@@ -1,0 +1,49 @@
+[project]
+name = "whenever"
+description = "Experimental datetime library"
+requires-python = ">=3.8"
+license = "MIT"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+test = [
+  "pytest~=7.4",
+  "black~=23.3",
+  "isort~=5.12",
+]
+
+
+[tool.maturin]
+python-source = "py"
+module-name = "whenever._whenever"
+features = ["pyo3/extension-module"]
+
+[tool.black]
+line-length = 79
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.eggs
+  | \.hg
+  | \.git
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = 'black'
+line_length = 79
+
+[build-system]
+requires = ["maturin>=1.3,<2.0"]
+build-backend = "maturin"
