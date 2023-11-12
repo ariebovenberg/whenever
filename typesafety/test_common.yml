@@ -1,0 +1,16 @@
+- case: strict_equality
+  regex: true
+  main: |
+    from whenever import Some, Nothing, Option
+    a: Some[int]
+    a_a: Some[int]
+    b: Some[str]
+    c: Nothing[bool]
+    d: Option[int]
+    e: Option[str]
+
+    a == 4  # E: .*comparison.*
+    a == b  # E: .*comparison.*
+    a == a_a
+    a == c  # E: .*comparison.*
+    d == e  # E: .*comparison.*

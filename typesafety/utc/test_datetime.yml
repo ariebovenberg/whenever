@@ -1,0 +1,17 @@
+- case: ymd_arguments
+  regex: true
+  main: |
+    from whenever.utc import DateTime
+    d = DateTime.new(2020, 8, 9)
+    d = DateTime.new(2020, 8, '15')  # E: .*incompatible type "str".* "int"
+- case: no_constructor
+  regex: true
+  main: |
+    from whenever.utc import DateTime
+    d = DateTime(2020)  # E: .*NoReturn
+- case: strict_equality
+  regex: true
+  main: |
+    from whenever.utc import DateTime
+    d = DateTime.new(2020, 8, 9).unwrap()
+    d == 3  # E: .*comparison.*
