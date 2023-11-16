@@ -3,7 +3,7 @@ name = "whenever"
 description = "Typesafe datetimes powered by Rust's chrono library"
 requires-python = ">=3.8"
 authors = [
-    {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com>"}
+    {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com"}
 ]
 license = "MIT"
 classifiers = [
@@ -17,6 +17,12 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://whenever.rtfd.io"
+Documentation = "https://whenever.rtfd.io"
+Repository = "https://github.com/ariebovenberg/whenever.git"
+Changelog = "https://github.com/ariebovenberg/whenever/blob/main/CHANGELOG.rst"
 
 [project.optional-dependencies]
 test = [
