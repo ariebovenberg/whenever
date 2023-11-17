@@ -69,7 +69,6 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
- "serde",
  "wasm-bindgen",
  "windows-targets",
 ]
@@ -398,7 +397,7 @@ checksum = "0d046c5d029ba91a1ed14da14dca44b68bf2f124cfbaf741c54151fdb3e0750b"
 
 [[package]]
 name = "whenever"
-version = "0.0.2"
+version = "0.0.4"
 dependencies = [
  "bincode",
  "chrono",

@@ -1,5 +1,6 @@
+import datetime as py_datetime
 import pickle
-from datetime import datetime as py_datetime
+import weakref
 
 import pytest
 from hypothesis import given
@@ -48,45 +49,45 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-class TestParse:
+class TestFromStr:
     def test_valid(self):
-        assert DateTime.parse("2020-08-15T12:08:30Z") == DateTime.new(
+        assert DateTime.from_str("2020-08-15T12:08:30Z") == DateTime.new(
             2020, 8, 15, 12, 8, 30
         )
 
     def test_valid_unpadded(self):
-        assert DateTime.parse("2020-8-15T12:8:30Z") == DateTime.new(
+        assert DateTime.from_str("2020-8-15T12:8:30Z") == DateTime.new(
             2020, 8, 15, 12, 8, 30
         )
 
     def test_valid_fraction(self):
-        assert DateTime.parse("2020-08-15T12:08:30.346Z") == DateTime.new(
+        assert DateTime.from_str("2020-08-15T12:08:30.346Z") == DateTime.new(
             2020, 8, 15, 12, 8, 30, 346_000_000
         )
 
     def test_overly_precise_fraction(self):
-        assert DateTime.parse(
+        assert DateTime.from_str(
             "2020-08-15T12:08:30.123456789123Z"
         ) == DateTime.new(2020, 8, 15, 12, 8, 30, 123_456_789)
 
     def test_invalid_lowercase_z(self):
-        assert not DateTime.parse("2020-08-15T12:08:30z")
+        assert not DateTime.from_str("2020-08-15T12:08:30z")
 
     def test_no_trailing_z(self):
-        assert not DateTime.parse("2020-08-15T12:08:30")
+        assert not DateTime.from_str("2020-08-15T12:08:30")
 
     def test_no_seconds(self):
-        assert not DateTime.parse("2020-08-15T12:08Z")
+        assert not DateTime.from_str("2020-08-15T12:08Z")
 
     def test_empty(self):
-        assert not DateTime.parse("")
+        assert not DateTime.from_str("")
 
     def test_garbage(self):
-        assert not DateTime.parse("garbage")
+        assert not DateTime.from_str("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
-        DateTime.parse(s)  # should not raise an exception, ever
+        DateTime.from_str(s)  # should not raise an exception, ever
 
 
 def test_equality():
@@ -164,8 +165,8 @@ def test_pickle(benchmark):
 
 
 def test_comparison():
-    d = DateTime.parse("2020-08-15T23:12:09Z").unwrap()
-    later = DateTime.parse("2020-08-16T00:00:00Z").unwrap()
+    d = DateTime.from_str("2020-08-15T23:12:09Z").unwrap()
+    later = DateTime.from_str("2020-08-16T00:00:00Z").unwrap()
     assert d < later
     assert d <= later
     assert later > d
@@ -177,4 +178,28 @@ def test_comparison():
 
 def test_to_py():
     d = DateTime.new(2020, 8, 15, 23, 12, 9, 987_654_000).unwrap()
-    assert d.to_py() == py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
+    assert d.to_py() == py_datetime.datetime(
+        2020, 8, 15, 23, 12, 9, 987_654, tzinfo=py_datetime.timezone.utc
+    )
+
+
+def test_from_py():
+    d = py_datetime.datetime(
+        2020, 8, 15, 23, 12, 9, 987_654, tzinfo=py_datetime.timezone.utc
+    )
+    assert (
+        DateTime.from_py(d).unwrap()
+        == DateTime.new(2020, 8, 15, 23, 12, 9, 987_654_000).unwrap()
+    )
+
+
+def test_now():
+    now = DateTime.now()
+    py_now = py_datetime.datetime.now(py_datetime.timezone.utc)
+    assert py_now - now.to_py() < py_datetime.timedelta(seconds=1)
+
+
+def test_weakref():
+    d = DateTime.new(2020, 8, 15).unwrap()
+    ref = weakref.ref(d)
+    assert ref() == d

@@ -2,13 +2,13 @@ use chrono::{self, NaiveDateTime};
 use chrono::{Datelike, Timelike};
 use pyo3::prelude::*;
 use pyo3::sync::GILOnceCell;
-use pyo3::types::PyDateTime;
+use pyo3::types::{timezone_utc, PyDateAccess, PyDateTime, PyTimeAccess, PyTzInfoAccess};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use crate::common::{PyNothing, PySome};
 
-/// Efficient UTC-only datetime
+/// An efficient UTC-only datetime
 #[pyclass(frozen, module = "whenever.utc", weakref)]
 struct DateTime {
     inner: chrono::NaiveDateTime,
@@ -47,9 +47,9 @@ impl DateTime {
         }
     }
 
-    /// Parse a string in the format of ``YYYY-MM-DDTHH:MM:SS[.f]Z``
+    /// Parse a string in the exact format of ``YYYY-MM-DDTHH:MM:SS[.f]Z``
     #[staticmethod]
-    fn parse(py: Python, s: &str) -> PyObject {
+    fn from_str(py: Python, s: &str) -> PyObject {
         match s.chars().last() {
             Some('Z') => match s[..s.len() - 1].parse::<chrono::NaiveDateTime>() {
                 Ok(inner) => PySome {
@@ -110,15 +110,45 @@ impl DateTime {
             self.inner.minute() as u8,
             self.inner.second() as u8,
             self.inner.nanosecond() / 1_000,
-            None,
+            Some(timezone_utc(py)),
         )
     }
 
+    /// Convert a :class:`datetime.datetime` (with tzinto=timezone.utc) to a DateTime
+    #[staticmethod]
+    fn from_py(py: Python, dt: &PyDateTime) -> PyObject {
+        match dt.get_tzinfo() {
+            Some(tz) if tz.is(timezone_utc(py)) => {
+                match chrono::NaiveDate::from_ymd_opt(
+                    dt.get_year(),
+                    dt.get_month() as u32,
+                    dt.get_day() as u32,
+                )
+                .and_then(|d| {
+                    d.and_hms_nano_opt(
+                        dt.get_hour() as u32,
+                        dt.get_minute() as u32,
+                        dt.get_second() as u32,
+                        dt.get_microsecond() * 1000 as u32,
+                    )
+                }) {
+                    Some(inner) => PySome {
+                        value: DateTime { inner }.into_py(py),
+                    }
+                    .into_py(py),
+                    None => (PyNothing {}).into_py(py),
+                }
+            }
+            _ => (PyNothing {}).into_py(py),
+        }
+    }
+    /// The year of this datetime
     #[getter]
     fn year(&self) -> i32 {
         self.inner.year()
     }
 
+    /// The month of this datetime
     #[getter]
     fn month(&self) -> u32 {
         self.inner.month()
@@ -149,6 +179,14 @@ impl DateTime {
         self.inner.nanosecond()
     }
 
+    #[staticmethod]
+    fn now() -> DateTime {
+        DateTime {
+            inner: chrono::Utc::now().naive_utc(),
+        }
+    }
+
+    /// Check for equality with other UTC-only DateTime objects
     fn __eq__(&self, rhs: &DateTime) -> bool {
         self.inner == rhs.inner
     }
@@ -203,13 +241,12 @@ fn unpickle_datetime(secs: i64, nsecs: u32) -> DateTime {
 static DATETIME_UNPICKLER: GILOnceCell<PyObject> = GILOnceCell::new();
 
 pub fn submodule(py: Python<'_>) -> PyResult<&PyModule> {
-    let m = PyModule::new(py, "utc")?;
+    let m = PyModule::new(py, "whenever.utc")?;
     m.add_class::<DateTime>()?;
 
     let unpickle_func = wrap_pyfunction!(unpickle_datetime, m)?;
-    DATETIME_UNPICKLER.set(py, unpickle_func.into()).unwrap();
-    unpickle_func.setattr("__module__", "whenever.utc")?;
     m.add_function(unpickle_func)?;
+    DATETIME_UNPICKLER.set(py, unpickle_func.into()).unwrap();
 
     Ok(m)
 }

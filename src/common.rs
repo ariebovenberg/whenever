@@ -81,8 +81,7 @@ impl PyNothing {
 }
 
 pub fn submodule(py: Python) -> PyResult<&PyModule> {
-    let m = PyModule::new(py, "_common")?;
-    m.add("_NOTHING", (PyNothing {}).into_py(py))?;
+    let m = PyModule::new(py, "whenever._common")?;
     m.add_class::<PySome>()?;
     m.add_class::<PyNothing>()?;
     Ok(m)

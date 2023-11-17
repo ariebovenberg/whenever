@@ -91,12 +91,12 @@ Some basic UTC functionality is already available though:
    from whenever.utc import DateTime
    from whenever import Some, Nothing
 
-   # Explicit types for functional/Rust-style error handling
-   d = DateTime.new(2020, 1, 1, 12, 0, 0).unwrap()
+   d = DateTime.now()
 
+   # Explicit types for functional/Rust-style error handling
    match DateTime.parse("2020-08-15T12:08:30Z"):
        case Some(d2) if d2 > d:
-           print('parsed a datetime after 2020-01-01T12:00:00Z')
+           print('parsed a datetime is in the future')
        case Nothing():
            print('failed to parse')
 
