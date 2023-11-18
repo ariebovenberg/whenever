@@ -1,0 +1,35 @@
+- case: ymd_arguments
+  regex: true
+  main: |
+    from whenever import UTCDateTime
+    d = UTCDateTime(2020, 8, 9)
+    d = UTCDateTime(2020, 8, '15')  # E: .*incompatible type "str".* "int"
+- case: strict_equality
+  regex: true
+  main: |
+    from whenever import UTCDateTime
+    d = UTCDateTime(2020, 8, 9)
+    d == 3  # E: .*comparison.*
+- case: addition
+  regex: true
+  main: |
+    from datetime import timedelta
+    from whenever import UTCDateTime
+    d = UTCDateTime(2020, 8, 9)
+    reveal_type(d + timedelta(4))  # N: .*whenever.UTCDateTime
+    d + 12  # E: .*Unsupported
+
+- case: subtraction
+  regex: true
+  main: |
+    from datetime import timedelta
+    from whenever import UTCDateTime
+    d = UTCDateTime(2020, 8, 9)
+    reveal_type(d - timedelta(4))  # N: .*type is "whenever.UTCDateTime"
+    reveal_type(d - d)  # N: .*type is "datetime.timedelta
+- case: replace
+  regex: true
+  main: |
+    from whenever import UTCDateTime
+    d = UTCDateTime(2020, 8, 9)
+    d.replace(tzinfo=None)  # E: .*Unexpected keyword.*tzinfo.*
