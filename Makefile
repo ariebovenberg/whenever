@@ -1,23 +1,17 @@
-.PHONY: build-dev
-build-dev:
-	maturin develop --extras test
-
-
 .PHONY: test
-test: build-dev
-	pytest
+test:
+	pytest -s
 
 .PHONY: mypy
-mypy: build-dev
-	mypy py/ tests/
+mypy: 
+	mypy src/ tests/
 
 .PHONY: format
 format:
-	black py/ tests/
-	isort py/ tests/
-	cargo fmt
+	black src/ tests/
+	isort src/ tests/
 
 .PHONY: docs
-docs: build-dev
+docs:
 	@touch docs/api.rst
 	make -C docs/ html
