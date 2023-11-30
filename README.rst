@@ -22,7 +22,7 @@
 .. image:: https://img.shields.io/readthedocs/whenever.svg?style=flat-square
    :target: http://whenever.readthedocs.io/
 
-**Simple, type-safe datetimes for Python**
+**Type-safe datetimes for Python**
 
 Five simple classes on top of the standard library to help you write bug-free code.
 
@@ -68,9 +68,9 @@ and here's how you can use them:
 +                       +-----+--------+-------+-------+       +
 |                       | UTC | Offset | Zoned | Local |       |
 +=======================+=====+========+=======+=======+=======+
-| comparison            | .. centered:: ✅             |  ✅   |
+| comparison            | ✅  |   ✅   |  ✅   |  ✅   |  ✅   |
 +-----------------------+-----+--------+-------+-------+-------+
-| difference            | .. centered:: ✅             |  ✅   |
+| difference            | ✅  |   ✅   |  ✅   |  ✅   |  ✅   |
 +-----------------------+-----+--------+-------+-------+-------+
 | add/subtract timedelta| ✅  |  ❌    |  ✅   |  ✅   |  ✅   |
 +-----------------------+-----+--------+-------+-------+-------+
