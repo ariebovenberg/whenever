@@ -43,10 +43,20 @@ class TestFromStr:
             2020, 8, 15, 12, 8, 30
         )
 
-    def test_valid_fraction(self):
+    def test_valid_three_fractions(self):
         assert NaiveDateTime.fromstr(
-            "2020-08-15T12:08:30.34"
-        ) == NaiveDateTime(2020, 8, 15, 12, 8, 30, 340_000)
+            "2020-08-15T12:08:30.349"
+        ) == NaiveDateTime(2020, 8, 15, 12, 8, 30, 349_000)
+
+    def test_valid_six_fractions(self):
+        assert NaiveDateTime.fromstr(
+            "2020-08-15T12:08:30.349123"
+        ) == NaiveDateTime(2020, 8, 15, 12, 8, 30, 349_123)
+
+    def test_single_space_instead_of_T(self):
+        assert NaiveDateTime.fromstr("2020-08-15 12:08:30") == NaiveDateTime(
+            2020, 8, 15, 12, 8, 30
+        )
 
     def test_unpadded(self):
         with pytest.raises(ValueError):

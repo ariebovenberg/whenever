@@ -31,21 +31,25 @@ Five simple classes on top of the standard library to help you write bug-free co
 Why?
 ----
 
-Most Python datetime libraries use a single class for
-UTC/timezoned/offset/local/naive datetimes,
-making it all too easy to mistakenly mix them.
-Your type checker and IDE are powerless to help you,
-leading to errors at best, and silent bugs at worst.
+Are you tired of crossing your fingers and hoping you didn't mix up
+aware and naive datetimes?
+Or that you were careful to always use UTC? Or that you didn't forget
+to account for daylight savings time?
 
-**Whenever** gives you five *distinct types* you can't mix up. 
-They're simple, fully typed, and avoid common pitfalls.
+Most datetime libraries leave you vulnerable to these pitfalls:
+They use a single class for all datetimes.
+As a result, a type checker or IDE can't detect these mistakes,
+and you end up discovering them at runtime — or worse, not at all.
+
+**Whenever** gives you *distinct datetime types* you can't mix up.
+They're fully typed, and avoid common pitfalls.
 It builds on the good parts of the standard library,
 and draws inspiration from battle-tested libraries in other languages.
 
-Best of all, **whenever** is *boring*. It doesn't do any fancy things.
+Best of all, **whenever** is *boring*. It doesn't do anything fancy or magic.
 It's just five dead-simple classes thinly wrapping the standard library.
 There's no function over 10 lines long, and no dependencies.
-The goal is to give you peace of mind.
+The goal is your peace of mind.
 
 
 Quickstart
@@ -94,10 +98,10 @@ and here's how you can use them:
      py311_release_livestream = UTCDateTime(2022, 10, 24, hour=17)
 
 - **OffsetDateTime** defines a local time using a UTC offset.
-  This is great if you're storing when something happened at a specific location.
+  This is great if you're storing when something happened at a local time.
   It's less suitable for *future* events though,
   because the UTC offset may change (e.g. due to daylight savings time).
-  For this reason, you also cannot add/subtract a ``timedelta``
+  For this reason, you cannot add/subtract a ``timedelta``
   — the offset may have changed!
 
   *Example use case:* Time at which a local event occurred.
@@ -106,6 +110,7 @@ and here's how you can use them:
 
      from whenever import hours  # alias for timedelta(hours=...)
 
+     # 9:00 in Salt Lake City, with the UTC offset at the time
      pycon23_started = OffsetDateTime(2023, 4, 21, hour=9, offset=hours(-6))
 
 - **ZonedDateTime** accounts for timezones and their variable UTC offset.

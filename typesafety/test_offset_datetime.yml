@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/typeddjango/pytest-mypy-plugins/master/pytest_mypy_plugins/schema.json
+- case: ymd_arguments
+  regex: true
+  main: |
+    from whenever import OffsetDateTime, hours
+    d = OffsetDateTime(2020, 8, 9, offset=hours(5))
+    d = OffsetDateTime(2020, 8, 15, offset='str')
+
+    # all-positional also allowed
+    d = OffsetDateTime(2020, 8, 9, 15, 0, 0, 0, hours(5))
+  out: |
+    # all this needed to match a single overload match failure...
+    main:3: E: .*No overload
+    main:3: N: .*
+    main:3: N: .*
+    main:3: N: .*
+- case: strict_equality
+  regex: true
+  main: |
+    from whenever import OffsetDateTime, hours, UTCDateTime
+    d = OffsetDateTime(2020, 8, 9, offset=hours(1))
+    d == OffsetDateTime(2023, 3, 10, offset=hours(4))
+    d == 3  # E: .*comparison.*
+    d == UTCDateTime(2020, 8, 8, 23)  # E: .*comparison.*
+- case: subtraction
+  regex: true
+  main: |
+    from whenever import OffsetDateTime, hours
+    d = OffsetDateTime(2020, 8, 9, offset=hours(3))
+    reveal_type(d - d)  # N: .*type is "datetime.timedelta
+    d - hours(4)  # E: .*operator.*
+- case: replace
+  regex: true
+  main: |
+    from whenever import OffsetDateTime, hours
+    d = OffsetDateTime(2020, 8, 9, offset=hours(1))
+    d.replace(tzinfo=None)  # E: .*Unexpected keyword.*tzinfo.*
+    d.replace(year=None)  # E: .*incompatible type "None".*
+    d.replace(offset=hours(2))

@@ -56,9 +56,19 @@ class TestFromStr:
             2020, 8, 15, 12, 8, 30
         )
 
-    def test_valid_fraction(self):
-        assert UTCDateTime.fromstr("2020-08-15T12:08:30.34Z") == UTCDateTime(
-            2020, 8, 15, 12, 8, 30, 340_000
+    def test_valid_three_fractions(self):
+        assert UTCDateTime.fromstr("2020-08-15T12:08:30.349Z") == UTCDateTime(
+            2020, 8, 15, 12, 8, 30, 349_000
+        )
+
+    def test_valid_six_fractions(self):
+        assert UTCDateTime.fromstr(
+            "2020-08-15T12:08:30.349123Z"
+        ) == UTCDateTime(2020, 8, 15, 12, 8, 30, 349_123)
+
+    def test_single_space_instead_of_T(self):
+        assert UTCDateTime.fromstr("2020-08-15 12:08:30Z") == UTCDateTime(
+            2020, 8, 15, 12, 8, 30
         )
 
     def test_unpadded(self):
