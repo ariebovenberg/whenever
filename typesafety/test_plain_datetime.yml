@@ -1,0 +1,30 @@
+- case: ymd_arguments
+  regex: true
+  main: |
+    from whenever import PlainDateTime
+    d = PlainDateTime(2020, 8, 9)
+    d = PlainDateTime(2020, 8, '15')  # E: .*incompatible type "str".* "int"
+- case: strict_equality
+  regex: true
+  main: |
+    from whenever import PlainDateTime, UTCDateTime
+    d = PlainDateTime(2020, 8, 9)
+    d == 3  # E: .*comparison.*
+    d == UTCDateTime(2020, 8, 9)  # E: .*comparison.*
+- case: addition
+  regex: true
+  main: |
+    from datetime import timedelta
+    from whenever import PlainDateTime
+    d = PlainDateTime(2020, 8, 9)
+    reveal_type(d + timedelta(4))  # N: .*whenever.PlainDateTime
+    d + 12  # E: .*Unsupported
+
+- case: subtraction
+  regex: true
+  main: |
+    from datetime import timedelta
+    from whenever import PlainDateTime
+    d = PlainDateTime(2020, 8, 9)
+    reveal_type(d - timedelta(4))  # N: .*type is "whenever.PlainDateTime"
+    reveal_type(d - d)  # N: .*type is "datetime.timedelta

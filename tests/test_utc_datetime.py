@@ -52,59 +52,59 @@ def test_immutable():
 
 class TestFromStr:
     def test_valid(self):
-        assert UTCDateTime.fromstr("2020-08-15T12:08:30Z") == UTCDateTime(
+        assert UTCDateTime.from_str("2020-08-15T12:08:30Z") == UTCDateTime(
             2020, 8, 15, 12, 8, 30
         )
 
     def test_valid_three_fractions(self):
-        assert UTCDateTime.fromstr("2020-08-15T12:08:30.349Z") == UTCDateTime(
+        assert UTCDateTime.from_str("2020-08-15T12:08:30.349Z") == UTCDateTime(
             2020, 8, 15, 12, 8, 30, 349_000
         )
 
     def test_valid_six_fractions(self):
-        assert UTCDateTime.fromstr(
+        assert UTCDateTime.from_str(
             "2020-08-15T12:08:30.349123Z"
         ) == UTCDateTime(2020, 8, 15, 12, 8, 30, 349_123)
 
     def test_single_space_instead_of_T(self):
-        assert UTCDateTime.fromstr("2020-08-15 12:08:30Z") == UTCDateTime(
+        assert UTCDateTime.from_str("2020-08-15 12:08:30Z") == UTCDateTime(
             2020, 8, 15, 12, 8, 30
         )
 
     def test_unpadded(self):
         with pytest.raises(ValueError):
-            UTCDateTime.fromstr("2020-8-15T12:8:30Z")
+            UTCDateTime.from_str("2020-8-15T12:8:30Z")
 
     # TODO: more comprehensive tests
 
     def test_overly_precise_fraction(self):
         with pytest.raises(ValueError):
-            UTCDateTime.fromstr("2020-08-15T12:08:30.123456789123Z")
+            UTCDateTime.from_str("2020-08-15T12:08:30.123456789123Z")
 
     def test_invalid_lowercase_z(self):
         with pytest.raises(ValueError):
-            UTCDateTime.fromstr("2020-08-15T12:08:30z")
+            UTCDateTime.from_str("2020-08-15T12:08:30z")
 
     def test_no_trailing_z(self):
         with pytest.raises(ValueError):
-            UTCDateTime.fromstr("2020-08-15T12:08:30")
+            UTCDateTime.from_str("2020-08-15T12:08:30")
 
     def test_no_seconds(self):
         with pytest.raises(ValueError):
-            UTCDateTime.fromstr("2020-08-15T12:08Z")
+            UTCDateTime.from_str("2020-08-15T12:08Z")
 
     def test_empty(self):
         with pytest.raises(ValueError):
-            UTCDateTime.fromstr("")
+            UTCDateTime.from_str("")
 
     def test_garbage(self):
         with pytest.raises(ValueError):
-            UTCDateTime.fromstr("garbage")
+            UTCDateTime.from_str("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
         with pytest.raises(ValueError, match="Invalid"):
-            UTCDateTime.fromstr(s)
+            UTCDateTime.from_str(s)
 
 
 def test_equality():
@@ -139,13 +139,13 @@ def test_timestamp():
     )
 
 
-def test_fromtimestamp():
-    assert UTCDateTime.fromtimestamp(0) == UTCDateTime(1970, 1, 1)
-    assert UTCDateTime.fromtimestamp(1_597_493_310) == UTCDateTime(
+def test_from_timestamp():
+    assert UTCDateTime.from_timestamp(0) == UTCDateTime(1970, 1, 1)
+    assert UTCDateTime.from_timestamp(1_597_493_310) == UTCDateTime(
         2020, 8, 15, 12, 8, 30
     )
     with pytest.raises((OSError, OverflowError)):
-        UTCDateTime.fromtimestamp(1_000_000_000_000_000_000)
+        UTCDateTime.from_timestamp(1_000_000_000_000_000_000)
 
 
 def test_repr():
@@ -163,8 +163,8 @@ def test_str():
 
 
 def test_comparison():
-    d = UTCDateTime.fromstr("2020-08-15T23:12:09Z")
-    later = UTCDateTime.fromstr("2020-08-16T00:00:00Z")
+    d = UTCDateTime.from_str("2020-08-15T23:12:09Z")
+    later = UTCDateTime.from_str("2020-08-16T00:00:00Z")
     assert d < later
     assert d <= later
     assert later > d
@@ -220,12 +220,16 @@ def test_min_max():
 def test_passthrough_datetime_attrs():
     d = UTCDateTime(2020, 8, 15, 12, 43)
     assert d.resolution == py_datetime.resolution
-    assert d.weekday() == d._py_datetime.weekday()
-    assert d.date() == d._py_datetime.date()
+    assert d.weekday() == d.to_py().weekday()
+    assert d.date() == d.to_py().date()
     time = d.time()
     assert time.tzinfo is None
-    assert time == d._py_datetime.time()
-    assert d.tz() == d._py_datetime.tzinfo == timezone.utc
+    assert time == d.to_py().time()
+
+
+def test_tz():
+    d = UTCDateTime(2020, 8, 15, 12, 43)
+    assert d.tzinfo == d.to_py().tzinfo == timezone.utc
 
 
 def test_replace():

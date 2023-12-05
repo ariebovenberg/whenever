@@ -1,3 +1,21 @@
+import sys
+
+__all__ = [
+    "ZoneInfo",
+    "ZoneInfoNotFoundError",
+    "AlwaysEqual",
+    "NeverEqual",
+    "AlwaysLarger",
+    "AlwaysSmaller",
+]
+
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+else:
+    from backports.zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+
 class AlwaysEqual:
     def __eq__(self, other):
         return True

@@ -4,16 +4,9 @@
   main: |
     from whenever import OffsetDateTime, hours
     d = OffsetDateTime(2020, 8, 9, offset=hours(5))
-    d = OffsetDateTime(2020, 8, 15, offset='str')
-
-    # all-positional also allowed
-    d = OffsetDateTime(2020, 8, 9, 15, 0, 0, 0, hours(5))
+    d = OffsetDateTime(2020, 8, 15, offset='str')  # E: .*"str"
   out: |
     # all this needed to match a single overload match failure...
-    main:3: E: .*No overload
-    main:3: N: .*
-    main:3: N: .*
-    main:3: N: .*
 - case: strict_equality
   regex: true
   main: |

@@ -1,0 +1,29 @@
+- case: strict_equality
+  regex: true
+  main: |
+    from whenever import ZonedDateTime
+    d = ZonedDateTime(2020, 8, 9, zone="Iceland", fold=0)
+    d == 3  # E: .*comparison.*
+- case: addition
+  regex: true
+  main: |
+    from datetime import timedelta
+    from whenever import ZonedDateTime
+    d = ZonedDateTime(2020, 8, 9, zone="Iceland", fold=0)
+    reveal_type(d + timedelta(4))  # N: .*whenever.ZonedDateTime
+    d + 12  # E: .*Unsupported
+
+- case: subtraction
+  regex: true
+  main: |
+    from datetime import timedelta
+    from whenever import ZonedDateTime
+    d = ZonedDateTime(2020, 8, 9, zone="Iceland", fold=0)
+    reveal_type(d - timedelta(4))  # N: .*type is "whenever.ZonedDateTime"
+    reveal_type(d - d)  # N: .*type is "datetime.timedelta
+- case: replace
+  regex: true
+  main: |
+    from whenever import ZonedDateTime
+    d = ZonedDateTime(2020, 8, 9, zone="Iceland", fold=0)
+    d.replace(tzinfo=None)  # E: .*Unexpected keyword.*tzinfo.*

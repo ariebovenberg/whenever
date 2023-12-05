@@ -5,6 +5,7 @@ Changelog
 ------------------
 
 - 📐 Implement ``OffsetDateTime``
+- ↔️ Rename ``NaiveDateTime`` to ``PlainDateTime``
 
 0.0.4 (2023-11-30)
 ------------------
