@@ -1,4 +1,8 @@
+import os
 import sys
+from contextlib import contextmanager
+from time import tzset
+from unittest.mock import patch
 
 __all__ = [
     "ZoneInfo",
@@ -52,3 +56,17 @@ class AlwaysSmaller:
 
     def __ge__(self, other):
         return False
+
+
+@contextmanager
+def local_ams_tz():
+    with patch.dict(os.environ, {"TZ": "Europe/Amsterdam"}):
+        tzset()
+        yield
+
+
+@contextmanager
+def local_nyc_tz():
+    with patch.dict(os.environ, {"TZ": "America/New_York"}):
+        tzset()
+        yield

@@ -7,9 +7,11 @@
 - case: strict_equality
   regex: true
   main: |
-    from whenever import UTCDateTime
+    from whenever import UTCDateTime, ZonedDateTime, DateTime
     d = UTCDateTime(2020, 8, 9)
     d == 3  # E: .*comparison.*
+    e: DateTime = ZonedDateTime(2020, 1, 1, zone="Iceland")
+    d == e
 - case: addition
   regex: true
   main: |
@@ -18,7 +20,6 @@
     d = UTCDateTime(2020, 8, 9)
     reveal_type(d + timedelta(4))  # N: .*whenever.UTCDateTime
     d + 12  # E: .*Unsupported
-
 - case: subtraction
   regex: true
   main: |
@@ -33,3 +34,17 @@
     from whenever import UTCDateTime
     d = UTCDateTime(2020, 8, 9)
     d.replace(tzinfo=None)  # E: .*Unexpected keyword.*tzinfo.*
+    d.replace(fold=None)  # E: .*Unexpected keyword.*fold.*
+- case: to_offset
+  regex: true
+  main: |
+    from whenever import UTCDateTime, hours
+    d = UTCDateTime(2020, 8, 9)
+    d.to_offset()
+    d.to_offset(hours(1))
+    d.to_offset(None)
+  out: |
+    main:5: E: .*overload
+    main:5: N: .*
+    main:5: N: .*
+    main:5: N: .*

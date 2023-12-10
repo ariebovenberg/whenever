@@ -1,11 +1,10 @@
 Changelog
 =========
 
-0.0.5 (2023-12-??)
+0.1.0 (2023-12-20)
 ------------------
 
-- 📐 Implement ``OffsetDateTime``
-- ↔️ Rename ``NaiveDateTime`` to ``PlainDateTime``
+- 🚀 Implement ``OffsetDateTime``, ``ZonedDateTime`` and ``LocalDateTime``
 
 0.0.4 (2023-11-30)
 ------------------
@@ -17,7 +16,7 @@ Changelog
 0.0.3 (2023-11-16)
 ------------------
 
-- 🌐 Implement basic UTC-only ``DateTime``
+- 🌐 Implement basic ``UTCDateTime``
 
 0.0.2 (2023-11-10)
 ------------------

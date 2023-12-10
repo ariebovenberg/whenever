@@ -8,9 +8,25 @@ from hypothesis import given
 from hypothesis.strategies import text
 from pytest import approx
 
-from whenever import OffsetDateTime, hours, minutes
+from whenever import (
+    AwareDateTime,
+    InvalidFormat,
+    LocalDateTime,
+    OffsetDateTime,
+    UTCDateTime,
+    ZonedDateTime,
+    hours,
+    minutes,
+)
 
-from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
+from .common import (
+    AlwaysEqual,
+    AlwaysLarger,
+    AlwaysSmaller,
+    NeverEqual,
+    ZoneInfoNotFoundError,
+    local_nyc_tz,
+)
 
 
 def test_init_and_attributes():
@@ -115,66 +131,93 @@ class TestFromStr:
         ) == OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=hours(-4))
 
     def test_unpadded(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(InvalidFormat):
             OffsetDateTime.from_str("2020-8-15T12:8:30+05:00")
 
     def test_overly_precise_fraction(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(InvalidFormat):
             OffsetDateTime.from_str("2020-08-15T12:08:30.123456789123+05:00")
 
     def test_invalid_offset(self):
-        with pytest.raises(ValueError, match="offset"):
+        with pytest.raises(ValueError):
             OffsetDateTime.from_str("2020-08-15T12:08:30-99:00")
 
     def test_no_offset(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(InvalidFormat):
             OffsetDateTime.from_str("2020-08-15T12:08:30")
 
     def test_no_seconds(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(InvalidFormat):
             OffsetDateTime.from_str("2020-08-15T12:08-05:00")
 
     def test_empty(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(InvalidFormat):
             OffsetDateTime.from_str("")
 
     def test_garbage(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(InvalidFormat):
             OffsetDateTime.from_str("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
-        with pytest.raises(ValueError, match="Invalid"):
+        with pytest.raises(InvalidFormat):
             OffsetDateTime.from_str(s)
 
 
-def test_equality():
+def test_exact_equality():
     d = OffsetDateTime(2020, 8, 15, 12, offset=hours(5))
-    different = OffsetDateTime(2020, 8, 15, 12, offset=hours(6))
-    same_exact = OffsetDateTime(2020, 8, 15, 12, 0, offset=hours(5))
-    same_time = OffsetDateTime(2020, 8, 15, 11, 0, offset=hours(4))
-    assert d == same_exact
-    assert d == same_time
-    assert d != different
-    assert not d == different
-    assert not d != same_exact
-    assert not d != same_time
+    same = d.replace()
+    utc_same = d.replace(hour=13, offset=hours(6))
+    different = d.replace(offset=hours(6))
+    assert d.exact_eq(same)
+    assert not d.exact_eq(utc_same)
+    assert not d.exact_eq(different)
 
-    assert hash(d) == hash(same_exact)
-    assert hash(d) == hash(same_time)
-    assert hash(d) != hash(different)
 
-    assert d == AlwaysEqual()
-    assert d != NeverEqual()
-    assert not d == NeverEqual()
-    assert not d != AlwaysEqual()
+class TestEquality:
+    def test_same_exact(self):
+        d = OffsetDateTime(2020, 8, 15, 12, offset=hours(5))
+        same = d.replace()
+        assert d == same
+        assert not d != same
+        assert hash(d) == hash(same)
 
-    assert d != 42  # type: ignore[comparison-overlap]
-    assert not d == 42  # type: ignore[comparison-overlap]
+    def test_different(self):
+        d = OffsetDateTime(2020, 8, 15, 12, offset=hours(5))
+        different = d.replace(offset=hours(6))
+        assert d != different
+        assert not d == different
+        assert hash(d) != hash(different)
 
-    assert OffsetDateTime(
-        2020, 8, 15, 12, 8, 30, 450, offset=hours(3)
-    ) != OffsetDateTime(2020, 8, 15, 12, 8, 31, 450, offset=hours(3))
+    def test_same_time(self):
+        d = OffsetDateTime(2020, 8, 15, 12, offset=hours(5))
+        same_time = d.replace(hour=11, offset=hours(4))
+        assert d == same_time
+        assert not d != same_time
+        assert hash(d) == hash(same_time)
+
+    @local_nyc_tz()
+    def test_other_aware(self):
+        d: AwareDateTime = OffsetDateTime(2020, 8, 15, 12, offset=hours(5))
+        assert d == d.to_utc()
+        assert hash(d) == hash(d.to_utc())
+        assert d != d.to_utc().replace(hour=10)
+
+        assert d == d.to_local()
+        assert d != d.to_local().replace(hour=8)
+
+        assert d == d.to_zoned("America/New_York")
+        assert hash(d) == hash(d.to_zoned("America/New_York"))
+        assert d != d.to_zoned("America/New_York").replace(hour=12)
+
+    def test_not_implemented(self):
+        d = OffsetDateTime(2020, 8, 15, 12, offset=hours(5))
+        assert d == AlwaysEqual()
+        assert d != NeverEqual()
+        assert not d == NeverEqual()
+        assert not d != AlwaysEqual()
+        assert d != 42  # type: ignore[comparison-overlap]
+        assert not d == 42  # type: ignore[comparison-overlap]
 
 
 def test_timestamp():
@@ -231,9 +274,9 @@ def test_comparison():
         d < 42  # type: ignore[operator]
 
 
-def test_to_py():
+def test_py():
     d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=hours(5))
-    assert d.to_py() == py_datetime(
+    assert d.py == py_datetime(
         2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone(hours(5))
     )
 
@@ -256,7 +299,7 @@ def test_now():
     now = OffsetDateTime.now(hours(5))
     assert now.offset == hours(5)
     py_now = py_datetime.now(timezone.utc)
-    assert py_now - now.to_py() < timedelta(seconds=1)
+    assert py_now - now.py < timedelta(seconds=1)
 
 
 def test_weakref():
@@ -275,16 +318,16 @@ def test_min_max():
 def test_passthrough_datetime_attrs():
     d = OffsetDateTime(2020, 8, 15, 12, 43, offset=hours(5))
     assert d.resolution == py_datetime.resolution
-    assert d.weekday() == d.to_py().weekday()
-    assert d.date() == d.to_py().date()
+    assert d.weekday() == d.py.weekday()
+    assert d.date() == d.py.date()
     time = d.time()
     assert time.tzinfo is None
-    assert time == d.to_py().time()
+    assert time == d.py.time()
 
 
 def test_tz():
     d = OffsetDateTime(2020, 8, 15, 12, 43, offset=hours(5))
-    assert d.tzinfo == d.to_py().tzinfo == timezone(hours(5))
+    assert d.tzinfo == d.py.tzinfo == timezone(hours(5))
 
 
 def test_replace():
@@ -346,5 +389,35 @@ def test_subtract_datetime():
 def test_pickle():
     d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=hours(3))
     dumped = pickle.dumps(d)
-    assert len(dumped) <= len(pickle.dumps(d.to_py())) + 10
+    assert len(dumped) <= len(pickle.dumps(d.py)) + 10
     assert pickle.loads(pickle.dumps(d)) == d
+
+
+def test_to_utc():
+    d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=hours(3))
+    assert d.to_utc() == UTCDateTime(2020, 8, 15, 20, 12, 9, 987_654)
+
+
+def test_to_offset():
+    d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=hours(3))
+    assert d.to_offset(hours(5)).exact_eq(
+        OffsetDateTime(2020, 8, 16, 1, 12, 9, 987_654, offset=hours(5))
+    )
+    assert d.to_offset() is d
+
+
+def test_to_zoned():
+    d = OffsetDateTime(2020, 8, 15, 20, 12, 9, 987_654, offset=hours(3))
+    assert d.to_zoned("America/New_York").exact_eq(
+        ZonedDateTime(2020, 8, 15, 13, 12, 9, 987_654, zone="America/New_York")
+    )
+    with pytest.raises(ZoneInfoNotFoundError):
+        d.to_zoned("America/Not_A_Real_Zone")
+
+
+@local_nyc_tz()
+def test_to_local():
+    d = OffsetDateTime(2020, 8, 15, 20, 12, 9, 987_654, offset=hours(3))
+    assert d.to_local() == LocalDateTime(
+        2020, 8, 15, 13, 12, 9, 987_654, fold=0
+    )
