@@ -19,7 +19,7 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
-    "sphinx_autodoc_typehints",
+    "sphinx_copybutton",
 ]
 templates_path = ["_templates"]
 source_suffix = ".rst"

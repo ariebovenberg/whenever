@@ -1,3 +1,25 @@
+import os
+import sys
+from contextlib import contextmanager
+from time import tzset
+from unittest.mock import patch
+
+__all__ = [
+    "ZoneInfo",
+    "ZoneInfoNotFoundError",
+    "AlwaysEqual",
+    "NeverEqual",
+    "AlwaysLarger",
+    "AlwaysSmaller",
+]
+
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+else:
+    from backports.zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+
 class AlwaysEqual:
     def __eq__(self, other):
         return True
@@ -34,3 +56,17 @@ class AlwaysSmaller:
 
     def __ge__(self, other):
         return False
+
+
+@contextmanager
+def local_ams_tz():
+    with patch.dict(os.environ, {"TZ": "Europe/Amsterdam"}):
+        tzset()
+        yield
+
+
+@contextmanager
+def local_nyc_tz():
+    with patch.dict(os.environ, {"TZ": "America/New_York"}):
+        tzset()
+        yield

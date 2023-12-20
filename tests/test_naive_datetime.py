@@ -39,45 +39,53 @@ def test_immutable():
 
 class TestFromStr:
     def test_valid(self):
-        assert NaiveDateTime.fromstr("2020-08-15T12:08:30") == NaiveDateTime(
+        assert NaiveDateTime.from_str("2020-08-15T12:08:30") == NaiveDateTime(
             2020, 8, 15, 12, 8, 30
         )
 
-    def test_valid_fraction(self):
-        assert NaiveDateTime.fromstr(
-            "2020-08-15T12:08:30.34"
-        ) == NaiveDateTime(2020, 8, 15, 12, 8, 30, 340_000)
+    def test_valid_three_fractions(self):
+        assert NaiveDateTime.from_str(
+            "2020-08-15T12:08:30.349"
+        ) == NaiveDateTime(2020, 8, 15, 12, 8, 30, 349_000)
+
+    def test_valid_six_fractions(self):
+        assert NaiveDateTime.from_str(
+            "2020-08-15T12:08:30.349123"
+        ) == NaiveDateTime(2020, 8, 15, 12, 8, 30, 349_123)
+
+    def test_single_space_instead_of_T(self):
+        assert NaiveDateTime.from_str("2020-08-15 12:08:30") == NaiveDateTime(
+            2020, 8, 15, 12, 8, 30
+        )
 
     def test_unpadded(self):
         with pytest.raises(ValueError):
-            NaiveDateTime.fromstr("2020-8-15T12:8:30")
-
-    # TODO: more comprehensive tests
+            NaiveDateTime.from_str("2020-8-15T12:8:30")
 
     def test_overly_precise_fraction(self):
         with pytest.raises(ValueError):
-            NaiveDateTime.fromstr("2020-08-15T12:08:30.123456789123")
+            NaiveDateTime.from_str("2020-08-15T12:08:30.123456789123")
 
     def test_trailing_z(self):
         with pytest.raises(ValueError):
-            NaiveDateTime.fromstr("2020-08-15T12:08:30Z")
+            NaiveDateTime.from_str("2020-08-15T12:08:30Z")
 
     def test_no_seconds(self):
         with pytest.raises(ValueError):
-            NaiveDateTime.fromstr("2020-08-15T12:08")
+            NaiveDateTime.from_str("2020-08-15T12:08")
 
     def test_empty(self):
         with pytest.raises(ValueError):
-            NaiveDateTime.fromstr("")
+            NaiveDateTime.from_str("")
 
     def test_garbage(self):
         with pytest.raises(ValueError):
-            NaiveDateTime.fromstr("garbage")
+            NaiveDateTime.from_str("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
         with pytest.raises(ValueError, match="Invalid"):
-            NaiveDateTime.fromstr(s)
+            NaiveDateTime.from_str(s)
 
 
 def test_equality():
@@ -114,14 +122,14 @@ def test_repr():
     )
 
 
-def test_str():
+def test_dunder_str():
     d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
     assert str(d) == "2020-08-15T23:12:09.987654"
 
 
 def test_comparison():
-    d = NaiveDateTime.fromstr("2020-08-15T23:12:09")
-    later = NaiveDateTime.fromstr("2020-08-16T00:00:00")
+    d = NaiveDateTime.from_str("2020-08-15T23:12:09")
+    later = NaiveDateTime.from_str("2020-08-16T00:00:00")
     assert d < later
     assert d <= later
     assert later > d
@@ -140,9 +148,9 @@ def test_comparison():
         d < 42  # type: ignore[operator]
 
 
-def test_to_py():
+def test_py():
     d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert d.to_py() == py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
+    assert d.py == py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
 
 
 def test_from_py():
@@ -173,10 +181,13 @@ def test_min_max():
 def test_passthrough_datetime_attrs():
     d = NaiveDateTime(2020, 8, 15)
     assert d.resolution == py_datetime.resolution
-    assert d.weekday() == d._py_datetime.weekday()
-    assert d.date() == d._py_datetime.date()
+    assert d.weekday() == d.py.weekday()
+    assert d.date() == d.py.date()
 
-    assert d.tz() is None
+
+def test_tz():
+    d = NaiveDateTime(2020, 8, 15)
+    assert d.tzinfo is None
 
 
 def test_replace():
@@ -232,5 +243,5 @@ def test_subtract_invalid():
 def test_pickle():
     d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
     dumped = pickle.dumps(d)
-    assert len(dumped) <= len(pickle.dumps(d.to_py())) + 15
+    assert len(dumped) <= len(pickle.dumps(d.py)) + 15
     assert pickle.loads(pickle.dumps(d)) == d
