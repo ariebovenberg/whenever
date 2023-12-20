@@ -27,7 +27,7 @@
 Do you cross your fingers every time you work with datetimes,
 hoping that you didn't mix naive and aware?
 or that you diligently converted to UTC everywhere?
-or that you avoided the :ref:`pitfalls of the standard library <pitfalls>`?
+or that you avoided the `pitfalls of the standard library <https://whenever.readthedocs.io/en/latest/#the-pitfalls-of-datetime>`_?
 There's no way to be sure, until you run your code...
 
 ✨ Until now! ✨
@@ -127,8 +127,6 @@ and here's how you can use them:
   .. code-block:: python
 
      city_simulation_start = NaiveDateTime(1900, 1, 1, hour=0)
-
-.. _pitfalls:
 
 The pitfalls of ``datetime``
 ----------------------------
