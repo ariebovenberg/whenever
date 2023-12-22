@@ -14,6 +14,7 @@ from whenever import (
     AwareDateTime,
     InvalidFormat,
     LocalDateTime,
+    NaiveDateTime,
     OffsetDateTime,
     UTCDateTime,
     ZonedDateTime,
@@ -25,40 +26,41 @@ from .common import (
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
+    local_ams_tz,
     local_nyc_tz,
 )
 
 
-def test_init_and_attributes():
-    d = UTCDateTime(2020, 8, 15, 5, 12, 30, 450)
+class TestInit:
+    def test_basic(self):
+        d = UTCDateTime(2020, 8, 15, 5, 12, 30, 450)
+        assert d.year == 2020
+        assert d.month == 8
+        assert d.day == 15
+        assert d.hour == 5
+        assert d.minute == 12
+        assert d.second == 30
+        assert d.microsecond == 450
+        assert d.offset == timedelta()
+        assert d.tzinfo == timezone.utc
 
-    assert d.year == 2020
-    assert d.month == 8
-    assert d.day == 15
-    assert d.hour == 5
-    assert d.minute == 12
-    assert d.second == 30
-    assert d.microsecond == 450
-    assert d.offset == timedelta()
+    def test_optionality(self):
+        assert (
+            UTCDateTime(2020, 8, 15, 12)
+            == UTCDateTime(2020, 8, 15, 12, 0)
+            == UTCDateTime(2020, 8, 15, 12, 0, 0)
+            == UTCDateTime(2020, 8, 15, 12, 0, 0, 0)
+        )
 
+    def test_invalid(self):
+        with pytest.raises(ValueError, match="microsecond must"):
+            UTCDateTime(2020, 8, 15, 12, 8, 30, 1_000_000)
 
-def test_init_optionality():
-    assert (
-        UTCDateTime(2020, 8, 15, 12)
-        == UTCDateTime(2020, 8, 15, 12, 0)
-        == UTCDateTime(2020, 8, 15, 12, 0, 0)
-        == UTCDateTime(2020, 8, 15, 12, 0, 0, 0)
-    )
-
-
-def test_init_invalid():
-    with pytest.raises(ValueError, match="microsecond must"):
-        UTCDateTime(2020, 8, 15, 12, 8, 30, 1_000_000)
-
-
-def test_init_named():
-    d = UTCDateTime(year=2020, month=8, day=15, hour=5, minute=12, second=30)
-    assert d == UTCDateTime(2020, 8, 15, 5, 12, 30)
+    def test_kwargs(self):
+        d = UTCDateTime(
+            year=2020, month=8, day=15, hour=5, minute=12, second=30
+        )
+        assert d == UTCDateTime(2020, 8, 15, 5, 12, 30)
 
 
 def test_immutable():
@@ -67,59 +69,74 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-class TestFromStr:
+@pytest.mark.parametrize(
+    "d, expected",
+    [
+        (
+            UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654),
+            "2020-08-15T23:12:09.987654Z",
+        ),
+        (UTCDateTime(2020, 8, 15, 23, 12, 9), "2020-08-15T23:12:09Z"),
+    ],
+)
+def test_canonical_str(d: UTCDateTime, expected: str):
+    assert str(d) == expected
+    assert d.canonical_str() == expected
+
+
+class TestFromCanonicalStr:
     def test_valid(self):
-        assert UTCDateTime.from_str("2020-08-15T12:08:30Z") == UTCDateTime(
-            2020, 8, 15, 12, 8, 30
-        )
+        assert UTCDateTime.from_canonical_str(
+            "2020-08-15T12:08:30Z"
+        ) == UTCDateTime(2020, 8, 15, 12, 8, 30)
 
     def test_valid_three_fractions(self):
-        assert UTCDateTime.from_str("2020-08-15T12:08:30.349Z") == UTCDateTime(
-            2020, 8, 15, 12, 8, 30, 349_000
-        )
+        assert UTCDateTime.from_canonical_str(
+            "2020-08-15T12:08:30.349Z"
+        ) == UTCDateTime(2020, 8, 15, 12, 8, 30, 349_000)
 
     def test_valid_six_fractions(self):
-        assert UTCDateTime.from_str(
+        assert UTCDateTime.from_canonical_str(
             "2020-08-15T12:08:30.349123Z"
         ) == UTCDateTime(2020, 8, 15, 12, 8, 30, 349_123)
 
     def test_single_space_instead_of_T(self):
-        assert UTCDateTime.from_str("2020-08-15 12:08:30Z") == UTCDateTime(
-            2020, 8, 15, 12, 8, 30
-        )
+        assert UTCDateTime.from_canonical_str(
+            "2020-08-15 12:08:30Z"
+        ) == UTCDateTime(2020, 8, 15, 12, 8, 30)
 
     def test_unpadded(self):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_str("2020-8-15T12:8:30Z")
+            UTCDateTime.from_canonical_str("2020-8-15T12:8:30Z")
 
     def test_overly_precise_fraction(self):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_str("2020-08-15T12:08:30.123456789123Z")
+            UTCDateTime.from_canonical_str("2020-08-15T12:08:30.123456789123Z")
 
     def test_invalid_lowercase_z(self):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_str("2020-08-15T12:08:30z")
+            UTCDateTime.from_canonical_str("2020-08-15T12:08:30z")
 
     def test_no_trailing_z(self):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_str("2020-08-15T12:08:30")
+            UTCDateTime.from_canonical_str("2020-08-15T12:08:30")
 
     def test_no_seconds(self):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_str("2020-08-15T12:08Z")
+            UTCDateTime.from_canonical_str("2020-08-15T12:08Z")
 
     def test_empty(self):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_str("")
+            UTCDateTime.from_canonical_str("")
 
     def test_garbage(self):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_str("garbage")
+            UTCDateTime.from_canonical_str("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_str(s)
+            UTCDateTime.from_canonical_str(s)
 
 
 class TestEquality:
@@ -151,15 +168,15 @@ class TestEquality:
     @local_nyc_tz()
     def test_other_aware_types(self):
         d: AwareDateTime = UTCDateTime(2020, 8, 15)
-        assert d == d.to_local()
-        assert d == d.to_local().replace(fold=1)
-        assert d == d.to_offset()
-        assert d == d.to_offset(hours(3))
-        assert d == d.to_zoned("Europe/Paris")
+        assert d == d.as_local()
+        assert d == d.as_local().replace(disambiguate="later")
+        assert d == d.as_offset()
+        assert d == d.as_offset(hours(3))
+        assert d == d.as_zoned("Europe/Paris")
 
-        assert d != d.to_local().replace(year=2021)
-        assert d != d.to_offset(hours(1)).replace(year=2021)
-        assert d != d.to_zoned("Europe/London").replace(year=2021)
+        assert d != d.as_local().replace(year=2021)
+        assert d != d.as_offset(hours(1)).replace(year=2021)
+        assert d != d.as_zoned("Europe/London").replace(year=2021)
 
 
 def test_timestamp():
@@ -187,30 +204,113 @@ def test_repr():
     )
 
 
-def test_str():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert str(d) == "2020-08-15T23:12:09.987654Z"
+class TestComparison:
+    def test_utc(self):
+        d = UTCDateTime.from_canonical_str("2020-08-15T23:12:09Z")
+        later = UTCDateTime.from_canonical_str("2020-08-16T00:00:00Z")
+        assert d < later
+        assert d <= later
+        assert later > d
+        assert later >= d
 
+        assert d < AlwaysLarger()
+        assert d <= AlwaysLarger()
+        assert not d > AlwaysLarger()
+        assert not d >= AlwaysLarger()
+        assert not d < AlwaysSmaller()
+        assert not d <= AlwaysSmaller()
+        assert d > AlwaysSmaller()
+        assert d >= AlwaysSmaller()
 
-def test_comparison():
-    d = UTCDateTime.from_str("2020-08-15T23:12:09Z")
-    later = UTCDateTime.from_str("2020-08-16T00:00:00Z")
-    assert d < later
-    assert d <= later
-    assert later > d
-    assert later >= d
+        with pytest.raises(TypeError):
+            d < 42  # type: ignore[operator]
 
-    assert d < AlwaysLarger()
-    assert d <= AlwaysLarger()
-    assert not d > AlwaysLarger()
-    assert not d >= AlwaysLarger()
-    assert not d < AlwaysSmaller()
-    assert not d <= AlwaysSmaller()
-    assert d > AlwaysSmaller()
-    assert d >= AlwaysSmaller()
+    def test_offset(self):
+        d = UTCDateTime(2020, 8, 15, 12, 30)
 
-    with pytest.raises(TypeError):
-        d < 42  # type: ignore[operator]
+        offset_eq = d.as_offset(hours(4))
+        offset_gt = offset_eq.replace(minute=31)
+        offset_lt = offset_eq.replace(minute=29)
+        assert d >= offset_eq
+        assert d <= offset_eq
+        assert not d > offset_eq
+        assert not d < offset_eq
+
+        assert d > offset_lt
+        assert d >= offset_lt
+        assert not d < offset_lt
+        assert not d <= offset_lt
+
+        assert d < offset_gt
+        assert d <= offset_gt
+        assert not d > offset_gt
+        assert not d >= offset_gt
+
+    def test_zoned(self):
+        d = UTCDateTime(2020, 8, 15, 12, 30)
+
+        zoned_eq = d.as_zoned("America/New_York")
+        zoned_gt = zoned_eq.replace(minute=31)
+        zoned_lt = zoned_eq.replace(minute=29)
+        assert d >= zoned_eq
+        assert d <= zoned_eq
+        assert not d > zoned_eq
+        assert not d < zoned_eq
+
+        assert d > zoned_lt
+        assert d >= zoned_lt
+        assert not d < zoned_lt
+        assert not d <= zoned_lt
+
+        assert d < zoned_gt
+        assert d <= zoned_gt
+        assert not d > zoned_gt
+        assert not d >= zoned_gt
+
+    @local_nyc_tz()
+    def test_local(self):
+        d = UTCDateTime(2020, 8, 15, 12, 30)
+
+        local_eq = d.as_local()
+        local_gt = local_eq.replace(minute=31)
+        local_lt = local_eq.replace(minute=29)
+        assert d >= local_eq
+        assert d <= local_eq
+        assert not d > local_eq
+        assert not d < local_eq
+
+        assert d > local_lt
+        assert d >= local_lt
+        assert not d < local_lt
+        assert not d <= local_lt
+
+        assert d < local_gt
+        assert d <= local_gt
+        assert not d > local_gt
+        assert not d >= local_gt
+
+    def test_notimplemented(self):
+        d = UTCDateTime(2020, 8, 15)
+        assert d < AlwaysLarger()
+        assert d <= AlwaysLarger()
+        assert not d > AlwaysLarger()
+        assert not d >= AlwaysLarger()
+        assert not d < AlwaysSmaller()
+        assert not d <= AlwaysSmaller()
+        assert d > AlwaysSmaller()
+        assert d >= AlwaysSmaller()
+
+        with pytest.raises(TypeError):
+            d < 42  # type: ignore[operator]
+
+        with pytest.raises(TypeError):
+            d <= 42  # type: ignore[operator]
+
+        with pytest.raises(TypeError):
+            d > 42  # type: ignore[operator]
+
+        with pytest.raises(TypeError):
+            d >= 42  # type: ignore[operator]
 
 
 def test_py():
@@ -262,11 +362,6 @@ def test_passthrough_datetime_attrs():
     assert time == d.py.time()
 
 
-def test_tz():
-    d = UTCDateTime(2020, 8, 15, 12, 43)
-    assert d.tzinfo == d.py.tzinfo == timezone.utc
-
-
 def test_replace():
     d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
     assert d.replace(year=2021) == UTCDateTime(2021, 8, 15, 23, 12, 9, 987_654)
@@ -281,36 +376,70 @@ def test_replace():
         d.replace(tzinfo=timezone.utc)  # type: ignore[call-arg]
 
 
-def test_add():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert d + timedelta(days=1, seconds=5) == UTCDateTime(
-        2020, 8, 16, 23, 12, 14, 987_654
-    )
+class TestAdd:
+    def test_timedelta(self):
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        assert d + timedelta(days=1, seconds=5) == UTCDateTime(
+            2020, 8, 16, 23, 12, 14, 987_654
+        )
+
+    def test_invalid(self):
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            d + 42  # type: ignore[operator]
 
 
-def test_add_invalid():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    with pytest.raises(TypeError, match="unsupported operand type"):
-        d + 42  # type: ignore[operator]
+class TestSubtract:
+    def test_timedelta(self):
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        assert d - timedelta(days=1, seconds=5) == UTCDateTime(
+            2020, 8, 14, 23, 12, 4, 987_654
+        )
 
+    def test_utc(self):
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        other = UTCDateTime(2020, 8, 14, 23, 12, 4, 987_654)
+        assert d - other == timedelta(days=1, seconds=5)
 
-def test_sub():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert d - timedelta(days=1, seconds=5) == UTCDateTime(
-        2020, 8, 14, 23, 12, 4, 987_654
-    )
+    def test_offset(self):
+        d = UTCDateTime(2020, 8, 15, 23)
+        assert d - OffsetDateTime(
+            2020, 8, 15, 20, offset=hours(2)
+        ) == timedelta(hours=5)
 
+    def test_zoned(self):
+        d = UTCDateTime(2023, 10, 29, 6)
+        assert d - ZonedDateTime(
+            2023, 10, 29, 3, tz="Europe/Paris", disambiguate="later"
+        ) == timedelta(hours=4)
+        assert d - ZonedDateTime(
+            2023, 10, 29, 2, tz="Europe/Paris", disambiguate="later"
+        ) == timedelta(hours=5)
+        assert d - ZonedDateTime(
+            2023, 10, 29, 2, tz="Europe/Paris", disambiguate="earlier"
+        ) == timedelta(hours=6)
+        assert d - ZonedDateTime(
+            2023, 10, 29, 1, tz="Europe/Paris"
+        ) == timedelta(hours=7)
 
-def test_subtract_datetime():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    other = UTCDateTime(2020, 8, 14, 23, 12, 4, 987_654)
-    assert d - other == timedelta(days=1, seconds=5)
+    @local_ams_tz()
+    def test_local(self):
+        d = UTCDateTime(2023, 10, 29, 6)
+        assert d - LocalDateTime(
+            2023, 10, 29, 3, disambiguate="later"
+        ) == timedelta(hours=4)
+        assert d - LocalDateTime(
+            2023, 10, 29, 2, disambiguate="later"
+        ) == timedelta(hours=5)
+        assert d - LocalDateTime(
+            2023, 10, 29, 2, disambiguate="earlier"
+        ) == timedelta(hours=6)
+        assert d - LocalDateTime(2023, 10, 29, 1) == timedelta(hours=7)
 
-
-def test_subtract_invalid():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    with pytest.raises(TypeError, match="unsupported operand type"):
-        d - 42  # type: ignore[operator]
+    def test_invalid(self):
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            d - 42  # type: ignore[operator]
 
 
 def test_pickle():
@@ -328,33 +457,45 @@ def test_copy():
 
 def test_to_utc():
     d = UTCDateTime(2020, 8, 15, 20)
-    assert d.to_utc() is d
+    assert d.as_utc() is d
 
 
 def test_to_offset():
     d = UTCDateTime(2020, 8, 15, 20)
-    assert d.to_offset().exact_eq(
+    assert d.as_offset().exact_eq(
         OffsetDateTime(2020, 8, 15, 20, offset=timedelta())
     )
-    assert d.to_offset(hours(3)).exact_eq(
+    assert d.as_offset(hours(3)).exact_eq(
         OffsetDateTime(2020, 8, 15, 23, offset=timedelta(hours=3))
     )
 
 
 def test_to_zoned():
     d = UTCDateTime(2020, 8, 15, 20)
-    assert d.to_zoned("America/New_York").exact_eq(
-        ZonedDateTime(2020, 8, 15, 16, zone="America/New_York")
+    assert d.as_zoned("America/New_York").exact_eq(
+        ZonedDateTime(2020, 8, 15, 16, tz="America/New_York")
     )
 
 
 @local_nyc_tz()
 def test_to_local():
     d = UTCDateTime(2020, 8, 15, 20)
-    assert d.to_local().exact_eq(LocalDateTime(2020, 8, 15, 16, fold=0))
+    assert d.as_local().exact_eq(LocalDateTime(2020, 8, 15, 16))
     # ensure fold is set correctly
     d = UTCDateTime(2022, 11, 6, 5)
-    assert d.to_local().exact_eq(LocalDateTime(2022, 11, 6, 1, fold=0))
-    assert d.replace(hour=6).to_local() == LocalDateTime(
-        2022, 11, 6, 1, fold=1
+    assert d.as_local().exact_eq(
+        LocalDateTime(2022, 11, 6, 1, disambiguate="earlier")
     )
+    assert d.replace(hour=6).as_local() == LocalDateTime(
+        2022, 11, 6, 1, disambiguate="later"
+    )
+
+
+def test_naive():
+    d = UTCDateTime(2020, 8, 15, 20)
+    assert d.naive() == NaiveDateTime(2020, 8, 15, 20)
+
+
+def test_from_naive():
+    d = NaiveDateTime(2020, 8, 15, 20)
+    assert UTCDateTime.from_naive(d) == UTCDateTime(2020, 8, 15, 20)
