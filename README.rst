@@ -22,7 +22,7 @@
 .. image:: https://img.shields.io/readthedocs/whenever.svg?style=flat-square
    :target: http://whenever.readthedocs.io/
 
-**Foolproof datetimes for maintainable code**
+**Foolproof datetimes for maintainable Python code**
 
 Do you cross your fingers every time you work with datetimes,
 hoping that you didn't mix naive and aware?
@@ -32,7 +32,7 @@ There's no way to be sure, until you run your code...
 
 ✨ Until now! ✨
 
-**Whenever** is built from the ground up, explicitly designed to enforce correctness.
+**Whenever** is designed from the ground up to enforce correctness.
 Mistakes become red squiggles in your IDE, instead of production outages.
 
 Benefits:
@@ -40,11 +40,12 @@ Benefits:
 - Fully typed classes with explicit semantics
 - Built on top of the *good parts* of the standard library
 - Removes footguns and pitfalls of the standard library
-- No dependencies
+- Based on familiar and proven concepts from other languages.
 - Minimal API surface. No frills or surprises.
+- No dependencies
 
-Overview
---------
+Quick overview
+--------------
 
 Whenever distinguishes these types of datetimes:
 
@@ -121,109 +122,138 @@ and here's how you can use them:
      print(f"Your timer will go off at {LocalDateTime.now() + hours(1)}.")
 
 
-- **NaiveDateTime** has no timezone or UTC offset.
-  Use this if you need a datetime type detached from the complexities of the real world.
+- **NaiveDateTime** is detached from any timezone information.
+  Use this if you're only interested in what appears on the "wall clock",
+  or if you absolutely don't need to account for the complexities of the real world.
 
   .. code-block:: python
 
-     city_simulation_start = NaiveDateTime(1900, 1, 1, hour=0)
+     clock_tower = NaiveDateTime(1955, 11, 12, hour=10, minute=4)
+     city_simulation_start = NaiveDateTime(1900, 1, 1)
 
 The pitfalls of ``datetime``
 ----------------------------
 
 Here are some of the issues with the standard library:
 
-1. **Can't statically enforce aware datetimes**. You can only
-   annotate with ``datetime``, which doesn't distinguish between naive and aware.
+Divergent concepts in one class
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-   .. code-block:: python
+The distinction between naive and aware datetimes is crucial,
+yet it's not reflected in the class hierarchy.
+Because you can only annotate ``datetime``, 
+you don't know if your code breaks until you run it.
 
-       # 🧨 No easy way to enforce that it's aware, you only know at runtime
-       def schedule_livestream(d: datetime) -> None: ...
+.. code-block:: python
 
-2. **Adding/subtracting timedelta doesn't account for DST**.
-   You may think using timezoned datetimes solves this, but it doesn't!
+    # 🧨 No easy way to enforce that it's aware, you only know at runtime
+    def schedule_livestream(d: datetime) -> None: ...
 
-   .. code-block:: python
+Adding/subtracting ignores DST
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-      # on the eve of changing the clock forward
-      bedtime = datetime(2023, 3, 26, hour=22, tzinfo=ZoneInfo("Europe/Amsterdam"))
-      # 🧨 6:00, but should be 7:00 due to DST
-      bedtime + timedelta(hours=8)
+You may think using timezoned datetimes solves this, but it doesn't!
 
-3. **The meaning of naive datetimes is inconsistent**.
+.. code-block:: python
 
-   .. code-block:: python
+    # on the eve of changing the clock forward
+    bedtime = datetime(2023, 3, 26, hour=22, tzinfo=ZoneInfo("Europe/Amsterdam"))
+    # 🧨 6:00, but should be 7:00 due to DST
+    bedtime + timedelta(hours=8)
 
-      d = datetime(1970, 1, 1, 0)  # a naive datetime
+Naive has inconsistent meaning
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-      # ⚠️ Treated as a local datetime here...
-      d.timestamp()
-      d.astimezone(UTC)
+Sometimes naive datetimes mean "local time", sometimes "UTC",
+and sometimes it means "detached from the real world".
 
-      # 🧨 ...but assumed UTC here.
-      d.utctimetuple()
-      email.utils.format_datetime(d)
-      datetime.utcnow()
+.. code-block:: python
 
-4. **You aren't prevented from creating non-existent datetimes**,
-   which creates subtle havoc once you perform basic operations.
+    d = datetime(1970, 1, 1, 0)  # a naive datetime
 
-   .. code-block:: python
+    # ⚠️ Treated as a local datetime here...
+    d.timestamp()
+    d.astimezone(UTC)
 
-      # ⚠️ No error that the datetime doesn't exist due to DST (clock set forward)
-      d = datetime(2023, 3, 26, hour=2, minute=30, tzinfo=ZoneInfo("Europe/Amsterdam"))
+    # 🧨 ...but assumed UTC here.
+    d.utctimetuple()
+    email.utils.format_datetime(d)
+    datetime.utcnow()
 
-      # 🧨 No UTC equivalent exists, so it just makes one up
-      assert d.astimezone(UTC) == d  # False???
+    # 🤷 ...detached from the real world here.
+    d >= datetime.now(UTC)
 
-5. **In the face of ambiguity, it guesses**.
-   When a datetime occurs twice (due to the clock being set backwards),
-   the ``fold`` attribute resolves the ambiguity.
-   However, it silently defaults to 0, negating the explicitness of the attribute.
+Silently non-existent datetimes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-   .. code-block:: python
+This creates subtle havoc once you perform basic operations.
 
-      # 🧨 Code silently assumes you mean the first occurrence
-      d = datetime(2023, 10, 29, 2, 30, tzinfo=ZoneInfo("Europe/Amsterdam"))
+.. code-block:: python
 
-6. **Equality between ambiguous datetimes is always False**,
-   even while the whole purpose of ``fold`` is to disambiguate them.
+    # ⚠️ No error that the datetime doesn't exist due to DST (clock set forward)
+    d = datetime(2023, 3, 26, hour=2, minute=30, tzinfo=ZoneInfo("Europe/Amsterdam"))
 
-   .. code-block:: python
+    # 🧨 No UTC equivalent exists, so it just makes one up
+    assert d.astimezone(UTC) == d  # False???
 
-      # We carefully disembiguate a DST-ambiguous datetime with fold=1...
-      x = datetime(2023, 10, 29, 2, 30, tzinfo=ZoneInfo("Europe/Amsterdam"), fold=1)
+In ambiguity, it guesses
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-      # 🧨 But nonetheless comparisons with other timezones are *always* False
-      y = d.astimezone(UTC)
-      assert x == y  # False, even though they're the same time!
+When a datetime occurs twice (due to the clock being set backwards),
+the ``fold`` attribute resolves the ambiguity.
+However, it silently defaults to 0, negating the explicitness of the attribute.
 
-7. **Equality behaves differently** within the same timezone
-   `than between different timezones <https://blog.ganssle.io/articles/2018/02/a-curious-case-datetimes.html>`_.
+.. code-block:: python
 
-   .. code-block:: python
+    # 🧨 Code silently assumes you mean the first occurrence
+    d = datetime(2023, 10, 29, 2, 30, tzinfo=ZoneInfo("Europe/Amsterdam"))
 
-      # 🧨 In the same timezone, fold is ignored...
-      before_dst = datetime(2023, 10, 29, 2, 30, tzinfo=ZoneInfo("Europe/Amsterdam"), fold=0)
-      after_dst = before_dst_transition.replace(fold=1)
-      before_dst == after_dst  # True -- even though they are one hour apart!
+Disambiguation mostly futile
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-      # ⁉️ ...but between different timezones, it *is* accounted for!
-      after_dst = after_dst.astimezone(ZoneInfo("Europe/Paris"))
-      before_dst == after_dst  # False -- even though Paris has same DST behavior as Amsterdam!
+The ``fold`` attribute was introduced to disambiguate times,
+but equality comparisons don't make use of it:
+comparisons are always False!
 
-8. **Datetime inherits from date**, which leads to unexpected behavior.
-   This is widely considered a `design <https://discuss.python.org/t/renaming-datetime-datetime-to-datetime-datetime/26279/2>`_ `flaw <https://github.com/python/typeshed/issues/4802>`_ in the standard library.
+.. code-block:: python
 
-   .. code-block:: python
+    # We carefully disembiguate a DST-ambiguous datetime with fold=1...
+    x = datetime(2023, 10, 29, 2, 30, tzinfo=ZoneInfo("Europe/Amsterdam"), fold=1)
 
-      # 🧨 Breaks when you pass in a datetime, even though it's a date subclass!
-      def is_future(dt: date) -> bool:
-          return dt > date.today()
+    # 🧨 But nonetheless comparisons with other timezones are *always* False
+    assert x.astimezone(UTC) == y  # False, even though they're the same time!
 
-      # 🧨 Doesn't make sense
-      datetime.today()
+Equality behaves inconsistently
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Within the same timezone, times are compared by their "wall clock" time,
+while between different timezones, `they are compared by their UTC time <https://blog.ganssle.io/articles/2018/02/a-curious-case-datetimes.html>`_.
+
+.. code-block:: python
+
+    # 🧨 In the same timezone, fold is ignored...
+    d = datetime(2023, 10, 29, 2, 30, tzinfo=ZoneInfo("Europe/Amsterdam"), fold=0)
+    d_1h_later = d.replace(fold=1)
+    d == d_1h_later  # True -- even though they are one hour apart!
+
+    # ⁉️ ...but between different timezones, it *is* accounted for!
+    d_1h_later = d_1h_later.astimezone(ZoneInfo("Europe/Paris"))
+    d == d_1h_later  # False -- even though Paris has same DST behavior as Amsterdam!
+
+Datetime inherits from date
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This leads to unexpected behavior and it is widely considered a
+`design <https://discuss.python.org/t/renaming-datetime-datetime-to-datetime-datetime/26279/2>`_ `flaw <https://github.com/python/typeshed/issues/4802>`_ in the standard library.
+
+.. code-block:: python
+
+    # 🧨 Breaks when you pass in a datetime, even though it's a date subclass!
+    def is_future(dt: date) -> bool:
+        return dt > date.today()
+
+    # 🧨 Doesn't make sense
+    datetime.today()
 
 Why not...?
 -----------
@@ -245,15 +275,6 @@ instead of *removing* the pitfalls themselves.
 It only solves issues if you carefully use the right functions,
 which isn't easy to do.
 
-pytz
-~~~~
-
-Pytz brought the IANA timezone database to Python,
-before ``zoneinfo`` was added to the standard library.
-Now that ``zoneinfo`` is available from Python 3.9 onwards,
-and backported to Python 3.6+, there's no reason to use pytz anymore.
-What's worse, pytz introduces `footguns of its own <https://blog.ganssle.io/articles/2018/03/pytz-fastest-footgun.html>`_.
-
 Arrow
 ~~~~~
 
@@ -270,18 +291,10 @@ to the standard library ``datetime`` first, which reintroduces the issues.
 
 Also, it appears to be unmaintained.
 
-udatetime
-~~~~~~~~~
-
-udatetime focusses on fast RFC 3339 parsing and formatting,
-and leaves other concerns by the wayside.
-
-Also, it appears to be unmaintained, and doesn't support Windows.
-
 DateType
 ~~~~~~~~
 
-DateType mostly fixes issue #1 (statically enforce aware datetimes),
+DateType mostly fixes issues #1 and #8 (during type-checking),
 but doesn't address the other issues. Additionally,
 it isn't able to *fully* type-check `all cases <https://github.com/glyph/DateType/blob/0ff07493bc2a13d6fafdba400e52ee919beeb093/tryit.py#L31>`_.
 
@@ -292,12 +305,50 @@ This library is a lot more explicit about the different types of datetimes,
 solving issue #1 (statically enforce aware datetimes).
 However, it doesn't address the other issues.
 
+FAQs
+----
+
+**Why isn't it a drop-in replacement for the standard library?**
+
+Fixing the issues with the standard library requires a different API.
+Keeping the same API would result in a library that's just as broken.
+
+**Why not inherit from datetime?**
+
+Not only would this keep most of the issues with the standard library,
+it would result in brittle code: many other libraries expect ``datetime`` *exactly*,
+and `don't work <https://github.com/sdispater/pendulum/issues/289#issue-371964426>`_
+`with subclasses <https://github.com/sdispater/pendulum/issues/131#issue-241088629>`_.
+
+**What is the performance impact?**
+
+Because whenever wraps the standard library, head-to-head performance will always be slightly slower.
+However, because **whenever** removes the need for many runtime checks,
+it may result in a net performance gain in real-world applications.
+
+**Why not a C or Rust extension?**
+
+**Whenever** actually did start out as a Rust extension. But since the wrapping code
+is so simple, it didn't make much performance difference.
+It did make the code a lot more complex, so a simple pure-Python implementation
+was preferred.
+If more involved operations are needed in the future, we can reconsider.
+
+**Is this production-ready?**
+
+The core functionality is complete and stable and the goal is to reach 1.0 soon.
+The API may change slightly until then.
+Of course, it's still a relatively young project, so the stability relies
+on you to try it out and report any issues!
+
+
 Versioning and compatibility policy
 -----------------------------------
 
 **Whenever** follows semantic versioning.
 Until the 1.0 version, the API may change with minor releases.
-Breaking changes will be announced in the changelog.
+Breaking changes will be avoided as much as possible,
+and meticulously explained in the changelog.
 Since the API is fully typed, your typechecker and/or IDE
 will help you adjust to any API changes.
 
@@ -306,10 +357,10 @@ Acknowledgements
 
 This project is inspired by the following projects. Check them out!
 
-- `DateType <https://github.com/glyph/DateType/tree/trunk>`_
-- `Pendulum <https://pendulum.eustace.io/>`_
 - `Noda Time <https://nodatime.org/>`_
 - `Chrono <https://docs.rs/chrono/latest/chrono/>`_
+- `DateType <https://github.com/glyph/DateType/tree/trunk>`_
+- `Pendulum <https://pendulum.eustace.io/>`_
 
 Contributing
 ------------

@@ -7,9 +7,15 @@ import pytest
 from hypothesis import given
 from hypothesis.strategies import text
 
-from whenever import NaiveDateTime
+from whenever import InvalidFormat, NaiveDateTime
 
-from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
+from .common import (
+    AlwaysEqual,
+    AlwaysLarger,
+    AlwaysSmaller,
+    NeverEqual,
+    local_ams_tz,
+)
 
 
 def test_minimal():
@@ -37,55 +43,57 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-class TestFromStr:
+class TestFromCanonicalStr:
     def test_valid(self):
-        assert NaiveDateTime.from_str("2020-08-15T12:08:30") == NaiveDateTime(
-            2020, 8, 15, 12, 8, 30
-        )
+        assert NaiveDateTime.from_canonical_str(
+            "2020-08-15T12:08:30"
+        ) == NaiveDateTime(2020, 8, 15, 12, 8, 30)
 
     def test_valid_three_fractions(self):
-        assert NaiveDateTime.from_str(
+        assert NaiveDateTime.from_canonical_str(
             "2020-08-15T12:08:30.349"
         ) == NaiveDateTime(2020, 8, 15, 12, 8, 30, 349_000)
 
     def test_valid_six_fractions(self):
-        assert NaiveDateTime.from_str(
+        assert NaiveDateTime.from_canonical_str(
             "2020-08-15T12:08:30.349123"
         ) == NaiveDateTime(2020, 8, 15, 12, 8, 30, 349_123)
 
     def test_single_space_instead_of_T(self):
-        assert NaiveDateTime.from_str("2020-08-15 12:08:30") == NaiveDateTime(
-            2020, 8, 15, 12, 8, 30
-        )
+        assert NaiveDateTime.from_canonical_str(
+            "2020-08-15 12:08:30"
+        ) == NaiveDateTime(2020, 8, 15, 12, 8, 30)
 
     def test_unpadded(self):
-        with pytest.raises(ValueError):
-            NaiveDateTime.from_str("2020-8-15T12:8:30")
+        with pytest.raises(InvalidFormat):
+            NaiveDateTime.from_canonical_str("2020-8-15T12:8:30")
 
     def test_overly_precise_fraction(self):
-        with pytest.raises(ValueError):
-            NaiveDateTime.from_str("2020-08-15T12:08:30.123456789123")
+        with pytest.raises(InvalidFormat):
+            NaiveDateTime.from_canonical_str(
+                "2020-08-15T12:08:30.123456789123"
+            )
 
     def test_trailing_z(self):
-        with pytest.raises(ValueError):
-            NaiveDateTime.from_str("2020-08-15T12:08:30Z")
+        with pytest.raises(InvalidFormat):
+            NaiveDateTime.from_canonical_str("2020-08-15T12:08:30Z")
 
     def test_no_seconds(self):
-        with pytest.raises(ValueError):
-            NaiveDateTime.from_str("2020-08-15T12:08")
+        with pytest.raises(InvalidFormat):
+            NaiveDateTime.from_canonical_str("2020-08-15T12:08")
 
     def test_empty(self):
-        with pytest.raises(ValueError):
-            NaiveDateTime.from_str("")
+        with pytest.raises(InvalidFormat):
+            NaiveDateTime.from_canonical_str("")
 
     def test_garbage(self):
-        with pytest.raises(ValueError):
-            NaiveDateTime.from_str("garbage")
+        with pytest.raises(InvalidFormat):
+            NaiveDateTime.from_canonical_str("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
-        with pytest.raises(ValueError, match="Invalid"):
-            NaiveDateTime.from_str(s)
+        with pytest.raises(InvalidFormat):
+            NaiveDateTime.from_canonical_str(s)
 
 
 def test_equality():
@@ -108,9 +116,11 @@ def test_equality():
     assert d != 42  # type: ignore[comparison-overlap]
     assert not d == 42  # type: ignore[comparison-overlap]
 
-    assert NaiveDateTime(2020, 8, 15, 12, 8, 30) != NaiveDateTime(
-        2020, 8, 15, 12, 8, 31
-    )
+    # Ambiguity in system timezone
+    with local_ams_tz():
+        assert NaiveDateTime(2023, 10, 29, 2, 15) == NaiveDateTime.from_py(
+            py_datetime(2023, 10, 29, 2, 15, fold=1)
+        )
 
 
 def test_repr():
@@ -122,14 +132,15 @@ def test_repr():
     )
 
 
-def test_dunder_str():
+def test_canonical_str():
     d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
     assert str(d) == "2020-08-15T23:12:09.987654"
+    assert d.canonical_str() == "2020-08-15T23:12:09.987654"
 
 
 def test_comparison():
-    d = NaiveDateTime.from_str("2020-08-15T23:12:09")
-    later = NaiveDateTime.from_str("2020-08-16T00:00:00")
+    d = NaiveDateTime.from_canonical_str("2020-08-15T23:12:09")
+    later = NaiveDateTime.from_canonical_str("2020-08-16T00:00:00")
     assert d < later
     assert d <= later
     assert later > d
@@ -185,7 +196,7 @@ def test_passthrough_datetime_attrs():
     assert d.date() == d.py.date()
 
 
-def test_tz():
+def test_tzinfo():
     d = NaiveDateTime(2020, 8, 15)
     assert d.tzinfo is None
 
