@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "whenever"
 version = "0.2.0"
-description = "Type-safe datetimes for Python"
+description = "Foolproof datetimes for maintainable code"
 authors = ["Arie Bovenberg <a.c.bovenberg@gmail.com>"]
 license = "MIT"
 classifiers = [
