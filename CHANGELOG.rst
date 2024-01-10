@@ -1,5 +1,30 @@
-Changelog
-=========
+🚀 Changelog
+============
+
+0.2.0 (2024-01-10)
+------------------
+
+**Breaking changes**
+
+- 📐Disambiguation of local datetimes is now consistent with zoned datetimes,
+  and is also run on ``replace()``.
+- 👌Renamed:
+
+  - ``from_str`` → ``from_canonical_str``
+  - ``to_utc/offset/zoned/local`` → ``as_utc/offset/zoned/local``.
+  - ``ZonedDateTime.zone`` → ``ZonedDateTime.tz``
+
+**Added**
+
+- ⚖️ Support comparison between all aware datetimes
+- 🧮Support subtraction between all aware datetimes
+- 🍩 Convenience methods for converting between aware/naive
+- 💪 More robust handling of zoned/local edge cases
+
+**Docs**
+
+- Cleaned up API reference
+- Added high-level overview
 
 0.1.0 (2023-12-20)
 ------------------

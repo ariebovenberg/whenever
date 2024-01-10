@@ -19,3 +19,11 @@ lint:
 docs:
 	@touch docs/api.rst
 	make -C docs/ html
+
+.PHONY: check-dist
+check-dist:
+	poetry build
+	twine check dist/*
+
+
+check: mypy format lint docs check-dist
