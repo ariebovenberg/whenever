@@ -39,7 +39,7 @@ Benefits
 --------
 
 - Fully typed classes with well-defined behavior
-- Eliminates the need for many runtime checks (is this UTC? timezoned? or naive?)
+- Enforce correctness without the need for runtime checks
 - Builds on the good parts of the standard library, while eliminating the bad parts
 - Based on familiar concepts from other languages. Doesn't reinvent the wheel.
 - Simple and obvious. No frills or surprises.
@@ -50,7 +50,7 @@ Benefits
 Quick overview
 --------------
 
-Whenever distinguishes these types of datetimes:
+Whenever distinguishes these classes:
 
 .. code-block:: python
 
@@ -179,7 +179,7 @@ Daylight Saving Time (DST). But surprisingly, basic operations don't do that.
 .. code-block:: python
 
     # On the eve of moving the clock forward 1 hour...
-    bedtime = datetime(2023, 3, 26, hour=22, tzinfo=ZoneInfo("Europe/Amsterdam"))
+    bedtime = datetime(2023, 3, 25, hour=22, tzinfo=ZoneInfo("Europe/Amsterdam"))
     # 🧨 returns 6:00, but should be 7:00 due to DST
     full_rest = bedtime + timedelta(hours=8)
 
@@ -287,16 +287,8 @@ Pendulum
 
 Pendulum is full-featured datetime library, but it's
 hamstrung by the decision to inherit from the standard library ``datetime``.
-From the issues mentioned above, it only addresses #2 (DST-aware addition/subtraction).
-All other pitfalls are still present.
-
-python-dateutil
-~~~~~~~~~~~~~~~
-
-Dateutil attempts to solve some of the issues with the standard library.
-However, it only *adds* functionality to work around the issues,
-instead of *removing* the pitfalls themselves.
-Without removing the pitfalls, it's still very likely to make mistakes.
+This means it inherits all the issues mentioned above, with the exception of #2
+(DST-aware addition/subtraction).
 
 Arrow
 ~~~~~
@@ -307,12 +299,11 @@ It doesn't seem to address any of the above mentioned issues with the standard l
 Maya
 ~~~~
 
-By enforcing UTC, Maya bypasses a lot of issues with the standard library.
+It's unmaintained, but does have an interesting approach.
+By enforcing UTC, it bypasses a lot of issues with the standard library.
 To do so, it sacrifices the ability to represent offset, zoned, and local datetimes.
 So in order to perform any timezone-aware operations, you need to convert
 to the standard library ``datetime`` first, which reintroduces the issues.
-
-Also, it appears to be unmaintained.
 
 DateType
 ~~~~~~~~
@@ -326,8 +317,17 @@ Heliclockter
 ~~~~~~~~~~~~
 
 This library is a lot more explicit about the different types of datetimes,
-attempting to solve issue #1 (naive/aware distinction).
-However, it doesn't address the other issues.
+addressing issue #1 (naive/aware distinction) with UTC, local, and zoned datetime types.
+It doesn't address the other datetime pitfalls though.
+Additionally, its "local" type doesn't account for DST.
+
+python-dateutil
+~~~~~~~~~~~~~~~
+
+Dateutil attempts to solve some of the issues with the standard library.
+However, it only *adds* functionality to work around the issues,
+instead of *removing* the pitfalls themselves.
+Without removing the pitfalls, it's still very likely to make mistakes.
 
 FAQs
 ----
