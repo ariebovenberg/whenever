@@ -35,6 +35,12 @@ Concrete classes
 .. autoclass:: whenever.NaiveDateTime
    :members: __eq__, __add__, __sub__
 
+Helpers
+-------
+
+.. autofunction:: whenever.hours
+.. autofunction:: whenever.minutes
+
 Exceptions
 ----------
 
