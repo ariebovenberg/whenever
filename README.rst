@@ -38,9 +38,10 @@ Mistakes become red squiggles in your IDE, instead of production outages.
 Benefits
 --------
 
-- Fully typed classes with well-defined behavior
-- Enforce correctness without the need for runtime checks
-- Builds on the good parts of the standard library, while eliminating the bad parts
+- Distinct classes with well-defined behavior
+- Fixes timezone quirks that even `pendulum`_ doesn't address
+- Enforce correctness without runtime checks
+- Built on the standard library, but eliminates its pitfalls
 - Based on familiar concepts from other languages. Doesn't reinvent the wheel.
 - Simple and obvious. No frills or surprises.
 - No dependencies
@@ -157,8 +158,8 @@ The problems with ``datetime``
 Since its adoption is 2003, the datetime library has accumulated
 a lot of cruft and pitfalls. Below is an overview:
 
-One class, conflicting concepts
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Conflicting ideas in one class
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Naive and aware datetimes mix like oil and water,
 but they're both represented by the same class.
@@ -167,7 +168,7 @@ you don't know if your code breaks until you run it.
 
 .. code-block:: python
 
-    # 🧨 Naive or aware? no way to tell
+    # 🧨 Naive or aware? no way to tell until you run it...
     def set_alarm(d: datetime) -> None: ...
 
 Operators ignore DST
@@ -241,11 +242,11 @@ are always False!
 
 .. code-block:: python
 
-    # We carefully disembiguate an ambiguous datetime with fold=1...
+    # We carefully disambiguate an ambiguous datetime with fold=1...
     x = datetime(2023, 10, 29, 2, 30, tzinfo=ZoneInfo("Europe/Amsterdam"), fold=1)
 
     # 🧨 Nonetheless comparisons with other timezones are *always* False
-    assert x.astimezone(UTC) == y  # False???
+    x.astimezone(UTC) == y  # False???
 
 Equality behaves inconsistently
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -384,7 +385,6 @@ This project is inspired by the following projects. Check them out!
 - `Noda Time <https://nodatime.org/>`_
 - `Chrono <https://docs.rs/chrono/latest/chrono/>`_
 - `DateType <https://github.com/glyph/DateType/tree/trunk>`_
-- `Pendulum <https://pendulum.eustace.io/>`_
 
 Contributing
 ------------
