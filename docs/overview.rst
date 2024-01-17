@@ -1,11 +1,115 @@
 🧭 Overview
 ===========
 
-This page goes into more detail about the types and features of **whenever**,
-beyond the :ref:`quick overview <overview>`. Read that first if you haven't
-already.
+This page goes into more detail about the types and features of **whenever**.
 After reading this page, you can browse the :ref:`API reference <api>` for
 the full details.
+
+The types
+---------
+
+**whenever** defines five types:
+
+.. code-block:: python
+
+   from whenever import (
+       UTCDateTime, OffsetDateTime, ZonedDateTime, LocalDateTime, NaiveDateTime,
+   )
+
+and here's how you can use them:
+
++-----------------------+-----+--------+-------+-------+-------+
+| Feature               |         Aware                | Naive |
++                       +-----+--------+-------+-------+       +
+|                       | UTC | Offset | Zoned | Local |       |
++=======================+=====+========+=======+=======+=======+
+| comparison            | ✅  |  ✅    |  ✅   |  ✅   |  ✅   |
++-----------------------+-----+--------+-------+-------+-------+
+| difference            | ✅  |  ✅    |  ✅   |  ✅   |  ✅   |
++-----------------------+-----+--------+-------+-------+-------+
+| add/subtract timedelta| ✅  |  ❌    |  ✅   |  ✅   |  ✅   |
++-----------------------+-----+--------+-------+-------+-------+
+| unambiguous           | ✅  |  ✅    |  ❌   |  ❌   |  ✅   |
++-----------------------+-----+--------+-------+-------+-------+
+| to/from timestamp     | ✅  |  ✅    |  ✅   |  ✅   |  ❌   |
++-----------------------+-----+--------+-------+-------+-------+
+| now                   | ✅  |  ✅    |  ✅   |  ✅   |  ❌   |
++-----------------------+-----+--------+-------+-------+-------+
+| hashable              | ✅  |  ✅    |  ✅   |  ❌   |  ✅   |
++-----------------------+-----+--------+-------+-------+-------+
+
+``UTCDateTime``
+~~~~~~~~~~~~~~~
+
+Always UTC: simple, fast, and unambiguous.
+It's great if you're storing when something happened (or will happen)
+regardless of location.
+
+.. code-block:: python
+
+    py311_livestream = UTCDateTime(2022, 10, 24, hour=17)
+
+In >95% of cases, you should use this class over the others. The other
+classes are most often useful at the boundaries of your application.
+
+``OffsetDateTime``
+~~~~~~~~~~~~~~~~~~
+
+Defines a local time with its UTC offset.
+This is great if you're storing when something happened at a local time.
+
+.. code-block:: python
+
+    from whenever import hours  # alias for timedelta(hours=...)
+
+    # 9:00 AM in Salt Lake City
+    pycon23_start = OffsetDateTime(2023, 4, 21, hour=9, offset=hours(-6))
+
+It's less suitable for *future* events,
+because the UTC offset may change (e.g. due to daylight saving time).
+For this reason, you cannot add/subtract a ``timedelta``
+— the offset may have changed!
+
+``ZonedDateTime``
+~~~~~~~~~~~~~~~~~
+
+This class accounts for the variable UTC offset of timezones,
+and is great for representing localized times in the past and future.
+Note that when the clock is set backwards, times occur twice.
+Use ``disambiguate`` to resolve these situations.
+
+.. code-block:: python
+
+    # Always at 11:00 in London
+    changing_the_guard = ZonedDateTime(2024, 12, 8, hour=11, tz="Europe/London")
+
+    # Explicitly resolve ambiguities
+    night_shift = ZonedDateTime(2023, 10, 29, 1, 15, tz="Europe/London", disambiguate="later")
+
+``LocalDateTime``
+~~~~~~~~~~~~~~~~~
+
+This is a datetime in the system local timezone.
+It's suitable for representing times related to the user's system.
+
+.. code-block:: python
+
+    print(f"Your timer will go off at {LocalDateTime.now() + hours(1)}.")
+
+Because the local timezone may change, the moment in time represented by a
+``LocalDateTime`` may change. Therefore, the type is not hashable.
+
+``NaiveDateTime``
+~~~~~~~~~~~~~~~~~
+
+This type is detached from any timezone information.
+Use this if you're only interested in what appears on a clock,
+or if you absolutely don't need to account for the complexities of the real world.
+
+.. code-block:: python
+
+    clock_tower = NaiveDateTime(1955, 11, 12, hour=10, minute=4)
+    city_simulation_start = NaiveDateTime(1900, 1, 1, hour=0)
 
 
 Equality and comparison
