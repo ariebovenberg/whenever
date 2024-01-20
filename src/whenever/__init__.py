@@ -45,6 +45,7 @@ __all__ = [
     "ZonedDateTime",
     "LocalDateTime",
     "NaiveDateTime",
+    "days",
     "hours",
     "minutes",
     "DoesntExistInZone",
@@ -2083,3 +2084,10 @@ def minutes(i: int, /) -> timedelta:
     ``minutes(1) == timedelta(minutes=1)``
     """
     return timedelta(minutes=i)
+
+
+def days(i: int, /) -> timedelta:
+    """Create a :class:`~datetime.timedelta` with the given number of days.
+    ``days(1) == timedelta(days=1)``
+    """
+    return timedelta(i)
