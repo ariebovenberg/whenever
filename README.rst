@@ -39,53 +39,68 @@ Benefits
 --------
 
 - Distinct classes with well-defined behavior
-- Fixes datetime quirks that even `pendulum`_ doesn't address
+- Fixes timezone quirks that even `pendulum`_ doesn't address
 - Enforce correctness without runtime checks
-- Based on familiar concepts from other languages. Doesn't reinvent the wheel.
-- Simple and obvious. No frills or surprises.
+- Based on familiar concepts from other languages. Doesn't reinvent the wheel
+- Simple and obvious. No frills or surprises
 - Thoroughly documented and tested
 - No dependencies
-
-.. _overview:
 
 Quickstart
 ----------
 
 .. code-block:: python
 
-   from whenever import (
-       # Explicit types for different use cases
-       UTCDateTime,     # -> Great for codebases that normalize to UTC
-       OffsetDateTime,  # -> Localized times without ambiguities
-       ZonedDateTime,   # -> Full-featured IANA timezone support
-       LocalDateTime,   # -> Bound to the local system
-       NaiveDateTime,   # -> Detached from any timezone information
+   >>> from whenever import (
+   ...    # Explicit types for different use cases
+   ...    UTCDateTime,     # -> Great for codebases that normalize to UTC
+   ...    OffsetDateTime,  # -> Localized times without ambiguities
+   ...    ZonedDateTime,   # -> Full-featured IANA timezone support
+   ...    LocalDateTime,   # -> In the local system timezone
+   ...    NaiveDateTime,   # -> Detached from any timezone
+   ...
+   ...    hours, days, minutes  # aliases for timedelta(hours=...) etc.
+   ... )
 
-       # aliases for timedelta(hours=...) etc.
-       hours, days, minutes
-   )
+   >>> py311_release = UTCDateTime(2022, 10, 24, hour=17)
+   UTCDateTime(2022-10-24 17:00:00Z)
+   >>> pycon23_started = OffsetDateTime(2023, 4, 21, hour=9, offset=hours(-6))
+   OffsetDateTime(2023-04-21 09:00:00-06:00)
 
-   py311_release = UTCDateTime(2022, 10, 24, hour=17)
-   # The start of PyCon23 in Salt Lake City
-   pycon23_started = OffsetDateTime(2023, 4, 21, hour=9, offset=hours(-6))
+   # Simple, explicit conversions
+   >>> py311_in_paris = py311_release.as_zoned("Europe/Paris")
+   ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
+   >>> pycon23_started.as_local()
+   LocalDateTime(2023-04-21 11:00:00-04:00)  # system timezone in NYC here
 
-   # Explicit conversions
-   py311_release.as_zoned("Europe/Paris")
-   pycon23_started.as_local()
-   LocalDateTime(2023, 4, 21, hour=9).as_utc()
-
-   # Comparison and equality work across aware types
-   pycon23_started > py311_release
-   py311_release == ZonedDateTime(2022, 10, 24, hour=19, tz="Europe/Berlin")
+   # Comparison and equality across aware types
+   >>> pycon23_started < py311_release
+   False
+   >>> py311_release == py311_release.as_zoned("America/Los_Angeles")
+   True
 
    # DST-aware addition/subtraction
-   pycon23_started - UTCDateTime.now()
-   py311_release + days(7)
+   >>> py311_in_paris + days(7)
+   ZonedDateTime(2022-10-31 18:00:00+01:00[Europe/Paris])
 
-   simulation_start = NaiveDateTime(1950, 1, 1, hour=9)
-   # Type checkers will flag if you mistakenly mix naive and aware
-   py311_release - simulation_start
-   simulation_start == pycon23_started
+   # Naive type that can't accidentally be mixed with aware types
+   >>> simulation_start = NaiveDateTime(1950, 1, 1, hour=9)
+   >>> # Mistakes caught by typechecker:
+   >>> py311_release - simulation_start
+   >>> simulation_start == pycon23_started
+
+   # round-trip to and from strings
+   >>> py311_release.canonical_str()
+   '2022-10-24T17:00:00Z'
+   >>> ZonedDateTime.from_canonical_str('2022-10-24T19:00:00+02:00[Europe/Paris]')
+   ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
+
+   # If you must: you can access the underlying datetime object
+   >>> pycon23_started.py.ctime()
+   'Fri Apr 21 09:00:00 2023'
+
+Read more in the `full overview <https://whenever.readthedocs.io/en/latest/overview.html>`_
+or `API reference <https://whenever.readthedocs.io/en/latest/api.html>`_.
 
 .. _many pitfalls of the standard library:
 
