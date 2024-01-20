@@ -1,9 +1,8 @@
 🧭 Overview
 ===========
 
-This page goes into more detail about the types and features of **whenever**.
-After reading this page, you can browse the :ref:`API reference <api>` for
-the full details.
+This page gives a high-level overview of **whenever**'s features.
+To get more details, see the :ref:`API reference <api>`.
 
 The types
 ---------
@@ -137,9 +136,11 @@ time. This means that two datetimes with different values can be equal:
 
     # all equal
     >>> as_utc == as_5hr_offset == as_8hr_offset == as_zoned
+    True
 
     # comparison
     >>> as_zoned > OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(5))
+    True
 
 .. note::
 
@@ -278,7 +279,7 @@ You choose the disambiguation behavior you want with the ``disambiguate=`` argum
 
     ams = "Europe/Amsterdam"
 
-    # Not ambiguous: `disambiguate` has no effect
+    # Not ambiguous: everything is fine
     >>> ZonedDateTime(2023, 1, 1, tz=ams)
 
     # Ambiguous: 1:30am occurs twice. Refuse to guess.
@@ -310,13 +311,21 @@ prevent you from creating non-existent datetimes, by raising a
     whenever.DoesntExistInZone
 
 
-Converting to/from stdlib ``datetime``
---------------------------------------
+Converting to/from standard library ``datetime``
+------------------------------------------------
 
 Each **whenever** class wraps a standard library :class:`~datetime.datetime` instance.
 You can access it with the :attr:`~whenever.DateTime.py` attribute.
 Conversely, you can create a type from a standard library datetime with the
 :meth:`~whenever.DateTime.from_py` classmethod.
+
+.. code-block:: python
+
+   >>> from datetime import datetime, UTC
+   >>> UTCDateTime.from_py(datetime(2023, 1, 1, tzinfo=UTC))
+   UTCDateTime(2023-01-01 00:00:00Z)
+   >>> ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam").py
+   datetime(2023, 1, 1, 0, 0, tzinfo=ZoneInfo('Europe/Amsterdam'))
 
 Canonical string format
 -----------------------
@@ -341,6 +350,13 @@ Here are the canonical formats for each type:
 +-----------------------------------+---------------------------------------------------------------------+
 | :class:`~whenever.NaiveDateTime`  | ``YYYY-MM-DDTHH:MM:SS(.ffffff)``                                    |
 +-----------------------------------+---------------------------------------------------------------------+
+
+.. code-block:: python
+
+   >>> UTCDateTime(2023, 1, 1, 0, 0).canonical_str()
+   '2023-01-01T00:00:00Z'
+   >>> ZonedDateTime.from_canonical_str('2022-10-24T19:00:00+02:00[Europe/Paris]')
+   ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
 
 .. seealso::
 
