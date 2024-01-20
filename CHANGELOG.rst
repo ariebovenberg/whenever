@@ -1,6 +1,12 @@
 🚀 Changelog
 ============
 
+0.2.1 (2024-01-20)
+------------------
+
+- added ``days()`` timedelta alias
+- Improvements to README, other docs
+
 0.2.0 (2024-01-10)
 ------------------
 

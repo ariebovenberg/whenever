@@ -38,6 +38,7 @@ Concrete classes
 Helpers
 -------
 
+.. autofunction:: whenever.days
 .. autofunction:: whenever.hours
 .. autofunction:: whenever.minutes
 
