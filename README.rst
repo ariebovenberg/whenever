@@ -27,7 +27,7 @@
 Do you cross your fingers every time you work with datetimes,
 hoping that you didn't mix naive and aware?
 or that you converted to UTC everywhere?
-or that you avoided the `many pitfalls of the standard library`_?
+or that you avoided the many `pitfalls of the standard library <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_?
 There's no way to be sure, until you run your code...
 
 ✨ Until now! ✨
@@ -39,7 +39,7 @@ Benefits
 --------
 
 - Distinct classes with well-defined behavior
-- Fixes timezone quirks that even `pendulum`_ doesn't address
+- Fixes timezone quirks that even `pendulum doesn't address <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_
 - Enforce correctness without runtime checks
 - Based on familiar concepts from other languages. Doesn't reinvent the wheel
 - Simple and obvious. No frills or surprises
@@ -102,152 +102,41 @@ Quickstart
 Read more in the `full overview <https://whenever.readthedocs.io/en/latest/overview.html>`_
 or `API reference <https://whenever.readthedocs.io/en/latest/api.html>`_.
 
-.. _many pitfalls of the standard library:
-
-The problems with ``datetime``
-------------------------------
-
-Since its adoption is 2003, the datetime library has accumulated
-a lot of cruft and pitfalls. Below is an overview:
-
-Conflicting ideas in one class
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Naive and aware datetimes mix like oil and water,
-but they're both represented by the same class.
-Because you can only annotate ``datetime``,
-you don't know if your code breaks until you run it.
-
-.. code-block:: python
-
-    # 🧨 Naive or aware? no way to tell until you run it...
-    def set_alarm(d: datetime) -> None: ...
-
-Operators ignore DST
-~~~~~~~~~~~~~~~~~~~~
-
-You might think that the whole purpose of aware datetimes is to account for
-Daylight Saving Time (DST). But surprisingly, basic operations don't do that.
-
-.. code-block:: python
-
-    # On the eve of moving the clock forward 1 hour...
-    bedtime = datetime(2023, 3, 25, hour=22, tzinfo=ZoneInfo("Europe/Amsterdam"))
-    # 🧨 returns 6:00, but should be 7:00 due to DST
-    full_rest = bedtime + timedelta(hours=8)
-
-Inconsistent meaning of "naive"
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Sometimes naive means "local time", sometimes it's interpreted as UTC,
-and still in other cases it means "detached from the real world".
-
-.. code-block:: python
-
-    d = datetime(2024, 1, 1, ...)  # naive
-
-    # ⚠️ Treated as a local datetime here...
-    d.timestamp()
-    d.astimezone(UTC)
-
-    # 🧨 ...but assumed UTC here.
-    d.utctimetuple()
-    email.utils.format_datetime(d)
-    datetime.utcnow()
-
-    # 🤷 ...detached from the real world here (error)
-    d >= datetime.now(UTC)
-
-Silently non-existent datetimes
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-You aren't warned when you create a datetime that doesn't exist
-(e.g. when the clock is set forward due to DST).
-These invalid objects then create problems in subsequent operations.
-
-.. code-block:: python
-
-    # ⚠️ No error that this time doesn't exist on this date
-    d = datetime(2023, 3, 26, hour=2, minute=30, tzinfo=ZoneInfo("Europe/Amsterdam"))
-
-    # 🧨 No UTC equivalent exists, so it just makes one up
-    assert d.astimezone(UTC) == d  # False???
-
-Guessing on ambiguity
-~~~~~~~~~~~~~~~~~~~~~
-
-When a datetime occurs twice (due to the clock being set backwards),
-the ``fold`` attribute `resolves the ambiguity <https://peps.python.org/pep-0495/>`_.
-However, by defaulting to ``0``, it silently assumes you mean the first occurrence.
-
-.. code-block:: python
-
-    # 🧨 Datetime is guessing your intention here without warning
-    d = datetime(2023, 10, 29, 2, 30, tzinfo=ZoneInfo("Europe/Amsterdam"))
-
-Disambiguation is often futile
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Even though ``fold`` was introduced to disambiguate times,
-equality comparisons don't make use of it: comparisons of disambiguated times
-are always False!
-
-.. code-block:: python
-
-    # We carefully disambiguate an ambiguous datetime with fold=1...
-    x = datetime(2023, 10, 29, 2, 30, tzinfo=ZoneInfo("Europe/Amsterdam"), fold=1)
-
-    # 🧨 Nonetheless comparisons with other timezones are *always* False
-    x.astimezone(UTC) == y  # False???
-
-Equality behaves inconsistently
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Within the same timezone, times are compared naively (ignoring ``fold``),
-while between different timezones, `they are compared by their UTC time <https://blog.ganssle.io/articles/2018/02/a-curious-case-datetimes.html>`_.
-
-.. code-block:: python
-
-    # 🧨 In the same timezone, fold is ignored...
-    d = datetime(2023, 10, 29, 2, 30, tzinfo=ZoneInfo("Europe/Amsterdam"), fold=0)
-    d_1h_later = d.replace(fold=1)
-    d == d_1h_later  # True -- even though they are one hour apart!
-
-    # ⁉️ ...but between different timezones, it *is* accounted for!
-    d_1h_later = d_1h_later.astimezone(ZoneInfo("Europe/Paris"))
-    d == d_1h_later  # False -- even though Paris has same DST behavior as Amsterdam!
-
-Datetime inherits from date
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-This leads to unexpected behavior and it is widely considered a
-`design <https://discuss.python.org/t/renaming-datetime-datetime-to-datetime-datetime/26279/2>`_ `flaw <https://github.com/python/typeshed/issues/4802>`_ in the standard library.
-
-.. code-block:: python
-
-    # 🧨 Breaks when you pass in a datetime, even though it's a subclass
-    def is_future(dt: date) -> bool:
-        return dt > date.today()
-
-    # 🧨 Some methods inherited from `date` don't make sense
-    datetime.today()
-
 Why not...?
 -----------
+
+The standard library
+~~~~~~~~~~~~~~~~~~~~
+
+The standard library is full of quirks and pitfalls.
+To summarize the detailed `blog post <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_:
+
+1.  Incompatible concepts are squeezed into one class
+2.  Operations ignore Daylight Saving Time (DST)
+3.  The meaning of "naive" is inconsistent
+4.  Non-existent datetimes pass silently
+5.  It guesses in the face of ambiguity
+6.  Disambiguation breaks equality
+7.  Inconsistent equality within timezone
+8.  `datetime` inherits from `date`
+9.  `datetime.timezone` isn’t a timezone. `ZoneInfo` is.
+10. The local timezone is DST-unaware
+
 
 Pendulum
 ~~~~~~~~
 
 Pendulum is full-featured datetime library, but it's
 hamstrung by the decision to inherit from the standard library ``datetime``.
-This means it inherits all the issues mentioned above, with the exception of #2
-(DST-aware addition/subtraction).
+This means it inherits most of its pitfalls,
+with the notable exception of DST-aware addition/subtraction.
 
 Arrow
 ~~~~~
 
+Arrow is probably the most historically popular datetime library.
 Pendulum did a good write-up of `the issues with Arrow <https://pendulum.eustace.io/faq/>`_.
-It doesn't seem to address any of the above mentioned issues with the standard library.
+It addresses fewer of datetime's pitfalls than Pendulum.
 
 Maya
 ~~~~
@@ -261,18 +150,10 @@ to the standard library ``datetime`` first, which reintroduces the issues.
 DateType
 ~~~~~~~~
 
-DateType mostly fixes issues #1 (naive/aware distinction)
-and #8 (datetime/date inheritance) during type-checking,
-but doesn't address the other issues. Additionally,
+DateType mostly fixes the issue of mixing naive and aware datetimes,
+and datetime/date inheritance during type-checking,
+but doesn't address the other pitfalls. Additionally,
 it isn't able to *fully* type-check `all cases <https://github.com/glyph/DateType/blob/0ff07493bc2a13d6fafdba400e52ee919beeb093/tryit.py#L31>`_.
-
-Heliclockter
-~~~~~~~~~~~~
-
-This library is a lot more explicit about the different types of datetimes,
-addressing issue #1 (naive/aware distinction) with UTC, local, and zoned datetime types.
-It doesn't address the other datetime pitfalls though.
-Additionally, its "local" type doesn't account for DST.
 
 python-dateutil
 ~~~~~~~~~~~~~~~
@@ -280,7 +161,17 @@ python-dateutil
 Dateutil attempts to solve some of the issues with the standard library.
 However, it only *adds* functionality to work around the issues,
 instead of *removing* the pitfalls themselves.
+This still puts the burden on the developer to know about the issues,
+and to use the correct functions to avoid them.
 Without removing the pitfalls, it's still very likely to make mistakes.
+
+Heliclockter
+~~~~~~~~~~~~
+
+This library is a lot more explicit about the different types of datetimes,
+addressing issue of naive/aware mixing with UTC, local, and zoned datetime subclasses.
+It doesn't address the other datetime pitfalls though.
+Additionally, its "local" type doesn't account for DST.
 
 FAQs
 ----

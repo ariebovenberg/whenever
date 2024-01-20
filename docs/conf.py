@@ -33,6 +33,7 @@ autodoc_member_order = "bysource"
 html_theme = "furo"
 highlight_language = "python3"
 pygments_style = "default"
+pygments_dark_style = "material"
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
 }
