@@ -1,6 +1,12 @@
 🚀 Changelog
 ============
 
+0.3.0 (2024-01-23)
+------------------
+
+- 🔨 Added ``strptime()`` to ``UTCDateTime``, ``OffsetDateTime`` and
+  ``NaiveDateTime``.
+
 0.2.1 (2024-01-20)
 ------------------
 

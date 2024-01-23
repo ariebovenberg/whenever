@@ -114,7 +114,7 @@ or if you absolutely don't need to account for the complexities of the real worl
 Equality and comparison
 -----------------------
 
-All types support equality and comparison. 
+All types support equality and comparison.
 However, :class:`~whenever.NaiveDateTime` instances are
 never equal or comparable to the aware types.
 
@@ -174,6 +174,28 @@ whether the values are the same, since there is no concept of timezones or UTC o
    See the documentation of :meth:`AwareDateTime.__eq__ <whenever.AwareDateTime.__eq__>`
    and :meth:`NaiveDateTime.__eq__ <whenever.NaiveDateTime.__eq__>` for more details.
 
+
+Strict equality
+~~~~~~~~~~~~~~~
+
+Naive and aware types are never equal or comparable to each other.
+However, to comply with the Python data model, the equality operator
+won't prevent you from using ``==`` to compare them.
+It may *seem* like the equality operator should raise a :exc:`TypeError`
+in these cases, but this would result in
+`surprising behavior <https://stackoverflow.com/a/33417512>`_
+when using values as dictionary keys.
+Instead, use mypy's ``--strict-equality``
+`flag <https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-strict-equality>`_
+to detect and prevent these mistakes.
+
+.. code-block:: python
+
+    # These are never equal
+    # Use mypy's --strict-equality flag to detect these mistakes
+    >>> UTCDateTime(2023, 12, 28) == NaiveDateTime(2023, 12, 28)
+    False
+
 Conversion
 ----------
 
@@ -204,21 +226,30 @@ information. Each aware type also defines a :meth:`from_naive` method.
     >>> n = d.naive()  # NaiveDateTime(2023-12-28 11:30:00)
     >>> OffsetDateTime.from_naive(n, offset=hours(5))  # 2023-12-28 11:30:00+05:00
 
+.. note::
+
+   The seemingly inconsistent naming of :meth:`~whenever.AwareDateTime.naive` and
+   the ``as_*`` methods is intentional. The ``as_*`` methods preserve the same
+   moment in time, while :meth:`~whenever.AwareDateTime.naive` converts to
+   something else entirely.
+
 
 Moving back and forwards in time
 --------------------------------
 
-You can add or subtract a :class:`~datetime.timedelta` from 
-:class:`~whenever.UTCDateTime`, 
-:class:`~whenever.ZonedDateTime`, :class:`~whenever.LocalDateTime`, 
+You can add or subtract a :class:`~datetime.timedelta` from
+:class:`~whenever.UTCDateTime`,
+:class:`~whenever.ZonedDateTime`, :class:`~whenever.LocalDateTime`,
 and :class:`~whenever.NaiveDateTime` instances. This represents moving forward or
 backward in time by the given duration:
 
 .. code-block:: python
 
+    from whenever import days, hours  # aliases for timedelta(days=...) etc.
+
     >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
-    >>> d + timedelta(hours=5)  # 5 hours later
-    >>> d - timedelta(days=1)  # 1 day earlier
+    >>> d + hours(5)  # 5 hours later
+    >>> d - days(1)  # 1 day earlier
 
 Adding/subtracting takes into account daylight savings time and other
 timezone variabilities.
@@ -228,7 +259,7 @@ timezone variabilities.
    :class:`~whenever.OffsetDateTime` instances do not support moving back and
    forwards in time, because offsets in real world timezones aren't always constant.
    That is, the offset may be different after moving backwards or forwards in time.
-   If you need to shift an :class:`~whenever.OffsetDateTime` instance, 
+   If you need to shift an :class:`~whenever.OffsetDateTime` instance,
    either convert to UTC or a proper timezone first.
 
 Difference between datetimes
@@ -326,6 +357,45 @@ Conversely, you can create a type from a standard library datetime with the
    UTCDateTime(2023-01-01 00:00:00Z)
    >>> ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam").py
    datetime(2023, 1, 1, 0, 0, tzinfo=ZoneInfo('Europe/Amsterdam'))
+
+Parsing
+-------
+
+For now, basic parsing functionality is implemented in the ``strptime()`` methods
+of :class:`~whenever.UTCDateTime`, :class:`~whenever.OffsetDateTime`,
+and :class:`~whenever.NaiveDateTime`.
+As the name suggests, these methods are thin wrappers around the standard library
+:meth:`~datetime.datetime.strptime` function.
+The same `formatting rules <https://docs.python.org/3/library/datetime.html#format-codes>`_ apply.
+
+.. code-block:: python
+
+   UTCDateTime.strptime("2023-01-01 12:30", "%Y-%m-%d %H:%M")  # 2023-01-01 12:30:00Z
+   OffsetDateTime.strptime("2023-01-01+05:00", "%Y-%m-%d%z")  # 2023-01-01 00:00:00+05:00
+   NaiveDateTime.strptime("2023-01-01 00:00", "%Y-%m-%d %H:%M")  # 2023-01-01 00:00:00
+
+.. note::
+
+   :class:`~whenever.ZonedDateTime` and :class:`~whenever.LocalDateTime` do not (yet)
+   implement ``strptime()`` methods, because they require disambiguation.
+   If you'd like to parse into these types,
+   use :meth:`NaiveDateTime.strptime() <whenever.NaiveDateTime.strptime>`
+   to parse them, and then use the ``.from_naive()`` method to convert to the desired type:
+
+   .. code-block:: python
+
+      ZonedDateTime.from_naive(
+          # This parsed datetime is ambiguous in the Europe/Amsterdam timezone
+          NaiveDateTime.strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S"),
+          disambiguate="earlier",
+          tz="Europe/Amsterdam",
+      )
+
+.. admonition:: Future plans
+
+   Python's builtin ``strptime`` has its limitations, so a more full-featured
+   parsing API may be added in the future.
+
 
 Canonical string format
 -----------------------

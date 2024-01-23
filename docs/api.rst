@@ -15,25 +15,25 @@ Base classes
 
 .. autoclass:: whenever.AwareDateTime
    :members:
-   :special-members: __eq__, __lt__, __le__, __gt__, __ge__, __sub__
+   :special-members: __eq__, __lt__, __le__, __gt__, __ge__, __sub__, naive
 
 Concrete classes
 ----------------
 
 .. autoclass:: whenever.UTCDateTime
-   :members: now, from_timestamp, __add__, __sub__
+   :members: now, from_timestamp, __add__, __sub__, from_naive, strptime
 
 .. autoclass:: whenever.OffsetDateTime
-   :members: now, from_timestamp
+   :members: now, from_timestamp, from_naive, strptime
 
 .. autoclass:: whenever.ZonedDateTime
-   :members: now, from_timestamp, tz, __add__, __sub__, disambiguated
+   :members: now, from_timestamp, tz, __add__, __sub__, from_naive, disambiguated
 
 .. autoclass:: whenever.LocalDateTime
-   :members: now, from_timestamp, exists, __add__, __sub__, disambiguated
+   :members: now, from_timestamp, exists, __add__, __sub__, from_naive, disambiguated
 
 .. autoclass:: whenever.NaiveDateTime
-   :members: __eq__, __add__, __sub__
+   :members: __eq__, __add__, __sub__, strptime
 
 Helpers
 -------
