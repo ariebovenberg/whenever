@@ -529,3 +529,100 @@ def test_strptime(string, fmt, expected):
 def test_strptime_invalid():
     with pytest.raises(ValueError):
         UTCDateTime.strptime("2020-08-15 23:12:09+0200", "%Y-%m-%d %H:%M:%S%z")
+
+
+def test_rfc2822():
+    assert (
+        UTCDateTime(2020, 8, 15, 23, 12, 9, 450).rfc2822()
+        == "Sat, 15 Aug 2020 23:12:09 GMT"
+    )
+
+
+@pytest.mark.parametrize(
+    "s, expected",
+    [
+        (
+            "Sat, 15 Aug 2020 23:12:09 GMT",
+            UTCDateTime(2020, 8, 15, 23, 12, 9),
+        ),
+        (
+            "Sat, 15 Aug 2020 23:12:09 +0000",
+            UTCDateTime(2020, 8, 15, 23, 12, 9),
+        ),
+        (
+            "Sat, 15 Aug 2020 23:12:09 UTC",
+            UTCDateTime(2020, 8, 15, 23, 12, 9),
+        ),
+        (
+            "15      Aug 2020\n23:12 UTC",
+            UTCDateTime(2020, 8, 15, 23, 12),
+        ),
+    ],
+)
+def test_from_rfc2822(s, expected):
+    assert UTCDateTime.from_rfc2822(s) == expected
+
+
+def test_from_rfc2822_invalid():
+    # no timezone
+    with pytest.raises(ValueError):
+        UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09")
+
+    # -0000 timezone special case
+    with pytest.raises(ValueError, match="RFC.*-0000.*UTC"):
+        UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09 -0000")
+
+    # nonzero offset
+    with pytest.raises(ValueError, match="nonzero"):
+        UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09 +0200")
+
+
+def test_rfc3339():
+    assert (
+        UTCDateTime(2020, 8, 15, 23, 12, 9, 450).rfc3339()
+        == "2020-08-15T23:12:09.000450Z"
+    )
+
+
+@pytest.mark.parametrize(
+    "s, expect",
+    [
+        (
+            "2020-08-15T23:12:09.000450Z",
+            UTCDateTime(2020, 8, 15, 23, 12, 9, 450),
+        ),
+        (
+            "2020-08-15t23:12:09z",
+            UTCDateTime(2020, 8, 15, 23, 12, 9),
+        ),
+        (
+            "2020-08-15_23:12:09-00:00",
+            UTCDateTime(2020, 8, 15, 23, 12, 9),
+        ),
+        (
+            "2020-08-15_23:12:09+00:00",
+            UTCDateTime(2020, 8, 15, 23, 12, 9),
+        ),
+        # subsecond precision that isn't supported by older fromisoformat()
+        (
+            "2020-08-15T23:12:09.34Z",
+            UTCDateTime(2020, 8, 15, 23, 12, 9, 340_000),
+        ),
+    ],
+)
+def test_from_rfc3339(s, expect):
+    assert UTCDateTime.from_rfc3339(s) == expect
+
+
+def test_from_rfc3339_invalid():
+    # no timezone
+    with pytest.raises(ValueError):
+        UTCDateTime.from_rfc3339("2020-08-15T23:12:09")
+
+    # no seconds
+    with pytest.raises(ValueError):
+        UTCDateTime.from_rfc3339("2020-08-15T23:12-00:00")
+
+    # nonzero offset
+    with pytest.raises(ValueError):
+        UTCDateTime.from_rfc3339("2020-08-15T23:12:09+02:00")

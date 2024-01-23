@@ -584,3 +584,104 @@ def test_strptime(string, fmt, expected):
 def test_strptime_invalid():
     with pytest.raises(ValueError):
         OffsetDateTime.strptime("2020-08-15 23:12:09", "%Y-%m-%d %H:%M:%S")
+
+
+def test_rfc2822():
+    assert (
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, 450, offset=hours(1)).rfc2822()
+        == "Sat, 15 Aug 2020 23:12:09 +0100"
+    )
+
+
+@pytest.mark.parametrize(
+    "s, expected",
+    [
+        (
+            "Sat, 15 Aug 2020 23:12:09 GMT",
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(0)),
+        ),
+        (
+            "Sat, 15 Aug 2020 23:12:09 +0000",
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(0)),
+        ),
+        (
+            "Sat, 15 Aug 2020 23:12:09 UTC",
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(0)),
+        ),
+        (
+            "Sat, 15 Aug 2020 23:12:09 -0100",
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(-1)),
+        ),
+        (
+            "Sat, 15 Aug 2020 23:12:09 +1200",
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(12)),
+        ),
+        (
+            "Sat, 15 Aug 2020 23:12:09 MST",
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(-7)),
+        ),
+        (
+            "15      Aug 2020\n23:12 UTC",
+            OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(0)),
+        ),
+    ],
+)
+def test_from_rfc2822(s, expected):
+    assert OffsetDateTime.from_rfc2822(s) == expected
+
+
+def test_from_rfc2822_invalid():
+    # no timezone
+    with pytest.raises(ValueError):
+        OffsetDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09")
+
+    # -0000 timezone special case
+    with pytest.raises(ValueError, match="RFC.*-0000"):
+        OffsetDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09 -0000")
+
+
+def test_rfc3339():
+    assert (
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, 450, offset=hours(4)).rfc3339()
+        == "2020-08-15T23:12:09.000450+04:00"
+    )
+
+
+@pytest.mark.parametrize(
+    "s, expect",
+    [
+        (
+            "2020-08-15T23:12:09.000450Z",
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, 450, offset=hours(0)),
+        ),
+        (
+            "2020-08-15t23:12:09z",
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(0)),
+        ),
+        (
+            "2020-08-15_23:12:09-02:00",
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(-2)),
+        ),
+        (
+            "2020-08-15_23:12:09+00:00",
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(0)),
+        ),
+        # subsecond precision that isn't supported by older fromisoformat()
+        (
+            "2020-08-15_23:12:09.23+02:00",
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, 230_000, offset=hours(2)),
+        ),
+    ],
+)
+def test_from_rfc3339(s, expect):
+    assert OffsetDateTime.from_rfc3339(s) == expect
+
+
+def test_from_rfc3339_invalid():
+    # no timezone
+    with pytest.raises(ValueError):
+        OffsetDateTime.from_rfc3339("2020-08-15T23:12:09")
+
+    # no seconds
+    with pytest.raises(ValueError):
+        OffsetDateTime.from_rfc3339("2020-08-15T23:12-02:00")

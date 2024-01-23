@@ -21,10 +21,10 @@ Concrete classes
 ----------------
 
 .. autoclass:: whenever.UTCDateTime
-   :members: now, from_timestamp, __add__, __sub__, from_naive, strptime
+   :members: now, from_timestamp, __add__, __sub__, from_naive, strptime, rfc2822, from_rfc2822, rfc3339, from_rfc3339
 
 .. autoclass:: whenever.OffsetDateTime
-   :members: now, from_timestamp, from_naive, strptime
+   :members: now, from_timestamp, from_naive, strptime, rfc2822, from_rfc2822, rfc3339, from_rfc3339
 
 .. autoclass:: whenever.ZonedDateTime
    :members: now, from_timestamp, tz, __add__, __sub__, from_naive, disambiguated
@@ -33,7 +33,7 @@ Concrete classes
    :members: now, from_timestamp, exists, __add__, __sub__, from_naive, disambiguated
 
 .. autoclass:: whenever.NaiveDateTime
-   :members: __eq__, __add__, __sub__, strptime
+   :members: __eq__, __add__, __sub__, strptime, rfc2822, from_rfc2822
 
 Helpers
 -------

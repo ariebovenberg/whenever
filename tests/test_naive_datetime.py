@@ -269,3 +269,37 @@ def test_strptime_invalid():
         NaiveDateTime.strptime(
             "2020-08-15 23:12:09+0500", "%Y-%m-%d %H:%M:%S%z"
         )
+
+
+def test_rfc2822():
+    assert (
+        NaiveDateTime(2020, 8, 15, 23, 12, 9, 450).rfc2822()
+        == "Sat, 15 Aug 2020 23:12:09 -0000"
+    )
+
+
+@pytest.mark.parametrize(
+    "s, expected",
+    [
+        (
+            "Sat, 15 Aug 2020 23:12:09",
+            NaiveDateTime(2020, 8, 15, 23, 12, 9),
+        ),
+        (
+            "Sat, 15 Aug 2020 23:12:09 -0000",
+            NaiveDateTime(2020, 8, 15, 23, 12, 9),
+        ),
+        (
+            "15      Aug 2020\n23:12 -0000",
+            NaiveDateTime(2020, 8, 15, 23, 12),
+        ),
+    ],
+)
+def test_from_rfc2822(s, expected):
+    assert NaiveDateTime.from_rfc2822(s) == expected
+
+
+def test_from_rfc2822_invalid():
+    # non-0000 timezone
+    with pytest.raises(ValueError, match="RFC.*-0000"):
+        NaiveDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09 +0000")
