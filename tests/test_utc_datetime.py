@@ -499,3 +499,33 @@ def test_naive():
 def test_from_naive():
     d = NaiveDateTime(2020, 8, 15, 20)
     assert UTCDateTime.from_naive(d) == UTCDateTime(2020, 8, 15, 20)
+
+
+@pytest.mark.parametrize(
+    "string, fmt, expected",
+    [
+        (
+            "2020-08-15 23:12+0000",
+            "%Y-%m-%d %H:%M%z",
+            UTCDateTime(2020, 8, 15, 23, 12),
+        ),
+        (
+            "2020-08-15 23:12:09+0000",
+            "%Y-%m-%d %H:%M:%S%z",
+            UTCDateTime(2020, 8, 15, 23, 12, 9),
+        ),
+        (
+            "2020-08-15 23:12:09Z",
+            "%Y-%m-%d %H:%M:%S%z",
+            UTCDateTime(2020, 8, 15, 23, 12, 9),
+        ),
+        ("2020-08-15 23", "%Y-%m-%d %H", UTCDateTime(2020, 8, 15, 23)),
+    ],
+)
+def test_strptime(string, fmt, expected):
+    assert UTCDateTime.strptime(string, fmt) == expected
+
+
+def test_strptime_invalid():
+    with pytest.raises(ValueError):
+        UTCDateTime.strptime("2020-08-15 23:12:09+0200", "%Y-%m-%d %H:%M:%S%z")

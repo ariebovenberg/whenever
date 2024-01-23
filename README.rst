@@ -43,7 +43,7 @@ Benefits
 - Enforce correctness without runtime checks
 - Based on familiar concepts from other languages. Doesn't reinvent the wheel
 - Simple and obvious. No frills or surprises
-- Thoroughly documented and tested
+- `Thoroughly documented <https://whenever.rtfd.io/en/latest/overview.html>`_ and tested
 - No dependencies
 
 Quickstart
@@ -118,8 +118,8 @@ To summarize the detailed `blog post <https://dev.arie.bovenberg.net/blog/python
 5.  It guesses in the face of ambiguity
 6.  Disambiguation breaks equality
 7.  Inconsistent equality within timezone
-8.  `datetime` inherits from `date`
-9.  `datetime.timezone` isn’t a timezone. `ZoneInfo` is.
+8.  ``datetime`` inherits from ``date``
+9.  ``datetime.timezone`` isn’t a timezone. ``ZoneInfo`` is.
 10. The local timezone is DST-unaware
 
 
@@ -128,7 +128,7 @@ Pendulum
 
 Pendulum is full-featured datetime library, but it's
 hamstrung by the decision to inherit from the standard library ``datetime``.
-This means it inherits most of its pitfalls,
+This means it inherits most of the pitfalls mentioned above,
 with the notable exception of DST-aware addition/subtraction.
 
 Arrow
@@ -138,22 +138,15 @@ Arrow is probably the most historically popular datetime library.
 Pendulum did a good write-up of `the issues with Arrow <https://pendulum.eustace.io/faq/>`_.
 It addresses fewer of datetime's pitfalls than Pendulum.
 
-Maya
-~~~~
-
-It's unmaintained, but does have an interesting approach.
-By enforcing UTC, it bypasses a lot of issues with the standard library.
-To do so, it sacrifices the ability to represent offset, zoned, and local datetimes.
-So in order to perform any timezone-aware operations, you need to convert
-to the standard library ``datetime`` first, which reintroduces the issues.
-
 DateType
 ~~~~~~~~
 
 DateType mostly fixes the issue of mixing naive and aware datetimes,
 and datetime/date inheritance during type-checking,
-but doesn't address the other pitfalls. Additionally,
-it isn't able to *fully* type-check `all cases <https://github.com/glyph/DateType/blob/0ff07493bc2a13d6fafdba400e52ee919beeb093/tryit.py#L31>`_.
+but doesn't address the other pitfalls.
+The type-checker-only approach also means that it doesn't enforce correctness at runtime,
+and it requires developers to be knowledgeable about
+how the 'type checking reality' differs from the 'runtime reality'.
 
 python-dateutil
 ~~~~~~~~~~~~~~~
@@ -165,13 +158,21 @@ This still puts the burden on the developer to know about the issues,
 and to use the correct functions to avoid them.
 Without removing the pitfalls, it's still very likely to make mistakes.
 
+Maya
+~~~~
+
+It's unmaintained, but does have an interesting approach.
+By enforcing UTC, it bypasses a lot of issues with the standard library.
+To do so, it sacrifices the ability to represent offset, zoned, and local datetimes.
+So in order to perform any timezone-aware operations, you need to convert
+to the standard library ``datetime`` first, which reintroduces the issues.
+
 Heliclockter
 ~~~~~~~~~~~~
 
 This library is a lot more explicit about the different types of datetimes,
 addressing issue of naive/aware mixing with UTC, local, and zoned datetime subclasses.
 It doesn't address the other datetime pitfalls though.
-Additionally, its "local" type doesn't account for DST.
 
 FAQs
 ----

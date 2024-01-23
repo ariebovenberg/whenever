@@ -551,3 +551,36 @@ def test_from_naive():
     assert OffsetDateTime.from_naive(d, hours(3)).exact_eq(
         OffsetDateTime(2020, 8, 15, 20, offset=hours(3))
     )
+
+
+@pytest.mark.parametrize(
+    "string, fmt, expected",
+    [
+        (
+            "2020-08-15 23:12+0315",
+            "%Y-%m-%d %H:%M%z",
+            OffsetDateTime(
+                2020, 8, 15, 23, 12, offset=timedelta(hours=3, minutes=15)
+            ),
+        ),
+        (
+            "2020-08-15 23:12:09+0550",
+            "%Y-%m-%d %H:%M:%S%z",
+            OffsetDateTime(
+                2020, 8, 15, 23, 12, 9, offset=timedelta(hours=5, minutes=50)
+            ),
+        ),
+        (
+            "2020-08-15 23:12:09Z",
+            "%Y-%m-%d %H:%M:%S%z",
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=timedelta()),
+        ),
+    ],
+)
+def test_strptime(string, fmt, expected):
+    assert OffsetDateTime.strptime(string, fmt) == expected
+
+
+def test_strptime_invalid():
+    with pytest.raises(ValueError):
+        OffsetDateTime.strptime("2020-08-15 23:12:09", "%Y-%m-%d %H:%M:%S")

@@ -256,3 +256,16 @@ def test_pickle():
     dumped = pickle.dumps(d)
     assert len(dumped) <= len(pickle.dumps(d.py)) + 15
     assert pickle.loads(pickle.dumps(d)) == d
+
+
+def test_strptime():
+    assert NaiveDateTime.strptime(
+        "2020-08-15 23:12", "%Y-%m-%d %H:%M"
+    ) == NaiveDateTime(2020, 8, 15, 23, 12)
+
+
+def test_strptime_invalid():
+    with pytest.raises(ValueError):
+        NaiveDateTime.strptime(
+            "2020-08-15 23:12:09+0500", "%Y-%m-%d %H:%M:%S%z"
+        )

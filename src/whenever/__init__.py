@@ -3,7 +3,7 @@
 # There is some code duplication in this file. This is intentional:
 # - It makes it easier to understand the code
 # - It's sometimes necessary for the type checker
-# - It's saves some overhead
+# - It saves some overhead
 from __future__ import annotations
 
 import re
@@ -170,6 +170,12 @@ class DateTime(ABC):
         ``ValueError`` is raised if the datetime doesn't have the correct
         tzinfo matching the class. For example, :class:`ZonedDateTime`
         requires a :class:`~zoneinfo.ZoneInfo` tzinfo.
+
+        Warning
+        -------
+        No exceptions are raised if the datetime is ambiguous.
+        Its ``fold`` attribute is consulted to determine which
+        the behavior on ambiguity.
         """
 
     @property
@@ -302,7 +308,11 @@ class AwareDateTime(DateTime):
         return LocalDateTime._from_py_unchecked(_to_local(self._py_dt))
 
     def naive(self) -> NaiveDateTime:
-        """Convert into a naive datetime, dropping all timezone information"""
+        """Convert into a naive datetime, dropping all timezone information
+
+        Each subclass also defines an inverse ``from_naive()`` method,
+        which may require additional arguments.
+        """
         return NaiveDateTime._from_py_unchecked(
             self._py_dt.replace(tzinfo=None)
         )
@@ -668,6 +678,34 @@ class UTCDateTime(AwareDateTime):
         """Create an instance from a naive datetime."""
         return cls._from_py_unchecked(d._py_dt.replace(tzinfo=_UTC))
 
+    @classmethod
+    def strptime(cls, s: str, /, fmt: str) -> UTCDateTime:
+        """Simple alias for ``UTCDateTime.from_py(datetime.strptime(s, fmt))``
+
+        Example
+        -------
+
+        .. code-block:: python
+
+            UTCDateTime.strptime("2020-08-15+0000", "%Y-%m-%d%z") == UTCDateTime(2020, 8, 15)
+            UTCDateTime.strptime("2020-08-15", "%Y-%m-%d")
+
+        Note
+        ----
+        The parsed ``tzinfo`` must be either :attr:`datetime.UTC`
+        or ``None`` (in which case it's set to :attr:`datetime.UTC`).
+
+        """
+        parsed = _datetime.strptime(s, fmt)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=_UTC)
+        elif parsed.tzinfo is not _UTC:
+            raise ValueError(
+                "Parsed datetime must have tzinfo=UTC or None, "
+                f"got {parsed.tzinfo!r}"
+            )
+        return cls._from_py_unchecked(parsed)
+
     def __repr__(self) -> str:
         return f"whenever.UTCDateTime({self})"
 
@@ -760,7 +798,7 @@ class OffsetDateTime(AwareDateTime):
     @classmethod
     def from_timestamp(cls, i: float, /, offset: timedelta) -> OffsetDateTime:
         """Create a OffsetDateTime from a UNIX timestamp.
-        The inverse of :meth:`timestamp`.
+        The inverse of :meth:`~AwareDateTime.timestamp`.
 
         Example
         -------
@@ -909,6 +947,36 @@ class OffsetDateTime(AwareDateTime):
         return cls._from_py_unchecked(
             d._py_dt.replace(tzinfo=_timezone(offset))
         )
+
+    @classmethod
+    def strptime(cls, s: str, /, fmt: str) -> OffsetDateTime:
+        """Simple alias for ``OffsetDateTime.from_py(datetime.strptime(s, fmt))``
+
+        Example
+        -------
+
+        .. code-block:: python
+
+            OffsetDateTime.strptime(
+                "2020-08-15+0200", "%Y-%m-%d%z"
+            ) == OffsetDateTime(2020, 8, 15, offset=hours(2))
+
+        Note
+        ----
+        The parsed ``tzinfo`` must be a fixed offset
+        (:class:`~datetime.timezone` instance).
+        This means you need to include the directive ``%z``, ``%Z``, or ``%:z``
+        in the format string.
+        """
+        parsed = _datetime.strptime(s, fmt)
+        # We only need to check for None, because the only other tzinfo
+        # returned from strptime is a fixed offset
+        if parsed.tzinfo is None:
+            raise ValueError(
+                "Parsed datetime must have an offset. "
+                "Use %z, %Z, or %:z in the format string"
+            )
+        return cls._from_py_unchecked(parsed)
 
     def __repr__(self) -> str:
         return f"whenever.OffsetDateTime({self})"
@@ -1492,7 +1560,7 @@ class LocalDateTime(AwareDateTime):
     @classmethod
     def from_timestamp(cls, i: float, /) -> LocalDateTime:
         """Create an instace from a UNIX timestamp.
-        The inverse of :meth:`timestamp`.
+        The inverse of :meth:`~AwareDateTime.timestamp`.
 
         Example
         -------
@@ -1986,6 +2054,33 @@ class NaiveDateTime(DateTime):
             elif isinstance(other, timedelta):
                 return self._from_py_unchecked(self._py_dt - other)
             return NotImplemented
+
+    @classmethod
+    def strptime(cls, s: str, /, fmt: str) -> NaiveDateTime:
+        """Simple alias for ``NaiveDateTime.from_py(datetime.strptime(s, fmt))``
+
+        Example
+        -------
+
+        .. code-block:: python
+
+            NaiveDateTime.strptime(
+                "2020-08-15", "%Y-%m-%d"
+            ) == NaiveDateTime(2020, 8, 15)
+
+        Note
+        ----
+        The parsed ``tzinfo`` must be be ``None``.
+        This means you can't include the directives ``%z``, ``%Z``, or ``%:z``
+        in the format string.
+        """
+        parsed = _datetime.strptime(s, fmt)
+        if parsed.tzinfo is not None:
+            raise ValueError(
+                "Parsed datetime can't have an offset. "
+                "Do not use %z, %Z, or %:z in the format string"
+            )
+        return cls._from_py_unchecked(parsed)
 
     def __repr__(self) -> str:
         return f"whenever.NaiveDateTime({self})"
