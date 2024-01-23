@@ -23,6 +23,7 @@ from typing import (
     ClassVar,
     Literal,
     TypeVar,
+    no_type_check,
     overload,
 )
 
@@ -816,9 +817,16 @@ class UTCDateTime(AwareDateTime):
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
         return (
-            UTCDateTime,
+            _unpkl_utc,
             self._py_dt.timetuple()[:6] + (self._py_dt.microsecond,),
         )
+
+
+# A separate unpickling function allows us to make backwards-compatible changes
+# to the pickling format in the future
+@no_type_check
+def _unpkl_utc(*args) -> UTCDateTime:
+    return UTCDateTime(*args)
 
 
 class OffsetDateTime(AwareDateTime):
@@ -1171,7 +1179,7 @@ class OffsetDateTime(AwareDateTime):
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
         return (
-            _offset_unpickle,
+            _unpkl_offset,
             self._py_dt.timetuple()[:6]
             + (self._py_dt.microsecond, self._py_dt.utcoffset()),
         )
@@ -1180,7 +1188,8 @@ class OffsetDateTime(AwareDateTime):
 # A separate function is needed for unpickling, because the
 # constructor doesn't accept positional offset argument as
 # required by __reduce__.
-def _offset_unpickle(
+# Also, it allows backwards-compatible changes to the pickling format.
+def _unpkl_offset(
     year: int,
     month: int,
     day: int,
@@ -1577,7 +1586,7 @@ class ZonedDateTime(AwareDateTime):
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
         return (
-            _zoned_unpickle,
+            _unpkl_zoned,
             self._py_dt.timetuple()[:6]
             + (
                 self._py_dt.microsecond,
@@ -1591,7 +1600,8 @@ class ZonedDateTime(AwareDateTime):
 # A separate function is needed for unpickling, because the
 # constructor doesn't accept positional tz and fold arguments as
 # required by __reduce__.
-def _zoned_unpickle(
+# Also, it allows backwards-compatible changes to the pickling format.
+def _unpkl_zoned(
     year: int,
     month: int,
     day: int,
@@ -2027,19 +2037,17 @@ class LocalDateTime(AwareDateTime):
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
         return (
-            _local_unpickle,
+            _unpkl_local,
             self._py_dt.timetuple()[:6]
-            + (
-                self._py_dt.microsecond,
-                self._py_dt.fold,
-            ),
+            + (self._py_dt.microsecond, self._py_dt.fold),
         )
 
 
 # A separate function is needed for unpickling, because the
 # constructor doesn't accept positional fold arguments as
 # required by __reduce__.
-def _local_unpickle(
+# Also, it allows backwards-compatible changes to the pickling format.
+def _unpkl_local(
     year: int,
     month: int,
     day: int,
@@ -2318,9 +2326,16 @@ class NaiveDateTime(DateTime):
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
         return (
-            NaiveDateTime,
+            _unpkl_naive,
             self._py_dt.timetuple()[:6] + (self._py_dt.microsecond,),
         )
+
+
+# A separate unpickling function allows us to make backwards-compatible changes
+# to the pickling format in the future
+@no_type_check
+def _unpkl_naive(*args) -> NaiveDateTime:
+    return NaiveDateTime(*args)
 
 
 class Ambiguous(Exception):

@@ -1063,6 +1063,19 @@ def test_pickle():
     assert pickle.loads(pickle.dumps(d)).exact_eq(d)
 
 
+def test_old_pickle_data_remains_unpicklable():
+    # Don't update this value -- the whole idea is that it's a pickle at
+    # a specific version of the library.
+    dumped = (
+        b"\x80\x04\x95I\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0c_unp"
+        b"kl_zoned\x94\x93\x94(M\xe4\x07K\x08K\x0fK\x17K\x0cK\tJ\x06\x12"
+        b"\x0f\x00\x8c\x10Europe/Amsterdam\x94K\x00t\x94R\x94."
+    )
+    assert pickle.loads(dumped) == ZonedDateTime(
+        2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+    )
+
+
 def test_copy():
     d = ZonedDateTime(2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam")
     assert copy(d) is d
