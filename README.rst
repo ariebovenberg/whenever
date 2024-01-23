@@ -39,7 +39,7 @@ Benefits
 --------
 
 - Distinct classes with well-defined behavior
-- Fixes timezone quirks that even `pendulum doesn't address <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_
+- Fixes timezone quirks that `even pendulum doesn't address <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_
 - Enforce correctness without runtime checks
 - Based on familiar concepts from other languages. Doesn't reinvent the wheel
 - Simple and obvious. No frills or surprises
@@ -121,14 +121,14 @@ The standard library
 The standard library is full of quirks and pitfalls.
 To summarize the detailed `blog post <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_:
 
-1.  Incompatible concepts are squeezed into one class
+1.  Incompatible concepts of naive and aware are squeezed into one class
 2.  Operations ignore Daylight Saving Time (DST)
-3.  The meaning of "naive" is inconsistent
-4.  Non-existent datetimes pass silently
+3.  The meaning of "naive" is inconsistent (UTC, local, or unspecified?)
+4.  Non-existent datetimes pass silently, then wreak havoc later
 5.  It guesses in the face of ambiguity
-6.  Disambiguation breaks equality
-7.  Inconsistent equality within timezone
-8.  ``datetime`` inherits from ``date``
+6.  False negatives on equality of ambiguous times between timezones
+7.  False positives on equality of ambiguous times within the same timezone
+8.  ``datetime`` inherits from ``date``, but behaves inconsistently
 9.  ``datetime.timezone`` isn’t a timezone. ``ZoneInfo`` is.
 10. The local timezone is DST-unaware
 
