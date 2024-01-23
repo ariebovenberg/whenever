@@ -89,11 +89,21 @@ Quickstart
    >>> py311_release - simulation_start
    >>> simulation_start == pycon23_started
 
-   # round-trip to and from strings
+   # Lossless round-trip to/from text (useful for JSON/serialization)
    >>> py311_release.canonical_str()
    '2022-10-24T17:00:00Z'
    >>> ZonedDateTime.from_canonical_str('2022-10-24T19:00:00+02:00[Europe/Paris]')
    ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
+
+   # Conversion to/from common formats
+   >>> py311_release.rfc2822()  # also: from_rfc2822()
+   "Mon, 24 Oct 2022 17:00:00 GMT"
+   >>> pycon23_started.rfc3339()  # also: from_rfc3339()
+   "2023-04-21T09:00:00-06:00"
+
+   # Basic parsing
+   >>> OffsetDateTime.strptime("2022-10-24+02:00", "%Y-%m-%d%z")
+   OffsetDateTime(2022-10-24 00:00:00+02:00)
 
    # If you must: you can access the underlying datetime object
    >>> pycon23_started.py.ctime()

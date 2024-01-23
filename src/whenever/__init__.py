@@ -15,6 +15,7 @@ from datetime import time as _time
 from datetime import timedelta
 from datetime import timezone as _timezone
 from datetime import tzinfo as _tzinfo
+from email.utils import format_datetime, parsedate_to_datetime
 from operator import attrgetter
 from typing import (
     TYPE_CHECKING,
@@ -706,6 +707,109 @@ class UTCDateTime(AwareDateTime):
             )
         return cls._from_py_unchecked(parsed)
 
+    def rfc2822(self) -> str:
+        """Format as an RFC 2822 string.
+
+        The inverse of :meth:`from_rfc2822`.
+
+        Example
+        -------
+
+        .. code-block:: python
+
+            >>> UTCDateTime(2020, 8, 15, hour=23, minute=12).rfc2822()
+            "Sat, 15 Aug 2020 23:12:00 GMT"
+        """
+        return format_datetime(self._py_dt, usegmt=True)
+
+    @classmethod
+    def from_rfc2822(cls, s: str, /) -> UTCDateTime:
+        """Parse a UTC datetime in RFC 2822 format.
+
+        The inverse of :meth:`rfc2822`.
+
+        Example
+        -------
+
+        .. code-block:: python
+
+            UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 GMT")
+            # -> UTCDateTime(2020-08-15 23:12:00Z)
+
+            # also valid:
+            UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 +0000")
+            UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 UT")
+
+            # Error: nonzero offset. Use OffsetDateTime.from_rfc2822() instead
+            UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 +0200")
+
+
+        Warning
+        -------
+        * Nonzero offsets will not be implicitly converted to UTC.
+          Use :meth:`OffsetDateTime.from_rfc2822` if you'd like to
+          parse an RFC 2822 string with a nonzero offset.
+        * The offset ``-0000`` has special meaning in RFC 2822,
+          and is not allowed here.
+        """
+        parsed = parsedate_to_datetime(s)
+        # Nested ifs to keep happy path fast
+        if parsed.tzinfo is not _UTC:
+            if parsed.tzinfo is None:
+                raise ValueError(
+                    "RFC 2822 string with -0000 offset cannot be parsed as UTC"
+                )
+            raise ValueError(
+                "RFC 2822 string can't have nonzero offset to be parsed as UTC"
+            )
+        return cls._from_py_unchecked(parsedate_to_datetime(s))
+
+    def rfc3339(self) -> str:
+        """Format as an RFC 3339 string
+
+        For UTCDateTime, equivalent to :meth:`~AwareDateTime.canonical_str`.
+        Inverse of :meth:`from_rfc3339`.
+
+        Example
+        -------
+
+        .. code-block:: python
+
+            >>> UTCDateTime(2020, 8, 15, hour=23, minute=12).rfc3339()
+            "2020-08-15T23:12:00Z"
+        """
+        return f"{self._py_dt.isoformat()[:-6]}Z"
+
+    @classmethod
+    def from_rfc3339(cls, s: str, /) -> UTCDateTime:
+        """Parse a UTC datetime in RFC 3339 format.
+
+        Inverse of :meth:`rfc3339`.
+
+        Example
+        -------
+
+        .. code-block:: python
+
+            UTCDateTime.from_rfc3339("2020-08-15T23:12:00Z")
+            # -> UTCDateTime(2020-08-15 23:12:00Z)
+
+            # also valid:
+            UTCDateTime.from_rfc3339("2020-08-15T23:12:00+00:00")
+            UTCDateTime.from_rfc3339("2020-08-15_23:12:00.34Z")
+            UTCDateTime.from_rfc3339("2020-08-15t23:12:00z")
+
+            # not valid (nonzero offset):
+            UTCDateTime.from_rfc3339("2020-08-15T23:12:00+02:00")
+
+        Warning
+        -------
+        Nonzero offsets will not be implicitly converted to UTC.
+        Use :meth:`OffsetDateTime.from_rfc3339` if you'd like to
+        parse an RFC 3339 string with a nonzero offset.
+        """
+        return cls._from_py_unchecked(_parse_utc_rfc3339(s))
+
     def __repr__(self) -> str:
         return f"whenever.UTCDateTime({self})"
 
@@ -977,6 +1081,89 @@ class OffsetDateTime(AwareDateTime):
                 "Use %z, %Z, or %:z in the format string"
             )
         return cls._from_py_unchecked(parsed)
+
+    def rfc2822(self) -> str:
+        """Format as an RFC 2822 string.
+
+        Inverse of :meth:`from_rfc2822`.
+
+        Example
+        -------
+
+        .. code-block:: python
+
+            >>> OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(2)).rfc2822()
+            "Sat, 15 Aug 2020 23:12:00 +0200"
+        """
+        return format_datetime(self._py_dt)
+
+    @classmethod
+    def from_rfc2822(cls, s: str, /) -> OffsetDateTime:
+        """Parse an offset datetime in RFC 2822 format.
+
+        Inverse of :meth:`rfc2822`.
+
+        Example
+        -------
+
+        .. code-block:: python
+
+            OffsetDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 +0200")
+            # -> OffsetDateTime(2020-08-15 23:12:00+02:00)
+
+            # also valid:
+            OffsetDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 UT")
+            OffsetDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 GMT")
+            OffsetDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 MST")
+
+        Warning
+        -------
+        The offset ``-0000`` has special meaning in RFC 2822,
+        and is not allowed here.
+        """
+        parsed = parsedate_to_datetime(s)
+        if parsed.tzinfo is None:
+            raise ValueError(
+                "RFC 2822 string with -0000 offset cannot be parsed as UTC"
+            )
+        return cls._from_py_unchecked(parsedate_to_datetime(s))
+
+    def rfc3339(self) -> str:
+        """Format as an RFC 3339 string
+
+        For ``OffsetDateTime``, equivalent to :meth:`~DateTime.canonical_str`.
+        Inverse of :meth:`from_rfc3339`.
+
+        Example
+        -------
+
+        .. code-block:: python
+
+            >>> OffsetDateTime(2020, 8, 15, hour=23, minute=12, offset=hours(4)).rfc3339()
+            "2020-08-15T23:12:00+04:00"
+        """
+        return self._py_dt.isoformat()
+
+    @classmethod
+    def from_rfc3339(cls, s: str, /) -> OffsetDateTime:
+        """Parse a UTC datetime in RFC 3339 format.
+
+        Inverse of :meth:`rfc3339`.
+
+        Example
+        -------
+
+        .. code-block:: python
+
+            OffsetDateTime.from_rfc3339("2020-08-15T23:12:00+02:00")
+            # -> OffsetDateTime(2020-08-15 23:12:00+02:00)
+
+            # also valid:
+            OffsetDateTime.from_rfc3339("2020-08-15T23:12:00Z")
+            OffsetDateTime.from_rfc3339("2020-08-15_23:12:00.23-12:00")
+            OffsetDateTime.from_rfc3339("2020-08-15t23:12:00z")
+        """
+        return cls._from_py_unchecked(_parse_rfc3339(s))
 
     def __repr__(self) -> str:
         return f"whenever.OffsetDateTime({self})"
@@ -2082,6 +2269,49 @@ class NaiveDateTime(DateTime):
             )
         return cls._from_py_unchecked(parsed)
 
+    def rfc2822(self) -> str:
+        """Format as an RFC 2822 string
+
+        Example
+        -------
+
+        .. code-block:: python
+
+            >>> NaiveDateTime(2020, 8, 15, 23, 12).rfc2822()
+            "Sat, 15 Aug 2020 23:12:00 -0000"
+        """
+        return format_datetime(self._py_dt)
+
+    @classmethod
+    def from_rfc2822(cls, s: str, /) -> NaiveDateTime:
+        """Parse an naive datetime in RFC 2822 format.
+
+        Example
+        -------
+
+        .. code-block:: python
+
+            NaiveDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 -0000")
+            # -> NaiveDateTime(2020-08-15 23:12:00)
+
+            # Error: non-0000 offset
+            NaiveDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 GMT")
+            NaiveDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 +0000")
+            NaiveDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 -0100")
+
+        Warning
+        -------
+        Only the offset ``-0000`` is allowed, since this has special meaning
+        in RFC 2822.
+        """
+        parsed = parsedate_to_datetime(s)
+        if parsed.tzinfo is not None:
+            raise ValueError(
+                "Only an RFC 2822 string with -0000 offset can be "
+                "parsed as NaiveDateTime"
+            )
+        return cls._from_py_unchecked(parsedate_to_datetime(s))
+
     def __repr__(self) -> str:
         return f"whenever.NaiveDateTime({self})"
 
@@ -2140,14 +2370,53 @@ _match_zoned_str = re.compile(rf"({_OFFSET_RE})\[([^\]]+)\]").fullmatch
 _fromisoformat = _datetime.fromisoformat
 _fromtimestamp = _datetime.fromtimestamp
 _zero_timezone = _timezone(timedelta())
-# Before Python 3.11, fromisoformat doesn't support the Z suffix.
+_match_utc_rfc3339 = re.compile(
+    r"\d{4}-\d{2}-\d{2}.\d{2}:\d{2}:\d{2}(\.\d{1,6})?(?:[Zz]|[+-]00:00)"
+).fullmatch
+_match_rfc3339 = re.compile(
+    r"\d{4}-\d{2}-\d{2}.\d{2}:\d{2}:\d{2}(\.\d{1,6})?(?:[Zz]|[+-]\d{2}:\d{2})"
+).fullmatch
+# Before Python 3.11, fromisoformat() is less capable
 if sys.version_info < (3, 11):  # pragma: no cover
 
     def _fromisoformat_utc(s: str) -> _datetime:
         return _fromisoformat(s[:-1]).replace(tzinfo=_UTC)
 
+    def _parse_rfc3339(s: str) -> _datetime:
+        if not (m := _match_rfc3339(s)):
+            raise ValueError()
+        return _fromisoformat_extra(m, s)
+
+    def _parse_utc_rfc3339(s: str) -> _datetime:
+        if not (m := _match_utc_rfc3339(s)):
+            raise ValueError()
+        return _fromisoformat_extra(m, s)
+
+    def _fromisoformat_extra(m: re.Match[str], s: str) -> _datetime:
+        # handle fractions that aren't exactly 3 or 6 digits
+        if (fraction := m.group(1)) and len(fraction) not in (7, 4):
+            s = (
+                s[:19]
+                + fraction.ljust(7, "0")
+                + s[19 + len(fraction) :]  # noqa
+            )
+        # handle Z suffix
+        if s.endswith(("Z", "z")):
+            s = s[:-1] + "+00:00"
+        return _fromisoformat(s)
+
 else:
     _fromisoformat_utc = _fromisoformat
+
+    def _parse_utc_rfc3339(s: str) -> _datetime:
+        if not _match_utc_rfc3339(s):
+            raise ValueError()
+        return _fromisoformat(s.upper())
+
+    def _parse_rfc3339(s: str) -> _datetime:
+        if not _match_rfc3339(s):
+            raise ValueError()
+        return _fromisoformat(s.upper())
 
 
 UTCDateTime.min = UTCDateTime._from_py_unchecked(

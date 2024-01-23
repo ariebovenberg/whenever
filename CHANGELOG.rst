@@ -6,6 +6,9 @@
 
 - 🔨 Added ``strptime()`` to ``UTCDateTime``, ``OffsetDateTime`` and
   ``NaiveDateTime``.
+- 📋 Added ``rfc2822()``/``from_rfc2822()`` to ``UTCDateTime``, 
+  ``OffsetDateTime`` and ``NaiveDateTime``.
+- ⚙️ Added ``rfc3339()``/``from_rfc3339()`` to ``UTCDateTime`` and ``OffsetDateTime``
 
 0.2.1 (2024-01-20)
 ------------------
