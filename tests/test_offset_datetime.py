@@ -511,6 +511,20 @@ def test_pickle():
     assert pickle.loads(pickle.dumps(d)) == d
 
 
+def test_old_pickle_data_remains_unpicklable():
+    # Don't update this value -- the whole idea is that it's a pickle at
+    # a specific version of the library.
+    dumped = (
+        b"\x80\x04\x95Y\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_o"
+        b"ffset\x94\x93\x94(M\xe4\x07K\x08K\x0fK\x17K\x0cK\tJ\x06\x12\x0f\x00\x8c"
+        b"\x08datetime\x94\x8c\ttimedelta\x94\x93\x94K\x00M0*K\x00\x87\x94R\x94t"
+        b"\x94R\x94."
+    )
+    assert pickle.loads(dumped) == OffsetDateTime(
+        2020, 8, 15, 23, 12, 9, 987_654, offset=hours(3)
+    )
+
+
 def test_to_utc():
     d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=hours(3))
     assert d.as_utc() == UTCDateTime(2020, 8, 15, 20, 12, 9, 987_654)

@@ -4,6 +4,13 @@
 0.3.0 (2024-01-23)
 ------------------
 
+**Breaking changes**
+
+- 🥒 Change pickle format so that backwards-compatible unpickling is possible
+  in the future.
+
+**Added**
+
 - 🔨 Added ``strptime()`` to ``UTCDateTime``, ``OffsetDateTime`` and
   ``NaiveDateTime``.
 - 📋 Added ``rfc2822()``/``from_rfc2822()`` to ``UTCDateTime``, 
