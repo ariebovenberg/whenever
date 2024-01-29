@@ -73,32 +73,25 @@ class DateTime(ABC):
     if TYPE_CHECKING or SPHINX_BUILD:
 
         @property
-        def year(self) -> int:
-            ...
+        def year(self) -> int: ...
 
         @property
-        def month(self) -> int:
-            ...
+        def month(self) -> int: ...
 
         @property
-        def day(self) -> int:
-            ...
+        def day(self) -> int: ...
 
         @property
-        def hour(self) -> int:
-            ...
+        def hour(self) -> int: ...
 
         @property
-        def minute(self) -> int:
-            ...
+        def minute(self) -> int: ...
 
         @property
-        def second(self) -> int:
-            ...
+        def second(self) -> int: ...
 
         @property
-        def microsecond(self) -> int:
-            ...
+        def microsecond(self) -> int: ...
 
         def weekday(self) -> int:
             """The day of the week as an integer (Monday=0, Sunday=6)"""
@@ -275,13 +268,11 @@ class AwareDateTime(DateTime):
 
     @overload
     @abstractmethod
-    def as_offset(self, /) -> OffsetDateTime:
-        ...
+    def as_offset(self, /) -> OffsetDateTime: ...
 
     @overload
     @abstractmethod
-    def as_offset(self, offset: timedelta, /) -> OffsetDateTime:
-        ...
+    def as_offset(self, offset: timedelta, /) -> OffsetDateTime: ...
 
     @abstractmethod
     def as_offset(self, offset: timedelta | None = None, /) -> OffsetDateTime:
@@ -553,8 +544,7 @@ class UTCDateTime(AwareDateTime):
             minute: int | NOT_SET = NOT_SET(),
             second: int | NOT_SET = NOT_SET(),
             microsecond: int | NOT_SET = NOT_SET(),
-        ) -> UTCDateTime:
-            ...
+        ) -> UTCDateTime: ...
 
     else:
 
@@ -618,17 +608,14 @@ class UTCDateTime(AwareDateTime):
     if TYPE_CHECKING:
 
         @overload
-        def __sub__(self, other: AwareDateTime) -> timedelta:
-            ...
+        def __sub__(self, other: AwareDateTime) -> timedelta: ...
 
         @overload
-        def __sub__(self, other: timedelta) -> UTCDateTime:
-            ...
+        def __sub__(self, other: timedelta) -> UTCDateTime: ...
 
         def __sub__(
             self, other: AwareDateTime | timedelta
-        ) -> AwareDateTime | timedelta:
-            ...
+        ) -> AwareDateTime | timedelta: ...
 
     else:
 
@@ -661,12 +648,10 @@ class UTCDateTime(AwareDateTime):
         return self
 
     @overload
-    def as_offset(self, /) -> OffsetDateTime:
-        ...
+    def as_offset(self, /) -> OffsetDateTime: ...
 
     @overload
-    def as_offset(self, offset: timedelta, /) -> OffsetDateTime:
-        ...
+    def as_offset(self, offset: timedelta, /) -> OffsetDateTime: ...
 
     def as_offset(self, offset: timedelta | None = None, /) -> OffsetDateTime:
         return OffsetDateTime._from_py_unchecked(
@@ -939,8 +924,7 @@ class OffsetDateTime(AwareDateTime):
     if TYPE_CHECKING:
 
         @property
-        def tzinfo(self) -> _timezone:
-            ...
+        def tzinfo(self) -> _timezone: ...
 
     else:
         tzinfo = property(attrgetter("_py_dt.tzinfo"))
@@ -959,8 +943,7 @@ class OffsetDateTime(AwareDateTime):
             second: int | NOT_SET = NOT_SET(),
             microsecond: int | NOT_SET = NOT_SET(),
             offset: timedelta | NOT_SET = NOT_SET(),
-        ) -> OffsetDateTime:
-            ...
+        ) -> OffsetDateTime: ...
 
     else:
 
@@ -1035,12 +1018,10 @@ class OffsetDateTime(AwareDateTime):
         return UTCDateTime._from_py_unchecked(self._py_dt.astimezone(_UTC))
 
     @overload
-    def as_offset(self, /) -> OffsetDateTime:
-        ...
+    def as_offset(self, /) -> OffsetDateTime: ...
 
     @overload
-    def as_offset(self, offset: timedelta, /) -> OffsetDateTime:
-        ...
+    def as_offset(self, offset: timedelta, /) -> OffsetDateTime: ...
 
     def as_offset(self, offset: timedelta | None = None, /) -> OffsetDateTime:
         return (
@@ -1377,8 +1358,7 @@ class ZonedDateTime(AwareDateTime):
             microsecond: int | NOT_SET = NOT_SET(),
             tz: str | NOT_SET = NOT_SET(),
             disambiguate: Disambiguate | NOT_SET = NOT_SET(),
-        ) -> ZonedDateTime:
-            ...
+        ) -> ZonedDateTime: ...
 
     else:
 
@@ -1495,17 +1475,14 @@ class ZonedDateTime(AwareDateTime):
     if TYPE_CHECKING:
 
         @overload
-        def __sub__(self, other: AwareDateTime) -> timedelta:
-            ...
+        def __sub__(self, other: AwareDateTime) -> timedelta: ...
 
         @overload
-        def __sub__(self, other: timedelta) -> ZonedDateTime:
-            ...
+        def __sub__(self, other: timedelta) -> ZonedDateTime: ...
 
         def __sub__(
             self, other: AwareDateTime | timedelta
-        ) -> AwareDateTime | timedelta:
-            ...
+        ) -> AwareDateTime | timedelta: ...
 
     else:
 
@@ -1544,12 +1521,10 @@ class ZonedDateTime(AwareDateTime):
         return UTCDateTime._from_py_unchecked(self._py_dt.astimezone(_UTC))
 
     @overload
-    def as_offset(self, /) -> OffsetDateTime:
-        ...
+    def as_offset(self, /) -> OffsetDateTime: ...
 
     @overload
-    def as_offset(self, offset: timedelta, /) -> OffsetDateTime:
-        ...
+    def as_offset(self, offset: timedelta, /) -> OffsetDateTime: ...
 
     def as_offset(self, offset: timedelta | None = None, /) -> OffsetDateTime:
         return OffsetDateTime._from_py_unchecked(
@@ -1855,8 +1830,7 @@ class LocalDateTime(AwareDateTime):
             second: int | NOT_SET = NOT_SET(),
             microsecond: int | NOT_SET = NOT_SET(),
             disambiguate: Disambiguate | NOT_SET = NOT_SET(),
-        ) -> LocalDateTime:
-            ...
+        ) -> LocalDateTime: ...
 
     else:
 
@@ -1894,17 +1868,14 @@ class LocalDateTime(AwareDateTime):
     if TYPE_CHECKING:
 
         @overload
-        def __sub__(self, other: AwareDateTime) -> timedelta:
-            ...
+        def __sub__(self, other: AwareDateTime) -> timedelta: ...
 
         @overload
-        def __sub__(self, other: timedelta) -> LocalDateTime:
-            ...
+        def __sub__(self, other: timedelta) -> LocalDateTime: ...
 
         def __sub__(
             self, other: AwareDateTime | timedelta
-        ) -> AwareDateTime | timedelta:
-            ...
+        ) -> AwareDateTime | timedelta: ...
 
     else:
 
@@ -1989,12 +1960,10 @@ class LocalDateTime(AwareDateTime):
         return UTCDateTime._from_py_unchecked(d)
 
     @overload
-    def as_offset(self, /) -> OffsetDateTime:
-        ...
+    def as_offset(self, /) -> OffsetDateTime: ...
 
     @overload
-    def as_offset(self, offset: timedelta, /) -> OffsetDateTime:
-        ...
+    def as_offset(self, offset: timedelta, /) -> OffsetDateTime: ...
 
     def as_offset(self, offset: timedelta | None = None, /) -> OffsetDateTime:
         if not self.exists():
@@ -2131,8 +2100,7 @@ class NaiveDateTime(DateTime):
             minute: int | NOT_SET = NOT_SET(),
             second: int | NOT_SET = NOT_SET(),
             microsecond: int | NOT_SET = NOT_SET(),
-        ) -> NaiveDateTime:
-            ...
+        ) -> NaiveDateTime: ...
 
     else:
 
@@ -2215,17 +2183,14 @@ class NaiveDateTime(DateTime):
     if TYPE_CHECKING:
 
         @overload
-        def __sub__(self, other: NaiveDateTime) -> timedelta:
-            ...
+        def __sub__(self, other: NaiveDateTime) -> timedelta: ...
 
         @overload
-        def __sub__(self, other: timedelta) -> NaiveDateTime:
-            ...
+        def __sub__(self, other: timedelta) -> NaiveDateTime: ...
 
         def __sub__(
             self, other: NaiveDateTime | timedelta
-        ) -> NaiveDateTime | timedelta:
-            ...
+        ) -> NaiveDateTime | timedelta: ...
 
     else:
 
