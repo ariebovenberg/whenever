@@ -37,7 +37,7 @@ mypy = "^1.0.0"
 pytest-mypy-plugins = "^3.0.0"
 
 [tool.poetry.group.linting.dependencies]
-black = "^23.1"
+black = ">=23.1,<25.0"
 flake8 = ">=6,<8"
 isort = "^5.7.0"
 slotscheck = "^0.17.0"
