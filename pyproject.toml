@@ -25,7 +25,7 @@ python = ">=3.8.1,<4.0"
 backports-zoneinfo = {version = "^0.2.1", python = "<3.9"}
 
 [tool.poetry.group.test.dependencies]
-pytest = "^7.0.1"
+pytest = ">=7.0.1,<9.0.0"
 pytest-cov = "^4.0.0"
 pytest-benchmark = "^4.0.0"
 pytest-mypy-plugins = "^3.0.0"
