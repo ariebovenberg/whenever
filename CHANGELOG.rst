@@ -1,6 +1,12 @@
 🚀 Changelog
 ============
 
+0.3.1 (2024-02-01)
+------------------
+
+- 📦 Fix packaging metadata issue involving README and CHANGELOG being
+  installed in the wrong place (#23)
+
 0.3.0 (2024-01-23)
 ------------------
 
