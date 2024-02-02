@@ -243,15 +243,44 @@ This project is inspired by the following projects. Check them out!
 Contributing
 ------------
 
-Contributions are welcome! Please open an issue or pull request.
+Contributions are welcome! Please open an issue or a pull request.
 
-An example of setting up things and running the tests:
+  ⚠️ **Note**: big changes should be discussed in an issue first.
+  This is to avoid wasted effort if the change isn't a good fit for the project.
+
+..
+
+  ⚠️ **Note**: Some tests are skipped on Windows.
+  These tests use unix-specific features to set the timezone for the current process.
+  As a result, you won't get 100% coverage on Windows, or be able to run
+  certain tests that rely on the system timezone.
+  It can be made to work on Windows too, but I haven't gotten around to it yet.
+
+Setting up a development environment
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+You'll need `poetry <https://python-poetry.org/>`_ installed.
+An example of setting up things up:
 
 .. code-block:: bash
 
    poetry install
+
+   # To run the tests with the current Python version
    pytest
 
-⚠️ **Note**: The tests don't run on Windows yet. This is because
-the tests use unix-specific features to set the timezone for the current process.
-It can be made to work on Windows too, but I haven't gotten around to it yet.
+   # if you want to build the docs
+   pip install -r docs/requirements.txt
+
+   # Various checks
+   mypy src/ tests/
+   flake8 src/ tests/
+
+   # autoformatting
+   black src/ tests/
+   isort src/ tests/
+
+   # To run the tests with all supported Python versions
+   # Alternatively, let the github actions on the PR do it for you
+   pip install tox
+   tox -p auto
