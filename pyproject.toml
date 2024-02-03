@@ -20,7 +20,7 @@ repository = "https://github.com/ariebovenberg/whenever"
 keywords = ["datetime"]
 
 [tool.poetry.dependencies]
-python = ">=3.8.1,<4.0"
+python = ">=3.8.1"
 backports-zoneinfo = {version = "^0.2.1", python = "<3.9"}
 
 [tool.poetry.group.test.dependencies]
