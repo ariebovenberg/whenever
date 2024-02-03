@@ -252,9 +252,8 @@ Contributions are welcome! Please open an issue or a pull request.
 
   ⚠️ **Note**: Some tests are skipped on Windows.
   These tests use unix-specific features to set the timezone for the current process.
-  As a result, you won't get 100% coverage on Windows, or be able to run
-  certain tests that rely on the system timezone.
-  It can be made to work on Windows too, but I haven't gotten around to it yet.
+  As a result, Windows isn't able to run certain tests that rely on the system timezone.
+  It appears that `this functionality is not available on Windows <https://stackoverflow.com/questions/62004265/python-3-time-tzset-alternative-for-windows>`_.
 
 Setting up a development environment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
