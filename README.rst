@@ -44,7 +44,7 @@ Benefits
 - Based on familiar concepts from other languages. Doesn't reinvent the wheel
 - Simple and obvious. No frills or surprises
 - `Thoroughly documented <https://whenever.rtfd.io/en/latest/overview.html>`_ and tested
-- No dependencies
+- No third-party dependencies
 
 Quickstart
 ----------
