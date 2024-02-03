@@ -22,6 +22,7 @@ keywords = ["datetime"]
 [tool.poetry.dependencies]
 python = ">=3.8.1"
 backports-zoneinfo = {version = "^0.2.1", python = "<3.9"}
+tzdata = {version = ">=2023.4", markers = 'sys_platform == "win32"'}
 
 [tool.poetry.group.test.dependencies]
 pytest = ">=7.0.1,<9.0.0"
