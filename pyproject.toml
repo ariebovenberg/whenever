@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "whenever"
-version = "0.3.2"
+version = "0.3.3"
 description = "Foolproof datetimes for maintainable code"
 authors = ["Arie Bovenberg <a.c.bovenberg@gmail.com>"]
 license = "MIT"
@@ -40,7 +40,7 @@ pytest-mypy-plugins = "^3.0.0"
 black = "^24"
 flake8 = ">=6,<8"
 isort = "^5.7.0"
-slotscheck = "^0.17.0"
+slotscheck = "^0.17.2"
 
 [tool.black]
 line-length = 79

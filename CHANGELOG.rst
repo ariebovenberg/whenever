@@ -1,6 +1,11 @@
 🚀 Changelog
 ============
 
+0.3.3 (2024-02-04)
+------------------
+
+- 💾 Add CPython-maintained ``tzdata`` package as Windows dependency (#32)
+
 0.3.2 (2024-02-03)
 ------------------
 
