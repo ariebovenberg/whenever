@@ -28,20 +28,20 @@ Do you cross your fingers every time you work with datetimes,
 hoping that you didn't mix naive and aware?
 or that you converted to UTC everywhere?
 or that you avoided the many `pitfalls of the standard library <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_?
-There's no way to be sure, until you run your code...
+There's no way to be sure...
 
 ✨ Until now! ✨
 
 **Whenever** is a datetime library designed from the ground up to enforce correctness.
-Mistakes become red squiggles in your IDE, instead of production outages.
+Mistakes become red squiggles in your IDE, instead of bugs in production.
 
 Benefits
 --------
 
 - Distinct classes with well-defined behavior
-- Fixes timezone quirks that `even pendulum doesn't address <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_
+- Fixes datetime pitfalls that `Arrow and Pendulum don't address <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_
 - Enforce correctness without runtime checks
-- Based on familiar concepts from other languages. Doesn't reinvent the wheel
+- Based on `familiar concepts from other languages <https://www.youtube.com/watch?v=saeKBuPewcU>`_. Doesn't reinvent the wheel
 - Simple and obvious. No frills or surprises
 - `Thoroughly documented <https://whenever.rtfd.io/en/latest/overview.html>`_ and tested
 - No third-party dependencies
@@ -237,8 +237,8 @@ Acknowledgements
 This project is inspired by the following projects. Check them out!
 
 - `Noda Time <https://nodatime.org/>`_
+- `Temporal <https://tc39.es/proposal-temporal/docs/>`_
 - `Chrono <https://docs.rs/chrono/latest/chrono/>`_
-- `DateType <https://github.com/glyph/DateType/tree/trunk>`_
 
 Contributing
 ------------
