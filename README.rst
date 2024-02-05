@@ -39,7 +39,7 @@ Benefits
 --------
 
 - Distinct classes with well-defined behavior
-- Fixes datetime pitfalls that `Arrow and Pendulum don't address <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_
+- Fixes pitfalls that `Arrow and Pendulum don't address <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_
 - Enforce correctness without runtime checks
 - Based on `familiar concepts from other languages <https://www.youtube.com/watch?v=saeKBuPewcU>`_. Doesn't reinvent the wheel
 - Simple and obvious. No frills or surprises
