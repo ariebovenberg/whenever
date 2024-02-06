@@ -318,13 +318,13 @@ You choose the disambiguation behavior you want with the ``disambiguate=`` argum
     >>> ZonedDateTime(2023, 1, 1, tz=ams)
 
     # Ambiguous: 1:30am occurs twice. Refuse to guess.
-    >>> ZonedDateTime(2023, 10, 29, 1, 30, tz=ams)
+    >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=ams)
     Traceback (most recent call last):
       ...
-    whenever.Ambiguous
+    whenever.Ambiguous: 2023-10-29 02:30:00 is ambiguous in timezone Europe/Amsterdam
 
     # Ambiguous: explicitly choose the earlier option
-    >>> ZonedDateTime(2023, 10, 29, 1, 30, tz=ams, disambiguate="earlier")
+    >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=ams, disambiguate="earlier")
 
 
 Non-existence
@@ -343,7 +343,8 @@ prevent you from creating non-existent datetimes, by raising a
     >>> ZonedDateTime(2023, 3, 26, 2, 30, tz="Europe/Amsterdam")
     Traceback (most recent call last):
       ...
-    whenever.DoesntExistInZone
+    whenever.DoesntExistInZone: 2023-03-26 02:30:00 doesn't exist in timezone
+    Europe/Amsterdam
 
 
 Converting to/from standard library ``datetime``

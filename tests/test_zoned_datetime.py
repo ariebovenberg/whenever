@@ -53,9 +53,11 @@ class TestInit:
 
     def test_ambiguous(self):
         # default behavior: raise
-        with pytest.raises(Ambiguous):
+        with pytest.raises(
+            Ambiguous,
+            match="2023-10-29 02:15:30 is ambiguous in timezone Europe/Amsterdam",
+        ):
             ZonedDateTime(2023, 10, 29, 2, 15, 30, tz="Europe/Amsterdam")
-
         d1 = ZonedDateTime(
             2023,
             10,
@@ -107,9 +109,10 @@ class TestInit:
         )
 
     def test_nonexistent(self):
-        with pytest.raises(DoesntExistInZone):
-            ZonedDateTime(2023, 3, 26, 2, 15, 30, tz="Europe/Amsterdam")
-        with pytest.raises(DoesntExistInZone):
+        with pytest.raises(
+            DoesntExistInZone,
+            match="2023-03-26 02:15:30 doesn't exist in timezone Europe/Amsterdam",
+        ):
             ZonedDateTime(2023, 3, 26, 2, 15, 30, tz="Europe/Amsterdam")
 
 
@@ -373,9 +376,11 @@ class TestFromNaive:
 
     def test_ambiguous(self):
         d = NaiveDateTime(2023, 10, 29, 2, 15)
-        with pytest.raises(Ambiguous):
+        with pytest.raises(
+            Ambiguous,
+            match="2023-10-29 02:15:00 is ambiguous in timezone Europe/Amsterdam",
+        ):
             ZonedDateTime.from_naive(d, tz="Europe/Amsterdam")
-
         assert ZonedDateTime.from_naive(
             d, tz="Europe/Amsterdam", disambiguate="earlier"
         ).exact_eq(
@@ -405,7 +410,10 @@ class TestFromNaive:
 
     def test_doesnt_exist(self):
         d = NaiveDateTime(2023, 3, 26, 2, 15)
-        with pytest.raises(DoesntExistInZone):
+        with pytest.raises(
+            DoesntExistInZone,
+            match="2023-03-26 02:15:00 doesn't exist in timezone Europe/Amsterdam",
+        ):
             ZonedDateTime.from_naive(d, tz="Europe/Amsterdam")
 
 
@@ -746,7 +754,10 @@ def test_from_py():
     with pytest.raises(ValueError, match="utc"):
         ZonedDateTime.from_py(d2)
 
-    with pytest.raises(DoesntExistInZone):
+    with pytest.raises(
+        DoesntExistInZone,
+        match="2023-03-26 02:15:30 doesn't exist in timezone Europe/Amsterdam",
+    ):
         ZonedDateTime.from_py(
             py_datetime(
                 2023, 3, 26, 2, 15, 30, tzinfo=ZoneInfo("Europe/Amsterdam")
@@ -881,9 +892,11 @@ class TestReplace:
             tz="Europe/Amsterdam",
             disambiguate="earlier",
         )
-        with pytest.raises(Ambiguous):
+        with pytest.raises(
+            Ambiguous,
+            match="2023-10-29 02:15:30 is ambiguous in timezone Europe/Amsterdam",
+        ):
             d.replace(disambiguate="raise")
-
         assert d.replace(disambiguate="later").exact_eq(
             ZonedDateTime(
                 2023,
@@ -900,7 +913,10 @@ class TestReplace:
 
     def test_nonexistent(self):
         d = ZonedDateTime(2023, 3, 26, 1, 15, 30, tz="Europe/Amsterdam")
-        with pytest.raises(DoesntExistInZone):
+        with pytest.raises(
+            DoesntExistInZone,
+            match="2023-03-26 02:15:30 doesn't exist in timezone Europe/Amsterdam",
+        ):
             d.replace(hour=2)
 
 
