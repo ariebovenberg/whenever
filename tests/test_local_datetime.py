@@ -61,22 +61,40 @@ class TestInit:
     def test_ambiguous(self):
         d = LocalDateTime(2023, 10, 29, 2, 15, disambiguate="earlier")
         assert d < LocalDateTime(2023, 10, 29, 2, 15, disambiguate="later")
-        with pytest.raises(Ambiguous):
+
+        with pytest.raises(Ambiguous) as e:
             LocalDateTime(2023, 10, 29, 2, 15, disambiguate="raise")
-        with pytest.raises(Ambiguous):
+        assert (
+            str(e.value)
+            == "2023-10-29 02:15:00 is ambiguous in the system timezone"
+        )
+
+        with pytest.raises(Ambiguous) as e:
             LocalDateTime(2023, 10, 29, 2, 15)
+        assert (
+            str(e.value)
+            == "2023-10-29 02:15:00 is ambiguous in the system timezone"
+        )
 
     @local_ams_tz()
     def test_nonexistent(self):
-        with pytest.raises(DoesntExistInZone):
+        with pytest.raises(DoesntExistInZone) as e:
             LocalDateTime(2023, 3, 26, 2, 15, 30)
+        assert (
+            str(e.value)
+            == "2023-03-26 02:15:30 doesn't exist in the system timezone"
+        )
 
 
 @local_nyc_tz()
 def test_offset_nonexistent():
     d = LocalDateTime(2023, 3, 26, 2, 15)
-    with local_ams_tz(), pytest.raises(DoesntExistInZone):
+    with local_ams_tz(), pytest.raises(DoesntExistInZone) as e:
         d.offset
+    assert (
+        str(e.value)
+        == "2023-03-26 02:15:00 doesn't exist in the system timezone"
+    )
 
 
 class TestToUTC:
@@ -98,8 +116,12 @@ class TestToUTC:
     @local_nyc_tz()
     def test_doesnt_exist(self):
         d = LocalDateTime(2023, 3, 26, 2, 15)
-        with local_ams_tz(), pytest.raises(DoesntExistInZone):
+        with local_ams_tz(), pytest.raises(DoesntExistInZone) as e:
             d.as_utc()
+        assert (
+            str(e.value)
+            == "2023-03-26 02:15:00 doesn't exist in the system timezone"
+        )
 
 
 def test_naive():
@@ -117,8 +139,12 @@ class TestFromNaive:
     @local_ams_tz()
     def test_ambiguous(self):
         d = NaiveDateTime(2023, 10, 29, 2, 15)
-        with pytest.raises(Ambiguous):
+        with pytest.raises(Ambiguous) as e:
             LocalDateTime.from_naive(d)
+        assert (
+            str(e.value)
+            == "2023-10-29 02:15:00 is ambiguous in the system timezone"
+        )
 
         assert LocalDateTime.from_naive(d, disambiguate="earlier").exact_eq(
             LocalDateTime(
@@ -144,8 +170,12 @@ class TestFromNaive:
     @local_ams_tz()
     def test_doesnt_exist(self):
         d = NaiveDateTime(2023, 3, 26, 2, 15)
-        with pytest.raises(DoesntExistInZone):
+        with pytest.raises(DoesntExistInZone) as e:
             LocalDateTime.from_naive(d)
+        assert (
+            str(e.value)
+            == "2023-03-26 02:15:00 doesn't exist in the system timezone"
+        )
 
 
 @local_ams_tz()
@@ -170,8 +200,12 @@ def test_to_zoned():
 
     # non-existent time
     d = LocalDateTime(2023, 3, 12, 2, 15)
-    with local_nyc_tz(), pytest.raises(DoesntExistInZone):
+    with local_nyc_tz(), pytest.raises(DoesntExistInZone) as e:
         d.as_zoned("Europe/London")
+    assert (
+        str(e.value)
+        == "2023-03-12 02:15:00 doesn't exist in the system timezone"
+    )
 
 
 class TestToOffset:
@@ -209,8 +243,12 @@ class TestToOffset:
     @local_nyc_tz()
     def test_doesnt_exist(self):
         d = LocalDateTime(2023, 3, 26, 2, 15)
-        with local_ams_tz(), pytest.raises(DoesntExistInZone):
+        with local_ams_tz(), pytest.raises(DoesntExistInZone) as e:
             d.as_offset()
+        assert (
+            str(e.value)
+            == "2023-03-26 02:15:00 doesn't exist in the system timezone"
+        )
 
 
 def test_to_local():
@@ -245,10 +283,15 @@ class TestCanonicalStr:
     @local_nyc_tz()
     def test_doesnt_exist(self):
         d = LocalDateTime(2023, 3, 26, 2, 15)
-        with local_ams_tz(), pytest.raises(DoesntExistInZone):
+        with local_ams_tz(), pytest.raises(
+            DoesntExistInZone,
+            match="2023-03-26 02:15:00 doesn't exist in the system timezone",
+        ):
             str(d)
-
-        with local_ams_tz(), pytest.raises(DoesntExistInZone):
+        with local_ams_tz(), pytest.raises(
+            DoesntExistInZone,
+            match="2023-03-26 02:15:00 doesn't exist in the system timezone",
+        ):
             d.canonical_str()
 
 
@@ -624,7 +667,10 @@ class TestFromPy:
 
     @local_ams_tz()
     def test_doesnt_exist(self):
-        with pytest.raises(DoesntExistInZone):
+        with pytest.raises(
+            DoesntExistInZone,
+            match="2023-03-26 02:15:00 doesn't exist in the system timezone",
+        ):
             LocalDateTime.from_py(py_datetime(2023, 3, 26, 2, 15))
 
 
@@ -689,12 +735,16 @@ class TestReplace:
     @local_ams_tz()
     def test_disambiguate(self):
         d = LocalDateTime(2023, 10, 29, 2, 15, 30, disambiguate="earlier")
-        with pytest.raises(Ambiguous):
+        with pytest.raises(
+            Ambiguous,
+            match="2023-10-29 02:15:30 is ambiguous in the system timezone",
+        ):
             d.replace(disambiguate="raise")
-
-        with pytest.raises(Ambiguous):
+        with pytest.raises(
+            Ambiguous,
+            match="2023-10-29 02:15:30 is ambiguous in the system timezone",
+        ):
             d.replace()
-
         assert d.replace(disambiguate="later").exact_eq(
             LocalDateTime(2023, 10, 29, 2, 15, 30, disambiguate="later")
         )
@@ -703,7 +753,10 @@ class TestReplace:
     @local_ams_tz()
     def test_nonexistent(self):
         d = LocalDateTime(2023, 3, 26, 1, 15, 30)
-        with pytest.raises(DoesntExistInZone):
+        with pytest.raises(
+            DoesntExistInZone,
+            match="2023-03-26 02:15:30 doesn't exist in the system timezone",
+        ):
             d.replace(hour=2)
 
 
@@ -726,7 +779,10 @@ class TestAdd:
     @local_nyc_tz()
     def test_non_existent(self):
         d = LocalDateTime(2023, 3, 26, 2, 15)
-        with local_ams_tz(), pytest.raises(DoesntExistInZone):
+        with local_ams_tz(), pytest.raises(
+            DoesntExistInZone,
+            match="2023-03-26 02:15:00 doesn't exist in the system timezone",
+        ):
             d + minutes(10)
 
     @local_ams_tz()
@@ -770,10 +826,15 @@ class TestSubtract:
     @local_nyc_tz()
     def test_non_existent(self):
         d = LocalDateTime(2023, 3, 26, 2, 15)
-        with local_ams_tz(), pytest.raises(DoesntExistInZone):
+        with local_ams_tz(), pytest.raises(
+            DoesntExistInZone,
+            match="2023-03-26 02:15:00 doesn't exist in the system timezone",
+        ):
             d - minutes(10)
-
-        with local_ams_tz(), pytest.raises(DoesntExistInZone):
+        with local_ams_tz(), pytest.raises(
+            DoesntExistInZone,
+            match="2023-03-26 02:15:00 doesn't exist in the system timezone",
+        ):
             d - LocalDateTime(2023, 1, 1)
 
     @local_ams_tz()
