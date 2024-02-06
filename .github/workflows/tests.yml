@@ -9,6 +9,21 @@ on:
       - main
 
 jobs:
+  poetry-lockfile:
+    name: check that poetry.lock is up to date with pyproject.toml
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install 'poetry>=1.7,<1.8'
+        poetry check --lock
+
   build:
     runs-on: ubuntu-latest
     strategy:

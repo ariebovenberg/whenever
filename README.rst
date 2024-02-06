@@ -28,23 +28,23 @@ Do you cross your fingers every time you work with datetimes,
 hoping that you didn't mix naive and aware?
 or that you converted to UTC everywhere?
 or that you avoided the many `pitfalls of the standard library <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_?
-There's no way to be sure, until you run your code...
+There's no way to be sure...
 
 ✨ Until now! ✨
 
 **Whenever** is a datetime library designed from the ground up to enforce correctness.
-Mistakes become red squiggles in your IDE, instead of production outages.
+Mistakes become red squiggles in your IDE, instead of bugs in production.
 
 Benefits
 --------
 
 - Distinct classes with well-defined behavior
-- Fixes timezone quirks that `even pendulum doesn't address <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_
+- Fixes datetime pitfalls that `Arrow and Pendulum don't address <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_
 - Enforce correctness without runtime checks
-- Based on familiar concepts from other languages. Doesn't reinvent the wheel
+- Based on `familiar concepts from other languages <https://www.youtube.com/watch?v=saeKBuPewcU>`_. Doesn't reinvent the wheel
 - Simple and obvious. No frills or surprises
 - `Thoroughly documented <https://whenever.rtfd.io/en/latest/overview.html>`_ and tested
-- No dependencies
+- No third-party dependencies
 
 Quickstart
 ----------
@@ -237,21 +237,49 @@ Acknowledgements
 This project is inspired by the following projects. Check them out!
 
 - `Noda Time <https://nodatime.org/>`_
+- `Temporal <https://tc39.es/proposal-temporal/docs/>`_
 - `Chrono <https://docs.rs/chrono/latest/chrono/>`_
-- `DateType <https://github.com/glyph/DateType/tree/trunk>`_
 
 Contributing
 ------------
 
-Contributions are welcome! Please open an issue or pull request.
+Contributions are welcome! Please open an issue or a pull request.
 
-An example of setting up things and running the tests:
+  ⚠️ **Note**: big changes should be discussed in an issue first.
+  This is to avoid wasted effort if the change isn't a good fit for the project.
+
+..
+
+  ⚠️ **Note**: Some tests are skipped on Windows.
+  These tests use unix-specific features to set the timezone for the current process.
+  As a result, Windows isn't able to run certain tests that rely on the system timezone.
+  It appears that `this functionality is not available on Windows <https://stackoverflow.com/questions/62004265/python-3-time-tzset-alternative-for-windows>`_.
+
+Setting up a development environment
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+You'll need `poetry <https://python-poetry.org/>`_ installed.
+An example of setting up things up:
 
 .. code-block:: bash
 
    poetry install
+
+   # To run the tests with the current Python version
    pytest
 
-⚠️ **Note**: The tests don't run on Windows yet. This is because
-the tests use unix-specific features to set the timezone for the current process.
-It can be made to work on Windows too, but I haven't gotten around to it yet.
+   # if you want to build the docs
+   pip install -r docs/requirements.txt
+
+   # Various checks
+   mypy src/ tests/
+   flake8 src/ tests/
+
+   # autoformatting
+   black src/ tests/
+   isort src/ tests/
+
+   # To run the tests with all supported Python versions
+   # Alternatively, let the github actions on the PR do it for you
+   pip install tox
+   tox -p auto

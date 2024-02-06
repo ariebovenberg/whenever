@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "whenever"
-version = "0.3.1"
+version = "0.3.3"
 description = "Foolproof datetimes for maintainable code"
 authors = ["Arie Bovenberg <a.c.bovenberg@gmail.com>"]
 license = "MIT"
@@ -20,8 +20,9 @@ repository = "https://github.com/ariebovenberg/whenever"
 keywords = ["datetime"]
 
 [tool.poetry.dependencies]
-python = ">=3.8.1,<4.0"
+python = ">=3.8.1"
 backports-zoneinfo = {version = "^0.2.1", python = "<3.9"}
+tzdata = {version = ">=2020.1", markers = 'sys_platform == "win32"'}
 
 [tool.poetry.group.test.dependencies]
 pytest = ">=7.0.1,<9.0.0"
@@ -39,7 +40,7 @@ pytest-mypy-plugins = "^3.0.0"
 black = "^24"
 flake8 = ">=6,<8"
 isort = "^5.7.0"
-slotscheck = "^0.17.0"
+slotscheck = "^0.17.2"
 
 [tool.black]
 line-length = 79

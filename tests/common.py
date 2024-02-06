@@ -1,8 +1,10 @@
 import os
 import sys
+import time
 from contextlib import contextmanager
-from time import tzset
 from unittest.mock import patch
+
+import pytest
 
 __all__ = [
     "ZoneInfo",
@@ -12,6 +14,8 @@ __all__ = [
     "AlwaysLarger",
     "AlwaysSmaller",
 ]
+
+IS_WINDOWS = sys.platform == "win32"
 
 
 if sys.version_info >= (3, 9):
@@ -60,13 +64,17 @@ class AlwaysSmaller:
 
 @contextmanager
 def local_ams_tz():
+    if IS_WINDOWS:
+        pytest.skip("tzset is not available on Windows")
     with patch.dict(os.environ, {"TZ": "Europe/Amsterdam"}):
-        tzset()
+        time.tzset()
         yield
 
 
 @contextmanager
 def local_nyc_tz():
+    if IS_WINDOWS:
+        pytest.skip("tzset is not available on Windows")
     with patch.dict(os.environ, {"TZ": "America/New_York"}):
-        tzset()
+        time.tzset()
         yield
