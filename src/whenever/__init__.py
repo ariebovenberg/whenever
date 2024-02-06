@@ -1,20 +1,50 @@
+# The MIT License (MIT)
+
+# Copyright (c) Arie Bovenberg
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
 # Maintainer's notes:
 #
-# There is some code duplication in this file. This is intentional:
-# - It makes it easier to understand the code
-# - It's sometimes necessary for the type checker
-# - It saves some overhead
+# - Why is everything in one file?
+#   - Flat is better than nested
+#   - It prevents circular imports since the classes 'know' about each other
+#   - It's easier to vendor (i.e. copy-paste) this library if needed
+# - There is some code duplication in this file. This is intentional:
+#   - It makes it easier to understand the code
+#   - It's sometimes necessary for the type checker
+#   - It saves some overhead
 from __future__ import annotations
+
+__version__ = "0.4.0rc0"
 
 import re
 import sys
 from abc import ABC, abstractmethod
-from datetime import date as _date
-from datetime import datetime as _datetime
-from datetime import time as _time
-from datetime import timedelta
-from datetime import timezone as _timezone
-from datetime import tzinfo as _tzinfo
+from datetime import (
+    date as _date,
+    datetime as _datetime,
+    time as _time,
+    timedelta,
+    timezone as _timezone,
+    tzinfo as _tzinfo,
+)
 from email.utils import format_datetime, parsedate_to_datetime
 from operator import attrgetter
 from typing import (
@@ -73,25 +103,32 @@ class DateTime(ABC):
     if TYPE_CHECKING or SPHINX_BUILD:
 
         @property
-        def year(self) -> int: ...
+        def year(self) -> int:
+            ...
 
         @property
-        def month(self) -> int: ...
+        def month(self) -> int:
+            ...
 
         @property
-        def day(self) -> int: ...
+        def day(self) -> int:
+            ...
 
         @property
-        def hour(self) -> int: ...
+        def hour(self) -> int:
+            ...
 
         @property
-        def minute(self) -> int: ...
+        def minute(self) -> int:
+            ...
 
         @property
-        def second(self) -> int: ...
+        def second(self) -> int:
+            ...
 
         @property
-        def microsecond(self) -> int: ...
+        def microsecond(self) -> int:
+            ...
 
         def weekday(self) -> int:
             """The day of the week as an integer (Monday=0, Sunday=6)"""
@@ -268,11 +305,13 @@ class AwareDateTime(DateTime):
 
     @overload
     @abstractmethod
-    def as_offset(self, /) -> OffsetDateTime: ...
+    def as_offset(self, /) -> OffsetDateTime:
+        ...
 
     @overload
     @abstractmethod
-    def as_offset(self, offset: timedelta, /) -> OffsetDateTime: ...
+    def as_offset(self, offset: timedelta, /) -> OffsetDateTime:
+        ...
 
     @abstractmethod
     def as_offset(self, offset: timedelta | None = None, /) -> OffsetDateTime:
@@ -294,17 +333,19 @@ class AwareDateTime(DateTime):
             self._py_dt.astimezone(ZoneInfo(tz))
         )
 
-    def as_local(self) -> LocalDateTime:
-        """Convert into a an equivalent LocalDateTime.
-        The result will always represent the same moment in time.
-        """
-        return LocalDateTime._from_py_unchecked(_to_local(self._py_dt))
+    def to_local(self) -> LocalDateTime:
+        """Convert into a datetime in the local system timezone."""
+        return LocalDateTime._from_py_unchecked(
+            self._py_dt.astimezone().replace(tzinfo=None)
+        )
 
     def naive(self) -> NaiveDateTime:
         """Convert into a naive datetime, dropping all timezone information
 
-        Each subclass also defines an inverse ``from_naive()`` method,
-        which may require additional arguments.
+        As an inverse, :class:`NaiveDateTime` has methods
+        :meth:`~NaiveDateTime.assume_utc`, :meth:`~NaiveDateTime.assume_offset`
+        and :meth:`~NaiveDateTime.assume_zoned`, which may require additional
+        arguments.
         """
         return NaiveDateTime._from_py_unchecked(
             self._py_dt.replace(tzinfo=None)
@@ -544,7 +585,8 @@ class UTCDateTime(AwareDateTime):
             minute: int | NOT_SET = NOT_SET(),
             second: int | NOT_SET = NOT_SET(),
             microsecond: int | NOT_SET = NOT_SET(),
-        ) -> UTCDateTime: ...
+        ) -> UTCDateTime:
+            ...
 
     else:
 
@@ -608,14 +650,17 @@ class UTCDateTime(AwareDateTime):
     if TYPE_CHECKING:
 
         @overload
-        def __sub__(self, other: AwareDateTime) -> timedelta: ...
+        def __sub__(self, other: AwareDateTime) -> timedelta:
+            ...
 
         @overload
-        def __sub__(self, other: timedelta) -> UTCDateTime: ...
+        def __sub__(self, other: timedelta) -> UTCDateTime:
+            ...
 
         def __sub__(
             self, other: AwareDateTime | timedelta
-        ) -> AwareDateTime | timedelta: ...
+        ) -> AwareDateTime | timedelta:
+            ...
 
     else:
 
@@ -648,10 +693,12 @@ class UTCDateTime(AwareDateTime):
         return self
 
     @overload
-    def as_offset(self, /) -> OffsetDateTime: ...
+    def as_offset(self, /) -> OffsetDateTime:
+        ...
 
     @overload
-    def as_offset(self, offset: timedelta, /) -> OffsetDateTime: ...
+    def as_offset(self, offset: timedelta, /) -> OffsetDateTime:
+        ...
 
     def as_offset(self, offset: timedelta | None = None, /) -> OffsetDateTime:
         return OffsetDateTime._from_py_unchecked(
@@ -659,11 +706,6 @@ class UTCDateTime(AwareDateTime):
                 _timezone(offset) if offset else _zero_timezone
             )
         )
-
-    @classmethod
-    def from_naive(cls, d: NaiveDateTime, /) -> UTCDateTime:
-        """Create an instance from a naive datetime."""
-        return cls._from_py_unchecked(d._py_dt.replace(tzinfo=_UTC))
 
     @classmethod
     def strptime(cls, s: str, /, fmt: str) -> UTCDateTime:
@@ -924,7 +966,8 @@ class OffsetDateTime(AwareDateTime):
     if TYPE_CHECKING:
 
         @property
-        def tzinfo(self) -> _timezone: ...
+        def tzinfo(self) -> _timezone:
+            ...
 
     else:
         tzinfo = property(attrgetter("_py_dt.tzinfo"))
@@ -943,7 +986,8 @@ class OffsetDateTime(AwareDateTime):
             second: int | NOT_SET = NOT_SET(),
             microsecond: int | NOT_SET = NOT_SET(),
             offset: timedelta | NOT_SET = NOT_SET(),
-        ) -> OffsetDateTime: ...
+        ) -> OffsetDateTime:
+            ...
 
     else:
 
@@ -1018,10 +1062,12 @@ class OffsetDateTime(AwareDateTime):
         return UTCDateTime._from_py_unchecked(self._py_dt.astimezone(_UTC))
 
     @overload
-    def as_offset(self, /) -> OffsetDateTime: ...
+    def as_offset(self, /) -> OffsetDateTime:
+        ...
 
     @overload
-    def as_offset(self, offset: timedelta, /) -> OffsetDateTime: ...
+    def as_offset(self, offset: timedelta, /) -> OffsetDateTime:
+        ...
 
     def as_offset(self, offset: timedelta | None = None, /) -> OffsetDateTime:
         return (
@@ -1030,15 +1076,6 @@ class OffsetDateTime(AwareDateTime):
             else self._from_py_unchecked(
                 self._py_dt.astimezone(_timezone(offset))
             )
-        )
-
-    @classmethod
-    def from_naive(
-        cls, d: NaiveDateTime, /, offset: timedelta
-    ) -> OffsetDateTime:
-        """Create an instance from a naive datetime."""
-        return cls._from_py_unchecked(
-            d._py_dt.replace(tzinfo=_timezone(offset))
         )
 
     @classmethod
@@ -1281,8 +1318,7 @@ class ZonedDateTime(AwareDateTime):
         tz: str,
         disambiguate: Disambiguate = "raise",
     ) -> None:
-        fold = _as_fold(disambiguate)
-        dt = _datetime(
+        self._py_dt = d = _datetime(
             year,
             month,
             day,
@@ -1290,16 +1326,13 @@ class ZonedDateTime(AwareDateTime):
             minute,
             second,
             microsecond,
-            zone_info := ZoneInfo(tz),
-            fold=fold,
+            zone := ZoneInfo(tz),
+            fold=_as_fold(disambiguate),
         )
-        if not _exists_in_tz(dt):
-            raise DoesntExistInZone.for_timezone(dt, zone_info)
-        if disambiguate == "raise" and dt.astimezone(_UTC) != dt.replace(
-            fold=1
-        ).astimezone(_UTC):
-            raise Ambiguous.for_timezone(dt, zone_info)
-        self._py_dt = dt
+        if not _exists_in_tz(d):
+            raise DoesntExistInZone.for_timezone(d, zone)
+        if disambiguate == "raise" and d.astimezone(_UTC) != d.replace(fold=1):
+            raise Ambiguous.for_timezone(d, zone)
 
     @classmethod
     def now(cls, tz: str) -> ZonedDateTime:
@@ -1358,7 +1391,8 @@ class ZonedDateTime(AwareDateTime):
             microsecond: int | NOT_SET = NOT_SET(),
             tz: str | NOT_SET = NOT_SET(),
             disambiguate: Disambiguate | NOT_SET = NOT_SET(),
-        ) -> ZonedDateTime: ...
+        ) -> ZonedDateTime:
+            ...
 
     else:
 
@@ -1475,14 +1509,17 @@ class ZonedDateTime(AwareDateTime):
     if TYPE_CHECKING:
 
         @overload
-        def __sub__(self, other: AwareDateTime) -> timedelta: ...
+        def __sub__(self, other: AwareDateTime) -> timedelta:
+            ...
 
         @overload
-        def __sub__(self, other: timedelta) -> ZonedDateTime: ...
+        def __sub__(self, other: timedelta) -> ZonedDateTime:
+            ...
 
         def __sub__(
             self, other: AwareDateTime | timedelta
-        ) -> AwareDateTime | timedelta: ...
+        ) -> AwareDateTime | timedelta:
+            ...
 
     else:
 
@@ -1521,10 +1558,12 @@ class ZonedDateTime(AwareDateTime):
         return UTCDateTime._from_py_unchecked(self._py_dt.astimezone(_UTC))
 
     @overload
-    def as_offset(self, /) -> OffsetDateTime: ...
+    def as_offset(self, /) -> OffsetDateTime:
+        ...
 
     @overload
-    def as_offset(self, offset: timedelta, /) -> OffsetDateTime: ...
+    def as_offset(self, offset: timedelta, /) -> OffsetDateTime:
+        ...
 
     def as_offset(self, offset: timedelta | None = None, /) -> OffsetDateTime:
         return OffsetDateTime._from_py_unchecked(
@@ -1536,24 +1575,6 @@ class ZonedDateTime(AwareDateTime):
 
     def as_zoned(self, tz: str, /) -> ZonedDateTime:
         return self._from_py_unchecked(self._py_dt.astimezone(ZoneInfo(tz)))
-
-    @classmethod
-    def from_naive(
-        cls,
-        d: NaiveDateTime,
-        /,
-        tz: str,
-        disambiguate: Disambiguate = "raise",
-    ) -> ZonedDateTime:
-        """Create an instance from a naive datetime."""
-        zinfo = ZoneInfo(tz)
-        zoned = d._py_dt.replace(tzinfo=zinfo, fold=_as_fold(disambiguate))
-        utc = zoned.astimezone(_UTC)
-        if utc.astimezone(zinfo) != zoned:
-            raise DoesntExistInZone.for_timezone(d._py_dt, zinfo)
-        if disambiguate == "raise" and zoned != utc:
-            raise Ambiguous.for_timezone(zoned, zinfo)
-        return cls._from_py_unchecked(zoned)
 
     def __repr__(self) -> str:
         return f"whenever.ZonedDateTime({self})"
@@ -1602,24 +1623,8 @@ def _unpkl_zoned(
     )
 
 
-class LocalDateTime(AwareDateTime):
+class LocalDateTime(DateTime):
     """Represents local time bound to the system timezone.
-
-    The ``disambiguate`` argument controls how ambiguous datetimes are handled:
-
-    - ``"raise"``: ambiguous datetimes raise :class:`Ambiguous`.
-      This will set ``fold=0`` on the inner :class:`~datetime.datetime`.
-    - ``"earlier"``: pick the earlier datetime (before the DST transition).
-      This will set ``fold=0`` on the inner :class:`~datetime.datetime`.
-    - ``"later"``: pick the later datetime (after the DST transition).
-      This will set ``fold=1`` on the inner :class:`~datetime.datetime`.
-
-    Raises
-    ------
-    Ambiguous
-        If ``disambiguate`` is ``"raise"`` and the datetime is ambiguous
-    DoesntExistInZone
-        If the datetime does not exist in the system timezone
 
     Example
     -------
@@ -1632,11 +1637,11 @@ class LocalDateTime(AwareDateTime):
        wake_up = LocalDateTime(2020, 8, 15, hour=8)
 
        # Conversion based on Los Angeles' offset
-       wake_up.as_utc()  # 2020-08-15T15:00:00Z
+       wake_up.to_utc()  # 2020-08-15T15:00:00Z
 
        # If we change the system timezone, the result changes
        os.environ["TZ"] = "Europe/Amsterdam"
-       wake_up.as_utc()  # 2020-08-15T06:00:00Z
+       wake_up.to_utc()  # 2020-08-15T06:00:00Z
 
     Note
     ----
@@ -1645,35 +1650,13 @@ class LocalDateTime(AwareDateTime):
 
     .. code-block:: text
 
-       YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))
+       YYYY-MM-DDTHH:MM:SS(.ffffff)
 
-    This format is both RFC 3339 and ISO 8601 compliant.
-    The offset is included to disambiguate cases where the same
-    local time occurs twice due to DST transitions.
-    If the offset is invalid for the system timezone,
-    parsing will raise :class:`InvalidOffsetForZone`.
+    This format is ISO8601 compliant.
 
     Note
     ----
     The underlying :class:`~datetime.datetime` object is always timezone-naive.
-
-    Warning
-    -------
-    The meaning of this type changes if the system timezone changes.
-    This means that instances are *not* hashable.
-    It isn't recommended to use this type for long-term storage,
-    or to change the system timezone after initialization.
-    If you do, be aware of the following:
-
-    - Ambiguities are resolved at initialization time against the system
-      timezone. Ambiguities arising from later changes in the system
-      timezone are **undefined**.
-    - Non-existance is resolved at initialization time against the system
-      timezone. Non-existance arising from later changes in the system
-      timezone will raise :class:`DoesntExistInZone` when methods are called.
-
-    Use :meth:`exists` to check whether a datetime (still) exists in the
-    system timezone.
     """
 
     __slots__ = ()
@@ -1687,52 +1670,64 @@ class LocalDateTime(AwareDateTime):
         minute: int = 0,
         second: int = 0,
         microsecond: int = 0,
-        *,
-        disambiguate: Disambiguate = "raise",
     ) -> None:
-        fold = _as_fold(disambiguate)
-        dt = _datetime(
-            year, month, day, hour, minute, second, microsecond, fold=fold
+        self._py_dt = _datetime(
+            year, month, day, hour, minute, second, microsecond
         )
-        # If it doesn't survive the UTC roundtrip, it doesn't exist
-        if dt.astimezone(_UTC).astimezone().replace(tzinfo=None) != dt:
-            raise DoesntExistInZone.for_system_timezone(dt)
-        if disambiguate == "raise" and dt.astimezone(_UTC) != dt.replace(
-            fold=1
-        ).astimezone(_UTC):
-            raise Ambiguous.for_system_timezone(dt)
-        self._py_dt = dt
 
     @classmethod
     def now(cls) -> LocalDateTime:
         """Create an instance from the current time"""
         return cls._from_py_unchecked(_datetime.now())
 
+    # TODO: faster @property
     def canonical_str(self) -> str:
-        if not self.exists():
-            raise DoesntExistInZone.for_system_timezone(self._py_dt)
-        return self._py_dt.astimezone().isoformat()
+        return self._py_dt.isoformat()
 
     __str__ = canonical_str
 
     @classmethod
     def from_canonical_str(cls, s: str, /) -> LocalDateTime:
-        if not _match_offset_str(s):
+        if not _match_naive_str(s):
             raise InvalidFormat()
-        dt = _fromisoformat(s)
-        # Determine `fold` from the offset
-        offset = dt.utcoffset()
-        dt = dt.replace(tzinfo=None)
-        if offset != dt.astimezone().utcoffset():
-            dt = dt.replace(fold=1)
-            if dt.astimezone().utcoffset() != offset:
-                raise InvalidOffsetForZone()
-        return cls._from_py_unchecked(dt)
+        return cls._from_py_unchecked(_fromisoformat(s))
+
+    # TODO: one parameter for disambiguation
+    def timestamp(
+        self,
+        disambiguate: Disambiguate = "raise",
+        nonexistent: NonExistent = "raise",
+    ) -> float:
+        """The UNIX timestamp for this datetime.
+
+        The inverse of :meth:`~LocalDateTime.from_timestamp`.
+
+        Warning
+        -------
+        Ambiguous or nonexistent times need to be handled explicitly
+        with the ``disambiguate`` and ``nonexistent`` arguments.
+
+        Example
+        -------
+
+        .. code-block:: python
+
+            # TODO: update
+            # assuming system timezone is America/New_York
+            LocalDateTime(1970, 1, 1).timestamp() == 0
+
+            # disambiguation
+            LocalDateTime(2023, 10, 29, 1, 15).timestamp(disambiguate="earlier") == 1_934_123_900
+
+        """
+        return self.to_utc(
+            disambiguate=disambiguate, nonexistent=nonexistent
+        ).timestamp()
 
     @classmethod
     def from_timestamp(cls, i: float, /) -> LocalDateTime:
         """Create an instace from a UNIX timestamp.
-        The inverse of :meth:`~AwareDateTime.timestamp`.
+        The inverse of :meth:`~LocalDateTime.timestamp`.
 
         Example
         -------
@@ -1765,56 +1760,34 @@ class LocalDateTime(AwareDateTime):
         except DoesntExistInZone:
             return f"whenever.LocalDateTime({self._py_dt.isoformat()}[nonexistent])"
 
-    @property
-    def offset(self) -> timedelta:
-        if not self.exists():
-            raise DoesntExistInZone.for_system_timezone(self._py_dt)
-        return self._py_dt.astimezone().utcoffset()  # type: ignore[return-value]
-
-    if TYPE_CHECKING:
-
-        @property
-        def fold(self) -> Literal[0, 1]:
-            """The fold value"""
-            ...
-
-    else:
-        fold = property(attrgetter("_py_dt.fold"))
+    if not TYPE_CHECKING:
 
         def __eq__(self, other: object) -> bool:
-            if not isinstance(other, AwareDateTime):
+            if not isinstance(other, LocalDateTime):
                 return NotImplemented
-            return self._py_dt.astimezone(_UTC) == other._py_dt.astimezone(
-                _UTC
-            )
+            return self._py_dt == other._py_dt
 
-    def __lt__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, AwareDateTime):
+        __hash__ = property(attrgetter("_py_dt.__hash__"))
+
+    def __lt__(self, other: LocalDateTime) -> bool:
+        if not isinstance(other, LocalDateTime):
             return NotImplemented
-        return self._py_dt.astimezone(_UTC) < other._py_dt.astimezone(_UTC)
+        return self._py_dt < other._py_dt
 
-    def __le__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, AwareDateTime):
+    def __le__(self, other: LocalDateTime) -> bool:
+        if not isinstance(other, LocalDateTime):
             return NotImplemented
-        return self._py_dt.astimezone(_UTC) <= other._py_dt.astimezone(_UTC)
+        return self._py_dt <= other._py_dt
 
-    def __gt__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, AwareDateTime):
+    def __gt__(self, other: LocalDateTime) -> bool:
+        if not isinstance(other, LocalDateTime):
             return NotImplemented
-        return self._py_dt.astimezone(_UTC) > other._py_dt.astimezone(_UTC)
+        return self._py_dt > other._py_dt
 
-    def __ge__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, AwareDateTime):
+    def __ge__(self, other: LocalDateTime) -> bool:
+        if not isinstance(other, LocalDateTime):
             return NotImplemented
-        return self._py_dt.astimezone(_UTC) >= other._py_dt.astimezone(_UTC)
-
-    def exact_eq(self, other: LocalDateTime) -> bool:
-        return (
-            self._py_dt == other._py_dt
-            and self._py_dt.fold == other._py_dt.fold
-        )
-
-    tzinfo: ClassVar[None] = None
+        return self._py_dt >= other._py_dt
 
     if TYPE_CHECKING:
         # We could have used typing.Unpack, but that's only available
@@ -1829,128 +1802,15 @@ class LocalDateTime(AwareDateTime):
             minute: int | NOT_SET = NOT_SET(),
             second: int | NOT_SET = NOT_SET(),
             microsecond: int | NOT_SET = NOT_SET(),
-            disambiguate: Disambiguate | NOT_SET = NOT_SET(),
-        ) -> LocalDateTime: ...
+        ) -> LocalDateTime:
+            ...
 
     else:
 
         def replace(self, /, **kwargs) -> LocalDateTime:
             if not _no_tzinfo_or_fold(kwargs):
                 raise TypeError("tzinfo and/or fold are not allowed arguments")
-            disambiguate = kwargs.pop("disambiguate", "raise")
-            fold = kwargs["fold"] = _as_fold(disambiguate)
-            d = self._py_dt.replace(**kwargs)
-            utc = d.astimezone(_UTC)
-            if utc.astimezone().replace(tzinfo=None) != d:
-                raise DoesntExistInZone.for_system_timezone(d)
-            if disambiguate == "raise" and utc != d.replace(
-                fold=not fold
-            ).astimezone(_UTC):
-                raise Ambiguous.for_system_timezone(d)
             return self._from_py_unchecked(self._py_dt.replace(**kwargs))
-
-    def __add__(self, other: timedelta) -> LocalDateTime:
-        """Add a timedelta to this datetime
-
-        Example
-        -------
-        .. code-block:: python
-
-           d = LocalDateTime(2020, 8, 15, hour=23, minute=12, fold=0)
-           d + timedelta(days=1, seconds=5) == LocalDateTime(
-               2020, 8, 16, hour=23, minute=12, second=5, fold=0
-           )
-        """
-        if not isinstance(other, timedelta):
-            return NotImplemented
-        return (self.as_utc() + other).as_local()
-
-    if TYPE_CHECKING:
-
-        @overload
-        def __sub__(self, other: AwareDateTime) -> timedelta: ...
-
-        @overload
-        def __sub__(self, other: timedelta) -> LocalDateTime: ...
-
-        def __sub__(
-            self, other: AwareDateTime | timedelta
-        ) -> AwareDateTime | timedelta: ...
-
-    else:
-
-        def __sub__(
-            self, other: timedelta | AwareDateTime
-        ) -> AwareDateTime | timedelta:
-            """Subtract another datetime or timedelta
-
-            Example
-            -------
-            .. code-block:: python
-
-               d = LocalDateTime(2020, 8, 15, hour=23, minute=12, fold=0)
-               d - timedelta(days=1, seconds=5) == LocalDateTime(
-                   2020, 8, 14, hour=23, minute=11, second=55, fold=0
-               )
-
-            """
-            utc = self._py_dt.astimezone(_UTC)
-            if utc.astimezone().replace(tzinfo=None) != self._py_dt:
-                raise DoesntExistInZone.for_system_timezone(self._py_dt)
-            if isinstance(other, LocalDateTime):
-                return utc - other._py_dt.astimezone(_UTC)
-            elif isinstance(
-                other, (UTCDateTime, OffsetDateTime, ZonedDateTime)
-            ):
-                return utc - other._py_dt
-            elif isinstance(other, timedelta):
-                return (self.as_utc() - other).as_local()
-            return NotImplemented
-
-    def disambiguated(self) -> bool:
-        """Whether the disambiguation has an effect.
-
-        Note
-        ----
-        Non-existent datetimes are not considered ambiguous.
-
-        Example
-        -------
-
-        .. code-block:: python
-
-           # (assuming system timezone is Europe/Amsterdam)
-           # False: disambiguating has no effect
-           LocalDateTime(2020, 8, 15, 23, disambiguate="later").disambiguated()
-           # True: disambiguating has an effect, since 2:15 AM occurs twice
-           LocalDateTime(2023, 10, 29, 2, 15, disambiguate="later").disambiguated()
-        """
-        return (
-            self._py_dt.astimezone(_UTC)
-            != self._py_dt.replace(fold=not self._py_dt.fold).astimezone(_UTC)
-            and self.exists()
-        )
-
-    def exists(self) -> bool:
-        """Whether the datetime exists in the system timezone.
-        This is only false in the rare case that the system timezone is
-        changed since the datetime was created.
-
-        Example
-        -------
-
-        .. code-block:: python
-
-           os.environ["TZ"] = "America/New_York"
-           d = LocalDateTime(2023, 3, 26, 2, 15, fold=0)
-           d.exists()  # True
-           os.environ["TZ"] = "Europe/Amsterdam"
-           d.exists()  # False
-        """
-        return (
-            self._py_dt.astimezone(_UTC).astimezone().replace(tzinfo=None)
-            == self._py_dt
-        )
 
     def as_utc(self) -> UTCDateTime:
         d = self._py_dt.astimezone(_UTC)
@@ -1959,46 +1819,69 @@ class LocalDateTime(AwareDateTime):
             raise DoesntExistInZone.for_system_timezone(self._py_dt)
         return UTCDateTime._from_py_unchecked(d)
 
-    @overload
-    def as_offset(self, /) -> OffsetDateTime: ...
-
-    @overload
-    def as_offset(self, offset: timedelta, /) -> OffsetDateTime: ...
-
-    def as_offset(self, offset: timedelta | None = None, /) -> OffsetDateTime:
-        if not self.exists():
-            raise DoesntExistInZone.for_system_timezone(self._py_dt)
-        return OffsetDateTime._from_py_unchecked(
-            self._py_dt.astimezone(
-                None if offset is None else _timezone(offset)
+    def to_utc(
+        self,
+        *,
+        disambiguate: Disambiguate = "raise",
+        nonexistent: NonExistent = "raise",
+    ) -> UTCDateTime:
+        return UTCDateTime._from_py_unchecked(
+            _local_to_tzinfo_checked(
+                self._py_dt, _UTC, disambiguate, nonexistent
             )
         )
 
-    def as_zoned(self, tz: str, /) -> ZonedDateTime:
-        if not self.exists():
-            raise DoesntExistInZone.for_system_timezone(self._py_dt)
+    def to_zoned(
+        self,
+        tz: str,
+        /,
+        *,
+        disambiguate: Disambiguate = "raise",
+        nonexistent: NonExistent = "raise",
+    ) -> ZonedDateTime:
         return ZonedDateTime._from_py_unchecked(
-            self._py_dt.astimezone(ZoneInfo(tz))
+            _local_to_tzinfo_checked(
+                self._py_dt, ZoneInfo(tz), disambiguate, nonexistent
+            )
         )
 
-    def as_local(self) -> LocalDateTime:
-        return self
+    @overload
+    def to_offset(
+        self,
+        /,
+        *,
+        disambiguate: Disambiguate = "raise",
+        nonexistent: NonExistent = "raise",
+    ) -> OffsetDateTime:
+        ...
 
-    @classmethod
-    def from_naive(
-        cls, d: NaiveDateTime, /, disambiguate: Disambiguate = "raise"
-    ) -> LocalDateTime:
-        """Create an instance from a naive datetime."""
-        fold = _as_fold(disambiguate)
-        local = d._py_dt.replace(fold=fold)
-        utc = local.astimezone(_UTC)
-        if utc.astimezone().replace(tzinfo=None) != local:
-            raise DoesntExistInZone.for_system_timezone(d._py_dt)
-        if disambiguate == "raise" and utc != local.replace(
-            fold=not fold
-        ).astimezone(_UTC):
-            raise Ambiguous.for_system_timezone(d._py_dt)
-        return cls._from_py_unchecked(local)
+    @overload
+    def to_offset(
+        self,
+        offset: timedelta,
+        /,
+        *,
+        disambiguate: Disambiguate = "raise",
+        nonexistent: NonExistent = "raise",
+    ) -> OffsetDateTime:
+        ...
+
+    def to_offset(
+        self,
+        offset: timedelta | None = None,
+        /,
+        *,
+        disambiguate: Disambiguate = "raise",
+        nonexistent: NonExistent = "raise",
+    ) -> OffsetDateTime:
+        return OffsetDateTime._from_py_unchecked(
+            _local_to_tzinfo_checked(
+                self._py_dt,
+                None if offset is None else _timezone(offset),
+                disambiguate,
+                nonexistent,
+            )
+        )
 
     def naive(self) -> NaiveDateTime:
         return NaiveDateTime._from_py_unchecked(self._py_dt)
@@ -2007,30 +1890,17 @@ class LocalDateTime(AwareDateTime):
     def __reduce__(self) -> tuple[object, ...]:
         return (
             _unpkl_local,
-            self._py_dt.timetuple()[:6]
-            + (self._py_dt.microsecond, self._py_dt.fold),
+            self._py_dt.timetuple()[:6] + (self._py_dt.microsecond,),
         )
 
 
-# A separate function is needed for unpickling, because the
-# constructor doesn't accept positional fold arguments as
-# required by __reduce__.
-# Also, it allows backwards-compatible changes to the pickling format.
+# A separate unpickling function allows us to make backwards-compatible changes
+# to the pickling format in the future
+@no_type_check
 def _unpkl_local(
-    year: int,
-    month: int,
-    day: int,
-    hour: int,
-    minute: int,
-    second: int,
-    microsecond: int,
-    fold: Literal[0, 1],
+    *args,
 ) -> LocalDateTime:
-    return LocalDateTime._from_py_unchecked(
-        _datetime(
-            year, month, day, hour, minute, second, microsecond, fold=fold
-        )
-    )
+    return LocalDateTime._from_py_unchecked(_datetime(*args))
 
 
 class NaiveDateTime(DateTime):
@@ -2100,7 +1970,8 @@ class NaiveDateTime(DateTime):
             minute: int | NOT_SET = NOT_SET(),
             second: int | NOT_SET = NOT_SET(),
             microsecond: int | NOT_SET = NOT_SET(),
-        ) -> NaiveDateTime: ...
+        ) -> NaiveDateTime:
+            ...
 
     else:
 
@@ -2183,14 +2054,17 @@ class NaiveDateTime(DateTime):
     if TYPE_CHECKING:
 
         @overload
-        def __sub__(self, other: NaiveDateTime) -> timedelta: ...
+        def __sub__(self, other: NaiveDateTime) -> timedelta:
+            ...
 
         @overload
-        def __sub__(self, other: timedelta) -> NaiveDateTime: ...
+        def __sub__(self, other: timedelta) -> NaiveDateTime:
+            ...
 
         def __sub__(
             self, other: NaiveDateTime | timedelta
-        ) -> NaiveDateTime | timedelta: ...
+        ) -> NaiveDateTime | timedelta:
+            ...
 
     else:
 
@@ -2254,6 +2128,73 @@ class NaiveDateTime(DateTime):
             "Sat, 15 Aug 2020 23:12:00 -0000"
         """
         return format_datetime(self._py_dt)
+
+    def assume_utc(self) -> UTCDateTime:
+        """Assume the datetime is in UTC,
+        creating a :class:`~whenever.UTCDateTime` instance.
+
+        Example
+        -------
+
+        .. code-block:: python
+
+           >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_utc()
+           UTCDateTime(2020-08-15 23:12:00Z)
+        """
+        return UTCDateTime._from_py_unchecked(self._py_dt.replace(tzinfo=_UTC))
+
+    def assume_offset(self, offset: timedelta, /) -> OffsetDateTime:
+        """Assume the datetime is in the given offset,
+        creating a :class:`~whenever.OffsetDateTime` instance.
+
+        Example
+        -------
+
+        .. code-block:: python
+
+           >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_offset(hours(2))
+           OffsetDateTime(2020-08-15 23:12:00+02:00)
+        """
+        return OffsetDateTime._from_py_unchecked(
+            self._py_dt.replace(tzinfo=_timezone(offset))
+        )
+
+    def assume_zoned(
+        self, tz: str, /, disambiguate: Disambiguate = "raise"
+    ) -> ZonedDateTime:
+        """Assume the datetime is in the given timezone,
+        creating a :class:`~whenever.ZonedDateTime` instance.
+
+        Example
+        -------
+
+        .. code-block:: python
+
+           >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_zoned("Europe/Amsterdam")
+           ZonedDateTime(2020-08-15 23:12:00+02:00[Europe/Amsterdam])
+        """
+        zone = ZoneInfo(tz)
+        dt = self._py_dt.replace(tzinfo=zone, fold=_as_fold(disambiguate))
+        dt_utc = dt.astimezone(_UTC)
+        if dt_utc.astimezone(dt.tzinfo) != dt:
+            raise DoesntExistInZone.for_timezone(dt, zone)
+        if disambiguate == "raise" and dt_utc != dt.replace(fold=1):
+            raise Ambiguous.for_timezone(dt, zone)
+        return ZonedDateTime._from_py_unchecked(dt)
+
+    def assume_local(self) -> LocalDateTime:
+        """Assume the datetime is in the system timezone,
+        creating a :class:`~whenever.LocalDateTime` instance.
+
+        Example
+        -------
+
+        .. code-block:: python
+
+           >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_local()
+           LocalDateTime(2020-08-15 23:12:00)
+        """
+        return LocalDateTime._from_py_unchecked(self._py_dt)
 
     @classmethod
     def from_rfc2822(cls, s: str, /) -> NaiveDateTime:
@@ -2350,15 +2291,25 @@ def _exists_in_tz(d: _datetime) -> bool:
     return d.astimezone(_UTC).astimezone(d.tzinfo) == d
 
 
-def _to_local(d: _datetime) -> _datetime:
-    # Converting to local time results in a datetime with a fixed UTC
-    # offset. To find the equivelant naive datetime, removing the
-    # tzinfo is not enough, we need to determine the ``fold`` value.
-    offset = d.astimezone()
-    naive = offset.replace(tzinfo=None)
-    if naive.astimezone(_UTC) != offset.astimezone(_UTC):
-        naive = naive.replace(fold=1)
-    return naive
+def _local_to_tzinfo_checked(
+    d: _datetime,
+    tz: _tzinfo | None,
+    disambiguate: Disambiguate,
+    nonexistent: NonExistent,
+) -> _datetime:
+    new = d.astimezone(tz)
+    # TODO: remark that this is not thread-safe
+    if new.astimezone().replace(tzinfo=None) != d:
+        if nonexistent == "raise":
+            raise DoesntExistInZone.for_system_timezone(d)
+        else:
+            new = d.replace(fold=_as_fold(nonexistent)).astimezone(tz)
+    elif d.replace(fold=1).astimezone(tz) != new:
+        if disambiguate == "raise":
+            raise Ambiguous.for_system_timezone(d)
+        else:
+            new = d.replace(fold=_as_fold(disambiguate)).astimezone(tz)
+    return new
 
 
 # Helpers that pre-compute/lookup as much as possible
@@ -2434,6 +2385,7 @@ UTCDateTime.max = UTCDateTime._from_py_unchecked(
 NaiveDateTime.min = NaiveDateTime._from_py_unchecked(_datetime.min)
 NaiveDateTime.max = NaiveDateTime._from_py_unchecked(_datetime.max)
 Disambiguate = Literal["earlier", "later", "raise"]
+NonExistent = Literal["earlier", "later", "raise"]
 Fold = Literal[0, 1]
 _as_fold: Callable[[Disambiguate], Fold] = {  # type: ignore[assignment]
     "earlier": 0,

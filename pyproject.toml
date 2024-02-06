@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "whenever"
-version = "0.3.4"
+version = "0.4.0rc0"
 description = "Strict, predictable, and typed datetimes"
 authors = ["Arie Bovenberg <a.c.bovenberg@gmail.com>"]
 license = "MIT"
@@ -67,6 +67,7 @@ exclude = '''
 [tool.isort]
 profile = 'black'
 line_length = 79
+combine_as_imports = true
 
 [tool.mypy]
 warn_unused_ignores = true

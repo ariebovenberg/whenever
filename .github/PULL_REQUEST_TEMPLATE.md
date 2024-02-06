@@ -10,6 +10,7 @@
 # Release checklist (maintainers only)
 
 - [ ] Version updated in ``pyproject.toml``
+- [ ] Version updated in ``whenever/__init__.py``
 - [ ] Version updated in changelog
 - [ ] Branch merged
 - [ ] Tag created and pushed

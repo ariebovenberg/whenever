@@ -1,7 +1,6 @@
 import pickle
 import weakref
-from datetime import datetime as py_datetime
-from datetime import timedelta, timezone, tzinfo
+from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
 
 import pytest
 from hypothesis import given
@@ -26,7 +25,6 @@ from .common import (
     AlwaysSmaller,
     NeverEqual,
     ZoneInfoNotFoundError,
-    local_ams_tz,
     local_nyc_tz,
 )
 
@@ -215,15 +213,11 @@ class TestEquality:
         assert not d != same_time
         assert hash(d) == hash(same_time)
 
-    @local_nyc_tz()
     def test_other_aware(self):
         d: AwareDateTime = OffsetDateTime(2020, 8, 15, 12, offset=hours(5))
         assert d == d.as_utc()
         assert hash(d) == hash(d.as_utc())
         assert d != d.as_utc().replace(hour=10)
-
-        assert d == d.as_local()
-        assert d != d.as_local().replace(hour=8)
 
         assert d == d.as_zoned("America/New_York")
         assert hash(d) == hash(d.as_zoned("America/New_York"))
@@ -322,28 +316,6 @@ class TestComparison:
         assert d >= zoned_lt
         assert not d < zoned_lt
         assert not d <= zoned_lt
-
-    @local_nyc_tz()
-    def test_local(self):
-        d = OffsetDateTime(2020, 8, 15, 12, 30, offset=hours(5))
-        local_eq = d.as_local()
-        local_gt = local_eq.replace(minute=31)
-        local_lt = local_eq.replace(minute=29)
-
-        assert d >= local_eq
-        assert d <= local_eq
-        assert not d > local_eq
-        assert not d < local_eq
-
-        assert d < local_gt
-        assert d <= local_gt
-        assert not d > local_gt
-        assert not d >= local_gt
-
-        assert d > local_lt
-        assert d >= local_lt
-        assert not d < local_lt
-        assert not d <= local_lt
 
     def test_not_implemented(self):
         d = OffsetDateTime(2020, 8, 15, 12, 30, offset=hours(5))
@@ -489,20 +461,6 @@ class TestSubtract:
             2023, 10, 29, 1, tz="Europe/Paris"
         ) == timedelta(hours=5)
 
-    @local_ams_tz()
-    def test_local(self):
-        d = OffsetDateTime(2023, 10, 29, 6, offset=hours(2))
-        assert d - LocalDateTime(
-            2023, 10, 29, 3, disambiguate="later"
-        ) == timedelta(hours=2)
-        assert d - LocalDateTime(
-            2023, 10, 29, 2, disambiguate="later"
-        ) == timedelta(hours=3)
-        assert d - LocalDateTime(
-            2023, 10, 29, 2, disambiguate="earlier"
-        ) == timedelta(hours=4)
-        assert d - LocalDateTime(2023, 10, 29, 1) == timedelta(hours=5)
-
 
 def test_pickle():
     d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=hours(3))
@@ -547,24 +505,33 @@ def test_to_zoned():
         d.as_zoned("America/Not_A_Real_Zone")
 
 
-@local_nyc_tz()
-def test_to_local():
-    d = OffsetDateTime(2020, 8, 15, 20, 12, 9, 987_654, offset=hours(3))
-    assert d.as_local().exact_eq(
-        LocalDateTime(2020, 8, 15, 13, 12, 9, 987_654)
-    )
+class TestToLocal:
+    @local_nyc_tz()
+    def test_typical(self):
+        d = OffsetDateTime(2020, 8, 15, 20, 12, 9, 987_654, offset=hours(3))
+        assert d.to_local() == LocalDateTime(2020, 8, 15, 13, 12, 9, 987_654)
+
+    @local_nyc_tz()
+    def test_ambiguous(self):
+        d_later = OffsetDateTime(2023, 11, 5, 10, 15, offset=hours(4))
+        local = d_later.to_local()
+        assert local == LocalDateTime(2023, 11, 5, 1, 15)
+        assert local.py.fold == 0
+        assert local.to_offset(hours(4), disambiguate="later").exact_eq(
+            d_later
+        )
+
+        d_earlier = d_later.replace(hour=9)
+        assert (
+            d_earlier.to_local()
+            .to_offset(hours(4), disambiguate="earlier")
+            .exact_eq(d_earlier)
+        )
 
 
 def test_naive():
     d = OffsetDateTime(2020, 8, 15, 20, offset=hours(3))
     assert d.naive() == NaiveDateTime(2020, 8, 15, 20)
-
-
-def test_from_naive():
-    d = NaiveDateTime(2020, 8, 15, 20)
-    assert OffsetDateTime.from_naive(d, hours(3)).exact_eq(
-        OffsetDateTime(2020, 8, 15, 20, offset=hours(3))
-    )
 
 
 @pytest.mark.parametrize(

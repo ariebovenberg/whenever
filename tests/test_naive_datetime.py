@@ -1,13 +1,22 @@
 import pickle
 import weakref
-from datetime import datetime as py_datetime
-from datetime import timedelta, timezone
+from datetime import datetime as py_datetime, timedelta, timezone
 
 import pytest
 from hypothesis import given
 from hypothesis.strategies import text
 
-from whenever import InvalidFormat, NaiveDateTime
+from whenever import (
+    Ambiguous,
+    DoesntExistInZone,
+    InvalidFormat,
+    LocalDateTime,
+    NaiveDateTime,
+    OffsetDateTime,
+    UTCDateTime,
+    ZonedDateTime,
+    hours,
+)
 
 from .common import (
     AlwaysEqual,
@@ -34,6 +43,59 @@ def test_minimal():
         == NaiveDateTime(2020, 8, 15, 12, 0)
         == NaiveDateTime(2020, 8, 15, 12, 0, 0)
         == NaiveDateTime(2020, 8, 15, 12, 0, 0, 0)
+    )
+
+
+def test_assume_utc():
+    assert NaiveDateTime(2020, 8, 15, 23).assume_utc() == UTCDateTime(
+        2020, 8, 15, 23
+    )
+
+
+def test_assume_offset():
+    assert (
+        NaiveDateTime(2020, 8, 15, 23)
+        .assume_offset(hours(5))
+        .exact_eq(OffsetDateTime(2020, 8, 15, 23, offset=hours(5)))
+    )
+
+
+class TestAssumeZoned:
+    def test_typical(self):
+        assert NaiveDateTime(2020, 8, 15, 23).assume_zoned(
+            "Asia/Tokyo"
+        ) == ZonedDateTime(2020, 8, 15, 23, tz="Asia/Tokyo")
+
+    def test_ambiguous(self):
+        d = NaiveDateTime(2023, 10, 29, 2, 15)
+
+        with pytest.raises(Ambiguous, match="02:15.*Europe/Amsterdam"):
+            d.assume_zoned("Europe/Amsterdam")
+
+        assert d.assume_zoned(
+            "Europe/Amsterdam", disambiguate="earlier"
+        ) == ZonedDateTime(
+            2023, 10, 29, 2, 15, tz="Europe/Amsterdam", disambiguate="earlier"
+        )
+        assert d.assume_zoned(
+            "Europe/Amsterdam", disambiguate="later"
+        ) == ZonedDateTime(
+            2023, 10, 29, 2, 15, tz="Europe/Amsterdam", disambiguate="later"
+        )
+
+    def test_nonexistent(self):
+        d = NaiveDateTime(2023, 3, 26, 2, 15)
+
+        with pytest.raises(DoesntExistInZone, match="02:15.*Europe/Amsterdam"):
+            d.assume_zoned("Europe/Amsterdam")
+
+        # TODO: nonexistent disambiguation
+
+
+
+def test_assume_local():
+    assert NaiveDateTime(2020, 8, 15, 23).assume_local() == LocalDateTime(
+        2020, 8, 15, 23
     )
 
 

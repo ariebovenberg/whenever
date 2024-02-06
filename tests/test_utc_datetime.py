@@ -1,8 +1,7 @@
 import pickle
 import weakref
 from copy import copy, deepcopy
-from datetime import datetime as py_datetime
-from datetime import timedelta, timezone
+from datetime import datetime as py_datetime, timedelta, timezone
 
 import pytest
 from freezegun import freeze_time
@@ -26,7 +25,6 @@ from .common import (
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
-    local_ams_tz,
     local_nyc_tz,
 )
 
@@ -165,16 +163,12 @@ class TestEquality:
         d = UTCDateTime(2020, 8, 15)
         d == 42  # type: ignore[comparison-overlap]
 
-    @local_nyc_tz()
     def test_other_aware_types(self):
         d: AwareDateTime = UTCDateTime(2020, 8, 15)
-        assert d == d.as_local()
-        assert d == d.as_local().replace(disambiguate="later")
         assert d == d.as_offset()
         assert d == d.as_offset(hours(3))
         assert d == d.as_zoned("Europe/Paris")
 
-        assert d != d.as_local().replace(year=2021)
         assert d != d.as_offset(hours(1)).replace(year=2021)
         assert d != d.as_zoned("Europe/London").replace(year=2021)
 
@@ -266,28 +260,6 @@ class TestComparison:
         assert d <= zoned_gt
         assert not d > zoned_gt
         assert not d >= zoned_gt
-
-    @local_nyc_tz()
-    def test_local(self):
-        d = UTCDateTime(2020, 8, 15, 12, 30)
-
-        local_eq = d.as_local()
-        local_gt = local_eq.replace(minute=31)
-        local_lt = local_eq.replace(minute=29)
-        assert d >= local_eq
-        assert d <= local_eq
-        assert not d > local_eq
-        assert not d < local_eq
-
-        assert d > local_lt
-        assert d >= local_lt
-        assert not d < local_lt
-        assert not d <= local_lt
-
-        assert d < local_gt
-        assert d <= local_gt
-        assert not d > local_gt
-        assert not d >= local_gt
 
     def test_notimplemented(self):
         d = UTCDateTime(2020, 8, 15)
@@ -422,20 +394,6 @@ class TestSubtract:
             2023, 10, 29, 1, tz="Europe/Paris"
         ) == timedelta(hours=7)
 
-    @local_ams_tz()
-    def test_local(self):
-        d = UTCDateTime(2023, 10, 29, 6)
-        assert d - LocalDateTime(
-            2023, 10, 29, 3, disambiguate="later"
-        ) == timedelta(hours=4)
-        assert d - LocalDateTime(
-            2023, 10, 29, 2, disambiguate="later"
-        ) == timedelta(hours=5)
-        assert d - LocalDateTime(
-            2023, 10, 29, 2, disambiguate="earlier"
-        ) == timedelta(hours=6)
-        assert d - LocalDateTime(2023, 10, 29, 1) == timedelta(hours=7)
-
     def test_invalid(self):
         d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
         with pytest.raises(TypeError, match="unsupported operand type"):
@@ -487,28 +445,27 @@ def test_to_zoned():
     )
 
 
-@local_nyc_tz()
-def test_to_local():
-    d = UTCDateTime(2020, 8, 15, 20)
-    assert d.as_local().exact_eq(LocalDateTime(2020, 8, 15, 16))
-    # ensure fold is set correctly
-    d = UTCDateTime(2022, 11, 6, 5)
-    assert d.as_local().exact_eq(
-        LocalDateTime(2022, 11, 6, 1, disambiguate="earlier")
-    )
-    assert d.replace(hour=6).as_local() == LocalDateTime(
-        2022, 11, 6, 1, disambiguate="later"
-    )
+class TestToLocal:
+    @local_nyc_tz()
+    def test_typical(self):
+        d = UTCDateTime(2020, 8, 15, 20)
+        assert d.to_local() == LocalDateTime(2020, 8, 15, 16)
+
+    @local_nyc_tz()
+    def test_ambiguous(self):
+        d_later = UTCDateTime(2023, 11, 5, 6, 15)
+        local = d_later.to_local()
+        assert local == LocalDateTime(2023, 11, 5, 1, 15)
+        assert local.py.fold == 0
+        assert local.to_utc(disambiguate="later") == d_later
+
+        d_earlier = d_later.replace(hour=5)
+        assert d_earlier.to_local().to_utc(disambiguate="earlier") == d_earlier
 
 
 def test_naive():
     d = UTCDateTime(2020, 8, 15, 20)
     assert d.naive() == NaiveDateTime(2020, 8, 15, 20)
-
-
-def test_from_naive():
-    d = NaiveDateTime(2020, 8, 15, 20)
-    assert UTCDateTime.from_naive(d) == UTCDateTime(2020, 8, 15, 20)
 
 
 @pytest.mark.parametrize(

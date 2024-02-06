@@ -17,29 +17,25 @@ The types
 
 and here's how you can use them:
 
-+-----------------------+-----+--------+-------+-------+-------+
-| Feature               |         Aware                | Naive |
-+                       +-----+--------+-------+-------+       +
-|                       | UTC | Offset | Zoned | Local |       |
-+=======================+=====+========+=======+=======+=======+
-| comparison            | ✅  |  ✅    |  ✅   |  ✅   |  ✅   |
-+-----------------------+-----+--------+-------+-------+-------+
-| difference            | ✅  |  ✅    |  ✅   |  ✅   |  ✅   |
-+-----------------------+-----+--------+-------+-------+-------+
-| add/subtract timedelta| ✅  |  ❌    |  ✅   |  ✅   |  ✅   |
-+-----------------------+-----+--------+-------+-------+-------+
-| unambiguous           | ✅  |  ✅    |  ❌   |  ❌   |  ✅   |
-+-----------------------+-----+--------+-------+-------+-------+
-| to/from timestamp     | ✅  |  ✅    |  ✅   |  ✅   |  ❌   |
-+-----------------------+-----+--------+-------+-------+-------+
-| now                   | ✅  |  ✅    |  ✅   |  ✅   |  ❌   |
-+-----------------------+-----+--------+-------+-------+-------+
-| to/from RFC2822       | ✅  |  ✅    |  ❌   |  ❌   |  ✅   |
-+-----------------------+-----+--------+-------+-------+-------+
-| to/from RFC3339       | ✅  |  ✅    |  ❌   |  ❌   |  ❌   |
-+-----------------------+-----+--------+-------+-------+-------+
-| hashable              | ✅  |  ✅    |  ✅   |  ❌   |  ✅   |
-+-----------------------+-----+--------+-------+-------+-------+
++-----------------------+-------+--------+-------+-------+-------+
+| Feature               |         Aware          |       |       |
++                       +-------+--------+-------+       +       +
+|                       | UTC   | Offset | Zoned | Local | Naïve |
++=======================+=======+========+=======+=======+=======+
+| comparison            | .. centered::  ✅      |  ✅   |  ✅   |
++-----------------------+-------+--------+-------+-------+-------+
+| difference            | .. centered::  ✅      |  ❌   |  ✅   |
++-----------------------+-------+--------+-------+-------+-------+
+| add/subtract timedelta| ✅    |  ❌    |  ✅   |  ❌   |  ✅   |
++-----------------------+-------+--------+-------+-------+-------+
+| to/from timestamp     | ✅    |  ✅    |  ✅   |  ✅   |  ❌   |
++-----------------------+-------+--------+-------+-------+-------+
+| now                   | ✅    |  ✅    |  ✅   |  ✅   |  ❌   |
++-----------------------+-------+--------+-------+-------+-------+
+| to/from RFC2822       | ✅    |  ✅    |  ❌   |  ✅   |  ✅   |
++-----------------------+-------+--------+-------+-------+-------+
+| to/from RFC3339       | ✅    |  ✅    |  ❌   |  ❌   |  ❌   |
++-----------------------+-------+--------+-------+-------+-------+
 
 ``UTCDateTime``
 ~~~~~~~~~~~~~~~
@@ -97,10 +93,8 @@ It's suitable for representing times related to the user's system.
 
 .. code-block:: python
 
-    print(f"Your timer will go off at {LocalDateTime.now() + hours(1)}.")
-
-Because the local timezone may change, the moment in time represented by a
-``LocalDateTime`` may change. Therefore, the type is not hashable.
+    backup_scheduled = LocalDateTime(2023, 12, 28, hour=20)
+    alarm = LocalDateTime(2023, 12, 28, hour=6)
 
 ``NaiveDateTime``
 ~~~~~~~~~~~~~~~~~
@@ -126,7 +120,7 @@ Aware types
 ~~~~~~~~~~~
 
 For aware types (:class:`~whenever.UTCDateTime`, :class:`~whenever.OffsetDateTime`,
-:class:`~whenever.ZonedDateTime`, and :class:`~whenever.LocalDateTime`),
+and :class:`~whenever.ZonedDateTime`),
 comparison and equality are based on whether they represent the same moment in
 time. This means that two datetimes with different values can be equal:
 
@@ -157,7 +151,7 @@ Note that if you want to compare for exact equality on the values
 (i.e. exactly the same year, month, day, hour, minute, etc.), you can use
 the :meth:`~whenever.AwareDateTime.exact_eq` method.
 
-Naive types
+Naïve types
 ~~~~~~~~~~~
 
 For :class:`~whenever.NaiveDateTime`, equality is simply based on
@@ -182,7 +176,7 @@ whether the values are the same, since there is no concept of timezones or UTC o
 Strict equality
 ~~~~~~~~~~~~~~~
 
-Naive and aware types are never equal or comparable to each other.
+Naïve and aware types are never equal or comparable to each other.
 However, to comply with the Python data model, the equality operator
 won't prevent you from using ``==`` to compare them.
 It may *seem* like the equality operator should raise a :exc:`TypeError`
@@ -203,10 +197,14 @@ to detect and prevent these mistakes.
 Conversion
 ----------
 
+Between aware types
+~~~~~~~~~~~~~~~~~~~
+
 You can convert between aware datetimes with the :meth:`~whenever.AwareDateTime.as_utc`,
-:meth:`~whenever.AwareDateTime.as_offset`, :meth:`~whenever.AwareDateTime.as_zoned`,
-and :meth:`~whenever.AwareDateTime.as_local` methods. These methods return a new
-instance of the appropriate type, representing the same moment in time.
+:meth:`~whenever.AwareDateTime.as_offset`, 
+and :meth:`~whenever.AwareDateTime.as_zoned`, methods. 
+These methods return a new instance of the appropriate type, 
+representing the same moment in time.
 This means the results will always compare equal to the original datetime.
 
 .. code-block:: python
@@ -215,27 +213,39 @@ This means the results will always compare equal to the original datetime.
     >>> d.as_utc()  # same moment in UTC
     >>> d.as_offset(hours(5))  # same moment with a +5:00 offset
     >>> d.as_zoned("America/New_York")  # same moment in New York
-    >>> d.as_local()  # same moment in the system timezone
 
     >>> d.as_offset(hours(4)) == d  # True: always the same moment in time
 
-You can convert to a :class:`~whenever.NaiveDateTime` with
-:meth:`~whenever.AwareDateTime.naive`, which strips away any timezone or offset
-information. Each aware type also defines a :meth:`from_naive` method.
+To and from naïve
+~~~~~~~~~~~~~~~~~
 
+Conversion to naïve types is always easy: calling
+:meth:`~whenever.AwareDateTime.naive` simply strips
+away any timezone information:
 
 .. code-block:: python
 
     >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
-    >>> n = d.naive()  # NaiveDateTime(2023-12-28 11:30:00)
-    >>> OffsetDateTime.from_naive(n, offset=hours(5))  # 2023-12-28 11:30:00+05:00
+    >>> d.naive()
+    NaiveDateTime(2023-12-28 11:30:00)
+
+You can convert from naïve types with the :meth:`~whenever.NaiveDateTime.assume_utc`,
+:meth:`~whenever.NaiveDateTime.assume_offset`, and
+:meth:`~whenever.NaiveDateTime.assume_zoned` methods.
+
+.. code-block:: python
+
+    >>> n = NaiveDateTime(2023, 12, 28, 11, 30)
+    >>> n.assume_utc()
+    UTCDateTime(2023-12-28 11:30:00Z)
+    >>> n.assume_zoned("Europe/Amsterdam")
+    ZonedDateTime(2023-12-28 11:30:00+01:00[Europe/Amsterdam])
 
 .. note::
 
-   The seemingly inconsistent naming of :meth:`~whenever.AwareDateTime.naive` and
-   the ``as_*`` methods is intentional. The ``as_*`` methods preserve the same
-   moment in time, while :meth:`~whenever.AwareDateTime.naive` converts to
-   something else entirely.
+   The seemingly inconsistent naming of the ``assume_*`` methods is intentional. The ``assume_*`` methods
+   emphasize that the conversion is not self-evident, but based on assumptions
+   of the developer.
 
 
 Moving back and forwards in time
@@ -243,7 +253,7 @@ Moving back and forwards in time
 
 You can add or subtract a :class:`~datetime.timedelta` from
 :class:`~whenever.UTCDateTime`,
-:class:`~whenever.ZonedDateTime`, :class:`~whenever.LocalDateTime`,
+:class:`~whenever.ZonedDateTime`,
 and :class:`~whenever.NaiveDateTime` instances. This represents moving forward or
 backward in time by the given duration:
 
@@ -271,14 +281,14 @@ Difference between datetimes
 
 You can subtract two :class:`~whenever.DateTime` instances to get a
 :class:`~datetime.timedelta` representing the duration between them.
-Aware types can be mixed, but naive types cannot be mixed with aware types:
+Aware types can be mixed, but naïve types cannot be mixed with aware types:
 
 .. code-block:: python
 
     # difference between moments in time
     >>> UTCDateTime(2023, 12, 28, 11, 30) - ZonedDateTime(2023, 12, 14, tz="Europe/Amsterdam")
 
-    # difference between naive datetimes
+    # difference between naïve datetimes
     >>> NaiveDateTime(2023, 12, 28, 11) - NaiveDateTime(2023, 12, 27, 11)
 
 Timezone complexities
@@ -286,8 +296,9 @@ Timezone complexities
 
 In real-world timezones, local clocks are often moved backwards and forwards
 due to daylight savings time or political decisions.
-This creates two types of situations for the :class:`~whenever.ZonedDateTime`
-and :class:`~whenever.LocalDateTime` types: *ambiguity* and *non-existence*.
+This creates two types of situations for 
+the :class:`~whenever.ZonedDateTime` class:
+*ambiguity* and *non-existence*.
 
 Ambiguity
 ~~~~~~~~~
@@ -334,8 +345,8 @@ When a clock moves forwards, there is a period of time that does not exist.
 For example: if a clock skips forward from 1am to 2am, then 1:30am does not
 exist.
 
-:class:`~whenever.ZonedDateTime` and :class:`~whenever.LocalDateTime`
-prevent you from creating non-existent datetimes, by raising a
+:class:`~whenever.ZonedDateTime` prevents
+you from creating non-existent datetimes, by raising a
 :exc:`~whenever.DoesntExistInZone` exception if you try to create one.
 
 .. code-block:: python
@@ -421,7 +432,7 @@ Here are the canonical formats for each type:
 +-----------------------------------+---------------------------------------------------------------------+
 | :class:`~whenever.ZonedDateTime`  | ``YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))[TIMEZONE NAME]`` |
 +-----------------------------------+---------------------------------------------------------------------+
-| :class:`~whenever.LocalDateTime`  | ``YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))``                |
+| :class:`~whenever.LocalDateTime`  | ``YYYY-MM-DDTHH:MM:SS(.ffffff)``                                    |
 +-----------------------------------+---------------------------------------------------------------------+
 | :class:`~whenever.NaiveDateTime`  | ``YYYY-MM-DDTHH:MM:SS(.ffffff)``                                    |
 +-----------------------------------+---------------------------------------------------------------------+
