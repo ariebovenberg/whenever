@@ -1,6 +1,11 @@
 🚀 Changelog
 ============
 
+0.3.4 (2024-02-07)
+------------------
+
+- 🏷️ Improved exception messages for ambiguous or non-existent times (#26)
+
 0.3.3 (2024-02-04)
 ------------------
 
