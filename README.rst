@@ -22,7 +22,7 @@
 .. image:: https://img.shields.io/readthedocs/whenever.svg?style=flat-square
    :target: http://whenever.readthedocs.io/
 
-**Foolproof datetimes for maintainable Python code**
+**Strict, predictable, and typed datetimes**
 
 Do you cross your fingers every time you work with datetimes,
 hoping that you didn't mix naive and aware?
