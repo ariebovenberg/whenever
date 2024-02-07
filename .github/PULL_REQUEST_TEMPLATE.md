@@ -4,8 +4,11 @@
 
 # Checklist
 
-- [ ] ``tox`` runs successfully
+- [ ] Build runs successfully
 - [ ] Docs updated
+
+# Release checklist (maintainers only)
+
 - [ ] Version updated in ``pyproject.toml``
 - [ ] Version updated in changelog
 - [ ] Branch merged
