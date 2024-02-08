@@ -1,8 +1,7 @@
 import pickle
 import weakref
 from copy import copy, deepcopy
-from datetime import datetime as py_datetime
-from datetime import timedelta, timezone
+from datetime import datetime as py_datetime, timedelta, timezone
 
 import pytest
 from freezegun import freeze_time
@@ -504,11 +503,6 @@ def test_to_local():
 def test_naive():
     d = UTCDateTime(2020, 8, 15, 20)
     assert d.naive() == NaiveDateTime(2020, 8, 15, 20)
-
-
-def test_from_naive():
-    d = NaiveDateTime(2020, 8, 15, 20)
-    assert UTCDateTime.from_naive(d) == UTCDateTime(2020, 8, 15, 20)
 
 
 @pytest.mark.parametrize(
