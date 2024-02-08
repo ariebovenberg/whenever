@@ -262,12 +262,10 @@ def test_repr():
     d = OffsetDateTime(
         2020, 8, 15, 23, 12, 9, 987_654, offset=timedelta(hours=5, minutes=22)
     )
-    assert (
-        repr(d) == "whenever.OffsetDateTime(2020-08-15T23:12:09.987654+05:22)"
-    )
+    assert repr(d) == "OffsetDateTime(2020-08-15T23:12:09.987654+05:22)"
     assert (
         repr(OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(0)))
-        == "whenever.OffsetDateTime(2020-08-15T23:12:00+00:00)"
+        == "OffsetDateTime(2020-08-15T23:12:00+00:00)"
     )
 
 

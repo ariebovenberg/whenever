@@ -578,13 +578,10 @@ def test_from_timestamp():
 @local_nyc_tz()
 def test_repr():
     d = LocalDateTime(2023, 3, 26, 2, 15)
-    assert repr(d) == "whenever.LocalDateTime(2023-03-26T02:15:00-04:00)"
+    assert repr(d) == "LocalDateTime(2023-03-26T02:15:00-04:00)"
 
     with local_ams_tz():
-        assert (
-            repr(d)
-            == "whenever.LocalDateTime(2023-03-26T02:15:00[nonexistent])"
-        )
+        assert repr(d) == "LocalDateTime(2023-03-26T02:15:00[nonexistent])"
 
 
 def test_py():

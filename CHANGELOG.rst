@@ -11,6 +11,10 @@
   Not only is this shorter; it also makes it explicit that assumptions are being made,
   and that there is no automatic conversion.
 
+**Improved**
+
+- Shortened the ``repr()`` of all types to omit ``whenever.`` prefix.
+
 0.3.4 (2024-02-07)
 ------------------
 

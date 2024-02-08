@@ -179,10 +179,10 @@ def test_equality():
 
 def test_repr():
     d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert repr(d) == "whenever.NaiveDateTime(2020-08-15T23:12:09.987654)"
+    assert repr(d) == "NaiveDateTime(2020-08-15T23:12:09.987654)"
     assert (
         repr(NaiveDateTime(2020, 8, 15, 23, 12))
-        == "whenever.NaiveDateTime(2020-08-15T23:12:00)"
+        == "NaiveDateTime(2020-08-15T23:12:00)"
     )
 
 

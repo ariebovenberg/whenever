@@ -542,12 +542,12 @@ def test_from_timestamp():
 def test_repr():
     d = ZonedDateTime(2020, 8, 15, 23, 12, 9, 987_654, tz="Australia/Darwin")
     assert (
-        repr(d) == "whenever.ZonedDateTime(2020-08-15T23:12:09.987654"
+        repr(d) == "ZonedDateTime(2020-08-15T23:12:09.987654"
         "+09:30[Australia/Darwin])"
     )
     assert (
         repr(ZonedDateTime(2020, 8, 15, 23, 12, tz="Iceland"))
-        == "whenever.ZonedDateTime(2020-08-15T23:12:00+00:00[Iceland])"
+        == "ZonedDateTime(2020-08-15T23:12:00+00:00[Iceland])"
     )
 
 

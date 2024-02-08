@@ -824,7 +824,7 @@ class UTCDateTime(AwareDateTime):
         return cls._from_py_unchecked(_parse_utc_rfc3339(s))
 
     def __repr__(self) -> str:
-        return f"whenever.UTCDateTime({self})"
+        return f"UTCDateTime({self})"
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
@@ -1173,7 +1173,7 @@ class OffsetDateTime(AwareDateTime):
         return cls._from_py_unchecked(_parse_rfc3339(s))
 
     def __repr__(self) -> str:
-        return f"whenever.OffsetDateTime({self})"
+        return f"OffsetDateTime({self})"
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
@@ -1552,7 +1552,7 @@ class ZonedDateTime(AwareDateTime):
         return self._from_py_unchecked(self._py_dt.astimezone(ZoneInfo(tz)))
 
     def __repr__(self) -> str:
-        return f"whenever.ZonedDateTime({self})"
+        return f"ZonedDateTime({self})"
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
@@ -1757,9 +1757,9 @@ class LocalDateTime(AwareDateTime):
 
     def __repr__(self) -> str:
         try:
-            return f"whenever.LocalDateTime({self})"
+            return f"LocalDateTime({self})"
         except DoesntExistInZone:
-            return f"whenever.LocalDateTime({self._py_dt.isoformat()}[nonexistent])"
+            return f"LocalDateTime({self._py_dt.isoformat()}[nonexistent])"
 
     @property
     def offset(self) -> timedelta:
@@ -2331,7 +2331,7 @@ class NaiveDateTime(DateTime):
         return cls._from_py_unchecked(parsedate_to_datetime(s))
 
     def __repr__(self) -> str:
-        return f"whenever.NaiveDateTime({self})"
+        return f"NaiveDateTime({self})"
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
