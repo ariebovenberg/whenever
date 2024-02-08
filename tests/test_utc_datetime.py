@@ -196,10 +196,10 @@ def test_from_timestamp():
 
 def test_repr():
     d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert repr(d) == "whenever.UTCDateTime(2020-08-15T23:12:09.987654Z)"
+    assert repr(d) == "UTCDateTime(2020-08-15T23:12:09.987654Z)"
     assert (
         repr(UTCDateTime(2020, 8, 15, 23, 12))
-        == "whenever.UTCDateTime(2020-08-15T23:12:00Z)"
+        == "UTCDateTime(2020-08-15T23:12:00Z)"
     )
 
 
