@@ -21,19 +21,19 @@ Concrete classes
 ----------------
 
 .. autoclass:: whenever.UTCDateTime
-   :members: now, from_timestamp, __add__, __sub__, from_naive, strptime, rfc2822, from_rfc2822, rfc3339, from_rfc3339
+   :members: now, from_timestamp, __add__, __sub__, strptime, rfc2822, from_rfc2822, rfc3339, from_rfc3339
 
 .. autoclass:: whenever.OffsetDateTime
-   :members: now, from_timestamp, from_naive, strptime, rfc2822, from_rfc2822, rfc3339, from_rfc3339
+   :members: now, from_timestamp, strptime, rfc2822, from_rfc2822, rfc3339, from_rfc3339
 
 .. autoclass:: whenever.ZonedDateTime
-   :members: now, from_timestamp, tz, __add__, __sub__, from_naive, disambiguated
+   :members: now, from_timestamp, tz, __add__, __sub__, disambiguated
 
 .. autoclass:: whenever.LocalDateTime
-   :members: now, from_timestamp, exists, __add__, __sub__, from_naive, disambiguated
+   :members: now, from_timestamp, exists, __add__, __sub__, disambiguated
 
 .. autoclass:: whenever.NaiveDateTime
-   :members: __eq__, __add__, __sub__, strptime, rfc2822, from_rfc2822
+   :members: __eq__, __add__, __sub__, assume_utc, assume_offset, assume_zoned, strptime, rfc2822, from_rfc2822
 
 Helpers
 -------

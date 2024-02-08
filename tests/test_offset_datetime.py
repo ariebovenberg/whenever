@@ -1,7 +1,6 @@
 import pickle
 import weakref
-from datetime import datetime as py_datetime
-from datetime import timedelta, timezone, tzinfo
+from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
 
 import pytest
 from hypothesis import given
@@ -558,13 +557,6 @@ def test_to_local():
 def test_naive():
     d = OffsetDateTime(2020, 8, 15, 20, offset=hours(3))
     assert d.naive() == NaiveDateTime(2020, 8, 15, 20)
-
-
-def test_from_naive():
-    d = NaiveDateTime(2020, 8, 15, 20)
-    assert OffsetDateTime.from_naive(d, hours(3)).exact_eq(
-        OffsetDateTime(2020, 8, 15, 20, offset=hours(3))
-    )
 
 
 @pytest.mark.parametrize(

@@ -97,7 +97,8 @@ It's suitable for representing times related to the user's system.
 
 .. code-block:: python
 
-    print(f"Your timer will go off at {LocalDateTime.now() + hours(1)}.")
+    backup_scheduled = LocalDateTime(2023, 12, 28, hour=20)
+    alarm = LocalDateTime(2023, 12, 28, hour=6)
 
 Because the local timezone may change, the moment in time represented by a
 ``LocalDateTime`` may change. Therefore, the type is not hashable.
@@ -203,6 +204,9 @@ to detect and prevent these mistakes.
 Conversion
 ----------
 
+Aware types
+~~~~~~~~~~~
+
 You can convert between aware datetimes with the :meth:`~whenever.AwareDateTime.as_utc`,
 :meth:`~whenever.AwareDateTime.as_offset`, :meth:`~whenever.AwareDateTime.as_zoned`,
 and :meth:`~whenever.AwareDateTime.as_local` methods. These methods return a new
@@ -219,23 +223,36 @@ This means the results will always compare equal to the original datetime.
 
     >>> d.as_offset(hours(4)) == d  # True: always the same moment in time
 
-You can convert to a :class:`~whenever.NaiveDateTime` with
-:meth:`~whenever.AwareDateTime.naive`, which strips away any timezone or offset
-information. Each aware type also defines a :meth:`from_naive` method.
+Naïve types
+~~~~~~~~~~~
 
+Conversion to naïve types is always easy: calling
+:meth:`~whenever.AwareDateTime.naive` simply strips
+away any timezone information:
 
 .. code-block:: python
 
     >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
-    >>> n = d.naive()  # NaiveDateTime(2023-12-28 11:30:00)
-    >>> OffsetDateTime.from_naive(n, offset=hours(5))  # 2023-12-28 11:30:00+05:00
+    >>> n = d.naive()
+    NaiveDateTime(2023-12-28 11:30:00)
+
+You can convert from naïve types with the :meth:`~whenever.NaiveDateTime.assume_utc`,
+:meth:`~whenever.NaiveDateTime.assume_offset`, and
+:meth:`~whenever.NaiveDateTime.assume_zoned` methods.
+
+.. code-block:: python
+
+    >>> n = NaiveDateTime(2023, 12, 28, 11, 30)
+    >>> n.assume_utc()
+    UTCDateTime(2023-12-28 11:30:00Z)
+    >>> n.assume_zoned("Europe/Amsterdam")
+    ZonedDateTime(2023-12-28 11:30:00+01:00[Europe/Amsterdam])
 
 .. note::
 
-   The seemingly inconsistent naming of :meth:`~whenever.AwareDateTime.naive` and
-   the ``as_*`` methods is intentional. The ``as_*`` methods preserve the same
-   moment in time, while :meth:`~whenever.AwareDateTime.naive` converts to
-   something else entirely.
+   The seemingly inconsistent naming of the ``assume_*`` methods is intentional. The ``assume_*`` methods
+   emphasize that the conversion is not self-evident, but based on assumptions
+   of the developer.
 
 
 Moving back and forwards in time

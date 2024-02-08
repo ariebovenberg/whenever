@@ -1,6 +1,16 @@
 🚀 Changelog
 ============
 
+0.4.0rc0 (2024-02-07)
+---------------------
+
+**Breaking changes**
+
+- Removed ``from_naive`` classmethods in favor of instance methods on ``NaiveDateTime``.
+  For example, ``UTCDateTime.from_naive(naive)`` becomes ``naive.assume_utc()``.
+  Not only is this shorter; it also makes it explicit that assumptions are being made,
+  and that there is no automatic conversion.
+
 0.3.4 (2024-02-07)
 ------------------
 
@@ -34,7 +44,7 @@
 
 - 🔨 Added ``strptime()`` to ``UTCDateTime``, ``OffsetDateTime`` and
   ``NaiveDateTime``.
-- 📋 Added ``rfc2822()``/``from_rfc2822()`` to ``UTCDateTime``, 
+- 📋 Added ``rfc2822()``/``from_rfc2822()`` to ``UTCDateTime``,
   ``OffsetDateTime`` and ``NaiveDateTime``.
 - ⚙️ Added ``rfc3339()``/``from_rfc3339()`` to ``UTCDateTime`` and ``OffsetDateTime``
 

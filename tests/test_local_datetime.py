@@ -1,8 +1,7 @@
 import pickle
 import weakref
 from copy import copy, deepcopy
-from datetime import datetime as py_datetime
-from datetime import timedelta, timezone
+from datetime import datetime as py_datetime, timedelta, timezone
 
 import pytest
 from hypothesis import given
@@ -89,12 +88,11 @@ class TestInit:
 @local_nyc_tz()
 def test_offset_nonexistent():
     d = LocalDateTime(2023, 3, 26, 2, 15)
-    with local_ams_tz(), pytest.raises(DoesntExistInZone) as e:
+    with local_ams_tz(), pytest.raises(
+        DoesntExistInZone,
+        match="2023-03-26 02:15:00 doesn't exist in the system timezone",
+    ):
         d.offset
-    assert (
-        str(e.value)
-        == "2023-03-26 02:15:00 doesn't exist in the system timezone"
-    )
 
 
 class TestToUTC:
@@ -116,66 +114,16 @@ class TestToUTC:
     @local_nyc_tz()
     def test_doesnt_exist(self):
         d = LocalDateTime(2023, 3, 26, 2, 15)
-        with local_ams_tz(), pytest.raises(DoesntExistInZone) as e:
+        with local_ams_tz(), pytest.raises(
+            DoesntExistInZone,
+            match="2023-03-26 02:15:00 doesn't exist in the system timezone",
+        ):
             d.as_utc()
-        assert (
-            str(e.value)
-            == "2023-03-26 02:15:00 doesn't exist in the system timezone"
-        )
 
 
 def test_naive():
     d = LocalDateTime(2020, 8, 15, 12, 8, 30)
     assert d.naive() == NaiveDateTime(2020, 8, 15, 12, 8, 30)
-
-
-class TestFromNaive:
-    @local_ams_tz()
-    def test_normal(self):
-        assert LocalDateTime.from_naive(
-            NaiveDateTime(2020, 8, 15, 13),
-        ).exact_eq(LocalDateTime(2020, 8, 15, 13))
-
-    @local_ams_tz()
-    def test_ambiguous(self):
-        d = NaiveDateTime(2023, 10, 29, 2, 15)
-        with pytest.raises(Ambiguous) as e:
-            LocalDateTime.from_naive(d)
-        assert (
-            str(e.value)
-            == "2023-10-29 02:15:00 is ambiguous in the system timezone"
-        )
-
-        assert LocalDateTime.from_naive(d, disambiguate="earlier").exact_eq(
-            LocalDateTime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                disambiguate="earlier",
-            )
-        )
-        assert LocalDateTime.from_naive(d, disambiguate="later").exact_eq(
-            LocalDateTime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                disambiguate="later",
-            )
-        )
-
-    @local_ams_tz()
-    def test_doesnt_exist(self):
-        d = NaiveDateTime(2023, 3, 26, 2, 15)
-        with pytest.raises(DoesntExistInZone) as e:
-            LocalDateTime.from_naive(d)
-        assert (
-            str(e.value)
-            == "2023-03-26 02:15:00 doesn't exist in the system timezone"
-        )
 
 
 @local_ams_tz()

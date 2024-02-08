@@ -1,8 +1,7 @@
 import pickle
 import weakref
 from copy import copy, deepcopy
-from datetime import datetime as py_datetime
-from datetime import timedelta, timezone
+from datetime import datetime as py_datetime, timedelta, timezone
 
 import pytest
 from hypothesis import given
@@ -366,55 +365,6 @@ def test_naive():
     assert d.replace(disambiguate="later").naive() == NaiveDateTime(
         2020, 8, 15, 13
     )
-
-
-class TestFromNaive:
-    def test_normal(self):
-        assert ZonedDateTime.from_naive(
-            NaiveDateTime(2020, 8, 15, 13), tz="Europe/Amsterdam"
-        ).exact_eq(ZonedDateTime(2020, 8, 15, 13, tz="Europe/Amsterdam"))
-
-    def test_ambiguous(self):
-        d = NaiveDateTime(2023, 10, 29, 2, 15)
-        with pytest.raises(
-            Ambiguous,
-            match="2023-10-29 02:15:00 is ambiguous in timezone Europe/Amsterdam",
-        ):
-            ZonedDateTime.from_naive(d, tz="Europe/Amsterdam")
-        assert ZonedDateTime.from_naive(
-            d, tz="Europe/Amsterdam", disambiguate="earlier"
-        ).exact_eq(
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                tz="Europe/Amsterdam",
-                disambiguate="earlier",
-            )
-        )
-        assert ZonedDateTime.from_naive(
-            d, tz="Europe/Amsterdam", disambiguate="later"
-        ).exact_eq(
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                tz="Europe/Amsterdam",
-                disambiguate="later",
-            )
-        )
-
-    def test_doesnt_exist(self):
-        d = NaiveDateTime(2023, 3, 26, 2, 15)
-        with pytest.raises(
-            DoesntExistInZone,
-            match="2023-03-26 02:15:00 doesn't exist in timezone Europe/Amsterdam",
-        ):
-            ZonedDateTime.from_naive(d, tz="Europe/Amsterdam")
 
 
 class TestFromStr:
