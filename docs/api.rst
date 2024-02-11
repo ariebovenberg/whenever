@@ -30,7 +30,7 @@ Concrete classes
    :members: now, from_timestamp, tz, __add__, __sub__, disambiguated
 
 .. autoclass:: whenever.LocalDateTime
-   :members: now, from_timestamp, exists, __add__, __sub__, disambiguated
+   :members: now, from_timestamp, tzname, __add__, __sub__
 
 .. autoclass:: whenever.NaiveDateTime
    :members: __eq__, __add__, __sub__, assume_utc, assume_offset, assume_zoned, strptime, rfc2822, from_rfc2822

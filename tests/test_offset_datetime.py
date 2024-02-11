@@ -545,7 +545,7 @@ def test_to_zoned():
 
 
 @local_nyc_tz()
-def test_to_local():
+def test_as_local():
     d = OffsetDateTime(2020, 8, 15, 20, 12, 9, 987_654, offset=hours(3))
     assert d.as_local().exact_eq(
         LocalDateTime(2020, 8, 15, 13, 12, 9, 987_654)

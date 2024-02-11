@@ -1,19 +1,26 @@
 🚀 Changelog
 ============
 
-0.4.0rc0 (2024-02-07)
+0.4.0rc0 (2024-02-??)
 ---------------------
 
 **Breaking changes**
 
-- Removed ``from_naive`` classmethods in favor of instance methods on ``NaiveDateTime``.
-  For example, ``UTCDateTime.from_naive(naive)`` becomes ``naive.assume_utc()``.
-  Not only is this shorter; it also makes it explicit that assumptions are being made,
-  and that there is no automatic conversion.
+- ``from_naive()`` removed in favor of methods on ``NaiveDateTime``.
+  For example, ``UTCDateTime.from_naive(n)`` becomes ``n.assume_utc()``.
+- The ``disambiguate=`` argument now also determines how non-existent times
+  are handled.
+- ``LocalDateTime`` no longer adjusts automatically to changes in the system 
+  timezone. This behavior was dependent on too many assumptions, and behaved 
+  unintuitively in some cases. Now, ``LocalDateTime`` reflects the system 
+  timezone at the moment of instantiation. It can be updated explicitly, 
+  instead of relying on mutable global state.
 
 **Improved**
 
-- Shortened the ``repr()`` of all types to omit ``whenever.`` prefix.
+- Shortened the ``repr()`` of all types.
+- Added a ``disambiguation="compatible"`` option that matches the behavior of
+  other languages and the RFC5545 standard.
 
 0.3.4 (2024-02-07)
 ------------------
