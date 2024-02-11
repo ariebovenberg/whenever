@@ -10,6 +10,7 @@ from whenever import (
     Ambiguous,
     DoesntExistInZone,
     InvalidFormat,
+    LocalDateTime,
     NaiveDateTime,
     OffsetDateTime,
     UTCDateTime,
@@ -88,7 +89,62 @@ class TestAssumeZoned:
         with pytest.raises(DoesntExistInZone, match="02:15.*Europe/Amsterdam"):
             d.assume_zoned("Europe/Amsterdam")
 
-        # TODO: nonexistent disambiguation
+        with pytest.raises(DoesntExistInZone, match="02:15.*Europe/Amsterdam"):
+            d.assume_zoned("Europe/Amsterdam", disambiguate="raise")
+
+        assert d.assume_zoned(
+            "Europe/Amsterdam", disambiguate="earlier"
+        ) == ZonedDateTime(
+            2023, 3, 26, 2, 15, tz="Europe/Amsterdam", disambiguate="earlier"
+        )
+
+
+class TestAssumeLocal:
+    @local_ams_tz()
+    def test_typical(self):
+        assert NaiveDateTime(2020, 8, 15, 23).assume_local() == LocalDateTime(
+            2020, 8, 15, 23
+        )
+
+    @local_ams_tz()
+    def test_ambiguous(self):
+        d = NaiveDateTime(2023, 10, 29, 2, 15)
+
+        with pytest.raises(Ambiguous, match="02:15.*system"):
+            d.assume_local()
+
+        with pytest.raises(Ambiguous, match="02:15.*system"):
+            d.assume_local(disambiguate="raise")
+
+        assert d.assume_local(disambiguate="earlier") == LocalDateTime(
+            2023, 10, 29, 2, 15, disambiguate="earlier"
+        )
+        assert d.assume_local(disambiguate="compatible") == LocalDateTime(
+            2023, 10, 29, 2, 15, disambiguate="earlier"
+        )
+        assert d.assume_local(disambiguate="later") == LocalDateTime(
+            2023, 10, 29, 2, 15, disambiguate="later"
+        )
+
+    @local_ams_tz()
+    def test_nonexistent(self):
+        d = NaiveDateTime(2023, 3, 26, 2, 15)
+
+        with pytest.raises(DoesntExistInZone, match="02:15.*system"):
+            d.assume_local()
+
+        with pytest.raises(DoesntExistInZone, match="02:15.*system"):
+            d.assume_local(disambiguate="raise")
+
+        assert d.assume_local(disambiguate="earlier") == LocalDateTime(
+            2023, 3, 26, 2, 15, disambiguate="earlier"
+        )
+        assert d.assume_local(disambiguate="later") == LocalDateTime(
+            2023, 3, 26, 2, 15, disambiguate="later"
+        )
+        assert d.assume_local(disambiguate="compatible") == LocalDateTime(
+            2023, 3, 26, 2, 15, disambiguate="compatible"
+        )
 
 
 def test_immutable():

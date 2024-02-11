@@ -2,6 +2,7 @@ import pickle
 import weakref
 from copy import copy, deepcopy
 from datetime import datetime as py_datetime, timedelta, timezone
+from typing import Any
 
 import pytest
 from hypothesis import given
@@ -51,35 +52,34 @@ class TestInit:
         assert d.offset == hours(-4)
 
     def test_ambiguous(self):
-        # default behavior: raise
+        kwargs: dict[str, Any] = dict(
+            year=2023,
+            month=10,
+            day=29,
+            hour=2,
+            minute=15,
+            second=30,
+            tz="Europe/Amsterdam",
+        )
+
         with pytest.raises(
             Ambiguous,
             match="2023-10-29 02:15:30 is ambiguous in timezone Europe/Amsterdam",
         ):
-            ZonedDateTime(2023, 10, 29, 2, 15, 30, tz="Europe/Amsterdam")
-        d1 = ZonedDateTime(
-            2023,
-            10,
-            29,
-            2,
-            15,
-            30,
-            tz="Europe/Amsterdam",
-            disambiguate="earlier",
-        )
-        assert d1.fold == 0
-        d2 = ZonedDateTime(
-            2023,
-            10,
-            29,
-            2,
-            15,
-            30,
-            tz="Europe/Amsterdam",
-            disambiguate="later",
-        )
-        assert d2.fold == 1
-        assert d2 > d1
+            ZonedDateTime(**kwargs)
+
+        with pytest.raises(
+            Ambiguous,
+            match="2023-10-29 02:15:30 is ambiguous in timezone Europe/Amsterdam",
+        ):
+            ZonedDateTime(**kwargs, disambiguate="raise")
+
+        d1 = ZonedDateTime(**kwargs, disambiguate="earlier")
+        assert d1.as_utc() == UTCDateTime(2023, 10, 29, 0, 15, 30)
+        assert ZonedDateTime(**kwargs, disambiguate="compatible") == d1
+
+        d2 = ZonedDateTime(**kwargs, disambiguate="later")
+        assert d2.as_utc() == UTCDateTime(2023, 10, 29, 1, 15, 30)
 
     def test_invalid_zone(self):
         with pytest.raises(TypeError):
@@ -108,11 +108,38 @@ class TestInit:
         )
 
     def test_nonexistent(self):
+        kwargs: dict[str, Any] = dict(
+            year=2023,
+            month=3,
+            day=26,
+            hour=2,
+            minute=15,
+            second=30,
+            tz="Europe/Amsterdam",
+        )
         with pytest.raises(
             DoesntExistInZone,
             match="2023-03-26 02:15:30 doesn't exist in timezone Europe/Amsterdam",
         ):
-            ZonedDateTime(2023, 3, 26, 2, 15, 30, tz="Europe/Amsterdam")
+            ZonedDateTime(**kwargs)
+
+        with pytest.raises(
+            DoesntExistInZone,
+            match="2023-03-26 02:15:30 doesn't exist in timezone Europe/Amsterdam",
+        ):
+            ZonedDateTime(**kwargs, disambiguate="raise")
+
+        d1 = ZonedDateTime(**kwargs, disambiguate="compatible")
+        assert d1.exact_eq(
+            ZonedDateTime(2023, 3, 26, 3, 15, 30, tz="Europe/Amsterdam")
+        )
+
+        assert ZonedDateTime(**kwargs, disambiguate="later").exact_eq(
+            ZonedDateTime(2023, 3, 26, 3, 15, 30, tz="Europe/Amsterdam")
+        )
+        assert ZonedDateTime(**kwargs, disambiguate="earlier").exact_eq(
+            ZonedDateTime(2023, 3, 26, 1, 15, 30, tz="Europe/Amsterdam")
+        )
 
 
 def test_immutable():
@@ -280,7 +307,7 @@ def test_disambiguated():
     ).disambiguated()
 
 
-def test_to_utc():
+def test_as_utc():
     assert ZonedDateTime(
         2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"
     ).as_utc() == UTCDateTime(2020, 8, 15, 10, 8, 30)
@@ -300,21 +327,14 @@ def test_to_utc():
     )
 
 
-def test_to_zoned():
+def test_as_zoned():
     assert (
         ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
         .as_zoned("America/New_York")
         .exact_eq(ZonedDateTime(2020, 8, 15, 6, 8, 30, tz="America/New_York"))
     )
     ams = ZonedDateTime(
-        2023,
-        10,
-        29,
-        2,
-        15,
-        30,
-        tz="Europe/Amsterdam",
-        disambiguate="earlier",
+        2023, 10, 29, 2, 15, 30, tz="Europe/Amsterdam", disambiguate="earlier"
     )
     nyc = ZonedDateTime(2023, 10, 28, 20, 15, 30, tz="America/New_York")
     assert ams.as_zoned("America/New_York").exact_eq(nyc)
@@ -337,7 +357,7 @@ def test_to_zoned():
     )
 
 
-def test_to_offset():
+def test_as_offset():
     d = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
 
     assert d.as_offset().exact_eq(
@@ -511,14 +531,7 @@ def test_timestamp():
     ).timestamp() == approx(1_597_493_310.000045, abs=1e-6)
 
     ambiguous = ZonedDateTime(
-        2023,
-        10,
-        29,
-        2,
-        15,
-        30,
-        tz="Europe/Amsterdam",
-        disambiguate="earlier",
+        2023, 10, 29, 2, 15, 30, tz="Europe/Amsterdam", disambiguate="earlier"
     )
     assert (
         ambiguous.timestamp()
@@ -822,7 +835,7 @@ class TestReplace:
             ZonedDateTime(2020, 8, 15, 23, 12, 9, 987_654, tz="Iceland")
         )
 
-    def test_invalid(self):
+    def test_invalid_args(self):
         d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
         with pytest.raises(TypeError, match="tzinfo"):
             d.replace(tzinfo=timezone.utc)  # type: ignore[call-arg]
@@ -831,7 +844,7 @@ class TestReplace:
         with pytest.raises(TypeError, match="foo"):
             d.replace(foo="bar")  # type: ignore[call-arg]
 
-    def test_disambiguate(self):
+    def test_disambiguate_ambiguous(self):
         d = ZonedDateTime(
             2023,
             10,
@@ -847,6 +860,7 @@ class TestReplace:
             match="2023-10-29 02:15:30 is ambiguous in timezone Europe/Amsterdam",
         ):
             d.replace(disambiguate="raise")
+
         assert d.replace(disambiguate="later").exact_eq(
             ZonedDateTime(
                 2023,
@@ -860,6 +874,7 @@ class TestReplace:
             )
         )
         assert d.replace(disambiguate="earlier").exact_eq(d)
+        assert d.replace(disambiguate="compatible").exact_eq(d)
 
     def test_nonexistent(self):
         d = ZonedDateTime(2023, 3, 26, 1, 15, 30, tz="Europe/Amsterdam")
@@ -868,6 +883,45 @@ class TestReplace:
             match="2023-03-26 02:15:30 doesn't exist in timezone Europe/Amsterdam",
         ):
             d.replace(hour=2)
+
+        assert d.replace(hour=2, disambiguate="earlier").exact_eq(
+            ZonedDateTime(
+                2023,
+                3,
+                26,
+                2,
+                15,
+                30,
+                tz="Europe/Amsterdam",
+                disambiguate="earlier",
+            )
+        )
+
+        assert d.replace(hour=2, disambiguate="later").exact_eq(
+            ZonedDateTime(
+                2023,
+                3,
+                26,
+                2,
+                15,
+                30,
+                tz="Europe/Amsterdam",
+                disambiguate="later",
+            )
+        )
+
+        assert d.replace(hour=2, disambiguate="compatible").exact_eq(
+            ZonedDateTime(
+                2023,
+                3,
+                26,
+                2,
+                15,
+                30,
+                tz="Europe/Amsterdam",
+                disambiguate="compatible",
+            )
+        )
 
 
 class TestAdd:

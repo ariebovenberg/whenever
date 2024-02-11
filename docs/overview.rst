@@ -15,7 +15,7 @@ The types
        UTCDateTime, OffsetDateTime, ZonedDateTime, LocalDateTime, NaiveDateTime,
    )
 
-and here's how you can use them:
+and here's a summary of how you can use them:
 
 +-----------------------+-----+--------+-------+-------+-------+
 | Feature               |         Aware                | Naive |
@@ -37,8 +37,6 @@ and here's how you can use them:
 | to/from RFC2822       | ✅  |  ✅    |  ❌   |  ❌   |  ✅   |
 +-----------------------+-----+--------+-------+-------+-------+
 | to/from RFC3339       | ✅  |  ✅    |  ❌   |  ❌   |  ❌   |
-+-----------------------+-----+--------+-------+-------+-------+
-| hashable              | ✅  |  ✅    |  ✅   |  ❌   |  ✅   |
 +-----------------------+-----+--------+-------+-------+-------+
 
 ``UTCDateTime``
@@ -97,11 +95,9 @@ It's suitable for representing times related to the user's system.
 
 .. code-block:: python
 
-    backup_scheduled = LocalDateTime(2023, 12, 28, hour=20)
-    alarm = LocalDateTime(2023, 12, 28, hour=6)
-
-Because the local timezone may change, the moment in time represented by a
-``LocalDateTime`` may change. Therefore, the type is not hashable.
+    >>> # assuming system timezone is America/New_York
+    >>> backup_scheduled = LocalDateTime(2023, 12, 28, hour=20)
+    LocalDateTime(2023-12-28 20:00:00-05:00)
 
 ``NaiveDateTime``
 ~~~~~~~~~~~~~~~~~
@@ -116,7 +112,7 @@ or if you absolutely don't need to account for the complexities of the real worl
     city_simulation_start = NaiveDateTime(1900, 1, 1, hour=0)
 
 
-Equality and comparison
+Comparison and equality
 -----------------------
 
 All types support equality and comparison.
@@ -283,8 +279,8 @@ timezone variabilities.
    If you need to shift an :class:`~whenever.OffsetDateTime` instance,
    either convert to UTC or a proper timezone first.
 
-Difference between datetimes
-----------------------------
+Subtracting datetimes
+---------------------
 
 You can subtract two :class:`~whenever.DateTime` instances to get a
 :class:`~datetime.timedelta` representing the duration between them.
@@ -298,74 +294,84 @@ Aware types can be mixed, but naive types cannot be mixed with aware types:
     # difference between naive datetimes
     >>> NaiveDateTime(2023, 12, 28, 11) - NaiveDateTime(2023, 12, 27, 11)
 
-Timezone complexities
----------------------
+Ambiguity in timezones
+----------------------
+
+.. note::
+
+   The API for handling ambiguitiy is inspired by that of
+   `Temporal <https://tc39.es/proposal-temporal/docs/ambiguity.html>`_,
+   the redesigned date and time API for JavaScript.
 
 In real-world timezones, local clocks are often moved backwards and forwards
-due to daylight savings time or political decisions.
+due to Daylight Saving Time (DST) or political decisions.
 This creates two types of situations for the :class:`~whenever.ZonedDateTime`
-and :class:`~whenever.LocalDateTime` types: *ambiguity* and *non-existence*.
+and :class:`~whenever.LocalDateTime` types:
 
-Ambiguity
-~~~~~~~~~
+- When the clock moves backwards, there is a period of time that occurs twice.
+  For example, Sunday October 29th 2:30am occured twice in Paris.
+  When you specify this time, you need to specify whether you want the earlier
+  or later occurrence.
+- When the clock moves forwards, a period of time is skipped.
+  For example, Sunday March 26th 2:30am didn't happen in Paris.
+  When you specify this time, you need to specify how you want to handle this non-existent time.
+  Common approaches are to extrapolate the time forward or backwards
+  to 1:30am or 3:30am.
 
-When a clock moves *backwards*, there is a period of time that occurs twice.
-For example: if a clock goes back from 2am to 1am, then 1:30am occurs
-twice: once before the clock goes back, and once after.
-
-In such ambiguous cases, **whenever** `refuses to guess <https://peps.python.org/pep-0020/>`_
-which of the two possible moments in time you intended:
+By default, **whenever** `refuses to guess <https://peps.python.org/pep-0020/>`_,
+but it is possible to customize how to handle these situations.
 You choose the disambiguation behavior you want with the ``disambiguate=`` argument:
 
-+-------------------+-----------------------------------------------------------------------+
-| ``disambiguate``  | Behavior in case of ambiguity                                         |
-+===================+=======================================================================+
-| ``"raise"``       | (default) Refuse to guess: raise :exc:`~whenever.Ambiguous` exception |
-+-------------------+-----------------------------------------------------------------------+
-| ``"earlier"``     | Choose the earlier of the two possible datetimes (before transition)  |
-+-------------------+-----------------------------------------------------------------------+
-| ``"later"``       | Choose the later of the two possible datetimes (after transition)     |
-+-------------------+-----------------------------------------------------------------------+
++------------------+-------------------------------------------------+
+| ``disambiguate`` | Behavior in case of ambiguity                   |
++==================+=================================================+
+| ``"raise"``      | (default) Refuse to guess:                      |
+|                  | raise :exc:`~whenever.Ambiguous`                |
+|                  | or :exc:`~whenever.DoesntExistInZone` exception.|
++------------------+-------------------------------------------------+
+| ``"earlier"``    | Choose the earlier of the two options           |
++------------------+-------------------------------------------------+
+| ``"later"``      | Choose the later of the two options             |
++------------------+-------------------------------------------------+
+| ``"compatible"`` | Choose "earlier" for backward transitions and   |
+|                  | "later" for forward transitions. This matches   |
+|                  | the behavior of other established libraries,    |
+|                  | and the industry standard RFC 5545.             |
+|                  | It corresponds to setting ``fold=0`` in the     |
+|                  | standard library.                               |
++------------------+-------------------------------------------------+
 
 .. code-block:: python
 
-    ams = "Europe/Amsterdam"
+    >>> paris = "Europe/Paris"
 
-    # Not ambiguous: everything is fine
-    >>> ZonedDateTime(2023, 1, 1, tz=ams)
+    >>> # Not ambiguous: everything is fine
+    >>> ZonedDateTime(2023, 1, 1, tz=paris)
+    ZonedDateTime(2023-01-01 00:00:00+01:00[Europe/Paris])
 
-    # Ambiguous: 1:30am occurs twice. Refuse to guess.
-    >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=ams)
+    >>> # Ambiguous: 1:30am occurs twice. Refuse to guess.
+    >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris)
     Traceback (most recent call last):
       ...
-    whenever.Ambiguous: 2023-10-29 02:30:00 is ambiguous in timezone Europe/Amsterdam
+    whenever.Ambiguous: 2023-10-29 02:30:00 is ambiguous in timezone Europe/Paris
 
-    # Ambiguous: explicitly choose the earlier option
-    >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=ams, disambiguate="earlier")
+    >>> # Ambiguous: explicitly choose the earlier option
+    >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="earlier")
+    ZoneDateTime(2023-10-29 02:30:00+01:00[Europe/Paris])
 
-
-Non-existence
-~~~~~~~~~~~~~
-
-When a clock moves forwards, there is a period of time that does not exist.
-For example: if a clock skips forward from 1am to 2am, then 1:30am does not
-exist.
-
-:class:`~whenever.ZonedDateTime` and :class:`~whenever.LocalDateTime`
-prevent you from creating non-existent datetimes, by raising a
-:exc:`~whenever.DoesntExistInZone` exception if you try to create one.
-
-.. code-block:: python
-
-    >>> ZonedDateTime(2023, 3, 26, 2, 30, tz="Europe/Amsterdam")
+    >>> # Non-existent: 2:30am doesn't exist.
+    >>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris)
     Traceback (most recent call last):
       ...
-    whenever.DoesntExistInZone: 2023-03-26 02:30:00 doesn't exist in timezone
-    Europe/Amsterdam
+    whenever.DoesntExistInZone: 2023-03-26 02:30:00 doesn't exist in timezone Europe/Paris
+
+    >>> # Non-existent: extrapolate to 3:30am
+    >>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguate="later")
+    ZonedDateTime(2023-03-26 03:30:00+02:00[Europe/Paris])
 
 
-Converting to/from standard library ``datetime``
-------------------------------------------------
+Conversion to the standard library
+----------------------------------
 
 Each **whenever** class wraps a standard library :class:`~datetime.datetime` instance.
 You can access it with the :attr:`~whenever.DateTime.py` attribute.
@@ -379,6 +385,7 @@ Conversely, you can create a type from a standard library datetime with the
    UTCDateTime(2023-01-01 00:00:00Z)
    >>> ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam").py
    datetime(2023, 1, 1, 0, 0, tzinfo=ZoneInfo('Europe/Amsterdam'))
+
 
 Parsing
 -------
@@ -396,22 +403,25 @@ The same `formatting rules <https://docs.python.org/3/library/datetime.html#form
    OffsetDateTime.strptime("2023-01-01+05:00", "%Y-%m-%d%z")  # 2023-01-01 00:00:00+05:00
    NaiveDateTime.strptime("2023-01-01 00:00", "%Y-%m-%d %H:%M")  # 2023-01-01 00:00:00
 
-.. note::
+:class:`~whenever.ZonedDateTime` and :class:`~whenever.LocalDateTime` do not (yet)
+implement ``strptime()`` methods, because they require disambiguation.
+If you'd like to parse into these types,
+use :meth:`NaiveDateTime.strptime() <whenever.NaiveDateTime.strptime>`
+to parse them, and then use the :meth:`~whenever.NaiveDateTime.assume_utc`,
+:meth:`~whenever.NaiveDateTime.assume_offset`,
+:meth:`~whenever.NaiveDateTime.assume_zoned`, or :meth:`~whenever.NaiveDateTime.assume_local`
+methods to convert them.
+This makes it explicit what information is being assumed.
 
-   :class:`~whenever.ZonedDateTime` and :class:`~whenever.LocalDateTime` do not (yet)
-   implement ``strptime()`` methods, because they require disambiguation.
-   If you'd like to parse into these types,
-   use :meth:`NaiveDateTime.strptime() <whenever.NaiveDateTime.strptime>`
-   to parse them, and then use the ``.from_naive()`` method to convert to the desired type:
+.. code-block:: python
 
-   .. code-block:: python
+    NaiveDateTime.strptime("2023-01-01 12:00", "%Y-%m-%d %H:%M").assume_local()
 
-      ZonedDateTime.from_naive(
-          # This parsed datetime is ambiguous in the Europe/Amsterdam timezone
-          NaiveDateTime.strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S"),
-          disambiguate="earlier",
-          tz="Europe/Amsterdam",
-      )
+    # handling ambiguity
+    NaiveDateTime.strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S").assume_zoned(
+        "Europe/Amsterdam",
+        disambiguate="earlier",
+    )
 
 .. admonition:: Future plans
 
@@ -419,8 +429,11 @@ The same `formatting rules <https://docs.python.org/3/library/datetime.html#form
    parsing API may be added in the future.
 
 
+Serialization
+-------------
+
 Canonical string format
------------------------
+~~~~~~~~~~~~~~~~~~~~~~~
 
 Each type has a canonical textual format, which is used when converting to and
 from strings. The canonical format is designed to be unambiguous, and to
@@ -455,3 +468,30 @@ Here are the canonical formats for each type:
    The methods :meth:`~whenever.DateTime.canonical_str` and
    :meth:`~whenever.DateTime.from_canonical_str` can be used to convert to and
    from the canonical string format.
+
+Pickling
+~~~~~~~~
+
+All types are pickleable, so you can use them in a distributed system or
+store them in a database that supports pickling.
+
+.. code-block:: python
+
+   import pickle
+
+   d = UTCDateTime(2023, 1, 1, 0, 0)
+   pickled = pickle.dumps(d)
+   unpickled = pickle.loads(pickled)
+   assert d == unpickled
+
+
+Changes to the local timezone
+-----------------------------
+
+The local timezone is the timezone of the system running the code.
+It's often useful to deal with times in the local timezone, but it's also
+important to be aware that the local timezone can change.
+
+.. code-block:: python
+
+   >>> from whenever import LocalDateTime
