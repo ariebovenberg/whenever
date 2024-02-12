@@ -148,46 +148,57 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-@pytest.mark.parametrize(
-    "d, expected",
-    [
-        (
-            ZonedDateTime(
-                2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+class TestCanonicalStr:
+
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (
+                ZonedDateTime(
+                    2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+                ),
+                "2020-08-15T23:12:09.987654+02:00[Europe/Amsterdam]",
             ),
-            "2020-08-15T23:12:09.987654+02:00[Europe/Amsterdam]",
-        ),
-        (
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                30,
-                tz="Europe/Amsterdam",
-                disambiguate="earlier",
+            (
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                    disambiguate="earlier",
+                ),
+                "2023-10-29T02:15:30+02:00[Europe/Amsterdam]",
             ),
-            "2023-10-29T02:15:30+02:00[Europe/Amsterdam]",
-        ),
-        (
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                30,
-                tz="Europe/Amsterdam",
-                disambiguate="later",
+            (
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                    disambiguate="later",
+                ),
+                "2023-10-29T02:15:30+01:00[Europe/Amsterdam]",
             ),
-            "2023-10-29T02:15:30+01:00[Europe/Amsterdam]",
-        ),
-    ],
-)
-def test_canonical_str(d: ZonedDateTime, expected: str):
-    assert str(d) == expected
-    assert d.canonical_str() == expected
+        ],
+    )
+    def test_canonical_str(self, d: ZonedDateTime, expected: str):
+        assert str(d) == expected.replace("T", " ")
+        assert d.canonical_str() == expected
+
+    def test_seperator(self):
+        d = ZonedDateTime(
+            2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+        )
+        assert (
+            d.canonical_str(sep=" ")
+            == "2020-08-15 23:12:09.987654+02:00[Europe/Amsterdam]"
+        )
 
 
 class TestEquality:
@@ -555,12 +566,12 @@ def test_from_timestamp():
 def test_repr():
     d = ZonedDateTime(2020, 8, 15, 23, 12, 9, 987_654, tz="Australia/Darwin")
     assert (
-        repr(d) == "ZonedDateTime(2020-08-15T23:12:09.987654"
+        repr(d) == "ZonedDateTime(2020-08-15 23:12:09.987654"
         "+09:30[Australia/Darwin])"
     )
     assert (
         repr(ZonedDateTime(2020, 8, 15, 23, 12, tz="Iceland"))
-        == "ZonedDateTime(2020-08-15T23:12:00+00:00[Iceland])"
+        == "ZonedDateTime(2020-08-15 23:12:00+00:00[Iceland])"
     )
 
 

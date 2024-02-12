@@ -150,16 +150,16 @@ class DateTime(ABC):
         time = property(attrgetter("_py_dt.time"))
 
     @abstractmethod
-    def canonical_str(self) -> str:
+    def canonical_str(self, sep: Literal[" ", "T"] = "T") -> str:
         """Format as the canonical string representation. Each
         subclass has a different format. See the documentation for
         the subclass for more information.
         Inverse of :meth:`from_canonical_str`.
         """
 
-    @abstractmethod
     def __str__(self) -> str:
-        """Same as :meth:`canonical_str`"""
+        """Same as :meth:`canonical_str` with ``sep=" "``"""
+        return self.canonical_str(" ")
 
     @classmethod
     @abstractmethod
@@ -528,10 +528,8 @@ class UTCDateTime(AwareDateTime):
         """Create an instance from the current time"""
         return cls._from_py_unchecked(_datetime.now(_UTC))
 
-    def canonical_str(self) -> str:
-        return f"{self._py_dt.isoformat()[:-6]}Z"
-
-    __str__ = canonical_str
+    def canonical_str(self, sep: Literal[" ", "T"] = "T") -> str:
+        return f"{self._py_dt.isoformat(sep)[:-6]}Z"
 
     @classmethod
     def from_canonical_str(cls, s: str, /) -> UTCDateTime:
@@ -914,10 +912,8 @@ class OffsetDateTime(AwareDateTime):
         """Create an instance at the current time with the given offset"""
         return cls._from_py_unchecked(_datetime.now(_timezone(offset)))
 
-    def canonical_str(self) -> str:
-        return self._py_dt.isoformat()
-
-    __str__ = canonical_str
+    def canonical_str(self, sep: Literal[" ", "T"] = "T") -> str:
+        return self._py_dt.isoformat(sep)
 
     @classmethod
     def from_canonical_str(cls, s: str, /) -> OffsetDateTime:
@@ -1327,13 +1323,11 @@ class ZonedDateTime(AwareDateTime):
         """Create an instance from the current time in the given timezone"""
         return cls._from_py_unchecked(_datetime.now(ZoneInfo(tz)))
 
-    def canonical_str(self) -> str:
+    def canonical_str(self, sep: Literal[" ", "T"] = "T") -> str:
         return (
-            f"{self._py_dt.isoformat()}"
+            f"{self._py_dt.isoformat(sep)}"
             f"[{self._py_dt.tzinfo.key}]"  # type: ignore[union-attr]
         )
-
-    __str__ = canonical_str
 
     @classmethod
     def from_canonical_str(cls, s: str, /) -> ZonedDateTime:
@@ -1747,10 +1741,8 @@ class LocalDateTime(AwareDateTime):
         """Create an instance from the current time"""
         return cls._from_py_unchecked(_datetime.now())
 
-    def canonical_str(self) -> str:
-        return self._py_dt.isoformat()
-
-    __str__ = canonical_str
+    def canonical_str(self, sep: Literal[" ", "T"] = "T") -> str:
+        return self._py_dt.isoformat(sep)
 
     @classmethod
     def from_canonical_str(cls, s: str, /) -> LocalDateTime:
@@ -2042,10 +2034,8 @@ class NaiveDateTime(DateTime):
             year, month, day, hour, minute, second, microsecond
         )
 
-    def canonical_str(self) -> str:
-        return self._py_dt.isoformat()
-
-    __str__ = canonical_str
+    def canonical_str(self, sep: Literal[" ", "T"] = "T") -> str:
+        return self._py_dt.isoformat(sep)
 
     @classmethod
     def from_canonical_str(cls, s: str, /) -> NaiveDateTime:

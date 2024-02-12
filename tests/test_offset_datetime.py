@@ -76,22 +76,30 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-@pytest.mark.parametrize(
-    "d, expected",
-    [
-        (
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(5)),
-            "2020-08-15T23:12:09+05:00",
-        ),
-        (
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=hours(5)),
-            "2020-08-15T23:12:09.987654+05:00",
-        ),
-    ],
-)
-def test_canonical_str(d: OffsetDateTime, expected: str):
-    assert str(d) == expected
-    assert d.canonical_str() == expected
+class TestCanonicalStr:
+
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(5)),
+                "2020-08-15T23:12:09+05:00",
+            ),
+            (
+                OffsetDateTime(
+                    2020, 8, 15, 23, 12, 9, 987_654, offset=hours(5)
+                ),
+                "2020-08-15T23:12:09.987654+05:00",
+            ),
+        ],
+    )
+    def test_canonical_str(self, d: OffsetDateTime, expected: str):
+        assert str(d) == expected.replace("T", " ")
+        assert d.canonical_str() == expected
+
+    def test_seperator(self):
+        d = OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(5))
+        assert d.canonical_str(sep=" ") == "2020-08-15 23:12:09+05:00"
 
 
 class TestFromStr:
@@ -262,10 +270,10 @@ def test_repr():
     d = OffsetDateTime(
         2020, 8, 15, 23, 12, 9, 987_654, offset=timedelta(hours=5, minutes=22)
     )
-    assert repr(d) == "OffsetDateTime(2020-08-15T23:12:09.987654+05:22)"
+    assert repr(d) == "OffsetDateTime(2020-08-15 23:12:09.987654+05:22)"
     assert (
         repr(OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(0)))
-        == "OffsetDateTime(2020-08-15T23:12:00+00:00)"
+        == "OffsetDateTime(2020-08-15 23:12:00+00:00)"
     )
 
 

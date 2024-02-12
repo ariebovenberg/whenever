@@ -68,19 +68,25 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-@pytest.mark.parametrize(
-    "d, expected",
-    [
-        (
-            UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654),
-            "2020-08-15T23:12:09.987654Z",
-        ),
-        (UTCDateTime(2020, 8, 15, 23, 12, 9), "2020-08-15T23:12:09Z"),
-    ],
-)
-def test_canonical_str(d: UTCDateTime, expected: str):
-    assert str(d) == expected
-    assert d.canonical_str() == expected
+class TestCanonicalStr:
+
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (
+                UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654),
+                "2020-08-15T23:12:09.987654Z",
+            ),
+            (UTCDateTime(2020, 8, 15, 23, 12, 9), "2020-08-15T23:12:09Z"),
+        ],
+    )
+    def test_canonical_str(self, d: UTCDateTime, expected: str):
+        assert str(d) == expected.replace("T", " ")
+        assert d.canonical_str() == expected
+
+    def test_seperator(self):
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        assert d.canonical_str(sep=" ") == "2020-08-15 23:12:09.987654Z"
 
 
 class TestFromCanonicalStr:
@@ -196,10 +202,10 @@ def test_from_timestamp():
 
 def test_repr():
     d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert repr(d) == "UTCDateTime(2020-08-15T23:12:09.987654Z)"
+    assert repr(d) == "UTCDateTime(2020-08-15 23:12:09.987654Z)"
     assert (
         repr(UTCDateTime(2020, 8, 15, 23, 12))
-        == "UTCDateTime(2020-08-15T23:12:00Z)"
+        == "UTCDateTime(2020-08-15 23:12:00Z)"
     )
 
 
