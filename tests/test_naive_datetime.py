@@ -235,16 +235,16 @@ def test_equality():
 
 def test_repr():
     d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert repr(d) == "NaiveDateTime(2020-08-15T23:12:09.987654)"
+    assert repr(d) == "NaiveDateTime(2020-08-15 23:12:09.987654)"
     assert (
         repr(NaiveDateTime(2020, 8, 15, 23, 12))
-        == "NaiveDateTime(2020-08-15T23:12:00)"
+        == "NaiveDateTime(2020-08-15 23:12:00)"
     )
 
 
 def test_canonical_str():
     d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert str(d) == "2020-08-15T23:12:09.987654"
+    assert str(d) == "2020-08-15 23:12:09.987654"
     assert d.canonical_str() == "2020-08-15T23:12:09.987654"
 
 

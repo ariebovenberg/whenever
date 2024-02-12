@@ -18,9 +18,10 @@
 
 **Improved**
 
-- Shortened the ``repr()`` of all types.
+- Shortened the ``repr()`` of all types, use space separator instead of ``T``.
 - Added a ``disambiguation="compatible"`` option that matches the behavior of
   other languages and the RFC5545 standard.
+- Added ``sep="T" or " "`` option to ``canonical_str()``
 
 0.3.4 (2024-02-07)
 ------------------

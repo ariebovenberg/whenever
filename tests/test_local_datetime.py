@@ -210,18 +210,25 @@ class TestCanonicalStr:
     def test_simple(self):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, 987_654)
         expected = "2020-08-15T23:12:09.987654+02:00"
-        assert str(d) == expected
+        assert str(d) == expected.replace("T", " ")
         assert d.canonical_str() == expected
 
     @local_ams_tz()
     def test_ambiguous(self):
         d = LocalDateTime(2023, 10, 29, 2, 15, 30, disambiguate="earlier")
         expected = "2023-10-29T02:15:30+02:00"
-        assert str(d) == expected
+        assert str(d) == expected.replace("T", " ")
         assert d.canonical_str() == expected
         d2 = d.replace(disambiguate="later")
-        assert str(d2) == expected.replace("+02:00", "+01:00")
+        assert str(d2) == expected.replace("+02:00", "+01:00").replace(
+            "T", " "
+        )
         assert d2.canonical_str() == expected.replace("+02:00", "+01:00")
+
+    @local_ams_tz()
+    def test_sep(self):
+        d = LocalDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        assert d.canonical_str(sep=" ") == "2020-08-15 23:12:09.987654+02:00"
 
 
 class TestEquality:
@@ -528,7 +535,7 @@ def test_from_timestamp():
 @local_nyc_tz()
 def test_repr():
     d = LocalDateTime(2023, 3, 26, 2, 15)
-    assert repr(d) == "LocalDateTime(2023-03-26T02:15:00-04:00)"
+    assert repr(d) == "LocalDateTime(2023-03-26 02:15:00-04:00)"
 
 
 @local_nyc_tz()
