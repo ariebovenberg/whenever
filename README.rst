@@ -39,12 +39,12 @@ Benefits
 --------
 
 - Distinct classes with well-defined behavior
-- Fixes datetime pitfalls that `Arrow and Pendulum don't address <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_
+- Fixes pitfalls that `Arrow and Pendulum don't address <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_
 - Enforce correctness without runtime checks
-- Based on `familiar concepts from other languages <https://www.youtube.com/watch?v=saeKBuPewcU>`_. Doesn't reinvent the wheel
-- Simple and obvious. No frills or surprises
+- Based on `familiar concepts from other languages <https://www.youtube.com/watch?v=saeKBuPewcU>`_. Doesn't reinvent the wheel.
+- Simple and obvious. No frills or surprises.
 - `Thoroughly documented <https://whenever.rtfd.io/en/latest/overview.html>`_ and tested
-- No third-party dependencies
+- One file. No third-party dependencies
 
 Quickstart
 ----------
@@ -64,30 +64,32 @@ Quickstart
 
    >>> py311_release = UTCDateTime(2022, 10, 24, hour=17)
    UTCDateTime(2022-10-24 17:00:00Z)
-   >>> pycon23_started = OffsetDateTime(2023, 4, 21, hour=9, offset=hours(-6))
+   >>> pycon23_start = OffsetDateTime(2023, 4, 21, hour=9, offset=hours(-6))
    OffsetDateTime(2023-04-21 09:00:00-06:00)
 
    # Simple, explicit conversions
-   >>> py311_in_paris = py311_release.as_zoned("Europe/Paris")
+   >>> py311_release.as_zoned("Europe/Paris")
    ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
-   >>> pycon23_started.as_local()
-   LocalDateTime(2023-04-21 11:00:00-04:00)  # system timezone in NYC here
+   >>> pycon23_start.as_local()  # example: system timezone in NYC
+   LocalDateTime(2023-04-21 11:00:00-04:00)
 
    # Comparison and equality across aware types
-   >>> pycon23_started < py311_release
+   >>> py311_release > pycon23_start
    False
    >>> py311_release == py311_release.as_zoned("America/Los_Angeles")
    True
 
-   # DST-aware addition/subtraction
-   >>> py311_in_paris + days(7)
-   ZonedDateTime(2022-10-31 18:00:00+01:00[Europe/Paris])
+   # Naive type that can't accidentally mix with aware types
+   >>> hackathon_invite = NaiveDateTime(2023, 10, 28, hour=12)
+   >>> # Naïve/aware mixups are caught by typechecker
+   >>> hackathon_invite - py311_release
+   >>> # Only explicit assumptions will make it aware
+   >>> hackathon_start = hackathon_invite.assume_zoned("Europe/Amsterdam")
+   ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])
 
-   # Naive type that can't accidentally be mixed with aware types
-   >>> simulation_start = NaiveDateTime(1950, 1, 1, hour=9)
-   >>> # Mistakes caught by typechecker:
-   >>> py311_release - simulation_start
-   >>> simulation_start == pycon23_started
+   # DST-aware operators
+   >>> hackathon_end = hackathon_start + hours(24)
+   ZonedDateTime(2022-10-29 11:00:00+01:00[Europe/Amsterdam])
 
    # Lossless round-trip to/from text (useful for JSON/serialization)
    >>> py311_release.canonical_str()
@@ -98,7 +100,7 @@ Quickstart
    # Conversion to/from common formats
    >>> py311_release.rfc2822()  # also: from_rfc2822()
    "Mon, 24 Oct 2022 17:00:00 GMT"
-   >>> pycon23_started.rfc3339()  # also: from_rfc3339()
+   >>> pycon23_start.rfc3339()  # also: from_rfc3339()
    "2023-04-21T09:00:00-06:00"
 
    # Basic parsing
@@ -106,7 +108,7 @@ Quickstart
    OffsetDateTime(2022-10-24 00:00:00+02:00)
 
    # If you must: you can access the underlying datetime object
-   >>> pycon23_started.py.ctime()
+   >>> pycon23_start.py.ctime()
    'Fri Apr 21 09:00:00 2023'
 
 Read more in the `full overview <https://whenever.readthedocs.io/en/latest/overview.html>`_
@@ -122,16 +124,15 @@ The standard library is full of quirks and pitfalls.
 To summarize the detailed `blog post <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_:
 
 1.  Incompatible concepts of naive and aware are squeezed into one class
-2.  Operations ignore Daylight Saving Time (DST)
+2.  Operators ignore Daylight Saving Time (DST)
 3.  The meaning of "naive" is inconsistent (UTC, local, or unspecified?)
-4.  Non-existent datetimes pass silently, then wreak havoc later
+4.  Non-existent datetimes pass silently
 5.  It guesses in the face of ambiguity
 6.  False negatives on equality of ambiguous times between timezones
 7.  False positives on equality of ambiguous times within the same timezone
 8.  ``datetime`` inherits from ``date``, but behaves inconsistently
-9.  ``datetime.timezone`` isn’t a timezone. ``ZoneInfo`` is.
+9.  ``datetime.timezone`` isn’t enough for full-featured timezones.
 10. The local timezone is DST-unaware
-
 
 Pendulum
 ~~~~~~~~
@@ -230,6 +231,10 @@ Breaking changes will be avoided as much as possible,
 and meticulously explained in the changelog.
 Since the API is fully typed, your typechecker and/or IDE
 will help you adjust to any API changes.
+
+  ⚠️ **Note**: until 1.x, pickled objects may not be unpicklable across
+  versions. After 1.0, backwards compatibility of pickles will be maintained
+  as much as possible.
 
 Acknowledgements
 ----------------
