@@ -2407,23 +2407,26 @@ def _resolve_ambuguity(
 
 # Whether the fold of a local time needs to be flipped in a gap
 # was changed (fixed) in Python 3.12. See cpython/issues/83861
+_requires_flip: Callable[[Disambiguate], bool]
 if sys.version_info > (3, 12):
-    _DISAMBIGUATE_REQUIRES_FLIP = ("earlier", "later")
+    _requires_flip = "compatible".__ne__
 else:  # pragma: no cover
-    _DISAMBIGUATE_REQUIRES_FLIP = ("compatible",)
+    _requires_flip = "compatible".__eq__
 
 
 def _resolve_local_ambiguity(
     dt: _datetime, disambiguate: Disambiguate
 ) -> _datetime:
-    # If it doesn't survive the UTC roundtrip, it doesn't exist
     norm = dt.astimezone(_UTC).astimezone()
+    # Non-existent times: they don't survive a UTC roundtrip
     if norm.replace(tzinfo=None) != dt:
         if disambiguate == "raise":
             raise DoesntExistInZone.for_system_timezone(dt)
-        elif disambiguate in _DISAMBIGUATE_REQUIRES_FLIP:
+        elif _requires_flip(disambiguate):
             dt = dt.replace(fold=not dt.fold)
+        # perform the normalisation, shifting away from non-existent times
         norm = dt.astimezone(_UTC).astimezone()
+    # Ambiguous times: they're never equal to other timezones
     elif disambiguate == "raise" and norm != dt.replace(fold=1).astimezone(
         _UTC
     ):
