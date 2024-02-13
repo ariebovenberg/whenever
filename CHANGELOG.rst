@@ -47,13 +47,16 @@ A big release with many small breaking changes, and a few new features.
   versions in the future. If needed, these properties can be accessed from the
   underlying datetime object with ``.py()``: ``.weekday`` becomes ``.py().weekday``.
 
+- Renamed ``.canonical_str()`` to ``.canonical_format()``.
+
+  **Rationale**: A more descriptive name.
 
 **Improved**
 
 - Added a ``disambiguation="compatible"`` option that matches the behavior of
   other languages and the RFC5545 standard.
 - Shortened the ``repr()`` of all types, use space separator instead of ``T``.
-- Added ``sep="T" or " "`` option to ``canonical_str()``
+- Added ``sep="T" or " "`` option to ``canonical_format()``
 
 0.3.4 (2024-02-07)
 ------------------

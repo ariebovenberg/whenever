@@ -147,7 +147,7 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-class TestCanonicalStr:
+class TestCanonicalFormat:
 
     @pytest.mark.parametrize(
         "d, expected",
@@ -186,16 +186,16 @@ class TestCanonicalStr:
             ),
         ],
     )
-    def test_canonical_str(self, d: ZonedDateTime, expected: str):
+    def test_canonical_format(self, d: ZonedDateTime, expected: str):
         assert str(d) == expected.replace("T", " ")
-        assert d.canonical_str() == expected
+        assert d.canonical_format() == expected
 
     def test_seperator(self):
         d = ZonedDateTime(
             2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
         )
         assert (
-            d.canonical_str(sep=" ")
+            d.canonical_format(sep=" ")
             == "2020-08-15 23:12:09.987654+02:00[Europe/Amsterdam]"
         )
 
@@ -397,16 +397,16 @@ def test_naive():
     )
 
 
-class TestFromStr:
+class TestFromCanonicalFormat:
     def test_valid(self):
-        assert ZonedDateTime.from_canonical_str(
+        assert ZonedDateTime.from_canonical_format(
             "2020-08-15T12:08:30+02:00[Europe/Amsterdam]"
         ).exact_eq(
             ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
         )
 
     def test_offset_disambiguates(self):
-        assert ZonedDateTime.from_canonical_str(
+        assert ZonedDateTime.from_canonical_format(
             "2023-10-29T02:15:30+01:00[Europe/Amsterdam]"
         ).exact_eq(
             ZonedDateTime(
@@ -420,7 +420,7 @@ class TestFromStr:
                 disambiguate="later",
             )
         )
-        assert ZonedDateTime.from_canonical_str(
+        assert ZonedDateTime.from_canonical_format(
             "2023-10-29T02:15:30+02:00[Europe/Amsterdam]"
         ).exact_eq(
             ZonedDateTime(
@@ -438,17 +438,17 @@ class TestFromStr:
     def test_offset_timezone_mismatch(self):
         with pytest.raises(InvalidOffsetForZone):
             # at the exact DST transition
-            ZonedDateTime.from_canonical_str(
+            ZonedDateTime.from_canonical_format(
                 "2023-10-29T02:15:30+03:00[Europe/Amsterdam]"
             )
         with pytest.raises(InvalidOffsetForZone):
             # some other time in the year
-            ZonedDateTime.from_canonical_str(
+            ZonedDateTime.from_canonical_format(
                 "2020-08-15T12:08:30+01:00:01[Europe/Amsterdam]"
             )
 
     def test_valid_three_fractions(self):
-        assert ZonedDateTime.from_canonical_str(
+        assert ZonedDateTime.from_canonical_format(
             "2020-08-15T12:08:30.349-04:00[America/New_York]"
         ).exact_eq(
             ZonedDateTime(
@@ -464,7 +464,7 @@ class TestFromStr:
         )
 
     def test_valid_six_fractions(self):
-        assert ZonedDateTime.from_canonical_str(
+        assert ZonedDateTime.from_canonical_format(
             "2020-08-15T12:08:30.349123-04:00[America/New_York]"
         ).exact_eq(
             ZonedDateTime(
@@ -480,7 +480,7 @@ class TestFromStr:
         )
 
     def test_single_space_instead_of_T(self):
-        assert ZonedDateTime.from_canonical_str(
+        assert ZonedDateTime.from_canonical_format(
             "2020-08-15 12:08:30-04:00[America/New_York]"
         ).exact_eq(
             ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="America/New_York")
@@ -488,50 +488,50 @@ class TestFromStr:
 
     def test_unpadded(self):
         with pytest.raises(InvalidFormat):
-            ZonedDateTime.from_canonical_str(
+            ZonedDateTime.from_canonical_format(
                 "2020-8-15T12:8:30+05:00[Asia/Kolkata]"
             )
 
     def test_overly_precise_fraction(self):
         with pytest.raises(InvalidFormat):
-            ZonedDateTime.from_canonical_str(
+            ZonedDateTime.from_canonical_format(
                 "2020-08-15T12:08:30.123456789123+05:00[Asia/Kolkata]"
             )
 
     def test_invalid_offset(self):
         with pytest.raises(InvalidOffsetForZone):
-            ZonedDateTime.from_canonical_str(
+            ZonedDateTime.from_canonical_format(
                 "2020-08-15T12:08:30-09:00[Asia/Kolkata]"
             )
 
     def test_no_offset(self):
         with pytest.raises(InvalidFormat):
-            ZonedDateTime.from_canonical_str(
+            ZonedDateTime.from_canonical_format(
                 "2020-08-15T12:08:30[Europe/Amsterdam]"
             )
 
     def test_no_timezone(self):
         with pytest.raises(InvalidFormat):
-            ZonedDateTime.from_canonical_str("2020-08-15T12:08:30+05:00")
+            ZonedDateTime.from_canonical_format("2020-08-15T12:08:30+05:00")
 
     def test_no_seconds(self):
         with pytest.raises(InvalidFormat):
-            ZonedDateTime.from_canonical_str(
+            ZonedDateTime.from_canonical_format(
                 "2020-08-15T12:08-05:00[America/New_York]"
             )
 
     def test_empty(self):
         with pytest.raises(InvalidFormat):
-            ZonedDateTime.from_canonical_str("")
+            ZonedDateTime.from_canonical_format("")
 
     def test_garbage(self):
         with pytest.raises(InvalidFormat):
-            ZonedDateTime.from_canonical_str("garbage")
+            ZonedDateTime.from_canonical_format("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
         with pytest.raises(InvalidFormat):
-            ZonedDateTime.from_canonical_str(s)
+            ZonedDateTime.from_canonical_format(s)
 
 
 def test_timestamp():
@@ -576,10 +576,10 @@ def test_repr():
 
 class TestComparison:
     def test_different_timezones(self):
-        d = ZonedDateTime.from_canonical_str(
+        d = ZonedDateTime.from_canonical_format(
             "2020-08-15T15:12:09+05:30[Asia/Kolkata]"
         )
-        later = ZonedDateTime.from_canonical_str(
+        later = ZonedDateTime.from_canonical_format(
             "2020-08-15T14:00:00+02:00[Europe/Amsterdam]"
         )
         assert d < later
@@ -592,10 +592,10 @@ class TestComparison:
         assert not later <= d
 
     def test_same_timezone_ambiguity(self):
-        d = ZonedDateTime.from_canonical_str(
+        d = ZonedDateTime.from_canonical_format(
             "2023-10-29T02:15:30+02:00[Europe/Amsterdam]"
         )
-        later = ZonedDateTime.from_canonical_str(
+        later = ZonedDateTime.from_canonical_format(
             "2023-10-29T02:15:30+01:00[Europe/Amsterdam]"
         )
         assert d < later
@@ -608,7 +608,7 @@ class TestComparison:
         assert not later <= d
 
     def test_different_timezone_same_time(self):
-        d = ZonedDateTime.from_canonical_str(
+        d = ZonedDateTime.from_canonical_format(
             "2023-10-29T02:15:30+02:00[Europe/Amsterdam]"
         )
         other = d.as_zoned("America/New_York")

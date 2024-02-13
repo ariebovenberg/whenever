@@ -76,7 +76,7 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-class TestCanonicalStr:
+class TestCanonicalFormat:
 
     @pytest.mark.parametrize(
         "d, expected",
@@ -93,23 +93,23 @@ class TestCanonicalStr:
             ),
         ],
     )
-    def test_canonical_str(self, d: OffsetDateTime, expected: str):
+    def test_canonical_format(self, d: OffsetDateTime, expected: str):
         assert str(d) == expected.replace("T", " ")
-        assert d.canonical_str() == expected
+        assert d.canonical_format() == expected
 
     def test_seperator(self):
         d = OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(5))
-        assert d.canonical_str(sep=" ") == "2020-08-15 23:12:09+05:00"
+        assert d.canonical_format(sep=" ") == "2020-08-15 23:12:09+05:00"
 
 
-class TestFromStr:
+class TestFromCanonicalFormat:
     def test_valid(self):
-        assert OffsetDateTime.from_canonical_str(
+        assert OffsetDateTime.from_canonical_format(
             "2020-08-15T12:08:30+05:00"
         ).exact_eq(OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=hours(5)))
 
     def test_valid_offset_with_seconds(self):
-        assert OffsetDateTime.from_canonical_str(
+        assert OffsetDateTime.from_canonical_format(
             "2020-08-15T12:08:30+05:00:33"
         ).exact_eq(
             OffsetDateTime(
@@ -118,7 +118,7 @@ class TestFromStr:
         )
 
     def test_valid_three_fractions(self):
-        assert OffsetDateTime.from_canonical_str(
+        assert OffsetDateTime.from_canonical_format(
             "2020-08-15T12:08:30.349+05:00:33"
         ).exact_eq(
             OffsetDateTime(
@@ -134,7 +134,7 @@ class TestFromStr:
         )
 
     def test_valid_six_fractions(self):
-        assert OffsetDateTime.from_canonical_str(
+        assert OffsetDateTime.from_canonical_format(
             "2020-08-15T12:08:30.349123+05:00:33.987654"
         ).exact_eq(
             OffsetDateTime(
@@ -150,44 +150,44 @@ class TestFromStr:
         )
 
     def test_single_space_instead_of_T(self):
-        assert OffsetDateTime.from_canonical_str(
+        assert OffsetDateTime.from_canonical_format(
             "2020-08-15 12:08:30-04:00"
         ).exact_eq(OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=hours(-4)))
 
     def test_unpadded(self):
         with pytest.raises(InvalidFormat):
-            OffsetDateTime.from_canonical_str("2020-8-15T12:8:30+05:00")
+            OffsetDateTime.from_canonical_format("2020-8-15T12:8:30+05:00")
 
     def test_overly_precise_fraction(self):
         with pytest.raises(InvalidFormat):
-            OffsetDateTime.from_canonical_str(
+            OffsetDateTime.from_canonical_format(
                 "2020-08-15T12:08:30.123456789123+05:00"
             )
 
     def test_invalid_offset(self):
         with pytest.raises(ValueError):
-            OffsetDateTime.from_canonical_str("2020-08-15T12:08:30-99:00")
+            OffsetDateTime.from_canonical_format("2020-08-15T12:08:30-99:00")
 
     def test_no_offset(self):
         with pytest.raises(InvalidFormat):
-            OffsetDateTime.from_canonical_str("2020-08-15T12:08:30")
+            OffsetDateTime.from_canonical_format("2020-08-15T12:08:30")
 
     def test_no_seconds(self):
         with pytest.raises(InvalidFormat):
-            OffsetDateTime.from_canonical_str("2020-08-15T12:08-05:00")
+            OffsetDateTime.from_canonical_format("2020-08-15T12:08-05:00")
 
     def test_empty(self):
         with pytest.raises(InvalidFormat):
-            OffsetDateTime.from_canonical_str("")
+            OffsetDateTime.from_canonical_format("")
 
     def test_garbage(self):
         with pytest.raises(InvalidFormat):
-            OffsetDateTime.from_canonical_str("garbage")
+            OffsetDateTime.from_canonical_format("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
         with pytest.raises(InvalidFormat):
-            OffsetDateTime.from_canonical_str(s)
+            OffsetDateTime.from_canonical_format(s)
 
 
 def test_exact_equality():

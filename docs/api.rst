@@ -10,7 +10,7 @@ Base classes
 
 .. autoclass:: whenever.DateTime
    :members:
-   :undoc-members: year, month, day, hour, minute, second, microsecond, canonical_str
+   :undoc-members: year, month, day, hour, minute, second, microsecond, canonical_format
    :special-members: __str__
 
 .. autoclass:: whenever.AwareDateTime

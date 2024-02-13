@@ -205,30 +205,32 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-class TestCanonicalStr:
+class TestCanonicalFormat:
     @local_ams_tz()
     def test_simple(self):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, 987_654)
         expected = "2020-08-15T23:12:09.987654+02:00"
         assert str(d) == expected.replace("T", " ")
-        assert d.canonical_str() == expected
+        assert d.canonical_format() == expected
 
     @local_ams_tz()
     def test_ambiguous(self):
         d = LocalDateTime(2023, 10, 29, 2, 15, 30, disambiguate="earlier")
         expected = "2023-10-29T02:15:30+02:00"
         assert str(d) == expected.replace("T", " ")
-        assert d.canonical_str() == expected
+        assert d.canonical_format() == expected
         d2 = d.replace(disambiguate="later")
         assert str(d2) == expected.replace("+02:00", "+01:00").replace(
             "T", " "
         )
-        assert d2.canonical_str() == expected.replace("+02:00", "+01:00")
+        assert d2.canonical_format() == expected.replace("+02:00", "+01:00")
 
     @local_ams_tz()
     def test_sep(self):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-        assert d.canonical_str(sep=" ") == "2020-08-15 23:12:09.987654+02:00"
+        assert (
+            d.canonical_format(sep=" ") == "2020-08-15 23:12:09.987654+02:00"
+        )
 
 
 class TestEquality:
@@ -405,21 +407,21 @@ def test_exact_equality():
     assert not different.exact_eq(a)
 
 
-class TestFromCanonicalStr:
+class TestFromCanonicalFormat:
     @local_ams_tz()
     def test_valid(self):
-        assert LocalDateTime.from_canonical_str(
+        assert LocalDateTime.from_canonical_format(
             "2020-08-15T12:08:30+02:00"
         ).exact_eq(LocalDateTime(2020, 8, 15, 12, 8, 30))
 
     @local_ams_tz()
     def test_offset_determines_fold(self):
-        assert LocalDateTime.from_canonical_str(
+        assert LocalDateTime.from_canonical_format(
             "2023-10-29T02:15:30+02:00"
         ).exact_eq(
             LocalDateTime(2023, 10, 29, 2, 15, 30, disambiguate="earlier")
         )
-        assert LocalDateTime.from_canonical_str(
+        assert LocalDateTime.from_canonical_format(
             "2023-10-29T02:15:30+01:00"
         ).exact_eq(
             LocalDateTime(2023, 10, 29, 2, 15, 30, disambiguate="later")
@@ -427,7 +429,7 @@ class TestFromCanonicalStr:
 
     @local_ams_tz()
     def test_valid_three_fractions(self):
-        assert LocalDateTime.from_canonical_str(
+        assert LocalDateTime.from_canonical_format(
             "2020-08-15T12:08:30.349+02:00"
         ).exact_eq(
             LocalDateTime(
@@ -443,7 +445,7 @@ class TestFromCanonicalStr:
 
     @local_ams_tz()
     def test_valid_six_fractions(self):
-        assert LocalDateTime.from_canonical_str(
+        assert LocalDateTime.from_canonical_format(
             "2020-08-15T12:08:30.349123+02:00"
         ).exact_eq(
             LocalDateTime(
@@ -459,51 +461,51 @@ class TestFromCanonicalStr:
 
     @local_ams_tz()
     def test_single_space_instead_of_T(self):
-        assert LocalDateTime.from_canonical_str(
+        assert LocalDateTime.from_canonical_format(
             "2020-08-15 12:08:30+02:00"
         ).exact_eq(LocalDateTime(2020, 8, 15, 12, 8, 30))
 
     @local_ams_tz()
     def test_unpadded(self):
         with pytest.raises(InvalidFormat):
-            LocalDateTime.from_canonical_str("2020-8-15T12:8:30+02:00")
+            LocalDateTime.from_canonical_format("2020-8-15T12:8:30+02:00")
 
     @local_ams_tz()
     def test_overly_precise_fraction(self):
         with pytest.raises(InvalidFormat):
-            LocalDateTime.from_canonical_str(
+            LocalDateTime.from_canonical_format(
                 "2020-08-15T12:08:30.123456789123+02:00"
             )
 
     @local_ams_tz()
     def test_invalid_offset(self):
         with pytest.raises(ValueError):
-            LocalDateTime.from_canonical_str("2020-08-15T12:08:30-29:00")
+            LocalDateTime.from_canonical_format("2020-08-15T12:08:30-29:00")
 
     def test_no_offset(self):
         with pytest.raises(InvalidFormat):
-            LocalDateTime.from_canonical_str("2020-08-15T12:08:30")
+            LocalDateTime.from_canonical_format("2020-08-15T12:08:30")
 
     def test_no_timezone(self):
         with pytest.raises(InvalidFormat):
-            LocalDateTime.from_canonical_str("2020-08-15T12:08:30")
+            LocalDateTime.from_canonical_format("2020-08-15T12:08:30")
 
     def test_no_seconds(self):
         with pytest.raises(InvalidFormat):
-            LocalDateTime.from_canonical_str("2020-08-15T12:08+02:00")
+            LocalDateTime.from_canonical_format("2020-08-15T12:08+02:00")
 
     def test_empty(self):
         with pytest.raises(InvalidFormat):
-            LocalDateTime.from_canonical_str("")
+            LocalDateTime.from_canonical_format("")
 
     def test_garbage(self):
         with pytest.raises(InvalidFormat):
-            LocalDateTime.from_canonical_str("garbage")
+            LocalDateTime.from_canonical_format("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
         with pytest.raises(InvalidFormat):
-            LocalDateTime.from_canonical_str(s)
+            LocalDateTime.from_canonical_format(s)
 
 
 @local_nyc_tz()
