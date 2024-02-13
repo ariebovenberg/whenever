@@ -1215,30 +1215,8 @@ def _unpkl_offset(
 
 
 class ZonedDateTime(AwareDateTime):
-    """A datetime associated with a timezone.
+    """A datetime associated with a IANA timezone ID.
     Useful for representing the local time bound to a specific location.
-
-    - The ``tz`` argument is the timezone's ID in the IANA database.
-
-    # TODO: update!
-    - The ``disambiguate`` argument controls how ambiguous datetimes are handled:
-
-      - ``"raise"``: ambiguous datetimes raise :class:`Ambiguous`.
-        ``fold`` is set to ``0`` on the inner :class:`~datetime.datetime`.
-      - ``"earlier"``: pick the earlier datetime (before the DST transition).
-        ``fold`` is set to ``0`` on the inner :class:`~datetime.datetime`.
-      - ``"later"``: pick the later datetime (after the DST transition).
-        ``fold`` is set to ``1`` on the inner :class:`~datetime.datetime`.
-
-    Raises
-    ------
-    ~zoneinfo.ZoneInfoNotFoundError
-        If the timezone ID is not found in the IANA database.
-    DoesntExistInZone
-        If the datetime does not exist in the given timezone
-        (i.e. the clock was set forward, "skipping" this time).
-    Ambiguous
-        If ``disambiguate`` is ``"raise"`` and the datetime is ambiguous
 
     Example
     -------
@@ -1259,6 +1237,30 @@ class ZonedDateTime(AwareDateTime):
 
        # DoesntExistInZone: 2:15 AM does not exist on this day
        ZonedDateTime(2023, 3, 26, 2, 15, tz="Europe/Amsterdam")
+
+    Disambiguation
+    --------------
+
+    The ``disambiguate`` argument controls how ambiguous datetimes are handled:
+
+    +------------------+-------------------------------------------------+
+    | ``disambiguate`` | Behavior in case of ambiguity                   |
+    +==================+=================================================+
+    | ``"raise"``      | (default) Refuse to guess:                      |
+    |                  | raise :exc:`~whenever.Ambiguous`                |
+    |                  | or :exc:`~whenever.DoesntExistInZone` exception.|
+    +------------------+-------------------------------------------------+
+    | ``"earlier"``    | Choose the earlier of the two options           |
+    +------------------+-------------------------------------------------+
+    | ``"later"``      | Choose the later of the two options             |
+    +------------------+-------------------------------------------------+
+    | ``"compatible"`` | Choose "earlier" for backward transitions and   |
+    |                  | "later" for forward transitions. This matches   |
+    |                  | the behavior of other established libraries,    |
+    |                  | and the industry standard RFC 5545.             |
+    |                  | It corresponds to setting ``fold=0`` in the     |
+    |                  | standard library.                               |
+    +------------------+-------------------------------------------------+
 
     Warning
     -------
@@ -1447,22 +1449,22 @@ class ZonedDateTime(AwareDateTime):
     def __lt__(self, other: AwareDateTime) -> bool:
         if not isinstance(other, AwareDateTime):
             return NotImplemented
-        return self._py_dt.astimezone(_UTC) < other._py_dt.astimezone(_UTC)
+        return self._py_dt.astimezone(_UTC) < other._py_dt
 
     def __le__(self, other: AwareDateTime) -> bool:
         if not isinstance(other, AwareDateTime):
             return NotImplemented
-        return self._py_dt.astimezone(_UTC) <= other._py_dt.astimezone(_UTC)
+        return self._py_dt.astimezone(_UTC) <= other._py_dt
 
     def __gt__(self, other: AwareDateTime) -> bool:
         if not isinstance(other, AwareDateTime):
             return NotImplemented
-        return self._py_dt.astimezone(_UTC) > other._py_dt.astimezone(_UTC)
+        return self._py_dt.astimezone(_UTC) > other._py_dt
 
     def __ge__(self, other: AwareDateTime) -> bool:
         if not isinstance(other, AwareDateTime):
             return NotImplemented
-        return self._py_dt.astimezone(_UTC) >= other._py_dt.astimezone(_UTC)
+        return self._py_dt.astimezone(_UTC) >= other._py_dt
 
     def __add__(self, delta: timedelta) -> ZonedDateTime:
         """Add a timedelta to this datetime.
@@ -1513,18 +1515,18 @@ class ZonedDateTime(AwareDateTime):
                 )
             return NotImplemented
 
-    def disambiguated(self) -> bool:
-        """Whether disambiguation was needed to create this datetime.
+    def ambiguous(self) -> bool:
+        """Whether the local time is ambiguous, e.g. due to a DST transition.
 
         Example
         -------
 
         .. code-block:: python
 
-           # False: no disambiguation needed
-           ZonedDateTime(2020, 8, 15, 23, tz="Europe/London", disambiguate="later").disambiguated()
-           # True: disambiguation needed, since 2:15 AM occurs twice
-           ZonedDateTime(2023, 10, 29, 2, 15, tz="Europe/Amsterdam", disambiguate="later").disambiguated()
+           >>> ZonedDateTime(2020, 8, 15, 23, tz="Europe/London", disambiguate="later").ambiguous()
+           False
+           >>> ZonedDateTime(2023, 10, 29, 2, 15, tz="Europe/Amsterdam", disambiguate="later").ambiguous()
+           True
         """
         return self._py_dt.astimezone(_UTC) != self._py_dt
 
