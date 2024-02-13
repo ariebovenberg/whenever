@@ -271,7 +271,7 @@ def test_comparison():
 
 def test_py():
     d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert d.py == py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
+    assert d.py() == py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
 
 
 def test_from_py():
@@ -297,18 +297,6 @@ def test_min_max():
     assert NaiveDateTime.max == NaiveDateTime(
         9999, 12, 31, 23, 59, 59, 999_999
     )
-
-
-def test_passthrough_datetime_attrs():
-    d = NaiveDateTime(2020, 8, 15)
-    assert d.resolution == py_datetime.resolution
-    assert d.weekday() == d.py.weekday()
-    assert d.date() == d.py.date()
-
-
-def test_tzinfo():
-    d = NaiveDateTime(2020, 8, 15)
-    assert d.tzinfo is None
 
 
 def test_replace():

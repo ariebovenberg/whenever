@@ -41,7 +41,6 @@ class TestInit:
         assert d.second == 30
         assert d.microsecond == 450
         assert d.offset == timedelta()
-        assert d.tzinfo == timezone.utc
 
     def test_optionality(self):
         assert (
@@ -320,7 +319,7 @@ class TestComparison:
 
 def test_py():
     d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert d.py == py_datetime(
+    assert d.py() == py_datetime(
         2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc
     )
 
@@ -338,7 +337,7 @@ def test_from_py():
 def test_now():
     now = UTCDateTime.now()
     py_now = py_datetime.now(timezone.utc)
-    assert py_now - now.py < timedelta(seconds=1)
+    assert py_now - now.py() < timedelta(seconds=1)
 
 
 @freeze_time("2020-08-15T23:12:09Z")
@@ -355,16 +354,6 @@ def test_weakref():
 def test_min_max():
     assert UTCDateTime.min == UTCDateTime(1, 1, 1)
     assert UTCDateTime.max == UTCDateTime(9999, 12, 31, 23, 59, 59, 999_999)
-
-
-def test_passthrough_datetime_attrs():
-    d = UTCDateTime(2020, 8, 15, 12, 43)
-    assert d.resolution == py_datetime.resolution
-    assert d.weekday() == d.py.weekday()
-    assert d.date() == d.py.date()
-    time = d.time()
-    assert time.tzinfo is None
-    assert time == d.py.time()
 
 
 def test_replace():
@@ -496,7 +485,7 @@ def test_to_zoned():
 def test_to_local():
     d = UTCDateTime(2020, 8, 15, 20)
     assert d.as_local().exact_eq(LocalDateTime(2020, 8, 15, 16))
-    # ensure fold is set correctly
+    # ensure disembiguation is correct
     d = UTCDateTime(2022, 11, 6, 5)
     assert d.as_local().exact_eq(
         LocalDateTime(2022, 11, 6, 1, disambiguate="earlier")

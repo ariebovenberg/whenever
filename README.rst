@@ -108,7 +108,7 @@ Quickstart
    OffsetDateTime(2022-10-24 00:00:00+02:00)
 
    # If you must: you can access the underlying datetime object
-   >>> pycon23_start.py.ctime()
+   >>> pycon23_start.py().ctime()
    'Fri Apr 21 09:00:00 2023'
 
 Read more in the `full overview <https://whenever.readthedocs.io/en/latest/overview.html>`_
