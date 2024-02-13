@@ -182,20 +182,48 @@ Strict equality
 Naive and aware types are never equal or comparable to each other.
 However, to comply with the Python data model, the equality operator
 won't prevent you from using ``==`` to compare them.
-It may *seem* like the equality operator should raise a :exc:`TypeError`
-in these cases, but this would result in
-`surprising behavior <https://stackoverflow.com/a/33417512>`_
-when using values as dictionary keys.
-Instead, use mypy's ``--strict-equality``
-`flag <https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-strict-equality>`_
-to detect and prevent these mistakes.
+To prevent these mix-ups, use mypy's ``--strict-equality``
+`flag <https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-strict-equality>`_.
 
 .. code-block:: python
 
-    # These are never equal
-    # Use mypy's --strict-equality flag to detect these mistakes
+    # These are never equal, but Python won't stop you from comparing them.
+    # Mypy will catch this mix-up if you use enable --strict-equality flag.
     >>> UTCDateTime(2023, 12, 28) == NaiveDateTime(2023, 12, 28)
     False
+
+.. admonition:: Why not raise a TypeError?
+
+    It may *seem* like the equality operator should raise a :exc:`TypeError`
+    in these cases, but this would result in
+    `surprising behavior <https://stackoverflow.com/a/33417512>`_
+    when using values as dictionary keys.
+
+Unfortunately, mypy's ``--strict-equality`` is *very* strict,
+forcing you to match aware types exactly.
+
+.. code-block:: python
+
+    d = UTCDateTime(2023, 12, 28, 10)
+
+    # mypy: ✅
+    d == UTCDateTime(2023, 12, 28, 10)
+
+    # mypy: ❌ (too strict, this should be allowed)
+    d == OffsetDateTime(2023, 12, 28, 10, offset=hours(0))
+
+To work around this, you can either convert explicitly:
+
+.. code-block:: python
+
+    d == OffsetDateTime(2023, 12, 28, offset=hours(0)).as_utc()
+
+Or annotate with the :class:`~whenever.AwareDateTime` base class:
+
+.. code-block:: python
+
+    d: AwareDateTime == OffsetDateTime(2023, 12, 28, 10, offset=hours(0))
+
 
 Conversion
 ----------
