@@ -6,21 +6,22 @@
 
 **Breaking changes**
 
-- ``from_naive()`` removed in favor of methods on ``NaiveDateTime``.
-  For example, ``UTCDateTime.from_naive(n)`` becomes ``n.assume_utc()``.
-- The ``disambiguate=`` argument now also determines how non-existent times
-  are handled.
 - ``LocalDateTime`` no longer adjusts automatically to changes in the system 
   timezone. This behavior was dependent on too many assumptions, and behaved 
   unintuitively in some cases. Now, ``LocalDateTime`` reflects the system 
   timezone at the moment of instantiation. It can be updated explicitly, 
   instead of relying on mutable global state.
+- The ``disambiguate=`` argument now also determines how non-existent times
+  are handled.
+- ``from_naive()`` removed in favor of methods on ``NaiveDateTime``.
+  For example, ``UTCDateTime.from_naive(n)`` becomes ``n.assume_utc()``.
+- Rename ``ZonedDateTime.disambiguated()`` to ``.ambiguous()``.
 
 **Improved**
 
-- Shortened the ``repr()`` of all types, use space separator instead of ``T``.
 - Added a ``disambiguation="compatible"`` option that matches the behavior of
   other languages and the RFC5545 standard.
+- Shortened the ``repr()`` of all types, use space separator instead of ``T``.
 - Added ``sep="T" or " "`` option to ``canonical_str()``
 
 0.3.4 (2024-02-07)

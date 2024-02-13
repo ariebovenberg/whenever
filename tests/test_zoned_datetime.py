@@ -302,10 +302,10 @@ class TestEquality:
         assert not d == 42  # type: ignore[comparison-overlap]
 
 
-def test_disambiguated():
+def test_ambiguous():
     assert not ZonedDateTime(
         2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"
-    ).disambiguated()
+    ).ambiguous()
     assert ZonedDateTime(
         2023,
         10,
@@ -315,7 +315,7 @@ def test_disambiguated():
         30,
         tz="Europe/Amsterdam",
         disambiguate="earlier",
-    ).disambiguated()
+    ).ambiguous()
 
 
 def test_as_utc():

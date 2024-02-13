@@ -27,7 +27,7 @@ Concrete classes
    :members: now, from_timestamp, strptime, rfc2822, from_rfc2822, rfc3339, from_rfc3339
 
 .. autoclass:: whenever.ZonedDateTime
-   :members: now, from_timestamp, tz, __add__, __sub__, disambiguated
+   :members: now, from_timestamp, tz, __add__, __sub__, ambiguous
 
 .. autoclass:: whenever.LocalDateTime
    :members: now, from_timestamp, tzname, __add__, __sub__
