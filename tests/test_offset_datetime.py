@@ -377,7 +377,7 @@ class TestComparison:
 
 def test_py():
     d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=hours(5))
-    assert d.py == py_datetime(
+    assert d.py() == py_datetime(
         2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone(hours(5))
     )
 
@@ -400,24 +400,13 @@ def test_now():
     now = OffsetDateTime.now(hours(5))
     assert now.offset == hours(5)
     py_now = py_datetime.now(timezone.utc)
-    assert py_now - now.py < timedelta(seconds=1)
+    assert py_now - now.py() < timedelta(seconds=1)
 
 
 def test_weakref():
     d = OffsetDateTime(2020, 8, 15, offset=hours(5))
     ref = weakref.ref(d)
     assert ref() == d
-
-
-def test_passthrough_datetime_attrs():
-    d = OffsetDateTime(2020, 8, 15, 12, 43, offset=hours(5))
-    assert d.resolution == py_datetime.resolution
-    assert d.weekday() == d.py.weekday()
-    assert d.date() == d.py.date()
-    time = d.time()
-    assert time.tzinfo is None
-    assert time == d.py.time()
-    assert d.tzinfo == d.py.tzinfo == timezone(hours(5))
 
 
 def test_replace():

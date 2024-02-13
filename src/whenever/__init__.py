@@ -38,9 +38,7 @@ import re
 import sys
 from abc import ABC, abstractmethod
 from datetime import (
-    date as _date,
     datetime as _datetime,
-    time as _time,
     timedelta,
     timezone as _timezone,
     tzinfo as _tzinfo,
@@ -123,18 +121,6 @@ class DateTime(ABC):
         @property
         def microsecond(self) -> int: ...
 
-        def weekday(self) -> int:
-            """The day of the week as an integer (Monday=0, Sunday=6)"""
-            ...
-
-        def date(self) -> _date:
-            """The :class:`~datetime.date` part of the datetime"""
-            ...
-
-        def time(self) -> _time:
-            """The :class:`~datetime.time` part of the datetime"""
-            ...
-
     else:
         # Defining properties this way is faster than declaring a `def`,
         # but the type checker doesn't like it.
@@ -145,9 +131,6 @@ class DateTime(ABC):
         minute = property(attrgetter("_py_dt.minute"))
         second = property(attrgetter("_py_dt.second"))
         microsecond = property(attrgetter("_py_dt.microsecond"))
-        weekday = property(attrgetter("_py_dt.weekday"))
-        date = property(attrgetter("_py_dt.date"))
-        time = property(attrgetter("_py_dt.time"))
 
     @abstractmethod
     def canonical_str(self, sep: Literal[" ", "T"] = "T") -> str:
@@ -179,9 +162,6 @@ class DateTime(ABC):
             If the string does not match this exact format.
         """
 
-    resolution: ClassVar[timedelta] = _datetime.resolution
-    """Alias for :attr:`datetime.datetime.resolution`"""
-
     @classmethod
     @abstractmethod
     def from_py(cls: type[_T], d: _datetime, /) -> _T:
@@ -203,7 +183,6 @@ class DateTime(ABC):
         the behavior on ambiguity.
         """
 
-    @property
     def py(self) -> _datetime:
         """Get the underlying :class:`~datetime.datetime` object"""
         return self._py_dt
@@ -264,11 +243,6 @@ class AwareDateTime(DateTime):
 
     if TYPE_CHECKING or SPHINX_BUILD:
 
-        @property
-        def tzinfo(self) -> _tzinfo | None:
-            """The tzinfo of the underlying :class:`~datetime.datetime`"""
-            ...
-
         def timestamp(self) -> float:
             """The UNIX timestamp for this datetime.
 
@@ -288,7 +262,6 @@ class AwareDateTime(DateTime):
             return self._py_dt.timestamp()
 
     else:
-        tzinfo = property(attrgetter("_py_dt.tzinfo"))
         timestamp = property(attrgetter("_py_dt.timestamp"))
 
     @property
@@ -564,7 +537,6 @@ class UTCDateTime(AwareDateTime):
             )
         return cls._from_py_unchecked(d)
 
-    tzinfo: ClassVar[_tzinfo] = _timezone.utc
     offset = timedelta()
 
     if TYPE_CHECKING:  # pragma: no branch
@@ -949,14 +921,6 @@ class OffsetDateTime(AwareDateTime):
                 f"got tzinfo={d.tzinfo!r}"
             )
         return cls._from_py_unchecked(d)
-
-    if TYPE_CHECKING:
-
-        @property
-        def tzinfo(self) -> _timezone: ...
-
-    else:
-        tzinfo = property(attrgetter("_py_dt.tzinfo"))
 
     if TYPE_CHECKING:
         # We could have used typing.Unpack, but that's only available
@@ -1397,23 +1361,11 @@ class ZonedDateTime(AwareDateTime):
     if TYPE_CHECKING or SPHINX_BUILD:  # pragma: no cover
 
         @property
-        def fold(self) -> Fold:
-            """The fold value"""
-            ...
-
-        @property
-        def tzinfo(self) -> ZoneInfo:
-            """The timezone"""
-            ...
-
-        @property
         def tz(self) -> str:
             """The timezone ID"""
             ...
 
     else:
-        fold = property(attrgetter("_py_dt.fold"))
-        tzinfo = property(attrgetter("_py_dt.tzinfo"))
         tz = property(attrgetter("_py_dt.tzinfo.key"))
 
     @property
@@ -1441,8 +1393,8 @@ class ZonedDateTime(AwareDateTime):
 
     def exact_eq(self, other: ZonedDateTime, /) -> bool:
         return (
-            self.tz is other.tz
-            and self.fold == other.fold
+            self._py_dt.tzinfo is other._py_dt.tzinfo
+            and self._py_dt.fold == other._py_dt.fold
             and self._py_dt == other._py_dt
         )
 
@@ -1855,12 +1807,7 @@ class LocalDateTime(AwareDateTime):
             disambiguate: Disambiguate | NOT_SET = NOT_SET(),
         ) -> LocalDateTime: ...
 
-        @property
-        def tzinfo(self) -> _timezone: ...
-
     else:
-
-        tzinfo = property(attrgetter("_py_dt.tzinfo"))
 
         def replace(self, /, disambiguate="raise", **kwargs) -> LocalDateTime:
             if not _no_tzinfo_or_fold(kwargs):

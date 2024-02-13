@@ -47,7 +47,6 @@ class TestInit:
         assert d.minute == 12
         assert d.second == 30
         assert d.microsecond == 450
-        assert d.fold == 0
         assert d.tz == zone
         assert d.offset == hours(-4)
 
@@ -360,7 +359,7 @@ def test_as_zoned():
         .as_zoned("Europe/Amsterdam")
         .exact_eq(ams.replace(disambiguate="later"))
     )
-    # fold doesn't affect NYC time because there's no ambiguity
+    # disambiguation doesn't affect NYC time because there's no ambiguity
     assert (
         nyc.replace(disambiguate="later")
         .as_zoned("Europe/Amsterdam")
@@ -406,7 +405,7 @@ class TestFromStr:
             ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
         )
 
-    def test_offset_determines_fold(self):
+    def test_offset_disambiguates(self):
         assert ZonedDateTime.from_canonical_str(
             "2023-10-29T02:15:30+01:00[Europe/Amsterdam]"
         ).exact_eq(
@@ -592,7 +591,7 @@ class TestComparison:
         assert not later < d
         assert not later <= d
 
-    def test_same_timezone_fold(self):
+    def test_same_timezone_ambiguity(self):
         d = ZonedDateTime.from_canonical_str(
             "2023-10-29T02:15:30+02:00[Europe/Amsterdam]"
         )
@@ -711,7 +710,7 @@ class TestComparison:
 
 def test_py():
     d = ZonedDateTime(2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam")
-    assert d.py == py_datetime(
+    assert d.py() == py_datetime(
         2020, 8, 15, 23, 12, 9, 987_654, tzinfo=ZoneInfo("Europe/Amsterdam")
     )
 
@@ -743,24 +742,13 @@ def test_now():
     now = ZonedDateTime.now("Iceland")
     assert now.tz == "Iceland"
     py_now = py_datetime.now(ZoneInfo("Iceland"))
-    assert py_now - now.py < timedelta(seconds=1)
+    assert py_now - now.py() < timedelta(seconds=1)
 
 
 def test_weakref():
     d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
     ref = weakref.ref(d)
     assert ref() == d
-
-
-def test_passthrough_datetime_attrs():
-    d = ZonedDateTime(2020, 8, 15, 12, 43, tz="Europe/Amsterdam")
-    assert d.resolution == py_datetime.resolution
-    assert d.weekday() == d.py.weekday()
-    assert d.date() == d.py.date()
-    time = d.time()
-    assert time.tzinfo is None
-    assert time == d.py.time()
-    assert d.tzinfo is d.py.tzinfo is ZoneInfo("Europe/Amsterdam")
 
 
 class TestExactEquality:
@@ -770,7 +758,7 @@ class TestExactEquality:
         assert a == b
         assert not a.exact_eq(b)
 
-    def test_same_timezone_fold(self):
+    def test_same_timezone_ambiguity(self):
         a = ZonedDateTime(
             2023,
             10,

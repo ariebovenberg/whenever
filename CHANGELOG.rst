@@ -4,18 +4,49 @@
 0.4.0rc0 (2024-02-??)
 ---------------------
 
+A big release with many small breaking changes, and a few new features.
+
 **Breaking changes**
 
-- ``LocalDateTime`` no longer adjusts automatically to changes in the system 
-  timezone. This behavior was dependent on too many assumptions, and behaved 
-  unintuitively in some cases. Now, ``LocalDateTime`` reflects the system 
-  timezone at the moment of instantiation. It can be updated explicitly, 
-  instead of relying on mutable global state.
+- ``LocalDateTime`` no longer adjusts automatically to changes in the system
+  timezone. Now, ``LocalDateTime`` reflects the system timezone at the moment
+  of instantiation. It can be updated explicitly.
+
+  **Rationale**: The old behavior was dependent on too many assumptions, and
+  behaved unintuitively in some cases. It also made the class dependent on
+  shared mutable state, which made it hard to reason about.
+
 - The ``disambiguate=`` argument now also determines how non-existent times
   are handled.
+
+  **Rationale**: This makes it possible to handle both ambiguous and
+  non-existent times gracefully and in a consistent way.
+  This behavior is also more in line with the RFC5545 standard,
+  and Temporal.
+
 - ``from_naive()`` removed in favor of methods on ``NaiveDateTime``.
   For example, ``UTCDateTime.from_naive(n)`` becomes ``n.assume_utc()``.
+
+  **Rationale**: It's shorter, and more explicit about assumptions.
+
 - Rename ``ZonedDateTime.disambiguated()`` to ``.ambiguous()``.
+
+  **Rationale**: The new name distinguishes it from the ``disambiguate=``
+  argument, which also affects non-existent times.
+
+- Made ``.py()`` a method instead of a property.
+
+  **Rationale**: Although it currently works fine as a property, this
+  may be changed in the future if the library no longer wraps a ``datetime``,
+  or arguments are needed.
+
+- Removed properties that simply delegated to the underlying ``datetime`` object:
+  ``tzinfo``, ``date``, ``time``, ``weekday``, and ``fold``.
+
+  **Rationale**: Removing these properties makes it possible to create improved
+  versions in the future. If needed, these properties can be accessed from the
+  underlying datetime object with ``.py()``: ``.weekday`` becomes ``.py().weekday``.
+
 
 **Improved**
 

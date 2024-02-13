@@ -541,9 +541,8 @@ def test_repr():
 @local_nyc_tz()
 def test_py():
     d = LocalDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    py = d.py
+    py = d.py()
     assert py == py_datetime(2020, 8, 15, 23, 12, 9, 987_654).astimezone(None)
-    assert py.fold == 0
 
 
 class TestFromPy:
@@ -572,26 +571,13 @@ class TestFromPy:
 def test_now():
     now = LocalDateTime.now()
     py_now = py_datetime.now(ZoneInfo("America/New_York")).replace(tzinfo=None)
-    assert py_now - now.py < timedelta(seconds=1)
+    assert py_now - now.py() < timedelta(seconds=1)
 
 
 def test_weakref():
     d = LocalDateTime(2020, 8, 15)
     ref = weakref.ref(d)
     assert ref() == d
-
-
-@local_ams_tz()
-def test_passthrough_datetime_attrs():
-    d = LocalDateTime(2020, 8, 15, 12, 43)
-    assert d.resolution == py_datetime.resolution
-    assert d.weekday() == d.py.weekday()
-    assert d.date() == d.py.date()
-    time = d.time()
-    assert time.tzinfo is None
-    assert time == d.py.time()
-    assert d.tzinfo is d.py.tzinfo
-    assert d.tzinfo == timezone(hours(2), "CEST")
 
 
 class TestReplace:
