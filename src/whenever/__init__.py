@@ -133,24 +133,24 @@ class DateTime(ABC):
         microsecond = property(attrgetter("_py_dt.microsecond"))
 
     @abstractmethod
-    def canonical_str(self, sep: Literal[" ", "T"] = "T") -> str:
+    def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
         """Format as the canonical string representation. Each
         subclass has a different format. See the documentation for
         the subclass for more information.
-        Inverse of :meth:`from_canonical_str`.
+        Inverse of :meth:`from_canonical_format`.
         """
 
     def __str__(self) -> str:
-        """Same as :meth:`canonical_str` with ``sep=" "``"""
-        return self.canonical_str(" ")
+        """Same as :meth:`canonical_format` with ``sep=" "``"""
+        return self.canonical_format(" ")
 
     @classmethod
     @abstractmethod
-    def from_canonical_str(cls: type[_T], s: str, /) -> _T:
+    def from_canonical_format(cls: type[_T], s: str, /) -> _T:
         """Create an instance from the canonical string representation,
         which is different for each subclass.
 
-        Inverse of :meth:`__str__` and :meth:`canonical_str`.
+        Inverse of :meth:`__str__` and :meth:`canonical_format`.
 
         Note
         ----
@@ -465,7 +465,7 @@ class UTCDateTime(AwareDateTime):
     Note
     ----
 
-    The canonical string representation is:
+    The canonical string format is:
 
     .. code-block:: text
 
@@ -501,11 +501,11 @@ class UTCDateTime(AwareDateTime):
         """Create an instance from the current time"""
         return cls._from_py_unchecked(_datetime.now(_UTC))
 
-    def canonical_str(self, sep: Literal[" ", "T"] = "T") -> str:
+    def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
         return f"{self._py_dt.isoformat(sep)[:-6]}Z"
 
     @classmethod
-    def from_canonical_str(cls, s: str, /) -> UTCDateTime:
+    def from_canonical_format(cls, s: str, /) -> UTCDateTime:
         if not _match_utc_str(s):
             raise InvalidFormat()
         return cls._from_py_unchecked(_fromisoformat_utc(s))
@@ -756,7 +756,7 @@ class UTCDateTime(AwareDateTime):
     def rfc3339(self) -> str:
         """Format as an RFC 3339 string
 
-        For UTCDateTime, equivalent to :meth:`~AwareDateTime.canonical_str`.
+        For UTCDateTime, equivalent to :meth:`~AwareDateTime.canonical_format`.
         Inverse of :meth:`from_rfc3339`.
 
         Example
@@ -833,7 +833,7 @@ class OffsetDateTime(AwareDateTime):
     Note
     ----
 
-    The canonical string representation is:
+    The canonical string format is:
 
     .. code-block:: text
 
@@ -884,11 +884,11 @@ class OffsetDateTime(AwareDateTime):
         """Create an instance at the current time with the given offset"""
         return cls._from_py_unchecked(_datetime.now(_timezone(offset)))
 
-    def canonical_str(self, sep: Literal[" ", "T"] = "T") -> str:
+    def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
         return self._py_dt.isoformat(sep)
 
     @classmethod
-    def from_canonical_str(cls, s: str, /) -> OffsetDateTime:
+    def from_canonical_format(cls, s: str, /) -> OffsetDateTime:
         if not _match_offset_str(s):
             raise InvalidFormat()
         return cls._from_py_unchecked(_fromisoformat(s))
@@ -1104,7 +1104,7 @@ class OffsetDateTime(AwareDateTime):
     def rfc3339(self) -> str:
         """Format as an RFC 3339 string
 
-        For ``OffsetDateTime``, equivalent to :meth:`~DateTime.canonical_str`.
+        For ``OffsetDateTime``, equivalent to :meth:`~DateTime.canonical_format`.
         Inverse of :meth:`from_rfc3339`.
 
         Example
@@ -1229,7 +1229,7 @@ class ZonedDateTime(AwareDateTime):
     Warning
     -------
 
-    The canonical string representation is:
+    The canonical string format is:
 
     .. code-block:: text
 
@@ -1289,14 +1289,14 @@ class ZonedDateTime(AwareDateTime):
         """Create an instance from the current time in the given timezone"""
         return cls._from_py_unchecked(_datetime.now(ZoneInfo(tz)))
 
-    def canonical_str(self, sep: Literal[" ", "T"] = "T") -> str:
+    def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
         return (
             f"{self._py_dt.isoformat(sep)}"
             f"[{self._py_dt.tzinfo.key}]"  # type: ignore[union-attr]
         )
 
     @classmethod
-    def from_canonical_str(cls, s: str, /) -> ZonedDateTime:
+    def from_canonical_format(cls, s: str, /) -> ZonedDateTime:
         if (match := _match_zoned_str(s)) is None:
             raise InvalidFormat()
         dt = _fromisoformat(match[1])
@@ -1648,7 +1648,7 @@ class LocalDateTime(AwareDateTime):
     Note
     ----
 
-    The canonical string representation is:
+    The canonical string format is:
 
     .. code-block:: text
 
@@ -1695,11 +1695,11 @@ class LocalDateTime(AwareDateTime):
         """Create an instance from the current time"""
         return cls._from_py_unchecked(_datetime.now())
 
-    def canonical_str(self, sep: Literal[" ", "T"] = "T") -> str:
+    def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
         return self._py_dt.isoformat(sep)
 
     @classmethod
-    def from_canonical_str(cls, s: str, /) -> LocalDateTime:
+    def from_canonical_format(cls, s: str, /) -> LocalDateTime:
         if not _match_offset_str(s):
             raise InvalidFormat()
         return cls._from_py_unchecked(_fromisoformat(s))
@@ -1741,7 +1741,7 @@ class LocalDateTime(AwareDateTime):
     def offset(self) -> timedelta:
         return self._py_dt.astimezone().utcoffset()  # type: ignore[return-value]
 
-    # TODO: include in canonical_str?
+    # TODO: include in canonical_format?
     @property
     def tzname(self) -> str | None:
         """The name of the timezone as provided by the system, if known.
@@ -1959,7 +1959,7 @@ class NaiveDateTime(DateTime):
     Note
     ----
 
-    The canonical string representation is:
+    The canonical string format is:
 
     .. code-block:: text
 
@@ -1983,11 +1983,11 @@ class NaiveDateTime(DateTime):
             year, month, day, hour, minute, second, microsecond
         )
 
-    def canonical_str(self, sep: Literal[" ", "T"] = "T") -> str:
+    def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
         return self._py_dt.isoformat(sep)
 
     @classmethod
-    def from_canonical_str(cls, s: str, /) -> NaiveDateTime:
+    def from_canonical_format(cls, s: str, /) -> NaiveDateTime:
         if not _match_naive_str(s):
             raise InvalidFormat()
         return cls._from_py_unchecked(_fromisoformat(s))

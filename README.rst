@@ -92,9 +92,9 @@ Quickstart
    ZonedDateTime(2022-10-29 11:00:00+01:00[Europe/Amsterdam])
 
    # Lossless round-trip to/from text (useful for JSON/serialization)
-   >>> py311_release.canonical_str()
+   >>> py311_release.canonical_format()
    '2022-10-24T17:00:00Z'
-   >>> ZonedDateTime.from_canonical_str('2022-10-24T19:00:00+02:00[Europe/Paris]')
+   >>> ZonedDateTime.from_canonical_format('2022-10-24T19:00:00+02:00[Europe/Paris]')
    ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
 
    # Conversion to/from common formats

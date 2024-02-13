@@ -486,15 +486,15 @@ Here are the canonical formats for each type:
 
 .. code-block:: python
 
-   >>> UTCDateTime(2023, 1, 1, 0, 0).canonical_str()
+   >>> UTCDateTime(2023, 1, 1, 0, 0).canonical_format()
    '2023-01-01T00:00:00Z'
-   >>> ZonedDateTime.from_canonical_str('2022-10-24T19:00:00+02:00[Europe/Paris]')
+   >>> ZonedDateTime.from_canonical_format('2022-10-24T19:00:00+02:00[Europe/Paris]')
    ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
 
 .. seealso::
 
-   The methods :meth:`~whenever.DateTime.canonical_str` and
-   :meth:`~whenever.DateTime.from_canonical_str` can be used to convert to and
+   The methods :meth:`~whenever.DateTime.canonical_format` and
+   :meth:`~whenever.DateTime.from_canonical_format` can be used to convert to and
    from the canonical string format.
 
 Pickling

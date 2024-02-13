@@ -67,7 +67,7 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-class TestCanonicalStr:
+class TestCanonicalFormat:
 
     @pytest.mark.parametrize(
         "d, expected",
@@ -79,68 +79,70 @@ class TestCanonicalStr:
             (UTCDateTime(2020, 8, 15, 23, 12, 9), "2020-08-15T23:12:09Z"),
         ],
     )
-    def test_canonical_str(self, d: UTCDateTime, expected: str):
+    def test_canonical_format(self, d: UTCDateTime, expected: str):
         assert str(d) == expected.replace("T", " ")
-        assert d.canonical_str() == expected
+        assert d.canonical_format() == expected
 
     def test_seperator(self):
         d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-        assert d.canonical_str(sep=" ") == "2020-08-15 23:12:09.987654Z"
+        assert d.canonical_format(sep=" ") == "2020-08-15 23:12:09.987654Z"
 
 
-class TestFromCanonicalStr:
+class TestFromCanonicalFormat:
     def test_valid(self):
-        assert UTCDateTime.from_canonical_str(
+        assert UTCDateTime.from_canonical_format(
             "2020-08-15T12:08:30Z"
         ) == UTCDateTime(2020, 8, 15, 12, 8, 30)
 
     def test_valid_three_fractions(self):
-        assert UTCDateTime.from_canonical_str(
+        assert UTCDateTime.from_canonical_format(
             "2020-08-15T12:08:30.349Z"
         ) == UTCDateTime(2020, 8, 15, 12, 8, 30, 349_000)
 
     def test_valid_six_fractions(self):
-        assert UTCDateTime.from_canonical_str(
+        assert UTCDateTime.from_canonical_format(
             "2020-08-15T12:08:30.349123Z"
         ) == UTCDateTime(2020, 8, 15, 12, 8, 30, 349_123)
 
     def test_single_space_instead_of_T(self):
-        assert UTCDateTime.from_canonical_str(
+        assert UTCDateTime.from_canonical_format(
             "2020-08-15 12:08:30Z"
         ) == UTCDateTime(2020, 8, 15, 12, 8, 30)
 
     def test_unpadded(self):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_canonical_str("2020-8-15T12:8:30Z")
+            UTCDateTime.from_canonical_format("2020-8-15T12:8:30Z")
 
     def test_overly_precise_fraction(self):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_canonical_str("2020-08-15T12:08:30.123456789123Z")
+            UTCDateTime.from_canonical_format(
+                "2020-08-15T12:08:30.123456789123Z"
+            )
 
     def test_invalid_lowercase_z(self):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_canonical_str("2020-08-15T12:08:30z")
+            UTCDateTime.from_canonical_format("2020-08-15T12:08:30z")
 
     def test_no_trailing_z(self):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_canonical_str("2020-08-15T12:08:30")
+            UTCDateTime.from_canonical_format("2020-08-15T12:08:30")
 
     def test_no_seconds(self):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_canonical_str("2020-08-15T12:08Z")
+            UTCDateTime.from_canonical_format("2020-08-15T12:08Z")
 
     def test_empty(self):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_canonical_str("")
+            UTCDateTime.from_canonical_format("")
 
     def test_garbage(self):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_canonical_str("garbage")
+            UTCDateTime.from_canonical_format("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
         with pytest.raises(InvalidFormat):
-            UTCDateTime.from_canonical_str(s)
+            UTCDateTime.from_canonical_format(s)
 
 
 class TestEquality:
@@ -210,8 +212,8 @@ def test_repr():
 
 class TestComparison:
     def test_utc(self):
-        d = UTCDateTime.from_canonical_str("2020-08-15T23:12:09Z")
-        later = UTCDateTime.from_canonical_str("2020-08-16T00:00:00Z")
+        d = UTCDateTime.from_canonical_format("2020-08-15T23:12:09Z")
+        later = UTCDateTime.from_canonical_format("2020-08-16T00:00:00Z")
         assert d < later
         assert d <= later
         assert later > d
