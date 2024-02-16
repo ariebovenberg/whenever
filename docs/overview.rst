@@ -1,13 +1,25 @@
+.. _overview:
+
 🧭 Overview
 ===========
 
 This page gives a high-level overview of **whenever**'s features.
-To get more details, see the :ref:`API reference <api>`.
+To get more details, see the :ref:`advanced features <advanced>` or the :ref:`API reference <api>`.
 
-The types
----------
+Datetime types
+--------------
 
-**whenever** defines five types:
+.. epigraph::
+
+   In API design, if you've got two things that are even subtly different,
+   it's worth having them as separate types—because you're representing the
+   meaning of your data more accurately.
+
+   -- Jon Skeet
+
+While the standard library has a single :class:`~datetime.datetime` type,
+**whenever** provides five different types to represent datetimes.
+Each type is designed to communicate intent and prevent common mistakes.
 
 .. code-block:: python
 
@@ -26,7 +38,7 @@ and here's a summary of how you can use them:
 +-----------------------+-----+--------+-------+-------+-------+
 | difference            | ✅  |  ✅    |  ✅   |  ✅   |  ✅   |
 +-----------------------+-----+--------+-------+-------+-------+
-| add/subtract timedelta| ✅  |  ❌    |  ✅   |  ✅   |  ✅   |
+| add/subtract time     | ✅  |  ❌    |  ✅   |  ✅   |  ✅   |
 +-----------------------+-----+--------+-------+-------+-------+
 | unambiguous           | ✅  |  ✅    |  ❌   |  ❌   |  ✅   |
 +-----------------------+-----+--------+-------+-------+-------+
@@ -39,78 +51,67 @@ and here's a summary of how you can use them:
 | to/from RFC3339       | ✅  |  ✅    |  ❌   |  ❌   |  ❌   |
 +-----------------------+-----+--------+-------+-------+-------+
 
-``UTCDateTime``
-~~~~~~~~~~~~~~~
+:class:`~whenever.UTCDateTime`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Always UTC: simple, fast, and unambiguous.
 It's great if you're storing when something happened (or will happen)
 regardless of location.
 
-.. code-block:: python
-
-    py311_livestream = UTCDateTime(2022, 10, 24, hour=17)
+>>> py311_livestream = UTCDateTime(2022, 10, 24, hour=17)
+UTCDateTime(2022-10-24 17:00:00Z)
 
 In >95% of cases, you should use this class over the others. The other
 classes are most often useful at the boundaries of your application.
 
-``OffsetDateTime``
-~~~~~~~~~~~~~~~~~~
+:class:`~whenever.OffsetDateTime`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Defines a local time with its UTC offset.
 This is great if you're storing when something happened at a local time.
 
-.. code-block:: python
-
-    from whenever import hours  # alias for timedelta(hours=...)
-
-    # 9:00 AM in Salt Lake City
-    pycon23_start = OffsetDateTime(2023, 4, 21, hour=9, offset=hours(-6))
+>>> # Pycon was in Salt Lake City that year
+>>> pycon23_start = OffsetDateTime(2023, 4, 21, hour=9, offset=-6)
+OffsetDateTime(2023-04-21 09:00:00-06:00)
 
 It's less suitable for *future* events,
 because the UTC offset may change (e.g. due to daylight saving time).
-For this reason, you cannot add/subtract a ``timedelta``
+For this reason, you cannot add or subtract time from an :class:`~whenever.OffsetDateTime`
 — the offset may have changed!
 
-``ZonedDateTime``
-~~~~~~~~~~~~~~~~~
+:class:`~whenever.ZonedDateTime`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This class accounts for the variable UTC offset of timezones,
 and is great for representing localized times in the past and future.
 Note that when the clock is set backwards, times occur twice.
 Use ``disambiguate`` to resolve these situations.
 
-.. code-block:: python
+>>> changing_the_guard = ZonedDateTime(2024, 12, 8, hour=11, tz="Europe/London")
+ZonedDateTime(2024-12-08 11:00:00+00:00[Europe/London])
+>>> ZonedDateTime(2023, 10, 29, 1, 15, tz="Europe/London", disambiguate="later")
+ZonedDateTime(2023-10-29 01:15:00+00:00[Europe/London])
 
-    # Always at 11:00 in London
-    changing_the_guard = ZonedDateTime(2024, 12, 8, hour=11, tz="Europe/London")
-
-    # Explicitly resolve ambiguities
-    night_shift = ZonedDateTime(2023, 10, 29, 1, 15, tz="Europe/London", disambiguate="later")
-
-``LocalDateTime``
-~~~~~~~~~~~~~~~~~
+:class:`~whenever.LocalDateTime`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This is a datetime in the system local timezone.
-It's suitable for representing times related to the user's system.
+Unless you're building a system that specifically runs on the user's local
+machine (such as a CLI), you should avoid using this type.
 
-.. code-block:: python
+>>> # assuming system timezone is America/New_York
+>>> backup_performed = LocalDateTime(2023, 12, 28, hour=2)
+LocalDateTime(2023-12-28 02:00:00-05:00)
 
-    >>> # assuming system timezone is America/New_York
-    >>> backup_scheduled = LocalDateTime(2023, 12, 28, hour=20)
-    LocalDateTime(2023-12-28 20:00:00-05:00)
+:class:`~whenever.NaiveDateTime`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``NaiveDateTime``
-~~~~~~~~~~~~~~~~~
+In dealing with real-world data, you'll often encounter datetimes
+that don't have timezone information.
+Use ``NaiveDateTime`` to represent these datetimes.
 
-This type is detached from any timezone information.
-Use this if you're only interested in what appears on a clock,
-or if you absolutely don't need to account for the complexities of the real world.
-
-.. code-block:: python
-
-    clock_tower = NaiveDateTime(1955, 11, 12, hour=10, minute=4)
-    city_simulation_start = NaiveDateTime(1900, 1, 1, hour=0)
-
+>>> invite_received = NaiveDateTime(2020, 3, 14, hour=15)
+NaiveDateTime(2020-03-14 15:00:00)
 
 Comparison and equality
 -----------------------
@@ -127,21 +128,17 @@ For aware types (:class:`~whenever.UTCDateTime`, :class:`~whenever.OffsetDateTim
 comparison and equality are based on whether they represent the same moment in
 time. This means that two datetimes with different values can be equal:
 
-.. code-block:: python
-
-    # different ways of representing the same moment in time
-    >>> as_utc = UTCDateTime(2023, 12, 28, 11, 30)
-    >>> as_5hr_offset = OffsetDateTime(2023, 12, 28, 16, 30, offset=hours(5))
-    >>> as_8hr_offset = OffsetDateTime(2023, 12, 28, 19, 30, offset=hours(8))
-    >>> as_zoned = ZonedDateTime(2023, 12, 28, 6, 30, tz="America/New_York")
-
-    # all equal
-    >>> as_utc == as_5hr_offset == as_8hr_offset == as_zoned
-    True
-
-    # comparison
-    >>> as_zoned > OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(5))
-    True
+>>> # different ways of representing the same moment in time
+>>> as_utc = UTCDateTime(2023, 12, 28, 11, 30)
+>>> as_5hr_offset = OffsetDateTime(2023, 12, 28, 16, 30, offset=hours(5))
+>>> as_8hr_offset = OffsetDateTime(2023, 12, 28, 19, 30, offset=hours(8))
+>>> as_zoned = ZonedDateTime(2023, 12, 28, 6, 30, tz="America/New_York")
+>>> # all equal
+>>> as_utc == as_5hr_offset == as_8hr_offset == as_zoned
+True
+>>> # comparison
+>>> as_zoned > OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(5))
+True
 
 .. note::
 
@@ -154,21 +151,21 @@ Note that if you want to compare for exact equality on the values
 (i.e. exactly the same year, month, day, hour, minute, etc.), you can use
 the :meth:`~whenever.AwareDateTime.exact_eq` method.
 
+>>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=5)
+
 Naive types
 ~~~~~~~~~~~
 
 For :class:`~whenever.NaiveDateTime`, equality is simply based on
 whether the values are the same, since there is no concept of timezones or UTC offset:
 
-.. code-block:: python
-
-    >>> d = NaiveDateTime(2023, 12, 28, 11, 30)
-    >>> same = NaiveDateTime(2023, 12, 28, 11, 30)
-    >>> different = NaiveDateTime(2023, 12, 28, 11, 31)
-
-    >>> d == same
-    >>> d != different
-
+>>> d = NaiveDateTime(2023, 12, 28, 11, 30)
+>>> same = NaiveDateTime(2023, 12, 28, 11, 30)
+>>> different = NaiveDateTime(2023, 12, 28, 11, 31)
+>>> d == same
+True
+>>> d == different
+False
 
 .. seealso::
 
@@ -185,12 +182,10 @@ won't prevent you from using ``==`` to compare them.
 To prevent these mix-ups, use mypy's ``--strict-equality``
 `flag <https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-strict-equality>`_.
 
-.. code-block:: python
-
-    # These are never equal, but Python won't stop you from comparing them.
-    # Mypy will catch this mix-up if you use enable --strict-equality flag.
-    >>> UTCDateTime(2023, 12, 28) == NaiveDateTime(2023, 12, 28)
-    False
+>>> # These are never equal, but Python won't stop you from comparing them.
+>>> # Mypy will catch this mix-up if you use enable --strict-equality flag.
+>>> UTCDateTime(2023, 12, 28) == NaiveDateTime(2023, 12, 28)
+False
 
 .. admonition:: Why not raise a TypeError?
 
@@ -210,26 +205,26 @@ forcing you to match aware types exactly.
     d == UTCDateTime(2023, 12, 28, 10)
 
     # mypy: ❌ (too strict, this should be allowed)
-    d == OffsetDateTime(2023, 12, 28, 10, offset=hours(0))
+    d == OffsetDateTime(2023, 12, 28, 10, offset=0)
 
 To work around this, you can either convert explicitly:
 
 .. code-block:: python
 
-    d == OffsetDateTime(2023, 12, 28, offset=hours(0)).as_utc()
+    d == OffsetDateTime(2023, 12, 28, offset=0).as_utc()
 
 Or annotate with the :class:`~whenever.AwareDateTime` base class:
 
 .. code-block:: python
 
-    d: AwareDateTime == OffsetDateTime(2023, 12, 28, 10, offset=hours(0))
+    d: AwareDateTime == OffsetDateTime(2023, 12, 28, 10, offset=0)
 
 
 Conversion
 ----------
 
-Aware types
-~~~~~~~~~~~
+Between aware types
+~~~~~~~~~~~~~~~~~~~
 
 You can convert between aware datetimes with the :meth:`~whenever.AwareDateTime.as_utc`,
 :meth:`~whenever.AwareDateTime.as_offset`, :meth:`~whenever.AwareDateTime.as_zoned`,
@@ -237,18 +232,20 @@ and :meth:`~whenever.AwareDateTime.as_local` methods. These methods return a new
 instance of the appropriate type, representing the same moment in time.
 This means the results will always compare equal to the original datetime.
 
-.. code-block:: python
+>>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
+>>> d.as_utc()  # same moment in UTC
+UTCDateTime(2023-12-28 10:30:00Z)
+>>> d.as_offset(5)  # same moment with a +5:00 offset
+OffsetDateTime(2023-12-28 15:30:00+05:00)
+>>> d.as_zoned("America/New_York")  # same moment in New York
+ZonedDateTime(2023-12-28 05:30:00-05:00[America/New_York])
+>>> d.as_local()  # same moment in the system timezone (e.g. Europe/Paris)
+LocalDateTime(2023-12-28 11:30:00+01:00)
+>>> d.as_offset(4) == d
+True  # always the same moment in time
 
-    >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
-    >>> d.as_utc()  # same moment in UTC
-    >>> d.as_offset(hours(5))  # same moment with a +5:00 offset
-    >>> d.as_zoned("America/New_York")  # same moment in New York
-    >>> d.as_local()  # same moment in the system timezone
-
-    >>> d.as_offset(hours(4)) == d  # True: always the same moment in time
-
-Naïve types
-~~~~~~~~~~~
+To and from naïve
+~~~~~~~~~~~~~~~~~
 
 Conversion to naïve types is always easy: calling
 :meth:`~whenever.AwareDateTime.naive` simply strips
@@ -262,7 +259,8 @@ away any timezone information:
 
 You can convert from naïve types with the :meth:`~whenever.NaiveDateTime.assume_utc`,
 :meth:`~whenever.NaiveDateTime.assume_offset`, and
-:meth:`~whenever.NaiveDateTime.assume_zoned` methods.
+:meth:`~whenever.NaiveDateTime.assume_zoned`, and
+:meth:`~whenever.NaiveDateTime.assume_local` methods.
 
 .. code-block:: python
 
@@ -279,25 +277,54 @@ You can convert from naïve types with the :meth:`~whenever.NaiveDateTime.assume
    of the developer.
 
 
-Moving back and forwards in time
---------------------------------
+Arithmetic
+----------
 
-You can add or subtract a :class:`~datetime.timedelta` from
-:class:`~whenever.UTCDateTime`,
-:class:`~whenever.ZonedDateTime`, :class:`~whenever.LocalDateTime`,
-and :class:`~whenever.NaiveDateTime` instances. This represents moving forward or
-backward in time by the given duration:
+Datetimes support varous arithmetic operations with addition and subtraction.
 
-.. code-block:: python
+Difference between times
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-    from whenever import days, hours  # aliases for timedelta(days=...) etc.
+You can subtract two :class:`~whenever.DateTime` instances to get a
+:class:`~whenever.Duration` representing the duration between them.
+Aware types can be mixed with each other, 
+but naive types cannot be mixed with aware types:
 
-    >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
-    >>> d + hours(5)  # 5 hours later
-    >>> d - days(1)  # 1 day earlier
+>>> # difference between moments in time
+>>> UTCDateTime(2023, 12, 28, 11, 30) - ZonedDateTime(2023, 12, 28, tz="Europe/Amsterdam")
+Duration(12:30:00)
+>>> # difference between naive datetimes
+>>> NaiveDateTime(2023, 12, 28, 11) - NaiveDateTime(2023, 12, 27, 11)
+Duration(24:00:00)
 
-Adding/subtracting takes into account daylight savings time and other
-timezone variabilities.
+.. _add-subtract-time:
+
+Adding and subtracting time
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+You can add or subtract various units of time from a :class:`~whenever.DateTime` instance.
+
+>>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
+>>> d.add(hours=5, minutes=30)
+ZonedDateTime(2023-12-28 17:00:00+01:00[Europe/Amsterdam])
+>>> d.subtract(days=1)  # 1 day earlier
+ZonedDateTime(2023-12-27 11:30:00+01:00[Europe/Amsterdam])
+
+Adding/subtracting takes into account timezone changes (e.g. daylight saving time)
+according to industry standard RFC 5545. This means:
+
+- Exact time units (hours, minutes, and seconds) account for DST changes, 
+  but "nominal" units (days, months, years) do not.
+  The expectation is that rescheduling a 10am appointment "a day later"
+  will still be at 10am, even after DST changes.
+- Units are added from largest (year) to smallest (microsecond).
+  This means that adding a month to January 31st will result in February 28th or 29th,
+  depending on the year.
+
+.. seealso::
+
+   Have a look at the documentation on :ref:`durations <durations>` for more details
+   on arithmetic operations, as well as more advanced features.
 
 .. attention::
 
@@ -306,21 +333,6 @@ timezone variabilities.
    That is, the offset may be different after moving backwards or forwards in time.
    If you need to shift an :class:`~whenever.OffsetDateTime` instance,
    either convert to UTC or a proper timezone first.
-
-Subtracting datetimes
----------------------
-
-You can subtract two :class:`~whenever.DateTime` instances to get a
-:class:`~datetime.timedelta` representing the duration between them.
-Aware types can be mixed, but naive types cannot be mixed with aware types:
-
-.. code-block:: python
-
-    # difference between moments in time
-    >>> UTCDateTime(2023, 12, 28, 11, 30) - ZonedDateTime(2023, 12, 14, tz="Europe/Amsterdam")
-
-    # difference between naive datetimes
-    >>> NaiveDateTime(2023, 12, 28, 11) - NaiveDateTime(2023, 12, 27, 11)
 
 Ambiguity in timezones
 ----------------------
@@ -398,21 +410,26 @@ You choose the disambiguation behavior you want with the ``disambiguate=`` argum
     ZonedDateTime(2023-03-26 03:30:00+02:00[Europe/Paris])
 
 
-Conversion to the standard library
-----------------------------------
+Integrate with the standard library
+-----------------------------------
 
-Each **whenever** class wraps a standard library :class:`~datetime.datetime` instance.
-You can access it with the :attr:`~whenever.DateTime.py` attribute.
+Each **whenever** datetime class wraps a standard
+library :class:`~datetime.datetime` instance.
+You can access it with the :meth:`~whenever.DateTime.py_datetime` method.
 Conversely, you can create a type from a standard library datetime with the
-:meth:`~whenever.DateTime.from_py` classmethod.
+:meth:`~whenever.DateTime.from_py_datetime` classmethod.
 
-.. code-block:: python
+>>> from datetime import datetime, UTC
+>>> UTCDateTime.from_py(datetime(2023, 1, 1, tzinfo=UTC))
+UTCDateTime(2023-01-01 00:00:00Z)
+>>> ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam").py_datetime()
+datetime(2023, 1, 1, 0, 0, tzinfo=ZoneInfo('Europe/Amsterdam'))
 
-   >>> from datetime import datetime, UTC
-   >>> UTCDateTime.from_py(datetime(2023, 1, 1, tzinfo=UTC))
-   UTCDateTime(2023-01-01 00:00:00Z)
-   >>> ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam").py
-   datetime(2023, 1, 1, 0, 0, tzinfo=ZoneInfo('Europe/Amsterdam'))
+.. note::
+
+   The fact that whenever datetimes wrap standard library datetimes
+   is an implementation detail, and you should not rely on it.
+   In the future, the implementation may change.
 
 
 Parsing
@@ -512,14 +529,8 @@ store them in a database that supports pickling.
    unpickled = pickle.loads(pickled)
    assert d == unpickled
 
+.. note::
 
-Changes to the local timezone
------------------------------
+   From version 1.0 onwards, we aim to maintain backwards compatibility
+   for unpickling.
 
-The local timezone is the timezone of the system running the code.
-It's often useful to deal with times in the local timezone, but it's also
-important to be aware that the local timezone can change.
-
-.. code-block:: python
-
-   >>> from whenever import LocalDateTime

@@ -4,7 +4,8 @@
 0.4.0rc0 (2024-02-??)
 ---------------------
 
-A big release with many small breaking changes, and a few new features.
+A big release with the main feature being the addition of ``Duration`` and
+``Period`` classes. This brings breaking changes.
 
 **Breaking changes**
 
@@ -29,27 +30,31 @@ A big release with many small breaking changes, and a few new features.
 
   **Rationale**: It's shorter, and more explicit about assumptions.
 
-- Rename ``ZonedDateTime.disambiguated()`` to ``.ambiguous()``.
+- Rename ``ZonedDateTime.disambiguated()`` to ``.is_ambiguous()``.
 
   **Rationale**: The new name distinguishes it from the ``disambiguate=``
   argument, which also affects non-existent times.
 
-- Made ``.py()`` a method instead of a property.
+- Replace ``.py`` property with ``.py_datetime()`` method.
 
   **Rationale**: Although it currently works fine as a property, this
-  may be changed in the future if the library no longer wraps a ``datetime``,
-  or arguments are needed.
+  may be changed in the future if the library no longer contains
+  a ``datetime`` internally.
 
 - Removed properties that simply delegated to the underlying ``datetime`` object:
   ``tzinfo``, ``date``, ``time``, ``weekday``, and ``fold``.
 
   **Rationale**: Removing these properties makes it possible to create improved
   versions in the future. If needed, these properties can be accessed from the
-  underlying datetime object with ``.py()``: ``.weekday`` becomes ``.py().weekday``.
+  underlying datetime object with ``.py_datetime()``.
 
 - Renamed ``.canonical_str()`` to ``.canonical_format()``.
 
   **Rationale**: A more descriptive name.
+
+- Renamed ``DoesntExistInZone`` to ``DoesntExist``.
+
+  **Rationale**: The new name is shorter and consistent with ``Ambiguous``.
 
 **Improved**
 
@@ -57,6 +62,8 @@ A big release with many small breaking changes, and a few new features.
   other languages and the RFC5545 standard.
 - Shortened the ``repr()`` of all types, use space separator instead of ``T``.
 - Added ``sep="T" or " "`` option to ``canonical_format()``
+- ``OffsetDateTime`` constructor and ``as_offset()`` methods now accept
+  integers as hour offsets.
 
 0.3.4 (2024-02-07)
 ------------------

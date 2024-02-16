@@ -11,15 +11,18 @@ from pytest import approx
 
 from whenever import (
     Ambiguous,
-    DoesntExistInZone,
+    DoesntExist,
     InvalidFormat,
     LocalDateTime,
     NaiveDateTime,
     OffsetDateTime,
     UTCDateTime,
     ZonedDateTime,
+    days,
     hours,
-    minutes,
+    months,
+    weeks,
+    years,
 )
 
 from .common import (
@@ -87,13 +90,13 @@ class TestInit:
             "minute": 30,
         }
         with pytest.raises(
-            DoesntExistInZone,
+            DoesntExist,
             match="2023-03-26 02:30:00 doesn't exist in the system timezone",
         ):
             LocalDateTime(**kwargs)
 
         with pytest.raises(
-            DoesntExistInZone,
+            DoesntExist,
         ):
             LocalDateTime(**kwargs, disambiguate="raise")
 
@@ -106,6 +109,13 @@ class TestInit:
         assert LocalDateTime(**kwargs, disambiguate="compatible").exact_eq(
             LocalDateTime(**{**kwargs, "hour": 3})
         )
+
+
+def test_tzname_none():
+    d = LocalDateTime.from_py_datetime(
+        py_datetime(2020, 8, 15, 23, tzinfo=timezone(timedelta(hours=2)))
+    )
+    assert d.tzname == ""
 
 
 class TestToUTC:
@@ -181,6 +191,9 @@ class TestToOffset:
         )
         assert d.as_offset(hours(0)).exact_eq(
             OffsetDateTime(2020, 8, 15, 10, 30, offset=hours(0))
+        )
+        assert d.as_offset(-1).exact_eq(
+            OffsetDateTime(2020, 8, 15, 9, 30, offset=hours(-1))
         )
 
 
@@ -543,28 +556,32 @@ def test_repr():
 @local_nyc_tz()
 def test_py():
     d = LocalDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    py = d.py()
+    py = d.py_datetime()
     assert py == py_datetime(2020, 8, 15, 23, 12, 9, 987_654).astimezone(None)
 
 
-class TestFromPy:
+class TestFromPyDateTime:
     @local_ams_tz()
     def test_basic(self):
-        d = py_datetime(2020, 8, 15, 23, tzinfo=timezone(hours(2)))
-        assert LocalDateTime.from_py(d).exact_eq(
+        d = py_datetime(
+            2020, 8, 15, 23, tzinfo=timezone(hours(2).py_timedelta())
+        )
+        assert LocalDateTime.from_py_datetime(d).exact_eq(
             LocalDateTime(2020, 8, 15, 23)
         )
 
     @local_ams_tz()
     def test_disambiguated(self):
-        d = py_datetime(2023, 10, 29, 2, 15, 30, tzinfo=timezone(hours(1)))
-        assert LocalDateTime.from_py(d).exact_eq(
+        d = py_datetime(
+            2023, 10, 29, 2, 15, 30, tzinfo=timezone(hours(1).py_timedelta())
+        )
+        assert LocalDateTime.from_py_datetime(d).exact_eq(
             LocalDateTime(2023, 10, 29, 2, 15, 30, disambiguate="later")
         )
 
     def test_wrong_tzinfo(self):
         with pytest.raises(ValueError, match="Paris"):
-            LocalDateTime.from_py(
+            LocalDateTime.from_py_datetime(
                 py_datetime(2020, 8, 15, 23, tzinfo=ZoneInfo("Europe/Paris"))
             )
 
@@ -573,7 +590,7 @@ class TestFromPy:
 def test_now():
     now = LocalDateTime.now()
     py_now = py_datetime.now(ZoneInfo("America/New_York")).replace(tzinfo=None)
-    assert py_now - now.py() < timedelta(seconds=1)
+    assert py_now - now.py_datetime() < timedelta(seconds=1)
 
 
 def test_weakref():
@@ -639,65 +656,203 @@ class TestReplace:
     def test_nonexistent(self):
         d = LocalDateTime(2023, 3, 26, 1, 15, 30)
         with pytest.raises(
-            DoesntExistInZone,
+            DoesntExist,
             match="2023-03-26 02:15:30 doesn't exist in the system timezone",
         ):
             d.replace(hour=2)
 
 
-class TestAdd:
+class TestAddTimeUnits:
     @local_ams_tz()
-    def test_zero_timedelta(self):
+    def test_zero(self):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-        assert (d + timedelta()).exact_eq(d)
+        assert (d + hours(0)).exact_eq(d)
 
     @local_ams_tz()
-    def test_ambiguous(self):
-        d = LocalDateTime(2023, 10, 29, 2, 15, 30, disambiguate="earlier")
-        assert (d + minutes(10)).exact_eq(
-            d.replace(minute=25, disambiguate="earlier")
+    def test_ambiguous_plus_zero(self):
+        d = LocalDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            disambiguate="earlier",
         )
-        assert (d.replace(disambiguate="later") + minutes(10)).exact_eq(
-            d.replace(disambiguate="later", minute=25)
+        assert (d + hours(0)).exact_eq(d)
+        assert (d.replace(disambiguate="later") + hours(0)).exact_eq(
+            d.replace(disambiguate="later")
         )
-
-    @local_ams_tz()
-    def test_timezone_changes(self):
-        d = LocalDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-        with local_nyc_tz():
-            assert (d + hours(2)).exact_eq(
-                LocalDateTime(2020, 8, 15, 19, 12, 9, 987_654)
-            )
 
     @local_ams_tz()
     def test_accounts_for_dst(self):
-        d = LocalDateTime(2023, 10, 29, 2, 15, 30, disambiguate="earlier")
+        d = LocalDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            disambiguate="earlier",
+        )
         assert (d + hours(24)).exact_eq(LocalDateTime(2023, 10, 30, 1, 15, 30))
         assert (d.replace(disambiguate="later") + hours(24)).exact_eq(
             LocalDateTime(2023, 10, 30, 2, 15, 30)
         )
 
-    def test_add_not_implemented(self):
+    @local_ams_tz()
+    def test_not_implemented(self):
         d = LocalDateTime(2020, 8, 15)
         with pytest.raises(TypeError, match="unsupported operand type"):
             d + 42  # type: ignore[operator]
 
 
-class TestSubtract:
-    @local_ams_tz()
-    def test_zero_timedelta(self):
-        d = LocalDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-        assert (d - timedelta()).exact_eq(d)
+class TestAddDateUnits:
 
     @local_ams_tz()
-    def test_ambiguous(self):
-        d = LocalDateTime(2023, 10, 29, 2, 15, 30, disambiguate="earlier")
-        assert (d - minutes(10)).exact_eq(
-            d.replace(minute=5, disambiguate="earlier")
+    def test_zero(self):
+        d = LocalDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        assert d + days(0) == d
+
+    @local_ams_tz()
+    def test_simple_date(self):
+        d = LocalDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        assert d + days(1) == d.replace(day=16)
+        assert d + years(1) + weeks(2) + days(-2) == d.replace(
+            year=2021, day=27
         )
-        assert (d.replace(disambiguate="later") - minutes(10)).exact_eq(
-            d.replace(disambiguate="later", minute=5)
+
+    @local_ams_tz()
+    def test_ambiguity(self):
+        d = LocalDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            disambiguate="later",
         )
+        assert d + days(0) == d
+        assert d + (days(7) - weeks(1)) == d
+        assert d + days(1) == d.replace(day=30)
+        assert d + days(6) == d.replace(month=11, day=4)
+        assert d + hours(-1) == d.replace(disambiguate="earlier")
+        assert d + hours(1) == d.replace(hour=3)
+        assert d.replace(disambiguate="earlier") + hours(1) == d
+
+        # transition to another fold
+        assert d + years(1) + days(-2) == d.replace(
+            year=2024, day=27, disambiguate="earlier"
+        )
+        # transition to a gap
+        assert d + months(5) + days(2) == d.replace(
+            year=2024, month=3, day=31, disambiguate="later"
+        )
+        # transition over a gap
+        assert d + months(5) + days(2) + hours(2) == d.replace(
+            year=2024, month=3, day=31, hour=5
+        )
+        assert d + months(5) + days(2) + hours(-1) == d.replace(
+            year=2024, month=3, day=31, disambiguate="earlier"
+        )
+
+
+class TestSubtractTimeUnits:
+    @local_ams_tz()
+    def test_zero(self):
+        d = LocalDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        assert (d - hours(0)).exact_eq(d)
+
+    @local_ams_tz()
+    def test_ambiguous_minus_zero(self):
+        d = LocalDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            disambiguate="earlier",
+        )
+        assert (d - hours(0)).exact_eq(d)
+        assert (d.replace(disambiguate="later") - hours(0)).exact_eq(
+            d.replace(disambiguate="later")
+        )
+
+    @local_ams_tz()
+    def test_accounts_for_dst(self):
+        d = LocalDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            disambiguate="earlier",
+        )
+        assert (d - hours(24)).exact_eq(LocalDateTime(2023, 10, 28, 2, 15, 30))
+        assert (d.replace(disambiguate="later") - hours(24)).exact_eq(
+            LocalDateTime(2023, 10, 28, 3, 15, 30)
+        )
+
+    def test_subtract_not_implemented(self):
+        d = LocalDateTime(2020, 8, 15)
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            d - 42  # type: ignore[operator]
+
+
+class TestSubtractDateUnits:
+    @local_ams_tz()
+    def test_zero(self):
+        d = LocalDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        assert d - days(0) == d
+
+    @local_ams_tz()
+    def test_simple_date(self):
+        d = LocalDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        assert d - days(1) == d.replace(day=14)
+        assert d - years(1) - weeks(2) - days(-2) == d.replace(
+            year=2019, day=3
+        )
+
+    @local_ams_tz()
+    def test_ambiguity(self):
+        d = LocalDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            disambiguate="later",
+        )
+        assert d - days(0) == d
+        assert d - (days(7) + weeks(-1)) == d
+        assert d - days(1) == d.replace(day=28)
+        assert d - days(6) == d.replace(month=10, day=23)
+        assert d - hours(1) == d.replace(disambiguate="earlier")
+        assert d - hours(-1) == d.replace(hour=3)
+        assert d.replace(disambiguate="earlier") - hours(-1) == d
+
+        # transition to another fold
+        assert d - years(1) - days(-1) == d.replace(
+            year=2022, day=30, disambiguate="earlier"
+        )
+        # transition to a gap
+        assert d - months(7) - days(3) == d.replace(
+            month=3, day=26, disambiguate="later"
+        )
+        # # transition over a gap
+        assert d - months(7) - days(3) - hours(1) == d.replace(
+            month=3, day=26, hour=1
+        )
+        assert d - months(7) - days(3) - hours(-1) == d.replace(
+            month=3, day=26, hour=4
+        )
+
+
+class TestSubtractOtherDateTime:
 
     @local_ams_tz()
     def test_accounts_for_dst(self):
@@ -708,17 +863,11 @@ class TestSubtract:
         )
 
     @local_ams_tz()
-    def test_subtract_not_implemented(self):
-        d = LocalDateTime(2020, 8, 15)
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            d - 42  # type: ignore[operator]
-
-    @local_ams_tz()
     def test_subtract_datetime(self):
         d = LocalDateTime(2023, 10, 29, 5)
         other = LocalDateTime(2023, 10, 28, 3)
         assert d - other == hours(27)
-        assert other - d == timedelta(hours=-27)
+        assert other - d == -hours(27)
 
     @local_ams_tz()
     def test_subtract_amibiguous_datetime(self):
@@ -762,7 +911,7 @@ class TestSubtract:
 def test_pickle():
     d = LocalDateTime(2020, 8, 15, 23, 12, 9, 987_654)
     dumped = pickle.dumps(d)
-    assert len(dumped) <= len(pickle.dumps(d.py))
+    assert len(dumped) <= len(pickle.dumps(d.py_datetime()))
     assert pickle.loads(pickle.dumps(d)) == d
 
 
@@ -771,10 +920,9 @@ def test_old_pickle_data_remains_unpicklable():
     # Don't update this value -- the whole idea is that it's a pickle at
     # a specific version of the library.
     dumped = (
-        b"\x80\x04\x95_\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0c_unp"
-        b"kl_local\x94\x93\x94(M\xe4\x07K\x08K\x0fK\x17K\x0cK\tJ\x06\x12"
-        b"\x0f\x00\x8c\x08datetime\x94\x8c\ttimedelta\x94\x93\x94K\x00M \x1c"
-        b"K\x00\x87\x94R\x94\x8c\x04CEST\x94t\x94R\x94."
+        b"\x80\x04\x95D\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0c_unp"
+        b"kl_local\x94\x93\x94(M\xe4\x07K\x08K\x0fK\x17K\x0cK\tJ\x06\x12\x0f\x00G@"
+        b"\xbc \x00\x00\x00\x00\x00\x8c\x04CEST\x94t\x94R\x94."
     )
     assert pickle.loads(dumped) == LocalDateTime(
         2020, 8, 15, 23, 12, 9, 987_654

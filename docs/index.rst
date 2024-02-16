@@ -8,6 +8,7 @@ Contents
 
    self
    overview.rst
+   advanced.rst
    api.rst
    changelog.rst
 
