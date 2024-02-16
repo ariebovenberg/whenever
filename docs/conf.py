@@ -3,6 +3,7 @@ from __future__ import annotations
 # -- Project information -----------------------------------------------------
 import importlib.metadata
 import typing
+
 typing.SPHINX_BUILD = True
 
 metadata = importlib.metadata.metadata("whenever")
@@ -14,6 +15,10 @@ release = metadata["Version"]
 
 # -- General configuration ------------------------------------------------
 
+nitpicky = True
+nitpick_ignore = [
+    ("py:class", "whenever._TDateTime"),
+]
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.intersphinx",

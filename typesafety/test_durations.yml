@@ -1,0 +1,30 @@
+- case: addition
+  regex: true
+  main: |
+    from whenever import years, months, weeks, days, hours, minutes
+
+    reveal_type(years(1))  # N: .*whenever.Period
+    reveal_type(months(1) + days(4))  # N: .*whenever.Period
+    reveal_type(weeks(1) + days(4))  # N: .*whenever.Period
+    reveal_type(hours(2) + minutes(40))  # N: .*whenever.TimeDelta
+    reveal_type(minutes(1))  # N: .*whenever.TimeDelta
+    reveal_type(years(2) + minutes(9))  # N: .*whenever.Duration
+    reveal_type(minutes(2) + years(9))  # N: .*whenever.Duration
+- case: subtraction
+  regex: true
+  main: |
+    from whenever import years, months, weeks, days, hours, minutes
+
+    reveal_type(months(1) - days(4))  # N: .*whenever.Period
+    reveal_type(weeks(1) - days(4))  # N: .*whenever.Period
+    reveal_type(hours(2) - minutes(40))  # N: .*whenever.TimeDelta
+    reveal_type(years(9) - minutes(1))  # N: .*whenever.Duration
+    reveal_type(minutes(9) - years(1))  # N: .*whenever.Duration
+- case: strict_equality_prevents_mixing
+  regex: true
+  main: |
+    from whenever import years, months, weeks, days, hours, minutes
+    
+    years(1) == months(12)
+    hours(24) == days(1)  # E: .*comparison.*
+    hours(1) == minutes(60)

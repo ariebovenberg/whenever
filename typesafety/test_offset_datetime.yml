@@ -20,7 +20,7 @@
   main: |
     from whenever import OffsetDateTime, hours
     d = OffsetDateTime(2020, 8, 9, offset=hours(3))
-    reveal_type(d - d)  # N: .*type is "datetime.timedelta
+    reveal_type(d - d)  # N: .*type is "whenever.TimeDelta
     d - hours(4)  # E: .*operator.*
 - case: replace
   regex: true

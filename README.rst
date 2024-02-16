@@ -56,15 +56,12 @@ Quickstart
    ...    UTCDateTime,     # -> Great for codebases that normalize to UTC
    ...    OffsetDateTime,  # -> Localized times without ambiguities
    ...    ZonedDateTime,   # -> Full-featured IANA timezone support
-   ...    LocalDateTime,   # -> In the local system timezone
    ...    NaiveDateTime,   # -> Detached from any timezone
-   ...
-   ...    hours, days, minutes  # aliases for timedelta(hours=...) etc.
    ... )
 
    >>> py311_release = UTCDateTime(2022, 10, 24, hour=17)
    UTCDateTime(2022-10-24 17:00:00Z)
-   >>> pycon23_start = OffsetDateTime(2023, 4, 21, hour=9, offset=hours(-6))
+   >>> pycon23_start = OffsetDateTime(2023, 4, 21, hour=9, offset=-6)
    OffsetDateTime(2023-04-21 09:00:00-06:00)
 
    # Simple, explicit conversions
@@ -88,7 +85,7 @@ Quickstart
    ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])
 
    # DST-aware operators
-   >>> hackathon_end = hackathon_start + hours(24)
+   >>> hackathon_end = hackathon_start.add(hours=24)
    ZonedDateTime(2022-10-29 11:00:00+01:00[Europe/Amsterdam])
 
    # Lossless round-trip to/from text (useful for JSON/serialization)
@@ -108,7 +105,7 @@ Quickstart
    OffsetDateTime(2022-10-24 00:00:00+02:00)
 
    # If you must: you can access the underlying datetime object
-   >>> pycon23_start.py().ctime()
+   >>> pycon23_start.py_datetime().ctime()
    'Fri Apr 21 09:00:00 2023'
 
 Read more in the `full overview <https://whenever.readthedocs.io/en/latest/overview.html>`_
@@ -185,6 +182,21 @@ This library is a lot more explicit about the different types of datetimes,
 addressing issue of naive/aware mixing with UTC, local, and zoned datetime subclasses.
 It doesn't address the other datetime pitfalls though.
 
+Roadmap
+-------
+
+- 🧪 **0.x**: get to feature-parity, process feedback, and tweak the API:
+
+  - ✅ Datetime classes
+  - ✅ Durations and periods
+  - 🚧 Date and time of day (separate from datetime)
+  - 🚧 Parsing and formatting
+  - ❓ Different calendar systems
+
+- 🔒 **1.0**: API stability and backwards compatibility
+- ⚡️ **2.0**: Reimplement in Rust for performance
+- 🐍 **future**: Inspire a standard library improvement
+
 FAQs
 ----
 
@@ -198,7 +210,13 @@ Keeping the same API would mean that the same issues would remain.
 Not only would this keep most of the issues with the standard library,
 it would result in brittle code: many popular libraries expect ``datetime`` *exactly*,
 and `don't work <https://github.com/sdispater/pendulum/issues/289#issue-371964426>`_
-`with subclasses <https://github.com/sdispater/pendulum/issues/131#issue-241088629>`_.
+with `subclasses <https://github.com/sdispater/pendulum/issues/131#issue-241088629>`_.
+
+**Why so many classes?**
+
+The different classes correspond to different ways of representing time.
+By having separate classes, you can be more explicit about what you mean,
+and the API can better enforce correctness.
 
 **What is the performance impact?**
 
@@ -212,7 +230,7 @@ It actually did start out as a Rust extension. But since the wrapping code
 is so simple, it didn't make much performance difference.
 Since it did make the code a lot more complex, a simple pure-Python implementation
 was preferred.
-If more involved operations are needed in the future, we can reconsider.
+Once the API is stable, a Rust implementation will be considered again.
 
 **Is this production-ready?**
 

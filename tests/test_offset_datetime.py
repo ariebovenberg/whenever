@@ -13,10 +13,12 @@ from whenever import (
     LocalDateTime,
     NaiveDateTime,
     OffsetDateTime,
+    TimeDelta,
     UTCDateTime,
     ZonedDateTime,
     hours,
     minutes,
+    seconds,
 )
 
 from .common import (
@@ -41,6 +43,10 @@ class TestInit:
         assert d.second == 30
         assert d.microsecond == 450
         assert d.offset == hours(5)
+
+    def test_int_offset(self):
+        d = OffsetDateTime(2020, 8, 15, 5, 12, 30, 450, offset=-5)
+        assert d.offset == hours(-5)
 
     def test_offset_missing(self):
         with pytest.raises(TypeError, match="offset"):
@@ -113,7 +119,13 @@ class TestFromCanonicalFormat:
             "2020-08-15T12:08:30+05:00:33"
         ).exact_eq(
             OffsetDateTime(
-                2020, 8, 15, 12, 8, 30, offset=timedelta(hours=5, seconds=33)
+                2020,
+                8,
+                15,
+                12,
+                8,
+                30,
+                offset=hours(5) + seconds(33),
             )
         )
 
@@ -129,7 +141,7 @@ class TestFromCanonicalFormat:
                 8,
                 30,
                 349_000,
-                offset=timedelta(hours=5, seconds=33),
+                offset=hours(5) + seconds(33),
             )
         )
 
@@ -145,7 +157,7 @@ class TestFromCanonicalFormat:
                 8,
                 30,
                 349_123,
-                offset=timedelta(hours=5, seconds=33, microseconds=987_654),
+                offset=TimeDelta(hours=5, seconds=33, microseconds=987_654),
             )
         )
 
@@ -268,7 +280,14 @@ def test_from_timestamp():
 
 def test_repr():
     d = OffsetDateTime(
-        2020, 8, 15, 23, 12, 9, 987_654, offset=timedelta(hours=5, minutes=22)
+        2020,
+        8,
+        15,
+        23,
+        12,
+        9,
+        987_654,
+        offset=hours(5) + minutes(22),
     )
     assert repr(d) == "OffsetDateTime(2020-08-15 23:12:09.987654+05:22)"
     assert (
@@ -375,16 +394,32 @@ class TestComparison:
             d >= 42  # type: ignore[operator]
 
 
-def test_py():
+def test_py_datetime():
     d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=hours(5))
-    assert d.py() == py_datetime(
-        2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone(hours(5))
+    assert d.py_datetime() == py_datetime(
+        2020,
+        8,
+        15,
+        23,
+        12,
+        9,
+        987_654,
+        tzinfo=timezone(timedelta(hours=5)),
     )
 
 
-def test_from_py():
-    d = py_datetime(2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone(hours(2)))
-    assert OffsetDateTime.from_py(d).exact_eq(
+def test_from_py_datetime():
+    d = py_datetime(
+        2020,
+        8,
+        15,
+        23,
+        12,
+        9,
+        987_654,
+        tzinfo=timezone(timedelta(hours=2)),
+    )
+    assert OffsetDateTime.from_py_datetime(d).exact_eq(
         OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=hours(2))
     )
 
@@ -393,14 +428,14 @@ def test_from_py():
 
     d2 = d.replace(tzinfo=SomeTzinfo())  # type: ignore[abstract]
     with pytest.raises(ValueError, match="SomeTzinfo"):
-        OffsetDateTime.from_py(d2)
+        OffsetDateTime.from_py_datetime(d2)
 
 
 def test_now():
     now = OffsetDateTime.now(hours(5))
     assert now.offset == hours(5)
     py_now = py_datetime.now(timezone.utc)
-    assert py_now - now.py() < timedelta(seconds=1)
+    assert py_now - now.py_datetime() < timedelta(seconds=1)
 
 
 def test_weakref():
@@ -462,46 +497,46 @@ class TestSubtract:
         other = OffsetDateTime(
             2020, 8, 14, 23, 12, 4, 987_654, offset=hours(-3)
         )
-        assert d - other == timedelta(hours=16, seconds=5)
+        assert d - other == hours(16) + seconds(5)
 
     def test_utc(self):
         d = OffsetDateTime(2020, 8, 15, 20, offset=hours(5))
-        assert d - UTCDateTime(2020, 8, 15, 20) == -timedelta(hours=5)
+        assert d - UTCDateTime(2020, 8, 15, 20) == -hours(5)
 
     def test_zoned(self):
         d = OffsetDateTime(2023, 10, 29, 6, offset=hours(2))
-        assert d - ZonedDateTime(
-            2023, 10, 29, 3, tz="Europe/Paris"
-        ) == timedelta(hours=2)
+        assert d - ZonedDateTime(2023, 10, 29, 3, tz="Europe/Paris") == hours(
+            2
+        )
         assert d - ZonedDateTime(
             2023, 10, 29, 2, tz="Europe/Paris", disambiguate="later"
-        ) == timedelta(hours=3)
+        ) == hours(3)
         assert d - ZonedDateTime(
             2023, 10, 29, 2, tz="Europe/Paris", disambiguate="earlier"
-        ) == timedelta(hours=4)
-        assert d - ZonedDateTime(
-            2023, 10, 29, 1, tz="Europe/Paris"
-        ) == timedelta(hours=5)
+        ) == hours(4)
+        assert d - ZonedDateTime(2023, 10, 29, 1, tz="Europe/Paris") == hours(
+            5
+        )
 
     @local_ams_tz()
     def test_local(self):
         d = OffsetDateTime(2023, 10, 29, 6, offset=hours(2))
         assert d - LocalDateTime(
             2023, 10, 29, 3, disambiguate="later"
-        ) == timedelta(hours=2)
+        ) == hours(2)
         assert d - LocalDateTime(
             2023, 10, 29, 2, disambiguate="later"
-        ) == timedelta(hours=3)
+        ) == hours(3)
         assert d - LocalDateTime(
             2023, 10, 29, 2, disambiguate="earlier"
-        ) == timedelta(hours=4)
-        assert d - LocalDateTime(2023, 10, 29, 1) == timedelta(hours=5)
+        ) == hours(4)
+        assert d - LocalDateTime(2023, 10, 29, 1) == hours(5)
 
 
 def test_pickle():
     d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=hours(3))
     dumped = pickle.dumps(d)
-    assert len(dumped) <= len(pickle.dumps(d.py)) + 10
+    assert len(dumped) <= len(pickle.dumps(d.py_datetime()))
     assert pickle.loads(pickle.dumps(d)) == d
 
 
@@ -509,10 +544,9 @@ def test_old_pickle_data_remains_unpicklable():
     # Don't update this value -- the whole idea is that it's a pickle at
     # a specific version of the library.
     dumped = (
-        b"\x80\x04\x95Y\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_o"
-        b"ffset\x94\x93\x94(M\xe4\x07K\x08K\x0fK\x17K\x0cK\tJ\x06\x12\x0f\x00\x8c"
-        b"\x08datetime\x94\x8c\ttimedelta\x94\x93\x94K\x00M0*K\x00\x87\x94R\x94t"
-        b"\x94R\x94."
+        b"\x80\x04\x95>\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_o"
+        b"ffset\x94\x93\x94(M\xe4\x07K\x08K\x0fK\x17K\x0cK\tJ\x06\x12\x0f\x00G"
+        b"@\xc5\x18\x00\x00\x00\x00\x00t\x94R\x94."
     )
     assert pickle.loads(dumped) == OffsetDateTime(
         2020, 8, 15, 23, 12, 9, 987_654, offset=hours(3)
@@ -530,6 +564,9 @@ def test_to_offset():
         OffsetDateTime(2020, 8, 16, 1, 12, 9, 987_654, offset=hours(5))
     )
     assert d.as_offset() is d
+    assert d.as_offset(-3).exact_eq(
+        OffsetDateTime(2020, 8, 15, 17, 12, 9, 987_654, offset=hours(-3))
+    )
 
 
 def test_to_zoned():
@@ -560,21 +597,25 @@ def test_naive():
         (
             "2020-08-15 23:12+0315",
             "%Y-%m-%d %H:%M%z",
-            OffsetDateTime(
-                2020, 8, 15, 23, 12, offset=timedelta(hours=3, minutes=15)
-            ),
+            OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(3) + minutes(15)),
         ),
         (
             "2020-08-15 23:12:09+0550",
             "%Y-%m-%d %H:%M:%S%z",
             OffsetDateTime(
-                2020, 8, 15, 23, 12, 9, offset=timedelta(hours=5, minutes=50)
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                offset=hours(5) + minutes(50),
             ),
         ),
         (
             "2020-08-15 23:12:09Z",
             "%Y-%m-%d %H:%M:%S%z",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=timedelta()),
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
         ),
     ],
 )

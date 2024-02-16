@@ -14,17 +14,15 @@
 - case: addition
   regex: true
   main: |
-    from datetime import timedelta
-    from whenever import NaiveDateTime
+    from whenever import NaiveDateTime, TimeDelta
     d = NaiveDateTime(2020, 8, 9)
-    reveal_type(d + timedelta(4))  # N: .*whenever.NaiveDateTime
+    reveal_type(d + TimeDelta(hours=4))  # N: .*whenever.NaiveDateTime
     d + 12  # E: .*Unsupported
 
 - case: subtraction
   regex: true
   main: |
-    from datetime import timedelta
-    from whenever import NaiveDateTime
+    from whenever import NaiveDateTime, TimeDelta
     d = NaiveDateTime(2020, 8, 9)
-    reveal_type(d - timedelta(4))  # N: .*type is "whenever.NaiveDateTime"
-    reveal_type(d - d)  # N: .*type is "datetime.timedelta
+    reveal_type(d - TimeDelta(hours=4))  # N: .*type is "whenever.NaiveDateTime"
+    reveal_type(d - d)  # N: .*type is "whenever.TimeDelta

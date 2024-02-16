@@ -12,7 +12,8 @@ from pytest import approx
 from whenever import (
     Ambiguous,
     AwareDateTime,
-    DoesntExistInZone,
+    Date,
+    DoesntExist,
     InvalidFormat,
     InvalidOffsetForZone,
     LocalDateTime,
@@ -20,7 +21,11 @@ from whenever import (
     OffsetDateTime,
     UTCDateTime,
     ZonedDateTime,
+    days,
     hours,
+    months,
+    weeks,
+    years,
 )
 
 from .common import (
@@ -117,13 +122,13 @@ class TestInit:
             tz="Europe/Amsterdam",
         )
         with pytest.raises(
-            DoesntExistInZone,
+            DoesntExist,
             match="2023-03-26 02:15:30 doesn't exist in timezone Europe/Amsterdam",
         ):
             ZonedDateTime(**kwargs)
 
         with pytest.raises(
-            DoesntExistInZone,
+            DoesntExist,
             match="2023-03-26 02:15:30 doesn't exist in timezone Europe/Amsterdam",
         ):
             ZonedDateTime(**kwargs, disambiguate="raise")
@@ -145,6 +150,51 @@ def test_immutable():
     d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
     with pytest.raises(AttributeError):
         d.year = 2021  # type: ignore[misc]
+
+
+def test_date():
+    d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
+    assert d.date() == Date(2020, 8, 15)
+
+
+class TestWithDate:
+    def test_unambiguous(self):
+        d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
+        assert d.with_date(Date(2021, 1, 2)) == ZonedDateTime(
+            2021, 1, 2, 14, tz="Europe/Amsterdam"
+        )
+
+    def test_ambiguous(self):
+        d = ZonedDateTime(2020, 1, 1, 2, 15, 30, tz="Europe/Amsterdam")
+        date = Date(2023, 10, 29)
+        with pytest.raises(Ambiguous):
+            assert d.with_date(date)
+
+        assert d.with_date(date, disambiguate="earlier") == d.replace(
+            year=2023, month=10, day=29, disambiguate="earlier"
+        )
+        assert d.with_date(date, disambiguate="later") == d.replace(
+            year=2023, month=10, day=29, disambiguate="later"
+        )
+        assert d.with_date(date, disambiguate="compatible") == d.replace(
+            year=2023, month=10, day=29, disambiguate="compatible"
+        )
+
+    def test_nonexistent(self):
+        d = ZonedDateTime(2020, 1, 1, 2, 15, 30, tz="Europe/Amsterdam")
+        date = Date(2023, 3, 26)
+        with pytest.raises(DoesntExist):
+            assert d.with_date(date)
+
+        assert d.with_date(date, disambiguate="earlier") == d.replace(
+            year=2023, month=3, day=26, disambiguate="earlier"
+        )
+        assert d.with_date(date, disambiguate="later") == d.replace(
+            year=2023, month=3, day=26, disambiguate="later"
+        )
+        assert d.with_date(date, disambiguate="compatible") == d.replace(
+            year=2023, month=3, day=26, disambiguate="compatible"
+        )
 
 
 class TestCanonicalFormat:
@@ -304,7 +354,7 @@ class TestEquality:
 def test_ambiguous():
     assert not ZonedDateTime(
         2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"
-    ).ambiguous()
+    ).is_ambiguous()
     assert ZonedDateTime(
         2023,
         10,
@@ -314,7 +364,7 @@ def test_ambiguous():
         30,
         tz="Europe/Amsterdam",
         disambiguate="earlier",
-    ).ambiguous()
+    ).is_ambiguous()
 
 
 def test_as_utc():
@@ -373,8 +423,21 @@ def test_as_offset():
     assert d.as_offset().exact_eq(
         OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=hours(2))
     )
-    d.replace(month=1).as_offset().exact_eq(
-        OffsetDateTime(2020, 1, 15, 12, 8, 30, offset=hours(1))
+    assert (
+        d.replace(month=1)
+        .as_offset()
+        .exact_eq(OffsetDateTime(2020, 1, 15, 12, 8, 30, offset=hours(1)))
+    )
+    assert (
+        d.replace(month=1)
+        .as_offset(hours(4))
+        .exact_eq(OffsetDateTime(2020, 1, 15, 15, 8, 30, offset=hours(4)))
+    )
+    assert d.as_offset(hours(0)).exact_eq(
+        OffsetDateTime(2020, 8, 15, 10, 8, 30, offset=hours(0))
+    )
+    assert d.as_offset(-4).exact_eq(
+        OffsetDateTime(2020, 8, 15, 6, 8, 30, offset=hours(-4))
     )
 
 
@@ -710,28 +773,28 @@ class TestComparison:
 
 def test_py():
     d = ZonedDateTime(2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam")
-    assert d.py() == py_datetime(
+    assert d.py_datetime() == py_datetime(
         2020, 8, 15, 23, 12, 9, 987_654, tzinfo=ZoneInfo("Europe/Amsterdam")
     )
 
 
-def test_from_py():
+def test_from_py_datetime():
     d = py_datetime(
         2020, 8, 15, 23, 12, 9, 987_654, tzinfo=ZoneInfo("Europe/Paris")
     )
-    assert ZonedDateTime.from_py(d).exact_eq(
+    assert ZonedDateTime.from_py_datetime(d).exact_eq(
         ZonedDateTime(2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Paris")
     )
 
     d2 = d.replace(tzinfo=timezone.utc)
     with pytest.raises(ValueError, match="utc"):
-        ZonedDateTime.from_py(d2)
+        ZonedDateTime.from_py_datetime(d2)
 
     with pytest.raises(
-        DoesntExistInZone,
+        DoesntExist,
         match="2023-03-26 02:15:30 doesn't exist in timezone Europe/Amsterdam",
     ):
-        ZonedDateTime.from_py(
+        ZonedDateTime.from_py_datetime(
             py_datetime(
                 2023, 3, 26, 2, 15, 30, tzinfo=ZoneInfo("Europe/Amsterdam")
             )
@@ -742,7 +805,7 @@ def test_now():
     now = ZonedDateTime.now("Iceland")
     assert now.tz == "Iceland"
     py_now = py_datetime.now(ZoneInfo("Iceland"))
-    assert py_now - now.py() < timedelta(seconds=1)
+    assert py_now - now.py_datetime() < timedelta(seconds=1)
 
 
 def test_weakref():
@@ -878,7 +941,7 @@ class TestReplace:
     def test_nonexistent(self):
         d = ZonedDateTime(2023, 3, 26, 1, 15, 30, tz="Europe/Amsterdam")
         with pytest.raises(
-            DoesntExistInZone,
+            DoesntExist,
             match="2023-03-26 02:15:30 doesn't exist in timezone Europe/Amsterdam",
         ):
             d.replace(hour=2)
@@ -923,12 +986,12 @@ class TestReplace:
         )
 
 
-class TestAdd:
-    def test_zero_timedelta(self):
+class TestAddTimeUnits:
+    def test_zero(self):
         d = ZonedDateTime(
             2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
         )
-        assert (d + timedelta()).exact_eq(d)
+        assert (d + hours(0)).exact_eq(d)
 
     def test_ambiguous_plus_zero(self):
         d = ZonedDateTime(
@@ -941,8 +1004,8 @@ class TestAdd:
             tz="Europe/Amsterdam",
             disambiguate="earlier",
         )
-        assert (d + timedelta()).exact_eq(d)
-        assert (d.replace(disambiguate="later") + timedelta()).exact_eq(
+        assert (d + hours(0)).exact_eq(d)
+        assert (d.replace(disambiguate="later") + hours(0)).exact_eq(
             d.replace(disambiguate="later")
         )
 
@@ -957,27 +1020,78 @@ class TestAdd:
             tz="Europe/Amsterdam",
             disambiguate="earlier",
         )
-        assert (d + timedelta(hours=24)).exact_eq(
+        assert (d + hours(24)).exact_eq(
             ZonedDateTime(2023, 10, 30, 1, 15, 30, tz="Europe/Amsterdam")
         )
-        assert (
-            d.replace(disambiguate="later") + timedelta(hours=24)
-        ).exact_eq(
+        assert (d.replace(disambiguate="later") + hours(24)).exact_eq(
             ZonedDateTime(2023, 10, 30, 2, 15, 30, tz="Europe/Amsterdam")
         )
 
-    def test_add_not_implemented(self):
+    def test_not_implemented(self):
         d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
         with pytest.raises(TypeError, match="unsupported operand type"):
             d + 42  # type: ignore[operator]
 
 
-class TestSubtract:
-    def test_zero_timedelta(self):
+class TestAddDateUnits:
+
+    def test_zero(self):
         d = ZonedDateTime(
             2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
         )
-        assert (d - timedelta()).exact_eq(d)
+        assert d + days(0) == d
+
+    def test_simple_date(self):
+        d = ZonedDateTime(
+            2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+        )
+        assert d + days(1) == d.replace(day=16)
+        assert d + years(1) + weeks(2) + days(-2) == d.replace(
+            year=2021, day=27
+        )
+
+    def test_ambiguity(self):
+        d = ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            tz="Europe/Amsterdam",
+            disambiguate="later",
+        )
+        assert d + days(0) == d
+        assert d + (days(7) - weeks(1)) == d
+        assert d + days(1) == d.replace(day=30)
+        assert d + days(6) == d.replace(month=11, day=4)
+        assert d + hours(-1) == d.replace(disambiguate="earlier")
+        assert d + hours(1) == d.replace(hour=3)
+        assert d.replace(disambiguate="earlier") + hours(1) == d
+
+        # transition to another fold
+        assert d + years(1) + days(-2) == d.replace(
+            year=2024, day=27, disambiguate="earlier"
+        )
+        # transition to a gap
+        assert d + months(5) + days(2) == d.replace(
+            year=2024, month=3, day=31, disambiguate="later"
+        )
+        # transition over a gap
+        assert d + months(5) + days(2) + hours(2) == d.replace(
+            year=2024, month=3, day=31, hour=5
+        )
+        assert d + months(5) + days(2) + hours(-1) == d.replace(
+            year=2024, month=3, day=31, disambiguate="earlier"
+        )
+
+
+class TestSubtractTimeUnits:
+    def test_zero(self):
+        d = ZonedDateTime(
+            2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+        )
+        assert (d - hours(0)).exact_eq(d)
 
     def test_ambiguous_minus_zero(self):
         d = ZonedDateTime(
@@ -990,8 +1104,8 @@ class TestSubtract:
             tz="Europe/Amsterdam",
             disambiguate="earlier",
         )
-        assert (d - timedelta()).exact_eq(d)
-        assert (d.replace(disambiguate="later") - timedelta()).exact_eq(
+        assert (d - hours(0)).exact_eq(d)
+        assert (d.replace(disambiguate="later") - hours(0)).exact_eq(
             d.replace(disambiguate="later")
         )
 
@@ -1006,12 +1120,10 @@ class TestSubtract:
             tz="Europe/Amsterdam",
             disambiguate="earlier",
         )
-        assert (d - timedelta(hours=24)).exact_eq(
+        assert (d - hours(24)).exact_eq(
             ZonedDateTime(2023, 10, 28, 2, 15, 30, tz="Europe/Amsterdam")
         )
-        assert (
-            d.replace(disambiguate="later") - timedelta(hours=24)
-        ).exact_eq(
+        assert (d.replace(disambiguate="later") - hours(24)).exact_eq(
             ZonedDateTime(2023, 10, 28, 3, 15, 30, tz="Europe/Amsterdam")
         )
 
@@ -1020,15 +1132,70 @@ class TestSubtract:
         with pytest.raises(TypeError, match="unsupported operand type"):
             d - 42  # type: ignore[operator]
 
-    def test_subtract_datetime(self):
+
+class TestSubtractDateUnits:
+    def test_zero(self):
+        d = ZonedDateTime(
+            2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+        )
+        assert d - days(0) == d
+
+    def test_simple_date(self):
+        d = ZonedDateTime(
+            2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+        )
+        assert d - days(1) == d.replace(day=14)
+        assert d - years(1) - weeks(2) - days(-2) == d.replace(
+            year=2019, day=3
+        )
+
+    def test_ambiguity(self):
+        d = ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            tz="Europe/Amsterdam",
+            disambiguate="later",
+        )
+        assert d - days(0) == d
+        assert d - (days(7) + weeks(-1)) == d
+        assert d - days(1) == d.replace(day=28)
+        assert d - days(6) == d.replace(month=10, day=23)
+        assert d - hours(1) == d.replace(disambiguate="earlier")
+        assert d - hours(-1) == d.replace(hour=3)
+        assert d.replace(disambiguate="earlier") - hours(-1) == d
+
+        # transition to another fold
+        assert d - years(1) - days(-1) == d.replace(
+            year=2022, day=30, disambiguate="earlier"
+        )
+        # transition to a gap
+        assert d - months(7) - days(3) == d.replace(
+            month=3, day=26, disambiguate="later"
+        )
+        # # transition over a gap
+        assert d - months(7) - days(3) - hours(1) == d.replace(
+            month=3, day=26, hour=1
+        )
+        assert d - months(7) - days(3) - hours(-1) == d.replace(
+            month=3, day=26, hour=4
+        )
+
+
+class TestSubtractDateTime:
+
+    def test_simple(self):
         d = ZonedDateTime(
             2023, 10, 29, 5, tz="Europe/Amsterdam", disambiguate="earlier"
         )
         other = ZonedDateTime(2023, 10, 28, 3, tz="Europe/Amsterdam")
-        assert d - other == timedelta(hours=27)
-        assert other - d == timedelta(hours=-27)
+        assert d - other == hours(27)
+        assert other - d == hours(-27)
 
-    def test_subtract_amibiguous_datetime(self):
+    def test_amibiguous(self):
         d = ZonedDateTime(
             2023,
             10,
@@ -1039,46 +1206,46 @@ class TestSubtract:
             disambiguate="earlier",
         )
         other = ZonedDateTime(2023, 10, 28, 3, 15, tz="Europe/Amsterdam")
-        assert d - other == timedelta(hours=23)
-        assert d.replace(disambiguate="later") - other == timedelta(hours=24)
-        assert other - d == timedelta(hours=-23)
-        assert other - d.replace(disambiguate="later") == timedelta(hours=-24)
+        assert d - other == hours(23)
+        assert d.replace(disambiguate="later") - other == hours(24)
+        assert other - d == hours(-23)
+        assert other - d.replace(disambiguate="later") == hours(-24)
 
     def test_utc(self):
         d = ZonedDateTime(
             2023, 10, 29, 2, tz="Europe/Amsterdam", disambiguate="earlier"
         )
-        assert d - UTCDateTime(2023, 10, 28, 20) == timedelta(hours=4)
+        assert d - UTCDateTime(2023, 10, 28, 20) == hours(4)
         assert d.replace(disambiguate="later") - UTCDateTime(
             2023, 10, 28, 20
-        ) == timedelta(hours=5)
+        ) == hours(5)
 
     def test_offset(self):
         d = ZonedDateTime(
             2023, 10, 29, 2, tz="Europe/Amsterdam", disambiguate="earlier"
         )
-        assert d - OffsetDateTime(
-            2023, 10, 28, 20, offset=hours(1)
-        ) == timedelta(hours=5)
+        assert d - OffsetDateTime(2023, 10, 28, 20, offset=hours(1)) == hours(
+            5
+        )
         assert d.replace(disambiguate="later") - OffsetDateTime(
             2023, 10, 28, 20, offset=hours(1)
-        ) == timedelta(hours=6)
+        ) == hours(6)
 
     @local_nyc_tz()
     def test_local(self):
         d = ZonedDateTime(
             2023, 10, 29, 2, tz="Europe/Amsterdam", disambiguate="earlier"
         )
-        assert d - LocalDateTime(2023, 10, 28, 19) == timedelta(hours=1)
+        assert d - LocalDateTime(2023, 10, 28, 19) == hours(1)
         assert d.replace(disambiguate="later") - LocalDateTime(
             2023, 10, 28, 19
-        ) == timedelta(hours=2)
+        ) == hours(2)
 
 
 def test_pickle():
     d = ZonedDateTime(2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam")
     dumped = pickle.dumps(d)
-    assert len(dumped) <= len(pickle.dumps(d.py))
+    assert len(dumped) <= len(pickle.dumps(d.py_datetime))
     assert pickle.loads(pickle.dumps(d)).exact_eq(d)
 
 
