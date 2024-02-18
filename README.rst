@@ -38,13 +38,13 @@ Mistakes become red squiggles in your IDE, instead of bugs in production.
 Benefits
 --------
 
-- Distinct classes with well-defined behavior
-- Fixes pitfalls that `Arrow and Pendulum don't address <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_
-- Enforce correctness without runtime checks
-- Based on `familiar concepts from other languages <https://www.youtube.com/watch?v=saeKBuPewcU>`_. Doesn't reinvent the wheel.
-- Simple and obvious. No frills or surprises.
-- `Thoroughly documented <https://whenever.rtfd.io/en/latest/overview.html>`_ and tested
-- One file. No third-party dependencies
+- 🎯 Distinct classes with well-defined behavior
+- 🔧 Fixes pitfalls that `arrow and pendulum don't <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_
+- ✅ Enforce correctness without runtime checks
+- 🔌 Based on `familiar concepts <https://www.youtube.com/watch?v=saeKBuPewcU>`_ and standards
+- 💎 Simple and obvious; no frills or surprises
+- 📖 `Thoroughly documented <https://whenever.rtfd.io/en/latest/overview.html>`_ and tested
+- 🎁 One file; no third-party dependencies
 
 Quickstart
 ----------
