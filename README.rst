@@ -84,7 +84,7 @@ Quickstart
    >>> # Naïve/aware mixups are caught by typechecker
    >>> hackathon_invite - py311_release
    >>> # Only explicit assumptions will make it aware
-   >>> hackathon_start = hackathon_invite.assume_zoned("Europe/Amsterdam")
+   >>> hackathon_start = ZonedDateTime.from_naive(hackathon_invite, "Europe/Amsterdam")
    ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])
 
    # DST-aware operators
