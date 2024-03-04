@@ -76,7 +76,7 @@ __all__ = [
     "UTCDateTime",
     "OffsetDateTime",
     "ZonedDateTime",
-    "LocalDateTime",
+    "LocalSystemDateTime",
     "NaiveDateTime",
     "TimeDelta",
     "Period",
@@ -1413,7 +1413,7 @@ class DateTime(ABC):
 
 class AwareDateTime(DateTime):
     """Abstract base class for all aware datetime types (:class:`UTCDateTime`,
-    :class:`OffsetDateTime`, :class:`ZonedDateTime` and :class:`LocalDateTime`).
+    :class:`OffsetDateTime`, :class:`ZonedDateTime` and :class:`LocalSystemDateTime`).
     """
 
     __slots__ = ()
@@ -1482,11 +1482,11 @@ class AwareDateTime(DateTime):
             self._py_dt.astimezone(ZoneInfo(tz))
         )
 
-    def as_local(self) -> LocalDateTime:
-        """Convert into a an equivalent LocalDateTime.
+    def as_local(self) -> LocalSystemDateTime:
+        """Convert into a an equivalent LocalSystemDateTime.
         The result will always represent the same moment in time.
         """
-        return LocalDateTime._from_py_unchecked(self._py_dt.astimezone())
+        return LocalSystemDateTime._from_py_unchecked(self._py_dt.astimezone())
 
     def naive(self) -> NaiveDateTime:
         """Convert into a naive datetime, dropping all timezone information
@@ -1757,7 +1757,7 @@ class UTCDateTime(AwareDateTime):
         # Hiding __eq__ from mypy ensures that --strict-equality works
         def __eq__(self, other: object) -> bool:
             if not isinstance(
-                other, (UTCDateTime, OffsetDateTime, LocalDateTime)
+                other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
             ):
                 return NotImplemented
             return self._py_dt == other._py_dt
@@ -1769,22 +1769,30 @@ class UTCDateTime(AwareDateTime):
         return self._py_dt == other._py_dt
 
     def __lt__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, (UTCDateTime, OffsetDateTime, LocalDateTime)):
+        if not isinstance(
+            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
+        ):
             return NotImplemented
         return self._py_dt < other._py_dt
 
     def __le__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, (UTCDateTime, OffsetDateTime, LocalDateTime)):
+        if not isinstance(
+            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
+        ):
             return NotImplemented
         return self._py_dt <= other._py_dt
 
     def __gt__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, (UTCDateTime, OffsetDateTime, LocalDateTime)):
+        if not isinstance(
+            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
+        ):
             return NotImplemented
         return self._py_dt > other._py_dt
 
     def __ge__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, (UTCDateTime, OffsetDateTime, LocalDateTime)):
+        if not isinstance(
+            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
+        ):
             return NotImplemented
         return self._py_dt >= other._py_dt
 
@@ -2218,7 +2226,7 @@ class OffsetDateTime(AwareDateTime):
         # Hiding __eq__ from mypy ensures that --strict-equality works
         def __eq__(self, other: object) -> bool:
             if not isinstance(
-                other, (UTCDateTime, OffsetDateTime, LocalDateTime)
+                other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
             ):
                 return NotImplemented
             return self._py_dt == other._py_dt
@@ -2233,22 +2241,30 @@ class OffsetDateTime(AwareDateTime):
         return self == other and self.offset == other.offset
 
     def __lt__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, (UTCDateTime, OffsetDateTime, LocalDateTime)):
+        if not isinstance(
+            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
+        ):
             return NotImplemented
         return self._py_dt < other._py_dt
 
     def __le__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, (UTCDateTime, OffsetDateTime, LocalDateTime)):
+        if not isinstance(
+            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
+        ):
             return NotImplemented
         return self._py_dt <= other._py_dt
 
     def __gt__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, (UTCDateTime, OffsetDateTime, LocalDateTime)):
+        if not isinstance(
+            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
+        ):
             return NotImplemented
         return self._py_dt > other._py_dt
 
     def __ge__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, (UTCDateTime, OffsetDateTime, LocalDateTime)):
+        if not isinstance(
+            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
+        ):
             return NotImplemented
         return self._py_dt >= other._py_dt
 
@@ -2847,7 +2863,7 @@ def _unpkl_zoned(
     )
 
 
-class LocalDateTime(AwareDateTime):
+class LocalSystemDateTime(AwareDateTime):
     """Represents a time in the system timezone. Unlike OffsetDateTime,
     it knows about the system timezone and its DST transitions.
 
@@ -2860,8 +2876,8 @@ class LocalDateTime(AwareDateTime):
     -------
 
     >>> # 8:00 in the system timezone—Paris in this case
-    >>> alarm = LocalDateTime(2024, 3, 31, hour=6)
-    LocalDateTime(2024-03-31 06:00:00+02:00)
+    >>> alarm = LocalSystemDateTime(2024, 3, 31, hour=6)
+    LocalSystemDateTime(2024-03-31 06:00:00+02:00)
     ...
     >>> # Conversion based on Paris' offset
     >>> alarm.as_utc()
@@ -2869,7 +2885,7 @@ class LocalDateTime(AwareDateTime):
     ...
     >>> # unlike OffsetDateTime, it knows about DST transitions
     >>> bedtime = alarm - hours(8)
-    LocalDateTime(2024-03-30 21:00:00+01:00)
+    LocalSystemDateTime(2024-03-30 21:00:00+01:00)
 
     Handling ambiguity
     ------------------
@@ -2943,7 +2959,7 @@ class LocalDateTime(AwareDateTime):
         )
 
     @classmethod
-    def now(cls) -> LocalDateTime:
+    def now(cls) -> LocalSystemDateTime:
         """Create an instance from the current time"""
         return cls._from_py_unchecked(_datetime.now())
 
@@ -2951,13 +2967,13 @@ class LocalDateTime(AwareDateTime):
         return self._py_dt.isoformat(sep)
 
     @classmethod
-    def from_canonical_format(cls, s: str, /) -> LocalDateTime:
+    def from_canonical_format(cls, s: str, /) -> LocalSystemDateTime:
         if not _match_offset_str(s):
             raise InvalidFormat()
         return cls._from_py_unchecked(_fromisoformat(s))
 
     @classmethod
-    def from_timestamp(cls, i: float, /) -> LocalDateTime:
+    def from_timestamp(cls, i: float, /) -> LocalSystemDateTime:
         """Create an instace from a UNIX timestamp.
         The inverse of :meth:`~AwareDateTime.timestamp`.
 
@@ -2965,26 +2981,26 @@ class LocalDateTime(AwareDateTime):
         -------
 
         >>> # assuming system timezone is America/New_York
-        >>> LocalDateTime.from_timestamp(0)
-        LocalDateTime(1969-12-31T19:00:00-05:00)
-        >>> LocalDateTime.from_timestamp(1_123_000_000.45)
-        LocalDateTime(2005-08-12T12:26:40.45-04:00)
-        >>> LocalDateTime.from_timestamp(d.timestamp()) == d
+        >>> LocalSystemDateTime.from_timestamp(0)
+        LocalSystemDateTime(1969-12-31T19:00:00-05:00)
+        >>> LocalSystemDateTime.from_timestamp(1_123_000_000.45)
+        LocalSystemDateTime(2005-08-12T12:26:40.45-04:00)
+        >>> LocalSystemDateTime.from_timestamp(d.timestamp()) == d
         True
         """
         return cls._from_py_unchecked(_fromtimestamp(i).astimezone())
 
     @classmethod
-    def from_py_datetime(cls, d: _datetime, /) -> LocalDateTime:
+    def from_py_datetime(cls, d: _datetime, /) -> LocalSystemDateTime:
         if not isinstance(d.tzinfo, _timezone):
             raise ValueError(
-                "Can only create LocalDateTime from a fixed-offset datetime, "
+                "Can only create LocalSystemDateTime from a fixed-offset datetime, "
                 f"got datetime with tzinfo={d.tzinfo!r}."
             )
         return cls._from_py_unchecked(d)
 
     def __repr__(self) -> str:
-        return f"LocalDateTime({self})"
+        return f"LocalSystemDateTime({self})"
 
     @property
     def offset(self) -> TimeDelta:
@@ -3021,32 +3037,40 @@ class LocalDateTime(AwareDateTime):
 
         def __eq__(self, other: object) -> bool:
             if not isinstance(
-                other, (UTCDateTime, OffsetDateTime, LocalDateTime)
+                other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
             ):
                 return NotImplemented
             return self._py_dt == other._py_dt
 
     def __lt__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, (UTCDateTime, OffsetDateTime, LocalDateTime)):
+        if not isinstance(
+            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
+        ):
             return NotImplemented
         return self._py_dt < other._py_dt
 
     def __le__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, (UTCDateTime, OffsetDateTime, LocalDateTime)):
+        if not isinstance(
+            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
+        ):
             return NotImplemented
         return self._py_dt <= other._py_dt
 
     def __gt__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, (UTCDateTime, OffsetDateTime, LocalDateTime)):
+        if not isinstance(
+            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
+        ):
             return NotImplemented
         return self._py_dt > other._py_dt
 
     def __ge__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, (UTCDateTime, OffsetDateTime, LocalDateTime)):
+        if not isinstance(
+            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
+        ):
             return NotImplemented
         return self._py_dt >= other._py_dt
 
-    def exact_eq(self, other: LocalDateTime) -> bool:
+    def exact_eq(self, other: LocalSystemDateTime) -> bool:
         return (
             self._py_dt == other._py_dt
             and self._py_dt.tzinfo == other._py_dt.tzinfo
@@ -3066,11 +3090,13 @@ class LocalDateTime(AwareDateTime):
             second: int | NOT_SET = NOT_SET(),
             microsecond: int | NOT_SET = NOT_SET(),
             disambiguate: Disambiguate | NOT_SET = NOT_SET(),
-        ) -> LocalDateTime: ...
+        ) -> LocalSystemDateTime: ...
 
     else:
 
-        def replace(self, /, disambiguate="raise", **kwargs) -> LocalDateTime:
+        def replace(
+            self, /, disambiguate="raise", **kwargs
+        ) -> LocalSystemDateTime:
             if not _no_tzinfo_or_fold(kwargs):
                 raise TypeError("tzinfo and/or fold are not allowed arguments")
             d = self._py_dt.replace(
@@ -3082,20 +3108,20 @@ class LocalDateTime(AwareDateTime):
 
         __hash__ = property(attrgetter("_py_dt.__hash__"))
 
-    def __add__(self, delta: AnyDuration) -> LocalDateTime:
+    def __add__(self, delta: AnyDuration) -> LocalSystemDateTime:
         """Add a duration to this datetime
 
         Example
         -------
 
         >>> # assuming system local TZ=Europe/Amsterdam
-        >>> d = LocalDateTime(2023, 10, 28, 12, disambiguate="earlier")
+        >>> d = LocalSystemDateTime(2023, 10, 28, 12, disambiguate="earlier")
         >>> # adding exact units accounts for the DST transition
         >>> d + hours(24)
-        LocalDateTime(2023-10-29T11:00:00+01:00)
+        LocalSystemDateTime(2023-10-29T11:00:00+01:00)
         >>> # adding date units keeps the same local time
         >>> d + days(1)
-        LocalDateTime(2023-10-29T12:00:00+01:00)
+        LocalSystemDateTime(2023-10-29T12:00:00+01:00)
 
         Note
         ----
@@ -3131,7 +3157,7 @@ class LocalDateTime(AwareDateTime):
     def __sub__(self, other: AwareDateTime) -> TimeDelta: ...
 
     @overload
-    def __sub__(self, other: AnyDuration) -> LocalDateTime: ...
+    def __sub__(self, other: AnyDuration) -> LocalSystemDateTime: ...
 
     def __sub__(
         self, other: AnyDuration | AwareDateTime
@@ -3141,9 +3167,9 @@ class LocalDateTime(AwareDateTime):
         Example
         -------
 
-        >>> d = LocalDateTime(2020, 8, 15, hour=23, minute=12)
+        >>> d = LocalSystemDateTime(2020, 8, 15, hour=23, minute=12)
         >>> d - hours(24) - seconds(5)
-        LocalDateTime(2020-08-14 23:11:55)
+        LocalSystemDateTime(2020-08-14 23:11:55)
 
         """
         if isinstance(other, AwareDateTime):
@@ -3181,7 +3207,7 @@ class LocalDateTime(AwareDateTime):
             self._py_dt.astimezone(ZoneInfo(tz))
         )
 
-    def as_local(self) -> LocalDateTime:
+    def as_local(self) -> LocalSystemDateTime:
         return self._from_py_unchecked(self._py_dt.astimezone())
 
     # a custom pickle implementation with a smaller payload
@@ -3211,9 +3237,9 @@ def _unpkl_local(
     microsecond: int,
     offset_secs: float,
     tzname: str,
-) -> LocalDateTime:
+) -> LocalSystemDateTime:
     # FUTURE: check that rounding of offset_secs doesn't cause issues
-    return LocalDateTime._from_py_unchecked(
+    return LocalSystemDateTime._from_py_unchecked(
         _datetime(
             year,
             month,
@@ -3494,18 +3520,18 @@ class NaiveDateTime(DateTime):
 
     def assume_local(
         self, disambiguate: Disambiguate = "raise"
-    ) -> LocalDateTime:
+    ) -> LocalSystemDateTime:
         """Assume the datetime is in the system timezone,
-        creating a :class:`~whenever.LocalDateTime` instance.
+        creating a :class:`~whenever.LocalSystemDateTime` instance.
 
         Example
         -------
 
         >>> # assuming system timezone is America/New_York
         >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_local()
-        LocalDateTime(2020-08-15 23:12:00-04:00)
+        LocalSystemDateTime(2020-08-15 23:12:00-04:00)
         """
-        return LocalDateTime._from_py_unchecked(
+        return LocalSystemDateTime._from_py_unchecked(
             _resolve_local_ambiguity(
                 self._py_dt.replace(fold=_as_fold(disambiguate)),
                 disambiguate,

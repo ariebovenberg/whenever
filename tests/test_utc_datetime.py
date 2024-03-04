@@ -13,7 +13,7 @@ from whenever import (
     AwareDateTime,
     Date,
     InvalidFormat,
-    LocalDateTime,
+    LocalSystemDateTime,
     NaiveDateTime,
     OffsetDateTime,
     UTCDateTime,
@@ -465,16 +465,16 @@ class TestSubtractOperator:
     @local_ams_tz()
     def test_local(self):
         d = UTCDateTime(2023, 10, 29, 6)
-        assert d - LocalDateTime(
+        assert d - LocalSystemDateTime(
             2023, 10, 29, 3, disambiguate="later"
         ) == hours(4)
-        assert d - LocalDateTime(
+        assert d - LocalSystemDateTime(
             2023, 10, 29, 2, disambiguate="later"
         ) == hours(5)
-        assert d - LocalDateTime(
+        assert d - LocalSystemDateTime(
             2023, 10, 29, 2, disambiguate="earlier"
         ) == hours(6)
-        assert d - LocalDateTime(2023, 10, 29, 1) == hours(7)
+        assert d - LocalSystemDateTime(2023, 10, 29, 1) == hours(7)
 
     def test_invalid(self):
         d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
@@ -531,13 +531,13 @@ def test_to_zoned():
 @local_nyc_tz()
 def test_to_local():
     d = UTCDateTime(2020, 8, 15, 20)
-    assert d.as_local().exact_eq(LocalDateTime(2020, 8, 15, 16))
+    assert d.as_local().exact_eq(LocalSystemDateTime(2020, 8, 15, 16))
     # ensure disembiguation is correct
     d = UTCDateTime(2022, 11, 6, 5)
     assert d.as_local().exact_eq(
-        LocalDateTime(2022, 11, 6, 1, disambiguate="earlier")
+        LocalSystemDateTime(2022, 11, 6, 1, disambiguate="earlier")
     )
-    assert d.replace(hour=6).as_local() == LocalDateTime(
+    assert d.replace(hour=6).as_local() == LocalSystemDateTime(
         2022, 11, 6, 1, disambiguate="later"
     )
 

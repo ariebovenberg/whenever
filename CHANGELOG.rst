@@ -9,8 +9,13 @@ A big release with the main feature being the addition of ``Duration`` and
 
 **Breaking changes**
 
-- ``LocalDateTime`` no longer adjusts automatically to changes in the system
-  timezone. Now, ``LocalDateTime`` reflects the system timezone at the moment
+- ``LocalDateTime`` renamed to ``LocalSystemDateTime``.
+
+  **Rationale**: The ``LocalDateTime`` name is used in other libraries for
+  naive datetimes, and the new name is more explicit.
+
+- ``LocalSystemDateTime`` no longer adjusts automatically to changes in the system
+  timezone. Now, ``LocalSystemDateTime`` reflects the system timezone at the moment
   of instantiation. It can be updated explicitly.
 
   **Rationale**: The old behavior was dependent on too many assumptions, and

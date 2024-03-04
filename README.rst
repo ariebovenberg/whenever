@@ -68,7 +68,7 @@ Quickstart
    >>> py311_release.as_zoned("Europe/Paris")
    ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
    >>> pycon23_start.as_local()  # example: system timezone in NYC
-   LocalDateTime(2023-04-21 11:00:00-04:00)
+   LocalSystemDateTime(2023-04-21 11:00:00-04:00)
 
    # Comparison and equality across aware types
    >>> py311_release > pycon23_start

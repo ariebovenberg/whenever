@@ -24,7 +24,7 @@ Each type is designed to communicate intent and prevent common mistakes.
 .. code-block:: python
 
    from whenever import (
-       UTCDateTime, OffsetDateTime, ZonedDateTime, LocalDateTime, NaiveDateTime,
+       UTCDateTime, OffsetDateTime, ZonedDateTime, LocalSystemDateTime, NaiveDateTime,
    )
 
 and here's a summary of how you can use them:
@@ -92,16 +92,16 @@ ZonedDateTime(2024-12-08 11:00:00+00:00[Europe/London])
 >>> ZonedDateTime(2023, 10, 29, 1, 15, tz="Europe/London", disambiguate="later")
 ZonedDateTime(2023-10-29 01:15:00+00:00[Europe/London])
 
-:class:`~whenever.LocalDateTime`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+:class:`~whenever.LocalSystemDateTime`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This is a datetime in the system local timezone.
 Unless you're building a system that specifically runs on the user's local
 machine (such as a CLI), you should avoid using this type.
 
 >>> # assuming system timezone is America/New_York
->>> backup_performed = LocalDateTime(2023, 12, 28, hour=2)
-LocalDateTime(2023-12-28 02:00:00-05:00)
+>>> backup_performed = LocalSystemDateTime(2023, 12, 28, hour=2)
+LocalSystemDateTime(2023-12-28 02:00:00-05:00)
 
 :class:`~whenever.NaiveDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -124,7 +124,7 @@ Aware types
 ~~~~~~~~~~~
 
 For aware types (:class:`~whenever.UTCDateTime`, :class:`~whenever.OffsetDateTime`,
-:class:`~whenever.ZonedDateTime`, and :class:`~whenever.LocalDateTime`),
+:class:`~whenever.ZonedDateTime`, and :class:`~whenever.LocalSystemDateTime`),
 comparison and equality are based on whether they represent the same moment in
 time. This means that two datetimes with different values can be equal:
 
@@ -240,7 +240,7 @@ OffsetDateTime(2023-12-28 15:30:00+05:00)
 >>> d.as_zoned("America/New_York")  # same moment in New York
 ZonedDateTime(2023-12-28 05:30:00-05:00[America/New_York])
 >>> d.as_local()  # same moment in the system timezone (e.g. Europe/Paris)
-LocalDateTime(2023-12-28 11:30:00+01:00)
+LocalSystemDateTime(2023-12-28 11:30:00+01:00)
 >>> d.as_offset(4) == d
 True  # always the same moment in time
 
@@ -346,7 +346,7 @@ Ambiguity in timezones
 In real-world timezones, local clocks are often moved backwards and forwards
 due to Daylight Saving Time (DST) or political decisions.
 This creates two types of situations for the :class:`~whenever.ZonedDateTime`
-and :class:`~whenever.LocalDateTime` types:
+and :class:`~whenever.LocalSystemDateTime` types:
 
 - When the clock moves backwards, there is a period of time that occurs twice.
   For example, Sunday October 29th 2:30am occured twice in Paris.
@@ -367,7 +367,7 @@ You choose the disambiguation behavior you want with the ``disambiguate=`` argum
 +==================+=================================================+
 | ``"raise"``      | (default) Refuse to guess:                      |
 |                  | raise :exc:`~whenever.Ambiguous`                |
-|                  | or :exc:`~whenever.DoesntExistInZone` exception.|
+|                  | or :exc:`~whenever.DoesntExist` exception.      |
 +------------------+-------------------------------------------------+
 | ``"earlier"``    | Choose the earlier of the two options           |
 +------------------+-------------------------------------------------+
@@ -448,7 +448,7 @@ The same `formatting rules <https://docs.python.org/3/library/datetime.html#form
    OffsetDateTime.strptime("2023-01-01+05:00", "%Y-%m-%d%z")  # 2023-01-01 00:00:00+05:00
    NaiveDateTime.strptime("2023-01-01 00:00", "%Y-%m-%d %H:%M")  # 2023-01-01 00:00:00
 
-:class:`~whenever.ZonedDateTime` and :class:`~whenever.LocalDateTime` do not (yet)
+:class:`~whenever.ZonedDateTime` and :class:`~whenever.LocalSystemDateTime` do not (yet)
 implement ``strptime()`` methods, because they require disambiguation.
 If you'd like to parse into these types,
 use :meth:`NaiveDateTime.strptime() <whenever.NaiveDateTime.strptime>`
@@ -487,19 +487,19 @@ database, or inclusing in JSON.
 
 Here are the canonical formats for each type:
 
-+-----------------------------------+---------------------------------------------------------------------+
-| Type                              | Canonical string format                                             |
-+===================================+=====================================================================+
-| :class:`~whenever.UTCDateTime`    | ``YYYY-MM-DDTHH:MM:SS(.ffffff)Z``                                   |
-+-----------------------------------+---------------------------------------------------------------------+
-| :class:`~whenever.OffsetDateTime` | ``YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))``                |
-+-----------------------------------+---------------------------------------------------------------------+
-| :class:`~whenever.ZonedDateTime`  | ``YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))[TIMEZONE NAME]`` |
-+-----------------------------------+---------------------------------------------------------------------+
-| :class:`~whenever.LocalDateTime`  | ``YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))``                |
-+-----------------------------------+---------------------------------------------------------------------+
-| :class:`~whenever.NaiveDateTime`  | ``YYYY-MM-DDTHH:MM:SS(.ffffff)``                                    |
-+-----------------------------------+---------------------------------------------------------------------+
++-----------------------------------------+---------------------------------------------------------------------+
+| Type                                    | Canonical string format                                             |
++=========================================+=====================================================================+
+| :class:`~whenever.UTCDateTime`          | ``YYYY-MM-DDTHH:MM:SS(.ffffff)Z``                                   |
++-----------------------------------------+---------------------------------------------------------------------+
+| :class:`~whenever.OffsetDateTime`       | ``YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))``                |
++-----------------------------------------+---------------------------------------------------------------------+
+| :class:`~whenever.ZonedDateTime`        | ``YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))[TIMEZONE NAME]`` |
++-----------------------------------------+---------------------------------------------------------------------+
+| :class:`~whenever.LocalSystemDateTime`  | ``YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))``                |
++-----------------------------------------+---------------------------------------------------------------------+
+| :class:`~whenever.NaiveDateTime`        | ``YYYY-MM-DDTHH:MM:SS(.ffffff)``                                    |
++-----------------------------------------+---------------------------------------------------------------------+
 
 .. code-block:: python
 
