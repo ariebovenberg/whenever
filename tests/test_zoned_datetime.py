@@ -16,7 +16,7 @@ from whenever import (
     DoesntExist,
     InvalidFormat,
     InvalidOffsetForZone,
-    LocalDateTime,
+    LocalSystemDateTime,
     NaiveDateTime,
     OffsetDateTime,
     UTCDateTime,
@@ -444,11 +444,11 @@ def test_as_offset():
 @local_ams_tz()
 def test_to_local():
     d = ZonedDateTime(2023, 10, 28, 2, 15, tz="Europe/Amsterdam")
-    assert d.as_local().exact_eq(LocalDateTime(2023, 10, 28, 2, 15))
+    assert d.as_local().exact_eq(LocalSystemDateTime(2023, 10, 28, 2, 15))
     assert (
         d.replace(day=29, disambiguate="later")
         .as_local()
-        .exact_eq(LocalDateTime(2023, 10, 29, 2, 15, disambiguate="later"))
+        .exact_eq(LocalSystemDateTime(2023, 10, 29, 2, 15, disambiguate="later"))
     )
 
 
@@ -1236,8 +1236,8 @@ class TestSubtractDateTime:
         d = ZonedDateTime(
             2023, 10, 29, 2, tz="Europe/Amsterdam", disambiguate="earlier"
         )
-        assert d - LocalDateTime(2023, 10, 28, 19) == hours(1)
-        assert d.replace(disambiguate="later") - LocalDateTime(
+        assert d - LocalSystemDateTime(2023, 10, 28, 19) == hours(1)
+        assert d.replace(disambiguate="later") - LocalSystemDateTime(
             2023, 10, 28, 19
         ) == hours(2)
 

@@ -9,16 +9,16 @@ from pytest import approx
 
 from whenever import (
     AwareDateTime,
+    TimeDelta,
+    seconds,
     InvalidFormat,
-    LocalDateTime,
+    LocalSystemDateTime,
     NaiveDateTime,
     OffsetDateTime,
-    TimeDelta,
     UTCDateTime,
     ZonedDateTime,
     hours,
     minutes,
-    seconds,
 )
 
 from .common import (
@@ -521,16 +521,16 @@ class TestSubtract:
     @local_ams_tz()
     def test_local(self):
         d = OffsetDateTime(2023, 10, 29, 6, offset=hours(2))
-        assert d - LocalDateTime(
+        assert d - LocalSystemDateTime(
             2023, 10, 29, 3, disambiguate="later"
         ) == hours(2)
-        assert d - LocalDateTime(
+        assert d - LocalSystemDateTime(
             2023, 10, 29, 2, disambiguate="later"
         ) == hours(3)
-        assert d - LocalDateTime(
+        assert d - LocalSystemDateTime(
             2023, 10, 29, 2, disambiguate="earlier"
         ) == hours(4)
-        assert d - LocalDateTime(2023, 10, 29, 1) == hours(5)
+        assert d - LocalSystemDateTime(2023, 10, 29, 1) == hours(5)
 
 
 def test_pickle():
@@ -582,7 +582,7 @@ def test_to_zoned():
 def test_as_local():
     d = OffsetDateTime(2020, 8, 15, 20, 12, 9, 987_654, offset=hours(3))
     assert d.as_local().exact_eq(
-        LocalDateTime(2020, 8, 15, 13, 12, 9, 987_654)
+        LocalSystemDateTime(2020, 8, 15, 13, 12, 9, 987_654)
     )
 
 

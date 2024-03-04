@@ -32,7 +32,7 @@ Concrete classes
 .. autoclass:: whenever.ZonedDateTime
    :members: now, from_timestamp, tz, __add__, __sub__, is_ambiguous
 
-.. autoclass:: whenever.LocalDateTime
+.. autoclass:: whenever.LocalSystemDateTime
    :members: now, from_timestamp, tzname, __add__, __sub__
 
 .. autoclass:: whenever.NaiveDateTime

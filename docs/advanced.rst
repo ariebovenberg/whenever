@@ -220,22 +220,22 @@ This is because:
   This would make it harder to reason about and use.
 
 >>> # initialization where the system timezone is America/New_York
->>> d = LocalDateTime(2020, 8, 15, hour=8)
-LocalDateTime(2020-08-15 08:00:00-04:00)
+>>> d = LocalSystemDateTime(2020, 8, 15, hour=8)
+LocalSystemDateTime(2020-08-15 08:00:00-04:00)
 ...
 >>> # we change the system timezone to Amsterdam
 >>> os.environ["TZ"] = "Europe/Amsterdam"
 >>> time.tzset()
 ...
 >>> d  # object remains unchanged
-LocalDateTime(2020-08-15 08:00:00-04:00)
+LocalSystemDateTime(2020-08-15 08:00:00-04:00)
 
 If you'd like to preserve the moment in time
 and calculate the new local time, simply call :meth:`~AwareDateTime.as_local`.
 
 >>> # same moment, but now with the clock time in Amsterdam
 >>> d.as_local()
-LocalDateTime(2020-08-15 14:00:00+02:00)
+LocalSystemDateTime(2020-08-15 14:00:00+02:00)
 
 On the other hand, if you'd like to preserve the local time on the clock
 and calculate the corresponding moment in time:
@@ -245,4 +245,4 @@ and calculate the corresponding moment in time:
 NaiveDateTime(2020-08-15 08:00:00)
 >>> # ...and assume the system timezone (Amsterdam)
 >>> wall_clock.assume_local()
-LocalDateTime(2020-08-15 08:00:00+02:00)
+LocalSystemDateTime(2020-08-15 08:00:00+02:00)
