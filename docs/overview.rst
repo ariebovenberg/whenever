@@ -251,24 +251,20 @@ Conversion to naïve types is always easy: calling
 :meth:`~whenever.AwareDateTime.naive` simply strips
 away any timezone information:
 
-.. code-block:: python
-
-    >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
-    >>> n = d.naive()
-    NaiveDateTime(2023-12-28 11:30:00)
+>>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
+>>> n = d.naive()
+NaiveDateTime(2023-12-28 11:30:00)
 
 You can convert from naïve types with the :meth:`~whenever.NaiveDateTime.assume_utc`,
 :meth:`~whenever.NaiveDateTime.assume_offset`, and
 :meth:`~whenever.NaiveDateTime.assume_zoned`, and
 :meth:`~whenever.NaiveDateTime.assume_local` methods.
 
-.. code-block:: python
-
-    >>> n = NaiveDateTime(2023, 12, 28, 11, 30)
-    >>> n.assume_utc()
-    UTCDateTime(2023-12-28 11:30:00Z)
-    >>> n.assume_zoned("Europe/Amsterdam")
-    ZonedDateTime(2023-12-28 11:30:00+01:00[Europe/Amsterdam])
+>>> n = NaiveDateTime(2023, 12, 28, 11, 30)
+>>> n.assume_utc()
+UTCDateTime(2023-12-28 11:30:00Z)
+>>> n.assume_zoned("Europe/Amsterdam")
+ZonedDateTime(2023-12-28 11:30:00+01:00[Europe/Amsterdam])
 
 .. note::
 
@@ -286,16 +282,16 @@ Difference between times
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 You can subtract two :class:`~whenever.DateTime` instances to get a
-:class:`~whenever.Duration` representing the duration between them.
+:class:`~whenever.TimeDelta` representing the duration between them.
 Aware types can be mixed with each other, 
 but naive types cannot be mixed with aware types:
 
 >>> # difference between moments in time
 >>> UTCDateTime(2023, 12, 28, 11, 30) - ZonedDateTime(2023, 12, 28, tz="Europe/Amsterdam")
-Duration(12:30:00)
+TimeDelta(12:30:00)
 >>> # difference between naive datetimes
 >>> NaiveDateTime(2023, 12, 28, 11) - NaiveDateTime(2023, 12, 27, 11)
-Duration(24:00:00)
+TimeDelta(24:00:00)
 
 .. _add-subtract-time:
 
