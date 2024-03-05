@@ -188,7 +188,7 @@ Roadmap
 - 🧪 **0.x**: get to feature-parity, process feedback, and tweak the API:
 
   - ✅ Datetime classes
-  - ✅ Durations and periods
+  - ✅ Deltas
   - 🚧 Date and time of day (separate from datetime)
   - 🚧 Parsing and formatting
   - ❓ Different calendar systems

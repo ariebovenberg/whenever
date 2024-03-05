@@ -8,21 +8,21 @@ Read the :ref:`overview <overview>` first if you haven't already.
 
 .. _durations:
 
-Durations
----------
+Deltas (durations)
+------------------
 
-As we've seen :ref:`earlier <add-subtract-time>`, durations can easily
-be added to and subtracted from datetimes:
+As we've seen :ref:`earlier <add-subtract-time>`, you can add and subtract
+time units from datetimes:
 
 >>> dt.add(hours=5, minutes=30)
 
-However, sometimes you want to operate on durations directly.
-For example, you might want to reuse a duration,
+However, sometimes you want to operate on these durations directly.
+For example, you might want to reuse a constant duration in multiple places,
 add 5 hours to it, or double it, for example.
 For this, **whenever** provides a dedicated API.
 As with datetimes, it's designed to help you avoid common pitfalls.
 
-Durations are created using the duration units provided by **whenever**.
+Durations are created using the duration units provided.
 Here is a quick demo:
 
 >>> from whenever import years, months, days, hours, minutes
@@ -33,50 +33,50 @@ Here is a quick demo:
 >>> movie_runtime / 1.2  # watch it at 1.2x speed
 TimeDelta(01:47:30)
 ...
->>> # Calendar units create a Period
+>>> # Calendar units create a DateDelta
 >>> project_estimate = months(1) + days(10)
 >>> Date(2023, 1, 29) + project_estimate
 Date(2023-03-10)
 >>> project_estimate * 2  # a pessimistic estimate
-Period(2M20D)
+DateDelta(2M20D)
 ...
->>> # Mixing date and time units creates a generic Duration
+>>> # Mixing date and time units creates a generic DateTimeDelta
 >>> project_estimate + movie_runtime
-Duration(P1M10DT2H9M)
+DateTimeDelta(P1M10DT2H9M)
 ...
 >>> # Mistakes prevented by the API:
->>> project_estimate * 1.3             # Precise arithmetic on calendar units
->>> project_estimate.in_hours()        # Value of calendar units depend on context
->>> Date(2023, 1, 29) + movie_runtime  # Can't add time to a date
+>>> project_estimate * 1.3             # Impossible arithmetic on calendar units
+>>> project_estimate.in_hours()        # Resolving calendar units without context
+>>> Date(2023, 1, 29) + movie_runtime  # Adding time to a date
 
-Types of durations
-~~~~~~~~~~~~~~~~~~
+Types of deltas
+~~~~~~~~~~~~~~~
 
 There are three duration types in **whenever**:
 
--  :class:`~whenever.Period`, created by :func:`~whenever.years`,
-   :func:`~whenever.months`, :func:`~whenever.weeks`, and :func:`~whenever.days`.
-   Their exact duration varies depending on the context.
+-  :class:`~whenever.TimeDelta`, created by precise units 
+   :func:`~whenever.hours`, :func:`~whenever.minutes`, :func:`~whenever.seconds`,
+   and :func:`~whenever.microseconds`.
+   Their duration is always the same and independent of the calendar.
+   Arithmetic on time units is straightforward.
+   It behaves similarly to the :class:`~datetime.timedelta` 
+   of the standard library.
+
+-  :class:`~whenever.DateDelta`, created by the calendar units 
+   :func:`~whenever.years`, :func:`~whenever.months`, :func:`~whenever.weeks`, 
+   and :func:`~whenever.days`.
+   They don't have a precise duration, as this depends on the context.
    For example, the number of days in a month varies, and a day may be
    longer or shorter than 24 hours due to Daylight Saving Time.
-   This makes arithmetic on calendar units tricky.
+   This makes arithmetic on calendar units less intuitive.
 
--  :class:`~whenever.TimeDelta`, created by :func:`~whenever.hours`,
-   :func:`~whenever.minutes`, :func:`~whenever.seconds`,
-   and :func:`~whenever.microseconds`.
-   Their duration is always the same.
-   Arithmetic on time units is straightforward.
-
--  :class:`~whenever.Duration`, created when you have a mix
-   of time and date units.
-
-Features
-~~~~~~~~
+-  :class:`~whenever.DateTimeDelta`, created when you mix
+   time and calendar units. 
 
 This distinction determines which operations are supported:
 
 +------------------------------+-------------------+--------------------+--------------------+
-| Feature                      | ``TimeDelta``     | ``Period``         | ``Duration``       |
+| Feature                      | ``TimeDelta``     | ``DateDelta``      | ``DateTimeDelta``  |
 +==============================+===================+====================+====================+
 | Add to ``DateTime``          | .. centered:: ✅  | .. centered:: ✅   | .. centered:: ✅   |
 +------------------------------+-------------------+--------------------+--------------------+
@@ -103,7 +103,7 @@ This distinction determines which operations are supported:
 +------------------------------+-------------------+--------------------+--------------------+
 
 Multiplication
-++++++++++++++
+~~~~~~~~~~~~~~
 
 You can multiply time units by a number:
 
@@ -116,7 +116,7 @@ Date units can only be multiplied by integers.
 >>> months(3) * 2
 
 Division
-++++++++
+~~~~~~~~
 
 Only time units can be divided:
 
@@ -126,7 +126,7 @@ TimeDelta(02:00:00)
 Date units can't be divided. "A year divided by 11.2", for example, can't be defined.
 
 Commutativity
-+++++++++++++
+~~~~~~~~~~~~~
 
 The result of adding two time durations is the same, regardless of what order you add them in:
 
@@ -143,7 +143,7 @@ UTCDateTime(2021-03-03 00:00:00)
 UTCDateTime(2021-03-01 00:00:00)
 
 Reversibility
-+++++++++++++
+~~~~~~~~~~~~~
 
 Adding a time duration and then subtracting it again gives you the original datetime:
 
@@ -159,7 +159,7 @@ UTCDateTime(2020-02-29 00:00:00)
 UTCDateTime(2020-01-29 00:00:00)
 
 Comparison
-++++++++++
+~~~~~~~~~~
 
 You can compare time durations:
 
@@ -171,7 +171,7 @@ This is not the case for date units:
 >>> months(1) > days(30)  # no universal answer
 
 Normalization
-+++++++++++++
+~~~~~~~~~~~~~
 
 Time durations are always normalized:
 
@@ -181,10 +181,10 @@ TimeDelta(01:10:00)
 Date units are not normalized:
 
 >>> months(13)
-DateDuration(P13M)
+DateDelta(P13M)
 
 Equality
-++++++++
+~~~~~~~~
 
 Two time durations are equal if their sum of components is equal:
 
@@ -207,8 +207,8 @@ The local timezone is the timezone of the system running the code.
 It's often useful to deal with times in the local timezone, but it's also
 important to be aware that the local timezone can change.
 
-Instances have the fixed offset of the system timezone
-at the time of initialization.
+Instances of :class:`~whenever.LocalSystemDateTime` have the fixed offset 
+of the system timezone at the time of initialization.
 The system timezone may change afterwards,
 but instances of this type will not reflect that change.
 This is because:
@@ -231,7 +231,8 @@ LocalSystemDateTime(2020-08-15 08:00:00-04:00)
 LocalSystemDateTime(2020-08-15 08:00:00-04:00)
 
 If you'd like to preserve the moment in time
-and calculate the new local time, simply call :meth:`~AwareDateTime.as_local`.
+and calculate the new local time, simply call 
+:meth:`~whenever.AwareDateTime.as_local`.
 
 >>> # same moment, but now with the clock time in Amsterdam
 >>> d.as_local()

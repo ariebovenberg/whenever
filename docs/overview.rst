@@ -416,7 +416,7 @@ Conversely, you can create a type from a standard library datetime with the
 :meth:`~whenever.DateTime.from_py_datetime` classmethod.
 
 >>> from datetime import datetime, UTC
->>> UTCDateTime.from_py(datetime(2023, 1, 1, tzinfo=UTC))
+>>> UTCDateTime.from_py_datetime(datetime(2023, 1, 1, tzinfo=UTC))
 UTCDateTime(2023-01-01 00:00:00Z)
 >>> ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam").py_datetime()
 datetime(2023, 1, 1, 0, 0, tzinfo=ZoneInfo('Europe/Amsterdam'))
@@ -426,6 +426,7 @@ datetime(2023, 1, 1, 0, 0, tzinfo=ZoneInfo('Europe/Amsterdam'))
    The fact that whenever datetimes wrap standard library datetimes
    is an implementation detail, and you should not rely on it.
    In the future, the implementation may change.
+   The conversion methods will remain, however.
 
 
 Parsing

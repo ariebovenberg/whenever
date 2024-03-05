@@ -4,8 +4,7 @@
 0.4.0rc0 (2024-02-??)
 ---------------------
 
-A big release with the main feature being the addition of ``Duration`` and
-``Period`` classes. This brings breaking changes.
+A big release with the main feature being the addition of date/time deltas.
 
 **Breaking changes**
 

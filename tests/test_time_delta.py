@@ -4,8 +4,8 @@ import pytest
 from pytest import approx
 
 from whenever import (
+    DateDelta,
     InvalidFormat,
-    Period,
     TimeDelta,
     hours,
     microseconds,
@@ -30,7 +30,7 @@ class TestInit:
 
 def test_parts():
     d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
-    assert d.date_part == Period.ZERO
+    assert d.date_part == DateDelta.ZERO
     assert d.time_part is d
 
 
