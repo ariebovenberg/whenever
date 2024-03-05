@@ -3144,14 +3144,15 @@ class LocalSystemDateTime(AwareDateTime):
         if isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
             new_py_date = (self.date() + delta.date_part)._py_date
             return self._from_py_unchecked(
-                (
+                _resolve_local_ambiguity(
                     (
                         self._py_dt
                         if new_py_date == self._py_dt.date()
                         else _datetime.combine(new_py_date, self._py_dt.time())
                     )
-                    + delta.time_part.py_timedelta()
-                ).astimezone()
+                    + delta.time_part.py_timedelta(),
+                    "compatible",
+                )
             )
         return NotImplemented
 
