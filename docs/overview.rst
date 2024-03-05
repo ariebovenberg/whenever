@@ -1,7 +1,7 @@
 .. _overview:
 
-🧭 Overview
-===========
+🧭 Main features
+================
 
 This page gives a high-level overview of **whenever**'s features.
 To get more details, see the :ref:`advanced features <advanced>` or the :ref:`API reference <api>`.
@@ -18,8 +18,10 @@ Datetime types
    -- Jon Skeet
 
 While the standard library has a single :class:`~datetime.datetime` type,
-**whenever** provides five different types to represent datetimes.
-Each type is designed to communicate intent and prevent common mistakes.
+**whenever** provides five distinct types.
+Each is designed to communicate intent and prevent common mistakes.
+You probably won't need all of them simultaneously in your project.
+Read on to find out which one is right for you.
 
 .. code-block:: python
 
@@ -27,7 +29,7 @@ Each type is designed to communicate intent and prevent common mistakes.
        UTCDateTime, OffsetDateTime, ZonedDateTime, LocalSystemDateTime, NaiveDateTime,
    )
 
-and here's a summary of how you can use them:
+Here's a summary of how you can use them:
 
 +-----------------------+-----+--------+-------+-------+-------+
 | Feature               |         Aware                | Naive |
@@ -61,23 +63,29 @@ regardless of location.
 >>> py311_livestream = UTCDateTime(2022, 10, 24, hour=17)
 UTCDateTime(2022-10-24 17:00:00Z)
 
-In >95% of cases, you should use this class over the others. The other
+In most cases, you should use this class over the others. The other
 classes are most often useful at the boundaries of your application.
 
 :class:`~whenever.OffsetDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Defines a local time with its UTC offset.
-This is great if you're storing when something happened at a local time.
+A time with a fixed offset from UTC.
+This is great if you're storing when something happened,
+including the local time.
 
 >>> # Pycon was in Salt Lake City that year
 >>> pycon23_start = OffsetDateTime(2023, 4, 21, hour=9, offset=-6)
 OffsetDateTime(2023-04-21 09:00:00-06:00)
 
 It's less suitable for *future* events,
-because the UTC offset may change (e.g. due to daylight saving time).
+because local UTC offsets often change (e.g. due to daylight saving time).
 For this reason, you cannot add or subtract time from an :class:`~whenever.OffsetDateTime`
 — the offset may have changed!
+
+.. seealso::
+
+   - :ref:`Why does UTCDateTime exist if OffsetDateTime can do the same? <faq-why-utc>`
+   - :ref:`Why doen't OffsetDateTime support arithmetic? <faq-offset-arithmetic>`
 
 :class:`~whenever.ZonedDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -103,6 +111,10 @@ machine (such as a CLI), you should avoid using this type.
 >>> backup_performed = LocalSystemDateTime(2023, 12, 28, hour=2)
 LocalSystemDateTime(2023-12-28 02:00:00-05:00)
 
+.. seealso::
+
+   :ref:`Why does LocalSystemDateTime exist? <faq-why-local>`
+
 :class:`~whenever.NaiveDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -112,6 +124,10 @@ Use ``NaiveDateTime`` to represent these datetimes.
 
 >>> invite_received = NaiveDateTime(2020, 3, 14, hour=15)
 NaiveDateTime(2020-03-14 15:00:00)
+
+.. seealso::
+
+   :ref:`Why does NaiveDateTime exist? <faq-why-naive>`
 
 Comparison and equality
 -----------------------
@@ -152,6 +168,14 @@ Note that if you want to compare for exact equality on the values
 the :meth:`~whenever.AwareDateTime.exact_eq` method.
 
 >>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=5)
+>>> same = OffsetDateTime(2023, 12, 28, 11, 30, offset=5)
+>>> same_moment = OffsetDateTime(2023, 12, 28, 12, 30, offset=6)
+>>> d == same_moment
+True
+>>> d.exact_eq(same_moment)
+False
+>>> d.exact_eq(same)
+True
 
 Naive types
 ~~~~~~~~~~~
@@ -283,7 +307,7 @@ Difference between times
 
 You can subtract two :class:`~whenever.DateTime` instances to get a
 :class:`~whenever.TimeDelta` representing the duration between them.
-Aware types can be mixed with each other, 
+Aware types can be mixed with each other,
 but naive types cannot be mixed with aware types:
 
 >>> # difference between moments in time
@@ -309,13 +333,11 @@ ZonedDateTime(2023-12-27 11:30:00+01:00[Europe/Amsterdam])
 Adding/subtracting takes into account timezone changes (e.g. daylight saving time)
 according to industry standard RFC 5545. This means:
 
-- Exact time units (hours, minutes, and seconds) account for DST changes, 
-  but "nominal" units (days, months, years) do not.
+- Precise time units (hours, minutes, and seconds) account for DST changes,
+  but calendar units (days, months, years) do not.
   The expectation is that rescheduling a 10am appointment "a day later"
   will still be at 10am, even after DST changes.
 - Units are added from largest (year) to smallest (microsecond).
-  This means that adding a month to January 31st will result in February 28th or 29th,
-  depending on the year.
 
 .. seealso::
 

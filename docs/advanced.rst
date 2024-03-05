@@ -1,6 +1,6 @@
 .. _advanced:
 
-🔧 Advanced features
+⚙️ Advanced features
 ====================
 
 This page covers the more advanced features of **whenever**.
@@ -28,6 +28,7 @@ Here is a quick demo:
 >>> from whenever import years, months, days, hours, minutes
 >>> # Precise time units create a TimeDelta
 >>> movie_runtime = hours(2) + minutes(9)
+TimeDelta(02:09:00)
 >>> movie_runtime.in_minutes()
 129.0
 >>> movie_runtime / 1.2  # watch it at 1.2x speed
@@ -35,6 +36,7 @@ TimeDelta(01:47:30)
 ...
 >>> # Calendar units create a DateDelta
 >>> project_estimate = months(1) + days(10)
+DateDelta(1M10D)
 >>> Date(2023, 1, 29) + project_estimate
 Date(2023-03-10)
 >>> project_estimate * 2  # a pessimistic estimate
@@ -114,6 +116,7 @@ Date units can only be multiplied by integers.
 "1.3 months" isn't a well-defined concept, so it's not supported:
 
 >>> months(3) * 2
+DateDelta(6M)
 
 Division
 ~~~~~~~~
@@ -247,3 +250,7 @@ NaiveDateTime(2020-08-15 08:00:00)
 >>> # ...and assume the system timezone (Amsterdam)
 >>> wall_clock.assume_local()
 LocalSystemDateTime(2020-08-15 08:00:00+02:00)
+
+.. seealso::
+
+   :ref:`Why does LocalSystemDateTime exist? <faq-why-local>`

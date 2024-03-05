@@ -9,6 +9,7 @@ Contents
    self
    overview.rst
    advanced.rst
+   faq.rst
    api.rst
    changelog.rst
 
