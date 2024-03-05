@@ -113,9 +113,9 @@ class TestAssumeZoned:
 class TestAssumeLocal:
     @local_ams_tz()
     def test_typical(self):
-        assert NaiveDateTime(2020, 8, 15, 23).assume_local() == LocalSystemDateTime(
+        assert NaiveDateTime(
             2020, 8, 15, 23
-        )
+        ).assume_local() == LocalSystemDateTime(2020, 8, 15, 23)
 
     @local_ams_tz()
     def test_ambiguous(self):
@@ -130,9 +130,9 @@ class TestAssumeLocal:
         assert d.assume_local(disambiguate="earlier") == LocalSystemDateTime(
             2023, 10, 29, 2, 15, disambiguate="earlier"
         )
-        assert d.assume_local(disambiguate="compatible") == LocalSystemDateTime(
-            2023, 10, 29, 2, 15, disambiguate="earlier"
-        )
+        assert d.assume_local(
+            disambiguate="compatible"
+        ) == LocalSystemDateTime(2023, 10, 29, 2, 15, disambiguate="earlier")
         assert d.assume_local(disambiguate="later") == LocalSystemDateTime(
             2023, 10, 29, 2, 15, disambiguate="later"
         )
@@ -153,9 +153,9 @@ class TestAssumeLocal:
         assert d.assume_local(disambiguate="later") == LocalSystemDateTime(
             2023, 3, 26, 2, 15, disambiguate="later"
         )
-        assert d.assume_local(disambiguate="compatible") == LocalSystemDateTime(
-            2023, 3, 26, 2, 15, disambiguate="compatible"
-        )
+        assert d.assume_local(
+            disambiguate="compatible"
+        ) == LocalSystemDateTime(2023, 3, 26, 2, 15, disambiguate="compatible")
 
 
 def test_immutable():

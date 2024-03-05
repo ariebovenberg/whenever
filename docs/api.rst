@@ -39,20 +39,20 @@ Concrete classes
    :members: __eq__, __add__, __sub__, assume_utc, assume_offset, assume_zoned, assume_local, strptime, rfc2822, from_rfc2822
 
 
-Durations
----------
+Deltas
+------
 
 .. autoclass:: whenever.TimeDelta
    :members:
    :undoc-members: hours, minutes, seconds, microseconds
    :special-members: __eq__, __neg__, __add__, __sub__, __mul__, __truediv__, __bool__, __abs__, __gt__
 
-.. autoclass:: whenever.Period
+.. autoclass:: whenever.DateDelta
    :members:
    :undoc-members: years, months, days
    :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __mul__, __bool__
 
-.. autoclass:: whenever.Duration
+.. autoclass:: whenever.DateTimeDelta
    :members:
    :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __mul__, __bool__
 

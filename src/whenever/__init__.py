@@ -53,6 +53,7 @@ from typing import (
     ClassVar,
     Literal,
     TypeVar,
+    Union,
     no_type_check,
     overload,
 )
@@ -79,8 +80,8 @@ __all__ = [
     "LocalSystemDateTime",
     "NaiveDateTime",
     "TimeDelta",
-    "Period",
-    "Duration",
+    "DateDelta",
+    "DateTimeDelta",
     "years",
     "months",
     "weeks",
@@ -211,13 +212,13 @@ class Date:
             _date(year_new, month_new, day_new) + _timedelta(days, weeks=weeks)
         )
 
-    def __add__(self, p: Period) -> Date:
-        """Add a period to a date
+    def __add__(self, p: DateDelta) -> Date:
+        """Add a delta to a date
 
         Example
         -------
 
-        >>> Date(2021, 1, 2) + Period(weeks=1, days=3)
+        >>> Date(2021, 1, 2) + DateDelta(weeks=1, days=3)
         Date(2021-01-09)
         """
         return self.add(
@@ -244,13 +245,13 @@ class Date:
         """
         return self.add(years=-years, months=-months, weeks=-weeks, days=-days)
 
-    def __sub__(self, p: Period) -> Date:
-        """Subtract a period from a date
+    def __sub__(self, p: DateDelta) -> Date:
+        """Subtract a delta from a date
 
         Example
         -------
 
-        >>> Date(2021, 1, 2) - Period(weeks=1, days=3)
+        >>> Date(2021, 1, 2) - DateDelta(weeks=1, days=3)
         Date(2020-12-26)
         """
         return self.subtract(
@@ -314,18 +315,18 @@ class TimeDelta:
         )
 
     ZERO: ClassVar[TimeDelta]
-    """A duration of zero"""
+    """A delta of zero"""
 
     # This will be set later
-    date_part: ClassVar[Period] = None  # type: ignore[assignment]
+    date_part: ClassVar[DateDelta] = None  # type: ignore[assignment]
 
     @property
     def time_part(self) -> TimeDelta:
-        """The time part of the duration, always equal to the duration itself"""
+        """The time part, always equal to the delta itself"""
         return self
 
     def in_hours(self) -> float:
-        """The total duration in hours
+        """The total size in hours
 
         Example
         -------
@@ -338,7 +339,7 @@ class TimeDelta:
         return self._total_ms / 3_600_000_000
 
     def in_minutes(self) -> float:
-        """The total duration in minutes
+        """The total size in minutes
 
         Example
         -------
@@ -351,7 +352,7 @@ class TimeDelta:
         return self._total_ms / 60_000_000
 
     def in_seconds(self) -> float:
-        """The total duration in seconds
+        """The total size in seconds
 
         Example
         -------
@@ -364,7 +365,7 @@ class TimeDelta:
         return self._total_ms / 1_000_000
 
     def in_microseconds(self) -> int:
-        """The total duration in microseconds
+        """The total size in microseconds
 
         >>> d = TimeDelta(seconds=2, microseconds=50)
         >>> d.in_microseconds()
@@ -417,7 +418,7 @@ class TimeDelta:
         return self._total_ms >= other._total_ms
 
     def __bool__(self) -> bool:
-        """True if the duration is non-zero
+        """True if the value is non-zero
 
         Example
         -------
@@ -431,7 +432,7 @@ class TimeDelta:
         return bool(self._total_ms)
 
     def __add__(self, other: TimeDelta) -> TimeDelta:
-        """Add two durations together
+        """Add two deltas together
 
         Example
         -------
@@ -446,7 +447,7 @@ class TimeDelta:
         return TimeDelta(microseconds=self._total_ms + other._total_ms)
 
     def __sub__(self, other: TimeDelta) -> TimeDelta:
-        """Subtract two durations
+        """Subtract two deltas
 
         Example
         -------
@@ -476,7 +477,7 @@ class TimeDelta:
         return TimeDelta(microseconds=int(self._total_ms * other))
 
     def __neg__(self) -> TimeDelta:
-        """Negate the duration
+        """Negate the value
 
         Example
         -------
@@ -495,14 +496,14 @@ class TimeDelta:
     def __truediv__(self, other: TimeDelta) -> float: ...
 
     def __truediv__(self, other: float | TimeDelta) -> TimeDelta | float:
-        """Divide by a number or another duration
+        """Divide by a number or another delta
 
         Example
         -------
 
         >>> d = TimeDelta(hours=1, minutes=30)
-        >>> d / 2
-        TimeDelta(00:45:00)
+        >>> d / 2.5
+        TimeDelta(00:36:00)
         >>> d / TimeDelta(minutes=30)
         3.0
 
@@ -514,7 +515,7 @@ class TimeDelta:
         return NotImplemented
 
     def __abs__(self) -> TimeDelta:
-        """The absolute value of the duration
+        """The absolute value
 
         Example
         -------
@@ -527,7 +528,7 @@ class TimeDelta:
         return TimeDelta(microseconds=abs(self._total_ms))
 
     def canonical_format(self) -> str:
-        """The duration in canonical format.
+        """Format the delta in the canonical string format.
 
         The format is:
 
@@ -566,7 +567,7 @@ class TimeDelta:
             If the string does not match this exact format.
 
         """
-        if not (match := _match_duration(s)):
+        if not (match := _match_timedelta(s)):
             raise InvalidFormat()
         sign, hours, mins, secs = match.groups()
         return cls(
@@ -641,44 +642,25 @@ class TimeDelta:
 TimeDelta.ZERO = TimeDelta()
 
 
-class Period:
-    """A period of time, consisting of years, months, weeks, and days.
-
-    The canonical string format is:
-
-    .. code-block:: text
-
-        PnYnMnWnD
-
-    For example:
-
-    .. code-block:: text
-
-        P1D
-        P2M
-        P1Y2M-3W4D
-
+class DateDelta:
+    """A duration of time consisting of calendar units (
+    years, months, weeks, and days)
     """
 
     __slots__ = ("_years", "_months", "_weeks", "_days")
 
-    ZERO: ClassVar[Period]
-    """A period of zero"""
+    ZERO: ClassVar[DateDelta]
+    """A delta of zero"""
 
     time_part = TimeDelta.ZERO
 
     @property
-    def date_part(self) -> Period:
-        """The date part of the period, always equal to the period itself"""
+    def date_part(self) -> DateDelta:
+        """The date part of the delta, always equal to itself"""
         return self
 
     def __init__(
-        self,
-        *,
-        years: int = 0,
-        months: int = 0,
-        weeks: int = 0,
-        days: int = 0,
+        self, *, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0
     ) -> None:
         self._years = years
         self._months = months
@@ -709,20 +691,20 @@ class Period:
 
             Note
             ----
-            Periods are equal if they have the same values for all fields.
+            DateDeltas are equal if they have the same values for all fields.
             No normalization is done, so "7 days" is not equal to "1 week".
 
             Example
             -------
 
-            >>> p = Period(weeks=1, days=11, years=0)
-            >>> p == Period(weeks=1, days=11)
+            >>> p = DateDelta(weeks=1, days=11, years=0)
+            >>> p == DateDelta(weeks=1, days=11)
             True
-            >>> # same duration, but different field values
-            >>> p == Period(weeks=2, days=4)
+            >>> # same delta, but different field values
+            >>> p == DateDelta(weeks=2, days=4)
             False
             """
-            if not isinstance(other, Period):
+            if not isinstance(other, DateDelta):
                 return NotImplemented
             return (
                 self._years == other._years
@@ -740,23 +722,39 @@ class Period:
         Example
         -------
 
-        >>> bool(Period())
+        >>> bool(DateDelta())
         False
-        >>> bool(Period(days=-1))
+        >>> bool(DateDelta(days=-1))
         True
 
         """
         return bool(self._years or self._months or self._weeks or self._days)
 
     def canonical_format(self) -> str:
-        """The period in canonical format.
+        """The delta in canonical format.
+
+        The canonical string format is:
+
+        .. code-block:: text
+
+            P(nY)(nM)(nW)(nD)
+
+        For example:
+
+        .. code-block:: text
+
+            P1D
+            P2M
+            P1Y2M-3W4D
 
         Example
         -------
 
-        >>> p = Period(years=1, months=2, weeks=3, days=11)
+        >>> p = DateDelta(years=1, months=2, weeks=3, days=11)
         >>> p.canonical_format()
         'P1Y2M3W11D'
+        >>> DateDelta().canonical_format()
+        'P0D'
 
         """
         date = (
@@ -768,7 +766,7 @@ class Period:
         return "P" + ("".join(date) or "0D")
 
     @classmethod
-    def from_canonical_format(cls, s: str, /) -> Period:
+    def from_canonical_format(cls, s: str, /) -> DateDelta:
         """Create from a canonical string representation.
 
         Inverse of :meth:`canonical_format`
@@ -776,8 +774,8 @@ class Period:
         Example
         -------
 
-        >>> Period.from_canonical_format("P1Y2M-3W4D")
-        Period(P1Y2M-3W4D)
+        >>> DateDelta.from_canonical_format("P1Y2M-3W4D")
+        DateDelta(P1Y2M-3W4D)
 
         Raises
         ------
@@ -785,7 +783,7 @@ class Period:
             If the string does not match this exact format.
 
         """
-        if not (match := _match_date_period(s)) or s == "P":
+        if not (match := _match_datedelta(s)) or s == "P":
             raise InvalidFormat()
         years, months, weeks, days = match.groups()
         return cls(
@@ -806,22 +804,22 @@ class Period:
             months: int | NOT_SET = NOT_SET(),
             weeks: int | NOT_SET = NOT_SET(),
             days: int | NOT_SET = NOT_SET(),
-        ) -> Period: ...
+        ) -> DateDelta: ...
 
     else:
 
-        def replace(self, **kwargs) -> Period:
+        def replace(self, **kwargs) -> DateDelta:
             """Create a new instance with the given fields replaced.
 
             Example
             -------
 
-            >>> p = Period(years=1, months=2)
+            >>> p = DateDelta(years=1, months=2)
             >>> p.replace(years=2)
-            Period(P2Y2M)
+            DateDelta(P2Y2M)
 
             """
-            return Period(
+            return DateDelta(
                 years=kwargs.get("years", self._years),
                 months=kwargs.get("months", self._months),
                 weeks=kwargs.get("weeks", self._weeks),
@@ -829,40 +827,40 @@ class Period:
             )
 
     def __repr__(self) -> str:
-        return f"Period({self})"
+        return f"DateDelta({self})"
 
-    def __neg__(self) -> Period:
-        """Negate each field of the period
+    def __neg__(self) -> DateDelta:
+        """Negate each field
 
         Example
         -------
 
-        >>> p = Period(weeks=2, days=-3)
+        >>> p = DateDelta(weeks=2, days=-3)
         >>> -p
-        Period(P-2W3DT)
+        DateDelta(P-2W3DT)
 
         """
-        return Period(
+        return DateDelta(
             years=-self._years,
             months=-self._months,
             weeks=-self._weeks,
             days=-self._days,
         )
 
-    def __mul__(self, other: int) -> Period:
+    def __mul__(self, other: int) -> DateDelta:
         """Multiply each field by a round number
 
         Example
         -------
 
-        >>> p = Period(years=1, weeks=2)
+        >>> p = DateDelta(years=1, weeks=2)
         >>> p * 2
-        Period(P2Y4W)
+        DateDelta(P2Y4W)
 
         """
         if not isinstance(other, int):
             return NotImplemented
-        return Period(
+        return DateDelta(
             years=self._years * other,
             months=self._months * other,
             weeks=self._weeks * other,
@@ -870,64 +868,68 @@ class Period:
         )
 
     @overload
-    def __add__(self, other: Period) -> Period: ...
+    def __add__(self, other: DateDelta) -> DateDelta: ...
 
     @overload
-    def __add__(self, other: TimeDelta) -> Duration: ...
+    def __add__(self, other: TimeDelta) -> DateTimeDelta: ...
 
-    def __add__(self, other: Period | TimeDelta) -> Period | Duration:
-        """Add the fields of another period to this one
+    def __add__(
+        self, other: DateDelta | TimeDelta
+    ) -> DateDelta | DateTimeDelta:
+        """Add the fields of another delta to this one
 
         Example
         -------
 
-        >>> p = Period(weeks=2, months=1)
-        >>> p + Period(weeks=1, days=-4)
-        Period(P1M3W-4D)
+        >>> p = DateDelta(weeks=2, months=1)
+        >>> p + DateDelta(weeks=1, days=-4)
+        DateDelta(P1M3W-4D)
 
         """
-        if isinstance(other, Period):
-            return Period(
+        if isinstance(other, DateDelta):
+            return DateDelta(
                 years=self._years + other._years,
                 months=self._months + other._months,
                 weeks=self._weeks + other._weeks,
                 days=self._days + other._days,
             )
         elif isinstance(other, TimeDelta):
-            new = _object_new(Duration)
+            new = _object_new(DateTimeDelta)
             new._date_part = self
             new._time_part = other
             return new
         else:
             return NotImplemented
 
-    def __radd__(self, other: TimeDelta) -> Duration:
+    def __radd__(self, other: TimeDelta) -> DateTimeDelta:
         if isinstance(other, TimeDelta):
-            new = _object_new(Duration)
+            new = _object_new(DateTimeDelta)
             new._date_part = self
             new._time_part = other
             return new
         return NotImplemented
 
     @overload
-    def __sub__(self, other: Period) -> Period: ...
+    def __sub__(self, other: DateDelta) -> DateDelta: ...
 
     @overload
-    def __sub__(self, other: TimeDelta) -> Duration: ...
+    def __sub__(self, other: TimeDelta) -> DateTimeDelta: ...
 
-    def __sub__(self, other: Period | TimeDelta) -> Period | Duration:
-        """Subtract the fields of another period from this one
+    def __sub__(
+        self, other: DateDelta | TimeDelta
+    ) -> DateDelta | DateTimeDelta:
+        """Subtract the fields of another delta from this one
 
         Example
         -------
 
-        >>> p = Period(weeks=2, days=3)
-        >>> p - Period(days=2)
-        Period(P2W1D)
+        >>> p = DateDelta(weeks=2, days=3)
+        >>> p - DateDelta(days=2)
+        DateDelta(P2W1D)
 
         """
-        if isinstance(other, Period):
-            return Period(
+        if isinstance(other, DateDelta):
+            return DateDelta(
                 years=self._years - other._years,
                 months=self._months - other._months,
                 weeks=self._weeks - other._weeks,
@@ -938,23 +940,23 @@ class Period:
         else:
             return NotImplemented
 
-    def __rsub__(self, other: TimeDelta) -> Duration:
+    def __rsub__(self, other: TimeDelta) -> DateTimeDelta:
         if isinstance(other, TimeDelta):
             return -self + other
         return NotImplemented
 
-    def __abs__(self) -> Period:
-        """The absolute value of the period
+    def __abs__(self) -> DateDelta:
+        """The absolute value of each field
 
         Example
         -------
 
-        >>> p = Period(weeks=-2, days=3)
+        >>> p = DateDelta(weeks=-2, days=3)
         >>> abs(p)
-        Period(P2W3D)
+        DateDelta(P2W3D)
 
         """
-        return Period(
+        return DateDelta(
             years=abs(self._years),
             months=abs(self._months),
             weeks=abs(self._weeks),
@@ -967,7 +969,7 @@ class Period:
         Example
         -------
 
-        >>> p = Period(weeks=2, days=3)
+        >>> p = DateDelta(weeks=2, days=3)
         >>> p.as_tuple()
         (0, 0, 2, 3)
 
@@ -975,11 +977,11 @@ class Period:
         return self._years, self._months, self._weeks, self._days
 
 
-Period.ZERO = Period()
-TimeDelta.date_part = Period.ZERO
+DateDelta.ZERO = DateDelta()
+TimeDelta.date_part = DateDelta.ZERO
 
 
-class Duration:
+class DateTimeDelta:
     """A duration with both a date and time component."""
 
     __slots__ = ("_date_part", "_time_part")
@@ -996,7 +998,7 @@ class Duration:
         seconds: float = 0,
         microseconds: int = 0,
     ) -> None:
-        self._date_part = Period(
+        self._date_part = DateDelta(
             years=years, months=months, weeks=weeks, days=days
         )
         self._time_part = TimeDelta(
@@ -1006,10 +1008,10 @@ class Duration:
             microseconds=microseconds,
         )
 
-    ZERO: ClassVar[Duration]
+    ZERO: ClassVar[DateTimeDelta]
 
     @property
-    def date_part(self) -> Period:
+    def date_part(self) -> DateDelta:
         return self._date_part
 
     @property
@@ -1022,18 +1024,18 @@ class Duration:
         Example
         -------
 
-        >>> d = MixedDuration(
+        >>> d = DateTimeDelta(
         ...     weeks=1,
         ...     days=11,
         ...     hours=4,
         ... )
-        >>> d == MixedDuration(
+        >>> d == DateTimeDelta(
         ...     weeks=1,
         ...     days=11,
         ...     minutes=4 * 60,  # normalized
         ... )
         True
-        >>> d == MixedDuration(
+        >>> d == DateTimeDelta(
         ...     weeks=2,
         ...     days=4,  # not normalized
         ...     hours=4,
@@ -1041,7 +1043,7 @@ class Duration:
         False
 
         """
-        if not isinstance(other, Duration):
+        if not isinstance(other, DateTimeDelta):
             return NotImplemented
         return (
             self._date_part == other._date_part
@@ -1057,21 +1059,21 @@ class Duration:
         Example
         -------
 
-        >>> bool(MixedDuration())
+        >>> bool(DateTimeDelta())
         False
-        >>> bool(MixedDuration(minutes=1))
+        >>> bool(DateTimeDelta(minutes=1))
         True
 
         """
         return bool(self._date_part or self._time_part)
 
     def canonical_format(self) -> str:
-        """The duration in canonical format.
+        """The delta in canonical format.
 
         Example
         -------
 
-        >>> d = MixedDuration(
+        >>> d = DateTimeDelta(
         ...     weeks=1,
         ...     days=11,
         ...     hours=4,
@@ -1100,10 +1102,10 @@ class Duration:
     __str__ = canonical_format
 
     def __repr__(self) -> str:
-        return f"MixedDuration({self})"
+        return f"DateTimeDelta({self})"
 
     @classmethod
-    def from_canonical_format(cls, s: str, /) -> Duration:
+    def from_canonical_format(cls, s: str, /) -> DateTimeDelta:
         """Create from a canonical string representation.
 
         Inverse of :meth:`canonical_format`
@@ -1111,8 +1113,8 @@ class Duration:
         Example
         -------
 
-        >>> MixedDuration.from_canonical_format("P1W11DT4H")
-        MixedDuration(weeks=1, days=11, hours=4)
+        >>> DateTimeDelta.from_canonical_format("P1W11DT4H")
+        DateTimeDelta(weeks=1, days=11, hours=4)
 
         Raises
         ------
@@ -1120,7 +1122,7 @@ class Duration:
             If the string does not match this exact format.
 
         """
-        if not (match := _match_period(s)) or s == "P":
+        if not (match := _match_datetimedelta(s)) or s == "P":
             raise InvalidFormat()
         years, months, weeks, days, hours, minutes, seconds = match.groups()
         return cls(
@@ -1133,101 +1135,103 @@ class Duration:
             seconds=float(seconds or 0),
         )
 
-    def __add__(self, other: AnyDuration) -> Duration:
-        """Add two durations together
+    def __add__(self, other: Delta) -> DateTimeDelta:
+        """Add two deltas together
 
         Example
         -------
 
-        >>> d = MixedDuration(weeks=1, days=11, hours=4)
-        >>> d + MixedDuration(months=2, days=3, minutes=90)
-        MixedDuration(P1M1W14DT5H30M)
+        >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
+        >>> d + DateTimeDelta(months=2, days=3, minutes=90)
+        DateTimeDelta(P1M1W14DT5H30M)
 
         """
-        new = _object_new(Duration)
-        if isinstance(other, Duration):
+        new = _object_new(DateTimeDelta)
+        if isinstance(other, DateTimeDelta):
             new._date_part = self._date_part + other._date_part
             new._time_part = self._time_part + other._time_part
         elif isinstance(other, TimeDelta):
             new._date_part = self._date_part
             new._time_part = self._time_part + other
-        elif isinstance(other, Period):
+        elif isinstance(other, DateDelta):
             new._date_part = self._date_part + other
             new._time_part = self._time_part
         else:
             return NotImplemented
         return new
 
-    def __radd__(self, other: TimeDelta | Period) -> Duration:
-        if isinstance(other, (TimeDelta, Period)):
+    def __radd__(self, other: TimeDelta | DateDelta) -> DateTimeDelta:
+        if isinstance(other, (TimeDelta, DateDelta)):
             return self + other
         return NotImplemented
 
-    def __sub__(self, other: Duration | TimeDelta | Period) -> Duration:
-        """Subtract two durations
+    def __sub__(
+        self, other: DateTimeDelta | TimeDelta | DateDelta
+    ) -> DateTimeDelta:
+        """Subtract two deltas
 
         Example
         -------
 
-        >>> d = MixedDuration(weeks=1, days=11, hours=4)
-        >>> d - MixedDuration(months=2, days=3, minutes=90)
-        MixedDuration(P-2M1W8DT2H30M)
+        >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
+        >>> d - DateTimeDelta(months=2, days=3, minutes=90)
+        DateTimeDelta(P-2M1W8DT2H30M)
 
         """
-        new = _object_new(Duration)
-        if isinstance(other, Duration):
+        new = _object_new(DateTimeDelta)
+        if isinstance(other, DateTimeDelta):
             new._date_part = self._date_part - other._date_part
             new._time_part = self._time_part - other._time_part
         elif isinstance(other, TimeDelta):
             new._date_part = self._date_part
             new._time_part = self._time_part - other
-        elif isinstance(other, Period):
+        elif isinstance(other, DateDelta):
             new._date_part = self._date_part - other
             new._time_part = self._time_part
         else:
             return NotImplemented
         return new
 
-    def __rsub__(self, other: TimeDelta | Period) -> Duration:
-        new = _object_new(Duration)
+    def __rsub__(self, other: TimeDelta | DateDelta) -> DateTimeDelta:
+        new = _object_new(DateTimeDelta)
         if isinstance(other, TimeDelta):
             new._date_part = -self._date_part
             new._time_part = other - self._time_part
-        elif isinstance(other, Period):
+        elif isinstance(other, DateDelta):
             new._date_part = other - self._date_part
             new._time_part = -self._time_part
         else:
             return NotImplemented
         return new
 
-    def __neg__(self) -> Duration:
-        """Negate the duration
+    def __neg__(self) -> DateTimeDelta:
+        """Negate the delta
 
         Example
         -------
 
-        >>> d = MixedDuration(weeks=1, days=-11, hours=4)
+        >>> d = DateTimeDelta(weeks=1, days=-11, hours=4)
         >>> -d
-        MixedDuration(P-1W11DT-4H)
+        DateTimeDelta(P-1W11DT-4H)
 
         """
-        new = _object_new(Duration)
+        new = _object_new(DateTimeDelta)
         new._date_part = -self._date_part
         new._time_part = -self._time_part
         return new
 
-    def __abs__(self) -> Duration:
-        """The absolute value of the duration
+    def __abs__(self) -> DateTimeDelta:
+        """The absolute value of the delta
 
         Example
         -------
 
-        >>> d = MixedDuration(weeks=1, days=-11, hours=4)
+        >>> d = DateTimeDelta(weeks=1, days=-11, hours=4)
         >>> abs(d)
-        MixedDuration(P1W11DT4H)
+        DateTimeDelta(P1W11DT4H)
 
         """
-        new = _object_new(Duration)
+        new = _object_new(DateTimeDelta)
         new._date_part = abs(self._date_part)
         new._time_part = abs(self._time_part)
         return new
@@ -1239,16 +1243,16 @@ class Duration:
         Example
         -------
 
-        >>> d = MixedDuration(weeks=1, days=11, hours=4)
+        >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
         >>> d.as_tuple()
         (0, 0, 1, 11, 4, 0, 0, 0)
         """
         return self._date_part.as_tuple() + self._time_part.as_tuple()
 
 
-Duration.ZERO = Duration()
+DateTimeDelta.ZERO = DateTimeDelta()
 
-AnyDuration = TimeDelta | Period | Duration
+Delta = Union[DateTimeDelta, TimeDelta, DateDelta]
 
 
 _TDateTime = TypeVar("_TDateTime", bound="DateTime")
@@ -1819,7 +1823,7 @@ class UTCDateTime(AwareDateTime):
         >>> d.add(years=1, days=2, minutes=5)
         UTCDateTime(2021-08-17 23:17:00Z)
         """
-        return self + Duration(
+        return self + DateTimeDelta(
             years=years,
             months=months,
             weeks=weeks,
@@ -1853,7 +1857,7 @@ class UTCDateTime(AwareDateTime):
         >>> d.subtract(years=1, days=2, minutes=5)
         UTCDateTime(2019-08-13 23:06:00Z)
         """
-        return self - Duration(
+        return self - DateTimeDelta(
             years=years,
             months=months,
             weeks=weeks,
@@ -1864,7 +1868,7 @@ class UTCDateTime(AwareDateTime):
             microseconds=microseconds,
         )
 
-    def __add__(self, delta: AnyDuration) -> UTCDateTime:
+    def __add__(self, delta: Delta) -> UTCDateTime:
         """Add a time amount to this datetime.
 
         Equivalent to:
@@ -1880,7 +1884,7 @@ class UTCDateTime(AwareDateTime):
         >>> d + years(1) + days(2) + minutes(5)
         UTCDateTime(2021-08-17 23:17:00Z)
         """
-        if isinstance(delta, (TimeDelta, Period, Duration)):
+        if isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
             return self._from_py_unchecked(
                 _datetime.combine(
                     (self.date() + delta.date_part)._py_date,
@@ -1894,11 +1898,9 @@ class UTCDateTime(AwareDateTime):
     def __sub__(self, other: AwareDateTime) -> TimeDelta: ...
 
     @overload
-    def __sub__(self, other: AnyDuration) -> UTCDateTime: ...
+    def __sub__(self, other: Delta) -> UTCDateTime: ...
 
-    def __sub__(
-        self, other: AnyDuration | AwareDateTime
-    ) -> UTCDateTime | TimeDelta:
+    def __sub__(self, other: Delta | AwareDateTime) -> UTCDateTime | TimeDelta:
         """Subtract another datetime or time amount
 
         Example
@@ -1914,7 +1916,7 @@ class UTCDateTime(AwareDateTime):
         """
         if isinstance(other, AwareDateTime):
             return TimeDelta.from_py_timedelta(self._py_dt - other._py_dt)
-        elif isinstance(other, (TimeDelta, Period, Duration)):
+        elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
             return self + -other
         return NotImplemented
 
@@ -2715,7 +2717,7 @@ class ZonedDateTime(AwareDateTime):
             return NotImplemented
         return self._py_dt.astimezone(_UTC) >= other._py_dt
 
-    def __add__(self, delta: AnyDuration) -> ZonedDateTime:
+    def __add__(self, delta: Delta) -> ZonedDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
 
         Example
@@ -2744,7 +2746,7 @@ class ZonedDateTime(AwareDateTime):
           the "compatible" disambiguation is used.
           This means that for gaps, time is skipped forward.
         """
-        if isinstance(delta, (TimeDelta, Period, Duration)):
+        if isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
             return self._from_py_unchecked(
                 (
                     _datetime.combine(
@@ -2761,17 +2763,17 @@ class ZonedDateTime(AwareDateTime):
     def __sub__(self, other: AwareDateTime) -> TimeDelta: ...
 
     @overload
-    def __sub__(self, other: AnyDuration) -> ZonedDateTime: ...
+    def __sub__(self, other: Delta) -> ZonedDateTime: ...
 
     def __sub__(
-        self, other: AnyDuration | AwareDateTime
+        self, other: Delta | AwareDateTime
     ) -> AwareDateTime | TimeDelta:
         """Subtract another datetime or duration"""
         if isinstance(other, AwareDateTime):
             return TimeDelta.from_py_timedelta(
                 self._py_dt.astimezone(_UTC) - other._py_dt
             )
-        elif isinstance(other, (TimeDelta, Period, Duration)):
+        elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
             return self + -other
         return NotImplemented
 
@@ -3108,7 +3110,7 @@ class LocalSystemDateTime(AwareDateTime):
 
         __hash__ = property(attrgetter("_py_dt.__hash__"))
 
-    def __add__(self, delta: AnyDuration) -> LocalSystemDateTime:
+    def __add__(self, delta: Delta) -> LocalSystemDateTime:
         """Add a duration to this datetime
 
         Example
@@ -3139,7 +3141,7 @@ class LocalSystemDateTime(AwareDateTime):
           This means that for gaps, time is skipped forward.
 
         """
-        if isinstance(delta, (TimeDelta, Period, Duration)):
+        if isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
             new_py_date = (self.date() + delta.date_part)._py_date
             return self._from_py_unchecked(
                 (
@@ -3157,11 +3159,9 @@ class LocalSystemDateTime(AwareDateTime):
     def __sub__(self, other: AwareDateTime) -> TimeDelta: ...
 
     @overload
-    def __sub__(self, other: AnyDuration) -> LocalSystemDateTime: ...
+    def __sub__(self, other: Delta) -> LocalSystemDateTime: ...
 
-    def __sub__(
-        self, other: AnyDuration | AwareDateTime
-    ) -> AwareDateTime | AnyDuration:
+    def __sub__(self, other: Delta | AwareDateTime) -> AwareDateTime | Delta:
         """Subtract another datetime or duration
 
         Example
@@ -3174,7 +3174,7 @@ class LocalSystemDateTime(AwareDateTime):
         """
         if isinstance(other, AwareDateTime):
             return TimeDelta.from_py_timedelta(self._py_dt - other._py_dt)
-        elif isinstance(other, (TimeDelta, Period, Duration)):
+        elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
             return self + -other
         return NotImplemented
 
@@ -3395,7 +3395,7 @@ class NaiveDateTime(DateTime):
             return NotImplemented
         return self._py_dt >= other._py_dt
 
-    def __add__(self, delta: AnyDuration) -> NaiveDateTime:
+    def __add__(self, delta: Delta) -> NaiveDateTime:
         """Add a duration to this datetime
 
         Example
@@ -3407,7 +3407,7 @@ class NaiveDateTime(DateTime):
         >>> d + years(3) + months(2) + days(1)
         NaiveDateTime(2023-10-16 23:12:00)
         """
-        if isinstance(delta, (TimeDelta, Period, Duration)):
+        if isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
             return self._from_py_unchecked(
                 _datetime.combine(
                     (self.date() + delta.date_part)._py_date,
@@ -3421,10 +3421,10 @@ class NaiveDateTime(DateTime):
     def __sub__(self, other: NaiveDateTime) -> TimeDelta: ...
 
     @overload
-    def __sub__(self, other: AnyDuration) -> NaiveDateTime: ...
+    def __sub__(self, other: Delta) -> NaiveDateTime: ...
 
     def __sub__(
-        self, other: AnyDuration | NaiveDateTime
+        self, other: Delta | NaiveDateTime
     ) -> NaiveDateTime | TimeDelta:
         """Subtract another datetime or time amount
 
@@ -3441,7 +3441,7 @@ class NaiveDateTime(DateTime):
         """
         if isinstance(other, NaiveDateTime):
             return TimeDelta.from_py_timedelta(self._py_dt - other._py_dt)
-        elif isinstance(other, (TimeDelta, Period, Duration)):
+        elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
             return self + -other
         return NotImplemented
 
@@ -3710,14 +3710,14 @@ _match_utc_rfc3339 = re.compile(
 _match_rfc3339 = re.compile(
     r"\d{4}-\d{2}-\d{2}.\d{2}:\d{2}:\d{2}(\.\d{1,6})?(?:[Zz]|[+-]\d{2}:\d{2})"
 ).fullmatch
-_match_date_period = re.compile(
+_match_datedelta = re.compile(
     r"P(?:([-+]?\d+)Y)?(?:([-+]?\d+)M)?(?:([-+]?\d+)W)?(?:([-+]?\d+)D)?"
 ).fullmatch
-_match_period = re.compile(
+_match_datetimedelta = re.compile(
     r"P(?:([-+]?\d+)Y)?(?:([-+]?\d+)M)?(?:([-+]?\d+)W)?(?:([-+]?\d+)D)?"
     r"(?:T(?:([-+]?\d+)H)?(?:([-+]?\d+)M)?(?:([-+]?\d+(?:\.\d{1,6})?)?S)?)?"
 ).fullmatch
-_match_duration = re.compile(
+_match_timedelta = re.compile(
     r"([-+]?)(\d{2,}):([0-5]\d):([0-5]\d(?:\.\d{1,6})?)"
 ).fullmatch
 # Before Python 3.11, fromisoformat() is less capable
@@ -3781,32 +3781,32 @@ _as_fold: Callable[[Disambiguate], Fold] = {  # type: ignore[assignment]
 }.__getitem__
 
 
-def years(i: int, /) -> Period:
-    """Create a :class:`~Period` with the given number of years.
-    ``years(1) == Period(years=1)``
+def years(i: int, /) -> DateDelta:
+    """Create a :class:`~DateDelta` with the given number of years.
+    ``years(1) == DateDelta(years=1)``
     """
-    return Period(years=i)
+    return DateDelta(years=i)
 
 
-def months(i: int, /) -> Period:
-    """Create a :class:`~Period` with the given number of months.
-    ``months(1) == Period(months=1)``
+def months(i: int, /) -> DateDelta:
+    """Create a :class:`~DateDelta` with the given number of months.
+    ``months(1) == DateDelta(months=1)``
     """
-    return Period(months=i)
+    return DateDelta(months=i)
 
 
-def weeks(i: int, /) -> Period:
-    """Create a :class:`~Period` with the given number of weeks.
-    ``weeks(1) == Period(weeks=1)``
+def weeks(i: int, /) -> DateDelta:
+    """Create a :class:`~DateDelta` with the given number of weeks.
+    ``weeks(1) == DateDelta(weeks=1)``
     """
-    return Period(weeks=i)
+    return DateDelta(weeks=i)
 
 
-def days(i: int, /) -> Period:
-    """Create a :class:`~Period` with the given number of days.
-    ``days(1) == Period(days=1)``
+def days(i: int, /) -> DateDelta:
+    """Create a :class:`~DateDelta` with the given number of days.
+    ``days(1) == DateDelta(days=1)``
     """
-    return Period(days=i)
+    return DateDelta(days=i)
 
 
 def hours(i: float, /) -> TimeDelta:

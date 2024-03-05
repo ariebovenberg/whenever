@@ -9,16 +9,16 @@ from pytest import approx
 
 from whenever import (
     AwareDateTime,
-    TimeDelta,
-    seconds,
     InvalidFormat,
     LocalSystemDateTime,
     NaiveDateTime,
     OffsetDateTime,
+    TimeDelta,
     UTCDateTime,
     ZonedDateTime,
     hours,
     minutes,
+    seconds,
 )
 
 from .common import (

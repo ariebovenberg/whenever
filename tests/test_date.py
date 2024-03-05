@@ -9,7 +9,7 @@ from whenever import (
     TUESDAY,
     WEDNESDAY,
     Date,
-    Period,
+    DateDelta,
 )
 
 from .common import AlwaysEqual, NeverEqual
@@ -72,7 +72,7 @@ def test_eq():
 )
 def test_add(d, kwargs, expected):
     assert d.add(**kwargs) == expected
-    assert d + Period(**kwargs) == expected
+    assert d + DateDelta(**kwargs) == expected
 
 
 @pytest.mark.parametrize(
@@ -100,7 +100,7 @@ def test_add(d, kwargs, expected):
 )
 def test_subtract(d, kwargs, expected):
     assert d.subtract(**kwargs) == expected
-    assert d - Period(**kwargs) == expected
+    assert d - DateDelta(**kwargs) == expected
 
 
 def test_day_of_week():

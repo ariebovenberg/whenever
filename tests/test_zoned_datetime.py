@@ -448,7 +448,9 @@ def test_to_local():
     assert (
         d.replace(day=29, disambiguate="later")
         .as_local()
-        .exact_eq(LocalSystemDateTime(2023, 10, 29, 2, 15, disambiguate="later"))
+        .exact_eq(
+            LocalSystemDateTime(2023, 10, 29, 2, 15, disambiguate="later")
+        )
     )
 
 

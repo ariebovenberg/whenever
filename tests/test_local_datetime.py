@@ -57,7 +57,9 @@ class TestInit:
             == LocalSystemDateTime(2020, 8, 15, 12, 0)
             == LocalSystemDateTime(2020, 8, 15, 12, 0, 0)
             == LocalSystemDateTime(2020, 8, 15, 12, 0, 0, 0)
-            == LocalSystemDateTime(2020, 8, 15, 12, 0, 0, 0, disambiguate="raise")
+            == LocalSystemDateTime(
+                2020, 8, 15, 12, 0, 0, 0, disambiguate="raise"
+            )
         )
 
     def test_ambiguous(self):
@@ -106,9 +108,9 @@ class TestInit:
         assert LocalSystemDateTime(**kwargs, disambiguate="later").exact_eq(
             LocalSystemDateTime(**{**kwargs, "hour": 3})
         )
-        assert LocalSystemDateTime(**kwargs, disambiguate="compatible").exact_eq(
-            LocalSystemDateTime(**{**kwargs, "hour": 3})
-        )
+        assert LocalSystemDateTime(
+            **kwargs, disambiguate="compatible"
+        ).exact_eq(LocalSystemDateTime(**{**kwargs, "hour": 3}))
 
 
 def test_tzname_none():
@@ -173,7 +175,9 @@ class TestToOffset:
     @local_ams_tz()
     def test_ambiguous(self):
         assert (
-            LocalSystemDateTime(2023, 10, 29, 2, 15, 30, disambiguate="earlier")
+            LocalSystemDateTime(
+                2023, 10, 29, 2, 15, 30, disambiguate="earlier"
+            )
             .as_offset()
             .exact_eq(OffsetDateTime(2023, 10, 29, 2, 15, 30, offset=hours(2)))
         )
@@ -208,7 +212,9 @@ class TestAsLocal:
     def test_timezone_change(self):
         d = LocalSystemDateTime(2020, 8, 15, 12, 8, 30)
         with local_nyc_tz():
-            assert d.as_local().exact_eq(LocalSystemDateTime(2020, 8, 15, 6, 8, 30))
+            assert d.as_local().exact_eq(
+                LocalSystemDateTime(2020, 8, 15, 6, 8, 30)
+            )
 
 
 @local_ams_tz()
@@ -228,7 +234,9 @@ class TestCanonicalFormat:
 
     @local_ams_tz()
     def test_ambiguous(self):
-        d = LocalSystemDateTime(2023, 10, 29, 2, 15, 30, disambiguate="earlier")
+        d = LocalSystemDateTime(
+            2023, 10, 29, 2, 15, 30, disambiguate="earlier"
+        )
         expected = "2023-10-29T02:15:30+02:00"
         assert str(d) == expected.replace("T", " ")
         assert d.canonical_format() == expected
@@ -265,8 +273,12 @@ class TestEquality:
 
     @local_ams_tz()
     def test_amibiguous(self):
-        d = LocalSystemDateTime(2023, 10, 29, 2, 15, 30, disambiguate="earlier")
-        other = LocalSystemDateTime(2023, 10, 29, 2, 15, 30, disambiguate="later")
+        d = LocalSystemDateTime(
+            2023, 10, 29, 2, 15, 30, disambiguate="earlier"
+        )
+        other = LocalSystemDateTime(
+            2023, 10, 29, 2, 15, 30, disambiguate="later"
+        )
         assert hash(d) != hash(other)
         assert d != other
         assert not d == other
@@ -305,7 +317,9 @@ class TestComparison:
 
     @local_ams_tz()
     def test_same_timezone_fold(self):
-        d = LocalSystemDateTime(2023, 10, 29, 2, 15, 30, disambiguate="earlier")
+        d = LocalSystemDateTime(
+            2023, 10, 29, 2, 15, 30, disambiguate="earlier"
+        )
         later = d.replace(disambiguate="later")
         assert d < later
         assert d <= later
@@ -432,7 +446,9 @@ class TestFromCanonicalFormat:
         assert LocalSystemDateTime.from_canonical_format(
             "2023-10-29T02:15:30+02:00"
         ).exact_eq(
-            LocalSystemDateTime(2023, 10, 29, 2, 15, 30, disambiguate="earlier")
+            LocalSystemDateTime(
+                2023, 10, 29, 2, 15, 30, disambiguate="earlier"
+            )
         )
         assert LocalSystemDateTime.from_canonical_format(
             "2023-10-29T02:15:30+01:00"
@@ -481,7 +497,9 @@ class TestFromCanonicalFormat:
     @local_ams_tz()
     def test_unpadded(self):
         with pytest.raises(InvalidFormat):
-            LocalSystemDateTime.from_canonical_format("2020-8-15T12:8:30+02:00")
+            LocalSystemDateTime.from_canonical_format(
+                "2020-8-15T12:8:30+02:00"
+            )
 
     @local_ams_tz()
     def test_overly_precise_fraction(self):
@@ -493,7 +511,9 @@ class TestFromCanonicalFormat:
     @local_ams_tz()
     def test_invalid_offset(self):
         with pytest.raises(ValueError):
-            LocalSystemDateTime.from_canonical_format("2020-08-15T12:08:30-29:00")
+            LocalSystemDateTime.from_canonical_format(
+                "2020-08-15T12:08:30-29:00"
+            )
 
     def test_no_offset(self):
         with pytest.raises(InvalidFormat):
@@ -524,11 +544,13 @@ class TestFromCanonicalFormat:
 @local_nyc_tz()
 def test_timestamp():
     assert LocalSystemDateTime(1969, 12, 31, 19).timestamp() == 0
-    assert LocalSystemDateTime(2020, 8, 15, 8, 8, 30, 45).timestamp() == approx(
-        1_597_493_310.000045, abs=1e-6
-    )
+    assert LocalSystemDateTime(
+        2020, 8, 15, 8, 8, 30, 45
+    ).timestamp() == approx(1_597_493_310.000045, abs=1e-6)
 
-    ambiguous = LocalSystemDateTime(2023, 11, 5, 1, 15, 30, disambiguate="earlier")
+    ambiguous = LocalSystemDateTime(
+        2023, 11, 5, 1, 15, 30, disambiguate="earlier"
+    )
     assert (
         ambiguous.timestamp()
         != ambiguous.replace(disambiguate="later").timestamp()
@@ -636,7 +658,9 @@ class TestReplace:
 
     @local_ams_tz()
     def test_disambiguate(self):
-        d = LocalSystemDateTime(2023, 10, 29, 2, 15, 30, disambiguate="earlier")
+        d = LocalSystemDateTime(
+            2023, 10, 29, 2, 15, 30, disambiguate="earlier"
+        )
         with pytest.raises(
             Ambiguous,
             match="2023-10-29 02:15:30 is ambiguous in the system timezone",
@@ -695,7 +719,9 @@ class TestAddTimeUnits:
             30,
             disambiguate="earlier",
         )
-        assert (d + hours(24)).exact_eq(LocalSystemDateTime(2023, 10, 30, 1, 15, 30))
+        assert (d + hours(24)).exact_eq(
+            LocalSystemDateTime(2023, 10, 30, 1, 15, 30)
+        )
         assert (d.replace(disambiguate="later") + hours(24)).exact_eq(
             LocalSystemDateTime(2023, 10, 30, 2, 15, 30)
         )
@@ -791,7 +817,9 @@ class TestSubtractTimeUnits:
             30,
             disambiguate="earlier",
         )
-        assert (d - hours(24)).exact_eq(LocalSystemDateTime(2023, 10, 28, 2, 15, 30))
+        assert (d - hours(24)).exact_eq(
+            LocalSystemDateTime(2023, 10, 28, 2, 15, 30)
+        )
         assert (d.replace(disambiguate="later") - hours(24)).exact_eq(
             LocalSystemDateTime(2023, 10, 28, 3, 15, 30)
         )
@@ -856,8 +884,12 @@ class TestSubtractOtherDateTime:
 
     @local_ams_tz()
     def test_accounts_for_dst(self):
-        d = LocalSystemDateTime(2023, 10, 29, 2, 15, 30, disambiguate="earlier")
-        assert (d - hours(24)).exact_eq(LocalSystemDateTime(2023, 10, 28, 2, 15, 30))
+        d = LocalSystemDateTime(
+            2023, 10, 29, 2, 15, 30, disambiguate="earlier"
+        )
+        assert (d - hours(24)).exact_eq(
+            LocalSystemDateTime(2023, 10, 28, 2, 15, 30)
+        )
         assert (d.replace(disambiguate="later") - hours(24)).exact_eq(
             LocalSystemDateTime(2023, 10, 28, 3, 15, 30)
         )
