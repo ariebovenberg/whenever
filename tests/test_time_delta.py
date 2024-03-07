@@ -1,3 +1,5 @@
+import weakref
+from copy import copy, deepcopy
 from datetime import timedelta
 
 import pytest
@@ -30,8 +32,8 @@ class TestInit:
 
 def test_parts():
     d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
-    assert d.date_part == DateDelta.ZERO
-    assert d.time_part is d
+    assert d._date_part == DateDelta.ZERO
+    assert d._time_part is d
 
 
 def test_factories():
@@ -338,3 +340,17 @@ def test_abs():
         TimeDelta(hours=-1, minutes=-2, seconds=-3, microseconds=-4)
     ) == TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
     assert abs(TimeDelta(hours=1)) == TimeDelta(hours=1)
+
+
+def test_weakref():
+    d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+    r = weakref.ref(d)
+    assert r() is d
+    del d
+    assert r() is None
+
+
+def test_copy():
+    d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+    assert copy(d) is d
+    assert deepcopy(d) is d

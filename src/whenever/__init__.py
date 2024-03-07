@@ -104,7 +104,20 @@ class NOT_SET:
     pass  # sentinel for when no value is passed
 
 
-class Date:
+class _ImmutableBase:
+    __slots__ = ("__weakref__",)
+
+    # Immutable classes don't need to be copied
+    @no_type_check
+    def __copy__(self):
+        return self
+
+    @no_type_check
+    def __deepcopy__(self, _):
+        return self
+
+
+class Date(_ImmutableBase):
     """A date without a time component
 
     Example
@@ -112,7 +125,6 @@ class Date:
 
     >>> d = Date(2021, 1, 2)
     Date(2021-01-02)
-
     """
 
     __slots__ = ("_py_date",)
@@ -171,6 +183,26 @@ class Date:
 
         __hash__ = property(attrgetter("_py_date.__hash__"))
 
+    def __lt__(self, other: Date) -> bool:
+        if not isinstance(other, Date):
+            return NotImplemented
+        return self._py_date < other._py_date
+
+    def __le__(self, other: Date) -> bool:
+        if not isinstance(other, Date):
+            return NotImplemented
+        return self._py_date <= other._py_date
+
+    def __gt__(self, other: Date) -> bool:
+        if not isinstance(other, Date):
+            return NotImplemented
+        return self._py_date > other._py_date
+
+    def __ge__(self, other: Date) -> bool:
+        if not isinstance(other, Date):
+            return NotImplemented
+        return self._py_date >= other._py_date
+
     @classmethod
     def from_py_date(cls, d: _date, /) -> Date:
         """Create from a :class:`~datetime.date`
@@ -204,12 +236,9 @@ class Date:
         Date(2021-02-28)
 
         """
-        year_overflow, month_new = divmod(self.month - 1 + months, 12)
-        month_new += 1
-        year_new = self.year + years + year_overflow
-        day_new = min(self.day, monthrange(year_new, month_new)[1])
         return Date.from_py_date(
-            _date(year_new, month_new, day_new) + _timedelta(days, weeks=weeks)
+            self._add_months(12 * years + months)._py_date
+            + _timedelta(days, weeks=weeks)
         )
 
     def __add__(self, p: DateDelta) -> Date:
@@ -245,18 +274,84 @@ class Date:
         """
         return self.add(years=-years, months=-months, weeks=-weeks, days=-days)
 
-    def __sub__(self, p: DateDelta) -> Date:
-        """Subtract a delta from a date
+    def _add_months(self, ms: int) -> Date:
+        year_overflow, month_new = divmod(self.month - 1 + ms, 12)
+        month_new += 1
+        year_new = self.year + year_overflow
+        return Date(
+            year_new,
+            month_new,
+            min(self.day, monthrange(year_new, month_new)[1]),
+        )
+
+    @overload
+    def __sub__(self, d: DateDelta) -> Date: ...
+
+    @overload
+    def __sub__(self, d: Date) -> DateDelta: ...
+
+    def __sub__(self, d: DateDelta | Date) -> Date | DateDelta:
+        """Subtract a delta from a date, or subtract two dates
 
         Example
         -------
 
         >>> Date(2021, 1, 2) - DateDelta(weeks=1, days=3)
         Date(2020-12-26)
+        >>> Date(2021, 1, 2) - Date(2020, 1, 2)
+        DateDelta(1Y)
+
+        Note
+        ----
+
+        The difference between two dates is calculated such that:
+
+        >>> delta = d1 - d2
+        >>> d1 == d2 + delta  # always
+
+        The following is not always true:
+
+        >>> d2 == d1 - delta  # not always
         """
-        return self.subtract(
-            years=p.years, months=p.months, weeks=p.weeks, days=p.days
-        )
+        if isinstance(d, DateDelta):
+            return self.subtract(
+                years=d.years, months=d.months, weeks=d.weeks, days=d.days
+            )
+        elif isinstance(d, Date):
+
+            mos = self.month - d.month + 12 * (self.year - d.year)
+            shifted = d._add_months(mos)
+
+            # yes, it's a bit duplicated, but preferable to being clever.
+            if d > self:
+                if shifted < self:  # i.e. we've overshot
+                    mos += 1
+                    shifted = d._add_months(mos)
+                    dys = (
+                        -shifted.day
+                        - monthrange(self.year, self.month)[1]
+                        + self.day
+                    )
+                else:
+                    dys = self.day - shifted.day
+                yrs, mos = divmod(mos, -12)
+                yrs = -yrs
+
+            else:
+                if shifted > self:  # i.e. we've overshot
+                    mos -= 1
+                    shifted = d._add_months(mos)
+                    dys = (
+                        -shifted.day
+                        + monthrange(shifted.year, shifted.month)[1]
+                        + self.day
+                    )
+                else:
+                    dys = self.day - shifted.day
+
+                yrs, mos = divmod(mos, 12)
+            return DateDelta(years=yrs, months=mos, days=dys)
+        return NotImplemented
 
     def day_of_week(self) -> int:
         """The day of the week, where 1 is Monday and 7 is Sunday
@@ -279,7 +374,7 @@ class Date:
         return self._py_date.isoweekday()
 
 
-class TimeDelta:
+class TimeDelta(_ImmutableBase):
     """A duration consisting of a precise time: hours, minutes, (micro)seconds
 
     The inputs are normalized, so 90 minutes becomes 1 hour and 30 minutes,
@@ -318,10 +413,10 @@ class TimeDelta:
     """A delta of zero"""
 
     # This will be set later
-    date_part: ClassVar[DateDelta] = None  # type: ignore[assignment]
+    _date_part: ClassVar[DateDelta] = None  # type: ignore[assignment]
 
     @property
-    def time_part(self) -> TimeDelta:
+    def _time_part(self) -> TimeDelta:
         """The time part, always equal to the delta itself"""
         return self
 
@@ -642,9 +737,9 @@ class TimeDelta:
 TimeDelta.ZERO = TimeDelta()
 
 
-class DateDelta:
-    """A duration of time consisting of calendar units (
-    years, months, weeks, and days)
+class DateDelta(_ImmutableBase):
+    """A duration of time consisting of calendar units
+    (years, months, weeks, and days)
     """
 
     __slots__ = ("_years", "_months", "_weeks", "_days")
@@ -652,10 +747,10 @@ class DateDelta:
     ZERO: ClassVar[DateDelta]
     """A delta of zero"""
 
-    time_part = TimeDelta.ZERO
+    _time_part = TimeDelta.ZERO
 
     @property
-    def date_part(self) -> DateDelta:
+    def _date_part(self) -> DateDelta:
         """The date part of the delta, always equal to itself"""
         return self
 
@@ -737,24 +832,24 @@ class DateDelta:
 
         .. code-block:: text
 
-            P(nY)(nM)(nW)(nD)
+            (nY)(nM)(nW)(nD)
 
         For example:
 
         .. code-block:: text
 
-            P1D
-            P2M
-            P1Y2M-3W4D
+            1D
+            2M
+            1Y2M-3W4D
 
         Example
         -------
 
         >>> p = DateDelta(years=1, months=2, weeks=3, days=11)
         >>> p.canonical_format()
-        'P1Y2M3W11D'
+        '1Y2M3W11D'
         >>> DateDelta().canonical_format()
-        'P0D'
+        '0D'
 
         """
         date = (
@@ -763,7 +858,7 @@ class DateDelta:
             f"{self._weeks}W" * bool(self._weeks),
             f"{self._days}D" * bool(self._days),
         )
-        return "P" + ("".join(date) or "0D")
+        return "".join(date) or "0D"
 
     @classmethod
     def from_canonical_format(cls, s: str, /) -> DateDelta:
@@ -774,8 +869,8 @@ class DateDelta:
         Example
         -------
 
-        >>> DateDelta.from_canonical_format("P1Y2M-3W4D")
-        DateDelta(P1Y2M-3W4D)
+        >>> DateDelta.from_canonical_format("1Y2M-3W4D")
+        DateDelta(1Y2M-3W4D)
 
         Raises
         ------
@@ -783,7 +878,7 @@ class DateDelta:
             If the string does not match this exact format.
 
         """
-        if not (match := _match_datedelta(s)) or s == "P":
+        if not ((match := _match_datedelta(s)) and s):
             raise InvalidFormat()
         years, months, weeks, days = match.groups()
         return cls(
@@ -978,10 +1073,10 @@ class DateDelta:
 
 
 DateDelta.ZERO = DateDelta()
-TimeDelta.date_part = DateDelta.ZERO
+TimeDelta._date_part = DateDelta.ZERO
 
 
-class DateTimeDelta:
+class DateTimeDelta(_ImmutableBase):
     """A duration with both a date and time component."""
 
     __slots__ = ("_date_part", "_time_part")
@@ -1084,7 +1179,7 @@ class DateTimeDelta:
         """
         hrs, mins, secs, ms = self._time_part.as_tuple()
         seconds = f"{secs + ms / 1_000_000:f}".rstrip("0").rstrip(".")
-        date = self._date_part.canonical_format()[1:] * bool(self._date_part)
+        date = self._date_part.canonical_format() * bool(self._date_part)
         return "P" + (
             (
                 date
@@ -1251,17 +1346,14 @@ class DateTimeDelta:
 
 
 DateTimeDelta.ZERO = DateTimeDelta()
-
 Delta = Union[DateTimeDelta, TimeDelta, DateDelta]
-
-
 _TDateTime = TypeVar("_TDateTime", bound="DateTime")
 
 
-class DateTime(ABC):
+class DateTime(_ImmutableBase, ABC):
     """Abstract base class for all datetime types"""
 
-    __slots__ = ("_py_dt", "__weakref__")
+    __slots__ = ("_py_dt",)
     _py_dt: _datetime
 
     if TYPE_CHECKING or SPHINX_BUILD:
@@ -1405,13 +1497,6 @@ class DateTime(ABC):
     ) -> _TDateTime:
         self = _object_new(cls)
         self._py_dt = d
-        return self
-
-    # We don't need to copy, because it's immutable
-    def __copy__(self: _TDateTime) -> _TDateTime:
-        return self
-
-    def __deepcopy__(self: _TDateTime, _: object) -> _TDateTime:
         return self
 
 
@@ -1887,10 +1972,10 @@ class UTCDateTime(AwareDateTime):
         if isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
             return self._from_py_unchecked(
                 _datetime.combine(
-                    (self.date() + delta.date_part)._py_date,
+                    (self.date() + delta._date_part)._py_date,
                     self._py_dt.timetz(),
                 )
-                + delta.time_part.py_timedelta()
+                + delta._time_part.py_timedelta()
             )
         return NotImplemented
 
@@ -2750,10 +2835,10 @@ class ZonedDateTime(AwareDateTime):
             return self._from_py_unchecked(
                 (
                     _datetime.combine(
-                        (self.date() + delta.date_part)._py_date,
+                        (self.date() + delta._date_part)._py_date,
                         self._py_dt.timetz(),
                     ).astimezone(_UTC)
-                    + delta.time_part.py_timedelta()
+                    + delta._time_part.py_timedelta()
                 ).astimezone(self._py_dt.tzinfo)
             )
         else:
@@ -3142,7 +3227,7 @@ class LocalSystemDateTime(AwareDateTime):
 
         """
         if isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
-            new_py_date = (self.date() + delta.date_part)._py_date
+            new_py_date = (self.date() + delta._date_part)._py_date
             return self._from_py_unchecked(
                 _resolve_local_ambiguity(
                     (
@@ -3150,7 +3235,7 @@ class LocalSystemDateTime(AwareDateTime):
                         if new_py_date == self._py_dt.date()
                         else _datetime.combine(new_py_date, self._py_dt.time())
                     )
-                    + delta.time_part.py_timedelta(),
+                    + delta._time_part.py_timedelta(),
                     "compatible",
                 )
             )
@@ -3411,10 +3496,10 @@ class NaiveDateTime(DateTime):
         if isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
             return self._from_py_unchecked(
                 _datetime.combine(
-                    (self.date() + delta.date_part)._py_date,
+                    (self.date() + delta._date_part)._py_date,
                     self._py_dt.time(),
                 )
-                + delta.time_part.py_timedelta()
+                + delta._time_part.py_timedelta()
             )
         return NotImplemented
 
@@ -3712,7 +3797,7 @@ _match_rfc3339 = re.compile(
     r"\d{4}-\d{2}-\d{2}.\d{2}:\d{2}:\d{2}(\.\d{1,6})?(?:[Zz]|[+-]\d{2}:\d{2})"
 ).fullmatch
 _match_datedelta = re.compile(
-    r"P(?:([-+]?\d+)Y)?(?:([-+]?\d+)M)?(?:([-+]?\d+)W)?(?:([-+]?\d+)D)?"
+    r"(?:([-+]?\d+)Y)?(?:([-+]?\d+)M)?(?:([-+]?\d+)W)?(?:([-+]?\d+)D)?"
 ).fullmatch
 _match_datetimedelta = re.compile(
     r"P(?:([-+]?\d+)Y)?(?:([-+]?\d+)M)?(?:([-+]?\d+)W)?(?:([-+]?\d+)D)?"
