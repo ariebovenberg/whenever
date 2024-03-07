@@ -1,3 +1,6 @@
+import weakref
+from copy import copy, deepcopy
+
 import pytest
 
 from whenever import DateDelta, DateTimeDelta, InvalidFormat, TimeDelta
@@ -557,3 +560,35 @@ def test_as_tuple():
         microseconds=800_000,
     )
     assert p.as_tuple() == (1, -2, 3, 4, 5, 6, 7, 800_000)
+
+
+def test_copy():
+    p = DateTimeDelta(
+        years=1,
+        months=-2,
+        weeks=3,
+        days=4,
+        hours=5,
+        minutes=6,
+        seconds=7,
+        microseconds=800_000,
+    )
+    assert copy(p) is p
+    assert deepcopy(p) is p
+
+
+def test_weakref():
+    p = DateTimeDelta(
+        years=1,
+        months=-2,
+        weeks=3,
+        days=4,
+        hours=5,
+        minutes=6,
+        seconds=7,
+        microseconds=800_000,
+    )
+    ref = weakref.ref(p)
+    assert ref() is p
+    del p
+    assert ref() is None

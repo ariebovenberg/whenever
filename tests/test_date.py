@@ -1,3 +1,7 @@
+import weakref
+from copy import copy, deepcopy
+from itertools import chain, product
+
 import pytest
 
 from whenever import (
@@ -10,9 +14,10 @@ from whenever import (
     WEDNESDAY,
     Date,
     DateDelta,
+    days,
 )
 
-from .common import AlwaysEqual, NeverEqual
+from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
 
 def test_basics():
@@ -49,6 +54,37 @@ def test_eq():
     assert not d != AlwaysEqual()
 
     assert hash(d) == hash(same)
+
+
+def test_comparison():
+    d = Date(2021, 5, 10)
+    same = Date(2021, 5, 10)
+    bigger = Date(2022, 2, 28)
+    smaller = Date(2020, 12, 31)
+
+    assert d <= same
+    assert d <= bigger
+    assert not d <= smaller
+    assert d <= AlwaysLarger()
+    assert not d <= AlwaysSmaller()
+
+    assert not d < same
+    assert d < bigger
+    assert not d < smaller
+    assert d < AlwaysLarger()
+    assert not d < AlwaysSmaller()
+
+    assert d >= same
+    assert not d >= bigger
+    assert d >= smaller
+    assert not d >= AlwaysLarger()
+    assert d >= AlwaysSmaller()
+
+    assert not d > same
+    assert not d > bigger
+    assert d > smaller
+    assert not d > AlwaysLarger()
+    assert d > AlwaysSmaller()
 
 
 @pytest.mark.parametrize(
@@ -103,6 +139,149 @@ def test_subtract(d, kwargs, expected):
     assert d - DateDelta(**kwargs) == expected
 
 
+_EXAMPLE_DATES = [
+    *chain.from_iterable(
+        [
+            Date(y, 1, 1),
+            Date(y, 1, 2),
+            Date(y, 1, 4),
+            Date(y, 1, 10),
+            Date(y, 1, 28),
+            Date(y, 1, 29),
+            Date(y, 1, 30),
+            Date(y, 1, 31),
+            Date(y, 2, 1),
+            Date(y, 2, 26),
+            Date(y, 2, 27),
+            Date(y, 2, 28),
+            Date(y, 3, 1),
+            Date(y, 3, 2),
+            Date(y, 3, 31),
+            Date(y, 4, 1),
+            Date(y, 4, 2),
+            Date(y, 4, 15),
+            Date(y, 4, 30),
+            Date(y, 5, 1),
+            Date(y, 5, 31),
+            Date(y, 8, 25),
+            Date(y, 11, 30),
+            Date(y, 12, 1),
+            Date(y, 12, 2),
+            Date(y, 12, 27),
+            Date(y, 12, 28),
+            Date(y, 12, 29),
+            Date(y, 12, 30),
+            Date(y, 12, 31),
+        ]
+        for y in (2020, 2021, 2022, 2023, 2024)
+    ),
+    Date(2024, 2, 29),
+    Date(2020, 2, 29),
+]
+
+
+class TestSubtractDate:
+
+    @pytest.mark.parametrize(
+        "d1, d2, expected",
+        [
+            (Date(2021, 1, 31), Date(2021, 1, 1), days(30)),
+            (Date(2021, 1, 1), Date(2021, 1, 31), -days(30)),
+            (Date(2021, 1, 20), Date(2021, 1, 11), days(9)),
+            (Date(2021, 2, 28), Date(2021, 2, 28), days(0)),
+            (Date(2021, 2, 28), Date(2021, 2, 27), days(1)),
+            (Date(2021, 2, 28), Date(2021, 2, 1), days(27)),
+        ],
+    )
+    def test_days(self, d1, d2, expected):
+        assert d1 - d2 == expected
+
+    @pytest.mark.parametrize(
+        "d1, d2, delta",
+        [
+            (Date(2021, 2, 1), Date(2020, 1, 29), DateDelta(years=1, days=3)),
+            (Date(2021, 1, 31), Date(2020, 12, 31), DateDelta(months=1)),
+            (Date(2020, 12, 31), Date(2021, 1, 31), DateDelta(months=-1)),
+            (
+                Date(2021, 1, 20),
+                Date(2020, 12, 19),
+                DateDelta(months=1, days=1),
+            ),
+            (Date(2024, 2, 28), Date(2024, 2, 29), -DateDelta(days=1)),
+            (Date(2024, 2, 29), Date(2024, 2, 28), DateDelta(days=1)),
+            (
+                Date(2024, 2, 29),
+                Date(2023, 3, 1),
+                DateDelta(months=11, days=28),
+            ),
+            (
+                Date(2024, 2, 29),
+                Date(2023, 3, 2),
+                DateDelta(months=11, days=27),
+            ),
+            (
+                Date(2023, 3, 2),
+                Date(2024, 2, 29),
+                -DateDelta(months=11, days=27),
+            ),
+            (
+                Date(2024, 1, 31),
+                Date(2023, 1, 31),
+                DateDelta(years=1),
+            ),
+            (
+                Date(2023, 1, 31),
+                Date(2024, 2, 29),
+                -DateDelta(years=1, days=28),
+            ),
+            (
+                Date(2023, 1, 30),
+                Date(2024, 2, 29),
+                -DateDelta(years=1, days=29),
+            ),
+            (
+                Date(2022, 12, 30),
+                Date(2024, 2, 29),
+                -DateDelta(years=1, months=1, days=30),
+            ),
+            (
+                Date(2024, 2, 29),
+                Date(2023, 1, 31),
+                DateDelta(years=1, months=1),
+            ),
+            (Date(2024, 2, 29), Date(2023, 2, 28), DateDelta(years=1, days=1)),
+            (Date(2023, 2, 28), Date(2024, 2, 29), -DateDelta(years=1)),
+            (Date(2023, 2, 28), Date(2024, 2, 28), -DateDelta(years=1)),
+            (Date(2025, 2, 28), Date(2024, 2, 29), DateDelta(years=1)),
+            (
+                Date(2024, 2, 29),
+                Date(2025, 2, 28),
+                -DateDelta(months=11, days=28),
+            ),
+            (
+                Date(2023, 2, 28),
+                Date(2024, 2, 29),
+                DateDelta(years=-1),
+            ),
+        ],
+    )
+    def test_months_and_years(self, d1, d2, delta):
+        assert d1 - d2 == delta
+        assert d2 + delta == d1
+
+    def test_fuzzing(self):
+        for d1, d2 in product(_EXAMPLE_DATES, _EXAMPLE_DATES):
+            delta = d1 - d2
+            assert d2 + delta == d1
+
+
+def test_subtract_invalid():
+    with pytest.raises(TypeError, match="unsupported operand"):
+        Date(2021, 1, 1) - 1  # type: ignore[operator]
+    with pytest.raises(TypeError, match="unsupported operand"):
+        Date(2021, 1, 1) - "2021-01-01"  # type: ignore[operator]
+
+
 def test_day_of_week():
     d = Date(2021, 1, 2)
     assert d.day_of_week() == SATURDAY
@@ -112,3 +291,17 @@ def test_day_of_week():
     assert Date(2021, 1, 6).day_of_week() == WEDNESDAY
     assert Date(2021, 1, 7).day_of_week() == THURSDAY
     assert Date(2021, 1, 8).day_of_week() == FRIDAY
+
+
+def test_copy():
+    d = Date(2021, 1, 2)
+    assert copy(d) is d
+    assert deepcopy(d) is d
+
+
+def test_weakref():
+    d = Date(2021, 1, 2)
+    ref = weakref.ref(d)
+    assert ref() is d
+    del d
+    assert ref() is None

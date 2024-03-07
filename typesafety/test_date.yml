@@ -1,0 +1,7 @@
+- case: strict_equality
+  regex: true
+  main: |
+    from whenever import Date
+
+    Date(2020, 1, 1) == Date(2020, 1, 1)
+    Date(2020, 1, 1) == "2020-01-01"  # E: .*comparison.*
