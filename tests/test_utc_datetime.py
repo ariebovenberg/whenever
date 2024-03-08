@@ -16,6 +16,7 @@ from whenever import (
     LocalSystemDateTime,
     NaiveDateTime,
     OffsetDateTime,
+    Time,
     UTCDateTime,
     ZonedDateTime,
     days,
@@ -47,7 +48,7 @@ class TestInit:
         assert d.microsecond == 450
         assert d.offset == hours(0)
 
-    def test_optionality(self):
+    def test_defaults(self):
         assert (
             UTCDateTime(2020, 8, 15, 12)
             == UTCDateTime(2020, 8, 15, 12, 0)
@@ -70,6 +71,12 @@ def test_immutable():
     d = UTCDateTime(2020, 8, 15)
     with pytest.raises(AttributeError):
         d.year = 2021  # type: ignore[misc]
+
+
+def test_components():
+    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    assert d.date() == Date(2020, 8, 15)
+    assert d.time() == Time(23, 12, 9, 987_654)
 
 
 class TestCanonicalFormat:
@@ -361,8 +368,8 @@ def test_weakref():
 
 
 def test_min_max():
-    assert UTCDateTime.min == UTCDateTime(1, 1, 1)
-    assert UTCDateTime.max == UTCDateTime(9999, 12, 31, 23, 59, 59, 999_999)
+    assert UTCDateTime.MIN == UTCDateTime(1, 1, 1)
+    assert UTCDateTime.MAX == UTCDateTime(9999, 12, 31, 23, 59, 59, 999_999)
 
 
 def test_replace():

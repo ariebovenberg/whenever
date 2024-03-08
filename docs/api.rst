@@ -66,12 +66,16 @@ Deltas
 .. autofunction:: whenever.seconds
 .. autofunction:: whenever.microseconds
 
-Other classes
--------------
+Date and time components
+------------------------
 
 .. autoclass:: whenever.Date
    :members:
-   :special-members: __eq__, __lt__, __le__, __gt__, __ge__, __sub__
+   :special-members: __eq__, __lt__, __le__, __gt__, __ge__, __sub__, __add__
+
+.. autoclass:: whenever.Time
+   :members:
+   :special-members: __eq__, __lt__, __le__, __gt__, __ge__
 
 Exceptions
 ----------

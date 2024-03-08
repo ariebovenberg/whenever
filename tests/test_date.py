@@ -1,5 +1,6 @@
 import weakref
 from copy import copy, deepcopy
+from datetime import date as py_date
 from itertools import chain, product
 
 import pytest
@@ -14,6 +15,8 @@ from whenever import (
     WEDNESDAY,
     Date,
     DateDelta,
+    NaiveDateTime,
+    Time,
     days,
 )
 
@@ -31,6 +34,11 @@ def test_canonical_format():
     d = Date(2021, 1, 2)
     assert str(d) == "2021-01-02"
     assert d.canonical_format() == "2021-01-02"
+
+
+def test_at():
+    d = Date(2021, 1, 2)
+    assert d.at(Time(3, 4, 5)) == NaiveDateTime(2021, 1, 2, 3, 4, 5)
 
 
 def test_repr():
@@ -109,6 +117,10 @@ def test_comparison():
 def test_add(d, kwargs, expected):
     assert d.add(**kwargs) == expected
     assert d + DateDelta(**kwargs) == expected
+
+
+def test_from_py_date():
+    assert Date.from_py_date(py_date(2021, 1, 2)) == Date(2021, 1, 2)
 
 
 @pytest.mark.parametrize(
