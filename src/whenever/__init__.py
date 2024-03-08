@@ -41,6 +41,7 @@ from calendar import monthrange
 from datetime import (
     date as _date,
     datetime as _datetime,
+    time as _time,
     timedelta as _timedelta,
     timezone as _timezone,
     tzinfo as _tzinfo,
@@ -224,6 +225,7 @@ class Date(_ImmutableBase):
         """Add a components to a date.
 
         Components are added in the order of years, months, weeks, and days.
+        Trucation and wrapping is done after each step.
 
         Example
         -------
@@ -242,13 +244,9 @@ class Date(_ImmutableBase):
         )
 
     def __add__(self, p: DateDelta) -> Date:
-        """Add a delta to a date
+        """Add a delta to a date.
+        Behaves the same as :meth:`add`
 
-        Example
-        -------
-
-        >>> Date(2021, 1, 2) + DateDelta(weeks=1, days=3)
-        Date(2021-01-09)
         """
         return self.add(
             years=p.years, months=p.months, weeks=p.weeks, days=p.days
@@ -260,6 +258,7 @@ class Date(_ImmutableBase):
         """Subtract a components from a date.
 
         Components are subtracted in the order of years, months, weeks, and days.
+        Truncation and wrapping is done after each step.
 
         Example
         -------
@@ -293,25 +292,33 @@ class Date(_ImmutableBase):
     def __sub__(self, d: DateDelta | Date) -> Date | DateDelta:
         """Subtract a delta from a date, or subtract two dates
 
-        Example
-        -------
+        Subtracting a delta works the same as :meth:`subtract`.
 
         >>> Date(2021, 1, 2) - DateDelta(weeks=1, days=3)
         Date(2020-12-26)
-        >>> Date(2021, 1, 2) - Date(2020, 1, 2)
-        DateDelta(1Y)
-
-        Note
-        ----
 
         The difference between two dates is calculated such that:
 
         >>> delta = d1 - d2
-        >>> d1 == d2 + delta  # always
+        >>> d2 + delta == d1  # always
 
         The following is not always true:
 
-        >>> d2 == d1 - delta  # not always
+        >>> d1 - (d1 - d2) == d2  # not always true!
+        >>> -(d2 - d1) == d1 - d2  # not always true!
+
+        Examples:
+
+        >>> Date(2023, 4, 15) - Date(2011, 6, 24)
+        DateDelta(12Y9M22D)
+        >>> # Truncation
+        >>> Date(2024, 4, 30) - Date(2023, 5, 31)
+        DateDelta(11M)
+        >>> Date(2024, 3, 31) - Date(2023, 6, 30)
+        DateDelta(9M1D)
+        >>> # the other way around, the result is different
+        >>> Date(2023, 6, 30) - Date(2024, 3, 31)
+        DateDelta(-9M)
         """
         if isinstance(d, DateDelta):
             return self.subtract(
@@ -372,6 +379,211 @@ class Date(_ImmutableBase):
 
         """
         return self._py_date.isoweekday()
+
+    def at(self, t: Time, /) -> NaiveDateTime:
+        """Combine a date with a time to create a datetime
+
+        Example
+        -------
+
+        >>> d = Date(2021, 1, 2)
+        >>> d.at(Time(12, 30))
+        DateTime(2021-01-02 12:30:00)
+
+        """
+        return NaiveDateTime.from_py_datetime(
+            _datetime.combine(self._py_date, t._py_time)
+        )
+
+
+class Time(_ImmutableBase):
+    """Time of day without a date component
+
+    Example
+    -------
+
+    >>> t = Time(12, 30, 0)
+    Time(12:30:00)
+
+
+    Canonical format
+    ----------------
+
+    The canonical format is:
+
+    .. code-block:: text
+
+       HH:MM:SS(.ffffff)
+
+    For example:
+
+    .. code-block:: text
+
+       12:30:11.004
+    """
+
+    __slots__ = ("_py_time",)
+
+    MIDNIGHT: ClassVar[Time]
+    """The time at midnight"""
+    NOON: ClassVar[Time]
+    """The time at noon"""
+    MAX: ClassVar[Time]
+    """The maximum time, just before midnight"""
+
+    def __init__(
+        self,
+        hour: int = 0,
+        minute: int = 0,
+        second: int = 0,
+        microsecond: int = 0,
+    ) -> None:
+        self._py_time = _time(hour, minute, second, microsecond)
+
+    @property
+    def hour(self) -> int:
+        return self._py_time.hour
+
+    @property
+    def minute(self) -> int:
+        return self._py_time.minute
+
+    @property
+    def second(self) -> int:
+        return self._py_time.second
+
+    @property
+    def microsecond(self) -> int:
+        return self._py_time.microsecond
+
+    def canonical_format(self) -> str:
+        """The time in canonical format.
+
+        Example
+        -------
+
+        >>> t = Time(12, 30, 0)
+        >>> t.canonical_format()
+        '12:30:00'
+
+        """
+        return self._py_time.isoformat()
+
+    __str__ = canonical_format
+
+    @classmethod
+    def from_canonical_format(cls, s: str, /) -> Time:
+        """Create from a canonical string representation.
+
+        Inverse of :meth:`canonical_format`
+
+        Example
+        -------
+
+        >>> Time.from_canonical_format("12:30:00")
+        Time(12:30:00)
+
+        Raises
+        ------
+        InvalidFormat
+            If the string does not match this exact format.
+
+        """
+        # FUTURE: allow to omit seconds?
+        if not _match_time(s):
+            raise InvalidFormat()
+        return cls._from_py_unchecked(_time.fromisoformat(s))
+
+    @classmethod
+    def from_py_time(cls, t: _time, /) -> Time:
+        """Create from a :class:`~datetime.time`
+
+        Example
+        -------
+
+        >>> Time.from_py_time(time(12, 30, 0))
+        Time(12:30:00)
+
+        """
+        if t.tzinfo is not None:
+            raise ValueError("Time must be naive")
+        elif t.fold:
+            raise ValueError("Time must have fold=0")
+        return cls._from_py_unchecked(t)
+
+    @classmethod
+    def _from_py_unchecked(cls, t: _time, /) -> Time:
+        self = _object_new(cls)
+        self._py_time = t
+        return self
+
+    def __repr__(self) -> str:
+        return f"Time({self})"
+
+    if not TYPE_CHECKING:  # pragma: no branch
+
+        def __eq__(self, other: object) -> bool:
+            """Compare for equality
+
+            Example
+            -------
+
+            >>> t = Time(12, 30, 0)
+            >>> t == Time(12, 30, 0)
+            True
+            >>> t == Time(12, 30, 1)
+            False
+
+            """
+            if not isinstance(other, Time):
+                return NotImplemented
+            return self._py_time == other._py_time
+
+        __hash__ = property(attrgetter("_py_time.__hash__"))
+
+    def __lt__(self, other: Time) -> bool:
+        if not isinstance(other, Time):
+            return NotImplemented
+        return self._py_time < other._py_time
+
+    def __le__(self, other: Time) -> bool:
+        if not isinstance(other, Time):
+            return NotImplemented
+        return self._py_time <= other._py_time
+
+    def __gt__(self, other: Time) -> bool:
+        if not isinstance(other, Time):
+            return NotImplemented
+        return self._py_time > other._py_time
+
+    def __ge__(self, other: Time) -> bool:
+        if not isinstance(other, Time):
+            return NotImplemented
+        return self._py_time >= other._py_time
+
+    def on(self, d: Date, /) -> NaiveDateTime:
+        """Combine a time with a date to create a datetime
+
+        Example
+        -------
+
+        >>> t = Time(12, 30)
+        >>> t.on(Date(2021, 1, 2))
+        NaiveDateTime(2021-01-02 12:30:00)
+
+        Then, use methods like :meth:`~NaiveDateTime.assume_utc`
+        or :meth:`~NaiveDateTime.assume_zoned`
+        to make the result aware.
+
+        """
+        return NaiveDateTime.from_py_datetime(
+            _datetime.combine(d._py_date, self._py_time)
+        )
+
+
+Time.MIDNIGHT = Time()
+Time.NOON = Time(12)
+Time.MAX = Time(23, 59, 59, 999_999)
 
 
 class TimeDelta(_ImmutableBase):
@@ -1403,6 +1615,25 @@ class DateTime(_ImmutableBase, ABC):
         """
         return Date.from_py_date(self._py_dt.date())
 
+    def time(self) -> Time:
+        """The time-of-day part of the datetime
+
+        Example
+        -------
+
+        >>> d = UTCDateTime(2021, 1, 2, 3, 4, 5)
+        UTCDateTime(2021-01-02T03:04:05Z)
+        >>> d.time()
+        Time(03:04:05)
+
+        To perform the inverse, use :meth:`Time.on` and a method
+        like :meth:`~NaiveDateTime.assume_utc` or
+        :meth:`~NaiveDateTime.assume_zoned`:
+
+        >>> time.on(date).assume_utc()
+        """
+        return Time.from_py_time(self._py_dt.time())
+
     @abstractmethod
     def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
         """Format as the canonical string representation. Each
@@ -1851,8 +2082,8 @@ class UTCDateTime(AwareDateTime):
                 return NotImplemented
             return self._py_dt == other._py_dt
 
-    min: ClassVar[UTCDateTime]
-    max: ClassVar[UTCDateTime]
+    MIN: ClassVar[UTCDateTime]
+    MAX: ClassVar[UTCDateTime]
 
     def exact_eq(self, other: UTCDateTime, /) -> bool:
         return self._py_dt == other._py_dt
@@ -3458,8 +3689,8 @@ class NaiveDateTime(DateTime):
                 return NotImplemented
             return self._py_dt == other._py_dt
 
-    min: ClassVar[NaiveDateTime]
-    max: ClassVar[NaiveDateTime]
+    MIN: ClassVar[NaiveDateTime]
+    MAX: ClassVar[NaiveDateTime]
 
     def __lt__(self, other: NaiveDateTime) -> bool:
         if not isinstance(other, NaiveDateTime):
@@ -3806,6 +4037,9 @@ _match_datetimedelta = re.compile(
 _match_timedelta = re.compile(
     r"([-+]?)(\d{2,}):([0-5]\d):([0-5]\d(?:\.\d{1,6})?)"
 ).fullmatch
+_match_time = re.compile(
+    r"([0-2]\d):([0-5]\d):([0-5]\d)(?:\.(\d{1,6}))?"
+).fullmatch
 # Before Python 3.11, fromisoformat() is less capable
 if sys.version_info < (3, 11):  # pragma: no cover
 
@@ -3849,14 +4083,14 @@ else:
         return _fromisoformat(s.upper())
 
 
-UTCDateTime.min = UTCDateTime._from_py_unchecked(
+UTCDateTime.MIN = UTCDateTime._from_py_unchecked(
     _datetime.min.replace(tzinfo=_UTC)
 )
-UTCDateTime.max = UTCDateTime._from_py_unchecked(
+UTCDateTime.MAX = UTCDateTime._from_py_unchecked(
     _datetime.max.replace(tzinfo=_UTC)
 )
-NaiveDateTime.min = NaiveDateTime._from_py_unchecked(_datetime.min)
-NaiveDateTime.max = NaiveDateTime._from_py_unchecked(_datetime.max)
+NaiveDateTime.MIN = NaiveDateTime._from_py_unchecked(_datetime.min)
+NaiveDateTime.MAX = NaiveDateTime._from_py_unchecked(_datetime.max)
 Disambiguate = Literal["compatible", "earlier", "later", "raise"]
 Fold = Literal[0, 1]
 _as_fold: Callable[[Disambiguate], Fold] = {  # type: ignore[assignment]

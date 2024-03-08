@@ -306,8 +306,8 @@ def test_weakref():
 
 
 def test_min_max():
-    assert NaiveDateTime.min == NaiveDateTime(1, 1, 1)
-    assert NaiveDateTime.max == NaiveDateTime(
+    assert NaiveDateTime.MIN == NaiveDateTime(1, 1, 1)
+    assert NaiveDateTime.MAX == NaiveDateTime(
         9999, 12, 31, 23, 59, 59, 999_999
     )
 

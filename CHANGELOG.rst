@@ -60,6 +60,10 @@ A big release with the main feature being the addition of date/time deltas.
 
   **Rationale**: The new name is shorter and consistent with ``Ambiguous``.
 
+- Renamed ``min`` and ``max`` to ``MIN`` and ``MAX``.
+
+  **Rationale**: Consistency with other uppercase class constants
+
 **Improved**
 
 - Added a ``disambiguation="compatible"`` option that matches the behavior of
@@ -68,6 +72,7 @@ A big release with the main feature being the addition of date/time deltas.
 - Added ``sep="T" or " "`` option to ``canonical_format()``
 - ``OffsetDateTime`` constructor and ``as_offset()`` methods now accept
   integers as hour offsets.
+- Add ``Date`` and ``Time`` classes for working with dates and times separately.
 
 0.3.4 (2024-02-07)
 ------------------
