@@ -189,13 +189,16 @@ Roadmap
 
   - ✅ Datetime classes
   - ✅ Deltas
-  - 🚧 Date and time of day (separate from datetime)
-  - 🚧 Parsing and formatting
-  - ❓ Different calendar systems
+  - ✅ Date and time of day (separate from datetime)
+  - 🚧 Interval
+  - 🚧 Improved parsing and formatting
 
 - 🔒 **1.0**: API stability and backwards compatibility
 - ⚡️ **2.0**: Reimplement in Rust for performance
 - 🐍 **future**: Inspire a standard library improvement
+
+Not planned:
+- Different calendar systems
 
 FAQs
 ----
