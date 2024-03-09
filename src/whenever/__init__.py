@@ -44,7 +44,6 @@ from datetime import (
     time as _time,
     timedelta as _timedelta,
     timezone as _timezone,
-    tzinfo as _tzinfo,
 )
 from email.utils import format_datetime, parsedate_to_datetime
 from operator import attrgetter
