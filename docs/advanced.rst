@@ -8,8 +8,8 @@ Read the :ref:`overview <overview>` first if you haven't already.
 
 .. _durations:
 
-Deltas (durations)
-------------------
+Deltas
+------
 
 As we've seen :ref:`earlier <add-subtract-time>`, you can add and subtract
 time units from datetimes:
@@ -17,21 +17,21 @@ time units from datetimes:
 >>> dt.add(hours=5, minutes=30)
 
 However, sometimes you want to operate on these durations directly.
-For example, you might want to reuse a constant duration in multiple places,
+For example, you might want to reuse it in multiple places,
 add 5 hours to it, or double it, for example.
-For this, **whenever** provides a dedicated API.
-As with datetimes, it's designed to help you avoid common pitfalls.
+For this, **whenever** provides an API
+designed to help you avoid common pitfalls.
 
 Durations are created using the duration units provided.
 Here is a quick demo:
 
 >>> from whenever import years, months, days, hours, minutes
->>> # Precise time units create a TimeDelta
+>>> # Precise units create a TimeDelta
 >>> movie_runtime = hours(2) + minutes(9)
 TimeDelta(02:09:00)
 >>> movie_runtime.in_minutes()
 129.0
->>> movie_runtime / 1.2  # watch it at 1.2x speed
+>>> movie_runtime / 1.2  # what if we watch it at 1.2x speed?
 TimeDelta(01:47:30)
 ...
 >>> # Calendar units create a DateDelta
@@ -56,16 +56,16 @@ Types of deltas
 
 There are three duration types in **whenever**:
 
--  :class:`~whenever.TimeDelta`, created by precise units 
+-  :class:`~whenever.TimeDelta`, created by precise units
    :func:`~whenever.hours`, :func:`~whenever.minutes`, :func:`~whenever.seconds`,
    and :func:`~whenever.microseconds`.
    Their duration is always the same and independent of the calendar.
    Arithmetic on time units is straightforward.
-   It behaves similarly to the :class:`~datetime.timedelta` 
+   It behaves similarly to the :class:`~datetime.timedelta`
    of the standard library.
 
--  :class:`~whenever.DateDelta`, created by the calendar units 
-   :func:`~whenever.years`, :func:`~whenever.months`, :func:`~whenever.weeks`, 
+-  :class:`~whenever.DateDelta`, created by the calendar units
+   :func:`~whenever.years`, :func:`~whenever.months`, :func:`~whenever.weeks`,
    and :func:`~whenever.days`.
    They don't have a precise duration, as this depends on the context.
    For example, the number of days in a month varies, and a day may be
@@ -73,7 +73,7 @@ There are three duration types in **whenever**:
    This makes arithmetic on calendar units less intuitive.
 
 -  :class:`~whenever.DateTimeDelta`, created when you mix
-   time and calendar units. 
+   time and calendar units.
 
 This distinction determines which operations are supported:
 
@@ -97,7 +97,7 @@ This distinction determines which operations are supported:
 +------------------------------+-------------------+--------------------+--------------------+
 | comparison (``>, >=, <, <=``)| .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
 +------------------------------+-------------------+--------------------+--------------------+
-| normalization                | .. centered:: ✅  | .. centered:: ❌   | ⚠️ only the time   |
+| normalized                   | .. centered:: ✅  | .. centered:: ❌   | ⚠️ only the time   |
 |                              |                   |                    | part               |
 +------------------------------+-------------------+--------------------+--------------------+
 | equality based on            | total sum in      | individual         | equality of date   |
@@ -210,7 +210,7 @@ The local timezone is the timezone of the system running the code.
 It's often useful to deal with times in the local timezone, but it's also
 important to be aware that the local timezone can change.
 
-Instances of :class:`~whenever.LocalSystemDateTime` have the fixed offset 
+Instances of :class:`~whenever.LocalSystemDateTime` have the fixed offset
 of the system timezone at the time of initialization.
 The system timezone may change afterwards,
 but instances of this type will not reflect that change.
@@ -234,7 +234,7 @@ LocalSystemDateTime(2020-08-15 08:00:00-04:00)
 LocalSystemDateTime(2020-08-15 08:00:00-04:00)
 
 If you'd like to preserve the moment in time
-and calculate the new local time, simply call 
+and calculate the new local time, simply call
 :meth:`~whenever.AwareDateTime.as_local`.
 
 >>> # same moment, but now with the clock time in Amsterdam

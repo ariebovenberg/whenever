@@ -231,8 +231,6 @@ it may result in a net performance gain in real-world applications.
 
 It actually did start out as a Rust extension. But since the wrapping code
 is so simple, it didn't make much performance difference.
-Since it did make the code a lot more complex, a simple pure-Python implementation
-was preferred.
 Once the API is stable, a Rust implementation will be considered again.
 
 **Is this production-ready?**

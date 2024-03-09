@@ -384,8 +384,8 @@ You choose the disambiguation behavior you want with the ``disambiguate=`` argum
 | ``disambiguate`` | Behavior in case of ambiguity                   |
 +==================+=================================================+
 | ``"raise"``      | (default) Refuse to guess:                      |
-|                  | raise :exc:`~whenever.Ambiguous`                |
-|                  | or :exc:`~whenever.DoesntExist` exception.      |
+|                  | raise :exc:`~whenever.AmbiguousTime`            |
+|                  | or :exc:`~whenever.SkippedTime` exception.      |
 +------------------+-------------------------------------------------+
 | ``"earlier"``    | Choose the earlier of the two options           |
 +------------------+-------------------------------------------------+
@@ -411,7 +411,7 @@ You choose the disambiguation behavior you want with the ``disambiguate=`` argum
     >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris)
     Traceback (most recent call last):
       ...
-    whenever.Ambiguous: 2023-10-29 02:30:00 is ambiguous in timezone Europe/Paris
+    whenever.AmbiguousTime: 2023-10-29 02:30:00 is ambiguous in timezone Europe/Paris
 
     >>> # Ambiguous: explicitly choose the earlier option
     >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="earlier")
@@ -421,7 +421,7 @@ You choose the disambiguation behavior you want with the ``disambiguate=`` argum
     >>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris)
     Traceback (most recent call last):
       ...
-    whenever.DoesntExistInZone: 2023-03-26 02:30:00 doesn't exist in timezone Europe/Paris
+    whenever.SkippedTime: 2023-03-26 02:30:00 is skipped in timezone Europe/Paris
 
     >>> # Non-existent: extrapolate to 3:30am
     >>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguate="later")

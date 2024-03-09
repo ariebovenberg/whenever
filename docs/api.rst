@@ -80,7 +80,7 @@ Date and time components
 Exceptions
 ----------
 
-.. autoexception:: whenever.Ambiguous
-.. autoexception:: whenever.DoesntExist
+.. autoexception:: whenever.AmbiguousTime
+.. autoexception:: whenever.SkippedTime
 .. autoexception:: whenever.InvalidOffsetForZone
 .. autoexception:: whenever.InvalidFormat

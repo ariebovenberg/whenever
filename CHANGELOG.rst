@@ -46,17 +46,19 @@ A big release with the main feature being the addition of date/time deltas.
   a ``datetime`` internally.
 
 - Removed properties that simply delegated to the underlying ``datetime`` object:
-  ``tzinfo``, ``date``, ``time``, ``weekday``, and ``fold``.
+  ``tzinfo``, ``weekday``, and ``fold``. ``date`` and ``time`` now
+  return ``whenever.Date`` and ``whenever.Time`` objects.
 
   **Rationale**: Removing these properties makes it possible to create improved
-  versions in the future. If needed, these properties can be accessed from the
+  versions. If needed, these properties can be accessed from the
   underlying datetime object with ``.py_datetime()``.
 
 - Renamed ``.canonical_str()`` to ``.canonical_format()``.
 
   **Rationale**: A more descriptive name.
 
-- Renamed ``DoesntExistInZone`` to ``DoesntExist``.
+- Renamed ``DoesntExistInZone`` to ``SkippedTime``, ``Ambiguous`` to
+  ``AmbiguousTime``.
 
   **Rationale**: The new name is shorter and consistent with ``Ambiguous``.
 

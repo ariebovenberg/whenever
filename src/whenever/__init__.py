@@ -91,8 +91,8 @@ __all__ = [
     "minutes",
     "seconds",
     "microseconds",
-    "DoesntExist",
-    "Ambiguous",
+    "SkippedTime",
+    "AmbiguousTime",
     "InvalidOffsetForZone",
     "InvalidFormat",
 ]
@@ -2791,7 +2791,7 @@ class ZonedDateTime(AwareDateTime):
     >>> # ZoneInfoNotFoundError: no such timezone
     >>> ZonedDateTime(2024, 12, 8, hour=11, tz="invalid")
     >>>
-    >>> # DoesntExist: 2:15 AM does not exist on this day
+    >>> # SkippedTime: 2:15 AM does not exist on this day
     >>> ZonedDateTime(2023, 3, 26, 2, 15, tz="Europe/Amsterdam")
 
     Disambiguation
@@ -2803,8 +2803,8 @@ class ZonedDateTime(AwareDateTime):
     | ``disambiguate`` | Behavior in case of ambiguity                   |
     +==================+=================================================+
     | ``"raise"``      | (default) Refuse to guess:                      |
-    |                  | raise :exc:`~whenever.Ambiguous`                |
-    |                  | or :exc:`~whenever.DoesntExist` exception.      |
+    |                  | raise :exc:`~whenever.AmbiguousTime`            |
+    |                  | or :exc:`~whenever.SkippedTime` exception.      |
     +------------------+-------------------------------------------------+
     | ``"earlier"``    | Choose the earlier of the two options           |
     +------------------+-------------------------------------------------+
@@ -2913,7 +2913,7 @@ class ZonedDateTime(AwareDateTime):
                 f"got datetime with tzinfo={d.tzinfo!r}"
             )
         if not _exists_in_tz(d):
-            raise DoesntExist.for_timezone(d, d.tzinfo)
+            raise SkippedTime.for_timezone(d, d.tzinfo)
         return cls._from_py_unchecked(d)
 
     def with_date(
@@ -3216,8 +3216,8 @@ class LocalSystemDateTime(AwareDateTime):
     | ``disambiguate`` | Behavior in case of ambiguity                   |
     +==================+=================================================+
     | ``"raise"``      | (default) Refuse to guess:                      |
-    |                  | raise :exc:`~whenever.Ambiguous`                |
-    |                  | or :exc:`~whenever.DoesntExist` exception.      |
+    |                  | raise :exc:`~whenever.AmbiguousTime`            |
+    |                  | or :exc:`~whenever.SkippedTime` exception.      |
     +------------------+-------------------------------------------------+
     | ``"earlier"``    | Choose the earlier of the two options           |
     +------------------+-------------------------------------------------+
@@ -3911,37 +3911,35 @@ def _unpkl_naive(*args) -> NaiveDateTime:
     return NaiveDateTime(*args)
 
 
-class Ambiguous(Exception):
+class AmbiguousTime(Exception):
     """A datetime is unexpectedly ambiguous"""
 
     @staticmethod
-    def for_timezone(d: _datetime, tz: _tzinfo) -> Ambiguous:
-        return Ambiguous(
-            f"{d.replace(tzinfo=None)} is ambiguous "
-            f"in timezone {tz.key}"  # type:ignore[attr-defined]
+    def for_timezone(d: _datetime, tz: ZoneInfo) -> AmbiguousTime:
+        return AmbiguousTime(
+            f"{d.replace(tzinfo=None)} is ambiguous " f"in timezone {tz.key}"
         )
 
     @staticmethod
-    def for_system_timezone(d: _datetime) -> Ambiguous:
-        return Ambiguous(
+    def for_system_timezone(d: _datetime) -> AmbiguousTime:
+        return AmbiguousTime(
             f"{d.replace(tzinfo=None)} is ambiguous in the system timezone"
         )
 
 
-class DoesntExist(Exception):
-    """A datetime doesnt exist in a timezone, e.g. because of DST"""
+class SkippedTime(Exception):
+    """A datetime is skipped in a timezone, e.g. because of DST"""
 
     @staticmethod
-    def for_timezone(d: _datetime, tz: _tzinfo) -> DoesntExist:
-        return DoesntExist(
-            f"{d.replace(tzinfo=None)} doesn't exist "
-            f"in timezone {tz.key}"  # type:ignore[attr-defined]
+    def for_timezone(d: _datetime, tz: ZoneInfo) -> SkippedTime:
+        return SkippedTime(
+            f"{d.replace(tzinfo=None)} is skipped " f"in timezone {tz.key}"
         )
 
     @staticmethod
-    def for_system_timezone(d: _datetime) -> DoesntExist:
-        return DoesntExist(
-            f"{d.replace(tzinfo=None)} doesn't exist in the system timezone"
+    def for_system_timezone(d: _datetime) -> SkippedTime:
+        return SkippedTime(
+            f"{d.replace(tzinfo=None)} is skipped in the system timezone"
         )
 
 
@@ -3960,7 +3958,7 @@ def _resolve_ambuguity(
     # Non-existent times: they don't survive a UTC roundtrip
     if dt_utc.astimezone(zone) != dt:
         if disambiguate == "raise":
-            raise DoesntExist.for_timezone(dt, zone)
+            raise SkippedTime.for_timezone(dt, zone)
         elif disambiguate != "compatible":  # i.e. "earlier" or "later"
             # In gaps, the relationship between
             # fold and earlier/later is reversed
@@ -3969,17 +3967,15 @@ def _resolve_ambuguity(
         dt = dt.astimezone(_UTC).astimezone(zone)
     # Ambiguous times: they're never equal to other timezones
     elif disambiguate == "raise" and dt_utc != dt:
-        raise Ambiguous.for_timezone(dt, zone)
+        raise AmbiguousTime.for_timezone(dt, zone)
     return dt
 
 
 # Whether the fold of a local time needs to be flipped in a gap
 # was changed (fixed) in Python 3.12. See cpython/issues/83861
-_requires_flip: Callable[[Disambiguate], bool]
-if sys.version_info > (3, 12):
-    _requires_flip = "compatible".__ne__
-else:  # pragma: no cover
-    _requires_flip = "compatible".__eq__
+_requires_flip: Callable[[Disambiguate], bool] = (
+    "compatible".__ne__ if sys.version_info > (3, 12) else "compatible".__eq__
+)
 
 
 def _resolve_local_ambiguity(
@@ -3989,7 +3985,7 @@ def _resolve_local_ambiguity(
     # Non-existent times: they don't survive a UTC roundtrip
     if norm.replace(tzinfo=None) != dt:
         if disambiguate == "raise":
-            raise DoesntExist.for_system_timezone(dt)
+            raise SkippedTime.for_system_timezone(dt)
         elif _requires_flip(disambiguate):
             dt = dt.replace(fold=not dt.fold)
         # perform the normalisation, shifting away from non-existent times
@@ -3998,7 +3994,7 @@ def _resolve_local_ambiguity(
     elif disambiguate == "raise" and norm != dt.replace(fold=1).astimezone(
         _UTC
     ):
-        raise Ambiguous.for_system_timezone(dt)
+        raise AmbiguousTime.for_system_timezone(dt)
     return norm
 
 
