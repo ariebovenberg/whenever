@@ -502,6 +502,29 @@ class TestSubtract:
             32 - p  # type: ignore[operator]
 
 
+def test_multiplication():
+    p = DateTimeDelta(
+        years=1,
+        months=2,
+        weeks=3,
+        days=4,
+        hours=5,
+        minutes=6,
+        seconds=7,
+        microseconds=300_000,
+    )
+    assert p * 3 == DateTimeDelta(
+        years=3,
+        months=6,
+        weeks=9,
+        days=12,
+        hours=15,
+        minutes=18,
+        seconds=21,
+        microseconds=900_000,
+    )
+
+
 def test_negate():
     p = DateTimeDelta(
         years=1,

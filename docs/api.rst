@@ -42,6 +42,16 @@ Concrete classes
 Deltas
 ------
 
+.. autofunction:: whenever.years
+.. autofunction:: whenever.months
+.. autofunction:: whenever.weeks
+.. autofunction:: whenever.days
+
+.. autofunction:: whenever.hours
+.. autofunction:: whenever.minutes
+.. autofunction:: whenever.seconds
+.. autofunction:: whenever.microseconds
+
 .. autoclass:: whenever.TimeDelta
    :members:
    :undoc-members: hours, minutes, seconds, microseconds
@@ -53,18 +63,9 @@ Deltas
    :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __mul__, __bool__
 
 .. autoclass:: whenever.DateTimeDelta
+   :undoc-members: date_part, time_part
    :members:
-   :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __mul__, __bool__
-
-.. autofunction:: whenever.years
-.. autofunction:: whenever.months
-.. autofunction:: whenever.weeks
-.. autofunction:: whenever.days
-
-.. autofunction:: whenever.hours
-.. autofunction:: whenever.minutes
-.. autofunction:: whenever.seconds
-.. autofunction:: whenever.microseconds
+   :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __bool__, __mul__
 
 Date and time components
 ------------------------

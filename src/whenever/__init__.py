@@ -1316,6 +1316,7 @@ class DateTimeDelta(_ImmutableBase):
         )
 
     ZERO: ClassVar[DateTimeDelta]
+    """A delta of zero"""
 
     @property
     def date_part(self) -> DateDelta:
@@ -1509,6 +1510,22 @@ class DateTimeDelta(_ImmutableBase):
             new._time_part = -self._time_part
         else:
             return NotImplemented
+        return new
+
+    def __mul__(self, other: int) -> DateTimeDelta:
+        """Multiply by a number
+
+        Example
+        -------
+
+        >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
+        >>> d * 2
+        DateTimeDelta(P2W22DT8H)
+
+        """
+        new = _object_new(DateTimeDelta)
+        new._date_part = self._date_part * other
+        new._time_part = self._time_part * other
         return new
 
     def __neg__(self) -> DateTimeDelta:
