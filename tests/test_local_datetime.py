@@ -10,12 +10,12 @@ from hypothesis.strategies import text
 from pytest import approx
 
 from whenever import (
-    Ambiguous,
-    DoesntExist,
+    AmbiguousTime,
     InvalidFormat,
     LocalSystemDateTime,
     NaiveDateTime,
     OffsetDateTime,
+    SkippedTime,
     UTCDateTime,
     ZonedDateTime,
     days,
@@ -74,12 +74,12 @@ class TestInit:
         assert d < LocalSystemDateTime(**kwargs, disambiguate="later")
 
         with pytest.raises(
-            Ambiguous,
+            AmbiguousTime,
             match="2023-10-29 02:15:00 is ambiguous in the system timezone",
         ):
             LocalSystemDateTime(2023, 10, 29, 2, 15, disambiguate="raise")
 
-        with pytest.raises(Ambiguous):
+        with pytest.raises(AmbiguousTime):
             LocalSystemDateTime(2023, 10, 29, 2, 15)
 
     @local_ams_tz()
@@ -92,13 +92,13 @@ class TestInit:
             "minute": 30,
         }
         with pytest.raises(
-            DoesntExist,
-            match="2023-03-26 02:30:00 doesn't exist in the system timezone",
+            SkippedTime,
+            match="2023-03-26 02:30:00 is skipped in the system timezone",
         ):
             LocalSystemDateTime(**kwargs)
 
         with pytest.raises(
-            DoesntExist,
+            SkippedTime,
         ):
             LocalSystemDateTime(**kwargs, disambiguate="raise")
 
@@ -662,12 +662,12 @@ class TestReplace:
             2023, 10, 29, 2, 15, 30, disambiguate="earlier"
         )
         with pytest.raises(
-            Ambiguous,
+            AmbiguousTime,
             match="2023-10-29 02:15:30 is ambiguous in the system timezone",
         ):
             d.replace(disambiguate="raise")
         with pytest.raises(
-            Ambiguous,
+            AmbiguousTime,
             match="2023-10-29 02:15:30 is ambiguous in the system timezone",
         ):
             d.replace()
@@ -680,8 +680,8 @@ class TestReplace:
     def test_nonexistent(self):
         d = LocalSystemDateTime(2023, 3, 26, 1, 15, 30)
         with pytest.raises(
-            DoesntExist,
-            match="2023-03-26 02:15:30 doesn't exist in the system timezone",
+            SkippedTime,
+            match="2023-03-26 02:15:30 is skipped in the system timezone",
         ):
             d.replace(hour=2)
 

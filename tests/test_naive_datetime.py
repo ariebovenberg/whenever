@@ -7,13 +7,13 @@ from hypothesis import given
 from hypothesis.strategies import text
 
 from whenever import (
-    Ambiguous,
+    AmbiguousTime,
     Date,
-    DoesntExist,
     InvalidFormat,
     LocalSystemDateTime,
     NaiveDateTime,
     OffsetDateTime,
+    SkippedTime,
     UTCDateTime,
     ZonedDateTime,
     days,
@@ -80,7 +80,7 @@ class TestAssumeZoned:
     def test_ambiguous(self):
         d = NaiveDateTime(2023, 10, 29, 2, 15)
 
-        with pytest.raises(Ambiguous, match="02:15.*Europe/Amsterdam"):
+        with pytest.raises(AmbiguousTime, match="02:15.*Europe/Amsterdam"):
             d.assume_zoned("Europe/Amsterdam")
 
         assert d.assume_zoned(
@@ -97,10 +97,10 @@ class TestAssumeZoned:
     def test_nonexistent(self):
         d = NaiveDateTime(2023, 3, 26, 2, 15)
 
-        with pytest.raises(DoesntExist, match="02:15.*Europe/Amsterdam"):
+        with pytest.raises(SkippedTime, match="02:15.*Europe/Amsterdam"):
             d.assume_zoned("Europe/Amsterdam")
 
-        with pytest.raises(DoesntExist, match="02:15.*Europe/Amsterdam"):
+        with pytest.raises(SkippedTime, match="02:15.*Europe/Amsterdam"):
             d.assume_zoned("Europe/Amsterdam", disambiguate="raise")
 
         assert d.assume_zoned(
@@ -121,10 +121,10 @@ class TestAssumeLocal:
     def test_ambiguous(self):
         d = NaiveDateTime(2023, 10, 29, 2, 15)
 
-        with pytest.raises(Ambiguous, match="02:15.*system"):
+        with pytest.raises(AmbiguousTime, match="02:15.*system"):
             d.assume_local()
 
-        with pytest.raises(Ambiguous, match="02:15.*system"):
+        with pytest.raises(AmbiguousTime, match="02:15.*system"):
             d.assume_local(disambiguate="raise")
 
         assert d.assume_local(disambiguate="earlier") == LocalSystemDateTime(
@@ -141,10 +141,10 @@ class TestAssumeLocal:
     def test_nonexistent(self):
         d = NaiveDateTime(2023, 3, 26, 2, 15)
 
-        with pytest.raises(DoesntExist, match="02:15.*system"):
+        with pytest.raises(SkippedTime, match="02:15.*system"):
             d.assume_local()
 
-        with pytest.raises(DoesntExist, match="02:15.*system"):
+        with pytest.raises(SkippedTime, match="02:15.*system"):
             d.assume_local(disambiguate="raise")
 
         assert d.assume_local(disambiguate="earlier") == LocalSystemDateTime(

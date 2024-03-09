@@ -10,15 +10,15 @@ from hypothesis.strategies import text
 from pytest import approx
 
 from whenever import (
-    Ambiguous,
+    AmbiguousTime,
     AwareDateTime,
     Date,
-    DoesntExist,
     InvalidFormat,
     InvalidOffsetForZone,
     LocalSystemDateTime,
     NaiveDateTime,
     OffsetDateTime,
+    SkippedTime,
     UTCDateTime,
     ZonedDateTime,
     days,
@@ -67,13 +67,13 @@ class TestInit:
         )
 
         with pytest.raises(
-            Ambiguous,
+            AmbiguousTime,
             match="2023-10-29 02:15:30 is ambiguous in timezone Europe/Amsterdam",
         ):
             ZonedDateTime(**kwargs)
 
         with pytest.raises(
-            Ambiguous,
+            AmbiguousTime,
             match="2023-10-29 02:15:30 is ambiguous in timezone Europe/Amsterdam",
         ):
             ZonedDateTime(**kwargs, disambiguate="raise")
@@ -122,14 +122,14 @@ class TestInit:
             tz="Europe/Amsterdam",
         )
         with pytest.raises(
-            DoesntExist,
-            match="2023-03-26 02:15:30 doesn't exist in timezone Europe/Amsterdam",
+            SkippedTime,
+            match="2023-03-26 02:15:30 is skipped in timezone Europe/Amsterdam",
         ):
             ZonedDateTime(**kwargs)
 
         with pytest.raises(
-            DoesntExist,
-            match="2023-03-26 02:15:30 doesn't exist in timezone Europe/Amsterdam",
+            SkippedTime,
+            match="2023-03-26 02:15:30 is skipped in timezone Europe/Amsterdam",
         ):
             ZonedDateTime(**kwargs, disambiguate="raise")
 
@@ -167,7 +167,7 @@ class TestWithDate:
     def test_ambiguous(self):
         d = ZonedDateTime(2020, 1, 1, 2, 15, 30, tz="Europe/Amsterdam")
         date = Date(2023, 10, 29)
-        with pytest.raises(Ambiguous):
+        with pytest.raises(AmbiguousTime):
             assert d.with_date(date)
 
         assert d.with_date(date, disambiguate="earlier") == d.replace(
@@ -183,7 +183,7 @@ class TestWithDate:
     def test_nonexistent(self):
         d = ZonedDateTime(2020, 1, 1, 2, 15, 30, tz="Europe/Amsterdam")
         date = Date(2023, 3, 26)
-        with pytest.raises(DoesntExist):
+        with pytest.raises(SkippedTime):
             assert d.with_date(date)
 
         assert d.with_date(date, disambiguate="earlier") == d.replace(
@@ -793,8 +793,8 @@ def test_from_py_datetime():
         ZonedDateTime.from_py_datetime(d2)
 
     with pytest.raises(
-        DoesntExist,
-        match="2023-03-26 02:15:30 doesn't exist in timezone Europe/Amsterdam",
+        SkippedTime,
+        match="2023-03-26 02:15:30 is skipped in timezone Europe/Amsterdam",
     ):
         ZonedDateTime.from_py_datetime(
             py_datetime(
@@ -920,7 +920,7 @@ class TestReplace:
             disambiguate="earlier",
         )
         with pytest.raises(
-            Ambiguous,
+            AmbiguousTime,
             match="2023-10-29 02:15:30 is ambiguous in timezone Europe/Amsterdam",
         ):
             d.replace(disambiguate="raise")
@@ -943,8 +943,8 @@ class TestReplace:
     def test_nonexistent(self):
         d = ZonedDateTime(2023, 3, 26, 1, 15, 30, tz="Europe/Amsterdam")
         with pytest.raises(
-            DoesntExist,
-            match="2023-03-26 02:15:30 doesn't exist in timezone Europe/Amsterdam",
+            SkippedTime,
+            match="2023-03-26 02:15:30 is skipped in timezone Europe/Amsterdam",
         ):
             d.replace(hour=2)
 
