@@ -1,10 +1,12 @@
 🚀 Changelog
 ============
 
-0.4.0rc0 (2024-02-??)
----------------------
+0.4.0 (2024-03-??)
+------------------
 
 A big release with the main feature being the addition of date/time deltas.
+I've also tried to bundle as many small breaking changes as possible into
+this release, to avoid having to do them in the future.
 
 **Breaking changes**
 

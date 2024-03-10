@@ -35,6 +35,13 @@ There's no way to be sure...
 **Whenever** is a datetime library designed from the ground up to enforce correctness.
 Mistakes become red squiggles in your IDE, instead of bugs in production.
 
+`📖 Docs <https://whenever.readthedocs.io/en/latest/overview.html>`_ |
+`🐍 PyPI <https://pypi.org/project/whenever/>`_ |
+`🐙 GitHub <https://github.com/ariebovenberg/whenever>`_ |
+`🚀 Changelog <https://whenever.readthedocs.io/en/latest/changelog.html>`_ |
+`💬 FAQ <https://whenever.readthedocs.io/en/latest/faq.html>`_ |
+🗺️ `Roadmap`_
+
 Benefits
 --------
 
@@ -182,6 +189,8 @@ This library is a lot more explicit about the different types of datetimes,
 addressing issue of naive/aware mixing with UTC, local, and zoned datetime subclasses.
 It doesn't address the other datetime pitfalls though.
 
+.. _roadmap:
+
 Roadmap
 -------
 
@@ -199,47 +208,6 @@ Roadmap
 
 Not planned:
 - Different calendar systems
-
-FAQs
-----
-
-**Why isn't it a drop-in replacement for the standard library?**
-
-Fixing the issues with the standard library requires a different API.
-Keeping the same API would mean that the same issues would remain.
-
-**Why not inherit from datetime?**
-
-Not only would this keep most of the issues with the standard library,
-it would result in brittle code: many popular libraries expect ``datetime`` *exactly*,
-and `don't work <https://github.com/sdispater/pendulum/issues/289#issue-371964426>`_
-with `subclasses <https://github.com/sdispater/pendulum/issues/131#issue-241088629>`_.
-
-**Why so many classes?**
-
-The different classes correspond to different ways of representing time.
-By having separate classes, you can be more explicit about what you mean,
-and the API can better enforce correctness.
-
-**What is the performance impact?**
-
-Because whenever wraps the standard library, head-to-head performance will always be slightly slower.
-However, because **whenever** removes the need for many runtime checks,
-it may result in a net performance gain in real-world applications.
-
-**Why not a C or Rust extension?**
-
-It actually did start out as a Rust extension. But since the wrapping code
-is so simple, it didn't make much performance difference.
-Once the API is stable, a Rust implementation will be considered again.
-
-**Is this production-ready?**
-
-The core functionality is complete and stable and the goal is to reach 1.0 soon.
-The API may change slightly until then.
-Of course, it's still a relatively young project, so the stability relies
-on you to try it out and report any issues!
-
 
 Versioning and compatibility policy
 -----------------------------------

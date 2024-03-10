@@ -1,5 +1,5 @@
-💬 FAQs
-=======
+💬 FAQ
+======
 
 .. _faq-why-utc:
 
@@ -112,7 +112,7 @@ in Denver, the correct result would
 actually be ``02:00:00-06:00`` — an hour earlier on the clock!
 
 For whenever, preventing a damaging pitfall weighs heavier than supporting
-a rare, theoretical, usage pattern.
+a more theoretical usage pattern.
 This is consisent with other libraries that emphasize correctness, such as NodaTime.
 If you do need to perform arithmetic on a fixed-offset datetime,
 you should make the location explicit by converting it to a
@@ -134,3 +134,55 @@ OffsetDateTime(2024-11-03 03:00:00-07:00)
    >>> a = OffsetDateTime(2024, 11, 3, hour=1, offset=-7)
    >>> a - OffsetDateTime(2024, 11, 3, hour=3, offset=4)
    TimeDelta(09:00:00)
+
+.. _faq-leap-seconds:
+
+Are leap seconds supported?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Leap seconds are unsupported.
+Taking leap seconds into account is a complex and niche feature,
+which is not needed for the vast majority of applications.
+This decision is consistent with other modern libraries
+(e.g. NodaTime, Temporal) and standards (RFC 5545, Unix time) which
+do not support leap seconds.
+
+Nonetheless, these improvements are possible in the future:
+
+- Allow parsing of leap seconds, e.g. ``23:59:60``.
+- Allow representation of leap seconds (similar to rust Chrono)
+
+.. _faq-performance:
+
+How is the performance?
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Because whenever currently wraps the standard library,
+head-to-head performance will be slightly slower.
+However, because **whenever** removes the need for many runtime checks,
+it may result in a net performance gain in real-world applications.
+
+A Rust extension is planned once the API stabilizes,
+which will provide a significant performance boost for certain operations.
+
+.. _faq-why-not-dropin:
+
+Why isn't it a drop-in replacement for the standard library?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Fixing the issues with the standard library requires a different API.
+Keeping the same API would mean that the same issues would remain.
+Also, inheriting from the standard library would result in brittle code:
+many popular libraries expect ``datetime`` *exactly*,
+and `don't work <https://github.com/sdispater/pendulum/issues/289#issue-371964426>`_
+with `subclasses <https://github.com/sdispater/pendulum/issues/131#issue-241088629>`_.
+
+.. _faq-production-ready:
+
+Is it production-ready?
+~~~~~~~~~~~~~~~~~~~~~~~
+
+The core functionality is complete and mostly stable.
+The goal is to reach 1.0 soon, but the API may change until then.
+Of course, it's still a relatively young project, so the stability relies
+on you to try it out and report any issues!

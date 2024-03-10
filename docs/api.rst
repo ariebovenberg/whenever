@@ -5,11 +5,14 @@
 
 All classes are immutable.
 
-Datetime classes
-----------------
+Datetimes
+---------
 
 Base classes
 ~~~~~~~~~~~~
+
+The following base classes encapsulate common behavior.
+They are not meant to be used directly.
 
 .. autoclass:: whenever.DateTime
    :members:
