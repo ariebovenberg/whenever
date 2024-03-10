@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "whenever"
-version = "0.4.0rc0"
+version = "0.4.0"
 description = "Strict, predictable, and typed datetimes"
 authors = ["Arie Bovenberg <a.c.bovenberg@gmail.com>"]
 license = "MIT"

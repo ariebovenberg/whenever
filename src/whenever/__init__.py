@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.4.0rc0"
+__version__ = "0.4.0"
 
 import re
 import sys
@@ -1627,6 +1627,12 @@ class DateTime(_ImmutableBase, ABC):
         >>> d = UTCDateTime(2021, 1, 2, 3, 4, 5)
         >>> d.date()
         Date(2021-01-02)
+
+        To perform the inverse, use :meth:`Date.at` and a method
+        like :meth:`~NaiveDateTime.assume_utc` or
+        :meth:`~NaiveDateTime.assume_zoned`:
+
+        >>> date.at(time).assume_zoned("Europe/London")
 
         """
         return Date.from_py_date(self._py_dt.date())
