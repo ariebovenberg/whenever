@@ -277,7 +277,7 @@ class TestComparison:
     def test_offset(self):
         d = UTCDateTime(2020, 8, 15, 12, 30)
 
-        offset_eq = d.as_offset(hours(4))
+        offset_eq = d.as_offset(4)
         offset_gt = offset_eq.replace(minute=31)
         offset_lt = offset_eq.replace(minute=29)
         assert d >= offset_eq
@@ -554,7 +554,7 @@ def test_to_offset():
     d = UTCDateTime(2020, 8, 15, 20)
     assert d.as_offset().exact_eq(OffsetDateTime(2020, 8, 15, 20, offset=0))
     assert d.as_offset(hours(3)).exact_eq(
-        OffsetDateTime(2020, 8, 15, 23, offset=hours(3))
+        OffsetDateTime(2020, 8, 15, 23, offset=3)
     )
     assert d.as_offset(-3).exact_eq(OffsetDateTime(2020, 8, 15, 17, offset=-3))
 

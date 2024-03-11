@@ -2271,13 +2271,7 @@ class UTCDateTime(_AwareDateTime):
         return OffsetDateTime._from_py_unchecked(
             self._py_dt
             if offset is None
-            else self._py_dt.astimezone(
-                _timezone(
-                    _timedelta(hours=offset)
-                    if isinstance(offset, int)
-                    else offset.py_timedelta()
-                )
-            )
+            else self._py_dt.astimezone(_load_offset(offset))
         )
 
     @classmethod
@@ -2479,19 +2473,13 @@ class OffsetDateTime(_AwareDateTime):
             minute,
             second,
             microsecond,
-            _timezone(
-                _timedelta(hours=offset)
-                if isinstance(offset, int)
-                else offset.py_timedelta()
-            ),
+            _load_offset(offset),
         )
 
     @classmethod
-    def now(cls, offset: TimeDelta) -> OffsetDateTime:
+    def now(cls, offset: int | TimeDelta) -> OffsetDateTime:
         """Create an instance at the current time with the given offset"""
-        return cls._from_py_unchecked(
-            _datetime.now(_timezone(offset.py_timedelta()))
-        )
+        return cls._from_py_unchecked(_datetime.now(_load_offset(offset)))
 
     def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
         return self._py_dt.isoformat(sep)
@@ -2503,7 +2491,9 @@ class OffsetDateTime(_AwareDateTime):
         return cls._from_py_unchecked(_fromisoformat(s))
 
     @classmethod
-    def from_timestamp(cls, i: float, /, offset: TimeDelta) -> OffsetDateTime:
+    def from_timestamp(
+        cls, i: float, /, offset: int | TimeDelta
+    ) -> OffsetDateTime:
         """Create a OffsetDateTime from a UNIX timestamp.
         The inverse of :meth:`~_AwareDateTime.timestamp`.
 
@@ -2512,14 +2502,12 @@ class OffsetDateTime(_AwareDateTime):
 
         >>> OffsetDateTime.from_timestamp(0, offset=hours(3))
         OffsetDateTime(1970-01-01 03:00:00+03:00)
-        >>>d = OffsetDateTime.from_timestamp(1_123_000_000.45, offset=hours(-2))
+        >>> d = OffsetDateTime.from_timestamp(1_123_000_000.45, offset=-2)
         OffsetDateTime(2004-08-02 14:26:40.45-02:00)
         >>> OffsetDateTime.from_timestamp(d.timestamp(), d.offset) == d
         True
         """
-        return cls._from_py_unchecked(
-            _fromtimestamp(i, _timezone(offset.py_timedelta()))
-        )
+        return cls._from_py_unchecked(_fromtimestamp(i, _load_offset(offset)))
 
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> OffsetDateTime:
@@ -2543,7 +2531,7 @@ class OffsetDateTime(_AwareDateTime):
             minute: int | NOT_SET = NOT_SET(),
             second: int | NOT_SET = NOT_SET(),
             microsecond: int | NOT_SET = NOT_SET(),
-            offset: TimeDelta | NOT_SET = NOT_SET(),
+            offset: int | TimeDelta | NOT_SET = NOT_SET(),
         ) -> OffsetDateTime: ...
 
     else:
@@ -2552,9 +2540,7 @@ class OffsetDateTime(_AwareDateTime):
             if not _no_tzinfo_or_fold(kwargs):
                 raise TypeError("tzinfo and fold are not allowed arguments")
             try:
-                kwargs["tzinfo"] = _timezone(
-                    kwargs.pop("offset").py_timedelta()
-                )
+                kwargs["tzinfo"] = _load_offset(kwargs.pop("offset"))
             except KeyError:
                 pass
             return self._from_py_unchecked(self._py_dt.replace(**kwargs))
@@ -2631,13 +2617,7 @@ class OffsetDateTime(_AwareDateTime):
             self
             if offset is None
             else self._from_py_unchecked(
-                self._py_dt.astimezone(
-                    _timezone(
-                        _timedelta(hours=offset)
-                        if isinstance(offset, int)
-                        else offset.py_timedelta()
-                    )
-                )
+                self._py_dt.astimezone(_load_offset(offset))
             )
         )
 
@@ -3135,11 +3115,7 @@ class ZonedDateTime(_AwareDateTime):
                 # mypy doesn't know that offset is never None
                 _timezone(self._py_dt.utcoffset())  # type: ignore[arg-type]
                 if offset is None
-                else _timezone(
-                    _timedelta(hours=offset)
-                    if isinstance(offset, int)
-                    else offset.py_timedelta()
-                )
+                else _load_offset(offset)
             )
         )
 
@@ -3514,13 +3490,7 @@ class LocalSystemDateTime(_AwareDateTime):
         return OffsetDateTime._from_py_unchecked(
             self._py_dt
             if offset is None
-            else self._py_dt.astimezone(
-                _timezone(
-                    _timedelta(hours=offset)
-                    if isinstance(offset, int)
-                    else offset.py_timedelta()
-                )
-            )
+            else self._py_dt.astimezone(_load_offset(offset))
         )
 
     def as_zoned(self, tz: str, /) -> ZonedDateTime:
@@ -4005,6 +3975,14 @@ def _resolve_local_ambiguity(
 def _exists_in_tz(d: _datetime) -> bool:
     # non-existent datetimes don't survive a round-trip to UTC
     return d.astimezone(_UTC).astimezone(d.tzinfo) == d
+
+
+def _load_offset(offset: int | TimeDelta, /) -> _timezone:
+    return _timezone(
+        _timedelta(hours=offset)
+        if isinstance(offset, int)
+        else offset.py_timedelta()
+    )
 
 
 # Helpers that pre-compute/lookup as much as possible

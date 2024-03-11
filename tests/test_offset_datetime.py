@@ -303,6 +303,9 @@ def test_from_timestamp():
     assert OffsetDateTime.from_timestamp(0, offset=hours(3)).exact_eq(
         OffsetDateTime(1970, 1, 1, 3, offset=3)
     )
+    assert OffsetDateTime.from_timestamp(0, offset=3).exact_eq(
+        OffsetDateTime(1970, 1, 1, 3, offset=3)
+    )
     assert OffsetDateTime.from_timestamp(
         1_597_493_310, offset=hours(-2)
     ).exact_eq(OffsetDateTime(2020, 8, 15, 10, 8, 30, offset=-2))
@@ -465,15 +468,23 @@ def test_from_py_datetime():
         OffsetDateTime.from_py_datetime(d2)
 
 
-def test_now():
-    now = OffsetDateTime.now(hours(5))
-    assert now.offset == hours(5)
-    py_now = py_datetime.now(timezone.utc)
-    assert py_now - now.py_datetime() < timedelta(seconds=1)
+class TestNow:
+
+    def test_timedelta(self):
+        now = OffsetDateTime.now(hours(5))
+        assert now.offset == hours(5)
+        py_now = py_datetime.now(timezone.utc)
+        assert py_now - now.py_datetime() < timedelta(seconds=1)
+
+    def test_int(self):
+        now = OffsetDateTime.now(-5)
+        assert now.offset == hours(-5)
+        py_now = py_datetime.now(timezone.utc)
+        assert py_now - now.py_datetime() < timedelta(seconds=1)
 
 
 def test_weakref():
-    d = OffsetDateTime(2020, 8, 15, offset=hours(5))
+    d = OffsetDateTime(2020, 8, 15, offset=5)
     ref = weakref.ref(d)
     assert ref() == d
 
@@ -481,28 +492,31 @@ def test_weakref():
 def test_replace():
     d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=5)
     assert d.replace(year=2021).exact_eq(
-        OffsetDateTime(2021, 8, 15, 23, 12, 9, 987_654, offset=hours(5))
+        OffsetDateTime(2021, 8, 15, 23, 12, 9, 987_654, offset=5)
     )
     assert d.replace(month=9).exact_eq(
-        OffsetDateTime(2020, 9, 15, 23, 12, 9, 987_654, offset=hours(5))
+        OffsetDateTime(2020, 9, 15, 23, 12, 9, 987_654, offset=5)
     )
     assert d.replace(day=16).exact_eq(
-        OffsetDateTime(2020, 8, 16, 23, 12, 9, 987_654, offset=hours(5))
+        OffsetDateTime(2020, 8, 16, 23, 12, 9, 987_654, offset=5)
     )
     assert d.replace(hour=0).exact_eq(
-        OffsetDateTime(2020, 8, 15, 0, 12, 9, 987_654, offset=hours(5))
+        OffsetDateTime(2020, 8, 15, 0, 12, 9, 987_654, offset=5)
     )
     assert d.replace(minute=0).exact_eq(
-        OffsetDateTime(2020, 8, 15, 23, 0, 9, 987_654, offset=hours(5))
+        OffsetDateTime(2020, 8, 15, 23, 0, 9, 987_654, offset=5)
     )
     assert d.replace(second=0).exact_eq(
-        OffsetDateTime(2020, 8, 15, 23, 12, 0, 987_654, offset=hours(5))
+        OffsetDateTime(2020, 8, 15, 23, 12, 0, 987_654, offset=5)
     )
     assert d.replace(microsecond=0).exact_eq(
-        OffsetDateTime(2020, 8, 15, 23, 12, 9, 0, offset=hours(5))
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, 0, offset=5)
     )
     assert d.replace(offset=hours(6)).exact_eq(
-        OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=hours(6))
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=6)
+    )
+    assert d.replace(offset=-6).exact_eq(
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=-6)
     )
 
     with pytest.raises(TypeError, match="tzinfo"):
@@ -552,7 +566,7 @@ class TestSubtract:
 
     @local_ams_tz()
     def test_local(self):
-        d = OffsetDateTime(2023, 10, 29, 6, offset=hours(2))
+        d = OffsetDateTime(2023, 10, 29, 6, offset=2)
         assert d - LocalSystemDateTime(
             2023, 10, 29, 3, disambiguate="later"
         ) == hours(2)
