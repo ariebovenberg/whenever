@@ -20,7 +20,6 @@ from whenever import (
     SkippedTime,
     UTCDateTime,
     ZonedDateTime,
-    _AwareDateTime,
     days,
     hours,
     months,

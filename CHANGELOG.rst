@@ -36,12 +36,12 @@ this release, to avoid having to do them in the future.
 
   **Rationale**: It's shorter, and more explicit about assumptions.
 
-- Rename ``ZonedDateTime.disambiguated()`` to ``.is_ambiguous()``.
+- Renamed ``ZonedDateTime.disambiguated()`` to ``.is_ambiguous()``.
 
   **Rationale**: The new name distinguishes it from the ``disambiguate=``
   argument, which also affects non-existent times.
 
-- Replace ``.py`` property with ``.py_datetime()`` method.
+- Replaced ``.py`` property with ``.py_datetime()`` method.
 
   **Rationale**: Although it currently works fine as a property, this
   may be changed in the future if the library no longer contains
@@ -74,9 +74,9 @@ this release, to avoid having to do them in the future.
   other languages and the RFC5545 standard.
 - Shortened the ``repr()`` of all types, use space separator instead of ``T``.
 - Added ``sep="T" or " "`` option to ``canonical_format()``
-- ``OffsetDateTime`` constructor and ``as_offset()`` methods now accept
+- ``OffsetDateTime`` constructor and methods creating offset datetimes now accept
   integers as hour offsets.
-- Add ``Date`` and ``Time`` classes for working with dates and times separately.
+- Added ``Date`` and ``Time`` classes for working with dates and times separately.
 
 0.3.4 (2024-02-07)
 ------------------
