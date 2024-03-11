@@ -10,7 +10,6 @@ from hypothesis.strategies import text
 from pytest import approx
 
 from whenever import (
-    AwareDateTime,
     Date,
     InvalidFormat,
     LocalSystemDateTime,
@@ -185,7 +184,9 @@ class TestEquality:
 
     @local_nyc_tz()
     def test_other_aware_types(self):
-        d: AwareDateTime = UTCDateTime(2020, 8, 15)
+        d: (
+            UTCDateTime | LocalSystemDateTime | OffsetDateTime | ZonedDateTime
+        ) = UTCDateTime(2020, 8, 15)
         assert d == d.as_local()
         assert d == d.as_local().replace(disambiguate="later")
         assert d == d.as_offset()

@@ -14,12 +14,12 @@ Base classes
 The following base classes encapsulate common behavior.
 They are not meant to be used directly.
 
-.. autoclass:: whenever.DateTime
+.. autoclass:: whenever._DateTime
    :members:
    :undoc-members: year, month, day, hour, minute, second, microsecond, canonical_format
    :special-members: __str__
 
-.. autoclass:: whenever.AwareDateTime
+.. autoclass:: whenever._AwareDateTime
    :members:
    :special-members: __eq__, __lt__, __le__, __gt__, __ge__, __sub__, naive
 
