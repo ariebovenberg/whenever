@@ -19,14 +19,14 @@ Datetime types
 
 While the standard library has a single :class:`~datetime.datetime` type,
 **whenever** provides five distinct types.
-Each is designed to communicate intent and prevent common mistakes.
+Each is designed to communicate intent, prevent mistakes, and optimize performance.
 You probably won't need all of them simultaneously in your project.
 Read on to find out which one is right for you.
 
 .. code-block:: python
 
    from whenever import (
-       UTCDateTime, OffsetDateTime, ZonedDateTime, LocalSystemDateTime, NaiveDateTime,
+       UTCDateTime, OffsetDateTime, ZonedDateTime, LocalSystemDateTime, NaiveDateTime
    )
 
 Here's a summary of how you can use them:
@@ -40,7 +40,7 @@ Here's a summary of how you can use them:
 +-----------------------+-----+--------+-------+-------+-------+
 | difference            | ✅  |  ✅    |  ✅   |  ✅   |  ✅   |
 +-----------------------+-----+--------+-------+-------+-------+
-| add/subtract time     | ✅  |  ❌    |  ✅   |  ✅   |  ✅   |
+| add/subtract delta    | ✅  |  ❌    |  ✅   |  ✅   |  ✅   |
 +-----------------------+-----+--------+-------+-------+-------+
 | unambiguous           | ✅  |  ✅    |  ❌   |  ❌   |  ✅   |
 +-----------------------+-----+--------+-------+-------+-------+
@@ -165,7 +165,7 @@ True
 
 Note that if you want to compare for exact equality on the values
 (i.e. exactly the same year, month, day, hour, minute, etc.), you can use
-the :meth:`~whenever.AwareDateTime.exact_eq` method.
+the :meth:`~whenever._AwareDateTime.exact_eq` method.
 
 >>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=5)
 >>> same = OffsetDateTime(2023, 12, 28, 11, 30, offset=5)
@@ -193,7 +193,7 @@ False
 
 .. seealso::
 
-   See the documentation of :meth:`AwareDateTime.__eq__ <whenever.AwareDateTime.__eq__>`
+   See the documentation of :meth:`__eq__ (aware) <whenever._AwareDateTime.__eq__>`
    and :meth:`NaiveDateTime.__eq__ <whenever.NaiveDateTime.__eq__>` for more details.
 
 
@@ -229,19 +229,19 @@ forcing you to match aware types exactly.
     d == UTCDateTime(2023, 12, 28, 10)
 
     # mypy: ❌ (too strict, this should be allowed)
-    d == OffsetDateTime(2023, 12, 28, 10, offset=0)
+    d == OffsetDateTime(2023, 12, 28, 11, offset=1)
 
 To work around this, you can either convert explicitly:
 
 .. code-block:: python
 
-    d == OffsetDateTime(2023, 12, 28, offset=0).as_utc()
+    d == OffsetDateTime(2023, 12, 28, 11, offset=1).as_utc()
 
-Or annotate with the :class:`~whenever.AwareDateTime` base class:
+Or annotate with a union:
 
 .. code-block:: python
 
-    d: AwareDateTime == OffsetDateTime(2023, 12, 28, 10, offset=0)
+    d: OffsetDateTime | UTCDateTime == OffsetDateTime(2023, 12, 28, 11, offset=1)
 
 
 Conversion
@@ -250,9 +250,9 @@ Conversion
 Between aware types
 ~~~~~~~~~~~~~~~~~~~
 
-You can convert between aware datetimes with the :meth:`~whenever.AwareDateTime.as_utc`,
-:meth:`~whenever.AwareDateTime.as_offset`, :meth:`~whenever.AwareDateTime.as_zoned`,
-and :meth:`~whenever.AwareDateTime.as_local` methods. These methods return a new
+You can convert between aware datetimes with the :meth:`~whenever._AwareDateTime.as_utc`,
+:meth:`~whenever._AwareDateTime.as_offset`, :meth:`~whenever._AwareDateTime.as_zoned`,
+and :meth:`~whenever._AwareDateTime.as_local` methods. These methods return a new
 instance of the appropriate type, representing the same moment in time.
 This means the results will always compare equal to the original datetime.
 
@@ -272,7 +272,7 @@ To and from naïve
 ~~~~~~~~~~~~~~~~~
 
 Conversion to naïve types is always easy: calling
-:meth:`~whenever.AwareDateTime.naive` simply strips
+:meth:`~whenever._AwareDateTime.naive` simply strips
 away any timezone information:
 
 >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
@@ -305,7 +305,7 @@ Datetimes support varous arithmetic operations with addition and subtraction.
 Difference between times
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-You can subtract two :class:`~whenever.DateTime` instances to get a
+You can subtract two datetime instances to get a
 :class:`~whenever.TimeDelta` representing the duration between them.
 Aware types can be mixed with each other,
 but naive types cannot be mixed with aware types:
@@ -322,7 +322,7 @@ TimeDelta(24:00:00)
 Adding and subtracting time
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-You can add or subtract various units of time from a :class:`~whenever.DateTime` instance.
+You can add or subtract various units of time from a datetime instance.
 
 >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
 >>> d.add(hours=5, minutes=30)
@@ -432,10 +432,10 @@ Integrate with the standard library
 -----------------------------------
 
 Each **whenever** datetime class wraps a standard
-library :class:`~datetime.datetime` instance.
-You can access it with the :meth:`~whenever.DateTime.py_datetime` method.
+library :class:`datetime.datetime` instance.
+You can access it with the :meth:`~whenever._DateTime.py_datetime` method.
 Conversely, you can create a type from a standard library datetime with the
-:meth:`~whenever.DateTime.from_py_datetime` classmethod.
+:meth:`~whenever._DateTime.from_py_datetime` classmethod.
 
 >>> from datetime import datetime, UTC
 >>> UTCDateTime.from_py_datetime(datetime(2023, 1, 1, tzinfo=UTC))
@@ -529,8 +529,8 @@ Here are the canonical formats for each type:
 
 .. seealso::
 
-   The methods :meth:`~whenever.DateTime.canonical_format` and
-   :meth:`~whenever.DateTime.from_canonical_format` can be used to convert to and
+   The methods :meth:`~whenever._DateTime.canonical_format` and
+   :meth:`~whenever._DateTime.from_canonical_format` can be used to convert to and
    from the canonical string format.
 
 Pickling

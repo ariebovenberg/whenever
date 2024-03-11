@@ -2,24 +2,24 @@
 - case: ymd_arguments
   regex: true
   main: |
-    from whenever import OffsetDateTime, hours
-    d = OffsetDateTime(2020, 8, 9, offset=hours(5))
+    from whenever import OffsetDateTime
+    d = OffsetDateTime(2020, 8, 9, offset=5)
     d = OffsetDateTime(2020, 8, 15, offset='str')  # E: .*"str"
   out: |
     # all this needed to match a single overload match failure...
 - case: strict_equality
   regex: true
   main: |
-    from whenever import OffsetDateTime, hours, UTCDateTime
-    d = OffsetDateTime(2020, 8, 9, offset=hours(1))
-    d == OffsetDateTime(2023, 3, 10, offset=hours(4))
+    from whenever import OffsetDateTime, UTCDateTime
+    d = OffsetDateTime(2020, 8, 9, offset=1)
+    d == OffsetDateTime(2023, 3, 10, offset=4)
     d == 3  # E: .*comparison.*
     d == UTCDateTime(2020, 8, 8, 23)  # E: .*comparison.*
 - case: subtraction
   regex: true
   main: |
     from whenever import OffsetDateTime, hours
-    d = OffsetDateTime(2020, 8, 9, offset=hours(3))
+    d = OffsetDateTime(2020, 8, 9, offset=3)
     reveal_type(d - d)  # N: .*type is "whenever.TimeDelta
     d - hours(4)  # E: .*operator.*
 - case: replace

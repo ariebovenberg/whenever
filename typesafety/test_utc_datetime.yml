@@ -7,10 +7,10 @@
 - case: strict_equality
   regex: true
   main: |
-    from whenever import UTCDateTime, ZonedDateTime, DateTime
+    from whenever import UTCDateTime, ZonedDateTime
     d = UTCDateTime(2020, 8, 9)
     d == 3  # E: .*comparison.*
-    e: DateTime = ZonedDateTime(2020, 1, 1, tz="Iceland")
+    e: UTCDateTime | ZonedDateTime = ZonedDateTime(2020, 1, 1, tz="Iceland")
     d == e
 - case: addition
   regex: true

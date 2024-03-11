@@ -11,7 +11,6 @@ from pytest import approx
 
 from whenever import (
     AmbiguousTime,
-    AwareDateTime,
     Date,
     InvalidFormat,
     InvalidOffsetForZone,
@@ -21,6 +20,7 @@ from whenever import (
     SkippedTime,
     UTCDateTime,
     ZonedDateTime,
+    _AwareDateTime,
     days,
     hours,
     months,
@@ -326,7 +326,7 @@ class TestEquality:
 
     @local_nyc_tz()
     def test_other_aware(self):
-        d: AwareDateTime = ZonedDateTime(
+        d: _AwareDateTime = ZonedDateTime(
             2020, 8, 15, 12, tz="Europe/Amsterdam"
         )
         assert d == d.as_utc()

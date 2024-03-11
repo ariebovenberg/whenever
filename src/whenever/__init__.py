@@ -72,8 +72,8 @@ except ImportError:  # pragma: no cover
 
 __all__ = [
     "Date",
-    "DateTime",
-    "AwareDateTime",
+    "_DateTime",
+    "_AwareDateTime",
     "UTCDateTime",
     "OffsetDateTime",
     "ZonedDateTime",
@@ -387,8 +387,10 @@ class Date(_ImmutableBase):
 
         >>> d = Date(2021, 1, 2)
         >>> d.at(Time(12, 30))
-        DateTime(2021-01-02 12:30:00)
+        NaiveDateTime(2021-01-02 12:30:00)
 
+        You can use methods like :meth:`~NaiveDateTime.assume_utc`
+        or :meth:`~NaiveDateTime.assume_zoned` to make the result aware.
         """
         return NaiveDateTime.from_py_datetime(
             _datetime.combine(self._py_date, t._py_time)
@@ -1122,7 +1124,7 @@ class DateDelta(_ImmutableBase):
 
             >>> p = DateDelta(years=1, months=2)
             >>> p.replace(years=2)
-            DateDelta(P2Y2M)
+            DateDelta(2Y2M)
 
             """
             return DateDelta(
@@ -1143,7 +1145,7 @@ class DateDelta(_ImmutableBase):
 
         >>> p = DateDelta(weeks=2, days=-3)
         >>> -p
-        DateDelta(P-2W3DT)
+        DateDelta(-2W3DT)
 
         """
         return DateDelta(
@@ -1161,7 +1163,7 @@ class DateDelta(_ImmutableBase):
 
         >>> p = DateDelta(years=1, weeks=2)
         >>> p * 2
-        DateDelta(P2Y4W)
+        DateDelta(2Y4W)
 
         """
         if not isinstance(other, int):
@@ -1189,7 +1191,7 @@ class DateDelta(_ImmutableBase):
 
         >>> p = DateDelta(weeks=2, months=1)
         >>> p + DateDelta(weeks=1, days=-4)
-        DateDelta(P1M3W-4D)
+        DateDelta(1M3W-4D)
 
         """
         if isinstance(other, DateDelta):
@@ -1231,7 +1233,7 @@ class DateDelta(_ImmutableBase):
 
         >>> p = DateDelta(weeks=2, days=3)
         >>> p - DateDelta(days=2)
-        DateDelta(P2W1D)
+        DateDelta(2W1D)
 
         """
         if isinstance(other, DateDelta):
@@ -1259,7 +1261,7 @@ class DateDelta(_ImmutableBase):
 
         >>> p = DateDelta(weeks=-2, days=3)
         >>> abs(p)
-        DateDelta(P2W3D)
+        DateDelta(2W3D)
 
         """
         return DateDelta(
@@ -1575,11 +1577,11 @@ class DateTimeDelta(_ImmutableBase):
 
 DateTimeDelta.ZERO = DateTimeDelta()
 Delta = Union[DateTimeDelta, TimeDelta, DateDelta]
-_TDateTime = TypeVar("_TDateTime", bound="DateTime")
+_TDateTime = TypeVar("_TDateTime", bound="_DateTime")
 
 
-class DateTime(_ImmutableBase, ABC):
-    """Abstract base class for all datetime types"""
+class _DateTime(_ImmutableBase, ABC):
+    """Encapsulates behavior common to all datetimes. Not for public use."""
 
     __slots__ = ("_py_dt",)
     _py_dt: _datetime
@@ -1703,7 +1705,7 @@ class DateTime(_ImmutableBase, ABC):
         Warning
         -------
         No exceptions are raised if the datetime is ambiguous.
-        Its ``fold`` attribute is consulted to determine which
+        Its ``fold`` attribute is consulted to determine
         the behavior on ambiguity.
         """
 
@@ -1753,9 +1755,11 @@ class DateTime(_ImmutableBase, ABC):
         return self
 
 
-class AwareDateTime(DateTime):
-    """Abstract base class for all aware datetime types (:class:`UTCDateTime`,
+class _AwareDateTime(_DateTime):
+    """Common behavior for all aware datetime types (:class:`UTCDateTime`,
     :class:`OffsetDateTime`, :class:`ZonedDateTime` and :class:`LocalSystemDateTime`).
+
+    Not for public use.
     """
 
     __slots__ = ()
@@ -1862,14 +1866,14 @@ class AwareDateTime(DateTime):
 
             >>> UTCDateTime(2020, 8, 15, hour=23) == UTCDateTime(2020, 8, 15, hour=23)
             True
-            >>> OffsetDateTime(2020, 8, 15, hour=23, offset=hours(1)) == (
+            >>> OffsetDateTime(2020, 8, 15, hour=23, offset=1) == (
             ...     ZonedDateTime(2020, 8, 15, hour=18, tz="America/New_York")
             ... )
             True
             """
 
     @abstractmethod
-    def __lt__(self, other: AwareDateTime) -> bool:
+    def __lt__(self, other: _AwareDateTime) -> bool:
         """Compare two datetimes by when they occur in time
 
         ``a < b`` is equivalent to ``a.as_utc() < b.as_utc()``
@@ -1877,14 +1881,14 @@ class AwareDateTime(DateTime):
         Example
         -------
 
-        >>> OffsetDateTime(2020, 8, 15, hour=23, offset=hours(8)) < (
+        >>> OffsetDateTime(2020, 8, 15, hour=23, offset=8) < (
         ...     ZoneDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
         ... )
         True
         """
 
     @abstractmethod
-    def __le__(self, other: AwareDateTime) -> bool:
+    def __le__(self, other: _AwareDateTime) -> bool:
         """Compare two datetimes by when they occur in time
 
         ``a <= b`` is equivalent to ``a.as_utc() <= b.as_utc()``
@@ -1892,14 +1896,14 @@ class AwareDateTime(DateTime):
         Example
         -------
 
-        >>> OffsetDateTime(2020, 8, 15, hour=23, offset=hours(8)) <= (
+        >>> OffsetDateTime(2020, 8, 15, hour=23, offset=8) <= (
         ...     ZoneDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
         ... )
         True
         """
 
     @abstractmethod
-    def __gt__(self, other: AwareDateTime) -> bool:
+    def __gt__(self, other: _AwareDateTime) -> bool:
         """Compare two datetimes by when they occur in time
 
         ``a > b`` is equivalent to ``a.as_utc() > b.as_utc()``
@@ -1907,14 +1911,14 @@ class AwareDateTime(DateTime):
         Example
         -------
 
-        >>> OffsetDateTime(2020, 8, 15, hour=19, offset=hours(-8)) > (
+        >>> OffsetDateTime(2020, 8, 15, hour=19, offset=-8) > (
         ...     ZoneDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
         ... )
         True
         """
 
     @abstractmethod
-    def __ge__(self, other: AwareDateTime) -> bool:
+    def __ge__(self, other: _AwareDateTime) -> bool:
         """Compare two datetimes by when they occur in time
 
         ``a >= b`` is equivalent to ``a.as_utc() >= b.as_utc()``
@@ -1922,7 +1926,7 @@ class AwareDateTime(DateTime):
         Example
         -------
 
-        >>> OffsetDateTime(2020, 8, 15, hour=19, offset=hours(-8)) >= (
+        >>> OffsetDateTime(2020, 8, 15, hour=19, offset=-8) >= (
         ...     ZoneDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
         ... )
         True
@@ -1933,7 +1937,7 @@ class AwareDateTime(DateTime):
     if not TYPE_CHECKING:  # pragma: no branch
 
         @abstractmethod
-        def __sub__(self, other: AwareDateTime) -> TimeDelta:
+        def __sub__(self, other: _AwareDateTime) -> TimeDelta:
             """Calculate the duration between two datetimes
 
             ``a - b`` is equivalent to ``a.as_utc() - b.as_utc()``
@@ -1959,8 +1963,8 @@ class AwareDateTime(DateTime):
         Examples
         --------
 
-        >>> a = OffsetDateTime(2020, 8, 15, hour=12, offset=hours(1))
-        >>> b = OffsetDateTime(2020, 8, 15, hour=13, offset=hours(2))
+        >>> a = OffsetDateTime(2020, 8, 15, hour=12, offset=1)
+        >>> b = OffsetDateTime(2020, 8, 15, hour=13, offset=2)
         >>> a == b
         True  # equivalent UTC times
         >>> a.exact_eq(b)
@@ -1968,7 +1972,7 @@ class AwareDateTime(DateTime):
         """
 
 
-class UTCDateTime(AwareDateTime):
+class UTCDateTime(_AwareDateTime):
     """A UTC-only datetime. Useful for representing moments in time
     in an unambiguous way.
 
@@ -2032,7 +2036,7 @@ class UTCDateTime(AwareDateTime):
     @classmethod
     def from_timestamp(cls, i: float, /) -> UTCDateTime:
         """Create an instance from a UNIX timestamp.
-        The inverse of :meth:`~AwareDateTime.timestamp`.
+        The inverse of :meth:`~_AwareDateTime.timestamp`.
 
         Example
         -------
@@ -2110,28 +2114,28 @@ class UTCDateTime(AwareDateTime):
     def exact_eq(self, other: UTCDateTime, /) -> bool:
         return self._py_dt == other._py_dt
 
-    def __lt__(self, other: AwareDateTime) -> bool:
+    def __lt__(self, other: _AwareDateTime) -> bool:
         if not isinstance(
             other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
         ):
             return NotImplemented
         return self._py_dt < other._py_dt
 
-    def __le__(self, other: AwareDateTime) -> bool:
+    def __le__(self, other: _AwareDateTime) -> bool:
         if not isinstance(
             other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
         ):
             return NotImplemented
         return self._py_dt <= other._py_dt
 
-    def __gt__(self, other: AwareDateTime) -> bool:
+    def __gt__(self, other: _AwareDateTime) -> bool:
         if not isinstance(
             other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
         ):
             return NotImplemented
         return self._py_dt > other._py_dt
 
-    def __ge__(self, other: AwareDateTime) -> bool:
+    def __ge__(self, other: _AwareDateTime) -> bool:
         if not isinstance(
             other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
         ):
@@ -2233,12 +2237,14 @@ class UTCDateTime(AwareDateTime):
         return NotImplemented
 
     @overload
-    def __sub__(self, other: AwareDateTime) -> TimeDelta: ...
+    def __sub__(self, other: _AwareDateTime) -> TimeDelta: ...
 
     @overload
     def __sub__(self, other: Delta) -> UTCDateTime: ...
 
-    def __sub__(self, other: Delta | AwareDateTime) -> UTCDateTime | TimeDelta:
+    def __sub__(
+        self, other: Delta | _AwareDateTime
+    ) -> UTCDateTime | TimeDelta:
         """Subtract another datetime or time amount
 
         Example
@@ -2252,7 +2258,7 @@ class UTCDateTime(AwareDateTime):
         >>> d - months(2) - days(2) - minutes(5)
         UTCDateTime(2020-06-12 23:06:00Z)
         """
-        if isinstance(other, AwareDateTime):
+        if isinstance(other, _AwareDateTime):
             return TimeDelta.from_py_timedelta(self._py_dt - other._py_dt)
         elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
             return self + -other
@@ -2367,7 +2373,7 @@ class UTCDateTime(AwareDateTime):
     def rfc3339(self) -> str:
         """Format as an RFC 3339 string
 
-        For UTCDateTime, equivalent to :meth:`~DateTime.canonical_format`.
+        For UTCDateTime, equivalent to :meth:`~_DateTime.canonical_format`.
         Inverse of :meth:`from_rfc3339`.
 
         Example
@@ -2424,7 +2430,7 @@ def _unpkl_utc(*args) -> UTCDateTime:
     return UTCDateTime(*args)
 
 
-class OffsetDateTime(AwareDateTime):
+class OffsetDateTime(_AwareDateTime):
     """A datetime with a fixed UTC offset.
     Useful for representing the local time at a specific location.
 
@@ -2507,7 +2513,7 @@ class OffsetDateTime(AwareDateTime):
     @classmethod
     def from_timestamp(cls, i: float, /, offset: TimeDelta) -> OffsetDateTime:
         """Create a OffsetDateTime from a UNIX timestamp.
-        The inverse of :meth:`~AwareDateTime.timestamp`.
+        The inverse of :meth:`~_AwareDateTime.timestamp`.
 
         Example
         -------
@@ -2580,35 +2586,35 @@ class OffsetDateTime(AwareDateTime):
         # FUTURE: there's probably a faster way to do this
         return self == other and self.offset == other.offset
 
-    def __lt__(self, other: AwareDateTime) -> bool:
+    def __lt__(self, other: _AwareDateTime) -> bool:
         if not isinstance(
             other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
         ):
             return NotImplemented
         return self._py_dt < other._py_dt
 
-    def __le__(self, other: AwareDateTime) -> bool:
+    def __le__(self, other: _AwareDateTime) -> bool:
         if not isinstance(
             other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
         ):
             return NotImplemented
         return self._py_dt <= other._py_dt
 
-    def __gt__(self, other: AwareDateTime) -> bool:
+    def __gt__(self, other: _AwareDateTime) -> bool:
         if not isinstance(
             other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
         ):
             return NotImplemented
         return self._py_dt > other._py_dt
 
-    def __ge__(self, other: AwareDateTime) -> bool:
+    def __ge__(self, other: _AwareDateTime) -> bool:
         if not isinstance(
             other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
         ):
             return NotImplemented
         return self._py_dt >= other._py_dt
 
-    def __sub__(self, other: AwareDateTime) -> TimeDelta:
+    def __sub__(self, other: _AwareDateTime) -> TimeDelta:
         """Subtract another datetime to get the duration between them
 
         Example
@@ -2621,7 +2627,7 @@ class OffsetDateTime(AwareDateTime):
         >>> d - OffsetDateTime(2020, 8, 15, offset=hours(-5))
         TimeDelta(18:12:00)
         """
-        if isinstance(other, AwareDateTime):
+        if isinstance(other, _AwareDateTime):
             return TimeDelta.from_py_timedelta(self._py_dt - other._py_dt)
         return NotImplemented
 
@@ -2723,7 +2729,7 @@ class OffsetDateTime(AwareDateTime):
     def rfc3339(self) -> str:
         """Format as an RFC 3339 string
 
-        For ``OffsetDateTime``, equivalent to :meth:`~DateTime.canonical_format`.
+        For ``OffsetDateTime``, equivalent to :meth:`~_DateTime.canonical_format`.
         Inverse of :meth:`from_rfc3339`.
 
         Example
@@ -2795,7 +2801,7 @@ def _unpkl_offset(
     )
 
 
-class ZonedDateTime(AwareDateTime):
+class ZonedDateTime(_AwareDateTime):
     """A datetime associated with a IANA timezone ID.
     Useful for representing the local time bound to a specific location.
 
@@ -2863,7 +2869,7 @@ class ZonedDateTime(AwareDateTime):
     This format is similar to those `used by other languages <https://tc39.es/proposal-temporal/docs/strings.html#iana-time-zone-names>`_,
     but it is *not* RFC 3339 or ISO 8601 compliant
     (these standards don't support timezone IDs.)
-    Use :meth:`~AwareDateTime.as_offset` first if you
+    Use :meth:`~_AwareDateTime.as_offset` first if you
     need RFC 3339 or ISO 8601 compliance.
     """
 
@@ -3016,7 +3022,7 @@ class ZonedDateTime(AwareDateTime):
     if not TYPE_CHECKING:  # pragma: no branch
 
         def __eq__(self, other: object) -> bool:
-            if not isinstance(other, AwareDateTime):
+            if not isinstance(other, _AwareDateTime):
                 return NotImplemented
 
             # We can't rely on simple equality, because it isn't equal
@@ -3035,23 +3041,23 @@ class ZonedDateTime(AwareDateTime):
             and self._py_dt == other._py_dt
         )
 
-    def __lt__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, AwareDateTime):
+    def __lt__(self, other: _AwareDateTime) -> bool:
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt.astimezone(_UTC) < other._py_dt
 
-    def __le__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, AwareDateTime):
+    def __le__(self, other: _AwareDateTime) -> bool:
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt.astimezone(_UTC) <= other._py_dt
 
-    def __gt__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, AwareDateTime):
+    def __gt__(self, other: _AwareDateTime) -> bool:
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt.astimezone(_UTC) > other._py_dt
 
-    def __ge__(self, other: AwareDateTime) -> bool:
-        if not isinstance(other, AwareDateTime):
+    def __ge__(self, other: _AwareDateTime) -> bool:
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt.astimezone(_UTC) >= other._py_dt
 
@@ -3098,16 +3104,16 @@ class ZonedDateTime(AwareDateTime):
             return NotImplemented
 
     @overload
-    def __sub__(self, other: AwareDateTime) -> TimeDelta: ...
+    def __sub__(self, other: _AwareDateTime) -> TimeDelta: ...
 
     @overload
     def __sub__(self, other: Delta) -> ZonedDateTime: ...
 
     def __sub__(
-        self, other: Delta | AwareDateTime
-    ) -> AwareDateTime | TimeDelta:
+        self, other: Delta | _AwareDateTime
+    ) -> _AwareDateTime | TimeDelta:
         """Subtract another datetime or duration"""
-        if isinstance(other, AwareDateTime):
+        if isinstance(other, _AwareDateTime):
             return TimeDelta.from_py_timedelta(
                 self._py_dt.astimezone(_UTC) - other._py_dt
             )
@@ -3203,7 +3209,7 @@ def _unpkl_zoned(
     )
 
 
-class LocalSystemDateTime(AwareDateTime):
+class LocalSystemDateTime(_AwareDateTime):
     """Represents a time in the system timezone. Unlike OffsetDateTime,
     it knows about the system timezone and its DST transitions.
 
@@ -3315,7 +3321,7 @@ class LocalSystemDateTime(AwareDateTime):
     @classmethod
     def from_timestamp(cls, i: float, /) -> LocalSystemDateTime:
         """Create an instace from a UNIX timestamp.
-        The inverse of :meth:`~AwareDateTime.timestamp`.
+        The inverse of :meth:`~_AwareDateTime.timestamp`.
 
         Example
         -------
@@ -3382,28 +3388,28 @@ class LocalSystemDateTime(AwareDateTime):
                 return NotImplemented
             return self._py_dt == other._py_dt
 
-    def __lt__(self, other: AwareDateTime) -> bool:
+    def __lt__(self, other: _AwareDateTime) -> bool:
         if not isinstance(
             other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
         ):
             return NotImplemented
         return self._py_dt < other._py_dt
 
-    def __le__(self, other: AwareDateTime) -> bool:
+    def __le__(self, other: _AwareDateTime) -> bool:
         if not isinstance(
             other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
         ):
             return NotImplemented
         return self._py_dt <= other._py_dt
 
-    def __gt__(self, other: AwareDateTime) -> bool:
+    def __gt__(self, other: _AwareDateTime) -> bool:
         if not isinstance(
             other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
         ):
             return NotImplemented
         return self._py_dt > other._py_dt
 
-    def __ge__(self, other: AwareDateTime) -> bool:
+    def __ge__(self, other: _AwareDateTime) -> bool:
         if not isinstance(
             other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
         ):
@@ -3495,12 +3501,12 @@ class LocalSystemDateTime(AwareDateTime):
         return NotImplemented
 
     @overload
-    def __sub__(self, other: AwareDateTime) -> TimeDelta: ...
+    def __sub__(self, other: _AwareDateTime) -> TimeDelta: ...
 
     @overload
     def __sub__(self, other: Delta) -> LocalSystemDateTime: ...
 
-    def __sub__(self, other: Delta | AwareDateTime) -> AwareDateTime | Delta:
+    def __sub__(self, other: Delta | _AwareDateTime) -> _AwareDateTime | Delta:
         """Subtract another datetime or duration
 
         Example
@@ -3511,7 +3517,7 @@ class LocalSystemDateTime(AwareDateTime):
         LocalSystemDateTime(2020-08-14 23:11:55)
 
         """
-        if isinstance(other, AwareDateTime):
+        if isinstance(other, _AwareDateTime):
             return TimeDelta.from_py_timedelta(self._py_dt - other._py_dt)
         elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
             return self + -other
@@ -3592,7 +3598,7 @@ def _unpkl_local(
     )
 
 
-class NaiveDateTime(DateTime):
+class NaiveDateTime(_DateTime):
     """A plain datetime without timezone or offset.
 
     It can't be mixed with aware datetimes.
