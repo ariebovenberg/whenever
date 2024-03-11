@@ -263,7 +263,7 @@ class TestEquality:
         assert not d != same
 
     @local_ams_tz()
-    def test_same_utc(self):
+    def test_same_moment(self):
         d = LocalSystemDateTime(2020, 8, 15, 12, 8, 30, 450)
         with local_nyc_tz():
             same = LocalSystemDateTime(2020, 8, 15, 6, 8, 30, 450)
@@ -282,6 +282,54 @@ class TestEquality:
         assert hash(d) != hash(other)
         assert d != other
         assert not d == other
+
+    @local_ams_tz()
+    def test_utc(self):
+        d: LocalSystemDateTime | UTCDateTime = LocalSystemDateTime(
+            2023, 10, 29, 2, 15, disambiguate="earlier"
+        )
+        same = UTCDateTime(2023, 10, 29, 0, 15)
+        different = UTCDateTime(2023, 10, 29, 1, 15)
+        assert d == same
+        assert not d != same
+        assert d != different
+        assert not d == different
+
+        assert hash(d) == hash(same)
+        assert hash(d) != hash(different)
+
+    @local_ams_tz()
+    def test_offset(self):
+        d: LocalSystemDateTime | OffsetDateTime = LocalSystemDateTime(
+            2023, 10, 29, 2, 15, disambiguate="earlier"
+        )
+        same = d.as_offset(hours(5))
+        different = d.as_offset(hours(3)).replace(minute=14)
+        assert d == same
+        assert not d != same
+        assert d != different
+        assert not d == different
+
+        assert hash(d) == hash(same)
+        assert hash(d) != hash(different)
+
+    @local_ams_tz()
+    def test_zoned(self):
+        d: LocalSystemDateTime | ZonedDateTime = LocalSystemDateTime(
+            2023, 10, 29, 2, 15, disambiguate="earlier"
+        )
+        same = d.as_zoned("Europe/Paris")
+        assert same.is_ambiguous()  # important we test this case
+        different = d.as_zoned("Europe/Amsterdam").replace(
+            minute=14, disambiguate="earlier"
+        )
+        assert d == same
+        assert not d != same
+        assert d != different
+        assert not d == different
+
+        assert hash(d) == hash(same)
+        assert hash(d) != hash(different)
 
     def test_notimplemented(self):
         d = LocalSystemDateTime(2020, 8, 15)

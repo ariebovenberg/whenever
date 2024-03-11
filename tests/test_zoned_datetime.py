@@ -257,7 +257,7 @@ class TestEquality:
         assert a == b
         assert hash(a) == hash(b)
 
-    def test_wildly_different_timezone(self):
+    def test_different_timezone(self):
         a = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
         b = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="America/New_York")
         assert a != b
@@ -326,8 +326,10 @@ class TestEquality:
 
     @local_nyc_tz()
     def test_other_aware(self):
-        d: _AwareDateTime = ZonedDateTime(
-            2020, 8, 15, 12, tz="Europe/Amsterdam"
+        d: (
+            ZonedDateTime | UTCDateTime | OffsetDateTime | LocalSystemDateTime
+        ) = ZonedDateTime(
+            2023, 10, 29, 2, 15, tz="Europe/Amsterdam", disambiguate="earlier"
         )
         assert d == d.as_utc()
         assert hash(d) == hash(d.as_utc())
@@ -351,7 +353,7 @@ class TestEquality:
         assert not d == 42  # type: ignore[comparison-overlap]
 
 
-def test_ambiguous():
+def test_is_ambiguous():
     assert not ZonedDateTime(
         2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"
     ).is_ambiguous()
@@ -687,7 +689,9 @@ class TestComparison:
         assert other <= d
 
     def test_utc(self):
-        d = ZonedDateTime(2020, 8, 15, 12, 30, tz="Europe/Amsterdam")
+        d = ZonedDateTime(
+            2023, 10, 29, 2, 30, tz="Europe/Amsterdam", disambiguate="later"
+        )
 
         utc_eq = d.as_utc()
         utc_lt = utc_eq.replace(minute=29)
@@ -709,7 +713,9 @@ class TestComparison:
         assert not d >= utc_gt
 
     def test_offset(self):
-        d = ZonedDateTime(2020, 8, 15, 12, 30, tz="Europe/Amsterdam")
+        d = ZonedDateTime(
+            2023, 10, 29, 2, 30, tz="Europe/Amsterdam", disambiguate="later"
+        )
 
         offset_eq = d.as_offset()
         offset_lt = offset_eq.replace(minute=29)
@@ -731,11 +737,13 @@ class TestComparison:
         assert not d >= offset_gt
 
     def test_local(self):
-        d = ZonedDateTime(2020, 8, 15, 12, 30, tz="Europe/Amsterdam")
+        d = ZonedDateTime(
+            2023, 10, 29, 2, 30, tz="Europe/Amsterdam", disambiguate="earlier"
+        )
 
         local_eq = d.as_local()
-        local_lt = local_eq.replace(minute=29)
-        local_gt = local_eq.replace(minute=31)
+        local_lt = local_eq.replace(minute=29, disambiguate="earlier")
+        local_gt = local_eq.replace(minute=31, disambiguate="earlier")
 
         assert d >= local_eq
         assert d <= local_eq
