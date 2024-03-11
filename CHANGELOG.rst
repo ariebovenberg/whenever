@@ -62,7 +62,7 @@ this release, to avoid having to do them in the future.
 - Renamed ``DoesntExistInZone`` to ``SkippedTime``, ``Ambiguous`` to
   ``AmbiguousTime``.
 
-  **Rationale**: The new name is shorter and consistent with ``Ambiguous``.
+  **Rationale**: The new names are shorter and more consistent.
 
 - Renamed ``min`` and ``max`` to ``MIN`` and ``MAX``.
 
