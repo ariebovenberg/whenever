@@ -182,20 +182,50 @@ class TestEquality:
         d = UTCDateTime(2020, 8, 15)
         d == 42  # type: ignore[comparison-overlap]
 
-    @local_nyc_tz()
-    def test_other_aware_types(self):
-        d: (
-            UTCDateTime | LocalSystemDateTime | OffsetDateTime | ZonedDateTime
-        ) = UTCDateTime(2020, 8, 15)
-        assert d == d.as_local()
-        assert d == d.as_local().replace(disambiguate="later")
-        assert d == d.as_offset()
-        assert d == d.as_offset(hours(3))
-        assert d == d.as_zoned("Europe/Paris")
+    def test_zoned(self):
+        d: UTCDateTime | ZonedDateTime = UTCDateTime(2023, 10, 29, 1, 15)
+        zoned_same = ZonedDateTime(
+            2023, 10, 29, 2, 15, tz="Europe/Paris", disambiguate="later"
+        )
+        zoned_different = ZonedDateTime(
+            2023, 10, 29, 2, 15, tz="Europe/Paris", disambiguate="earlier"
+        )
+        assert d == zoned_same
+        assert not d != zoned_same
+        assert not d == zoned_different
+        assert d != zoned_different
 
-        assert d != d.as_local().replace(year=2021)
-        assert d != d.as_offset(hours(1)).replace(year=2021)
-        assert d != d.as_zoned("Europe/London").replace(year=2021)
+        assert hash(d) == hash(zoned_same)
+        assert hash(d) != hash(zoned_different)
+
+    @local_ams_tz()
+    def test_local(self):
+        d: UTCDateTime | LocalSystemDateTime = UTCDateTime(2023, 10, 29, 1, 15)
+        local_same = LocalSystemDateTime(
+            2023, 10, 29, 2, 15, disambiguate="later"
+        )
+        local_different = LocalSystemDateTime(
+            2023, 10, 29, 2, 15, disambiguate="earlier"
+        )
+        assert d == local_same
+        assert not d != local_same
+        assert not d == local_different
+        assert d != local_different
+
+        assert hash(d) == hash(local_same)
+        assert hash(d) != hash(local_different)
+
+    def test_offset(self):
+        d: UTCDateTime | OffsetDateTime = UTCDateTime(2023, 4, 5, 4)
+        offset_same = OffsetDateTime(2023, 4, 5, 6, offset=+2)
+        offset_different = OffsetDateTime(2023, 4, 5, 4, offset=-3)
+        assert d == offset_same
+        assert not d != offset_same
+        assert not d == offset_different
+        assert d != offset_different
+
+        assert hash(d) == hash(offset_same)
+        assert hash(d) != hash(offset_different)
 
 
 def test_timestamp():
@@ -266,11 +296,13 @@ class TestComparison:
         assert not d >= offset_gt
 
     def test_zoned(self):
-        d = UTCDateTime(2020, 8, 15, 12, 30)
+        d = UTCDateTime(2023, 10, 29, 1, 15)
+        zoned_eq = ZonedDateTime(
+            2023, 10, 29, 2, 15, tz="Europe/Paris", disambiguate="later"
+        )
 
-        zoned_eq = d.as_zoned("America/New_York")
-        zoned_gt = zoned_eq.replace(minute=31)
-        zoned_lt = zoned_eq.replace(minute=29)
+        zoned_gt = zoned_eq.replace(minute=16, disambiguate="later")
+        zoned_lt = zoned_eq.replace(minute=14, disambiguate="later")
         assert d >= zoned_eq
         assert d <= zoned_eq
         assert not d > zoned_eq
@@ -520,9 +552,7 @@ def test_to_utc():
 
 def test_to_offset():
     d = UTCDateTime(2020, 8, 15, 20)
-    assert d.as_offset().exact_eq(
-        OffsetDateTime(2020, 8, 15, 20, offset=hours(0))
-    )
+    assert d.as_offset().exact_eq(OffsetDateTime(2020, 8, 15, 20, offset=0))
     assert d.as_offset(hours(3)).exact_eq(
         OffsetDateTime(2020, 8, 15, 23, offset=hours(3))
     )

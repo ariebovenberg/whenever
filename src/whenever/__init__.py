@@ -2115,30 +2115,22 @@ class UTCDateTime(_AwareDateTime):
         return self._py_dt == other._py_dt
 
     def __lt__(self, other: _AwareDateTime) -> bool:
-        if not isinstance(
-            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
-        ):
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt < other._py_dt
 
     def __le__(self, other: _AwareDateTime) -> bool:
-        if not isinstance(
-            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
-        ):
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt <= other._py_dt
 
     def __gt__(self, other: _AwareDateTime) -> bool:
-        if not isinstance(
-            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
-        ):
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt > other._py_dt
 
     def __ge__(self, other: _AwareDateTime) -> bool:
-        if not isinstance(
-            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
-        ):
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt >= other._py_dt
 
@@ -2587,30 +2579,22 @@ class OffsetDateTime(_AwareDateTime):
         return self == other and self.offset == other.offset
 
     def __lt__(self, other: _AwareDateTime) -> bool:
-        if not isinstance(
-            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
-        ):
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt < other._py_dt
 
     def __le__(self, other: _AwareDateTime) -> bool:
-        if not isinstance(
-            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
-        ):
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt <= other._py_dt
 
     def __gt__(self, other: _AwareDateTime) -> bool:
-        if not isinstance(
-            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
-        ):
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt > other._py_dt
 
     def __ge__(self, other: _AwareDateTime) -> bool:
-        if not isinstance(
-            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
-        ):
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt >= other._py_dt
 
@@ -3389,30 +3373,22 @@ class LocalSystemDateTime(_AwareDateTime):
             return self._py_dt == other._py_dt
 
     def __lt__(self, other: _AwareDateTime) -> bool:
-        if not isinstance(
-            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
-        ):
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt < other._py_dt
 
     def __le__(self, other: _AwareDateTime) -> bool:
-        if not isinstance(
-            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
-        ):
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt <= other._py_dt
 
     def __gt__(self, other: _AwareDateTime) -> bool:
-        if not isinstance(
-            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
-        ):
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt > other._py_dt
 
     def __ge__(self, other: _AwareDateTime) -> bool:
-        if not isinstance(
-            other, (UTCDateTime, OffsetDateTime, LocalSystemDateTime)
-        ):
+        if not isinstance(other, _AwareDateTime):
             return NotImplemented
         return self._py_dt >= other._py_dt
 
