@@ -235,7 +235,7 @@ LocalSystemDateTime(2020-08-15 08:00:00-04:00)
 
 If you'd like to preserve the moment in time
 and calculate the new local time, simply call
-:meth:`~whenever.AwareDateTime.as_local`.
+:meth:`~whenever._AwareDateTime.as_local`.
 
 >>> # same moment, but now with the clock time in Amsterdam
 >>> d.as_local()

@@ -35,7 +35,7 @@ There's no way to be sure...
 **Whenever** is a datetime library designed from the ground up to enforce correctness.
 Mistakes become red squiggles in your IDE, instead of bugs in production.
 
-`📖 Docs <https://whenever.readthedocs.io/en/latest/overview.html>`_ |
+`📖 Docs <https://whenever.readthedocs.io>`_ |
 `🐍 PyPI <https://pypi.org/project/whenever/>`_ |
 `🐙 GitHub <https://github.com/ariebovenberg/whenever>`_ |
 `🚀 Changelog <https://whenever.readthedocs.io/en/latest/changelog.html>`_ |
@@ -88,7 +88,7 @@ Quickstart
    >>> # Naïve/aware mixups are caught by typechecker
    >>> hackathon_invite - py311_release
    >>> # Only explicit assumptions will make it aware
-   >>> hackathon_start = ZonedDateTime.from_naive(hackathon_invite, "Europe/Amsterdam")
+   >>> hackathon_start = hackathon_invite.assume_zoned("Europe/Amsterdam")
    ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])
 
    # DST-aware operators
@@ -207,6 +207,7 @@ Roadmap
 - 🐍 **future**: Inspire a standard library improvement
 
 Not planned:
+
 - Different calendar systems
 
 Versioning and compatibility policy

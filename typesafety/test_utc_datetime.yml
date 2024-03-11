@@ -8,9 +8,10 @@
   regex: true
   main: |
     from whenever import UTCDateTime, ZonedDateTime
+    from typing import Union
     d = UTCDateTime(2020, 8, 9)
     d == 3  # E: .*comparison.*
-    e: UTCDateTime | ZonedDateTime = ZonedDateTime(2020, 1, 1, tz="Iceland")
+    e: Union[UTCDateTime, ZonedDateTime] = ZonedDateTime(2020, 1, 1, tz="Iceland")
     d == e
 - case: addition
   regex: true
