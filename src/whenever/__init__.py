@@ -396,6 +396,17 @@ class Date(_ImmutableBase):
             _datetime.combine(self._py_date, t._py_time)
         )
 
+    @no_type_check
+    def __reduce__(self):
+        return (_unpkl_date, (self.year, self.month, self.day))
+
+
+# A separate unpickling function allows us to make backwards-compatible changes
+# to the pickling format in the future
+@no_type_check
+def _unpkl_date(*args):
+    return Date(*args)
+
 
 class Time(_ImmutableBase):
     """Time of day without a date component
@@ -579,6 +590,20 @@ class Time(_ImmutableBase):
         return NaiveDateTime.from_py_datetime(
             _datetime.combine(d._py_date, self._py_time)
         )
+
+    @no_type_check
+    def __reduce__(self):
+        return (
+            _unpkl_time,
+            (self.hour, self.minute, self.second, self.microsecond),
+        )
+
+
+# A separate unpickling function allows us to make backwards-compatible changes
+# to the pickling format in the future
+@no_type_check
+def _unpkl_time(*args):
+    return Time(*args)
 
 
 Time.MIDNIGHT = Time()
@@ -945,6 +970,17 @@ class TimeDelta(_ImmutableBase):
     def __repr__(self) -> str:
         return f"TimeDelta({self})"
 
+    @no_type_check
+    def __reduce__(self):
+        return (_unpkl_tdelta, (self._total_ms,))
+
+
+# A separate unpickling function allows us to make backwards-compatible changes
+# to the pickling format in the future
+@no_type_check
+def _unpkl_tdelta(ms):
+    return TimeDelta(microseconds=ms)
+
 
 TimeDelta.ZERO = TimeDelta()
 
@@ -1283,6 +1319,20 @@ class DateDelta(_ImmutableBase):
         """
         return self._years, self._months, self._weeks, self._days
 
+    @no_type_check
+    def __reduce__(self):
+        return (
+            _unpkl_ddelta,
+            (self._years, self._months, self._weeks, self._days),
+        )
+
+
+# A separate unpickling function allows us to make backwards-compatible changes
+# to the pickling format in the future
+@no_type_check
+def _unpkl_ddelta(y, m, w, d):
+    return DateDelta(years=y, months=m, weeks=w, days=d)
+
 
 DateDelta.ZERO = DateDelta()
 TimeDelta._date_part = DateDelta.ZERO
@@ -1572,6 +1622,23 @@ class DateTimeDelta(_ImmutableBase):
         (0, 0, 1, 11, 4, 0, 0, 0)
         """
         return self._date_part.as_tuple() + self._time_part.as_tuple()
+
+    @no_type_check
+    def __reduce__(self):
+        return (
+            _unpkl_dtdelta,
+            self._date_part.as_tuple() + (self._time_part._total_ms,),
+        )
+
+
+# A separate unpickling function allows us to make backwards-compatible changes
+# to the pickling format in the future
+@no_type_check
+def _unpkl_dtdelta(y, m, w, d, ms):
+    new = _object_new(DateTimeDelta)
+    new._date_part = DateDelta(years=y, months=m, weeks=w, days=d)
+    new._time_part = TimeDelta(microseconds=ms)
+    return new
 
 
 DateTimeDelta.ZERO = DateTimeDelta()

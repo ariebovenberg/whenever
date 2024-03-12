@@ -1,3 +1,4 @@
+import pickle
 import weakref
 from copy import copy, deepcopy
 from datetime import timedelta
@@ -359,3 +360,20 @@ def test_copy():
     d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
     assert copy(d) is d
     assert deepcopy(d) is d
+
+
+def test_pickling():
+    d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+    dumped = pickle.dumps(d)
+    assert len(dumped) < len(pickle.dumps(d.py_timedelta())) + 10
+    assert pickle.loads(dumped) == d
+
+
+def test_compatible_unpickle():
+    dumped = (
+        b"\x80\x04\x95)\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_t"
+        b"delta\x94\x93\x94\x8a\x05\xc4x\xe8\xdd\x00\x85\x94R\x94."
+    )
+    assert pickle.loads(dumped) == TimeDelta(
+        hours=1, minutes=2, seconds=3, microseconds=4
+    )

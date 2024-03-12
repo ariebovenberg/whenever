@@ -1,3 +1,4 @@
+import pickle
 import weakref
 from copy import copy, deepcopy
 
@@ -615,3 +616,37 @@ def test_weakref():
     assert ref() is p
     del p
     assert ref() is None
+
+
+def test_pickle():
+    p = DateTimeDelta(
+        years=1,
+        months=-2,
+        weeks=3,
+        days=4,
+        hours=5,
+        minutes=6,
+        seconds=7,
+        microseconds=800_000,
+    )
+    dumped = pickle.dumps(p)
+    assert len(dumped) < 100
+    assert pickle.loads(dumped) == p
+
+
+def test_compatible_unpickle():
+    dumped = (
+        b"\x80\x04\x956\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0e_unp"
+        b"kl_dtdelta\x94\x93\x94(K\x01J\xfe\xff\xff\xffK\x03K\x04\x8a\x05\xc0"
+        b"b\xceF\x04t\x94R\x94."
+    )
+    assert pickle.loads(dumped) == DateTimeDelta(
+        years=1,
+        months=-2,
+        weeks=3,
+        days=4,
+        hours=5,
+        minutes=6,
+        seconds=7,
+        microseconds=800_000,
+    )
