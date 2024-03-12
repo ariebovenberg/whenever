@@ -163,6 +163,10 @@ def test_comparison():
             "00:58:02.999996",
         ),
         (
+            TimeDelta(hours=1, minutes=2, seconds=3, microseconds=50_000),
+            "01:02:03.05",
+        ),
+        (
             TimeDelta(hours=1, minutes=120, seconds=3),
             "03:00:03",
         ),
@@ -203,6 +207,7 @@ class TestFromCanonicalFormat:
             ("400:00:00", TimeDelta(hours=400)),
             ("00:00:00.000000", TimeDelta()),
             ("00:00:00.999955", TimeDelta(microseconds=999_955)),
+            ("00:00:00.99", TimeDelta(microseconds=990_000)),
             ("-00:04:00", TimeDelta(minutes=-4)),
             ("+00:04:00", TimeDelta(minutes=4)),
         ],
