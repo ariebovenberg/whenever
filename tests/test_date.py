@@ -1,3 +1,4 @@
+import pickle
 import weakref
 from copy import copy, deepcopy
 from datetime import date as py_date
@@ -303,6 +304,21 @@ def test_day_of_week():
     assert Date(2021, 1, 6).day_of_week() == WEDNESDAY
     assert Date(2021, 1, 7).day_of_week() == THURSDAY
     assert Date(2021, 1, 8).day_of_week() == FRIDAY
+
+
+def test_pickling():
+    d = Date(2021, 1, 2)
+    dumped = pickle.dumps(d)
+    assert len(dumped) < len(pickle.dumps(d._py_date)) + 10
+    assert pickle.loads(dumped) == d
+
+
+def test_unpickle_compatibility():
+    dumped = (
+        b"\x80\x04\x95'\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0b_unp"
+        b"kl_date\x94\x93\x94M\xe5\x07K\x01K\x02\x87\x94R\x94."
+    )
+    assert pickle.loads(dumped) == Date(2021, 1, 2)
 
 
 def test_copy():

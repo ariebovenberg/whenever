@@ -1,3 +1,4 @@
+import pickle
 from datetime import time as py_time, timezone as py_timezone
 
 import pytest
@@ -148,4 +149,19 @@ def test_constants():
 
 def test_on():
     t = Time(1, 2, 3, 4_000)
-    t.on(Date(2021, 1, 2)) == NaiveDateTime(2021, 1, 2, 1, 2, 3, 4_000)
+    assert t.on(Date(2021, 1, 2)) == NaiveDateTime(2021, 1, 2, 1, 2, 3, 4_000)
+
+
+def test_pickling():
+    t = Time(1, 2, 3, 4_000)
+    dumped = pickle.dumps(t)
+    assert len(dumped) < len(pickle.dumps(t._py_time)) + 10
+    assert pickle.loads(dumped) == t
+
+
+def test_compatible_unpickle():
+    dumped = (
+        b"\x80\x04\x95*\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0b_unp"
+        b"kl_time\x94\x93\x94(K\x01K\x02K\x03M\xa0\x0ft\x94R\x94."
+    )
+    assert pickle.loads(dumped) == Time(1, 2, 3, 4_000)
