@@ -468,7 +468,7 @@ class Time(_ImmutableBase):
         '12:30:00'
 
         """
-        return self._py_time.isoformat()
+        return self._py_time.isoformat().rstrip("0")
 
     __str__ = canonical_format
 
@@ -490,10 +490,9 @@ class Time(_ImmutableBase):
             If the string does not match this exact format.
 
         """
-        # FUTURE: allow to omit seconds?
         if not _match_time(s):
             raise InvalidFormat()
-        return cls._from_py_unchecked(_time.fromisoformat(s))
+        return cls._from_py_unchecked(_fromisoformat_time(s))
 
     @classmethod
     def from_py_time(cls, t: _time, /) -> Time:
@@ -854,7 +853,7 @@ class TimeDelta(_ImmutableBase):
         hrs, mins, secs, ms = abs(self).as_tuple()
         return (
             f"{'-'*(self._total_ms < 0)}{hrs:02}:{mins:02}:{secs:02}"
-            + f".{ms:0>6}" * bool(ms)
+            + f".{ms:0>6}".rstrip("0") * bool(ms)
         )
 
     @classmethod
@@ -4047,8 +4046,17 @@ if sys.version_info < (3, 11):  # pragma: no cover
             s = s[:-1] + "+00:00"
         return _fromisoformat(s)
 
+    # assuming _match_time regex passed
+    def _fromisoformat_time(s: str) -> _time:
+        return (
+            _time.fromisoformat(s.ljust(15, "0"))
+            if "." in s
+            else _time.fromisoformat(s)
+        )
+
 else:
     _fromisoformat_utc = _fromisoformat
+    _fromisoformat_time = _time.fromisoformat
 
     def _parse_utc_rfc3339(s: str) -> _datetime:
         if not _match_utc_rfc3339(s):

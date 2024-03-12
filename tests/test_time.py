@@ -36,15 +36,15 @@ class TestInit:
 
 
 def test_canonical_format():
-    t = Time(1, 2, 3, 4_000)
-    assert str(t) == "01:02:03.004000"
-    assert t.canonical_format() == "01:02:03.004000"
+    t = Time(1, 2, 3, 40_000)
+    assert str(t) == "01:02:03.04"
+    assert t.canonical_format() == "01:02:03.04"
     assert str(Time(1, 2, 3)) == "01:02:03"
 
 
 def test_repr():
-    t = Time(1, 2, 3, 4_000)
-    assert repr(t) == "Time(01:02:03.004000)"
+    t = Time(1, 2, 3, 40_000)
+    assert repr(t) == "Time(01:02:03.04)"
 
 
 class TestFromCanonicalFormat:
@@ -55,6 +55,7 @@ class TestFromCanonicalFormat:
             ("00:00:00.000000", Time()),
             ("01:02:03.004000", Time(1, 2, 3, 4_000)),
             ("23:59:59.999999", Time(23, 59, 59, 999_999)),
+            ("23:59:59.99", Time(23, 59, 59, 990_000)),
             ("23:59:59", Time(23, 59, 59)),
         ],
     )
