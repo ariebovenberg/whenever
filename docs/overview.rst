@@ -333,11 +333,12 @@ ZonedDateTime(2023-12-27 11:30:00+01:00[Europe/Amsterdam])
 Adding/subtracting takes into account timezone changes (e.g. daylight saving time)
 according to industry standard RFC 5545. This means:
 
+- Units are added from largest (year) to smallest (microsecond),
+  truncating and/or wrapping at each step.
 - Precise time units (hours, minutes, and seconds) account for DST changes,
   but calendar units (days, months, years) do not.
   The expectation is that rescheduling a 10am appointment "a day later"
   will still be at 10am, even after DST changes.
-- Units are added from largest (year) to smallest (microsecond).
 
 .. seealso::
 
@@ -417,7 +418,7 @@ You choose the disambiguation behavior you want with the ``disambiguate=`` argum
     >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="earlier")
     ZoneDateTime(2023-10-29 02:30:00+01:00[Europe/Paris])
 
-    >>> # Non-existent: 2:30am doesn't exist.
+    >>> # Skipped: 2:30am doesn't exist.
     >>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris)
     Traceback (most recent call last):
       ...
@@ -513,7 +514,7 @@ Here are the canonical formats for each type:
 +-----------------------------------------+---------------------------------------------------------------------+
 | :class:`~whenever.OffsetDateTime`       | ``YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))``                |
 +-----------------------------------------+---------------------------------------------------------------------+
-| :class:`~whenever.ZonedDateTime`        | ``YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))[TIMEZONE NAME]`` |
+| :class:`~whenever.ZonedDateTime`        | ``YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))[TIMEZONE ID]``   |
 +-----------------------------------------+---------------------------------------------------------------------+
 | :class:`~whenever.LocalSystemDateTime`  | ``YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))``                |
 +-----------------------------------------+---------------------------------------------------------------------+

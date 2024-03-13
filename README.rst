@@ -35,23 +35,24 @@ There's no way to be sure...
 **Whenever** is a datetime library designed from the ground up to enforce correctness.
 Mistakes become red squiggles in your IDE, instead of bugs in production.
 
-`📖 Docs <https://whenever.readthedocs.io>`_ |
-`🐍 PyPI <https://pypi.org/project/whenever/>`_ |
-`🐙 GitHub <https://github.com/ariebovenberg/whenever>`_ |
-`🚀 Changelog <https://whenever.readthedocs.io/en/latest/changelog.html>`_ |
-`💬 FAQ <https://whenever.readthedocs.io/en/latest/faq.html>`_ |
-🗺️ `Roadmap`_
+`📖 Docs <https://whenever.readthedocs.io>`_ |
+`🐍 PyPI <https://pypi.org/project/whenever/>`_ |
+`🐙 GitHub <https://github.com/ariebovenberg/whenever>`_ |
+`🚀 Changelog <https://whenever.readthedocs.io/en/latest/changelog.html>`_ |
+`❓ FAQ <https://whenever.readthedocs.io/en/latest/faq.html>`_ |
+🗺️ `Roadmap`_ |
+`💬 Issues & discussions <https://github.com/ariebovenberg/whenever/issues>`_
 
 Benefits
 --------
 
-- 🎯 Distinct classes with well-defined behavior
-- 🔧 Fixes pitfalls that `arrow and pendulum don't <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_
-- ✅ Enforce correctness without runtime checks
-- 🔌 Based on `familiar concepts <https://www.youtube.com/watch?v=saeKBuPewcU>`_ and standards
-- 💎 Simple and obvious; no frills or surprises
-- 📖 `Thoroughly documented <https://whenever.rtfd.io/en/latest/overview.html>`_ and tested
-- 🎁 One file; no third-party dependencies
+- Distinct classes with well-defined behavior
+- Fixes pitfalls that `arrow and pendulum don't <https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/>`_
+- Enforce correctness without runtime checks
+- Based on `familiar concepts <https://www.youtube.com/watch?v=saeKBuPewcU>`_ and standards
+- Simple and obvious; no frills or surprises
+- `Thoroughly documented <https://whenever.rtfd.io/en/latest/overview.html>`_ and tested
+- One file; no third-party dependencies
 
 Quickstart
 ----------
@@ -60,7 +61,7 @@ Quickstart
 
    >>> from whenever import (
    ...    # Explicit types for different use cases
-   ...    UTCDateTime,     # -> Great for codebases that normalize to UTC
+   ...    UTCDateTime,     # -> To enforce UTC normalization
    ...    OffsetDateTime,  # -> Localized times without ambiguities
    ...    ZonedDateTime,   # -> Full-featured IANA timezone support
    ...    NaiveDateTime,   # -> Detached from any timezone
@@ -115,7 +116,7 @@ Quickstart
    >>> pycon23_start.py_datetime().ctime()
    'Fri Apr 21 09:00:00 2023'
 
-Read more in the `full overview <https://whenever.readthedocs.io/en/latest/overview.html>`_
+Read more in the `feature overview <https://whenever.readthedocs.io/en/latest/overview.html>`_
 or `API reference <https://whenever.readthedocs.io/en/latest/api.html>`_.
 
 Why not...?

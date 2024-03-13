@@ -1,4 +1,4 @@
-💬 FAQ
+❓ FAQ
 ======
 
 .. _faq-why-utc:
