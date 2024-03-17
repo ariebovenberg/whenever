@@ -1,15 +1,7 @@
-.. _advanced:
-
-⚙️ Advanced features
-====================
-
-This page covers the more advanced features of **whenever**.
-Read the :ref:`overview <overview>` first if you haven't already.
-
 .. _durations:
 
-Deltas
-------
+⏳ Deltas (durations)
+=====================
 
 As we've seen :ref:`earlier <add-subtract-time>`, you can add and subtract
 time units from datetimes:
@@ -52,7 +44,7 @@ DateTimeDelta(P1M10DT2H9M)
 >>> Date(2023, 1, 29) + movie_runtime  # Adding time to a date
 
 Types of deltas
-~~~~~~~~~~~~~~~
+---------------
 
 There are three duration types in **whenever**:
 
@@ -84,28 +76,27 @@ This distinction determines which operations are supported:
 +------------------------------+-------------------+--------------------+--------------------+
 | Add to ``Date``              | .. centered:: ❌  | .. centered:: ✅   | .. centered:: ❌   |
 +------------------------------+-------------------+--------------------+--------------------+
-| multiplication (×)           | .. centered:: ✅  | ⚠️  only by        | ⚠️  only by        |
+| multiplication (×)           | .. centered:: ✅  | ⚠️  by             | ⚠️  by             |
 |                              |                   | ``int``            | ``int``            |
 +------------------------------+-------------------+--------------------+--------------------+
 | division (÷)                 | .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
 +------------------------------+-------------------+--------------------+--------------------+
-| Commutative, i.e.            |                   |                    |                    |
+| Commutative:                 |                   |                    |                    |
 | ``dt + a + b == dt + b + a`` | .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
 +------------------------------+-------------------+--------------------+--------------------+
-| Reversible, i.e              |                   |                    |                    |
-| ``(dt + a) - a == dt``       | .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
+| Reversible:                  |                   |                    |                    |
+| ``(dt + a) - a == dt``       | .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
 +------------------------------+-------------------+--------------------+--------------------+
 | comparison (``>, >=, <, <=``)| .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
 +------------------------------+-------------------+--------------------+--------------------+
-| normalized                   | .. centered:: ✅  | .. centered:: ❌   | ⚠️ only the time   |
-|                              |                   |                    | part               |
+| normalized                   | .. centered:: ✅  | .. centered:: ❌   | ⚠️  time part      |
 +------------------------------+-------------------+--------------------+--------------------+
-| equality based on            | total sum in      | individual         | equality of date   |
-|                              | microseconds      | fields             | and time parts     |
+| equality based on            | total microseconds| individual         | date/time parts    |
+|                              |                   | fields             |                    |
 +------------------------------+-------------------+--------------------+--------------------+
 
 Multiplication
-~~~~~~~~~~~~~~
+--------------
 
 You can multiply time units by a number:
 
@@ -119,7 +110,7 @@ Date units can only be multiplied by integers.
 DateDelta(6M)
 
 Division
-~~~~~~~~
+--------
 
 Only time units can be divided:
 
@@ -129,7 +120,7 @@ TimeDelta(02:00:00)
 Date units can't be divided. "A year divided by 11.2", for example, can't be defined.
 
 Commutativity
-~~~~~~~~~~~~~
+-------------
 
 The result of adding two time durations is the same, regardless of what order you add them in:
 
@@ -146,7 +137,7 @@ UTCDateTime(2021-03-03 00:00:00)
 UTCDateTime(2021-03-01 00:00:00)
 
 Reversibility
-~~~~~~~~~~~~~
+-------------
 
 Adding a time duration and then subtracting it again gives you the original datetime:
 
@@ -162,7 +153,7 @@ UTCDateTime(2020-02-29 00:00:00)
 UTCDateTime(2020-01-29 00:00:00)
 
 Comparison
-~~~~~~~~~~
+----------
 
 You can compare time durations:
 
@@ -174,7 +165,7 @@ This is not the case for date units:
 >>> months(1) > days(30)  # no universal answer
 
 Normalization
-~~~~~~~~~~~~~
+-------------
 
 Time durations are always normalized:
 
@@ -187,7 +178,7 @@ Date units are not normalized:
 DateDelta(P13M)
 
 Equality
-~~~~~~~~
+--------
 
 Two time durations are equal if their sum of components is equal:
 
@@ -200,57 +191,52 @@ equal if their individual components are equal:
 >>> months(1) + days(30) == months(2) - days(1)
 False
 
+.. _iso8601-durations:
 
-.. _localtime:
+ISO 8601 format
+---------------
 
-The local system timezone
--------------------------
+The ISO 8601 standard defines formats for specifying durations,
+the most common being:
 
-The local timezone is the timezone of the system running the code.
-It's often useful to deal with times in the local timezone, but it's also
-important to be aware that the local timezone can change.
+.. code-block:: none
 
-Instances of :class:`~whenever.LocalSystemDateTime` have the fixed offset
-of the system timezone at the time of initialization.
-The system timezone may change afterwards,
-but instances of this type will not reflect that change.
-This is because:
+   ±PnYnMnDTnHnMnS
 
-- There are several ways to deal with such a change:
-  should the moment in time be preserved, or the local time on the clock?
-- Automatically reflecting that change would mean that the object could
-  change at any time, depending on some global mutable state.
-  This would make it harder to reason about and use.
+Where:
 
->>> # initialization where the system timezone is America/New_York
->>> d = LocalSystemDateTime(2020, 8, 15, hour=8)
-LocalSystemDateTime(2020-08-15 08:00:00-04:00)
-...
->>> # we change the system timezone to Amsterdam
->>> os.environ["TZ"] = "Europe/Amsterdam"
->>> time.tzset()
-...
->>> d  # object remains unchanged
-LocalSystemDateTime(2020-08-15 08:00:00-04:00)
+- ``P`` is the period designator, and ``T`` separates date and time components.
+- ``nY`` is the number of years, ``nM`` is the number of months, etc.
+- Each ``n`` may be negative, and only seconds may have a fractional part.
 
-If you'd like to preserve the moment in time
-and calculate the new local time, simply call
-:meth:`~whenever._AwareDateTime.as_local`.
+For example:
 
->>> # same moment, but now with the clock time in Amsterdam
->>> d.as_local()
-LocalSystemDateTime(2020-08-15 14:00:00+02:00)
+- ``P3Y4DT12H30M`` is 3 years, 4 days, 12 hours, and 30 minutes.
+- ``-P2M5D`` is -2 months, +5 days.
+- ``P0D`` is zero.
+- ``PT-5M4.25S`` is -5 minutes and +4.25 seconds.
 
-On the other hand, if you'd like to preserve the local time on the clock
-and calculate the corresponding moment in time:
+All deltas can be converted to and from this format using the methods
+:meth:`~whenever.DateTimeDelta.common_iso8601`
+and :meth:`~whenever.DateTimeDelta.from_common_iso8601`.
 
->>> # take the wall clock time...
->>> wall_clock = d.naive()
-NaiveDateTime(2020-08-15 08:00:00)
->>> # ...and assume the system timezone (Amsterdam)
->>> wall_clock.assume_local()
-LocalSystemDateTime(2020-08-15 08:00:00+02:00)
+>>> hours(3).common_iso8601()
+'PT3H'
+>>> (years(1) - months(3) + minutes(30.25)).common_iso8601()
+'P1Y-3MT30M15S'
+>>> DateDelta.from_common_iso8601('-P2M')
+DateDelta(-2M)
+>>> DateTimeDelta.from_common_iso8601('P3YT90M')
+DateTimeDelta(P3YT1H30M)
 
-.. seealso::
+.. attention::
 
-   :ref:`Why does LocalSystemDateTime exist? <faq-why-local>`
+   Full conformance to the ISO 8601 standard is not provided, because:
+
+   - It allows for a lot of unnecessary flexibility
+     (e.g. fractional components other than seconds)
+   - There are different revisions with different rules
+   - The full specification is not freely available
+
+   Supporting a commonly used subset is more practical.
+   This is also what established libraries such as java.time and Nodatime do.

@@ -66,8 +66,8 @@ Deltas
    :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __mul__, __bool__
 
 .. autoclass:: whenever.DateTimeDelta
-   :undoc-members: date_part, time_part
    :members:
+   :undoc-members: date_part, time_part
    :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __bool__, __mul__
 
 Date and time components

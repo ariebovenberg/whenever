@@ -191,6 +191,104 @@ def test_comparison():
 )
 def test_canonical_format(d, expected):
     assert d.canonical_format() == expected
+    assert str(d) == expected
+
+
+@pytest.mark.parametrize(
+    "d, expected",
+    [
+        (
+            TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4),
+            "PT1H2M3.000004S",
+        ),
+        (
+            TimeDelta(hours=1, minutes=-2, seconds=3, microseconds=-4),
+            "PT58M2.999996S",
+        ),
+        (
+            TimeDelta(hours=1, minutes=2, seconds=3, microseconds=50_000),
+            "PT1H2M3.05S",
+        ),
+        (
+            TimeDelta(hours=1, minutes=120, seconds=3),
+            "PT3H3S",
+        ),
+        (
+            TimeDelta(),
+            "PT0S",
+        ),
+        (
+            TimeDelta(microseconds=1),
+            "PT0.000001S",
+        ),
+        (
+            TimeDelta(microseconds=-1),
+            "PT-0.000001S",
+        ),
+        (
+            TimeDelta(seconds=2, microseconds=-3),
+            "PT1.999997S",
+        ),
+        (
+            TimeDelta(hours=5),
+            "PT5H",
+        ),
+        (
+            TimeDelta(hours=400),
+            "PT400H",
+        ),
+        (
+            TimeDelta(minutes=-4),
+            "PT-4M",
+        ),
+    ],
+)
+def test_common_iso8601(d, expected):
+    assert d.common_iso8601() == expected
+
+
+class TestFromCommonIso8601:
+
+    @pytest.mark.parametrize(
+        "s, expected",
+        [
+            (
+                "PT1H2M3.000004S",
+                TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4),
+            ),
+            (
+                "PT58M2.999996S",
+                TimeDelta(hours=1, minutes=-2, seconds=3, microseconds=-4),
+            ),
+            (
+                "PT1H2M3.05S",
+                TimeDelta(hours=1, minutes=2, seconds=3, microseconds=50_000),
+            ),
+            ("PT3H3S", TimeDelta(hours=1, minutes=120, seconds=3)),
+            ("PT0S", TimeDelta()),
+            ("PT0.000001S", TimeDelta(microseconds=1)),
+            ("PT-0.000001S", TimeDelta(microseconds=-1)),
+            ("PT1.999997S", TimeDelta(seconds=2, microseconds=-3)),
+            ("PT5H", TimeDelta(hours=5)),
+            ("PT400H", TimeDelta(hours=400)),
+            ("PT-4M", TimeDelta(minutes=-4)),
+            ("P0D", TimeDelta()),
+            ("PT0S", TimeDelta()),
+            ("P0YT3M", TimeDelta(minutes=3)),
+            ("-P-0YT+3M", TimeDelta(minutes=-3)),
+            ("PT0M", TimeDelta()),
+        ],
+    )
+    def test_valid(self, s, expected):
+        assert TimeDelta.from_common_iso8601(s) == expected
+
+    @pytest.mark.parametrize(
+        "s",
+        ["P1D", "P1Y", "T1H", "PT4M3H", "PT1.5H"],
+    )
+    def test_invalid(self, s) -> None:
+        with pytest.raises(InvalidFormat):
+            TimeDelta.from_common_iso8601(s)
 
 
 class TestFromCanonicalFormat:

@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 import re
 import sys
@@ -594,7 +594,6 @@ class TimeDelta(_ImmutableBase):
 
     Examples
     --------
-
     >>> d = TimeDelta(hours=1, minutes=30)
     TimeDelta(01:30:00)
     >>> d.in_minutes()
@@ -859,6 +858,52 @@ class TimeDelta(_ImmutableBase):
 
     __str__ = canonical_format
 
+    def common_iso8601(self) -> str:
+        """Format as the *popular interpretation* of the ISO 8601 duration format.
+        May not strictly adhere to (all versions of) the standard.
+        See :ref:`here <iso8601-durations>` for more information.
+
+        Inverse of :meth:`from_common_iso8601`
+
+        Example
+        -------
+        >>> TimeDelta(hours=1, minutes=30).common_iso8601()
+        'PT1H30M'
+        """
+        hrs, mins, secs, ms = self.as_tuple()
+        seconds = f"{secs + ms / 1_000_000:f}".rstrip("0") if ms else str(secs)
+        return "PT" + (
+            (
+                f"{hrs}H" * bool(hrs)
+                + f"{mins}M" * bool(mins)
+                + f"{seconds}S" * bool(secs or ms)
+            )
+            or "0S"
+        )
+
+    @classmethod
+    def from_common_iso8601(cls, s: str, /) -> TimeDelta:
+        """Parse the *popular interpretation* of the ISO 8601 duration format.
+        Does not parse all possible ISO 8601 durations.
+        See :ref:`here <iso8601-durations>` for more information.
+
+        Inverse of :meth:`common_iso8601`
+
+        Example
+        -------
+        >>> TimeDelta.from_common_iso8601("PT1H30M")
+        TimeDelta(01:30:00)
+
+        Note
+        ----
+        Any duration with a non-zero date part is considered invalid.
+        ``P0D`` is valid, but ``P1DT1H`` is not.
+        """
+        parsed = DateTimeDelta.from_common_iso8601(s)
+        if parsed._date_part:
+            raise InvalidFormat()
+        return parsed._time_part
+
     def py_timedelta(self) -> _timedelta:
         """Convert to a :class:`~datetime.timedelta`
 
@@ -1009,67 +1054,6 @@ class DateDelta(_ImmutableBase):
         True
         """
         return bool(self._years or self._months or self._weeks or self._days)
-
-    def canonical_format(self) -> str:
-        """The delta in canonical format.
-
-        The canonical string format is:
-
-        .. code-block:: text
-
-            (nY)(nM)(nW)(nD)
-
-        For example:
-
-        .. code-block:: text
-
-            1D
-            2M
-            1Y2M-3W4D
-
-        Example
-        -------
-        >>> p = DateDelta(years=1, months=2, weeks=3, days=11)
-        >>> p.canonical_format()
-        '1Y2M3W11D'
-        >>> DateDelta().canonical_format()
-        '0D'
-        """
-        date = (
-            f"{self._years}Y" * bool(self._years),
-            f"{self._months}M" * bool(self._months),
-            f"{self._weeks}W" * bool(self._weeks),
-            f"{self._days}D" * bool(self._days),
-        )
-        return "".join(date) or "0D"
-
-    @classmethod
-    def from_canonical_format(cls, s: str, /) -> DateDelta:
-        """Create from a canonical string representation.
-
-        Inverse of :meth:`canonical_format`
-
-        Example
-        -------
-        >>> DateDelta.from_canonical_format("1Y2M-3W4D")
-        DateDelta(1Y2M-3W4D)
-
-        Raises
-        ------
-        InvalidFormat
-            If the string does not match this exact format.
-        """
-        if not ((match := _match_datedelta(s)) and s):
-            raise InvalidFormat()
-        years, months, weeks, days = match.groups()
-        return cls(
-            years=int(years or 0),
-            months=int(months or 0),
-            weeks=int(weeks or 0),
-            days=int(days or 0),
-        )
-
-    __str__ = canonical_format
 
     if TYPE_CHECKING:
 
@@ -1227,6 +1211,105 @@ class DateDelta(_ImmutableBase):
             days=abs(self._days),
         )
 
+    def canonical_format(self) -> str:
+        """The delta in canonical format.
+
+        The canonical string format is:
+
+        .. code-block:: text
+
+            (nY)(nM)(nW)(nD)
+
+        For example:
+
+        .. code-block:: text
+
+            1D
+            2M
+            1Y2M-3W4D
+
+        Example
+        -------
+        >>> p = DateDelta(years=1, months=2, weeks=3, days=11)
+        >>> p.canonical_format()
+        '1Y2M3W11D'
+        >>> DateDelta().canonical_format()
+        '0D'
+        """
+        date = (
+            f"{self._years}Y" * bool(self._years),
+            f"{self._months}M" * bool(self._months),
+            f"{self._weeks}W" * bool(self._weeks),
+            f"{self._days}D" * bool(self._days),
+        )
+        return "".join(date) or "0D"
+
+    @classmethod
+    def from_canonical_format(cls, s: str, /) -> DateDelta:
+        """Create from a canonical string representation.
+
+        Inverse of :meth:`canonical_format`
+
+        Example
+        -------
+        >>> DateDelta.from_canonical_format("1Y2M-3W4D")
+        DateDelta(1Y2M-3W4D)
+
+        Raises
+        ------
+        InvalidFormat
+            If the string does not match this exact format.
+        """
+        if not ((match := _match_datedelta(s)) and s):
+            raise InvalidFormat()
+        years, months, weeks, days = match.groups()
+        return cls(
+            years=int(years or 0),
+            months=int(months or 0),
+            weeks=int(weeks or 0),
+            days=int(days or 0),
+        )
+
+    __str__ = canonical_format
+
+    def common_iso8601(self) -> str:
+        """Format as the *popular interpretation* of the ISO 8601 duration format.
+        May not strictly adhere to (all versions of) the standard.
+        See :ref:`here <iso8601-durations>` for more information.
+
+        Inverse of :meth:`from_common_iso8601`
+
+        Example
+        -------
+        >>> DateDelta(weeks=1, days=11).common_iso8601()
+        'P1W11D'
+        """
+        return f"P{self}"
+
+    @classmethod
+    def from_common_iso8601(cls, s: str, /) -> DateDelta:
+        """Parse the *popular interpretation* of the ISO 8601 duration format.
+        Does not parse all possible ISO 8601 durations.
+        See :ref:`here <iso8601-durations>` for more information.
+
+        Inverse of :meth:`common_iso8601`.
+
+        Example
+        -------
+        >>> DateDelta.from_common_iso8601("P1W11D")
+        DateDelta(1W11D)
+
+        Note
+        ----
+        Any duration with a non-zero time part is considered invalid.
+        ``PT0S`` is valid, but ``P3DT1H`` is not.
+
+        """
+        full_delta = DateTimeDelta.from_canonical_format(s)
+        if full_delta.time_part:
+            raise InvalidFormat()
+        return full_delta.date_part
+
     def as_tuple(self) -> tuple[int, int, int, int]:
         """Convert to a tuple of (years, months, weeks, days)
 
@@ -1340,70 +1423,6 @@ class DateTimeDelta(_ImmutableBase):
         """
         return bool(self._date_part or self._time_part)
 
-    def canonical_format(self) -> str:
-        """The delta in canonical format.
-
-        Example
-        -------
-        >>> d = DateTimeDelta(
-        ...     weeks=1,
-        ...     days=11,
-        ...     hours=4,
-        ... )
-        >>> d.canonical_format()
-        'P1W11DT4H'
-        """
-        hrs, mins, secs, ms = self._time_part.as_tuple()
-        seconds = f"{secs + ms / 1_000_000:f}".rstrip("0").rstrip(".")
-        date = self._date_part.canonical_format() * bool(self._date_part)
-        return "P" + (
-            (
-                date
-                + (
-                    "T"
-                    + f"{hrs}H" * bool(hrs)
-                    + f"{mins}M" * bool(mins)
-                    + f"{seconds}S" * bool(secs or ms)
-                )
-                * bool(self._time_part)
-            )
-            or "0D"
-        )
-
-    __str__ = canonical_format
-
-    def __repr__(self) -> str:
-        return f"DateTimeDelta({self})"
-
-    @classmethod
-    def from_canonical_format(cls, s: str, /) -> DateTimeDelta:
-        """Create from a canonical string representation.
-
-        Inverse of :meth:`canonical_format`
-
-        Example
-        -------
-        >>> DateTimeDelta.from_canonical_format("P1W11DT4H")
-        DateTimeDelta(weeks=1, days=11, hours=4)
-
-        Raises
-        ------
-        InvalidFormat
-            If the string does not match this exact format.
-        """
-        if not (match := _match_datetimedelta(s)) or s == "P":
-            raise InvalidFormat()
-        years, months, weeks, days, hours, minutes, seconds = match.groups()
-        return cls(
-            years=int(years or 0),
-            months=int(months or 0),
-            weeks=int(weeks or 0),
-            days=int(days or 0),
-            hours=float(hours or 0),
-            minutes=float(minutes or 0),
-            seconds=float(seconds or 0),
-        )
-
     def __add__(self, other: Delta) -> DateTimeDelta:
         """Add two deltas together
 
@@ -1510,6 +1529,98 @@ class DateTimeDelta(_ImmutableBase):
         new._date_part = abs(self._date_part)
         new._time_part = abs(self._time_part)
         return new
+
+    def canonical_format(self) -> str:
+        """The delta in canonical format.
+
+        Example
+        -------
+        >>> d = DateTimeDelta(
+        ...     weeks=1,
+        ...     days=11,
+        ...     hours=4,
+        ... )
+        >>> d.canonical_format()
+        'P1W11DT4H'
+        """
+        date = self._date_part.canonical_format() * bool(self._date_part)
+        time = self._time_part.common_iso8601()[1:] * bool(self._time_part)
+        return "P" + ((date + time) or "0D")
+
+    __str__ = canonical_format
+
+    def __repr__(self) -> str:
+        return f"DateTimeDelta({self})"
+
+    @classmethod
+    def from_canonical_format(cls, s: str, /) -> DateTimeDelta:
+        """Create from a canonical string representation.
+        Inverse of :meth:`canonical_format`
+
+        Examples:
+
+        .. code-block:: text
+
+           P4D        # 4 days
+           PT4H       # 4 hours
+           PT3M40.5   # 3 minutes and 40.5 seconds
+           P1W11DT4H  # 1 week, 11 days, and 4 hours
+           PT-7H4M    # -7 hours and +4 minutes (-6:56:00)
+           -PT7H4M    # -7 hours and -4 minutes (-7:04:00)
+           -PT-7H+4M  # +7 hours and -4 minutes (-6:56:00)
+
+
+        Example
+        -------
+        >>> DateTimeDelta.from_canonical_format("P1W11DT4H")
+        DateTimeDelta(weeks=1, days=11, hours=4)
+
+        Raises
+        ------
+        InvalidFormat
+            If the string does not match this exact format.
+        """
+        if not (match := _match_datetimedelta(s)) or s == "P":
+            raise InvalidFormat()
+        sign, years, months, weeks, days, hours, minutes, seconds = (
+            match.groups()
+        )
+        parsed = cls(
+            years=int(years or 0),
+            months=int(months or 0),
+            weeks=int(weeks or 0),
+            days=int(days or 0),
+            hours=float(hours or 0),
+            minutes=float(minutes or 0),
+            seconds=float(seconds or 0),
+        )
+        return -parsed if sign == "-" else parsed
+
+    def common_iso8601(self) -> str:
+        """Format as the *popular interpretation* of the ISO 8601 duration format.
+        May not strictly adhere to (all versions of) the standard.
+        See :ref:`here <iso8601-durations>` for more information.
+
+        Example
+        -------
+        >>> DateTimeDelta(weeks=1, days=-11, hours=4).common_iso8601()
+        'P1W-11DT4H'
+        """
+        return self.canonical_format()
+
+    @classmethod
+    def from_common_iso8601(cls, s: str, /) -> DateTimeDelta:
+        """Parse the *popular interpretation* of the ISO 8601 duration format.
+        Does not parse all possible ISO 8601 durations.
+        See :ref:`here <iso8601-durations>` for more information.
+
+        Example
+        -------
+        >>> DateTimeDelta.from_common_iso8601("-P1W11DT4H")
+        DateTimeDelta(P-1W-11DT-4H)
+
+        """
+        return cls.from_canonical_format(s)
 
     def as_tuple(self) -> tuple[int, int, int, int, int, int, int, int]:
         """Convert to a tuple of (years, months, weeks, days, hours,
@@ -3923,7 +4034,7 @@ _match_datedelta = re.compile(
     r"(?:([-+]?\d+)Y)?(?:([-+]?\d+)M)?(?:([-+]?\d+)W)?(?:([-+]?\d+)D)?"
 ).fullmatch
 _match_datetimedelta = re.compile(
-    r"P(?:([-+]?\d+)Y)?(?:([-+]?\d+)M)?(?:([-+]?\d+)W)?(?:([-+]?\d+)D)?"
+    r"([-+]?)P(?:([-+]?\d+)Y)?(?:([-+]?\d+)M)?(?:([-+]?\d+)W)?(?:([-+]?\d+)D)?"
     r"(?:T(?:([-+]?\d+)H)?(?:([-+]?\d+)M)?(?:([-+]?\d+(?:\.\d{1,6})?)?S)?)?"
 ).fullmatch
 _match_timedelta = re.compile(

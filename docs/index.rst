@@ -8,7 +8,7 @@ Contents
 
    self
    overview.rst
-   advanced.rst
+   deltas.rst
    faq.rst
    api.rst
    changelog.rst

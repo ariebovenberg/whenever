@@ -1,6 +1,12 @@
 🚀 Changelog
 ============
 
+0.4.1 (2024-03-17)
+------------------
+
+- Improve and clarify ISO8601-conformance of deltas.
+- Separate docs for deltas and datetimes.
+
 0.4.0 (2024-03-13)
 ------------------
 
