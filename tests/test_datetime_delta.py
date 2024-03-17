@@ -154,13 +154,15 @@ def test_bool():
 )
 def test_canonical_format(p, expect):
     assert p.canonical_format() == expect
+    assert p.common_iso8601() == expect
     assert str(p) == expect
 
 
-class TestFromCanonicalFormat:
+class TestFromCanonicalFormatAndCommonISO8601:
 
     def test_empty(self):
         assert DateTimeDelta.from_canonical_format("P0D") == DateTimeDelta()
+        assert DateTimeDelta.from_common_iso8601("P0D") == DateTimeDelta()
 
     @pytest.mark.parametrize(
         "input, expect",
@@ -180,6 +182,7 @@ class TestFromCanonicalFormat:
     )
     def test_single_unit(self, input, expect):
         assert DateTimeDelta.from_canonical_format(input) == expect
+        assert DateTimeDelta.from_common_iso8601(input) == expect
 
     @pytest.mark.parametrize(
         "input, expect",
@@ -227,23 +230,36 @@ class TestFromCanonicalFormat:
             ),
             ("P-2MT-1M", DateTimeDelta(months=-2, minutes=-1)),
             (
-                "P-2Y3W-0DT-0.999S",
+                "+P-2Y+3W-0DT-0.999S",
                 DateTimeDelta(
                     years=-2, weeks=3, seconds=-1, microseconds=1_000
+                ),
+            ),
+            (
+                "-P1Y-3MT-4.999S",
+                DateTimeDelta(
+                    years=-1, months=3, seconds=4, microseconds=999_000
                 ),
             ),
         ],
     )
     def test_multiple_units(self, input, expect):
         assert DateTimeDelta.from_canonical_format(input) == expect
+        assert DateTimeDelta.from_common_iso8601(input) == expect
 
     def test_invalid(self):
         with pytest.raises(InvalidFormat):
             DateTimeDelta.from_canonical_format("P")
 
+        with pytest.raises(InvalidFormat):
+            DateTimeDelta.from_common_iso8601("P")
+
     def test_too_many_microseconds(self):
         with pytest.raises(InvalidFormat):
             DateTimeDelta.from_canonical_format("PT0.0000001S")
+
+        with pytest.raises(InvalidFormat):
+            DateTimeDelta.from_common_iso8601("PT0.0000001S")
 
 
 class TestAdd:

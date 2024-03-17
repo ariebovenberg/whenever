@@ -35,13 +35,13 @@ There's no way to be sure...
 **Whenever** is a datetime library designed from the ground up to enforce correctness.
 Mistakes become red squiggles in your IDE, instead of bugs in production.
 
-`📖 Docs <https://whenever.readthedocs.io>`_ |
-`🐍 PyPI <https://pypi.org/project/whenever/>`_ |
-`🐙 GitHub <https://github.com/ariebovenberg/whenever>`_ |
-`🚀 Changelog <https://whenever.readthedocs.io/en/latest/changelog.html>`_ |
-`❓ FAQ <https://whenever.readthedocs.io/en/latest/faq.html>`_ |
-🗺️ `Roadmap`_ |
-`💬 Issues & discussions <https://github.com/ariebovenberg/whenever/issues>`_
+`📖 Docs <https://whenever.readthedocs.io>`_ |
+`🐍 PyPI <https://pypi.org/project/whenever/>`_ |
+`🐙 GitHub <https://github.com/ariebovenberg/whenever>`_ |
+`🚀 Changelog <https://whenever.readthedocs.io/en/latest/changelog.html>`_ |
+`❓ FAQ <https://whenever.readthedocs.io/en/latest/faq.html>`_ |
+🗺️ `Roadmap`_ |
+`💬 Issues & discussions <https://github.com/ariebovenberg/whenever/issues>`_
 
 Benefits
 --------
@@ -61,10 +61,10 @@ Quickstart
 
    >>> from whenever import (
    ...    # Explicit types for different use cases
-   ...    UTCDateTime,     # -> To enforce UTC normalization
-   ...    OffsetDateTime,  # -> Localized times without ambiguities
-   ...    ZonedDateTime,   # -> Full-featured IANA timezone support
-   ...    NaiveDateTime,   # -> Detached from any timezone
+   ...    UTCDateTime,     # -> Enforce UTC-normalization
+   ...    OffsetDateTime,  # -> Simple localized times
+   ...    ZonedDateTime,   # -> Full-featured timezones
+   ...    NaiveDateTime,   # -> Without any timezone
    ... )
 
    >>> py311_release = UTCDateTime(2022, 10, 24, hour=17)

@@ -1,13 +1,13 @@
 .. _overview:
 
-🧭 Main features
-================
+🕘 Datetimes
+============
 
-This page gives a high-level overview of **whenever**'s features.
-To get more details, see the :ref:`advanced features <advanced>` or the :ref:`API reference <api>`.
+This page gives an overview of **whenever**'s main features for working with datetimes.
+For more details, see the :ref:`API reference <api>`.
 
-Datetime types
---------------
+The types
+---------
 
 .. epigraph::
 
@@ -113,7 +113,8 @@ LocalSystemDateTime(2023-12-28 02:00:00-05:00)
 
 .. seealso::
 
-   :ref:`Why does LocalSystemDateTime exist? <faq-why-local>`
+   - :ref:`Why does LocalSystemDateTime exist? <faq-why-local>`
+   - :ref:`Working with the local system timezone <localtime>`
 
 :class:`~whenever.NaiveDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -342,7 +343,7 @@ according to industry standard RFC 5545. This means:
 
 .. seealso::
 
-   Have a look at the documentation on :ref:`durations <durations>` for more details
+   Have a look at the documentation on :ref:`deltas <durations>` for more details
    on arithmetic operations, as well as more advanced features.
 
 .. attention::
@@ -554,3 +555,60 @@ store them in a database that supports pickling.
    From version 1.0 onwards, we aim to maintain backwards compatibility
    for unpickling.
 
+.. _localtime:
+
+The local system timezone
+-------------------------
+
+The local timezone is the timezone of the system running the code.
+It's important to be aware that the local timezone can change.
+Instances of :class:`~whenever.LocalSystemDateTime` have the fixed offset
+of the system timezone at the time of initialization.
+The system timezone may change afterwards,
+but instances of this type will not reflect that change.
+This is because:
+
+- There are several ways to deal with such a change:
+  should the moment in time be preserved, or the local time on the clock?
+- Automatically reflecting that change would mean that the object could
+  change at any time, depending on some global mutable state.
+  This would make it harder to reason about and use.
+
+>>> # initialization where the system timezone is America/New_York
+>>> d = LocalSystemDateTime(2020, 8, 15, hour=8)
+LocalSystemDateTime(2020-08-15 08:00:00-04:00)
+...
+>>> # we change the system timezone to Amsterdam
+>>> os.environ["TZ"] = "Europe/Amsterdam"
+>>> time.tzset()
+...
+>>> d  # object remains unchanged
+LocalSystemDateTime(2020-08-15 08:00:00-04:00)
+
+If you'd like to preserve the moment in time
+and calculate the new local time, simply call
+:meth:`~whenever._AwareDateTime.as_local`.
+
+>>> # same moment, but now with the clock time in Amsterdam
+>>> d.as_local()
+LocalSystemDateTime(2020-08-15 14:00:00+02:00)
+
+On the other hand, if you'd like to preserve the local time on the clock
+and calculate the corresponding moment in time:
+
+>>> # take the wall clock time...
+>>> wall_clock = d.naive()
+NaiveDateTime(2020-08-15 08:00:00)
+>>> # ...and assume the system timezone (Amsterdam)
+>>> wall_clock.assume_local()
+LocalSystemDateTime(2020-08-15 08:00:00+02:00)
+
+.. note::
+
+   Remember that :meth:`~whenever.NaiveDateTime.assume_local` may
+   require disambiguation, if the wall clock time is ambiguous in
+   the system timezone.
+
+.. seealso::
+
+   :ref:`Why does LocalSystemDateTime exist? <faq-why-local>`
