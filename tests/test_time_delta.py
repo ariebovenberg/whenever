@@ -413,6 +413,18 @@ def test_negate():
     ) == -TimeDelta(hours=1, minutes=-2, seconds=3, microseconds=-4)
 
 
+@pytest.mark.parametrize(
+    "d",
+    [
+        TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4),
+        TimeDelta.ZERO,
+        TimeDelta(hours=-2, minutes=-15),
+    ],
+)
+def test_pos(d):
+    assert d is +d
+
+
 def test_py_timedelta():
     assert TimeDelta().py_timedelta() == timedelta(0)
     assert TimeDelta(

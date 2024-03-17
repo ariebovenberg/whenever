@@ -212,6 +212,18 @@ def test_negate():
     assert -p == DateDelta(years=-1, months=-2, weeks=-3, days=4)
 
 
+@pytest.mark.parametrize(
+    "p",
+    [
+        DateDelta(years=1, months=2, weeks=3, days=4),
+        DateDelta.ZERO,
+        DateDelta(years=-1, months=2),
+    ],
+)
+def test_pos(p):
+    assert +p is p
+
+
 def test_multiply():
     p = DateDelta(
         years=1,
