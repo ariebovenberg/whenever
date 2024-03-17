@@ -565,6 +565,14 @@ def test_negate():
     )
 
 
+@pytest.mark.parametrize(
+    "d",
+    [DateTimeDelta.ZERO, DateTimeDelta(years=1, seconds=-7)],
+)
+def test_positive(d):
+    assert +d is d
+
+
 def test_abs():
     p = DateTimeDelta(
         years=1,

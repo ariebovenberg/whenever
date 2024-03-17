@@ -773,6 +773,17 @@ class TimeDelta(_ImmutableBase):
         """
         return TimeDelta(microseconds=-self._total_ms)
 
+    def __pos__(self) -> TimeDelta:
+        """Return the value unchanged
+
+        Example
+        -------
+        >>> d = TimeDelta(hours=1, minutes=30)
+        >>> +d
+        TimeDelta(01:30:00)
+        """
+        return self
+
     @overload
     def __truediv__(self, other: float) -> TimeDelta: ...
 
@@ -1102,6 +1113,17 @@ class DateDelta(_ImmutableBase):
             weeks=-self._weeks,
             days=-self._days,
         )
+
+    def __pos__(self) -> DateDelta:
+        """Return the value unchanged
+
+        Example
+        -------
+        >>> p = DateDelta(weeks=2, days=-3)
+        >>> +p
+        DateDelta(2W-3D)
+        """
+        return self
 
     def __mul__(self, other: int) -> DateDelta:
         """Multiply each field by a round number
@@ -1515,6 +1537,17 @@ class DateTimeDelta(_ImmutableBase):
         new._date_part = -self._date_part
         new._time_part = -self._time_part
         return new
+
+    def __pos__(self) -> DateTimeDelta:
+        """Return the delta unchanged
+
+        Example
+        -------
+        >>> d = DateTimeDelta(weeks=1, days=-11, hours=4)
+        >>> +d
+        DateTimeDelta(P1W11DT4H)
+        """
+        return self
 
     def __abs__(self) -> DateTimeDelta:
         """The absolute value of the delta
