@@ -1,13 +1,13 @@
 .. _overview:
 
-🕘 Datetimes
+🕗 Datetimes
 ============
 
 This page gives an overview of **whenever**'s main features for working with datetimes.
 For more details, see the :ref:`API reference <api>`.
 
-The types
----------
+Different types
+---------------
 
 .. epigraph::
 
@@ -48,9 +48,9 @@ Here's a summary of how you can use them:
 +-----------------------+-----+--------+-------+-------+-------+
 | now                   | ✅  |  ✅    |  ✅   |  ✅   |  ❌   |
 +-----------------------+-----+--------+-------+-------+-------+
-| to/from RFC2822       | ✅  |  ✅    |  ❌   |  ❌   |  ✅   |
+| to/from common ISO8601| ✅  |  ✅    |  ❌   |  ❌   |  ✅   |
 +-----------------------+-----+--------+-------+-------+-------+
-| to/from RFC3339       | ✅  |  ✅    |  ❌   |  ❌   |  ❌   |
+| to/from RFC3339/2822  | ✅  |  ✅    |  ❌   |  ❌   |  ❌   |
 +-----------------------+-----+--------+-------+-------+-------+
 
 :class:`~whenever.UTCDateTime`
@@ -430,12 +430,120 @@ You choose the disambiguation behavior you want with the ``disambiguate=`` argum
     ZonedDateTime(2023-03-26 03:30:00+02:00[Europe/Paris])
 
 
-Integrate with the standard library
------------------------------------
+Standardized representations
+----------------------------
 
-Each **whenever** datetime class wraps a standard
-library :class:`datetime.datetime` instance.
-You can access it with the :meth:`~whenever._DateTime.py_datetime` method.
+**Whenever** supports various standardized representations of datetimes.
+
+ISO 8601
+~~~~~~~~
+
+The `ISO 8601 <https://en.wikipedia.org/wiki/ISO_8601>`_ standard
+is probably the format you're most familiar with.
+What you may not know is that it's a very complex standard with many options.
+Like most libraries, **whenever** supports a subset of the standard 
+which is the most commonly used:
+
+.. code-block:: text
+
+   YYYY-MM-DDTHH:MM:SS±HH:MM
+
+For example: ``2023-12-28T11:30:00+05:00``
+
+Where:
+
+- Seconds may be fractional
+- The offset may be replaced with a ``"Z"`` to indicate UTC
+- Offset ``-00:00`` is not allowed
+
+Use the methods :meth:`~whenever.OffsetDateTime.common_iso8601` and
+:meth:`~whenever.OffsetDateTime.from_common_iso8601` to format and parse
+to this format, respectively:
+
+>>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=+5)
+>>> d.common_iso8601()
+'2023-12-28T11:30:00+05:00'
+>>> OffsetDateTime.from_common_iso8601('2021-07-13T09:45:00-09:00')
+OffsetDateTime(2021-07-13 09:45:00-09:00)
+
+.. admonition:: Why not support the full ISO 8601 spec?
+
+   The full ISO 8601 standard is not supported for several reasons:
+
+   - It allows for a lot of rarely-used flexibility:
+     e.g. fractional hours, omitting separators, week-based years, etc.
+   - There are different versions of the standard with different rules
+   - The full specification is not freely available
+
+   This isn't a problem in practice since people referring to "ISO 8601"
+   often mean the most common subset, which is what **whenever** supports.
+   It's rare for libraries to support the full standard.
+   The method name ``from_common_iso8601`` makes this assumption explicit.
+
+   If you do need to parse the full spectrum of ISO 8601, you can use
+   a specialized library such as `dateutil.parser <https://dateutil.readthedocs.io/en/stable/parser.html>`_.
+   If possible, it's recommend to use the :ref:`RFC 3339 <rfc3339>` format instead.
+
+.. _rfc3339:
+
+RFC 3339
+~~~~~~~~
+
+`RFC 3339 <https://tools.ietf.org/html/rfc3339>`_ is a subset of ISO 8601
+with a few deviations. The format is:
+
+.. code-block:: text
+
+   YYYY-MM-DDTHH:MM:SS±HH:MM
+
+For example: ``2023-12-28T11:30:00+05:00``
+
+Where:
+
+- Seconds may be fractional
+- The offset may be replaced with a ``"Z"`` to indicate UTC
+- ``T`` may be replaced with a space (unlike ISO 8601)
+- ``T`` and ``Z`` may be lowercase (unlike ISO 8601)
+
+Use the methods :meth:`~whenever.OffsetDateTime.rfc3339` and
+:meth:`~whenever.OffsetDateTime.from_rfc3339` to format and parse
+to this format, respectively:
+
+>>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=+5)
+>>> d.rfc3339()
+'2023-12-28T11:30:00+05:00'
+>>> OffsetDateTime.from_rfc3339('2021-07-13 09:45:00Z')
+OffsetDateTime(2021-07-13 09:45:00Z)
+
+RFC 2822
+~~~~~~~~
+
+`RFC 2822 <https://datatracker.ietf.org/doc/html/rfc2822.html#section-3.3>`_ is another common format
+for representing datetimes. It's used in email headers and HTTP headers.
+The format is:
+
+.. code-block:: text
+
+   Weekday, DD Mon YYYY HH:MM:SS ±HHMM
+
+For example: ``Tue, 13 Jul 2021 09:45:00 -0900``
+
+Use the methods :meth:`~whenever.OffsetDateTime.rfc2822` and
+:meth:`~whenever.OffsetDateTime.from_rfc2822` to format and parse
+to this format, respectively:
+
+>>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=+5)
+>>> d.rfc2822()
+'Thu, 28 Dec 2023 11:30:00 +0500'
+>>> OffsetDateTime.from_rfc2822('Tue, 13 Jul 2021 09:45:00 -0900')
+OffsetDateTime(2021-07-13 09:45:00-09:00)
+
+To and from the standard library
+--------------------------------
+
+Each **whenever** datetime class can be converted to a standard
+library :class:`~datetime.datetime`
+with the :meth:`~whenever._DateTime.py_datetime` method.
 Conversely, you can create a type from a standard library datetime with the
 :meth:`~whenever._DateTime.from_py_datetime` classmethod.
 
@@ -444,14 +552,6 @@ Conversely, you can create a type from a standard library datetime with the
 UTCDateTime(2023-01-01 00:00:00Z)
 >>> ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam").py_datetime()
 datetime(2023, 1, 1, 0, 0, tzinfo=ZoneInfo('Europe/Amsterdam'))
-
-.. note::
-
-   The fact that whenever datetimes wrap standard library datetimes
-   is an implementation detail, and you should not rely on it.
-   In the future, the implementation may change.
-   The conversion methods will remain, however.
-
 
 Parsing
 -------
@@ -535,6 +635,14 @@ Here are the canonical formats for each type:
    :meth:`~whenever._DateTime.from_canonical_format` can be used to convert to and
    from the canonical string format.
 
+.. note::
+
+   The canonical format is similar to existing standards like ISO 8601 and RFC 3339.
+   If parsing from these formats, it's recommended to use
+   :meth:`~whenever.OffsetDateTime.from_common_iso8601` or 
+   :meth:`~whenever.OffsetDateTime.from_rfc3339` over ``from_canonical_format()``. 
+   These methods are more explicit and generally more lenient in what they accept.
+
 Pickling
 ~~~~~~~~
 
@@ -554,6 +662,29 @@ store them in a database that supports pickling.
 
    From version 1.0 onwards, we aim to maintain backwards compatibility
    for unpickling.
+
+
+Date and time components
+------------------------
+
+Aside from the datetimes themselves, **whenever** also provides 
+:class:`~whenever.Date` for calendar dates and :class:`~whenever.Time` for 
+representing times of day.
+
+>>> from whenever import Date, Time
+>>> Date(2023, 1, 1)
+Date(2023-01-01)
+>>> Time(12, 30)
+Time(12:30:00)
+
+These types can be converted to datetimes and vice versa:
+
+>>> Date(2023, 1, 1).at(Time(12, 30))
+NaiveDateTime(2023-01-01 12:30:00)
+>>> UTCDateTime.now().date()
+Date(2023-07-13)
+
+See the :ref:`API reference <date-and-time-api>` for more details.
 
 .. _localtime:
 

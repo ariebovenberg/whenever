@@ -110,68 +110,33 @@ def test_bool():
 @pytest.mark.parametrize(
     "p, expect",
     [
-        (DateDelta(), "0D"),
-        (DateDelta(years=-2), "-2Y"),
-        (DateDelta(days=1), "1D"),
-        (DateDelta(weeks=1), "1W"),
-        (DateDelta(months=1), "1M"),
-        (DateDelta(years=1), "1Y"),
-        (DateDelta(years=1, months=2, weeks=3, days=4), "1Y2M3W4D"),
-        (DateDelta(months=2, weeks=3), "2M3W"),
-        (DateDelta(months=2, weeks=-3), "2M-3W"),
+        (DateDelta(), "P0D"),
+        (DateDelta(years=-2), "P-2Y"),
+        (DateDelta(days=1), "P1D"),
+        (DateDelta(weeks=1), "P1W"),
+        (DateDelta(months=1), "P1M"),
+        (DateDelta(years=1), "P1Y"),
+        (DateDelta(years=1, months=2, weeks=3, days=4), "P1Y2M3W4D"),
+        (DateDelta(months=2, weeks=3), "P2M3W"),
+        (DateDelta(months=2, weeks=-3), "P2M-3W"),
     ],
 )
 def test_string_formats(p, expect):
     assert p.canonical_format() == expect
-    assert p.common_iso8601() == f"P{expect}"
+    assert p.common_iso8601() == expect
     assert str(p) == expect
 
 
 class TestFromCanonicalFormat:
 
     def test_empty(self):
-        assert DateDelta.from_canonical_format("0D") == DateDelta()
-
-    @pytest.mark.parametrize(
-        "input, expect",
-        [
-            ("0D", DateDelta()),
-            ("2Y", DateDelta(years=2)),
-            ("1M", DateDelta(months=1)),
-            ("1W", DateDelta(weeks=1)),
-            ("1D", DateDelta(days=1)),
-        ],
-    )
-    def test_single_unit(self, input, expect):
-        assert DateDelta.from_canonical_format(input) == expect
-
-    @pytest.mark.parametrize(
-        "input, expect",
-        [
-            ("1Y2M3W4D", DateDelta(years=1, months=2, weeks=3, days=4)),
-            ("2M3W", DateDelta(months=2, weeks=3)),
-            ("-2M", DateDelta(months=-2)),
-            ("-2Y3W", DateDelta(years=-2, weeks=3)),
-        ],
-    )
-    def test_multiple_units(self, input, expect):
-        assert DateDelta.from_canonical_format(input) == expect
-
-    def test_invalid(self):
-        with pytest.raises(InvalidFormat):
-            DateDelta.from_canonical_format("")
-
-
-class TestFromCommonIso8601:
-
-    def test_empty(self):
+        assert DateDelta.from_canonical_format("P0D") == DateDelta()
         assert DateDelta.from_common_iso8601("P0D") == DateDelta()
-        assert DateDelta.from_common_iso8601("P0Y") == DateDelta()
 
     @pytest.mark.parametrize(
         "input, expect",
         [
-            ("P0Y", DateDelta()),
+            ("P0D", DateDelta()),
             ("P2Y", DateDelta(years=2)),
             ("P1M", DateDelta(months=1)),
             ("P1W", DateDelta(weeks=1)),
@@ -179,6 +144,7 @@ class TestFromCommonIso8601:
         ],
     )
     def test_single_unit(self, input, expect):
+        assert DateDelta.from_canonical_format(input) == expect
         assert DateDelta.from_common_iso8601(input) == expect
 
     @pytest.mark.parametrize(
@@ -187,13 +153,22 @@ class TestFromCommonIso8601:
             ("P1Y2M3W4D", DateDelta(years=1, months=2, weeks=3, days=4)),
             ("P2M3W", DateDelta(months=2, weeks=3)),
             ("P-2M", DateDelta(months=-2)),
+            ("P-2Y3W", DateDelta(years=-2, weeks=3)),
+            ("P1Y2M3W4D", DateDelta(years=1, months=2, weeks=3, days=4)),
+            ("P1Y2M3W4DT0S", DateDelta(years=1, months=2, weeks=3, days=4)),
+            ("P2M3W", DateDelta(months=2, weeks=3)),
+            ("P-2M", DateDelta(months=-2)),
             ("-P-2Y+3W", DateDelta(years=2, weeks=-3)),
         ],
     )
     def test_multiple_units(self, input, expect):
+        assert DateDelta.from_canonical_format(input) == expect
         assert DateDelta.from_common_iso8601(input) == expect
 
     def test_invalid(self):
+        with pytest.raises(InvalidFormat):
+            DateDelta.from_canonical_format("P")
+
         with pytest.raises(InvalidFormat):
             DateDelta.from_common_iso8601("P")
 
@@ -201,10 +176,13 @@ class TestFromCommonIso8601:
         with pytest.raises(InvalidFormat):
             DateDelta.from_common_iso8601("P1Y2M3W4DT1H2M3S")
 
+        with pytest.raises(InvalidFormat):
+            DateDelta.from_canonical_format("P1Y2M3W4DT1H2M3S")
+
 
 def test_repr():
     p = DateDelta(years=1, months=2, weeks=3, days=4)
-    assert repr(p) == "DateDelta(1Y2M3W4D)"
+    assert repr(p) == "DateDelta(P1Y2M3W4D)"
 
 
 def test_negate():
