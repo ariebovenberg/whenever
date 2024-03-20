@@ -27,10 +27,10 @@ Concrete classes
 ~~~~~~~~~~~~~~~~
 
 .. autoclass:: whenever.UTCDateTime
-   :members: now, from_timestamp, add, __add__, subtract, __sub__, strptime, rfc2822, from_rfc2822, rfc3339, from_rfc3339
+   :members: now, from_timestamp, add, __add__, subtract, __sub__, strptime, rfc2822, from_rfc2822, rfc3339, from_rfc3339, common_iso8601, from_common_iso8601
 
 .. autoclass:: whenever.OffsetDateTime
-   :members: now, from_timestamp, strptime, rfc2822, from_rfc2822, rfc3339, from_rfc3339
+   :members: now, from_timestamp, strptime, rfc2822, from_rfc2822, rfc3339, from_rfc3339, common_iso8601, from_common_iso8601
 
 .. autoclass:: whenever.ZonedDateTime
    :members: now, from_timestamp, tz, __add__, __sub__, is_ambiguous
@@ -39,7 +39,7 @@ Concrete classes
    :members: now, from_timestamp, tzname, __add__, __sub__
 
 .. autoclass:: whenever.NaiveDateTime
-   :members: __eq__, __add__, __sub__, assume_utc, assume_offset, assume_zoned, assume_local, strptime, rfc2822, from_rfc2822
+   :members: __eq__, __add__, __sub__, assume_utc, assume_offset, assume_zoned, assume_local, strptime, common_iso8601, from_common_iso8601
 
 
 Deltas
@@ -69,6 +69,8 @@ Deltas
    :members:
    :undoc-members: date_part, time_part
    :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __bool__, __mul__
+
+.. _date-and-time-api:
 
 Date and time components
 ------------------------

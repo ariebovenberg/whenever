@@ -1,11 +1,21 @@
 🚀 Changelog
 ============
 
-0.4.1 (2024-03-17)
+0.5.0 (2024-03-??)
 ------------------
 
-- Improve and clarify ISO8601-conformance of deltas.
+**Breaking changes**
+
+- Fix handling of ``-0000`` offset in RFC2822 format, which was not according
+  to the standard. ``NaiveDateTime`` can now no longer be created from this format.
+- ``DateDelta`` canonical format now uses ``P`` prefix.
+
+**Improved**
+
+- Add explicit ISO8601 formatting/parsing methods to datetimes, date, time, and deltas.
+- Add missing ``Date.from_canonical_format`` method.
 - Separate docs for deltas and datetimes.
+- ``NaiveDateTime.assume_offset`` now also accepts integers as hour offsets.
 
 0.4.0 (2024-03-13)
 ------------------

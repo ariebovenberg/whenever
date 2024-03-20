@@ -37,6 +37,34 @@ def test_canonical_format():
     assert d.canonical_format() == "2021-01-02"
 
 
+class TestFromCanonicalFormat:
+
+    @pytest.mark.parametrize(
+        "s, expected",
+        [
+            ("2021-01-02", Date(2021, 1, 2)),
+            ("2014-12-31", Date(2014, 12, 31)),
+        ],
+    )
+    def test_valid(self, s, expected):
+        assert Date.from_canonical_format(s) == expected
+
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "2021-01-02T03:04:05",  # with a time
+            "2021-1-2",  # no padding
+            "2020-123",  # ordinal date
+            "2020-W12-3",  # week date
+            "20-12-03",  # two-digit year
+            "-0123-12-03",  # negative year
+        ],
+    )
+    def test_invalid(self, s):
+        with pytest.raises(ValueError):
+            Date.from_canonical_format(s)
+
+
 def test_at():
     d = Date(2021, 1, 2)
     assert d.at(Time(3, 4, 5)) == NaiveDateTime(2021, 1, 2, 3, 4, 5)
@@ -333,3 +361,34 @@ def test_weakref():
     assert ref() is d
     del d
     assert ref() is None
+
+
+def test_common_iso8601():
+    assert Date(2021, 1, 2).common_iso8601() == "2021-01-02"
+
+
+@pytest.mark.parametrize(
+    "s, expected",
+    [
+        ("2021-01-02", Date(2021, 1, 2)),
+        ("2014-12-31", Date(2014, 12, 31)),
+    ],
+)
+def test_from_common_iso8601(s, expected):
+    assert Date.from_common_iso8601(s) == expected
+
+
+@pytest.mark.parametrize(
+    "s",
+    [
+        "2021-01-02T03:04:05",  # with a time
+        "2021-1-2",  # no padding
+        "2020-123",  # ordinal date
+        "2020-W12-3",  # week date
+        "20-12-03",  # two-digit year
+        "-0123-12-03",  # negative year
+    ],
+)
+def test_from_common_iso8601_invalid(s):
+    with pytest.raises(ValueError):
+        Date.from_common_iso8601(s)

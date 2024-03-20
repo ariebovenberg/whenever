@@ -36,11 +36,19 @@ class TestInit:
             Time(0, 0, 0, 1_000_000)
 
 
-def test_canonical_format():
-    t = Time(1, 2, 3, 40_000)
-    assert str(t) == "01:02:03.04"
-    assert t.canonical_format() == "01:02:03.04"
-    assert str(Time(1, 2, 3)) == "01:02:03"
+@pytest.mark.parametrize(
+    "t, expect",
+    [
+        (Time(1, 2, 3, 40_000), "01:02:03.04"),
+        (Time(1, 2, 3), "01:02:03"),
+        (Time(1, 2), "01:02:00"),
+        (Time(1), "01:00:00"),
+    ],
+)
+def test_canonical_format(t, expect):
+    assert str(t) == expect
+    assert t.canonical_format() == expect
+    assert t.common_iso8601() == expect
 
 
 def test_repr():
@@ -62,6 +70,7 @@ class TestFromCanonicalFormat:
     )
     def test_valid(self, input, expect):
         assert Time.from_canonical_format(input) == expect
+        assert Time.from_common_iso8601(input) == expect
 
     @pytest.mark.parametrize(
         "input",
@@ -76,6 +85,9 @@ class TestFromCanonicalFormat:
     def test_invalid(self, input):
         with pytest.raises(InvalidFormat):
             Time.from_canonical_format(input)
+
+        with pytest.raises(InvalidFormat):
+            Time.from_common_iso8601(input)
 
 
 def test_eq():

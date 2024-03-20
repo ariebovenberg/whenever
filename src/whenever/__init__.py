@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"
 
 import re
 import sys
@@ -146,19 +146,6 @@ class Date(_ImmutableBase):
     @property
     def day(self) -> int:
         return self._py_date.day
-
-    def canonical_format(self) -> str:
-        """The date in canonical format.
-
-        Example
-        -------
-        >>> d = Date(2021, 1, 2)
-        >>> d.canonical_format()
-        '2021-01-02'
-        """
-        return self._py_date.isoformat()
-
-    __str__ = canonical_format
 
     def __repr__(self) -> str:
         return f"Date({self})"
@@ -299,15 +286,15 @@ class Date(_ImmutableBase):
         Examples:
 
         >>> Date(2023, 4, 15) - Date(2011, 6, 24)
-        DateDelta(12Y9M22D)
+        DateDelta(P12Y9M22D)
         >>> # Truncation
         >>> Date(2024, 4, 30) - Date(2023, 5, 31)
-        DateDelta(11M)
+        DateDelta(P11M)
         >>> Date(2024, 3, 31) - Date(2023, 6, 30)
-        DateDelta(9M1D)
+        DateDelta(P9M1D)
         >>> # the other way around, the result is different
         >>> Date(2023, 6, 30) - Date(2024, 3, 31)
-        DateDelta(-9M)
+        DateDelta(P-9M)
         """
         if isinstance(d, DateDelta):
             return self.subtract(
@@ -381,9 +368,66 @@ class Date(_ImmutableBase):
             _datetime.combine(self._py_date, t._py_time)
         )
 
+    def canonical_format(self) -> str:
+        """The date in canonical format.
+
+        Example
+        -------
+        >>> d = Date(2021, 1, 2)
+        >>> d.canonical_format()
+        '2021-01-02'
+        """
+        return self._py_date.isoformat()
+
+    @classmethod
+    def from_canonical_format(cls, s: str, /) -> Date:
+        """Create from the canonical string representation.
+
+        Inverse of :meth:`canonical_format`
+
+        Example
+        -------
+        >>> Date.from_canonical_format("2021-01-02")
+        Date(2021-01-02)
+        """
+        if s[5] == "W":
+            # prevent isoformat from parsing week dates
+            raise InvalidFormat()
+        return cls.from_py_date(_date.fromisoformat(s))
+
+    __str__ = canonical_format
+
+    def common_iso8601(self) -> str:
+        """Format as the common ISO 8601 date format.
+
+        Inverse of :meth:`from_common_iso8601`.
+        Equivalent to :meth:`canonical_format`.
+
+        Example
+        -------
+        >>> Date(2021, 1, 2).common_iso8601()
+        '2021-01-02'
+        """
+        return self._py_date.isoformat()
+
+    @classmethod
+    def from_common_iso8601(cls, s: str, /) -> Date:
+        """Create from the common ISO 8601 date format ``YYYY-MM-DD``.
+        Does not accept more "exotic" ISO 8601 formats.
+
+        Inverse of :meth:`common_iso8601`.
+        Equivalent to :meth:`from_canonical_format`.
+
+        Example
+        -------
+        >>> Date.from_common_iso8601("2021-01-02")
+        Date(2021-01-02)
+        """
+        return cls.from_canonical_format(s)
+
     @no_type_check
     def __reduce__(self):
-        return (_unpkl_date, (self.year, self.month, self.day))
+        return _unpkl_date, (self.year, self.month, self.day)
 
 
 # A separate unpickling function allows us to make backwards-compatible changes
@@ -450,39 +494,6 @@ class Time(_ImmutableBase):
     @property
     def microsecond(self) -> int:
         return self._py_time.microsecond
-
-    def canonical_format(self) -> str:
-        """The time in canonical format.
-
-        Example
-        -------
-        >>> t = Time(12, 30, 0)
-        >>> t.canonical_format()
-        '12:30:00'
-        """
-        return self._py_time.isoformat().rstrip("0")
-
-    __str__ = canonical_format
-
-    @classmethod
-    def from_canonical_format(cls, s: str, /) -> Time:
-        """Create from a canonical string representation.
-
-        Inverse of :meth:`canonical_format`
-
-        Example
-        -------
-        >>> Time.from_canonical_format("12:30:00")
-        Time(12:30:00)
-
-        Raises
-        ------
-        InvalidFormat
-            If the string does not match this exact format.
-        """
-        if not _match_time(s):
-            raise InvalidFormat()
-        return cls._from_py_unchecked(_fromisoformat_time(s))
 
     @classmethod
     def from_py_time(cls, t: _time, /) -> Time:
@@ -565,6 +576,71 @@ class Time(_ImmutableBase):
         return NaiveDateTime.from_py_datetime(
             _datetime.combine(d._py_date, self._py_time)
         )
+
+    def canonical_format(self) -> str:
+        """The time in canonical format.
+
+        Example
+        -------
+        >>> t = Time(12, 30, 0)
+        >>> t.canonical_format()
+        '12:30:00'
+        """
+        return (
+            self._py_time.isoformat().rstrip("0")
+            if self._py_time.microsecond
+            else self._py_time.isoformat()
+        )
+
+    __str__ = canonical_format
+
+    @classmethod
+    def from_canonical_format(cls, s: str, /) -> Time:
+        """Create from the canonical string representation.
+
+        Inverse of :meth:`canonical_format`
+
+        Example
+        -------
+        >>> Time.from_canonical_format("12:30:00")
+        Time(12:30:00)
+
+        Raises
+        ------
+        InvalidFormat
+            If the string does not match this exact format.
+        """
+        if not _match_time(s):
+            raise InvalidFormat()
+        return cls._from_py_unchecked(_fromisoformat_time(s))
+
+    def common_iso8601(self) -> str:
+        """Format as the common ISO 8601 time format.
+
+        Inverse of :meth:`from_common_iso8601`.
+        Equivalent to :meth:`canonical_format`.
+
+        Example
+        -------
+        >>> Time(12, 30, 0).common_iso8601()
+        '12:30:00'
+        """
+        return self.canonical_format()
+
+    @classmethod
+    def from_common_iso8601(cls, s: str, /) -> Time:
+        """Create from the common ISO 8601 time format ``HH:MM:SS``.
+        Does not accept more "exotic" ISO 8601 formats.
+
+        Inverse of :meth:`common_iso8601`.
+        Equivalent to :meth:`from_canonical_format`.
+
+        Example
+        -------
+        >>> Time.from_common_iso8601("12:30:00")
+        Time(12:30:00)
+        """
+        return cls.from_canonical_format(s)
 
     @no_type_check
     def __reduce__(self):
@@ -841,7 +917,7 @@ class TimeDelta(_ImmutableBase):
 
     @classmethod
     def from_canonical_format(cls, s: str, /) -> TimeDelta:
-        """Create from a canonical string representation.
+        """Create from the canonical string representation.
 
         Inverse of :meth:`canonical_format`
 
@@ -968,7 +1044,7 @@ class TimeDelta(_ImmutableBase):
 
     @no_type_check
     def __reduce__(self):
-        return (_unpkl_tdelta, (self._total_ms,))
+        return _unpkl_tdelta, (self._total_ms,)
 
 
 # A separate unpickling function allows us to make backwards-compatible changes
@@ -1086,7 +1162,7 @@ class DateDelta(_ImmutableBase):
             -------
             >>> p = DateDelta(years=1, months=2)
             >>> p.replace(years=2)
-            DateDelta(2Y2M)
+            DateDelta(P2Y2M)
             """
             return DateDelta(
                 years=kwargs.get("years", self._years),
@@ -1105,7 +1181,7 @@ class DateDelta(_ImmutableBase):
         -------
         >>> p = DateDelta(weeks=2, days=-3)
         >>> -p
-        DateDelta(-2W3DT)
+        DateDelta(P-2W3DT)
         """
         return DateDelta(
             years=-self._years,
@@ -1121,7 +1197,7 @@ class DateDelta(_ImmutableBase):
         -------
         >>> p = DateDelta(weeks=2, days=-3)
         >>> +p
-        DateDelta(2W-3D)
+        DateDelta(P2W-3D)
         """
         return self
 
@@ -1132,7 +1208,7 @@ class DateDelta(_ImmutableBase):
         -------
         >>> p = DateDelta(years=1, weeks=2)
         >>> p * 2
-        DateDelta(2Y4W)
+        DateDelta(P2Y4W)
         """
         if not isinstance(other, int):
             return NotImplemented
@@ -1158,7 +1234,7 @@ class DateDelta(_ImmutableBase):
         -------
         >>> p = DateDelta(weeks=2, months=1)
         >>> p + DateDelta(weeks=1, days=-4)
-        DateDelta(1M3W-4D)
+        DateDelta(P1M3W-4D)
         """
         if isinstance(other, DateDelta):
             return DateDelta(
@@ -1198,7 +1274,7 @@ class DateDelta(_ImmutableBase):
         -------
         >>> p = DateDelta(weeks=2, days=3)
         >>> p - DateDelta(days=2)
-        DateDelta(2W1D)
+        DateDelta(P2W1D)
         """
         if isinstance(other, DateDelta):
             return DateDelta(
@@ -1224,7 +1300,7 @@ class DateDelta(_ImmutableBase):
         -------
         >>> p = DateDelta(weeks=-2, days=3)
         >>> abs(p)
-        DateDelta(2W3D)
+        DateDelta(P2W3D)
         """
         return DateDelta(
             years=abs(self._years),
@@ -1240,23 +1316,23 @@ class DateDelta(_ImmutableBase):
 
         .. code-block:: text
 
-            (nY)(nM)(nW)(nD)
+            P(nY)(nM)(nW)(nD)
 
         For example:
 
         .. code-block:: text
 
-            1D
-            2M
-            1Y2M-3W4D
+            P1D
+            P2M
+            P1Y2M-3W4D
 
         Example
         -------
         >>> p = DateDelta(years=1, months=2, weeks=3, days=11)
         >>> p.canonical_format()
-        '1Y2M3W11D'
+        'P1Y2M3W11D'
         >>> DateDelta().canonical_format()
-        '0D'
+        'P0D'
         """
         date = (
             f"{self._years}Y" * bool(self._years),
@@ -1264,33 +1340,20 @@ class DateDelta(_ImmutableBase):
             f"{self._weeks}W" * bool(self._weeks),
             f"{self._days}D" * bool(self._days),
         )
-        return "".join(date) or "0D"
+        return "P" + ("".join(date) or "0D")
 
     @classmethod
     def from_canonical_format(cls, s: str, /) -> DateDelta:
-        """Create from a canonical string representation.
+        """Create from the canonical string representation.
 
         Inverse of :meth:`canonical_format`
 
         Example
         -------
         >>> DateDelta.from_canonical_format("1Y2M-3W4D")
-        DateDelta(1Y2M-3W4D)
-
-        Raises
-        ------
-        InvalidFormat
-            If the string does not match this exact format.
+        DateDelta(P1Y2M-3W4D)
         """
-        if not ((match := _match_datedelta(s)) and s):
-            raise InvalidFormat()
-        years, months, weeks, days = match.groups()
-        return cls(
-            years=int(years or 0),
-            months=int(months or 0),
-            weeks=int(weeks or 0),
-            days=int(days or 0),
-        )
+        return cls.from_common_iso8601(s)
 
     __str__ = canonical_format
 
@@ -1306,7 +1369,7 @@ class DateDelta(_ImmutableBase):
         >>> DateDelta(weeks=1, days=11).common_iso8601()
         'P1W11D'
         """
-        return f"P{self}"
+        return self.canonical_format()
 
     @classmethod
     def from_common_iso8601(cls, s: str, /) -> DateDelta:
@@ -1319,7 +1382,7 @@ class DateDelta(_ImmutableBase):
         Example
         -------
         >>> DateDelta.from_common_iso8601("P1W11D")
-        DateDelta(1W11D)
+        DateDelta(P1W11D)
 
         Note
         ----
@@ -1576,7 +1639,7 @@ class DateTimeDelta(_ImmutableBase):
         >>> d.canonical_format()
         'P1W11DT4H'
         """
-        date = self._date_part.canonical_format() * bool(self._date_part)
+        date = self._date_part.common_iso8601()[1:] * bool(self._date_part)
         time = self._time_part.common_iso8601()[1:] * bool(self._time_part)
         return "P" + ((date + time) or "0D")
 
@@ -1587,7 +1650,7 @@ class DateTimeDelta(_ImmutableBase):
 
     @classmethod
     def from_canonical_format(cls, s: str, /) -> DateTimeDelta:
-        """Create from a canonical string representation.
+        """Create from the canonical string representation.
         Inverse of :meth:`canonical_format`
 
         Examples:
@@ -2421,6 +2484,7 @@ class UTCDateTime(_AwareDateTime):
 
         >>> # also valid:
         >>> UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 +0000")
+        >>> UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 -0000")
         >>> UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 UT")
 
         >>> # Error: nonzero offset. Use OffsetDateTime.from_rfc2822() instead
@@ -2432,20 +2496,19 @@ class UTCDateTime(_AwareDateTime):
         * Nonzero offsets will not be implicitly converted to UTC.
           Use :meth:`OffsetDateTime.from_rfc2822` if you'd like to
           parse an RFC 2822 string with a nonzero offset.
-        * The offset ``-0000`` has special meaning in RFC 2822,
-          and is not allowed here.
         """
-        parsed = parsedate_to_datetime(s)
+        parsed = _parse_rfc2822(s)
         # Nested ifs to keep happy path fast
         if parsed.tzinfo is not _UTC:
             if parsed.tzinfo is None:
+                if "-0000" not in s:
+                    raise ValueError("RFC 2822 string must have a UTC offset")
+                parsed = parsed.replace(tzinfo=_UTC)
+            else:
                 raise ValueError(
-                    "RFC 2822 string with -0000 offset cannot be parsed as UTC"
+                    "RFC 2822 string can't have nonzero offset to be parsed as UTC"
                 )
-            raise ValueError(
-                "RFC 2822 string can't have nonzero offset to be parsed as UTC"
-            )
-        return cls._from_py_unchecked(parsedate_to_datetime(s))
+        return cls._from_py_unchecked(parsed)
 
     def rfc3339(self) -> str:
         """Format as an RFC 3339 string
@@ -2485,6 +2548,48 @@ class UTCDateTime(_AwareDateTime):
         Use :meth:`OffsetDateTime.from_rfc3339` if you'd like to
         parse an RFC 3339 string with a nonzero offset.
         """
+        return cls._from_py_unchecked(_parse_utc_rfc3339(s))
+
+    def common_iso8601(self) -> str:
+        """Format as a common ISO 8601 string.
+
+        For this class, equivalent to :meth:`rfc3339`.
+
+        Example
+        -------
+        >>> UTCDateTime(2020, 8, 15, hour=23, minute=12).common_iso8601()
+        "2020-08-15T23:12:00Z"
+        """
+        return f"{self._py_dt.isoformat()[:-6]}Z"
+
+    @classmethod
+    def from_common_iso8601(cls, s: str, /) -> UTCDateTime:
+        """Parse a UTC datetime in common ISO 8601 format.
+
+        Inverse of :meth:`common_iso8601`.
+
+        Example
+        -------
+        >>> UTCDateTime.from_common_iso8601("2020-08-15T23:12:00Z")
+        UTCDateTime(2020-08-15 23:12:00Z)
+        >>>
+        >>> # also valid:
+        >>> UTCDateTime.from_common_iso8601("2020-08-15T23:12:00+00:00")
+        >>> UTCDateTime.from_common_iso8601("2020-08-15T23:12:00.34Z")
+        >>>
+        >>> # not valid
+        >>> UTCDateTime.from_common_iso8601("2020-08-15T23:12:00+02:00")
+        >>> UTCDateTime.from_common_iso8601("2020-08-15 23:12:00+00:00")
+        >>> UTCDateTime.from_common_iso8601("2020-08-15T23:12:00-00:00")
+
+        Warning
+        -------
+        Nonzero offsets will not be implicitly converted to UTC.
+        Use :meth:`OffsetDateTime.from_common_iso8601` if you'd like to
+        parse an ISO 8601 string with a nonzero offset.
+        """
+        if s[10] != "T" or s.endswith(("z", "-00:00")):
+            raise InvalidFormat()
         return cls._from_py_unchecked(_parse_utc_rfc3339(s))
 
     def __repr__(self) -> str:
@@ -2762,19 +2867,23 @@ class OffsetDateTime(_AwareDateTime):
         Warning
         -------
         The offset ``-0000`` has special meaning in RFC 2822,
-        and is not allowed here.
+        indicating a UTC time with unknown local offset.
+        Thus, it cannot be parsed to an :class:`OffsetDateTime`.
         """
-        parsed = parsedate_to_datetime(s)
+        parsed = _parse_rfc2822(s)
         if parsed.tzinfo is None:
             raise ValueError(
-                "RFC 2822 string with -0000 offset cannot be parsed as UTC"
+                "RFC 2822 string with missing or -0000 offset "
+                "cannot be parsed as OffsetDateTime"
             )
-        return cls._from_py_unchecked(parsedate_to_datetime(s))
+        return cls._from_py_unchecked(parsed)
 
     def rfc3339(self) -> str:
         """Format as an RFC 3339 string
 
-        For ``OffsetDateTime``, equivalent to :meth:`~_DateTime.canonical_format`.
+        For ``OffsetDateTime``, equivalent to
+        :meth:`~_DateTime.canonical_format`
+        and :meth:`~OffsetDateTime.common_iso8601`.
         Inverse of :meth:`from_rfc3339`.
 
         Example
@@ -2800,6 +2909,47 @@ class OffsetDateTime(_AwareDateTime):
         >>> OffsetDateTime.from_rfc3339("2020-08-15t23:12:00z")
         """
         return cls._from_py_unchecked(_parse_rfc3339(s))
+
+    def common_iso8601(self) -> str:
+        """Format in the commonly used ISO 8601 format.
+
+        Inverse of :meth:`from_common_iso8601`.
+
+        Note
+        ----
+        For ``OffsetDateTime``, equivalent to :meth:`~_DateTime.canonical_format`
+        and :meth:`~OffsetDateTime.rfc3339`.
+
+        Example
+        -------
+        >>> OffsetDateTime(2020, 8, 15, hour=23, offset=+3).common_iso8601()
+        "2020-08-15T23:00:00+03:00"
+        """
+        return self._py_dt.isoformat()
+
+    @classmethod
+    def from_common_iso8601(cls, s: str, /) -> OffsetDateTime:
+        """Parse a *popular version* of the ISO 8601 datetime format.
+
+        Inverse of :meth:`common_iso8601`.
+
+        Note
+        ----
+        While similar, this function behaves differently from
+        :meth:`~_DateTime.from_canonical_format`
+        or :meth:`~OffsetDateTime.from_rfc3339`.
+
+        Example
+        -------
+        >>> OffsetDateTime.from_common_iso8601("2020-08-15T23:12:00+02:00")
+        OffsetDateTime(2020-08-15 23:12:00+02:00)
+        >>> # also valid:
+        >>> OffsetDateTime.from_common_iso8601("2020-08-15T23:12:00Z")
+        """
+        if s[10] == "T" and not s.endswith(("-00:00", "z")):
+            return cls.from_rfc3339(s)
+        else:
+            raise InvalidFormat()
 
     def __repr__(self) -> str:
         return f"OffsetDateTime({self})"
@@ -3836,17 +3986,17 @@ class NaiveDateTime(_DateTime):
         """
         return UTCDateTime._from_py_unchecked(self._py_dt.replace(tzinfo=_UTC))
 
-    def assume_offset(self, offset: TimeDelta, /) -> OffsetDateTime:
+    def assume_offset(self, offset: int | TimeDelta, /) -> OffsetDateTime:
         """Assume the datetime is in the given offset,
         creating a :class:`~whenever.OffsetDateTime` instance.
 
         Example
         -------
-        >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_offset(hours(2))
+        >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_offset(+2)
         OffsetDateTime(2020-08-15 23:12:00+02:00)
         """
         return OffsetDateTime._from_py_unchecked(
-            self._py_dt.replace(tzinfo=_timezone(offset.py_timedelta()))
+            self._py_dt.replace(tzinfo=_load_offset(offset))
         )
 
     def assume_zoned(
@@ -3889,44 +4039,41 @@ class NaiveDateTime(_DateTime):
             )
         )
 
-    def rfc2822(self) -> str:
-        """Format as an RFC 2822 string
-
-        Example
-        -------
-        >>> NaiveDateTime(2020, 8, 15, 23, 12).rfc2822()
-        "Sat, 15 Aug 2020 23:12:00 -0000"
-        """
-        return format_datetime(self._py_dt)
-
-    @classmethod
-    def from_rfc2822(cls, s: str, /) -> NaiveDateTime:
-        """Parse an naive datetime in RFC 2822 format.
-
-        Example
-        -------
-        >>> NaiveDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 -0000")
-        NaiveDateTime(2020-08-15 23:12:00)
-        >>> # Error: non-0000 offset
-        >>> NaiveDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 GMT")
-        >>> NaiveDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 +0000")
-        >>> NaiveDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:00 -0100")
-
-        Warning
-        -------
-        Only the offset ``-0000`` is allowed, since this has special meaning
-        in RFC 2822.
-        """
-        parsed = parsedate_to_datetime(s)
-        if parsed.tzinfo is not None:
-            raise ValueError(
-                "Only an RFC 2822 string with -0000 offset can be "
-                "parsed as NaiveDateTime"
-            )
-        return cls._from_py_unchecked(parsedate_to_datetime(s))
-
     def __repr__(self) -> str:
         return f"NaiveDateTime({self})"
+
+    def common_iso8601(self) -> str:
+        """Format in the commonly used ISO 8601 format.
+
+        Inverse of :meth:`from_common_iso8601`.
+
+        Example
+        -------
+        >>> NaiveDateTime(2020, 8, 15, 23, 12).common_iso8601()
+        '2020-08-15T23:12:00'
+        """
+        return self._py_dt.isoformat().rstrip("0")
+
+    @classmethod
+    def from_common_iso8601(cls, s: str, /) -> NaiveDateTime:
+        """Parse from the commonly used ISO 8601 format
+        ``YYYY-MM-DDTHH:MM:SS``, where seconds may be fractional.
+
+        Inverse of :meth:`common_iso8601`.
+
+        Example
+        -------
+        >>> NaiveDateTime.from_common_iso8601("2020-08-15T23:12:00")
+        NaiveDateTime(2020-08-15 23:12:00)
+        """
+        if len(s) > 26:
+            raise ValueError(f"Not a valid common ISO 8601 string: {s!r}")
+        parsed = _fromisoformat_naive(s)
+        if parsed.tzinfo is not None:
+            raise ValueError(
+                f"Naive ISO 8601 string must not have an offset: {s!r}"
+            )
+        return cls._from_py_unchecked(parsed)
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
@@ -4047,9 +4194,7 @@ def _load_offset(offset: int | TimeDelta, /) -> _timezone:
 _UTC = _timezone.utc
 _no_tzinfo_or_fold = {"tzinfo", "fold"}.isdisjoint
 _object_new = object.__new__
-# YYYY-MM-DD HH:MM:SS[.fff[fff]]
 _DATETIME_RE = r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.(?:\d{3}|\d{6}))?"
-# YYYY-MM-DD HH:MM:SS[.fff[fff]]±HH:MM[:SS[.ffffff]]
 _OFFSET_RE = rf"{_DATETIME_RE}[+-]\d{{2}}:\d{{2}}(?::\d{{2}}(?:\.\d{{6}})?)?"
 _match_utc_str = re.compile(rf"{_DATETIME_RE}Z").fullmatch
 _match_naive_str = re.compile(_DATETIME_RE).fullmatch
@@ -4062,9 +4207,6 @@ _match_utc_rfc3339 = re.compile(
 ).fullmatch
 _match_rfc3339 = re.compile(
     r"\d{4}-\d{2}-\d{2}.\d{2}:\d{2}:\d{2}(\.\d{1,6})?(?:[Zz]|[+-]\d{2}:\d{2})"
-).fullmatch
-_match_datedelta = re.compile(
-    r"(?:([-+]?\d+)Y)?(?:([-+]?\d+)M)?(?:([-+]?\d+)W)?(?:([-+]?\d+)D)?"
 ).fullmatch
 _match_datetimedelta = re.compile(
     r"([-+]?)P(?:([-+]?\d+)Y)?(?:([-+]?\d+)M)?(?:([-+]?\d+)W)?(?:([-+]?\d+)D)?"
@@ -4081,6 +4223,9 @@ if sys.version_info < (3, 11):  # pragma: no cover
 
     def _fromisoformat_utc(s: str) -> _datetime:
         return _fromisoformat(s[:-1]).replace(tzinfo=_UTC)
+
+    def _fromisoformat_naive(s: str) -> _datetime:
+        return _fromisoformat(s.ljust(26, "0") if len(s) > 20 else s)
 
     def _parse_rfc3339(s: str) -> _datetime:
         if not (m := _match_rfc3339(s)):
@@ -4113,9 +4258,19 @@ if sys.version_info < (3, 11):  # pragma: no cover
             else _time.fromisoformat(s)
         )
 
+    def _parse_rfc2822(s: str) -> _datetime:
+        try:
+            return parsedate_to_datetime(s)
+        except TypeError:
+            if isinstance(s, str):
+                raise ValueError(f"Invalid RFC2822 string: {s!r}")
+            raise
+
 else:
     _fromisoformat_utc = _fromisoformat
     _fromisoformat_time = _time.fromisoformat
+    _fromisoformat_naive = _fromisoformat
+    _parse_rfc2822 = parsedate_to_datetime
 
     def _parse_utc_rfc3339(s: str) -> _datetime:
         if not _match_utc_rfc3339(s):

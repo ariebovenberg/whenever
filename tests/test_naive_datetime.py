@@ -1,4 +1,5 @@
 import pickle
+import re
 import weakref
 from datetime import datetime as py_datetime, timezone
 
@@ -67,7 +68,12 @@ def test_assume_offset():
     assert (
         NaiveDateTime(2020, 8, 15, 23)
         .assume_offset(hours(5))
-        .exact_eq(OffsetDateTime(2020, 8, 15, 23, offset=hours(5)))
+        .exact_eq(OffsetDateTime(2020, 8, 15, 23, offset=5))
+    )
+    assert (
+        NaiveDateTime(2020, 8, 15, 23)
+        .assume_offset(-2)
+        .exact_eq(OffsetDateTime(2020, 8, 15, 23, offset=-2))
     )
 
 
@@ -408,35 +414,40 @@ def test_strptime_invalid():
         )
 
 
-def test_rfc2822():
+def test_common_iso8601():
     assert (
-        NaiveDateTime(2020, 8, 15, 23, 12, 9, 450).rfc2822()
-        == "Sat, 15 Aug 2020 23:12:09 -0000"
+        NaiveDateTime(2020, 8, 15, 23, 12, 9).common_iso8601()
+        == "2020-08-15T23:12:09"
+    )
+    assert (
+        NaiveDateTime(2020, 8, 15, 23, 12, 9, 450_000).common_iso8601()
+        == "2020-08-15T23:12:09.45"
     )
 
 
 @pytest.mark.parametrize(
-    "s, expected",
+    "s,expected",
     [
+        ("2020-08-15T23:12:09", NaiveDateTime(2020, 8, 15, 23, 12, 9)),
         (
-            "Sat, 15 Aug 2020 23:12:09",
-            NaiveDateTime(2020, 8, 15, 23, 12, 9),
-        ),
-        (
-            "Sat, 15 Aug 2020 23:12:09 -0000",
-            NaiveDateTime(2020, 8, 15, 23, 12, 9),
-        ),
-        (
-            "15      Aug 2020\n23:12 -0000",
-            NaiveDateTime(2020, 8, 15, 23, 12),
+            "2020-08-15T23:12:09.45",
+            NaiveDateTime(2020, 8, 15, 23, 12, 9, 450_000),
         ),
     ],
 )
-def test_from_rfc2822(s, expected):
-    assert NaiveDateTime.from_rfc2822(s) == expected
+def test_from_common_iso8601(s, expected):
+    assert NaiveDateTime.from_common_iso8601(s) == expected
 
 
-def test_from_rfc2822_invalid():
-    # non-0000 timezone
-    with pytest.raises(ValueError, match="RFC.*-0000"):
-        NaiveDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09 +0000")
+@pytest.mark.parametrize(
+    "s",
+    [
+        "2020-08-15T23:12:09.123456789",  # too many fractions
+        "2020-08-15T23:12:09.",  # no fractions
+        "2020-08-15T23:12:09.45+0500",  # offset
+        "2020-08-15T23:12:09+05:00",  # offset
+    ],
+)
+def test_from_common_iso8601_invalid(s):
+    with pytest.raises(ValueError, match=re.escape(s)):
+        NaiveDateTime.from_common_iso8601(s)

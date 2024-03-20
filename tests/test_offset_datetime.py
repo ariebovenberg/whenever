@@ -720,7 +720,7 @@ def test_from_rfc2822(s, expected):
 
 def test_from_rfc2822_invalid():
     # no timezone
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="missing"):
         OffsetDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09")
 
     # -0000 timezone special case
@@ -773,3 +773,98 @@ def test_from_rfc3339_invalid():
     # no seconds
     with pytest.raises(ValueError):
         OffsetDateTime.from_rfc3339("2020-08-15T23:12-02:00")
+
+
+@pytest.mark.parametrize(
+    "d, expected",
+    [
+        (
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=5),
+            "2020-08-15T23:12:09+05:00",
+        ),
+        (
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
+            "2020-08-15T23:12:09+00:00",
+        ),
+        (
+            OffsetDateTime(
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                987_654,
+                offset=TimeDelta(hours=5, seconds=3),
+            ),
+            "2020-08-15T23:12:09.987654+05:00:03",
+        ),
+    ],
+)
+def test_common_iso8601(d, expected):
+    assert d.common_iso8601() == expected
+
+
+@pytest.mark.parametrize(
+    "s, expected",
+    [
+        (
+            "2020-08-15T23:12:09+05:00",
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=5),
+        ),
+        (
+            "2020-08-15T23:12:09Z",
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
+        ),
+        (
+            "2020-08-15T23:12:09.12Z",
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, 120_000, offset=0),
+        ),
+        (
+            "2020-08-15T23:12:09.98765+05:03",
+            OffsetDateTime(
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                987_650,
+                offset=TimeDelta(hours=5, minutes=3),
+            ),
+        ),
+        (
+            "2020-08-15T23:12:09.98765+05:03",
+            OffsetDateTime(
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                987_650,
+                offset=TimeDelta(hours=5, minutes=3),
+            ),
+        ),
+    ],
+)
+def test_from_common_iso8601(s, expected):
+    assert OffsetDateTime.from_common_iso8601(s) == expected
+
+
+@pytest.mark.parametrize(
+    "s",
+    [
+        "2020-08-15T23:12:09",  # no offset
+        "2020-08-15 23:12:09+05:00",  # no separator
+        "2020-08-15T23:12.98+05:00",  # fractional minutes
+        "2020-08-15T23:12:09-99:00",  # invalid offset
+        "2020-08-15T23:12:09-12:00:04",  # seconds offset
+        "2020-08-15T23:12:09-00:00",  # special forbidden offset
+        "2020-08-15t23:12:09-00:00",  # non-T separator
+        "2020-08-15T23:12:09z",  # lowercase Z
+    ],
+)
+def test_from_common_iso8601_invalid(s):
+    with pytest.raises(ValueError):
+        OffsetDateTime.from_common_iso8601(s)

@@ -28,11 +28,11 @@ TimeDelta(01:47:30)
 ...
 >>> # Calendar units create a DateDelta
 >>> project_estimate = months(1) + days(10)
-DateDelta(1M10D)
+DateDelta(P1M10D)
 >>> Date(2023, 1, 29) + project_estimate
 Date(2023-03-10)
 >>> project_estimate * 2  # a pessimistic estimate
-DateDelta(2M20D)
+DateDelta(P2M20D)
 ...
 >>> # Mixing date and time units creates a generic DateTimeDelta
 >>> project_estimate + movie_runtime
@@ -107,7 +107,7 @@ Date units can only be multiplied by integers.
 "1.3 months" isn't a well-defined concept, so it's not supported:
 
 >>> months(3) * 2
-DateDelta(6M)
+DateDelta(P6M)
 
 Division
 --------
