@@ -31,7 +31,7 @@ tzdata = {version = ">=2020.1", markers = 'sys_platform == "win32"'}
 
 [tool.poetry.group.test.dependencies]
 pytest = ">=7.0.1,<9.0.0"
-pytest-cov = "^4.0.0"
+pytest-cov = ">=4,<6"
 pytest-benchmark = "^4.0.0"
 pytest-mypy-plugins = "^3.0.0"
 hypothesis = "^6.68.2"
