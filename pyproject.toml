@@ -45,7 +45,7 @@ pytest-mypy-plugins = "^3.0.0"
 black = "^24"
 flake8 = ">=6,<8"
 isort = "^5.7.0"
-slotscheck = ">=0.17.2,<0.19.0"
+slotscheck = ">=0.17.2,<0.20.0"
 
 [tool.black]
 line-length = 79
