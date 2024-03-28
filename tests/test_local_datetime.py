@@ -62,6 +62,7 @@ class TestInit:
             )
         )
 
+    @local_ams_tz()
     def test_ambiguous(self):
         kwargs: dict[str, Any] = {
             "year": 2023,

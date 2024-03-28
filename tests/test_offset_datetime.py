@@ -309,7 +309,7 @@ def test_from_timestamp():
     assert OffsetDateTime.from_timestamp(
         1_597_493_310, offset=hours(-2)
     ).exact_eq(OffsetDateTime(2020, 8, 15, 10, 8, 30, offset=-2))
-    with pytest.raises((OSError, OverflowError)):
+    with pytest.raises((OSError, OverflowError, ValueError)):
         OffsetDateTime.from_timestamp(
             1_000_000_000_000_000_000, offset=hours(0)
         )

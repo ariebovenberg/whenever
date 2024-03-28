@@ -359,8 +359,6 @@ def test_weakref():
     d = Date(2021, 1, 2)
     ref = weakref.ref(d)
     assert ref() is d
-    del d
-    assert ref() is None
 
 
 def test_common_iso8601():

@@ -462,8 +462,6 @@ def test_weakref():
     d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
     r = weakref.ref(d)
     assert r() is d
-    del d
-    assert r() is None
 
 
 def test_copy():

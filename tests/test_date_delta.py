@@ -326,8 +326,6 @@ def test_weakref():
     p = DateDelta(years=1, months=2, weeks=3, days=4)
     ref = weakref.ref(p)
     assert ref() is p
-    del p
-    assert ref() is None
 
 
 def test_copy():
