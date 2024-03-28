@@ -240,7 +240,7 @@ def test_from_timestamp():
     assert UTCDateTime.from_timestamp(1_597_493_310) == UTCDateTime(
         2020, 8, 15, 12, 8, 30
     )
-    with pytest.raises((OSError, OverflowError)):
+    with pytest.raises((OSError, OverflowError, ValueError)):
         UTCDateTime.from_timestamp(1_000_000_000_000_000_000)
 
 

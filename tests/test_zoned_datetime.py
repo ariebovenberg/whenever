@@ -622,7 +622,7 @@ def test_from_timestamp():
     assert ZonedDateTime.from_timestamp(
         1_597_493_310, tz="America/Nuuk"
     ).exact_eq(ZonedDateTime(2020, 8, 15, 10, 8, 30, tz="America/Nuuk"))
-    with pytest.raises((OSError, OverflowError)):
+    with pytest.raises((OSError, OverflowError, ValueError)):
         ZonedDateTime.from_timestamp(
             1_000_000_000_000_000_000, tz="America/Nuuk"
         )

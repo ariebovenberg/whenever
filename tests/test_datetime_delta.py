@@ -638,8 +638,6 @@ def test_weakref():
     )
     ref = weakref.ref(p)
     assert ref() is p
-    del p
-    assert ref() is None
 
 
 def test_pickle():

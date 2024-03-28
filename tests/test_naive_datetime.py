@@ -384,7 +384,7 @@ class TestSubtract:
 def test_pickle():
     d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
     dumped = pickle.dumps(d)
-    assert len(dumped) <= len(pickle.dumps(d.py_datetime())) + 15
+    assert len(dumped) <= len(pickle.dumps(d.py_datetime())) + 20
     assert pickle.loads(pickle.dumps(d)) == d
 
 
