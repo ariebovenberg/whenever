@@ -1,0 +1,33 @@
+[package]
+name = "whenever"
+version = "0.6.0-beta.1"
+authors = []
+description = "Rust extension module for whenever"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+readme = "README.rst"
+keywords = []
+include = [
+    "Cargo.toml",
+    "CHANGELOG.md",
+    "pyproject.toml",
+    "README.md",
+    "src",
+    "tests/*.py",
+    "requirements/*.txt",
+]
+
+[lib]
+name = "whenever"
+crate-type = ["cdylib"]
+
+[features]
+default = []
+
+[dependencies]
+chrono = "0.4.35"
+pyo3-ffi = { version = "^0.21.0", default_features = false, features = ["extension-module"]}
+
+[build-dependencies]
+pyo3-build-config = { version = "^0.21.0" }

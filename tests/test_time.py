@@ -52,6 +52,11 @@ def test_canonical_format(t, expect):
     assert t.common_iso8601() == expect
 
 
+def test_py_time():
+    t = Time(1, 2, 3, 4_000)
+    assert t.py_time() == py_time(1, 2, 3, 4_000)
+
+
 def test_repr():
     t = Time(1, 2, 3, 40_000)
     assert repr(t) == "Time(01:02:03.04)"
@@ -176,7 +181,7 @@ def test_on():
 def test_pickling():
     t = Time(1, 2, 3, 4_000)
     dumped = pickle.dumps(t)
-    assert len(dumped) < len(pickle.dumps(t._py_time)) + 10
+    assert len(dumped) < len(pickle.dumps(t.py_time())) + 10
     assert pickle.loads(dumped) == t
 
 

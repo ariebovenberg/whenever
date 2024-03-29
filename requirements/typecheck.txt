@@ -1,0 +1,2 @@
+mypy>=1,<2
+pytest-mypy-plugins>=1.4.0,<2
