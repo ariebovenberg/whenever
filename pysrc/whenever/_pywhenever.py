@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.5.1"
+__version__ = "0.6.0rc0"
 
 import re
 import sys
@@ -74,8 +74,6 @@ __all__ = [
     # Date and time
     "Date",
     "Time",
-    "_DateTime",
-    "_AwareDateTime",
     "UTCDateTime",
     "OffsetDateTime",
     "ZonedDateTime",
@@ -97,10 +95,25 @@ __all__ = [
     "SkippedTime",
     "AmbiguousTime",
     "InvalidOffsetForZone",
+
+    # Constants
+    "MONDAY",
+    "TUESDAY",
+    "WEDNESDAY",
+    "THURSDAY",
+    "FRIDAY",
+    "SATURDAY",
+    "SUNDAY",
 ]
 
 
-MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY = range(1, 8)
+MONDAY = 1
+TUESDAY = 2
+WEDNESDAY = 3
+THURSDAY = 4
+FRIDAY = 5
+SATURDAY = 6
+SUNDAY = 7
 
 
 def _make_canonical_format_parse_error(s: str) -> ValueError:
@@ -205,7 +218,7 @@ class Date(_ImmutableBase):
         return self._py_date >= other._py_date
 
     def py_date(self) -> _date:
-        """Get the underlying :class:`~datetime.date` object"""
+        """Convert to a standard library :class:`~datetime.date`"""
         return self._py_date
 
     @classmethod
@@ -519,6 +532,10 @@ class Time(_ImmutableBase):
     @property
     def microsecond(self) -> int:
         return self._py_time.microsecond
+
+    def py_time(self) -> _time:
+        """Convert to a standard library :class:`~datetime.time`"""
+        return self._py_time
 
     @classmethod
     def from_py_time(cls, t: _time, /) -> Time:
@@ -1917,7 +1934,7 @@ class _DateTime(_ImmutableBase, ABC):
         """
 
     def py_datetime(self) -> _datetime:
-        """Get the underlying :class:`~datetime.datetime` object"""
+        """Convert to a standard library :class:`~datetime.datetime`"""
         return self._py_dt
 
     if not TYPE_CHECKING and SPHINX_BUILD:  # pragma: no cover
@@ -2194,8 +2211,8 @@ class UTCDateTime(_AwareDateTime):
 
     Note
     ----
-    The underlying :class:`~datetime.datetime` object is always timezone-aware
-    and has a fixed :attr:`~datetime.UTC` tzinfo.
+    The corresponding :class:`~datetime.datetime` object is always
+    timezone-aware and has a fixed :attr:`~datetime.UTC` tzinfo.
     """
 
     __slots__ = ()
@@ -2686,8 +2703,8 @@ class OffsetDateTime(_AwareDateTime):
 
     Note
     ----
-    The underlying :class:`~datetime.datetime` object is always timezone-aware
-    and has a fixed :class:`datetime.timezone` tzinfo.
+    The corresponding :class:`~datetime.datetime` object is always
+    timezone-aware and has a fixed :class:`datetime.timezone` tzinfo.
     """
 
     __slots__ = ()
@@ -3512,7 +3529,7 @@ class LocalSystemDateTime(_AwareDateTime):
 
     Note
     ----
-    The underlying :class:`~datetime.datetime` object has
+    The corresponding :class:`~datetime.datetime` object has
     a fixed :class:`~datetime.timezone` tzinfo.
     """
 
@@ -4411,3 +4428,23 @@ def microseconds(i: int, /) -> TimeDelta:
     ``microseconds(1) == TimeDelta(microseconds=1)``
     """
     return TimeDelta(microseconds=i)
+
+
+for name in __all__:
+    member = locals()[name]
+    if not isinstance(member, int):
+        member.__module__ = "whenever"
+
+for _unpkl in (
+    _unpkl_date,
+    _unpkl_time,
+    _unpkl_tdelta,
+    _unpkl_dtdelta,
+    _unpkl_ddelta,
+    _unpkl_utc,
+    _unpkl_offset,
+    _unpkl_zoned,
+    _unpkl_local,
+    _unpkl_naive,
+):
+    _unpkl.__module__ = "whenever"

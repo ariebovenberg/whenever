@@ -252,12 +252,11 @@ Contributions are welcome! Please open an issue or a pull request.
 Setting up a development environment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-You'll need `poetry <https://python-poetry.org/>`_ installed.
 An example of setting up things up:
 
 .. code-block:: bash
 
-   poetry install
+   pip install -r requirements/all.txt
 
    # To run the tests with the current Python version
    pytest
@@ -266,14 +265,9 @@ An example of setting up things up:
    pip install -r docs/requirements.txt
 
    # Various checks
-   mypy src/ tests/
-   flake8 src/ tests/
+   mypy pysrc/ tests/
+   flake8 pysrc/ tests/
 
    # autoformatting
-   black src/ tests/
-   isort src/ tests/
-
-   # To run the tests with all supported Python versions
-   # Alternatively, let the github actions on the PR do it for you
-   pip install tox
-   tox -p auto
+   black pysrc/ tests/
+   isort pysrc/ tests/

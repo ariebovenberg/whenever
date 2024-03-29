@@ -1,19 +1,12 @@
-.PHONY: test
-test:
-	pytest -s
-
-.PHONY: mypy
-mypy: 
-	mypy src/ tests/
+.PHONY: typecheck
+typecheck: 
+	mypy pysrc/ tests/
+	pytest typesafety/
 
 .PHONY: format
 format:
-	black src/ tests/
-	isort src/ tests/
-
-.PHONY: lint
-lint:
-	flake8 src/ tests/
+	black pysrc/ tests/
+	isort pysrc/ tests/
 
 .PHONY: docs
 docs:
@@ -22,8 +15,12 @@ docs:
 
 .PHONY: check-dist
 check-dist:
-	poetry build
-	twine check dist/*
+	maturin build --sdist
+	twine check target/wheels/*
 
-
-check: mypy format lint docs check-dist
+.PHONY: ci-lint
+ci-lint: check-dist
+	flake8 pysrc/ tests/
+	black --check pysrc/ tests/
+	isort --check pysrc/ tests/
+	python -m slotscheck pysrc/

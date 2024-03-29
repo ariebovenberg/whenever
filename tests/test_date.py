@@ -30,6 +30,11 @@ def test_basics():
     assert d.day == 2
 
 
+def test_py_date():
+    d = Date(2021, 1, 2)
+    assert d.py_date() == py_date(2021, 1, 2)
+
+
 def test_canonical_format():
     d = Date(2021, 1, 2)
     assert str(d) == "2021-01-02"
@@ -344,7 +349,7 @@ def test_day_of_week():
 def test_pickling():
     d = Date(2021, 1, 2)
     dumped = pickle.dumps(d)
-    assert len(dumped) < len(pickle.dumps(d._py_date)) + 10
+    assert len(dumped) < len(pickle.dumps(d.py_date())) + 10
     assert pickle.loads(dumped) == d
 
 
