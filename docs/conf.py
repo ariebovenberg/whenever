@@ -17,7 +17,7 @@ release = metadata["Version"]
 
 nitpicky = True
 nitpick_ignore = [
-    ("py:class", "whenever._TDateTime"),
+    ("py:class", "whenever._pywhenever._TDateTime"),
 ]
 extensions = [
     "sphinx.ext.autodoc",
@@ -42,4 +42,4 @@ pygments_dark_style = "lightbulb"
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
 }
-toc_object_entries_show_parents = 'hide'
+toc_object_entries_show_parents = "hide"

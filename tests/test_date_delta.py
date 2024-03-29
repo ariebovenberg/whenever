@@ -40,12 +40,6 @@ class TestInit:
         assert days(1) == DateDelta(days=1)
 
 
-def test_parts():
-    d = DateDelta(years=1, months=2, weeks=3, days=4)
-    assert d._date_part is d
-    assert d._time_part == TimeDelta.ZERO
-
-
 def test_immutable():
     p = DateDelta(
         years=1,
