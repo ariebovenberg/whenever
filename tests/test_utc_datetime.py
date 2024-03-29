@@ -6,7 +6,7 @@ from datetime import datetime as py_datetime, timedelta, timezone
 import pytest
 from freezegun import freeze_time
 from hypothesis import given
-from hypothesis.strategies import text
+from hypothesis.strategies import integers, text
 from pytest import approx
 
 from whenever import (
@@ -34,6 +34,8 @@ from .common import (
     local_nyc_tz,
 )
 
+BIG_INT = 1 << 64 + 1  # a big int that may cause an overflow error
+
 
 class TestInit:
     def test_basic(self):
@@ -45,25 +47,86 @@ class TestInit:
         assert d.minute == 12
         assert d.second == 30
         assert d.microsecond == 450
-        assert d.offset == hours(0)
 
     def test_defaults(self):
-        assert (
-            UTCDateTime(2020, 8, 15, 12)
-            == UTCDateTime(2020, 8, 15, 12, 0)
-            == UTCDateTime(2020, 8, 15, 12, 0, 0)
-            == UTCDateTime(2020, 8, 15, 12, 0, 0, 0)
-        )
+        assert UTCDateTime(2020, 8, 15) == UTCDateTime(2020, 8, 15, 0, 0, 0, 0)
 
-    def test_invalid(self):
-        with pytest.raises(ValueError, match="microsecond must"):
-            UTCDateTime(2020, 8, 15, 12, 8, 30, 1_000_000)
+    @pytest.mark.parametrize(
+        "kwargs, keyword",
+        [
+            (dict(year=0), "year"),
+            (dict(year=10_000), "year"),
+            (dict(year=BIG_INT), "too large|year"),
+            (dict(year=-BIG_INT), "too large|year"),
+            (dict(month=0), "month"),
+            (dict(month=13), "month"),
+            (dict(month=BIG_INT), "too large|month"),
+            (dict(month=-BIG_INT), "too large|month"),
+            (dict(day=0), "day"),
+            (dict(day=32), "day"),
+            (dict(day=BIG_INT), "too large|day"),
+            (dict(day=-BIG_INT), "too large|day"),
+            (dict(hour=-1), "hour"),
+            (dict(hour=24), "hour"),
+            (dict(hour=BIG_INT), "too large|hour"),
+            (dict(hour=-BIG_INT), "too large|hour"),
+            (dict(minute=-1), "minute"),
+            (dict(minute=60), "minute"),
+            (dict(minute=BIG_INT), "too large|minute"),
+            (dict(minute=-BIG_INT), "too large|minute"),
+            (dict(second=-1), "second"),
+            (dict(second=60), "second"),
+            (dict(second=BIG_INT), "too large|second"),
+            (dict(second=-BIG_INT), "too large|second"),
+            (dict(microsecond=-1), "microsecond"),
+            (dict(microsecond=1_000_000), "microsecond"),
+            (dict(microsecond=BIG_INT), "too large|microsecond"),
+            (dict(microsecond=-BIG_INT), "too large|microsecond"),
+        ],
+    )
+    def test_bounds(self, kwargs, keyword):
+        defaults = {
+            "year": 1,
+            "month": 1,
+            "day": 1,
+            "hour": 0,
+            "minute": 0,
+            "second": 0,
+            "microsecond": 0,
+        }
+
+        with pytest.raises((ValueError, OverflowError), match=keyword):
+            UTCDateTime(**{**defaults, **kwargs})
 
     def test_kwargs(self):
         d = UTCDateTime(
             year=2020, month=8, day=15, hour=5, minute=12, second=30
         )
         assert d == UTCDateTime(2020, 8, 15, 5, 12, 30)
+
+    def test_wrong_types(self):
+        with pytest.raises(TypeError):
+            UTCDateTime("2020", 8, 15, 5, 12, 30)  # type: ignore[arg-type]
+
+    @given(
+        integers(),
+        integers(),
+        integers(),
+        integers(),
+        integers(),
+        integers(),
+        integers(),
+    )
+    def test_fuzzing(
+        self, year, month, day, hour, minute, second, microsecond
+    ):
+        with pytest.raises((ValueError, OverflowError)):
+            UTCDateTime(year, month, day, hour, minute, second, microsecond)
+
+
+def test_offset():
+    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    assert d.offset == hours(0)
 
 
 def test_immutable():
@@ -72,7 +135,7 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-def test_components():
+def test_date_and_time():
     d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
     assert d.date() == Date(2020, 8, 15)
     assert d.time() == Time(23, 12, 9, 987_654)
@@ -87,38 +150,52 @@ class TestCanonicalFormat:
                 UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654),
                 "2020-08-15T23:12:09.987654Z",
             ),
+            (
+                UTCDateTime(2020, 8, 15, 23, 12, 9, 980_000),
+                "2020-08-15T23:12:09.980000Z",
+            ),
+            (UTCDateTime(2020, 8, 15), "2020-08-15T00:00:00Z"),
             (UTCDateTime(2020, 8, 15, 23, 12, 9), "2020-08-15T23:12:09Z"),
         ],
     )
     def test_canonical_format(self, d: UTCDateTime, expected: str):
         assert str(d) == expected.replace("T", " ")
         assert d.canonical_format() == expected
+        assert d.common_iso8601() == expected
 
     def test_seperator(self):
         d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
         assert d.canonical_format(sep=" ") == "2020-08-15 23:12:09.987654Z"
+        assert d.canonical_format(sep="T") == "2020-08-15T23:12:09.987654Z"
+
+        with pytest.raises(ValueError):
+            d.canonical_format(sep="w")  # type: ignore[arg-type]
 
 
 class TestFromCanonicalFormat:
-    def test_valid(self):
-        assert UTCDateTime.from_canonical_format(
-            "2020-08-15T12:08:30Z"
-        ) == UTCDateTime(2020, 8, 15, 12, 8, 30)
-
-    def test_valid_three_fractions(self):
-        assert UTCDateTime.from_canonical_format(
-            "2020-08-15T12:08:30.349Z"
-        ) == UTCDateTime(2020, 8, 15, 12, 8, 30, 349_000)
-
-    def test_valid_six_fractions(self):
-        assert UTCDateTime.from_canonical_format(
-            "2020-08-15T12:08:30.349123Z"
-        ) == UTCDateTime(2020, 8, 15, 12, 8, 30, 349_123)
-
-    def test_single_space_instead_of_T(self):
-        assert UTCDateTime.from_canonical_format(
-            "2020-08-15 12:08:30Z"
-        ) == UTCDateTime(2020, 8, 15, 12, 8, 30)
+    @pytest.mark.parametrize(
+        "s, expect",
+        [
+            # full precision
+            (
+                "2020-08-15T23:12:09.987654Z",
+                UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654),
+            ),
+            # no fractions
+            ("2020-08-15T23:12:09Z", UTCDateTime(2020, 8, 15, 23, 12, 9)),
+            # no time
+            ("2020-08-15T00:00:00Z", UTCDateTime(2020, 8, 15)),
+            # millisecond precision
+            (
+                "2020-08-15T23:12:09.344Z",
+                UTCDateTime(2020, 8, 15, 23, 12, 9, 344_000),
+            ),
+            # single space instead of T
+            ("2020-08-15 23:12:09Z", UTCDateTime(2020, 8, 15, 23, 12, 9)),
+        ],
+    )
+    def test_valid(self, s, expect):
+        assert UTCDateTime.from_canonical_format(s) == expect
 
     def test_unpadded(self):
         with pytest.raises(InvalidFormat):
