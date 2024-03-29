@@ -2183,6 +2183,8 @@ class UTCDateTime(_AwareDateTime):
         return cls._from_py_unchecked(_datetime.now(_UTC))
 
     def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
+        if sep not in (" ", "T"):
+            raise ValueError("sep must be ' ' or 'T'")
         return f"{self._py_dt.isoformat(sep)[:-6]}Z"
 
     @classmethod
