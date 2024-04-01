@@ -1,6 +1,11 @@
 import sys
 
-from whenever.whenever import AmbiguousTime, Interval, TimeDelta, sum_as_string
+from whenever._whenever import (
+    AmbiguousTime,
+    Interval,
+    TimeDelta,
+    sum_as_string,
+)
 
 
 def test_module_method():

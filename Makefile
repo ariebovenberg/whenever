@@ -15,8 +15,9 @@ docs:
 
 .PHONY: check-dist
 check-dist:
-	maturin build --sdist
-	twine check target/wheels/*
+	pip install -U build twine
+	python -m build --sdist
+	twine check dist/*
 
 .PHONY: ci-lint
 ci-lint: check-dist
@@ -24,3 +25,13 @@ ci-lint: check-dist
 	black --check pysrc/ tests/
 	isort --check pysrc/ tests/
 	python -m slotscheck pysrc/
+
+.PHONY: clean
+clean:
+	python setup.py clean --all
+	rm -rf build/ dist/ pysrc/**/*.so pysrc/**/__pycache__ *.egg-info **/*.egg-info \
+		docs/_build/ htmlcov/ .mypy_cache/ .pytest_cache/ target/
+
+.PHONY: develop
+develop:
+	python setup.py build_ext --inplace
