@@ -4,7 +4,7 @@ from copy import copy, deepcopy
 
 import pytest
 
-from whenever import DateDelta, DateTimeDelta, InvalidFormat, TimeDelta
+from whenever import DateDelta, DateTimeDelta, TimeDelta
 
 from .common import AlwaysEqual, NeverEqual
 
@@ -248,17 +248,17 @@ class TestFromCanonicalFormatAndCommonISO8601:
         assert DateTimeDelta.from_common_iso8601(input) == expect
 
     def test_invalid(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             DateTimeDelta.from_canonical_format("P")
 
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             DateTimeDelta.from_common_iso8601("P")
 
     def test_too_many_microseconds(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             DateTimeDelta.from_canonical_format("PT0.0000001S")
 
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             DateTimeDelta.from_common_iso8601("PT0.0000001S")
 
 
