@@ -6,7 +6,6 @@ authors = [
 readme = "README.rst"
 version = "0.6.0rc0"
 description = "Sensible and typesafe datetimes"
-repository = "https://github.com/ariebovenberg/whenever"
 requires-python = ">=3.8"
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -58,6 +57,9 @@ exclude = '''
 )/
 '''
 
+[tool.setuptools.packages]
+find = { where = ["pysrc"] }
+
 [tool.isort]
 profile = 'black'
 line_length = 79
@@ -74,15 +76,13 @@ module = [
 check_untyped_defs = true
 disable_error_code = ["no-untyped-def"]
 
-[build-system]
-build-backend = "maturin"
-requires = ["maturin>=1,<2"]
-
-[tool.maturin]
-python-source = "pysrc"
-include = [
-    { format = "sdist", path = ".cargo/*" },
-    { format = "sdist", path = "build.rs" },
-    { format = "sdist", path = "Cargo.lock" },
-    { format = "sdist", path = "include/**/*" },
+# ignore errors in extension module
+[[tool.mypy.overrides]]
+module = [
+    "whenever._whenever",
 ]
+ignore_missing_imports = true
+
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = ["setuptools", "wheel", "setuptools-rust"]

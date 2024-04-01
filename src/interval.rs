@@ -35,6 +35,7 @@ unsafe extern "C" fn new(
 
 #[cfg(Py_3_9)]
 extern "C" {
+    #[cfg_attr(PyPy, link_name = "PyPy_GenericAlias")]
     fn Py_GenericAlias(origin: *mut PyObject, args: *mut PyObject) -> *mut PyObject;
 }
 

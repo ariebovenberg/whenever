@@ -1,4 +1,4 @@
-name: Test
+name: Checks
 
 on:
   push:
@@ -8,62 +8,55 @@ on:
   workflow_dispatch:
 
 jobs:
-  Testing:
+  Test:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        # Note: pypy/pytest fails sometimes (https://github.com/pypy/pypy/issues/3959)
+        python-version: ["3.9", "3.10", "3.11", "3.12", "pypy3.8", "pypy3.9", "pypy3.10"]
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Create virtual environment
-        run: |
-          python -m venv venv
 
       - name: "Test Rust"
         if: matrix.os == 'ubuntu-latest'
         run: |
           cargo test
 
-      - name: Install and test (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          source venv/Scripts/activate
-          python -m pip install --upgrade pip
-          pip install -U pip maturin
-          pip install -r requirements/test.txt
-          maturin develop --release
-          pytest tests/
-
       - name: Install and test
-        if: ${{ matrix.os != 'windows-latest' && !((matrix.python-version == '3.12') && (matrix.os == 'ubuntu-latest')) }}
+        if: ${{ !((matrix.python-version == '3.12') && (matrix.os == 'ubuntu-latest')) }}
         shell: bash
         run: |
-          source venv/bin/activate
-          pip install -U pip maturin
+          pip install .
           pip install -r requirements/test.txt
-          maturin develop --release
           pytest tests/
 
       - name: Install and test (incl coverage)
         if: ${{ (matrix.python-version == '3.12') && (matrix.os == 'ubuntu-latest') }}
         shell: bash
         run: |
-          source venv/bin/activate
-          pip install -U pip maturin
+          pip install .
           pip install -r requirements/test.txt
-          maturin develop --release
           pytest tests/ --cov=whenever
+
+  Test-pure-python-implementation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          pip install .
+          pip install -r requirements/test.txt
+          pytest tests/ --ignore tests/test_extension_demo.py
+        env:
+          WHENEVER_NO_BUILD_RUST_EXT: "1"
 
   Linting:
     runs-on: ubuntu-latest
@@ -73,9 +66,11 @@ jobs:
         with:
           python-version: '3.12'
       - run: |
-          pip install -U pip maturin twine
+          pip install -U pip
           pip install -r requirements/lint.txt
           make ci-lint
+        env:
+          WHENEVER_NO_BUILD_RUST_EXT: "1"
 
   Typecheck:
     runs-on: ubuntu-latest
@@ -85,10 +80,9 @@ jobs:
         with:
           python-version: '3.12'
       - run: |
-          python -m venv venv
-          source venv/bin/activate
-          pip install -U pip maturin
+          pip install .
           pip install -r requirements/typecheck.txt
           pip install -r requirements/test.txt
-          maturin develop
           make typecheck
+        env:
+          WHENEVER_NO_BUILD_RUST_EXT: "1"
