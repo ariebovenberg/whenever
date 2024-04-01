@@ -248,17 +248,33 @@ class TestFromCanonicalFormatAndCommonISO8601:
         assert DateTimeDelta.from_common_iso8601(input) == expect
 
     def test_invalid(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format "
+            "or common ISO 8601 string: 'P'",
+        ):
             DateTimeDelta.from_canonical_format("P")
 
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format "
+            "or common ISO 8601 string: 'P'",
+        ):
             DateTimeDelta.from_common_iso8601("P")
 
     def test_too_many_microseconds(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format "
+            "or common ISO 8601 string: 'PT0.0000001S'",
+        ):
             DateTimeDelta.from_canonical_format("PT0.0000001S")
 
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format "
+            "or common ISO 8601 string: 'PT0.0000001S'",
+        ):
             DateTimeDelta.from_common_iso8601("PT0.0000001S")
 
 

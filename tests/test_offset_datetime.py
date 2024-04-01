@@ -1,4 +1,5 @@
 import pickle
+import re
 import weakref
 from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
 
@@ -163,38 +164,67 @@ class TestFromCanonicalFormat:
         ).exact_eq(OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=-4))
 
     def test_unpadded(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            f"'{re.escape('2020-8-15T12:8:30+05:00')}'",
+        ):
             OffsetDateTime.from_canonical_format("2020-8-15T12:8:30+05:00")
 
     def test_overly_precise_fraction(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            f"'{re.escape('2020-08-15T12:08:30.123456789123+05:00')}'",
+        ):
             OffsetDateTime.from_canonical_format(
                 "2020-08-15T12:08:30.123456789123+05:00"
             )
 
     def test_invalid_offset(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            f"'{re.escape('2020-08-15T12:08:30-99:00')}'",
+        ):
             OffsetDateTime.from_canonical_format("2020-08-15T12:08:30-99:00")
 
     def test_no_offset(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            f"'{re.escape('2020-08-15T12:08:30')}'",
+        ):
             OffsetDateTime.from_canonical_format("2020-08-15T12:08:30")
 
     def test_no_seconds(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            f"'{re.escape('2020-08-15T12:08-05:00')}'",
+        ):
             OffsetDateTime.from_canonical_format("2020-08-15T12:08-05:00")
 
     def test_empty(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match="Could not parse as canonical format string: ''"
+        ):
             OffsetDateTime.from_canonical_format("")
 
     def test_garbage(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: 'garbage'",
+        ):
             OffsetDateTime.from_canonical_format("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape(repr(s)),
+        ):
             OffsetDateTime.from_canonical_format(s)
 
 
@@ -766,11 +796,18 @@ def test_from_rfc3339(s, expect):
 
 def test_from_rfc3339_invalid():
     # no timezone
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match="Could not parse as RFC3339 string: "
+        f"'{re.escape('2020-08-15T23:12:09')}'",
+    ):
         OffsetDateTime.from_rfc3339("2020-08-15T23:12:09")
 
     # no seconds
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match="Could not parse as RFC3339 string: '2020-08-15T23:12-02:00'",
+    ):
         OffsetDateTime.from_rfc3339("2020-08-15T23:12-02:00")
 
 
@@ -865,5 +902,9 @@ def test_from_common_iso8601(s, expected):
     ],
 )
 def test_from_common_iso8601_invalid(s):
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match="Could not parse as common ISO 8601 string: "
+        + re.escape(repr(s)),
+    ):
         OffsetDateTime.from_common_iso8601(s)

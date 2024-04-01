@@ -165,17 +165,33 @@ class TestFromCanonicalFormat:
         assert DateDelta.from_common_iso8601(input) == expect
 
     def test_invalid(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format "
+            "or common ISO 8601 string: 'P'",
+        ):
             DateDelta.from_canonical_format("P")
 
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format "
+            "or common ISO 8601 string: 'P'",
+        ):
             DateDelta.from_common_iso8601("P")
 
     def test_time_component_not_allowed(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format "
+            "or common ISO 8601 string: 'P1Y2M3W4DT1H2M3S'",
+        ):
             DateDelta.from_common_iso8601("P1Y2M3W4DT1H2M3S")
 
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format "
+            "or common ISO 8601 string: 'P1Y2M3W4DT1H2M3S'",
+        ):
             DateDelta.from_canonical_format("P1Y2M3W4DT1H2M3S")
 
 

@@ -61,7 +61,11 @@ class TestFromCanonicalFormat:
         ],
     )
     def test_invalid(self, s):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format "
+            "or common ISO 8601 string: " + repr(s),
+        ):
             Date.from_canonical_format(s)
 
 
@@ -388,5 +392,9 @@ def test_from_common_iso8601(s, expected):
     ],
 )
 def test_from_common_iso8601_invalid(s):
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match="Could not parse as canonical format or common ISO 8601 string: "
+        + repr(s),
+    ):
         Date.from_common_iso8601(s)

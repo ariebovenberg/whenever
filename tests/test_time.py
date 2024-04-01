@@ -1,4 +1,5 @@
 import pickle
+import re
 from datetime import time as py_time, timezone as py_timezone
 
 import pytest
@@ -83,10 +84,18 @@ class TestFromCanonicalFormat:
         ],
     )
     def test_invalid(self, input):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format or common ISO 8601 "
+            "string: " + re.escape(repr(input)),
+        ):
             Time.from_canonical_format(input)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format or common ISO 8601 "
+            "string: " + re.escape(repr(input)),
+        ):
             Time.from_common_iso8601(input)
 
 

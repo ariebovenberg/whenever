@@ -1,4 +1,5 @@
 import pickle
+import re
 import weakref
 from copy import copy, deepcopy
 from datetime import datetime as py_datetime, timedelta, timezone
@@ -197,38 +198,67 @@ class TestFromCanonicalFormat:
         assert UTCDateTime.from_canonical_format(s) == expect
 
     def test_unpadded(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            "'2020-8-15T12:8:30Z'",
+        ):
             UTCDateTime.from_canonical_format("2020-8-15T12:8:30Z")
 
     def test_overly_precise_fraction(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            "'2020-08-15T12:08:30.123456789123Z'",
+        ):
             UTCDateTime.from_canonical_format(
                 "2020-08-15T12:08:30.123456789123Z"
             )
 
     def test_invalid_lowercase_z(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            "'2020-08-15T12:08:30z'",
+        ):
             UTCDateTime.from_canonical_format("2020-08-15T12:08:30z")
 
     def test_no_trailing_z(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            "'2020-08-15T12:08:30'",
+        ):
             UTCDateTime.from_canonical_format("2020-08-15T12:08:30")
 
     def test_no_seconds(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            "'2020-08-15T12:08Z'",
+        ):
             UTCDateTime.from_canonical_format("2020-08-15T12:08Z")
 
     def test_empty(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match="Could not parse as canonical format string: ''"
+        ):
             UTCDateTime.from_canonical_format("")
 
     def test_garbage(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: 'garbage'",
+        ):
             UTCDateTime.from_canonical_format("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape(repr(s)),
+        ):
             UTCDateTime.from_canonical_format(s)
 
 
@@ -729,15 +759,28 @@ def test_from_rfc2822(s, expected):
 
 def test_from_rfc2822_invalid():
     # no offset
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match="Cannot parse as RFC 2822 string: 'Sat, 15 Aug 2020 23:12:09'. "
+        "Input must have a UTC offset.",
+    ):
         UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09")
 
     # nonzero offset
-    with pytest.raises(ValueError, match="nonzero"):
+    with pytest.raises(
+        ValueError,
+        match="Cannot parse as RFC 2822 string: "
+        + re.escape("'Sat, 15 Aug 2020 23:12:09 +0200'. ")
+        + "Input can't have nonzero offset to be parsed as UTC.",
+    ):
         UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09 +0200")
 
     # garbage
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match="Cannot parse as RFC 2822 string: "
+        + re.escape("'Blurb, 2 Bla 2020 23:12:09,0'"),
+    ):
         UTCDateTime.from_rfc2822("Blurb, 2 Bla 2020 23:12:09,0")
 
 
@@ -780,15 +823,25 @@ def test_from_rfc3339(s, expect):
 
 def test_from_rfc3339_invalid():
     # no timezone
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match="Could not parse as UTC RFC3339 string: '2020-08-15T23:12:09'",
+    ):
         UTCDateTime.from_rfc3339("2020-08-15T23:12:09")
 
     # no seconds
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match="Could not parse as UTC RFC3339 string: '2020-08-15T23:12-00:00'",
+    ):
         UTCDateTime.from_rfc3339("2020-08-15T23:12-00:00")
 
     # nonzero offset
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match="Could not parse as UTC RFC3339 string: "
+        + re.escape("'2020-08-15T23:12:09+02:00'"),
+    ):
         UTCDateTime.from_rfc3339("2020-08-15T23:12:09+02:00")
 
 
@@ -836,5 +889,9 @@ def test_from_common_iso8601(s, expect):
     ],
 )
 def test_from_common_iso8601_invalid(s):
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match="Could not parse as common ISO 8601 string: "
+        + re.escape(repr(s)),
+    ):
         UTCDateTime.from_common_iso8601(s)

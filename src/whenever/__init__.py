@@ -395,7 +395,13 @@ class Date(_ImmutableBase):
                 "Could not parse as canonical format "
                 f"or common ISO 8601 string: {s!r}"
             )
-        return cls.from_py_date(_date.fromisoformat(s))
+        try:
+            return cls.from_py_date(_date.fromisoformat(s))
+        except ValueError:
+            raise ValueError(
+                "Could not parse as canonical format "
+                f"or common ISO 8601 string: {s!r}"
+            )
 
     __str__ = canonical_format
 
@@ -996,7 +1002,7 @@ class TimeDelta(_ImmutableBase):
         parsed = DateTimeDelta.from_common_iso8601(s)
         if parsed._date_part:
             raise ValueError(
-                f"Could not parse as common ISO 8601 string: {s!r}"
+                f"Could not parse as canonical format or common ISO 8601 string: {s!r}"
             )
         return parsed._time_part
 
@@ -1402,7 +1408,8 @@ class DateDelta(_ImmutableBase):
         full_delta = DateTimeDelta.from_canonical_format(s)
         if full_delta.time_part:
             raise ValueError(
-                f"Could not parse as common ISO 8601 string: {s!r}"
+                "Could not parse as canonical format "
+                f"or common ISO 8601 string: {s!r}"
             )
         return full_delta.date_part
 
@@ -2515,16 +2522,24 @@ class UTCDateTime(_AwareDateTime):
           Use :meth:`OffsetDateTime.from_rfc2822` if you'd like to
           parse an RFC 2822 string with a nonzero offset.
         """
-        parsed = _parse_rfc2822(s)
+        try:
+            parsed = _parse_rfc2822(s)
+        except ValueError as e:
+            raise ValueError(f"Cannot parse as RFC 2822 string: {s!r}") from e
+
         # Nested ifs to keep happy path fast
         if parsed.tzinfo is not _UTC:
             if parsed.tzinfo is None:
                 if "-0000" not in s:
-                    raise ValueError("RFC 2822 string must have a UTC offset")
+                    raise ValueError(
+                        f"Cannot parse as RFC 2822 string: {s!r}. "
+                        "Input must have a UTC offset."
+                    )
                 parsed = parsed.replace(tzinfo=_UTC)
             else:
                 raise ValueError(
-                    "RFC 2822 string can't have nonzero offset to be parsed as UTC"
+                    f"Cannot parse as RFC 2822 string: {s!r}. "
+                    "Input can't have nonzero offset to be parsed as UTC."
                 )
         return cls._from_py_unchecked(parsed)
 
@@ -2608,9 +2623,14 @@ class UTCDateTime(_AwareDateTime):
         """
         if s[10] != "T" or s.endswith(("z", "-00:00")):
             raise ValueError(
-                "Could not parse as common ISO 8601 string: {s!r}"
+                f"Could not parse as common ISO 8601 string: {s!r}"
             )
-        return cls._from_py_unchecked(_parse_utc_rfc3339(s))
+        try:
+            return cls._from_py_unchecked(_parse_utc_rfc3339(s))
+        except ValueError as e:
+            raise ValueError(
+                f"Could not parse as common ISO 8601 string: {s!r}"
+            ) from e
 
     def __repr__(self) -> str:
         return f"UTCDateTime({self})"
@@ -2701,7 +2721,12 @@ class OffsetDateTime(_AwareDateTime):
             raise ValueError(
                 f"Could not parse as canonical format string: {s!r}"
             )
-        return cls._from_py_unchecked(_fromisoformat(s))
+        try:
+            return cls._from_py_unchecked(_fromisoformat(s))
+        except ValueError as e:
+            raise ValueError(
+                f"Could not parse as canonical format string: {s!r}"
+            ) from e
 
     @classmethod
     def from_timestamp(
@@ -2930,7 +2955,12 @@ class OffsetDateTime(_AwareDateTime):
         >>> OffsetDateTime.from_rfc3339("2020-08-15_23:12:00.23-12:00")
         >>> OffsetDateTime.from_rfc3339("2020-08-15t23:12:00z")
         """
-        return cls._from_py_unchecked(_parse_rfc3339(s))
+        try:
+            return cls._from_py_unchecked(_parse_rfc3339(s))
+        except ValueError as e:
+            raise ValueError(
+                f"Could not parse as RFC3339 string: {s!r}"
+            ) from e
 
     def common_iso8601(self) -> str:
         """Format in the commonly used ISO 8601 format.
@@ -2969,7 +2999,12 @@ class OffsetDateTime(_AwareDateTime):
         >>> OffsetDateTime.from_common_iso8601("2020-08-15T23:12:00Z")
         """
         if s[10] == "T" and not s.endswith(("-00:00", "z")):
-            return cls.from_rfc3339(s)
+            try:
+                return cls.from_rfc3339(s)
+            except ValueError as e:
+                raise ValueError(
+                    f"Could not parse as common ISO 8601 string: {s!r}"
+                ) from e
         else:
             raise ValueError(
                 f"Could not parse as common ISO 8601 string: {s!r}"
@@ -3527,7 +3562,12 @@ class LocalSystemDateTime(_AwareDateTime):
             raise ValueError(
                 f"Could not parse as canonical format string: {s!r}"
             )
-        return cls._from_py_unchecked(_fromisoformat(s))
+        try:
+            return cls._from_py_unchecked(_fromisoformat(s))
+        except ValueError:
+            raise ValueError(
+                f"Could not parse as canonical format string: {s!r}"
+            )
 
     @classmethod
     def from_timestamp(cls, i: float, /) -> LocalSystemDateTime:
