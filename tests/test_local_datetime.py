@@ -1,4 +1,5 @@
 import pickle
+import re
 import weakref
 from copy import copy, deepcopy
 from datetime import datetime as py_datetime, timedelta, timezone
@@ -544,48 +545,81 @@ class TestFromCanonicalFormat:
 
     @local_ams_tz()
     def test_unpadded(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape("'2020-8-15T12:8:30+02:00'"),
+        ):
             LocalSystemDateTime.from_canonical_format(
                 "2020-8-15T12:8:30+02:00"
             )
 
     @local_ams_tz()
     def test_overly_precise_fraction(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape("'2020-08-15T12:08:30.123456789123+02:00'"),
+        ):
             LocalSystemDateTime.from_canonical_format(
                 "2020-08-15T12:08:30.123456789123+02:00"
             )
 
     @local_ams_tz()
     def test_invalid_offset(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape("'2020-08-15T12:08:30-29:00'"),
+        ):
             LocalSystemDateTime.from_canonical_format(
                 "2020-08-15T12:08:30-29:00"
             )
 
     def test_no_offset(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape("'2020-08-15T12:08:30'"),
+        ):
             LocalSystemDateTime.from_canonical_format("2020-08-15T12:08:30")
 
     def test_no_timezone(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape("'2020-08-15T12:08:30'"),
+        ):
             LocalSystemDateTime.from_canonical_format("2020-08-15T12:08:30")
 
     def test_no_seconds(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape("'2020-08-15T12:08+02:00'"),
+        ):
             LocalSystemDateTime.from_canonical_format("2020-08-15T12:08+02:00")
 
     def test_empty(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match="Could not parse as canonical format string: ''"
+        ):
             LocalSystemDateTime.from_canonical_format("")
 
     def test_garbage(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: 'garbage'",
+        ):
             LocalSystemDateTime.from_canonical_format("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape(repr(s)),
+        ):
             LocalSystemDateTime.from_canonical_format(s)
 
 

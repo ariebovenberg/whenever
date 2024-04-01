@@ -1,4 +1,5 @@
 import pickle
+import re
 import weakref
 from copy import copy, deepcopy
 from datetime import timedelta
@@ -286,7 +287,10 @@ class TestFromCommonIso8601:
         ["P1D", "P1Y", "T1H", "PT4M3H", "PT1.5H"],
     )
     def test_invalid(self, s) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match=f"Could not parse as canonical format or common ISO 8601 string: {s!r}",
+        ):
             TimeDelta.from_common_iso8601(s)
 
 
@@ -318,7 +322,11 @@ class TestFromCanonicalFormat:
         ["00:60:00", "00:00:60"],
     )
     def test_invalid_too_large(self, s):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape(repr(s)),
+        ):
             TimeDelta.from_canonical_format(s)
 
     @pytest.mark.parametrize(
@@ -331,7 +339,11 @@ class TestFromCanonicalFormat:
         ],
     )
     def test_invalid_seperators(self, s):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape(repr(s)),
+        ):
             TimeDelta.from_canonical_format(s)
 
 

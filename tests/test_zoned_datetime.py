@@ -1,4 +1,5 @@
 import pickle
+import re
 import weakref
 from copy import copy, deepcopy
 from datetime import datetime as py_datetime, timedelta, timezone
@@ -552,13 +553,23 @@ class TestFromCanonicalFormat:
         )
 
     def test_unpadded(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape("'2020-8-15T12:8:30+05:00[Asia/Kolkata]'"),
+        ):
             ZonedDateTime.from_canonical_format(
                 "2020-8-15T12:8:30+05:00[Asia/Kolkata]"
             )
 
     def test_overly_precise_fraction(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape(
+                "'2020-08-15T12:08:30.123456789123+05:00[Asia/Kolkata]'"
+            ),
+        ):
             ZonedDateTime.from_canonical_format(
                 "2020-08-15T12:08:30.123456789123+05:00[Asia/Kolkata]"
             )
@@ -570,32 +581,53 @@ class TestFromCanonicalFormat:
             )
 
     def test_no_offset(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape("'2020-08-15T12:08:30[Europe/Amsterdam]'"),
+        ):
             ZonedDateTime.from_canonical_format(
                 "2020-08-15T12:08:30[Europe/Amsterdam]"
             )
 
     def test_no_timezone(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape("'2020-08-15T12:08:30+05:00'"),
+        ):
             ZonedDateTime.from_canonical_format("2020-08-15T12:08:30+05:00")
 
     def test_no_seconds(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape("'2020-08-15T12:08-05:00[America/New_York]'"),
+        ):
             ZonedDateTime.from_canonical_format(
                 "2020-08-15T12:08-05:00[America/New_York]"
             )
 
     def test_empty(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match="Could not parse as canonical format string: ''"
+        ):
             ZonedDateTime.from_canonical_format("")
 
     def test_garbage(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: 'garbage'",
+        ):
             ZonedDateTime.from_canonical_format("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match="Could not parse as canonical format string: "
+            + re.escape(repr(s)),
+        ):
             ZonedDateTime.from_canonical_format(s)
 
 
