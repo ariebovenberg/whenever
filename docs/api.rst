@@ -89,4 +89,3 @@ Exceptions
 .. autoexception:: whenever.AmbiguousTime
 .. autoexception:: whenever.SkippedTime
 .. autoexception:: whenever.InvalidOffsetForZone
-.. autoexception:: whenever.InvalidFormat
