@@ -1,4 +1,4 @@
-name: Build
+name: Build and publish wheels
 
 on:
   push:
@@ -19,21 +19,19 @@ jobs:
         target: [x86_64, x86, aarch64, armv7, s390x, ppc64le]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
-          sccache: 'true'
-          manylinux: auto
+        run: |
+          pip install cibuildwheel==2.17.0
+          cibuildwheel --output-dir dist
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-linux-${{ matrix.target }}
-          path: dist
+          name: cibw-wheels-linux-${{ matrix.target }}
+          path: dist/*.whl
 
   windows:
     runs-on: windows-latest
@@ -42,21 +40,20 @@ jobs:
         target: [x64, x86]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
           architecture: ${{ matrix.target }}
       - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
-          sccache: 'true'
+        run: |
+          pip install cibuildwheel==2.17.0
+          cibuildwheel --output-dir dist
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-windows-${{ matrix.target }}
-          path: dist
+          path: dist/*.whl
 
   macos:
     runs-on: macos-latest
@@ -65,15 +62,14 @@ jobs:
         target: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
-          sccache: 'true'
+        run: |
+          pip install cibuildwheel==2.17.0
+          cibuildwheel --output-dir dist
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -85,10 +81,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build sdist
-        uses: PyO3/maturin-action@v1
-        with:
-          command: sdist
-          args: --out dist
+        run: |
+          pip install build
+          python -m build --sdist --outdir dist
       - name: Upload sdist
         uses: actions/upload-artifact@v4
         with:
@@ -103,10 +98,13 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
       - name: Publish to PyPI
-        uses: PyO3/maturin-action@v1
+        run: |
+          pip install twine
+          twine upload dist/*
         env:
-          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-          MATURIN_REPOSITORY: testpypi
+          TWINE_UESRNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+          TWINE_REPOSITORY: testpypi
         with:
           command: upload
           args: --non-interactive --skip-existing wheels-*/*

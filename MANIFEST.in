@@ -1,0 +1,7 @@
+include Cargo.toml
+include Cargo.lock
+include include/**/*
+include .cargo/*
+include src/*
+include pysrc/*
+include build.rs

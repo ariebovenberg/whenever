@@ -131,7 +131,7 @@ struct WheneverState {
 
 #[allow(non_snake_case)]
 #[no_mangle]
-pub unsafe extern "C" fn PyInit_whenever() -> *mut PyObject {
+pub unsafe extern "C" fn PyInit__whenever() -> *mut PyObject {
     let m = PyModuleDef_Init(ptr::addr_of_mut!(MODULE_DEF));
     if m.is_null() {
         return std::ptr::null_mut();

@@ -19,7 +19,7 @@ include = [
 ]
 
 [lib]
-name = "whenever"
+name = "_whenever"
 crate-type = ["cdylib"]
 
 [features]
@@ -28,6 +28,7 @@ default = []
 [dependencies]
 chrono = "0.4.35"
 pyo3-ffi = { version = "^0.21.0", default_features = false, features = ["extension-module"]}
+pyo3 = { version = "^0.21.0", features = ["extension-module"] }
 
 [build-dependencies]
 pyo3-build-config = { version = "^0.21.0" }
