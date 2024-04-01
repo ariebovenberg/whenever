@@ -8,7 +8,6 @@ from pytest import approx
 
 from whenever import (
     DateDelta,
-    InvalidFormat,
     TimeDelta,
     hours,
     microseconds,
@@ -287,7 +286,7 @@ class TestFromCommonIso8601:
         ["P1D", "P1Y", "T1H", "PT4M3H", "PT1.5H"],
     )
     def test_invalid(self, s) -> None:
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             TimeDelta.from_common_iso8601(s)
 
 
@@ -319,7 +318,7 @@ class TestFromCanonicalFormat:
         ["00:60:00", "00:00:60"],
     )
     def test_invalid_too_large(self, s):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             TimeDelta.from_canonical_format(s)
 
     @pytest.mark.parametrize(
@@ -332,7 +331,7 @@ class TestFromCanonicalFormat:
         ],
     )
     def test_invalid_seperators(self, s):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             TimeDelta.from_canonical_format(s)
 
 

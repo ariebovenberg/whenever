@@ -12,7 +12,6 @@ from pytest import approx
 from whenever import (
     AmbiguousTime,
     Date,
-    InvalidFormat,
     InvalidOffsetForZone,
     LocalSystemDateTime,
     NaiveDateTime,
@@ -553,13 +552,13 @@ class TestFromCanonicalFormat:
         )
 
     def test_unpadded(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             ZonedDateTime.from_canonical_format(
                 "2020-8-15T12:8:30+05:00[Asia/Kolkata]"
             )
 
     def test_overly_precise_fraction(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             ZonedDateTime.from_canonical_format(
                 "2020-08-15T12:08:30.123456789123+05:00[Asia/Kolkata]"
             )
@@ -571,32 +570,32 @@ class TestFromCanonicalFormat:
             )
 
     def test_no_offset(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             ZonedDateTime.from_canonical_format(
                 "2020-08-15T12:08:30[Europe/Amsterdam]"
             )
 
     def test_no_timezone(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             ZonedDateTime.from_canonical_format("2020-08-15T12:08:30+05:00")
 
     def test_no_seconds(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             ZonedDateTime.from_canonical_format(
                 "2020-08-15T12:08-05:00[America/New_York]"
             )
 
     def test_empty(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             ZonedDateTime.from_canonical_format("")
 
     def test_garbage(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             ZonedDateTime.from_canonical_format("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             ZonedDateTime.from_canonical_format(s)
 
 

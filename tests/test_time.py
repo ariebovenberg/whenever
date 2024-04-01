@@ -3,7 +3,7 @@ from datetime import time as py_time, timezone as py_timezone
 
 import pytest
 
-from whenever import Date, InvalidFormat, NaiveDateTime, Time
+from whenever import Date, NaiveDateTime, Time
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
@@ -83,10 +83,10 @@ class TestFromCanonicalFormat:
         ],
     )
     def test_invalid(self, input):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             Time.from_canonical_format(input)
 
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             Time.from_common_iso8601(input)
 
 

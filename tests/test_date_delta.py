@@ -7,7 +7,6 @@ import pytest
 from whenever import (
     DateDelta,
     DateTimeDelta,
-    InvalidFormat,
     TimeDelta,
     days,
     months,
@@ -166,17 +165,17 @@ class TestFromCanonicalFormat:
         assert DateDelta.from_common_iso8601(input) == expect
 
     def test_invalid(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             DateDelta.from_canonical_format("P")
 
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             DateDelta.from_common_iso8601("P")
 
     def test_time_component_not_allowed(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             DateDelta.from_common_iso8601("P1Y2M3W4DT1H2M3S")
 
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             DateDelta.from_canonical_format("P1Y2M3W4DT1H2M3S")
 
 

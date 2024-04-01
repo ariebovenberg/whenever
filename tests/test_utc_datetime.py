@@ -11,7 +11,6 @@ from pytest import approx
 
 from whenever import (
     Date,
-    InvalidFormat,
     LocalSystemDateTime,
     NaiveDateTime,
     OffsetDateTime,
@@ -198,38 +197,38 @@ class TestFromCanonicalFormat:
         assert UTCDateTime.from_canonical_format(s) == expect
 
     def test_unpadded(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             UTCDateTime.from_canonical_format("2020-8-15T12:8:30Z")
 
     def test_overly_precise_fraction(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             UTCDateTime.from_canonical_format(
                 "2020-08-15T12:08:30.123456789123Z"
             )
 
     def test_invalid_lowercase_z(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             UTCDateTime.from_canonical_format("2020-08-15T12:08:30z")
 
     def test_no_trailing_z(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             UTCDateTime.from_canonical_format("2020-08-15T12:08:30")
 
     def test_no_seconds(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             UTCDateTime.from_canonical_format("2020-08-15T12:08Z")
 
     def test_empty(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             UTCDateTime.from_canonical_format("")
 
     def test_garbage(self):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             UTCDateTime.from_canonical_format("garbage")
 
     @given(text())
     def test_fuzzing(self, s: str):
-        with pytest.raises(InvalidFormat):
+        with pytest.raises(ValueError):
             UTCDateTime.from_canonical_format(s)
 
 
