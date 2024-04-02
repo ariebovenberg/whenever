@@ -1,6 +1,16 @@
 🚀 Changelog
 ============
 
+0.6.0 (2024-??-??)
+------------------
+
+- Implement as a Rust extension module
+
+**Breaking changes**
+
+- Removed weakref support. The overhead of weakrefs was too high for
+  such primitive objects, and the use case was not clear.
+
 0.5.1 (2024-04-02)
 ------------------
 

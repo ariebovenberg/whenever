@@ -1,5 +1,4 @@
 import abc
-import sys
 from abc import ABC, abstractmethod
 from datetime import (
     date as _date,
@@ -7,12 +6,8 @@ from datetime import (
     time as _time,
     timedelta as _timedelta,
 )
-from typing import ClassVar, Literal, TypeVar, overload
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-else:
-    from backports.zoneinfo import ZoneInfo
+from typing import ClassVar, Literal, TypeVar, final, overload
+from zoneinfo import ZoneInfo
 
 __all__ = [
     "Date",
@@ -36,7 +31,6 @@ __all__ = [
     "SkippedTime",
     "AmbiguousTime",
     "InvalidOffsetForZone",
-    "InvalidFormat",
     "MONDAY",
     "TUESDAY",
     "WEDNESDAY",
@@ -59,6 +53,7 @@ class _UNSET: ...
 _TDateTime = TypeVar("_TDateTime")
 Disambiguate = Literal["raise", "earlier", "later", "compatible"]
 
+@final
 class Date:
     def __init__(self, year: int, month: int, day: int) -> None: ...
     @property
@@ -93,7 +88,15 @@ class Date:
     def common_iso8601(self) -> str: ...
     @classmethod
     def from_common_iso8601(cls, s: str) -> Date: ...
+    def replace(
+        self,
+        *,
+        year: int | _UNSET = ...,
+        month: int | _UNSET = ...,
+        day: int | _UNSET = ...,
+    ) -> Date: ...
 
+@final
 class Time:
     MIDNIGHT: ClassVar[Time]
     NOON: ClassVar[Time]
@@ -103,7 +106,7 @@ class Time:
         hour: int = 0,
         minute: int = 0,
         second: int = 0,
-        microsecond: int = 0,
+        nanosecond: int = 0,
     ) -> None: ...
     @property
     def hour(self) -> int: ...
@@ -112,7 +115,7 @@ class Time:
     @property
     def second(self) -> int: ...
     @property
-    def microsecond(self) -> int: ...
+    def nanosecond(self) -> int: ...
     def py_time(self) -> _time: ...
     @classmethod
     def from_py_time(cls, t: _time) -> Time: ...
@@ -128,6 +131,7 @@ class Time:
     @classmethod
     def from_common_iso8601(cls, s: str) -> Time: ...
 
+@final
 class TimeDelta:
     def __init__(
         self,
@@ -135,13 +139,15 @@ class TimeDelta:
         hours: float = 0,
         minutes: float = 0,
         seconds: float = 0,
-        microseconds: int = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
     ) -> None: ...
     ZERO: ClassVar[TimeDelta]
     def in_hours(self) -> float: ...
     def in_minutes(self) -> float: ...
     def in_seconds(self) -> float: ...
-    def in_microseconds(self) -> int: ...
+    def in_nanoseconds(self) -> int: ...
     def __hash__(self) -> int: ...
     def __lt__(self, other: TimeDelta) -> bool: ...
     def __le__(self, other: TimeDelta) -> bool: ...
@@ -169,6 +175,7 @@ class TimeDelta:
     def from_py_timedelta(cls, td: _timedelta) -> TimeDelta: ...
     def as_tuple(self) -> tuple[int, int, int, int]: ...
 
+@final
 class DateDelta:
     ZERO: ClassVar[DateDelta]
     def __init__(
@@ -214,6 +221,7 @@ class DateDelta:
     def from_common_iso8601(cls, s: str) -> DateDelta: ...
     def as_tuple(self) -> tuple[int, int, int, int]: ...
 
+@final
 class DateTimeDelta:
     def __init__(
         self,
@@ -225,7 +233,7 @@ class DateTimeDelta:
         hours: float = 0,
         minutes: float = 0,
         seconds: float = 0,
-        microseconds: int = 0,
+        nanoseconds: int = 0,
     ) -> None: ...
     ZERO: ClassVar[DateTimeDelta]
     @property
@@ -309,6 +317,7 @@ class _AwareDateTime(_DateTime, metaclass=abc.ABCMeta):
     @abstractmethod
     def exact_eq(self: _TDateTime, other: _TDateTime) -> bool: ...
 
+@final
 class UTCDateTime(_AwareDateTime):
     def __init__(
         self,
@@ -395,6 +404,7 @@ class UTCDateTime(_AwareDateTime):
     @classmethod
     def from_common_iso8601(cls, s: str) -> UTCDateTime: ...
 
+@final
 class OffsetDateTime(_AwareDateTime):
     def __init__(
         self,
@@ -456,6 +466,7 @@ class OffsetDateTime(_AwareDateTime):
     @classmethod
     def from_common_iso8601(cls, s: str) -> OffsetDateTime: ...
 
+@final
 class ZonedDateTime(_AwareDateTime):
     def __init__(
         self,
@@ -518,6 +529,7 @@ class ZonedDateTime(_AwareDateTime):
     def as_offset(self, offset: int | TimeDelta) -> OffsetDateTime: ...
     def as_zoned(self, tz: str) -> ZonedDateTime: ...
 
+@final
 class LocalSystemDateTime(_AwareDateTime):
     def __init__(
         self,
@@ -574,6 +586,7 @@ class LocalSystemDateTime(_AwareDateTime):
     def as_zoned(self, tz: str) -> ZonedDateTime: ...
     def as_local(self) -> LocalSystemDateTime: ...
 
+@final
 class NaiveDateTime(_DateTime):
     def __init__(
         self,
@@ -583,7 +596,7 @@ class NaiveDateTime(_DateTime):
         hour: int = 0,
         minute: int = 0,
         second: int = 0,
-        microsecond: int = 0,
+        nanosecond: int = 0,
     ) -> None: ...
     def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str: ...
     @classmethod
@@ -600,7 +613,7 @@ class NaiveDateTime(_DateTime):
         hour: int | _UNSET = ...,
         minute: int | _UNSET = ...,
         second: int | _UNSET = ...,
-        microsecond: int | _UNSET = ...,
+        nanosecond: int | _UNSET = ...,
     ) -> NaiveDateTime: ...
     MIN: ClassVar[NaiveDateTime]
     MAX: ClassVar[NaiveDateTime]
@@ -627,20 +640,22 @@ class NaiveDateTime(_DateTime):
     @classmethod
     def from_common_iso8601(cls, s: str) -> NaiveDateTime: ...
 
+@final
 class AmbiguousTime(Exception):
     @staticmethod
     def for_timezone(d: _datetime, tz: ZoneInfo) -> AmbiguousTime: ...
     @staticmethod
     def for_system_timezone(d: _datetime) -> AmbiguousTime: ...
 
+@final
 class SkippedTime(Exception):
     @staticmethod
     def for_timezone(d: _datetime, tz: ZoneInfo) -> SkippedTime: ...
     @staticmethod
     def for_system_timezone(d: _datetime) -> SkippedTime: ...
 
+@final
 class InvalidOffsetForZone(ValueError): ...
-class InvalidFormat(ValueError): ...
 
 def years(i: int) -> DateDelta: ...
 def months(i: int) -> DateDelta: ...

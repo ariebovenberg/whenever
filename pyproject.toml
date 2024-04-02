@@ -6,7 +6,7 @@ authors = [
 readme = "README.rst"
 version = "0.6.0rc0"
 description = "Sensible and typesafe datetimes"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -15,7 +15,6 @@ classifiers = [
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -26,14 +25,13 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "backports-zoneinfo>=0.2.1; python_version < '3.9'",
     "tzdata>=2020.1; sys_platform == 'win32'",
 ]
 keywords = [
-    "datetime", "typesafe", "rust", "time", "timezone", "utc", "naive", "aware", 
+    "datetime", "typesafe", "rust", "time", "timezone", "utc", "naive", "aware",
     "zoneinfo", "tzdata"
 ]
-    
+
 
 [project.urls]
 Documentation = "https://whenever.readthedocs.io"

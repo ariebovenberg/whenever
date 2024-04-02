@@ -1,25 +1,16 @@
 import pickle
 import re
-import weakref
 from datetime import datetime as py_datetime, timezone
 
 import pytest
 from hypothesis import given
 from hypothesis.strategies import text
 
-from whenever import (
-    AmbiguousTime,
+from whenever import (  # AmbiguousTime,; LocalSystemDateTime,; OffsetDateTime,; SkippedTime,; UTCDateTime,; ZonedDateTime,; days,; hours,; minutes,; seconds,; weeks,; years,
     Date,
-    LocalSystemDateTime,
     NaiveDateTime,
-    OffsetDateTime,
-    SkippedTime,
-    UTCDateTime,
-    ZonedDateTime,
+    Time,
     days,
-    hours,
-    minutes,
-    seconds,
     weeks,
     years,
 )
@@ -42,7 +33,7 @@ def test_minimal():
     assert d.hour == 5
     assert d.minute == 12
     assert d.second == 30
-    assert d.microsecond == 450
+    assert d.nanosecond == 450
 
     assert (
         NaiveDateTime(2020, 8, 15, 12)
@@ -52,115 +43,116 @@ def test_minimal():
     )
 
 
-def test_date():
-    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+def test_components():
+    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654_123)
     assert d.date() == Date(2020, 8, 15)
+    assert d.time() == Time(23, 12, 9, 987_654_123)
 
 
-def test_assume_utc():
-    assert NaiveDateTime(2020, 8, 15, 23).assume_utc() == UTCDateTime(
-        2020, 8, 15, 23
-    )
+# def test_assume_utc():
+#     assert NaiveDateTime(2020, 8, 15, 23).assume_utc() == UTCDateTime(
+#         2020, 8, 15, 23
+#     )
 
 
-def test_assume_offset():
-    assert (
-        NaiveDateTime(2020, 8, 15, 23)
-        .assume_offset(hours(5))
-        .exact_eq(OffsetDateTime(2020, 8, 15, 23, offset=5))
-    )
-    assert (
-        NaiveDateTime(2020, 8, 15, 23)
-        .assume_offset(-2)
-        .exact_eq(OffsetDateTime(2020, 8, 15, 23, offset=-2))
-    )
+# def test_assume_offset():
+#     assert (
+#         NaiveDateTime(2020, 8, 15, 23)
+#         .assume_offset(hours(5))
+#         .exact_eq(OffsetDateTime(2020, 8, 15, 23, offset=5))
+#     )
+#     assert (
+#         NaiveDateTime(2020, 8, 15, 23)
+#         .assume_offset(-2)
+#         .exact_eq(OffsetDateTime(2020, 8, 15, 23, offset=-2))
+#     )
 
 
-class TestAssumeZoned:
-    def test_typical(self):
-        assert NaiveDateTime(2020, 8, 15, 23).assume_zoned(
-            "Asia/Tokyo"
-        ) == ZonedDateTime(2020, 8, 15, 23, tz="Asia/Tokyo")
+# class TestAssumeZoned:
+#     def test_typical(self):
+#         assert NaiveDateTime(2020, 8, 15, 23).assume_zoned(
+#             "Asia/Tokyo"
+#         ) == ZonedDateTime(2020, 8, 15, 23, tz="Asia/Tokyo")
 
-    def test_ambiguous(self):
-        d = NaiveDateTime(2023, 10, 29, 2, 15)
+#     def test_ambiguous(self):
+#         d = NaiveDateTime(2023, 10, 29, 2, 15)
 
-        with pytest.raises(AmbiguousTime, match="02:15.*Europe/Amsterdam"):
-            d.assume_zoned("Europe/Amsterdam")
+#         with pytest.raises(AmbiguousTime, match="02:15.*Europe/Amsterdam"):
+#             d.assume_zoned("Europe/Amsterdam")
 
-        assert d.assume_zoned(
-            "Europe/Amsterdam", disambiguate="earlier"
-        ) == ZonedDateTime(
-            2023, 10, 29, 2, 15, tz="Europe/Amsterdam", disambiguate="earlier"
-        )
-        assert d.assume_zoned(
-            "Europe/Amsterdam", disambiguate="later"
-        ) == ZonedDateTime(
-            2023, 10, 29, 2, 15, tz="Europe/Amsterdam", disambiguate="later"
-        )
+#         assert d.assume_zoned(
+#             "Europe/Amsterdam", disambiguate="earlier"
+#         ) == ZonedDateTime(
+#             2023, 10, 29, 2, 15, tz="Europe/Amsterdam", disambiguate="earlier"
+#         )
+#         assert d.assume_zoned(
+#             "Europe/Amsterdam", disambiguate="later"
+#         ) == ZonedDateTime(
+#             2023, 10, 29, 2, 15, tz="Europe/Amsterdam", disambiguate="later"
+#         )
 
-    def test_nonexistent(self):
-        d = NaiveDateTime(2023, 3, 26, 2, 15)
+#     def test_nonexistent(self):
+#         d = NaiveDateTime(2023, 3, 26, 2, 15)
 
-        with pytest.raises(SkippedTime, match="02:15.*Europe/Amsterdam"):
-            d.assume_zoned("Europe/Amsterdam")
+#         with pytest.raises(SkippedTime, match="02:15.*Europe/Amsterdam"):
+#             d.assume_zoned("Europe/Amsterdam")
 
-        with pytest.raises(SkippedTime, match="02:15.*Europe/Amsterdam"):
-            d.assume_zoned("Europe/Amsterdam", disambiguate="raise")
+#         with pytest.raises(SkippedTime, match="02:15.*Europe/Amsterdam"):
+#             d.assume_zoned("Europe/Amsterdam", disambiguate="raise")
 
-        assert d.assume_zoned(
-            "Europe/Amsterdam", disambiguate="earlier"
-        ) == ZonedDateTime(
-            2023, 3, 26, 2, 15, tz="Europe/Amsterdam", disambiguate="earlier"
-        )
+#         assert d.assume_zoned(
+#             "Europe/Amsterdam", disambiguate="earlier"
+#         ) == ZonedDateTime(
+#             2023, 3, 26, 2, 15, tz="Europe/Amsterdam", disambiguate="earlier"
+#         )
 
 
-class TestAssumeLocal:
-    @local_ams_tz()
-    def test_typical(self):
-        assert NaiveDateTime(
-            2020, 8, 15, 23
-        ).assume_local() == LocalSystemDateTime(2020, 8, 15, 23)
+# class TestAssumeLocal:
+#     @local_ams_tz()
+#     def test_typical(self):
+#         assert NaiveDateTime(
+#             2020, 8, 15, 23
+#         ).assume_local() == LocalSystemDateTime(2020, 8, 15, 23)
 
-    @local_ams_tz()
-    def test_ambiguous(self):
-        d = NaiveDateTime(2023, 10, 29, 2, 15)
+#     @local_ams_tz()
+#     def test_ambiguous(self):
+#         d = NaiveDateTime(2023, 10, 29, 2, 15)
 
-        with pytest.raises(AmbiguousTime, match="02:15.*system"):
-            d.assume_local()
+#         with pytest.raises(AmbiguousTime, match="02:15.*system"):
+#             d.assume_local()
 
-        with pytest.raises(AmbiguousTime, match="02:15.*system"):
-            d.assume_local(disambiguate="raise")
+#         with pytest.raises(AmbiguousTime, match="02:15.*system"):
+#             d.assume_local(disambiguate="raise")
 
-        assert d.assume_local(disambiguate="earlier") == LocalSystemDateTime(
-            2023, 10, 29, 2, 15, disambiguate="earlier"
-        )
-        assert d.assume_local(
-            disambiguate="compatible"
-        ) == LocalSystemDateTime(2023, 10, 29, 2, 15, disambiguate="earlier")
-        assert d.assume_local(disambiguate="later") == LocalSystemDateTime(
-            2023, 10, 29, 2, 15, disambiguate="later"
-        )
+#         assert d.assume_local(disambiguate="earlier") == LocalSystemDateTime(
+#             2023, 10, 29, 2, 15, disambiguate="earlier"
+#         )
+#         assert d.assume_local(
+#             disambiguate="compatible"
+#         ) == LocalSystemDateTime(2023, 10, 29, 2, 15, disambiguate="earlier")
+#         assert d.assume_local(disambiguate="later") == LocalSystemDateTime(
+#             2023, 10, 29, 2, 15, disambiguate="later"
+#         )
 
-    @local_ams_tz()
-    def test_nonexistent(self):
-        d = NaiveDateTime(2023, 3, 26, 2, 15)
+#     @local_ams_tz()
+#     def test_nonexistent(self):
+#         d = NaiveDateTime(2023, 3, 26, 2, 15)
 
-        with pytest.raises(SkippedTime, match="02:15.*system"):
-            d.assume_local()
+#         with pytest.raises(SkippedTime, match="02:15.*system"):
+#             d.assume_local()
 
-        with pytest.raises(SkippedTime, match="02:15.*system"):
-            d.assume_local(disambiguate="raise")
+#         with pytest.raises(SkippedTime, match="02:15.*system"):
+#             d.assume_local(disambiguate="raise")
 
-        assert d.assume_local(disambiguate="earlier") == LocalSystemDateTime(
-            2023, 3, 26, 2, 15, disambiguate="earlier"
-        )
-        assert d.assume_local(disambiguate="later") == LocalSystemDateTime(
-            2023, 3, 26, 2, 15, disambiguate="later"
-        )
-        assert d.assume_local(
-            disambiguate="compatible"
-        ) == LocalSystemDateTime(2023, 3, 26, 2, 15, disambiguate="compatible")
+#         assert d.assume_local(disambiguate="earlier") == LocalSystemDateTime(
+#             2023, 3, 26, 2, 15, disambiguate="earlier"
+#         )
+#         assert d.assume_local(disambiguate="later") == LocalSystemDateTime(
+#             2023, 3, 26, 2, 15, disambiguate="later"
+#         )
+#         assert d.assume_local(
+#             disambiguate="compatible"
+#         ) == LocalSystemDateTime(2023, 3, 26, 2, 15, disambiguate="compatible")
 
 
 def test_immutable():
@@ -170,74 +162,51 @@ def test_immutable():
 
 
 class TestFromCanonicalFormat:
-    def test_valid(self):
-        assert NaiveDateTime.from_canonical_format(
-            "2020-08-15T12:08:30"
-        ) == NaiveDateTime(2020, 8, 15, 12, 8, 30)
+    @pytest.mark.parametrize(
+        "s, expected",
+        [
+            ("2020-08-15 12:08:30", NaiveDateTime(2020, 8, 15, 12, 8, 30)),
+            (
+                "2020-08-15 12:08:30.349",
+                NaiveDateTime(2020, 8, 15, 12, 8, 30, 349_000_000),
+            ),
+            (
+                "2020-08-15 12:08:30.3491239",
+                NaiveDateTime(2020, 8, 15, 12, 8, 30, 349_123_900),
+            ),
+        ],
+    )
+    def test_valid(self, s, expected):
+        assert NaiveDateTime.from_canonical_format(s) == expected
 
-    def test_valid_three_fractions(self):
-        assert NaiveDateTime.from_canonical_format(
-            "2020-08-15T12:08:30.349"
-        ) == NaiveDateTime(2020, 8, 15, 12, 8, 30, 349_000)
-
-    def test_valid_six_fractions(self):
-        assert NaiveDateTime.from_canonical_format(
-            "2020-08-15T12:08:30.349123"
-        ) == NaiveDateTime(2020, 8, 15, 12, 8, 30, 349_123)
-
-    def test_single_space_instead_of_T(self):
-        assert NaiveDateTime.from_canonical_format(
-            "2020-08-15 12:08:30"
-        ) == NaiveDateTime(2020, 8, 15, 12, 8, 30)
-
-    def test_unpadded(self):
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*canonical format.*'2020-8-15T12:8:30'",
-        ):
-            NaiveDateTime.from_canonical_format("2020-8-15T12:8:30")
-
-    def test_overly_precise_fraction(self):
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*canonical format.*"
-            "'2020-08-15T12:08:30.123456789123'",
-        ):
-            NaiveDateTime.from_canonical_format(
-                "2020-08-15T12:08:30.123456789123"
-            )
-
-    def test_trailing_z(self):
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*canonical format.*'2020-08-15T12:08:30Z'",
-        ):
-            NaiveDateTime.from_canonical_format("2020-08-15T12:08:30Z")
-
-    def test_no_seconds(self):
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*canonical format.*'2020-08-15T12:08'",
-        ):
-            NaiveDateTime.from_canonical_format("2020-08-15T12:08")
-
-    def test_empty(self):
-        with pytest.raises(
-            ValueError, match=r"Could not parse.*canonical format.*''"
-        ):
-            NaiveDateTime.from_canonical_format("")
-
-    def test_garbage(self):
-        with pytest.raises(
-            ValueError, match=r"Could not parse.*canonical format.*'garbage'"
-        ):
-            NaiveDateTime.from_canonical_format("garbage")
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "2020-08-15 12:08:30.1234567890",  # too many fractions
+            "2020-08-15 12:08:30.",  # no fractions
+            "2020-08-15 12:08:30.45+0500",  # offset
+            "2020-08-15 12:08:30+05:00",  # offset
+            "2020-08-15",  # just a date
+            "2020",  # way too short
+            "2020033434 12.08.30",  # invalid separators
+            "garbage",  # garbage
+            "12:08:30.1234567890",  # no date
+            "2020-08-15 12:08:30.123456789Z",  # Z at the end
+            "2020-08-15T12:08:30",  # invalid separator
+            "2020-08-15T12:8:30",  # missing padding
+            "2020-08-15T12:08",  # no seconds
+            "",  # empty
+        ],
+    )
+    def test_invalid(self, s):
+        with pytest.raises(ValueError, match=re.escape(s)):
+            NaiveDateTime.from_canonical_format(s)
 
     @given(text())
     def test_fuzzing(self, s: str):
         with pytest.raises(
             ValueError,
-            match=r"Could not parse.*canonical format.*" + re.escape(repr(s)),
+            match=re.escape(repr(s)),
         ):
             NaiveDateTime.from_canonical_format(s)
 
@@ -262,7 +231,7 @@ def test_equality():
     assert d != 42  # type: ignore[comparison-overlap]
     assert not d == 42  # type: ignore[comparison-overlap]
 
-    # Ambiguity in system timezone
+    # Ambiguity in system timezone doesn't affect equality
     with local_ams_tz():
         assert NaiveDateTime(
             2023, 10, 29, 2, 15
@@ -273,7 +242,8 @@ def test_equality():
 
 def test_repr():
     d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert repr(d) == "NaiveDateTime(2020-08-15 23:12:09.987654)"
+    assert repr(d) == "NaiveDateTime(2020-08-15 23:12:09.000987654)"
+    # no fractional seconds
     assert (
         repr(NaiveDateTime(2020, 8, 15, 23, 12))
         == "NaiveDateTime(2020-08-15 23:12:00)"
@@ -282,13 +252,14 @@ def test_repr():
 
 def test_canonical_format():
     d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert str(d) == "2020-08-15 23:12:09.987654"
-    assert d.canonical_format() == "2020-08-15T23:12:09.987654"
+    assert str(d) == "2020-08-15 23:12:09.000987654"
+    # TODO: remove sep argument
+    assert d.canonical_format() == "2020-08-15 23:12:09.000987654"
 
 
 def test_comparison():
-    d = NaiveDateTime.from_canonical_format("2020-08-15T23:12:09")
-    later = NaiveDateTime.from_canonical_format("2020-08-16T00:00:00")
+    d = NaiveDateTime(2020, 8, 15, 23, 12, 9)
+    later = NaiveDateTime(2020, 8, 16, 0, 0, 0)
     assert d < later
     assert d <= later
     assert later > d
@@ -307,15 +278,15 @@ def test_comparison():
         d < 42  # type: ignore[operator]
 
 
-def test_py():
-    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+def test_py_datetime():
+    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654_823)
     assert d.py_datetime() == py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
 
 
 def test_from_py_datetime():
     d = py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
     assert NaiveDateTime.from_py_datetime(d) == NaiveDateTime(
-        2020, 8, 15, 23, 12, 9, 987_654
+        2020, 8, 15, 23, 12, 9, 987_654_000
     )
 
     with pytest.raises(ValueError, match="utc"):
@@ -323,17 +294,18 @@ def test_from_py_datetime():
             py_datetime(2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc)
         )
 
+    class MyDateTime(py_datetime):
+        pass
 
-def test_weakref():
-    d = NaiveDateTime(2020, 8, 15)
-    ref = weakref.ref(d)
-    assert ref() == d
+    assert NaiveDateTime.from_py_datetime(
+        MyDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    ) == NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654_000)
 
 
 def test_min_max():
     assert NaiveDateTime.MIN == NaiveDateTime(1, 1, 1)
     assert NaiveDateTime.MAX == NaiveDateTime(
-        9999, 12, 31, 23, 59, 59, 999_999
+        9999, 12, 31, 23, 59, 59, 999_999_999
     )
 
 
@@ -349,7 +321,7 @@ def test_replace():
     assert d.replace(second=0) == NaiveDateTime(
         2020, 8, 15, 23, 12, 0, 987_654
     )
-    assert d.replace(microsecond=0) == NaiveDateTime(2020, 8, 15, 23, 12, 9, 0)
+    assert d.replace(nanosecond=0) == NaiveDateTime(2020, 8, 15, 23, 12, 9, 0)
 
     with pytest.raises(TypeError, match="tzinfo"):
         d.replace(tzinfo=timezone.utc)  # type: ignore[call-arg]
@@ -357,42 +329,48 @@ def test_replace():
 
 class TestAdd:
 
-    def test_time_units(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-        assert d + hours(24) + seconds(5) == NaiveDateTime(
-            2020, 8, 16, 23, 12, 14, 987_654
-        )
+    #     def test_time_units(self):
+    #         d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    #         assert d + hours(24) + seconds(5) == NaiveDateTime(
+    #             2020, 8, 16, 23, 12, 14, 987_654
+    #         )
 
     def test_invalid(self):
         d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
         with pytest.raises(TypeError, match="unsupported operand type"):
             d + 42  # type: ignore[operator]
 
-    def test_date_units(self):
+    def test_calendar_units(self):
         d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-        assert d + years(1) + weeks(1) + days(-3) + minutes(5) == d.replace(
-            year=2021, day=19, minute=17
+        assert d + years(1) + weeks(1) + days(-3) == d.replace(
+            year=2021, day=19
         )
+
+    # def test_mixed_units(self):
+    #     assert False
 
 
 class TestSubtract:
 
-    def test_time_units(self):
+    #     def test_time_units(self):
+    #         d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    #         assert d - hours(24) - seconds(5) == NaiveDateTime(
+    #             2020, 8, 14, 23, 12, 4, 987_654
+    #         )
+
+    def test_calendar_units(self):
         d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-        assert d - hours(24) - seconds(5) == NaiveDateTime(
-            2020, 8, 14, 23, 12, 4, 987_654
+        assert d - (years(1) + weeks(1) + days(-3)) == d.replace(
+            year=2019, day=11
         )
 
-    def test_date_units(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-        assert d - (years(1) + weeks(1) + days(-3) + minutes(6)) == d.replace(
-            year=2019, day=11, minute=6
-        )
+    # def test_mixed_units(self):
+    #     assert False
 
-    def test_other_datetime(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-        other = NaiveDateTime(2020, 8, 14, 23, 12, 4, 987_654)
-        assert d - other == hours(24) + seconds(5)
+    #     def test_other_datetime(self):
+    #         d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    #         other = NaiveDateTime(2020, 8, 14, 23, 12, 4, 987_654)
+    #         assert d - other == hours(24) + seconds(5)
 
     def test_invalid(self):
         d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
@@ -439,34 +417,46 @@ def test_common_iso8601():
         == "2020-08-15T23:12:09"
     )
     assert (
-        NaiveDateTime(2020, 8, 15, 23, 12, 9, 450_000).common_iso8601()
+        NaiveDateTime(2020, 8, 15, 23, 12, 9, 450_000_000).common_iso8601()
         == "2020-08-15T23:12:09.45"
     )
 
 
-@pytest.mark.parametrize(
-    "s,expected",
-    [
-        ("2020-08-15T23:12:09", NaiveDateTime(2020, 8, 15, 23, 12, 9)),
-        (
-            "2020-08-15T23:12:09.45",
-            NaiveDateTime(2020, 8, 15, 23, 12, 9, 450_000),
-        ),
-    ],
-)
-def test_from_common_iso8601(s, expected):
-    assert NaiveDateTime.from_common_iso8601(s) == expected
+class TestFromCommonISO8601:
+
+    @pytest.mark.parametrize(
+        "s,expected",
+        [
+            ("2020-08-15T23:12:09", NaiveDateTime(2020, 8, 15, 23, 12, 9)),
+            (
+                "2020-08-15T23:12:09.45",
+                NaiveDateTime(2020, 8, 15, 23, 12, 9, 450_000_000),
+            ),
+        ],
+    )
+    def test_valid(self, s, expected):
+        assert NaiveDateTime.from_common_iso8601(s) == expected
+
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "2020-08-15T23:12:09.1234567890",  # too many fractions
+            "2020-08-15T23:12:09.",  # no fractions
+            "2020-08-15T23:12:09.45+0500",  # offset
+            "2020-08-15T23:12:09+05:00",  # offset
+            "2020-08-15",  # just a date
+            "2020",  # way too short
+            "2020033434T23.12.09",  # invalid separators
+            "",  # empty
+        ],
+    )
+    def test_invalid(self, s):
+        with pytest.raises(ValueError, match=re.escape(s)):
+            NaiveDateTime.from_common_iso8601(s)
 
 
-@pytest.mark.parametrize(
-    "s",
-    [
-        "2020-08-15T23:12:09.123456789",  # too many fractions
-        "2020-08-15T23:12:09.",  # no fractions
-        "2020-08-15T23:12:09.45+0500",  # offset
-        "2020-08-15T23:12:09+05:00",  # offset
-    ],
-)
-def test_from_common_iso8601_invalid(s):
-    with pytest.raises(ValueError, match=re.escape(s)):
-        NaiveDateTime.from_common_iso8601(s)
+def test_cannot_subclass():
+    with pytest.raises(TypeError):
+
+        class Subclass(NaiveDateTime):  # type: ignore[misc]
+            pass

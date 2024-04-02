@@ -1,5 +1,8 @@
 [flake8]
 exclude = .git,__pycache__,docs/source/conf.py,old,build,dist,.tox
-extend-ignore = 
+extend-ignore =
   # let black handle line length
   E501
+per-file-ignores =
+    __init__.py: F401,F403
+
