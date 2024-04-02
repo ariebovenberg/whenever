@@ -1,6 +1,11 @@
 🚀 Changelog
 ============
 
+0.5.1 (2024-04-02)
+------------------
+
+- Fix ``LocalSystemDateTime.now()`` not setting the correct offset (#104)
+
 0.5.0 (2024-03-21)
 ------------------
 
