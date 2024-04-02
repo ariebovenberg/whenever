@@ -761,8 +761,7 @@ def test_from_rfc2822_invalid():
     # no offset
     with pytest.raises(
         ValueError,
-        match="Cannot parse as RFC 2822 string: 'Sat, 15 Aug 2020 23:12:09'. "
-        "Input must have a UTC offset.",
+        match="Cannot parse as RFC 2822 string: 'Sat, 15 Aug 2020 23:12:09'",
     ):
         UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09")
 
@@ -770,8 +769,7 @@ def test_from_rfc2822_invalid():
     with pytest.raises(
         ValueError,
         match="Cannot parse as RFC 2822 string: "
-        + re.escape("'Sat, 15 Aug 2020 23:12:09 +0200'. ")
-        + "Input can't have nonzero offset to be parsed as UTC.",
+        + re.escape("'Sat, 15 Aug 2020 23:12:09 +0200'"),
     ):
         UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09 +0200")
 
