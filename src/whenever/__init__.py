@@ -389,19 +389,16 @@ class Date(_ImmutableBase):
         >>> Date.from_canonical_format("2021-01-02")
         Date(2021-01-02)
         """
-        if s[5] == "W":
-            # prevent isoformat from parsing week dates
-            raise ValueError(
-                "Could not parse as canonical format "
-                f"or common ISO 8601 string: {s!r}"
-            )
         try:
+            if s[5] == "W":
+                # prevent isoformat from parsing week dates
+                raise ValueError("Week dates are not supported")
             return cls.from_py_date(_date.fromisoformat(s))
-        except ValueError:
+        except ValueError as e:
             raise ValueError(
                 "Could not parse as canonical format "
                 f"or common ISO 8601 string: {s!r}"
-            )
+            ) from e
 
     __str__ = canonical_format
 
@@ -1002,7 +999,8 @@ class TimeDelta(_ImmutableBase):
         parsed = DateTimeDelta.from_common_iso8601(s)
         if parsed._date_part:
             raise ValueError(
-                f"Could not parse as canonical format or common ISO 8601 string: {s!r}"
+                "Could not parse as canonical format "
+                f"or common ISO 8601 string: {s!r}"
             )
         return parsed._time_part
 
@@ -2524,24 +2522,21 @@ class UTCDateTime(_AwareDateTime):
         """
         try:
             parsed = _parse_rfc2822(s)
+            # Nested ifs to keep happy path fast
+            if parsed.tzinfo is not _UTC:
+                if parsed.tzinfo is None:
+                    if "-0000" not in s:
+                        raise ValueError(
+                            "RFC 2822 string must have a UTC offset"
+                        )
+                    parsed = parsed.replace(tzinfo=_UTC)
+                else:
+                    raise ValueError(
+                        "RFC 2822 string can't have nonzero offset to be parsed as UTC"
+                    )
+            return cls._from_py_unchecked(parsed)
         except ValueError as e:
             raise ValueError(f"Cannot parse as RFC 2822 string: {s!r}") from e
-
-        # Nested ifs to keep happy path fast
-        if parsed.tzinfo is not _UTC:
-            if parsed.tzinfo is None:
-                if "-0000" not in s:
-                    raise ValueError(
-                        f"Cannot parse as RFC 2822 string: {s!r}. "
-                        "Input must have a UTC offset."
-                    )
-                parsed = parsed.replace(tzinfo=_UTC)
-            else:
-                raise ValueError(
-                    f"Cannot parse as RFC 2822 string: {s!r}. "
-                    "Input can't have nonzero offset to be parsed as UTC."
-                )
-        return cls._from_py_unchecked(parsed)
 
     def rfc3339(self) -> str:
         """Format as an RFC 3339 string
@@ -2621,11 +2616,9 @@ class UTCDateTime(_AwareDateTime):
         Use :meth:`OffsetDateTime.from_common_iso8601` if you'd like to
         parse an ISO 8601 string with a nonzero offset.
         """
-        if s[10] != "T" or s.endswith(("z", "-00:00")):
-            raise ValueError(
-                f"Could not parse as common ISO 8601 string: {s!r}"
-            )
         try:
+            if s[10] != "T" or s.endswith(("z", "-00:00")):
+                raise ValueError("Input has a nonzero offset")
             return cls._from_py_unchecked(_parse_utc_rfc3339(s))
         except ValueError as e:
             raise ValueError(
@@ -2717,11 +2710,10 @@ class OffsetDateTime(_AwareDateTime):
 
     @classmethod
     def from_canonical_format(cls, s: str, /) -> OffsetDateTime:
-        if not _match_offset_str(s):
-            raise ValueError(
-                f"Could not parse as canonical format string: {s!r}"
-            )
         try:
+            if not _match_offset_str(s):
+                raise ValueError("Input seems malformed")
+            # Catch errors thrown by _from_py_unchecked too
             return cls._from_py_unchecked(_fromisoformat(s))
         except ValueError as e:
             raise ValueError(
@@ -2998,17 +2990,21 @@ class OffsetDateTime(_AwareDateTime):
         >>> # also valid:
         >>> OffsetDateTime.from_common_iso8601("2020-08-15T23:12:00Z")
         """
-        if s[10] == "T" and not s.endswith(("-00:00", "z")):
-            try:
+        try:
+            if s[10] == "T" and not s.endswith(("-00:00", "z")):
                 return cls.from_rfc3339(s)
-            except ValueError as e:
-                raise ValueError(
-                    f"Could not parse as common ISO 8601 string: {s!r}"
-                ) from e
-        else:
+            else:
+                # Examine the string again to keep the above happy path fast
+                if s[10] != "T":
+                    raise ValueError("Input seems malformed: missing 'T' separator")
+                if s.endswith("z"):
+                    raise ValueError("Input has a trailing lowercase 'z'")
+                if s.endswith("-00:00"):
+                    raise ValueError("Input has forbidden offset '-00:00'")
+        except ValueError as e:
             raise ValueError(
                 f"Could not parse as common ISO 8601 string: {s!r}"
-            )
+            ) from e
 
     def __repr__(self) -> str:
         return f"OffsetDateTime({self})"
@@ -3558,16 +3554,14 @@ class LocalSystemDateTime(_AwareDateTime):
 
     @classmethod
     def from_canonical_format(cls, s: str, /) -> LocalSystemDateTime:
-        if not _match_offset_str(s):
-            raise ValueError(
-                f"Could not parse as canonical format string: {s!r}"
-            )
         try:
+            if not _match_offset_str(s):
+                raise ValueError("Input seems malformed")
             return cls._from_py_unchecked(_fromisoformat(s))
-        except ValueError:
+        except ValueError as e:
             raise ValueError(
                 f"Could not parse as canonical format string: {s!r}"
-            )
+            ) from e
 
     @classmethod
     def from_timestamp(cls, i: float, /) -> LocalSystemDateTime:
