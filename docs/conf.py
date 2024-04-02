@@ -25,12 +25,17 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx_copybutton",
+    "myst_parser",
 ]
 templates_path = ["_templates"]
-source_suffix = ".rst"
+source_suffix = {
+    ".md": "markdown",
+    ".rst": "restructuredtext",
+}
 
 master_doc = "index"
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+myst_heading_anchors = 2
 
 # -- Options for HTML output ----------------------------------------------
 

@@ -3,7 +3,7 @@ import os
 from setuptools import setup
 from setuptools_rust import Binding, RustExtension, build_rust
 
-_SKIP_BUILD_SUGGESTION = f"""
+_SKIP_BUILD_SUGGESTION = """
 *******************************************************************************
 
 Building the Rust extension of the library `whenever` failed. See errors above.
@@ -24,7 +24,10 @@ class CustomBuildExtCommand(build_rust):
 
 
 setup(
-    rust_extensions=[RustExtension("whenever._whenever", binding=Binding.PyO3)]
-    * (not os.getenv("WHENEVER_NO_BUILD_RUST_EXT")),
+    rust_extensions=(
+        []
+        if os.getenv("WHENEVER_NO_BUILD_RUST_EXT")
+        else [RustExtension("whenever._whenever", binding=Binding.PyO3)]
+    ),
     cmdclass={"build_rust": CustomBuildExtCommand},
 )

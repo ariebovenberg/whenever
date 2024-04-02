@@ -15,10 +15,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         # Note: pypy/pytest fails sometimes (https://github.com/pypy/pypy/issues/3959)
-        python-version: ["3.9", "3.10", "3.11", "3.12", "pypy3.8", "pypy3.9", "pypy3.10"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "pypy3.9", "pypy3.10"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -54,7 +56,7 @@ jobs:
       - run: |
           pip install .
           pip install -r requirements/test.txt
-          pytest tests/ --ignore tests/test_extension_demo.py
+          pytest tests/
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
 

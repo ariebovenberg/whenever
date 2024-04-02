@@ -152,19 +152,6 @@ Nonetheless, these improvements are possible in the future:
 - Allow parsing of leap seconds, e.g. ``23:59:60``.
 - Allow representation of leap seconds (similar to rust Chrono)
 
-.. _faq-performance:
-
-How is the performance?
-~~~~~~~~~~~~~~~~~~~~~~~
-
-Because whenever currently wraps the standard library,
-head-to-head performance will be slightly slower.
-However, because **whenever** removes the need for many runtime checks,
-it may result in a net performance gain in real-world applications.
-
-A Rust extension is planned once the API stabilizes,
-which will provide a significant performance boost for certain operations.
-
 .. _faq-why-not-dropin:
 
 Why isn't it a drop-in replacement for the standard library?
