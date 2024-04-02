@@ -63,12 +63,7 @@ try:
 except ImportError:
     SPHINX_BUILD = False
 
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:  # pragma: no cover
-    from backports.zoneinfo import (  # type: ignore[import-not-found,no-redef]
-        ZoneInfo,
-    )
+from zoneinfo import ZoneInfo
 
 __all__ = [
     # Date and time
@@ -95,7 +90,6 @@ __all__ = [
     "SkippedTime",
     "AmbiguousTime",
     "InvalidOffsetForZone",
-
     # Constants
     "MONDAY",
     "TUESDAY",
@@ -216,6 +210,20 @@ class Date(_ImmutableBase):
         if not isinstance(other, Date):
             return NotImplemented
         return self._py_date >= other._py_date
+
+    if not TYPE_CHECKING:
+
+        def replace(self, **kwargs) -> Date:
+            """Create a new instance with the given fields replaced
+
+            Example
+            -------
+            >>> d = Date(2021, 1, 2)
+            >>> d.replace(day=3)
+            Date(2021-01-03)
+
+            """
+            return Date.from_py_date(self._py_date.replace(**kwargs))
 
     def py_date(self) -> _date:
         """Convert to a standard library :class:`~datetime.date`"""
@@ -1395,7 +1403,7 @@ class DateDelta(_ImmutableBase):
 
         Example
         -------
-        >>> DateDelta.from_canonical_format("1Y2M-3W4D")
+        >>> DateDelta.from_canonical_format("P1Y2M-3W4D")
         DateDelta(P1Y2M-3W4D)
         """
         try:

@@ -4,7 +4,7 @@ version = "0.6.0-beta.1"
 authors = []
 description = "Rust extension module for whenever"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.77"
 license = "MIT"
 readme = "README.rst"
 keywords = []
@@ -20,15 +20,22 @@ include = [
 
 [lib]
 name = "_whenever"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [features]
-default = []
+extension-module = ["pyo3/extension-module"]
+
+[[bench]]
+name = "benchmarks"
+path = "benchmarks/rust/main.rs"
 
 [dependencies]
-chrono = "0.4.35"
-pyo3-ffi = { version = "^0.21.0", default_features = false, features = ["extension-module"]}
-pyo3 = { version = "^0.21.0", features = ["extension-module"] }
+# TODO: await response to https://github.com/PyO3/pyo3/issues/4093
+# pyo3-ffi = { version = "^0.21.0", default_features = false, features = ["extension-module"]}
+# pyo3 = { version = "^0.21.0", features = ["extension-module"] }
+pyo3-ffi = { path = "../pyo3/pyo3-ffi", features = ["extension-module"] }
+pyo3 = { path = "../pyo3", features = ["extension-module"] }
 
 [build-dependencies]
-pyo3-build-config = { version = "^0.21.0" }
+# pyo3-build-config = { version = "^0.21.0" }
+pyo3-build-config = { path = "../pyo3/pyo3-build-config" }

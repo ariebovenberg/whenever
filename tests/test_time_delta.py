@@ -1,75 +1,173 @@
 import pickle
 import re
-import weakref
 from copy import copy, deepcopy
-from datetime import timedelta
+from datetime import timedelta as py_timedelta
 
 import pytest
 from pytest import approx
 
 from whenever import (
-    DateDelta,
     TimeDelta,
     hours,
     microseconds,
+    milliseconds,
     minutes,
+    nanoseconds,
     seconds,
 )
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
+MAX_HOURS = 9999 * 366 * 24
+
 
 class TestInit:
 
-    def test_basics(self):
-        d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+    # TODO: a big fuzzing test for argument handling
+    @pytest.mark.parametrize(
+        "kwargs, expected_nanos",
+        [
+            (dict(), 0),
+            # simplest cases
+            (dict(hours=2), 2 * 3_600_000_000_000),
+            (dict(minutes=3), 3 * 60_000_000_000),
+            (dict(seconds=4), 4 * 1_000_000_000),
+            (dict(milliseconds=5), 5 * 1_000_000),
+            (dict(microseconds=6), 6 * 1_000),
+            (dict(nanoseconds=7), 7),
+            # all components
+            (
+                dict(
+                    hours=1,
+                    minutes=2,
+                    seconds=90,
+                    microseconds=4,
+                    nanoseconds=5,
+                    milliseconds=9,
+                ),
+                3_600_000_000_000
+                + 2 * 60_000_000_000
+                + 90 * 1_000_000_000
+                + 9 * 1_000_000
+                + 4 * 1_000
+                + 5,
+            ),
+            # mixed signs
+            (
+                dict(hours=1, minutes=-2),
+                3_600_000_000_000 - 2 * 60_000_000_000,
+            ),
+            (
+                dict(hours=-1, milliseconds=2),
+                -3_600_000_000_000 + 2 * 1_000_000,
+            ),
+            (dict(nanoseconds=1 << 66), 1 << 66),  # huge value outside i64
+            # precision loss for floats
+            (
+                dict(microseconds=MAX_HOURS * 3_600_000_000 + 0.001),
+                MAX_HOURS * 3_600_000_000_000,
+            ),
+            # no precision loss for integers
+            (
+                dict(hours=MAX_HOURS - 1),
+                (MAX_HOURS - 1) * 3_600_000_000_000,
+            ),
+            (
+                dict(minutes=MAX_HOURS * 60 - 1),
+                MAX_HOURS * 3_600_000_000_000 - 60_000_000_000,
+            ),
+            (
+                dict(seconds=MAX_HOURS * 3_600 - 1),
+                MAX_HOURS * 3_600_000_000_000 - 1_000_000_000,
+            ),
+            (
+                dict(milliseconds=MAX_HOURS * 3_600_000 - 1),
+                MAX_HOURS * 3_600_000_000_000 - 1_000_000,
+            ),
+            (
+                dict(microseconds=MAX_HOURS * 3_600_000_000 - 1),
+                MAX_HOURS * 3_600_000_000_000 - 1_000,
+            ),
+            (
+                dict(microseconds=-MAX_HOURS * 3_600_000_000 + 1),
+                -MAX_HOURS * 3_600_000_000_000 + 1_000,
+            ),
+            (
+                dict(nanoseconds=-MAX_HOURS * 3_600_000_000_000 + 1),
+                -MAX_HOURS * 3_600_000_000_000 + 1,
+            ),
+            (
+                dict(nanoseconds=MAX_HOURS * 3_600_000_000_000 - 1),
+                MAX_HOURS * 3_600_000_000_000 - 1,
+            ),
+            # fractional values
+            (dict(minutes=1.5), int(1.5 * 60_000_000_000)),
+            (dict(seconds=1.5), int(1.5 * 1_000_000_000)),
+        ],
+    )
+    def test_valid(self, kwargs, expected_nanos):
+        d = TimeDelta(**kwargs)
+        assert d.in_nanoseconds() == expected_nanos
         # the components are not accessible directly
         assert not hasattr(d, "hours")
 
-    def test_defaults(self):
-        d = TimeDelta()
-        assert d.in_microseconds() == 0
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            dict(hours=MAX_HOURS + 1),
+            dict(hours=-MAX_HOURS - 1),
+            dict(minutes=MAX_HOURS * 60 + 1),
+            dict(minutes=-MAX_HOURS * 60 - 1),
+            dict(seconds=MAX_HOURS * 3_600 + 1),
+            dict(seconds=-MAX_HOURS * 3_600 - 1),
+            dict(milliseconds=MAX_HOURS * 3_600_000 + 1),
+            dict(milliseconds=-MAX_HOURS * 3_600_000 - 1),
+            dict(microseconds=MAX_HOURS * 3_600_000_000 + 1),
+            dict(microseconds=-MAX_HOURS * 3_600_000_000 - 1),
+            dict(nanoseconds=MAX_HOURS * 3_600_000_000_000 + 1),
+            dict(nanoseconds=-MAX_HOURS * 3_600_000_000_000 - 1),
+            dict(hours=float("inf")),
+            dict(minutes=float("inf")),
+            dict(seconds=float("-inf")),
+            dict(milliseconds=float("nan")),
+        ],
+    )
+    def test_invalid_out_of_range(self, kwargs):
+        with pytest.raises(ValueError, match="range"):
+            TimeDelta(**kwargs)
 
+    def test_invalid_kwargs(self):
+        with pytest.raises(TypeError, match="foo"):
+            TimeDelta(foo=1)  # type: ignore[call-arg]
 
-def test_factories():
-    assert hours(1) == TimeDelta(hours=1)
-    assert minutes(1) == TimeDelta(minutes=1)
-    assert seconds(1) == TimeDelta(seconds=1)
-    assert microseconds(1) == TimeDelta(microseconds=1)
+        with pytest.raises(TypeError):
+            TimeDelta(1)  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError):
+            TimeDelta(**{1: 43})  # type: ignore[misc]
 
 
 @pytest.mark.parametrize(
-    "kwargs, expected",
+    "f, arg, expected",
     [
-        (dict(), TimeDelta()),
-        (dict(hours=1), TimeDelta(microseconds=3_600_000_000)),
-        (dict(minutes=1), TimeDelta(microseconds=60_000_000)),
-        (dict(seconds=1), TimeDelta(microseconds=1_000_000)),
-        (
-            dict(minutes=90, microseconds=-3_600_000_000),
-            TimeDelta(minutes=30),
-        ),
+        (hours, 3.5, TimeDelta(hours=3.5)),
+        (minutes, 3.5, TimeDelta(minutes=3.5)),
+        (seconds, 3.5, TimeDelta(seconds=3.5)),
+        (microseconds, 3.5, TimeDelta(microseconds=3.5)),
+        (milliseconds, 3.5, TimeDelta(milliseconds=3.5)),
+        (nanoseconds, 3, TimeDelta(nanoseconds=3)),
     ],
 )
-def test_normalization(kwargs, expected):
-    assert TimeDelta(**kwargs) == expected
+def test_factories(f, arg, expected):
+    assert f(arg) == expected
 
 
-def test_fractional():
-    assert TimeDelta(minutes=1.5) == TimeDelta(seconds=90)
-
-
-def test_avoids_floating_point_errors():
-    assert TimeDelta(hours=10_000_001.0, microseconds=1) == TimeDelta(
-        microseconds=int(10_000_001 * 3_600_000_000) + 1
+def test_constants():
+    assert TimeDelta.ZERO == TimeDelta()
+    assert TimeDelta.MAX == TimeDelta(
+        nanoseconds=9999 * 366 * 24 * 60 * 60 * 1_000_000_000
     )
-
-
-def test_zero():
-    assert TimeDelta().ZERO == TimeDelta()
-    assert TimeDelta.ZERO == TimeDelta(
-        hours=0, minutes=0, seconds=0, microseconds=0
-    )
+    assert TimeDelta.MIN == -TimeDelta.MAX
 
 
 def test_boolean():
@@ -79,13 +177,21 @@ def test_boolean():
 
 
 def test_aggregations():
-    d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
-    assert d.in_hours() == approx(1 + 2 / 60 + 3 / 3_600 + 4 / 3_600_000_000)
-    assert d.in_minutes() == approx(60 + 2 + 3 / 60 + 4 / 60_000_000)
-    assert d.in_seconds() == approx(3600 + 2 * 60 + 3 + 4 / 1_000_000)
-    assert (
-        d.in_microseconds()
-        == 3_600_000_000 + 2 * 60_000_000 + 3 * 1_000_000 + 4
+    d = TimeDelta(hours=1, minutes=2, seconds=0.003, nanoseconds=4)
+    assert d.in_microseconds() == approx(
+        3_600_000_000 + 2 * 60_000_000 + 3 * 1_000 + 0.004
+    )
+    assert d.in_milliseconds() == approx(3_600_000 + 2 * 60_000 + 3 + 4e-6)
+    assert d.in_seconds() == approx(3600 + 2 * 60 + 0.003 + 4e-9)
+    assert d.in_minutes() == approx(60 + 2 + 0.003 / 60 + 4 / 60_000_000_000)
+    assert d.in_hours() == approx(
+        1 + 2 / 60 + 0.003 / 3_600 + 4 / 3_600_000_000_000_000
+    )
+    assert d.in_days_of_24h() == approx(
+        1 / 24
+        + 2 / (24 * 60)
+        + 0.003 / (24 * 3_600)
+        + 4 / (24 * 3_600_000_000_000_000)
     )
 
 
@@ -146,6 +252,7 @@ def test_comparison():
     assert d > AlwaysSmaller()
 
 
+# TODO: prefix with `PT`?
 @pytest.mark.parametrize(
     "d, expected",
     [
@@ -188,6 +295,58 @@ def test_canonical_format(d, expected):
     assert str(d) == expected
 
 
+class TestFromCanonicalFormat:
+
+    @pytest.mark.parametrize(
+        "s, expected",
+        [
+            (
+                "01:02:03.000004",
+                TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4),
+            ),
+            ("00:04:00", TimeDelta(minutes=4)),
+            ("00:00:00", TimeDelta()),
+            ("05:00:00", TimeDelta(hours=5)),
+            ("400:00:00", TimeDelta(hours=400)),
+            ("00:00:00.000000", TimeDelta()),
+            ("00:00:00.999955", TimeDelta(microseconds=999_955)),
+            ("00:00:00.99", TimeDelta(microseconds=990_000)),
+            ("-00:04:00", TimeDelta(minutes=-4)),
+            ("+00:04:00", TimeDelta(minutes=4)),
+            ("-00:04:00.000000001", TimeDelta(minutes=-4, nanoseconds=-1)),
+            ("4:00:00", TimeDelta(hours=4)),
+        ],
+    )
+    def test_valid(self, s, expected):
+        assert TimeDelta.from_canonical_format(s) == expected
+
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "00:00:00.000000.000000",  # too many dots
+            "00:00:00.0000.00",  # too many dots
+            "00:00.00",  # invalid separator
+            "00.00.00.0000",  # invalid separator
+            "",  # empty
+            "00:60:00",  # too large minutes
+            "00:00:60",  # too large seconds
+            "04:4:00",  # missing padding
+            "05:-2:11",  # negative minutes
+            "05:02:11.",  # invalid fraction
+            "05:02:11.a",  # invalid fraction
+            "05:02:11.1234567890",  # too long fraction
+            "05",  # only hours
+            "5:00",  # missing seconds
+        ],
+    )
+    def test_invalid(self, s):
+        with pytest.raises(
+            ValueError,
+            match="Invalid time delta format.*" + re.escape(repr(s)),
+        ):
+            TimeDelta.from_canonical_format(s)
+
+
 @pytest.mark.parametrize(
     "d, expected",
     [
@@ -217,7 +376,7 @@ def test_canonical_format(d, expected):
         ),
         (
             TimeDelta(microseconds=-1),
-            "PT-0.000001S",
+            "-PT0.000001S",
         ),
         (
             TimeDelta(seconds=2, microseconds=-3),
@@ -233,7 +392,7 @@ def test_canonical_format(d, expected):
         ),
         (
             TimeDelta(minutes=-4),
-            "PT-4M",
+            "-PT4M",
         ),
     ],
 )
@@ -260,17 +419,25 @@ class TestFromCommonIso8601:
             ),
             ("PT3H3S", TimeDelta(hours=1, minutes=120, seconds=3)),
             ("PT0S", TimeDelta()),
+            ("PT0.000000001S", TimeDelta(nanoseconds=1)),
+            ("PT450.000000001S", TimeDelta(seconds=450, nanoseconds=1)),
             ("PT0.000001S", TimeDelta(microseconds=1)),
-            ("PT-0.000001S", TimeDelta(microseconds=-1)),
+            ("-PT0.000001S", TimeDelta(microseconds=-1)),
             ("PT1.999997S", TimeDelta(seconds=2, microseconds=-3)),
             ("PT5H", TimeDelta(hours=5)),
             ("PT400H", TimeDelta(hours=400)),
-            ("PT-4M", TimeDelta(minutes=-4)),
-            ("P0D", TimeDelta()),
+            ("-PT4M", TimeDelta(minutes=-4)),
             ("PT0S", TimeDelta()),
-            ("P0YT3M", TimeDelta(minutes=3)),
-            ("-P-0YT+3M", TimeDelta(minutes=-3)),
+            ("PT3M", TimeDelta(minutes=3)),
+            ("+PT3M", TimeDelta(minutes=3)),
             ("PT0M", TimeDelta()),
+            ("PT0.000000000S", TimeDelta()),
+            # extremely long but still valid
+            (
+                "PT0H0M000000000000000300000000000.000000000S",
+                TimeDelta(seconds=300_000_000_000),
+            ),
+            # TODO: extreme number of seconds
         ],
     )
     def test_valid(self, s, expected):
@@ -278,66 +445,38 @@ class TestFromCommonIso8601:
 
     @pytest.mark.parametrize(
         "s",
-        ["P1D", "P1Y", "T1H", "PT4M3H", "PT1.5H"],
+        [
+            "P1D",  # date units
+            "P1YT4M",  # date units
+            "T1H",  # wrong prefix
+            "PT4M3H",  # wrong order
+            "PT1.5H",  # fractional hours
+            "PT1H2M3.000004S9H",  # stuff after nanoseconds
+            "PT1H2M3.000004S ",  # stuff after nanoseconds
+            "PT34.S",  # missing fractions
+            "PTS",  # no digits
+            "PT4HS",  # no digits
+            # way too many digits (there's a limit...)
+            "PT000000000000000000000000000000000000000000000000000000000001S",
+        ],
     )
     def test_invalid(self, s) -> None:
         with pytest.raises(
             ValueError,
-            match=r"Could not parse.*ISO 8601.*" + re.escape(repr(s)),
+            match=r"Invalid time delta format.*" + re.escape(repr(s)),
         ):
             TimeDelta.from_common_iso8601(s)
 
-
-class TestFromCanonicalFormat:
-
-    @pytest.mark.parametrize(
-        "s, expected",
-        [
-            (
-                "01:02:03.000004",
-                TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4),
-            ),
-            ("00:04:00", TimeDelta(minutes=4)),
-            ("00:00:00", TimeDelta()),
-            ("05:00:00", TimeDelta(hours=5)),
-            ("400:00:00", TimeDelta(hours=400)),
-            ("00:00:00.000000", TimeDelta()),
-            ("00:00:00.999955", TimeDelta(microseconds=999_955)),
-            ("00:00:00.99", TimeDelta(microseconds=990_000)),
-            ("-00:04:00", TimeDelta(minutes=-4)),
-            ("+00:04:00", TimeDelta(minutes=4)),
-        ],
-    )
-    def test_valid(self, s, expected):
-        assert TimeDelta.from_canonical_format(s) == expected
-
-    @pytest.mark.parametrize(
-        "s",
-        ["00:60:00", "00:00:60"],
-    )
-    def test_invalid_too_large(self, s):
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*canonical format.*" + re.escape(repr(s)),
-        ):
-            TimeDelta.from_canonical_format(s)
-
     @pytest.mark.parametrize(
         "s",
         [
-            "00:00:00.000000.000000",
-            "00:00:00.0000.00" "00:00.00.0000",
-            "00.00.00.0000",
-            "+0000:00",
+            f"PT{10_000 * 366 * 24}H",  # too big value
+            f"PT{10_000 * 366 * 24 * 3600}S",  # too big value
         ],
     )
-    def test_invalid_seperators(self, s):
-        with pytest.raises(
-            ValueError,
-            match="Could not parse as canonical format string: "
-            + re.escape(repr(s)),
-        ):
-            TimeDelta.from_canonical_format(s)
+    def test_too_large(self, s) -> None:
+        with pytest.raises(ValueError, match="range"):
+            TimeDelta.from_common_iso8601(s)
 
 
 def test_addition():
@@ -375,6 +514,18 @@ def test_multiply():
         hours=0, minutes=31, seconds=1, microseconds=500_002
     )
 
+    # allow very big ints if there's no overflow
+    assert TimeDelta(nanoseconds=1) * (1 << 66) == TimeDelta(
+        nanoseconds=1 << 66
+    )
+    assert TimeDelta(nanoseconds=1) * float(1 << 66) == TimeDelta(
+        nanoseconds=1 << 66
+    )
+
+    # overflow
+    with pytest.raises(ValueError, match="range"):
+        d * 1_000_000_000
+
     with pytest.raises(TypeError, match="unsupported operand"):
         d * Ellipsis  # type: ignore[operator]
 
@@ -389,12 +540,20 @@ class TestDivision:
         assert d / 0.5 == TimeDelta(
             hours=2, minutes=4, seconds=6, microseconds=8
         )
+        assert TimeDelta.MAX / 1.0 == TimeDelta.MAX
+        assert TimeDelta.MIN / 1.0 == TimeDelta.MIN
 
     def test_divide_by_duration(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
         assert d / TimeDelta(hours=1) == approx(
             1 + 2 / 60 + 3 / 3_600 + 4 / 3_600_000_000
         )
+        assert TimeDelta.ZERO / TimeDelta.MAX == 0.0
+        assert TimeDelta.ZERO / TimeDelta.MIN == 0.0
+        assert TimeDelta.MAX / TimeDelta.MAX == 1.0
+        assert TimeDelta.MIN / TimeDelta.MIN == 1.0
+        assert TimeDelta.MAX / TimeDelta.MIN == -1.0
+        assert TimeDelta.MIN / TimeDelta.MAX == -1.0
 
     def test_divide_by_zero(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
@@ -403,6 +562,9 @@ class TestDivision:
 
         with pytest.raises(ZeroDivisionError):
             d / 0
+
+        with pytest.raises(ZeroDivisionError):
+            d / 0.0
 
     def test_invalid(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
@@ -430,18 +592,37 @@ def test_pos(d):
 
 
 def test_py_timedelta():
-    assert TimeDelta().py_timedelta() == timedelta(0)
+    assert TimeDelta().py_timedelta() == py_timedelta(0)
     assert TimeDelta(
         hours=1, minutes=2, seconds=3, microseconds=4
-    ).py_timedelta() == timedelta(
+    ).py_timedelta() == py_timedelta(
         hours=1, minutes=2, seconds=3, microseconds=4
+    )
+    assert TimeDelta(nanoseconds=-42_000).py_timedelta() == py_timedelta(
+        microseconds=-42
+    )
+
+    # consistent truncation of sub-microsecond values
+    assert TimeDelta(nanoseconds=-1).py_timedelta() == py_timedelta()
+    assert TimeDelta(nanoseconds=-499).py_timedelta() == py_timedelta()
+    assert TimeDelta(nanoseconds=-500).py_timedelta() == py_timedelta()
+    assert TimeDelta(nanoseconds=-501).py_timedelta() == py_timedelta(
+        microseconds=-1
+    )
+    assert TimeDelta(nanoseconds=1).py_timedelta() == py_timedelta()
+    assert TimeDelta(nanoseconds=499).py_timedelta() == py_timedelta()
+    assert TimeDelta(nanoseconds=500).py_timedelta() == py_timedelta(
+        microseconds=1
+    )
+    assert TimeDelta(nanoseconds=501).py_timedelta() == py_timedelta(
+        microseconds=1
     )
 
 
-def test_from_timedelta():
-    assert TimeDelta.from_py_timedelta(timedelta(0)) == TimeDelta()
+def test_from_py_timedelta():
+    assert TimeDelta.from_py_timedelta(py_timedelta(0)) == TimeDelta.ZERO
     assert TimeDelta.from_py_timedelta(
-        timedelta(weeks=8, hours=1, minutes=2, seconds=3, microseconds=4)
+        py_timedelta(weeks=8, hours=1, minutes=2, seconds=3, microseconds=4)
     ) == TimeDelta(hours=1 + 7 * 24 * 8, minutes=2, seconds=3, microseconds=4)
 
 
@@ -449,8 +630,9 @@ def test_tuple():
     d = TimeDelta(hours=1, minutes=2, seconds=-3, microseconds=4_060_000)
     hms = d.as_tuple()
     assert all(isinstance(x, int) for x in hms)
-    assert hms == (1, 2, 1, 60_000)
+    assert hms == (1, 2, 1, 60_000_000)
     assert TimeDelta(hours=-2, minutes=-15).as_tuple() == (-2, -15, 0, 0)
+    assert TimeDelta(nanoseconds=-4).as_tuple() == (0, 0, 0, -4)
     assert TimeDelta.ZERO.as_tuple() == (0, 0, 0, 0)
 
 
@@ -460,12 +642,6 @@ def test_abs():
         TimeDelta(hours=-1, minutes=-2, seconds=-3, microseconds=-4)
     ) == TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
     assert abs(TimeDelta(hours=1)) == TimeDelta(hours=1)
-
-
-def test_weakref():
-    d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
-    r = weakref.ref(d)
-    assert r() is d
 
 
 def test_copy():
@@ -480,11 +656,14 @@ def test_pickling():
     assert len(dumped) < len(pickle.dumps(d.py_timedelta())) + 10
     assert pickle.loads(dumped) == d
 
+    assert pickle.loads(pickle.dumps(TimeDelta.MAX)) == TimeDelta.MAX
+    assert pickle.loads(pickle.dumps(TimeDelta.MIN)) == TimeDelta.MIN
+
 
 def test_compatible_unpickle():
     dumped = (
-        b"\x80\x04\x95)\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_t"
-        b"delta\x94\x93\x94\x8a\x05\xc4x\xe8\xdd\x00\x85\x94R\x94."
+        b"\x80\x04\x95(\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_t"
+        b"delta\x94\x93\x94M\x8b\x0eM\xa0\x0f\x86\x94R\x94."
     )
     assert pickle.loads(dumped) == TimeDelta(
         hours=1, minutes=2, seconds=3, microseconds=4

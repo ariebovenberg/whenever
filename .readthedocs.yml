@@ -9,7 +9,8 @@ build:
   os: ubuntu-22.04
   tools:
     python: "3.11"
-    rust: "1.75"
+    # rust shouldn't be needed as we disable building the extension
+    # in the readthedocs configuration
 
 python:
   install:
