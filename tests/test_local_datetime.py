@@ -617,6 +617,8 @@ def test_from_timestamp():
     with pytest.raises((OSError, OverflowError)):
         LocalSystemDateTime.from_timestamp(1_000_000_000_000_000_000)
 
+    assert LocalSystemDateTime.from_timestamp(0).offset == hours(-5)
+
 
 @local_nyc_tz()
 def test_repr():
@@ -660,7 +662,8 @@ class TestFromPyDateTime:
 @local_nyc_tz()
 def test_now():
     now = LocalSystemDateTime.now()
-    py_now = py_datetime.now(ZoneInfo("America/New_York")).replace(tzinfo=None)
+    assert now.offset == hours(-4)
+    py_now = py_datetime.now(ZoneInfo("America/New_York"))
     assert py_now - now.py_datetime() < timedelta(seconds=1)
 
 

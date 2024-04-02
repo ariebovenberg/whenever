@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "whenever"
-version = "0.5.0"
+version = "0.5.1"
 description = "Sensible and typesafe datetimes"
 authors = ["Arie Bovenberg <a.c.bovenberg@gmail.com>"]
 license = "MIT"

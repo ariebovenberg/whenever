@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 
 import re
 import sys
@@ -3492,7 +3492,7 @@ class LocalSystemDateTime(_AwareDateTime):
     @classmethod
     def now(cls) -> LocalSystemDateTime:
         """Create an instance from the current time"""
-        return cls._from_py_unchecked(_datetime.now())
+        return cls._from_py_unchecked(_datetime.now().astimezone(None))
 
     def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
         return self._py_dt.isoformat(sep)
