@@ -187,7 +187,6 @@ class TestFromCanonicalFormat:
         assert isinstance(exc_info.value.__cause__, ValueError)
         assert "time part" in str(exc_info.value.__cause__).lower()
 
-
         with pytest.raises(
             ValueError,
             match=r"Could not parse.*canonical format.*'P1Y2M3W4DT1H2M3S'",
