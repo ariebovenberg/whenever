@@ -193,16 +193,15 @@ class TestFromCanonicalFormat:
     def test_unpadded(self):
         with pytest.raises(
             ValueError,
-            match="Could not parse as canonical format string: "
-            + re.escape("'2020-8-15T12:8:30'"),
+            match=r"Could not parse.*canonical format.*'2020-8-15T12:8:30'",
         ):
             NaiveDateTime.from_canonical_format("2020-8-15T12:8:30")
 
     def test_overly_precise_fraction(self):
         with pytest.raises(
             ValueError,
-            match="Could not parse as canonical format string: "
-            + re.escape("'2020-08-15T12:08:30.123456789123'"),
+            match=r"Could not parse.*canonical format.*"
+            "'2020-08-15T12:08:30.123456789123'",
         ):
             NaiveDateTime.from_canonical_format(
                 "2020-08-15T12:08:30.123456789123"
@@ -211,29 +210,26 @@ class TestFromCanonicalFormat:
     def test_trailing_z(self):
         with pytest.raises(
             ValueError,
-            match="Could not parse as canonical format string: "
-            + re.escape("'2020-08-15T12:08:30Z'"),
+            match=r"Could not parse.*canonical format.*'2020-08-15T12:08:30Z'",
         ):
             NaiveDateTime.from_canonical_format("2020-08-15T12:08:30Z")
 
     def test_no_seconds(self):
         with pytest.raises(
             ValueError,
-            match="Could not parse as canonical format string: "
-            + re.escape("'2020-08-15T12:08'"),
+            match=r"Could not parse.*canonical format.*'2020-08-15T12:08'",
         ):
             NaiveDateTime.from_canonical_format("2020-08-15T12:08")
 
     def test_empty(self):
         with pytest.raises(
-            ValueError, match="Could not parse as canonical format string: ''"
+            ValueError, match=r"Could not parse.*canonical format.*''"
         ):
             NaiveDateTime.from_canonical_format("")
 
     def test_garbage(self):
         with pytest.raises(
-            ValueError,
-            match="Could not parse as canonical format string: 'garbage'",
+            ValueError, match=r"Could not parse.*canonical format.*'garbage'"
         ):
             NaiveDateTime.from_canonical_format("garbage")
 
@@ -241,8 +237,7 @@ class TestFromCanonicalFormat:
     def test_fuzzing(self, s: str):
         with pytest.raises(
             ValueError,
-            match="Could not parse as canonical format string: "
-            + re.escape(repr(s)),
+            match=r"Could not parse.*canonical format.*" + re.escape(repr(s)),
         ):
             NaiveDateTime.from_canonical_format(s)
 
