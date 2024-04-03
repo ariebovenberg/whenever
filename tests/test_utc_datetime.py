@@ -873,7 +873,7 @@ def test_from_common_iso8601(s, expect):
 
 
 @pytest.mark.parametrize(
-    "s,message",
+    "s, message",
     [
         ("2020-08-15T23:12:09.000450", None),  # no offset
         ("2020-08-15T23:12:09+02:00", None),  # non-UTC offset
