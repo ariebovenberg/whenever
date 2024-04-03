@@ -757,15 +757,21 @@ def test_from_rfc2822_invalid():
     with pytest.raises(
         ValueError,
         match=r"Cannot parse.*RFC 2822.*'Sat, 15 Aug 2020 23:12:09'",
-    ):
+    ) as exc_info:
         UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09")
+    assert exc_info.value.__cause__ is not None
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert "must have a UTC offset" in str(exc_info.value.__cause__)
 
     # nonzero offset
     with pytest.raises(
         ValueError,
         match=r"Cannot parse.*RFC 2822.*'Sat, 15 Aug 2020 23:12:09 \+0200'",
-    ):
+    ) as exc_info:
         UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09 +0200")
+    assert exc_info.value.__cause__ is not None
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert "nonzero" in str(exc_info.value.__cause__)
 
     # garbage
     with pytest.raises(
@@ -867,20 +873,24 @@ def test_from_common_iso8601(s, expect):
 
 
 @pytest.mark.parametrize(
-    "s",
+    "s,message",
     [
-        "2020-08-15T23:12:09.000450",  # no offset
-        "2020-08-15T23:12:09+02:00",  # non-UTC offset
-        "2020-08-15 23:12:09Z",  # non-T separator
-        "2020-08-15t23:12:09Z",  # non-T separator
-        "2020-08-15T23:12:09z",  # lowercase Z
-        "2020-08-15T23:12:09-00:00",  # forbidden offset
-        "2020-08-15T23:12:09-02:00:03",  # seconds in offset
+        ("2020-08-15T23:12:09.000450", None),  # no offset
+        ("2020-08-15T23:12:09+02:00", None),  # non-UTC offset
+        ("2020-08-15 23:12:09Z", "'T' separator"),
+        ("2020-08-15t23:12:09Z", "'T' separator"),
+        ("2020-08-15T23:12:09z", "lowercase 'z'"),
+        ("2020-08-15T23:12:09-00:00", "forbidden offset '-00:00'"),
+        ("2020-08-15T23:12:09-02:00:03", None),  # seconds in offset
     ],
 )
-def test_from_common_iso8601_invalid(s):
+def test_from_common_iso8601_invalid(s, message):
     with pytest.raises(
         ValueError,
         match=r"Could not parse.*ISO 8601.*" + re.escape(repr(s)),
-    ):
+    ) as exc_info:
         UTCDateTime.from_common_iso8601(s)
+    if message is not None:
+        assert exc_info.value.__cause__ is not None
+        assert isinstance(exc_info.value.__cause__, ValueError)
+        assert message in str(exc_info.value.__cause__)
