@@ -2996,7 +2996,9 @@ class OffsetDateTime(_AwareDateTime):
             else:
                 # Examine the string again to keep the above happy path fast
                 if s[10] != "T":
-                    raise ValueError("Input seems malformed: missing 'T' separator")
+                    raise ValueError(
+                        "Input seems malformed: missing 'T' separator"
+                    )
                 if s.endswith("z"):
                     raise ValueError("Input has a trailing lowercase 'z'")
                 if s.endswith("-00:00"):
