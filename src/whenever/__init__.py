@@ -3003,6 +3003,8 @@ class OffsetDateTime(_AwareDateTime):
                     raise ValueError("Input has a trailing lowercase 'z'")
                 if s.endswith("-00:00"):
                     raise ValueError("Input has forbidden offset '-00:00'")
+                else:
+                    raise ValueError()
         except ValueError as e:
             raise ValueError(
                 f"Could not parse as common ISO 8601 string: {s!r}"
