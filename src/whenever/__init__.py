@@ -996,13 +996,16 @@ class TimeDelta(_ImmutableBase):
         Any duration with a non-zero date part is considered invalid.
         ``P0D`` is valid, but ``P1DT1H`` is not.
         """
-        parsed = DateTimeDelta.from_common_iso8601(s)
-        if parsed._date_part:
+        try:
+            parsed = DateTimeDelta.from_common_iso8601(s)
+            if parsed._date_part:
+                raise ValueError("Date parts are not allowed.")
+            return parsed._time_part
+        except ValueError as e:
             raise ValueError(
                 "Could not parse as canonical format "
                 f"or common ISO 8601 string: {s!r}"
-            )
-        return parsed._time_part
+            ) from e
 
     def py_timedelta(self) -> _timedelta:
         """Convert to a :class:`~datetime.timedelta`
@@ -1407,7 +1410,8 @@ class DateDelta(_ImmutableBase):
         if full_delta.time_part:
             raise ValueError(
                 "Could not parse as canonical format "
-                f"or common ISO 8601 string: {s!r}"
+                f"or common ISO 8601 string: {s!r}. "
+                "Time parts are not allowed."
             )
         return full_delta.date_part
 
