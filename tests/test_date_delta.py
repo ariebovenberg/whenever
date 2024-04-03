@@ -181,8 +181,12 @@ class TestFromCanonicalFormat:
         with pytest.raises(
             ValueError,
             match=r"Could not parse.*ISO 8601.*'P1Y2M3W4DT1H2M3S'",
-        ):
+        ) as exc_info:
             DateDelta.from_common_iso8601("P1Y2M3W4DT1H2M3S")
+        assert exc_info.value.__cause__ is not None
+        assert isinstance(exc_info.value.__cause__, ValueError)
+        assert "time part" in str(exc_info.value.__cause__).lower()
+
 
         with pytest.raises(
             ValueError,
