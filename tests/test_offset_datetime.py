@@ -883,21 +883,25 @@ def test_from_common_iso8601(s, expected):
 
 
 @pytest.mark.parametrize(
-    "s",
+    "s, message",
     [
-        "2020-08-15T23:12:09",  # no offset
-        "2020-08-15 23:12:09+05:00",  # no separator
-        "2020-08-15T23:12.98+05:00",  # fractional minutes
-        "2020-08-15T23:12:09-99:00",  # invalid offset
-        "2020-08-15T23:12:09-12:00:04",  # seconds offset
-        "2020-08-15T23:12:09-00:00",  # special forbidden offset
-        "2020-08-15t23:12:09-00:00",  # non-T separator
-        "2020-08-15T23:12:09z",  # lowercase Z
+        ("2020-08-15T23:12:09", None),  # no offset
+        ("2020-08-15 23:12:09+05:00", "'T' separator"),
+        ("2020-08-15T23:12.98+05:00", None),  # fractional minutes
+        ("2020-08-15T23:12:09-99:00", None),  # invalid offset
+        ("2020-08-15T23:12:09-12:00:04", None),  # seconds offset
+        ("2020-08-15T23:12:09-00:00", "forbidden offset '-00:00'"),
+        ("2020-08-15t23:12:09-00:00", "'T' separator"),
+        ("2020-08-15T23:12:09z", "lowercase 'z'"),
     ],
 )
-def test_from_common_iso8601_invalid(s):
+def test_from_common_iso8601_invalid(s, message):
     with pytest.raises(
         ValueError,
         match=r"Could not parse.*ISO 8601.*" + re.escape(repr(s)),
-    ):
+    ) as exc_info:
         OffsetDateTime.from_common_iso8601(s)
+    if message is not None:
+        assert exc_info.value.__cause__ is not None
+        assert isinstance(exc_info.value.__cause__, ValueError)
+        assert message in str(exc_info.value.__cause__)

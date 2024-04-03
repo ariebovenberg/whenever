@@ -2618,9 +2618,22 @@ class UTCDateTime(_AwareDateTime):
         parse an ISO 8601 string with a nonzero offset.
         """
         try:
-            if s[10] != "T" or s.endswith(("z", "-00:00")):
-                raise ValueError("Input has a nonzero offset")
-            return cls._from_py_unchecked(_parse_utc_rfc3339(s))
+            if s[10] == "T" and not s.endswith(("z", "-00:00")):
+                return cls._from_py_unchecked(_parse_utc_rfc3339(s))
+            else:
+                # Examine the string again to keep the above happy path fast
+                if s[10] != "T":
+                    raise ValueError(
+                        "Input seems malformed: missing 'T' separator"
+                    )
+                if s.endswith("z"):
+                    raise ValueError("Input must not end with a lowercase 'z'")
+                if s.endswith("-00:00"):
+                    raise ValueError(
+                        "Input must not end with the forbidden offset '-00:00'"
+                    )
+                else:
+                    raise ValueError()
         except ValueError as e:
             raise ValueError(
                 f"Could not parse as common ISO 8601 string: {s!r}"
@@ -3000,9 +3013,11 @@ class OffsetDateTime(_AwareDateTime):
                         "Input seems malformed: missing 'T' separator"
                     )
                 if s.endswith("z"):
-                    raise ValueError("Input has a trailing lowercase 'z'")
+                    raise ValueError("Input must not end with a lowercase 'z'")
                 if s.endswith("-00:00"):
-                    raise ValueError("Input has forbidden offset '-00:00'")
+                    raise ValueError(
+                        "Input must not end with the forbidden offset '-00:00'"
+                    )
                 else:
                     raise ValueError()
         except ValueError as e:
