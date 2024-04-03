@@ -999,7 +999,7 @@ class TimeDelta(_ImmutableBase):
         try:
             parsed = DateTimeDelta.from_common_iso8601(s)
             if parsed._date_part:
-                raise ValueError("Date parts are not allowed.")
+                raise ValueError("Date parts are not allowed")
             return parsed._time_part
         except ValueError as e:
             raise ValueError(
