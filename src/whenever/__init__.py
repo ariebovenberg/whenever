@@ -2532,7 +2532,8 @@ class UTCDateTime(_AwareDateTime):
                     parsed = parsed.replace(tzinfo=_UTC)
                 else:
                     raise ValueError(
-                        "RFC 2822 string can't have nonzero offset to be parsed as UTC"
+                        "RFC 2822 string can't have nonzero offset "
+                        "to be parsed as UTC"
                     )
             return cls._from_py_unchecked(parsed)
         except ValueError as e:
