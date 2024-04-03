@@ -1406,14 +1406,16 @@ class DateDelta(_ImmutableBase):
         ``PT0S`` is valid, but ``P3DT1H`` is not.
 
         """
-        full_delta = DateTimeDelta.from_canonical_format(s)
-        if full_delta.time_part:
+        try:
+            full_delta = DateTimeDelta.from_canonical_format(s)
+            if full_delta.time_part:
+                raise ValueError("Time parts are not allowed")
+            return full_delta.date_part
+        except ValueError as e:
             raise ValueError(
                 "Could not parse as canonical format "
-                f"or common ISO 8601 string: {s!r}. "
-                "Time parts are not allowed."
-            )
-        return full_delta.date_part
+                f"or common ISO 8601 string: {s!r}"
+            ) from e
 
     def as_tuple(self) -> tuple[int, int, int, int]:
         """Convert to a tuple of (years, months, weeks, days)
