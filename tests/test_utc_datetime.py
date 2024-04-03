@@ -873,7 +873,7 @@ def test_from_common_iso8601(s, expect):
 
 
 @pytest.mark.parametrize(
-    "s, message",
+    "s, sub_message",
     [
         ("2020-08-15T23:12:09.000450", None),  # no offset
         ("2020-08-15T23:12:09+02:00", None),  # non-UTC offset
@@ -884,13 +884,13 @@ def test_from_common_iso8601(s, expect):
         ("2020-08-15T23:12:09-02:00:03", None),  # seconds in offset
     ],
 )
-def test_from_common_iso8601_invalid(s, message):
+def test_from_common_iso8601_invalid(s, sub_message):
     with pytest.raises(
         ValueError,
         match=r"Could not parse.*ISO 8601.*" + re.escape(repr(s)),
     ) as exc_info:
         UTCDateTime.from_common_iso8601(s)
-    if message is not None:
+    if sub_message is not None:
         assert exc_info.value.__cause__ is not None
         assert isinstance(exc_info.value.__cause__, ValueError)
-        assert message in str(exc_info.value.__cause__)
+        assert sub_message in str(exc_info.value.__cause__)

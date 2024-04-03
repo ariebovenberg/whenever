@@ -283,7 +283,7 @@ class TestFromCommonIso8601:
         assert TimeDelta.from_common_iso8601(s) == expected
 
     @pytest.mark.parametrize(
-        "s, message",
+        "s, sub_message",
         [
             ("P1D", "date part"),
             ("P1Y", "date part"),
@@ -292,16 +292,16 @@ class TestFromCommonIso8601:
             ("PT1.5H", None),
         ],
     )
-    def test_invalid(self, s, message) -> None:
+    def test_invalid(self, s, sub_message) -> None:
         with pytest.raises(
             ValueError,
             match=r"Could not parse.*ISO 8601.*" + re.escape(repr(s)),
         ) as exc_info:
             TimeDelta.from_common_iso8601(s)
-        if message is not None:
+        if sub_message is not None:
             assert exc_info.value.__cause__ is not None
             assert isinstance(exc_info.value.__cause__, ValueError)
-            assert message in str(exc_info.value.__cause__).lower()
+            assert sub_message in str(exc_info.value.__cause__).lower()
 
 
 class TestFromCanonicalFormat:
