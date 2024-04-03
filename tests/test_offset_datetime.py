@@ -793,14 +793,14 @@ def test_from_rfc3339_invalid():
     # no timezone
     with pytest.raises(
         ValueError,
-        match=r"Could not parse.*RFC3339.*'2020-08-15T23:12:09'",
+        match=r"Could not parse.*RFC 3339.*'2020-08-15T23:12:09'",
     ):
         OffsetDateTime.from_rfc3339("2020-08-15T23:12:09")
 
     # no seconds
     with pytest.raises(
         ValueError,
-        match=r"Could not parse.*RFC3339.*'2020-08-15T23:12-02:00'",
+        match=r"Could not parse.*RFC 3339.*'2020-08-15T23:12-02:00'",
     ):
         OffsetDateTime.from_rfc3339("2020-08-15T23:12-02:00")
 

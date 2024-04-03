@@ -2951,7 +2951,7 @@ class OffsetDateTime(_AwareDateTime):
             return cls._from_py_unchecked(_parse_rfc3339(s))
         except ValueError as e:
             raise ValueError(
-                f"Could not parse as RFC3339 string: {s!r}"
+                f"Could not parse as RFC 3339 string: {s!r}"
             ) from e
 
     def common_iso8601(self) -> str:
@@ -4293,12 +4293,12 @@ if sys.version_info < (3, 11):  # pragma: no cover
 
     def _parse_rfc3339(s: str) -> _datetime:
         if not (m := _match_rfc3339(s)):
-            raise ValueError(f"Could not parse as RFC3339 string: {s!r}")
+            raise ValueError(f"Could not parse as RFC 3339 string: {s!r}")
         return _fromisoformat_extra(m, s)
 
     def _parse_utc_rfc3339(s: str) -> _datetime:
         if not (m := _match_utc_rfc3339(s)):
-            raise ValueError(f"Could not parse as UTC RFC3339 string: {s!r}")
+            raise ValueError(f"Could not parse as UTC RFC 3339 string: {s!r}")
         return _fromisoformat_extra(m, s)
 
     def _fromisoformat_extra(m: re.Match[str], s: str) -> _datetime:
@@ -4338,12 +4338,12 @@ else:
 
     def _parse_utc_rfc3339(s: str) -> _datetime:
         if not _match_utc_rfc3339(s):
-            raise ValueError(f"Could not parse as UTC RFC3339 string: {s!r}")
+            raise ValueError(f"Could not parse as UTC RFC 3339 string: {s!r}")
         return _fromisoformat(s.upper())
 
     def _parse_rfc3339(s: str) -> _datetime:
         if not _match_rfc3339(s):
-            raise ValueError(f"Could not parse as RFC3339 string: {s!r}")
+            raise ValueError(f"Could not parse as RFC 3339 string: {s!r}")
         return _fromisoformat(s.upper())
 
 
