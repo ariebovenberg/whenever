@@ -289,7 +289,7 @@ class TestFromCommonIso8601:
     def test_invalid(self, s) -> None:
         with pytest.raises(
             ValueError,
-            match=f"Could not parse as canonical format or common ISO 8601 string: {s!r}",
+            match=r"Could not parse.*ISO 8601.*" + re.escape(repr(s)),
         ):
             TimeDelta.from_common_iso8601(s)
 
@@ -324,8 +324,7 @@ class TestFromCanonicalFormat:
     def test_invalid_too_large(self, s):
         with pytest.raises(
             ValueError,
-            match="Could not parse as canonical format string: "
-            + re.escape(repr(s)),
+            match=r"Could not parse.*canonical format.*" + re.escape(repr(s)),
         ):
             TimeDelta.from_canonical_format(s)
 

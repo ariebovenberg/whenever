@@ -86,15 +86,14 @@ class TestFromCanonicalFormat:
     def test_invalid(self, input):
         with pytest.raises(
             ValueError,
-            match="Could not parse as canonical format or common ISO 8601 "
-            "string: " + re.escape(repr(input)),
+            match=r"Could not parse.*canonical format.*"
+            + re.escape(repr(input)),
         ):
             Time.from_canonical_format(input)
 
         with pytest.raises(
             ValueError,
-            match="Could not parse as canonical format or common ISO 8601 "
-            "string: " + re.escape(repr(input)),
+            match=r"Could not parse.*ISO 8601.*" + re.escape(repr(input)),
         ):
             Time.from_common_iso8601(input)
 
