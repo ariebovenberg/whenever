@@ -2714,7 +2714,6 @@ class OffsetDateTime(_AwareDateTime):
         try:
             if not _match_offset_str(s):
                 raise ValueError("Input seems malformed")
-            # Catch errors thrown by _from_py_unchecked too
             return cls._from_py_unchecked(_fromisoformat(s))
         except ValueError as e:
             raise ValueError(
