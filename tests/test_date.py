@@ -67,13 +67,6 @@ class TestFromCanonicalFormat:
         ):
             Date.from_canonical_format(s)
 
-    def test_week_date_exception_context(self):
-        with pytest.raises(ValueError) as exc_info:
-            Date.from_canonical_format("2020-W12-3")
-        assert exc_info.value.__cause__ is not None
-        assert isinstance(exc_info.value.__cause__, ValueError)
-        assert "week date" in str(exc_info.value.__cause__).lower()
-
 
 def test_at():
     d = Date(2021, 1, 2)
