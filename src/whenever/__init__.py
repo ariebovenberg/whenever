@@ -103,6 +103,22 @@ __all__ = [
 MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY = range(1, 8)
 
 
+def _make_canonical_format_parse_error(s: str) -> ValueError:
+    return ValueError(f"Could not parse as canonical format string: {s!r}")
+
+
+def _make_common_iso8601_parse_error(s: str) -> ValueError:
+    return ValueError(f"Could not parse as common ISO 8601 string: {s!r}")
+
+
+def _make_rfc3339_parse_error(s: str) -> ValueError:
+    return ValueError(f"Could not parse as RFC 3339 string: {s!r}")
+
+
+def _make_rfc2822_parse_error(s: str) -> ValueError:
+    return ValueError(f"Could not parse as RFC 2822 string: {s!r}")
+
+
 class _UNSET:
     pass  # sentinel for when no value is passed
 
@@ -389,16 +405,13 @@ class Date(_ImmutableBase):
         >>> Date.from_canonical_format("2021-01-02")
         Date(2021-01-02)
         """
+        if s[5] == "W":
+            # prevent isoformat from parsing week dates
+            raise _make_canonical_format_parse_error(s)
         try:
-            if s[5] == "W":
-                # prevent isoformat from parsing week dates
-                raise ValueError("Week dates are not supported")
             return cls.from_py_date(_date.fromisoformat(s))
-        except ValueError as e:
-            raise ValueError(
-                "Could not parse as canonical format "
-                f"or common ISO 8601 string: {s!r}"
-            ) from e
+        except ValueError:
+            raise _make_canonical_format_parse_error(s)
 
     __str__ = canonical_format
 
@@ -428,7 +441,10 @@ class Date(_ImmutableBase):
         >>> Date.from_common_iso8601("2021-01-02")
         Date(2021-01-02)
         """
-        return cls.from_canonical_format(s)
+        try:
+            return cls.from_canonical_format(s)
+        except ValueError:
+            raise _make_common_iso8601_parse_error(s)
 
     @no_type_check
     def __reduce__(self):
@@ -616,10 +632,7 @@ class Time(_ImmutableBase):
             If the string does not match this exact format.
         """
         if not _match_time(s):
-            raise ValueError(
-                "Could not parse as canonical format "
-                f"or common ISO 8601 string: {s!r}"
-            )
+            raise _make_canonical_format_parse_error(s)
         return cls._from_py_unchecked(_fromisoformat_time(s))
 
     def common_iso8601(self) -> str:
@@ -648,7 +661,10 @@ class Time(_ImmutableBase):
         >>> Time.from_common_iso8601("12:30:00")
         Time(12:30:00)
         """
-        return cls.from_canonical_format(s)
+        try:
+            return cls.from_canonical_format(s)
+        except ValueError:
+            raise _make_common_iso8601_parse_error(s)
 
     @no_type_check
     def __reduce__(self):
@@ -940,9 +956,7 @@ class TimeDelta(_ImmutableBase):
             If the string does not match this exact format.
         """
         if not (match := _match_timedelta(s)):
-            raise ValueError(
-                f"Could not parse as canonical format string: {s!r}"
-            )
+            raise _make_canonical_format_parse_error(s)
         sign, hours, mins, secs = match.groups()
         return cls(
             microseconds=(-1 if sign == "-" else 1)
@@ -996,16 +1010,10 @@ class TimeDelta(_ImmutableBase):
         Any duration with a non-zero date part is considered invalid.
         ``P0D`` is valid, but ``P1DT1H`` is not.
         """
-        try:
-            parsed = DateTimeDelta.from_common_iso8601(s)
-            if parsed._date_part:
-                raise ValueError("Date parts are not allowed")
-            return parsed._time_part
-        except ValueError as e:
-            raise ValueError(
-                "Could not parse as canonical format "
-                f"or common ISO 8601 string: {s!r}"
-            ) from e
+        parsed = DateTimeDelta.from_common_iso8601(s)
+        if parsed._date_part:
+            raise _make_common_iso8601_parse_error(s)
+        return parsed._time_part
 
     def py_timedelta(self) -> _timedelta:
         """Convert to a :class:`~datetime.timedelta`
@@ -1369,7 +1377,10 @@ class DateDelta(_ImmutableBase):
         >>> DateDelta.from_canonical_format("1Y2M-3W4D")
         DateDelta(P1Y2M-3W4D)
         """
-        return cls.from_common_iso8601(s)
+        try:
+            return cls.from_common_iso8601(s)
+        except ValueError:
+            raise _make_canonical_format_parse_error(s)
 
     __str__ = canonical_format
 
@@ -1408,14 +1419,11 @@ class DateDelta(_ImmutableBase):
         """
         try:
             full_delta = DateTimeDelta.from_canonical_format(s)
-            if full_delta.time_part:
-                raise ValueError("Time parts are not allowed")
-            return full_delta.date_part
-        except ValueError as e:
-            raise ValueError(
-                "Could not parse as canonical format "
-                f"or common ISO 8601 string: {s!r}"
-            ) from e
+        except ValueError:
+            raise _make_common_iso8601_parse_error(s)
+        if full_delta.time_part:
+            raise _make_common_iso8601_parse_error(s)
+        return full_delta.date_part
 
     def as_tuple(self) -> tuple[int, int, int, int]:
         """Convert to a tuple of (years, months, weeks, days)
@@ -1699,10 +1707,7 @@ class DateTimeDelta(_ImmutableBase):
             If the string does not match this exact format.
         """
         if not (match := _match_datetimedelta(s)) or s == "P":
-            raise ValueError(
-                "Could not parse as canonical format "
-                f"or common ISO 8601 string: {s!r}"
-            )
+            raise _make_canonical_format_parse_error(s)
         sign, years, months, weeks, days, hours, minutes, seconds = (
             match.groups()
         )
@@ -1741,7 +1746,10 @@ class DateTimeDelta(_ImmutableBase):
         DateTimeDelta(P-1W-11DT-4H)
 
         """
-        return cls.from_canonical_format(s)
+        try:
+            return cls.from_canonical_format(s)
+        except ValueError:
+            raise _make_common_iso8601_parse_error(s)
 
     def as_tuple(self) -> tuple[int, int, int, int, int, int, int, int]:
         """Convert to a tuple of (years, months, weeks, days, hours,
@@ -2215,9 +2223,7 @@ class UTCDateTime(_AwareDateTime):
     @classmethod
     def from_canonical_format(cls, s: str, /) -> UTCDateTime:
         if not _match_utc_str(s):
-            raise ValueError(
-                f"Could not parse as canonical format string: {s!r}"
-            )
+            raise _make_canonical_format_parse_error(s)
         return cls._from_py_unchecked(_fromisoformat_utc(s))
 
     @classmethod
@@ -2543,7 +2549,7 @@ class UTCDateTime(_AwareDateTime):
                     )
             return cls._from_py_unchecked(parsed)
         except ValueError as e:
-            raise ValueError(f"Cannot parse as RFC 2822 string: {s!r}") from e
+            raise _make_rfc2822_parse_error(s) from e
 
     def rfc3339(self) -> str:
         """Format as an RFC 3339 string
@@ -2623,27 +2629,12 @@ class UTCDateTime(_AwareDateTime):
         Use :meth:`OffsetDateTime.from_common_iso8601` if you'd like to
         parse an ISO 8601 string with a nonzero offset.
         """
+        if s[10] != "T" or s.endswith(("z", "-00:00")):
+            raise _make_common_iso8601_parse_error(s)
         try:
-            if s[10] == "T" and not s.endswith(("z", "-00:00")):
-                return cls._from_py_unchecked(_parse_utc_rfc3339(s))
-            else:
-                # Examine the string again to keep the above happy path fast
-                if s[10] != "T":
-                    raise ValueError(
-                        "Input seems malformed: missing 'T' separator"
-                    )
-                if s.endswith("z"):
-                    raise ValueError("Input must not end with a lowercase 'z'")
-                if s.endswith("-00:00"):
-                    raise ValueError(
-                        "Input must not end with the forbidden offset '-00:00'"
-                    )
-                else:
-                    raise ValueError()
-        except ValueError as e:
-            raise ValueError(
-                f"Could not parse as common ISO 8601 string: {s!r}"
-            ) from e
+            return cls._from_py_unchecked(_parse_utc_rfc3339(s))
+        except ValueError:
+            raise _make_common_iso8601_parse_error(s)
 
     def __repr__(self) -> str:
         return f"UTCDateTime({self})"
@@ -2730,14 +2721,12 @@ class OffsetDateTime(_AwareDateTime):
 
     @classmethod
     def from_canonical_format(cls, s: str, /) -> OffsetDateTime:
+        if not _match_offset_str(s):
+            raise _make_canonical_format_parse_error(s)
         try:
-            if not _match_offset_str(s):
-                raise ValueError("Input seems malformed")
             return cls._from_py_unchecked(_fromisoformat(s))
-        except ValueError as e:
-            raise ValueError(
-                f"Could not parse as canonical format string: {s!r}"
-            ) from e
+        except ValueError:
+            raise _make_canonical_format_parse_error(s)
 
     @classmethod
     def from_timestamp(
@@ -2968,10 +2957,8 @@ class OffsetDateTime(_AwareDateTime):
         """
         try:
             return cls._from_py_unchecked(_parse_rfc3339(s))
-        except ValueError as e:
-            raise ValueError(
-                f"Could not parse as RFC 3339 string: {s!r}"
-            ) from e
+        except ValueError:
+            raise _make_rfc3339_parse_error(s)
 
     def common_iso8601(self) -> str:
         """Format in the commonly used ISO 8601 format.
@@ -3009,27 +2996,13 @@ class OffsetDateTime(_AwareDateTime):
         >>> # also valid:
         >>> OffsetDateTime.from_common_iso8601("2020-08-15T23:12:00Z")
         """
-        try:
-            if s[10] == "T" and not s.endswith(("-00:00", "z")):
+        if s[10] == "T" and not s.endswith(("-00:00", "z")):
+            try:
                 return cls.from_rfc3339(s)
-            else:
-                # Examine the string again to keep the above happy path fast
-                if s[10] != "T":
-                    raise ValueError(
-                        "Input seems malformed: missing 'T' separator"
-                    )
-                if s.endswith("z"):
-                    raise ValueError("Input must not end with a lowercase 'z'")
-                if s.endswith("-00:00"):
-                    raise ValueError(
-                        "Input must not end with the forbidden offset '-00:00'"
-                    )
-                else:
-                    raise ValueError()
-        except ValueError as e:
-            raise ValueError(
-                f"Could not parse as common ISO 8601 string: {s!r}"
-            ) from e
+            except ValueError:
+                raise _make_common_iso8601_parse_error(s)
+        else:
+            raise _make_common_iso8601_parse_error(s)
 
     def __repr__(self) -> str:
         return f"OffsetDateTime({self})"
@@ -3189,9 +3162,7 @@ class ZonedDateTime(_AwareDateTime):
     @classmethod
     def from_canonical_format(cls, s: str, /) -> ZonedDateTime:
         if (match := _match_zoned_str(s)) is None:
-            raise ValueError(
-                f"Could not parse as canonical format string: {s!r}"
-            )
+            raise _make_canonical_format_parse_error(s)
         dt = _fromisoformat(match[1])
         offset = dt.utcoffset()
         dt = dt.replace(tzinfo=ZoneInfo(match[2]))
@@ -3579,14 +3550,12 @@ class LocalSystemDateTime(_AwareDateTime):
 
     @classmethod
     def from_canonical_format(cls, s: str, /) -> LocalSystemDateTime:
+        if not _match_offset_str(s):
+            raise _make_canonical_format_parse_error(s)
         try:
-            if not _match_offset_str(s):
-                raise ValueError("Input seems malformed")
             return cls._from_py_unchecked(_fromisoformat(s))
-        except ValueError as e:
-            raise ValueError(
-                f"Could not parse as canonical format string: {s!r}"
-            ) from e
+        except ValueError:
+            raise _make_canonical_format_parse_error(s)
 
     @classmethod
     def from_timestamp(cls, i: float, /) -> LocalSystemDateTime:
@@ -3900,9 +3869,7 @@ class NaiveDateTime(_DateTime):
     @classmethod
     def from_canonical_format(cls, s: str, /) -> NaiveDateTime:
         if not _match_naive_str(s):
-            raise ValueError(
-                f"Could not parse as canonical format string: {s!r}"
-            )
+            raise _make_canonical_format_parse_error(s)
         return cls._from_py_unchecked(_fromisoformat(s))
 
     @classmethod
@@ -4314,12 +4281,12 @@ if sys.version_info < (3, 11):  # pragma: no cover
 
     def _parse_rfc3339(s: str) -> _datetime:
         if not (m := _match_rfc3339(s)):
-            raise ValueError(f"Could not parse as RFC 3339 string: {s!r}")
+            raise _make_rfc3339_parse_error(s)
         return _fromisoformat_extra(m, s)
 
     def _parse_utc_rfc3339(s: str) -> _datetime:
         if not (m := _match_utc_rfc3339(s)):
-            raise ValueError(f"Could not parse as UTC RFC 3339 string: {s!r}")
+            raise _make_rfc3339_parse_error(s)
         return _fromisoformat_extra(m, s)
 
     def _fromisoformat_extra(m: re.Match[str], s: str) -> _datetime:
@@ -4359,12 +4326,12 @@ else:
 
     def _parse_utc_rfc3339(s: str) -> _datetime:
         if not _match_utc_rfc3339(s):
-            raise ValueError(f"Could not parse as UTC RFC 3339 string: {s!r}")
+            raise _make_rfc3339_parse_error(s)
         return _fromisoformat(s.upper())
 
     def _parse_rfc3339(s: str) -> _datetime:
         if not _match_rfc3339(s):
-            raise ValueError(f"Could not parse as RFC 3339 string: {s!r}")
+            raise _make_rfc3339_parse_error(s)
         return _fromisoformat(s.upper())
 
 

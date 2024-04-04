@@ -81,6 +81,7 @@ class TestFromCanonicalFormat:
             "32:02:03",
             "22:72:03",
             "22:72:93",
+            "garbage",
         ],
     )
     def test_invalid(self, input):
