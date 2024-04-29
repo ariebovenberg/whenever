@@ -4,11 +4,24 @@
 0.6.0 (2024-??-??)
 ------------------
 
-- Implement as a Rust extension module
+**Improved**
+
+- Implement as a Rust extension module, leading to a big speedup
 
 **Breaking changes**
 
-- Removed weakref support. The overhead of weakrefs was too high for
+- Nanosecond precision is now the default for all datetimes and deltas.
+
+  **Rationale**: Nanosecond precision is the standard for most modern
+  datetime libraries.
+
+- Renamed `(from_)canonical_format` methods to `(from_)default_format`.
+
+  **Rationale**: The new name is simpler to understand.
+
+- Removed weakref support.
+
+  **Rationale**: The overhead of weakrefs was too high for
   such primitive objects, and the use case was not clear.
 
 0.5.1 (2024-04-02)

@@ -4,11 +4,13 @@ import pyperf
 runner = pyperf.Runner()
 
 runner.timeit(
-    "parse + convert + add",
-    "datetime.fromisoformat('2020-04-05 22:04:00-04:00')"
-    ".astimezone(ZoneInfo('Europe/Amsterdam'))"
-    " + timedelta(days=30)",
-    "from datetime import datetime, timedelta; from zoneinfo import ZoneInfo",
+    "various operations",
+    "d = datetime.fromisoformat('2020-04-05 22:04:00-04:00')"
+    ".astimezone(UTC);"
+    "d - datetime.now(UTC);"
+    "(d + timedelta(hours=4, minutes=30))"
+    ".astimezone(ZoneInfo('Europe/Amsterdam'))",
+    setup="from datetime import datetime, timedelta, UTC; from zoneinfo import ZoneInfo",
 )
 
 runner.timeit(

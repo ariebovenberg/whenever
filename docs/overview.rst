@@ -146,23 +146,23 @@ comparison and equality are based on whether they represent the same moment in
 time. This means that two datetimes with different values can be equal:
 
 >>> # different ways of representing the same moment in time
->>> as_utc = UTCDateTime(2023, 12, 28, 11, 30)
+>>> in_utc = UTCDateTime(2023, 12, 28, 11, 30)
 >>> as_5hr_offset = OffsetDateTime(2023, 12, 28, 16, 30, offset=hours(5))
 >>> as_8hr_offset = OffsetDateTime(2023, 12, 28, 19, 30, offset=hours(8))
->>> as_zoned = ZonedDateTime(2023, 12, 28, 6, 30, tz="America/New_York")
+>>> in_nyc = ZonedDateTime(2023, 12, 28, 6, 30, tz="America/New_York")
 >>> # all equal
->>> as_utc == as_5hr_offset == as_8hr_offset == as_zoned
+>>> in_utc == as_5hr_offset == as_8hr_offset == in_nyc
 True
 >>> # comparison
->>> as_zoned > OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(5))
+>>> in_nyc > OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(5))
 True
 
 .. note::
 
    Another way to think about this is that the equality operator compares
    the UTC equivalent of the datetimes.  ``a == b`` is always equivalent to
-   ``a.as_utc() == b.as_utc()``, and ``a > b`` is always equivalent to
-   ``a.as_utc() > b.as_utc()``, and so on.
+   ``a.in_utc() == b.in_utc()``, and ``a > b`` is always equivalent to
+   ``a.in_utc() > b.in_utc()``, and so on.
 
 Note that if you want to compare for exact equality on the values
 (i.e. exactly the same year, month, day, hour, minute, etc.), you can use
@@ -236,7 +236,7 @@ To work around this, you can either convert explicitly:
 
 .. code-block:: python
 
-    d == OffsetDateTime(2023, 12, 28, 11, offset=1).as_utc()
+    d == OffsetDateTime(2023, 12, 28, 11, offset=1).in_utc()
 
 Or annotate with a union:
 
@@ -251,22 +251,22 @@ Conversion
 Between aware types
 ~~~~~~~~~~~~~~~~~~~
 
-You can convert between aware datetimes with the :meth:`~whenever._AwareDateTime.as_utc`,
-:meth:`~whenever._AwareDateTime.as_offset`, :meth:`~whenever._AwareDateTime.as_zoned`,
-and :meth:`~whenever._AwareDateTime.as_local` methods. These methods return a new
+You can convert between aware datetimes with the :meth:`~whenever._AwareDateTime.in_utc`,
+:meth:`~whenever._AwareDateTime.in_fixed_offset`, :meth:`~whenever._AwareDateTime.in_tz`,
+and :meth:`~whenever._AwareDateTime.in_local_system` methods. These methods return a new
 instance of the appropriate type, representing the same moment in time.
 This means the results will always compare equal to the original datetime.
 
 >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
->>> d.as_utc()  # same moment in UTC
+>>> d.in_utc()  # same moment in UTC
 UTCDateTime(2023-12-28 10:30:00Z)
->>> d.as_offset(5)  # same moment with a +5:00 offset
+>>> d.in_fixed_offset(5)  # same moment with a +5:00 offset
 OffsetDateTime(2023-12-28 15:30:00+05:00)
->>> d.as_zoned("America/New_York")  # same moment in New York
+>>> d.in_tz("America/New_York")  # same moment in New York
 ZonedDateTime(2023-12-28 05:30:00-05:00[America/New_York])
->>> d.as_local()  # same moment in the system timezone (e.g. Europe/Paris)
+>>> d.in_local_system()  # same moment in the system timezone (e.g. Europe/Paris)
 LocalSystemDateTime(2023-12-28 11:30:00+01:00)
->>> d.as_offset(4) == d
+>>> d.in_fixed_offset(4) == d
 True  # always the same moment in time
 
 To and from naïve

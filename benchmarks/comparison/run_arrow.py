@@ -5,11 +5,13 @@ runner = pyperf.Runner()
 
 
 runner.timeit(
-    "parse + convert + add",
-    "arrow.get('2020-04-05 22:04:00-04:00')"
-    ".to('Europe/Amsterdam')"
-    ".shift(days=30)",
-    "import arrow",
+    "various operations",
+    "d = arrow.get('2020-04-05 22:04:00-04:00')"
+    ".to('utc');"
+    "d - arrow.utcnow();"
+    "d.shift(hours=4, minutes=30)"
+    ".to('Europe/Amsterdam')",
+    setup="import arrow",
 )
 
 

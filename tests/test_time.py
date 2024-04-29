@@ -8,7 +8,7 @@ from datetime import (
 
 import pytest
 
-from whenever import Date, Time
+from whenever import Date, NaiveDateTime, Time
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
@@ -50,9 +50,9 @@ class TestInit:
         (Time(1), "01:00:00"),
     ],
 )
-def test_canonical_format(t, expect):
+def test_default_format(t, expect):
     assert str(t) == expect
-    assert t.canonical_format() == expect
+    assert t.default_format() == expect
     assert t.common_iso8601() == expect
 
 
@@ -66,7 +66,7 @@ def test_repr():
     assert repr(t) == "Time(01:02:03.04)"
 
 
-class TestFromCanonicalFormat:
+class TestFromDefaultFormat:
 
     @pytest.mark.parametrize(
         "input, expect",
@@ -80,7 +80,7 @@ class TestFromCanonicalFormat:
         ],
     )
     def test_valid(self, input, expect):
-        assert Time.from_canonical_format(input) == expect
+        assert Time.from_default_format(input) == expect
         assert Time.from_common_iso8601(input) == expect
 
     @pytest.mark.parametrize(
@@ -102,7 +102,7 @@ class TestFromCanonicalFormat:
             ValueError,
             match=r"Could not parse.*" + re.escape(repr(input)),
         ):
-            Time.from_canonical_format(input)
+            Time.from_default_format(input)
 
         with pytest.raises(
             ValueError,
@@ -135,12 +135,21 @@ class TestFromPyTime:
         assert Time.from_py_time(py_time(1, 2, 3, 4)) == Time(1, 2, 3, 4_000)
 
     def test_tzinfo(self):
-        assert Time.from_py_time(
-            py_time(1, 2, 3, 4, tzinfo=py_timezone(py_timedelta(hours=1)))
-        ) == Time(1, 2, 3, 4_000)
+        with pytest.raises(ValueError):
+            assert Time.from_py_time(
+                py_time(1, 2, 3, 4, tzinfo=py_timezone(py_timedelta(hours=1)))
+            )
 
     def test_fold_ignored(self):
         assert Time.from_py_time(py_time(1, 2, 3, 4, fold=1)) == Time(
+            1, 2, 3, 4_000
+        )
+
+    def test_subclass(self):
+        class SubclassTime(py_time):
+            pass
+
+        assert Time.from_py_time(SubclassTime(1, 2, 3, 4)) == Time(
             1, 2, 3, 4_000
         )
 
@@ -182,9 +191,9 @@ def test_constants():
     assert Time.MAX == Time(23, 59, 59, 999_999_999)
 
 
-# # def test_on():
-# #     t = Time(1, 2, 3, 4_000)
-# #     assert t.on(Date(2021, 1, 2)) == NaiveDateTime(2021, 1, 2, 1, 2, 3, 4_000)
+def test_on():
+    t = Time(1, 2, 3, 4_000)
+    assert t.on(Date(2021, 1, 2)) == NaiveDateTime(2021, 1, 2, 1, 2, 3, 4_000)
 
 
 def test_pickling():

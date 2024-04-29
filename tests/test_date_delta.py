@@ -21,17 +21,49 @@ class TestInit:
 
     def test_init(self):
         d = DateDelta(years=1, months=2, weeks=3, days=11)
-        assert d.years == 1
-        assert d.months == 2
-        assert d.weeks == 3
-        assert d.days == 11
+        assert d.in_months_days() == (14, 32)
+
+    def test_mixing_signs_valid(self):
+        # these are valid because normalized months and days
+        # aren't mixed
+        assert DateDelta(
+            years=1, months=-2, weeks=3, days=-4
+        ).in_months_days() == (10, 17)
+        assert DateDelta(
+            years=-1, months=2, weeks=-3, days=4
+        ).in_months_days() == (-10, -17)
+        assert DateDelta(years=-1, months=12, days=0).in_months_days() == (
+            0,
+            0,
+        )
+        assert DateDelta(
+            years=-1, months=12, days=7, weeks=-1
+        ).in_months_days() == (
+            0,
+            0,
+        )
+        assert DateDelta(
+            years=-1, months=12, days=8, weeks=-1
+        ).in_months_days() == (
+            0,
+            1,
+        )
+        assert DateDelta(
+            years=-2, months=23, days=7, weeks=-1
+        ).in_months_days() == (
+            -1,
+            0,
+        )
+
+    def test_mixing_signs_invalid(self):
+        with pytest.raises(ValueError, match="Mixed sign"):
+            DateDelta(years=1, months=-13, weeks=3, days=4)
+
+        with pytest.raises(ValueError, match="Mixed sign"):
+            DateDelta(months=-9, days=-1, weeks=1)
 
     def test_defaults(self):
-        d = DateDelta()
-        assert d.years == 0
-        assert d.months == 0
-        assert d.weeks == 0
-        assert d.days == 0
+        assert DateDelta().in_months_days() == (0, 0)
 
     @pytest.mark.parametrize(
         "kwargs",
@@ -84,34 +116,23 @@ class TestFactories:
             factory(value)
 
 
-def test_immutable():
-    p = DateDelta(
-        years=1,
-        months=2,
-        weeks=3,
-        days=4,
-    )
-    with pytest.raises(AttributeError):
-        p.years = 2  # type: ignore[misc]
-
-
 def test_equality():
     p = DateDelta(years=1, months=2, weeks=3, days=4)
     same = DateDelta(years=1, months=2, weeks=3, days=4)
     same_total = DateDelta(years=1, months=2, weeks=2, days=11)
     different = DateDelta(years=1, months=2, weeks=3, days=5)
     assert p == same
-    assert not p == same_total
+    assert p == same_total
     assert not p == different
     assert not p == NeverEqual()
     assert p == AlwaysEqual()
     assert not p != same
-    assert p != same_total
+    assert p == same_total
     assert p != different
     assert p != NeverEqual()
     assert not p != AlwaysEqual()
     assert hash(p) == hash(same)
-    assert hash(p) != hash(same_total)
+    assert hash(p) == hash(same_total)
     assert hash(p) != hash(different)
 
 
@@ -128,26 +149,26 @@ def test_bool():
     "p, expect",
     [
         (DateDelta(), "P0D"),
-        (DateDelta(years=-2), "P-2Y"),
+        (DateDelta(years=-2), "-P2Y"),
         (DateDelta(days=1), "P1D"),
-        (DateDelta(weeks=1), "P1W"),
+        (DateDelta(weeks=1), "P7D"),
         (DateDelta(months=1), "P1M"),
         (DateDelta(years=1), "P1Y"),
-        (DateDelta(years=1, months=2, weeks=3, days=4), "P1Y2M3W4D"),
-        (DateDelta(months=2, weeks=3), "P2M3W"),
-        (DateDelta(months=2, weeks=-3), "P2M-3W"),
+        (DateDelta(years=1, months=2, weeks=3, days=4), "P1Y2M25D"),
+        (DateDelta(months=2, weeks=3), "P2M21D"),
+        (DateDelta(months=-2, weeks=-3), "-P2M21D"),
     ],
 )
 def test_string_formats(p, expect):
-    assert p.canonical_format() == expect
+    assert p.default_format() == expect
     assert p.common_iso8601() == expect
     assert str(p) == expect
 
 
-class TestFromCanonicalFormat:
+class TestFromDefaultFormat:
 
     def test_empty(self):
-        assert DateDelta.from_canonical_format("P0D") == DateDelta()
+        assert DateDelta.from_default_format("P0D") == DateDelta()
         assert DateDelta.from_common_iso8601("P0D") == DateDelta()
 
     @pytest.mark.parametrize(
@@ -161,7 +182,7 @@ class TestFromCanonicalFormat:
         ],
     )
     def test_single_unit(self, input, expect):
-        assert DateDelta.from_canonical_format(input) == expect
+        assert DateDelta.from_default_format(input) == expect
         assert DateDelta.from_common_iso8601(input) == expect
 
     @pytest.mark.parametrize(
@@ -169,16 +190,16 @@ class TestFromCanonicalFormat:
         [
             ("P1Y2M3W4D", DateDelta(years=1, months=2, weeks=3, days=4)),
             ("P2M3W", DateDelta(months=2, weeks=3)),
-            ("P-2M", DateDelta(months=-2)),
-            ("P-2Y3W", DateDelta(years=-2, weeks=3)),
+            ("-P2M", DateDelta(months=-2)),
+            ("-P2Y3W", DateDelta(years=-2, weeks=-3)),
             ("P1Y2M3W4D", DateDelta(years=1, months=2, weeks=3, days=4)),
-            ("P2M3W", DateDelta(months=2, weeks=3)),
-            ("P-2M", DateDelta(months=-2)),
-            ("-P-2Y+3W", DateDelta(years=2, weeks=-3)),
+            ("+P2M3W", DateDelta(months=2, weeks=3)),
+            ("-P2M", DateDelta(months=-2)),
+            ("+P2Y3W", DateDelta(years=2, weeks=3)),
         ],
     )
     def test_multiple_units(self, input, expect):
-        assert DateDelta.from_canonical_format(input) == expect
+        assert DateDelta.from_default_format(input) == expect
         assert DateDelta.from_common_iso8601(input) == expect
 
     @pytest.mark.parametrize(
@@ -195,6 +216,9 @@ class TestFromCanonicalFormat:
             "P--2D",
             "P++2D",
             "P+-2D",
+            "--P2D",
+            "++P2D",
+            "1P2",
             "P-D",
             "P+D",
             "P-",
@@ -212,7 +236,7 @@ class TestFromCanonicalFormat:
             ValueError,
             match=r"Invalid date delta format.*" + re.escape(s),
         ):
-            DateDelta.from_canonical_format(s)
+            DateDelta.from_default_format(s)
 
         with pytest.raises(
             ValueError,
@@ -222,7 +246,7 @@ class TestFromCanonicalFormat:
 
     def test_invalid_type(self):
         with pytest.raises(TypeError):
-            DateDelta.from_canonical_format(1)  # type: ignore[arg-type]
+            DateDelta.from_default_format(1)  # type: ignore[arg-type]
 
         with pytest.raises(TypeError):
             DateDelta.from_common_iso8601(1)  # type: ignore[arg-type]
@@ -235,17 +259,18 @@ class TestFromCanonicalFormat:
             ValueError,
             match=r"Invalid date delta format",
         ):
-            DateDelta.from_canonical_format("P1Y2M3W4DT1H2M3S")
+            DateDelta.from_default_format("P1Y2M3W4DT1H2M3S")
 
 
 def test_repr():
     p = DateDelta(years=1, months=2, weeks=3, days=4)
-    assert repr(p) == "DateDelta(P1Y2M3W4D)"
+    assert repr(p) == "DateDelta(P1Y2M25D)"
 
 
 def test_negate():
-    p = DateDelta(years=1, months=2, weeks=3, days=-4)
-    assert -p == DateDelta(years=-1, months=-2, weeks=-3, days=4)
+    p = DateDelta(years=1, months=2, weeks=3, days=4)
+    assert -p == DateDelta(years=-1, months=-2, weeks=-3, days=-4)
+    assert -DateDelta() == DateDelta()
 
 
 @pytest.mark.parametrize(
@@ -283,10 +308,10 @@ class TestMultiply:
 
     def test_year_range(self):
         DateDelta(years=2) * 4999  # allowed
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises(ValueError, match="bounds"):
             DateDelta(years=5) * 2000
 
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises(ValueError, match="bounds"):
             DateDelta(years=5) * (1 << 15 + 1)
 
     def test_month_range(self):
@@ -320,24 +345,6 @@ class TestMultiply:
             p * Ellipsis  # type: ignore[operator]
 
 
-def test_replace():
-    p = DateDelta(years=1, months=2, weeks=3, days=4)
-    assert p.replace(years=2) == DateDelta(years=2, months=2, weeks=3, days=4)
-    assert p.replace(months=3) == DateDelta(years=1, months=3, weeks=3, days=4)
-    assert p.replace(weeks=4) == DateDelta(years=1, months=2, weeks=4, days=4)
-    assert p.replace(days=5) == DateDelta(years=1, months=2, weeks=3, days=5)
-    assert p.replace() == p
-
-    with pytest.raises(TypeError):
-        p.replace(3)  # type: ignore[arg-type]
-
-    with pytest.raises(TypeError, match="foo"):
-        p.replace(foo=3)  # type: ignore[arg-type]
-
-    with pytest.raises(ValueError, match="years"):
-        p.replace(years=10_000)
-
-
 class TestAdd:
 
     def test_same_type(self):
@@ -352,20 +359,20 @@ class TestAdd:
         with pytest.raises(TypeError, match="unsupported operand"):
             32 + p  # type: ignore[operator]
 
-    #     def test_time_delta(self):
-    #         p = DateDelta(years=1, months=2, weeks=3, days=4)
-    #         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=400_004)
-    #         assert p + d == DateTimeDelta(
-    #             years=1,
-    #             months=2,
-    #             weeks=3,
-    #             days=4,
-    #             hours=1,
-    #             minutes=2,
-    #             seconds=3,
-    #             microseconds=400_004,
-    #         )
-    #         assert p + d == d + p
+        #     def test_time_delta(self):
+        #         p = DateDelta(years=1, months=2, weeks=3, days=4)
+        #         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=400_004)
+        #         assert p + d == DateTimeDelta(
+        #             years=1,
+        #             months=2,
+        #             weeks=3,
+        #             days=4,
+        #             hours=1,
+        #             minutes=2,
+        #             seconds=3,
+        #             microseconds=400_004,
+        #         )
+        #         assert p + d == d + p
 
     def test_unsupported(self):
         p = DateDelta(years=1, months=2, weeks=3, days=4)
@@ -384,30 +391,30 @@ class TestSubtract:
         assert p - q == DateDelta(years=2, months=-1, weeks=4, days=4)
         assert q - p == DateDelta(years=-2, months=1, weeks=-4, days=-4)
 
-    #     def test_time_delta(self):
-    #         p = DateDelta(years=1, months=2, weeks=3, days=4)
-    #         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=400_004)
-    #         assert p - d == DateTimeDelta(
-    #             years=1,
-    #             months=2,
-    #             weeks=3,
-    #             days=4,
-    #             hours=-1,
-    #             minutes=-2,
-    #             seconds=-3,
-    #             microseconds=-400_004,
-    #         )
-    #         assert p - d == -d + p
-    #         assert d - p == DateTimeDelta(
-    #             years=-1,
-    #             months=-2,
-    #             weeks=-3,
-    #             days=-4,
-    #             hours=1,
-    #             minutes=2,
-    #             seconds=3,
-    #             microseconds=400_004,
-    #         )
+        #     def test_time_delta(self):
+        #         p = DateDelta(years=1, months=2, weeks=3, days=4)
+        #         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=400_004)
+        #         assert p - d == DateTimeDelta(
+        #             years=1,
+        #             months=2,
+        #             weeks=3,
+        #             days=4,
+        #             hours=-1,
+        #             minutes=-2,
+        #             seconds=-3,
+        #             microseconds=-400_004,
+        #         )
+        #         assert p - d == -d + p
+        #         assert d - p == DateTimeDelta(
+        #             years=-1,
+        #             months=-2,
+        #             weeks=-3,
+        #             days=-4,
+        #             hours=1,
+        #             minutes=2,
+        #             seconds=3,
+        #             microseconds=400_004,
+        #         )
 
     def test_unsupported(self):
         p = DateDelta(years=1, months=2, weeks=3, days=4)
@@ -418,14 +425,16 @@ class TestSubtract:
             32 - p  # type: ignore[operator]
 
 
-def test_as_tuple():
-    p = DateDelta(years=1, months=2, weeks=3, days=4)
-    assert p.as_tuple() == (1, 2, 3, 4)
+def test_in_years_months_days():
+    p = DateDelta(years=2, months=14, weeks=3, days=4)
+    assert p.in_years_months_days() == (3, 2, 25)
 
 
 def test_abs():
     p = DateDelta(years=1, months=2, weeks=3, days=-4)
-    assert abs(p) == DateDelta(years=1, months=2, weeks=3, days=4)
+    assert abs(p) == DateDelta(years=1, months=2, weeks=3, days=-4)
+    assert abs(DateDelta()) == DateDelta()
+    assert abs(DateDelta(years=-1, months=-2)) == DateDelta(years=1, months=2)
 
 
 def test_copy():
@@ -435,7 +444,7 @@ def test_copy():
 
 
 def test_pickle():
-    p = DateDelta(years=1, months=2, weeks=3, days=4)
+    p = DateDelta(years=1, months=345, weeks=3, days=4)
     dumped = pickle.dumps(p)
     assert len(dumped) < 55
     assert pickle.loads(dumped) == p
@@ -443,8 +452,8 @@ def test_pickle():
 
 def test_compatible_unpickle():
     dumped = (
-        b"\x80\x04\x95+\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_d"
-        b"delta\x94\x93\x94(K\x01K\x02K\x03K\x04t\x94R\x94."
+        b"\x80\x04\x95&\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_d"
+        b"delta\x94\x93\x94K\x0eK\x19\x86\x94R\x94."
     )
     assert pickle.loads(dumped) == DateDelta(
         years=1, months=2, weeks=3, days=4

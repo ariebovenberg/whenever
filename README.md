@@ -5,10 +5,10 @@
 [![](https://img.shields.io/pypi/l/whenever.svg?style=flat-square&color=blue)](https://pypi.python.org/pypi/whenever)
 [![](https://img.shields.io/badge/mypy-strict-forestgreen?style=flat-square)](https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-strict)
 [![](https://img.shields.io/badge/coverage-100%25-forestgreen?style=flat-square)](https://github.com/ariebovenberg/whenever)
-[![]( https://img.shields.io/github/actions/workflow/status/ariebovenberg/whenever/tests.yml?branch=main&style=flat-square)](https://github.com/ariebovenberg/whenever)
+[![](https://img.shields.io/github/actions/workflow/status/ariebovenberg/whenever/tests.yml?branch=main&style=flat-square)](https://github.com/ariebovenberg/whenever)
 [![](https://img.shields.io/readthedocs/whenever.svg?style=flat-square)](http://whenever.readthedocs.io/)
 
-**Fast and typesafe datetimes for Python—written in Rust**
+**Fast and typesafe datetimes for Python, written in Rust**
 
 Do you cross your fingers every time you work with datetimes,
 hoping that you didn't mix naive and aware?
@@ -31,19 +31,19 @@ It's also **way faster** than other third-party libraries—and often the standa
   </p>
 
   <p align="center" style="font-size: 14px">
-    <i>Parse an RFC3339 string, change the timezone, and add 30 days (1M times)</i>
+    <i>RFC3339-parse, normalize, compare to now, shift, and change timezone (1M times)</i>
   </p>
 
 ## Benefits
 
-- 🔒 Typesafe API that prevents common bugs
-- ✅ Fixes pitfalls that [arrow and pendulum don't](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/#datetime-library-scorecard)
-- ⚖️  Based on [familiar concepts](https://www.youtube.com/watch?v=saeKBuPewcU) and standards
+- 🔒 Typesafe API protects you from common bugs
+- ✅ Fixes pitfalls [arrow and pendulum don't](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/#datetime-library-scorecard)
+- ⚖️  Based on [familiar, proven concepts](https://www.youtube.com/watch?v=saeKBuPewcU)
 - ⚡️ Unmatched performance
 - 💎 Thoroughly tested and documented
-- 📆 Support for date arithmetic, ISO8601 periods
-- ⏱️ nanosecond precision
-
+- 📆 Support for date arithmetic
+- ⏱️ Nanosecond precision
+- 🐍 Pure-Python fallback available
 
 <!-- TODO: mention extra features -->
 
@@ -59,6 +59,7 @@ It's also **way faster** than other third-party libraries—and often the standa
 
 </div>
 
+> ⚠️ **Note**: Whenever is in pre-1.0 stage. The API may change with minor releases.
 
 ## Quickstart
 
@@ -77,15 +78,15 @@ UTCDateTime(2022-10-24 17:00:00Z)
 OffsetDateTime(2023-04-21 09:00:00-06:00)
 
 # Simple, explicit conversions
->>> py311_release.as_zoned("Europe/Paris")
+>>> py311_release.in_tz("Europe/Paris")
 ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
->>> pycon23_start.as_local()  # example: system timezone in NYC
+>>> pycon23_start.in_local_system()  # example: system timezone in NYC
 LocalSystemDateTime(2023-04-21 11:00:00-04:00)
 
 # Comparison and equality across aware types
 >>> py311_release > pycon23_start
 False
->>> py311_release == py311_release.as_zoned("America/Los_Angeles")
+>>> py311_release == py311_release.in_tz("America/Los_Angeles")
 True
 
 # Naive type that can't accidentally mix with aware types
@@ -101,9 +102,9 @@ ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])
 ZonedDateTime(2022-10-29 11:00:00+01:00[Europe/Amsterdam])
 
 # Lossless round-trip to/from text (useful for JSON/serialization)
->>> py311_release.canonical_format()
+>>> str(py311_release)
 '2022-10-24 17:00:00Z'
->>> ZonedDateTime.from_canonical_format('2022-10-24 19:00:00+02:00[Europe/Paris]')
+>>> ZonedDateTime.from_default_format('2022-10-24 19:00:00+02:00[Europe/Paris]')
 ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
 
 # Conversion to/from common formats
