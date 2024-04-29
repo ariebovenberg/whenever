@@ -3,18 +3,20 @@ import pyperf
 
 runner = pyperf.Runner()
 
-# runner.timeit(
-#     "parse + convert + add",
-#     "OffsetDateTime.from_rfc3339('2020-04-05 22:04:00-04:00')"
-#     ".as_zoned('Europe/Amsterdam')"
-#     ".add(days=30)",
-#     "from whenever import OffsetDateTime",
-# )
+runner.timeit(
+    "various operations",
+    "d = OffsetDateTime.from_rfc3339('2020-04-05 22:04:00-04:00')"
+    ".in_utc();"
+    "d - UTCDateTime.now();"
+    "d.add(hours=4, minutes=30)"
+    ".in_tz('Europe/Amsterdam')",
+    setup="from whenever import OffsetDateTime, UTCDateTime",
+)
 
 runner.timeit(
     "new date",
     "Date(2020, 2, 29)",
-    "from whenever import Date",
+    setup="from whenever import Date",
 )
 
 runner.timeit(
@@ -43,6 +45,6 @@ runner.timeit(
 
 runner.timeit(
     "change tz",
-    "dt.as_zoned('America/New_York')",
+    "dt.in_tz('America/New_York')",
     setup="from whenever import ZonedDateTime; dt = ZonedDateTime(2020, 3, 20, 12, 30, 45, tz='Europe/Amsterdam')",
 )

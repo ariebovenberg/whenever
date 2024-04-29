@@ -10,7 +10,10 @@ from whenever import (  # AmbiguousTime,; LocalSystemDateTime,; OffsetDateTime,;
     Date,
     NaiveDateTime,
     Time,
+    UTCDateTime,
     days,
+    hours,
+    seconds,
     weeks,
     years,
 )
@@ -22,6 +25,8 @@ from .common import (
     NeverEqual,
     local_ams_tz,
 )
+
+# TODO: comprehensive __init__ tests
 
 
 def test_minimal():
@@ -49,10 +54,10 @@ def test_components():
     assert d.time() == Time(23, 12, 9, 987_654_123)
 
 
-# def test_assume_utc():
-#     assert NaiveDateTime(2020, 8, 15, 23).assume_utc() == UTCDateTime(
-#         2020, 8, 15, 23
-#     )
+def test_assume_utc():
+    assert NaiveDateTime(2020, 8, 15, 23).assume_utc() == UTCDateTime(
+        2020, 8, 15, 23
+    )
 
 
 # def test_assume_offset():
@@ -161,38 +166,38 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-class TestFromCanonicalFormat:
+class TestFromDefaultFormat:
     @pytest.mark.parametrize(
         "s, expected",
         [
-            ("2020-08-15 12:08:30", NaiveDateTime(2020, 8, 15, 12, 8, 30)),
+            ("2020-08-15T12:08:30", NaiveDateTime(2020, 8, 15, 12, 8, 30)),
             (
-                "2020-08-15 12:08:30.349",
+                "2020-08-15T12:08:30.349",
                 NaiveDateTime(2020, 8, 15, 12, 8, 30, 349_000_000),
             ),
             (
-                "2020-08-15 12:08:30.3491239",
+                "2020-08-15T12:08:30.3491239",
                 NaiveDateTime(2020, 8, 15, 12, 8, 30, 349_123_900),
             ),
         ],
     )
     def test_valid(self, s, expected):
-        assert NaiveDateTime.from_canonical_format(s) == expected
+        assert NaiveDateTime.from_default_format(s) == expected
 
     @pytest.mark.parametrize(
         "s",
         [
-            "2020-08-15 12:08:30.1234567890",  # too many fractions
-            "2020-08-15 12:08:30.",  # no fractions
-            "2020-08-15 12:08:30.45+0500",  # offset
-            "2020-08-15 12:08:30+05:00",  # offset
+            "2020-08-15T12:08:30.1234567890",  # too many fractions
+            "2020-08-15T12:08:30.",  # no fractions
+            "2020-08-15T12:08:30.45+0500",  # offset
+            "2020-08-15T12:08:30+05:00",  # offset
             "2020-08-15",  # just a date
             "2020",  # way too short
-            "2020033434 12.08.30",  # invalid separators
+            "2020033434T12.08.30",  # invalid separators
             "garbage",  # garbage
             "12:08:30.1234567890",  # no date
-            "2020-08-15 12:08:30.123456789Z",  # Z at the end
-            "2020-08-15T12:08:30",  # invalid separator
+            "2020-08-15T12:08:30.123456789Z",  # Z at the end
+            "2020-08-15 12:08:30",  # invalid separator
             "2020-08-15T12:8:30",  # missing padding
             "2020-08-15T12:08",  # no seconds
             "",  # empty
@@ -200,7 +205,7 @@ class TestFromCanonicalFormat:
     )
     def test_invalid(self, s):
         with pytest.raises(ValueError, match=re.escape(s)):
-            NaiveDateTime.from_canonical_format(s)
+            NaiveDateTime.from_default_format(s)
 
     @given(text())
     def test_fuzzing(self, s: str):
@@ -208,7 +213,7 @@ class TestFromCanonicalFormat:
             ValueError,
             match=re.escape(repr(s)),
         ):
-            NaiveDateTime.from_canonical_format(s)
+            NaiveDateTime.from_default_format(s)
 
 
 def test_equality():
@@ -250,11 +255,10 @@ def test_repr():
     )
 
 
-def test_canonical_format():
+def test_default_format():
     d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert str(d) == "2020-08-15 23:12:09.000987654"
-    # TODO: remove sep argument
-    assert d.canonical_format() == "2020-08-15 23:12:09.000987654"
+    assert str(d) == "2020-08-15T23:12:09.000987654"
+    assert d.default_format() == "2020-08-15T23:12:09.000987654"
 
 
 def test_comparison():
@@ -327,13 +331,16 @@ def test_replace():
         d.replace(tzinfo=timezone.utc)  # type: ignore[call-arg]
 
 
+# TODO: add method?
+
+
 class TestAdd:
 
-    #     def test_time_units(self):
-    #         d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    #         assert d + hours(24) + seconds(5) == NaiveDateTime(
-    #             2020, 8, 16, 23, 12, 14, 987_654
-    #         )
+    def test_time_units(self):
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        assert d + hours(24) + seconds(5) == NaiveDateTime(
+            2020, 8, 16, 23, 12, 14, 987_654
+        )
 
     def test_invalid(self):
         d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)

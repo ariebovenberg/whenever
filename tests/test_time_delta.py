@@ -252,91 +252,93 @@ def test_comparison():
     assert d > AlwaysSmaller()
 
 
-# TODO: prefix with `PT`?
 @pytest.mark.parametrize(
     "d, expected",
     [
         (
             TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4),
-            "01:02:03.000004",
+            "PT01:02:03.000004",
         ),
         (
             TimeDelta(hours=1, minutes=-2, seconds=3, microseconds=-4),
-            "00:58:02.999996",
+            "PT00:58:02.999996",
         ),
         (
             TimeDelta(hours=1, minutes=2, seconds=3, microseconds=50_000),
-            "01:02:03.05",
+            "PT01:02:03.05",
         ),
         (
             TimeDelta(hours=1, minutes=120, seconds=3),
-            "03:00:03",
+            "PT03:00:03",
         ),
         (
             TimeDelta(),
-            "00:00:00",
+            "PT00:00:00",
         ),
         (
             TimeDelta(hours=5),
-            "05:00:00",
+            "PT05:00:00",
         ),
         (
             TimeDelta(hours=400),
-            "400:00:00",
+            "PT400:00:00",
         ),
         (
             TimeDelta(minutes=-4),
-            "-00:04:00",
+            "-PT00:04:00",
         ),
     ],
 )
-def test_canonical_format(d, expected):
-    assert d.canonical_format() == expected
+def test_default_format(d, expected):
+    assert d.default_format() == expected
     assert str(d) == expected
 
 
-class TestFromCanonicalFormat:
+class TestFromDefaultFormat:
 
     @pytest.mark.parametrize(
         "s, expected",
         [
             (
-                "01:02:03.000004",
+                "PT01:02:03.000004",
                 TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4),
             ),
-            ("00:04:00", TimeDelta(minutes=4)),
-            ("00:00:00", TimeDelta()),
-            ("05:00:00", TimeDelta(hours=5)),
-            ("400:00:00", TimeDelta(hours=400)),
-            ("00:00:00.000000", TimeDelta()),
-            ("00:00:00.999955", TimeDelta(microseconds=999_955)),
-            ("00:00:00.99", TimeDelta(microseconds=990_000)),
-            ("-00:04:00", TimeDelta(minutes=-4)),
-            ("+00:04:00", TimeDelta(minutes=4)),
-            ("-00:04:00.000000001", TimeDelta(minutes=-4, nanoseconds=-1)),
-            ("4:00:00", TimeDelta(hours=4)),
+            ("PT00:04:00", TimeDelta(minutes=4)),
+            ("PT00:00:00", TimeDelta()),
+            ("PT05:00:00", TimeDelta(hours=5)),
+            ("PT400:00:00", TimeDelta(hours=400)),
+            ("PT00:00:00.000000", TimeDelta()),
+            ("PT00:00:00.999955", TimeDelta(microseconds=999_955)),
+            ("PT00:00:00.99", TimeDelta(microseconds=990_000)),
+            ("-PT00:04:00", TimeDelta(minutes=-4)),
+            ("+PT00:04:00", TimeDelta(minutes=4)),
+            ("-PT00:04:00.000000001", TimeDelta(minutes=-4, nanoseconds=-1)),
+            ("PT4:00:00", TimeDelta(hours=4)),
         ],
     )
     def test_valid(self, s, expected):
-        assert TimeDelta.from_canonical_format(s) == expected
+        assert TimeDelta.from_default_format(s) == expected
 
     @pytest.mark.parametrize(
         "s",
         [
-            "00:00:00.000000.000000",  # too many dots
-            "00:00:00.0000.00",  # too many dots
-            "00:00.00",  # invalid separator
-            "00.00.00.0000",  # invalid separator
+            "PT00:00:00.000000.000000",  # too many dots
+            "PT00:00:00.0000.00",  # too many dots
+            "PT00:00.00",  # invalid separator
+            "PT00.00.00.0000",  # invalid separator
             "",  # empty
-            "00:60:00",  # too large minutes
-            "00:00:60",  # too large seconds
-            "04:4:00",  # missing padding
-            "05:-2:11",  # negative minutes
-            "05:02:11.",  # invalid fraction
-            "05:02:11.a",  # invalid fraction
-            "05:02:11.1234567890",  # too long fraction
-            "05",  # only hours
-            "5:00",  # missing seconds
+            "PT",  # empty
+            "PT00:60:00",  # too large minutes
+            "PT00:00:60",  # too large seconds
+            "PT04:4:00",  # missing padding
+            "PT05:-2:11",  # negative minutes
+            "PT05:02:11.",  # invalid fraction
+            "PT05:02:11.a",  # invalid fraction
+            "PT05:02:11.1234567890",  # too long fraction
+            "PT05:02:11.123456789 ",  # space after
+            "PT05",  # only hours
+            "PT5:00",  # missing seconds
+            "5:00:00",  # missing prefix
         ],
     )
     def test_invalid(self, s):
@@ -344,7 +346,7 @@ class TestFromCanonicalFormat:
             ValueError,
             match="Invalid time delta format.*" + re.escape(repr(s)),
         ):
-            TimeDelta.from_canonical_format(s)
+            TimeDelta.from_default_format(s)
 
 
 @pytest.mark.parametrize(
@@ -437,7 +439,7 @@ class TestFromCommonIso8601:
                 "PT0H0M000000000000000300000000000.000000000S",
                 TimeDelta(seconds=300_000_000_000),
             ),
-            # TODO: extreme number of seconds
+            ("PT316192377600S", TimeDelta.MAX),
         ],
     )
     def test_valid(self, s, expected):
@@ -624,6 +626,14 @@ def test_from_py_timedelta():
     assert TimeDelta.from_py_timedelta(
         py_timedelta(weeks=8, hours=1, minutes=2, seconds=3, microseconds=4)
     ) == TimeDelta(hours=1 + 7 * 24 * 8, minutes=2, seconds=3, microseconds=4)
+
+    # subclass
+    class SubclassTimedelta(py_timedelta):
+        pass
+
+    assert TimeDelta.from_py_timedelta(SubclassTimedelta(1)) == TimeDelta(
+        hours=24
+    )
 
 
 def test_tuple():

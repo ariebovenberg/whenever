@@ -5,6 +5,7 @@
 # Checklist
 
 - [ ] Build runs successfully
+- [ ] Type stubs updated
 - [ ] Docs updated
 
 # Release checklist (maintainers only)

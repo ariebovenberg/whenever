@@ -1,12 +1,10 @@
 import pickle
 import re
-import weakref
 from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
 
 import pytest
 from hypothesis import given
 from hypothesis.strategies import text
-from pytest import approx
 
 from whenever import (
     LocalSystemDateTime,
@@ -16,6 +14,7 @@ from whenever import (
     UTCDateTime,
     ZonedDateTime,
     hours,
+    milliseconds,
     minutes,
     seconds,
 )
@@ -33,27 +32,40 @@ from .common import (
 
 class TestInit:
     def test_init_and_attributes(self):
-        d = OffsetDateTime(2020, 8, 15, 5, 12, 30, 450, offset=hours(5))
+        d = OffsetDateTime(
+            2020, 8, 15, 5, 12, 30, nanosecond=450, offset=hours(5)
+        )
         assert d.year == 2020
         assert d.month == 8
         assert d.day == 15
         assert d.hour == 5
         assert d.minute == 12
         assert d.second == 30
-        assert d.microsecond == 450
+        assert d.nanosecond == 450
         assert d.offset == hours(5)
 
     def test_int_offset(self):
-        d = OffsetDateTime(2020, 8, 15, 5, 12, 30, 450, offset=-5)
+        d = OffsetDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450, offset=-5)
         assert d.offset == hours(-5)
 
     def test_offset_missing(self):
-        with pytest.raises(TypeError, match="offset"):
-            OffsetDateTime(2020, 8, 15, 5, 12, 30, 450)  # type: ignore[call-arg]
+        with pytest.raises(TypeError, match="offset.*required"):
+            OffsetDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)  # type: ignore[call-arg]
 
-    def test_invalid_offset(self):
-        with pytest.raises(ValueError, match="offset"):
+    def test_invalid_offset_int(self):
+        with pytest.raises(ValueError, match="offset.*24 hours"):
             OffsetDateTime(2020, 8, 15, 5, 12, offset=34)
+
+    def test_invalid_offset_delta(self):
+        # too large
+        with pytest.raises(ValueError, match="offset.*24 hours"):
+            OffsetDateTime(2020, 8, 15, 5, 12, offset=hours(34))
+
+        # too precise
+        with pytest.raises(ValueError, match="offset.*whole.*seconds"):
+            OffsetDateTime(
+                2020, 8, 15, 5, 12, offset=hours(34) + milliseconds(1)
+            )
 
     def test_init_optionality(self):
         assert (
@@ -72,7 +84,16 @@ class TestInit:
             second=30,
             offset=5,
         )
-        assert d == OffsetDateTime(2020, 8, 15, 5, 12, 30, 0, offset=5)
+        assert d == OffsetDateTime(
+            2020, 8, 15, 5, 12, 30, nanosecond=0, offset=5
+        )
+
+    def test_invalid_date(self):
+        with pytest.raises(ValueError, match="date"):
+            OffsetDateTime(2020, 2, 30, 5, 12, offset=5)
+
+        with pytest.raises(ValueError, match="time"):
+            OffsetDateTime(2020, 2, 28, 5, 64, offset=5)
 
 
 def test_immutable():
@@ -81,7 +102,7 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-class TestCanonicalFormat:
+class TestDefaultFormat:
 
     @pytest.mark.parametrize(
         "d, expected",
@@ -91,136 +112,135 @@ class TestCanonicalFormat:
                 "2020-08-15T23:12:09+05:00",
             ),
             (
-                OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=5),
-                "2020-08-15T23:12:09.987654+05:00",
+                OffsetDateTime(
+                    2020, 8, 15, 23, 12, 9, nanosecond=987_654, offset=5
+                ),
+                "2020-08-15T23:12:09.000987654+05:00",
+            ),
+            (
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=minutes(73)),
+                "2020-08-15T23:12:09+01:13",
+            ),
+            (
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-minutes(73)),
+                "2020-08-15T23:12:09-01:13",
+            ),
+            (
+                OffsetDateTime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    nanosecond=1,
+                    offset=minutes(73) + seconds(32),
+                ),
+                "2020-08-15T23:12:09.000000001+01:13:32",
             ),
         ],
     )
-    def test_canonical_format(self, d: OffsetDateTime, expected: str):
-        assert str(d) == expected.replace("T", " ")
-        assert d.canonical_format() == expected
-
-    def test_seperator(self):
-        d = OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=5)
-        assert d.canonical_format(sep=" ") == "2020-08-15 23:12:09+05:00"
+    def test_default_format(self, d: OffsetDateTime, expected: str):
+        assert str(d) == expected
+        assert d.default_format() == expected
 
 
-class TestFromCanonicalFormat:
-    def test_valid(self):
-        assert OffsetDateTime.from_canonical_format(
-            "2020-08-15T12:08:30+05:00"
-        ).exact_eq(OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=5))
+class TestFromDefaultFormat:
+    @pytest.mark.parametrize(
+        "s, expect",
+        [
+            (
+                "2020-08-15T12:08:30+05:00",
+                OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=5),
+            ),
+            (
+                "2020-08-15T12:08:30+20:00",
+                OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=20),
+            ),
+            (
+                "2020-08-15T12:08:30.0034+05:00",
+                OffsetDateTime(
+                    2020, 8, 15, 12, 8, 30, nanosecond=3_400_000, offset=5
+                ),
+            ),
+            (
+                "2020-08-15T12:08:30.000000010+05:00",
+                OffsetDateTime(
+                    2020, 8, 15, 12, 8, 30, nanosecond=10, offset=5
+                ),
+            ),
+            (
+                "2020-08-15T12:08:30.0034-05:00:01",
+                OffsetDateTime(
+                    2020,
+                    8,
+                    15,
+                    12,
+                    8,
+                    30,
+                    nanosecond=3_400_000,
+                    offset=-hours(5) - seconds(1),
+                ),
+            ),
+            (
+                "2020-08-15T12:08:30+00:00",
+                OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=0),
+            ),
+            # Technically, -00:00 is forbidden by ISO8601, but
+            # this isn't checked in most parsers.
+            (
+                "2020-08-15T12:08:30-00:00",
+                OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=0),
+            ),
+            (
+                "2020-08-15T12:08:30Z",
+                OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=0),
+            ),
+        ],
+    )
+    def test_valid(self, s, expect):
+        assert OffsetDateTime.from_default_format(s).exact_eq(expect)
+        assert OffsetDateTime.from_common_iso8601(s).exact_eq(expect)
 
-    def test_valid_offset_with_seconds(self):
-        assert OffsetDateTime.from_canonical_format(
-            "2020-08-15T12:08:30+05:00:33"
-        ).exact_eq(
-            OffsetDateTime(
-                2020,
-                8,
-                15,
-                12,
-                8,
-                30,
-                offset=hours(5) + seconds(33),
-            )
-        )
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "2020-08-15T2:08:30+05:00:01",  # unpadded
+            "2020-8-15T12:8:30+05:00",  # unpadded
+            "2020-08-15T12:08:30+05",  # no minutes offset
+            "2020-08-15T12:08:30.0000000001+05:00",  # overly precise
+            "2020-08-15T12:08:30+05:00:01.0",  # fractional seconds in offset
+            "2020-08-15T12:08:30+05:00stuff",  # trailing stuff
+            "2020-08-15T12:08+04:00",  # no seconds
+            "2020-08-15",  # date only
+            "2020-08-15 12:08:30+05:00"  # wrong separator
+            "2020-08-15T12:08.30+05:00",  # wrong time separator
+            "2020-08-15T12:08:30+24:00",  # too large offset
+            "2020-08-15T23:12:09-99:00",  # invalid offset
+            "",  # empty
+            "garbage",  # garbage
+        ],
+    )
+    def test_invalid(self, s):
+        with pytest.raises(ValueError, match="format.*" + re.escape(repr(s))):
+            OffsetDateTime.from_default_format(s)
 
-    def test_valid_three_fractions(self):
-        assert OffsetDateTime.from_canonical_format(
-            "2020-08-15T12:08:30.349+05:00:33"
-        ).exact_eq(
-            OffsetDateTime(
-                2020,
-                8,
-                15,
-                12,
-                8,
-                30,
-                349_000,
-                offset=hours(5) + seconds(33),
-            )
-        )
-
-    def test_valid_six_fractions(self):
-        assert OffsetDateTime.from_canonical_format(
-            "2020-08-15T12:08:30.349123+05:00:33.987654"
-        ).exact_eq(
-            OffsetDateTime(
-                2020,
-                8,
-                15,
-                12,
-                8,
-                30,
-                349_123,
-                offset=TimeDelta(hours=5, seconds=33, microseconds=987_654),
-            )
-        )
-
-    def test_single_space_instead_of_T(self):
-        assert OffsetDateTime.from_canonical_format(
-            "2020-08-15 12:08:30-04:00"
-        ).exact_eq(OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=-4))
-
-    def test_unpadded(self):
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*canonical format.*'2020-8-15T12:8:30\+05:00'",
-        ):
-            OffsetDateTime.from_canonical_format("2020-8-15T12:8:30+05:00")
-
-    def test_overly_precise_fraction(self):
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*canonical format.*"
-            r"'2020-08-15T12:08:30.123456789123\+05:00'",
-        ):
-            OffsetDateTime.from_canonical_format(
-                "2020-08-15T12:08:30.123456789123+05:00"
-            )
-
-    def test_invalid_offset(self):
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*canonical format.*'2020-08-15T12:08:30-99:00'",
-        ):
-            OffsetDateTime.from_canonical_format("2020-08-15T12:08:30-99:00")
-
-    def test_no_offset(self):
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*canonical format.*'2020-08-15T12:08:30'",
-        ):
-            OffsetDateTime.from_canonical_format("2020-08-15T12:08:30")
-
-    def test_no_seconds(self):
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*canonical format.*'2020-08-15T12:08-05:00'",
-        ):
-            OffsetDateTime.from_canonical_format("2020-08-15T12:08-05:00")
-
-    def test_empty(self):
-        with pytest.raises(
-            ValueError, match=r"Could not parse.*canonical format.*''"
-        ):
-            OffsetDateTime.from_canonical_format("")
-
-    def test_garbage(self):
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*canonical format.*'garbage'",
-        ):
-            OffsetDateTime.from_canonical_format("garbage")
+        with pytest.raises(ValueError, match="format.*" + re.escape(repr(s))):
+            OffsetDateTime.from_common_iso8601(s)
 
     @given(text())
     def test_fuzzing(self, s: str):
         with pytest.raises(
             ValueError,
-            match=r"Could not parse.*canonical format.*" + re.escape(repr(s)),
+            match=r"format.*" + re.escape(repr(s)),
         ):
-            OffsetDateTime.from_canonical_format(s)
+            OffsetDateTime.from_default_format(s)
+
+        with pytest.raises(
+            ValueError,
+            match=r"format.*" + re.escape(repr(s)),
+        ):
+            OffsetDateTime.from_common_iso8601(s)
 
 
 def test_exact_equality():
@@ -314,28 +334,97 @@ class TestEquality:
         assert not d != AlwaysEqual()
         assert d != 42  # type: ignore[comparison-overlap]
         assert not d == 42  # type: ignore[comparison-overlap]
+        assert 42 != d  # type: ignore[comparison-overlap]
+        assert not 42 == d  # type: ignore[comparison-overlap]
 
 
-def test_timestamp():
-    assert OffsetDateTime(1970, 1, 1, 3, offset=3).timestamp() == 0
-    assert OffsetDateTime(
-        2020, 8, 15, 8, 8, 30, 45, offset=-4
-    ).timestamp() == approx(1_597_493_310.000045, abs=1e-6)
+class TestTimestamp:
+
+    def test_default_seconds(self):
+        assert OffsetDateTime(1970, 1, 1, 3, offset=3).timestamp() == 0
+        assert (
+            OffsetDateTime(
+                2020, 8, 15, 8, 8, 30, nanosecond=45, offset=-4
+            ).timestamp()
+            == 1_597_493_310
+        )
+
+    def test_millis(self):
+        assert OffsetDateTime(1970, 1, 1, 3, offset=3).timestamp_millis() == 0
+        assert (
+            OffsetDateTime(
+                2020, 8, 15, 8, 8, 30, nanosecond=45_999_123, offset=-4
+            ).timestamp_millis()
+            == 1_597_493_310_045
+        )
+
+    def test_nanos(self):
+        assert OffsetDateTime(1970, 1, 1, 3, offset=3).timestamp_nanos() == 0
+        assert (
+            OffsetDateTime(
+                2020, 8, 15, 8, 8, 30, nanosecond=45, offset=-4
+            ).timestamp_nanos()
+            == 1_597_493_310_000_000_045
+        )
 
 
-def test_from_timestamp():
-    assert OffsetDateTime.from_timestamp(0, offset=hours(3)).exact_eq(
-        OffsetDateTime(1970, 1, 1, 3, offset=3)
+class TestFromTimestamp:
+
+    @pytest.mark.parametrize(
+        "method, factor",
+        [
+            (OffsetDateTime.from_timestamp, 1),
+            (OffsetDateTime.from_timestamp_millis, 1_000),
+            (OffsetDateTime.from_timestamp_nanos, 1_000_000_000),
+        ],
     )
-    assert OffsetDateTime.from_timestamp(0, offset=3).exact_eq(
-        OffsetDateTime(1970, 1, 1, 3, offset=3)
-    )
-    assert OffsetDateTime.from_timestamp(
-        1_597_493_310, offset=hours(-2)
-    ).exact_eq(OffsetDateTime(2020, 8, 15, 10, 8, 30, offset=-2))
-    with pytest.raises((OSError, OverflowError, ValueError)):
-        OffsetDateTime.from_timestamp(
-            1_000_000_000_000_000_000, offset=hours(0)
+    def test_all(self, method, factor):
+        assert method(0, offset=3).exact_eq(
+            OffsetDateTime(1970, 1, 1, 3, offset=3)
+        )
+        assert method(1_597_493_310 * factor, offset=hours(-2)).exact_eq(
+            OffsetDateTime(2020, 8, 15, 10, 8, 30, offset=-2)
+        )
+        with pytest.raises((OSError, OverflowError, ValueError)):
+            method(1_000_000_000_000_000_000 * factor, offset=3)
+
+        with pytest.raises((OSError, OverflowError, ValueError)):
+            method(-1_000_000_000_000_000_000 * factor, offset=3)
+
+        with pytest.raises(TypeError):
+            method(0, offset="3")  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError):
+            method(0, offset=hours(31))
+
+        with pytest.raises(TypeError, match="got 3"):
+            method(0, offset=3, foo="bar")  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError):
+            method(0, foo="bar")  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError):
+            method(0)  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError):
+            method(0, 3)  # type: ignore[misc]
+
+    def test_nanos(self):
+        assert OffsetDateTime.from_timestamp_nanos(
+            1_597_493_310_123_456_789, offset=-2
+        ).exact_eq(
+            OffsetDateTime(
+                2020, 8, 15, 10, 8, 30, nanosecond=123_456_789, offset=-2
+            )
+        )
+
+    def test_millis(self):
+        assert OffsetDateTime.from_timestamp_millis(
+            1_597_493_310_123, offset=-2
+        ).exact_eq(
+            OffsetDateTime(
+                2020, 8, 15, 10, 8, 30, nanosecond=123_000_000, offset=-2
+            )
         )
 
 
@@ -347,10 +436,10 @@ def test_repr():
         23,
         12,
         9,
-        987_654,
+        nanosecond=1_987_654,
         offset=hours(5) + minutes(22),
     )
-    assert repr(d) == "OffsetDateTime(2020-08-15 23:12:09.987654+05:22)"
+    assert repr(d) == "OffsetDateTime(2020-08-15 23:12:09.001987654+05:22)"
     assert (
         repr(OffsetDateTime(2020, 8, 15, 23, 12, offset=0))
         == "OffsetDateTime(2020-08-15 23:12:00+00:00)"
@@ -368,7 +457,7 @@ class TestComparison:
 
     def test_utc(self):
         d = OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
-        utc_eq = d.as_utc()
+        utc_eq = d.in_utc()
         utc_gt = utc_eq.replace(minute=31)
         utc_lt = utc_eq.replace(minute=29)
 
@@ -389,7 +478,7 @@ class TestComparison:
 
     def test_zoned(self):
         d = OffsetDateTime(2023, 10, 29, 5, 30, offset=5)
-        zoned_eq = d.as_zoned("Europe/Paris")
+        zoned_eq = d.in_tz("Europe/Paris")
         zoned_gt = zoned_eq.replace(minute=31, disambiguate="earlier")
         zoned_lt = zoned_eq.replace(minute=29, disambiguate="earlier")
 
@@ -411,7 +500,7 @@ class TestComparison:
     @local_nyc_tz()
     def test_local(self):
         d = OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
-        local_eq = d.as_local()
+        local_eq = d.in_local_system()
         local_gt = local_eq.replace(minute=31)
         local_lt = local_eq.replace(minute=29)
 
@@ -456,7 +545,9 @@ class TestComparison:
 
 
 def test_py_datetime():
-    d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=5)
+    d = OffsetDateTime(
+        2020, 8, 15, 23, 12, 9, nanosecond=987_654_999, offset=5
+    )
     assert d.py_datetime() == py_datetime(
         2020,
         8,
@@ -481,7 +572,9 @@ def test_from_py_datetime():
         tzinfo=timezone(timedelta(hours=2)),
     )
     assert OffsetDateTime.from_py_datetime(d).exact_eq(
-        OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=2)
+        OffsetDateTime(
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654_000, offset=2
+        )
     )
 
     class SomeTzinfo(tzinfo):
@@ -507,40 +600,34 @@ class TestNow:
         assert py_now - now.py_datetime() < timedelta(seconds=1)
 
 
-def test_weakref():
-    d = OffsetDateTime(2020, 8, 15, offset=5)
-    ref = weakref.ref(d)
-    assert ref() == d
-
-
 def test_replace():
-    d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=5)
+    d = OffsetDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654, offset=5)
     assert d.replace(year=2021).exact_eq(
-        OffsetDateTime(2021, 8, 15, 23, 12, 9, 987_654, offset=5)
+        OffsetDateTime(2021, 8, 15, 23, 12, 9, nanosecond=987_654, offset=5)
     )
     assert d.replace(month=9).exact_eq(
-        OffsetDateTime(2020, 9, 15, 23, 12, 9, 987_654, offset=5)
+        OffsetDateTime(2020, 9, 15, 23, 12, 9, nanosecond=987_654, offset=5)
     )
     assert d.replace(day=16).exact_eq(
-        OffsetDateTime(2020, 8, 16, 23, 12, 9, 987_654, offset=5)
+        OffsetDateTime(2020, 8, 16, 23, 12, 9, nanosecond=987_654, offset=5)
     )
-    assert d.replace(hour=0).exact_eq(
-        OffsetDateTime(2020, 8, 15, 0, 12, 9, 987_654, offset=5)
+    assert d.replace(hour=1).exact_eq(
+        OffsetDateTime(2020, 8, 15, 1, 12, 9, nanosecond=987_654, offset=5)
     )
-    assert d.replace(minute=0).exact_eq(
-        OffsetDateTime(2020, 8, 15, 23, 0, 9, 987_654, offset=5)
+    assert d.replace(minute=59).exact_eq(
+        OffsetDateTime(2020, 8, 15, 23, 59, 9, nanosecond=987_654, offset=5)
     )
-    assert d.replace(second=0).exact_eq(
-        OffsetDateTime(2020, 8, 15, 23, 12, 0, 987_654, offset=5)
+    assert d.replace(second=2).exact_eq(
+        OffsetDateTime(2020, 8, 15, 23, 12, 2, nanosecond=987_654, offset=5)
     )
-    assert d.replace(microsecond=0).exact_eq(
-        OffsetDateTime(2020, 8, 15, 23, 12, 9, 0, offset=5)
+    assert d.replace(nanosecond=3).exact_eq(
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, nanosecond=3, offset=5)
     )
     assert d.replace(offset=hours(6)).exact_eq(
-        OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=6)
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654, offset=6)
     )
     assert d.replace(offset=-6).exact_eq(
-        OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=-6)
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654, offset=-6)
     )
 
     with pytest.raises(TypeError, match="tzinfo"):
@@ -548,7 +635,7 @@ def test_replace():
 
 
 def test_add_not_allowed():
-    d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=5)
+    d = OffsetDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654, offset=5)
     with pytest.raises(TypeError, match="unsupported operand type"):
         d + hours(4)  # type: ignore[operator]
 
@@ -558,15 +645,20 @@ def test_add_not_allowed():
 
 class TestSubtract:
     def test_invalid(self):
-        d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=5)
+        d = OffsetDateTime(
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654, offset=5
+        )
         with pytest.raises(TypeError, match="unsupported operand type"):
             d - hours(2)  # type: ignore[operator]
         with pytest.raises(TypeError, match="unsupported operand type"):
             d - 42  # type: ignore[operator]
 
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            32 - d  # type: ignore[operator]
+
     def test_offset(self):
-        d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=5)
-        other = OffsetDateTime(2020, 8, 14, 23, 12, 4, 987_654, offset=-3)
+        d = OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=5)
+        other = OffsetDateTime(2020, 8, 14, 23, 12, 4, offset=-3)
         assert d - other == hours(16) + seconds(5)
 
     def test_utc(self):
@@ -604,61 +696,79 @@ class TestSubtract:
 
 
 def test_pickle():
-    d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=3)
+    d = OffsetDateTime(
+        2020, 8, 15, 23, 12, 9, nanosecond=987_654_321, offset=3
+    )
     dumped = pickle.dumps(d)
     assert len(dumped) <= len(pickle.dumps(d.py_datetime()))
-    assert pickle.loads(pickle.dumps(d)) == d
+    assert pickle.loads(pickle.dumps(d)).exact_eq(d)
 
 
 def test_old_pickle_data_remains_unpicklable():
     # Don't update this value -- the whole idea is that it's a pickle at
     # a specific version of the library.
     dumped = (
-        b"\x80\x04\x95>\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_o"
-        b"ffset\x94\x93\x94(M\xe4\x07K\x08K\x0fK\x17K\x0cK\tJ\x06\x12\x0f\x00G"
-        b"@\xc5\x18\x00\x00\x00\x00\x00t\x94R\x94."
+        b"\x80\x04\x954\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_o"
+        b"ffset\x94\x93\x94C\x0f\xe4\x07\x08\x0f\x17\x0c\t\xb1h\xde:0*\x00"
+        b"\x00\x94\x85\x94R\x94."
     )
-    assert pickle.loads(dumped) == OffsetDateTime(
-        2020, 8, 15, 23, 12, 9, 987_654, offset=3
-    )
-
-
-def test_to_utc():
-    d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=3)
-    assert d.as_utc() == UTCDateTime(2020, 8, 15, 20, 12, 9, 987_654)
-
-
-def test_to_offset():
-    d = OffsetDateTime(2020, 8, 15, 23, 12, 9, 987_654, offset=3)
-    assert d.as_offset(5).exact_eq(
-        OffsetDateTime(2020, 8, 16, 1, 12, 9, 987_654, offset=5)
-    )
-    assert d.as_offset() is d
-    assert d.as_offset(-3).exact_eq(
-        OffsetDateTime(2020, 8, 15, 17, 12, 9, 987_654, offset=-3)
+    assert pickle.loads(dumped).exact_eq(
+        OffsetDateTime(
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654_321, offset=3
+        )
     )
 
 
-def test_to_zoned():
-    d = OffsetDateTime(2020, 8, 15, 20, 12, 9, 987_654, offset=3)
-    assert d.as_zoned("America/New_York").exact_eq(
-        ZonedDateTime(2020, 8, 15, 13, 12, 9, 987_654, tz="America/New_York")
+def test_in_utc():
+    d = OffsetDateTime(
+        2020, 8, 15, 23, 12, 9, nanosecond=987_654_321, offset=3
+    )
+    assert d.in_utc() == UTCDateTime(
+        2020, 8, 15, 20, 12, 9, nanosecond=987_654_321
+    )
+
+
+def test_in_fixed_offset():
+    d = OffsetDateTime(
+        2020, 8, 15, 23, 12, 9, nanosecond=987_654_321, offset=3
+    )
+    assert d.in_fixed_offset(5).exact_eq(
+        OffsetDateTime(2020, 8, 16, 1, 12, 9, nanosecond=987_654_321, offset=5)
+    )
+    assert d.in_fixed_offset() is d
+    assert d.in_fixed_offset(-3).exact_eq(
+        OffsetDateTime(
+            2020, 8, 15, 17, 12, 9, nanosecond=987_654_321, offset=-3
+        )
+    )
+
+
+def test_in_tz():
+    d = OffsetDateTime(
+        2020, 8, 15, 20, 12, 9, nanosecond=987_654_321, offset=3
+    )
+    assert d.in_tz("America/New_York").exact_eq(
+        ZonedDateTime(
+            2020, 8, 15, 13, 12, 9, 987_654_321, tz="America/New_York"
+        )
     )
     with pytest.raises(ZoneInfoNotFoundError):
-        d.as_zoned("America/Not_A_Real_Zone")
+        d.in_tz("America/Not_A_Real_Zone")
 
 
 @local_nyc_tz()
-def test_as_local():
-    d = OffsetDateTime(2020, 8, 15, 20, 12, 9, 987_654, offset=3)
-    assert d.as_local().exact_eq(
-        LocalSystemDateTime(2020, 8, 15, 13, 12, 9, 987_654)
+def test_in_local_system():
+    d = OffsetDateTime(
+        2020, 8, 15, 20, 12, 9, nanosecond=987_654_321, offset=3
+    )
+    assert d.in_local_system().exact_eq(
+        LocalSystemDateTime(2020, 8, 15, 13, 12, 9, nanosecond=987_654_321)
     )
 
 
 def test_naive():
-    d = OffsetDateTime(2020, 8, 15, 20, offset=3)
-    assert d.naive() == NaiveDateTime(2020, 8, 15, 20)
+    d = OffsetDateTime(2020, 8, 15, 20, nanosecond=1, offset=3)
+    assert d.naive() == NaiveDateTime(2020, 8, 15, 20, nanosecond=1)
 
 
 @pytest.mark.parametrize(
@@ -698,111 +808,162 @@ def test_strptime_invalid():
         OffsetDateTime.strptime("2020-08-15 23:12:09", "%Y-%m-%d %H:%M:%S")
 
 
-def test_rfc2822():
-    assert (
-        OffsetDateTime(2020, 8, 15, 23, 12, 9, 450, offset=1).rfc2822()
-        == "Sat, 15 Aug 2020 23:12:09 +0100"
-    )
-
-
 @pytest.mark.parametrize(
-    "s, expected",
+    "d, expected",
     [
         (
-            "Sat, 15 Aug 2020 23:12:09 GMT",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
-        ),
-        (
-            "Sat, 15 Aug 2020 23:12:09 +0000",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
-        ),
-        (
-            "Sat, 15 Aug 2020 23:12:09 UTC",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
-        ),
-        (
-            "Sat, 15 Aug 2020 23:12:09 -0100",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-1),
-        ),
-        (
-            "Sat, 15 Aug 2020 23:12:09 +1200",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=12),
-        ),
-        (
-            "Sat, 15 Aug 2020 23:12:09 MST",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-7),
-        ),
-        (
-            "15      Aug 2020\n23:12 UTC",
-            OffsetDateTime(2020, 8, 15, 23, 12, offset=0),
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=5),
+            "Sat, 15 Aug 2020 23:12:09 +0500",
         ),
     ],
 )
-def test_from_rfc2822(s, expected):
-    assert OffsetDateTime.from_rfc2822(s) == expected
+def test_rfc2822(d, expected):
+    assert d.rfc2822() == expected
 
 
-def test_from_rfc2822_invalid():
-    # no timezone
-    with pytest.raises(ValueError, match="missing"):
-        OffsetDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09")
+class TestFromRFC2822:
 
-    # -0000 timezone special case
-    with pytest.raises(ValueError, match="RFC.*-0000"):
-        OffsetDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09 -0000")
-
-
-def test_rfc3339():
-    assert (
-        OffsetDateTime(2020, 8, 15, 23, 12, 9, 450, offset=4).rfc3339()
-        == "2020-08-15T23:12:09.000450+04:00"
+    @pytest.mark.parametrize(
+        "s, expected",
+        [
+            (
+                "Sat, 15 Aug 2020 23:12:09 GMT",
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
+            ),
+            (
+                "Sat, 15 Aug 2020 23:12:09 +0000",
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
+            ),
+            (
+                "Sat, 15 Aug 2020 23:12:09 UTC",
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
+            ),
+            (
+                "Sat, 15 Aug 2020 23:12:09 -0100",
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-1),
+            ),
+            (
+                "Sat, 15 Aug 2020 23:12:09 +1200",
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=12),
+            ),
+            (
+                "Sat, 15 Aug 2020 23:12:09 MST",
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-7),
+            ),
+            (
+                "15      Aug 2020\n23:12 UTC",
+                OffsetDateTime(2020, 8, 15, 23, 12, offset=0),
+            ),
+        ],
     )
+    def test_valid(self, s, expected):
+        assert OffsetDateTime.from_rfc2822(s) == expected
+
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "Sat, 15 Aug 2020 23:12:09",  # no timezone
+            "Sat, 15 Aug 2020 23:12:09 -0000",  # -0000 timezone special case
+            "",  # empty
+            "garbage",  # garbage
+        ],
+    )
+    def test_invalid(self, s):
+        with pytest.raises(ValueError, match=re.escape(s)):
+            OffsetDateTime.from_rfc2822(s)
 
 
-@pytest.mark.parametrize(
-    "s, expect",
-    [
-        (
-            "2020-08-15T23:12:09.000450Z",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, 450, offset=0),
-        ),
-        (
-            "2020-08-15t23:12:09z",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
-        ),
-        (
-            "2020-08-15_23:12:09-02:00",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-2),
-        ),
-        (
-            "2020-08-15_23:12:09+00:00",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
-        ),
-        # subsecond precision that isn't supported by older fromisoformat()
-        (
-            "2020-08-15_23:12:09.23+02:00",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, 230_000, offset=2),
-        ),
-    ],
-)
-def test_from_rfc3339(s, expect):
-    assert OffsetDateTime.from_rfc3339(s) == expect
+class TestRFC3339:
+
+    def test_simple(self):
+        assert (
+            OffsetDateTime(
+                2020, 8, 15, 23, 12, 9, nanosecond=450, offset=4
+            ).rfc3339()
+            == "2020-08-15 23:12:09.00000045+04:00"
+        )
+
+    def test_offset_seconds(self):
+        assert (
+            OffsetDateTime(
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                nanosecond=450_000,
+                offset=hours(4) + minutes(8) + seconds(45),
+            ).rfc3339()
+            == "2020-08-15 23:12:09.00045+04:08"
+        )
 
 
-def test_from_rfc3339_invalid():
-    # no timezone
-    with pytest.raises(
-        ValueError,
-        match=r"Could not parse.*RFC 3339.*'2020-08-15T23:12:09'",
-    ):
-        OffsetDateTime.from_rfc3339("2020-08-15T23:12:09")
+class TestFromRFC3339:
 
-    # no seconds
-    with pytest.raises(
-        ValueError,
-        match=r"Could not parse.*RFC 3339.*'2020-08-15T23:12-02:00'",
-    ):
-        OffsetDateTime.from_rfc3339("2020-08-15T23:12-02:00")
+    @pytest.mark.parametrize(
+        "s, expect",
+        [
+            (
+                "2020-08-15T23:12:09.000000450Z",
+                OffsetDateTime(
+                    2020, 8, 15, 23, 12, 9, nanosecond=450, offset=0
+                ),
+            ),
+            (
+                "2020-08-15t23:12:09z",
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
+            ),
+            (
+                "2020-08-15 23:12:09-00:00",
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
+            ),
+            (
+                "2020-08-15_23:12:09-02:00",
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-2),
+            ),
+            (
+                "2020-08-15_23:12:09+00:00",
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
+            ),
+            (
+                "2020-08-15_23:12:09-20:00",
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-20),
+            ),
+            # subsecond precision that isn't supported by older fromisoformat()
+            (
+                "2020-08-15_23:12:09.23+02:00",
+                OffsetDateTime(
+                    2020, 8, 15, 23, 12, 9, nanosecond=230_000_000, offset=2
+                ),
+            ),
+        ],
+    )
+    def test_valid(self, s, expect):
+        assert OffsetDateTime.from_rfc3339(s) == expect
+
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "2020-08-15T23:12:09",  # no timezone
+            "2020-08-15T23:12-02:00",  # no seconds
+            "2020-08-15T23:12:00-02.00",  # fractional offset
+            "",  # empty
+            "garbage",  # garbage
+            "2020-08-15T23:12.09.12Z",  # wrong time separator
+            "2020-08-15",  # only date
+            "2020-08-15T23:12:09-99:00",  # invalid offset
+            "2020-08-15T23:12:09-25:00",  # invalid offset
+            "2020-08-15T23:12:09-12:00stuff",  # trailing content
+            "2020-08-15T23:12:09zzz",  # trailing content
+        ],
+    )
+    def test_invalid(self, s):
+        with pytest.raises(
+            ValueError,
+            match=r".*RFC3339.*" + re.escape(repr(s)),
+        ):
+            OffsetDateTime.from_rfc3339(s)
 
 
 @pytest.mark.parametrize(
@@ -824,80 +985,12 @@ def test_from_rfc3339_invalid():
                 23,
                 12,
                 9,
-                987_654,
+                nanosecond=987_654_320,
                 offset=TimeDelta(hours=5, seconds=3),
             ),
-            "2020-08-15T23:12:09.987654+05:00:03",
+            "2020-08-15T23:12:09.98765432+05:00:03",
         ),
     ],
 )
 def test_common_iso8601(d, expected):
     assert d.common_iso8601() == expected
-
-
-@pytest.mark.parametrize(
-    "s, expected",
-    [
-        (
-            "2020-08-15T23:12:09+05:00",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=5),
-        ),
-        (
-            "2020-08-15T23:12:09Z",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
-        ),
-        (
-            "2020-08-15T23:12:09.12Z",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, 120_000, offset=0),
-        ),
-        (
-            "2020-08-15T23:12:09.98765+05:03",
-            OffsetDateTime(
-                2020,
-                8,
-                15,
-                23,
-                12,
-                9,
-                987_650,
-                offset=TimeDelta(hours=5, minutes=3),
-            ),
-        ),
-        (
-            "2020-08-15T23:12:09.98765+05:03",
-            OffsetDateTime(
-                2020,
-                8,
-                15,
-                23,
-                12,
-                9,
-                987_650,
-                offset=TimeDelta(hours=5, minutes=3),
-            ),
-        ),
-    ],
-)
-def test_from_common_iso8601(s, expected):
-    assert OffsetDateTime.from_common_iso8601(s) == expected
-
-
-@pytest.mark.parametrize(
-    "s",
-    [
-        "2020-08-15T23:12:09",  # no offset
-        "2020-08-15 23:12:09+05:00",  # no separator
-        "2020-08-15T23:12.98+05:00",  # fractional minutes
-        "2020-08-15T23:12:09-99:00",  # invalid offset
-        "2020-08-15T23:12:09-12:00:04",  # seconds offset
-        "2020-08-15T23:12:09-00:00",  # special forbidden offset
-        "2020-08-15t23:12:09-00:00",  # non-T separator
-        "2020-08-15T23:12:09z",  # lowercase Z
-    ],
-)
-def test_from_common_iso8601_invalid(s):
-    with pytest.raises(
-        ValueError,
-        match=r"Could not parse.*ISO 8601.*" + re.escape(repr(s)),
-    ):
-        OffsetDateTime.from_common_iso8601(s)

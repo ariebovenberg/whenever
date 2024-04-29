@@ -17,6 +17,8 @@ from whenever import (
     WEDNESDAY,
     Date,
     DateDelta,
+    NaiveDateTime,
+    Time,
     days,
 )
 
@@ -97,7 +99,7 @@ class TestInit:
         except OverflowError as e:
             assert "int too large" in str(e)
         except ValueError as e:
-            assert "year" in str(e)
+            assert "date" in str(e)
         else:
             assert False, "expected an exception"
 
@@ -117,7 +119,7 @@ class TestInit:
         except OverflowError as e:
             assert "int too large" in str(e)
         except ValueError as e:
-            assert "month" in str(e)
+            assert "date" in str(e)
         else:
             assert False, "expected an exception"
 
@@ -140,7 +142,7 @@ class TestInit:
         except OverflowError as e:
             assert "int too large" in str(e)
         except ValueError as e:
-            assert "day" in str(e)
+            assert "date" in str(e)
         else:
             assert False, "expected an exception"
 
@@ -156,14 +158,19 @@ def test_from_py_date():
         2021, 1, 2
     )
 
+    class CustomDate(py_date):
+        pass
 
-def test_canonical_format():
+    assert Date.from_py_date(CustomDate(2021, 1, 2)) == Date(2021, 1, 2)
+
+
+def test_default_format():
     d = Date(2021, 1, 2)
     assert str(d) == "2021-01-02"
-    assert d.canonical_format() == "2021-01-02"
+    assert d.default_format() == "2021-01-02"
 
 
-class TestFromCanonicalFormat:
+class TestFromDefaultFormat:
 
     @pytest.mark.parametrize(
         "s, expected",
@@ -173,7 +180,7 @@ class TestFromCanonicalFormat:
         ],
     )
     def test_valid(self, s, expected):
-        assert Date.from_canonical_format(s) == expected
+        assert Date.from_default_format(s) == expected
         assert Date.from_common_iso8601(s) == expected
 
     @pytest.mark.parametrize(
@@ -193,7 +200,7 @@ class TestFromCanonicalFormat:
             ValueError,
             match=r"Could not parse.*" + re.escape(repr(s)),
         ):
-            Date.from_canonical_format(s)
+            Date.from_default_format(s)
 
         with pytest.raises(
             ValueError,
@@ -203,7 +210,7 @@ class TestFromCanonicalFormat:
 
     def test_no_string(self):
         with pytest.raises(TypeError, match="argument must be str"):
-            Date.from_canonical_format(20210102)  # type: ignore[arg-type]
+            Date.from_default_format(20210102)  # type: ignore[arg-type]
 
         with pytest.raises(TypeError, match="argument must be str"):
             Date.from_common_iso8601(20210102)  # type: ignore[arg-type]
@@ -225,13 +232,13 @@ def test_replace():
     with pytest.raises(TypeError, match="foo"):
         d.replace(foo="blabla")  # type: ignore[call-arg]
 
-    with pytest.raises(ValueError, match="year"):
+    with pytest.raises(ValueError, match="date"):
         d.replace(year=10_000)
 
 
-# def test_at():
-#     d = Date(2021, 1, 2)
-#     assert d.at(Time(3, 4, 5)) == NaiveDateTime(2021, 1, 2, 3, 4, 5)
+def test_at():
+    d = Date(2021, 1, 2)
+    assert d.at(Time(3, 4, 5)) == NaiveDateTime(2021, 1, 2, 3, 4, 5)
 
 
 def test_repr():
@@ -338,14 +345,6 @@ class TestAdd:
     def test_invalid(self, d, kwargs):
         with pytest.raises((OverflowError, ValueError)):
             d.add(**kwargs)
-
-def test_py_date():
-    d = Date(2021, 1, 2)
-    assert d.py_date() == py_date(2021, 1, 2)
-
-
-def test_from_py_date():
-    assert Date.from_py_date(py_date(2021, 1, 2)) == Date(2021, 1, 2)
 
 
 @pytest.mark.parametrize(

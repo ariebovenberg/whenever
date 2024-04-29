@@ -89,7 +89,7 @@ __all__ = [
     # Exceptions
     "SkippedTime",
     "AmbiguousTime",
-    "InvalidOffsetForZone",
+    "InvalidOffset",
     # Constants
     "MONDAY",
     "TUESDAY",
@@ -110,8 +110,8 @@ SATURDAY = 6
 SUNDAY = 7
 
 
-def _make_canonical_format_parse_error(s: str) -> ValueError:
-    return ValueError(f"Could not parse as canonical format string: {s!r}")
+def _make_default_format_parse_error(s: str) -> ValueError:
+    return ValueError(f"Could not parse as default format string: {s!r}")
 
 
 def _make_common_iso8601_parse_error(s: str) -> ValueError:
@@ -408,43 +408,43 @@ class Date(_ImmutableBase):
             _datetime.combine(self._py_date, t._py_time)
         )
 
-    def canonical_format(self) -> str:
-        """The date in canonical format.
+    def default_format(self) -> str:
+        """The date in default format.
 
         Example
         -------
         >>> d = Date(2021, 1, 2)
-        >>> d.canonical_format()
+        >>> d.default_format()
         '2021-01-02'
         """
         return self._py_date.isoformat()
 
     @classmethod
-    def from_canonical_format(cls, s: str, /) -> Date:
-        """Create from the canonical string representation.
+    def from_default_format(cls, s: str, /) -> Date:
+        """Create from the default string representation.
 
-        Inverse of :meth:`canonical_format`
+        Inverse of :meth:`default_format`
 
         Example
         -------
-        >>> Date.from_canonical_format("2021-01-02")
+        >>> Date.from_default_format("2021-01-02")
         Date(2021-01-02)
         """
         if s[5] == "W":
             # prevent isoformat from parsing week dates
-            raise _make_canonical_format_parse_error(s)
+            raise _make_default_format_parse_error(s)
         try:
             return cls.from_py_date(_date.fromisoformat(s))
         except ValueError:
-            raise _make_canonical_format_parse_error(s)
+            raise _make_default_format_parse_error(s)
 
-    __str__ = canonical_format
+    __str__ = default_format
 
     def common_iso8601(self) -> str:
         """Format as the common ISO 8601 date format.
 
         Inverse of :meth:`from_common_iso8601`.
-        Equivalent to :meth:`canonical_format`.
+        Equivalent to :meth:`default_format`.
 
         Example
         -------
@@ -459,7 +459,7 @@ class Date(_ImmutableBase):
         Does not accept more "exotic" ISO 8601 formats.
 
         Inverse of :meth:`common_iso8601`.
-        Equivalent to :meth:`from_canonical_format`.
+        Equivalent to :meth:`from_default_format`.
 
         Example
         -------
@@ -467,7 +467,7 @@ class Date(_ImmutableBase):
         Date(2021-01-02)
         """
         try:
-            return cls.from_canonical_format(s)
+            return cls.from_default_format(s)
         except ValueError:
             raise _make_common_iso8601_parse_error(s)
 
@@ -491,10 +491,10 @@ class Time(_ImmutableBase):
     >>> t = Time(12, 30, 0)
     Time(12:30:00)
 
-    Canonical format
-    ----------------
+    Default format
+    --------------
 
-    The canonical format is:
+    The default format is:
 
     .. code-block:: text
 
@@ -627,13 +627,13 @@ class Time(_ImmutableBase):
             _datetime.combine(d._py_date, self._py_time)
         )
 
-    def canonical_format(self) -> str:
-        """The time in canonical format.
+    def default_format(self) -> str:
+        """The time in default format.
 
         Example
         -------
         >>> t = Time(12, 30, 0)
-        >>> t.canonical_format()
+        >>> t.default_format()
         '12:30:00'
         """
         return (
@@ -642,17 +642,17 @@ class Time(_ImmutableBase):
             else self._py_time.isoformat()
         )
 
-    __str__ = canonical_format
+    __str__ = default_format
 
     @classmethod
-    def from_canonical_format(cls, s: str, /) -> Time:
-        """Create from the canonical string representation.
+    def from_default_format(cls, s: str, /) -> Time:
+        """Create from the default string representation.
 
-        Inverse of :meth:`canonical_format`
+        Inverse of :meth:`default_format`
 
         Example
         -------
-        >>> Time.from_canonical_format("12:30:00")
+        >>> Time.from_default_format("12:30:00")
         Time(12:30:00)
 
         Raises
@@ -661,21 +661,21 @@ class Time(_ImmutableBase):
             If the string does not match this exact format.
         """
         if not _match_time(s):
-            raise _make_canonical_format_parse_error(s)
+            raise _make_default_format_parse_error(s)
         return cls._from_py_unchecked(_fromisoformat_time(s))
 
     def common_iso8601(self) -> str:
         """Format as the common ISO 8601 time format.
 
         Inverse of :meth:`from_common_iso8601`.
-        Equivalent to :meth:`canonical_format`.
+        Equivalent to :meth:`default_format`.
 
         Example
         -------
         >>> Time(12, 30, 0).common_iso8601()
         '12:30:00'
         """
-        return self.canonical_format()
+        return self.default_format()
 
     @classmethod
     def from_common_iso8601(cls, s: str, /) -> Time:
@@ -683,7 +683,7 @@ class Time(_ImmutableBase):
         Does not accept more "exotic" ISO 8601 formats.
 
         Inverse of :meth:`common_iso8601`.
-        Equivalent to :meth:`from_canonical_format`.
+        Equivalent to :meth:`from_default_format`.
 
         Example
         -------
@@ -691,7 +691,7 @@ class Time(_ImmutableBase):
         Time(12:30:00)
         """
         try:
-            return cls.from_canonical_format(s)
+            return cls.from_default_format(s)
         except ValueError:
             raise _make_common_iso8601_parse_error(s)
 
@@ -947,8 +947,8 @@ class TimeDelta(_ImmutableBase):
         """
         return TimeDelta(microseconds=abs(self._total_ms))
 
-    def canonical_format(self) -> str:
-        """Format the delta in the canonical string format.
+    def default_format(self) -> str:
+        """Format the delta in the default string format.
 
         The format is:
 
@@ -969,14 +969,14 @@ class TimeDelta(_ImmutableBase):
         )
 
     @classmethod
-    def from_canonical_format(cls, s: str, /) -> TimeDelta:
-        """Create from the canonical string representation.
+    def from_default_format(cls, s: str, /) -> TimeDelta:
+        """Create from the default string representation.
 
-        Inverse of :meth:`canonical_format`
+        Inverse of :meth:`default_format`
 
         Example
         -------
-        >>> TimeDelta.from_canonical_format("01:30:00")
+        >>> TimeDelta.from_default_format("01:30:00")
         TimeDelta(01:30:00)
 
         Raises
@@ -985,7 +985,7 @@ class TimeDelta(_ImmutableBase):
             If the string does not match this exact format.
         """
         if not (match := _match_timedelta(s)):
-            raise _make_canonical_format_parse_error(s)
+            raise _make_default_format_parse_error(s)
         sign, hours, mins, secs = match.groups()
         return cls(
             microseconds=(-1 if sign == "-" else 1)
@@ -996,7 +996,7 @@ class TimeDelta(_ImmutableBase):
             )
         )
 
-    __str__ = canonical_format
+    __str__ = default_format
 
     def common_iso8601(self) -> str:
         """Format as the *popular interpretation* of the ISO 8601 duration format.
@@ -1362,10 +1362,10 @@ class DateDelta(_ImmutableBase):
             days=abs(self._days),
         )
 
-    def canonical_format(self) -> str:
-        """The delta in canonical format.
+    def default_format(self) -> str:
+        """The delta in default format.
 
-        The canonical string format is:
+        The default string format is:
 
         .. code-block:: text
 
@@ -1382,9 +1382,9 @@ class DateDelta(_ImmutableBase):
         Example
         -------
         >>> p = DateDelta(years=1, months=2, weeks=3, days=11)
-        >>> p.canonical_format()
+        >>> p.default_format()
         'P1Y2M3W11D'
-        >>> DateDelta().canonical_format()
+        >>> DateDelta().default_format()
         'P0D'
         """
         date = (
@@ -1396,22 +1396,22 @@ class DateDelta(_ImmutableBase):
         return "P" + ("".join(date) or "0D")
 
     @classmethod
-    def from_canonical_format(cls, s: str, /) -> DateDelta:
-        """Create from the canonical string representation.
+    def from_default_format(cls, s: str, /) -> DateDelta:
+        """Create from the default string representation.
 
-        Inverse of :meth:`canonical_format`
+        Inverse of :meth:`default_format`
 
         Example
         -------
-        >>> DateDelta.from_canonical_format("P1Y2M-3W4D")
+        >>> DateDelta.from_default_format("P1Y2M-3W4D")
         DateDelta(P1Y2M-3W4D)
         """
         try:
             return cls.from_common_iso8601(s)
         except ValueError:
-            raise _make_canonical_format_parse_error(s)
+            raise _make_default_format_parse_error(s)
 
-    __str__ = canonical_format
+    __str__ = default_format
 
     def common_iso8601(self) -> str:
         """Format as the *popular interpretation* of the ISO 8601 duration format.
@@ -1425,7 +1425,7 @@ class DateDelta(_ImmutableBase):
         >>> DateDelta(weeks=1, days=11).common_iso8601()
         'P1W11D'
         """
-        return self.canonical_format()
+        return self.default_format()
 
     @classmethod
     def from_common_iso8601(cls, s: str, /) -> DateDelta:
@@ -1447,7 +1447,7 @@ class DateDelta(_ImmutableBase):
 
         """
         try:
-            full_delta = DateTimeDelta.from_canonical_format(s)
+            full_delta = DateTimeDelta.from_default_format(s)
         except ValueError:
             raise _make_common_iso8601_parse_error(s)
         if full_delta.time_part:
@@ -1685,8 +1685,8 @@ class DateTimeDelta(_ImmutableBase):
         new._time_part = abs(self._time_part)
         return new
 
-    def canonical_format(self) -> str:
-        """The delta in canonical format.
+    def default_format(self) -> str:
+        """The delta in default format.
 
         Example
         -------
@@ -1695,22 +1695,22 @@ class DateTimeDelta(_ImmutableBase):
         ...     days=11,
         ...     hours=4,
         ... )
-        >>> d.canonical_format()
+        >>> d.default_format()
         'P1W11DT4H'
         """
         date = self._date_part.common_iso8601()[1:] * bool(self._date_part)
         time = self._time_part.common_iso8601()[1:] * bool(self._time_part)
         return "P" + ((date + time) or "0D")
 
-    __str__ = canonical_format
+    __str__ = default_format
 
     def __repr__(self) -> str:
         return f"DateTimeDelta({self})"
 
     @classmethod
-    def from_canonical_format(cls, s: str, /) -> DateTimeDelta:
-        """Create from the canonical string representation.
-        Inverse of :meth:`canonical_format`
+    def from_default_format(cls, s: str, /) -> DateTimeDelta:
+        """Create from the default string representation.
+        Inverse of :meth:`default_format`
 
         Examples:
 
@@ -1727,7 +1727,7 @@ class DateTimeDelta(_ImmutableBase):
 
         Example
         -------
-        >>> DateTimeDelta.from_canonical_format("P1W11DT4H")
+        >>> DateTimeDelta.from_default_format("P1W11DT4H")
         DateTimeDelta(weeks=1, days=11, hours=4)
 
         Raises
@@ -1736,7 +1736,7 @@ class DateTimeDelta(_ImmutableBase):
             If the string does not match this exact format.
         """
         if not (match := _match_datetimedelta(s)) or s == "P":
-            raise _make_canonical_format_parse_error(s)
+            raise _make_default_format_parse_error(s)
         sign, years, months, weeks, days, hours, minutes, seconds = (
             match.groups()
         )
@@ -1761,7 +1761,7 @@ class DateTimeDelta(_ImmutableBase):
         >>> DateTimeDelta(weeks=1, days=-11, hours=4).common_iso8601()
         'P1W-11DT4H'
         """
-        return self.canonical_format()
+        return self.default_format()
 
     @classmethod
     def from_common_iso8601(cls, s: str, /) -> DateTimeDelta:
@@ -1776,7 +1776,7 @@ class DateTimeDelta(_ImmutableBase):
 
         """
         try:
-            return cls.from_canonical_format(s)
+            return cls.from_default_format(s)
         except ValueError:
             raise _make_common_iso8601_parse_error(s)
 
@@ -1891,24 +1891,24 @@ class _DateTime(_ImmutableBase, ABC):
         return Time.from_py_time(self._py_dt.time())
 
     @abstractmethod
-    def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
-        """Format as the canonical string representation. Each
+    def default_format(self, sep: Literal[" ", "T"] = "T") -> str:
+        """Format as the default string representation. Each
         subclass has a different format. See the documentation for
         the subclass for more information.
-        Inverse of :meth:`from_canonical_format`.
+        Inverse of :meth:`from_default_format`.
         """
 
     def __str__(self) -> str:
-        """Same as :meth:`canonical_format` with ``sep=" "``"""
-        return self.canonical_format(" ")
+        """Same as :meth:`default_format` with ``sep=" "``"""
+        return self.default_format(" ")
 
     @classmethod
     @abstractmethod
-    def from_canonical_format(cls: type[_TDateTime], s: str, /) -> _TDateTime:
-        """Create an instance from the canonical string representation,
+    def from_default_format(cls: type[_TDateTime], s: str, /) -> _TDateTime:
+        """Create an instance from the default string representation,
         which is different for each subclass.
 
-        Inverse of :meth:`__str__` and :meth:`canonical_format`.
+        Inverse of :meth:`__str__` and :meth:`default_format`.
 
         Note
         ----
@@ -2022,21 +2022,23 @@ class _AwareDateTime(_DateTime):
         """The UTC offset of the datetime"""
 
     @abstractmethod
-    def as_utc(self) -> UTCDateTime:
+    def in_utc(self) -> UTCDateTime:
         """Convert into an equivalent UTCDateTime.
         The result will always represent the same moment in time.
         """
 
     @overload
     @abstractmethod
-    def as_offset(self, /) -> OffsetDateTime: ...
+    def in_fixed_offset(self, /) -> OffsetDateTime: ...
 
     @overload
     @abstractmethod
-    def as_offset(self, offset: int | TimeDelta, /) -> OffsetDateTime: ...
+    def in_fixed_offset(
+        self, offset: int | TimeDelta, /
+    ) -> OffsetDateTime: ...
 
     @abstractmethod
-    def as_offset(
+    def in_fixed_offset(
         self, offset: int | TimeDelta | None = None, /
     ) -> OffsetDateTime:
         """Convert into an equivalent OffsetDateTime.
@@ -2044,7 +2046,7 @@ class _AwareDateTime(_DateTime):
         The result will always represent the same moment in time.
         """
 
-    def as_zoned(self, tz: str, /) -> ZonedDateTime:
+    def in_tz(self, tz: str, /) -> ZonedDateTime:
         """Convert into an equivalent ZonedDateTime.
         The result will always represent the same moment in time.
 
@@ -2057,7 +2059,7 @@ class _AwareDateTime(_DateTime):
             self._py_dt.astimezone(ZoneInfo(tz))
         )
 
-    def as_local(self) -> LocalSystemDateTime:
+    def in_local_system(self) -> LocalSystemDateTime:
         """Convert into a an equivalent LocalSystemDateTime.
         The result will always represent the same moment in time.
         """
@@ -2082,7 +2084,7 @@ class _AwareDateTime(_DateTime):
         def __eq__(self, other: object) -> bool:
             """Check if two datetimes represent at the same moment in time
 
-            ``a == b`` is equivalent to ``a.as_utc() == b.as_utc()``
+            ``a == b`` is equivalent to ``a.in_utc() == b.in_utc()``
 
             Note
             ----
@@ -2103,7 +2105,7 @@ class _AwareDateTime(_DateTime):
     def __lt__(self, other: _AwareDateTime) -> bool:
         """Compare two datetimes by when they occur in time
 
-        ``a < b`` is equivalent to ``a.as_utc() < b.as_utc()``
+        ``a < b`` is equivalent to ``a.in_utc() < b.in_utc()``
 
         Example
         -------
@@ -2117,7 +2119,7 @@ class _AwareDateTime(_DateTime):
     def __le__(self, other: _AwareDateTime) -> bool:
         """Compare two datetimes by when they occur in time
 
-        ``a <= b`` is equivalent to ``a.as_utc() <= b.as_utc()``
+        ``a <= b`` is equivalent to ``a.in_utc() <= b.in_utc()``
 
         Example
         -------
@@ -2131,7 +2133,7 @@ class _AwareDateTime(_DateTime):
     def __gt__(self, other: _AwareDateTime) -> bool:
         """Compare two datetimes by when they occur in time
 
-        ``a > b`` is equivalent to ``a.as_utc() > b.as_utc()``
+        ``a > b`` is equivalent to ``a.in_utc() > b.in_utc()``
 
         Example
         -------
@@ -2145,7 +2147,7 @@ class _AwareDateTime(_DateTime):
     def __ge__(self, other: _AwareDateTime) -> bool:
         """Compare two datetimes by when they occur in time
 
-        ``a >= b`` is equivalent to ``a.as_utc() >= b.as_utc()``
+        ``a >= b`` is equivalent to ``a.in_utc() >= b.in_utc()``
 
         Example
         -------
@@ -2163,7 +2165,7 @@ class _AwareDateTime(_DateTime):
         def __sub__(self, other: _AwareDateTime) -> TimeDelta:
             """Calculate the duration between two datetimes
 
-            ``a - b`` is equivalent to ``a.as_utc() - b.as_utc()``
+            ``a - b`` is equivalent to ``a.in_utc() - b.in_utc()``
 
             Example
             -------
@@ -2209,7 +2211,7 @@ class UTCDateTime(_AwareDateTime):
 
     Note
     ----
-    The canonical string format is:
+    The default string format is:
 
     .. code-block:: text
 
@@ -2244,15 +2246,15 @@ class UTCDateTime(_AwareDateTime):
         """Create an instance from the current time"""
         return cls._from_py_unchecked(_datetime.now(_UTC))
 
-    def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
+    def default_format(self, sep: Literal[" ", "T"] = "T") -> str:
         if sep not in (" ", "T"):
             raise ValueError("sep must be ' ' or 'T'")
         return f"{self._py_dt.isoformat(sep)[:-6]}Z"
 
     @classmethod
-    def from_canonical_format(cls, s: str, /) -> UTCDateTime:
+    def from_default_format(cls, s: str, /) -> UTCDateTime:
         if not _match_utc_str(s):
-            raise _make_canonical_format_parse_error(s)
+            raise _make_default_format_parse_error(s)
         return cls._from_py_unchecked(_fromisoformat_utc(s))
 
     @classmethod
@@ -2294,30 +2296,12 @@ class UTCDateTime(_AwareDateTime):
             _datetime.combine(date._py_date, self._py_dt.timetz())
         )
 
-    if TYPE_CHECKING:  # pragma: no branch
-        # We could have used typing.Unpack, but that's only available
-        # in Python 3.11+ or with typing_extensions.
-        def replace(
-            self,
-            *,
-            year: int | _UNSET = _UNSET(),
-            month: int | _UNSET = _UNSET(),
-            day: int | _UNSET = _UNSET(),
-            hour: int | _UNSET = _UNSET(),
-            minute: int | _UNSET = _UNSET(),
-            second: int | _UNSET = _UNSET(),
-            microsecond: int | _UNSET = _UNSET(),
-        ) -> UTCDateTime: ...
+    def replace(self, /, **kwargs) -> UTCDateTime:
+        if not _no_tzinfo_or_fold(kwargs):
+            raise TypeError("tzinfo and fold are not allowed arguments")
+        return self._from_py_unchecked(self._py_dt.replace(**kwargs))
 
-    else:
-
-        def replace(self, /, **kwargs) -> UTCDateTime:
-            if not _no_tzinfo_or_fold(kwargs):
-                raise TypeError("tzinfo and fold are not allowed arguments")
-            return self._from_py_unchecked(self._py_dt.replace(**kwargs))
-
-        # Defining properties this way is faster than declaring a `def`,
-        # but the type checker doesn't like it.
+    if not TYPE_CHECKING:  # pragma: no branch
         __hash__ = property(attrgetter("_py_dt.__hash__"))
 
         # Hiding __eq__ from mypy ensures that --strict-equality works
@@ -2478,16 +2462,18 @@ class UTCDateTime(_AwareDateTime):
             return self + -other
         return NotImplemented
 
-    def as_utc(self) -> UTCDateTime:
+    def in_utc(self) -> UTCDateTime:
         return self
 
     @overload
-    def as_offset(self, /) -> OffsetDateTime: ...
+    def in_fixed_offset(self, /) -> OffsetDateTime: ...
 
     @overload
-    def as_offset(self, offset: int | TimeDelta, /) -> OffsetDateTime: ...
+    def in_fixed_offset(
+        self, offset: int | TimeDelta, /
+    ) -> OffsetDateTime: ...
 
-    def as_offset(
+    def in_fixed_offset(
         self, offset: int | TimeDelta | None = None, /
     ) -> OffsetDateTime:
         return OffsetDateTime._from_py_unchecked(
@@ -2583,7 +2569,7 @@ class UTCDateTime(_AwareDateTime):
     def rfc3339(self) -> str:
         """Format as an RFC 3339 string
 
-        For UTCDateTime, equivalent to :meth:`~_DateTime.canonical_format`.
+        For UTCDateTime, equivalent to :meth:`~_DateTime.default_format`.
         Inverse of :meth:`from_rfc3339`.
 
         Example
@@ -2695,7 +2681,7 @@ class OffsetDateTime(_AwareDateTime):
 
     Note
     ----
-    The canonical string format is:
+    The default string format is:
 
     .. code-block:: text
 
@@ -2745,17 +2731,17 @@ class OffsetDateTime(_AwareDateTime):
         """Create an instance at the current time with the given offset"""
         return cls._from_py_unchecked(_datetime.now(_load_offset(offset)))
 
-    def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
+    def default_format(self, sep: Literal[" ", "T"] = "T") -> str:
         return self._py_dt.isoformat(sep)
 
     @classmethod
-    def from_canonical_format(cls, s: str, /) -> OffsetDateTime:
+    def from_default_format(cls, s: str, /) -> OffsetDateTime:
         if not _match_offset_str(s):
-            raise _make_canonical_format_parse_error(s)
+            raise _make_default_format_parse_error(s)
         try:
             return cls._from_py_unchecked(_fromisoformat(s))
         except ValueError:
-            raise _make_canonical_format_parse_error(s)
+            raise _make_default_format_parse_error(s)
 
     @classmethod
     def from_timestamp(
@@ -2866,16 +2852,18 @@ class OffsetDateTime(_AwareDateTime):
             return TimeDelta.from_py_timedelta(self._py_dt - other._py_dt)
         return NotImplemented
 
-    def as_utc(self) -> UTCDateTime:
+    def in_utc(self) -> UTCDateTime:
         return UTCDateTime._from_py_unchecked(self._py_dt.astimezone(_UTC))
 
     @overload
-    def as_offset(self, /) -> OffsetDateTime: ...
+    def in_fixed_offset(self, /) -> OffsetDateTime: ...
 
     @overload
-    def as_offset(self, offset: int | TimeDelta, /) -> OffsetDateTime: ...
+    def in_fixed_offset(
+        self, offset: int | TimeDelta, /
+    ) -> OffsetDateTime: ...
 
-    def as_offset(
+    def in_fixed_offset(
         self, offset: int | TimeDelta | None = None, /
     ) -> OffsetDateTime:
         return (
@@ -2958,7 +2946,7 @@ class OffsetDateTime(_AwareDateTime):
         """Format as an RFC 3339 string
 
         For ``OffsetDateTime``, equivalent to
-        :meth:`~_DateTime.canonical_format`
+        :meth:`~_DateTime.default_format`
         and :meth:`~OffsetDateTime.common_iso8601`.
         Inverse of :meth:`from_rfc3339`.
 
@@ -2996,7 +2984,7 @@ class OffsetDateTime(_AwareDateTime):
 
         Note
         ----
-        For ``OffsetDateTime``, equivalent to :meth:`~_DateTime.canonical_format`
+        For ``OffsetDateTime``, equivalent to :meth:`~_DateTime.default_format`
         and :meth:`~OffsetDateTime.rfc3339`.
 
         Example
@@ -3015,7 +3003,7 @@ class OffsetDateTime(_AwareDateTime):
         Note
         ----
         While similar, this function behaves differently from
-        :meth:`~_DateTime.from_canonical_format`
+        :meth:`~_DateTime.from_default_format`
         or :meth:`~OffsetDateTime.from_rfc3339`.
 
         Example
@@ -3122,7 +3110,7 @@ class ZonedDateTime(_AwareDateTime):
 
     Warning
     -------
-    The canonical string format is:
+    The default string format is:
 
     .. code-block:: text
 
@@ -3137,12 +3125,12 @@ class ZonedDateTime(_AwareDateTime):
     The offset is included to disambiguate cases where the same
     local time occurs twice due to DST transitions.
     If the offset is invalid for the system timezone,
-    parsing will raise :class:`InvalidOffsetForZone`.
+    parsing will raise :class:`InvalidOffset`.
 
     This format is similar to those `used by other languages <https://tc39.es/proposal-temporal/docs/strings.html#iana-time-zone-names>`_,
     but it is *not* RFC 3339 or ISO 8601 compliant
     (these standards don't support timezone IDs.)
-    Use :meth:`~_AwareDateTime.as_offset` first if you
+    Use :meth:`~_AwareDateTime.in_fixed_offset` first if you
     need RFC 3339 or ISO 8601 compliance.
     """
 
@@ -3182,23 +3170,23 @@ class ZonedDateTime(_AwareDateTime):
         """Create an instance from the current time in the given timezone"""
         return cls._from_py_unchecked(_datetime.now(ZoneInfo(tz)))
 
-    def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
+    def default_format(self, sep: Literal[" ", "T"] = "T") -> str:
         return (
             f"{self._py_dt.isoformat(sep)}"
             f"[{self._py_dt.tzinfo.key}]"  # type: ignore[union-attr]
         )
 
     @classmethod
-    def from_canonical_format(cls, s: str, /) -> ZonedDateTime:
+    def from_default_format(cls, s: str, /) -> ZonedDateTime:
         if (match := _match_zoned_str(s)) is None:
-            raise _make_canonical_format_parse_error(s)
+            raise _make_default_format_parse_error(s)
         dt = _fromisoformat(match[1])
         offset = dt.utcoffset()
         dt = dt.replace(tzinfo=ZoneInfo(match[2]))
         if offset != dt.utcoffset():  # offset/zone mismatch: try other fold
             dt = dt.replace(fold=1)
             if dt.utcoffset() != offset:
-                raise InvalidOffsetForZone()
+                raise InvalidOffset()
         return cls._from_py_unchecked(dt)
 
     @classmethod
@@ -3239,49 +3227,27 @@ class ZonedDateTime(_AwareDateTime):
             )
         )
 
-    if TYPE_CHECKING:
-        # We could have used typing.Unpack, but that's only available
-        # in Python 3.11+ or with typing_extensions.
-        def replace(
-            self,
-            *,
-            year: int | _UNSET = _UNSET(),
-            month: int | _UNSET = _UNSET(),
-            day: int | _UNSET = _UNSET(),
-            hour: int | _UNSET = _UNSET(),
-            minute: int | _UNSET = _UNSET(),
-            second: int | _UNSET = _UNSET(),
-            microsecond: int | _UNSET = _UNSET(),
-            tz: str | _UNSET = _UNSET(),
-            disambiguate: Disambiguate | _UNSET = _UNSET(),
-        ) -> ZonedDateTime: ...
-
-    else:
-
-        def replace(self, /, disambiguate="raise", **kwargs) -> ZonedDateTime:
-            if not _no_tzinfo_or_fold(kwargs):
-                raise TypeError("tzinfo and/or fold are not allowed arguments")
-            try:
-                kwargs["tzinfo"] = ZoneInfo(kwargs.pop("tz"))
-            except KeyError:
-                pass
-            return self._from_py_unchecked(
-                _resolve_ambuguity(
-                    self._py_dt.replace(fold=_as_fold(disambiguate), **kwargs),
-                    kwargs.get("tzinfo", self._py_dt.tzinfo),
-                    disambiguate,
-                )
+    def replace(
+        self, /, disambiguate: Disambiguate = "raise", **kwargs
+    ) -> ZonedDateTime:
+        if not _no_tzinfo_or_fold(kwargs):
+            raise TypeError("tzinfo and/or fold are not allowed arguments")
+        try:
+            kwargs["tzinfo"] = ZoneInfo(kwargs.pop("tz"))
+        except KeyError:
+            pass
+        return self._from_py_unchecked(
+            _resolve_ambuguity(
+                self._py_dt.replace(fold=_as_fold(disambiguate), **kwargs),
+                kwargs.get("tzinfo", self._py_dt.tzinfo),
+                disambiguate,
             )
+        )
 
-    if TYPE_CHECKING or SPHINX_BUILD:  # pragma: no cover
-
-        @property
-        def tz(self) -> str:
-            """The timezone ID"""
-            ...
-
-    else:
-        tz = property(attrgetter("_py_dt.tzinfo.key"))
+    @property
+    def tz(self) -> str:
+        """The timezone ID"""
+        return self._py_dt.tzinfo.key  # type: ignore[union-attr]
 
     @property
     def offset(self) -> TimeDelta:
@@ -3308,6 +3274,7 @@ class ZonedDateTime(_AwareDateTime):
 
     def exact_eq(self, other: ZonedDateTime, /) -> bool:
         return (
+            # TODO: only consider fold on ambiguity
             self._py_dt.tzinfo is other._py_dt.tzinfo
             and self._py_dt.fold == other._py_dt.fold
             and self._py_dt == other._py_dt
@@ -3405,16 +3372,18 @@ class ZonedDateTime(_AwareDateTime):
         """
         return self._py_dt.astimezone(_UTC) != self._py_dt
 
-    def as_utc(self) -> UTCDateTime:
+    def in_utc(self) -> UTCDateTime:
         return UTCDateTime._from_py_unchecked(self._py_dt.astimezone(_UTC))
 
     @overload
-    def as_offset(self, /) -> OffsetDateTime: ...
+    def in_fixed_offset(self, /) -> OffsetDateTime: ...
 
     @overload
-    def as_offset(self, offset: int | TimeDelta, /) -> OffsetDateTime: ...
+    def in_fixed_offset(
+        self, offset: int | TimeDelta, /
+    ) -> OffsetDateTime: ...
 
-    def as_offset(
+    def in_fixed_offset(
         self, offset: int | TimeDelta | None = None, /
     ) -> OffsetDateTime:
         return OffsetDateTime._from_py_unchecked(
@@ -3426,7 +3395,7 @@ class ZonedDateTime(_AwareDateTime):
             )
         )
 
-    def as_zoned(self, tz: str, /) -> ZonedDateTime:
+    def in_tz(self, tz: str, /) -> ZonedDateTime:
         return self._from_py_unchecked(self._py_dt.astimezone(ZoneInfo(tz)))
 
     def __repr__(self) -> str:
@@ -3492,7 +3461,7 @@ class LocalSystemDateTime(_AwareDateTime):
     LocalSystemDateTime(2024-03-31 06:00:00+02:00)
     ...
     >>> # Conversion based on Paris' offset
-    >>> alarm.as_utc()
+    >>> alarm.in_utc()
     UTCDateTime(2024-03-31 04:00:00)
     ...
     >>> # unlike OffsetDateTime, it knows about DST transitions
@@ -3527,7 +3496,7 @@ class LocalSystemDateTime(_AwareDateTime):
 
     Note
     ----
-    The canonical string format is:
+    The default string format is:
 
     .. code-block:: text
 
@@ -3574,17 +3543,17 @@ class LocalSystemDateTime(_AwareDateTime):
         """Create an instance from the current time"""
         return cls._from_py_unchecked(_datetime.now().astimezone(None))
 
-    def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
+    def default_format(self, sep: Literal[" ", "T"] = "T") -> str:
         return self._py_dt.isoformat(sep)
 
     @classmethod
-    def from_canonical_format(cls, s: str, /) -> LocalSystemDateTime:
+    def from_default_format(cls, s: str, /) -> LocalSystemDateTime:
         if not _match_offset_str(s):
-            raise _make_canonical_format_parse_error(s)
+            raise _make_default_format_parse_error(s)
         try:
             return cls._from_py_unchecked(_fromisoformat(s))
         except ValueError:
-            raise _make_canonical_format_parse_error(s)
+            raise _make_default_format_parse_error(s)
 
     @classmethod
     def from_timestamp(cls, i: float, /) -> LocalSystemDateTime:
@@ -3780,16 +3749,18 @@ class LocalSystemDateTime(_AwareDateTime):
             return self + -other
         return NotImplemented
 
-    def as_utc(self) -> UTCDateTime:
+    def in_utc(self) -> UTCDateTime:
         return UTCDateTime._from_py_unchecked(self._py_dt.astimezone(_UTC))
 
     @overload
-    def as_offset(self, /) -> OffsetDateTime: ...
+    def in_fixed_offset(self, /) -> OffsetDateTime: ...
 
     @overload
-    def as_offset(self, offset: int | TimeDelta, /) -> OffsetDateTime: ...
+    def in_fixed_offset(
+        self, offset: int | TimeDelta, /
+    ) -> OffsetDateTime: ...
 
-    def as_offset(
+    def in_fixed_offset(
         self, offset: int | TimeDelta | None = None, /
     ) -> OffsetDateTime:
         return OffsetDateTime._from_py_unchecked(
@@ -3798,12 +3769,12 @@ class LocalSystemDateTime(_AwareDateTime):
             else self._py_dt.astimezone(_load_offset(offset))
         )
 
-    def as_zoned(self, tz: str, /) -> ZonedDateTime:
+    def in_tz(self, tz: str, /) -> ZonedDateTime:
         return ZonedDateTime._from_py_unchecked(
             self._py_dt.astimezone(ZoneInfo(tz))
         )
 
-    def as_local(self) -> LocalSystemDateTime:
+    def in_local_system(self) -> LocalSystemDateTime:
         return self._from_py_unchecked(self._py_dt.astimezone())
 
     # a custom pickle implementation with a smaller payload
@@ -3868,7 +3839,7 @@ class NaiveDateTime(_DateTime):
 
     Note
     ----
-    The canonical string format is:
+    The default string format is:
 
     .. code-block:: text
 
@@ -3892,13 +3863,13 @@ class NaiveDateTime(_DateTime):
             year, month, day, hour, minute, second, microsecond
         )
 
-    def canonical_format(self, sep: Literal[" ", "T"] = "T") -> str:
+    def default_format(self, sep: Literal[" ", "T"] = "T") -> str:
         return self._py_dt.isoformat(sep)
 
     @classmethod
-    def from_canonical_format(cls, s: str, /) -> NaiveDateTime:
+    def from_default_format(cls, s: str, /) -> NaiveDateTime:
         if not _match_naive_str(s):
-            raise _make_canonical_format_parse_error(s)
+            raise _make_default_format_parse_error(s)
         return cls._from_py_unchecked(_fromisoformat(s))
 
     @classmethod
@@ -4207,7 +4178,7 @@ class SkippedTime(Exception):
         )
 
 
-class InvalidOffsetForZone(ValueError):
+class InvalidOffset(ValueError):
     """A string has an invalid offset for the given zone"""
 
 

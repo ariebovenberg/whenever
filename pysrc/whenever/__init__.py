@@ -3,9 +3,12 @@ try:
     from ._whenever import (
         _unpkl_date,
         _unpkl_ddelta,
+        _unpkl_local,
         _unpkl_naive,
+        _unpkl_offset,
         _unpkl_tdelta,
         _unpkl_time,
+        _unpkl_utc,
         _unpkl_zoned,
     )
 

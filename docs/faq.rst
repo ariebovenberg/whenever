@@ -118,12 +118,12 @@ If you do need to perform arithmetic on a fixed-offset datetime,
 you should make the location explicit by converting it to a
 :class:`~whenever.ZonedDateTime` first:
 
->>> departure.as_zoned("America/Denver").add(hours=2)
+>>> departure.in_tz("America/Denver").add(hours=2)
 ZonedDateTime(2024-11-03 02:00:00-06:00[America/Denver])
->>> departure.as_zoned("America/Phoenix").add(hours=2)
+>>> departure.in_tz("America/Phoenix").add(hours=2)
 ZonedDateTime(2024-11-03 03:00:00-07:00[America/Phoenix])
 >>> # not recommended, but possible:
->>> departure.as_utc().add(hours=2).as_offset(departure.offset)
+>>> departure.in_utc().add(hours=2).in_fixed_offset(departure.offset)
 OffsetDateTime(2024-11-03 03:00:00-07:00)
 
 .. note::

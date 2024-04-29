@@ -4,11 +4,13 @@ import pyperf
 runner = pyperf.Runner()
 
 runner.timeit(
-    "parse + convert + add",
-    "parse('2020-04-05 22:04:00-04:00')"
-    ".in_tz('Europe/Amsterdam')"
-    ".add(days=30)",
-    "from pendulum import parse",
+    "various operations",
+    "d = parse('2020-04-05 22:04:00-04:00')"
+    ".in_tz('UTC');"
+    "d.diff();"
+    "d.add(hours=4, minutes=30)"
+    ".in_tz('Europe/Amsterdam')",
+    setup="from pendulum import parse, DateTime",
 )
 
 runner.timeit(
