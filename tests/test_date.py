@@ -6,6 +6,7 @@ from itertools import chain, product
 
 import pytest
 
+from tests.common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 from whenever import (
     FRIDAY,
     MONDAY,
@@ -20,8 +21,6 @@ from whenever import (
     Time,
     days,
 )
-
-from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
 
 def test_basics():
@@ -146,6 +145,11 @@ def test_comparison():
 def test_add(d, kwargs, expected):
     assert d.add(**kwargs) == expected
     assert d + DateDelta(**kwargs) == expected
+
+
+def test_py():
+    d = Date(2021, 1, 2)
+    assert d.py_date() == py_date(2021, 1, 2)
 
 
 def test_from_py_date():
