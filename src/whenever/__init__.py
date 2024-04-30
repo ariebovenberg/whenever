@@ -204,6 +204,10 @@ class Date(_ImmutableBase):
             return NotImplemented
         return self._py_date >= other._py_date
 
+    def py_date(self) -> _date:
+        """Get the underlying :class:`~datetime.date` object"""
+        return self._py_date
+
     @classmethod
     def from_py_date(cls, d: _date, /) -> Date:
         """Create from a :class:`~datetime.date`
