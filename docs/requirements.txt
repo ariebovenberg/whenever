@@ -1,3 +1,3 @@
 sphinx<8
-furo~=2024.1.29
+furo>=2024.4.27,<2024.5
 sphinx-copybutton~=0.5
