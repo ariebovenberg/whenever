@@ -465,7 +465,7 @@ class TestFromCommonIso8601:
     def test_invalid(self, s) -> None:
         with pytest.raises(
             ValueError,
-            match=r"Invalid time delta format.*" + re.escape(repr(s)),
+            match=r"Invalid format.*" + re.escape(repr(s)),
         ):
             TimeDelta.from_common_iso8601(s)
 
@@ -493,6 +493,9 @@ def test_addition():
 
     with pytest.raises(TypeError, match="unsupported operand"):
         d + Ellipsis  # type: ignore[operator]
+
+    with pytest.raises(TypeError, match="unsupported operand"):
+        Ellipsis + d  # type: ignore[operator]
 
 
 def test_subtraction():
@@ -636,14 +639,19 @@ def test_from_py_timedelta():
     )
 
 
-def test_tuple():
+def test_as_hrs_mins_secs_nanos():
     d = TimeDelta(hours=1, minutes=2, seconds=-3, microseconds=4_060_000)
-    hms = d.as_tuple()
+    hms = d.as_hrs_mins_secs_nanos()
     assert all(isinstance(x, int) for x in hms)
     assert hms == (1, 2, 1, 60_000_000)
-    assert TimeDelta(hours=-2, minutes=-15).as_tuple() == (-2, -15, 0, 0)
-    assert TimeDelta(nanoseconds=-4).as_tuple() == (0, 0, 0, -4)
-    assert TimeDelta.ZERO.as_tuple() == (0, 0, 0, 0)
+    assert TimeDelta(hours=-2, minutes=-15).as_hrs_mins_secs_nanos() == (
+        -2,
+        -15,
+        0,
+        0,
+    )
+    assert TimeDelta(nanoseconds=-4).as_hrs_mins_secs_nanos() == (0, 0, 0, -4)
+    assert TimeDelta.ZERO.as_hrs_mins_secs_nanos() == (0, 0, 0, 0)
 
 
 def test_abs():
@@ -663,7 +671,7 @@ def test_copy():
 def test_pickling():
     d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
     dumped = pickle.dumps(d)
-    assert len(dumped) < len(pickle.dumps(d.py_timedelta())) + 10
+    assert len(dumped) < len(pickle.dumps(d.py_timedelta())) + 15
     assert pickle.loads(dumped) == d
 
     assert pickle.loads(pickle.dumps(TimeDelta.MAX)) == TimeDelta.MAX
@@ -672,8 +680,9 @@ def test_pickling():
 
 def test_compatible_unpickle():
     dumped = (
-        b"\x80\x04\x95(\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_t"
-        b"delta\x94\x93\x94M\x8b\x0eM\xa0\x0f\x86\x94R\x94."
+        b"\x80\x04\x951\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_t"
+        b"delta\x94\x93\x94C\x0c\x8b\x0e\x00\x00\x00\x00\x00\x00\xa0\x0f"
+        b"\x00\x00\x94\x85\x94R\x94."
     )
     assert pickle.loads(dumped) == TimeDelta(
         hours=1, minutes=2, seconds=3, microseconds=4

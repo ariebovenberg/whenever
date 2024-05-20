@@ -4,8 +4,11 @@ from copy import copy, deepcopy
 
 import pytest
 
-from whenever import (  # DateTimeDelta,; TimeDelta,
+from whenever import (
     DateDelta,
+    DateTimeDelta,
+    Time,
+    TimeDelta,
     days,
     months,
     weeks,
@@ -229,18 +232,20 @@ class TestFromDefaultFormat:
             "PT3M",  # time component
             "P3.4Y",  # decimal
             "P1,5D",  # comma
+            "P1Y2M3W4DT1H2M3S",  # time component
+            "P1YT0S",  # zero time component still invalid
         ],
     )
     def test_invalid_format(self, s):
         with pytest.raises(
             ValueError,
-            match=r"Invalid date delta format.*" + re.escape(s),
+            match=r"Invalid format.*" + re.escape(s),
         ):
             DateDelta.from_default_format(s)
 
         with pytest.raises(
             ValueError,
-            match=r"Invalid date delta format.*" + re.escape(s),
+            match=r"Invalid format.*" + re.escape(s),
         ):
             DateDelta.from_common_iso8601(s)
 
@@ -250,16 +255,6 @@ class TestFromDefaultFormat:
 
         with pytest.raises(TypeError):
             DateDelta.from_common_iso8601(1)  # type: ignore[arg-type]
-
-    def test_time_component_not_allowed(self):
-        with pytest.raises(ValueError, match=r"Invalid date delta format"):
-            DateDelta.from_common_iso8601("P1Y2M3W4DT1H2M3S")
-
-        with pytest.raises(
-            ValueError,
-            match=r"Invalid date delta format",
-        ):
-            DateDelta.from_default_format("P1Y2M3W4DT1H2M3S")
 
 
 def test_repr():
@@ -298,6 +293,12 @@ class TestMultiply:
             months=4,
             weeks=6,
             days=8,
+        )
+        assert 3 * p == DateDelta(
+            years=30,
+            months=6,
+            weeks=9,
+            days=12,
         )
         assert p * 0 == DateDelta.ZERO
 
@@ -344,6 +345,15 @@ class TestMultiply:
         with pytest.raises(TypeError):
             p * Ellipsis  # type: ignore[operator]
 
+        with pytest.raises(TypeError):
+            1.5 * p  # type: ignore[operator]
+
+        with pytest.raises(TypeError):
+            None * p  # type: ignore[operator]
+
+        with pytest.raises(TypeError):
+            Time() * p  # type: ignore[operator]
+
 
 class TestAdd:
 
@@ -359,20 +369,20 @@ class TestAdd:
         with pytest.raises(TypeError, match="unsupported operand"):
             32 + p  # type: ignore[operator]
 
-        #     def test_time_delta(self):
-        #         p = DateDelta(years=1, months=2, weeks=3, days=4)
-        #         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=400_004)
-        #         assert p + d == DateTimeDelta(
-        #             years=1,
-        #             months=2,
-        #             weeks=3,
-        #             days=4,
-        #             hours=1,
-        #             minutes=2,
-        #             seconds=3,
-        #             microseconds=400_004,
-        #         )
-        #         assert p + d == d + p
+    def test_time_delta(self):
+        p = DateDelta(years=1, months=2, weeks=3, days=4)
+        d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=400_004)
+        assert p + d == DateTimeDelta(
+            years=1,
+            months=2,
+            weeks=3,
+            days=4,
+            hours=1,
+            minutes=2,
+            seconds=3,
+            microseconds=400_004,
+        )
+        assert p + d == d + p
 
     def test_unsupported(self):
         p = DateDelta(years=1, months=2, weeks=3, days=4)
@@ -380,7 +390,10 @@ class TestAdd:
             p + 32  # type: ignore[operator]
 
         with pytest.raises(TypeError, match="unsupported operand"):
-            32 + p  # type: ignore[operator]
+            None + p  # type: ignore[operator]
+
+        with pytest.raises(TypeError, match="unsupported operand"):
+            Time() + p  # type: ignore[operator]
 
 
 class TestSubtract:
@@ -391,30 +404,30 @@ class TestSubtract:
         assert p - q == DateDelta(years=2, months=-1, weeks=4, days=4)
         assert q - p == DateDelta(years=-2, months=1, weeks=-4, days=-4)
 
-        #     def test_time_delta(self):
-        #         p = DateDelta(years=1, months=2, weeks=3, days=4)
-        #         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=400_004)
-        #         assert p - d == DateTimeDelta(
-        #             years=1,
-        #             months=2,
-        #             weeks=3,
-        #             days=4,
-        #             hours=-1,
-        #             minutes=-2,
-        #             seconds=-3,
-        #             microseconds=-400_004,
-        #         )
-        #         assert p - d == -d + p
-        #         assert d - p == DateTimeDelta(
-        #             years=-1,
-        #             months=-2,
-        #             weeks=-3,
-        #             days=-4,
-        #             hours=1,
-        #             minutes=2,
-        #             seconds=3,
-        #             microseconds=400_004,
-        #         )
+    def test_time_delta(self):
+        p = DateDelta(years=-1, months=-2, weeks=-3, days=4)
+        d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=400_004)
+        assert p - d == DateTimeDelta(
+            years=-1,
+            months=-2,
+            weeks=-3,
+            days=4,
+            hours=-1,
+            minutes=-2,
+            seconds=-3,
+            microseconds=-400_004,
+        )
+        assert p - d == -d + p
+        assert d - p == DateTimeDelta(
+            years=1,
+            months=2,
+            weeks=3,
+            days=-4,
+            hours=1,
+            minutes=2,
+            seconds=3,
+            microseconds=400_004,
+        )
 
     def test_unsupported(self):
         p = DateDelta(years=1, months=2, weeks=3, days=4)
@@ -422,7 +435,10 @@ class TestSubtract:
             p - 32  # type: ignore[operator]
 
         with pytest.raises(TypeError, match="unsupported operand"):
-            32 - p  # type: ignore[operator]
+            None - p  # type: ignore[operator]
+
+        with pytest.raises(TypeError, match="unsupported operand"):
+            Time() - p  # type: ignore[operator]
 
 
 def test_in_years_months_days():

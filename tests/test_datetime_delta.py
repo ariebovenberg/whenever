@@ -1,5 +1,5 @@
 import pickle
-import weakref
+import re
 from copy import copy, deepcopy
 
 import pytest
@@ -9,32 +9,69 @@ from whenever import DateDelta, DateTimeDelta, TimeDelta
 from .common import AlwaysEqual, NeverEqual
 
 
-def test_init():
-    d = DateTimeDelta(
-        years=1,
-        months=2,
-        weeks=3,
-        days=11,
-        hours=4,
-        minutes=5,
-        seconds=6,
-        microseconds=7,
-    )
-    assert d.date_part == DateDelta(years=1, months=2, weeks=3, days=11)
-    assert d.time_part == TimeDelta(
-        hours=4, minutes=5, seconds=6, microseconds=7
-    )
+class TestInit:
 
-    assert DateTimeDelta() == DateTimeDelta(
-        years=0,
-        months=0,
-        weeks=0,
-        days=0,
-        hours=0,
-        minutes=0,
-        seconds=0,
-        microseconds=0,
+    def test_happy_path(self):
+        d = DateTimeDelta(
+            years=1,
+            months=2,
+            weeks=3,
+            days=11,
+            hours=4,
+            minutes=5,
+            seconds=6,
+            milliseconds=7,
+            microseconds=8,
+            nanoseconds=9,
+        )
+        assert d.date_part() == DateDelta(years=1, months=2, weeks=3, days=11)
+        assert d.time_part() == TimeDelta(
+            hours=4, minutes=5, seconds=6, nanoseconds=7008009
+        )
+
+    def test_zero(self):
+        assert DateTimeDelta() == DateTimeDelta(
+            years=0,
+            months=0,
+            weeks=0,
+            days=0,
+            hours=0,
+            minutes=0,
+            seconds=0,
+            nanoseconds=0,
+        )
+
+    def test_negative(self):
+        d = DateTimeDelta(
+            years=-1,
+            months=-2,
+            weeks=-3,
+            days=-11,
+            hours=-4,
+            minutes=-5,
+            seconds=-6,
+            milliseconds=-7,
+            microseconds=-8,
+            nanoseconds=-9,
+        )
+        assert d.date_part() == DateDelta(
+            years=-1, months=-2, weeks=-3, days=-11
+        )
+        assert d.time_part() == TimeDelta(
+            hours=-4, minutes=-5, seconds=-6, nanoseconds=-7008009
+        )
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"years": 1, "days": -2},
+            {"years": 1e9, "days": 2},
+            {"years": 8, "nanoseconds": 2, "milliseconds": -3},
+        ],
     )
+    def test_invalid(self, kwargs):
+        with pytest.raises((ValueError, OverflowError)):
+            DateTimeDelta(**kwargs)
 
 
 def test_immutable():
@@ -74,17 +111,17 @@ def test_equality():
         days=5,
     )
     assert p == same
-    assert not p == same_total
+    assert p == same_total
     assert not p == different
     assert not p == NeverEqual()
     assert p == AlwaysEqual()
     assert not p != same
-    assert p != same_total
+    assert not p != same_total
     assert p != different
     assert p != NeverEqual()
     assert not p != AlwaysEqual()
     assert hash(p) == hash(same)
-    assert hash(p) != hash(same_total)
+    assert hash(p) == hash(same_total)
     assert hash(p) != hash(different)
 
 
@@ -95,20 +132,21 @@ def test_zero():
 def test_bool():
     assert not DateTimeDelta()
     assert DateTimeDelta(days=1)
+    assert DateTimeDelta(nanoseconds=1)
 
 
 @pytest.mark.parametrize(
     "p, expect",
     [
         (DateTimeDelta(), "P0D"),
-        (DateTimeDelta(years=-2), "P-2Y"),
+        (DateTimeDelta(years=-2), "-P2Y"),
         (DateTimeDelta(days=1), "P1D"),
         (DateTimeDelta(hours=1), "PT1H"),
         (DateTimeDelta(minutes=1), "PT1M"),
         (DateTimeDelta(seconds=1), "PT1S"),
         (DateTimeDelta(microseconds=1), "PT0.000001S"),
         (DateTimeDelta(microseconds=4300), "PT0.0043S"),
-        (DateTimeDelta(weeks=1), "P1W"),
+        (DateTimeDelta(weeks=1), "P7D"),
         (DateTimeDelta(months=1), "P1M"),
         (DateTimeDelta(years=1), "P1Y"),
         (
@@ -120,9 +158,9 @@ def test_bool():
                 hours=5,
                 minutes=6,
                 seconds=7,
-                microseconds=8,
+                microseconds=800_000,
             ),
-            "P1Y2M3W4DT5H6M7.000008S",
+            "P1Y2M25DT5H6M7.8S",
         ),
         (
             DateTimeDelta(
@@ -134,34 +172,38 @@ def test_bool():
                 minutes=6,
                 seconds=7,
                 microseconds=8,
+                nanoseconds=9,
             ),
-            "P1Y2M3W4DT5H6M7.000008S",
+            "P1Y2M25DT5H6M7.000008009S",
         ),
-        (DateTimeDelta(months=2, weeks=3, minutes=6, seconds=7), "P2M3WT6M7S"),
-        (DateTimeDelta(microseconds=-45), "PT-0.000045S"),
+        (
+            DateTimeDelta(months=2, weeks=3, minutes=6, seconds=7),
+            "P2M21DT6M7S",
+        ),
+        (DateTimeDelta(microseconds=-45), "-PT0.000045S"),
         (
             DateTimeDelta(
                 years=-3,
                 months=2,
-                weeks=3,
+                weeks=-3,
                 minutes=-6,
                 seconds=7,
                 microseconds=-45,
             ),
-            "P-3Y2M3WT-5M-53.000045S",
+            "-P2Y10M21DT5M53.000045S",
         ),
     ],
 )
-def test_canonical_format(p, expect):
-    assert p.canonical_format() == expect
+def test_default_format(p, expect):
+    assert p.default_format() == expect
     assert p.common_iso8601() == expect
     assert str(p) == expect
 
 
-class TestFromCanonicalFormatAndCommonISO8601:
+class TestFromDefaultFormatAndCommonISO8601:
 
     def test_empty(self):
-        assert DateTimeDelta.from_canonical_format("P0D") == DateTimeDelta()
+        assert DateTimeDelta.from_default_format("P0D") == DateTimeDelta()
         assert DateTimeDelta.from_common_iso8601("P0D") == DateTimeDelta()
 
     @pytest.mark.parametrize(
@@ -174,6 +216,7 @@ class TestFromCanonicalFormatAndCommonISO8601:
             ("P1W", DateTimeDelta(weeks=1)),
             ("P1D", DateTimeDelta(days=1)),
             ("PT1H", DateTimeDelta(hours=1)),
+            ("PT0H", DateTimeDelta()),
             ("PT1M", DateTimeDelta(minutes=1)),
             ("PT1S", DateTimeDelta(seconds=1)),
             ("PT0.000001S", DateTimeDelta(microseconds=1)),
@@ -181,7 +224,7 @@ class TestFromCanonicalFormatAndCommonISO8601:
         ],
     )
     def test_single_unit(self, input, expect):
-        assert DateTimeDelta.from_canonical_format(input) == expect
+        assert DateTimeDelta.from_default_format(input) == expect
         assert DateTimeDelta.from_common_iso8601(input) == expect
 
     @pytest.mark.parametrize(
@@ -216,62 +259,55 @@ class TestFromCanonicalFormatAndCommonISO8601:
                 "P2M3WT6M7S",
                 DateTimeDelta(months=2, weeks=3, minutes=6, seconds=7),
             ),
-            ("PT-0.000045S", DateTimeDelta(microseconds=-45)),
+            ("-PT0.00004501S", DateTimeDelta(nanoseconds=-45_010)),
             (
-                "P-3Y2M+3WT-6M6.999955S",
+                "-P3Y2M3WT6M6.999955S",
                 DateTimeDelta(
                     years=-3,
-                    months=2,
-                    weeks=3,
+                    months=-2,
+                    weeks=-3,
                     minutes=-6,
-                    seconds=7,
-                    microseconds=-45,
+                    seconds=-7,
+                    microseconds=45,
                 ),
             ),
-            ("P-2MT-1M", DateTimeDelta(months=-2, minutes=-1)),
+            ("-P2MT1M", DateTimeDelta(months=-2, minutes=-1)),
             (
-                "+P-2Y+3W-0DT-0.999S",
+                "+P2Y3W0DT0.999S",
                 DateTimeDelta(
-                    years=-2, weeks=3, seconds=-1, microseconds=1_000
+                    years=2, weeks=3, seconds=1, microseconds=-1_000
                 ),
             ),
             (
-                "-P1Y-3MT-4.999S",
+                "-P1Y3MT4.999S",
                 DateTimeDelta(
-                    years=-1, months=3, seconds=4, microseconds=999_000
+                    years=-1, months=-3, seconds=-4, microseconds=-999_000
                 ),
             ),
         ],
     )
     def test_multiple_units(self, input, expect):
-        assert DateTimeDelta.from_canonical_format(input) == expect
+        assert DateTimeDelta.from_default_format(input) == expect
         assert DateTimeDelta.from_common_iso8601(input) == expect
 
-    def test_invalid(self):
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "P",
+            "PT0.0000000001S",  # too many decimal places
+            "",
+            "3D",
+            "-PT",
+            "PT",
+            "+PT",
+            "P1YX3M",  # invalid separator
+        ],
+    )
+    def test_invalid(self, s):
         with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*canonical format.*'P'",
+            ValueError, match=r"Invalid format.*" + re.escape(repr(s))
         ):
-            DateTimeDelta.from_canonical_format("P")
-
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*ISO 8601.*'P'",
-        ):
-            DateTimeDelta.from_common_iso8601("P")
-
-    def test_too_many_microseconds(self):
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*canonical format.*'PT0.0000001S'",
-        ):
-            DateTimeDelta.from_canonical_format("PT0.0000001S")
-
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*ISO 8601.*'PT0.0000001S'",
-        ):
-            DateTimeDelta.from_common_iso8601("PT0.0000001S")
+            DateTimeDelta.from_default_format(s)
 
 
 class TestAdd:
@@ -292,8 +328,8 @@ class TestAdd:
             months=3,
             weeks=-1,
             minutes=0,
-            seconds=1,
-            microseconds=300_000,
+            seconds=-1,
+            microseconds=-300_000,
         )
         assert p + q == DateTimeDelta(
             months=5,
@@ -301,27 +337,11 @@ class TestAdd:
             days=4,
             hours=5,
             minutes=6,
-            seconds=9,
-            microseconds=100_000,
-        )
-        assert p + DateTimeDelta(
-            years=-1,
-            months=3,
-            weeks=-1,
-            minutes=0,
-            seconds=1,
-            microseconds=-300_000,
-        ) == DateTimeDelta(
-            months=5,
-            weeks=2,
-            days=4,
-            hours=5,
-            minutes=6,
-            seconds=8,
+            seconds=6,
             microseconds=500_000,
         )
 
-    def test_duration(self):
+    def test_time_delta(self):
         p = DateTimeDelta(
             years=1,
             months=2,
@@ -348,18 +368,9 @@ class TestAdd:
             seconds=11,
             microseconds=200_000,
         )
-        assert q + p == DateTimeDelta(
-            years=1,
-            months=2,
-            weeks=3,
-            days=4,
-            hours=6,
-            minutes=8,
-            seconds=11,
-            microseconds=200_000,
-        )
+        assert q + p == p + q
 
-    def test_datedelta(self):
+    def test_date_delta(self):
         p = DateTimeDelta(
             years=1,
             months=2,
@@ -370,25 +381,18 @@ class TestAdd:
             seconds=7,
             microseconds=800_000,
         )
-        q = DateDelta(years=-1, months=3, weeks=-1, days=0)
+        q = DateDelta(months=9, days=1)
         assert p + q == DateTimeDelta(
-            months=5,
-            weeks=2,
-            days=4,
+            years=1,
+            months=11,
+            weeks=3,
+            days=5,
             hours=5,
             minutes=6,
             seconds=7,
             microseconds=800_000,
         )
-        assert q + p == DateTimeDelta(
-            months=5,
-            weeks=2,
-            days=4,
-            hours=5,
-            minutes=6,
-            seconds=7,
-            microseconds=800_000,
-        )
+        assert q + p == p + q
 
     def test_unsupported(self):
         p = DateTimeDelta(
@@ -423,23 +427,34 @@ class TestSubtract:
         )
         q = DateTimeDelta(
             years=-1,
-            months=2,
+            months=3,
             weeks=-1,
             minutes=0,
-            seconds=1,
+            seconds=-1,
             microseconds=800_000,
         )
         assert p - q == DateTimeDelta(
-            years=2,
+            years=1,
+            months=11,
             weeks=4,
             days=4,
             hours=5,
             minutes=6,
-            seconds=5,
+            seconds=7,
             microseconds=500_000,
         )
+        assert q - p == DateTimeDelta(
+            years=-1,
+            months=-11,
+            weeks=-4,
+            days=-4,
+            hours=-5,
+            minutes=-6,
+            seconds=-7,
+            microseconds=-500_000,
+        )
 
-    def test_duration(self):
+    def test_timedelta(self):
         p = DateTimeDelta(
             years=1,
             months=2,
@@ -513,6 +528,22 @@ class TestSubtract:
             microseconds=-300_000,
         )
 
+    def test_datetimedelta_mixed_sign(self):
+        # ok
+        assert (
+            DateTimeDelta(months=-1) - DateTimeDelta(months=-1)
+            == DateTimeDelta()
+        )
+        assert DateTimeDelta(months=-1, seconds=-34) - DateTimeDelta(
+            months=-1, seconds=-35
+        ) == DateTimeDelta(seconds=1)
+
+        # not ok
+        with pytest.raises(ValueError, match="sign"):
+            DateTimeDelta(months=2, seconds=3) - DateTimeDelta(
+                months=1, seconds=4
+            )
+
     def test_unsupported(self):
         p = DateTimeDelta(
             years=1,
@@ -552,13 +583,14 @@ def test_multiplication():
         seconds=21,
         microseconds=900_000,
     )
+    assert 3 * p == p * 3
 
 
 def test_negate():
     p = DateTimeDelta(
         years=1,
         months=2,
-        weeks=-3,
+        weeks=3,
         days=4,
         hours=5,
         minutes=6,
@@ -568,7 +600,7 @@ def test_negate():
     assert -p == DateTimeDelta(
         years=-1,
         months=-2,
-        weeks=3,
+        weeks=-3,
         days=-4,
         hours=-5,
         minutes=-6,
@@ -579,7 +611,7 @@ def test_negate():
 
 @pytest.mark.parametrize(
     "d",
-    [DateTimeDelta.ZERO, DateTimeDelta(years=1, seconds=-7)],
+    [DateTimeDelta.ZERO, DateTimeDelta(years=1, seconds=7)],
 )
 def test_positive(d):
     assert +d is d
@@ -587,10 +619,10 @@ def test_positive(d):
 
 def test_abs():
     p = DateTimeDelta(
-        years=1,
+        years=-1,
         months=-2,
-        weeks=3,
-        days=4,
+        weeks=-3,
+        days=-4,
         hours=-5,
         minutes=-6,
         seconds=-7,
@@ -606,9 +638,10 @@ def test_abs():
         seconds=7,
         microseconds=800_000,
     )
+    assert abs(-p) == -p
 
 
-def test_as_tuple():
+def test_in_months_days_secs_nanos():
     p = DateTimeDelta(
         years=1,
         months=-2,
@@ -619,7 +652,15 @@ def test_as_tuple():
         seconds=7,
         microseconds=800_000,
     )
-    assert p.as_tuple() == (1, -2, 3, 4, 5, 6, 7, 800_000)
+    assert p.in_months_days_secs_nanos() == (
+        10,
+        3 * 7 + 4,
+        5 * 3_600 + 6 * 60 + 7,
+        800_000_000,
+    )
+    assert DateTimeDelta(
+        seconds=-3, nanoseconds=2
+    ).in_months_days_secs_nanos() == (0, 0, -2, -999_999_998)
 
 
 def test_copy():
@@ -637,21 +678,6 @@ def test_copy():
     assert deepcopy(p) is p
 
 
-def test_weakref():
-    p = DateTimeDelta(
-        years=1,
-        months=-2,
-        weeks=3,
-        days=4,
-        hours=5,
-        minutes=6,
-        seconds=7,
-        microseconds=800_000,
-    )
-    ref = weakref.ref(p)
-    assert ref() is p
-
-
 def test_pickle():
     p = DateTimeDelta(
         years=1,
@@ -664,15 +690,14 @@ def test_pickle():
         microseconds=800_000,
     )
     dumped = pickle.dumps(p)
-    assert len(dumped) < 100
+    assert len(dumped) < 60
     assert pickle.loads(dumped) == p
 
 
 def test_compatible_unpickle():
     dumped = (
-        b"\x80\x04\x956\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0e_unp"
-        b"kl_dtdelta\x94\x93\x94(K\x01J\xfe\xff\xff\xffK\x03K\x04\x8a\x05\xc0"
-        b"b\xceF\x04t\x94R\x94."
+        b"\x80\x04\x950\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0e_unp"
+        b"kl_dtdelta\x94\x93\x94(K\nK\x19M\xbfGJ\x00\x08\xaf/t\x94R\x94."
     )
     assert pickle.loads(dumped) == DateTimeDelta(
         years=1,

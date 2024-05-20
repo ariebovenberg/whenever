@@ -326,6 +326,11 @@ class TestEquality:
         assert not 3 == d
         assert 3 != d
 
+        assert not d == None
+        assert d != None
+        assert not None == d
+        assert None != d
+
 
 class TestComparison:
     @local_nyc_tz()
@@ -825,6 +830,13 @@ class TestAddTimeUnits:
         assert (d.replace(disambiguate="later") + hours(24)).exact_eq(
             LocalSystemDateTime(2023, 10, 30, 2, 15, 30)
         )
+
+    @local_ams_tz()
+    def test_out_of_range(self):
+        d = LocalSystemDateTime(2020, 8, 15)
+
+        with pytest.raises(ValueError, match="range"):
+            d + hours(24 * 366 * 8_000)
 
     @local_ams_tz()
     def test_not_implemented(self):
