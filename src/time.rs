@@ -4,10 +4,7 @@ use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 use std::ptr::null_mut as NULL;
 
-use crate::common::{
-    c_str, classmethod, get_digit, getter, identity, method, newref, py_bool, py_str, py_try,
-    pyint_as_long, pystr_to_utf8, raise, HASH_MASK,
-};
+use crate::common::*;
 use crate::date::Date;
 use crate::naive_datetime::{self, DateTime};
 use crate::State;
@@ -23,24 +20,27 @@ pub struct Time {
 #[repr(C)]
 pub(crate) struct PyTime {
     _ob_base: PyObject,
-    pub(crate) time: Time,
+    data: Time,
 }
 
 impl Time {
     #[cfg(target_pointer_width = "32")]
     pub(crate) const fn pyhash(&self) -> Py_hash_t {
-        ((self.hour as Py_hash_t) << 16)
-            ^ ((self.minute as Py_hash_t) << 8)
-            ^ (self.second as Py_hash_t)
-            ^ (self.nanos as Py_hash_t)
-            ^ HASH_MASK
+        hashmask(
+            ((self.hour as Py_hash_t) << 16)
+                ^ ((self.minute as Py_hash_t) << 8)
+                ^ (self.second as Py_hash_t)
+                ^ (self.nanos as Py_hash_t),
+        )
     }
 
     #[cfg(target_pointer_width = "64")]
     pub(crate) const fn pyhash(&self) -> Py_hash_t {
-        ((self.hour as Py_hash_t) << 48)
-            | ((self.minute as Py_hash_t) << 40)
-            | ((self.second as Py_hash_t) << 32) ^ (self.nanos as Py_hash_t) ^ HASH_MASK
+        hashmask(
+            ((self.hour as Py_hash_t) << 48)
+                | ((self.minute as Py_hash_t) << 40)
+                | ((self.second as Py_hash_t) << 32) ^ (self.nanos as Py_hash_t),
+        )
     }
 
     pub(crate) const fn seconds(&self) -> i32 {
@@ -107,7 +107,7 @@ impl Time {
     }
 
     pub(crate) fn extract(obj: *mut PyObject) -> Self {
-        unsafe { (*obj.cast::<PyTime>()).time }
+        unsafe { (*obj.cast::<PyTime>()).data }
     }
 
     pub(crate) fn parse_all(s: &[u8]) -> Option<Self> {
@@ -224,11 +224,11 @@ pub(crate) const SINGLETONS: [(&str, Time); 3] = [
     ),
 ];
 
-unsafe extern "C" fn __new__(
+unsafe fn __new__(
     subtype: *mut PyTypeObject,
     args: *mut PyObject,
     kwargs: *mut PyObject,
-) -> *mut PyObject {
+) -> PyReturn {
     let mut hour: c_long = 0;
     let mut minute: c_long = 0;
     let mut second: c_long = 0;
@@ -253,39 +253,28 @@ unsafe extern "C" fn __new__(
         &mut nanos,
     ) == 0
     {
-        return NULL();
+        Err(PyErrOccurred())?
     }
 
     match Time::from_longs(hour, minute, second, nanos) {
-        Some(time) => new_unchecked(subtype, time).cast(),
-        None => raise!(PyExc_ValueError, "Invalid time component value"),
+        Some(time) => new_unchecked(subtype, time),
+        None => Err(value_error!("Invalid time component value")),
     }
 }
 
-unsafe extern "C" fn __repr__(slf: *mut PyObject) -> *mut PyObject {
-    py_str(format!("Time({})", _default_fmt(Time::extract(slf))).as_str())
+unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
+    format!("Time({})", _default_fmt(Time::extract(slf))).to_py()
 }
 
 unsafe extern "C" fn __hash__(slf: *mut PyObject) -> Py_hash_t {
     Time::extract(slf).pyhash()
 }
 
-unsafe extern "C" fn dealloc(slf: *mut PyObject) {
-    let tp_free = PyType_GetSlot(Py_TYPE(slf), Py_tp_free);
-    debug_assert_ne!(tp_free, NULL());
-    let f: freefunc = std::mem::transmute(tp_free);
-    f(slf.cast());
-}
-
-unsafe extern "C" fn __richcmp__(
-    obj_a: *mut PyObject,
-    obj_b: *mut PyObject,
-    op: c_int,
-) -> *mut PyObject {
-    newref(if Py_TYPE(obj_b) == Py_TYPE(obj_a) {
+unsafe fn __richcmp__(obj_a: *mut PyObject, obj_b: *mut PyObject, op: c_int) -> PyReturn {
+    Ok(newref(if Py_TYPE(obj_b) == Py_TYPE(obj_a) {
         let a = Time::extract(obj_a);
         let b = Time::extract(obj_b);
-        py_bool(match op {
+        match op {
             pyo3_ffi::Py_LT => a < b,
             pyo3_ffi::Py_LE => a <= b,
             pyo3_ffi::Py_EQ => a == b,
@@ -293,32 +282,21 @@ unsafe extern "C" fn __richcmp__(
             pyo3_ffi::Py_GT => a > b,
             pyo3_ffi::Py_GE => a >= b,
             _ => unreachable!(),
-        })
+        }
+        .to_py()?
     } else {
         Py_NotImplemented()
-    })
+    }))
 }
 
 static mut SLOTS: &[PyType_Slot] = &[
-    PyType_Slot {
-        slot: Py_tp_new,
-        pfunc: __new__ as *mut c_void,
-    },
+    slotmethod!(Py_tp_new, __new__),
+    slotmethod!(Py_tp_str, default_format, 2),
+    slotmethod!(Py_tp_repr, __repr__, 1),
+    slotmethod!(Py_tp_richcompare, __richcmp__),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: "A time type\0".as_ptr() as *mut c_void,
-    },
-    PyType_Slot {
-        slot: Py_tp_str,
-        pfunc: default_format as *mut c_void,
-    },
-    PyType_Slot {
-        slot: Py_tp_repr,
-        pfunc: __repr__ as *mut c_void,
-    },
-    PyType_Slot {
-        slot: Py_tp_richcompare,
-        pfunc: __richcmp__ as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_methods,
@@ -342,7 +320,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-unsafe extern "C" fn py_time(slf: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
+unsafe fn py_time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let Time {
         hour,
         minute,
@@ -362,14 +340,15 @@ unsafe extern "C" fn py_time(slf: *mut PyObject, _: *mut PyObject) -> *mut PyObj
         Py_None(),
         TimeType,
     )
+    .as_result()
 }
 
-unsafe extern "C" fn from_py_time(type_: *mut PyObject, time: *mut PyObject) -> *mut PyObject {
+unsafe fn from_py_time(type_: *mut PyObject, time: *mut PyObject) -> PyReturn {
     if PyTime_Check(time) == 0 {
-        raise!(PyExc_TypeError, "argument must be datetime.time");
+        Err(type_error!("argument must be a Time"))?
     }
     if PyDateTime_TIME_GET_TZINFO(time) != Py_None() {
-        raise!(PyExc_ValueError, "time with timezone is not supported");
+        Err(value_error!("time with timezone is not supported"))?
     }
     // TODO: check fold etc.
     new_unchecked(
@@ -381,11 +360,10 @@ unsafe extern "C" fn from_py_time(type_: *mut PyObject, time: *mut PyObject) -> 
             nanos: PyDateTime_TIME_GET_MICROSECOND(time) as u32 * 1_000,
         },
     )
-    .cast()
 }
 
-unsafe extern "C" fn default_format(slf: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
-    py_str(_default_fmt(Time::extract(slf)).as_str())
+unsafe fn default_format(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    _default_fmt(Time::extract(slf)).to_py()
 }
 
 fn _default_fmt(time: Time) -> String {
@@ -401,7 +379,7 @@ fn _default_fmt(time: Time) -> String {
     }
 }
 
-unsafe extern "C" fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
+unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let Time {
         hour,
         minute,
@@ -411,24 +389,22 @@ unsafe extern "C" fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> *mut Py
     PyTuple_Pack(
         2,
         State::for_obj(slf).unpickle_time,
-        py_try!(PyTuple_Pack(
-            4,
-            PyLong_FromLong(hour.into()),
-            PyLong_FromLong(minute.into()),
-            PyLong_FromLong(second.into()),
-            PyLong_FromLong(nanos as c_long),
-        )),
+        steal!(PyTuple_Pack(1, steal!(pack![hour, minute, second, nanos].to_py()?)).as_result()?),
     )
+    .as_result()
 }
 
-unsafe extern "C" fn from_default_format(cls: *mut PyObject, s: *mut PyObject) -> *mut PyObject {
-    match Time::parse_all(pystr_to_utf8!(s, "argument must be str")) {
+unsafe fn from_default_format(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
+    match Time::parse_all(
+        s.to_utf8()?
+            .ok_or_else(|| type_error!("Argument must be a string"))?,
+    ) {
         Some(t) => new_unchecked(cls.cast(), t),
-        None => raise!(PyExc_ValueError, "Could not parse time: %R", s),
+        None => Err(value_error!("Could not parse time: %R", s)),
     }
 }
 
-unsafe extern "C" fn on(slf: *mut PyObject, date: *mut PyObject) -> *mut PyObject {
+unsafe fn on(slf: *mut PyObject, date: *mut PyObject) -> PyReturn {
     let &State {
         naive_datetime_type,
         date_type,
@@ -442,9 +418,8 @@ unsafe extern "C" fn on(slf: *mut PyObject, date: *mut PyObject) -> *mut PyObjec
                 time: Time::extract(slf),
             },
         )
-        .cast()
     } else {
-        raise!(PyExc_TypeError, "argument must be a date");
+        Err(type_error!("argument must be a date"))
     }
 }
 
@@ -455,62 +430,70 @@ static mut METHODS: &[PyMethodDef] = &[
         default_format named "common_iso8601",
         "Return the time in the common ISO 8601 format"
     ),
-    classmethod!(from_default_format, "", METH_O),
-    classmethod!(from_default_format named "from_common_iso8601", "Create a date from the common ISO 8601 format", METH_O),
-    classmethod!(
+    method!(from_default_format, "", METH_O | METH_CLASS),
+    method!(
+        from_default_format named "from_common_iso8601", 
+        "Create a date from the common ISO 8601 format", 
+        METH_O | METH_CLASS),
+    method!(
         from_py_time,
         "Create a time from a Python datetime.time",
-        METH_O
+        METH_O | METH_CLASS
     ),
-    method!(identity named "__copy__", ""),
-    method!(identity named "__deepcopy__", "", METH_O),
+    method!(identity2 named "__copy__", ""),
+    method!(identity2 named "__deepcopy__", "", METH_O),
     method!(__reduce__, ""),
     method!(on, "Combine with a date to create a datetime", METH_O),
     PyMethodDef::zeroed(),
 ];
 
-unsafe extern "C" fn get_hour(slf: *mut PyObject, _: *mut c_void) -> *mut PyObject {
-    PyLong_FromLong(Time::extract(slf).hour.into())
-}
-
-unsafe extern "C" fn get_minute(slf: *mut PyObject, _: *mut c_void) -> *mut PyObject {
-    PyLong_FromLong(Time::extract(slf).minute.into())
-}
-
-unsafe extern "C" fn get_second(slf: *mut PyObject, _: *mut c_void) -> *mut PyObject {
-    PyLong_FromLong(Time::extract(slf).second.into())
-}
-
-unsafe extern "C" fn get_nanos(slf: *mut PyObject, _: *mut c_void) -> *mut PyObject {
-    PyLong_FromLong(Time::extract(slf).nanos as c_long)
-}
-
-pub(crate) unsafe fn new_unchecked(type_: *mut PyTypeObject, t: Time) -> *mut PyObject {
+pub(crate) unsafe fn new_unchecked(type_: *mut PyTypeObject, t: Time) -> PyReturn {
     let f: allocfunc = (*type_).tp_alloc.expect("tp_alloc is not set");
-    let slf = py_try!(f(type_, 0).cast::<PyTime>());
-    ptr::addr_of_mut!((*slf).time).write(t);
-    slf.cast()
+    let slf = f(type_, 0).cast::<PyTime>();
+    if slf.is_null() {
+        return Err(PyErrOccurred());
+    }
+    ptr::addr_of_mut!((*slf).data).write(t);
+    Ok(slf.cast::<PyObject>().as_mut().unwrap())
 }
 
 // OPTIMIZE: a more efficient pickle?
-pub(crate) unsafe extern "C" fn unpickle(
-    module: *mut PyObject,
-    args: *mut *mut PyObject,
-    nargs: Py_ssize_t,
-) -> *mut PyObject {
-    if PyVectorcall_NARGS(nargs as usize) != 4 {
-        raise!(PyExc_TypeError, "Invalid pickle data");
+pub(crate) unsafe fn unpickle(module: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
+    if args.len() != 1 {
+        Err(type_error!("Invalid pickle data"))?
     }
-    new_unchecked(
+    let mut data = args[0]
+        .to_bytes()?
+        .ok_or_else(|| type_error!("Invalid pickle data"))?;
+    let new = new_unchecked(
         State::for_mod(module).time_type,
         Time {
-            hour: pyint_as_long!(*args) as u8,
-            minute: pyint_as_long!(*args.add(1)) as u8,
-            second: pyint_as_long!(*args.add(2)) as u8,
-            nanos: pyint_as_long!(*args.add(3)) as u32,
+            hour: unpack_one!(data, u8),
+            minute: unpack_one!(data, u8),
+            second: unpack_one!(data, u8),
+            nanos: unpack_one!(data, u32),
         },
-    )
-    .cast()
+    );
+    if !data.is_empty() {
+        Err(type_error!("Invalid pickle data"))?
+    }
+    new
+}
+
+unsafe fn get_hour(slf: *mut PyObject) -> PyReturn {
+    Time::extract(slf).hour.to_py()
+}
+
+unsafe fn get_minute(slf: *mut PyObject) -> PyReturn {
+    Time::extract(slf).minute.to_py()
+}
+
+unsafe fn get_second(slf: *mut PyObject) -> PyReturn {
+    Time::extract(slf).second.to_py()
+}
+
+unsafe fn get_nanos(slf: *mut PyObject) -> PyReturn {
+    Time::extract(slf).nanos.to_py()
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[

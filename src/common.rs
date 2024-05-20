@@ -1,18 +1,9 @@
+use core::ffi::c_long;
 use core::mem;
 use pyo3_ffi::*;
 
 use crate::date::Date;
 use crate::time::Time;
-
-macro_rules! py_try {
-    ($e:expr) => {{
-        let x = $e;
-        if x.is_null() {
-            return ptr::null_mut();
-        }
-        x
-    }};
-}
 
 macro_rules! c_str(
     ($s:expr) => {{
@@ -21,41 +12,37 @@ macro_rules! c_str(
     }};
 );
 
-macro_rules! raise(
+macro_rules! py_error(
+    () => {
+        PyErrOccurred()
+    };
     ($exc:expr, $msg:literal) => {{
         use crate::common::c_str;
         PyErr_SetString($exc, c_str!($msg));
-        return ptr::null_mut();
+        PyErrOccurred()
     }};
     ($exc:expr, $msg:literal, $($args:expr),*) => {{
         use crate::common::c_str;
         PyErr_Format($exc, c_str!($msg), $($args),*);
-        return ptr::null_mut();
+        PyErrOccurred()
     }};
 );
 
-// TODO: rename `or_else_raise`?
-macro_rules! unwrap_or_raise(
-    ($e:expr, $exc:ident, $msg:literal) => {
-        match $e {
-            Some(x) => x,
-            None => raise!($exc, $msg),
-        }
+macro_rules! value_error(
+    ($msg:literal) => {
+        py_error!(PyExc_ValueError, $msg)
     };
-    ($e:expr, $exc:ident, $msg:literal, $($args:expr),*) => {
-        match $e {
-            Some(x) => x,
-            None => raise!($exc, $msg, $($args),*),
-        }
+    ($msg:literal, $($args:expr),*) => {
+        py_error!(PyExc_ValueError, $msg, $($args),*)
     };
 );
 
-macro_rules! between(
-    ($x:expr, =$min:expr, $max:expr) => {
-        $x >= $min as _ && $x < $max as _
+macro_rules! type_error(
+    ($msg:literal) => {
+        py_error!(PyExc_TypeError, $msg)
     };
-    ($x:expr, =$min:expr, =$max:expr) => {
-        $x >= $min as _ && $x <= $max as _
+    ($msg:literal, $($args:expr),*) => {
+        py_error!(PyExc_TypeError, $msg, $($args),*)
     };
 );
 
@@ -72,83 +59,6 @@ macro_rules! get_digit(
             _ => return None,
         }
     }
-);
-
-macro_rules! pystr_to_utf8(
-    ($s:expr, $msg:expr) => {{
-        use crate::common::c_str;
-        use core::ptr;
-        if PyUnicode_Check($s) == 0 {
-            PyErr_SetString(PyExc_TypeError, c_str!($msg));
-            return ptr::null_mut();
-        }
-        let mut size = 0;
-        let p = PyUnicode_AsUTF8AndSize($s, &mut size);
-        if p.is_null() {
-            return ptr::null_mut();
-        };
-        std::slice::from_raw_parts(p.cast::<u8>(), size as usize)
-    }}
-);
-
-macro_rules! pybytes_extract(
-    ($s:expr) => {{
-        let p = PyBytes_AsString($s);
-        if p.is_null() {
-            return ptr::null_mut();
-        };
-        std::slice::from_raw_parts(p.cast::<u8>(), PyBytes_Size($s) as usize)
-    }}
-);
-
-macro_rules! pyint_as_long(
-    ($o:expr) => {{
-        let x = PyLong_AsLong($o);
-        if x == -1 && !PyErr_Occurred().is_null() {
-            return ptr::null_mut();
-        }
-        x
-    }}
-);
-
-macro_rules! pyint_as_i64(
-    ($o:expr) => {{
-        let x = PyLong_AsLongLong($o);
-        if x == -1 && !PyErr_Occurred().is_null() {
-            return ptr::null_mut();
-        }
-        x as i64
-    }}
-);
-
-macro_rules! i128_extract(
-    ($o:expr, $errmsg:literal) => {{
-        use crate::common::i128_extract_unchecked;
-        if PyLong_Check($o) == 0 {
-            raise!(PyExc_TypeError, $errmsg);
-        }
-        i128_extract_unchecked!($o.cast())
-    }}
-);
-
-macro_rules! i128_extract_unchecked(
-    ($o:expr) => {{
-        let mut bytes: [u8; 16] = [0; 16];
-        if _PyLong_AsByteArray($o, &mut bytes as *mut _, 16, 1, 1) != 0 {
-            raise!(PyExc_OverflowError, "Python int too large to convert to Rust i128");
-        }
-        i128::from_le_bytes(bytes)
-    }}
-);
-
-macro_rules! try_get_float(
-    ($o:expr) => {{
-        let x = PyFloat_AsDouble($o);
-        if x == -1.0 && !PyErr_Occurred().is_null() {
-            return ptr::null_mut();
-        }
-        x
-    }}
 );
 
 macro_rules! pack {
@@ -173,25 +83,6 @@ macro_rules! unpack_one {
     }};
 }
 
-macro_rules! classmethod(
-    ($meth:ident, $doc:expr) => {
-        classmethod!($meth named stringify!($meth), $doc, METH_NOARGS)
-    };
-    ($meth:ident, $doc:expr, $flags:expr) => {
-        classmethod!($meth named stringify!($meth), $doc, $flags)
-    };
-    ($meth:ident named $name:expr, $doc:expr, $flags:expr) => {
-        PyMethodDef {
-            ml_name: c_str!($name),
-            ml_meth: PyMethodDefPointer {
-                PyCFunction: $meth,
-            },
-            ml_flags: METH_CLASS | $flags,
-            ml_doc: c_str!($doc),
-        }
-    };
-);
-
 macro_rules! method(
     ($meth:ident, $doc:expr) => {
         method!($meth named stringify!($meth), $doc, METH_NOARGS)
@@ -204,12 +95,19 @@ macro_rules! method(
     ($meth:ident named $name:expr, $doc:expr) => {
         method!($meth named $name, $doc, METH_NOARGS)
     };
-
     ($meth:ident named $name:expr, $doc:expr, $flags:expr) => {
         PyMethodDef {
             ml_name: c_str!($name),
             ml_meth: PyMethodDefPointer {
-                PyCFunction: $meth,
+                PyCFunction: {
+                    unsafe extern "C" fn _wrap(slf: *mut PyObject, arg: *mut PyObject) -> *mut PyObject {
+                        match $meth(&mut *slf, &mut *arg) {
+                            Ok(x) => x,
+                            Err(PyErrOccurred()) => core::ptr::null_mut(),
+                        }
+                    }
+                    _wrap
+                },
             },
             ml_flags: $flags,
             ml_doc: c_str!($doc),
@@ -217,14 +115,188 @@ macro_rules! method(
     };
 );
 
+macro_rules! method_vararg(
+    ($meth:ident, $doc:expr) => {
+        method_vararg!($meth named stringify!($meth), $doc, 0)
+    };
+
+    ($meth:ident, $doc:expr, $flags:expr) => {
+        method_vararg!($meth named stringify!($meth), $doc, $flags)
+    };
+
+    ($meth:ident named $name:expr, $doc:expr) => {
+        method_vararg!($meth named $name, $doc, 0)
+    };
+
+    ($meth:ident named $name:expr, $doc:expr, $flags:expr) => {
+        PyMethodDef {
+            ml_name: c_str!($name),
+            ml_meth: PyMethodDefPointer {
+                _PyCFunctionFast: {
+                    unsafe extern "C" fn _wrap(
+                        slf: *mut PyObject,
+                        args: *mut *mut PyObject,
+                        nargs: Py_ssize_t,
+                    ) -> *mut PyObject {
+                        match $meth(&mut *slf, std::slice::from_raw_parts(args, nargs as usize)) {
+                            Ok(x) => x,
+                            Err(PyErrOccurred()) => core::ptr::null_mut(),
+                        }
+                    }
+                    _wrap
+                },
+            },
+            ml_flags: METH_FASTCALL | $flags,
+            ml_doc: c_str!($doc),
+        }
+    };
+);
+
+macro_rules! method_kwargs(
+    ($meth:ident, $doc:expr) => {
+        method_kwargs!($meth named stringify!($meth), $doc)
+    };
+
+    ($meth:ident, $doc:expr, $flags:expr) => {
+        method_kwargs!($meth named stringify!($meth), $doc, $flags)
+    };
+
+    ($meth:ident named $name:expr, $doc:expr) => {
+        method_kwargs!($meth named $name, $doc, 0)
+    };
+
+    ($meth:ident named $name:expr, $doc:expr, $flags:expr) => {
+        PyMethodDef {
+            ml_name: c_str!($name),
+            ml_meth: PyMethodDefPointer {
+                PyCMethod: {
+                    unsafe extern "C" fn _wrap(
+                        slf: *mut PyObject,
+                        cls: *mut PyTypeObject,
+                        args_raw: *const *mut PyObject,
+                        nargsf: Py_ssize_t,
+                        kwnames_raw: *mut PyObject,
+                    ) -> *mut PyObject {
+                        let nargs = PyVectorcall_NARGS(nargsf as usize);
+                        let args = std::slice::from_raw_parts(args_raw, nargs as usize);
+                        let kwargs = if kwnames_raw.is_null() {
+                            Vec::with_capacity(0)
+                        } else {
+                            let mut v = Vec::with_capacity(PyTuple_GET_SIZE(kwnames_raw) as usize);
+                            for i in 0..PyTuple_GET_SIZE(kwnames_raw) {
+                                v.push((
+                                     PyTuple_GET_ITEM(kwnames_raw, i),
+                                     *args_raw.offset(nargs + i as isize)
+                                ));
+                            }
+                            v
+                        };
+                        match $meth(slf, cls, args, &kwargs) {
+                            Ok(x) => x as *mut PyObject,
+                            Err(PyErrOccurred()) => core::ptr::null_mut(),
+                        }
+                    }
+                    _wrap
+                },
+            },
+            ml_flags: $flags | METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
+            ml_doc: c_str!($doc),
+        }
+    };
+);
+
+macro_rules! slotmethod {
+    (Py_tp_new, $name:ident) => {
+        PyType_Slot {
+            slot: Py_tp_new,
+            pfunc: {
+                unsafe extern "C" fn _wrap(
+                    cls: *mut PyTypeObject,
+                    args: *mut PyObject,
+                    kwargs: *mut PyObject,
+                ) -> *mut PyObject {
+                    match $name(cls, args, kwargs) {
+                        Ok(x) => x,
+                        Err(PyErrOccurred()) => core::ptr::null_mut(),
+                    }
+                }
+                _wrap as *mut c_void
+            },
+        }
+    };
+
+    (Py_tp_richcompare, $name:ident) => {
+        PyType_Slot {
+            slot: Py_tp_richcompare,
+            pfunc: {
+                unsafe extern "C" fn _wrap(
+                    a: *mut PyObject,
+                    b: *mut PyObject,
+                    op: c_int,
+                ) -> *mut PyObject {
+                    match $name(a, b, op) {
+                        Ok(x) => x,
+                        Err(PyErrOccurred()) => core::ptr::null_mut(),
+                    }
+                }
+                _wrap as *mut c_void
+            },
+        }
+    };
+
+    ($slot:ident, $name:ident, 2) => {
+        PyType_Slot {
+            slot: $slot,
+            pfunc: {
+                unsafe extern "C" fn _wrap(
+                    slf: *mut PyObject,
+                    arg: *mut PyObject,
+                ) -> *mut PyObject {
+                    match $name(slf, arg) {
+                        Ok(x) => x,
+                        Err(PyErrOccurred()) => core::ptr::null_mut(),
+                    }
+                }
+                _wrap as *mut c_void
+            },
+        }
+    };
+
+    ($slot:ident, $name:ident, 1) => {
+        PyType_Slot {
+            slot: $slot,
+            pfunc: {
+                unsafe extern "C" fn _wrap(slf: *mut PyObject) -> *mut PyObject {
+                    match $name(slf) {
+                        Ok(x) => x,
+                        Err(PyErrOccurred()) => core::ptr::null_mut(),
+                    }
+                }
+                _wrap as *mut c_void
+            },
+        }
+    };
+}
+
 macro_rules! getter(
     ($meth:ident named $name:expr, $doc:expr) => {
         PyGetSetDef {
             name: c_str!($name),
-            get: Some($meth),
+            get: Some({
+                unsafe extern "C" fn _wrap(
+                    slf: *mut PyObject,
+                    _: *mut c_void,
+                ) -> *mut PyObject {
+                    match $meth(&mut *slf) {
+                        Ok(x) => x,
+                        Err(PyErrOccurred()) => core::ptr::null_mut(),
+                    }
+                }
+                _wrap
+            }),
             set: None,
             doc: c_str!($doc),
-            closure: ptr::null_mut(),
+            closure: core::ptr::null_mut(),
         }
     };
 );
@@ -244,34 +316,228 @@ macro_rules! defer_decref(
 );
 
 // Apply this on arguments to have them decref'd after the call
+// It has the same effect as if the call would 'steal' the reference
 macro_rules! steal(
     ($e:expr) => {
         DecrefOnDrop($e).0
     };
 );
 
+// We use `Result` to implement Python's error handling.
+// Note that Python's error handling doesn't map exactly onto Rust's `Result` type,
+// The most important difference being that Python's error handling
+// is based on a global error indicator.
+// This means that some `Result` functionality will not behave as expected.
+// However, this is a price we can pay in exchange for the convenience
+// of the `?` operator.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct PyErrOccurred(); // sentinel that the Python error indicator is set
 pub(crate) type PyResult<T> = Result<T, PyErrOccurred>;
+pub(crate) type PyReturn = PyResult<&'static mut PyObject>;
+pub(crate) trait PyResultExt<T> {
+    // a version of `unwrap_or` that properly unsets the Python error indicator
+    // XXX: There's nothing preventing usage of `unwrap_or`, which
+    // would not unset the Python error indicator!
+    unsafe fn try_except(self, value: T) -> T;
+}
+impl<T> PyResultExt<T> for PyResult<T> {
+    unsafe fn try_except(self, value: T) -> T {
+        match self {
+            Ok(x) => x,
+            Err(_) => {
+                PyErr_Clear();
+                value
+            }
+        }
+    }
+}
 
 pub(crate) trait PyObjectExt {
+    #[allow(clippy::wrong_self_convention)]
     unsafe fn as_result<'a>(self) -> PyResult<&'a mut PyObject>;
+    #[allow(clippy::wrong_self_convention)]
+    unsafe fn is_int(self) -> bool;
+    // FUTURE: unchecked versions of these in case we know the type
+    unsafe fn to_bytes<'a>(self) -> PyResult<Option<&'a [u8]>>;
+    unsafe fn to_utf8<'a>(self) -> PyResult<Option<&'a [u8]>>;
+    unsafe fn to_str<'a>(self) -> PyResult<Option<&'a str>>;
+    unsafe fn to_long(self) -> PyResult<Option<c_long>>;
+    unsafe fn to_i64(self) -> PyResult<Option<i64>>;
+    unsafe fn to_i128(self) -> PyResult<Option<i128>>;
+    unsafe fn to_f64(self) -> PyResult<Option<f64>>;
 }
 
 impl PyObjectExt for *mut PyObject {
     unsafe fn as_result<'a>(self) -> PyResult<&'a mut PyObject> {
         self.as_mut().ok_or(PyErrOccurred())
     }
+    unsafe fn is_int(self) -> bool {
+        PyLong_Check(self) != 0
+    }
+
+    unsafe fn to_bytes<'a>(self) -> PyResult<Option<&'a [u8]>> {
+        if PyBytes_Check(self) == 0 {
+            return Ok(None);
+        };
+        let p = PyBytes_AsString(self);
+        if p.is_null() {
+            return Err(PyErrOccurred());
+        };
+        Ok(Some(std::slice::from_raw_parts(
+            p.cast::<u8>(),
+            PyBytes_Size(self) as usize,
+        )))
+    }
+
+    unsafe fn to_utf8<'a>(self) -> PyResult<Option<&'a [u8]>> {
+        if PyUnicode_Check(self) == 0 {
+            return Ok(None);
+        }
+        let mut size = 0;
+        let p = PyUnicode_AsUTF8AndSize(self, &mut size);
+        if p.is_null() {
+            return Err(PyErrOccurred());
+        };
+        Ok(Some(std::slice::from_raw_parts(
+            p.cast::<u8>(),
+            size as usize,
+        )))
+    }
+
+    unsafe fn to_str<'a>(self) -> PyResult<Option<&'a str>> {
+        match self.to_utf8()? {
+            Some(s) => Ok(Some(std::str::from_utf8_unchecked(s))),
+            None => Ok(None),
+        }
+    }
+
+    unsafe fn to_long(self) -> PyResult<Option<c_long>> {
+        if PyLong_Check(self) == 0 {
+            return Ok(None);
+        }
+        let x = PyLong_AsLong(self);
+        if x == -1 && !PyErr_Occurred().is_null() {
+            return Err(PyErrOccurred());
+        }
+        Ok(Some(x))
+    }
+
+    unsafe fn to_i64(self) -> PyResult<Option<i64>> {
+        if PyLong_Check(self) == 0 {
+            return Ok(None);
+        }
+        let x = PyLong_AsLongLong(self);
+        if x == -1 && !PyErr_Occurred().is_null() {
+            return Err(PyErrOccurred());
+        }
+        Ok(Some(x))
+    }
+
+    unsafe fn to_i128(self) -> PyResult<Option<i128>> {
+        if PyLong_Check(self) == 0 {
+            return Ok(None);
+        }
+        let mut bytes: [u8; 16] = [0; 16];
+        if _PyLong_AsByteArray(self.cast(), &mut bytes as *mut _, 16, 1, 1) != 0 {
+            Err(py_error!(
+                PyExc_OverflowError,
+                "Python int too large to convert to i128"
+            ))
+        } else {
+            Ok(Some(i128::from_le_bytes(bytes)))
+        }
+    }
+
+    unsafe fn to_f64(self) -> PyResult<Option<f64>> {
+        if PyFloat_Check(self) == 0 {
+            return Ok(None);
+        }
+        let x = PyFloat_AsDouble(self);
+        if x == -1.0 && !PyErr_Occurred().is_null() {
+            return Err(PyErrOccurred());
+        }
+        Ok(Some(x))
+    }
 }
 
-macro_rules! to_py {
-    ($e:expr) => {{
-        use crate::common::PyErrOccurred;
-        match $e {
-            Ok(x) => x,
-            Err(PyErrOccurred()) => return ptr::null_mut(),
+pub(crate) trait ToPy {
+    unsafe fn to_py(self) -> PyReturn;
+}
+
+impl ToPy for bool {
+    unsafe fn to_py(self) -> PyReturn {
+        // TODO: refcounts?
+        match self {
+            true => Ok(Py_True().as_mut().unwrap()),
+            false => Ok(Py_False().as_mut().unwrap()),
         }
-    }};
+    }
+}
+
+impl ToPy for i128 {
+    unsafe fn to_py(self) -> PyReturn {
+        _PyLong_FromByteArray(
+            self.to_le_bytes().as_ptr().cast(),
+            mem::size_of::<i128>(),
+            1,
+            1,
+        )
+        .as_result()
+    }
+}
+
+impl ToPy for i64 {
+    unsafe fn to_py(self) -> PyReturn {
+        PyLong_FromLongLong(self).as_result()
+    }
+}
+
+impl ToPy for i32 {
+    unsafe fn to_py(self) -> PyReturn {
+        PyLong_FromLong(self.into()).as_result()
+    }
+}
+
+impl ToPy for f64 {
+    unsafe fn to_py(self) -> PyReturn {
+        PyFloat_FromDouble(self).as_result()
+    }
+}
+
+impl ToPy for u32 {
+    unsafe fn to_py(self) -> PyReturn {
+        PyLong_FromUnsignedLong(self.into()).as_result()
+    }
+}
+
+impl ToPy for u16 {
+    unsafe fn to_py(self) -> PyReturn {
+        PyLong_FromUnsignedLong(self.into()).as_result()
+    }
+}
+
+impl ToPy for u8 {
+    unsafe fn to_py(self) -> PyReturn {
+        PyLong_FromUnsignedLong(self.into()).as_result()
+    }
+}
+
+impl ToPy for String {
+    unsafe fn to_py(self) -> PyReturn {
+        PyUnicode_FromStringAndSize(self.as_ptr().cast(), self.len() as _).as_result()
+    }
+}
+
+impl ToPy for &str {
+    unsafe fn to_py(self) -> PyReturn {
+        PyUnicode_FromStringAndSize(self.as_ptr().cast(), self.len() as _).as_result()
+    }
+}
+
+impl ToPy for &[u8] {
+    unsafe fn to_py(self) -> PyReturn {
+        PyBytes_FromStringAndSize(self.as_ptr().cast(), self.len() as _).as_result()
+    }
 }
 
 // TODO: remove
@@ -284,54 +550,22 @@ macro_rules! print_repr {
     }};
 }
 
-pub(crate) unsafe fn py_bool(val: bool) -> *mut PyObject {
-    match val {
-        true => Py_True(),
-        false => Py_False(),
-    }
+pub(crate) unsafe fn identity1(slf: *mut PyObject) -> PyReturn {
+    Ok(newref(slf))
 }
 
-pub(crate) unsafe fn py_int128(n: i128) -> *mut PyObject {
-    _PyLong_FromByteArray(
-        n.to_le_bytes().as_ptr().cast(),
-        mem::size_of::<i128>(),
-        1,
-        1,
-    )
+pub(crate) unsafe fn identity2(slf: &'static mut PyObject, _: &mut PyObject) -> PyReturn {
+    Ok(newref(slf))
 }
 
-pub(crate) unsafe fn py_str(s: &str) -> *mut PyObject {
-    PyUnicode_FromStringAndSize(s.as_ptr().cast(), s.len() as _)
-}
-
-pub(crate) unsafe fn py_bytes(s: &[u8]) -> *mut PyObject {
-    // TODO: cast to c_char always valid?
-    PyBytes_FromStringAndSize(s.as_ptr().cast(), s.len() as _)
-}
-
-pub(crate) unsafe extern "C" fn identity(slf: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
-    newref(slf)
-}
-
-pub(crate) unsafe fn newref(obj: *mut PyObject) -> *mut PyObject {
+pub(crate) unsafe fn newref<'a>(obj: *mut PyObject) -> &'a mut PyObject {
     Py_INCREF(obj);
-    obj
+    obj.as_mut().unwrap()
 }
 
-pub(crate) unsafe fn offset_from_py_dt(dt: *mut PyObject) -> i32 {
+pub(crate) unsafe fn offset_from_py_dt(dt: *mut PyObject) -> PyResult<i32> {
     // OPTIMIZE: is calling ZoneInfo.utcoffset() faster?
-    let delta = PyObject_CallMethodNoArgs(dt, steal!(py_str("utcoffset")))
-        .as_result()
-        .unwrap();
-    defer_decref!(delta);
-    PyDateTime_DELTA_GET_DAYS(delta) * 86400 + PyDateTime_DELTA_GET_SECONDS(delta)
-}
-
-pub(crate) unsafe fn offset_from_py_dt_safe(dt: *mut PyObject) -> PyResult<i32> {
-    // OPTIMIZE: is calling ZoneInfo.utcoffset() faster?
-    let delta = PyObject_CallMethodNoArgs(dt, steal!(py_str("utcoffset")))
-        .as_result()
-        .unwrap();
+    let delta = PyObject_CallMethodNoArgs(dt, steal!("utcoffset".to_py()?)).as_result()?;
     defer_decref!(delta);
     Ok(PyDateTime_DELTA_GET_DAYS(delta) * 86400 + PyDateTime_DELTA_GET_SECONDS(delta))
 }
@@ -375,7 +609,7 @@ unsafe fn local_offset(
         DateTimeType,
         ..
     }: &PyDateTime_CAPI,
-) -> Option<(i32, bool)> {
+) -> PyResult<(i32, bool)> {
     // OPTIMIZE: re-use Python string objects
     let naive = DateTime_FromDateAndTimeAndFold(
         date.year.into(),
@@ -388,21 +622,29 @@ unsafe fn local_offset(
         Py_None(),
         fold,
         DateTimeType,
-    );
+    )
+    .as_result()?;
     defer_decref!(naive);
-    let aware = PyObject_CallMethodNoArgs(naive, steal!(py_str("astimezone"))).as_mut()?;
+    let aware = PyObject_CallMethodNoArgs(naive, steal!("astimezone".to_py()?)).as_result()?;
     defer_decref!(aware);
-    let kwargs = PyDict_New();
+    let kwargs = PyDict_New().as_result()?;
     defer_decref!(kwargs);
-    PyDict_SetItemString(kwargs, c_str!("tzinfo"), Py_None());
+    if PyDict_SetItemString(kwargs, c_str!("tzinfo"), Py_None()) == -1 {
+        return Err(PyErrOccurred());
+    }
     let shifted_naive = PyObject_Call(
-        PyObject_GetAttrString(aware, c_str!("replace")).as_mut()?,
+        PyObject_GetAttrString(aware, c_str!("replace")).as_result()?,
         PyTuple_New(0),
         kwargs,
-    );
+    )
+    .as_result()?;
     defer_decref!(shifted_naive);
-    let shifted = PyObject_RichCompareBool(naive, shifted_naive, Py_EQ) == 0;
-    Some((offset_from_py_dt(aware), shifted))
+    let shifted = match PyObject_RichCompareBool(naive, shifted_naive, Py_EQ) {
+        1 => false,
+        0 => true,
+        _ => return Err(PyErrOccurred()),
+    };
+    Ok((offset_from_py_dt(aware)?, shifted))
 }
 
 impl OffsetResult {
@@ -410,17 +652,16 @@ impl OffsetResult {
         py_api: &PyDateTime_CAPI,
         date: Date,
         time: Time,
-    ) -> OffsetResult {
-        let (offset0, shifted) = local_offset(date, time, 0, py_api).unwrap();
-        let (offset1, _) = local_offset(date, time, 1, py_api).unwrap();
-        use OffsetResult::*;
-        if offset0 == offset1 {
-            Unambiguous(offset0)
+    ) -> PyResult<OffsetResult> {
+        let (offset0, shifted) = local_offset(date, time, 0, py_api)?;
+        let (offset1, _) = local_offset(date, time, 1, py_api)?;
+        Ok(if offset0 == offset1 {
+            Self::Unambiguous(offset0)
         } else if shifted {
-            Gap(offset1, offset0)
+            Self::Gap(offset1, offset0)
         } else {
-            Fold(offset0, offset1)
-        }
+            Self::Fold(offset0, offset1)
+        })
     }
 
     pub(crate) unsafe fn for_tz(
@@ -432,7 +673,7 @@ impl OffsetResult {
         date: Date,
         time: Time,
         zoneinfo: *mut PyObject,
-    ) -> OffsetResult {
+    ) -> PyResult<OffsetResult> {
         let dt0 = DateTime_FromDateAndTimeAndFold(
             date.year.into(),
             date.month.into(),
@@ -444,7 +685,8 @@ impl OffsetResult {
             zoneinfo,
             0,
             DateTimeType,
-        );
+        )
+        .as_result()?;
         defer_decref!(dt0);
         let dt1 = DateTime_FromDateAndTimeAndFold(
             date.year.into(),
@@ -457,31 +699,29 @@ impl OffsetResult {
             zoneinfo,
             1,
             DateTimeType,
-        );
+        )
+        .as_result()?;
         defer_decref!(dt1);
-        let offset0 = offset_from_py_dt(dt0);
-        let offset1 = offset_from_py_dt(dt1);
+        let off0 = offset_from_py_dt(dt0)?;
+        let off1 = offset_from_py_dt(dt1)?;
 
-        use OffsetResult::*;
-        if offset0 == offset1 {
-            Unambiguous(offset0)
-        } else if offset0 > offset1 {
-            Fold(offset0, offset1)
-        } else {
-            Gap(offset0, offset1)
-        }
+        Ok(match off0.cmp(&off1) {
+            std::cmp::Ordering::Equal => Self::Unambiguous(off0),
+            std::cmp::Ordering::Greater => Self::Fold(off0, off1),
+            std::cmp::Ordering::Less => Self::Gap(off0, off1),
+        })
     }
 }
 
 impl Disambiguate {
     pub(crate) fn parse(s: &[u8]) -> Option<Self> {
-        match s {
-            b"compatible" => Some(Self::Compatible),
-            b"earlier" => Some(Self::Earlier),
-            b"later" => Some(Self::Later),
-            b"raise" => Some(Self::Raise),
-            _ => None,
-        }
+        Some(match s {
+            b"compatible" => Self::Compatible,
+            b"earlier" => Self::Earlier,
+            b"later" => Self::Later,
+            b"raise" => Self::Raise,
+            _ => None?,
+        })
     }
 }
 
@@ -491,12 +731,14 @@ pub(crate) enum Ambiguity {
     Gap,
 }
 
-// This mask prevents the hash value from being -1,
-// which is reserved for indicating an error.
-// TODO: actually check if using this correctly
-pub(crate) const HASH_MASK: Py_hash_t = -2;
+pub(crate) unsafe extern "C" fn dealloc(slf: *mut PyObject) {
+    let tp_free = PyType_GetSlot(Py_TYPE(slf), Py_tp_free);
+    debug_assert_ne!(tp_free, core::ptr::null_mut());
+    let f: freefunc = std::mem::transmute(tp_free);
+    f(slf.cast());
+}
 
-// TODO: a more efficient way to guarantee this in case of smaller values?
+// FUTURE: a more efficient way for specific cases?
 pub(crate) const fn hashmask(hash: Py_hash_t) -> Py_hash_t {
     match hash {
         -1 => -2,
@@ -506,7 +748,6 @@ pub(crate) const fn hashmask(hash: Py_hash_t) -> Py_hash_t {
 
 #[allow(unused_imports)]
 pub(crate) use {
-    between, c_str, classmethod, get_digit, getter, i128_extract, i128_extract_unchecked, method,
-    pack, print_repr, py_try, pybytes_extract, pyint_as_i64, pyint_as_long, pystr_to_utf8, raise,
-    to_py, try_get_float, unpack_one, unwrap_or_raise,
+    c_str, defer_decref, get_digit, getter, method, method_kwargs, method_vararg, pack, print_repr,
+    py_error, slotmethod, steal, type_error, unpack_one, value_error,
 };

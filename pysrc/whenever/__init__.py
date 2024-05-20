@@ -3,6 +3,7 @@ try:
     from ._whenever import (
         _unpkl_date,
         _unpkl_ddelta,
+        _unpkl_dtdelta,
         _unpkl_local,
         _unpkl_naive,
         _unpkl_offset,

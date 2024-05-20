@@ -2,10 +2,7 @@ use core::ffi::{c_char, c_int, c_long, c_void};
 use core::{mem, ptr, ptr::null_mut as NULL};
 use pyo3_ffi::*;
 
-use crate::common::{
-    c_str, classmethod, getter, identity, method, newref, py_bool, py_str, py_try, pyint_as_long,
-    pystr_to_utf8, raise, HASH_MASK,
-};
+use crate::common::*;
 use crate::{
     date::{self, Date},
     date_delta::DateDelta,
@@ -23,7 +20,7 @@ pub(crate) struct DateTime {
 #[repr(C)]
 pub(crate) struct PyNaiveDateTime {
     _ob_base: PyObject,
-    dt: DateTime,
+    data: DateTime,
 }
 
 pub(crate) const SINGLETONS: [(&str, DateTime); 2] = [
@@ -62,6 +59,7 @@ pub(crate) const SINGLETONS: [(&str, DateTime); 2] = [
 ];
 
 impl DateTime {
+    #[inline]
     pub(crate) fn default_fmt(&self) -> String {
         if self.time.nanos == 0 {
             format!(
@@ -89,16 +87,13 @@ impl DateTime {
         }
     }
 
+    #[inline]
     pub(crate) fn extract(obj: *mut PyObject) -> Self {
-        unsafe { (*(obj.cast::<PyNaiveDateTime>())).dt }
+        unsafe { (*(obj.cast::<PyNaiveDateTime>())).data }
     }
 }
 
-unsafe extern "C" fn __new__(
-    subtype: *mut PyTypeObject,
-    args: *mut PyObject,
-    kwargs: *mut PyObject,
-) -> *mut PyObject {
+unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
     let mut year: c_long = 0;
     let mut month: c_long = 0;
     let mut day: c_long = 0;
@@ -132,60 +127,47 @@ unsafe extern "C" fn __new__(
         &mut nanos,
     ) == 0
     {
-        return NULL();
+        Err(PyErrOccurred())?
     }
 
     new_unchecked(
-        subtype,
+        cls,
         DateTime {
-            date: match Date::from_longs(year, month, day) {
-                Some(date) => date,
-                None => raise!(PyExc_ValueError, "Invalid date"),
-            },
-            time: match Time::from_longs(hour, minute, second, nanos) {
-                Some(time) => time,
-                None => raise!(PyExc_ValueError, "Invalid time"),
-            },
+            date: Date::from_longs(year, month, day).ok_or_else(|| type_error!("Invalid date"))?,
+            time: Time::from_longs(hour, minute, second, nanos)
+                .ok_or_else(|| type_error!("Invalid time"))?,
         },
     )
 }
 
-pub(crate) unsafe fn new_unchecked(type_: *mut PyTypeObject, dt: DateTime) -> *mut PyObject {
+pub(crate) unsafe fn new_unchecked(type_: *mut PyTypeObject, dt: DateTime) -> PyReturn {
     let f: allocfunc = (*type_).tp_alloc.expect("tp_alloc is not set");
-    let slf = py_try!(f(type_, 0).cast::<PyNaiveDateTime>());
-    ptr::addr_of_mut!((*slf).dt).write(dt);
-    slf.cast()
+    let slf = f(type_, 0).cast::<PyNaiveDateTime>();
+    if slf.is_null() {
+        return Err(PyErrOccurred());
+    }
+    ptr::addr_of_mut!((*slf).data).write(dt);
+    Ok(slf.cast::<PyObject>().as_mut().unwrap())
 }
 
-unsafe extern "C" fn dealloc(slf: *mut PyObject) {
-    let tp_free = PyType_GetSlot(Py_TYPE(slf), Py_tp_free);
-    debug_assert_ne!(tp_free, NULL());
-    let f: freefunc = std::mem::transmute(tp_free);
-    f(slf.cast());
-}
-
-unsafe extern "C" fn __repr__(slf: *mut PyObject) -> *mut PyObject {
+unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
     let DateTime { date, time } = DateTime::extract(slf);
-    py_str(&format!("NaiveDateTime({} {})", date, time))
+    format!("NaiveDateTime({} {})", date, time).to_py()
 }
 
-unsafe extern "C" fn __str__(slf: *mut PyObject) -> *mut PyObject {
-    py_str(&DateTime::extract(slf).default_fmt())
+unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
+    DateTime::extract(slf).default_fmt().to_py()
 }
 
-unsafe extern "C" fn default_format(slf: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
+unsafe fn default_format(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     __str__(slf)
 }
 
-unsafe extern "C" fn __richcmp__(
-    a_obj: *mut PyObject,
-    b_obj: *mut PyObject,
-    op: c_int,
-) -> *mut PyObject {
-    newref(if Py_TYPE(b_obj) == Py_TYPE(a_obj) {
+unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> PyReturn {
+    Ok(newref(if Py_TYPE(b_obj) == Py_TYPE(a_obj) {
         let a = DateTime::extract(a_obj);
         let b = DateTime::extract(b_obj);
-        py_bool(match op {
+        match op {
             pyo3_ffi::Py_LT => a < b,
             pyo3_ffi::Py_LE => a <= b,
             pyo3_ffi::Py_EQ => a == b,
@@ -193,18 +175,20 @@ unsafe extern "C" fn __richcmp__(
             pyo3_ffi::Py_GT => a > b,
             pyo3_ffi::Py_GE => a >= b,
             _ => unreachable!(),
-        })
+        }
+        .to_py()?
     } else {
         Py_NotImplemented()
-    })
+    }))
 }
 
 unsafe extern "C" fn __hash__(slf: *mut PyObject) -> Py_hash_t {
     let DateTime { date, time } = DateTime::extract(slf);
-    date.hash() as Py_hash_t ^ time.pyhash() & HASH_MASK
+    hashmask(date.hash() as Py_hash_t ^ time.pyhash())
 }
 
-unsafe extern "C" fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> *mut PyObject {
+unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
+    // TODO: reflexivity
     let type_b = Py_TYPE(obj_b);
     let type_a = Py_TYPE(obj_a);
     let a = DateTime::extract(obj_a);
@@ -228,27 +212,27 @@ unsafe extern "C" fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> *mut
                     time: Time::from_total_nanos(new_nanos.rem_euclid(86_400_000_000_000) as u64),
                 },
             ),
-            None => raise!(PyExc_ValueError, "Resulting date out of range"),
+            None => Err(value_error!("Resulting date out of range")),
         }
     } else if type_b == date_delta_type {
         match _add_datedelta(a, DateDelta::extract(obj_b)) {
             Some(dt) => new_unchecked(type_a, dt),
-            None => raise!(PyExc_ValueError, "Resulting date out of range"),
+            None => Err(value_error!("Resulting date out of range")),
         }
     } else {
-        newref(Py_NotImplemented())
+        Ok(newref(Py_NotImplemented()))
     }
 }
 
-unsafe extern "C" fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> *mut PyObject {
+unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     let slf = DateTime::extract(obj_a);
     if Py_TYPE(obj_b) == State::for_type(Py_TYPE(obj_a)).date_delta_type {
         match _add_datedelta(slf, -DateDelta::extract(obj_b)) {
             Some(dt) => new_unchecked(Py_TYPE(obj_a), dt),
-            None => raise!(PyExc_ValueError, "Resulting date out of range"),
+            None => Err(value_error!("Resulting date out of range")),
         }
     } else {
-        newref(Py_NotImplemented())
+        Ok(newref(Py_NotImplemented()))
     }
 }
 
@@ -259,34 +243,12 @@ fn _add_datedelta(dt: DateTime, delta: DateDelta) -> Option<DateTime> {
 }
 
 static mut SLOTS: &[PyType_Slot] = &[
-    PyType_Slot {
-        slot: Py_tp_new,
-        pfunc: __new__ as *mut c_void,
-    },
-    PyType_Slot {
-        slot: Py_tp_doc,
-        pfunc: "A calendar date type\0".as_ptr() as *mut c_void,
-    },
-    PyType_Slot {
-        slot: Py_tp_repr,
-        pfunc: __repr__ as *mut c_void,
-    },
-    PyType_Slot {
-        slot: Py_tp_str,
-        pfunc: __str__ as *mut c_void,
-    },
-    PyType_Slot {
-        slot: Py_tp_richcompare,
-        pfunc: __richcmp__ as *mut c_void,
-    },
-    PyType_Slot {
-        slot: Py_nb_add,
-        pfunc: __add__ as *mut c_void,
-    },
-    PyType_Slot {
-        slot: Py_nb_subtract,
-        pfunc: __sub__ as *mut c_void,
-    },
+    slotmethod!(Py_tp_new, __new__),
+    slotmethod!(Py_tp_repr, __repr__, 1),
+    slotmethod!(Py_tp_str, __str__, 1),
+    slotmethod!(Py_tp_richcompare, __richcmp__),
+    slotmethod!(Py_nb_add, __add__, 2),
+    slotmethod!(Py_nb_subtract, __sub__, 2),
     PyType_Slot {
         slot: Py_tp_hash,
         pfunc: __hash__ as *mut c_void,
@@ -309,71 +271,71 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-unsafe extern "C" fn replace(
+unsafe fn replace(
     slf: *mut PyObject,
-    type_: *mut PyTypeObject,
-    args: *const *mut PyObject,
-    nargs: Py_ssize_t,
-    kwnames: *mut PyObject,
-) -> *mut PyObject {
-    if PyVectorcall_NARGS(nargs as usize) != 0 {
-        raise!(PyExc_TypeError, "replace() takes no positional arguments");
+    cls: *mut PyTypeObject,
+    args: &[*mut PyObject],
+    kwargs: &[(*mut PyObject, *mut PyObject)],
+) -> PyReturn {
+    if !args.is_empty() {
+        Err(type_error!("replace() takes no positional arguments"))?
     }
-    if kwnames.is_null() {
-        newref(slf)
-    } else {
-        let module = State::for_type(type_);
-        let dt = DateTime::extract(slf);
-        let mut year = dt.date.year as c_long;
-        let mut month = dt.date.month as c_long;
-        let mut day = dt.date.day as c_long;
-        let mut hour = dt.time.hour as c_long;
-        let mut minute = dt.time.minute as c_long;
-        let mut second = dt.time.second as c_long;
-        let mut nanos = dt.time.nanos as c_long;
-        for i in 0..=Py_SIZE(kwnames).saturating_sub(1) {
-            let name = PyTuple_GET_ITEM(kwnames, i);
-            if name == module.str_year {
-                year = pyint_as_long!(*args.offset(i));
-            } else if name == module.str_month {
-                month = pyint_as_long!(*args.offset(i));
-            } else if name == module.str_day {
-                day = pyint_as_long!(*args.offset(i));
-            } else if name == module.str_hour {
-                hour = pyint_as_long!(*args.offset(i));
-            } else if name == module.str_minute {
-                minute = pyint_as_long!(*args.offset(i));
-            } else if name == module.str_second {
-                second = pyint_as_long!(*args.offset(i));
-            } else if name == module.str_nanosecond {
-                nanos = pyint_as_long!(*args.offset(i));
-            } else {
-                raise!(
-                    PyExc_TypeError,
-                    "replace() got an unexpected keyword argument %R",
-                    name
-                );
-            }
+    let module = State::for_type(cls);
+    let dt = DateTime::extract(slf);
+    let mut year = dt.date.year as c_long;
+    let mut month = dt.date.month as c_long;
+    let mut day = dt.date.day as c_long;
+    let mut hour = dt.time.hour as c_long;
+    let mut minute = dt.time.minute as c_long;
+    let mut second = dt.time.second as c_long;
+    let mut nanos = dt.time.nanos as c_long;
+    for &(name, value) in kwargs {
+        if name == module.str_year {
+            year = value
+                .to_long()?
+                .ok_or_else(|| type_error!("year must be an integer"))?;
+        } else if name == module.str_month {
+            month = value
+                .to_long()?
+                .ok_or_else(|| type_error!("month must be an integer"))?;
+        } else if name == module.str_day {
+            day = value
+                .to_long()?
+                .ok_or_else(|| type_error!("day must be an integer"))?;
+        } else if name == module.str_hour {
+            hour = value
+                .to_long()?
+                .ok_or_else(|| type_error!("hour must be an integer"))?;
+        } else if name == module.str_minute {
+            minute = value
+                .to_long()?
+                .ok_or_else(|| type_error!("minute must be an integer"))?;
+        } else if name == module.str_second {
+            second = value
+                .to_long()?
+                .ok_or_else(|| type_error!("second must be an integer"))?;
+        } else if name == module.str_nanosecond {
+            nanos = value
+                .to_long()?
+                .ok_or_else(|| type_error!("nanosecond must be an integer"))?;
+        } else {
+            Err(type_error!(
+                "replace() got an unexpected keyword argument: %R",
+                name
+            ))?
         }
-        new_unchecked(
-            type_,
-            DateTime {
-                date: match Date::from_longs(year, month, day) {
-                    Some(date) => date,
-                    None => raise!(PyExc_ValueError, "Invalid date"),
-                },
-                time: match Time::from_longs(hour, minute, second, nanos) {
-                    Some(time) => time,
-                    None => {
-                        raise!(PyExc_ValueError, "Invalid time");
-                    }
-                },
-            },
-        )
     }
+    new_unchecked(
+        cls,
+        DateTime {
+            date: Date::from_longs(year, month, day).ok_or_else(|| type_error!("Invalid date"))?,
+            time: Time::from_longs(hour, minute, second, nanos)
+                .ok_or_else(|| type_error!("Invalid time"))?,
+        },
+    )
 }
 
-unsafe extern "C" fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
+unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let DateTime {
         date: Date { year, month, day },
         time:
@@ -387,56 +349,54 @@ unsafe extern "C" fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> *mut Py
     PyTuple_Pack(
         2,
         State::for_obj(slf).unpickle_naive_datetime,
-        py_try!(PyTuple_Pack(
-            7,
-            PyLong_FromLong(year.into()),
-            PyLong_FromLong(month.into()),
-            PyLong_FromLong(day.into()),
-            PyLong_FromLong(hour.into()),
-            PyLong_FromLong(minute.into()),
-            PyLong_FromLong(second.into()),
-            PyLong_FromLong(nanos as c_long),
-        )),
+        steal!(PyTuple_Pack(
+            1,
+            pack![year, month, day, hour, minute, second, nanos].to_py()?
+        )
+        .as_result()?),
     )
+    .as_result()
 }
 
-pub(crate) unsafe extern "C" fn unpickle(
-    module: *mut PyObject,
-    args: *mut *mut PyObject,
-    nargs: Py_ssize_t,
-) -> *mut PyObject {
-    if PyVectorcall_NARGS(nargs as usize) != 7 {
-        raise!(PyExc_TypeError, "Invalid pickle data");
+pub(crate) unsafe fn unpickle(module: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
+    if args.len() != 1 {
+        Err(type_error!("Invalid pickle data"))?
     }
-    new_unchecked(
+    let mut packed = args[0]
+        .to_bytes()?
+        .ok_or_else(|| type_error!("Invalid pickle data"))?;
+    let new = new_unchecked(
         State::for_mod(module).naive_datetime_type,
         DateTime {
             date: date::Date {
-                year: pyint_as_long!(*args.offset(0)) as u16,
-                month: pyint_as_long!(*args.offset(1)) as u8,
-                day: pyint_as_long!(*args.offset(2)) as u8,
+                year: unpack_one!(packed, u16),
+                month: unpack_one!(packed, u8),
+                day: unpack_one!(packed, u8),
             },
             time: time::Time {
-                hour: pyint_as_long!(*args.offset(3)) as u8,
-                minute: pyint_as_long!(*args.offset(4)) as u8,
-                second: pyint_as_long!(*args.offset(5)) as u8,
-                nanos: pyint_as_long!(*args.offset(6)) as u32,
+                hour: unpack_one!(packed, u8),
+                minute: unpack_one!(packed, u8),
+                second: unpack_one!(packed, u8),
+                nanos: unpack_one!(packed, u32),
             },
         },
-    )
+    );
+    if !packed.is_empty() {
+        Err(type_error!("Invalid pickle data"))?
+    }
+    new
 }
 
-unsafe extern "C" fn from_py_datetime(type_: *mut PyObject, dt: *mut PyObject) -> *mut PyObject {
+unsafe fn from_py_datetime(type_: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     if PyDateTime_Check(dt) == 0 {
-        raise!(PyExc_TypeError, "argument must be datetime.datetime");
+        Err(type_error!("argument must be datetime.datetime"))?
     }
     let tzinfo = PyDateTime_DATE_GET_TZINFO(dt);
     if tzinfo != Py_None() {
-        raise!(
-            PyExc_ValueError,
+        Err(value_error!(
             "datetime must be naive, but got tzinfo=%R",
             tzinfo
-        );
+        ))?
     }
     new_unchecked(
         type_.cast(),
@@ -456,7 +416,7 @@ unsafe extern "C" fn from_py_datetime(type_: *mut PyObject, dt: *mut PyObject) -
     )
 }
 
-unsafe extern "C" fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
+unsafe fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let DateTime {
         date: date::Date { year, month, day },
         time:
@@ -472,7 +432,7 @@ unsafe extern "C" fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> *mut P
         DateTimeType,
         ..
     } = State::for_type(Py_TYPE(slf)).datetime_api;
-    py_try!(DateTime_FromDateAndTime(
+    DateTime_FromDateAndTime(
         year.into(),
         month.into(),
         day.into(),
@@ -482,14 +442,15 @@ unsafe extern "C" fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> *mut P
         (nanos / 1_000) as c_int,
         Py_None(),
         DateTimeType,
-    ))
+    )
+    .as_result()
 }
 
-unsafe extern "C" fn get_date(slf: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
+unsafe fn get_date(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     date::new_unchecked(State::for_obj(slf).date_type, DateTime::extract(slf).date)
 }
 
-unsafe extern "C" fn get_time(slf: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
+unsafe fn get_time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     time::new_unchecked(
         State::for_type(Py_TYPE(slf)).time_type,
         DateTime::extract(slf).time,
@@ -504,47 +465,35 @@ pub(crate) fn parse_date_and_time(s: &[u8]) -> Option<(date::Date, time::Time)> 
     Date::parse_all(&s[..10]).zip(Time::parse_all(&s[11..]))
 }
 
-unsafe extern "C" fn from_default_format(cls: *mut PyObject, arg: *mut PyObject) -> *mut PyObject {
-    let s = pystr_to_utf8!(arg, "Expected a string");
+unsafe fn from_default_format(cls: *mut PyObject, arg: *mut PyObject) -> PyReturn {
+    let s = arg
+        .to_utf8()?
+        .ok_or_else(|| type_error!("Expected a string"))?;
     if s.len() < 19 || s[10] != b'T' {
-        raise!(PyExc_ValueError, "Invalid format: %R", arg);
-    }
-    match parse_date_and_time(s) {
-        Some((date, time)) => new_unchecked(cls.cast(), DateTime { date, time }),
-        None => raise!(PyExc_ValueError, "Invalid format: %R", arg),
-    }
-}
-
-unsafe extern "C" fn common_iso8601(slf: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
-    let DateTime { date, time } = DateTime::extract(slf);
-    py_str(&format!("{}T{}", date, time))
-}
-
-unsafe extern "C" fn from_common_iso8601(cls: *mut PyObject, obj: *mut PyObject) -> *mut PyObject {
-    let s = pystr_to_utf8!(obj, "Expected a string");
-    if s.len() < 19 || s[10] != b'T' {
-        raise!(PyExc_ValueError, "Invalid common ISO 8601 format: %R", obj);
-    }
-    match parse_date_and_time(s) {
-        Some((date, time)) => new_unchecked(cls.cast(), DateTime { date, time }),
-        None => raise!(PyExc_ValueError, "Invalid common ISO 8601 format: %R", obj),
+        Err(value_error!("Invalid format: %R", arg))
+    } else {
+        match parse_date_and_time(s) {
+            Some((date, time)) => new_unchecked(cls.cast(), DateTime { date, time }),
+            None => Err(value_error!("Invalid format: %R", arg)),
+        }
     }
 }
 
-unsafe extern "C" fn strptime(cls: *mut PyObject, args: *mut PyObject) -> *mut PyObject {
-    // FUTURE: get this working with vectorcall
-    let parsed = py_try!(PyObject_Call(
+unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
+    // OPTIMIZE: get this working with vectorcall
+    let parsed = PyObject_Call(
         State::for_type(cls.cast()).strptime,
-        args,
-        NULL()
-    ));
+        steal!(PyTuple_Pack(2, args[0], args[1]).as_result()?),
+        NULL(),
+    )
+    .as_result()?;
+    defer_decref!(parsed);
     let tzinfo = PyDateTime_DATE_GET_TZINFO(parsed);
     if tzinfo != Py_None() {
-        raise!(
-            PyExc_ValueError,
+        Err(value_error!(
             "datetime must be naive, but got tzinfo=%R",
             tzinfo
-        );
+        ))?;
     }
     new_unchecked(
         cls.cast(),
@@ -564,7 +513,7 @@ unsafe extern "C" fn strptime(cls: *mut PyObject, args: *mut PyObject) -> *mut P
     )
 }
 
-unsafe extern "C" fn assume_utc(slf: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
+unsafe fn assume_utc(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let DateTime { date, time } = DateTime::extract(slf);
     utc_datetime::new_unchecked(
         State::for_obj(slf).utc_datetime_type,
@@ -573,91 +522,73 @@ unsafe extern "C" fn assume_utc(slf: *mut PyObject, _: *mut PyObject) -> *mut Py
 }
 
 static mut METHODS: &[PyMethodDef] = &[
+    method!(identity2 named "__copy__", ""),
+    method!(identity2 named "__deepcopy__", "", METH_O),
     method!(
-        identity named "__copy__",
-        "Return a shallow copy of the instance"
-    ),
-    method!(
-        identity named "__deepcopy__",
-        "Return a deep copy of the instance",
-        METH_O
-    ),
-    classmethod!(
         from_py_datetime,
         "Create an instance from a datetime.datetime",
-        METH_O
+        METH_CLASS | METH_O
     ),
-    method!(py_datetime, "Convert to a datetime.datetime", METH_NOARGS),
+    method!(py_datetime, "Convert to a datetime.datetime"),
     method!(
         get_date named "date",
-        "Get the date component",
-        METH_NOARGS
+        "Get the date component"
     ),
     method!(
         get_time named "time",
-        "Get the time component",
-        METH_NOARGS
+        "Get the time component"
     ),
-    method!(default_format, ""),
-    classmethod!(from_default_format, "", METH_O),
+    method!(default_format, "Format in the default way"),
     method!(
-        common_iso8601,
+        from_default_format,
+        "Parse from the default format",
+        METH_O | METH_CLASS
+    ),
+    method!(
+        default_format named "common_iso8601",
         "Get the common ISO 8601 string representation"
     ),
-    classmethod!(
-        from_common_iso8601,
+    method!(
+        from_default_format named "from_common_iso8601",
         "Create an instance from the common ISO 8601 string representation",
-        METH_O
+        METH_O | METH_CLASS
     ),
     method!(__reduce__, ""),
-    PyMethodDef {
-        ml_name: c_str!("strptime"),
-        ml_meth: PyMethodDefPointer {
-            PyCFunction: strptime,
-        },
-        ml_flags: METH_CLASS | METH_VARARGS,
-        ml_doc: c_str!("Parse a string into a NaiveDateTime"),
-    },
-    PyMethodDef {
-        ml_name: c_str!("replace"),
-        ml_meth: PyMethodDefPointer { PyCMethod: replace },
-        ml_flags: METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
-        ml_doc: c_str!("Return a new instance with the specified fields replaced"),
-    },
-    method!(
-        assume_utc,
-        "Convert to an equivalent UTCDateTime",
-        METH_NOARGS
+    method_vararg!(strptime, "Parse a string into a NaiveDateTime", METH_CLASS),
+    method_kwargs!(
+        replace,
+        "Return a new instance with the specified fields replaced"
     ),
+    method!(assume_utc, "Convert to an equivalent UTCDateTime"),
     PyMethodDef::zeroed(),
 ];
 
-unsafe extern "C" fn get_year(slf: *mut PyObject, _: *mut c_void) -> *mut PyObject {
-    PyLong_FromLong(DateTime::extract(slf).date.year.into())
+unsafe fn get_year(slf: *mut PyObject) -> PyReturn {
+    DateTime::extract(slf).date.year.to_py()
 }
 
-unsafe extern "C" fn get_month(slf: *mut PyObject, _: *mut c_void) -> *mut PyObject {
-    PyLong_FromLong(DateTime::extract(slf).date.month.into())
+unsafe fn get_month(slf: *mut PyObject) -> PyReturn {
+    DateTime::extract(slf).date.month.to_py()
 }
 
-unsafe extern "C" fn get_day(slf: *mut PyObject, _: *mut c_void) -> *mut PyObject {
-    PyLong_FromLong(DateTime::extract(slf).date.day.into())
+unsafe fn get_day(slf: *mut PyObject) -> PyReturn {
+    DateTime::extract(slf).date.day.to_py()
 }
 
-unsafe extern "C" fn get_hour(slf: *mut PyObject, _: *mut c_void) -> *mut PyObject {
-    PyLong_FromLong(DateTime::extract(slf).time.hour.into())
+unsafe fn get_hour(slf: *mut PyObject) -> PyReturn {
+    DateTime::extract(slf).time.hour.to_py()
 }
 
-unsafe extern "C" fn get_minute(slf: *mut PyObject, _: *mut c_void) -> *mut PyObject {
-    PyLong_FromLong(DateTime::extract(slf).time.minute.into())
+unsafe fn get_minute(slf: *mut PyObject) -> PyReturn {
+    DateTime::extract(slf).time.minute.to_py()
 }
 
-unsafe extern "C" fn get_second(slf: *mut PyObject, _: *mut c_void) -> *mut PyObject {
-    PyLong_FromLong(DateTime::extract(slf).time.second.into())
+unsafe fn get_second(slf: *mut PyObject) -> PyReturn {
+    DateTime::extract(slf).time.second.to_py()
 }
 
-unsafe extern "C" fn get_nanos(slf: *mut PyObject, _: *mut c_void) -> *mut PyObject {
-    PyLong_FromLong(DateTime::extract(slf).time.nanos as c_long)
+unsafe fn get_nanos(slf: *mut PyObject) -> PyReturn {
+    DateTime::extract(slf).time.nanos.to_py()
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[

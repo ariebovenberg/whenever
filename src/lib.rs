@@ -3,11 +3,12 @@ use core::ptr::null_mut as NULL;
 use core::{mem, ptr};
 use pyo3_ffi::*;
 
-use crate::common::{c_str, py_str};
+use crate::common::*;
 
 mod common;
 pub mod date;
 mod date_delta;
+mod datetime_delta;
 mod local_datetime;
 pub mod naive_datetime;
 mod offset_datetime;
@@ -16,10 +17,23 @@ mod time_delta;
 mod utc_datetime;
 mod zoned_datetime;
 
+use date::unpickle as _unpkl_date;
+use date_delta::unpickle as _unpkl_ddelta;
+use date_delta::{days, months, weeks, years};
+use datetime_delta::unpickle as _unpkl_dtdelta;
+use local_datetime::unpickle as _unpkl_local;
+use naive_datetime::unpickle as _unpkl_naive;
+use offset_datetime::unpickle as _unpkl_offset;
+use time::unpickle as _unpkl_time;
+use time_delta::unpickle as _unpkl_tdelta;
+use time_delta::{hours, microseconds, milliseconds, minutes, nanoseconds, seconds};
+use utc_datetime::unpickle as _unpkl_utc;
+use zoned_datetime::unpickle as _unpkl_zoned;
+
 static mut MODULE_DEF: PyModuleDef = PyModuleDef {
     m_base: PyModuleDef_HEAD_INIT,
     m_name: c_str!("whenever"),
-    m_doc: c_str!("Fast and typesafe datetimes for Python, written in Rust"),
+    m_doc: c_str!("A better datetime API for Python, written in Rust"),
     m_size: mem::size_of::<State>() as _,
     m_methods: unsafe { METHODS as *const [_] as *mut _ },
     m_slots: unsafe { MODULE_SLOTS as *const [_] as *mut _ },
@@ -29,159 +43,67 @@ static mut MODULE_DEF: PyModuleDef = PyModuleDef {
 };
 
 static mut METHODS: &[PyMethodDef] = &[
-    PyMethodDef {
-        ml_name: c_str!("_unpkl_date"),
-        ml_meth: PyMethodDefPointer {
-            _PyCFunctionFast: date::unpickle,
-        },
-        ml_flags: METH_FASTCALL,
-        ml_doc: NULL(),
-    },
-    PyMethodDef {
-        ml_name: c_str!("_unpkl_time"),
-        ml_meth: PyMethodDefPointer {
-            _PyCFunctionFast: time::unpickle,
-        },
-        ml_flags: METH_FASTCALL,
-        ml_doc: NULL(),
-    },
-    PyMethodDef {
-        ml_name: c_str!("_unpkl_tdelta"),
-        ml_meth: PyMethodDefPointer {
-            _PyCFunctionFast: time_delta::unpickle,
-        },
-        ml_flags: METH_FASTCALL,
-        ml_doc: NULL(),
-    },
-    PyMethodDef {
-        ml_name: c_str!("_unpkl_ddelta"),
-        ml_meth: PyMethodDefPointer {
-            _PyCFunctionFast: date_delta::unpickle,
-        },
-        ml_flags: METH_FASTCALL,
-        ml_doc: NULL(),
-    },
-    PyMethodDef {
-        ml_name: c_str!("_unpkl_naive"),
-        ml_meth: PyMethodDefPointer {
-            _PyCFunctionFast: naive_datetime::unpickle,
-        },
-        ml_flags: METH_FASTCALL,
-        ml_doc: NULL(),
-    },
-    PyMethodDef {
-        ml_name: c_str!("_unpkl_utc"),
-        ml_meth: PyMethodDefPointer {
-            _PyCFunctionFast: utc_datetime::unpickle,
-        },
-        ml_flags: METH_FASTCALL,
-        ml_doc: NULL(),
-    },
-    PyMethodDef {
-        ml_name: c_str!("_unpkl_offset"),
-        ml_meth: PyMethodDefPointer {
-            _PyCFunctionFast: offset_datetime::unpickle,
-        },
-        ml_flags: METH_FASTCALL,
-        ml_doc: NULL(),
-    },
-    PyMethodDef {
-        ml_name: c_str!("_unpkl_zoned"),
-        ml_meth: PyMethodDefPointer {
-            _PyCFunctionFast: zoned_datetime::unpickle,
-        },
-        ml_flags: METH_FASTCALL,
-        ml_doc: NULL(),
-    },
-    PyMethodDef {
-        ml_name: c_str!("_unpkl_local"),
-        ml_meth: PyMethodDefPointer {
-            _PyCFunctionFast: local_datetime::unpickle,
-        },
-        ml_flags: METH_FASTCALL,
-        ml_doc: NULL(),
-    },
-    PyMethodDef {
-        ml_name: c_str!("years"),
-        ml_meth: PyMethodDefPointer {
-            PyCFunction: date_delta::years,
-        },
-        ml_flags: METH_O,
-        ml_doc: c_str!("Create a new `DateDelta` representing the given number of years."),
-    },
-    PyMethodDef {
-        // TODO: set __module__ on these
-        ml_name: c_str!("months"),
-        ml_meth: PyMethodDefPointer {
-            PyCFunction: date_delta::months,
-        },
-        ml_flags: METH_O,
-        ml_doc: c_str!("Create a new `DateDelta` representing the given number of months."),
-    },
-    PyMethodDef {
-        ml_name: c_str!("weeks"),
-        ml_meth: PyMethodDefPointer {
-            PyCFunction: date_delta::weeks,
-        },
-        ml_flags: METH_O,
-        ml_doc: c_str!("Create a new `DateDelta` representing the given number of weeks."),
-    },
-    PyMethodDef {
-        ml_name: c_str!("days"),
-        ml_meth: PyMethodDefPointer {
-            PyCFunction: date_delta::days,
-        },
-        ml_flags: METH_O,
-        ml_doc: c_str!("Create a new `DateDelta` representing the given number of days."),
-    },
-    PyMethodDef {
-        ml_name: c_str!("hours"),
-        ml_meth: PyMethodDefPointer {
-            PyCFunction: time_delta::hours,
-        },
-        ml_flags: METH_O,
-        ml_doc: c_str!("Create a new `TimeDelta` representing the given number of hours."),
-    },
-    PyMethodDef {
-        ml_name: c_str!("minutes"),
-        ml_meth: PyMethodDefPointer {
-            PyCFunction: time_delta::minutes,
-        },
-        ml_flags: METH_O,
-        ml_doc: c_str!("Create a new `TimeDelta` representing the given number of minutes."),
-    },
-    PyMethodDef {
-        ml_name: c_str!("seconds"),
-        ml_meth: PyMethodDefPointer {
-            PyCFunction: time_delta::seconds,
-        },
-        ml_flags: METH_O,
-        ml_doc: c_str!("Create a new `TimeDelta` representing the given number of seconds."),
-    },
-    PyMethodDef {
-        ml_name: c_str!("milliseconds"),
-        ml_meth: PyMethodDefPointer {
-            PyCFunction: time_delta::milliseconds,
-        },
-        ml_flags: METH_O,
-        ml_doc: c_str!("Create a new `TimeDelta` representing the given number of milliseconds."),
-    },
-    PyMethodDef {
-        ml_name: c_str!("microseconds"),
-        ml_meth: PyMethodDefPointer {
-            PyCFunction: time_delta::microseconds,
-        },
-        ml_flags: METH_O,
-        ml_doc: c_str!("Create a new `TimeDelta` representing the given number of microseconds."),
-    },
-    PyMethodDef {
-        ml_name: c_str!("nanoseconds"),
-        ml_meth: PyMethodDefPointer {
-            PyCFunction: time_delta::nanoseconds,
-        },
-        ml_flags: METH_O,
-        ml_doc: c_str!("Create a new `TimeDelta` representing the given number of nanoseconds."),
-    },
+    method_vararg!(_unpkl_date, "Unpickle a `Date` object."),
+    method_vararg!(_unpkl_time, "Unpickle a `Time` object."),
+    method_vararg!(_unpkl_tdelta, "Unpickle a `TimeDelta` object."),
+    method_vararg!(_unpkl_ddelta, "Unpickle a `DateDelta` object."),
+    method_vararg!(_unpkl_dtdelta, "Unpickle a `DateTimeDelta` object."),
+    method_vararg!(_unpkl_naive, "Unpickle a `NaiveDateTime` object."),
+    method_vararg!(_unpkl_utc, "Unpickle a `UTCDateTime` object."),
+    method_vararg!(_unpkl_offset, "Unpickle an `OffsetDateTime` object."),
+    method_vararg!(_unpkl_zoned, "Unpickle a `ZonedDateTime` object."),
+    method_vararg!(_unpkl_local, "Unpickle a `LocalSystemDateTime` object."),
+    // FUTURE: set __module__ on these
+    method!(
+        years,
+        "Create a new `DateDelta` representing the given number of years.",
+        METH_O
+    ),
+    method!(
+        months,
+        "Create a new `DateDelta` representing the given number of months.",
+        METH_O
+    ),
+    method!(
+        weeks,
+        "Create a new `DateDelta` representing the given number of weeks.",
+        METH_O
+    ),
+    method!(
+        days,
+        "Create a new `DateDelta` representing the given number of days.",
+        METH_O
+    ),
+    method!(
+        hours,
+        "Create a new `TimeDelta` representing the given number of hours.",
+        METH_O
+    ),
+    method!(
+        minutes,
+        "Create a new `TimeDelta` representing the given number of minutes.",
+        METH_O
+    ),
+    method!(
+        seconds,
+        "Create a new `TimeDelta` representing the given number of seconds.",
+        METH_O
+    ),
+    method!(
+        milliseconds,
+        "Create a new `TimeDelta` representing the given number of milliseconds.",
+        METH_O
+    ),
+    method!(
+        microseconds,
+        "Create a new `TimeDelta` representing the given number of microseconds.",
+        METH_O
+    ),
+    method!(
+        nanoseconds,
+        "Create a new `TimeDelta` representing the given number of nanoseconds.",
+        METH_O
+    ),
     PyMethodDef::zeroed(),
 ];
 
@@ -196,25 +118,12 @@ static mut MODULE_SLOTS: &[PyModuleDef_Slot] = &[
         // awaiting https://github.com/python/cpython/pull/102995
         value: Py_MOD_MULTIPLE_INTERPRETERS_NOT_SUPPORTED,
     },
+    // FUTURE: set no_gil slot (peps.python.org/pep-0703/#py-mod-gil-slot)
     PyModuleDef_Slot {
         slot: 0,
         value: NULL(),
     },
 ];
-
-#[cfg(Py_3_10)]
-macro_rules! add {
-    ($mptr:expr, $name:expr, $obj:expr) => {
-        PyModule_AddObjectRef($mptr, c_str!($name), $obj);
-    };
-}
-
-#[cfg(not(Py_3_10))]
-macro_rules! add {
-    ($mptr:expr, $name:expr, $obj:expr) => {
-        PyModule_AddObject($mptr, c_str!($name), $obj);
-    };
-}
 
 macro_rules! add_int {
     ($mptr:expr, $name:expr, $obj:expr) => {
@@ -228,7 +137,10 @@ macro_rules! add_exc {
         if e.is_null() {
             return -1;
         }
-        add!($mptr, $name, e);
+        defer_decref!(e);
+        if PyModule_AddType($mptr, e.cast()) != 0 {
+            return -1;
+        }
         $state.$varname = e.cast();
     };
 }
@@ -238,36 +150,6 @@ macro_rules! add_type {
      $module_nameobj:expr,
      $state:ident,
      $submodule:ident,
-     $name:expr,
-     $varname:ident,
-     $unpickle_name:expr,
-     $unpickle_var:ident,
-     WITH_SINGLETONS) => {
-        add_type!(
-            $module,
-            $module_nameobj,
-            $state,
-            $submodule,
-            $name,
-            $varname,
-            $unpickle_name,
-            $unpickle_var
-        );
-
-        for (name, value) in $submodule::SINGLETONS {
-            let pyvalue = $submodule::new_unchecked($varname.cast(), value);
-            PyDict_SetItemString(
-                (*$varname.cast::<PyTypeObject>()).tp_dict,
-                name.as_ptr().cast(),
-                pyvalue.cast(),
-            );
-        }
-    };
-    ($module:ident,
-     $module_nameobj:expr,
-     $state:ident,
-     $submodule:ident,
-     $name:expr,
      $varname:ident,
      $unpickle_name:expr,
      $unpickle_var:ident) => {
@@ -279,25 +161,43 @@ macro_rules! add_type {
         if $varname.is_null() {
             return -1;
         }
-        add!($module, $name, $varname);
+        defer_decref!($varname);
+        if PyModule_AddType($module, $varname.cast()) != 0 {
+            return -1;
+        }
         $state.$varname = $varname.cast();
 
         let unpickler = PyObject_GetAttrString($module, c_str!($unpickle_name));
         PyObject_SetAttrString(unpickler, c_str!("__module__"), $module_nameobj);
         $state.$unpickle_var = unpickler;
+
+        for (name, value) in $submodule::SINGLETONS {
+            let pyvalue = match $submodule::new_unchecked($varname.cast(), value) {
+                Ok(v) => v,
+                Err(_) => return -1,
+            };
+            PyDict_SetItemString(
+                (*$varname.cast::<PyTypeObject>()).tp_dict,
+                name.as_ptr().cast(),
+                pyvalue,
+            );
+        }
     };
 }
 
 unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     let state: &mut State = PyModule_GetState(module).cast::<State>().as_mut().unwrap();
-    let module_name = py_str("whenever");
+    let module_name = match "whenever".to_py() {
+        Ok(name) => name,
+        Err(_) => return -1,
+    };
+    defer_decref!(module_name);
 
     add_type!(
         module,
         module_name,
         state,
         date,
-        "Date",
         date_type,
         "_unpkl_date",
         unpickle_date
@@ -307,62 +207,60 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         module_name,
         state,
         time,
-        "Time",
         time_type,
         "_unpkl_time",
-        unpickle_time,
-        WITH_SINGLETONS
+        unpickle_time
     );
     add_type!(
         module,
         module_name,
         state,
         date_delta,
-        "DateDelta",
         date_delta_type,
         "_unpkl_ddelta",
-        unpickle_date_delta,
-        WITH_SINGLETONS
+        unpickle_date_delta
     );
     add_type!(
         module,
         module_name,
         state,
         time_delta,
-        "TimeDelta",
         time_delta_type,
         "_unpkl_tdelta",
-        unpickle_time_delta,
-        WITH_SINGLETONS
+        unpickle_time_delta
+    );
+    add_type!(
+        module,
+        module_name,
+        state,
+        datetime_delta,
+        datetime_delta_type,
+        "_unpkl_dtdelta",
+        unpickle_datetime_delta
     );
     add_type!(
         module,
         module_name,
         state,
         naive_datetime,
-        "NaiveDateTime",
         naive_datetime_type,
         "_unpkl_naive",
-        unpickle_naive_datetime,
-        WITH_SINGLETONS
+        unpickle_naive_datetime
     );
     add_type!(
         module,
         module_name,
         state,
         utc_datetime,
-        "UTCDateTime",
         utc_datetime_type,
         "_unpkl_utc",
-        unpickle_utc_datetime,
-        WITH_SINGLETONS
+        unpickle_utc_datetime
     );
     add_type!(
         module,
         module_name,
         state,
         offset_datetime,
-        "OffsetDateTime",
         offset_datetime_type,
         "_unpkl_offset",
         unpickle_offset_datetime
@@ -372,7 +270,6 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         module_name,
         state,
         zoned_datetime,
-        "ZonedDateTime",
         zoned_datetime_type,
         "_unpkl_zoned",
         unpickle_zoned_datetime
@@ -382,7 +279,6 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         module_name,
         state,
         local_datetime,
-        "LocalSystemDateTime",
         local_datetime_type,
         "_unpkl_local",
         unpickle_local_datetime
@@ -391,18 +287,21 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     PyDict_SetItemString(
         (*state.utc_datetime_type).tp_dict,
         c_str!("offset"),
-        time_delta::new_unchecked(
+        steal!(match time_delta::new_unchecked(
             state.time_delta_type,
             time_delta::TimeDelta::from_nanos_unchecked(0),
-        ),
+        ) {
+            Ok(v) => v,
+            Err(_) => return -1,
+        }),
     );
 
     // zoneinfo module
     let zoneinfo_module = PyImport_ImportModule(c_str!("zoneinfo"));
+    defer_decref!(zoneinfo_module);
     state.zoneinfo_type = PyObject_GetAttrString(zoneinfo_module, c_str!("ZoneInfo")).cast();
-    Py_DECREF(zoneinfo_module);
 
-    // datetime module
+    // datetime C API
     PyDateTime_IMPORT();
     match PyDateTimeAPI().as_ref() {
         Some(api) => state.datetime_api = api,
@@ -410,18 +309,18 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     }
 
     let datetime_module = PyImport_ImportModule(c_str!("datetime"));
+    defer_decref!(datetime_module);
     state.strptime = PyObject_GetAttrString(
-        PyObject_GetAttrString(datetime_module, c_str!("datetime")),
+        steal!(PyObject_GetAttrString(datetime_module, c_str!("datetime"))),
         c_str!("strptime"),
     );
     state.timezone_type = PyObject_GetAttrString(datetime_module, c_str!("timezone")).cast();
-    Py_DECREF(datetime_module);
 
     let email_utils = PyImport_ImportModule(c_str!("email.utils"));
+    defer_decref!(email_utils);
     state.format_rfc2822 = PyObject_GetAttrString(email_utils, c_str!("format_datetime")).cast();
     state.parse_rfc2822 =
         PyObject_GetAttrString(email_utils, c_str!("parsedate_to_datetime")).cast();
-    Py_DECREF(email_utils);
 
     // TODO: a proper enum
     add_int!(module, "MONDAY", 1);
@@ -462,6 +361,15 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     0
 }
 
+macro_rules! visit {
+    ($state:ident, $name:ident, $visit:ident, $arg:ident) => {
+        let $name: *mut PyObject = $state.$name.cast();
+        if !$name.is_null() {
+            ($visit)($name, $arg);
+        }
+    };
+}
+
 unsafe extern "C" fn module_traverse(
     module: *mut PyObject,
     visit: visitproc,
@@ -470,54 +378,25 @@ unsafe extern "C" fn module_traverse(
     let state = State::for_mod(module);
 
     // types
-    let date_type: *mut PyObject = state.date_type.cast();
-    if !date_type.is_null() {
-        (visit)(date_type, arg);
-    };
-    let time_type: *mut PyObject = state.time_type.cast();
-    if !time_type.is_null() {
-        (visit)(time_type, arg);
-    };
-    let date_delta_type: *mut PyObject = state.date_delta_type.cast();
-    if !date_delta_type.is_null() {
-        (visit)(date_delta_type, arg);
-    };
-    let time_delta_type: *mut PyObject = state.time_delta_type.cast();
-    if !time_delta_type.is_null() {
-        (visit)(time_delta_type, arg);
-    };
-    let naive_datetime_type: *mut PyObject = state.naive_datetime_type.cast();
-    if !naive_datetime_type.is_null() {
-        (visit)(naive_datetime_type, arg);
-    };
-    let utc_datetime_type: *mut PyObject = state.utc_datetime_type.cast();
-    if !utc_datetime_type.is_null() {
-        (visit)(utc_datetime_type, arg);
-    };
-    let offset_datetime_type: *mut PyObject = state.offset_datetime_type.cast();
-    if !offset_datetime_type.is_null() {
-        (visit)(offset_datetime_type, arg);
-    };
-    let zoned_datetime_type: *mut PyObject = state.zoned_datetime_type.cast();
-    if !zoned_datetime_type.is_null() {
-        (visit)(zoned_datetime_type, arg);
-    };
-    let local_datetime_type: *mut PyObject = state.local_datetime_type.cast();
-    if !local_datetime_type.is_null() {
-        (visit)(local_datetime_type, arg);
-    };
+    visit!(state, date_type, visit, arg);
+    visit!(state, time_type, visit, arg);
+    visit!(state, date_delta_type, visit, arg);
+    visit!(state, time_delta_type, visit, arg);
+    visit!(state, datetime_delta_type, visit, arg);
+    visit!(state, naive_datetime_type, visit, arg);
+    visit!(state, utc_datetime_type, visit, arg);
+    visit!(state, offset_datetime_type, visit, arg);
+    visit!(state, zoned_datetime_type, visit, arg);
+    visit!(state, local_datetime_type, visit, arg);
+
+    // exceptions
+    visit!(state, exc_ambiguous, visit, arg);
+    visit!(state, exc_skipped, visit, arg);
+    visit!(state, exc_invalid_offset, visit, arg);
 
     // Imported modules
-    let zoneinfo_type: *mut PyObject = state.zoneinfo_type.cast();
-    if !zoneinfo_type.is_null() {
-        (visit)(zoneinfo_type, arg);
-    };
-
-    let timezone_type: *mut PyObject = state.timezone_type.cast();
-    if !timezone_type.is_null() {
-        (visit)(timezone_type, arg);
-    };
-
+    visit!(state, zoneinfo_type, visit, arg);
+    visit!(state, timezone_type, visit, arg);
     0
 }
 
@@ -528,26 +407,21 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR(ptr::addr_of_mut!(state.time_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.date_delta_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.time_delta_type).cast());
+    Py_CLEAR(ptr::addr_of_mut!(state.datetime_delta_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.naive_datetime_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.utc_datetime_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.offset_datetime_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.zoned_datetime_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.local_datetime_type).cast());
 
-    // unpickling functions
-    Py_CLEAR(ptr::addr_of_mut!(state.unpickle_date).cast());
-    Py_CLEAR(ptr::addr_of_mut!(state.unpickle_time).cast());
-    Py_CLEAR(ptr::addr_of_mut!(state.unpickle_date_delta).cast());
-    Py_CLEAR(ptr::addr_of_mut!(state.unpickle_time_delta).cast());
-    Py_CLEAR(ptr::addr_of_mut!(state.unpickle_naive_datetime).cast());
-    Py_CLEAR(ptr::addr_of_mut!(state.unpickle_utc_datetime).cast());
-    Py_CLEAR(ptr::addr_of_mut!(state.unpickle_offset_datetime).cast());
-    Py_CLEAR(ptr::addr_of_mut!(state.unpickle_zoned_datetime).cast());
-    Py_CLEAR(ptr::addr_of_mut!(state.unpickle_local_datetime).cast());
+    // exceptions
+    Py_CLEAR(ptr::addr_of_mut!(state.exc_ambiguous).cast());
+    Py_CLEAR(ptr::addr_of_mut!(state.exc_skipped).cast());
+    Py_CLEAR(ptr::addr_of_mut!(state.exc_invalid_offset).cast());
 
-    // TODO: check if this is at all sensible
     // imported modules
     Py_CLEAR(ptr::addr_of_mut!(state.zoneinfo_type).cast());
+    Py_CLEAR(ptr::addr_of_mut!(state.timezone_type).cast());
     0
 }
 
@@ -562,6 +436,7 @@ struct State<'a> {
     time_type: *mut PyTypeObject,
     date_delta_type: *mut PyTypeObject,
     time_delta_type: *mut PyTypeObject,
+    datetime_delta_type: *mut PyTypeObject,
     naive_datetime_type: *mut PyTypeObject,
     utc_datetime_type: *mut PyTypeObject,
     offset_datetime_type: *mut PyTypeObject,
@@ -578,6 +453,7 @@ struct State<'a> {
     unpickle_time: *mut PyObject,
     unpickle_date_delta: *mut PyObject,
     unpickle_time_delta: *mut PyObject,
+    unpickle_datetime_delta: *mut PyObject,
     unpickle_naive_datetime: *mut PyObject,
     unpickle_utc_datetime: *mut PyObject,
     unpickle_offset_datetime: *mut PyObject,
@@ -585,10 +461,10 @@ struct State<'a> {
     unpickle_local_datetime: *mut PyObject,
 
     // imported stuff
-    zoneinfo_type: *mut PyTypeObject,
     datetime_api: &'a PyDateTime_CAPI,
-    strptime: *mut PyObject,
+    zoneinfo_type: *mut PyTypeObject,
     timezone_type: *mut PyTypeObject,
+    strptime: *mut PyObject,
     format_rfc2822: *mut PyObject,
     parse_rfc2822: *mut PyObject,
 
@@ -634,6 +510,7 @@ impl State<'_> {
     }
 }
 
+#[allow(clippy::missing_safety_doc)]
 #[allow(non_snake_case)]
 #[no_mangle]
 pub unsafe extern "C" fn PyInit__whenever() -> *mut PyObject {

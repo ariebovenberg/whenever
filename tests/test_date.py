@@ -266,6 +266,10 @@ def test_eq():
     assert d != different
     assert d != NeverEqual()
     assert not d != AlwaysEqual()
+    assert d != None
+    assert None != d
+    assert not d == None
+    assert not None == d
 
     assert hash(d) == hash(same)
 
@@ -342,9 +346,16 @@ class TestAdd:
             (Date(2021, 1, 31), dict(months=MAX_I64 + 2)),
         ],
     )
-    def test_invalid(self, d, kwargs):
+    def test_out_of_range(self, d, kwargs):
         with pytest.raises((OverflowError, ValueError)):
             d.add(**kwargs)
+
+    def test_invalid(self):
+        with pytest.raises(TypeError):
+            Date(2021, 1, 1) + None
+
+        with pytest.raises(TypeError):
+            None + Date(2021, 1, 1)
 
 
 @pytest.mark.parametrize(
@@ -551,6 +562,12 @@ class TestSubtract:
         with pytest.raises(TypeError, match="unsupported operand"):
             Date(2021, 1, 1) - "2021-01-01"  # type: ignore[operator]
 
+        with pytest.raises(TypeError):
+            None - Date(2021, 1, 1)
+
+        with pytest.raises(TypeError):
+            3 - Date(2021, 1, 1)
+
     def test_fuzzing(self):
         for d1, d2 in product(_EXAMPLE_DATES, _EXAMPLE_DATES):
             delta = d1 - d2
@@ -578,7 +595,7 @@ def test_pickling():
 def test_unpickle_compatibility():
     dumped = (
         b"\x80\x04\x95'\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0b_unp"
-        b"kl_date\x94\x93\x94M\xe5\x07K\x01K\x02\x87\x94R\x94."
+        b"kl_date\x94\x93\x94C\x04\xe5\x07\x01\x02\x94\x85\x94R\x94."
     )
     assert pickle.loads(dumped) == Date(2021, 1, 2)
 
