@@ -39,7 +39,7 @@ Concrete classes
    :members: now, from_timestamp, tzname, __add__, __sub__
 
 .. autoclass:: whenever.NaiveDateTime
-   :members: __eq__, __add__, __sub__, assume_utc, assume_offset, assume_zoned, assume_local, strptime, common_iso8601, from_common_iso8601
+   :members: __eq__, __add__, __sub__, assume_utc, assume_fixed_offset, assume_zoned, assume_in_local_system, strptime, common_iso8601, from_common_iso8601
 
 
 Deltas

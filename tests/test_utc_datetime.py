@@ -2,11 +2,10 @@ import pickle
 import re
 from copy import copy, deepcopy
 from datetime import datetime as py_datetime, timedelta, timezone
-from unittest import mock
 
 import pytest
 from hypothesis import given
-from hypothesis.strategies import integers, text
+from hypothesis.strategies import floats, integers, text
 
 from whenever import (
     Date,
@@ -18,6 +17,7 @@ from whenever import (
     ZonedDateTime,
     days,
     hours,
+    minutes,
     seconds,
     years,
 )
@@ -124,7 +124,7 @@ class TestInit:
 
 
 def test_offset():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
     assert d.offset == hours(0)
 
 
@@ -135,16 +135,16 @@ def test_immutable():
 
 
 def test_date_and_time():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
     assert d.date() == Date(2020, 8, 15)
-    assert d.time() == Time(23, 12, 9, 987_654)
+    assert d.time() == Time(23, 12, 9, nanosecond=987_654)
 
 
 @pytest.mark.parametrize(
     "d, expected",
     [
         (
-            UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654),
+            UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654),
             "2020-08-15T23:12:09.000987654Z",
         ),
         (
@@ -167,12 +167,12 @@ class TestFromDefaultFormat:
             # full precision
             (
                 "2020-08-15T23:12:09.987654001Z",
-                UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654_001),
+                UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_001),
             ),
             # microsecond precision
             (
                 "2020-08-15T23:12:09.987654Z",
-                UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654_000),
+                UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000),
             ),
             # no fractions
             ("2020-08-15T23:12:09Z", UTCDateTime(2020, 8, 15, 23, 12, 9)),
@@ -210,12 +210,13 @@ class TestFromDefaultFormat:
             "2020-08-15T23:12:09.1234567890Z",  # too precise
             "2020-09-15T22:44:20z",  # lowercase z
             "2020-09-15T22:44:20",  # no trailing z
+            "2020-09-15T\x0012:32",  # NULL byte
         ],
     )
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"Invalid format.*" + re.escape(s),
+            match=r"Invalid format.*" + re.escape(repr(s)),
         ):
             UTCDateTime.from_default_format(s)
 
@@ -317,7 +318,9 @@ class TestTimestamp:
     def test_millis(self):
         assert UTCDateTime(1970, 1, 1).timestamp_millis() == 0
         assert (
-            UTCDateTime(2020, 8, 15, 12, 8, 30, 45_123_987).timestamp_millis()
+            UTCDateTime(
+                2020, 8, 15, 12, 8, 30, nanosecond=45_123_987
+            ).timestamp_millis()
             == 1_597_493_310_045
         )
         assert UTCDateTime.MAX.timestamp_millis() == 253402300799999
@@ -384,7 +387,7 @@ class TestFromTimestamp:
 
 
 def test_repr():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
     assert repr(d) == "UTCDateTime(2020-08-15 23:12:09.000987654Z)"
     assert (
         repr(UTCDateTime(2020, 8, 15, 23, 12))
@@ -550,13 +553,6 @@ def test_now():
     assert py_now - now.py_datetime() < timedelta(seconds=1)
 
 
-def test_patchable_now():
-    with mock.patch.object(
-        UTCDateTime, "now", return_value=UTCDateTime(2020, 8, 15, 14)
-    ):
-        assert UTCDateTime.now() == UTCDateTime(2020, 8, 15, 14)
-
-
 def test_min_max():
     assert UTCDateTime.MIN == UTCDateTime(1, 1, 1)
     assert UTCDateTime.MAX == UTCDateTime(
@@ -564,69 +560,164 @@ def test_min_max():
     )
 
 
-def test_replace():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert d.replace(year=2021) == UTCDateTime(2021, 8, 15, 23, 12, 9, 987_654)
-    assert d.replace(month=9) == UTCDateTime(2020, 9, 15, 23, 12, 9, 987_654)
-    assert d.replace(day=16) == UTCDateTime(2020, 8, 16, 23, 12, 9, 987_654)
-    assert d.replace(hour=0) == UTCDateTime(2020, 8, 15, 0, 12, 9, 987_654)
-    assert d.replace(minute=0) == UTCDateTime(2020, 8, 15, 23, 0, 9, 987_654)
-    assert d.replace(second=0) == UTCDateTime(2020, 8, 15, 23, 12, 0, 987_654)
-    assert d.replace(nanosecond=0) == UTCDateTime(2020, 8, 15, 23, 12, 9, 0)
+class TestReplace:
 
-    with pytest.raises(TypeError, match="tzinfo"):
-        d.replace(tzinfo=timezone.utc)  # type: ignore[call-arg]
+    def test_valid(self):
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        assert d.replace(year=2021) == UTCDateTime(
+            2021, 8, 15, 23, 12, 9, nanosecond=987_654
+        )
+        assert d.replace(month=9) == UTCDateTime(
+            2020, 9, 15, 23, 12, 9, nanosecond=987_654
+        )
+        assert d.replace(day=16) == UTCDateTime(
+            2020, 8, 16, 23, 12, 9, nanosecond=987_654
+        )
+        assert d.replace(hour=0) == UTCDateTime(
+            2020, 8, 15, 0, 12, 9, nanosecond=987_654
+        )
+        assert d.replace(minute=0) == UTCDateTime(
+            2020, 8, 15, 23, 0, 9, nanosecond=987_654
+        )
+        assert d.replace(second=0) == UTCDateTime(
+            2020, 8, 15, 23, 12, 0, nanosecond=987_654
+        )
+        assert d.replace(nanosecond=0) == UTCDateTime(2020, 8, 15, 23, 12, 9)
+
+        with pytest.raises(TypeError, match="tzinfo"):
+            d.replace(tzinfo=timezone.utc)  # type: ignore[call-arg]
+
+    def test_invalid(self):
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with pytest.raises(ValueError, match="Invalid date"):
+            d.replace(year=0)
+
+        with pytest.raises(ValueError, match="Invalid date"):
+            d.replace(day=32)
+
+        with pytest.raises(ValueError, match="Invalid time"):
+            d.replace(hour=24)
 
 
 def test_with_date():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
     assert d.with_date(Date(2019, 1, 1)) == UTCDateTime(
-        2019, 1, 1, 23, 12, 9, 987_654
+        2019, 1, 1, 23, 12, 9, nanosecond=987_654
     )
-    assert d == UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    assert d == UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
 
 
 def test_with_time():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
     assert d.with_time(Time(1, 2, 3, 4)) == UTCDateTime(
         2020, 8, 15, 1, 2, 3, 4
     )
-    assert d == UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    assert d == UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
 
 
-def test_add_method():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert d.add(hours=24, seconds=5) == UTCDateTime(
-        2020, 8, 16, 23, 12, 14, 987_654
+class TestAddMethod:
+
+    def test_valid(self):
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        assert d.add(hours=24, seconds=5) == d + hours(24) + seconds(5)
+        assert d.add(years=1, days=4, minutes=-4) == d + years(1) + days(
+            4
+        ) - minutes(4)
+
+    def test_invalid(self):
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with pytest.raises(ValueError, match="range"):
+            d.add(hours=24 * 365 * 8000)
+
+        with pytest.raises(ValueError, match="range"):
+            d.add(hours=-24 * 365 * 3000)
+
+        with pytest.raises(TypeError, match="positional"):
+            d.add(4)  # type: ignore[call-args]
+
+    @given(
+        years=integers(),
+        months=integers(),
+        days=integers(),
+        hours=floats(),
+        minutes=floats(),
+        seconds=floats(),
+        milliseconds=floats(),
+        microseconds=floats(),
+        nanoseconds=floats(),
     )
-    assert d.add(years=1, days=4, minutes=-4) == UTCDateTime(
-        2021, 8, 19, 23, 8, 9, 987_654
+    def test_fuzzing(self, **kwargs):
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
+        try:
+            d.add(**kwargs)
+        except (ValueError, OverflowError):
+            pass
+
+
+class TestSubtractMethod:
+
+    def test_valid(self):
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        assert d.subtract(hours=24, seconds=5) == d - hours(24) - seconds(5)
+        assert d.subtract(years=1, days=4, minutes=-4) == d - years(1) - days(
+            4
+        ) - minutes(-4)
+
+    def test_invalid(self):
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with pytest.raises(ValueError, match="range"):
+            d.subtract(hours=24 * 365 * 3000)
+
+        with pytest.raises(ValueError, match="range"):
+            d.subtract(hours=-24 * 365 * 8000)
+
+        with pytest.raises(TypeError, match="positional"):
+            d.subtract(4)  # type: ignore[call-args]
+
+        with pytest.raises(TypeError, match="positional"):
+            d.subtract(hours(4))  # type: ignore[call-args]
+
+    @given(
+        years=integers(),
+        months=integers(),
+        days=integers(),
+        hours=floats(),
+        minutes=floats(),
+        seconds=floats(),
+        milliseconds=floats(),
+        microseconds=floats(),
+        nanoseconds=floats(),
     )
+    def test_fuzzing(self, **kwargs):
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
+        try:
+            d.subtract(**kwargs)
+        except (ValueError, OverflowError):
+            pass
 
 
 class TestAddOperator:
     def test_time_units(self):
-        d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         assert d + hours(24) + seconds(5) == UTCDateTime(
-            2020, 8, 16, 23, 12, 14, 987_654
+            2020, 8, 16, 23, 12, 14, nanosecond=987_654
         )
 
         with pytest.raises(ValueError, match="range"):
             d + hours(9_000 * 366 * 24)
 
-    # TODO
-    # def test_mix(self):
-    #     d = UTCDateTime(2020, 8, 15, 23, 30)
-    #     assert d + years(1) + days(4) - minutes(4) == UTCDateTime(
-    #         2021, 8, 19, 23, 26
-    #     )
+    def test_mix(self):
+        d = UTCDateTime(2020, 8, 15, 23, 30)
+        assert d + (years(1) + days(4) + minutes(4)) == UTCDateTime(
+            2021, 8, 19, 23, 34
+        )
 
     def test_date_units(self):
         d = UTCDateTime(2020, 8, 15, 23, 30)
         assert d + years(1) + days(4) == UTCDateTime(2021, 8, 19, 23, 30)
 
     def test_invalid(self):
-        d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.raises(TypeError, match="unsupported operand type"):
             d + 42  # type: ignore[operator]
 
@@ -636,38 +727,30 @@ class TestAddOperator:
         with pytest.raises(TypeError, match="unsupported operand type"):
             None + d  # type: ignore[operator]
 
-
-def test_subtract_method():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert d.subtract(hours=24, seconds=5) == UTCDateTime(
-        2020, 8, 14, 23, 12, 4, 987_654
-    )
-    assert d.subtract(years=1, days=4, minutes=-4) == UTCDateTime(
-        2019, 8, 11, 23, 16, 9, 987_654
-    )
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            NaiveDateTime(2020, 1, 1) + d  # type: ignore[operator]
 
 
 class TestSubtractOperator:
     def test_time_units(self):
-        d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         assert d - hours(24) - seconds(5) == UTCDateTime(
-            2020, 8, 14, 23, 12, 4, 987_654
+            2020, 8, 14, 23, 12, 4, nanosecond=987_654
         )
 
     def test_date_units(self):
         d = UTCDateTime(2020, 8, 15, 23, 30)
         assert d - years(1) - days(4) == UTCDateTime(2019, 8, 11, 23, 30)
 
-    # TODO
-    # def test_mixed_units(self):
-    #     d = UTCDateTime(2020, 8, 15, 23, 30)
-    #     assert d - years(1) - days(4) - minutes(-4) == UTCDateTime(
-    #         2019, 8, 11, 23, 34
-    #     )
+    def test_mixed_units(self):
+        d = UTCDateTime(2020, 8, 15, 23, 30)
+        assert d - (years(1) + days(4) + minutes(4)) == UTCDateTime(
+            2019, 8, 11, 23, 26
+        )
 
     def test_utc(self):
-        d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-        other = UTCDateTime(2020, 8, 14, 23, 12, 4, 987_654)
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        other = UTCDateTime(2020, 8, 14, 23, 12, 4, nanosecond=987_654)
         assert d - other == hours(24) + seconds(5)
 
     def test_offset(self):
@@ -704,7 +787,7 @@ class TestSubtractOperator:
         assert d - LocalSystemDateTime(2023, 10, 29, 1) == hours(7)
 
     def test_invalid(self):
-        d = UTCDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.raises(TypeError, match="unsupported operand type"):
             d - 42  # type: ignore[operator]
 
@@ -931,6 +1014,8 @@ class TestFromRFC3339:
             "garbage",  # garbage
             "2020-08-15T23:12:09.1234567890Z",  # too precise
             "2020-09-15T22:44:20+01:00",  # non-UTC offset
+            "2020-08-15T23:12:09.34ZZ",  # extra Z
+            "2020-08-15T23:12:09.34Z01:00",  # offset and Z
         ],
     )
     def test_invalid(self, s):

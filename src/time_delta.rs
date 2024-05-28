@@ -1,5 +1,5 @@
 use core::ffi::{c_int, c_void};
-use core::{mem, ptr};
+use core::mem;
 use pyo3_ffi::*;
 use std::cmp::min;
 use std::fmt;
@@ -9,7 +9,7 @@ use std::ptr::null_mut as NULL;
 use crate::common::*;
 use crate::date::MAX_YEAR;
 use crate::date_delta::{DateDelta, InitError};
-use crate::datetime_delta::{self, DateTimeDelta};
+use crate::datetime_delta::{handle_exact_unit, DateTimeDelta};
 use crate::State;
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -17,12 +17,6 @@ pub(crate) struct TimeDelta {
     // struct design inspired by datetime.timedelta and chrono::TimeDelta
     pub(crate) secs: i64,  // div_euclid(total_nanos) - may be negative
     pub(crate) nanos: u32, // rem_euclid(total_nanos) - never negative
-}
-
-#[repr(C)]
-pub(crate) struct PyTimeDelta {
-    _ob_base: PyObject,
-    data: TimeDelta,
 }
 
 impl TimeDelta {
@@ -47,10 +41,6 @@ impl TimeDelta {
 
     pub(crate) const fn total_nanos(&self) -> i128 {
         self.secs as i128 * 1_000_000_000 + self.nanos as i128
-    }
-
-    pub(crate) unsafe fn extract(obj: *mut PyObject) -> Self {
-        (*obj.cast::<PyTimeDelta>()).data
     }
 
     pub(crate) const fn subsec_nanos(&self) -> u32 {
@@ -95,6 +85,8 @@ impl TimeDelta {
 
     pub(crate) const ZERO: Self = Self { secs: 0, nanos: 0 };
 }
+
+impl PyWrapped for TimeDelta {}
 
 impl Neg for TimeDelta {
     type Output = Self;
@@ -161,27 +153,6 @@ pub(crate) const SINGLETONS: [(&str, TimeDelta); 3] = [
     ),
 ];
 
-macro_rules! handle_unit(
-    ($obj:expr, $unit:literal, $max:expr, $num_nanos:expr) => {{
-        if PyLong_Check($obj) != 0 {
-            let i = $obj.to_long()?
-                // Safe to unwrap since we just checked that it's a long
-                .unwrap();
-            if !(-$max..=$max).contains(&i) {
-                Err(value_error!("%s out of range", c_str!($unit)))?
-            }
-            i as i128 * $num_nanos
-        } else {
-            let f = $obj.to_f64()?
-                .ok_or_else(|| value_error!("%s must be an integer or float", c_str!($unit)))?;
-            if f < -$max as _ || f > $max as _ || f.is_nan() {
-                Err(value_error!("%s out of range", c_str!($unit)))?
-            }
-            (f * $num_nanos as f64) as i128
-        }
-    }}
-);
-
 unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
     let nargs = PyTuple_GET_SIZE(args);
     let nkwargs = if kwargs.is_null() {
@@ -208,106 +179,97 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
             let mut pos: Py_ssize_t = 0;
             while PyDict_Next(kwargs, &mut pos, &mut key, &mut value) != 0 {
                 if key == str_hours {
-                    nanos += handle_unit!(value, "hours", MAX_HOURS, 3_600_000_000_000_i128);
+                    nanos += handle_exact_unit(value, MAX_HOURS, "hours", 3_600_000_000_000_i128)?;
                 } else if key == str_minutes {
-                    nanos += handle_unit!(value, "minutes", MAX_MINUTES, 60_000_000_000_i128);
+                    nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", 60_000_000_000_i128)?;
                 } else if key == str_seconds {
-                    nanos += handle_unit!(value, "seconds", MAX_SECS, 1_000_000_000_i128);
+                    nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000_i128)?;
                 } else if key == str_milliseconds {
-                    nanos += handle_unit!(value, "milliseconds", MAX_MILLISECONDS, 1_000_000_i128);
+                    nanos +=
+                        handle_exact_unit(value, MAX_MILLISECONDS, "milliseconds", 1_000_000_i128)?;
                 } else if key == str_microseconds {
-                    nanos += handle_unit!(value, "microseconds", MAX_MICROSECONDS, 1_000_i128);
+                    nanos +=
+                        handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000_i128)?;
                 } else if key == str_nanoseconds {
                     nanos += value
                         .to_i128()?
-                        .ok_or_else(|| value_error!("nanoseconds must be an integer"))?;
+                        .ok_or_value_err("nanoseconds must be an integer")?;
                 } else {
-                    Err(type_error!(
-                        "TimeDelta() got an unexpected keyword argument: %R",
-                        key
+                    Err(type_err!(
+                        "TimeDelta() got an unexpected keyword argument: {}",
+                        key.repr()
                     ))?
                 }
             }
-            TimeDelta::from_nanos(nanos).ok_or_else(|| value_error!("TimeDelta out of range"))?
+            TimeDelta::from_nanos(nanos).ok_or_value_err("TimeDelta out of range")?
         }
-        _ => Err(type_error!("TimeDelta() takes no positional arguments"))?,
+        _ => Err(type_err!("TimeDelta() takes no positional arguments"))?,
     };
-    new_unchecked(cls, delta)
+    delta.to_obj(cls)
 }
 
 pub(crate) unsafe fn hours(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
-    new_unchecked(
-        State::for_mod(module).time_delta_type,
-        TimeDelta::from_nanos_unchecked(handle_unit!(
-            amount,
-            "hours",
-            MAX_HOURS,
-            3_600_000_000_000_i128
-        )),
-    )
+    TimeDelta::from_nanos_unchecked(handle_exact_unit(
+        amount,
+        MAX_HOURS,
+        "hours",
+        3_600_000_000_000_i128,
+    )?)
+    .to_obj(State::for_mod(module).time_delta_type)
 }
 
 pub(crate) unsafe fn minutes(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
-    new_unchecked(
-        State::for_mod(module).time_delta_type,
-        TimeDelta::from_nanos_unchecked(handle_unit!(
-            amount,
-            "minutes",
-            MAX_MINUTES,
-            60_000_000_000_i128
-        )),
-    )
+    TimeDelta::from_nanos_unchecked(handle_exact_unit(
+        amount,
+        MAX_MINUTES,
+        "minutes",
+        60_000_000_000_i128,
+    )?)
+    .to_obj(State::for_mod(module).time_delta_type)
 }
 
 pub(crate) unsafe fn seconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
-    new_unchecked(
-        State::for_mod(module).time_delta_type,
-        TimeDelta::from_nanos_unchecked(handle_unit!(
-            amount,
-            "seconds",
-            MAX_SECS,
-            1_000_000_000_i128
-        )),
-    )
+    TimeDelta::from_nanos_unchecked(handle_exact_unit(
+        amount,
+        MAX_SECS,
+        "seconds",
+        1_000_000_000_i128,
+    )?)
+    .to_obj(State::for_mod(module).time_delta_type)
 }
 
 pub(crate) unsafe fn milliseconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
-    new_unchecked(
-        State::for_mod(module).time_delta_type,
-        TimeDelta::from_nanos_unchecked(handle_unit!(
-            amount,
-            "milliseconds",
-            MAX_MILLISECONDS,
-            1_000_000i128
-        )),
-    )
+    TimeDelta::from_nanos_unchecked(handle_exact_unit(
+        amount,
+        MAX_MILLISECONDS,
+        "milliseconds",
+        1_000_000_i128,
+    )?)
+    .to_obj(State::for_mod(module).time_delta_type)
 }
 
 pub(crate) unsafe fn microseconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
-    new_unchecked(
-        State::for_mod(module).time_delta_type,
-        TimeDelta::from_nanos_unchecked(handle_unit!(
-            amount,
-            "microseconds",
-            MAX_MICROSECONDS,
-            1_000_i128
-        )),
-    )
+    TimeDelta::from_nanos_unchecked(handle_exact_unit(
+        amount,
+        MAX_MICROSECONDS,
+        "microseconds",
+        1_000_i128,
+    )?)
+    .to_obj(State::for_mod(module).time_delta_type)
 }
 
 pub(crate) unsafe fn nanoseconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
-    new_unchecked(
-        State::for_mod(module).time_delta_type,
-        TimeDelta::from_nanos_unchecked(
-            amount
-                .to_i128()?
-                .ok_or_else(|| value_error!("nanoseconds must be an integer"))?,
-        ),
+    TimeDelta::from_nanos(
+        amount
+            .to_i128()?
+            .ok_or_value_err("nanoseconds must be an integer")?,
     )
+    .ok_or_value_err("TimeDelta out of range")?
+    .to_obj(State::for_mod(module).time_delta_type)
 }
 
 unsafe fn __richcmp__(obj_a: *mut PyObject, obj_b: *mut PyObject, op: c_int) -> PyReturn {
-    Ok(newref(if Py_TYPE(obj_b) == Py_TYPE(obj_a) {
+    if Py_TYPE(obj_b) == Py_TYPE(obj_a) {
         let a = TimeDelta::extract(obj_a);
         let b = TimeDelta::extract(obj_b);
         match op {
@@ -319,24 +281,22 @@ unsafe fn __richcmp__(obj_a: *mut PyObject, obj_b: *mut PyObject, op: c_int) -> 
             pyo3_ffi::Py_GE => a >= b,
             _ => unreachable!(),
         }
-        .to_py()?
+        .to_py()
     } else {
-        Py_NotImplemented()
-    }))
+        Ok(newref(Py_NotImplemented()))
+    }
 }
 
 unsafe extern "C" fn __hash__(slf: *mut PyObject) -> Py_hash_t {
-    let tdelta = TimeDelta::extract(slf);
-    hashmask(tdelta.pyhash())
+    hashmask(TimeDelta::extract(slf).pyhash())
 }
 
 unsafe fn __neg__(slf: *mut PyObject) -> PyReturn {
-    new_unchecked(Py_TYPE(slf), -TimeDelta::extract(slf))
+    (-TimeDelta::extract(slf)).to_obj(Py_TYPE(slf))
 }
 
 unsafe extern "C" fn __bool__(slf: *mut PyObject) -> c_int {
-    let TimeDelta { secs, nanos } = TimeDelta::extract(slf);
-    (secs != 0 || nanos != 0).into()
+    (!TimeDelta::extract(slf).is_zero()).into()
 }
 
 unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
@@ -347,53 +307,59 @@ unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
     format!("{}", TimeDelta::extract(slf)).to_py()
 }
 
-unsafe fn __mul__(slf: *mut PyObject, factor_obj: *mut PyObject) -> PyReturn {
-    // TODO: reflexivity?
-    let new = if PyLong_Check(factor_obj) != 0 {
-        let factor = factor_obj
-            .to_i128()?
-            // safe to unwrap since we already know it's a long
-            .unwrap();
-        if factor == 1 {
-            return Ok(newref(slf));
-        }
-        TimeDelta::extract(slf)
+unsafe fn __mul__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
+    if obj_b.is_int() {
+        _mul_int(obj_a, obj_b.to_i128()?.unwrap())
+    } else if obj_b.is_float() {
+        _mul_float(obj_a, obj_b.to_f64()?.unwrap())
+    // important: this method can be called with the arguments reversed (__rmul__)
+    } else if obj_a.is_int() {
+        _mul_int(obj_b, obj_a.to_i128()?.unwrap())
+    } else if obj_a.is_float() {
+        _mul_float(obj_b, obj_a.to_f64()?.unwrap())
+    } else {
+        Ok(newref(Py_NotImplemented()))
+    }
+}
+
+#[inline]
+unsafe fn _mul_int(delta_obj: *mut PyObject, factor: i128) -> PyReturn {
+    if factor == 1 {
+        Ok(newref(delta_obj))
+    } else {
+        TimeDelta::extract(delta_obj)
             .total_nanos()
             .checked_mul(factor)
             .and_then(TimeDelta::from_nanos)
-            .ok_or_else(|| value_error!("Multiplication result out of range"))?
-    } else if PyFloat_Check(factor_obj) != 0 {
-        let factor = factor_obj
-            .to_f64()?
-            // safe to unwrap since we've just checked it's a float
-            .unwrap();
-        if factor == 1.0 {
-            return Ok(newref(slf));
-        }
-        let TimeDelta { secs, nanos } = TimeDelta::extract(slf);
-        Some((secs as f64 * 1e9 + nanos as f64) * factor)
-            .filter(|&t| t.is_finite() && t.abs() < MAX_NANOSECONDS as f64)
-            .map(|t| TimeDelta::from_nanos_unchecked(t as i128))
-            .ok_or_else(|| value_error!("Multiplication result out of range"))?
+            .ok_or_value_err("Multiplication result out of range")?
+            .to_obj(Py_TYPE(delta_obj))
+    }
+}
+
+#[inline]
+unsafe fn _mul_float(delta_obj: *mut PyObject, factor: f64) -> PyReturn {
+    if factor == 1.0 {
+        Ok(newref(delta_obj))
     } else {
-        return Ok(newref(Py_NotImplemented()));
-    };
-    new_unchecked(Py_TYPE(slf), new)
+        let TimeDelta { secs, nanos } = TimeDelta::extract(delta_obj);
+        let nanos = (secs as f64 * 1e9 + nanos as f64) * factor;
+        if nanos.is_nan() || !(-MAX_NANOSECONDS as f64..MAX_NANOSECONDS as f64).contains(&nanos) {
+            Err(value_err!("Multiplication result out of range"))?
+        }
+        TimeDelta::from_nanos_unchecked(nanos as i128).to_obj(Py_TYPE(delta_obj))
+    }
 }
 
 unsafe fn __truediv__(slf: *mut PyObject, factor_obj: *mut PyObject) -> PyReturn {
-    // TODO: reflexivity?
-    // get the factor, complicated by the fact that it can be a float,
-    // or even a >i64::MAX integer
-    let new = if PyLong_Check(factor_obj) != 0 {
+    if factor_obj.is_int() {
         let factor = factor_obj
             .to_i128()?
-            // safe to unwrap since we already know it's a long
+            // safe to unwrap since we already know it's an int
             .unwrap();
         if factor == 1 {
             return Ok(newref(slf));
         } else if factor == 0 {
-            Err(py_error!(PyExc_ZeroDivisionError, "Division by zero"))?
+            Err(py_err!(PyExc_ZeroDivisionError, "Division by zero"))?
         }
         let nanos = TimeDelta::extract(slf).total_nanos();
         TimeDelta::from_nanos_unchecked(if nanos % factor == 0 {
@@ -401,7 +367,7 @@ unsafe fn __truediv__(slf: *mut PyObject, factor_obj: *mut PyObject) -> PyReturn
         } else {
             (nanos as f64 / factor as f64).round() as i128
         })
-    } else if PyFloat_Check(factor_obj) != 0 {
+    } else if factor_obj.is_float() {
         let factor = factor_obj
             .to_f64()?
             // safe to unwrap since we already know it's a float
@@ -409,24 +375,24 @@ unsafe fn __truediv__(slf: *mut PyObject, factor_obj: *mut PyObject) -> PyReturn
         if factor == 1.0 {
             return Ok(newref(slf));
         } else if factor == 0.0 {
-            Err(py_error!(PyExc_ZeroDivisionError, "Division by zero"))?
+            Err(py_err!(PyExc_ZeroDivisionError, "Division by zero"))?
         }
         let mut nanos = TimeDelta::extract(slf).total_nanos() as f64;
         nanos /= factor;
         if nanos.is_nan() || (MAX_NANOSECONDS as f64) < nanos || nanos < -MAX_NANOSECONDS as f64 {
-            Err(py_error!(PyExc_ValueError, "Division result out of range"))?
+            Err(py_err!(PyExc_ValueError, "Division result out of range"))?
         };
         TimeDelta::from_nanos_unchecked(nanos as i128)
     } else if Py_TYPE(factor_obj) == Py_TYPE(slf) {
         let factor = TimeDelta::extract(factor_obj).total_nanos();
         if factor == 0 {
-            Err(py_error!(PyExc_ZeroDivisionError, "Division by zero"))?
+            Err(py_err!(PyExc_ZeroDivisionError, "Division by zero"))?
         }
         return (TimeDelta::extract(slf).total_nanos() as f64 / factor as f64).to_py();
     } else {
         return Ok(newref(Py_NotImplemented()));
-    };
-    new_unchecked(Py_TYPE(slf), new)
+    }
+    .to_obj(Py_TYPE(slf))
 }
 
 // TODO: add/subtract *methods*
@@ -449,25 +415,22 @@ unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) 
         if negate {
             b = -b;
         }
-        new_unchecked(
-            type_a,
-            a.checked_add(b)
-                .ok_or_else(|| value_error!("Addition result out of range"))?,
-        )
+        a.checked_add(b)
+            .ok_or_value_err("Addition result out of range")?
+            .to_obj(type_a)
+    // Careful argument handling since the method may be called with args reversed
     } else {
         let mod_a = PyType_GetModule(type_a);
         let mod_b = PyType_GetModule(type_b);
         if mod_a == mod_b {
-            // at this point we know that `a` is a TimeDelta
             let state = State::for_mod(mod_a);
-            let delta_a = TimeDelta::extract(obj_a);
-            let result = if type_b == state.date_delta_type {
+            if type_b == state.date_delta_type {
                 let mut b = DateDelta::extract(obj_b);
                 if negate {
                     b = -b;
                 }
-                DateTimeDelta::new(b, delta_a)
-                    .ok_or_else(|| value_error!("Mixed sign of delta components"))?
+                DateTimeDelta::new(b, TimeDelta::extract(obj_a))
+                    .ok_or_value_err("Mixed sign of delta components")?
             } else if type_b == state.datetime_delta_type {
                 let mut b = DateTimeDelta::extract(obj_b);
                 if negate {
@@ -475,20 +438,20 @@ unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) 
                 }
                 b.checked_add(DateTimeDelta {
                     ddelta: DateDelta::ZERO,
-                    tdelta: delta_a,
+                    tdelta: TimeDelta::extract(obj_a),
                 })
                 .map_err(|e| match e {
-                    InitError::TooBig => value_error!("Result out of range"),
-                    InitError::MixedSign => value_error!("Mixed sign of delta components"),
+                    InitError::TooBig => value_err!("Result out of range"),
+                    InitError::MixedSign => value_err!("Mixed sign of delta components"),
                 })?
             } else {
-                return Err(type_error!(
-                    "unsupported operand type(s) for +/-: %R and %R",
-                    type_a,
-                    type_b
-                ));
-            };
-            datetime_delta::new_unchecked(state.datetime_delta_type, result)
+                Err(type_err!(
+                    "unsupported operand type(s) for +/-: {} and {}",
+                    (type_a as *mut PyObject).repr(),
+                    (type_b as *mut PyObject).repr()
+                ))?
+            }
+            .to_obj(state.datetime_delta_type)
         } else {
             Ok(newref(Py_NotImplemented()))
         }
@@ -500,7 +463,7 @@ unsafe fn __abs__(slf: *mut PyObject) -> PyReturn {
     if delta.secs >= 0 {
         Ok(newref(slf))
     } else {
-        new_unchecked(Py_TYPE(slf), -delta)
+        (-delta).to_obj(Py_TYPE(slf))
     }
 }
 
@@ -523,7 +486,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_dealloc,
-        pfunc: dealloc as *mut c_void,
+        pfunc: generic_dealloc as *mut c_void,
     },
     slotmethod!(Py_tp_new, __new__),
     slotmethod!(Py_tp_richcompare, __richcmp__),
@@ -556,25 +519,16 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     .as_result()
 }
 
-// OPTIMIZE: a more efficient pickle?
-pub(crate) unsafe fn unpickle(module: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
-    if args.len() != 1 {
-        Err(type_error!("TimeDelta unpickle requires 1 argument"))?
+pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
+    let mut data = arg.to_bytes()?.ok_or_value_err("Invalid pickle data")?;
+    if data.len() != 12 {
+        Err(value_err!("Invalid pickle data"))?;
     }
-    let mut data = args[0]
-        .to_bytes()?
-        .ok_or_else(|| value_error!("Invalid pickle data"))?;
-    let new = new_unchecked(
-        State::for_mod(module).time_delta_type,
-        TimeDelta {
-            secs: unpack_one!(data, i64),
-            nanos: unpack_one!(data, u32),
-        },
-    );
-    if !data.is_empty() {
-        Err(value_error!("Invalid pickle data"))?;
+    TimeDelta {
+        secs: unpack_one!(data, i64),
+        nanos: unpack_one!(data, u32),
     }
-    new
+    .to_obj(State::for_mod(module).time_delta_type)
 }
 
 unsafe fn in_nanoseconds(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -613,16 +567,14 @@ unsafe fn in_days_of_24h(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn from_py_timedelta(cls: *mut PyObject, d: *mut PyObject) -> PyReturn {
     if PyDelta_Check(d) == 0 {
-        Err(type_error!("argument must be datetime.timedelta"))?;
+        Err(type_err!("argument must be datetime.timedelta"))?;
     }
-    new_unchecked(
-        cls.cast(),
-        TimeDelta {
-            secs: i64::from(PyDateTime_DELTA_GET_DAYS(d)) * 24 * 3600
-                + i64::from(PyDateTime_DELTA_GET_SECONDS(d)),
-            nanos: PyDateTime_DELTA_GET_MICROSECONDS(d) as u32 * 1_000,
-        },
-    )
+    TimeDelta {
+        secs: i64::from(PyDateTime_DELTA_GET_DAYS(d)) * 24 * 3600
+            + i64::from(PyDateTime_DELTA_GET_SECONDS(d)),
+        nanos: PyDateTime_DELTA_GET_MICROSECONDS(d) as u32 * 1_000,
+    }
+    .to_obj(cls.cast())
 }
 
 unsafe fn py_timedelta(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -631,7 +583,7 @@ unsafe fn py_timedelta(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         Delta_FromDelta,
         DeltaType,
         ..
-    } = State::for_obj(slf).datetime_api;
+    } = State::for_obj(slf).py_api;
     // This whole circus just to round nanoseconds...there's probably
     // a better way to do this
     let mut micros = (nanos / 1_000) as i32;
@@ -715,24 +667,22 @@ fn parse_prefix(s: &mut &[u8]) -> Option<i128> {
 unsafe fn from_default_format(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let s = &mut s_obj
         .to_utf8()?
-        .ok_or_else(|| type_error!("Argument must be a string"))?;
+        .ok_or_type_err("Argument must be a string")?;
 
     let sign = (s.len() > 8)
         .then(|| parse_prefix(s))
         .flatten()
-        .ok_or_else(|| value_error!("Invalid time delta format: %R", s_obj))?;
+        .ok_or_else(|| value_err!("Invalid time delta format: {}", s_obj.repr()))?;
 
     let (hours, (mins, secs, nanos)) = parse_hours(s)
         .zip(parse_mins_secs_nanos(s))
-        .ok_or_else(|| value_error!("Invalid time delta format: %R", s_obj))?;
-    new_unchecked(
-        cls.cast(),
-        TimeDelta::from_nanos(
-            sign * ((hours as i64 * 3600 + mins as i64 * 60 + secs as i64) as i128 * 1_000_000_000
-                + nanos as i128),
-        )
-        .ok_or_else(|| value_error!("TimeDelta out of range"))?,
+        .ok_or_else(|| value_err!("Invalid time delta format: {}", s_obj.repr()))?;
+    TimeDelta::from_nanos(
+        sign * ((hours as i64 * 3600 + mins as i64 * 60 + secs as i64) as i128 * 1_000_000_000
+            + nanos as i128),
     )
+    .ok_or_value_err("TimeDelta out of range")?
+    .to_obj(cls.cast())
 }
 
 unsafe fn as_hrs_mins_secs_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -759,7 +709,7 @@ unsafe fn as_hrs_mins_secs_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyRetu
 }
 
 #[inline]
-pub(crate) fn format_components(td: TimeDelta, s: &mut String) -> () {
+pub(crate) fn format_components(td: TimeDelta, s: &mut String) {
     let TimeDelta { mut secs, nanos } = td;
     debug_assert!(secs >= 0);
     debug_assert!(secs > 0 || nanos > 0);
@@ -895,25 +845,23 @@ pub(crate) unsafe fn parse_all_components(s: &mut &[u8]) -> Option<(i128, bool)>
 unsafe fn from_common_iso8601(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let s = &mut s_obj
         .to_utf8()?
-        .ok_or_else(|| type_error!("argument must be a string"))?;
+        .ok_or_type_err("argument must be a string")?;
 
     let sign = (s.len() >= 4)
         .then(|| parse_prefix(s))
         .flatten()
-        .ok_or_else(|| value_error!("Invalid format: %R", s_obj))?;
+        .ok_or_else(|| value_err!("Invalid format: {}", s_obj.repr()))?;
 
     let (nanos, empty) =
-        parse_all_components(s).ok_or_else(|| value_error!("Invalid format: %R", s_obj))?;
+        parse_all_components(s).ok_or_else(|| value_err!("Invalid format: {}", s_obj.repr()))?;
 
     // i.e. there must be at least one component (`PT` alone is invalid)
     if empty {
-        Err(value_error!("Invalid format: %R", s_obj))?;
+        Err(value_err!("Invalid format: {}", s_obj.repr()))?;
     }
-    new_unchecked(
-        cls.cast(),
-        TimeDelta::from_nanos(nanos * sign)
-            .ok_or_else(|| value_error!("Time delta out of range"))?,
-    )
+    TimeDelta::from_nanos(nanos * sign)
+        .ok_or_value_err("Time delta out of range")?
+        .to_obj(cls.cast())
 }
 
 static mut METHODS: &[PyMethodDef] = &[
@@ -955,23 +903,4 @@ static mut METHODS: &[PyMethodDef] = &[
     PyMethodDef::zeroed(),
 ];
 
-pub(crate) unsafe fn new_unchecked(type_: *mut PyTypeObject, d: TimeDelta) -> PyReturn {
-    let f: allocfunc = (*type_).tp_alloc.expect("tp_alloc is not set");
-    let slf = f(type_, 0).cast::<PyTimeDelta>();
-    if slf.is_null() {
-        return Err(PyErrOccurred());
-    }
-    ptr::addr_of_mut!((*slf).data).write(d);
-    Ok(slf.cast::<PyObject>().as_mut().unwrap())
-}
-
-pub(crate) static mut SPEC: PyType_Spec = PyType_Spec {
-    name: c_str!("whenever.TimeDelta"),
-    basicsize: mem::size_of::<PyTimeDelta>() as _,
-    itemsize: 0,
-    flags: Py_TPFLAGS_DEFAULT as _,
-    slots: unsafe { SLOTS as *const [_] as *mut _ },
-};
-
-#[allow(unused_imports)]
-pub(crate) use handle_unit;
+type_spec!(TimeDelta, SLOTS);

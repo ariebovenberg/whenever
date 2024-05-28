@@ -402,7 +402,7 @@ class Date(_ImmutableBase):
         NaiveDateTime(2021-01-02 12:30:00)
 
         You can use methods like :meth:`~NaiveDateTime.assume_utc`
-        or :meth:`~NaiveDateTime.assume_zoned` to make the result aware.
+        or :meth:`~NaiveDateTime.assume_in_tz` to make the result aware.
         """
         return NaiveDateTime.from_py_datetime(
             _datetime.combine(self._py_date, t._py_time)
@@ -620,7 +620,7 @@ class Time(_ImmutableBase):
         NaiveDateTime(2021-01-02 12:30:00)
 
         Then, use methods like :meth:`~NaiveDateTime.assume_utc`
-        or :meth:`~NaiveDateTime.assume_zoned`
+        or :meth:`~NaiveDateTime.assume_in_tz`
         to make the result aware.
         """
         return NaiveDateTime.from_py_datetime(
@@ -1866,9 +1866,9 @@ class _DateTime(_ImmutableBase, ABC):
 
         To perform the inverse, use :meth:`Date.at` and a method
         like :meth:`~NaiveDateTime.assume_utc` or
-        :meth:`~NaiveDateTime.assume_zoned`:
+        :meth:`~NaiveDateTime.assume_in_tz`:
 
-        >>> date.at(time).assume_zoned("Europe/London")
+        >>> date.at(time).assume_in_tz("Europe/London")
         """
         return Date.from_py_date(self._py_dt.date())
 
@@ -1884,7 +1884,7 @@ class _DateTime(_ImmutableBase, ABC):
 
         To perform the inverse, use :meth:`Time.on` and a method
         like :meth:`~NaiveDateTime.assume_utc` or
-        :meth:`~NaiveDateTime.assume_zoned`:
+        :meth:`~NaiveDateTime.assume_in_tz`:
 
         >>> time.on(date).assume_utc()
         """
@@ -2069,8 +2069,8 @@ class _AwareDateTime(_DateTime):
         """Convert into a naive datetime, dropping all timezone information
 
         As an inverse, :class:`NaiveDateTime` has methods
-        :meth:`~NaiveDateTime.assume_utc`, :meth:`~NaiveDateTime.assume_offset`
-        , :meth:`~NaiveDateTime.assume_zoned`, and :meth:`~NaiveDateTime.assume_local`
+        :meth:`~NaiveDateTime.assume_utc`, :meth:`~NaiveDateTime.assume_fixed_offset`
+        , :meth:`~NaiveDateTime.assume_in_tz`, and :meth:`~NaiveDateTime.assume_in_local_system`
         which may require additional arguments.
         """
         return NaiveDateTime._from_py_unchecked(
@@ -3274,7 +3274,7 @@ class ZonedDateTime(_AwareDateTime):
 
     def exact_eq(self, other: ZonedDateTime, /) -> bool:
         return (
-            # TODO: only consider fold on ambiguity
+            # TODO: only consider fold on ambiguity!
             self._py_dt.tzinfo is other._py_dt.tzinfo
             and self._py_dt.fold == other._py_dt.fold
             and self._py_dt == other._py_dt
@@ -3881,8 +3881,6 @@ class NaiveDateTime(_DateTime):
             )
         return cls._from_py_unchecked(d)
 
-    tzinfo: ClassVar[None] = None
-
     if TYPE_CHECKING:
         # We could have used typing.Unpack, but that's only available
         # in Python 3.11+ or with typing_extensions.
@@ -4042,20 +4040,22 @@ class NaiveDateTime(_DateTime):
         """
         return UTCDateTime._from_py_unchecked(self._py_dt.replace(tzinfo=_UTC))
 
-    def assume_offset(self, offset: int | TimeDelta, /) -> OffsetDateTime:
+    def assume_fixed_offset(
+        self, offset: int | TimeDelta, /
+    ) -> OffsetDateTime:
         """Assume the datetime is in the given offset,
         creating a :class:`~whenever.OffsetDateTime` instance.
 
         Example
         -------
-        >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_offset(+2)
+        >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_fixed_offset(+2)
         OffsetDateTime(2020-08-15 23:12:00+02:00)
         """
         return OffsetDateTime._from_py_unchecked(
             self._py_dt.replace(tzinfo=_load_offset(offset))
         )
 
-    def assume_zoned(
+    def assume_in_tz(
         self, tz: str, /, disambiguate: Disambiguate = "raise"
     ) -> ZonedDateTime:
         """Assume the datetime is in the given timezone,
@@ -4063,7 +4063,7 @@ class NaiveDateTime(_DateTime):
 
         Example
         -------
-        >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_zoned("Europe/Amsterdam")
+        >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_in_tz("Europe/Amsterdam")
         ZonedDateTime(2020-08-15 23:12:00+02:00[Europe/Amsterdam])
         """
         return ZonedDateTime._from_py_unchecked(
@@ -4076,7 +4076,7 @@ class NaiveDateTime(_DateTime):
             )
         )
 
-    def assume_local(
+    def assume_in_local_system(
         self, disambiguate: Disambiguate = "raise"
     ) -> LocalSystemDateTime:
         """Assume the datetime is in the system timezone,
@@ -4085,7 +4085,7 @@ class NaiveDateTime(_DateTime):
         Example
         -------
         >>> # assuming system timezone is America/New_York
-        >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_local()
+        >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_in_local_system()
         LocalSystemDateTime(2020-08-15 23:12:00-04:00)
         """
         return LocalSystemDateTime._from_py_unchecked(

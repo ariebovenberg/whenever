@@ -1,12 +1,12 @@
 use core::ffi::{c_char, c_int, c_long, c_void};
-use core::{mem, ptr};
+use core::mem;
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 use std::ptr::null_mut as NULL;
 
 use crate::common::*;
 use crate::date::Date;
-use crate::naive_datetime::{self, DateTime};
+use crate::naive_datetime::DateTime;
 use crate::State;
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -15,12 +15,6 @@ pub struct Time {
     pub(crate) minute: u8,
     pub(crate) second: u8,
     pub(crate) nanos: u32,
-}
-
-#[repr(C)]
-pub(crate) struct PyTime {
-    _ob_base: PyObject,
-    data: Time,
 }
 
 impl Time {
@@ -106,10 +100,6 @@ impl Time {
         })
     }
 
-    pub(crate) fn extract(obj: *mut PyObject) -> Self {
-        unsafe { (*obj.cast::<PyTime>()).data }
-    }
-
     pub(crate) fn parse_all(s: &[u8]) -> Option<Self> {
         if s.len() < 8 || s.len() == 9 || s.len() > 18 || s[2] != b':' || s[5] != b':' {
             return None;
@@ -178,6 +168,8 @@ impl Time {
     }
 }
 
+impl PyWrapped for Time {}
+
 impl Display for Time {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if self.nanos == 0 {
@@ -224,11 +216,7 @@ pub(crate) const SINGLETONS: [(&str, Time); 3] = [
     ),
 ];
 
-unsafe fn __new__(
-    subtype: *mut PyTypeObject,
-    args: *mut PyObject,
-    kwargs: *mut PyObject,
-) -> PyReturn {
+unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
     let mut hour: c_long = 0;
     let mut minute: c_long = 0;
     let mut second: c_long = 0;
@@ -257,8 +245,8 @@ unsafe fn __new__(
     }
 
     match Time::from_longs(hour, minute, second, nanos) {
-        Some(time) => new_unchecked(subtype, time),
-        None => Err(value_error!("Invalid time component value")),
+        Some(time) => time.to_obj(cls),
+        None => Err(value_err!("Invalid time component value")),
     }
 }
 
@@ -312,7 +300,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_dealloc,
-        pfunc: dealloc as *mut c_void,
+        pfunc: generic_dealloc as *mut c_void,
     },
     PyType_Slot {
         slot: 0,
@@ -331,7 +319,7 @@ unsafe fn py_time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         Time_FromTime,
         TimeType,
         ..
-    } = State::for_obj(slf).datetime_api;
+    } = State::for_obj(slf).py_api;
     Time_FromTime(
         hour.into(),
         minute.into(),
@@ -345,21 +333,19 @@ unsafe fn py_time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn from_py_time(type_: *mut PyObject, time: *mut PyObject) -> PyReturn {
     if PyTime_Check(time) == 0 {
-        Err(type_error!("argument must be a Time"))?
+        Err(type_err!("argument must be a Time"))?
     }
     if PyDateTime_TIME_GET_TZINFO(time) != Py_None() {
-        Err(value_error!("time with timezone is not supported"))?
+        Err(value_err!("time with timezone is not supported"))?
     }
-    // TODO: check fold etc.
-    new_unchecked(
-        type_.cast(),
-        Time {
-            hour: PyDateTime_TIME_GET_HOUR(time) as u8,
-            minute: PyDateTime_TIME_GET_MINUTE(time) as u8,
-            second: PyDateTime_TIME_GET_SECOND(time) as u8,
-            nanos: PyDateTime_TIME_GET_MICROSECOND(time) as u32 * 1_000,
-        },
-    )
+    // FUTURE: check `fold=0`?
+    Time {
+        hour: PyDateTime_TIME_GET_HOUR(time) as u8,
+        minute: PyDateTime_TIME_GET_MINUTE(time) as u8,
+        second: PyDateTime_TIME_GET_SECOND(time) as u8,
+        nanos: PyDateTime_TIME_GET_MICROSECOND(time) as u32 * 1_000,
+    }
+    .to_obj(type_.cast())
 }
 
 unsafe fn default_format(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -395,12 +381,9 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn from_default_format(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
-    match Time::parse_all(
-        s.to_utf8()?
-            .ok_or_else(|| type_error!("Argument must be a string"))?,
-    ) {
-        Some(t) => new_unchecked(cls.cast(), t),
-        None => Err(value_error!("Could not parse time: %R", s)),
+    match Time::parse_all(s.to_utf8()?.ok_or_type_err("Argument must be a string")?) {
+        Some(t) => t.to_obj(cls.cast()),
+        None => Err(value_err!("Could not parse time: {}", s.repr())),
     }
 }
 
@@ -411,15 +394,13 @@ unsafe fn on(slf: *mut PyObject, date: *mut PyObject) -> PyReturn {
         ..
     } = State::for_obj(slf);
     if Py_TYPE(date) == date_type {
-        naive_datetime::new_unchecked(
-            naive_datetime_type,
-            DateTime {
-                date: Date::extract(date),
-                time: Time::extract(slf),
-            },
-        )
+        DateTime {
+            date: Date::extract(date),
+            time: Time::extract(slf),
+        }
+        .to_obj(naive_datetime_type)
     } else {
-        Err(type_error!("argument must be a date"))
+        Err(type_err!("argument must be a date"))
     }
 }
 
@@ -447,37 +428,18 @@ static mut METHODS: &[PyMethodDef] = &[
     PyMethodDef::zeroed(),
 ];
 
-pub(crate) unsafe fn new_unchecked(type_: *mut PyTypeObject, t: Time) -> PyReturn {
-    let f: allocfunc = (*type_).tp_alloc.expect("tp_alloc is not set");
-    let slf = f(type_, 0).cast::<PyTime>();
-    if slf.is_null() {
-        return Err(PyErrOccurred());
+pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
+    let mut data = arg.to_bytes()?.ok_or_type_err("Invalid pickle data")?;
+    if data.len() != 7 {
+        Err(type_err!("Invalid pickle data"))?
     }
-    ptr::addr_of_mut!((*slf).data).write(t);
-    Ok(slf.cast::<PyObject>().as_mut().unwrap())
-}
-
-// OPTIMIZE: a more efficient pickle?
-pub(crate) unsafe fn unpickle(module: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
-    if args.len() != 1 {
-        Err(type_error!("Invalid pickle data"))?
+    Time {
+        hour: unpack_one!(data, u8),
+        minute: unpack_one!(data, u8),
+        second: unpack_one!(data, u8),
+        nanos: unpack_one!(data, u32),
     }
-    let mut data = args[0]
-        .to_bytes()?
-        .ok_or_else(|| type_error!("Invalid pickle data"))?;
-    let new = new_unchecked(
-        State::for_mod(module).time_type,
-        Time {
-            hour: unpack_one!(data, u8),
-            minute: unpack_one!(data, u8),
-            second: unpack_one!(data, u8),
-            nanos: unpack_one!(data, u32),
-        },
-    );
-    if !data.is_empty() {
-        Err(type_error!("Invalid pickle data"))?
-    }
-    new
+    .to_obj(State::for_mod(module).time_type)
 }
 
 unsafe fn get_hour(slf: *mut PyObject) -> PyReturn {
@@ -510,10 +472,4 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
     },
 ];
 
-pub(crate) static mut SPEC: PyType_Spec = PyType_Spec {
-    name: c_str!("whenever.Time"),
-    basicsize: mem::size_of::<PyTime>() as _,
-    itemsize: 0,
-    flags: Py_TPFLAGS_DEFAULT as _,
-    slots: unsafe { SLOTS as *const [_] as *mut _ },
-};
+type_spec!(Time, SLOTS);

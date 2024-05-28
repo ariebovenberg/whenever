@@ -23,7 +23,6 @@ MAX_HOURS = 9999 * 366 * 24
 
 class TestInit:
 
-    # TODO: a big fuzzing test for argument handling
     @pytest.mark.parametrize(
         "kwargs, expected_nanos",
         [
@@ -147,19 +146,42 @@ class TestInit:
             TimeDelta(**{1: 43})  # type: ignore[misc]
 
 
-@pytest.mark.parametrize(
-    "f, arg, expected",
-    [
-        (hours, 3.5, TimeDelta(hours=3.5)),
-        (minutes, 3.5, TimeDelta(minutes=3.5)),
-        (seconds, 3.5, TimeDelta(seconds=3.5)),
-        (microseconds, 3.5, TimeDelta(microseconds=3.5)),
-        (milliseconds, 3.5, TimeDelta(milliseconds=3.5)),
-        (nanoseconds, 3, TimeDelta(nanoseconds=3)),
-    ],
-)
-def test_factories(f, arg, expected):
-    assert f(arg) == expected
+class TestFactories:
+
+    @pytest.mark.parametrize(
+        "f, arg, expected",
+        [
+            (hours, 3.5, TimeDelta(hours=3.5)),
+            (minutes, 3.5, TimeDelta(minutes=3.5)),
+            (seconds, 3.5, TimeDelta(seconds=3.5)),
+            (microseconds, 3.5, TimeDelta(microseconds=3.5)),
+            (milliseconds, 3.5, TimeDelta(milliseconds=3.5)),
+            (nanoseconds, 3, TimeDelta(nanoseconds=3)),
+        ],
+    )
+    def test_valid(self, f, arg, expected):
+        assert f(arg) == expected
+
+    @pytest.mark.parametrize(
+        "factory, value",
+        [
+            (hours, 24 * 366 * 9999 + 1),
+            (hours, -24 * 366 * 9999 - 1),
+            (minutes, 60 * 24 * 366 * 9999 + 1),
+            (minutes, -60 * 24 * 366 * 9999 - 1),
+            (seconds, 3_600 * 24 * 366 * 9999 + 1),
+            (seconds, -3_600 * 24 * 366 * 9999 - 1),
+            (milliseconds, 3_600_000 * 24 * 366 * 9999 + 1),
+            (milliseconds, -3_600_000 * 24 * 366 * 9999 - 1),
+            (microseconds, 3_600_000_000 * 24 * 366 * 9999 + 1),
+            (microseconds, -3_600_000_000 * 24 * 366 * 9999 - 1),
+            (nanoseconds, 3_600_000_000_000 * 24 * 366 * 9999 + 1),
+            (nanoseconds, -3_600_000_000_000 * 24 * 366 * 9999 - 1),
+        ],
+    )
+    def test_bounds(self, factory, value):
+        with pytest.raises((ValueError, OverflowError)):
+            factory(value)
 
 
 def test_constants():
@@ -518,6 +540,8 @@ def test_multiply():
     assert d * 0.5 == TimeDelta(
         hours=0, minutes=31, seconds=1, microseconds=500_002
     )
+    assert d * 0.5 == 0.5 * d
+    assert d * 2 == 2 * d
 
     # allow very big ints if there's no overflow
     assert TimeDelta(nanoseconds=1) * (1 << 66) == TimeDelta(
@@ -533,6 +557,9 @@ def test_multiply():
 
     with pytest.raises(TypeError, match="unsupported operand"):
         d * Ellipsis  # type: ignore[operator]
+
+    with pytest.raises(TypeError, match="unsupported operand"):
+        Ellipsis * d  # type: ignore[operator]
 
 
 class TestDivision:
@@ -575,6 +602,9 @@ class TestDivision:
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
         with pytest.raises(TypeError):
             d / "invalid"  # type: ignore[operator]
+
+        with pytest.raises(TypeError):
+            "invalid" / d  # type: ignore[operator]
 
 
 def test_negate():

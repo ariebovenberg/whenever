@@ -29,13 +29,14 @@ extension-module = ["pyo3/extension-module"]
 name = "benchmarks"
 path = "benchmarks/rust/main.rs"
 
+# TODO: replace git repos with proper versions once this fix has 
+# been released: https://github.com/PyO3/pyo3/issues/4093
 [dependencies]
-# TODO: await response to https://github.com/PyO3/pyo3/issues/4093
 # pyo3-ffi = { version = "^0.21.0", default_features = false, features = ["extension-module"]}
 # pyo3 = { version = "^0.21.0", features = ["extension-module"] }
-pyo3-ffi = { path = "../pyo3/pyo3-ffi", features = ["extension-module"] }
-pyo3 = { path = "../pyo3", features = ["extension-module"] }
+pyo3-ffi = { git = "https://github.com/PyO3/pyo3", features = ["extension-module"] }
+pyo3 = { git = "https://github.com/PyO3/pyo3", features = ["extension-module"] }
 
 [build-dependencies]
 # pyo3-build-config = { version = "^0.21.0" }
-pyo3-build-config = { path = "../pyo3/pyo3-build-config" }
+pyo3-build-config = { git = "https://github.com/PyO3/pyo3" }

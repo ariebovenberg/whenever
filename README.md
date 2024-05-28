@@ -18,7 +18,7 @@ There’s no way to be sure...
 
 ✨ Until now! ✨
 
-Whenever is a datetime library designed from the ground up to enforce correctness.
+Whenever is designed from the ground up to **enforce correctness**.
 Mistakes become <span style="text-decoration: underline; text-decoration-color: red; text-decoration-style: wavy">red squiggles</span> in your IDE, instead of bugs in production.
 It's also **way faster** than other third-party libraries—and often the standard library as well.
 
@@ -60,6 +60,7 @@ It's also **way faster** than other third-party libraries—and often the standa
 </div>
 
 > ⚠️ **Note**: Whenever is in pre-1.0 stage. The API may change with minor releases.
+> On the plus side, this means that the API can still be influenced by your feedback!
 
 ## Quickstart
 
@@ -94,7 +95,7 @@ True
 >>> # Naïve/aware mixups are caught by typechecker
 >>> hackathon_invite - py311_release
 >>> # Only explicit assumptions will make it aware
->>> hackathon_start = hackathon_invite.assume_zoned("Europe/Amsterdam")
+>>> hackathon_start = hackathon_invite.assume_in_tz("Europe/Amsterdam")
 ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])
 
 # DST-aware operators
