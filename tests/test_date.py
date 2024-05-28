@@ -7,20 +7,7 @@ from itertools import chain, product
 import pytest
 
 from tests.common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
-from whenever import (
-    FRIDAY,
-    MONDAY,
-    SATURDAY,
-    SUNDAY,
-    THURSDAY,
-    TUESDAY,
-    WEDNESDAY,
-    Date,
-    DateDelta,
-    NaiveDateTime,
-    Time,
-    days,
-)
+from whenever import Date, DateDelta, NaiveDateTime, Time, Weekday, days
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
@@ -357,6 +344,9 @@ class TestAdd:
         with pytest.raises(TypeError):
             None + Date(2021, 1, 1)
 
+        with pytest.raises(TypeError):
+            py_date(2020, 1, 1) + Date(2021, 1, 1)
+
 
 @pytest.mark.parametrize(
     "d, kwargs, expected",
@@ -576,13 +566,13 @@ class TestSubtract:
 
 def test_day_of_week():
     d = Date(2021, 1, 2)
-    assert d.day_of_week() == SATURDAY
-    assert Date(2021, 1, 3).day_of_week() == SUNDAY
-    assert Date(2021, 1, 4).day_of_week() == MONDAY
-    assert Date(2021, 1, 5).day_of_week() == TUESDAY
-    assert Date(2021, 1, 6).day_of_week() == WEDNESDAY
-    assert Date(2021, 1, 7).day_of_week() == THURSDAY
-    assert Date(2021, 1, 8).day_of_week() == FRIDAY
+    assert d.day_of_week() is Weekday.SATURDAY
+    assert Date(2021, 1, 3).day_of_week() is Weekday.SUNDAY
+    assert Date(2021, 1, 4).day_of_week() is Weekday.MONDAY
+    assert Date(2021, 1, 5).day_of_week() is Weekday.TUESDAY
+    assert Date(2021, 1, 6).day_of_week() is Weekday.WEDNESDAY
+    assert Date(2021, 1, 7).day_of_week() is Weekday.THURSDAY
+    assert Date(2021, 1, 8).day_of_week() is Weekday.FRIDAY
 
 
 def test_pickling():

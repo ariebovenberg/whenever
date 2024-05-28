@@ -10,39 +10,50 @@ macro_rules! c_str(
         use core::ffi::c_char;
         concat!($s, "\0").as_ptr().cast::<c_char>()
     }};
+    ($template:expr, $($arg:tt)*) => {{
+        use core::ffi::c_char;
+        format!(
+            concat!($template, "\0"),
+            $($arg)*
+        ).as_ptr().cast::<c_char>()
+    }}
 );
 
-macro_rules! py_error(
+macro_rules! py_err(
     () => {
         PyErrOccurred()
     };
     ($exc:expr, $msg:literal) => {{
-        use crate::common::c_str;
-        PyErr_SetString($exc, c_str!($msg));
+        match $msg.to_py() {
+            Ok(msg) => PyErr_SetObject($exc, msg),
+            Err(_) => {},
+        }
         PyErrOccurred()
     }};
-    ($exc:expr, $msg:literal, $($args:expr),*) => {{
-        use crate::common::c_str;
-        PyErr_Format($exc, c_str!($msg), $($args),*);
+    ($exc:expr, $msg:literal, $($args:tt)*) => {{
+        match format!($msg, $($args)*).to_py() {
+            Ok(msg) => PyErr_SetObject($exc, msg),
+            Err(_) => {},
+        }
         PyErrOccurred()
     }};
 );
 
-macro_rules! value_error(
+macro_rules! value_err(
     ($msg:literal) => {
-        py_error!(PyExc_ValueError, $msg)
+        py_err!(PyExc_ValueError, $msg)
     };
     ($msg:literal, $($args:expr),*) => {
-        py_error!(PyExc_ValueError, $msg, $($args),*)
+        py_err!(PyExc_ValueError, $msg, $($args),*)
     };
 );
 
-macro_rules! type_error(
+macro_rules! type_err(
     ($msg:literal) => {
-        py_error!(PyExc_TypeError, $msg)
+        py_err!(PyExc_TypeError, $msg)
     };
     ($msg:literal, $($args:expr),*) => {
-        py_error!(PyExc_TypeError, $msg, $($args),*)
+        py_err!(PyExc_TypeError, $msg, $($args),*)
     };
 );
 
@@ -78,7 +89,10 @@ macro_rules! unpack_one {
         const SIZE: usize = std::mem::size_of::<$t>();
         let mut bytes = [0; SIZE];
         bytes.copy_from_slice(&$arr[..SIZE]);
-        $arr = &$arr[SIZE..];
+        #[allow(unused_assignments)]
+        {
+            $arr = &$arr[SIZE..];
+        }
         <$t>::from_le_bytes(bytes)
     }};
 }
@@ -309,14 +323,15 @@ impl Drop for DecrefOnDrop {
     }
 }
 
+// Automatically decref the object when it goes out of scope
 macro_rules! defer_decref(
     ($name:ident) => {
         let _deferred = DecrefOnDrop($name);
     };
 );
 
-// Apply this on arguments to have them decref'd after the call
-// It has the same effect as if the call would 'steal' the reference
+// Apply this on arguments to have them decref'd after the containing expression.
+// For function calls, it has the same effect as if the call would 'steal' the reference
 macro_rules! steal(
     ($e:expr) => {
         DecrefOnDrop($e).0
@@ -332,31 +347,24 @@ macro_rules! steal(
 // of the `?` operator.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct PyErrOccurred(); // sentinel that the Python error indicator is set
-pub(crate) type PyResult<T> = Result<T, PyErrOccurred>;
-pub(crate) type PyReturn = PyResult<&'static mut PyObject>;
-pub(crate) trait PyResultExt<T> {
-    // a version of `unwrap_or` that properly unsets the Python error indicator
-    // XXX: There's nothing preventing usage of `unwrap_or`, which
-    // would not unset the Python error indicator!
-    unsafe fn try_except(self, value: T) -> T;
-}
-impl<T> PyResultExt<T> for PyResult<T> {
-    unsafe fn try_except(self, value: T) -> T {
-        match self {
-            Ok(x) => x,
-            Err(_) => {
-                PyErr_Clear();
-                value
-            }
-        }
+
+impl PyErrOccurred {
+    pub(crate) fn err<T>(self) -> PyResult<T> {
+        Err(self)
     }
 }
+pub(crate) type PyResult<T> = Result<T, PyErrOccurred>;
+pub(crate) type PyReturn = PyResult<&'static mut PyObject>;
 
 pub(crate) trait PyObjectExt {
     #[allow(clippy::wrong_self_convention)]
     unsafe fn as_result<'a>(self) -> PyResult<&'a mut PyObject>;
     #[allow(clippy::wrong_self_convention)]
     unsafe fn is_int(self) -> bool;
+    #[allow(clippy::wrong_self_convention)]
+    unsafe fn is_str(self) -> bool;
+    #[allow(clippy::wrong_self_convention)]
+    unsafe fn is_float(self) -> bool;
     // FUTURE: unchecked versions of these in case we know the type
     unsafe fn to_bytes<'a>(self) -> PyResult<Option<&'a [u8]>>;
     unsafe fn to_utf8<'a>(self) -> PyResult<Option<&'a [u8]>>;
@@ -365,6 +373,7 @@ pub(crate) trait PyObjectExt {
     unsafe fn to_i64(self) -> PyResult<Option<i64>>;
     unsafe fn to_i128(self) -> PyResult<Option<i128>>;
     unsafe fn to_f64(self) -> PyResult<Option<f64>>;
+    unsafe fn repr(self) -> String;
 }
 
 impl PyObjectExt for *mut PyObject {
@@ -375,6 +384,16 @@ impl PyObjectExt for *mut PyObject {
         PyLong_Check(self) != 0
     }
 
+    unsafe fn is_float(self) -> bool {
+        PyFloat_Check(self) != 0
+    }
+
+    unsafe fn is_str(self) -> bool {
+        PyUnicode_Check(self) != 0
+    }
+
+    // WARNING: the string lifetime is only valid so long as the
+    // Python object is alive
     unsafe fn to_bytes<'a>(self) -> PyResult<Option<&'a [u8]>> {
         if PyBytes_Check(self) == 0 {
             return Ok(None);
@@ -389,6 +408,8 @@ impl PyObjectExt for *mut PyObject {
         )))
     }
 
+    // WARNING: the string lifetime is only valid so long as the
+    // Python object is alive
     unsafe fn to_utf8<'a>(self) -> PyResult<Option<&'a [u8]>> {
         if PyUnicode_Check(self) == 0 {
             return Ok(None);
@@ -404,11 +425,10 @@ impl PyObjectExt for *mut PyObject {
         )))
     }
 
+    // WARNING: the string lifetime is only valid so long as the
+    // Python object is alive
     unsafe fn to_str<'a>(self) -> PyResult<Option<&'a str>> {
-        match self.to_utf8()? {
-            Some(s) => Ok(Some(std::str::from_utf8_unchecked(s))),
-            None => Ok(None),
-        }
+        Ok(self.to_utf8()?.map(|s| std::str::from_utf8_unchecked(s)))
     }
 
     unsafe fn to_long(self) -> PyResult<Option<c_long>> {
@@ -439,7 +459,7 @@ impl PyObjectExt for *mut PyObject {
         }
         let mut bytes: [u8; 16] = [0; 16];
         if _PyLong_AsByteArray(self.cast(), &mut bytes as *mut _, 16, 1, 1) != 0 {
-            Err(py_error!(
+            Err(py_err!(
                 PyExc_OverflowError,
                 "Python int too large to convert to i128"
             ))
@@ -458,6 +478,52 @@ impl PyObjectExt for *mut PyObject {
         }
         Ok(Some(x))
     }
+
+    unsafe fn repr(self) -> String {
+        let repr_obj = PyObject_Repr(self);
+        if repr_obj.is_null() {
+            // i.e. it raised an exception, or isn't a string
+            PyErr_Clear();
+            return "<repr() failed>".to_string();
+        }
+        defer_decref!(repr_obj);
+        debug_assert!(repr_obj.is_str());
+        match repr_obj.to_str() {
+            Ok(Some(r)) => r,
+            _ => {
+                PyErr_Clear();
+                "<repr() failed>"
+            }
+        }
+        .to_string()
+    }
+}
+
+pub(crate) trait OptionExt<T> {
+    unsafe fn ok_or_py_err(self, exc: *mut PyObject, msg: &str) -> PyResult<T>;
+    unsafe fn ok_or_value_err(self, msg: &str) -> PyResult<T>;
+    unsafe fn ok_or_type_err(self, msg: &str) -> PyResult<T>;
+}
+
+impl<T> OptionExt<T> for Option<T> {
+    unsafe fn ok_or_py_err(self, exc: *mut PyObject, msg: &str) -> PyResult<T> {
+        self.ok_or_else(|| {
+            // If conversion to a Python object fails (MemoryError likely),
+            // a message is already set for us.
+            if let Ok(msg) = msg.to_py() {
+                PyErr_SetObject(exc, msg)
+            };
+            PyErrOccurred()
+        })
+    }
+
+    unsafe fn ok_or_value_err(self, msg: &str) -> PyResult<T> {
+        self.ok_or_py_err(PyExc_ValueError, msg)
+    }
+
+    unsafe fn ok_or_type_err(self, msg: &str) -> PyResult<T> {
+        self.ok_or_py_err(PyExc_TypeError, msg)
+    }
 }
 
 pub(crate) trait ToPy {
@@ -466,10 +532,9 @@ pub(crate) trait ToPy {
 
 impl ToPy for bool {
     unsafe fn to_py(self) -> PyReturn {
-        // TODO: refcounts?
         match self {
-            true => Ok(Py_True().as_mut().unwrap()),
-            false => Ok(Py_False().as_mut().unwrap()),
+            true => Ok(newref(Py_True().as_mut().unwrap())),
+            false => Ok(newref(Py_False().as_mut().unwrap())),
         }
     }
 }
@@ -540,16 +605,6 @@ impl ToPy for &[u8] {
     }
 }
 
-// TODO: remove
-// Used for debugging--OK if not used
-#[allow(unused_macros)]
-macro_rules! print_repr {
-    ($e:expr) => {{
-        let s = pystr_to_utf8!(py_try!(PyObject_Repr($e)), "Expected a string");
-        println!("{:?}", std::str::from_utf8_unchecked(s));
-    }};
-}
-
 pub(crate) unsafe fn identity1(slf: *mut PyObject) -> PyReturn {
     Ok(newref(slf))
 }
@@ -567,7 +622,7 @@ pub(crate) unsafe fn offset_from_py_dt(dt: *mut PyObject) -> PyResult<i32> {
     // OPTIMIZE: is calling ZoneInfo.utcoffset() faster?
     let delta = PyObject_CallMethodNoArgs(dt, steal!("utcoffset".to_py()?)).as_result()?;
     defer_decref!(delta);
-    Ok(PyDateTime_DELTA_GET_DAYS(delta) * 86400 + PyDateTime_DELTA_GET_SECONDS(delta))
+    Ok(PyDateTime_DELTA_GET_DAYS(delta) * 86_400 + PyDateTime_DELTA_GET_SECONDS(delta))
 }
 
 pub(crate) fn offset_fmt(secs: i32) -> String {
@@ -723,6 +778,32 @@ impl Disambiguate {
             _ => None?,
         })
     }
+
+    pub(crate) unsafe fn from_only_kwarg(
+        kwargs: &[(*mut PyObject, *mut PyObject)],
+        str_disambiguate: *mut PyObject,
+        fname: &str,
+    ) -> PyResult<Self> {
+        match kwargs {
+            [] => Ok(Self::Raise),
+            [(name, value)] if *name == str_disambiguate => Self::parse(
+                value
+                    .to_utf8()?
+                    .ok_or_else(|| type_err!("Disambiguate value must be a string"))?,
+            )
+            .ok_or_value_err("Invalid disambiguate value"),
+            [(name, _)] => Err(type_err!(
+                "{}() got an unexpected keyword argument {}",
+                fname,
+                name.repr()
+            )),
+            _ => Err(type_err!(
+                "{}() takes at most 1 keyword argument, got {}",
+                fname,
+                kwargs.len()
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -731,11 +812,60 @@ pub(crate) enum Ambiguity {
     Gap,
 }
 
-pub(crate) unsafe extern "C" fn dealloc(slf: *mut PyObject) {
+pub(crate) unsafe extern "C" fn generic_dealloc(slf: *mut PyObject) {
     let tp_free = PyType_GetSlot(Py_TYPE(slf), Py_tp_free);
     debug_assert_ne!(tp_free, core::ptr::null_mut());
     let f: freefunc = std::mem::transmute(tp_free);
     f(slf.cast());
+    Py_DECREF(Py_TYPE(slf).cast());
+}
+
+#[inline]
+pub(crate) unsafe fn generic_to_obj<T>(type_: *mut PyTypeObject, d: T) -> PyReturn {
+    let f: allocfunc = (*type_).tp_alloc.unwrap();
+    let slf = f(type_, 0).cast::<PyWrap<T>>();
+    match slf.cast::<PyObject>().as_mut() {
+        Some(r) => {
+            core::ptr::addr_of_mut!((*slf).data).write(d);
+            Ok(r)
+        }
+        None => Err(PyErrOccurred()),
+    }
+}
+
+pub(crate) trait PyWrapped: Copy {
+    #[inline]
+    unsafe fn extract(obj: *mut PyObject) -> Self {
+        generic_extract(obj)
+    }
+
+    #[inline]
+    unsafe fn to_obj(self, type_: *mut PyTypeObject) -> PyReturn {
+        generic_to_obj(type_, self)
+    }
+}
+
+#[repr(C)]
+pub(crate) struct PyWrap<T> {
+    _ob_base: PyObject,
+    data: T,
+}
+
+#[inline]
+pub(crate) unsafe fn generic_extract<T: Copy>(obj: *mut PyObject) -> T {
+    (*obj.cast::<PyWrap<T>>()).data
+}
+
+macro_rules! type_spec {
+    ($typ:ident, $slots:expr) => {
+        pub(crate) static mut SPEC: PyType_Spec = PyType_Spec {
+            name: concat!("whenever.", stringify!($typ), "\0").as_ptr().cast(),
+            basicsize: mem::size_of::<PyWrap<$typ>>() as _,
+            itemsize: 0,
+            flags: (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_IMMUTABLETYPE) as _,
+            slots: unsafe { $slots as *const [_] as *mut _ },
+        };
+    };
 }
 
 // FUTURE: a more efficient way for specific cases?
@@ -746,8 +876,11 @@ pub(crate) const fn hashmask(hash: Py_hash_t) -> Py_hash_t {
     }
 }
 
+pub(crate) static S_PER_DAY: i32 = 86_400;
+pub(crate) static NS_PER_DAY: i128 = 86_400 * 1_000_000_000;
+
 #[allow(unused_imports)]
 pub(crate) use {
-    c_str, defer_decref, get_digit, getter, method, method_kwargs, method_vararg, pack, print_repr,
-    py_error, slotmethod, steal, type_error, unpack_one, value_error,
+    c_str, defer_decref, get_digit, getter, method, method_kwargs, method_vararg, pack, py_err,
+    slotmethod, steal, type_err, type_spec, unpack_one, value_err,
 };

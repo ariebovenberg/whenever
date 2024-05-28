@@ -10,10 +10,12 @@ from hypothesis.strategies import text
 
 from whenever import (
     AmbiguousTime,
+    Date,
     LocalSystemDateTime,
     NaiveDateTime,
     OffsetDateTime,
     SkippedTime,
+    Time,
     UTCDateTime,
     ZonedDateTime,
     days,
@@ -110,6 +112,16 @@ class TestInit:
         assert LocalSystemDateTime(
             **kwargs, disambiguate="compatible"
         ).exact_eq(LocalSystemDateTime(**{**kwargs, "hour": 3}))
+
+    @local_ams_tz()
+    def test_bounds_min(self):
+        with pytest.raises(ValueError, match="range"):
+            LocalSystemDateTime(1, 1, 1)
+
+    @local_nyc_tz()
+    def test_bounds_max(self):
+        with pytest.raises(ValueError, match="range"):
+            LocalSystemDateTime(9999, 12, 31)
 
 
 class TestInUTC:
@@ -565,6 +577,8 @@ class TestFromDefaultFormat:
             "2020-08-15T23:12:09-99:00",  # invalid offset
             "",  # empty
             "garbage",  # garbage
+            "9999-12-31T22:08:30-04:00",  # out of bounds in UTC
+            "0001-01-01T02:08:30+04:00",  # out of bounds in UTC
         ],
     )
     def test_invalid(self, s):
@@ -685,7 +699,7 @@ def test_repr():
 
 
 @local_nyc_tz()
-def test_py():
+def test_py_datetime():
     d = LocalSystemDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_999)
     py = d.py_datetime()
     assert py == py_datetime(2020, 8, 15, 23, 12, 9, 987_654).astimezone(None)
@@ -714,6 +728,19 @@ class TestFromPyDateTime:
         with pytest.raises(ValueError, match="Paris"):
             LocalSystemDateTime.from_py_datetime(
                 py_datetime(2020, 8, 15, 23, tzinfo=ZoneInfo("Europe/Paris"))
+            )
+
+    def test_bounds(self):
+        with pytest.raises(ValueError, match="range"):
+            LocalSystemDateTime.from_py_datetime(
+                py_datetime(1, 1, 1, tzinfo=timezone(timedelta(hours=2)))
+            )
+
+        with pytest.raises(ValueError, match="range"):
+            LocalSystemDateTime.from_py_datetime(
+                py_datetime(
+                    9999, 12, 31, hour=23, tzinfo=timezone(timedelta(hours=-2))
+                )
             )
 
 
@@ -790,6 +817,18 @@ class TestReplace:
         ):
             d.replace(hour=2)
 
+    @local_ams_tz()
+    def test_bounds_min(self):
+        d = LocalSystemDateTime(2020, 8, 15, 23, 12, 9)
+        with pytest.raises(ValueError, match="range"):
+            d.replace(year=1, month=1, day=1)
+
+    @local_nyc_tz()
+    def test_bounds_max(self):
+        d = LocalSystemDateTime(2020, 8, 15, 23, 12, 9)
+        with pytest.raises(ValueError, match="range"):
+            d.replace(year=9999, month=12, day=31, hour=23)
+
 
 class TestAddTimeUnits:
     @local_ams_tz()
@@ -847,6 +886,12 @@ class TestAddTimeUnits:
         with pytest.raises(TypeError, match="unsupported operand type"):
             42 + d  # type: ignore[operator]
 
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            years(1) + d  # type: ignore[operator]
+
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            d + d  # type: ignore[operator]
+
 
 class TestAddDateUnits:
 
@@ -898,6 +943,18 @@ class TestAddDateUnits:
             year=2024, month=3, day=31, disambiguate="earlier"
         )
 
+    @local_ams_tz()
+    def test_out_of_bounds_min(self):
+        d = LocalSystemDateTime(2000, 1, 1)
+        with pytest.raises(ValueError, match="range"):
+            d + years(-1999)
+
+    @local_nyc_tz()
+    def test_out_of_bounds_max(self):
+        d = LocalSystemDateTime(2000, 12, 31, hour=23)
+        with pytest.raises(ValueError, match="range"):
+            d + years(7999)
+
 
 class TestSubtractTimeUnits:
     @local_ams_tz()
@@ -947,6 +1004,9 @@ class TestSubtractTimeUnits:
         with pytest.raises(TypeError, match="unsupported operand type"):
             42 - d  # type: ignore[operator]
 
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            hours(1) - d  # type: ignore[operator]
+
 
 class TestSubtractDateUnits:
     @local_ams_tz()
@@ -989,13 +1049,36 @@ class TestSubtractDateUnits:
         assert d - months(7) - days(3) == d.replace(
             month=3, day=26, disambiguate="later"
         )
-        # # transition over a gap
+        # transition over a gap
         assert d - months(7) - days(3) - hours(1) == d.replace(
             month=3, day=26, hour=1
         )
         assert d - months(7) - days(3) - hours(-1) == d.replace(
             month=3, day=26, hour=4
         )
+
+        assert d - months(7) - days(3) - hours(1) == d - (
+            months(7) + days(3) + hours(1)
+        )
+
+    @local_ams_tz()
+    def test_out_of_bounds_min(self):
+        d = LocalSystemDateTime(2000, 1, 1)
+        with pytest.raises(ValueError, match="range"):
+            d - years(1999)
+
+    @local_nyc_tz()
+    def test_out_of_bounds_max(self):
+        d = LocalSystemDateTime(2000, 12, 31, hour=23)
+        with pytest.raises(ValueError, match="range"):
+            d - years(-7999)
+
+
+def test_subtract_date_and_time():
+    d = LocalSystemDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
+    assert d - (months(7) + days(1) + hours(1)) == d - months(7) - days(
+        1
+    ) - hours(1)
 
 
 class TestSubtractOtherDateTime:
@@ -1055,6 +1138,142 @@ class TestSubtractOtherDateTime:
         assert d.replace(disambiguate="later") - ZonedDateTime(
             2023, 10, 28, 17, tz="America/New_York"
         ) == hours(4)
+
+
+class TestWithDate:
+    @local_ams_tz()
+    def test_unambiguous(self):
+        d = LocalSystemDateTime(2020, 8, 15, 14)
+        assert d.with_date(Date(2021, 1, 2)) == LocalSystemDateTime(
+            2021, 1, 2, 14
+        )
+
+    @local_ams_tz()
+    def test_ambiguous(self):
+        d = LocalSystemDateTime(2020, 1, 1, 2, 15, 30)
+        date = Date(2023, 10, 29)
+        with pytest.raises(AmbiguousTime):
+            assert d.with_date(date)
+
+        assert d.with_date(date, disambiguate="earlier") == d.replace(
+            year=2023, month=10, day=29, disambiguate="earlier"
+        )
+        assert d.with_date(date, disambiguate="later") == d.replace(
+            year=2023, month=10, day=29, disambiguate="later"
+        )
+        assert d.with_date(date, disambiguate="compatible") == d.replace(
+            year=2023, month=10, day=29, disambiguate="compatible"
+        )
+
+    @local_ams_tz()
+    def test_nonexistent(self):
+        d = LocalSystemDateTime(2020, 1, 1, 2, 15, 30)
+        date = Date(2023, 3, 26)
+        with pytest.raises(SkippedTime):
+            assert d.with_date(date)
+
+        assert d.with_date(date, disambiguate="earlier") == d.replace(
+            year=2023, month=3, day=26, disambiguate="earlier"
+        )
+        assert d.with_date(date, disambiguate="later") == d.replace(
+            year=2023, month=3, day=26, disambiguate="later"
+        )
+        assert d.with_date(date, disambiguate="compatible") == d.replace(
+            year=2023, month=3, day=26, disambiguate="compatible"
+        )
+
+    def test_invalid(self):
+        d = LocalSystemDateTime(2020, 8, 15, 14)
+        with pytest.raises(TypeError):
+            d.with_date(object())  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError, match="disambiguate"):
+            d.with_date(Date(2020, 8, 15), disambiguate="foo")  # type: ignore[arg-type]
+
+        with pytest.raises(TypeError, match="got 2"):
+            d.with_date(Date(2020, 8, 15), disambiguate="raise", foo=4)  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError, match="foo"):
+            d.with_date(Date(2020, 8, 15), foo="raise")  # type: ignore[call-arg]
+
+    def test_out_of_range_due_to_offset(self):
+        with local_ams_tz():
+            d = LocalSystemDateTime(2020, 1, 1)
+            with pytest.raises(ValueError, match="range"):
+                d.with_date(Date(1, 1, 1))
+
+        with local_nyc_tz():
+            d2 = LocalSystemDateTime(2020, 1, 1, hour=23)
+            with pytest.raises(ValueError, match="range"):
+                d2.with_date(Date(9999, 12, 31))
+
+
+class TestWithTime:
+    @local_ams_tz()
+    def test_unambiguous(self):
+        d = LocalSystemDateTime(2020, 8, 15, 14)
+        assert d.with_time(Time(1, 2, 3, 4_000)).exact_eq(
+            LocalSystemDateTime(2020, 8, 15, 1, 2, 3, nanosecond=4_000)
+        )
+
+    @local_ams_tz()
+    def test_fold(self):
+        d = LocalSystemDateTime(2023, 10, 29, 0, 15, 30)
+        time = Time(2, 15, 30)
+        with pytest.raises(AmbiguousTime):
+            assert d.with_time(time)
+
+        assert d.with_time(time, disambiguate="earlier").exact_eq(
+            d.replace(hour=2, minute=15, second=30, disambiguate="earlier")
+        )
+        assert d.with_time(time, disambiguate="later").exact_eq(
+            d.replace(hour=2, minute=15, second=30, disambiguate="later")
+        )
+        assert d.with_time(time, disambiguate="compatible").exact_eq(
+            d.replace(hour=2, minute=15, second=30, disambiguate="compatible")
+        )
+
+    @local_ams_tz()
+    def test_gap(self):
+        d = LocalSystemDateTime(2023, 3, 26, 8, 15)
+        time = Time(2, 15)
+        with pytest.raises(SkippedTime):
+            assert d.with_time(time)
+
+        assert d.with_time(time, disambiguate="earlier").exact_eq(
+            d.replace(hour=2, minute=15, disambiguate="earlier")
+        )
+        assert d.with_time(time, disambiguate="later").exact_eq(
+            d.replace(hour=2, minute=15, disambiguate="later")
+        )
+        assert d.with_time(time, disambiguate="compatible").exact_eq(
+            d.replace(hour=2, minute=15, disambiguate="compatible")
+        )
+
+    def test_invalid(self):
+        d = LocalSystemDateTime(2020, 8, 15, 14)
+        with pytest.raises(TypeError):
+            d.with_time(object())  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError, match="disambiguate"):
+            d.with_time(Time(1, 2, 3), disambiguate="foo")  # type: ignore[arg-type]
+
+        with pytest.raises(TypeError, match="got 2"):
+            d.with_time(Time(1, 2, 3), disambiguate="raise", foo=4)  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError, match="foo"):
+            d.with_time(Time(1, 2, 3), foo="raise")  # type: ignore[call-arg]
+
+    def test_out_of_range_due_to_offset(self):
+        with local_ams_tz():
+            d = UTCDateTime.MIN.in_local_system()
+            with pytest.raises(ValueError, match="range"):
+                d.with_time(Time(0))
+
+        with local_nyc_tz():
+            d2 = UTCDateTime.MAX.in_local_system()
+            with pytest.raises(ValueError, match="range"):
+                d2.with_time(Time(23))
 
 
 @local_ams_tz()

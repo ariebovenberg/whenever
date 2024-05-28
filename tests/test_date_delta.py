@@ -7,6 +7,7 @@ import pytest
 from whenever import (
     DateDelta,
     DateTimeDelta,
+    OffsetDateTime,
     Time,
     TimeDelta,
     days,
@@ -393,7 +394,7 @@ class TestAdd:
             None + p  # type: ignore[operator]
 
         with pytest.raises(TypeError, match="unsupported operand"):
-            Time() + p  # type: ignore[operator]
+            OffsetDateTime(2020, 1, 1, offset=0) + p  # type: ignore[operator]
 
 
 class TestSubtract:

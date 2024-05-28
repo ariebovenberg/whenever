@@ -10,7 +10,7 @@ use test::{black_box, Bencher};
 fn date_from_ord(bench: &mut Bencher) {
     let ord = black_box(730179);
     bench.iter(|| {
-        let date = Date::from_ord(ord);
+        let date = Date::from_ord_unchecked(ord);
         black_box(date);
     })
 }

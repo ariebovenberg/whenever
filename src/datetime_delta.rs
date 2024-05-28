@@ -1,5 +1,5 @@
 use core::ffi::{c_int, c_void};
-use core::{mem, ptr};
+use core::mem;
 use pyo3_ffi::*;
 use std::fmt;
 use std::ops::Neg;
@@ -8,8 +8,7 @@ use std::ptr::null_mut as NULL;
 use crate::common::*;
 use crate::date_delta::{self, parse_prefix, DateDelta, InitError, Unit as DateUnit};
 use crate::time_delta::{
-    self, handle_unit, TimeDelta, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES,
-    MAX_SECS,
+    self, TimeDelta, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS,
 };
 use crate::State;
 
@@ -20,17 +19,7 @@ pub(crate) struct DateTimeDelta {
     pub(crate) tdelta: TimeDelta,
 }
 
-#[repr(C)]
-pub(crate) struct PyDateTimeDelta {
-    _ob_base: PyObject,
-    data: DateTimeDelta,
-}
-
 impl DateTimeDelta {
-    pub(crate) fn extract(obj: *mut PyObject) -> DateTimeDelta {
-        unsafe { (*obj.cast::<PyDateTimeDelta>()).data }
-    }
-
     pub(crate) fn pyhash(self) -> Py_hash_t {
         self.ddelta.pyhash() ^ self.tdelta.pyhash()
     }
@@ -70,6 +59,8 @@ impl DateTimeDelta {
     }
 }
 
+impl PyWrapped for DateTimeDelta {}
+
 impl Neg for DateTimeDelta {
     type Output = Self;
 
@@ -81,11 +72,109 @@ impl Neg for DateTimeDelta {
     }
 }
 
+#[inline]
+pub(crate) unsafe fn handle_exact_unit(
+    value: *mut PyObject,
+    max: i64,
+    name: &str,
+    factor: i128,
+) -> PyResult<i128> {
+    if value.is_int() {
+        let i = value
+            .to_long()?
+            // Safe to unwrap since we just checked that it's an int
+            .unwrap();
+        if (-max..=max).contains(&i) {
+            Ok(i as i128 * factor)
+        } else {
+            Err(value_err!("{} out of range", name))?
+        }
+    } else {
+        let f = value
+            .to_f64()?
+            .ok_or_else(|| value_err!("{} must be an integer or float", name))?;
+        if (-max as f64..=max as f64).contains(&f) {
+            Ok((f * factor as f64) as i128)
+        } else {
+            Err(value_err!("{} out of range", name))?
+        }
+    }
+}
+
+// OPTIMIZE: a version for cases in which days are a fixed amount of nanos
+#[inline]
+pub(crate) unsafe fn set_delta_from_kwarg(
+    key: *mut PyObject,
+    value: *mut PyObject,
+    months: &mut i32,
+    days: &mut i32,
+    nanos: &mut i128,
+    state: &State,
+    fname: &str,
+) -> PyResult<()> {
+    if key == state.str_years {
+        *months = value
+            .to_long()?
+            .ok_or_value_err("years must be an integer")?
+            .checked_mul(12)
+            .and_then(|y| y.try_into().ok())
+            .and_then(|y| months.checked_add(y))
+            .ok_or_value_err("total years out of range")?;
+    } else if key == state.str_months {
+        *months = value
+            .to_long()?
+            .ok_or_value_err("months must be an integer")?
+            .try_into()
+            .ok()
+            .and_then(|m| months.checked_add(m))
+            .ok_or_value_err("total months out of range")?;
+    } else if key == state.str_weeks {
+        *days = value
+            .to_long()?
+            .ok_or_value_err("weeks must be an integer")?
+            .checked_mul(7)
+            .and_then(|d| d.try_into().ok())
+            .and_then(|d| days.checked_add(d))
+            .ok_or_value_err("total days out of range")?;
+    } else if key == state.str_days {
+        *days = value
+            .to_long()?
+            .ok_or_value_err("days must be an integer")?
+            .try_into()
+            .ok()
+            .and_then(|d| days.checked_add(d))
+            .ok_or_value_err("total days out of range")?;
+    } else if key == state.str_hours {
+        *nanos += handle_exact_unit(value, MAX_HOURS, "hours", 3_600_000_000_000_i128)?;
+    } else if key == state.str_minutes {
+        *nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", 60_000_000_000_i128)?;
+    } else if key == state.str_seconds {
+        *nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000_i128)?;
+    } else if key == state.str_milliseconds {
+        *nanos += handle_exact_unit(value, MAX_MILLISECONDS, "milliseconds", 1_000_000_i128)?;
+    } else if key == state.str_microseconds {
+        *nanos += handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000_i128)?;
+    } else if key == state.str_nanoseconds {
+        *nanos = value
+            .to_i128()?
+            .ok_or_value_err("nanoseconds must be an integer")?
+            .checked_add(*nanos)
+            .ok_or_value_err("total nanoseconds out of range")?;
+    } else {
+        Err(type_err!(
+            "{}() got an unexpected keyword argument: {}",
+            fname,
+            key.repr()
+        ))?
+    }
+    Ok(())
+}
+
 pub(crate) const SINGLETONS: [(&str, DateTimeDelta); 1] = [(
     "ZERO\0",
     DateTimeDelta {
-        ddelta: DateDelta { months: 0, days: 0 },
-        tdelta: TimeDelta::from_secs_unchecked(0),
+        ddelta: DateDelta::ZERO,
+        tdelta: TimeDelta::ZERO,
     },
 )];
 
@@ -124,19 +213,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     let mut months: i32 = 0;
     let mut days: i32 = 0;
     let mut nanos: i128 = 0;
-    let &State {
-        str_years,
-        str_months,
-        str_weeks,
-        str_days,
-        str_hours,
-        str_minutes,
-        str_seconds,
-        str_microseconds,
-        str_milliseconds,
-        str_nanoseconds,
-        ..
-    } = State::for_type(cls);
+    let state = State::for_type(cls);
     let delta = match (nargs, nkwargs) {
         (0, 0) => DateTimeDelta {
             ddelta: DateDelta { months: 0, days: 0 },
@@ -147,73 +224,30 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
             let mut value: *mut PyObject = NULL();
             let mut pos: Py_ssize_t = 0;
             while PyDict_Next(kwargs, &mut pos, &mut key, &mut value) != 0 {
-                if key == str_years {
-                    months = value
-                        .to_long()?
-                        .ok_or_else(|| value_error!("years must be an integer"))?
-                        .checked_mul(12)
-                        .and_then(|y| y.try_into().ok())
-                        .and_then(|y| months.checked_add(y))
-                        .ok_or_else(|| value_error!("total years out of range"))?;
-                } else if key == str_months {
-                    months = value
-                        .to_long()?
-                        .ok_or_else(|| value_error!("months must be an integer"))?
-                        .try_into()
-                        .ok()
-                        .and_then(|m| months.checked_add(m))
-                        .ok_or_else(|| value_error!("total months out of range"))?;
-                } else if key == str_weeks {
-                    days = value
-                        .to_long()?
-                        .ok_or_else(|| value_error!("weeks must be an integer"))?
-                        .checked_mul(7)
-                        .and_then(|d| d.try_into().ok())
-                        .and_then(|d| days.checked_add(d))
-                        .ok_or_else(|| value_error!("total days out of range"))?;
-                } else if key == str_days {
-                    days = value
-                        .to_long()?
-                        .ok_or_else(|| value_error!("days must be an integer"))?
-                        .try_into()
-                        .ok()
-                        .and_then(|d| days.checked_add(d))
-                        .ok_or_else(|| value_error!("total days out of range"))?;
-                } else if key == str_hours {
-                    nanos += handle_unit!(value, "hours", MAX_HOURS, 3_600_000_000_000_i128);
-                } else if key == str_minutes {
-                    nanos += handle_unit!(value, "minutes", MAX_MINUTES, 60_000_000_000_i128);
-                } else if key == str_seconds {
-                    nanos += handle_unit!(value, "seconds", MAX_SECS, 1_000_000_000_i128);
-                } else if key == str_milliseconds {
-                    nanos += handle_unit!(value, "milliseconds", MAX_MILLISECONDS, 1_000_000_i128);
-                } else if key == str_microseconds {
-                    nanos += handle_unit!(value, "microseconds", MAX_MICROSECONDS, 1_000_i128);
-                } else if key == str_nanoseconds {
-                    nanos += value
-                        .to_i128()?
-                        .ok_or_else(|| value_error!("nanoseconds must be an integer"))?;
-                } else {
-                    Err(type_error!(
-                        "TimeDelta() got an unexpected keyword argument: %R",
-                        key
-                    ))?
-                }
+                set_delta_from_kwarg(
+                    key,
+                    value,
+                    &mut months,
+                    &mut days,
+                    &mut nanos,
+                    state,
+                    "DateTimeDelta",
+                )?
             }
             if months >= 0 && days >= 0 && nanos >= 0 || months <= 0 && days <= 0 && nanos <= 0 {
                 DateTimeDelta {
                     ddelta: DateDelta::from_same_sign(months, days)
-                        .ok_or_else(|| value_error!("Out of range"))?,
+                        .ok_or_value_err("Out of range")?,
                     tdelta: TimeDelta::from_nanos(nanos)
-                        .ok_or_else(|| value_error!("TimeDelta out of range"))?,
+                        .ok_or_value_err("TimeDelta out of range")?,
                 }
             } else {
-                Err(value_error!("Mixed sign in DateTimeDelta"))?
+                Err(value_err!("Mixed sign in DateTimeDelta"))?
             }
         }
-        _ => Err(type_error!("TimeDelta() takes no positional arguments"))?,
+        _ => Err(value_err!("TimeDelta() takes no positional arguments"))?,
     };
-    new_unchecked(cls, delta)
+    delta.to_obj(cls)
 }
 
 unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> PyReturn {
@@ -235,7 +269,7 @@ unsafe extern "C" fn __hash__(slf: *mut PyObject) -> Py_hash_t {
 }
 
 unsafe fn __neg__(slf: *mut PyObject) -> PyReturn {
-    new_unchecked(Py_TYPE(slf), -DateTimeDelta::extract(slf))
+    (-DateTimeDelta::extract(slf)).to_obj(Py_TYPE(slf))
 }
 
 unsafe extern "C" fn __bool__(slf: *mut PyObject) -> c_int {
@@ -268,13 +302,11 @@ unsafe fn __mul__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     };
     let delta = DateTimeDelta::extract(delta_obj);
     // FUTURE: optimize zero delta case, zero factor case
-    new_unchecked(
-        Py_TYPE(delta_obj),
-        i32::try_from(factor)
-            .ok()
-            .and_then(|f| delta.checked_mul(f))
-            .ok_or_else(|| value_error!("Multiplication factor or result out of bounds"))?,
-    )
+    i32::try_from(factor)
+        .ok()
+        .and_then(|f| delta.checked_mul(f))
+        .ok_or_value_err("Multiplication factor or result out of bounds")?
+        .to_obj(Py_TYPE(delta_obj))
 }
 
 unsafe fn __add__(a_obj: *mut PyObject, b_obj: *mut PyObject) -> PyReturn {
@@ -314,10 +346,10 @@ unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) 
                     tdelta: TimeDelta::extract(obj_b),
                 }
             } else {
-                return Err(type_error!(
-                    "unsupported operand type(s) for +/-: %R and %R",
-                    type_a,
-                    type_b
+                return Err(value_err!(
+                    "unsupported operand type(s) for +/-: {} and {}",
+                    (type_a as *mut PyObject).repr(),
+                    (type_b as *mut PyObject).repr()
                 ));
             };
             (delta_a, delta_b)
@@ -328,25 +360,22 @@ unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) 
     if negate {
         b = -b;
     };
-    new_unchecked(
-        type_a,
-        a.checked_add(b).map_err(|e| match e {
-            InitError::TooBig => value_error!("Addition result out of bounds"),
-            InitError::MixedSign => value_error!("Mixed sign in DateTimeDelta"),
-        })?,
-    )
+    a.checked_add(b)
+        .map_err(|e| match e {
+            InitError::TooBig => value_err!("Addition result out of bounds"),
+            InitError::MixedSign => value_err!("Mixed sign in DateTimeDelta"),
+        })?
+        .to_obj(type_a)
 }
 
 unsafe fn __abs__(slf: *mut PyObject) -> PyReturn {
     let DateTimeDelta { ddelta, tdelta } = DateTimeDelta::extract(slf);
     // FUTURE: optimize case where self is already positive
-    new_unchecked(
-        Py_TYPE(slf),
-        DateTimeDelta {
-            ddelta: ddelta.abs(),
-            tdelta: tdelta.abs(),
-        },
-    )
+    DateTimeDelta {
+        ddelta: ddelta.abs(),
+        tdelta: tdelta.abs(),
+    }
+    .to_obj(Py_TYPE(slf))
 }
 
 static mut SLOTS: &[PyType_Slot] = &[
@@ -378,7 +407,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_dealloc,
-        pfunc: dealloc as *mut c_void,
+        pfunc: generic_dealloc as *mut c_void,
     },
     PyType_Slot {
         slot: 0,
@@ -425,22 +454,21 @@ pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
 }
 
 unsafe fn from_default_format(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
-    let s = &mut s_obj
-        .to_utf8()?
-        .ok_or_else(|| type_error!("argument must be str"))?;
+    let s = &mut s_obj.to_utf8()?.ok_or_value_err("argument must be str")?;
     if s.len() < 3 {
         // at least `P0D`
-        Err(value_error!("Invalid format: %R", s_obj))?
+        Err(value_err!("Invalid format: {}", s_obj.repr()))?
     }
 
-    let negated = parse_prefix(s).ok_or_else(|| value_error!("1 Invalid format: %R", s_obj))?;
+    let negated =
+        parse_prefix(s).ok_or_else(|| value_err!("1 Invalid format: {}", s_obj.repr()))?;
     if s.len() < 2 {
         // This check prevents "empty" deltas without units, like `-PT`
-        Err(value_error!("Invalid format: %R", s_obj))?
+        Err(value_err!("Invalid format: {}", s_obj.repr()))?
     }
     let mut ddelta = match parse_date_components(s) {
         Some(d) => d,
-        None => Err(value_error!("2 Invalid format: %R", s_obj))?,
+        None => Err(value_err!("2 Invalid format: {}", s_obj.repr()))?,
     };
     let mut tdelta = if s.is_empty() {
         TimeDelta::ZERO
@@ -448,16 +476,15 @@ unsafe fn from_default_format(cls: *mut PyObject, s_obj: *mut PyObject) -> PyRet
         *s = &s[1..];
         let (nanos, _) = match time_delta::parse_all_components(s) {
             Some(t) => t,
-            None => Err(value_error!("3 Invalid format: %R", s_obj))?,
+            None => Err(value_err!("3 Invalid format: {}", s_obj.repr()))?,
         };
-        TimeDelta::from_nanos(nanos).ok_or_else(|| value_error!("TimeDelta out of range"))?
+        TimeDelta::from_nanos(nanos).ok_or_value_err("TimeDelta out of range")?
     };
-    // TODO: ensure there's at least one component
     if negated {
         ddelta = -ddelta;
         tdelta = -tdelta;
     }
-    new_unchecked(cls.cast(), DateTimeDelta { ddelta, tdelta })
+    DateTimeDelta { ddelta, tdelta }.to_obj(cls.cast())
 }
 
 unsafe fn in_months_days_secs_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -483,12 +510,12 @@ unsafe fn in_months_days_secs_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyR
 
 unsafe fn date_part(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let DateTimeDelta { ddelta, .. } = DateTimeDelta::extract(slf);
-    date_delta::new_unchecked(State::for_obj(slf).date_delta_type, ddelta)
+    ddelta.to_obj(State::for_obj(slf).date_delta_type)
 }
 
 unsafe fn time_part(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let DateTimeDelta { tdelta, .. } = DateTimeDelta::extract(slf);
-    time_delta::new_unchecked(State::for_obj(slf).time_delta_type, tdelta)
+    tdelta.to_obj(State::for_obj(slf).time_delta_type)
 }
 
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -515,38 +542,23 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 pub(crate) unsafe fn unpickle(module: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
     if args.len() == 4 {
-        new_unchecked(
-            State::for_mod(module).datetime_delta_type,
-            DateTimeDelta {
-                ddelta: DateDelta {
-                    months: args[0]
-                        .to_long()?
-                        .ok_or_else(|| type_error!("Invalid pickle data"))?
-                        as _,
-                    days: args[1]
-                        .to_long()?
-                        .ok_or_else(|| type_error!("Invalid pickle data"))?
-                        as _,
-                },
-                tdelta: TimeDelta {
-                    secs: args[2]
-                        .to_long()?
-                        .ok_or_else(|| type_error!("Invalid pickle data"))?
-                        as _,
-                    nanos: args[3]
-                        .to_long()?
-                        .ok_or_else(|| type_error!("Invalid pickle data"))?
-                        as _,
-                },
+        DateTimeDelta {
+            ddelta: DateDelta {
+                months: args[0].to_long()?.ok_or_type_err("Invalid pickle data")? as _,
+                days: args[1].to_long()?.ok_or_type_err("Invalid pickle data")? as _,
             },
-        )
+            tdelta: TimeDelta {
+                secs: args[2].to_long()?.ok_or_type_err("Invalid pickle data")? as _,
+                nanos: args[3].to_long()?.ok_or_type_err("Invalid pickle data")? as _,
+            },
+        }
+        .to_obj(State::for_mod(module).datetime_delta_type)
     } else {
-        Err(type_error!("Invalid pickle data"))
+        Err(type_err!("Invalid pickle data"))
     }
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    // TODO: rename to method!
     method!(identity2 named "__copy__", ""),
     method!(identity2 named "__deepcopy__", "", METH_O),
     method!(default_format, ""),
@@ -573,20 +585,4 @@ static mut METHODS: &[PyMethodDef] = &[
     PyMethodDef::zeroed(),
 ];
 
-pub(crate) unsafe fn new_unchecked(type_: *mut PyTypeObject, d: DateTimeDelta) -> PyReturn {
-    let f: allocfunc = (*type_).tp_alloc.expect("tp_alloc is not set");
-    let slf = f(type_, 0).cast::<PyDateTimeDelta>();
-    if slf.is_null() {
-        return Err(PyErrOccurred());
-    }
-    ptr::addr_of_mut!((*slf).data).write(d);
-    Ok(slf.cast::<PyObject>().as_mut().unwrap())
-}
-
-pub(crate) static mut SPEC: PyType_Spec = PyType_Spec {
-    name: c_str!("whenever.DateTimeDelta"),
-    basicsize: mem::size_of::<PyDateTimeDelta>() as _,
-    itemsize: 0,
-    flags: Py_TPFLAGS_DEFAULT as _,
-    slots: unsafe { SLOTS as *const [_] as *mut _ },
-};
+type_spec!(DateTimeDelta, SLOTS);

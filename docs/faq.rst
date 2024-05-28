@@ -80,7 +80,7 @@ to use:
 - Conversions to aware datetimes are explicit about assumptions being made:
 
   >>> n = NaiveDateTime(2022, 1, 1, 12)
-  >>> n.assume_zoned("Europe/Berlin")
+  >>> n.assume_in_tz("Europe/Berlin")
   ZonedDateTime(2022-01-01 12:00:00+01:00[Europe/Berlin])
 
 .. _faq-offset-arithmetic:

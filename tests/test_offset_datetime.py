@@ -7,9 +7,11 @@ from hypothesis import given
 from hypothesis.strategies import text
 
 from whenever import (
+    Date,
     LocalSystemDateTime,
     NaiveDateTime,
     OffsetDateTime,
+    Time,
     TimeDelta,
     UTCDateTime,
     ZonedDateTime,
@@ -94,6 +96,10 @@ class TestInit:
 
         with pytest.raises(ValueError, match="time"):
             OffsetDateTime(2020, 2, 28, 5, 64, offset=5)
+
+    def test_bounds(self):
+        with pytest.raises(ValueError, match="range"):
+            OffsetDateTime(1, 1, 1, 0, offset=1)
 
 
 def test_immutable():
@@ -226,6 +232,20 @@ class TestFromDefaultFormat:
             OffsetDateTime.from_default_format(s)
 
         with pytest.raises(ValueError, match="format.*" + re.escape(repr(s))):
+            OffsetDateTime.from_common_iso8601(s)
+
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "0001-01-01T02:08:30+05:00",
+            "9999-12-31T22:08:30-05:00",
+        ],
+    )
+    def test_bounds(self, s):
+        with pytest.raises(ValueError):
+            OffsetDateTime.from_default_format(s)
+
+        with pytest.raises(ValueError):
             OffsetDateTime.from_common_iso8601(s)
 
     @given(text())
@@ -584,6 +604,46 @@ def test_from_py_datetime():
     with pytest.raises(ValueError, match="SomeTzinfo"):
         OffsetDateTime.from_py_datetime(d2)
 
+    # UTC out of range
+    d = py_datetime(1, 1, 1, tzinfo=timezone(timedelta(hours=1)))
+
+    with pytest.raises(ValueError, match="range"):
+        OffsetDateTime.from_py_datetime(d)
+
+
+def test_with_date():
+    d = OffsetDateTime(2020, 8, 15, 3, 12, 9, offset=5)
+    assert d.with_date(Date(1996, 2, 19)).exact_eq(
+        OffsetDateTime(1996, 2, 19, 3, 12, 9, offset=5)
+    )
+
+    with pytest.raises(ValueError, match="range"):
+        d.with_date(Date(1, 1, 1))
+
+    with pytest.raises(TypeError, match="date"):
+        d.with_date(42)
+
+
+def test_with_time():
+    d = OffsetDateTime(2020, 8, 15, 3, 12, 9, offset=5)
+    assert d.with_time(Time(1, 2, 3)).exact_eq(
+        OffsetDateTime(2020, 8, 15, 1, 2, 3, offset=5)
+    )
+
+    d2 = OffsetDateTime(1, 1, 1, 3, 12, 9, offset=3)
+    with pytest.raises(ValueError, match="range"):
+        d2.with_time(Time(1))
+
+    with pytest.raises(TypeError, match="time"):
+        d.with_time(42)
+
+
+def test_components():
+    d = OffsetDateTime(2020, 8, 15, 3, 12, 9, offset=5)
+    assert d.date() == Date(2020, 8, 15)
+    assert d.time() == Time(3, 12, 9)
+    assert d.offset == hours(5)
+
 
 class TestNow:
 
@@ -633,6 +693,9 @@ def test_replace():
     with pytest.raises(TypeError, match="tzinfo"):
         d.replace(tzinfo=timezone.utc)  # type: ignore[call-arg]
 
+    with pytest.raises(ValueError, match="range"):
+        d.replace(year=1, month=1, day=1, hour=4, offset=5)
+
 
 def test_add_not_allowed():
     d = OffsetDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654, offset=5)
@@ -641,6 +704,12 @@ def test_add_not_allowed():
 
     with pytest.raises(TypeError, match="unsupported operand type"):
         d + 32  # type: ignore[operator]
+
+    with pytest.raises(TypeError, match="unsupported operand type"):
+        32 + d  # type: ignore[operator]
+
+    with pytest.raises(TypeError, match="unsupported operand type"):
+        hours(4) + d  # type: ignore[operator]
 
 
 class TestSubtract:
@@ -804,8 +873,14 @@ def test_strptime(string, fmt, expected):
 
 
 def test_strptime_invalid():
+    # no offset
     with pytest.raises(ValueError):
         OffsetDateTime.strptime("2020-08-15 23:12:09", "%Y-%m-%d %H:%M:%S")
+
+    with pytest.raises(ValueError, match="range"):
+        OffsetDateTime.strptime(
+            "0001-01-01 03:12:09+0550", "%Y-%m-%d %H:%M:%S%z"
+        )
 
 
 @pytest.mark.parametrize(
@@ -866,6 +941,9 @@ class TestFromRFC2822:
             "Sat, 15 Aug 2020 23:12:09 -0000",  # -0000 timezone special case
             "",  # empty
             "garbage",  # garbage
+            # FUTURE: apparently this parses into the year 2001
+            # check if this is a bug in the stdlib, or expected behavior
+            # "Mon, 1 Jan 0001 03:12:09 +0400",  # out of range in UTC
         ],
     )
     def test_invalid(self, s):
@@ -956,6 +1034,8 @@ class TestFromRFC3339:
             "2020-08-15T23:12:09-25:00",  # invalid offset
             "2020-08-15T23:12:09-12:00stuff",  # trailing content
             "2020-08-15T23:12:09zzz",  # trailing content
+            "0001-01-01T03:12:09+04:00",  # out of bounds due to offset
+            "9999-12-31T23:12:09-03:00",  # out of bounds due to offset
         ],
     )
     def test_invalid(self, s):

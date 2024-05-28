@@ -1,4 +1,4 @@
-use core::ffi::{c_int, c_long, c_void};
+use core::ffi::{c_char, c_int, c_long, c_void};
 use core::ptr::null_mut as NULL;
 use core::{mem, ptr};
 use pyo3_ffi::*;
@@ -43,16 +43,16 @@ static mut MODULE_DEF: PyModuleDef = PyModuleDef {
 };
 
 static mut METHODS: &[PyMethodDef] = &[
-    method_vararg!(_unpkl_date, "Unpickle a `Date` object."),
-    method_vararg!(_unpkl_time, "Unpickle a `Time` object."),
-    method_vararg!(_unpkl_tdelta, "Unpickle a `TimeDelta` object."),
-    method_vararg!(_unpkl_ddelta, "Unpickle a `DateDelta` object."),
-    method_vararg!(_unpkl_dtdelta, "Unpickle a `DateTimeDelta` object."),
-    method_vararg!(_unpkl_naive, "Unpickle a `NaiveDateTime` object."),
-    method_vararg!(_unpkl_utc, "Unpickle a `UTCDateTime` object."),
-    method_vararg!(_unpkl_offset, "Unpickle an `OffsetDateTime` object."),
-    method_vararg!(_unpkl_zoned, "Unpickle a `ZonedDateTime` object."),
-    method_vararg!(_unpkl_local, "Unpickle a `LocalSystemDateTime` object."),
+    method!(_unpkl_date, "", METH_O),
+    method!(_unpkl_time, "", METH_O),
+    method!(_unpkl_tdelta, "", METH_O),
+    method_vararg!(_unpkl_ddelta, ""),
+    method_vararg!(_unpkl_dtdelta, ""),
+    method!(_unpkl_naive, "", METH_O),
+    method!(_unpkl_utc, "", METH_O),
+    method!(_unpkl_offset, "", METH_O),
+    method_vararg!(_unpkl_zoned, ""),
+    method!(_unpkl_local, "", METH_O),
     // FUTURE: set __module__ on these
     method!(
         years,
@@ -125,6 +125,26 @@ static mut MODULE_SLOTS: &[PyModuleDef_Slot] = &[
     },
 ];
 
+unsafe fn create_enum(name: *const c_char, members: &[(*const c_char, i32)]) -> PyReturn {
+    let members_dict = PyDict_New().as_result()?;
+    defer_decref!(members_dict);
+    for &(name, value) in members {
+        if PyDict_SetItemString(members_dict, name, steal!(value.to_py()?)) == -1 {
+            return Err(py_err!());
+        }
+    }
+    let enum_module = PyImport_ImportModule(c_str!("enum")).as_result()?;
+    defer_decref!(enum_module);
+    PyObject_CallMethod(
+        enum_module,
+        c_str!("Enum"),
+        c_str!("sO"),
+        name,
+        members_dict,
+    )
+    .as_result()
+}
+
 macro_rules! add_int {
     ($mptr:expr, $name:expr, $obj:expr) => {
         PyModule_AddIntConstant($mptr, c_str!($name), $obj as c_long);
@@ -141,7 +161,7 @@ macro_rules! add_exc {
         if PyModule_AddType($mptr, e.cast()) != 0 {
             return -1;
         }
-        $state.$varname = e.cast();
+        $state.$varname = e;
     };
 }
 
@@ -171,8 +191,9 @@ macro_rules! add_type {
         PyObject_SetAttrString(unpickler, c_str!("__module__"), $module_nameobj);
         $state.$unpickle_var = unpickler;
 
+        // TODO: set these in a way that we don't need to support GC
         for (name, value) in $submodule::SINGLETONS {
-            let pyvalue = match $submodule::new_unchecked($varname.cast(), value) {
+            let pyvalue = match value.to_obj($varname.cast()) {
                 Ok(v) => v,
                 Err(_) => return -1,
             };
@@ -287,24 +308,23 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     PyDict_SetItemString(
         (*state.utc_datetime_type).tp_dict,
         c_str!("offset"),
-        steal!(match time_delta::new_unchecked(
-            state.time_delta_type,
-            time_delta::TimeDelta::from_nanos_unchecked(0),
-        ) {
-            Ok(v) => v,
-            Err(_) => return -1,
-        }),
+        steal!(
+            match time_delta::TimeDelta::from_nanos_unchecked(0).to_obj(state.time_delta_type) {
+                Ok(v) => v,
+                Err(_) => return -1,
+            }
+        ),
     );
 
     // zoneinfo module
     let zoneinfo_module = PyImport_ImportModule(c_str!("zoneinfo"));
     defer_decref!(zoneinfo_module);
-    state.zoneinfo_type = PyObject_GetAttrString(zoneinfo_module, c_str!("ZoneInfo")).cast();
+    state.zoneinfo_type = PyObject_GetAttrString(zoneinfo_module, c_str!("ZoneInfo"));
 
     // datetime C API
     PyDateTime_IMPORT();
     match PyDateTimeAPI().as_ref() {
-        Some(api) => state.datetime_api = api,
+        Some(api) => state.py_api = api,
         None => return -1,
     }
 
@@ -322,14 +342,35 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     state.parse_rfc2822 =
         PyObject_GetAttrString(email_utils, c_str!("parsedate_to_datetime")).cast();
 
-    // TODO: a proper enum
-    add_int!(module, "MONDAY", 1);
-    add_int!(module, "TUESDAY", 2);
-    add_int!(module, "WEDNESDAY", 3);
-    add_int!(module, "THURSDAY", 4);
-    add_int!(module, "FRIDAY", 5);
-    add_int!(module, "SATURDAY", 6);
-    add_int!(module, "SUNDAY", 7);
+    let weekday_enum = match create_enum(
+        c_str!("Weekday"),
+        &[
+            (c_str!("MONDAY"), 1),
+            (c_str!("TUESDAY"), 2),
+            (c_str!("WEDNESDAY"), 3),
+            (c_str!("THURSDAY"), 4),
+            (c_str!("FRIDAY"), 5),
+            (c_str!("SATURDAY"), 6),
+            (c_str!("SUNDAY"), 7),
+        ],
+    ) {
+        Err(_) => return -1,
+        Ok(v) => v,
+    } as *mut PyObject;
+    defer_decref!(weekday_enum);
+    if PyModule_AddType(module, weekday_enum.cast()) != 0 {
+        return -1;
+    }
+
+    state.weekday_enum_members = [
+        PyObject_GetAttrString(weekday_enum, c_str!("MONDAY")),
+        PyObject_GetAttrString(weekday_enum, c_str!("TUESDAY")),
+        PyObject_GetAttrString(weekday_enum, c_str!("WEDNESDAY")),
+        PyObject_GetAttrString(weekday_enum, c_str!("THURSDAY")),
+        PyObject_GetAttrString(weekday_enum, c_str!("FRIDAY")),
+        PyObject_GetAttrString(weekday_enum, c_str!("SATURDAY")),
+        PyObject_GetAttrString(weekday_enum, c_str!("SUNDAY")),
+    ];
 
     state.str_years = PyUnicode_InternFromString(c_str!("years"));
     state.str_months = PyUnicode_InternFromString(c_str!("months"));
@@ -362,10 +403,10 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
 }
 
 macro_rules! visit {
-    ($state:ident, $name:ident, $visit:ident, $arg:ident) => {
-        let $name: *mut PyObject = $state.$name.cast();
-        if !$name.is_null() {
-            ($visit)($name, $arg);
+    ($target:expr, $visit:ident, $arg:ident) => {
+        let obj: *mut PyObject = $target.cast();
+        if !obj.is_null() {
+            ($visit)(obj, $arg);
         }
     };
 }
@@ -378,25 +419,58 @@ unsafe extern "C" fn module_traverse(
     let state = State::for_mod(module);
 
     // types
-    visit!(state, date_type, visit, arg);
-    visit!(state, time_type, visit, arg);
-    visit!(state, date_delta_type, visit, arg);
-    visit!(state, time_delta_type, visit, arg);
-    visit!(state, datetime_delta_type, visit, arg);
-    visit!(state, naive_datetime_type, visit, arg);
-    visit!(state, utc_datetime_type, visit, arg);
-    visit!(state, offset_datetime_type, visit, arg);
-    visit!(state, zoned_datetime_type, visit, arg);
-    visit!(state, local_datetime_type, visit, arg);
+    visit!(state.date_type, visit, arg);
+    visit!(state.time_type, visit, arg);
+    visit!(state.date_delta_type, visit, arg);
+    visit!(state.time_delta_type, visit, arg);
+    visit!(state.datetime_delta_type, visit, arg);
+    visit!(state.naive_datetime_type, visit, arg);
+    visit!(state.utc_datetime_type, visit, arg);
+    visit!(state.offset_datetime_type, visit, arg);
+    visit!(state.zoned_datetime_type, visit, arg);
+    visit!(state.local_datetime_type, visit, arg);
+
+    // enum members
+    visit!(state.weekday_enum_members[0], visit, arg);
+    visit!(state.weekday_enum_members[1], visit, arg);
+    visit!(state.weekday_enum_members[2], visit, arg);
+    visit!(state.weekday_enum_members[3], visit, arg);
+    visit!(state.weekday_enum_members[4], visit, arg);
+    visit!(state.weekday_enum_members[5], visit, arg);
+    visit!(state.weekday_enum_members[6], visit, arg);
+
+    // interned strings
+    visit!(state.str_years, visit, arg);
+    visit!(state.str_months, visit, arg);
+    visit!(state.str_weeks, visit, arg);
+    visit!(state.str_days, visit, arg);
+    visit!(state.str_hours, visit, arg);
+    visit!(state.str_minutes, visit, arg);
+    visit!(state.str_seconds, visit, arg);
+    visit!(state.str_milliseconds, visit, arg);
+    visit!(state.str_microseconds, visit, arg);
+    visit!(state.str_nanoseconds, visit, arg);
+    visit!(state.str_year, visit, arg);
+    visit!(state.str_month, visit, arg);
+    visit!(state.str_day, visit, arg);
+    visit!(state.str_hour, visit, arg);
+    visit!(state.str_minute, visit, arg);
+    visit!(state.str_second, visit, arg);
+    visit!(state.str_nanosecond, visit, arg);
+    visit!(state.str_nanos, visit, arg);
+    visit!(state.str_raise, visit, arg);
+    visit!(state.str_tz, visit, arg);
+    visit!(state.str_disambiguate, visit, arg);
+    visit!(state.str_offset, visit, arg);
 
     // exceptions
-    visit!(state, exc_ambiguous, visit, arg);
-    visit!(state, exc_skipped, visit, arg);
-    visit!(state, exc_invalid_offset, visit, arg);
+    visit!(state.exc_ambiguous, visit, arg);
+    visit!(state.exc_skipped, visit, arg);
+    visit!(state.exc_invalid_offset, visit, arg);
 
     // Imported modules
-    visit!(state, zoneinfo_type, visit, arg);
-    visit!(state, timezone_type, visit, arg);
+    visit!(state.zoneinfo_type, visit, arg);
+    visit!(state.timezone_type, visit, arg);
     0
 }
 
@@ -414,14 +488,26 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR(ptr::addr_of_mut!(state.zoned_datetime_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.local_datetime_type).cast());
 
+    // enum members
+    Py_CLEAR(ptr::addr_of_mut!(state.weekday_enum_members[0]));
+    Py_CLEAR(ptr::addr_of_mut!(state.weekday_enum_members[1]));
+    Py_CLEAR(ptr::addr_of_mut!(state.weekday_enum_members[2]));
+    Py_CLEAR(ptr::addr_of_mut!(state.weekday_enum_members[3]));
+    Py_CLEAR(ptr::addr_of_mut!(state.weekday_enum_members[4]));
+    Py_CLEAR(ptr::addr_of_mut!(state.weekday_enum_members[5]));
+    Py_CLEAR(ptr::addr_of_mut!(state.weekday_enum_members[6]));
+
     // exceptions
-    Py_CLEAR(ptr::addr_of_mut!(state.exc_ambiguous).cast());
-    Py_CLEAR(ptr::addr_of_mut!(state.exc_skipped).cast());
-    Py_CLEAR(ptr::addr_of_mut!(state.exc_invalid_offset).cast());
+    Py_CLEAR(ptr::addr_of_mut!(state.exc_ambiguous));
+    Py_CLEAR(ptr::addr_of_mut!(state.exc_skipped));
+    Py_CLEAR(ptr::addr_of_mut!(state.exc_invalid_offset));
 
     // imported modules
-    Py_CLEAR(ptr::addr_of_mut!(state.zoneinfo_type).cast());
-    Py_CLEAR(ptr::addr_of_mut!(state.timezone_type).cast());
+    Py_CLEAR(ptr::addr_of_mut!(state.zoneinfo_type));
+    Py_CLEAR(ptr::addr_of_mut!(state.timezone_type));
+    Py_CLEAR(ptr::addr_of_mut!(state.strptime));
+    Py_CLEAR(ptr::addr_of_mut!(state.format_rfc2822));
+    Py_CLEAR(ptr::addr_of_mut!(state.parse_rfc2822));
     0
 }
 
@@ -443,10 +529,13 @@ struct State<'a> {
     zoned_datetime_type: *mut PyTypeObject,
     local_datetime_type: *mut PyTypeObject,
 
+    // weekday enum
+    weekday_enum_members: [*mut PyObject; 7],
+
     // exceptions
-    exc_ambiguous: *mut PyTypeObject,
-    exc_skipped: *mut PyTypeObject,
-    exc_invalid_offset: *mut PyTypeObject,
+    exc_ambiguous: *mut PyObject,
+    exc_skipped: *mut PyObject,
+    exc_invalid_offset: *mut PyObject,
 
     // unpickling functions
     unpickle_date: *mut PyObject,
@@ -460,10 +549,11 @@ struct State<'a> {
     unpickle_zoned_datetime: *mut PyObject,
     unpickle_local_datetime: *mut PyObject,
 
+    py_api: &'a PyDateTime_CAPI,
+
     // imported stuff
-    datetime_api: &'a PyDateTime_CAPI,
-    zoneinfo_type: *mut PyTypeObject,
-    timezone_type: *mut PyTypeObject,
+    zoneinfo_type: *mut PyObject,
+    timezone_type: *mut PyObject,
     strptime: *mut PyObject,
     format_rfc2822: *mut PyObject,
     parse_rfc2822: *mut PyObject,
@@ -505,7 +595,7 @@ impl State<'_> {
     unsafe fn for_obj<'a>(obj: *mut PyObject) -> &'a Self {
         PyType_GetModuleState(Py_TYPE(obj))
             .cast::<Self>()
-            .as_mut()
+            .as_ref()
             .unwrap()
     }
 }

@@ -281,14 +281,14 @@ away any timezone information:
 NaiveDateTime(2023-12-28 11:30:00)
 
 You can convert from naïve types with the :meth:`~whenever.NaiveDateTime.assume_utc`,
-:meth:`~whenever.NaiveDateTime.assume_offset`, and
-:meth:`~whenever.NaiveDateTime.assume_zoned`, and
-:meth:`~whenever.NaiveDateTime.assume_local` methods.
+:meth:`~whenever.NaiveDateTime.assume_fixed_offset`, and
+:meth:`~whenever.NaiveDateTime.assume_in_tz`, and
+:meth:`~whenever.NaiveDateTime.assume_in_local_system` methods.
 
 >>> n = NaiveDateTime(2023, 12, 28, 11, 30)
 >>> n.assume_utc()
 UTCDateTime(2023-12-28 11:30:00Z)
->>> n.assume_zoned("Europe/Amsterdam")
+>>> n.assume_in_tz("Europe/Amsterdam")
 ZonedDateTime(2023-12-28 11:30:00+01:00[Europe/Amsterdam])
 
 .. note::
@@ -574,17 +574,17 @@ implement ``strptime()`` methods, because they require disambiguation.
 If you'd like to parse into these types,
 use :meth:`NaiveDateTime.strptime() <whenever.NaiveDateTime.strptime>`
 to parse them, and then use the :meth:`~whenever.NaiveDateTime.assume_utc`,
-:meth:`~whenever.NaiveDateTime.assume_offset`,
-:meth:`~whenever.NaiveDateTime.assume_zoned`, or :meth:`~whenever.NaiveDateTime.assume_local`
+:meth:`~whenever.NaiveDateTime.assume_fixed_offset`,
+:meth:`~whenever.NaiveDateTime.assume_in_tz`, or :meth:`~whenever.NaiveDateTime.assume_in_local_system`
 methods to convert them.
 This makes it explicit what information is being assumed.
 
 .. code-block:: python
 
-    NaiveDateTime.strptime("2023-01-01 12:00", "%Y-%m-%d %H:%M").assume_local()
+    NaiveDateTime.strptime("2023-01-01 12:00", "%Y-%m-%d %H:%M").assume_in_local_system()
 
     # handling ambiguity
-    NaiveDateTime.strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S").assume_zoned(
+    NaiveDateTime.strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S").assume_in_tz(
         "Europe/Amsterdam",
         disambiguate="earlier",
     )
@@ -731,12 +731,12 @@ and calculate the corresponding moment in time:
 >>> wall_clock = d.naive()
 NaiveDateTime(2020-08-15 08:00:00)
 >>> # ...and assume the system timezone (Amsterdam)
->>> wall_clock.assume_local()
+>>> wall_clock.assume_in_local_system()
 LocalSystemDateTime(2020-08-15 08:00:00+02:00)
 
 .. note::
 
-   Remember that :meth:`~whenever.NaiveDateTime.assume_local` may
+   Remember that :meth:`~whenever.NaiveDateTime.assume_in_local_system` may
    require disambiguation, if the wall clock time is ambiguous in
    the system timezone.
 
