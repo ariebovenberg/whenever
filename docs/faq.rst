@@ -6,12 +6,11 @@
 Why does :class:`~whenever.UTCDateTime` exist?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-It's true that you can express a UTC time using an :class:`~whenever.OffsetDateTime`
-with an offset of 0.
-However, :class:`~whenever.UTCDateTime` is valuable exactly because it
-doesn't allow an offset.
-By using it, you clearly express that you are working only in UTC,
-and are not storing local time.
+Since you can express a UTC time using an :class:`~whenever.OffsetDateTime`
+with offset 0, you might wonder why :class:`~whenever.UTCDateTime` exists.
+The reason it exists is precisely *because* it doesn't allow an offset.
+By using :class:`~whenever.UTCDateTime`, you clearly express that you only 
+care about when something happened, and don't care about the local time.
 
 Consider the difference in intent between these two classes:
 
@@ -41,19 +40,17 @@ and extending it correctly (e.g. with migrations, API endpoints, etc).
 Why does :class:`~whenever.LocalSystemDateTime` exist?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-It's true that the local system time is irrelevant in server-type applications.
-However, it is often useful for CLI tools or desktop applications
-to output or accept times in the user's local time.
+While it may not make sense for server-type applications to use the local system time,
+it's often useful for CLI tools or desktop applications.
 
-Why not use :class:`~whenever.OffsetDateTime`? Because it doesn't
-know about the system's DST changes, while :class:`~whenever.LocalSystemDateTime` does.
-This allows it to correctly add and subtract durations.
+Using :class:`~whenever.LocalSystemDateTime` has the following advantages:
 
-Why not use :class:`~whenever.ZonedDateTime`?
-Because it can only express IANA timezones.
-While a system is often configured with an IANA timezone,
-it's not guaranteed to be so. :class:`~whenever.LocalSystemDateTime`
-works with the system's local timezone, regardless of how it's configured.
+- In contrast to :class:`~whenever.OffsetDateTime`, 
+  :class:`~whenever.LocalSystemDateTime` knows about the system's timezone changes,
+  enabling DST-safe arithmetic.
+- In contrast to :class:`~whenever.ZonedDateTime`, 
+  :class:`~whenever.LocalSystemDateTime` doesn't require the system be configured with an IANA timezone.
+  While this is often the case, it's not guaranteed.
 
 Of course, feel free to work with :class:`~whenever.ZonedDateTime` if
 you know the system's IANA timezone. You can use
@@ -64,23 +61,23 @@ the `tzlocal <https://pypi.org/project/tzlocal/>`_ library to help with this.
 Why does :class:`~whenever.NaiveDateTime` exist?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-In general, you shouldn't ignore timezones in a real application.
-However, there there are cases where you simply don't *know* the timezone.
-For example, when parsing a date from a user input,
-or when reading datetimes from a file that doesn't include timezone information.
+In most cases, it's best to use aware datetimes. However, there are valid exceptions.
+A common case is when you simply *don't know* the timezone 
+of a datetime you're working with.
+For example, when parsing a date from a user input, 
+or when reading datetimes from a CSV file.
 Expressing these as :class:`~whenever.NaiveDateTime` makes it clear that
 the timezone is unknown.
 
-Also, compared to the standard library, :class:`whenever.NaiveDateTime` is safer
-to use:
+Additionally, :class:`~whenever.NaiveDateTime` offers these advantages over the standard library's
+counterpart:
 
-- It's a different class, which prevents accidentally mixing it with aware datetimes.
-- It doesn't have a ``.now()`` method, removing a common source of
-  mistakenly naive datetimes.
+- It is a different class, so any mix-up will be caught by your IDE or type-checker.
+- It doesn't have a ``.now()`` method, removing a common source of mistakenly naive datetimes.
 - Conversions to aware datetimes are explicit about assumptions being made:
 
-  >>> n = NaiveDateTime(2022, 1, 1, 12)
-  >>> n.assume_in_tz("Europe/Berlin")
+  >>> party_invite = NaiveDateTime(2022, 1, 1, 12)
+  >>> party_invite.assume_in_tz("Europe/Berlin")
   ZonedDateTime(2022-01-01 12:00:00+01:00[Europe/Berlin])
 
 .. _faq-offset-arithmetic:
@@ -89,7 +86,8 @@ Why can't :class:`~whenever.OffsetDateTime` add or subtract durations?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``OffsetDateTime`` does not support addition or subtraction of time deltas.
-This is a deliberate decision to avoid an infamous pitfall.
+This is a deliberate decision to prevent inadvertent DST-related bugs.
+
 In practice, fixed-offset datetimes are commonly used to express a time at
 which something occurs at a specific location.
 But for many locations, the offset changes throughout the year

@@ -9,8 +9,8 @@ time units from datetimes:
 >>> dt.add(hours=5, minutes=30)
 
 However, sometimes you want to operate on these durations directly.
-For example, you might want to reuse it in multiple places,
-add 5 hours to it, or double it, for example.
+For example, you might want to reuse a particular duration,
+or perform arithmetic on it.
 For this, **whenever** provides an API
 designed to help you avoid common pitfalls.
 
@@ -18,7 +18,7 @@ Durations are created using the duration units provided.
 Here is a quick demo:
 
 >>> from whenever import years, months, days, hours, minutes
->>> # Precise units create a TimeDelta
+>>> # Precise units create a TimeDelta, supporting broad arithmetic
 >>> movie_runtime = hours(2) + minutes(9)
 TimeDelta(02:09:00)
 >>> movie_runtime.in_minutes()
@@ -26,19 +26,19 @@ TimeDelta(02:09:00)
 >>> movie_runtime / 1.2  # what if we watch it at 1.2x speed?
 TimeDelta(01:47:30)
 ...
->>> # Calendar units create a DateDelta
+>>> # Calendar units create a DateDelta, with more limited arithmetic
 >>> project_estimate = months(1) + days(10)
 DateDelta(P1M10D)
 >>> Date(2023, 1, 29) + project_estimate
 Date(2023-03-10)
->>> project_estimate * 2  # a pessimistic estimate
+>>> project_estimate * 2  # make it pessimistic
 DateDelta(P2M20D)
 ...
 >>> # Mixing date and time units creates a generic DateTimeDelta
 >>> project_estimate + movie_runtime
 DateTimeDelta(P1M10DT2H9M)
 ...
->>> # Mistakes prevented by the API:
+>>> # API ensures common mistakes are caught early:
 >>> project_estimate * 1.3             # Impossible arithmetic on calendar units
 >>> project_estimate.in_hours()        # Resolving calendar units without context
 >>> Date(2023, 1, 29) + movie_runtime  # Adding time to a date
@@ -76,10 +76,12 @@ This distinction determines which operations are supported:
 +------------------------------+-------------------+--------------------+--------------------+
 | Add to ``Date``              | .. centered:: ❌  | .. centered:: ✅   | .. centered:: ❌   |
 +------------------------------+-------------------+--------------------+--------------------+
+| division (÷)                 | .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
++------------------------------+-------------------+--------------------+--------------------+
 | multiplication (×)           | .. centered:: ✅  | ⚠️  by             | ⚠️  by             |
 |                              |                   | ``int``            | ``int``            |
 +------------------------------+-------------------+--------------------+--------------------+
-| division (÷)                 | .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
+| comparison (``>, >=, <, <=``)| .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
 +------------------------------+-------------------+--------------------+--------------------+
 | Commutative:                 |                   |                    |                    |
 | ``dt + a + b == dt + b + a`` | .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
@@ -87,12 +89,10 @@ This distinction determines which operations are supported:
 | Reversible:                  |                   |                    |                    |
 | ``(dt + a) - a == dt``       | .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
 +------------------------------+-------------------+--------------------+--------------------+
-| comparison (``>, >=, <, <=``)| .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
+| normalized                   | .. centered:: ✅  | ⚠️ to months & days| ⚠️  date/time parts|
 +------------------------------+-------------------+--------------------+--------------------+
-| normalized                   | .. centered:: ✅  | .. centered:: ❌   | ⚠️  time part      |
-+------------------------------+-------------------+--------------------+--------------------+
-| equality based on            | total microseconds| individual         | date/time parts    |
-|                              |                   | fields             |                    |
+| equality based on            | total nanoseconds | months & days      | date/time parts    |
+|                              |                   |                    |                    |
 +------------------------------+-------------------+--------------------+--------------------+
 
 Multiplication
@@ -197,7 +197,7 @@ ISO 8601 format
 ---------------
 
 The ISO 8601 standard defines formats for specifying durations,
-the most common being:
+the `most common <https://en.wikipedia.org/wiki/ISO_8601#Durations>`_ being:
 
 .. code-block:: none
 
@@ -207,14 +207,15 @@ Where:
 
 - ``P`` is the period designator, and ``T`` separates date and time components.
 - ``nY`` is the number of years, ``nM`` is the number of months, etc.
-- Each ``n`` may be negative, and only seconds may have a fractional part.
+- Only seconds may have a fractional part.
+
 
 For example:
 
 - ``P3Y4DT12H30M`` is 3 years, 4 days, 12 hours, and 30 minutes.
-- ``-P2M5D`` is -2 months, +5 days.
+- ``-P2M5D`` is -2 months, and -5 days.
 - ``P0D`` is zero.
-- ``PT-5M4.25S`` is -5 minutes and +4.25 seconds.
+- ``+PT5M4.25S`` is 5 minutes and 4.25 seconds.
 
 All deltas can be converted to and from this format using the methods
 :meth:`~whenever.DateTimeDelta.common_iso8601`
@@ -222,8 +223,8 @@ and :meth:`~whenever.DateTimeDelta.from_common_iso8601`.
 
 >>> hours(3).common_iso8601()
 'PT3H'
->>> (years(1) - months(3) + minutes(30.25)).common_iso8601()
-'P1Y-3MT30M15S'
+>>> (-years(1) - months(3) - minutes(30.25)).common_iso8601()
+'-P1Y3MT30M15S'
 >>> DateDelta.from_common_iso8601('-P2M')
 DateDelta(-2M)
 >>> DateTimeDelta.from_common_iso8601('P3YT90M')

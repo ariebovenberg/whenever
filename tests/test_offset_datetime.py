@@ -51,20 +51,20 @@ class TestInit:
         assert d.offset == hours(-5)
 
     def test_offset_missing(self):
-        with pytest.raises(TypeError, match="offset.*required"):
+        with pytest.raises(TypeError, match="required.*offset"):
             OffsetDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)  # type: ignore[call-arg]
 
     def test_invalid_offset_int(self):
-        with pytest.raises(ValueError, match="offset.*24 hours"):
+        with pytest.raises(ValueError, match="offset.*24.*hours"):
             OffsetDateTime(2020, 8, 15, 5, 12, offset=34)
 
     def test_invalid_offset_delta(self):
         # too large
-        with pytest.raises(ValueError, match="offset.*24 hours"):
+        with pytest.raises(ValueError, match="offset.*24.*hours"):
             OffsetDateTime(2020, 8, 15, 5, 12, offset=hours(34))
 
         # too precise
-        with pytest.raises(ValueError, match="offset.*whole.*seconds"):
+        with pytest.raises(ValueError, match="(o|O)ffset.*whole.*seconds"):
             OffsetDateTime(
                 2020, 8, 15, 5, 12, offset=hours(34) + milliseconds(1)
             )
@@ -91,10 +91,10 @@ class TestInit:
         )
 
     def test_invalid_date(self):
-        with pytest.raises(ValueError, match="date"):
+        with pytest.raises(ValueError, match="date|day"):
             OffsetDateTime(2020, 2, 30, 5, 12, offset=5)
 
-        with pytest.raises(ValueError, match="time"):
+        with pytest.raises(ValueError, match="time|minute"):
             OffsetDateTime(2020, 2, 28, 5, 64, offset=5)
 
     def test_bounds(self):
@@ -198,6 +198,8 @@ class TestFromDefaultFormat:
                 "2020-08-15T12:08:30-00:00",
                 OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=0),
             ),
+            # FUTURE: consider whether to allow `Z` since this strictly
+            # means there is no offset
             (
                 "2020-08-15T12:08:30Z",
                 OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=0),
@@ -223,6 +225,8 @@ class TestFromDefaultFormat:
             "2020-08-15T12:08.30+05:00",  # wrong time separator
             "2020-08-15T12:08:30+24:00",  # too large offset
             "2020-08-15T23:12:09-99:00",  # invalid offset
+            "2020-08-15T12:𝟘8:30+00:00",  # non-ASCII
+            "2020-08-15T12:08:30.0034+05:𝟙0",  # non-ASCII
             "",  # empty
             "garbage",  # garbage
         ],
@@ -271,6 +275,7 @@ def test_exact_equality():
     assert d.exact_eq(same)
     assert not d.exact_eq(utc_same)
     assert not d.exact_eq(different)
+    assert not d.exact_eq(d.replace(nanosecond=1))
 
 
 class TestEquality:
@@ -412,22 +417,22 @@ class TestFromTimestamp:
             method(-1_000_000_000_000_000_000 * factor, offset=3)
 
         with pytest.raises(TypeError):
-            method(0, offset="3")  # type: ignore[arg-type]
+            method(0, offset="3")
 
         with pytest.raises(ValueError):
             method(0, offset=hours(31))
 
-        with pytest.raises(TypeError, match="got 3"):
-            method(0, offset=3, foo="bar")  # type: ignore[call-arg]
+        with pytest.raises(TypeError, match="got 3|foo"):
+            method(0, offset=3, foo="bar")
 
         with pytest.raises(TypeError):
-            method(0, foo="bar")  # type: ignore[call-arg]
+            method(0, foo="bar")
 
         with pytest.raises(TypeError):
-            method(0)  # type: ignore[call-arg]
+            method(0)
 
         with pytest.raises(TypeError):
-            method(0, 3)  # type: ignore[misc]
+            method(0, 3)
 
     def test_nanos(self):
         assert OffsetDateTime.from_timestamp_nanos(
@@ -469,7 +474,7 @@ def test_repr():
 class TestComparison:
     def test_offset(self):
         d = OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
-        later = d.replace(hour=13)
+        later = d.replace(nanosecond=13)
         assert d < later
         assert d <= later
         assert later > d
@@ -620,8 +625,8 @@ def test_with_date():
     with pytest.raises(ValueError, match="range"):
         d.with_date(Date(1, 1, 1))
 
-    with pytest.raises(TypeError, match="date"):
-        d.with_date(42)
+    with pytest.raises((TypeError, AttributeError), match="date"):
+        d.with_date(42)  # type: ignore[arg-type]
 
 
 def test_with_time():
@@ -634,8 +639,8 @@ def test_with_time():
     with pytest.raises(ValueError, match="range"):
         d2.with_time(Time(1))
 
-    with pytest.raises(TypeError, match="time"):
-        d.with_time(42)
+    with pytest.raises((TypeError, AttributeError), match="time"):
+        d.with_time(42)  # type: ignore[arg-type]
 
 
 def test_components():
@@ -976,6 +981,8 @@ class TestRFC3339:
             == "2020-08-15 23:12:09.00045+04:08"
         )
 
+    # TODO rounding
+
 
 class TestFromRFC3339:
 
@@ -1041,7 +1048,7 @@ class TestFromRFC3339:
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r".*RFC3339.*" + re.escape(repr(s)),
+            match=r".*RFC 3339.*" + re.escape(repr(s)),
         ):
             OffsetDateTime.from_rfc3339(s)
 

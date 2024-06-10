@@ -228,7 +228,7 @@ pub(crate) unsafe fn extract_offset(
     tdelta_cls: *mut PyTypeObject,
 ) -> PyResult<i32> {
     if obj.is_null() {
-        Err(type_err!("offset argument is required"))
+        Err(type_err!("Missing required keyword argument: 'offset'"))
     } else if obj.is_int() {
         let given_int = obj
             .to_i64()?
@@ -774,7 +774,7 @@ fn parse_hm_offset(s: &[u8]) -> Option<i32> {
 unsafe fn from_rfc3339(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let s = &mut s_obj.to_utf8()?.ok_or_type_err("Expected a string")?;
     // at least: "YYYY-MM-DDTHH:MM:SSZ"
-    let raise = || value_err!("Invalid RFC3339 format: {}", s_obj.repr());
+    let raise = || value_err!("Invalid RFC 3339 format: {}", s_obj.repr());
     if s.len() < 20 {
         Err(raise())?
     }

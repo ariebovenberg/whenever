@@ -110,6 +110,11 @@ static mut METHODS: &[PyMethodDef] = &[
     PyMethodDef::zeroed(),
 ];
 
+#[allow(non_upper_case_globals)]
+pub const Py_mod_gil: c_int = 4;
+#[allow(non_upper_case_globals)]
+pub const Py_MOD_GIL_NOT_USED: *mut c_void = 1 as *mut c_void;
+
 static mut MODULE_SLOTS: &[PyModuleDef_Slot] = &[
     PyModuleDef_Slot {
         slot: Py_mod_exec,
@@ -120,6 +125,11 @@ static mut MODULE_SLOTS: &[PyModuleDef_Slot] = &[
         slot: Py_mod_multiple_interpreters,
         // awaiting https://github.com/python/cpython/pull/102995
         value: Py_MOD_PER_INTERPRETER_GIL_SUPPORTED,
+    },
+    #[cfg(Py_3_13)]
+    PyModuleDef_Slot {
+        slot: Py_mod_gil,
+        value: Py_MOD_GIL_NOT_USED,
     },
     // FUTURE: set no_gil slot (peps.python.org/pep-0703/#py-mod-gil-slot)
     PyModuleDef_Slot {

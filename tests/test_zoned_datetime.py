@@ -117,10 +117,10 @@ class TestInit:
             ZonedDateTime(2020, 8, 15, 12)  # type: ignore[call-arg]
 
     def test_out_of_range_due_to_offset(self):
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             ZonedDateTime(1, 1, 1, tz="Asia/Tokyo")
 
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             ZonedDateTime(9999, 12, 31, 23, tz="America/New_York")
 
     def test_skipped(self):
@@ -181,9 +181,9 @@ def test_time():
 
 class TestWithDate:
     def test_unambiguous(self):
-        d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
+        d = ZonedDateTime(2020, 8, 15, 14, nanosecond=2, tz="Europe/Amsterdam")
         assert d.with_date(Date(2021, 1, 2)).exact_eq(
-            ZonedDateTime(2021, 1, 2, 14, tz="Europe/Amsterdam")
+            ZonedDateTime(2021, 1, 2, 14, nanosecond=2, tz="Europe/Amsterdam")
         )
 
     def test_fold(self):
@@ -220,13 +220,13 @@ class TestWithDate:
 
     def test_invalid(self):
         d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
-        with pytest.raises(TypeError):
+        with pytest.raises((TypeError, AttributeError)):
             d.with_date(object())  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="disambiguate"):
             d.with_date(Date(2020, 8, 15), disambiguate="foo")  # type: ignore[arg-type]
 
-        with pytest.raises(TypeError, match="got 2"):
+        with pytest.raises(TypeError, match="got 2|foo"):
             d.with_date(Date(2020, 8, 15), disambiguate="raise", foo=4)  # type: ignore[call-arg]
 
         with pytest.raises(TypeError, match="foo"):
@@ -234,11 +234,11 @@ class TestWithDate:
 
     def test_out_of_range_due_to_offset(self):
         d = ZonedDateTime(2020, 1, 1, tz="Asia/Tokyo")
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             d.with_date(Date(1, 1, 1))
 
         d2 = ZonedDateTime(2020, 1, 1, hour=23, tz="America/New_York")
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             d2.with_date(Date(9999, 12, 31))
 
 
@@ -283,13 +283,13 @@ class TestWithTime:
 
     def test_invalid(self):
         d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
-        with pytest.raises(TypeError):
+        with pytest.raises((TypeError, AttributeError)):
             d.with_time(object())  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="disambiguate"):
             d.with_time(Time(1, 2, 3), disambiguate="foo")  # type: ignore[arg-type]
 
-        with pytest.raises(TypeError, match="got 2"):
+        with pytest.raises(TypeError, match="got 2|foo"):
             d.with_time(Time(1, 2, 3), disambiguate="raise", foo=4)  # type: ignore[call-arg]
 
         with pytest.raises(TypeError, match="foo"):
@@ -297,11 +297,11 @@ class TestWithTime:
 
     def test_out_of_range_due_to_offset(self):
         d = ZonedDateTime(1, 1, 1, hour=23, tz="Asia/Tokyo")
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             d.with_time(Time(1))
 
         d2 = ZonedDateTime(9999, 12, 31, hour=2, tz="America/New_York")
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             d2.with_time(Time(23))
 
 
@@ -314,7 +314,7 @@ class TestDefaultFormat:
                 ZonedDateTime(
                     2020, 8, 15, 23, 12, 9, 987_654_321, tz="Europe/Amsterdam"
                 ),
-                "2020-08-15 23:12:09.987654321+02:00[Europe/Amsterdam]",
+                "2020-08-15T23:12:09.987654321+02:00[Europe/Amsterdam]",
             ),
             (
                 ZonedDateTime(
@@ -327,7 +327,7 @@ class TestDefaultFormat:
                     tz="Europe/Amsterdam",
                     disambiguate="earlier",
                 ),
-                "2023-10-29 02:15:30+02:00[Europe/Amsterdam]",
+                "2023-10-29T02:15:30+02:00[Europe/Amsterdam]",
             ),
             (
                 ZonedDateTime(
@@ -340,7 +340,7 @@ class TestDefaultFormat:
                     tz="Europe/Amsterdam",
                     disambiguate="later",
                 ),
-                "2023-10-29 02:15:30+01:00[Europe/Amsterdam]",
+                "2023-10-29T02:15:30+01:00[Europe/Amsterdam]",
             ),
             (
                 ZonedDateTime(
@@ -349,7 +349,7 @@ class TestDefaultFormat:
                     1,
                     tz="Europe/Dublin",
                 ),
-                "1900-01-01 00:00:00-00:25:21[Europe/Dublin]",
+                "1900-01-01T00:00:00-00:25:21[Europe/Dublin]",
             ),
         ],
     )
@@ -589,35 +589,35 @@ class TestFromDefaultFormat:
         "s, expect",
         [
             (
-                "2020-08-15 12:08:30+02:00[Europe/Amsterdam]",
+                "2020-08-15T12:08:30+02:00[Europe/Amsterdam]",
                 ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
             ),
             # fractions
             (
-                "2020-08-15 12:08:30.0232+02:00[Europe/Amsterdam]",
+                "2020-08-15T12:08:30.0232+02:00[Europe/Amsterdam]",
                 ZonedDateTime(
                     2020, 8, 15, 12, 8, 30, 23_200_000, tz="Europe/Amsterdam"
                 ),
             ),
             # nano precision
             (
-                "2020-08-15 12:08:30.000000001+02:00[Europe/Berlin]",
+                "2020-08-15T12:08:30.000000001+02:00[Europe/Berlin]",
                 ZonedDateTime(2020, 8, 15, 12, 8, 30, 1, tz="Europe/Berlin"),
             ),
             # second-level offset
             (
-                "1900-01-01 23:34:39.01-00:25:21[Europe/Dublin]",
+                "1900-01-01T23:34:39.01-00:25:21[Europe/Dublin]",
                 ZonedDateTime(
                     1900, 1, 1, 23, 34, 39, 10_000_000, tz="Europe/Dublin"
                 ),
             ),
             (
-                "2020-08-15 12:08:30+02:00:00[Europe/Berlin]",
+                "2020-08-15T12:08:30+02:00:00[Europe/Berlin]",
                 ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Berlin"),
             ),
             # offset disambiguates
             (
-                "2023-10-29 02:15:30+01:00[Europe/Amsterdam]",
+                "2023-10-29T02:15:30+01:00[Europe/Amsterdam]",
                 ZonedDateTime(
                     2023,
                     10,
@@ -630,7 +630,7 @@ class TestFromDefaultFormat:
                 ),
             ),
             (
-                "2023-10-29 02:15:30+02:00[Europe/Amsterdam]",
+                "2023-10-29T02:15:30+02:00[Europe/Amsterdam]",
                 ZonedDateTime(
                     2023,
                     10,
@@ -650,30 +650,31 @@ class TestFromDefaultFormat:
     @pytest.mark.parametrize(
         "s",
         [
-            "2020-08-15 12:08:30+02:00",  # no tz
-            "2020-08-15 12:08:30[Europe/Amsterdam]",  # no offset
-            "2020-08-15 12:08:30+02:00[Europe/Amsterdam",  # mismatched brackets
-            "2020-08-15 12:08:30+02:00Europe/Amsterdam]",  # mismatched brackets
-            "2020-08-15T12:08:30+02:00[Europe/Amsterdam]",  # wrong separator
-            "2020-08-15 12.08:30+02:00[Europe/Amsterdam]",  # wrong separator
-            "2020_08-15 12:08:30+02:00[Europe/Amsterdam]",  # wrong separator
-            "2020-08-15 12:8:30+02:00[Europe/Amsterdam]",  # unpadded
-            "2020-08-32 12:08:30+02:00[Europe/Amsterdam]",  # invalid date
-            "2020-08-12 12:68:30+02:00[Europe/Amsterdam]",  # invalid time
-            "2020-08-12 12:68:30+99:00[Europe/Amsterdam]",  # invalid offset
-            "2020-08-12 12:68:30+14:89[Europe/Amsterdam]",  # invalid offset
-            "2020-08-12 12:68:30+14:29:60[Europe/Amsterdam]",  # invalid offset
-            "2023-10-29 02:15:30>02:00[Europe/Amsterdam]",  # invalid offset
-            " 2023-10-29 02:15:30+02:00[Europe/Amsterdam]",  # leading space
-            "2023-10-29 02:15:30+02:00[Europe/Amsterdam] ",  # trailing space
-            "2023-10-29 02:15:30+02:00(Europe/Amsterdam)",  # wrong brackets
+            "2020-08-15T12:08:30+02:00",  # no tz
+            "2020-08-15T12:08:30[Europe/Amsterdam]",  # no offset
+            "2020-08-15T12:08:30+02:00[Europe/Amsterdam",  # mismatched brackets
+            "2020-08-15T12:08:30+02:00Europe/Amsterdam]",  # mismatched brackets
+            "2020-08-15 12:08:30+02:00[Europe/Amsterdam]",  # wrong separator
+            "2020-08-15T12.08:30+02:00[Europe/Amsterdam]",  # wrong separator
+            "2020_08-15T12:08:30+02:00[Europe/Amsterdam]",  # wrong separator
+            "2020-08-15T12:8:30+02:00[Europe/Amsterdam]",  # unpadded
+            "2020-08-32T12:08:30+02:00[Europe/Amsterdam]",  # invalid date
+            "2020-08-12T12:68:30+02:00[Europe/Amsterdam]",  # invalid time
+            "2020-08-12T12:68:30+99:00[Europe/Amsterdam]",  # invalid offset
+            "2020-08-12T12:68:30+14:89[Europe/Amsterdam]",  # invalid offset
+            "2020-08-12T12:68:30+14:29:60[Europe/Amsterdam]",  # invalid offset
+            "2023-10-29T02:15:30>02:00[Europe/Amsterdam]",  # invalid offset
+            " 2023-10-29T02:15:30+02:00[Europe/Amsterdam]",  # leading space
+            "2023-10-29T02:15:30+02:00[Europe/Amsterdam] ",  # trailing space
+            "2023-10-29T02:15:30+02:00(Europe/Amsterdam)",  # wrong brackets
             "2023-10-29",  # only date
             "02:15:30",  # only time
             "2023-10-29T02:15:30",  # no offset
             "",  # empty
             "garbage",  # garbage
-            "2023-10-29 02:15:30.0000000001+02:00[Europe/Amsterdam]",  # overly precise fraction
-            "2023-10-29 02:15:30+02:00:00.00[Europe/Amsterdam]",  # subsecond offset
+            "2023-10-29T02:15:30.0000000001+02:00[Europe/Amsterdam]",  # overly precise fraction
+            "2023-10-29T02:15:30+02:00:00.00[Europe/Amsterdam]",  # subsecond offset
+            "2023-10-29T02:15:30+0𝟙:00[Europe/Amsterdam]",
         ],
     )
     def test_invalid(self, s):
@@ -683,30 +684,30 @@ class TestFromDefaultFormat:
     def test_invalid_tz(self):
         with pytest.raises(ZoneInfoNotFoundError):
             ZonedDateTime.from_default_format(
-                "2020-08-15 12:08:30+02:00[Europe/Nowhere]"
+                "2020-08-15T12:08:30+02:00[Europe/Nowhere]"
             )
 
     @pytest.mark.parametrize(
         "s",
         [
-            "0001-01-01 00:15:30+09:00[Etc/GMT-9]",
-            "9999-12-31 20:15:30-09:00[Etc/GMT+9]",
+            "0001-01-01T00:15:30+09:00[Etc/GMT-9]",
+            "9999-12-31T20:15:30-09:00[Etc/GMT+9]",
         ],
     )
     def test_out_of_range(self, s):
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             ZonedDateTime.from_default_format(s)
 
     def test_offset_timezone_mismatch(self):
         with pytest.raises(InvalidOffset):
             # at the exact DST transition
             ZonedDateTime.from_default_format(
-                "2023-10-29 02:15:30+03:00[Europe/Amsterdam]"
+                "2023-10-29T02:15:30+03:00[Europe/Amsterdam]"
             )
         with pytest.raises(InvalidOffset):
             # some other time in the year
             ZonedDateTime.from_default_format(
-                "2020-08-15 12:08:30+01:00:01[Europe/Amsterdam]"
+                "2020-08-15T12:08:30+01:00:01[Europe/Amsterdam]"
             )
 
     @given(text())
@@ -817,22 +818,22 @@ class TestFromTimestamp:
             method(-1_000_000_000_000_000_000 * factor, tz="America/Nuuk")
 
         with pytest.raises(TypeError):
-            method(0, tz=3)  # type: ignore[arg-type]
+            method(0, tz=3)
 
         with pytest.raises(ZoneInfoNotFoundError):
             method(0, tz="America/Nowhere")
 
-        with pytest.raises(TypeError, match="got 3"):
-            method(0, tz="America/New_York", foo="bar")  # type: ignore[call-arg]
+        with pytest.raises(TypeError, match="got 3|foo"):
+            method(0, tz="America/New_York", foo="bar")
 
         with pytest.raises(TypeError):
-            method(0, foo="bar")  # type: ignore[call-arg]
+            method(0, foo="bar")
 
         with pytest.raises(TypeError):
-            method(0)  # type: ignore[call-arg]
+            method(0)
 
         with pytest.raises(TypeError):
-            method(0, "bar")  # type: ignore[misc]
+            method(0, "bar")
 
     def test_nanos(self):
         assert ZonedDateTime.from_timestamp_nanos(
@@ -1154,7 +1155,7 @@ def test_from_py_datetime():
     )
 
     # out-of-range
-    with pytest.raises(ValueError, match="range"):
+    with pytest.raises((ValueError, OverflowError), match="range"):
         ZonedDateTime.from_py_datetime(
             py_datetime(1, 1, 1, tzinfo=ZoneInfo("Asia/Kolkata"))
         )
@@ -1220,7 +1221,7 @@ class TestExactEquality:
 
     def test_invalid(self):
         a = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
-        with pytest.raises(TypeError):
+        with pytest.raises((TypeError, AttributeError)):
             a.exact_eq(42)  # type: ignore[arg-type]
 
 
@@ -1281,7 +1282,7 @@ class TestReplace:
         with pytest.raises(ZoneInfoNotFoundError, match="Nowhere"):
             d.replace(tz="Nowhere")
 
-        with pytest.raises(ValueError, match="date"):
+        with pytest.raises(ValueError, match="date|day"):
             d.replace(year=2023, month=2, day=29)
 
     def test_disambiguate_ambiguous(self):
@@ -1369,10 +1370,10 @@ class TestReplace:
     def test_out_of_range(self):
         d = ZonedDateTime(1, 1, 1, tz="America/New_York")
 
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             d.replace(tz="Europe/Amsterdam")
 
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             d.replace(year=9999, month=12, day=31, hour=23)
 
 

@@ -862,7 +862,18 @@ macro_rules! type_spec {
             name: concat!("whenever.", stringify!($typ), "\0").as_ptr().cast(),
             basicsize: mem::size_of::<PyWrap<$typ>>() as _,
             itemsize: 0,
+            #[cfg(Py_3_10)]
             flags: (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_IMMUTABLETYPE) as _,
+            // XXX: implement a way to prevent refcycles on Python 3.9
+            // without Py_TPFLAGS_IMMUTABLETYPE.
+            // Not a pressing concern, because this only will be triggered
+            // if users themselves decide to add instances to the class
+            // namespace.
+            // Even so, this will just result in a minor memory leak
+            // preventing the module from being GC'ed,
+            // since subinterpreters aren't a concern.
+            #[cfg(not(Py_3_10))]
+            flags: Py_TPFLAGS_DEFAULT as _,
             slots: unsafe { $slots as *const [_] as *mut _ },
         };
     };

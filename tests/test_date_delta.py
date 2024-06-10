@@ -217,6 +217,7 @@ class TestFromDefaultFormat:
             "P8",  # digits without units
             "P8M3",  # digits without units
             "P3D7Y",  # components out of order
+            "P𝟙Y",  # non-ASCII
             "P--2D",
             "P++2D",
             "P+-2D",
@@ -310,18 +311,18 @@ class TestMultiply:
 
     def test_year_range(self):
         DateDelta(years=2) * 4999  # allowed
-        with pytest.raises(ValueError, match="bounds"):
+        with pytest.raises(ValueError, match="(bounds|range)"):
             DateDelta(years=5) * 2000
 
-        with pytest.raises(ValueError, match="bounds"):
+        with pytest.raises(ValueError, match="(bounds|range)"):
             DateDelta(years=5) * (1 << 15 + 1)
 
     def test_month_range(self):
         DateDelta(months=2) * 59993  # just allowed
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="(bounds|range)"):
             DateDelta(months=2) * 59995
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="(bounds|range)"):
             DateDelta(months=2) * (1 << 31 + 1)
 
     @pytest.mark.parametrize(
@@ -445,6 +446,9 @@ class TestSubtract:
 def test_in_years_months_days():
     p = DateDelta(years=2, months=14, weeks=3, days=4)
     assert p.in_years_months_days() == (3, 2, 25)
+    assert DateDelta.ZERO.in_years_months_days() == (0, 0, 0)
+    assert DateDelta(months=-30).in_years_months_days() == (-2, -6, 0)
+    assert DateDelta(months=4).in_years_months_days() == (0, 4, 0)
 
 
 def test_abs():

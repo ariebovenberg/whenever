@@ -79,6 +79,7 @@ disable_error_code = ["no-untyped-def"]
 [[tool.mypy.overrides]]
 module = [
     "whenever._whenever",
+    "_interpreters",
 ]
 ignore_missing_imports = true
 

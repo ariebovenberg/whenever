@@ -7,7 +7,7 @@ use crate::common::*;
 use crate::{
     date::Date,
     date_delta::DateDelta,
-    datetime_delta::DateTimeDelta,
+    datetime_delta::{set_delta_from_kwarg, DateTimeDelta},
     naive_datetime::DateTime,
     offset_datetime::{self, naive, timestamp, timestamp_millis, timestamp_nanos, OffsetDateTime},
     time::Time,
@@ -771,6 +771,90 @@ unsafe fn in_local_system(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         .to_obj(cls)
 }
 
+unsafe fn add(
+    slf: *mut PyObject,
+    cls: *mut PyTypeObject,
+    args: &[*mut PyObject],
+    kwargs: &[(*mut PyObject, *mut PyObject)],
+) -> PyReturn {
+    _shift_method(slf, cls, args, kwargs, false, "add")
+}
+
+unsafe fn subtract(
+    slf: *mut PyObject,
+    cls: *mut PyTypeObject,
+    args: &[*mut PyObject],
+    kwargs: &[(*mut PyObject, *mut PyObject)],
+) -> PyReturn {
+    _shift_method(slf, cls, args, kwargs, true, "subtract")
+}
+
+#[inline]
+unsafe fn _shift_method(
+    slf: *mut PyObject,
+    cls: *mut PyTypeObject,
+    args: &[*mut PyObject],
+    kwargs: &[(*mut PyObject, *mut PyObject)],
+    negate: bool,
+    fname: &str,
+) -> PyReturn {
+    if !args.is_empty() {
+        return Err(type_err!("{}() takes no positional arguments", fname));
+    }
+    let state = State::for_type(cls);
+    let mut dis = Disambiguate::Raise;
+    let mut months = 0;
+    let mut days = 0;
+    let mut nanos = 0;
+    for &(key, value) in kwargs {
+        if key == state.str_disambiguate {
+            dis = Disambiguate::parse(
+                value
+                    .to_utf8()?
+                    .ok_or_type_err("disambiguate must be a string")?,
+            )
+            .ok_or_value_err("Invalid disambiguate value")?;
+        } else {
+            set_delta_from_kwarg(key, value, &mut months, &mut days, &mut nanos, state, fname)?;
+        }
+    }
+    if negate {
+        months = -months;
+        days = -days;
+        nanos = -nanos;
+    }
+    // First, shift the calendar units
+    let odt = if months != 0 || days != 0 {
+        let odt = OffsetDateTime::extract(slf);
+        OffsetDateTime::for_localsystem(
+            state.py_api,
+            odt.date()
+                .shift(0, months, days)
+                .ok_or_value_err("Resulting date is out of range")?,
+            odt.time(),
+            dis,
+        )?
+        .map_err(|amb| match amb {
+            Ambiguity::Fold => py_err!(
+                state.exc_ambiguous,
+                "The resulting datetime is ambiguous in the system timezone"
+            ),
+            Ambiguity::Gap => py_err!(
+                state.exc_skipped,
+                "The resulting datetime is skipped in the system timezone"
+            ),
+        })?
+    } else {
+        OffsetDateTime::extract(slf)
+    };
+
+    odt.to_instant()
+        .shift(nanos)
+        .ok_or_value_err("Result is out of range")?
+        .to_local_system(state.py_api)?
+        .to_obj(cls)
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     // FUTURE: get docstrings from Python implementation
     method!(identity2 named "__copy__", ""),
@@ -838,6 +922,11 @@ static mut METHODS: &[PyMethodDef] = &[
     ),
     method_kwargs!(with_date, "Return a new instance with the date replaced"),
     method_kwargs!(with_time, "Return a new instance with the time replaced"),
+    method_kwargs!(add, "Return a new instance with the given time units added"),
+    method_kwargs!(
+        subtract,
+        "Return a new instance with the given time units subtracted"
+    ),
     PyMethodDef::zeroed(),
 ];
 

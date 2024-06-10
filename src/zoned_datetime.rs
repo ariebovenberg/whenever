@@ -191,7 +191,7 @@ impl Display for ZonedDateTime {
         } = self;
         write!(
             f,
-            "{} {}{}[{}]",
+            "{}T{}{}[{}]",
             date,
             time,
             offset_fmt(offset_secs),
@@ -305,7 +305,20 @@ unsafe extern "C" fn dealloc(slf: *mut PyObject) {
 }
 
 unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
-    format!("ZonedDateTime({})", ZonedDateTime::extract(slf)).to_py()
+    let ZonedDateTime {
+        date,
+        time,
+        offset_secs,
+        zoneinfo,
+    } = ZonedDateTime::extract(slf);
+    format!(
+        "ZonedDateTime({} {}{}[{}])",
+        date,
+        time,
+        offset_fmt(offset_secs),
+        zoneinfo_key(zoneinfo)
+    )
+    .to_py()
 }
 
 unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
@@ -1154,7 +1167,7 @@ unsafe fn from_default_format(cls: *mut PyObject, s_obj: *mut PyObject) -> PyRet
     let s = &mut s_obj.to_utf8()?.ok_or_type_err("Argument must be string")?;
     let parse_err = || value_err!("Invalid format: {}", s_obj.repr());
     // at least: "YYYY-MM-DD HH:MM:SS+HH:MM[?]"
-    if s.len() < 28 || s[10] != b' ' {
+    if s.len() < 28 || s[10] != b'T' {
         return Err(parse_err());
     }
     let date = Date::parse_partial(s).ok_or_else(parse_err)?;
