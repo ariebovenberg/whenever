@@ -4,3 +4,7 @@ pytest-benchmark[histogram]>=4,<6
 pytest-mypy-plugins>=3,<4
 hypothesis>=6,<7
 freezegun>=1,<2
+
+# TODO: remove these constraints once rdps-py supports python 3.13
+referencing>=...,<0.24.0; python_version == '3.13'
+jsonschema>=...,<4.18.0; python_version == '3.13'

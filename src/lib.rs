@@ -1,4 +1,4 @@
-use core::ffi::{c_char, c_int, c_long, c_void};
+use core::ffi::{c_char, c_int, c_void};
 use core::ptr::null_mut as NULL;
 use core::{mem, ptr};
 use pyo3_ffi::*;
@@ -39,14 +39,17 @@ static mut MODULE_DEF: PyModuleDef = PyModuleDef {
     m_slots: unsafe { MODULE_SLOTS as *const [_] as *mut _ },
     m_traverse: Some(module_traverse),
     m_clear: Some(module_clear),
-    m_free: Some(module_free),
+    // XXX: m_free likely not needed, since m_clear clears all references,
+    // and the module state is deallocated along with the module.
+    // See https://github.com/python/cpython/blob/c3b6dbff2c8886de1edade737febe85dd47ff4d0/Modules/xxlimited.c#L429C1-L431C8
+    m_free: None,
 };
 
 static mut METHODS: &[PyMethodDef] = &[
     method!(_unpkl_date, "", METH_O),
     method!(_unpkl_time, "", METH_O),
-    method!(_unpkl_tdelta, "", METH_O),
     method_vararg!(_unpkl_ddelta, ""),
+    method!(_unpkl_tdelta, "", METH_O),
     method_vararg!(_unpkl_dtdelta, ""),
     method!(_unpkl_naive, "", METH_O),
     method!(_unpkl_utc, "", METH_O),
@@ -112,11 +115,11 @@ static mut MODULE_SLOTS: &[PyModuleDef_Slot] = &[
         slot: Py_mod_exec,
         value: module_exec as *mut c_void,
     },
-    #[cfg(Py_3_12)]
+    #[cfg(Py_3_13)]
     PyModuleDef_Slot {
         slot: Py_mod_multiple_interpreters,
         // awaiting https://github.com/python/cpython/pull/102995
-        value: Py_MOD_MULTIPLE_INTERPRETERS_NOT_SUPPORTED,
+        value: Py_MOD_PER_INTERPRETER_GIL_SUPPORTED,
     },
     // FUTURE: set no_gil slot (peps.python.org/pep-0703/#py-mod-gil-slot)
     PyModuleDef_Slot {
@@ -145,12 +148,6 @@ unsafe fn create_enum(name: *const c_char, members: &[(*const c_char, i32)]) -> 
     .as_result()
 }
 
-macro_rules! add_int {
-    ($mptr:expr, $name:expr, $obj:expr) => {
-        PyModule_AddIntConstant($mptr, c_str!($name), $obj as c_long);
-    };
-}
-
 macro_rules! add_exc {
     ($mptr:expr, $state:ident, $name:expr, $varname:ident) => {
         let e = PyErr_NewException(c_str!(concat!("whenever.", $name)), NULL(), NULL());
@@ -173,30 +170,24 @@ macro_rules! add_type {
      $varname:ident,
      $unpickle_name:expr,
      $unpickle_var:ident) => {
-        let $varname = PyType_FromModuleAndSpec(
+        let $varname = unwrap_or_errcode!(PyType_FromModuleAndSpec(
             $module,
             ptr::addr_of_mut!($submodule::SPEC),
             ptr::null_mut(),
-        );
-        if $varname.is_null() {
-            return -1;
-        }
-        defer_decref!($varname);
+        )
+        .as_result()) as *mut PyObject;
         if PyModule_AddType($module, $varname.cast()) != 0 {
             return -1;
         }
         $state.$varname = $varname.cast();
 
         let unpickler = PyObject_GetAttrString($module, c_str!($unpickle_name));
+        defer_decref!(unpickler);
         PyObject_SetAttrString(unpickler, c_str!("__module__"), $module_nameobj);
         $state.$unpickle_var = unpickler;
 
-        // TODO: set these in a way that we don't need to support GC
         for (name, value) in $submodule::SINGLETONS {
-            let pyvalue = match value.to_obj($varname.cast()) {
-                Ok(v) => v,
-                Err(_) => return -1,
-            };
+            let pyvalue = unwrap_or_errcode!(value.to_obj($varname.cast()));
             PyDict_SetItemString(
                 (*$varname.cast::<PyTypeObject>()).tp_dict,
                 name.as_ptr().cast(),
@@ -206,12 +197,18 @@ macro_rules! add_type {
     };
 }
 
+macro_rules! unwrap_or_errcode {
+    ($expr:expr) => {
+        match $expr {
+            Ok(v) => v,
+            Err(_) => return -1,
+        }
+    };
+}
+
 unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     let state: &mut State = PyModule_GetState(module).cast::<State>().as_mut().unwrap();
-    let module_name = match "whenever".to_py() {
-        Ok(name) => name,
-        Err(_) => return -1,
-    };
+    let module_name = unwrap_or_errcode!("whenever".to_py());
     defer_decref!(module_name);
 
     add_type!(
@@ -305,28 +302,26 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         unpickle_local_datetime
     );
 
+    // XXX: this SEEMS to work out refcount- and GC-wise
     PyDict_SetItemString(
         (*state.utc_datetime_type).tp_dict,
         c_str!("offset"),
-        steal!(
-            match time_delta::TimeDelta::from_nanos_unchecked(0).to_obj(state.time_delta_type) {
-                Ok(v) => v,
-                Err(_) => return -1,
-            }
-        ),
+        steal!(unwrap_or_errcode!(PyDict_GetItemString(
+            (*state.time_delta_type).tp_dict,
+            c_str!("ZERO")
+        )
+        .as_result())),
     );
 
-    // zoneinfo module
     let zoneinfo_module = PyImport_ImportModule(c_str!("zoneinfo"));
     defer_decref!(zoneinfo_module);
     state.zoneinfo_type = PyObject_GetAttrString(zoneinfo_module, c_str!("ZoneInfo"));
 
-    // datetime C API
     PyDateTime_IMPORT();
-    match PyDateTimeAPI().as_ref() {
-        Some(api) => state.py_api = api,
+    state.py_api = match PyDateTimeAPI().as_ref() {
+        Some(api) => api,
         None => return -1,
-    }
+    };
 
     let datetime_module = PyImport_ImportModule(c_str!("datetime"));
     defer_decref!(datetime_module);
@@ -342,7 +337,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     state.parse_rfc2822 =
         PyObject_GetAttrString(email_utils, c_str!("parsedate_to_datetime")).cast();
 
-    let weekday_enum = match create_enum(
+    let weekday_enum = unwrap_or_errcode!(create_enum(
         c_str!("Weekday"),
         &[
             (c_str!("MONDAY"), 1),
@@ -353,10 +348,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
             (c_str!("SATURDAY"), 6),
             (c_str!("SUNDAY"), 7),
         ],
-    ) {
-        Err(_) => return -1,
-        Ok(v) => v,
-    } as *mut PyObject;
+    )) as *mut PyObject;
     defer_decref!(weekday_enum);
     if PyModule_AddType(module, weekday_enum.cast()) != 0 {
         return -1;
@@ -411,57 +403,76 @@ macro_rules! visit {
     };
 }
 
+macro_rules! visit_type {
+    ($target:expr, $visit:ident, $arg:ident, $singletons:expr) => {
+        let obj: *mut PyObject = $target.cast();
+        if !obj.is_null() {
+            ($visit)(obj, $arg);
+            // XXX: This trick SEEMS to let us avoid adding GC
+            // support to our types: Since our types are atomic and immutable
+            // this should be allowed...
+            // ...BUT there is a reference cycle between the class and the
+            // singleton instances (e.g. the Date.MAX instance and Date class itself)
+            // Visiting the type once for each singleton should make GC aware of this.
+            for _ in $singletons {
+                ($visit)(obj, $arg);
+            }
+        }
+    };
+}
+
 unsafe extern "C" fn module_traverse(
     module: *mut PyObject,
     visit: visitproc,
     arg: *mut c_void,
 ) -> c_int {
     let state = State::for_mod(module);
-
     // types
-    visit!(state.date_type, visit, arg);
-    visit!(state.time_type, visit, arg);
-    visit!(state.date_delta_type, visit, arg);
-    visit!(state.time_delta_type, visit, arg);
-    visit!(state.datetime_delta_type, visit, arg);
-    visit!(state.naive_datetime_type, visit, arg);
-    visit!(state.utc_datetime_type, visit, arg);
-    visit!(state.offset_datetime_type, visit, arg);
-    visit!(state.zoned_datetime_type, visit, arg);
-    visit!(state.local_datetime_type, visit, arg);
+    visit_type!(state.date_type, visit, arg, date::SINGLETONS);
+    visit_type!(state.time_type, visit, arg, time::SINGLETONS);
+    visit_type!(state.date_delta_type, visit, arg, date_delta::SINGLETONS);
+    visit_type!(state.time_delta_type, visit, arg, time_delta::SINGLETONS);
+    visit_type!(
+        state.datetime_delta_type,
+        visit,
+        arg,
+        datetime_delta::SINGLETONS
+    );
+    visit_type!(
+        state.naive_datetime_type,
+        visit,
+        arg,
+        naive_datetime::SINGLETONS
+    );
+    visit_type!(
+        state.utc_datetime_type,
+        visit,
+        arg,
+        utc_datetime::SINGLETONS
+    );
+    visit_type!(
+        state.offset_datetime_type,
+        visit,
+        arg,
+        offset_datetime::SINGLETONS
+    );
+    visit_type!(
+        state.zoned_datetime_type,
+        visit,
+        arg,
+        zoned_datetime::SINGLETONS
+    );
+    visit_type!(
+        state.local_datetime_type,
+        visit,
+        arg,
+        local_datetime::SINGLETONS
+    );
 
     // enum members
-    visit!(state.weekday_enum_members[0], visit, arg);
-    visit!(state.weekday_enum_members[1], visit, arg);
-    visit!(state.weekday_enum_members[2], visit, arg);
-    visit!(state.weekday_enum_members[3], visit, arg);
-    visit!(state.weekday_enum_members[4], visit, arg);
-    visit!(state.weekday_enum_members[5], visit, arg);
-    visit!(state.weekday_enum_members[6], visit, arg);
-
-    // interned strings
-    visit!(state.str_years, visit, arg);
-    visit!(state.str_months, visit, arg);
-    visit!(state.str_weeks, visit, arg);
-    visit!(state.str_days, visit, arg);
-    visit!(state.str_hours, visit, arg);
-    visit!(state.str_minutes, visit, arg);
-    visit!(state.str_seconds, visit, arg);
-    visit!(state.str_milliseconds, visit, arg);
-    visit!(state.str_microseconds, visit, arg);
-    visit!(state.str_nanoseconds, visit, arg);
-    visit!(state.str_year, visit, arg);
-    visit!(state.str_month, visit, arg);
-    visit!(state.str_day, visit, arg);
-    visit!(state.str_hour, visit, arg);
-    visit!(state.str_minute, visit, arg);
-    visit!(state.str_second, visit, arg);
-    visit!(state.str_nanosecond, visit, arg);
-    visit!(state.str_nanos, visit, arg);
-    visit!(state.str_raise, visit, arg);
-    visit!(state.str_tz, visit, arg);
-    visit!(state.str_disambiguate, visit, arg);
-    visit!(state.str_offset, visit, arg);
+    for &member in state.weekday_enum_members.iter() {
+        visit!(member, visit, arg);
+    }
 
     // exceptions
     visit!(state.exc_ambiguous, visit, arg);
@@ -471,6 +482,10 @@ unsafe extern "C" fn module_traverse(
     // Imported modules
     visit!(state.zoneinfo_type, visit, arg);
     visit!(state.timezone_type, visit, arg);
+    visit!(state.strptime, visit, arg);
+    visit!(state.format_rfc2822, visit, arg);
+    visit!(state.parse_rfc2822, visit, arg);
+
     0
 }
 
@@ -509,10 +524,6 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR(ptr::addr_of_mut!(state.format_rfc2822));
     Py_CLEAR(ptr::addr_of_mut!(state.parse_rfc2822));
     0
-}
-
-unsafe extern "C" fn module_free(module: *mut c_void) {
-    module_clear(module.cast());
 }
 
 #[repr(C)]

@@ -13,7 +13,10 @@ pub struct Date {
     pub(crate) day: u8,
 }
 
-pub(crate) const SINGLETONS: [(&str, Date); 0] = [];
+pub(crate) const SINGLETONS: [(&str, Date); 2] = [
+    ("MIN\0", Date::new_unchecked(1, 1, 1)),
+    ("MAX\0", Date::new_unchecked(9999, 12, 31)),
+];
 
 impl Date {
     pub(crate) const unsafe fn hash(self) -> i32 {
