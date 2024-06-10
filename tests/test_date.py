@@ -596,6 +596,11 @@ def test_copy():
     assert deepcopy(d) is d
 
 
+def test_singletons():
+    assert Date.MIN == Date(1, 1, 1)
+    assert Date.MAX == Date(9999, 12, 31)
+
+
 def cannot_subclass():
     with pytest.raises(TypeError):
 

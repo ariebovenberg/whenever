@@ -19,6 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python",
     "Programming Language :: Rust",
@@ -28,8 +29,8 @@ dependencies = [
     "tzdata>=2020.1; sys_platform == 'win32'",
 ]
 keywords = [
-    "datetime", "typesafe", "rust", "time", "timezone", "utc", "naive", "aware",
-    "zoneinfo", "tzdata"
+    "datetime", "typesafe", "rust", "date", "time", "timezone", "utc",
+    "naive", "aware", "zoneinfo", "tzdata"
 ]
 
 
