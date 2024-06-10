@@ -18,6 +18,7 @@ from whenever import (
     days,
     hours,
     minutes,
+    nanoseconds,
     seconds,
     years,
 )
@@ -51,34 +52,34 @@ class TestInit:
     @pytest.mark.parametrize(
         "kwargs, keyword",
         [
-            (dict(year=0), "date"),
-            (dict(year=10_000), "date"),
-            (dict(year=BIG_INT), "too large|date"),
-            (dict(year=-BIG_INT), "too large|date"),
-            (dict(month=0), "date"),
-            (dict(month=13), "date"),
-            (dict(month=BIG_INT), "too large|date"),
-            (dict(month=-BIG_INT), "too large|date"),
-            (dict(day=0), "date"),
-            (dict(day=32), "date"),
-            (dict(day=BIG_INT), "too large|date"),
-            (dict(day=-BIG_INT), "too large|date"),
-            (dict(hour=-1), "time"),
-            (dict(hour=24), "time"),
-            (dict(hour=BIG_INT), "too large|time"),
-            (dict(hour=-BIG_INT), "too large|time"),
-            (dict(minute=-1), "time"),
-            (dict(minute=60), "time"),
-            (dict(minute=BIG_INT), "too large|time"),
-            (dict(minute=-BIG_INT), "too large|time"),
-            (dict(second=-1), "time"),
-            (dict(second=60), "time"),
-            (dict(second=BIG_INT), "too large|time"),
-            (dict(second=-BIG_INT), "too large|time"),
-            (dict(nanosecond=-1), "time"),
-            (dict(nanosecond=1_000_000_000), "time"),
-            (dict(nanosecond=BIG_INT), "too large|time"),
-            (dict(nanosecond=-BIG_INT), "too large|time"),
+            (dict(year=0), "date|year"),
+            (dict(year=10_000), "date|year"),
+            (dict(year=BIG_INT), "too large|date|year"),
+            (dict(year=-BIG_INT), "too large|date|year"),
+            (dict(month=0), "date|month"),
+            (dict(month=13), "date|month"),
+            (dict(month=BIG_INT), "too large|date|month"),
+            (dict(month=-BIG_INT), "too large|date|month"),
+            (dict(day=0), "date|day"),
+            (dict(day=32), "date|day"),
+            (dict(day=BIG_INT), "too large|date|day"),
+            (dict(day=-BIG_INT), "too large|date|day"),
+            (dict(hour=-1), "time|hour"),
+            (dict(hour=24), "time|hour"),
+            (dict(hour=BIG_INT), "too large|time|hour"),
+            (dict(hour=-BIG_INT), "too large|time|hour"),
+            (dict(minute=-1), "time|minute"),
+            (dict(minute=60), "time|minute"),
+            (dict(minute=BIG_INT), "too large|time|minute"),
+            (dict(minute=-BIG_INT), "too large|time|minute"),
+            (dict(second=-1), "time|second"),
+            (dict(second=60), "time|second"),
+            (dict(second=BIG_INT), "too large|time|second"),
+            (dict(second=-BIG_INT), "too large|time|second"),
+            (dict(nanosecond=-1), "time|nanos"),
+            (dict(nanosecond=1_000_000_000), "time|nanos"),
+            (dict(nanosecond=BIG_INT), "too large|time|nanos"),
+            (dict(nanosecond=-BIG_INT), "too large|time|nanos"),
         ],
     )
     def test_bounds(self, kwargs, keyword):
@@ -211,6 +212,7 @@ class TestFromDefaultFormat:
             "2020-09-15T22:44:20z",  # lowercase z
             "2020-09-15T22:44:20",  # no trailing z
             "2020-09-15T\x0012:32",  # NULL byte
+            "2020-08-15T23:12:09.3𝟙Z",
         ],
     )
     def test_invalid(self, s):
@@ -239,7 +241,7 @@ class TestEquality:
 
     def test_different(self):
         d = UTCDateTime(2020, 8, 15)
-        different = UTCDateTime(2020, 8, 16)
+        different = UTCDateTime(2020, 8, 15, nanosecond=1)
         assert d != different
         assert not d == different
         assert hash(d) != hash(different)
@@ -255,8 +257,8 @@ class TestEquality:
         assert d != 3  # type: ignore[comparison-overlap]
         assert not 3 == d  # type: ignore[comparison-overlap]
         assert 3 != d  # type: ignore[comparison-overlap]
-        assert not None == d  # type: ignore[comparison-overlap]
-        assert None != d  # type: ignore[comparison-overlap]
+        assert not None == d  # noqa: E711
+        assert None != d  # noqa: E711
 
     def test_zoned(self):
         d: UTCDateTime | ZonedDateTime = UTCDateTime(2023, 10, 29, 1, 15)
@@ -541,7 +543,7 @@ def test_from_py_datetime():
         2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
     )
 
-    with pytest.raises(ValueError, match="utc.*timedelta"):
+    with pytest.raises(ValueError, match="UTC.*timedelta"):
         UTCDateTime.from_py_datetime(
             d.replace(tzinfo=timezone(-timedelta(hours=4)))
         )
@@ -584,56 +586,58 @@ class TestReplace:
         )
         assert d.replace(nanosecond=0) == UTCDateTime(2020, 8, 15, 23, 12, 9)
 
+        with pytest.raises(ValueError):
+            d.replace(nanosecond=1_000_000_000)
+
         with pytest.raises(TypeError, match="tzinfo"):
             d.replace(tzinfo=timezone.utc)  # type: ignore[call-arg]
 
     def test_invalid(self):
         d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.raises(ValueError, match="Invalid date"):
+        with pytest.raises(ValueError, match="date|year"):
             d.replace(year=0)
 
-        with pytest.raises(ValueError, match="Invalid date"):
+        with pytest.raises(ValueError, match="date|day"):
             d.replace(day=32)
 
-        with pytest.raises(ValueError, match="Invalid time"):
+        with pytest.raises(ValueError, match="time|hour"):
             d.replace(hour=24)
 
 
 def test_with_date():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+    d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
     assert d.with_date(Date(2019, 1, 1)) == UTCDateTime(
-        2019, 1, 1, 23, 12, 9, nanosecond=987_654
+        2019, 1, 1, 23, 12, 9, nanosecond=987_654_321
     )
-    assert d == UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
 
 
 def test_with_time():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+    d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
     assert d.with_time(Time(1, 2, 3, 4)) == UTCDateTime(
         2020, 8, 15, 1, 2, 3, 4
     )
-    assert d == UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
 
 
 class TestAddMethod:
 
     def test_valid(self):
-        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         assert d.add(hours=24, seconds=5) == d + hours(24) + seconds(5)
         assert d.add(years=1, days=4, minutes=-4) == d + years(1) + days(
             4
         ) - minutes(4)
+        assert d + nanoseconds(20_000_000) == d.add(nanoseconds=20_000_000)
 
     def test_invalid(self):
         d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             d.add(hours=24 * 365 * 8000)
 
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             d.add(hours=-24 * 365 * 3000)
 
         with pytest.raises(TypeError, match="positional"):
-            d.add(4)  # type: ignore[call-args]
+            d.add(4)  # type: ignore[misc]
 
     @given(
         years=integers(),
@@ -644,7 +648,7 @@ class TestAddMethod:
         seconds=floats(),
         milliseconds=floats(),
         microseconds=floats(),
-        nanoseconds=floats(),
+        nanoseconds=integers(),
     )
     def test_fuzzing(self, **kwargs):
         d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
@@ -665,17 +669,17 @@ class TestSubtractMethod:
 
     def test_invalid(self):
         d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             d.subtract(hours=24 * 365 * 3000)
 
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             d.subtract(hours=-24 * 365 * 8000)
 
         with pytest.raises(TypeError, match="positional"):
-            d.subtract(4)  # type: ignore[call-args]
+            d.subtract(4)  # type: ignore[misc]
 
         with pytest.raises(TypeError, match="positional"):
-            d.subtract(hours(4))  # type: ignore[call-args]
+            d.subtract(hours(4))  # type: ignore[arg-type,misc]
 
     @given(
         years=integers(),
@@ -686,7 +690,7 @@ class TestSubtractMethod:
         seconds=floats(),
         milliseconds=floats(),
         microseconds=floats(),
-        nanoseconds=floats(),
+        nanoseconds=integers(),
     )
     def test_fuzzing(self, **kwargs):
         d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
@@ -698,12 +702,15 @@ class TestSubtractMethod:
 
 class TestAddOperator:
     def test_time_units(self):
-        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         assert d + hours(24) + seconds(5) == UTCDateTime(
-            2020, 8, 16, 23, 12, 14, nanosecond=987_654
+            2020, 8, 16, 23, 12, 14, nanosecond=987_654_321
+        )
+        assert d + nanoseconds(20_000_000) == UTCDateTime(
+            2020, 8, 15, 23, 12, 10, nanosecond=7_654_321
         )
 
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             d + hours(9_000 * 366 * 24)
 
     def test_mix(self):
@@ -749,9 +756,9 @@ class TestSubtractOperator:
         )
 
     def test_utc(self):
-        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        other = UTCDateTime(2020, 8, 14, 23, 12, 4, nanosecond=987_654)
-        assert d - other == hours(24) + seconds(5)
+        d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
+        other = UTCDateTime(2020, 8, 14, 23, 12, 4, nanosecond=987_654_321)
+        assert d - other == hours(24) + seconds(5) - nanoseconds(321)
 
     def test_offset(self):
         d = UTCDateTime(2020, 8, 15, 23)
@@ -920,11 +927,10 @@ class TestFromRFC2822:
                 "Sat, 15 Aug 2020 23:12:09 +0000",
                 UTCDateTime(2020, 8, 15, 23, 12, 9),
             ),
-            # TODO: fix
-            # (
-            #     "Sat, 15 Aug 2020 23:12:09 -0000",
-            #     UTCDateTime(2020, 8, 15, 23, 12, 9),
-            # ),
+            (
+                "Sat, 15 Aug 2020 23:12:09 -0000",
+                UTCDateTime(2020, 8, 15, 23, 12, 9),
+            ),
             (
                 "Sat, 15 Aug 2020 23:12:09 UTC",
                 UTCDateTime(2020, 8, 15, 23, 12, 9),
@@ -938,27 +944,24 @@ class TestFromRFC2822:
     def test_valid(self, s, expected):
         assert UTCDateTime.from_rfc2822(s) == expected
 
-    def test_invalid(self):
-        # no offset
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "Sat, 15 Aug 2020 23:12:09 +0200",  # non-UTC offset
+            "Sat, 15 Aug 2020 23:12:09,0 GMT",  # fraction
+            "Sat, 15 Aug 2020 23:12:09.0 GMT",  # fraction
+            "Sat, 15 Aug 2020 23:12:09",  # missing zone/offset
+            "blurb",  # garbage
+            # FUTURE: is this a bug in the stdlib?
+            # "Sat, 𝟙5 Aug 2020 23:12:09 UTC",  # non-ascii
+        ],
+    )
+    def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"Could not parse.*RFC 2822.*'Sat, 15 Aug 2020 23:12:09'",
+            match=r"(Could not parse.*RFC 2822|Invalid).*" + re.escape(s),
         ):
-            UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09")
-
-        # nonzero offset
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*RFC 2822.*offset.*'Sat, 15 Aug 2020 23:12:09 \+0200'",
-        ):
-            UTCDateTime.from_rfc2822("Sat, 15 Aug 2020 23:12:09 +0200")
-
-        # garbage
-        with pytest.raises(
-            ValueError,
-            match=r"Invalid.*Blurb.*",
-        ):
-            UTCDateTime.from_rfc2822("Blurb, 2 Bla 2020 23:12:09,0")
+            UTCDateTime.from_rfc2822(s)
 
 
 def test_rfc3339():
@@ -1016,13 +1019,14 @@ class TestFromRFC3339:
             "2020-09-15T22:44:20+01:00",  # non-UTC offset
             "2020-08-15T23:12:09.34ZZ",  # extra Z
             "2020-08-15T23:12:09.34Z01:00",  # offset and Z
+            "2020-08-15T23:12:09.3𝟜Z",  # non ascii
         ],
     )
     def test_invalid(self, s):
         # no timezone
         with pytest.raises(
             ValueError,
-            match=r"Invalid.*RFC3339.*" + re.escape(s),
+            match=r"Invalid.*RFC 3339.*" + re.escape(s),
         ):
             UTCDateTime.from_rfc3339(s)
 
@@ -1049,7 +1053,6 @@ class TestFromCommonIso8601:
                 "2020-08-15T23:12:09Z",
                 UTCDateTime(2020, 8, 15, 23, 12, 9),
             ),
-            # subsecond precision that isn't supported by older fromisoformat()
             (
                 "2020-08-15T23:12:09.34Z",
                 UTCDateTime(2020, 8, 15, 23, 12, 9, 340_000_000),
@@ -1069,11 +1072,12 @@ class TestFromCommonIso8601:
             "2020-08-15T23:12:09z",  # lowercase Z
             "2020-08-15T23:12:09-00:00",  # forbidden offset
             "2020-08-15T23:12:09-02:00:03",  # seconds in offset
+            "2020-08-15T23:12:09.3𝟜Z",  # non ascii
         ],
     )
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"Invalid common.*ISO8601.*" + re.escape(repr(s)),
+            match=r"Invalid common.*ISO 8601.*" + re.escape(repr(s)),
         ):
             UTCDateTime.from_common_iso8601(s)

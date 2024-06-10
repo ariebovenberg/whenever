@@ -59,11 +59,31 @@ def test_default_format(t, expect):
 def test_py_time():
     t = Time(1, 2, 3, 4_000_000)
     assert t.py_time() == py_time(1, 2, 3, 4_000)
+    # truncation
+    assert Time(nanosecond=999).py_time() == py_time(0)
 
 
 def test_repr():
     t = Time(1, 2, 3, 40_000_000)
     assert repr(t) == "Time(01:02:03.04)"
+
+
+def test_replace():
+    t = Time(1, 2, 3, 4_000)
+    assert t.replace() == t
+    assert t.replace(hour=5) == Time(5, 2, 3, 4_000)
+    assert t.replace(minute=5) == Time(1, 5, 3, 4_000)
+    assert t.replace(second=5) == Time(1, 2, 5, 4_000)
+    assert t.replace(nanosecond=5) == Time(1, 2, 3, 5)
+
+    with pytest.raises(ValueError):
+        t.replace(hour=24)
+
+    with pytest.raises(TypeError):
+        t.replace(tzinfo=None)  # type: ignore[call-arg]
+
+    with pytest.raises(TypeError):
+        t.replace(fold=0)  # type: ignore[call-arg]
 
 
 class TestFromDefaultFormat:
@@ -95,18 +115,19 @@ class TestFromDefaultFormat:
             "22:12:23,123",
             "garbage",
             "12:02:03.1234567890",  # too many digits
+            "23:59:59.99999𝟙",  # non-ASCII
         ],
     )
     def test_invalid(self, input):
         with pytest.raises(
             ValueError,
-            match=r"Could not parse.*" + re.escape(repr(input)),
+            match=r"Invalid format.*" + re.escape(repr(input)),
         ):
             Time.from_default_format(input)
 
         with pytest.raises(
             ValueError,
-            match=r"Could not parse.*" + re.escape(repr(input)),
+            match=r"Invalid format.*" + re.escape(repr(input)),
         ):
             Time.from_common_iso8601(input)
 
@@ -158,7 +179,7 @@ def test_comparison():
     t = Time(1, 2, 3, 4_000)
     same = Time(1, 2, 3, 4_000)
     bigger = Time(2, 2, 3, 4_000)
-    smaller = Time(0, 2, 3, 4_000)
+    smaller = Time(1, 2, 3, 3_999)
 
     assert t <= same
     assert t <= bigger

@@ -66,23 +66,12 @@ class TestInit:
         [
             {"years": 1, "days": -2},
             {"years": 1e9, "days": 2},
-            {"years": 8, "nanoseconds": 2, "milliseconds": -3},
+            {"years": 8, "nanoseconds": 2, "milliseconds": -3},  # mixed signs
         ],
     )
     def test_invalid(self, kwargs):
         with pytest.raises((ValueError, OverflowError)):
             DateTimeDelta(**kwargs)
-
-
-def test_immutable():
-    p = DateTimeDelta(
-        years=1,
-        months=2,
-        weeks=3,
-        hours=4,
-    )
-    with pytest.raises(AttributeError):
-        p.date_part = DateDelta()  # type: ignore[misc]
 
 
 def test_equality():
@@ -162,6 +151,7 @@ def test_bool():
             ),
             "P1Y2M25DT5H6M7.8S",
         ),
+        # TODO: add non-ascii everywhere: 𝟙
         (
             DateTimeDelta(
                 years=1,
@@ -301,6 +291,8 @@ class TestFromDefaultFormatAndCommonISO8601:
             "PT",
             "+PT",
             "P1YX3M",  # invalid separator
+            "PT𝟙H",  # non-ascii
+            "P3DT",  # a T, but no time part
         ],
     )
     def test_invalid(self, s):

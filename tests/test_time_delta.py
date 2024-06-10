@@ -132,7 +132,9 @@ class TestInit:
         ],
     )
     def test_invalid_out_of_range(self, kwargs):
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises(
+            (ValueError, OverflowError), match="(range|inf|NaN)"
+        ):
             TimeDelta(**kwargs)
 
     def test_invalid_kwargs(self):
@@ -140,7 +142,7 @@ class TestInit:
             TimeDelta(foo=1)  # type: ignore[call-arg]
 
         with pytest.raises(TypeError):
-            TimeDelta(1)  # type: ignore[call-arg]
+            TimeDelta(1)  # type: ignore[misc]
 
         with pytest.raises(TypeError):
             TimeDelta(**{1: 43})  # type: ignore[misc]
@@ -286,6 +288,10 @@ def test_comparison():
             "PT00:58:02.999996",
         ),
         (
+            TimeDelta(hours=1, nanoseconds=40),
+            "PT01:00:00.00000004",
+        ),
+        (
             TimeDelta(hours=1, minutes=2, seconds=3, microseconds=50_000),
             "PT01:02:03.05",
         ),
@@ -361,6 +367,7 @@ class TestFromDefaultFormat:
             "PT05",  # only hours
             "PT5:00",  # missing seconds
             "5:00:00",  # missing prefix
+            "PT00:0𝟙:00",  # non-ascii
         ],
     )
     def test_invalid(self, s):
@@ -401,6 +408,10 @@ class TestFromDefaultFormat:
         (
             TimeDelta(microseconds=-1),
             "-PT0.000001S",
+        ),
+        (
+            TimeDelta(hours=4, nanoseconds=40),
+            "PT4H0.00000004S",
         ),
         (
             TimeDelta(seconds=2, microseconds=-3),
@@ -480,6 +491,10 @@ class TestFromCommonIso8601:
             "PT34.S",  # missing fractions
             "PTS",  # no digits
             "PT4HS",  # no digits
+            "PT-3M",  # sign not at the beginning
+            "PT5H.9S",  # wrong fraction
+            "PT5H13.S",  # wrong fraction
+            "PT𝟙H",  # non-ascii
             # way too many digits (there's a limit...)
             "PT000000000000000000000000000000000000000000000000000000000001S",
         ],
@@ -637,7 +652,7 @@ def test_py_timedelta():
         microseconds=-42
     )
 
-    # consistent truncation of sub-microsecond values
+    # consistent rounding of sub-microsecond values
     assert TimeDelta(nanoseconds=-1).py_timedelta() == py_timedelta()
     assert TimeDelta(nanoseconds=-499).py_timedelta() == py_timedelta()
     assert TimeDelta(nanoseconds=-500).py_timedelta() == py_timedelta()
@@ -646,8 +661,10 @@ def test_py_timedelta():
     )
     assert TimeDelta(nanoseconds=1).py_timedelta() == py_timedelta()
     assert TimeDelta(nanoseconds=499).py_timedelta() == py_timedelta()
-    assert TimeDelta(nanoseconds=500).py_timedelta() == py_timedelta(
-        microseconds=1
+    # banker's rounding
+    assert TimeDelta(nanoseconds=500).py_timedelta() == py_timedelta()
+    assert TimeDelta(nanoseconds=1500).py_timedelta() == py_timedelta(
+        microseconds=2
     )
     assert TimeDelta(nanoseconds=501).py_timedelta() == py_timedelta(
         microseconds=1
@@ -671,17 +688,17 @@ def test_from_py_timedelta():
 
 def test_as_hrs_mins_secs_nanos():
     d = TimeDelta(hours=1, minutes=2, seconds=-3, microseconds=4_060_000)
-    hms = d.as_hrs_mins_secs_nanos()
+    hms = d.in_hrs_mins_secs_nanos()
     assert all(isinstance(x, int) for x in hms)
     assert hms == (1, 2, 1, 60_000_000)
-    assert TimeDelta(hours=-2, minutes=-15).as_hrs_mins_secs_nanos() == (
+    assert TimeDelta(hours=-2, minutes=-15).in_hrs_mins_secs_nanos() == (
         -2,
         -15,
         0,
         0,
     )
-    assert TimeDelta(nanoseconds=-4).as_hrs_mins_secs_nanos() == (0, 0, 0, -4)
-    assert TimeDelta.ZERO.as_hrs_mins_secs_nanos() == (0, 0, 0, 0)
+    assert TimeDelta(nanoseconds=-4).in_hrs_mins_secs_nanos() == (0, 0, 0, -4)
+    assert TimeDelta.ZERO.in_hrs_mins_secs_nanos() == (0, 0, 0, 0)
 
 
 def test_abs():

@@ -462,8 +462,7 @@ unsafe fn from_default_format(cls: *mut PyObject, s_obj: *mut PyObject) -> PyRet
 
     let negated =
         parse_prefix(s).ok_or_else(|| value_err!("1 Invalid format: {}", s_obj.repr()))?;
-    if s.len() < 2 {
-        // This check prevents "empty" deltas without units, like `-PT`
+    if s[s.len() - 1] == b'T' {
         Err(value_err!("Invalid format: {}", s_obj.repr()))?
     }
     let mut ddelta = match parse_date_components(s) {

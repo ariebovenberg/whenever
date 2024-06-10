@@ -381,10 +381,9 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn from_default_format(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
-    match Time::parse_all(s.to_utf8()?.ok_or_type_err("Argument must be a string")?) {
-        Some(t) => t.to_obj(cls.cast()),
-        None => Err(value_err!("Could not parse time: {}", s.repr())),
-    }
+    Time::parse_all(s.to_utf8()?.ok_or_type_err("Argument must be a string")?)
+        .ok_or_else(|| value_err!("Invalid format: {}", s.repr()))?
+        .to_obj(cls.cast())
 }
 
 unsafe fn on(slf: *mut PyObject, date: *mut PyObject) -> PyReturn {
@@ -404,9 +403,59 @@ unsafe fn on(slf: *mut PyObject, date: *mut PyObject) -> PyReturn {
     }
 }
 
+unsafe fn replace(
+    slf: *mut PyObject,
+    type_: *mut PyTypeObject,
+    args: &[*mut PyObject],
+    kwargs: &[(*mut PyObject, *mut PyObject)],
+) -> PyReturn {
+    let &State {
+        str_hour,
+        str_minute,
+        str_second,
+        str_nanosecond,
+        ..
+    } = State::for_type(type_);
+    if !args.is_empty() {
+        Err(type_err!("replace() takes no positional arguments"))
+    } else {
+        let time = Time::extract(slf);
+        let mut hour = time.hour.into();
+        let mut minute = time.minute.into();
+        let mut second = time.second.into();
+        let mut nanos = time.nanos.into();
+        for &(name, value) in kwargs {
+            if name == str_hour {
+                hour = value.to_long()?.ok_or_type_err("hour must be an integer")?;
+            } else if name == str_minute {
+                minute = value
+                    .to_long()?
+                    .ok_or_type_err("minute must be an integer")?;
+            } else if name == str_second {
+                second = value
+                    .to_long()?
+                    .ok_or_type_err("second must be an integer")?;
+            } else if name == str_nanosecond {
+                nanos = value
+                    .to_long()?
+                    .ok_or_type_err("nanosecond must be an integer")?;
+            } else {
+                Err(type_err!(
+                    "replace() got an unexpected keyword argument: {}",
+                    name.repr()
+                ))?;
+            }
+        }
+        Time::from_longs(hour, minute, second, nanos)
+            .ok_or_value_err("Invalid time component value")?
+            .to_obj(type_)
+    }
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     method!(py_time, "Convert to a Python datetime.time"),
     method!(default_format, ""),
+    method_kwargs!(replace, "Replace one or more components of the time"),
     method!(
         default_format named "common_iso8601",
         "Return the time in the common ISO 8601 format"

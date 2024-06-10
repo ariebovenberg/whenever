@@ -586,11 +586,10 @@ unsafe fn py_timedelta(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     } = State::for_obj(slf).py_api;
     // This whole circus just to round nanoseconds...there's probably
     // a better way to do this
-    let mut micros = (nanos / 1_000) as i32;
-    if nanos % 1_000 >= 500 {
-        micros += 1;
-        secs += (micros / 1_000_000) as i64;
-        micros %= 1_000_000;
+    let mut micros = (nanos as f64 / 1_000.0).round_ties_even() as i32;
+    if micros == 1_000_000 {
+        micros = 0;
+        secs += 1
     }
     let sign = if secs >= 0 { 1 } else { -1 };
     Delta_FromDelta(
@@ -685,7 +684,7 @@ unsafe fn from_default_format(cls: *mut PyObject, s_obj: *mut PyObject) -> PyRet
     .to_obj(cls.cast())
 }
 
-unsafe fn as_hrs_mins_secs_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn in_hrs_mins_secs_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let TimeDelta {
         secs,
         nanos: nanos_unsigned,
@@ -799,7 +798,7 @@ fn parse_component(s: &mut &[u8]) -> Option<(i128, Unit)> {
                 *s = &s[i + 1..];
                 return Some((tally * 1_000_000_000, Unit::Nanoseconds));
             }
-            b'.' => {
+            b'.' if i > 0 => {
                 let result = parse_nano_fractions(&s[i + 1..])
                     .map(|ns| (tally * 1_000_000_000 + ns, Unit::Nanoseconds));
                 *s = &[];
@@ -898,7 +897,7 @@ static mut METHODS: &[PyMethodDef] = &[
         METH_O | METH_CLASS
     ),
     method!(py_timedelta, "Convert to a Python datetime.timedelta"),
-    method!(as_hrs_mins_secs_nanos, "Return the date delta as a tuple"),
+    method!(in_hrs_mins_secs_nanos, "Return the date delta as a tuple"),
     method!(__reduce__, ""),
     PyMethodDef::zeroed(),
 ];

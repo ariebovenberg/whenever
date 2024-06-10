@@ -333,15 +333,15 @@ class TestEquality:
         assert d != NeverEqual()
         assert not d == NeverEqual()
 
-        assert not d == 3
-        assert d != 3
-        assert not 3 == d
-        assert 3 != d
+        assert not d == 3  # type: ignore[comparison-overlap]
+        assert d != 3  # type: ignore[comparison-overlap]
+        assert not 3 == d  # type: ignore[comparison-overlap]
+        assert 3 != d  # type: ignore[comparison-overlap]
 
-        assert not d == None
-        assert d != None
-        assert not None == d
-        assert None != d
+        assert not d == None  # noqa: E711
+        assert d != None  # noqa: E711
+        assert not None == d  # noqa: E711
+        assert None != d  # noqa: E711
 
 
 class TestComparison:
@@ -577,13 +577,26 @@ class TestFromDefaultFormat:
             "2020-08-15T23:12:09-99:00",  # invalid offset
             "",  # empty
             "garbage",  # garbage
-            "9999-12-31T22:08:30-04:00",  # out of bounds in UTC
-            "0001-01-01T02:08:30+04:00",  # out of bounds in UTC
         ],
     )
     def test_invalid(self, s):
         with pytest.raises(ValueError, match="format.*" + re.escape(repr(s))):
             LocalSystemDateTime.from_default_format(s)
+
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "0001-01-01T02:08:30+05:00",
+            "9999-12-31T22:08:30-05:00",
+        ],
+    )
+    def test_bounds(self, s):
+        with pytest.raises(ValueError):
+            LocalSystemDateTime.from_default_format(s)
+
+        # TODO: either have this or not
+        # with pytest.raises(ValueError):
+        #     LocalSystemDateTime.from_common_iso8601(s)
 
     @given(text())
     def test_fuzzing(self, s: str):
@@ -674,7 +687,7 @@ class TestFromTimestamp:
             method(-1_000_000_000_000_000_000 * factor)
 
         with pytest.raises(TypeError):
-            method()  # type: ignore[arg-type]
+            method()
 
     @local_ams_tz()
     def test_nanos(self):
@@ -836,6 +849,9 @@ class TestAddTimeUnits:
         d = LocalSystemDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         assert (d + hours(0)).exact_eq(d)
 
+        # the equivalent with the method
+        assert d.add(hours=1).exact_eq(d + hours(1))
+
     @local_ams_tz()
     def test_ambiguous_plus_zero(self):
         d = LocalSystemDateTime(
@@ -850,6 +866,14 @@ class TestAddTimeUnits:
         assert (d + hours(0)).exact_eq(d)
         assert (d.replace(disambiguate="later") + hours(0)).exact_eq(
             d.replace(disambiguate="later")
+        )
+
+        # the equivalent with the method
+        assert d.add(hours=0).exact_eq(d)
+        assert (
+            d.replace(disambiguate="later")
+            .add(hours=0)
+            .exact_eq(d.replace(disambiguate="later"))
         )
 
     @local_ams_tz()
@@ -870,12 +894,24 @@ class TestAddTimeUnits:
             LocalSystemDateTime(2023, 10, 30, 2, 15, 30)
         )
 
+        # the equivalent with the method
+        assert d.add(hours=24).exact_eq(d + hours(24))
+        assert (
+            d.replace(disambiguate="later")
+            .add(hours=24)
+            .exact_eq(d.replace(disambiguate="later") + hours(24))
+        )
+
     @local_ams_tz()
     def test_out_of_range(self):
         d = LocalSystemDateTime(2020, 8, 15)
 
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             d + hours(24 * 366 * 8_000)
+
+        # the equivalent with the method
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            d.add(hours=24 * 366 * 8_000)
 
     @local_ams_tz()
     def test_not_implemented(self):
@@ -892,20 +928,33 @@ class TestAddTimeUnits:
         with pytest.raises(TypeError, match="unsupported operand type"):
             d + d  # type: ignore[operator]
 
+        with pytest.raises(TypeError):
+            d.add(4)  # type: ignore[call-arg]
+
 
 class TestAddDateUnits:
 
     @local_ams_tz()
     def test_zero(self):
         d = LocalSystemDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        assert d + days(0) == d
+        assert (d + days(0)).exact_eq(d)
+
+        # the equivalent with the method
+        assert d.add(days=0).exact_eq(d)
+        assert d.add().exact_eq(d)
 
     @local_ams_tz()
     def test_simple_date(self):
         d = LocalSystemDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        assert d + days(1) == d.replace(day=16)
-        assert d + years(1) + weeks(2) + days(-2) == d.replace(
-            year=2021, day=27
+        assert (d + days(1)).exact_eq(d.replace(day=16))
+        assert (d + years(1) + weeks(2) + days(-2)).exact_eq(
+            d.replace(year=2021, day=27)
+        )
+
+        # the equivalent with the method
+        assert d.add(days=1).exact_eq(d + days(1))
+        assert d.add(years=1, weeks=2, days=-2).exact_eq(
+            d + years(1) + weeks(2) + days(-2)
         )
 
     @local_ams_tz()
@@ -919,29 +968,50 @@ class TestAddDateUnits:
             30,
             disambiguate="later",
         )
-        assert d + days(0) == d
-        assert d + (days(7) - weeks(1)) == d
-        assert d + days(1) == d.replace(day=30)
-        assert d + days(6) == d.replace(month=11, day=4)
-        assert d + hours(-1) == d.replace(disambiguate="earlier")
-        assert d + hours(1) == d.replace(hour=3)
-        assert d.replace(disambiguate="earlier") + hours(1) == d
+        assert (d + days(0)).exact_eq(d)
+        assert (d + (days(7) - weeks(1))).exact_eq(d)
+        assert (d + days(1)).exact_eq(d.replace(day=30))
+        assert (d + days(6)).exact_eq(d.replace(month=11, day=4))
+        assert (d + hours(-1)).exact_eq(d.replace(disambiguate="earlier"))
+        assert (d + hours(1)).exact_eq(d.replace(hour=3))
+        assert (d.replace(disambiguate="earlier") + hours(1)).exact_eq(d)
 
         # transition to another fold
-        assert d + years(1) + days(-2) == d.replace(
-            year=2024, day=27, disambiguate="earlier"
+        assert (d + years(1) + days(-2)).exact_eq(
+            d.replace(year=2024, day=27, disambiguate="earlier")
         )
         # transition to a gap
-        assert d + months(5) + days(2) == d.replace(
-            year=2024, month=3, day=31, disambiguate="later"
+        assert (d + months(5) + days(2)).exact_eq(
+            d.replace(year=2024, month=3, day=31, disambiguate="later")
         )
         # transition over a gap
-        assert d + months(5) + days(2) + hours(2) == d.replace(
-            year=2024, month=3, day=31, hour=5
+        assert (d + months(5) + days(2) + hours(2)).exact_eq(
+            d.replace(year=2024, month=3, day=31, hour=5)
         )
-        assert d + months(5) + days(2) + hours(-1) == d.replace(
-            year=2024, month=3, day=31, disambiguate="earlier"
+        assert (d + months(5) + days(2) + hours(-1)).exact_eq(
+            d.replace(year=2024, month=3, day=31, disambiguate="earlier")
         )
+
+        # the equivalent with the method
+        assert d.add(days=0).exact_eq(d)
+        assert d.add(days=7, weeks=-1).exact_eq(d)
+        assert d.add(days=1).exact_eq(d + days(1))
+        assert d.add(days=6).exact_eq(d + days(6))
+        assert d.add(hours=-1).exact_eq(d + hours(-1))
+        assert d.add(hours=1).exact_eq(d + hours(1))
+        assert d.replace(disambiguate="earlier").add(hours=1).exact_eq(d)
+        assert d.add(years=1, days=-2, disambiguate="compatible").exact_eq(
+            d + years(1) + days(-2)
+        )
+        assert d.add(months=5, days=2, disambiguate="compatible").exact_eq(
+            d + months(5) + days(2)
+        )
+        assert d.add(
+            months=5, days=2, hours=2, disambiguate="compatible"
+        ).exact_eq(d + months(5) + days(2) + hours(2))
+        assert d.add(
+            months=5, days=2, hours=-1, disambiguate="compatible"
+        ).exact_eq(d + months(5) + days(2) + hours(-1))
 
     @local_ams_tz()
     def test_out_of_bounds_min(self):
@@ -949,11 +1019,19 @@ class TestAddDateUnits:
         with pytest.raises(ValueError, match="range"):
             d + years(-1999)
 
+        # the equivalent with the method
+        with pytest.raises(ValueError, match="range"):
+            d.add(years=-1999)
+
     @local_nyc_tz()
     def test_out_of_bounds_max(self):
         d = LocalSystemDateTime(2000, 12, 31, hour=23)
         with pytest.raises(ValueError, match="range"):
             d + years(7999)
+
+        # the equivalent with the method
+        with pytest.raises(ValueError, match="range"):
+            d.add(years=7999)
 
 
 class TestSubtractTimeUnits:
@@ -961,6 +1039,10 @@ class TestSubtractTimeUnits:
     def test_zero(self):
         d = LocalSystemDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         assert (d - hours(0)).exact_eq(d)
+
+        # the equivalent with the method
+        assert d.subtract(hours=0).exact_eq(d)
+        assert d.subtract().exact_eq(d)
 
     @local_ams_tz()
     def test_ambiguous_minus_zero(self):
@@ -976,6 +1058,14 @@ class TestSubtractTimeUnits:
         assert (d - hours(0)).exact_eq(d)
         assert (d.replace(disambiguate="later") - hours(0)).exact_eq(
             d.replace(disambiguate="later")
+        )
+
+        # the equivalent with the method
+        assert d.subtract(hours=0).exact_eq(d)
+        assert (
+            d.replace(disambiguate="later")
+            .subtract(hours=0)
+            .exact_eq(d.replace(disambiguate="later"))
         )
 
     @local_ams_tz()
@@ -996,6 +1086,14 @@ class TestSubtractTimeUnits:
             LocalSystemDateTime(2023, 10, 28, 3, 15, 30)
         )
 
+        # the equivalent with the method
+        assert d.subtract(hours=24).exact_eq(d - hours(24))
+        assert (
+            d.replace(disambiguate="later")
+            .subtract(hours=24)
+            .exact_eq(d.replace(disambiguate="later") - hours(24))
+        )
+
     def test_subtract_not_implemented(self):
         d = LocalSystemDateTime(2020, 8, 15)
         with pytest.raises(TypeError, match="unsupported operand type"):
@@ -1007,19 +1105,32 @@ class TestSubtractTimeUnits:
         with pytest.raises(TypeError, match="unsupported operand type"):
             hours(1) - d  # type: ignore[operator]
 
+        with pytest.raises(TypeError):
+            d.subtract(4)  # type: ignore[call-arg]
+
 
 class TestSubtractDateUnits:
     @local_ams_tz()
     def test_zero(self):
         d = LocalSystemDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        assert d - days(0) == d
+        assert (d - days(0)).exact_eq(d)
+
+        # the equivalent with the method
+        assert d.subtract(days=0).exact_eq(d)
+        assert d.subtract().exact_eq(d)
 
     @local_ams_tz()
     def test_simple_date(self):
         d = LocalSystemDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        assert d - days(1) == d.replace(day=14)
-        assert d - years(1) - weeks(2) - days(-2) == d.replace(
-            year=2019, day=3
+        assert (d - days(1)).exact_eq(d.replace(day=14))
+        assert (d - years(1) - weeks(2) - days(-2)).exact_eq(
+            d.replace(year=2019, day=3)
+        )
+
+        # the equivalent with the method
+        assert d.subtract(days=1).exact_eq(d - days(1))
+        assert d.subtract(years=1, weeks=2, days=-2).exact_eq(
+            d - years(1) - weeks(2) - days(-2)
         )
 
     @local_ams_tz()
@@ -1033,33 +1144,52 @@ class TestSubtractDateUnits:
             30,
             disambiguate="later",
         )
-        assert d - days(0) == d
-        assert d - (days(7) + weeks(-1)) == d
-        assert d - days(1) == d.replace(day=28)
-        assert d - days(6) == d.replace(month=10, day=23)
-        assert d - hours(1) == d.replace(disambiguate="earlier")
-        assert d - hours(-1) == d.replace(hour=3)
-        assert d.replace(disambiguate="earlier") - hours(-1) == d
+
+        # the above, but with exact_eq:
+        assert (d - days(0)).exact_eq(d)
+        assert (d - (days(7) - weeks(1))).exact_eq(d)
+        assert (d - days(1)).exact_eq(d.replace(day=28))
+        assert (d - days(6)).exact_eq(d.replace(month=10, day=23))
+        assert (d - hours(1)).exact_eq(d.replace(disambiguate="earlier"))
+        assert (d - hours(-1)).exact_eq(d.replace(hour=3))
+        assert (d.replace(disambiguate="earlier") - hours(-1)).exact_eq(d)
 
         # transition to another fold
-        assert d - years(1) - days(-1) == d.replace(
-            year=2022, day=30, disambiguate="earlier"
+        assert (d - years(1) - days(-1)).exact_eq(
+            d.replace(year=2022, day=30, disambiguate="earlier")
         )
         # transition to a gap
-        assert d - months(7) - days(3) == d.replace(
-            month=3, day=26, disambiguate="later"
+        assert (d - months(7) - days(3)).exact_eq(
+            d.replace(month=3, day=26, disambiguate="later")
         )
         # transition over a gap
-        assert d - months(7) - days(3) - hours(1) == d.replace(
-            month=3, day=26, hour=1
+        assert (d - months(7) - days(3) - hours(1)).exact_eq(
+            d.replace(month=3, day=26, hour=1)
         )
-        assert d - months(7) - days(3) - hours(-1) == d.replace(
-            month=3, day=26, hour=4
+        assert (d - months(7) - days(3) - hours(-1)).exact_eq(
+            d.replace(month=3, day=26, hour=4)
         )
 
-        assert d - months(7) - days(3) - hours(1) == d - (
-            months(7) + days(3) + hours(1)
-        )
+        # the equivalent with the method
+        assert d.subtract(days=0).exact_eq(d)
+        assert d.subtract(days=7, weeks=-1).exact_eq(d)
+        assert d.subtract(days=1).exact_eq(d - days(1))
+        assert d.subtract(days=6).exact_eq(d - days(6))
+        assert d.subtract(hours=1).exact_eq(d - hours(1))
+        assert d.subtract(hours=-1).exact_eq(d - hours(-1))
+        assert d.replace(disambiguate="earlier").subtract(hours=-1).exact_eq(d)
+        assert d.subtract(
+            years=1, days=-1, disambiguate="compatible"
+        ).exact_eq(d - years(1) - days(-1))
+        assert d.subtract(
+            months=7, days=3, disambiguate="compatible"
+        ).exact_eq(d - months(7) - days(3))
+        assert d.subtract(
+            months=7, days=3, hours=1, disambiguate="compatible"
+        ).exact_eq(d - months(7) - days(3) - hours(1))
+        assert d.subtract(
+            months=7, days=3, hours=-1, disambiguate="compatible"
+        ).exact_eq(d - months(7) - days(3) - hours(-1))
 
     @local_ams_tz()
     def test_out_of_bounds_min(self):
@@ -1067,18 +1197,17 @@ class TestSubtractDateUnits:
         with pytest.raises(ValueError, match="range"):
             d - years(1999)
 
+        with pytest.raises(ValueError, match="range"):
+            d.subtract(years=1999)
+
     @local_nyc_tz()
     def test_out_of_bounds_max(self):
         d = LocalSystemDateTime(2000, 12, 31, hour=23)
         with pytest.raises(ValueError, match="range"):
             d - years(-7999)
 
-
-def test_subtract_date_and_time():
-    d = LocalSystemDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-    assert d - (months(7) + days(1) + hours(1)) == d - months(7) - days(
-        1
-    ) - hours(1)
+        with pytest.raises(ValueError, match="range"):
+            d.subtract(years=-7999)
 
 
 class TestSubtractOtherDateTime:
@@ -1184,13 +1313,13 @@ class TestWithDate:
 
     def test_invalid(self):
         d = LocalSystemDateTime(2020, 8, 15, 14)
-        with pytest.raises(TypeError):
+        with pytest.raises((TypeError, AttributeError)):
             d.with_date(object())  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="disambiguate"):
             d.with_date(Date(2020, 8, 15), disambiguate="foo")  # type: ignore[arg-type]
 
-        with pytest.raises(TypeError, match="got 2"):
+        with pytest.raises(TypeError, match="got 2|foo"):
             d.with_date(Date(2020, 8, 15), disambiguate="raise", foo=4)  # type: ignore[call-arg]
 
         with pytest.raises(TypeError, match="foo"):
@@ -1252,13 +1381,13 @@ class TestWithTime:
 
     def test_invalid(self):
         d = LocalSystemDateTime(2020, 8, 15, 14)
-        with pytest.raises(TypeError):
+        with pytest.raises((TypeError, AttributeError)):
             d.with_time(object())  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="disambiguate"):
             d.with_time(Time(1, 2, 3), disambiguate="foo")  # type: ignore[arg-type]
 
-        with pytest.raises(TypeError, match="got 2"):
+        with pytest.raises(TypeError, match="got 2|foo"):
             d.with_time(Time(1, 2, 3), disambiguate="raise", foo=4)  # type: ignore[call-arg]
 
         with pytest.raises(TypeError, match="foo"):

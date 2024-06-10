@@ -503,12 +503,7 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
         Err(type_err!("Expected a datetime object"))?;
     }
     Instant::from_py(dt, State::for_type(cls.cast()))
-        .ok_or_else(|| {
-            value_err!(
-                "datetime must have tzinfo set to datetime.timezone.utc, got {}",
-                dt.repr()
-            )
-        })?
+        .ok_or_else(|| value_err!("datetime must have tzinfo set to UTC, got {}", dt.repr()))?
         .to_obj(cls.cast())
 }
 
@@ -630,19 +625,20 @@ unsafe fn from_rfc3339(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let s = s_obj
         .to_utf8()?
         .ok_or_else(|| type_err!("Expected a string"))?;
+    let raise = || value_err!("Invalid RFC 3339 format: {}", s_obj.repr());
     if s.len() < 20 || !(s[10] == b' ' || s[10] == b'T' || s[10] == b't' || s[10] == b'_') {
-        Err(value_err!("Invalid RFC3339 format: {}", s_obj.repr()))?;
+        Err(raise())?;
     };
     let offset_index = match s[s.len() - 1] {
         b'Z' | b'z' => s.len() - 1,
         _ => match &s[s.len() - 6..] {
             b"+00:00" | b"-00:00" => s.len() - 6,
-            _ => Err(value_err!("Invalid RFC3339 format: {}", s_obj.repr()))?,
+            _ => Err(raise())?,
         },
     };
     match naive_datetime::parse_date_and_time(&s[..offset_index]) {
         Some((date, time)) => Instant::from_datetime(date, time).to_obj(cls.cast()),
-        None => Err(value_err!("Invalid RFC3339 format: {}", s_obj.repr())),
+        None => Err(raise()),
     }
 }
 
@@ -656,26 +652,18 @@ unsafe fn from_common_iso8601(cls: *mut PyObject, s_obj: *mut PyObject) -> PyRet
     let s = s_obj
         .to_utf8()?
         .ok_or_else(|| type_err!("Expected a string"))?;
+    let raise = || value_err!("Invalid common ISO 8601 format: {}", s_obj.repr());
     if s.len() < 20 || s[10] != b'T' {
-        Err(value_err!(
-            "Invalid common ISO8601 format: {}",
-            s_obj.repr()
-        ))?;
+        Err(raise())?;
     };
     let offset_index = match s[s.len() - 1] {
         b'Z' => s.len() - 1,
         _ if &s[s.len() - 6..] == b"+00:00" => s.len() - 6,
-        _ => Err(value_err!(
-            "Invalid common ISO8601 format: {}",
-            s_obj.repr()
-        ))?,
+        _ => Err(raise())?,
     };
     match naive_datetime::parse_date_and_time(&s[..offset_index]) {
         Some((date, time)) => Instant::from_datetime(date, time).to_obj(cls.cast()),
-        None => Err(value_err!(
-            "Invalid common ISO8601 format: {}",
-            s_obj.repr()
-        )),
+        None => Err(raise()),
     }
 }
 
@@ -870,16 +858,32 @@ unsafe fn rfc2822(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn from_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let state = State::for_type(cls.cast());
-    let py_dt = PyObject_CallOneArg(state.parse_rfc2822, s_obj).as_result()?;
-    defer_decref!(py_dt);
-    Instant::from_py(py_dt, state)
-        .ok_or_else(|| {
-            value_err!(
-                "Could not parse RFC 2822 string with nonzero offset: {}",
-                s_obj.repr()
-            )
-        })?
+    let dt = PyObject_CallOneArg(state.parse_rfc2822, s_obj).as_result()?;
+    defer_decref!(dt);
+    let tzinfo = PyDateTime_DATE_GET_TZINFO(dt);
+    if tzinfo == state.py_api.TimeZone_UTC
+        || (tzinfo == Py_None() && s_obj.to_str()?.unwrap().contains("-0000"))
+    {
+        Instant::from_datetime(
+            Date {
+                year: PyDateTime_GET_YEAR(dt) as u16,
+                month: PyDateTime_GET_MONTH(dt) as u8,
+                day: PyDateTime_GET_DAY(dt) as u8,
+            },
+            Time {
+                hour: PyDateTime_DATE_GET_HOUR(dt) as u8,
+                minute: PyDateTime_DATE_GET_MINUTE(dt) as u8,
+                second: PyDateTime_DATE_GET_SECOND(dt) as u8,
+                nanos: PyDateTime_DATE_GET_MICROSECOND(dt) as u32 * 1_000,
+            },
+        )
         .to_obj(cls.cast())
+    } else {
+        Err(value_err!(
+            "Could not parse RFC 2822 with nonzero offset: {}",
+            s_obj.repr()
+        ))
+    }
 }
 
 static mut METHODS: &[PyMethodDef] = &[

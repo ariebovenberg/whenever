@@ -2,9 +2,6 @@ from __future__ import annotations
 
 # -- Project information -----------------------------------------------------
 import importlib.metadata
-import typing
-
-typing.SPHINX_BUILD = True
 
 metadata = importlib.metadata.metadata("whenever")
 
@@ -25,6 +22,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx_copybutton",
+    "enum_tools.autoenum",
     "myst_parser",
 ]
 templates_path = ["_templates"]

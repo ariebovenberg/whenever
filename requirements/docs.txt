@@ -2,3 +2,4 @@ sphinx<8
 furo>=2024.4.27,<2024.6
 sphinx-copybutton~=0.5
 myst-parser>=3,<4
+enum-tools[sphinx]==0.12.0

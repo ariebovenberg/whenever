@@ -33,13 +33,13 @@ Concrete classes
    :members: now, from_timestamp, strptime, rfc2822, from_rfc2822, rfc3339, from_rfc3339, common_iso8601, from_common_iso8601
 
 .. autoclass:: whenever.ZonedDateTime
-   :members: now, from_timestamp, tz, __add__, __sub__, is_ambiguous
+   :members: now, from_timestamp, tz, __add__, __sub__, add, subtract, is_ambiguous
 
 .. autoclass:: whenever.LocalSystemDateTime
-   :members: now, from_timestamp, tzname, __add__, __sub__
+   :members: now, from_timestamp, __add__, __sub__, add, subtract
 
 .. autoclass:: whenever.NaiveDateTime
-   :members: __eq__, __add__, __sub__, assume_utc, assume_fixed_offset, assume_zoned, assume_in_local_system, strptime, common_iso8601, from_common_iso8601
+   :members: __eq__, __add__, __sub__, assume_utc, assume_fixed_offset, assume_in_tz, assume_in_local_system, strptime, common_iso8601, from_common_iso8601
 
 
 Deltas
@@ -83,9 +83,13 @@ Date and time components
    :members:
    :special-members: __eq__, __lt__, __le__, __gt__, __ge__
 
-Exceptions
-----------
+Miscellaneous
+-------------
+
+.. autoenum:: whenever.Weekday
+   :members:
+   :member-order: bysource
 
 .. autoexception:: whenever.AmbiguousTime
 .. autoexception:: whenever.SkippedTime
-.. autoexception:: whenever.InvalidOffsetForZone
+.. autoexception:: whenever.InvalidOffset

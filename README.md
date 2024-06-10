@@ -13,14 +13,14 @@
 Do you cross your fingers every time you work with datetimes,
 hoping that you didn't mix naive and aware?
 or that you converted to UTC everywhere?
-or that you avoided the [many pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/) of the standard library?
+or that you avoided the [pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/) of the standard library?
 There’s no way to be sure...
 
 ✨ Until now! ✨
 
 Whenever is designed from the ground up to **enforce correctness**.
 Mistakes become <span style="text-decoration: underline; text-decoration-color: red; text-decoration-style: wavy">red squiggles</span> in your IDE, instead of bugs in production.
-It's also **way faster** than other third-party libraries—and often the standard library as well.
+It's also **way faster** than other third-party libraries—and usually the standard library as well.
 
   <p align="center">
     <picture align="center">
@@ -36,16 +36,15 @@ It's also **way faster** than other third-party libraries—and often the standa
 
 ## Benefits
 
-- 🔒 Typesafe API protects you from common bugs
+- 🔒 Typesafe API prevents common bugs
 - ✅ Fixes pitfalls [arrow and pendulum don't](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/#datetime-library-scorecard)
-- ⚖️  Based on [familiar, proven concepts](https://www.youtube.com/watch?v=saeKBuPewcU)
+- ⚖️  Based on proven and [familiar concepts](https://www.youtube.com/watch?v=saeKBuPewcU)
 - ⚡️ Unmatched performance
 - 💎 Thoroughly tested and documented
 - 📆 Support for date arithmetic
 - ⏱️ Nanosecond precision
-- 🐍 Pure-Python fallback available
-
-<!-- TODO: mention extra features -->
+- 🦀 Rust!—but with a pure-Python fallback
+- 🚀 Support for subinterpreters and disabling GIL (experimental)
 
 <div align="center">
 
@@ -93,7 +92,7 @@ True
 # Naive type that can't accidentally mix with aware types
 >>> hackathon_invite = NaiveDateTime(2023, 10, 28, hour=12)
 >>> # Naïve/aware mixups are caught by typechecker
->>> hackathon_invite - py311_release
+>>> hackathon_invite - py311_release  # error flagged here
 >>> # Only explicit assumptions will make it aware
 >>> hackathon_start = hackathon_invite.assume_in_tz("Europe/Amsterdam")
 ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])
@@ -104,15 +103,15 @@ ZonedDateTime(2022-10-29 11:00:00+01:00[Europe/Amsterdam])
 
 # Lossless round-trip to/from text (useful for JSON/serialization)
 >>> str(py311_release)
-'2022-10-24 17:00:00Z'
->>> ZonedDateTime.from_default_format('2022-10-24 19:00:00+02:00[Europe/Paris]')
+'2022-10-24T17:00:00Z'
+>>> ZonedDateTime.from_default_format('2022-10-24T19:00:00+02:00[Europe/Paris]')
 ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
 
 # Conversion to/from common formats
 >>> py311_release.rfc2822()  # also: from_rfc2822()
 "Mon, 24 Oct 2022 17:00:00 GMT"
 >>> pycon23_start.rfc3339()  # also: from_rfc3339()
-"2023-04-21T09:00:00-06:00"
+"2023-04-21 09:00:00-06:00"
 
 # Basic parsing
 >>> OffsetDateTime.strptime("2022-10-24+02:00", "%Y-%m-%d%z")
@@ -126,36 +125,47 @@ OffsetDateTime(2022-10-24 00:00:00+02:00)
 Read more in the [feature overview](https://whenever.readthedocs.io/en/latest/overview.html)
 or [API reference](https://whenever.readthedocs.io/en/latest/api.html).
 
+## Limitations
+
+- Only the proleptic Gregorian calendar between 1 and 9999 AD
+- Timezone offsets are limited to whole seconds
+- No support for leap seconds
+
 ## Why not...?
 
 ### The standard library
 
-The standard library is full of quirks and pitfalls.
-To summarize the detailed [blog post](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/):
+Given it's over 20 years old, Python's `datetime` library has actually held up remarkably well.
+When it was designed in 2002, timezones weren't standardized like they are now,
+and the influential java.time library was still a few years away.
+It's been able to adapt to changes, but it's showing its age.
+There are many pitfalls that are hard to avoid—even for experienced developers.
 
-1.  Incompatible concepts of naive and aware are squeezed into one class
-2.  Operators ignore Daylight Saving Time (DST)
-3.  The meaning of "naive" is inconsistent (UTC, local, or unspecified?)
-4.  Non-existent datetimes pass silently
-5.  It guesses in the face of ambiguity
-6.  False negatives on equality of ambiguous times between timezones
-7.  False positives on equality of ambiguous times within the same timezone
-8.  ``datetime`` inherits from ``date``, but behaves inconsistently
-9.  ``datetime.timezone`` isn’t enough for full-featured timezones.
-10. The local timezone is DST-unaware
+Most notably:
 
-### Pendulum
+- Naive and aware datetimes are incompatible, but easy to mix up with disastrous results
+- Accounting for Daylight Saving Time (DST) is surprisingly hard and error-prone
 
-Pendulum is full-featured datetime library, but it's
-hamstrung by the decision to inherit from the standard library ``datetime``.
-This means it inherits most of the pitfalls mentioned above,
-with the notable exception of DST-aware addition/subtraction.
+I wrote a more detailed [blog post](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/)
+going into more details—and how third party libraries don't (fully) solve these issues.
 
 ### Arrow
 
-Arrow is probably the most historically popular datetime library.
-Pendulum did a good write-up of [the issues with Arrow](https://pendulum.eustace.io/faq/).
-It addresses fewer of datetime's pitfalls than Pendulum.
+Arrow is probably the most historically popular 3rd party datetime library.
+It attempts to provide a more *friendly* API than the standard library,
+but doesn't address the core issues with the standard library:
+DST-handling is still easy to get wrong, and its decision to reduce the number
+of types to just one (``arrow.Arrow``) means that it's even harder
+for typecheckers to catch mistakes.
+
+### Pendulum
+
+Pendulum came in the scene in 2016, promising better DST-handling,
+as well as improved performance.
+However, it only fixes [*some* DST-related pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/),
+and its performance has significantly [degraded over time](https://github.com/sdispater/pendulum/issues/818).
+Additionally, maintenance seems inactive since the breaking 3.0 release in 2023: 
+Serious issues have remained answered and no PRs have been merged since then.
 
 ### DateType
 
@@ -183,12 +193,6 @@ To do so, it sacrifices the ability to represent offset, zoned, and local dateti
 So in order to perform any timezone-aware operations, you need to convert
 to the standard library ``datetime`` first, which reintroduces the issues.
 
-### Heliclockter
-
-This library is a lot more explicit about the different types of datetimes,
-addressing issue of naive/aware mixing with UTC, local, and zoned datetime subclasses.
-It doesn't address the other datetime pitfalls though.
-
 ## Roadmap
 
 - 🧪 **0.x**: get to feature-parity, process feedback, and tweak the API:
@@ -196,18 +200,16 @@ It doesn't address the other datetime pitfalls though.
   - ✅ Datetime classes
   - ✅ Deltas
   - ✅ Date and time of day (separate from datetime)
+  - ✅ Implement Rust extension for performance
   - 🚧 Interval
   - 🚧 Improved parsing and formatting
-  - 🚧 Implement Rust extension for performance
 - 🔒 **1.0**: API stability and backwards compatibility
-- 🐍 **future**: Inspire a standard library improvement
 
 ## Versioning and compatibility policy
 
 **Whenever** follows semantic versioning.
 Until the 1.0 version, the API may change with minor releases.
-Breaking changes will be avoided as much as possible,
-and meticulously explained in the changelog.
+Breaking changes will be meticulously explained in the changelog.
 Since the API is fully typed, your typechecker and/or IDE
 will help you adjust to any API changes.
 
