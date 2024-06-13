@@ -420,14 +420,14 @@ unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
     format!("{}", Date::extract(slf)).to_py()
 }
 
-unsafe fn default_format(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     __str__(slf)
 }
 
-unsafe fn from_default_format(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
+unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
     match Date::parse_all(s.to_utf8()?.ok_or_type_err("argument must be str")?) {
         Some(d) => d.to_obj(cls.cast()),
-        None => Err(value_err!("Could not parse date: {}", s.repr())),
+        None => Err(value_err!("Invalid format: {}", s.repr())),
     }
 }
 
@@ -679,18 +679,12 @@ unsafe fn at(slf: *mut PyObject, time_obj: *mut PyObject) -> PyReturn {
 
 static mut METHODS: &[PyMethodDef] = &[
     method!(py_date, "Convert to a Python datetime.date"),
-    method!(default_format, "Format in the default way"),
     method!(
-        from_default_format,
-        "Parse from the default format",
-        METH_O | METH_CLASS
-    ),
-    method!(
-        default_format named "common_iso8601",
+        format_common_iso,
         "Return the date in the common ISO 8601 format"
     ),
     method!(
-        from_default_format named "from_common_iso8601",
+        parse_common_iso,
         "Create a date from the common ISO 8601 format",
         METH_O | METH_CLASS
     ),

@@ -151,7 +151,6 @@ def test_bool():
             ),
             "P1Y2M25DT5H6M7.8S",
         ),
-        # TODO: add non-ascii everywhere: 𝟙
         (
             DateTimeDelta(
                 years=1,
@@ -184,17 +183,15 @@ def test_bool():
         ),
     ],
 )
-def test_default_format(p, expect):
-    assert p.default_format() == expect
-    assert p.common_iso8601() == expect
+def test_format_common_iso(p, expect):
+    assert p.format_common_iso() == expect
     assert str(p) == expect
 
 
-class TestFromDefaultFormatAndCommonISO8601:
+class TestParseCommonIso:
 
     def test_empty(self):
-        assert DateTimeDelta.from_default_format("P0D") == DateTimeDelta()
-        assert DateTimeDelta.from_common_iso8601("P0D") == DateTimeDelta()
+        assert DateTimeDelta.parse_common_iso("P0D") == DateTimeDelta()
 
     @pytest.mark.parametrize(
         "input, expect",
@@ -214,8 +211,7 @@ class TestFromDefaultFormatAndCommonISO8601:
         ],
     )
     def test_single_unit(self, input, expect):
-        assert DateTimeDelta.from_default_format(input) == expect
-        assert DateTimeDelta.from_common_iso8601(input) == expect
+        assert DateTimeDelta.parse_common_iso(input) == expect
 
     @pytest.mark.parametrize(
         "input, expect",
@@ -277,8 +273,7 @@ class TestFromDefaultFormatAndCommonISO8601:
         ],
     )
     def test_multiple_units(self, input, expect):
-        assert DateTimeDelta.from_default_format(input) == expect
-        assert DateTimeDelta.from_common_iso8601(input) == expect
+        assert DateTimeDelta.parse_common_iso(input) == expect
 
     @pytest.mark.parametrize(
         "s",
@@ -299,7 +294,7 @@ class TestFromDefaultFormatAndCommonISO8601:
         with pytest.raises(
             ValueError, match=r"Invalid format.*" + re.escape(repr(s))
         ):
-            DateTimeDelta.from_default_format(s)
+            DateTimeDelta.parse_common_iso(s)
 
 
 class TestAdd:

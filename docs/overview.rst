@@ -146,12 +146,12 @@ comparison and equality are based on whether they represent the same moment in
 time. This means that two datetimes with different values can be equal:
 
 >>> # different ways of representing the same moment in time
->>> in_utc = UTCDateTime(2023, 12, 28, 11, 30)
+>>> to_utc = UTCDateTime(2023, 12, 28, 11, 30)
 >>> as_5hr_offset = OffsetDateTime(2023, 12, 28, 16, 30, offset=hours(5))
 >>> as_8hr_offset = OffsetDateTime(2023, 12, 28, 19, 30, offset=hours(8))
 >>> in_nyc = ZonedDateTime(2023, 12, 28, 6, 30, tz="America/New_York")
 >>> # all equal
->>> in_utc == as_5hr_offset == as_8hr_offset == in_nyc
+>>> to_utc == as_5hr_offset == as_8hr_offset == in_nyc
 True
 >>> # comparison
 >>> in_nyc > OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(5))
@@ -161,8 +161,8 @@ True
 
    Another way to think about this is that the equality operator compares
    the UTC equivalent of the datetimes.  ``a == b`` is always equivalent to
-   ``a.in_utc() == b.in_utc()``, and ``a > b`` is always equivalent to
-   ``a.in_utc() > b.in_utc()``, and so on.
+   ``a.to_utc() == b.to_utc()``, and ``a > b`` is always equivalent to
+   ``a.to_utc() > b.to_utc()``, and so on.
 
 Note that if you want to compare for exact equality on the values
 (i.e. exactly the same year, month, day, hour, minute, etc.), you can use
@@ -236,7 +236,7 @@ To work around this, you can either convert explicitly:
 
 .. code-block:: python
 
-    d == OffsetDateTime(2023, 12, 28, 11, offset=1).in_utc()
+    d == OffsetDateTime(2023, 12, 28, 11, offset=1).to_utc()
 
 Or annotate with a union:
 
@@ -251,22 +251,22 @@ Conversion
 Between aware types
 ~~~~~~~~~~~~~~~~~~~
 
-You can convert between aware datetimes with the :meth:`~whenever._AwareDateTime.in_utc`,
-:meth:`~whenever._AwareDateTime.in_fixed_offset`, :meth:`~whenever._AwareDateTime.in_tz`,
-and :meth:`~whenever._AwareDateTime.in_local_system` methods. These methods return a new
+You can convert between aware datetimes with the :meth:`~whenever._AwareDateTime.to_utc`,
+:meth:`~whenever._AwareDateTime.to_fixed_offset`, :meth:`~whenever._AwareDateTime.to_tz`,
+and :meth:`~whenever._AwareDateTime.to_local_system` methods. These methods return a new
 instance of the appropriate type, representing the same moment in time.
 This means the results will always compare equal to the original datetime.
 
 >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
->>> d.in_utc()  # same moment in UTC
+>>> d.to_utc()  # same moment in UTC
 UTCDateTime(2023-12-28 10:30:00Z)
->>> d.in_fixed_offset(5)  # same moment with a +5:00 offset
+>>> d.to_fixed_offset(5)  # same moment with a +5:00 offset
 OffsetDateTime(2023-12-28 15:30:00+05:00)
->>> d.in_tz("America/New_York")  # same moment in New York
+>>> d.to_tz("America/New_York")  # same moment in New York
 ZonedDateTime(2023-12-28 05:30:00-05:00[America/New_York])
->>> d.in_local_system()  # same moment in the system timezone (e.g. Europe/Paris)
+>>> d.to_local_system()  # same moment in the system timezone (e.g. Europe/Paris)
 LocalSystemDateTime(2023-12-28 11:30:00+01:00)
->>> d.in_fixed_offset(4) == d
+>>> d.to_fixed_offset(4) == d
 True  # always the same moment in time
 
 To and from naïve
@@ -282,13 +282,13 @@ NaiveDateTime(2023-12-28 11:30:00)
 
 You can convert from naïve types with the :meth:`~whenever.NaiveDateTime.assume_utc`,
 :meth:`~whenever.NaiveDateTime.assume_fixed_offset`, and
-:meth:`~whenever.NaiveDateTime.assume_in_tz`, and
-:meth:`~whenever.NaiveDateTime.assume_in_local_system` methods.
+:meth:`~whenever.NaiveDateTime.assume_tz`, and
+:meth:`~whenever.NaiveDateTime.assume_local_system` methods.
 
 >>> n = NaiveDateTime(2023, 12, 28, 11, 30)
 >>> n.assume_utc()
 UTCDateTime(2023-12-28 11:30:00Z)
->>> n.assume_in_tz("Europe/Amsterdam")
+>>> n.assume_tz("Europe/Amsterdam")
 ZonedDateTime(2023-12-28 11:30:00+01:00[Europe/Amsterdam])
 
 .. note::
@@ -429,11 +429,10 @@ You choose the disambiguation behavior you want with the ``disambiguate=`` argum
     >>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguate="later")
     ZonedDateTime(2023-03-26 03:30:00+02:00[Europe/Paris])
 
+Formatting and parsing
+----------------------
 
-Standardized representations
-----------------------------
-
-**Whenever** supports various standardized representations of datetimes.
+**Whenever** supports formatting and parsing standardized formats
 
 ISO 8601
 ~~~~~~~~
@@ -441,30 +440,47 @@ ISO 8601
 The `ISO 8601 <https://en.wikipedia.org/wiki/ISO_8601>`_ standard
 is probably the format you're most familiar with.
 What you may not know is that it's a very complex standard with many options.
-Like most libraries, **whenever** supports a subset of the standard 
+Like most libraries, **whenever** supports a only subset of the standard 
 which is the most commonly used:
 
-.. code-block:: text
+Here are the ISO formats for each type:
 
-   YYYY-MM-DDTHH:MM:SS±HH:MM
-
-For example: ``2023-12-28T11:30:00+05:00``
++-----------------------------------------+------------------------------------------------+
+| Type                                    | Canonical string format                        |
++=========================================+================================================+
+| :class:`~whenever.UTCDateTime`          | ``YYYY-MM-DDTHH:MM:SSZ``                       |
++-----------------------------------------+------------------------------------------------+
+| :class:`~whenever.OffsetDateTime`       | ``YYYY-MM-DDTHH:MM:SS±HH:MM``                  |
++-----------------------------------------+------------------------------------------------+
+| :class:`~whenever.ZonedDateTime`        | ``YYYY-MM-DDTHH:MM:SS±HH:MM[TIMEZONE ID]`` [1]_|
++-----------------------------------------+------------------------------------------------+
+| :class:`~whenever.LocalSystemDateTime`  | ``YYYY-MM-DDTHH:MM:SS±HH:MM``                  |
++-----------------------------------------+------------------------------------------------+
+| :class:`~whenever.NaiveDateTime`        | ``YYYY-MM-DDTHH:MM:SS``                        |
++-----------------------------------------+------------------------------------------------+
 
 Where:
 
 - Seconds may be fractional
+- Offsets may have second precision
 - The offset may be replaced with a ``"Z"`` to indicate UTC
 - Offset ``-00:00`` is not allowed
 
-Use the methods :meth:`~whenever.OffsetDateTime.common_iso8601` and
-:meth:`~whenever.OffsetDateTime.from_common_iso8601` to format and parse
+Use the methods :meth:`~whenever._DateTime.format_common_iso` and
+:meth:`~whenever._DateTime.parse_common_iso` to format and parse
 to this format, respectively:
 
 >>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=+5)
->>> d.common_iso8601()
+>>> d.format_common_iso()
 '2023-12-28T11:30:00+05:00'
->>> OffsetDateTime.from_common_iso8601('2021-07-13T09:45:00-09:00')
+>>> OffsetDateTime.parse_common_iso('2021-07-13T09:45:00-09:00')
 OffsetDateTime(2021-07-13 09:45:00-09:00)
+
+.. note::
+
+   The ISO formats in **whenever** are designed so you can format and parse
+   them without losing information.
+   This makes it ideal for JSON serialization and other data interchange formats.
 
 .. admonition:: Why not support the full ISO 8601 spec?
 
@@ -478,7 +494,7 @@ OffsetDateTime(2021-07-13 09:45:00-09:00)
    This isn't a problem in practice since people referring to "ISO 8601"
    often mean the most common subset, which is what **whenever** supports.
    It's rare for libraries to support the full standard.
-   The method name ``from_common_iso8601`` makes this assumption explicit.
+   The method name ``parse_common_iso`` makes this assumption explicit.
 
    If you do need to parse the full spectrum of ISO 8601, you can use
    a specialized library such as `dateutil.parser <https://dateutil.readthedocs.io/en/stable/parser.html>`_.
@@ -502,17 +518,18 @@ Where:
 
 - Seconds may be fractional
 - The offset may be replaced with a ``"Z"`` to indicate UTC
-- ``T`` may be replaced with a space (unlike ISO 8601)
+- ``T`` may be replaced with a space or ``_`` (unlike ISO 8601)
 - ``T`` and ``Z`` may be lowercase (unlike ISO 8601)
+- The offset is limited to whole minutes (unlike ISO 8601)
 
-Use the methods :meth:`~whenever.OffsetDateTime.rfc3339` and
-:meth:`~whenever.OffsetDateTime.from_rfc3339` to format and parse
+Use the methods :meth:`~whenever.OffsetDateTime.format_rfc3339` and
+:meth:`~whenever.OffsetDateTime.parse_rfc3339` to format and parse
 to this format, respectively:
 
 >>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=+5)
->>> d.rfc3339()
+>>> d.format_rfc3339()
 '2023-12-28T11:30:00+05:00'
->>> OffsetDateTime.from_rfc3339('2021-07-13 09:45:00Z')
+>>> OffsetDateTime.parse_rfc3339('2021-07-13 09:45:00Z')
 OffsetDateTime(2021-07-13 09:45:00Z)
 
 RFC 2822
@@ -528,14 +545,14 @@ The format is:
 
 For example: ``Tue, 13 Jul 2021 09:45:00 -0900``
 
-Use the methods :meth:`~whenever.OffsetDateTime.rfc2822` and
-:meth:`~whenever.OffsetDateTime.from_rfc2822` to format and parse
+Use the methods :meth:`~whenever.OffsetDateTime.format_rfc2822` and
+:meth:`~whenever.OffsetDateTime.parse_rfc2822` to format and parse
 to this format, respectively:
 
 >>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=+5)
 >>> d.rfc2822()
 'Thu, 28 Dec 2023 11:30:00 +0500'
->>> OffsetDateTime.from_rfc2822('Tue, 13 Jul 2021 09:45:00 -0900')
+>>> OffsetDateTime.parse_rfc2822('Tue, 13 Jul 2021 09:45:00 -0900')
 OffsetDateTime(2021-07-13 09:45:00-09:00)
 
 To and from the standard library
@@ -575,16 +592,16 @@ If you'd like to parse into these types,
 use :meth:`NaiveDateTime.strptime() <whenever.NaiveDateTime.strptime>`
 to parse them, and then use the :meth:`~whenever.NaiveDateTime.assume_utc`,
 :meth:`~whenever.NaiveDateTime.assume_fixed_offset`,
-:meth:`~whenever.NaiveDateTime.assume_in_tz`, or :meth:`~whenever.NaiveDateTime.assume_in_local_system`
+:meth:`~whenever.NaiveDateTime.assume_tz`, or :meth:`~whenever.NaiveDateTime.assume_local_system`
 methods to convert them.
 This makes it explicit what information is being assumed.
 
 .. code-block:: python
 
-    NaiveDateTime.strptime("2023-01-01 12:00", "%Y-%m-%d %H:%M").assume_in_local_system()
+    NaiveDateTime.strptime("2023-01-01 12:00", "%Y-%m-%d %H:%M").assume_local_system()
 
     # handling ambiguity
-    NaiveDateTime.strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S").assume_in_tz(
+    NaiveDateTime.strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S").assume_tz(
         "Europe/Amsterdam",
         disambiguate="earlier",
     )
@@ -595,56 +612,8 @@ This makes it explicit what information is being assumed.
    parsing API may be added in the future.
 
 
-Serialization
--------------
-
-Canonical string format
-~~~~~~~~~~~~~~~~~~~~~~~
-
-Each type has a canonical textual format, which is used when converting to and
-from strings. The canonical format is designed to be unambiguous, and to
-preserve all information. This makes it ideal for storing datetimes in a
-database, or inclusing in JSON.
-
-Here are the canonical formats for each type:
-
-+-----------------------------------------+---------------------------------------------------------------------+
-| Type                                    | Canonical string format                                             |
-+=========================================+=====================================================================+
-| :class:`~whenever.UTCDateTime`          | ``YYYY-MM-DDTHH:MM:SS(.ffffff)Z``                                   |
-+-----------------------------------------+---------------------------------------------------------------------+
-| :class:`~whenever.OffsetDateTime`       | ``YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))``                |
-+-----------------------------------------+---------------------------------------------------------------------+
-| :class:`~whenever.ZonedDateTime`        | ``YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))[TIMEZONE ID]``   |
-+-----------------------------------------+---------------------------------------------------------------------+
-| :class:`~whenever.LocalSystemDateTime`  | ``YYYY-MM-DDTHH:MM:SS(.ffffff)±HH:MM(:SS(.ffffff))``                |
-+-----------------------------------------+---------------------------------------------------------------------+
-| :class:`~whenever.NaiveDateTime`        | ``YYYY-MM-DDTHH:MM:SS(.ffffff)``                                    |
-+-----------------------------------------+---------------------------------------------------------------------+
-
-.. code-block:: python
-
-   >>> UTCDateTime(2023, 1, 1, 0, 0).canonical_format()
-   '2023-01-01T00:00:00Z'
-   >>> ZonedDateTime.from_canonical_format('2022-10-24T19:00:00+02:00[Europe/Paris]')
-   ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
-
-.. seealso::
-
-   The methods :meth:`~whenever._DateTime.canonical_format` and
-   :meth:`~whenever._DateTime.from_canonical_format` can be used to convert to and
-   from the canonical string format.
-
-.. note::
-
-   The canonical format is similar to existing standards like ISO 8601 and RFC 3339.
-   If parsing from these formats, it's recommended to use
-   :meth:`~whenever.OffsetDateTime.from_common_iso8601` or 
-   :meth:`~whenever.OffsetDateTime.from_rfc3339` over ``from_canonical_format()``. 
-   These methods are more explicit and generally more lenient in what they accept.
-
 Pickling
-~~~~~~~~
+--------
 
 All types are pickleable, so you can use them in a distributed system or
 store them in a database that supports pickling.
@@ -718,10 +687,10 @@ LocalSystemDateTime(2020-08-15 08:00:00-04:00)
 
 If you'd like to preserve the moment in time
 and calculate the new local time, simply call
-:meth:`~whenever._AwareDateTime.as_local`.
+:meth:`~whenever._AwareDateTime.to_local_system`.
 
 >>> # same moment, but now with the clock time in Amsterdam
->>> d.as_local()
+>>> d.to_local_system()
 LocalSystemDateTime(2020-08-15 14:00:00+02:00)
 
 On the other hand, if you'd like to preserve the local time on the clock
@@ -731,15 +700,19 @@ and calculate the corresponding moment in time:
 >>> wall_clock = d.naive()
 NaiveDateTime(2020-08-15 08:00:00)
 >>> # ...and assume the system timezone (Amsterdam)
->>> wall_clock.assume_in_local_system()
+>>> wall_clock.assume_local_system()
 LocalSystemDateTime(2020-08-15 08:00:00+02:00)
 
 .. note::
 
-   Remember that :meth:`~whenever.NaiveDateTime.assume_in_local_system` may
+   Remember that :meth:`~whenever.NaiveDateTime.assume_local_system` may
    require disambiguation, if the wall clock time is ambiguous in
    the system timezone.
 
 .. seealso::
 
    :ref:`Why does LocalSystemDateTime exist? <faq-why-local>`
+
+.. [1] The timezone ID is not part of the core ISO 8601 standard, 
+   but is part of the RFC 9557 extension.
+   This format is commonly used by datetime libraries in other languages as well.

@@ -150,13 +150,17 @@ def test_from_py_date():
     assert Date.from_py_date(CustomDate(2021, 1, 2)) == Date(2021, 1, 2)
 
 
-def test_default_format():
+def test_format_common_iso():
+    d = Date(2021, 1, 2)
+    assert d.format_common_iso() == "2021-01-02"
+
+
+def test_str():
     d = Date(2021, 1, 2)
     assert str(d) == "2021-01-02"
-    assert d.default_format() == "2021-01-02"
 
 
-class TestFromDefaultFormat:
+class TestParseCommonIso:
 
     @pytest.mark.parametrize(
         "s, expected",
@@ -166,8 +170,7 @@ class TestFromDefaultFormat:
         ],
     )
     def test_valid(self, s, expected):
-        assert Date.from_default_format(s) == expected
-        assert Date.from_common_iso8601(s) == expected
+        assert Date.parse_common_iso(s) == expected
 
     @pytest.mark.parametrize(
         "s",
@@ -179,27 +182,19 @@ class TestFromDefaultFormat:
             "20-12-03",  # two-digit year
             "-012-12-03",  # negative year
             "312🧨-12-03",  # non-ASCII
+            "202𝟙-11-02",  # non-ascii
         ],
     )
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"Could not parse.*" + re.escape(repr(s)),
+            match=r"Invalid format.*" + re.escape(repr(s)),
         ):
-            Date.from_default_format(s)
-
-        with pytest.raises(
-            ValueError,
-            match=r"Could not parse.*" + re.escape(repr(s)),
-        ):
-            Date.from_common_iso8601(s)
+            Date.parse_common_iso(s)
 
     def test_no_string(self):
         with pytest.raises(TypeError, match="(int|str)"):
-            Date.from_default_format(20210102)  # type: ignore[arg-type]
-
-        with pytest.raises(TypeError, match="(int|str)"):
-            Date.from_common_iso8601(20210102)  # type: ignore[arg-type]
+            Date.parse_common_iso(20210102)  # type: ignore[arg-type]
 
 
 def test_replace():
@@ -605,7 +600,3 @@ def cannot_subclass():
 
         class SubclassDate(Date):  # type: ignore[misc]
             pass
-
-
-def test_common_iso8601():
-    assert Date(2021, 1, 2).common_iso8601() == "2021-01-02"

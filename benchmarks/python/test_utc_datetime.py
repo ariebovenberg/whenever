@@ -7,7 +7,7 @@ def test_now(benchmark):
 
 def test_change_tz(benchmark):
     dt = UTCDateTime(2020, 3, 20, 12, 30, 45, 450)
-    benchmark(dt.in_tz, "America/New_York")
+    benchmark(dt.to_tz, "America/New_York")
 
 
 def test_add_date(benchmark):

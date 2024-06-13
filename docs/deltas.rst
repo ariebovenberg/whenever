@@ -218,16 +218,16 @@ For example:
 - ``+PT5M4.25S`` is 5 minutes and 4.25 seconds.
 
 All deltas can be converted to and from this format using the methods
-:meth:`~whenever.DateTimeDelta.common_iso8601`
-and :meth:`~whenever.DateTimeDelta.from_common_iso8601`.
+:meth:`~whenever.DateTimeDelta.format_common_iso`
+and :meth:`~whenever.DateTimeDelta.parse_common_iso`.
 
->>> hours(3).common_iso8601()
+>>> hours(3).format_common_iso()
 'PT3H'
->>> (-years(1) - months(3) - minutes(30.25)).common_iso8601()
+>>> (-years(1) - months(3) - minutes(30.25)).format_common_iso()
 '-P1Y3MT30M15S'
->>> DateDelta.from_common_iso8601('-P2M')
+>>> DateDelta.parse_common_iso('-P2M')
 DateDelta(-2M)
->>> DateTimeDelta.from_common_iso8601('P3YT90M')
+>>> DateTimeDelta.parse_common_iso('P3YT90M')
 DateTimeDelta(P3YT1H30M)
 
 .. attention::

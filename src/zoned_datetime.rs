@@ -536,7 +536,7 @@ unsafe fn exact_eq(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     }
 }
 
-unsafe fn in_tz(slf: &mut PyObject, tz: &mut PyObject) -> PyReturn {
+unsafe fn to_tz(slf: &mut PyObject, tz: &mut PyObject) -> PyReturn {
     let cls = Py_TYPE(slf);
     let &State {
         zoneinfo_type,
@@ -623,13 +623,13 @@ unsafe fn py_datetime(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
     .as_result()
 }
 
-unsafe fn in_utc(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
+unsafe fn to_utc(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
     ZonedDateTime::extract(slf)
         .to_instant()
         .to_obj(State::for_obj(slf).utc_datetime_type)
 }
 
-unsafe fn in_fixed_offset(slf_obj: &mut PyObject, args: &[*mut PyObject]) -> PyReturn {
+unsafe fn to_fixed_offset(slf_obj: &mut PyObject, args: &[*mut PyObject]) -> PyReturn {
     let cls = Py_TYPE(slf_obj);
     let slf = ZonedDateTime::extract(slf_obj);
     let &State {
@@ -641,7 +641,7 @@ unsafe fn in_fixed_offset(slf_obj: &mut PyObject, args: &[*mut PyObject]) -> PyR
         OffsetDateTime::new_unchecked(slf.date, slf.time, slf.offset_secs)
             .to_obj(offset_datetime_type)
     } else if args.len() > 1 {
-        Err(type_err!("in_fixed_offset() takes at most 1 argument"))
+        Err(type_err!("to_fixed_offset() takes at most 1 argument"))
     } else {
         let offset_secs = offset_datetime::extract_offset(args[0], time_delta_type)?;
         let DateTime { date, time } = slf
@@ -651,7 +651,7 @@ unsafe fn in_fixed_offset(slf_obj: &mut PyObject, args: &[*mut PyObject]) -> PyR
     }
 }
 
-unsafe fn in_local_system(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn to_local_system(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let &State {
         py_api,
         local_datetime_type,
@@ -675,7 +675,7 @@ unsafe fn time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         .to_obj(State::for_obj(slf).time_type)
 }
 
-unsafe fn with_date(
+unsafe fn replace_date(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
@@ -692,12 +692,12 @@ unsafe fn with_date(
 
     if args.len() != 1 {
         Err(type_err!(
-            "with_date() takes 1 positional argument but {} were given",
+            "replace_date() takes 1 positional argument but {} were given",
             args.len()
         ))?
     }
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "with_date")?;
+    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_date")?;
     let ZonedDateTime { time, zoneinfo, .. } = ZonedDateTime::extract(slf);
     if Py_TYPE(args[0]) == date_type {
         match ZonedDateTime::from_naive(py_api, Date::extract(args[0]), time, zoneinfo, dis)? {
@@ -716,7 +716,7 @@ unsafe fn with_date(
     }
 }
 
-unsafe fn with_time(
+unsafe fn replace_time(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
@@ -733,12 +733,12 @@ unsafe fn with_time(
 
     if args.len() != 1 {
         return Err(type_err!(
-            "with_time() takes 1 positional argument but {} were given",
+            "replace_time() takes 1 positional argument but {} were given",
             args.len()
         ));
     }
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "with_time")?;
+    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_time")?;
     let ZonedDateTime { date, zoneinfo, .. } = ZonedDateTime::extract(slf);
     if Py_TYPE(args[0]) == time_type {
         match ZonedDateTime::from_naive(py_api, date, Time::extract(args[0]), zoneinfo, dis)? {
@@ -757,7 +757,7 @@ unsafe fn with_time(
     }
 }
 
-unsafe fn default_format(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     __str__(slf)
 }
 
@@ -1163,7 +1163,7 @@ fn parse_offset_partial(s: &mut &[u8]) -> Option<i32> {
     .map(|s| sign * s)
 }
 
-unsafe fn from_default_format(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
+unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let s = &mut s_obj.to_utf8()?.ok_or_type_err("Argument must be string")?;
     let parse_err = || value_err!("Invalid format: {}", s_obj.repr());
     // at least: "YYYY-MM-DD HH:MM:SS+HH:MM[?]"
@@ -1307,14 +1307,22 @@ unsafe fn _shift_method(
 static mut METHODS: &[PyMethodDef] = &[
     method!(identity2 named "__copy__", ""),
     method!(identity2 named "__deepcopy__", "", METH_O),
-    method!(in_tz, "Convert to a `ZonedDateTime` with given tz", METH_O),
+    method!(to_tz, "Convert to a `ZonedDateTime` with given tz", METH_O),
     method!(exact_eq, "Exact equality", METH_O),
     method!(py_datetime, "Convert to a `datetime.datetime`"),
-    method!(in_utc, "Convert to a `UTCDateTime`"),
-    method!(in_local_system, "Convert to a datetime in the local system"),
+    method!(to_utc, "Convert to a `UTCDateTime`"),
+    method!(to_local_system, "Convert to a datetime in the local system"),
     method!(date, "The date component"),
     method!(time, "The time component"),
-    method!(default_format, "Format in the default way"),
+    method!(
+        format_common_iso,
+        "Format in the common ISO format (RFC9557 profile)"
+    ),
+    method!(
+        parse_common_iso,
+        "Parse the common ISO format (RFC9557 profile)",
+        METH_O | METH_CLASS
+    ),
     method!(__reduce__, ""),
     method!(
         now,
@@ -1337,7 +1345,6 @@ static mut METHODS: &[PyMethodDef] = &[
         "Convert to a UNIX timestamp in nanoseconds"
     ),
     method!(is_ambiguous, "Check if the datetime is ambiguous"),
-    method!(from_default_format, "", METH_O | METH_CLASS),
     method_kwargs!(
         from_timestamp,
         "Create a new instance from a UNIX timestamp",
@@ -1357,9 +1364,9 @@ static mut METHODS: &[PyMethodDef] = &[
         replace,
         "Return a new instance with the specified fields replaced"
     ),
-    method_kwargs!(with_date, "Return a new instance with the date replaced"),
-    method_kwargs!(with_time, "Return a new instance with the time replaced"),
-    method_vararg!(in_fixed_offset, "Convert to an equivalent offset datetime"),
+    method_kwargs!(replace_date, "Return a new instance with the date replaced"),
+    method_kwargs!(replace_time, "Return a new instance with the time replaced"),
+    method_vararg!(to_fixed_offset, "Convert to an equivalent offset datetime"),
     method_kwargs!(add, "Add various time/calendar units"),
     method_kwargs!(subtract, "Subtract various time/calendar units"),
     PyMethodDef::zeroed(),

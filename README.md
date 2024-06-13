@@ -78,15 +78,15 @@ UTCDateTime(2022-10-24 17:00:00Z)
 OffsetDateTime(2023-04-21 09:00:00-06:00)
 
 # Simple, explicit conversions
->>> py311_release.in_tz("Europe/Paris")
+>>> py311_release.to_tz("Europe/Paris")
 ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
->>> pycon23_start.in_local_system()  # example: system timezone in NYC
+>>> pycon23_start.to_local_system()  # example: system timezone in NYC
 LocalSystemDateTime(2023-04-21 11:00:00-04:00)
 
 # Comparison and equality across aware types
 >>> py311_release > pycon23_start
 False
->>> py311_release == py311_release.in_tz("America/Los_Angeles")
+>>> py311_release == py311_release.to_tz("America/Los_Angeles")
 True
 
 # Naive type that can't accidentally mix with aware types
@@ -94,30 +94,30 @@ True
 >>> # Naïve/aware mixups are caught by typechecker
 >>> hackathon_invite - py311_release  # error flagged here
 >>> # Only explicit assumptions will make it aware
->>> hackathon_start = hackathon_invite.assume_in_tz("Europe/Amsterdam")
+>>> hackathon_start = hackathon_invite.assume_tz("Europe/Amsterdam")
 ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])
 
-# DST-aware operators
+# DST-safe arithmetic
 >>> hackathon_end = hackathon_start.add(hours=24)
 ZonedDateTime(2022-10-29 11:00:00+01:00[Europe/Amsterdam])
 
 # Lossless round-trip to/from text (useful for JSON/serialization)
 >>> str(py311_release)
 '2022-10-24T17:00:00Z'
->>> ZonedDateTime.from_default_format('2022-10-24T19:00:00+02:00[Europe/Paris]')
+>>> ZonedDateTime.parse_common_iso('2022-10-24T19:00:00+02:00[Europe/Paris]')
 ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
 
 # Conversion to/from common formats
->>> py311_release.rfc2822()  # also: from_rfc2822()
+>>> py311_release.format_rfc2822()  # also: parse_rfc2822()
 "Mon, 24 Oct 2022 17:00:00 GMT"
->>> pycon23_start.rfc3339()  # also: from_rfc3339()
+>>> pycon23_start.format_rfc3339()  # also: parse_rfc3339()
 "2023-04-21 09:00:00-06:00"
 
-# Basic parsing
+# Basic parsing (to be extended)
 >>> OffsetDateTime.strptime("2022-10-24+02:00", "%Y-%m-%d%z")
 OffsetDateTime(2022-10-24 00:00:00+02:00)
 
-# If you must: you can access the underlying datetime object
+# If you must: you can convert to and from the standard lib
 >>> pycon23_start.py_datetime().ctime()
 'Fri Apr 21 09:00:00 2023'
 ```
@@ -127,7 +127,7 @@ or [API reference](https://whenever.readthedocs.io/en/latest/api.html).
 
 ## Limitations
 
-- Only the proleptic Gregorian calendar between 1 and 9999 AD
+- Supports the proleptic Gregorian calendar between 1 and 9999 AD
 - Timezone offsets are limited to whole seconds
 - No support for leap seconds
 

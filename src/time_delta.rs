@@ -113,7 +113,7 @@ impl std::fmt::Display for TimeDelta {
         };
         write!(
             f,
-            "PT{:02}:{:02}:{:02}",
+            "{:02}:{:02}:{:02}",
             delta.secs / 3600,
             (delta.secs % 3600) / 60,
             delta.secs % 60,
@@ -304,7 +304,7 @@ unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
-    format!("{}", TimeDelta::extract(slf)).to_py()
+    format_common_iso(slf, NULL())
 }
 
 unsafe fn __mul__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
@@ -395,17 +395,16 @@ unsafe fn __truediv__(slf: *mut PyObject, factor_obj: *mut PyObject) -> PyReturn
     .to_obj(Py_TYPE(slf))
 }
 
-// TODO: add/subtract *methods*
 unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
-    _add_method(obj_a, obj_b, false)
+    _add_operator(obj_a, obj_b, false)
 }
 
 unsafe fn __sub__(a_obj: *mut PyObject, b_obj: *mut PyObject) -> PyReturn {
-    _add_method(a_obj, b_obj, true)
+    _add_operator(a_obj, b_obj, true)
 }
 
 #[inline]
-unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) -> PyReturn {
+unsafe fn _add_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) -> PyReturn {
     let type_a = Py_TYPE(obj_a);
     let type_b = Py_TYPE(obj_b);
     // The easy case: both are TimeDelta
@@ -505,10 +504,6 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-unsafe fn default_format(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    __str__(slf)
-}
-
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let TimeDelta { secs, nanos } = TimeDelta::extract(slf);
     PyTuple_Pack(
@@ -602,56 +597,6 @@ unsafe fn py_timedelta(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     .as_result()
 }
 
-// parses H[HHHHHH]:<rest>
-fn parse_hours(s: &mut &[u8]) -> Option<u32> {
-    let mut hours = u32::from(get_digit!(s, 0));
-    // limit parsing to 8 characters in total to prevent overflow
-    for i in 1..min(s.len(), 7) {
-        match s[i] {
-            c if c.is_ascii_digit() => hours = hours * 10 + u32::from(c - b'0'),
-            b':' => {
-                *s = &s[i + 1..];
-                return Some(hours);
-            }
-            _ => break,
-        }
-    }
-    None
-}
-
-// MM:SS[.nnnnnnnnn] -> (MM, SS, nnnnnnnnn)
-fn parse_mins_secs_nanos(s: &[u8]) -> Option<(u8, u8, u32)> {
-    if s.len() < 5 || s[2] != b':' {
-        return None;
-    }
-    let minutes = get_digit!(s, 0, ..=b'5') * 10 + get_digit!(s, 1);
-    let seconds = get_digit!(s, 3, ..=b'5') * 10 + get_digit!(s, 4);
-
-    let mut nanos = 0;
-    if s.len() > 5 {
-        if s[5] != b'.' || s.len() == 6 || s.len() > 15 {
-            return None;
-        }
-        for (i, factor) in s[6..].iter().zip(&[
-            100_000_000,
-            10_000_000,
-            1_000_000,
-            100_000,
-            10_000,
-            1_000,
-            100,
-            10,
-            1,
-        ]) {
-            if !i.is_ascii_digit() {
-                return None;
-            }
-            nanos += u32::from(i - b'0') * factor;
-        }
-    }
-    Some((minutes, seconds, nanos))
-}
-
 fn parse_prefix(s: &mut &[u8]) -> Option<i128> {
     let (result, i) = match &s[..3] {
         b"+PT" => (Some(1), 3),
@@ -661,27 +606,6 @@ fn parse_prefix(s: &mut &[u8]) -> Option<i128> {
     };
     *s = &s[i..];
     result
-}
-
-unsafe fn from_default_format(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
-    let s = &mut s_obj
-        .to_utf8()?
-        .ok_or_type_err("Argument must be a string")?;
-
-    let sign = (s.len() > 8)
-        .then(|| parse_prefix(s))
-        .flatten()
-        .ok_or_else(|| value_err!("Invalid time delta format: {}", s_obj.repr()))?;
-
-    let (hours, (mins, secs, nanos)) = parse_hours(s)
-        .zip(parse_mins_secs_nanos(s))
-        .ok_or_else(|| value_err!("Invalid time delta format: {}", s_obj.repr()))?;
-    TimeDelta::from_nanos(
-        sign * ((hours as i64 * 3600 + mins as i64 * 60 + secs as i64) as i128 * 1_000_000_000
-            + nanos as i128),
-    )
-    .ok_or_value_err("TimeDelta out of range")?
-    .to_obj(cls.cast())
 }
 
 unsafe fn in_hrs_mins_secs_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -731,7 +655,7 @@ pub(crate) fn format_components(td: TimeDelta, s: &mut String) {
     }
 }
 
-unsafe fn common_iso8601(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let mut delta = TimeDelta::extract(slf);
     if delta.secs == 0 && delta.nanos == 0 {
         return "PT0S".to_py();
@@ -841,7 +765,7 @@ pub(crate) unsafe fn parse_all_components(s: &mut &[u8]) -> Option<(i128, bool)>
     Some((nanos, prev_unit.is_none()))
 }
 
-unsafe fn from_common_iso8601(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
+unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let s = &mut s_obj
         .to_utf8()?
         .ok_or_type_err("argument must be a string")?;
@@ -866,18 +790,12 @@ unsafe fn from_common_iso8601(cls: *mut PyObject, s_obj: *mut PyObject) -> PyRet
 static mut METHODS: &[PyMethodDef] = &[
     method!(identity2 named "__copy__", ""),
     method!(identity2 named "__deepcopy__", "", METH_O),
-    method!(default_format, "Format the time delta in the default way"),
     method!(
-        common_iso8601,
+        format_common_iso,
         "Return the time delta in the common ISO8601 format"
     ),
     method!(
-        from_default_format,
-        "Parse from the default string representation",
-        METH_O | METH_CLASS
-    ),
-    method!(
-        from_common_iso8601,
+        parse_common_iso,
         "Parse from the common ISO8601 period format",
         METH_O | METH_CLASS
     ),

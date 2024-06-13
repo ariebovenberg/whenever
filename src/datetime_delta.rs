@@ -415,7 +415,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-unsafe fn default_format(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     __str__(slf)
 }
 
@@ -453,7 +453,7 @@ pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
     Some(DateDelta { months, days })
 }
 
-unsafe fn from_default_format(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
+unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let s = &mut s_obj.to_utf8()?.ok_or_value_err("argument must be str")?;
     if s.len() < 3 {
         // at least `P0D`
@@ -560,9 +560,7 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, args: &[*mut PyObject]) -> 
 static mut METHODS: &[PyMethodDef] = &[
     method!(identity2 named "__copy__", ""),
     method!(identity2 named "__deepcopy__", "", METH_O),
-    method!(default_format, ""),
-    method!(default_format named "common_iso8601", "Return the ISO 8601 string representation"),
-    method!(from_default_format, "", METH_O | METH_CLASS),
+    method!(format_common_iso, "Format as common ISO8601 period"),
     method!(
         date_part,
         "Return the date part of the delta as a DateDelta"
@@ -572,7 +570,7 @@ static mut METHODS: &[PyMethodDef] = &[
         "Return the time part of the delta as a TimeDelta"
     ),
     method!(
-        from_default_format named "from_common_iso8601",
+        parse_common_iso,
         "Parse from the common ISO8601 period format",
         METH_O | METH_CLASS
     ),

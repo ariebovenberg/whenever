@@ -20,21 +20,17 @@ pub struct Time {
 impl Time {
     #[cfg(target_pointer_width = "32")]
     pub(crate) const fn pyhash(&self) -> Py_hash_t {
-        hashmask(
-            ((self.hour as Py_hash_t) << 16)
-                ^ ((self.minute as Py_hash_t) << 8)
-                ^ (self.second as Py_hash_t)
-                ^ (self.nanos as Py_hash_t),
-        )
+        ((self.hour as Py_hash_t) << 16)
+            ^ ((self.minute as Py_hash_t) << 8)
+            ^ (self.second as Py_hash_t)
+            ^ (self.nanos as Py_hash_t)
     }
 
     #[cfg(target_pointer_width = "64")]
     pub(crate) const fn pyhash(&self) -> Py_hash_t {
-        hashmask(
-            ((self.hour as Py_hash_t) << 48)
-                | ((self.minute as Py_hash_t) << 40)
-                | ((self.second as Py_hash_t) << 32) ^ (self.nanos as Py_hash_t),
-        )
+        ((self.hour as Py_hash_t) << 48)
+            | ((self.minute as Py_hash_t) << 40)
+            | ((self.second as Py_hash_t) << 32) ^ (self.nanos as Py_hash_t)
     }
 
     pub(crate) const fn seconds(&self) -> i32 {
@@ -255,7 +251,7 @@ unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
 }
 
 unsafe extern "C" fn __hash__(slf: *mut PyObject) -> Py_hash_t {
-    Time::extract(slf).pyhash()
+    hashmask(Time::extract(slf).pyhash())
 }
 
 unsafe fn __richcmp__(obj_a: *mut PyObject, obj_b: *mut PyObject, op: c_int) -> PyReturn {
@@ -279,7 +275,7 @@ unsafe fn __richcmp__(obj_a: *mut PyObject, obj_b: *mut PyObject, op: c_int) -> 
 
 static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_tp_new, __new__),
-    slotmethod!(Py_tp_str, default_format, 2),
+    slotmethod!(Py_tp_str, format_common_iso, 2),
     slotmethod!(Py_tp_repr, __repr__, 1),
     slotmethod!(Py_tp_richcompare, __richcmp__),
     PyType_Slot {
@@ -348,7 +344,7 @@ unsafe fn from_py_time(type_: *mut PyObject, time: *mut PyObject) -> PyReturn {
     .to_obj(type_.cast())
 }
 
-unsafe fn default_format(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     _default_fmt(Time::extract(slf)).to_py()
 }
 
@@ -380,7 +376,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     .as_result()
 }
 
-unsafe fn from_default_format(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
+unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
     Time::parse_all(s.to_utf8()?.ok_or_type_err("Argument must be a string")?)
         .ok_or_else(|| value_err!("Invalid format: {}", s.repr()))?
         .to_obj(cls.cast())
@@ -454,17 +450,17 @@ unsafe fn replace(
 
 static mut METHODS: &[PyMethodDef] = &[
     method!(py_time, "Convert to a Python datetime.time"),
-    method!(default_format, ""),
+    method!(format_common_iso, ""),
     method_kwargs!(replace, "Replace one or more components of the time"),
     method!(
-        default_format named "common_iso8601",
+        format_common_iso,
         "Return the time in the common ISO 8601 format"
     ),
-    method!(from_default_format, "", METH_O | METH_CLASS),
     method!(
-        from_default_format named "from_common_iso8601", 
-        "Create a date from the common ISO 8601 format", 
-        METH_O | METH_CLASS),
+        parse_common_iso,
+        "Create an instance from the common ISO 8601 format",
+        METH_O | METH_CLASS
+    ),
     method!(
         from_py_time,
         "Create a time from a Python datetime.time",

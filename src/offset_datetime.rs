@@ -381,7 +381,7 @@ unsafe fn exact_eq(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     }
 }
 
-unsafe fn in_tz(slf: *mut PyObject, tz: *mut PyObject) -> PyReturn {
+unsafe fn to_tz(slf: *mut PyObject, tz: *mut PyObject) -> PyReturn {
     let type_ = Py_TYPE(slf);
     let &State {
         zoneinfo_type,
@@ -422,7 +422,7 @@ unsafe fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     OffsetDateTime::extract(slf).to_py(State::for_obj(slf).py_api)
 }
 
-unsafe fn in_utc(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn to_utc(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     OffsetDateTime::extract(slf)
         .to_instant()
         .to_obj(State::for_obj(slf).utc_datetime_type)
@@ -440,7 +440,7 @@ unsafe fn time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         .to_obj(State::for_obj(slf).time_type)
 }
 
-unsafe fn with_date(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
+unsafe fn replace_date(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let cls = Py_TYPE(slf);
     let OffsetDateTime {
         time, offset_secs, ..
@@ -454,7 +454,7 @@ unsafe fn with_date(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     }
 }
 
-unsafe fn with_time(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
+unsafe fn replace_time(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let cls = Py_TYPE(slf);
     let OffsetDateTime {
         date, offset_secs, ..
@@ -468,7 +468,7 @@ unsafe fn with_time(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     }
 }
 
-unsafe fn default_format(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     __str__(slf)
 }
 
@@ -746,7 +746,7 @@ fn parse_hms_offset(s: &[u8]) -> Option<i32> {
     }
 }
 
-unsafe fn from_default_format(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
+unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     OffsetDateTime::parse(s_obj.to_utf8()?.ok_or_type_err("Expected a string")?)
         .ok_or_else(|| value_err!("Invalid format: {}", s_obj.repr()))?
         .to_obj(cls.cast())
@@ -771,7 +771,7 @@ fn parse_hm_offset(s: &[u8]) -> Option<i32> {
     }
 }
 
-unsafe fn from_rfc3339(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
+unsafe fn parse_rfc3339(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let s = &mut s_obj.to_utf8()?.ok_or_type_err("Expected a string")?;
     // at least: "YYYY-MM-DDTHH:MM:SSZ"
     let raise = || value_err!("Invalid RFC 3339 format: {}", s_obj.repr());
@@ -791,11 +791,11 @@ unsafe fn from_rfc3339(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
         .to_obj(cls.cast())
 }
 
-unsafe fn in_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
+unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
     if args.is_empty() {
         return Ok(newref(slf_obj));
     } else if args.len() > 1 {
-        Err(type_err!("in_fixed_offset() takes at most 1 argument"))?;
+        Err(type_err!("to_fixed_offset() takes at most 1 argument"))?;
     }
     let cls = Py_TYPE(slf_obj);
     let slf = OffsetDateTime::extract(slf_obj);
@@ -806,7 +806,7 @@ unsafe fn in_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
         .to_obj(cls)
 }
 
-unsafe fn in_local_system(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn to_local_system(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let &State {
         py_api,
         local_datetime_type,
@@ -846,7 +846,7 @@ pub(crate) fn offset_fmt_rfc3339(secs: i32) -> String {
     format!("{}{:02}:{:02}", sign, secs / 3600, (secs % 3600) / 60)
 }
 
-unsafe fn rfc3339(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn format_rfc3339(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let OffsetDateTime {
         date,
         time,
@@ -855,16 +855,7 @@ unsafe fn rfc3339(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     format!("{} {}{}", date, time, offset_fmt_rfc3339(offset_secs)).to_py()
 }
 
-unsafe fn common_iso8601(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let OffsetDateTime {
-        date,
-        time,
-        offset_secs,
-    } = OffsetDateTime::extract(slf);
-    format!("{}T{}{}", date, time, offset_fmt(offset_secs)).to_py()
-}
-
-unsafe fn rfc2822(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn format_rfc2822(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let &State {
         format_rfc2822,
         py_api: datetime_api,
@@ -877,7 +868,7 @@ unsafe fn rfc2822(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     .as_result()
 }
 
-unsafe fn from_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
+unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let state = State::for_type(cls.cast());
     let py_dt = PyObject_CallOneArg(state.parse_rfc2822, s_obj).as_result()?;
     defer_decref!(py_dt);
@@ -895,32 +886,34 @@ static mut METHODS: &[PyMethodDef] = &[
     // FUTURE: get docstrings from Python implementation
     method!(identity2 named "__copy__", ""),
     method!(identity2 named "__deepcopy__", "", METH_O),
-    method!(in_tz, "Convert to a `ZonedDateTime` with given tz", METH_O),
+    method!(to_tz, "Convert to a `ZonedDateTime` with given tz", METH_O),
     method!(exact_eq, "Exact equality", METH_O),
     method!(py_datetime, "Convert to a `datetime.datetime`"),
-    method!(in_utc, "Convert to a `UTCDateTime`"),
-    method!(in_local_system, "Convert to a datetime in the local system"),
+    method!(to_utc, "Convert to a `UTCDateTime`"),
+    method!(to_local_system, "Convert to a datetime in the local system"),
     method!(date, "The date component"),
     method!(time, "The time component"),
-    method!(default_format, "Format in the default way"),
-    method!(from_default_format, "", METH_O | METH_CLASS),
-    method!(rfc3339, "Format according to RFC3339"),
+    method!(format_rfc3339, "Format according to RFC3339"),
     method!(
-        from_rfc3339,
+        parse_rfc3339,
         "Create a new instance from an RFC3339 timestamp",
         METH_O | METH_CLASS
     ),
-    method!(rfc2822, "Format according to RFC2822"),
+    method!(format_rfc2822, "Format according to RFC2822"),
     method!(
-        from_rfc2822,
+        parse_rfc2822,
         "Create a new instance from an RFC2822 timestamp",
         METH_O | METH_CLASS
     ),
     method!(
-        common_iso8601,
+        format_common_iso,
         "Format according to the common ISO8601 style"
     ),
-    method!(from_default_format named "from_common_iso8601", "", METH_O | METH_CLASS),
+    method!(
+        parse_common_iso,
+        "Parse from the common ISO8601 format",
+        METH_O | METH_CLASS
+    ),
     method!(__reduce__, ""),
     method!(
         now,
@@ -962,16 +955,16 @@ static mut METHODS: &[PyMethodDef] = &[
         "Return a new instance with the specified fields replaced"
     ),
     method_vararg!(
-        in_fixed_offset,
+        to_fixed_offset,
         "Convert to a new instance with a different offset"
     ),
     method!(
-        with_date,
+        replace_date,
         "Return a new instance with the date replaced",
         METH_O
     ),
     method!(
-        with_time,
+        replace_time,
         "Return a new instance with the time replaced",
         METH_O
     ),
