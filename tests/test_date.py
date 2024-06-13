@@ -80,14 +80,10 @@ class TestInit:
         ],
     )
     def test_invalid_year(self, year, month, day):
-        try:
+        with pytest.raises(
+            (ValueError, OverflowError), match="int|range|date|year"
+        ):
             Date(year, month, day)
-        except OverflowError as e:
-            assert "int" in str(e)
-        except ValueError as e:
-            assert "range" in str(e) or "date" in str(e)
-        else:
-            assert False, "expected an exception"
 
     @pytest.mark.parametrize(
         "year, month, day",
@@ -100,14 +96,10 @@ class TestInit:
         ],
     )
     def test_invalid_month(self, year, month, day):
-        try:
+        with pytest.raises(
+            (ValueError, OverflowError), match="int|range|date|month"
+        ):
             Date(year, month, day)
-        except OverflowError as e:
-            assert "int" in str(e)
-        except ValueError as e:
-            assert "date" in str(e) or "month" in str(e)
-        else:
-            assert False, "expected an exception"
 
     @pytest.mark.parametrize(
         "year, month, day",
@@ -123,14 +115,10 @@ class TestInit:
         ],
     )
     def test_invalid_day(self, year, month, day):
-        try:
+        with pytest.raises(
+            (ValueError, OverflowError), match="int|range|date|day"
+        ):
             Date(year, month, day)
-        except OverflowError as e:
-            assert "int" in str(e)
-        except ValueError as e:
-            assert "date" in str(e) or "day" in str(e)
-        else:
-            assert False, "expected an exception"
 
 
 def test_py_date():
@@ -148,6 +136,9 @@ def test_from_py_date():
         pass
 
     assert Date.from_py_date(CustomDate(2021, 1, 2)) == Date(2021, 1, 2)
+
+    with pytest.raises(TypeError):
+        Date.from_py_date(20210102)  # type: ignore[arg-type]
 
 
 def test_format_common_iso():
@@ -175,6 +166,7 @@ class TestParseCommonIso:
     @pytest.mark.parametrize(
         "s",
         [
+            "202A-01-02",  # non-digit
             "2021-01-02T03:04:05",  # with a time
             "2021-1-2",  # no padding
             "2020-123",  # ordinal date

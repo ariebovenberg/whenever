@@ -8,17 +8,16 @@
 [![](https://img.shields.io/github/actions/workflow/status/ariebovenberg/whenever/tests.yml?branch=main&style=flat-square)](https://github.com/ariebovenberg/whenever)
 [![](https://img.shields.io/readthedocs/whenever.svg?style=flat-square)](http://whenever.readthedocs.io/)
 
-**Fast and typesafe datetimes for Python, written in Rust**
+**Typed and DST-safe datetimes for Python, written in Rust**
 
-Do you cross your fingers every time you work with datetimes,
-hoping that you didn't mix naive and aware?
-or that you converted to UTC everywhere?
-or that you avoided the [pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/) of the standard library?
+Do you cross your fingers every time you work with Python's datetime—hoping that you didn't mix naive and aware?
+or that you avoided its [other pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/)?
+or that you properly accounted for Daylight Saving Time (DST)?
 There’s no way to be sure...
 
 ✨ Until now! ✨
 
-Whenever is designed from the ground up to **enforce correctness**.
+*Whenever* helps you write **correct** and **type checked** datetime code.
 Mistakes become <span style="text-decoration: underline; text-decoration-color: red; text-decoration-style: wavy">red squiggles</span> in your IDE, instead of bugs in production.
 It's also **way faster** than other third-party libraries—and usually the standard library as well.
 
@@ -34,18 +33,6 @@ It's also **way faster** than other third-party libraries—and usually the stan
     <i>RFC3339-parse, normalize, compare to now, shift, and change timezone (1M times)</i>
   </p>
 
-## Benefits
-
-- 🔒 Typesafe API prevents common bugs
-- ✅ Fixes pitfalls [arrow and pendulum don't](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/#datetime-library-scorecard)
-- ⚖️  Based on proven and [familiar concepts](https://www.youtube.com/watch?v=saeKBuPewcU)
-- ⚡️ Unmatched performance
-- 💎 Thoroughly tested and documented
-- 📆 Support for date arithmetic
-- ⏱️ Nanosecond precision
-- 🦀 Rust!—but with a pure-Python fallback
-- 🚀 Support for subinterpreters and disabling GIL (experimental)
-
 <div align="center">
 
 [📖 Docs](https://whenever.readthedocs.io) |
@@ -58,8 +45,79 @@ It's also **way faster** than other third-party libraries—and usually the stan
 
 </div>
 
-> ⚠️ **Note**: Whenever is in pre-1.0 stage. The API may change with minor releases.
-> On the plus side, this means that the API can still be influenced by your feedback!
+> ⚠️ **Note**: Whenever is in pre-1.0 beta. The API may change
+> as we gather feedback and improve the library.
+> Leave a ⭐️ on github if you'd like to see how this project develops!
+
+## Why not the standard library?
+
+Over 20+ years, Python's `datetime` has grown
+out of step with what you'd expect from a modern datetime library.
+Two points stand out:
+
+1. **It doesn't always account for Daylight Saving Time (DST)**.
+   Here is a simple example:
+
+   ```python
+   bedtime = datetime(2023, 3, 25, 22, tzinfo=ZoneInfo("Europe/Paris"))
+   full_rest = bedtime + timedelta(hours=8)
+   # It returns 6am, but should be 7am—because we skipped an hour due to DST!
+   ```
+
+   Note this isn't a bug, but a design decision that DST is only considered
+   when calculations involve *two different timezones*.
+   If you think this is surprising, you
+   [are](https://github.com/python/cpython/issues/91618)
+   [not](https://github.com/python/cpython/issues/116035)
+   [alone](https://github.com/python/cpython/issues/112638).
+
+2. **Typing can't distinguish between naive and aware datetimes**.
+   Your code probably only works with one or the other,
+   but there's no way to enforce this in the type system!
+
+   ```python
+   # Should this be a naive or aware datetime? Can't tell!
+   def schedule_meeting(at: datetime) -> None: ...
+   ```
+
+## Why not other libraries?
+
+There are two other popular third-party libraries, but they don't (fully)
+address these issues. Here's how they compare to *whenever* and the standard library:
+
+|                   | Whenever | datetime | Arrow | Pendulum |
+|-------------------|:--------:|:--------:|:-----:|:--------:|
+|      DST-safe     |     ✅    |     ❌    |   ❌   |     ⚠️    |
+| Typed aware/naive |     ✅    |     ❌    |   ❌   |     ❌    |
+|        Fast       |     ✅    |     ✅    |   ❌   |     ❌    |
+
+[**Arrow**](https://pypi.org/project/arrow/)
+is probably the most historically popular 3rd party datetime library.
+It attempts to provide a more "friendly" API than the standard library,
+but doesn't address the core issues:
+it keeps the same footguns, and its decision to reduce the number
+of types to just one (``arrow.Arrow``) means that it's even harder
+for typecheckers to catch mistakes.
+
+[**Pendulum**](https://pypi.org/project/pendulum/)
+came in the scene in 2016, promising better DST-handling,
+as well as improved performance.
+However, it only fixes [*some* DST-related pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/#datetime-library-scorecard),
+and its performance has significantly [degraded over time](https://github.com/sdispater/pendulum/issues/818).
+Additionally, it hasn't been actively maintained since a breaking 3.0 release last year.
+
+## Why use whenever?
+
+- 🌐 DST-safe arithmetic. Always.
+- ⚖️ Typesafe API prevents common bugs
+- ✅ Fixes issues that [arrow/pendulum don't](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/#datetime-library-scorecard)
+- ⚖️  Based on proven and [familiar concepts](https://www.youtube.com/watch?v=saeKBuPewcU)
+- ⚡️ Unmatched performance
+- 💎 Thoroughly tested and documented
+- 📆 Support for date arithmetic
+- ⏱️ Nanosecond precision
+- 🦀 Rust!—but with a pure-Python fallback
+- 🚀 Support for the latest GIL-related improvements (experimental)
 
 ## Quickstart
 
@@ -67,131 +125,42 @@ It's also **way faster** than other third-party libraries—and usually the stan
 >>> from whenever import (
 ...    # Explicit types for different use cases
 ...    UTCDateTime,     # -> Enforce UTC-normalization
-...    OffsetDateTime,  # -> Simple localized times
 ...    ZonedDateTime,   # -> Full-featured timezones
 ...    NaiveDateTime,   # -> Without any timezone
 ... )
 
 >>> py311_release = UTCDateTime(2022, 10, 24, hour=17)
 UTCDateTime(2022-10-24 17:00:00Z)
->>> pycon23_start = OffsetDateTime(2023, 4, 21, hour=9, offset=-6)
-OffsetDateTime(2023-04-21 09:00:00-06:00)
 
 # Simple, explicit conversions
 >>> py311_release.to_tz("Europe/Paris")
 ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
->>> pycon23_start.to_local_system()  # example: system timezone in NYC
-LocalSystemDateTime(2023-04-21 11:00:00-04:00)
 
-# Comparison and equality across aware types
->>> py311_release > pycon23_start
-False
->>> py311_release == py311_release.to_tz("America/Los_Angeles")
+# Comparison and equality
+>>> UTCDateTime.now() > py311_release
 True
 
-# Naive type that can't accidentally mix with aware types
+# Naive type that can't accidentally mix with aware types.
+# Only explicit assumptions will make it aware
 >>> hackathon_invite = NaiveDateTime(2023, 10, 28, hour=12)
->>> # Naïve/aware mixups are caught by typechecker
->>> hackathon_invite - py311_release  # error flagged here
->>> # Only explicit assumptions will make it aware
 >>> hackathon_start = hackathon_invite.assume_tz("Europe/Amsterdam")
 ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])
 
 # DST-safe arithmetic
->>> hackathon_end = hackathon_start.add(hours=24)
+>>> hackathon_start.add(hours=24)
 ZonedDateTime(2022-10-29 11:00:00+01:00[Europe/Amsterdam])
 
-# Lossless round-trip to/from text (useful for JSON/serialization)
->>> str(py311_release)
-'2022-10-24T17:00:00Z'
->>> ZonedDateTime.parse_common_iso('2022-10-24T19:00:00+02:00[Europe/Paris]')
-ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
-
-# Conversion to/from common formats
->>> py311_release.format_rfc2822()  # also: parse_rfc2822()
+# Formatting & parsing common formats (ISO, RFC3339, RFC2822)
+>>> py311_release.format_rfc2822()
 "Mon, 24 Oct 2022 17:00:00 GMT"
->>> pycon23_start.format_rfc3339()  # also: parse_rfc3339()
-"2023-04-21 09:00:00-06:00"
 
-# Basic parsing (to be extended)
->>> OffsetDateTime.strptime("2022-10-24+02:00", "%Y-%m-%d%z")
-OffsetDateTime(2022-10-24 00:00:00+02:00)
-
-# If you must: you can convert to and from the standard lib
->>> pycon23_start.py_datetime().ctime()
-'Fri Apr 21 09:00:00 2023'
+# If you must: you can convert to/from the standard lib
+>>> py311_release.py_datetime()
+datetime.datetime(2022, 10, 24, 17, 0, tzinfo=datetime.timezone.utc)
 ```
 
 Read more in the [feature overview](https://whenever.readthedocs.io/en/latest/overview.html)
 or [API reference](https://whenever.readthedocs.io/en/latest/api.html).
-
-## Limitations
-
-- Supports the proleptic Gregorian calendar between 1 and 9999 AD
-- Timezone offsets are limited to whole seconds
-- No support for leap seconds
-
-## Why not...?
-
-### The standard library
-
-Given it's over 20 years old, Python's `datetime` library has actually held up remarkably well.
-When it was designed in 2002, timezones weren't standardized like they are now,
-and the influential java.time library was still a few years away.
-It's been able to adapt to changes, but it's showing its age.
-There are many pitfalls that are hard to avoid—even for experienced developers.
-
-Most notably:
-
-- Naive and aware datetimes are incompatible, but easy to mix up with disastrous results
-- Accounting for Daylight Saving Time (DST) is surprisingly hard and error-prone
-
-I wrote a more detailed [blog post](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/)
-going into more details—and how third party libraries don't (fully) solve these issues.
-
-### Arrow
-
-Arrow is probably the most historically popular 3rd party datetime library.
-It attempts to provide a more *friendly* API than the standard library,
-but doesn't address the core issues with the standard library:
-DST-handling is still easy to get wrong, and its decision to reduce the number
-of types to just one (``arrow.Arrow``) means that it's even harder
-for typecheckers to catch mistakes.
-
-### Pendulum
-
-Pendulum came in the scene in 2016, promising better DST-handling,
-as well as improved performance.
-However, it only fixes [*some* DST-related pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/),
-and its performance has significantly [degraded over time](https://github.com/sdispater/pendulum/issues/818).
-Additionally, maintenance seems inactive since the breaking 3.0 release in 2023: 
-Serious issues have remained answered and no PRs have been merged since then.
-
-### DateType
-
-DateType mostly fixes the issue of mixing naive and aware datetimes,
-and datetime/date inheritance during type-checking,
-but doesn't address the other pitfalls.
-The type-checker-only approach also means that it doesn't enforce correctness at runtime,
-and it requires developers to be knowledgeable about
-how the 'type checking reality' differs from the 'runtime reality'.
-
-### python-dateutil
-
-Dateutil attempts to solve some of the issues with the standard library.
-However, it only *adds* functionality to work around the issues,
-instead of *removing* the pitfalls themselves.
-This still puts the burden on the developer to know about the issues,
-and to use the correct functions to avoid them.
-Without removing the pitfalls, it's still very likely to make mistakes.
-
-### Maya
-
-It's unmaintained, but does have an interesting approach.
-By enforcing UTC, it bypasses a lot of issues with the standard library.
-To do so, it sacrifices the ability to represent offset, zoned, and local datetimes.
-So in order to perform any timezone-aware operations, you need to convert
-to the standard library ``datetime`` first, which reintroduces the issues.
 
 ## Roadmap
 
@@ -201,9 +170,16 @@ to the standard library ``datetime`` first, which reintroduces the issues.
   - ✅ Deltas
   - ✅ Date and time of day (separate from datetime)
   - ✅ Implement Rust extension for performance
-  - 🚧 Interval
+  - 🚧 Parsing leap seconds
+  - 🚧 Intervals
   - 🚧 Improved parsing and formatting
 - 🔒 **1.0**: API stability and backwards compatibility
+
+## Limitations
+
+- Supports the proleptic Gregorian calendar between 1 and 9999 AD
+- Timezone offsets are limited to whole seconds (consistent with IANA TZ DB)
+- No support for leap seconds (consistent with industry standards and other modern libraries)
 
 ## Versioning and compatibility policy
 

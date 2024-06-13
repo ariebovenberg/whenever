@@ -57,20 +57,21 @@ macro_rules! type_err(
     };
 );
 
-macro_rules! get_digit(
-    ($s:ident, $index:expr) => {
-        match $s[$index] {
-            c if c.is_ascii_digit() => c - b'0',
-            _ => return None,
-        }
-    };
-    ($s:ident, $index:expr, ..=$max:literal) => {
-        match $s[$index] {
-            c @ b'0'..=$max => c - b'0',
-            _ => return None,
-        }
+#[inline]
+pub(crate) fn parse_digit(s: &[u8], index: usize) -> Option<u8> {
+    match s[index] {
+        c if c.is_ascii_digit() => Some(c - b'0'),
+        _ => None,
     }
-);
+}
+
+#[inline]
+pub(crate) fn parse_digit_max(s: &[u8], index: usize, max: u8) -> Option<u8> {
+    match s[index] {
+        c if c >= b'0' && c <= max => Some(c - b'0'),
+        _ => None,
+    }
+}
 
 macro_rules! pack {
     [$x:expr, $($xs:expr),*] => {{
@@ -684,11 +685,11 @@ unsafe fn local_offset(
     defer_decref!(aware);
     let kwargs = PyDict_New().as_result()?;
     defer_decref!(kwargs);
-    if PyDict_SetItemString(kwargs, c_str!("tzinfo"), Py_None()) == -1 {
+    if PyDict_SetItemString(kwargs, c"tzinfo".as_ptr(), Py_None()) == -1 {
         return Err(PyErrOccurred());
     }
     let shifted_naive = PyObject_Call(
-        PyObject_GetAttrString(aware, c_str!("replace")).as_result()?,
+        PyObject_GetAttrString(aware, c"replace".as_ptr()).as_result()?,
         PyTuple_New(0),
         kwargs,
     )
@@ -710,10 +711,20 @@ impl OffsetResult {
     ) -> PyResult<OffsetResult> {
         let (offset0, shifted) = local_offset(date, time, 0, py_api)?;
         let (offset1, _) = local_offset(date, time, 1, py_api)?;
+
         Ok(if offset0 == offset1 {
             Self::Unambiguous(offset0)
         } else if shifted {
-            Self::Gap(offset1, offset0)
+            // Before Python 3.12, the fold of a local times was erroneously reversed
+            // in case of gaps. See cpython/issues/83861
+            #[cfg(Py_3_12)]
+            {
+                Self::Gap(offset1, offset0)
+            }
+            #[cfg(not(Py_3_12))]
+            {
+                Self::Gap(offset0, offset1)
+            }
         } else {
             Self::Fold(offset0, offset1)
         })
@@ -887,11 +898,30 @@ pub(crate) const fn hashmask(hash: Py_hash_t) -> Py_hash_t {
     }
 }
 
+// from stackoverflow.com/questions/5889238
+#[cfg(target_pointer_width = "64")]
+#[inline]
+pub(crate) const fn hash_combine(lhs: Py_hash_t, rhs: Py_hash_t) -> Py_hash_t {
+    lhs ^ (rhs
+        .wrapping_add(0x517cc1b727220a95)
+        .wrapping_add(lhs << 6)
+        .wrapping_add(lhs >> 2))
+}
+
+#[cfg(target_pointer_width = "32")]
+#[inline]
+pub(crate) const fn hash_combine(lhs: Py_hash_t, rhs: Py_hash_t) -> Py_hash_t {
+    lhs ^ (rhs
+        .wrapping_add(-0x61c88647)
+        .wrapping_add(lhs << 6)
+        .wrapping_add(lhs >> 2))
+}
+
 pub(crate) static S_PER_DAY: i32 = 86_400;
 pub(crate) static NS_PER_DAY: i128 = 86_400 * 1_000_000_000;
 
 #[allow(unused_imports)]
 pub(crate) use {
-    c_str, defer_decref, get_digit, getter, method, method_kwargs, method_vararg, pack, py_err,
-    slotmethod, steal, type_err, type_spec, unpack_one, value_err,
+    c_str, defer_decref, getter, method, method_kwargs, method_vararg, pack, py_err, slotmethod,
+    steal, type_err, type_spec, unpack_one, value_err,
 };

@@ -44,7 +44,7 @@ ci-lint: check-readme
 	black --check pysrc/ tests/
 	isort --check pysrc/ tests/
 	cargo fmt -- --check
-	python -m slotscheck pysrc/
+	env PYTHONPATH=pysrc/ slotscheck pysrc
 	cargo clippy -- -D warnings
 
 .PHONY: clean

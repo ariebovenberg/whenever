@@ -45,7 +45,7 @@ from .common import (
 class TestInit:
     def test_unambiguous(self):
         zone = "America/New_York"
-        d = ZonedDateTime(2020, 8, 15, 5, 12, 30, 450, tz=zone)
+        d = ZonedDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450, tz=zone)
 
         assert d.year == 2020
         assert d.month == 8
@@ -107,9 +107,17 @@ class TestInit:
             ZonedDateTime(2020, 8, 15, 12, tz=tz)
             == ZonedDateTime(2020, 8, 15, 12, 0, tz=tz)
             == ZonedDateTime(2020, 8, 15, 12, 0, 0, tz=tz)
-            == ZonedDateTime(2020, 8, 15, 12, 0, 0, 0, tz=tz)
+            == ZonedDateTime(2020, 8, 15, 12, 0, 0, nanosecond=0, tz=tz)
             == ZonedDateTime(
-                2020, 8, 15, 12, 0, 0, 0, tz=tz, disambiguate="raise"
+                2020,
+                8,
+                15,
+                12,
+                0,
+                0,
+                nanosecond=0,
+                tz=tz,
+                disambiguate="raise",
             )
         )
 
@@ -118,11 +126,24 @@ class TestInit:
             ZonedDateTime(2020, 8, 15, 12)  # type: ignore[call-arg]
 
     def test_out_of_range_due_to_offset(self):
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             ZonedDateTime(1, 1, 1, tz="Asia/Tokyo")
 
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             ZonedDateTime(9999, 12, 31, 23, tz="America/New_York")
+
+    def test_invalid(self):
+        with pytest.raises(ValueError):
+            ZonedDateTime(
+                2020,
+                8,
+                15,
+                12,
+                8,
+                30,
+                nanosecond=1_000_000_000,
+                tz="Europe/Amsterdam",
+            )
 
     def test_skipped(self):
         kwargs: dict[str, Any] = dict(
@@ -160,7 +181,9 @@ class TestInit:
 
 
 def test_offset():
-    d = ZonedDateTime(2020, 8, 15, 5, 12, 30, 450, tz="America/New_York")
+    d = ZonedDateTime(
+        2020, 8, 15, 5, 12, 30, nanosecond=450, tz="America/New_York"
+    )
     assert d.offset == hours(-4)
 
 
@@ -235,19 +258,21 @@ class TestWithDate:
 
     def test_out_of_range_due_to_offset(self):
         d = ZonedDateTime(2020, 1, 1, tz="Asia/Tokyo")
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.replace_date(Date(1, 1, 1))
 
         d2 = ZonedDateTime(2020, 1, 1, hour=23, tz="America/New_York")
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d2.replace_date(Date(9999, 12, 31))
 
 
 class TestWithTime:
     def test_unambiguous(self):
         d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
-        assert d.replace_time(Time(1, 2, 3, 4_000)).exact_eq(
-            ZonedDateTime(2020, 8, 15, 1, 2, 3, 4_000, tz="Europe/Amsterdam")
+        assert d.replace_time(Time(1, 2, 3, nanosecond=4_000)).exact_eq(
+            ZonedDateTime(
+                2020, 8, 15, 1, 2, 3, nanosecond=4_000, tz="Europe/Amsterdam"
+            )
         )
 
     def test_fold(self):
@@ -298,11 +323,11 @@ class TestWithTime:
 
     def test_out_of_range_due_to_offset(self):
         d = ZonedDateTime(1, 1, 1, hour=23, tz="Asia/Tokyo")
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.replace_time(Time(1))
 
         d2 = ZonedDateTime(9999, 12, 31, hour=2, tz="America/New_York")
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d2.replace_time(Time(23))
 
 
@@ -313,7 +338,14 @@ class TestFormatCommonIso:
         [
             (
                 ZonedDateTime(
-                    2020, 8, 15, 23, 12, 9, 987_654_321, tz="Europe/Amsterdam"
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    nanosecond=987_654_321,
+                    tz="Europe/Amsterdam",
                 ),
                 "2020-08-15T23:12:09.987654321+02:00[Europe/Amsterdam]",
             ),
@@ -593,23 +625,43 @@ class TestParseCommonIso:
                 "2020-08-15T12:08:30+02:00[Europe/Amsterdam]",
                 ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
             ),
+            (
+                "2020-08-15T12:08:30Z[Iceland]",
+                ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Iceland"),
+            ),
             # fractions
             (
                 "2020-08-15T12:08:30.0232+02:00[Europe/Amsterdam]",
                 ZonedDateTime(
-                    2020, 8, 15, 12, 8, 30, 23_200_000, tz="Europe/Amsterdam"
+                    2020,
+                    8,
+                    15,
+                    12,
+                    8,
+                    30,
+                    nanosecond=23_200_000,
+                    tz="Europe/Amsterdam",
                 ),
             ),
             # nano precision
             (
                 "2020-08-15T12:08:30.000000001+02:00[Europe/Berlin]",
-                ZonedDateTime(2020, 8, 15, 12, 8, 30, 1, tz="Europe/Berlin"),
+                ZonedDateTime(
+                    2020, 8, 15, 12, 8, 30, nanosecond=1, tz="Europe/Berlin"
+                ),
             ),
             # second-level offset
             (
                 "1900-01-01T23:34:39.01-00:25:21[Europe/Dublin]",
                 ZonedDateTime(
-                    1900, 1, 1, 23, 34, 39, 10_000_000, tz="Europe/Dublin"
+                    1900,
+                    1,
+                    1,
+                    23,
+                    34,
+                    39,
+                    nanosecond=10_000_000,
+                    tz="Europe/Dublin",
                 ),
             ),
             (
@@ -676,6 +728,7 @@ class TestParseCommonIso:
             "2023-10-29T02:15:30.0000000001+02:00[Europe/Amsterdam]",  # overly precise fraction
             "2023-10-29T02:15:30+02:00:00.00[Europe/Amsterdam]",  # subsecond offset
             "2023-10-29T02:15:30+0𝟙:00[Europe/Amsterdam]",
+            "2020-08-15T12:08:30.000000001+29:00[Europe/Berlin]",  # out of range offset
         ],
     )
     def test_invalid(self, s):
@@ -696,7 +749,7 @@ class TestParseCommonIso:
         ],
     )
     def test_out_of_range(self, s):
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             ZonedDateTime.parse_common_iso(s)
 
     def test_offset_timezone_mismatch(self):
@@ -726,7 +779,7 @@ class TestTimestamp:
         assert ZonedDateTime(1970, 1, 1, tz="Iceland").timestamp() == 0
         assert (
             ZonedDateTime(
-                2020, 8, 15, 8, 8, 30, 45_123, tz="America/New_York"
+                2020, 8, 15, 8, 8, 30, nanosecond=45_123, tz="America/New_York"
             ).timestamp()
             == 1_597_493_310
         )
@@ -750,7 +803,14 @@ class TestTimestamp:
         assert ZonedDateTime(1970, 1, 1, tz="Iceland").timestamp_millis() == 0
         assert (
             ZonedDateTime(
-                2020, 8, 15, 8, 8, 30, 45_923_789, tz="America/New_York"
+                2020,
+                8,
+                15,
+                8,
+                8,
+                30,
+                nanosecond=45_923_789,
+                tz="America/New_York",
             ).timestamp_millis()
             == 1_597_493_310_045
         )
@@ -774,7 +834,14 @@ class TestTimestamp:
         assert ZonedDateTime(1970, 1, 1, tz="Iceland").timestamp_nanos() == 0
         assert (
             ZonedDateTime(
-                2020, 8, 15, 8, 8, 30, 45_123_789, tz="America/New_York"
+                2020,
+                8,
+                15,
+                8,
+                8,
+                30,
+                nanosecond=45_123_789,
+                tz="America/New_York",
             ).timestamp_nanos()
             == 1_597_493_310_045_123_789
         )
@@ -841,7 +908,14 @@ class TestFromTimestamp:
             1_597_493_310_123_456_789, tz="America/Nuuk"
         ).exact_eq(
             ZonedDateTime(
-                2020, 8, 15, 10, 8, 30, 123_456_789, tz="America/Nuuk"
+                2020,
+                8,
+                15,
+                10,
+                8,
+                30,
+                nanosecond=123_456_789,
+                tz="America/Nuuk",
             )
         )
 
@@ -850,13 +924,22 @@ class TestFromTimestamp:
             1_597_493_310_123, tz="America/Nuuk"
         ).exact_eq(
             ZonedDateTime(
-                2020, 8, 15, 10, 8, 30, 123_000_000, tz="America/Nuuk"
+                2020,
+                8,
+                15,
+                10,
+                8,
+                30,
+                nanosecond=123_000_000,
+                tz="America/Nuuk",
             )
         )
 
 
 def test_repr():
-    d = ZonedDateTime(2020, 8, 15, 23, 12, 9, 9_876_543, tz="Australia/Darwin")
+    d = ZonedDateTime(
+        2020, 8, 15, 23, 12, 9, nanosecond=9_876_543, tz="Australia/Darwin"
+    )
     assert (
         repr(d) == "ZonedDateTime(2020-08-15 23:12:09.009876543"
         "+09:30[Australia/Darwin])"
@@ -1035,7 +1118,7 @@ class TestComparison:
 
 def test_py_datetime():
     d = ZonedDateTime(
-        2020, 8, 15, 23, 12, 9, 987_654_999, tz="Europe/Amsterdam"
+        2020, 8, 15, 23, 12, 9, nanosecond=987_654_999, tz="Europe/Amsterdam"
     )
     assert d.py_datetime() == py_datetime(
         2020, 8, 15, 23, 12, 9, 987_654, tzinfo=ZoneInfo("Europe/Amsterdam")
@@ -1060,7 +1143,9 @@ def test_from_py_datetime():
         2020, 8, 15, 23, 12, 9, 987_654, tzinfo=ZoneInfo("Europe/Paris")
     )
     assert ZonedDateTime.from_py_datetime(d).exact_eq(
-        ZonedDateTime(2020, 8, 15, 23, 12, 9, 987_654_000, tz="Europe/Paris")
+        ZonedDateTime(
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654_000, tz="Europe/Paris"
+        )
     )
 
     # subclass
@@ -1072,7 +1157,9 @@ def test_from_py_datetime():
             2020, 8, 15, 23, 12, 9, 987_654, tzinfo=ZoneInfo("Europe/Paris")
         )
     ).exact_eq(
-        ZonedDateTime(2020, 8, 15, 23, 12, 9, 987_654_000, tz="Europe/Paris")
+        ZonedDateTime(
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654_000, tz="Europe/Paris"
+        )
     )
 
     # wrong tzinfo class
@@ -1156,7 +1243,7 @@ def test_from_py_datetime():
     )
 
     # out-of-range
-    with pytest.raises((ValueError, OverflowError), match="range"):
+    with pytest.raises((ValueError, OverflowError), match="range|year"):
         ZonedDateTime.from_py_datetime(
             py_datetime(1, 1, 1, tzinfo=ZoneInfo("Asia/Kolkata"))
         )
@@ -1229,43 +1316,89 @@ class TestExactEquality:
 class TestReplace:
     def test_basics(self):
         d = ZonedDateTime(
-            2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
         )
         assert d.replace(year=2021).exact_eq(
             ZonedDateTime(
-                2021, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+                2021,
+                8,
+                15,
+                23,
+                12,
+                9,
+                nanosecond=987_654,
+                tz="Europe/Amsterdam",
             )
         )
         assert d.replace(month=9).exact_eq(
             ZonedDateTime(
-                2020, 9, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+                2020,
+                9,
+                15,
+                23,
+                12,
+                9,
+                nanosecond=987_654,
+                tz="Europe/Amsterdam",
             )
         )
         assert d.replace(day=16).exact_eq(
             ZonedDateTime(
-                2020, 8, 16, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+                2020,
+                8,
+                16,
+                23,
+                12,
+                9,
+                nanosecond=987_654,
+                tz="Europe/Amsterdam",
             )
         )
         assert d.replace(hour=0).exact_eq(
             ZonedDateTime(
-                2020, 8, 15, 0, 12, 9, 987_654, tz="Europe/Amsterdam"
+                2020,
+                8,
+                15,
+                0,
+                12,
+                9,
+                nanosecond=987_654,
+                tz="Europe/Amsterdam",
             )
         )
         assert d.replace(minute=0).exact_eq(
             ZonedDateTime(
-                2020, 8, 15, 23, 0, 9, 987_654, tz="Europe/Amsterdam"
+                2020,
+                8,
+                15,
+                23,
+                0,
+                9,
+                nanosecond=987_654,
+                tz="Europe/Amsterdam",
             )
         )
         assert d.replace(second=0).exact_eq(
             ZonedDateTime(
-                2020, 8, 15, 23, 12, 0, 987_654, tz="Europe/Amsterdam"
+                2020,
+                8,
+                15,
+                23,
+                12,
+                0,
+                nanosecond=987_654,
+                tz="Europe/Amsterdam",
             )
         )
         assert d.replace(nanosecond=0).exact_eq(
-            ZonedDateTime(2020, 8, 15, 23, 12, 9, 0, tz="Europe/Amsterdam")
+            ZonedDateTime(
+                2020, 8, 15, 23, 12, 9, nanosecond=0, tz="Europe/Amsterdam"
+            )
         )
         assert d.replace(tz="Iceland").exact_eq(
-            ZonedDateTime(2020, 8, 15, 23, 12, 9, 987_654, tz="Iceland")
+            ZonedDateTime(
+                2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Iceland"
+            )
         )
 
     def test_invalid(self):
@@ -1371,10 +1504,10 @@ class TestReplace:
     def test_out_of_range(self):
         d = ZonedDateTime(1, 1, 1, tz="America/New_York")
 
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.replace(tz="Europe/Amsterdam")
 
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.replace(year=9999, month=12, day=31, hour=23)
 
 
@@ -1382,7 +1515,7 @@ class TestAddMethod:
 
     def test_zero(self):
         d = ZonedDateTime(
-            2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
         )
         assert d.add() == d
 
@@ -1432,11 +1565,12 @@ class TestAddMethod:
         )
 
     def test_exceptions(self):
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises(ValueError, match="range|year"):
             ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam").add(
                 hours=3000 * 24 * 366 * 8000
             )
 
+        with pytest.raises(ValueError, match="range|year"):
             ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam").add(
                 hours=-3000 * 24 * 366 * 3000
             )
@@ -1446,7 +1580,7 @@ class TestSubtractMethod:
 
     def test_zero(self):
         d = ZonedDateTime(
-            2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
         )
         assert d.subtract() == d
 
@@ -1492,7 +1626,7 @@ class TestSubtractMethod:
         )
 
     def test_exceptions(self):
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises(ValueError, match="range|year"):
             ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam").subtract(
                 hours=3000 * 24 * 366 * 3000
             )
@@ -1502,12 +1636,15 @@ class TestSubtractMethod:
             )
 
 
-class TestAddOperatorWithTimeUnits:
+class TestAddWithTimeUnits:
     def test_zero(self):
         d = ZonedDateTime(
-            2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
         )
         assert (d + hours(0)).exact_eq(d)
+
+        # the same with the method
+        assert d.add(hours=0).exact_eq(d)
 
     def test_ambiguous_plus_zero(self):
         d = ZonedDateTime(
@@ -1523,6 +1660,14 @@ class TestAddOperatorWithTimeUnits:
         assert (d + hours(0)).exact_eq(d)
         assert (d.replace(disambiguate="later") + hours(0)).exact_eq(
             d.replace(disambiguate="later")
+        )
+
+        # the same with the method
+        assert d.add(hours=0).exact_eq(d)
+        assert (
+            d.replace(disambiguate="later")
+            .add(hours=0)
+            .exact_eq(d.replace(disambiguate="later"))
         )
 
     def test_accounts_for_dst(self):
@@ -1543,6 +1688,14 @@ class TestAddOperatorWithTimeUnits:
             ZonedDateTime(2023, 10, 30, 2, 15, 30, tz="Europe/Amsterdam")
         )
 
+        # the same with the method
+        assert d.add(hours=24).exact_eq(d + hours(24))
+        assert (
+            d.replace(disambiguate="later")
+            .add(hours=24)
+            .exact_eq(d.replace(disambiguate="later") + hours(24))
+        )
+
     def test_not_implemented(self):
         d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
         with pytest.raises(TypeError, match="unsupported operand type"):
@@ -1555,39 +1708,49 @@ class TestAddOperatorWithTimeUnits:
             Date(2020, 1, 1) + d  # type: ignore[operator]
 
     def test_exceptions(self):
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises(ValueError, match="range|year"):
             ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam") + hours(
                 3000 * 24 * 366 * 8000
             )
 
+        with pytest.raises(ValueError, match="range|year"):
             ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam") + hours(
                 -3000 * 24 * 366 * 3000
             )
 
 
-class TestAddOperatorWithDateUnits:
+class TestAddWithDateAndTimeUnits:
 
     def test_zero(self):
         d = ZonedDateTime(
-            2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
         )
-        assert d + days(0) == d
+        assert (d + days(0)).exact_eq(d)
+
+        # the same with the method
+        assert d.add(days=0).exact_eq(d)
 
     def test_simple_date(self):
         d = ZonedDateTime(
-            2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
         )
-        assert d + days(1) == d.replace(day=16)
-        assert d + years(1) + weeks(2) + days(-2) == d.replace(
-            year=2021, day=27
+        assert (d + days(1)).exact_eq(d.replace(day=16))
+        assert (d + years(1) + weeks(2) + days(-2)).exact_eq(
+            d.replace(year=2021, day=27)
+        )
+
+        # the same with the method
+        assert d.add(days=1).exact_eq(d + days(1))
+        assert d.add(years=1, weeks=2, days=-2).exact_eq(
+            d + years(1) + weeks(2) + days(-2)
         )
 
     def test_out_of_range(self):
         d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
-        with pytest.raises(ValueError, match="out of range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d + years(9000)
 
-        with pytest.raises(ValueError, match="out of range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d + years(-3000)
 
     def test_ambiguity(self):
@@ -1601,42 +1764,58 @@ class TestAddOperatorWithDateUnits:
             tz="Europe/Amsterdam",
             disambiguate="later",
         )
-        assert d + days(0) == d
-        assert d + (days(7) - weeks(1)) == d
-        assert d + days(1) == d.replace(day=30)
-        assert d + days(6) == d.replace(month=11, day=4)
-        assert d + hours(-1) == d.replace(disambiguate="earlier")
-        assert d + hours(1) == d.replace(hour=3)
-        assert d.replace(disambiguate="earlier") + hours(1) == d
+        assert (d + days(0)).exact_eq(d)
+        assert (d + (days(7) - weeks(1))).exact_eq(d)
+        assert (d + days(1)).exact_eq(d.replace(day=30))
+        assert (d + days(6)).exact_eq(d.replace(month=11, day=4))
+        assert (d + hours(-1)).exact_eq(d.replace(disambiguate="earlier"))
+        assert (d + hours(1)).exact_eq(d.replace(hour=3))
+        assert (d.replace(disambiguate="earlier") + hours(1)).exact_eq(d)
 
         # transition to another fold
-        assert d + years(1) + days(-2) == d.replace(
-            year=2024, day=27, disambiguate="earlier"
+        assert (d + years(1) + days(-2)).exact_eq(
+            d.replace(year=2024, day=27, disambiguate="earlier")
         )
         # transition to a gap
-        assert d + months(5) + days(2) == d.replace(
-            year=2024, month=3, day=31, disambiguate="later"
+        assert (d + months(5) + days(2)).exact_eq(
+            d.replace(year=2024, month=3, day=31, disambiguate="later")
         )
         # transition over a gap
-        assert d + months(5) + days(2) + hours(2) == d.replace(
-            year=2024, month=3, day=31, hour=5
+        assert (d + months(5) + days(2) + hours(2)).exact_eq(
+            d.replace(year=2024, month=3, day=31, hour=5)
         )
-        assert d + months(5) + days(2) + hours(-1) == d.replace(
-            year=2024, month=3, day=31, disambiguate="earlier"
+        assert (d + months(5) + days(2) + hours(-1)).exact_eq(
+            d.replace(year=2024, month=3, day=31, disambiguate="earlier")
+        )
+        # same result if combining durations first
+        assert (d + (months(5) + days(2) + hours(2))).exact_eq(
+            d + (months(5) + days(2) + hours(2))
         )
 
-        # same result if combining durations first
-        assert d + (months(5) + days(2) + hours(2)) == d + (
-            months(5) + days(2) + hours(2)
+        # same with the method
+        assert d.add(years=1, days=-2, disambiguate="compatible").exact_eq(
+            d + years(1) + days(-2)
         )
+        assert d.add(months=5, days=2, disambiguate="compatible").exact_eq(
+            d + months(5) + days(2)
+        )
+        assert d.add(
+            months=5, days=2, hours=2, disambiguate="compatible"
+        ).exact_eq(d + months(5) + days(2) + hours(2))
+        assert d.add(
+            months=5, days=2, hours=-1, disambiguate="compatible"
+        ).exact_eq(d + months(5) + days(2) + hours(-1))
 
 
 class TestSubtractTimeUnits:
     def test_zero(self):
         d = ZonedDateTime(
-            2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
         )
         assert (d - hours(0)).exact_eq(d)
+
+        # the same with the method
+        assert d.subtract(hours=0).exact_eq(d)
 
     def test_ambiguous_minus_zero(self):
         d = ZonedDateTime(
@@ -1652,6 +1831,14 @@ class TestSubtractTimeUnits:
         assert (d - hours(0)).exact_eq(d)
         assert (d.replace(disambiguate="later") - hours(0)).exact_eq(
             d.replace(disambiguate="later")
+        )
+
+        # the same with the method
+        assert d.subtract(hours=0).exact_eq(d)
+        assert (
+            d.replace(disambiguate="later")
+            .subtract(hours=0)
+            .exact_eq(d.replace(disambiguate="later"))
         )
 
     def test_accounts_for_dst(self):
@@ -1672,6 +1859,14 @@ class TestSubtractTimeUnits:
             ZonedDateTime(2023, 10, 28, 3, 15, 30, tz="Europe/Amsterdam")
         )
 
+        # the same with the method
+        assert d.subtract(hours=24).exact_eq(d - hours(24))
+        assert (
+            d.replace(disambiguate="later")
+            .subtract(hours=24)
+            .exact_eq(d.replace(disambiguate="later") - hours(24))
+        )
+
     def test_subtract_not_implemented(self):
         d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
         with pytest.raises(TypeError, match="unsupported operand type"):
@@ -1681,26 +1876,40 @@ class TestSubtractTimeUnits:
             42 - d  # type: ignore[operator]
 
     def test_exceptions(self):
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises(ValueError, match="range|year"):
             ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam") - hours(
                 3000 * 24 * 366 * 9999
+            )
+
+        with pytest.raises(ValueError, match="range|year"):
+            ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam") - hours(
+                -8000 * 24 * 366 * 9999
             )
 
 
 class TestSubtractDateUnits:
     def test_zero(self):
         d = ZonedDateTime(
-            2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
         )
-        assert d - days(0) == d
+        assert (d - days(0)).exact_eq(d)
+
+        # the same with the method
+        assert d.subtract(days=0).exact_eq(d)
 
     def test_simple_date(self):
         d = ZonedDateTime(
-            2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam"
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
         )
-        assert d - days(1) == d.replace(day=14)
-        assert d - years(1) - weeks(2) - days(-2) == d.replace(
-            year=2019, day=3
+        assert (d - days(1)).exact_eq(d.replace(day=14))
+        assert (d - years(1) - weeks(2) - days(-2)).exact_eq(
+            d.replace(year=2019, day=3)
+        )
+
+        # the same with the method
+        assert d.subtract(days=1).exact_eq(d - days(1))
+        assert d.subtract(years=1, weeks=2, days=-2).exact_eq(
+            d - years(1) - weeks(2) - days(-2)
         )
 
     def test_ambiguity(self):
@@ -1714,33 +1923,50 @@ class TestSubtractDateUnits:
             tz="Europe/Amsterdam",
             disambiguate="later",
         )
-        assert d - days(0) == d
-        assert d - (days(7) + weeks(-1)) == d
-        assert d - days(1) == d.replace(day=28)
-        assert d - days(6) == d.replace(month=10, day=23)
-        assert d - hours(1) == d.replace(disambiguate="earlier")
-        assert d - hours(-1) == d.replace(hour=3)
-        assert d.replace(disambiguate="earlier") - hours(-1) == d
+        assert (d - days(0)).exact_eq(d)
+        assert (d - (days(7) + weeks(-1))).exact_eq(d)
+        assert (d - days(1)).exact_eq(d.replace(day=28))
+        assert (d - days(6)).exact_eq(d.replace(month=10, day=23))
+        assert (d - hours(1)).exact_eq(d.replace(disambiguate="earlier"))
+        assert (d - hours(-1)).exact_eq(d.replace(hour=3))
+        assert (d.replace(disambiguate="earlier") - hours(-1)).exact_eq(d)
 
         # transition to another fold
-        assert d - years(1) - days(-1) == d.replace(
-            year=2022, day=30, disambiguate="earlier"
+        assert (d - years(1) - days(-1)).exact_eq(
+            d.replace(year=2022, day=30, disambiguate="earlier")
         )
         # transition to a gap
-        assert d - months(7) - days(3) == d.replace(
-            month=3, day=26, disambiguate="later"
+        assert (d - months(7) - days(3)).exact_eq(
+            d.replace(month=3, day=26, disambiguate="later")
         )
-        # # transition over a gap
-        assert d - months(7) - days(3) - hours(1) == d.replace(
-            month=3, day=26, hour=1
+        # transition over a gap
+        assert (d - months(7) - days(3) - hours(1)).exact_eq(
+            d.replace(month=3, day=26, hour=1)
         )
-        assert d - months(7) - days(3) - hours(-1) == d.replace(
-            month=3, day=26, hour=4
+        assert (d - months(7) - days(3) - hours(-1)).exact_eq(
+            d.replace(month=3, day=26, hour=4)
         )
 
+        # same with the method
+        assert d.subtract(
+            years=1, days=-1, disambiguate="compatible"
+        ).exact_eq(d - years(1) - days(-1))
+        assert d.subtract(
+            months=7, days=3, disambiguate="compatible"
+        ).exact_eq(d - months(7) - days(3))
+        assert d.subtract(
+            months=7, days=3, hours=1, disambiguate="compatible"
+        ).exact_eq(d - months(7) - days(3) - hours(1))
+        assert d.subtract(
+            months=7, days=3, hours=-1, disambiguate="compatible"
+        ).exact_eq(d - months(7) - days(3) - hours(-1))
+
     def test_exceptions(self):
-        with pytest.raises(ValueError, match="range"):
-            ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam") - years(9000)
+        with pytest.raises(ValueError, match="range|year"):
+            ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam") - years(3000)
+
+        with pytest.raises(ValueError, match="range|year"):
+            ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam") - years(-8000)
 
 
 class TestSubtractDateTime:
@@ -1828,7 +2054,9 @@ def test_old_pickle_data_remains_unpicklable():
 
 
 def test_copy():
-    d = ZonedDateTime(2020, 8, 15, 23, 12, 9, 987_654, tz="Europe/Amsterdam")
+    d = ZonedDateTime(
+        2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
+    )
     assert copy(d) is d
     assert deepcopy(d) is d
 

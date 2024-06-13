@@ -201,7 +201,7 @@ impl Display for ZonedDateTime {
 }
 
 unsafe fn zoneinfo_key(zoneinfo: *mut PyObject) -> String {
-    let key_obj = PyObject_GetAttrString(zoneinfo, c_str!("key"));
+    let key_obj = PyObject_GetAttrString(zoneinfo, c"key".as_ptr());
     defer_decref!(key_obj);
     match key_obj.to_str() {
         Ok(Some(s)) => s,
@@ -233,17 +233,17 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     if PyArg_ParseTupleAndKeywords(
         args,
         kwargs,
-        c_str!("lll|llllU$U:ZonedDateTime"),
+        c"lll|lll$lUU:ZonedDateTime".as_ptr(),
         vec![
-            c_str!("year") as *mut c_char,
-            c_str!("month") as *mut c_char,
-            c_str!("day") as *mut c_char,
-            c_str!("hour") as *mut c_char,
-            c_str!("minute") as *mut c_char,
-            c_str!("second") as *mut c_char,
-            c_str!("nanosecond") as *mut c_char,
-            c_str!("tz") as *mut c_char,
-            c_str!("disambiguate") as *mut c_char,
+            c"year".as_ptr() as *mut c_char,
+            c"month".as_ptr() as *mut c_char,
+            c"day".as_ptr() as *mut c_char,
+            c"hour".as_ptr() as *mut c_char,
+            c"minute".as_ptr() as *mut c_char,
+            c"second".as_ptr() as *mut c_char,
+            c"nanosecond".as_ptr() as *mut c_char,
+            c"tz".as_ptr() as *mut c_char,
+            c"disambiguate".as_ptr() as *mut c_char,
             NULL(),
         ]
         .as_mut_ptr(),
@@ -348,8 +348,8 @@ unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> 
     .to_py()
 }
 
-unsafe fn __hash__(slf: *mut PyObject) -> Py_hash_t {
-    ZonedDateTime::extract(slf).to_instant().pyhash()
+unsafe extern "C" fn __hash__(slf: *mut PyObject) -> Py_hash_t {
+    hashmask(ZonedDateTime::extract(slf).to_instant().pyhash())
 }
 
 #[inline]
@@ -798,7 +798,7 @@ unsafe fn replace(
     let mut hour = time.hour.into();
     let mut minute = time.minute.into();
     let mut second = time.second.into();
-    let mut nanos = time.nanos.into();
+    let mut nanos = time.nanos as _;
     let mut dis = Disambiguate::Raise;
 
     for &(name, value) in kwargs {
@@ -1010,7 +1010,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         steal!(PyTuple_Pack(
             2,
             steal!(pack![year, month, day, hour, minute, second, nanos, offset_secs].to_py()?),
-            steal!(PyObject_GetAttrString(zoneinfo, c_str!("key")).as_result()?),
+            steal!(PyObject_GetAttrString(zoneinfo, c"key".as_ptr()).as_result()?),
         )
         .as_result()?),
     )
@@ -1129,6 +1129,10 @@ unsafe fn is_ambiguous(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 // parse ±HH:MM[:SS] (consuming as much as possible of the input)
 fn parse_offset_partial(s: &mut &[u8]) -> Option<i32> {
     debug_assert!(s.len() >= 6);
+    if s[0] == b'Z' {
+        *s = &s[1..];
+        return Some(0);
+    }
     if s[3] != b':' {
         return None;
     }
@@ -1141,14 +1145,15 @@ fn parse_offset_partial(s: &mut &[u8]) -> Option<i32> {
     // the HH:MM part
     // FUTURE: technically, this eliminates 2x:00 offsets. There
     // are no such offsets in the IANA database, but may be possible...
-    let secs = (get_digit!(s, 1, ..=b'1') * 10 + get_digit!(s, 2)) as i32 * 3600
-        + (get_digit!(s, 4, ..=b'5') * 10 + get_digit!(s, 5)) as i32 * 60;
+    let secs = (parse_digit_max(s, 1, b'1')? * 10 + parse_digit(s, 2)?) as i32 * 3600
+        + (parse_digit_max(s, 4, b'5')? * 10 + parse_digit(s, 5)?) as i32 * 60;
     // the optional seconds part
     match s.get(6) {
         Some(b':') => {
             if s.len() > 8 {
-                let result =
-                    Some(secs + get_digit!(s, 7, ..=b'5') as i32 * 10 + get_digit!(s, 8) as i32);
+                let result = Some(
+                    secs + parse_digit_max(s, 7, b'5')? as i32 * 10 + parse_digit(s, 8)? as i32,
+                );
                 *s = &s[9..];
                 result
             } else {
@@ -1401,7 +1406,7 @@ unsafe fn get_nanos(slf: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn get_tz(slf: *mut PyObject) -> PyReturn {
-    PyObject_GetAttrString(ZonedDateTime::extract(slf).zoneinfo, c_str!("key")).as_result()
+    PyObject_GetAttrString(ZonedDateTime::extract(slf).zoneinfo, c"key".as_ptr()).as_result()
 }
 
 unsafe fn get_offset(slf: *mut PyObject) -> PyReturn {

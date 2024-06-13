@@ -90,12 +90,17 @@ class TestInit:
             2020, 8, 15, 5, 12, 30, nanosecond=0, offset=5
         )
 
-    def test_invalid_date(self):
+    def test_invalid(self):
         with pytest.raises(ValueError, match="date|day"):
             OffsetDateTime(2020, 2, 30, 5, 12, offset=5)
 
         with pytest.raises(ValueError, match="time|minute"):
             OffsetDateTime(2020, 2, 28, 5, 64, offset=5)
+
+        with pytest.raises(ValueError, match="nano|time"):
+            OffsetDateTime(
+                2020, 2, 28, 5, 12, nanosecond=1_000_000_000, offset=5
+            )
 
     def test_bounds(self):
         with pytest.raises(ValueError, match="range"):
@@ -688,6 +693,9 @@ def test_replace():
     with pytest.raises(ValueError, match="range"):
         d.replace(year=1, month=1, day=1, hour=4, offset=5)
 
+    with pytest.raises(TypeError, match="nano"):
+        d.replace(nanosecond="0")  # type: ignore[arg-type]
+
 
 def test_add_not_allowed():
     d = OffsetDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654, offset=5)
@@ -810,7 +818,14 @@ def test_to_tz():
     )
     assert d.to_tz("America/New_York").exact_eq(
         ZonedDateTime(
-            2020, 8, 15, 13, 12, 9, 987_654_321, tz="America/New_York"
+            2020,
+            8,
+            15,
+            13,
+            12,
+            9,
+            nanosecond=987_654_321,
+            tz="America/New_York",
         )
     )
     with pytest.raises(ZoneInfoNotFoundError):

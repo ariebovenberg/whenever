@@ -37,7 +37,7 @@ BIG_INT = 1 << 64 + 1  # a big int that may cause an overflow error
 
 class TestInit:
     def test_basic(self):
-        d = UTCDateTime(2020, 8, 15, 5, 12, 30, 450)
+        d = UTCDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)
         assert d.year == 2020
         assert d.month == 8
         assert d.day == 15
@@ -47,7 +47,9 @@ class TestInit:
         assert d.nanosecond == 450
 
     def test_defaults(self):
-        assert UTCDateTime(2020, 8, 15) == UTCDateTime(2020, 8, 15, 0, 0, 0, 0)
+        assert UTCDateTime(2020, 8, 15) == UTCDateTime(
+            2020, 8, 15, 0, 0, 0, nanosecond=0
+        )
 
     @pytest.mark.parametrize(
         "kwargs, keyword",
@@ -115,11 +117,11 @@ class TestInit:
         integers(),
         integers(),
     )
-    def test_fuzzing(
-        self, year, month, day, hour, minute, second, microsecond
-    ):
+    def test_fuzzing(self, year, month, day, hour, minute, second, nanos):
         try:
-            UTCDateTime(year, month, day, hour, minute, second, microsecond)
+            UTCDateTime(
+                year, month, day, hour, minute, second, nanosecond=nanos
+            )
         except (ValueError, OverflowError):
             pass
 
@@ -148,6 +150,7 @@ class TestEquality:
         assert d == same
         assert not d != same
         assert hash(d) == hash(same)
+        assert d.exact_eq(same)
 
     def test_different(self):
         d = UTCDateTime(2020, 8, 15)
@@ -221,7 +224,7 @@ class TestTimestamp:
     def test_default_seconds(self):
         assert UTCDateTime(1970, 1, 1).timestamp() == 0
         assert (
-            UTCDateTime(2020, 8, 15, 12, 8, 30, 45_123).timestamp()
+            UTCDateTime(2020, 8, 15, 12, 8, 30, nanosecond=45_123).timestamp()
             == 1_597_493_310
         )
         assert UTCDateTime.MAX.timestamp() == 253402300799
@@ -241,7 +244,9 @@ class TestTimestamp:
     def test_nanos(self):
         assert UTCDateTime(1970, 1, 1).timestamp_nanos() == 0
         assert (
-            UTCDateTime(2020, 8, 15, 12, 8, 30, 45_123_789).timestamp_nanos()
+            UTCDateTime(
+                2020, 8, 15, 12, 8, 30, nanosecond=45_123_789
+            ).timestamp_nanos()
             == 1_597_493_310_045_123_789
         )
         assert UTCDateTime.MAX.timestamp_nanos() == 253402300799_999_999_999
@@ -468,7 +473,7 @@ def test_now():
 def test_min_max():
     assert UTCDateTime.MIN == UTCDateTime(1, 1, 1)
     assert UTCDateTime.MAX == UTCDateTime(
-        9999, 12, 31, 23, 59, 59, 999_999_999
+        9999, 12, 31, 23, 59, 59, nanosecond=999_999_999
     )
 
 
@@ -523,8 +528,8 @@ def test_replace_date():
 
 def test_replace_time():
     d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-    assert d.replace_time(Time(1, 2, 3, 4)) == UTCDateTime(
-        2020, 8, 15, 1, 2, 3, 4
+    assert d.replace_time(Time(1, 2, 3, nanosecond=4)) == UTCDateTime(
+        2020, 8, 15, 1, 2, 3, nanosecond=4
     )
 
 
@@ -876,7 +881,7 @@ class TestParseRFC2822:
 
 def test_format_rfc3339():
     assert (
-        UTCDateTime(2020, 8, 15, 23, 12, 9, 450).format_rfc3339()
+        UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=450).format_rfc3339()
         == "2020-08-15 23:12:09.00000045Z"
     )
 
@@ -892,7 +897,7 @@ class TestParseRFC3339:
             ),
             (
                 "2020-08-15T23:12:09.000002001Z",
-                UTCDateTime(2020, 8, 15, 23, 12, 9, 2_001),
+                UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=2_001),
             ),
             (
                 "2020-08-15t23:12:09z",
@@ -906,10 +911,9 @@ class TestParseRFC3339:
                 "2020-08-15_23:12:09+00:00",
                 UTCDateTime(2020, 8, 15, 23, 12, 9),
             ),
-            # subsecond precision that isn't supported by older fromisoformat()
             (
                 "2020-08-15T23:12:09.34Z",
-                UTCDateTime(2020, 8, 15, 23, 12, 9, 340_000_000),
+                UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=340_000_000),
             ),
         ],
     )
@@ -949,7 +953,7 @@ class TestParseRFC3339:
             "2020-08-15T23:12:09.000987654Z",
         ),
         (
-            UTCDateTime(2020, 8, 15, 23, 12, 9, 980_000_000),
+            UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=980_000_000),
             "2020-08-15T23:12:09.98Z",
         ),
         (UTCDateTime(2020, 8, 15), "2020-08-15T00:00:00Z"),
@@ -968,7 +972,7 @@ class TestParseCommonIso:
         [
             (
                 "2020-08-15T23:12:09.000450Z",
-                UTCDateTime(2020, 8, 15, 23, 12, 9, 450_000),
+                UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=450_000),
             ),
             (
                 "2020-08-15T23:12:09+00:00",
@@ -980,7 +984,7 @@ class TestParseCommonIso:
             ),
             (
                 "2020-08-15T23:12:09.34Z",
-                UTCDateTime(2020, 8, 15, 23, 12, 9, 340_000_000),
+                UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=340_000_000),
             ),
             # full precision
             (
@@ -999,12 +1003,12 @@ class TestParseCommonIso:
             # millisecond precision
             (
                 "2020-08-15T23:12:09.344Z",
-                UTCDateTime(2020, 8, 15, 23, 12, 9, 344_000_000),
+                UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=344_000_000),
             ),
             # single fraction
             (
                 "2020-08-15T23:12:09.3Z",
-                UTCDateTime(2020, 8, 15, 23, 12, 9, 300_000_000),
+                UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=300_000_000),
             ),
             ("2020-08-15T23:12:09Z", UTCDateTime(2020, 8, 15, 23, 12, 9)),
         ],

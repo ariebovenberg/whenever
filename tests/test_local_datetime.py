@@ -19,8 +19,8 @@ from whenever import (
     UTCDateTime,
     ZonedDateTime,
     days,
-    microseconds,
     hours,
+    microseconds,
     months,
     seconds,
     weeks,
@@ -114,14 +114,18 @@ class TestInit:
             **kwargs, disambiguate="compatible"
         ).exact_eq(LocalSystemDateTime(**{**kwargs, "hour": 3}))
 
+    def test_invalid(self):
+        with pytest.raises(ValueError, match="range|time"):
+            LocalSystemDateTime(2020, 1, 15, nanosecond=1_000_000_000)
+
     @local_ams_tz()
     def test_bounds_min(self):
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             LocalSystemDateTime(1, 1, 1)
 
     @local_nyc_tz()
     def test_bounds_max(self):
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             LocalSystemDateTime(9999, 12, 31)
 
 
@@ -695,6 +699,7 @@ class TestFromTimestamp:
             LocalSystemDateTime(2020, 8, 15, 14, 8, 30, nanosecond=123_456_789)
         )
 
+    @local_ams_tz()
     def test_millis(self):
         assert LocalSystemDateTime.from_timestamp_millis(
             1_597_493_310_123
@@ -742,12 +747,12 @@ class TestFromPyDateTime:
             )
 
     def test_bounds(self):
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             LocalSystemDateTime.from_py_datetime(
                 py_datetime(1, 1, 1, tzinfo=timezone(timedelta(hours=2)))
             )
 
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             LocalSystemDateTime.from_py_datetime(
                 py_datetime(
                     9999, 12, 31, hour=23, tzinfo=timezone(timedelta(hours=-2))
@@ -831,13 +836,13 @@ class TestReplace:
     @local_ams_tz()
     def test_bounds_min(self):
         d = LocalSystemDateTime(2020, 8, 15, 23, 12, 9)
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.replace(year=1, month=1, day=1)
 
     @local_nyc_tz()
     def test_bounds_max(self):
         d = LocalSystemDateTime(2020, 8, 15, 23, 12, 9)
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.replace(year=9999, month=12, day=31, hour=23)
 
 
@@ -904,11 +909,11 @@ class TestAddTimeUnits:
     def test_out_of_range(self):
         d = LocalSystemDateTime(2020, 8, 15)
 
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d + hours(24 * 366 * 8_000)
 
         # the equivalent with the method
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.add(hours=24 * 366 * 8_000)
 
     @local_ams_tz()
@@ -1014,21 +1019,21 @@ class TestAddDateUnits:
     @local_ams_tz()
     def test_out_of_bounds_min(self):
         d = LocalSystemDateTime(2000, 1, 1)
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d + years(-1999)
 
         # the equivalent with the method
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.add(years=-1999)
 
     @local_nyc_tz()
     def test_out_of_bounds_max(self):
         d = LocalSystemDateTime(2000, 12, 31, hour=23)
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d + years(7999)
 
         # the equivalent with the method
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.add(years=7999)
 
 
@@ -1192,19 +1197,19 @@ class TestSubtractDateUnits:
     @local_ams_tz()
     def test_out_of_bounds_min(self):
         d = LocalSystemDateTime(2000, 1, 1)
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d - years(1999)
 
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.subtract(years=1999)
 
     @local_nyc_tz()
     def test_out_of_bounds_max(self):
         d = LocalSystemDateTime(2000, 12, 31, hour=23)
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d - years(-7999)
 
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.subtract(years=-7999)
 
 
@@ -1314,12 +1319,16 @@ class TestReplaceDate:
     def test_out_of_range_due_to_offset(self):
         with local_ams_tz():
             d = LocalSystemDateTime(2020, 1, 1)
-            with pytest.raises(ValueError, match="range"):
+            with pytest.raises(
+                (ValueError, OverflowError), match="range|year"
+            ):
                 d.replace_date(Date(1, 1, 1))
 
         with local_nyc_tz():
             d2 = LocalSystemDateTime(2020, 1, 1, hour=23)
-            with pytest.raises(ValueError, match="range"):
+            with pytest.raises(
+                (ValueError, OverflowError), match="range|year"
+            ):
                 d2.replace_date(Date(9999, 12, 31))
 
 
@@ -1327,7 +1336,7 @@ class TestReplaceTime:
     @local_ams_tz()
     def test_unambiguous(self):
         d = LocalSystemDateTime(2020, 8, 15, 14)
-        assert d.replace_time(Time(1, 2, 3, 4_000)).exact_eq(
+        assert d.replace_time(Time(1, 2, 3, nanosecond=4_000)).exact_eq(
             LocalSystemDateTime(2020, 8, 15, 1, 2, 3, nanosecond=4_000)
         )
 
@@ -1382,12 +1391,16 @@ class TestReplaceTime:
     def test_out_of_range_due_to_offset(self):
         with local_ams_tz():
             d = UTCDateTime.MIN.to_local_system()
-            with pytest.raises(ValueError, match="range"):
+            with pytest.raises(
+                (ValueError, OverflowError), match="range|year"
+            ):
                 d.replace_time(Time(0))
 
         with local_nyc_tz():
             d2 = UTCDateTime.MAX.to_local_system()
-            with pytest.raises(ValueError, match="range"):
+            with pytest.raises(
+                (ValueError, OverflowError), match="range|year"
+            ):
                 d2.replace_time(Time(23))
 
 

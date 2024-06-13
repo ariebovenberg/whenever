@@ -32,8 +32,8 @@ use zoned_datetime::unpickle as _unpkl_zoned;
 
 static mut MODULE_DEF: PyModuleDef = PyModuleDef {
     m_base: PyModuleDef_HEAD_INIT,
-    m_name: c_str!("whenever"),
-    m_doc: c_str!("A better datetime API for Python, written in Rust"),
+    m_name: c"whenever".as_ptr(),
+    m_doc: c"A better datetime API for Python, written in Rust".as_ptr(),
     m_size: mem::size_of::<State>() as _,
     m_methods: unsafe { METHODS as *const [_] as *mut _ },
     m_slots: unsafe { MODULE_SLOTS as *const [_] as *mut _ },
@@ -146,12 +146,12 @@ unsafe fn create_enum(name: *const c_char, members: &[(*const c_char, i32)]) -> 
             return Err(py_err!());
         }
     }
-    let enum_module = PyImport_ImportModule(c_str!("enum")).as_result()?;
+    let enum_module = PyImport_ImportModule(c"enum".as_ptr()).as_result()?;
     defer_decref!(enum_module);
     PyObject_CallMethod(
         enum_module,
-        c_str!("Enum"),
-        c_str!("sO"),
+        c"Enum".as_ptr(),
+        c"sO".as_ptr(),
         name,
         members_dict,
     )
@@ -160,7 +160,11 @@ unsafe fn create_enum(name: *const c_char, members: &[(*const c_char, i32)]) -> 
 
 macro_rules! add_exc {
     ($mptr:expr, $state:ident, $name:expr, $varname:ident) => {
-        let e = PyErr_NewException(c_str!(concat!("whenever.", $name)), NULL(), NULL());
+        let e = PyErr_NewException(
+            concat!("whenever.", $name, "\0").as_ptr().cast::<c_char>(),
+            NULL(),
+            NULL(),
+        );
         if e.is_null() {
             return -1;
         }
@@ -178,7 +182,7 @@ macro_rules! add_type {
      $state:ident,
      $submodule:ident,
      $varname:ident,
-     $unpickle_name:expr,
+     $unpickle_name:literal,
      $unpickle_var:ident) => {
         let $varname = unwrap_or_errcode!(PyType_FromModuleAndSpec(
             $module,
@@ -191,9 +195,9 @@ macro_rules! add_type {
         }
         $state.$varname = $varname.cast();
 
-        let unpickler = PyObject_GetAttrString($module, c_str!($unpickle_name));
+        let unpickler = PyObject_GetAttrString($module, $unpickle_name.as_ptr());
         defer_decref!(unpickler);
-        PyObject_SetAttrString(unpickler, c_str!("__module__"), $module_nameobj);
+        PyObject_SetAttrString(unpickler, c"__module__".as_ptr(), $module_nameobj);
         $state.$unpickle_var = unpickler;
 
         for (name, value) in $submodule::SINGLETONS {
@@ -227,7 +231,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         state,
         date,
         date_type,
-        "_unpkl_date",
+        c"_unpkl_date",
         unpickle_date
     );
     add_type!(
@@ -236,7 +240,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         state,
         time,
         time_type,
-        "_unpkl_time",
+        c"_unpkl_time",
         unpickle_time
     );
     add_type!(
@@ -245,7 +249,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         state,
         date_delta,
         date_delta_type,
-        "_unpkl_ddelta",
+        c"_unpkl_ddelta",
         unpickle_date_delta
     );
     add_type!(
@@ -254,7 +258,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         state,
         time_delta,
         time_delta_type,
-        "_unpkl_tdelta",
+        c"_unpkl_tdelta",
         unpickle_time_delta
     );
     add_type!(
@@ -263,7 +267,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         state,
         datetime_delta,
         datetime_delta_type,
-        "_unpkl_dtdelta",
+        c"_unpkl_dtdelta",
         unpickle_datetime_delta
     );
     add_type!(
@@ -272,7 +276,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         state,
         naive_datetime,
         naive_datetime_type,
-        "_unpkl_naive",
+        c"_unpkl_naive",
         unpickle_naive_datetime
     );
     add_type!(
@@ -281,7 +285,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         state,
         utc_datetime,
         utc_datetime_type,
-        "_unpkl_utc",
+        c"_unpkl_utc",
         unpickle_utc_datetime
     );
     add_type!(
@@ -290,7 +294,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         state,
         offset_datetime,
         offset_datetime_type,
-        "_unpkl_offset",
+        c"_unpkl_offset",
         unpickle_offset_datetime
     );
     add_type!(
@@ -299,7 +303,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         state,
         zoned_datetime,
         zoned_datetime_type,
-        "_unpkl_zoned",
+        c"_unpkl_zoned",
         unpickle_zoned_datetime
     );
     add_type!(
@@ -308,24 +312,24 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         state,
         local_datetime,
         local_datetime_type,
-        "_unpkl_local",
+        c"_unpkl_local",
         unpickle_local_datetime
     );
 
     // XXX: this SEEMS to work out refcount- and GC-wise
     PyDict_SetItemString(
         (*state.utc_datetime_type).tp_dict,
-        c_str!("offset"),
+        c"offset".as_ptr(),
         steal!(unwrap_or_errcode!(PyDict_GetItemString(
             (*state.time_delta_type).tp_dict,
-            c_str!("ZERO")
+            c"ZERO".as_ptr()
         )
         .as_result())),
     );
 
-    let zoneinfo_module = PyImport_ImportModule(c_str!("zoneinfo"));
+    let zoneinfo_module = PyImport_ImportModule(c"zoneinfo".as_ptr());
     defer_decref!(zoneinfo_module);
-    state.zoneinfo_type = PyObject_GetAttrString(zoneinfo_module, c_str!("ZoneInfo"));
+    state.zoneinfo_type = PyObject_GetAttrString(zoneinfo_module, c"ZoneInfo".as_ptr());
 
     PyDateTime_IMPORT();
     state.py_api = match PyDateTimeAPI().as_ref() {
@@ -333,30 +337,33 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         None => return -1,
     };
 
-    let datetime_module = PyImport_ImportModule(c_str!("datetime"));
+    let datetime_module = PyImport_ImportModule(c"datetime".as_ptr());
     defer_decref!(datetime_module);
     state.strptime = PyObject_GetAttrString(
-        steal!(PyObject_GetAttrString(datetime_module, c_str!("datetime"))),
-        c_str!("strptime"),
+        steal!(PyObject_GetAttrString(
+            datetime_module,
+            c"datetime".as_ptr()
+        )),
+        c"strptime".as_ptr(),
     );
-    state.timezone_type = PyObject_GetAttrString(datetime_module, c_str!("timezone")).cast();
+    state.timezone_type = PyObject_GetAttrString(datetime_module, c"timezone".as_ptr()).cast();
 
-    let email_utils = PyImport_ImportModule(c_str!("email.utils"));
+    let email_utils = PyImport_ImportModule(c"email.utils".as_ptr());
     defer_decref!(email_utils);
-    state.format_rfc2822 = PyObject_GetAttrString(email_utils, c_str!("format_datetime")).cast();
+    state.format_rfc2822 = PyObject_GetAttrString(email_utils, c"format_datetime".as_ptr()).cast();
     state.parse_rfc2822 =
-        PyObject_GetAttrString(email_utils, c_str!("parsedate_to_datetime")).cast();
+        PyObject_GetAttrString(email_utils, c"parsedate_to_datetime".as_ptr()).cast();
 
     let weekday_enum = unwrap_or_errcode!(create_enum(
-        c_str!("Weekday"),
+        c"Weekday".as_ptr(),
         &[
-            (c_str!("MONDAY"), 1),
-            (c_str!("TUESDAY"), 2),
-            (c_str!("WEDNESDAY"), 3),
-            (c_str!("THURSDAY"), 4),
-            (c_str!("FRIDAY"), 5),
-            (c_str!("SATURDAY"), 6),
-            (c_str!("SUNDAY"), 7),
+            (c"MONDAY".as_ptr(), 1),
+            (c"TUESDAY".as_ptr(), 2),
+            (c"WEDNESDAY".as_ptr(), 3),
+            (c"THURSDAY".as_ptr(), 4),
+            (c"FRIDAY".as_ptr(), 5),
+            (c"SATURDAY".as_ptr(), 6),
+            (c"SUNDAY".as_ptr(), 7),
         ],
     )) as *mut PyObject;
     defer_decref!(weekday_enum);
@@ -365,37 +372,37 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     }
 
     state.weekday_enum_members = [
-        PyObject_GetAttrString(weekday_enum, c_str!("MONDAY")),
-        PyObject_GetAttrString(weekday_enum, c_str!("TUESDAY")),
-        PyObject_GetAttrString(weekday_enum, c_str!("WEDNESDAY")),
-        PyObject_GetAttrString(weekday_enum, c_str!("THURSDAY")),
-        PyObject_GetAttrString(weekday_enum, c_str!("FRIDAY")),
-        PyObject_GetAttrString(weekday_enum, c_str!("SATURDAY")),
-        PyObject_GetAttrString(weekday_enum, c_str!("SUNDAY")),
+        PyObject_GetAttrString(weekday_enum, c"MONDAY".as_ptr()),
+        PyObject_GetAttrString(weekday_enum, c"TUESDAY".as_ptr()),
+        PyObject_GetAttrString(weekday_enum, c"WEDNESDAY".as_ptr()),
+        PyObject_GetAttrString(weekday_enum, c"THURSDAY".as_ptr()),
+        PyObject_GetAttrString(weekday_enum, c"FRIDAY".as_ptr()),
+        PyObject_GetAttrString(weekday_enum, c"SATURDAY".as_ptr()),
+        PyObject_GetAttrString(weekday_enum, c"SUNDAY".as_ptr()),
     ];
 
-    state.str_years = PyUnicode_InternFromString(c_str!("years"));
-    state.str_months = PyUnicode_InternFromString(c_str!("months"));
-    state.str_weeks = PyUnicode_InternFromString(c_str!("weeks"));
-    state.str_days = PyUnicode_InternFromString(c_str!("days"));
-    state.str_hours = PyUnicode_InternFromString(c_str!("hours"));
-    state.str_minutes = PyUnicode_InternFromString(c_str!("minutes"));
-    state.str_seconds = PyUnicode_InternFromString(c_str!("seconds"));
-    state.str_milliseconds = PyUnicode_InternFromString(c_str!("milliseconds"));
-    state.str_microseconds = PyUnicode_InternFromString(c_str!("microseconds"));
-    state.str_nanoseconds = PyUnicode_InternFromString(c_str!("nanoseconds"));
-    state.str_year = PyUnicode_InternFromString(c_str!("year"));
-    state.str_month = PyUnicode_InternFromString(c_str!("month"));
-    state.str_day = PyUnicode_InternFromString(c_str!("day"));
-    state.str_hour = PyUnicode_InternFromString(c_str!("hour"));
-    state.str_minute = PyUnicode_InternFromString(c_str!("minute"));
-    state.str_second = PyUnicode_InternFromString(c_str!("second"));
-    state.str_nanosecond = PyUnicode_InternFromString(c_str!("nanosecond"));
-    state.str_nanos = PyUnicode_InternFromString(c_str!("nanos"));
-    state.str_raise = PyUnicode_InternFromString(c_str!("raise"));
-    state.str_tz = PyUnicode_InternFromString(c_str!("tz"));
-    state.str_disambiguate = PyUnicode_InternFromString(c_str!("disambiguate"));
-    state.str_offset = PyUnicode_InternFromString(c_str!("offset"));
+    state.str_years = PyUnicode_InternFromString(c"years".as_ptr());
+    state.str_months = PyUnicode_InternFromString(c"months".as_ptr());
+    state.str_weeks = PyUnicode_InternFromString(c"weeks".as_ptr());
+    state.str_days = PyUnicode_InternFromString(c"days".as_ptr());
+    state.str_hours = PyUnicode_InternFromString(c"hours".as_ptr());
+    state.str_minutes = PyUnicode_InternFromString(c"minutes".as_ptr());
+    state.str_seconds = PyUnicode_InternFromString(c"seconds".as_ptr());
+    state.str_milliseconds = PyUnicode_InternFromString(c"milliseconds".as_ptr());
+    state.str_microseconds = PyUnicode_InternFromString(c"microseconds".as_ptr());
+    state.str_nanoseconds = PyUnicode_InternFromString(c"nanoseconds".as_ptr());
+    state.str_year = PyUnicode_InternFromString(c"year".as_ptr());
+    state.str_month = PyUnicode_InternFromString(c"month".as_ptr());
+    state.str_day = PyUnicode_InternFromString(c"day".as_ptr());
+    state.str_hour = PyUnicode_InternFromString(c"hour".as_ptr());
+    state.str_minute = PyUnicode_InternFromString(c"minute".as_ptr());
+    state.str_second = PyUnicode_InternFromString(c"second".as_ptr());
+    state.str_nanosecond = PyUnicode_InternFromString(c"nanosecond".as_ptr());
+    state.str_nanos = PyUnicode_InternFromString(c"nanos".as_ptr());
+    state.str_raise = PyUnicode_InternFromString(c"raise".as_ptr());
+    state.str_tz = PyUnicode_InternFromString(c"tz".as_ptr());
+    state.str_disambiguate = PyUnicode_InternFromString(c"disambiguate".as_ptr());
+    state.str_offset = PyUnicode_InternFromString(c"offset".as_ptr());
 
     add_exc!(module, state, "AmbiguousTime", exc_ambiguous);
     add_exc!(module, state, "SkippedTime", exc_skipped);

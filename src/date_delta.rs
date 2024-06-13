@@ -27,7 +27,7 @@ pub(crate) enum InitError {
 impl DateDelta {
     #[cfg(target_pointer_width = "32")]
     pub(crate) fn pyhash(self) -> Py_hash_t {
-        self.months as Py_hash_t ^ self.days as Py_hash_t
+        hash_combine(self.months as Py_hash_t, self.days as Py_hash_t)
     }
 
     #[cfg(target_pointer_width = "64")]
@@ -185,12 +185,12 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     if PyArg_ParseTupleAndKeywords(
         args,
         kwargs,
-        c_str!("|$llll:DateDelta"),
+        c"|$llll:DateDelta".as_ptr(),
         vec![
-            c_str!("years") as *mut _,
-            c_str!("months") as *mut _,
-            c_str!("weeks") as *mut _,
-            c_str!("days") as *mut _,
+            c"years".as_ptr() as *mut _,
+            c"months".as_ptr() as *mut _,
+            c"weeks".as_ptr() as *mut _,
+            c"days".as_ptr() as *mut _,
             NULL(),
         ]
         .as_mut_ptr(),
@@ -549,7 +549,9 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
         months *= -1;
         days *= -1;
     }
-    DateDelta { months, days }.to_obj(cls.cast())
+    DateDelta::from_same_sign(months, days)
+        .ok_or_value_err("DateDelta out of range")?
+        .to_obj(cls.cast())
 }
 
 unsafe fn in_months_days(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {

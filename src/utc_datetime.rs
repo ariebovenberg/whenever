@@ -210,12 +210,15 @@ impl Instant {
 
     #[cfg(target_pointer_width = "64")]
     pub(crate) const fn pyhash(&self) -> Py_hash_t {
-        self.secs as Py_hash_t ^ self.nanos as Py_hash_t
+        hash_combine(self.secs as Py_hash_t, self.nanos as Py_hash_t)
     }
 
     #[cfg(target_pointer_width = "32")]
     pub(crate) const fn pyhash(&self) -> Py_hash_t {
-        (self.secs as Py_hash_t) ^ ((self.secs >> 32) as Py_hash_t) ^ (self.nanos as Py_hash_t)
+        hash_combine(
+            self.secs as Py_hash_t,
+            hash_combine((self.secs >> 32) as Py_hash_t, self.nanos as Py_hash_t),
+        )
     }
 }
 
@@ -232,15 +235,15 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     if PyArg_ParseTupleAndKeywords(
         args,
         kwargs,
-        c_str!("lll|llll:UTCDateTime"),
+        c"lll|lll$l:UTCDateTime".as_ptr(),
         vec![
-            c_str!("year") as *mut c_char,
-            c_str!("month") as *mut c_char,
-            c_str!("day") as *mut c_char,
-            c_str!("hour") as *mut c_char,
-            c_str!("minute") as *mut c_char,
-            c_str!("second") as *mut c_char,
-            c_str!("nanosecond") as *mut c_char,
+            c"year".as_ptr() as *mut c_char,
+            c"month".as_ptr() as *mut c_char,
+            c"day".as_ptr() as *mut c_char,
+            c"hour".as_ptr() as *mut c_char,
+            c"minute".as_ptr() as *mut c_char,
+            c"second".as_ptr() as *mut c_char,
+            c"nanosecond".as_ptr() as *mut c_char,
             NULL(),
         ]
         .as_mut_ptr(),
@@ -428,6 +431,14 @@ static mut SLOTS: &[PyType_Slot] = &[
         pfunc: NULL(),
     },
 ];
+
+unsafe fn exact_eq(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
+    if Py_TYPE(obj_a) == Py_TYPE(obj_b) {
+        (Instant::extract(obj_a) == Instant::extract(obj_b)).to_py()
+    } else {
+        Err(type_err!("Can't compare different types"))
+    }
+}
 
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let Instant { secs, nanos } = Instant::extract(slf);
@@ -676,7 +687,7 @@ unsafe fn replace(
     let mut hour = time.hour.into();
     let mut minute = time.minute.into();
     let mut second = time.second.into();
-    let mut nanos = time.nanos.into();
+    let mut nanos = time.nanos as _;
 
     for &(name, value) in kwargs {
         if name == str_year {
@@ -839,7 +850,28 @@ unsafe fn format_rfc2822(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let state = State::for_type(cls.cast());
-    let dt = PyObject_CallOneArg(state.parse_rfc2822, s_obj).as_result()?;
+    let dt: &mut PyObject;
+    // On python 3.9, parsing RFC2822 is more flaky in returning TypeError
+    #[cfg(not(Py_3_10))]
+    {
+        if !s_obj.is_str() {
+            Err(type_err!("Expected a string"))?;
+        }
+        dt = PyObject_CallOneArg(state.parse_rfc2822, s_obj)
+            .as_result()
+            .map_err(|e| {
+                if PyErr_ExceptionMatches(PyExc_TypeError) != 0 {
+                    PyErr_Clear();
+                    value_err!("Invalid format: {}", s_obj.repr())
+                } else {
+                    e
+                }
+            })?;
+    }
+    #[cfg(Py_3_10)]
+    {
+        dt = PyObject_CallOneArg(state.parse_rfc2822, s_obj).as_result()?;
+    }
     defer_decref!(dt);
     let tzinfo = PyDateTime_DATE_GET_TZINFO(dt);
     if tzinfo == state.py_api.TimeZone_UTC
@@ -870,6 +902,7 @@ unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
 static mut METHODS: &[PyMethodDef] = &[
     method!(identity2 named "__copy__", ""),
     method!(identity2 named "__deepcopy__", "", METH_O),
+    method!(exact_eq, "Equality check limited to the same type", METH_O),
     method!(__reduce__, ""),
     method!(timestamp, "Get the UNIX timestamp in seconds"),
     method!(timestamp_millis, "Get the UNIX timestamp in milliseconds"),

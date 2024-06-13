@@ -21,7 +21,7 @@ pub(crate) struct DateTimeDelta {
 
 impl DateTimeDelta {
     pub(crate) fn pyhash(self) -> Py_hash_t {
-        self.ddelta.pyhash() ^ self.tdelta.pyhash()
+        hash_combine(self.ddelta.pyhash(), self.tdelta.pyhash())
     }
 
     pub(crate) fn new(ddelta: DateDelta, tdelta: TimeDelta) -> Option<Self> {
@@ -81,7 +81,7 @@ pub(crate) unsafe fn handle_exact_unit(
 ) -> PyResult<i128> {
     if value.is_int() {
         let i = value
-            .to_long()?
+            .to_i64()?
             // Safe to unwrap since we just checked that it's an int
             .unwrap();
         if (-max..=max).contains(&i) {

@@ -20,6 +20,9 @@ pub(crate) const SINGLETONS: [(&str, Date); 2] = [
 
 impl Date {
     pub(crate) const unsafe fn hash(self) -> i32 {
+        // Since the data already fits within an i32
+        // we don't need to do any extra hashing. It may be counterintuitive,
+        // but this is also what `int` does: `hash(6) == 6`.
         mem::transmute::<_, i32>(self)
     }
 
@@ -163,15 +166,15 @@ impl Date {
         Date { year, month, day }
     }
 
-    pub(crate) const fn parse_all(s: &[u8]) -> Option<Self> {
+    pub(crate) fn parse_all(s: &[u8]) -> Option<Self> {
         if s.len() == 10 && s[4] == b'-' && s[7] == b'-' {
             Date::new(
-                get_digit!(s, 0) as u16 * 1000
-                    + get_digit!(s, 1) as u16 * 100
-                    + get_digit!(s, 2) as u16 * 10
-                    + get_digit!(s, 3) as u16,
-                get_digit!(s, 5) * 10 + get_digit!(s, 6),
-                get_digit!(s, 8) * 10 + get_digit!(s, 9),
+                parse_digit(s, 0)? as u16 * 1000
+                    + parse_digit(s, 1)? as u16 * 100
+                    + parse_digit(s, 2)? as u16 * 10
+                    + parse_digit(s, 3)? as u16,
+                parse_digit(s, 5)? * 10 + parse_digit(s, 6)?,
+                parse_digit(s, 8)? * 10 + parse_digit(s, 9)?,
             )
         } else {
             None
