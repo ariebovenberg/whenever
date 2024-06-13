@@ -189,16 +189,16 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     if PyArg_ParseTupleAndKeywords(
         args,
         kwargs,
-        c_str!("lll|lll$lO:OffsetDateTime"),
+        c"lll|lll$lO:OffsetDateTime".as_ptr(),
         vec![
-            c_str!("year") as *mut c_char,
-            c_str!("month") as *mut c_char,
-            c_str!("day") as *mut c_char,
-            c_str!("hour") as *mut c_char,
-            c_str!("minute") as *mut c_char,
-            c_str!("second") as *mut c_char,
-            c_str!("nanosecond") as *mut c_char,
-            c_str!("offset") as *mut c_char,
+            c"year".as_ptr() as *mut c_char,
+            c"month".as_ptr() as *mut c_char,
+            c"day".as_ptr() as *mut c_char,
+            c"hour".as_ptr() as *mut c_char,
+            c"minute".as_ptr() as *mut c_char,
+            c"second".as_ptr() as *mut c_char,
+            c"nanosecond".as_ptr() as *mut c_char,
+            c"offset".as_ptr() as *mut c_char,
             NULL(),
         ]
         .as_mut_ptr(),
@@ -504,7 +504,7 @@ unsafe fn replace(
     let mut hour = time.hour.into();
     let mut minute = time.minute.into();
     let mut second = time.second.into();
-    let mut nanos = time.nanos.into();
+    let mut nanos = time.nanos as _;
     let mut offset_secs = offset_secs;
 
     for &(name, value) in kwargs {
@@ -727,14 +727,12 @@ fn parse_hms_offset(s: &[u8]) -> Option<i32> {
     };
     if s.len() >= 6 && s[3] == b':' {
         // the HH:MM part
-        // Important: we by limiting the first digit to 1, we ensure the offset
-        // never exceeds 24 hours
-        let secs = (get_digit!(s, 1, ..=b'2') * 10 + get_digit!(s, 2)) as i32 * 3600
-            + (get_digit!(s, 4, ..=b'5') * 10 + get_digit!(s, 5)) as i32 * 60;
+        let secs = (parse_digit_max(s, 1, b'2')? * 10 + parse_digit(s, 2)?) as i32 * 3600
+            + (parse_digit_max(s, 4, b'5')? * 10 + parse_digit(s, 5)?) as i32 * 60;
         // the optional seconds part
         match s.get(6) {
             Some(b':') if s.len() == 9 => {
-                Some(secs + get_digit!(s, 7, ..=b'5') as i32 * 10 + get_digit!(s, 8) as i32)
+                Some(secs + parse_digit_max(s, 7, b'5')? as i32 * 10 + parse_digit(s, 8)? as i32)
             }
             None => Some(secs),
             _ => None,
@@ -762,8 +760,8 @@ fn parse_hm_offset(s: &[u8]) -> Option<i32> {
     };
     if s.len() == 6 && s[3] == b':' {
         Some(
-            sign * ((get_digit!(s, 1, ..=b'2') * 10 + get_digit!(s, 2)) as i32 * 3600
-                + (get_digit!(s, 4, ..=b'5') * 10 + get_digit!(s, 5)) as i32 * 60),
+            sign * ((parse_digit_max(s, 1, b'2')? * 10 + parse_digit(s, 2)?) as i32 * 3600
+                + (parse_digit_max(s, 4, b'5')? * 10 + parse_digit(s, 5)?) as i32 * 60),
         )
         .filter(|secs| secs.abs() < 24 * 3600)
     } else {
@@ -868,9 +866,39 @@ unsafe fn format_rfc2822(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     .as_result()
 }
 
+#[cfg(Py_3_10)]
 unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let state = State::for_type(cls.cast());
     let py_dt = PyObject_CallOneArg(state.parse_rfc2822, s_obj).as_result()?;
+    defer_decref!(py_dt);
+    OffsetDateTime::from_py(py_dt, state)?
+        .ok_or_else(|| {
+            value_err!(
+                "parsed datetime must have a timezone and be in range, got {}",
+                s_obj.repr()
+            )
+        })?
+        .to_obj(cls.cast())
+}
+
+// On python 3.9, parsing sometimes raises a TypeError.
+// We need special handling for this case.
+#[cfg(not(Py_3_10))]
+unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
+    let state = State::for_type(cls.cast());
+    if !s_obj.is_str() {
+        Err(type_err!("Argument must be a string"))?
+    }
+    let py_dt = PyObject_CallOneArg(state.parse_rfc2822, s_obj)
+        .as_result()
+        .map_err(|e| {
+            if PyErr_ExceptionMatches(PyExc_TypeError) != 0 {
+                PyErr_Clear();
+                value_err!("Invalid format: {}", s_obj.repr())
+            } else {
+                e
+            }
+        })?;
     defer_decref!(py_dt);
     OffsetDateTime::from_py(py_dt, state)?
         .ok_or_else(|| {

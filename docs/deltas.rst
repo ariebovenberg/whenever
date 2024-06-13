@@ -69,31 +69,31 @@ There are three duration types in **whenever**:
 
 This distinction determines which operations are supported:
 
-+------------------------------+-------------------+--------------------+--------------------+
-| Feature                      | ``TimeDelta``     | ``DateDelta``      | ``DateTimeDelta``  |
-+==============================+===================+====================+====================+
-| Add to ``DateTime``          | .. centered:: ✅  | .. centered:: ✅   | .. centered:: ✅   |
-+------------------------------+-------------------+--------------------+--------------------+
-| Add to ``Date``              | .. centered:: ❌  | .. centered:: ✅   | .. centered:: ❌   |
-+------------------------------+-------------------+--------------------+--------------------+
-| division (÷)                 | .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
-+------------------------------+-------------------+--------------------+--------------------+
-| multiplication (×)           | .. centered:: ✅  | ⚠️  by             | ⚠️  by             |
-|                              |                   | ``int``            | ``int``            |
-+------------------------------+-------------------+--------------------+--------------------+
-| comparison (``>, >=, <, <=``)| .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
-+------------------------------+-------------------+--------------------+--------------------+
-| Commutative:                 |                   |                    |                    |
-| ``dt + a + b == dt + b + a`` | .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
-+------------------------------+-------------------+--------------------+--------------------+
-| Reversible:                  |                   |                    |                    |
-| ``(dt + a) - a == dt``       | .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
-+------------------------------+-------------------+--------------------+--------------------+
-| normalized                   | .. centered:: ✅  | ⚠️ to months & days| ⚠️  date/time parts|
-+------------------------------+-------------------+--------------------+--------------------+
-| equality based on            | total nanoseconds | months & days      | date/time parts    |
-|                              |                   |                    |                    |
-+------------------------------+-------------------+--------------------+--------------------+
++------------------------------+-------------------+-----------------------+-------------------------+
+| Feature                      | ``TimeDelta``     | ``DateDelta``         | ``DateTimeDelta``       |
++==============================+===================+=======================+=========================+
+| Add to ``DateTime``          | .. centered:: ✅  | .. centered:: ✅      | .. centered:: ✅        |
++------------------------------+-------------------+-----------------------+-------------------------+
+| Add to ``Date``              | .. centered:: ❌  | .. centered:: ✅      | .. centered:: ❌        |
++------------------------------+-------------------+-----------------------+-------------------------+
+| division (÷)                 | .. centered:: ✅  | .. centered:: ❌      | .. centered:: ❌        |
++------------------------------+-------------------+-----------------------+-------------------------+
+| multiplication (×)           | .. centered:: ✅  | .. centered:: ⚠️ [1]_ | .. centered:: ⚠️  [1]_  |
++------------------------------+-------------------+-----------------------+-------------------------+
+| comparison (``>, >=, <, <=``)| .. centered:: ✅  | .. centered:: ❌      | .. centered:: ❌        |
++------------------------------+-------------------+-----------------------+-------------------------+
+| Commutative:                 |                   |                       |                         |
+| ``dt + a + b == dt + b + a`` | .. centered:: ✅  | .. centered:: ❌      | .. centered:: ❌        |
++------------------------------+-------------------+-----------------------+-------------------------+
+| Reversible:                  |                   |                       |                         |
+| ``(dt + a) - a == dt``       | .. centered:: ✅  | .. centered:: ❌      | .. centered:: ❌        |
++------------------------------+-------------------+-----------------------+-------------------------+
+| normalized                   | .. centered:: ✅  | .. centered:: ⚠️ [2]_ | .. centered:: ⚠️  [2]_  |
++------------------------------+-------------------+-----------------------+-------------------------+
+
+.. [1] Only by integers
+.. [2] Years/months and weeks/days are normalized amongst each other,
+       but not with other units. 
 
 Multiplication
 --------------
@@ -167,15 +167,24 @@ This is not the case for date units:
 Normalization
 -------------
 
-Time durations are always normalized:
+Time durations are always fully normalized: hours, minutes, seconds,
+milliseconds, microseconds, and nanoseconds all roll over into each other:
 
 >>> minutes(70)
 TimeDelta(01:10:00)
 
-Date units are not normalized:
+Only some date units can be normalized: years and months are normalized amongst each other,
+and weeks and days are normalized amongst each other.
+1 year doesn't always correspond to a fixed number of days, but it does always correspond to 12 months.
+One day also doesn't correspond to a fixed number of hours,
+as this can change depending on Daylight Saving Time, for example.
 
 >>> months(13)
-DateDelta(P13M)
+DateDelta(P1Y1M)
+>>> months(1) + weeks(4)
+DateDelta(P1M28D)
+>>> days(1) + hours(24)
+DateTimeDelta(P1DT24H)
 
 Equality
 --------
@@ -185,11 +194,13 @@ Two time durations are equal if their sum of components is equal:
 >>> hours(1) + minutes(30) == hours(2) - minutes(30)
 True
 
-Since date units aren't normalized, two date duration are only
-equal if their individual components are equal:
+Since date units are only partially normalized, date durations are only
+equal if months/years and weeks/days are equal amongst each other:
 
->>> months(1) + days(30) == months(2) - days(1)
-False
+>>> months(1) == days(31)
+False  # a month will never equal a fixed number of days
+>>> years(1) + weeks(1) == months(12) + days(7)
+True  # a years is always 12 months, and a week is always 7 days
 
 .. _iso8601-durations:
 

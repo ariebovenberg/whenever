@@ -8,19 +8,21 @@ on:
   workflow_dispatch:
 
 jobs:
-  Test:
-    runs-on: ${{ matrix.os }}
+  test-python-version:
+    name: Test Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        # Note: pypy/pytest fails sometimes (https://github.com/pypy/pypy/issues/3959)
         python-version: [
-          # "3.9",
-          # "3.10",
-          # "3.11",
+          "3.9",
+          "3.10",
+          "3.11",
           "3.12",
-          # "3.13.0b2",
+          "3.13-dev",
+          # FUTURE: pypy builds current fail. Uncomment when fixed.
+          # Low prio because pure-Python version is available.
+          # NOTE: pypy/pytest fails sometimes (https://github.com/pypy/pypy/issues/3959)
           # "pypy3.9",
           # "pypy3.10"
         ]
@@ -32,33 +34,77 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: "Test Rust"
-        if: matrix.os == 'ubuntu-latest'
+        if: ${{ (matrix.os == 'ubuntu-latest') && (matrix.python-version == '3.12') }}
         run: |
           cargo test
 
       - name: Install and test
-        if: ${{ !((matrix.python-version == '3.12') && (matrix.os == 'ubuntu-latest')) }}
         shell: bash
         run: |
           pip install .
           pip install -r requirements/test.txt
           pytest tests/
 
-      - name: Install and test (incl coverage)
-        if: ${{ (matrix.python-version == '3.12') && (matrix.os == 'ubuntu-latest') }}
+  Test-os:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - uses: actions/setup-python@v5
+        if: ${{ !(matrix.os == 'windows-latest') }}
+        with:
+          python-version: '3.12'
+
+      # ensure 32-bit target is tested
+      - uses: actions/setup-python@v5
+        if: ${{ matrix.os == 'windows-latest' }}
+        with:
+          python-version: '3.12'
+          architecture: x86
+
+
+      - name: Install and test
         shell: bash
         run: |
-          pip install .
+          pip install -e .
           pip install -r requirements/test.txt
-          pytest tests/ --cov=whenever
+          pytest tests/
 
-  Test-pure-python-implementation:
+  test-pure-python:
+    name: Test pure Python version
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [
+          "3.9",
+          "3.10",
+          "3.11",
+          "3.12",
+          "3.13-dev",
+          # NOTE: pypy/pytest fails sometimes (https://github.com/pypy/pypy/issues/3959)
+          "pypy3.9",
+          "pypy3.10"
+        ]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
+      # only run coverage once
+      - if: ${{ matrix.python-version == '3.12' }}
+        run: |
+          pip install .
+          pip install -r requirements/test.txt
+          pytest tests/ --cov=whenever --cov-report=xml
+        env:
+          WHENEVER_NO_BUILD_RUST_EXT: "1"
       - run: |
           pip install .
           pip install -r requirements/test.txt
@@ -74,6 +120,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: |
+          pip install .
           pip install -U pip
           pip install -r requirements/lint.txt
           make ci-lint

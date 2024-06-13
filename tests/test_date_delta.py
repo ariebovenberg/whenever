@@ -213,6 +213,7 @@ class TestParseCommonIso:
             "P8",  # digits without units
             "P8M3",  # digits without units
             "P3D7Y",  # components out of order
+            "P3M7Y",  # components out of order
             "P𝟙Y",  # non-ASCII
             "P--2D",
             "P++2D",
@@ -232,12 +233,12 @@ class TestParseCommonIso:
             "P1,5D",  # comma
             "P1Y2M3W4DT1H2M3S",  # time component
             "P1YT0S",  # zero time component still invalid
+            "P99999Y",  # too large
         ],
     )
     def test_invalid_format(self, s):
         with pytest.raises(
-            ValueError,
-            match=r"Invalid format.*" + re.escape(s),
+            ValueError, match=f"Invalid format.*{re.escape(s)}|range"
         ):
             DateDelta.parse_common_iso(s)
 
@@ -306,10 +307,14 @@ class TestMultiply:
 
     def test_month_range(self):
         DateDelta(months=2) * 59993  # just allowed
-        with pytest.raises(ValueError, match="(bounds|range)"):
+        with pytest.raises(
+            (ValueError, OverflowError), match="bounds|range|C long"
+        ):
             DateDelta(months=2) * 59995
 
-        with pytest.raises(ValueError, match="(bounds|range)"):
+        with pytest.raises(
+            (ValueError, OverflowError), match="bounds|range|C long"
+        ):
             DateDelta(months=2) * (1 << 31 + 1)
 
     @pytest.mark.parametrize(

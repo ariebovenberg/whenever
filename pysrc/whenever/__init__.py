@@ -1,6 +1,6 @@
 try:
     from ._whenever import *
-    from ._whenever import (
+    from ._whenever import (  # pragma: no cover
         _unpkl_date,
         _unpkl_ddelta,
         _unpkl_dtdelta,
@@ -14,7 +14,7 @@ try:
     )
 
 except ModuleNotFoundError as e:
-    if e.name != "whenever._whenever":
+    if e.name != "whenever._whenever":  # pragma: no cover
         raise e
     from ._pywhenever import *
     from ._pywhenever import (

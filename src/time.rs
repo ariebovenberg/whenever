@@ -20,17 +20,20 @@ pub struct Time {
 impl Time {
     #[cfg(target_pointer_width = "32")]
     pub(crate) const fn pyhash(&self) -> Py_hash_t {
-        ((self.hour as Py_hash_t) << 16)
-            ^ ((self.minute as Py_hash_t) << 8)
-            ^ (self.second as Py_hash_t)
-            ^ (self.nanos as Py_hash_t)
+        hash_combine(
+            (self.hour as Py_hash_t) << 16
+                | (self.minute as Py_hash_t) << 8
+                | (self.second as Py_hash_t),
+            self.nanos as Py_hash_t,
+        )
     }
 
     #[cfg(target_pointer_width = "64")]
     pub(crate) const fn pyhash(&self) -> Py_hash_t {
         ((self.hour as Py_hash_t) << 48)
             | ((self.minute as Py_hash_t) << 40)
-            | ((self.second as Py_hash_t) << 32) ^ (self.nanos as Py_hash_t)
+            | ((self.second as Py_hash_t) << 32)
+            | (self.nanos as Py_hash_t)
     }
 
     pub(crate) const fn seconds(&self) -> i32 {
@@ -100,9 +103,9 @@ impl Time {
         if s.len() < 8 || s.len() == 9 || s.len() > 18 || s[2] != b':' || s[5] != b':' {
             return None;
         }
-        let hour = get_digit!(s, 0) * 10 + get_digit!(s, 1);
-        let minute = get_digit!(s, 3) * 10 + get_digit!(s, 4);
-        let second = get_digit!(s, 6) * 10 + get_digit!(s, 7);
+        let hour = parse_digit_max(s, 0, b'2')? * 10 + parse_digit(s, 1)?;
+        let minute = parse_digit_max(s, 3, b'5')? * 10 + parse_digit(s, 4)?;
+        let second = parse_digit_max(s, 6, b'5')? * 10 + parse_digit(s, 7)?;
         let mut nanos: u32 = 0;
         if s.len() > 8 {
             if s[8] != b'.' {
@@ -133,9 +136,9 @@ impl Time {
         if s[2] != b':' || s[5] != b':' {
             return None;
         }
-        let hour = get_digit!(s, 0) * 10 + get_digit!(s, 1);
-        let minute = get_digit!(s, 3) * 10 + get_digit!(s, 4);
-        let second = get_digit!(s, 6) * 10 + get_digit!(s, 7);
+        let hour = parse_digit_max(s, 0, b'2')? * 10 + parse_digit(s, 1)?;
+        let minute = parse_digit_max(s, 3, b'5')? * 10 + parse_digit(s, 4)?;
+        let second = parse_digit_max(s, 6, b'5')? * 10 + parse_digit(s, 7)?;
         let mut nanos: u32 = 0;
         let mut end_index = 8;
         if s.len() > 8 && s[8] == b'.' {
@@ -222,12 +225,12 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     if PyArg_ParseTupleAndKeywords(
         args,
         kwargs,
-        c_str!("|llll:Time"),
+        c"|lll$l:Time".as_ptr(),
         vec![
-            c_str!("hour") as *mut c_char,
-            c_str!("minute") as *mut c_char,
-            c_str!("second") as *mut c_char,
-            c_str!("nanosecond") as *mut c_char,
+            c"hour".as_ptr() as *mut c_char,
+            c"minute".as_ptr() as *mut c_char,
+            c"second".as_ptr() as *mut c_char,
+            c"nanosecond".as_ptr() as *mut c_char,
             NULL(),
         ]
         .as_mut_ptr(),
@@ -419,7 +422,7 @@ unsafe fn replace(
         let mut hour = time.hour.into();
         let mut minute = time.minute.into();
         let mut second = time.second.into();
-        let mut nanos = time.nanos.into();
+        let mut nanos = time.nanos as _;
         for &(name, value) in kwargs {
             if name == str_hour {
                 hour = value.to_long()?.ok_or_type_err("hour must be an integer")?;

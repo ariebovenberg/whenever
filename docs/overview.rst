@@ -17,8 +17,9 @@ Different types
 
    -- Jon Skeet
 
-While the standard library has a single :class:`~datetime.datetime` type,
-**whenever** provides five distinct types.
+While the standard library has a single :class:`~datetime.datetime` type
+for all cases (naive, with ``timezone``, with ``ZoneInfo``, etc.),
+**whenever** provides distinct types.
 Each is designed to communicate intent, prevent mistakes, and optimize performance.
 You probably won't need all of them simultaneously in your project.
 Read on to find out which one is right for you.
@@ -32,7 +33,7 @@ Read on to find out which one is right for you.
 Here's a summary of how you can use them:
 
 +-----------------------+-----+--------+-------+-------+-------+
-| Feature               |         Aware                | Naive |
+| Feature               |         "Aware"              | Naive |
 +                       +-----+--------+-------+-------+       +
 |                       | UTC | Offset | Zoned | Local |       |
 +=======================+=====+========+=======+=======+=======+
@@ -48,8 +49,6 @@ Here's a summary of how you can use them:
 +-----------------------+-----+--------+-------+-------+-------+
 | now                   | ✅  |  ✅    |  ✅   |  ✅   |  ❌   |
 +-----------------------+-----+--------+-------+-------+-------+
-| to/from common ISO8601| ✅  |  ✅    |  ❌   |  ❌   |  ✅   |
-+-----------------------+-----+--------+-------+-------+-------+
 | to/from RFC3339/2822  | ✅  |  ✅    |  ❌   |  ❌   |  ❌   |
 +-----------------------+-----+--------+-------+-------+-------+
 
@@ -63,24 +62,24 @@ regardless of location.
 >>> py311_livestream = UTCDateTime(2022, 10, 24, hour=17)
 UTCDateTime(2022-10-24 17:00:00Z)
 
-In most cases, you should use this class over the others. The other
+In most cases, you should choose this class. The other
 classes are most often useful at the boundaries of your application.
 
 :class:`~whenever.OffsetDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 A time with a fixed offset from UTC.
-This is great if you're storing when something happened,
-including the local time.
+This is great if you don't only need to represent when something happened,
+but also the local time at that moment.
 
->>> # Pycon was in Salt Lake City that year
+>>> # In Salt Lake City, the UTC offset was -6 at the time
 >>> pycon23_start = OffsetDateTime(2023, 4, 21, hour=9, offset=-6)
 OffsetDateTime(2023-04-21 09:00:00-06:00)
 
-It's less suitable for *future* events,
-because local UTC offsets often change (e.g. due to daylight saving time).
+A big caveat is that it doesn't know about *changes* to the offset,
+which can happen due to daylight saving time, for example.
 For this reason, you cannot add or subtract time from an :class:`~whenever.OffsetDateTime`
-— the offset may have changed!
+, because the offset may have changed!
 
 .. seealso::
 
@@ -90,9 +89,10 @@ For this reason, you cannot add or subtract time from an :class:`~whenever.Offse
 :class:`~whenever.ZonedDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-This class accounts for the variable UTC offset of timezones,
-and is great for representing localized times in the past and future.
-Note that when the clock is set backwards, times occur twice.
+Like :class:`~whenever.OffsetDateTime`, it represents when something happened
+along with the local time at that moment.
+However, it also knows about past and future changes to the offset.
+Due to UTC offset changes, times may be skipped or even occur twice.
 Use ``disambiguate`` to resolve these situations.
 
 >>> changing_the_guard = ZonedDateTime(2024, 12, 8, hour=11, tz="Europe/London")
@@ -332,13 +332,14 @@ ZonedDateTime(2023-12-28 17:00:00+01:00[Europe/Amsterdam])
 ZonedDateTime(2023-12-27 11:30:00+01:00[Europe/Amsterdam])
 
 Adding/subtracting takes into account timezone changes (e.g. daylight saving time)
-according to industry standard RFC 5545. This means:
+according to industry standard RFC 5545 and other modern datetime libraries. 
+This means:
 
-- Units are added from largest (year) to smallest (microsecond),
+- Units are added from largest (year) to smallest (nanosecond),
   truncating and/or wrapping at each step.
 - Precise time units (hours, minutes, and seconds) account for DST changes,
   but calendar units (days, months, years) do not.
-  The expectation is that rescheduling a 10am appointment "a day later"
+  This is because you'd expect that rescheduling a 10am appointment "a day later"
   will still be at 10am, even after DST changes.
 
 .. seealso::
@@ -352,7 +353,7 @@ according to industry standard RFC 5545. This means:
    forwards in time, because offsets in real world timezones aren't always constant.
    That is, the offset may be different after moving backwards or forwards in time.
    If you need to shift an :class:`~whenever.OffsetDateTime` instance,
-   either convert to UTC or a proper timezone first.
+   either convert to UTC or a proper :class:`~whenever.ZonedDateTime` first.
 
 Ambiguity in timezones
 ----------------------
@@ -550,30 +551,15 @@ Use the methods :meth:`~whenever.OffsetDateTime.format_rfc2822` and
 to this format, respectively:
 
 >>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=+5)
->>> d.rfc2822()
+>>> d.format_rfc2822()
 'Thu, 28 Dec 2023 11:30:00 +0500'
 >>> OffsetDateTime.parse_rfc2822('Tue, 13 Jul 2021 09:45:00 -0900')
 OffsetDateTime(2021-07-13 09:45:00-09:00)
 
-To and from the standard library
---------------------------------
+Custom formats
+~~~~~~~~~~~~~~
 
-Each **whenever** datetime class can be converted to a standard
-library :class:`~datetime.datetime`
-with the :meth:`~whenever._DateTime.py_datetime` method.
-Conversely, you can create a type from a standard library datetime with the
-:meth:`~whenever._DateTime.from_py_datetime` classmethod.
-
->>> from datetime import datetime, UTC
->>> UTCDateTime.from_py_datetime(datetime(2023, 1, 1, tzinfo=UTC))
-UTCDateTime(2023-01-01 00:00:00Z)
->>> ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam").py_datetime()
-datetime(2023, 1, 1, 0, 0, tzinfo=ZoneInfo('Europe/Amsterdam'))
-
-Parsing
--------
-
-For now, basic parsing functionality is implemented in the ``strptime()`` methods
+For now, basic customized parsing functionality is implemented in the ``strptime()`` methods
 of :class:`~whenever.UTCDateTime`, :class:`~whenever.OffsetDateTime`,
 and :class:`~whenever.NaiveDateTime`.
 As the name suggests, these methods are thin wrappers around the standard library
@@ -611,26 +597,25 @@ This makes it explicit what information is being assumed.
    Python's builtin ``strptime`` has its limitations, so a more full-featured
    parsing API may be added in the future.
 
+To and from the standard library
+--------------------------------
 
-Pickling
---------
+Each **whenever** datetime class can be converted to a standard
+library :class:`~datetime.datetime`
+with the :meth:`~whenever._DateTime.py_datetime` method.
+Conversely, you can create a type from a standard library datetime with the
+:meth:`~whenever._DateTime.from_py_datetime` classmethod.
 
-All types are pickleable, so you can use them in a distributed system or
-store them in a database that supports pickling.
-
-.. code-block:: python
-
-   import pickle
-
-   d = UTCDateTime(2023, 1, 1, 0, 0)
-   pickled = pickle.dumps(d)
-   unpickled = pickle.loads(pickled)
-   assert d == unpickled
+>>> from datetime import datetime, UTC
+>>> UTCDateTime.from_py_datetime(datetime(2023, 1, 1, tzinfo=UTC))
+UTCDateTime(2023-01-01 00:00:00Z)
+>>> ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam").py_datetime()
+datetime(2023, 1, 1, 0, 0, tzinfo=ZoneInfo('Europe/Amsterdam'))
 
 .. note::
 
-   From version 1.0 onwards, we aim to maintain backwards compatibility
-   for unpickling.
+   ``from_py_datetime`` also works for subclasses, so you can also ingest types
+   from ``pendulum`` and ``arrow`` libraries.
 
 
 Date and time components
@@ -652,6 +637,15 @@ These types can be converted to datetimes and vice versa:
 NaiveDateTime(2023-01-01 12:30:00)
 >>> UTCDateTime.now().date()
 Date(2023-07-13)
+
+Dates support arithmetic with months and years,
+with similar semantics to modern datetime libraries:
+
+>>> d = Date(2023, 1, 31)
+>>> d.add(months=1)
+Date(2023-02-28)
+>>> d - Date(2022, 10, 15)
+DateDelta(P3M16D)
 
 See the :ref:`API reference <date-and-time-api>` for more details.
 
@@ -696,11 +690,8 @@ LocalSystemDateTime(2020-08-15 14:00:00+02:00)
 On the other hand, if you'd like to preserve the local time on the clock
 and calculate the corresponding moment in time:
 
->>> # take the wall clock time...
->>> wall_clock = d.naive()
-NaiveDateTime(2020-08-15 08:00:00)
->>> # ...and assume the system timezone (Amsterdam)
->>> wall_clock.assume_local_system()
+>>> # take the wall clock time and assume the (new) system timezone (Amsterdam)
+>>> d.naive().assume_local_system()
 LocalSystemDateTime(2020-08-15 08:00:00+02:00)
 
 .. note::

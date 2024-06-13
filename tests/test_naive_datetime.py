@@ -35,7 +35,7 @@ from .common import (
 
 
 def test_minimal():
-    d = NaiveDateTime(2020, 8, 15, 5, 12, 30, 450)
+    d = NaiveDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)
 
     assert d.year == 2020
     assert d.month == 8
@@ -49,14 +49,14 @@ def test_minimal():
         NaiveDateTime(2020, 8, 15, 12)
         == NaiveDateTime(2020, 8, 15, 12, 0)
         == NaiveDateTime(2020, 8, 15, 12, 0, 0)
-        == NaiveDateTime(2020, 8, 15, 12, 0, 0, 0)
+        == NaiveDateTime(2020, 8, 15, 12, 0, 0, nanosecond=0)
     )
 
 
 def test_components():
-    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654_123)
+    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_123)
     assert d.date() == Date(2020, 8, 15)
-    assert d.time() == Time(23, 12, 9, 987_654_123)
+    assert d.time() == Time(23, 12, 9, nanosecond=987_654_123)
 
 
 def test_assume_utc():
@@ -178,11 +178,11 @@ class TestParseCommonIso:
             ("2020-08-15T12:08:30", NaiveDateTime(2020, 8, 15, 12, 8, 30)),
             (
                 "2020-08-15T12:08:30.349",
-                NaiveDateTime(2020, 8, 15, 12, 8, 30, 349_000_000),
+                NaiveDateTime(2020, 8, 15, 12, 8, 30, nanosecond=349_000_000),
             ),
             (
                 "2020-08-15T12:08:30.3491239",
-                NaiveDateTime(2020, 8, 15, 12, 8, 30, 349_123_900),
+                NaiveDateTime(2020, 8, 15, 12, 8, 30, nanosecond=349_123_900),
             ),
         ],
     )
@@ -249,7 +249,7 @@ def test_equality():
 
 
 def test_repr():
-    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
     assert repr(d) == "NaiveDateTime(2020-08-15 23:12:09.000987654)"
     # no fractional seconds
     assert (
@@ -259,7 +259,7 @@ def test_repr():
 
 
 def test_format_common_iso():
-    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
     assert str(d) == "2020-08-15T23:12:09.000987654"
     assert d.format_common_iso() == "2020-08-15T23:12:09.000987654"
 
@@ -286,14 +286,14 @@ def test_comparison():
 
 
 def test_py_datetime():
-    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654_823)
+    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_823)
     assert d.py_datetime() == py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
 
 
 def test_from_py_datetime():
     d = py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
     assert NaiveDateTime.from_py_datetime(d) == NaiveDateTime(
-        2020, 8, 15, 23, 12, 9, 987_654_000
+        2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
     )
 
     with pytest.raises(ValueError, match="utc"):
@@ -306,29 +306,39 @@ def test_from_py_datetime():
 
     assert NaiveDateTime.from_py_datetime(
         MyDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    ) == NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654_000)
+    ) == NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
 
 
 def test_min_max():
     assert NaiveDateTime.MIN == NaiveDateTime(1, 1, 1)
     assert NaiveDateTime.MAX == NaiveDateTime(
-        9999, 12, 31, 23, 59, 59, 999_999_999
+        9999, 12, 31, 23, 59, 59, nanosecond=999_999_999
     )
 
 
 def test_replace():
-    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
     assert d.replace(year=2021) == NaiveDateTime(
-        2021, 8, 15, 23, 12, 9, 987_654
+        2021, 8, 15, 23, 12, 9, nanosecond=987_654
     )
-    assert d.replace(month=9) == NaiveDateTime(2020, 9, 15, 23, 12, 9, 987_654)
-    assert d.replace(day=16) == NaiveDateTime(2020, 8, 16, 23, 12, 9, 987_654)
-    assert d.replace(hour=0) == NaiveDateTime(2020, 8, 15, 0, 12, 9, 987_654)
-    assert d.replace(minute=0) == NaiveDateTime(2020, 8, 15, 23, 0, 9, 987_654)
+    assert d.replace(month=9) == NaiveDateTime(
+        2020, 9, 15, 23, 12, 9, nanosecond=987_654
+    )
+    assert d.replace(day=16) == NaiveDateTime(
+        2020, 8, 16, 23, 12, 9, nanosecond=987_654
+    )
+    assert d.replace(hour=0) == NaiveDateTime(
+        2020, 8, 15, 0, 12, 9, nanosecond=987_654
+    )
+    assert d.replace(minute=0) == NaiveDateTime(
+        2020, 8, 15, 23, 0, 9, nanosecond=987_654
+    )
     assert d.replace(second=0) == NaiveDateTime(
-        2020, 8, 15, 23, 12, 0, 987_654
+        2020, 8, 15, 23, 12, 0, nanosecond=987_654
     )
-    assert d.replace(nanosecond=0) == NaiveDateTime(2020, 8, 15, 23, 12, 9, 0)
+    assert d.replace(nanosecond=0) == NaiveDateTime(
+        2020, 8, 15, 23, 12, 9, nanosecond=0
+    )
 
     with pytest.raises(ValueError, match="nano|time"):
         d.replace(nanosecond=1_000_000_000)
@@ -343,18 +353,18 @@ def test_replace():
 class TestAddMethod:
 
     def test_valid(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
 
         assert d.add(hours=48, seconds=5, months=-2) == d - months(2) + hours(
             48
         ) + seconds(5)
 
     def test_invalid(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.add(hours=24 * 365 * 8000)
 
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.add(hours=-24 * 365 * 3000)
 
         with pytest.raises(TypeError, match="positional"):
@@ -375,7 +385,7 @@ class TestAddMethod:
         nanoseconds=integers(),
     )
     def test_fuzzing(self, **kwargs):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654_321)
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         try:
             d.add(**kwargs)
         except (ValueError, OverflowError):
@@ -385,13 +395,13 @@ class TestAddMethod:
 class TestSubtractMethod:
 
     def test_valid(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         assert d.subtract(
             hours=24, seconds=5, months=-2, days=1
         ) == d + months(2) - days(1) - hours(24) - seconds(5)
 
     def test_invalid(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.raises(TypeError, match="positional"):
             d.subtract(4)  # type: ignore[misc]
 
@@ -410,7 +420,7 @@ class TestSubtractMethod:
         nanoseconds=integers(),
     )
     def test_fuzzing(self, **kwargs):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654_321)
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         try:
             d.subtract(**kwargs)
         except (ValueError, OverflowError):
@@ -420,50 +430,50 @@ class TestSubtractMethod:
 class TestAddOperator:
 
     def test_time_units(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654_321)
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         assert d + hours(48) + seconds(5) + nanoseconds(3) == NaiveDateTime(
-            2020, 8, 17, 23, 12, 14, 987_654_324
+            2020, 8, 17, 23, 12, 14, nanosecond=987_654_324
         )
         assert d + nanoseconds(400_000_000) == NaiveDateTime(
-            2020, 8, 15, 23, 12, 10, 387_654_321
+            2020, 8, 15, 23, 12, 10, nanosecond=387_654_321
         )
         assert d + seconds(-20) == NaiveDateTime(
-            2020, 8, 15, 23, 11, 49, 987_654_321
+            2020, 8, 15, 23, 11, 49, nanosecond=987_654_321
         )
 
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d + hours(24 * 365 * 8000)
 
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d + hours(-24 * 365 * 3000)
 
     def test_calendar_units(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         assert d + (years(1) + weeks(1) + days(-3)) == d.replace(
             year=2021, day=19
         )
         assert d + days(-1) == d.replace(day=14)
 
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d + years(8_000)
 
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d + days(366 * 8_000)
 
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d + years(-3_000)
 
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d + days(-366 * 8_000)
 
     def test_mixed_units(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654_321)
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         assert d + (
             years(1) + weeks(1) + days(-3) + hours(24) + seconds(5)
-        ) == NaiveDateTime(2021, 8, 20, 23, 12, 14, 987_654_321)
+        ) == NaiveDateTime(2021, 8, 20, 23, 12, 14, nanosecond=987_654_321)
 
     def test_invalid(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.raises(TypeError, match="unsupported operand type"):
             d + 42  # type: ignore[operator]
         with pytest.raises(TypeError, match="unsupported operand type"):
@@ -475,30 +485,30 @@ class TestAddOperator:
 class TestSubtractOperator:
 
     def test_time_units(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         assert d - hours(24) - seconds(5) == NaiveDateTime(
-            2020, 8, 14, 23, 12, 4, 987_654
+            2020, 8, 14, 23, 12, 4, nanosecond=987_654
         )
 
     def test_calendar_units(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         assert d - (years(1) + weeks(1) + days(-3)) == d.replace(
             year=2019, day=11
         )
 
     def test_mixed_units(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654_321)
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         assert d - (
             years(1) + weeks(1) + days(-3) + hours(24) + seconds(5)
-        ) == NaiveDateTime(2019, 8, 10, 23, 12, 4, 987_654_321)
+        ) == NaiveDateTime(2019, 8, 10, 23, 12, 4, nanosecond=987_654_321)
 
     def test_other_datetime(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654_321)
-        other = NaiveDateTime(2020, 8, 14, 23, 12, 4, 987_654_331)
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
+        other = NaiveDateTime(2020, 8, 14, 23, 12, 4, nanosecond=987_654_331)
         assert d - other == hours(24) + seconds(5) - nanoseconds(10)
 
     def test_invalid(self):
-        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.raises(TypeError, match="unsupported operand type"):
             d - 42  # type: ignore[operator]
 
@@ -526,7 +536,7 @@ def test_replace_time():
 
 
 def test_pickle():
-    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    d = NaiveDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
     dumped = pickle.dumps(d)
     assert len(dumped) <= len(pickle.dumps(d.py_datetime())) + 10
     assert pickle.loads(pickle.dumps(d)) == d
@@ -541,7 +551,7 @@ def test_old_pickle_data_remains_unpicklable():
         b"\x94\x85\x94R\x94."
     )
     assert pickle.loads(dumped) == NaiveDateTime(
-        2020, 8, 15, 23, 12, 9, 987_654
+        2020, 8, 15, 23, 12, 9, nanosecond=987_654
     )
 
 

@@ -169,15 +169,15 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     if PyArg_ParseTupleAndKeywords(
         args,
         kwargs,
-        c_str!("lll|llll:NaiveDateTime"),
+        c"lll|lll$l:NaiveDateTime".as_ptr(),
         vec![
-            c_str!("year") as *mut c_char,
-            c_str!("month") as *mut c_char,
-            c_str!("day") as *mut c_char,
-            c_str!("hour") as *mut c_char,
-            c_str!("minute") as *mut c_char,
-            c_str!("second") as *mut c_char,
-            c_str!("nanosecond") as *mut c_char,
+            c"year".as_ptr() as *mut c_char,
+            c"month".as_ptr() as *mut c_char,
+            c"day".as_ptr() as *mut c_char,
+            c"hour".as_ptr() as *mut c_char,
+            c"minute".as_ptr() as *mut c_char,
+            c"second".as_ptr() as *mut c_char,
+            c"nanosecond".as_ptr() as *mut c_char,
             NULL(),
         ]
         .as_mut_ptr(),
@@ -234,7 +234,7 @@ unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> 
 
 unsafe extern "C" fn __hash__(slf: *mut PyObject) -> Py_hash_t {
     let DateTime { date, time } = DateTime::extract(slf);
-    hashmask(date.hash() as Py_hash_t ^ time.pyhash())
+    hashmask(hash_combine(date.hash() as Py_hash_t, time.pyhash()))
 }
 
 unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {

@@ -53,12 +53,15 @@ impl TimeDelta {
 
     #[cfg(target_pointer_width = "64")]
     pub(crate) const fn pyhash(self) -> Py_hash_t {
-        self.nanos as Py_hash_t ^ self.secs as Py_hash_t
+        hash_combine(self.nanos as Py_hash_t, self.secs as Py_hash_t)
     }
 
     #[cfg(target_pointer_width = "32")]
     pub(crate) const fn pyhash(self) -> Py_hash_t {
-        self.nanos as Py_hash_t ^ self.secs as Py_hash_t ^ (self.secs >> 32) as Py_hash_t
+        hash_combine(
+            self.nanos as Py_hash_t,
+            hash_combine(self.secs as Py_hash_t, (self.secs >> 32) as Py_hash_t),
+        )
     }
 
     pub(crate) const fn is_zero(&self) -> bool {
@@ -127,7 +130,7 @@ impl std::fmt::Display for TimeDelta {
 }
 
 #[allow(clippy::unnecessary_cast)]
-pub(crate) const MAX_SECS: i64 = (MAX_YEAR * 366 * 24 * 3600) as i64;
+pub(crate) const MAX_SECS: i64 = (MAX_YEAR as i64) * 366 * 24 * 3600;
 pub(crate) const MAX_HOURS: i64 = MAX_SECS / 3600;
 pub(crate) const MAX_MINUTES: i64 = MAX_SECS / 60;
 pub(crate) const MAX_MILLISECONDS: i64 = MAX_SECS * 1_000;
@@ -679,7 +682,7 @@ enum Unit {
 
 // 001234 -> 1_234_000
 fn parse_nano_fractions(s: &[u8]) -> Option<i128> {
-    let mut tally = get_digit!(s, 0) as i128 * 100_000_000;
+    let mut tally = parse_digit(s, 0)? as i128 * 100_000_000;
     for i in 1..min(s.len(), 9) {
         match s[i] {
             c if c.is_ascii_digit() => {
