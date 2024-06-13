@@ -34,14 +34,14 @@
     d = UTCDateTime(2020, 8, 9)
     d.replace(tzinfo=None)  # E: .*Unexpected keyword.*tzinfo.*
     d.replace(fold=None)  # E: .*Unexpected keyword.*fold.*
-- case: in_fixed_offset
+- case: to_fixed_offset
   regex: true
   main: |
     from whenever import UTCDateTime, hours
     d = UTCDateTime(2020, 8, 9)
-    d.in_fixed_offset()
-    d.in_fixed_offset(hours(1))
-    d.in_fixed_offset(None)
+    d.to_fixed_offset()
+    d.to_fixed_offset(hours(1))
+    d.to_fixed_offset(None)
   out: |
     main:5: E: .*overload
     main:5: N: .*

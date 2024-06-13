@@ -5,11 +5,11 @@ runner = pyperf.Runner()
 
 runner.timeit(
     "various operations",
-    "d = OffsetDateTime.from_rfc3339('2020-04-05 22:04:00-04:00')"
-    ".in_utc();"
+    "d = OffsetDateTime.parse_rfc3339('2020-04-05 22:04:00-04:00')"
+    ".to_utc();"
     "d - UTCDateTime.now();"
     "d.add(hours=4, minutes=30)"
-    ".in_tz('Europe/Amsterdam')",
+    ".to_tz('Europe/Amsterdam')",
     setup="from whenever import OffsetDateTime, UTCDateTime",
 )
 
@@ -45,6 +45,6 @@ runner.timeit(
 
 runner.timeit(
     "change tz",
-    "dt.in_tz('America/New_York')",
+    "dt.to_tz('America/New_York')",
     setup="from whenever import ZonedDateTime; dt = ZonedDateTime(2020, 3, 20, 12, 30, 45, tz='Europe/Amsterdam')",
 )

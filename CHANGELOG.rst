@@ -4,9 +4,10 @@
 0.6.0 (2024-??-??)
 ------------------
 
-**Improved**
+**Added**
 
 - Implement as a Rust extension module, leading to a big speedup
+- Add ``replace_date`` and ``replace_time`` methods to datetimes.
 
 **Breaking changes**
 
@@ -15,9 +16,22 @@
   **Rationale**: Nanosecond precision is the standard for most modern
   datetime libraries.
 
-- Renamed `(from_)canonical_format` methods to `(from_)default_format`.
+- Unified `(from_)canonical_format` methods with `(from_)common_iso8601` methods
+  into `(format|parse)_common_iso` methods.
 
-  **Rationale**: The new name is simpler to understand.
+  **Rationale**: This cuts down on the number of methods; the performance benefits
+  aren't worth the extra clutter.
+
+- Renamed `(from_)(rfc3339|rfc2822)` methods to `(format|parse)_(rfc3339|rfc2822)`.
+
+  **Rationale**: Consistency with other methods.
+
+- Renamed ``as_utc``, ``as_offset``, ``as_zoned``, ``as_local`` to
+  ``to_utc``, ``to_fixed_offset``, ``to_tz``, ``to_local_system``,
+  and the ``NaiveDateTime.assume_*`` methods accordingly
+
+  **Rationale**: "to" better clarifies a conversion is being made (not a replacement),
+  and "fixed offset" and "tz" are more descriptive than "offset" and "zoned".
 
 - Removed weakref support.
 

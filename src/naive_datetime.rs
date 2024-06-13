@@ -209,7 +209,7 @@ unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
     DateTime::extract(slf).default_fmt().to_py()
 }
 
-unsafe fn default_format(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     __str__(slf)
 }
 
@@ -564,7 +564,7 @@ pub fn parse_date_and_time(s: &[u8]) -> Option<(Date, Time)> {
     Date::parse_all(&s[..10]).zip(Time::parse_all(&s[11..]))
 }
 
-unsafe fn from_default_format(cls: *mut PyObject, arg: *mut PyObject) -> PyReturn {
+unsafe fn parse_common_iso(cls: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let s = arg.to_utf8()?.ok_or_type_err("Expected a string")?;
     if s.len() < 19 || s[10] != b'T' {
         Err(value_err!("Invalid format: {}", arg.repr()))
@@ -632,7 +632,7 @@ unsafe fn assume_fixed_offset(slf: *mut PyObject, arg: *mut PyObject) -> PyRetur
         .to_obj(offset_datetime_type)
 }
 
-unsafe fn assume_in_tz(
+unsafe fn assume_tz(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
@@ -650,13 +650,13 @@ unsafe fn assume_in_tz(
     let DateTime { date, time } = DateTime::extract(slf);
     if args.len() != 1 {
         type_err!(
-            "assume_in_tz() takes 1 positional argument but {} were given",
+            "assume_tz() takes 1 positional argument but {} were given",
             args.len()
         )
         .err()?
     }
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_in_tz")?;
+    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_tz")?;
     let zoneinfo = PyObject_CallOneArg(zoneinfo_type, args[0]).as_result()?;
     defer_decref!(zoneinfo);
     ZonedDateTime::from_naive(py_api, date, time, zoneinfo, dis)?
@@ -679,7 +679,7 @@ unsafe fn assume_in_tz(
         .to_obj(zoned_datetime_type)
 }
 
-unsafe fn assume_in_local_system(
+unsafe fn assume_local_system(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
@@ -696,11 +696,11 @@ unsafe fn assume_in_local_system(
     let DateTime { date, time } = DateTime::extract(slf);
     if !args.is_empty() {
         Err(type_err!(
-            "assume_in_local_system() takes no positional arguments"
+            "assume_local_system() takes no positional arguments"
         ))?
     }
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_in_local_system")?;
+    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_local_system")?;
     OffsetDateTime::for_localsystem(py_api, date, time, dis)?
         .map_err(|e| match e {
             Ambiguity::Fold => py_err!(
@@ -719,7 +719,7 @@ unsafe fn assume_in_local_system(
         .to_obj(local_datetime_type)
 }
 
-unsafe fn with_date(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
+unsafe fn replace_date(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let cls = Py_TYPE(slf);
     let DateTime { time, .. } = DateTime::extract(slf);
     if Py_TYPE(arg) == State::for_type(cls).date_type {
@@ -733,7 +733,7 @@ unsafe fn with_date(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     }
 }
 
-unsafe fn with_time(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
+unsafe fn replace_time(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let cls = Py_TYPE(slf);
     let DateTime { date, .. } = DateTime::extract(slf);
     if Py_TYPE(arg) == State::for_type(cls).time_type {
@@ -764,18 +764,12 @@ static mut METHODS: &[PyMethodDef] = &[
         get_time named "time",
         "Get the time component"
     ),
-    method!(default_format, "Format in the default way"),
     method!(
-        from_default_format,
-        "Parse from the default format",
-        METH_O | METH_CLASS
-    ),
-    method!(
-        default_format named "common_iso8601",
+        format_common_iso,
         "Get the common ISO 8601 string representation"
     ),
     method!(
-        from_default_format named "from_common_iso8601",
+        parse_common_iso,
         "Create an instance from the common ISO 8601 string representation",
         METH_O | METH_CLASS
     ),
@@ -791,18 +785,18 @@ static mut METHODS: &[PyMethodDef] = &[
         "Assume the datetime has a fixed offset",
         METH_O
     ),
-    method_kwargs!(assume_in_tz, "Assume the datetime is in a timezone"),
+    method_kwargs!(assume_tz, "Assume the datetime is in a timezone"),
     method_kwargs!(
-        assume_in_local_system,
+        assume_local_system,
         "Assume the datetime is in the local system timezone"
     ),
     method!(
-        with_date,
+        replace_date,
         "Return a new instance with the date replaced",
         METH_O
     ),
     method!(
-        with_time,
+        replace_time,
         "Return a new instance with the time replaced",
         METH_O
     ),

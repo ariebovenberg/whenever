@@ -281,108 +281,6 @@ def test_comparison():
     [
         (
             TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4),
-            "PT01:02:03.000004",
-        ),
-        (
-            TimeDelta(hours=1, minutes=-2, seconds=3, microseconds=-4),
-            "PT00:58:02.999996",
-        ),
-        (
-            TimeDelta(hours=1, nanoseconds=40),
-            "PT01:00:00.00000004",
-        ),
-        (
-            TimeDelta(hours=1, minutes=2, seconds=3, microseconds=50_000),
-            "PT01:02:03.05",
-        ),
-        (
-            TimeDelta(hours=1, minutes=120, seconds=3),
-            "PT03:00:03",
-        ),
-        (
-            TimeDelta(),
-            "PT00:00:00",
-        ),
-        (
-            TimeDelta(hours=5),
-            "PT05:00:00",
-        ),
-        (
-            TimeDelta(hours=400),
-            "PT400:00:00",
-        ),
-        (
-            TimeDelta(minutes=-4),
-            "-PT00:04:00",
-        ),
-    ],
-)
-def test_default_format(d, expected):
-    assert d.default_format() == expected
-    assert str(d) == expected
-
-
-class TestFromDefaultFormat:
-
-    @pytest.mark.parametrize(
-        "s, expected",
-        [
-            (
-                "PT01:02:03.000004",
-                TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4),
-            ),
-            ("PT00:04:00", TimeDelta(minutes=4)),
-            ("PT00:00:00", TimeDelta()),
-            ("PT05:00:00", TimeDelta(hours=5)),
-            ("PT400:00:00", TimeDelta(hours=400)),
-            ("PT00:00:00.000000", TimeDelta()),
-            ("PT00:00:00.999955", TimeDelta(microseconds=999_955)),
-            ("PT00:00:00.99", TimeDelta(microseconds=990_000)),
-            ("-PT00:04:00", TimeDelta(minutes=-4)),
-            ("+PT00:04:00", TimeDelta(minutes=4)),
-            ("-PT00:04:00.000000001", TimeDelta(minutes=-4, nanoseconds=-1)),
-            ("PT4:00:00", TimeDelta(hours=4)),
-        ],
-    )
-    def test_valid(self, s, expected):
-        assert TimeDelta.from_default_format(s) == expected
-
-    @pytest.mark.parametrize(
-        "s",
-        [
-            "PT00:00:00.000000.000000",  # too many dots
-            "PT00:00:00.0000.00",  # too many dots
-            "PT00:00.00",  # invalid separator
-            "PT00.00.00.0000",  # invalid separator
-            "",  # empty
-            "PT",  # empty
-            "PT00:60:00",  # too large minutes
-            "PT00:00:60",  # too large seconds
-            "PT04:4:00",  # missing padding
-            "PT05:-2:11",  # negative minutes
-            "PT05:02:11.",  # invalid fraction
-            "PT05:02:11.a",  # invalid fraction
-            "PT05:02:11.1234567890",  # too long fraction
-            "PT05:02:11.123456789 ",  # space after
-            "PT05",  # only hours
-            "PT5:00",  # missing seconds
-            "5:00:00",  # missing prefix
-            "PT00:0𝟙:00",  # non-ascii
-        ],
-    )
-    def test_invalid(self, s):
-        with pytest.raises(
-            ValueError,
-            match="Invalid time delta format.*" + re.escape(repr(s)),
-        ):
-            TimeDelta.from_default_format(s)
-
-
-@pytest.mark.parametrize(
-    "d, expected",
-    [
-        (
-            TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4),
             "PT1H2M3.000004S",
         ),
         (
@@ -393,49 +291,27 @@ class TestFromDefaultFormat:
             TimeDelta(hours=1, minutes=2, seconds=3, microseconds=50_000),
             "PT1H2M3.05S",
         ),
-        (
-            TimeDelta(hours=1, minutes=120, seconds=3),
-            "PT3H3S",
-        ),
-        (
-            TimeDelta(),
-            "PT0S",
-        ),
-        (
-            TimeDelta(microseconds=1),
-            "PT0.000001S",
-        ),
-        (
-            TimeDelta(microseconds=-1),
-            "-PT0.000001S",
-        ),
-        (
-            TimeDelta(hours=4, nanoseconds=40),
-            "PT4H0.00000004S",
-        ),
-        (
-            TimeDelta(seconds=2, microseconds=-3),
-            "PT1.999997S",
-        ),
-        (
-            TimeDelta(hours=5),
-            "PT5H",
-        ),
-        (
-            TimeDelta(hours=400),
-            "PT400H",
-        ),
-        (
-            TimeDelta(minutes=-4),
-            "-PT4M",
-        ),
+        (TimeDelta(hours=1, minutes=120, seconds=3), "PT3H3S"),
+        (TimeDelta(), "PT0S"),
+        (TimeDelta(microseconds=1), "PT0.000001S"),
+        (TimeDelta(microseconds=-1), "-PT0.000001S"),
+        (TimeDelta(hours=4, nanoseconds=40), "PT4H0.00000004S"),
+        (TimeDelta(seconds=2, microseconds=-3), "PT1.999997S"),
+        (TimeDelta(hours=5), "PT5H"),
+        (TimeDelta(hours=400), "PT400H"),
+        (TimeDelta(minutes=-4), "-PT4M"),
     ],
 )
-def test_common_iso8601(d, expected):
-    assert d.common_iso8601() == expected
+def test_format_common_iso(d, expected):
+    assert d.format_common_iso() == expected
 
 
-class TestFromCommonIso8601:
+def test_repr():
+    d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+    assert repr(d) == "TimeDelta(01:02:03.000004)"
+
+
+class TestParseCommonIso:
 
     @pytest.mark.parametrize(
         "s, expected",
@@ -476,7 +352,7 @@ class TestFromCommonIso8601:
         ],
     )
     def test_valid(self, s, expected):
-        assert TimeDelta.from_common_iso8601(s) == expected
+        assert TimeDelta.parse_common_iso(s) == expected
 
     @pytest.mark.parametrize(
         "s",
@@ -504,7 +380,7 @@ class TestFromCommonIso8601:
             ValueError,
             match=r"Invalid format.*" + re.escape(repr(s)),
         ):
-            TimeDelta.from_common_iso8601(s)
+            TimeDelta.parse_common_iso(s)
 
     @pytest.mark.parametrize(
         "s",
@@ -515,7 +391,7 @@ class TestFromCommonIso8601:
     )
     def test_too_large(self, s) -> None:
         with pytest.raises(ValueError, match="range"):
-            TimeDelta.from_common_iso8601(s)
+            TimeDelta.parse_common_iso(s)
 
 
 def test_addition():

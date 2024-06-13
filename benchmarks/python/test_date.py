@@ -13,13 +13,13 @@ def test_new(benchmark):
     benchmark(Date, 2020, 8, 24)
 
 
-def test_canonical_format(benchmark):
+def test_format_common_iso(benchmark):
     d1 = Date(2020, 8, 24)
-    benchmark(d1.canonical_format)
+    benchmark(d1.format_common_iso)
 
 
-def test_from_canonical_format(benchmark):
-    benchmark(Date.from_common_iso8601, "2020-08-24")
+def test_parse_common_iso(benchmark):
+    benchmark(Date.parse_common_iso, "2020-08-24")
 
 
 def test_add(benchmark):
@@ -41,10 +41,6 @@ def test_attributes(benchmark):
 def test_pickle(benchmark):
     d1 = Date(2020, 8, 24)
     benchmark(pickle.dumps, d1)
-
-
-def test_parse(benchmark):
-    benchmark(Date.from_canonical_format, "2020-08-24")
 
 
 def test_sizeof():

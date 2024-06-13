@@ -141,96 +141,6 @@ def test_date_and_time():
     assert d.time() == Time(23, 12, 9, nanosecond=987_654)
 
 
-@pytest.mark.parametrize(
-    "d, expected",
-    [
-        (
-            UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654),
-            "2020-08-15T23:12:09.000987654Z",
-        ),
-        (
-            UTCDateTime(2020, 8, 15, 23, 12, 9, 980_000_000),
-            "2020-08-15T23:12:09.98Z",
-        ),
-        (UTCDateTime(2020, 8, 15), "2020-08-15T00:00:00Z"),
-        (UTCDateTime(2020, 8, 15, 23, 12, 9), "2020-08-15T23:12:09Z"),
-    ],
-)
-def test_default_format(d: UTCDateTime, expected: str):
-    assert str(d) == expected
-    assert d.default_format() == expected
-
-
-class TestFromDefaultFormat:
-    @pytest.mark.parametrize(
-        "s, expect",
-        [
-            # full precision
-            (
-                "2020-08-15T23:12:09.987654001Z",
-                UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_001),
-            ),
-            # microsecond precision
-            (
-                "2020-08-15T23:12:09.987654Z",
-                UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000),
-            ),
-            # no fractions
-            ("2020-08-15T23:12:09Z", UTCDateTime(2020, 8, 15, 23, 12, 9)),
-            # no time
-            ("2020-08-15T00:00:00Z", UTCDateTime(2020, 8, 15)),
-            # millisecond precision
-            (
-                "2020-08-15T23:12:09.344Z",
-                UTCDateTime(2020, 8, 15, 23, 12, 9, 344_000_000),
-            ),
-            # single fraction
-            (
-                "2020-08-15T23:12:09.3Z",
-                UTCDateTime(2020, 8, 15, 23, 12, 9, 300_000_000),
-            ),
-            ("2020-08-15T23:12:09Z", UTCDateTime(2020, 8, 15, 23, 12, 9)),
-        ],
-    )
-    def test_valid(self, s, expect):
-        assert UTCDateTime.from_default_format(s) == expect
-
-    @pytest.mark.parametrize(
-        "s",
-        [
-            "2020-8-15 T23:12:45Z",  # invalid padding
-            "2020-8-15 T23:12:45Z",  # invalid padding
-            "2020-08-15 23:12:45Z",  # missing separator
-            "2020-08-15T23:12Z",  # no seconds
-            "2020-08-15Z",  # no time
-            "2020-08Z",
-            "2020Z",  # no time or date
-            "Z",  # no time or date
-            "",  # empty
-            "garbage",  # garbage
-            "2020-08-15T23:12:09.1234567890Z",  # too precise
-            "2020-09-15T22:44:20z",  # lowercase z
-            "2020-09-15T22:44:20",  # no trailing z
-            "2020-09-15T\x0012:32",  # NULL byte
-            "2020-08-15T23:12:09.3𝟙Z",
-        ],
-    )
-    def test_invalid(self, s):
-        with pytest.raises(
-            ValueError,
-            match=r"Invalid format.*" + re.escape(repr(s)),
-        ):
-            UTCDateTime.from_default_format(s)
-
-    @given(text())
-    def test_fuzzing(self, s: str):
-        with pytest.raises(
-            ValueError,
-            match=r"Invalid format.*" + re.escape(repr(s)),
-        ):
-            UTCDateTime.from_default_format(s)
-
-
 class TestEquality:
     def test_same(self):
         d = UTCDateTime(2020, 8, 15)
@@ -430,7 +340,7 @@ class TestComparison:
     def test_offset(self):
         d = UTCDateTime(2020, 8, 15, 12, 30)
 
-        offset_eq = d.in_fixed_offset(4)
+        offset_eq = d.to_fixed_offset(4)
         offset_gt = offset_eq.replace(minute=31)
         offset_lt = offset_eq.replace(minute=29)
         assert d >= offset_eq
@@ -475,7 +385,7 @@ class TestComparison:
     def test_local(self):
         d = UTCDateTime(2020, 8, 15, 12, 30)
 
-        local_eq = d.in_local_system()
+        local_eq = d.to_local_system()
         local_gt = local_eq.replace(minute=31)
         local_lt = local_eq.replace(minute=29)
         assert d >= local_eq
@@ -604,16 +514,16 @@ class TestReplace:
             d.replace(hour=24)
 
 
-def test_with_date():
+def test_replace_date():
     d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-    assert d.with_date(Date(2019, 1, 1)) == UTCDateTime(
+    assert d.replace_date(Date(2019, 1, 1)) == UTCDateTime(
         2019, 1, 1, 23, 12, 9, nanosecond=987_654_321
     )
 
 
-def test_with_time():
+def test_replace_time():
     d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-    assert d.with_time(Time(1, 2, 3, 4)) == UTCDateTime(
+    assert d.replace_time(Time(1, 2, 3, 4)) == UTCDateTime(
         2020, 8, 15, 1, 2, 3, 4
     )
 
@@ -830,27 +740,27 @@ def test_copy():
     assert deepcopy(d) is d
 
 
-def test_in_utc():
+def test_to_utc():
     d = UTCDateTime(2020, 8, 15, 20)
-    assert d.in_utc() is d
+    assert d.to_utc() is d
 
 
-def test_in_fixed_offset():
+def test_to_fixed_offset():
     d = UTCDateTime(2020, 8, 15, 20)
-    assert d.in_fixed_offset().exact_eq(
+    assert d.to_fixed_offset().exact_eq(
         OffsetDateTime(2020, 8, 15, 20, offset=0)
     )
-    assert d.in_fixed_offset(hours(3)).exact_eq(
+    assert d.to_fixed_offset(hours(3)).exact_eq(
         OffsetDateTime(2020, 8, 15, 23, offset=3)
     )
-    assert d.in_fixed_offset(-3).exact_eq(
+    assert d.to_fixed_offset(-3).exact_eq(
         OffsetDateTime(2020, 8, 15, 17, offset=-3)
     )
 
 
-def test_in_tz():
+def test_to_tz():
     d = UTCDateTime(2020, 8, 15, 20)
-    assert d.in_tz("America/New_York").exact_eq(
+    assert d.to_tz("America/New_York").exact_eq(
         ZonedDateTime(2020, 8, 15, 16, tz="America/New_York")
     )
 
@@ -858,13 +768,13 @@ def test_in_tz():
 @local_nyc_tz()
 def test_in_local_system():
     d = UTCDateTime(2020, 8, 15, 20)
-    assert d.in_local_system().exact_eq(LocalSystemDateTime(2020, 8, 15, 16))
+    assert d.to_local_system().exact_eq(LocalSystemDateTime(2020, 8, 15, 16))
     # ensure disembiguation is correct
     d = UTCDateTime(2022, 11, 6, 5)
-    assert d.in_local_system().exact_eq(
+    assert d.to_local_system().exact_eq(
         LocalSystemDateTime(2022, 11, 6, 1, disambiguate="earlier")
     )
-    assert d.replace(hour=6).in_local_system() == LocalSystemDateTime(
+    assert d.replace(hour=6).to_local_system() == LocalSystemDateTime(
         2022, 11, 6, 1, disambiguate="later"
     )
 
@@ -909,12 +819,12 @@ class TestStrptime:
 
 def test_rfc2822():
     assert (
-        UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=450).rfc2822()
+        UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=450).format_rfc2822()
         == "Sat, 15 Aug 2020 23:12:09 GMT"
     )
 
 
-class TestFromRFC2822:
+class TestParseRFC2822:
 
     @pytest.mark.parametrize(
         "s, expected",
@@ -942,7 +852,7 @@ class TestFromRFC2822:
         ],
     )
     def test_valid(self, s, expected):
-        assert UTCDateTime.from_rfc2822(s) == expected
+        assert UTCDateTime.parse_rfc2822(s) == expected
 
     @pytest.mark.parametrize(
         "s",
@@ -961,17 +871,17 @@ class TestFromRFC2822:
             ValueError,
             match=r"(Could not parse.*RFC 2822|Invalid).*" + re.escape(s),
         ):
-            UTCDateTime.from_rfc2822(s)
+            UTCDateTime.parse_rfc2822(s)
 
 
-def test_rfc3339():
+def test_format_rfc3339():
     assert (
-        UTCDateTime(2020, 8, 15, 23, 12, 9, 450).rfc3339()
+        UTCDateTime(2020, 8, 15, 23, 12, 9, 450).format_rfc3339()
         == "2020-08-15 23:12:09.00000045Z"
     )
 
 
-class TestFromRFC3339:
+class TestParseRFC3339:
 
     @pytest.mark.parametrize(
         "s, expect",
@@ -1003,8 +913,8 @@ class TestFromRFC3339:
             ),
         ],
     )
-    def test_from_rfc3339(self, s, expect):
-        assert UTCDateTime.from_rfc3339(s) == expect
+    def test_parse_rfc3339(self, s, expect):
+        assert UTCDateTime.parse_rfc3339(s) == expect
 
     @pytest.mark.parametrize(
         "s",
@@ -1028,15 +938,30 @@ class TestFromRFC3339:
             ValueError,
             match=r"Invalid.*RFC 3339.*" + re.escape(s),
         ):
-            UTCDateTime.from_rfc3339(s)
+            UTCDateTime.parse_rfc3339(s)
 
 
-def test_common_iso8601():
-    d = UTCDateTime(2020, 8, 15, 23, 12, 9, 450)
-    assert d.common_iso8601() == "2020-08-15T23:12:09.00000045Z"
+@pytest.mark.parametrize(
+    "d, expect",
+    [
+        (
+            UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654),
+            "2020-08-15T23:12:09.000987654Z",
+        ),
+        (
+            UTCDateTime(2020, 8, 15, 23, 12, 9, 980_000_000),
+            "2020-08-15T23:12:09.98Z",
+        ),
+        (UTCDateTime(2020, 8, 15), "2020-08-15T00:00:00Z"),
+        (UTCDateTime(2020, 8, 15, 23, 12, 9), "2020-08-15T23:12:09Z"),
+    ],
+)
+def test_format_common_iso(d, expect):
+    assert d.format_common_iso() == expect
+    assert str(d) == expect
 
 
-class TestFromCommonIso8601:
+class TestParseCommonIso:
 
     @pytest.mark.parametrize(
         "s, expect",
@@ -1057,14 +982,47 @@ class TestFromCommonIso8601:
                 "2020-08-15T23:12:09.34Z",
                 UTCDateTime(2020, 8, 15, 23, 12, 9, 340_000_000),
             ),
+            # full precision
+            (
+                "2020-08-15T23:12:09.987654001Z",
+                UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_001),
+            ),
+            # microsecond precision
+            (
+                "2020-08-15T23:12:09.987654Z",
+                UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000),
+            ),
+            # no fractions
+            ("2020-08-15T23:12:09Z", UTCDateTime(2020, 8, 15, 23, 12, 9)),
+            # no time
+            ("2020-08-15T00:00:00Z", UTCDateTime(2020, 8, 15)),
+            # millisecond precision
+            (
+                "2020-08-15T23:12:09.344Z",
+                UTCDateTime(2020, 8, 15, 23, 12, 9, 344_000_000),
+            ),
+            # single fraction
+            (
+                "2020-08-15T23:12:09.3Z",
+                UTCDateTime(2020, 8, 15, 23, 12, 9, 300_000_000),
+            ),
+            ("2020-08-15T23:12:09Z", UTCDateTime(2020, 8, 15, 23, 12, 9)),
         ],
     )
-    def test_from_common_iso8601(self, s, expect):
-        assert UTCDateTime.from_common_iso8601(s) == expect
+    def test_valid(self, s, expect):
+        assert UTCDateTime.parse_common_iso(s) == expect
 
     @pytest.mark.parametrize(
         "s",
         [
+            "2020-8-15T23:12:45Z",  # invalid padding
+            "2020-08-15T23:12Z",  # no seconds
+            "2020-08-15_23Z",  # no time
+            "2020-08Z",  # no time or date
+            "2020Z",  # no time or date
+            "Z",  # no time or date
+            "garbage",  # garbage
+            "",  # empty
             "2020-08-15T23:12:09.000450",  # no offset
             "2020-08-15T23:12:09+02:00",  # non-UTC offset
             "2020-08-15 23:12:09Z",  # non-T separator
@@ -1073,11 +1031,23 @@ class TestFromCommonIso8601:
             "2020-08-15T23:12:09-00:00",  # forbidden offset
             "2020-08-15T23:12:09-02:00:03",  # seconds in offset
             "2020-08-15T23:12:09.3𝟜Z",  # non ascii
+            "2020-08-15T23:12:09.1234567890Z",  # too precise
+            "2020-09-15T22:44:20",  # no trailing z
+            "2020-09-15T\x0012:32",  # NULL byte
+            "2020-08-15T23:12:09.3𝟙Z",  # non ascii
         ],
     )
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"Invalid common.*ISO 8601.*" + re.escape(repr(s)),
+            match=r"Invalid format.*" + re.escape(repr(s)),
         ):
-            UTCDateTime.from_common_iso8601(s)
+            UTCDateTime.parse_common_iso(s)
+
+    @given(text())
+    def test_fuzzing(self, s: str):
+        with pytest.raises(
+            ValueError,
+            match=r"Invalid format.*" + re.escape(repr(s)),
+        ):
+            UTCDateTime.parse_common_iso(s)

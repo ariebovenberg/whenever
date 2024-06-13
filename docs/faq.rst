@@ -77,7 +77,7 @@ counterpart:
 - Conversions to aware datetimes are explicit about assumptions being made:
 
   >>> party_invite = NaiveDateTime(2022, 1, 1, 12)
-  >>> party_invite.assume_in_tz("Europe/Berlin")
+  >>> party_invite.assume_tz("Europe/Berlin")
   ZonedDateTime(2022-01-01 12:00:00+01:00[Europe/Berlin])
 
 .. _faq-offset-arithmetic:
@@ -116,12 +116,12 @@ If you do need to perform arithmetic on a fixed-offset datetime,
 you should make the location explicit by converting it to a
 :class:`~whenever.ZonedDateTime` first:
 
->>> departure.in_tz("America/Denver").add(hours=2)
+>>> departure.to_tz("America/Denver").add(hours=2)
 ZonedDateTime(2024-11-03 02:00:00-06:00[America/Denver])
->>> departure.in_tz("America/Phoenix").add(hours=2)
+>>> departure.to_tz("America/Phoenix").add(hours=2)
 ZonedDateTime(2024-11-03 03:00:00-07:00[America/Phoenix])
 >>> # not recommended, but possible:
->>> departure.in_utc().add(hours=2).in_fixed_offset(departure.offset)
+>>> departure.to_utc().add(hours=2).to_fixed_offset(departure.offset)
 OffsetDateTime(2024-11-03 03:00:00-07:00)
 
 .. note::

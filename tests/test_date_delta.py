@@ -163,17 +163,15 @@ def test_bool():
         (DateDelta(months=-2, weeks=-3), "-P2M21D"),
     ],
 )
-def test_string_formats(p, expect):
-    assert p.default_format() == expect
-    assert p.common_iso8601() == expect
+def test_format_common_iso(p, expect):
+    assert p.format_common_iso() == expect
     assert str(p) == expect
 
 
-class TestFromDefaultFormat:
+class TestParseCommonIso:
 
     def test_empty(self):
-        assert DateDelta.from_default_format("P0D") == DateDelta()
-        assert DateDelta.from_common_iso8601("P0D") == DateDelta()
+        assert DateDelta.parse_common_iso("P0D") == DateDelta()
 
     @pytest.mark.parametrize(
         "input, expect",
@@ -186,8 +184,7 @@ class TestFromDefaultFormat:
         ],
     )
     def test_single_unit(self, input, expect):
-        assert DateDelta.from_default_format(input) == expect
-        assert DateDelta.from_common_iso8601(input) == expect
+        assert DateDelta.parse_common_iso(input) == expect
 
     @pytest.mark.parametrize(
         "input, expect",
@@ -203,8 +200,7 @@ class TestFromDefaultFormat:
         ],
     )
     def test_multiple_units(self, input, expect):
-        assert DateDelta.from_default_format(input) == expect
-        assert DateDelta.from_common_iso8601(input) == expect
+        assert DateDelta.parse_common_iso(input) == expect
 
     @pytest.mark.parametrize(
         "s",
@@ -243,20 +239,11 @@ class TestFromDefaultFormat:
             ValueError,
             match=r"Invalid format.*" + re.escape(s),
         ):
-            DateDelta.from_default_format(s)
-
-        with pytest.raises(
-            ValueError,
-            match=r"Invalid format.*" + re.escape(s),
-        ):
-            DateDelta.from_common_iso8601(s)
+            DateDelta.parse_common_iso(s)
 
     def test_invalid_type(self):
         with pytest.raises(TypeError):
-            DateDelta.from_default_format(1)  # type: ignore[arg-type]
-
-        with pytest.raises(TypeError):
-            DateDelta.from_common_iso8601(1)  # type: ignore[arg-type]
+            DateDelta.parse_common_iso(1)  # type: ignore[arg-type]
 
 
 def test_repr():

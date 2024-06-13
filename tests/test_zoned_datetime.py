@@ -26,6 +26,7 @@ from whenever import (
     ZonedDateTime,
     days,
     hours,
+    milliseconds,
     months,
     weeks,
     years,
@@ -182,7 +183,7 @@ def test_time():
 class TestWithDate:
     def test_unambiguous(self):
         d = ZonedDateTime(2020, 8, 15, 14, nanosecond=2, tz="Europe/Amsterdam")
-        assert d.with_date(Date(2021, 1, 2)).exact_eq(
+        assert d.replace_date(Date(2021, 1, 2)).exact_eq(
             ZonedDateTime(2021, 1, 2, 14, nanosecond=2, tz="Europe/Amsterdam")
         )
 
@@ -190,15 +191,15 @@ class TestWithDate:
         d = ZonedDateTime(2020, 1, 1, 2, 15, 30, tz="Europe/Amsterdam")
         date = Date(2023, 10, 29)
         with pytest.raises(AmbiguousTime):
-            assert d.with_date(date)
+            assert d.replace_date(date)
 
-        assert d.with_date(date, disambiguate="earlier").exact_eq(
+        assert d.replace_date(date, disambiguate="earlier").exact_eq(
             d.replace(year=2023, month=10, day=29, disambiguate="earlier")
         )
-        assert d.with_date(date, disambiguate="later").exact_eq(
+        assert d.replace_date(date, disambiguate="later").exact_eq(
             d.replace(year=2023, month=10, day=29, disambiguate="later")
         )
-        assert d.with_date(date, disambiguate="compatible").exact_eq(
+        assert d.replace_date(date, disambiguate="compatible").exact_eq(
             d.replace(year=2023, month=10, day=29, disambiguate="compatible")
         )
 
@@ -206,46 +207,46 @@ class TestWithDate:
         d = ZonedDateTime(2020, 1, 1, 2, 15, 30, tz="Europe/Amsterdam")
         date = Date(2023, 3, 26)
         with pytest.raises(SkippedTime):
-            assert d.with_date(date)
+            assert d.replace_date(date)
 
-        assert d.with_date(date, disambiguate="earlier").exact_eq(
+        assert d.replace_date(date, disambiguate="earlier").exact_eq(
             d.replace(year=2023, month=3, day=26, disambiguate="earlier")
         )
-        assert d.with_date(date, disambiguate="later").exact_eq(
+        assert d.replace_date(date, disambiguate="later").exact_eq(
             d.replace(year=2023, month=3, day=26, disambiguate="later")
         )
-        assert d.with_date(date, disambiguate="compatible").exact_eq(
+        assert d.replace_date(date, disambiguate="compatible").exact_eq(
             d.replace(year=2023, month=3, day=26, disambiguate="compatible")
         )
 
     def test_invalid(self):
         d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
         with pytest.raises((TypeError, AttributeError)):
-            d.with_date(object())  # type: ignore[arg-type]
+            d.replace_date(object())  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="disambiguate"):
-            d.with_date(Date(2020, 8, 15), disambiguate="foo")  # type: ignore[arg-type]
+            d.replace_date(Date(2020, 8, 15), disambiguate="foo")  # type: ignore[arg-type]
 
         with pytest.raises(TypeError, match="got 2|foo"):
-            d.with_date(Date(2020, 8, 15), disambiguate="raise", foo=4)  # type: ignore[call-arg]
+            d.replace_date(Date(2020, 8, 15), disambiguate="raise", foo=4)  # type: ignore[call-arg]
 
         with pytest.raises(TypeError, match="foo"):
-            d.with_date(Date(2020, 8, 15), foo="raise")  # type: ignore[call-arg]
+            d.replace_date(Date(2020, 8, 15), foo="raise")  # type: ignore[call-arg]
 
     def test_out_of_range_due_to_offset(self):
         d = ZonedDateTime(2020, 1, 1, tz="Asia/Tokyo")
         with pytest.raises((ValueError, OverflowError), match="range"):
-            d.with_date(Date(1, 1, 1))
+            d.replace_date(Date(1, 1, 1))
 
         d2 = ZonedDateTime(2020, 1, 1, hour=23, tz="America/New_York")
         with pytest.raises((ValueError, OverflowError), match="range"):
-            d2.with_date(Date(9999, 12, 31))
+            d2.replace_date(Date(9999, 12, 31))
 
 
 class TestWithTime:
     def test_unambiguous(self):
         d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
-        assert d.with_time(Time(1, 2, 3, 4_000)).exact_eq(
+        assert d.replace_time(Time(1, 2, 3, 4_000)).exact_eq(
             ZonedDateTime(2020, 8, 15, 1, 2, 3, 4_000, tz="Europe/Amsterdam")
         )
 
@@ -253,15 +254,15 @@ class TestWithTime:
         d = ZonedDateTime(2023, 10, 29, 0, 15, 30, tz="Europe/Amsterdam")
         time = Time(2, 15, 30)
         with pytest.raises(AmbiguousTime):
-            assert d.with_time(time)
+            assert d.replace_time(time)
 
-        assert d.with_time(time, disambiguate="earlier").exact_eq(
+        assert d.replace_time(time, disambiguate="earlier").exact_eq(
             d.replace(hour=2, minute=15, second=30, disambiguate="earlier")
         )
-        assert d.with_time(time, disambiguate="later").exact_eq(
+        assert d.replace_time(time, disambiguate="later").exact_eq(
             d.replace(hour=2, minute=15, second=30, disambiguate="later")
         )
-        assert d.with_time(time, disambiguate="compatible").exact_eq(
+        assert d.replace_time(time, disambiguate="compatible").exact_eq(
             d.replace(hour=2, minute=15, second=30, disambiguate="compatible")
         )
 
@@ -269,43 +270,43 @@ class TestWithTime:
         d = ZonedDateTime(2023, 3, 26, 0, 15, tz="Europe/Amsterdam")
         time = Time(2, 15)
         with pytest.raises(SkippedTime):
-            assert d.with_time(time)
+            assert d.replace_time(time)
 
-        assert d.with_time(time, disambiguate="earlier").exact_eq(
+        assert d.replace_time(time, disambiguate="earlier").exact_eq(
             d.replace(hour=2, minute=15, disambiguate="earlier")
         )
-        assert d.with_time(time, disambiguate="later").exact_eq(
+        assert d.replace_time(time, disambiguate="later").exact_eq(
             d.replace(hour=2, minute=15, disambiguate="later")
         )
-        assert d.with_time(time, disambiguate="compatible").exact_eq(
+        assert d.replace_time(time, disambiguate="compatible").exact_eq(
             d.replace(hour=2, minute=15, disambiguate="compatible")
         )
 
     def test_invalid(self):
         d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
         with pytest.raises((TypeError, AttributeError)):
-            d.with_time(object())  # type: ignore[arg-type]
+            d.replace_time(object())  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="disambiguate"):
-            d.with_time(Time(1, 2, 3), disambiguate="foo")  # type: ignore[arg-type]
+            d.replace_time(Time(1, 2, 3), disambiguate="foo")  # type: ignore[arg-type]
 
         with pytest.raises(TypeError, match="got 2|foo"):
-            d.with_time(Time(1, 2, 3), disambiguate="raise", foo=4)  # type: ignore[call-arg]
+            d.replace_time(Time(1, 2, 3), disambiguate="raise", foo=4)  # type: ignore[call-arg]
 
         with pytest.raises(TypeError, match="foo"):
-            d.with_time(Time(1, 2, 3), foo="raise")  # type: ignore[call-arg]
+            d.replace_time(Time(1, 2, 3), foo="raise")  # type: ignore[call-arg]
 
     def test_out_of_range_due_to_offset(self):
         d = ZonedDateTime(1, 1, 1, hour=23, tz="Asia/Tokyo")
         with pytest.raises((ValueError, OverflowError), match="range"):
-            d.with_time(Time(1))
+            d.replace_time(Time(1))
 
         d2 = ZonedDateTime(9999, 12, 31, hour=2, tz="America/New_York")
         with pytest.raises((ValueError, OverflowError), match="range"):
-            d2.with_time(Time(23))
+            d2.replace_time(Time(23))
 
 
-class TestDefaultFormat:
+class TestFormatCommonIso:
 
     @pytest.mark.parametrize(
         "d, expected",
@@ -353,9 +354,9 @@ class TestDefaultFormat:
             ),
         ],
     )
-    def test_default_format(self, d: ZonedDateTime, expected: str):
+    def test_common_iso(self, d: ZonedDateTime, expected: str):
         assert str(d) == expected
-        assert d.default_format() == expected
+        assert d.format_common_iso() == expected
 
 
 class TestEquality:
@@ -434,8 +435,8 @@ class TestEquality:
             tz="Europe/Amsterdam",
             disambiguate="later",
         )
-        b = a.in_tz("America/New_York")
-        assert a.in_utc() == b.in_utc()  # sanity check
+        b = a.to_tz("America/New_York")
+        assert a.to_utc() == b.to_utc()  # sanity check
         assert hash(a) == hash(b)
         assert a == b
 
@@ -446,16 +447,16 @@ class TestEquality:
         ) = ZonedDateTime(
             2023, 10, 29, 2, 15, tz="Europe/Amsterdam", disambiguate="earlier"
         )
-        assert d == d.in_utc()
-        assert hash(d) == hash(d.in_utc())
-        assert d != d.in_utc().replace(hour=23)
+        assert d == d.to_utc()
+        assert hash(d) == hash(d.to_utc())
+        assert d != d.to_utc().replace(hour=23)
 
-        assert d == d.in_local_system()
-        assert d != d.in_local_system().replace(hour=8)
+        assert d == d.to_local_system()
+        assert d != d.to_local_system().replace(hour=8)
 
-        assert d == d.in_fixed_offset()
-        assert hash(d) == hash(d.in_fixed_offset())
-        assert d != d.in_fixed_offset().replace(hour=10)
+        assert d == d.to_fixed_offset()
+        assert hash(d) == hash(d.to_fixed_offset())
+        assert d != d.to_fixed_offset().replace(hour=10)
 
     def test_not_implemented(self):
         d = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
@@ -487,10 +488,10 @@ def test_is_ambiguous():
     ).is_ambiguous()
 
 
-def test_in_utc():
+def test_to_utc():
     assert ZonedDateTime(
         2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"
-    ).in_utc() == UTCDateTime(2020, 8, 15, 10, 8, 30)
+    ).to_utc() == UTCDateTime(2020, 8, 15, 10, 8, 30)
     d = ZonedDateTime(
         2023,
         10,
@@ -501,62 +502,62 @@ def test_in_utc():
         tz="Europe/Amsterdam",
         disambiguate="earlier",
     )
-    assert d.in_utc() == UTCDateTime(2023, 10, 29, 0, 15, 30)
+    assert d.to_utc() == UTCDateTime(2023, 10, 29, 0, 15, 30)
     assert ZonedDateTime(
         2023, 10, 29, 2, 15, 30, tz="Europe/Amsterdam", disambiguate="later"
-    ).in_utc() == UTCDateTime(2023, 10, 29, 1, 15, 30)
+    ).to_utc() == UTCDateTime(2023, 10, 29, 1, 15, 30)
 
 
-def test_in_tz():
+def test_to_tz():
     assert (
         ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
-        .in_tz("America/New_York")
+        .to_tz("America/New_York")
         .exact_eq(ZonedDateTime(2020, 8, 15, 6, 8, 30, tz="America/New_York"))
     )
     ams = ZonedDateTime(
         2023, 10, 29, 2, 15, 30, tz="Europe/Amsterdam", disambiguate="earlier"
     )
     nyc = ZonedDateTime(2023, 10, 28, 20, 15, 30, tz="America/New_York")
-    assert ams.in_tz("America/New_York").exact_eq(nyc)
+    assert ams.to_tz("America/New_York").exact_eq(nyc)
     assert (
         ams.replace(disambiguate="later")
-        .in_tz("America/New_York")
+        .to_tz("America/New_York")
         .exact_eq(nyc.replace(hour=21))
     )
-    assert nyc.in_tz("Europe/Amsterdam").exact_eq(ams)
+    assert nyc.to_tz("Europe/Amsterdam").exact_eq(ams)
     assert (
         nyc.replace(hour=21)
-        .in_tz("Europe/Amsterdam")
+        .to_tz("Europe/Amsterdam")
         .exact_eq(ams.replace(disambiguate="later"))
     )
     # disambiguation doesn't affect NYC time because there's no ambiguity
     assert (
         nyc.replace(disambiguate="later")
-        .in_tz("Europe/Amsterdam")
+        .to_tz("Europe/Amsterdam")
         .exact_eq(ams)
     )
 
 
-def test_in_fixed_offset():
+def test_to_fixed_offset():
     d = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
 
-    assert d.in_fixed_offset().exact_eq(
+    assert d.to_fixed_offset().exact_eq(
         OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=hours(2))
     )
     assert (
         d.replace(month=1)
-        .in_fixed_offset()
+        .to_fixed_offset()
         .exact_eq(OffsetDateTime(2020, 1, 15, 12, 8, 30, offset=hours(1)))
     )
     assert (
         d.replace(month=1)
-        .in_fixed_offset(hours(4))
+        .to_fixed_offset(hours(4))
         .exact_eq(OffsetDateTime(2020, 1, 15, 15, 8, 30, offset=hours(4)))
     )
-    assert d.in_fixed_offset(hours(0)).exact_eq(
+    assert d.to_fixed_offset(hours(0)).exact_eq(
         OffsetDateTime(2020, 8, 15, 10, 8, 30, offset=hours(0))
     )
-    assert d.in_fixed_offset(-4).exact_eq(
+    assert d.to_fixed_offset(-4).exact_eq(
         OffsetDateTime(2020, 8, 15, 6, 8, 30, offset=hours(-4))
     )
 
@@ -564,12 +565,12 @@ def test_in_fixed_offset():
 @local_ams_tz()
 def test_in_local_system():
     d = ZonedDateTime(2023, 10, 28, 2, 15, tz="Europe/Amsterdam")
-    assert d.in_local_system().exact_eq(
+    assert d.to_local_system().exact_eq(
         LocalSystemDateTime(2023, 10, 28, 2, 15)
     )
     assert (
         d.replace(day=29, disambiguate="later")
-        .in_local_system()
+        .to_local_system()
         .exact_eq(
             LocalSystemDateTime(2023, 10, 29, 2, 15, disambiguate="later")
         )
@@ -584,7 +585,7 @@ def test_naive():
     )
 
 
-class TestFromDefaultFormat:
+class TestParseCommonIso:
     @pytest.mark.parametrize(
         "s, expect",
         [
@@ -645,7 +646,7 @@ class TestFromDefaultFormat:
         ],
     )
     def test_valid(self, s, expect):
-        assert ZonedDateTime.from_default_format(s).exact_eq(expect)
+        assert ZonedDateTime.parse_common_iso(s).exact_eq(expect)
 
     @pytest.mark.parametrize(
         "s",
@@ -679,11 +680,11 @@ class TestFromDefaultFormat:
     )
     def test_invalid(self, s):
         with pytest.raises(ValueError, match="format.*" + re.escape(s)):
-            ZonedDateTime.from_default_format(s)
+            ZonedDateTime.parse_common_iso(s)
 
     def test_invalid_tz(self):
         with pytest.raises(ZoneInfoNotFoundError):
-            ZonedDateTime.from_default_format(
+            ZonedDateTime.parse_common_iso(
                 "2020-08-15T12:08:30+02:00[Europe/Nowhere]"
             )
 
@@ -696,17 +697,17 @@ class TestFromDefaultFormat:
     )
     def test_out_of_range(self, s):
         with pytest.raises((ValueError, OverflowError), match="range"):
-            ZonedDateTime.from_default_format(s)
+            ZonedDateTime.parse_common_iso(s)
 
     def test_offset_timezone_mismatch(self):
         with pytest.raises(InvalidOffset):
             # at the exact DST transition
-            ZonedDateTime.from_default_format(
+            ZonedDateTime.parse_common_iso(
                 "2023-10-29T02:15:30+03:00[Europe/Amsterdam]"
             )
         with pytest.raises(InvalidOffset):
             # some other time in the year
-            ZonedDateTime.from_default_format(
+            ZonedDateTime.parse_common_iso(
                 "2020-08-15T12:08:30+01:00:01[Europe/Amsterdam]"
             )
 
@@ -716,7 +717,7 @@ class TestFromDefaultFormat:
             ValueError,
             match=r"Invalid format.*" + re.escape(repr(s)),
         ):
-            ZonedDateTime.from_default_format(s)
+            ZonedDateTime.parse_common_iso(s)
 
 
 class TestTimestamp:
@@ -921,7 +922,7 @@ class TestComparison:
             tz="Europe/Amsterdam",
             disambiguate="earlier",
         )
-        other = d.in_tz("America/New_York")
+        other = d.to_tz("America/New_York")
         assert not d < other
         assert d <= other
         assert not other > d
@@ -936,7 +937,7 @@ class TestComparison:
             2023, 10, 29, 2, 30, tz="Europe/Amsterdam", disambiguate="later"
         )
 
-        utc_eq = d.in_utc()
+        utc_eq = d.to_utc()
         utc_lt = utc_eq.replace(minute=29)
         utc_gt = utc_eq.replace(minute=31)
 
@@ -960,7 +961,7 @@ class TestComparison:
             2023, 10, 29, 2, 30, tz="Europe/Amsterdam", disambiguate="later"
         )
 
-        offset_eq = d.in_fixed_offset()
+        offset_eq = d.to_fixed_offset()
         offset_lt = offset_eq.replace(minute=29)
         offset_gt = offset_eq.replace(minute=31)
 
@@ -984,7 +985,7 @@ class TestComparison:
             2023, 10, 29, 2, 30, tz="Europe/Amsterdam", disambiguate="earlier"
         )
 
-        local_eq = d.in_local_system()
+        local_eq = d.to_local_system()
         local_lt = local_eq.replace(minute=29, disambiguate="earlier")
         local_gt = local_eq.replace(minute=31, disambiguate="earlier")
 
@@ -1178,7 +1179,7 @@ class TestExactEquality:
         a = ZonedDateTime(
             2020, 8, 15, 12, 43, nanosecond=1, tz="Europe/Amsterdam"
         )
-        b = a.in_tz("America/New_York")
+        b = a.to_tz("America/New_York")
         assert a == b
         assert not a.exact_eq(b)
 
@@ -1748,9 +1749,11 @@ class TestSubtractDateTime:
         d = ZonedDateTime(
             2023, 10, 29, 5, tz="Europe/Amsterdam", disambiguate="earlier"
         )
-        other = ZonedDateTime(2023, 10, 28, 3, tz="Europe/Amsterdam")
-        assert d - other == hours(27)
-        assert other - d == hours(-27)
+        other = ZonedDateTime(
+            2023, 10, 28, 3, nanosecond=4_000_000, tz="Europe/Amsterdam"
+        )
+        assert d - other == (hours(27) - milliseconds(4))
+        assert other - d == (hours(-27) + milliseconds(4))
 
     def test_amibiguous(self):
         d = ZonedDateTime(
