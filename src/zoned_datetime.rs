@@ -101,9 +101,9 @@ impl ZonedDateTime {
         }: Time,
         zoneinfo: *mut PyObject,
     ) -> PyResult<Self> {
-        let dt = PyObject_CallMethodOneArg(
+        let dt = methcall1(
             zoneinfo,
-            steal!("fromutc".to_py()?),
+            "fromutc",
             steal!(DateTime_FromDateAndTime(
                 year.into(),
                 month.into(),
@@ -115,8 +115,7 @@ impl ZonedDateTime {
                 zoneinfo,
                 DateTimeType,
             )),
-        )
-        .as_result()?;
+        )?;
         defer_decref!(dt);
 
         // Don't need to use the checked constructor since we know
@@ -264,7 +263,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     if tz.is_null() {
         return Err(type_err!("tz argument is required"));
     }
-    let zoneinfo = PyObject_CallOneArg(zoneinfo_type, tz).as_result()?;
+    let zoneinfo = call1(zoneinfo_type, tz)?;
     defer_decref!(zoneinfo);
 
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
@@ -543,7 +542,7 @@ unsafe fn to_tz(slf: &mut PyObject, tz: &mut PyObject) -> PyReturn {
         py_api,
         ..
     } = State::for_type(cls);
-    let new_zoneinfo = PyObject_CallOneArg(zoneinfo_type, tz).as_result()?;
+    let new_zoneinfo = call1(zoneinfo_type, tz)?;
     defer_decref!(new_zoneinfo);
     let zdt = ZonedDateTime::extract(slf);
     let DateTime { date, time, .. } = zdt.without_offset().small_shift_unchecked(-zdt.offset_secs);
@@ -560,7 +559,7 @@ pub(crate) unsafe fn unpickle(module: &mut PyObject, args: &[*mut PyObject]) -> 
         ..
     } = State::for_mod(module);
     let mut packed = args[0].to_bytes()?.ok_or_type_err("Invalid pickle data")?;
-    let zoneinfo = PyObject_CallOneArg(zoneinfo_type, args[1]).as_result()?;
+    let zoneinfo = call1(zoneinfo_type, args[1])?;
     defer_decref!(zoneinfo);
     if packed.len() != mem::size_of::<u16>() + mem::size_of::<u8>() * 5 + mem::size_of::<i32>() * 2
     {
@@ -605,9 +604,9 @@ unsafe fn py_datetime(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
             },
         ..
     } = State::for_obj(slf);
-    PyObject_CallMethodOneArg(
+    methcall1(
         zdt.zoneinfo,
-        steal!("fromutc".to_py()?),
+        "fromutc",
         steal!(DateTime_FromDateAndTime(
             year.into(),
             month.into(),
@@ -620,7 +619,6 @@ unsafe fn py_datetime(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
             DateTimeType,
         )),
     )
-    .as_result()
 }
 
 unsafe fn to_utc(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
@@ -825,7 +823,7 @@ unsafe fn replace(
                 .to_long()?
                 .ok_or_type_err("nanosecond must be an integer")?
         } else if name == str_tz {
-            zoneinfo = PyObject_CallOneArg(zoneinfo_type, value).as_result()?;
+            zoneinfo = call1(zoneinfo_type, value)?;
             defer_decref!(zoneinfo);
         } else if name == str_disambiguate {
             dis = Disambiguate::parse(
@@ -873,7 +871,7 @@ unsafe fn now(cls: *mut PyObject, tz: *mut PyObject) -> PyReturn {
         zoneinfo_type,
         ..
     } = State::for_type(cls.cast());
-    let zoneinfo = PyObject_CallOneArg(zoneinfo_type, tz).as_result()? as *mut PyObject;
+    let zoneinfo = call1(zoneinfo_type, tz)? as *mut PyObject;
     defer_decref!(zoneinfo);
     let (timestamp, subsec) = match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
         Ok(dur) => (dur.as_secs() as f64, dur.subsec_nanos()),
@@ -918,7 +916,7 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     if PyDateTime_Check(dt) == 0 {
         Err(type_err!("Argument must be a datetime.datetime instance"))?;
     }
-    let tzinfo = PyDateTime_DATE_GET_TZINFO(dt);
+    let tzinfo = get_dt_tzinfo(dt);
 
     // NOTE: it has to be exactly a `ZoneInfo`, since subclasses
     // could theoretically introduce circular references.
@@ -1042,7 +1040,7 @@ unsafe fn check_from_timestamp_args_return_zoneinfo(
             args.len() + kwargs.len()
         ))
     } else if kwargs[0].0 == str_tz {
-        PyObject_CallOneArg(zoneinfo_type, kwargs[0].1).as_result()
+        call1(zoneinfo_type, kwargs[0].1)
     } else {
         Err(type_err!(
             "{}() got an unexpected keyword argument {}",
@@ -1193,11 +1191,10 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
         exc_invalid_offset,
         ..
     } = State::for_type(cls.cast());
-    let zoneinfo = PyObject_CallOneArg(
+    let zoneinfo = call1(
         zoneinfo_type,
         steal!(std::str::from_utf8_unchecked(&s[1..s.len() - 1]).to_py()?),
-    )
-    .as_result()?;
+    )?;
     defer_decref!(zoneinfo);
     let offset_valid = match OffsetResult::for_tz(py_api, date, time, zoneinfo)? {
         OffsetResult::Unambiguous(o) => o == offset_secs,

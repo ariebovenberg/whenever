@@ -621,7 +621,7 @@ pub(crate) unsafe fn newref<'a>(obj: *mut PyObject) -> &'a mut PyObject {
 
 pub(crate) unsafe fn offset_from_py_dt(dt: *mut PyObject) -> PyResult<i32> {
     // OPTIMIZE: is calling ZoneInfo.utcoffset() faster?
-    let delta = PyObject_CallMethodNoArgs(dt, steal!("utcoffset".to_py()?)).as_result()?;
+    let delta = methcall0(dt, "utcoffset")?;
     defer_decref!(delta);
     Ok(PyDateTime_DELTA_GET_DAYS(delta) * 86_400 + PyDateTime_DELTA_GET_SECONDS(delta))
 }
@@ -681,7 +681,7 @@ unsafe fn local_offset(
     )
     .as_result()?;
     defer_decref!(naive);
-    let aware = PyObject_CallMethodNoArgs(naive, steal!("astimezone".to_py()?)).as_result()?;
+    let aware = methcall0(naive, "astimezone")?;
     defer_decref!(aware);
     let kwargs = PyDict_New().as_result()?;
     defer_decref!(kwargs);
@@ -895,6 +895,55 @@ pub(crate) const fn hashmask(hash: Py_hash_t) -> Py_hash_t {
     match hash {
         -1 => -2,
         x => x,
+    }
+}
+
+#[inline]
+pub(crate) unsafe fn call1(func: *mut PyObject, arg: *mut PyObject) -> PyReturn {
+    PyObject_CallOneArg(func, arg).as_result()
+}
+
+#[inline]
+pub(crate) unsafe fn methcall1(slf: *mut PyObject, name: &str, arg: *mut PyObject) -> PyReturn {
+    PyObject_CallMethodOneArg(slf, name.to_py()?, arg).as_result()
+}
+
+#[inline]
+pub(crate) unsafe fn methcall0(slf: *mut PyObject, name: &str) -> PyReturn {
+    PyObject_CallMethodNoArgs(slf, steal!(name.to_py()?)).as_result()
+}
+
+#[inline]
+pub(crate) unsafe fn get_dt_tzinfo(dt: *mut PyObject) -> *mut PyObject {
+    #[cfg(Py_3_10)]
+    {
+        PyDateTime_DATE_GET_TZINFO(dt)
+    }
+    #[cfg(not(Py_3_10))]
+    {
+        let tzinfo = PyObject_GetAttrString(dt, c"tzinfo".as_ptr());
+        // To keep things consistent with the Py3.10 code above,
+        // we need to decref it, turning it into a borrowed reference.
+        // We can assume the parent datetime keeps it alive.
+        Py_DECREF(tzinfo);
+        tzinfo
+    }
+}
+
+#[inline]
+pub(crate) unsafe fn get_time_tzinfo(dt: *mut PyObject) -> *mut PyObject {
+    #[cfg(Py_3_10)]
+    {
+        PyDateTime_TIME_GET_TZINFO(dt)
+    }
+    #[cfg(not(Py_3_10))]
+    {
+        let tzinfo = PyObject_GetAttrString(dt, c"tzinfo".as_ptr());
+        // To keep things consistent with the Py3.10 code above,
+        // we need to decref it, turning it into a borrowed reference.
+        // We can assume the parent datetime keeps it alive.
+        Py_DECREF(tzinfo);
+        tzinfo
     }
 }
 

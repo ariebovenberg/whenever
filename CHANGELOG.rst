@@ -16,13 +16,13 @@
   **Rationale**: Nanosecond precision is the standard for most modern
   datetime libraries.
 
-- Unified `(from_)canonical_format` methods with `(from_)common_iso8601` methods
-  into `(format|parse)_common_iso` methods.
+- Unified `[from_]canonical_format` methods with `[from_]common_iso8601` methods
+  into `[format|parse]_common_iso` methods.
 
   **Rationale**: This cuts down on the number of methods; the performance benefits
-  aren't worth the extra clutter.
+  of separate methods aren't worth the clutter.
 
-- Renamed `(from_)(rfc3339|rfc2822)` methods to `(format|parse)_(rfc3339|rfc2822)`.
+- Renamed `[from_][rfc3339|rfc2822]` methods to `[format|parse]_[rfc3339|rfc2822]`.
 
   **Rationale**: Consistency with other methods.
 

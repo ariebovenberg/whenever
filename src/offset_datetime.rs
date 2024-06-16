@@ -127,7 +127,7 @@ impl OffsetDateTime {
     // Returns None if the tzinfo is incorrect, or the UTC time is out of bounds
     pub(crate) unsafe fn from_py(dt: *mut PyObject, state: &State) -> PyResult<Option<Self>> {
         debug_assert!(PyObject_IsInstance(dt, state.py_api.DateTimeType.cast()).is_positive());
-        let tzinfo = PyDateTime_DATE_GET_TZINFO(dt);
+        let tzinfo = get_dt_tzinfo(dt);
         Ok(match PyObject_IsInstance(tzinfo, state.timezone_type) {
             1 => OffsetDateTime::new(
                 Date {
@@ -389,7 +389,7 @@ unsafe fn to_tz(slf: *mut PyObject, tz: *mut PyObject) -> PyReturn {
         zoned_datetime_type,
         ..
     } = State::for_type(type_);
-    let zoneinfo = PyObject_CallOneArg(zoneinfo_type, tz).as_result()?;
+    let zoneinfo = call1(zoneinfo_type, tz)?;
     defer_decref!(zoneinfo);
     let odt = OffsetDateTime::extract(slf);
     let DateTime { date, time } = odt.without_offset().small_shift_unchecked(-odt.offset_secs);
@@ -859,17 +859,16 @@ unsafe fn format_rfc2822(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         py_api: datetime_api,
         ..
     } = State::for_obj(slf);
-    PyObject_CallOneArg(
+    call1(
         format_rfc2822,
         OffsetDateTime::extract(slf).to_py(datetime_api)?,
     )
-    .as_result()
 }
 
 #[cfg(Py_3_10)]
 unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let state = State::for_type(cls.cast());
-    let py_dt = PyObject_CallOneArg(state.parse_rfc2822, s_obj).as_result()?;
+    let py_dt = call1(state.parse_rfc2822, s_obj)?;
     defer_decref!(py_dt);
     OffsetDateTime::from_py(py_dt, state)?
         .ok_or_else(|| {
@@ -889,16 +888,14 @@ unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     if !s_obj.is_str() {
         Err(type_err!("Argument must be a string"))?
     }
-    let py_dt = PyObject_CallOneArg(state.parse_rfc2822, s_obj)
-        .as_result()
-        .map_err(|e| {
-            if PyErr_ExceptionMatches(PyExc_TypeError) != 0 {
-                PyErr_Clear();
-                value_err!("Invalid format: {}", s_obj.repr())
-            } else {
-                e
-            }
-        })?;
+    let py_dt = call1(state.parse_rfc2822, s_obj).map_err(|e| {
+        if PyErr_ExceptionMatches(PyExc_TypeError) != 0 {
+            PyErr_Clear();
+            value_err!("Invalid format: {}", s_obj.repr())
+        } else {
+            e
+        }
+    })?;
     defer_decref!(py_dt);
     OffsetDateTime::from_py(py_dt, state)?
         .ok_or_else(|| {

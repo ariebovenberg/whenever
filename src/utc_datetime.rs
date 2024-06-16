@@ -192,7 +192,7 @@ impl Instant {
     }
 
     pub(crate) unsafe fn from_py(dt: *mut PyObject, state: &State) -> Option<Self> {
-        let tzinfo = PyDateTime_DATE_GET_TZINFO(dt);
+        let tzinfo = get_dt_tzinfo(dt);
         (tzinfo == state.py_api.TimeZone_UTC).then_some(Instant::from_datetime(
             Date {
                 year: PyDateTime_GET_YEAR(dt) as u16,
@@ -592,7 +592,7 @@ unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
     )
     .as_result()?;
     defer_decref!(parsed);
-    let tzinfo = PyDateTime_DATE_GET_TZINFO(parsed);
+    let tzinfo = get_dt_tzinfo(parsed);
     if !(tzinfo == Py_None() || tzinfo == module.py_api.TimeZone_UTC) {
         Err(value_err!(
             "datetime must have UTC tzinfo, but got {}",
@@ -798,7 +798,7 @@ unsafe fn to_tz(slf: &mut PyObject, tz: &mut PyObject) -> PyReturn {
         ..
     } = State::for_obj(slf);
     let DateTime { date, time } = Instant::extract(slf).to_datetime();
-    let zoneinfo = PyObject_CallOneArg(zoneinfo_type, tz).as_result()?;
+    let zoneinfo = call1(zoneinfo_type, tz)?;
     defer_decref!(zoneinfo);
     ZonedDateTime::from_utc(py_api, date, time, zoneinfo)?.to_obj(zoned_datetime_type)
 }
@@ -857,23 +857,21 @@ unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
         if !s_obj.is_str() {
             Err(type_err!("Expected a string"))?;
         }
-        dt = PyObject_CallOneArg(state.parse_rfc2822, s_obj)
-            .as_result()
-            .map_err(|e| {
-                if PyErr_ExceptionMatches(PyExc_TypeError) != 0 {
-                    PyErr_Clear();
-                    value_err!("Invalid format: {}", s_obj.repr())
-                } else {
-                    e
-                }
-            })?;
+        dt = call1(state.parse_rfc2822, s_obj).map_err(|e| {
+            if PyErr_ExceptionMatches(PyExc_TypeError) != 0 {
+                PyErr_Clear();
+                value_err!("Invalid format: {}", s_obj.repr())
+            } else {
+                e
+            }
+        })?;
     }
     #[cfg(Py_3_10)]
     {
-        dt = PyObject_CallOneArg(state.parse_rfc2822, s_obj).as_result()?;
+        dt = call1(state.parse_rfc2822, s_obj)?;
     }
     defer_decref!(dt);
-    let tzinfo = PyDateTime_DATE_GET_TZINFO(dt);
+    let tzinfo = get_dt_tzinfo(dt);
     if tzinfo == state.py_api.TimeZone_UTC
         || (tzinfo == Py_None() && s_obj.to_str()?.unwrap().contains("-0000"))
     {

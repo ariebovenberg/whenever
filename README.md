@@ -41,7 +41,7 @@ It's also **way faster** than other third-party libraries—and usually the stan
 [🚀 Changelog](https://whenever.readthedocs.io/en/latest/changelog.html) |
 [❓ FAQ](https://whenever.readthedocs.io/en/latest/faq.html) |
 [🗺️ Roadmap](#roadmap) |
-[💬 Issues & discussions](https://github.com/ariebovenberg/whenever/issues)
+[💬 Issues & feedback](https://github.com/ariebovenberg/whenever/issues)
 
 </div>
 
@@ -65,7 +65,7 @@ Two points stand out:
    ```
 
    Note this isn't a bug, but a design decision that DST is only considered
-   when calculations involve *two different timezones*.
+   when calculations involve *two* timezones.
    If you think this is surprising, you
    [are](https://github.com/python/cpython/issues/91618)
    [not](https://github.com/python/cpython/issues/116035)
@@ -76,7 +76,7 @@ Two points stand out:
    but there's no way to enforce this in the type system!
 
    ```python
-   # Should this be a naive or aware datetime? Can't tell!
+   # Does this expect naive or aware? Can't tell!
    def schedule_meeting(at: datetime) -> None: ...
    ```
 
@@ -85,11 +85,15 @@ Two points stand out:
 There are two other popular third-party libraries, but they don't (fully)
 address these issues. Here's how they compare to *whenever* and the standard library:
 
+<div align="center">
+
 |                   | Whenever | datetime | Arrow | Pendulum |
 |-------------------|:--------:|:--------:|:-----:|:--------:|
 |      DST-safe     |     ✅    |     ❌    |   ❌   |     ⚠️    |
 | Typed aware/naive |     ✅    |     ❌    |   ❌   |     ❌    |
 |        Fast       |     ✅    |     ✅    |   ❌   |     ❌    |
+
+</div>
 
 [**Arrow**](https://pypi.org/project/arrow/)
 is probably the most historically popular 3rd party datetime library.
@@ -100,7 +104,7 @@ of types to just one (``arrow.Arrow``) means that it's even harder
 for typecheckers to catch mistakes.
 
 [**Pendulum**](https://pypi.org/project/pendulum/)
-came in the scene in 2016, promising better DST-handling,
+arrived on the scene in 2016, promising better DST-handling,
 as well as improved performance.
 However, it only fixes [*some* DST-related pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/#datetime-library-scorecard),
 and its performance has significantly [degraded over time](https://github.com/sdispater/pendulum/issues/818).
