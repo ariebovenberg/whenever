@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-python-version:
+  test-python-versions:
     name: Test Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
@@ -20,11 +20,6 @@ jobs:
           "3.11",
           "3.12",
           "3.13-dev",
-          # FUTURE: pypy builds current fail. Uncomment when fixed.
-          # Low prio because pure-Python version is available.
-          # NOTE: pypy/pytest fails sometimes (https://github.com/pypy/pypy/issues/3959)
-          # "pypy3.9",
-          # "pypy3.10"
         ]
     steps:
       - uses: actions/checkout@v4
@@ -88,7 +83,7 @@ jobs:
           "3.11",
           "3.12",
           "3.13-dev",
-          # NOTE: pypy/pytest fails sometimes (https://github.com/pypy/pypy/issues/3959)
+          # # NOTE: pypy/pytest fails sometimes (https://github.com/pypy/pypy/issues/3959)
           "pypy3.9",
           "pypy3.10"
         ]

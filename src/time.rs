@@ -334,7 +334,7 @@ unsafe fn from_py_time(type_: *mut PyObject, time: *mut PyObject) -> PyReturn {
     if PyTime_Check(time) == 0 {
         Err(type_err!("argument must be a Time"))?
     }
-    if PyDateTime_TIME_GET_TZINFO(time) != Py_None() {
+    if get_time_tzinfo(time) != Py_None() {
         Err(value_err!("time with timezone is not supported"))?
     }
     // FUTURE: check `fold=0`?

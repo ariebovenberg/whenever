@@ -83,6 +83,28 @@ module = [
 ]
 ignore_missing_imports = true
 
+[tool.cibuildwheel]
+skip = ["pp*", "*-musllinux_i686"]
+test-command = "pytest -s {project}/tests"
+test-requires = [
+    "pytest",
+    "pytest-benchmark",
+    "hypothesis",
+    "pytest-mypy-plugins",
+]
+environment = { PATH = "$HOME/.cargo/bin:$PATH" }
+
+[tool.cibuildwheel.linux]
+before-all = "curl -sSf https://sh.rustup.rs | sh -s -- -y"
+
+[tool.cibuildwheel.windows]
+before-all = "rustup target add i686-pc-windows-msvc"
+environment = { PATH = "$UserProfile\\.cargo\\bin;$PATH" }
+
+[[tool.cibuildwheel.overrides]]
+select = "*-musllinux*"
+before-all = "curl -sSf https://sh.rustup.rs | sh -s -- -y && apk add tzdata"
+
 [build-system]
 build-backend = "setuptools.build_meta"
 requires = ["setuptools", "wheel", "setuptools-rust"]

@@ -53,8 +53,7 @@ impl OffsetDateTime {
     pub(crate) unsafe fn to_local_system(self, py_api: &PyDateTime_CAPI) -> PyResult<Self> {
         let dt_original = self.to_py(py_api)?;
         defer_decref!(dt_original);
-        let dt_new =
-            PyObject_CallMethodNoArgs(dt_original, steal!("astimezone".to_py()?)).as_result()?;
+        let dt_new = methcall0(dt_original, "astimezone")?;
         defer_decref!(dt_new);
         Ok(OffsetDateTime::new_unchecked(
             Date {
@@ -81,8 +80,7 @@ impl Instant {
     ) -> PyResult<OffsetDateTime> {
         let dt_utc = self.to_py(py_api)?;
         defer_decref!(dt_utc);
-        let dt_new =
-            PyObject_CallMethodNoArgs(dt_utc, steal!("astimezone".to_py()?)).as_result()?;
+        let dt_new = methcall0(dt_utc, "astimezone")?;
         defer_decref!(dt_new);
         Ok(OffsetDateTime::new_unchecked(
             Date {
@@ -376,7 +374,7 @@ unsafe fn to_tz(slf: *mut PyObject, tz: *mut PyObject) -> PyReturn {
         zoned_datetime_type,
         ..
     } = State::for_type(type_);
-    let zoneinfo = PyObject_CallOneArg(zoneinfo_type, tz).as_result()?;
+    let zoneinfo = call1(zoneinfo_type, tz)?;
     defer_decref!(zoneinfo);
     let odt = OffsetDateTime::extract(slf);
     let DateTime { date, time } = odt
@@ -648,7 +646,7 @@ unsafe fn now(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
     )
     .as_result()?;
     defer_decref!(utc_dt);
-    let local_dt = PyObject_CallMethodNoArgs(utc_dt, steal!("astimezone".to_py()?)).as_result()?;
+    let local_dt = methcall0(utc_dt, "astimezone")?;
     defer_decref!(local_dt);
     OffsetDateTime::new_unchecked(
         Date {

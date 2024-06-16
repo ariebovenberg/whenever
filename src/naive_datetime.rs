@@ -491,7 +491,7 @@ unsafe fn from_py_datetime(type_: *mut PyObject, dt: *mut PyObject) -> PyReturn 
     if PyDateTime_Check(dt) == 0 {
         Err(type_err!("argument must be datetime.datetime"))?
     }
-    let tzinfo = PyDateTime_DATE_GET_TZINFO(dt);
+    let tzinfo = get_dt_tzinfo(dt);
     if tzinfo != Py_None() {
         Err(value_err!(
             "datetime must be naive, but got tzinfo={}",
@@ -592,7 +592,7 @@ unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
     )
     .as_result()?;
     defer_decref!(parsed);
-    let tzinfo = PyDateTime_DATE_GET_TZINFO(parsed);
+    let tzinfo = get_dt_tzinfo(parsed);
     if tzinfo != Py_None() {
         Err(value_err!(
             "datetime must be naive, but got tzinfo={}",
@@ -657,7 +657,7 @@ unsafe fn assume_tz(
     }
 
     let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_tz")?;
-    let zoneinfo = PyObject_CallOneArg(zoneinfo_type, args[0]).as_result()?;
+    let zoneinfo = call1(zoneinfo_type, args[0])?;
     defer_decref!(zoneinfo);
     ZonedDateTime::from_naive(py_api, date, time, zoneinfo, dis)?
         .map_err(|e| match e {

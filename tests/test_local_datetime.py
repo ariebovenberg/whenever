@@ -1390,7 +1390,14 @@ class TestReplaceTime:
 
     def test_out_of_range_due_to_offset(self):
         with local_ams_tz():
-            d = UTCDateTime.MIN.to_local_system()
+            try:
+                d = UTCDateTime.MIN.to_local_system()
+            except OverflowError as e:
+                # For some platforms, this cannot be represented as a time_t.
+                # we skip the test in this case.
+                assert "time_t" in str(e)
+                pytest.skip("time_t overflow")
+
             with pytest.raises(
                 (ValueError, OverflowError), match="range|year"
             ):
