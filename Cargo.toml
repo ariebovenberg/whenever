@@ -6,7 +6,7 @@ description = "Rust extension module for whenever"
 edition = "2021"
 rust-version = "1.78"
 license = "MIT"
-readme = "README.rst"
+readme = "README.md"
 keywords = []
 include = [
     "Cargo.toml",

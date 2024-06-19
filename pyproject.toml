@@ -84,22 +84,26 @@ module = [
 ignore_missing_imports = true
 
 [tool.cibuildwheel]
-skip = ["pp*", "*-musllinux_i686"]
+skip = ["pp*", "*-musllinux_i686", "*-musllinux_ppc64le", "*-musllinux_s390x"]
+free-threaded-support = true
 test-command = "pytest -s {project}/tests"
 test-requires = [
     "pytest",
-    "pytest-benchmark",
     "hypothesis",
-    "pytest-mypy-plugins",
 ]
 environment = { PATH = "$HOME/.cargo/bin:$PATH" }
 
 [tool.cibuildwheel.linux]
 before-all = "curl -sSf https://sh.rustup.rs | sh -s -- -y"
+archs = ["x86_64", "i686", "aarch64", "ppc64le", "s390x"]
 
 [tool.cibuildwheel.windows]
 before-all = "rustup target add i686-pc-windows-msvc"
 environment = { PATH = "$UserProfile\\.cargo\\bin;$PATH" }
+
+[tool.cibuildwheel.macos]
+before-all = "rustup target add x86_64-apple-darwin"
+archs = ["x86_64", "arm64"]
 
 [[tool.cibuildwheel.overrides]]
 select = "*-musllinux*"

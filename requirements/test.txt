@@ -1,7 +1,6 @@
 pytest>=7,<9
 pytest-cov>=4,<6
 pytest-benchmark[histogram]>=4,<6
-pytest-mypy-plugins>=3,<4
 hypothesis>=6,<7
 
 # FUTURE: remove these constraints once rdps-py supports python 3.13
