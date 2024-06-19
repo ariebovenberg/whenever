@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - rust  # TODO: remove
     tags:
       - '*'
   workflow_dispatch:
