@@ -7,7 +7,7 @@ init:
 .PHONY: typecheck
 typecheck:
 	mypy pysrc/ tests/
-	pytest typesafety/
+	pytest --mypy-ini-file=tests/mypy.ini typesafety/
 
 .PHONY: format
 format:
