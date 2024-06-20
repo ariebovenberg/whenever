@@ -1,4 +1,4 @@
-use core::ffi::{c_int, c_long, c_void};
+use core::ffi::{c_int, c_long, c_void, CStr};
 use core::mem;
 use pyo3_ffi::*;
 use std::cmp::min;
@@ -37,47 +37,29 @@ impl DateDelta {
 
     pub(crate) fn new(months: i32, days: i32) -> Result<Self, InitError> {
         match (months.signum(), days.signum()) {
-            (0, 0) => Ok(Self { months: 0, days: 0 }),
             (1, -1) | (-1, 1) => Err(InitError::MixedSign),
-            (1 | 0, 1 | 0) => Ok(Self {
-                months: (months < MAX_MONTHS)
+            _ => Ok(Self {
+                months: (months.abs() < MAX_MONTHS)
                     .then_some(months)
                     .ok_or(InitError::TooBig)?,
-                days: (days < MAX_DAYS).then_some(days).ok_or(InitError::TooBig)?,
-            }),
-            (-1 | 0, -1 | 0) => Ok(Self {
-                months: (-months < MAX_MONTHS)
-                    .then_some(months)
-                    .ok_or(InitError::TooBig)?,
-                days: (-days < MAX_DAYS)
+                days: (days.abs() < MAX_DAYS)
                     .then_some(days)
                     .ok_or(InitError::TooBig)?,
             }),
-            _ => unreachable!(),
         }
     }
 
     pub(crate) fn from_longs(months: c_long, days: c_long) -> Result<Self, InitError> {
         match (months.signum(), days.signum()) {
-            (0, 0) => Ok(Self { months: 0, days: 0 }),
             (1, -1) | (-1, 1) => Err(InitError::MixedSign),
-            (1 | 0, 1 | 0) => Ok(Self {
-                months: (months < MAX_MONTHS as _)
+            _ => Ok(Self {
+                months: (months.abs() < MAX_MONTHS as _)
                     .then_some(months as _)
                     .ok_or(InitError::TooBig)?,
-                days: (days < MAX_DAYS as _)
+                days: (days.abs() < MAX_DAYS as _)
                     .then_some(days as _)
                     .ok_or(InitError::TooBig)?,
             }),
-            (-1 | 0, -1 | 0) => Ok(Self {
-                months: (-months < MAX_MONTHS as _)
-                    .then_some(months as _)
-                    .ok_or(InitError::TooBig)?,
-                days: (-days < MAX_DAYS as _)
-                    .then_some(days as _)
-                    .ok_or(InitError::TooBig)?,
-            }),
-            _ => unreachable!(),
         }
     }
 
@@ -136,8 +118,8 @@ impl Neg for DateDelta {
 const MAX_MONTHS: i32 = (MAX_YEAR * 12) as i32;
 const MAX_DAYS: i32 = (MAX_YEAR * 366) as i32;
 
-pub(crate) const SINGLETONS: [(&str, DateDelta); 1] =
-    [("ZERO\0", DateDelta { months: 0, days: 0 })];
+pub(crate) const SINGLETONS: [(&CStr, DateDelta); 1] =
+    [(c"ZERO", DateDelta { months: 0, days: 0 })];
 
 impl fmt::Display for DateDelta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -200,7 +182,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         &mut days,
     ) == 0
     {
-        return Err(PyErrOccurred());
+        return Err(py_err!());
     }
     match years
         .checked_mul(12)
@@ -307,12 +289,12 @@ unsafe fn __mul__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
         .to_obj(Py_TYPE(delta_obj))
 }
 
-unsafe fn __add__(a_obj: *mut PyObject, b_obj: *mut PyObject) -> PyReturn {
-    _add_method(a_obj, b_obj, false)
+unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
+    _add_method(obj_a, obj_b, false)
 }
 
-unsafe fn __sub__(a_obj: *mut PyObject, b_obj: *mut PyObject) -> PyReturn {
-    _add_method(a_obj, b_obj, true)
+unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
+    _add_method(obj_a, obj_b, true)
 }
 
 #[inline]
@@ -398,7 +380,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_nb_subtract, __sub__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: "A delta for calendar units\0".as_ptr() as *mut c_void,
+        pfunc: c"A delta for calendar units".as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_methods,
@@ -458,7 +440,7 @@ pub(crate) enum Unit {
 }
 
 fn finish_parsing_component(s: &mut &[u8], mut value: i32) -> Option<(i32, Unit)> {
-    // We limit parsing to 7 digits to prevent overflow
+    // We limit parsing to a number of digits to prevent overflow
     for i in 1..min(s.len(), 7) {
         match s[i] {
             c if c.is_ascii_digit() => value = value * 10 + i32::from(c - b'0'),
@@ -486,7 +468,7 @@ fn finish_parsing_component(s: &mut &[u8], mut value: i32) -> Option<(i32, Unit)
     None
 }
 
-// parse a component of a ISO8601 duration, e.g. `6Y`, `-56M`, `+2W`, `0D`
+// parse a component of a ISO8601 duration, e.g. `6Y`, `56M`, `2W`, `0D`
 pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, Unit)> {
     if s.len() >= 2 && s[0].is_ascii_digit() {
         finish_parsing_component(s, (s[0] - b'0').into())
@@ -497,57 +479,54 @@ pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, Unit)> {
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let s = &mut s_obj.to_utf8()?.ok_or_type_err("argument must be str")?;
+    let raise = || value_err!("Invalid format: {}", s_obj.repr());
     if s.len() < 3 {
         // at least `P0D`
-        Err(value_err!("Invalid format: {}", s_obj.repr()))?
+        Err(raise())?
     }
     let mut months = 0;
     let mut days = 0;
     let mut prev_unit: Option<Unit> = None;
 
-    let negated = parse_prefix(s).ok_or_else(|| value_err!("Invalid format: {}", s_obj.repr()))?;
+    let negated = parse_prefix(s).ok_or_else(raise)?;
 
     while !s.is_empty() {
-        if let Some((value, unit)) = parse_component(s) {
-            match (unit, prev_unit.replace(unit)) {
-                // Note: overflows are prevented by limiting the number
-                // of digits that are parsed.
-                (Unit::Years, None) => {
-                    months += value * 12;
-                }
-                (Unit::Months, None | Some(Unit::Years)) => {
-                    months += value;
-                }
-                (Unit::Weeks, None | Some(Unit::Years | Unit::Months)) => {
-                    days += value * 7;
-                }
-                (Unit::Days, _) => {
-                    days += value;
-                    if s.is_empty() {
-                        break;
-                    }
-                    // i.e. there's more after the days component
-                    Err(value_err!("Invalid format: {}", s_obj.repr()))?;
-                }
-                _ => {
-                    // i.e. the order of the components is wrong
-                    Err(value_err!("Invalid format: {}", s_obj.repr()))?;
-                }
+        let (value, unit) = parse_component(s).ok_or_else(raise)?;
+        match (unit, prev_unit.replace(unit)) {
+            // Note: overflows are prevented by limiting the number
+            // of digits that are parsed.
+            (Unit::Years, None) => {
+                months += value * 12;
             }
-        } else {
-            // i.e. the component is invalid
-            Err(value_err!("Invalid format: {}", s_obj.repr()))?;
+            (Unit::Months, None | Some(Unit::Years)) => {
+                months += value;
+            }
+            (Unit::Weeks, None | Some(Unit::Years | Unit::Months)) => {
+                days += value * 7;
+            }
+            (Unit::Days, _) => {
+                days += value;
+                if s.is_empty() {
+                    break;
+                }
+                // i.e. there's more after the days component
+                Err(raise())?;
+            }
+            _ => {
+                // i.e. the order of the components is wrong
+                Err(raise())?;
+            }
         }
     }
 
     // i.e. there must be at least one component (`P` alone is invalid)
     if prev_unit.is_none() {
-        Err(value_err!("Invalid date delta format: {}", s_obj.repr()))?;
+        Err(raise())?;
     }
 
     if negated {
-        months *= -1;
-        days *= -1;
+        months = -months;
+        days = -days;
     }
     DateDelta::from_same_sign(months, days)
         .ok_or_value_err("DateDelta out of range")?
@@ -556,30 +535,28 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
 
 unsafe fn in_months_days(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let DateDelta { months, days } = DateDelta::extract(slf);
-    PyTuple_Pack(2, steal!(months.to_py()?), steal!(days.to_py()?)).as_result()
+    (steal!(months.to_py()?), steal!(days.to_py()?)).to_py()
 }
 
 unsafe fn in_years_months_days(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let DateDelta { months, days } = DateDelta::extract(slf);
     let years = months / 12;
     let months = months % 12;
-    PyTuple_Pack(
-        3,
+    (
         steal!(years.to_py()?),
         steal!(months.to_py()?),
         steal!(days.to_py()?),
     )
-    .as_result()
+        .to_py()
 }
 
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let DateDelta { months, days } = DateDelta::extract(slf);
-    PyTuple_Pack(
-        2,
+    (
         State::for_type(Py_TYPE(slf)).unpickle_date_delta,
-        steal!(PyTuple_Pack(2, steal!(months.to_py()?), steal!(days.to_py()?)).as_result()?),
+        steal!((steal!(months.to_py()?), steal!(days.to_py()?)).to_py()?),
     )
-    .as_result()
+        .to_py()
 }
 
 pub(crate) unsafe fn unpickle(module: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {

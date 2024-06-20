@@ -118,6 +118,9 @@ class TestInit:
         with pytest.raises(ValueError, match="range|time"):
             LocalSystemDateTime(2020, 1, 15, nanosecond=1_000_000_000)
 
+        with pytest.raises(ValueError, match="disambiguate"):
+            LocalSystemDateTime(2020, 1, 15, disambiguate="foo")  # type: ignore[arg-type]
+
     @local_ams_tz()
     def test_bounds_min(self):
         with pytest.raises((ValueError, OverflowError), match="range|year"):

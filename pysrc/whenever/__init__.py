@@ -12,6 +12,7 @@ try:
         _unpkl_utc,
         _unpkl_zoned,
     )
+
     _EXTENSION_LOADED = True
 
 except ModuleNotFoundError as e:

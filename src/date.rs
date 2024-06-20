@@ -1,4 +1,4 @@
-use core::ffi::{c_int, c_long, c_void};
+use core::ffi::{c_int, c_long, c_void, CStr};
 use core::{mem, ptr::null_mut as NULL};
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
@@ -13,9 +13,9 @@ pub struct Date {
     pub(crate) day: u8,
 }
 
-pub(crate) const SINGLETONS: [(&str, Date); 2] = [
-    ("MIN\0", Date::new_unchecked(1, 1, 1)),
-    ("MAX\0", Date::new_unchecked(9999, 12, 31)),
+pub(crate) const SINGLETONS: [(&CStr, Date); 2] = [
+    (c"MIN", Date::new_unchecked(1, 1, 1)),
+    (c"MAX", Date::new_unchecked(9999, 12, 31)),
 ];
 
 impl Date {
@@ -29,9 +29,13 @@ impl Date {
     pub(crate) const fn increment(mut self) -> Self {
         if self.day < days_in_month(self.year, self.month) {
             self.day += 1
-        } else {
+        } else if self.month < 12 {
             self.day = 1;
-            self.month = self.month % 12 + 1;
+            self.month += 1;
+        } else {
+            self.year += 1;
+            self.month = 1;
+            self.day = 1;
         }
         self
     }
@@ -39,9 +43,13 @@ impl Date {
     pub(crate) const fn decrement(mut self) -> Self {
         if self.day > 1 {
             self.day -= 1;
+        } else if self.month > 1 {
+            self.month -= 1;
+            self.day = days_in_month(self.year, self.month);
         } else {
-            self.day = days_in_month(self.year, self.month - 1);
-            self.month = self.month.saturating_sub(1);
+            self.day = 31;
+            self.month = 12;
+            self.year -= 1;
         }
         self
     }
@@ -329,10 +337,9 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
             day.ok_or_type_err("day is a required argument")?,
         )
     };
-    match Date::from_longs(year, month, day) {
-        Some(date) => date.to_obj(cls),
-        None => Err(value_err!("Invalid date components")),
-    }
+    Date::from_longs(year, month, day)
+        .ok_or_value_err("Invalid date components")?
+        .to_obj(cls)
 }
 
 unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
@@ -344,7 +351,7 @@ unsafe extern "C" fn __hash__(slf: *mut PyObject) -> Py_hash_t {
 }
 
 unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> PyReturn {
-    Ok(newref(if Py_TYPE(b_obj) == Py_TYPE(a_obj) {
+    Ok(if Py_TYPE(b_obj) == Py_TYPE(a_obj) {
         let a = Date::extract(a_obj);
         let b = Date::extract(b_obj);
         match op {
@@ -358,8 +365,8 @@ unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> 
         }
         .to_py()?
     } else {
-        Py_NotImplemented()
-    }))
+        newref(Py_NotImplemented())
+    })
 }
 
 static mut SLOTS: &[PyType_Slot] = &[
@@ -371,7 +378,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_nb_add, __add__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: "A calendar date type\0".as_ptr() as *mut c_void,
+        pfunc: c"A calendar date type".as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_methods,
@@ -418,7 +425,6 @@ unsafe fn from_py_date(cls: *mut PyObject, date: *mut PyObject) -> PyReturn {
     }
 }
 
-#[inline]
 unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
     format!("{}", Date::extract(slf)).to_py()
 }
@@ -428,10 +434,9 @@ unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
-    match Date::parse_all(s.to_utf8()?.ok_or_type_err("argument must be str")?) {
-        Some(d) => d.to_obj(cls.cast()),
-        None => Err(value_err!("Invalid format: {}", s.repr())),
-    }
+    Date::parse_all(s.to_utf8()?.ok_or_type_err("argument must be str")?)
+        .ok_or_else(|| value_err!("Invalid format: {}", s.repr()))?
+        .to_obj(cls.cast())
 }
 
 const fn days_before_year(year: u16) -> u32 {
@@ -451,19 +456,20 @@ const fn days_before_month(year: u16, month: u8) -> u16 {
 
 unsafe fn day_of_week(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let enum_members = State::for_obj(slf).weekday_enum_members;
-    Ok(enum_members[((Date::extract(slf).ord() + 6) % 7) as usize]
-        .as_mut()
-        .unwrap())
+    Ok(newref(
+        enum_members[((Date::extract(slf).ord() + 6) % 7) as usize]
+            .as_mut()
+            .unwrap(),
+    ))
 }
 
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let Date { year, month, day } = Date::extract(slf);
-    PyTuple_Pack(
-        2,
+    (
         State::for_obj(slf).unpickle_date,
-        steal!(PyTuple_Pack(1, steal!(pack![year, month, day].to_py()?)).as_result()?),
+        steal!((steal!(pack![year, month, day].to_py()?),).to_py()?),
     )
-    .as_result()
+        .to_py()
 }
 
 unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
@@ -514,18 +520,22 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
                 .ok_or_value_err("Resulting date out of range")?
                 .to_obj(type_a)
         } else {
-            Ok(newref(Py_NotImplemented()))
+            // We can safely discount other types within our module
+            Err(type_err!(
+                "unsupported operand type(s) for -: 'Date' and '{}'",
+                (type_b as *mut PyObject).repr()
+            ))?
         }
     }
 }
 
 unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
+    // We need to be careful since this method can be called reflexively
     let type_a = Py_TYPE(obj_a);
     let type_b = Py_TYPE(obj_b);
-    // We need to be careful since this method can be reflexive
-    if PyType_GetModule(type_a) == PyType_GetModule(type_b)
-        && type_b == State::for_type(type_a).date_delta_type
-    {
+    let mod_a = PyType_GetModule(type_a);
+    let mod_b = PyType_GetModule(type_b);
+    if mod_a == mod_b && type_b == State::for_mod(mod_a).date_delta_type {
         let DateDelta { months, days } = DateDelta::extract(obj_b);
         Date::extract(obj_a)
             .shift_months(months)
@@ -533,7 +543,11 @@ unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             .ok_or_value_err("Resulting date out of range")?
             .to_obj(type_a)
     } else {
-        Ok(newref(Py_NotImplemented()))
+        // We can safely discount other types within our module
+        Err(type_err!(
+            "unsupported operand type(s) for +: 'Date' and '{}'",
+            (type_b as *mut PyObject).repr()
+        ))?
     }
 }
 
@@ -615,15 +629,15 @@ unsafe fn _shift_method(
         years = -years;
     }
 
-    match Date::extract(slf).shift(years, months, days) {
-        Some(date) => date.to_obj(cls),
-        None => Err(value_err!("Resulting date out of range"))?,
-    }
+    Date::extract(slf)
+        .shift(years, months, days)
+        .ok_or_value_err("Resulting date out of range")?
+        .to_obj(cls)
 }
 
 unsafe fn replace(
     slf: *mut PyObject,
-    type_: *mut PyTypeObject,
+    cls: *mut PyTypeObject,
     args: &[*mut PyObject],
     kwargs: &[(*mut PyObject, *mut PyObject)],
 ) -> PyReturn {
@@ -632,7 +646,7 @@ unsafe fn replace(
         str_month,
         str_day,
         ..
-    } = State::for_type(type_);
+    } = State::for_type(cls);
     if !args.is_empty() {
         Err(type_err!("replace() takes no positional arguments"))
     } else {
@@ -656,10 +670,9 @@ unsafe fn replace(
                 ))?;
             }
         }
-        match Date::from_longs(year, month, day) {
-            Some(date) => date.to_obj(type_),
-            None => Err(value_err!("Invalid date components"))?,
-        }
+        Date::from_longs(year, month, day)
+            .ok_or_value_err("Invalid date components")?
+            .to_obj(cls)
     }
 }
 
@@ -676,7 +689,7 @@ unsafe fn at(slf: *mut PyObject, time_obj: *mut PyObject) -> PyReturn {
         }
         .to_obj(naive_datetime_type)
     } else {
-        Err(type_err!("argument must be a Time"))
+        Err(type_err!("argument must be a whenever.Time"))
     }
 }
 
@@ -698,10 +711,7 @@ static mut METHODS: &[PyMethodDef] = &[
     ),
     method!(identity2 named "__copy__", ""),
     method!(identity2 named "__deepcopy__", "", METH_O),
-    method!(
-        day_of_week,
-        "Return the ISO day of the week, where monday=1"
-    ),
+    method!(day_of_week, "Return the day of the week"),
     method!(at, "Combine with a time to create a datetime", METH_O),
     method!(__reduce__, ""),
     method_kwargs!(add, "Add various units to the date"),
@@ -878,9 +888,57 @@ mod tests {
 
     #[test]
     fn test_ord_ymd_reversible() {
-        for ord in 1..=(366 * 4) {
+        for ord in 1..=(MAX_ORD as u32) {
             let date = Date::from_ord_unchecked(ord);
             assert_eq!(ord, date.ord());
         }
+    }
+
+    #[test]
+    fn test_increment() {
+        assert_eq!(
+            Date::new_unchecked(2021, 1, 1).increment(),
+            Date::new(2021, 1, 2).unwrap()
+        );
+        assert_eq!(
+            Date::new_unchecked(2021, 1, 31).increment(),
+            Date::new(2021, 2, 1).unwrap()
+        );
+        assert_eq!(
+            Date::new_unchecked(2021, 2, 28).increment(),
+            Date::new(2021, 3, 1).unwrap()
+        );
+        assert_eq!(
+            Date::new_unchecked(2020, 2, 29).increment(),
+            Date::new(2020, 3, 1).unwrap()
+        );
+        assert_eq!(
+            Date::new_unchecked(2020, 12, 31).increment(),
+            Date::new(2021, 1, 1).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_decrement() {
+        assert_eq!(
+            Date::new_unchecked(2021, 1, 2).decrement(),
+            Date::new(2021, 1, 1).unwrap()
+        );
+        assert_eq!(
+            Date::new_unchecked(2021, 2, 1).decrement(),
+            Date::new(2021, 1, 31).unwrap()
+        );
+        assert_eq!(
+            Date::new_unchecked(2021, 3, 1).decrement(),
+            Date::new(2021, 2, 28).unwrap()
+        );
+        assert_eq!(
+            Date::new_unchecked(2020, 3, 1).decrement(),
+            Date::new(2020, 2, 29).unwrap()
+        );
+        assert_eq!(
+            Date::new_unchecked(2021, 1, 1).decrement(),
+            Date::new(2020, 12, 31).unwrap()
+        );
     }
 }

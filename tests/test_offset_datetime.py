@@ -233,6 +233,7 @@ class TestParseCommonIso:
             "2020-08-15T12:08:30.0034+05:𝟙0",  # non-ASCII
             "",  # empty
             "garbage",  # garbage
+            "2020-08-15T12:08:30z",  # lowercase Z
         ],
     )
     def test_invalid(self, s):
