@@ -125,6 +125,8 @@ impl DateTime {
         })
     }
 
+    // FUTURE: is this actually worth it?
+    // shift by <48 hours, faster than going through date.shift()
     pub(crate) fn small_shift_unchecked(self, secs: i32) -> Self {
         debug_assert!(secs.abs() < S_PER_DAY * 2);
         let Self { date, time } = self;
@@ -924,5 +926,149 @@ mod tests {
         assert_eq!(parse_date_and_time(b"2023-03-02 02:69:09.123456789"), None);
         // invalid date
         assert_eq!(parse_date_and_time(b"2023-02-29 02:29:09.123456789"), None);
+    }
+
+    #[test]
+    fn test_small_shift_unchecked() {
+        let d = DateTime {
+            date: Date {
+                year: 2023,
+                month: 3,
+                day: 2,
+            },
+            time: Time {
+                hour: 2,
+                minute: 9,
+                second: 9,
+                nanos: 0,
+            },
+        };
+        assert_eq!(d.small_shift_unchecked(0), d);
+        assert_eq!(
+            d.small_shift_unchecked(1),
+            DateTime {
+                date: Date {
+                    year: 2023,
+                    month: 3,
+                    day: 2,
+                },
+                time: Time {
+                    hour: 2,
+                    minute: 9,
+                    second: 10,
+                    nanos: 0,
+                }
+            }
+        );
+        assert_eq!(
+            d.small_shift_unchecked(-1),
+            DateTime {
+                date: Date {
+                    year: 2023,
+                    month: 3,
+                    day: 2,
+                },
+                time: Time {
+                    hour: 2,
+                    minute: 9,
+                    second: 8,
+                    nanos: 0,
+                }
+            }
+        );
+        assert_eq!(
+            d.small_shift_unchecked(S_PER_DAY),
+            DateTime {
+                date: Date {
+                    year: 2023,
+                    month: 3,
+                    day: 3,
+                },
+                time: Time {
+                    hour: 2,
+                    minute: 9,
+                    second: 9,
+                    nanos: 0,
+                }
+            }
+        );
+        assert_eq!(
+            d.small_shift_unchecked(-S_PER_DAY),
+            DateTime {
+                date: Date {
+                    year: 2023,
+                    month: 3,
+                    day: 1,
+                },
+                time: Time {
+                    hour: 2,
+                    minute: 9,
+                    second: 9,
+                    nanos: 0,
+                }
+            }
+        );
+        let midnight = DateTime {
+            date: Date {
+                year: 2023,
+                month: 3,
+                day: 2,
+            },
+            time: Time {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanos: 0,
+            },
+        };
+        assert_eq!(midnight.small_shift_unchecked(0), midnight);
+        assert_eq!(
+            midnight.small_shift_unchecked(-1),
+            DateTime {
+                date: Date {
+                    year: 2023,
+                    month: 3,
+                    day: 1,
+                },
+                time: Time {
+                    hour: 23,
+                    minute: 59,
+                    second: 59,
+                    nanos: 0,
+                }
+            }
+        );
+        assert_eq!(
+            midnight.small_shift_unchecked(-S_PER_DAY),
+            DateTime {
+                date: Date {
+                    year: 2023,
+                    month: 3,
+                    day: 1,
+                },
+                time: Time {
+                    hour: 0,
+                    minute: 0,
+                    second: 0,
+                    nanos: 0,
+                }
+            }
+        );
+        assert_eq!(
+            midnight.small_shift_unchecked(-S_PER_DAY - 1),
+            DateTime {
+                date: Date {
+                    year: 2023,
+                    month: 2,
+                    day: 28,
+                },
+                time: Time {
+                    hour: 23,
+                    minute: 59,
+                    second: 59,
+                    nanos: 0,
+                }
+            }
+        );
     }
 }
