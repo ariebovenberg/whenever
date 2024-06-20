@@ -12,6 +12,7 @@ try:
         _unpkl_utc,
         _unpkl_zoned,
     )
+    _EXTENSION_LOADED = True
 
 except ModuleNotFoundError as e:
     if e.name != "whenever._whenever":  # pragma: no cover
@@ -33,3 +34,5 @@ except ModuleNotFoundError as e:
         _unpkl_utc,
         _unpkl_zoned,
     )
+
+    _EXTENSION_LOADED = False
