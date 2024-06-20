@@ -453,7 +453,7 @@ Here are the ISO formats for each type:
 +-----------------------------------------+------------------------------------------------+
 | :class:`~whenever.OffsetDateTime`       | ``YYYY-MM-DDTHH:MM:SS±HH:MM``                  |
 +-----------------------------------------+------------------------------------------------+
-| :class:`~whenever.ZonedDateTime`        | ``YYYY-MM-DDTHH:MM:SS±HH:MM[TIMEZONE ID]`` [1]_|
+| :class:`~whenever.ZonedDateTime`        | ``YYYY-MM-DDTHH:MM:SS±HH:MM[IANA TZ ID]`` [1]_ |
 +-----------------------------------------+------------------------------------------------+
 | :class:`~whenever.LocalSystemDateTime`  | ``YYYY-MM-DDTHH:MM:SS±HH:MM``                  |
 +-----------------------------------------+------------------------------------------------+

@@ -4,14 +4,20 @@
 0.6.0 (2024-??-??)
 ------------------
 
-**Added**
+**Added or improved**
 
 - Implement as a Rust extension module, leading to a big speedup
 - Add ``replace_date`` and ``replace_time`` methods to datetimes.
+- Add ``Date.MIN`` and ``Date.MAX`` constants.
+- ``from_py_*`` methods are more robust.
+- The pickle format for most types is now more efficient.
+
 
 **Breaking changes**
 
 - Nanosecond precision is now the default for all datetimes and deltas.
+  ``nanosecond`` is a keyword-only argument for all constructors,
+  to prevent mistakes porting code from ``datetime``.
 
   **Rationale**: Nanosecond precision is the standard for most modern
   datetime libraries.
@@ -21,6 +27,12 @@
 
   **Rationale**: This cuts down on the number of methods; the performance benefits
   of separate methods aren't worth the clutter.
+
+- Timestamp methods now use integers instead of floats. There
+  are now separate methods for seconds, milliseconds, and nanoseconds.
+
+  **Rationale**: This prevents loss of precision when converting to floats,
+  and is more in line with other modern libraries.
 
 - Renamed `[from_][rfc3339|rfc2822]` methods to `[format|parse]_[rfc3339|rfc2822]`.
 
@@ -37,6 +49,37 @@
 
   **Rationale**: The overhead of weakrefs was too high for
   such primitive objects, and the use case was not clear.
+
+- Weekdays are now an enum instead integer.
+
+  **Rationale**: Enums are more descriptive and less error-prone,
+  especially since ISO weekdays start at 1 and Python weekdays at 0.
+
+- Calendar units in ``Date[Time]Delta`` can now only be retrieved together.
+  For example, there is no ``delta.months`` or ``delta.days`` anymore,
+  ``delta.in_months_days()`` should be used in this case.
+
+  **Rationale**: This safeguards against mistakes like ``(date1 - date2).days``
+  which would only return the *days component* of the delta, excluding months.
+  Having to call ``in_months_days()`` is more explicit that both parts are needed.
+
+- Units in delta cannot be different signs anymore (after normalization).
+
+  **Rationale**: The use case for mixed sign deltas (e.g. 2 months and -15 days) is unclear,
+  and having a consistent sign makes it easier to reason about.
+  It also alings with the most well-known version of the ISO format.
+
+- Calendar units are normalized, but only in sofar as they can be converted
+  strictly. For example, 1 year is always equal to 12 months, but 1 month
+  isn't equal to a fixed number of days. Refer to the delta docs for more information.
+
+  **Rationale**: This is more in line with ``TimeDelta`` which also normalizes.
+
+
+- Dropped Python 3.8 support
+
+  **Rationale**: Rust extension relies on C API features added in Python 3.9.
+  Python 3.8 will be EOL later this year.
 
 0.5.1 (2024-04-02)
 ------------------
