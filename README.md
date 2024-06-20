@@ -113,8 +113,8 @@ Additionally, it hasn't been actively maintained since a breaking 3.0 release la
 ## Why use whenever?
 
 - 🌐 DST-safe arithmetic. Always.
-- ⚖️ Typesafe API prevents common bugs
-- ✅ Fixes issues that [arrow/pendulum don't](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/#datetime-library-scorecard)
+- 🛡️ Typesafe API prevents common bugs
+- ✅ Fixes issues [arrow/pendulum don't](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/#datetime-library-scorecard)
 - ⚖️  Based on proven and [familiar concepts](https://www.youtube.com/watch?v=saeKBuPewcU)
 - ⚡️ Unmatched performance
 - 💎 Thoroughly tested and documented

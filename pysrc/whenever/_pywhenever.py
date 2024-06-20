@@ -2007,8 +2007,8 @@ class _DateTime(_ImmutableBase, ABC):
 
         Note
         ----
-        This method doesn't parse the more "extended" ISO 8601 formats.
-        Also, ``ZonedDateTime`` uses the recent RFC9557 extension.
+        This method doesn't parse the more "exotic" ISO 8601 formats.
+        Note that ``ZonedDateTime`` uses the recent RFC9557 extension.
 
         Inverse of :meth:`format_common_iso`.
 
@@ -3326,7 +3326,7 @@ class ZonedDateTime(_AwareDateTime):
 
     .. code-block:: text
 
-       YYYY-MM-DDTHH:MM:SS±HH:MM[TIMEZONE ID]
+       YYYY-MM-DDTHH:MM:SS±HH:MM[IANA TZ ID]
 
     This format uses the RFC 9557 extension to ISO 8601.
 
@@ -4834,7 +4834,6 @@ def _strip_subclasses(dt: _datetime) -> _datetime:
         )
 
 
-# Before Python 3.11, fromisoformat() is less capable
 if sys.version_info < (3, 11):  # pragma: no cover
 
     def _parse_rfc2822(s: str) -> _datetime:
