@@ -274,6 +274,12 @@ class TestFromTimestamp:
         with pytest.raises((OSError, OverflowError, ValueError)):
             method(-1_000_000_000_000_000_000 * factor)
 
+        with pytest.raises((OSError, OverflowError, ValueError)):
+            method(1 << 129)
+
+        with pytest.raises(TypeError, match="integer"):
+            method(1.0)  # type: ignore[arg-type]
+
     def test_extremes(self):
         assert UTCDateTime.from_timestamp(
             UTCDateTime.MAX.timestamp()

@@ -1,4 +1,4 @@
-use core::ffi::{c_int, c_void};
+use core::ffi::{c_int, c_void, CStr};
 use core::mem;
 use pyo3_ffi::*;
 use std::cmp::min;
@@ -138,17 +138,18 @@ pub(crate) const MAX_MICROSECONDS: i64 = MAX_SECS * 1_000_000;
 pub(crate) const MAX_NANOSECONDS: i128 = MAX_SECS as i128 * 1_000_000_000;
 const SECS_PER_DAY: i64 = 24 * 3600;
 
-pub(crate) const SINGLETONS: [(&str, TimeDelta); 3] = [
-    ("ZERO\0", TimeDelta { secs: 0, nanos: 0 }),
+pub(crate) const SINGLETONS: [(&CStr, TimeDelta); 3] = [
+    (c"ZERO", TimeDelta { secs: 0, nanos: 0 }),
     (
-        "MIN\0",
+        c"MIN",
         TimeDelta {
             secs: -MAX_SECS,
             nanos: 0,
         },
     ),
     (
-        "MAX\0",
+        // FUTURE: should the nanos be 999_999_999?
+        c"MAX",
         TimeDelta {
             secs: MAX_SECS,
             nanos: 0,
@@ -174,8 +175,8 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         ..
     } = State::for_type(cls);
 
-    let delta = match (nargs, nkwargs) {
-        (0, 0) => TimeDelta { secs: 0, nanos: 0 }, // FUTURE: return the singleton
+    match (nargs, nkwargs) {
+        (0, 0) => TimeDelta { secs: 0, nanos: 0 }, // FUTURE: return the singleton?
         (0, _) => {
             let mut key: *mut PyObject = NULL();
             let mut value: *mut PyObject = NULL();
@@ -207,8 +208,8 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
             TimeDelta::from_nanos(nanos).ok_or_value_err("TimeDelta out of range")?
         }
         _ => Err(type_err!("TimeDelta() takes no positional arguments"))?,
-    };
-    delta.to_obj(cls)
+    }
+    .to_obj(cls)
 }
 
 pub(crate) unsafe fn hours(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
@@ -470,9 +471,20 @@ unsafe fn __abs__(slf: *mut PyObject) -> PyReturn {
 }
 
 static mut SLOTS: &[PyType_Slot] = &[
+    slotmethod!(Py_tp_new, __new__),
+    slotmethod!(Py_tp_richcompare, __richcmp__),
+    slotmethod!(Py_nb_negative, __neg__, 1),
+    slotmethod!(Py_tp_repr, __repr__, 1),
+    slotmethod!(Py_tp_str, __str__, 1),
+    slotmethod!(Py_nb_positive, identity1, 1),
+    slotmethod!(Py_nb_multiply, __mul__, 2),
+    slotmethod!(Py_nb_true_divide, __truediv__, 2),
+    slotmethod!(Py_nb_add, __add__, 2),
+    slotmethod!(Py_nb_subtract, __sub__, 2),
+    slotmethod!(Py_nb_absolute, __abs__, 1),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: "A delta type of precise time units\0".as_ptr() as *mut c_void,
+        pfunc: c"A delta type of precise time units".as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_methods,
@@ -490,17 +502,6 @@ static mut SLOTS: &[PyType_Slot] = &[
         slot: Py_tp_dealloc,
         pfunc: generic_dealloc as *mut c_void,
     },
-    slotmethod!(Py_tp_new, __new__),
-    slotmethod!(Py_tp_richcompare, __richcmp__),
-    slotmethod!(Py_nb_negative, __neg__, 1),
-    slotmethod!(Py_tp_repr, __repr__, 1),
-    slotmethod!(Py_tp_str, __str__, 1),
-    slotmethod!(Py_nb_positive, identity1, 1),
-    slotmethod!(Py_nb_multiply, __mul__, 2),
-    slotmethod!(Py_nb_true_divide, __truediv__, 2),
-    slotmethod!(Py_nb_add, __add__, 2),
-    slotmethod!(Py_nb_subtract, __sub__, 2),
-    slotmethod!(Py_nb_absolute, __abs__, 1),
     PyType_Slot {
         slot: 0,
         pfunc: NULL(),
@@ -509,12 +510,12 @@ static mut SLOTS: &[PyType_Slot] = &[
 
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let TimeDelta { secs, nanos } = TimeDelta::extract(slf);
-    PyTuple_Pack(
-        2,
+    let data = pack![secs, nanos];
+    (
         State::for_obj(slf).unpickle_time_delta,
-        steal!(PyTuple_Pack(1, steal!(pack![secs, nanos].to_py()?)).as_result()?),
+        steal!((steal!(data.to_py()?),).to_py()?),
     )
-    .as_result()
+        .to_py()
 }
 
 pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
@@ -567,9 +568,13 @@ unsafe fn from_py_timedelta(cls: *mut PyObject, d: *mut PyObject) -> PyReturn {
     if PyDelta_Check(d) == 0 {
         Err(type_err!("argument must be datetime.timedelta"))?;
     }
+    let secs = i64::from(PyDateTime_DELTA_GET_DAYS(d)) * SECS_PER_DAY
+        + i64::from(PyDateTime_DELTA_GET_SECONDS(d));
+    if secs < -MAX_SECS || secs > MAX_SECS {
+        Err(value_err!("TimeDelta out of range"))?;
+    }
     TimeDelta {
-        secs: i64::from(PyDateTime_DELTA_GET_DAYS(d)) * 24 * 3600
-            + i64::from(PyDateTime_DELTA_GET_SECONDS(d)),
+        secs,
         nanos: PyDateTime_DELTA_GET_MICROSECONDS(d) as u32 * 1_000,
     }
     .to_obj(cls.cast())
@@ -582,8 +587,6 @@ unsafe fn py_timedelta(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         DeltaType,
         ..
     } = State::for_obj(slf).py_api;
-    // This whole circus just to round nanoseconds...there's probably
-    // a better way to do this
     let mut micros = (nanos as f64 / 1_000.0).round_ties_even() as i32;
     if micros == 1_000_000 {
         micros = 0;
@@ -601,13 +604,13 @@ unsafe fn py_timedelta(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 fn parse_prefix(s: &mut &[u8]) -> Option<i128> {
-    let (result, i) = match &s[..3] {
+    let (result, cursor) = match &s[..3] {
         b"+PT" => (Some(1), 3),
         b"-PT" => (Some(-1), 3),
         [b'P', b'T', _] => (Some(1), 2),
         _ => return None,
     };
-    *s = &s[i..];
+    *s = &s[cursor..];
     result
 }
 
@@ -624,14 +627,13 @@ unsafe fn in_hrs_mins_secs_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyRetu
     } else {
         (secs + 1, nanos_unsigned as i32 - 1_000_000_000)
     };
-    PyTuple_Pack(
-        4,
+    (
         steal!((secs / 3_600).to_py()?),
         steal!((secs % 3_600 / 60).to_py()?),
         steal!((secs % 60).to_py()?),
         steal!(nanos.to_py()?),
     )
-    .as_result()
+        .to_py()
 }
 
 #[inline]
@@ -741,28 +743,24 @@ pub(crate) unsafe fn parse_all_components(s: &mut &[u8]) -> Option<(i128, bool)>
     let mut prev_unit: Option<Unit> = None;
     let mut nanos = 0;
     while !s.is_empty() {
-        if let Some((value, unit)) = parse_component(s) {
-            match (unit, prev_unit.replace(unit)) {
-                (Unit::Hours, None) => {
-                    nanos += value * 3_600_000_000_000;
-                }
-                (Unit::Minutes, None | Some(Unit::Hours)) => {
-                    nanos += value * 60_000_000_000;
-                }
-                (Unit::Nanoseconds, _) => {
-                    nanos += value;
-                    if s.is_empty() {
-                        break;
-                    }
-                    // i.e. there's still something left after the nanoseconds
-                    None?
-                }
-                // i.e. the order of the components is wrong
-                _ => None?,
+        let (value, unit) = parse_component(s)?;
+        match (unit, prev_unit.replace(unit)) {
+            (Unit::Hours, None) => {
+                nanos += value * 3_600_000_000_000;
             }
-        } else {
-            // i.e. the component parsing failed
-            None?
+            (Unit::Minutes, None | Some(Unit::Hours)) => {
+                nanos += value * 60_000_000_000;
+            }
+            (Unit::Nanoseconds, _) => {
+                nanos += value;
+                if s.is_empty() {
+                    break;
+                }
+                // i.e. there's still something left after the nanoseconds
+                return None;
+            }
+            // i.e. the order of the components is wrong
+            _ => return None,
         }
     }
     Some((nanos, prev_unit.is_none()))
@@ -818,7 +816,7 @@ static mut METHODS: &[PyMethodDef] = &[
         METH_O | METH_CLASS
     ),
     method!(py_timedelta, "Convert to a Python datetime.timedelta"),
-    method!(in_hrs_mins_secs_nanos, "Return the date delta as a tuple"),
+    method!(in_hrs_mins_secs_nanos, "Return the time delta as a tuple"),
     method!(__reduce__, ""),
     PyMethodDef::zeroed(),
 ];

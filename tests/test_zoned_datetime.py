@@ -729,6 +729,8 @@ class TestParseCommonIso:
             "2023-10-29T02:15:30+02:00:00.00[Europe/Amsterdam]",  # subsecond offset
             "2023-10-29T02:15:30+0𝟙:00[Europe/Amsterdam]",
             "2020-08-15T12:08:30.000000001+29:00[Europe/Berlin]",  # out of range offset
+            f"2023-10-29T02:15:30+02:00[{'X'*9999}]",  # huge tz
+            f"2023-10-29T02:15:30+02:00[{chr(1600)}]",  # non-ascii
         ],
     )
     def test_invalid(self, s):
@@ -740,6 +742,9 @@ class TestParseCommonIso:
             ZonedDateTime.parse_common_iso(
                 "2020-08-15T12:08:30+02:00[Europe/Nowhere]"
             )
+
+        with pytest.raises(ZoneInfoNotFoundError):
+            ZonedDateTime.parse_common_iso("2020-08-15T12:08:30Z[X]")
 
     @pytest.mark.parametrize(
         "s",
@@ -893,6 +898,9 @@ class TestFromTimestamp:
 
         with pytest.raises(TypeError, match="got 3|foo"):
             method(0, tz="America/New_York", foo="bar")
+
+        with pytest.raises(TypeError, match="positional"):
+            method(ts=0, tz="America/New_York")
 
         with pytest.raises(TypeError):
             method(0, foo="bar")

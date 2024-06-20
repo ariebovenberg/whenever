@@ -606,11 +606,41 @@ impl ToPy for &[u8] {
     }
 }
 
+impl<T> ToPy for (T,) {
+    unsafe fn to_py(self) -> PyReturn {
+        PyTuple_Pack(1, self.0).as_result()
+    }
+}
+
+impl<T, U> ToPy for (T, U) {
+    unsafe fn to_py(self) -> PyReturn {
+        PyTuple_Pack(2, self.0, self.1).as_result()
+    }
+}
+
+impl<T, U, V> ToPy for (T, U, V) {
+    unsafe fn to_py(self) -> PyReturn {
+        PyTuple_Pack(3, self.0, self.1, self.2).as_result()
+    }
+}
+
+impl<T, U, V, W> ToPy for (T, U, V, W) {
+    unsafe fn to_py(self) -> PyReturn {
+        PyTuple_Pack(4, self.0, self.1, self.2, self.3).as_result()
+    }
+}
+
+impl<T, U, V, W, X> ToPy for (T, U, V, W, X) {
+    unsafe fn to_py(self) -> PyReturn {
+        PyTuple_Pack(5, self.0, self.1, self.2, self.3, self.4).as_result()
+    }
+}
+
 pub(crate) unsafe fn identity1(slf: *mut PyObject) -> PyReturn {
     Ok(newref(slf))
 }
 
-pub(crate) unsafe fn identity2(slf: &'static mut PyObject, _: &mut PyObject) -> PyReturn {
+pub(crate) unsafe fn identity2(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     Ok(newref(slf))
 }
 
@@ -704,7 +734,7 @@ unsafe fn local_offset(
 }
 
 impl OffsetResult {
-    pub(crate) unsafe fn for_localsystem(
+    pub(crate) unsafe fn for_system_tz(
         py_api: &PyDateTime_CAPI,
         date: Date,
         time: Time,
@@ -790,6 +820,14 @@ impl Disambiguate {
         })
     }
 
+    pub(crate) unsafe fn from_py(obj: *mut PyObject) -> PyResult<Self> {
+        Disambiguate::parse(
+            obj.to_utf8()?
+                .ok_or_type_err("disambiguate must be a string")?,
+        )
+        .ok_or_value_err("Invalid disambiguate value")
+    }
+
     pub(crate) unsafe fn from_only_kwarg(
         kwargs: &[(*mut PyObject, *mut PyObject)],
         str_disambiguate: *mut PyObject,
@@ -797,13 +835,8 @@ impl Disambiguate {
     ) -> PyResult<Self> {
         match kwargs {
             [] => Ok(Self::Raise),
-            [(name, value)] if *name == str_disambiguate => Self::parse(
-                value
-                    .to_utf8()?
-                    .ok_or_else(|| type_err!("Disambiguate value must be a string"))?,
-            )
-            .ok_or_value_err("Invalid disambiguate value"),
-            [(name, _)] => Err(type_err!(
+            &[(name, value)] if name == str_disambiguate => Self::from_py(value),
+            &[(name, _)] => Err(type_err!(
                 "{}() got an unexpected keyword argument {}",
                 fname,
                 name.repr()
@@ -832,7 +865,7 @@ pub(crate) unsafe extern "C" fn generic_dealloc(slf: *mut PyObject) {
 }
 
 #[inline]
-pub(crate) unsafe fn generic_to_obj<T>(type_: *mut PyTypeObject, d: T) -> PyReturn {
+pub(crate) unsafe fn generic_alloc<T>(type_: *mut PyTypeObject, d: T) -> PyReturn {
     let f: allocfunc = (*type_).tp_alloc.unwrap();
     let slf = f(type_, 0).cast::<PyWrap<T>>();
     match slf.cast::<PyObject>().as_mut() {
@@ -852,7 +885,7 @@ pub(crate) trait PyWrapped: Copy {
 
     #[inline]
     unsafe fn to_obj(self, type_: *mut PyTypeObject) -> PyReturn {
-        generic_to_obj(type_, self)
+        generic_alloc(type_, self)
     }
 }
 
@@ -905,12 +938,23 @@ pub(crate) unsafe fn call1(func: *mut PyObject, arg: *mut PyObject) -> PyReturn 
 
 #[inline]
 pub(crate) unsafe fn methcall1(slf: *mut PyObject, name: &str, arg: *mut PyObject) -> PyReturn {
-    PyObject_CallMethodOneArg(slf, name.to_py()?, arg).as_result()
+    PyObject_CallMethodOneArg(slf, steal!(name.to_py()?), arg).as_result()
 }
 
 #[inline]
 pub(crate) unsafe fn methcall0(slf: *mut PyObject, name: &str) -> PyReturn {
     PyObject_CallMethodNoArgs(slf, steal!(name.to_py()?)).as_result()
+}
+
+#[inline]
+#[allow(dead_code)]
+unsafe fn getattr_tzinfo(dt: *mut PyObject) -> *mut PyObject {
+    let tzinfo = PyObject_GetAttrString(dt, c"tzinfo".as_ptr());
+    // To keep things consistent with the Py3.10 code above,
+    // we need to decref it, turning it into a borrowed reference.
+    // We can assume the parent datetime keeps it alive.
+    Py_DECREF(tzinfo);
+    tzinfo
 }
 
 #[inline]
@@ -921,12 +965,7 @@ pub(crate) unsafe fn get_dt_tzinfo(dt: *mut PyObject) -> *mut PyObject {
     }
     #[cfg(not(Py_3_10))]
     {
-        let tzinfo = PyObject_GetAttrString(dt, c"tzinfo".as_ptr());
-        // To keep things consistent with the Py3.10 code above,
-        // we need to decref it, turning it into a borrowed reference.
-        // We can assume the parent datetime keeps it alive.
-        Py_DECREF(tzinfo);
-        tzinfo
+        getattr_tzinfo(dt)
     }
 }
 
@@ -938,12 +977,7 @@ pub(crate) unsafe fn get_time_tzinfo(dt: *mut PyObject) -> *mut PyObject {
     }
     #[cfg(not(Py_3_10))]
     {
-        let tzinfo = PyObject_GetAttrString(dt, c"tzinfo".as_ptr());
-        // To keep things consistent with the Py3.10 code above,
-        // we need to decref it, turning it into a borrowed reference.
-        // We can assume the parent datetime keeps it alive.
-        Py_DECREF(tzinfo);
-        tzinfo
+        getattr_tzinfo(dt)
     }
 }
 

@@ -1,4 +1,4 @@
-use core::ffi::{c_char, c_int, c_long, c_void};
+use core::ffi::{c_int, c_long, c_void, CStr};
 use core::mem;
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
@@ -18,6 +18,19 @@ pub struct Time {
 }
 
 impl Time {
+    pub(crate) const fn new(hour: u8, minute: u8, second: u8, nanos: u32) -> Option<Self> {
+        if hour > 23 || minute > 59 || second > 59 || nanos > 999_999_999 {
+            None
+        } else {
+            Some(Time {
+                hour,
+                minute,
+                second,
+                nanos,
+            })
+        }
+    }
+
     #[cfg(target_pointer_width = "32")]
     pub(crate) const fn pyhash(&self) -> Py_hash_t {
         hash_combine(
@@ -36,7 +49,7 @@ impl Time {
             | (self.nanos as Py_hash_t)
     }
 
-    pub(crate) const fn seconds(&self) -> i32 {
+    pub(crate) const fn total_seconds(&self) -> i32 {
         self.hour as i32 * 3600 + self.minute as i32 * 60 + self.second as i32
     }
 
@@ -48,7 +61,7 @@ impl Time {
     }
 
     pub(crate) const fn total_nanos(&self) -> u64 {
-        self.nanos as u64 + self.seconds() as u64 * 1_000_000_000
+        self.nanos as u64 + self.total_seconds() as u64 * 1_000_000_000
     }
 
     pub(crate) const fn from_total_nanos(nanos: u64) -> Self {
@@ -60,43 +73,30 @@ impl Time {
         }
     }
 
-    pub(crate) const fn new(hour: u8, minute: u8, second: u8, nanos: u32) -> Option<Self> {
-        if hour > 23 || minute > 59 || second > 59 || nanos > 999_999_999 {
-            None
-        } else {
-            Some(Time {
-                hour,
-                minute,
-                second,
-                nanos,
-            })
-        }
-    }
-
     pub(crate) const fn from_longs(
         hour: c_long,
         minute: c_long,
         second: c_long,
         nanos: c_long,
     ) -> Option<Self> {
-        if hour < 0 || hour > 23 {
-            return None;
+        if hour < 0
+            || hour > 23
+            || minute < 0
+            || minute > 59
+            || second < 0
+            || second > 59
+            || nanos < 0
+            || nanos > 999_999_999
+        {
+            None
+        } else {
+            Some(Time {
+                hour: hour as u8,
+                minute: minute as u8,
+                second: second as u8,
+                nanos: nanos as u32,
+            })
         }
-        if minute < 0 || minute > 59 {
-            return None;
-        }
-        if second < 0 || second > 59 {
-            return None;
-        }
-        if nanos < 0 || nanos > 999_999_999 {
-            return None;
-        }
-        Some(Time {
-            hour: hour as u8,
-            minute: minute as u8,
-            second: second as u8,
-            nanos: nanos as u32,
-        })
     }
 
     pub(crate) fn parse_all(s: &[u8]) -> Option<Self> {
@@ -185,9 +185,9 @@ impl Display for Time {
     }
 }
 
-pub(crate) const SINGLETONS: [(&str, Time); 3] = [
+pub(crate) const SINGLETONS: [(&CStr, Time); 3] = [
     (
-        "MIDNIGHT\0",
+        c"MIDNIGHT",
         Time {
             hour: 0,
             minute: 0,
@@ -196,7 +196,7 @@ pub(crate) const SINGLETONS: [(&str, Time); 3] = [
         },
     ),
     (
-        "NOON\0",
+        c"NOON",
         Time {
             hour: 12,
             minute: 0,
@@ -205,7 +205,7 @@ pub(crate) const SINGLETONS: [(&str, Time); 3] = [
         },
     ),
     (
-        "MAX\0",
+        c"MAX",
         Time {
             hour: 23,
             minute: 59,
@@ -227,10 +227,10 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         kwargs,
         c"|lll$l:Time".as_ptr(),
         vec![
-            c"hour".as_ptr() as *mut c_char,
-            c"minute".as_ptr() as *mut c_char,
-            c"second".as_ptr() as *mut c_char,
-            c"nanosecond".as_ptr() as *mut c_char,
+            c"hour".as_ptr() as *mut _,
+            c"minute".as_ptr() as *mut _,
+            c"second".as_ptr() as *mut _,
+            c"nanosecond".as_ptr() as *mut _,
             NULL(),
         ]
         .as_mut_ptr(),
@@ -240,13 +240,12 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         &mut nanos,
     ) == 0
     {
-        Err(PyErrOccurred())?
+        Err(py_err!())?
     }
 
-    match Time::from_longs(hour, minute, second, nanos) {
-        Some(time) => time.to_obj(cls),
-        None => Err(value_err!("Invalid time component value")),
-    }
+    Time::from_longs(hour, minute, second, nanos)
+        .ok_or_value_err("Invalid time component value")?
+        .to_obj(cls)
 }
 
 unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
@@ -258,7 +257,7 @@ unsafe extern "C" fn __hash__(slf: *mut PyObject) -> Py_hash_t {
 }
 
 unsafe fn __richcmp__(obj_a: *mut PyObject, obj_b: *mut PyObject, op: c_int) -> PyReturn {
-    Ok(newref(if Py_TYPE(obj_b) == Py_TYPE(obj_a) {
+    Ok(if Py_TYPE(obj_b) == Py_TYPE(obj_a) {
         let a = Time::extract(obj_a);
         let b = Time::extract(obj_b);
         match op {
@@ -272,8 +271,8 @@ unsafe fn __richcmp__(obj_a: *mut PyObject, obj_b: *mut PyObject, op: c_int) -> 
         }
         .to_py()?
     } else {
-        Py_NotImplemented()
-    }))
+        newref(Py_NotImplemented())
+    })
 }
 
 static mut SLOTS: &[PyType_Slot] = &[
@@ -283,7 +282,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_tp_richcompare, __richcmp__),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: "A time type\0".as_ptr() as *mut c_void,
+        pfunc: c"A type representing the time of day".as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_methods,
@@ -332,7 +331,7 @@ unsafe fn py_time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn from_py_time(type_: *mut PyObject, time: *mut PyObject) -> PyReturn {
     if PyTime_Check(time) == 0 {
-        Err(type_err!("argument must be a Time"))?
+        Err(type_err!("argument must be a whenever.Time"))?
     }
     if get_time_tzinfo(time) != Py_None() {
         Err(value_err!("time with timezone is not supported"))?
@@ -371,12 +370,12 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         second,
         nanos,
     } = Time::extract(slf);
-    PyTuple_Pack(
-        2,
+    let data = pack![hour, minute, second, nanos];
+    (
         State::for_obj(slf).unpickle_time,
-        steal!(PyTuple_Pack(1, steal!(pack![hour, minute, second, nanos].to_py()?)).as_result()?),
+        steal!((steal!(data.to_py()?),).to_py()?),
     )
-    .as_result()
+        .to_py()
 }
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
@@ -453,7 +452,6 @@ unsafe fn replace(
 
 static mut METHODS: &[PyMethodDef] = &[
     method!(py_time, "Convert to a Python datetime.time"),
-    method!(format_common_iso, ""),
     method_kwargs!(replace, "Replace one or more components of the time"),
     method!(
         format_common_iso,
