@@ -118,7 +118,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     if PyArg_ParseTupleAndKeywords(
         args,
         kwargs,
-        c"lll|lll$lU:LocalSystemDateTime".as_ptr(),
+        c"lll|lll$lU:SystemDateTime".as_ptr(),
         vec![
             c"year".as_ptr() as *mut _,
             c"month".as_ptr() as *mut _,
@@ -167,13 +167,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
 
 unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
     let (date, time, offset) = OffsetDateTime::extract(slf).as_tuple();
-    format!(
-        "LocalSystemDateTime({} {}{})",
-        date,
-        time,
-        offset_fmt(offset)
-    )
-    .to_py()
+    format!("SystemDateTime({} {}{})", date, time, offset_fmt(offset)).to_py()
 }
 
 unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
@@ -239,12 +233,12 @@ unsafe fn _shift(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) -> Py
         // We don't need to return NotImplemented here, as we know
         // which types within the module are supported.
         Err(type_err!(
-            "unsupported operand type(s) for {}: 'LocalSystemDateTime' and {}",
+            "unsupported operand type(s) for {}: 'SystemDateTime' and {}",
             opname,
             type_b.cast::<PyObject>().repr()
         ))?
     };
-    debug_assert_eq!(type_a, State::for_type(type_a).local_datetime_type);
+    debug_assert_eq!(type_a, State::for_type(type_a).system_datetime_type);
     let odt = OffsetDateTime::extract(obj_a);
     if negate {
         delta = -delta;
@@ -281,7 +275,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     let type_a = Py_TYPE(obj_a);
     let type_b = Py_TYPE(obj_b);
 
-    // Easy case: LocalDT - LocalDT
+    // Easy case: systemDT - systemDT
     let (inst_a, inst_b) = if type_a == type_b {
         (
             OffsetDateTime::extract(obj_a).to_instant(),
@@ -303,7 +297,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             } else {
                 return _shift(obj_a, obj_b, true);
             };
-            debug_assert_eq!(type_a, State::for_type(type_a).local_datetime_type);
+            debug_assert_eq!(type_a, State::for_type(type_a).system_datetime_type);
             (OffsetDateTime::extract(obj_a).to_instant(), inst_b)
         } else {
             return Ok(newref(Py_NotImplemented()));
@@ -322,7 +316,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_nb_subtract, __sub__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: c"A datetime type in the local system timezone".as_ptr() as *mut c_void,
+        pfunc: c"A datetime in the system timezone".as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_hash,
@@ -378,7 +372,7 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
         },
         unpack_one!(packed, i32),
     )
-    .to_obj(State::for_mod(module).local_datetime_type)
+    .to_obj(State::for_mod(module).system_datetime_type)
 }
 
 unsafe fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -565,9 +559,9 @@ unsafe fn now(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
         .ok_or_value_err("timestamp is out of range")?
         .to_py_ignore_nanos(py_api)?;
     defer_decref!(utc_dt);
-    let local_dt = methcall0(utc_dt, "astimezone")?;
-    defer_decref!(local_dt);
-    OffsetDateTime::from_py_and_nanos_unchecked(local_dt, nanos)?.to_obj(cls.cast())
+    let dt = methcall0(utc_dt, "astimezone")?;
+    defer_decref!(dt);
+    OffsetDateTime::from_py_and_nanos_unchecked(dt, nanos)?.to_obj(cls.cast())
 }
 
 unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
@@ -598,7 +592,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     ) = OffsetDateTime::extract(slf).as_tuple();
     let data = pack![year, month, day, hour, minute, second, nanos, offset_secs];
     (
-        State::for_obj(slf).unpickle_local_datetime,
+        State::for_obj(slf).unpickle_system_datetime,
         steal!((steal!(data.to_py()?),).to_py()?),
     )
         .to_py()
@@ -691,8 +685,7 @@ unsafe fn to_tz(slf: *mut PyObject, tz: *mut PyObject) -> PyReturn {
         .to_obj(zoned_datetime_type)
 }
 
-// TODO: rename
-unsafe fn to_local_system(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn to_system_tz(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let cls = Py_TYPE(slf);
     OffsetDateTime::extract(slf)
         .to_system_tz(State::for_type(cls).py_api)?
@@ -797,7 +790,7 @@ static mut METHODS: &[PyMethodDef] = &[
         "Create a new instance from the common ISO8601 style",
         METH_O | METH_CLASS
     ),
-    method!(to_local_system, "Convert to the local system timezone"),
+    method!(to_system_tz, "Convert to the system timezone"),
     method!(__reduce__, ""),
     method!(
         now,
@@ -903,5 +896,5 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
     },
 ];
 
-type LocalSystemDateTime = OffsetDateTime;
-type_spec!(LocalSystemDateTime, SLOTS);
+type SystemDateTime = OffsetDateTime;
+type_spec!(SystemDateTime, SLOTS);

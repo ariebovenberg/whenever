@@ -701,7 +701,7 @@ unsafe fn assume_tz(
         .to_obj(zoned_datetime_type)
 }
 
-unsafe fn assume_local_system(
+unsafe fn assume_system_tz(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
@@ -710,7 +710,7 @@ unsafe fn assume_local_system(
     let &State {
         py_api,
         str_disambiguate,
-        local_datetime_type,
+        system_datetime_type,
         exc_skipped,
         exc_ambiguous,
         ..
@@ -718,11 +718,11 @@ unsafe fn assume_local_system(
     let DateTime { date, time } = DateTime::extract(slf);
     if !args.is_empty() {
         Err(type_err!(
-            "assume_local_system() takes no positional arguments"
+            "assume_system_tz() takes no positional arguments"
         ))?
     }
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_local_system")?;
+    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_system_tz")?;
     OffsetDateTime::from_system_tz(py_api, date, time, dis)?
         .map_err(|e| match e {
             Ambiguity::Fold => py_err!(
@@ -738,7 +738,7 @@ unsafe fn assume_local_system(
                 time,
             ),
         })?
-        .to_obj(local_datetime_type)
+        .to_obj(system_datetime_type)
 }
 
 unsafe fn replace_date(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
@@ -809,8 +809,8 @@ static mut METHODS: &[PyMethodDef] = &[
     ),
     method_kwargs!(assume_tz, "Assume the datetime is in a timezone"),
     method_kwargs!(
-        assume_local_system,
-        "Assume the datetime is in the local system timezone"
+        assume_system_tz,
+        "Assume the datetime is in the system timezone"
     ),
     method!(
         replace_date,

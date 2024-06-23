@@ -9,9 +9,9 @@ mod common;
 pub mod date;
 mod date_delta;
 mod datetime_delta;
-mod local_datetime;
 pub mod naive_datetime;
 mod offset_datetime;
+mod system_datetime;
 mod time;
 mod time_delta;
 mod utc_datetime;
@@ -21,9 +21,9 @@ use date::unpickle as _unpkl_date;
 use date_delta::unpickle as _unpkl_ddelta;
 use date_delta::{days, months, weeks, years};
 use datetime_delta::unpickle as _unpkl_dtdelta;
-use local_datetime::unpickle as _unpkl_local;
 use naive_datetime::unpickle as _unpkl_naive;
 use offset_datetime::unpickle as _unpkl_offset;
+use system_datetime::unpickle as _unpkl_system;
 use time::unpickle as _unpkl_time;
 use time_delta::unpickle as _unpkl_tdelta;
 use time_delta::{hours, microseconds, milliseconds, minutes, nanoseconds, seconds};
@@ -55,7 +55,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(_unpkl_utc, "", METH_O),
     method!(_unpkl_offset, "", METH_O),
     method_vararg!(_unpkl_zoned, ""),
-    method!(_unpkl_local, "", METH_O),
+    method!(_unpkl_system, "", METH_O),
     // FUTURE: set __module__ on these
     method!(
         years,
@@ -314,10 +314,10 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         module,
         module_name,
         state,
-        local_datetime,
-        local_datetime_type,
-        c"_unpkl_local",
-        unpickle_local_datetime
+        system_datetime,
+        system_datetime_type,
+        c"_unpkl_system",
+        unpickle_system_datetime
     );
 
     // XXX: this SEEMS to work out refcount- and GC-wise
@@ -495,10 +495,10 @@ unsafe extern "C" fn module_traverse(
         zoned_datetime::SINGLETONS.len(),
     );
     do_type_visit(
-        state.local_datetime_type,
+        state.system_datetime_type,
         visit,
         arg,
-        local_datetime::SINGLETONS.len(),
+        system_datetime::SINGLETONS.len(),
     );
 
     // enum members
@@ -533,7 +533,7 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR(ptr::addr_of_mut!(state.utc_datetime_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.offset_datetime_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.zoned_datetime_type).cast());
-    Py_CLEAR(ptr::addr_of_mut!(state.local_datetime_type).cast());
+    Py_CLEAR(ptr::addr_of_mut!(state.system_datetime_type).cast());
 
     // enum members
     Py_CLEAR(ptr::addr_of_mut!(state.weekday_enum_members[0]));
@@ -570,7 +570,7 @@ struct State {
     utc_datetime_type: *mut PyTypeObject,
     offset_datetime_type: *mut PyTypeObject,
     zoned_datetime_type: *mut PyTypeObject,
-    local_datetime_type: *mut PyTypeObject,
+    system_datetime_type: *mut PyTypeObject,
 
     // weekday enum
     weekday_enum_members: [*mut PyObject; 7],
@@ -590,7 +590,7 @@ struct State {
     unpickle_utc_datetime: *mut PyObject,
     unpickle_offset_datetime: *mut PyObject,
     unpickle_zoned_datetime: *mut PyObject,
-    unpickle_local_datetime: *mut PyObject,
+    unpickle_system_datetime: *mut PyObject,
 
     py_api: &'static PyDateTime_CAPI,
 

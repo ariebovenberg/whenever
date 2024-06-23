@@ -352,7 +352,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
                 Instant::extract(obj_b)
             } else if type_b == State::for_mod(mod_a).zoned_datetime_type {
                 ZonedDateTime::extract(obj_b).instant()
-            } else if type_b == State::for_mod(mod_a).local_datetime_type {
+            } else if type_b == State::for_mod(mod_a).system_datetime_type {
                 OffsetDateTime::extract(obj_b).to_instant()
             } else {
                 return Ok(newref(Py_NotImplemented()));
@@ -446,15 +446,15 @@ unsafe fn to_tz(slf: *mut PyObject, tz: *mut PyObject) -> PyReturn {
         .to_obj(zoned_datetime_type)
 }
 
-unsafe fn to_local_system(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn to_system_tz(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let &State {
         py_api,
-        local_datetime_type,
+        system_datetime_type,
         ..
     } = State::for_obj(slf);
     OffsetDateTime::extract(slf)
         .to_system_tz(py_api)?
-        .to_obj(local_datetime_type)
+        .to_obj(system_datetime_type)
 }
 
 pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
@@ -909,7 +909,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(exact_eq, "Exact equality", METH_O),
     method!(py_datetime, "Convert to a `datetime.datetime`"),
     method!(to_utc, "Convert to a `UTCDateTime`"),
-    method!(to_local_system, "Convert to a datetime in the local system"),
+    method!(to_system_tz, "Convert to a datetime to the system timezone"),
     method!(date, "The date component"),
     method!(time, "The time component"),
     method!(format_rfc3339, "Format according to RFC3339"),

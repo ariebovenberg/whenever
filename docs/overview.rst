@@ -27,7 +27,7 @@ Read on to find out which one is right for you.
 .. code-block:: python
 
    from whenever import (
-       UTCDateTime, OffsetDateTime, ZonedDateTime, LocalSystemDateTime, NaiveDateTime
+       UTCDateTime, OffsetDateTime, ZonedDateTime, SystemDateTime, NaiveDateTime
    )
 
 Here's a summary of how you can use them:
@@ -35,7 +35,7 @@ Here's a summary of how you can use them:
 +-----------------------+-----+--------+-------+-------+-------+
 | Feature               |         "Aware"              | Naive |
 +                       +-----+--------+-------+-------+       +
-|                       | UTC | Offset | Zoned | Local |       |
+|                       | UTC | Offset | Zoned | System|       |
 +=======================+=====+========+=======+=======+=======+
 | comparison            | ✅  |  ✅    |  ✅   |  ✅   |  ✅   |
 +-----------------------+-----+--------+-------+-------+-------+
@@ -100,21 +100,21 @@ ZonedDateTime(2024-12-08 11:00:00+00:00[Europe/London])
 >>> ZonedDateTime(2023, 10, 29, 1, 15, tz="Europe/London", disambiguate="later")
 ZonedDateTime(2023-10-29 01:15:00+00:00[Europe/London])
 
-:class:`~whenever.LocalSystemDateTime`
+:class:`~whenever.SystemDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-This is a datetime in the system local timezone.
-Unless you're building a system that specifically runs on the user's local
+This is a datetime in the timezone of the system running the code.
+Unless you're building a system that specifically runs on the user's
 machine (such as a CLI), you should avoid using this type.
 
 >>> # assuming system timezone is America/New_York
->>> backup_performed = LocalSystemDateTime(2023, 12, 28, hour=2)
-LocalSystemDateTime(2023-12-28 02:00:00-05:00)
+>>> backup_performed = SystemDateTime(2023, 12, 28, hour=2)
+SystemDateTime(2023-12-28 02:00:00-05:00)
 
 .. seealso::
 
-   - :ref:`Why does LocalSystemDateTime exist? <faq-why-local>`
-   - :ref:`Working with the local system timezone <localtime>`
+   - :ref:`Why does SystemDateTime exist? <faq-why-system>`
+   - :ref:`Working with the system timezone <systemtime>`
 
 :class:`~whenever.NaiveDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -141,7 +141,7 @@ Aware types
 ~~~~~~~~~~~
 
 For aware types (:class:`~whenever.UTCDateTime`, :class:`~whenever.OffsetDateTime`,
-:class:`~whenever.ZonedDateTime`, and :class:`~whenever.LocalSystemDateTime`),
+:class:`~whenever.ZonedDateTime`, and :class:`~whenever.SystemDateTime`),
 comparison and equality are based on whether they represent the same moment in
 time. This means that two datetimes with different values can be equal:
 
@@ -253,7 +253,7 @@ Between aware types
 
 You can convert between aware datetimes with the :meth:`~whenever._AwareDateTime.to_utc`,
 :meth:`~whenever._AwareDateTime.to_fixed_offset`, :meth:`~whenever._AwareDateTime.to_tz`,
-and :meth:`~whenever._AwareDateTime.to_local_system` methods. These methods return a new
+and :meth:`~whenever._AwareDateTime.to_system_tz` methods. These methods return a new
 instance of the appropriate type, representing the same moment in time.
 This means the results will always compare equal to the original datetime.
 
@@ -264,8 +264,8 @@ UTCDateTime(2023-12-28 10:30:00Z)
 OffsetDateTime(2023-12-28 15:30:00+05:00)
 >>> d.to_tz("America/New_York")  # same moment in New York
 ZonedDateTime(2023-12-28 05:30:00-05:00[America/New_York])
->>> d.to_local_system()  # same moment in the system timezone (e.g. Europe/Paris)
-LocalSystemDateTime(2023-12-28 11:30:00+01:00)
+>>> d.to_system_tz()  # same moment in the system timezone (e.g. Europe/Paris)
+SystemDateTime(2023-12-28 11:30:00+01:00)
 >>> d.to_fixed_offset(4) == d
 True  # always the same moment in time
 
@@ -283,7 +283,7 @@ NaiveDateTime(2023-12-28 11:30:00)
 You can convert from naïve types with the :meth:`~whenever.NaiveDateTime.assume_utc`,
 :meth:`~whenever.NaiveDateTime.assume_fixed_offset`, and
 :meth:`~whenever.NaiveDateTime.assume_tz`, and
-:meth:`~whenever.NaiveDateTime.assume_local_system` methods.
+:meth:`~whenever.NaiveDateTime.assume_system_tz` methods.
 
 >>> n = NaiveDateTime(2023, 12, 28, 11, 30)
 >>> n.assume_utc()
@@ -367,7 +367,7 @@ Ambiguity in timezones
 In real-world timezones, local clocks are often moved backwards and forwards
 due to Daylight Saving Time (DST) or political decisions.
 This creates two types of situations for the :class:`~whenever.ZonedDateTime`
-and :class:`~whenever.LocalSystemDateTime` types:
+and :class:`~whenever.SystemDateTime` types:
 
 - When the clock moves backwards, there is a period of time that occurs twice.
   For example, Sunday October 29th 2:30am occured twice in Paris.
@@ -455,7 +455,7 @@ Here are the ISO formats for each type:
 +-----------------------------------------+------------------------------------------------+
 | :class:`~whenever.ZonedDateTime`        | ``YYYY-MM-DDTHH:MM:SS±HH:MM[IANA TZ ID]`` [1]_ |
 +-----------------------------------------+------------------------------------------------+
-| :class:`~whenever.LocalSystemDateTime`  | ``YYYY-MM-DDTHH:MM:SS±HH:MM``                  |
+| :class:`~whenever.SystemDateTime`       | ``YYYY-MM-DDTHH:MM:SS±HH:MM``                  |
 +-----------------------------------------+------------------------------------------------+
 | :class:`~whenever.NaiveDateTime`        | ``YYYY-MM-DDTHH:MM:SS``                        |
 +-----------------------------------------+------------------------------------------------+
@@ -572,19 +572,20 @@ The same `formatting rules <https://docs.python.org/3/library/datetime.html#form
    OffsetDateTime.strptime("2023-01-01+05:00", "%Y-%m-%d%z")  # 2023-01-01 00:00:00+05:00
    NaiveDateTime.strptime("2023-01-01 00:00", "%Y-%m-%d %H:%M")  # 2023-01-01 00:00:00
 
-:class:`~whenever.ZonedDateTime` and :class:`~whenever.LocalSystemDateTime` do not (yet)
+:class:`~whenever.ZonedDateTime` and :class:`~whenever.SystemDateTime` do not (yet)
 implement ``strptime()`` methods, because they require disambiguation.
 If you'd like to parse into these types,
 use :meth:`NaiveDateTime.strptime() <whenever.NaiveDateTime.strptime>`
 to parse them, and then use the :meth:`~whenever.NaiveDateTime.assume_utc`,
 :meth:`~whenever.NaiveDateTime.assume_fixed_offset`,
-:meth:`~whenever.NaiveDateTime.assume_tz`, or :meth:`~whenever.NaiveDateTime.assume_local_system`
+:meth:`~whenever.NaiveDateTime.assume_tz`, 
+or :meth:`~whenever.NaiveDateTime.assume_system_tz`
 methods to convert them.
 This makes it explicit what information is being assumed.
 
 .. code-block:: python
 
-    NaiveDateTime.strptime("2023-01-01 12:00", "%Y-%m-%d %H:%M").assume_local_system()
+    NaiveDateTime.strptime("2023-01-01 12:00", "%Y-%m-%d %H:%M").assume_system_tz()
 
     # handling ambiguity
     NaiveDateTime.strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S").assume_tz(
@@ -649,14 +650,14 @@ DateDelta(P3M16D)
 
 See the :ref:`API reference <date-and-time-api>` for more details.
 
-.. _localtime:
+.. _systemtime:
 
-The local system timezone
--------------------------
+The system timezone
+-------------------
 
-The local timezone is the timezone of the system running the code.
-It's important to be aware that the local timezone can change.
-Instances of :class:`~whenever.LocalSystemDateTime` have the fixed offset
+The system running the code also has a timezone configured.
+It's important to be aware that the system timezone can change.
+Instances of :class:`~whenever.SystemDateTime` have the fixed offset
 of the system timezone at the time of initialization.
 The system timezone may change afterwards,
 but instances of this type will not reflect that change.
@@ -669,40 +670,40 @@ This is because:
   This would make it harder to reason about and use.
 
 >>> # initialization where the system timezone is America/New_York
->>> d = LocalSystemDateTime(2020, 8, 15, hour=8)
-LocalSystemDateTime(2020-08-15 08:00:00-04:00)
+>>> d = SystemDateTime(2020, 8, 15, hour=8)
+SystemDateTime(2020-08-15 08:00:00-04:00)
 ...
 >>> # we change the system timezone to Amsterdam
 >>> os.environ["TZ"] = "Europe/Amsterdam"
 >>> time.tzset()
 ...
 >>> d  # object remains unchanged
-LocalSystemDateTime(2020-08-15 08:00:00-04:00)
+SystemDateTime(2020-08-15 08:00:00-04:00)
 
 If you'd like to preserve the moment in time
 and calculate the new local time, simply call
-:meth:`~whenever._AwareDateTime.to_local_system`.
+:meth:`~whenever._AwareDateTime.to_system_tz`.
 
 >>> # same moment, but now with the clock time in Amsterdam
->>> d.to_local_system()
-LocalSystemDateTime(2020-08-15 14:00:00+02:00)
+>>> d.to_system_tz()
+DateTime(2020-08-15 14:00:00+02:00)
 
 On the other hand, if you'd like to preserve the local time on the clock
 and calculate the corresponding moment in time:
 
 >>> # take the wall clock time and assume the (new) system timezone (Amsterdam)
->>> d.naive().assume_local_system()
-LocalSystemDateTime(2020-08-15 08:00:00+02:00)
+>>> d.naive().assume_system_tz()
+SystemDateTime(2020-08-15 08:00:00+02:00)
 
 .. note::
 
-   Remember that :meth:`~whenever.NaiveDateTime.assume_local_system` may
+   Remember that :meth:`~whenever.NaiveDateTime.assume_system_tz` may
    require disambiguation, if the wall clock time is ambiguous in
    the system timezone.
 
 .. seealso::
 
-   :ref:`Why does LocalSystemDateTime exist? <faq-why-local>`
+   :ref:`Why does SystemDateTime exist? <faq-why-system>`
 
 .. [1] The timezone ID is not part of the core ISO 8601 standard, 
    but is part of the RFC 9557 extension.

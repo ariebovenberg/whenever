@@ -9,10 +9,10 @@ from hypothesis.strategies import floats, integers, text
 from whenever import (
     AmbiguousTime,
     Date,
-    LocalSystemDateTime,
     NaiveDateTime,
     OffsetDateTime,
     SkippedTime,
+    SystemDateTime,
     Time,
     UTCDateTime,
     ZonedDateTime,
@@ -30,7 +30,7 @@ from .common import (
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
-    local_ams_tz,
+    system_tz_ams,
 )
 
 
@@ -117,52 +117,52 @@ class TestAssumeZoned:
         )
 
 
-class TestAssumeLocal:
-    @local_ams_tz()
+class TestAssumeSystemTz:
+    @system_tz_ams()
     def test_typical(self):
         assert NaiveDateTime(
             2020, 8, 15, 23
-        ).assume_local_system() == LocalSystemDateTime(2020, 8, 15, 23)
+        ).assume_system_tz() == SystemDateTime(2020, 8, 15, 23)
 
-    @local_ams_tz()
+    @system_tz_ams()
     def test_ambiguous(self):
         d = NaiveDateTime(2023, 10, 29, 2, 15)
 
         with pytest.raises(AmbiguousTime, match="02:15.*system"):
-            d.assume_local_system()
+            d.assume_system_tz()
 
         with pytest.raises(AmbiguousTime, match="02:15.*system"):
-            d.assume_local_system(disambiguate="raise")
+            d.assume_system_tz(disambiguate="raise")
 
-        assert d.assume_local_system(
-            disambiguate="earlier"
-        ) == LocalSystemDateTime(2023, 10, 29, 2, 15, disambiguate="earlier")
-        assert d.assume_local_system(
-            disambiguate="compatible"
-        ) == LocalSystemDateTime(2023, 10, 29, 2, 15, disambiguate="earlier")
-        assert d.assume_local_system(
-            disambiguate="later"
-        ) == LocalSystemDateTime(2023, 10, 29, 2, 15, disambiguate="later")
+        assert d.assume_system_tz(disambiguate="earlier") == SystemDateTime(
+            2023, 10, 29, 2, 15, disambiguate="earlier"
+        )
+        assert d.assume_system_tz(disambiguate="compatible") == SystemDateTime(
+            2023, 10, 29, 2, 15, disambiguate="earlier"
+        )
+        assert d.assume_system_tz(disambiguate="later") == SystemDateTime(
+            2023, 10, 29, 2, 15, disambiguate="later"
+        )
 
-    @local_ams_tz()
+    @system_tz_ams()
     def test_nonexistent(self):
         d = NaiveDateTime(2023, 3, 26, 2, 15)
 
         with pytest.raises(SkippedTime, match="02:15.*system"):
-            d.assume_local_system()
+            d.assume_system_tz()
 
         with pytest.raises(SkippedTime, match="02:15.*system"):
-            d.assume_local_system(disambiguate="raise")
+            d.assume_system_tz(disambiguate="raise")
 
-        assert d.assume_local_system(
-            disambiguate="earlier"
-        ) == LocalSystemDateTime(2023, 3, 26, 2, 15, disambiguate="earlier")
-        assert d.assume_local_system(
-            disambiguate="later"
-        ) == LocalSystemDateTime(2023, 3, 26, 2, 15, disambiguate="later")
-        assert d.assume_local_system(
-            disambiguate="compatible"
-        ) == LocalSystemDateTime(2023, 3, 26, 2, 15, disambiguate="compatible")
+        assert d.assume_system_tz(disambiguate="earlier") == SystemDateTime(
+            2023, 3, 26, 2, 15, disambiguate="earlier"
+        )
+        assert d.assume_system_tz(disambiguate="later") == SystemDateTime(
+            2023, 3, 26, 2, 15, disambiguate="later"
+        )
+        assert d.assume_system_tz(disambiguate="compatible") == SystemDateTime(
+            2023, 3, 26, 2, 15, disambiguate="compatible"
+        )
 
 
 def test_immutable():
@@ -240,7 +240,7 @@ def test_equality():
     assert not d == 42  # type: ignore[comparison-overlap]
 
     # Ambiguity in system timezone doesn't affect equality
-    with local_ams_tz():
+    with system_tz_ams():
         assert NaiveDateTime(
             2023, 10, 29, 2, 15
         ) == NaiveDateTime.from_py_datetime(

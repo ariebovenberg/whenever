@@ -79,7 +79,7 @@ Concrete classes
    :special-members: __add__, __sub__
    :member-order: bysource
 
-.. autoclass:: whenever.LocalSystemDateTime
+.. autoclass:: whenever.SystemDateTime
    :members:
      now,
      from_timestamp,
@@ -98,7 +98,7 @@ Concrete classes
      assume_utc,
      assume_fixed_offset,
      assume_tz,
-     assume_local_system,
+     assume_system_tz,
      strptime,
      replace,
      replace_date,

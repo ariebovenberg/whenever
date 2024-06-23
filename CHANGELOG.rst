@@ -39,7 +39,7 @@
   **Rationale**: Consistency with other methods.
 
 - Renamed ``as_utc``, ``as_offset``, ``as_zoned``, ``as_local`` to
-  ``to_utc``, ``to_fixed_offset``, ``to_tz``, ``to_local_system``,
+  ``to_utc``, ``to_fixed_offset``, ``to_tz``, ``to_system_tz``,
   and the ``NaiveDateTime.assume_*`` methods accordingly
 
   **Rationale**: "to" better clarifies a conversion is being made (not a replacement),
