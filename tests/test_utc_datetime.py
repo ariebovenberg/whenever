@@ -768,12 +768,24 @@ def test_to_fixed_offset():
         OffsetDateTime(2020, 8, 15, 17, offset=-3)
     )
 
+    with pytest.raises((ValueError, OverflowError)):
+        UTCDateTime.MIN.to_fixed_offset(-4)
+
+    with pytest.raises((ValueError, OverflowError)):
+        UTCDateTime.MAX.to_fixed_offset(4)
+
 
 def test_to_tz():
     d = UTCDateTime(2020, 8, 15, 20)
     assert d.to_tz("America/New_York").exact_eq(
         ZonedDateTime(2020, 8, 15, 16, tz="America/New_York")
     )
+
+    with pytest.raises((ValueError, OverflowError)):
+        UTCDateTime.MIN.to_tz("America/New_York")
+
+    with pytest.raises((ValueError, OverflowError)):
+        UTCDateTime.MAX.to_tz("Asia/Tokyo")
 
 
 @local_nyc_tz()
@@ -788,6 +800,13 @@ def test_in_local_system():
     assert d.replace(hour=6).to_local_system() == LocalSystemDateTime(
         2022, 11, 6, 1, disambiguate="later"
     )
+
+    with pytest.raises((ValueError, OverflowError)):
+        UTCDateTime.MIN.to_local_system()
+
+    with local_ams_tz():
+        with pytest.raises((ValueError, OverflowError)):
+            UTCDateTime.MAX.to_local_system()
 
 
 def test_naive():

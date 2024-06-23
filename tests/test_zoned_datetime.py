@@ -569,6 +569,15 @@ def test_to_tz():
         .exact_eq(ams)
     )
 
+    # catch local datetimes sliding out of range
+    small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
+    with pytest.raises((ValueError, OverflowError), match="range|year"):
+        small_zdt.to_tz("America/New_York")
+
+    big_zdt = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
+    with pytest.raises((ValueError, OverflowError), match="range|year"):
+        big_zdt.to_tz("Asia/Tokyo")
+
 
 def test_to_fixed_offset():
     d = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
@@ -593,6 +602,15 @@ def test_to_fixed_offset():
         OffsetDateTime(2020, 8, 15, 6, 8, 30, offset=hours(-4))
     )
 
+    # catch local datetimes sliding out of range
+    small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
+    with pytest.raises((ValueError, OverflowError), match="range|year"):
+        small_zdt.to_fixed_offset(-3)
+
+    big_zdt = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
+    with pytest.raises((ValueError, OverflowError), match="range|year"):
+        big_zdt.to_fixed_offset(4)
+
 
 @local_ams_tz()
 def test_in_local_system():
@@ -607,6 +625,16 @@ def test_in_local_system():
             LocalSystemDateTime(2023, 10, 29, 2, 15, disambiguate="later")
         )
     )
+
+    # catch local datetimes sliding out of range
+    small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
+    with local_nyc_tz():
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
+            small_zdt.to_local_system()
+
+    big_zdt = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
+    with pytest.raises((ValueError, OverflowError), match="range|year"):
+        big_zdt.to_local_system()
 
 
 def test_naive():

@@ -182,6 +182,13 @@ impl DateTime {
     }
 }
 
+impl Instant {
+    pub(crate) fn to_offset(self, secs: i32) -> Option<OffsetDateTime> {
+        self.shift_secs(secs.into())
+            .map(|i| i.to_datetime().with_offset_unchecked(secs))
+    }
+}
+
 impl PyWrapped for OffsetDateTime {}
 
 impl Display for OffsetDateTime {
@@ -304,7 +311,7 @@ unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> 
     } else if type_b == State::for_type(type_a).utc_datetime_type {
         Instant::extract(b_obj)
     } else if type_b == State::for_type(type_a).zoned_datetime_type {
-        ZonedDateTime::extract(b_obj).to_instant()
+        ZonedDateTime::extract(b_obj).instant()
     } else {
         return Ok(newref(Py_NotImplemented()));
     };
@@ -344,7 +351,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             let inst_b = if type_b == State::for_mod(mod_a).utc_datetime_type {
                 Instant::extract(obj_b)
             } else if type_b == State::for_mod(mod_a).zoned_datetime_type {
-                ZonedDateTime::extract(obj_b).to_instant()
+                ZonedDateTime::extract(obj_b).instant()
             } else if type_b == State::for_mod(mod_a).local_datetime_type {
                 OffsetDateTime::extract(obj_b).to_instant()
             } else {
@@ -401,6 +408,28 @@ unsafe fn exact_eq(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     }
 }
 
+unsafe fn to_utc(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    OffsetDateTime::extract(slf)
+        .to_instant()
+        .to_obj(State::for_obj(slf).utc_datetime_type)
+}
+
+unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
+    match args {
+        &[] => Ok(newref(slf_obj)),
+        &[offset] => {
+            let cls = Py_TYPE(slf_obj);
+            let offset_secs = extract_offset(offset, State::for_type(cls).time_delta_type)?;
+            OffsetDateTime::extract(slf_obj)
+                .to_instant()
+                .to_offset(offset_secs)
+                .ok_or_value_err("Resulting local date is out of range")?
+                .to_obj(cls)
+        }
+        _ => Err(type_err!("to_fixed_offset() takes at most 1 argument")),
+    }
+}
+
 unsafe fn to_tz(slf: *mut PyObject, tz: *mut PyObject) -> PyReturn {
     let type_ = Py_TYPE(slf);
     let &State {
@@ -411,9 +440,21 @@ unsafe fn to_tz(slf: *mut PyObject, tz: *mut PyObject) -> PyReturn {
     } = State::for_type(type_);
     let zoneinfo = call1(zoneinfo_type, tz)?;
     defer_decref!(zoneinfo);
-    let odt = OffsetDateTime::extract(slf);
-    let DateTime { date, time } = odt.without_offset().small_shift_unchecked(-odt.offset_secs);
-    ZonedDateTime::from_utc(py_api, date, time, zoneinfo)?.to_obj(zoned_datetime_type)
+    OffsetDateTime::extract(slf)
+        .to_instant()
+        .to_tz(py_api, zoneinfo)?
+        .to_obj(zoned_datetime_type)
+}
+
+unsafe fn to_local_system(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    let &State {
+        py_api,
+        local_datetime_type,
+        ..
+    } = State::for_obj(slf);
+    OffsetDateTime::extract(slf)
+        .to_system_tz(py_api)?
+        .to_obj(local_datetime_type)
 }
 
 pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
@@ -440,12 +481,6 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
 
 unsafe fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     OffsetDateTime::extract(slf).to_py(State::for_obj(slf).py_api)
-}
-
-unsafe fn to_utc(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf)
-        .to_instant()
-        .to_obj(State::for_obj(slf).utc_datetime_type)
 }
 
 unsafe fn date(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -779,33 +814,6 @@ unsafe fn parse_rfc3339(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     OffsetDateTime::new(date, time, offset_secs)
         .ok_or_else(raise)?
         .to_obj(cls.cast())
-}
-
-unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
-    match args {
-        &[] => Ok(newref(slf_obj)),
-        &[offset] => {
-            let cls = Py_TYPE(slf_obj);
-            let slf = OffsetDateTime::extract(slf_obj);
-            let offset_secs = extract_offset(offset, State::for_type(cls).time_delta_type)?;
-            slf.without_offset()
-                .small_shift_unchecked(offset_secs - slf.offset_secs)
-                .with_offset_unchecked(offset_secs)
-                .to_obj(cls)
-        }
-        _ => Err(type_err!("to_fixed_offset() takes at most 1 argument")),
-    }
-}
-
-unsafe fn to_local_system(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let &State {
-        py_api,
-        local_datetime_type,
-        ..
-    } = State::for_obj(slf);
-    OffsetDateTime::extract(slf)
-        .to_system_tz(py_api)?
-        .to_obj(local_datetime_type)
 }
 
 unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {

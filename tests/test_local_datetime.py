@@ -132,7 +132,7 @@ class TestInit:
             LocalSystemDateTime(9999, 12, 31)
 
 
-class TestInUTC:
+class TestToUTC:
     @local_ams_tz()
     def test_common_time(self):
         d = LocalSystemDateTime(2020, 8, 15, 11)
@@ -174,8 +174,17 @@ def test_to_tz():
     # disambiguation doesn't affect NYC time because there's no ambiguity
     assert nyc.replace(disambiguate="later").to_local_system() == ams
 
+    d_min = UTCDateTime.MIN.to_local_system()
+    with pytest.raises((ValueError, OverflowError), match="range|year"):
+        d_min.to_tz("America/New_York")
 
-class TestAsOffset:
+    with local_nyc_tz():
+        d_max = UTCDateTime.MAX.to_local_system()
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
+            d_max.to_tz("Europe/Amsterdam")
+
+
+class TestToOffset:
     @local_ams_tz()
     def test_simple(self):
         assert (
@@ -212,8 +221,21 @@ class TestAsOffset:
             OffsetDateTime(2020, 8, 15, 9, 30, offset=hours(-1))
         )
 
+    @local_ams_tz()
+    def test_bounds(self):
+        small_dt = UTCDateTime.MIN.to_local_system()
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
+            small_dt.to_fixed_offset(-23)
 
-class TestInLocalSystem:
+        with local_nyc_tz():
+            big_dt = UTCDateTime.MAX.to_local_system()
+            with pytest.raises(
+                (ValueError, OverflowError), match="range|year"
+            ):
+                big_dt.to_fixed_offset(23)
+
+
+class TestToSystemTz:
 
     @local_ams_tz()
     def test_no_timezone_change(self):
@@ -227,6 +249,20 @@ class TestInLocalSystem:
             assert d.to_local_system().exact_eq(
                 LocalSystemDateTime(2020, 8, 15, 6, 8, 30)
             )
+
+    @local_nyc_tz()
+    def test_bounds(self):
+        d = UTCDateTime.MAX.to_local_system()
+        with local_ams_tz():
+            with pytest.raises(
+                (ValueError, OverflowError), match="range|year"
+            ):
+                d.to_local_system()
+
+            d2 = UTCDateTime.MIN.to_local_system()
+
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
+            d2.to_local_system()
 
 
 @local_ams_tz()

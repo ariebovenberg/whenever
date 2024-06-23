@@ -159,6 +159,18 @@ impl Instant {
         }
     }
 
+    pub(crate) const fn shift_secs(&self, secs: i64) -> Option<Self> {
+        let new_secs = self.secs + secs;
+        if MIN_INSTANT <= new_secs && new_secs <= MAX_INSTANT {
+            Some(Instant {
+                secs: new_secs,
+                nanos: self.nanos,
+            })
+        } else {
+            None
+        }
+    }
+
     pub(crate) unsafe fn to_py(
         self,
         &PyDateTime_CAPI {
@@ -324,7 +336,7 @@ unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> 
     let inst_b = if type_b == type_a {
         Instant::extract(b_obj)
     } else if type_b == State::for_type(type_a).zoned_datetime_type {
-        ZonedDateTime::extract(b_obj).to_instant()
+        ZonedDateTime::extract(b_obj).instant()
     } else if type_b == State::for_type(type_a).offset_datetime_type
         || type_b == State::for_type(type_a).local_datetime_type
     {
@@ -363,7 +375,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
         let mod_b = PyType_GetModule(type_b);
         if mod_a == mod_b {
             let inst_b = if type_b == State::for_mod(mod_a).zoned_datetime_type {
-                ZonedDateTime::extract(obj_b).to_instant()
+                ZonedDateTime::extract(obj_b).instant()
             } else if type_b == State::for_mod(mod_a).offset_datetime_type
                 || type_b == State::for_mod(mod_a).local_datetime_type
             {
@@ -801,10 +813,11 @@ unsafe fn to_tz(slf: &mut PyObject, tz: &mut PyObject) -> PyReturn {
         py_api,
         ..
     } = State::for_obj(slf);
-    let DateTime { date, time } = Instant::extract(slf).to_datetime();
     let zoneinfo = call1(zoneinfo_type, tz)?;
     defer_decref!(zoneinfo);
-    ZonedDateTime::from_utc(py_api, date, time, zoneinfo)?.to_obj(zoned_datetime_type)
+    Instant::extract(slf)
+        .to_tz(py_api, zoneinfo)?
+        .to_obj(zoned_datetime_type)
 }
 
 unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
@@ -822,10 +835,8 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
             .to_obj(offset_datetime_type),
         &[offset] => {
             let offset_secs = offset_datetime::extract_offset(offset, time_delta_type)?;
-            // TODO offset out of range?
-            slf.shift_secs_unchecked(offset_secs.into())
-                .to_datetime()
-                .with_offset_unchecked(offset_secs)
+            slf.to_offset(offset_secs)
+                .ok_or_value_err("Resulting local date is out of range")?
                 .to_obj(offset_datetime_type)
         }
         _ => Err(type_err!("to_fixed_offset() takes at most 1 argument")),

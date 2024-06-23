@@ -8,7 +8,7 @@ use crate::{
     date::Date,
     date_delta::DateDelta,
     datetime_delta::{set_units_from_kwargs, DateTimeDelta},
-    naive_datetime::DateTime,
+    naive_datetime::{set_components_from_kwargs, DateTime},
     offset_datetime::{self, naive, timestamp, timestamp_millis, timestamp_nanos, OffsetDateTime},
     time::Time,
     time_delta::TimeDelta,
@@ -189,7 +189,7 @@ unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> 
     } else if type_b == State::for_type(type_a).utc_datetime_type {
         Instant::extract(b_obj)
     } else if type_b == State::for_type(type_a).zoned_datetime_type {
-        ZonedDateTime::extract(b_obj).to_instant()
+        ZonedDateTime::extract(b_obj).instant()
     } else if type_b == State::for_type(type_a).offset_datetime_type {
         OffsetDateTime::extract(b_obj).to_instant()
     } else {
@@ -297,7 +297,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             let inst_b = if type_b == State::for_mod(mod_a).utc_datetime_type {
                 Instant::extract(obj_b)
             } else if type_b == State::for_mod(mod_a).zoned_datetime_type {
-                ZonedDateTime::extract(obj_b).to_instant()
+                ZonedDateTime::extract(obj_b).instant()
             } else if type_b == State::for_mod(mod_a).offset_datetime_type {
                 OffsetDateTime::extract(obj_b).to_instant()
             } else {
@@ -359,23 +359,6 @@ unsafe fn exact_eq(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     }
 }
 
-unsafe fn to_tz(slf: *mut PyObject, tz: *mut PyObject) -> PyReturn {
-    let cls = Py_TYPE(slf);
-    let &State {
-        zoneinfo_type,
-        py_api,
-        zoned_datetime_type,
-        ..
-    } = State::for_type(cls);
-    let zoneinfo = call1(zoneinfo_type, tz)?;
-    defer_decref!(zoneinfo);
-    let odt = OffsetDateTime::extract(slf);
-    let DateTime { date, time } = odt
-        .without_offset()
-        .small_shift_unchecked(-odt.offset_secs());
-    ZonedDateTime::from_utc(py_api, date, time, zoneinfo)?.to_obj(zoned_datetime_type)
-}
-
 pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let mut packed = arg.to_bytes()?.ok_or_type_err("Invalid pickle data")?;
     if packed.len() != 15 {
@@ -400,12 +383,6 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
 
 unsafe fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     OffsetDateTime::extract(slf).to_py(State::for_obj(slf).py_api)
-}
-
-unsafe fn to_utc(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf)
-        .to_instant()
-        .to_obj(State::for_obj(slf).utc_datetime_type)
 }
 
 unsafe fn date(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -512,52 +489,6 @@ unsafe fn replace_time(
 
 unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     __str__(slf)
-}
-
-#[inline]
-pub(crate) unsafe fn set_components_from_kwargs(
-    key: *mut PyObject,
-    value: *mut PyObject,
-    year: &mut c_long,
-    month: &mut c_long,
-    day: &mut c_long,
-    hour: &mut c_long,
-    minute: &mut c_long,
-    second: &mut c_long,
-    nanos: &mut c_long,
-    state: &State,
-    fname: &str,
-) -> PyResult<()> {
-    if key == state.str_year {
-        *year = value.to_long()?.ok_or_type_err("year must be an integer")?
-    } else if key == state.str_month {
-        *month = value
-            .to_long()?
-            .ok_or_type_err("month must be an integer")?
-    } else if key == state.str_day {
-        *day = value.to_long()?.ok_or_type_err("day must be an integer")?
-    } else if key == state.str_hour {
-        *hour = value.to_long()?.ok_or_type_err("hour must be an integer")?
-    } else if key == state.str_minute {
-        *minute = value
-            .to_long()?
-            .ok_or_type_err("minute must be an integer")?
-    } else if key == state.str_second {
-        *second = value
-            .to_long()?
-            .ok_or_type_err("second must be an integer")?
-    } else if key == state.str_nanosecond {
-        *nanos = value
-            .to_long()?
-            .ok_or_type_err("nanosecond must be an integer")?
-    } else {
-        Err(type_err!(
-            "{}() got an unexpected keyword argument: {}",
-            fname,
-            key.repr()
-        ))?
-    }
-    Ok(())
 }
 
 unsafe fn replace(
@@ -713,6 +644,12 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
     .to_obj(cls.cast())
 }
 
+unsafe fn to_utc(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    OffsetDateTime::extract(slf)
+        .to_instant()
+        .to_obj(State::for_obj(slf).utc_datetime_type)
+}
+
 unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
     let slf = OffsetDateTime::extract(slf_obj);
     match args {
@@ -730,13 +667,28 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
                 ..
             } = State::for_obj(slf_obj);
             let offset_secs = offset_datetime::extract_offset(arg, time_delta_type)?;
-            let DateTime { date, time, .. } = slf
-                .without_offset()
-                .small_shift_unchecked(offset_secs - slf.offset_secs());
-            OffsetDateTime::new_unchecked(date, time, offset_secs).to_obj(offset_datetime_type)
+            slf.to_instant()
+                .to_offset(offset_secs)
+                .ok_or_value_err("Resulting local date out of range")?
+                .to_obj(offset_datetime_type)
         }
         _ => Err(type_err!("to_fixed_offset() takes at most 1 argument")),
     }
+}
+
+unsafe fn to_tz(slf: *mut PyObject, tz: *mut PyObject) -> PyReturn {
+    let &State {
+        zoneinfo_type,
+        py_api,
+        zoned_datetime_type,
+        ..
+    } = State::for_obj(slf);
+    let zoneinfo = call1(zoneinfo_type, tz)?;
+    defer_decref!(zoneinfo);
+    OffsetDateTime::extract(slf)
+        .to_instant()
+        .to_tz(py_api, zoneinfo)?
+        .to_obj(zoned_datetime_type)
 }
 
 // TODO: rename
