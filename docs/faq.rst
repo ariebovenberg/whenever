@@ -35,21 +35,21 @@ In the second, you communicate that you also store the user's local time.
 This intent is crucial for reasoning about the code,
 and extending it correctly (e.g. with migrations, API endpoints, etc).
 
-.. _faq-why-local:
+.. _faq-why-system-tz:
 
-Why does :class:`~whenever.LocalSystemDateTime` exist?
+Why does :class:`~whenever.SystemDateTime` exist?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-While it may not make sense for server-type applications to use the local system time,
+While it may not make sense for server-type applications to use the system timezone,
 it's often useful for CLI tools or desktop applications.
 
-Using :class:`~whenever.LocalSystemDateTime` has the following advantages:
+Using :class:`~whenever.SystemDateTime` has the following advantages:
 
 - In contrast to :class:`~whenever.OffsetDateTime`, 
-  :class:`~whenever.LocalSystemDateTime` knows about the system's timezone changes,
+  :class:`~whenever.SystemDateTime` knows about the system's timezone changes,
   enabling DST-safe arithmetic.
 - In contrast to :class:`~whenever.ZonedDateTime`, 
-  :class:`~whenever.LocalSystemDateTime` doesn't require the system be configured with an IANA timezone.
+  :class:`~whenever.SystemDateTime` doesn't require the system be configured with an IANA timezone.
   While this is often the case, it's not guaranteed.
 
 Of course, feel free to work with :class:`~whenever.ZonedDateTime` if

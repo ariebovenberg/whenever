@@ -686,7 +686,7 @@ pub(crate) enum OffsetResult {
     Fold(i32, i32),
 }
 
-unsafe fn local_offset(
+unsafe fn system_offset(
     date: Date,
     time: Time,
     fold: i32,
@@ -739,13 +739,13 @@ impl OffsetResult {
         date: Date,
         time: Time,
     ) -> PyResult<OffsetResult> {
-        let (offset0, shifted) = local_offset(date, time, 0, py_api)?;
-        let (offset1, _) = local_offset(date, time, 1, py_api)?;
+        let (offset0, shifted) = system_offset(date, time, 0, py_api)?;
+        let (offset1, _) = system_offset(date, time, 1, py_api)?;
 
         Ok(if offset0 == offset1 {
             Self::Unambiguous(offset0)
         } else if shifted {
-            // Before Python 3.12, the fold of a local times was erroneously reversed
+            // Before Python 3.12, the fold of system times was erroneously reversed
             // in case of gaps. See cpython/issues/83861
             #[cfg(Py_3_12)]
             {

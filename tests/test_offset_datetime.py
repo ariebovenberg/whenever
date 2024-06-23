@@ -8,9 +8,9 @@ from hypothesis.strategies import text
 
 from whenever import (
     Date,
-    LocalSystemDateTime,
     NaiveDateTime,
     OffsetDateTime,
+    SystemDateTime,
     Time,
     UTCDateTime,
     ZonedDateTime,
@@ -27,8 +27,8 @@ from .common import (
     AlwaysSmaller,
     NeverEqual,
     ZoneInfoNotFoundError,
-    local_ams_tz,
-    local_nyc_tz,
+    system_tz_ams,
+    system_tz_nyc,
 )
 
 
@@ -311,24 +311,22 @@ class TestEquality:
         assert hash(d) == hash(zoned_same)
         assert hash(d) != hash(zoned_different)
 
-    @local_ams_tz()
-    def test_local(self):
-        d: OffsetDateTime | LocalSystemDateTime = OffsetDateTime(
+    @system_tz_ams()
+    def test_system_tz(self):
+        d: OffsetDateTime | SystemDateTime = OffsetDateTime(
             2023, 10, 29, 0, 15, offset=-1
         )
-        local_same = LocalSystemDateTime(
-            2023, 10, 29, 2, 15, disambiguate="later"
-        )
-        local_different = LocalSystemDateTime(
+        sys_same = SystemDateTime(2023, 10, 29, 2, 15, disambiguate="later")
+        sys_different = SystemDateTime(
             2023, 10, 29, 2, 15, disambiguate="earlier"
         )
-        assert d == local_same
-        assert not d != local_same
-        assert not d == local_different
-        assert d != local_different
+        assert d == sys_same
+        assert not d != sys_same
+        assert not d == sys_different
+        assert d != sys_different
 
-        assert hash(d) == hash(local_same)
-        assert hash(d) != hash(local_different)
+        assert hash(d) == hash(sys_same)
+        assert hash(d) != hash(sys_different)
 
     def test_utc(self):
         d: UTCDateTime | OffsetDateTime = OffsetDateTime(
@@ -515,27 +513,27 @@ class TestComparison:
         assert not d < zoned_lt
         assert not d <= zoned_lt
 
-    @local_nyc_tz()
-    def test_local(self):
+    @system_tz_nyc()
+    def test_system_tz(self):
         d = OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
-        local_eq = d.to_local_system()
-        local_gt = local_eq.replace(minute=31)
-        local_lt = local_eq.replace(minute=29)
+        sys_eq = d.to_system_tz()
+        sys_gt = sys_eq.replace(minute=31)
+        sys_lt = sys_eq.replace(minute=29)
 
-        assert d >= local_eq
-        assert d <= local_eq
-        assert not d > local_eq
-        assert not d < local_eq
+        assert d >= sys_eq
+        assert d <= sys_eq
+        assert not d > sys_eq
+        assert not d < sys_eq
 
-        assert d < local_gt
-        assert d <= local_gt
-        assert not d > local_gt
-        assert not d >= local_gt
+        assert d < sys_gt
+        assert d <= sys_gt
+        assert not d > sys_gt
+        assert not d >= sys_gt
 
-        assert d > local_lt
-        assert d >= local_lt
-        assert not d < local_lt
-        assert not d <= local_lt
+        assert d > sys_lt
+        assert d >= sys_lt
+        assert not d < sys_lt
+        assert not d <= sys_lt
 
     def test_not_implemented(self):
         d = OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
@@ -750,19 +748,19 @@ class TestSubtract:
             5
         )
 
-    @local_ams_tz()
-    def test_local(self):
+    @system_tz_ams()
+    def test_system_tz(self):
         d = OffsetDateTime(2023, 10, 29, 6, offset=2)
-        assert d - LocalSystemDateTime(
+        assert d - SystemDateTime(
             2023, 10, 29, 3, disambiguate="later"
         ) == hours(2)
-        assert d - LocalSystemDateTime(
+        assert d - SystemDateTime(
             2023, 10, 29, 2, disambiguate="later"
         ) == hours(3)
-        assert d - LocalSystemDateTime(
+        assert d - SystemDateTime(
             2023, 10, 29, 2, disambiguate="earlier"
         ) == hours(4)
-        assert d - LocalSystemDateTime(2023, 10, 29, 1) == hours(5)
+        assert d - SystemDateTime(2023, 10, 29, 1) == hours(5)
 
 
 def test_pickle():
@@ -849,23 +847,23 @@ def test_to_tz():
         big_dt.to_tz("Asia/Tokyo")
 
 
-@local_nyc_tz()
-def test_in_local_system():
+@system_tz_nyc()
+def test_to_system_tz():
     d = OffsetDateTime(
         2020, 8, 15, 20, 12, 9, nanosecond=987_654_321, offset=3
     )
-    assert d.to_local_system().exact_eq(
-        LocalSystemDateTime(2020, 8, 15, 13, 12, 9, nanosecond=987_654_321)
+    assert d.to_system_tz().exact_eq(
+        SystemDateTime(2020, 8, 15, 13, 12, 9, nanosecond=987_654_321)
     )
 
     small_dt = OffsetDateTime(1, 1, 1, offset=0)
     with pytest.raises((ValueError, OverflowError)):
-        small_dt.to_local_system()
+        small_dt.to_system_tz()
 
     big_dt = OffsetDateTime(9999, 12, 31, hour=23, offset=0)
-    with local_ams_tz():
+    with system_tz_ams():
         with pytest.raises((ValueError, OverflowError)):
-            big_dt.to_local_system()
+            big_dt.to_system_tz()
 
 
 def test_naive():

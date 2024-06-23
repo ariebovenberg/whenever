@@ -17,10 +17,10 @@ from whenever import (
     AmbiguousTime,
     Date,
     InvalidOffset,
-    LocalSystemDateTime,
     NaiveDateTime,
     OffsetDateTime,
     SkippedTime,
+    SystemDateTime,
     Time,
     UTCDateTime,
     ZonedDateTime,
@@ -37,8 +37,8 @@ from .common import (
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
-    local_ams_tz,
-    local_nyc_tz,
+    system_tz_ams,
+    system_tz_nyc,
 )
 
 
@@ -472,19 +472,25 @@ class TestEquality:
         assert hash(a) == hash(b)
         assert a == b
 
-    @local_nyc_tz()
+    @system_tz_nyc()
     def test_other_aware(self):
-        d: (
-            ZonedDateTime | UTCDateTime | OffsetDateTime | LocalSystemDateTime
-        ) = ZonedDateTime(
-            2023, 10, 29, 2, 15, tz="Europe/Amsterdam", disambiguate="earlier"
+        d: ZonedDateTime | UTCDateTime | OffsetDateTime | SystemDateTime = (
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                15,
+                tz="Europe/Amsterdam",
+                disambiguate="earlier",
+            )
         )
         assert d == d.to_utc()
         assert hash(d) == hash(d.to_utc())
         assert d != d.to_utc().replace(hour=23)
 
-        assert d == d.to_local_system()
-        assert d != d.to_local_system().replace(hour=8)
+        assert d == d.to_system_tz()
+        assert d != d.to_system_tz().replace(hour=8)
 
         assert d == d.to_fixed_offset()
         assert hash(d) == hash(d.to_fixed_offset())
@@ -612,29 +618,25 @@ def test_to_fixed_offset():
         big_zdt.to_fixed_offset(4)
 
 
-@local_ams_tz()
-def test_in_local_system():
+@system_tz_ams()
+def test_to_system_tz():
     d = ZonedDateTime(2023, 10, 28, 2, 15, tz="Europe/Amsterdam")
-    assert d.to_local_system().exact_eq(
-        LocalSystemDateTime(2023, 10, 28, 2, 15)
-    )
+    assert d.to_system_tz().exact_eq(SystemDateTime(2023, 10, 28, 2, 15))
     assert (
         d.replace(day=29, disambiguate="later")
-        .to_local_system()
-        .exact_eq(
-            LocalSystemDateTime(2023, 10, 29, 2, 15, disambiguate="later")
-        )
+        .to_system_tz()
+        .exact_eq(SystemDateTime(2023, 10, 29, 2, 15, disambiguate="later"))
     )
 
     # catch local datetimes sliding out of range
     small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
-    with local_nyc_tz():
+    with system_tz_nyc():
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            small_zdt.to_local_system()
+            small_zdt.to_system_tz()
 
     big_zdt = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
     with pytest.raises((ValueError, OverflowError), match="range|year"):
-        big_zdt.to_local_system()
+        big_zdt.to_system_tz()
 
 
 def test_naive():
@@ -1099,29 +1101,29 @@ class TestComparison:
         assert not d > offset_gt
         assert not d >= offset_gt
 
-    def test_local(self):
+    def test_system_tz(self):
         d = ZonedDateTime(
             2023, 10, 29, 2, 30, tz="Europe/Amsterdam", disambiguate="earlier"
         )
 
-        local_eq = d.to_local_system()
-        local_lt = local_eq.replace(minute=29, disambiguate="earlier")
-        local_gt = local_eq.replace(minute=31, disambiguate="earlier")
+        sys_eq = d.to_system_tz()
+        sys_lt = sys_eq.replace(minute=29, disambiguate="earlier")
+        sys_gt = sys_eq.replace(minute=31, disambiguate="earlier")
 
-        assert d >= local_eq
-        assert d <= local_eq
-        assert not d > local_eq
-        assert not d < local_eq
+        assert d >= sys_eq
+        assert d <= sys_eq
+        assert not d > sys_eq
+        assert not d < sys_eq
 
-        assert d > local_lt
-        assert d >= local_lt
-        assert not d < local_lt
-        assert not d <= local_lt
+        assert d > sys_lt
+        assert d >= sys_lt
+        assert not d < sys_lt
+        assert not d <= sys_lt
 
-        assert d < local_gt
-        assert d <= local_gt
-        assert not d > local_gt
-        assert not d >= local_gt
+        assert d < sys_gt
+        assert d <= sys_gt
+        assert not d > sys_gt
+        assert not d >= sys_gt
 
     def test_notimplemented(self):
         d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
@@ -2053,13 +2055,13 @@ class TestSubtractDateTime:
             2023, 10, 28, 20, offset=hours(1)
         ) == hours(6)
 
-    @local_nyc_tz()
-    def test_local(self):
+    @system_tz_nyc()
+    def test_system_tz(self):
         d = ZonedDateTime(
             2023, 10, 29, 2, tz="Europe/Amsterdam", disambiguate="earlier"
         )
-        assert d - LocalSystemDateTime(2023, 10, 28, 19) == hours(1)
-        assert d.replace(disambiguate="later") - LocalSystemDateTime(
+        assert d - SystemDateTime(2023, 10, 28, 19) == hours(1)
+        assert d.replace(disambiguate="later") - SystemDateTime(
             2023, 10, 28, 19
         ) == hours(2)
 

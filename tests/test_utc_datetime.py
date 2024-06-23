@@ -9,9 +9,9 @@ from hypothesis.strategies import floats, integers, text
 
 from whenever import (
     Date,
-    LocalSystemDateTime,
     NaiveDateTime,
     OffsetDateTime,
+    SystemDateTime,
     Time,
     UTCDateTime,
     ZonedDateTime,
@@ -28,8 +28,8 @@ from .common import (
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
-    local_ams_tz,
-    local_nyc_tz,
+    system_tz_ams,
+    system_tz_nyc,
 )
 
 BIG_INT = 1 << 64 + 1  # a big int that may cause an overflow error
@@ -189,22 +189,20 @@ class TestEquality:
         assert hash(d) == hash(zoned_same)
         assert hash(d) != hash(zoned_different)
 
-    @local_ams_tz()
-    def test_local(self):
-        d: UTCDateTime | LocalSystemDateTime = UTCDateTime(2023, 10, 29, 1, 15)
-        local_same = LocalSystemDateTime(
-            2023, 10, 29, 2, 15, disambiguate="later"
-        )
-        local_different = LocalSystemDateTime(
+    @system_tz_ams()
+    def test_system_tz(self):
+        d: UTCDateTime | SystemDateTime = UTCDateTime(2023, 10, 29, 1, 15)
+        sys_same = SystemDateTime(2023, 10, 29, 2, 15, disambiguate="later")
+        sys_different = SystemDateTime(
             2023, 10, 29, 2, 15, disambiguate="earlier"
         )
-        assert d == local_same
-        assert not d != local_same
-        assert not d == local_different
-        assert d != local_different
+        assert d == sys_same
+        assert not d != sys_same
+        assert not d == sys_different
+        assert d != sys_different
 
-        assert hash(d) == hash(local_same)
-        assert hash(d) != hash(local_different)
+        assert hash(d) == hash(sys_same)
+        assert hash(d) != hash(sys_different)
 
     def test_offset(self):
         d: UTCDateTime | OffsetDateTime = UTCDateTime(2023, 4, 5, 4)
@@ -278,7 +276,7 @@ class TestFromTimestamp:
             method(1 << 129)
 
         with pytest.raises(TypeError, match="integer"):
-            method(1.0)  # type: ignore[arg-type]
+            method(1.0)
 
     def test_extremes(self):
         assert UTCDateTime.from_timestamp(
@@ -392,27 +390,27 @@ class TestComparison:
         assert not d > zoned_gt
         assert not d >= zoned_gt
 
-    @local_nyc_tz()
-    def test_local(self):
+    @system_tz_nyc()
+    def test_system_tz(self):
         d = UTCDateTime(2020, 8, 15, 12, 30)
 
-        local_eq = d.to_local_system()
-        local_gt = local_eq.replace(minute=31)
-        local_lt = local_eq.replace(minute=29)
-        assert d >= local_eq
-        assert d <= local_eq
-        assert not d > local_eq
-        assert not d < local_eq
+        sys_eq = d.to_system_tz()
+        sys_gt = sys_eq.replace(minute=31)
+        sys_lt = sys_eq.replace(minute=29)
+        assert d >= sys_eq
+        assert d <= sys_eq
+        assert not d > sys_eq
+        assert not d < sys_eq
 
-        assert d > local_lt
-        assert d >= local_lt
-        assert not d < local_lt
-        assert not d <= local_lt
+        assert d > sys_lt
+        assert d >= sys_lt
+        assert not d < sys_lt
+        assert not d <= sys_lt
 
-        assert d < local_gt
-        assert d <= local_gt
-        assert not d > local_gt
-        assert not d >= local_gt
+        assert d < sys_gt
+        assert d <= sys_gt
+        assert not d > sys_gt
+        assert not d >= sys_gt
 
     def test_notimplemented(self):
         d = UTCDateTime(2020, 8, 15)
@@ -700,19 +698,19 @@ class TestSubtractOperator:
             7
         )
 
-    @local_ams_tz()
-    def test_local(self):
+    @system_tz_ams()
+    def test_system_tz(self):
         d = UTCDateTime(2023, 10, 29, 6)
-        assert d - LocalSystemDateTime(
+        assert d - SystemDateTime(
             2023, 10, 29, 3, disambiguate="later"
         ) == hours(4)
-        assert d - LocalSystemDateTime(
+        assert d - SystemDateTime(
             2023, 10, 29, 2, disambiguate="later"
         ) == hours(5)
-        assert d - LocalSystemDateTime(
+        assert d - SystemDateTime(
             2023, 10, 29, 2, disambiguate="earlier"
         ) == hours(6)
-        assert d - LocalSystemDateTime(2023, 10, 29, 1) == hours(7)
+        assert d - SystemDateTime(2023, 10, 29, 1) == hours(7)
 
     def test_invalid(self):
         d = UTCDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
@@ -788,25 +786,25 @@ def test_to_tz():
         UTCDateTime.MAX.to_tz("Asia/Tokyo")
 
 
-@local_nyc_tz()
-def test_in_local_system():
+@system_tz_nyc()
+def test_to_system_tz():
     d = UTCDateTime(2020, 8, 15, 20)
-    assert d.to_local_system().exact_eq(LocalSystemDateTime(2020, 8, 15, 16))
+    assert d.to_system_tz().exact_eq(SystemDateTime(2020, 8, 15, 16))
     # ensure disembiguation is correct
     d = UTCDateTime(2022, 11, 6, 5)
-    assert d.to_local_system().exact_eq(
-        LocalSystemDateTime(2022, 11, 6, 1, disambiguate="earlier")
+    assert d.to_system_tz().exact_eq(
+        SystemDateTime(2022, 11, 6, 1, disambiguate="earlier")
     )
-    assert d.replace(hour=6).to_local_system() == LocalSystemDateTime(
+    assert d.replace(hour=6).to_system_tz() == SystemDateTime(
         2022, 11, 6, 1, disambiguate="later"
     )
 
     with pytest.raises((ValueError, OverflowError)):
-        UTCDateTime.MIN.to_local_system()
+        UTCDateTime.MIN.to_system_tz()
 
-    with local_ams_tz():
+    with system_tz_ams():
         with pytest.raises((ValueError, OverflowError)):
-            UTCDateTime.MAX.to_local_system()
+            UTCDateTime.MAX.to_system_tz()
 
 
 def test_naive():

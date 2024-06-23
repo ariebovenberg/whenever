@@ -338,7 +338,7 @@ unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> 
     } else if type_b == State::for_type(type_a).zoned_datetime_type {
         ZonedDateTime::extract(b_obj).instant()
     } else if type_b == State::for_type(type_a).offset_datetime_type
-        || type_b == State::for_type(type_a).local_datetime_type
+        || type_b == State::for_type(type_a).system_datetime_type
     {
         OffsetDateTime::extract(b_obj).to_instant()
     } else {
@@ -377,7 +377,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             let inst_b = if type_b == State::for_mod(mod_a).zoned_datetime_type {
                 ZonedDateTime::extract(obj_b).instant()
             } else if type_b == State::for_mod(mod_a).offset_datetime_type
-                || type_b == State::for_mod(mod_a).local_datetime_type
+                || type_b == State::for_mod(mod_a).system_datetime_type
             {
                 OffsetDateTime::extract(obj_b).to_instant()
             } else {
@@ -843,15 +843,15 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
     }
 }
 
-unsafe fn to_local_system(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn to_system_tz(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let &State {
         py_api,
-        local_datetime_type,
+        system_datetime_type,
         ..
     } = State::for_obj(slf);
     Instant::extract(slf)
         .to_system_tz(py_api)?
-        .to_obj(local_datetime_type)
+        .to_obj(system_datetime_type)
 }
 
 unsafe fn format_rfc2822(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -1000,8 +1000,8 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(subtract, "Subtract various time units from the instance"),
     method!(to_tz, "Convert to an equivalent ZonedDateTime", METH_O),
     method!(
-        to_local_system,
-        "Convert to an equivalent datetime in the local system"
+        to_system_tz,
+        "Convert to an equivalent datetime in the system timezone"
     ),
     method_vararg!(to_fixed_offset, "Convert to an equivalent OffsetDateTime"),
     PyMethodDef::zeroed(),

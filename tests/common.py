@@ -63,7 +63,7 @@ class AlwaysSmaller:
 
 
 @contextmanager
-def local_ams_tz():
+def system_tz_ams():
     if IS_WINDOWS:
         pytest.skip("tzset is not available on Windows")
     with patch.dict(os.environ, {"TZ": "Europe/Amsterdam"}):
@@ -72,7 +72,7 @@ def local_ams_tz():
 
 
 @contextmanager
-def local_nyc_tz():
+def system_tz_nyc():
     if IS_WINDOWS:
         pytest.skip("tzset is not available on Windows")
     with patch.dict(os.environ, {"TZ": "America/New_York"}):

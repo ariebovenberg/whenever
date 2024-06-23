@@ -71,7 +71,7 @@ __all__ = [
     "UTCDateTime",
     "OffsetDateTime",
     "ZonedDateTime",
-    "LocalSystemDateTime",
+    "SystemDateTime",
     "NaiveDateTime",
     # Deltas and time units
     "DateDelta",
@@ -2034,7 +2034,7 @@ class _DateTime(_ImmutableBase, ABC):
         Warning
         -------
         The same exceptions as the constructor may be raised.
-        For local and zoned datetimes,
+        For system and zoned datetimes,
         you will need to pass ``disambiguate=`` to resolve ambiguities.
 
         Example
@@ -2066,7 +2066,7 @@ class _DateTime(_ImmutableBase, ABC):
 
 class _AwareDateTime(_DateTime):
     """Common behavior for all aware datetime types (:class:`UTCDateTime`,
-    :class:`OffsetDateTime`, :class:`ZonedDateTime` and :class:`LocalSystemDateTime`).
+    :class:`OffsetDateTime`, :class:`ZonedDateTime` and :class:`SystemDateTime`).
 
     The class itself it not for public use.
     """
@@ -2113,9 +2113,9 @@ class _AwareDateTime(_DateTime):
             self._py_dt.astimezone(ZoneInfo(tz)), self._nanos
         )
 
-    def to_local_system(self) -> LocalSystemDateTime:
-        """Convert to a LocalSystemDateTime that represents the same moment in time."""
-        return LocalSystemDateTime._from_py_unchecked(
+    def to_system_tz(self) -> SystemDateTime:
+        """Convert to a SystemDateTime that represents the same moment in time."""
+        return SystemDateTime._from_py_unchecked(
             self._py_dt.astimezone(), self._nanos
         )
 
@@ -2124,7 +2124,7 @@ class _AwareDateTime(_DateTime):
 
         As an inverse, :class:`NaiveDateTime` has methods
         :meth:`~NaiveDateTime.assume_utc`, :meth:`~NaiveDateTime.assume_fixed_offset`
-        , :meth:`~NaiveDateTime.assume_tz`, and :meth:`~NaiveDateTime.assume_local_system`
+        , :meth:`~NaiveDateTime.assume_tz`, and :meth:`~NaiveDateTime.assume_system_tz`
         which may require additional arguments.
         """
         return NaiveDateTime._from_py_unchecked(
@@ -3802,7 +3802,7 @@ def _unpkl_zoned(
 
 
 @final
-class LocalSystemDateTime(_AwareDateTime):
+class SystemDateTime(_AwareDateTime):
     """Represents a time in the system timezone. Unlike OffsetDateTime,
     it knows about the system timezone and its DST transitions.
 
@@ -3814,8 +3814,8 @@ class LocalSystemDateTime(_AwareDateTime):
     Example
     -------
     >>> # 8:00 in the system timezone—Paris in this case
-    >>> alarm = LocalSystemDateTime(2024, 3, 31, hour=6)
-    LocalSystemDateTime(2024-03-31 06:00:00+02:00)
+    >>> alarm = SystemDateTime(2024, 3, 31, hour=6)
+    SystemDateTime(2024-03-31 06:00:00+02:00)
     ...
     >>> # Conversion based on Paris' offset
     >>> alarm.to_utc()
@@ -3823,7 +3823,7 @@ class LocalSystemDateTime(_AwareDateTime):
     ...
     >>> # unlike OffsetDateTime, it knows about DST transitions
     >>> bedtime = alarm - hours(8)
-    LocalSystemDateTime(2024-03-30 21:00:00+01:00)
+    SystemDateTime(2024-03-30 21:00:00+01:00)
 
     Handling ambiguity
     ------------------
@@ -3884,7 +3884,7 @@ class LocalSystemDateTime(_AwareDateTime):
         nanosecond: int = 0,
         disambiguate: Disambiguate = "raise",
     ) -> None:
-        self._py_dt = _resolve_local_ambiguity(
+        self._py_dt = _resolve_system_ambiguity(
             _datetime(
                 year,
                 month,
@@ -3902,7 +3902,7 @@ class LocalSystemDateTime(_AwareDateTime):
         self._nanos = nanosecond
 
     @classmethod
-    def now(cls) -> LocalSystemDateTime:
+    def now(cls) -> SystemDateTime:
         """Create an instance from the current time"""
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(
@@ -3912,7 +3912,7 @@ class LocalSystemDateTime(_AwareDateTime):
     format_common_iso = OffsetDateTime.format_common_iso
 
     @classmethod
-    def parse_common_iso(cls, s: str, /) -> LocalSystemDateTime:
+    def parse_common_iso(cls, s: str, /) -> SystemDateTime:
         """Parse from the common ISO 8601 format,
 
         similar to that of ``OffsetDateTime``."""
@@ -3920,24 +3920,24 @@ class LocalSystemDateTime(_AwareDateTime):
         return cls._from_py_unchecked(odt._py_dt, odt._nanos)
 
     @classmethod
-    def from_timestamp(cls, i: int, /) -> LocalSystemDateTime:
+    def from_timestamp(cls, i: int, /) -> SystemDateTime:
         """Create an instace from a UNIX timestamp.
         The inverse of :meth:`~_AwareDateTime.timestamp`.
 
         Example
         -------
         >>> # assuming system timezone is America/New_York
-        >>> LocalSystemDateTime.from_timestamp(0)
-        LocalSystemDateTime(1969-12-31T19:00:00-05:00)
-        >>> LocalSystemDateTime.from_timestamp(1_123_000_000)
-        LocalSystemDateTime(2005-08-12T12:26:40-04:00)
-        >>> LocalSystemDateTime.from_timestamp(d.timestamp()) == d
+        >>> SystemDateTime.from_timestamp(0)
+        SystemDateTime(1969-12-31T19:00:00-05:00)
+        >>> SystemDateTime.from_timestamp(1_123_000_000)
+        SystemDateTime(2005-08-12T12:26:40-04:00)
+        >>> SystemDateTime.from_timestamp(d.timestamp()) == d
         True
         """
         return cls._from_py_unchecked(_fromtimestamp(i, _UTC).astimezone(), 0)
 
     @classmethod
-    def from_timestamp_millis(cls, i: int, /) -> LocalSystemDateTime:
+    def from_timestamp_millis(cls, i: int, /) -> SystemDateTime:
         """Create an instace from a UNIX timestamp in milliseconds."""
         secs, millis = divmod(i, 1_000)
         return cls._from_py_unchecked(
@@ -3945,7 +3945,7 @@ class LocalSystemDateTime(_AwareDateTime):
         )
 
     @classmethod
-    def from_timestamp_nanos(cls, i: int, /) -> LocalSystemDateTime:
+    def from_timestamp_nanos(cls, i: int, /) -> SystemDateTime:
         """Create an instace from a UNIX timestamp in milliseconds."""
         secs, nanos = divmod(i, 1_000_000_000)
         return cls._from_py_unchecked(
@@ -3953,12 +3953,12 @@ class LocalSystemDateTime(_AwareDateTime):
         )
 
     @classmethod
-    def from_py_datetime(cls, d: _datetime, /) -> LocalSystemDateTime:
+    def from_py_datetime(cls, d: _datetime, /) -> SystemDateTime:
         odt = OffsetDateTime.from_py_datetime(d)
         return cls._from_py_unchecked(odt._py_dt, odt._nanos)
 
     def __repr__(self) -> str:
-        return f"LocalSystemDateTime({str(self).replace('T', ' ')})"
+        return f"SystemDateTime({str(self).replace('T', ' ')})"
 
     @property
     def offset(self) -> TimeDelta:
@@ -3966,7 +3966,7 @@ class LocalSystemDateTime(_AwareDateTime):
 
     # FUTURE: expose the tzname?
 
-    def exact_eq(self, other: LocalSystemDateTime) -> bool:
+    def exact_eq(self, other: SystemDateTime) -> bool:
         return (
             self._py_dt == other._py_dt
             and self._nanos == other._nanos
@@ -3975,17 +3975,17 @@ class LocalSystemDateTime(_AwareDateTime):
 
     def replace_date(
         self, date: Date, /, disambiguate: Disambiguate = "raise"
-    ) -> LocalSystemDateTime:
+    ) -> SystemDateTime:
         """Create a new instance with the same time, but a different date.
 
         Example
         -------
-        >>> d = LocalSystemDateTime(2020, 3, 28, 12)
+        >>> d = SystemDateTime(2020, 3, 28, 12)
         >>> d.replace_date(Date(2023, 10, 29))
-        LocalSystemDateTime(2023-10-29T12:00:00+02:00)
+        SystemDateTime(2023-10-29T12:00:00+02:00)
         """
         return self._from_py_unchecked(
-            _resolve_local_ambiguity(
+            _resolve_system_ambiguity(
                 _datetime.combine(date._py_date, self._py_dt.time()).replace(
                     fold=_as_fold(disambiguate)
                 ),
@@ -3996,17 +3996,17 @@ class LocalSystemDateTime(_AwareDateTime):
 
     def replace_time(
         self, time: Time, /, disambiguate: Disambiguate = "raise"
-    ) -> LocalSystemDateTime:
+    ) -> SystemDateTime:
         """Create a new instance with the same date, but a different time.
 
         Example
         -------
-        >>> d = LocalSystemDateTime(2020, 2, 3, 12)
+        >>> d = SystemDateTime(2020, 2, 3, 12)
         >>> d.replace_time(Time(15, 30))
-        LocalSystemDateTime(2020-02-03T15:30:00+02:00)
+        SystemDateTime(2020-02-03T15:30:00+02:00)
         """
         return self._from_py_unchecked(
-            _resolve_local_ambiguity(
+            _resolve_system_ambiguity(
                 _datetime.combine(self._py_dt, time._py_time).replace(
                     fold=_as_fold(disambiguate)
                 ),
@@ -4017,11 +4017,11 @@ class LocalSystemDateTime(_AwareDateTime):
 
     def replace(
         self, /, disambiguate: Disambiguate = "raise", **kwargs: Any
-    ) -> LocalSystemDateTime:
+    ) -> SystemDateTime:
         _check_invalid_replace_kwargs(kwargs)
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
         return self._from_py_unchecked(
-            _resolve_local_ambiguity(
+            _resolve_system_ambiguity(
                 self._py_dt.replace(
                     tzinfo=None, fold=_as_fold(disambiguate), **kwargs
                 ),
@@ -4033,19 +4033,19 @@ class LocalSystemDateTime(_AwareDateTime):
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
 
-    def __add__(self, delta: Delta) -> LocalSystemDateTime:
+    def __add__(self, delta: Delta) -> SystemDateTime:
         """Add a duration to this datetime
 
         Example
         -------
-        >>> # assuming system local TZ=Europe/Amsterdam
-        >>> d = LocalSystemDateTime(2023, 10, 28, 12, disambiguate="earlier")
+        >>> # assuming system TZ=Europe/Amsterdam
+        >>> d = SystemDateTime(2023, 10, 28, 12, disambiguate="earlier")
         >>> # adding exact units accounts for the DST transition
         >>> d + hours(24)
-        LocalSystemDateTime(2023-10-29T11:00:00+01:00)
+        SystemDateTime(2023-10-29T11:00:00+01:00)
         >>> # adding date units keeps the same local time
         >>> d + days(1)
-        LocalSystemDateTime(2023-10-29T12:00:00+01:00)
+        SystemDateTime(2023-10-29T12:00:00+01:00)
 
         Note
         ----
@@ -4084,16 +4084,16 @@ class LocalSystemDateTime(_AwareDateTime):
     def __sub__(self, other: _AwareDateTime) -> TimeDelta: ...
 
     @overload
-    def __sub__(self, other: Delta) -> LocalSystemDateTime: ...
+    def __sub__(self, other: Delta) -> SystemDateTime: ...
 
     def __sub__(self, other: Delta | _AwareDateTime) -> _AwareDateTime | Delta:
         """Subtract another datetime or duration
 
         Example
         -------
-        >>> d = LocalSystemDateTime(2020, 8, 15, hour=23, minute=12)
+        >>> d = SystemDateTime(2020, 8, 15, hour=23, minute=12)
         >>> d - hours(24) - seconds(5)
-        LocalSystemDateTime(2020-08-14 23:11:55)
+        SystemDateTime(2020-08-14 23:11:55)
         """
         if isinstance(other, _AwareDateTime):
             py_delta = self._py_dt - other._py_dt
@@ -4119,7 +4119,7 @@ class LocalSystemDateTime(_AwareDateTime):
         microseconds: float = 0,
         nanoseconds: int = 0,
         disambiguate: Disambiguate = "raise",
-    ) -> LocalSystemDateTime:
+    ) -> SystemDateTime:
         """Add a time amount to this datetime.
 
         Units are added from largest to smallest,
@@ -4127,11 +4127,11 @@ class LocalSystemDateTime(_AwareDateTime):
 
         Example
         -------
-        >>> d = LocalSystemDateTime(2020, 8, 15, hour=23, minute=12)
+        >>> d = SystemDateTime(2020, 8, 15, hour=23, minute=12)
         >>> d.add(hours=24, seconds=5)
-        LocalSystemDateTime(2020-08-16 23:12:05+01:00)
+        SystemDateTime(2020-08-16 23:12:05+01:00)
         >>> d.add(years=1, days=2, minutes=5)
-        LocalSystemDateTime(2021-08-17 23:17:00+01:00)
+        SystemDateTime(2021-08-17 23:17:00+01:00)
         """
         months_total = years * 12 + months
         days_total = weeks * 7 + days
@@ -4163,7 +4163,7 @@ class LocalSystemDateTime(_AwareDateTime):
         microseconds: float = 0,
         nanoseconds: int = 0,
         disambiguate: Disambiguate = "raise",
-    ) -> LocalSystemDateTime:
+    ) -> SystemDateTime:
         """Subtract a time amount from this datetime.
 
         Units are subtracted from largest to smallest,
@@ -4171,11 +4171,11 @@ class LocalSystemDateTime(_AwareDateTime):
 
         Example
         -------
-        >>> d = LocalSystemDateTime(2020, 8, 15, hour=23, minute=12)
+        >>> d = SystemDateTime(2020, 8, 15, hour=23, minute=12)
         >>> d.subtract(hours=24, seconds=5)
-        LocalSystemDateTime(2020-08-14 23:11:55+01:00)
+        SystemDateTime(2020-08-14 23:11:55+01:00)
         >>> d.subtract(years=1, days=2, minutes=5)
-        LocalSystemDateTime(2019-08-13 23:06:00+01:00)
+        SystemDateTime(2019-08-13 23:06:00+01:00)
         """
         return self.add(
             years=-years,
@@ -4221,13 +4221,10 @@ class LocalSystemDateTime(_AwareDateTime):
             self._py_dt.astimezone(ZoneInfo(tz)), self._nanos
         )
 
-    def to_local_system(self) -> LocalSystemDateTime:
-        return self._from_py_unchecked(self._py_dt.astimezone(), self._nanos)
-
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
         return (
-            _unpkl_local,
+            _unpkl_system,
             (
                 pack(
                     "<HBBBBBIl",
@@ -4243,10 +4240,10 @@ class LocalSystemDateTime(_AwareDateTime):
 # constructor doesn't accept positional fold arguments as
 # required by __reduce__.
 # Also, it allows backwards-compatible changes to the pickling format.
-def _unpkl_local(data: bytes) -> LocalSystemDateTime:
+def _unpkl_system(data: bytes) -> SystemDateTime:
     *args, nanos, offset_secs = unpack("<HBBBBBIl", data)
     args += (0, _timezone(_timedelta(seconds=offset_secs)))
-    return LocalSystemDateTime._from_py_unchecked(_datetime(*args), nanos)
+    return SystemDateTime._from_py_unchecked(_datetime(*args), nanos)
 
 
 @final
@@ -4617,20 +4614,20 @@ class NaiveDateTime(_DateTime):
             self._nanos,
         )
 
-    def assume_local_system(
+    def assume_system_tz(
         self, disambiguate: Disambiguate = "raise"
-    ) -> LocalSystemDateTime:
+    ) -> SystemDateTime:
         """Assume the datetime is in the system timezone,
-        creating a :class:`~whenever.LocalSystemDateTime` instance.
+        creating a :class:`~whenever.SystemDateTime` instance.
 
         Example
         -------
         >>> # assuming system timezone is America/New_York
-        >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_local_system()
-        LocalSystemDateTime(2020-08-15 23:12:00-04:00)
+        >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_system_tz()
+        SystemDateTime(2020-08-15 23:12:00-04:00)
         """
-        return LocalSystemDateTime._from_py_unchecked(
-            _resolve_local_ambiguity(
+        return SystemDateTime._from_py_unchecked(
+            _resolve_system_ambiguity(
                 self._py_dt.replace(fold=_as_fold(disambiguate)),
                 disambiguate,
             ),
@@ -4712,14 +4709,14 @@ def _resolve_ambuguity(
     return dt
 
 
-# Whether the fold of a local time needs to be flipped in a gap
+# Whether the fold of a system time needs to be flipped in a gap
 # was changed (fixed) in Python 3.12. See cpython/issues/83861
 _requires_flip: Callable[[Disambiguate], bool] = (
     "compatible".__ne__ if sys.version_info > (3, 12) else "compatible".__eq__
 )
 
 
-def _resolve_local_ambiguity(
+def _resolve_system_ambiguity(
     dt: _datetime, disambiguate: Disambiguate
 ) -> _datetime:
     assert dt.tzinfo is None
@@ -4968,7 +4965,7 @@ for _unpkl in (
     _unpkl_utc,
     _unpkl_offset,
     _unpkl_zoned,
-    _unpkl_local,
+    _unpkl_system,
     _unpkl_naive,
 ):
     _unpkl.__module__ = "whenever"
