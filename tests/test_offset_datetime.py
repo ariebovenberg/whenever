@@ -812,6 +812,14 @@ def test_to_fixed_offset():
         )
     )
 
+    with pytest.raises((ValueError, OverflowError)):
+        OffsetDateTime(1, 1, 1, hour=3, minute=59, offset=0).to_fixed_offset(
+            -4
+        )
+
+    with pytest.raises((ValueError, OverflowError)):
+        OffsetDateTime(9999, 12, 31, hour=23, offset=0).to_fixed_offset(1)
+
 
 def test_to_tz():
     d = OffsetDateTime(
@@ -832,6 +840,14 @@ def test_to_tz():
     with pytest.raises(ZoneInfoNotFoundError):
         d.to_tz("America/Not_A_Real_Zone")
 
+    small_dt = OffsetDateTime(1, 1, 1, offset=0)
+    with pytest.raises((ValueError, OverflowError)):
+        small_dt.to_tz("America/New_York")
+
+    big_dt = OffsetDateTime(9999, 12, 31, hour=23, offset=0)
+    with pytest.raises((ValueError, OverflowError)):
+        big_dt.to_tz("Asia/Tokyo")
+
 
 @local_nyc_tz()
 def test_in_local_system():
@@ -841,6 +857,15 @@ def test_in_local_system():
     assert d.to_local_system().exact_eq(
         LocalSystemDateTime(2020, 8, 15, 13, 12, 9, nanosecond=987_654_321)
     )
+
+    small_dt = OffsetDateTime(1, 1, 1, offset=0)
+    with pytest.raises((ValueError, OverflowError)):
+        small_dt.to_local_system()
+
+    big_dt = OffsetDateTime(9999, 12, 31, hour=23, offset=0)
+    with local_ams_tz():
+        with pytest.raises((ValueError, OverflowError)):
+            big_dt.to_local_system()
 
 
 def test_naive():
