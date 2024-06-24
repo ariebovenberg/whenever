@@ -70,6 +70,8 @@ def system_tz_ams():
         time.tzset()
         yield
 
+    time.tzset()
+
 
 @contextmanager
 def system_tz_nyc():
@@ -78,3 +80,5 @@ def system_tz_nyc():
     with patch.dict(os.environ, {"TZ": "America/New_York"}):
         time.tzset()
         yield
+
+    time.tzset()

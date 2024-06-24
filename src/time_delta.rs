@@ -570,7 +570,7 @@ unsafe fn from_py_timedelta(cls: *mut PyObject, d: *mut PyObject) -> PyReturn {
     }
     let secs = i64::from(PyDateTime_DELTA_GET_DAYS(d)) * SECS_PER_DAY
         + i64::from(PyDateTime_DELTA_GET_SECONDS(d));
-    if secs < -MAX_SECS || secs > MAX_SECS {
+    if !(-MAX_SECS..=MAX_SECS).contains(&secs) {
         Err(value_err!("TimeDelta out of range"))?;
     }
     TimeDelta {

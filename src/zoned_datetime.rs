@@ -607,10 +607,10 @@ unsafe fn to_fixed_offset(slf_obj: &mut PyObject, args: &[*mut PyObject]) -> PyR
         time_delta_type,
         ..
     } = State::for_obj(slf_obj);
-    match args {
-        &[] => OffsetDateTime::new_unchecked(slf.date, slf.time, slf.offset_secs)
+    match *args {
+        [] => OffsetDateTime::new_unchecked(slf.date, slf.time, slf.offset_secs)
             .to_obj(offset_datetime_type),
-        &[arg] => slf
+        [arg] => slf
             .instant()
             .to_offset(offset_datetime::extract_offset(arg, time_delta_type)?)
             .ok_or_value_err("Resulting local date is out of range")?

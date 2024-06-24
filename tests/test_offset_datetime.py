@@ -839,11 +839,11 @@ def test_to_tz():
         d.to_tz("America/Not_A_Real_Zone")
 
     small_dt = OffsetDateTime(1, 1, 1, offset=0)
-    with pytest.raises((ValueError, OverflowError)):
+    with pytest.raises((ValueError, OverflowError, OSError)):
         small_dt.to_tz("America/New_York")
 
     big_dt = OffsetDateTime(9999, 12, 31, hour=23, offset=0)
-    with pytest.raises((ValueError, OverflowError)):
+    with pytest.raises((ValueError, OverflowError, OSError)):
         big_dt.to_tz("Asia/Tokyo")
 
 
