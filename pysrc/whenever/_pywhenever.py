@@ -4761,7 +4761,7 @@ _OFFSET_DATETIME_RE = (
 _match_naive_str = re.compile(_DT_RE_GROUPED, re.ASCII).fullmatch
 _match_offset_str = re.compile(_OFFSET_DATETIME_RE, re.ASCII).fullmatch
 _match_zoned_str = re.compile(
-    _OFFSET_DATETIME_RE + r"\[([^\]]+)\]", re.ASCII
+    _OFFSET_DATETIME_RE + r"\[([^\]]{1,255})\]", re.ASCII
 ).fullmatch
 _match_utc_rfc3339 = re.compile(
     r"(\d{4})-([0-1]\d)-([0-3]\d)[ _Tt]([0-2]\d):([0-5]\d):([0-6]\d)(?:\.(\d{1,9}))?(?:[Zz]|[+-]00:00)",

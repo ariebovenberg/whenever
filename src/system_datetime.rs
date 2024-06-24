@@ -646,15 +646,15 @@ unsafe fn to_utc(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
     let slf = OffsetDateTime::extract(slf_obj);
-    match args {
-        &[] => {
+    match *args {
+        [] => {
             let &State {
                 offset_datetime_type,
                 ..
             } = State::for_obj(slf_obj);
             slf.to_obj(offset_datetime_type)
         }
-        &[arg] => {
+        [arg] => {
             let &State {
                 offset_datetime_type,
                 time_delta_type,

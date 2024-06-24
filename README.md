@@ -128,25 +128,25 @@ Additionally, it hasn't been actively maintained since a breaking 3.0 release la
 ```python
 >>> from whenever import (
 ...    # Explicit types for different use cases
-...    UTCDateTime,     # -> Enforce UTC-normalization
+...    Instant,     # -> Enforce UTC-normalization
 ...    ZonedDateTime,   # -> Full-featured timezones
-...    NaiveDateTime,   # -> Without any timezone
+...    LocalDateTime,   # -> Without any timezone
 ... )
 
->>> py311_release = UTCDateTime(2022, 10, 24, hour=17)
-UTCDateTime(2022-10-24 17:00:00Z)
+>>> livestream_start = Instant.from_utc(2022, 10, 24, hour=17)
+Instant(2022-10-24 17:00:00Z)
 
 # Simple, explicit conversions
->>> py311_release.to_tz("Europe/Paris")
+>>> livestream_start.to_tz("Europe/Paris")
 ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
 
 # Comparison and equality
->>> UTCDateTime.now() > py311_release
+>>> Instant.now() > livestream_start
 True
 
 # Naive type that can't accidentally mix with aware types.
 # Only explicit assumptions will make it aware
->>> hackathon_invite = NaiveDateTime(2023, 10, 28, hour=12)
+>>> hackathon_invite = LocalDateTime(2023, 10, 28, hour=12)
 >>> hackathon_start = hackathon_invite.assume_tz("Europe/Amsterdam")
 ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])
 
@@ -155,11 +155,11 @@ ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])
 ZonedDateTime(2022-10-29 11:00:00+01:00[Europe/Amsterdam])
 
 # Formatting & parsing common formats (ISO, RFC3339, RFC2822)
->>> py311_release.format_rfc2822()
+>>> livestream_start.format_rfc2822()
 "Mon, 24 Oct 2022 17:00:00 GMT"
 
 # If you must: you can convert to/from the standard lib
->>> py311_release.py_datetime()
+>>> livestream_start.py_datetime()
 datetime.datetime(2022, 10, 24, 17, 0, tzinfo=datetime.timezone.utc)
 ```
 

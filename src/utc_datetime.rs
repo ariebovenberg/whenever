@@ -664,7 +664,7 @@ unsafe fn parse_rfc3339(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     *s = &s[1..];
     let time = Time::parse_partial(s).ok_or_else(raise)?;
     if let b"Z" | b"z" | b"+00:00" | b"-00:00" = &s[..] {
-        return Instant::from_datetime(date, time).to_obj(cls.cast());
+        Instant::from_datetime(date, time).to_obj(cls.cast())
     } else {
         Err(raise())?
     }
@@ -690,7 +690,7 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
     *s = &s[1..];
     let time = Time::parse_partial(s).ok_or_else(raise)?;
     if let b"Z" | b"+00:00" | b"+00:00:00" = &s[..] {
-        return Instant::from_datetime(date, time).to_obj(cls.cast());
+        Instant::from_datetime(date, time).to_obj(cls.cast())
     } else {
         Err(raise())?
     }
@@ -828,12 +828,12 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
         time_delta_type,
         ..
     } = State::for_type(cls);
-    match args {
-        &[] => slf
+    match *args {
+        [] => slf
             .to_datetime()
             .with_offset_unchecked(0)
             .to_obj(offset_datetime_type),
-        &[offset] => {
+        [offset] => {
             let offset_secs = offset_datetime::extract_offset(offset, time_delta_type)?;
             slf.to_offset(offset_secs)
                 .ok_or_value_err("Resulting local date is out of range")?

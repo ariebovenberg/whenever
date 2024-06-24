@@ -328,6 +328,7 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 #[inline]
+#[allow(clippy::too_many_arguments)]
 pub(crate) unsafe fn set_components_from_kwargs(
     key: *mut PyObject,
     value: *mut PyObject,
@@ -390,7 +391,7 @@ unsafe fn replace(
     let mut hour = dt.time.hour.into();
     let mut minute = dt.time.minute.into();
     let mut second = dt.time.second.into();
-    let mut nanos = dt.time.nanos.try_into().unwrap();
+    let mut nanos = dt.time.nanos as _;
     for &(name, value) in kwargs {
         set_components_from_kwargs(
             name,

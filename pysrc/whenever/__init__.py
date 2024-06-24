@@ -1,6 +1,6 @@
-try:
+try:  # pragma: no cover
     from ._whenever import *
-    from ._whenever import (  # pragma: no cover
+    from ._whenever import (
         _unpkl_date,
         _unpkl_ddelta,
         _unpkl_dtdelta,

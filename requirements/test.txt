@@ -4,5 +4,5 @@ pytest-benchmark[histogram]>=4,<6
 hypothesis>=6,<7
 
 # FUTURE: remove these constraints once rdps-py supports python 3.13
-referencing>=...,<0.24.0; python_version == '3.13'
-jsonschema>=...,<4.18.0; python_version == '3.13'
+referencing>=0.23,<0.24.0; python_version == '3.13'
+jsonschema>=4.17,<4.18.0; python_version == '3.13'

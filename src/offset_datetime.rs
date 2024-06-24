@@ -415,9 +415,9 @@ unsafe fn to_utc(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
-    match args {
-        &[] => Ok(newref(slf_obj)),
-        &[offset] => {
+    match *args {
+        [] => Ok(newref(slf_obj)),
+        [offset] => {
             let cls = Py_TYPE(slf_obj);
             let offset_secs = extract_offset(offset, State::for_type(cls).time_delta_type)?;
             OffsetDateTime::extract(slf_obj)
@@ -548,7 +548,7 @@ unsafe fn replace(
     let mut hour = time.hour.into();
     let mut minute = time.minute.into();
     let mut second = time.second.into();
-    let mut nanos = time.nanos.try_into().unwrap();
+    let mut nanos = time.nanos as _;
     let mut offset_secs = offset_secs;
 
     for &(key, value) in kwargs {

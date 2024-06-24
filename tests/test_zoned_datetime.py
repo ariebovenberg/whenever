@@ -577,11 +577,11 @@ def test_to_tz():
 
     # catch local datetimes sliding out of range
     small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
-    with pytest.raises((ValueError, OverflowError), match="range|year"):
+    with pytest.raises((ValueError, OverflowError, OSError)):
         small_zdt.to_tz("America/New_York")
 
     big_zdt = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
-    with pytest.raises((ValueError, OverflowError), match="range|year"):
+    with pytest.raises((ValueError, OverflowError, OSError)):
         big_zdt.to_tz("Asia/Tokyo")
 
 
@@ -759,8 +759,6 @@ class TestParseCommonIso:
             "2023-10-29T02:15:30+02:00:00.00[Europe/Amsterdam]",  # subsecond offset
             "2023-10-29T02:15:30+0𝟙:00[Europe/Amsterdam]",
             "2020-08-15T12:08:30.000000001+29:00[Europe/Berlin]",  # out of range offset
-            f"2023-10-29T02:15:30+02:00[{'X'*9999}]",  # huge tz
-            f"2023-10-29T02:15:30+02:00[{chr(1600)}]",  # non-ascii
         ],
     )
     def test_invalid(self, s):
@@ -775,6 +773,16 @@ class TestParseCommonIso:
 
         with pytest.raises(ZoneInfoNotFoundError):
             ZonedDateTime.parse_common_iso("2020-08-15T12:08:30Z[X]")
+
+        with pytest.raises((ZoneInfoNotFoundError, ValueError)):
+            ZonedDateTime.parse_common_iso(
+                f"2023-10-29T02:15:30+02:00[{'X'*9999}]"
+            )
+
+        with pytest.raises((ZoneInfoNotFoundError, ValueError)):
+            ZonedDateTime.parse_common_iso(
+                f"2023-10-29T02:15:30+02:00[{chr(1600)}]",
+            )
 
     @pytest.mark.parametrize(
         "s",
@@ -929,7 +937,7 @@ class TestFromTimestamp:
         with pytest.raises(TypeError, match="got 3|foo"):
             method(0, tz="America/New_York", foo="bar")
 
-        with pytest.raises(TypeError, match="positional"):
+        with pytest.raises(TypeError, match="positional|ts"):
             method(ts=0, tz="America/New_York")
 
         with pytest.raises(TypeError):

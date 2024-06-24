@@ -113,7 +113,7 @@ SystemDateTime(2023-12-28 02:00:00-05:00)
 
 .. seealso::
 
-   - :ref:`Why does SystemDateTime exist? <faq-why-system>`
+   - :ref:`Why does SystemDateTime exist? <faq-why-system-tz>`
    - :ref:`Working with the system timezone <systemtime>`
 
 :class:`~whenever.NaiveDateTime`
@@ -703,7 +703,7 @@ SystemDateTime(2020-08-15 08:00:00+02:00)
 
 .. seealso::
 
-   :ref:`Why does SystemDateTime exist? <faq-why-system>`
+   :ref:`Why does SystemDateTime exist? <faq-why-system-tz>`
 
 .. [1] The timezone ID is not part of the core ISO 8601 standard, 
    but is part of the RFC 9557 extension.
