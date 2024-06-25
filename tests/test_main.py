@@ -14,6 +14,6 @@ def test_multiple_interpreters():
         interp_id = interpreters.create()
         interpreters.run_string(
             interp_id,
-            "from whenever import UTCDateTime; UTCDateTime.now()",
+            "from whenever import Instant; Instant.now()",
         )
         interpreters.destroy(interp_id)

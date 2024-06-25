@@ -1,15 +1,16 @@
 ❓ FAQ
 ======
 
-.. _faq-why-utc:
+.. _faq-why-instant:
 
-Why does :class:`~whenever.UTCDateTime` exist?
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Why does :class:`~whenever.Instant` exist?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Since you can express a UTC time using an :class:`~whenever.OffsetDateTime`
-with offset 0, you might wonder why :class:`~whenever.UTCDateTime` exists.
-The reason it exists is precisely *because* it doesn't allow an offset.
-By using :class:`~whenever.UTCDateTime`, you clearly express that you only 
+Since you can also express a moment in time using 
+:class:`~whenever.ZonedDateTime`
+you might wonder why :class:`~whenever.Instant` exists.
+The reason it exists is precisely *because* it doesn't include a timezone.
+By using :class:`~whenever.Instant`, you clearly express that you only 
 care about when something happened, and don't care about the local time.
 
 Consider the difference in intent between these two classes:
@@ -18,7 +19,7 @@ Consider the difference in intent between these two classes:
    :emphasize-lines: 2
 
    class ChatMessage:
-       sent: UTCDateTime
+       sent: Instant
        content: str
 
 
@@ -26,7 +27,7 @@ Consider the difference in intent between these two classes:
    :emphasize-lines: 2
 
    class ChatMessage:
-       sent: OffsetDateTime
+       sent: ZonedDateTime
        content: str
 
 In the first example, it's clear that you only care about the moment when
@@ -121,7 +122,7 @@ ZonedDateTime(2024-11-03 02:00:00-06:00[America/Denver])
 >>> departure.to_tz("America/Phoenix").add(hours=2)
 ZonedDateTime(2024-11-03 03:00:00-07:00[America/Phoenix])
 >>> # not recommended, but possible:
->>> departure.to_utc().add(hours=2).to_fixed_offset(departure.offset)
+>>> departure.instant().add(hours=2).to_fixed_offset(departure.offset)
 OffsetDateTime(2024-11-03 03:00:00-07:00)
 
 .. note::

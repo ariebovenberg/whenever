@@ -6,11 +6,11 @@ runner = pyperf.Runner()
 runner.timeit(
     "various operations",
     "d = OffsetDateTime.parse_rfc3339('2020-04-05 22:04:00-04:00')"
-    ".to_utc();"
-    "d - UTCDateTime.now();"
+    ".instant();"
+    "d - Instant.now();"
     "d.add(hours=4, minutes=30)"
     ".to_tz('Europe/Amsterdam')",
-    setup="from whenever import OffsetDateTime, UTCDateTime",
+    setup="from whenever import OffsetDateTime, Instant",
 )
 
 runner.timeit(

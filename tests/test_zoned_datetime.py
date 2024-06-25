@@ -16,17 +16,18 @@ from hypothesis.strategies import text
 from whenever import (
     AmbiguousTime,
     Date,
+    Instant,
     InvalidOffset,
     NaiveDateTime,
     OffsetDateTime,
     SkippedTime,
     SystemDateTime,
     Time,
-    UTCDateTime,
     ZonedDateTime,
     days,
     hours,
     milliseconds,
+    minutes,
     months,
     weeks,
     years,
@@ -468,26 +469,24 @@ class TestEquality:
             disambiguate="later",
         )
         b = a.to_tz("America/New_York")
-        assert a.to_utc() == b.to_utc()  # sanity check
+        assert a.instant() == b.instant()  # sanity check
         assert hash(a) == hash(b)
         assert a == b
 
     @system_tz_nyc()
     def test_other_aware(self):
-        d: ZonedDateTime | UTCDateTime | OffsetDateTime | SystemDateTime = (
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                tz="Europe/Amsterdam",
-                disambiguate="earlier",
-            )
+        d: ZonedDateTime | OffsetDateTime | SystemDateTime = ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            tz="Europe/Amsterdam",
+            disambiguate="earlier",
         )
-        assert d == d.to_utc()
-        assert hash(d) == hash(d.to_utc())
-        assert d != d.to_utc().replace(hour=23)
+        assert d == d.instant()  # type: ignore[comparison-overlap]
+        assert hash(d) == hash(d.instant())
+        assert d != d.instant() + hours(2)  # type: ignore[comparison-overlap]
 
         assert d == d.to_system_tz()
         assert d != d.to_system_tz().replace(hour=8)
@@ -526,10 +525,10 @@ def test_is_ambiguous():
     ).is_ambiguous()
 
 
-def test_to_utc():
+def test_instant():
     assert ZonedDateTime(
         2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"
-    ).to_utc() == UTCDateTime(2020, 8, 15, 10, 8, 30)
+    ).instant() == Instant.from_utc(2020, 8, 15, 10, 8, 30)
     d = ZonedDateTime(
         2023,
         10,
@@ -540,10 +539,10 @@ def test_to_utc():
         tz="Europe/Amsterdam",
         disambiguate="earlier",
     )
-    assert d.to_utc() == UTCDateTime(2023, 10, 29, 0, 15, 30)
+    assert d.instant() == Instant.from_utc(2023, 10, 29, 0, 15, 30)
     assert ZonedDateTime(
         2023, 10, 29, 2, 15, 30, tz="Europe/Amsterdam", disambiguate="later"
-    ).to_utc() == UTCDateTime(2023, 10, 29, 1, 15, 30)
+    ).instant() == Instant.from_utc(2023, 10, 29, 1, 15, 30)
 
 
 def test_to_tz():
@@ -1061,29 +1060,29 @@ class TestComparison:
         assert not other < d
         assert other <= d
 
-    def test_utc(self):
+    def test_instant(self):
         d = ZonedDateTime(
             2023, 10, 29, 2, 30, tz="Europe/Amsterdam", disambiguate="later"
         )
 
-        utc_eq = d.to_utc()
-        utc_lt = utc_eq.replace(minute=29)
-        utc_gt = utc_eq.replace(minute=31)
+        inst_eq = d.instant()
+        inst_lt = inst_eq - minutes(1)
+        inst_gt = inst_eq + minutes(1)
 
-        assert d >= utc_eq
-        assert d <= utc_eq
-        assert not d > utc_eq
-        assert not d < utc_eq
+        assert d >= inst_eq
+        assert d <= inst_eq
+        assert not d > inst_eq
+        assert not d < inst_eq
 
-        assert d > utc_lt
-        assert d >= utc_lt
-        assert not d < utc_lt
-        assert not d <= utc_lt
+        assert d > inst_lt
+        assert d >= inst_lt
+        assert not d < inst_lt
+        assert not d <= inst_lt
 
-        assert d < utc_gt
-        assert d <= utc_gt
-        assert not d > utc_gt
-        assert not d >= utc_gt
+        assert d < inst_gt
+        assert d <= inst_gt
+        assert not d > inst_gt
+        assert not d >= inst_gt
 
     def test_offset(self):
         d = ZonedDateTime(
@@ -2047,8 +2046,8 @@ class TestSubtractDateTime:
         d = ZonedDateTime(
             2023, 10, 29, 2, tz="Europe/Amsterdam", disambiguate="earlier"
         )
-        assert d - UTCDateTime(2023, 10, 28, 20) == hours(4)
-        assert d.replace(disambiguate="later") - UTCDateTime(
+        assert d - Instant.from_utc(2023, 10, 28, 20) == hours(4)
+        assert d.replace(disambiguate="later") - Instant.from_utc(
             2023, 10, 28, 20
         ) == hours(5)
 

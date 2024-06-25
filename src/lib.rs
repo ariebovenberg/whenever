@@ -9,25 +9,25 @@ mod common;
 pub mod date;
 mod date_delta;
 mod datetime_delta;
+mod instant;
 pub mod naive_datetime;
 mod offset_datetime;
 mod system_datetime;
 mod time;
 mod time_delta;
-mod utc_datetime;
 mod zoned_datetime;
 
 use date::unpickle as _unpkl_date;
 use date_delta::unpickle as _unpkl_ddelta;
 use date_delta::{days, months, weeks, years};
 use datetime_delta::unpickle as _unpkl_dtdelta;
+use instant::unpickle as _unpkl_utc;
 use naive_datetime::unpickle as _unpkl_naive;
 use offset_datetime::unpickle as _unpkl_offset;
 use system_datetime::unpickle as _unpkl_system;
 use time::unpickle as _unpkl_time;
 use time_delta::unpickle as _unpkl_tdelta;
 use time_delta::{hours, microseconds, milliseconds, minutes, nanoseconds, seconds};
-use utc_datetime::unpickle as _unpkl_utc;
 use zoned_datetime::unpickle as _unpkl_zoned;
 
 static mut MODULE_DEF: PyModuleDef = PyModuleDef {
@@ -287,10 +287,10 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         module,
         module_name,
         state,
-        utc_datetime,
-        utc_datetime_type,
+        instant,
+        instant_type,
         c"_unpkl_utc",
-        unpickle_utc_datetime
+        unpickle_instant
     );
     add_type!(
         module,
@@ -322,7 +322,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
 
     // XXX: this SEEMS to work out refcount- and GC-wise
     PyDict_SetItemString(
-        (*state.utc_datetime_type).tp_dict,
+        (*state.instant_type).tp_dict,
         c"offset".as_ptr(),
         steal!(unwrap_or_errcode!(PyDict_GetItemString(
             (*state.time_delta_type).tp_dict,
@@ -476,12 +476,7 @@ unsafe extern "C" fn module_traverse(
         arg,
         naive_datetime::SINGLETONS.len(),
     );
-    do_type_visit(
-        state.utc_datetime_type,
-        visit,
-        arg,
-        utc_datetime::SINGLETONS.len(),
-    );
+    do_type_visit(state.instant_type, visit, arg, instant::SINGLETONS.len());
     do_type_visit(
         state.offset_datetime_type,
         visit,
@@ -530,7 +525,7 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR(ptr::addr_of_mut!(state.time_delta_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.datetime_delta_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.naive_datetime_type).cast());
-    Py_CLEAR(ptr::addr_of_mut!(state.utc_datetime_type).cast());
+    Py_CLEAR(ptr::addr_of_mut!(state.instant_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.offset_datetime_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.zoned_datetime_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.system_datetime_type).cast());
@@ -567,7 +562,7 @@ struct State {
     time_delta_type: *mut PyTypeObject,
     datetime_delta_type: *mut PyTypeObject,
     naive_datetime_type: *mut PyTypeObject,
-    utc_datetime_type: *mut PyTypeObject,
+    instant_type: *mut PyTypeObject,
     offset_datetime_type: *mut PyTypeObject,
     zoned_datetime_type: *mut PyTypeObject,
     system_datetime_type: *mut PyTypeObject,
@@ -587,7 +582,7 @@ struct State {
     unpickle_time_delta: *mut PyObject,
     unpickle_datetime_delta: *mut PyObject,
     unpickle_naive_datetime: *mut PyObject,
-    unpickle_utc_datetime: *mut PyObject,
+    unpickle_instant: *mut PyObject,
     unpickle_offset_datetime: *mut PyObject,
     unpickle_zoned_datetime: *mut PyObject,
     unpickle_system_datetime: *mut PyObject,

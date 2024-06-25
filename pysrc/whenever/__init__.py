@@ -22,8 +22,6 @@ except ModuleNotFoundError as e:
     from ._pywhenever import (
         __all__,
         __version__,
-        _AwareDateTime,
-        _DateTime,
         _unpkl_date,
         _unpkl_ddelta,
         _unpkl_dtdelta,
@@ -34,6 +32,11 @@ except ModuleNotFoundError as e:
         _unpkl_time,
         _unpkl_utc,
         _unpkl_zoned,
+        # for docs
+        _BasicConversions,
+        _KnowsInstant,
+        _KnowsInstantAndLocal,
+        _KnowsLocal,
     )
 
     _EXTENSION_LOADED = False

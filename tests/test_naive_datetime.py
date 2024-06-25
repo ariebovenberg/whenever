@@ -9,12 +9,12 @@ from hypothesis.strategies import floats, integers, text
 from whenever import (
     AmbiguousTime,
     Date,
+    Instant,
     NaiveDateTime,
     OffsetDateTime,
     SkippedTime,
     SystemDateTime,
     Time,
-    UTCDateTime,
     ZonedDateTime,
     days,
     hours,
@@ -60,7 +60,7 @@ def test_components():
 
 
 def test_assume_utc():
-    assert NaiveDateTime(2020, 8, 15, 23).assume_utc() == UTCDateTime(
+    assert NaiveDateTime(2020, 8, 15, 23).assume_utc() == Instant.from_utc(
         2020, 8, 15, 23
     )
 

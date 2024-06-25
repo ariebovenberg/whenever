@@ -11,11 +11,11 @@ use crate::{
     date::Date,
     date_delta::DateDelta,
     datetime_delta::DateTimeDelta,
+    instant::{Instant, MAX_INSTANT, MIN_INSTANT},
     naive_datetime::DateTime,
     offset_datetime::{self, OffsetDateTime},
     time::Time,
     time_delta::{self, TimeDelta},
-    utc_datetime::{Instant, MAX_INSTANT, MIN_INSTANT},
     State,
 };
 
@@ -303,7 +303,7 @@ unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> 
     let inst_a = ZonedDateTime::extract(a_obj).instant();
     let inst_b = if type_b == type_a {
         ZonedDateTime::extract(b_obj).instant()
-    } else if type_b == State::for_type(type_a).utc_datetime_type {
+    } else if type_b == State::for_type(type_a).instant_type {
         Instant::extract(b_obj)
     } else {
         return Ok(newref(Py_NotImplemented()));
@@ -445,7 +445,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
         let mod_a = PyType_GetModule(type_a);
         let mod_b = PyType_GetModule(type_b);
         if mod_a == mod_b {
-            let inst_b = if type_b == State::for_mod(mod_a).utc_datetime_type {
+            let inst_b = if type_b == State::for_mod(mod_a).instant_type {
                 Instant::extract(obj_b)
             } else if type_b == State::for_mod(mod_a).offset_datetime_type
                 || type_b == State::for_mod(mod_a).system_datetime_type
@@ -594,10 +594,10 @@ unsafe fn py_datetime(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
     )
 }
 
-unsafe fn to_utc(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
+unsafe fn instant(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
     ZonedDateTime::extract(slf)
         .instant()
-        .to_obj(State::for_obj(slf).utc_datetime_type)
+        .to_obj(State::for_obj(slf).instant_type)
 }
 
 unsafe fn to_fixed_offset(slf_obj: &mut PyObject, args: &[*mut PyObject]) -> PyReturn {
@@ -1064,11 +1064,9 @@ unsafe fn is_ambiguous(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     .to_py()
 }
 
-// TODO: are offset seconds rounded?
 // parse ±HH:MM[:SS] (consuming as much as possible of the input)
 fn parse_offset_partial(s: &mut &[u8]) -> Option<i32> {
-    // TODO: doesn't make sense
-    debug_assert!(s.len() >= 4);
+    debug_assert!(s.len() >= 1);
     // the sign (always present)
     let sign = match s[0] {
         b'+' => 1,
@@ -1254,7 +1252,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(to_tz, "Convert to a `ZonedDateTime` with given tz", METH_O),
     method!(exact_eq, "Exact equality", METH_O),
     method!(py_datetime, "Convert to a `datetime.datetime`"),
-    method!(to_utc, "Convert to a `UTCDateTime`"),
+    method!(instant, "Get the underlying instant"),
     method!(to_system_tz, "Convert to a datetime in the system timezone"),
     method!(date, "The date component"),
     method!(time, "The time component"),

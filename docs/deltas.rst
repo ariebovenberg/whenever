@@ -1,7 +1,7 @@
 .. _durations:
 
-⏳ Deltas (durations)
-=====================
+⏳ Deltas
+=========
 
 As we've seen :ref:`earlier <add-subtract-time>`, you can add and subtract
 time units from datetimes:
@@ -124,17 +124,18 @@ Commutativity
 
 The result of adding two time durations is the same, regardless of what order you add them in:
 
->>> dt = UTCDateTime(2020, 1, 29)
+>>> dt = Instant.from_utc(2020, 1, 29)
 >>> dt + hours(2) + minutes(30)
-UTCDateTime(2020-01-29 02:30:00Z)
+Instant(2020-01-29 02:30:00Z)
 >>> dt + minutes(30) + hours(2)  # same result
 
 This is not the case for date units. The result of adding two date units depends on the order:
 
->>> dt + months(1) + days(3)
-UTCDateTime(2021-03-03 00:00:00)
->>> dt + days(3) + months(1)
-UTCDateTime(2021-03-01 00:00:00)
+>>> d = Date(2020, 1, 29)
+>>> d + months(1) + days(3)
+Date(2021-03-03)
+>>> d + days(3) + months(1)
+Date(2021-03-01)
 
 Reversibility
 -------------
@@ -146,11 +147,11 @@ True
 
 This is not the case for date units:
 
->>> jan30 = UTCDateTime(2020, 1, 30)
+>>> jan30 = Date(2020, 1, 30)
 >>> jan30 + months(1)
-UTCDateTime(2020-02-29 00:00:00)
+Date(2020-02-29)
 >>> jan30 + months(1) - months(1)
-UTCDateTime(2020-01-29 00:00:00)
+Date(2020-01-29)
 
 Comparison
 ----------
