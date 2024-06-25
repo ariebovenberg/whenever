@@ -5,7 +5,7 @@ use pyo3_ffi::*;
 use crate::date::Date;
 use crate::time::Time;
 
-macro_rules! c_str(
+macro_rules! cstr(
     ($s:expr) => {{
         use core::ffi::c_char;
         concat!($s, "\0").as_ptr().cast::<c_char>()
@@ -112,7 +112,7 @@ macro_rules! method(
     };
     ($meth:ident named $name:expr, $doc:expr, $flags:expr) => {
         PyMethodDef {
-            ml_name: c_str!($name),
+            ml_name: cstr!($name),
             ml_meth: PyMethodDefPointer {
                 PyCFunction: {
                     unsafe extern "C" fn _wrap(slf: *mut PyObject, arg: *mut PyObject) -> *mut PyObject {
@@ -125,7 +125,7 @@ macro_rules! method(
                 },
             },
             ml_flags: $flags,
-            ml_doc: c_str!($doc),
+            ml_doc: cstr!($doc),
         }
     };
 );
@@ -145,7 +145,7 @@ macro_rules! method_vararg(
 
     ($meth:ident named $name:expr, $doc:expr, $flags:expr) => {
         PyMethodDef {
-            ml_name: c_str!($name),
+            ml_name: cstr!($name),
             ml_meth: PyMethodDefPointer {
                 _PyCFunctionFast: {
                     unsafe extern "C" fn _wrap(
@@ -162,7 +162,7 @@ macro_rules! method_vararg(
                 },
             },
             ml_flags: METH_FASTCALL | $flags,
-            ml_doc: c_str!($doc),
+            ml_doc: cstr!($doc),
         }
     };
 );
@@ -182,7 +182,7 @@ macro_rules! method_kwargs(
 
     ($meth:ident named $name:expr, $doc:expr, $flags:expr) => {
         PyMethodDef {
-            ml_name: c_str!($name),
+            ml_name: cstr!($name),
             ml_meth: PyMethodDefPointer {
                 PyCMethod: {
                     unsafe extern "C" fn _wrap(
@@ -215,7 +215,7 @@ macro_rules! method_kwargs(
                 },
             },
             ml_flags: $flags | METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
-            ml_doc: c_str!($doc),
+            ml_doc: cstr!($doc),
         }
     };
 );
@@ -296,7 +296,7 @@ macro_rules! slotmethod {
 macro_rules! getter(
     ($meth:ident named $name:expr, $doc:expr) => {
         PyGetSetDef {
-            name: c_str!($name),
+            name: cstr!($name),
             get: Some({
                 unsafe extern "C" fn _wrap(
                     slf: *mut PyObject,
@@ -310,7 +310,7 @@ macro_rules! getter(
                 _wrap
             }),
             set: None,
-            doc: c_str!($doc),
+            doc: cstr!($doc),
             closure: core::ptr::null_mut(),
         }
     };
@@ -1005,6 +1005,6 @@ pub(crate) static NS_PER_DAY: i128 = 86_400 * 1_000_000_000;
 
 #[allow(unused_imports)]
 pub(crate) use {
-    c_str, defer_decref, getter, method, method_kwargs, method_vararg, pack, py_err, slotmethod,
+    cstr, defer_decref, getter, method, method_kwargs, method_vararg, pack, py_err, slotmethod,
     steal, type_err, type_spec, unpack_one, value_err,
 };

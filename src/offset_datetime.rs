@@ -8,10 +8,10 @@ use crate::common::*;
 use crate::naive_datetime::set_components_from_kwargs;
 use crate::{
     date::Date,
+    instant::{Instant, MAX_INSTANT, MIN_INSTANT},
     naive_datetime::DateTime,
     time::Time,
     time_delta::TimeDelta,
-    utc_datetime::{Instant, MAX_INSTANT, MIN_INSTANT},
     zoned_datetime::ZonedDateTime,
     State,
 };
@@ -308,7 +308,7 @@ unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> 
     let inst_a = OffsetDateTime::extract(a_obj).to_instant();
     let inst_b = if type_b == type_a {
         OffsetDateTime::extract(b_obj).to_instant()
-    } else if type_b == State::for_type(type_a).utc_datetime_type {
+    } else if type_b == State::for_type(type_a).instant_type {
         Instant::extract(b_obj)
     } else if type_b == State::for_type(type_a).zoned_datetime_type {
         ZonedDateTime::extract(b_obj).instant()
@@ -348,7 +348,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
         let mod_a = PyType_GetModule(type_a);
         let mod_b = PyType_GetModule(type_b);
         if mod_a == mod_b {
-            let inst_b = if type_b == State::for_mod(mod_a).utc_datetime_type {
+            let inst_b = if type_b == State::for_mod(mod_a).instant_type {
                 Instant::extract(obj_b)
             } else if type_b == State::for_mod(mod_a).zoned_datetime_type {
                 ZonedDateTime::extract(obj_b).instant()
@@ -408,10 +408,10 @@ unsafe fn exact_eq(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     }
 }
 
-unsafe fn to_utc(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn instant(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     OffsetDateTime::extract(slf)
         .to_instant()
-        .to_obj(State::for_obj(slf).utc_datetime_type)
+        .to_obj(State::for_obj(slf).instant_type)
 }
 
 unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
@@ -908,7 +908,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(to_tz, "Convert to a `ZonedDateTime` with given tz", METH_O),
     method!(exact_eq, "Exact equality", METH_O),
     method!(py_datetime, "Convert to a `datetime.datetime`"),
-    method!(to_utc, "Convert to a `UTCDateTime`"),
+    method!(instant, "Get the underlying instant"),
     method!(to_system_tz, "Convert to a datetime to the system timezone"),
     method!(date, "The date component"),
     method!(time, "The time component"),

@@ -8,11 +8,11 @@ from hypothesis.strategies import text
 
 from whenever import (
     Date,
+    Instant,
     NaiveDateTime,
     OffsetDateTime,
     SystemDateTime,
     Time,
-    UTCDateTime,
     ZonedDateTime,
     hours,
     milliseconds,
@@ -329,11 +329,9 @@ class TestEquality:
         assert hash(d) != hash(sys_different)
 
     def test_utc(self):
-        d: UTCDateTime | OffsetDateTime = OffsetDateTime(
-            2020, 8, 15, 12, offset=5
-        )
-        utc_same = UTCDateTime(2020, 8, 15, 7)
-        utc_different = UTCDateTime(2020, 8, 15, 7, 1)
+        d: Instant | OffsetDateTime = OffsetDateTime(2020, 8, 15, 12, offset=5)
+        utc_same = Instant.from_utc(2020, 8, 15, 7)
+        utc_different = Instant.from_utc(2020, 8, 15, 7, 1)
         assert d == utc_same
         assert not d != utc_same
         assert not d == utc_different
@@ -471,26 +469,26 @@ class TestComparison:
         assert later > d
         assert later >= d
 
-    def test_utc(self):
+    def test_instant(self):
         d = OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
-        utc_eq = d.to_utc()
-        utc_gt = utc_eq.replace(minute=31)
-        utc_lt = utc_eq.replace(minute=29)
+        inst_eq = d.instant()
+        inst_gt = inst_eq + minutes(1)
+        inst_lt = inst_eq - minutes(1)
 
-        assert d >= utc_eq
-        assert d <= utc_eq
-        assert not d > utc_eq
-        assert not d < utc_eq
+        assert d >= inst_eq
+        assert d <= inst_eq
+        assert not d > inst_eq
+        assert not d < inst_eq
 
-        assert d < utc_gt
-        assert d <= utc_gt
-        assert not d > utc_gt
-        assert not d >= utc_gt
+        assert d < inst_gt
+        assert d <= inst_gt
+        assert not d > inst_gt
+        assert not d >= inst_gt
 
-        assert d > utc_lt
-        assert d >= utc_lt
-        assert not d < utc_lt
-        assert not d <= utc_lt
+        assert d > inst_lt
+        assert d >= inst_lt
+        assert not d < inst_lt
+        assert not d <= inst_lt
 
     def test_zoned(self):
         d = OffsetDateTime(2023, 10, 29, 5, 30, offset=5)
@@ -731,7 +729,7 @@ class TestSubtract:
 
     def test_utc(self):
         d = OffsetDateTime(2020, 8, 15, 20, offset=5)
-        assert d - UTCDateTime(2020, 8, 15, 20) == -hours(5)
+        assert d - Instant.from_utc(2020, 8, 15, 20) == -hours(5)
 
     def test_zoned(self):
         d = OffsetDateTime(2023, 10, 29, 6, offset=2)
@@ -787,11 +785,11 @@ def test_old_pickle_data_remains_unpicklable():
     )
 
 
-def test_to_utc():
+def test_instant():
     d = OffsetDateTime(
         2020, 8, 15, 23, 12, 9, nanosecond=987_654_321, offset=3
     )
-    assert d.to_utc() == UTCDateTime(
+    assert d.instant() == Instant.from_utc(
         2020, 8, 15, 20, 12, 9, nanosecond=987_654_321
     )
 
@@ -803,7 +801,7 @@ def test_to_fixed_offset():
     assert d.to_fixed_offset(5).exact_eq(
         OffsetDateTime(2020, 8, 16, 1, 12, 9, nanosecond=987_654_321, offset=5)
     )
-    assert d.to_fixed_offset() is d
+    assert d.to_fixed_offset().exact_eq(d)
     assert d.to_fixed_offset(-3).exact_eq(
         OffsetDateTime(
             2020, 8, 15, 17, 12, 9, nanosecond=987_654_321, offset=-3

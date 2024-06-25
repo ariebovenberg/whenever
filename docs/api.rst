@@ -8,90 +8,49 @@ All classes are immutable.
 Datetimes
 ---------
 
-Base classes
-~~~~~~~~~~~~
+Common behavior
+~~~~~~~~~~~~~~~
 
 The following base classes encapsulate common behavior.
 They are not meant to be used directly.
 
-.. autoclass:: whenever._DateTime
+.. autoclass:: whenever._BasicConversions
    :members:
-   :undoc-members: year, month, day, hour, minute, second, nanosecond
-   :special-members: __str__
+   :inherited-members:
    :member-order: bysource
 
-.. autoclass:: whenever._AwareDateTime
+.. autoclass:: whenever._KnowsInstant
    :members:
-   :special-members: __eq__, __lt__, __le__, __gt__, __ge__, __sub__
    :member-order: bysource
+   :special-members: __eq__, __lt__, __le__, __gt__, __ge__, __sub__
+   :show-inheritance:
+
+.. autoclass:: whenever._KnowsLocal
+   :members:
+   :undoc-members: year, month, day, hour, minute, second, nanosecond
+   :member-order: bysource
+   :show-inheritance:
+
+.. autoclass:: whenever._KnowsInstantAndLocal
+   :members:
+   :member-order: bysource
+   :show-inheritance:
 
 Concrete classes
 ~~~~~~~~~~~~~~~~
 
-.. autoclass:: whenever.UTCDateTime
+.. autoclass:: whenever.Instant
    :members:
-     now,
-     from_timestamp,
-     from_timestamp_millis,
-     from_timestamp_nanos,
      format_rfc3339,
      format_rfc2822,
      parse_rfc3339,
      parse_rfc2822,
      strptime,
-     replace,
-     replace_date,
-     replace_time,
      add,
      subtract
    :special-members: __add__, __sub__
    :member-order: bysource
-
-.. autoclass:: whenever.OffsetDateTime
-   :members:
-     now,
-     from_timestamp,
-     from_timestamp_millis,
-     from_timestamp_nanos,
-     format_rfc3339,
-     format_rfc2822,
-     parse_rfc3339,
-     parse_rfc2822,
-     strptime,
-     replace,
-     replace_date,
-     replace_time,
-   :member-order: bysource
-
-.. autoclass:: whenever.ZonedDateTime
-   :members:
-     tz,
-     is_ambiguous,
-     now,
-     from_timestamp,
-     from_timestamp_millis,
-     from_timestamp_nanos,
-     replace,
-     replace_date,
-     replace_time,
-     add,
-     subtract
-   :special-members: __add__, __sub__
-   :member-order: bysource
-
-.. autoclass:: whenever.SystemDateTime
-   :members:
-     now,
-     from_timestamp,
-     from_timestamp_millis,
-     from_timestamp_nanos,
-     replace,
-     replace_date,
-     replace_time,
-     add,
-     subtract
-   :special-members: __add__, __sub__
-   :member-order: bysource
+   :show-inheritance:
 
 .. autoclass:: whenever.NaiveDateTime
    :members:
@@ -101,11 +60,38 @@ Concrete classes
      assume_system_tz,
      strptime,
      replace,
-     replace_date,
-     replace_time,
    :special-members: __add__, __sub__, __eq__
    :member-order: bysource
+   :show-inheritance:
 
+.. autoclass:: whenever.OffsetDateTime
+   :members:
+     format_rfc3339,
+     format_rfc2822,
+     parse_rfc3339,
+     parse_rfc2822,
+     strptime,
+   :special-members: __sub__
+   :member-order: bysource
+   :show-inheritance:
+
+.. autoclass:: whenever.ZonedDateTime
+   :members:
+     tz,
+     is_ambiguous,
+     add,
+     subtract
+   :special-members: __add__, __sub__
+   :member-order: bysource
+   :show-inheritance:
+
+.. autoclass:: whenever.SystemDateTime
+   :members:
+     add,
+     subtract
+   :special-members: __add__, __sub__
+   :member-order: bysource
+   :show-inheritance:
 
 Deltas
 ------
@@ -124,13 +110,11 @@ Deltas
 
 .. autoclass:: whenever.TimeDelta
    :members:
-   :undoc-members: hours, minutes, seconds, microseconds
    :special-members: __eq__, __neg__, __add__, __sub__, __mul__, __truediv__, __bool__, __abs__, __gt__
    :member-order: bysource
 
 .. autoclass:: whenever.DateDelta
    :members:
-   :undoc-members: years, months, days
    :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __mul__, __bool__
    :member-order: bysource
 

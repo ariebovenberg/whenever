@@ -7,10 +7,10 @@
 - case: strict_equality
   regex: true
   main: |
-    from whenever import NaiveDateTime, UTCDateTime
+    from whenever import NaiveDateTime, Instant
     d = NaiveDateTime(2020, 8, 9)
     d == 3  # E: .*comparison.*
-    d == UTCDateTime(2020, 8, 9)  # E: .*comparison.*
+    d == Instant.from_utc(2020, 8, 9)  # E: .*comparison.*
 - case: addition
   regex: true
   main: |

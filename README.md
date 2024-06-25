@@ -128,11 +128,12 @@ Additionally, it hasn't been actively maintained since a breaking 3.0 release la
 ```python
 >>> from whenever import (
 ...    # Explicit types for different use cases
-...    Instant,     # -> Enforce UTC-normalization
-...    ZonedDateTime,   # -> Full-featured timezones
-...    LocalDateTime,   # -> Without any timezone
+...    Instant,
+...    ZonedDateTime,
+...    LocalDateTime,
 ... )
 
+# Identify moments in time, without timezone/calendar complexity
 >>> livestream_start = Instant.from_utc(2022, 10, 24, hour=17)
 Instant(2022-10-24 17:00:00Z)
 
@@ -144,8 +145,8 @@ ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
 >>> Instant.now() > livestream_start
 True
 
-# Naive type that can't accidentally mix with aware types.
-# Only explicit assumptions will make it aware
+# 'Naive' local time can't accidentally mix with aware types.
+# You need to explicitly make it aware.
 >>> hackathon_invite = LocalDateTime(2023, 10, 28, hour=12)
 >>> hackathon_start = hackathon_invite.assume_tz("Europe/Amsterdam")
 ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])
@@ -154,7 +155,7 @@ ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])
 >>> hackathon_start.add(hours=24)
 ZonedDateTime(2022-10-29 11:00:00+01:00[Europe/Amsterdam])
 
-# Formatting & parsing common formats (ISO, RFC3339, RFC2822)
+# Formatting & parsing common formats (ISO8601, RFC3339, RFC2822)
 >>> livestream_start.format_rfc2822()
 "Mon, 24 Oct 2022 17:00:00 GMT"
 

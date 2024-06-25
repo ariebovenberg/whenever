@@ -11,16 +11,17 @@ from hypothesis.strategies import text
 from whenever import (
     AmbiguousTime,
     Date,
+    Instant,
     NaiveDateTime,
     OffsetDateTime,
     SkippedTime,
     SystemDateTime,
     Time,
-    UTCDateTime,
     ZonedDateTime,
     days,
     hours,
     microseconds,
+    minutes,
     months,
     seconds,
     weeks,
@@ -132,17 +133,17 @@ class TestInit:
             SystemDateTime(9999, 12, 31)
 
 
-class TestToUTC:
+class TestInstant:
     @system_tz_ams()
     def test_common_time(self):
         d = SystemDateTime(2020, 8, 15, 11)
-        assert d.to_utc() == UTCDateTime(2020, 8, 15, 9)
+        assert d.instant() == Instant.from_utc(2020, 8, 15, 9)
 
     @system_tz_ams()
     def test_amibiguous_time(self):
         d = SystemDateTime(2023, 10, 29, 2, 15, disambiguate="earlier")
-        assert d.to_utc() == UTCDateTime(2023, 10, 29, 0, 15)
-        assert d.replace(disambiguate="later").to_utc() == UTCDateTime(
+        assert d.instant() == Instant.from_utc(2023, 10, 29, 0, 15)
+        assert d.replace(disambiguate="later").instant() == Instant.from_utc(
             2023, 10, 29, 1, 15
         )
 
@@ -174,12 +175,12 @@ def test_to_tz():
     # disambiguation doesn't affect NYC time because there's no ambiguity
     assert nyc.replace(disambiguate="later").to_system_tz() == ams
 
-    d_min = UTCDateTime.MIN.to_system_tz()
+    d_min = Instant.MIN.to_system_tz()
     with pytest.raises((ValueError, OverflowError), match="range|year"):
         d_min.to_tz("America/New_York")
 
     with system_tz_nyc():
-        d_max = UTCDateTime.MAX.to_system_tz()
+        d_max = Instant.MAX.to_system_tz()
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             d_max.to_tz("Europe/Amsterdam")
 
@@ -221,12 +222,12 @@ class TestToOffset:
 
     @system_tz_ams()
     def test_bounds(self):
-        small_dt = UTCDateTime.MIN.to_system_tz()
+        small_dt = Instant.MIN.to_system_tz()
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             small_dt.to_fixed_offset(-23)
 
         with system_tz_nyc():
-            big_dt = UTCDateTime.MAX.to_system_tz()
+            big_dt = Instant.MAX.to_system_tz()
             with pytest.raises(
                 (ValueError, OverflowError), match="range|year"
             ):
@@ -250,14 +251,14 @@ class TestToSystemTz:
 
     @system_tz_nyc()
     def test_bounds(self):
-        d = UTCDateTime.MAX.to_system_tz()
+        d = Instant.MAX.to_system_tz()
         with system_tz_ams():
             with pytest.raises(
                 (ValueError, OverflowError), match="range|year"
             ):
                 d.to_system_tz()
 
-            d2 = UTCDateTime.MIN.to_system_tz()
+            d2 = Instant.MIN.to_system_tz()
 
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             d2.to_system_tz()
@@ -315,12 +316,12 @@ class TestEquality:
         assert hash(d) != hash(other)
 
     @system_tz_ams()
-    def test_utc(self):
-        d: SystemDateTime | UTCDateTime = SystemDateTime(
+    def test_instant(self):
+        d: SystemDateTime | Instant = SystemDateTime(
             2023, 10, 29, 2, 15, disambiguate="earlier"
         )
-        same = UTCDateTime(2023, 10, 29, 0, 15)
-        different = UTCDateTime(2023, 10, 29, 1, 15)
+        same = Instant.from_utc(2023, 10, 29, 0, 15)
+        different = Instant.from_utc(2023, 10, 29, 1, 15)
         assert d == same
         assert not d != same
         assert d != different
@@ -462,9 +463,9 @@ class TestComparison:
     @system_tz_ams()
     def test_utc(self):
         d = SystemDateTime(2020, 8, 15, 12, 30)
-        same = d.to_utc()
-        later = same.replace(minute=31)
-        earlier = same.replace(minute=29)
+        same = d.instant()
+        later = same + minutes(1)
+        earlier = same - minutes(1)
         assert d >= same
         assert d <= same
         assert not d > same
@@ -522,7 +523,7 @@ def test_exact_equality():
     same = a.replace()
     with system_tz_nyc():
         same_moment = SystemDateTime(2020, 8, 15, 6, 8, 30, nanosecond=450)
-    assert same.to_utc() == same_moment.to_utc()
+    assert same.instant() == same_moment.instant()
     different = a.replace(hour=13)
 
     assert a.exact_eq(same)
@@ -1259,8 +1260,8 @@ class TestSubtractOtherDateTime:
     @system_tz_ams()
     def test_utc(self):
         d = SystemDateTime(2023, 10, 29, 2, disambiguate="earlier")
-        assert d - UTCDateTime(2023, 10, 28, 20) == hours(4)
-        assert d.replace(disambiguate="later") - UTCDateTime(
+        assert d - Instant.from_utc(2023, 10, 28, 20) == hours(4)
+        assert d.replace(disambiguate="later") - Instant.from_utc(
             2023, 10, 28, 20
         ) == hours(5)
 
@@ -1416,7 +1417,7 @@ class TestReplaceTime:
     def test_out_of_range_due_to_offset(self):
         with system_tz_ams():
             try:
-                d = UTCDateTime.MIN.to_system_tz()
+                d = Instant.MIN.to_system_tz()
             except OverflowError as e:
                 # For some platforms, this cannot be represented as a time_t.
                 # we skip the test in this case.
@@ -1429,7 +1430,7 @@ class TestReplaceTime:
                 d.replace_time(Time(0))
 
         with system_tz_nyc():
-            d2 = UTCDateTime.MAX.to_system_tz()
+            d2 = Instant.MAX.to_system_tz()
             with pytest.raises(
                 (ValueError, OverflowError), match="range|year"
             ):
@@ -1448,7 +1449,6 @@ def test_pickle():
 def test_old_pickle_data_remains_unpicklable():
     # Don't update this value -- the whole idea is that it's a pickle at
     # a specific version of the library.
-    # TODO
     dumped = (
         b"\x80\x04\x954\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_s"
         b"ystem\x94\x93\x94C\x0f\xe4\x07\x08\x0f\x17\x0c\t\xb1h\xde: \x1c\x00"

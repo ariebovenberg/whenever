@@ -7,10 +7,10 @@ use crate::{
     date::Date,
     date_delta::DateDelta,
     datetime_delta::{set_units_from_kwargs, DateTimeDelta},
+    instant::Instant,
     offset_datetime::{self, OffsetDateTime},
     time::Time,
     time_delta::TimeDelta,
-    utc_datetime::Instant,
     zoned_datetime::ZonedDateTime,
     State,
 };
@@ -641,7 +641,7 @@ unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
 
 unsafe fn assume_utc(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let DateTime { date, time } = DateTime::extract(slf);
-    Instant::from_datetime(date, time).to_obj(State::for_obj(slf).utc_datetime_type)
+    Instant::from_datetime(date, time).to_obj(State::for_obj(slf).instant_type)
 }
 
 unsafe fn assume_fixed_offset(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {

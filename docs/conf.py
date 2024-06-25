@@ -14,7 +14,7 @@ release = metadata["Version"]
 
 nitpicky = True
 nitpick_ignore = [
-    ("py:class", "whenever._pywhenever._TDateTime"),
+    ("py:class", "whenever._pywhenever._T"),
 ]
 extensions = [
     "sphinx.ext.autodoc",

@@ -18,117 +18,174 @@ Different types
    -- Jon Skeet
 
 While the standard library has a single :class:`~datetime.datetime` type
-for all cases (naive, with ``timezone``, with ``ZoneInfo``, etc.),
-**whenever** provides distinct types.
+for all use cases,
+**whenever** provides distinct types similar to other modern datetime libraries [2]_.
 Each is designed to communicate intent, prevent mistakes, and optimize performance.
-You probably won't need all of them simultaneously in your project.
-Read on to find out which one is right for you.
-
-.. code-block:: python
-
-   from whenever import (
-       UTCDateTime, OffsetDateTime, ZonedDateTime, SystemDateTime, NaiveDateTime
-   )
-
-Here's a summary of how you can use them:
-
-+-----------------------+-----+--------+-------+-------+-------+
-| Feature               |         "Aware"              | Naive |
-+                       +-----+--------+-------+-------+       +
-|                       | UTC | Offset | Zoned | System|       |
-+=======================+=====+========+=======+=======+=======+
-| comparison            | ✅  |  ✅    |  ✅   |  ✅   |  ✅   |
-+-----------------------+-----+--------+-------+-------+-------+
-| difference            | ✅  |  ✅    |  ✅   |  ✅   |  ✅   |
-+-----------------------+-----+--------+-------+-------+-------+
-| add/subtract delta    | ✅  |  ❌    |  ✅   |  ✅   |  ✅   |
-+-----------------------+-----+--------+-------+-------+-------+
-| unambiguous           | ✅  |  ✅    |  ❌   |  ❌   |  ✅   |
-+-----------------------+-----+--------+-------+-------+-------+
-| to/from timestamp     | ✅  |  ✅    |  ✅   |  ✅   |  ❌   |
-+-----------------------+-----+--------+-------+-------+-------+
-| now                   | ✅  |  ✅    |  ✅   |  ✅   |  ❌   |
-+-----------------------+-----+--------+-------+-------+-------+
-| to/from RFC3339/2822  | ✅  |  ✅    |  ❌   |  ❌   |  ❌   |
-+-----------------------+-----+--------+-------+-------+-------+
-
-:class:`~whenever.UTCDateTime`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Always UTC: simple, fast, and unambiguous.
-It's great if you're storing when something happened (or will happen)
-regardless of location.
-
->>> py311_livestream = UTCDateTime(2022, 10, 24, hour=17)
-UTCDateTime(2022-10-24 17:00:00Z)
-
-In most cases, you should choose this class. The other
-classes are most often useful at the boundaries of your application.
-
-:class:`~whenever.OffsetDateTime`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-A time with a fixed offset from UTC.
-This is great if you don't only need to represent when something happened,
-but also the local time at that moment.
-
->>> # In Salt Lake City, the UTC offset was -6 at the time
->>> pycon23_start = OffsetDateTime(2023, 4, 21, hour=9, offset=-6)
-OffsetDateTime(2023-04-21 09:00:00-06:00)
-
-A big caveat is that it doesn't know about *changes* to the offset,
-which can happen due to daylight saving time, for example.
-For this reason, you cannot add or subtract time from an :class:`~whenever.OffsetDateTime`
-, because the offset may have changed!
+You won't need all of them at the same time.
+Read on to find out which one is right for your use case.
 
 .. seealso::
 
-   - :ref:`Why does UTCDateTime exist if OffsetDateTime can do the same? <faq-why-utc>`
-   - :ref:`Why doen't OffsetDateTime support arithmetic? <faq-offset-arithmetic>`
+:class:`~whenever.Instant`
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This is the simplest way to represent a moment on the timeline,
+independent of human complexities like timezones or calendars.
+An ``Instant`` maps 1:1 to UTC or a UNIX timestamp.
+Its great for storing when something happened (or will happen)
+regardless of location.
+
+>>> livestream_starts = Instant.from_utc(2022, 10, 24, hour=17)
+Instant(2022-10-24 17:00:00Z)
+>>> Instant.now() > livestream_starts
+True
+>>> livestream_starts.add(hours=3).timestamp()
+1666641600
+
+The value of this type is in its simplicity. It's straightforward to compare,
+add, and subtract. It's always clear what moment in time
+you're referring to—without having to worry about timezones,
+daylight saving time, or the calendar.
+
+.. seealso::
+
+   :ref:`Why does Instant exist? <faq-why-instant>`
+
+:class:`~whenever.NaiveDateTime`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Naive datetimes represent date and time as humans typically interact with them,
+for example: *January 23rd, 2023, 3:30pm*.
+While this information makes sense to people within a certain context,
+on its own it doesn't refer to a moment on the timeline.
+This is because this date and time occur at different moments
+depending on whether you're in Australia or Mexico, for example.
+
+Another limitation is that naive datetimes can't account for daylight saving time.
+Therefore, it's not possible to add or subtract an exact time from a naive datetime.
+This is because—strictly speaking—you don't know what time it will be in 3 hours:
+perhaps the clock will be moved forward or back due to daylight saving time.
+
+>>> bus_departs = NaiveDateTime(2020, 3, 14, hour=15)
+NaiveDateTime(2020-03-14 15:00:00)
+# NOT possible:
+>>> Instant.now() > bus_departs                 # comparison with exact moments
+>>> bus_departs.add(hours=3)                    # adding an exact time
+# IS possible:
+>>> NaiveDateTime(2020, 3, 15) > bus_departs    # comparison with other naive datetimes
+>>> bus_departs.add(hours=3, ignore_dst=True)   # explicitly ignore DST
+>>> bus_departs.add(days=2)                     # calendar operations are OK
+
+So how do you account for daylight saving time? Or place a naive datetime on the timeline?
+That's what the next type is for.
+
+.. seealso::
+
+   :ref:`Why does NaiveDateTime exist? <faq-why-naive>`
 
 :class:`~whenever.ZonedDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Like :class:`~whenever.OffsetDateTime`, it represents when something happened
-along with the local time at that moment.
-However, it also knows about past and future changes to the offset.
-Due to UTC offset changes, times may be skipped or even occur twice.
-Use ``disambiguate`` to resolve these situations.
+This is a combination of an instant *and* a local time at a specific location.
+It accounts for daylight saving time *and* supports calendar operations.
 
->>> changing_the_guard = ZonedDateTime(2024, 12, 8, hour=11, tz="Europe/London")
-ZonedDateTime(2024-12-08 11:00:00+00:00[Europe/London])
->>> ZonedDateTime(2023, 10, 29, 1, 15, tz="Europe/London", disambiguate="later")
-ZonedDateTime(2023-10-29 01:15:00+00:00[Europe/London])
+>>> pycon24_keynote = ZonedDateTime(2024, 5, 17, 9, 45, tz="America/New_York")
+ZonedDateTime(2024-05-17 09:45:00-04:00[America/New_York])
+>>> pycon24_keynote.subtract(months=3)
+ZonedDateTime(2024-02-17 09:45:00-05:00[America/New_York])
+
+A timezone determines a UTC offset and rules for daylight saving time.
+As a result, any :class:`~whenever.Instant` can
+be converted to a :class:`~whenever.ZonedDateTime`.
+However, converting a :class:`~whenever.NaiveDateTime` to a :class:`~whenever.ZonedDateTime`
+is more complex, because local times can occur twice or not at all due to daylight saving time.
+Read about ambiguity in more detail :ref:`here <ambiguity>`.
+
+>>> # from Instant: always possible
+>>> livestream_starts.to_tz("America/New_York")
+ZonedDateTime(2022-10-24 13:00:00-04:00[America/New_York])
+>>> # from NaiveDateTime: maybe ambiguous
+>>> bus_departs.assume_tz("America/New_York", disambiguate="earlier")
+ZonedDateTime(2020-03-14 15:00:00-04:00[America/New_York])
+
+:class:`~whenever.OffsetDateTime`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Like :class:`~whenever.ZonedDateTime`, this type represents a moment on the timeline
+with a local time. The difference is that :class:`~whenever.OffsetDateTime`
+has a *fixed* offset from UTC rather than a timezone.
+As a result, it doesn't know about daylight saving time or other timezone changes.
+
+Then why use it? Firstly, most datetime formats (e.g. ISO 8601 and RFC 3339) only have fixed offsets,
+making :class:`~whenever.OffsetDateTime` ideal for representing datetimes in these formats.
+Second, a :class:`~whenever.OffsetDateTime` is simpler—so long as you
+don't need to adjust it. This makes :class:`~whenever.OffsetDateTime`
+an efficient and compatible choice for representing times in the past.
+
+>>> flight_departure = OffsetDateTime(2023, 4, 21, hour=9, offset=-4)
+>>> flight_arrival = OffsetDateTime(2023, 4, 21, hour=10, offset=-6)
+>>> (flight_arrival - flight_departure).in_hours()
+3
+>>> # but you CAN'T do this:
+>>> flight_arrival.add(hours=3)  # a DST-bug waiting to happen!
+>>> # instead:
+>>> flight_arrival.in_tz("America/New_York").add(hours=3)  # use the full timezone
+>>> flight_arrival.add(hours=3, ignore_dst=True)  # explicitly ignore DST
+
+
+.. seealso::
+
+   - :ref:`Why doen't OffsetDateTime support arithmetic? <faq-offset-arithmetic>`
 
 :class:`~whenever.SystemDateTime`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This is a datetime in the timezone of the system running the code.
-Unless you're building a system that specifically runs on the user's
-machine (such as a CLI), you should avoid using this type.
+Unless your code specifically runs on the user's
+machine (such as a CLI), you shouldn't need to use this type.
 
 >>> # assuming system timezone is America/New_York
 >>> backup_performed = SystemDateTime(2023, 12, 28, hour=2)
 SystemDateTime(2023-12-28 02:00:00-05:00)
+>>> livestream_starts.to_system_tz()
+SystemDateTime(2022-10-24 13:00:00-04:00)
 
 .. seealso::
 
    - :ref:`Why does SystemDateTime exist? <faq-why-system-tz>`
    - :ref:`Working with the system timezone <systemtime>`
 
-:class:`~whenever.NaiveDateTime`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. _summary:
 
-In dealing with real-world data, you'll often encounter datetimes
-that don't have timezone information.
-Use ``NaiveDateTime`` to represent these datetimes.
+Here's a summary of how you can use the types:
 
->>> invite_received = NaiveDateTime(2020, 3, 14, hour=15)
-NaiveDateTime(2020-03-14 15:00:00)
++-----------------------+---------+---------+-------+--------+---------+
+| Feature               |             "Aware"                |"Naive"  |
++                       +---------+---------+-------+--------+---------+
+|                       | Instant | OffsetDT|ZonedDT|SystemDT|LocalDT  |
++=======================+=========+=========+=======+========+=========+
+| comparison            | .. centered:: ✅                   |  ✅     |
++-----------------------+---------+---------+-------+--------+---------+
+| difference            | .. centered:: ✅                   |  ✅     |
++-----------------------+---------+---------+-------+--------+---------+
+| add/subtract years,   | ❌      |  ✅     |  ✅   |  ✅    |  ✅     |
+| months, days          |         |         |       |        |         |
++-----------------------+---------+---------+-------+--------+---------+
+| add/subtract hours,   | ✅      | ⚠️ [3]_ |  ✅   |  ✅    |⚠️  [3]_ |
+| minutes, seconds, ... |         |         |       |        |         |
++-----------------------+---------+---------+-------+--------+---------+
+| no disambiguation     | ✅      |  ✅     |  ❌   |  ❌    |  ✅     |
+| needed                |         |         |       |        |         |
++-----------------------+---------+---------+-------+--------+---------+
+| to/from timestamp     | ✅      |  ✅     |  ✅   |  ✅    |  ❌     |
++-----------------------+---------+---------+-------+--------+---------+
+| now                   | ✅      |  ✅     |  ✅   |  ✅    |  ❌     |
++-----------------------+---------+---------+-------+--------+---------+
+| to/from RFC3339/2822  | ✅      |  ✅     |  ❌   |  ❌    |  ❌     |
++-----------------------+---------+---------+-------+--------+---------+
 
-.. seealso::
+.. [3] Only possible with explicit ``ignore_dst=True``
 
-   :ref:`Why does NaiveDateTime exist? <faq-why-naive>`
 
 Comparison and equality
 -----------------------
@@ -140,29 +197,22 @@ never equal or comparable to the aware types.
 Aware types
 ~~~~~~~~~~~
 
-For aware types (:class:`~whenever.UTCDateTime`, :class:`~whenever.OffsetDateTime`,
+For aware types (:class:`~whenever.Instant`, :class:`~whenever.OffsetDateTime`,
 :class:`~whenever.ZonedDateTime`, and :class:`~whenever.SystemDateTime`),
 comparison and equality are based on whether they represent the same moment in
-time. This means that two datetimes with different values can be equal:
+time. This means that two objects with different values can be equal:
 
 >>> # different ways of representing the same moment in time
->>> to_utc = UTCDateTime(2023, 12, 28, 11, 30)
->>> as_5hr_offset = OffsetDateTime(2023, 12, 28, 16, 30, offset=hours(5))
->>> as_8hr_offset = OffsetDateTime(2023, 12, 28, 19, 30, offset=hours(8))
+>>> inst = Instant.from_utc(2023, 12, 28, 11, 30)
+>>> as_5hr_offset = OffsetDateTime(2023, 12, 28, 16, 30, offset=5)
+>>> as_8hr_offset = OffsetDateTime(2023, 12, 28, 19, 30, offset=8)
 >>> in_nyc = ZonedDateTime(2023, 12, 28, 6, 30, tz="America/New_York")
 >>> # all equal
->>> to_utc == as_5hr_offset == as_8hr_offset == in_nyc
+>>> inst == as_5hr_offset == as_8hr_offset == in_nyc
 True
 >>> # comparison
->>> in_nyc > OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(5))
+>>> in_nyc > OffsetDateTime(2023, 12, 28, 11, 30, offset=5)
 True
-
-.. note::
-
-   Another way to think about this is that the equality operator compares
-   the UTC equivalent of the datetimes.  ``a == b`` is always equivalent to
-   ``a.to_utc() == b.to_utc()``, and ``a > b`` is always equivalent to
-   ``a.to_utc() > b.to_utc()``, and so on.
 
 Note that if you want to compare for exact equality on the values
 (i.e. exactly the same year, month, day, hour, minute, etc.), you can use
@@ -209,7 +259,7 @@ To prevent these mix-ups, use mypy's ``--strict-equality``
 
 >>> # These are never equal, but Python won't stop you from comparing them.
 >>> # Mypy will catch this mix-up if you use enable --strict-equality flag.
->>> UTCDateTime(2023, 12, 28) == NaiveDateTime(2023, 12, 28)
+>>> Instant.from_utc(2023, 12, 28) == NaiveDateTime(2023, 12, 28)
 False
 
 .. admonition:: Why not raise a TypeError?
@@ -224,25 +274,25 @@ forcing you to match aware types exactly.
 
 .. code-block:: python
 
-    d = UTCDateTime(2023, 12, 28, 10)
+    x = Instant.from_utc(2023, 12, 28, 10)
 
     # mypy: ✅
-    d == UTCDateTime(2023, 12, 28, 10)
+    x == Instant.from_utc(2023, 12, 28, 10)
 
     # mypy: ❌ (too strict, this should be allowed)
-    d == OffsetDateTime(2023, 12, 28, 11, offset=1)
+    x == OffsetDateTime(2023, 12, 28, 11, offset=1)
 
 To work around this, you can either convert explicitly:
 
 .. code-block:: python
 
-    d == OffsetDateTime(2023, 12, 28, 11, offset=1).to_utc()
+    x == OffsetDateTime(2023, 12, 28, 11, offset=1).instant()
 
 Or annotate with a union:
 
 .. code-block:: python
 
-    d: OffsetDateTime | UTCDateTime == OffsetDateTime(2023, 12, 28, 11, offset=1)
+    x: OffsetDateTime | Instant == OffsetDateTime(2023, 12, 28, 11, offset=1)
 
 
 Conversion
@@ -251,15 +301,15 @@ Conversion
 Between aware types
 ~~~~~~~~~~~~~~~~~~~
 
-You can convert between aware datetimes with the :meth:`~whenever._AwareDateTime.to_utc`,
+You can convert between aware types with the :meth:`~whenever._AwareDateTime.instant`,
 :meth:`~whenever._AwareDateTime.to_fixed_offset`, :meth:`~whenever._AwareDateTime.to_tz`,
 and :meth:`~whenever._AwareDateTime.to_system_tz` methods. These methods return a new
 instance of the appropriate type, representing the same moment in time.
 This means the results will always compare equal to the original datetime.
 
 >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
->>> d.to_utc()  # same moment in UTC
-UTCDateTime(2023-12-28 10:30:00Z)
+>>> d.instant()  # The underlying moment in time
+Instant(2023-12-28 10:30:00Z)
 >>> d.to_fixed_offset(5)  # same moment with a +5:00 offset
 OffsetDateTime(2023-12-28 15:30:00+05:00)
 >>> d.to_tz("America/New_York")  # same moment in New York
@@ -287,7 +337,7 @@ You can convert from naïve types with the :meth:`~whenever.NaiveDateTime.assume
 
 >>> n = NaiveDateTime(2023, 12, 28, 11, 30)
 >>> n.assume_utc()
-UTCDateTime(2023-12-28 11:30:00Z)
+Instant(2023-12-28 11:30:00Z)
 >>> n.assume_tz("Europe/Amsterdam")
 ZonedDateTime(2023-12-28 11:30:00+01:00[Europe/Amsterdam])
 
@@ -312,7 +362,7 @@ Aware types can be mixed with each other,
 but naive types cannot be mixed with aware types:
 
 >>> # difference between moments in time
->>> UTCDateTime(2023, 12, 28, 11, 30) - ZonedDateTime(2023, 12, 28, tz="Europe/Amsterdam")
+>>> Instant.from_utc(2023, 12, 28, 11, 30) - ZonedDateTime(2023, 12, 28, tz="Europe/Amsterdam")
 TimeDelta(12:30:00)
 >>> # difference between naive datetimes
 >>> NaiveDateTime(2023, 12, 28, 11) - NaiveDateTime(2023, 12, 27, 11)
@@ -332,7 +382,7 @@ ZonedDateTime(2023-12-28 17:00:00+01:00[Europe/Amsterdam])
 ZonedDateTime(2023-12-27 11:30:00+01:00[Europe/Amsterdam])
 
 Adding/subtracting takes into account timezone changes (e.g. daylight saving time)
-according to industry standard RFC 5545 and other modern datetime libraries. 
+according to industry standard RFC 5545 and other modern datetime libraries.
 This means:
 
 - Units are added from largest (year) to smallest (nanosecond),
@@ -354,6 +404,8 @@ This means:
    That is, the offset may be different after moving backwards or forwards in time.
    If you need to shift an :class:`~whenever.OffsetDateTime` instance,
    either convert to UTC or a proper :class:`~whenever.ZonedDateTime` first.
+
+.. _ambiguity:
 
 Ambiguity in timezones
 ----------------------
@@ -441,7 +493,7 @@ ISO 8601
 The `ISO 8601 <https://en.wikipedia.org/wiki/ISO_8601>`_ standard
 is probably the format you're most familiar with.
 What you may not know is that it's a very complex standard with many options.
-Like most libraries, **whenever** supports a only subset of the standard 
+Like most libraries, **whenever** supports a only subset of the standard
 which is the most commonly used:
 
 Here are the ISO formats for each type:
@@ -449,7 +501,7 @@ Here are the ISO formats for each type:
 +-----------------------------------------+------------------------------------------------+
 | Type                                    | Canonical string format                        |
 +=========================================+================================================+
-| :class:`~whenever.UTCDateTime`          | ``YYYY-MM-DDTHH:MM:SSZ``                       |
+| :class:`~whenever.Instant`              | ``YYYY-MM-DDTHH:MM:SSZ``                       |
 +-----------------------------------------+------------------------------------------------+
 | :class:`~whenever.OffsetDateTime`       | ``YYYY-MM-DDTHH:MM:SS±HH:MM``                  |
 +-----------------------------------------+------------------------------------------------+
@@ -560,7 +612,7 @@ Custom formats
 ~~~~~~~~~~~~~~
 
 For now, basic customized parsing functionality is implemented in the ``strptime()`` methods
-of :class:`~whenever.UTCDateTime`, :class:`~whenever.OffsetDateTime`,
+of :class:`~whenever.Instant`, :class:`~whenever.OffsetDateTime`,
 and :class:`~whenever.NaiveDateTime`.
 As the name suggests, these methods are thin wrappers around the standard library
 :meth:`~datetime.datetime.strptime` function.
@@ -568,7 +620,7 @@ The same `formatting rules <https://docs.python.org/3/library/datetime.html#form
 
 .. code-block:: python
 
-   UTCDateTime.strptime("2023-01-01 12:30", "%Y-%m-%d %H:%M")  # 2023-01-01 12:30:00Z
+   Instant.strptime("2023-01-01 12:30", "%Y-%m-%d %H:%M")  # 2023-01-01 12:30:00Z
    OffsetDateTime.strptime("2023-01-01+05:00", "%Y-%m-%d%z")  # 2023-01-01 00:00:00+05:00
    NaiveDateTime.strptime("2023-01-01 00:00", "%Y-%m-%d %H:%M")  # 2023-01-01 00:00:00
 
@@ -578,7 +630,7 @@ If you'd like to parse into these types,
 use :meth:`NaiveDateTime.strptime() <whenever.NaiveDateTime.strptime>`
 to parse them, and then use the :meth:`~whenever.NaiveDateTime.assume_utc`,
 :meth:`~whenever.NaiveDateTime.assume_fixed_offset`,
-:meth:`~whenever.NaiveDateTime.assume_tz`, 
+:meth:`~whenever.NaiveDateTime.assume_tz`,
 or :meth:`~whenever.NaiveDateTime.assume_system_tz`
 methods to convert them.
 This makes it explicit what information is being assumed.
@@ -608,8 +660,8 @@ Conversely, you can create a type from a standard library datetime with the
 :meth:`~whenever._DateTime.from_py_datetime` classmethod.
 
 >>> from datetime import datetime, UTC
->>> UTCDateTime.from_py_datetime(datetime(2023, 1, 1, tzinfo=UTC))
-UTCDateTime(2023-01-01 00:00:00Z)
+>>> Instant.from_py_datetime(datetime(2023, 1, 1, tzinfo=UTC))
+Instant(2023-01-01 00:00:00Z)
 >>> ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam").py_datetime()
 datetime(2023, 1, 1, 0, 0, tzinfo=ZoneInfo('Europe/Amsterdam'))
 
@@ -622,8 +674,8 @@ datetime(2023, 1, 1, 0, 0, tzinfo=ZoneInfo('Europe/Amsterdam'))
 Date and time components
 ------------------------
 
-Aside from the datetimes themselves, **whenever** also provides 
-:class:`~whenever.Date` for calendar dates and :class:`~whenever.Time` for 
+Aside from the datetimes themselves, **whenever** also provides
+:class:`~whenever.Date` for calendar dates and :class:`~whenever.Time` for
 representing times of day.
 
 >>> from whenever import Date, Time
@@ -636,7 +688,7 @@ These types can be converted to datetimes and vice versa:
 
 >>> Date(2023, 1, 1).at(Time(12, 30))
 NaiveDateTime(2023-01-01 12:30:00)
->>> UTCDateTime.now().date()
+>>> ZonedDateTime.now("Asia/Tokyo").date()
 Date(2023-07-13)
 
 Dates support arithmetic with months and years,
@@ -705,6 +757,12 @@ SystemDateTime(2020-08-15 08:00:00+02:00)
 
    :ref:`Why does SystemDateTime exist? <faq-why-system-tz>`
 
-.. [1] The timezone ID is not part of the core ISO 8601 standard, 
+.. [2] java.time, Noda Time (C#), and partly Temporal (JavaScript)
+   all use a similar datamodel.
+   `Here is an excellent video on the topic <https://www.youtube.com/watch?v=saeKBuPewcU>`_.
+
+
+.. [1] The timezone ID is not part of the core ISO 8601 standard,
    but is part of the RFC 9557 extension.
    This format is commonly used by datetime libraries in other languages as well.
+
