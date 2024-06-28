@@ -5,11 +5,11 @@ use std::fmt::{self, Display, Formatter};
 use std::time::SystemTime;
 
 use crate::common::*;
-use crate::naive_datetime::set_components_from_kwargs;
+use crate::local_datetime::set_components_from_kwargs;
 use crate::{
     date::Date,
     instant::{Instant, MAX_INSTANT, MIN_INSTANT},
-    naive_datetime::DateTime,
+    local_datetime::DateTime,
     time::Time,
     time_delta::TimeDelta,
     zoned_datetime::ZonedDateTime,
@@ -607,10 +607,10 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
         .to_obj(cls.cast())
 }
 
-pub(crate) unsafe fn naive(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+pub(crate) unsafe fn local(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     OffsetDateTime::extract(slf)
         .without_offset()
-        .to_obj(State::for_obj(slf).naive_datetime_type)
+        .to_obj(State::for_obj(slf).local_datetime_type)
 }
 
 pub(crate) unsafe fn timestamp(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -944,7 +944,7 @@ static mut METHODS: &[PyMethodDef] = &[
         "Create a new instance from a `datetime.datetime`",
         METH_O | METH_CLASS
     ),
-    method!(naive, "Convert to a `NaiveDateTime`"),
+    method!(local, "Get the local date and time"),
     method!(timestamp, "Convert to a UNIX timestamp"),
     method!(
         timestamp_millis,

@@ -6,7 +6,7 @@ from itertools import chain, product
 
 import pytest
 
-from whenever import Date, DateDelta, NaiveDateTime, Time, Weekday, days
+from whenever import Date, DateDelta, LocalDateTime, Time, Weekday, days
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
@@ -211,7 +211,7 @@ def test_replace():
 
 def test_at():
     d = Date(2021, 1, 2)
-    assert d.at(Time(3, 4, 5)) == NaiveDateTime(2021, 1, 2, 3, 4, 5)
+    assert d.at(Time(3, 4, 5)) == LocalDateTime(2021, 1, 2, 3, 4, 5)
 
 
 def test_repr():

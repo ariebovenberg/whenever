@@ -42,24 +42,22 @@ Concrete classes
 .. autoclass:: whenever.Instant
    :members:
      format_rfc3339,
-     format_rfc2822,
      parse_rfc3339,
+     format_rfc2822,
      parse_rfc2822,
-     strptime,
      add,
      subtract
    :special-members: __add__, __sub__
    :member-order: bysource
    :show-inheritance:
 
-.. autoclass:: whenever.NaiveDateTime
+.. autoclass:: whenever.LocalDateTime
    :members:
      assume_utc,
      assume_fixed_offset,
      assume_tz,
      assume_system_tz,
      strptime,
-     replace,
    :special-members: __add__, __sub__, __eq__
    :member-order: bysource
    :show-inheritance:

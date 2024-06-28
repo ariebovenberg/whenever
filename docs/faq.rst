@@ -57,30 +57,6 @@ Of course, feel free to work with :class:`~whenever.ZonedDateTime` if
 you know the system's IANA timezone. You can use
 the `tzlocal <https://pypi.org/project/tzlocal/>`_ library to help with this.
 
-.. _faq-why-naive:
-
-Why does :class:`~whenever.NaiveDateTime` exist?
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-In most cases, it's best to use aware datetimes. However, there are valid exceptions.
-A common case is when you simply *don't know* the timezone 
-of a datetime you're working with.
-For example, when parsing a date from a user input, 
-or when reading datetimes from a CSV file.
-Expressing these as :class:`~whenever.NaiveDateTime` makes it clear that
-the timezone is unknown.
-
-Additionally, :class:`~whenever.NaiveDateTime` offers these advantages over the standard library's
-counterpart:
-
-- It is a different class, so any mix-up will be caught by your IDE or type-checker.
-- It doesn't have a ``.now()`` method, removing a common source of mistakenly naive datetimes.
-- Conversions to aware datetimes are explicit about assumptions being made:
-
-  >>> party_invite = NaiveDateTime(2022, 1, 1, 12)
-  >>> party_invite.assume_tz("Europe/Berlin")
-  ZonedDateTime(2022-01-01 12:00:00+01:00[Europe/Berlin])
-
 .. _faq-offset-arithmetic:
 
 Why can't :class:`~whenever.OffsetDateTime` add or subtract durations?

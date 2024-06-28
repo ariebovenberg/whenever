@@ -8,7 +8,7 @@ from datetime import (
 
 import pytest
 
-from whenever import Date, NaiveDateTime, Time
+from whenever import Date, LocalDateTime, Time
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
@@ -212,7 +212,7 @@ def test_constants():
 
 def test_on():
     t = Time(1, 2, 3, nanosecond=4_000)
-    assert t.on(Date(2021, 1, 2)) == NaiveDateTime(
+    assert t.on(Date(2021, 1, 2)) == LocalDateTime(
         2021, 1, 2, 1, 2, 3, nanosecond=4_000
     )
 

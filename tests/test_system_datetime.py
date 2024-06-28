@@ -12,7 +12,7 @@ from whenever import (
     AmbiguousTime,
     Date,
     Instant,
-    NaiveDateTime,
+    LocalDateTime,
     OffsetDateTime,
     SkippedTime,
     SystemDateTime,
@@ -148,9 +148,9 @@ class TestInstant:
         )
 
 
-def test_naive():
+def test_local():
     d = SystemDateTime(2020, 8, 15, 12, 8, 30)
-    assert d.naive() == NaiveDateTime(2020, 8, 15, 12, 8, 30)
+    assert d.local() == LocalDateTime(2020, 8, 15, 12, 8, 30)
 
 
 @system_tz_ams()
@@ -540,27 +540,27 @@ class TestParseCommonIso:
         [
             (
                 "2020-08-15T12:08:30+05:00",
-                NaiveDateTime(2020, 8, 15, 12, 8, 30),
+                LocalDateTime(2020, 8, 15, 12, 8, 30),
                 hours(5),
             ),
             (
                 "2020-08-15T12:08:30+20:00",
-                NaiveDateTime(2020, 8, 15, 12, 8, 30),
+                LocalDateTime(2020, 8, 15, 12, 8, 30),
                 hours(20),
             ),
             (
                 "2020-08-15T12:08:30.0034+05:00",
-                NaiveDateTime(2020, 8, 15, 12, 8, 30, nanosecond=3_400_000),
+                LocalDateTime(2020, 8, 15, 12, 8, 30, nanosecond=3_400_000),
                 hours(5),
             ),
             (
                 "2020-08-15T12:08:30.000000010+05:00",
-                NaiveDateTime(2020, 8, 15, 12, 8, 30, nanosecond=10),
+                LocalDateTime(2020, 8, 15, 12, 8, 30, nanosecond=10),
                 hours(5),
             ),
             (
                 "2020-08-15T12:08:30.0034-05:00:01",
-                NaiveDateTime(
+                LocalDateTime(
                     2020,
                     8,
                     15,
@@ -573,24 +573,24 @@ class TestParseCommonIso:
             ),
             (
                 "2020-08-15T12:08:30+00:00",
-                NaiveDateTime(2020, 8, 15, 12, 8, 30),
+                LocalDateTime(2020, 8, 15, 12, 8, 30),
                 hours(0),
             ),
             (
                 "2020-08-15T12:08:30-00:00",
-                NaiveDateTime(2020, 8, 15, 12, 8, 30),
+                LocalDateTime(2020, 8, 15, 12, 8, 30),
                 hours(0),
             ),
             (
                 "2020-08-15T12:08:30Z",
-                NaiveDateTime(2020, 8, 15, 12, 8, 30),
+                LocalDateTime(2020, 8, 15, 12, 8, 30),
                 hours(0),
             ),
         ],
     )
     def test_valid(self, s, expect, offset):
         dt = SystemDateTime.parse_common_iso(s)
-        assert dt.naive() == expect
+        assert dt.local() == expect
         assert dt.offset == offset
 
     @pytest.mark.parametrize(

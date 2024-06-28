@@ -9,7 +9,7 @@ from hypothesis.strategies import floats, integers, text
 
 from whenever import (
     Instant,
-    NaiveDateTime,
+    LocalDateTime,
     OffsetDateTime,
     SystemDateTime,
     ZonedDateTime,
@@ -549,7 +549,7 @@ class TestAddOperator:
             None + d  # type: ignore[operator]
 
         with pytest.raises(TypeError, match="unsupported operand type"):
-            NaiveDateTime(2020, 1, 1) + d  # type: ignore[operator]
+            LocalDateTime(2020, 1, 1) + d  # type: ignore[operator]
 
 
 class TestSubtractOperator:
@@ -687,41 +687,6 @@ def test_to_system_tz():
     with system_tz_ams():
         with pytest.raises((ValueError, OverflowError)):
             Instant.MAX.to_system_tz()
-
-
-class TestStrptime:
-
-    @pytest.mark.parametrize(
-        "string, fmt, expected",
-        [
-            (
-                "2020-08-15 23:12+0000",
-                "%Y-%m-%d %H:%M%z",
-                Instant.from_utc(2020, 8, 15, 23, 12),
-            ),
-            (
-                "2020-08-15 23:12:09+0000",
-                "%Y-%m-%d %H:%M:%S%z",
-                Instant.from_utc(2020, 8, 15, 23, 12, 9),
-            ),
-            (
-                "2020-08-15 23:12:09Z",
-                "%Y-%m-%d %H:%M:%S%z",
-                Instant.from_utc(2020, 8, 15, 23, 12, 9),
-            ),
-            (
-                "2020-08-15 23",
-                "%Y-%m-%d %H",
-                Instant.from_utc(2020, 8, 15, 23),
-            ),
-        ],
-    )
-    def test_strptime(self, string, fmt, expected):
-        assert Instant.strptime(string, fmt) == expected
-
-    def test_strptime_invalid(self):
-        with pytest.raises(ValueError):
-            Instant.strptime("2020-08-15 23:12:09+0200", "%Y-%m-%d %H:%M:%S%z")
 
 
 def test_rfc2822():

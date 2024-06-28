@@ -169,7 +169,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     if PyArg_ParseTupleAndKeywords(
         args,
         kwargs,
-        c"lll|lll$l:NaiveDateTime".as_ptr(),
+        c"lll|lll$l:LocalDateTime".as_ptr(),
         vec![
             c"year".as_ptr() as *mut c_char,
             c"month".as_ptr() as *mut c_char,
@@ -202,7 +202,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
 
 unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
     let DateTime { date, time } = DateTime::extract(slf);
-    format!("NaiveDateTime({} {})", date, time).to_py()
+    format!("LocalDateTime({} {})", date, time).to_py()
 }
 
 unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
@@ -242,7 +242,7 @@ unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
-    // easy case: subtracting two NaiveDateTime objects
+    // easy case: subtracting two LocalDateTime objects
     if Py_TYPE(obj_a) == Py_TYPE(obj_b) {
         let a = DateTime::extract(obj_a);
         let b = DateTime::extract(obj_b);
@@ -280,12 +280,12 @@ unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bo
             DateTimeDelta::extract(obj_b)
         } else {
             Err(type_err!(
-                "unsupported operand type(s) for {}: 'NaiveDateTime' and {}",
+                "unsupported operand type(s) for {}: 'LocalDateTime' and {}",
                 opname,
                 type_b.cast::<PyObject>().repr()
             ))?
         };
-        debug_assert_eq!(type_a, State::for_type(type_a).naive_datetime_type);
+        debug_assert_eq!(type_a, State::for_type(type_a).local_datetime_type);
         let dt = DateTime::extract(obj_a);
         if negate {
             delta = -delta;
@@ -484,7 +484,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     } = DateTime::extract(slf);
     let data = pack![year, month, day, hour, minute, second, nanos];
     (
-        State::for_obj(slf).unpickle_naive_datetime,
+        State::for_obj(slf).unpickle_local_datetime,
         steal!((steal!(data.to_py()?),).to_py()?),
     )
         .to_py()
@@ -508,7 +508,7 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
             nanos: unpack_one!(packed, u32),
         },
     }
-    .to_obj(State::for_mod(module).naive_datetime_type)
+    .to_obj(State::for_mod(module).local_datetime_type)
 }
 
 unsafe fn from_py_datetime(type_: *mut PyObject, dt: *mut PyObject) -> PyReturn {
@@ -682,7 +682,7 @@ unsafe fn assume_tz(
     let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_tz")?;
     let zoneinfo = call1(zoneinfo_type, tz)?;
     defer_decref!(zoneinfo);
-    ZonedDateTime::from_naive(py_api, date, time, zoneinfo, dis)?
+    ZonedDateTime::from_local(py_api, date, time, zoneinfo, dis)?
         .map_err(|e| match e {
             Ambiguity::Fold => py_err!(
                 exc_ambiguous,
@@ -797,7 +797,7 @@ static mut METHODS: &[PyMethodDef] = &[
         METH_O | METH_CLASS
     ),
     method!(__reduce__, ""),
-    method_vararg!(strptime, "Parse a string into a NaiveDateTime", METH_CLASS),
+    method_vararg!(strptime, "Parse a string into a LocalDateTime", METH_CLASS),
     method_kwargs!(
         replace,
         "Return a new instance with the specified fields replaced"
@@ -894,8 +894,8 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
     },
 ];
 
-type NaiveDateTime = DateTime;
-type_spec!(NaiveDateTime, SLOTS);
+type LocalDateTime = DateTime;
+type_spec!(LocalDateTime, SLOTS);
 
 #[cfg(test)]
 mod tests {

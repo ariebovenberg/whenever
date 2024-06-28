@@ -9,8 +9,8 @@ use crate::{
     date_delta::DateDelta,
     datetime_delta::{set_units_from_kwargs, DateTimeDelta},
     instant::Instant,
-    naive_datetime::{set_components_from_kwargs, DateTime},
-    offset_datetime::{self, naive, timestamp, timestamp_millis, timestamp_nanos, OffsetDateTime},
+    local_datetime::{set_components_from_kwargs, DateTime},
+    offset_datetime::{self, local, timestamp, timestamp_millis, timestamp_nanos, OffsetDateTime},
     time::Time,
     time_delta::TimeDelta,
     zoned_datetime::ZonedDateTime,
@@ -802,7 +802,7 @@ static mut METHODS: &[PyMethodDef] = &[
         "Create a new instance from a `datetime.datetime`",
         METH_O | METH_CLASS
     ),
-    method!(naive, "Convert to a `NaiveDateTime`"),
+    method!(local, "Get the local time"),
     method!(timestamp, "Convert to a UNIX timestamp"),
     method!(
         timestamp_millis,

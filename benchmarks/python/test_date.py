@@ -1,7 +1,9 @@
 import pickle
 import sys
 
-from whenever import Date
+import pytest
+
+from whenever import _EXTENSION_LOADED, Date
 
 
 def test_hash(benchmark):
@@ -43,5 +45,6 @@ def test_pickle(benchmark):
     benchmark(pickle.dumps, d1)
 
 
+@pytest.mark.skipif(not _EXTENSION_LOADED, reason="extension not loaded")
 def test_sizeof():
     assert sys.getsizeof(Date(2020, 8, 24)) == 24

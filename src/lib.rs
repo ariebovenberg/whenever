@@ -10,7 +10,7 @@ pub mod date;
 mod date_delta;
 mod datetime_delta;
 mod instant;
-pub mod naive_datetime;
+pub mod local_datetime;
 mod offset_datetime;
 mod system_datetime;
 mod time;
@@ -22,7 +22,7 @@ use date_delta::unpickle as _unpkl_ddelta;
 use date_delta::{days, months, weeks, years};
 use datetime_delta::unpickle as _unpkl_dtdelta;
 use instant::unpickle as _unpkl_utc;
-use naive_datetime::unpickle as _unpkl_naive;
+use local_datetime::unpickle as _unpkl_local;
 use offset_datetime::unpickle as _unpkl_offset;
 use system_datetime::unpickle as _unpkl_system;
 use time::unpickle as _unpkl_time;
@@ -51,7 +51,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method_vararg!(_unpkl_ddelta, ""),
     method!(_unpkl_tdelta, "", METH_O),
     method_vararg!(_unpkl_dtdelta, ""),
-    method!(_unpkl_naive, "", METH_O),
+    method!(_unpkl_local, "", METH_O),
     method!(_unpkl_utc, "", METH_O),
     method!(_unpkl_offset, "", METH_O),
     method_vararg!(_unpkl_zoned, ""),
@@ -278,10 +278,10 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         module,
         module_name,
         state,
-        naive_datetime,
-        naive_datetime_type,
-        c"_unpkl_naive",
-        unpickle_naive_datetime
+        local_datetime,
+        local_datetime_type,
+        c"_unpkl_local",
+        unpickle_local_datetime
     );
     add_type!(
         module,
@@ -471,10 +471,10 @@ unsafe extern "C" fn module_traverse(
         datetime_delta::SINGLETONS.len(),
     );
     do_type_visit(
-        state.naive_datetime_type,
+        state.local_datetime_type,
         visit,
         arg,
-        naive_datetime::SINGLETONS.len(),
+        local_datetime::SINGLETONS.len(),
     );
     do_type_visit(state.instant_type, visit, arg, instant::SINGLETONS.len());
     do_type_visit(
@@ -524,7 +524,7 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR(ptr::addr_of_mut!(state.date_delta_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.time_delta_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.datetime_delta_type).cast());
-    Py_CLEAR(ptr::addr_of_mut!(state.naive_datetime_type).cast());
+    Py_CLEAR(ptr::addr_of_mut!(state.local_datetime_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.instant_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.offset_datetime_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.zoned_datetime_type).cast());
@@ -561,7 +561,7 @@ struct State {
     date_delta_type: *mut PyTypeObject,
     time_delta_type: *mut PyTypeObject,
     datetime_delta_type: *mut PyTypeObject,
-    naive_datetime_type: *mut PyTypeObject,
+    local_datetime_type: *mut PyTypeObject,
     instant_type: *mut PyTypeObject,
     offset_datetime_type: *mut PyTypeObject,
     zoned_datetime_type: *mut PyTypeObject,
@@ -581,7 +581,7 @@ struct State {
     unpickle_date_delta: *mut PyObject,
     unpickle_time_delta: *mut PyObject,
     unpickle_datetime_delta: *mut PyObject,
-    unpickle_naive_datetime: *mut PyObject,
+    unpickle_local_datetime: *mut PyObject,
     unpickle_instant: *mut PyObject,
     unpickle_offset_datetime: *mut PyObject,
     unpickle_zoned_datetime: *mut PyObject,

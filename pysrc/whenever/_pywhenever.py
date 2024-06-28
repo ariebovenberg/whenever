@@ -72,7 +72,7 @@ __all__ = [
     "OffsetDateTime",
     "ZonedDateTime",
     "SystemDateTime",
-    "NaiveDateTime",
+    "LocalDateTime",
     # Deltas and time units
     "DateDelta",
     "TimeDelta",
@@ -132,7 +132,7 @@ _MAX_DELTA_NANOS = _MAX_DELTA_DAYS * 24 * 3_600_000_000_000
 
 
 class _ImmutableBase:
-    __slots__ = ("__weakref__",)
+    __slots__ = ()
 
     # Immutable classes don't need to be copied
     @no_type_check
@@ -201,19 +201,19 @@ class Date(_ImmutableBase):
         """
         return Weekday(self._py_date.isoweekday())
 
-    def at(self, t: Time, /) -> NaiveDateTime:
+    def at(self, t: Time, /) -> LocalDateTime:
         """Combine a date with a time to create a datetime
 
         Example
         -------
         >>> d = Date(2021, 1, 2)
         >>> d.at(Time(12, 30))
-        NaiveDateTime(2021-01-02 12:30:00)
+        LocalDateTime(2021-01-02 12:30:00)
 
-        You can use methods like :meth:`~NaiveDateTime.assume_utc`
-        or :meth:`~NaiveDateTime.assume_tz` to make the result aware.
+        You can use methods like :meth:`~LocalDateTime.assume_utc`
+        or :meth:`~LocalDateTime.assume_tz` to make the result aware.
         """
-        return NaiveDateTime._from_py_unchecked(
+        return LocalDateTime._from_py_unchecked(
             _datetime.combine(self._py_date, t._py_time), t._nanos
         )
 
@@ -545,20 +545,20 @@ class Time(_ImmutableBase):
     def nanosecond(self) -> int:
         return self._nanos
 
-    def on(self, d: Date, /) -> NaiveDateTime:
+    def on(self, d: Date, /) -> LocalDateTime:
         """Combine a time with a date to create a datetime
 
         Example
         -------
         >>> t = Time(12, 30)
         >>> t.on(Date(2021, 1, 2))
-        NaiveDateTime(2021-01-02 12:30:00)
+        LocalDateTime(2021-01-02 12:30:00)
 
-        Then, use methods like :meth:`~NaiveDateTime.assume_utc`
-        or :meth:`~NaiveDateTime.assume_tz`
+        Then, use methods like :meth:`~LocalDateTime.assume_utc`
+        or :meth:`~LocalDateTime.assume_tz`
         to make the result aware.
         """
-        return NaiveDateTime._from_py_unchecked(
+        return LocalDateTime._from_py_unchecked(
             _datetime.combine(d._py_date, self._py_time),
             self._nanos,
         )
@@ -1898,7 +1898,7 @@ class _BasicConversions(_ImmutableBase, ABC):
     """Methods for types converting to/from the standard library and ISO8601:
 
     - :class:`Instant`
-    - :class:`NaiveDateTime`
+    - :class:`LocalDateTime`
     - :class:`ZonedDateTime`
     - :class:`OffsetDateTime`
     - :class:`SystemDateTime`
@@ -1942,9 +1942,9 @@ class _BasicConversions(_ImmutableBase, ABC):
     @abstractmethod
     def format_common_iso(self) -> str:
         """Format as common ISO string representation. Each
-        subclass has a different format. See the documentation for
-        the subclass for more information.
-        Inverse of :meth:`parse_common_iso`.
+        subclass has a different format.
+
+        See :ref:`here <iso8601>` for more information.
         """
 
     @classmethod
@@ -1953,17 +1953,7 @@ class _BasicConversions(_ImmutableBase, ABC):
         """Create an instance from common ISO 8601 representation,
         which is different for each subclass.
 
-        Note
-        ----
-        This method doesn't parse the more "exotic" ISO 8601 formats.
-        Note that ``ZonedDateTime`` uses the recent RFC9557 extension.
-
-        Inverse of :meth:`format_common_iso`.
-
-        Raises
-        ------
-        ValueError
-            If the string does not match this exact format.
+        See :ref:`here <iso8601>` for more information.
         """
 
     def __str__(self) -> str:
@@ -1983,7 +1973,7 @@ class _BasicConversions(_ImmutableBase, ABC):
 class _KnowsLocal(_BasicConversions, ABC):
     """Methods for types that know a local date and time:
 
-    - :class:`NaiveDateTime`
+    - :class:`LocalDateTime`
     - :class:`ZonedDateTime`
     - :class:`OffsetDateTime`
     - :class:`SystemDateTime`
@@ -2031,8 +2021,8 @@ class _KnowsLocal(_BasicConversions, ABC):
         Date(2021-01-02)
 
         To perform the inverse, use :meth:`Date.at` and a method
-        like :meth:`~NaiveDateTime.assume_utc` or
-        :meth:`~NaiveDateTime.assume_tz`:
+        like :meth:`~LocalDateTime.assume_utc` or
+        :meth:`~LocalDateTime.assume_tz`:
 
         >>> date.at(time).assume_tz("Europe/London")
         """
@@ -2049,8 +2039,8 @@ class _KnowsLocal(_BasicConversions, ABC):
         Time(03:04:05)
 
         To perform the inverse, use :meth:`Time.on` and a method
-        like :meth:`~NaiveDateTime.assume_utc` or
-        :meth:`~NaiveDateTime.assume_tz`:
+        like :meth:`~LocalDateTime.assume_utc` or
+        :meth:`~LocalDateTime.assume_tz`:
 
         >>> time.on(date).assume_utc()
         """
@@ -2448,15 +2438,15 @@ class _KnowsInstantAndLocal(_KnowsLocal, _KnowsInstant):
             self._py_dt.astimezone(_UTC), self._nanos
         )
 
-    def naive(self) -> NaiveDateTime:
-        """Convert into a naive datetime, dropping all timezone information
+    def local(self) -> LocalDateTime:
+        """Get the underlying local date and time
 
-        As an inverse, :class:`NaiveDateTime` has methods
-        :meth:`~NaiveDateTime.assume_utc`, :meth:`~NaiveDateTime.assume_fixed_offset`
-        , :meth:`~NaiveDateTime.assume_tz`, and :meth:`~NaiveDateTime.assume_system_tz`
+        As an inverse, :class:`LocalDateTime` has methods
+        :meth:`~LocalDateTime.assume_utc`, :meth:`~LocalDateTime.assume_fixed_offset`
+        , :meth:`~LocalDateTime.assume_tz`, and :meth:`~LocalDateTime.assume_system_tz`
         which may require additional arguments.
         """
-        return NaiveDateTime._from_py_unchecked(
+        return LocalDateTime._from_py_unchecked(
             self._py_dt.replace(tzinfo=None),
             self._nanos,
         )
@@ -2483,7 +2473,7 @@ class Instant(_KnowsInstant):
     timezone-aware and has a fixed :attr:`~datetime.UTC` tzinfo.
     """
 
-    __slots__ = ("_py_dt", "_nanos")
+    __slots__ = ()
 
     def __init__(self) -> None:
         raise TypeError("Instant instances cannot be created")
@@ -2602,35 +2592,6 @@ class Instant(_KnowsInstant):
         nanos = int(match[7].ljust(9, "0")) if match[7] else 0
         return cls._from_py_unchecked(
             _fromisoformat(s[:19]).replace(tzinfo=_UTC), nanos
-        )
-
-    @classmethod
-    def strptime(cls, s: str, /, fmt: str) -> Instant:
-        """Simple alias for
-        ``Instant.from_py_datetime(datetime.strptime(s, fmt))``
-
-        Example
-        -------
-        >>> Instant.strptime("2020-08-15+0000", "%Y-%m-%d%z")
-        Instant(2020-08-15 00:00:00Z)
-        >>> Instant.strptime("2020-08-15", "%Y-%m-%d")
-        Instant(2020-08-15 00:00:00Z)
-
-        Note
-        ----
-        The parsed ``tzinfo`` must be either :attr:`datetime.UTC`
-        or ``None`` (in which case it's set to :attr:`datetime.UTC`).
-        """
-        parsed = _datetime.strptime(s, fmt)
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=_UTC)
-        elif parsed.tzinfo is not _UTC:
-            raise ValueError(
-                "Parsed datetime must have tzinfo=UTC or None, "
-                f"got {parsed.tzinfo!r}"
-            )
-        return cls._from_py_unchecked(
-            parsed.replace(microsecond=0), parsed.microsecond * 1_000
         )
 
     def format_rfc2822(self) -> str:
@@ -3276,75 +3237,14 @@ class ZonedDateTime(_KnowsInstantAndLocal):
 
     Example
     -------
-    >>> from whenever import ZonedDateTime
-    >>>
-    >>> # always at 11:00 in London, regardless of the offset
     >>> changing_the_guard = ZonedDateTime(2024, 12, 8, hour=11, tz="Europe/London")
-    >>>
     >>> # Explicitly resolve ambiguities when clocks are set backwards.
     >>> night_shift = ZonedDateTime(2023, 10, 29, 1, 15, tz="Europe/London", disambiguate="later")
-    >>>
-    >>> # ZoneInfoNotFoundError: no such timezone
-    >>> ZonedDateTime(2024, 12, 8, hour=11, tz="invalid")
-    >>>
-    >>> # SkippedTime: 2:15 AM does not exist on this day
-    >>> ZonedDateTime(2023, 3, 26, 2, 15, tz="Europe/Amsterdam")
 
-    Disambiguation
-    --------------
 
-    The ``disambiguate`` argument controls how ambiguous datetimes are handled:
-
-    +------------------+-------------------------------------------------+
-    | ``disambiguate`` | Behavior in case of ambiguity                   |
-    +==================+=================================================+
-    | ``"raise"``      | (default) Refuse to guess:                      |
-    |                  | raise :exc:`~whenever.AmbiguousTime`            |
-    |                  | or :exc:`~whenever.SkippedTime` exception.      |
-    +------------------+-------------------------------------------------+
-    | ``"earlier"``    | Choose the earlier of the two options           |
-    +------------------+-------------------------------------------------+
-    | ``"later"``      | Choose the later of the two options             |
-    +------------------+-------------------------------------------------+
-    | ``"compatible"`` | Choose "earlier" for backward transitions and   |
-    |                  | "later" for forward transitions. This matches   |
-    |                  | the behavior of other established libraries,    |
-    |                  | and the industry standard RFC 5545.             |
-    |                  | It corresponds to setting ``fold=0`` in the     |
-    |                  | standard library.                               |
-    +------------------+-------------------------------------------------+
-
-    Warning
-    -------
-    The common ISO format is:
-
-    .. code-block:: text
-
-       YYYY-MM-DDTHH:MM:SS±HH:MM[IANA TZ ID]
-
-    This format uses the RFC 9557 extension to ISO 8601.
-
-    Where:
-
-    - Seconds may be fractional up to nanosecond precision.
-    - Offset may have seconds precision.
-
-    For example:
-
-    .. code-block:: text
-
-       2020-08-15T23:12:00+01:00[Europe/London]
-
-    The offset is included to disambiguate cases where the same
-    local time occurs twice due to DST transitions.
-    If the offset is invalid for the system timezone,
-    parsing will raise :class:`InvalidOffset`.
-
-    This format is similar to those `used by other languages <https://tc39.es/proposal-temporal/docs/strings.html#iana-time-zone-names>`_,
-    but it is *not* RFC 3339 or ISO 8601 compliant
-    (these standards don't support timezone IDs.)
-    Use :meth:`~_KnowsInstant.to_fixed_offset` first if you
-    need RFC 3339 or ISO 8601 compliance.
+    Attention
+    ---------
+    To use this type properly, read more about :ref:`ambiguity <ambiguity>`.
     """
 
     __slots__ = ()
@@ -3440,12 +3340,10 @@ class ZonedDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def from_timestamp(cls, i: int, /, *, tz: str) -> ZonedDateTime:
-        """Create an instace from a UNIX timestamp."""
         return cls._from_py_unchecked(_fromtimestamp(i, ZoneInfo(tz)), 0)
 
     @classmethod
     def from_timestamp_millis(cls, i: int, /, *, tz: str) -> ZonedDateTime:
-        """Create an instace from a UNIX timestamp in milliseconds."""
         secs, millis = divmod(i, 1_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, ZoneInfo(tz)), millis * 1_000_000
@@ -3453,7 +3351,6 @@ class ZonedDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def from_timestamp_nanos(cls, i: int, /, *, tz: str) -> ZonedDateTime:
-        """Create an instace from a UNIX timestamp in milliseconds."""
         secs, nanos = divmod(i, 1_000_000_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, ZoneInfo(tz)), nanos
@@ -3476,14 +3373,6 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def replace_date(
         self, date: Date, /, disambiguate: Disambiguate = "raise"
     ) -> ZonedDateTime:
-        """Create a new ZonedDateTime with the same time, but a different date.
-
-        Example
-        -------
-        >>> d = ZonedDateTime(2020, 3, 28, 12, tz="Europe/Amsterdam")
-        >>> d.replace_date(Date(2023, 10, 29))
-        ZonedDateTime(2023-10-29T12:00:00+02:00[Europe/Amsterdam])
-        """
         return self._from_py_unchecked(
             _resolve_ambuguity(
                 _datetime.combine(date._py_date, self._py_dt.timetz()).replace(
@@ -3499,14 +3388,6 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def replace_time(
         self, time: Time, /, disambiguate: Disambiguate = "raise"
     ) -> ZonedDateTime:
-        """Create a new ZonedDateTime with the same date, but a different time.
-
-        Example
-        -------
-        >>> d = ZonedDateTime(2020, 2, 3, 12, tz="Europe/Amsterdam")
-        >>> d.replace_time(Time(15, 30))
-        ZonedDateTime(2020-02-03T15:30:00+02:00[Europe/Amsterdam])
-        """
         return self._from_py_unchecked(
             _resolve_ambuguity(
                 _datetime.combine(
@@ -3554,31 +3435,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def __add__(self, delta: Delta) -> ZonedDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
 
-        Example
-        -------
-        >>> d = ZonedDateTime(2023, 10, 28, 12, tz="Europe/Amsterdam", disambiguate="earlier")
-        >>> # adding exact units accounts for the DST transition
-        >>> d + hours(24)
-        ZonedDateTime(2023-10-29T11:00:00+01:00[Europe/Amsterdam])
-        >>> # adding date units keeps the same local time
-        >>> d + days(1)
-        ZonedDateTime(2023-10-29T12:00:00+01:00[Europe/Amsterdam])
-
-        Note
-        ----
-        Addition of calendar units follows RFC 5545
-        (iCalendar) and the behavior of other established libraries:
-
-        - Units are added from largest to smallest,
-          truncating and/or wrapping after each step.
-        - Adding days keeps the same local time. For example,
-          scheduling a 11am event "a days later" will result in
-          11am local time the next day, even if there was a DST transition.
-          Scheduling it exactly 24 hours would have resulted in
-          a different local time.
-        - If the resulting time is amgiuous after shifting the date,
-          the "compatible" disambiguation is used.
-          This means that for gaps, time is skipped forward.
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
         if isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
             py_dt = self._py_dt
@@ -3609,7 +3466,10 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def __sub__(
         self, other: Delta | _KnowsInstant
     ) -> _KnowsInstant | TimeDelta:
-        """Subtract another datetime or duration"""
+        """Subtract another datetime or duration.
+
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
+        """
         if isinstance(other, _KnowsInstant):
             return super().__sub__(other)  # type: ignore[misc, no-any-return]
         elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
@@ -3631,18 +3491,9 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         nanoseconds: int = 0,
         disambiguate: Disambiguate = "raise",
     ) -> ZonedDateTime:
-        """Add a time amount to this datetime.
+        """Add a date and time units to this datetime.
 
-        Units are added from largest to smallest,
-        truncating and/or wrapping after each step.
-
-        Example
-        -------
-        >>> d = ZonedDateTime(2020, 8, 15, hour=23, minute=12, tz="Europe/London")
-        >>> d.add(hours=24, seconds=5)
-        ZonedDateTime(2020-08-16 23:12:05+01:00[Europe/London])
-        >>> d.add(years=1, days=2, minutes=5)
-        ZonedDateTime(2021-08-17 23:17:00+01:00[Europe/London])
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
         months_total = years * 12 + months
         days_total = weeks * 7 + days
@@ -3675,18 +3526,9 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         nanoseconds: int = 0,
         disambiguate: Disambiguate = "raise",
     ) -> ZonedDateTime:
-        """Subtract a time amount from this datetime.
+        """Subtract date and time units from this datetime.
 
-        Units are subtracted from largest to smallest,
-        wrapping and/or truncating after each step.
-
-        Example
-        -------
-        >>> d = ZonedDateTime(2020, 8, 15, hour=23, minute=12, tz="Europe/London")
-        >>> d.subtract(hours=24, seconds=5)
-        ZonedDateTime(2020-08-14 23:11:55+01:00[Europe/London])
-        >>> d.subtract(years=1, days=2, minutes=5)
-        ZonedDateTime(2019-08-13 23:06:00+01:00[Europe/London])
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
         return self.add(
             years=-years,
@@ -3712,7 +3554,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         >>> ZonedDateTime(2023, 10, 29, 2, 15, tz="Europe/Amsterdam", disambiguate="later").ambiguous()
         True
         """
-        # we make use of a quirk of the standard library here:
+        # We make use of a quirk of the standard library here:
         # ambiguous datetimes are never equal across timezones
         return self._py_dt.astimezone(_UTC) != self._py_dt
 
@@ -3755,66 +3597,26 @@ def _unpkl_zoned(
 
 @final
 class SystemDateTime(_KnowsInstantAndLocal):
-    """Represents a time in the system timezone. Unlike OffsetDateTime,
+    """Represents a time in the system timezone.
+    Unlike :class:`~OffsetDateTime`,
     it knows about the system timezone and its DST transitions.
-
-    Instances have the fixed offset of the system timezone
-    at the time of initialization.
-    The system timezone may change afterwards,
-    but instances of this type will not reflect that change.
 
     Example
     -------
     >>> # 8:00 in the system timezone—Paris in this case
     >>> alarm = SystemDateTime(2024, 3, 31, hour=6)
     SystemDateTime(2024-03-31 06:00:00+02:00)
-    ...
     >>> # Conversion based on Paris' offset
     >>> alarm.instant()
     Instant(2024-03-31 04:00:00Z)
-    ...
-    >>> # unlike OffsetDateTime, it knows about DST transitions
+    >>> # DST-safe arithmetic
     >>> bedtime = alarm - hours(8)
     SystemDateTime(2024-03-30 21:00:00+01:00)
 
-    Handling ambiguity
-    ------------------
-
-    The system timezone may have ambiguous datetimes,
-    such as during a DST transition.
-    The ``disambiguate`` argument controls how ambiguous datetimes are handled:
-
-    +------------------+-------------------------------------------------+
-    | ``disambiguate`` | Behavior in case of ambiguity                   |
-    +==================+=================================================+
-    | ``"raise"``      | (default) Refuse to guess:                      |
-    |                  | raise :exc:`~whenever.AmbiguousTime`            |
-    |                  | or :exc:`~whenever.SkippedTime` exception.      |
-    +------------------+-------------------------------------------------+
-    | ``"earlier"``    | Choose the earlier of the two options           |
-    +------------------+-------------------------------------------------+
-    | ``"later"``      | Choose the later of the two options             |
-    +------------------+-------------------------------------------------+
-    | ``"compatible"`` | Choose "earlier" for backward transitions and   |
-    |                  | "later" for forward transitions. This matches   |
-    |                  | the behavior of other established libraries,    |
-    |                  | and the industry standard RFC 5545.             |
-    |                  | It corresponds to setting ``fold=0`` in the     |
-    |                  | standard library.                               |
-    +------------------+-------------------------------------------------+
-
-    Note
-    ----
-    The ISO string format is:
-
-    .. code-block:: text
-
-       YYYY-MM-DDTHH:MM:SS±HH:MM
-
-    Where:
-
-    - Seconds may be fractional up to nanosecond precision.
-    - Offset may have seconds precision.
+    Attention
+    ---------
+    To use this type properly, read more about :ref:`ambiguity <ambiguity>` and
+    :ref:`working with the system timezone <systemtime>`.
 
     Note
     ----
@@ -3855,7 +3657,6 @@ class SystemDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def now(cls) -> SystemDateTime:
-        """Create an instance from the current time"""
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(
             _datetime.fromtimestamp(secs, _UTC).astimezone(None), nanos
@@ -3873,24 +3674,10 @@ class SystemDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def from_timestamp(cls, i: int, /) -> SystemDateTime:
-        """Create an instace from a UNIX timestamp.
-        The inverse of :meth:`~_KnowsInstant.timestamp`.
-
-        Example
-        -------
-        >>> # assuming system timezone is America/New_York
-        >>> SystemDateTime.from_timestamp(0)
-        SystemDateTime(1969-12-31T19:00:00-05:00)
-        >>> SystemDateTime.from_timestamp(1_123_000_000)
-        SystemDateTime(2005-08-12T12:26:40-04:00)
-        >>> SystemDateTime.from_timestamp(d.timestamp()) == d
-        True
-        """
         return cls._from_py_unchecked(_fromtimestamp(i, _UTC).astimezone(), 0)
 
     @classmethod
     def from_timestamp_millis(cls, i: int, /) -> SystemDateTime:
-        """Create an instace from a UNIX timestamp in milliseconds."""
         secs, millis = divmod(i, 1_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _UTC).astimezone(), millis * 1_000_000
@@ -3898,7 +3685,6 @@ class SystemDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def from_timestamp_nanos(cls, i: int, /) -> SystemDateTime:
-        """Create an instace from a UNIX timestamp in milliseconds."""
         secs, nanos = divmod(i, 1_000_000_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _UTC).astimezone(), nanos
@@ -3979,34 +3765,9 @@ class SystemDateTime(_KnowsInstantAndLocal):
         return hash((self._py_dt, self._nanos))
 
     def __add__(self, delta: Delta) -> SystemDateTime:
-        """Add a duration to this datetime
+        """Add an amount of time, accounting for timezone changes (e.g. DST).
 
-        Example
-        -------
-        >>> # assuming system TZ=Europe/Amsterdam
-        >>> d = SystemDateTime(2023, 10, 28, 12, disambiguate="earlier")
-        >>> # adding exact units accounts for the DST transition
-        >>> d + hours(24)
-        SystemDateTime(2023-10-29T11:00:00+01:00)
-        >>> # adding date units keeps the same local time
-        >>> d + days(1)
-        SystemDateTime(2023-10-29T12:00:00+01:00)
-
-        Note
-        ----
-        Addition of calendar units follows RFC 5545
-        (iCalendar) and the behavior of other established libraries:
-
-        - Units are added from largest to smallest,
-          truncating and/or wrapping after each step.
-        - Adding days keeps the same local time. For example,
-          scheduling a 11am event "a days later" will result in
-          11am local time the next day, even if there was a DST transition.
-          Scheduling it exactly 24 hours would have resulted in
-          a different local time.
-        - If the resulting time is amgiuous after shifting the date,
-          the "compatible" disambiguation is used.
-          This means that for gaps, time is skipped forward.
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
         if isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
             py_dt = self._py_dt
@@ -4034,11 +3795,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
     def __sub__(self, other: Delta | _KnowsInstant) -> _KnowsInstant | Delta:
         """Subtract another datetime or duration
 
-        Example
-        -------
-        >>> d = SystemDateTime(2020, 8, 15, hour=23, minute=12)
-        >>> d - hours(24) - seconds(5)
-        SystemDateTime(2020-08-14 23:11:55)
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
         if isinstance(other, _KnowsInstant):
             return super().__sub__(other)  # type: ignore[misc, no-any-return]
@@ -4061,18 +3818,9 @@ class SystemDateTime(_KnowsInstantAndLocal):
         nanoseconds: int = 0,
         disambiguate: Disambiguate = "raise",
     ) -> SystemDateTime:
-        """Add a time amount to this datetime.
+        """Add date and time units to this datetime.
 
-        Units are added from largest to smallest,
-        truncating and/or wrapping after each step.
-
-        Example
-        -------
-        >>> d = SystemDateTime(2020, 8, 15, hour=23, minute=12)
-        >>> d.add(hours=24, seconds=5)
-        SystemDateTime(2020-08-16 23:12:05+01:00)
-        >>> d.add(years=1, days=2, minutes=5)
-        SystemDateTime(2021-08-17 23:17:00+01:00)
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
         months_total = years * 12 + months
         days_total = weeks * 7 + days
@@ -4105,18 +3853,9 @@ class SystemDateTime(_KnowsInstantAndLocal):
         nanoseconds: int = 0,
         disambiguate: Disambiguate = "raise",
     ) -> SystemDateTime:
-        """Subtract a time amount from this datetime.
+        """Subtract date and time units from this datetime.
 
-        Units are subtracted from largest to smallest,
-        wrapping and/or truncating after each step.
-
-        Example
-        -------
-        >>> d = SystemDateTime(2020, 8, 15, hour=23, minute=12)
-        >>> d.subtract(hours=24, seconds=5)
-        SystemDateTime(2020-08-14 23:11:55+01:00)
-        >>> d.subtract(years=1, days=2, minutes=5)
-        SystemDateTime(2019-08-13 23:06:00+01:00)
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
         return self.add(
             years=-years,
@@ -4158,8 +3897,8 @@ def _unpkl_system(data: bytes) -> SystemDateTime:
 
 
 @final
-class NaiveDateTime(_KnowsLocal):
-    """A plain datetime without timezone or offset.
+class LocalDateTime(_KnowsLocal):
+    """A local date and time, i.e. it would appear to people on a wall clock.
 
     It can't be mixed with aware datetimes.
     Conversion to aware datetimes can only be done by
@@ -4174,16 +3913,6 @@ class NaiveDateTime(_KnowsLocal):
     - In the rare case you truly don't need to account for timezones,
       or Daylight Saving Time transitions. For example, when modeling
       time in a simulation game.
-
-    Note
-    ----
-    The ISO string format is:
-
-    .. code-block:: text
-
-       YYYY-MM-DDTHH:MM:SS
-
-    Where seconds may be fractional up to nanosecond precision.
     """
 
     def __init__(
@@ -4208,7 +3937,7 @@ class NaiveDateTime(_KnowsLocal):
         )
 
     @classmethod
-    def parse_common_iso(cls, s: str, /) -> NaiveDateTime:
+    def parse_common_iso(cls, s: str, /) -> LocalDateTime:
         """Parse from the commonly used ISO 8601 format
         ``YYYY-MM-DDTHH:MM:SS``, where seconds may be fractional.
 
@@ -4216,10 +3945,10 @@ class NaiveDateTime(_KnowsLocal):
 
         Example
         -------
-        >>> NaiveDateTime.parse_common_iso("2020-08-15T23:12:00")
-        NaiveDateTime(2020-08-15 23:12:00)
+        >>> LocalDateTime.parse_common_iso("2020-08-15T23:12:00")
+        LocalDateTime(2020-08-15 23:12:00)
         """
-        if (match := _match_naive_str(s)) is None:
+        if (match := _match_local_str(s)) is None:
             raise ValueError(f"Invalid format: {s!r}")
         year, month, day, hour, minute, second = map(int, match.groups()[:6])
         nanos = int(match.group(7).ljust(9, "0")) if match.group(7) else 0
@@ -4228,17 +3957,17 @@ class NaiveDateTime(_KnowsLocal):
         )
 
     @classmethod
-    def from_py_datetime(cls, d: _datetime, /) -> NaiveDateTime:
+    def from_py_datetime(cls, d: _datetime, /) -> LocalDateTime:
         if d.tzinfo is not None:
             raise ValueError(
-                "Can only create NaiveDateTime from a naive datetime, "
+                "Can only create LocalDateTime from a naive datetime, "
                 f"got datetime with tzinfo={d.tzinfo!r}"
             )
         return cls._from_py_unchecked(
             _strip_subclasses(d.replace(microsecond=0)), d.microsecond * 1_000
         )
 
-    def replace(self, /, **kwargs: Any) -> NaiveDateTime:
+    def replace(self, /, **kwargs: Any) -> LocalDateTime:
         if not _no_tzinfo_fold_or_ms(kwargs):
             raise TypeError(
                 "tzinfo, fold, or microsecond are not allowed arguments"
@@ -4248,12 +3977,12 @@ class NaiveDateTime(_KnowsLocal):
             raise ValueError("Invalid nanosecond value")
         return self._from_py_unchecked(self._py_dt.replace(**kwargs), nanos)
 
-    def replace_date(self, d: Date, /) -> NaiveDateTime:
+    def replace_date(self, d: Date, /) -> LocalDateTime:
         return self._from_py_unchecked(
             _datetime.combine(d._py_date, self._py_dt.time()), self._nanos
         )
 
-    def replace_time(self, t: Time, /) -> NaiveDateTime:
+    def replace_time(self, t: Time, /) -> LocalDateTime:
         return self._from_py_unchecked(
             _datetime.combine(self._py_dt.date(), t._py_time), t._nanos
         )
@@ -4263,7 +3992,7 @@ class NaiveDateTime(_KnowsLocal):
 
     def __eq__(self, other: object) -> bool:
         """Compare objects for equality.
-        Only ever equal to other :class:`NaiveDateTime` instances with the
+        Only ever equal to other :class:`LocalDateTime` instances with the
         same values.
 
         Warning
@@ -4278,50 +4007,44 @@ class NaiveDateTime(_KnowsLocal):
 
         Example
         -------
-        >>> NaiveDateTime(2020, 8, 15, 23) == NaiveDateTime(2020, 8, 15, 23)
+        >>> LocalDateTime(2020, 8, 15, 23) == LocalDateTime(2020, 8, 15, 23)
         True
-        >>> NaiveDateTime(2020, 8, 15, 23, 1) == NaiveDateTime(2020, 8, 15, 23)
+        >>> LocalDateTime(2020, 8, 15, 23, 1) == LocalDateTime(2020, 8, 15, 23)
         False
-        >>> NaiveDateTime(2020, 8, 15) == Instant.from_utc(2020, 8, 15)
+        >>> LocalDateTime(2020, 8, 15) == Instant.from_utc(2020, 8, 15)
         False  # Use mypy's --strict-equality flag to detect this.
         """
-        if not isinstance(other, NaiveDateTime):
+        if not isinstance(other, LocalDateTime):
             return NotImplemented
         return (self._py_dt, self._nanos) == (other._py_dt, other._nanos)
 
-    MIN: ClassVar[NaiveDateTime]
-    MAX: ClassVar[NaiveDateTime]
+    MIN: ClassVar[LocalDateTime]
+    MAX: ClassVar[LocalDateTime]
 
-    def __lt__(self, other: NaiveDateTime) -> bool:
-        if not isinstance(other, NaiveDateTime):
+    def __lt__(self, other: LocalDateTime) -> bool:
+        if not isinstance(other, LocalDateTime):
             return NotImplemented
         return self._py_dt < other._py_dt
 
-    def __le__(self, other: NaiveDateTime) -> bool:
-        if not isinstance(other, NaiveDateTime):
+    def __le__(self, other: LocalDateTime) -> bool:
+        if not isinstance(other, LocalDateTime):
             return NotImplemented
         return self._py_dt <= other._py_dt
 
-    def __gt__(self, other: NaiveDateTime) -> bool:
-        if not isinstance(other, NaiveDateTime):
+    def __gt__(self, other: LocalDateTime) -> bool:
+        if not isinstance(other, LocalDateTime):
             return NotImplemented
         return self._py_dt > other._py_dt
 
-    def __ge__(self, other: NaiveDateTime) -> bool:
-        if not isinstance(other, NaiveDateTime):
+    def __ge__(self, other: LocalDateTime) -> bool:
+        if not isinstance(other, LocalDateTime):
             return NotImplemented
         return self._py_dt >= other._py_dt
 
-    def __add__(self, delta: Delta) -> NaiveDateTime:
+    def __add__(self, delta: Delta) -> LocalDateTime:
         """Add a delta to this datetime
 
-        Example
-        -------
-        >>> d = NaiveDateTime(2020, 8, 15, hour=23, minute=12)
-        >>> d + hours(24) + seconds(5)
-        NaiveDateTime(2020-08-16 23:12:05)
-        >>> d + years(3) + months(2) + days(1)
-        NaiveDateTime(2023-10-16 23:12:00)
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
         if isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
             delta_secs, nanos = divmod(
@@ -4339,27 +4062,19 @@ class NaiveDateTime(_KnowsLocal):
         return NotImplemented
 
     @overload
-    def __sub__(self, other: NaiveDateTime) -> TimeDelta: ...
+    def __sub__(self, other: LocalDateTime) -> TimeDelta: ...
 
     @overload
-    def __sub__(self, other: Delta) -> NaiveDateTime: ...
+    def __sub__(self, other: Delta) -> LocalDateTime: ...
 
     def __sub__(
-        self, other: Delta | NaiveDateTime
-    ) -> NaiveDateTime | TimeDelta:
+        self, other: Delta | LocalDateTime
+    ) -> LocalDateTime | TimeDelta:
         """Subtract another datetime or time amount
 
-        Example
-        -------
-        >>> d = NaiveDateTime(2020, 8, 15, hour=23, minute=12)
-        >>> d - hours(24) - seconds(5)
-        NaiveDateTime(2020-08-14 23:11:55)
-        >>> d - NaiveDateTime(2020, 8, 14)
-        TimeDelta(47:12:00)
-        >>> d - years(3) - months(2) - days(1) - minutes(5)
-        NaiveDateTime(2017-06-14 23:07:00)
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
-        if isinstance(other, NaiveDateTime):
+        if isinstance(other, LocalDateTime):
             py_delta = self._py_dt - other._py_dt
             return TimeDelta(
                 seconds=py_delta.days * 86_400 + py_delta.seconds,
@@ -4383,19 +4098,10 @@ class NaiveDateTime(_KnowsLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-    ) -> NaiveDateTime:
-        """Add a time amount to this datetime.
+    ) -> LocalDateTime:
+        """Add date and time units to this datetime.
 
-        Units are added from largest to smallest,
-        truncating and/or wrapping after each step.
-
-        Example
-        -------
-        >>> d = NaiveDateTime(2020, 8, 15, hour=23, minute=12)
-        >>> d.add(hours=24, seconds=5)
-        NaiveDateTime(2020-08-16 23:12:05)
-        >>> d.add(years=1, days=2, minutes=5)
-        NaiveDateTime(2021-08-17 23:17:00)
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
         return self.replace_date(
             self.date()
@@ -4423,19 +4129,10 @@ class NaiveDateTime(_KnowsLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-    ) -> NaiveDateTime:
-        """Subtract a time amount from this datetime.
+    ) -> LocalDateTime:
+        """Subtract date and time units from this datetime.
 
-        Units are subtracted from largest to smallest,
-        wrapping and/or truncating after each step.
-
-        Example
-        -------
-        >>> d = NaiveDateTime(2020, 8, 15, hour=23, minute=12)
-        >>> d.subtract(hours=24, seconds=5)
-        NaiveDateTime(2020-08-14 23:11:55)
-        >>> d.subtract(years=1, days=2, minutes=5)
-        NaiveDateTime(2019-08-13 23:06:00)
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
         return self.add(
             years=-years,
@@ -4451,14 +4148,14 @@ class NaiveDateTime(_KnowsLocal):
         )
 
     @classmethod
-    def strptime(cls, s: str, /, fmt: str) -> NaiveDateTime:
+    def strptime(cls, s: str, /, fmt: str) -> LocalDateTime:
         """Simple alias for
-        ``NaiveDateTime.from_py_datetime(datetime.strptime(s, fmt))``
+        ``LocalDateTime.from_py_datetime(datetime.strptime(s, fmt))``
 
         Example
         -------
-        >>> NaiveDateTime.strptime("2020-08-15", "%Y-%m-%d")
-        NaiveDateTime(2020-08-15 00:00:00)
+        >>> LocalDateTime.strptime("2020-08-15", "%Y-%m-%d")
+        LocalDateTime(2020-08-15 00:00:00)
 
         Note
         ----
@@ -4482,7 +4179,7 @@ class NaiveDateTime(_KnowsLocal):
 
         Example
         -------
-        >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_utc()
+        >>> LocalDateTime(2020, 8, 15, 23, 12).assume_utc()
         Instant(2020-08-15 23:12:00Z)
         """
         return Instant._from_py_unchecked(
@@ -4497,7 +4194,7 @@ class NaiveDateTime(_KnowsLocal):
 
         Example
         -------
-        >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_fixed_offset(+2)
+        >>> LocalDateTime(2020, 8, 15, 23, 12).assume_fixed_offset(+2)
         OffsetDateTime(2020-08-15 23:12:00+02:00)
         """
         return OffsetDateTime._from_py_unchecked(
@@ -4512,7 +4209,7 @@ class NaiveDateTime(_KnowsLocal):
 
         Example
         -------
-        >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_tz("Europe/Amsterdam")
+        >>> LocalDateTime(2020, 8, 15, 23, 12).assume_tz("Europe/Amsterdam")
         ZonedDateTime(2020-08-15 23:12:00+02:00[Europe/Amsterdam])
         """
         return ZonedDateTime._from_py_unchecked(
@@ -4535,7 +4232,7 @@ class NaiveDateTime(_KnowsLocal):
         Example
         -------
         >>> # assuming system timezone is America/New_York
-        >>> NaiveDateTime(2020, 8, 15, 23, 12).assume_system_tz()
+        >>> LocalDateTime(2020, 8, 15, 23, 12).assume_system_tz()
         SystemDateTime(2020-08-15 23:12:00-04:00)
         """
         return SystemDateTime._from_py_unchecked(
@@ -4547,12 +4244,12 @@ class NaiveDateTime(_KnowsLocal):
         )
 
     def __repr__(self) -> str:
-        return f"NaiveDateTime({str(self).replace('T', ' ')})"
+        return f"LocalDateTime({str(self).replace('T', ' ')})"
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
         return (
-            _unpkl_naive,
+            _unpkl_local,
             (pack("<HBBBBBI", *self._py_dt.timetuple()[:6], self._nanos),),
         )
 
@@ -4560,11 +4257,12 @@ class NaiveDateTime(_KnowsLocal):
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
 @no_type_check
-def _unpkl_naive(data: bytes) -> NaiveDateTime:
+def _unpkl_local(data: bytes) -> LocalDateTime:
     *args, nanos = unpack("<HBBBBBI", data)
-    return NaiveDateTime._from_py_unchecked(_datetime(*args), nanos)
+    return LocalDateTime._from_py_unchecked(_datetime(*args), nanos)
 
 
+# RepeatedTime
 class AmbiguousTime(Exception):
     """A datetime is unexpectedly ambiguous"""
 
@@ -4670,7 +4368,7 @@ _DT_RE_GROUPED = r"(\d{4})-([0-2]\d)-([0-3]\d)T([0-2]\d):([0-5]\d):([0-5]\d)(?:\
 _OFFSET_DATETIME_RE = (
     _DT_RE_GROUPED + r"(?:([+-])(\d{2}):(\d{2})(?::(\d{2}))?|Z)"
 )
-_match_naive_str = re.compile(_DT_RE_GROUPED, re.ASCII).fullmatch
+_match_local_str = re.compile(_DT_RE_GROUPED, re.ASCII).fullmatch
 _match_offset_str = re.compile(_OFFSET_DATETIME_RE, re.ASCII).fullmatch
 _match_zoned_str = re.compile(
     _OFFSET_DATETIME_RE + r"\[([^\]]{1,255})\]", re.ASCII
@@ -4764,8 +4462,8 @@ Instant.MAX = Instant._from_py_unchecked(
     _datetime.max.replace(tzinfo=_UTC, microsecond=0),
     999_999_999,
 )
-NaiveDateTime.MIN = NaiveDateTime._from_py_unchecked(_datetime.min, 0)
-NaiveDateTime.MAX = NaiveDateTime._from_py_unchecked(
+LocalDateTime.MIN = LocalDateTime._from_py_unchecked(_datetime.min, 0)
+LocalDateTime.MAX = LocalDateTime._from_py_unchecked(
     _datetime.max.replace(microsecond=0), 999_999_999
 )
 Disambiguate = Literal["compatible", "earlier", "later", "raise"]
@@ -4878,7 +4576,7 @@ for _unpkl in (
     _unpkl_offset,
     _unpkl_zoned,
     _unpkl_system,
-    _unpkl_naive,
+    _unpkl_local,
 ):
     _unpkl.__module__ = "whenever"
 

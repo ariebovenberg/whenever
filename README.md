@@ -145,8 +145,8 @@ ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
 >>> Instant.now() > livestream_start
 True
 
-# 'Naive' local time can't accidentally mix with aware types.
-# You need to explicitly make it aware.
+# A 'Naive' local time can't accidentally mix with other types.
+# You need to explicitly convert it.
 >>> hackathon_invite = LocalDateTime(2023, 10, 28, hour=12)
 >>> hackathon_start = hackathon_invite.assume_tz("Europe/Amsterdam")
 ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])

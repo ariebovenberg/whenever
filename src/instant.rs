@@ -8,7 +8,7 @@ use crate::datetime_delta::handle_exact_unit;
 use crate::time_delta::{MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS};
 use crate::{
     date::{self, Date},
-    naive_datetime::DateTime,
+    local_datetime::DateTime,
     offset_datetime::{self, OffsetDateTime},
     time::Time,
     time_delta::TimeDelta,
@@ -538,38 +538,6 @@ unsafe fn now(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
     }
 }
 
-unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
-    let module = State::for_type(cls.cast());
-    if args.len() != 2 {
-        Err(type_err!("strptime() takes exactly 2 arguments"))?;
-    }
-    // OPTIMIZE: get this working with vectorcall
-    let parsed =
-        PyObject_Call(module.strptime, steal!((args[0], args[1]).to_py()?), NULL()).as_result()?;
-    defer_decref!(parsed);
-    let tzinfo = get_dt_tzinfo(parsed);
-    if !(tzinfo == Py_None() || tzinfo == module.py_api.TimeZone_UTC) {
-        Err(value_err!(
-            "datetime must have UTC tzinfo, but got {}",
-            tzinfo.repr()
-        ))?;
-    }
-    Instant {
-        secs: Date::new_unchecked(
-            PyDateTime_GET_YEAR(parsed) as u16,
-            PyDateTime_GET_MONTH(parsed) as u8,
-            PyDateTime_GET_DAY(parsed) as u8,
-        )
-        .ord() as i64
-            * 86_400
-            + i64::from(PyDateTime_DATE_GET_HOUR(parsed)) * 3_600
-            + i64::from(PyDateTime_DATE_GET_MINUTE(parsed)) * 60
-            + i64::from(PyDateTime_DATE_GET_SECOND(parsed)),
-        nanos: PyDateTime_DATE_GET_MICROSECOND(parsed) as u32 * 1_000,
-    }
-    .to_obj(cls.cast())
-}
-
 unsafe fn parse_rfc3339(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let s = &mut s_obj.to_utf8()?.ok_or_type_err("Expected a string")?;
     let raise = || value_err!("Invalid RFC 3339 format: {}", s_obj.repr());
@@ -850,11 +818,6 @@ static mut METHODS: &[PyMethodDef] = &[
         now,
         "Create an instance from the current time",
         METH_CLASS | METH_NOARGS
-    ),
-    method_vararg!(
-        strptime,
-        "Create an instance from a strptime result",
-        METH_CLASS
     ),
     method!(format_rfc3339, "Format in the RFC3339 format"),
     method!(

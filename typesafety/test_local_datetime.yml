@@ -1,0 +1,28 @@
+- case: ymd_arguments
+  regex: true
+  main: |
+    from whenever import LocalDateTime
+    d = LocalDateTime(2020, 8, 9)
+    d = LocalDateTime(2020, 8, '15')  # E: .*incompatible type "str".* "int"
+- case: strict_equality
+  regex: true
+  main: |
+    from whenever import LocalDateTime, Instant
+    d = LocalDateTime(2020, 8, 9)
+    d == 3  # E: .*comparison.*
+    d == Instant.from_utc(2020, 8, 9)  # E: .*comparison.*
+- case: addition
+  regex: true
+  main: |
+    from whenever import LocalDateTime, hours
+    d = LocalDateTime(2020, 8, 9)
+    reveal_type(d + hours(4))  # N: .*whenever.LocalDateTime
+    d + 12  # E: .*Unsupported
+
+- case: subtraction
+  regex: true
+  main: |
+    from whenever import LocalDateTime, hours
+    d = LocalDateTime(2020, 8, 9)
+    reveal_type(d - hours(4))  # N: .*type is "whenever.LocalDateTime"
+    reveal_type(d - d)  # N: .*type is "whenever.TimeDelta

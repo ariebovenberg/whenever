@@ -9,7 +9,7 @@ from hypothesis.strategies import text
 from whenever import (
     Date,
     Instant,
-    NaiveDateTime,
+    LocalDateTime,
     OffsetDateTime,
     SystemDateTime,
     Time,
@@ -864,9 +864,9 @@ def test_to_system_tz():
             big_dt.to_system_tz()
 
 
-def test_naive():
+def test_local():
     d = OffsetDateTime(2020, 8, 15, 20, nanosecond=1, offset=3)
-    assert d.naive() == NaiveDateTime(2020, 8, 15, 20, nanosecond=1)
+    assert d.local() == LocalDateTime(2020, 8, 15, 20, nanosecond=1)
 
 
 @pytest.mark.parametrize(
