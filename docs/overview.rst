@@ -1,7 +1,7 @@
 .. _overview:
 
 ⭐️ Main features
-================
+=================
 
 This page gives an overview of **whenever**'s main features for working 
 with date and time.
@@ -343,12 +343,12 @@ You can convert from local datetimes with the :meth:`~whenever.LocalDateTime.ass
 >>> n = LocalDateTime(2023, 12, 28, 11, 30)
 >>> n.assume_utc()
 Instant(2023-12-28 11:30:00Z)
->>> n.assume_tz("Europe/Amsterdam")
+>>> n.assume_tz("Europe/Amsterdam", disambiguate="compatible")
 ZonedDateTime(2023-12-28 11:30:00+01:00[Europe/Amsterdam])
 
 .. note::
 
-   The seemingly inconsistent naming of the ``assume_*`` methods is intentional. The ``assume_*`` methods
+   The seemingly inconsistent naming of the ``to_*`` and ``assume_*`` methods is intentional. The ``assume_*`` methods
    emphasize that the conversion is not self-evident, but based on assumptions
    of the developer.
 
@@ -385,7 +385,7 @@ You can add or subtract various units of time from a datetime instance.
 >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
 >>> d.add(hours=5, minutes=30)
 ZonedDateTime(2023-12-28 17:00:00+01:00[Europe/Amsterdam])
->>> d.subtract(days=1)  # 1 day earlier
+>>> d.subtract(days=1, disambiguate="compatible")  # 1 day earlier
 ZonedDateTime(2023-12-27 11:30:00+01:00[Europe/Amsterdam])
 
 Adding/subtracting takes into account timezone changes (e.g. daylight saving time)
@@ -398,6 +398,8 @@ This means:
   time of day the same across DST changes.
   This is because you'd expect that rescheduling a 10am appointment "a day later"
   will still be at 10am, regardless of a DST change overnight.
+  However, because the new time may be repeated or skipped,
+  ``disambiguate`` is required for calendar units.
 - Precise time units (hours, minutes, and seconds) account for DST changes.
 
 .. seealso::
@@ -447,7 +449,7 @@ You choose the disambiguation behavior you want with the ``disambiguate=`` argum
 | ``disambiguate`` | Behavior in case of ambiguity                   |
 +==================+=================================================+
 | ``"raise"``      | (default) Refuse to guess:                      |
-|                  | raise :exc:`~whenever.AmbiguousTime`            |
+|                  | raise :exc:`~whenever.RepeatedTime`             |
 |                  | or :exc:`~whenever.SkippedTime` exception.      |
 +------------------+-------------------------------------------------+
 | ``"earlier"``    | Choose the earlier of the two options           |
@@ -474,9 +476,9 @@ You choose the disambiguation behavior you want with the ``disambiguate=`` argum
     >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris)
     Traceback (most recent call last):
       ...
-    whenever.AmbiguousTime: 2023-10-29 02:30:00 is ambiguous in timezone Europe/Paris
+    whenever.RepeatedTime: 2023-10-29 02:30:00 is repeated in timezone Europe/Paris
 
-    >>> # Ambiguous: explicitly choose the earlier option
+    >>> # Repeated: explicitly choose the earlier option
     >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="earlier")
     ZoneDateTime(2023-10-29 02:30:00+01:00[Europe/Paris])
 
@@ -642,13 +644,9 @@ or :meth:`~whenever.LocalDateTime.assume_system_tz`
 methods to convert them.
 This makes it explicit what information is being assumed.
 
->>> LocalDateTime.strptime("2023-01-01 12:00", "%Y-%m-%d %H:%M").assume_system_tz()
-SystemDateTime(2023-01-01 12:00:00+01:00)
+>>> d = LocalDateTime.strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S")
 >>> # handling ambiguity
->>> LocalDateTime.strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S").assume_tz(
-...     "Europe/Amsterdam",
-...     disambiguate="earlier",
-... )
+>>> d.assume_tz("Europe/Amsterdam", disambiguate="earlier")
 ZonedDateTime(2023-10-29 02:30:00+02:00[Europe/Amsterdam])
 
 .. admonition:: Future plans

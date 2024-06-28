@@ -408,7 +408,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     state.str_disambiguate = PyUnicode_InternFromString(c"disambiguate".as_ptr());
     state.str_offset = PyUnicode_InternFromString(c"offset".as_ptr());
 
-    state.exc_ambiguous = new_exc(module, c"whenever.AmbiguousTime");
+    state.exc_repeated = new_exc(module, c"whenever.RepeatedTime");
     state.exc_skipped = new_exc(module, c"whenever.SkippedTime");
     state.exc_invalid_offset = new_exc(module, c"whenever.InvalidOffset");
 
@@ -502,7 +502,7 @@ unsafe extern "C" fn module_traverse(
     }
 
     // exceptions
-    do_visit(state.exc_ambiguous, visit, arg);
+    do_visit(state.exc_repeated, visit, arg);
     do_visit(state.exc_skipped, visit, arg);
     do_visit(state.exc_invalid_offset, visit, arg);
 
@@ -540,7 +540,7 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR(ptr::addr_of_mut!(state.weekday_enum_members[6]));
 
     // exceptions
-    Py_CLEAR(ptr::addr_of_mut!(state.exc_ambiguous));
+    Py_CLEAR(ptr::addr_of_mut!(state.exc_repeated));
     Py_CLEAR(ptr::addr_of_mut!(state.exc_skipped));
     Py_CLEAR(ptr::addr_of_mut!(state.exc_invalid_offset));
 
@@ -571,7 +571,7 @@ struct State {
     weekday_enum_members: [*mut PyObject; 7],
 
     // exceptions
-    exc_ambiguous: *mut PyObject,
+    exc_repeated: *mut PyObject,
     exc_skipped: *mut PyObject,
     exc_invalid_offset: *mut PyObject,
 

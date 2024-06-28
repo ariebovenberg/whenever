@@ -14,6 +14,7 @@ from whenever import (
     SystemDateTime,
     ZonedDateTime,
     hours,
+    minutes,
     nanoseconds,
     seconds,
 )
@@ -30,7 +31,12 @@ from .common import (
 BIG_INT = 1 << 64 + 1  # a big int that may cause an overflow error
 
 
-class TestInit:
+def test_no_init():
+    with pytest.raises(TypeError, match="cannot"):
+        Instant()
+
+
+class TestFromUTC:
     def test_defaults(self):
         assert Instant.from_utc(2020, 8, 15) == Instant.from_utc(
             2020, 8, 15, 0, 0, 0, nanosecond=0
@@ -368,8 +374,8 @@ class TestComparison:
         d = Instant.from_utc(2020, 8, 15, 12, 30)
 
         sys_eq = d.to_system_tz()
-        sys_gt = sys_eq.replace(minute=31)
-        sys_lt = sys_eq.replace(minute=29)
+        sys_gt = sys_eq + minutes(1)
+        sys_lt = sys_eq - minutes(1)
         assert d >= sys_eq
         assert d <= sys_eq
         assert not d > sys_eq

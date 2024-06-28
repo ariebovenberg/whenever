@@ -57,6 +57,7 @@ from typing import (
     ClassVar,
     Literal,
     Mapping,
+    Optional,
     TypeVar,
     Union,
     no_type_check,
@@ -89,7 +90,7 @@ __all__ = [
     "nanoseconds",
     # Exceptions
     "SkippedTime",
-    "AmbiguousTime",
+    "RepeatedTime",
     "InvalidOffset",
     # Constants
     "MONDAY",
@@ -2024,7 +2025,7 @@ class _KnowsLocal(_BasicConversions, ABC):
         like :meth:`~LocalDateTime.assume_utc` or
         :meth:`~LocalDateTime.assume_tz`:
 
-        >>> date.at(time).assume_tz("Europe/London")
+        >>> date.at(time).assume_tz("Europe/London", disambiguate="compatible")
         """
         return Date._from_py_unchecked(self._py_dt.date())
 
@@ -2046,48 +2047,52 @@ class _KnowsLocal(_BasicConversions, ABC):
         """
         return Time._from_py_unchecked(self._py_dt.time(), self._nanos)
 
-    @abstractmethod
-    def replace(self: _T, /, **kwargs: Any) -> _T:
-        """Construct a new instance with the given fields replaced.
-
-        Arguments are the same as the constructor,
-        but only keyword arguments are allowed.
-
-        Note
-        ----
-        If you need to shift the datetime by a duration,
-        use the addition and subtraction operators instead.
-        These account for daylight saving time and other complications.
-
-        Warning
-        -------
-        The same exceptions as the constructor may be raised.
-        For system and zoned datetimes,
-        you will need to pass ``disambiguate=`` to resolve ambiguities.
-
-        Example
-        -------
-        >>> d = Instant.from_utc(2020, 8, 15, 23, 12)
-        >>> d.replace(year=2021)
-        Instant(2021-08-15T23:12:00)
-        >>>
-        >>> z = ZonedDateTime(2020, 8, 15, 23, 12, tz="Europe/London")
-        >>> z.replace(year=2021, disambiguate="later")
-        ZonedDateTime(2021-08-15T23:12:00+01:00)
-        """
-
     # We document these methods as abtract,
     # but they are actually implemented slightly different per subclass
-    if not TYPE_CHECKING:
+    if not TYPE_CHECKING:  # pragma: no cover
+
+        @abstractmethod
+        def replace(self: _T, /, **kwargs: Any) -> _T:
+            """Construct a new instance with the given fields replaced.
+
+            Arguments are the same as the constructor,
+            but only keyword arguments are allowed.
+
+            Note
+            ----
+            If you need to shift the datetime by a duration,
+            use the addition and subtraction operators instead.
+            These account for daylight saving time and other complications.
+
+            Warning
+            -------
+            The same exceptions as the constructor may be raised.
+            For system and zoned datetimes,
+            The ``disambiguate=`` keyword argument is **required** to
+            resolve ambiguities.
+
+            Example
+            -------
+            >>> d = Instant.from_utc(2020, 8, 15, 23, 12)
+            >>> d.replace(year=2021)
+            Instant(2021-08-15T23:12:00)
+            >>>
+            >>> z = ZonedDateTime(2020, 8, 15, 23, 12, tz="Europe/London")
+            >>> z.replace(year=2021, disambiguate="raise")
+            ZonedDateTime(2021-08-15T23:12:00+01:00)
+            """
 
         def replace_date(self: _T, date: Date, /, **kwargs) -> _T:
             """Create a new instance with the date replaced
 
             Example
             -------
-            >>> d = OffsetDateTime(2020, 8, 15, offset=-4)
+            >>> d = LocalDateTime(2020, 8, 15, hour=4)
             >>> d.replace_date(Date(2021, 1, 1))
-            OffsetDateTime(2021-01-01T00:00:00-04:00)
+            LocalDateTime(2021-01-01T04:00:00)
+            >>> zdt = ZonedDateTime.now("Europe/London")
+            >>> zdt.replace_date(Date(2021, 1, 1), disambiguate="raise"))
+            ZonedDateTime(2021-01-01T13:00:00.23439+00:00[Europe/London])
 
             Warning
             -------
@@ -2101,9 +2106,12 @@ class _KnowsLocal(_BasicConversions, ABC):
 
             Example
             -------
-            >>> d = OffsetDateTime(2020, 8, 15, offset=-12)
+            >>> d = LocalDateTime(2020, 8, 15, hour=4)
             >>> d.replace_time(Time(12, 30))
-            OffsetDateTime(2020-08-15T12:30:00-12:00)
+            LocalDateTime(2020-08-15T12:30:00)
+            >>> zdt = ZonedDateTime.now("Europe/London")
+            >>> zdt.replace_time(Time(12, 30), disambiguate="raise")
+            ZonedDateTime(2024-06-15T12:30:00+01:00[Europe/London])
 
             Warning
             -------
@@ -2130,7 +2138,7 @@ class _KnowsInstant(_BasicConversions):
 
     # These methods aren't strictly abstract (they don't follow LSP),
     # but we do document them here.
-    if not TYPE_CHECKING:
+    if not TYPE_CHECKING:  # pragma: no cover
 
         @classmethod
         def now(cls: type[_T], **kwargs) -> _T:
@@ -2192,16 +2200,10 @@ class _KnowsInstant(_BasicConversions):
         @classmethod
         def from_timestamp_millis(cls: type[_T], i: int, /, **kwargs) -> _T:
             """Like :meth:`from_timestamp`, but for milliseconds."""
-            secs, millis = divmod(i, 1_000)
-            return cls._from_py_unchecked(
-                _fromtimestamp(secs, _UTC), millis * 1_000_000
-            )
 
         @classmethod
         def from_timestamp_nanos(cls: type[_T], i: int, /, **kwargs) -> _T:
             """Like :meth:`from_timestamp`, but for nanoseconds."""
-            secs, nanos = divmod(i, 1_000_000_000)
-            return cls._from_py_unchecked(_fromtimestamp(secs, _UTC), nanos)
 
     @overload
     def to_fixed_offset(self, /) -> OffsetDateTime: ...
@@ -2420,9 +2422,14 @@ class _KnowsInstantAndLocal(_KnowsLocal, _KnowsInstant):
     __slots__ = ()
 
     @property
-    @abstractmethod
     def offset(self) -> TimeDelta:
         """The UTC offset of the datetime"""
+        return TimeDelta._from_nanos_unchecked(
+            int(
+                self._py_dt.utcoffset().total_seconds()  # type: ignore[union-attr]
+                * 1_000_000_000
+            )
+        )
 
     def instant(self) -> Instant:
         """Get the underlying instant
@@ -3048,15 +3055,6 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
 
-    @property
-    def offset(self) -> TimeDelta:
-        return TimeDelta._from_nanos_unchecked(
-            int(
-                self._py_dt.utcoffset().total_seconds()  # type: ignore[union-attr]
-                * 1_000_000_000
-            )
-        )
-
     def __sub__(self, other: _KnowsInstant) -> TimeDelta:
         """Subtract another datetime to get the duration between them
 
@@ -3356,6 +3354,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
             _fromtimestamp(secs, ZoneInfo(tz)), nanos
         )
 
+    # FUTURE: optional `disambiguate` to override fold?
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> ZonedDateTime:
         if type(d.tzinfo) is not ZoneInfo:
@@ -3371,7 +3370,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         )
 
     def replace_date(
-        self, date: Date, /, disambiguate: Disambiguate = "raise"
+        self, date: Date, /, disambiguate: Disambiguate
     ) -> ZonedDateTime:
         return self._from_py_unchecked(
             _resolve_ambuguity(
@@ -3386,7 +3385,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         )
 
     def replace_time(
-        self, time: Time, /, disambiguate: Disambiguate = "raise"
+        self, time: Time, /, disambiguate: Disambiguate
     ) -> ZonedDateTime:
         return self._from_py_unchecked(
             _resolve_ambuguity(
@@ -3401,7 +3400,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         )
 
     def replace(
-        self, /, disambiguate: Disambiguate = "raise", **kwargs: Any
+        self, /, disambiguate: Disambiguate, **kwargs: Any
     ) -> ZonedDateTime:
         _check_invalid_replace_kwargs(kwargs)
         try:
@@ -3424,10 +3423,6 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def tz(self) -> str:
         """The timezone ID"""
         return self._py_dt.tzinfo.key  # type: ignore[union-attr,no-any-return]
-
-    @property
-    def offset(self) -> TimeDelta:
-        return TimeDelta.from_py_timedelta(self._py_dt.utcoffset())  # type: ignore[arg-type]
 
     def __hash__(self) -> int:
         return hash((self._py_dt.astimezone(_UTC), self._nanos))
@@ -3489,7 +3484,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Disambiguate = "raise",
+        disambiguate: Optional[Disambiguate] = None,
     ) -> ZonedDateTime:
         """Add a date and time units to this datetime.
 
@@ -3498,6 +3493,11 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         months_total = years * 12 + months
         days_total = weeks * 7 + days
         if months_total or days_total:
+            if disambiguate is None:
+                raise TypeError(
+                    "'disambiguate' keyword argument must be provided when "
+                    "adding/subtracting calendar units"
+                )
             self = self.replace_date(
                 self.date()._add_months(months_total)._add_days(days_total),
                 disambiguate=disambiguate,
@@ -3524,7 +3524,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Disambiguate = "raise",
+        disambiguate: Optional[Disambiguate] = None,
     ) -> ZonedDateTime:
         """Subtract date and time units from this datetime.
 
@@ -3698,14 +3698,10 @@ class SystemDateTime(_KnowsInstantAndLocal):
     def __repr__(self) -> str:
         return f"SystemDateTime({str(self).replace('T', ' ')})"
 
-    @property
-    def offset(self) -> TimeDelta:
-        return TimeDelta.from_py_timedelta(self._py_dt.utcoffset())  # type: ignore[arg-type]
-
     # FUTURE: expose the tzname?
 
     def replace_date(
-        self, date: Date, /, disambiguate: Disambiguate = "raise"
+        self, date: Date, /, disambiguate: Disambiguate
     ) -> SystemDateTime:
         """Create a new instance with the same time, but a different date.
 
@@ -3726,7 +3722,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         )
 
     def replace_time(
-        self, time: Time, /, disambiguate: Disambiguate = "raise"
+        self, time: Time, /, disambiguate: Disambiguate
     ) -> SystemDateTime:
         """Create a new instance with the same date, but a different time.
 
@@ -3747,7 +3743,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         )
 
     def replace(
-        self, /, disambiguate: Disambiguate = "raise", **kwargs: Any
+        self, /, disambiguate: Disambiguate, **kwargs: Any
     ) -> SystemDateTime:
         _check_invalid_replace_kwargs(kwargs)
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
@@ -3816,7 +3812,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Disambiguate = "raise",
+        disambiguate: Optional[Disambiguate] = None,
     ) -> SystemDateTime:
         """Add date and time units to this datetime.
 
@@ -3825,6 +3821,11 @@ class SystemDateTime(_KnowsInstantAndLocal):
         months_total = years * 12 + months
         days_total = weeks * 7 + days
         if months_total or days_total:
+            if disambiguate is None:
+                raise TypeError(
+                    "'disambiguate' keyword argument must be provided when "
+                    "adding/subtracting calendar units"
+                )
             self = self.replace_date(
                 self.date()._add_months(months_total)._add_days(days_total),
                 disambiguate=disambiguate,
@@ -4202,14 +4203,15 @@ class LocalDateTime(_KnowsLocal):
         )
 
     def assume_tz(
-        self, tz: str, /, disambiguate: Disambiguate = "raise"
+        self, tz: str, /, disambiguate: Disambiguate
     ) -> ZonedDateTime:
         """Assume the datetime is in the given timezone,
         creating a :class:`~whenever.ZonedDateTime` instance.
 
         Example
         -------
-        >>> LocalDateTime(2020, 8, 15, 23, 12).assume_tz("Europe/Amsterdam")
+        >>> d = LocalDateTime(2020, 8, 15, 23, 12)
+        >>> d.assume_tz("Europe/Amsterdam", disambiguate="raise")
         ZonedDateTime(2020-08-15 23:12:00+02:00[Europe/Amsterdam])
         """
         return ZonedDateTime._from_py_unchecked(
@@ -4223,16 +4225,15 @@ class LocalDateTime(_KnowsLocal):
             self._nanos,
         )
 
-    def assume_system_tz(
-        self, disambiguate: Disambiguate = "raise"
-    ) -> SystemDateTime:
+    def assume_system_tz(self, disambiguate: Disambiguate) -> SystemDateTime:
         """Assume the datetime is in the system timezone,
         creating a :class:`~whenever.SystemDateTime` instance.
 
         Example
         -------
+        >>> d = LocalDateTime(2020, 8, 15, 23, 12)
         >>> # assuming system timezone is America/New_York
-        >>> LocalDateTime(2020, 8, 15, 23, 12).assume_system_tz()
+        >>> d.assume_system_tz(disambiguate="raise")
         SystemDateTime(2020-08-15 23:12:00-04:00)
         """
         return SystemDateTime._from_py_unchecked(
@@ -4263,19 +4264,19 @@ def _unpkl_local(data: bytes) -> LocalDateTime:
 
 
 # RepeatedTime
-class AmbiguousTime(Exception):
+class RepeatedTime(Exception):
     """A datetime is unexpectedly ambiguous"""
 
     @classmethod
-    def _for_tz(cls, d: _datetime, tz: ZoneInfo) -> AmbiguousTime:
+    def _for_tz(cls, d: _datetime, tz: ZoneInfo) -> RepeatedTime:
         return cls(
-            f"{d.replace(tzinfo=None)} is ambiguous " f"in timezone {tz.key!r}"
+            f"{d.replace(tzinfo=None)} is repeated " f"in timezone {tz.key!r}"
         )
 
     @classmethod
-    def _for_system_tz(cls, d: _datetime) -> AmbiguousTime:
+    def _for_system_tz(cls, d: _datetime) -> RepeatedTime:
         return cls(
-            f"{d.replace(tzinfo=None)} is ambiguous in the system timezone"
+            f"{d.replace(tzinfo=None)} is repeated in the system timezone"
         )
 
 
@@ -4315,7 +4316,7 @@ def _resolve_ambuguity(
         dt = dt.astimezone(_UTC).astimezone(zone)
     # Ambiguous times: they're never equal to other timezones
     elif disambiguate == "raise" and dt_utc != dt:
-        raise AmbiguousTime._for_tz(dt, zone)
+        raise RepeatedTime._for_tz(dt, zone)
     return dt
 
 
@@ -4343,7 +4344,7 @@ def _resolve_system_ambiguity(
     elif disambiguate == "raise" and norm != dt.replace(fold=1).astimezone(
         _UTC
     ):
-        raise AmbiguousTime._for_system_tz(dt)
+        raise RepeatedTime._for_system_tz(dt)
     return norm
 
 

@@ -668,7 +668,7 @@ unsafe fn assume_tz(
         str_disambiguate,
         zoned_datetime_type,
         exc_skipped,
-        exc_ambiguous,
+        exc_repeated,
         ..
     } = State::for_type(cls);
     let DateTime { date, time } = DateTime::extract(slf);
@@ -685,8 +685,8 @@ unsafe fn assume_tz(
     ZonedDateTime::from_local(py_api, date, time, zoneinfo, dis)?
         .map_err(|e| match e {
             Ambiguity::Fold => py_err!(
-                exc_ambiguous,
-                "{} {} is ambiguous in the timezone {}",
+                exc_repeated,
+                "{} {} is repeated in the timezone {}",
                 date,
                 time,
                 tz.repr()
@@ -713,7 +713,7 @@ unsafe fn assume_system_tz(
         str_disambiguate,
         system_datetime_type,
         exc_skipped,
-        exc_ambiguous,
+        exc_repeated,
         ..
     } = State::for_type(cls);
     let DateTime { date, time } = DateTime::extract(slf);
@@ -727,8 +727,8 @@ unsafe fn assume_system_tz(
     OffsetDateTime::from_system_tz(py_api, date, time, dis)?
         .map_err(|e| match e {
             Ambiguity::Fold => py_err!(
-                exc_ambiguous,
-                "{} {} is ambiguous in the system timezone",
+                exc_repeated,
+                "{} {} is repeated in the system timezone",
                 date,
                 time,
             ),

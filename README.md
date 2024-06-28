@@ -146,9 +146,9 @@ ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
 True
 
 # A 'Naive' local time can't accidentally mix with other types.
-# You need to explicitly convert it.
+# You need to explicitly convert it and handle ambiguity.
 >>> hackathon_invite = LocalDateTime(2023, 10, 28, hour=12)
->>> hackathon_start = hackathon_invite.assume_tz("Europe/Amsterdam")
+>>> hackathon_start = hackathon_invite.assume_tz("Europe/Amsterdam", disambiguate="earlier")
 ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])
 
 # DST-safe arithmetic
@@ -176,8 +176,9 @@ or [API reference](https://whenever.readthedocs.io/en/latest/api.html).
   - ✅ Date and time of day (separate from datetime)
   - ✅ Implement Rust extension for performance
   - 🚧 Parsing leap seconds
-  - 🚧 Intervals
   - 🚧 Improved parsing and formatting
+  - 🚧 More helpful error messages
+  - 🚧 Intervals
 - 🔒 **1.0**: API stability and backwards compatibility
 
 ## Limitations
@@ -202,7 +203,7 @@ will help you adjust to any API changes.
 
 This project is inspired by the following projects. Check them out!
 
-- [Noda Time](https://nodatime.org/)
+- [Noda Time](https://nodatime.org/) and [Joda Time](https://www.joda.org/joda-time/)
 - [Temporal](https://tc39.es/proposal-temporal/docs/)
 - [Chrono](https://docs.rs/chrono/latest/chrono/)
 

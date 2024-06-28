@@ -100,7 +100,7 @@ impl Instant {
 unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
     let &State {
         py_api,
-        exc_ambiguous,
+        exc_repeated,
         exc_skipped,
         str_raise,
         ..
@@ -150,8 +150,8 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     OffsetDateTime::from_system_tz(py_api, date, time, dis)?
         .map_err(|e| match e {
             Ambiguity::Fold => py_err!(
-                exc_ambiguous,
-                "{} {} is ambiguous in the system timezone",
+                exc_repeated,
+                "{} {} is repeated in the system timezone",
                 date,
                 time
             ),
@@ -402,7 +402,7 @@ unsafe fn replace_date(
         py_api,
         str_disambiguate,
         exc_skipped,
-        exc_ambiguous,
+        exc_repeated,
         ..
     } = State::for_obj(slf);
 
@@ -413,24 +413,24 @@ unsafe fn replace_date(
         ))?
     }
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_date")?;
     if Py_TYPE(args[0]) == date_type {
-        match OffsetDateTime::from_system_tz(
+        OffsetDateTime::from_system_tz(
             py_api,
             Date::extract(args[0]),
             OffsetDateTime::extract(slf).time(),
-            dis,
-        )? {
-            Ok(d) => d.to_obj(cls),
-            Err(Ambiguity::Fold) => Err(py_err!(
-                exc_ambiguous,
-                "The new datetime is ambiguous in the current timezone"
-            )),
-            Err(Ambiguity::Gap) => Err(py_err!(
+            Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_date")?,
+        )?
+        .map_err(|e| match e {
+            Ambiguity::Fold => py_err!(
+                exc_repeated,
+                "The new datetime is repeated in the current timezone"
+            ),
+            Ambiguity::Gap => py_err!(
                 exc_skipped,
                 "The new datetime is skipped in the current timezone"
-            )),
-        }
+            ),
+        })?
+        .to_obj(cls)
     } else {
         Err(type_err!("date must be a Date instance"))
     }
@@ -447,7 +447,7 @@ unsafe fn replace_time(
         py_api,
         str_disambiguate,
         exc_skipped,
-        exc_ambiguous,
+        exc_repeated,
         ..
     } = State::for_obj(slf);
 
@@ -458,24 +458,24 @@ unsafe fn replace_time(
         ));
     }
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_time")?;
     if Py_TYPE(args[0]) == time_type {
-        match OffsetDateTime::from_system_tz(
+        OffsetDateTime::from_system_tz(
             py_api,
             OffsetDateTime::extract(slf).date(),
             Time::extract(args[0]),
-            dis,
-        )? {
-            Ok(d) => d.to_obj(cls),
-            Err(Ambiguity::Fold) => Err(py_err!(
-                exc_ambiguous,
-                "The new datetime is ambiguous in the current timezone"
-            )),
-            Err(Ambiguity::Gap) => Err(py_err!(
+            Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_time")?,
+        )?
+        .map_err(|e| match e {
+            Ambiguity::Fold => py_err!(
+                exc_repeated,
+                "The new datetime is repeated in the current timezone"
+            ),
+            Ambiguity::Gap => py_err!(
                 exc_skipped,
                 "The new datetime is skipped in the current timezone"
-            )),
-        }
+            ),
+        })?
+        .to_obj(cls)
     } else {
         Err(type_err!("time must be a Time instance"))
     }
@@ -503,11 +503,11 @@ unsafe fn replace(
     let mut minute = time.minute.into();
     let mut second = time.second.into();
     let mut nanos = time.nanos as _;
-    let mut dis = Disambiguate::Raise;
+    let mut dis = None;
 
     for &(name, value) in kwargs {
         if name == state.str_disambiguate {
-            dis = Disambiguate::from_py(value)?;
+            dis = Some(Disambiguate::from_py(value)?);
         } else {
             set_components_from_kwargs(
                 name,
@@ -526,22 +526,27 @@ unsafe fn replace(
     }
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?;
-    OffsetDateTime::from_system_tz(state.py_api, date, time, dis)?
-        .map_err(|e| match e {
-            Ambiguity::Fold => py_err!(
-                state.exc_ambiguous,
-                "{} {} is ambiguous in the system timezone",
-                date,
-                time
-            ),
-            Ambiguity::Gap => py_err!(
-                state.exc_skipped,
-                "{} {} is skipped in the system timezone",
-                date,
-                time
-            ),
-        })?
-        .to_obj(cls)
+    OffsetDateTime::from_system_tz(
+        state.py_api,
+        date,
+        time,
+        dis.ok_or_type_err("replace() requires a 'disambiguate' keyword argument")?,
+    )?
+    .map_err(|e| match e {
+        Ambiguity::Fold => py_err!(
+            state.exc_repeated,
+            "{} {} is repeated in the system timezone",
+            date,
+            time
+        ),
+        Ambiguity::Gap => py_err!(
+            state.exc_skipped,
+            "{} {} is skipped in the system timezone",
+            date,
+            time
+        ),
+    })?
+    .to_obj(cls)
 }
 
 unsafe fn now(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -723,13 +728,13 @@ unsafe fn _shift_method(
         return Err(type_err!("{}() takes no positional arguments", fname));
     }
     let state = State::for_type(cls);
-    let mut dis = Disambiguate::Raise;
+    let mut dis = None;
     let mut months = 0;
     let mut days = 0;
     let mut nanos = 0;
     for &(key, value) in kwargs {
         if key == state.str_disambiguate {
-            dis = Disambiguate::from_py(value)?;
+            dis = Some(Disambiguate::from_py(value)?);
         } else {
             set_units_from_kwargs(key, value, &mut months, &mut days, &mut nanos, state, fname)?;
         }
@@ -748,12 +753,17 @@ unsafe fn _shift_method(
                 .shift(0, months, days)
                 .ok_or_value_err("Resulting date is out of range")?,
             odt.time(),
-            dis,
+            dis.ok_or_else(|| {
+                type_err!(
+                    "{}() requires a 'disambiguate' keyword argument when given calendar units",
+                    fname
+                )
+            })?,
         )?
         .map_err(|amb| match amb {
             Ambiguity::Fold => py_err!(
-                state.exc_ambiguous,
-                "The resulting datetime is ambiguous in the system timezone"
+                state.exc_repeated,
+                "The resulting datetime is repeated in the system timezone"
             ),
             Ambiguity::Gap => py_err!(
                 state.exc_skipped,

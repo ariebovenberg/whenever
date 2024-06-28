@@ -834,7 +834,10 @@ impl Disambiguate {
         fname: &str,
     ) -> PyResult<Self> {
         match kwargs {
-            [] => Ok(Self::Raise),
+            [] => Err(type_err!(
+                "{}() missing 1 required keyword-only argument: 'disambiguate'",
+                fname
+            )),
             &[(name, value)] if name == str_disambiguate => Self::from_py(value),
             &[(name, _)] => Err(type_err!(
                 "{}() got an unexpected keyword argument {}",
