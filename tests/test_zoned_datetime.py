@@ -18,7 +18,7 @@ from whenever import (
     Date,
     Instant,
     InvalidOffset,
-    NaiveDateTime,
+    LocalDateTime,
     OffsetDateTime,
     SkippedTime,
     SystemDateTime,
@@ -638,10 +638,10 @@ def test_to_system_tz():
         big_zdt.to_system_tz()
 
 
-def test_naive():
+def test_local():
     d = ZonedDateTime(2020, 8, 15, 13, tz="Europe/Amsterdam")
-    assert d.naive() == NaiveDateTime(2020, 8, 15, 13)
-    assert d.replace(disambiguate="later").naive() == NaiveDateTime(
+    assert d.local() == LocalDateTime(2020, 8, 15, 13)
+    assert d.replace(disambiguate="later").local() == LocalDateTime(
         2020, 8, 15, 13
     )
 

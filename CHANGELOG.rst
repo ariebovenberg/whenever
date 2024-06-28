@@ -4,6 +4,9 @@
 0.6.0 (2024-??-??)
 ------------------
 
+A big release touting a Rust extension module
+and an API more consistent with other modern libraries.
+
 **Added or improved**
 
 - Implement as a Rust extension module, leading to a big speedup
@@ -12,8 +15,18 @@
 - ``from_py_*`` methods are more robust.
 - The pickle format for most types is now more efficient.
 
-
 **Breaking changes**
+
+- ``UTCDateTime`` is now ``Instant``. Removed methods that were specific to UTC.
+
+  **Rationale**: ``Instant`` is simpler and more conceptually clear.
+  It also avoids the mistake of performing calendar arithmetic in UTC.
+
+- ``NaiveDateTime`` is now ``LocalDateTime``
+
+  **Rationale**: "Local" is more descriptive for describing the concept of
+  "wall clock" time observed locally by humans.
+  It's consistent with other libraries and standards.
 
 - Nanosecond precision is now the default for all datetimes and deltas.
   ``nanosecond`` is a keyword-only argument for all constructors,
@@ -74,7 +87,6 @@
   isn't equal to a fixed number of days. Refer to the delta docs for more information.
 
   **Rationale**: This is more in line with ``TimeDelta`` which also normalizes.
-
 
 - Dropped Python 3.8 support
 

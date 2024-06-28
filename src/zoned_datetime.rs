@@ -6,13 +6,13 @@ use std::time::SystemTime;
 
 use crate::common::*;
 use crate::datetime_delta::set_units_from_kwargs;
-use crate::naive_datetime::set_components_from_kwargs;
+use crate::local_datetime::set_components_from_kwargs;
 use crate::{
     date::Date,
     date_delta::DateDelta,
     datetime_delta::DateTimeDelta,
     instant::{Instant, MAX_INSTANT, MIN_INSTANT},
-    naive_datetime::DateTime,
+    local_datetime::DateTime,
     offset_datetime::{self, OffsetDateTime},
     time::Time,
     time_delta::{self, TimeDelta},
@@ -48,7 +48,7 @@ impl ZonedDateTime {
             })
     }
 
-    pub(crate) unsafe fn from_naive(
+    pub(crate) unsafe fn from_local(
         py_api: &PyDateTime_CAPI,
         date: Date,
         time: Time,
@@ -247,7 +247,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?;
     let dis = Disambiguate::from_py(disambiguate)?;
-    ZonedDateTime::from_naive(py_api, date, time, zoneinfo, dis)?
+    ZonedDateTime::from_local(py_api, date, time, zoneinfo, dis)?
         .map_err(|a| match a {
             Ambiguity::Fold => py_err!(
                 exc_ambiguous,
@@ -370,7 +370,7 @@ unsafe fn _shift(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) -> Py
         if months == 0 && days == 0 {
             return Ok(newref(obj_a));
         }
-        ZonedDateTime::from_naive(
+        ZonedDateTime::from_local(
             py_api,
             date.shift(0, months, days)
                 .ok_or_value_err("Resulting date is out of range")?,
@@ -400,7 +400,7 @@ unsafe fn _shift(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) -> Py
             days = -days;
             tdelta = -tdelta;
         };
-        let zdt = ZonedDateTime::from_naive(
+        let zdt = ZonedDateTime::from_local(
             py_api,
             date.shift(0, months, days)
                 .ok_or_value_err("Resulting date is out of range")?,
@@ -668,7 +668,7 @@ unsafe fn replace_date(
     let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_date")?;
     let ZonedDateTime { time, zoneinfo, .. } = ZonedDateTime::extract(slf);
     if Py_TYPE(args[0]) == date_type {
-        ZonedDateTime::from_naive(py_api, Date::extract(args[0]), time, zoneinfo, dis)?
+        ZonedDateTime::from_local(py_api, Date::extract(args[0]), time, zoneinfo, dis)?
             .map_err(|a| match a {
                 Ambiguity::Fold => py_err!(
                     exc_ambiguous,
@@ -710,7 +710,7 @@ unsafe fn replace_time(
     let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_time")?;
     let ZonedDateTime { date, zoneinfo, .. } = ZonedDateTime::extract(slf);
     if Py_TYPE(args[0]) == time_type {
-        ZonedDateTime::from_naive(py_api, date, Time::extract(args[0]), zoneinfo, dis)?
+        ZonedDateTime::from_local(py_api, date, Time::extract(args[0]), zoneinfo, dis)?
             .map_err(|a| match a {
                 Ambiguity::Fold => py_err!(
                     exc_ambiguous,
@@ -780,7 +780,7 @@ unsafe fn replace(
     }
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?;
-    ZonedDateTime::from_naive(state.py_api, date, time, zoneinfo, dis)?
+    ZonedDateTime::from_local(state.py_api, date, time, zoneinfo, dis)?
         .map_err(|a| match a {
             Ambiguity::Fold => py_err!(
                 state.exc_ambiguous,
@@ -901,10 +901,10 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     .to_obj(cls.cast())
 }
 
-unsafe fn naive(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn local(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     ZonedDateTime::extract(slf)
         .without_offset()
-        .to_obj(State::for_obj(slf).naive_datetime_type)
+        .to_obj(State::for_obj(slf).local_datetime_type)
 }
 
 unsafe fn timestamp(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -1066,8 +1066,7 @@ unsafe fn is_ambiguous(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 // parse ±HH:MM[:SS] (consuming as much as possible of the input)
 fn parse_offset_partial(s: &mut &[u8]) -> Option<i32> {
-    debug_assert!(s.len() >= 1);
-    // the sign (always present)
+    debug_assert!(!s.is_empty());
     let sign = match s[0] {
         b'+' => 1,
         b'-' => -1,
@@ -1215,7 +1214,7 @@ unsafe fn _shift_method(
             zoneinfo,
             ..
         } = ZonedDateTime::extract(slf);
-        ZonedDateTime::from_naive(
+        ZonedDateTime::from_local(
             state.py_api,
             date.shift(0, months, days)
                 .ok_or_value_err("Resulting date is out of range")?,
@@ -1276,7 +1275,7 @@ static mut METHODS: &[PyMethodDef] = &[
         "Create a new instance from a `datetime.datetime`",
         METH_O | METH_CLASS
     ),
-    method!(naive, "Convert to a `NaiveDateTime`"),
+    method!(local, "Get the local date and time"),
     method!(timestamp, "Convert to a UNIX timestamp"),
     method!(
         timestamp_millis,

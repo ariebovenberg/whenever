@@ -4,7 +4,7 @@ use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
 use crate::common::*;
-use crate::{date_delta::DateDelta, naive_datetime::DateTime, time::Time, State};
+use crate::{date_delta::DateDelta, local_datetime::DateTime, time::Time, State};
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub struct Date {
@@ -679,7 +679,7 @@ unsafe fn replace(
 unsafe fn at(slf: *mut PyObject, time_obj: *mut PyObject) -> PyReturn {
     let &State {
         time_type,
-        naive_datetime_type,
+        local_datetime_type,
         ..
     } = State::for_obj(slf);
     if Py_TYPE(time_obj) == time_type {
@@ -687,7 +687,7 @@ unsafe fn at(slf: *mut PyObject, time_obj: *mut PyObject) -> PyReturn {
             date: Date::extract(slf),
             time: Time::extract(time_obj),
         }
-        .to_obj(naive_datetime_type)
+        .to_obj(local_datetime_type)
     } else {
         Err(type_err!("argument must be a whenever.Time"))
     }
