@@ -58,6 +58,11 @@ and an API more consistent with other modern libraries.
   **Rationale**: "to" better clarifies a conversion is being made (not a replacement),
   and "fixed offset" and "tz" are more descriptive than "offset" and "zoned".
 
+- ``disambiguate=`` is non-optional for all relevent methods.
+
+  **Rationale**: This makes it explicit how ambiguous and non-existent times are handled.
+  The previous default of raising an error by default was too strict.
+
 - Removed weakref support.
 
   **Rationale**: The overhead of weakrefs was too high for
@@ -87,6 +92,12 @@ and an API more consistent with other modern libraries.
   isn't equal to a fixed number of days. Refer to the delta docs for more information.
 
   **Rationale**: This is more in line with ``TimeDelta`` which also normalizes.
+
+- Renamed ``AmbiguousTime`` to ``RepeatedTime``.
+
+  **Rationale**: The new name is more descriptive for repeated times
+  occurring twice due to DST. It also clarifies the difference between
+  "repeated" times and "ambiguous" times (which can also refer to non-existent times).
 
 - Dropped Python 3.8 support
 

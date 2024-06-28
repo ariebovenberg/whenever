@@ -142,6 +142,6 @@ Miscellaneous
    :members:
    :member-order: bysource
 
-.. autoexception:: whenever.AmbiguousTime
+.. autoexception:: whenever.RepeatedTime
 .. autoexception:: whenever.SkippedTime
 .. autoexception:: whenever.InvalidOffset

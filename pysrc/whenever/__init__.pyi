@@ -28,7 +28,7 @@ __all__ = [
     "seconds",
     "microseconds",
     "SkippedTime",
-    "AmbiguousTime",
+    "RepeatedTime",
     "InvalidOffset",
     "MONDAY",
     "TUESDAY",
@@ -309,6 +309,8 @@ class _Aware(_BasicConversions, ABC):
 class _AwareDateTime(_Aware, _ContainsLocalDateTime, ABC):
     def instant(self) -> Instant: ...
     def local(self) -> LocalDateTime: ...
+    @property
+    def offset(self) -> TimeDelta: ...
 
 @final
 class Instant(_Aware):
@@ -328,16 +330,6 @@ class Instant(_Aware):
     MAX: ClassVar[Instant]
     @classmethod
     def now(cls) -> Instant: ...
-    def py_datetime(self) -> _datetime: ...
-    def __hash__(self) -> int: ...
-    @overload
-    def to_fixed_offset(self) -> OffsetDateTime: ...
-    @overload
-    def to_fixed_offset(
-        self, offset: int | TimeDelta, /
-    ) -> OffsetDateTime: ...
-    def to_tz(self, tz: str, /) -> ZonedDateTime: ...
-    def to_system_tz(self) -> SystemDateTime: ...
     @classmethod
     def from_timestamp(cls, i: int, /) -> Instant: ...
     @classmethod
@@ -346,8 +338,6 @@ class Instant(_Aware):
     def from_timestamp_nanos(cls, i: int, /) -> Instant: ...
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> Instant: ...
-    @classmethod
-    def strptime(cls, s: str, fmt: str, /) -> Instant: ...
     def format_rfc2822(self) -> str: ...
     @classmethod
     def parse_rfc2822(cls, s: str, /) -> Instant: ...
@@ -398,8 +388,6 @@ class OffsetDateTime(_AwareDateTime):
         nanosecond: int = 0,
         offset: int | TimeDelta,
     ) -> None: ...
-    @property
-    def offset(self) -> TimeDelta: ...
     @classmethod
     def now(cls, offset: int | TimeDelta, /) -> OffsetDateTime: ...
     @classmethod
@@ -460,8 +448,6 @@ class ZonedDateTime(_AwareDateTime):
     ) -> None: ...
     @property
     def tz(self) -> str: ...
-    @property
-    def offset(self) -> TimeDelta: ...
     def is_ambiguous(self) -> bool: ...
     @classmethod
     def now(cls, tz: str, /) -> ZonedDateTime: ...
@@ -487,14 +473,15 @@ class ZonedDateTime(_AwareDateTime):
         second: int | _UNSET = ...,
         nanosecond: int | _UNSET = ...,
         tz: str | _UNSET = ...,
-        disambiguate: Disambiguate | _UNSET = ...,
+        disambiguate: Disambiguate,
     ) -> ZonedDateTime: ...
     def replace_date(
-        self, d: Date, /, *, disambiguate: Disambiguate = "raise"
+        self, d: Date, /, *, disambiguate: Disambiguate
     ) -> ZonedDateTime: ...
     def replace_time(
-        self, t: Time, /, *, disambiguate: Disambiguate = "raise"
+        self, t: Time, /, *, disambiguate: Disambiguate
     ) -> ZonedDateTime: ...
+    @overload
     def add(
         self,
         *,
@@ -508,8 +495,20 @@ class ZonedDateTime(_AwareDateTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Disambiguate = "raise",
+        disambiguate: Disambiguate,
     ) -> ZonedDateTime: ...
+    @overload
+    def add(
+        self,
+        *,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
+    ) -> ZonedDateTime: ...
+    @overload
     def subtract(
         self,
         *,
@@ -523,7 +522,18 @@ class ZonedDateTime(_AwareDateTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Disambiguate = "raise",
+        disambiguate: Disambiguate,
+    ) -> ZonedDateTime: ...
+    @overload
+    def subtract(
+        self,
+        *,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
     ) -> ZonedDateTime: ...
     def __add__(self, delta: Delta) -> ZonedDateTime: ...
     @overload
@@ -545,8 +555,6 @@ class SystemDateTime(_AwareDateTime):
         nanosecond: int = 0,
         disambiguate: Disambiguate = "raise",
     ) -> None: ...
-    @property
-    def offset(self) -> TimeDelta: ...
     @classmethod
     def now(cls) -> SystemDateTime: ...
     @classmethod
@@ -570,14 +578,15 @@ class SystemDateTime(_AwareDateTime):
         minute: int | _UNSET = ...,
         second: int | _UNSET = ...,
         nanosecond: int | _UNSET = ...,
-        disambiguate: Disambiguate | _UNSET = ...,
+        disambiguate: Disambiguate,
     ) -> SystemDateTime: ...
     def replace_date(
-        self, d: Date, /, *, disambiguate: Disambiguate = "raise"
+        self, d: Date, /, *, disambiguate: Disambiguate
     ) -> SystemDateTime: ...
     def replace_time(
-        self, t: Time, /, *, disambiguate: Disambiguate = "raise"
+        self, t: Time, /, *, disambiguate: Disambiguate
     ) -> SystemDateTime: ...
+    @overload
     def add(
         self,
         *,
@@ -591,8 +600,20 @@ class SystemDateTime(_AwareDateTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Disambiguate = "raise",
+        disambiguate: Disambiguate,
     ) -> SystemDateTime: ...
+    @overload
+    def add(
+        self,
+        *,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
+    ) -> SystemDateTime: ...
+    @overload
     def subtract(
         self,
         *,
@@ -606,7 +627,18 @@ class SystemDateTime(_AwareDateTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Disambiguate = "raise",
+        disambiguate: Disambiguate,
+    ) -> SystemDateTime: ...
+    @overload
+    def subtract(
+        self,
+        *,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
     ) -> SystemDateTime: ...
     def __add__(self, delta: Delta) -> SystemDateTime: ...
     @overload
@@ -634,10 +666,10 @@ class LocalDateTime(_ContainsLocalDateTime):
         self, offset: int | TimeDelta, /
     ) -> OffsetDateTime: ...
     def assume_tz(
-        self, tz: str, /, *, disambiguate: Disambiguate = "raise"
+        self, tz: str, /, *, disambiguate: Disambiguate
     ) -> ZonedDateTime: ...
     def assume_system_tz(
-        self, *, disambiguate: Disambiguate = "raise"
+        self, *, disambiguate: Disambiguate
     ) -> SystemDateTime: ...
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> LocalDateTime: ...
@@ -697,7 +729,7 @@ class LocalDateTime(_ContainsLocalDateTime):
     def __ge__(self, other: LocalDateTime) -> bool: ...
 
 @final
-class AmbiguousTime(Exception): ...
+class RepeatedTime(Exception): ...
 
 @final
 class SkippedTime(Exception): ...

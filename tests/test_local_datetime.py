@@ -7,11 +7,11 @@ from hypothesis import given
 from hypothesis.strategies import floats, integers, text
 
 from whenever import (
-    AmbiguousTime,
     Date,
     Instant,
     LocalDateTime,
     OffsetDateTime,
+    RepeatedTime,
     SkippedTime,
     SystemDateTime,
     Time,
@@ -80,15 +80,20 @@ def test_assume_fixed_offset():
 
 class TestAssumeZoned:
     def test_typical(self):
-        assert LocalDateTime(2020, 8, 15, 23).assume_tz(
-            "Asia/Tokyo"
+        d = LocalDateTime(2020, 8, 15, 23)
+        assert d.assume_tz(
+            "Asia/Tokyo", disambiguate="raise"
         ) == ZonedDateTime(2020, 8, 15, 23, tz="Asia/Tokyo")
+
+        # disambiguate is required
+        with pytest.raises(TypeError, match="disambiguat"):
+            d.assume_tz("Asia/Tokyo")  # type: ignore[call-arg]
 
     def test_ambiguous(self):
         d = LocalDateTime(2023, 10, 29, 2, 15)
 
-        with pytest.raises(AmbiguousTime, match="02:15.*Europe/Amsterdam"):
-            d.assume_tz("Europe/Amsterdam")
+        with pytest.raises(RepeatedTime, match="02:15.*Europe/Amsterdam"):
+            d.assume_tz("Europe/Amsterdam", disambiguate="raise")
 
         assert d.assume_tz(
             "Europe/Amsterdam", disambiguate="earlier"
@@ -105,9 +110,6 @@ class TestAssumeZoned:
         d = LocalDateTime(2023, 3, 26, 2, 15)
 
         with pytest.raises(SkippedTime, match="02:15.*Europe/Amsterdam"):
-            d.assume_tz("Europe/Amsterdam")
-
-        with pytest.raises(SkippedTime, match="02:15.*Europe/Amsterdam"):
             d.assume_tz("Europe/Amsterdam", disambiguate="raise")
 
         assert d.assume_tz(
@@ -120,18 +122,19 @@ class TestAssumeZoned:
 class TestAssumeSystemTz:
     @system_tz_ams()
     def test_typical(self):
-        assert LocalDateTime(
-            2020, 8, 15, 23
-        ).assume_system_tz() == SystemDateTime(2020, 8, 15, 23)
+        assert LocalDateTime(2020, 8, 15, 23).assume_system_tz(
+            disambiguate="raise"
+        ) == SystemDateTime(2020, 8, 15, 23)
+
+        # disambiguate is required
+        with pytest.raises(TypeError, match="disambiguat"):
+            LocalDateTime(2020, 8, 15, 23).assume_system_tz()  # type: ignore[call-arg]
 
     @system_tz_ams()
     def test_ambiguous(self):
         d = LocalDateTime(2023, 10, 29, 2, 15)
 
-        with pytest.raises(AmbiguousTime, match="02:15.*system"):
-            d.assume_system_tz()
-
-        with pytest.raises(AmbiguousTime, match="02:15.*system"):
+        with pytest.raises(RepeatedTime, match="02:15.*system"):
             d.assume_system_tz(disambiguate="raise")
 
         assert d.assume_system_tz(disambiguate="earlier") == SystemDateTime(
@@ -147,9 +150,6 @@ class TestAssumeSystemTz:
     @system_tz_ams()
     def test_nonexistent(self):
         d = LocalDateTime(2023, 3, 26, 2, 15)
-
-        with pytest.raises(SkippedTime, match="02:15.*system"):
-            d.assume_system_tz()
 
         with pytest.raises(SkippedTime, match="02:15.*system"):
             d.assume_system_tz(disambiguate="raise")

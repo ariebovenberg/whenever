@@ -515,8 +515,8 @@ class TestComparison:
     def test_system_tz(self):
         d = OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
         sys_eq = d.to_system_tz()
-        sys_gt = sys_eq.replace(minute=31)
-        sys_lt = sys_eq.replace(minute=29)
+        sys_gt = sys_eq + minutes(1)
+        sys_lt = sys_eq - minutes(1)
 
         assert d >= sys_eq
         assert d <= sys_eq
