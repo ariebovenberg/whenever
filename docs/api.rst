@@ -58,7 +58,8 @@ Concrete classes
      assume_tz,
      assume_system_tz,
      strptime,
-   :special-members: __add__, __sub__, __eq__
+     difference,
+   :special-members: __eq__
    :member-order: bysource
    :show-inheritance:
 
@@ -69,7 +70,6 @@ Concrete classes
      parse_rfc3339,
      parse_rfc2822,
      strptime,
-   :special-members: __sub__
    :member-order: bysource
    :show-inheritance:
 
@@ -77,17 +77,10 @@ Concrete classes
    :members:
      tz,
      is_ambiguous,
-     add,
-     subtract
-   :special-members: __add__, __sub__
    :member-order: bysource
    :show-inheritance:
 
 .. autoclass:: whenever.SystemDateTime
-   :members:
-     add,
-     subtract
-   :special-members: __add__, __sub__
    :member-order: bysource
    :show-inheritance:
 
@@ -143,5 +136,10 @@ Miscellaneous
    :member-order: bysource
 
 .. autoexception:: whenever.RepeatedTime
+   :show-inheritance:
+
 .. autoexception:: whenever.SkippedTime
+   :show-inheritance:
+
 .. autoexception:: whenever.InvalidOffset
+   :show-inheritance:

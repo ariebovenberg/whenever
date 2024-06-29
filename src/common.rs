@@ -23,7 +23,7 @@ macro_rules! py_err(
     () => {
         PyErrOccurred()
     };
-    ($exc:expr, $msg:literal) => {{
+    ($exc:expr, $msg:expr) => {{
         match $msg.to_py() {
             Ok(msg) => PyErr_SetObject($exc, msg),
             Err(_) => {},

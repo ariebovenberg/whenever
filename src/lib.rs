@@ -158,8 +158,8 @@ unsafe fn create_enum(name: &CStr, members: &[(&CStr, i32)]) -> PyReturn {
     .as_result()
 }
 
-unsafe fn new_exc(module: *mut PyObject, name: &CStr) -> *mut PyObject {
-    let e = PyErr_NewException(name.as_ptr(), NULL(), NULL());
+unsafe fn new_exc(module: *mut PyObject, name: &CStr, base: *mut PyObject) -> *mut PyObject {
+    let e = PyErr_NewException(name.as_ptr(), base, NULL());
     if e.is_null() {
         return NULL();
     }
@@ -407,10 +407,13 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     state.str_tz = PyUnicode_InternFromString(c"tz".as_ptr());
     state.str_disambiguate = PyUnicode_InternFromString(c"disambiguate".as_ptr());
     state.str_offset = PyUnicode_InternFromString(c"offset".as_ptr());
+    state.str_ignore_dst = PyUnicode_InternFromString(c"ignore_dst".as_ptr());
 
-    state.exc_repeated = new_exc(module, c"whenever.RepeatedTime");
-    state.exc_skipped = new_exc(module, c"whenever.SkippedTime");
-    state.exc_invalid_offset = new_exc(module, c"whenever.InvalidOffset");
+    state.exc_repeated = new_exc(module, c"whenever.RepeatedTime", NULL());
+    state.exc_skipped = new_exc(module, c"whenever.SkippedTime", NULL());
+    state.exc_invalid_offset = new_exc(module, c"whenever.InvalidOffset", PyExc_ValueError);
+    state.exc_implicitly_ignoring_dst =
+        new_exc(module, c"whenever.ImplicitlyIgnoringDST", PyExc_TypeError);
 
     0
 }
@@ -505,6 +508,7 @@ unsafe extern "C" fn module_traverse(
     do_visit(state.exc_repeated, visit, arg);
     do_visit(state.exc_skipped, visit, arg);
     do_visit(state.exc_invalid_offset, visit, arg);
+    do_visit(state.exc_implicitly_ignoring_dst, visit, arg);
 
     // Imported modules
     do_visit(state.zoneinfo_type, visit, arg);
@@ -543,6 +547,7 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR(ptr::addr_of_mut!(state.exc_repeated));
     Py_CLEAR(ptr::addr_of_mut!(state.exc_skipped));
     Py_CLEAR(ptr::addr_of_mut!(state.exc_invalid_offset));
+    Py_CLEAR(ptr::addr_of_mut!(state.exc_implicitly_ignoring_dst));
 
     // imported modules
     Py_CLEAR(ptr::addr_of_mut!(state.zoneinfo_type));
@@ -574,6 +579,7 @@ struct State {
     exc_repeated: *mut PyObject,
     exc_skipped: *mut PyObject,
     exc_invalid_offset: *mut PyObject,
+    exc_implicitly_ignoring_dst: *mut PyObject,
 
     // unpickling functions
     unpickle_date: *mut PyObject,
@@ -619,6 +625,7 @@ struct State {
     str_tz: *mut PyObject,
     str_disambiguate: *mut PyObject,
     str_offset: *mut PyObject,
+    str_ignore_dst: *mut PyObject,
 }
 
 impl State {

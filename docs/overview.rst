@@ -3,7 +3,7 @@
 ⭐️ Main features
 =================
 
-This page gives an overview of **whenever**'s main features for working 
+This page gives an overview of **whenever**'s main features for working
 with date and time.
 For more details, see the :ref:`API reference <api>`.
 
@@ -20,7 +20,7 @@ Different types
 
 While the standard library has a single :class:`~datetime.datetime` type
 for all use cases,
-**whenever** provides distinct types similar to other modern datetime libraries [2]_:
+**whenever** provides distinct types similar to other modern datetime libraries [2]_.
 
 - :class:`~whenever.Instant`—the simplest way to represent a point on the timeline
 - :class:`~whenever.LocalDateTime`—"wall clock time", how people typically think of time locally
@@ -34,6 +34,10 @@ Less commonly used types are:
 Each is designed to communicate intent, prevent mistakes, and optimize performance.
 You won't need all of them at the same time.
 Read on to find out which one is right for your use case.
+
+.. tip::
+
+   If you prefer a video explanation, `here is an excellent explanation of the datamodel that whenever is based on <https://www.youtube.com/watch?v=saeKBuPewcU>`_.
 
 :class:`~whenever.Instant`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -66,7 +70,7 @@ daylight saving time, or the calendar.
 Local datetimes represent date and time as humans typically interact with them,
 for example: *January 23rd, 2023, 3:30pm*.
 While this information makes sense to people within a certain context,
-on its own it doesn't refer to a moment on the timeline.
+it doesn't refer to a moment on the timeline on its own.
 This is because this date and time occur at different moments
 depending on whether you're in Australia or Mexico, for example.
 
@@ -91,27 +95,33 @@ That's what the next type is for.
 :class:`~whenever.ZonedDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-This is a combination of an instant *and* a local time at a specific location.
-It accounts for daylight saving time *and* supports calendar operations.
+This is a combination of an instant *and* a local time at a specific location,
+with rules about daylight saving time and other timezone changes.
 
->>> pycon24_keynote = ZonedDateTime(2024, 5, 17, 9, 45, tz="America/New_York")
-ZonedDateTime(2024-05-17 09:45:00-04:00[America/New_York])
->>> pycon24_keynote.subtract(months=3)
-ZonedDateTime(2024-02-17 09:45:00-05:00[America/New_York])
+>>> bedtime = ZonedDateTime(2024, 3, 9, 22, tz="America/New_York")
+ZonedDateTime(2024-03-09 22:00:00-05:00[America/New_York])
+# accounts for the DST transition over the night:
+>>> bedtime.add(hours=8)
+ZonedDateTime(2024-03-10 07:00:00-04:00[America/New_York])
 
-A timezone determines a UTC offset and rules for daylight saving time.
+A timezone defines a UTC offset for each point on the timeline.
 As a result, any :class:`~whenever.Instant` can
 be converted to a :class:`~whenever.ZonedDateTime`.
-However, converting a :class:`~whenever.LocalDateTime` to a :class:`~whenever.ZonedDateTime`
-is more complex, because local times can occur twice or not at all due to daylight saving time.
-Read about ambiguity in more detail :ref:`here <ambiguity>`.
+Converting from a :class:`~whenever.LocalDateTime`, however,
+may be ambiguous,
+because changes to the offset can result in local times
+occuring twice or not at all.
 
->>> # from Instant: always possible
+>>> # Instant->Zoned is always straightforward
 >>> livestream_starts.to_tz("America/New_York")
 ZonedDateTime(2022-10-24 13:00:00-04:00[America/New_York])
->>> # from LocalDateTime: maybe ambiguous
+>>> # Local->Zoned may be ambiguous
 >>> bus_departs.assume_tz("America/New_York", disambiguate="earlier")
 ZonedDateTime(2020-03-14 15:00:00-04:00[America/New_York])
+
+.. seealso::
+
+    Read about ambiguity in more detail :ref:`here <ambiguity>`.
 
 :class:`~whenever.OffsetDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -124,7 +134,7 @@ As a result, it doesn't know about daylight saving time or other timezone change
 Then why use it? Firstly, most datetime formats (e.g. ISO 8601 and RFC 3339) only have fixed offsets,
 making :class:`~whenever.OffsetDateTime` ideal for representing datetimes in these formats.
 Second, a :class:`~whenever.OffsetDateTime` is simpler—so long as you
-don't need to adjust it. This makes :class:`~whenever.OffsetDateTime`
+don't need the ability to adjust it. This makes :class:`~whenever.OffsetDateTime`
 an efficient and compatible choice for representing times in the past.
 
 >>> flight_departure = OffsetDateTime(2023, 4, 21, hour=9, offset=-4)
@@ -140,7 +150,7 @@ an efficient and compatible choice for representing times in the past.
 
 .. seealso::
 
-   - :ref:`Why doen't OffsetDateTime support arithmetic? <faq-offset-arithmetic>`
+   - :ref:`Performing DST-safe arithmetic <arithmetic-dst>`
 
 :class:`~whenever.SystemDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -162,34 +172,21 @@ SystemDateTime(2022-10-24 13:00:00-04:00)
 
 .. _summary:
 
-Here's a summary of how you can use the types:
+Summary
+~~~~~~~
 
-+-----------------------+---------+---------+-------+--------+---------+
-| Feature               |             "Exact"                |         |
-+                       +---------+---------+-------+--------+         +
-|                       | Instant | OffsetDT|ZonedDT|SystemDT|LocalDT  |
-+=======================+=========+=========+=======+========+=========+
-| comparison            | .. centered:: ✅                   |  ✅     |
-+-----------------------+---------+---------+-------+--------+---------+
-| difference            | .. centered:: ✅                   |  ✅     |
-+-----------------------+---------+---------+-------+--------+---------+
-| add/subtract years,   | ❌      |  ✅     |  ✅   |  ✅    |  ✅     |
-| months, days          |         |         |       |        |         |
-+-----------------------+---------+---------+-------+--------+---------+
-| add/subtract hours,   | ✅      | ⚠️ [3]_ |  ✅   |  ✅    |⚠️  [3]_ |
-| minutes, seconds, ... |         |         |       |        |         |
-+-----------------------+---------+---------+-------+--------+---------+
-| no disambiguation     | ✅      |  ✅     |  ❌   |  ❌    |  ✅     |
-| needed                |         |         |       |        |         |
-+-----------------------+---------+---------+-------+--------+---------+
-| to/from timestamp     | ✅      |  ✅     |  ✅   |  ✅    |  ❌     |
-+-----------------------+---------+---------+-------+--------+---------+
-| now                   | ✅      |  ✅     |  ✅   |  ✅    |  ❌     |
-+-----------------------+---------+---------+-------+--------+---------+
-| to/from RFC3339/2822  | ✅      |  ✅     |  ❌   |  ❌    |  ❌     |
-+-----------------------+---------+---------+-------+--------+---------+
+Here's a summary of the differences between the types:
 
-.. [3] Only possible with explicit ``ignore_dst=True``
++------------------------------+---------+---------+-------+---------+---------+
+|                              | Instant | OffsetDT|ZonedDT| SystemDT|LocalDT  |
++==============================+=========+=========+=======+=========+=========+
+| knows time since epoch       |   ✅    | ✅      | ✅    |  ✅     |  ❌     |
++------------------------------+---------+---------+-------+---------+---------+
+| knows the local time         |  ❌     |  ✅     |  ✅   |  ✅     |  ✅     |
++------------------------------+---------+---------+-------+---------+---------+
+| knows about DST rules [6]_   |  ❌     |  ❌     |  ✅   |  ✅     |  ❌     |
++------------------------------+---------+---------+-------+---------+---------+
+
 
 
 Comparison and equality
@@ -352,69 +349,6 @@ ZonedDateTime(2023-12-28 11:30:00+01:00[Europe/Amsterdam])
    emphasize that the conversion is not self-evident, but based on assumptions
    of the developer.
 
-
-.. _arithmetic:
-
-Arithmetic
-----------
-
-Datetimes support varous arithmetic operations with addition and subtraction.
-
-Difference between times
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-You can subtract two datetime instances to get a
-:class:`~whenever.TimeDelta` representing the duration between them.
-Exact types can be mixed with each other,
-but local datetimes cannot be mixed with exact types:
-
->>> # difference between moments in time
->>> Instant.from_utc(2023, 12, 28, 11, 30) - ZonedDateTime(2023, 12, 28, tz="Europe/Amsterdam")
-TimeDelta(12:30:00)
->>> # difference between local datetimes
->>> LocalDateTime(2023, 12, 28, 11) - LocalDateTime(2023, 12, 27, 11)
-TimeDelta(24:00:00)
-
-.. _add-subtract-time:
-
-Adding and subtracting time
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-You can add or subtract various units of time from a datetime instance.
-
->>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
->>> d.add(hours=5, minutes=30)
-ZonedDateTime(2023-12-28 17:00:00+01:00[Europe/Amsterdam])
->>> d.subtract(days=1, disambiguate="compatible")  # 1 day earlier
-ZonedDateTime(2023-12-27 11:30:00+01:00[Europe/Amsterdam])
-
-Adding/subtracting takes into account timezone changes (e.g. daylight saving time)
-according to industry standard RFC 5545 and other modern datetime libraries.
-This means:
-
-- Units are handled from largest (year) to smallest (nanosecond),
-  truncating and/or wrapping at each step.
-- Adding or subtracting calendar units (months, days) keeps the local
-  time of day the same across DST changes.
-  This is because you'd expect that rescheduling a 10am appointment "a day later"
-  will still be at 10am, regardless of a DST change overnight.
-  However, because the new time may be repeated or skipped,
-  ``disambiguate`` is required for calendar units.
-- Precise time units (hours, minutes, and seconds) account for DST changes.
-
-.. seealso::
-
-   Have a look at the documentation on :ref:`deltas <durations>` for more details
-   on arithmetic operations, as well as more advanced features.
-
-.. attention::
-
-   :class:`~whenever.OffsetDateTime` instances do not support moving back and
-   forwards in time, because offsets in real world timezones aren't always constant.
-   That is, the offset may be different after moving backwards or forwards in time.
-   If you need to shift an :class:`~whenever.OffsetDateTime` instance,
-   either convert to UTC or a proper :class:`~whenever.ZonedDateTime` first.
-
 .. _ambiguity:
 
 Ambiguity in timezones
@@ -431,25 +365,24 @@ due to Daylight Saving Time (DST) or political decisions.
 This creates two types of situations for the :class:`~whenever.ZonedDateTime`
 and :class:`~whenever.SystemDateTime` types:
 
-- When the clock moves backwards, there is a period of time that occurs twice.
-  For example, Sunday October 29th 2:30am occured twice in Paris.
+- When the clock moves backwards, there is a period of time that repeats.
+  For example, Sunday October 29th 2023 2:30am occured twice in Paris.
   When you specify this time, you need to specify whether you want the earlier
   or later occurrence.
 - When the clock moves forwards, a period of time is skipped.
-  For example, Sunday March 26th 2:30am didn't happen in Paris.
+  For example, Sunday March 26th 2023 2:30am didn't happen in Paris.
   When you specify this time, you need to specify how you want to handle this non-existent time.
   Common approaches are to extrapolate the time forward or backwards
   to 1:30am or 3:30am.
 
-By default, **whenever** `refuses to guess <https://peps.python.org/pep-0020/>`_,
-but it is possible to customize how to handle these situations.
-You choose the disambiguation behavior you want with the ``disambiguate=`` argument:
+**Whenever** `refuses to guess <https://peps.python.org/pep-0020/>`_
+and requires that you explicitly handle these situations
+with the ``disambiguate=`` argument:
 
 +------------------+-------------------------------------------------+
 | ``disambiguate`` | Behavior in case of ambiguity                   |
 +==================+=================================================+
-| ``"raise"``      | (default) Refuse to guess:                      |
-|                  | raise :exc:`~whenever.RepeatedTime`             |
+| ``"raise"``      | Raise :exc:`~whenever.RepeatedTime`             |
 |                  | or :exc:`~whenever.SkippedTime` exception.      |
 +------------------+-------------------------------------------------+
 | ``"earlier"``    | Choose the earlier of the two options           |
@@ -491,6 +424,159 @@ You choose the disambiguation behavior you want with the ``disambiguate=`` argum
     >>> # Non-existent: extrapolate to 3:30am
     >>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguate="later")
     ZonedDateTime(2023-03-26 03:30:00+02:00[Europe/Paris])
+
+.. _arithmetic:
+
+Arithmetic
+----------
+
+Datetimes support varous arithmetic operations with addition and subtraction.
+
+Difference between times
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+You can get the duration between two instances with the ``-`` operator or
+the :meth:`~whenever._KnowsInstant.difference` method.
+Exact types can be mixed with each other,
+but local datetimes cannot be mixed with exact types:
+
+>>> # difference between moments in time
+>>> Instant.from_utc(2023, 12, 28, 11, 30) - ZonedDateTime(2023, 12, 28, tz="Europe/Amsterdam")
+TimeDelta(12:30:00)
+>>> # difference between local datetimes
+>>> LocalDateTime(2023, 12, 28, 11).difference(
+...     LocalDateTime(2023, 12, 27, 11),
+...     ignore_dst=True
+... )
+TimeDelta(24:00:00)
+
+.. _add-subtract-time:
+
+Adding and subtracting time
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+You can add or subtract various units of time from a datetime instance.
+
+>>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
+>>> d.add(hours=5, minutes=30)
+ZonedDateTime(2023-12-28 17:00:00+01:00[Europe/Amsterdam])
+>>> d.subtract(days=1, disambiguate="compatible")  # 1 day earlier
+ZonedDateTime(2023-12-27 11:30:00+01:00[Europe/Amsterdam])
+
+Adding/subtracting takes into account timezone changes (e.g. daylight saving time)
+according to industry standard RFC 5545 and other modern datetime libraries.
+This means:
+
+- Units are handled from largest (years and months) to smallest (nanosecond),
+  truncating and/or wrapping at each step.
+- Adding or subtracting calendar units (months, days) keeps the local
+  time of day the same across DST changes.
+  This is because you'd expect that rescheduling a 10am appointment "a day later"
+  will still be at 10am, regardless of a DST change overnight.
+- Precise time units (hours, minutes, and seconds) account for DST changes.
+  You wouldn't want a timer set for 2 hours to go off at 1 or 3 hours later instead.
+
+.. seealso::
+
+   Have a look at the documentation on :ref:`deltas <durations>` for more details
+   on arithmetic operations, as well as more advanced features.
+
+.. _arithmetic-dst:
+
+DST-safe arithmetic
+~~~~~~~~~~~~~~~~~~~
+
+Arithmetic with timezones can be tricky due to daylight saving time (DST)
+and other timezone changes.
+The API of the different classes is designed to avoid implicitly ignoring these.
+The type annotations and descriptive error messages should automatically guide you
+to the correct usage.
+
+- :class:`~whenever.Instant` has no calendar, so it doesn't support
+  adding calendar units. Precise time units can be added without any complications.
+- :class:`~whenever.OffsetDateTime` has a fixed offset, so it *cannot*
+  account for DST and other timezone changes.
+  For example, the result of adding 24 hours to ``2024-03-09 13:00:00-07:00``
+  is different whether the offset corresponds to Denver or Phoenix.
+  To perform DST-safe arithmetic, you should convert to a :class:`~whenever.ZonedDateTime` first.
+  Or, if you don't know the timezone and accept potentially incorrect results
+  during DST transitions, pass ``ignore_dst=True``.
+
+  >>> d = OffsetDateTime(2024, 3, 9, 13, offset=-7)
+  >>> d.add(hours=24)
+  Traceback (most recent call last):
+    ImplicitlyIgnoringDST: Adjusting a fixed offset datetime implicitly ignores DST [...]
+  >>> d.to_tz("America/Denver").add(hours=24)
+  ZonedDateTime(2024-03-10 14:00:00-06:00[America/Denver])
+  >>> d.add(hours=24, ignore_dst=True)  # NOT recommended
+  OffsetDateTime(2024-03-10 13:00:00-07:00)
+
+  .. attention::
+
+     Even when working in a timezone without DST, you should still use
+     :class:`~whenever.ZonedDateTime`. This is because political decisions
+     in the future can also change the offset!
+
+- :class:`~whenever.ZonedDateTime` and :class:`~whenever.SystemDateTime`
+  account for DST and other timezone changes, thus adding
+  precise time units is always correct.
+  Adding calendar units is also possible, but can result in ambiguity.
+  For example, if shifting the date puts it in the middle of a DST transition:
+
+  >>> d = ZonedDateTime(2024, 10, 3, 1, 15, tz="America/Denver")
+  >>> d.add(months=1)  # 2024-11-03 01:15:00 would be ambiguous!
+  Traceback (most recent call last):
+    ...
+  >>> d.add(months=1, disambiguate="later")
+  ZonedDateTime(2024-11-03 01:15:00-07:00[America/Denver])
+  >>> d.add(hours=24)  # no disambiguation necessary for precise units
+
+- :class:`~whenever.LocalDateTime` doesn't have a timezone,
+  so it can't account for DST or other clock changes.
+  Calendar units can be added without any complications,
+  but, adding precise time units is only possible with explicit ``ignore_dst=True``,
+  because it doesn't know about DST or other timezone changes:
+
+  >>> d = LocalDateTime(2023, 10, 29, 1, 30)
+  >>> d.add(hours=2)  # There could be a DST transition, depending on the location
+  Traceback (most recent call last):
+    ...
+  >>> d.assume_tz("Europe/Amsterdam", disambiguate="earlier").add(hours=2)
+  ZonedDateTime(2023-10-29 02:30:00+01:00[Europe/Amsterdam])
+  >>> d.add(hours=2, ignore_dst=True)  # NOT recommended
+  LocalDateTime(2024-10-03 03:30:00)
+
+.. attention::
+
+    Even when dealing with a timezone without DST, you should still use
+    :class:`~whenever.ZonedDateTime` for precise time arithmetic.
+    This is because political decisions in the future can also change the offset!
+
+Here is a summary of the arithmetic features for each type:
+
++-----------------------+---------+---------+---------+----------+---------+
+|                       | Instant | OffsetDT|ZonedDT  |SystemDT  |LocalDT  |
++=======================+=========+=========+=========+==========+=========+
+| Difference            | ✅      |  ✅     |   ✅    | ✅       |⚠️  [3]_ |
++-----------------------+---------+---------+---------+----------+---------+
+| add/subtract years,   | ❌      |⚠️  [3]_ |🔶  [4]_ | 🔶  [4]_ |    ✅   |
+| months, days          |         |         |         |          |         |
++-----------------------+---------+---------+---------+----------+---------+
+| add/subtract hours,   | ✅      |⚠️  [3]_ |  ✅     |    ✅    |⚠️  [3]_ |
+| minutes, seconds, ... |         |         |         |          |         |
++-----------------------+---------+---------+---------+----------+---------+
+
+.. [3] Only possible by passing ``ignore_dst=True`` to the method.
+.. [4] Only possible by passing ``disambiguate=...`` to the method.
+
+
+.. admonition:: Why even have ``ignore_dst``? Isn't it dangerous?
+
+   While DST-safe arithmetic is certainly the way to go, there are cases where
+   it's simply not possible due to lack of information.
+   Because there's no way to to stop users from working around
+   restrictions to get the result they want, **whenever** provides the
+   ``ignore_dst`` option to at least make it explicit when this is happening.
 
 Formatting and parsing
 ----------------------
@@ -748,14 +834,8 @@ On the other hand, if you'd like to preserve the local time on the clock
 and calculate the corresponding moment in time:
 
 >>> # take the wall clock time and assume the (new) system timezone (Amsterdam)
->>> d.local().assume_system_tz()
+>>> d.local().assume_system_tz(disambiguate="earlier")
 SystemDateTime(2020-08-15 08:00:00+02:00)
-
-.. note::
-
-   Remember that :meth:`~whenever.LocalDateTime.assume_system_tz` may
-   require disambiguation, if the wall clock time is ambiguous in
-   the system timezone.
 
 .. seealso::
 
@@ -763,10 +843,10 @@ SystemDateTime(2020-08-15 08:00:00+02:00)
 
 .. [2] java.time, Noda Time (C#), and partly Temporal (JavaScript)
    all use a similar datamodel.
-   `Here is an excellent video on the topic <https://www.youtube.com/watch?v=saeKBuPewcU>`_.
-
 
 .. [1] The timezone ID is not part of the core ISO 8601 standard,
    but is part of the RFC 9557 extension.
    This format is commonly used by datetime libraries in other languages as well.
 
+.. [6] Daylight Saving Time isn't the only reason for UTC offset changes.
+   Changes can also occur due to political decisions, or historical reasons.

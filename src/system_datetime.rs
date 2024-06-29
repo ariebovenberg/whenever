@@ -7,7 +7,8 @@ use crate::common::*;
 use crate::{
     date::Date,
     date_delta::DateDelta,
-    datetime_delta::{set_units_from_kwargs, DateTimeDelta},
+    datetime_delta::set_units_from_kwargs,
+    datetime_delta::DateTimeDelta,
     instant::Instant,
     local_datetime::{set_components_from_kwargs, DateTime},
     offset_datetime::{self, local, timestamp, timestamp_millis, timestamp_nanos, OffsetDateTime},
@@ -177,15 +178,15 @@ unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
 unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> PyReturn {
     let type_a = Py_TYPE(a_obj);
     let type_b = Py_TYPE(b_obj);
-    let inst_a = OffsetDateTime::extract(a_obj).to_instant();
+    let inst_a = OffsetDateTime::extract(a_obj).instant();
     let inst_b = if type_b == type_a {
-        OffsetDateTime::extract(b_obj).to_instant()
+        OffsetDateTime::extract(b_obj).instant()
     } else if type_b == State::for_type(type_a).instant_type {
         Instant::extract(b_obj)
     } else if type_b == State::for_type(type_a).zoned_datetime_type {
         ZonedDateTime::extract(b_obj).instant()
     } else if type_b == State::for_type(type_a).offset_datetime_type {
-        OffsetDateTime::extract(b_obj).to_instant()
+        OffsetDateTime::extract(b_obj).instant()
     } else {
         return Ok(newref(Py_NotImplemented()));
     };
@@ -203,7 +204,6 @@ unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> 
 
 #[inline]
 unsafe fn _shift(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) -> PyReturn {
-    let opname = if negate { '-' } else { '+' };
     debug_assert_eq!(
         PyType_GetModule(Py_TYPE(obj_a)),
         PyType_GetModule(Py_TYPE(obj_b))
@@ -217,50 +217,26 @@ unsafe fn _shift(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) -> Py
         py_api,
         ..
     } = State::for_type(type_a);
-    let mut delta = if type_b == time_delta_type {
-        DateTimeDelta {
-            ddelta: DateDelta::ZERO,
-            tdelta: TimeDelta::extract(obj_b),
-        }
-    } else if type_b == date_delta_type {
-        DateTimeDelta {
-            ddelta: DateDelta::extract(obj_b),
-            tdelta: TimeDelta::ZERO,
-        }
-    } else if type_b == datetime_delta_type {
-        DateTimeDelta::extract(obj_b)
-    } else {
-        // We don't need to return NotImplemented here, as we know
-        // which types within the module are supported.
+    if type_b == time_delta_type {
+        let odt = OffsetDateTime::extract(obj_a);
+        let mut delta = TimeDelta::extract(obj_b);
+        if negate {
+            delta = -delta;
+        };
+        odt.instant()
+            .shift(delta.total_nanos())
+            .ok_or_value_err("Resulting datetime is out of range")?
+            .to_system_tz(py_api)?
+            .to_obj(type_a)
+    } else if type_b == date_delta_type || type_b == datetime_delta_type {
         Err(type_err!(
-            "unsupported operand type(s) for {}: 'SystemDateTime' and {}",
-            opname,
-            type_b.cast::<PyObject>().repr()
+            "Addition/subtraction of calendar units on a ZonedDateTime requires \
+             explicit disambiguation. Use the `add`/`subtract` methods instead. \
+             For example, instead of `dt + delta` use `dt.add(delta, disambiguate=...)`."
         ))?
-    };
-    debug_assert_eq!(type_a, State::for_type(type_a).system_datetime_type);
-    let odt = OffsetDateTime::extract(obj_a);
-    if negate {
-        delta = -delta;
-    }
-    let DateTimeDelta { ddelta, tdelta } = delta;
-    let date_shifted = if delta.ddelta.is_zero() {
-        odt
     } else {
-        let DateTime { date, time } = odt
-            .without_offset()
-            .shift_date(ddelta.months, ddelta.days)
-            .ok_or_else(|| value_err!("Result of {} out of range", opname))?;
-        OffsetDateTime::from_system_tz(py_api, date, time, Disambiguate::Compatible)?
-            // no errors in "compatible" mode
-            .unwrap()
-    };
-    date_shifted
-        .to_instant()
-        .shift(tdelta.total_nanos())
-        .ok_or_else(|| value_err!("Result of {} out of range", opname))?
-        .to_system_tz(py_api)?
-        .to_obj(type_a)
+        Ok(newref(Py_NotImplemented()))
+    }
 }
 
 unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
@@ -278,8 +254,8 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     // Easy case: systemDT - systemDT
     let (inst_a, inst_b) = if type_a == type_b {
         (
-            OffsetDateTime::extract(obj_a).to_instant(),
-            OffsetDateTime::extract(obj_b).to_instant(),
+            OffsetDateTime::extract(obj_a).instant(),
+            OffsetDateTime::extract(obj_b).instant(),
         )
     // Other cases are more difficult, as they can be triggered
     // by reflexive operations with arbitrary types.
@@ -293,12 +269,12 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             } else if type_b == State::for_mod(mod_a).zoned_datetime_type {
                 ZonedDateTime::extract(obj_b).instant()
             } else if type_b == State::for_mod(mod_a).offset_datetime_type {
-                OffsetDateTime::extract(obj_b).to_instant()
+                OffsetDateTime::extract(obj_b).instant()
             } else {
                 return _shift(obj_a, obj_b, true);
             };
             debug_assert_eq!(type_a, State::for_type(type_a).system_datetime_type);
-            (OffsetDateTime::extract(obj_a).to_instant(), inst_b)
+            (OffsetDateTime::extract(obj_a).instant(), inst_b)
         } else {
             return Ok(newref(Py_NotImplemented()));
         }
@@ -645,7 +621,7 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
 
 unsafe fn instant(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     OffsetDateTime::extract(slf)
-        .to_instant()
+        .instant()
         .to_obj(State::for_obj(slf).instant_type)
 }
 
@@ -666,7 +642,7 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
                 ..
             } = State::for_obj(slf_obj);
             let offset_secs = offset_datetime::extract_offset(arg, time_delta_type)?;
-            slf.to_instant()
+            slf.instant()
                 .to_offset(offset_secs)
                 .ok_or_value_err("Resulting local date out of range")?
                 .to_obj(offset_datetime_type)
@@ -685,7 +661,7 @@ unsafe fn to_tz(slf: *mut PyObject, tz: *mut PyObject) -> PyReturn {
     let zoneinfo = call1(zoneinfo_type, tz)?;
     defer_decref!(zoneinfo);
     OffsetDateTime::extract(slf)
-        .to_instant()
+        .instant()
         .to_tz(py_api, zoneinfo)?
         .to_obj(zoned_datetime_type)
 }
@@ -703,7 +679,7 @@ unsafe fn add(
     args: &[*mut PyObject],
     kwargs: &[(*mut PyObject, *mut PyObject)],
 ) -> PyReturn {
-    _shift_method(slf, cls, args, kwargs, false, "add")
+    _shift_method(slf, cls, args, kwargs, false)
 }
 
 unsafe fn subtract(
@@ -712,7 +688,7 @@ unsafe fn subtract(
     args: &[*mut PyObject],
     kwargs: &[(*mut PyObject, *mut PyObject)],
 ) -> PyReturn {
-    _shift_method(slf, cls, args, kwargs, true, "subtract")
+    _shift_method(slf, cls, args, kwargs, true)
 }
 
 #[inline]
@@ -722,22 +698,63 @@ unsafe fn _shift_method(
     args: &[*mut PyObject],
     kwargs: &[(*mut PyObject, *mut PyObject)],
     negate: bool,
-    fname: &str,
 ) -> PyReturn {
-    if !args.is_empty() {
-        return Err(type_err!("{}() takes no positional arguments", fname));
-    }
+    let fname = if negate { "subtract" } else { "add" };
     let state = State::for_type(cls);
     let mut dis = None;
     let mut months = 0;
     let mut days = 0;
     let mut nanos = 0;
-    for &(key, value) in kwargs {
-        if key == state.str_disambiguate {
-            dis = Some(Disambiguate::from_py(value)?);
-        } else {
-            set_units_from_kwargs(key, value, &mut months, &mut days, &mut nanos, state, fname)?;
+
+    match *args {
+        [arg] => {
+            match *kwargs {
+                [(key, value)] if key == state.str_disambiguate => {
+                    dis = Some(Disambiguate::from_py(value)?)
+                }
+                [] => {}
+                _ => Err(type_err!(
+                    "{}() can't mix positional and keyword arguments",
+                    fname
+                ))?,
+            };
+            if Py_TYPE(arg) == state.time_delta_type {
+                nanos = TimeDelta::extract(arg).total_nanos();
+            } else if Py_TYPE(arg) == state.date_delta_type {
+                let dd = DateDelta::extract(arg);
+                months = dd.months;
+                days = dd.days;
+            } else if Py_TYPE(arg) == state.datetime_delta_type {
+                let dt = DateTimeDelta::extract(arg);
+                months = dt.ddelta.months;
+                days = dt.ddelta.days;
+                nanos = dt.tdelta.total_nanos();
+            } else {
+                Err(type_err!("{}() argument must be a delta", fname))?
+            }
         }
+        [] => {
+            for &(key, value) in kwargs {
+                if key == state.str_disambiguate {
+                    dis = Some(Disambiguate::from_py(value)?);
+                } else {
+                    set_units_from_kwargs(
+                        key,
+                        value,
+                        &mut months,
+                        &mut days,
+                        &mut nanos,
+                        state,
+                        fname,
+                    )?;
+                }
+            }
+        }
+        _ => Err(type_err!(
+            "{}() takes at most 1 positional argument, got {}",
+            fname,
+            args.len()
+        ))?,
     }
     if negate {
         months = -months;
@@ -774,11 +791,34 @@ unsafe fn _shift_method(
         OffsetDateTime::extract(slf)
     };
 
-    odt.to_instant()
+    odt.instant()
         .shift(nanos)
         .ok_or_value_err("Result is out of range")?
         .to_system_tz(state.py_api)?
         .to_obj(cls)
+}
+
+unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
+    let type_b = Py_TYPE(obj_b);
+    let type_a = Py_TYPE(obj_a);
+    let state = State::for_type(type_a);
+    let inst_a = OffsetDateTime::extract(obj_a).instant();
+    let inst_b = if type_b == Py_TYPE(obj_a) {
+        OffsetDateTime::extract(obj_b).instant()
+    } else if type_b == state.instant_type {
+        Instant::extract(obj_b)
+    } else if type_b == state.zoned_datetime_type {
+        ZonedDateTime::extract(obj_b).instant()
+    } else if type_b == state.offset_datetime_type {
+        OffsetDateTime::extract(obj_b).instant()
+    } else {
+        Err(type_err!(
+            "difference() argument must be an OffsetDateTime, 
+             Instant, ZonedDateTime, or SystemDateTime"
+        ))?
+    };
+    TimeDelta::from_nanos_unchecked(inst_a.total_nanos() - inst_b.total_nanos())
+        .to_obj(state.time_delta_type)
 }
 
 static mut METHODS: &[PyMethodDef] = &[
@@ -851,6 +891,11 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(
         subtract,
         "Return a new instance with the given time units subtracted"
+    ),
+    method!(
+        difference,
+        "Return the difference between two instances",
+        METH_O
     ),
     PyMethodDef::zeroed(),
 ];

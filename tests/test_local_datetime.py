@@ -8,6 +8,7 @@ from hypothesis.strategies import floats, integers, text
 
 from whenever import (
     Date,
+    ImplicitlyIgnoringDST,
     Instant,
     LocalDateTime,
     OffsetDateTime,
@@ -222,14 +223,18 @@ class TestParseCommonIso:
 def test_equality():
     d = LocalDateTime(2020, 8, 15)
     different = LocalDateTime(2020, 8, 16)
+    different2 = LocalDateTime(2020, 8, 15, nanosecond=1)
     same = LocalDateTime(2020, 8, 15)
     assert d == same
     assert d != different
     assert not d == different
+    assert d != different2
+    assert not d == different2
     assert not d != same
 
     assert hash(d) == hash(same)
     assert hash(d) != hash(different)
+    assert hash(d) != hash(different2)
 
     assert d == AlwaysEqual()
     assert d != NeverEqual()
@@ -267,10 +272,16 @@ def test_format_common_iso():
 def test_comparison():
     d = LocalDateTime(2020, 8, 15, 23, 12, 9)
     later = LocalDateTime(2020, 8, 16, 0, 0, 0)
+    later2 = d.replace(nanosecond=1)
     assert d < later
     assert d <= later
     assert later > d
     assert later >= d
+
+    assert d < later2
+    assert d <= later2
+    assert later2 > d
+    assert later2 >= d
 
     assert d < AlwaysLarger()
     assert d <= AlwaysLarger()
@@ -350,28 +361,80 @@ def test_replace():
         d.replace(tzinfo=timezone.utc)  # type: ignore[call-arg]
 
 
-class TestAddMethod:
+class TestShiftMethods:
 
     def test_valid(self):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        shifted = LocalDateTime(2020, 5, 27, 23, 12, 14, nanosecond=987_651)
 
-        assert d.add(hours=48, seconds=5, months=-2) == d - months(2) + hours(
-            48
-        ) + seconds(5)
+        assert d.add(ignore_dst=True) == d
+
+        assert (
+            d.add(
+                months=-3,
+                days=10,
+                hours=48,
+                seconds=5,
+                nanoseconds=-3,
+                ignore_dst=True,
+            )
+            == shifted
+        )
+
+        # same result with deltas
+        assert (
+            d.add(hours(48) + seconds(5) + nanoseconds(-3), ignore_dst=True)
+            .add(months(-3))
+            .add(days(10))
+        ) == shifted
+
+        # same result with subtract()
+        assert (
+            d.subtract(
+                months=3,
+                days=-10,
+                hours=-48,
+                seconds=-5,
+                nanoseconds=3,
+                ignore_dst=True,
+            )
+            == shifted
+        )
+
+        # same result with deltas
+        assert (
+            d.subtract(
+                hours(-48) + seconds(-5) + nanoseconds(3), ignore_dst=True
+            )
+            .subtract(months(3))
+            .subtract(days(-10))
+        ) == shifted
+
+        # date units don't require ignore_dst
+        assert d.subtract(months=3) == d.add(months=-3)
 
     def test_invalid(self):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d.add(hours=24 * 365 * 8000)
+            d.add(hours=24 * 365 * 8000, ignore_dst=True)
 
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d.add(hours=-24 * 365 * 3000)
+            d.add(hours=-24 * 365 * 3000, ignore_dst=True)
 
-        with pytest.raises(TypeError, match="positional"):
-            d.add(4)  # type: ignore[misc]
+        with pytest.raises((TypeError, AttributeError)):
+            d.add(4, ignore_dst=True)  # type: ignore[call-overload]
 
-        with pytest.raises(TypeError, match="positional"):
-            d.add(hours(4))  # type: ignore[arg-type,misc]
+        # ignore_dst is required
+        with pytest.raises(ImplicitlyIgnoringDST):
+            d.add(hours=48, seconds=5)  # type: ignore[call-overload]
+
+        # ignore_dst is required
+        with pytest.raises(ImplicitlyIgnoringDST):
+            d.add(hours(48))  # type: ignore[call-overload]
+
+        # mixing args/kwargs
+        with pytest.raises(TypeError):
+            d.add(hours(48), seconds=5, ignore_dst=True)  # type: ignore[call-overload]
 
     @given(
         years=integers(),
@@ -387,72 +450,20 @@ class TestAddMethod:
     def test_fuzzing(self, **kwargs):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         try:
-            d.add(**kwargs)
+            d.add(**kwargs, ignore_dst=True)
         except (ValueError, OverflowError):
             pass
 
 
-class TestSubtractMethod:
-
-    def test_valid(self):
-        d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        assert d.subtract(
-            hours=24, seconds=5, months=-2, days=1
-        ) == d + months(2) - days(1) - hours(24) - seconds(5)
-
-    def test_invalid(self):
-        d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.raises(TypeError, match="positional"):
-            d.subtract(4)  # type: ignore[misc]
-
-        with pytest.raises(TypeError, match="positional"):
-            d.subtract(hours(4))  # type: ignore[misc,arg-type]
-
-    @given(
-        years=integers(),
-        months=integers(),
-        days=integers(),
-        hours=floats(),
-        minutes=floats(),
-        seconds=floats(),
-        milliseconds=floats(),
-        microseconds=floats(),
-        nanoseconds=integers(),
-    )
-    def test_fuzzing(self, **kwargs):
-        d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        try:
-            d.subtract(**kwargs)
-        except (ValueError, OverflowError):
-            pass
-
-
-class TestAddOperator:
-
-    def test_time_units(self):
-        d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        assert d + hours(48) + seconds(5) + nanoseconds(3) == LocalDateTime(
-            2020, 8, 17, 23, 12, 14, nanosecond=987_654_324
-        )
-        assert d + nanoseconds(400_000_000) == LocalDateTime(
-            2020, 8, 15, 23, 12, 10, nanosecond=387_654_321
-        )
-        assert d + seconds(-20) == LocalDateTime(
-            2020, 8, 15, 23, 11, 49, nanosecond=987_654_321
-        )
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d + hours(24 * 365 * 8000)
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d + hours(-24 * 365 * 3000)
+class TestShiftOperators:
 
     def test_calendar_units(self):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        assert d + (years(1) + weeks(1) + days(-3)) == d.replace(
-            year=2021, day=19
-        )
-        assert d + days(-1) == d.replace(day=14)
+        shifted = d.replace(year=2021, day=19)
+        assert d + (years(1) + weeks(1) + days(-3)) == shifted
+
+        # same results with subtraction
+        assert d - (years(-1) + weeks(-1) + days(3)) == shifted
 
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             d + years(8_000)
@@ -466,12 +477,6 @@ class TestAddOperator:
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             d + days(-366 * 8_000)
 
-    def test_mixed_units(self):
-        d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        assert d + (
-            years(1) + weeks(1) + days(-3) + hours(24) + seconds(5)
-        ) == LocalDateTime(2021, 8, 20, 23, 12, 14, nanosecond=987_654_321)
-
     def test_invalid(self):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.raises(TypeError, match="unsupported operand type"):
@@ -481,42 +486,32 @@ class TestAddOperator:
         with pytest.raises(TypeError, match="unsupported operand type"):
             seconds(4) + d  # type: ignore[operator]
 
+        with pytest.raises(ImplicitlyIgnoringDST, match="add"):
+            d + hours(24)  # type: ignore[operator]
 
-class TestSubtractOperator:
+        with pytest.raises(ImplicitlyIgnoringDST, match="add"):
+            d - (hours(24) + months(3))  # type: ignore[operator]
 
-    def test_time_units(self):
-        d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        assert d - hours(24) - seconds(5) == LocalDateTime(
-            2020, 8, 14, 23, 12, 4, nanosecond=987_654
-        )
 
-    def test_calendar_units(self):
-        d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        assert d - (years(1) + weeks(1) + days(-3)) == d.replace(
-            year=2019, day=11
-        )
-
-    def test_mixed_units(self):
-        d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        assert d - (
-            years(1) + weeks(1) + days(-3) + hours(24) + seconds(5)
-        ) == LocalDateTime(2019, 8, 10, 23, 12, 4, nanosecond=987_654_321)
-
-    def test_other_datetime(self):
-        d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        other = LocalDateTime(2020, 8, 14, 23, 12, 4, nanosecond=987_654_331)
-        assert d - other == hours(24) + seconds(5) - nanoseconds(10)
+class TestDifference:
+    def test_same(self):
+        d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
+        other = LocalDateTime(2020, 8, 14, 23, 12, 4, nanosecond=987_654_321)
+        assert d.difference(d, ignore_dst=True) == hours(0)
+        assert d.difference(other, ignore_dst=True) == hours(24) + seconds(
+            5
+        ) - nanoseconds(321)
 
     def test_invalid(self):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            d - 42  # type: ignore[operator]
+        with pytest.raises(ImplicitlyIgnoringDST):
+            d.difference(d)  # type: ignore[call-arg]
 
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            42 - d  # type: ignore[operator]
+        with pytest.raises(ImplicitlyIgnoringDST):
+            d - d  # type: ignore[operator]
 
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            seconds(4) - d  # type: ignore[operator]
+        with pytest.raises(TypeError):
+            d - 43  # type: ignore[operator]
 
 
 def test_replace_date():

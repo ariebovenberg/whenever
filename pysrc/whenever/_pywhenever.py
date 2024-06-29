@@ -92,6 +92,7 @@ __all__ = [
     "SkippedTime",
     "RepeatedTime",
     "InvalidOffset",
+    "ImplicitlyIgnoringDST",
     # Constants
     "MONDAY",
     "TUESDAY",
@@ -130,6 +131,7 @@ _object_new = object.__new__
 _MAX_DELTA_MONTHS = 9999 * 12
 _MAX_DELTA_DAYS = 9999 * 366
 _MAX_DELTA_NANOS = _MAX_DELTA_DAYS * 24 * 3_600_000_000_000
+_UNSET = object()
 
 
 class _ImmutableBase:
@@ -384,7 +386,7 @@ class Date(_ImmutableBase):
         DateDelta(P9M1D)
         >>> # the other way around, the result is different
         >>> Date(2023, 6, 30) - Date(2024, 3, 31)
-        DateDelta(P-9M)
+        DateDelta(-P9M)
         """
         if isinstance(d, DateDelta):
             return self.subtract(months=d._months, days=d._days)
@@ -492,20 +494,6 @@ class Time(_ImmutableBase):
     >>> t = Time(12, 30, 0)
     Time(12:30:00)
 
-    Default format
-    --------------
-
-    The default format is:
-
-    .. code-block:: text
-
-       HH:MM:SS(.ffffff)
-
-    For example:
-
-    .. code-block:: text
-
-       12:30:11.004
     """
 
     __slots__ = ("_py_time", "_nanos")
@@ -1722,7 +1710,7 @@ class DateTimeDelta(_ImmutableBase):
         -------
         >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
         >>> d - DateTimeDelta(months=2, days=3, minutes=90)
-        DateTimeDelta(P-2M1W8DT2H30M)
+        DateTimeDelta(-P2M1W8DT2H30M)
         """
         if isinstance(other, DateTimeDelta):
             d = self._date_part - other._date_part
@@ -2034,8 +2022,8 @@ class _KnowsLocal(_BasicConversions, ABC):
 
         Example
         -------
-        >>> d = Instant.from_utc(2021, 1, 2, 3, 4, 5)
-        Instant(2021-01-02T03:04:05Z)
+        >>> d = ZonedDateTime(2021, 1, 2, 3, 4, 5, tz="Europe/Paris")
+        ZonedDateTime(2021-01-02T03:04:05+01:00[Europe/Paris])
         >>> d.time()
         Time(03:04:05)
 
@@ -2043,7 +2031,7 @@ class _KnowsLocal(_BasicConversions, ABC):
         like :meth:`~LocalDateTime.assume_utc` or
         :meth:`~LocalDateTime.assume_tz`:
 
-        >>> time.on(date).assume_utc()
+        >>> time.on(date).assume_tz("Europe/Paris", disambiguate="compatible")
         """
         return Time._from_py_unchecked(self._py_dt.time(), self._nanos)
 
@@ -2073,9 +2061,9 @@ class _KnowsLocal(_BasicConversions, ABC):
 
             Example
             -------
-            >>> d = Instant.from_utc(2020, 8, 15, 23, 12)
+            >>> d = LocalDateTime(2020, 8, 15, 23, 12)
             >>> d.replace(year=2021)
-            Instant(2021-08-15T23:12:00)
+            LocalDateTime(2021-08-15 23:12:00)
             >>>
             >>> z = ZonedDateTime(2020, 8, 15, 23, 12, tz="Europe/London")
             >>> z.replace(year=2021, disambiguate="raise")
@@ -2118,6 +2106,48 @@ class _KnowsLocal(_BasicConversions, ABC):
             The same exceptions as the constructor may be raised.
             For system and zoned datetimes,
             you will need to pass ``disambiguate=`` to resolve ambiguities.
+            """
+
+        @abstractmethod
+        def add(
+            self: _T,
+            *,
+            years: int = 0,
+            months: int = 0,
+            weeks: int = 0,
+            days: int = 0,
+            hours: float = 0,
+            minutes: float = 0,
+            seconds: float = 0,
+            milliseconds: float = 0,
+            microseconds: float = 0,
+            nanoseconds: int = 0,
+            **kwargs,
+        ) -> _T:
+            """Add date and time units to this datetime.
+
+            See :ref:`the docs on arithmetic <arithmetic>` for more information.
+            """
+
+        @abstractmethod
+        def subtract(
+            self: _T,
+            *,
+            years: int = 0,
+            months: int = 0,
+            weeks: int = 0,
+            days: int = 0,
+            hours: float = 0,
+            minutes: float = 0,
+            seconds: float = 0,
+            milliseconds: float = 0,
+            microseconds: float = 0,
+            nanoseconds: int = 0,
+            **kwargs,
+        ) -> _T:
+            """Subtract date and time units to this datetime.
+
+            See :ref:`the docs on arithmetic <arithmetic>` for more information.
             """
 
 
@@ -2249,7 +2279,8 @@ class _KnowsInstant(_BasicConversions):
         )
 
     def exact_eq(self: _T, other: _T, /) -> bool:
-        """Compare objects by their values (instead of their UTC equivalence).
+        """Compare objects by their values
+        (instead of whether they represent the same instant).
         Different types are never equal.
 
         Note
@@ -2263,7 +2294,7 @@ class _KnowsInstant(_BasicConversions):
         >>> a = OffsetDateTime(2020, 8, 15, hour=12, offset=1)
         >>> b = OffsetDateTime(2020, 8, 15, hour=13, offset=2)
         >>> a == b
-        True  # equivalent UTC times
+        True  # equivalent instants
         >>> a.exact_eq(b)
         False  # different values (hour and offset)
         """
@@ -2279,6 +2310,19 @@ class _KnowsInstant(_BasicConversions):
             type(other._py_dt.tzinfo),  # type: ignore[attr-defined]
         )
 
+    def difference(
+        self,
+        other: Instant | OffsetDateTime | ZonedDateTime | SystemDateTime,
+        /,
+    ) -> TimeDelta:
+        """Calculate the difference between two instants in time.
+
+        Equivalent to :meth:`__sub__`.
+
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
+        """
+        return self - other  # type: ignore[operator, no-any-return]
+
     def __eq__(self, other: object) -> bool:
         """Check if two datetimes represent at the same moment in time
 
@@ -2287,7 +2331,7 @@ class _KnowsInstant(_BasicConversions):
         Note
         ----
         If you want to exactly compare the values on their values
-        instead of UTC equivalence, use :meth:`exact_eq` instead.
+        instead, use :meth:`exact_eq`.
 
         Example
         -------
@@ -2396,17 +2440,23 @@ class _KnowsInstant(_BasicConversions):
 
             ``a - b`` is equivalent to ``a.instant() - b.instant()``
 
+            Equivalent to :meth:`difference`.
+
+            See :ref:`the docs on arithmetic <arithmetic>` for more information.
+
             Example
             -------
             >>> d = Instant.from_utc(2020, 8, 15, hour=23)
             >>> d - ZonedDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
             TimeDelta(05:00:00)
             """
-            py_delta = self._py_dt.astimezone(_UTC) - other._py_dt
-            return TimeDelta(
-                seconds=py_delta.days * 86_400 + py_delta.seconds,
-                nanoseconds=self._nanos - other._nanos,
-            )
+            if isinstance(other, _KnowsInstant):
+                py_delta = self._py_dt.astimezone(_UTC) - other._py_dt
+                return TimeDelta(
+                    seconds=py_delta.days * 86_400 + py_delta.seconds,
+                    nanoseconds=self._nanos - other._nanos,
+                )
+            return NotImplemented
 
 
 class _KnowsInstantAndLocal(_KnowsLocal, _KnowsInstant):
@@ -2511,7 +2561,6 @@ class Instant(_KnowsInstant):
 
     @classmethod
     def now(cls) -> Instant:
-        """Create an instance from the current time"""
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(
             _datetime.fromtimestamp(secs, _UTC), nanos
@@ -2519,22 +2568,10 @@ class Instant(_KnowsInstant):
 
     @classmethod
     def from_timestamp(cls, i: int, /) -> Instant:
-        """Create an instance from a UNIX timestamp.
-        The inverse of :meth:`~_KnowsInstant.timestamp`.
-
-        Example
-        -------
-        >>> Instant.from_timestamp(0) == Instant.from_utc(1970, 1, 1)
-        >>> d = Instant.from_timestamp(1_123_000_000)
-        Instant(2004-08-02T16:26:40Z)
-        >>> Instant.from_timestamp(d.timestamp()) == d
-        True
-        """
         return cls._from_py_unchecked(_fromtimestamp(i, _UTC), 0)
 
     @classmethod
     def from_timestamp_millis(cls, i: int, /) -> Instant:
-        """Create an instace from a UNIX timestamp in milliseconds."""
         secs, millis = divmod(i, 1_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _UTC), millis * 1_000_000
@@ -2542,7 +2579,6 @@ class Instant(_KnowsInstant):
 
     @classmethod
     def from_timestamp_nanos(cls, i: int, /) -> Instant:
-        """Create an instace from a UNIX timestamp in milliseconds."""
         secs, nanos = divmod(i, 1_000_000_000)
         return cls._from_py_unchecked(_fromtimestamp(secs, _UTC), nanos)
 
@@ -2717,18 +2753,9 @@ class Instant(_KnowsInstant):
         microseconds: float = 0,
         nanoseconds: int = 0,
     ) -> Instant:
-        """Add a time amount to this datetime.
+        """Add a time amount to this instant.
 
-        Units are added from largest to smallest,
-        truncating and/or wrapping after each step.
-
-        Example
-        -------
-        >>> d = Instant.from_utc(2020, 8, 15, hour=23, minute=12)
-        >>> d.add(hours=24, seconds=5)
-        Instant(2020-08-16 23:12:05Z)
-        >>> d.add(years=1, days=2, minutes=5)
-        Instant(2021-08-17 23:17:00Z)
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
         return self + TimeDelta(
             hours=hours,
@@ -2749,18 +2776,9 @@ class Instant(_KnowsInstant):
         microseconds: float = 0,
         nanoseconds: int = 0,
     ) -> Instant:
-        """Subtract a time amount from this datetime.
+        """Subtract a time amount from this instant.
 
-        Units are subtracted from largest to smallest,
-        wrapping and/or truncating after each step.
-
-        Example
-        -------
-        >>> d = Instant.from_utc(2020, 8, 15, hour=23, minute=12)
-        >>> d.subtract(hours=24, seconds=5)
-        Instant(2020-08-14 23:11:55Z)
-        >>> d.subtract(years=1, days=2, minutes=5)
-        Instant(2019-08-13 23:06:00Z)
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
         return self.add(
             hours=-hours,
@@ -2774,13 +2792,7 @@ class Instant(_KnowsInstant):
     def __add__(self, delta: TimeDelta) -> Instant:
         """Add a time amount to this datetime.
 
-        Behaves the same as :meth:`add`.
-
-        Example
-        -------
-        >>> d = Instant.from_utc(2020, 8, 15, hour=23, minute=12)
-        >>> d + hours(24) + seconds(5)
-        Instant(2020-08-16 23:12:05Z)
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
         if isinstance(delta, TimeDelta):
             delta_secs, nanos = divmod(
@@ -2803,6 +2815,7 @@ class Instant(_KnowsInstant):
         """Subtract another exact time or timedelta
 
         Subtraction of deltas happens in the same way as :meth:`subtract`.
+        Subtraction of instants happens the same way as :meth:`~_KnowsInstant.difference`.
 
         Example
         -------
@@ -2861,25 +2874,11 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     >>> pycon23_start = OffsetDateTime(2023, 4, 21, hour=9, offset=-6)
     OffsetDateTime(2023-04-21 09:00:00-06:00)
 
-    Note
-    ----
-    The common ISO format is:
-
-    .. code-block:: text
-
-        YYYY-MM-DDTHH:MM:SS±HH:MM
-
-    Where:
-
-    - Seconds may be fractional up to nanosecond precision.
-    - Offset may have seconds precision.
-    - The offset may be `Z` for UTC.
-
-    For example:
-
-    .. code-block:: text
-
-        2020-08-15T12:08:30+01:00
+    Warning
+    -------
+    This class does *not* account for daylight saving time.
+    If you need to adjust an offset datetime and account for DST,
+    convert to a :class:`~ZonedDateTime`.
 
     Note
     ----
@@ -2917,10 +2916,18 @@ class OffsetDateTime(_KnowsInstantAndLocal):
             raise ValueError(f"nanosecond out of range: {nanosecond}")
         self._nanos = nanosecond
 
-    # FUTURE: remove?
     @classmethod
-    def now(cls, offset: int | TimeDelta, /) -> OffsetDateTime:
-        """Create an instance at the current time with the given offset"""
+    def now(
+        cls, offset: int | TimeDelta, /, *, ignore_dst: bool = False
+    ) -> OffsetDateTime:
+        if ignore_dst is not True:
+            raise ImplicitlyIgnoringDST(
+                "Getting the current time with a fixed offset implicitly ignores DST "
+                "and other timezone changes. Instead, use `Instant.now()` or "
+                "`ZonedDateTime.now(<tz name>)` if you know the timezone. "
+                "Or, if you want to ignore DST and accept potentially incorrect offsets, "
+                "pass `ignore_dst=True` to this method."
+            )
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _load_offset(offset)), nanos
@@ -2973,29 +2980,20 @@ class OffsetDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def from_timestamp(
-        cls, i: int, /, *, offset: int | TimeDelta
+        cls, i: int, /, *, offset: int | TimeDelta, ignore_dst: bool = False
     ) -> OffsetDateTime:
-        """Create a OffsetDateTime from a UNIX timestamp.
-        The inverse of :meth:`~_KnowsInstant.timestamp`.
-
-        Example
-        -------
-        >>> OffsetDateTime.from_timestamp(0, offset=hours(3))
-        OffsetDateTime(1970-01-01 03:00:00+03:00)
-        >>> d = OffsetDateTime.from_timestamp(1_123_000_000.45, offset=-2)
-        OffsetDateTime(2004-08-02 14:26:40.45-02:00)
-        >>> OffsetDateTime.from_timestamp(d.timestamp(), d.offset) == d
-        True
-        """
+        if ignore_dst is not True:
+            raise _EXC_TIMESTAMP_DST
         return cls._from_py_unchecked(
             _fromtimestamp(i, _load_offset(offset)), 0
         )
 
     @classmethod
     def from_timestamp_millis(
-        cls, i: int, /, *, offset: int | TimeDelta
+        cls, i: int, /, *, offset: int | TimeDelta, ignore_dst: bool = False
     ) -> OffsetDateTime:
-        """Create an instace from a UNIX timestamp in milliseconds."""
+        if ignore_dst is not True:
+            raise _EXC_TIMESTAMP_DST
         secs, millis = divmod(i, 1_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _load_offset(offset)), millis * 1_000_000
@@ -3003,9 +3001,10 @@ class OffsetDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def from_timestamp_nanos(
-        cls, i: int, /, *, offset: int | TimeDelta
+        cls, i: int, /, *, offset: int | TimeDelta, ignore_dst: bool = False
     ) -> OffsetDateTime:
-        """Create an instace from a UNIX timestamp in milliseconds."""
+        if ignore_dst is not True:
+            raise _EXC_TIMESTAMP_DST
         secs, nanos = divmod(i, 1_000_000_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _load_offset(offset)), nanos
@@ -3023,8 +3022,12 @@ class OffsetDateTime(_KnowsInstantAndLocal):
             d.microsecond * 1_000,
         )
 
-    def replace(self, /, **kwargs: Any) -> OffsetDateTime:
+    def replace(
+        self, /, ignore_dst: bool = False, **kwargs: Any
+    ) -> OffsetDateTime:
         _check_invalid_replace_kwargs(kwargs)
+        if ignore_dst is not True:
+            raise _EXC_ADJUST_OFFSET_DATETIME
         try:
             kwargs["tzinfo"] = _load_offset(kwargs.pop("offset"))
         except KeyError:
@@ -3034,7 +3037,11 @@ class OffsetDateTime(_KnowsInstantAndLocal):
             _check_utc_bounds(self._py_dt.replace(**kwargs)), nanos
         )
 
-    def replace_date(self, date: Date, /) -> OffsetDateTime:
+    def replace_date(
+        self, date: Date, /, *, ignore_dst: bool = False
+    ) -> OffsetDateTime:
+        if ignore_dst is not True:
+            raise _EXC_ADJUST_OFFSET_DATETIME
         return self._from_py_unchecked(
             _check_utc_bounds(
                 _datetime.combine(date._py_date, self._py_dt.timetz())
@@ -3042,7 +3049,11 @@ class OffsetDateTime(_KnowsInstantAndLocal):
             self._nanos,
         )
 
-    def replace_time(self, time: Time, /) -> OffsetDateTime:
+    def replace_time(
+        self, time: Time, /, *, ignore_dst: bool = False
+    ) -> OffsetDateTime:
+        if ignore_dst is not True:
+            raise _EXC_ADJUST_OFFSET_DATETIME
         return self._from_py_unchecked(
             _check_utc_bounds(
                 _datetime.combine(
@@ -3056,25 +3067,9 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         return hash((self._py_dt, self._nanos))
 
     def __sub__(self, other: _KnowsInstant) -> TimeDelta:
-        """Subtract another datetime to get the duration between them
-
-        Example
-        -------
-        >>> d = Instant.from_utc(2020, 8, 15, 23, 12)
-        >>> d - hours(28) - seconds(5)
-        Instant(2020-08-14 19:11:55Z)
-
-        >>> d - OffsetDateTime(2020, 8, 15, offset=hours(-5))
-        TimeDelta(18:12:00)
-        """
-        if isinstance(other, _KnowsInstant):
-            return super().__sub__(other)  # type: ignore[misc, no-any-return]
-        return NotImplemented
-
-    def instant(self) -> Instant:
-        return Instant._from_py_unchecked(
-            self._py_dt.astimezone(_UTC), self._nanos
-        )
+        if isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
+            raise _EXC_ADJUST_OFFSET_DATETIME
+        return super().__sub__(other)  # type: ignore[misc, no-any-return]
 
     @classmethod
     def strptime(cls, s: str, /, fmt: str) -> OffsetDateTime:
@@ -3200,6 +3195,81 @@ class OffsetDateTime(_KnowsInstantAndLocal):
 
         return cls._from_py_unchecked(py_dt, nanos)
 
+    @no_type_check
+    def add(self, *args, **kwargs) -> OffsetDateTime:
+        return self._shift(1, *args, **kwargs)
+
+    @no_type_check
+    def subtract(self, *args, **kwargs) -> OffsetDateTime:
+        return self._shift(-1, *args, **kwargs)
+
+    @no_type_check
+    def _shift(
+        self,
+        sign: int,
+        arg: Delta | _UNSET = _UNSET,
+        /,
+        *,
+        ignore_dst: Optional[Literal[True]] = None,
+        **kwargs,
+    ) -> OffsetDateTime:
+        if ignore_dst is not True:
+            raise _EXC_ADJUST_OFFSET_DATETIME
+        elif kwargs:
+            if arg is _UNSET:
+                return self._shift_kwargs(sign, **kwargs)
+            raise TypeError("Cannot mix positional and keyword arguments")
+
+        elif arg is not _UNSET:
+            return self._shift_kwargs(
+                sign,
+                months=arg._date_part._months,
+                days=arg._date_part._days,
+                nanoseconds=arg._time_part._total_ns,
+            )
+        else:
+            return self
+
+    def _shift_kwargs(
+        self,
+        sign: int,
+        *,
+        years: int = 0,
+        months: int = 0,
+        weeks: int = 0,
+        days: int = 0,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
+    ) -> OffsetDateTime:
+
+        py_dt_with_new_date = self.replace_date(
+            self.date()
+            ._add_months(sign * (years * 12 + months))
+            ._add_days(sign * (weeks * 7 + days)),
+            ignore_dst=True,
+        )._py_dt
+
+        tdelta = sign * TimeDelta(
+            hours=hours,
+            minutes=minutes,
+            seconds=seconds,
+            milliseconds=milliseconds,
+            microseconds=microseconds,
+            nanoseconds=nanoseconds,
+        )
+
+        delta_secs, nanos = divmod(
+            tdelta._total_ns + self._nanos, 1_000_000_000
+        )
+        return self._from_py_unchecked(
+            (py_dt_with_new_date + _timedelta(seconds=delta_secs)),
+            nanos,
+        )
+
     def __repr__(self) -> str:
         return f"OffsetDateTime({str(self).replace('T', ' ')})"
 
@@ -3281,7 +3351,6 @@ class ZonedDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def now(cls, tz: str, /) -> ZonedDateTime:
-        """Create an instance from the current time in the given timezone"""
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, ZoneInfo(tz)), nanos
@@ -3427,39 +3496,38 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def __hash__(self) -> int:
         return hash((self._py_dt.astimezone(_UTC), self._nanos))
 
-    def __add__(self, delta: Delta) -> ZonedDateTime:
+    def __add__(self, delta: TimeDelta) -> ZonedDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
 
         See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
-        if isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
-            py_dt = self._py_dt
-            if delta._date_part:
-                py_dt = self.replace_date(
-                    self.date() + delta._date_part,
-                    disambiguate="compatible",
-                )._py_dt
-
+        if isinstance(delta, TimeDelta):
             delta_secs, nanos = divmod(
                 delta._time_part._total_ns + self._nanos, 1_000_000_000
             )
             return self._from_py_unchecked(
                 (
-                    py_dt.astimezone(_UTC) + _timedelta(seconds=delta_secs)
+                    self._py_dt.astimezone(_UTC)
+                    + _timedelta(seconds=delta_secs)
                 ).astimezone(self._py_dt.tzinfo),
                 nanos,
             )
-        else:
-            return NotImplemented
+        elif isinstance(delta, (DateDelta, DateTimeDelta)):
+            raise TypeError(
+                "Addition/subtraction of calendar units on a ZonedDateTime requires "
+                "explicit disambiguation. Use the `add`/`subtract` methods instead. "
+                "For example, instead of `dt + delta` use `dt.add(delta, disambiguate=...)`."
+            )
+        return NotImplemented
 
     @overload
     def __sub__(self, other: _KnowsInstant) -> TimeDelta: ...
 
     @overload
-    def __sub__(self, other: Delta) -> ZonedDateTime: ...
+    def __sub__(self, other: TimeDelta) -> ZonedDateTime: ...
 
     def __sub__(
-        self, other: Delta | _KnowsInstant
+        self, other: TimeDelta | _KnowsInstant
     ) -> _KnowsInstant | TimeDelta:
         """Subtract another datetime or duration.
 
@@ -3471,8 +3539,45 @@ class ZonedDateTime(_KnowsInstantAndLocal):
             return self + -other
         return NotImplemented
 
-    def add(
+    @no_type_check
+    def add(self, *args, **kwargs) -> ZonedDateTime:
+        return self._shift(1, *args, **kwargs)
+
+    @no_type_check
+    def subtract(self, *args, **kwargs) -> ZonedDateTime:
+        return self._shift(-1, *args, **kwargs)
+
+    @no_type_check
+    def _shift(
         self,
+        sign: int,
+        delta: Delta | _UNSET = _UNSET,
+        /,
+        *,
+        disambiguate: Disambiguate | _UNSET = _UNSET,
+        **kwargs,
+    ) -> ZonedDateTime:
+        if kwargs:
+            if delta is _UNSET:
+                return self._shift_kwargs(
+                    sign, disambiguate=disambiguate, **kwargs
+                )
+            raise TypeError("Cannot mix positional and keyword arguments")
+
+        elif delta is not _UNSET:
+            return self._shift_kwargs(
+                sign,
+                months=delta._date_part._months,
+                days=delta._date_part._days,
+                nanoseconds=delta._time_part._total_ns,
+                disambiguate=disambiguate,
+            )
+        else:
+            return self
+
+    def _shift_kwargs(
+        self,
+        sign: int,
         *,
         years: int = 0,
         months: int = 0,
@@ -3484,16 +3589,12 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Optional[Disambiguate] = None,
+        disambiguate: Disambiguate,  # may be _UNSET sentinel
     ) -> ZonedDateTime:
-        """Add a date and time units to this datetime.
-
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
-        """
-        months_total = years * 12 + months
-        days_total = weeks * 7 + days
+        months_total = sign * (years * 12 + months)
+        days_total = sign * (weeks * 7 + days)
         if months_total or days_total:
-            if disambiguate is None:
+            if disambiguate is _UNSET:
                 raise TypeError(
                     "'disambiguate' keyword argument must be provided when "
                     "adding/subtracting calendar units"
@@ -3502,46 +3603,13 @@ class ZonedDateTime(_KnowsInstantAndLocal):
                 self.date()._add_months(months_total)._add_days(days_total),
                 disambiguate=disambiguate,
             )
-        return self + TimeDelta(
+        return self + sign * TimeDelta(
             hours=hours,
             minutes=minutes,
             seconds=seconds,
             milliseconds=milliseconds,
             microseconds=microseconds,
             nanoseconds=nanoseconds,
-        )
-
-    def subtract(
-        self,
-        *,
-        years: int = 0,
-        months: int = 0,
-        weeks: int = 0,
-        days: int = 0,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-        disambiguate: Optional[Disambiguate] = None,
-    ) -> ZonedDateTime:
-        """Subtract date and time units from this datetime.
-
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
-        """
-        return self.add(
-            years=-years,
-            months=-months,
-            weeks=-weeks,
-            days=-days,
-            hours=-hours,
-            minutes=-minutes,
-            seconds=-seconds,
-            milliseconds=-milliseconds,
-            microseconds=-microseconds,
-            nanoseconds=-nanoseconds,
-            disambiguate=disambiguate,
         )
 
     def is_ambiguous(self) -> bool:
@@ -3703,14 +3771,6 @@ class SystemDateTime(_KnowsInstantAndLocal):
     def replace_date(
         self, date: Date, /, disambiguate: Disambiguate
     ) -> SystemDateTime:
-        """Create a new instance with the same time, but a different date.
-
-        Example
-        -------
-        >>> d = SystemDateTime(2020, 3, 28, 12)
-        >>> d.replace_date(Date(2023, 10, 29))
-        SystemDateTime(2023-10-29T12:00:00+02:00)
-        """
         return self._from_py_unchecked(
             _resolve_system_ambiguity(
                 _datetime.combine(date._py_date, self._py_dt.time()).replace(
@@ -3724,14 +3784,6 @@ class SystemDateTime(_KnowsInstantAndLocal):
     def replace_time(
         self, time: Time, /, disambiguate: Disambiguate
     ) -> SystemDateTime:
-        """Create a new instance with the same date, but a different time.
-
-        Example
-        -------
-        >>> d = SystemDateTime(2020, 2, 3, 12)
-        >>> d.replace_time(Time(15, 30))
-        SystemDateTime(2020-02-03T15:30:00+02:00)
-        """
         return self._from_py_unchecked(
             _resolve_system_ambiguity(
                 _datetime.combine(self._py_dt, time._py_time).replace(
@@ -3760,25 +3812,24 @@ class SystemDateTime(_KnowsInstantAndLocal):
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
 
-    def __add__(self, delta: Delta) -> SystemDateTime:
+    def __add__(self, delta: TimeDelta) -> SystemDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
 
         See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
-        if isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
+        if isinstance(delta, TimeDelta):
             py_dt = self._py_dt
-            if delta._date_part:
-                py_dt = self.replace_date(
-                    self.date() + delta._date_part,
-                    disambiguate="compatible",
-                )._py_dt
-
             delta_secs, nanos = divmod(
                 delta._time_part._total_ns + self._nanos, 1_000_000_000
             )
-
             return self._from_py_unchecked(
                 (py_dt + _timedelta(seconds=delta_secs)).astimezone(), nanos
+            )
+        elif isinstance(delta, (DateDelta, DateTimeDelta)):
+            raise TypeError(
+                "Addition/subtraction of calendar units on a SystemDateTime requires "
+                "explicit disambiguation. Use the `add`/`subtract` methods instead. "
+                "For example, instead of `dt + delta` use `dt.add(delta, disambiguate=...)`."
             )
         return NotImplemented
 
@@ -3786,9 +3837,11 @@ class SystemDateTime(_KnowsInstantAndLocal):
     def __sub__(self, other: _KnowsInstant) -> TimeDelta: ...
 
     @overload
-    def __sub__(self, other: Delta) -> SystemDateTime: ...
+    def __sub__(self, other: TimeDelta) -> SystemDateTime: ...
 
-    def __sub__(self, other: Delta | _KnowsInstant) -> _KnowsInstant | Delta:
+    def __sub__(
+        self, other: TimeDelta | _KnowsInstant
+    ) -> _KnowsInstant | Delta:
         """Subtract another datetime or duration
 
         See :ref:`the docs on arithmetic <arithmetic>` for more information.
@@ -3799,8 +3852,45 @@ class SystemDateTime(_KnowsInstantAndLocal):
             return self + -other
         return NotImplemented
 
-    def add(
+    @no_type_check
+    def add(self, *args, **kwargs) -> SystemDateTime:
+        return self._shift(1, *args, **kwargs)
+
+    @no_type_check
+    def subtract(self, *args, **kwargs) -> SystemDateTime:
+        return self._shift(-1, *args, **kwargs)
+
+    @no_type_check
+    def _shift(
         self,
+        sign: int,
+        delta: Delta | _UNSET = _UNSET,
+        /,
+        *,
+        disambiguate: Disambiguate | _UNSET = _UNSET,
+        **kwargs,
+    ) -> SystemDateTime:
+        if kwargs:
+            if delta is _UNSET:
+                return self._shift_kwargs(
+                    sign, disambiguate=disambiguate, **kwargs
+                )
+            raise TypeError("Cannot mix positional and keyword arguments")
+
+        elif delta is not _UNSET:
+            return self._shift_kwargs(
+                sign,
+                months=delta._date_part._months,
+                days=delta._date_part._days,
+                nanoseconds=delta._time_part._total_ns,
+                disambiguate=disambiguate,
+            )
+        else:
+            return self
+
+    def _shift_kwargs(
+        self,
+        sign: int,
         *,
         years: int = 0,
         months: int = 0,
@@ -3812,16 +3902,12 @@ class SystemDateTime(_KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Optional[Disambiguate] = None,
+        disambiguate: Disambiguate,  # may be _UNSET sentinel
     ) -> SystemDateTime:
-        """Add date and time units to this datetime.
-
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
-        """
-        months_total = years * 12 + months
-        days_total = weeks * 7 + days
+        months_total = sign * (years * 12 + months)
+        days_total = sign * (weeks * 7 + days)
         if months_total or days_total:
-            if disambiguate is None:
+            if disambiguate is _UNSET:
                 raise TypeError(
                     "'disambiguate' keyword argument must be provided when "
                     "adding/subtracting calendar units"
@@ -3830,46 +3916,13 @@ class SystemDateTime(_KnowsInstantAndLocal):
                 self.date()._add_months(months_total)._add_days(days_total),
                 disambiguate=disambiguate,
             )
-        return self + TimeDelta(
+        return self + sign * TimeDelta(
             hours=hours,
             minutes=minutes,
             seconds=seconds,
             milliseconds=milliseconds,
             microseconds=microseconds,
             nanoseconds=nanoseconds,
-        )
-
-    def subtract(
-        self,
-        *,
-        years: int = 0,
-        months: int = 0,
-        weeks: int = 0,
-        days: int = 0,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-        disambiguate: Disambiguate = "raise",
-    ) -> SystemDateTime:
-        """Subtract date and time units from this datetime.
-
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
-        """
-        return self.add(
-            years=-years,
-            months=-months,
-            weeks=-weeks,
-            days=-days,
-            hours=-hours,
-            minutes=-minutes,
-            seconds=-seconds,
-            milliseconds=-milliseconds,
-            microseconds=-microseconds,
-            nanoseconds=-nanoseconds,
-            disambiguate=disambiguate,
         )
 
     # a custom pickle implementation with a smaller payload
@@ -3973,9 +4026,7 @@ class LocalDateTime(_KnowsLocal):
             raise TypeError(
                 "tzinfo, fold, or microsecond are not allowed arguments"
             )
-        nanos = kwargs.pop("nanosecond", self._nanos)
-        if not 0 <= nanos < 1_000_000_000:
-            raise ValueError("Invalid nanosecond value")
+        nanos = _pop_nanos_kwarg(kwargs, self._nanos)
         return self._from_py_unchecked(self._py_dt.replace(**kwargs), nanos)
 
     def replace_date(self, d: Date, /) -> LocalDateTime:
@@ -4025,69 +4076,118 @@ class LocalDateTime(_KnowsLocal):
     def __lt__(self, other: LocalDateTime) -> bool:
         if not isinstance(other, LocalDateTime):
             return NotImplemented
-        return self._py_dt < other._py_dt
+        return (self._py_dt, self._nanos) < (other._py_dt, other._nanos)
 
     def __le__(self, other: LocalDateTime) -> bool:
         if not isinstance(other, LocalDateTime):
             return NotImplemented
-        return self._py_dt <= other._py_dt
+        return (self._py_dt, self._nanos) <= (other._py_dt, other._nanos)
 
     def __gt__(self, other: LocalDateTime) -> bool:
         if not isinstance(other, LocalDateTime):
             return NotImplemented
-        return self._py_dt > other._py_dt
+        return (self._py_dt, self._nanos) > (other._py_dt, other._nanos)
 
     def __ge__(self, other: LocalDateTime) -> bool:
         if not isinstance(other, LocalDateTime):
             return NotImplemented
-        return self._py_dt >= other._py_dt
+        return (self._py_dt, self._nanos) >= (other._py_dt, other._nanos)
 
-    def __add__(self, delta: Delta) -> LocalDateTime:
-        """Add a delta to this datetime
+    def __add__(self, delta: DateDelta) -> LocalDateTime:
+        """Add a delta to this datetime.
 
         See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
-        if isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
-            delta_secs, nanos = divmod(
-                self._nanos + delta._time_part._total_ns,
-                1_000_000_000,
-            )
+        if isinstance(delta, DateDelta):
             return self._from_py_unchecked(
                 _datetime.combine(
                     (self.date() + delta._date_part)._py_date,
                     self._py_dt.time(),
-                )
-                + _timedelta(seconds=delta_secs),
-                nanos,
+                ),
+                self._nanos,
+            )
+        elif isinstance(delta, (TimeDelta, DateTimeDelta)):
+            raise ImplicitlyIgnoringDST(
+                "Adding or subtracting a (date)time delta to a local datetime "
+                "implicitly ignores DST transitions and other timezone "
+                "changes. Instead, use the `add` or `subtract` method."
             )
         return NotImplemented
 
-    @overload
-    def __sub__(self, other: LocalDateTime) -> TimeDelta: ...
-
-    @overload
-    def __sub__(self, other: Delta) -> LocalDateTime: ...
-
-    def __sub__(
-        self, other: Delta | LocalDateTime
-    ) -> LocalDateTime | TimeDelta:
-        """Subtract another datetime or time amount
+    def __sub__(self, other: DateDelta) -> LocalDateTime:
+        """Subtract another datetime or delta
 
         See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
-        if isinstance(other, LocalDateTime):
-            py_delta = self._py_dt - other._py_dt
-            return TimeDelta(
-                seconds=py_delta.days * 86_400 + py_delta.seconds,
-                nanoseconds=self._nanos - other._nanos,
-            )
-        elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
+        # Handling these extra types allows for descriptive error messages
+        if isinstance(other, (DateDelta, TimeDelta, DateTimeDelta)):
             return self + -other
+        elif isinstance(other, LocalDateTime):
+            raise ImplicitlyIgnoringDST(
+                "The difference between two local datetimes implicitly ignores "
+                "DST transitions and other timezone changes. "
+                "Use the `difference` method instead."
+            )
         return NotImplemented
 
-    # TODO: ignore_dst kwarg
-    def add(
+    def difference(
+        self, other: LocalDateTime, /, *, ignore_dst: bool = False
+    ) -> TimeDelta:
+        """Calculate the difference between two local datetimes.
+
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
+        """
+        if ignore_dst is not True:
+            raise ImplicitlyIgnoringDST(
+                "The difference between two local datetimes implicitly ignores "
+                "DST transitions and other timezone changes. "
+                + _IGNORE_DST_SUGGESTION
+            )
+
+        py_delta = self._py_dt - other._py_dt
+        return TimeDelta(
+            seconds=py_delta.days * 86_400 + py_delta.seconds,
+            nanoseconds=self._nanos - other._nanos,
+        )
+
+    @no_type_check
+    def add(self, *args, **kwargs) -> LocalDateTime:
+        return self._shift(1, *args, **kwargs)
+
+    @no_type_check
+    def subtract(self, *args, **kwargs) -> LocalDateTime:
+        return self._shift(-1, *args, **kwargs)
+
+    @no_type_check
+    def _shift(
         self,
+        sign: int,
+        arg: Delta | _UNSET = _UNSET,
+        /,
+        *,
+        ignore_dst: bool = False,
+        **kwargs,
+    ) -> LocalDateTime:
+        if kwargs:
+            if arg is _UNSET:
+                return self._shift_kwargs(sign, ignore_dst, **kwargs)
+            raise TypeError("Cannot mix positional and keyword arguments")
+
+        elif arg is not _UNSET:
+            return self._shift_kwargs(
+                sign,
+                ignore_dst,
+                months=arg._date_part._months,
+                days=arg._date_part._days,
+                nanoseconds=arg._time_part._total_ns,
+            )
+        else:
+            return self
+
+    def _shift_kwargs(
+        self,
+        sign: int,
+        ignore_dst: bool,
         *,
         years: int = 0,
         months: int = 0,
@@ -4100,15 +4200,13 @@ class LocalDateTime(_KnowsLocal):
         microseconds: float = 0,
         nanoseconds: int = 0,
     ) -> LocalDateTime:
-        """Add date and time units to this datetime.
-
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
-        """
-        return self.replace_date(
+        py_dt_with_new_date = self.replace_date(
             self.date()
-            ._add_months(years * 12 + months)
-            ._add_days(weeks * 7 + days)
-        ) + TimeDelta(
+            ._add_months(sign * (years * 12 + months))
+            ._add_days(sign * (weeks * 7 + days)),
+        )._py_dt
+
+        tdelta = sign * TimeDelta(
             hours=hours,
             minutes=minutes,
             seconds=seconds,
@@ -4116,36 +4214,15 @@ class LocalDateTime(_KnowsLocal):
             microseconds=microseconds,
             nanoseconds=nanoseconds,
         )
+        if tdelta and ignore_dst is not True:
+            raise _EXC_ADJUST_LOCAL_DATETIME
 
-    def subtract(
-        self,
-        *,
-        years: int = 0,
-        months: int = 0,
-        weeks: int = 0,
-        days: int = 0,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-    ) -> LocalDateTime:
-        """Subtract date and time units from this datetime.
-
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
-        """
-        return self.add(
-            years=-years,
-            months=-months,
-            weeks=-weeks,
-            days=-days,
-            hours=-hours,
-            minutes=-minutes,
-            seconds=-seconds,
-            milliseconds=-milliseconds,
-            microseconds=-microseconds,
-            nanoseconds=-nanoseconds,
+        delta_secs, nanos = divmod(
+            tdelta._total_ns + self._nanos, 1_000_000_000
+        )
+        return self._from_py_unchecked(
+            (py_dt_with_new_date + _timedelta(seconds=delta_secs)),
+            nanos,
         )
 
     @classmethod
@@ -4265,7 +4342,7 @@ def _unpkl_local(data: bytes) -> LocalDateTime:
 
 # RepeatedTime
 class RepeatedTime(Exception):
-    """A datetime is unexpectedly ambiguous"""
+    """A datetime is repeated in a timezone, e.g. because of DST"""
 
     @classmethod
     def _for_tz(cls, d: _datetime, tz: ZoneInfo) -> RepeatedTime:
@@ -4298,6 +4375,37 @@ class SkippedTime(Exception):
 
 class InvalidOffset(ValueError):
     """A string has an invalid offset for the given zone"""
+
+
+class ImplicitlyIgnoringDST(TypeError):
+    """A calculation was performed that implicitly ignored DST"""
+
+
+_EXC_TIMESTAMP_DST = ImplicitlyIgnoringDST(
+    "Converting from a timestamp with a fixed offset implicitly ignores DST "
+    "and other timezone changes. To perform a DST-safe conversion, use "
+    "ZonedDateTime.from_timestamp() instead. "
+    "Or, if you don't know the timezone and accept potentially incorrect results "
+    "during DST transitions, pass `ignore_dst=True`."
+)
+
+
+# FUTURE: docs link
+_IGNORE_DST_SUGGESTION = """\
+To perform DST-safe operations, convert to a ZonedDateTime first. \
+Or, if you don't know the timezone and accept potentially incorrect results \
+during DST transitions, pass `ignore_dst=True`."""
+
+
+_EXC_ADJUST_OFFSET_DATETIME = ImplicitlyIgnoringDST(
+    "Adjusting a fixed offset datetime implicitly ignores DST and other timezone changes. "
+    + _IGNORE_DST_SUGGESTION
+)
+
+_EXC_ADJUST_LOCAL_DATETIME = ImplicitlyIgnoringDST(
+    "Adjusting a local datetime by time units (e.g. hours and minutess) ignores "
+    "DST and other timezone changes. " + _IGNORE_DST_SUGGESTION
+)
 
 
 def _resolve_ambuguity(

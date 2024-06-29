@@ -57,59 +57,6 @@ Of course, feel free to work with :class:`~whenever.ZonedDateTime` if
 you know the system's IANA timezone. You can use
 the `tzlocal <https://pypi.org/project/tzlocal/>`_ library to help with this.
 
-.. _faq-offset-arithmetic:
-
-Why can't :class:`~whenever.OffsetDateTime` add or subtract durations?
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-``OffsetDateTime`` does not support addition or subtraction of time deltas.
-This is a deliberate decision to prevent inadvertent DST-related bugs.
-
-In practice, fixed-offset datetimes are commonly used to express a time at
-which something occurs at a specific location.
-But for many locations, the offset changes throughout the year
-(due to DST or political decisions).
-Allowing users to add/subtract from fixed-offset datetimes gives them the
-impression that they are doing valid arithmetic,
-while in actuality they are setting themselves up for DST-bugs
-(which, again, are rampant).
-
-An example:
-
->>> departure = OffsetDateTime(2024, 11, 3, hour=1, offset=-7)
->>> departure.add(hours=2)  # a 2 hour delay
-OffsetDateTime(2024-11-03 03:00:00-07:00)
-
-While this is correct in theory, it may not be what the user intended.
-Does the ``-7:00`` offset correspond to Denver, or Phoenix?
-It would be correct in Phoenix (which doesn't observe DST), but
-in Denver, the correct result would
-actually be ``02:00:00-06:00`` — an hour earlier on the clock!
-
-For whenever, preventing a damaging pitfall weighs heavier than supporting
-a more theoretical usage pattern.
-This is consisent with other libraries that emphasize correctness, such as NodaTime.
-If you do need to perform arithmetic on a fixed-offset datetime,
-you should make the location explicit by converting it to a
-:class:`~whenever.ZonedDateTime` first:
-
->>> departure.to_tz("America/Denver").add(hours=2)
-ZonedDateTime(2024-11-03 02:00:00-06:00[America/Denver])
->>> departure.to_tz("America/Phoenix").add(hours=2)
-ZonedDateTime(2024-11-03 03:00:00-07:00[America/Phoenix])
->>> # not recommended, but possible:
->>> departure.instant().add(hours=2).to_fixed_offset(departure.offset)
-OffsetDateTime(2024-11-03 03:00:00-07:00)
-
-.. note::
-
-   ``OffsetDateTime`` *does* support calculating the difference between two datetimes,
-   because this isn't affected by DST changes:
-
-   >>> a = OffsetDateTime(2024, 11, 3, hour=1, offset=-7)
-   >>> a - OffsetDateTime(2024, 11, 3, hour=3, offset=4)
-   TimeDelta(09:00:00)
-
 .. _faq-leap-seconds:
 
 Are leap seconds supported?
@@ -126,6 +73,17 @@ Nonetheless, these improvements are possible in the future:
 
 - Allow parsing of leap seconds, e.g. ``23:59:60``.
 - Allow representation of leap seconds (similar to rust Chrono)
+
+Why not adopt Rust's Chrono API?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+I did consider this initially, but decided against it for the following reasons:
+
+- While I love Rust's functional approach to error handling,
+  it doesn't map well to idiomatic Python.
+- At the time of writing, Chrono is only on version 0.4 and its API is still evolving.
+- Chrono's timezone functionality can't handle disambiguation in gaps yet
+  (see `this issue <https://github.com/chronotope/chrono/issues/1448>`_)
 
 .. _faq-why-not-dropin:
 
