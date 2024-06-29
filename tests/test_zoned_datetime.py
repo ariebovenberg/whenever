@@ -1476,7 +1476,7 @@ class TestReplace:
         with pytest.raises(ValueError, match="date|day"):
             d.replace(year=2023, month=2, day=29, disambiguate="compatible")
 
-        with pytest.raises(ValueError, match="nano"):
+        with pytest.raises(ValueError, match="nano|time"):
             d.replace(nanosecond=1_000_000_000, disambiguate="compatible")
 
         # disambiguation required

@@ -492,20 +492,6 @@ class Time(_ImmutableBase):
     >>> t = Time(12, 30, 0)
     Time(12:30:00)
 
-    Default format
-    --------------
-
-    The default format is:
-
-    .. code-block:: text
-
-       HH:MM:SS(.ffffff)
-
-    For example:
-
-    .. code-block:: text
-
-       12:30:11.004
     """
 
     __slots__ = ("_py_time", "_nanos")
@@ -3973,9 +3959,7 @@ class LocalDateTime(_KnowsLocal):
             raise TypeError(
                 "tzinfo, fold, or microsecond are not allowed arguments"
             )
-        nanos = kwargs.pop("nanosecond", self._nanos)
-        if not 0 <= nanos < 1_000_000_000:
-            raise ValueError("Invalid nanosecond value")
+        nanos = _pop_nanos_kwarg(kwargs, self._nanos)
         return self._from_py_unchecked(self._py_dt.replace(**kwargs), nanos)
 
     def replace_date(self, d: Date, /) -> LocalDateTime:
@@ -4085,7 +4069,6 @@ class LocalDateTime(_KnowsLocal):
             return self + -other
         return NotImplemented
 
-    # TODO: ignore_dst kwarg
     def add(
         self,
         *,
@@ -4099,16 +4082,18 @@ class LocalDateTime(_KnowsLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
+        ignore_dst: Optional[Literal[True]] = None,
     ) -> LocalDateTime:
         """Add date and time units to this datetime.
 
         See :ref:`the docs on arithmetic <arithmetic>` for more information.
         """
-        return self.replace_date(
+        date_shifted = self.replace_date(
             self.date()
             ._add_months(years * 12 + months)
             ._add_days(weeks * 7 + days)
-        ) + TimeDelta(
+        )
+        tdelta = TimeDelta(
             hours=hours,
             minutes=minutes,
             seconds=seconds,
@@ -4116,6 +4101,14 @@ class LocalDateTime(_KnowsLocal):
             microseconds=microseconds,
             nanoseconds=nanoseconds,
         )
+        if tdelta and not ignore_dst:
+            raise TypeError(
+                "Adding time units to a LocalDateTime implicitly ignores "
+                "Daylight Saving Time. Instead, convert to a ZonedDateTime first "
+                "using assume_tz(). Or, if you're sure you want to ignore DST, "
+                "explicitly pass ignore_dst=True."
+            )
+        return date_shifted + tdelta
 
     def subtract(
         self,
@@ -4130,6 +4123,7 @@ class LocalDateTime(_KnowsLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
+        ignore_dst: Optional[Literal[True]] = None,
     ) -> LocalDateTime:
         """Subtract date and time units from this datetime.
 
@@ -4146,6 +4140,7 @@ class LocalDateTime(_KnowsLocal):
             milliseconds=-milliseconds,
             microseconds=-microseconds,
             nanoseconds=-nanoseconds,
+            ignore_dst=ignore_dst,
         )
 
     @classmethod
@@ -4265,7 +4260,7 @@ def _unpkl_local(data: bytes) -> LocalDateTime:
 
 # RepeatedTime
 class RepeatedTime(Exception):
-    """A datetime is unexpectedly ambiguous"""
+    """A datetime is repeated in a timezone, e.g. because of DST"""
 
     @classmethod
     def _for_tz(cls, d: _datetime, tz: ZoneInfo) -> RepeatedTime:

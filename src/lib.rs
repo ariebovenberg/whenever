@@ -407,6 +407,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     state.str_tz = PyUnicode_InternFromString(c"tz".as_ptr());
     state.str_disambiguate = PyUnicode_InternFromString(c"disambiguate".as_ptr());
     state.str_offset = PyUnicode_InternFromString(c"offset".as_ptr());
+    state.str_ignore_dst = PyUnicode_InternFromString(c"ignore_dst".as_ptr());
 
     state.exc_repeated = new_exc(module, c"whenever.RepeatedTime");
     state.exc_skipped = new_exc(module, c"whenever.SkippedTime");
@@ -619,6 +620,7 @@ struct State {
     str_tz: *mut PyObject,
     str_disambiguate: *mut PyObject,
     str_offset: *mut PyObject,
+    str_ignore_dst: *mut PyObject,
 }
 
 impl State {

@@ -690,6 +690,7 @@ class LocalDateTime(_ContainsLocalDateTime):
     ) -> LocalDateTime: ...
     def replace_date(self, d: Date) -> LocalDateTime: ...
     def replace_time(self, t: Time) -> LocalDateTime: ...
+    @overload
     def add(
         self,
         *,
@@ -703,7 +704,18 @@ class LocalDateTime(_ContainsLocalDateTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
+        ignore_dst: Literal[True],
     ) -> LocalDateTime: ...
+    @overload
+    def add(
+        self,
+        *,
+        years: int = 0,
+        months: int = 0,
+        weeks: int = 0,
+        days: int = 0,
+    ) -> LocalDateTime: ...
+    @overload
     def subtract(
         self,
         *,
@@ -717,6 +729,16 @@ class LocalDateTime(_ContainsLocalDateTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
+        ignore_dst: Literal[True],
+    ) -> LocalDateTime: ...
+    @overload
+    def subtract(
+        self,
+        *,
+        years: int = 0,
+        months: int = 0,
+        weeks: int = 0,
+        days: int = 0,
     ) -> LocalDateTime: ...
     def __add__(self, delta: Delta) -> LocalDateTime: ...
     @overload

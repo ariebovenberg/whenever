@@ -448,21 +448,28 @@ unsafe fn _shift_method(
     let mut months = 0;
     let mut days = 0;
     let mut nanos = 0;
-    for &(name, value) in kwargs {
-        set_units_from_kwargs(
-            name,
-            value,
-            &mut months,
-            &mut days,
-            &mut nanos,
-            state,
-            fname,
-        )?;
+    let mut ignore_dst = false;
+    for &(key, value) in kwargs {
+        if key == state.str_ignore_dst {
+            if value == Py_True() {
+                ignore_dst = true;
+            }
+        } else {
+            set_units_from_kwargs(key, value, &mut months, &mut days, &mut nanos, state, fname)?;
+        }
     }
     if negate {
         months = -months;
         days = -days;
         nanos = -nanos;
+    }
+    if nanos != 0 && !ignore_dst {
+        Err(type_err!(
+            "Adding time units to a LocalDateTime implicitly ignores \
+            Daylight Saving Time. Instead, convert to a ZonedDateTime first \
+            using assume_tz(). Or, if you're sure you want to ignore DST, \
+            explicitly pass ignore_dst=True."
+        ))?
     }
     DateTime::extract(slf)
         .shift_date(months, days)

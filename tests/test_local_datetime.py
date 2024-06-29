@@ -355,23 +355,39 @@ class TestAddMethod:
     def test_valid(self):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
 
-        assert d.add(hours=48, seconds=5, months=-2) == d - months(2) + hours(
+        # time units
+        assert d.add(hours=48, seconds=5, ignore_dst=True) == d + hours(
             48
         ) + seconds(5)
+
+        # ignore_dst is required for time units
+        with pytest.raises(TypeError, match="ignore_dst"):
+            d.add(hours=48, seconds=5)  # type: ignore[call-overload]
+
+        # calendar units
+        assert d.add(months=-2) == d - months(2)
+
+        # mixed units
+        assert d.add(
+            hours=48, seconds=5, months=-2, ignore_dst=True
+        ) == d - months(2) + hours(48) + seconds(5)
+
+        with pytest.raises(TypeError, match="ignore_dst"):
+            d.add(hours=48, seconds=5, months=-2)  # type: ignore[call-overload]
 
     def test_invalid(self):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d.add(hours=24 * 365 * 8000)
+            d.add(hours=24 * 365 * 8000, ignore_dst=True)
 
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d.add(hours=-24 * 365 * 3000)
+            d.add(hours=-24 * 365 * 3000, ignore_dst=True)
 
         with pytest.raises(TypeError, match="positional"):
-            d.add(4)  # type: ignore[misc]
+            d.add(4)  # type: ignore[call-overload]
 
         with pytest.raises(TypeError, match="positional"):
-            d.add(hours(4))  # type: ignore[arg-type,misc]
+            d.add(hours(4))  # type: ignore[call-overload]
 
     @given(
         years=integers(),
@@ -387,7 +403,7 @@ class TestAddMethod:
     def test_fuzzing(self, **kwargs):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         try:
-            d.add(**kwargs)
+            d.add(**kwargs, ignore_dst=True)
         except (ValueError, OverflowError):
             pass
 
@@ -397,16 +413,23 @@ class TestSubtractMethod:
     def test_valid(self):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         assert d.subtract(
-            hours=24, seconds=5, months=-2, days=1
+            hours=24, seconds=5, months=-2, days=1, ignore_dst=True
         ) == d + months(2) - days(1) - hours(24) - seconds(5)
+
+        # ignore_dst is required for time units
+        with pytest.raises(TypeError, match="ignore_dst"):
+            d.subtract(hours=24, seconds=5)  # type: ignore[call-overload]
+
+        # but not required for date units
+        assert d.subtract(months=2) == d - months(2)
 
     def test_invalid(self):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.raises(TypeError, match="positional"):
-            d.subtract(4)  # type: ignore[misc]
+            d.subtract(4)  # type: ignore[call-overload]
 
         with pytest.raises(TypeError, match="positional"):
-            d.subtract(hours(4))  # type: ignore[misc,arg-type]
+            d.subtract(hours(4))  # type: ignore[call-overload]
 
     @given(
         years=integers(),
@@ -422,7 +445,7 @@ class TestSubtractMethod:
     def test_fuzzing(self, **kwargs):
         d = LocalDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         try:
-            d.subtract(**kwargs)
+            d.subtract(**kwargs, ignore_dst=True)
         except (ValueError, OverflowError):
             pass
 

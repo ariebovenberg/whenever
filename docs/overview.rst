@@ -91,27 +91,33 @@ That's what the next type is for.
 :class:`~whenever.ZonedDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-This is a combination of an instant *and* a local time at a specific location.
-It accounts for daylight saving time *and* supports calendar operations.
+This is a combination of an instant *and* a local time at a specific location,
+with rules about daylight saving time and other timezone changes.
 
->>> pycon24_keynote = ZonedDateTime(2024, 5, 17, 9, 45, tz="America/New_York")
-ZonedDateTime(2024-05-17 09:45:00-04:00[America/New_York])
->>> pycon24_keynote.subtract(months=3)
-ZonedDateTime(2024-02-17 09:45:00-05:00[America/New_York])
+>>> bedtime = ZonedDateTime(2024, 3, 9, 22, tz="America/New_York")
+ZonedDateTime(2024-03-09 22:00:00-05:00[America/New_York])
+# accounts for the DST transition over the night:
+>>> bedtime.add(hours=8)
+ZonedDateTime(2024-03-10 07:00:00-04:00[America/New_York])
 
-A timezone determines a UTC offset and rules for daylight saving time.
+A timezone defines a UTC offset for each point on the timeline.
 As a result, any :class:`~whenever.Instant` can
 be converted to a :class:`~whenever.ZonedDateTime`.
-However, converting a :class:`~whenever.LocalDateTime` to a :class:`~whenever.ZonedDateTime`
-is more complex, because local times can occur twice or not at all due to daylight saving time.
-Read about ambiguity in more detail :ref:`here <ambiguity>`.
+Converting from a :class:`~whenever.LocalDateTime`, however,
+may be ambiguous,
+because changes to the offset can result in local times
+occuring twice or not at all.
 
->>> # from Instant: always possible
+>>> # Instant->Zoned is always straightforward
 >>> livestream_starts.to_tz("America/New_York")
 ZonedDateTime(2022-10-24 13:00:00-04:00[America/New_York])
->>> # from LocalDateTime: maybe ambiguous
+>>> # Local->Zoned may be ambiguous
 >>> bus_departs.assume_tz("America/New_York", disambiguate="earlier")
 ZonedDateTime(2020-03-14 15:00:00-04:00[America/New_York])
+
+.. seealso::
+
+    Read about ambiguity in more detail :ref:`here <ambiguity>`.
 
 :class:`~whenever.OffsetDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -162,34 +168,21 @@ SystemDateTime(2022-10-24 13:00:00-04:00)
 
 .. _summary:
 
-Here's a summary of how you can use the types:
+Summary
+~~~~~~~
 
-+-----------------------+---------+---------+-------+--------+---------+
-| Feature               |             "Exact"                |         |
-+                       +---------+---------+-------+--------+         +
-|                       | Instant | OffsetDT|ZonedDT|SystemDT|LocalDT  |
-+=======================+=========+=========+=======+========+=========+
-| comparison            | .. centered:: ✅                   |  ✅     |
-+-----------------------+---------+---------+-------+--------+---------+
-| difference            | .. centered:: ✅                   |  ✅     |
-+-----------------------+---------+---------+-------+--------+---------+
-| add/subtract years,   | ❌      |  ✅     |  ✅   |  ✅    |  ✅     |
-| months, days          |         |         |       |        |         |
-+-----------------------+---------+---------+-------+--------+---------+
-| add/subtract hours,   | ✅      | ⚠️ [3]_ |  ✅   |  ✅    |⚠️  [3]_ |
-| minutes, seconds, ... |         |         |       |        |         |
-+-----------------------+---------+---------+-------+--------+---------+
-| no disambiguation     | ✅      |  ✅     |  ❌   |  ❌    |  ✅     |
-| needed                |         |         |       |        |         |
-+-----------------------+---------+---------+-------+--------+---------+
-| to/from timestamp     | ✅      |  ✅     |  ✅   |  ✅    |  ❌     |
-+-----------------------+---------+---------+-------+--------+---------+
-| now                   | ✅      |  ✅     |  ✅   |  ✅    |  ❌     |
-+-----------------------+---------+---------+-------+--------+---------+
-| to/from RFC3339/2822  | ✅      |  ✅     |  ❌   |  ❌    |  ❌     |
-+-----------------------+---------+---------+-------+--------+---------+
+Here's a summary of the differences between the types:
 
-.. [3] Only possible with explicit ``ignore_dst=True``
++------------------------------+---------+---------+-------+---------+---------+
+|                              | Instant | OffsetDT|ZonedDT| SystemDT|LocalDT  |
++==============================+=========+=========+=======+=========+=========+
+| knows time since epoch       |   ✅    | ✅      | ✅    |  ✅     |  ❌     |
++------------------------------+---------+---------+-------+---------+---------+
+| knows the local time         |  ❌     |  ✅     |  ✅   |  ✅     |  ✅     |
++------------------------------+---------+---------+-------+---------+---------+
+| knows about DST rules [6]_   |  ❌     |  ❌     |  ✅   |  ✅     |  ❌     |
++------------------------------+---------+---------+-------+---------+---------+
+
 
 
 Comparison and equality
@@ -415,6 +408,29 @@ This means:
    If you need to shift an :class:`~whenever.OffsetDateTime` instance,
    either convert to UTC or a proper :class:`~whenever.ZonedDateTime` first.
 
+Summary
+~~~~~~~
+
+Here is a summary of the arithmetic features for each type:
+
++-----------------------+---------+---------+---------+----------+---------+
+| Arithmethic feature   |             "Exact"                    |         |
++                       +---------+---------+---------+----------+         +
+|                       | Instant | OffsetDT|ZonedDT  |SystemDT  |LocalDT  |
++=======================+=========+=========+=========+==========+=========+
+| difference            | ✅      | ✅      |  ✅     |  ✅      |  ✅     |
++-----------------------+---------+---------+---------+----------+---------+
+| add/subtract years,   | ❌      |❗️ [3]_ |❓  [4]_ | ❓  [4]_ |    ✅   |
+| months, days          |         |         |         |          |         |
++-----------------------+---------+---------+---------+----------+---------+
+| add/subtract hours,   | ✅      |❗️ [3]_ |  ✅     |    ✅    |❗️ [3]_ |
+| minutes, seconds, ... |         |         |         |          |         |
++-----------------------+---------+---------+---------+----------+---------+
+
+.. [3] Only possible with explicit ``ignore_dst=True``
+.. [4] Requires disambiguation
+
+
 .. _ambiguity:
 
 Ambiguity in timezones
@@ -431,7 +447,7 @@ due to Daylight Saving Time (DST) or political decisions.
 This creates two types of situations for the :class:`~whenever.ZonedDateTime`
 and :class:`~whenever.SystemDateTime` types:
 
-- When the clock moves backwards, there is a period of time that occurs twice.
+- When the clock moves backwards, there is a period of time that repeats.
   For example, Sunday October 29th 2:30am occured twice in Paris.
   When you specify this time, you need to specify whether you want the earlier
   or later occurrence.
@@ -765,8 +781,9 @@ SystemDateTime(2020-08-15 08:00:00+02:00)
    all use a similar datamodel.
    `Here is an excellent video on the topic <https://www.youtube.com/watch?v=saeKBuPewcU>`_.
 
-
 .. [1] The timezone ID is not part of the core ISO 8601 standard,
    but is part of the RFC 9557 extension.
    This format is commonly used by datetime libraries in other languages as well.
 
+.. [6] Daylight Saving Time isn't the only reason for UTC offset changes.
+   Changes can also occur due to political decisions, or historical reasons.

@@ -143,5 +143,10 @@ Miscellaneous
    :member-order: bysource
 
 .. autoexception:: whenever.RepeatedTime
+   :show-inheritance:
+
 .. autoexception:: whenever.SkippedTime
+   :show-inheritance:
+
 .. autoexception:: whenever.InvalidOffset
+   :show-inheritance:
