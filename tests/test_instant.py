@@ -329,8 +329,8 @@ class TestComparison:
         d = Instant.from_utc(2020, 8, 15, 12, 30)
 
         offset_eq = d.to_fixed_offset(4)
-        offset_gt = offset_eq.replace(minute=31)
-        offset_lt = offset_eq.replace(minute=29)
+        offset_gt = offset_eq.replace(minute=31, ignore_dst=True)
+        offset_lt = offset_eq.replace(minute=29, ignore_dst=True)
         assert d >= offset_eq
         assert d <= offset_eq
         assert not d > offset_eq
@@ -530,7 +530,7 @@ class TestSubtractMethod:
             pass
 
 
-class TestAddOperator:
+class TestShiftOperators:
     def test_time_units(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         assert d + hours(24) + seconds(5) == Instant.from_utc(
@@ -539,6 +539,9 @@ class TestAddOperator:
         assert d + nanoseconds(20_000_000) == Instant.from_utc(
             2020, 8, 15, 23, 12, 10, nanosecond=7_654_321
         )
+
+        # same with subtract
+        assert d - hours(-24) - seconds(-5) == d + hours(24) + seconds(5)
 
         with pytest.raises((ValueError, OverflowError), match="range"):
             d + hours(9_000 * 366 * 24)
@@ -558,12 +561,7 @@ class TestAddOperator:
             LocalDateTime(2020, 1, 1) + d  # type: ignore[operator]
 
 
-class TestSubtractOperator:
-    def test_time_units(self):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        assert d - hours(24) - seconds(5) == Instant.from_utc(
-            2020, 8, 14, 23, 12, 4, nanosecond=987_654
-        )
+class TestDifference:
 
     def test_other_instant(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
@@ -572,15 +570,23 @@ class TestSubtractOperator:
         )
         assert d - other == hours(24) + seconds(5) - nanoseconds(321)
 
+        # same with method
+        assert d.difference(other) == d - other
+
     def test_offset(self):
         d = Instant.from_utc(2020, 8, 15, 23)
-        assert d - OffsetDateTime(2020, 8, 15, 20, offset=2) == hours(5)
+        other = OffsetDateTime(2020, 8, 15, 20, offset=2)
+        assert d - other == hours(5)
+
+        # same with method
+        assert d.difference(other) == d - other
 
     def test_zoned(self):
         d = Instant.from_utc(2023, 10, 29, 6)
-        assert d - ZonedDateTime(
+        other = ZonedDateTime(
             2023, 10, 29, 3, tz="Europe/Paris", disambiguate="later"
-        ) == hours(4)
+        )
+        assert d - other == hours(4)
         assert d - ZonedDateTime(
             2023, 10, 29, 2, tz="Europe/Paris", disambiguate="later"
         ) == hours(5)
@@ -591,12 +597,14 @@ class TestSubtractOperator:
             7
         )
 
+        # same with method
+        assert d.difference(other) == d - other
+
     @system_tz_ams()
     def test_system_tz(self):
         d = Instant.from_utc(2023, 10, 29, 6)
-        assert d - SystemDateTime(
-            2023, 10, 29, 3, disambiguate="later"
-        ) == hours(4)
+        other = SystemDateTime(2023, 10, 29, 3, disambiguate="later")
+        assert d - other == hours(4)
         assert d - SystemDateTime(
             2023, 10, 29, 2, disambiguate="later"
         ) == hours(5)
@@ -604,6 +612,9 @@ class TestSubtractOperator:
             2023, 10, 29, 2, disambiguate="earlier"
         ) == hours(6)
         assert d - SystemDateTime(2023, 10, 29, 1) == hours(7)
+
+        # same with method
+        assert d.difference(other) == d - other
 
     def test_invalid(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
@@ -944,3 +955,10 @@ class TestParseCommonIso:
             match=r"Invalid format.*" + re.escape(repr(s)),
         ):
             Instant.parse_common_iso(s)
+
+
+def test_cannot_subclass():
+    with pytest.raises(TypeError):
+
+        class Subclass(Instant):  # type: ignore[misc]
+            pass

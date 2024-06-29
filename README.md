@@ -147,13 +147,16 @@ True
 
 # A 'Naive' local time can't accidentally mix with other types.
 # You need to explicitly convert it and handle ambiguity.
->>> hackathon_invite = LocalDateTime(2023, 10, 28, hour=12)
->>> hackathon_start = hackathon_invite.assume_tz("Europe/Amsterdam", disambiguate="earlier")
-ZonedDateTime(2023-10-28 12:00:00+02:00[Europe/Amsterdam])
+>>> party_invite = LocalDateTime(2023, 10, 28, hour=22)
+>>> party_invite.add(hours=8)
+Traceback (most recent call last):
+  ImplicitlyIgnoringDST: Adjusting a local datetime implicitly ignores DST [...]
+>>> party_starts = party_invite.assume_tz("Europe/Amsterdam", disambiguate="earlier")
+ZonedDateTime(2023-10-28 22:00:00+02:00[Europe/Amsterdam])
 
 # DST-safe arithmetic
->>> hackathon_start.add(hours=24)
-ZonedDateTime(2022-10-29 11:00:00+01:00[Europe/Amsterdam])
+>>> party_starts.add(hours=8)
+ZonedDateTime(2022-10-29 05:00:00+01:00[Europe/Amsterdam])
 
 # Formatting & parsing common formats (ISO8601, RFC3339, RFC2822)
 >>> livestream_start.format_rfc2822()

@@ -3,6 +3,7 @@ use core::{mem, ptr::null_mut as NULL};
 use pyo3_ffi::*;
 
 use crate::common::*;
+use crate::offset_datetime::check_ignore_dst_kwarg;
 use crate::{
     date::Date,
     date_delta::DateDelta,
@@ -83,24 +84,6 @@ impl DateTime {
             .trim_end_matches('0')
             .to_string()
         }
-    }
-
-    #[inline]
-    pub(crate) fn shift(self, delta: DateTimeDelta) -> Option<Self> {
-        let DateTimeDelta {
-            ddelta: DateDelta { months, days },
-            tdelta,
-        } = delta;
-        let DateTime { mut date, time } = self;
-        date = date.shift(0, months, days)?;
-        // no overflow due to earlier range checks
-        let time_maybe_overflow = i128::from(time.total_nanos()) + tdelta.total_nanos();
-        let days_overflow = time_maybe_overflow.div_euclid(NS_PER_DAY) as i32;
-        let time = Time::from_total_nanos(time_maybe_overflow.rem_euclid(NS_PER_DAY) as u64);
-        if days_overflow != 0 {
-            date = date.shift_days(days_overflow)?;
-        }
-        Some(DateTime { date, time })
     }
 
     pub(crate) fn shift_date(self, months: i32, days: i32) -> Option<Self> {
@@ -244,13 +227,11 @@ unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
 unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     // easy case: subtracting two LocalDateTime objects
     if Py_TYPE(obj_a) == Py_TYPE(obj_b) {
-        let a = DateTime::extract(obj_a);
-        let b = DateTime::extract(obj_b);
-        TimeDelta::from_nanos_unchecked(
-            Instant::from_datetime(a.date, a.time).total_nanos()
-                - Instant::from_datetime(b.date, b.time).total_nanos(),
-        )
-        .to_obj(State::for_type(Py_TYPE(obj_a)).time_delta_type)
+        Err(py_err!(
+            State::for_obj(obj_a).exc_implicitly_ignoring_dst,
+            "The difference between local datetimes implicitly ignores DST transitions \
+            and other timezone changes. Use the `difference` method instead."
+        ))?
     } else {
         _shift_operator(obj_a, obj_b, true)
     }
@@ -266,33 +247,35 @@ unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bo
     let mod_b = PyType_GetModule(type_b);
 
     if mod_a == mod_b {
-        let mut delta = if type_b == State::for_mod(mod_a).time_delta_type {
-            DateTimeDelta {
-                ddelta: DateDelta::ZERO,
-                tdelta: TimeDelta::extract(obj_b),
+        let state = State::for_mod(mod_a);
+        if type_b == state.date_delta_type {
+            let DateDelta {
+                mut months,
+                mut days,
+            } = DateDelta::extract(obj_b);
+            debug_assert_eq!(type_a, state.local_datetime_type);
+            let dt = DateTime::extract(obj_a);
+            if negate {
+                months = -months;
+                days = -days;
             }
-        } else if type_b == State::for_mod(mod_a).date_delta_type {
-            DateTimeDelta {
-                ddelta: DateDelta::extract(obj_b),
-                tdelta: TimeDelta::ZERO,
-            }
-        } else if type_b == State::for_mod(mod_a).datetime_delta_type {
-            DateTimeDelta::extract(obj_b)
+            dt.shift_date(months, days)
+                .ok_or_else(|| value_err!("Result of {} out of range", opname))?
+                .to_obj(type_a)
+        } else if type_b == state.datetime_delta_type || type_b == state.time_delta_type {
+            Err(py_err!(
+                state.exc_implicitly_ignoring_dst,
+                "Adding or subtracting a (date)time delta to a local datetime \
+                implicitly ignores DST transitions and other timezone \
+                changes. Instead, use the `add` or `subtract` method."
+            ))?
         } else {
             Err(type_err!(
                 "unsupported operand type(s) for {}: 'LocalDateTime' and {}",
                 opname,
                 type_b.cast::<PyObject>().repr()
             ))?
-        };
-        debug_assert_eq!(type_a, State::for_type(type_a).local_datetime_type);
-        let dt = DateTime::extract(obj_a);
-        if negate {
-            delta = -delta;
         }
-        dt.shift(delta)
-            .ok_or_else(|| value_err!("Result of {} out of range", opname))?
-            .to_obj(type_a)
     } else {
         Ok(newref(Py_NotImplemented()))
     }
@@ -441,34 +424,113 @@ unsafe fn _shift_method(
     negate: bool,
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
-    if !args.is_empty() {
-        Err(type_err!("{}() takes no positional arguments", fname))?
-    }
     let state = State::for_type(cls);
     let mut months = 0;
     let mut days = 0;
     let mut nanos = 0;
-    for &(name, value) in kwargs {
-        set_units_from_kwargs(
-            name,
-            value,
-            &mut months,
-            &mut days,
-            &mut nanos,
-            state,
+    let mut ignore_dst = false;
+
+    match *args {
+        [arg] => {
+            match *kwargs {
+                [(key, value)] if key == state.str_ignore_dst => {
+                    ignore_dst = value == Py_True();
+                }
+                [] => {}
+                _ => Err(type_err!(
+                    "{}() can't mix positional and keyword arguments",
+                    fname
+                ))?,
+            };
+            if Py_TYPE(arg) == state.time_delta_type {
+                nanos = TimeDelta::extract(arg).total_nanos();
+            } else if Py_TYPE(arg) == state.date_delta_type {
+                let dd = DateDelta::extract(arg);
+                months = dd.months;
+                days = dd.days;
+            } else if Py_TYPE(arg) == state.datetime_delta_type {
+                let dt = DateTimeDelta::extract(arg);
+                months = dt.ddelta.months;
+                days = dt.ddelta.days;
+                nanos = dt.tdelta.total_nanos();
+            } else {
+                Err(type_err!("{}() argument must be a delta", fname))?
+            }
+        }
+        [] => {
+            for &(key, value) in kwargs {
+                if key == state.str_ignore_dst {
+                    ignore_dst = value == Py_True();
+                } else {
+                    set_units_from_kwargs(
+                        key,
+                        value,
+                        &mut months,
+                        &mut days,
+                        &mut nanos,
+                        state,
+                        fname,
+                    )?;
+                }
+            }
+        }
+        _ => Err(type_err!(
+            "{}() takes at most 1 positional argument, got {}",
             fname,
-        )?;
+            args.len()
+        ))?,
     }
+
     if negate {
         months = -months;
         days = -days;
         nanos = -nanos;
+    }
+    if nanos != 0 && !ignore_dst {
+        Err(py_err!(
+            state.exc_implicitly_ignoring_dst,
+            "Adding time units to a LocalDateTime implicitly ignores \
+            Daylight Saving Time. Instead, convert to a ZonedDateTime first \
+            using assume_tz(). Or, if you're sure you want to ignore DST, \
+            explicitly pass ignore_dst=True."
+        ))?
     }
     DateTime::extract(slf)
         .shift_date(months, days)
         .and_then(|dt| dt.shift_nanos(nanos))
         .ok_or_else(|| value_err!("Result of {}() out of range", fname))?
         .to_obj(cls)
+}
+
+unsafe fn difference(
+    slf: *mut PyObject,
+    cls: *mut PyTypeObject,
+    args: &[*mut PyObject],
+    kwargs: &[(*mut PyObject, *mut PyObject)],
+) -> PyReturn {
+    let state = State::for_type(cls);
+    check_ignore_dst_kwarg(
+        kwargs,
+        state,
+        "The difference between two local datetimes implicitly ignores DST transitions. \
+        and other timezone changes. To perform DST-safe arithmetic, convert to a ZonedDateTime \
+        first using assume_tz(). Or, if you're sure you want to ignore DST, explicitly pass \
+        ignore_dst=True.",
+    )?;
+    let [arg] = *args else {
+        Err(type_err!("difference() takes exactly 1 argument"))?
+    };
+    if Py_TYPE(arg) == cls {
+        let a = DateTime::extract(slf);
+        let b = DateTime::extract(arg);
+        TimeDelta::from_nanos_unchecked(
+            Instant::from_datetime(a.date, a.time).total_nanos()
+                - Instant::from_datetime(b.date, b.time).total_nanos(),
+        )
+        .to_obj(state.time_delta_type)
+    } else {
+        Err(type_err!("difference() argument must be a LocalDateTime"))?
+    }
 }
 
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -825,6 +887,7 @@ static mut METHODS: &[PyMethodDef] = &[
     ),
     method_kwargs!(add, "Add various time and/or calendar units"),
     method_kwargs!(subtract, "Subtract various time and/or calendar units"),
+    method_kwargs!(difference, "Get the difference between two local datetimes"),
     PyMethodDef::zeroed(),
 ];
 

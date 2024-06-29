@@ -350,71 +350,12 @@ unsafe fn _shift(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) -> Py
             .ok_or_value_err("Resulting datetime is out of range")?
             .to_tz(py_api, zdt.zoneinfo)?
             .to_obj(type_a)
-    } else if type_b == date_delta_type {
-        let ZonedDateTime {
-            date,
-            time,
-            zoneinfo,
-            ..
-        } = ZonedDateTime::extract(obj_a);
-        let DateDelta {
-            mut months,
-            mut days,
-        } = DateDelta::extract(obj_b);
-        if negate {
-            months = -months;
-            days = -days;
-        };
-        // Prevent re-resolving in case there is no shift.
-        // otherwise, ambiguous dates may shift unexpectedly.
-        if months == 0 && days == 0 {
-            return Ok(newref(obj_a));
-        }
-        ZonedDateTime::from_local(
-            py_api,
-            date.shift(0, months, days)
-                .ok_or_value_err("Resulting date is out of range")?,
-            time,
-            zoneinfo,
-            Disambiguate::Compatible,
-        )?
-        // No error possible in "Compatible" mode
-        .unwrap()
-        .to_obj(type_a)
-    } else if type_b == datetime_delta_type {
-        let ZonedDateTime {
-            date,
-            time,
-            zoneinfo,
-            ..
-        } = ZonedDateTime::extract(obj_a);
-        let DateTimeDelta {
-            ddelta: DateDelta {
-                mut months,
-                mut days,
-            },
-            mut tdelta,
-        } = DateTimeDelta::extract(obj_b);
-        if negate {
-            months = -months;
-            days = -days;
-            tdelta = -tdelta;
-        };
-        let zdt = ZonedDateTime::from_local(
-            py_api,
-            date.shift(0, months, days)
-                .ok_or_value_err("Resulting date is out of range")?,
-            time,
-            zoneinfo,
-            Disambiguate::Compatible,
-        )?
-        // No error possible in "Compatible" mode
-        .unwrap();
-        zdt.instant()
-            .shift(tdelta.total_nanos())
-            .ok_or_value_err("Resulting datetime is out of range")?
-            .to_tz(py_api, zdt.zoneinfo)?
-            .to_obj(type_a)
+    } else if type_b == date_delta_type || type_b == datetime_delta_type {
+        Err(type_err!(
+            "Addition/subtraction of calendar units on a ZonedDateTime requires \
+             explicit disambiguation. Use the `add`/`subtract` methods instead. \
+             For example, instead of `dt + delta` use `dt.add(delta, disambiguate=...)`."
+        ))?
     } else {
         Ok(newref(Py_NotImplemented()))
     }
@@ -450,7 +391,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             } else if type_b == State::for_mod(mod_a).offset_datetime_type
                 || type_b == State::for_mod(mod_a).system_datetime_type
             {
-                OffsetDateTime::extract(obj_b).to_instant()
+                OffsetDateTime::extract(obj_b).instant()
             } else {
                 return _shift(obj_a, obj_b, true);
             };
@@ -1187,20 +1128,61 @@ unsafe fn _shift_method(
     negate: bool,
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
-    if !args.is_empty() {
-        return Err(type_err!("{}() takes no positional arguments", fname));
-    }
     let state = State::for_type(cls);
     let mut dis = None;
     let mut months = 0;
     let mut days = 0;
     let mut nanos = 0;
-    for &(key, value) in kwargs {
-        if key == state.str_disambiguate {
-            dis = Some(Disambiguate::from_py(value)?);
-        } else {
-            set_units_from_kwargs(key, value, &mut months, &mut days, &mut nanos, state, fname)?;
+
+    match *args {
+        [arg] => {
+            match *kwargs {
+                [(key, value)] if key == state.str_disambiguate => {
+                    dis = Some(Disambiguate::from_py(value)?)
+                }
+                [] => {}
+                _ => Err(type_err!(
+                    "{}() can't mix positional and keyword arguments",
+                    fname
+                ))?,
+            };
+            if Py_TYPE(arg) == state.time_delta_type {
+                nanos = TimeDelta::extract(arg).total_nanos();
+            } else if Py_TYPE(arg) == state.date_delta_type {
+                let dd = DateDelta::extract(arg);
+                months = dd.months;
+                days = dd.days;
+            } else if Py_TYPE(arg) == state.datetime_delta_type {
+                let dt = DateTimeDelta::extract(arg);
+                months = dt.ddelta.months;
+                days = dt.ddelta.days;
+                nanos = dt.tdelta.total_nanos();
+            } else {
+                Err(type_err!("{}() argument must be a delta", fname))?
+            }
         }
+        [] => {
+            for &(key, value) in kwargs {
+                if key == state.str_disambiguate {
+                    dis = Some(Disambiguate::from_py(value)?);
+                } else {
+                    set_units_from_kwargs(
+                        key,
+                        value,
+                        &mut months,
+                        &mut days,
+                        &mut nanos,
+                        state,
+                        fname,
+                    )?;
+                }
+            }
+        }
+        _ => Err(type_err!(
+            "{}() takes at most 1 positional argument, got {}",
+            fname,
+            args.len()
+        ))?,
     }
     if negate {
         months = -months;
@@ -1249,6 +1231,27 @@ unsafe fn _shift_method(
         .ok_or_value_err("Result is out of range")?
         .to_tz(state.py_api, zdt.zoneinfo)?
         .to_obj(cls)
+}
+
+unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
+    let type_b = Py_TYPE(obj_b);
+    let type_a = Py_TYPE(obj_a);
+    let state = State::for_type(type_a);
+    let inst_a = ZonedDateTime::extract(obj_a).instant();
+    let inst_b = if type_b == Py_TYPE(obj_a) {
+        ZonedDateTime::extract(obj_b).instant()
+    } else if type_b == state.instant_type {
+        Instant::extract(obj_b)
+    } else if type_b == state.system_datetime_type || type_b == state.offset_datetime_type {
+        OffsetDateTime::extract(obj_b).instant()
+    } else {
+        Err(type_err!(
+            "difference() argument must be an OffsetDateTime, 
+             Instant, ZonedDateTime, or SystemDateTime"
+        ))?
+    };
+    TimeDelta::from_nanos_unchecked(inst_a.total_nanos() - inst_b.total_nanos())
+        .to_obj(state.time_delta_type)
 }
 
 static mut METHODS: &[PyMethodDef] = &[
@@ -1316,6 +1319,11 @@ static mut METHODS: &[PyMethodDef] = &[
     method_vararg!(to_fixed_offset, "Convert to an equivalent offset datetime"),
     method_kwargs!(add, "Add various time/calendar units"),
     method_kwargs!(subtract, "Subtract various time/calendar units"),
+    method!(
+        difference,
+        "Get the difference between two instances",
+        METH_O
+    ),
     PyMethodDef::zeroed(),
 ];
 

@@ -330,7 +330,7 @@ unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> 
     } else if type_b == State::for_type(type_a).offset_datetime_type
         || type_b == State::for_type(type_a).system_datetime_type
     {
-        OffsetDateTime::extract(b_obj).to_instant()
+        OffsetDateTime::extract(b_obj).instant()
     } else {
         return Ok(newref(Py_NotImplemented()));
     };
@@ -369,7 +369,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             } else if type_b == State::for_mod(mod_a).offset_datetime_type
                 || type_b == State::for_mod(mod_a).system_datetime_type
             {
-                OffsetDateTime::extract(obj_b).to_instant()
+                OffsetDateTime::extract(obj_b).instant()
             } else {
                 return _shift(obj_a, obj_b, true);
             };
@@ -653,6 +653,27 @@ unsafe fn _shift_method(
         .to_obj(cls)
 }
 
+unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
+    let type_b = Py_TYPE(obj_b);
+    let type_a = Py_TYPE(obj_a);
+    let state = State::for_type(type_a);
+    let inst_a = Instant::extract(obj_a);
+    let inst_b = if type_b == Py_TYPE(obj_a) {
+        Instant::extract(obj_b)
+    } else if type_b == state.zoned_datetime_type {
+        ZonedDateTime::extract(obj_b).instant()
+    } else if type_b == state.system_datetime_type || type_b == state.offset_datetime_type {
+        OffsetDateTime::extract(obj_b).instant()
+    } else {
+        Err(type_err!(
+            "difference() argument must be an OffsetDateTime, 
+             Instant, ZonedDateTime, or SystemDateTime"
+        ))?
+    };
+    TimeDelta::from_nanos_unchecked(inst_a.total_nanos() - inst_b.total_nanos())
+        .to_obj(state.time_delta_type)
+}
+
 unsafe fn to_tz(slf: &mut PyObject, tz: &mut PyObject) -> PyReturn {
     let &State {
         zoned_datetime_type,
@@ -848,6 +869,11 @@ static mut METHODS: &[PyMethodDef] = &[
         "Convert to an equivalent datetime in the system timezone"
     ),
     method_vararg!(to_fixed_offset, "Convert to an equivalent OffsetDateTime"),
+    method!(
+        difference,
+        "Calculate the difference between two instances",
+        METH_O
+    ),
     PyMethodDef::zeroed(),
 ];
 

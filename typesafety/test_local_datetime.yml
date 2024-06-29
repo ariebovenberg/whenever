@@ -14,15 +14,14 @@
 - case: addition
   regex: true
   main: |
-    from whenever import LocalDateTime, hours
+    from whenever import LocalDateTime, months
     d = LocalDateTime(2020, 8, 9)
-    reveal_type(d + hours(4))  # N: .*whenever.LocalDateTime
+    reveal_type(d + months(4))  # N: .*whenever.LocalDateTime
     d + 12  # E: .*Unsupported
 
 - case: subtraction
   regex: true
   main: |
-    from whenever import LocalDateTime, hours
+    from whenever import LocalDateTime, months
     d = LocalDateTime(2020, 8, 9)
-    reveal_type(d - hours(4))  # N: .*type is "whenever.LocalDateTime"
-    reveal_type(d - d)  # N: .*type is "whenever.TimeDelta
+    reveal_type(d - months(4))  # N: .*type is "whenever.LocalDateTime"

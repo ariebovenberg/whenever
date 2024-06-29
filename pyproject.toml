@@ -4,7 +4,7 @@ authors = [
     {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com"},
 ]
 readme = "README.md"
-version = "0.6.0rc0"
+version = "0.6.0rc1"
 description = "Sensible and typesafe datetimes"
 requires-python = ">=3.9"
 classifiers = [
