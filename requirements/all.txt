@@ -1,0 +1,4 @@
+-r test.txt
+-r lint.txt
+-r typecheck.txt
+-r docs.txt

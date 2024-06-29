@@ -1,7 +1,7 @@
 .. _durations:
 
-⏳ Deltas (durations)
-=====================
+⏳ Deltas
+=========
 
 As we've seen :ref:`earlier <add-subtract-time>`, you can add and subtract
 time units from datetimes:
@@ -9,8 +9,8 @@ time units from datetimes:
 >>> dt.add(hours=5, minutes=30)
 
 However, sometimes you want to operate on these durations directly.
-For example, you might want to reuse it in multiple places,
-add 5 hours to it, or double it, for example.
+For example, you might want to reuse a particular duration,
+or perform arithmetic on it.
 For this, **whenever** provides an API
 designed to help you avoid common pitfalls.
 
@@ -18,7 +18,7 @@ Durations are created using the duration units provided.
 Here is a quick demo:
 
 >>> from whenever import years, months, days, hours, minutes
->>> # Precise units create a TimeDelta
+>>> # Precise units create a TimeDelta, supporting broad arithmetic
 >>> movie_runtime = hours(2) + minutes(9)
 TimeDelta(02:09:00)
 >>> movie_runtime.in_minutes()
@@ -26,19 +26,19 @@ TimeDelta(02:09:00)
 >>> movie_runtime / 1.2  # what if we watch it at 1.2x speed?
 TimeDelta(01:47:30)
 ...
->>> # Calendar units create a DateDelta
+>>> # Calendar units create a DateDelta, with more limited arithmetic
 >>> project_estimate = months(1) + days(10)
 DateDelta(P1M10D)
 >>> Date(2023, 1, 29) + project_estimate
 Date(2023-03-10)
->>> project_estimate * 2  # a pessimistic estimate
+>>> project_estimate * 2  # make it pessimistic
 DateDelta(P2M20D)
 ...
 >>> # Mixing date and time units creates a generic DateTimeDelta
 >>> project_estimate + movie_runtime
 DateTimeDelta(P1M10DT2H9M)
 ...
->>> # Mistakes prevented by the API:
+>>> # API ensures common mistakes are caught early:
 >>> project_estimate * 1.3             # Impossible arithmetic on calendar units
 >>> project_estimate.in_hours()        # Resolving calendar units without context
 >>> Date(2023, 1, 29) + movie_runtime  # Adding time to a date
@@ -69,31 +69,31 @@ There are three duration types in **whenever**:
 
 This distinction determines which operations are supported:
 
-+------------------------------+-------------------+--------------------+--------------------+
-| Feature                      | ``TimeDelta``     | ``DateDelta``      | ``DateTimeDelta``  |
-+==============================+===================+====================+====================+
-| Add to ``DateTime``          | .. centered:: ✅  | .. centered:: ✅   | .. centered:: ✅   |
-+------------------------------+-------------------+--------------------+--------------------+
-| Add to ``Date``              | .. centered:: ❌  | .. centered:: ✅   | .. centered:: ❌   |
-+------------------------------+-------------------+--------------------+--------------------+
-| multiplication (×)           | .. centered:: ✅  | ⚠️  by             | ⚠️  by             |
-|                              |                   | ``int``            | ``int``            |
-+------------------------------+-------------------+--------------------+--------------------+
-| division (÷)                 | .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
-+------------------------------+-------------------+--------------------+--------------------+
-| Commutative:                 |                   |                    |                    |
-| ``dt + a + b == dt + b + a`` | .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
-+------------------------------+-------------------+--------------------+--------------------+
-| Reversible:                  |                   |                    |                    |
-| ``(dt + a) - a == dt``       | .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
-+------------------------------+-------------------+--------------------+--------------------+
-| comparison (``>, >=, <, <=``)| .. centered:: ✅  | .. centered:: ❌   | .. centered:: ❌   |
-+------------------------------+-------------------+--------------------+--------------------+
-| normalized                   | .. centered:: ✅  | .. centered:: ❌   | ⚠️  time part      |
-+------------------------------+-------------------+--------------------+--------------------+
-| equality based on            | total microseconds| individual         | date/time parts    |
-|                              |                   | fields             |                    |
-+------------------------------+-------------------+--------------------+--------------------+
++------------------------------+-------------------+-----------------------+-------------------------+
+| Feature                      | ``TimeDelta``     | ``DateDelta``         | ``DateTimeDelta``       |
++==============================+===================+=======================+=========================+
+| Add to ``DateTime``          | .. centered:: ✅  | .. centered:: ✅      | .. centered:: ✅        |
++------------------------------+-------------------+-----------------------+-------------------------+
+| Add to ``Date``              | .. centered:: ❌  | .. centered:: ✅      | .. centered:: ❌        |
++------------------------------+-------------------+-----------------------+-------------------------+
+| division (÷)                 | .. centered:: ✅  | .. centered:: ❌      | .. centered:: ❌        |
++------------------------------+-------------------+-----------------------+-------------------------+
+| multiplication (×)           | .. centered:: ✅  | .. centered:: ⚠️ [1]_ | .. centered:: ⚠️  [1]_  |
++------------------------------+-------------------+-----------------------+-------------------------+
+| comparison (``>, >=, <, <=``)| .. centered:: ✅  | .. centered:: ❌      | .. centered:: ❌        |
++------------------------------+-------------------+-----------------------+-------------------------+
+| Commutative:                 |                   |                       |                         |
+| ``dt + a + b == dt + b + a`` | .. centered:: ✅  | .. centered:: ❌      | .. centered:: ❌        |
++------------------------------+-------------------+-----------------------+-------------------------+
+| Reversible:                  |                   |                       |                         |
+| ``(dt + a) - a == dt``       | .. centered:: ✅  | .. centered:: ❌      | .. centered:: ❌        |
++------------------------------+-------------------+-----------------------+-------------------------+
+| normalized                   | .. centered:: ✅  | .. centered:: ⚠️ [2]_ | .. centered:: ⚠️  [2]_  |
++------------------------------+-------------------+-----------------------+-------------------------+
+
+.. [1] Only by integers
+.. [2] Years/months and weeks/days are normalized amongst each other,
+       but not with other units. 
 
 Multiplication
 --------------
@@ -124,17 +124,18 @@ Commutativity
 
 The result of adding two time durations is the same, regardless of what order you add them in:
 
->>> dt = UTCDateTime(2020, 1, 29)
+>>> dt = Instant.from_utc(2020, 1, 29)
 >>> dt + hours(2) + minutes(30)
-UTCDateTime(2020-01-29 02:30:00Z)
+Instant(2020-01-29 02:30:00Z)
 >>> dt + minutes(30) + hours(2)  # same result
 
 This is not the case for date units. The result of adding two date units depends on the order:
 
->>> dt + months(1) + days(3)
-UTCDateTime(2021-03-03 00:00:00)
->>> dt + days(3) + months(1)
-UTCDateTime(2021-03-01 00:00:00)
+>>> d = Date(2020, 1, 29)
+>>> d + months(1) + days(3)
+Date(2021-03-03)
+>>> d + days(3) + months(1)
+Date(2021-03-01)
 
 Reversibility
 -------------
@@ -146,11 +147,11 @@ True
 
 This is not the case for date units:
 
->>> jan30 = UTCDateTime(2020, 1, 30)
+>>> jan30 = Date(2020, 1, 30)
 >>> jan30 + months(1)
-UTCDateTime(2020-02-29 00:00:00)
+Date(2020-02-29)
 >>> jan30 + months(1) - months(1)
-UTCDateTime(2020-01-29 00:00:00)
+Date(2020-01-29)
 
 Comparison
 ----------
@@ -167,15 +168,24 @@ This is not the case for date units:
 Normalization
 -------------
 
-Time durations are always normalized:
+Time durations are always fully normalized: hours, minutes, seconds,
+milliseconds, microseconds, and nanoseconds all roll over into each other:
 
 >>> minutes(70)
 TimeDelta(01:10:00)
 
-Date units are not normalized:
+Only some date units can be normalized: years and months are normalized amongst each other,
+and weeks and days are normalized amongst each other.
+1 year doesn't always correspond to a fixed number of days, but it does always correspond to 12 months.
+One day also doesn't correspond to a fixed number of hours,
+as this can change depending on Daylight Saving Time, for example.
 
 >>> months(13)
-DateDelta(P13M)
+DateDelta(P1Y1M)
+>>> months(1) + weeks(4)
+DateDelta(P1M28D)
+>>> days(1) + hours(24)
+DateTimeDelta(P1DT24H)
 
 Equality
 --------
@@ -185,11 +195,13 @@ Two time durations are equal if their sum of components is equal:
 >>> hours(1) + minutes(30) == hours(2) - minutes(30)
 True
 
-Since date units aren't normalized, two date duration are only
-equal if their individual components are equal:
+Since date units are only partially normalized, date durations are only
+equal if months/years and weeks/days are equal amongst each other:
 
->>> months(1) + days(30) == months(2) - days(1)
-False
+>>> months(1) == days(31)
+False  # a month will never equal a fixed number of days
+>>> years(1) + weeks(1) == months(12) + days(7)
+True  # a years is always 12 months, and a week is always 7 days
 
 .. _iso8601-durations:
 
@@ -197,7 +209,7 @@ ISO 8601 format
 ---------------
 
 The ISO 8601 standard defines formats for specifying durations,
-the most common being:
+the `most common <https://en.wikipedia.org/wiki/ISO_8601#Durations>`_ being:
 
 .. code-block:: none
 
@@ -207,26 +219,27 @@ Where:
 
 - ``P`` is the period designator, and ``T`` separates date and time components.
 - ``nY`` is the number of years, ``nM`` is the number of months, etc.
-- Each ``n`` may be negative, and only seconds may have a fractional part.
+- Only seconds may have a fractional part.
+
 
 For example:
 
 - ``P3Y4DT12H30M`` is 3 years, 4 days, 12 hours, and 30 minutes.
-- ``-P2M5D`` is -2 months, +5 days.
+- ``-P2M5D`` is -2 months, and -5 days.
 - ``P0D`` is zero.
-- ``PT-5M4.25S`` is -5 minutes and +4.25 seconds.
+- ``+PT5M4.25S`` is 5 minutes and 4.25 seconds.
 
 All deltas can be converted to and from this format using the methods
-:meth:`~whenever.DateTimeDelta.common_iso8601`
-and :meth:`~whenever.DateTimeDelta.from_common_iso8601`.
+:meth:`~whenever.DateTimeDelta.format_common_iso`
+and :meth:`~whenever.DateTimeDelta.parse_common_iso`.
 
->>> hours(3).common_iso8601()
+>>> hours(3).format_common_iso()
 'PT3H'
->>> (years(1) - months(3) + minutes(30.25)).common_iso8601()
-'P1Y-3MT30M15S'
->>> DateDelta.from_common_iso8601('-P2M')
+>>> (-years(1) - months(3) - minutes(30.25)).format_common_iso()
+'-P1Y3MT30M15S'
+>>> DateDelta.parse_common_iso('-P2M')
 DateDelta(-2M)
->>> DateTimeDelta.from_common_iso8601('P3YT90M')
+>>> DateTimeDelta.parse_common_iso('P3YT90M')
 DateTimeDelta(P3YT1H30M)
 
 .. attention::

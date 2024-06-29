@@ -2,9 +2,6 @@ from __future__ import annotations
 
 # -- Project information -----------------------------------------------------
 import importlib.metadata
-import typing
-
-typing.SPHINX_BUILD = True
 
 metadata = importlib.metadata.metadata("whenever")
 
@@ -17,7 +14,7 @@ release = metadata["Version"]
 
 nitpicky = True
 nitpick_ignore = [
-    ("py:class", "whenever._TDateTime"),
+    ("py:class", "whenever._pywhenever._T"),
 ]
 extensions = [
     "sphinx.ext.autodoc",
@@ -25,12 +22,18 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx_copybutton",
+    "enum_tools.autoenum",
+    "myst_parser",
 ]
 templates_path = ["_templates"]
-source_suffix = ".rst"
+source_suffix = {
+    ".md": "markdown",
+    ".rst": "restructuredtext",
+}
 
 master_doc = "index"
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+myst_heading_anchors = 2
 
 # -- Options for HTML output ----------------------------------------------
 
@@ -42,4 +45,4 @@ pygments_dark_style = "lightbulb"
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
 }
-toc_object_entries_show_parents = 'hide'
+toc_object_entries_show_parents = "hide"

@@ -1,0 +1,88 @@
+name: Build and publish wheels
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  binary:
+    name: build on ${{ matrix.os }} - (target ${{ matrix.target || 'all' }}) - (filter ${{ matrix.build_only || 'all' }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+          - os: macos-latest
+          - os: ubuntu-latest
+            target: x86_64
+          - os: ubuntu-latest
+            target: i686
+          - os: ubuntu-latest
+            target: ppc64le
+          - os: ubuntu-latest
+            target: s390x
+          # parallelized because they are slow
+          - os: ubuntu-latest
+            target: aarch64
+            build_only: 'musllinux'
+          - os: ubuntu-latest
+            target: aarch64
+            build_only: 'manylinux'
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up QEMU
+        if: runner.os == 'Linux'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -U twine cibuildwheel==2.19.1
+      - run: cibuildwheel --output-dir dist
+        env:
+          CIBW_ARCHS: ${{ matrix.target || 'auto' }}
+          CIBW_BUILD: '*${{ matrix.build_only }}*'
+      - run: twine check --strict dist/*
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-binary-${{ runner.os }}-${{ matrix.target || 'all' }}-${{ matrix.build_only || 'all' }}
+          path: dist/*
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build sdist
+        run: |
+          pip install build twine
+          python -m build --sdist --outdir dist
+      - run: twine check --strict dist/*
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-sdist
+          path: dist/*
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    if: "startsWith(github.ref, 'refs/tags/')"
+    needs: [binary, sdist]
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: Publish to PyPI
+        run: |
+          pip install twine
+          twine upload --non-interactive --disable-progress-bar --skip-existing wheels-*/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}

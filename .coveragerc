@@ -1,0 +1,11 @@
+[coverage:run]
+branch=True
+[coverage:report]
+fail_under=100
+exclude_lines=
+    pragma: no cover
+    raise NotImplementedError
+    def __repr__
+    @overload
+    ^\s+\.\.\.
+    if TYPE_CHECKING.*:
