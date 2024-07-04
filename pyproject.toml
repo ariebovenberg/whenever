@@ -4,8 +4,8 @@ authors = [
     {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com"},
 ]
 readme = "README.md"
-version = "0.6.0"
-description = "Sensible and typesafe datetimes"
+version = "0.6.1"
+description = "Modern datetime library for Python, written in Rust"
 requires-python = ">=3.9"
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -21,6 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
     "Programming Language :: Python",
     "Programming Language :: Rust",
     "Typing :: Typed",
