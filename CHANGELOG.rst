@@ -1,7 +1,7 @@
 🚀 Changelog
 ============
 
-0.6.0 (2024-07-0)
+0.6.0 (2024-07-04)
 ------------------
 
 A big release touting a Rust extension module
