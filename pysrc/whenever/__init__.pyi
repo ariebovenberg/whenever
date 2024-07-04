@@ -39,9 +39,6 @@ __all__ = [
     "SUNDAY",
 ]
 
-class _UNSET: ...
-
-_TDateTime = TypeVar("_TDateTime")
 Disambiguate = Literal["raise", "earlier", "later", "compatible"]
 
 @final
@@ -64,11 +61,7 @@ class Date:
     @classmethod
     def parse_common_iso(cls, s: str, /) -> Date: ...
     def replace(
-        self,
-        *,
-        year: int | _UNSET = ...,
-        month: int | _UNSET = ...,
-        day: int | _UNSET = ...,
+        self, *, year: int = ..., month: int = ..., day: int = ...
     ) -> Date: ...
     def add(
         self, *, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0
@@ -118,10 +111,10 @@ class Time:
     def replace(
         self,
         *,
-        hour: int | _UNSET = ...,
-        minute: int | _UNSET = ...,
-        second: int | _UNSET = ...,
-        nanosecond: int | _UNSET = ...,
+        hour: int = ...,
+        minute: int = ...,
+        second: int = ...,
+        nanosecond: int = ...,
     ) -> Time: ...
     def __lt__(self, other: Time) -> bool: ...
     def __le__(self, other: Time) -> bool: ...
@@ -198,10 +191,10 @@ class DateDelta:
     def replace(
         self,
         *,
-        years: int | _UNSET = ...,
-        months: int | _UNSET = ...,
-        weeks: int | _UNSET = ...,
-        days: int | _UNSET = ...,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
     ) -> DateDelta: ...
     def __hash__(self) -> int: ...
     def __bool__(self) -> bool: ...
@@ -421,14 +414,14 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     def replace(
         self,
         *,
-        year: int | _UNSET = ...,
-        month: int | _UNSET = ...,
-        day: int | _UNSET = ...,
-        hour: int | _UNSET = ...,
-        minute: int | _UNSET = ...,
-        second: int | _UNSET = ...,
-        nanosecond: int | _UNSET = ...,
-        offset: int | TimeDelta | _UNSET = ...,
+        year: int = ...,
+        month: int = ...,
+        day: int = ...,
+        hour: int = ...,
+        minute: int = ...,
+        second: int = ...,
+        nanosecond: int = ...,
+        offset: int | TimeDelta = ...,
         ignore_dst: Literal[True],
     ) -> OffsetDateTime: ...
     def replace_date(
@@ -513,14 +506,14 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def replace(
         self,
         *,
-        year: int | _UNSET = ...,
-        month: int | _UNSET = ...,
-        day: int | _UNSET = ...,
-        hour: int | _UNSET = ...,
-        minute: int | _UNSET = ...,
-        second: int | _UNSET = ...,
-        nanosecond: int | _UNSET = ...,
-        tz: str | _UNSET = ...,
+        year: int = ...,
+        month: int = ...,
+        day: int = ...,
+        hour: int = ...,
+        minute: int = ...,
+        second: int = ...,
+        nanosecond: int = ...,
+        tz: str = ...,
         disambiguate: Disambiguate,
     ) -> ZonedDateTime: ...
     def replace_date(
@@ -631,13 +624,13 @@ class SystemDateTime(_KnowsInstantAndLocal):
     def replace(
         self,
         *,
-        year: int | _UNSET = ...,
-        month: int | _UNSET = ...,
-        day: int | _UNSET = ...,
-        hour: int | _UNSET = ...,
-        minute: int | _UNSET = ...,
-        second: int | _UNSET = ...,
-        nanosecond: int | _UNSET = ...,
+        year: int = ...,
+        month: int = ...,
+        day: int = ...,
+        hour: int = ...,
+        minute: int = ...,
+        second: int = ...,
+        nanosecond: int = ...,
         disambiguate: Disambiguate,
     ) -> SystemDateTime: ...
     def replace_date(
@@ -752,13 +745,13 @@ class LocalDateTime(_KnowsLocal):
     def replace(
         self,
         *,
-        year: int | _UNSET = ...,
-        month: int | _UNSET = ...,
-        day: int | _UNSET = ...,
-        hour: int | _UNSET = ...,
-        minute: int | _UNSET = ...,
-        second: int | _UNSET = ...,
-        nanosecond: int | _UNSET = ...,
+        year: int = ...,
+        month: int = ...,
+        day: int = ...,
+        hour: int = ...,
+        minute: int = ...,
+        second: int = ...,
+        nanosecond: int = ...,
     ) -> LocalDateTime: ...
     def replace_date(self, d: Date) -> LocalDateTime: ...
     def replace_time(self, t: Time) -> LocalDateTime: ...
@@ -780,22 +773,13 @@ class LocalDateTime(_KnowsLocal):
     ) -> LocalDateTime: ...
     @overload
     def add(
-        self,
-        *,
-        years: int = 0,
-        months: int = 0,
-        weeks: int = 0,
-        days: int = 0,
+        self, *, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0
     ) -> LocalDateTime: ...
     @overload
     def add(self, d: DateDelta, /) -> LocalDateTime: ...
     @overload
     def add(
-        self,
-        d: TimeDelta | DateTimeDelta,
-        /,
-        *,
-        ignore_dst: Literal[True],
+        self, d: TimeDelta | DateTimeDelta, /, *, ignore_dst: Literal[True]
     ) -> LocalDateTime: ...
     @overload
     def subtract(
@@ -815,22 +799,13 @@ class LocalDateTime(_KnowsLocal):
     ) -> LocalDateTime: ...
     @overload
     def subtract(
-        self,
-        *,
-        years: int = 0,
-        months: int = 0,
-        weeks: int = 0,
-        days: int = 0,
+        self, *, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0
     ) -> LocalDateTime: ...
     @overload
     def subtract(self, d: DateDelta, /) -> LocalDateTime: ...
     @overload
     def subtract(
-        self,
-        d: TimeDelta | DateTimeDelta,
-        /,
-        *,
-        ignore_dst: Literal[True],
+        self, d: TimeDelta | DateTimeDelta, /, *, ignore_dst: Literal[True]
     ) -> LocalDateTime: ...
     def difference(
         self, other: LocalDateTime, /, *, ignore_dst: Literal[True]

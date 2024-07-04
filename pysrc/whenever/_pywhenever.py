@@ -57,7 +57,6 @@ from typing import (
     ClassVar,
     Literal,
     Mapping,
-    Optional,
     TypeVar,
     Union,
     no_type_check,
@@ -294,8 +293,7 @@ class Date(_ImmutableBase):
     ) -> Date:
         """Add a components to a date.
 
-        Components are added from largest to smallest.
-        Trucation and wrapping is done after each step.
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
 
         Example
         -------
@@ -315,8 +313,7 @@ class Date(_ImmutableBase):
     ) -> Date:
         """Subtract a components from a date.
 
-        Components are subtracted from largest to smallest.
-        Trucation and wrapping is done after each step.
+        See :ref:`the docs on arithmetic <arithmetic>` for more information.
 
         Example
         -------
@@ -767,7 +764,6 @@ class TimeDelta(_ImmutableBase):
 
     @property
     def _time_part(self) -> TimeDelta:
-        """The time part, always equal to the delta itself"""
         return self
 
     def in_days_of_24h(self) -> float:
@@ -3096,7 +3092,10 @@ class OffsetDateTime(_KnowsInstantAndLocal):
                 "Parsed datetime must have an offset. "
                 "Use %z, %Z, or %:z in the format string"
             )
-        return cls._from_py_unchecked(_check_utc_bounds(parsed), 0)
+        return cls._from_py_unchecked(
+            _check_utc_bounds(parsed.replace(microsecond=0)),
+            parsed.microsecond * 1_000,
+        )
 
     def format_rfc2822(self) -> str:
         """Format as an RFC 2822 string.
@@ -3210,7 +3209,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         arg: Delta | _UNSET = _UNSET,
         /,
         *,
-        ignore_dst: Optional[Literal[True]] = None,
+        ignore_dst: bool = False,
         **kwargs,
     ) -> OffsetDateTime:
         if ignore_dst is not True:

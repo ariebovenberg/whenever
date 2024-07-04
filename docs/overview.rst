@@ -37,7 +37,7 @@ Read on to find out which one is right for your use case.
 
 .. tip::
 
-   If you prefer a video explanation, `here is an excellent explanation of the datamodel that whenever is based on <https://www.youtube.com/watch?v=saeKBuPewcU>`_.
+   If you prefer a video explanation, `here is an excellent explanation of these concepts <https://www.youtube.com/watch?v=saeKBuPewcU>`_.
 
 :class:`~whenever.Instant`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -100,7 +100,7 @@ with rules about daylight saving time and other timezone changes.
 
 >>> bedtime = ZonedDateTime(2024, 3, 9, 22, tz="America/New_York")
 ZonedDateTime(2024-03-09 22:00:00-05:00[America/New_York])
-# accounts for the DST transition over the night:
+# accounts for the DST transition overnight:
 >>> bedtime.add(hours=8)
 ZonedDateTime(2024-03-10 07:00:00-04:00[America/New_York])
 
@@ -356,7 +356,7 @@ Ambiguity in timezones
 
 .. note::
 
-   The API for handling ambiguitiy is inspired by that of
+   The API for handling ambiguity is inspired by that of
    `Temporal <https://tc39.es/proposal-temporal/docs/ambiguity.html>`_,
    the redesigned date and time API for JavaScript.
 
@@ -366,7 +366,7 @@ This creates two types of situations for the :class:`~whenever.ZonedDateTime`
 and :class:`~whenever.SystemDateTime` types:
 
 - When the clock moves backwards, there is a period of time that repeats.
-  For example, Sunday October 29th 2023 2:30am occured twice in Paris.
+  For example, Sunday October 29th 2023 2:30am occurred twice in Paris.
   When you specify this time, you need to specify whether you want the earlier
   or later occurrence.
 - When the clock moves forwards, a period of time is skipped.
@@ -430,7 +430,7 @@ with the ``disambiguate=`` argument:
 Arithmetic
 ----------
 
-Datetimes support varous arithmetic operations with addition and subtraction.
+Datetimes support various arithmetic operations with addition and subtraction.
 
 Difference between times
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -486,7 +486,7 @@ This means:
 DST-safe arithmetic
 ~~~~~~~~~~~~~~~~~~~
 
-Arithmetic with timezones can be tricky due to daylight saving time (DST)
+Date and time arithmetic can be tricky due to daylight saving time (DST)
 and other timezone changes.
 The API of the different classes is designed to avoid implicitly ignoring these.
 The type annotations and descriptive error messages should automatically guide you
@@ -538,7 +538,7 @@ to the correct usage.
   because it doesn't know about DST or other timezone changes:
 
   >>> d = LocalDateTime(2023, 10, 29, 1, 30)
-  >>> d.add(hours=2)  # There could be a DST transition, depending on the location
+  >>> d.add(hours=2)  # There could be a DST transition for all we know!
   Traceback (most recent call last):
     ...
   >>> d.assume_tz("Europe/Amsterdam", disambiguate="earlier").add(hours=2)

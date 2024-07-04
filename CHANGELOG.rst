@@ -1,7 +1,7 @@
 🚀 Changelog
 ============
 
-0.6.0 (2024-??-??)
+0.6.0 (2024-07-0)
 ------------------
 
 A big release touting a Rust extension module
@@ -25,15 +25,14 @@ and an API more consistent with other modern libraries.
 - ``NaiveDateTime`` is now ``LocalDateTime``
 
   **Rationale**: "Local" is more descriptive for describing the concept of
-  "wall clock" time observed locally by humans.
-  It's consistent with other libraries and standards.
+  "wall clock" time observed locally by humans. It's also consistent with
+  other libraries and standards.
 
 - Nanosecond precision is now the default for all datetimes and deltas.
   ``nanosecond`` is a keyword-only argument for all constructors,
-  to prevent mistakes porting code from ``datetime``.
+  to prevent mistakes porting code from ``datetime`` (which uses microseconds).
 
-  **Rationale**: Nanosecond precision is the standard for most modern
-  datetime libraries.
+  **Rationale**: Nanosecond precision is the standard for modern datetime libraries.
 
 - Unified `[from_]canonical_format` methods with `[from_]common_iso8601` methods
   into `[format|parse]_common_iso` methods.
@@ -51,6 +50,13 @@ and an API more consistent with other modern libraries.
 
   **Rationale**: Consistency with other methods.
 
+- Added explicit ``ignore_dst=True`` flag to DST-unsafe operations such as
+  shifting an offset datetime.
+
+  **Rationale**: Previously, DST-unsafe operations were completely disallowed,
+  but to a frustrating degree. This flag is a better alternative than having
+  users resort to workarounds.
+
 - Renamed ``as_utc``, ``as_offset``, ``as_zoned``, ``as_local`` to
   ``to_utc``, ``to_fixed_offset``, ``to_tz``, ``to_system_tz``,
   and the ``NaiveDateTime.assume_*`` methods accordingly
@@ -58,17 +64,17 @@ and an API more consistent with other modern libraries.
   **Rationale**: "to" better clarifies a conversion is being made (not a replacement),
   and "fixed offset" and "tz" are more descriptive than "offset" and "zoned".
 
-- ``disambiguate=`` is non-optional for all relevent methods.
+- ``disambiguate=`` is non-optional for all relevant methods.
+  The only exception is the constructor, which defaults to "raise".
 
   **Rationale**: This makes it explicit how ambiguous and non-existent times are handled.
-  The previous default of raising an error by default was too strict.
 
 - Removed weakref support.
 
   **Rationale**: The overhead of weakrefs was too high for
   such primitive objects, and the use case was not clear.
 
-- Weekdays are now an enum instead integer.
+- Weekdays are now an enum instead of an integer.
 
   **Rationale**: Enums are more descriptive and less error-prone,
   especially since ISO weekdays start at 1 and Python weekdays at 0.
@@ -85,9 +91,9 @@ and an API more consistent with other modern libraries.
 
   **Rationale**: The use case for mixed sign deltas (e.g. 2 months and -15 days) is unclear,
   and having a consistent sign makes it easier to reason about.
-  It also alings with the most well-known version of the ISO format.
+  It also aligns with the most well-known version of the ISO format.
 
-- Calendar units are normalized, but only in sofar as they can be converted
+- Calendar units are normalized, but only in so far as they can be converted
   strictly. For example, 1 year is always equal to 12 months, but 1 month
   isn't equal to a fixed number of days. Refer to the delta docs for more information.
 
