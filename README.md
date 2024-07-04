@@ -23,9 +23,9 @@ It's also **way faster** than other third-party libraries—and usually the stan
 
   <p align="center">
     <picture align="center">
-        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ariebovenberg/whenever/rust/benchmarks/comparison/graph-dark.svg">
-        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/ariebovenberg/whenever/rust/benchmarks/comparison/graph-light.svg">
-        <img alt="Shows a bar chart with benchmark results." src="https://raw.githubusercontent.com/ariebovenberg/whenever/rust/benchmarks/comparison/graph-light.svg">
+        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ariebovenberg/whenever/main/benchmarks/comparison/graph-dark.svg">
+        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/ariebovenberg/whenever/main/benchmarks/comparison/graph-light.svg">
+        <img alt="Shows a bar chart with benchmark results." src="https://raw.githubusercontent.com/ariebovenberg/whenever/main/benchmarks/comparison/graph-light.svg">
     </picture>
   </p>
 
