@@ -51,6 +51,13 @@ and an API more consistent with other modern libraries.
 
   **Rationale**: Consistency with other methods.
 
+- Added explicit ``ignore_dst=True`` flag to DST-unsafe operations such as
+  shifting an offset datetime.
+
+  **Rationale**: Previously, DST-unsafe operations were completely disallowed,
+  but to a frustrating degree. This flag is a better alternative than having
+  users resort to workarounds.
+
 - Renamed ``as_utc``, ``as_offset``, ``as_zoned``, ``as_local`` to
   ``to_utc``, ``to_fixed_offset``, ``to_tz``, ``to_system_tz``,
   and the ``NaiveDateTime.assume_*`` methods accordingly
@@ -59,6 +66,7 @@ and an API more consistent with other modern libraries.
   and "fixed offset" and "tz" are more descriptive than "offset" and "zoned".
 
 - ``disambiguate=`` is non-optional for all relevent methods.
+  The only exception is the constructor, which defaults to "raise".
 
   **Rationale**: This makes it explicit how ambiguous and non-existent times are handled.
   The previous default of raising an error by default was too strict.
@@ -68,7 +76,7 @@ and an API more consistent with other modern libraries.
   **Rationale**: The overhead of weakrefs was too high for
   such primitive objects, and the use case was not clear.
 
-- Weekdays are now an enum instead integer.
+- Weekdays are now an enum instead of an integer.
 
   **Rationale**: Enums are more descriptive and less error-prone,
   especially since ISO weekdays start at 1 and Python weekdays at 0.
