@@ -57,6 +57,7 @@ jobs:
           python-version: '3.12'
 
       # ensure 32-bit target is tested
+      # FUTURE: Add a linux 32-bit target
       - uses: actions/setup-python@v5
         if: ${{ matrix.os == 'windows-latest' }}
         with:

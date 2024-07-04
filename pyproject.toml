@@ -4,7 +4,7 @@ authors = [
     {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com"},
 ]
 readme = "README.md"
-version = "0.6.0rc1"
+version = "0.6.0"
 description = "Sensible and typesafe datetimes"
 requires-python = ">=3.9"
 classifiers = [
@@ -56,9 +56,6 @@ exclude = '''
 )/
 '''
 
-[tool.setuptools.packages]
-find = { where = ["pysrc"] }
-
 [tool.isort]
 profile = 'black'
 line_length = 79
@@ -83,31 +80,18 @@ module = [
 ]
 ignore_missing_imports = true
 
-[tool.cibuildwheel]
-skip = ["pp*", "*-musllinux_i686", "*-musllinux_ppc64le", "*-musllinux_s390x"]
-free-threaded-support = true
-test-command = "pytest -s {project}/tests"
-test-requires = [
-    "pytest",
-    "hypothesis",
-]
-environment = { PATH = "$HOME/.cargo/bin:$PATH" }
+[tool.setuptools.packages]
+find = { where = ["pysrc"] }
 
-[tool.cibuildwheel.linux]
-before-all = "curl -sSf https://sh.rustup.rs | sh -s -- -y"
-archs = ["x86_64", "i686", "aarch64", "ppc64le", "s390x"]
-
-[tool.cibuildwheel.windows]
-before-all = "rustup target add i686-pc-windows-msvc"
-environment = { PATH = "$UserProfile\\.cargo\\bin;$PATH" }
-
-[tool.cibuildwheel.macos]
-before-all = "rustup target add x86_64-apple-darwin"
-archs = ["x86_64", "arm64"]
-
-[[tool.cibuildwheel.overrides]]
-select = "*-musllinux*"
-before-all = "curl -sSf https://sh.rustup.rs | sh -s -- -y && apk add tzdata"
+# Notes about the build configuration:
+# We need setuptools_rust to support enabling/disabling building the Rust
+# extension from source distributions.
+# However, we also use maturin to build the binary distributions (wheels)
+# since it is *very* convenient for this purpose.
+# During wheel building, we set build-backend to `maturin`
+[tool.maturin]
+python-source = "pysrc"
+module-name = "whenever._whenever"
 
 [build-system]
 build-backend = "setuptools.build_meta"

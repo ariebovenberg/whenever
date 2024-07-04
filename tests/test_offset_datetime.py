@@ -1028,6 +1028,13 @@ def test_local():
             "%Y-%m-%d %H:%M:%S%z",
             OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
         ),
+        (
+            "2020-08-15 23:12:09.234678Z",
+            "%Y-%m-%d %H:%M:%S.%f%z",
+            OffsetDateTime(
+                2020, 8, 15, 23, 12, 9, nanosecond=234_678_000, offset=0
+            ),
+        ),
     ],
 )
 def test_strptime(string, fmt, expected):

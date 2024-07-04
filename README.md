@@ -112,7 +112,7 @@ Additionally, it hasn't been actively maintained since a breaking 3.0 release la
 
 ## Why use whenever?
 
-- 🌐 DST-safe arithmetic. Always.
+- 🌐 DST-safe arithmetic
 - 🛡️ Typesafe API prevents common bugs
 - ✅ Fixes issues [arrow/pendulum don't](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/#datetime-library-scorecard)
 - ⚖️  Based on proven and [familiar concepts](https://www.youtube.com/watch?v=saeKBuPewcU)
@@ -134,37 +134,37 @@ Additionally, it hasn't been actively maintained since a breaking 3.0 release la
 ... )
 
 # Identify moments in time, without timezone/calendar complexity
->>> livestream_start = Instant.from_utc(2022, 10, 24, hour=17)
-Instant(2022-10-24 17:00:00Z)
+>>> now = Instant.now()
+Instant(2024-07-04 10:36:56Z)
 
 # Simple, explicit conversions
->>> livestream_start.to_tz("Europe/Paris")
-ZonedDateTime(2022-10-24 19:00:00+02:00[Europe/Paris])
+>>> now.to_tz("Europe/Paris")
+ZonedDateTime(2024-07-04 12:36:56+02:00[Europe/Paris])
 
-# Comparison and equality
->>> Instant.now() > livestream_start
-True
-
-# A 'Naive' local time can't accidentally mix with other types.
+# A 'naive' local time can't accidentally mix with other types.
 # You need to explicitly convert it and handle ambiguity.
 >>> party_invite = LocalDateTime(2023, 10, 28, hour=22)
->>> party_invite.add(hours=8)
+>>> party_invite.add(hours=6)
 Traceback (most recent call last):
   ImplicitlyIgnoringDST: Adjusting a local datetime implicitly ignores DST [...]
 >>> party_starts = party_invite.assume_tz("Europe/Amsterdam", disambiguate="earlier")
 ZonedDateTime(2023-10-28 22:00:00+02:00[Europe/Amsterdam])
 
 # DST-safe arithmetic
->>> party_starts.add(hours=8)
-ZonedDateTime(2022-10-29 05:00:00+01:00[Europe/Amsterdam])
+>>> party_starts.add(hours=6)
+ZonedDateTime(2022-10-29 03:00:00+01:00[Europe/Amsterdam])
+
+# Comparison and equality
+>>> now > party_starts
+True
 
 # Formatting & parsing common formats (ISO8601, RFC3339, RFC2822)
->>> livestream_start.format_rfc2822()
-"Mon, 24 Oct 2022 17:00:00 GMT"
+>>> now.format_rfc2822()
+"Thu, 04 Jul 2024 10:36:56 GMT"
 
 # If you must: you can convert to/from the standard lib
->>> livestream_start.py_datetime()
-datetime.datetime(2022, 10, 24, 17, 0, tzinfo=datetime.timezone.utc)
+>>> now.py_datetime()
+datetime.datetime(2024, 7, 4, 10, 36, 56, tzinfo=datetime.timezone.utc)
 ```
 
 Read more in the [feature overview](https://whenever.readthedocs.io/en/latest/overview.html)
