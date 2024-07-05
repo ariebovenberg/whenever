@@ -202,6 +202,12 @@ will help you adjust to any API changes.
 > versions. After 1.0, backwards compatibility of pickles will be maintained
 > as much as possible.
 
+## License
+
+**Whenever** is licensed under the MIT License.
+The binary wheels contain Rust dependencies which are licensed under MIT or Apache 2.0.
+These licenses are included in the wheels and source distributions.
+
 ## Acknowledgements
 
 This project is inspired by the following projects. Check them out!
