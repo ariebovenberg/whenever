@@ -18,17 +18,17 @@ jobs:
         include:
           # manylinux targets
           - os: linux
+            target: x86_64
+          - os: linux
             target: x86
           - os: linux
-            target: x86_64
+            target: aarch64
           - os: linux
             target: armv7
           - os: linux
             target: ppc64le
           - os: linux
             target: s390x
-          - os: linux
-            target: aarch64
 
           # musllinux targets
           - os: linux
@@ -64,11 +64,11 @@ jobs:
         with:
           python-version: '3.12'
           architecture: ${{ matrix.python-architecture || 'x64' }}
-      - run: |
-          pip install -U twine
-          sed -i ${{ (matrix.os == 'macos' && '""') || '' }} 's/build-backend = "setuptools.build_meta"/build-backend = "maturin"/' pyproject.toml
-          sed -i ${{ (matrix.os == 'macos' && '""') || '' }} 's/^requires = \["setuptools", .*]/requires = \["maturin>=1.0,<2.0"\]/' pyproject.toml
-          tail pyproject.toml
+      - run: pip install -U twine
+      - name: Generate third-party license information
+        run: |
+          cargo install cargo-3pl --version 0.1.3
+          cargo 3pl > LICENSE-THIRD-PARTY
       - name: build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -88,6 +88,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Generate third-party license information
+        run: |
+          cargo install cargo-3pl --version 0.1.3
+          cargo 3pl > LICENSE-THIRD-PARTY
       - name: Build sdist
         run: |
           pip install build twine

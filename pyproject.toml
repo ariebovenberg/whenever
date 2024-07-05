@@ -89,7 +89,6 @@ find = { where = ["pysrc"] }
 # extension from source distributions.
 # However, we also use maturin to build the binary distributions (wheels)
 # since it is *very* convenient for this purpose.
-# During wheel building, we set build-backend to `maturin`
 [tool.maturin]
 python-source = "pysrc"
 module-name = "whenever._whenever"
