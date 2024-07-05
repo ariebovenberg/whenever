@@ -15,20 +15,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows, macos, linux]
-        target: [x86_64, aarch64]
         include:
-          # additional linux targets
+          # manylinux targets
           - os: linux
             target: x86
+          - os: linux
+            target: x86_64
           - os: linux
             target: armv7
           - os: linux
             target: ppc64le
           - os: linux
             target: s390x
+          - os: linux
+            target: aarch64
 
-          # musl targets
+          # musllinux targets
           - os: linux
             target: x86_64
             manylinux: musllinux_1_2
@@ -42,12 +44,17 @@ jobs:
             target: armv7
             manylinux: musllinux_1_2
 
+          # windows
+          - os: windows
+            target: x86_64
           - os: windows
             python-architecture: x86
             target: x86
 
-        exclude:
-          - os: windows
+          # macos
+          - os: macos
+            target: x86_64
+          - os: macos
             target: aarch64
 
     runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-latest
