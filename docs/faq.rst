@@ -106,3 +106,9 @@ The core functionality is complete and mostly stable.
 The goal is to reach 1.0 soon, but the API may change until then.
 Of course, it's still a relatively young project, so the stability relies
 on you to try it out and report any issues!
+
+Where do the benchmarks come from?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+More information about the benchmarks can be found in the ``benchmarks`` directory
+of the repository.
