@@ -6,11 +6,11 @@
 Why does :class:`~whenever.Instant` exist?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Since you can also express a moment in time using 
+Since you can also express a moment in time using
 :class:`~whenever.ZonedDateTime`
 you might wonder why :class:`~whenever.Instant` exists.
 The reason it exists is precisely *because* it doesn't include a timezone.
-By using :class:`~whenever.Instant`, you clearly express that you only 
+By using :class:`~whenever.Instant`, you clearly express that you only
 care about when something happened, and don't care about the local time.
 
 Consider the difference in intent between these two classes:
@@ -46,10 +46,10 @@ it's often useful for CLI tools or desktop applications.
 
 Using :class:`~whenever.SystemDateTime` has the following advantages:
 
-- In contrast to :class:`~whenever.OffsetDateTime`, 
+- In contrast to :class:`~whenever.OffsetDateTime`,
   :class:`~whenever.SystemDateTime` knows about the system's timezone changes,
   enabling DST-safe arithmetic.
-- In contrast to :class:`~whenever.ZonedDateTime`, 
+- In contrast to :class:`~whenever.ZonedDateTime`,
   :class:`~whenever.SystemDateTime` doesn't require the system be configured with an IANA timezone.
   While this is often the case, it's not guaranteed.
 
@@ -112,3 +112,41 @@ Where do the benchmarks come from?
 
 More information about the benchmarks can be found in the ``benchmarks`` directory
 of the repository.
+
+How can I use the pure-Python version?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. note::
+
+   On PyPy, the Python implementation is automatically used. No need to configure anything.
+
+To opt out of the Rust extension and use the pure-Python version,
+use the source distribution and set the ``WHENEVER_NO_BUILD_RUST_EXT`` environment variable:
+
+.. code-block:: bash
+
+   WHENEVER_NO_BUILD_RUST_EXT=1 pip install whenever --no-binary whenever
+
+You can check if the Rust extension is being used by running:
+
+.. code-block:: bash
+
+   python -c "import whenever; print(whenever._EXTENSION_LOADED)"
+
+.. note::
+
+   If you're using Poetry or another third-party package manager,
+   you should consult its documentation on opting out of binary wheels.
+
+
+What about ``dateutil``?
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+I haven't included it in the comparison since dateutil is more of an
+*extension* to datetime, while Whenever (and Pendulum and Arrow)
+are more like replacements.
+
+That said, here are my thoughts on dateutil: while it certainly provides
+useful helpers (especially for parsing and arithmetic), it doesn't solve the
+(IMHO) most glaring issues with the standard library: DST-safety and typing
+for naive/aware. These are issues that only a full replacement can solve.
