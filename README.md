@@ -205,8 +205,9 @@ will help you adjust to any API changes.
 ## License
 
 **Whenever** is licensed under the MIT License.
-The binary wheels contain Rust dependencies which are licensed under MIT or Apache 2.0.
-These licenses are included in the wheels and source distributions.
+The binary wheels contain Rust dependencies which are licensed under
+similarly permissive licenses (MIT, Apache-2.0, and others).
+For more details, see the licenses included in the distribution.
 
 ## Acknowledgements
 

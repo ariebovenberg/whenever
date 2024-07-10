@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.0rc0"
+__version__ = "0.6.2"
 
 import enum
 import re
