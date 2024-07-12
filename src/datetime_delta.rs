@@ -110,9 +110,9 @@ pub(crate) unsafe fn set_units_from_kwargs(
     days: &mut i32,
     nanos: &mut i128,
     state: &State,
-    fname: &str,
-) -> PyResult<()> {
-    if key == state.str_years {
+    eq: fn(*mut PyObject, *mut PyObject) -> bool,
+) -> PyResult<bool> {
+    if eq(key, state.str_years) {
         *months = value
             .to_long()?
             .ok_or_value_err("years must be an integer")?
@@ -120,7 +120,7 @@ pub(crate) unsafe fn set_units_from_kwargs(
             .and_then(|y| y.try_into().ok())
             .and_then(|y| months.checked_add(y))
             .ok_or_value_err("total years out of range")?;
-    } else if key == state.str_months {
+    } else if eq(key, state.str_months) {
         *months = value
             .to_long()?
             .ok_or_value_err("months must be an integer")?
@@ -128,7 +128,7 @@ pub(crate) unsafe fn set_units_from_kwargs(
             .ok()
             .and_then(|m| months.checked_add(m))
             .ok_or_value_err("total months out of range")?;
-    } else if key == state.str_weeks {
+    } else if eq(key, state.str_weeks) {
         *days = value
             .to_long()?
             .ok_or_value_err("weeks must be an integer")?
@@ -136,7 +136,7 @@ pub(crate) unsafe fn set_units_from_kwargs(
             .and_then(|d| d.try_into().ok())
             .and_then(|d| days.checked_add(d))
             .ok_or_value_err("total days out of range")?;
-    } else if key == state.str_days {
+    } else if eq(key, state.str_days) {
         *days = value
             .to_long()?
             .ok_or_value_err("days must be an integer")?
@@ -144,30 +144,26 @@ pub(crate) unsafe fn set_units_from_kwargs(
             .ok()
             .and_then(|d| days.checked_add(d))
             .ok_or_value_err("total days out of range")?;
-    } else if key == state.str_hours {
+    } else if eq(key, state.str_hours) {
         *nanos += handle_exact_unit(value, MAX_HOURS, "hours", 3_600_000_000_000_i128)?;
-    } else if key == state.str_minutes {
+    } else if eq(key, state.str_minutes) {
         *nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", 60_000_000_000_i128)?;
-    } else if key == state.str_seconds {
+    } else if eq(key, state.str_seconds) {
         *nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000_i128)?;
-    } else if key == state.str_milliseconds {
+    } else if eq(key, state.str_milliseconds) {
         *nanos += handle_exact_unit(value, MAX_MILLISECONDS, "milliseconds", 1_000_000_i128)?;
-    } else if key == state.str_microseconds {
+    } else if eq(key, state.str_microseconds) {
         *nanos += handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000_i128)?;
-    } else if key == state.str_nanoseconds {
+    } else if eq(key, state.str_nanoseconds) {
         *nanos = value
             .to_i128()?
             .ok_or_value_err("nanoseconds must be an integer")?
             .checked_add(*nanos)
             .ok_or_value_err("total nanoseconds out of range")?;
     } else {
-        Err(type_err!(
-            "{}() got an unexpected keyword argument: {}",
-            fname,
-            key.repr()
-        ))?
+        return Ok(false);
     }
-    Ok(())
+    Ok(true)
 }
 
 pub(crate) const SINGLETONS: [(&CStr, DateTimeDelta); 1] = [(
@@ -220,20 +216,13 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
             tdelta: TimeDelta { secs: 0, nanos: 0 },
         }, // OPTIMIZE: return the singleton
         (0, _) => {
-            let mut key: *mut PyObject = NULL();
-            let mut value: *mut PyObject = NULL();
-            let mut pos: Py_ssize_t = 0;
-            while PyDict_Next(kwargs, &mut pos, &mut key, &mut value) != 0 {
-                set_units_from_kwargs(
-                    key,
-                    value,
-                    &mut months,
-                    &mut days,
-                    &mut nanos,
-                    state,
-                    "DateTimeDelta",
-                )?
-            }
+            handle_kwargs(
+                "DateTimeDelta",
+                DictItems::new_unchecked(kwargs),
+                |key, value, eq| {
+                    set_units_from_kwargs(key, value, &mut months, &mut days, &mut nanos, state, eq)
+                },
+            )?;
             if months >= 0 && days >= 0 && nanos >= 0 || months <= 0 && days <= 0 && nanos <= 0 {
                 DateTimeDelta {
                     ddelta: DateDelta::from_same_sign(months, days)

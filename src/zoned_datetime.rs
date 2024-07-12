@@ -588,7 +588,7 @@ unsafe fn replace_date(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let &State {
         date_type,
@@ -599,17 +599,17 @@ unsafe fn replace_date(
         ..
     } = State::for_obj(slf);
 
-    if args.len() != 1 {
+    let &[arg] = args else {
         Err(type_err!(
-            "replace_date() takes 1 positional argument but {} were given",
+            "replace_date() takes exactly 1 argument but {} were given",
             args.len()
         ))?
-    }
+    };
 
     let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_date")?;
     let ZonedDateTime { time, zoneinfo, .. } = ZonedDateTime::extract(slf);
-    if Py_TYPE(args[0]) == date_type {
-        ZonedDateTime::from_local(py_api, Date::extract(args[0]), time, zoneinfo, dis)?
+    if Py_TYPE(arg) == date_type {
+        ZonedDateTime::from_local(py_api, Date::extract(arg), time, zoneinfo, dis)?
             .map_err(|a| match a {
                 Ambiguity::Fold => py_err!(
                     exc_repeated,
@@ -630,7 +630,7 @@ unsafe fn replace_time(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let &State {
         time_type,
@@ -641,17 +641,17 @@ unsafe fn replace_time(
         ..
     } = State::for_obj(slf);
 
-    if args.len() != 1 {
-        return Err(type_err!(
-            "replace_time() takes 1 positional argument but {} were given",
+    let &[arg] = args else {
+        Err(type_err!(
+            "replace_time() takes exactly 1 argument but {} were given",
             args.len()
-        ));
-    }
+        ))?
+    };
 
     let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_time")?;
     let ZonedDateTime { date, zoneinfo, .. } = ZonedDateTime::extract(slf);
-    if Py_TYPE(args[0]) == time_type {
-        ZonedDateTime::from_local(py_api, date, Time::extract(args[0]), zoneinfo, dis)?
+    if Py_TYPE(arg) == time_type {
+        ZonedDateTime::from_local(py_api, date, Time::extract(arg), zoneinfo, dis)?
             .map_err(|a| match a {
                 Ambiguity::Fold => py_err!(
                     exc_repeated,
@@ -676,7 +676,7 @@ unsafe fn replace(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     if !args.is_empty() {
         Err(type_err!("replace() takes no positional arguments"))?;
@@ -697,14 +697,14 @@ unsafe fn replace(
     let mut nanos = time.nanos as _;
     let mut dis = None;
 
-    for &(key, value) in kwargs {
-        if key == state.str_tz {
+    handle_kwargs("replace", kwargs, |key, value, eq| {
+        if eq(key, state.str_tz) {
             zoneinfo = call1(state.zoneinfo_type, value)?;
             defer_decref!(zoneinfo);
-        } else if key == state.str_disambiguate {
+        } else if eq(key, state.str_disambiguate) {
             dis = Some(Disambiguate::from_py(value)?);
         } else {
-            set_components_from_kwargs(
+            return set_components_from_kwargs(
                 key,
                 value,
                 &mut year,
@@ -715,10 +715,12 @@ unsafe fn replace(
                 &mut second,
                 &mut nanos,
                 state,
-                "replace",
-            )?;
+                eq,
+            );
         }
-    }
+        Ok(true)
+    })?;
+
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?;
     ZonedDateTime::from_local(
@@ -901,7 +903,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 #[inline]
 unsafe fn check_from_timestamp_args_return_zoneinfo(
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
     &State {
         zoneinfo_type,
         str_tz,
@@ -909,9 +911,9 @@ unsafe fn check_from_timestamp_args_return_zoneinfo(
     }: &State,
     fname: &str,
 ) -> PyReturn {
-    match (args, kwargs) {
-        (&[_], &[(key, value)]) => {
-            if key == str_tz {
+    match (args, kwargs.next()) {
+        (&[_], Some((key, value))) if kwargs.length() == 1 => {
+            if key.kwarg_eq(str_tz) {
                 call1(zoneinfo_type, value)
             } else {
                 Err(type_err!(
@@ -921,7 +923,7 @@ unsafe fn check_from_timestamp_args_return_zoneinfo(
                 ))
             }
         }
-        (&[_], []) => Err(type_err!(
+        (&[_], None) => Err(type_err!(
             "{}() missing 1 required keyword-only argument: 'tz'",
             fname
         )),
@@ -932,7 +934,7 @@ unsafe fn check_from_timestamp_args_return_zoneinfo(
         _ => Err(type_err!(
             "{}() expected 2 arguments, got {}",
             fname,
-            args.len() + kwargs.len()
+            args.len() + (kwargs.length() as usize)
         )),
     }
 }
@@ -941,7 +943,7 @@ unsafe fn from_timestamp(
     _: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let state = State::for_type(cls);
     let zoneinfo =
@@ -961,7 +963,7 @@ unsafe fn from_timestamp_millis(
     _: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let state = State::for_type(cls);
     let zoneinfo =
@@ -981,7 +983,7 @@ unsafe fn from_timestamp_nanos(
     _: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let state = State::for_type(cls);
     let zoneinfo =
@@ -1105,7 +1107,7 @@ unsafe fn add(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     _shift_method(slf, cls, args, kwargs, false)
 }
@@ -1114,7 +1116,7 @@ unsafe fn subtract(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     _shift_method(slf, cls, args, kwargs, true)
 }
@@ -1124,7 +1126,7 @@ unsafe fn _shift_method(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
     negate: bool,
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
@@ -1136,11 +1138,13 @@ unsafe fn _shift_method(
 
     match *args {
         [arg] => {
-            match *kwargs {
-                [(key, value)] if key == state.str_disambiguate => {
+            match kwargs.next() {
+                Some((key, value))
+                    if kwargs.length() == 1 && key.kwarg_eq(state.str_disambiguate) =>
+                {
                     dis = Some(Disambiguate::from_py(value)?)
                 }
-                [] => {}
+                None => {}
                 _ => Err(type_err!(
                     "{}() can't mix positional and keyword arguments",
                     fname
@@ -1162,21 +1166,14 @@ unsafe fn _shift_method(
             }
         }
         [] => {
-            for &(key, value) in kwargs {
-                if key == state.str_disambiguate {
+            handle_kwargs(fname, kwargs, |key, value, eq| {
+                if eq(key, state.str_disambiguate) {
                     dis = Some(Disambiguate::from_py(value)?);
+                    Ok(true)
                 } else {
-                    set_units_from_kwargs(
-                        key,
-                        value,
-                        &mut months,
-                        &mut days,
-                        &mut nanos,
-                        state,
-                        fname,
-                    )?;
+                    set_units_from_kwargs(key, value, &mut months, &mut days, &mut nanos, state, eq)
                 }
-            }
+            })?;
         }
         _ => Err(type_err!(
             "{}() takes at most 1 positional argument, got {}",

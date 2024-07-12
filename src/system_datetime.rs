@@ -371,7 +371,7 @@ unsafe fn replace_date(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let &State {
         date_type,
@@ -382,17 +382,17 @@ unsafe fn replace_date(
         ..
     } = State::for_obj(slf);
 
-    if args.len() != 1 {
+    let &[arg] = args else {
         Err(type_err!(
             "replace_date() takes 1 positional argument but {} were given",
             args.len()
         ))?
-    }
+    };
 
-    if Py_TYPE(args[0]) == date_type {
+    if Py_TYPE(arg) == date_type {
         OffsetDateTime::from_system_tz(
             py_api,
-            Date::extract(args[0]),
+            Date::extract(arg),
             OffsetDateTime::extract(slf).time(),
             Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_date")?,
         )?
@@ -416,7 +416,7 @@ unsafe fn replace_time(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let &State {
         time_type,
@@ -427,18 +427,18 @@ unsafe fn replace_time(
         ..
     } = State::for_obj(slf);
 
-    if args.len() != 1 {
-        return Err(type_err!(
+    let &[arg] = args else {
+        Err(type_err!(
             "replace_time() takes 1 positional argument but {} were given",
             args.len()
-        ));
-    }
+        ))?
+    };
 
-    if Py_TYPE(args[0]) == time_type {
+    if Py_TYPE(arg) == time_type {
         OffsetDateTime::from_system_tz(
             py_api,
             OffsetDateTime::extract(slf).date(),
-            Time::extract(args[0]),
+            Time::extract(arg),
             Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_time")?,
         )?
         .map_err(|e| match e {
@@ -465,7 +465,7 @@ unsafe fn replace(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     if !args.is_empty() {
         Err(type_err!("replace() takes no positional arguments"))?
@@ -481,12 +481,13 @@ unsafe fn replace(
     let mut nanos = time.nanos as _;
     let mut dis = None;
 
-    for &(name, value) in kwargs {
-        if name == state.str_disambiguate {
+    handle_kwargs("replace", kwargs, |key, value, eq| {
+        if eq(key, state.str_disambiguate) {
             dis = Some(Disambiguate::from_py(value)?);
+            Ok(true)
         } else {
             set_components_from_kwargs(
-                name,
+                key,
                 value,
                 &mut year,
                 &mut month,
@@ -496,10 +497,11 @@ unsafe fn replace(
                 &mut second,
                 &mut nanos,
                 state,
-                "replace",
-            )?;
+                eq,
+            )
         }
-    }
+    })?;
+
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?;
     OffsetDateTime::from_system_tz(
@@ -677,7 +679,7 @@ unsafe fn add(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     _shift_method(slf, cls, args, kwargs, false)
 }
@@ -686,7 +688,7 @@ unsafe fn subtract(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     _shift_method(slf, cls, args, kwargs, true)
 }
@@ -696,7 +698,7 @@ unsafe fn _shift_method(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
     negate: bool,
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
@@ -708,15 +710,17 @@ unsafe fn _shift_method(
 
     match *args {
         [arg] => {
-            match *kwargs {
-                [(key, value)] if key == state.str_disambiguate => {
+            match kwargs.next() {
+                Some((key, value))
+                    if kwargs.length() == 1 && key.kwarg_eq(state.str_disambiguate) =>
+                {
                     dis = Some(Disambiguate::from_py(value)?)
                 }
-                [] => {}
-                _ => Err(type_err!(
+                Some(_) => Err(type_err!(
                     "{}() can't mix positional and keyword arguments",
                     fname
                 ))?,
+                None => {}
             };
             if Py_TYPE(arg) == state.time_delta_type {
                 nanos = TimeDelta::extract(arg).total_nanos();
@@ -734,21 +738,14 @@ unsafe fn _shift_method(
             }
         }
         [] => {
-            for &(key, value) in kwargs {
-                if key == state.str_disambiguate {
+            handle_kwargs(fname, kwargs, |key, value, eq| {
+                if eq(key, state.str_disambiguate) {
                     dis = Some(Disambiguate::from_py(value)?);
+                    Ok(true)
                 } else {
-                    set_units_from_kwargs(
-                        key,
-                        value,
-                        &mut months,
-                        &mut days,
-                        &mut nanos,
-                        state,
-                        fname,
-                    )?;
+                    set_units_from_kwargs(key, value, &mut months, &mut days, &mut nanos, state, eq)
                 }
-            }
+            })?;
         }
         _ => Err(type_err!(
             "{}() takes at most 1 positional argument, got {}",
@@ -813,7 +810,7 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
         OffsetDateTime::extract(obj_b).instant()
     } else {
         Err(type_err!(
-            "difference() argument must be an OffsetDateTime, 
+            "difference() argument must be an OffsetDateTime,
              Instant, ZonedDateTime, or SystemDateTime"
         ))?
     };

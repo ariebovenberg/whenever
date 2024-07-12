@@ -1,6 +1,16 @@
 🚀 Changelog
 ============
 
+0.6.3 (2024-07-??)
+------------------
+
+- Improve robustness and speed of keyword argument parsing in Rust extension (#149)
+
+0.6.2 (2024-07-04)
+------------------
+
+- Add third-party licenses to distributions
+
 0.6.1 (2024-07-04)
 ------------------
 
