@@ -209,6 +209,13 @@ def test_replace():
         d.replace(year=10_000)
 
 
+def test_kwarg_interning_bug_issue_149():
+    d = Date(2021, 1, 2)
+    assert d.replace(**{"day": 4, "y" + (lambda: "ear")(): 2022}) == Date(
+        2022, 1, 4
+    )
+
+
 def test_at():
     d = Date(2021, 1, 2)
     assert d.at(Time(3, 4, 5)) == LocalDateTime(2021, 1, 2, 3, 4, 5)

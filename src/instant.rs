@@ -588,7 +588,7 @@ unsafe fn add(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     _shift_method(slf, cls, args, kwargs, false)
 }
@@ -597,7 +597,7 @@ unsafe fn subtract(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     _shift_method(slf, cls, args, kwargs, true)
 }
@@ -607,42 +607,47 @@ unsafe fn _shift_method(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
     negate: bool,
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let instant = Instant::extract(slf);
-    let state = State::for_type(cls);
+    let &State {
+        str_hours,
+        str_minutes,
+        str_seconds,
+        str_milliseconds,
+        str_microseconds,
+        str_nanoseconds,
+        ..
+    } = State::for_type(cls);
     let mut nanos: i128 = 0;
 
     if !args.is_empty() {
         Err(type_err!("{}() takes no positional arguments", fname))?;
     }
-    for &(key, value) in kwargs {
-        if key == state.str_hours {
+    handle_kwargs(fname, kwargs, |key, value, eq| {
+        if eq(key, str_hours) {
             nanos += handle_exact_unit(value, MAX_HOURS, "hours", 3_600_000_000_000_i128)?;
-        } else if key == state.str_minutes {
+        } else if eq(key, str_minutes) {
             nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", 60_000_000_000_i128)?;
-        } else if key == state.str_seconds {
+        } else if eq(key, str_seconds) {
             nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000_i128)?;
-        } else if key == state.str_milliseconds {
+        } else if eq(key, str_milliseconds) {
             nanos += handle_exact_unit(value, MAX_MILLISECONDS, "milliseconds", 1_000_000_i128)?;
-        } else if key == state.str_microseconds {
+        } else if eq(key, str_microseconds) {
             nanos += handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000_i128)?;
-        } else if key == state.str_nanoseconds {
+        } else if eq(key, str_nanoseconds) {
             nanos = value
                 .to_i128()?
                 .ok_or_value_err("nanoseconds must be an integer")?
                 .checked_add(nanos)
                 .ok_or_value_err("total nanoseconds out of range")?;
         } else {
-            Err(type_err!(
-                "{}() got an unexpected keyword argument: {}",
-                fname,
-                key.repr()
-            ))?
+            return Ok(false);
         }
-    }
+        Ok(true)
+    })?;
     if negate {
         nanos = -nanos;
     }

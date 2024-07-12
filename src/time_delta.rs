@@ -178,33 +178,38 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     match (nargs, nkwargs) {
         (0, 0) => TimeDelta { secs: 0, nanos: 0 }, // FUTURE: return the singleton?
         (0, _) => {
-            let mut key: *mut PyObject = NULL();
-            let mut value: *mut PyObject = NULL();
-            let mut pos: Py_ssize_t = 0;
-            while PyDict_Next(kwargs, &mut pos, &mut key, &mut value) != 0 {
-                if key == str_hours {
-                    nanos += handle_exact_unit(value, MAX_HOURS, "hours", 3_600_000_000_000_i128)?;
-                } else if key == str_minutes {
-                    nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", 60_000_000_000_i128)?;
-                } else if key == str_seconds {
-                    nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000_i128)?;
-                } else if key == str_milliseconds {
-                    nanos +=
-                        handle_exact_unit(value, MAX_MILLISECONDS, "milliseconds", 1_000_000_i128)?;
-                } else if key == str_microseconds {
-                    nanos +=
-                        handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000_i128)?;
-                } else if key == str_nanoseconds {
-                    nanos += value
-                        .to_i128()?
-                        .ok_or_value_err("nanoseconds must be an integer")?;
-                } else {
-                    Err(type_err!(
-                        "TimeDelta() got an unexpected keyword argument: {}",
-                        key.repr()
-                    ))?
-                }
-            }
+            handle_kwargs(
+                "TimeDelta",
+                DictItems::new_unchecked(kwargs),
+                |key, value, eq| {
+                    if eq(key, str_hours) {
+                        nanos +=
+                            handle_exact_unit(value, MAX_HOURS, "hours", 3_600_000_000_000_i128)?;
+                    } else if eq(key, str_minutes) {
+                        nanos +=
+                            handle_exact_unit(value, MAX_MINUTES, "minutes", 60_000_000_000_i128)?;
+                    } else if eq(key, str_seconds) {
+                        nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000_i128)?;
+                    } else if eq(key, str_milliseconds) {
+                        nanos += handle_exact_unit(
+                            value,
+                            MAX_MILLISECONDS,
+                            "milliseconds",
+                            1_000_000_i128,
+                        )?;
+                    } else if eq(key, str_microseconds) {
+                        nanos +=
+                            handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000_i128)?;
+                    } else if eq(key, str_nanoseconds) {
+                        nanos += value
+                            .to_i128()?
+                            .ok_or_value_err("nanoseconds must be an integer")?;
+                    } else {
+                        return Ok(false);
+                    }
+                    Ok(true)
+                },
+            )?;
             TimeDelta::from_nanos(nanos).ok_or_value_err("TimeDelta out of range")?
         }
         _ => Err(type_err!("TimeDelta() takes no positional arguments"))?,

@@ -797,7 +797,21 @@ See the :ref:`API reference <date-and-time-api>` for more details.
 The system timezone
 -------------------
 
-The system running the code also has a timezone configured.
+When working with the timezone of the current system, there
+are a few things to keep in mind.
+
+Acceptable range
+~~~~~~~~~~~~~~~~
+
+The range of possible times is limited depending on the platform.
+This means that operations with ``SystemDateTime`` may raise
+exceptions in rare cases.
+For example, Windows only supports time after 1970,
+and 32-bit systems often can't handle dates after 2038.
+
+Changes to the system timezone
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 It's important to be aware that the system timezone can change.
 Instances of :class:`~whenever.SystemDateTime` have the fixed offset
 of the system timezone at the time of initialization.

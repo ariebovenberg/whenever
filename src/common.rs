@@ -1,5 +1,6 @@
 use core::ffi::c_long;
 use core::mem;
+use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
 use crate::date::Date;
@@ -167,6 +168,45 @@ macro_rules! method_vararg(
     };
 );
 
+pub(crate) struct KwargIter {
+    keys: *mut PyObject,
+    values: *const *mut PyObject,
+    len: isize,
+    i: isize,
+}
+
+impl KwargIter {
+    pub(crate) unsafe fn new(keys: *mut PyObject, values: *const *mut PyObject) -> Self {
+        Self {
+            keys,
+            values,
+            len: if keys.is_null() {
+                0
+            } else {
+                PyTuple_GET_SIZE(keys) as isize
+            },
+            i: 0,
+        }
+    }
+
+    pub(crate) fn length(&self) -> isize {
+        self.len
+    }
+}
+
+impl Iterator for KwargIter {
+    type Item = (*mut PyObject, *mut PyObject);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.i >= self.len {
+            return None;
+        }
+        let i = self.i;
+        self.i = i + 1;
+        unsafe { Some((PyTuple_GET_ITEM(self.keys, i), *self.values.offset(i))) }
+    }
+}
+
 macro_rules! method_kwargs(
     ($meth:ident, $doc:expr) => {
         method_kwargs!($meth named stringify!($meth), $doc)
@@ -190,23 +230,12 @@ macro_rules! method_kwargs(
                         cls: *mut PyTypeObject,
                         args_raw: *const *mut PyObject,
                         nargsf: Py_ssize_t,
-                        kwnames_raw: *mut PyObject,
+                        kwnames: *mut PyObject,
                     ) -> *mut PyObject {
                         let nargs = PyVectorcall_NARGS(nargsf as usize);
                         let args = std::slice::from_raw_parts(args_raw, nargs as usize);
-                        let kwargs = if kwnames_raw.is_null() {
-                            Vec::with_capacity(0)
-                        } else {
-                            let mut v = Vec::with_capacity(PyTuple_GET_SIZE(kwnames_raw) as usize);
-                            for i in 0..PyTuple_GET_SIZE(kwnames_raw) {
-                                v.push((
-                                     PyTuple_GET_ITEM(kwnames_raw, i),
-                                     *args_raw.offset(nargs + i as isize)
-                                ));
-                            }
-                            v
-                        };
-                        match $meth(slf, cls, args, &kwargs) {
+                        let mut kwargs = KwargIter::new(kwnames, args_raw.offset(nargs as isize));
+                        match $meth(slf, cls, args, &mut kwargs) {
                             Ok(x) => x as *mut PyObject,
                             Err(PyErrOccurred()) => core::ptr::null_mut(),
                         }
@@ -375,6 +404,7 @@ pub(crate) trait PyObjectExt {
     unsafe fn to_i128(self) -> PyResult<Option<i128>>;
     unsafe fn to_f64(self) -> PyResult<Option<f64>>;
     unsafe fn repr(self) -> String;
+    unsafe fn kwarg_eq(self, other: *mut PyObject) -> bool;
 }
 
 impl PyObjectExt for *mut PyObject {
@@ -497,6 +527,12 @@ impl PyObjectExt for *mut PyObject {
             }
         }
         .to_string()
+    }
+
+    // A faster comparison for keyword arguments that leverages
+    // the fact that keyword arguments are almost always interned
+    unsafe fn kwarg_eq(self, other: *mut PyObject) -> bool {
+        self == other || PyObject_RichCompareBool(self, other, Py_EQ) == 1
     }
 }
 
@@ -829,25 +865,30 @@ impl Disambiguate {
     }
 
     pub(crate) unsafe fn from_only_kwarg(
-        kwargs: &[(*mut PyObject, *mut PyObject)],
+        kwargs: &mut KwargIter,
         str_disambiguate: *mut PyObject,
         fname: &str,
     ) -> PyResult<Self> {
-        match kwargs {
-            [] => Err(type_err!(
-                "{}() missing 1 required keyword-only argument: 'disambiguate'",
-                fname
-            )),
-            &[(name, value)] if name == str_disambiguate => Self::from_py(value),
-            &[(name, _)] => Err(type_err!(
-                "{}() got an unexpected keyword argument {}",
-                fname,
-                name.repr()
-            )),
-            _ => Err(type_err!(
+        match kwargs.next() {
+            Some((name, value)) if kwargs.length() == 1 => {
+                if name.kwarg_eq(str_disambiguate) {
+                    Self::from_py(value)
+                } else {
+                    Err(type_err!(
+                        "{}() got an unexpected keyword argument {}",
+                        fname,
+                        name.repr()
+                    ))
+                }
+            }
+            Some(_) => Err(type_err!(
                 "{}() takes at most 1 keyword argument, got {}",
                 fname,
-                kwargs.len()
+                kwargs.length()
+            )),
+            None => Err(type_err!(
+                "{}() missing 1 required keyword-only argument: 'disambiguate'",
+                fname
             )),
         }
     }
@@ -950,10 +991,69 @@ pub(crate) unsafe fn methcall0(slf: *mut PyObject, name: &str) -> PyReturn {
 }
 
 #[inline]
+fn ptr_eq(a: *mut PyObject, b: *mut PyObject) -> bool {
+    a == b
+}
+
+#[inline]
+fn value_eq(a: *mut PyObject, b: *mut PyObject) -> bool {
+    unsafe { PyObject_RichCompareBool(a, b, Py_EQ) == 1 }
+}
+
+pub(crate) struct DictItems {
+    dict: *mut PyObject,
+    pos: Py_ssize_t,
+}
+
+impl DictItems {
+    pub(crate) fn new_unchecked(dict: *mut PyObject) -> Self {
+        debug_assert!(!dict.is_null() && unsafe { PyDict_Size(dict) > 0 });
+        DictItems { dict, pos: 0 }
+    }
+}
+
+impl Iterator for DictItems {
+    type Item = (*mut PyObject, *mut PyObject);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut key = NULL();
+        let mut value = NULL();
+        (unsafe { PyDict_Next(self.dict, &mut self.pos, &mut key, &mut value) } != 0)
+            .then_some((key, value))
+    }
+}
+
+#[inline]
+pub(crate) unsafe fn handle_kwargs<F, K>(fname: &str, kwargs: K, mut handler: F) -> PyResult<()>
+where
+    F: FnMut(
+        *mut PyObject,
+        *mut PyObject,
+        fn(*mut PyObject, *mut PyObject) -> bool,
+    ) -> PyResult<bool>,
+    K: IntoIterator<Item = (*mut PyObject, *mut PyObject)>,
+{
+    for (key, value) in kwargs {
+        // First we try to match on pointer equality.
+        // This is actually the common case, as static strings are interned.
+        // In the rare case they aren't, we fall back to value comparison.
+        // Doing it this way is faster than always doing value comparison outright.
+        if !handler(key, value, ptr_eq)? && !handler(key, value, value_eq)? {
+            return Err(type_err!(
+                "{}() got an unexpected keyword argument: {}",
+                fname,
+                key.repr()
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[inline]
 #[allow(dead_code)]
 unsafe fn getattr_tzinfo(dt: *mut PyObject) -> *mut PyObject {
     let tzinfo = PyObject_GetAttrString(dt, c"tzinfo".as_ptr());
-    // To keep things consistent with the Py3.10 code above,
+    // To keep things consistent with the Py3.10 version,
     // we need to decref it, turning it into a borrowed reference.
     // We can assume the parent datetime keeps it alive.
     Py_DECREF(tzinfo);

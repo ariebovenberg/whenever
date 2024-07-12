@@ -512,13 +512,17 @@ unsafe fn time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 #[inline]
 pub(crate) unsafe fn check_ignore_dst_kwarg(
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
     state: &State,
     msg: &str,
 ) -> PyResult<()> {
-    match *kwargs {
-        [(key, value)] if key == state.str_ignore_dst && value == Py_True() => Ok(()),
-        [(key, _), _] => Err(type_err!("Unknown keyword argument: {}", key.repr())),
+    match kwargs.next() {
+        Some((key, value))
+            if kwargs.length() == 1 && key.kwarg_eq(state.str_ignore_dst) && value == Py_True() =>
+        {
+            Ok(())
+        }
+        Some((key, _)) => Err(type_err!("Unknown keyword argument: {}", key.repr())),
         _ => Err(py_err!(state.exc_implicitly_ignoring_dst, msg)),
     }
 }
@@ -527,7 +531,7 @@ unsafe fn replace_date(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let OffsetDateTime {
         time, offset_secs, ..
@@ -552,7 +556,7 @@ unsafe fn replace_time(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let OffsetDateTime {
         date, offset_secs, ..
@@ -581,7 +585,7 @@ unsafe fn replace(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     if !args.is_empty() {
         Err(type_err!("replace() takes no positional arguments"))?
@@ -602,13 +606,13 @@ unsafe fn replace(
     let mut offset_secs = offset_secs;
     let mut ignore_dst = false;
 
-    for &(key, value) in kwargs {
-        if key == state.str_ignore_dst {
+    handle_kwargs("replace", kwargs, |key, value, eq| {
+        if eq(key, state.str_ignore_dst) {
             ignore_dst = value == Py_True();
-        } else if key == state.str_offset {
-            offset_secs = extract_offset(value, state.time_delta_type)?
+        } else if eq(key, state.str_offset) {
+            offset_secs = extract_offset(value, state.time_delta_type)?;
         } else {
-            set_components_from_kwargs(
+            return set_components_from_kwargs(
                 key,
                 value,
                 &mut year,
@@ -619,10 +623,11 @@ unsafe fn replace(
                 &mut second,
                 &mut nanos,
                 state,
-                "replace",
-            )?;
+                eq,
+            );
         }
-    }
+        Ok(true)
+    })?;
 
     if !ignore_dst {
         Err(py_err!(state.exc_implicitly_ignoring_dst, IGNORE_DST_MSG))?
@@ -639,7 +644,7 @@ unsafe fn now(
     _: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let state = State::for_type(cls);
     let nanos = SystemTime::now()
@@ -714,7 +719,7 @@ unsafe fn add(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     _shift_method(slf, cls, args, kwargs, false)
 }
@@ -723,7 +728,7 @@ unsafe fn subtract(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     _shift_method(slf, cls, args, kwargs, true)
 }
@@ -733,7 +738,7 @@ unsafe fn _shift_method(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
     negate: bool,
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
@@ -745,16 +750,18 @@ unsafe fn _shift_method(
 
     match *args {
         [arg] => {
-            match *kwargs {
-                [(key, value)] if key == state.str_ignore_dst => {
+            match kwargs.next() {
+                Some((key, value))
+                    if kwargs.length() == 1 && key.kwarg_eq(state.str_ignore_dst) =>
+                {
                     ignore_dst = value == Py_True();
                 }
-                [] => {}
+                None => {}
                 _ => Err(type_err!(
                     "{}() can't mix positional and keyword arguments",
                     fname
                 ))?,
-            };
+            }
             if Py_TYPE(arg) == state.time_delta_type {
                 nanos = TimeDelta::extract(arg).total_nanos();
             } else if Py_TYPE(arg) == state.date_delta_type {
@@ -771,21 +778,14 @@ unsafe fn _shift_method(
             }
         }
         [] => {
-            for &(key, value) in kwargs {
-                if key == state.str_ignore_dst {
+            handle_kwargs(fname, kwargs, |key, value, eq| {
+                if eq(key, state.str_ignore_dst) {
                     ignore_dst = value == Py_True();
+                    Ok(true)
                 } else {
-                    set_units_from_kwargs(
-                        key,
-                        value,
-                        &mut months,
-                        &mut days,
-                        &mut nanos,
-                        state,
-                        fname,
-                    )?;
+                    set_units_from_kwargs(key, value, &mut months, &mut days, &mut nanos, state, eq)
                 }
-            }
+            })?;
         }
         _ => Err(type_err!(
             "{}() takes at most 1 positional argument, got {}",
@@ -866,8 +866,9 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 // checks the args comply with (ts: ?, /, *, offset: ?, ignore_dst: true)
 unsafe fn check_from_timestamp_args_return_offset(
+    fname: &str,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
     &State {
         str_offset,
         str_ignore_dst,
@@ -880,23 +881,22 @@ unsafe fn check_from_timestamp_args_return_offset(
     let mut offset_secs = None;
     if args.len() != 1 {
         Err(type_err!(
-            "from_timestamp() takes 1 positional argument but {} were given",
+            "{}() takes 1 positional argument but {} were given",
+            fname,
             args.len()
         ))?
     }
 
-    for &(key, value) in kwargs {
-        if key == str_offset {
-            offset_secs = Some(extract_offset(value, time_delta_type)?);
-        } else if key == str_ignore_dst {
+    handle_kwargs("from_timestamp", kwargs, |key, value, eq| {
+        if eq(key, str_ignore_dst) {
             ignore_dst = value == Py_True();
+        } else if eq(key, str_offset) {
+            offset_secs = Some(extract_offset(value, time_delta_type)?);
         } else {
-            Err(type_err!(
-                "from_timestamp() got an unexpected keyword argument {}",
-                key.repr()
-            ))?
+            return Ok(false);
         }
-    }
+        Ok(true)
+    })?;
 
     if !ignore_dst {
         Err(py_err!(exc_implicitly_ignoring_dst, IGNORE_DST_MSG))?
@@ -909,10 +909,11 @@ unsafe fn from_timestamp(
     _: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let state = State::for_type(cls);
-    let offset_secs = check_from_timestamp_args_return_offset(args, kwargs, state)?;
+    let offset_secs =
+        check_from_timestamp_args_return_offset("from_timestamp", args, kwargs, state)?;
     Instant::from_timestamp(
         args[0]
             .to_i64()?
@@ -929,10 +930,11 @@ unsafe fn from_timestamp_millis(
     _: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let state = State::for_type(cls);
-    let offset_secs = check_from_timestamp_args_return_offset(args, kwargs, state)?;
+    let offset_secs =
+        check_from_timestamp_args_return_offset("from_timestamp_millis", args, kwargs, state)?;
     Instant::from_timestamp_millis(
         args[0]
             .to_i64()?
@@ -949,10 +951,11 @@ unsafe fn from_timestamp_nanos(
     _: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let state = State::for_type(cls);
-    let offset_secs = check_from_timestamp_args_return_offset(args, kwargs, state)?;
+    let offset_secs =
+        check_from_timestamp_args_return_offset("from_timestamp_nanos", args, kwargs, state)?;
     Instant::from_timestamp_nanos(
         args[0]
             .to_i128()?

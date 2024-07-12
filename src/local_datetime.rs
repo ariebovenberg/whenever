@@ -323,45 +323,41 @@ pub(crate) unsafe fn set_components_from_kwargs(
     second: &mut c_long,
     nanos: &mut c_long,
     state: &State,
-    fname: &str,
-) -> PyResult<()> {
-    if key == state.str_year {
+    eq: fn(*mut PyObject, *mut PyObject) -> bool,
+) -> PyResult<bool> {
+    if eq(key, state.str_year) {
         *year = value.to_long()?.ok_or_type_err("year must be an integer")?
-    } else if key == state.str_month {
+    } else if eq(key, state.str_month) {
         *month = value
             .to_long()?
             .ok_or_type_err("month must be an integer")?
-    } else if key == state.str_day {
+    } else if eq(key, state.str_day) {
         *day = value.to_long()?.ok_or_type_err("day must be an integer")?
-    } else if key == state.str_hour {
+    } else if eq(key, state.str_hour) {
         *hour = value.to_long()?.ok_or_type_err("hour must be an integer")?
-    } else if key == state.str_minute {
+    } else if eq(key, state.str_minute) {
         *minute = value
             .to_long()?
             .ok_or_type_err("minute must be an integer")?
-    } else if key == state.str_second {
+    } else if eq(key, state.str_second) {
         *second = value
             .to_long()?
             .ok_or_type_err("second must be an integer")?
-    } else if key == state.str_nanosecond {
+    } else if eq(key, state.str_nanosecond) {
         *nanos = value
             .to_long()?
             .ok_or_type_err("nanosecond must be an integer")?
     } else {
-        Err(type_err!(
-            "{}() got an unexpected keyword argument: {}",
-            fname,
-            key.repr()
-        ))?
+        return Ok(false);
     }
-    Ok(())
+    Ok(true)
 }
 
 unsafe fn replace(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     if !args.is_empty() {
         Err(type_err!("replace() takes no positional arguments"))?
@@ -375,9 +371,9 @@ unsafe fn replace(
     let mut minute = dt.time.minute.into();
     let mut second = dt.time.second.into();
     let mut nanos = dt.time.nanos as _;
-    for &(name, value) in kwargs {
+    handle_kwargs("replace", kwargs, |key, value, eq| {
         set_components_from_kwargs(
-            name,
+            key,
             value,
             &mut year,
             &mut month,
@@ -387,9 +383,9 @@ unsafe fn replace(
             &mut second,
             &mut nanos,
             module,
-            "replace",
-        )?;
-    }
+            eq,
+        )
+    })?;
     DateTime {
         date: Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?,
         time: Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?,
@@ -401,7 +397,7 @@ unsafe fn add(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     _shift_method(slf, cls, args, kwargs, false)
 }
@@ -410,7 +406,7 @@ unsafe fn subtract(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     _shift_method(slf, cls, args, kwargs, true)
 }
@@ -420,7 +416,7 @@ unsafe fn _shift_method(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
     negate: bool,
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
@@ -432,15 +428,17 @@ unsafe fn _shift_method(
 
     match *args {
         [arg] => {
-            match *kwargs {
-                [(key, value)] if key == state.str_ignore_dst => {
+            match kwargs.next() {
+                Some((key, value))
+                    if kwargs.length() == 1 && key.kwarg_eq(state.str_ignore_dst) =>
+                {
                     ignore_dst = value == Py_True();
                 }
-                [] => {}
-                _ => Err(type_err!(
+                Some(_) => Err(type_err!(
                     "{}() can't mix positional and keyword arguments",
                     fname
                 ))?,
+                None => {}
             };
             if Py_TYPE(arg) == state.time_delta_type {
                 nanos = TimeDelta::extract(arg).total_nanos();
@@ -458,21 +456,14 @@ unsafe fn _shift_method(
             }
         }
         [] => {
-            for &(key, value) in kwargs {
-                if key == state.str_ignore_dst {
+            handle_kwargs(fname, kwargs, |key, value, eq| {
+                if eq(key, state.str_ignore_dst) {
                     ignore_dst = value == Py_True();
+                    Ok(true)
                 } else {
-                    set_units_from_kwargs(
-                        key,
-                        value,
-                        &mut months,
-                        &mut days,
-                        &mut nanos,
-                        state,
-                        fname,
-                    )?;
+                    set_units_from_kwargs(key, value, &mut months, &mut days, &mut nanos, state, eq)
                 }
-            }
+            })?;
         }
         _ => Err(type_err!(
             "{}() takes at most 1 positional argument, got {}",
@@ -506,7 +497,7 @@ unsafe fn difference(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let state = State::for_type(cls);
     check_ignore_dst_kwarg(
@@ -722,7 +713,7 @@ unsafe fn assume_tz(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let &State {
         py_api,
@@ -768,7 +759,7 @@ unsafe fn assume_system_tz(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let &State {
         py_api,

@@ -287,49 +287,37 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
             str_day,
             ..
         } = State::for_type(cls);
-        let mut key_obj: *mut PyObject = NULL();
-        let mut value_obj: *mut PyObject = NULL();
-        let mut pos: Py_ssize_t = 0;
-        while nkwargs > 0 && PyDict_Next(kwargs, &mut pos, &mut key_obj, &mut value_obj) != 0 {
-            if key_obj == str_year {
-                if year
-                    .replace(
-                        value_obj
-                            .to_long()?
-                            .ok_or_type_err("year must be an integer")?,
-                    )
-                    .is_some()
-                {
-                    Err(type_err!("Date() got multiple values for argument 'year'"))?;
-                }
-            } else if key_obj == str_month {
-                if month
-                    .replace(
-                        value_obj
-                            .to_long()?
-                            .ok_or_type_err("month must be an integer")?,
-                    )
-                    .is_some()
-                {
-                    Err(type_err!("Date() got multiple values for argument 'month'"))?;
-                }
-            } else if key_obj == str_day {
-                if day
-                    .replace(
-                        value_obj
-                            .to_long()?
-                            .ok_or_type_err("day must be an integer")?,
-                    )
-                    .is_some()
-                {
-                    Err(type_err!("Date() got multiple values for argument 'day'"))?;
-                }
-            } else {
-                Err(type_err!(
-                    "Date() got an unexpected keyword argument: {}",
-                    key_obj.repr()
-                ))?;
-            }
+        if nkwargs > 0 {
+            handle_kwargs(
+                "Date()",
+                DictItems::new_unchecked(kwargs),
+                |key, value, eq| {
+                    if eq(key, str_year) {
+                        let None = year
+                            .replace(value.to_long()?.ok_or_type_err("year must be an integer")?)
+                        else {
+                            Err(type_err!("Date() got multiple values for argument 'year"))?
+                        };
+                    } else if eq(key, str_month) {
+                        let None = month.replace(
+                            value
+                                .to_long()?
+                                .ok_or_type_err("month must be an integer")?,
+                        ) else {
+                            Err(type_err!("Date() got multiple values for argument 'month"))?
+                        };
+                    } else if eq(key, str_day) {
+                        let None =
+                            day.replace(value.to_long()?.ok_or_type_err("day must be an integer")?)
+                        else {
+                            Err(type_err!("Date() got multiple values for argument 'day"))?
+                        };
+                    } else {
+                        return Ok(false);
+                    }
+                    Ok(true)
+                },
+            )?;
         }
         (
             year.ok_or_type_err("year is a required argument")?,
@@ -555,18 +543,18 @@ unsafe fn add(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
-    _shift_method(slf, cls, args, kwargs, false, "add")
+    _shift_method(slf, cls, args, kwargs, false)
 }
 
 unsafe fn subtract(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
-    _shift_method(slf, cls, args, kwargs, true, "subtract")
+    _shift_method(slf, cls, args, kwargs, true)
 }
 
 #[inline]
@@ -574,11 +562,17 @@ unsafe fn _shift_method(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
     negate: bool,
-    fname: &str,
 ) -> PyReturn {
-    let state = State::for_type(cls);
+    let fname = if negate { "subtract" } else { "add" };
+    let &State {
+        str_days,
+        str_months,
+        str_years,
+        str_weeks,
+        ..
+    } = State::for_type(cls);
     let mut days: i32 = 0;
     let mut months: i32 = 0;
     let mut years: i16 = 0;
@@ -586,27 +580,27 @@ unsafe fn _shift_method(
     if !args.is_empty() {
         Err(type_err!("{}() takes no positional arguments", fname))?
     };
-    for &(key, value) in kwargs {
-        if key == state.str_days {
+    handle_kwargs(fname, kwargs, |key, value, eq| {
+        if eq(key, str_days) {
             let add_value: i32 = value
                 .to_long()?
                 .ok_or_type_err("days must be an integer")?
                 .try_into()
                 .map_err(|_| value_err!("days out of range"))?;
             days += add_value;
-        } else if key == state.str_months {
+        } else if eq(key, str_months) {
             months = value
                 .to_long()?
                 .ok_or_type_err("months must be an integer")?
                 .try_into()
                 .map_err(|_| value_err!("months out of range"))?;
-        } else if key == state.str_years {
+        } else if eq(key, str_years) {
             years = value
                 .to_long()?
                 .ok_or_type_err("years must be an integer")?
                 .try_into()
                 .map_err(|_| value_err!("years out of range"))?;
-        } else if key == state.str_weeks {
+        } else if eq(key, str_weeks) {
             let add_value: i32 = value
                 .to_long()?
                 .ok_or_type_err("weeks must be an integer")?
@@ -616,13 +610,10 @@ unsafe fn _shift_method(
                 .map_err(|_| value_err!("weeks out of range"))?;
             days += add_value;
         } else {
-            Err(type_err!(
-                "{}() got an unexpected keyword argument: {}",
-                fname,
-                key.repr()
-            ))?
+            return Ok(false);
         }
-    }
+        Ok(true)
+    })?;
     if negate {
         days = -days;
         months = -months;
@@ -639,7 +630,7 @@ unsafe fn replace(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let &State {
         str_year,
@@ -654,22 +645,20 @@ unsafe fn replace(
         let mut year = date.year.into();
         let mut month = date.month.into();
         let mut day = date.day.into();
-        for &(name, value) in kwargs {
-            if name == str_year {
+        handle_kwargs("replace", kwargs, |key, value, eq| {
+            if eq(key, str_year) {
                 year = value.to_long()?.ok_or_type_err("year must be an integer")?;
-            } else if name == str_month {
+            } else if eq(key, str_month) {
                 month = value
                     .to_long()?
                     .ok_or_type_err("month must be an integer")?;
-            } else if name == str_day {
+            } else if eq(key, str_day) {
                 day = value.to_long()?.ok_or_type_err("day must be an integer")?;
             } else {
-                Err(type_err!(
-                    "replace() got an unexpected keyword argument: {}",
-                    name.repr()
-                ))?;
+                return Ok(false);
             }
-        }
+            Ok(true)
+        })?;
         Date::from_longs(year, month, day)
             .ok_or_value_err("Invalid date components")?
             .to_obj(cls)

@@ -405,7 +405,7 @@ unsafe fn replace(
     slf: *mut PyObject,
     type_: *mut PyTypeObject,
     args: &[*mut PyObject],
-    kwargs: &[(*mut PyObject, *mut PyObject)],
+    kwargs: &mut KwargIter,
 ) -> PyReturn {
     let &State {
         str_hour,
@@ -422,28 +422,26 @@ unsafe fn replace(
         let mut minute = time.minute.into();
         let mut second = time.second.into();
         let mut nanos = time.nanos as _;
-        for &(name, value) in kwargs {
-            if name == str_hour {
+        handle_kwargs("replace", kwargs, |key, value, eq| {
+            if eq(key, str_hour) {
                 hour = value.to_long()?.ok_or_type_err("hour must be an integer")?;
-            } else if name == str_minute {
+            } else if eq(key, str_minute) {
                 minute = value
                     .to_long()?
                     .ok_or_type_err("minute must be an integer")?;
-            } else if name == str_second {
+            } else if eq(key, str_second) {
                 second = value
                     .to_long()?
                     .ok_or_type_err("second must be an integer")?;
-            } else if name == str_nanosecond {
+            } else if eq(key, str_nanosecond) {
                 nanos = value
                     .to_long()?
                     .ok_or_type_err("nanosecond must be an integer")?;
             } else {
-                Err(type_err!(
-                    "replace() got an unexpected keyword argument: {}",
-                    name.repr()
-                ))?;
+                return Ok(false);
             }
-        }
+            Ok(true)
+        })?;
         Time::from_longs(hour, minute, second, nanos)
             .ok_or_value_err("Invalid time component value")?
             .to_obj(type_)
