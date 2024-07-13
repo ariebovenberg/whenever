@@ -420,6 +420,7 @@ unsafe fn _shift_method(
     negate: bool,
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
+    // FUTURE: get fields all at once from State (this is faster)
     let state = State::for_type(cls);
     let mut months = 0;
     let mut days = 0;
@@ -429,9 +430,7 @@ unsafe fn _shift_method(
     match *args {
         [arg] => {
             match kwargs.next() {
-                Some((key, value))
-                    if kwargs.length() == 1 && key.kwarg_eq(state.str_ignore_dst) =>
-                {
+                Some((key, value)) if kwargs.len() == 1 && key.kwarg_eq(state.str_ignore_dst) => {
                     ignore_dst = value == Py_True();
                 }
                 Some(_) => Err(type_err!(

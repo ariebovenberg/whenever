@@ -711,9 +711,7 @@ unsafe fn _shift_method(
     match *args {
         [arg] => {
             match kwargs.next() {
-                Some((key, value))
-                    if kwargs.length() == 1 && key.kwarg_eq(state.str_disambiguate) =>
-                {
+                Some((key, value)) if kwargs.len() == 1 && key.kwarg_eq(state.str_disambiguate) => {
                     dis = Some(Disambiguate::from_py(value)?)
                 }
                 Some(_) => Err(type_err!(

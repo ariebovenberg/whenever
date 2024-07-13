@@ -518,7 +518,7 @@ pub(crate) unsafe fn check_ignore_dst_kwarg(
 ) -> PyResult<()> {
     match kwargs.next() {
         Some((key, value))
-            if kwargs.length() == 1 && key.kwarg_eq(state.str_ignore_dst) && value == Py_True() =>
+            if kwargs.len() == 1 && key.kwarg_eq(state.str_ignore_dst) && value == Py_True() =>
         {
             Ok(())
         }
@@ -751,9 +751,7 @@ unsafe fn _shift_method(
     match *args {
         [arg] => {
             match kwargs.next() {
-                Some((key, value))
-                    if kwargs.length() == 1 && key.kwarg_eq(state.str_ignore_dst) =>
-                {
+                Some((key, value)) if kwargs.len() == 1 && key.kwarg_eq(state.str_ignore_dst) => {
                     ignore_dst = value == Py_True();
                 }
                 None => {}
