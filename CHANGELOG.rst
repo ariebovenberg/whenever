@@ -1,10 +1,11 @@
 🚀 Changelog
 ============
 
-0.6.3 (2024-07-??)
+0.6.3 (2024-07-13)
 ------------------
 
 - Improve robustness and speed of keyword argument parsing in Rust extension (#149)
+- Add more answers to common questions in the docs and FAQ (#148, #150)
 
 0.6.2 (2024-07-04)
 ------------------
