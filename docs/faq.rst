@@ -139,6 +139,12 @@ You can check if the Rust extension is being used by running:
    you should consult its documentation on opting out of binary wheels.
 
 
+What's the performance of the pure-Python version?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In casual benchmarks, the pure-Python version is about 10x slower than the Rust version,
+making it 5x slower than the standard library but still (in general) faster than Pendulum and Arrow.
+
 What about ``dateutil``?
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -150,3 +156,21 @@ That said, here are my thoughts on dateutil: while it certainly provides
 useful helpers (especially for parsing and arithmetic), it doesn't solve the
 (IMHO) most glaring issues with the standard library: DST-safety and typing
 for naive/aware. These are issues that only a full replacement can solve.
+
+Why did you use ``pyo3_ffi`` instead of ``PyO3``?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+There are two main reasons:
+
+1. The higher-level binding library PyO3 has a small additional overhead for function calls,
+   which can be significant for small functions. Whenever has a lot of small functions.
+   Only with ``pyo3_ffi`` can these functions be on par (or faster) than the standard library.
+   The overhead has decreased in recent versions of PyO3, but it's still there.
+2. I was eager to learn to use the bare C API of Python, in order to better
+   understand how Python extension modules and PyO3 work under the hood.
+
+Additional advantages of ``pyo3_ffi`` are:
+
+- Its API is more stable than PyO3's, which is still evolving.
+- It allows support for per-interpreter GIL, and free-threaded Python,
+  which are not yet supported by PyO3.

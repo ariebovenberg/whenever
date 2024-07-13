@@ -375,6 +375,20 @@ and :class:`~whenever.SystemDateTime` types:
   Common approaches are to extrapolate the time forward or backwards
   to 1:30am or 3:30am.
 
+  .. important::
+
+     You may wonder why skipped time is "extrapolated" like this,
+     and not truncated. Why turn 2:30am into 3:30am and not cut
+     it off at 1:59am when the gap occurs?
+
+     The reason for the "extrapolation" approach is:
+
+     * It fits the most likely reason the time is skipped: we forgot to adjust the clock, or adjusted it too early
+     * This is how other datetime libraries do it (e.g. Javascript (Temporal), C# (Nodatime), Java, Python itself)
+     * It corresponds with the iCalendar (RFC5545) standard of handling gaps
+
+     The figure in the Python docs `here <https://peps.python.org/pep-0495/#mind-the-gap>`_ also shows how this "extrapolation" makes sense graphically.
+
 **Whenever** `refuses to guess <https://peps.python.org/pep-0020/>`_
 and requires that you explicitly handle these situations
 with the ``disambiguate=`` argument:

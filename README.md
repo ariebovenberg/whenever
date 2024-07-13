@@ -8,7 +8,7 @@
 [![](https://img.shields.io/github/actions/workflow/status/ariebovenberg/whenever/checks.yml?branch=main&style=flat-square)](https://github.com/ariebovenberg/whenever)
 [![](https://img.shields.io/readthedocs/whenever.svg?style=flat-square)](http://whenever.readthedocs.io/)
 
-**Typed and DST-safe datetimes for Python, written in Rust**
+**Typed and DST-safe datetimes for Python, written in Rust\***
 
 Do you cross your fingers every time you work with Python's datetime—hoping that you didn't mix naive and aware?
 or that you avoided its [other pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/)?
@@ -33,6 +33,7 @@ It's also **way faster** than other third-party libraries—and usually the stan
     <i>RFC3339-parse, normalize, compare to now, shift, and change timezone (1M times)</i>
   </p>
 
+
 <div align="center">
 
 [📖 Docs](https://whenever.readthedocs.io) |
@@ -48,6 +49,8 @@ It's also **way faster** than other third-party libraries—and usually the stan
 > ⚠️ **Note**: Whenever is in pre-1.0 beta. The API may change
 > as we gather feedback and improve the library.
 > Leave a ⭐️ on github if you'd like to see how this project develops!
+
+\**Skeptical of Rust? Don't worry, it's available in pure Python too!*
 
 ## Why not the standard library?
 

@@ -165,7 +165,7 @@ checksum = "c7de7d73e1754487cb58364ee906a499937a0dfabd86bcb980fa99ec8c8fa2ce"
 
 [[package]]
 name = "whenever"
-version = "0.6.0-beta.1"
+version = "0.6.3"
 dependencies = [
  "pyo3",
  "pyo3-build-config",

@@ -15,5 +15,5 @@
 - [ ] Version updated in changelog
 - [ ] Branch merged
 - [ ] Tag created and pushed
-- [ ] Published
+- [ ] Confirm published job runs successfully
 - [ ] Github release created

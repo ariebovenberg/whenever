@@ -1,6 +1,6 @@
 [package]
 name = "whenever"
-version = "0.6.0-beta.1"
+version = "0.6.3"
 authors = []
 description = "Rust extension module for whenever"
 edition = "2021"
