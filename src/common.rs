@@ -171,8 +171,8 @@ macro_rules! method_vararg(
 pub(crate) struct KwargIter {
     keys: *mut PyObject,
     values: *const *mut PyObject,
-    len: isize,
-    i: isize,
+    size: isize,
+    pos: isize,
 }
 
 impl KwargIter {
@@ -180,17 +180,17 @@ impl KwargIter {
         Self {
             keys,
             values,
-            len: if keys.is_null() {
+            size: if keys.is_null() {
                 0
             } else {
                 PyTuple_GET_SIZE(keys) as isize
             },
-            i: 0,
+            pos: 0,
         }
     }
 
-    pub(crate) fn length(&self) -> isize {
-        self.len
+    pub(crate) fn len(&self) -> isize {
+        self.size
     }
 }
 
@@ -198,11 +198,11 @@ impl Iterator for KwargIter {
     type Item = (*mut PyObject, *mut PyObject);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.i >= self.len {
+        if self.pos >= self.size {
             return None;
         }
-        let i = self.i;
-        self.i = i + 1;
+        let i = self.pos;
+        self.pos = i + 1;
         unsafe { Some((PyTuple_GET_ITEM(self.keys, i), *self.values.offset(i))) }
     }
 }
@@ -870,7 +870,7 @@ impl Disambiguate {
         fname: &str,
     ) -> PyResult<Self> {
         match kwargs.next() {
-            Some((name, value)) if kwargs.length() == 1 => {
+            Some((name, value)) if kwargs.len() == 1 => {
                 if name.kwarg_eq(str_disambiguate) {
                     Self::from_py(value)
                 } else {
@@ -884,7 +884,7 @@ impl Disambiguate {
             Some(_) => Err(type_err!(
                 "{}() takes at most 1 keyword argument, got {}",
                 fname,
-                kwargs.length()
+                kwargs.len()
             )),
             None => Err(type_err!(
                 "{}() missing 1 required keyword-only argument: 'disambiguate'",

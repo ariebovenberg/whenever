@@ -912,7 +912,7 @@ unsafe fn check_from_timestamp_args_return_zoneinfo(
     fname: &str,
 ) -> PyReturn {
     match (args, kwargs.next()) {
-        (&[_], Some((key, value))) if kwargs.length() == 1 => {
+        (&[_], Some((key, value))) if kwargs.len() == 1 => {
             if key.kwarg_eq(str_tz) {
                 call1(zoneinfo_type, value)
             } else {
@@ -934,7 +934,7 @@ unsafe fn check_from_timestamp_args_return_zoneinfo(
         _ => Err(type_err!(
             "{}() expected 2 arguments, got {}",
             fname,
-            args.len() + (kwargs.length() as usize)
+            args.len() + (kwargs.len() as usize)
         )),
     }
 }
@@ -1139,9 +1139,7 @@ unsafe fn _shift_method(
     match *args {
         [arg] => {
             match kwargs.next() {
-                Some((key, value))
-                    if kwargs.length() == 1 && key.kwarg_eq(state.str_disambiguate) =>
-                {
+                Some((key, value)) if kwargs.len() == 1 && key.kwarg_eq(state.str_disambiguate) => {
                     dis = Some(Disambiguate::from_py(value)?)
                 }
                 None => {}
