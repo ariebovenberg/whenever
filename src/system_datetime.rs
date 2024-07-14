@@ -1,7 +1,6 @@
 use core::ffi::{c_int, c_long, c_void, CStr};
 use core::{mem, ptr::null_mut as NULL};
 use pyo3_ffi::*;
-use std::time::SystemTime;
 
 use crate::common::*;
 use crate::{
@@ -528,9 +527,9 @@ unsafe fn replace(
 }
 
 unsafe fn now(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let &State { py_api, .. } = State::for_type(cls.cast());
-    let (timestamp, nanos) = match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-        Ok(dur) => (dur.as_secs(), dur.subsec_nanos()),
+    let state = State::for_type(cls.cast());
+    let (timestamp, nanos) = match state.epoch() {
+        Some(dur) => (dur.as_secs(), dur.subsec_nanos()),
         _ => Err(py_err!(PyExc_OSError, "SystemTime before UNIX EPOCH"))?,
     };
     // Technically conversion to i128 can overflow, but only if system
@@ -540,7 +539,7 @@ unsafe fn now(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
         .ok()
         .and_then(Instant::from_timestamp)
         .ok_or_value_err("timestamp is out of range")?
-        .to_py_ignore_nanos(py_api)?;
+        .to_py_ignore_nanos(state.py_api)?;
     defer_decref!(utc_dt);
     let dt = methcall0(utc_dt, "astimezone")?;
     defer_decref!(dt);
