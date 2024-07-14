@@ -1,12 +1,13 @@
 import enum
 from abc import ABC
+from contextlib import contextmanager
 from datetime import (
     date as _date,
     datetime as _datetime,
     time as _time,
     timedelta as _timedelta,
 )
-from typing import ClassVar, Literal, TypeVar, final, overload
+from typing import Any, ClassVar, Iterator, Literal, TypeVar, final, overload
 
 __all__ = [
     "Date",
@@ -856,3 +857,11 @@ def seconds(i: float) -> TimeDelta: ...
 def milliseconds(i: float) -> TimeDelta: ...
 def microseconds(i: float) -> TimeDelta: ...
 def nanoseconds(i: int) -> TimeDelta: ...
+
+class _TimePatch:
+    def shift(self, *args: Any, **kwargs: Any) -> None: ...
+
+@contextmanager
+def patch_current_time(
+    i: _KnowsInstant, /, *, keep_ticking: bool
+) -> Iterator[_TimePatch]: ...

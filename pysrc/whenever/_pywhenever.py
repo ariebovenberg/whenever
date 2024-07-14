@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.3"
+__version__ = "0.6.4"
 
 import enum
 import re
@@ -2558,9 +2558,7 @@ class Instant(_KnowsInstant):
     @classmethod
     def now(cls) -> Instant:
         secs, nanos = divmod(time_ns(), 1_000_000_000)
-        return cls._from_py_unchecked(
-            _datetime.fromtimestamp(secs, _UTC), nanos
-        )
+        return cls._from_py_unchecked(_fromtimestamp(secs, _UTC), nanos)
 
     @classmethod
     def from_timestamp(cls, i: int, /) -> Instant:
@@ -3726,7 +3724,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
     def now(cls) -> SystemDateTime:
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(
-            _datetime.fromtimestamp(secs, _UTC).astimezone(None), nanos
+            _fromtimestamp(secs, _UTC).astimezone(None), nanos
         )
 
     format_common_iso = OffsetDateTime.format_common_iso
@@ -4695,3 +4693,32 @@ final(_KnowsInstant)
 final(_KnowsLocal)
 final(_KnowsInstantAndLocal)
 final(_BasicConversions)
+
+
+_time_patch = None
+
+
+def _patch_time_frozen(inst: Instant) -> None:
+    global _time_patch
+    global time_ns
+
+    def time_ns() -> int:
+        return inst.timestamp_nanos()
+
+
+def _patch_time_keep_ticking(inst: Instant) -> None:
+    global _time_patch
+    global time_ns
+
+    _patched_at = time_ns()
+    _time_ns = time_ns
+
+    def time_ns() -> int:
+        return inst.timestamp_nanos() + _time_ns() - _patched_at
+
+
+def _unpatch_time() -> None:
+    global _time_patch
+    global time_ns
+
+    from time import time_ns

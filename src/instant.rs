@@ -1,13 +1,12 @@
 use core::ffi::{c_int, c_long, c_void, CStr};
 use core::{mem, ptr::null_mut as NULL};
 use pyo3_ffi::*;
-use std::time::SystemTime;
 
 use crate::common::*;
 use crate::datetime_delta::handle_exact_unit;
 use crate::time_delta::{MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS};
 use crate::{
-    date::{self, Date},
+    date::Date,
     local_datetime::DateTime,
     offset_datetime::{self, OffsetDateTime},
     time::Time,
@@ -40,7 +39,7 @@ pub(crate) const SINGLETONS: [(&CStr, Instant); 2] = [
     ),
 ];
 
-const UNIX_EPOCH_INSTANT: i64 = 62_135_683_200; // 1970-01-01 in seconds after 0000-12-31
+pub(crate) const UNIX_EPOCH_INSTANT: i64 = 62_135_683_200; // 1970-01-01 in seconds after 0000-12-31
 pub(crate) const MIN_INSTANT: i64 = 24 * 60 * 60;
 pub(crate) const MAX_INSTANT: i64 = 315_537_983_999;
 
@@ -55,10 +54,6 @@ impl Instant {
                 nanos: self.nanos,
             },
         }
-    }
-
-    pub(crate) const fn date(&self) -> date::Date {
-        date::Date::from_ord_unchecked((self.secs / 86400) as _)
     }
 
     pub(crate) const fn from_datetime(
@@ -85,6 +80,10 @@ impl Instant {
 
     pub(crate) const fn total_nanos(&self) -> i128 {
         self.secs as i128 * 1_000_000_000 + self.nanos as i128
+    }
+
+    pub(crate) const fn whole_secs(&self) -> i64 {
+        self.secs
     }
 
     pub(crate) const fn subsec_nanos(&self) -> u32 {
@@ -527,8 +526,8 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn now(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-        Ok(dur) => Instant {
+    match State::for_type(cls.cast()).epoch() {
+        Some(dur) => Instant {
             // FUTURE: decide on overflow check (only possible in ridiculous cases)
             secs: i64::try_from(dur.as_secs()).unwrap() + UNIX_EPOCH_INSTANT,
             nanos: dur.subsec_nanos(),
@@ -882,18 +881,6 @@ static mut METHODS: &[PyMethodDef] = &[
     PyMethodDef::zeroed(),
 ];
 
-unsafe fn get_year(slf: *mut PyObject) -> PyReturn {
-    Instant::extract(slf).date().year.to_py()
-}
-
-unsafe fn get_month(slf: *mut PyObject) -> PyReturn {
-    Instant::extract(slf).date().month.to_py()
-}
-
-unsafe fn get_day(slf: *mut PyObject) -> PyReturn {
-    Instant::extract(slf).date().day.to_py()
-}
-
 unsafe fn get_hour(slf: *mut PyObject) -> PyReturn {
     (Instant::extract(slf).secs % 86400 / 3600).to_py()
 }
@@ -911,9 +898,6 @@ unsafe fn get_nanos(slf: *mut PyObject) -> PyReturn {
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter!(get_year named "year", "The year component"),
-    getter!(get_month named "month", "The month component"),
-    getter!(get_day named "day", "The day component"),
     getter!(get_hour named "hour", "The hour component"),
     getter!(get_minute named "minute", "The minute component"),
     getter!(get_secs named "second", "The second component"),
