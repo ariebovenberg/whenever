@@ -2,7 +2,6 @@ use core::ffi::{c_int, c_long, c_void, CStr};
 use core::{mem, ptr::null_mut as NULL};
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
-use std::time::SystemTime;
 
 use crate::common::*;
 use crate::datetime_delta::set_units_from_kwargs;
@@ -647,9 +646,9 @@ unsafe fn now(
     kwargs: &mut KwargIter,
 ) -> PyReturn {
     let state = State::for_type(cls);
-    let nanos = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(|_| py_err!(PyExc_OSError, "SystemTime before UNIX EPOCH"))?
+    let nanos = state
+        .epoch()
+        .ok_or_py_err(PyExc_OSError, "SystemTime before UNIX EPOCH")?
         .as_nanos();
 
     let &[offset] = args else {

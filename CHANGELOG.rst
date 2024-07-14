@@ -1,6 +1,12 @@
 🚀 Changelog
 ============
 
+0.6.4 (2024-07-??)
+------------------
+
+- Add ``patch_current_time`` helper for patching the current time in tests
+- Remove undocumented ``year``/``month``/``day`` properties from ``Instant``
+
 0.6.3 (2024-07-13)
 ------------------
 

@@ -2,7 +2,6 @@ use core::ffi::{c_int, c_long, c_void, CStr};
 use core::{mem, ptr::null_mut as NULL};
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
-use std::time::SystemTime;
 
 use crate::common::*;
 use crate::datetime_delta::set_units_from_kwargs;
@@ -750,6 +749,7 @@ unsafe fn replace(
 }
 
 unsafe fn now(cls: *mut PyObject, tz: *mut PyObject) -> PyReturn {
+    let state = State::for_type(cls.cast());
     let &State {
         py_api:
             &PyDateTime_CAPI {
@@ -759,12 +759,12 @@ unsafe fn now(cls: *mut PyObject, tz: *mut PyObject) -> PyReturn {
             },
         zoneinfo_type,
         ..
-    } = State::for_type(cls.cast());
+    } = state;
     let zoneinfo = call1(zoneinfo_type, tz)? as *mut PyObject;
     defer_decref!(zoneinfo);
-    let (timestamp, subsec) = match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-        Ok(dur) => (dur.as_secs() as f64, dur.subsec_nanos()),
-        _ => Err(py_err!(PyExc_OSError, "SystemTime before UNIX EPOCH"))?,
+    let (timestamp, subsec) = match state.epoch() {
+        Some(dur) => (dur.as_secs() as f64, dur.subsec_nanos()),
+        None => Err(py_err!(PyExc_OSError, "SystemTime before UNIX EPOCH"))?,
     };
     // OPTIMIZE: faster way without fromtimestamp?
     let dt = DateTime_FromTimestamp(

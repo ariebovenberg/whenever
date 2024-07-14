@@ -806,6 +806,13 @@ DateDelta(P3M16D)
 
 See the :ref:`API reference <date-and-time-api>` for more details.
 
+Testing
+-------
+
+For manipulating the current time in tests,
+there is a helper :func:`~whenever.patch_current_time`.
+See its documentation for more details.
+
 .. _systemtime:
 
 The system timezone
