@@ -364,17 +364,6 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         unpickle_system_datetime
     );
 
-    // XXX: this SEEMS to work out refcount- and GC-wise
-    PyDict_SetItemString(
-        (*state.instant_type).tp_dict,
-        c"offset".as_ptr(),
-        steal!(unwrap_or_errcode!(PyDict_GetItemString(
-            (*state.time_delta_type).tp_dict,
-            c"ZERO".as_ptr()
-        )
-        .as_result())),
-    );
-
     let zoneinfo_module = PyImport_ImportModule(c"zoneinfo".as_ptr());
     defer_decref!(zoneinfo_module);
     state.zoneinfo_type = PyObject_GetAttrString(zoneinfo_module, c"ZoneInfo".as_ptr());
