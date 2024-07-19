@@ -138,7 +138,7 @@ pub(crate) const MAX_MICROSECONDS: i64 = MAX_SECS * 1_000_000;
 pub(crate) const MAX_NANOSECONDS: i128 = MAX_SECS as i128 * 1_000_000_000;
 const SECS_PER_DAY: i64 = 24 * 3600;
 
-pub(crate) const SINGLETONS: [(&CStr, TimeDelta); 3] = [
+pub(crate) const SINGLETONS: &[(&CStr, TimeDelta); 3] = &[
     (c"ZERO", TimeDelta { secs: 0, nanos: 0 }),
     (
         c"MIN",

@@ -26,7 +26,7 @@ pub(crate) struct ZonedDateTime {
     zoneinfo: *mut PyObject,
 }
 
-pub(crate) const SINGLETONS: [(&CStr, ZonedDateTime); 0] = [];
+pub(crate) const SINGLETONS: &[(&CStr, ZonedDateTime); 0] = &[];
 
 impl ZonedDateTime {
     pub(crate) unsafe fn new(

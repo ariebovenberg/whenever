@@ -214,40 +214,40 @@ unsafe fn new_exc(module: *mut PyObject, name: &CStr, base: *mut PyObject) -> *m
     e
 }
 
-macro_rules! add_type {
-    ($module:ident,
-     $module_nameobj:expr,
-     $state:ident,
-     $submodule:ident,
-     $varname:ident,
-     $unpickle_name:literal,
-     $unpickle_var:ident) => {
-        let $varname = null_to_errcode!(PyType_FromModuleAndSpec(
-            $module,
-            ptr::addr_of_mut!($submodule::SPEC),
-            ptr::null_mut(),
-        ));
-        if PyModule_AddType($module, $varname.cast()) != 0 {
-            return -1;
-        }
-        $state.$varname = $varname.cast();
+// Return the new type and the unpickler function
+unsafe fn new_type<T: PyWrapped>(
+    module: *mut PyObject,
+    module_nameobj: *mut PyObject,
+    spec: *mut PyType_Spec,
+    unpickle_name: &CStr,
+    singletons: &[(&CStr, T)],
+    type_ptr: *mut *mut PyTypeObject,
+    unpickle_ptr: *mut *mut PyObject,
+) -> bool {
+    let cls: *mut PyTypeObject = PyType_FromModuleAndSpec(module, spec, ptr::null_mut()).cast();
+    if cls.is_null() || PyModule_AddType(module, cls) != 0 {
+        return false;
+    }
 
-        let unpickler = PyObject_GetAttrString($module, $unpickle_name.as_ptr());
-        defer_decref!(unpickler);
-        PyObject_SetAttrString(unpickler, c"__module__".as_ptr(), $module_nameobj);
-        $state.$unpickle_var = unpickler;
+    let unpickler = PyObject_GetAttrString(module, unpickle_name.as_ptr());
+    defer_decref!(unpickler);
+    if PyObject_SetAttrString(unpickler, c"__module__".as_ptr(), module_nameobj) != 0 {
+        return false;
+    }
 
-        for (name, value) in $submodule::SINGLETONS {
-            let pyvalue = unwrap_or_errcode!(value.to_obj($varname.cast()));
-            // NOTE: we don't decref the value here on purpose.
-            // Singletons work out refcount/GC-wise in the end.
-            PyDict_SetItemString(
-                (*$varname.cast::<PyTypeObject>()).tp_dict,
-                name.as_ptr().cast(),
-                pyvalue,
-            );
+    for (name, value) in singletons {
+        let Some(pyvalue) = value.to_obj(cls).ok() else {
+            return false;
+        };
+        // NOTE: we don't decref the value here on purpose.
+        // Singletons work out refcount/GC-wise in the end.
+        if PyDict_SetItemString((*cls).tp_dict, name.as_ptr().cast(), pyvalue) != 0 {
+            return false;
         }
-    };
+    }
+    (*type_ptr) = cls;
+    (*unpickle_ptr) = unpickler;
+    true
 }
 
 macro_rules! unwrap_or_errcode {
@@ -259,110 +259,96 @@ macro_rules! unwrap_or_errcode {
     };
 }
 
-macro_rules! null_to_errcode {
-    ($expr:expr) => {
-        match $expr {
-            x if x.is_null() => return -1,
-            x => x,
-        }
-    };
-}
-
+#[cold]
+#[cfg_attr(feature = "optimize", optimize(size))]
 unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     let state: &mut State = PyModule_GetState(module).cast::<State>().as_mut().unwrap();
     let module_name = unwrap_or_errcode!("whenever".to_py());
     defer_decref!(module_name);
 
-    add_type!(
+    if !new_type(
         module,
         module_name,
-        state,
-        date,
-        date_type,
+        ptr::addr_of_mut!(date::SPEC),
         c"_unpkl_date",
-        unpickle_date
-    );
-    add_type!(
+        date::SINGLETONS,
+        ptr::addr_of_mut!(state.date_type),
+        ptr::addr_of_mut!(state.unpickle_date),
+    ) || !new_type(
         module,
         module_name,
-        state,
-        time,
-        time_type,
+        ptr::addr_of_mut!(time::SPEC),
         c"_unpkl_time",
-        unpickle_time
-    );
-    add_type!(
+        time::SINGLETONS,
+        ptr::addr_of_mut!(state.time_type),
+        ptr::addr_of_mut!(state.unpickle_time),
+    ) || !new_type(
         module,
         module_name,
-        state,
-        date_delta,
-        date_delta_type,
+        ptr::addr_of_mut!(date_delta::SPEC),
         c"_unpkl_ddelta",
-        unpickle_date_delta
-    );
-    add_type!(
+        date_delta::SINGLETONS,
+        ptr::addr_of_mut!(state.date_delta_type),
+        ptr::addr_of_mut!(state.unpickle_date_delta),
+    ) || !new_type(
         module,
         module_name,
-        state,
-        time_delta,
-        time_delta_type,
+        ptr::addr_of_mut!(time_delta::SPEC),
         c"_unpkl_tdelta",
-        unpickle_time_delta
-    );
-    add_type!(
+        time_delta::SINGLETONS,
+        ptr::addr_of_mut!(state.time_delta_type),
+        ptr::addr_of_mut!(state.unpickle_time_delta),
+    ) || !new_type(
         module,
         module_name,
-        state,
-        datetime_delta,
-        datetime_delta_type,
+        ptr::addr_of_mut!(datetime_delta::SPEC),
         c"_unpkl_dtdelta",
-        unpickle_datetime_delta
-    );
-    add_type!(
+        datetime_delta::SINGLETONS,
+        ptr::addr_of_mut!(state.datetime_delta_type),
+        ptr::addr_of_mut!(state.unpickle_datetime_delta),
+    ) || !new_type(
         module,
         module_name,
-        state,
-        local_datetime,
-        local_datetime_type,
+        ptr::addr_of_mut!(local_datetime::SPEC),
         c"_unpkl_local",
-        unpickle_local_datetime
-    );
-    add_type!(
+        local_datetime::SINGLETONS,
+        ptr::addr_of_mut!(state.local_datetime_type),
+        ptr::addr_of_mut!(state.unpickle_local_datetime),
+    ) || !new_type(
         module,
         module_name,
-        state,
-        instant,
-        instant_type,
+        ptr::addr_of_mut!(instant::SPEC),
         c"_unpkl_utc",
-        unpickle_instant
-    );
-    add_type!(
+        instant::SINGLETONS,
+        ptr::addr_of_mut!(state.instant_type),
+        ptr::addr_of_mut!(state.unpickle_instant),
+    ) || !new_type(
         module,
         module_name,
-        state,
-        offset_datetime,
-        offset_datetime_type,
+        ptr::addr_of_mut!(offset_datetime::SPEC),
         c"_unpkl_offset",
-        unpickle_offset_datetime
-    );
-    add_type!(
+        offset_datetime::SINGLETONS,
+        ptr::addr_of_mut!(state.offset_datetime_type),
+        ptr::addr_of_mut!(state.unpickle_offset_datetime),
+    ) || !new_type(
         module,
         module_name,
-        state,
-        zoned_datetime,
-        zoned_datetime_type,
+        ptr::addr_of_mut!(zoned_datetime::SPEC),
         c"_unpkl_zoned",
-        unpickle_zoned_datetime
-    );
-    add_type!(
+        zoned_datetime::SINGLETONS,
+        ptr::addr_of_mut!(state.zoned_datetime_type),
+        ptr::addr_of_mut!(state.unpickle_zoned_datetime),
+    ) || !new_type(
         module,
         module_name,
-        state,
-        system_datetime,
-        system_datetime_type,
+        ptr::addr_of_mut!(system_datetime::SPEC),
         c"_unpkl_system",
-        unpickle_system_datetime
-    );
+        system_datetime::SINGLETONS,
+        ptr::addr_of_mut!(state.system_datetime_type),
+        ptr::addr_of_mut!(state.unpickle_system_datetime),
+    ) {
+        return -1;
+    }
 
     let zoneinfo_module = PyImport_ImportModule(c"zoneinfo".as_ptr());
     defer_decref!(zoneinfo_module);
@@ -552,12 +538,16 @@ unsafe extern "C" fn module_traverse(
     do_visit(state.format_rfc2822, visit, arg);
     do_visit(state.parse_rfc2822, visit, arg);
 
+    println!("traversing strings");
+
     0
 }
 
+#[cold]
 unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     let state = PyModule_GetState(module).cast::<State>().as_mut().unwrap();
     // types
+    println!("clearing types");
     Py_CLEAR(ptr::addr_of_mut!(state.date_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.time_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.date_delta_type).cast());
@@ -709,6 +699,8 @@ impl State {
 #[allow(clippy::missing_safety_doc)]
 #[allow(non_snake_case)]
 #[no_mangle]
+#[cold]
+#[cfg_attr(feature = "optimize", optimize(size))]
 pub unsafe extern "C" fn PyInit__whenever() -> *mut PyObject {
     PyModuleDef_Init(ptr::addr_of_mut!(MODULE_DEF))
 }

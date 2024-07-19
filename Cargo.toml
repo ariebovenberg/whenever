@@ -27,9 +27,7 @@ name = "benchmarks"
 path = "benchmarks/rust/main.rs"
 
 [dependencies]
-pyo3-ffi = { version = "^0.22.0", default-features = false, features = ["extension-module"]}
-# FUTURE: can we remove this? Currently seems we cannot configure setuptools-rust without it
-pyo3 = { version = "^0.22.0", default-features = false, features = ["extension-module"] }
+pyo3-ffi = { version = "^0.22.2", default-features = false, features = ["extension-module"]}
 
 [build-dependencies]
-pyo3-build-config = { version = "^0.22.0" }
+pyo3-build-config = { version = "^0.22.2" }

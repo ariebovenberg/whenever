@@ -25,7 +25,7 @@ pub(crate) struct OffsetDateTime {
     offset_secs: i32,
 }
 
-pub(crate) const SINGLETONS: [(&CStr, OffsetDateTime); 0] = [];
+pub(crate) const SINGLETONS: &[(&CStr, OffsetDateTime); 0] = &[];
 
 impl OffsetDateTime {
     pub(crate) const fn new_unchecked(date: Date, time: Time, offset_secs: i32) -> Self {

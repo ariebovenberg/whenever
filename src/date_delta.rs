@@ -118,8 +118,8 @@ impl Neg for DateDelta {
 const MAX_MONTHS: i32 = (MAX_YEAR * 12) as i32;
 const MAX_DAYS: i32 = (MAX_YEAR * 366) as i32;
 
-pub(crate) const SINGLETONS: [(&CStr, DateDelta); 1] =
-    [(c"ZERO", DateDelta { months: 0, days: 0 })];
+pub(crate) const SINGLETONS: &[(&CStr, DateDelta); 1] =
+    &[(c"ZERO", DateDelta { months: 0, days: 0 })];
 
 impl fmt::Display for DateDelta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
