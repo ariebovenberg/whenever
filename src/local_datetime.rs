@@ -22,7 +22,7 @@ pub(crate) struct DateTime {
     pub time: Time,
 }
 
-pub(crate) const SINGLETONS: [(&CStr, DateTime); 2] = [
+pub(crate) const SINGLETONS: &[(&CStr, DateTime); 2] = &[
     (
         c"MIN",
         DateTime {

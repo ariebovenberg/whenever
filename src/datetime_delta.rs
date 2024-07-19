@@ -166,7 +166,7 @@ pub(crate) unsafe fn set_units_from_kwargs(
     Ok(true)
 }
 
-pub(crate) const SINGLETONS: [(&CStr, DateTimeDelta); 1] = [(
+pub(crate) const SINGLETONS: &[(&CStr, DateTimeDelta); 1] = &[(
     c"ZERO",
     DateTimeDelta {
         ddelta: DateDelta::ZERO,

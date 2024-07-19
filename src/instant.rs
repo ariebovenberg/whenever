@@ -22,7 +22,7 @@ pub(crate) struct Instant {
                // FUTURE: make use of padding to cache the date value?
 }
 
-pub(crate) const SINGLETONS: [(&CStr, Instant); 2] = [
+pub(crate) const SINGLETONS: &[(&CStr, Instant); 2] = &[
     (
         c"MIN",
         Instant {

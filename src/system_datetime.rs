@@ -17,7 +17,7 @@ use crate::{
     State,
 };
 
-pub(crate) const SINGLETONS: [(&CStr, OffsetDateTime); 0] = [];
+pub(crate) const SINGLETONS: &[(&CStr, OffsetDateTime); 0] = &[];
 
 impl OffsetDateTime {
     #[inline]

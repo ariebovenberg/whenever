@@ -13,7 +13,7 @@ pub struct Date {
     pub(crate) day: u8,
 }
 
-pub(crate) const SINGLETONS: [(&CStr, Date); 2] = [
+pub(crate) const SINGLETONS: &[(&CStr, Date); 2] = &[
     (c"MIN", Date::new_unchecked(1, 1, 1)),
     (c"MAX", Date::new_unchecked(9999, 12, 31)),
 ];
