@@ -70,7 +70,7 @@ def system_tz_ams():
         time.tzset()
         yield
 
-    time.tzset()
+    time.tzset()  # don't forget to set the old timezone back
 
 
 @contextmanager
@@ -81,4 +81,4 @@ def system_tz_nyc():
         time.tzset()
         yield
 
-    time.tzset()
+    time.tzset()  # don't forget to set the old timezone back

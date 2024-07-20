@@ -116,12 +116,16 @@ of the repository.
 How can I use the pure-Python version?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Whenever is implemented both in Rust and in pure Python.
+By default, the Rust extension is used, as it's faster and more memory-efficient.
+But you can opt out of it if you prefer the pure-Python version.
+
 .. note::
 
    On PyPy, the Python implementation is automatically used. No need to configure anything.
 
 To opt out of the Rust extension and use the pure-Python version,
-use the source distribution and set the ``WHENEVER_NO_BUILD_RUST_EXT`` environment variable:
+install from the source distribution with the ``WHENEVER_NO_BUILD_RUST_EXT`` environment variable set:
 
 .. code-block:: bash
 
