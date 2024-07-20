@@ -123,7 +123,7 @@ Additionally, it hasn't been actively maintained since a breaking 3.0 release la
 - 💎 Thoroughly tested and documented
 - 📆 Support for date arithmetic
 - ⏱️ Nanosecond precision
-- 🦀 Rust!—but with a pure-Python fallback
+- 🦀 Rust!—but with a [pure-Python option](https://whenever.readthedocs.io/en/latest/faq.html#how-can-i-use-the-pure-python-version)
 - 🚀 Support for the latest GIL-related improvements (experimental)
 
 ## Quickstart
@@ -221,33 +221,3 @@ This project is inspired by the following projects. Check them out!
 - [Chrono](https://docs.rs/chrono/latest/chrono/)
 
 The benchmark comparison graph is based on the one from the [Ruff](https://github.com/astral-sh/ruff) project.
-
-## Contributing
-
-Contributions are welcome! Please open an issue or a pull request.
-
-> ⚠️ **Note**: Non-trivial changes should be discussed in an issue first.
-> This is to avoid wasted effort if the change isn't a good fit for the project.
-
-> ⚠️ **Note**: Some tests are skipped on Windows.
-> These tests use unix-specific features to set the timezone for the current process.
-> As a result, Windows isn't able to run certain tests that rely on the system timezone.
-> It appears that this functionality (only needed for the tests) is
-> [not available on Windows](https://stackoverflow.com/questions/62004265/python-3-time-tzset-alternative-for-windows>).
-
-## Setting up a development environment
-
-An example of setting up things up:
-
-```bash
-# install the dependencies
-make init
-
-# build the rust extension
-make build
-
-make test  # run the tests (Python and Rust)
-make format  # apply autoformatting
-make ci-lint  # various static checks
-make typecheck  # run mypy and typing tests
-```

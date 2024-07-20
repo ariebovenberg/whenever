@@ -188,7 +188,6 @@ Here's a summary of the differences between the types:
 +------------------------------+---------+---------+-------+---------+---------+
 
 
-
 Comparison and equality
 -----------------------
 
@@ -812,6 +811,40 @@ Testing
 For manipulating the current time in tests,
 there is a helper :func:`~whenever.patch_current_time`.
 See its documentation for more details.
+
+For changing the system timezone in tests,
+use the :func:`~time.tzset` function from the standard library.
+Since **whenever** uses the standard library to operate with the system timezone,
+``tzset`` will behave as expected from the documentation.
+Do note that this function is not available on Windows.
+This is a limitation of ``tzset`` itself.
+
+Below is an example of a testing helper that can be used with ``pytest``:
+
+.. code-block:: python
+
+   import os
+   import pytest
+   import sys
+   import time
+   from contextlib import contextmanager
+   from unittest.mock import patch
+
+   @contextmanager
+   def system_tz_ams():
+       if sys.platform == "win32":
+           pytest.skip("tzset is not available on Windows")
+       with patch.dict(os.environ, {"TZ": "Europe/Amsterdam"}):
+           time.tzset()
+           yield
+
+       time.tzset()  # don't forget to set the old timezone back
+
+.. code-block:: python
+
+   @system_tz_ams
+   def test_something():
+       SystemDateTime.now()  # as if the system timezone is Amsterdam
 
 .. _systemtime:
 
