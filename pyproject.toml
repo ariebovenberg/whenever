@@ -95,4 +95,4 @@ module-name = "whenever._whenever"
 
 [build-system]
 build-backend = "setuptools.build_meta"
-requires = ["setuptools", "wheel", "setuptools-rust"]
+requires = ["setuptools", "wheel", "setuptools-rust>=1.9"]

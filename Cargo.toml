@@ -27,7 +27,7 @@ name = "benchmarks"
 path = "benchmarks/rust/main.rs"
 
 [dependencies]
-pyo3-ffi = { version = "^0.22.2", default-features = false, features = ["extension-module"]}
+pyo3-ffi = { version = "^0.22.0", default-features = false, features = ["extension-module"]}
 
 [build-dependencies]
-pyo3-build-config = { version = "^0.22.2" }
+pyo3-build-config = { version = "^0.22.0" }
