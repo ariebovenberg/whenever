@@ -538,8 +538,6 @@ unsafe extern "C" fn module_traverse(
     do_visit(state.format_rfc2822, visit, arg);
     do_visit(state.parse_rfc2822, visit, arg);
 
-    println!("traversing strings");
-
     0
 }
 
@@ -547,7 +545,6 @@ unsafe extern "C" fn module_traverse(
 unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     let state = PyModule_GetState(module).cast::<State>().as_mut().unwrap();
     // types
-    println!("clearing types");
     Py_CLEAR(ptr::addr_of_mut!(state.date_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.time_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.date_delta_type).cast());
