@@ -83,7 +83,7 @@ I did consider this initially, but decided against it for the following reasons:
   it doesn't map well to idiomatic Python.
 - At the time of writing, Chrono is only on version 0.4 and its API is still evolving.
 - Chrono's timezone functionality can't handle disambiguation in gaps yet
-  (see `this issue <https://github.com/chronotope/chrono/issues/1448>`_)
+  (see `here <https://github.com/chronotope/chrono/issues/1448>`_)
 
 .. _faq-why-not-dropin:
 
@@ -141,6 +141,13 @@ You can check if the Rust extension is being used by running:
 
    If you're using Poetry or another third-party package manager,
    you should consult its documentation on opting out of binary wheels.
+
+.. admonition:: Why not publish the pure-Python version separately on PyPI?
+
+   There's no way to do this without creating other problems.
+   See
+   `this issue <https://github.com/ariebovenberg/whenever/issues/158>`_
+   for more information.
 
 
 What's the performance of the pure-Python version?
