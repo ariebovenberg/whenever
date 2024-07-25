@@ -762,14 +762,11 @@ unsafe fn now(cls: *mut PyObject, tz: *mut PyObject) -> PyReturn {
     } = state;
     let zoneinfo = call1(zoneinfo_type, tz)? as *mut PyObject;
     defer_decref!(zoneinfo);
-    let (timestamp, subsec) = match state.epoch() {
-        Some(dur) => (dur.as_secs() as f64, dur.subsec_nanos()),
-        None => Err(py_err!(PyExc_OSError, "SystemTime before UNIX EPOCH"))?,
-    };
+    let (timestamp, subsec) = state.time_ns()?;
     // OPTIMIZE: faster way without fromtimestamp?
     let dt = DateTime_FromTimestamp(
         DateTimeType,
-        steal!((steal!(timestamp.to_py()?), zoneinfo).to_py()?),
+        steal!((steal!((timestamp as f64).to_py()?), zoneinfo).to_py()?),
         NULL(),
     )
     .as_result()?;

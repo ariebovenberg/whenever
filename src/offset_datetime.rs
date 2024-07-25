@@ -646,10 +646,7 @@ unsafe fn now(
     kwargs: &mut KwargIter,
 ) -> PyReturn {
     let state = State::for_type(cls);
-    let nanos = state
-        .epoch()
-        .ok_or_py_err(PyExc_OSError, "SystemTime before UNIX EPOCH")?
-        .as_nanos();
+    let (secs, subsec_nanos) = state.time_ns()?;
 
     let &[offset] = args else {
         Err(type_err!("now() takes exactly 1 positional argument"))?
@@ -666,12 +663,12 @@ unsafe fn now(
     )?;
 
     let offset_secs = extract_offset(offset, state.time_delta_type)?;
-    // Technically conversion to i128 can overflow, but only if system
-    // time is set to a very very very distant future
-    let DateTime { date, time } = Instant::from_timestamp_nanos(nanos as i128)
-        .ok_or_value_err("SystemTime out of range")?
-        .shift_secs_unchecked(offset_secs.into())
-        .to_datetime();
+    // FUTURE: Conversion to Instant can be done a bit more efficiently
+    let DateTime { date, time } =
+        Instant::from_timestamp_nanos(secs as i128 * 1_000_000_000 + i128::from(subsec_nanos))
+            .ok_or_value_err("SystemTime out of range")?
+            .shift_secs_unchecked(offset_secs.into())
+            .to_datetime();
     // Technically this can fail if the system time is set beyond year 9999
     OffsetDateTime::new_unchecked(date, time, offset_secs).to_obj(cls.cast())
 }

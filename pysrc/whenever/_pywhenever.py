@@ -4693,32 +4693,3 @@ final(_KnowsInstant)
 final(_KnowsLocal)
 final(_KnowsInstantAndLocal)
 final(_BasicConversions)
-
-
-_time_patch = None
-
-
-def _patch_time_frozen(inst: Instant) -> None:
-    global _time_patch
-    global time_ns
-
-    def time_ns() -> int:
-        return inst.timestamp_nanos()
-
-
-def _patch_time_keep_ticking(inst: Instant) -> None:
-    global _time_patch
-    global time_ns
-
-    _patched_at = time_ns()
-    _time_ns = time_ns
-
-    def time_ns() -> int:
-        return inst.timestamp_nanos() + _time_ns() - _patched_at
-
-
-def _unpatch_time() -> None:
-    global _time_patch
-    global time_ns
-
-    from time import time_ns
