@@ -4,8 +4,10 @@
 Development
 -----------
 
-- Add ``patch_current_time`` helper for patching the current time in tests
+- Support patching the current time with `time-machine <https://github.com/adamchainz/time-machine>`_ (#147)
 - Remove undocumented ``year``/``month``/``day``/``offset`` properties from ``Instant``
+- Reduce size of binary distributions
+- Clarify contribution guidelines
 
 0.6.3 (2024-07-13)
 ------------------

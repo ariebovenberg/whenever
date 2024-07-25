@@ -39,7 +39,7 @@ pub(crate) const SINGLETONS: &[(&CStr, Instant); 2] = &[
     ),
 ];
 
-pub(crate) const UNIX_EPOCH_INSTANT: i64 = 62_135_683_200; // 1970-01-01 in seconds after 0000-12-31
+const UNIX_EPOCH_INSTANT: i64 = 62_135_683_200; // 1970-01-01 in seconds after 0000-12-31
 pub(crate) const MIN_INSTANT: i64 = 24 * 60 * 60;
 pub(crate) const MAX_INSTANT: i64 = 315_537_983_999;
 
@@ -80,10 +80,6 @@ impl Instant {
 
     pub(crate) const fn total_nanos(&self) -> i128 {
         self.secs as i128 * 1_000_000_000 + self.nanos as i128
-    }
-
-    pub(crate) const fn whole_secs(&self) -> i64 {
-        self.secs
     }
 
     pub(crate) const fn subsec_nanos(&self) -> u32 {
@@ -526,15 +522,12 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn now(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    match State::for_type(cls.cast()).epoch() {
-        Some(dur) => Instant {
-            // FUTURE: decide on overflow check (only possible in ridiculous cases)
-            secs: i64::try_from(dur.as_secs()).unwrap() + UNIX_EPOCH_INSTANT,
-            nanos: dur.subsec_nanos(),
-        }
-        .to_obj(cls.cast()),
-        _ => Err(py_err!(PyExc_OSError, "SystemTime before UNIX EPOCH")),
+    let (secs, nanos) = State::for_type(cls.cast()).time_ns()?;
+    Instant {
+        secs: secs + UNIX_EPOCH_INSTANT,
+        nanos,
     }
+    .to_obj(cls.cast())
 }
 
 unsafe fn parse_rfc3339(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {

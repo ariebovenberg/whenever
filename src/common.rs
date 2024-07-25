@@ -89,13 +89,12 @@ macro_rules! pack {
 macro_rules! unpack_one {
     ($arr:ident, $t:ty) => {{
         const SIZE: usize = std::mem::size_of::<$t>();
-        let mut bytes = [0; SIZE];
-        bytes.copy_from_slice(&$arr[..SIZE]);
+        let data = <$t>::from_le_bytes($arr[..SIZE].try_into().unwrap());
         #[allow(unused_assignments)]
         {
             $arr = &$arr[SIZE..];
         }
-        <$t>::from_le_bytes(bytes)
+        data
     }};
 }
 

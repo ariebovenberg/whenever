@@ -22,7 +22,7 @@ use date::unpickle as _unpkl_date;
 use date_delta::unpickle as _unpkl_ddelta;
 use date_delta::{days, months, weeks, years};
 use datetime_delta::unpickle as _unpkl_dtdelta;
-use instant::{unpickle as _unpkl_utc, UNIX_EPOCH_INSTANT};
+use instant::unpickle as _unpkl_utc;
 use local_datetime::unpickle as _unpkl_local;
 use offset_datetime::unpickle as _unpkl_offset;
 use system_datetime::unpickle as _unpkl_system;
@@ -108,51 +108,8 @@ static mut METHODS: &[PyMethodDef] = &[
         "Create a new `TimeDelta` representing the given number of nanoseconds.",
         METH_O
     ),
-    method!(_patch_time_frozen, "", METH_O),
-    method!(_patch_time_keep_ticking, "", METH_O),
-    method!(_unpatch_time, ""),
     PyMethodDef::zeroed(),
 ];
-
-unsafe fn _patch_time_frozen(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
-    _patch_time(module, arg, true)
-}
-
-unsafe fn _patch_time_keep_ticking(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
-    _patch_time(module, arg, false)
-}
-
-unsafe fn _patch_time(module: *mut PyObject, arg: *mut PyObject, freeze: bool) -> PyReturn {
-    let state: &mut State = PyModule_GetState(module).cast::<State>().as_mut().unwrap();
-    if Py_TYPE(arg) != state.instant_type {
-        Err(type_err!("Expected an Instant"))?
-    }
-    let inst = instant::Instant::extract(arg);
-    let pin = std::time::Duration::new(
-        (inst.whole_secs() as u64)
-            .checked_sub(UNIX_EPOCH_INSTANT as _)
-            .ok_or_type_err("Cannot set time before 1970")?,
-        inst.subsec_nanos(),
-    );
-    state.time_patch = if freeze {
-        TimePatch::Frozen(pin)
-    } else {
-        TimePatch::KeepTicking {
-            pin,
-            at: SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .ok()
-                .ok_or_type_err("System time before 1970")?,
-        }
-    };
-    Py_None().as_result()
-}
-
-unsafe fn _unpatch_time(module: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let state: &mut State = PyModule_GetState(module).cast::<State>().as_mut().unwrap();
-    state.time_patch = TimePatch::Unset;
-    Py_None().as_result()
-}
 
 #[allow(non_upper_case_globals)]
 pub const Py_mod_gil: c_int = 4;
@@ -377,6 +334,10 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     state.parse_rfc2822 =
         PyObject_GetAttrString(email_utils, c"parsedate_to_datetime".as_ptr()).cast();
 
+    let time_module = PyImport_ImportModule(c"time".as_ptr());
+    defer_decref!(time_module);
+    state.time_ns = PyObject_GetAttrString(time_module, c"time_ns".as_ptr()).cast();
+
     let weekday_enum = unwrap_or_errcode!(create_enum(
         c"Weekday",
         &[
@@ -434,7 +395,18 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     state.exc_implicitly_ignoring_dst =
         new_exc(module, c"whenever.ImplicitlyIgnoringDST", PyExc_TypeError);
 
-    state.time_patch = TimePatch::Unset;
+    // Making time patcheable results in a performance hit.
+    // Only enable it if the time_machine module is available.
+    state.time_patchable = match PyImport_ImportModule(c"time_machine".as_ptr()).as_result() {
+        Ok(t) => {
+            Py_DecRef(t);
+            true
+        }
+        Err(_) => {
+            PyErr_Clear();
+            false
+        }
+    };
 
     0
 }
@@ -580,15 +552,6 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     0
 }
 
-enum TimePatch {
-    Unset,
-    Frozen(std::time::Duration),
-    KeepTicking {
-        pin: std::time::Duration,
-        at: std::time::Duration,
-    },
-}
-
 #[repr(C)]
 struct State {
     // types
@@ -632,6 +595,7 @@ struct State {
     strptime: *mut PyObject,
     format_rfc2822: *mut PyObject,
     parse_rfc2822: *mut PyObject,
+    time_ns: *mut PyObject,
 
     // strings
     str_years: *mut PyObject,
@@ -658,7 +622,7 @@ struct State {
     str_offset: *mut PyObject,
     str_ignore_dst: *mut PyObject,
 
-    time_patch: TimePatch,
+    time_patchable: bool,
 }
 
 impl State {
@@ -677,19 +641,28 @@ impl State {
             .unwrap()
     }
 
-    unsafe fn epoch(&self) -> Option<std::time::Duration> {
-        match self.time_patch {
-            TimePatch::Unset => SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .ok(),
-            TimePatch::Frozen(e) => Some(e),
-            TimePatch::KeepTicking { pin, at } => Some(
-                pin + SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .ok()?
-                    - at,
-            ),
+    unsafe fn time_ns(&self) -> PyResult<(i64, u32)> {
+        if self.time_patchable {
+            self.time_ns_py()
+        } else {
+            self.time_ns_rust()
         }
+    }
+
+    unsafe fn time_ns_py(&self) -> PyResult<(i64, u32)> {
+        let ts = PyObject_CallNoArgs(self.time_ns).as_result()?;
+        let ns = (ts as *mut PyObject)
+            .to_i64()?
+            .ok_or_py_err(PyExc_RuntimeError, "time_ns() returned a non-integer")?;
+        Ok((ns / 1_000_000_000, (ns % 1_000_000_000) as u32))
+    }
+
+    unsafe fn time_ns_rust(&self) -> PyResult<(i64, u32)> {
+        let dur = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .ok()
+            .ok_or_py_err(PyExc_OSError, "System time out of range")?;
+        Ok((dur.as_secs() as i64, dur.subsec_nanos()))
     }
 }
 

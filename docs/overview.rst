@@ -808,43 +808,17 @@ See the :ref:`API reference <date-and-time-api>` for more details.
 Testing
 -------
 
-For manipulating the current time in tests,
-there is a helper :func:`~whenever.patch_current_time`.
+**Whenever** supports patching the current time for testing purposes
+using the `time-machine <https://github.com/adamchainz/time-machine>`_ package.
 See its documentation for more details.
 
-For changing the system timezone in tests,
-use the :func:`~time.tzset` function from the standard library.
-Since **whenever** uses the standard library to operate with the system timezone,
-``tzset`` will behave as expected from the documentation.
-Do note that this function is not available on Windows.
-This is a limitation of ``tzset`` itself.
-
-Below is an example of a testing helper that can be used with ``pytest``:
+Here's an example:
 
 .. code-block:: python
 
-   import os
-   import pytest
-   import sys
-   import time
-   from contextlib import contextmanager
-   from unittest.mock import patch
-
-   @contextmanager
-   def system_tz_ams():
-       if sys.platform == "win32":
-           pytest.skip("tzset is not available on Windows")
-       with patch.dict(os.environ, {"TZ": "Europe/Amsterdam"}):
-           time.tzset()
-           yield
-
-       time.tzset()  # don't forget to set the old timezone back
-
-.. code-block:: python
-
-   @system_tz_ams
-   def test_something():
-       SystemDateTime.now()  # as if the system timezone is Amsterdam
+   @time_machine.travel("1980-03-02 02:00 UTC")
+   def test_patch_time():
+       assert Instant.now() == Instant.from_utc(1980, 3, 2, hour=2)
 
 .. _systemtime:
 

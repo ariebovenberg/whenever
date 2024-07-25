@@ -528,16 +528,10 @@ unsafe fn replace(
 
 unsafe fn now(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let state = State::for_type(cls.cast());
-    let (timestamp, nanos) = match state.epoch() {
-        Some(dur) => (dur.as_secs(), dur.subsec_nanos()),
-        _ => Err(py_err!(PyExc_OSError, "SystemTime before UNIX EPOCH"))?,
-    };
+    let (timestamp, nanos) = state.time_ns()?;
     // Technically conversion to i128 can overflow, but only if system
     // time is set to a very very very distant future
-    let utc_dt = timestamp
-        .try_into()
-        .ok()
-        .and_then(Instant::from_timestamp)
+    let utc_dt = Instant::from_timestamp(timestamp)
         .ok_or_value_err("timestamp is out of range")?
         .to_py_ignore_nanos(state.py_api)?;
     defer_decref!(utc_dt);

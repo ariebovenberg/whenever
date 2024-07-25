@@ -1,9 +1,9 @@
 import sys
-from time import sleep
 
 import pytest
+import time_machine
 
-from whenever import ImplicitlyIgnoringDST, InvalidOffset, hours, seconds
+from whenever import ImplicitlyIgnoringDST, Instant, InvalidOffset
 
 
 @pytest.mark.skipif(
@@ -27,27 +27,6 @@ def test_exceptions():
     assert issubclass(InvalidOffset, ValueError)
 
 
+@time_machine.travel("1980-03-02 02:00 UTC")
 def test_patch_time():
-
-    from whenever import Instant, patch_current_time
-
-    i = Instant.from_utc(1980, 3, 2, hour=2)
-
-    with patch_current_time(i, keep_ticking=False) as p:
-        assert Instant.now() == i
-        p.shift(hours=3)
-        p.shift(hours=1)
-        assert i.now() == i.add(hours=4)
-
-    assert Instant.now() != i
-
-    with patch_current_time(i, keep_ticking=True) as p:
-        assert (Instant.now() - i) < seconds(1)
-        p.shift(hours=2)
-        sleep(0.000001)
-        assert hours(2) < (Instant.now() - i) < hours(2.1)
-        p.shift(hours=6)
-        sleep(0.000001)
-        assert hours(8) < (Instant.now() - i) < hours(8.1)
-
-    assert Instant.now() - i > hours(40_000)
+    assert Instant.now() == Instant.from_utc(1980, 3, 2, hour=2)

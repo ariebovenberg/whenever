@@ -143,5 +143,3 @@ Miscellaneous
 
 .. autoexception:: whenever.InvalidOffset
    :show-inheritance:
-
-.. autoclass:: whenever.patch_current_time
