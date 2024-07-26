@@ -1,7 +1,7 @@
 🚀 Changelog
 ============
 
-0.6.4 (2024-07-??)
+0.6.4 (2024-07-26)
 ------------------
 
 - Add helper ``patch_current_time`` for patching current time in whenever (only) (#147)
