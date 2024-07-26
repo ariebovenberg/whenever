@@ -118,7 +118,8 @@ How can I use the pure-Python version?
 
 Whenever is implemented both in Rust and in pure Python.
 By default, the Rust extension is used, as it's faster and more memory-efficient.
-But you can opt out of it if you prefer the pure-Python version.
+But you can opt out of it if you prefer the pure-Python version,
+which has a smaller disk footprint and works on all platforms.
 
 .. note::
 
@@ -141,13 +142,6 @@ You can check if the Rust extension is being used by running:
 
    If you're using Poetry or another third-party package manager,
    you should consult its documentation on opting out of binary wheels.
-
-.. admonition:: Why not publish the pure-Python version separately on PyPI?
-
-   There's no way to do this without creating other problems.
-   See
-   `this issue <https://github.com/ariebovenberg/whenever/issues/158>`_
-   for more information.
 
 
 What's the performance of the pure-Python version?

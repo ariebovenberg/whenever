@@ -1,9 +1,10 @@
 🚀 Changelog
 ============
 
-Development
------------
+0.6.4 (2024-07-??)
+------------------
 
+- Add helper ``patch_current_time`` for patching current time in whenever (only) (#147)
 - Support patching the current time with `time-machine <https://github.com/adamchainz/time-machine>`_ (#147)
 - Remove undocumented ``year``/``month``/``day``/``offset`` properties from ``Instant``
 - Reduce size of binary distributions

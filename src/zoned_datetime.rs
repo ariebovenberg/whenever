@@ -766,7 +766,7 @@ unsafe fn now(cls: *mut PyObject, tz: *mut PyObject) -> PyReturn {
     // OPTIMIZE: faster way without fromtimestamp?
     let dt = DateTime_FromTimestamp(
         DateTimeType,
-        steal!((steal!((timestamp as f64).to_py()?), zoneinfo).to_py()?),
+        steal!((steal!(timestamp.to_py()?), zoneinfo).to_py()?),
         NULL(),
     )
     .as_result()?;

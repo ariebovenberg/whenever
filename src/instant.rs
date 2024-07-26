@@ -39,7 +39,7 @@ pub(crate) const SINGLETONS: &[(&CStr, Instant); 2] = &[
     ),
 ];
 
-const UNIX_EPOCH_INSTANT: i64 = 62_135_683_200; // 1970-01-01 in seconds after 0000-12-31
+pub(crate) const UNIX_EPOCH_INSTANT: i64 = 62_135_683_200; // 1970-01-01 in seconds after 0000-12-31
 pub(crate) const MIN_INSTANT: i64 = 24 * 60 * 60;
 pub(crate) const MAX_INSTANT: i64 = 315_537_983_999;
 
@@ -80,6 +80,10 @@ impl Instant {
 
     pub(crate) const fn total_nanos(&self) -> i128 {
         self.secs as i128 * 1_000_000_000 + self.nanos as i128
+    }
+
+    pub(crate) const fn whole_secs(&self) -> i64 {
+        self.secs
     }
 
     pub(crate) const fn subsec_nanos(&self) -> u32 {

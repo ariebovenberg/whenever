@@ -808,17 +808,77 @@ See the :ref:`API reference <date-and-time-api>` for more details.
 Testing
 -------
 
-**Whenever** supports patching the current time for testing purposes
-using the `time-machine <https://github.com/adamchainz/time-machine>`_ package.
-See its documentation for more details.
+Patching the current time
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Here's an example:
+Sometimes you need to 'fake' the output of ``.now()`` functions, typically for testing.
+**Whenever** supports various ways to do this, depending on your needs:
+
+1. With :class:`whenever.patch_current_time`. This patcher
+   only affects **whenever**, not the standard library or other libraries.
+   See its documentation for more details.
+2. With the `time-machine <https://github.com/adamchainz/time-machine>`_ package.
+   Using ``time-machine`` *does* affect the standard library and other libraries,
+   which can lead to unintended side effects.
+   Note that ``time-machine`` doesn't support PyPy.
+
+.. note::
+
+   It's also possible to use the
+   `freezegun <https://github.com/spulec/freezegun>`_ library,
+   but it will *only work on the Pure-Python version* of **whenever**.
+
+.. tip::
+
+   Instead of relying on patching, consider using dependency injection
+   instead. This is less error-prone and more explicit.
+
+   You can do this by adding ``now`` argument to your function,
+   like this:
+
+   .. code-block:: python
+
+      def greet(name, now=Instant.now):
+          current_time = now()
+          # more code here...
+
+      # in normal use, you don't notice the difference:
+      greet('bob')
+
+      # to test it, pass a custom function:
+      greet('alice', now=lambda: Instant.from_utc(2023, 1, 1))
+
+
+Patching the system timezone
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For changing the system timezone in tests,
+use the :func:`~time.tzset` function from the standard library.
+Since **whenever** uses the standard library to operate with the system timezone,
+``tzset`` will behave as expected from the documentation.
+Do note that this function is not available on Windows.
+This is a limitation of ``tzset`` itself.
+
+Below is an example of a testing helper that can be used with ``pytest``:
 
 .. code-block:: python
 
-   @time_machine.travel("1980-03-02 02:00 UTC")
-   def test_patch_time():
-       assert Instant.now() == Instant.from_utc(1980, 3, 2, hour=2)
+   import os
+   import pytest
+   import sys
+   import time
+   from contextlib import contextmanager
+   from unittest.mock import patch
+
+   @contextmanager
+   def system_tz_ams():
+       if sys.platform == "win32":
+           pytest.skip("tzset is not available on Windows")
+       with patch.dict(os.environ, {"TZ": "Europe/Amsterdam"}):
+           time.tzset()
+           yield
+
+       time.tzset()  # don't forget to set the old timezone back
 
 .. _systemtime:
 

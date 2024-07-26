@@ -9,7 +9,9 @@ python benchmarks/comparison/run_pendulum.py
 python benchmarks/comparison/run_arrow.py
 ```
 
-Tip: make sure to build `whenever` in release mode before running the benchmarks!
+Make sure that:
+- `whenever` is built in release mode
+- `time_machine` isn't installed. **Whenever** detects it and uses a slower code path if it is installed.
 
 ## Generating the graphs
 

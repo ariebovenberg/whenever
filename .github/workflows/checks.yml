@@ -55,6 +55,10 @@ jobs:
         with:
           toolchain: "1.79"
 
+      - name: Add win32 target
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: rustup target add i686-pc-windows-msvc
+
       - uses: actions/setup-python@v5
         if: ${{ !(matrix.os == 'windows-latest') }}
         with:
