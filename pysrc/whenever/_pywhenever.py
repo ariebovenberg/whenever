@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.5"
+__version__ = "0.6.6"
 
 import enum
 import re
@@ -3355,7 +3355,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         tz: str,
         disambiguate: Disambiguate = "raise",
     ) -> None:
-        self._py_dt = _resolve_ambuguity(
+        self._py_dt = _resolve_ambiguity(
             _datetime(
                 year,
                 month,
@@ -3474,7 +3474,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         self, date: Date, /, disambiguate: Disambiguate
     ) -> ZonedDateTime:
         return self._from_py_unchecked(
-            _resolve_ambuguity(
+            _resolve_ambiguity(
                 _datetime.combine(date._py_date, self._py_dt.timetz()).replace(
                     fold=_as_fold(disambiguate)
                 ),
@@ -3489,7 +3489,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         self, time: Time, /, disambiguate: Disambiguate
     ) -> ZonedDateTime:
         return self._from_py_unchecked(
-            _resolve_ambuguity(
+            _resolve_ambiguity(
                 _datetime.combine(
                     self._py_dt, time._py_time, self._py_dt.tzinfo
                 ).replace(fold=_as_fold(disambiguate)),
@@ -3512,7 +3512,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
             kwargs["tzinfo"] = ZoneInfo(tz)
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
         return self._from_py_unchecked(
-            _resolve_ambuguity(
+            _resolve_ambiguity(
                 self._py_dt.replace(fold=_as_fold(disambiguate), **kwargs),
                 kwargs.get("tzinfo", self._py_dt.tzinfo),
                 disambiguate,
@@ -4331,7 +4331,7 @@ class LocalDateTime(_KnowsLocal):
         ZonedDateTime(2020-08-15 23:12:00+02:00[Europe/Amsterdam])
         """
         return ZonedDateTime._from_py_unchecked(
-            _resolve_ambuguity(
+            _resolve_ambiguity(
                 self._py_dt.replace(
                     tzinfo=(zone := ZoneInfo(tz)), fold=_as_fold(disambiguate)
                 ),
@@ -4447,7 +4447,7 @@ _EXC_ADJUST_LOCAL_DATETIME = ImplicitlyIgnoringDST(
 )
 
 
-def _resolve_ambuguity(
+def _resolve_ambiguity(
     dt: _datetime, zone: ZoneInfo, disambiguate: Disambiguate
 ) -> _datetime:
     dt_utc = dt.astimezone(_UTC)
