@@ -1,6 +1,11 @@
 🚀 Changelog
 ============
 
+0.6.6 (2024-07-27)
+------------------
+
+- Fix potential memory leak in ``.now()`` if ``time-machine`` is used
+
 0.6.5 (2024-07-27)
 ------------------
 
