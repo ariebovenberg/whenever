@@ -583,13 +583,38 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR(ptr::addr_of_mut!(state.weekday_enum_members[5]));
     Py_CLEAR(ptr::addr_of_mut!(state.weekday_enum_members[6]));
 
+    // interned strings
+    Py_CLEAR(ptr::addr_of_mut!(state.str_years));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_months));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_weeks));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_days));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_hours));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_minutes));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_seconds));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_milliseconds));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_microseconds));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_nanoseconds));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_year));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_month));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_day));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_hour));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_minute));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_second));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_nanosecond));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_nanos));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_raise));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_tz));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_disambiguate));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_offset));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_ignore_dst));
+
     // exceptions
     Py_CLEAR(ptr::addr_of_mut!(state.exc_repeated));
     Py_CLEAR(ptr::addr_of_mut!(state.exc_skipped));
     Py_CLEAR(ptr::addr_of_mut!(state.exc_invalid_offset));
     Py_CLEAR(ptr::addr_of_mut!(state.exc_implicitly_ignoring_dst));
 
-    // imported modules
+    // imported stuff
     Py_CLEAR(ptr::addr_of_mut!(state.zoneinfo_type));
     Py_CLEAR(ptr::addr_of_mut!(state.timezone_type));
     Py_CLEAR(ptr::addr_of_mut!(state.strptime));
