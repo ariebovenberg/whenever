@@ -946,11 +946,15 @@ unsafe fn from_timestamp(
     let zoneinfo =
         check_from_timestamp_args_return_zoneinfo(args, kwargs, state, "from_timestamp")?;
     defer_decref!(zoneinfo);
-    Instant::from_timestamp(
-        args[0]
-            .to_i64()?
-            .ok_or_type_err("timestamp must be an integer")?,
-    )
+
+    match args[0].to_i64()? {
+        Some(ts) => Instant::from_timestamp(ts),
+        None => Instant::from_timestamp_f64(
+            args[0]
+                .to_f64()?
+                .ok_or_type_err("Timestamp must be an integer or float")?,
+        ),
+    }
     .ok_or_value_err("timestamp is out of range")?
     .to_tz(state.py_api, zoneinfo)?
     .to_obj(cls)

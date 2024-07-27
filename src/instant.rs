@@ -42,6 +42,8 @@ pub(crate) const SINGLETONS: &[(&CStr, Instant); 2] = &[
 pub(crate) const UNIX_EPOCH_INSTANT: i64 = 62_135_683_200; // 1970-01-01 in seconds after 0000-12-31
 pub(crate) const MIN_INSTANT: i64 = 24 * 60 * 60;
 pub(crate) const MAX_INSTANT: i64 = 315_537_983_999;
+const MIN_EPOCH: i64 = MIN_INSTANT - UNIX_EPOCH_INSTANT;
+const MAX_EPOCH: i64 = MAX_INSTANT - UNIX_EPOCH_INSTANT;
 
 impl Instant {
     pub(crate) fn to_datetime(self) -> DateTime {
@@ -109,22 +111,31 @@ impl Instant {
             .map(|secs| Instant { secs, nanos: 0 })
     }
 
+    pub(crate) fn from_timestamp_f64(timestamp: f64) -> Option<Self> {
+        (MIN_EPOCH as f64..MAX_EPOCH as f64)
+            .contains(&timestamp)
+            .then(|| Instant {
+                secs: (timestamp.floor() as i64 + UNIX_EPOCH_INSTANT),
+                nanos: (timestamp * 1_000_000_000_f64).rem_euclid(1_000_000_000_f64) as u32,
+            })
+    }
+
     pub(crate) fn from_timestamp_millis(timestamp: i64) -> Option<Self> {
-        let secs = timestamp / 1_000 + UNIX_EPOCH_INSTANT;
-        ((MIN_INSTANT..=MAX_INSTANT).contains(&secs)).then_some(Instant {
+        let secs = timestamp.div_euclid(1_000) + UNIX_EPOCH_INSTANT;
+        ((MIN_INSTANT..=MAX_INSTANT).contains(&secs)).then(|| Instant {
             secs,
-            nanos: (timestamp % 1_000) as u32 * 1_000_000,
+            nanos: timestamp.rem_euclid(1_000) as u32 * 1_000_000,
         })
     }
 
     pub(crate) fn from_timestamp_nanos(timestamp: i128) -> Option<Self> {
-        i64::try_from(timestamp / 1_000_000_000)
+        i64::try_from(timestamp.div_euclid(1_000_000_000))
             .ok()
-            .map(|secs| secs + UNIX_EPOCH_INSTANT)
+            .map(|s| s + UNIX_EPOCH_INSTANT)
             .filter(|s| (MIN_INSTANT..=MAX_INSTANT).contains(s))
             .map(|secs| Instant {
                 secs,
-                nanos: (timestamp % 1_000_000_000) as u32,
+                nanos: timestamp.rem_euclid(1_000_000_000) as u32,
             })
     }
 
@@ -486,10 +497,13 @@ unsafe fn timestamp_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn from_timestamp(cls: *mut PyObject, ts: *mut PyObject) -> PyReturn {
-    Instant::from_timestamp(
-        ts.to_i64()?
-            .ok_or_type_err("Timestamp must be an integer")?,
-    )
+    match ts.to_i64()? {
+        Some(ts) => Instant::from_timestamp(ts),
+        None => Instant::from_timestamp_f64(
+            ts.to_f64()?
+                .ok_or_type_err("Timestamp must be an integer or float")?,
+        ),
+    }
     .ok_or_value_err("Timestamp out of range")?
     .to_obj(cls.cast())
 }

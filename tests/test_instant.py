@@ -14,6 +14,7 @@ from whenever import (
     SystemDateTime,
     ZonedDateTime,
     hours,
+    milliseconds,
     minutes,
     nanoseconds,
     seconds,
@@ -248,6 +249,11 @@ class TestFromTimestamp:
         assert method(1_597_493_310 * factor) == Instant.from_utc(
             2020, 8, 15, 12, 8, 30
         )
+
+        assert method(-4 * factor) == Instant.from_utc(
+            1969, 12, 31, 23, 59, 56
+        )
+
         with pytest.raises((OSError, OverflowError, ValueError)):
             method(1_000_000_000_000_000_000 * factor)
 
@@ -257,10 +263,17 @@ class TestFromTimestamp:
         with pytest.raises((OSError, OverflowError, ValueError)):
             method(1 << 129)
 
-        try:
-            method(1.0)
-        except TypeError:
-            pass
+        if method != Instant.from_timestamp:
+            with pytest.raises(TypeError):
+                method(1.0)
+
+        assert Instant.from_timestamp_millis(-4) == Instant.from_timestamp(
+            0
+        ) - milliseconds(4)
+
+        assert Instant.from_timestamp_nanos(-4) == Instant.from_timestamp(
+            0
+        ) - nanoseconds(4)
 
     def test_extremes(self):
         assert Instant.from_timestamp(
@@ -284,6 +297,32 @@ class TestFromTimestamp:
             Instant.from_timestamp_nanos(Instant.MIN.timestamp_nanos())
             == Instant.MIN
         )
+
+    def test_float(self):
+        assert Instant.from_timestamp(1.0) == Instant.from_timestamp(1)
+        assert Instant.from_timestamp(1.000_000_001) == Instant.from_timestamp(
+            1
+        ) + nanoseconds(1)
+
+        assert Instant.from_timestamp(
+            -9.000_000_100
+        ) == Instant.from_timestamp(-9) - nanoseconds(100)
+
+        with pytest.raises((ValueError, OverflowError)):
+            Instant.from_timestamp(9e200)
+
+        with pytest.raises((ValueError, OverflowError)):
+            Instant.from_timestamp(float(Instant.MAX.timestamp()) + 0.99999999)
+
+        with pytest.raises((ValueError, OverflowError)):
+            Instant.from_timestamp(float("inf"))
+
+        with pytest.raises((ValueError, OverflowError)):
+            Instant.from_timestamp(float("nan"))
+
+    def test_invalid(self):
+        with pytest.raises(TypeError):
+            Instant.from_timestamp("2020")  # type: ignore[arg-type]
 
 
 def test_repr():

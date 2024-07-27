@@ -415,6 +415,9 @@ class TestFromTimestamp:
         with pytest.raises(TypeError):
             method(0, offset="3", ignore_dst=True)
 
+        with pytest.raises(TypeError):
+            method("0", offset=3, ignore_dst=True)
+
         with pytest.raises(ValueError):
             method(0, offset=hours(31), ignore_dst=True)
 
@@ -432,6 +435,55 @@ class TestFromTimestamp:
 
         with pytest.raises(ImplicitlyIgnoringDST):
             method(0, offset=3)
+
+        assert OffsetDateTime.from_timestamp_millis(
+            -4, offset=1, ignore_dst=True
+        ).instant() == Instant.from_timestamp(0) - milliseconds(4)
+
+        assert OffsetDateTime.from_timestamp_nanos(
+            -4, offset=-3, ignore_dst=True
+        ).instant() == Instant.from_timestamp(0) - nanoseconds(4)
+
+    def test_float(self):
+        assert OffsetDateTime.from_timestamp(
+            1.0, offset=1, ignore_dst=True
+        ).exact_eq(OffsetDateTime.from_timestamp(1, offset=1, ignore_dst=True))
+
+        assert OffsetDateTime.from_timestamp(
+            1.000_000_001, offset=1, ignore_dst=True
+        ).exact_eq(
+            OffsetDateTime.from_timestamp(1, offset=1, ignore_dst=True).add(
+                nanoseconds=1, ignore_dst=True
+            )
+        )
+
+        assert OffsetDateTime.from_timestamp(
+            -9.000_000_100, offset=-2, ignore_dst=True
+        ).exact_eq(
+            OffsetDateTime.from_timestamp(
+                -9, offset=-2, ignore_dst=True
+            ).subtract(nanoseconds=100, ignore_dst=True)
+        )
+
+        with pytest.raises((ValueError, OverflowError)):
+            OffsetDateTime.from_timestamp(9e200, ignore_dst=True, offset=0)
+
+        with pytest.raises((ValueError, OverflowError)):
+            OffsetDateTime.from_timestamp(
+                float(Instant.MAX.timestamp()) + 0.99999999,
+                ignore_dst=True,
+                offset=0,
+            )
+
+        with pytest.raises((ValueError, OverflowError)):
+            OffsetDateTime.from_timestamp(
+                float("inf"), ignore_dst=True, offset=0
+            )
+
+        with pytest.raises((ValueError, OverflowError)):
+            OffsetDateTime.from_timestamp(
+                float("nan"), ignore_dst=True, offset=0
+            )
 
     def test_nanos(self):
         assert OffsetDateTime.from_timestamp_nanos(

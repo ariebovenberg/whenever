@@ -575,10 +575,13 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn from_timestamp(cls: *mut PyObject, arg: *mut PyObject) -> PyReturn {
-    Instant::from_timestamp(
-        arg.to_i64()?
-            .ok_or_type_err("argument must be an integer")?,
-    )
+    match arg.to_i64()? {
+        Some(ts) => Instant::from_timestamp(ts),
+        None => Instant::from_timestamp_f64(
+            arg.to_f64()?
+                .ok_or_type_err("Timestamp must be an integer or float")?,
+        ),
+    }
     .ok_or_value_err("timestamp is out of range")
     .and_then(|inst| inst.to_system_tz(State::for_type(cls.cast()).py_api))?
     .to_obj(cls.cast())

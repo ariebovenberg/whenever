@@ -908,12 +908,16 @@ unsafe fn from_timestamp(
     let state = State::for_type(cls);
     let offset_secs =
         check_from_timestamp_args_return_offset("from_timestamp", args, kwargs, state)?;
-    Instant::from_timestamp(
-        args[0]
-            .to_i64()?
-            .ok_or_value_err("timestamp must be an integer")?,
-    )
-    .ok_or_value_err("timestamp is out of range")?
+
+    match args[0].to_i64()? {
+        Some(ts) => Instant::from_timestamp(ts),
+        None => Instant::from_timestamp_f64(
+            args[0]
+                .to_f64()?
+                .ok_or_type_err("Timestamp must be an integer or float")?,
+        ),
+    }
+    .ok_or_value_err("Timestamp is out of range")?
     .shift_secs_unchecked(offset_secs as i64)
     .to_datetime()
     .with_offset_unchecked(offset_secs)
@@ -932,7 +936,7 @@ unsafe fn from_timestamp_millis(
     Instant::from_timestamp_millis(
         args[0]
             .to_i64()?
-            .ok_or_value_err("timestamp must be an integer")?,
+            .ok_or_type_err("timestamp must be an integer")?,
     )
     .ok_or_value_err("timestamp is out of range")?
     .shift_secs_unchecked(offset_secs as i64)
@@ -953,7 +957,7 @@ unsafe fn from_timestamp_nanos(
     Instant::from_timestamp_nanos(
         args[0]
             .to_i128()?
-            .ok_or_value_err("timestamp must be an integer")?,
+            .ok_or_type_err("timestamp must be an integer")?,
     )
     .ok_or_value_err("timestamp is out of range")?
     .shift_secs_unchecked(offset_secs as i64)
