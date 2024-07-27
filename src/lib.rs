@@ -722,6 +722,7 @@ impl State {
 
     unsafe fn time_ns_py(&self) -> PyResult<(i64, u32)> {
         let ts = PyObject_CallNoArgs(self.time_ns).as_result()?;
+        defer_decref!(ts);
         let ns = (ts as *mut PyObject)
             .to_i64()?
             .ok_or_py_err(PyExc_RuntimeError, "time_ns() returned a non-integer")?;
