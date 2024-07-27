@@ -741,6 +741,17 @@ class TestFromTimestamp:
         with pytest.raises(TypeError):
             method()
 
+        with pytest.raises(TypeError):
+            method("0")
+
+        assert SystemDateTime.from_timestamp_millis(
+            -4,
+        ).instant() == Instant.from_timestamp(0).subtract(milliseconds=4)
+
+        assert SystemDateTime.from_timestamp_nanos(
+            -4,
+        ).instant() == Instant.from_timestamp(0).subtract(nanoseconds=4)
+
     @system_tz_ams()
     def test_nanos(self):
         assert SystemDateTime.from_timestamp_nanos(
@@ -756,6 +767,50 @@ class TestFromTimestamp:
         ).exact_eq(
             SystemDateTime(2020, 8, 15, 14, 8, 30, nanosecond=123_000_000)
         )
+
+    @system_tz_ams()
+    def test_float(self):
+        assert SystemDateTime.from_timestamp(
+            1.0,
+        ).exact_eq(
+            SystemDateTime.from_timestamp(
+                1,
+            )
+        )
+
+        assert SystemDateTime.from_timestamp(
+            1.000_000_001,
+        ).exact_eq(
+            SystemDateTime.from_timestamp(
+                1,
+            ).add(
+                nanoseconds=1,
+            )
+        )
+
+        assert SystemDateTime.from_timestamp(
+            -9.000_000_100,
+        ).exact_eq(
+            SystemDateTime.from_timestamp(
+                -9,
+            ).subtract(
+                nanoseconds=100,
+            )
+        )
+
+        with pytest.raises((ValueError, OverflowError)):
+            SystemDateTime.from_timestamp(9e200)
+
+        with pytest.raises((ValueError, OverflowError)):
+            SystemDateTime.from_timestamp(
+                float(Instant.MAX.timestamp()) + 0.99999999,
+            )
+
+        with pytest.raises((ValueError, OverflowError)):
+            SystemDateTime.from_timestamp(float("inf"))
+
+        with pytest.raises((ValueError, OverflowError)):
+            SystemDateTime.from_timestamp(float("nan"))
 
 
 @system_tz_nyc()

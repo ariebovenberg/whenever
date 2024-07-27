@@ -1,6 +1,13 @@
 🚀 Changelog
 ============
 
+0.6.5 (2024-07-27)
+------------------
+
+- ``from_timestamp`` now also accepts floats, to ease porting code from ``datetime`` (#159)
+- Fixed incorrect fractional seconds when parsing negative values in ``from_timestamp`` methods.
+- Fix some places where ``ValueError`` was raised instead of ``TypeError``
+
 0.6.4 (2024-07-26)
 ------------------
 

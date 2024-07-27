@@ -942,6 +942,9 @@ class TestFromTimestamp:
         with pytest.raises(TypeError):
             method(0, tz=3)
 
+        with pytest.raises(TypeError):
+            method("0", tz="America/New_York")
+
         with pytest.raises(ZoneInfoNotFoundError):
             method(0, tz="America/Nowhere")
 
@@ -959,6 +962,14 @@ class TestFromTimestamp:
 
         with pytest.raises(TypeError):
             method(0, "bar")
+
+        assert ZonedDateTime.from_timestamp_millis(
+            -4, tz="America/Nuuk"
+        ).instant() == Instant.from_timestamp(0) - milliseconds(4)
+
+        assert ZonedDateTime.from_timestamp_nanos(
+            -4, tz="America/Nuuk"
+        ).instant() == Instant.from_timestamp(0).subtract(nanoseconds=4)
 
     def test_nanos(self):
         assert ZonedDateTime.from_timestamp_nanos(
@@ -991,6 +1002,56 @@ class TestFromTimestamp:
                 tz="America/Nuuk",
             )
         )
+
+    def test_float(self):
+        assert ZonedDateTime.from_timestamp(
+            1.0,
+            tz="America/New_York",
+        ).exact_eq(
+            ZonedDateTime.from_timestamp(
+                1,
+                tz="America/New_York",
+            )
+        )
+
+        assert ZonedDateTime.from_timestamp(
+            1.000_000_001,
+            tz="America/New_York",
+        ).exact_eq(
+            ZonedDateTime.from_timestamp(
+                1,
+                tz="America/New_York",
+            ).add(
+                nanoseconds=1,
+            )
+        )
+
+        assert ZonedDateTime.from_timestamp(
+            -9.000_000_100,
+            tz="America/New_York",
+        ).exact_eq(
+            ZonedDateTime.from_timestamp(
+                -9,
+                tz="America/New_York",
+            ).subtract(
+                nanoseconds=100,
+            )
+        )
+
+        with pytest.raises((ValueError, OverflowError)):
+            ZonedDateTime.from_timestamp(9e200, tz="America/New_York")
+
+        with pytest.raises((ValueError, OverflowError)):
+            ZonedDateTime.from_timestamp(
+                float(Instant.MAX.timestamp()) + 0.99999999,
+                tz="America/New_York",
+            )
+
+        with pytest.raises((ValueError, OverflowError)):
+            ZonedDateTime.from_timestamp(float("inf"), tz="America/New_York")
+
+        with pytest.raises((ValueError, OverflowError)):
+            ZonedDateTime.from_timestamp(float("nan"), tz="America/New_York")
 
 
 def test_repr():

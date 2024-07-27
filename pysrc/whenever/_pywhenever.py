@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.4"
+__version__ = "0.6.5"
 
 import enum
 import re
@@ -2186,6 +2186,13 @@ class _KnowsInstant(_BasicConversions):
     def timestamp(self) -> int:
         """The UNIX timestamp for this datetime. Inverse of :meth:`from_timestamp`.
 
+        Note
+        ----
+        In contrast to the standard library, this method always returns an integer,
+        not a float. This is because floating point timestamps are not precise
+        enough to represent all instants to nanosecond precision.
+        This decision is consistent with other modern date-time libraries.
+
         Example
         -------
         >>> Instant.from_utc(1970, 1, 1).timestamp()
@@ -2207,12 +2214,20 @@ class _KnowsInstant(_BasicConversions):
     if not TYPE_CHECKING:
 
         @classmethod
-        def from_timestamp(cls: type[_T], i: int, /, **kwargs) -> _T:
+        def from_timestamp(cls: type[_T], i: int | float, /, **kwargs) -> _T:
             """Create an instance from a UNIX timestamp.
             The inverse of :meth:`~_KnowsInstant.timestamp`.
 
             :class:`~ZonedDateTime` and :class:`~OffsetDateTime` require
             a ``tz=`` and ``offset=`` kwarg, respectively.
+
+            Note
+            ----
+            ``from_timestamp()`` also accepts floats, in order to ease
+            migration from the standard library.
+            Note however that ``timestamp()`` only returns integers.
+            The reason is that floating point timestamps are not precise
+            enough to represent all instants to nanosecond precision.
 
             Example
             -------
@@ -2561,11 +2576,16 @@ class Instant(_KnowsInstant):
         return cls._from_py_unchecked(_fromtimestamp(secs, _UTC), nanos)
 
     @classmethod
-    def from_timestamp(cls, i: int, /) -> Instant:
-        return cls._from_py_unchecked(_fromtimestamp(i, _UTC), 0)
+    def from_timestamp(cls, i: int | float, /) -> Instant:
+        secs, fract = divmod(i, 1)
+        return cls._from_py_unchecked(
+            _fromtimestamp(secs, _UTC), int(fract * 1_000_000_000)
+        )
 
     @classmethod
     def from_timestamp_millis(cls, i: int, /) -> Instant:
+        if not isinstance(i, int):
+            raise TypeError("method requires an integer")
         secs, millis = divmod(i, 1_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _UTC), millis * 1_000_000
@@ -2573,6 +2593,8 @@ class Instant(_KnowsInstant):
 
     @classmethod
     def from_timestamp_nanos(cls, i: int, /) -> Instant:
+        if not isinstance(i, int):
+            raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
         return cls._from_py_unchecked(_fromtimestamp(secs, _UTC), nanos)
 
@@ -2978,8 +3000,10 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     ) -> OffsetDateTime:
         if ignore_dst is not True:
             raise _EXC_TIMESTAMP_DST
+        secs, fract = divmod(i, 1)
         return cls._from_py_unchecked(
-            _fromtimestamp(i, _load_offset(offset)), 0
+            _fromtimestamp(secs, _load_offset(offset)),
+            int(fract * 1_000_000_000),
         )
 
     @classmethod
@@ -2988,6 +3012,8 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     ) -> OffsetDateTime:
         if ignore_dst is not True:
             raise _EXC_TIMESTAMP_DST
+        if not isinstance(i, int):
+            raise TypeError("method requires an integer")
         secs, millis = divmod(i, 1_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _load_offset(offset)), millis * 1_000_000
@@ -2999,6 +3025,8 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     ) -> OffsetDateTime:
         if ignore_dst is not True:
             raise _EXC_TIMESTAMP_DST
+        if not isinstance(i, int):
+            raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _load_offset(offset)), nanos
@@ -3404,10 +3432,15 @@ class ZonedDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def from_timestamp(cls, i: int, /, *, tz: str) -> ZonedDateTime:
-        return cls._from_py_unchecked(_fromtimestamp(i, ZoneInfo(tz)), 0)
+        secs, fract = divmod(i, 1)
+        return cls._from_py_unchecked(
+            _fromtimestamp(secs, ZoneInfo(tz)), int(fract * 1_000_000_000)
+        )
 
     @classmethod
     def from_timestamp_millis(cls, i: int, /, *, tz: str) -> ZonedDateTime:
+        if not isinstance(i, int):
+            raise TypeError("method requires an integer")
         secs, millis = divmod(i, 1_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, ZoneInfo(tz)), millis * 1_000_000
@@ -3415,6 +3448,8 @@ class ZonedDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def from_timestamp_nanos(cls, i: int, /, *, tz: str) -> ZonedDateTime:
+        if not isinstance(i, int):
+            raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, ZoneInfo(tz)), nanos
@@ -3738,11 +3773,16 @@ class SystemDateTime(_KnowsInstantAndLocal):
         return cls._from_py_unchecked(odt._py_dt, odt._nanos)
 
     @classmethod
-    def from_timestamp(cls, i: int, /) -> SystemDateTime:
-        return cls._from_py_unchecked(_fromtimestamp(i, _UTC).astimezone(), 0)
+    def from_timestamp(cls, i: int | float, /) -> SystemDateTime:
+        secs, fract = divmod(i, 1)
+        return cls._from_py_unchecked(
+            _fromtimestamp(secs, _UTC).astimezone(), int(fract * 1_000_000_000)
+        )
 
     @classmethod
     def from_timestamp_millis(cls, i: int, /) -> SystemDateTime:
+        if not isinstance(i, int):
+            raise TypeError("method requires an integer")
         secs, millis = divmod(i, 1_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _UTC).astimezone(), millis * 1_000_000
@@ -3750,6 +3790,8 @@ class SystemDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def from_timestamp_nanos(cls, i: int, /) -> SystemDateTime:
+        if not isinstance(i, int):
+            raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _UTC).astimezone(), nanos
