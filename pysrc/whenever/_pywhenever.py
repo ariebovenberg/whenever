@@ -130,6 +130,7 @@ _object_new = object.__new__
 _MAX_DELTA_MONTHS = 9999 * 12
 _MAX_DELTA_DAYS = 9999 * 366
 _MAX_DELTA_NANOS = _MAX_DELTA_DAYS * 24 * 3_600_000_000_000
+_24H_IN_NANOS = 86_400_000_000_000
 _UNSET = object()
 
 
@@ -853,6 +854,35 @@ class TimeDelta(_ImmutableBase):
             if self._total_ns >= 0
             else (-hours, -mins, -secs, -ms)
         )
+
+    def relative_to(
+        self,
+        dt: _KnowsLocal,
+        *,
+        include_months: bool,
+        ignore_dst: bool = False,
+    ) -> DateTimeDelta:
+        """Determine the calendar components of a delta relative to a datetime
+
+        Example
+        -------
+        TODO
+        """
+        if isinstance(dt, (LocalDateTime, OffsetDateTime)):
+            if ignore_dst is not True:
+                raise ImplicitlyIgnoringDST(
+                    "Calculating the DateTimeDelta relative to a local or offset"
+                    "datetime implicitly ignores DST. If you want to account for "
+                    "DST and other timezone changes, pass a `ZonedDateTime` instead."
+                    "Alternatively, pass `ignore_dst=True` to explicitly ignore DST."
+                )
+            date1 = dt.date()
+            date2 = date1.add(days=int(self.in_days_of_24h()))
+
+            return (date2 - date1) + TimeDelta._from_nanos_unchecked(
+                int(fmod(self._total_ns, _24H_IN_NANOS))
+            )
+        return self + days(0)
 
     def py_timedelta(self) -> _timedelta:
         """Convert to a :class:`~datetime.timedelta`

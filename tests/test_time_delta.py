@@ -7,7 +7,12 @@ import pytest
 from pytest import approx
 
 from whenever import (
+    DateTimeDelta,
+    ImplicitlyIgnoringDST,
+    LocalDateTime,
+    OffsetDateTime,
     TimeDelta,
+    ZonedDateTime,
     hours,
     microseconds,
     milliseconds,
@@ -613,3 +618,58 @@ def test_compatible_unpickle():
     assert pickle.loads(dumped) == TimeDelta(
         hours=1, minutes=2, seconds=3, microseconds=4
     )
+
+
+class TestRelativeTo:
+    def test_zero(self):
+        assert (
+            TimeDelta().relative_to(ZonedDateTime(2021, 1, 1, tz="UTC"))
+            == DateTimeDelta()
+        )
+
+    def test_less_than_day(self):
+        assert TimeDelta(
+            hours=23, minutes=59, seconds=59, nanoseconds=999_999_999
+        ).relative_to(ZonedDateTime(2021, 2, 8, tz="UTC")) == DateTimeDelta(
+            hours=23, minutes=59, seconds=59, nanoseconds=999_999_999
+        )
+        assert TimeDelta(
+            hours=23, minutes=59, seconds=59, nanoseconds=999_999_999
+        ).relative_to(
+            OffsetDateTime(2021, 8, 3, offset=+9), ignore_dst=True
+        ) == DateTimeDelta(
+            hours=23, minutes=59, seconds=59, nanoseconds=999_999_999
+        )
+        assert TimeDelta(
+            hours=23, minutes=59, seconds=59, nanoseconds=999_999_999
+        ).relative_to(
+            LocalDateTime(2021, 8, 3), ignore_dst=True
+        ) == DateTimeDelta(
+            hours=23, minutes=59, seconds=59, nanoseconds=999_999_999
+        )
+
+    def test_no_dst(self):
+        delta = TimeDelta(hours=24 * 99 + 20, nanoseconds=3)
+        assert delta.relative_to(
+            LocalDateTime(2021, 2, 9, hour=23),
+            ignore_dst=True,
+        ) == DateTimeDelta(months=3, days=10, hours=20, nanoseconds=3)
+        assert (-delta).relative_to(
+            LocalDateTime(2021, 2, 9, hour=23),
+            ignore_dst=True,
+        ) == DateTimeDelta(months=-3, days=-7, hours=-20, nanoseconds=-3)
+
+        assert delta.relative_to(
+            OffsetDateTime(2021, 2, 9, hour=23, offset=-4),
+            ignore_dst=True,
+        ) == DateTimeDelta(months=3, days=10, hours=20, nanoseconds=3)
+        assert (-delta).relative_to(
+            OffsetDateTime(2021, 2, 9, hour=23, offset=+10),
+            ignore_dst=True,
+        ) == DateTimeDelta(months=-3, days=-7, hours=-20, nanoseconds=-3)
+
+        # ignore_dst required
+        with pytest.raises(ImplicitlyIgnoringDST):
+            delta.relative_to(LocalDateTime(2021, 3, 14, hour=1))
+        with pytest.raises(ImplicitlyIgnoringDST):
+            delta.relative_to(OffsetDateTime(2021, 3, 14, hour=1, offset=-4))
