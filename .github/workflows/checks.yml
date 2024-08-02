@@ -123,6 +123,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: "1.79"
+          components: "clippy, rustfmt"
       - run: |
           pip install .
           pip install -U pip

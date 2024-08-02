@@ -8,7 +8,7 @@
 [![](https://img.shields.io/github/actions/workflow/status/ariebovenberg/whenever/checks.yml?branch=main&style=flat-square)](https://github.com/ariebovenberg/whenever)
 [![](https://img.shields.io/readthedocs/whenever.svg?style=flat-square)](http://whenever.readthedocs.io/)
 
-**Typed and DST-safe datetimes for Python, written in Rust\***
+**Typed and DST-safe datetimes for Python, available in speedy Rust or pure Python.**
 
 Do you cross your fingers every time you work with Python's datetime—hoping that you didn't mix naive and aware?
 or that you avoided its [other pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/)?
@@ -20,6 +20,8 @@ There’s no way to be sure...
 *Whenever* helps you write **correct** and **type checked** datetime code.
 Mistakes become <span style="text-decoration: underline; text-decoration-color: red; text-decoration-style: wavy">red squiggles</span> in your IDE, instead of bugs in production.
 It's also **way faster** than other third-party libraries—and usually the standard library as well.
+If performance isn't your top priority, a **pure Python** version is available as well.
+
 
   <p align="center">
     <picture align="center">
@@ -49,8 +51,6 @@ It's also **way faster** than other third-party libraries—and usually the stan
 > ⚠️ **Note**: Whenever is in pre-1.0 beta. The API may change
 > as we gather feedback and improve the library.
 > Leave a ⭐️ on github if you'd like to see how this project develops!
-
-\**Skeptical of Rust? Don't worry, it's available in pure Python too!*
 
 ## Why not the standard library?
 
@@ -218,6 +218,5 @@ This project is inspired by the following projects. Check them out!
 
 - [Noda Time](https://nodatime.org/) and [Joda Time](https://www.joda.org/joda-time/)
 - [Temporal](https://tc39.es/proposal-temporal/docs/)
-- [Chrono](https://docs.rs/chrono/latest/chrono/)
 
 The benchmark comparison graph is based on the one from the [Ruff](https://github.com/astral-sh/ruff) project.

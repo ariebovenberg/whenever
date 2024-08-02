@@ -204,11 +204,7 @@ unsafe fn create_enum(name: &CStr, members: &[(&CStr, i32)]) -> PyReturn {
 
 unsafe fn new_exc(module: *mut PyObject, name: &CStr, base: *mut PyObject) -> *mut PyObject {
     let e = PyErr_NewException(name.as_ptr(), base, NULL());
-    if e.is_null() {
-        return NULL();
-    }
-    defer_decref!(e);
-    if PyModule_AddType(module, e.cast()) != 0 {
+    if e.is_null() || PyModule_AddType(module, e.cast()) != 0 {
         return NULL();
     }
     e
@@ -239,9 +235,8 @@ unsafe fn new_type<T: PyWrapped>(
         let Some(pyvalue) = value.to_obj(cls).ok() else {
             return false;
         };
-        // NOTE: we don't decref the value here on purpose.
-        // Singletons work out refcount/GC-wise in the end.
-        if PyDict_SetItemString((*cls).tp_dict, name.as_ptr().cast(), pyvalue) != 0 {
+        defer_decref!(pyvalue);
+        if PyDict_SetItemString((*cls).tp_dict, name.as_ptr(), pyvalue) != 0 {
             return false;
         }
     }
@@ -440,46 +435,45 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
 
     // Making time patcheable results in a performance hit.
     // Only enable it if the time_machine module is available.
-    state.time_machine_exists = match PyImport_ImportModule(c"time_machine".as_ptr()).as_result() {
-        Ok(m) => {
-            Py_DecRef(m);
-            true
-        }
-        Err(_) => {
-            PyErr_Clear();
-            false
-        }
-    };
-
+    state.time_machine_exists = unwrap_or_errcode!(time_machine_installed());
     state.time_patch = TimePatch::Unset;
 
     0
 }
 
-unsafe fn do_visit(target: *mut PyObject, visit: visitproc, arg: *mut c_void) {
-    let obj: *mut PyObject = target.cast();
-    if !obj.is_null() {
-        (visit)(obj, arg);
+unsafe fn time_machine_installed() -> PyResult<bool> {
+    // Important: we don't import the `time_machine` here,
+    // because that would be slower. We only need to check its existence.
+    let find_spec = PyObject_GetAttrString(
+        steal!(PyImport_ImportModule(c"importlib.util".as_ptr()).as_result()?),
+        c"find_spec".as_ptr(),
+    );
+    defer_decref!(find_spec);
+    let spec = call1(find_spec, steal!("time_machine".to_py()?))?;
+    defer_decref!(spec);
+    Ok((spec as *mut PyObject) != Py_None())
+}
+
+unsafe fn traverse(target: *mut PyObject, visit: visitproc, arg: *mut c_void) {
+    if !target.is_null() {
+        (visit)(target, arg);
     }
 }
 
-unsafe fn do_type_visit(
+unsafe fn traverse_type(
     target: *mut PyTypeObject,
     visit: visitproc,
     arg: *mut c_void,
     num_singletons: usize,
 ) {
-    let obj: *mut PyObject = target.cast();
-    if !obj.is_null() {
-        (visit)(obj, arg);
-        // XXX: This trick SEEMS to let us avoid adding GC
-        // support to our types: Since our types are atomic and immutable
-        // this should be allowed...
+    if !target.is_null() {
+        // XXX: This trick SEEMS to let us avoid adding GC support to our types.
+        // Since our types are atomic and immutable this should be allowed...
         // ...BUT there is a reference cycle between the class and the
         // singleton instances (e.g. the Date.MAX instance and Date class itself)
         // Visiting the type once for each singleton should make GC aware of this.
-        for _ in 0..num_singletons {
-            (visit)(obj, arg);
+        for _ in 0..(num_singletons + 1) {
+            (visit)(target.cast(), arg);
         }
     }
 }
@@ -491,46 +485,46 @@ unsafe extern "C" fn module_traverse(
 ) -> c_int {
     let state = State::for_mod(module);
     // types
-    do_type_visit(state.date_type, visit, arg, date::SINGLETONS.len());
-    do_type_visit(state.time_type, visit, arg, time::SINGLETONS.len());
-    do_type_visit(
+    traverse_type(state.date_type, visit, arg, date::SINGLETONS.len());
+    traverse_type(state.time_type, visit, arg, time::SINGLETONS.len());
+    traverse_type(
         state.date_delta_type,
         visit,
         arg,
         date_delta::SINGLETONS.len(),
     );
-    do_type_visit(
+    traverse_type(
         state.time_delta_type,
         visit,
         arg,
         time_delta::SINGLETONS.len(),
     );
-    do_type_visit(
+    traverse_type(
         state.datetime_delta_type,
         visit,
         arg,
         datetime_delta::SINGLETONS.len(),
     );
-    do_type_visit(
+    traverse_type(
         state.local_datetime_type,
         visit,
         arg,
         local_datetime::SINGLETONS.len(),
     );
-    do_type_visit(state.instant_type, visit, arg, instant::SINGLETONS.len());
-    do_type_visit(
+    traverse_type(state.instant_type, visit, arg, instant::SINGLETONS.len());
+    traverse_type(
         state.offset_datetime_type,
         visit,
         arg,
         offset_datetime::SINGLETONS.len(),
     );
-    do_type_visit(
+    traverse_type(
         state.zoned_datetime_type,
         visit,
         arg,
         zoned_datetime::SINGLETONS.len(),
     );
-    do_type_visit(
+    traverse_type(
         state.system_datetime_type,
         visit,
         arg,
@@ -539,22 +533,22 @@ unsafe extern "C" fn module_traverse(
 
     // enum members
     for &member in state.weekday_enum_members.iter() {
-        do_visit(member, visit, arg);
+        traverse(member, visit, arg);
     }
 
     // exceptions
-    do_visit(state.exc_repeated, visit, arg);
-    do_visit(state.exc_skipped, visit, arg);
-    do_visit(state.exc_invalid_offset, visit, arg);
-    do_visit(state.exc_implicitly_ignoring_dst, visit, arg);
+    traverse(state.exc_repeated, visit, arg);
+    traverse(state.exc_skipped, visit, arg);
+    traverse(state.exc_invalid_offset, visit, arg);
+    traverse(state.exc_implicitly_ignoring_dst, visit, arg);
 
     // Imported modules
-    do_visit(state.zoneinfo_type, visit, arg);
-    do_visit(state.timezone_type, visit, arg);
-    do_visit(state.strptime, visit, arg);
-    do_visit(state.format_rfc2822, visit, arg);
-    do_visit(state.parse_rfc2822, visit, arg);
-    do_visit(state.time_ns, visit, arg);
+    traverse(state.zoneinfo_type, visit, arg);
+    traverse(state.timezone_type, visit, arg);
+    traverse(state.strptime, visit, arg);
+    traverse(state.format_rfc2822, visit, arg);
+    traverse(state.parse_rfc2822, visit, arg);
+    traverse(state.time_ns, visit, arg);
 
     0
 }
