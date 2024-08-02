@@ -1,6 +1,12 @@
 🚀 Changelog
 ============
 
+0.6.7 (2024-08-06)
+------------------
+
+- Add Python 3.13 binary wheels, now that its ABI is stable
+- Small improvements to import speed
+
 0.6.6 (2024-07-27)
 ------------------
 

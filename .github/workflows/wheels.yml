@@ -61,9 +61,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
+        if : ${{ matrix.os == 'windows' }}
         with:
-          python-version: '3.12'
+          python-version: '3.13'
           architecture: ${{ matrix.python-architecture || 'x64' }}
+          allow-prereleases: true
       - run: pip install -U twine
       - name: Generate third-party license information
         run: |
@@ -73,7 +75,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --strip --out dist --interpreter '3.9 3.10 3.11 3.12'
+          args: --release --strip --out dist --interpreter '3.9 3.10 3.11 3.12 3.13'
           manylinux: ${{ matrix.manylinux || 'auto' }}
           sccache: 'true'
           rust-toolchain: "1.79"
