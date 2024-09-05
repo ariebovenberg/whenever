@@ -900,11 +900,12 @@ pub(crate) enum Ambiguity {
 }
 
 pub(crate) unsafe extern "C" fn generic_dealloc(slf: *mut PyObject) {
-    let tp_free = PyType_GetSlot(Py_TYPE(slf), Py_tp_free);
+    let cls = Py_TYPE(slf);
+    let tp_free = PyType_GetSlot(cls, Py_tp_free);
     debug_assert_ne!(tp_free, core::ptr::null_mut());
     let f: freefunc = std::mem::transmute(tp_free);
     f(slf.cast());
-    Py_DECREF(Py_TYPE(slf).cast());
+    Py_DECREF(cls.cast());
 }
 
 #[inline]

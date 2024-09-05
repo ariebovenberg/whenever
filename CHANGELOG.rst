@@ -1,6 +1,11 @@
 🚀 Changelog
 ============
 
+0.6.8 (2024-09-05)
+------------------
+
+- Fix issue with object deallocation in particular Windows builds (#167)
+
 0.6.7 (2024-08-06)
 ------------------
 
