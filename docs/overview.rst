@@ -502,7 +502,7 @@ DST-safe arithmetic
 Date and time arithmetic can be tricky due to daylight saving time (DST)
 and other timezone changes.
 The API of the different classes is designed to avoid implicitly ignoring these.
-The type annotations and descriptive error messages should automatically guide you
+The type annotations and descriptive error messages should guide you
 to the correct usage.
 
 - :class:`~whenever.Instant` has no calendar, so it doesn't support

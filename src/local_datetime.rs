@@ -482,7 +482,8 @@ unsafe fn _shift_method(
             "Adding time units to a LocalDateTime implicitly ignores \
             Daylight Saving Time. Instead, convert to a ZonedDateTime first \
             using assume_tz(). Or, if you're sure you want to ignore DST, \
-            explicitly pass ignore_dst=True."
+            explicitly pass ignore_dst=True. For more information, see \
+            whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
         ))?
     }
     DateTime::extract(slf)
@@ -505,7 +506,8 @@ unsafe fn difference(
         "The difference between two local datetimes implicitly ignores DST transitions. \
         and other timezone changes. To perform DST-safe arithmetic, convert to a ZonedDateTime \
         first using assume_tz(). Or, if you're sure you want to ignore DST, explicitly pass \
-        ignore_dst=True.",
+        ignore_dst=True. For more information, see \
+        whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic",
     )?;
     let [arg] = *args else {
         Err(type_err!("difference() takes exactly 1 argument"))?
