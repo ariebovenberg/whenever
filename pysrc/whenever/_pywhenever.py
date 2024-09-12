@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.8"
+__version__ = "0.6.9"
 
 import enum
 import re
@@ -2942,7 +2942,8 @@ class OffsetDateTime(_KnowsInstantAndLocal):
                 "and other timezone changes. Instead, use `Instant.now()` or "
                 "`ZonedDateTime.now(<tz name>)` if you know the timezone. "
                 "Or, if you want to ignore DST and accept potentially incorrect offsets, "
-                "pass `ignore_dst=True` to this method."
+                "pass `ignore_dst=True` to this method. For more information, see "
+                "whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
             )
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(
@@ -4425,15 +4426,17 @@ _EXC_TIMESTAMP_DST = ImplicitlyIgnoringDST(
     "and other timezone changes. To perform a DST-safe conversion, use "
     "ZonedDateTime.from_timestamp() instead. "
     "Or, if you don't know the timezone and accept potentially incorrect results "
-    "during DST transitions, pass `ignore_dst=True`."
+    "during DST transitions, pass `ignore_dst=True`. For more information, see "
+    "whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
 )
 
 
-# FUTURE: docs link
 _IGNORE_DST_SUGGESTION = """\
 To perform DST-safe operations, convert to a ZonedDateTime first. \
 Or, if you don't know the timezone and accept potentially incorrect results \
-during DST transitions, pass `ignore_dst=True`."""
+during DST transitions, pass `ignore_dst=True`. For more information, see \
+whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
+"""
 
 
 _EXC_ADJUST_OFFSET_DATETIME = ImplicitlyIgnoringDST(

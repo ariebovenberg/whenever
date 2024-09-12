@@ -4,7 +4,7 @@ authors = [
     {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com"},
 ]
 readme = "README.md"
-version = "0.6.8"
+version = "0.6.9"
 description = "Modern datetime library for Python, written in Rust"
 requires-python = ">=3.9"
 classifiers = [

@@ -363,10 +363,11 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             {
                 Err(py_err!(
                     state.exc_implicitly_ignoring_dst,
-                    "Subtracting a delta from a LocalDateTime implicitly ignores \
+                    "Subtracting a delta from an OffsetDateTime implicitly ignores \
                      Daylight Saving Time. Instead, convert to a ZonedDateTime first \
                      using to_tz(). Or, if you're sure you want to ignore DST, \
-                     explicitly pass ignore_dst=True."
+                     explicitly pass ignore_dst=True. For more information, see \
+                     whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
                 ))?
             } else {
                 return Ok(newref(Py_NotImplemented()));
@@ -659,7 +660,8 @@ unsafe fn now(
          and other timezone changes. Instead, use `Instant.now()` or \
          `ZonedDateTime.now(<tz name>)` if you know the timezone. \
          Or, if you want to ignore DST and accept potentially incorrect offsets, \
-         pass `ignore_dst=True` to this method.",
+         pass `ignore_dst=True` to this method. For more information, see \
+         whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic",
     )?;
 
     let offset_secs = extract_offset(offset, state.time_delta_type)?;
@@ -796,10 +798,11 @@ unsafe fn _shift_method(
     if !ignore_dst {
         Err(py_err!(
             state.exc_implicitly_ignoring_dst,
-            "Adding time units to a LocalDateTime implicitly ignores \
+            "Adding time units to an OffsetDateTime implicitly ignores \
             Daylight Saving Time. Instead, convert to a ZonedDateTime first \
             using assume_tz(). Or, if you're sure you want to ignore DST, \
-            explicitly pass ignore_dst=True."
+            explicitly pass ignore_dst=True. For more information, see \
+            whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
         ))?
     }
     let OffsetDateTime {
@@ -1264,9 +1267,10 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
 ];
 
 static IGNORE_DST_MSG: &str =
-    "Adjusting a fixed offset datetime implicitly ignores DST and other timezone changes. \
+    "Adjusting a fixed-offset datetime implicitly ignores DST and other timezone changes. \
     To perform DST-safe operations, convert to a ZonedDateTime first using `to_tz()`. \
     Or, if you don't know the timezone and accept potentially incorrect results \
-    during DST transitions, pass `ignore_dst=True`.";
+    during DST transitions, pass `ignore_dst=True`. For more information, see \
+    whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";
 
 type_spec!(OffsetDateTime, SLOTS);
