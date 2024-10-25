@@ -3,9 +3,12 @@ name = "whenever"
 authors = [
     {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com"},
 ]
+maintainers = [
+    {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com"},
+]
 readme = "README.md"
-version = "0.6.9"
-description = "Modern datetime library for Python, written in Rust"
+version = "0.6.10"
+description = "Modern datetime library for Python"
 requires-python = ">=3.9"
 classifiers = [
     "Development Status :: 4 - Beta",

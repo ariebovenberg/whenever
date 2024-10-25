@@ -703,11 +703,20 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(day_of_week, "Return the day of the week"),
     method!(at, "Combine with a time to create a datetime", METH_O),
     method!(__reduce__, ""),
-    method_kwargs!(add, "Add various units to the date"),
-    method_kwargs!(subtract, "Subtract various units from the date"),
+    method_kwargs!(
+        add,
+        "add($self, *, years=0, months=0, weeks=0, days=0)\n--\n\n\
+        Add various units to the date"
+    ),
+    method_kwargs!(
+        subtract,
+        "subtract($self, *, years=0, months=0, weeks=0, days=0)\n--\n\n\
+        Subtract various units from the date"
+    ),
     method_kwargs!(
         replace,
-        "Return a new date with the specified components replaced"
+        "replace($self, *, year=None, month=None, day=None)\n--\n\n\
+        Return a new date with the specified components replaced"
     ),
     PyMethodDef::zeroed(),
 ];

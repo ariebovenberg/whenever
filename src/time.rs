@@ -226,14 +226,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         args,
         kwargs,
         c"|lll$l:Time".as_ptr(),
-        vec![
-            c"hour".as_ptr() as *mut _,
-            c"minute".as_ptr() as *mut _,
-            c"second".as_ptr() as *mut _,
-            c"nanosecond".as_ptr() as *mut _,
-            NULL(),
-        ]
-        .as_mut_ptr(),
+        arg_vec(&[c"hour", c"minute", c"second", c"nanosecond"]).as_mut_ptr(),
         &mut hour,
         &mut minute,
         &mut second,
@@ -450,7 +443,11 @@ unsafe fn replace(
 
 static mut METHODS: &[PyMethodDef] = &[
     method!(py_time, "Convert to a Python datetime.time"),
-    method_kwargs!(replace, "Replace one or more components of the time"),
+    method_kwargs!(
+        replace,
+        "replace($self, *, hour=None, minute=None, second=None, nanosecond=None)\n--\n\n\
+        Replace one or more components of the time"
+    ),
     method!(
         format_common_iso,
         "Return the time in the common ISO 8601 format"

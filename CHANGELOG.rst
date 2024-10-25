@@ -1,6 +1,18 @@
 🚀 Changelog
 ============
 
+0.6.10 (2024-10-30)
+-------------------
+
+**Improved**
+
+- Improve method documentation and autocomplete support (#172, #173, #176)
+
+**Fixed**
+
+- Remove lingering undocumented ``offset`` on ``Instant``
+- Fix incorrect ``LocalDateTime.difference`` return type annotation
+
 0.6.9 (2024-09-12)
 ------------------
 

@@ -41,15 +41,19 @@ Concrete classes
 
 .. autoclass:: whenever.Instant
    :members:
+     from_utc,
      format_rfc3339,
      parse_rfc3339,
      format_rfc2822,
      parse_rfc2822,
      add,
-     subtract
+     subtract,
    :special-members: __add__, __sub__
    :member-order: bysource
    :show-inheritance:
+
+   .. autoattribute:: MIN
+   .. autoattribute:: MAX
 
 .. autoclass:: whenever.LocalDateTime
    :members:
@@ -62,6 +66,9 @@ Concrete classes
    :special-members: __eq__
    :member-order: bysource
    :show-inheritance:
+
+   .. autoattribute:: MIN
+   .. autoattribute:: MAX
 
 .. autoclass:: whenever.OffsetDateTime
    :members:

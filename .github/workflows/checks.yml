@@ -19,7 +19,7 @@ jobs:
           "3.10",
           "3.11",
           "3.12",
-          "3.13-dev",
+          "3.13",
         ]
     steps:
       - uses: actions/checkout@v4
@@ -62,14 +62,14 @@ jobs:
       - uses: actions/setup-python@v5
         if: ${{ !(matrix.os == 'windows-latest') }}
         with:
-          python-version: '3.12'
+          python-version: '3.13'
 
       # ensure 32-bit target is tested
       # FUTURE: Add a linux 32-bit target
       - uses: actions/setup-python@v5
         if: ${{ matrix.os == 'windows-latest' }}
         with:
-          python-version: '3.12'
+          python-version: '3.13'
           architecture: x86
 
 
@@ -91,7 +91,7 @@ jobs:
           "3.10",
           "3.11",
           "3.12",
-          "3.13-dev",
+          "3.13",
           # # NOTE: pypy/pytest fails sometimes (https://github.com/pypy/pypy/issues/3959)
           "pypy3.9",
           "pypy3.10"

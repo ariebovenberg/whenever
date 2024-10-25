@@ -7,6 +7,7 @@
 - [ ] Build runs successfully
 - [ ] Type stubs updated
 - [ ] Docs updated
+- [ ] If docstrings were affected, check if they appear correctly in the docs as well as autocomplete
 
 # Release checklist (maintainers only)
 

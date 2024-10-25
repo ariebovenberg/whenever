@@ -1,5 +1,5 @@
 sphinx<9
-furo>=2024.4.27,<2024.9
+furo>=2024.8.6,<2024.9
 sphinx-copybutton~=0.5
 myst-parser>=3,<5
 enum-tools[sphinx]==0.12.0

@@ -179,3 +179,17 @@ Additional advantages of ``pyo3_ffi`` are:
 - Its API is more stable than PyO3's, which is still evolving.
 - It allows support for per-interpreter GIL, and free-threaded Python,
   which are not yet supported by PyO3.
+
+Why can't I subclass Whenever classes?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Whenever classes aren't meant to be subclassed.
+There's no plan to change this due to the following reasons:
+
+1. The benefits of subclassing are limited.
+   If you want to extend the classes, composition is a better way to do it.
+   Alternatively, you can use Python's dynamic features to create
+   something that "quacks" like a subclass.
+2. For a class to support subclassing properly, a lot of extra work is needed.
+   It also adds many subtle ways to misuse the API, that are hard to control.
+3. Enabling subclassing would undo some performance optimizations.

@@ -361,8 +361,8 @@ Ambiguity in timezones
 
 In timezones, local clocks are often moved backwards and forwards
 due to Daylight Saving Time (DST) or political decisions.
-This creates two types of situations for the :class:`~whenever.ZonedDateTime`
-and :class:`~whenever.SystemDateTime` types:
+This makes it complicated to map a local datetime to a point on the timeline.
+Two common situations arise:
 
 - When the clock moves backwards, there is a period of time that repeats.
   For example, Sunday October 29th 2023 2:30am occurred twice in Paris.
@@ -374,7 +374,7 @@ and :class:`~whenever.SystemDateTime` types:
   Common approaches are to extrapolate the time forward or backwards
   to 1:30am or 3:30am.
 
-  .. important::
+  .. note::
 
      You may wonder why skipped time is "extrapolated" like this,
      and not truncated. Why turn 2:30am into 3:30am and not cut

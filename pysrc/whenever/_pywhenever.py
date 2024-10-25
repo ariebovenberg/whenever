@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.9"
+__version__ = "0.6.10"
 
 import enum
 import re
@@ -1931,6 +1931,7 @@ class _BasicConversions(_ImmutableBase, ABC):
 
         See :ref:`here <iso8601>` for more information.
         """
+        raise NotImplementedError()
 
     @classmethod
     @abstractmethod
@@ -2053,7 +2054,8 @@ class _KnowsLocal(_BasicConversions, ABC):
             The same exceptions as the constructor may be raised.
             For system and zoned datetimes,
             The ``disambiguate=`` keyword argument is **required** to
-            resolve ambiguities.
+            resolve ambiguities. For more information, see
+            whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones
 
             Example
             -------
@@ -2083,6 +2085,8 @@ class _KnowsLocal(_BasicConversions, ABC):
             The same exceptions as the constructor may be raised.
             For system and zoned datetimes,
             you will need to pass ``disambiguate=`` to resolve ambiguities.
+            For more information, see
+            whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones
             """
 
         def replace_time(self: _T, time: Time, /, **kwargs) -> _T:
@@ -2122,7 +2126,11 @@ class _KnowsLocal(_BasicConversions, ABC):
         ) -> _T:
             """Add date and time units to this datetime.
 
-            See :ref:`the docs on arithmetic <arithmetic>` for more information.
+            Arithmetic on datetimes is complicated.
+            Additional keyword arguments ``ignore_dst`` and ``disambiguate``
+            may be needed for certain types and situations.
+            See :ref:`the docs on arithmetic <arithmetic>` for more information
+            and the reasoning behind it.
             """
 
         @abstractmethod
@@ -2141,10 +2149,7 @@ class _KnowsLocal(_BasicConversions, ABC):
             nanoseconds: int = 0,
             **kwargs,
         ) -> _T:
-            """Subtract date and time units to this datetime.
-
-            See :ref:`the docs on arithmetic <arithmetic>` for more information.
-            """
+            """Inverse of :meth:`add`."""
 
 
 class _KnowsInstant(_BasicConversions):
@@ -2530,21 +2535,19 @@ class Instant(_KnowsInstant):
     Example
     -------
     >>> from whenever import Instant
-    >>> py311_release_livestream = Instant.from_utc(2022, 10, 24, hour=17)
+    >>> py311_release = Instant.from_utc(2022, 10, 24, hour=17)
     Instant(2022-10-24 17:00:00Z)
-    >>> py311_release_livestream.add(hours=3).timestamp()
+    >>> py311_release.add(hours=3).timestamp()
     1666641600
-
-    Note
-    ----
-    The corresponding :class:`~datetime.datetime` object is always
-    timezone-aware and has a fixed :attr:`~datetime.UTC` tzinfo.
     """
 
     __slots__ = ()
 
     def __init__(self) -> None:
-        raise TypeError("Instant instances cannot be created")
+        raise TypeError(
+            "Instant instances cannot be created through the constructor. "
+            "Use `Instant.from_utc` or `Instant.now` instead."
+        )
 
     @classmethod
     def from_utc(
@@ -2558,6 +2561,7 @@ class Instant(_KnowsInstant):
         *,
         nanosecond: int = 0,
     ) -> Instant:
+        """Create an Instant defined by a UTC date and time."""
         if nanosecond < 0 or nanosecond >= 1_000_000_000:
             raise ValueError(f"nanosecond out of range: {nanosecond}")
         return cls._from_py_unchecked(
@@ -2565,18 +2569,24 @@ class Instant(_KnowsInstant):
             nanosecond,
         )
 
-    offset = TimeDelta.ZERO
-
     MIN: ClassVar[Instant]
+    """The minimum representable instant."""
+
     MAX: ClassVar[Instant]
+    """The maximum representable instant."""
 
     @classmethod
     def now(cls) -> Instant:
+        """Create an Instant from the current time."""
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(_fromtimestamp(secs, _UTC), nanos)
 
     @classmethod
     def from_timestamp(cls, i: int | float, /) -> Instant:
+        """Create an Instant from a UNIX timestamp (in seconds).
+
+        The inverse of the ``timestamp()`` method.
+        """
         secs, fract = divmod(i, 1)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _UTC), int(fract * 1_000_000_000)
@@ -2584,6 +2594,10 @@ class Instant(_KnowsInstant):
 
     @classmethod
     def from_timestamp_millis(cls, i: int, /) -> Instant:
+        """Create an Instant from a UNIX timestamp (in milliseconds).
+
+        The inverse of the ``timestamp_millis()`` method.
+        """
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, millis = divmod(i, 1_000)
@@ -2593,6 +2607,10 @@ class Instant(_KnowsInstant):
 
     @classmethod
     def from_timestamp_nanos(cls, i: int, /) -> Instant:
+        """Create an Instant from a UNIX timestamp (in nanoseconds).
+
+        The inverse of the ``timestamp_nanos()`` method.
+        """
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
@@ -2600,6 +2618,17 @@ class Instant(_KnowsInstant):
 
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> Instant:
+        """Create an Instant from a standard library ``datetime`` object
+        with ``tzinfo=datetime.timezone.utc``.
+
+        The inverse of the ``py_datetime()`` method.
+
+        Important
+        ---------
+        If the datetime tzinfo is *not* UTC, a ``ValueError`` is raised.
+        If you want to convert a datetime with a different timezone to UTC,
+        use ``ZonedDateTime`` or ``OffsetDateTime``.
+        """
         if d.tzinfo is not _UTC:
             raise ValueError(
                 "Can only create Instant from UTC datetime, "
@@ -2610,6 +2639,10 @@ class Instant(_KnowsInstant):
         )
 
     def format_common_iso(self) -> str:
+        """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SSZ``
+
+        The inverse of the ``parse_common_iso()`` method.
+        """
         return (
             self._py_dt.isoformat()[:-6]
             + bool(self._nanos) * f".{self._nanos:09d}".rstrip("0")
@@ -2618,28 +2651,15 @@ class Instant(_KnowsInstant):
 
     @classmethod
     def parse_common_iso(cls, s: str, /) -> Instant:
-        """Parse a UTC datetime in common ISO 8601 format.
+        """Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SSZ``
 
-        Inverse of :meth:`~_DateTime.format_common_iso`
+        The inverse of the ``format_common_iso()`` method.
 
-        Example
-        -------
-        >>> Instant.parse_common_iso("2020-08-15T23:12:00Z")
-        Instant(2020-08-15 23:12:00Z)
-        >>>
-        >>> # also valid:
-        >>> Instant.parse_common_iso("2020-08-15T23:12:00+00:00")
-        >>> Instant.parse_common_iso("2020-08-15T23:12:00.34Z")
-        >>>
-        >>> # not valid
-        >>> Instant.parse_common_iso("2020-08-15T23:12:00+02:00")
-        >>> Instant.parse_common_iso("2020-08-15 23:12:00Z")
-        >>> Instant.parse_common_iso("2020-08-15T23:12:00-00:00")
-
-        Warning
-        -------
-        Nonzero offsets will not be implicitly converted to UTC.
-        Use :meth:`OffsetDateTime.parse_common_iso` if you'd like to
+        Important
+        ---------
+        Nonzero offsets will *not* be implicitly converted to UTC,
+        but will raise a ``ValueError``.
+        Use ``OffsetDateTime.parse_common_iso`` if you'd like to
         parse an ISO 8601 string with a nonzero offset.
         """
         if (
@@ -2656,7 +2676,7 @@ class Instant(_KnowsInstant):
     def format_rfc2822(self) -> str:
         """Format as an RFC 2822 string.
 
-        The inverse of :meth:`parse_rfc2822`.
+        The inverse of the ``parse_rfc2822()`` method.
 
         Example
         -------
@@ -2669,7 +2689,7 @@ class Instant(_KnowsInstant):
     def parse_rfc2822(cls, s: str, /) -> Instant:
         """Parse a UTC datetime in RFC 2822 format.
 
-        The inverse of :meth:`format_rfc2822`.
+        The inverse of the ``format_rfc2822()`` method.
 
         Example
         -------
@@ -2685,11 +2705,11 @@ class Instant(_KnowsInstant):
         >>> # Error: includes offset. Use OffsetDateTime.parse_rfc2822() instead
         >>> Instant.parse_rfc2822("Sat, 15 Aug 2020 23:12:00 +0200")
 
-        Warning
-        -------
-        * Nonzero offsets will not be implicitly converted to UTC.
-          Use :meth:`OffsetDateTime.parse_rfc2822` if you'd like to
-          parse an RFC 2822 string with a nonzero offset.
+        Important
+        ---------
+        Nonzero offsets will not be implicitly converted to UTC.
+        Use ``OffsetDateTime.parse_rfc2822()`` if you'd like to
+        parse an RFC 2822 string with a nonzero offset.
         """
         # FUTURE: disallow +0000
         parsed = _parse_rfc2822(s)
@@ -2712,7 +2732,7 @@ class Instant(_KnowsInstant):
     def format_rfc3339(self) -> str:
         """Format as an RFC 3339 string
 
-        Inverse of :meth:`parse_rfc3339`.
+        The inverse of the ``parse_rfc3339()`` method.
 
         Example
         -------
@@ -2729,7 +2749,7 @@ class Instant(_KnowsInstant):
     def parse_rfc3339(cls, s: str, /) -> Instant:
         """Parse a UTC datetime in RFC 3339 format.
 
-        Inverse of :meth:`format_rfc3339`.
+        The inverse of the ``format_rfc3339()`` method.
 
         Example
         -------
@@ -2744,9 +2764,10 @@ class Instant(_KnowsInstant):
         >>> # not valid (nonzero offset):
         >>> Instant.parse_rfc3339("2020-08-15T23:12:00+02:00")
 
-        Warning
-        -------
-        Nonzero offsets will not be implicitly converted to UTC.
+        Important
+        ---------
+        Nonzero offsets will not be implicitly converted to UTC,
+        but will raise a ValueError.
         Use :meth:`OffsetDateTime.parse_rfc3339` if you'd like to
         parse an RFC 3339 string with a nonzero offset.
         """
@@ -2771,7 +2792,7 @@ class Instant(_KnowsInstant):
     ) -> Instant:
         """Add a time amount to this instant.
 
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
+        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`_ for more information.
         """
         return self + TimeDelta(
             hours=hours,
@@ -2794,7 +2815,7 @@ class Instant(_KnowsInstant):
     ) -> Instant:
         """Subtract a time amount from this instant.
 
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
+        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`_ for more information.
         """
         return self.add(
             hours=-hours,
@@ -2808,7 +2829,7 @@ class Instant(_KnowsInstant):
     def __add__(self, delta: TimeDelta) -> Instant:
         """Add a time amount to this datetime.
 
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
+        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`_ for more information.
         """
         if isinstance(delta, TimeDelta):
             delta_secs, nanos = divmod(
@@ -2830,8 +2851,10 @@ class Instant(_KnowsInstant):
     def __sub__(self, other: TimeDelta | _KnowsInstant) -> Instant | TimeDelta:
         """Subtract another exact time or timedelta
 
-        Subtraction of deltas happens in the same way as :meth:`subtract`.
-        Subtraction of instants happens the same way as :meth:`~_KnowsInstant.difference`.
+        Subtraction of deltas happens in the same way as the :meth:`subtract` method.
+        Subtraction of instants happens the same way as the :meth:`~_KnowsInstant.difference` method.
+
+        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`_ for more information.
 
         Example
         -------
@@ -2886,20 +2909,16 @@ class OffsetDateTime(_KnowsInstantAndLocal):
 
     Example
     -------
-    >>> # 9 AM in Salt Lake City, with the UTC offset at the time
-    >>> pycon23_start = OffsetDateTime(2023, 4, 21, hour=9, offset=-6)
-    OffsetDateTime(2023-04-21 09:00:00-06:00)
-
-    Warning
-    -------
-    This class does *not* account for daylight saving time.
-    If you need to adjust an offset datetime and account for DST,
-    convert to a :class:`~ZonedDateTime`.
+    >>> # Midnight in Salt Lake City
+    >>> OffsetDateTime(2023, 4, 21, offset=-6)
+    OffsetDateTime(2023-04-21 00:00:00-06:00)
 
     Note
     ----
-    The corresponding :class:`~datetime.datetime` object is always
-    timezone-aware and has a fixed :class:`datetime.timezone` tzinfo.
+    Adjusting instances of this class do *not* account for daylight saving time.
+    If you need to add or subtract durations from an offset datetime
+    and account for DST, convert to a ``ZonedDateTime`` first,
+    This class knows when the offset changes.
     """
 
     __slots__ = ()
@@ -2936,6 +2955,17 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     def now(
         cls, offset: int | TimeDelta, /, *, ignore_dst: bool = False
     ) -> OffsetDateTime:
+        """Create an instance from the current time.
+
+        Important
+        ---------
+        Getting the current time with a fixed offset implicitly ignores DST
+        and other timezone changes. Instead, use ``Instant.now()`` or
+        ``ZonedDateTime.now(<tz_id>)`` if you know the timezone.
+        Or, if you want to ignore DST and accept potentially incorrect offsets,
+        pass ``ignore_dst=True`` to this method. For more information, see
+        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
+        """
         if ignore_dst is not True:
             raise ImplicitlyIgnoringDST(
                 "Getting the current time with a fixed offset implicitly ignores DST "
@@ -2951,6 +2981,10 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         )
 
     def format_common_iso(self) -> str:
+        """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
+
+        The inverse of the ``parse_common_iso()`` method.
+        """
         iso_without_fracs = self._py_dt.isoformat()
         return (
             iso_without_fracs[:19]
@@ -2960,16 +2994,14 @@ class OffsetDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def parse_common_iso(cls, s: str, /) -> OffsetDateTime:
-        """Parse a *popular version* of the ISO 8601 datetime format.
+        """Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
 
-        Inverse of :meth:`~_DateTime.format_common_iso`
+        The inverse of the ``format_common_iso()`` method.
 
         Example
         -------
         >>> OffsetDateTime.parse_common_iso("2020-08-15T23:12:00+02:00")
         OffsetDateTime(2020-08-15 23:12:00+02:00)
-        >>> # also valid:
-        >>> OffsetDateTime.parse_common_iso("2020-08-15T23:12:00Z")
         """
         if (match := _match_offset_str(s)) is None:
             raise ValueError(f"Invalid format: {s!r}")
@@ -2999,6 +3031,21 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     def from_timestamp(
         cls, i: int, /, *, offset: int | TimeDelta, ignore_dst: bool = False
     ) -> OffsetDateTime:
+        """Create an instance from a UNIX timestamp (in seconds).
+
+        The inverse of the ``timestamp()`` method.
+
+        Important
+        ---------
+        Creating an instance from a UNIX timestamp implicitly ignores DST
+        and other timezone changes. This because you don't strictly
+        know if the given offset is correct for an arbitrary timestamp.
+        Instead, use ``Instant.from_timestamp()``
+        or ``ZonedDateTime.from_timestamp()`` if you know the timezone.
+        Or, if you want to ignore DST and accept potentially incorrect offsets,
+        pass ``ignore_dst=True`` to this method. For more information, see
+        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
+        """
         if ignore_dst is not True:
             raise _EXC_TIMESTAMP_DST
         secs, fract = divmod(i, 1)
@@ -3011,6 +3058,21 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     def from_timestamp_millis(
         cls, i: int, /, *, offset: int | TimeDelta, ignore_dst: bool = False
     ) -> OffsetDateTime:
+        """Create an instance from a UNIX timestamp (in milliseconds).
+
+        The inverse of the ``timestamp_millis()`` method.
+
+        Important
+        ---------
+        Creating an instance from a UNIX timestamp implicitly ignores DST
+        and other timezone changes. This because you don't strictly
+        know if the given offset is correct for an arbitrary timestamp.
+        Instead, use ``Instant.from_timestamp_millis()``
+        or ``ZonedDateTime.from_timestamp_millis()`` if you know the timezone.
+        Or, if you want to ignore DST and accept potentially incorrect offsets,
+        pass ``ignore_dst=True`` to this method. For more information, see
+        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
+        """
         if ignore_dst is not True:
             raise _EXC_TIMESTAMP_DST
         if not isinstance(i, int):
@@ -3024,6 +3086,21 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     def from_timestamp_nanos(
         cls, i: int, /, *, offset: int | TimeDelta, ignore_dst: bool = False
     ) -> OffsetDateTime:
+        """Create an instance from a UNIX timestamp (in nanoseconds).
+
+        The inverse of the ``timestamp_nanos()`` method.
+
+        Important
+        ---------
+        Creating an instance from a UNIX timestamp implicitly ignores DST
+        and other timezone changes. This because you don't strictly
+        know if the given offset is correct for an arbitrary timestamp.
+        Instead, use ``Instant.from_timestamp_nanos()``
+        or ``ZonedDateTime.from_timestamp_nanos()`` if you know the timezone.
+        Or, if you want to ignore DST and accept potentially incorrect offsets,
+        pass ``ignore_dst=True`` to this method. For more information, see
+        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
+        """
         if ignore_dst is not True:
             raise _EXC_TIMESTAMP_DST
         if not isinstance(i, int):
@@ -3035,6 +3112,16 @@ class OffsetDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> OffsetDateTime:
+        """Create an instance from a standard library ``datetime`` object.
+
+        The inverse of the ``py_datetime()`` method.
+
+        Important
+        ---------
+        If the datetime tzinfo is *not* a fixed offset,
+        a ``ValueError`` is raised. If you want to convert a datetime
+        with a ``ZoneInfo`` tzinfo, use ``ZonedDateTime.from_py_datetime()`` instead.
+        """
         if not isinstance(d.tzinfo, _timezone):
             raise ValueError(
                 "Datetime's tzinfo is not a datetime.timezone, "
@@ -3048,6 +3135,17 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     def replace(
         self, /, ignore_dst: bool = False, **kwargs: Any
     ) -> OffsetDateTime:
+        """Construct a new instance with the given fields replaced.
+
+        Important
+        ---------
+        Replacing fields of an offset datetime implicitly ignores DST
+        and other timezone changes. This because it isn't guaranteed that
+        the same offset will be valid at the new time.
+        If you want to account for DST, convert to a ``ZonedDateTime`` first.
+        Or, if you want to ignore DST and accept potentially incorrect offsets,
+        pass ``ignore_dst=True`` to this method.
+        """
         _check_invalid_replace_kwargs(kwargs)
         if ignore_dst is not True:
             raise _EXC_ADJUST_OFFSET_DATETIME
@@ -3063,6 +3161,17 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     def replace_date(
         self, date: Date, /, *, ignore_dst: bool = False
     ) -> OffsetDateTime:
+        """Construct a new instance with the date replaced.
+
+        Important
+        ---------
+        Replacing the date of an offset datetime implicitly ignores DST
+        and other timezone changes. This because it isn't guaranteed that
+        the same offset will be valid at the new date.
+        If you want to account for DST, convert to a ``ZonedDateTime`` first.
+        Or, if you want to ignore DST and accept potentially incorrect offsets,
+        pass ``ignore_dst=True`` to this method.
+        """
         if ignore_dst is not True:
             raise _EXC_ADJUST_OFFSET_DATETIME
         return self._from_py_unchecked(
@@ -3075,6 +3184,17 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     def replace_time(
         self, time: Time, /, *, ignore_dst: bool = False
     ) -> OffsetDateTime:
+        """Construct a new instance with the time replaced.
+
+        Important
+        ---------
+        Replacing the time of an offset datetime implicitly ignores DST
+        and other timezone changes. This because it isn't guaranteed that
+        the same offset will be valid at the new time.
+        If you want to account for DST, convert to a ``ZonedDateTime`` first.
+        Or, if you want to ignore DST and accept potentially incorrect offsets,
+        pass ``ignore_dst=True`` to this method.
+        """
         if ignore_dst is not True:
             raise _EXC_ADJUST_OFFSET_DATETIME
         return self._from_py_unchecked(
@@ -3090,6 +3210,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         return hash((self._py_dt, self._nanos))
 
     def __sub__(self, other: _KnowsInstant) -> TimeDelta:
+        """Calculate the duration relative to another exact time."""
         if isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
             raise _EXC_ADJUST_OFFSET_DATETIME
         return super().__sub__(other)  # type: ignore[misc, no-any-return]
@@ -3104,11 +3225,11 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         >>> OffsetDateTime.strptime("2020-08-15+0200", "%Y-%m-%d%z")
         OffsetDateTime(2020-08-15 00:00:00+02:00)
 
-        Note
-        ----
+        Important
+        ---------
         The parsed ``tzinfo`` must be a fixed offset
-        (:class:`~datetime.timezone` instance).
-        This means you need to include the directive ``%z``, ``%Z``, or ``%:z``
+        (``datetime.timezone`` instance).
+        This means you MUST include the directive ``%z``, ``%Z``, or ``%:z``
         in the format string.
         """
         parsed = _datetime.strptime(s, fmt)
@@ -3127,7 +3248,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     def format_rfc2822(self) -> str:
         """Format as an RFC 2822 string.
 
-        Inverse of :meth:`parse_rfc2822`.
+        The inverse of the ``parse_rfc2822()`` method.
 
         Example
         -------
@@ -3140,7 +3261,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     def parse_rfc2822(cls, s: str, /) -> OffsetDateTime:
         """Parse an offset datetime in RFC 2822 format.
 
-        Inverse of :meth:`format_rfc2822`.
+        The inverse of the ``format_rfc2822()`` method.
 
         Example
         -------
@@ -3168,7 +3289,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     def format_rfc3339(self) -> str:
         """Format as an RFC 3339 string
 
-        Inverse of :meth:`parse_rfc3339`.
+        The inverse of the ``parse_rfc3339()`` method.
 
         Example
         -------
@@ -3184,9 +3305,9 @@ class OffsetDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def parse_rfc3339(cls, s: str, /) -> OffsetDateTime:
-        """Parse a UTC datetime in RFC 3339 format.
+        """Parse a fixed-offset datetime in RFC 3339 format.
 
-        Inverse of :meth:`format_rfc3339`.
+        The inverse of the ``format_rfc3339()`` method.
 
         Example
         -------
@@ -3223,10 +3344,38 @@ class OffsetDateTime(_KnowsInstantAndLocal):
 
     @no_type_check
     def add(self, *args, **kwargs) -> OffsetDateTime:
+        """Add a time amount to this datetime.
+
+        Important
+        ---------
+        Shifting a fixed-offset datetime implicitly ignore DST
+        and other timezone changes. This because it isn't guaranteed that
+        the same offset will be valid at the resulting time.
+        If you want to account for DST, convert to a ``ZonedDateTime`` first.
+        Or, if you want to ignore DST and accept potentially incorrect offsets,
+        pass ``ignore_dst=True`` to this method.
+
+        For more information, see
+        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
+        """
         return self._shift(1, *args, **kwargs)
 
     @no_type_check
     def subtract(self, *args, **kwargs) -> OffsetDateTime:
+        """Subtract a time amount from this datetime.
+
+        Important
+        ---------
+        Shifting a fixed-offset datetime implicitly ignore DST
+        and other timezone changes. This because it isn't guaranteed that
+        the same offset will be valid at the resulting time.
+        If you want to account for DST, convert to a ``ZonedDateTime`` first.
+        Or, if you want to ignore DST and accept potentially incorrect offsets,
+        pass ``ignore_dst=True`` to this method.
+
+        For more information, see
+        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
+        """
         return self._shift(-1, *args, **kwargs)
 
     @no_type_check
@@ -3326,19 +3475,21 @@ def _unpkl_offset(data: bytes) -> OffsetDateTime:
 
 @final
 class ZonedDateTime(_KnowsInstantAndLocal):
-    """A datetime associated with a IANA timezone ID.
-    Useful for representing the local time bound to a specific location.
+    """A datetime associated with a timezone in the IANA database.
+    Useful for representing the exact time at a specific location.
 
     Example
     -------
-    >>> changing_the_guard = ZonedDateTime(2024, 12, 8, hour=11, tz="Europe/London")
-    >>> # Explicitly resolve ambiguities when clocks are set backwards.
-    >>> night_shift = ZonedDateTime(2023, 10, 29, 1, 15, tz="Europe/London", disambiguate="later")
+    >>> ZonedDateTime(2024, 12, 8, hour=11, tz="Europe/Paris")
+    ZonedDateTime(2024-12-08 11:00:00+01:00[Europe/Paris])
+    >>> # Explicitly resolve ambiguities during DST transitions
+    >>> ZonedDateTime(2023, 10, 29, 1, 15, tz="Europe/London", disambiguate="earlier")
+    ZonedDateTime(2023-10-29 01:15:00+01:00[Europe/London])
 
-
-    Attention
+    Important
     ---------
-    To use this type properly, read more about :ref:`ambiguity <ambiguity>`.
+    To use this type properly, read more about
+    `ambiguity in timezones <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_.
     """
 
     __slots__ = ()
@@ -3377,12 +3528,28 @@ class ZonedDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def now(cls, tz: str, /) -> ZonedDateTime:
+        """Create an instance from the current time in the given timezone."""
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, ZoneInfo(tz)), nanos
         )
 
     def format_common_iso(self) -> str:
+        """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
+
+        The inverse of the ``parse_common_iso()`` method.
+
+        Example
+        -------
+        >>> ZonedDateTime(2020, 8, 15, hour=23, minute=12, tz="Europe/London")
+        ZonedDateTime(2020-08-15 23:12:00+01:00[Europe/London])
+
+        Important
+        ---------
+        The timezone ID is a recent extension to the ISO 8601 format (RFC 9557).
+        Althought it is gaining popularity, it is not yet widely supported
+        by ISO 8601 parsers.
+        """
         py_isofmt = self._py_dt.isoformat()
         return (
             py_isofmt[:19]  # without the offset
@@ -3393,15 +3560,19 @@ class ZonedDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def parse_common_iso(cls, s: str, /) -> ZonedDateTime:
-        """Parse from the common ISO 8601 format.
+        """Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
 
-        Inverse of :meth:`~_DateTime.format_common_iso`.
+        The inverse of the ``format_common_iso()`` method.
 
         Example
         -------
-
         >>> ZonedDateTime.parse_common_iso("2020-08-15T23:12:00+01:00[Europe/London]")
         ZonedDateTime(2020-08-15 23:12:00+01:00[Europe/London])
+
+        Important
+        ---------
+        The timezone ID is a recent extension to the ISO 8601 format (RFC 9557).
+        Althought it is gaining popularity, it is not yet widely supported.
         """
         if (match := _match_zoned_str(s)) is None:
             raise ValueError(f"Invalid format: {s!r}")
@@ -3433,6 +3604,10 @@ class ZonedDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def from_timestamp(cls, i: int, /, *, tz: str) -> ZonedDateTime:
+        """Create an instance from a UNIX timestamp (in seconds).
+
+        The inverse of the ``timestamp()`` method.
+        """
         secs, fract = divmod(i, 1)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, ZoneInfo(tz)), int(fract * 1_000_000_000)
@@ -3440,6 +3615,10 @@ class ZonedDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def from_timestamp_millis(cls, i: int, /, *, tz: str) -> ZonedDateTime:
+        """Create an instance from a UNIX timestamp (in milliseconds).
+
+        The inverse of the ``timestamp_millis()`` method.
+        """
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, millis = divmod(i, 1_000)
@@ -3449,6 +3628,10 @@ class ZonedDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def from_timestamp_nanos(cls, i: int, /, *, tz: str) -> ZonedDateTime:
+        """Create an instance from a UNIX timestamp (in nanoseconds).
+
+        The inverse of the ``timestamp_nanos()`` method.
+        """
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
@@ -3459,6 +3642,16 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     # FUTURE: optional `disambiguate` to override fold?
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> ZonedDateTime:
+        """Create an instance from a standard library ``datetime`` object
+        with a ``ZoneInfo`` tzinfo.
+
+        The inverse of the ``py_datetime()`` method.
+
+        Attention
+        ---------
+        If the datetime is ambiguous (e.g. during a DST transition),
+        the ``fold`` attribute is used to disambiguate the time.
+        """
         if type(d.tzinfo) is not ZoneInfo:
             raise ValueError(
                 "Can only create ZonedDateTime from tzinfo=ZoneInfo (exactly), "
@@ -3474,6 +3667,17 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def replace_date(
         self, date: Date, /, disambiguate: Disambiguate
     ) -> ZonedDateTime:
+        """Construct a new instance with the date replaced.
+
+        Important
+        ---------
+        Replacing the date of a ZonedDateTime may result in an ambiguous time
+        (e.g. during a DST transition). Therefore, you must explicitly
+        specify how to handle such a situation using the ``disambiguate`` argument.
+
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
+        for more information.
+        """
         return self._from_py_unchecked(
             _resolve_ambiguity(
                 _datetime.combine(date._py_date, self._py_dt.timetz()).replace(
@@ -3489,6 +3693,17 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def replace_time(
         self, time: Time, /, disambiguate: Disambiguate
     ) -> ZonedDateTime:
+        """Construct a new instance with the time replaced.
+
+        Important
+        ---------
+        Replacing the time of a ZonedDateTime may result in an ambiguous time
+        (e.g. during a DST transition). Therefore, you must explicitly
+        specify how to handle such a situation using the ``disambiguate`` argument.
+
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
+        for more information.
+        """
         return self._from_py_unchecked(
             _resolve_ambiguity(
                 _datetime.combine(
@@ -3504,6 +3719,17 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def replace(
         self, /, disambiguate: Disambiguate, **kwargs: Any
     ) -> ZonedDateTime:
+        """Construct a new instance with the given fields replaced.
+
+        Important
+        ---------
+        Replacing fields of a ZonedDateTime may result in an ambiguous time
+        (e.g. during a DST transition). Therefore, you must explicitly
+        specify how to handle such a situation using the ``disambiguate`` argument.
+
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
+        for more information.
+        """
         _check_invalid_replace_kwargs(kwargs)
         try:
             tz = kwargs.pop("tz")
@@ -3532,7 +3758,8 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def __add__(self, delta: TimeDelta) -> ZonedDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
 
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
+        See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
+        for more information.
         """
         if isinstance(delta, TimeDelta):
             delta_secs, nanos = divmod(
@@ -3564,7 +3791,8 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     ) -> _KnowsInstant | TimeDelta:
         """Subtract another datetime or duration.
 
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
+        See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
+        for more information.
         """
         if isinstance(other, _KnowsInstant):
             return super().__sub__(other)  # type: ignore[misc, no-any-return]
@@ -3574,10 +3802,34 @@ class ZonedDateTime(_KnowsInstantAndLocal):
 
     @no_type_check
     def add(self, *args, **kwargs) -> ZonedDateTime:
+        """Add a time amount to this datetime.
+
+        Important
+        ---------
+        Shifting a ``ZonedDateTime`` with **calendar units** (e.g. months, weeks)
+        may result in an ambiguous time (e.g. during a DST transition).
+        Therefore, when adding calendar units, you must explicitly
+        specify how to handle such a situation using the ``disambiguate`` argument.
+
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
+        for more information.
+        """
         return self._shift(1, *args, **kwargs)
 
     @no_type_check
     def subtract(self, *args, **kwargs) -> ZonedDateTime:
+        """Subtract a time amount from this datetime.
+
+        Important
+        ---------
+        Shifting a ``ZonedDateTime`` with **calendar units** (e.g. months, weeks)
+        may result in an ambiguous time (e.g. during a DST transition).
+        Therefore, when adding calendar units, you must explicitly
+        specify how to handle such a situation using the ``disambiguate`` argument.
+
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
+        for more information.
+        """
         return self._shift(-1, *args, **kwargs)
 
     @no_type_check
@@ -3699,8 +3951,8 @@ def _unpkl_zoned(
 @final
 class SystemDateTime(_KnowsInstantAndLocal):
     """Represents a time in the system timezone.
-    Unlike :class:`~OffsetDateTime`,
-    it knows about the system timezone and its DST transitions.
+    It is similar to ``OffsetDateTime``,
+    but it knows about the system timezone and its DST transitions.
 
     Example
     -------
@@ -3716,13 +3968,8 @@ class SystemDateTime(_KnowsInstantAndLocal):
 
     Attention
     ---------
-    To use this type properly, read more about :ref:`ambiguity <ambiguity>` and
-    :ref:`working with the system timezone <systemtime>`.
-
-    Note
-    ----
-    The corresponding :class:`~datetime.datetime` object has
-    a fixed :class:`~datetime.timezone` tzinfo.
+    To use this type properly, read more about `ambiguity <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
+    and `working with the system timezone <https://whenever.rtfd.io/en/latest/overview.html#the-system-timezone>`_.
     """
 
     __slots__ = ()
@@ -3758,23 +4005,41 @@ class SystemDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def now(cls) -> SystemDateTime:
+        """Create an instance from the current time in the system timezone."""
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _UTC).astimezone(None), nanos
         )
 
     format_common_iso = OffsetDateTime.format_common_iso
+    """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
+
+    The inverse of the ``parse_common_iso()`` method.
+
+    Important
+    ---------
+    Information about the system timezone name is *not* included in the output.
+    """
 
     @classmethod
     def parse_common_iso(cls, s: str, /) -> SystemDateTime:
-        """Parse from the common ISO 8601 format,
+        """Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
 
-        similar to that of ``OffsetDateTime``."""
+        Important
+        ---------
+        The offset isn't adjusted to the current system timezone.
+        See `the docs <https://whenever.rtfd.io/en/latest/overview.html#the-system-timezone>`_
+        for more information.
+        """
         odt = OffsetDateTime.parse_common_iso(s)
         return cls._from_py_unchecked(odt._py_dt, odt._nanos)
 
     @classmethod
     def from_timestamp(cls, i: int | float, /) -> SystemDateTime:
+        """Create an instance from a UNIX timestamp (in seconds).
+
+        The inverse of the ``timestamp()`` method.
+        """
         secs, fract = divmod(i, 1)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _UTC).astimezone(), int(fract * 1_000_000_000)
@@ -3782,6 +4047,10 @@ class SystemDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def from_timestamp_millis(cls, i: int, /) -> SystemDateTime:
+        """Create an instance from a UNIX timestamp (in milliseconds).
+
+        The inverse of the ``timestamp_millis()`` method.
+        """
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, millis = divmod(i, 1_000)
@@ -3791,6 +4060,10 @@ class SystemDateTime(_KnowsInstantAndLocal):
 
     @classmethod
     def from_timestamp_nanos(cls, i: int, /) -> SystemDateTime:
+        """Create an instance from a UNIX timestamp (in nanoseconds).
+
+        The inverse of the ``timestamp_nanos()`` method.
+        """
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
@@ -3798,8 +4071,13 @@ class SystemDateTime(_KnowsInstantAndLocal):
             _fromtimestamp(secs, _UTC).astimezone(), nanos
         )
 
+    # TODO py_datetime docstring
+
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> SystemDateTime:
+        """Create an instance from a standard library ``datetime`` object
+        with fixed-offset tzinfo.
+        """
         odt = OffsetDateTime.from_py_datetime(d)
         return cls._from_py_unchecked(odt._py_dt, odt._nanos)
 
@@ -3811,6 +4089,17 @@ class SystemDateTime(_KnowsInstantAndLocal):
     def replace_date(
         self, date: Date, /, disambiguate: Disambiguate
     ) -> SystemDateTime:
+        """Construct a new instance with the date replaced.
+
+        Important
+        ---------
+        Replacing the date of a SystemDateTime may result in an ambiguous time
+        (e.g. during a DST transition). Therefore, you must explicitly
+        specify how to handle such a situation using the ``disambiguate`` argument.
+
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
+        for more information.
+        """
         return self._from_py_unchecked(
             _resolve_system_ambiguity(
                 _datetime.combine(date._py_date, self._py_dt.time()).replace(
@@ -3824,6 +4113,17 @@ class SystemDateTime(_KnowsInstantAndLocal):
     def replace_time(
         self, time: Time, /, disambiguate: Disambiguate
     ) -> SystemDateTime:
+        """Construct a new instance with the time replaced.
+
+        Important
+        ---------
+        Replacing the time of a SystemDateTime may result in an ambiguous time
+        (e.g. during a DST transition). Therefore, you must explicitly
+        specify how to handle such a situation using the ``disambiguate`` argument.
+
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
+        for more information.
+        """
         return self._from_py_unchecked(
             _resolve_system_ambiguity(
                 _datetime.combine(self._py_dt, time._py_time).replace(
@@ -3837,6 +4137,17 @@ class SystemDateTime(_KnowsInstantAndLocal):
     def replace(
         self, /, disambiguate: Disambiguate, **kwargs: Any
     ) -> SystemDateTime:
+        """Construct a new instance with the given fields replaced.
+
+        Important
+        ---------
+        Replacing fields of a SystemDateTime may result in an ambiguous time
+        (e.g. during a DST transition). Therefore, you must explicitly
+        specify how to handle such a situation using the ``disambiguate`` argument.
+
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
+        for more information.
+        """
         _check_invalid_replace_kwargs(kwargs)
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
         return self._from_py_unchecked(
@@ -3855,7 +4166,8 @@ class SystemDateTime(_KnowsInstantAndLocal):
     def __add__(self, delta: TimeDelta) -> SystemDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
 
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
+        See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
+        for more information.
         """
         if isinstance(delta, TimeDelta):
             py_dt = self._py_dt
@@ -3884,7 +4196,8 @@ class SystemDateTime(_KnowsInstantAndLocal):
     ) -> _KnowsInstant | Delta:
         """Subtract another datetime or duration
 
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
+        See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
+        for more information.
         """
         if isinstance(other, _KnowsInstant):
             return super().__sub__(other)  # type: ignore[misc, no-any-return]
@@ -3894,10 +4207,34 @@ class SystemDateTime(_KnowsInstantAndLocal):
 
     @no_type_check
     def add(self, *args, **kwargs) -> SystemDateTime:
+        """Add a time amount to this datetime.
+
+        Important
+        ---------
+        Shifting a ``SystemDateTime`` with **calendar units** (e.g. months, weeks)
+        may result in an ambiguous time (e.g. during a DST transition).
+        Therefore, when adding calendar units, you must explicitly
+        specify how to handle such a situation using the ``disambiguate`` argument.
+
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
+        for more information.
+        """
         return self._shift(1, *args, **kwargs)
 
     @no_type_check
     def subtract(self, *args, **kwargs) -> SystemDateTime:
+        """Subtract a time amount from this datetime.
+
+        Important
+        ---------
+        Shifting a ``SystemDateTime`` with **calendar units** (e.g. months, weeks)
+        may result in an ambiguous time (e.g. during a DST transition).
+        Therefore, when adding calendar units, you must explicitly
+        specify how to handle such a situation using the ``disambiguate`` argument.
+
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
+        for more information.
+        """
         return self._shift(-1, *args, **kwargs)
 
     @no_type_check
@@ -4024,6 +4361,10 @@ class LocalDateTime(_KnowsLocal):
         self._nanos = nanosecond
 
     def format_common_iso(self) -> str:
+        """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
+
+        The inverse of the ``parse_common_iso()`` method.
+        """
         return (
             (self._py_dt.isoformat() + f".{self._nanos:09d}").rstrip("0")
             if self._nanos
@@ -4032,10 +4373,9 @@ class LocalDateTime(_KnowsLocal):
 
     @classmethod
     def parse_common_iso(cls, s: str, /) -> LocalDateTime:
-        """Parse from the commonly used ISO 8601 format
-        ``YYYY-MM-DDTHH:MM:SS``, where seconds may be fractional.
+        """Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
 
-        Inverse of :meth:`~_DateTime.format_common_iso`.
+        The inverse of the ``format_common_iso()`` method.
 
         Example
         -------
@@ -4052,6 +4392,7 @@ class LocalDateTime(_KnowsLocal):
 
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> LocalDateTime:
+        """Create an instance from a "naive" standard library ``datetime`` object"""
         if d.tzinfo is not None:
             raise ValueError(
                 "Can only create LocalDateTime from a naive datetime, "
@@ -4062,6 +4403,7 @@ class LocalDateTime(_KnowsLocal):
         )
 
     def replace(self, /, **kwargs: Any) -> LocalDateTime:
+        """Construct a new instance with the given fields replaced."""
         if not _no_tzinfo_fold_or_ms(kwargs):
             raise TypeError(
                 "tzinfo, fold, or microsecond are not allowed arguments"
@@ -4070,11 +4412,13 @@ class LocalDateTime(_KnowsLocal):
         return self._from_py_unchecked(self._py_dt.replace(**kwargs), nanos)
 
     def replace_date(self, d: Date, /) -> LocalDateTime:
+        """Construct a new instance with the date replaced."""
         return self._from_py_unchecked(
             _datetime.combine(d._py_date, self._py_dt.time()), self._nanos
         )
 
     def replace_time(self, t: Time, /) -> LocalDateTime:
+        """Construct a new instance with the time replaced."""
         return self._from_py_unchecked(
             _datetime.combine(self._py_dt.date(), t._py_time), t._nanos
         )
@@ -4111,7 +4455,9 @@ class LocalDateTime(_KnowsLocal):
         return (self._py_dt, self._nanos) == (other._py_dt, other._nanos)
 
     MIN: ClassVar[LocalDateTime]
+    """The minimum representable value of this type."""
     MAX: ClassVar[LocalDateTime]
+    """The maximum representable value of this type."""
 
     def __lt__(self, other: LocalDateTime) -> bool:
         if not isinstance(other, LocalDateTime):
@@ -4175,7 +4521,15 @@ class LocalDateTime(_KnowsLocal):
     ) -> TimeDelta:
         """Calculate the difference between two local datetimes.
 
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
+        Important
+        ---------
+        The difference between two local datetimes implicitly ignores
+        DST transitions and other timezone changes.
+        To perform DST-safe operations, convert to a ``ZonedDateTime`` first.
+        Or, if you don't know the timezone and accept potentially incorrect results
+        during DST transitions, pass ``ignore_dst=True``.
+        For more information,
+        see `the docs <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
         """
         if ignore_dst is not True:
             raise ImplicitlyIgnoringDST(
@@ -4192,10 +4546,36 @@ class LocalDateTime(_KnowsLocal):
 
     @no_type_check
     def add(self, *args, **kwargs) -> LocalDateTime:
+        """Add a time amount to this datetime.
+
+        Important
+        ---------
+        Shifting a ``LocalDateTime`` with **exact units** (e.g. hours, seconds)
+        implicitly ignores DST transitions and other timezone changes.
+        If you need to account for these, convert to a ``ZonedDateTime`` first.
+        Or, if you don't know the timezone and accept potentially incorrect results
+        during DST transitions, pass ``ignore_dst=True``.
+
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_
+        for more information.
+        """
         return self._shift(1, *args, **kwargs)
 
     @no_type_check
     def subtract(self, *args, **kwargs) -> LocalDateTime:
+        """Subtract a time amount from this datetime.
+
+        Important
+        ---------
+        Shifting a ``LocalDateTime`` with **exact units** (e.g. hours, seconds)
+        implicitly ignores DST transitions and other timezone changes.
+        If you need to account for these, convert to a ``ZonedDateTime`` first.
+        Or, if you don't know the timezone and accept potentially incorrect results
+        during DST transitions, pass ``ignore_dst=True``.
+
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_
+        for more information.
+        """
         return self._shift(-1, *args, **kwargs)
 
     @no_type_check
@@ -4278,7 +4658,7 @@ class LocalDateTime(_KnowsLocal):
         Note
         ----
         The parsed ``tzinfo`` must be be ``None``.
-        This means you can't include the directives ``%z``, ``%Z``, or ``%:z``
+        This means you CANNOT include the directives ``%z``, ``%Z``, or ``%:z``
         in the format string.
         """
         parsed = _datetime.strptime(s, fmt)
@@ -4292,8 +4672,7 @@ class LocalDateTime(_KnowsLocal):
         )
 
     def assume_utc(self) -> Instant:
-        """Assume the datetime is in UTC,
-        creating a :class:`~whenever.Instant` instance.
+        """Assume the datetime is in UTC, creating an ``Instant``.
 
         Example
         -------
@@ -4307,8 +4686,7 @@ class LocalDateTime(_KnowsLocal):
     def assume_fixed_offset(
         self, offset: int | TimeDelta, /
     ) -> OffsetDateTime:
-        """Assume the datetime is in the given offset,
-        creating a :class:`~whenever.OffsetDateTime` instance.
+        """Assume the datetime has the given offset, creating an ``OffsetDateTime``.
 
         Example
         -------
@@ -4323,7 +4701,15 @@ class LocalDateTime(_KnowsLocal):
         self, tz: str, /, disambiguate: Disambiguate
     ) -> ZonedDateTime:
         """Assume the datetime is in the given timezone,
-        creating a :class:`~whenever.ZonedDateTime` instance.
+        creating a ``ZonedDateTime``.
+
+        Note
+        ----
+        The local datetime may be ambiguous in the given timezone
+        (e.g. during a DST transition). Therefore, you must explicitly
+        specify how to handle such a situation using the ``disambiguate`` argument.
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
+        for more information.
 
         Example
         -------
@@ -4344,7 +4730,15 @@ class LocalDateTime(_KnowsLocal):
 
     def assume_system_tz(self, disambiguate: Disambiguate) -> SystemDateTime:
         """Assume the datetime is in the system timezone,
-        creating a :class:`~whenever.SystemDateTime` instance.
+        creating a ``SystemDateTime``.
+
+        Note
+        ----
+        The local datetime may be ambiguous in the system timezone
+        (e.g. during a DST transition). Therefore, you must explicitly
+        specify how to handle such a situation using the ``disambiguate`` argument.
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
+        for more information.
 
         Example
         -------
