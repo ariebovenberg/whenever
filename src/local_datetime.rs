@@ -1,4 +1,4 @@
-use core::ffi::{c_char, c_int, c_long, c_void, CStr};
+use core::ffi::{c_int, c_long, c_void, CStr};
 use core::{mem, ptr::null_mut as NULL};
 use pyo3_ffi::*;
 
@@ -153,16 +153,15 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         args,
         kwargs,
         c"lll|lll$l:LocalDateTime".as_ptr(),
-        vec![
-            c"year".as_ptr() as *mut c_char,
-            c"month".as_ptr() as *mut c_char,
-            c"day".as_ptr() as *mut c_char,
-            c"hour".as_ptr() as *mut c_char,
-            c"minute".as_ptr() as *mut c_char,
-            c"second".as_ptr() as *mut c_char,
-            c"nanosecond".as_ptr() as *mut c_char,
-            NULL(),
-        ]
+        arg_vec(&[
+            c"year",
+            c"month",
+            c"day",
+            c"hour",
+            c"minute",
+            c"second",
+            c"nanosecond",
+        ])
         .as_mut_ptr(),
         &mut year,
         &mut month,
@@ -851,10 +850,17 @@ static mut METHODS: &[PyMethodDef] = &[
         METH_O | METH_CLASS
     ),
     method!(__reduce__, ""),
-    method_vararg!(strptime, "Parse a string into a LocalDateTime", METH_CLASS),
+    method_vararg!(
+        strptime,
+        "strptime($type, string, fmt, /)\n--\n\n\
+        Parse a string into a LocalDateTime",
+        METH_CLASS
+    ),
     method_kwargs!(
         replace,
-        "Return a new instance with the specified fields replaced"
+        "replace($self, *, year=None, month=None, day=None, hour=None, \
+        minute=None, second=None, nanosecond=None)\n--\n\n\
+        Return a new instance with the specified fields replaced"
     ),
     method!(assume_utc, "Assume the datetime is in UTC"),
     method!(
@@ -862,10 +868,15 @@ static mut METHODS: &[PyMethodDef] = &[
         "Assume the datetime has a fixed offset",
         METH_O
     ),
-    method_kwargs!(assume_tz, "Assume the datetime is in a timezone"),
+    method_kwargs!(
+        assume_tz,
+        "assume_tz($self, tz, /, *, disambiguate)\n--\n\n\
+        Assume the datetime is in a timezone"
+    ),
     method_kwargs!(
         assume_system_tz,
-        "Assume the datetime is in the system timezone"
+        "assume_system_tz($self, *, disambiguate)\n--\n\n\
+        Assume the datetime is in the system timezone"
     ),
     method!(
         replace_date,
@@ -877,9 +888,25 @@ static mut METHODS: &[PyMethodDef] = &[
         "Return a new instance with the time replaced",
         METH_O
     ),
-    method_kwargs!(add, "Add various time and/or calendar units"),
-    method_kwargs!(subtract, "Subtract various time and/or calendar units"),
-    method_kwargs!(difference, "Get the difference between two local datetimes"),
+    method_kwargs!(
+        add,
+        "add($self, delta=None, /, *, years=0, months=0, days=0, \
+        hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
+        ignore_dst=False)\n--\n\n\
+        Add various time and/or calendar units"
+    ),
+    method_kwargs!(
+        subtract,
+        "subtract($self, delta=None, /, *, years=0, months=0, days=0, \
+        hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
+        ignore_dst=False)\n--\n\n\
+        Subtract various time and/or calendar units"
+    ),
+    method_kwargs!(
+        difference,
+        "difference($self, other, /, *, ignore_dst)\n--\n\n\
+        Get the difference between two local datetimes"
+    ),
     PyMethodDef::zeroed(),
 ];
 

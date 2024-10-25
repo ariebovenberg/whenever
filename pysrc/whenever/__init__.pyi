@@ -40,7 +40,7 @@ __all__ = [
     "SUNDAY",
 ]
 
-Disambiguate = Literal["raise", "earlier", "later", "compatible"]
+_EXTENSION_LOADED: bool
 
 @final
 class Date:
@@ -257,15 +257,7 @@ Delta = DateTimeDelta | TimeDelta | DateDelta
 
 _T = TypeVar("_T")
 
-class _BasicConversions(ABC):
-    @classmethod
-    def from_py_datetime(cls: type[_T], d: _datetime, /) -> _T: ...
-    def py_datetime(self) -> _datetime: ...
-    def format_common_iso(self) -> str: ...
-    @classmethod
-    def parse_common_iso(cls: type[_T], s: str, /) -> _T: ...
-
-class _KnowsLocal(_BasicConversions, ABC):
+class _KnowsLocal(ABC):
     @property
     def year(self) -> int: ...
     @property
@@ -283,7 +275,7 @@ class _KnowsLocal(_BasicConversions, ABC):
     def date(self) -> Date: ...
     def time(self) -> Time: ...
 
-class _KnowsInstant(_BasicConversions, ABC):
+class _KnowsInstant(ABC):
     def timestamp(self) -> int: ...
     def timestamp_millis(self) -> int: ...
     def timestamp_nanos(self) -> int: ...
@@ -333,6 +325,7 @@ class Instant(_KnowsInstant):
     def from_timestamp_nanos(cls, i: int, /) -> Instant: ...
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> Instant: ...
+    def py_datetime(self) -> _datetime: ...
     def format_rfc2822(self) -> str: ...
     @classmethod
     def parse_rfc2822(cls, s: str, /) -> Instant: ...
@@ -406,11 +399,13 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     ) -> OffsetDateTime: ...
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> OffsetDateTime: ...
+    def py_datetime(self) -> _datetime: ...
     @classmethod
     def strptime(cls, s: str, fmt: str, /) -> OffsetDateTime: ...
     def format_rfc2822(self) -> str: ...
     @classmethod
     def parse_rfc2822(cls, s: str, /) -> OffsetDateTime: ...
+    def format_common_iso(self) -> str: ...
     def format_rfc3339(self) -> str: ...
     @classmethod
     def parse_rfc3339(cls, s: str, /) -> OffsetDateTime: ...
@@ -491,7 +486,9 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         *,
         nanosecond: int = 0,
         tz: str,
-        disambiguate: Disambiguate = "raise",
+        disambiguate: Literal[
+            "compatible", "raise", "earlier", "later"
+        ] = "raise",
     ) -> None: ...
     @property
     def tz(self) -> str: ...
@@ -500,6 +497,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def now(cls, tz: str, /) -> ZonedDateTime: ...
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> ZonedDateTime: ...
+    def py_datetime(self) -> _datetime: ...
     @classmethod
     def from_timestamp(
         cls, i: int | float, /, *, tz: str
@@ -508,6 +506,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def from_timestamp_millis(cls, i: int, /, *, tz: str) -> ZonedDateTime: ...
     @classmethod
     def from_timestamp_nanos(cls, i: int, /, *, tz: str) -> ZonedDateTime: ...
+    def format_common_iso(self) -> str: ...
     @classmethod
     def parse_common_iso(cls, s: str, /) -> ZonedDateTime: ...
     def exact_eq(self, other: ZonedDateTime, /) -> bool: ...
@@ -522,13 +521,21 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         second: int = ...,
         nanosecond: int = ...,
         tz: str = ...,
-        disambiguate: Disambiguate,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> ZonedDateTime: ...
     def replace_date(
-        self, d: Date, /, *, disambiguate: Disambiguate
+        self,
+        d: Date,
+        /,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> ZonedDateTime: ...
     def replace_time(
-        self, t: Time, /, *, disambiguate: Disambiguate
+        self,
+        t: Time,
+        /,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> ZonedDateTime: ...
     @overload
     def add(
@@ -544,7 +551,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Disambiguate,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> ZonedDateTime: ...
     @overload
     def add(
@@ -561,7 +568,11 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def add(self, d: TimeDelta, /) -> ZonedDateTime: ...
     @overload
     def add(
-        self, d: DateDelta | DateTimeDelta, /, *, disambiguate: Disambiguate
+        self,
+        d: DateDelta | DateTimeDelta,
+        /,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> ZonedDateTime: ...
     @overload
     def subtract(
@@ -577,7 +588,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Disambiguate,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> ZonedDateTime: ...
     @overload
     def subtract(
@@ -594,7 +605,11 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def subtract(self, d: TimeDelta, /) -> ZonedDateTime: ...
     @overload
     def subtract(
-        self, d: DateDelta | DateTimeDelta, /, *, disambiguate: Disambiguate
+        self,
+        d: DateDelta | DateTimeDelta,
+        /,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> ZonedDateTime: ...
     def __add__(self, delta: TimeDelta) -> ZonedDateTime: ...
     @overload
@@ -614,7 +629,9 @@ class SystemDateTime(_KnowsInstantAndLocal):
         second: int = 0,
         *,
         nanosecond: int = 0,
-        disambiguate: Disambiguate = "raise",
+        disambiguate: Literal[
+            "compatible", "raise", "earlier", "later"
+        ] = "raise",
     ) -> None: ...
     @classmethod
     def now(cls) -> SystemDateTime: ...
@@ -626,8 +643,10 @@ class SystemDateTime(_KnowsInstantAndLocal):
     def from_timestamp_nanos(cls, i: int, /) -> SystemDateTime: ...
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> SystemDateTime: ...
+    def py_datetime(self) -> _datetime: ...
     @classmethod
     def parse_common_iso(cls, s: str, /) -> SystemDateTime: ...
+    def format_common_iso(self) -> str: ...
     def exact_eq(self, other: SystemDateTime, /) -> bool: ...
     def replace(
         self,
@@ -639,13 +658,21 @@ class SystemDateTime(_KnowsInstantAndLocal):
         minute: int = ...,
         second: int = ...,
         nanosecond: int = ...,
-        disambiguate: Disambiguate,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> SystemDateTime: ...
     def replace_date(
-        self, d: Date, /, *, disambiguate: Disambiguate
+        self,
+        d: Date,
+        /,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> SystemDateTime: ...
     def replace_time(
-        self, t: Time, /, *, disambiguate: Disambiguate
+        self,
+        t: Time,
+        /,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> SystemDateTime: ...
     @overload
     def add(
@@ -661,7 +688,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Disambiguate,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> SystemDateTime: ...
     @overload
     def add(
@@ -678,7 +705,11 @@ class SystemDateTime(_KnowsInstantAndLocal):
     def add(self, d: TimeDelta, /) -> SystemDateTime: ...
     @overload
     def add(
-        self, d: DateDelta | DateTimeDelta, /, *, disambiguate: Disambiguate
+        self,
+        d: DateDelta | DateTimeDelta,
+        /,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> SystemDateTime: ...
     @overload
     def subtract(
@@ -694,7 +725,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Disambiguate,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> SystemDateTime: ...
     @overload
     def subtract(
@@ -711,7 +742,11 @@ class SystemDateTime(_KnowsInstantAndLocal):
     def subtract(self, d: TimeDelta, /) -> SystemDateTime: ...
     @overload
     def subtract(
-        self, d: DateDelta | DateTimeDelta, /, *, disambiguate: Disambiguate
+        self,
+        d: DateDelta | DateTimeDelta,
+        /,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> SystemDateTime: ...
     def __add__(self, delta: TimeDelta) -> SystemDateTime: ...
     @overload
@@ -739,15 +774,23 @@ class LocalDateTime(_KnowsLocal):
         self, offset: int | TimeDelta, /
     ) -> OffsetDateTime: ...
     def assume_tz(
-        self, tz: str, /, *, disambiguate: Disambiguate
+        self,
+        tz: str,
+        /,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> ZonedDateTime: ...
     def assume_system_tz(
-        self, *, disambiguate: Disambiguate
+        self,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> SystemDateTime: ...
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> LocalDateTime: ...
+    def py_datetime(self) -> _datetime: ...
     @classmethod
     def parse_common_iso(cls, s: str, /) -> LocalDateTime: ...
+    def format_common_iso(self) -> str: ...
     @classmethod
     def strptime(cls, s: str, fmt: str, /) -> LocalDateTime: ...
     def replace(
@@ -817,7 +860,7 @@ class LocalDateTime(_KnowsLocal):
     ) -> LocalDateTime: ...
     def difference(
         self, other: LocalDateTime, /, *, ignore_dst: Literal[True]
-    ) -> DateTimeDelta: ...
+    ) -> TimeDelta: ...
     def __add__(self, delta: DateDelta) -> LocalDateTime: ...
     def __sub__(self, other: DateDelta) -> LocalDateTime: ...
     def __lt__(self, other: LocalDateTime) -> bool: ...

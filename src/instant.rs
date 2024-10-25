@@ -282,16 +282,15 @@ unsafe fn from_utc(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyO
         args,
         kwargs,
         c"lll|lll$l:Instant.from_utc".as_ptr(),
-        vec![
-            c"year".as_ptr() as *mut _,
-            c"month".as_ptr() as *mut _,
-            c"day".as_ptr() as *mut _,
-            c"hour".as_ptr() as *mut _,
-            c"minute".as_ptr() as *mut _,
-            c"second".as_ptr() as *mut _,
-            c"nanosecond".as_ptr() as *mut _,
-            NULL(),
-        ]
+        arg_vec(&[
+            c"year",
+            c"month",
+            c"day",
+            c"hour",
+            c"minute",
+            c"second",
+            c"nanosecond",
+        ])
         .as_mut_ptr(),
         &mut year,
         &mut month,
@@ -832,7 +831,7 @@ static mut METHODS: &[PyMethodDef] = &[
             },
         },
         ml_flags: METH_CLASS | METH_VARARGS | METH_KEYWORDS,
-        ml_doc: c"Create an instance from a UTC date and time".as_ptr(),
+        ml_doc: c"from_utc()\n--\n\nCreate an instance from a UTC date and time".as_ptr(),
     },
     method!(
         from_timestamp_millis,
@@ -876,14 +875,28 @@ static mut METHODS: &[PyMethodDef] = &[
         "Create an instance from the common ISO8601 format",
         METH_O | METH_CLASS
     ),
-    method_kwargs!(add, "Add various time units to the instance"),
-    method_kwargs!(subtract, "Subtract various time units from the instance"),
+    method_kwargs!(
+        add,
+        "add($self, *, hours=0, minutes=0, seconds=0, milliseconds=0, \
+        microseconds=0, nanoseconds=0)\n--\n\n\
+        Add various time units to the instance"
+    ),
+    method_kwargs!(
+        subtract,
+        "subtract($self, *, hours=0, minutes=0, seconds=0, milliseconds=0, \
+        microseconds=0, nanoseconds=0)\n--\n\n\
+        Subtract various time units from the instance"
+    ),
     method!(to_tz, "Convert to an equivalent ZonedDateTime", METH_O),
     method!(
         to_system_tz,
         "Convert to an equivalent datetime in the system timezone"
     ),
-    method_vararg!(to_fixed_offset, "Convert to an equivalent OffsetDateTime"),
+    method_vararg!(
+        to_fixed_offset,
+        "to_fixed_offset($self, offset=0, /)\n--\n\n\
+        Convert to an equivalent OffsetDateTime"
+    ),
     method!(
         difference,
         "Calculate the difference between two instances",

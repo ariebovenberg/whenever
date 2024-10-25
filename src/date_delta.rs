@@ -168,14 +168,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         args,
         kwargs,
         c"|$llll:DateDelta".as_ptr(),
-        vec![
-            c"years".as_ptr() as *mut _,
-            c"months".as_ptr() as *mut _,
-            c"weeks".as_ptr() as *mut _,
-            c"days".as_ptr() as *mut _,
-            NULL(),
-        ]
-        .as_mut_ptr(),
+        arg_vec(&[c"years", c"months", c"weeks", c"days"]).as_mut_ptr(),
         &mut years,
         &mut months,
         &mut weeks,

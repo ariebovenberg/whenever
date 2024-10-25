@@ -219,17 +219,16 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         args,
         kwargs,
         c"lll|lll$lO:OffsetDateTime".as_ptr(),
-        vec![
-            c"year".as_ptr() as *mut _,
-            c"month".as_ptr() as *mut _,
-            c"day".as_ptr() as *mut _,
-            c"hour".as_ptr() as *mut _,
-            c"minute".as_ptr() as *mut _,
-            c"second".as_ptr() as *mut _,
-            c"nanosecond".as_ptr() as *mut _,
-            c"offset".as_ptr() as *mut _,
-            NULL(),
-        ]
+        arg_vec(&[
+            c"year",
+            c"month",
+            c"day",
+            c"hour",
+            c"minute",
+            c"second",
+            c"nanosecond",
+            c"offset",
+        ])
         .as_mut_ptr(),
         &mut year,
         &mut month,
@@ -1133,10 +1132,11 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(__reduce__, ""),
     method_kwargs!(
         now,
-        "Create a new instance representing the current time",
+        "now($type, offset, /, *, ignore_dst)\n--\n\n\
+        Create a new instance representing the current time",
         METH_CLASS
     ),
-    method!(exact_eq, "Exact equality", METH_O),
+    method!(exact_eq, "exact_eq()\n--\n\nExact equality", METH_O),
     method!(py_datetime, "Convert to a `datetime.datetime`"),
     method!(
         from_py_datetime,
@@ -1148,7 +1148,8 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(to_tz, "Convert to a `ZonedDateTime` with given tz", METH_O),
     method_vararg!(
         to_fixed_offset,
-        "Convert to a new instance with a different offset"
+        "to_fixed_offset($self, offset=None, /)\n--\n\n\
+        Convert to a new instance with a different offset"
     ),
     method!(to_system_tz, "Convert to a datetime to the system timezone"),
     method!(date, "The date component"),
@@ -1185,28 +1186,58 @@ static mut METHODS: &[PyMethodDef] = &[
     ),
     method_kwargs!(
         from_timestamp,
-        "Create a new instance from a UNIX timestamp",
+        "from_timestamp($type, timestamp, /, *, offset, ignore_dst)\n--\n\n\
+        Create a new instance from a UNIX timestamp",
         METH_CLASS
     ),
     method_kwargs!(
         from_timestamp_millis,
-        "Create a new instance from a UNIX timestamp in milliseconds",
+        "from_timestamp_millis($type, timestamp, /, *, offset, ignore_dst)\n--\n\n\
+        Create a new instance from a UNIX timestamp in milliseconds",
         METH_CLASS
     ),
     method_kwargs!(
         from_timestamp_nanos,
-        "Create a new instance from a UNIX timestamp",
+        "from_timestamp_nanos($type, timestamp, /, *, offset, ignore_dst)\n--\n\n\
+        Create a new instance from a UNIX timestamp",
         METH_CLASS
     ),
     method_kwargs!(
         replace,
-        "Return a new instance with the specified fields replaced"
+        "replace($self, /, *, year=None, month=None, day=None, hour=None, \
+        minute=None, second=None, nanosecond=None, offset=None, ignore_dst)\n--\n\n\
+        Return a new instance with the specified fields replaced"
     ),
-    method_kwargs!(replace_date, "Return a new instance with the date replaced"),
-    method_kwargs!(replace_time, "Return a new instance with the time replaced"),
-    method_vararg!(strptime, "Parse a string with strptime", METH_CLASS),
-    method_kwargs!(add, "Add time units"),
-    method_kwargs!(subtract, "Subtract time units"),
+    method_kwargs!(
+        replace_date,
+        "replace_date($self, date, /, *, ignore_dst)\n--\n\n\
+        Return a new instance with the date replaced"
+    ),
+    method_kwargs!(
+        replace_time,
+        "replace_time($self, time, /, *, ignore_dst)\n--\n\n\
+        Return a new instance with the time replaced"
+    ),
+    method_vararg!(
+        strptime,
+        "strptime($type, date_string, format, /)\n--\n\n\
+        Parse a string with strptime",
+        METH_CLASS
+    ),
+    method_kwargs!(
+        add,
+        "add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, \
+        hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
+        ignore_dst=False)\n--\n\n\
+        Add time units"
+    ),
+    method_kwargs!(
+        subtract,
+        "subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, \
+        hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
+        ignore_dst=False)\n--\n\n\
+        Subtract time units"
+    ),
     method!(
         difference,
         "Calculate the difference between two instances",

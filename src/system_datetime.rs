@@ -119,17 +119,16 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         args,
         kwargs,
         c"lll|lll$lU:SystemDateTime".as_ptr(),
-        vec![
-            c"year".as_ptr() as *mut _,
-            c"month".as_ptr() as *mut _,
-            c"day".as_ptr() as *mut _,
-            c"hour".as_ptr() as *mut _,
-            c"minute".as_ptr() as *mut _,
-            c"second".as_ptr() as *mut _,
-            c"nanosecond".as_ptr() as *mut _,
-            c"disambiguate".as_ptr() as *mut _,
-            NULL(),
-        ]
+        arg_vec(&[
+            c"year",
+            c"month",
+            c"day",
+            c"hour",
+            c"minute",
+            c"second",
+            c"nanosecond",
+            c"disambiguate",
+        ])
         .as_mut_ptr(),
         &mut year,
         &mut month,
@@ -870,18 +869,38 @@ static mut METHODS: &[PyMethodDef] = &[
     ),
     method_kwargs!(
         replace,
-        "Return a new instance with the specified fields replaced"
+        "replace($self, *, year=None, month=None, day=None, hour=None, \
+        minute=None, second=None, nanosecond=None, disambiguate=None)\n--\n\n\
+        Return a new instance with the specified fields replaced"
     ),
     method_vararg!(
         to_fixed_offset,
-        "Return an equivalent instance with the given offset"
+        "to_fixed_offset($self, offset=None, /)\n--\n\n\
+        Return an equivalent instance with the given offset"
     ),
-    method_kwargs!(replace_date, "Return a new instance with the date replaced"),
-    method_kwargs!(replace_time, "Return a new instance with the time replaced"),
-    method_kwargs!(add, "Return a new instance with the given time units added"),
+    method_kwargs!(
+        replace_date,
+        "replace_date($self, date, /, *, disambiguate)\n--\n\n\
+        Return a new instance with the date replaced"
+    ),
+    method_kwargs!(
+        replace_time,
+        "replace_time($self, time, /, *, disambiguate)\n--\n\n\
+        Return a new instance with the time replaced"
+    ),
+    method_kwargs!(
+        add,
+        "add($self, delta=None, /, *, years=0, months=0, days=0, hours=0, \
+        minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
+        disambiguate)\n--\n\n\
+        Return a new instance with the given time units added"
+    ),
     method_kwargs!(
         subtract,
-        "Return a new instance with the given time units subtracted"
+        "subtract($self, delta=None, /, *, years=0, months=0, days=0, hours=0, \
+        minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
+        disambiguate)\n--\n\n\
+        Return a new instance with the given time units subtracted"
     ),
     method!(
         difference,

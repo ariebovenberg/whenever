@@ -1,4 +1,4 @@
-use core::ffi::c_long;
+use core::ffi::{c_char, c_long, CStr};
 use core::mem;
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
@@ -1101,6 +1101,31 @@ pub(crate) const fn hash_combine(lhs: Py_hash_t, rhs: Py_hash_t) -> Py_hash_t {
         .wrapping_add(-0x61c88647)
         .wrapping_add(lhs << 6)
         .wrapping_add(lhs >> 2))
+}
+
+// FUTURE: create arg lists statically
+#[cfg(Py_3_13)]
+pub(crate) fn arg_vec(fields: &[&CStr]) -> Vec<*const c_char> {
+    [
+        fields
+            .iter()
+            .map(|&field| field.as_ptr())
+            .collect::<Vec<_>>(),
+        vec![NULL()],
+    ]
+    .concat()
+}
+
+#[cfg(not(Py_3_13))]
+pub(crate) fn arg_vec(fields: &[&CStr]) -> Vec<*mut c_char> {
+    [
+        fields
+            .iter()
+            .map(|&field| field.as_ptr() as *mut _)
+            .collect::<Vec<_>>(),
+        vec![NULL()],
+    ]
+    .concat()
 }
 
 pub(crate) static S_PER_DAY: i32 = 86_400;
