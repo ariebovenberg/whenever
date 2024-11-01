@@ -4,7 +4,9 @@ use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
 use crate::common::*;
-use crate::{date_delta::DateDelta, local_datetime::DateTime, time::Time, State};
+use crate::{
+    date_delta::DateDelta, local_datetime::DateTime, time::Time, yearmonth::YearMonth, State,
+};
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub struct Date {
@@ -206,7 +208,7 @@ impl Display for Date {
 }
 
 pub(crate) const MAX_YEAR: c_long = 9999;
-const MIN_YEAR: c_long = 1;
+pub(crate) const MIN_YEAR: c_long = 1;
 const DAYS_IN_MONTH: [u8; 13] = [
     0, // 1-indexed
     31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
@@ -411,6 +413,11 @@ unsafe fn from_py_date(cls: *mut PyObject, date: *mut PyObject) -> PyReturn {
         }
         .to_obj(cls.cast())
     }
+}
+
+unsafe fn year_month(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    let Date { year, month, .. } = Date::extract(slf);
+    YearMonth::new_unchecked(year, month).to_obj(State::for_obj(slf).yearmonth_type)
 }
 
 unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
@@ -702,6 +709,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(identity2 named "__deepcopy__", "", METH_O),
     method!(day_of_week, "Return the day of the week"),
     method!(at, "Combine with a time to create a datetime", METH_O),
+    method!(year_month, "Return the year and month"),
     method!(__reduce__, ""),
     method_kwargs!(
         add,

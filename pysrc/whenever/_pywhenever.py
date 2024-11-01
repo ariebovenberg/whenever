@@ -67,6 +67,7 @@ from zoneinfo import ZoneInfo
 __all__ = [
     # Date and time
     "Date",
+    "YearMonth",
     "Time",
     "Instant",
     "OffsetDateTime",
@@ -190,6 +191,16 @@ class Date(_ImmutableBase):
     @property
     def day(self) -> int:
         return self._py_date.day
+
+    def year_month(self) -> YearMonth:
+        """The year and month (without a day component)
+
+        Example
+        -------
+        >>> Date(2021, 1, 2).year_month()
+        YearMonth(2021-01)
+        """
+        return YearMonth._from_py_unchecked(self._py_date.replace(day=1))
 
     def day_of_week(self) -> Weekday:
         """The day of the week
@@ -480,6 +491,155 @@ def _unpkl_date(data: bytes) -> Date:
 
 Date.MIN = Date._from_py_unchecked(_date.min)
 Date.MAX = Date._from_py_unchecked(_date.max)
+
+
+@final
+class YearMonth(_ImmutableBase):
+    """A year and month without a day component
+
+    Example
+    -------
+    >>> ym = YearMonth(2021, 1)
+    YearMonth(2021-01)
+    """
+
+    # We store the underlying data in a datetime.date object,
+    # which allows us to benefit from its functionality and performance.
+    # It isn't exposed to the user, so it's not a problem.
+    __slots__ = ("_py_date",)
+
+    MIN: ClassVar[YearMonth]
+    """The minimum possible year-month"""
+    MAX: ClassVar[YearMonth]
+    """The maximum possible year-month"""
+
+    def __init__(self, year: int, month: int) -> None:
+        self._py_date = _date(year, month, 1)
+
+    @property
+    def year(self) -> int:
+        return self._py_date.year
+
+    @property
+    def month(self) -> int:
+        return self._py_date.month
+
+    def format_common_iso(self) -> str:
+        """Format as the common ISO 8601 year-month format.
+
+        Inverse of :meth:`parse_common_iso`.
+
+        Example
+        -------
+        >>> YearMonth(2021, 1).format_common_iso()
+        '2021-01'
+        """
+        return self._py_date.isoformat()[:7]
+
+    @classmethod
+    def parse_common_iso(cls, s: str, /) -> YearMonth:
+        """Create from the common ISO 8601 format ``YYYY-MM``.
+        Does not accept more "exotic" ISO 8601 formats.
+
+        Inverse of :meth:`format_common_iso`
+
+        Example
+        -------
+        >>> YearMonth.parse_common_iso("2021-01-02")
+        YearMonth(2021-01-02)
+        """
+        if not _match_yearmonth(s):
+            raise ValueError(f"Invalid format: {s!r}")
+        return cls._from_py_unchecked(_date.fromisoformat(s + "-01"))
+
+    def replace(self, **kwargs: Any) -> YearMonth:
+        """Create a new instance with the given fields replaced
+
+        Example
+        -------
+        >>> d = YearMonth(2021, 12)
+        >>> d.replace(month=3)
+        YearMonth(2021-03)
+        """
+        if "day" in kwargs:
+            raise TypeError(
+                "replace() got an unexpected keyword argument 'day'"
+            )
+        return YearMonth._from_py_unchecked(self._py_date.replace(**kwargs))
+
+    def on_day(self, day: int, /) -> Date:
+        """Create a date from this year-month with a given day
+
+        Example
+        -------
+        >>> YearMonth(2021, 1).on_day(2)
+        Date(2021-01-02)
+        """
+        return Date._from_py_unchecked(self._py_date.replace(day=day))
+
+    __str__ = format_common_iso
+
+    def __repr__(self) -> str:
+        return f"YearMonth({self})"
+
+    def __eq__(self, other: object) -> bool:
+        """Compare for equality
+
+        Example
+        -------
+        >>> ym = YearMonth(2021, 1)
+        >>> ym == YearMonth(2021, 1)
+        True
+        >>> ym == YearMonth(2021, 2)
+        False
+        """
+        if not isinstance(other, YearMonth):
+            return NotImplemented
+        return self._py_date == other._py_date
+
+    def __lt__(self, other: YearMonth) -> bool:
+        if not isinstance(other, YearMonth):
+            return NotImplemented
+        return self._py_date < other._py_date
+
+    def __le__(self, other: YearMonth) -> bool:
+        if not isinstance(other, YearMonth):
+            return NotImplemented
+        return self._py_date <= other._py_date
+
+    def __gt__(self, other: YearMonth) -> bool:
+        if not isinstance(other, YearMonth):
+            return NotImplemented
+        return self._py_date > other._py_date
+
+    def __ge__(self, other: YearMonth) -> bool:
+        if not isinstance(other, YearMonth):
+            return NotImplemented
+        return self._py_date >= other._py_date
+
+    def __hash__(self) -> int:
+        return hash(self._py_date)
+
+    @classmethod
+    def _from_py_unchecked(cls, d: _date, /) -> YearMonth:
+        self = _object_new(cls)
+        self._py_date = d
+        return self
+
+    @no_type_check
+    def __reduce__(self):
+        return _unpkl_ym, (pack("<HB", self.year, self.month),)
+
+
+# A separate unpickling function allows us to make backwards-compatible changes
+# to the pickling format in the future
+@no_type_check
+def _unpkl_ym(data: bytes) -> YearMonth:
+    return YearMonth(*unpack("<HB", data))
+
+
+YearMonth.MIN = YearMonth._from_py_unchecked(_date.min)
+YearMonth.MAX = YearMonth._from_py_unchecked(_date.max.replace(day=1))
 
 
 @final
@@ -4941,6 +5101,7 @@ _match_next_timedelta_component = re.compile(
 _match_next_datedelta_component = re.compile(
     r"^(\d{1,8})([YMWD])", re.ASCII
 ).match
+_match_yearmonth = re.compile(r"\d{4}-\d{2}", re.ASCII).fullmatch
 
 
 def _check_utc_bounds(dt: _datetime) -> _datetime:
@@ -5113,6 +5274,7 @@ for name in __all__:
 
 for _unpkl in (
     _unpkl_date,
+    _unpkl_ym,
     _unpkl_time,
     _unpkl_tdelta,
     _unpkl_dtdelta,

@@ -16,6 +16,7 @@ mod offset_datetime;
 mod system_datetime;
 mod time;
 mod time_delta;
+mod yearmonth;
 mod zoned_datetime;
 
 use date::unpickle as _unpkl_date;
@@ -29,12 +30,13 @@ use system_datetime::unpickle as _unpkl_system;
 use time::unpickle as _unpkl_time;
 use time_delta::unpickle as _unpkl_tdelta;
 use time_delta::{hours, microseconds, milliseconds, minutes, nanoseconds, seconds};
+use yearmonth::unpickle as _unpkl_ym;
 use zoned_datetime::unpickle as _unpkl_zoned;
 
 static mut MODULE_DEF: PyModuleDef = PyModuleDef {
     m_base: PyModuleDef_HEAD_INIT,
     m_name: c"whenever".as_ptr(),
-    m_doc: c"A better datetime API for Python, written in Rust".as_ptr(),
+    m_doc: c"Modern datetime library for Python".as_ptr(),
     m_size: mem::size_of::<State>() as _,
     m_methods: unsafe { METHODS.as_ptr() as *mut _ },
     m_slots: unsafe { MODULE_SLOTS.as_ptr() as *mut _ },
@@ -48,6 +50,7 @@ static mut MODULE_DEF: PyModuleDef = PyModuleDef {
 
 static mut METHODS: &[PyMethodDef] = &[
     method!(_unpkl_date, "", METH_O),
+    method!(_unpkl_ym, "", METH_O),
     method!(_unpkl_time, "", METH_O),
     method_vararg!(_unpkl_ddelta, ""),
     method!(_unpkl_tdelta, "", METH_O),
@@ -269,6 +272,14 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         date::SINGLETONS,
         ptr::addr_of_mut!(state.date_type),
         ptr::addr_of_mut!(state.unpickle_date),
+    ) || !new_type(
+        module,
+        module_name,
+        ptr::addr_of_mut!(yearmonth::SPEC),
+        c"_unpkl_ym",
+        yearmonth::SINGLETONS,
+        ptr::addr_of_mut!(state.yearmonth_type),
+        ptr::addr_of_mut!(state.unpickle_yearmonth),
     ) || !new_type(
         module,
         module_name,
@@ -622,6 +633,7 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
 struct State {
     // types
     date_type: *mut PyTypeObject,
+    yearmonth_type: *mut PyTypeObject,
     time_type: *mut PyTypeObject,
     date_delta_type: *mut PyTypeObject,
     time_delta_type: *mut PyTypeObject,
@@ -643,6 +655,7 @@ struct State {
 
     // unpickling functions
     unpickle_date: *mut PyObject,
+    unpickle_yearmonth: *mut PyObject,
     unpickle_time: *mut PyObject,
     unpickle_date_delta: *mut PyObject,
     unpickle_time_delta: *mut PyObject,
