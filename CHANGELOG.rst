@@ -1,6 +1,17 @@
 🚀 Changelog
 ============
 
+0.6.11 (2024-11-??)
+-------------------
+
+**Added**
+
+- Added ``YearMonth`` class
+
+**Fixed**
+
+- ``__version__`` is accessible, whether the Rust or Python version is used
+
 0.6.10 (2024-10-30)
 -------------------
 
