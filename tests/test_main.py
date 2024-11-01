@@ -46,6 +46,12 @@ def test_exceptions():
     assert issubclass(InvalidOffset, ValueError)
 
 
+def test_version():
+    from whenever import __version__
+
+    assert isinstance(__version__, str)
+
+
 @pytest.mark.skipif(
     sys.implementation.name == "pypy",
     reason="time-machine doesn't support PyPy",

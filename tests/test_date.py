@@ -6,7 +6,15 @@ from itertools import chain, product
 
 import pytest
 
-from whenever import Date, DateDelta, LocalDateTime, Time, Weekday, days
+from whenever import (
+    Date,
+    DateDelta,
+    LocalDateTime,
+    Time,
+    Weekday,
+    YearMonth,
+    days,
+)
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
@@ -119,6 +127,11 @@ class TestInit:
             (ValueError, OverflowError), match="int|range|date|day"
         ):
             Date(year, month, day)
+
+
+def test_year_month():
+    d = Date(2021, 1, 2)
+    assert d.year_month() == YearMonth(2021, 1)
 
 
 def test_py_date():
@@ -594,7 +607,7 @@ def test_singletons():
     assert Date.MAX == Date(9999, 12, 31)
 
 
-def cannot_subclass():
+def test_cannot_subclass():
     with pytest.raises(TypeError):
 
         class SubclassDate(Date):  # type: ignore[misc]
