@@ -13,6 +13,7 @@ try:  # pragma: no cover
         _unpkl_tdelta,
         _unpkl_time,
         _unpkl_utc,
+        _unpkl_ym,
         _unpkl_zoned,
     )
 
@@ -24,7 +25,6 @@ except ModuleNotFoundError as e:
     from ._pywhenever import *
     from ._pywhenever import (  # for the docs
         __all__,
-        __version__,
         _BasicConversions,
         _KnowsInstant,
         _KnowsInstantAndLocal,
@@ -41,15 +41,17 @@ except ModuleNotFoundError as e:
         _unpkl_tdelta,
         _unpkl_time,
         _unpkl_utc,
+        _unpkl_ym,
         _unpkl_zoned,
     )
 
     _EXTENSION_LOADED = False
 
-
 from contextlib import contextmanager as _contextmanager
 from dataclasses import dataclass as _dataclass
 from typing import Iterator as _Iterator
+
+from ._pywhenever import __version__
 
 
 @_dataclass
