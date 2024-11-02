@@ -5,7 +5,8 @@ use std::fmt::{self, Display, Formatter};
 
 use crate::common::*;
 use crate::{
-    date_delta::DateDelta, local_datetime::DateTime, time::Time, yearmonth::YearMonth, State,
+    date_delta::DateDelta, local_datetime::DateTime, monthday::MonthDay, time::Time,
+    yearmonth::YearMonth, State,
 };
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -209,9 +210,9 @@ impl Display for Date {
 
 pub(crate) const MAX_YEAR: c_long = 9999;
 pub(crate) const MIN_YEAR: c_long = 1;
-const DAYS_IN_MONTH: [u8; 13] = [
+pub(crate) const MAX_MONTH_DAYS_IN_LEAP_YEAR: [u8; 13] = [
     0, // 1-indexed
-    31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+    31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
 ];
 const MIN_ORD: i32 = 1;
 const MAX_ORD: i32 = 3_652_059;
@@ -229,10 +230,10 @@ const fn is_leap(year: u16) -> bool {
 
 const fn days_in_month(year: u16, month: u8) -> u8 {
     debug_assert!(month >= 1 && month <= 12);
-    if month == 2 && is_leap(year) {
-        29
+    if month == 2 && !is_leap(year) {
+        28
     } else {
-        DAYS_IN_MONTH[month as usize]
+        MAX_MONTH_DAYS_IN_LEAP_YEAR[month as usize]
     }
 }
 
@@ -418,6 +419,11 @@ unsafe fn from_py_date(cls: *mut PyObject, date: *mut PyObject) -> PyReturn {
 unsafe fn year_month(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let Date { year, month, .. } = Date::extract(slf);
     YearMonth::new_unchecked(year, month).to_obj(State::for_obj(slf).yearmonth_type)
+}
+
+unsafe fn month_day(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    let Date { month, day, .. } = Date::extract(slf);
+    MonthDay::new_unchecked(month, day).to_obj(State::for_obj(slf).monthday_type)
 }
 
 unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
@@ -710,6 +716,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(day_of_week, "Return the day of the week"),
     method!(at, "Combine with a time to create a datetime", METH_O),
     method!(year_month, "Return the year and month"),
+    method!(month_day, "Return the month and day"),
     method!(__reduce__, ""),
     method_kwargs!(
         add,

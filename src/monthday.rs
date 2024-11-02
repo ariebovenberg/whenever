@@ -4,60 +4,59 @@ use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
 use crate::common::*;
-use crate::date::{Date, MAX_YEAR, MIN_YEAR};
+use crate::date::{Date, MAX_MONTH_DAYS_IN_LEAP_YEAR};
 use crate::State;
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
-pub struct YearMonth {
-    pub(crate) year: u16,
+pub struct MonthDay {
     pub(crate) month: u8,
+    pub(crate) day: u8,
 }
 
-pub(crate) const SINGLETONS: &[(&CStr, YearMonth); 2] = &[
-    (c"MIN", YearMonth::new_unchecked(1, 1)),
-    (c"MAX", YearMonth::new_unchecked(9999, 12)),
+pub(crate) const SINGLETONS: &[(&CStr, MonthDay); 2] = &[
+    (c"MIN", MonthDay::new_unchecked(1, 1)),
+    (c"MAX", MonthDay::new_unchecked(12, 31)),
 ];
 
-impl YearMonth {
+impl MonthDay {
     pub(crate) const unsafe fn hash(self) -> i32 {
-        (self.year as i32) << 4 | self.month as i32
+        (self.month as i32) << 8 | self.day as i32
     }
 
-    pub(crate) const fn from_longs(year: c_long, month: c_long) -> Option<Self> {
-        if year < MIN_YEAR || year > MAX_YEAR {
-            return None;
-        }
+    pub(crate) const fn from_longs(month: c_long, day: c_long) -> Option<Self> {
         if month < 1 || month > 12 {
             return None;
         }
-        Some(YearMonth {
-            year: year as u16,
-            month: month as u8,
-        })
-    }
-
-    pub(crate) const fn new(year: u16, month: u8) -> Option<Self> {
-        if year == 0 || year > MAX_YEAR as _ || month < 1 || month > 12 {
-            None
+        if day >= 1 && day <= MAX_MONTH_DAYS_IN_LEAP_YEAR[month as usize] as _ {
+            Some(MonthDay {
+                month: month as u8,
+                day: day as u8,
+            })
         } else {
-            Some(YearMonth { year, month })
+            None
         }
     }
 
-    pub(crate) const fn new_unchecked(year: u16, month: u8) -> Self {
-        debug_assert!(year != 0);
-        debug_assert!(year <= MAX_YEAR as _);
-        debug_assert!(month >= 1 && month <= 12);
-        YearMonth { year, month }
+    pub(crate) const fn new(month: u8, day: u8) -> Option<Self> {
+        if month == 0 || month > 12 || day == 0 || day > MAX_MONTH_DAYS_IN_LEAP_YEAR[month as usize]
+        {
+            None
+        } else {
+            Some(MonthDay { month, day })
+        }
+    }
+
+    pub(crate) const fn new_unchecked(month: u8, day: u8) -> Self {
+        debug_assert!(month > 0);
+        debug_assert!(month <= 12);
+        debug_assert!(day > 0 && day <= 31);
+        MonthDay { month, day }
     }
 
     pub(crate) fn parse_all(s: &[u8]) -> Option<Self> {
-        if s.len() == 7 && s[4] == b'-' {
-            YearMonth::new(
-                parse_digit(s, 0)? as u16 * 1000
-                    + parse_digit(s, 1)? as u16 * 100
-                    + parse_digit(s, 2)? as u16 * 10
-                    + parse_digit(s, 3)? as u16,
+        if s.len() == 7 && s[0] == b'-' && s[1] == b'-' && s[4] == b'-' {
+            MonthDay::new(
+                parse_digit(s, 2)? * 10 + parse_digit(s, 3)?,
                 parse_digit(s, 5)? * 10 + parse_digit(s, 6)?,
             )
         } else {
@@ -66,48 +65,48 @@ impl YearMonth {
     }
 }
 
-impl PyWrapped for YearMonth {}
+impl PyWrapped for MonthDay {}
 
-impl Display for YearMonth {
+impl Display for MonthDay {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{:04}-{:02}", self.year, self.month)
+        write!(f, "--{:02}-{:02}", self.month, self.day)
     }
 }
 
 unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
-    let mut year: c_long = 0;
     let mut month: c_long = 0;
+    let mut day: c_long = 0;
 
     // FUTURE: parse them manually, which is more efficient
     if PyArg_ParseTupleAndKeywords(
         args,
         kwargs,
-        c"ll:YearMonth".as_ptr(),
-        arg_vec(&[c"year", c"month"]).as_mut_ptr(),
-        &mut year,
+        c"ll:MonthDay".as_ptr(),
+        arg_vec(&[c"month", c"day"]).as_mut_ptr(),
         &mut month,
+        &mut day,
     ) == 0
     {
         Err(py_err!())?
     }
 
-    YearMonth::from_longs(year, month)
-        .ok_or_value_err("Invalid year/month component value")?
+    MonthDay::from_longs(month, day)
+        .ok_or_value_err("Invalid month/day component value")?
         .to_obj(cls)
 }
 
 unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
-    format!("YearMonth({})", YearMonth::extract(slf)).to_py()
+    format!("MonthDay({})", MonthDay::extract(slf)).to_py()
 }
 
 unsafe extern "C" fn __hash__(slf: *mut PyObject) -> Py_hash_t {
-    YearMonth::extract(slf).hash() as Py_hash_t
+    MonthDay::extract(slf).hash() as Py_hash_t
 }
 
 unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> PyReturn {
     Ok(if Py_TYPE(b_obj) == Py_TYPE(a_obj) {
-        let a = YearMonth::extract(a_obj);
-        let b = YearMonth::extract(b_obj);
+        let a = MonthDay::extract(a_obj);
+        let b = MonthDay::extract(b_obj);
         match op {
             pyo3_ffi::Py_LT => a < b,
             pyo3_ffi::Py_LE => a <= b,
@@ -130,7 +129,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_tp_richcompare, __richcmp__),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: c"A year and month type, i.e. a date without a day".as_ptr() as *mut c_void,
+        pfunc: c"A month and day type, i.e. a date without a specific year".as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_methods,
@@ -155,7 +154,7 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
-    format!("{}", YearMonth::extract(slf)).to_py()
+    format!("{}", MonthDay::extract(slf)).to_py()
 }
 
 unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -163,16 +162,16 @@ unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
-    YearMonth::parse_all(s.to_utf8()?.ok_or_type_err("argument must be str")?)
+    MonthDay::parse_all(s.to_utf8()?.ok_or_type_err("argument must be str")?)
         .ok_or_else(|| value_err!("Invalid format: {}", s.repr()))?
         .to_obj(cls.cast())
 }
 
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let YearMonth { year, month } = YearMonth::extract(slf);
+    let MonthDay { month, day } = MonthDay::extract(slf);
     (
-        State::for_obj(slf).unpickle_yearmonth,
-        steal!((steal!(pack![year, month].to_py()?),).to_py()?),
+        State::for_obj(slf).unpickle_monthday,
+        steal!((steal!(pack![month, day].to_py()?),).to_py()?),
     )
         .to_py()
 }
@@ -184,47 +183,50 @@ unsafe fn replace(
     kwargs: &mut KwargIter,
 ) -> PyReturn {
     let &State {
-        str_year,
-        str_month,
-        ..
+        str_month, str_day, ..
     } = State::for_type(cls);
     if !args.is_empty() {
         Err(type_err!("replace() takes no positional arguments"))
     } else {
-        let ym = YearMonth::extract(slf);
-        let mut year = ym.year.into();
-        let mut month = ym.month.into();
+        let md = MonthDay::extract(slf);
+        let mut month = md.month.into();
+        let mut day = md.day.into();
         handle_kwargs("replace", kwargs, |key, value, eq| {
-            if eq(key, str_year) {
-                year = value.to_long()?.ok_or_type_err("year must be an integer")?;
-            } else if eq(key, str_month) {
+            if eq(key, str_month) {
                 month = value
                     .to_long()?
                     .ok_or_type_err("month must be an integer")?;
+            } else if eq(key, str_day) {
+                day = value.to_long()?.ok_or_type_err("day must be an integer")?;
             } else {
                 return Ok(false);
             }
             Ok(true)
         })?;
-        YearMonth::from_longs(year, month)
-            .ok_or_value_err("Invalid year/month components")?
+        MonthDay::from_longs(month, day)
+            .ok_or_value_err("Invalid month/day components")?
             .to_obj(cls)
     }
 }
 
-unsafe fn on_day(slf: *mut PyObject, day_obj: *mut PyObject) -> PyReturn {
+unsafe fn in_year(slf: *mut PyObject, year_obj: *mut PyObject) -> PyReturn {
     let &State { date_type, .. } = State::for_obj(slf);
-    let YearMonth { year, month } = YearMonth::extract(slf);
-    let day = day_obj
+    let MonthDay { month, day } = MonthDay::extract(slf);
+    let year = year_obj
         .to_long()?
-        .ok_or_type_err("day must be an integer")?
+        .ok_or_type_err("year must be an integer")?
         .try_into()
         .ok()
-        .ok_or_value_err("day out of range")?;
-    // OPTIMIZE: we don't need to check the validity of the year and month again
+        .ok_or_value_err("year out of range")?;
+    // OPTIMIZE: we don't need to check the validity of the month again
     Date::new(year, month, day)
         .ok_or_value_err("Invalid date components")?
         .to_obj(date_type)
+}
+
+unsafe fn is_leap(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    let MonthDay { month, day } = MonthDay::extract(slf);
+    (day == 29 && month == 2).to_py()
 }
 
 static mut METHODS: &[PyMethodDef] = &[
@@ -240,10 +242,11 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(identity2 named "__copy__", ""),
     method!(identity2 named "__deepcopy__", "", METH_O),
     method!(
-        on_day,
-        "Create a date from this year-month with a given day",
+        in_year,
+        "Create a date from this month and day in the specified year",
         METH_O
     ),
+    method!(is_leap, "Return whether this month and day is February 29"),
     method!(__reduce__, ""),
     method_kwargs!(
         replace,
@@ -255,32 +258,32 @@ static mut METHODS: &[PyMethodDef] = &[
 
 pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let mut packed = arg.to_bytes()?.ok_or_type_err("Invalid pickle data")?;
-    if packed.len() != 3 {
+    if packed.len() != 2 {
         Err(value_err!("Invalid pickle data"))?
     }
-    YearMonth {
-        year: unpack_one!(packed, u16),
+    MonthDay {
         month: unpack_one!(packed, u8),
+        day: unpack_one!(packed, u8),
     }
-    .to_obj(State::for_mod(module).yearmonth_type)
-}
-
-unsafe fn get_year(slf: *mut PyObject) -> PyReturn {
-    YearMonth::extract(slf).year.to_py()
+    .to_obj(State::for_mod(module).monthday_type)
 }
 
 unsafe fn get_month(slf: *mut PyObject) -> PyReturn {
-    YearMonth::extract(slf).month.to_py()
+    MonthDay::extract(slf).month.to_py()
+}
+
+unsafe fn get_day(slf: *mut PyObject) -> PyReturn {
+    MonthDay::extract(slf).day.to_py()
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
     getter!(
-        get_year named "year",
-        "The year component"
-    ),
-    getter!(
         get_month named "month",
         "The month component"
+    ),
+    getter!(
+        get_day named "day",
+        "The day component"
     ),
     PyGetSetDef {
         name: NULL(),
@@ -291,4 +294,4 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
     },
 ];
 
-type_spec!(YearMonth, SLOTS);
+type_spec!(MonthDay, SLOTS);

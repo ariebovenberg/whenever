@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.10"
+__version__ = "0.6.11"
 
 import enum
 import re
@@ -68,6 +68,7 @@ __all__ = [
     # Date and time
     "Date",
     "YearMonth",
+    "MonthDay",
     "Time",
     "Instant",
     "OffsetDateTime",
@@ -201,6 +202,18 @@ class Date(_ImmutableBase):
         YearMonth(2021-01)
         """
         return YearMonth._from_py_unchecked(self._py_date.replace(day=1))
+
+    def month_day(self) -> MonthDay:
+        """The month and day (without a year component)
+
+        Example
+        -------
+        >>> Date(2021, 1, 2).month_day()
+        MonthDay(--01-02)
+        """
+        return MonthDay._from_py_unchecked(
+            self._py_date.replace(year=_DUMMY_LEAP_YEAR)
+        )
 
     def day_of_week(self) -> Weekday:
         """The day of the week
@@ -497,6 +510,8 @@ Date.MAX = Date._from_py_unchecked(_date.max)
 class YearMonth(_ImmutableBase):
     """A year and month without a day component
 
+    Useful for representing recurring events or billing periods.
+
     Example
     -------
     >>> ym = YearMonth(2021, 1)
@@ -622,6 +637,7 @@ class YearMonth(_ImmutableBase):
 
     @classmethod
     def _from_py_unchecked(cls, d: _date, /) -> YearMonth:
+        assert d.day == 1
         self = _object_new(cls)
         self._py_date = d
         return self
@@ -640,6 +656,190 @@ def _unpkl_ym(data: bytes) -> YearMonth:
 
 YearMonth.MIN = YearMonth._from_py_unchecked(_date.min)
 YearMonth.MAX = YearMonth._from_py_unchecked(_date.max.replace(day=1))
+
+
+_DUMMY_LEAP_YEAR = 4
+
+
+@final
+class MonthDay(_ImmutableBase):
+    """A month and day without a year component.
+
+    Useful for representing recurring events or birthdays.
+
+    Example
+    -------
+    >>> MonthDay(11, 23)
+    MonthDay(--11-23)
+    """
+
+    # We store the underlying data in a datetime.date object,
+    # which allows us to benefit from its functionality and performance.
+    # It isn't exposed to the user, so it's not a problem.
+    __slots__ = ("_py_date",)
+
+    MIN: ClassVar[MonthDay]
+    """The minimum possible month-day"""
+    MAX: ClassVar[MonthDay]
+    """The maximum possible month-day"""
+
+    def __init__(self, month: int, day: int) -> None:
+        self._py_date = _date(_DUMMY_LEAP_YEAR, month, day)
+
+    @property
+    def month(self) -> int:
+        return self._py_date.month
+
+    @property
+    def day(self) -> int:
+        return self._py_date.day
+
+    def format_common_iso(self) -> str:
+        """Format as the common ISO 8601 month-day format.
+
+        Inverse of ``parse_common_iso``.
+
+        Example
+        -------
+        >>> MonthDay(10, 8).format_common_iso()
+        '--10-08'
+
+        Note
+        ----
+        This format is officially only part of the 2000 edition of the
+        ISO 8601 standard. There is no alternative for month-day
+        in the newer editions. However, it is still widely used in other libraries.
+        """
+        return f"-{self._py_date.isoformat()[4:]}"
+
+    @classmethod
+    def parse_common_iso(cls, s: str, /) -> MonthDay:
+        """Create from the common ISO 8601 format ``--MM-DD``.
+        Does not accept more "exotic" ISO 8601 formats.
+
+        Inverse of :meth:`format_common_iso`
+
+        Example
+        -------
+        >>> MonthDay.parse_common_iso("--11-23")
+        MonthDay(--11-23)
+        """
+        if not _match_monthday(s):
+            raise ValueError(f"Invalid format: {s!r}")
+        return cls._from_py_unchecked(
+            _date.fromisoformat(f"{_DUMMY_LEAP_YEAR:0>4}" + s[1:])
+        )
+
+    def replace(self, **kwargs: Any) -> MonthDay:
+        """Create a new instance with the given fields replaced
+
+        Example
+        -------
+        >>> d = MonthDay(11, 23)
+        >>> d.replace(month=3)
+        MonthDay(--03-23)
+        """
+        if "year" in kwargs:
+            raise TypeError(
+                "replace() got an unexpected keyword argument 'year'"
+            )
+        return MonthDay._from_py_unchecked(self._py_date.replace(**kwargs))
+
+    def in_year(self, year: int, /) -> Date:
+        """Create a date from this month-day with a given day
+
+        Example
+        -------
+        >>> MonthDay(8, 1).in_year(2025)
+        Date(2025-08-01)
+
+        Note
+        ----
+        This method will raise a ``ValueError`` if the month-day is a leap day
+        and the year is not a leap year.
+        """
+        return Date._from_py_unchecked(self._py_date.replace(year=year))
+
+    def is_leap(self) -> bool:
+        """Check if the month-day is February 29th
+
+        Example
+        -------
+        >>> MonthDay(2, 29).is_leap()
+        True
+        >>> MonthDay(3, 1).is_leap()
+        False
+        """
+        return self._py_date.month == 2 and self._py_date.day == 29
+
+    __str__ = format_common_iso
+
+    def __repr__(self) -> str:
+        return f"MonthDay({self})"
+
+    def __eq__(self, other: object) -> bool:
+        """Compare for equality
+
+        Example
+        -------
+        >>> md = MonthDay(10, 1)
+        >>> md == MonthDay(10, 1)
+        True
+        >>> md == MonthDay(10, 2)
+        False
+        """
+        if not isinstance(other, MonthDay):
+            return NotImplemented
+        return self._py_date == other._py_date
+
+    def __lt__(self, other: MonthDay) -> bool:
+        if not isinstance(other, MonthDay):
+            return NotImplemented
+        return self._py_date < other._py_date
+
+    def __le__(self, other: MonthDay) -> bool:
+        if not isinstance(other, MonthDay):
+            return NotImplemented
+        return self._py_date <= other._py_date
+
+    def __gt__(self, other: MonthDay) -> bool:
+        if not isinstance(other, MonthDay):
+            return NotImplemented
+        return self._py_date > other._py_date
+
+    def __ge__(self, other: MonthDay) -> bool:
+        if not isinstance(other, MonthDay):
+            return NotImplemented
+        return self._py_date >= other._py_date
+
+    def __hash__(self) -> int:
+        return hash(self._py_date)
+
+    @classmethod
+    def _from_py_unchecked(cls, d: _date, /) -> MonthDay:
+        assert d.year == _DUMMY_LEAP_YEAR
+        self = _object_new(cls)
+        self._py_date = d
+        return self
+
+    @no_type_check
+    def __reduce__(self):
+        return _unpkl_md, (pack("<BB", self.month, self.day),)
+
+
+# A separate unpickling function allows us to make backwards-compatible changes
+# to the pickling format in the future
+@no_type_check
+def _unpkl_md(data: bytes) -> MonthDay:
+    return MonthDay(*unpack("<BB", data))
+
+
+MonthDay.MIN = MonthDay._from_py_unchecked(
+    _date.min.replace(year=_DUMMY_LEAP_YEAR)
+)
+MonthDay.MAX = MonthDay._from_py_unchecked(
+    _date.max.replace(year=_DUMMY_LEAP_YEAR)
+)
 
 
 @final
@@ -5102,6 +5302,7 @@ _match_next_datedelta_component = re.compile(
     r"^(\d{1,8})([YMWD])", re.ASCII
 ).match
 _match_yearmonth = re.compile(r"\d{4}-\d{2}", re.ASCII).fullmatch
+_match_monthday = re.compile(r"--\d{2}-\d{2}", re.ASCII).fullmatch
 
 
 def _check_utc_bounds(dt: _datetime) -> _datetime:
@@ -5275,6 +5476,7 @@ for name in __all__:
 for _unpkl in (
     _unpkl_date,
     _unpkl_ym,
+    _unpkl_md,
     _unpkl_time,
     _unpkl_tdelta,
     _unpkl_dtdelta,

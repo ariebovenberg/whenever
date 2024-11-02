@@ -12,6 +12,7 @@ mod date_delta;
 mod datetime_delta;
 mod instant;
 pub mod local_datetime;
+mod monthday;
 mod offset_datetime;
 mod system_datetime;
 mod time;
@@ -25,6 +26,7 @@ use date_delta::{days, months, weeks, years};
 use datetime_delta::unpickle as _unpkl_dtdelta;
 use instant::{unpickle as _unpkl_utc, UNIX_EPOCH_INSTANT};
 use local_datetime::unpickle as _unpkl_local;
+use monthday::unpickle as _unpkl_md;
 use offset_datetime::unpickle as _unpkl_offset;
 use system_datetime::unpickle as _unpkl_system;
 use time::unpickle as _unpkl_time;
@@ -51,6 +53,7 @@ static mut MODULE_DEF: PyModuleDef = PyModuleDef {
 static mut METHODS: &[PyMethodDef] = &[
     method!(_unpkl_date, "", METH_O),
     method!(_unpkl_ym, "", METH_O),
+    method!(_unpkl_md, "", METH_O),
     method!(_unpkl_time, "", METH_O),
     method_vararg!(_unpkl_ddelta, ""),
     method!(_unpkl_tdelta, "", METH_O),
@@ -283,6 +286,14 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     ) || !new_type(
         module,
         module_name,
+        ptr::addr_of_mut!(monthday::SPEC),
+        c"_unpkl_md",
+        monthday::SINGLETONS,
+        ptr::addr_of_mut!(state.monthday_type),
+        ptr::addr_of_mut!(state.unpickle_monthday),
+    ) || !new_type(
+        module,
+        module_name,
         ptr::addr_of_mut!(time::SPEC),
         c"_unpkl_time",
         time::SINGLETONS,
@@ -497,6 +508,13 @@ unsafe extern "C" fn module_traverse(
     let state = State::for_mod(module);
     // types
     traverse_type(state.date_type, visit, arg, date::SINGLETONS.len());
+    traverse_type(
+        state.yearmonth_type,
+        visit,
+        arg,
+        yearmonth::SINGLETONS.len(),
+    );
+    traverse_type(state.monthday_type, visit, arg, monthday::SINGLETONS.len());
     traverse_type(state.time_type, visit, arg, time::SINGLETONS.len());
     traverse_type(
         state.date_delta_type,
@@ -569,6 +587,8 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     let state = PyModule_GetState(module).cast::<State>().as_mut().unwrap();
     // types
     Py_CLEAR(ptr::addr_of_mut!(state.date_type).cast());
+    Py_CLEAR(ptr::addr_of_mut!(state.yearmonth_type).cast());
+    Py_CLEAR(ptr::addr_of_mut!(state.monthday_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.time_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.date_delta_type).cast());
     Py_CLEAR(ptr::addr_of_mut!(state.time_delta_type).cast());
@@ -634,6 +654,7 @@ struct State {
     // types
     date_type: *mut PyTypeObject,
     yearmonth_type: *mut PyTypeObject,
+    monthday_type: *mut PyTypeObject,
     time_type: *mut PyTypeObject,
     date_delta_type: *mut PyTypeObject,
     time_delta_type: *mut PyTypeObject,
@@ -656,6 +677,7 @@ struct State {
     // unpickling functions
     unpickle_date: *mut PyObject,
     unpickle_yearmonth: *mut PyObject,
+    unpickle_monthday: *mut PyObject,
     unpickle_time: *mut PyObject,
     unpickle_date_delta: *mut PyObject,
     unpickle_time_delta: *mut PyObject,
