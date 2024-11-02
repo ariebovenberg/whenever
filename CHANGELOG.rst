@@ -1,16 +1,16 @@
 🚀 Changelog
 ============
 
-0.6.11 (2024-11-??)
+0.6.11 (2024-11-04)
 -------------------
 
 **Added**
 
-- Added ``YearMonth`` class
+- Added ``YearMonth`` and ``MonthDay`` classes for working with year-month and month-day pairs
 
 **Fixed**
 
-- ``__version__`` is accessible, whether the Rust or Python version is used
+- ``whenever.__version__`` is now also accessible when Rust extension is used
 
 0.6.10 (2024-10-30)
 -------------------

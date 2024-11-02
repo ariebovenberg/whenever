@@ -189,7 +189,7 @@ There's no plan to change this due to the following reasons:
 1. The benefits of subclassing are limited.
    If you want to extend the classes, composition is a better way to do it.
    Alternatively, you can use Python's dynamic features to create
-   something that "quacks" like a subclass.
+   something that behaves like a subclass.
 2. For a class to support subclassing properly, a lot of extra work is needed.
    It also adds many subtle ways to misuse the API, that are hard to control.
 3. Enabling subclassing would undo some performance optimizations.

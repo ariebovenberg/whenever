@@ -10,6 +10,7 @@ from whenever import (
     Date,
     DateDelta,
     LocalDateTime,
+    MonthDay,
     Time,
     Weekday,
     YearMonth,
@@ -132,6 +133,11 @@ class TestInit:
 def test_year_month():
     d = Date(2021, 1, 2)
     assert d.year_month() == YearMonth(2021, 1)
+
+
+def test_month_day():
+    d = Date(2021, 1, 2)
+    assert d.month_day() == MonthDay(1, 2)
 
 
 def test_py_date():

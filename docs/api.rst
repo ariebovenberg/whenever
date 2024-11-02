@@ -131,6 +131,14 @@ Date and time components
    :members:
    :special-members: __eq__, __lt__, __le__, __gt__, __ge__, __sub__, __add__
 
+.. autoclass:: whenever.YearMonth
+   :members:
+   :special-members: __eq__, __lt__, __le__, __gt__, __ge__
+
+.. autoclass:: whenever.MonthDay
+   :members:
+   :special-members: __eq__, __lt__, __le__, __gt__, __ge__
+
 .. autoclass:: whenever.Time
    :members:
    :special-members: __eq__, __lt__, __le__, __gt__, __ge__

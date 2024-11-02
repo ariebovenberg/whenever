@@ -528,8 +528,6 @@ unsafe fn replace(
 unsafe fn now(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let state = State::for_type(cls.cast());
     let (timestamp, nanos) = state.time_ns()?;
-    // Technically conversion to i128 can overflow, but only if system
-    // time is set to a very very very distant future
     let utc_dt = Instant::from_timestamp(timestamp)
         .ok_or_value_err("timestamp is out of range")?
         .to_py_ignore_nanos(state.py_api)?;

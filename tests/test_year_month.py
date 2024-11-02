@@ -27,9 +27,19 @@ class TestInit:
             (10_000, 3),
         ],
     )
-    def test_invalid(self, year, month):
+    def test_invalid_combinations(self, year, month):
         with pytest.raises(ValueError):
             YearMonth(year, month)
+
+    def test_invalid(self):
+        with pytest.raises(TypeError):
+            YearMonth(2000)  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError):
+            YearMonth("2001", "SEP")  # type: ignore[arg-type]
+
+        with pytest.raises(TypeError):
+            YearMonth()  # type: ignore[call-arg]
 
 
 def test_properties():

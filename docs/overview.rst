@@ -803,6 +803,10 @@ Date(2023-02-28)
 >>> d - Date(2022, 10, 15)
 DateDelta(P3M16D)
 
+There's also :class:`~whenever.YearMonth` and :class:`~whenever.MonthDay` for representing
+year-month and month-day combinations, respectively.
+These are useful for representing recurring events or birthdays.
+
 See the :ref:`API reference <date-and-time-api>` for more details.
 
 Testing

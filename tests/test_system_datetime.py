@@ -868,7 +868,7 @@ class TestFromPyDateTime:
 @system_tz_nyc()
 def test_now():
     now = SystemDateTime.now()
-    assert now.offset == hours(-4)
+    assert now.offset in (hours(-4), hours(-5))
     py_now = py_datetime.now(ZoneInfo("America/New_York"))
     assert py_now - now.py_datetime() < timedelta(seconds=1)
 
