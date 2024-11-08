@@ -691,9 +691,12 @@ to this format, respectively:
 
 >>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=+5)
 >>> d.format_rfc3339()
-'2023-12-28T11:30:00+05:00'
->>> OffsetDateTime.parse_rfc3339('2021-07-13 09:45:00Z')
+'2023-12-28 11:30:00+05:00'
+>>> OffsetDateTime.parse_rfc3339('2021-07-13_09:45:00Z')
 OffsetDateTime(2021-07-13 09:45:00Z)
+
+The RFC3339 formatter uses a space separator by default.
+If you prefer the ``T`` separator, use ``format_common_iso()`` instead.
 
 RFC 2822
 ~~~~~~~~

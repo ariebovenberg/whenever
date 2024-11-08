@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.11"
+__version__ = "0.6.12"
 
 import enum
 import re
@@ -3090,14 +3090,16 @@ class Instant(_KnowsInstant):
         return cls._from_py_unchecked(parsed, 0)
 
     def format_rfc3339(self) -> str:
-        """Format as an RFC 3339 string
+        """Format as an RFC 3339 string ``YYYY-MM-DD HH:MM:SSZ``
+
+        If you prefer the ``T`` separator, use `format_common_iso()` instead.
 
         The inverse of the ``parse_rfc3339()`` method.
 
         Example
         -------
         >>> Instant.from_utc(2020, 8, 15, hour=23, minute=12).format_rfc3339()
-        "2020-08-15T23:12:00Z"
+        "2020-08-15 23:12:00Z"
         """
         return (
             self._py_dt.isoformat(sep=" ")[:-6]
@@ -3113,7 +3115,7 @@ class Instant(_KnowsInstant):
 
         Example
         -------
-        >>> Instant.parse_rfc3339("2020-08-15T23:12:00Z")
+        >>> Instant.parse_rfc3339("2020-08-15 23:12:00Z")
         Instant(2020-08-15 23:12:00Z)
         >>>
         >>> # also valid:
@@ -3647,14 +3649,23 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         return cls._from_py_unchecked(parsed, 0)
 
     def format_rfc3339(self) -> str:
-        """Format as an RFC 3339 string
+        """Format as an RFC 3339 string ``YYYY-MM-DD HH:MM:SS±HH:MM``
+
+        If you prefer the ``T`` separator, use ``format_common_iso()`` instead.
 
         The inverse of the ``parse_rfc3339()`` method.
 
         Example
         -------
         >>> OffsetDateTime(2020, 8, 15, hour=23, minute=12, offset=hours(4)).format_rfc3339()
-        "2020-08-15T23:12:00+04:00"
+        "2020-08-15 23:12:00+04:00"
+
+        Note
+        ----
+        The RFC3339 format does not allow for second-level precision of the UTC offset.
+        This should not be a problem in practice, unless you're dealing with
+        pre-1950s timezones.
+        The ``format_common_iso()`` does support this precision.
         """
         py_isofmt = self._py_dt.isoformat(" ")
         return (
@@ -3671,7 +3682,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
 
         Example
         -------
-        >>> OffsetDateTime.parse_rfc3339("2020-08-15T23:12:00+02:00")
+        >>> OffsetDateTime.parse_rfc3339("2020-08-15 23:12:00+02:00")
         OffsetDateTime(2020-08-15 23:12:00+02:00)
         >>> # also valid:
         >>> OffsetDateTime.parse_rfc3339("2020-08-15T23:12:00Z")
