@@ -1,6 +1,12 @@
 🚀 Changelog
 ============
 
+0.6.12 (2024-11-08)
+-------------------
+
+- Fixed ``format_rfc3339()`` docstrings that incorrectly included a ``T`` separator.
+  Clarified that ``T`` can be added by using the ``format_common_iso()`` method instead. (#185)
+
 0.6.11 (2024-11-04)
 -------------------
 
