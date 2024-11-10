@@ -1,7 +1,8 @@
 import pickle
 import re
 from copy import copy, deepcopy
-from datetime import datetime as py_datetime, timedelta, timezone
+from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
+from zoneinfo import ZoneInfo
 
 import pytest
 from hypothesis import given
@@ -474,16 +475,99 @@ def test_py_datetime():
     )
 
 
-def test_from_py_datetime():
-    d = py_datetime(2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc)
-    assert Instant.from_py_datetime(d) == Instant.from_utc(
-        2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
-    )
+class TestFromPyDatetime:
 
-    with pytest.raises(ValueError, match="UTC.*timedelta"):
-        Instant.from_py_datetime(
-            d.replace(tzinfo=timezone(-timedelta(hours=4)))
+    def test_utc(self):
+        d = py_datetime(2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc)
+        assert Instant.from_py_datetime(d) == Instant.from_utc(
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
         )
+
+    def test_offset(self):
+
+        assert Instant.from_py_datetime(
+            py_datetime(
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                987_654,
+                tzinfo=timezone(-timedelta(hours=4)),
+            )
+        ).exact_eq(
+            Instant.from_utc(2020, 8, 16, 3, 12, 9, nanosecond=987_654_000)
+        )
+
+    def test_subsecond_offset(self):
+        assert Instant.from_py_datetime(
+            py_datetime(
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                987_654,
+                tzinfo=timezone(timedelta(hours=4, microseconds=30)),
+            )
+        ).exact_eq(
+            Instant.from_utc(2020, 8, 15, 19, 12, 9, nanosecond=987_624_000)
+        )
+
+    def test_zoneinfo(self):
+
+        assert Instant.from_py_datetime(
+            py_datetime(
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                987_654,
+                tzinfo=ZoneInfo("America/New_York"),
+            )
+        ).exact_eq(
+            Instant.from_utc(2020, 8, 16, 3, 12, 9, nanosecond=987_654_000)
+        )
+
+    def test_subclass(self):
+
+        class MyDateTime(py_datetime):
+            pass
+
+        assert Instant.from_py_datetime(
+            MyDateTime(
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                987_654,
+                tzinfo=timezone(-timedelta(hours=4)),
+            )
+        ) == Instant.from_utc(2020, 8, 16, 3, 12, 9, nanosecond=987_654_000)
+
+    def test_out_of_range(self):
+        d = py_datetime(1, 1, 1, tzinfo=timezone(timedelta(hours=5)))
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            Instant.from_py_datetime(d)
+
+    def test_naive(self):
+        with pytest.raises(ValueError, match="naive"):
+            Instant.from_py_datetime(py_datetime(2020, 8, 15, 12))
+
+    def test_utcoffset_none(self):
+
+        class MyTz(tzinfo):
+            def utcoffset(self, _):
+                return None
+
+        with pytest.raises(ValueError, match="utcoffset.*"):
+            Instant.from_py_datetime(py_datetime(2020, 8, 15, tzinfo=MyTz()))  # type: ignore[abstract]
 
 
 def test_now():
@@ -811,6 +895,7 @@ def test_format_rfc3339():
         ).format_rfc3339()
         == "2020-08-15 23:12:09.00000045Z"
     )
+    Instant.now().format_rfc3339
 
 
 class TestParseRFC3339:

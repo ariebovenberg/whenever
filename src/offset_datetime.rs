@@ -129,25 +129,23 @@ impl OffsetDateTime {
     // Returns None if the tzinfo is incorrect, or the UTC time is out of bounds
     pub(crate) unsafe fn from_py(dt: *mut PyObject, state: &State) -> PyResult<Option<Self>> {
         debug_assert!(PyObject_IsInstance(dt, state.py_api.DateTimeType.cast()).is_positive());
-        let tzinfo = get_dt_tzinfo(dt);
-        Ok(match PyObject_IsInstance(tzinfo, state.timezone_type) {
-            1 => OffsetDateTime::new(
-                Date {
-                    year: PyDateTime_GET_YEAR(dt) as u16,
-                    month: PyDateTime_GET_MONTH(dt) as u8,
-                    day: PyDateTime_GET_DAY(dt) as u8,
-                },
-                Time {
-                    hour: PyDateTime_DATE_GET_HOUR(dt) as u8,
-                    minute: PyDateTime_DATE_GET_MINUTE(dt) as u8,
-                    second: PyDateTime_DATE_GET_SECOND(dt) as u8,
-                    nanos: PyDateTime_DATE_GET_MICROSECOND(dt) as u32 * 1_000,
-                },
-                offset_from_py_dt(dt)?,
-            ),
-            0 => None,
-            _ => Err(py_err!())?,
-        })
+        if is_none(get_dt_tzinfo(dt)) {
+            Err(value_err!("Datetime cannot be naive"))?
+        }
+        Ok(OffsetDateTime::new(
+            Date {
+                year: PyDateTime_GET_YEAR(dt) as u16,
+                month: PyDateTime_GET_MONTH(dt) as u8,
+                day: PyDateTime_GET_DAY(dt) as u8,
+            },
+            Time {
+                hour: PyDateTime_DATE_GET_HOUR(dt) as u8,
+                minute: PyDateTime_DATE_GET_MINUTE(dt) as u8,
+                second: PyDateTime_DATE_GET_SECOND(dt) as u8,
+                nanos: PyDateTime_DATE_GET_MICROSECOND(dt) as u32 * 1_000,
+            },
+            offset_from_py_dt(dt)?,
+        ))
     }
 
     pub(crate) unsafe fn from_py_and_nanos_unchecked(
@@ -1088,6 +1086,12 @@ unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let state = State::for_type(cls.cast());
     let py_dt = call1(state.parse_rfc2822, s_obj)?;
     defer_decref!(py_dt);
+    if is_none(get_dt_tzinfo(py_dt)) {
+        Err(value_err!(
+            "parsed datetime must have a timezone, got {}",
+            s_obj.repr()
+        ))?
+    };
     OffsetDateTime::from_py(py_dt, state)?
         .ok_or_else(|| {
             value_err!(
@@ -1115,6 +1119,12 @@ unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
         }
     })?;
     defer_decref!(py_dt);
+    if is_none(get_dt_tzinfo(py_dt)) {
+        Err(value_err!(
+            "parsed datetime must have a timezone, got {}",
+            s_obj.repr()
+        ))?
+    };
     OffsetDateTime::from_py(py_dt, state)?
         .ok_or_else(|| {
             value_err!(

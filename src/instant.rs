@@ -230,9 +230,12 @@ impl Instant {
         .as_result()
     }
 
-    pub(crate) unsafe fn from_py(dt: *mut PyObject, state: &State) -> Option<Self> {
+    unsafe fn from_py(dt: *mut PyObject, state: &State) -> PyResult<Option<Self>> {
         let tzinfo = get_dt_tzinfo(dt);
-        (tzinfo == state.py_api.TimeZone_UTC).then_some(Instant::from_datetime(
+        if is_none(tzinfo) {
+            Err(value_err!("datetime cannot be naive"))?;
+        };
+        let inst = Instant::from_datetime(
             Date {
                 year: PyDateTime_GET_YEAR(dt) as u16,
                 month: PyDateTime_GET_MONTH(dt) as u8,
@@ -244,7 +247,20 @@ impl Instant {
                 second: PyDateTime_DATE_GET_SECOND(dt) as u8,
                 nanos: PyDateTime_DATE_GET_MICROSECOND(dt) as u32 * 1_000,
             },
-        ))
+        );
+        Ok(if tzinfo == state.py_api.TimeZone_UTC {
+            // Fast path for the common case
+            Some(inst)
+        } else {
+            let delta = methcall1(tzinfo, "utcoffset", dt)?;
+            if is_none(delta) {
+                Err(value_err!("datetime utcoffset() is None"))?;
+            }
+            let nanos = i128::from(PyDateTime_DELTA_GET_DAYS(delta)) * NS_PER_DAY
+                + i128::from(PyDateTime_DELTA_GET_SECONDS(delta)) * 1_000_000_000
+                + i128::from(PyDateTime_DELTA_GET_MICROSECONDS(delta)) * 1_000;
+            inst.shift(-nanos)
+        })
     }
 
     #[cfg(target_pointer_width = "64")]
@@ -533,8 +549,8 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     if PyDateTime_Check(dt) == 0 {
         Err(type_err!("Expected a datetime object"))?;
     }
-    Instant::from_py(dt, State::for_type(cls.cast()))
-        .ok_or_else(|| value_err!("datetime must have tzinfo set to UTC, got {}", dt.repr()))?
+    Instant::from_py(dt, State::for_type(cls.cast()))?
+        .ok_or_else(|| value_err!("datetime out of range: {}", dt.repr()))?
         .to_obj(cls.cast())
 }
 
@@ -776,7 +792,7 @@ unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     defer_decref!(dt);
     let tzinfo = get_dt_tzinfo(dt);
     if tzinfo == state.py_api.TimeZone_UTC
-        || (tzinfo == Py_None() && s_obj.to_str()?.unwrap().contains("-0000"))
+        || (is_none(tzinfo) && s_obj.to_str()?.unwrap().contains("-0000"))
     {
         Instant::from_datetime(
             Date {

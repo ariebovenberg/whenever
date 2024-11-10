@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.12"
+__version__ = "0.6.13"
 
 import enum
 import re
@@ -2978,24 +2978,24 @@ class Instant(_KnowsInstant):
 
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> Instant:
-        """Create an Instant from a standard library ``datetime`` object
-        with ``tzinfo=datetime.timezone.utc``.
+        """Create an Instant from a standard library ``datetime`` object.
+        The datetime must be aware.
 
         The inverse of the ``py_datetime()`` method.
-
-        Important
-        ---------
-        If the datetime tzinfo is *not* UTC, a ``ValueError`` is raised.
-        If you want to convert a datetime with a different timezone to UTC,
-        use ``ZonedDateTime`` or ``OffsetDateTime``.
         """
-        if d.tzinfo is not _UTC:
+        if d.tzinfo is None:
             raise ValueError(
-                "Can only create Instant from UTC datetime, "
-                f"got datetime with tzinfo={d.tzinfo!r}"
+                "Cannot create Instant from a naive datetime. "
+                "Use LocalDateTime.from_py_datetime() for this."
             )
+        if d.utcoffset() is None:
+            raise ValueError(
+                "Cannot create from datetime with utcoffset() None"
+            )
+        as_utc = d.astimezone(_UTC)
         return cls._from_py_unchecked(
-            _strip_subclasses(d.replace(microsecond=0)), d.microsecond * 1_000
+            _strip_subclasses(as_utc.replace(microsecond=0)),
+            as_utc.microsecond * 1_000,
         )
 
     def format_common_iso(self) -> str:
@@ -3475,22 +3475,28 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> OffsetDateTime:
         """Create an instance from a standard library ``datetime`` object.
+        The datetime must be aware.
 
         The inverse of the ``py_datetime()`` method.
 
-        Important
-        ---------
-        If the datetime tzinfo is *not* a fixed offset,
-        a ``ValueError`` is raised. If you want to convert a datetime
-        with a ``ZoneInfo`` tzinfo, use ``ZonedDateTime.from_py_datetime()`` instead.
         """
-        if not isinstance(d.tzinfo, _timezone):
+        if d.tzinfo is None:
             raise ValueError(
-                "Datetime's tzinfo is not a datetime.timezone, "
-                f"got tzinfo={d.tzinfo!r}"
+                "Cannot create from a naive datetime. "
+                "Use LocalDateTime.from_py_datetime() for this."
             )
+        if (offset := d.utcoffset()) is None:
+            raise ValueError(
+                "Cannot create from datetime with utcoffset() None"
+            )
+        elif offset.microseconds:
+            raise ValueError("Sub-second offsets are not supported")
         return cls._from_py_unchecked(
-            _check_utc_bounds(_strip_subclasses(d.replace(microsecond=0))),
+            _check_utc_bounds(
+                _strip_subclasses(
+                    d.replace(microsecond=0, tzinfo=_timezone(offset))
+                )
+            ),
             d.microsecond * 1_000,
         )
 
@@ -4442,12 +4448,12 @@ class SystemDateTime(_KnowsInstantAndLocal):
             _fromtimestamp(secs, _UTC).astimezone(), nanos
         )
 
-    # TODO py_datetime docstring
-
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> SystemDateTime:
-        """Create an instance from a standard library ``datetime`` object
-        with fixed-offset tzinfo.
+        """Create an instance from a standard library ``datetime`` object.
+        The datetime must be aware.
+
+        The inverse of the ``py_datetime()`` method.
         """
         odt = OffsetDateTime.from_py_datetime(d)
         return cls._from_py_unchecked(odt._py_dt, odt._nanos)
@@ -5281,8 +5287,9 @@ _no_tzinfo_fold_or_ms = {"tzinfo", "fold", "microsecond"}.isdisjoint
 _fromisoformat = _datetime.fromisoformat
 _fromtimestamp = _datetime.fromtimestamp
 _DT_RE_GROUPED = r"(\d{4})-([0-2]\d)-([0-3]\d)T([0-2]\d):([0-5]\d):([0-5]\d)(?:\.(\d{1,9}))?"
+# TODO: check correct of incorrect offset 13:90
 _OFFSET_DATETIME_RE = (
-    _DT_RE_GROUPED + r"(?:([+-])(\d{2}):(\d{2})(?::(\d{2}))?|Z)"
+    _DT_RE_GROUPED + r"(?:([+-])([0-2]\d):([0-5]\d)(?::([0-5]\d))?|Z)"
 )
 _match_local_str = re.compile(_DT_RE_GROUPED, re.ASCII).fullmatch
 _match_offset_str = re.compile(_OFFSET_DATETIME_RE, re.ASCII).fullmatch
@@ -5295,7 +5302,7 @@ _match_utc_rfc3339 = re.compile(
 ).fullmatch
 _match_rfc3339 = re.compile(
     r"(\d{4})-([0-2]\d)-([0-3]\d)[Tt_ ]([0-2]\d):([0-5]\d):([0-5]\d)(?:\.(\d{1,9}))?"
-    r"(?:[Zz]|([+-])(\d{2}):(\d{2}))",
+    r"(?:[Zz]|([+-])(\d{2}):([0-5]\d))",
     re.ASCII,
 ).fullmatch
 _match_datetimedelta = re.compile(

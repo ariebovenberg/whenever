@@ -473,7 +473,7 @@ unsafe fn time_machine_installed() -> PyResult<bool> {
     defer_decref!(find_spec);
     let spec = call1(find_spec, steal!("time_machine".to_py()?))?;
     defer_decref!(spec);
-    Ok((spec as *mut PyObject) != Py_None())
+    Ok(!is_none(spec))
 }
 
 unsafe fn traverse(target: *mut PyObject, visit: visitproc, arg: *mut c_void) {

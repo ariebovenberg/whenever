@@ -1,6 +1,19 @@
 🚀 Changelog
 ============
 
+0.6.13 (2024-11-14)
+-------------------
+
+**Added**
+
+- Make ``from_py_datetime()`` on ``Instant``/``OffsetDateTime`` less pedantic.
+  It now accepts any aware datetime
+
+**Fixed**
+
+- Parsing UTC offsets with out-of-range minute components (e.g. ``06:79``)
+  now raises the expected parsing failure.
+
 0.6.12 (2024-11-08)
 -------------------
 

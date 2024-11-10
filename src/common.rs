@@ -684,11 +684,23 @@ pub(crate) unsafe fn newref<'a>(obj: *mut PyObject) -> &'a mut PyObject {
     obj.as_mut().unwrap()
 }
 
+// FUTURE: replace with Py_IsNone when dropping Py 3.9 support
+pub(crate) unsafe fn is_none(x: *mut PyObject) -> bool {
+    x == Py_None()
+}
+
+// NOTE: assumes it's an "aware" datetime object
 pub(crate) unsafe fn offset_from_py_dt(dt: *mut PyObject) -> PyResult<i32> {
-    // OPTIMIZE: is calling ZoneInfo.utcoffset() faster?
     let delta = methcall0(dt, "utcoffset")?;
     defer_decref!(delta);
-    Ok(PyDateTime_DELTA_GET_DAYS(delta) * 86_400 + PyDateTime_DELTA_GET_SECONDS(delta))
+    if is_none(delta) {
+        // This case is rare, but possible even with aware datetimes
+        Err(value_err!("utcoffset() returned None"))
+    } else if PyDateTime_DELTA_GET_MICROSECONDS(delta) != 0 {
+        Err(value_err!("Sub-second offsets are not supported",))
+    } else {
+        Ok(PyDateTime_DELTA_GET_DAYS(delta) * 86_400 + PyDateTime_DELTA_GET_SECONDS(delta))
+    }
 }
 
 pub(crate) fn offset_fmt(secs: i32) -> String {
@@ -1051,7 +1063,7 @@ where
 
 #[inline]
 #[allow(dead_code)]
-unsafe fn getattr_tzinfo(dt: *mut PyObject) -> *mut PyObject {
+unsafe fn getattr_tzinfo_unchecked(dt: *mut PyObject) -> *mut PyObject {
     let tzinfo = PyObject_GetAttrString(dt, c"tzinfo".as_ptr());
     // To keep things consistent with the Py3.10 version,
     // we need to decref it, turning it into a borrowed reference.
@@ -1068,7 +1080,7 @@ pub(crate) unsafe fn get_dt_tzinfo(dt: *mut PyObject) -> *mut PyObject {
     }
     #[cfg(not(Py_3_10))]
     {
-        getattr_tzinfo(dt)
+        getattr_tzinfo_unchecked(dt)
     }
 }
 
@@ -1080,7 +1092,7 @@ pub(crate) unsafe fn get_time_tzinfo(dt: *mut PyObject) -> *mut PyObject {
     }
     #[cfg(not(Py_3_10))]
     {
-        getattr_tzinfo(dt)
+        getattr_tzinfo_unchecked(dt)
     }
 }
 

@@ -324,10 +324,10 @@ unsafe fn py_time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn from_py_time(type_: *mut PyObject, time: *mut PyObject) -> PyReturn {
     if PyTime_Check(time) == 0 {
-        Err(type_err!("argument must be a whenever.Time"))?
+        Err(type_err!("argument must be a datetime.time"))?
     }
-    if get_time_tzinfo(time) != Py_None() {
-        Err(value_err!("time with timezone is not supported"))?
+    if !is_none(get_time_tzinfo(time)) {
+        Err(value_err!("time with tzinfo is not supported"))?
     }
     // FUTURE: check `fold=0`?
     Time {
