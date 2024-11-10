@@ -762,7 +762,7 @@ To and from the standard library
 Each **whenever** datetime class can be converted to a standard
 library :class:`~datetime.datetime`
 with the :meth:`~whenever._BasicConversions.py_datetime` method.
-Conversely, you can create a type from a standard library datetime with the
+Conversely, you can create instances from a standard library datetime with the
 :meth:`~whenever._BasicConversions.from_py_datetime` classmethod.
 
 >>> from datetime import datetime, UTC

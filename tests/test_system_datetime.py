@@ -1,7 +1,7 @@
 import pickle
 import re
 from copy import copy, deepcopy
-from datetime import datetime as py_datetime, timedelta, timezone
+from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
 from typing import Any
 
 import pytest
@@ -630,6 +630,12 @@ class TestParseCommonIso:
             "2020-08-15T12:08.30+05:00",  # wrong time separator
             "2020-08-15T12:08:30+24:00",  # too large offset
             "2020-08-15T23:12:09-99:00",  # invalid offset
+            "2020-08-15T12:08:30+09:80",  # invalid minutes
+            "2020-08-15T12:08:30-02:80:40",  # invalid minutes
+            "2020-08-15T12:08:30+09:40:80",  # invalid seconds
+            "2020-08-15T12:08:30-00:40:60",  # invalid seconds
+            "2020-08-15T12:𝟘8:30+00:00",  # non-ASCII
+            "2020-08-15T12:08:30.0034+05:𝟙0",  # non-ASCII
             "",  # empty
             "garbage",  # garbage
             "20𝟚0-08-15T12:08:30+00:00",  # non-ASCII
@@ -845,11 +851,11 @@ class TestFromPyDateTime:
             SystemDateTime(2023, 10, 29, 2, 15, 30, disambiguate="later")
         )
 
-    def test_wrong_tzinfo(self):
-        with pytest.raises(ValueError, match="Paris"):
-            SystemDateTime.from_py_datetime(
-                py_datetime(2020, 8, 15, 23, tzinfo=ZoneInfo("Europe/Paris"))
-            )
+    @system_tz_ams()
+    def test_zoneinfo(self):
+        assert SystemDateTime.from_py_datetime(
+            py_datetime(2020, 8, 15, 23, tzinfo=ZoneInfo("Europe/Paris"))
+        ).exact_eq(SystemDateTime(2020, 8, 15, 23))
 
     def test_bounds(self):
         with pytest.raises((ValueError, OverflowError), match="range|year"):
@@ -863,6 +869,49 @@ class TestFromPyDateTime:
                     9999, 12, 31, hour=23, tzinfo=timezone(timedelta(hours=-2))
                 )
             )
+
+    def test_subsecond_offset(self):
+        with pytest.raises(ValueError, match="Sub-second"):
+            SystemDateTime.from_py_datetime(
+                py_datetime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=timezone(timedelta(hours=2, microseconds=30)),
+                )
+            )
+
+    def test_utcoffset_none(self):
+
+        class MyTz(tzinfo):
+            def utcoffset(self, _):
+                return None
+
+        with pytest.raises(ValueError, match="utcoffset.*"):
+            SystemDateTime.from_py_datetime(
+                py_datetime(2020, 8, 15, tzinfo=MyTz())  # type: ignore[abstract]
+            )
+
+    @system_tz_ams()
+    def test_naive(self):
+        with pytest.raises(ValueError, match="naive"):
+            SystemDateTime.from_py_datetime(py_datetime(2020, 8, 15, 12))
+
+    @system_tz_ams()
+    def test_subclass(self):
+        class MyDatetime(py_datetime):
+            pass
+
+        d = MyDatetime(
+            2020, 8, 15, 23, 12, 9, 987_654, tzinfo=ZoneInfo("Europe/Paris")
+        )
+        assert SystemDateTime.from_py_datetime(d).exact_eq(
+            SystemDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
+        )
 
 
 @system_tz_nyc()

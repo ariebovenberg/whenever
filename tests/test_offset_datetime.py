@@ -1,6 +1,7 @@
 import pickle
 import re
 from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
+from zoneinfo import ZoneInfo
 
 import pytest
 from hypothesis import given
@@ -231,6 +232,10 @@ class TestParseCommonIso:
             "2020-08-15 12:08:30+05:00"  # wrong separator
             "2020-08-15T12:08.30+05:00",  # wrong time separator
             "2020-08-15T12:08:30+24:00",  # too large offset
+            "2020-08-15T12:08:30+09:80",  # invalid minutes
+            "2020-08-15T12:08:30-02:80:40",  # invalid minutes
+            "2020-08-15T12:08:30+09:40:80",  # invalid seconds
+            "2020-08-15T12:08:30-00:40:60",  # invalid seconds
             "2020-08-15T23:12:09-99:00",  # invalid offset
             "2020-08-15T12:𝟘8:30+00:00",  # non-ASCII
             "2020-08-15T12:08:30.0034+05:𝟙0",  # non-ASCII
@@ -636,35 +641,89 @@ def test_py_datetime():
     )
 
 
-def test_from_py_datetime():
-    d = py_datetime(
-        2020,
-        8,
-        15,
-        23,
-        12,
-        9,
-        987_654,
-        tzinfo=timezone(timedelta(hours=2)),
-    )
-    assert OffsetDateTime.from_py_datetime(d).exact_eq(
-        OffsetDateTime(
-            2020, 8, 15, 23, 12, 9, nanosecond=987_654_000, offset=2
+class TestFromPyDatetime:
+
+    def test_offset(self):
+
+        d = py_datetime(
+            2020,
+            8,
+            15,
+            23,
+            12,
+            9,
+            987_654,
+            tzinfo=timezone(timedelta(hours=2)),
         )
-    )
+        assert OffsetDateTime.from_py_datetime(d).exact_eq(
+            OffsetDateTime(
+                2020, 8, 15, 23, 12, 9, nanosecond=987_654_000, offset=2
+            )
+        )
 
-    class SomeTzinfo(tzinfo):
-        pass
+    def test_zoneinfo(self):
 
-    d2 = d.replace(tzinfo=SomeTzinfo())  # type: ignore[abstract]
-    with pytest.raises(ValueError, match="SomeTzinfo"):
-        OffsetDateTime.from_py_datetime(d2)
+        d = py_datetime(
+            2020,
+            8,
+            15,
+            23,
+            12,
+            9,
+            987_654,
+            tzinfo=ZoneInfo("Europe/Amsterdam"),
+        )
+        assert OffsetDateTime.from_py_datetime(d).exact_eq(
+            OffsetDateTime(
+                2020, 8, 15, 23, 12, 9, nanosecond=987_654_000, offset=2
+            )
+        )
 
-    # UTC out of range
-    d = py_datetime(1, 1, 1, tzinfo=timezone(timedelta(hours=1)))
+    def test_naive(self):
+        with pytest.raises(ValueError, match="naive"):
+            OffsetDateTime.from_py_datetime(py_datetime(12, 3, 4, 12))
 
-    with pytest.raises(ValueError, match="range"):
-        OffsetDateTime.from_py_datetime(d)
+    def test_out_of_range(self):
+        d = py_datetime(1, 1, 1, tzinfo=timezone(timedelta(hours=5)))
+        with pytest.raises(ValueError, match="range"):
+            OffsetDateTime.from_py_datetime(d)
+
+    def test_utcoffset_none(self):
+
+        class MyTz(tzinfo):
+            def utcoffset(self, _):
+                return None
+
+        with pytest.raises(ValueError, match="utcoffset.*"):
+            OffsetDateTime.from_py_datetime(
+                py_datetime(2020, 8, 15, tzinfo=MyTz())  # type: ignore[abstract]
+            )
+
+    def test_subsecond_offset(self):
+        with pytest.raises(ValueError, match="Sub-second"):
+            OffsetDateTime.from_py_datetime(
+                py_datetime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=timezone(timedelta(hours=2, microseconds=30)),
+                )
+            )
+
+    def test_subclass(self):
+        class MyDatetime(py_datetime):
+            pass
+
+        d = MyDatetime(2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc)
+        assert OffsetDateTime.from_py_datetime(d).exact_eq(
+            OffsetDateTime(
+                2020, 8, 15, 23, 12, 9, nanosecond=987_654_000, offset=0
+            )
+        )
 
 
 def test_replace_date():
@@ -1253,8 +1312,13 @@ class TestParseRFC3339:
             "garbage",  # garbage
             "2020-08-15T23:12.09.12Z",  # wrong time separator
             "2020-08-15",  # only date
+            "2020-08-15T24:12:09-11:00",  # invalid hour
             "2020-08-15T23:12:09-99:00",  # invalid offset
+            "2020-08-15T23:12:09-04:90",  # invalid offset
+            "2020-08-15T23:12:09+04:60",  # invalid offset
             "2020-08-15T23:12:09-25:00",  # invalid offset
+            "2020-08-15T23:12:09+25:00",  # invalid offset
+            "2020-08-15T23:12:09+23:60",  # invalid offset
             "2020-08-15T23:12:09-12:00stuff",  # trailing content
             "2020-08-15T23:12:09zzz",  # trailing content
             "0001-01-01T03:12:09+04:00",  # out of bounds due to offset

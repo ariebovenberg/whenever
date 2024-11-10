@@ -761,6 +761,10 @@ class TestParseCommonIso:
             " 2023-10-29T02:15:30+02:00[Europe/Amsterdam]",  # leading space
             "2023-10-29T02:15:30+02:00[Europe/Amsterdam] ",  # trailing space
             "2023-10-29T02:15:30+02:00(Europe/Amsterdam)",  # wrong brackets
+            # invalid offset seconds, even though total offset is correct
+            "1900-01-01T23:34:39.01-00:24:81[Europe/Dublin]",
+            # invalid offset minutes, even though total offset is correct
+            "2020-01-01T00:00:00+04:90[Asia/Calcutta]",
             "2023-10-29",  # only date
             "02:15:30",  # only time
             "2023-10-29T02:15:30",  # no offset
