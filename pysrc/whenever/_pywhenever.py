@@ -3081,9 +3081,12 @@ class Instant(_KnowsInstant):
 
         Important
         ---------
-        Nonzero offsets will not be implicitly converted to UTC.
-        Use ``OffsetDateTime.parse_rfc2822()`` if you'd like to
-        parse an RFC 2822 string with a nonzero offset.
+        - This function parses, but **does not validate** the input (yet).
+          This is due to the limitations of the underlying
+          function ``email.utils.parsedate_to_datetime()``.
+        - Nonzero offsets will not be implicitly converted to UTC.
+          Use ``OffsetDateTime.parse_rfc2822()`` if you'd like to
+          parse an RFC 2822 string with a nonzero offset.
         """
         # FUTURE: disallow +0000
         parsed = _parse_rfc2822(s)
@@ -3656,9 +3659,12 @@ class OffsetDateTime(_KnowsInstantAndLocal):
 
         Warning
         -------
-        The offset ``-0000`` has special meaning in RFC 2822,
-        indicating a UTC time with unknown local offset.
-        Thus, it cannot be parsed to an :class:`OffsetDateTime`.
+        - This function parses, but **does not validate** the input (yet).
+          This is due to the limitations of the underlying
+          function ``email.utils.parsedate_to_datetime()``.
+        - The offset ``-0000`` has special meaning in RFC 2822,
+          indicating a UTC time with unknown local offset.
+          Thus, it cannot be parsed to an :class:`OffsetDateTime`.
         """
         parsed = _parse_rfc2822(s)
         if parsed.tzinfo is None:

@@ -14,6 +14,8 @@
 
 - Parsing UTC offsets with out-of-range minute components (e.g. ``06:79``)
   now raises the expected parsing failure.
+- Note in ``parse_rfc2822()`` docstring that it doesn't (yet) validate the input,
+  due to limitations in the underlying parser.
 
 0.6.12 (2024-11-08)
 -------------------
