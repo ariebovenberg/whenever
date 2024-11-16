@@ -24,6 +24,8 @@ from whenever import (
     seconds,
 )
 
+from .common import system_tz_ams
+
 
 @pytest.mark.skipif(
     sys.version_info < (3, 13),
@@ -63,6 +65,7 @@ def test_time_machine():
         assert Instant.now() == Instant.from_utc(1980, 3, 2, hour=2)
 
 
+@system_tz_ams()
 def test_patch_time():
 
     i = Instant.from_utc(1980, 3, 2, hour=2)
@@ -70,11 +73,14 @@ def test_patch_time():
     # simplest case: freeze time at fixed UTC
     with patch_current_time(i, keep_ticking=False) as p:
         assert Instant.now() == i
+        assert Date.today_in_system_tz() == i.to_system_tz().date()
         p.shift(hours=3)
         p.shift(hours=1)
-        assert i.now() == i.add(hours=4)
+        assert Instant.now() == i.add(hours=4)
 
-    assert Instant.now() != i
+    # patch has ended
+    assert Instant.now() > Instant.from_utc(2024, 1, 1)
+    assert Date.today_in_system_tz() > Date(2024, 1, 1)
 
     # complex case: freeze time at zoned datetime and keep ticking
     with patch_current_time(

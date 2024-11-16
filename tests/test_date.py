@@ -145,6 +145,13 @@ def test_py_date():
     assert d.py_date() == py_date(2021, 1, 2)
 
 
+def test_today_in_system_tz():
+    d = Date.today_in_system_tz()
+    # NOTE: this may fail if the test is run *exactly* at midnight.
+    # Macking this out would make things more complicated than it's worth.
+    assert d == Date.from_py_date(py_date.today())
+
+
 def test_from_py_date():
     assert Date.from_py_date(py_date(2021, 1, 2)) == Date(2021, 1, 2)
     assert Date.from_py_date(py_datetime(2021, 1, 2, 3, 4, 5)) == Date(

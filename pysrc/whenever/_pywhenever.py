@@ -181,6 +181,20 @@ class Date(_ImmutableBase):
     def __init__(self, year: int, month: int, day: int) -> None:
         self._py_date = _date(year, month, day)
 
+    @staticmethod
+    def today_in_system_tz() -> Date:
+        """Get the current date in the system's local timezone.
+
+        Alias for ``SystemDateTime.now().date()``.
+
+        Example
+        -------
+        >>> Date.today_in_system_tz()
+        Date(2021-01-02)
+        """
+        # Use now() so this function gets patched like the other now functions
+        return Instant.now().to_system_tz().date()
+
     @property
     def year(self) -> int:
         return self._py_date.year

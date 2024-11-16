@@ -5,8 +5,8 @@ use std::fmt::{self, Display, Formatter};
 
 use crate::common::*;
 use crate::{
-    date_delta::DateDelta, local_datetime::DateTime, monthday::MonthDay, time::Time,
-    yearmonth::YearMonth, State,
+    date_delta::DateDelta, instant::Instant, local_datetime::DateTime, monthday::MonthDay,
+    time::Time, yearmonth::YearMonth, State,
 };
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -695,8 +695,30 @@ unsafe fn at(slf: *mut PyObject, time_obj: *mut PyObject) -> PyReturn {
     }
 }
 
+unsafe fn today_in_system_tz(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    let state = State::for_type(cls.cast());
+    let (timestamp, _) = state.time_ns()?;
+    let utc_dt = Instant::from_timestamp(timestamp)
+        .ok_or_value_err("timestamp is out of range")?
+        .to_py_ignore_nanos(state.py_api)?;
+    defer_decref!(utc_dt);
+    let dt = methcall0(utc_dt, "astimezone")?;
+    defer_decref!(dt);
+    Date {
+        year: PyDateTime_GET_YEAR(dt) as u16,
+        month: PyDateTime_GET_MONTH(dt) as u8,
+        day: PyDateTime_GET_DAY(dt) as u8,
+    }
+    .to_obj(cls.cast())
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     method!(py_date, "Convert to a Python datetime.date"),
+    method!(
+        today_in_system_tz,
+        "Return the current date in the system timezone",
+        METH_CLASS | METH_NOARGS
+    ),
     method!(
         format_common_iso,
         "Return the date in the common ISO 8601 format"
