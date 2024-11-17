@@ -148,7 +148,7 @@ def test_py_date():
 def test_today_in_system_tz():
     d = Date.today_in_system_tz()
     # NOTE: this may fail if the test is run *exactly* at midnight.
-    # Macking this out would make things more complicated than it's worth.
+    # Mocking this out would make things more complicated than it's worth.
     assert d == Date.from_py_date(py_date.today())
 
 

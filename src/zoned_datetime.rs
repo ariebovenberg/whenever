@@ -797,7 +797,7 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     if PyDateTime_Check(dt) == 0 {
         Err(type_err!("Argument must be a datetime.datetime instance"))?;
     }
-    let tzinfo = get_dt_tzinfo(dt);
+    let tzinfo = borrow_dt_tzinfo(dt);
 
     // NOTE: it has to be exactly a `ZoneInfo`, since subclasses
     // could theoretically introduce circular references.

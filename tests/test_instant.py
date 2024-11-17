@@ -895,7 +895,6 @@ def test_format_rfc3339():
         ).format_rfc3339()
         == "2020-08-15 23:12:09.00000045Z"
     )
-    Instant.now().format_rfc3339
 
 
 class TestParseRFC3339:
