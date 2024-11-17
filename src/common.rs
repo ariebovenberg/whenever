@@ -1073,7 +1073,7 @@ unsafe fn getattr_tzinfo_unchecked(dt: *mut PyObject) -> *mut PyObject {
 }
 
 #[inline]
-pub(crate) unsafe fn get_dt_tzinfo(dt: *mut PyObject) -> *mut PyObject {
+pub(crate) unsafe fn borrow_dt_tzinfo(dt: *mut PyObject) -> *mut PyObject {
     #[cfg(Py_3_10)]
     {
         PyDateTime_DATE_GET_TZINFO(dt)

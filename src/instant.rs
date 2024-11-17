@@ -231,7 +231,7 @@ impl Instant {
     }
 
     unsafe fn from_py(dt: *mut PyObject, state: &State) -> PyResult<Option<Self>> {
-        let tzinfo = get_dt_tzinfo(dt);
+        let tzinfo = borrow_dt_tzinfo(dt);
         if is_none(tzinfo) {
             Err(value_err!("datetime cannot be naive"))?;
         };
@@ -253,6 +253,7 @@ impl Instant {
             Some(inst)
         } else {
             let delta = methcall1(tzinfo, "utcoffset", dt)?;
+            defer_decref!(delta);
             if is_none(delta) {
                 Err(value_err!("datetime utcoffset() is None"))?;
             }
@@ -790,7 +791,7 @@ unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
         dt = call1(state.parse_rfc2822, s_obj)?;
     }
     defer_decref!(dt);
-    let tzinfo = get_dt_tzinfo(dt);
+    let tzinfo = borrow_dt_tzinfo(dt);
     if tzinfo == state.py_api.TimeZone_UTC
         || (is_none(tzinfo) && s_obj.to_str()?.unwrap().contains("-0000"))
     {

@@ -1,14 +1,14 @@
 🚀 Changelog
 ============
 
-0.6.13 (2024-11-16)
+0.6.13 (2024-11-17)
 -------------------
 
 **Added**
 
 - Make ``from_py_datetime()`` on ``Instant``/``OffsetDateTime`` less pedantic.
-  It now accepts any aware datetime
-- ``Date.today_in_system_tz()`` convenience method
+  They now accept any aware datetime
+- New ``Date.today_in_system_tz()`` convenience method
 
 **Fixed**
 

@@ -129,7 +129,7 @@ impl OffsetDateTime {
     // Returns None if the tzinfo is incorrect, or the UTC time is out of bounds
     pub(crate) unsafe fn from_py(dt: *mut PyObject, state: &State) -> PyResult<Option<Self>> {
         debug_assert!(PyObject_IsInstance(dt, state.py_api.DateTimeType.cast()).is_positive());
-        if is_none(get_dt_tzinfo(dt)) {
+        if is_none(borrow_dt_tzinfo(dt)) {
             Err(value_err!("Datetime cannot be naive"))?
         }
         Ok(OffsetDateTime::new(
@@ -1086,7 +1086,7 @@ unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let state = State::for_type(cls.cast());
     let py_dt = call1(state.parse_rfc2822, s_obj)?;
     defer_decref!(py_dt);
-    if is_none(get_dt_tzinfo(py_dt)) {
+    if is_none(borrow_dt_tzinfo(py_dt)) {
         Err(value_err!(
             "parsed datetime must have a timezone, got {}",
             s_obj.repr()
@@ -1119,7 +1119,7 @@ unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
         }
     })?;
     defer_decref!(py_dt);
-    if is_none(get_dt_tzinfo(py_dt)) {
+    if is_none(borrow_dt_tzinfo(py_dt)) {
         Err(value_err!(
             "parsed datetime must have a timezone, got {}",
             s_obj.repr()

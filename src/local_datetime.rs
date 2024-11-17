@@ -568,7 +568,7 @@ unsafe fn from_py_datetime(type_: *mut PyObject, dt: *mut PyObject) -> PyReturn 
     if PyDateTime_Check(dt) == 0 {
         Err(type_err!("argument must be datetime.datetime"))?
     }
-    let tzinfo = get_dt_tzinfo(dt);
+    let tzinfo = borrow_dt_tzinfo(dt);
     if !is_none(tzinfo) {
         Err(value_err!(
             "datetime must be naive, but got tzinfo={}",
@@ -669,7 +669,7 @@ unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
     )
     .as_result()?;
     defer_decref!(parsed);
-    let tzinfo = get_dt_tzinfo(parsed);
+    let tzinfo = borrow_dt_tzinfo(parsed);
     if !is_none(tzinfo) {
         Err(value_err!(
             "datetime must be naive, but got tzinfo={}",

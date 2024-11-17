@@ -193,7 +193,7 @@ class Date(_ImmutableBase):
         Date(2021-01-02)
         """
         # Use now() so this function gets patched like the other now functions
-        return Instant.now().to_system_tz().date()
+        return SystemDateTime.now().date()
 
     @property
     def year(self) -> int:
@@ -5307,7 +5307,6 @@ _no_tzinfo_fold_or_ms = {"tzinfo", "fold", "microsecond"}.isdisjoint
 _fromisoformat = _datetime.fromisoformat
 _fromtimestamp = _datetime.fromtimestamp
 _DT_RE_GROUPED = r"(\d{4})-([0-2]\d)-([0-3]\d)T([0-2]\d):([0-5]\d):([0-5]\d)(?:\.(\d{1,9}))?"
-# TODO: check correct of incorrect offset 13:90
 _OFFSET_DATETIME_RE = (
     _DT_RE_GROUPED + r"(?:([+-])([0-2]\d):([0-5]\d)(?::([0-5]\d))?|Z)"
 )

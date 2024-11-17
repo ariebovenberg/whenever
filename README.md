@@ -181,13 +181,12 @@ or [API reference](https://whenever.readthedocs.io/en/latest/api.html).
   - ✅ Deltas
   - ✅ Date and time of day (separate from datetime)
   - ✅ Implement Rust extension for performance
+  - 🚧 Tweaks to the delta API
 - 🔒 **1.0**: API stability and backwards compatibility
-  - 🚧 Improved parsing and formatting
+  - 🚧 Customizable parsing and formatting
   - 🚧 Intervals
   - 🚧 Ranges and recurring times
   - 🚧 Parsing leap seconds
-  - 🚧 More helpful error messages
-
 
 ## Limitations
 
