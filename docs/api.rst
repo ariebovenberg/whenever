@@ -118,7 +118,6 @@ Deltas
 
 .. autoclass:: whenever.DateTimeDelta
    :members:
-   :undoc-members: date_part, time_part
    :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __bool__, __mul__
    :member-order: bysource
 

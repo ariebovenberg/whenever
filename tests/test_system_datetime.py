@@ -555,6 +555,12 @@ def test_exact_equality():
     assert not a.exact_eq(different)
     assert not different.exact_eq(a)
 
+    with pytest.raises(TypeError):
+        a.exact_eq(42)  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError):
+        a.exact_eq(a.instant())  # type: ignore[arg-type]
+
 
 class TestParseCommonIso:
     @pytest.mark.parametrize(

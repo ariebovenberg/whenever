@@ -278,6 +278,9 @@ def test_exact_equality():
     assert not d.exact_eq(different)
     assert not d.exact_eq(d.replace(nanosecond=1, ignore_dst=True))
 
+    with pytest.raises(TypeError):
+        d.exact_eq(d.instant())  # type: ignore[arg-type]
+
 
 class TestEquality:
     def test_same_exact(self):

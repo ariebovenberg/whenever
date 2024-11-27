@@ -10,6 +10,7 @@ use crate::common::*;
 use crate::date::MAX_YEAR;
 use crate::date_delta::{DateDelta, InitError};
 use crate::datetime_delta::{handle_exact_unit, DateTimeDelta};
+use crate::docstrings as doc;
 use crate::State;
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -489,7 +490,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_nb_absolute, __abs__, 1),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: c"A delta type of precise time units".as_ptr() as *mut c_void,
+        pfunc: doc::TIMEDELTA.as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_methods,
@@ -794,35 +795,32 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method!(identity2 named "__copy__", ""),
-    method!(identity2 named "__deepcopy__", "", METH_O),
-    method!(
-        format_common_iso,
-        "Return the time delta in the common ISO8601 format"
-    ),
+    method!(identity2 named "__copy__", c""),
+    method!(identity2 named "__deepcopy__", c"", METH_O),
+    method!(__reduce__, c""),
+    method!(format_common_iso, doc::TIMEDELTA_FORMAT_COMMON_ISO),
     method!(
         parse_common_iso,
-        "Parse from the common ISO8601 period format",
+        doc::TIMEDELTA_PARSE_COMMON_ISO,
         METH_O | METH_CLASS
     ),
-    method!(in_nanoseconds, "Return the total number of nanoseconds"),
-    method!(in_microseconds, "Return the total number of microseconds"),
-    method!(in_milliseconds, "Return the total number of milliseconds"),
-    method!(in_seconds, "Return the total number of seconds"),
-    method!(in_minutes, "Return the total number of minutes"),
-    method!(in_hours, "Return the total number of hours"),
-    method!(
-        in_days_of_24h,
-        "Return the total number of days, assuming 24 hours per day"
-    ),
+    method!(in_nanoseconds, doc::TIMEDELTA_IN_NANOSECONDS),
+    method!(in_microseconds, doc::TIMEDELTA_IN_MICROSECONDS),
+    method!(in_milliseconds, doc::TIMEDELTA_IN_MILLISECONDS),
+    method!(in_seconds, doc::TIMEDELTA_IN_SECONDS),
+    method!(in_minutes, doc::TIMEDELTA_IN_MINUTES),
+    method!(in_hours, doc::TIMEDELTA_IN_HOURS),
+    method!(in_days_of_24h, doc::TIMEDELTA_IN_DAYS_OF_24H),
     method!(
         from_py_timedelta,
-        "Create a date from a Python datetime.timedelta",
+        doc::TIMEDELTA_FROM_PY_TIMEDELTA,
         METH_O | METH_CLASS
     ),
-    method!(py_timedelta, "Convert to a Python datetime.timedelta"),
-    method!(in_hrs_mins_secs_nanos, "Return the time delta as a tuple"),
-    method!(__reduce__, ""),
+    method!(py_timedelta, doc::TIMEDELTA_PY_TIMEDELTA),
+    method!(
+        in_hrs_mins_secs_nanos,
+        doc::TIMEDELTA_IN_HRS_MINS_SECS_NANOS
+    ),
     PyMethodDef::zeroed(),
 ];
 

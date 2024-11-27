@@ -4,6 +4,7 @@ use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
 use crate::common::*;
+use crate::docstrings as doc;
 use crate::{
     date_delta::DateDelta, instant::Instant, local_datetime::DateTime, monthday::MonthDay,
     time::Time, yearmonth::YearMonth, State,
@@ -369,7 +370,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_nb_add, __add__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: c"A calendar date type".as_ptr() as *mut c_void,
+        pfunc: doc::DATE.as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_methods,
@@ -713,48 +714,29 @@ unsafe fn today_in_system_tz(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method!(py_date, "Convert to a Python datetime.date"),
+    method!(py_date, doc::DATE_PY_DATE),
     method!(
         today_in_system_tz,
-        "Return the current date in the system timezone",
+        doc::DATE_TODAY_IN_SYSTEM_TZ,
         METH_CLASS | METH_NOARGS
     ),
-    method!(
-        format_common_iso,
-        "Return the date in the common ISO 8601 format"
-    ),
+    method!(format_common_iso, doc::DATE_FORMAT_COMMON_ISO),
     method!(
         parse_common_iso,
-        "Create a date from the common ISO 8601 format",
+        doc::DATE_PARSE_COMMON_ISO,
         METH_O | METH_CLASS
     ),
-    method!(
-        from_py_date,
-        "Create a date from a Python datetime.date",
-        METH_O | METH_CLASS
-    ),
-    method!(identity2 named "__copy__", ""),
-    method!(identity2 named "__deepcopy__", "", METH_O),
-    method!(day_of_week, "Return the day of the week"),
-    method!(at, "Combine with a time to create a datetime", METH_O),
-    method!(year_month, "Return the year and month"),
-    method!(month_day, "Return the month and day"),
-    method!(__reduce__, ""),
-    method_kwargs!(
-        add,
-        "add($self, *, years=0, months=0, weeks=0, days=0)\n--\n\n\
-        Add various units to the date"
-    ),
-    method_kwargs!(
-        subtract,
-        "subtract($self, *, years=0, months=0, weeks=0, days=0)\n--\n\n\
-        Subtract various units from the date"
-    ),
-    method_kwargs!(
-        replace,
-        "replace($self, *, year=None, month=None, day=None)\n--\n\n\
-        Return a new date with the specified components replaced"
-    ),
+    method!(from_py_date, doc::DATE_FROM_PY_DATE, METH_O | METH_CLASS),
+    method!(identity2 named "__copy__", c""),
+    method!(identity2 named "__deepcopy__", c"", METH_O),
+    method!(day_of_week, doc::DATE_DAY_OF_WEEK),
+    method!(at, doc::DATE_AT, METH_O),
+    method!(year_month, doc::DATE_YEAR_MONTH),
+    method!(month_day, doc::DATE_MONTH_DAY),
+    method!(__reduce__, c""),
+    method_kwargs!(add, doc::DATE_ADD),
+    method_kwargs!(subtract, doc::DATE_SUBTRACT),
+    method_kwargs!(replace, doc::DATE_REPLACE),
     PyMethodDef::zeroed(),
 ];
 

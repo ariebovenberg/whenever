@@ -9,6 +9,7 @@ use std::ptr::null_mut as NULL;
 use crate::common::*;
 use crate::date::MAX_YEAR;
 use crate::datetime_delta::DateTimeDelta;
+use crate::docstrings as doc;
 use crate::time_delta::TimeDelta;
 use crate::State;
 
@@ -373,7 +374,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_nb_subtract, __sub__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: c"A delta for calendar units".as_ptr() as *mut c_void,
+        pfunc: doc::DATEDELTA.as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_methods,
@@ -565,23 +566,17 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, args: &[*mut PyObject]) -> 
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method!(identity2 named "__copy__", ""),
-    method!(identity2 named "__deepcopy__", "", METH_O),
-    method!(format_common_iso, "Format as common ISO8601 period format"),
+    method!(identity2 named "__copy__", c""),
+    method!(identity2 named "__deepcopy__", c"", METH_O),
+    method!(format_common_iso, doc::DATEDELTA_FORMAT_COMMON_ISO),
     method!(
         parse_common_iso,
-        "Parse from the common ISO8601 period format",
+        doc::DATEDELTA_PARSE_COMMON_ISO,
         METH_O | METH_CLASS
     ),
-    method!(
-        in_months_days,
-        "Return the date delta as a tuple of months and days"
-    ),
-    method!(
-        in_years_months_days,
-        "Return the date delta as a tuple of years, months, and days"
-    ),
-    method!(__reduce__, ""),
+    method!(in_months_days, doc::DATEDELTA_IN_MONTHS_DAYS),
+    method!(in_years_months_days, doc::DATEDELTA_IN_YEARS_MONTHS_DAYS),
+    method!(__reduce__, c""),
     PyMethodDef::zeroed(),
 ];
 

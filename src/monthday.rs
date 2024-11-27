@@ -5,6 +5,7 @@ use std::fmt::{self, Display, Formatter};
 
 use crate::common::*;
 use crate::date::{Date, MAX_MONTH_DAYS_IN_LEAP_YEAR};
+use crate::docstrings as doc;
 use crate::State;
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -129,7 +130,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_tp_richcompare, __richcmp__),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: c"A month and day type, i.e. a date without a specific year".as_ptr() as *mut c_void,
+        pfunc: doc::MONTHDAY.as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_methods,
@@ -230,29 +231,18 @@ unsafe fn is_leap(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method!(
-        format_common_iso,
-        "Return the date in the common ISO 8601 format"
-    ),
+    method!(__reduce__, c""),
+    method!(identity2 named "__copy__", c""),
+    method!(identity2 named "__deepcopy__", c"", METH_O),
+    method!(format_common_iso, doc::MONTHDAY_FORMAT_COMMON_ISO),
     method!(
         parse_common_iso,
-        "Create a date from the common ISO 8601 format",
+        doc::MONTHDAY_PARSE_COMMON_ISO,
         METH_O | METH_CLASS
     ),
-    method!(identity2 named "__copy__", ""),
-    method!(identity2 named "__deepcopy__", "", METH_O),
-    method!(
-        in_year,
-        "Create a date from this month and day in the specified year",
-        METH_O
-    ),
-    method!(is_leap, "Return whether this month and day is February 29"),
-    method!(__reduce__, ""),
-    method_kwargs!(
-        replace,
-        "replace($self, *, month=None, day=None)\n--\n\n\
-        Return a new instance with the specified components replaced"
-    ),
+    method!(in_year, doc::MONTHDAY_IN_YEAR, METH_O),
+    method!(is_leap, doc::MONTHDAY_IS_LEAP),
+    method_kwargs!(replace, doc::MONTHDAY_REPLACE),
     PyMethodDef::zeroed(),
 ];
 

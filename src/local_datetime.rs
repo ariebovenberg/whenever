@@ -3,6 +3,7 @@ use core::{mem, ptr::null_mut as NULL};
 use pyo3_ffi::*;
 
 use crate::common::*;
+use crate::docstrings as doc;
 use crate::offset_datetime::check_ignore_dst_kwarg;
 use crate::{
     date::Date,
@@ -228,8 +229,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     if Py_TYPE(obj_a) == Py_TYPE(obj_b) {
         Err(py_err!(
             State::for_obj(obj_a).exc_implicitly_ignoring_dst,
-            "The difference between local datetimes implicitly ignores DST transitions \
-            and other timezone changes. Use the `difference` method instead."
+            doc::DIFF_OPERATOR_LOCAL_MSG
         ))?
     } else {
         _shift_operator(obj_a, obj_b, true)
@@ -264,9 +264,7 @@ unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bo
         } else if type_b == state.datetime_delta_type || type_b == state.time_delta_type {
             Err(py_err!(
                 state.exc_implicitly_ignoring_dst,
-                "Adding or subtracting a (date)time delta to a local datetime \
-                implicitly ignores DST transitions and other timezone \
-                changes. Instead, use the `add` or `subtract` method."
+                doc::SHIFT_LOCAL_MSG
             ))?
         } else {
             Err(type_err!(
@@ -287,6 +285,10 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_tp_richcompare, __richcmp__),
     slotmethod!(Py_nb_add, __add__, 2),
     slotmethod!(Py_nb_subtract, __sub__, 2),
+    PyType_Slot {
+        slot: Py_tp_doc,
+        pfunc: doc::LOCALDATETIME.as_ptr() as *mut c_void,
+    },
     PyType_Slot {
         slot: Py_tp_hash,
         pfunc: __hash__ as *mut c_void,
@@ -478,11 +480,7 @@ unsafe fn _shift_method(
     if nanos != 0 && !ignore_dst {
         Err(py_err!(
             state.exc_implicitly_ignoring_dst,
-            "Adding time units to a LocalDateTime implicitly ignores \
-            Daylight Saving Time. Instead, convert to a ZonedDateTime first \
-            using assume_tz(). Or, if you're sure you want to ignore DST, \
-            explicitly pass ignore_dst=True. For more information, see \
-            whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
+            doc::ADJUST_LOCAL_DATETIME_MSG
         ))?
     }
     DateTime::extract(slf)
@@ -499,15 +497,7 @@ unsafe fn difference(
     kwargs: &mut KwargIter,
 ) -> PyReturn {
     let state = State::for_type(cls);
-    check_ignore_dst_kwarg(
-        kwargs,
-        state,
-        "The difference between two local datetimes implicitly ignores DST transitions. \
-        and other timezone changes. To perform DST-safe arithmetic, convert to a ZonedDateTime \
-        first using assume_tz(). Or, if you're sure you want to ignore DST, explicitly pass \
-        ignore_dst=True. For more information, see \
-        whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic",
-    )?;
+    check_ignore_dst_kwarg(kwargs, state, doc::DIFF_LOCAL_MSG)?;
     let [arg] = *args else {
         Err(type_err!("difference() takes exactly 1 argument"))?
     };
@@ -824,89 +814,44 @@ unsafe fn replace_time(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method!(identity2 named "__copy__", ""),
-    method!(identity2 named "__deepcopy__", "", METH_O),
+    method!(identity2 named "__copy__", c""),
+    method!(identity2 named "__deepcopy__", c"", METH_O),
+    method!(__reduce__, c""),
     method!(
         from_py_datetime,
-        "Create an instance from a datetime.datetime",
+        doc::LOCALDATETIME_FROM_PY_DATETIME,
         METH_CLASS | METH_O
     ),
-    method!(py_datetime, "Convert to a datetime.datetime"),
+    method!(py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
     method!(
         get_date named "date",
-        "Get the date component"
+        doc::KNOWSLOCAL_DATE
     ),
     method!(
         get_time named "time",
-        "Get the time component"
+        doc::KNOWSLOCAL_TIME
     ),
-    method!(
-        format_common_iso,
-        "Get the common ISO 8601 string representation"
-    ),
+    method!(format_common_iso, doc::LOCALDATETIME_FORMAT_COMMON_ISO),
     method!(
         parse_common_iso,
-        "Create an instance from the common ISO 8601 string representation",
+        doc::LOCALDATETIME_PARSE_COMMON_ISO,
         METH_O | METH_CLASS
     ),
-    method!(__reduce__, ""),
-    method_vararg!(
-        strptime,
-        "strptime($type, string, fmt, /)\n--\n\n\
-        Parse a string into a LocalDateTime",
-        METH_CLASS
-    ),
-    method_kwargs!(
-        replace,
-        "replace($self, *, year=None, month=None, day=None, hour=None, \
-        minute=None, second=None, nanosecond=None)\n--\n\n\
-        Return a new instance with the specified fields replaced"
-    ),
-    method!(assume_utc, "Assume the datetime is in UTC"),
+    method_vararg!(strptime, doc::LOCALDATETIME_STRPTIME, METH_CLASS),
+    method_kwargs!(replace, doc::LOCALDATETIME_REPLACE),
+    method!(assume_utc, doc::LOCALDATETIME_ASSUME_UTC),
     method!(
         assume_fixed_offset,
-        "Assume the datetime has a fixed offset",
+        doc::LOCALDATETIME_ASSUME_FIXED_OFFSET,
         METH_O
     ),
-    method_kwargs!(
-        assume_tz,
-        "assume_tz($self, tz, /, *, disambiguate)\n--\n\n\
-        Assume the datetime is in a timezone"
-    ),
-    method_kwargs!(
-        assume_system_tz,
-        "assume_system_tz($self, *, disambiguate)\n--\n\n\
-        Assume the datetime is in the system timezone"
-    ),
-    method!(
-        replace_date,
-        "Return a new instance with the date replaced",
-        METH_O
-    ),
-    method!(
-        replace_time,
-        "Return a new instance with the time replaced",
-        METH_O
-    ),
-    method_kwargs!(
-        add,
-        "add($self, delta=None, /, *, years=0, months=0, days=0, \
-        hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
-        ignore_dst=False)\n--\n\n\
-        Add various time and/or calendar units"
-    ),
-    method_kwargs!(
-        subtract,
-        "subtract($self, delta=None, /, *, years=0, months=0, days=0, \
-        hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
-        ignore_dst=False)\n--\n\n\
-        Subtract various time and/or calendar units"
-    ),
-    method_kwargs!(
-        difference,
-        "difference($self, other, /, *, ignore_dst)\n--\n\n\
-        Get the difference between two local datetimes"
-    ),
+    method_kwargs!(assume_tz, doc::LOCALDATETIME_ASSUME_TZ),
+    method_kwargs!(assume_system_tz, doc::LOCALDATETIME_ASSUME_SYSTEM_TZ),
+    method!(replace_date, doc::LOCALDATETIME_REPLACE_DATE, METH_O),
+    method!(replace_time, doc::LOCALDATETIME_REPLACE_TIME, METH_O),
+    method_kwargs!(add, doc::LOCALDATETIME_ADD),
+    method_kwargs!(subtract, doc::LOCALDATETIME_SUBTRACT),
+    method_kwargs!(difference, doc::LOCALDATETIME_DIFFERENCE),
     PyMethodDef::zeroed(),
 ];
 

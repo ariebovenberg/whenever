@@ -1431,8 +1431,11 @@ class TestExactEquality:
 
     def test_invalid(self):
         a = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
-        with pytest.raises((TypeError, AttributeError)):
+        with pytest.raises(TypeError):
             a.exact_eq(42)  # type: ignore[arg-type]
+
+        with pytest.raises(TypeError):
+            a.exact_eq(a.instant())  # type: ignore[arg-type]
 
 
 class TestReplace:

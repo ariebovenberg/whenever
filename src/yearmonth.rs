@@ -5,6 +5,7 @@ use std::fmt::{self, Display, Formatter};
 
 use crate::common::*;
 use crate::date::{Date, MAX_YEAR, MIN_YEAR};
+use crate::docstrings as doc;
 use crate::State;
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -130,7 +131,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_tp_richcompare, __richcmp__),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: c"A year and month type, i.e. a date without a day".as_ptr() as *mut c_void,
+        pfunc: doc::YEARMONTH.as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_methods,
@@ -228,28 +229,17 @@ unsafe fn on_day(slf: *mut PyObject, day_obj: *mut PyObject) -> PyReturn {
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method!(
-        format_common_iso,
-        "Return the date in the common ISO 8601 format"
-    ),
+    method!(identity2 named "__copy__", c""),
+    method!(identity2 named "__deepcopy__", c"", METH_O),
+    method!(__reduce__, c""),
+    method!(format_common_iso, doc::YEARMONTH_FORMAT_COMMON_ISO),
     method!(
         parse_common_iso,
-        "Create a date from the common ISO 8601 format",
+        doc::YEARMONTH_PARSE_COMMON_ISO,
         METH_O | METH_CLASS
     ),
-    method!(identity2 named "__copy__", ""),
-    method!(identity2 named "__deepcopy__", "", METH_O),
-    method!(
-        on_day,
-        "Create a date from this year-month with a given day",
-        METH_O
-    ),
-    method!(__reduce__, ""),
-    method_kwargs!(
-        replace,
-        "replace($self, *, month=None, day=None)\n--\n\n\
-        Return a new instance with the specified components replaced"
-    ),
+    method!(on_day, doc::YEARMONTH_ON_DAY, METH_O),
+    method_kwargs!(replace, doc::YEARMONTH_REPLACE),
     PyMethodDef::zeroed(),
 ];
 

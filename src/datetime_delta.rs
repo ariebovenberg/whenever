@@ -7,6 +7,7 @@ use std::ptr::null_mut as NULL;
 
 use crate::common::*;
 use crate::date_delta::{self, parse_prefix, DateDelta, InitError, Unit as DateUnit};
+use crate::docstrings as doc;
 use crate::time_delta::{
     self, TimeDelta, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS,
 };
@@ -377,7 +378,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_nb_subtract, __sub__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: c"A delta for calendar and exact units".as_ptr() as *mut c_void,
+        pfunc: doc::DATETIMEDELTA.as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_methods,
@@ -530,26 +531,20 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, args: &[*mut PyObject]) -> 
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method!(identity2 named "__copy__", ""),
-    method!(identity2 named "__deepcopy__", "", METH_O),
-    method!(format_common_iso, "Format as common ISO8601 period"),
-    method!(
-        date_part,
-        "Return the date part of the delta as a DateDelta"
-    ),
-    method!(
-        time_part,
-        "Return the time part of the delta as a TimeDelta"
-    ),
+    method!(identity2 named "__copy__", c""),
+    method!(identity2 named "__deepcopy__", c"", METH_O),
+    method!(format_common_iso, doc::DATETIMEDELTA_FORMAT_COMMON_ISO),
+    method!(date_part, doc::DATETIMEDELTA_DATE_PART),
+    method!(time_part, doc::DATETIMEDELTA_TIME_PART),
     method!(
         parse_common_iso,
-        "Parse from the common ISO8601 period format",
+        doc::DATETIMEDELTA_PARSE_COMMON_ISO,
         METH_O | METH_CLASS
     ),
-    method!(__reduce__, ""),
+    method!(__reduce__, c""),
     method!(
         in_months_days_secs_nanos,
-        "Extract the components of the delta"
+        doc::DATETIMEDELTA_IN_MONTHS_DAYS_SECS_NANOS
     ),
     PyMethodDef::zeroed(),
 ];

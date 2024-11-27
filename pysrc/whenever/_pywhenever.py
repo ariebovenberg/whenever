@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.13"
+__version__ = "0.6.14"
 
 import enum
 import re
@@ -181,8 +181,8 @@ class Date(_ImmutableBase):
     def __init__(self, year: int, month: int, day: int) -> None:
         self._py_date = _date(year, month, day)
 
-    @staticmethod
-    def today_in_system_tz() -> Date:
+    @classmethod
+    def today_in_system_tz(cls) -> Date:
         """Get the current date in the system's local timezone.
 
         Alias for ``SystemDateTime.now().date()``.
@@ -321,8 +321,8 @@ class Date(_ImmutableBase):
         Example
         -------
         >>> d = Date(2021, 1, 2)
-        >>> d.replace(day=3)
-        Date(2021-01-03)
+        >>> d.replace(day=4)
+        Date(2021-01-04)
         """
         return Date._from_py_unchecked(self._py_date.replace(**kwargs))
 
@@ -1944,9 +1944,11 @@ class DateTimeDelta(_ImmutableBase):
     """A delta of zero"""
 
     def date_part(self) -> DateDelta:
+        """The date part of the delta"""
         return self._date_part
 
     def time_part(self) -> TimeDelta:
+        """The time part of the delta"""
         return self._time_part
 
     def in_months_days_secs_nanos(self) -> tuple[int, int, int, int]:
@@ -2687,7 +2689,11 @@ class _KnowsInstant(_BasicConversions):
         True  # equivalent instants
         >>> a.exact_eq(b)
         False  # different values (hour and offset)
+        >>> a.exact_eq(Instant.now())
+        TypeError  # different types
         """
+        if type(self) is not type(other):
+            raise TypeError("Cannot compare different types")
         return (
             self._py_dt,  # type: ignore[attr-defined]
             self._py_dt.utcoffset(),  # type: ignore[attr-defined]
@@ -2872,7 +2878,7 @@ class _KnowsInstantAndLocal(_KnowsLocal, _KnowsInstant):
         )
 
     def instant(self) -> Instant:
-        """Get the underlying instant
+        """Get the underlying instant in time
 
         Example
         -------
@@ -3346,14 +3352,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
         """
         if ignore_dst is not True:
-            raise ImplicitlyIgnoringDST(
-                "Getting the current time with a fixed offset implicitly ignores DST "
-                "and other timezone changes. Instead, use `Instant.now()` or "
-                "`ZonedDateTime.now(<tz name>)` if you know the timezone. "
-                "Or, if you want to ignore DST and accept potentially incorrect offsets, "
-                "pass `ignore_dst=True` to this method. For more information, see "
-                "whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
-            )
+            raise ImplicitlyIgnoringDST(OFFSET_NOW_DST_MSG)
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _load_offset(offset)), nanos
@@ -3426,7 +3425,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
         """
         if ignore_dst is not True:
-            raise _EXC_TIMESTAMP_DST
+            raise ImplicitlyIgnoringDST(TIMESTAMP_DST_MSG)
         secs, fract = divmod(i, 1)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _load_offset(offset)),
@@ -3453,7 +3452,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
         """
         if ignore_dst is not True:
-            raise _EXC_TIMESTAMP_DST
+            raise ImplicitlyIgnoringDST(TIMESTAMP_DST_MSG)
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, millis = divmod(i, 1_000)
@@ -3481,7 +3480,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
         """
         if ignore_dst is not True:
-            raise _EXC_TIMESTAMP_DST
+            raise ImplicitlyIgnoringDST(TIMESTAMP_DST_MSG)
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
@@ -3533,7 +3532,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         """
         _check_invalid_replace_kwargs(kwargs)
         if ignore_dst is not True:
-            raise _EXC_ADJUST_OFFSET_DATETIME
+            raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
         try:
             kwargs["tzinfo"] = _load_offset(kwargs.pop("offset"))
         except KeyError:
@@ -3558,7 +3557,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         pass ``ignore_dst=True`` to this method.
         """
         if ignore_dst is not True:
-            raise _EXC_ADJUST_OFFSET_DATETIME
+            raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
         return self._from_py_unchecked(
             _check_utc_bounds(
                 _datetime.combine(date._py_date, self._py_dt.timetz())
@@ -3581,7 +3580,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         pass ``ignore_dst=True`` to this method.
         """
         if ignore_dst is not True:
-            raise _EXC_ADJUST_OFFSET_DATETIME
+            raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
         return self._from_py_unchecked(
             _check_utc_bounds(
                 _datetime.combine(
@@ -3597,7 +3596,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     def __sub__(self, other: _KnowsInstant) -> TimeDelta:
         """Calculate the duration relative to another exact time."""
         if isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
-            raise _EXC_ADJUST_OFFSET_DATETIME
+            raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
         return super().__sub__(other)  # type: ignore[misc, no-any-return]
 
     @classmethod
@@ -3786,7 +3785,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         **kwargs,
     ) -> OffsetDateTime:
         if ignore_dst is not True:
-            raise _EXC_ADJUST_OFFSET_DATETIME
+            raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
         elif kwargs:
             if arg is _UNSET:
                 return self._shift_kwargs(sign, **kwargs)
@@ -4170,11 +4169,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
                 nanos,
             )
         elif isinstance(delta, (DateDelta, DateTimeDelta)):
-            raise TypeError(
-                "Addition/subtraction of calendar units on a ZonedDateTime requires "
-                "explicit disambiguation. Use the `add`/`subtract` methods instead. "
-                "For example, instead of `dt + delta` use `dt.add(delta, disambiguate=...)`."
-            )
+            raise TypeError(SHIFT_OPERATOR_CALENDAR_ZONED_MSG)
         return NotImplemented
 
     @overload
@@ -4575,11 +4570,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
                 (py_dt + _timedelta(seconds=delta_secs)).astimezone(), nanos
             )
         elif isinstance(delta, (DateDelta, DateTimeDelta)):
-            raise TypeError(
-                "Addition/subtraction of calendar units on a SystemDateTime requires "
-                "explicit disambiguation. Use the `add`/`subtract` methods instead. "
-                "For example, instead of `dt + delta` use `dt.add(delta, disambiguate=...)`."
-            )
+            raise TypeError(SHIFT_OPERATOR_CALENDAR_ZONED_MSG)
         return NotImplemented
 
     @overload
@@ -4890,11 +4881,7 @@ class LocalDateTime(_KnowsLocal):
                 self._nanos,
             )
         elif isinstance(delta, (TimeDelta, DateTimeDelta)):
-            raise ImplicitlyIgnoringDST(
-                "Adding or subtracting a (date)time delta to a local datetime "
-                "implicitly ignores DST transitions and other timezone "
-                "changes. Instead, use the `add` or `subtract` method."
-            )
+            raise ImplicitlyIgnoringDST(SHIFT_LOCAL_MSG)
         return NotImplemented
 
     def __sub__(self, other: DateDelta) -> LocalDateTime:
@@ -4906,11 +4893,7 @@ class LocalDateTime(_KnowsLocal):
         if isinstance(other, (DateDelta, TimeDelta, DateTimeDelta)):
             return self + -other
         elif isinstance(other, LocalDateTime):
-            raise ImplicitlyIgnoringDST(
-                "The difference between two local datetimes implicitly ignores "
-                "DST transitions and other timezone changes. "
-                "Use the `difference` method instead."
-            )
+            raise ImplicitlyIgnoringDST(DIFF_OPERATOR_LOCAL_MSG)
         return NotImplemented
 
     def difference(
@@ -4929,11 +4912,7 @@ class LocalDateTime(_KnowsLocal):
         see `the docs <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
         """
         if ignore_dst is not True:
-            raise ImplicitlyIgnoringDST(
-                "The difference between two local datetimes implicitly ignores "
-                "DST transitions and other timezone changes. "
-                + _IGNORE_DST_SUGGESTION
-            )
+            raise ImplicitlyIgnoringDST(DIFF_LOCAL_MSG)
 
         py_delta = self._py_dt - other._py_dt
         return TimeDelta(
@@ -5032,7 +5011,7 @@ class LocalDateTime(_KnowsLocal):
             nanoseconds=nanoseconds,
         )
         if tdelta and ignore_dst is not True:
-            raise _EXC_ADJUST_LOCAL_DATETIME
+            raise ImplicitlyIgnoringDST(ADJUST_LOCAL_DATETIME_MSG)
 
         delta_secs, nanos = divmod(
             tdelta._total_ns + self._nanos, 1_000_000_000
@@ -5171,7 +5150,6 @@ def _unpkl_local(data: bytes) -> LocalDateTime:
     return LocalDateTime._from_py_unchecked(_datetime(*args), nanos)
 
 
-# RepeatedTime
 class RepeatedTime(Exception):
     """A datetime is repeated in a timezone, e.g. because of DST"""
 
@@ -5212,7 +5190,40 @@ class ImplicitlyIgnoringDST(TypeError):
     """A calculation was performed that implicitly ignored DST"""
 
 
-_EXC_TIMESTAMP_DST = ImplicitlyIgnoringDST(
+_IGNORE_DST_SUGGESTION = (
+    "To perform DST-safe operations, convert to a ZonedDateTime first. "
+    "Or, if you don't know the timezone and accept potentially incorrect results "
+    "during DST transitions, pass `ignore_dst=True`. For more information, see "
+    "whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
+)
+
+
+SHIFT_LOCAL_MSG = (
+    "Adding or subtracting a (date)time delta to a local datetime "
+    "implicitly ignores DST transitions and other timezone "
+    "changes. Instead, use the `add` or `subtract` method."
+)
+
+DIFF_OPERATOR_LOCAL_MSG = (
+    "The difference between two local datetimes implicitly ignores "
+    "DST transitions and other timezone changes. "
+    "Use the `difference` method instead."
+)
+
+DIFF_LOCAL_MSG = (
+    "The difference between two local datetimes implicitly ignores "
+    "DST transitions and other timezone changes. " + _IGNORE_DST_SUGGESTION
+)
+
+
+SHIFT_OPERATOR_CALENDAR_ZONED_MSG = (
+    "Addition/subtraction of calendar units on a Zoned/System-DateTime requires "
+    "explicit disambiguation. Use the `add`/`subtract` methods instead. "
+    "For example, instead of `dt + delta` use `dt.add(delta, disambiguate=...)`."
+)
+
+
+TIMESTAMP_DST_MSG = (
     "Converting from a timestamp with a fixed offset implicitly ignores DST "
     "and other timezone changes. To perform a DST-safe conversion, use "
     "ZonedDateTime.from_timestamp() instead. "
@@ -5222,20 +5233,21 @@ _EXC_TIMESTAMP_DST = ImplicitlyIgnoringDST(
 )
 
 
-_IGNORE_DST_SUGGESTION = """\
-To perform DST-safe operations, convert to a ZonedDateTime first. \
-Or, if you don't know the timezone and accept potentially incorrect results \
-during DST transitions, pass `ignore_dst=True`. For more information, see \
-whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
-"""
+OFFSET_NOW_DST_MSG = (
+    "Getting the current time with a fixed offset implicitly ignores DST "
+    "and other timezone changes. Instead, use `Instant.now()` or "
+    "`ZonedDateTime.now(<tz name>)` if you know the timezone. "
+    "Or, if you want to ignore DST and accept potentially incorrect offsets, "
+    "pass `ignore_dst=True` to this method. For more information, see "
+    "whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
+)
 
-
-_EXC_ADJUST_OFFSET_DATETIME = ImplicitlyIgnoringDST(
+ADJUST_OFFSET_DATETIME_MSG = (
     "Adjusting a fixed offset datetime implicitly ignores DST and other timezone changes. "
     + _IGNORE_DST_SUGGESTION
 )
 
-_EXC_ADJUST_LOCAL_DATETIME = ImplicitlyIgnoringDST(
+ADJUST_LOCAL_DATETIME_MSG = (
     "Adjusting a local datetime by time units (e.g. hours and minutess) ignores "
     "DST and other timezone changes. " + _IGNORE_DST_SUGGESTION
 )
@@ -5505,10 +5517,19 @@ def nanoseconds(i: int, /) -> TimeDelta:
     return TimeDelta(nanoseconds=i)
 
 
-for name in __all__:
+# We expose the public members in the root of the module.
+# For clarity, we remove the "_pywhenever" part from the names,
+# since this is an implementation detail.
+for name in (
+    __all__ + "_KnowsLocal _KnowsInstant _KnowsInstantAndLocal".split()
+):
     member = locals()[name]
     if getattr(member, "__module__", None) == __name__:  # pragma: no branch
         member.__module__ = "whenever"
+
+# clear up loop variables so they don't leak into the namespace
+del name
+del member
 
 for _unpkl in (
     _unpkl_date,

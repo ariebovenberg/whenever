@@ -42,7 +42,7 @@ jobs:
           pip install -r requirements/test.txt
           pytest tests/
 
-  Test-os:
+  test-os:
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -116,7 +116,8 @@ jobs:
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
 
-  Linting:
+  lint:
+    name: Linting
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -135,7 +136,29 @@ jobs:
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
 
-  Typecheck:
+  check-docstrings:
+    name: Ensure docstrings in Rust/Python are synced
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: |
+          pip install .
+          python generate_docstrings.py > fresh_docstrings.rs
+          if diff -q fresh_docstrings.rs src/docstrings.rs > /dev/null; then
+              echo "OK"
+          else
+              echo "Rust docstrings are stale. Please run 'python generate_docstrings.py > src/docstrings.rs'";
+              # output the actual diff
+              diff -u fresh_docstrings.rs src/docstrings.rs
+              exit 1
+          fi
+        env:
+          WHENEVER_NO_BUILD_RUST_EXT: "1"
+  typecheck:
+    name: Typecheck Python code
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -149,3 +172,22 @@ jobs:
           make typecheck
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
+
+  # https://github.com/marketplace/actions/alls-green#why
+  all-green:
+    name: Are all checks green?
+    if: always()
+    needs:
+      - test-python-versions
+      - test-os
+      - test-pure-python
+      - lint
+      - check-docstrings
+      - typecheck
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Decide whether the needed jobs succeeded or failed
+      uses: re-actors/alls-green@release/v1
+      with:
+        jobs: ${{ toJSON(needs) }}
