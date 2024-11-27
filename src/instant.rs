@@ -4,6 +4,7 @@ use pyo3_ffi::*;
 
 use crate::common::*;
 use crate::datetime_delta::handle_exact_unit;
+use crate::docstrings as doc;
 use crate::time_delta::{MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS};
 use crate::{
     date::Date,
@@ -446,7 +447,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_nb_add, __add__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: c"A UTC datetime type".as_ptr() as *mut c_void,
+        pfunc: doc::INSTANT.as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_hash,
@@ -455,10 +456,6 @@ static mut SLOTS: &[PyType_Slot] = &[
     PyType_Slot {
         slot: Py_tp_methods,
         pfunc: unsafe { METHODS.as_ptr() as *mut c_void },
-    },
-    PyType_Slot {
-        slot: Py_tp_getset,
-        pfunc: unsafe { GETSETTERS.as_ptr() as *mut c_void },
     },
     PyType_Slot {
         slot: Py_tp_dealloc,
@@ -818,16 +815,16 @@ unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method!(identity2 named "__copy__", ""),
-    method!(identity2 named "__deepcopy__", "", METH_O),
-    method!(exact_eq, "Equality check limited to the same type", METH_O),
-    method!(__reduce__, ""),
-    method!(timestamp, "Get the UNIX timestamp in seconds"),
-    method!(timestamp_millis, "Get the UNIX timestamp in milliseconds"),
-    method!(timestamp_nanos, "Get the UNIX timestamp in nanoseconds"),
+    method!(identity2 named "__copy__", c""),
+    method!(identity2 named "__deepcopy__", c"", METH_O),
+    method!(__reduce__, c""),
+    method!(exact_eq, doc::KNOWSINSTANT_EXACT_EQ, METH_O),
+    method!(timestamp, doc::KNOWSINSTANT_TIMESTAMP),
+    method!(timestamp_millis, doc::KNOWSINSTANT_TIMESTAMP_MILLIS),
+    method!(timestamp_nanos, doc::KNOWSINSTANT_TIMESTAMP_NANOS),
     method!(
         from_timestamp,
-        "Create an instance from a UNIX timestamp in seconds",
+        doc::INSTANT_FROM_TIMESTAMP,
         METH_O | METH_CLASS
     ),
     PyMethodDef {
@@ -848,108 +845,50 @@ static mut METHODS: &[PyMethodDef] = &[
             },
         },
         ml_flags: METH_CLASS | METH_VARARGS | METH_KEYWORDS,
-        ml_doc: c"from_utc()\n--\n\nCreate an instance from a UTC date and time".as_ptr(),
+        ml_doc: doc::INSTANT_FROM_UTC.as_ptr(),
     },
     method!(
         from_timestamp_millis,
-        "Create an instance from a UNIX timestamp in milliseconds",
+        doc::INSTANT_FROM_TIMESTAMP_MILLIS,
         METH_O | METH_CLASS
     ),
     method!(
         from_timestamp_nanos,
-        "Create an instance from a UNIX timestamp in nanoseconds",
+        doc::INSTANT_FROM_TIMESTAMP_NANOS,
         METH_O | METH_CLASS
     ),
-    method!(py_datetime, "Get the equivalent datetime.datetime object"),
+    method!(py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
     method!(
         from_py_datetime,
-        "Create an instance from a datetime.datetime",
+        doc::INSTANT_FROM_PY_DATETIME,
         METH_O | METH_CLASS
     ),
-    method!(
-        now,
-        "Create an instance from the current time",
-        METH_CLASS | METH_NOARGS
-    ),
-    method!(format_rfc3339, "Format in the RFC3339 format"),
+    method!(now, doc::INSTANT_NOW, METH_CLASS | METH_NOARGS),
+    method!(format_rfc3339, doc::INSTANT_FORMAT_RFC3339),
     method!(
         parse_rfc3339,
-        "Create an instance from an RFC3339 string",
+        doc::INSTANT_PARSE_RFC3339,
         METH_CLASS | METH_O
     ),
-    method!(format_rfc2822, "Format in the RFC2822 format"),
+    method!(format_rfc2822, doc::INSTANT_FORMAT_RFC2822),
     method!(
         parse_rfc2822,
-        "Create an instance from an RFC2822 string",
+        doc::INSTANT_PARSE_RFC2822,
         METH_O | METH_CLASS
     ),
-    method!(
-        format_common_iso,
-        "Format in the common ISO8601 representation"
-    ),
+    method!(format_common_iso, doc::INSTANT_FORMAT_COMMON_ISO),
     method!(
         parse_common_iso,
-        "Create an instance from the common ISO8601 format",
+        doc::INSTANT_PARSE_COMMON_ISO,
         METH_O | METH_CLASS
     ),
-    method_kwargs!(
-        add,
-        "add($self, *, hours=0, minutes=0, seconds=0, milliseconds=0, \
-        microseconds=0, nanoseconds=0)\n--\n\n\
-        Add various time units to the instance"
-    ),
-    method_kwargs!(
-        subtract,
-        "subtract($self, *, hours=0, minutes=0, seconds=0, milliseconds=0, \
-        microseconds=0, nanoseconds=0)\n--\n\n\
-        Subtract various time units from the instance"
-    ),
-    method!(to_tz, "Convert to an equivalent ZonedDateTime", METH_O),
-    method!(
-        to_system_tz,
-        "Convert to an equivalent datetime in the system timezone"
-    ),
-    method_vararg!(
-        to_fixed_offset,
-        "to_fixed_offset($self, offset=0, /)\n--\n\n\
-        Convert to an equivalent OffsetDateTime"
-    ),
-    method!(
-        difference,
-        "Calculate the difference between two instances",
-        METH_O
-    ),
+    method_kwargs!(add, doc::INSTANT_ADD),
+    method_kwargs!(subtract, doc::INSTANT_SUBTRACT),
+    method!(to_tz, doc::KNOWSINSTANT_TO_TZ, METH_O),
+    method!(to_system_tz, doc::KNOWSINSTANT_TO_SYSTEM_TZ),
+    method_vararg!(to_fixed_offset, doc::KNOWSINSTANT_TO_FIXED_OFFSET),
+    method!(difference, doc::KNOWSINSTANT_DIFFERENCE, METH_O),
     PyMethodDef::zeroed(),
-];
-
-unsafe fn get_hour(slf: *mut PyObject) -> PyReturn {
-    (Instant::extract(slf).secs % 86400 / 3600).to_py()
-}
-
-unsafe fn get_minute(slf: *mut PyObject) -> PyReturn {
-    (Instant::extract(slf).secs % 3600 / 60).to_py()
-}
-
-unsafe fn get_secs(slf: *mut PyObject) -> PyReturn {
-    (Instant::extract(slf).secs % 60).to_py()
-}
-
-unsafe fn get_nanos(slf: *mut PyObject) -> PyReturn {
-    Instant::extract(slf).nanos.to_py()
-}
-
-static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter!(get_hour named "hour", "The hour component"),
-    getter!(get_minute named "minute", "The minute component"),
-    getter!(get_secs named "second", "The second component"),
-    getter!(get_nanos named "nanosecond", "The nanosecond component"),
-    PyGetSetDef {
-        name: NULL(),
-        get: None,
-        set: None,
-        doc: NULL(),
-        closure: NULL(),
-    },
 ];
 
 type_spec!(Instant, SLOTS);

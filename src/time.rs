@@ -6,6 +6,7 @@ use std::ptr::null_mut as NULL;
 
 use crate::common::*;
 use crate::date::Date;
+use crate::docstrings as doc;
 use crate::local_datetime::DateTime;
 use crate::State;
 
@@ -275,7 +276,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_tp_richcompare, __richcmp__),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: c"A type representing the time of day".as_ptr() as *mut c_void,
+        pfunc: doc::TIME.as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_methods,
@@ -442,30 +443,19 @@ unsafe fn replace(
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method!(py_time, "Convert to a Python datetime.time"),
-    method_kwargs!(
-        replace,
-        "replace($self, *, hour=None, minute=None, second=None, nanosecond=None)\n--\n\n\
-        Replace one or more components of the time"
-    ),
-    method!(
-        format_common_iso,
-        "Return the time in the common ISO 8601 format"
-    ),
+    method!(identity2 named "__copy__", c""),
+    method!(identity2 named "__deepcopy__", c"", METH_O),
+    method!(__reduce__, c""),
+    method!(py_time, doc::TIME_PY_TIME),
+    method_kwargs!(replace, doc::TIME_REPLACE),
+    method!(format_common_iso, doc::TIME_FORMAT_COMMON_ISO),
     method!(
         parse_common_iso,
-        "Create an instance from the common ISO 8601 format",
+        doc::TIME_PARSE_COMMON_ISO,
         METH_O | METH_CLASS
     ),
-    method!(
-        from_py_time,
-        "Create a time from a Python datetime.time",
-        METH_O | METH_CLASS
-    ),
-    method!(identity2 named "__copy__", ""),
-    method!(identity2 named "__deepcopy__", "", METH_O),
-    method!(__reduce__, ""),
-    method!(on, "Combine with a date to create a datetime", METH_O),
+    method!(from_py_time, doc::TIME_FROM_PY_TIME, METH_O | METH_CLASS),
+    method!(on, doc::TIME_ON, METH_O),
     PyMethodDef::zeroed(),
 ];
 

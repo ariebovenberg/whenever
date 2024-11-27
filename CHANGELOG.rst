@@ -1,6 +1,18 @@
 🚀 Changelog
 ============
 
+0.6.14 (2024-11-27)
+-------------------
+
+**Fixed**
+
+- Ensure docstrings and error messages are consistent in Rust extension
+  as well as the pure-Python version
+- Remove ondocumented properties ``hour/minute/etc`` from ``Instant``
+  that were accidentally left in the Rust extension.
+- ``exact_eq()`` now also raises ``TypeError`` in the pure Python version
+  when comparing different types.
+
 0.6.13 (2024-11-17)
 -------------------
 

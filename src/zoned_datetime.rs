@@ -5,6 +5,7 @@ use std::fmt::{self, Display, Formatter};
 
 use crate::common::*;
 use crate::datetime_delta::set_units_from_kwargs;
+use crate::docstrings as doc;
 use crate::local_datetime::set_components_from_kwargs;
 use crate::{
     date::Date,
@@ -349,11 +350,7 @@ unsafe fn _shift(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) -> Py
             .to_tz(py_api, zdt.zoneinfo)?
             .to_obj(type_a)
     } else if type_b == date_delta_type || type_b == datetime_delta_type {
-        Err(type_err!(
-            "Addition/subtraction of calendar units on a ZonedDateTime requires \
-             explicit disambiguation. Use the `add`/`subtract` methods instead. \
-             For example, instead of `dt + delta` use `dt.add(delta, disambiguate=...)`."
-        ))?
+        Err(type_err!(doc::SHIFT_OPERATOR_CALENDAR_ZONED_MSG))?
     } else {
         Ok(newref(Py_NotImplemented()))
     }
@@ -412,7 +409,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_nb_subtract, __sub__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: c"A datetime type with IANA tz ID".as_ptr() as *mut c_void,
+        pfunc: doc::ZONEDDATETIME.as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_hash,
@@ -1250,104 +1247,55 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method!(identity2 named "__copy__", ""),
-    method!(identity2 named "__deepcopy__", "", METH_O),
-    method!(to_tz, "Convert to a `ZonedDateTime` with given tz", METH_O),
-    method!(exact_eq, "Exact equality", METH_O),
-    method!(py_datetime, "Convert to a `datetime.datetime`"),
-    method!(instant, "Get the underlying instant"),
-    method!(to_system_tz, "Convert to a datetime in the system timezone"),
-    method!(date, "The date component"),
-    method!(time, "The time component"),
-    method!(
-        format_common_iso,
-        "Format in the common ISO format (RFC9557 profile)"
-    ),
+    method!(identity2 named "__copy__", c""),
+    method!(identity2 named "__deepcopy__", c"", METH_O),
+    method!(__reduce__, c""),
+    method!(to_tz, doc::KNOWSINSTANT_TO_TZ, METH_O),
+    method!(to_system_tz, doc::KNOWSINSTANT_TO_SYSTEM_TZ),
+    method_vararg!(to_fixed_offset, doc::KNOWSINSTANT_TO_FIXED_OFFSET),
+    method!(exact_eq, doc::KNOWSINSTANT_EXACT_EQ, METH_O),
+    method!(py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
+    method!(instant, doc::KNOWSINSTANTANDLOCAL_INSTANT),
+    method!(local, doc::KNOWSINSTANTANDLOCAL_LOCAL),
+    method!(date, doc::KNOWSLOCAL_DATE),
+    method!(time, doc::KNOWSLOCAL_TIME),
+    method!(format_common_iso, doc::ZONEDDATETIME_FORMAT_COMMON_ISO),
     method!(
         parse_common_iso,
-        "Parse the common ISO format (RFC9557 profile)",
+        doc::ZONEDDATETIME_PARSE_COMMON_ISO,
         METH_O | METH_CLASS
     ),
-    method!(__reduce__, ""),
-    method!(
-        now,
-        "Create a new instance representing the current time",
-        METH_O | METH_CLASS
-    ),
+    method!(now, doc::ZONEDDATETIME_NOW, METH_O | METH_CLASS),
     method!(
         from_py_datetime,
-        "Create a new instance from a `datetime.datetime`",
+        doc::ZONEDDATETIME_FROM_PY_DATETIME,
         METH_O | METH_CLASS
     ),
-    method!(local, "Get the local date and time"),
-    method!(timestamp, "Convert to a UNIX timestamp"),
-    method!(
-        timestamp_millis,
-        "Convert to a UNIX timestamp in milliseconds"
-    ),
-    method!(
-        timestamp_nanos,
-        "Convert to a UNIX timestamp in nanoseconds"
-    ),
-    method!(is_ambiguous, "Check if the datetime is ambiguous"),
+    method!(timestamp, doc::KNOWSINSTANT_TIMESTAMP),
+    method!(timestamp_millis, doc::KNOWSINSTANT_TIMESTAMP_MILLIS),
+    method!(timestamp_nanos, doc::KNOWSINSTANT_TIMESTAMP_NANOS),
+    method!(is_ambiguous, doc::ZONEDDATETIME_IS_AMBIGUOUS),
     method_kwargs!(
         from_timestamp,
-        "from_timestamp($type, ts, /, *, tz)\n--\n\n\
-        Create a new instance from a UNIX timestamp",
+        doc::ZONEDDATETIME_FROM_TIMESTAMP,
         METH_CLASS
     ),
     method_kwargs!(
         from_timestamp_millis,
-        "from_timestamp_millis($type, ts, /, *, tz)\n--\n\n\
-        Create a new instance from a UNIX timestamp in milliseconds",
+        doc::ZONEDDATETIME_FROM_TIMESTAMP_MILLIS,
         METH_CLASS
     ),
     method_kwargs!(
         from_timestamp_nanos,
-        "from_timestamp_nanos($type, ts, /, *, tz)\n--\n\n\
-        Create a new instance from a UNIX timestamp in nanoseconds",
+        doc::ZONEDDATETIME_FROM_TIMESTAMP_NANOS,
         METH_CLASS
     ),
-    method_kwargs!(
-        replace,
-        "replace($self, /, *, year=None, month=None, day=None, hour=None, \
-        minute=None, second=None, nanosecond=None, tz=None, disambiguate)\n--\n\n\
-        Return a new instance with the specified fields replaced"
-    ),
-    method_kwargs!(
-        replace_date,
-        "replace_date($self, date, /, *, disambiguate)\n--\n\n\
-        Return a new instance with the date replaced"
-    ),
-    method_kwargs!(
-        replace_time,
-        "replace_time($self, time, /, *, disambiguate)\n--\n\n\
-        Return a new instance with the time replaced"
-    ),
-    method_vararg!(
-        to_fixed_offset,
-        "to_fixed_offset($self, offset=None, /)\n--\n\n\
-        Convert to an equivalent offset datetime"
-    ),
-    method_kwargs!(
-        add,
-        "add($self, delta=None, /, *, years=0, months=0, days=0, hours=0, \
-        minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
-        disambiguate=None)\n--\n\n\
-        Add various time/calendar units"
-    ),
-    method_kwargs!(
-        subtract,
-        "subtract($self, delta=None, /, *, years=0, months=0, days=0, hours=0, \
-        minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
-        disambiguate=None)\n--\n\n\
-        Subtract various time/calendar units"
-    ),
-    method!(
-        difference,
-        "Get the difference between two instances",
-        METH_O
-    ),
+    method_kwargs!(replace, doc::ZONEDDATETIME_REPLACE),
+    method_kwargs!(replace_date, doc::ZONEDDATETIME_REPLACE_DATE),
+    method_kwargs!(replace_time, doc::ZONEDDATETIME_REPLACE_TIME),
+    method_kwargs!(add, doc::ZONEDDATETIME_ADD),
+    method_kwargs!(subtract, doc::ZONEDDATETIME_SUBTRACT),
+    method!(difference, doc::KNOWSINSTANT_DIFFERENCE, METH_O),
     PyMethodDef::zeroed(),
 ];
 

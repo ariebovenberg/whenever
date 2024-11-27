@@ -5,6 +5,7 @@ use std::fmt::{self, Display, Formatter};
 
 use crate::common::*;
 use crate::datetime_delta::set_units_from_kwargs;
+use crate::docstrings as doc;
 use crate::local_datetime::set_components_from_kwargs;
 use crate::{
     date::Date,
@@ -388,7 +389,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_nb_subtract, __sub__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: c"A datetime type with a fixed UTC offset".as_ptr() as *mut c_void,
+        pfunc: doc::OFFSETDATETIME.as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_hash,
@@ -535,7 +536,7 @@ unsafe fn replace_date(
     } = OffsetDateTime::extract(slf);
     let state = State::for_type(cls);
 
-    check_ignore_dst_kwarg(kwargs, state, IGNORE_DST_MSG)?;
+    check_ignore_dst_kwarg(kwargs, state, doc::ADJUST_OFFSET_DATETIME_MSG)?;
 
     let &[arg] = args else {
         Err(type_err!("replace() takes exactly 1 positional argument"))?
@@ -559,7 +560,7 @@ unsafe fn replace_time(
         date, offset_secs, ..
     } = OffsetDateTime::extract(slf);
     let state = State::for_type(cls);
-    check_ignore_dst_kwarg(kwargs, state, IGNORE_DST_MSG)?;
+    check_ignore_dst_kwarg(kwargs, state, doc::ADJUST_OFFSET_DATETIME_MSG)?;
 
     let &[arg] = args else {
         Err(type_err!("replace() takes exactly 1 positional argument"))?
@@ -627,7 +628,10 @@ unsafe fn replace(
     })?;
 
     if !ignore_dst {
-        Err(py_err!(state.exc_implicitly_ignoring_dst, IGNORE_DST_MSG))?
+        Err(py_err!(
+            state.exc_implicitly_ignoring_dst,
+            doc::ADJUST_OFFSET_DATETIME_MSG
+        ))?
     }
 
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
@@ -650,16 +654,7 @@ unsafe fn now(
         Err(type_err!("now() takes exactly 1 positional argument"))?
     };
 
-    check_ignore_dst_kwarg(
-        kwargs,
-        state,
-        "Getting the current time with a fixed offset implicitly ignores DST \
-         and other timezone changes. Instead, use `Instant.now()` or \
-         `ZonedDateTime.now(<tz name>)` if you know the timezone. \
-         Or, if you want to ignore DST and accept potentially incorrect offsets, \
-         pass `ignore_dst=True` to this method. For more information, see \
-         whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic",
-    )?;
+    check_ignore_dst_kwarg(kwargs, state, doc::OFFSET_NOW_DST_MSG)?;
 
     let offset_secs = extract_offset(offset, state.time_delta_type)?;
     // FUTURE: Conversion to Instant can be done a bit more efficiently
@@ -795,11 +790,7 @@ unsafe fn _shift_method(
     if !ignore_dst {
         Err(py_err!(
             state.exc_implicitly_ignoring_dst,
-            "Adding time units to an OffsetDateTime implicitly ignores \
-            Daylight Saving Time. Instead, convert to a ZonedDateTime first \
-            using assume_tz(). Or, if you're sure you want to ignore DST, \
-            explicitly pass ignore_dst=True. For more information, see \
-            whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
+            doc::ADJUST_OFFSET_DATETIME_MSG
         ))?
     }
     let OffsetDateTime {
@@ -893,7 +884,7 @@ unsafe fn check_from_timestamp_args_return_offset(
     })?;
 
     if !ignore_dst {
-        Err(py_err!(exc_implicitly_ignoring_dst, IGNORE_DST_MSG))?
+        Err(py_err!(exc_implicitly_ignoring_dst, doc::TIMESTAMP_DST_MSG))?
     }
 
     offset_secs.ok_or_type_err("Missing required keyword argument: 'offset'")
@@ -1137,122 +1128,67 @@ unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
 
 static mut METHODS: &[PyMethodDef] = &[
     // FUTURE: get docstrings from Python implementation
-    method!(identity2 named "__copy__", ""),
-    method!(identity2 named "__deepcopy__", "", METH_O),
-    method!(__reduce__, ""),
-    method_kwargs!(
-        now,
-        "now($type, offset, /, *, ignore_dst)\n--\n\n\
-        Create a new instance representing the current time",
-        METH_CLASS
-    ),
-    method!(exact_eq, "exact_eq()\n--\n\nExact equality", METH_O),
-    method!(py_datetime, "Convert to a `datetime.datetime`"),
+    method!(identity2 named "__copy__", c""),
+    method!(identity2 named "__deepcopy__", c"", METH_O),
+    method!(__reduce__, c""),
+    method_kwargs!(now, doc::OFFSETDATETIME_NOW, METH_CLASS),
+    method!(exact_eq, doc::KNOWSINSTANT_EXACT_EQ, METH_O),
+    method!(py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
     method!(
         from_py_datetime,
-        "Create a new instance from a `datetime.datetime`",
+        doc::OFFSETDATETIME_FROM_PY_DATETIME,
         METH_O | METH_CLASS
     ),
-    method!(instant, "Get the underlying instant"),
-    method!(local, "Get the local date and time"),
-    method!(to_tz, "Convert to a `ZonedDateTime` with given tz", METH_O),
-    method_vararg!(
-        to_fixed_offset,
-        "to_fixed_offset($self, offset=None, /)\n--\n\n\
-        Convert to a new instance with a different offset"
-    ),
-    method!(to_system_tz, "Convert to a datetime to the system timezone"),
-    method!(date, "The date component"),
-    method!(time, "The time component"),
-    method!(format_rfc3339, "Format according to RFC3339"),
+    method!(instant, doc::KNOWSINSTANTANDLOCAL_INSTANT),
+    method!(local, doc::KNOWSINSTANTANDLOCAL_LOCAL),
+    method!(to_tz, doc::KNOWSINSTANT_TO_TZ, METH_O),
+    method_vararg!(to_fixed_offset, doc::KNOWSINSTANT_TO_FIXED_OFFSET),
+    method!(to_system_tz, doc::KNOWSINSTANT_TO_SYSTEM_TZ),
+    method!(date, doc::KNOWSLOCAL_DATE),
+    method!(time, doc::KNOWSLOCAL_TIME),
+    method!(format_rfc3339, doc::OFFSETDATETIME_FORMAT_RFC3339),
     method!(
         parse_rfc3339,
-        "Create a new instance from an RFC3339 timestamp",
+        doc::OFFSETDATETIME_PARSE_RFC3339,
         METH_O | METH_CLASS
     ),
-    method!(format_rfc2822, "Format according to RFC2822"),
+    method!(format_rfc2822, doc::OFFSETDATETIME_FORMAT_RFC2822),
     method!(
         parse_rfc2822,
-        "Create a new instance from an RFC2822 timestamp",
+        doc::OFFSETDATETIME_PARSE_RFC2822,
         METH_O | METH_CLASS
     ),
-    method!(
-        format_common_iso,
-        "Format according to the common ISO8601 style"
-    ),
+    method!(format_common_iso, doc::OFFSETDATETIME_FORMAT_COMMON_ISO),
     method!(
         parse_common_iso,
-        "Parse from the common ISO8601 format",
+        doc::OFFSETDATETIME_PARSE_COMMON_ISO,
         METH_O | METH_CLASS
     ),
-    method!(timestamp, "Convert to a UNIX timestamp"),
-    method!(
-        timestamp_millis,
-        "Convert to a UNIX timestamp in milliseconds"
-    ),
-    method!(
-        timestamp_nanos,
-        "Convert to a UNIX timestamp in nanoseconds"
-    ),
+    method!(timestamp, doc::KNOWSINSTANT_TIMESTAMP),
+    method!(timestamp_millis, doc::KNOWSINSTANT_TIMESTAMP_MILLIS),
+    method!(timestamp_nanos, doc::KNOWSINSTANT_TIMESTAMP_NANOS),
     method_kwargs!(
         from_timestamp,
-        "from_timestamp($type, timestamp, /, *, offset, ignore_dst)\n--\n\n\
-        Create a new instance from a UNIX timestamp",
+        doc::OFFSETDATETIME_FROM_TIMESTAMP,
         METH_CLASS
     ),
     method_kwargs!(
         from_timestamp_millis,
-        "from_timestamp_millis($type, timestamp, /, *, offset, ignore_dst)\n--\n\n\
-        Create a new instance from a UNIX timestamp in milliseconds",
+        doc::OFFSETDATETIME_FROM_TIMESTAMP_MILLIS,
         METH_CLASS
     ),
     method_kwargs!(
         from_timestamp_nanos,
-        "from_timestamp_nanos($type, timestamp, /, *, offset, ignore_dst)\n--\n\n\
-        Create a new instance from a UNIX timestamp",
+        doc::OFFSETDATETIME_FROM_TIMESTAMP_NANOS,
         METH_CLASS
     ),
-    method_kwargs!(
-        replace,
-        "replace($self, /, *, year=None, month=None, day=None, hour=None, \
-        minute=None, second=None, nanosecond=None, offset=None, ignore_dst)\n--\n\n\
-        Return a new instance with the specified fields replaced"
-    ),
-    method_kwargs!(
-        replace_date,
-        "replace_date($self, date, /, *, ignore_dst)\n--\n\n\
-        Return a new instance with the date replaced"
-    ),
-    method_kwargs!(
-        replace_time,
-        "replace_time($self, time, /, *, ignore_dst)\n--\n\n\
-        Return a new instance with the time replaced"
-    ),
-    method_vararg!(
-        strptime,
-        "strptime($type, date_string, format, /)\n--\n\n\
-        Parse a string with strptime",
-        METH_CLASS
-    ),
-    method_kwargs!(
-        add,
-        "add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, \
-        hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
-        ignore_dst=False)\n--\n\n\
-        Add time units"
-    ),
-    method_kwargs!(
-        subtract,
-        "subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, \
-        hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
-        ignore_dst=False)\n--\n\n\
-        Subtract time units"
-    ),
-    method!(
-        difference,
-        "Calculate the difference between two instances",
-        METH_O
-    ),
+    method_kwargs!(replace, doc::OFFSETDATETIME_REPLACE),
+    method_kwargs!(replace_date, doc::OFFSETDATETIME_REPLACE_DATE),
+    method_kwargs!(replace_time, doc::OFFSETDATETIME_REPLACE_TIME),
+    method_vararg!(strptime, doc::OFFSETDATETIME_STRPTIME, METH_CLASS),
+    method_kwargs!(add, doc::OFFSETDATETIME_ADD),
+    method_kwargs!(subtract, doc::OFFSETDATETIME_SUBTRACT),
+    method!(difference, doc::KNOWSINSTANT_DIFFERENCE, METH_O),
     PyMethodDef::zeroed(),
 ];
 
@@ -1306,12 +1242,5 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
         closure: NULL(),
     },
 ];
-
-static IGNORE_DST_MSG: &str =
-    "Adjusting a fixed-offset datetime implicitly ignores DST and other timezone changes. \
-    To perform DST-safe operations, convert to a ZonedDateTime first using `to_tz()`. \
-    Or, if you don't know the timezone and accept potentially incorrect results \
-    during DST transitions, pass `ignore_dst=True`. For more information, see \
-    whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";
 
 type_spec!(OffsetDateTime, SLOTS);

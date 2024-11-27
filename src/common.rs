@@ -41,7 +41,7 @@ macro_rules! py_err(
 );
 
 macro_rules! value_err(
-    ($msg:literal) => {
+    ($msg:expr) => {
         py_err!(PyExc_ValueError, $msg)
     };
     ($msg:literal, $($args:expr),*) => {
@@ -50,7 +50,7 @@ macro_rules! value_err(
 );
 
 macro_rules! type_err(
-    ($msg:literal) => {
+    ($msg:expr) => {
         py_err!(PyExc_TypeError, $msg)
     };
     ($msg:literal, $($args:expr),*) => {
@@ -125,7 +125,7 @@ macro_rules! method(
                 },
             },
             ml_flags: $flags,
-            ml_doc: cstr!($doc),
+            ml_doc: $doc.as_ptr()
         }
     };
 );
@@ -162,7 +162,7 @@ macro_rules! method_vararg(
                 },
             },
             ml_flags: METH_FASTCALL | $flags,
-            ml_doc: cstr!($doc),
+            ml_doc: $doc.as_ptr()
         }
     };
 );
@@ -206,6 +206,7 @@ impl Iterator for KwargIter {
     }
 }
 
+// FUTURE: the method macros could probably become plain functions
 macro_rules! method_kwargs(
     ($meth:ident, $doc:expr) => {
         method_kwargs!($meth named stringify!($meth), $doc)
@@ -243,7 +244,7 @@ macro_rules! method_kwargs(
                 },
             },
             ml_flags: $flags | METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
-            ml_doc: cstr!($doc),
+            ml_doc: $doc.as_ptr()
         }
     };
 );

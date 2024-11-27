@@ -171,6 +171,9 @@ class TestEquality:
         assert hash(d) == hash(zoned_same)
         assert hash(d) != hash(zoned_different)
 
+        with pytest.raises(TypeError):
+            d.exact_eq(zoned_same)  # type: ignore[arg-type]
+
     @system_tz_ams()
     def test_system_tz(self):
         d: Instant | SystemDateTime = Instant.from_utc(2023, 10, 29, 1, 15)
@@ -186,6 +189,9 @@ class TestEquality:
         assert hash(d) == hash(sys_same)
         assert hash(d) != hash(sys_different)
 
+        with pytest.raises(TypeError):
+            d.exact_eq(sys_same)  # type: ignore[arg-type]
+
     def test_offset(self):
         d: Instant | OffsetDateTime = Instant.from_utc(2023, 4, 5, 4)
         offset_same = OffsetDateTime(2023, 4, 5, 6, offset=+2)
@@ -197,6 +203,9 @@ class TestEquality:
 
         assert hash(d) == hash(offset_same)
         assert hash(d) != hash(offset_different)
+
+        with pytest.raises(TypeError):
+            d.exact_eq(offset_same)  # type: ignore[arg-type]
 
 
 class TestTimestamp:
