@@ -48,9 +48,9 @@ If performance isn't your top priority, a **pure Python** version is available a
 
 </div>
 
-> ⚠️ **Note**: Whenever is in pre-1.0 beta. The API may change
+> ⚠️ **Note**: Whenever is still on a pre-1.0 version. The API may change
 > as we gather feedback and improve the library.
-> Leave a ⭐️ on github if you'd like to see how this project develops!
+> Leave a ⭐️ on GitHub if you'd like to see how this project develops!
 
 ## Why not the standard library?
 
