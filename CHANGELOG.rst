@@ -1,6 +1,13 @@
 🚀 Changelog
 ============
 
+0.6.15 (2024-12-11)
+-------------------
+
+- Add ``Date.days_[since|until]`` methods for calculating the difference
+  between two dates in days only (no months or years)
+- Improve docs about arithmetic rules for calendar and time units.
+
 0.6.14 (2024-11-27)
 -------------------
 

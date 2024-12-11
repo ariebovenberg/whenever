@@ -443,15 +443,14 @@ with the ``disambiguate=`` argument:
 Arithmetic
 ----------
 
-Datetimes support various arithmetic operations with addition and subtraction.
+Datetimes support various arithmetic operations.
 
-Difference between times
-~~~~~~~~~~~~~~~~~~~~~~~~
+Difference
+~~~~~~~~~~
 
-You can get the duration between two instances with the ``-`` operator or
+You can get the duration between two datetimes or instants with the ``-`` operator or
 the :meth:`~whenever._KnowsInstant.difference` method.
-Exact types can be mixed with each other,
-but local datetimes cannot be mixed with exact types:
+Exact and local types cannot be mixed, although exact types can be mixed with each other:
 
 >>> # difference between moments in time
 >>> Instant.from_utc(2023, 12, 28, 11, 30) - ZonedDateTime(2023, 12, 28, tz="Europe/Amsterdam")
@@ -465,29 +464,81 @@ TimeDelta(24:00:00)
 
 .. _add-subtract-time:
 
-Adding and subtracting time
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Addition and subtraction
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 You can add or subtract various units of time from a datetime instance.
 
 >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
 >>> d.add(hours=5, minutes=30)
 ZonedDateTime(2023-12-28 17:00:00+01:00[Europe/Amsterdam])
->>> d.subtract(days=1, disambiguate="compatible")  # 1 day earlier
-ZonedDateTime(2023-12-27 11:30:00+01:00[Europe/Amsterdam])
 
-Adding/subtracting takes into account timezone changes (e.g. daylight saving time)
-according to industry standard RFC 5545 and other modern datetime libraries.
-This means:
+The behavior arithmetic behavior is different for three categories of units:
 
-- Units are handled from largest (years and months) to smallest (nanosecond),
-  truncating and/or wrapping at each step.
-- Adding or subtracting calendar units (months, days) keeps the local
-  time of day the same across DST changes.
-  This is because you'd expect that rescheduling a 10am appointment "a day later"
-  will still be at 10am, regardless of a DST change overnight.
-- Precise time units (hours, minutes, and seconds) account for DST changes.
-  You wouldn't want a timer set for 2 hours to go off at 1 or 3 hours later instead.
+1. Adding **years and months** may require truncation of the date.
+   For example, adding a month to August 31st results in September 31st,
+   which isn't valid. In such cases, the date is truncated to the last day of the month.
+
+   .. code-block:: python
+
+      >>> d = LocalDateTime(2023, 8, 31, hour=12)
+      >>> d.add(months=1)
+      LocalDateTime(2023-09-30 12:00:00)
+
+   In case of dealing with :class:`~whenever.ZonedDateTime` or :class:`~whenever.SystemDateTime`,
+   there is a rare case where the resulting date might land the datetime in the middle of a DST transition.
+   For this reason, adding years or months to these types requires the ``disambiguate=`` argument:
+
+   .. code-block:: python
+
+      >>> d = ZonedDateTime(2023, 9, 29, 2, 15, tz="Europe/Amsterdam")
+      >>> d.add(months=1, disambiguate="raise")
+      Traceback (most recent call last):
+        ...
+      whenever.RepeatedTime: The resulting datetime is repeated in tz Europe/Amsterdam
+
+2. Adding **days** only affects the calendar date.
+   Adding a day to a datetime will not affect the local time of day.
+   This is usually same as adding 24 hours, **except** during DST transitions!
+
+   This behavior may seem strange at first, but it's the most intuitive
+   when you consider that you'd expect postponing a meeting "to tomorrow"
+   should still keep the same time of day, regardless of DST changes.
+   For this reason, this is the behavior of the industry standard RFC 5545
+   and other modern datetime libraries.
+
+   .. code-block:: python
+
+      >>> # on the eve of a DST transition
+      >>> d = ZonedDateTime(2023, 3, 25, hour=12, tz="Europe/Amsterdam")
+      >>> d.add(days=1, disambiguate="raise")  # a day later, still 12 o'clock
+      ZonedDateTime(2023-03-26 12:00:00+02:00[Europe/Amsterdam])
+      >>> d.add(hours=24)  # 24 hours later (we skipped an hour overnight!)
+      ZonedDateTime(2023-03-26 13:00:00+02:00[Europe/Amsterdam])
+
+   As with months and years, adding days to a :class:`~whenever.ZonedDateTime`
+   or :class:`~whenever.SystemDateTime` requires the ``disambiguate=`` argument,
+   since the resulting date might land the datetime in a DST transition.
+
+3. Adding **precise time units** (hours, minutes, seconds) never results
+   in ambiguity. If an hour is skipped or repeated due to a DST transition,
+   precise time units will account for this.
+
+   .. code-block:: python
+
+      >>> d = ZonedDateTime(2023, 3, 25, hour=12, tz="Europe/Amsterdam")
+      >>> d.add(hours=24)  # we skipped an hour overnight!
+      ZonedDateTime(2023-03-26 13:00:00+02:00[Europe/Amsterdam])
+
+   :class:`~whenever.LocalDateTime` also supports adding precise time units,
+   but requires the ``ignore_dst=True`` argument, to prevent
+   the common mistake of ignoring DST transitions by ignoring timezones.
+
+   .. code-block:: python
+
+      >>> d = LocalDateTime(2023, 3, 25, hour=12, tz="Europe/Amsterdam")
+      >>> d.add(hours=24, ignore_dst=True)  # NOT recommended
+      ZonedDateTime(2023-03-26 13:00:00+02:00[Europe/Amsterdam])
 
 .. seealso::
 
