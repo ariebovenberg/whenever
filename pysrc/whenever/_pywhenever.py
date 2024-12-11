@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.14"
+__version__ = "0.6.15"
 
 import enum
 import re
@@ -349,7 +349,7 @@ class Date(_ImmutableBase):
     def subtract(
         self, *, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0
     ) -> Date:
-        """Subtract a components from a date.
+        """Subtract components from a date.
 
         See :ref:`the docs on arithmetic <arithmetic>` for more information.
 
@@ -362,6 +362,38 @@ class Date(_ImmutableBase):
         Date(2020-03-01)
         """
         return self.add(years=-years, months=-months, weeks=-weeks, days=-days)
+
+    def days_until(self, other: Date, /) -> int:
+        """Calculate the number of days from this date to another date.
+        If the other date is before this date, the result is negative.
+
+        Example
+        -------
+        >>> Date(2021, 1, 2).days_until(Date(2021, 1, 5))
+        3
+
+        Note
+        ----
+        If you're interested in calculating the difference
+        in terms of days **and** months, use the subtraction operator instead.
+        """
+        return (other._py_date - self._py_date).days
+
+    def days_since(self, other: Date, /) -> int:
+        """Calculate the number of days this day is after another date.
+        If the other date is after this date, the result is negative.
+
+        Example
+        -------
+        >>> Date(2021, 1, 5).days_since(Date(2021, 1, 2))
+        3
+
+        Note
+        ----
+        If you're interested in calculating the difference
+        in terms of days **and** months, use the subtraction operator instead.
+        """
+        return (self._py_date - other._py_date).days
 
     def _add_months(self, mos: int) -> Date:
         year_overflow, month_new = divmod(self.month - 1 + mos, 12)
@@ -400,7 +432,8 @@ class Date(_ImmutableBase):
         >>> Date(2021, 1, 2) - DateDelta(weeks=1, days=3)
         Date(2020-12-26)
 
-        The difference between two dates is calculated such that:
+        The difference between two dates is calculated in months and days,
+        such that:
 
         >>> delta = d1 - d2
         >>> d2 + delta == d1  # always
@@ -422,6 +455,11 @@ class Date(_ImmutableBase):
         >>> # the other way around, the result is different
         >>> Date(2023, 6, 30) - Date(2024, 3, 31)
         DateDelta(-P9M)
+
+        Note
+        ----
+        If you'd like to calculate the difference in days only (no months),
+        use the :meth:`days_until` or :meth:`days_since` instead.
         """
         if isinstance(d, DateDelta):
             return self.subtract(months=d._months, days=d._days)

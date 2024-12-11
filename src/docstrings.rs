@@ -243,6 +243,40 @@ Weekday.SATURDAY
 >>> Weekday.SATURDAY.value
 6  # the ISO value
 ";
+pub(crate) const DATE_DAYS_SINCE: &CStr = c"\
+days_since($self, other, /)
+--
+
+Calculate the number of days this day is after another date.
+If the other date is after this date, the result is negative.
+
+Example
+-------
+>>> Date(2021, 1, 5).days_since(Date(2021, 1, 2))
+3
+
+Note
+----
+If you're interested in calculating the difference
+in terms of days **and** months, use the subtraction operator instead.
+";
+pub(crate) const DATE_DAYS_UNTIL: &CStr = c"\
+days_until($self, other, /)
+--
+
+Calculate the number of days from this date to another date.
+If the other date is before this date, the result is negative.
+
+Example
+-------
+>>> Date(2021, 1, 2).days_until(Date(2021, 1, 5))
+3
+
+Note
+----
+If you're interested in calculating the difference
+in terms of days **and** months, use the subtraction operator instead.
+";
 pub(crate) const DATE_FORMAT_COMMON_ISO: &CStr = c"\
 format_common_iso($self)
 --
@@ -313,7 +347,7 @@ pub(crate) const DATE_SUBTRACT: &CStr = c"\
 subtract($self, *, years=0, months=0, weeks=0, days=0)
 --
 
-Subtract a components from a date.
+Subtract components from a date.
 
 See :ref:`the docs on arithmetic <arithmetic>` for more information.
 

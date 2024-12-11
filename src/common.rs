@@ -147,7 +147,7 @@ macro_rules! method_vararg(
         PyMethodDef {
             ml_name: cstr!($name),
             ml_meth: PyMethodDefPointer {
-                _PyCFunctionFast: {
+                PyCFunctionFast: {
                     unsafe extern "C" fn _wrap(
                         slf: *mut PyObject,
                         args: *mut *mut PyObject,

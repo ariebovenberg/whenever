@@ -640,6 +640,17 @@ unsafe fn _shift_method(
         .to_obj(cls)
 }
 
+unsafe fn days_since(a: *mut PyObject, b: *mut PyObject) -> PyReturn {
+    if Py_TYPE(b) != Py_TYPE(a) {
+        Err(type_err!("argument must be a whenever.Date"))?
+    }
+    (Date::extract(a).ord() as i32 - Date::extract(b).ord() as i32).to_py()
+}
+
+unsafe fn days_until(a: *mut PyObject, b: *mut PyObject) -> PyReturn {
+    days_since(b, a)
+}
+
 unsafe fn replace(
     slf: *mut PyObject,
     cls: *mut PyTypeObject,
@@ -736,6 +747,8 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(__reduce__, c""),
     method_kwargs!(add, doc::DATE_ADD),
     method_kwargs!(subtract, doc::DATE_SUBTRACT),
+    method!(days_since, doc::DATE_DAYS_SINCE, METH_O),
+    method!(days_until, doc::DATE_DAYS_UNTIL, METH_O),
     method_kwargs!(replace, doc::DATE_REPLACE),
     PyMethodDef::zeroed(),
 ];

@@ -111,7 +111,8 @@ arrived on the scene in 2016, promising better DST-handling,
 as well as improved performance.
 However, it only fixes [*some* DST-related pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/#datetime-library-scorecard),
 and its performance has significantly [degraded over time](https://github.com/sdispater/pendulum/issues/818).
-Additionally, it hasn't been actively maintained since a breaking 3.0 release last year.
+Additionally, it's in maintenance limbo with only one release in the last four years,
+and issues piling up unaddressed.
 
 ## Why use whenever?
 

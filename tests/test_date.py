@@ -395,6 +395,30 @@ def test_subtract(d, kwargs, expected):
     assert d - DateDelta(**kwargs) == expected
 
 
+class TestDaysUntilAndSince:
+
+    @pytest.mark.parametrize(
+        "d1, d2, expected",
+        [
+            (Date(2021, 1, 1), Date(2021, 1, 31), 30),
+            (Date(2020, 2, 28), Date(2020, 2, 28), 0),
+            (Date(2020, 2, 28), Date(2020, 3, 1), 2),
+            (Date(2020, 2, 28), Date(2020, 2, 1), -27),
+            (Date(1990, 5, 2), Date(2021, 12, 1), 11536),
+            (Date.MIN, Date.MAX, 3652058),
+        ],
+    )
+    def test_days_until_and_since(self, d1, d2, expected):
+        assert d1.days_until(d2) == expected
+        assert d2.days_since(d1) == expected
+        assert d1.days_since(d2) == -expected
+        assert d2.days_until(d1) == -expected
+
+    def test_invalid(self):
+        with pytest.raises((TypeError, AttributeError)):
+            Date(2021, 1, 1).days_until(LocalDateTime(2021, 1, 1, 1, 2, 3))  # type: ignore[arg-type]
+
+
 _EXAMPLE_DATES = [
     *chain.from_iterable(
         [
