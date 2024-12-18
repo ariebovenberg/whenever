@@ -725,24 +725,16 @@ unsafe fn assume_tz(
     let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_tz")?;
     let zoneinfo = call1(zoneinfo_type, tz)?;
     defer_decref!(zoneinfo);
-    ZonedDateTime::from_local(py_api, date, time, zoneinfo, dis)?
-        .map_err(|e| match e {
-            Ambiguity::Fold => py_err!(
-                exc_repeated,
-                "{} {} is repeated in the timezone {}",
-                date,
-                time,
-                tz.repr()
-            ),
-            Ambiguity::Gap => py_err!(
-                exc_skipped,
-                "{} {} is skipped in the timezone {}",
-                date,
-                time,
-                tz.repr()
-            ),
-        })?
-        .to_obj(zoned_datetime_type)
+    ZonedDateTime::resolve_using_disambiguate(
+        py_api,
+        date,
+        time,
+        zoneinfo,
+        dis.unwrap_or(Disambiguate::Compatible),
+        exc_repeated,
+        exc_skipped,
+    )?
+    .to_obj(zoned_datetime_type)
 }
 
 unsafe fn assume_system_tz(
@@ -767,22 +759,15 @@ unsafe fn assume_system_tz(
     }
 
     let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_system_tz")?;
-    OffsetDateTime::from_system_tz(py_api, date, time, dis)?
-        .map_err(|e| match e {
-            Ambiguity::Fold => py_err!(
-                exc_repeated,
-                "{} {} is repeated in the system timezone",
-                date,
-                time,
-            ),
-            Ambiguity::Gap => py_err!(
-                exc_skipped,
-                "{} {} is skipped in the system timezone",
-                date,
-                time,
-            ),
-        })?
-        .to_obj(system_datetime_type)
+    OffsetDateTime::resolve_system_tz_using_disambiguate(
+        py_api,
+        date,
+        time,
+        dis.unwrap_or(Disambiguate::Compatible),
+        exc_repeated,
+        exc_skipped,
+    )?
+    .to_obj(system_datetime_type)
 }
 
 unsafe fn replace_date(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {

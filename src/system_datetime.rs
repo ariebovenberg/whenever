@@ -1,4 +1,4 @@
-use core::ffi::{c_int, c_long, c_void, CStr};
+use core::ffi::{c_int, c_void, CStr};
 use core::{mem, ptr::null_mut as NULL};
 use pyo3_ffi::*;
 
@@ -21,36 +21,98 @@ use crate::{
 pub(crate) const SINGLETONS: &[(&CStr, OffsetDateTime); 0] = &[];
 
 impl OffsetDateTime {
-    #[inline]
-    pub(crate) unsafe fn from_system_tz(
+    pub(crate) unsafe fn resolve_system_tz(
+        py_api: &PyDateTime_CAPI,
+        date: Date,
+        time: Time,
+        dis: Option<Disambiguate>,
+        preferred_offset: i32,
+        exc_repeated: *mut PyObject,
+        exc_skipped: *mut PyObject,
+    ) -> PyResult<Self> {
+        match dis {
+            Some(dis) => Self::resolve_system_tz_using_disambiguate(
+                py_api,
+                date,
+                time,
+                dis,
+                exc_repeated,
+                exc_skipped,
+            ),
+            None => Self::resolve_system_tz_using_offset(py_api, date, time, preferred_offset),
+        }
+    }
+
+    pub(crate) unsafe fn resolve_system_tz_using_disambiguate(
         py_api: &PyDateTime_CAPI,
         date: Date,
         time: Time,
         dis: Disambiguate,
-    ) -> PyResult<Result<Self, Ambiguity>> {
+        exc_repeated: *mut PyObject,
+        exc_skipped: *mut PyObject,
+    ) -> PyResult<Self> {
         use OffsetResult::*;
         Ok(match OffsetResult::for_system_tz(py_api, date, time)? {
-            Unambiguous(offset_secs) => Ok(OffsetDateTime::new_unchecked(date, time, offset_secs)),
-            Fold(offset0, offset1) => match dis {
-                Disambiguate::Compatible | Disambiguate::Earlier => Ok(offset0),
-                Disambiguate::Later => Ok(offset1),
-                Disambiguate::Raise => Err(Ambiguity::Fold),
+            Unambiguous(offset_secs) => OffsetDateTime::new_unchecked(date, time, offset_secs),
+            Fold(offset0, offset1) => {
+                let offset = match dis {
+                    Disambiguate::Compatible | Disambiguate::Earlier => offset0,
+                    Disambiguate::Later => offset1,
+                    Disambiguate::Raise => Err(py_err!(
+                        exc_repeated,
+                        "{} {} is repeated in the system timezone",
+                        date,
+                        time
+                    ))?,
+                };
+                OffsetDateTime::new_unchecked(date, time, offset)
             }
-            .map(|offset_secs| OffsetDateTime::new_unchecked(date, time, offset_secs)),
-            Gap(offset0, offset1) => match dis {
-                Disambiguate::Compatible | Disambiguate::Later => Ok((offset1, offset1 - offset0)),
-                Disambiguate::Earlier => Ok((offset0, offset0 - offset1)),
-                Disambiguate::Raise => Err(Ambiguity::Gap),
-            }
-            .map(|(offset_secs, shift)| {
+            Gap(offset0, offset1) => {
+                let (offset_secs, shift) = match dis {
+                    Disambiguate::Compatible | Disambiguate::Later => (offset1, offset1 - offset0),
+                    Disambiguate::Earlier => (offset0, offset0 - offset1),
+                    Disambiguate::Raise => Err(py_err!(
+                        exc_skipped,
+                        "{} {} is skipped in the system timezone",
+                        date,
+                        time
+                    ))?,
+                };
                 DateTime { date, time }
                     .small_shift_unchecked(shift)
                     .with_offset_unchecked(offset_secs)
-            }),
+            }
         })
     }
 
-    #[inline]
+    unsafe fn resolve_system_tz_using_offset(
+        py_api: &PyDateTime_CAPI,
+        date: Date,
+        time: Time,
+        offset: i32,
+    ) -> PyResult<Self> {
+        use OffsetResult::*;
+        match OffsetResult::for_system_tz(py_api, date, time)? {
+            Unambiguous(offset_secs) => OffsetDateTime::new(date, time, offset_secs),
+            Fold(offset0, offset1) => OffsetDateTime::new(
+                date,
+                time,
+                if offset == offset1 { offset1 } else { offset0 },
+            ),
+            Gap(offset0, offset1) => {
+                let (offset_secs, shift) = if offset == offset0 {
+                    (offset0, offset0 - offset1)
+                } else {
+                    (offset1, offset1 - offset0)
+                };
+                DateTime { date, time }
+                    .small_shift_unchecked(shift)
+                    .with_offset(offset_secs)
+            }
+        }
+        .ok_or_value_err("Resulting datetime is out of range")
+    }
+
     pub(crate) unsafe fn to_system_tz(self, py_api: &PyDateTime_CAPI) -> PyResult<Self> {
         let dt_original = self.to_py(py_api)?;
         defer_decref!(dt_original);
@@ -67,10 +129,42 @@ impl OffsetDateTime {
                 hour: PyDateTime_DATE_GET_HOUR(dt_new) as u8,
                 minute: PyDateTime_DATE_GET_MINUTE(dt_new) as u8,
                 second: PyDateTime_DATE_GET_SECOND(dt_new) as u8,
-                nanos: self.time().nanos,
+                nanos: self.time.nanos,
             },
             offset_from_py_dt(dt_new)?,
         ))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn shift_in_system_tz(
+        self,
+        py_api: &PyDateTime_CAPI,
+        months: i32,
+        days: i32,
+        nanos: i128,
+        dis: Option<Disambiguate>,
+        exc_repeated: *mut PyObject,
+        exc_skipped: *mut PyObject,
+    ) -> PyResult<Self> {
+        let slf = if months != 0 || days != 0 {
+            Self::resolve_system_tz(
+                py_api,
+                self.date
+                    .shift(0, months, days)
+                    .ok_or_value_err("Resulting date is out of range")?,
+                self.time,
+                dis,
+                self.offset_secs,
+                exc_repeated,
+                exc_skipped,
+            )?
+        } else {
+            self
+        };
+        slf.instant()
+            .shift(nanos)
+            .ok_or_value_err("Result is out of range")?
+            .to_system_tz(py_api)
     }
 }
 
@@ -103,17 +197,17 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         py_api,
         exc_repeated,
         exc_skipped,
-        str_raise,
+        str_compatible,
         ..
     } = State::for_type(cls);
-    let mut year: c_long = 0;
-    let mut month: c_long = 0;
-    let mut day: c_long = 0;
-    let mut hour: c_long = 0;
-    let mut minute: c_long = 0;
-    let mut second: c_long = 0;
-    let mut nanos: c_long = 0;
-    let mut disambiguate: *mut PyObject = str_raise;
+    let mut year = 0;
+    let mut month = 0;
+    let mut day = 0;
+    let mut hour = 0;
+    let mut minute = 0;
+    let mut second = 0;
+    let mut nanos = 0;
+    let mut disambiguate: *mut PyObject = str_compatible;
 
     // FUTURE: parse them manually, which is more efficient
     if PyArg_ParseTupleAndKeywords(
@@ -147,27 +241,30 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?;
     let dis = Disambiguate::from_py(disambiguate)?;
-    OffsetDateTime::from_system_tz(py_api, date, time, dis)?
-        .map_err(|e| match e {
-            Ambiguity::Fold => py_err!(
-                exc_repeated,
-                "{} {} is repeated in the system timezone",
-                date,
-                time
-            ),
-            Ambiguity::Gap => py_err!(
-                exc_skipped,
-                "{} {} is skipped in the system timezone",
-                date,
-                time
-            ),
-        })?
-        .to_obj(cls)
+    OffsetDateTime::resolve_system_tz_using_disambiguate(
+        py_api,
+        date,
+        time,
+        dis,
+        exc_repeated,
+        exc_skipped,
+    )?
+    .to_obj(cls)
 }
 
 unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
-    let (date, time, offset) = OffsetDateTime::extract(slf).as_tuple();
-    format!("SystemDateTime({} {}{})", date, time, offset_fmt(offset)).to_py()
+    let OffsetDateTime {
+        date,
+        time,
+        offset_secs,
+    } = OffsetDateTime::extract(slf);
+    format!(
+        "SystemDateTime({} {}{})",
+        date,
+        time,
+        offset_fmt(offset_secs)
+    )
+    .to_py()
 }
 
 unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
@@ -202,7 +299,7 @@ unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> 
 }
 
 #[inline]
-unsafe fn _shift(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) -> PyReturn {
+unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) -> PyReturn {
     debug_assert_eq!(
         PyType_GetModule(Py_TYPE(obj_a)),
         PyType_GetModule(Py_TYPE(obj_b))
@@ -214,29 +311,43 @@ unsafe fn _shift(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) -> Py
         date_delta_type,
         datetime_delta_type,
         py_api,
+        exc_repeated,
+        exc_skipped,
         ..
     } = State::for_type(type_a);
+
+    let odt = OffsetDateTime::extract(obj_a);
+    let mut months = 0;
+    let mut days = 0;
+    let mut nanos = 0;
+
     if type_b == time_delta_type {
-        let odt = OffsetDateTime::extract(obj_a);
-        let mut delta = TimeDelta::extract(obj_b);
-        if negate {
-            delta = -delta;
-        };
-        odt.instant()
-            .shift(delta.total_nanos())
-            .ok_or_value_err("Resulting datetime is out of range")?
-            .to_system_tz(py_api)?
-            .to_obj(type_a)
-    } else if type_b == date_delta_type || type_b == datetime_delta_type {
-        Err(type_err!(doc::SHIFT_OPERATOR_CALENDAR_ZONED_MSG))?
+        nanos = TimeDelta::extract(obj_b).total_nanos();
+    } else if type_b == date_delta_type {
+        let dd = DateDelta::extract(obj_b);
+        months = dd.months;
+        days = dd.days;
+    } else if type_b == datetime_delta_type {
+        let dtd = DateTimeDelta::extract(obj_b);
+        months = dtd.ddelta.months;
+        days = dtd.ddelta.days;
+        nanos = dtd.tdelta.total_nanos();
     } else {
-        Ok(newref(Py_NotImplemented()))
-    }
+        return Ok(newref(Py_NotImplemented()));
+    };
+    if negate {
+        months = -months;
+        days = -days;
+        nanos = -nanos;
+    };
+
+    odt.shift_in_system_tz(py_api, months, days, nanos, None, exc_repeated, exc_skipped)?
+        .to_obj(type_a)
 }
 
 unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     if PyType_GetModule(Py_TYPE(obj_a)) == PyType_GetModule(Py_TYPE(obj_b)) {
-        _shift(obj_a, obj_b, false)
+        _shift_operator(obj_a, obj_b, false)
     } else {
         Ok(newref(Py_NotImplemented()))
     }
@@ -266,7 +377,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             } else if type_b == State::for_mod(mod_a).offset_datetime_type {
                 OffsetDateTime::extract(obj_b).instant()
             } else {
-                return _shift(obj_a, obj_b, true);
+                return _shift_operator(obj_a, obj_b, true);
             };
             debug_assert_eq!(type_a, State::for_type(type_a).system_datetime_type);
             (OffsetDateTime::extract(obj_a).instant(), inst_b)
@@ -352,13 +463,13 @@ unsafe fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn date(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     OffsetDateTime::extract(slf)
-        .date()
+        .date
         .to_obj(State::for_obj(slf).date_type)
 }
 
 unsafe fn time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     OffsetDateTime::extract(slf)
-        .time()
+        .time
         .to_obj(State::for_obj(slf).time_type)
 }
 
@@ -385,22 +496,18 @@ unsafe fn replace_date(
     };
 
     if Py_TYPE(arg) == date_type {
-        OffsetDateTime::from_system_tz(
+        let OffsetDateTime {
+            time, offset_secs, ..
+        } = OffsetDateTime::extract(slf);
+        OffsetDateTime::resolve_system_tz(
             py_api,
             Date::extract(arg),
-            OffsetDateTime::extract(slf).time(),
+            time,
             Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_date")?,
+            offset_secs,
+            exc_repeated,
+            exc_skipped,
         )?
-        .map_err(|e| match e {
-            Ambiguity::Fold => py_err!(
-                exc_repeated,
-                "The new datetime is repeated in the current timezone"
-            ),
-            Ambiguity::Gap => py_err!(
-                exc_skipped,
-                "The new datetime is skipped in the current timezone"
-            ),
-        })?
         .to_obj(cls)
     } else {
         Err(type_err!("date must be a Date instance"))
@@ -430,22 +537,18 @@ unsafe fn replace_time(
     };
 
     if Py_TYPE(arg) == time_type {
-        OffsetDateTime::from_system_tz(
+        let OffsetDateTime {
+            date, offset_secs, ..
+        } = OffsetDateTime::extract(slf);
+        OffsetDateTime::resolve_system_tz(
             py_api,
-            OffsetDateTime::extract(slf).date(),
+            date,
             Time::extract(arg),
             Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_time")?,
+            offset_secs,
+            exc_repeated,
+            exc_skipped,
         )?
-        .map_err(|e| match e {
-            Ambiguity::Fold => py_err!(
-                exc_repeated,
-                "The new datetime is repeated in the current timezone"
-            ),
-            Ambiguity::Gap => py_err!(
-                exc_skipped,
-                "The new datetime is skipped in the current timezone"
-            ),
-        })?
         .to_obj(cls)
     } else {
         Err(type_err!("time must be a Time instance"))
@@ -466,7 +569,11 @@ unsafe fn replace(
         Err(type_err!("replace() takes no positional arguments"))?
     }
     let state = State::for_type(cls);
-    let (date, time, _) = OffsetDateTime::extract(slf).as_tuple();
+    let OffsetDateTime {
+        date,
+        time,
+        offset_secs,
+    } = OffsetDateTime::extract(slf);
     let mut year = date.year.into();
     let mut month = date.month.into();
     let mut day = date.day.into();
@@ -499,26 +606,15 @@ unsafe fn replace(
 
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?;
-    OffsetDateTime::from_system_tz(
+    OffsetDateTime::resolve_system_tz(
         state.py_api,
         date,
         time,
-        dis.ok_or_type_err("replace() requires a 'disambiguate' keyword argument")?,
+        dis,
+        offset_secs,
+        state.exc_repeated,
+        state.exc_skipped,
     )?
-    .map_err(|e| match e {
-        Ambiguity::Fold => py_err!(
-            state.exc_repeated,
-            "{} {} is repeated in the system timezone",
-            date,
-            time
-        ),
-        Ambiguity::Gap => py_err!(
-            state.exc_skipped,
-            "{} {} is skipped in the system timezone",
-            date,
-            time
-        ),
-    })?
     .to_obj(cls)
 }
 
@@ -549,17 +645,18 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let (
-        Date { year, month, day },
-        Time {
-            hour,
-            minute,
-            second,
-            nanos,
-            ..
-        },
+    let OffsetDateTime {
+        date: Date { year, month, day },
+        time:
+            Time {
+                hour,
+                minute,
+                second,
+                nanos,
+                ..
+            },
         offset_secs,
-    ) = OffsetDateTime::extract(slf).as_tuple();
+    } = OffsetDateTime::extract(slf);
     let data = pack![year, month, day, hour, minute, second, nanos, offset_secs];
     (
         State::for_obj(slf).unpickle_system_datetime,
@@ -746,40 +843,16 @@ unsafe fn _shift_method(
         days = -days;
         nanos = -nanos;
     }
-    // First, shift the calendar units
-    let odt = if months != 0 || days != 0 {
-        let odt = OffsetDateTime::extract(slf);
-        OffsetDateTime::from_system_tz(
+    OffsetDateTime::extract(slf)
+        .shift_in_system_tz(
             state.py_api,
-            odt.date()
-                .shift(0, months, days)
-                .ok_or_value_err("Resulting date is out of range")?,
-            odt.time(),
-            dis.ok_or_else(|| {
-                type_err!(
-                    "{}() requires a 'disambiguate' keyword argument when given calendar units",
-                    fname
-                )
-            })?,
+            months,
+            days,
+            nanos,
+            dis,
+            state.exc_repeated,
+            state.exc_skipped,
         )?
-        .map_err(|amb| match amb {
-            Ambiguity::Fold => py_err!(
-                state.exc_repeated,
-                "The resulting datetime is repeated in the system timezone"
-            ),
-            Ambiguity::Gap => py_err!(
-                state.exc_skipped,
-                "The resulting datetime is skipped in the system timezone"
-            ),
-        })?
-    } else {
-        OffsetDateTime::extract(slf)
-    };
-
-    odt.instant()
-        .shift(nanos)
-        .ok_or_value_err("Result is out of range")?
-        .to_system_tz(state.py_api)?
         .to_obj(cls)
 }
 
@@ -860,35 +933,35 @@ static mut METHODS: &[PyMethodDef] = &[
 ];
 
 unsafe fn get_year(slf: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).date().year.to_py()
+    OffsetDateTime::extract(slf).date.year.to_py()
 }
 
 unsafe fn get_month(slf: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).date().month.to_py()
+    OffsetDateTime::extract(slf).date.month.to_py()
 }
 
 unsafe fn get_day(slf: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).date().day.to_py()
+    OffsetDateTime::extract(slf).date.day.to_py()
 }
 
 unsafe fn get_hour(slf: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).time().hour.to_py()
+    OffsetDateTime::extract(slf).time.hour.to_py()
 }
 
 unsafe fn get_minute(slf: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).time().minute.to_py()
+    OffsetDateTime::extract(slf).time.minute.to_py()
 }
 
 unsafe fn get_second(slf: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).time().second.to_py()
+    OffsetDateTime::extract(slf).time.second.to_py()
 }
 
 unsafe fn get_nanos(slf: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).time().nanos.to_py()
+    OffsetDateTime::extract(slf).time.nanos.to_py()
 }
 
 unsafe fn get_offset(slf: *mut PyObject) -> PyReturn {
-    TimeDelta::from_secs_unchecked(OffsetDateTime::extract(slf).offset_secs() as i64)
+    TimeDelta::from_secs_unchecked(OffsetDateTime::extract(slf).offset_secs as i64)
         .to_obj(State::for_obj(slf).time_delta_type)
 }
 

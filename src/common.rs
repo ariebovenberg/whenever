@@ -880,11 +880,11 @@ impl Disambiguate {
         kwargs: &mut KwargIter,
         str_disambiguate: *mut PyObject,
         fname: &str,
-    ) -> PyResult<Self> {
+    ) -> PyResult<Option<Self>> {
         match kwargs.next() {
             Some((name, value)) if kwargs.len() == 1 => {
                 if name.kwarg_eq(str_disambiguate) {
-                    Self::from_py(value)
+                    Self::from_py(value).map(Some)
                 } else {
                     Err(type_err!(
                         "{}() got an unexpected keyword argument {}",
@@ -898,18 +898,9 @@ impl Disambiguate {
                 fname,
                 kwargs.len()
             )),
-            None => Err(type_err!(
-                "{}() missing 1 required keyword-only argument: 'disambiguate'",
-                fname
-            )),
+            None => Ok(None),
         }
     }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Ambiguity {
-    Fold,
-    Gap,
 }
 
 pub(crate) unsafe extern "C" fn generic_dealloc(slf: *mut PyObject) {

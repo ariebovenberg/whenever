@@ -21,9 +21,9 @@ use crate::{
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub(crate) struct OffsetDateTime {
-    date: Date,
-    time: Time,
-    offset_secs: i32,
+    pub(crate) date: Date,
+    pub(crate) time: Time,
+    pub(crate) offset_secs: i32,
 }
 
 pub(crate) const SINGLETONS: &[(&CStr, OffsetDateTime); 0] = &[];
@@ -48,22 +48,6 @@ impl OffsetDateTime {
                 time,
                 offset_secs,
             })
-    }
-
-    pub(crate) const fn offset_secs(self) -> i32 {
-        self.offset_secs
-    }
-
-    pub(crate) const fn time(self) -> Time {
-        self.time
-    }
-
-    pub(crate) const fn date(self) -> Date {
-        self.date
-    }
-
-    pub(crate) const fn as_tuple(self) -> (Date, Time, i32) {
-        (self.date, self.time, self.offset_secs)
     }
 
     pub(crate) const fn instant(self) -> Instant {
