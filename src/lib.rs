@@ -411,7 +411,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     state.str_second = PyUnicode_InternFromString(c"second".as_ptr());
     state.str_nanosecond = PyUnicode_InternFromString(c"nanosecond".as_ptr());
     state.str_nanos = PyUnicode_InternFromString(c"nanos".as_ptr());
-    state.str_raise = PyUnicode_InternFromString(c"raise".as_ptr());
+    state.str_compatible = PyUnicode_InternFromString(c"compatible".as_ptr());
     state.str_tz = PyUnicode_InternFromString(c"tz".as_ptr());
     state.str_disambiguate = PyUnicode_InternFromString(c"disambiguate".as_ptr());
     state.str_offset = PyUnicode_InternFromString(c"offset".as_ptr());
@@ -604,7 +604,7 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR(ptr::addr_of_mut!(state.str_second));
     Py_CLEAR(ptr::addr_of_mut!(state.str_nanosecond));
     Py_CLEAR(ptr::addr_of_mut!(state.str_nanos));
-    Py_CLEAR(ptr::addr_of_mut!(state.str_raise));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_compatible));
     Py_CLEAR(ptr::addr_of_mut!(state.str_tz));
     Py_CLEAR(ptr::addr_of_mut!(state.str_disambiguate));
     Py_CLEAR(ptr::addr_of_mut!(state.str_offset));
@@ -694,7 +694,7 @@ struct State {
     str_second: *mut PyObject,
     str_nanosecond: *mut PyObject,
     str_nanos: *mut PyObject,
-    str_raise: *mut PyObject,
+    str_compatible: *mut PyObject,
     str_tz: *mut PyObject,
     str_disambiguate: *mut PyObject,
     str_offset: *mut PyObject,

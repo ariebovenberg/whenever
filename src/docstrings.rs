@@ -740,7 +740,7 @@ Example
 OffsetDateTime(2020-08-15 23:12:00+02:00)
 ";
 pub(crate) const LOCALDATETIME_ASSUME_SYSTEM_TZ: &CStr = c"\
-assume_system_tz($self, disambiguate)
+assume_system_tz($self, disambiguate='compatible')
 --
 
 Assume the datetime is in the system timezone,
@@ -762,7 +762,7 @@ Example
 SystemDateTime(2020-08-15 23:12:00-04:00)
 ";
 pub(crate) const LOCALDATETIME_ASSUME_TZ: &CStr = c"\
-assume_tz($self, tz, /, disambiguate)
+assume_tz($self, tz, /, disambiguate='compatible')
 --
 
 Assume the datetime is in the given timezone,
@@ -1179,14 +1179,7 @@ replace_date($self, date, /, *, ignore_dst=False)
 
 Construct a new instance with the date replaced.
 
-Important
----------
-Replacing the date of an offset datetime implicitly ignores DST
-and other timezone changes. This because it isn't guaranteed that
-the same offset will be valid at the new date.
-If you want to account for DST, convert to a ``ZonedDateTime`` first.
-Or, if you want to ignore DST and accept potentially incorrect offsets,
-pass ``ignore_dst=True`` to this method.
+See the ``replace()`` method for more information.
 ";
 pub(crate) const OFFSETDATETIME_REPLACE_TIME: &CStr = c"\
 replace_time($self, time, /, *, ignore_dst=False)
@@ -1194,14 +1187,7 @@ replace_time($self, time, /, *, ignore_dst=False)
 
 Construct a new instance with the time replaced.
 
-Important
----------
-Replacing the time of an offset datetime implicitly ignores DST
-and other timezone changes. This because it isn't guaranteed that
-the same offset will be valid at the new time.
-If you want to account for DST, convert to a ``ZonedDateTime`` first.
-Or, if you want to ignore DST and accept potentially incorrect offsets,
-pass ``ignore_dst=True`` to this method.
+See the ``replace()`` method for more information.
 ";
 pub(crate) const OFFSETDATETIME_STRPTIME: &CStr = c"\
 strptime(s, /, fmt)
@@ -1250,7 +1236,7 @@ Important
 ---------
 Shifting a ``SystemDateTime`` with **calendar units** (e.g. months, weeks)
 may result in an ambiguous time (e.g. during a DST transition).
-Therefore, when adding calendar units, you must explicitly
+Therefore, when adding calendar units, it's recommended to
 specify how to handle such a situation using the ``disambiguate`` argument.
 
 See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
@@ -1315,41 +1301,27 @@ Construct a new instance with the given fields replaced.
 Important
 ---------
 Replacing fields of a SystemDateTime may result in an ambiguous time
-(e.g. during a DST transition). Therefore, you must explicitly
+(e.g. during a DST transition). Therefore, it's recommended to
 specify how to handle such a situation using the ``disambiguate`` argument.
 
 See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
 for more information.
 ";
 pub(crate) const SYSTEMDATETIME_REPLACE_DATE: &CStr = c"\
-replace_date($self, date, /, disambiguate)
+replace_date($self, date, /, disambiguate=None)
 --
 
 Construct a new instance with the date replaced.
 
-Important
----------
-Replacing the date of a SystemDateTime may result in an ambiguous time
-(e.g. during a DST transition). Therefore, you must explicitly
-specify how to handle such a situation using the ``disambiguate`` argument.
-
-See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
-for more information.
+See the ``replace()`` method for more information.
 ";
 pub(crate) const SYSTEMDATETIME_REPLACE_TIME: &CStr = c"\
-replace_time($self, time, /, disambiguate)
+replace_time($self, time, /, disambiguate=None)
 --
 
 Construct a new instance with the time replaced.
 
-Important
----------
-Replacing the time of a SystemDateTime may result in an ambiguous time
-(e.g. during a DST transition). Therefore, you must explicitly
-specify how to handle such a situation using the ``disambiguate`` argument.
-
-See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
-for more information.
+See the ``replace()`` method for more information.
 ";
 pub(crate) const SYSTEMDATETIME_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
@@ -1361,7 +1333,7 @@ Important
 ---------
 Shifting a ``SystemDateTime`` with **calendar units** (e.g. months, weeks)
 may result in an ambiguous time (e.g. during a DST transition).
-Therefore, when adding calendar units, you must explicitly
+Therefore, when adding calendar units, it's recommended to
 specify how to handle such a situation using the ``disambiguate`` argument.
 
 See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
@@ -1656,7 +1628,7 @@ Important
 ---------
 Shifting a ``ZonedDateTime`` with **calendar units** (e.g. months, weeks)
 may result in an ambiguous time (e.g. during a DST transition).
-Therefore, when adding calendar units, you must explicitly
+Therefore, when adding calendar units, it's recommended to
 specify how to handle such a situation using the ``disambiguate`` argument.
 
 See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
@@ -1727,9 +1699,9 @@ Whether the local time is ambiguous, e.g. due to a DST transition.
 
 Example
 -------
->>> ZonedDateTime(2020, 8, 15, 23, tz=\"Europe/London\", disambiguate=\"later\").ambiguous()
+>>> ZonedDateTime(2020, 8, 15, 23, tz=\"Europe/London\").is_ambiguous()
 False
->>> ZonedDateTime(2023, 10, 29, 2, 15, tz=\"Europe/Amsterdam\", disambiguate=\"later\").ambiguous()
+>>> ZonedDateTime(2023, 10, 29, 2, 15, tz=\"Europe/Amsterdam\").is_ambiguous()
 True
 ";
 pub(crate) const ZONEDDATETIME_NOW: &CStr = c"\
@@ -1764,41 +1736,30 @@ Construct a new instance with the given fields replaced.
 Important
 ---------
 Replacing fields of a ZonedDateTime may result in an ambiguous time
-(e.g. during a DST transition). Therefore, you must explicitly
+(e.g. during a DST transition). Therefore, it's recommended to
 specify how to handle such a situation using the ``disambiguate`` argument.
+
+By default, if the tz remains the same, the offset is used to disambiguate
+if possible, falling back to the \"compatible\" strategy if needed.
 
 See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
 for more information.
 ";
 pub(crate) const ZONEDDATETIME_REPLACE_DATE: &CStr = c"\
-replace_date($self, date, /, disambiguate)
+replace_date($self, date, /, disambiguate=None)
 --
 
 Construct a new instance with the date replaced.
 
-Important
----------
-Replacing the date of a ZonedDateTime may result in an ambiguous time
-(e.g. during a DST transition). Therefore, you must explicitly
-specify how to handle such a situation using the ``disambiguate`` argument.
-
-See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
-for more information.
+See the ``replace()`` method for more information.
 ";
 pub(crate) const ZONEDDATETIME_REPLACE_TIME: &CStr = c"\
-replace_time($self, time, /, disambiguate)
+replace_time($self, time, /, disambiguate=None)
 --
 
 Construct a new instance with the time replaced.
 
-Important
----------
-Replacing the time of a ZonedDateTime may result in an ambiguous time
-(e.g. during a DST transition). Therefore, you must explicitly
-specify how to handle such a situation using the ``disambiguate`` argument.
-
-See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
-for more information.
+See the ``replace()`` method for more information.
 ";
 pub(crate) const ZONEDDATETIME_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
@@ -1810,7 +1771,7 @@ Important
 ---------
 Shifting a ``ZonedDateTime`` with **calendar units** (e.g. months, weeks)
 may result in an ambiguous time (e.g. during a DST transition).
-Therefore, when adding calendar units, you must explicitly
+Therefore, when adding calendar units, it's recommended to
 specify how to handle such a situation using the ``disambiguate`` argument.
 
 See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
@@ -1956,7 +1917,7 @@ To perform the inverse, use :meth:`Date.at` and a method
 like :meth:`~LocalDateTime.assume_utc` or
 :meth:`~LocalDateTime.assume_tz`:
 
->>> date.at(time).assume_tz(\"Europe/London\", disambiguate=\"compatible\")
+>>> date.at(time).assume_tz(\"Europe/London\")
 ";
 pub(crate) const KNOWSLOCAL_TIME: &CStr = c"\
 time($self)
@@ -1975,13 +1936,12 @@ To perform the inverse, use :meth:`Time.on` and a method
 like :meth:`~LocalDateTime.assume_utc` or
 :meth:`~LocalDateTime.assume_tz`:
 
->>> time.on(date).assume_tz(\"Europe/Paris\", disambiguate=\"compatible\")
+>>> time.on(date).assume_tz(\"Europe/Paris\")
 ";
 pub(crate) const ADJUST_LOCAL_DATETIME_MSG: &str = "Adjusting a local datetime by time units (e.g. hours and minutess) ignores DST and other timezone changes. To perform DST-safe operations, convert to a ZonedDateTime first. Or, if you don't know the timezone and accept potentially incorrect results during DST transitions, pass `ignore_dst=True`. For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";
 pub(crate) const ADJUST_OFFSET_DATETIME_MSG: &str = "Adjusting a fixed offset datetime implicitly ignores DST and other timezone changes. To perform DST-safe operations, convert to a ZonedDateTime first. Or, if you don't know the timezone and accept potentially incorrect results during DST transitions, pass `ignore_dst=True`. For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";
 pub(crate) const DIFF_LOCAL_MSG: &str = "The difference between two local datetimes implicitly ignores DST transitions and other timezone changes. To perform DST-safe operations, convert to a ZonedDateTime first. Or, if you don't know the timezone and accept potentially incorrect results during DST transitions, pass `ignore_dst=True`. For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";
 pub(crate) const DIFF_OPERATOR_LOCAL_MSG: &str = "The difference between two local datetimes implicitly ignores DST transitions and other timezone changes. Use the `difference` method instead.";
 pub(crate) const OFFSET_NOW_DST_MSG: &str = "Getting the current time with a fixed offset implicitly ignores DST and other timezone changes. Instead, use `Instant.now()` or `ZonedDateTime.now(<tz name>)` if you know the timezone. Or, if you want to ignore DST and accept potentially incorrect offsets, pass `ignore_dst=True` to this method. For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";
-pub(crate) const SHIFT_LOCAL_MSG: &str = "Adding or subtracting a (date)time delta to a local datetime implicitly ignores DST transitions and other timezone changes. Instead, use the `add` or `subtract` method.";
-pub(crate) const SHIFT_OPERATOR_CALENDAR_ZONED_MSG: &str = "Addition/subtraction of calendar units on a Zoned/System-DateTime requires explicit disambiguation. Use the `add`/`subtract` methods instead. For example, instead of `dt + delta` use `dt.add(delta, disambiguate=...)`.";
+pub(crate) const SHIFT_LOCAL_MSG: &str = "Adding or subtracting a (date)time delta to a local datetime implicitly ignores DST transitions and other timezone changes. Use the `add` or `subtract` method instead.";
 pub(crate) const TIMESTAMP_DST_MSG: &str = "Converting from a timestamp with a fixed offset implicitly ignores DST and other timezone changes. To perform a DST-safe conversion, use ZonedDateTime.from_timestamp() instead. Or, if you don't know the timezone and accept potentially incorrect results during DST transitions, pass `ignore_dst=True`. For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";

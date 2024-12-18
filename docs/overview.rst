@@ -116,7 +116,7 @@ occuring twice or not at all.
 >>> livestream_starts.to_tz("America/New_York")
 ZonedDateTime(2022-10-24 13:00:00-04:00[America/New_York])
 >>> # Local->Zoned may be ambiguous
->>> bus_departs.assume_tz("America/New_York", disambiguate="earlier")
+>>> bus_departs.assume_tz("America/New_York")
 ZonedDateTime(2020-03-14 15:00:00-04:00[America/New_York])
 
 .. seealso::
@@ -339,7 +339,7 @@ You can convert from local datetimes with the :meth:`~whenever.LocalDateTime.ass
 >>> n = LocalDateTime(2023, 12, 28, 11, 30)
 >>> n.assume_utc()
 Instant(2023-12-28 11:30:00Z)
->>> n.assume_tz("Europe/Amsterdam", disambiguate="compatible")
+>>> n.assume_tz("Europe/Amsterdam")
 ZonedDateTime(2023-12-28 11:30:00+01:00[Europe/Amsterdam])
 
 .. note::
@@ -388,9 +388,8 @@ Two common situations arise:
 
      The figure in the Python docs `here <https://peps.python.org/pep-0495/#mind-the-gap>`_ also shows how this "extrapolation" makes sense graphically.
 
-**Whenever** `refuses to guess <https://peps.python.org/pep-0020/>`_
-and requires that you explicitly handle these situations
-with the ``disambiguate=`` argument:
+**Whenever** allows you to customize how to handle these situations
+using the ``disambiguate`` argument:
 
 +------------------+-------------------------------------------------+
 | ``disambiguate`` | Behavior in case of ambiguity                   |
@@ -403,7 +402,7 @@ with the ``disambiguate=`` argument:
 | ``"later"``      | Choose the later of the two options             |
 +------------------+-------------------------------------------------+
 | ``"compatible"`` | Choose "earlier" for backward transitions and   |
-|                  | "later" for forward transitions. This matches   |
+| (default)        | "later" for forward transitions. This matches   |
 |                  | the behavior of other established libraries,    |
 |                  | and the industry standard RFC 5545.             |
 |                  | It corresponds to setting ``fold=0`` in the     |
@@ -418,24 +417,24 @@ with the ``disambiguate=`` argument:
     >>> ZonedDateTime(2023, 1, 1, tz=paris)
     ZonedDateTime(2023-01-01 00:00:00+01:00[Europe/Paris])
 
-    >>> # Ambiguous: 1:30am occurs twice. Refuse to guess.
-    >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris)
+    >>> # 1:30am occurs twice. Use 'raise' to reject ambiguous times.
+    >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="raise")
     Traceback (most recent call last):
       ...
     whenever.RepeatedTime: 2023-10-29 02:30:00 is repeated in timezone Europe/Paris
 
-    >>> # Repeated: explicitly choose the earlier option
+    >>> # Explicitly choose the earlier option
     >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="earlier")
     ZoneDateTime(2023-10-29 02:30:00+01:00[Europe/Paris])
 
-    >>> # Skipped: 2:30am doesn't exist.
-    >>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris)
+    >>> # 2:30am doesn't exist on this date (clocks moved forward)
+    >>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguate="raise")
     Traceback (most recent call last):
       ...
     whenever.SkippedTime: 2023-03-26 02:30:00 is skipped in timezone Europe/Paris
 
-    >>> # Non-existent: extrapolate to 3:30am
-    >>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguate="later")
+    >>> # Default behavior is compatible with other libraries and standards
+    >>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris)
     ZonedDateTime(2023-03-26 03:30:00+02:00[Europe/Paris])
 
 .. _arithmetic:
@@ -464,8 +463,8 @@ TimeDelta(24:00:00)
 
 .. _add-subtract-time:
 
-Addition and subtraction
-~~~~~~~~~~~~~~~~~~~~~~~~
+Units of time
+~~~~~~~~~~~~~
 
 You can add or subtract various units of time from a datetime instance.
 
@@ -475,7 +474,7 @@ ZonedDateTime(2023-12-28 17:00:00+01:00[Europe/Amsterdam])
 
 The behavior arithmetic behavior is different for three categories of units:
 
-1. Adding **years and months** may require truncation of the date.
+1. Adding **years and months** may result in truncation of the date.
    For example, adding a month to August 31st results in September 31st,
    which isn't valid. In such cases, the date is truncated to the last day of the month.
 
@@ -485,21 +484,25 @@ The behavior arithmetic behavior is different for three categories of units:
       >>> d.add(months=1)
       LocalDateTime(2023-09-30 12:00:00)
 
-   In case of dealing with :class:`~whenever.ZonedDateTime` or :class:`~whenever.SystemDateTime`,
-   there is a rare case where the resulting date might land the datetime in the middle of a DST transition.
-   For this reason, adding years or months to these types requires the ``disambiguate=`` argument:
+   .. note::
 
-   .. code-block:: python
+      In case of dealing with :class:`~whenever.ZonedDateTime` or :class:`~whenever.SystemDateTime`,
+      there is a rare case where the resulting date might put the datetime in the middle of a DST transition.
+      For this reason, adding years or months to these types accepts the
+      ``disambiguate`` argument. By default, it tries to keep the same UTC offset,
+      and if that's not possible, it chooses the ``"compatible"`` option.
 
-      >>> d = ZonedDateTime(2023, 9, 29, 2, 15, tz="Europe/Amsterdam")
-      >>> d.add(months=1, disambiguate="raise")
-      Traceback (most recent call last):
-        ...
-      whenever.RepeatedTime: The resulting datetime is repeated in tz Europe/Amsterdam
+      .. code-block:: python
+
+         >>> d = ZonedDateTime(2023, 9, 29, 2, 15, tz="Europe/Amsterdam")
+         >>> d.add(months=1, disambiguate="raise")
+         Traceback (most recent call last):
+           ...
+         whenever.RepeatedTime: 2023-10-29 02:15:00 is repeated in timezone 'Europe/Amsterdam'
 
 2. Adding **days** only affects the calendar date.
    Adding a day to a datetime will not affect the local time of day.
-   This is usually same as adding 24 hours, **except** during DST transitions!
+   This is usually same as adding 24 hours, *except* during DST transitions!
 
    This behavior may seem strange at first, but it's the most intuitive
    when you consider that you'd expect postponing a meeting "to tomorrow"
@@ -511,14 +514,16 @@ The behavior arithmetic behavior is different for three categories of units:
 
       >>> # on the eve of a DST transition
       >>> d = ZonedDateTime(2023, 3, 25, hour=12, tz="Europe/Amsterdam")
-      >>> d.add(days=1, disambiguate="raise")  # a day later, still 12 o'clock
+      >>> d.add(days=1)  # a day later, still 12 o'clock
       ZonedDateTime(2023-03-26 12:00:00+02:00[Europe/Amsterdam])
       >>> d.add(hours=24)  # 24 hours later (we skipped an hour overnight!)
       ZonedDateTime(2023-03-26 13:00:00+02:00[Europe/Amsterdam])
 
-   As with months and years, adding days to a :class:`~whenever.ZonedDateTime`
-   or :class:`~whenever.SystemDateTime` requires the ``disambiguate=`` argument,
-   since the resulting date might land the datetime in a DST transition.
+   .. note::
+
+      As with months and years, adding days to a :class:`~whenever.ZonedDateTime`
+      or :class:`~whenever.SystemDateTime` accepts the ``disambiguate`` argument,
+      since the resulting date might put the datetime in a DST transition.
 
 3. Adding **precise time units** (hours, minutes, seconds) never results
    in ambiguity. If an hour is skipped or repeated due to a DST transition,
@@ -528,16 +533,6 @@ The behavior arithmetic behavior is different for three categories of units:
 
       >>> d = ZonedDateTime(2023, 3, 25, hour=12, tz="Europe/Amsterdam")
       >>> d.add(hours=24)  # we skipped an hour overnight!
-      ZonedDateTime(2023-03-26 13:00:00+02:00[Europe/Amsterdam])
-
-   :class:`~whenever.LocalDateTime` also supports adding precise time units,
-   but requires the ``ignore_dst=True`` argument, to prevent
-   the common mistake of ignoring DST transitions by ignoring timezones.
-
-   .. code-block:: python
-
-      >>> d = LocalDateTime(2023, 3, 25, hour=12, tz="Europe/Amsterdam")
-      >>> d.add(hours=24, ignore_dst=True)  # NOT recommended
       ZonedDateTime(2023-03-26 13:00:00+02:00[Europe/Amsterdam])
 
 .. seealso::
@@ -569,7 +564,8 @@ to the correct usage.
   >>> d = OffsetDateTime(2024, 3, 9, 13, offset=-7)
   >>> d.add(hours=24)
   Traceback (most recent call last):
-    ImplicitlyIgnoringDST: Adjusting a fixed offset datetime implicitly ignores DST [...]
+    ...
+  ImplicitlyIgnoringDST: Adjusting a fixed offset datetime implicitly ignores DST [...]
   >>> d.to_tz("America/Denver").add(hours=24)
   ZonedDateTime(2024-03-10 14:00:00-06:00[America/Denver])
   >>> d.add(hours=24, ignore_dst=True)  # NOT recommended
@@ -584,16 +580,17 @@ to the correct usage.
 - :class:`~whenever.ZonedDateTime` and :class:`~whenever.SystemDateTime`
   account for DST and other timezone changes, thus adding
   precise time units is always correct.
-  Adding calendar units is also possible, but can result in ambiguity.
-  For example, if shifting the date puts it in the middle of a DST transition:
+  Adding calendar units is also possible, but may result in ambiguity in rare cases,
+  if the resulting datetime is in the middle of a DST transition:
 
   >>> d = ZonedDateTime(2024, 10, 3, 1, 15, tz="America/Denver")
-  >>> d.add(months=1)  # 2024-11-03 01:15:00 would be ambiguous!
+  ZonedDateTime(2024-10-03 01:15:00-06:00[America/Denver])
+  >>> d.add(months=1)
+  ZonedDateTime(2024-11-03 01:15:00-06:00[America/Denver])
+  >>> d.add(months=1, disambiguate="raise")
   Traceback (most recent call last):
     ...
-  >>> d.add(months=1, disambiguate="later")
-  ZonedDateTime(2024-11-03 01:15:00-07:00[America/Denver])
-  >>> d.add(hours=24)  # no disambiguation necessary for precise units
+  whenever.RepeatedTime: 2024-11-03 01:15:00 is repeated in timezone 'America/Denver'
 
 - :class:`~whenever.LocalDateTime` doesn't have a timezone,
   so it can't account for DST or other clock changes.
@@ -605,7 +602,9 @@ to the correct usage.
   >>> d.add(hours=2)  # There could be a DST transition for all we know!
   Traceback (most recent call last):
     ...
-  >>> d.assume_tz("Europe/Amsterdam", disambiguate="earlier").add(hours=2)
+  whenever.ImplicitlyIgnoringDST: Adjusting a local datetime by time units
+  ignores DST and other timezone changes. [...]
+  >>> d.assume_tz("Europe/Amsterdam").add(hours=2)
   ZonedDateTime(2023-10-29 02:30:00+01:00[Europe/Amsterdam])
   >>> d.add(hours=2, ignore_dst=True)  # NOT recommended
   LocalDateTime(2024-10-03 03:30:00)
@@ -623,7 +622,7 @@ Here is a summary of the arithmetic features for each type:
 +=======================+=========+=========+=========+==========+=========+
 | Difference            | ✅      |  ✅     |   ✅    | ✅       |⚠️  [3]_ |
 +-----------------------+---------+---------+---------+----------+---------+
-| add/subtract years,   | ❌      |⚠️  [3]_ |🔶  [4]_ | 🔶  [4]_ |    ✅   |
+| add/subtract years,   | ❌      |⚠️  [3]_ |✅  [4]_ | ✅  [4]_ |    ✅   |
 | months, days          |         |         |         |          |         |
 +-----------------------+---------+---------+---------+----------+---------+
 | add/subtract hours,   | ✅      |⚠️  [3]_ |  ✅     |    ✅    |⚠️  [3]_ |
@@ -631,7 +630,7 @@ Here is a summary of the arithmetic features for each type:
 +-----------------------+---------+---------+---------+----------+---------+
 
 .. [3] Only possible by passing ``ignore_dst=True`` to the method.
-.. [4] Only possible by passing ``disambiguate=...`` to the method.
+.. [4] The result by be ambiguous in rare cases. Accepts the ``disambiguate`` argument.
 
 
 .. admonition:: Why even have ``ignore_dst``? Isn't it dangerous?
@@ -798,8 +797,7 @@ methods to convert them.
 This makes it explicit what information is being assumed.
 
 >>> d = LocalDateTime.strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S")
->>> # handling ambiguity
->>> d.assume_tz("Europe/Amsterdam", disambiguate="earlier")
+>>> d.assume_tz("Europe/Amsterdam")
 ZonedDateTime(2023-10-29 02:30:00+02:00[Europe/Amsterdam])
 
 .. admonition:: Future plans
@@ -994,7 +992,7 @@ On the other hand, if you'd like to preserve the local time on the clock
 and calculate the corresponding moment in time:
 
 >>> # take the wall clock time and assume the (new) system timezone (Amsterdam)
->>> d.local().assume_system_tz(disambiguate="earlier")
+>>> d.local().assume_system_tz()
 SystemDateTime(2020-08-15 08:00:00+02:00)
 
 .. seealso::

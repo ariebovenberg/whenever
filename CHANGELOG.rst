@@ -1,6 +1,20 @@
 🚀 Changelog
 ============
 
+0.6.16 (2024-12-22)
+-------------------
+
+- Fix but in ``ZonedDateTime`` ``repr()`` that would mangle some timezone names
+- Make ``disambiguate`` argument optional, defaulting to ``"compatible"``.
+
+  **Rationale**: This required parameter was a frequent source of
+  irritation for users. Although "explicit is better than implicit",
+  other modern libraries and standards also choose an (implicit) default.
+  For those that do want to enforce explicit handling of ambiguous times,
+  a special stubs file or other plugin may be introduced in the future.
+
+- Various small fixes to the docs
+
 0.6.15 (2024-12-11)
 -------------------
 

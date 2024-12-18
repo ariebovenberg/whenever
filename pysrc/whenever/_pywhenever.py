@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.15"
+__version__ = "0.6.16"
 
 import enum
 import re
@@ -2424,7 +2424,7 @@ class _KnowsLocal(_BasicConversions, ABC):
         like :meth:`~LocalDateTime.assume_utc` or
         :meth:`~LocalDateTime.assume_tz`:
 
-        >>> date.at(time).assume_tz("Europe/London", disambiguate="compatible")
+        >>> date.at(time).assume_tz("Europe/London")
         """
         return Date._from_py_unchecked(self._py_dt.date())
 
@@ -2442,7 +2442,7 @@ class _KnowsLocal(_BasicConversions, ABC):
         like :meth:`~LocalDateTime.assume_utc` or
         :meth:`~LocalDateTime.assume_tz`:
 
-        >>> time.on(date).assume_tz("Europe/Paris", disambiguate="compatible")
+        >>> time.on(date).assume_tz("Europe/Paris")
         """
         return Time._from_py_unchecked(self._py_dt.time(), self._nanos)
 
@@ -2467,8 +2467,8 @@ class _KnowsLocal(_BasicConversions, ABC):
             -------
             The same exceptions as the constructor may be raised.
             For system and zoned datetimes,
-            The ``disambiguate=`` keyword argument is **required** to
-            resolve ambiguities. For more information, see
+            The ``disambiguate`` keyword argument is recommended to
+            resolve ambiguities explicitly. For more information, see
             whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones
 
             Example
@@ -2478,7 +2478,7 @@ class _KnowsLocal(_BasicConversions, ABC):
             LocalDateTime(2021-08-15 23:12:00)
             >>>
             >>> z = ZonedDateTime(2020, 8, 15, 23, 12, tz="Europe/London")
-            >>> z.replace(year=2021, disambiguate="raise")
+            >>> z.replace(year=2021)
             ZonedDateTime(2021-08-15T23:12:00+01:00)
             """
 
@@ -2491,16 +2491,10 @@ class _KnowsLocal(_BasicConversions, ABC):
             >>> d.replace_date(Date(2021, 1, 1))
             LocalDateTime(2021-01-01T04:00:00)
             >>> zdt = ZonedDateTime.now("Europe/London")
-            >>> zdt.replace_date(Date(2021, 1, 1), disambiguate="raise"))
+            >>> zdt.replace_date(Date(2021, 1, 1))
             ZonedDateTime(2021-01-01T13:00:00.23439+00:00[Europe/London])
 
-            Warning
-            -------
-            The same exceptions as the constructor may be raised.
-            For system and zoned datetimes,
-            you will need to pass ``disambiguate=`` to resolve ambiguities.
-            For more information, see
-            whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones
+            See :meth:`replace` for more information.
             """
 
         def replace_time(self: _T, time: Time, /, **kwargs) -> _T:
@@ -2512,14 +2506,10 @@ class _KnowsLocal(_BasicConversions, ABC):
             >>> d.replace_time(Time(12, 30))
             LocalDateTime(2020-08-15T12:30:00)
             >>> zdt = ZonedDateTime.now("Europe/London")
-            >>> zdt.replace_time(Time(12, 30), disambiguate="raise")
+            >>> zdt.replace_time(Time(12, 30))
             ZonedDateTime(2024-06-15T12:30:00+01:00[Europe/London])
 
-            Warning
-            -------
-            The same exceptions as the constructor may be raised.
-            For system and zoned datetimes,
-            you will need to pass ``disambiguate=`` to resolve ambiguities.
+            See :meth:`replace` for more information.
             """
 
         @abstractmethod
@@ -2542,7 +2532,7 @@ class _KnowsLocal(_BasicConversions, ABC):
 
             Arithmetic on datetimes is complicated.
             Additional keyword arguments ``ignore_dst`` and ``disambiguate``
-            may be needed for certain types and situations.
+            may be relevant for certain types and situations.
             See :ref:`the docs on arithmetic <arithmetic>` for more information
             and the reasoning behind it.
             """
@@ -3585,14 +3575,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     ) -> OffsetDateTime:
         """Construct a new instance with the date replaced.
 
-        Important
-        ---------
-        Replacing the date of an offset datetime implicitly ignores DST
-        and other timezone changes. This because it isn't guaranteed that
-        the same offset will be valid at the new date.
-        If you want to account for DST, convert to a ``ZonedDateTime`` first.
-        Or, if you want to ignore DST and accept potentially incorrect offsets,
-        pass ``ignore_dst=True`` to this method.
+        See the ``replace()`` method for more information.
         """
         if ignore_dst is not True:
             raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
@@ -3608,14 +3591,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     ) -> OffsetDateTime:
         """Construct a new instance with the time replaced.
 
-        Important
-        ---------
-        Replacing the time of an offset datetime implicitly ignores DST
-        and other timezone changes. This because it isn't guaranteed that
-        the same offset will be valid at the new time.
-        If you want to account for DST, convert to a ``ZonedDateTime`` first.
-        Or, if you want to ignore DST and accept potentially incorrect offsets,
-        pass ``ignore_dst=True`` to this method.
+        See the ``replace()`` method for more information.
         """
         if ignore_dst is not True:
             raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
@@ -3939,7 +3915,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         *,
         nanosecond: int = 0,
         tz: str,
-        disambiguate: Disambiguate = "raise",
+        disambiguate: Disambiguate = "compatible",
     ) -> None:
         self._py_dt = _resolve_ambiguity(
             _datetime(
@@ -3951,7 +3927,6 @@ class ZonedDateTime(_KnowsInstantAndLocal):
                 second,
                 0,
                 zone := ZoneInfo(tz),
-                fold=_as_fold(disambiguate),
             ),
             zone,
             disambiguate,
@@ -4099,84 +4074,78 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         )
 
     def replace_date(
-        self, date: Date, /, disambiguate: Disambiguate
+        self, date: Date, /, disambiguate: Disambiguate | None = None
     ) -> ZonedDateTime:
         """Construct a new instance with the date replaced.
 
-        Important
-        ---------
-        Replacing the date of a ZonedDateTime may result in an ambiguous time
-        (e.g. during a DST transition). Therefore, you must explicitly
-        specify how to handle such a situation using the ``disambiguate`` argument.
-
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
-        for more information.
+        See the ``replace()`` method for more information.
         """
         return self._from_py_unchecked(
             _resolve_ambiguity(
-                _datetime.combine(date._py_date, self._py_dt.timetz()).replace(
-                    fold=_as_fold(disambiguate)
-                ),
+                _datetime.combine(date._py_date, self._py_dt.timetz()),
                 # mypy doesn't know that tzinfo is always a ZoneInfo here
                 self._py_dt.tzinfo,  # type: ignore[arg-type]
-                disambiguate,
+                # mypy doesn't know that offset is never None here
+                disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
             ),
             self._nanos,
         )
 
     def replace_time(
-        self, time: Time, /, disambiguate: Disambiguate
+        self, time: Time, /, disambiguate: Disambiguate | None = None
     ) -> ZonedDateTime:
         """Construct a new instance with the time replaced.
 
-        Important
-        ---------
-        Replacing the time of a ZonedDateTime may result in an ambiguous time
-        (e.g. during a DST transition). Therefore, you must explicitly
-        specify how to handle such a situation using the ``disambiguate`` argument.
-
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
-        for more information.
+        See the ``replace()`` method for more information.
         """
         return self._from_py_unchecked(
             _resolve_ambiguity(
                 _datetime.combine(
                     self._py_dt, time._py_time, self._py_dt.tzinfo
-                ).replace(fold=_as_fold(disambiguate)),
+                ),
                 # mypy doesn't know that tzinfo is always a ZoneInfo here
                 self._py_dt.tzinfo,  # type: ignore[arg-type]
-                disambiguate,
+                # mypy doesn't know that offset is never None here
+                disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
             ),
             time._nanos,
         )
 
     def replace(
-        self, /, disambiguate: Disambiguate, **kwargs: Any
+        self, /, disambiguate: Disambiguate | None = None, **kwargs: Any
     ) -> ZonedDateTime:
         """Construct a new instance with the given fields replaced.
 
         Important
         ---------
         Replacing fields of a ZonedDateTime may result in an ambiguous time
-        (e.g. during a DST transition). Therefore, you must explicitly
+        (e.g. during a DST transition). Therefore, it's recommended to
         specify how to handle such a situation using the ``disambiguate`` argument.
+
+        By default, if the tz remains the same, the offset is used to disambiguate
+        if possible, falling back to the "compatible" strategy if needed.
 
         See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
         for more information.
         """
+
         _check_invalid_replace_kwargs(kwargs)
         try:
             tz = kwargs.pop("tz")
         except KeyError:
             pass
         else:
-            kwargs["tzinfo"] = ZoneInfo(tz)
+            kwargs["tzinfo"] = zoneinfo_new = ZoneInfo(tz)
+            if zoneinfo_new is not self._py_dt.tzinfo:
+                disambiguate = disambiguate or "compatible"
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
+
         return self._from_py_unchecked(
             _resolve_ambiguity(
-                self._py_dt.replace(fold=_as_fold(disambiguate), **kwargs),
+                self._py_dt.replace(**kwargs),
                 kwargs.get("tzinfo", self._py_dt.tzinfo),
-                disambiguate,
+                # mypy doesn't know that offset is never None here
+                disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
             ),
             nanos,
         )
@@ -4189,7 +4158,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def __hash__(self) -> int:
         return hash((self._py_dt.astimezone(_UTC), self._nanos))
 
-    def __add__(self, delta: TimeDelta) -> ZonedDateTime:
+    def __add__(self, delta: Delta) -> ZonedDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
 
         See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
@@ -4206,8 +4175,13 @@ class ZonedDateTime(_KnowsInstantAndLocal):
                 ).astimezone(self._py_dt.tzinfo),
                 nanos,
             )
-        elif isinstance(delta, (DateDelta, DateTimeDelta)):
-            raise TypeError(SHIFT_OPERATOR_CALENDAR_ZONED_MSG)
+        elif isinstance(delta, DateDelta):
+            return self.replace_date(self.date() + delta)
+        elif isinstance(delta, DateTimeDelta):
+            return (
+                self.replace_date(self.date() + delta._date_part)
+                + delta._time_part
+            )
         return NotImplemented
 
     @overload
@@ -4238,7 +4212,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         ---------
         Shifting a ``ZonedDateTime`` with **calendar units** (e.g. months, weeks)
         may result in an ambiguous time (e.g. during a DST transition).
-        Therefore, when adding calendar units, you must explicitly
+        Therefore, when adding calendar units, it's recommended to
         specify how to handle such a situation using the ``disambiguate`` argument.
 
         See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
@@ -4254,7 +4228,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         ---------
         Shifting a ``ZonedDateTime`` with **calendar units** (e.g. months, weeks)
         may result in an ambiguous time (e.g. during a DST transition).
-        Therefore, when adding calendar units, you must explicitly
+        Therefore, when adding calendar units, it's recommended to
         specify how to handle such a situation using the ``disambiguate`` argument.
 
         See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
@@ -4269,7 +4243,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         delta: Delta | _UNSET = _UNSET,
         /,
         *,
-        disambiguate: Disambiguate | _UNSET = _UNSET,
+        disambiguate: Disambiguate | None = None,
         **kwargs,
     ) -> ZonedDateTime:
         if kwargs:
@@ -4304,16 +4278,11 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Disambiguate,  # may be _UNSET sentinel
+        disambiguate: Disambiguate | None,
     ) -> ZonedDateTime:
         months_total = sign * (years * 12 + months)
         days_total = sign * (weeks * 7 + days)
         if months_total or days_total:
-            if disambiguate is _UNSET:
-                raise TypeError(
-                    "'disambiguate' keyword argument must be provided when "
-                    "adding/subtracting calendar units"
-                )
             self = self.replace_date(
                 self.date()._add_months(months_total)._add_days(days_total),
                 disambiguate=disambiguate,
@@ -4332,9 +4301,9 @@ class ZonedDateTime(_KnowsInstantAndLocal):
 
         Example
         -------
-        >>> ZonedDateTime(2020, 8, 15, 23, tz="Europe/London", disambiguate="later").ambiguous()
+        >>> ZonedDateTime(2020, 8, 15, 23, tz="Europe/London").is_ambiguous()
         False
-        >>> ZonedDateTime(2023, 10, 29, 2, 15, tz="Europe/Amsterdam", disambiguate="later").ambiguous()
+        >>> ZonedDateTime(2023, 10, 29, 2, 15, tz="Europe/Amsterdam").is_ambiguous()
         True
         """
         # We make use of a quirk of the standard library here:
@@ -4342,7 +4311,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         return self._py_dt.astimezone(_UTC) != self._py_dt
 
     def __repr__(self) -> str:
-        return f"ZonedDateTime({str(self).replace('T', ' ')})"
+        return f"ZonedDateTime({str(self).replace('T', ' ', 1)})"
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
@@ -4414,7 +4383,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         second: int = 0,
         *,
         nanosecond: int = 0,
-        disambiguate: Disambiguate = "raise",
+        disambiguate: Disambiguate = "compatible",
     ) -> None:
         self._py_dt = _resolve_system_ambiguity(
             _datetime(
@@ -4425,7 +4394,6 @@ class SystemDateTime(_KnowsInstantAndLocal):
                 minute,
                 second,
                 0,
-                fold=_as_fold(disambiguate),
             ),
             disambiguate,
         )
@@ -4517,62 +4485,46 @@ class SystemDateTime(_KnowsInstantAndLocal):
     # FUTURE: expose the tzname?
 
     def replace_date(
-        self, date: Date, /, disambiguate: Disambiguate
+        self, date: Date, /, disambiguate: Disambiguate | None = None
     ) -> SystemDateTime:
         """Construct a new instance with the date replaced.
 
-        Important
-        ---------
-        Replacing the date of a SystemDateTime may result in an ambiguous time
-        (e.g. during a DST transition). Therefore, you must explicitly
-        specify how to handle such a situation using the ``disambiguate`` argument.
-
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
-        for more information.
+        See the ``replace()`` method for more information.
         """
         return self._from_py_unchecked(
             _resolve_system_ambiguity(
-                _datetime.combine(date._py_date, self._py_dt.time()).replace(
-                    fold=_as_fold(disambiguate)
-                ),
-                disambiguate,
+                _datetime.combine(date._py_date, self._py_dt.time()),
+                # mypy doesn't know that offset is never None here
+                disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
             ),
             self._nanos,
         )
 
     def replace_time(
-        self, time: Time, /, disambiguate: Disambiguate
+        self, time: Time, /, disambiguate: Disambiguate | None = None
     ) -> SystemDateTime:
         """Construct a new instance with the time replaced.
 
-        Important
-        ---------
-        Replacing the time of a SystemDateTime may result in an ambiguous time
-        (e.g. during a DST transition). Therefore, you must explicitly
-        specify how to handle such a situation using the ``disambiguate`` argument.
-
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
-        for more information.
+        See the ``replace()`` method for more information.
         """
         return self._from_py_unchecked(
             _resolve_system_ambiguity(
-                _datetime.combine(self._py_dt, time._py_time).replace(
-                    fold=_as_fold(disambiguate)
-                ),
-                disambiguate,
+                _datetime.combine(self._py_dt, time._py_time),
+                # mypy doesn't know that offset is never None here
+                disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
             ),
             time._nanos,
         )
 
     def replace(
-        self, /, disambiguate: Disambiguate, **kwargs: Any
+        self, /, disambiguate: Disambiguate | None = None, **kwargs: Any
     ) -> SystemDateTime:
         """Construct a new instance with the given fields replaced.
 
         Important
         ---------
         Replacing fields of a SystemDateTime may result in an ambiguous time
-        (e.g. during a DST transition). Therefore, you must explicitly
+        (e.g. during a DST transition). Therefore, it's recommended to
         specify how to handle such a situation using the ``disambiguate`` argument.
 
         See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
@@ -4582,10 +4534,9 @@ class SystemDateTime(_KnowsInstantAndLocal):
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
         return self._from_py_unchecked(
             _resolve_system_ambiguity(
-                self._py_dt.replace(
-                    tzinfo=None, fold=_as_fold(disambiguate), **kwargs
-                ),
-                disambiguate,
+                self._py_dt.replace(tzinfo=None, **kwargs),
+                # mypy doesn't know that offset is never None here
+                disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
             ),
             nanos,
         )
@@ -4607,8 +4558,13 @@ class SystemDateTime(_KnowsInstantAndLocal):
             return self._from_py_unchecked(
                 (py_dt + _timedelta(seconds=delta_secs)).astimezone(), nanos
             )
-        elif isinstance(delta, (DateDelta, DateTimeDelta)):
-            raise TypeError(SHIFT_OPERATOR_CALENDAR_ZONED_MSG)
+        elif isinstance(delta, DateDelta):
+            return self.replace_date(self.date() + delta)
+        elif isinstance(delta, DateTimeDelta):
+            return (
+                self.replace_date(self.date() + delta._date_part)
+                + delta._time_part
+            )
         return NotImplemented
 
     @overload
@@ -4639,7 +4595,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         ---------
         Shifting a ``SystemDateTime`` with **calendar units** (e.g. months, weeks)
         may result in an ambiguous time (e.g. during a DST transition).
-        Therefore, when adding calendar units, you must explicitly
+        Therefore, when adding calendar units, it's recommended to
         specify how to handle such a situation using the ``disambiguate`` argument.
 
         See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
@@ -4655,7 +4611,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         ---------
         Shifting a ``SystemDateTime`` with **calendar units** (e.g. months, weeks)
         may result in an ambiguous time (e.g. during a DST transition).
-        Therefore, when adding calendar units, you must explicitly
+        Therefore, when adding calendar units, it's recommended to
         specify how to handle such a situation using the ``disambiguate`` argument.
 
         See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
@@ -4670,7 +4626,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         delta: Delta | _UNSET = _UNSET,
         /,
         *,
-        disambiguate: Disambiguate | _UNSET = _UNSET,
+        disambiguate: Disambiguate | None = None,
         **kwargs,
     ) -> SystemDateTime:
         if kwargs:
@@ -4705,16 +4661,11 @@ class SystemDateTime(_KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Disambiguate,  # may be _UNSET sentinel
+        disambiguate: Disambiguate | None,
     ) -> SystemDateTime:
         months_total = sign * (years * 12 + months)
         days_total = sign * (weeks * 7 + days)
         if months_total or days_total:
-            if disambiguate is _UNSET:
-                raise TypeError(
-                    "'disambiguate' keyword argument must be provided when "
-                    "adding/subtracting calendar units"
-                )
             self = self.replace_date(
                 self.date()._add_months(months_total)._add_days(days_total),
                 disambiguate=disambiguate,
@@ -5112,7 +5063,7 @@ class LocalDateTime(_KnowsLocal):
         )
 
     def assume_tz(
-        self, tz: str, /, disambiguate: Disambiguate
+        self, tz: str, /, disambiguate: Disambiguate = "compatible"
     ) -> ZonedDateTime:
         """Assume the datetime is in the given timezone,
         creating a ``ZonedDateTime``.
@@ -5133,16 +5084,16 @@ class LocalDateTime(_KnowsLocal):
         """
         return ZonedDateTime._from_py_unchecked(
             _resolve_ambiguity(
-                self._py_dt.replace(
-                    tzinfo=(zone := ZoneInfo(tz)), fold=_as_fold(disambiguate)
-                ),
+                self._py_dt.replace(tzinfo=(zone := ZoneInfo(tz))),
                 zone,
                 disambiguate,
             ),
             self._nanos,
         )
 
-    def assume_system_tz(self, disambiguate: Disambiguate) -> SystemDateTime:
+    def assume_system_tz(
+        self, disambiguate: Disambiguate = "compatible"
+    ) -> SystemDateTime:
         """Assume the datetime is in the system timezone,
         creating a ``SystemDateTime``.
 
@@ -5162,10 +5113,7 @@ class LocalDateTime(_KnowsLocal):
         SystemDateTime(2020-08-15 23:12:00-04:00)
         """
         return SystemDateTime._from_py_unchecked(
-            _resolve_system_ambiguity(
-                self._py_dt.replace(fold=_as_fold(disambiguate)),
-                disambiguate,
-            ),
+            _resolve_system_ambiguity(self._py_dt, disambiguate),
             self._nanos,
         )
 
@@ -5239,7 +5187,7 @@ _IGNORE_DST_SUGGESTION = (
 SHIFT_LOCAL_MSG = (
     "Adding or subtracting a (date)time delta to a local datetime "
     "implicitly ignores DST transitions and other timezone "
-    "changes. Instead, use the `add` or `subtract` method."
+    "changes. Use the `add` or `subtract` method instead."
 )
 
 DIFF_OPERATOR_LOCAL_MSG = (
@@ -5251,13 +5199,6 @@ DIFF_OPERATOR_LOCAL_MSG = (
 DIFF_LOCAL_MSG = (
     "The difference between two local datetimes implicitly ignores "
     "DST transitions and other timezone changes. " + _IGNORE_DST_SUGGESTION
-)
-
-
-SHIFT_OPERATOR_CALENDAR_ZONED_MSG = (
-    "Addition/subtraction of calendar units on a Zoned/System-DateTime requires "
-    "explicit disambiguation. Use the `add`/`subtract` methods instead. "
-    "For example, instead of `dt + delta` use `dt.add(delta, disambiguate=...)`."
 )
 
 
@@ -5292,8 +5233,11 @@ ADJUST_LOCAL_DATETIME_MSG = (
 
 
 def _resolve_ambiguity(
-    dt: _datetime, zone: ZoneInfo, disambiguate: Disambiguate
+    dt: _datetime, zone: ZoneInfo, disambiguate: Disambiguate | _timedelta
 ) -> _datetime:
+    if isinstance(disambiguate, _timedelta):
+        return _resolve_ambiguity_using_prev_offset(dt, disambiguate)
+    dt = dt.replace(fold=_as_fold(disambiguate))
     dt_utc = dt.astimezone(_UTC)
     # Non-existent times: they don't survive a UTC roundtrip
     if dt_utc.astimezone(zone) != dt:
@@ -5303,12 +5247,28 @@ def _resolve_ambiguity(
             # In gaps, the relationship between
             # fold and earlier/later is reversed
             dt = dt.replace(fold=not dt.fold)
-        # perform the normalisation, shifting away from non-existent times
+        # Perform the normalisation, shifting away from non-existent times
         dt = dt.astimezone(_UTC).astimezone(zone)
     # Ambiguous times: they're never equal to other timezones
     elif disambiguate == "raise" and dt_utc != dt:
         raise RepeatedTime._for_tz(dt, zone)
     return dt
+
+
+def _resolve_ambiguity_using_prev_offset(
+    dt: _datetime,
+    prev_offset: _timedelta,
+) -> _datetime:
+    if prev_offset == dt.utcoffset():
+        pass
+    elif prev_offset == dt.replace(fold=not dt.fold).utcoffset():
+        dt = dt.replace(fold=not dt.fold)
+    else:
+        # No offset match. Setting fold=0 adopts the 'compatible' strategy
+        dt = dt.replace(fold=0)
+
+    # This roundtrip ensures skipped times are shifted
+    return dt.astimezone(_UTC).astimezone(dt.tzinfo)
 
 
 # Whether the fold of a system time needs to be flipped in a gap
@@ -5318,11 +5278,15 @@ _requires_flip: Callable[[Disambiguate], bool] = (
 )
 
 
+# FUTURE: document that this isn't threadsafe (system tz may change)
 def _resolve_system_ambiguity(
-    dt: _datetime, disambiguate: Disambiguate
+    dt: _datetime, disambiguate: Disambiguate | _timedelta
 ) -> _datetime:
     assert dt.tzinfo is None
-    norm = dt.astimezone(_UTC).astimezone()
+    if isinstance(disambiguate, _timedelta):
+        return _resolve_system_ambiguity_using_prev_offset(dt, disambiguate)
+    dt = dt.replace(fold=_as_fold(disambiguate))
+    norm = dt.astimezone(_UTC).astimezone()  # going through UTC resolves gaps
     # Non-existent times: they don't survive a UTC roundtrip
     if norm.replace(tzinfo=None) != dt:
         if disambiguate == "raise":
@@ -5337,6 +5301,29 @@ def _resolve_system_ambiguity(
     ):
         raise RepeatedTime._for_system_tz(dt)
     return norm
+
+
+def _resolve_system_ambiguity_using_prev_offset(
+    dt: _datetime, prev_offset: _timedelta
+) -> _datetime:
+    if dt.astimezone(_UTC).astimezone().utcoffset() == prev_offset:
+        pass
+    elif (
+        dt.replace(fold=not dt.fold).astimezone(_UTC).astimezone().utcoffset()
+        == prev_offset
+    ):
+        dt = dt.replace(fold=not dt.fold)
+    else:  # rare: no offset match.
+        # We account for this CPython bug: cpython/issues/83861
+        if (
+            sys.version_info < (3, 12)
+            # i.e. it's in a gap
+            and dt.astimezone(_UTC).astimezone().replace(tzinfo=None) != dt
+        ):  # pragma: no cover
+            dt = dt.replace(fold=not dt.fold)
+        else:
+            dt = dt.replace(fold=0)
+    return dt.astimezone(_UTC).astimezone()
 
 
 def _load_offset(offset: int | TimeDelta, /) -> _timezone:

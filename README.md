@@ -8,20 +8,18 @@
 [![](https://img.shields.io/github/actions/workflow/status/ariebovenberg/whenever/checks.yml?branch=main&style=flat-square)](https://github.com/ariebovenberg/whenever)
 [![](https://img.shields.io/readthedocs/whenever.svg?style=flat-square)](http://whenever.readthedocs.io/)
 
-**Typed and DST-safe datetimes for Python, available in speedy Rust or pure Python.**
+**Typed and DST-safe datetimes for Python, available in Rust or pure Python.**
 
 Do you cross your fingers every time you work with Python's datetime—hoping that you didn't mix naive and aware?
 or that you avoided its [other pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/)?
-or that you properly accounted for Daylight Saving Time (DST)?
 There’s no way to be sure...
 
 ✨ Until now! ✨
 
-*Whenever* helps you write **correct** and **type checked** datetime code.
-Mistakes become <span style="text-decoration: underline; text-decoration-color: red; text-decoration-style: wavy">red squiggles</span> in your IDE, instead of bugs in production.
+*Whenever* helps you write **correct** and **type checked** datetime code,
+using **well-established concepts** from modern libraries in other languages.
 It's also **way faster** than other third-party libraries—and usually the standard library as well.
 If performance isn't your top priority, a **pure Python** version is available as well.
-
 
   <p align="center">
     <picture align="center">
@@ -35,8 +33,8 @@ If performance isn't your top priority, a **pure Python** version is available a
     <i>RFC3339-parse, normalize, compare to now, shift, and change timezone (1M times)</i>
   </p>
 
-
 <div align="center">
+
 
 [📖 Docs](https://whenever.readthedocs.io) |
 [🐍 PyPI](https://pypi.org/project/whenever/) |
@@ -48,7 +46,7 @@ If performance isn't your top priority, a **pure Python** version is available a
 
 </div>
 
-> ⚠️ **Note**: Whenever is still on a pre-1.0 version. The API may change
+> ⚠️ **Note**: A 1.0 release is coming soon. Until then, the API may change
 > as we gather feedback and improve the library.
 > Leave a ⭐️ on GitHub if you'd like to see how this project develops!
 
@@ -112,7 +110,7 @@ as well as improved performance.
 However, it only fixes [*some* DST-related pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/#datetime-library-scorecard),
 and its performance has significantly [degraded over time](https://github.com/sdispater/pendulum/issues/818).
 Additionally, it's in maintenance limbo with only one release in the last four years,
-and issues piling up unaddressed.
+and many issues remaining unaddressed.
 
 ## Why use whenever?
 
@@ -151,7 +149,7 @@ ZonedDateTime(2024-07-04 12:36:56+02:00[Europe/Paris])
 >>> party_invite.add(hours=6)
 Traceback (most recent call last):
   ImplicitlyIgnoringDST: Adjusting a local datetime implicitly ignores DST [...]
->>> party_starts = party_invite.assume_tz("Europe/Amsterdam", disambiguate="earlier")
+>>> party_starts = party_invite.assume_tz("Europe/Amsterdam")
 ZonedDateTime(2023-10-28 22:00:00+02:00[Europe/Amsterdam])
 
 # DST-safe arithmetic
@@ -216,9 +214,10 @@ For more details, see the licenses included in the distribution.
 
 ## Acknowledgements
 
-This project is inspired by the following projects. Check them out!
+This project is inspired by—and borrows concepts from—the following projects. Check them out!
 
 - [Noda Time](https://nodatime.org/) and [Joda Time](https://www.joda.org/joda-time/)
 - [Temporal](https://tc39.es/proposal-temporal/docs/)
 
 The benchmark comparison graph is based on the one from the [Ruff](https://github.com/astral-sh/ruff) project.
+For timezone data, **Whenever** uses Python's own `zoneinfo` module.

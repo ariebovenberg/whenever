@@ -79,16 +79,12 @@ def test_assume_fixed_offset():
     )
 
 
-class TestAssumeZoned:
+class TestAssumeTz:
     def test_typical(self):
         d = LocalDateTime(2020, 8, 15, 23)
         assert d.assume_tz(
             "Asia/Tokyo", disambiguate="raise"
         ) == ZonedDateTime(2020, 8, 15, 23, tz="Asia/Tokyo")
-
-        # disambiguate is required
-        with pytest.raises(TypeError, match="disambiguat"):
-            d.assume_tz("Asia/Tokyo")  # type: ignore[call-arg]
 
     def test_ambiguous(self):
         d = LocalDateTime(2023, 10, 29, 2, 15)
@@ -126,10 +122,6 @@ class TestAssumeSystemTz:
         assert LocalDateTime(2020, 8, 15, 23).assume_system_tz(
             disambiguate="raise"
         ) == SystemDateTime(2020, 8, 15, 23)
-
-        # disambiguate is required
-        with pytest.raises(TypeError, match="disambiguat"):
-            LocalDateTime(2020, 8, 15, 23).assume_system_tz()  # type: ignore[call-arg]
 
     @system_tz_ams()
     def test_ambiguous(self):
