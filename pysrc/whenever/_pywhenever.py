@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.15"
+__version__ = "0.6.16"
 
 import enum
 import re
@@ -2424,7 +2424,7 @@ class _KnowsLocal(_BasicConversions, ABC):
         like :meth:`~LocalDateTime.assume_utc` or
         :meth:`~LocalDateTime.assume_tz`:
 
-        >>> date.at(time).assume_tz("Europe/London", disambiguate="compatible")
+        >>> date.at(time).assume_tz("Europe/London")
         """
         return Date._from_py_unchecked(self._py_dt.date())
 
@@ -2442,7 +2442,7 @@ class _KnowsLocal(_BasicConversions, ABC):
         like :meth:`~LocalDateTime.assume_utc` or
         :meth:`~LocalDateTime.assume_tz`:
 
-        >>> time.on(date).assume_tz("Europe/Paris", disambiguate="compatible")
+        >>> time.on(date).assume_tz("Europe/Paris")
         """
         return Time._from_py_unchecked(self._py_dt.time(), self._nanos)
 
@@ -2467,8 +2467,8 @@ class _KnowsLocal(_BasicConversions, ABC):
             -------
             The same exceptions as the constructor may be raised.
             For system and zoned datetimes,
-            The ``disambiguate=`` keyword argument is **required** to
-            resolve ambiguities. For more information, see
+            The ``disambiguate=`` keyword argument is recommended to
+            resolve ambiguities explicitly. For more information, see
             whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones
 
             Example
@@ -2478,7 +2478,7 @@ class _KnowsLocal(_BasicConversions, ABC):
             LocalDateTime(2021-08-15 23:12:00)
             >>>
             >>> z = ZonedDateTime(2020, 8, 15, 23, 12, tz="Europe/London")
-            >>> z.replace(year=2021, disambiguate="raise")
+            >>> z.replace(year=2021)
             ZonedDateTime(2021-08-15T23:12:00+01:00)
             """
 
@@ -2491,15 +2491,15 @@ class _KnowsLocal(_BasicConversions, ABC):
             >>> d.replace_date(Date(2021, 1, 1))
             LocalDateTime(2021-01-01T04:00:00)
             >>> zdt = ZonedDateTime.now("Europe/London")
-            >>> zdt.replace_date(Date(2021, 1, 1), disambiguate="raise"))
+            >>> zdt.replace_date(Date(2021, 1, 1))
             ZonedDateTime(2021-01-01T13:00:00.23439+00:00[Europe/London])
 
             Warning
             -------
             The same exceptions as the constructor may be raised.
             For system and zoned datetimes,
-            you will need to pass ``disambiguate=`` to resolve ambiguities.
-            For more information, see
+            The ``disambiguate=`` keyword argument is recommend to
+            resolve ambiguities explicitly. For more information, see
             whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones
             """
 
@@ -2512,14 +2512,16 @@ class _KnowsLocal(_BasicConversions, ABC):
             >>> d.replace_time(Time(12, 30))
             LocalDateTime(2020-08-15T12:30:00)
             >>> zdt = ZonedDateTime.now("Europe/London")
-            >>> zdt.replace_time(Time(12, 30), disambiguate="raise")
+            >>> zdt.replace_time(Time(12, 30))
             ZonedDateTime(2024-06-15T12:30:00+01:00[Europe/London])
 
             Warning
             -------
             The same exceptions as the constructor may be raised.
             For system and zoned datetimes,
-            you will need to pass ``disambiguate=`` to resolve ambiguities.
+            the ``disambiguate=`` keyword argument is recommend to
+            resolve ambiguities explicitly. For more information, see
+            whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones
             """
 
         @abstractmethod
@@ -3939,7 +3941,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         *,
         nanosecond: int = 0,
         tz: str,
-        disambiguate: Disambiguate = "raise",
+        disambiguate: Disambiguate = "compatible",
     ) -> None:
         self._py_dt = _resolve_ambiguity(
             _datetime(
@@ -3951,7 +3953,6 @@ class ZonedDateTime(_KnowsInstantAndLocal):
                 second,
                 0,
                 zone := ZoneInfo(tz),
-                fold=_as_fold(disambiguate),
             ),
             zone,
             disambiguate,
@@ -4099,7 +4100,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         )
 
     def replace_date(
-        self, date: Date, /, disambiguate: Disambiguate
+        self, date: Date, /, disambiguate: Disambiguate = "compatible"
     ) -> ZonedDateTime:
         """Construct a new instance with the date replaced.
 
@@ -4114,9 +4115,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         """
         return self._from_py_unchecked(
             _resolve_ambiguity(
-                _datetime.combine(date._py_date, self._py_dt.timetz()).replace(
-                    fold=_as_fold(disambiguate)
-                ),
+                _datetime.combine(date._py_date, self._py_dt.timetz()),
                 # mypy doesn't know that tzinfo is always a ZoneInfo here
                 self._py_dt.tzinfo,  # type: ignore[arg-type]
                 disambiguate,
@@ -4125,7 +4124,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         )
 
     def replace_time(
-        self, time: Time, /, disambiguate: Disambiguate
+        self, time: Time, /, disambiguate: Disambiguate = "compatible"
     ) -> ZonedDateTime:
         """Construct a new instance with the time replaced.
 
@@ -4142,7 +4141,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
             _resolve_ambiguity(
                 _datetime.combine(
                     self._py_dt, time._py_time, self._py_dt.tzinfo
-                ).replace(fold=_as_fold(disambiguate)),
+                ),
                 # mypy doesn't know that tzinfo is always a ZoneInfo here
                 self._py_dt.tzinfo,  # type: ignore[arg-type]
                 disambiguate,
@@ -4151,7 +4150,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         )
 
     def replace(
-        self, /, disambiguate: Disambiguate, **kwargs: Any
+        self, /, disambiguate: Disambiguate | None = None, **kwargs: Any
     ) -> ZonedDateTime:
         """Construct a new instance with the given fields replaced.
 
@@ -4164,6 +4163,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
         for more information.
         """
+
         _check_invalid_replace_kwargs(kwargs)
         try:
             tz = kwargs.pop("tz")
@@ -4172,11 +4172,19 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         else:
             kwargs["tzinfo"] = ZoneInfo(tz)
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
+
         return self._from_py_unchecked(
-            _resolve_ambiguity(
-                self._py_dt.replace(fold=_as_fold(disambiguate), **kwargs),
-                kwargs.get("tzinfo", self._py_dt.tzinfo),
-                disambiguate,
+            (
+                _resolve_ambiguity_using_prev_offset(
+                    self._py_dt,
+                    self._py_dt.replace(**kwargs),
+                )
+                if disambiguate is None
+                else _resolve_ambiguity(
+                    self._py_dt.replace(**kwargs),
+                    kwargs.get("tzinfo", self._py_dt.tzinfo),
+                    disambiguate,
+                )
             ),
             nanos,
         )
@@ -4342,7 +4350,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         return self._py_dt.astimezone(_UTC) != self._py_dt
 
     def __repr__(self) -> str:
-        return f"ZonedDateTime({str(self).replace('T', ' ')})"
+        return f"ZonedDateTime({str(self).replace('T', ' ', 1)})"
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
@@ -4414,7 +4422,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         second: int = 0,
         *,
         nanosecond: int = 0,
-        disambiguate: Disambiguate = "raise",
+        disambiguate: Disambiguate = "compatible",
     ) -> None:
         self._py_dt = _resolve_system_ambiguity(
             _datetime(
@@ -4517,7 +4525,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
     # FUTURE: expose the tzname?
 
     def replace_date(
-        self, date: Date, /, disambiguate: Disambiguate
+        self, date: Date, /, disambiguate: Disambiguate = "compatible"
     ) -> SystemDateTime:
         """Construct a new instance with the date replaced.
 
@@ -4541,7 +4549,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         )
 
     def replace_time(
-        self, time: Time, /, disambiguate: Disambiguate
+        self, time: Time, /, disambiguate: Disambiguate = "compatible"
     ) -> SystemDateTime:
         """Construct a new instance with the time replaced.
 
@@ -4565,7 +4573,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         )
 
     def replace(
-        self, /, disambiguate: Disambiguate, **kwargs: Any
+        self, /, disambiguate: Disambiguate = "compatible", **kwargs: Any
     ) -> SystemDateTime:
         """Construct a new instance with the given fields replaced.
 
@@ -5112,7 +5120,7 @@ class LocalDateTime(_KnowsLocal):
         )
 
     def assume_tz(
-        self, tz: str, /, disambiguate: Disambiguate
+        self, tz: str, /, disambiguate: Disambiguate = "compatible"
     ) -> ZonedDateTime:
         """Assume the datetime is in the given timezone,
         creating a ``ZonedDateTime``.
@@ -5133,16 +5141,16 @@ class LocalDateTime(_KnowsLocal):
         """
         return ZonedDateTime._from_py_unchecked(
             _resolve_ambiguity(
-                self._py_dt.replace(
-                    tzinfo=(zone := ZoneInfo(tz)), fold=_as_fold(disambiguate)
-                ),
+                self._py_dt.replace(tzinfo=(zone := ZoneInfo(tz))),
                 zone,
                 disambiguate,
             ),
             self._nanos,
         )
 
-    def assume_system_tz(self, disambiguate: Disambiguate) -> SystemDateTime:
+    def assume_system_tz(
+        self, disambiguate: Disambiguate = "compatible"
+    ) -> SystemDateTime:
         """Assume the datetime is in the system timezone,
         creating a ``SystemDateTime``.
 
@@ -5294,6 +5302,7 @@ ADJUST_LOCAL_DATETIME_MSG = (
 def _resolve_ambiguity(
     dt: _datetime, zone: ZoneInfo, disambiguate: Disambiguate
 ) -> _datetime:
+    dt = dt.replace(fold=_as_fold(disambiguate))
     dt_utc = dt.astimezone(_UTC)
     # Non-existent times: they don't survive a UTC roundtrip
     if dt_utc.astimezone(zone) != dt:
@@ -5309,6 +5318,21 @@ def _resolve_ambiguity(
     elif disambiguate == "raise" and dt_utc != dt:
         raise RepeatedTime._for_tz(dt, zone)
     return dt
+
+
+def _resolve_ambiguity_using_prev_offset(
+    old: _datetime, new: _datetime
+) -> _datetime:
+    old_offset = old.utcoffset()
+    if old_offset == new.utcoffset():
+        pass
+    elif old_offset == new.replace(fold=not new.fold).utcoffset():
+        new = new.replace(fold=not new.fold)
+    else:
+        new = new.replace(fold=0)
+
+    # This roundtrip ensures skipped times are shifted
+    return new.astimezone(_UTC).astimezone(new.tzinfo)
 
 
 # Whether the fold of a system time needs to be flipped in a gap

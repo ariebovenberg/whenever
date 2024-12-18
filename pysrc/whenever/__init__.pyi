@@ -569,21 +569,21 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         second: int = ...,
         nanosecond: int = ...,
         tz: str = ...,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> ZonedDateTime: ...
     def replace_date(
         self,
         d: Date,
         /,
         *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> ZonedDateTime: ...
     def replace_time(
         self,
         t: Time,
         /,
         *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> ZonedDateTime: ...
     @overload
     def add(
