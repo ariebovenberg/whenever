@@ -22,7 +22,6 @@ from whenever import (
     hours,
     microseconds,
     minutes,
-    months,
     seconds,
     weeks,
     years,
@@ -73,6 +72,10 @@ class TestInit:
             "hour": 2,
             "minute": 15,
         }
+        assert SystemDateTime(**kwargs, disambiguate="compatible").exact_eq(
+            SystemDateTime(**kwargs)
+        )
+
         d = SystemDateTime(**kwargs, disambiguate="earlier")
         assert d < SystemDateTime(**kwargs, disambiguate="later")
 
@@ -82,11 +85,8 @@ class TestInit:
         ):
             SystemDateTime(2023, 10, 29, 2, 15, disambiguate="raise")
 
-        with pytest.raises(RepeatedTime):
-            SystemDateTime(2023, 10, 29, 2, 15)
-
     @system_tz_ams()
-    def test_nonexistent(self):
+    def test_skipped(self):
         kwargs: dict[str, Any] = {
             "year": 2023,
             "month": 3,
@@ -94,11 +94,10 @@ class TestInit:
             "hour": 2,
             "minute": 30,
         }
-        with pytest.raises(
-            SkippedTime,
-            match="2023-03-26 02:30:00 is skipped in the system timezone",
-        ):
+
+        assert SystemDateTime(**kwargs, disambiguate="compatible").exact_eq(
             SystemDateTime(**kwargs)
+        )
 
         with pytest.raises(
             SkippedTime,
@@ -130,7 +129,7 @@ class TestInit:
     @system_tz_nyc()
     def test_bounds_max(self):
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            SystemDateTime(9999, 12, 31)
+            SystemDateTime(9999, 12, 31, 23)
 
 
 class TestInstant:
@@ -932,25 +931,25 @@ class TestReplace:
     @system_tz_ams()
     def test_basics(self):
         d = SystemDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        assert d.replace(year=2021, disambiguate="raise").exact_eq(
+        assert d.replace(year=2021).exact_eq(
             SystemDateTime(2021, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         )
-        assert d.replace(month=9, disambiguate="raise").exact_eq(
+        assert d.replace(month=9).exact_eq(
             SystemDateTime(2020, 9, 15, 23, 12, 9, nanosecond=987_654_321)
         )
-        assert d.replace(day=16, disambiguate="raise").exact_eq(
+        assert d.replace(day=16).exact_eq(
             SystemDateTime(2020, 8, 16, 23, 12, 9, nanosecond=987_654_321)
         )
-        assert d.replace(hour=1, disambiguate="raise").exact_eq(
+        assert d.replace(hour=1).exact_eq(
             SystemDateTime(2020, 8, 15, 1, 12, 9, nanosecond=987_654_321)
         )
-        assert d.replace(minute=1, disambiguate="raise").exact_eq(
+        assert d.replace(minute=1).exact_eq(
             SystemDateTime(2020, 8, 15, 23, 1, 9, nanosecond=987_654_321)
         )
-        assert d.replace(second=1, disambiguate="raise").exact_eq(
+        assert d.replace(second=1).exact_eq(
             SystemDateTime(2020, 8, 15, 23, 12, 1, nanosecond=987_654_321)
         )
-        assert d.replace(nanosecond=1, disambiguate="raise").exact_eq(
+        assert d.replace(nanosecond=1).exact_eq(
             SystemDateTime(2020, 8, 15, 23, 12, 9, nanosecond=1)
         )
 
@@ -963,18 +962,10 @@ class TestReplace:
         with pytest.raises(TypeError, match="foo"):
             d.replace(foo=1, disambiguate="compatible")  # type: ignore[call-arg]
 
-        # disambiguate is required
-        with pytest.raises(TypeError, match="disambiguat"):
-            d.replace(hour=1)  # type: ignore[call-arg]
-
     @system_tz_ams()
-    def test_disambiguate(self):
+    def test_repeated(self):
         d = SystemDateTime(2023, 10, 29, 2, 15, 30, disambiguate="earlier")
-        with pytest.raises(
-            RepeatedTime,
-            match="2023-10-29 02:15:30 is repeated in the system timezone",
-        ):
-            d.replace(disambiguate="raise")
+        d_later = SystemDateTime(2023, 10, 29, 2, 15, 30, disambiguate="later")
         with pytest.raises(
             RepeatedTime,
             match="2023-10-29 02:15:30 is repeated in the system timezone",
@@ -985,15 +976,47 @@ class TestReplace:
             SystemDateTime(2023, 10, 29, 2, 15, 30, disambiguate="later")
         )
         assert d.replace(disambiguate="earlier").exact_eq(d)
+        assert d.replace().exact_eq(d)
+        assert d_later.replace().exact_eq(d_later)
+
+        # very rare case where offset cannot be reused
+        with system_tz_nyc():
+            assert d.replace(month=11, day=5).exact_eq(
+                SystemDateTime(
+                    2023, 11, 5, 2, 15, 30, disambiguate="compatible"
+                )
+            )
+            assert d_later.replace(month=11, day=5).exact_eq(
+                SystemDateTime(
+                    2023, 11, 5, 2, 15, 30, disambiguate="compatible"
+                )
+            )
 
     @system_tz_ams()
-    def test_nonexistent(self):
+    def test_skipped(self):
         d = SystemDateTime(2023, 3, 26, 1, 15, 30)
+        d_later = SystemDateTime(2023, 3, 26, 3, 15, 30)
         with pytest.raises(
             SkippedTime,
             match="2023-03-26 02:15:30 is skipped in the system timezone",
         ):
             d.replace(hour=2, disambiguate="raise")
+
+        assert d.replace(hour=2).exact_eq(
+            SystemDateTime(2023, 3, 26, 2, 15, 30, disambiguate="earlier")
+        )
+        assert d_later.replace(hour=2).exact_eq(
+            SystemDateTime(2023, 3, 26, 2, 15, 30, disambiguate="later")
+        )
+
+        # very rare case where offset cannot be reused
+        with system_tz_nyc():
+            assert d.replace(day=12, hour=2).exact_eq(
+                SystemDateTime(2023, 3, 12, 3, 15, 30)
+            )
+            assert d_later.replace(day=12, hour=2).exact_eq(
+                SystemDateTime(2023, 3, 12, 3, 15, 30)
+            )
 
     @system_tz_ams()
     def test_bounds_min(self):
@@ -1137,10 +1160,6 @@ class TestShiftTimeUnits:
         with pytest.raises(TypeError):
             d.add(hours(4), seconds=3)  # type: ignore[call-overload]
 
-        # other types of delta: recommend use the method
-        with pytest.raises(TypeError, match="ambigu.*add"):
-            d + months(1)  # type: ignore[operator]
-
 
 class TestShiftDateUnits:
 
@@ -1148,43 +1167,61 @@ class TestShiftDateUnits:
     def test_zero(self):
         d = SystemDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         assert d.add(days=0, disambiguate="raise").exact_eq(d)
+        assert d.add(days=0).exact_eq(d)
+        assert d.add(weeks=0).exact_eq(d)
+        assert d.add(months=0).exact_eq(d)
+        assert d.add(years=0, weeks=0).exact_eq(d)
         assert d.add().exact_eq(d)
 
-        # same with subtraction
-        assert d.subtract(days=0, disambiguate="raise").exact_eq(d)
+        # same with operators
+        assert d + days(0) == d
+        assert d + weeks(0) == d
+        assert d + years(0) == d
 
-        # disambiguate is required
-        with pytest.raises(TypeError, match="disambiguat"):
-            d.add(days=1)  # type: ignore[call-overload]
+        # same with subtraction
+        assert d.subtract(days=0).exact_eq(d)
+
+        assert d - days(0) == d
+        assert d - weeks(0) == d
+        assert d - years(0) == d
 
     @system_tz_ams()
     def test_simple_date(self):
         d = SystemDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        assert d.add(days=1, disambiguate="raise").exact_eq(
-            d.replace(day=16, disambiguate="raise")
-        )
-        assert d.add(years=1, weeks=2, days=-2, disambiguate="raise").exact_eq(
-            d.replace(year=2021, day=27, disambiguate="raise")
+        assert d.add(days=1).exact_eq(d.replace(day=16))
+        assert d.add(years=1, weeks=2, days=-2).exact_eq(
+            d.replace(year=2021, day=27)
         )
 
         # same with subtraction
-        assert d.subtract(days=1, disambiguate="raise").exact_eq(
-            d.replace(day=14, disambiguate="raise")
+        assert d.subtract(days=1).exact_eq(d.replace(day=14))
+        assert d.subtract(years=1, weeks=2, days=-2).exact_eq(
+            d.replace(year=2019, day=3)
         )
-        assert d.subtract(
-            years=1, weeks=2, days=-2, disambiguate="raise"
-        ).exact_eq(d.replace(year=2019, day=3, disambiguate="raise"))
 
-        assert d.add(years=1, weeks=2, days=-2, disambiguate="raise").exact_eq(
-            d.replace(year=2021, day=27, disambiguate="raise")
+        assert d.add(years=1, weeks=2, days=-2).exact_eq(
+            d.replace(year=2021, day=27)
         )
         # same with arg
-        assert d.add(
-            years(1) + weeks(2) + days(-2), disambiguate="raise"
-        ).exact_eq(d.add(years=1, weeks=2, days=-2, disambiguate="raise"))
-        assert d.add(
-            years(1) + weeks(2) + hours(2), disambiguate="raise"
-        ).exact_eq(d.add(years=1, weeks=2, hours=2, disambiguate="raise"))
+        assert d.add(years(1) + weeks(2) + days(-2)).exact_eq(
+            d.add(years=1, weeks=2, days=-2)
+        )
+        assert d.add(years(1) + weeks(2) + hours(2)).exact_eq(
+            d.add(years=1, weeks=2, hours=2)
+        )
+        # same with operators
+        assert d + (years(1) + weeks(2) + days(-2)) == d.add(
+            years=1, weeks=2, days=-2
+        )
+        assert d + (years(1) + weeks(2) + hours(2)) == d.add(
+            years=1, weeks=2, hours=2
+        )
+        assert d - (years(1) + weeks(2) + days(-2)) == d.subtract(
+            years=1, weeks=2, days=-2
+        )
+        assert d - (years(1) + weeks(2) + hours(2)) == d.subtract(
+            years=1, weeks=2, hours=2
+        )
 
     @system_tz_ams()
     def test_ambiguity(self):
@@ -1197,20 +1234,18 @@ class TestShiftDateUnits:
             30,
             disambiguate="later",
         )
-        assert d.add(days=0, disambiguate="raise").exact_eq(d)
-        assert d.add(days=7, weeks=-1, disambiguate="raise").exact_eq(d)
-        assert d.add(days=1, disambiguate="raise").exact_eq(
-            d.replace(day=30, disambiguate="raise")
-        )
-        assert d.add(days=6, disambiguate="raise").exact_eq(
-            d.replace(month=11, day=4, disambiguate="raise")
-        )
+        assert d.add(days=0).exact_eq(d)
+        assert d.add(days=7, weeks=-1).exact_eq(d)
+        assert d.add(days=1).exact_eq(d.replace(day=30))
+        assert d.add(days=6).exact_eq(d.replace(month=11, day=4))
         assert d.replace(disambiguate="earlier").add(hours=1).exact_eq(d)
 
         # transition to another fold
         assert d.add(years=1, days=-2, disambiguate="compatible").exact_eq(
             d.replace(year=2024, day=27, disambiguate="earlier")
         )
+        # check operators too
+        assert d + years(1) - days(2) == d.add(years=1, days=-2)
 
         # transition to a gap
         assert d.add(months=5, days=2, disambiguate="compatible").exact_eq(
@@ -1230,11 +1265,9 @@ class TestShiftDateUnits:
         )
 
         # same with subtraction
-        assert d.subtract(days=0, disambiguate="raise").exact_eq(d)
-        assert d.subtract(days=7, weeks=-1, disambiguate="raise").exact_eq(d)
-        assert d.subtract(days=1, disambiguate="raise").exact_eq(
-            d.replace(day=28, disambiguate="raise")
-        )
+        assert d.subtract(days=0).exact_eq(d)
+        assert d.subtract(days=7, weeks=-1).exact_eq(d)
+        assert d.subtract(days=1).exact_eq(d.replace(day=28))
 
     @system_tz_ams()
     def test_out_of_bounds_min(self):
@@ -1312,16 +1345,15 @@ class TestReplaceDate:
     @system_tz_ams()
     def test_unambiguous(self):
         d = SystemDateTime(2020, 8, 15, 14)
+        assert d.replace_date(Date(2021, 1, 2)) == SystemDateTime(
+            2021, 1, 2, 14
+        )
         assert d.replace_date(
             Date(2021, 1, 2), disambiguate="raise"
         ) == SystemDateTime(2021, 1, 2, 14)
 
-        # disambiguate is required
-        with pytest.raises(TypeError, match="disambiguat"):
-            d.replace_date(Date(2021, 1, 2))  # type: ignore[call-arg]
-
     @system_tz_ams()
-    def test_ambiguous(self):
+    def test_repeated(self):
         d = SystemDateTime(2020, 1, 1, 2, 15, 30)
         date = Date(2023, 10, 29)
         with pytest.raises(RepeatedTime):
@@ -1336,9 +1368,12 @@ class TestReplaceDate:
         assert d.replace_date(date, disambiguate="compatible") == d.replace(
             year=2023, month=10, day=29, disambiguate="compatible"
         )
+        assert d.replace_date(date).exact_eq(
+            d.replace_date(date, disambiguate="later")
+        )
 
     @system_tz_ams()
-    def test_nonexistent(self):
+    def test_skipped(self):
         d = SystemDateTime(2020, 1, 1, 2, 15, 30)
         date = Date(2023, 3, 26)
         with pytest.raises(SkippedTime):
@@ -1352,6 +1387,9 @@ class TestReplaceDate:
         )
         assert d.replace_date(date, disambiguate="compatible") == d.replace(
             year=2023, month=3, day=26, disambiguate="compatible"
+        )
+        assert d.replace_date(date).exact_eq(
+            d.replace_date(date, disambiguate="earlier")
         )
 
     def test_invalid(self):
@@ -1391,13 +1429,12 @@ class TestReplaceTime:
         assert d.replace_time(
             Time(1, 2, 3, nanosecond=4_000), disambiguate="raise"
         ).exact_eq(SystemDateTime(2020, 8, 15, 1, 2, 3, nanosecond=4_000))
-
-        # disambiguate is required
-        with pytest.raises(TypeError, match="disambiguat"):
-            d.replace_time(Time(1, 2, 3, nanosecond=4_000))  # type: ignore[call-arg]
+        assert d.replace_time(Time(1, 2, 3, nanosecond=4_000)).exact_eq(
+            SystemDateTime(2020, 8, 15, 1, 2, 3, nanosecond=4_000)
+        )
 
     @system_tz_ams()
-    def test_fold(self):
+    def test_repeated_time(self):
         d = SystemDateTime(2023, 10, 29, 0, 15, 30)
         time = Time(2, 15, 30)
         with pytest.raises(RepeatedTime):
@@ -1412,9 +1449,19 @@ class TestReplaceTime:
         assert d.replace_time(time, disambiguate="compatible").exact_eq(
             d.replace(hour=2, minute=15, second=30, disambiguate="compatible")
         )
+        # default behavior
+        assert d.replace_time(time).exact_eq(
+            d.replace(hour=2, minute=15, second=30, disambiguate="earlier")
+        )
+        # For small moves within a fold, keeps the same offset
+        SystemDateTime(2023, 10, 29, 2, 30, disambiguate="later").replace_time(
+            time
+        ).exact_eq(
+            SystemDateTime(2023, 10, 29, 2, 15, 30, disambiguate="later")
+        )
 
     @system_tz_ams()
-    def test_gap(self):
+    def test_skipped_time(self):
         d = SystemDateTime(2023, 3, 26, 8, 15)
         time = Time(2, 15)
         with pytest.raises(SkippedTime):
@@ -1428,6 +1475,10 @@ class TestReplaceTime:
         )
         assert d.replace_time(time, disambiguate="compatible").exact_eq(
             d.replace(hour=2, minute=15, disambiguate="compatible")
+        )
+        # default behavior
+        assert d.replace_time(time).exact_eq(
+            d.replace(hour=2, minute=15, disambiguate="later")
         )
 
     def test_invalid(self):

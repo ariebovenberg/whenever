@@ -534,9 +534,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         *,
         nanosecond: int = 0,
         tz: str,
-        disambiguate: Literal[
-            "compatible", "raise", "earlier", "later"
-        ] = "raise",
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> None: ...
     @property
     def tz(self) -> str: ...
@@ -569,21 +567,21 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         second: int = ...,
         nanosecond: int = ...,
         tz: str = ...,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> ZonedDateTime: ...
     def replace_date(
         self,
         d: Date,
         /,
         *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> ZonedDateTime: ...
     def replace_time(
         self,
         t: Time,
         /,
         *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> ZonedDateTime: ...
     @overload
     def add(
@@ -599,19 +597,20 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> ZonedDateTime: ...
-    @overload
-    def add(
-        self,
-        *,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-    ) -> ZonedDateTime: ...
+    # FUTURE: include this in strict stubs version
+    # @overload
+    # def add(
+    #     self,
+    #     *,
+    #     hours: float = 0,
+    #     minutes: float = 0,
+    #     seconds: float = 0,
+    #     milliseconds: float = 0,
+    #     microseconds: float = 0,
+    #     nanoseconds: int = 0,
+    # ) -> ZonedDateTime: ...
     @overload
     def add(self, d: TimeDelta, /) -> ZonedDateTime: ...
     @overload
@@ -620,7 +619,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         d: DateDelta | DateTimeDelta,
         /,
         *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> ZonedDateTime: ...
     @overload
     def subtract(
@@ -636,19 +635,20 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> ZonedDateTime: ...
-    @overload
-    def subtract(
-        self,
-        *,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-    ) -> ZonedDateTime: ...
+    # FUTURE: include this in strict stubs version
+    # @overload
+    # def subtract(
+    #     self,
+    #     *,
+    #     hours: float = 0,
+    #     minutes: float = 0,
+    #     seconds: float = 0,
+    #     milliseconds: float = 0,
+    #     microseconds: float = 0,
+    #     nanoseconds: int = 0,
+    # ) -> ZonedDateTime: ...
     @overload
     def subtract(self, d: TimeDelta, /) -> ZonedDateTime: ...
     @overload
@@ -657,13 +657,14 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         d: DateDelta | DateTimeDelta,
         /,
         *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> ZonedDateTime: ...
-    def __add__(self, delta: TimeDelta) -> ZonedDateTime: ...
+    # FUTURE: disable date components in strict stubs version
+    def __add__(self, delta: Delta) -> ZonedDateTime: ...
     @overload
     def __sub__(self, other: _KnowsInstant) -> TimeDelta: ...
     @overload
-    def __sub__(self, other: TimeDelta) -> ZonedDateTime: ...
+    def __sub__(self, other: Delta) -> ZonedDateTime: ...
 
 @final
 class SystemDateTime(_KnowsInstantAndLocal):
@@ -677,9 +678,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         second: int = 0,
         *,
         nanosecond: int = 0,
-        disambiguate: Literal[
-            "compatible", "raise", "earlier", "later"
-        ] = "raise",
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> None: ...
     @classmethod
     def now(cls) -> SystemDateTime: ...
@@ -706,21 +705,21 @@ class SystemDateTime(_KnowsInstantAndLocal):
         minute: int = ...,
         second: int = ...,
         nanosecond: int = ...,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> SystemDateTime: ...
     def replace_date(
         self,
         d: Date,
         /,
         *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> SystemDateTime: ...
     def replace_time(
         self,
         t: Time,
         /,
         *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> SystemDateTime: ...
     @overload
     def add(
@@ -736,19 +735,20 @@ class SystemDateTime(_KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> SystemDateTime: ...
-    @overload
-    def add(
-        self,
-        *,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-    ) -> SystemDateTime: ...
+    # FUTURE: include this in strict stubs version
+    # @overload
+    # def add(
+    #     self,
+    #     *,
+    #     hours: float = 0,
+    #     minutes: float = 0,
+    #     seconds: float = 0,
+    #     milliseconds: float = 0,
+    #     microseconds: float = 0,
+    #     nanoseconds: int = 0,
+    # ) -> SystemDateTime: ...
     @overload
     def add(self, d: TimeDelta, /) -> SystemDateTime: ...
     @overload
@@ -757,7 +757,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         d: DateDelta | DateTimeDelta,
         /,
         *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> SystemDateTime: ...
     @overload
     def subtract(
@@ -773,19 +773,20 @@ class SystemDateTime(_KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> SystemDateTime: ...
-    @overload
-    def subtract(
-        self,
-        *,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-    ) -> SystemDateTime: ...
+    # FUTURE: include this in strict stubs version
+    # @overload
+    # def subtract(
+    #     self,
+    #     *,
+    #     hours: float = 0,
+    #     minutes: float = 0,
+    #     seconds: float = 0,
+    #     milliseconds: float = 0,
+    #     microseconds: float = 0,
+    #     nanoseconds: int = 0,
+    # ) -> SystemDateTime: ...
     @overload
     def subtract(self, d: TimeDelta, /) -> SystemDateTime: ...
     @overload
@@ -794,13 +795,14 @@ class SystemDateTime(_KnowsInstantAndLocal):
         d: DateDelta | DateTimeDelta,
         /,
         *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> SystemDateTime: ...
-    def __add__(self, delta: TimeDelta) -> SystemDateTime: ...
+    # FUTURE: disable date components in strict stubs version
+    def __add__(self, delta: Delta) -> SystemDateTime: ...
     @overload
     def __sub__(self, other: _KnowsInstant) -> TimeDelta: ...
     @overload
-    def __sub__(self, other: TimeDelta) -> SystemDateTime: ...
+    def __sub__(self, other: Delta) -> SystemDateTime: ...
 
 @final
 class LocalDateTime(_KnowsLocal):

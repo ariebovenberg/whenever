@@ -112,7 +112,7 @@ as well as improved performance.
 However, it only fixes [*some* DST-related pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/#datetime-library-scorecard),
 and its performance has significantly [degraded over time](https://github.com/sdispater/pendulum/issues/818).
 Additionally, it's in maintenance limbo with only one release in the last four years,
-and issues piling up unaddressed.
+and many issues remaining unaddressed.
 
 ## Why use whenever?
 
@@ -151,7 +151,7 @@ ZonedDateTime(2024-07-04 12:36:56+02:00[Europe/Paris])
 >>> party_invite.add(hours=6)
 Traceback (most recent call last):
   ImplicitlyIgnoringDST: Adjusting a local datetime implicitly ignores DST [...]
->>> party_starts = party_invite.assume_tz("Europe/Amsterdam", disambiguate="earlier")
+>>> party_starts = party_invite.assume_tz("Europe/Amsterdam")
 ZonedDateTime(2023-10-28 22:00:00+02:00[Europe/Amsterdam])
 
 # DST-safe arithmetic
