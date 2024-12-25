@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import pytest
 from hypothesis import given
 from hypothesis.strategies import text
+from pytest import approx
 
 from whenever import (
     Date,
@@ -564,6 +565,171 @@ def test_is_ambiguous():
         tz="Europe/Amsterdam",
         disambiguate="earlier",
     ).is_ambiguous()
+    # skipped times are shifted into non-ambiguous times
+    assert not ZonedDateTime(
+        2023,
+        3,
+        26,
+        2,
+        15,
+        30,
+        tz="Europe/Amsterdam",
+    ).is_ambiguous()
+
+
+@pytest.mark.parametrize(
+    "d, expect",
+    [
+        # no special day
+        (ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"), 24),
+        (ZonedDateTime(1832, 12, 15, 12, 1, 30, tz="UTC"), 24),
+        # Longer day
+        (ZonedDateTime(2023, 10, 29, 12, 8, 30, tz="Europe/Amsterdam"), 25),
+        (ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam"), 25),
+        (
+            ZonedDateTime(2023, 10, 30, tz="Europe/Amsterdam").subtract(
+                nanoseconds=1
+            ),
+            25,
+        ),
+        # Shorter day
+        (ZonedDateTime(2023, 3, 26, 12, 8, 30, tz="Europe/Amsterdam"), 23),
+        (ZonedDateTime(2023, 3, 26, tz="Europe/Amsterdam"), 23),
+        (
+            ZonedDateTime(2023, 3, 27, tz="Europe/Amsterdam").subtract(
+                nanoseconds=1
+            ),
+            23,
+        ),
+        # non-hour DST change
+        (ZonedDateTime(2024, 10, 6, 1, tz="Australia/Lord_Howe"), 23.5),
+        (ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"), 24.5),
+        # Non-regular transition
+        (
+            ZonedDateTime(1894, 6, 1, 1, tz="Europe/Zurich"),
+            approx(23.49611111),
+        ),
+        # DST starts at midnight
+        (ZonedDateTime(2016, 2, 20, tz="America/Sao_Paulo"), 25),
+        (ZonedDateTime(2016, 2, 21, tz="America/Sao_Paulo"), 24),
+        (ZonedDateTime(2016, 10, 16, tz="America/Sao_Paulo"), 23),
+        (ZonedDateTime(2016, 10, 17, tz="America/Sao_Paulo"), 24),
+        # Samoa skipped a day
+        (ZonedDateTime(2011, 12, 31, 21, tz="Pacific/Apia"), 24),
+        (ZonedDateTime(2011, 12, 29, 21, tz="Pacific/Apia"), 24),
+        # A day that starts twice
+        (
+            ZonedDateTime(
+                2016,
+                2,
+                20,
+                23,
+                45,
+                disambiguate="later",
+                tz="America/Sao_Paulo",
+            ),
+            25,
+        ),
+        (
+            ZonedDateTime(
+                2016,
+                2,
+                20,
+                23,
+                45,
+                disambiguate="earlier",
+                tz="America/Sao_Paulo",
+            ),
+            25,
+        ),
+    ],
+)
+def test_hours_in_day(d, expect):
+    assert d.hours_in_day() == expect
+
+
+@pytest.mark.parametrize(
+    "d, expect",
+    [
+        # no special day
+        (
+            ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
+            ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam"),
+        ),
+        (
+            ZonedDateTime(1832, 12, 15, 12, 1, 30, tz="UTC"),
+            ZonedDateTime(1832, 12, 15, tz="UTC"),
+        ),
+        # DST at non-midnight
+        (
+            ZonedDateTime(2023, 10, 29, 12, 8, 30, tz="Europe/Amsterdam"),
+            ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam"),
+        ),
+        (
+            ZonedDateTime(2023, 3, 26, 12, 8, 30, tz="Europe/Amsterdam"),
+            ZonedDateTime(2023, 3, 26, tz="Europe/Amsterdam"),
+        ),
+        (
+            ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"),
+            ZonedDateTime(2024, 4, 7, tz="Australia/Lord_Howe"),
+        ),
+        # Non-regular transition
+        (
+            ZonedDateTime(1894, 6, 1, 1, tz="Europe/Zurich"),
+            ZonedDateTime(1894, 6, 1, 0, 30, 14, tz="Europe/Zurich"),
+        ),
+        # DST starts at midnight
+        (
+            ZonedDateTime(2016, 2, 20, 8, tz="America/Sao_Paulo"),
+            ZonedDateTime(2016, 2, 20, tz="America/Sao_Paulo"),
+        ),
+        (
+            ZonedDateTime(2016, 2, 21, 2, tz="America/Sao_Paulo"),
+            ZonedDateTime(2016, 2, 21, tz="America/Sao_Paulo"),
+        ),
+        (
+            ZonedDateTime(2016, 10, 16, 15, tz="America/Sao_Paulo"),
+            ZonedDateTime(2016, 10, 16, 1, tz="America/Sao_Paulo"),
+        ),
+        (
+            ZonedDateTime(2016, 10, 17, 19, tz="America/Sao_Paulo"),
+            ZonedDateTime(2016, 10, 17, tz="America/Sao_Paulo"),
+        ),
+        # Samoa skipped a day
+        (
+            ZonedDateTime(2011, 12, 31, 21, tz="Pacific/Apia"),
+            ZonedDateTime(2011, 12, 31, tz="Pacific/Apia"),
+        ),
+        (
+            ZonedDateTime(2011, 12, 29, 21, tz="Pacific/Apia"),
+            ZonedDateTime(2011, 12, 29, tz="Pacific/Apia"),
+        ),
+        # Another edge case
+        (
+            ZonedDateTime(2010, 11, 7, 23, tz="America/St_Johns"),
+            ZonedDateTime(
+                2010, 11, 7, tz="America/St_Johns", disambiguate="earlier"
+            ),
+        ),
+        # a day that starts twice
+        (
+            ZonedDateTime(
+                2016,
+                2,
+                20,
+                23,
+                45,
+                disambiguate="later",
+                tz="America/Sao_Paulo",
+            ),
+            ZonedDateTime(
+                2016, 2, 20, tz="America/Sao_Paulo", disambiguate="raise"
+            ),
+        ),
+    ],
+)
+def test_start_of_day(d, expect):
+    assert d.start_of_day() == expect
 
 
 def test_instant():

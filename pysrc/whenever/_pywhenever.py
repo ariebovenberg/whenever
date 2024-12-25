@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.16"
+__version__ = "0.6.17"
 
 import enum
 import re
@@ -4309,6 +4309,38 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         # We make use of a quirk of the standard library here:
         # ambiguous datetimes are never equal across timezones
         return self._py_dt.astimezone(_UTC) != self._py_dt
+
+    def hours_in_day(self) -> float:
+        """The number of hours in the day, accounting for timezone transitions,
+        e.g. during a DST transition.
+
+        Example
+        -------
+        >>> ZonedDateTime(2020, 8, 15, tz="Europe/London").hours_in_day()
+        24
+        >>> ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam").hours_in_day()
+        25
+        """
+        midnight = _datetime.combine(
+            self._py_dt.date(), _time(), self._py_dt.tzinfo
+        )
+        next_midnight = midnight + _timedelta(days=1)
+        return (
+            next_midnight.astimezone(_UTC) - midnight.astimezone(_UTC)
+        ) / _timedelta(hours=1)
+
+    def start_of_day(self) -> ZonedDateTime:
+        """The start of the current calendar day.
+
+        This is almost always at midnight the same day, but may be different
+        for timezones which transition at—and thus skip over—midnight.
+        """
+        midnight = _datetime.combine(
+            self._py_dt.date(), _time(), self._py_dt.tzinfo
+        )
+        return ZonedDateTime._from_py_unchecked(
+            midnight.astimezone(_UTC).astimezone(self._py_dt.tzinfo), 0
+        )
 
     def __repr__(self) -> str:
         return f"ZonedDateTime({str(self).replace('T', ' ', 1)})"

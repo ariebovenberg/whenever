@@ -1,6 +1,12 @@
 🚀 Changelog
 ============
 
+0.6.17 (2024-12-??)
+-------------------
+
+- Added ``hours_in_day()`` and ``start_of_day()`` methods to ``ZonedDateTime``
+  to make it easier to work with edge cases around DST transitions.
+
 0.6.16 (2024-12-22)
 -------------------
 
