@@ -128,7 +128,7 @@ TimeDelta(01:30:00)
 
 Note
 ----
-A shorter was to instantiate a timedelta is to use the helper functions
+A shorter way to instantiate a timedelta is to use the helper functions
 :func:`~whenever.hours`, :func:`~whenever.minutes`, etc.
 
 ";
