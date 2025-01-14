@@ -1603,8 +1603,8 @@ Inverse of :meth:`format_common_iso`
 
 Example
 -------
->>> YearMonth.parse_common_iso(\"2021-01-02\")
-YearMonth(2021-01-02)
+>>> YearMonth.parse_common_iso(\"2021-01\")
+YearMonth(2021-01)
 ";
 pub(crate) const YEARMONTH_REPLACE: &CStr = c"\
 replace($self, /, *, year=None, month=None)
@@ -1691,6 +1691,20 @@ Create an instance from a UNIX timestamp (in nanoseconds).
 
 The inverse of the ``timestamp_nanos()`` method.
 ";
+pub(crate) const ZONEDDATETIME_HOURS_IN_DAY: &CStr = c"\
+hours_in_day($self)
+--
+
+The number of hours in the day, accounting for timezone transitions,
+e.g. during a DST transition.
+
+Example
+-------
+>>> ZonedDateTime(2020, 8, 15, tz=\"Europe/London\").hours_in_day()
+24
+>>> ZonedDateTime(2023, 10, 29, tz=\"Europe/Amsterdam\").hours_in_day()
+25
+";
 pub(crate) const ZONEDDATETIME_IS_AMBIGUOUS: &CStr = c"\
 is_ambiguous($self)
 --
@@ -1760,6 +1774,15 @@ replace_time($self, time, /, disambiguate=None)
 Construct a new instance with the time replaced.
 
 See the ``replace()`` method for more information.
+";
+pub(crate) const ZONEDDATETIME_START_OF_DAY: &CStr = c"\
+start_of_day($self)
+--
+
+The start of the current calendar day.
+
+This is almost always at midnight the same day, but may be different
+for timezones which transition at—and thus skip over—midnight.
 ";
 pub(crate) const ZONEDDATETIME_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)

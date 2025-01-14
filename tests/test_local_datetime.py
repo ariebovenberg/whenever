@@ -82,9 +82,12 @@ def test_assume_fixed_offset():
 class TestAssumeTz:
     def test_typical(self):
         d = LocalDateTime(2020, 8, 15, 23)
-        assert d.assume_tz(
-            "Asia/Tokyo", disambiguate="raise"
-        ) == ZonedDateTime(2020, 8, 15, 23, tz="Asia/Tokyo")
+        assert d.assume_tz("Asia/Tokyo", disambiguate="raise").exact_eq(
+            ZonedDateTime(2020, 8, 15, 23, tz="Asia/Tokyo")
+        )
+        assert d.assume_tz("Asia/Tokyo").exact_eq(
+            ZonedDateTime(2020, 8, 15, 23, tz="Asia/Tokyo")
+        )
 
     def test_ambiguous(self):
         d = LocalDateTime(2023, 10, 29, 2, 15)
@@ -94,13 +97,27 @@ class TestAssumeTz:
 
         assert d.assume_tz(
             "Europe/Amsterdam", disambiguate="earlier"
-        ) == ZonedDateTime(
-            2023, 10, 29, 2, 15, tz="Europe/Amsterdam", disambiguate="earlier"
+        ).exact_eq(
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                15,
+                tz="Europe/Amsterdam",
+                disambiguate="earlier",
+            )
         )
-        assert d.assume_tz(
-            "Europe/Amsterdam", disambiguate="later"
-        ) == ZonedDateTime(
-            2023, 10, 29, 2, 15, tz="Europe/Amsterdam", disambiguate="later"
+        assert d.assume_tz("Europe/Amsterdam", disambiguate="later").exact_eq(
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                15,
+                tz="Europe/Amsterdam",
+                disambiguate="later",
+            )
         )
 
     def test_nonexistent(self):
@@ -111,17 +128,27 @@ class TestAssumeTz:
 
         assert d.assume_tz(
             "Europe/Amsterdam", disambiguate="earlier"
-        ) == ZonedDateTime(
-            2023, 3, 26, 2, 15, tz="Europe/Amsterdam", disambiguate="earlier"
+        ).exact_eq(
+            ZonedDateTime(
+                2023,
+                3,
+                26,
+                2,
+                15,
+                tz="Europe/Amsterdam",
+                disambiguate="earlier",
+            )
         )
 
 
 class TestAssumeSystemTz:
     @system_tz_ams()
     def test_typical(self):
-        assert LocalDateTime(2020, 8, 15, 23).assume_system_tz(
-            disambiguate="raise"
-        ) == SystemDateTime(2020, 8, 15, 23)
+        assert (
+            LocalDateTime(2020, 8, 15, 23)
+            .assume_system_tz(disambiguate="raise")
+            .exact_eq(SystemDateTime(2020, 8, 15, 23))
+        )
 
     @system_tz_ams()
     def test_ambiguous(self):
@@ -130,14 +157,14 @@ class TestAssumeSystemTz:
         with pytest.raises(RepeatedTime, match="02:15.*system"):
             d.assume_system_tz(disambiguate="raise")
 
-        assert d.assume_system_tz(disambiguate="earlier") == SystemDateTime(
-            2023, 10, 29, 2, 15, disambiguate="earlier"
+        assert d.assume_system_tz(disambiguate="earlier").exact_eq(
+            SystemDateTime(2023, 10, 29, 2, 15, disambiguate="earlier")
         )
-        assert d.assume_system_tz(disambiguate="compatible") == SystemDateTime(
-            2023, 10, 29, 2, 15, disambiguate="earlier"
+        assert d.assume_system_tz(disambiguate="compatible").exact_eq(
+            SystemDateTime(2023, 10, 29, 2, 15, disambiguate="earlier")
         )
-        assert d.assume_system_tz(disambiguate="later") == SystemDateTime(
-            2023, 10, 29, 2, 15, disambiguate="later"
+        assert d.assume_system_tz(disambiguate="later").exact_eq(
+            SystemDateTime(2023, 10, 29, 2, 15, disambiguate="later")
         )
 
     @system_tz_ams()
@@ -147,14 +174,14 @@ class TestAssumeSystemTz:
         with pytest.raises(SkippedTime, match="02:15.*system"):
             d.assume_system_tz(disambiguate="raise")
 
-        assert d.assume_system_tz(disambiguate="earlier") == SystemDateTime(
-            2023, 3, 26, 2, 15, disambiguate="earlier"
+        assert d.assume_system_tz(disambiguate="earlier").exact_eq(
+            SystemDateTime(2023, 3, 26, 2, 15, disambiguate="earlier")
         )
-        assert d.assume_system_tz(disambiguate="later") == SystemDateTime(
-            2023, 3, 26, 2, 15, disambiguate="later"
+        assert d.assume_system_tz(disambiguate="later").exact_eq(
+            SystemDateTime(2023, 3, 26, 2, 15, disambiguate="later")
         )
-        assert d.assume_system_tz(disambiguate="compatible") == SystemDateTime(
-            2023, 3, 26, 2, 15, disambiguate="compatible"
+        assert d.assume_system_tz(disambiguate="compatible").exact_eq(
+            SystemDateTime(2023, 3, 26, 2, 15, disambiguate="compatible")
         )
 
 

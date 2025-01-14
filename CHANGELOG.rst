@@ -1,11 +1,12 @@
 🚀 Changelog
 ============
 
-0.6.17 (2024-12-??)
+0.6.17 (2025-01-29)
 -------------------
 
 - Added ``hours_in_day()`` and ``start_of_day()`` methods to ``ZonedDateTime``
   to make it easier to work with edge cases around DST transitions.
+- Fix cases in type stubs where positional-only arguments weren't marked as such
 
 0.6.16 (2024-12-22)
 -------------------

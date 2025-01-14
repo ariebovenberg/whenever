@@ -612,8 +612,8 @@ class YearMonth(_ImmutableBase):
 
         Example
         -------
-        >>> YearMonth.parse_common_iso("2021-01-02")
-        YearMonth(2021-01-02)
+        >>> YearMonth.parse_common_iso("2021-01")
+        YearMonth(2021-01)
         """
         if not _match_yearmonth(s):
             raise ValueError(f"Invalid format: {s!r}")

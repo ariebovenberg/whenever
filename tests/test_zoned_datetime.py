@@ -68,8 +68,8 @@ class TestInit:
             tz="Europe/Amsterdam",
         )
 
-        assert ZonedDateTime(**kwargs) == ZonedDateTime(
-            **kwargs, disambiguate="compatible"
+        assert ZonedDateTime(**kwargs).exact_eq(
+            ZonedDateTime(**kwargs, disambiguate="compatible")
         )
 
         with pytest.raises(
@@ -102,12 +102,8 @@ class TestInit:
 
     def test_optionality(self):
         tz = "America/New_York"
-        assert (
-            ZonedDateTime(2020, 8, 15, 12, tz=tz)
-            == ZonedDateTime(2020, 8, 15, 12, 0, tz=tz)
-            == ZonedDateTime(2020, 8, 15, 12, 0, 0, tz=tz)
-            == ZonedDateTime(2020, 8, 15, 12, 0, 0, nanosecond=0, tz=tz)
-            == ZonedDateTime(
+        assert ZonedDateTime(2020, 8, 15, 12, tz=tz).exact_eq(
+            ZonedDateTime(
                 2020,
                 8,
                 15,
@@ -155,8 +151,8 @@ class TestInit:
             tz="Europe/Amsterdam",
         )
 
-        assert ZonedDateTime(**kwargs) == ZonedDateTime(
-            **kwargs, disambiguate="compatible"
+        assert ZonedDateTime(**kwargs).exact_eq(
+            ZonedDateTime(**kwargs, disambiguate="compatible")
         )
 
         with pytest.raises(
@@ -733,9 +729,11 @@ def test_start_of_day(d, expect):
 
 
 def test_instant():
-    assert ZonedDateTime(
-        2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"
-    ).instant() == Instant.from_utc(2020, 8, 15, 10, 8, 30)
+    assert (
+        ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
+        .instant()
+        .exact_eq(Instant.from_utc(2020, 8, 15, 10, 8, 30))
+    )
     d = ZonedDateTime(
         2023,
         10,
@@ -746,10 +744,21 @@ def test_instant():
         tz="Europe/Amsterdam",
         disambiguate="earlier",
     )
-    assert d.instant() == Instant.from_utc(2023, 10, 29, 0, 15, 30)
-    assert ZonedDateTime(
-        2023, 10, 29, 2, 15, 30, tz="Europe/Amsterdam", disambiguate="later"
-    ).instant() == Instant.from_utc(2023, 10, 29, 1, 15, 30)
+    assert d.instant().exact_eq(Instant.from_utc(2023, 10, 29, 0, 15, 30))
+    assert (
+        ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            tz="Europe/Amsterdam",
+            disambiguate="later",
+        )
+        .instant()
+        .exact_eq(Instant.from_utc(2023, 10, 29, 1, 15, 30))
+    )
 
 
 def test_to_tz():
@@ -2093,17 +2102,17 @@ class TestShiftDateUnits:
         assert d.add().exact_eq(d)
 
         # same with operators
-        assert d + days(0) == d
-        assert d + weeks(0) == d
-        assert d + years(0) == d
+        assert (d + days(0)).exact_eq(d)
+        assert (d + weeks(0)).exact_eq(d)
+        assert (d + years(0)).exact_eq(d)
 
         # same with subtraction
         assert d.subtract(days=0, disambiguate="raise").exact_eq(d)
         assert d.subtract(days=0).exact_eq(d)
 
-        assert d - days(0) == d
-        assert d - weeks(0) == d
-        assert d - years(0) == d
+        assert (d - days(0)).exact_eq(d)
+        assert (d - weeks(0)).exact_eq(d)
+        assert (d - years(0)).exact_eq(d)
 
     def test_simple_date(self):
         d = ZonedDateTime(
@@ -2138,17 +2147,17 @@ class TestShiftDateUnits:
             d.add(years=1, weeks=2, hours=2)
         )
         # same with operators
-        assert d + (years(1) + weeks(2) + days(-2)) == d.add(
-            years=1, weeks=2, days=-2
+        assert (d + (years(1) + weeks(2) + days(-2))).exact_eq(
+            d.add(years=1, weeks=2, days=-2)
         )
-        assert d + (years(1) + weeks(2) + hours(2)) == d.add(
-            years=1, weeks=2, hours=2
+        assert (d + (years(1) + weeks(2) + hours(2))).exact_eq(
+            d.add(years=1, weeks=2, hours=2)
         )
-        assert d - (years(1) + weeks(2) + days(-2)) == d.subtract(
-            years=1, weeks=2, days=-2
+        assert (d - (years(1) + weeks(2) + days(-2))).exact_eq(
+            d.subtract(years=1, weeks=2, days=-2)
         )
-        assert d - (years(1) + weeks(2) + hours(2)) == d.subtract(
-            years=1, weeks=2, hours=2
+        assert (d - (years(1) + weeks(2) + hours(2))).exact_eq(
+            d.subtract(years=1, weeks=2, hours=2)
         )
 
     def test_ambiguity(self):
@@ -2173,7 +2182,7 @@ class TestShiftDateUnits:
             d.replace(year=2024, day=27, disambiguate="earlier")
         )
         # check operators too
-        assert d + years(1) - days(2) == d.add(years=1, days=-2)
+        assert (d + years(1) - days(2)).exact_eq(d.add(years=1, days=-2))
 
         # transition to a gap
         assert d.add(months=5, days=2, disambiguate="compatible").exact_eq(

@@ -186,6 +186,13 @@ impl Display for Time {
     }
 }
 
+pub(crate) const MIDNIGHT: Time = Time {
+    hour: 0,
+    minute: 0,
+    second: 0,
+    nanos: 0,
+};
+
 pub(crate) const SINGLETONS: &[(&CStr, Time); 3] = &[
     (
         c"MIDNIGHT",
