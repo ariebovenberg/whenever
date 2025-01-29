@@ -1634,6 +1634,20 @@ specify how to handle such a situation using the ``disambiguate`` argument.
 See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
 for more information.
 ";
+pub(crate) const ZONEDDATETIME_DAY_LENGTH: &CStr = c"\
+day_length($self)
+--
+
+The duration between the start of the current day and the next.
+This is usually 24 hours, but may be different due to timezone transitions.
+
+Example
+-------
+>>> ZonedDateTime(2020, 8, 15, tz=\"Europe/London\").day_length()
+TimeDelta(24:00:00)
+>>> ZonedDateTime(2023, 10, 29, tz=\"Europe/Amsterdam\").day_length()
+TimeDelta(25:00:00)
+";
 pub(crate) const ZONEDDATETIME_FORMAT_COMMON_ISO: &CStr = c"\
 format_common_iso($self)
 --
@@ -1690,20 +1704,6 @@ from_timestamp_nanos(i, /, *, tz)
 Create an instance from a UNIX timestamp (in nanoseconds).
 
 The inverse of the ``timestamp_nanos()`` method.
-";
-pub(crate) const ZONEDDATETIME_HOURS_IN_DAY: &CStr = c"\
-hours_in_day($self)
---
-
-The number of hours in the day, accounting for timezone transitions,
-e.g. during a DST transition.
-
-Example
--------
->>> ZonedDateTime(2020, 8, 15, tz=\"Europe/London\").hours_in_day()
-24
->>> ZonedDateTime(2023, 10, 29, tz=\"Europe/Amsterdam\").hours_in_day()
-25
 ";
 pub(crate) const ZONEDDATETIME_IS_AMBIGUOUS: &CStr = c"\
 is_ambiguous($self)

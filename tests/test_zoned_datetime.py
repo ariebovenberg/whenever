@@ -12,7 +12,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import pytest
 from hypothesis import given
 from hypothesis.strategies import text
-from pytest import approx
 
 from whenever import (
     Date,
@@ -24,6 +23,7 @@ from whenever import (
     SkippedTime,
     SystemDateTime,
     Time,
+    TimeDelta,
     ZonedDateTime,
     days,
     hours,
@@ -577,42 +577,51 @@ def test_is_ambiguous():
     "d, expect",
     [
         # no special day
-        (ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"), 24),
-        (ZonedDateTime(1832, 12, 15, 12, 1, 30, tz="UTC"), 24),
+        (
+            ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
+            hours(24),
+        ),
+        (ZonedDateTime(1832, 12, 15, 12, 1, 30, tz="UTC"), hours(24)),
         # Longer day
-        (ZonedDateTime(2023, 10, 29, 12, 8, 30, tz="Europe/Amsterdam"), 25),
-        (ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam"), 25),
+        (
+            ZonedDateTime(2023, 10, 29, 12, 8, 30, tz="Europe/Amsterdam"),
+            hours(25),
+        ),
+        (ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam"), hours(25)),
         (
             ZonedDateTime(2023, 10, 30, tz="Europe/Amsterdam").subtract(
                 nanoseconds=1
             ),
-            25,
+            hours(25),
         ),
         # Shorter day
-        (ZonedDateTime(2023, 3, 26, 12, 8, 30, tz="Europe/Amsterdam"), 23),
-        (ZonedDateTime(2023, 3, 26, tz="Europe/Amsterdam"), 23),
+        (
+            ZonedDateTime(2023, 3, 26, 12, 8, 30, tz="Europe/Amsterdam"),
+            hours(23),
+        ),
+        (ZonedDateTime(2023, 3, 26, tz="Europe/Amsterdam"), hours(23)),
         (
             ZonedDateTime(2023, 3, 27, tz="Europe/Amsterdam").subtract(
                 nanoseconds=1
             ),
-            23,
+            hours(23),
         ),
         # non-hour DST change
-        (ZonedDateTime(2024, 10, 6, 1, tz="Australia/Lord_Howe"), 23.5),
-        (ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"), 24.5),
+        (ZonedDateTime(2024, 10, 6, 1, tz="Australia/Lord_Howe"), hours(23.5)),
+        (ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"), hours(24.5)),
         # Non-regular transition
         (
             ZonedDateTime(1894, 6, 1, 1, tz="Europe/Zurich"),
-            approx(23.49611111),
+            TimeDelta(hours=24, minutes=-30, seconds=-14),
         ),
         # DST starts at midnight
-        (ZonedDateTime(2016, 2, 20, tz="America/Sao_Paulo"), 25),
-        (ZonedDateTime(2016, 2, 21, tz="America/Sao_Paulo"), 24),
-        (ZonedDateTime(2016, 10, 16, tz="America/Sao_Paulo"), 23),
-        (ZonedDateTime(2016, 10, 17, tz="America/Sao_Paulo"), 24),
+        (ZonedDateTime(2016, 2, 20, tz="America/Sao_Paulo"), hours(25)),
+        (ZonedDateTime(2016, 2, 21, tz="America/Sao_Paulo"), hours(24)),
+        (ZonedDateTime(2016, 10, 16, tz="America/Sao_Paulo"), hours(23)),
+        (ZonedDateTime(2016, 10, 17, tz="America/Sao_Paulo"), hours(24)),
         # Samoa skipped a day
-        (ZonedDateTime(2011, 12, 31, 21, tz="Pacific/Apia"), 24),
-        (ZonedDateTime(2011, 12, 29, 21, tz="Pacific/Apia"), 24),
+        (ZonedDateTime(2011, 12, 31, 21, tz="Pacific/Apia"), hours(24)),
+        (ZonedDateTime(2011, 12, 29, 21, tz="Pacific/Apia"), hours(24)),
         # A day that starts twice
         (
             ZonedDateTime(
@@ -624,7 +633,7 @@ def test_is_ambiguous():
                 disambiguate="later",
                 tz="America/Sao_Paulo",
             ),
-            25,
+            hours(25),
         ),
         (
             ZonedDateTime(
@@ -636,12 +645,12 @@ def test_is_ambiguous():
                 disambiguate="earlier",
                 tz="America/Sao_Paulo",
             ),
-            25,
+            hours(25),
         ),
     ],
 )
-def test_hours_in_day(d, expect):
-    assert d.hours_in_day() == expect
+def test_day_length(d, expect):
+    assert d.day_length() == expect
 
 
 @pytest.mark.parametrize(

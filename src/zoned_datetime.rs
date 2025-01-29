@@ -1348,12 +1348,13 @@ unsafe fn start_of_day(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     .to_obj(Py_TYPE(slf))
 }
 
-unsafe fn hours_in_day(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn day_length(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let ZonedDateTime { date, zoneinfo, .. } = ZonedDateTime::extract(slf);
     let &State {
         py_api,
         exc_repeated,
         exc_skipped,
+        time_delta_type,
         ..
     } = State::for_obj(slf);
     let start_of_day = ZonedDateTime::resolve_using_disambiguate(
@@ -1376,8 +1377,8 @@ unsafe fn hours_in_day(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         exc_skipped,
     )?
     .instant();
-    ((start_of_next_day.total_nanos() - start_of_day.total_nanos()) as f64 / 3_600_000_000_000.0)
-        .to_py()
+    TimeDelta::from_nanos_unchecked(start_of_next_day.total_nanos() - start_of_day.total_nanos())
+        .to_obj(time_delta_type)
 }
 
 static mut METHODS: &[PyMethodDef] = &[
@@ -1431,7 +1432,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(subtract, doc::ZONEDDATETIME_SUBTRACT),
     method!(difference, doc::KNOWSINSTANT_DIFFERENCE, METH_O),
     method!(start_of_day, doc::ZONEDDATETIME_START_OF_DAY),
-    method!(hours_in_day, doc::ZONEDDATETIME_HOURS_IN_DAY),
+    method!(day_length, doc::ZONEDDATETIME_DAY_LENGTH),
     PyMethodDef::zeroed(),
 ];
 

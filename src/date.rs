@@ -27,35 +27,7 @@ impl Date {
         // Since the data already fits within an i32
         // we don't need to do any extra hashing. It may be counterintuitive,
         // but this is also what `int` does: `hash(6) == 6`.
-        mem::transmute::<_, i32>(self)
-    }
-
-    pub(crate) const fn increment(mut self) -> Self {
-        if self.day < days_in_month(self.year, self.month) {
-            self.day += 1
-        } else if self.month < 12 {
-            self.day = 1;
-            self.month += 1;
-        } else {
-            self.year += 1;
-            self.month = 1;
-            self.day = 1;
-        }
-        self
-    }
-
-    pub(crate) const fn decrement(mut self) -> Self {
-        if self.day > 1 {
-            self.day -= 1;
-        } else if self.month > 1 {
-            self.month -= 1;
-            self.day = days_in_month(self.year, self.month);
-        } else {
-            self.day = 31;
-            self.month = 12;
-            self.year -= 1;
-        }
-        self
+        mem::transmute(self)
     }
 
     pub(crate) const fn ord(self) -> u32 {
@@ -198,6 +170,36 @@ impl Date {
         let result = Self::parse_all(&s[..10]);
         *s = &s[10..];
         result
+    }
+
+    // Faster methods for small adjustments.
+    // OPTIMIZE: actually determine if these are worth it
+    pub(crate) const fn increment(mut self) -> Self {
+        if self.day < days_in_month(self.year, self.month) {
+            self.day += 1
+        } else if self.month < 12 {
+            self.day = 1;
+            self.month += 1;
+        } else {
+            self.year += 1;
+            self.month = 1;
+            self.day = 1;
+        }
+        self
+    }
+
+    pub(crate) const fn decrement(mut self) -> Self {
+        if self.day > 1 {
+            self.day -= 1;
+        } else if self.month > 1 {
+            self.month -= 1;
+            self.day = days_in_month(self.year, self.month);
+        } else {
+            self.day = 31;
+            self.month = 12;
+            self.year -= 1;
+        }
+        self
     }
 }
 

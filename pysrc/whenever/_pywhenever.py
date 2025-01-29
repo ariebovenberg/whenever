@@ -4310,24 +4310,24 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         # ambiguous datetimes are never equal across timezones
         return self._py_dt.astimezone(_UTC) != self._py_dt
 
-    def hours_in_day(self) -> float:
-        """The number of hours in the day, accounting for timezone transitions,
-        e.g. during a DST transition.
+    def day_length(self) -> TimeDelta:
+        """The duration between the start of the current day and the next.
+        This is usually 24 hours, but may be different due to timezone transitions.
 
         Example
         -------
-        >>> ZonedDateTime(2020, 8, 15, tz="Europe/London").hours_in_day()
-        24
-        >>> ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam").hours_in_day()
-        25
+        >>> ZonedDateTime(2020, 8, 15, tz="Europe/London").day_length()
+        TimeDelta(24:00:00)
+        >>> ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam").day_length()
+        TimeDelta(25:00:00)
         """
         midnight = _datetime.combine(
             self._py_dt.date(), _time(), self._py_dt.tzinfo
         )
         next_midnight = midnight + _timedelta(days=1)
-        return (
+        return TimeDelta.from_py_timedelta(
             next_midnight.astimezone(_UTC) - midnight.astimezone(_UTC)
-        ) / _timedelta(hours=1)
+        )
 
     def start_of_day(self) -> ZonedDateTime:
         """The start of the current calendar day.

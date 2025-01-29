@@ -84,6 +84,8 @@ Concrete classes
    :members:
      tz,
      is_ambiguous,
+     start_of_day,
+     day_length,
    :member-order: bysource
    :show-inheritance:
 
