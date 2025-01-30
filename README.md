@@ -17,7 +17,7 @@ There’s no way to be sure...
 ✨ Until now! ✨
 
 *Whenever* helps you write **correct** and **type checked** datetime code,
-using **well-established concepts** from modern libraries in other languages.
+using **well-established concepts** from [modern libraries](#acknowledgements) in other languages.
 It's also **way faster** than other third-party libraries—and usually the standard library as well.
 If performance isn't your top priority, a **pure Python** version is available as well.
 
@@ -214,10 +214,10 @@ For more details, see the licenses included in the distribution.
 
 ## Acknowledgements
 
-This project is inspired by—and borrows concepts from—the following projects. Check them out!
+This project is inspired by—and borrows most concepts from—the following projects. Check them out!
 
-- [Noda Time](https://nodatime.org/) and [Joda Time](https://www.joda.org/joda-time/)
 - [Temporal](https://tc39.es/proposal-temporal/docs/)
+- [Noda Time](https://nodatime.org/) and [Joda Time](https://www.joda.org/joda-time/)
 
 The benchmark comparison graph is based on the one from the [Ruff](https://github.com/astral-sh/ruff) project.
 For timezone data, **Whenever** uses Python's own `zoneinfo` module.

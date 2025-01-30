@@ -14,7 +14,7 @@ use crate::{
     instant::{Instant, MAX_INSTANT, MIN_INSTANT},
     local_datetime::DateTime,
     offset_datetime::{self, OffsetDateTime},
-    time::Time,
+    time::{Time, MIDNIGHT},
     time_delta::{self, TimeDelta},
     State,
 };
@@ -1328,6 +1328,59 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
         .to_obj(state.time_delta_type)
 }
 
+unsafe fn start_of_day(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    let ZonedDateTime { date, zoneinfo, .. } = ZonedDateTime::extract(slf);
+    let &State {
+        py_api,
+        exc_repeated,
+        exc_skipped,
+        ..
+    } = State::for_obj(slf);
+    ZonedDateTime::resolve_using_disambiguate(
+        py_api,
+        date,
+        MIDNIGHT,
+        zoneinfo,
+        Disambiguate::Compatible,
+        exc_repeated,
+        exc_skipped,
+    )?
+    .to_obj(Py_TYPE(slf))
+}
+
+unsafe fn day_length(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    let ZonedDateTime { date, zoneinfo, .. } = ZonedDateTime::extract(slf);
+    let &State {
+        py_api,
+        exc_repeated,
+        exc_skipped,
+        time_delta_type,
+        ..
+    } = State::for_obj(slf);
+    let start_of_day = ZonedDateTime::resolve_using_disambiguate(
+        py_api,
+        date,
+        MIDNIGHT,
+        zoneinfo,
+        Disambiguate::Compatible,
+        exc_repeated,
+        exc_skipped,
+    )?
+    .instant();
+    let start_of_next_day = ZonedDateTime::resolve_using_disambiguate(
+        py_api,
+        date.increment(),
+        MIDNIGHT,
+        zoneinfo,
+        Disambiguate::Compatible,
+        exc_repeated,
+        exc_skipped,
+    )?
+    .instant();
+    TimeDelta::from_nanos_unchecked(start_of_next_day.total_nanos() - start_of_day.total_nanos())
+        .to_obj(time_delta_type)
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     method!(identity2 named "__copy__", c""),
     method!(identity2 named "__deepcopy__", c"", METH_O),
@@ -1378,6 +1431,8 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(add, doc::ZONEDDATETIME_ADD),
     method_kwargs!(subtract, doc::ZONEDDATETIME_SUBTRACT),
     method!(difference, doc::KNOWSINSTANT_DIFFERENCE, METH_O),
+    method!(start_of_day, doc::ZONEDDATETIME_START_OF_DAY),
+    method!(day_length, doc::ZONEDDATETIME_DAY_LENGTH),
     PyMethodDef::zeroed(),
 ];
 

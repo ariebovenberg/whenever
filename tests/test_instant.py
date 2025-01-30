@@ -826,8 +826,10 @@ def test_to_system_tz():
     assert d.to_system_tz().exact_eq(
         SystemDateTime(2022, 11, 6, 1, disambiguate="earlier")
     )
-    assert Instant.from_utc(2022, 11, 6, 6).to_system_tz() == SystemDateTime(
-        2022, 11, 6, 1, disambiguate="later"
+    assert (
+        Instant.from_utc(2022, 11, 6, 6)
+        .to_system_tz()
+        .exact_eq(SystemDateTime(2022, 11, 6, 1, disambiguate="later"))
     )
 
     with pytest.raises((ValueError, OverflowError)):

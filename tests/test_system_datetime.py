@@ -53,12 +53,8 @@ class TestInit:
         assert d.offset == hours(2)
 
     def test_optionality(self):
-        assert (
-            SystemDateTime(2020, 8, 15, 12)
-            == SystemDateTime(2020, 8, 15, 12, 0)
-            == SystemDateTime(2020, 8, 15, 12, 0, 0)
-            == SystemDateTime(2020, 8, 15, 12, 0, 0, nanosecond=0)
-            == SystemDateTime(
+        assert SystemDateTime(2020, 8, 15, 12).exact_eq(
+            SystemDateTime(
                 2020, 8, 15, 12, 0, 0, nanosecond=0, disambiguate="raise"
             )
         )
@@ -136,14 +132,16 @@ class TestInstant:
     @system_tz_ams()
     def test_common_time(self):
         d = SystemDateTime(2020, 8, 15, 11)
-        assert d.instant() == Instant.from_utc(2020, 8, 15, 9)
+        assert d.instant().exact_eq(Instant.from_utc(2020, 8, 15, 9))
 
     @system_tz_ams()
     def test_amibiguous_time(self):
         d = SystemDateTime(2023, 10, 29, 2, 15, disambiguate="earlier")
-        assert d.instant() == Instant.from_utc(2023, 10, 29, 0, 15)
-        assert d.replace(disambiguate="later").instant() == Instant.from_utc(
-            2023, 10, 29, 1, 15
+        assert d.instant().exact_eq(Instant.from_utc(2023, 10, 29, 0, 15))
+        assert (
+            d.replace(disambiguate="later")
+            .instant()
+            .exact_eq(Instant.from_utc(2023, 10, 29, 1, 15))
         )
 
 
@@ -167,12 +165,14 @@ def test_to_tz():
         .to_tz("America/New_York")
         .exact_eq(nyc.replace(hour=21, disambiguate="raise"))
     )
-    assert nyc.to_system_tz() == ams
-    assert nyc.replace(
-        hour=21, disambiguate="raise"
-    ).to_system_tz() == ams.replace(disambiguate="later")
+    assert nyc.to_system_tz().exact_eq(ams)
+    assert (
+        nyc.replace(hour=21, disambiguate="raise")
+        .to_system_tz()
+        .exact_eq(ams.replace(disambiguate="later"))
+    )
     # disambiguation doesn't affect NYC time because there's no ambiguity
-    assert nyc.replace(disambiguate="later").to_system_tz() == ams
+    assert nyc.replace(disambiguate="later").to_system_tz().exact_eq(ams)
 
     try:
         d_min = Instant.MIN.to_system_tz()

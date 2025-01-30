@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.16"
+__version__ = "0.6.17"
 
 import enum
 import re
@@ -612,8 +612,8 @@ class YearMonth(_ImmutableBase):
 
         Example
         -------
-        >>> YearMonth.parse_common_iso("2021-01-02")
-        YearMonth(2021-01-02)
+        >>> YearMonth.parse_common_iso("2021-01")
+        YearMonth(2021-01)
         """
         if not _match_yearmonth(s):
             raise ValueError(f"Invalid format: {s!r}")
@@ -4309,6 +4309,38 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         # We make use of a quirk of the standard library here:
         # ambiguous datetimes are never equal across timezones
         return self._py_dt.astimezone(_UTC) != self._py_dt
+
+    def day_length(self) -> TimeDelta:
+        """The duration between the start of the current day and the next.
+        This is usually 24 hours, but may be different due to timezone transitions.
+
+        Example
+        -------
+        >>> ZonedDateTime(2020, 8, 15, tz="Europe/London").day_length()
+        TimeDelta(24:00:00)
+        >>> ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam").day_length()
+        TimeDelta(25:00:00)
+        """
+        midnight = _datetime.combine(
+            self._py_dt.date(), _time(), self._py_dt.tzinfo
+        )
+        next_midnight = midnight + _timedelta(days=1)
+        return TimeDelta.from_py_timedelta(
+            next_midnight.astimezone(_UTC) - midnight.astimezone(_UTC)
+        )
+
+    def start_of_day(self) -> ZonedDateTime:
+        """The start of the current calendar day.
+
+        This is almost always at midnight the same day, but may be different
+        for timezones which transition at—and thus skip over—midnight.
+        """
+        midnight = _datetime.combine(
+            self._py_dt.date(), _time(), self._py_dt.tzinfo
+        )
+        return ZonedDateTime._from_py_unchecked(
+            midnight.astimezone(_UTC).astimezone(self._py_dt.tzinfo), 0
+        )
 
     def __repr__(self) -> str:
         return f"ZonedDateTime({str(self).replace('T', ' ', 1)})"

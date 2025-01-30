@@ -23,6 +23,7 @@ from whenever import (
     SkippedTime,
     SystemDateTime,
     Time,
+    TimeDelta,
     ZonedDateTime,
     days,
     hours,
@@ -67,8 +68,8 @@ class TestInit:
             tz="Europe/Amsterdam",
         )
 
-        assert ZonedDateTime(**kwargs) == ZonedDateTime(
-            **kwargs, disambiguate="compatible"
+        assert ZonedDateTime(**kwargs).exact_eq(
+            ZonedDateTime(**kwargs, disambiguate="compatible")
         )
 
         with pytest.raises(
@@ -101,12 +102,8 @@ class TestInit:
 
     def test_optionality(self):
         tz = "America/New_York"
-        assert (
-            ZonedDateTime(2020, 8, 15, 12, tz=tz)
-            == ZonedDateTime(2020, 8, 15, 12, 0, tz=tz)
-            == ZonedDateTime(2020, 8, 15, 12, 0, 0, tz=tz)
-            == ZonedDateTime(2020, 8, 15, 12, 0, 0, nanosecond=0, tz=tz)
-            == ZonedDateTime(
+        assert ZonedDateTime(2020, 8, 15, 12, tz=tz).exact_eq(
+            ZonedDateTime(
                 2020,
                 8,
                 15,
@@ -154,8 +151,8 @@ class TestInit:
             tz="Europe/Amsterdam",
         )
 
-        assert ZonedDateTime(**kwargs) == ZonedDateTime(
-            **kwargs, disambiguate="compatible"
+        assert ZonedDateTime(**kwargs).exact_eq(
+            ZonedDateTime(**kwargs, disambiguate="compatible")
         )
 
         with pytest.raises(
@@ -564,12 +561,188 @@ def test_is_ambiguous():
         tz="Europe/Amsterdam",
         disambiguate="earlier",
     ).is_ambiguous()
+    # skipped times are shifted into non-ambiguous times
+    assert not ZonedDateTime(
+        2023,
+        3,
+        26,
+        2,
+        15,
+        30,
+        tz="Europe/Amsterdam",
+    ).is_ambiguous()
+
+
+@pytest.mark.parametrize(
+    "d, expect",
+    [
+        # no special day
+        (
+            ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
+            hours(24),
+        ),
+        (ZonedDateTime(1832, 12, 15, 12, 1, 30, tz="UTC"), hours(24)),
+        # Longer day
+        (
+            ZonedDateTime(2023, 10, 29, 12, 8, 30, tz="Europe/Amsterdam"),
+            hours(25),
+        ),
+        (ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam"), hours(25)),
+        (
+            ZonedDateTime(2023, 10, 30, tz="Europe/Amsterdam").subtract(
+                nanoseconds=1
+            ),
+            hours(25),
+        ),
+        # Shorter day
+        (
+            ZonedDateTime(2023, 3, 26, 12, 8, 30, tz="Europe/Amsterdam"),
+            hours(23),
+        ),
+        (ZonedDateTime(2023, 3, 26, tz="Europe/Amsterdam"), hours(23)),
+        (
+            ZonedDateTime(2023, 3, 27, tz="Europe/Amsterdam").subtract(
+                nanoseconds=1
+            ),
+            hours(23),
+        ),
+        # non-hour DST change
+        (ZonedDateTime(2024, 10, 6, 1, tz="Australia/Lord_Howe"), hours(23.5)),
+        (ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"), hours(24.5)),
+        # Non-regular transition
+        (
+            ZonedDateTime(1894, 6, 1, 1, tz="Europe/Zurich"),
+            TimeDelta(hours=24, minutes=-30, seconds=-14),
+        ),
+        # DST starts at midnight
+        (ZonedDateTime(2016, 2, 20, tz="America/Sao_Paulo"), hours(25)),
+        (ZonedDateTime(2016, 2, 21, tz="America/Sao_Paulo"), hours(24)),
+        (ZonedDateTime(2016, 10, 16, tz="America/Sao_Paulo"), hours(23)),
+        (ZonedDateTime(2016, 10, 17, tz="America/Sao_Paulo"), hours(24)),
+        # Samoa skipped a day
+        (ZonedDateTime(2011, 12, 31, 21, tz="Pacific/Apia"), hours(24)),
+        (ZonedDateTime(2011, 12, 29, 21, tz="Pacific/Apia"), hours(24)),
+        # A day that starts twice
+        (
+            ZonedDateTime(
+                2016,
+                2,
+                20,
+                23,
+                45,
+                disambiguate="later",
+                tz="America/Sao_Paulo",
+            ),
+            hours(25),
+        ),
+        (
+            ZonedDateTime(
+                2016,
+                2,
+                20,
+                23,
+                45,
+                disambiguate="earlier",
+                tz="America/Sao_Paulo",
+            ),
+            hours(25),
+        ),
+    ],
+)
+def test_day_length(d, expect):
+    assert d.day_length() == expect
+
+
+@pytest.mark.parametrize(
+    "d, expect",
+    [
+        # no special day
+        (
+            ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
+            ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam"),
+        ),
+        (
+            ZonedDateTime(1832, 12, 15, 12, 1, 30, tz="UTC"),
+            ZonedDateTime(1832, 12, 15, tz="UTC"),
+        ),
+        # DST at non-midnight
+        (
+            ZonedDateTime(2023, 10, 29, 12, 8, 30, tz="Europe/Amsterdam"),
+            ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam"),
+        ),
+        (
+            ZonedDateTime(2023, 3, 26, 12, 8, 30, tz="Europe/Amsterdam"),
+            ZonedDateTime(2023, 3, 26, tz="Europe/Amsterdam"),
+        ),
+        (
+            ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"),
+            ZonedDateTime(2024, 4, 7, tz="Australia/Lord_Howe"),
+        ),
+        # Non-regular transition
+        (
+            ZonedDateTime(1894, 6, 1, 1, tz="Europe/Zurich"),
+            ZonedDateTime(1894, 6, 1, 0, 30, 14, tz="Europe/Zurich"),
+        ),
+        # DST starts at midnight
+        (
+            ZonedDateTime(2016, 2, 20, 8, tz="America/Sao_Paulo"),
+            ZonedDateTime(2016, 2, 20, tz="America/Sao_Paulo"),
+        ),
+        (
+            ZonedDateTime(2016, 2, 21, 2, tz="America/Sao_Paulo"),
+            ZonedDateTime(2016, 2, 21, tz="America/Sao_Paulo"),
+        ),
+        (
+            ZonedDateTime(2016, 10, 16, 15, tz="America/Sao_Paulo"),
+            ZonedDateTime(2016, 10, 16, 1, tz="America/Sao_Paulo"),
+        ),
+        (
+            ZonedDateTime(2016, 10, 17, 19, tz="America/Sao_Paulo"),
+            ZonedDateTime(2016, 10, 17, tz="America/Sao_Paulo"),
+        ),
+        # Samoa skipped a day
+        (
+            ZonedDateTime(2011, 12, 31, 21, tz="Pacific/Apia"),
+            ZonedDateTime(2011, 12, 31, tz="Pacific/Apia"),
+        ),
+        (
+            ZonedDateTime(2011, 12, 29, 21, tz="Pacific/Apia"),
+            ZonedDateTime(2011, 12, 29, tz="Pacific/Apia"),
+        ),
+        # Another edge case
+        (
+            ZonedDateTime(2010, 11, 7, 23, tz="America/St_Johns"),
+            ZonedDateTime(
+                2010, 11, 7, tz="America/St_Johns", disambiguate="earlier"
+            ),
+        ),
+        # a day that starts twice
+        (
+            ZonedDateTime(
+                2016,
+                2,
+                20,
+                23,
+                45,
+                disambiguate="later",
+                tz="America/Sao_Paulo",
+            ),
+            ZonedDateTime(
+                2016, 2, 20, tz="America/Sao_Paulo", disambiguate="raise"
+            ),
+        ),
+    ],
+)
+def test_start_of_day(d, expect):
+    assert d.start_of_day() == expect
 
 
 def test_instant():
-    assert ZonedDateTime(
-        2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"
-    ).instant() == Instant.from_utc(2020, 8, 15, 10, 8, 30)
+    assert (
+        ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
+        .instant()
+        .exact_eq(Instant.from_utc(2020, 8, 15, 10, 8, 30))
+    )
     d = ZonedDateTime(
         2023,
         10,
@@ -580,10 +753,21 @@ def test_instant():
         tz="Europe/Amsterdam",
         disambiguate="earlier",
     )
-    assert d.instant() == Instant.from_utc(2023, 10, 29, 0, 15, 30)
-    assert ZonedDateTime(
-        2023, 10, 29, 2, 15, 30, tz="Europe/Amsterdam", disambiguate="later"
-    ).instant() == Instant.from_utc(2023, 10, 29, 1, 15, 30)
+    assert d.instant().exact_eq(Instant.from_utc(2023, 10, 29, 0, 15, 30))
+    assert (
+        ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            tz="Europe/Amsterdam",
+            disambiguate="later",
+        )
+        .instant()
+        .exact_eq(Instant.from_utc(2023, 10, 29, 1, 15, 30))
+    )
 
 
 def test_to_tz():
@@ -1927,17 +2111,17 @@ class TestShiftDateUnits:
         assert d.add().exact_eq(d)
 
         # same with operators
-        assert d + days(0) == d
-        assert d + weeks(0) == d
-        assert d + years(0) == d
+        assert (d + days(0)).exact_eq(d)
+        assert (d + weeks(0)).exact_eq(d)
+        assert (d + years(0)).exact_eq(d)
 
         # same with subtraction
         assert d.subtract(days=0, disambiguate="raise").exact_eq(d)
         assert d.subtract(days=0).exact_eq(d)
 
-        assert d - days(0) == d
-        assert d - weeks(0) == d
-        assert d - years(0) == d
+        assert (d - days(0)).exact_eq(d)
+        assert (d - weeks(0)).exact_eq(d)
+        assert (d - years(0)).exact_eq(d)
 
     def test_simple_date(self):
         d = ZonedDateTime(
@@ -1972,17 +2156,17 @@ class TestShiftDateUnits:
             d.add(years=1, weeks=2, hours=2)
         )
         # same with operators
-        assert d + (years(1) + weeks(2) + days(-2)) == d.add(
-            years=1, weeks=2, days=-2
+        assert (d + (years(1) + weeks(2) + days(-2))).exact_eq(
+            d.add(years=1, weeks=2, days=-2)
         )
-        assert d + (years(1) + weeks(2) + hours(2)) == d.add(
-            years=1, weeks=2, hours=2
+        assert (d + (years(1) + weeks(2) + hours(2))).exact_eq(
+            d.add(years=1, weeks=2, hours=2)
         )
-        assert d - (years(1) + weeks(2) + days(-2)) == d.subtract(
-            years=1, weeks=2, days=-2
+        assert (d - (years(1) + weeks(2) + days(-2))).exact_eq(
+            d.subtract(years=1, weeks=2, days=-2)
         )
-        assert d - (years(1) + weeks(2) + hours(2)) == d.subtract(
-            years=1, weeks=2, hours=2
+        assert (d - (years(1) + weeks(2) + hours(2))).exact_eq(
+            d.subtract(years=1, weeks=2, hours=2)
         )
 
     def test_ambiguity(self):
@@ -2007,7 +2191,7 @@ class TestShiftDateUnits:
             d.replace(year=2024, day=27, disambiguate="earlier")
         )
         # check operators too
-        assert d + years(1) - days(2) == d.add(years=1, days=-2)
+        assert (d + years(1) - days(2)).exact_eq(d.add(years=1, days=-2))
 
         # transition to a gap
         assert d.add(months=5, days=2, disambiguate="compatible").exact_eq(

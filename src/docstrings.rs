@@ -1603,8 +1603,8 @@ Inverse of :meth:`format_common_iso`
 
 Example
 -------
->>> YearMonth.parse_common_iso(\"2021-01-02\")
-YearMonth(2021-01-02)
+>>> YearMonth.parse_common_iso(\"2021-01\")
+YearMonth(2021-01)
 ";
 pub(crate) const YEARMONTH_REPLACE: &CStr = c"\
 replace($self, /, *, year=None, month=None)
@@ -1633,6 +1633,20 @@ specify how to handle such a situation using the ``disambiguate`` argument.
 
 See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
 for more information.
+";
+pub(crate) const ZONEDDATETIME_DAY_LENGTH: &CStr = c"\
+day_length($self)
+--
+
+The duration between the start of the current day and the next.
+This is usually 24 hours, but may be different due to timezone transitions.
+
+Example
+-------
+>>> ZonedDateTime(2020, 8, 15, tz=\"Europe/London\").day_length()
+TimeDelta(24:00:00)
+>>> ZonedDateTime(2023, 10, 29, tz=\"Europe/Amsterdam\").day_length()
+TimeDelta(25:00:00)
 ";
 pub(crate) const ZONEDDATETIME_FORMAT_COMMON_ISO: &CStr = c"\
 format_common_iso($self)
@@ -1760,6 +1774,15 @@ replace_time($self, time, /, disambiguate=None)
 Construct a new instance with the time replaced.
 
 See the ``replace()`` method for more information.
+";
+pub(crate) const ZONEDDATETIME_START_OF_DAY: &CStr = c"\
+start_of_day($self)
+--
+
+The start of the current calendar day.
+
+This is almost always at midnight the same day, but may be different
+for timezones which transition at—and thus skip over—midnight.
 ";
 pub(crate) const ZONEDDATETIME_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
