@@ -111,9 +111,10 @@ jobs:
     needs: [binary, sdist]
     steps:
       - uses: actions/download-artifact@v4
+      # NOTE: version pin due to to github.com/pypi/warehouse/issues/15611
+      - run: pip install -U twine==6.0.1
       - name: Publish to PyPI
         run: |
-          pip install twine
           twine upload --non-interactive --disable-progress-bar --skip-existing wheels-*/*
         env:
           TWINE_USERNAME: __token__
