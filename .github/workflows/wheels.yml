@@ -78,8 +78,7 @@ jobs:
           manylinux: ${{ matrix.manylinux || 'auto' }}
           sccache: 'true'
           rust-toolchain: "1.79"
-      # NOTE: version pin due to to github.com/pypi/warehouse/issues/15611
-      - run: pip install -U twine==6.0.1
+      - run: pip install -U twine packaging
       - run: twine check --strict dist/*
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -95,8 +94,7 @@ jobs:
         run: |
           pip install build
           python -m build --sdist --outdir dist
-      # NOTE: version pin due to to github.com/pypi/warehouse/issues/15611
-      - run: pip install -U twine==6.0.1
+      - run: pip install -U twine packaging
       - run: twine check --strict dist/*
       - name: Upload sdist
         uses: actions/upload-artifact@v4
@@ -111,8 +109,7 @@ jobs:
     needs: [binary, sdist]
     steps:
       - uses: actions/download-artifact@v4
-      # NOTE: version pin due to to github.com/pypi/warehouse/issues/15611
-      - run: pip install -U twine==6.0.1
+      - run: pip install -U twine packaging
       - name: Publish to PyPI
         run: |
           twine upload --non-interactive --disable-progress-bar --skip-existing wheels-*/*
