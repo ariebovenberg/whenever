@@ -63,7 +63,8 @@ jobs:
       - uses: actions/setup-python@v5
         if : ${{ matrix.os == 'windows' }}
         with:
-          python-version: '3.13'
+          # NOTE: we can't update to 3.13 here yet due to github.com/pypa/twine/issues/1146
+          python-version: '3.12'
           architecture: ${{ matrix.python-architecture || 'x64' }}
           allow-prereleases: true
       - run: pip install -U twine

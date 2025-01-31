@@ -88,12 +88,6 @@ ignore_missing_imports = true
 [tool.setuptools.packages]
 find = { where = ["pysrc"] }
 
-[tool.setuptools]
-# FUTURE: remove this once PEP639 compatibility issue is solved
-# Note that maturin build still includes the license files in the wheel.
-# Nothing to worry about.
-license-files = []
-
 # Notes about the build configuration:
 # We need setuptools_rust to support enabling/disabling building the Rust
 # extension from source distributions.
