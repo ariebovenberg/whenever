@@ -63,11 +63,9 @@ jobs:
       - uses: actions/setup-python@v5
         if : ${{ matrix.os == 'windows' }}
         with:
-          # NOTE: we can't update to 3.13 here yet due to github.com/pypa/twine/issues/1146
-          python-version: '3.12'
+          python-version: '3.13'
           architecture: ${{ matrix.python-architecture || 'x64' }}
           allow-prereleases: true
-      - run: pip install -U twine
       - name: Generate third-party license information
         run: |
           cargo install cargo-3pl --version 0.1.3
@@ -80,6 +78,8 @@ jobs:
           manylinux: ${{ matrix.manylinux || 'auto' }}
           sccache: 'true'
           rust-toolchain: "1.79"
+      # NOTE: version pin due to to github.com/pypi/warehouse/issues/15611
+      - run: pip install -U twine==6.0.1
       - run: twine check --strict dist/*
       - name: Upload wheels
         uses: actions/upload-artifact@v4
