@@ -133,6 +133,7 @@ SKIP = {
     W._KnowsLocal.replace,
     W._KnowsLocal.replace_date,
     W._KnowsLocal.replace_time,
+    W._KnowsLocal.round,
 }
 
 
@@ -148,6 +149,8 @@ def method_doc(method):
                 "\u0028cls", "\u0028$type"
             )
         )
+    # OPTIMIZE: for 0 and 1-argument function, we might not need to define
+    # the __text_signature__ manually, potentially saving space.
     doc = method.__doc__.replace('"', '\\"')
     return f"{method.__name__}{sig}\n--\n\n{doc}"
 

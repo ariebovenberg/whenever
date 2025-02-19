@@ -1091,6 +1091,148 @@ class TestParseCommonIso:
             Instant.parse_common_iso(s)
 
 
+class TestRound:
+
+    @pytest.mark.parametrize(
+        "d, increment, unit, floor, ceil, half_floor, half_ceil, half_even",
+        [
+            (
+                Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                1,
+                "nanosecond",
+                Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+            ),
+            (
+                Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                1,
+                "second",
+                Instant.from_utc(2023, 7, 14, 1, 2, 3),
+                Instant.from_utc(2023, 7, 14, 1, 2, 4),
+                Instant.from_utc(2023, 7, 14, 1, 2, 3),
+                Instant.from_utc(2023, 7, 14, 1, 2, 3),
+                Instant.from_utc(2023, 7, 14, 1, 2, 3),
+            ),
+            (
+                Instant.from_utc(
+                    2023, 7, 14, 1, 2, 21, nanosecond=459_999_999
+                ),
+                4,
+                "second",
+                Instant.from_utc(2023, 7, 14, 1, 2, 20),
+                Instant.from_utc(2023, 7, 14, 1, 2, 24),
+                Instant.from_utc(2023, 7, 14, 1, 2, 20),
+                Instant.from_utc(2023, 7, 14, 1, 2, 20),
+                Instant.from_utc(2023, 7, 14, 1, 2, 20),
+            ),
+            (
+                Instant.from_utc(
+                    2023, 7, 14, 23, 52, 29, nanosecond=999_999_999
+                ),
+                10,
+                "minute",
+                Instant.from_utc(2023, 7, 14, 23, 50, 0),
+                Instant.from_utc(2023, 7, 15),
+                Instant.from_utc(2023, 7, 14, 23, 50, 0),
+                Instant.from_utc(2023, 7, 14, 23, 50, 0),
+                Instant.from_utc(2023, 7, 14, 23, 50, 0),
+            ),
+            (
+                Instant.from_utc(
+                    2023, 7, 14, 23, 52, 29, nanosecond=999_999_999
+                ),
+                60,
+                "minute",
+                Instant.from_utc(2023, 7, 14, 23),
+                Instant.from_utc(2023, 7, 15),
+                Instant.from_utc(2023, 7, 15),
+                Instant.from_utc(2023, 7, 15),
+                Instant.from_utc(2023, 7, 15),
+            ),
+            (
+                Instant.from_utc(
+                    2023, 7, 14, 11, 59, 29, nanosecond=999_999_999
+                ),
+                12,
+                "hour",
+                Instant.from_utc(2023, 7, 14),
+                Instant.from_utc(2023, 7, 14, 12, 0, 0),
+                Instant.from_utc(2023, 7, 14, 12, 0, 0),
+                Instant.from_utc(2023, 7, 14, 12, 0, 0),
+                Instant.from_utc(2023, 7, 14, 12, 0, 0),
+            ),
+        ],
+    )
+    def test_round(
+        self,
+        d: Instant,
+        increment,
+        unit,
+        floor,
+        ceil,
+        half_floor,
+        half_ceil,
+        half_even,
+    ):
+        assert d.round(unit, increment=increment) == half_even
+        assert d.round(unit, increment=increment, mode="floor") == floor
+        assert d.round(unit, increment=increment, mode="ceil") == ceil
+        assert (
+            d.round(unit, increment=increment, mode="half_floor") == half_floor
+        )
+        assert (
+            d.round(unit, increment=increment, mode="half_ceil") == half_ceil
+        )
+        assert (
+            d.round(unit, increment=increment, mode="half_even") == half_even
+        )
+
+    def test_default(self):
+        d = Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=500_000_000)
+        assert d.round() == Instant.from_utc(2023, 7, 14, 1, 2, 4)
+        assert d.add(seconds=5).round() == Instant.from_utc(
+            2023, 7, 14, 1, 2, 8
+        )
+
+    def test_invalid_mode(self):
+        d = Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
+        with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
+            d.round("second", mode="foo")  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        "unit, increment",
+        [
+            ("minute", 8),
+            ("second", 14),
+            ("millisecond", 15),
+            ("hour", 48),
+            ("microsecond", 2000),
+        ],
+    )
+    def test_invalid_increment(self, unit, increment):
+        d = Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
+        with pytest.raises(ValueError, match="[Ii]ncrement"):
+            d.round(unit, increment=increment)
+
+    def test_invalid_unit(self):
+        d = Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
+        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+            d.round("foo")  # type: ignore[arg-type]
+
+    def test_day_not_supported(self):
+        d = Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
+        with pytest.raises(ValueError, match="day.*24.*hour"):
+            d.round("day")  # type: ignore[arg-type]
+
+    def test_out_of_range(self):
+        d = Instant.MAX.subtract(hours=1)
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            d.round("hour", increment=4)
+
+
 def test_cannot_subclass():
     with pytest.raises(TypeError):
 

@@ -6,11 +6,12 @@ use crate::common::*;
 use crate::docstrings as doc;
 use crate::offset_datetime::check_ignore_dst_kwarg;
 use crate::{
-    date::Date,
+    date::{Date, MAX as MAX_DATE},
     date_delta::DateDelta,
     datetime_delta::{set_units_from_kwargs, DateTimeDelta},
     instant::Instant,
     offset_datetime::{self, OffsetDateTime},
+    round,
     time::Time,
     time_delta::TimeDelta,
     zoned_datetime::ZonedDateTime,
@@ -103,7 +104,7 @@ impl DateTime {
         }
         Some(DateTime {
             date,
-            time: Time::from_total_nanos(nano_delta),
+            time: Time::from_total_nanos_unchecked(nano_delta),
         })
     }
 
@@ -798,6 +799,29 @@ unsafe fn replace_time(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     }
 }
 
+unsafe fn round(
+    slf: *mut PyObject,
+    cls: *mut PyTypeObject,
+    args: &[*mut PyObject],
+    kwargs: &mut KwargIter,
+) -> PyReturn {
+    let (_, increment, mode) = round::parse_args(State::for_obj(slf), args, kwargs, false, false)?;
+    let DateTime { mut date, time } = DateTime::extract(slf);
+    let (time_rounded, next_day) = time.round(increment as u64, mode);
+    if next_day == 1 {
+        if date != MAX_DATE {
+            date = date.increment();
+        } else {
+            Err(value_err!("Resulting datetime out of range"))?
+        }
+    }
+    DateTime {
+        date,
+        time: time_rounded,
+    }
+    .to_obj(cls)
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     method!(identity2 named "__copy__", c""),
     method!(identity2 named "__deepcopy__", c"", METH_O),
@@ -837,6 +861,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(add, doc::LOCALDATETIME_ADD),
     method_kwargs!(subtract, doc::LOCALDATETIME_SUBTRACT),
     method_kwargs!(difference, doc::LOCALDATETIME_DIFFERENCE),
+    method_kwargs!(round, doc::LOCALDATETIME_ROUND),
     PyMethodDef::zeroed(),
 ];
 

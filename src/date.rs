@@ -17,10 +17,10 @@ pub struct Date {
     pub(crate) day: u8,
 }
 
-pub(crate) const SINGLETONS: &[(&CStr, Date); 2] = &[
-    (c"MIN", Date::new_unchecked(1, 1, 1)),
-    (c"MAX", Date::new_unchecked(9999, 12, 31)),
-];
+pub(crate) const MAX: Date = Date::new_unchecked(9999, 12, 31);
+
+pub(crate) const SINGLETONS: &[(&CStr, Date); 2] =
+    &[(c"MIN", Date::new_unchecked(1, 1, 1)), (c"MAX", MAX)];
 
 impl Date {
     pub(crate) const unsafe fn hash(self) -> i32 {
@@ -174,32 +174,42 @@ impl Date {
 
     // Faster methods for small adjustments.
     // OPTIMIZE: actually determine if these are worth it
-    pub(crate) const fn increment(mut self) -> Self {
-        if self.day < days_in_month(self.year, self.month) {
-            self.day += 1
-        } else if self.month < 12 {
-            self.day = 1;
-            self.month += 1;
+    pub(crate) const fn increment(self) -> Self {
+        let Date {
+            mut year,
+            mut month,
+            mut day,
+        } = self;
+        if day < days_in_month(year, month) {
+            day += 1;
+        } else if month < 12 {
+            day = 1;
+            month += 1;
         } else {
-            self.year += 1;
-            self.month = 1;
-            self.day = 1;
+            day = 1;
+            month = 1;
+            year += 1;
         }
-        self
+        Date { year, month, day }
     }
 
-    pub(crate) const fn decrement(mut self) -> Self {
-        if self.day > 1 {
-            self.day -= 1;
-        } else if self.month > 1 {
-            self.month -= 1;
-            self.day = days_in_month(self.year, self.month);
+    pub(crate) const fn decrement(self) -> Self {
+        let Date {
+            mut year,
+            mut month,
+            mut day,
+        } = self;
+        if day > 1 {
+            day -= 1;
+        } else if month > 1 {
+            month -= 1;
+            day = days_in_month(year, month);
         } else {
-            self.day = 31;
-            self.month = 12;
-            self.year -= 1;
+            day = 31;
+            month = 12;
+            year -= 1;
         }
-        self
+        Date { year, month, day }
     }
 }
 
@@ -241,6 +251,8 @@ const fn days_in_month(year: u16, month: u8) -> u8 {
 }
 
 unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
+    // FUTURE: just use normal arg/kwargs handling. It may be slower, but it's more maintainable.
+    // maybe in the future we can create our own arg/kwargs handling that's faster
     let nargs = PyTuple_GET_SIZE(args);
     let nkwargs = if kwargs.is_null() {
         0

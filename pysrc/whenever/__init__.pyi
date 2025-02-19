@@ -165,6 +165,21 @@ class Time:
         second: int = ...,
         nanosecond: int = ...,
     ) -> Time: ...
+    def round(
+        self,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = ...,
+        increment: int = ...,
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = ...,
+    ) -> Time: ...
     def __lt__(self, other: Time) -> bool: ...
     def __le__(self, other: Time) -> bool: ...
     def __gt__(self, other: Time) -> bool: ...
@@ -200,6 +215,21 @@ class TimeDelta:
     def format_common_iso(self) -> str: ...
     @classmethod
     def parse_common_iso(cls, s: str, /) -> TimeDelta: ...
+    def round(
+        self,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = ...,
+        increment: int = ...,
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = ...,
+    ) -> TimeDelta: ...
     def __hash__(self) -> int: ...
     def __lt__(self, other: TimeDelta) -> bool: ...
     def __le__(self, other: TimeDelta) -> bool: ...
@@ -404,6 +434,21 @@ class Instant(_KnowsInstant):
         microseconds: float = 0,
         nanoseconds: int = 0,
     ) -> Instant: ...
+    def round(
+        self,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = ...,
+        increment: int = ...,
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = ...,
+    ) -> Instant: ...
     def __add__(self, delta: TimeDelta) -> Instant: ...
     @overload
     def __sub__(self, other: _KnowsInstant) -> TimeDelta: ...
@@ -519,6 +564,24 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     def subtract(
         self, d: Delta, /, ignore_dst: Literal[True]
     ) -> OffsetDateTime: ...
+    def round(
+        self,
+        unit: Literal[
+            "day",
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = ...,
+        increment: int = ...,
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = ...,
+        *,
+        ignore_dst: Literal[True],
+    ) -> OffsetDateTime: ...
     def __sub__(self, other: _KnowsInstant) -> TimeDelta: ...
 
 @final
@@ -538,7 +601,6 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     ) -> None: ...
     @property
     def tz(self) -> str: ...
-    def is_ambiguous(self) -> bool: ...
     @classmethod
     def now(cls, tz: str, /) -> ZonedDateTime: ...
     @classmethod
@@ -659,8 +721,25 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         *,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> ZonedDateTime: ...
+    def is_ambiguous(self) -> bool: ...
     def hours_in_day(self) -> float: ...
     def start_of_day(self) -> ZonedDateTime: ...
+    def round(
+        self,
+        unit: Literal[
+            "day",
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = ...,
+        increment: int = ...,
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = ...,
+    ) -> ZonedDateTime: ...
     # FUTURE: disable date components in strict stubs version
     def __add__(self, delta: Delta) -> ZonedDateTime: ...
     @overload
@@ -799,6 +878,25 @@ class SystemDateTime(_KnowsInstantAndLocal):
         *,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> SystemDateTime: ...
+    def is_ambiguous(self) -> bool: ...
+    def hours_in_day(self) -> float: ...
+    def start_of_day(self) -> ZonedDateTime: ...
+    def round(
+        self,
+        unit: Literal[
+            "day",
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = ...,
+        increment: int = ...,
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = ...,
+    ) -> SystemDateTime: ...
     # FUTURE: disable date components in strict stubs version
     def __add__(self, delta: Delta) -> SystemDateTime: ...
     @overload
@@ -913,6 +1011,22 @@ class LocalDateTime(_KnowsLocal):
     def difference(
         self, other: LocalDateTime, /, *, ignore_dst: Literal[True]
     ) -> TimeDelta: ...
+    def round(
+        self,
+        unit: Literal[
+            "day",
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = ...,
+        increment: int = ...,
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = ...,
+    ) -> LocalDateTime: ...
     def __add__(self, delta: DateDelta) -> LocalDateTime: ...
     def __sub__(self, other: DateDelta) -> LocalDateTime: ...
     def __lt__(self, other: LocalDateTime) -> bool: ...

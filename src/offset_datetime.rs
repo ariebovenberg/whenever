@@ -8,11 +8,12 @@ use crate::datetime_delta::set_units_from_kwargs;
 use crate::docstrings as doc;
 use crate::local_datetime::set_components_from_kwargs;
 use crate::{
-    date::Date,
+    date::{Date, MAX as MAX_DATE},
     date_delta::DateDelta,
     datetime_delta::DateTimeDelta,
     instant::{Instant, MAX_INSTANT, MIN_INSTANT},
     local_datetime::DateTime,
+    round,
     time::Time,
     time_delta::TimeDelta,
     zoned_datetime::ZonedDateTime,
@@ -345,11 +346,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             {
                 Err(py_err!(
                     state.exc_implicitly_ignoring_dst,
-                    "Subtracting a delta from an OffsetDateTime implicitly ignores \
-                     Daylight Saving Time. Instead, convert to a ZonedDateTime first \
-                     using to_tz(). Or, if you're sure you want to ignore DST, \
-                     explicitly pass ignore_dst=True. For more information, see \
-                     whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
+                    doc::ADJUST_OFFSET_DATETIME_MSG
                 ))?
             } else {
                 return Ok(newref(Py_NotImplemented()));
@@ -1110,6 +1107,34 @@ unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
         .to_obj(cls.cast())
 }
 
+unsafe fn round(
+    slf: *mut PyObject,
+    cls: *mut PyTypeObject,
+    args: &[*mut PyObject],
+    kwargs: &mut KwargIter,
+) -> PyReturn {
+    let (_, increment, mode) = round::parse_args(State::for_obj(slf), args, kwargs, false, true)?;
+    let OffsetDateTime {
+        mut date,
+        time,
+        offset_secs,
+    } = OffsetDateTime::extract(slf);
+    let (time_rounded, next_day) = time.round(increment as u64, mode);
+    if next_day == 1 {
+        if date != MAX_DATE {
+            date = date.increment();
+        } else {
+            Err(value_err!("Resulting datetime out of range"))?
+        }
+    }
+    OffsetDateTime {
+        date,
+        time: time_rounded,
+        offset_secs,
+    }
+    .to_obj(cls)
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     // FUTURE: get docstrings from Python implementation
     method!(identity2 named "__copy__", c""),
@@ -1173,6 +1198,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(add, doc::OFFSETDATETIME_ADD),
     method_kwargs!(subtract, doc::OFFSETDATETIME_SUBTRACT),
     method!(difference, doc::KNOWSINSTANT_DIFFERENCE, METH_O),
+    method_kwargs!(round, doc::OFFSETDATETIME_ROUND),
     PyMethodDef::zeroed(),
 ];
 

@@ -217,6 +217,205 @@ def test_on():
     )
 
 
+class TestRound:
+
+    @pytest.mark.parametrize(
+        "t, increment, unit, floor, ceil, half_floor, half_ceil, half_even",
+        [
+            (
+                Time.MIDNIGHT,
+                1,
+                "nanosecond",
+                Time.MIDNIGHT,
+                Time.MIDNIGHT,
+                Time.MIDNIGHT,
+                Time.MIDNIGHT,
+                Time.MIDNIGHT,
+            ),
+            (
+                Time(1, 2, 3, nanosecond=459_999_999),
+                1,
+                "nanosecond",
+                Time(1, 2, 3, nanosecond=459_999_999),
+                Time(1, 2, 3, nanosecond=459_999_999),
+                Time(1, 2, 3, nanosecond=459_999_999),
+                Time(1, 2, 3, nanosecond=459_999_999),
+                Time(1, 2, 3, nanosecond=459_999_999),
+            ),
+            (
+                Time(1, 2, 3, nanosecond=459_999_999),
+                1,
+                "second",
+                Time(1, 2, 3),
+                Time(1, 2, 4),
+                Time(1, 2, 3),
+                Time(1, 2, 3),
+                Time(1, 2, 3),
+            ),
+            (
+                Time(1, 2, 3, nanosecond=859_979_999),
+                1,
+                "second",
+                Time(1, 2, 3),
+                Time(1, 2, 4),
+                Time(1, 2, 4),
+                Time(1, 2, 4),
+                Time(1, 2, 4),
+            ),
+            (
+                Time(1, 2, 3, nanosecond=500_000_000),
+                1,
+                "second",
+                Time(1, 2, 3),
+                Time(1, 2, 4),
+                Time(1, 2, 3),
+                Time(1, 2, 4),
+                Time(1, 2, 4),
+            ),
+            (
+                Time(1, 2, 8, nanosecond=500_000_000),
+                1,
+                "second",
+                Time(1, 2, 8),
+                Time(1, 2, 9),
+                Time(1, 2, 8),
+                Time(1, 2, 9),
+                Time(1, 2, 8),
+            ),
+            (
+                Time(23, 59, 59, nanosecond=4_000),
+                1,
+                "second",
+                Time(23, 59, 59),
+                Time(0, 0, 0),
+                Time(23, 59, 59),
+                Time(23, 59, 59),
+                Time(23, 59, 59),
+            ),
+            (
+                Time(1, 2, 11, nanosecond=459_999_999),
+                4,
+                "second",
+                Time(1, 2, 8),
+                Time(1, 2, 12),
+                Time(1, 2, 12),
+                Time(1, 2, 12),
+                Time(1, 2, 12),
+            ),
+            (
+                Time(1, 2, 21, nanosecond=459_999_999),
+                4,
+                "second",
+                Time(1, 2, 20),
+                Time(1, 2, 24),
+                Time(1, 2, 20),
+                Time(1, 2, 20),
+                Time(1, 2, 20),
+            ),
+            (
+                Time(1, 2, 32),
+                4,
+                "second",
+                Time(1, 2, 32),
+                Time(1, 2, 32),
+                Time(1, 2, 32),
+                Time(1, 2, 32),
+                Time(1, 2, 32),
+            ),
+            (
+                Time(23, 2, 30),
+                1,
+                "minute",
+                Time(23, 2, 0),
+                Time(23, 3, 0),
+                Time(23, 2, 0),
+                Time(23, 3, 0),
+                Time(23, 2, 0),
+            ),
+            (
+                Time(23, 2, 30),
+                1,
+                "minute",
+                Time(23, 2, 0),
+                Time(23, 3, 0),
+                Time(23, 2, 0),
+                Time(23, 3, 0),
+                Time(23, 2, 0),
+            ),
+            (
+                Time(23, 52, 29, nanosecond=999_999_999),
+                10,
+                "minute",
+                Time(23, 50, 0),
+                Time(0, 0, 0),
+                Time(23, 50, 0),
+                Time(23, 50, 0),
+                Time(23, 50, 0),
+            ),
+            (
+                Time(11, 59, 29, nanosecond=999_999_999),
+                12,
+                "hour",
+                Time(0, 0, 0),
+                Time(12, 0, 0),
+                Time(12, 0, 0),
+                Time(12, 0, 0),
+                Time(12, 0, 0),
+            ),
+        ],
+    )
+    def test_round(
+        self, t, increment, unit, floor, ceil, half_floor, half_ceil, half_even
+    ):
+        assert t.round(unit, increment=increment) == half_even
+        assert t.round(unit, increment=increment, mode="floor") == floor
+        assert t.round(unit, increment=increment, mode="ceil") == ceil
+        assert (
+            t.round(unit, increment=increment, mode="half_floor") == half_floor
+        )
+        assert (
+            t.round(unit, increment=increment, mode="half_ceil") == half_ceil
+        )
+        assert (
+            t.round(unit, increment=increment, mode="half_even") == half_even
+        )
+
+    def test_default(self):
+        assert Time(1, 2, 3, nanosecond=500_000_000).round() == Time(1, 2, 4)
+        assert Time(1, 2, 8, nanosecond=500_000_000).round() == Time(1, 2, 8)
+
+    def test_invalid_mode(self):
+        t = Time(1, 2, 3, nanosecond=4_000)
+        with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
+            t.round("second", mode="foo")  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        "unit, increment",
+        [
+            ("minute", 8),
+            ("second", 14),
+            ("millisecond", 15),
+            ("millisecond", 2000),
+            ("hour", 48),
+            ("hour", 20),
+        ],
+    )
+    def test_invalid_increment(self, unit, increment):
+        t = Time(1, 2, 3, nanosecond=4_000)
+        with pytest.raises(ValueError, match="[Ii]ncrement"):
+            t.round(unit, increment=increment)
+
+    def test_invalid_unit(self):
+        t = Time(1, 2, 3, nanosecond=4_000)
+        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+            t.round("foo")  # type: ignore[arg-type]
+
+    def test_no_day_unit(self):
+        t = Time(1, 2, 3, nanosecond=4_000)
+        with pytest.raises(ValueError, match="day"):
+            t.round("day")  # type: ignore[arg-type]
+
+
 def test_pickling():
     t = Time(1, 2, 3, nanosecond=4_000)
     dumped = pickle.dumps(t)

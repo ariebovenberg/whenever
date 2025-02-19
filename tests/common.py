@@ -74,6 +74,17 @@ def system_tz_ams():
 
 
 @contextmanager
+def system_tz(name):
+    if IS_WINDOWS:
+        pytest.skip("tzset is not available on Windows")
+    with patch.dict(os.environ, {"TZ": name}):
+        time.tzset()
+        yield
+
+    time.tzset()
+
+
+@contextmanager
 def system_tz_nyc():
     if IS_WINDOWS:
         pytest.skip("tzset is not available on Windows")

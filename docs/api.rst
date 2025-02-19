@@ -48,6 +48,7 @@ Concrete classes
      parse_rfc2822,
      add,
      subtract,
+     round,
    :special-members: __add__, __sub__
    :member-order: bysource
    :show-inheritance:
@@ -90,6 +91,10 @@ Concrete classes
    :show-inheritance:
 
 .. autoclass:: whenever.SystemDateTime
+   :members:
+     is_ambiguous,
+     start_of_day,
+     day_length,
    :member-order: bysource
    :show-inheritance:
 

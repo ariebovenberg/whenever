@@ -1,6 +1,22 @@
 🚀 Changelog
 ============
 
+0.7.0 (2025-02-??)
+------------------
+
+**Breaking changes**
+
+- ``TimeDelta.py_timedelta()`` now truncates nanoseconds to microseconds
+  instead of rounding them. Use the new ``round()`` method to customize
+  rounding behavior.
+
+**Added**
+
+- Added ``round()`` to time and ``TimeDelta`` classes
+- Add ``is_ambiguous()``, ``day_length()`` and ``start_of_day()`` to ``SystemDateTime``,
+  for consistency with ``ZonedDateTime``.
+- Improvements to documentation
+
 0.6.17 (2025-01-30)
 -------------------
 
