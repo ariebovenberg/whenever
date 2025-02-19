@@ -140,8 +140,8 @@ and many issues remaining unaddressed.
 Instant(2024-07-04 10:36:56Z)
 
 # Simple, explicit conversions
->>> now.to_tz("Europe/Paris")
-ZonedDateTime(2024-07-04 12:36:56+02:00[Europe/Paris])
+>>> now.to_tz("Europe/Paris").round("minute", increment=5)
+ZonedDateTime(2024-07-04 12:35:00+02:00[Europe/Paris])
 
 # A 'naive' local time can't accidentally mix with other types.
 # You need to explicitly convert it and handle ambiguity.

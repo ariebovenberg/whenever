@@ -1336,6 +1336,179 @@ class TestParseRFC3339:
             OffsetDateTime.parse_rfc3339(s)
 
 
+class TestRound:
+
+    @pytest.mark.parametrize(
+        "d, increment, unit, floor, ceil, half_floor, half_ceil, half_even",
+        [
+            (
+                OffsetDateTime(
+                    2023, 7, 14, 1, 2, 3, nanosecond=459_999_999, offset=2
+                ),
+                1,
+                "nanosecond",
+                OffsetDateTime(
+                    2023, 7, 14, 1, 2, 3, nanosecond=459_999_999, offset=2
+                ),
+                OffsetDateTime(
+                    2023, 7, 14, 1, 2, 3, nanosecond=459_999_999, offset=2
+                ),
+                OffsetDateTime(
+                    2023, 7, 14, 1, 2, 3, nanosecond=459_999_999, offset=2
+                ),
+                OffsetDateTime(
+                    2023, 7, 14, 1, 2, 3, nanosecond=459_999_999, offset=2
+                ),
+                OffsetDateTime(
+                    2023, 7, 14, 1, 2, 3, nanosecond=459_999_999, offset=2
+                ),
+            ),
+            (
+                OffsetDateTime(
+                    2023, 7, 14, 1, 2, 3, nanosecond=459_999_999, offset=2
+                ),
+                1,
+                "second",
+                OffsetDateTime(2023, 7, 14, 1, 2, 3, offset=2),
+                OffsetDateTime(2023, 7, 14, 1, 2, 4, offset=2),
+                OffsetDateTime(2023, 7, 14, 1, 2, 3, offset=2),
+                OffsetDateTime(2023, 7, 14, 1, 2, 3, offset=2),
+                OffsetDateTime(2023, 7, 14, 1, 2, 3, offset=2),
+            ),
+            (
+                OffsetDateTime(
+                    2023, 7, 14, 1, 2, 21, nanosecond=459_999_999, offset=2
+                ),
+                4,
+                "second",
+                OffsetDateTime(2023, 7, 14, 1, 2, 20, offset=2),
+                OffsetDateTime(2023, 7, 14, 1, 2, 24, offset=2),
+                OffsetDateTime(2023, 7, 14, 1, 2, 20, offset=2),
+                OffsetDateTime(2023, 7, 14, 1, 2, 20, offset=2),
+                OffsetDateTime(2023, 7, 14, 1, 2, 20, offset=2),
+            ),
+            (
+                OffsetDateTime(
+                    2023, 7, 14, 23, 52, 29, nanosecond=999_999_999, offset=2
+                ),
+                10,
+                "minute",
+                OffsetDateTime(2023, 7, 14, 23, 50, 0, offset=2),
+                OffsetDateTime(2023, 7, 15, offset=2),
+                OffsetDateTime(2023, 7, 14, 23, 50, 0, offset=2),
+                OffsetDateTime(2023, 7, 14, 23, 50, 0, offset=2),
+                OffsetDateTime(2023, 7, 14, 23, 50, 0, offset=2),
+            ),
+            (
+                OffsetDateTime(
+                    2023, 7, 14, 11, 59, 29, nanosecond=999_999_999, offset=2
+                ),
+                12,
+                "hour",
+                OffsetDateTime(2023, 7, 14, offset=2),
+                OffsetDateTime(2023, 7, 14, 12, 0, 0, offset=2),
+                OffsetDateTime(2023, 7, 14, 12, 0, 0, offset=2),
+                OffsetDateTime(2023, 7, 14, 12, 0, 0, offset=2),
+                OffsetDateTime(2023, 7, 14, 12, 0, 0, offset=2),
+            ),
+            (
+                OffsetDateTime(2023, 7, 14, 12, offset=2),
+                1,
+                "day",
+                OffsetDateTime(2023, 7, 14, offset=2),
+                OffsetDateTime(2023, 7, 15, offset=2),
+                OffsetDateTime(2023, 7, 14, offset=2),
+                OffsetDateTime(2023, 7, 15, offset=2),
+                OffsetDateTime(2023, 7, 14, offset=2),
+            ),
+        ],
+    )
+    def test_round(
+        self,
+        d: OffsetDateTime,
+        increment,
+        unit,
+        floor,
+        ceil,
+        half_floor,
+        half_ceil,
+        half_even,
+    ):
+        assert d.round(unit, increment=increment, ignore_dst=True) == half_even
+        assert (
+            d.round(unit, increment=increment, mode="floor", ignore_dst=True)
+            == floor
+        )
+        assert (
+            d.round(unit, increment=increment, mode="ceil", ignore_dst=True)
+            == ceil
+        )
+        assert (
+            d.round(
+                unit, increment=increment, mode="half_floor", ignore_dst=True
+            )
+            == half_floor
+        )
+        assert (
+            d.round(
+                unit, increment=increment, mode="half_ceil", ignore_dst=True
+            )
+            == half_ceil
+        )
+        assert (
+            d.round(
+                unit, increment=increment, mode="half_even", ignore_dst=True
+            )
+            == half_even
+        )
+
+    def test_default(self):
+        d = OffsetDateTime(
+            2023, 7, 14, 1, 2, 3, nanosecond=500_000_000, offset=2
+        )
+        assert d.round(ignore_dst=True) == OffsetDateTime(
+            2023, 7, 14, 1, 2, 4, offset=2
+        )
+        assert d.replace(second=8, ignore_dst=True).round(
+            ignore_dst=True
+        ) == OffsetDateTime(2023, 7, 14, 1, 2, 8, offset=2)
+
+        # ignore_dst is required
+        with pytest.raises(ImplicitlyIgnoringDST):
+            d.round()  # type: ignore[call-arg]
+
+    def test_invalid_mode(self):
+        d = OffsetDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000, offset=2)
+        with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
+            d.round("second", mode="foo", ignore_dst=True)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        "unit, increment",
+        [
+            ("minute", 8),
+            ("second", 14),
+            ("millisecond", 15),
+            ("day", 2),
+            ("hour", 48),
+            ("microsecond", 2000),
+        ],
+    )
+    def test_invalid_increment(self, unit, increment):
+        d = OffsetDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000, offset=2)
+        with pytest.raises(ValueError, match="[Ii]ncrement"):
+            d.round(unit, increment=increment, ignore_dst=True)
+
+    def test_invalid_unit(self):
+        d = OffsetDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000, offset=2)
+        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+            d.round("foo", ignore_dst=True)  # type: ignore[arg-type]
+
+    def test_out_of_range(self):
+        d = LocalDateTime.MAX.replace(nanosecond=0).assume_fixed_offset(0)
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            d.round("second", increment=5, ignore_dst=True)
+
+
 def test_cannot_subclass():
     with pytest.raises(TypeError):
 

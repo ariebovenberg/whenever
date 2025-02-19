@@ -11,11 +11,14 @@ use crate::date::MAX_YEAR;
 use crate::date_delta::{DateDelta, InitError};
 use crate::datetime_delta::{handle_exact_unit, DateTimeDelta};
 use crate::docstrings as doc;
+use crate::round;
 use crate::State;
 
+/// TimeDelta represents a duration of time with nanosecond precision.
+///
+/// The struct design is inspired by datetime.timedelta and chrono::timedelta
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub(crate) struct TimeDelta {
-    // struct design inspired by datetime.timedelta and chrono::TimeDelta
     pub(crate) secs: i64,  // div_euclid(total_nanos) - may be negative
     pub(crate) nanos: u32, // rem_euclid(total_nanos) - never negative
 }
@@ -84,10 +87,68 @@ impl TimeDelta {
     }
 
     pub(crate) fn checked_add(self, other: Self) -> Option<Self> {
+        // FUTURE: optimize to avoid i128
         Self::from_nanos(self.total_nanos() + other.total_nanos())
     }
 
     pub(crate) const ZERO: Self = Self { secs: 0, nanos: 0 };
+
+    pub(crate) fn round(self, increment: i64, mode: round::Mode) -> Option<Self> {
+        debug_assert!(increment > 0);
+        let TimeDelta {
+            mut secs,
+            mut nanos,
+        } = self;
+
+        if increment < 1_000_000_000 {
+            nanos = Self::round_subsec(nanos, increment as u32, mode);
+            secs += (nanos / 1_000_000_000) as i64;
+            nanos %= 1_000_000_000;
+        } else {
+            secs = Self::round_whole_secs(secs, nanos, increment, mode);
+            if (-MAX_SECS..=MAX_SECS).contains(&secs) {
+                nanos = 0
+            } else {
+                return None;
+            }
+        }
+
+        Some(Self { secs, nanos })
+    }
+
+    fn round_subsec(nanos: u32, increment: u32, mode: round::Mode) -> u32 {
+        debug_assert!(increment < 1_000_000_000);
+        debug_assert!(1_000_000_000 % increment == 0);
+        let quotient = nanos / increment;
+        let remainder = nanos % increment;
+        let threshold = match mode {
+            round::Mode::HalfEven => std::cmp::max(increment / 2 + (quotient % 2 == 0) as u32, 1),
+            round::Mode::Ceil => 1,
+            round::Mode::Floor => increment + 1,
+            round::Mode::HalfFloor => increment / 2 + 1,
+            round::Mode::HalfCeil => std::cmp::max(increment / 2, 1),
+        };
+        let round_up = remainder >= threshold;
+        (quotient + u32::from(round_up)) * increment
+    }
+
+    fn round_whole_secs(secs: i64, nanos: u32, increment_ns: i64, mode: round::Mode) -> i64 {
+        debug_assert!(increment_ns % 1_000_000_000 == 0);
+        let increment_s = increment_ns / 1_000_000_000;
+        let quotient = secs.div_euclid(increment_s);
+        let remainder_ns = secs.rem_euclid(increment_s) * 1_000_000_000 + nanos as i64;
+        let threshold_ns = match mode {
+            round::Mode::HalfEven => {
+                std::cmp::max(increment_ns / 2 + (quotient % 2 == 0) as i64, 1)
+            }
+            round::Mode::HalfCeil => std::cmp::max(increment_ns / 2, 1),
+            round::Mode::Ceil => 1,
+            round::Mode::Floor => increment_ns + 1,
+            round::Mode::HalfFloor => increment_ns / 2 + 1,
+        };
+        let round_up = remainder_ns >= threshold_ns;
+        (quotient + i64::from(round_up)) * increment_s
+    }
 }
 
 impl PyWrapped for TimeDelta {}
@@ -587,22 +648,16 @@ unsafe fn from_py_timedelta(cls: *mut PyObject, d: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn py_timedelta(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let TimeDelta { nanos, mut secs } = TimeDelta::extract(slf);
+    let TimeDelta { nanos, secs } = TimeDelta::extract(slf);
     let &PyDateTime_CAPI {
         Delta_FromDelta,
         DeltaType,
         ..
     } = State::for_obj(slf).py_api;
-    let mut micros = (nanos as f64 / 1_000.0).round_ties_even() as i32;
-    if micros == 1_000_000 {
-        micros = 0;
-        secs += 1
-    }
-    let sign = if secs >= 0 { 1 } else { -1 };
     Delta_FromDelta(
-        (secs.div_euclid(SECS_PER_DAY * sign) * sign) as _,
-        secs.rem_euclid(SECS_PER_DAY * sign) as _,
-        micros,
+        secs.div_euclid(SECS_PER_DAY) as _,
+        secs.rem_euclid(SECS_PER_DAY) as _,
+        (nanos / 1_000) as _,
         0,
         DeltaType,
     )
@@ -782,16 +837,33 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
         .flatten()
         .ok_or_else(|| value_err!("Invalid format: {}", s_obj.repr()))?;
 
-    let (nanos, empty) =
+    let (nanos, is_empty) =
         parse_all_components(s).ok_or_else(|| value_err!("Invalid format: {}", s_obj.repr()))?;
 
     // i.e. there must be at least one component (`PT` alone is invalid)
-    if empty {
+    if is_empty {
         Err(value_err!("Invalid format: {}", s_obj.repr()))?;
     }
     TimeDelta::from_nanos(nanos * sign)
         .ok_or_value_err("Time delta out of range")?
         .to_obj(cls.cast())
+}
+
+unsafe fn round(
+    slf: *mut PyObject,
+    cls: *mut PyTypeObject,
+    args: &[*mut PyObject],
+    kwargs: &mut KwargIter,
+) -> PyReturn {
+    let (unit, increment, mode) =
+        round::parse_args(State::for_obj(slf), args, kwargs, true, false)?;
+    if unit == round::Unit::Day {
+        Err(value_err!(doc::CANNOT_ROUND_DAY_MSG))?;
+    }
+    TimeDelta::extract(slf)
+        .round(increment, mode)
+        .ok_or_value_err("Resulting TimeDelta out of range")?
+        .to_obj(cls)
 }
 
 static mut METHODS: &[PyMethodDef] = &[
@@ -821,6 +893,7 @@ static mut METHODS: &[PyMethodDef] = &[
         in_hrs_mins_secs_nanos,
         doc::TIMEDELTA_IN_HRS_MINS_SECS_NANOS
     ),
+    method_kwargs!(round, doc::TIMEDELTA_ROUND),
     PyMethodDef::zeroed(),
 ];
 

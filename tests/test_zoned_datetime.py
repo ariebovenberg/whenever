@@ -38,6 +38,7 @@ from .common import (
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
+    system_tz,
     system_tz_ams,
     system_tz_nyc,
 )
@@ -547,30 +548,40 @@ class TestEquality:
         assert not hours(2) == d  # type: ignore[comparison-overlap]
 
 
-def test_is_ambiguous():
-    assert not ZonedDateTime(
-        2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"
-    ).is_ambiguous()
-    assert ZonedDateTime(
-        2023,
-        10,
-        29,
-        2,
-        15,
-        30,
-        tz="Europe/Amsterdam",
-        disambiguate="earlier",
-    ).is_ambiguous()
-    # skipped times are shifted into non-ambiguous times
-    assert not ZonedDateTime(
-        2023,
-        3,
-        26,
-        2,
-        15,
-        30,
-        tz="Europe/Amsterdam",
-    ).is_ambiguous()
+@pytest.mark.parametrize(
+    "d, expect",
+    [
+        (
+            ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
+            False,
+        ),
+        (
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                15,
+                30,
+                tz="Europe/Amsterdam",
+                disambiguate="earlier",
+            ),
+            True,
+        ),
+        (
+            # skipped times are shifted into non-ambiguous times
+            ZonedDateTime(2023, 3, 26, 2, 15, 30, tz="Europe/Amsterdam"),
+            False,
+        ),
+    ],
+)
+def test_is_ambiguous(d, expect):
+    assert d.is_ambiguous() == expect
+
+    # the same result with SystemDateTime
+    with system_tz(d.tz):
+        d_system = d.to_system_tz()
+        assert d_system.is_ambiguous() == expect
 
 
 @pytest.mark.parametrize(
@@ -651,6 +662,11 @@ def test_is_ambiguous():
 )
 def test_day_length(d, expect):
     assert d.day_length() == expect
+
+    # test the same behavior on SystemDateTime
+    with system_tz(d.tz):
+        d_system = d.to_system_tz()
+        assert d_system.day_length() == expect
 
 
 @pytest.mark.parametrize(
@@ -735,6 +751,12 @@ def test_day_length(d, expect):
 )
 def test_start_of_day(d, expect):
     assert d.start_of_day() == expect
+
+    # test the same behavior on SystemDateTime
+    with system_tz(d.tz):
+        d_system = d.to_system_tz()
+        expect_system = expect.to_system_tz()
+        assert d_system.start_of_day() == expect_system
 
 
 def test_instant():
@@ -2296,6 +2318,251 @@ class TestDifference:
 
         # same with the method
         assert d.difference(other) == d - other
+
+
+class TestRound:
+
+    @pytest.mark.parametrize(
+        "d, increment, unit, floor, ceil, half_floor, half_ceil, half_even",
+        [
+            (
+                ZonedDateTime(
+                    2023, 7, 14, 1, nanosecond=459_999_999, tz="Europe/Paris"
+                ),
+                1,
+                "nanosecond",
+                ZonedDateTime(
+                    2023, 7, 14, 1, nanosecond=459_999_999, tz="Europe/Paris"
+                ),
+                ZonedDateTime(
+                    2023, 7, 14, 1, nanosecond=459_999_999, tz="Europe/Paris"
+                ),
+                ZonedDateTime(
+                    2023, 7, 14, 1, nanosecond=459_999_999, tz="Europe/Paris"
+                ),
+                ZonedDateTime(
+                    2023, 7, 14, 1, nanosecond=459_999_999, tz="Europe/Paris"
+                ),
+                ZonedDateTime(
+                    2023, 7, 14, 1, nanosecond=459_999_999, tz="Europe/Paris"
+                ),
+            ),
+            (
+                ZonedDateTime(
+                    2023,
+                    7,
+                    14,
+                    1,
+                    2,
+                    21,
+                    nanosecond=459_999_999,
+                    tz="Europe/Paris",
+                ),
+                4,
+                "second",
+                ZonedDateTime(2023, 7, 14, 1, 2, 20, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, 1, 2, 24, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, 1, 2, 20, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, 1, 2, 20, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, 1, 2, 20, tz="Europe/Paris"),
+            ),
+            (
+                ZonedDateTime(
+                    2023,
+                    7,
+                    14,
+                    23,
+                    52,
+                    29,
+                    nanosecond=999_999_999,
+                    tz="Europe/Paris",
+                ),
+                10,
+                "minute",
+                ZonedDateTime(2023, 7, 14, 23, 50, 0, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 15, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, 23, 50, 0, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, 23, 50, 0, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, 23, 50, 0, tz="Europe/Paris"),
+            ),
+            (
+                ZonedDateTime(
+                    2023,
+                    7,
+                    14,
+                    11,
+                    59,
+                    29,
+                    nanosecond=999_999_999,
+                    tz="Europe/Paris",
+                ),
+                12,
+                "hour",
+                ZonedDateTime(2023, 7, 14, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, 12, 0, 0, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, 12, 0, 0, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, 12, 0, 0, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, 12, 0, 0, tz="Europe/Paris"),
+            ),
+            # normal, 24-hour day
+            (
+                ZonedDateTime(2023, 7, 14, 12, tz="Europe/Paris"),
+                1,
+                "day",
+                ZonedDateTime(2023, 7, 14, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 15, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 15, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, tz="Europe/Paris"),
+            ),
+            # shorter day
+            (
+                ZonedDateTime(2023, 3, 26, 11, 30, tz="Europe/Paris"),
+                1,
+                "day",
+                ZonedDateTime(2023, 3, 26, tz="Europe/Paris"),
+                ZonedDateTime(2023, 3, 27, tz="Europe/Paris"),
+                ZonedDateTime(2023, 3, 26, tz="Europe/Paris"),
+                ZonedDateTime(2023, 3, 27, tz="Europe/Paris"),
+                ZonedDateTime(2023, 3, 26, tz="Europe/Paris"),
+            ),
+            # shorter day (23 hours)
+            (
+                ZonedDateTime(2023, 3, 26, 11, 30, tz="Europe/Paris"),
+                1,
+                "day",
+                ZonedDateTime(2023, 3, 26, tz="Europe/Paris"),
+                ZonedDateTime(2023, 3, 27, tz="Europe/Paris"),
+                ZonedDateTime(2023, 3, 26, tz="Europe/Paris"),
+                ZonedDateTime(2023, 3, 27, tz="Europe/Paris"),
+                ZonedDateTime(2023, 3, 26, tz="Europe/Paris"),
+            ),
+            # longer day (24.5 hours)
+            (
+                ZonedDateTime(2024, 4, 7, 12, 15, tz="Australia/Lord_Howe"),
+                1,
+                "day",
+                ZonedDateTime(2024, 4, 7, tz="Australia/Lord_Howe"),
+                ZonedDateTime(2024, 4, 8, tz="Australia/Lord_Howe"),
+                ZonedDateTime(2024, 4, 7, tz="Australia/Lord_Howe"),
+                ZonedDateTime(2024, 4, 8, tz="Australia/Lord_Howe"),
+                ZonedDateTime(2024, 4, 7, tz="Australia/Lord_Howe"),
+            ),
+            # keeps the offset if possible
+            (
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    15,
+                    tz="Europe/Paris",
+                    disambiguate="later",
+                ),
+                30,
+                "minute",
+                ZonedDateTime(
+                    2023, 10, 29, 2, 0, tz="Europe/Paris", disambiguate="later"
+                ),
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    30,
+                    tz="Europe/Paris",
+                    disambiguate="later",
+                ),
+                ZonedDateTime(
+                    2023, 10, 29, 2, 0, tz="Europe/Paris", disambiguate="later"
+                ),
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    30,
+                    tz="Europe/Paris",
+                    disambiguate="later",
+                ),
+                ZonedDateTime(
+                    2023, 10, 29, 2, 0, tz="Europe/Paris", disambiguate="later"
+                ),
+            ),
+        ],
+    )
+    def test_round(
+        self,
+        d: ZonedDateTime,
+        increment,
+        unit,
+        floor,
+        ceil,
+        half_floor,
+        half_ceil,
+        half_even,
+    ):
+        assert d.round(unit, increment=increment) == half_even
+        assert d.round(unit, increment=increment, mode="floor") == floor
+        assert d.round(unit, increment=increment, mode="ceil") == ceil
+        assert (
+            d.round(unit, increment=increment, mode="half_floor") == half_floor
+        )
+        assert (
+            d.round(unit, increment=increment, mode="half_ceil") == half_ceil
+        )
+        assert (
+            d.round(unit, increment=increment, mode="half_even") == half_even
+        )
+
+    def test_default(self):
+        d = ZonedDateTime(
+            2023, 7, 14, 1, 2, 3, nanosecond=500_000_000, tz="Europe/Paris"
+        )
+        assert d.round() == ZonedDateTime(
+            2023, 7, 14, 1, 2, 4, tz="Europe/Paris"
+        )
+        assert d.replace(second=8).round() == ZonedDateTime(
+            2023, 7, 14, 1, 2, 8, tz="Europe/Paris"
+        )
+
+    def test_invalid_mode(self):
+        d = ZonedDateTime(
+            2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
+        )
+        with pytest.raises(ValueError, match="mode.*foo"):
+            d.round("second", mode="foo")  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        "unit, increment",
+        [
+            ("minute", 8),
+            ("second", 14),
+            ("millisecond", 15),
+            ("day", 2),
+            ("hour", 48),
+            ("microsecond", 1500),
+        ],
+    )
+    def test_invalid_increment(self, unit, increment):
+        d = ZonedDateTime(
+            2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
+        )
+        with pytest.raises(ValueError, match="[Ii]ncrement"):
+            d.round(unit, increment=increment)
+
+    def test_invalid_unit(self):
+        d = ZonedDateTime(
+            2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
+        )
+        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+            d.round("foo")  # type: ignore[arg-type]
+
+    def test_out_of_range(self):
+        d = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
+
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            d.round("hour", increment=4)
 
 
 def test_pickle():

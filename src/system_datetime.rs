@@ -5,14 +5,15 @@ use pyo3_ffi::*;
 use crate::common::*;
 use crate::docstrings as doc;
 use crate::{
-    date::Date,
+    date::{Date, MAX as MAX_DATE},
     date_delta::DateDelta,
     datetime_delta::set_units_from_kwargs,
     datetime_delta::DateTimeDelta,
     instant::Instant,
     local_datetime::{set_components_from_kwargs, DateTime},
     offset_datetime::{self, local, timestamp, timestamp_millis, timestamp_nanos, OffsetDateTime},
-    time::Time,
+    round,
+    time::{Time, MIDNIGHT},
     time_delta::TimeDelta,
     zoned_datetime::ZonedDateTime,
     State,
@@ -879,6 +880,157 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
         .to_obj(state.time_delta_type)
 }
 
+unsafe fn is_ambiguous(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    let OffsetDateTime { date, time, .. } = OffsetDateTime::extract(slf);
+    matches!(
+        OffsetResult::for_system_tz(State::for_obj(slf).py_api, date, time)?,
+        OffsetResult::Fold(_, _)
+    )
+    .to_py()
+}
+
+unsafe fn start_of_day(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    let OffsetDateTime { date, .. } = OffsetDateTime::extract(slf);
+    let &State {
+        py_api,
+        exc_repeated,
+        exc_skipped,
+        ..
+    } = State::for_obj(slf);
+    OffsetDateTime::resolve_system_tz_using_disambiguate(
+        py_api,
+        date,
+        MIDNIGHT,
+        Disambiguate::Compatible,
+        exc_repeated,
+        exc_skipped,
+    )?
+    .to_obj(Py_TYPE(slf))
+}
+
+unsafe fn day_length(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    let OffsetDateTime { date, .. } = OffsetDateTime::extract(slf);
+    let &State {
+        py_api,
+        exc_repeated,
+        exc_skipped,
+        time_delta_type,
+        ..
+    } = State::for_obj(slf);
+    let start_of_day = OffsetDateTime::resolve_system_tz_using_disambiguate(
+        py_api,
+        date,
+        MIDNIGHT,
+        Disambiguate::Compatible,
+        exc_repeated,
+        exc_skipped,
+    )?
+    .instant();
+    let start_of_next_day = OffsetDateTime::resolve_system_tz_using_disambiguate(
+        py_api,
+        date.increment(),
+        MIDNIGHT,
+        Disambiguate::Compatible,
+        exc_repeated,
+        exc_skipped,
+    )?
+    .instant();
+    TimeDelta::from_nanos_unchecked(start_of_next_day.total_nanos() - start_of_day.total_nanos())
+        .to_obj(time_delta_type)
+}
+
+unsafe fn round(
+    slf: *mut PyObject,
+    cls: *mut PyTypeObject,
+    args: &[*mut PyObject],
+    kwargs: &mut KwargIter,
+) -> PyReturn {
+    let state = State::for_type(cls);
+    let (unit, increment, mode) = round::parse_args(state, args, kwargs, false, false)?;
+
+    match unit {
+        round::Unit::Day => _round_day(slf, state, mode),
+        _ => {
+            let OffsetDateTime {
+                mut date,
+                time,
+                offset_secs,
+            } = OffsetDateTime::extract(slf);
+            let (time_rounded, next_day) = time.round(increment as u64, mode);
+            if next_day == 1 {
+                if date != MAX_DATE {
+                    date = date.increment();
+                } else {
+                    Err(value_err!("Resulting datetime out of range"))?
+                }
+            };
+            OffsetDateTime::resolve_system_tz_using_offset(
+                state.py_api,
+                date,
+                time_rounded,
+                offset_secs,
+            )
+        }
+    }?
+    .to_obj(cls)
+}
+
+unsafe fn _round_day(
+    slf: *mut PyObject,
+    state: &State,
+    mode: round::Mode,
+) -> PyResult<OffsetDateTime> {
+    let OffsetDateTime { date, time, .. } = OffsetDateTime::extract(slf);
+    let &State {
+        py_api,
+        exc_repeated,
+        exc_skipped,
+        ..
+    } = state;
+    let get_floor = || {
+        OffsetDateTime::resolve_system_tz_using_disambiguate(
+            py_api,
+            date,
+            MIDNIGHT,
+            Disambiguate::Compatible,
+            exc_repeated,
+            exc_skipped,
+        )
+    };
+    let get_ceil = || {
+        OffsetDateTime::resolve_system_tz_using_disambiguate(
+            py_api,
+            date.increment(),
+            MIDNIGHT,
+            Disambiguate::Compatible,
+            exc_repeated,
+            exc_skipped,
+        )
+    };
+    match mode {
+        round::Mode::Ceil => get_ceil(),
+        round::Mode::Floor => get_floor(),
+        _ => {
+            let time_ns = time.total_nanos();
+            let floor = get_floor()?;
+            let ceil = get_ceil()?;
+            let day_ns = (ceil.instant().total_nanos() - floor.instant().total_nanos()) as u64;
+            debug_assert!(day_ns > 1);
+            let threshold = match mode {
+                round::Mode::HalfEven => day_ns / 2 + (time_ns % 2 == 0) as u64,
+                round::Mode::HalfFloor => day_ns / 2 + 1,
+                round::Mode::HalfCeil => day_ns / 2,
+                _ => unreachable!(),
+            };
+            if time_ns >= threshold {
+                Ok(ceil)
+            } else {
+                Ok(floor)
+            }
+        }
+    }
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     // FUTURE: get docstrings from Python implementation
     method!(identity2 named "__copy__", c""),
@@ -929,6 +1081,10 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(add, doc::SYSTEMDATETIME_ADD),
     method_kwargs!(subtract, doc::SYSTEMDATETIME_SUBTRACT),
     method!(difference, doc::KNOWSINSTANT_DIFFERENCE, METH_O),
+    method!(is_ambiguous, doc::SYSTEMDATETIME_IS_AMBIGUOUS),
+    method!(start_of_day, doc::SYSTEMDATETIME_START_OF_DAY),
+    method!(day_length, doc::SYSTEMDATETIME_DAY_LENGTH),
+    method_kwargs!(round, doc::SYSTEMDATETIME_ROUND),
     PyMethodDef::zeroed(),
 ];
 

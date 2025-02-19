@@ -32,7 +32,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.6.17"
+__version__ = "0.7.0"
 
 import enum
 import re
@@ -133,6 +133,7 @@ _MAX_DELTA_MONTHS = 9999 * 12
 _MAX_DELTA_DAYS = 9999 * 366
 _MAX_DELTA_NANOS = _MAX_DELTA_DAYS * 24 * 3_600_000_000_000
 _UNSET = object()
+_PY312 = sys.version_info >= (3, 12)
 
 
 class _ImmutableBase:
@@ -1041,6 +1042,84 @@ class Time(_ImmutableBase):
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
         return Time._from_py_unchecked(self._py_time.replace(**kwargs), nanos)
 
+    def _to_ns_since_midnight(self) -> int:
+        return (
+            self._py_time.hour * 3_600_000_000_000
+            + self._py_time.minute * 60_000_000_000
+            + self._py_time.second * 1_000_000_000
+            + self._nanos
+        )
+
+    @classmethod
+    def _from_ns_since_midnight(cls, ns: int) -> Time:
+        assert 0 <= ns < 86_400_000_000_000
+        (hours, ns) = divmod(ns, 3_600_000_000_000)
+        (minutes, ns) = divmod(ns, 60_000_000_000)
+        (seconds, ns) = divmod(ns, 1_000_000_000)
+        return cls._from_py_unchecked(_time(hours, minutes, seconds), ns)
+
+    def round(
+        self,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = "second",
+        increment: int = 1,
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "half_even",
+    ) -> Time:
+        """Round the time to the specified unit and increment.
+        Various rounding modes are available.
+
+        Examples
+        --------
+        >>> Time(12, 39, 59).round("minute", 15)
+        Time(12:45:00)
+        >>> Time(8, 9, 13).round("second", 5, mode="floor")
+        Time(08:09:10)
+        """
+        if unit == "day":  # type: ignore[comparison-overlap]
+            raise ValueError("Cannot round Time to day")
+        return self._round_unchecked(
+            increment_to_ns(unit, increment, any_hour_ok=False),
+            mode,
+            86_400_000_000_000,
+        )[0]
+
+    def _round_unchecked(
+        self,
+        increment_ns: int,
+        mode: str,
+        day_in_ns: int,
+    ) -> tuple[Time, int]:  # the time, and whether the result is "next day"
+
+        quotient, remainder_ns = divmod(
+            self._to_ns_since_midnight(), increment_ns
+        )
+
+        if mode == "half_even":  # check the default mode first
+            threshold_ns = increment_ns // 2 + (quotient % 2 == 0) or 1
+        elif mode == "ceil":
+            threshold_ns = 1  # Always round up
+        elif mode == "floor":
+            threshold_ns = increment_ns + 1  # Never round up
+        elif mode == "half_floor":
+            threshold_ns = increment_ns // 2 + 1
+        elif mode == "half_ceil":
+            threshold_ns = increment_ns // 2 or 1
+        else:
+            raise ValueError(f"Invalid rounding mode: {mode!r}")
+
+        round_up = remainder_ns >= threshold_ns
+        ns_since_midnight = (quotient + round_up) * increment_ns
+        next_day, ns_since_midnight = divmod(ns_since_midnight, day_in_ns)
+        return self._from_ns_since_midnight(ns_since_midnight), next_day
+
     @classmethod
     def _from_py_unchecked(cls, t: _time, nanos: int, /) -> Time:
         assert not t.microsecond
@@ -1108,6 +1187,42 @@ class Time(_ImmutableBase):
         )
 
 
+_NS_PER_UNIT = {
+    "minute": 60_000_000_000,
+    "second": 1_000_000_000,
+    "millisecond": 1_000_000,
+    "microsecond": 1_000,
+    "nanosecond": 1,
+}
+
+
+def increment_to_ns(unit: str, increment: int, any_hour_ok: bool) -> int:
+    if increment < 1 or increment > 1_000 or increment != int(increment):
+        raise ValueError("Invalid increment")
+    if unit == "day":
+        if increment == 1:
+            return 86_400_000_000_000
+        else:
+            raise ValueError("Invalid increment for day")
+    elif unit == "hour":
+        if 24 % increment and not any_hour_ok:
+            raise ValueError("Invalid increment for hour")
+        else:
+            return 3_600_000_000_000 * increment
+    elif unit in ("minute", "second"):
+        if 60 % increment:
+            raise ValueError(f"Invalid increment for {unit}")
+        else:
+            return _NS_PER_UNIT[unit] * increment
+    elif unit in ("millisecond", "microsecond", "nanosecond"):
+        if 1_000 % increment:
+            raise ValueError(f"Invalid increment for {unit}")
+        else:
+            return _NS_PER_UNIT[unit] * increment
+    else:
+        raise ValueError(f"Invalid unit: {unit}")
+
+
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
 def _unpkl_time(data: bytes) -> Time:
@@ -1122,7 +1237,7 @@ Time.MAX = Time(23, 59, 59, nanosecond=999_999_999)
 
 @final
 class TimeDelta(_ImmutableBase):
-    """A duration consisting of a precise time: hours, minutes, (micro)seconds
+    """A duration consisting of a precise time: hours, minutes, (nano)seconds
 
     The inputs are normalized, so 90 minutes becomes 1 hour and 30 minutes,
     for example.
@@ -1273,7 +1388,8 @@ class TimeDelta(_ImmutableBase):
 
         Note
         ----
-        Nanoseconds are rounded to the nearest even microsecond.
+        Nanoseconds are truncated to microseconds.
+        If you need more control over rounding, use :meth:`round` first.
 
         Example
         -------
@@ -1281,7 +1397,7 @@ class TimeDelta(_ImmutableBase):
         >>> d.py_timedelta()
         timedelta(seconds=5400)
         """
-        return _timedelta(microseconds=round(self._total_ns / 1_000))
+        return _timedelta(microseconds=self._total_ns // 1_000)
 
     @classmethod
     def from_py_timedelta(cls, td: _timedelta, /) -> TimeDelta:
@@ -1383,6 +1499,58 @@ class TimeDelta(_ImmutableBase):
             raise ValueError("TimeDelta out of range")
 
         return TimeDelta._from_nanos_unchecked(sign * nanos)
+
+    def round(
+        self,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = "second",
+        increment: int = 1,
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "half_even",
+    ) -> TimeDelta:
+        """Round the delta to the specified unit and increment.
+        Various rounding modes are available.
+
+        Examples
+        --------
+        >>> t = TimeDelta(seconds=12345)
+        TimeDelta(03:25:45)
+        >>> t.round("minute")
+        TimeDelta(03:26:00)
+        >>> t.round("second", increment=10, mode="floor")
+        Time(03:25:40)
+        """
+        if unit == "day":  # type: ignore[comparison-overlap]
+            raise ValueError(CANNOT_ROUND_DAY_MSG)
+
+        increment_ns = increment_to_ns(unit, increment, any_hour_ok=True)
+        quotient, remainder_ns = divmod(self._total_ns, increment_ns)
+
+        if mode == "half_even":  # check the default case first
+            threshold_ns = increment_ns // 2 + (quotient % 2 == 0) or 1
+        elif mode == "ceil":
+            threshold_ns = 1  # Always round up
+        elif mode == "floor":
+            threshold_ns = increment_ns + 1  # Never round up
+        elif mode == "half_floor":
+            threshold_ns = increment_ns // 2 + 1
+        elif mode == "half_ceil":
+            threshold_ns = increment_ns // 2 or 1
+        else:
+            raise ValueError(f"Invalid rounding mode: {mode!r}")
+
+        round_up = remainder_ns >= threshold_ns
+        rounded_ns = (quotient + round_up) * increment_ns
+        if abs(rounded_ns) > _MAX_DELTA_NANOS:
+            raise ValueError("Resulting TimeDelta out of range")
+        return self._from_nanos_unchecked(rounded_ns)
 
     def __add__(self, other: TimeDelta) -> TimeDelta:
         """Add two deltas together
@@ -2335,6 +2503,8 @@ class _BasicConversions(_ImmutableBase, ABC):
         Note
         ----
         Nanoseconds are truncated to microseconds.
+        If you wish to customize the rounding behavior, use
+        the ``round()`` method first.
         """
         return self._py_dt.replace(microsecond=self._nanos // 1_000)
 
@@ -2554,6 +2724,47 @@ class _KnowsLocal(_BasicConversions, ABC):
             **kwargs,
         ) -> _T:
             """Inverse of :meth:`add`."""
+
+        def round(
+            self: _T,
+            unit: Literal[
+                "day",
+                "hour",
+                "minute",
+                "second",
+                "millisecond",
+                "microsecond",
+                "nanosecond",
+            ] = "second",
+            increment: int = 1,
+            mode: Literal[
+                "ceil", "floor", "half_ceil", "half_floor", "half_even"
+            ] = "half_even",
+        ) -> _T:
+            """Round the datetime to the specified unit and increment.
+            Different rounding modes are available.
+
+            Examples
+            --------
+            >>> d = ZonedDateTime(2020, 8, 15, 23, 24, 18, tz="Europe/Paris")
+            >>> d.round("day")
+            ZonedDateTime(2020-08-16 00:00:00+02:00[Europe/Paris])
+            >>> d.round("minute", increment=15, mode="floor")
+            ZonedDateTime(2020-08-15 23:15:00+02:00[Europe/Paris])
+
+            Notes
+            -----
+            * In the rare case that rounding results in an ambiguous time,
+              the offset is preserved if possible.
+              Otherwise, the time is resolved according to the "compatible" strategy.
+            * Rounding in "day" mode may be affected by DST transitions.
+              i.e. on 23-hour days, 11:31 AM is rounded up.
+            * For ``OffsetDateTime``, the ``ignore_dst`` parameter is required,
+              because it is possible (though unlikely) that the rounded datetime
+              will not have the same offset.
+            * This method has similar behavior to the ``round()`` method of
+              Temporal objects in JavaScript.
+            """
 
 
 class _KnowsInstant(_BasicConversions):
@@ -3239,6 +3450,49 @@ class Instant(_KnowsInstant):
             nanoseconds=-nanoseconds,
         )
 
+    def round(
+        self,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = "second",
+        increment: int = 1,
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "half_even",
+    ) -> Instant:
+        """Round the instant to the specified unit and increment.
+        Various rounding modes are available.
+
+        Examples
+        --------
+        >>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round("minute", 15)
+        Instant(2020-01-01 12:45:00Z)
+        >>> Instant.from_utc(2020, 1, 1, 8, 9, 13).round("second", 5, mode="floor")
+        Instant(2020-01-01 08:09:10Z)
+        """
+        if unit == "day":  # type: ignore[comparison-overlap]
+            raise ValueError(CANNOT_ROUND_DAY_MSG)
+        rounded_time, next_day = Time._from_py_unchecked(
+            self._py_dt.time(), self._nanos
+        )._round_unchecked(
+            increment_to_ns(unit, increment, any_hour_ok=False),
+            mode,
+            86_400_000_000_000,
+        )
+        return self._from_py_unchecked(
+            _datetime.combine(
+                self._py_dt.date() + _timedelta(days=next_day),
+                rounded_time._py_time,
+                tzinfo=_UTC,
+            ),
+            rounded_time._nanos,
+        )
+
     def __add__(self, delta: TimeDelta) -> Instant:
         """Add a time amount to this datetime.
 
@@ -3855,6 +4109,54 @@ class OffsetDateTime(_KnowsInstantAndLocal):
             nanos,
         )
 
+    def round(
+        self,
+        unit: Literal[
+            "day",
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = "second",
+        increment: int = 1,
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "half_even",
+        *,
+        ignore_dst: bool = False,
+    ) -> OffsetDateTime:
+        """Round the datetime to the specified unit and increment.
+        Different rounding modes are available.
+
+        Examples
+        --------
+        >>> d = OffsetDateTime(2020, 8, 15, 23, 24, 18, offset=+4)
+        >>> d.round("day")
+        OffsetDateTime(2020-08-16 00:00:00[+04:00])
+        >>> d.round("minute", increment=15, mode="floor")
+        OffsetDateTime(2020-08-15 23:15:00[+04:00])
+
+        Note
+        ----
+        * The ``ignore_dst`` parameter is required, because it is possible
+          (though unlikely) that the rounded datetime will not have the same offset.
+        * This method has similar behavior to the ``round()`` method of
+          Temporal objects in JavaScript.
+        """
+        if ignore_dst is not True:
+            raise ImplicitlyIgnoringDST(OFFSET_ROUNDING_DST_MSG)
+        return (
+            self.local()
+            ._round_unchecked(
+                increment_to_ns(unit, increment, any_hour_ok=False),
+                mode,
+                86_400_000_000_000,
+            )
+            .assume_fixed_offset(self.offset)
+        )
+
     def __repr__(self) -> str:
         return f"OffsetDateTime({str(self).replace('T', ' ')})"
 
@@ -4338,8 +4640,62 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         midnight = _datetime.combine(
             self._py_dt.date(), _time(), self._py_dt.tzinfo
         )
-        return ZonedDateTime._from_py_unchecked(
+        return self._from_py_unchecked(
             midnight.astimezone(_UTC).astimezone(self._py_dt.tzinfo), 0
+        )
+
+    def round(
+        self,
+        unit: Literal[
+            "day",
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = "second",
+        increment: int = 1,
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "half_even",
+    ) -> ZonedDateTime:
+        """Round the datetime to the specified unit and increment.
+        Different rounding modes are available.
+
+        Examples
+        --------
+        >>> d = ZonedDateTime(2020, 8, 15, 23, 24, 18, tz="Europe/Paris")
+        >>> d.round("day")
+        ZonedDateTime(2020-08-16 00:00:00+02:00[Europe/Paris])
+        >>> d.round("minute", increment=15, mode="floor")
+        ZonedDateTime(2020-08-15 23:15:00+02:00[Europe/Paris])
+
+        Notes
+        -----
+        * In the rare case that rounding results in an ambiguous time,
+          the offset is preserved if possible.
+          Otherwise, the time is resolved according to the "compatible" strategy.
+        * Rounding in "day" mode may be affected by DST transitions.
+          i.e. on 23-hour days, 11:31 AM is rounded up.
+        * This method has similar behavior to the ``round()`` method of
+          Temporal objects in JavaScript.
+        """
+        increment_ns = increment_to_ns(unit, increment, any_hour_ok=False)
+        if unit == "day":
+            increment_ns = day_ns = self.day_length()._total_ns
+        else:
+            day_ns = 86_400_000_000_000
+
+        rounded_local = self.local()._round_unchecked(
+            increment_ns, mode, day_ns
+        )
+        return self._from_py_unchecked(
+            _resolve_ambiguity_using_prev_offset(
+                rounded_local._py_dt.replace(tzinfo=self._py_dt.tzinfo),
+                self._py_dt.utcoffset(),  # type: ignore[arg-type]
+            ),
+            rounded_local._nanos,
         )
 
     def __repr__(self) -> str:
@@ -4709,6 +5065,117 @@ class SystemDateTime(_KnowsInstantAndLocal):
             milliseconds=milliseconds,
             microseconds=microseconds,
             nanoseconds=nanoseconds,
+        )
+
+    def is_ambiguous(self) -> bool:
+        """Whether the local time is ambiguous, e.g. due to a DST transition.
+
+        Example
+        -------
+        >>> # with system configured in Europe/Paris
+        >>> SystemDateTime(2020, 8, 15, 23).is_ambiguous()
+        False
+        >>> SystemDateTime(2023, 10, 29, 2, 15).is_ambiguous()
+        True
+
+        Note
+        ----
+        This method may give a different result after a change to the system timezone.
+        """
+        naive = self._py_dt.replace(tzinfo=None)
+        return naive.astimezone(_UTC) != naive.replace(fold=1).astimezone(_UTC)
+
+    def day_length(self) -> TimeDelta:
+        """The duration between the start of the current day and the next.
+        This is usually 24 hours, but may be different due to timezone transitions.
+
+        Example
+        -------
+        >>> # with system configured in Europe/Paris
+        >>> SystemDateTime(2020, 8, 15).day_length()
+        TimeDelta(24:00:00)
+        >>> SystemDateTime(2023, 10, 29).day_length()
+        TimeDelta(25:00:00)
+
+        Note
+        ----
+        This method may give a different result after a change to the system timezone.
+        """
+        midnight = _datetime.combine(self._py_dt.date(), _time())
+        next_midnight = midnight + _timedelta(days=1)
+        return TimeDelta.from_py_timedelta(
+            _resolve_system_ambiguity(next_midnight, "compatible")
+            - _resolve_system_ambiguity(midnight, "compatible")
+        )
+
+    def start_of_day(self) -> SystemDateTime:
+        """The start of the current calendar day.
+
+        This is almost always at midnight the same day, but may be different
+        for timezones which transition at—and thus skip over—midnight.
+
+        Note
+        ----
+        This method may give a different result after a change to the system timezone.
+        """
+        midnight = _datetime.combine(self._py_dt.date(), _time())
+        return self._from_py_unchecked(
+            _resolve_system_ambiguity(midnight, "compatible"), 0
+        )
+
+    def round(
+        self,
+        unit: Literal[
+            "day",
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = "second",
+        increment: int = 1,
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "half_even",
+    ) -> SystemDateTime:
+        """Round the datetime to the specified unit and increment.
+        Different rounding modes are available.
+
+        Examples
+        --------
+        >>> d = SystemDateTime(2020, 8, 15, 23, 24, 18)
+        >>> d.round("day")
+        SystemDateTime(2020-08-16 00:00:00+02:00)
+        >>> d.round("minute", increment=15, mode="floor")
+        SystemDateTime(2020-08-15 23:15:00+02:00)
+
+        Notes
+        -----
+        * In the rare case that rounding results in an ambiguous time,
+          the offset is preserved if possible.
+          Otherwise, the time is resolved according to the "compatible" strategy.
+        * Rounding in "day" mode may be affected by DST transitions.
+          i.e. on 23-hour days, 11:31 AM is rounded up.
+        * This method has similar behavior to the ``round()`` method of
+          Temporal objects in JavaScript.
+        * The result of this method may change if the system timezone changes.
+        """
+        increment_ns = increment_to_ns(unit, increment, any_hour_ok=False)
+        if unit == "day":
+            increment_ns = day_ns = self.day_length()._total_ns
+        else:
+            day_ns = 86_400_000_000_000
+
+        rounded_local = self.local()._round_unchecked(
+            increment_ns, mode, day_ns
+        )
+        return self._from_py_unchecked(
+            _resolve_system_ambiguity_using_prev_offset(
+                rounded_local._py_dt,
+                self._py_dt.utcoffset(),  # type: ignore[arg-type]
+            ),
+            rounded_local._nanos,
         )
 
     # a custom pickle implementation with a smaller payload
@@ -5149,6 +5616,52 @@ class LocalDateTime(_KnowsLocal):
             self._nanos,
         )
 
+    def round(
+        self,
+        unit: Literal[
+            "day",
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = "second",
+        increment: int = 1,
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "half_even",
+    ) -> LocalDateTime:
+        """Round the datetime to the specified unit and increment.
+        Different rounding modes are available.
+
+        Examples
+        --------
+        >>> d = LocalDateTime(2020, 8, 15, 23, 24, 18)
+        >>> d.round("day")
+        LocalDateTime(2020-08-16 00:00:00)
+        >>> d.round("minute", increment=15, mode="floor")
+        LocalDateTime(2020-08-15 23:15:00)
+
+        Note
+        ----
+        This method has similar behavior to the ``round()`` method of
+        Temporal objects in JavaScript.
+        """
+        return self._round_unchecked(
+            increment_to_ns(unit, increment, any_hour_ok=False),
+            mode,
+            86_400_000_000_000,
+        )
+
+    def _round_unchecked(
+        self, increment_ns: int, mode: str, day_ns: int
+    ) -> LocalDateTime:
+        rounded_time, next_day = self.time()._round_unchecked(
+            increment_ns, mode, day_ns
+        )
+        return self.date()._add_days(next_day).at(rounded_time)
+
     def __repr__(self) -> str:
         return f"LocalDateTime({str(self).replace('T', ' ')})"
 
@@ -5253,6 +5766,15 @@ OFFSET_NOW_DST_MSG = (
     "whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
 )
 
+OFFSET_ROUNDING_DST_MSG = (
+    "Rounding a fixed offset datetime may (in rare cases) result in a datetime "
+    "for which the offset is incorrect. This is because the offset may change "
+    "during DST transitions. To perform DST-safe rounding, convert to a "
+    "ZonedDateTime first. Or, if you don't know the timezone and accept "
+    "potentially incorrect results during DST transitions, pass `ignore_dst=True`. "
+    "For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
+)
+
 ADJUST_OFFSET_DATETIME_MSG = (
     "Adjusting a fixed offset datetime implicitly ignores DST and other timezone changes. "
     + _IGNORE_DST_SUGGESTION
@@ -5261,6 +5783,12 @@ ADJUST_OFFSET_DATETIME_MSG = (
 ADJUST_LOCAL_DATETIME_MSG = (
     "Adjusting a local datetime by time units (e.g. hours and minutess) ignores "
     "DST and other timezone changes. " + _IGNORE_DST_SUGGESTION
+)
+
+CANNOT_ROUND_DAY_MSG = (
+    "Cannot round to day, because days do not have a fixed length. "
+    "Due to daylight saving time, some days have 23 or 25 hours."
+    "If you wish to round to exaxtly 24 hours, use `round('hour', increment=24)`."
 )
 
 
@@ -5306,7 +5834,7 @@ def _resolve_ambiguity_using_prev_offset(
 # Whether the fold of a system time needs to be flipped in a gap
 # was changed (fixed) in Python 3.12. See cpython/issues/83861
 _requires_flip: Callable[[Disambiguate], bool] = (
-    "compatible".__ne__ if sys.version_info > (3, 12) else "compatible".__eq__
+    "compatible".__ne__ if _PY312 else "compatible".__eq__
 )
 
 
@@ -5348,7 +5876,7 @@ def _resolve_system_ambiguity_using_prev_offset(
     else:  # rare: no offset match.
         # We account for this CPython bug: cpython/issues/83861
         if (
-            sys.version_info < (3, 12)
+            not _PY312
             # i.e. it's in a gap
             and dt.astimezone(_UTC).astimezone().replace(tzinfo=None) != dt
         ):  # pragma: no cover

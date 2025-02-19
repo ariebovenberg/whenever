@@ -517,34 +517,210 @@ def test_pos(d):
     assert d is +d
 
 
-def test_py_timedelta():
-    assert TimeDelta().py_timedelta() == py_timedelta(0)
-    assert TimeDelta(
-        hours=1, minutes=2, seconds=3, microseconds=4
-    ).py_timedelta() == py_timedelta(
-        hours=1, minutes=2, seconds=3, microseconds=4
+class TestRound:
+    @pytest.mark.parametrize(
+        "t, increment, unit, floor, ceil, half_floor, half_ceil, half_even",
+        [
+            (
+                TimeDelta.ZERO,
+                1,
+                "nanosecond",
+                TimeDelta.ZERO,
+                TimeDelta.ZERO,
+                TimeDelta.ZERO,
+                TimeDelta.ZERO,
+                TimeDelta.ZERO,
+            ),
+            (
+                TimeDelta(nanoseconds=5),
+                10,
+                "nanosecond",
+                TimeDelta.ZERO,
+                TimeDelta(nanoseconds=10),
+                TimeDelta.ZERO,
+                TimeDelta(nanoseconds=10),
+                TimeDelta.ZERO,
+            ),
+            (
+                TimeDelta(nanoseconds=-5),
+                10,
+                "nanosecond",
+                TimeDelta(nanoseconds=-10),
+                TimeDelta.ZERO,
+                TimeDelta(nanoseconds=-10),
+                TimeDelta.ZERO,
+                TimeDelta.ZERO,
+            ),
+            (
+                TimeDelta(hours=1, minutes=2, seconds=3, nanoseconds=4),
+                1,
+                "nanosecond",
+                TimeDelta(hours=1, minutes=2, seconds=3, nanoseconds=4),
+                TimeDelta(hours=1, minutes=2, seconds=3, nanoseconds=4),
+                TimeDelta(hours=1, minutes=2, seconds=3, nanoseconds=4),
+                TimeDelta(hours=1, minutes=2, seconds=3, nanoseconds=4),
+                TimeDelta(hours=1, minutes=2, seconds=3, nanoseconds=4),
+            ),
+            (
+                -TimeDelta(hours=1, minutes=2, seconds=3, nanoseconds=4),
+                1,
+                "nanosecond",
+                -TimeDelta(hours=1, minutes=2, seconds=3, nanoseconds=4),
+                -TimeDelta(hours=1, minutes=2, seconds=3, nanoseconds=4),
+                -TimeDelta(hours=1, minutes=2, seconds=3, nanoseconds=4),
+                -TimeDelta(hours=1, minutes=2, seconds=3, nanoseconds=4),
+                -TimeDelta(hours=1, minutes=2, seconds=3, nanoseconds=4),
+            ),
+            # nanoseconds avoids a tie
+            (
+                TimeDelta(hours=1, minutes=2, seconds=3, nanoseconds=4),
+                2,
+                "second",
+                TimeDelta(hours=1, minutes=2, seconds=2),
+                TimeDelta(hours=1, minutes=2, seconds=4),
+                TimeDelta(hours=1, minutes=2, seconds=4),
+                TimeDelta(hours=1, minutes=2, seconds=4),
+                TimeDelta(hours=1, minutes=2, seconds=4),
+            ),
+            # nanoseconds results in a tie
+            (
+                TimeDelta(hours=1, minutes=2, seconds=7, milliseconds=500),
+                3,
+                "second",
+                TimeDelta(hours=1, minutes=2, seconds=6),
+                TimeDelta(hours=1, minutes=2, seconds=9),
+                TimeDelta(hours=1, minutes=2, seconds=6),
+                TimeDelta(hours=1, minutes=2, seconds=9),
+                TimeDelta(hours=1, minutes=2, seconds=6),
+            ),
+            (
+                TimeDelta(hours=1, minutes=2, seconds=3),
+                2,
+                "second",
+                TimeDelta(hours=1, minutes=2, seconds=2),
+                TimeDelta(hours=1, minutes=2, seconds=4),
+                TimeDelta(hours=1, minutes=2, seconds=2),
+                TimeDelta(hours=1, minutes=2, seconds=4),
+                TimeDelta(hours=1, minutes=2, seconds=4),
+            ),
+            (
+                TimeDelta(hours=1, minutes=7.5),
+                15,
+                "minute",
+                TimeDelta(hours=1, minutes=0),
+                TimeDelta(hours=1, minutes=15),
+                TimeDelta(hours=1, minutes=0),
+                TimeDelta(hours=1, minutes=15),
+                TimeDelta(hours=1, minutes=0),
+            ),
+            (
+                -TimeDelta(hours=4, minutes=43),
+                30,
+                "minute",
+                -TimeDelta(hours=5),
+                -TimeDelta(hours=4.5),
+                -TimeDelta(hours=4.5),
+                -TimeDelta(hours=4.5),
+                -TimeDelta(hours=4.5),
+            ),
+            (
+                TimeDelta(hours=10, minutes=30),
+                10,
+                "hour",
+                TimeDelta(hours=10),
+                TimeDelta(hours=20),
+                TimeDelta(hours=10),
+                TimeDelta(hours=10),
+                TimeDelta(hours=10),
+            ),
+        ],
     )
-    assert TimeDelta(nanoseconds=-42_000).py_timedelta() == py_timedelta(
-        microseconds=-42
-    )
+    def test_valid(
+        self, t, increment, unit, floor, ceil, half_floor, half_ceil, half_even
+    ):
+        assert t.round(unit, increment=increment) == half_even
+        assert t.round(unit, increment=increment, mode="ceil") == ceil
+        assert t.round(unit, increment=increment, mode="floor") == floor
+        assert (
+            t.round(unit, increment=increment, mode="half_floor") == half_floor
+        )
+        assert (
+            t.round(unit, increment=increment, mode="half_ceil") == half_ceil
+        )
+        assert (
+            t.round(unit, increment=increment, mode="half_even") == half_even
+        )
 
-    # consistent rounding of sub-microsecond values
-    assert TimeDelta(nanoseconds=-1).py_timedelta() == py_timedelta()
-    assert TimeDelta(nanoseconds=-499).py_timedelta() == py_timedelta()
-    assert TimeDelta(nanoseconds=-500).py_timedelta() == py_timedelta()
-    assert TimeDelta(nanoseconds=-501).py_timedelta() == py_timedelta(
-        microseconds=-1
+    @pytest.mark.parametrize(
+        "unit, increment",
+        [
+            ("minute", 8),
+            ("second", 14),
+            ("millisecond", 15),
+            ("millisecond", 2000),
+            ("second", 90),
+            ("hour", 5000),
+            ("millisecond", -100),
+        ],
     )
-    assert TimeDelta(nanoseconds=1).py_timedelta() == py_timedelta()
-    assert TimeDelta(nanoseconds=499).py_timedelta() == py_timedelta()
-    # banker's rounding
-    assert TimeDelta(nanoseconds=500).py_timedelta() == py_timedelta()
-    assert TimeDelta(nanoseconds=1500).py_timedelta() == py_timedelta(
-        microseconds=2
-    )
-    assert TimeDelta(nanoseconds=501).py_timedelta() == py_timedelta(
-        microseconds=1
-    )
+    def test_invalid_increment(self, unit, increment):
+        t = TimeDelta.ZERO
+        with pytest.raises(ValueError, match="[Ii]ncrement"):
+            t.round(unit, increment=increment)
+
+    def test_default_half_even_seconds(self):
+        assert TimeDelta(seconds=2, milliseconds=500).round() == TimeDelta(
+            seconds=2
+        )
+        assert TimeDelta(seconds=3, milliseconds=500).round() == TimeDelta(
+            seconds=4
+        )
+
+    def test_invalid_unit(self):
+        t = TimeDelta.ZERO
+        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+            t.round("foo")  # type: ignore[arg-type]
+
+    def test_invalid_mode(self):
+        t = TimeDelta.ZERO
+        with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
+            t.round(mode="foo")  # type: ignore[arg-type]
+
+    def test_no_day_unit(self):
+        t = TimeDelta.ZERO
+        with pytest.raises(ValueError, match="day.*24 hours"):
+            t.round("day")  # type: ignore[arg-type]
+
+    def test_out_of_range(self):
+        t = TimeDelta.MAX - TimeDelta(nanoseconds=1)
+        assert t.round(mode="floor") == TimeDelta.MAX - TimeDelta(seconds=1)
+        with pytest.raises(ValueError, match="range"):
+            t.round(unit="hour", increment=10)
+
+
+@pytest.mark.parametrize(
+    "d, expected",
+    [
+        (TimeDelta(), py_timedelta(0)),
+        (
+            TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4),
+            py_timedelta(hours=1, minutes=2, seconds=3, microseconds=4),
+        ),
+        (TimeDelta(nanoseconds=-42_865), py_timedelta(microseconds=-43)),
+        (TimeDelta(nanoseconds=1), py_timedelta()),
+        (TimeDelta(nanoseconds=1_000), py_timedelta(microseconds=1)),
+        (TimeDelta(nanoseconds=1_000_000), py_timedelta(milliseconds=1)),
+        (TimeDelta(nanoseconds=987), py_timedelta()),
+        (TimeDelta(nanoseconds=12987), py_timedelta(microseconds=12)),
+        (TimeDelta(hours=48, nanoseconds=800), py_timedelta(days=2)),
+        (
+            TimeDelta(hours=48, nanoseconds=-800),
+            py_timedelta(days=2, microseconds=-1),
+        ),
+    ],
+)
+def test_py_timedelta(d, expected):
+    assert d.py_timedelta() == expected
 
 
 def test_from_py_timedelta():

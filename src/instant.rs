@@ -10,6 +10,7 @@ use crate::{
     date::Date,
     local_datetime::DateTime,
     offset_datetime::{self, OffsetDateTime},
+    round,
     time::Time,
     time_delta::TimeDelta,
     zoned_datetime::ZonedDateTime,
@@ -81,6 +82,7 @@ impl Instant {
         })
     }
 
+    // OPTIMIZE: lets see if we can remove the need for i128 in most places...
     pub(crate) const fn total_nanos(&self) -> i128 {
         self.secs as i128 * 1_000_000_000 + self.nanos as i128
     }
@@ -276,6 +278,13 @@ impl Instant {
             self.secs as Py_hash_t,
             hash_combine((self.secs >> 32) as Py_hash_t, self.nanos as Py_hash_t),
         )
+    }
+
+    fn to_delta(self) -> TimeDelta {
+        TimeDelta {
+            secs: self.secs,
+            nanos: self.nanos,
+        }
     }
 }
 
@@ -814,6 +823,28 @@ unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     }
 }
 
+unsafe fn round(
+    slf: *mut PyObject,
+    cls: *mut PyTypeObject,
+    args: &[*mut PyObject],
+    kwargs: &mut KwargIter,
+) -> PyReturn {
+    let (unit, increment, mode) =
+        round::parse_args(State::for_obj(slf), args, kwargs, false, false)?;
+    if unit == round::Unit::Day {
+        Err(value_err!(doc::CANNOT_ROUND_DAY_MSG))?;
+    }
+    let TimeDelta { secs, nanos } = Instant::extract(slf)
+        .to_delta()
+        .round(increment, mode)
+        .unwrap(); // safe unwrap: delta has higher range than instant
+
+    if secs > MAX_INSTANT {
+        Err(value_err!("Resulting Instant out of range"))?;
+    }
+    Instant { secs, nanos }.to_obj(cls)
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     method!(identity2 named "__copy__", c""),
     method!(identity2 named "__deepcopy__", c"", METH_O),
@@ -888,6 +919,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(to_system_tz, doc::KNOWSINSTANT_TO_SYSTEM_TZ),
     method_vararg!(to_fixed_offset, doc::KNOWSINSTANT_TO_FIXED_OFFSET),
     method!(difference, doc::KNOWSINSTANT_DIFFERENCE, METH_O),
+    method_kwargs!(round, doc::INSTANT_ROUND),
     PyMethodDef::zeroed(),
 ];
 

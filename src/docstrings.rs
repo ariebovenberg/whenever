@@ -114,7 +114,7 @@ Time(12:30:00)
 
 ";
 pub(crate) const TIMEDELTA: &CStr = c"\
-A duration consisting of a precise time: hours, minutes, (micro)seconds
+A duration consisting of a precise time: hours, minutes, (nano)seconds
 
 The inputs are normalized, so 90 minutes becomes 1 hour and 30 minutes,
 for example.
@@ -703,6 +703,20 @@ but will raise a ValueError.
 Use :meth:`OffsetDateTime.parse_rfc3339` if you'd like to
 parse an RFC 3339 string with a nonzero offset.
 ";
+pub(crate) const INSTANT_ROUND: &CStr = c"\
+round($self, unit='second', increment=1, mode='half_even')
+--
+
+Round the instant to the specified unit and increment.
+Various rounding modes are available.
+
+Examples
+--------
+>>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round(\"minute\", 15)
+Instant(2020-01-01 12:45:00Z)
+>>> Instant.from_utc(2020, 1, 1, 8, 9, 13).round(\"second\", 5, mode=\"floor\")
+Instant(2020-01-01 08:09:10Z)
+";
 pub(crate) const INSTANT_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0)
 --
@@ -850,6 +864,26 @@ replace_time($self, t, /)
 --
 
 Construct a new instance with the time replaced.";
+pub(crate) const LOCALDATETIME_ROUND: &CStr = c"\
+round($self, unit='second', increment=1, mode='half_even')
+--
+
+Round the datetime to the specified unit and increment.
+Different rounding modes are available.
+
+Examples
+--------
+>>> d = LocalDateTime(2020, 8, 15, 23, 24, 18)
+>>> d.round(\"day\")
+LocalDateTime(2020-08-16 00:00:00)
+>>> d.round(\"minute\", increment=15, mode=\"floor\")
+LocalDateTime(2020-08-15 23:15:00)
+
+Note
+----
+This method has similar behavior to the ``round()`` method of
+Temporal objects in JavaScript.
+";
 pub(crate) const LOCALDATETIME_STRPTIME: &CStr = c"\
 strptime(s, /, fmt)
 --
@@ -1189,6 +1223,28 @@ Construct a new instance with the time replaced.
 
 See the ``replace()`` method for more information.
 ";
+pub(crate) const OFFSETDATETIME_ROUND: &CStr = c"\
+round($self, unit='second', increment=1, mode='half_even', *, ignore_dst=False)
+--
+
+Round the datetime to the specified unit and increment.
+Different rounding modes are available.
+
+Examples
+--------
+>>> d = OffsetDateTime(2020, 8, 15, 23, 24, 18, offset=+4)
+>>> d.round(\"day\")
+OffsetDateTime(2020-08-16 00:00:00[+04:00])
+>>> d.round(\"minute\", increment=15, mode=\"floor\")
+OffsetDateTime(2020-08-15 23:15:00[+04:00])
+
+Note
+----
+* The ``ignore_dst`` parameter is required, because it is possible
+  (though unlikely) that the rounded datetime will not have the same offset.
+* This method has similar behavior to the ``round()`` method of
+  Temporal objects in JavaScript.
+";
 pub(crate) const OFFSETDATETIME_STRPTIME: &CStr = c"\
 strptime(s, /, fmt)
 --
@@ -1242,6 +1298,25 @@ specify how to handle such a situation using the ``disambiguate`` argument.
 See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
 for more information.
 ";
+pub(crate) const SYSTEMDATETIME_DAY_LENGTH: &CStr = c"\
+day_length($self)
+--
+
+The duration between the start of the current day and the next.
+This is usually 24 hours, but may be different due to timezone transitions.
+
+Example
+-------
+>>> # with system configured in Europe/Paris
+>>> SystemDateTime(2020, 8, 15).day_length()
+TimeDelta(24:00:00)
+>>> SystemDateTime(2023, 10, 29).day_length()
+TimeDelta(25:00:00)
+
+Note
+----
+This method may give a different result after a change to the system timezone.
+";
 pub(crate) const SYSTEMDATETIME_FROM_PY_DATETIME: &CStr = c"\
 from_py_datetime(d, /)
 --
@@ -1274,6 +1349,24 @@ from_timestamp_nanos(i, /)
 Create an instance from a UNIX timestamp (in nanoseconds).
 
 The inverse of the ``timestamp_nanos()`` method.
+";
+pub(crate) const SYSTEMDATETIME_IS_AMBIGUOUS: &CStr = c"\
+is_ambiguous($self)
+--
+
+Whether the local time is ambiguous, e.g. due to a DST transition.
+
+Example
+-------
+>>> # with system configured in Europe/Paris
+>>> SystemDateTime(2020, 8, 15, 23).is_ambiguous()
+False
+>>> SystemDateTime(2023, 10, 29, 2, 15).is_ambiguous()
+True
+
+Note
+----
+This method may give a different result after a change to the system timezone.
 ";
 pub(crate) const SYSTEMDATETIME_NOW: &CStr = c"\
 now()
@@ -1322,6 +1415,45 @@ replace_time($self, time, /, disambiguate=None)
 Construct a new instance with the time replaced.
 
 See the ``replace()`` method for more information.
+";
+pub(crate) const SYSTEMDATETIME_ROUND: &CStr = c"\
+round($self, unit='second', increment=1, mode='half_even')
+--
+
+Round the datetime to the specified unit and increment.
+Different rounding modes are available.
+
+Examples
+--------
+>>> d = SystemDateTime(2020, 8, 15, 23, 24, 18)
+>>> d.round(\"day\")
+SystemDateTime(2020-08-16 00:00:00+02:00)
+>>> d.round(\"minute\", increment=15, mode=\"floor\")
+SystemDateTime(2020-08-15 23:15:00+02:00)
+
+Notes
+-----
+* In the rare case that rounding results in an ambiguous time,
+  the offset is preserved if possible.
+  Otherwise, the time is resolved according to the \"compatible\" strategy.
+* Rounding in \"day\" mode may be affected by DST transitions.
+  i.e. on 23-hour days, 11:31 AM is rounded up.
+* This method has similar behavior to the ``round()`` method of
+  Temporal objects in JavaScript.
+* The result of this method may change if the system timezone changes.
+";
+pub(crate) const SYSTEMDATETIME_START_OF_DAY: &CStr = c"\
+start_of_day($self)
+--
+
+The start of the current calendar day.
+
+This is almost always at midnight the same day, but may be different
+for timezones which transition at—and thus skip over—midnight.
+
+Note
+----
+This method may give a different result after a change to the system timezone.
 ";
 pub(crate) const SYSTEMDATETIME_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
@@ -1412,6 +1544,20 @@ Example
 >>> d.replace(minute=3, nanosecond=4_000)
 Time(12:03:00.000004)
 
+";
+pub(crate) const TIME_ROUND: &CStr = c"\
+round($self, unit='second', increment=1, mode='half_even')
+--
+
+Round the time to the specified unit and increment.
+Various rounding modes are available.
+
+Examples
+--------
+>>> Time(12, 39, 59).round(\"minute\", 15)
+Time(12:45:00)
+>>> Time(8, 9, 13).round(\"second\", 5, mode=\"floor\")
+Time(08:09:10)
 ";
 pub(crate) const TIMEDELTA_FORMAT_COMMON_ISO: &CStr = c"\
 format_common_iso($self)
@@ -1560,13 +1706,30 @@ Inverse of :meth:`from_py_timedelta`
 
 Note
 ----
-Nanoseconds are rounded to the nearest even microsecond.
+Nanoseconds are truncated to microseconds.
+If you need more control over rounding, use :meth:`round` first.
 
 Example
 -------
 >>> d = TimeDelta(hours=1, minutes=30)
 >>> d.py_timedelta()
 timedelta(seconds=5400)
+";
+pub(crate) const TIMEDELTA_ROUND: &CStr = c"\
+round($self, unit='second', increment=1, mode='half_even')
+--
+
+Round the delta to the specified unit and increment.
+Various rounding modes are available.
+
+Examples
+--------
+>>> t = TimeDelta(seconds=12345)
+TimeDelta(03:25:45)
+>>> t.round(\"minute\")
+TimeDelta(03:26:00)
+>>> t.round(\"second\", increment=10, mode=\"floor\")
+Time(03:25:40)
 ";
 pub(crate) const YEARMONTH_FORMAT_COMMON_ISO: &CStr = c"\
 format_common_iso($self)
@@ -1775,6 +1938,31 @@ Construct a new instance with the time replaced.
 
 See the ``replace()`` method for more information.
 ";
+pub(crate) const ZONEDDATETIME_ROUND: &CStr = c"\
+round($self, unit='second', increment=1, mode='half_even')
+--
+
+Round the datetime to the specified unit and increment.
+Different rounding modes are available.
+
+Examples
+--------
+>>> d = ZonedDateTime(2020, 8, 15, 23, 24, 18, tz=\"Europe/Paris\")
+>>> d.round(\"day\")
+ZonedDateTime(2020-08-16 00:00:00+02:00[Europe/Paris])
+>>> d.round(\"minute\", increment=15, mode=\"floor\")
+ZonedDateTime(2020-08-15 23:15:00+02:00[Europe/Paris])
+
+Notes
+-----
+* In the rare case that rounding results in an ambiguous time,
+  the offset is preserved if possible.
+  Otherwise, the time is resolved according to the \"compatible\" strategy.
+* Rounding in \"day\" mode may be affected by DST transitions.
+  i.e. on 23-hour days, 11:31 AM is rounded up.
+* This method has similar behavior to the ``round()`` method of
+  Temporal objects in JavaScript.
+";
 pub(crate) const ZONEDDATETIME_START_OF_DAY: &CStr = c"\
 start_of_day($self)
 --
@@ -1809,6 +1997,8 @@ Convert to a standard library :class:`~datetime.datetime`
 Note
 ----
 Nanoseconds are truncated to microseconds.
+If you wish to customize the rounding behavior, use
+the ``round()`` method first.
 ";
 pub(crate) const KNOWSINSTANT_DIFFERENCE: &CStr = c"\
 difference($self, other, /)
@@ -1963,8 +2153,10 @@ like :meth:`~LocalDateTime.assume_utc` or
 ";
 pub(crate) const ADJUST_LOCAL_DATETIME_MSG: &str = "Adjusting a local datetime by time units (e.g. hours and minutess) ignores DST and other timezone changes. To perform DST-safe operations, convert to a ZonedDateTime first. Or, if you don't know the timezone and accept potentially incorrect results during DST transitions, pass `ignore_dst=True`. For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";
 pub(crate) const ADJUST_OFFSET_DATETIME_MSG: &str = "Adjusting a fixed offset datetime implicitly ignores DST and other timezone changes. To perform DST-safe operations, convert to a ZonedDateTime first. Or, if you don't know the timezone and accept potentially incorrect results during DST transitions, pass `ignore_dst=True`. For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";
+pub(crate) const CANNOT_ROUND_DAY_MSG: &str = "Cannot round to day, because days do not have a fixed length. Due to daylight saving time, some days have 23 or 25 hours.If you wish to round to exaxtly 24 hours, use `round('hour', increment=24)`.";
 pub(crate) const DIFF_LOCAL_MSG: &str = "The difference between two local datetimes implicitly ignores DST transitions and other timezone changes. To perform DST-safe operations, convert to a ZonedDateTime first. Or, if you don't know the timezone and accept potentially incorrect results during DST transitions, pass `ignore_dst=True`. For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";
 pub(crate) const DIFF_OPERATOR_LOCAL_MSG: &str = "The difference between two local datetimes implicitly ignores DST transitions and other timezone changes. Use the `difference` method instead.";
 pub(crate) const OFFSET_NOW_DST_MSG: &str = "Getting the current time with a fixed offset implicitly ignores DST and other timezone changes. Instead, use `Instant.now()` or `ZonedDateTime.now(<tz name>)` if you know the timezone. Or, if you want to ignore DST and accept potentially incorrect offsets, pass `ignore_dst=True` to this method. For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";
+pub(crate) const OFFSET_ROUNDING_DST_MSG: &str = "Rounding a fixed offset datetime may (in rare cases) result in a datetime for which the offset is incorrect. This is because the offset may change during DST transitions. To perform DST-safe rounding, convert to a ZonedDateTime first. Or, if you don't know the timezone and accept potentially incorrect results during DST transitions, pass `ignore_dst=True`. For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";
 pub(crate) const SHIFT_LOCAL_MSG: &str = "Adding or subtracting a (date)time delta to a local datetime implicitly ignores DST transitions and other timezone changes. Use the `add` or `subtract` method instead.";
 pub(crate) const TIMESTAMP_DST_MSG: &str = "Converting from a timestamp with a fixed offset implicitly ignores DST and other timezone changes. To perform a DST-safe conversion, use ZonedDateTime.from_timestamp() instead. Or, if you don't know the timezone and accept potentially incorrect results during DST transitions, pass `ignore_dst=True`. For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";

@@ -197,12 +197,17 @@ impl Iterator for KwargIter {
     type Item = (*mut PyObject, *mut PyObject);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.pos >= self.size {
+        if self.pos == self.size {
             return None;
         }
-        let i = self.pos;
-        self.pos = i + 1;
-        unsafe { Some((PyTuple_GET_ITEM(self.keys, i), *self.values.offset(i))) }
+        unsafe {
+            let item = (
+                PyTuple_GET_ITEM(self.keys, self.pos),
+                *self.values.offset(self.pos),
+            );
+            self.pos += 1;
+            Some(item)
+        }
     }
 }
 
@@ -761,6 +766,7 @@ unsafe fn system_offset(
     defer_decref!(naive);
     let aware = methcall0(naive, "astimezone")?;
     defer_decref!(aware);
+    // OPTIMIZE: just create the raw naive datetime instead of going through replace()?
     let kwargs = PyDict_New().as_result()?;
     defer_decref!(kwargs);
     if PyDict_SetItemString(kwargs, c"tzinfo".as_ptr(), Py_None()) == -1 {
@@ -986,6 +992,7 @@ pub(crate) unsafe fn call1(func: *mut PyObject, arg: *mut PyObject) -> PyReturn 
 
 #[inline]
 pub(crate) unsafe fn methcall1(slf: *mut PyObject, name: &str, arg: *mut PyObject) -> PyReturn {
+    // OPTIMIZE: what if we use an interned string for the method name?
     PyObject_CallMethodOneArg(slf, steal!(name.to_py()?), arg).as_result()
 }
 
@@ -1051,6 +1058,20 @@ where
         }
     }
     Ok(())
+}
+
+#[inline]
+pub(crate) unsafe fn match_interned_str<T, F>(
+    name: &str,
+    value: *mut PyObject,
+    mut handler: F,
+) -> PyResult<T>
+where
+    F: FnMut(*mut PyObject, fn(*mut PyObject, *mut PyObject) -> bool) -> Option<T>,
+{
+    handler(value, ptr_eq)
+        .or_else(|| handler(value, value_eq))
+        .ok_or_else(|| value_err!("Invalid value for {}: {}", name, value.repr()))
 }
 
 #[inline]

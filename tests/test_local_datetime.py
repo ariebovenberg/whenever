@@ -533,6 +533,146 @@ class TestDifference:
             d - 43  # type: ignore[operator]
 
 
+class TestRound:
+
+    @pytest.mark.parametrize(
+        "d, increment, unit, floor, ceil, half_floor, half_ceil, half_even",
+        [
+            (
+                LocalDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                1,
+                "nanosecond",
+                LocalDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                LocalDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                LocalDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                LocalDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                LocalDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+            ),
+            (
+                LocalDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                1,
+                "second",
+                LocalDateTime(2023, 7, 14, 1, 2, 3),
+                LocalDateTime(2023, 7, 14, 1, 2, 4),
+                LocalDateTime(2023, 7, 14, 1, 2, 3),
+                LocalDateTime(2023, 7, 14, 1, 2, 3),
+                LocalDateTime(2023, 7, 14, 1, 2, 3),
+            ),
+            (
+                LocalDateTime(2023, 7, 14, 1, 2, 21, nanosecond=459_999_999),
+                4,
+                "second",
+                LocalDateTime(2023, 7, 14, 1, 2, 20),
+                LocalDateTime(2023, 7, 14, 1, 2, 24),
+                LocalDateTime(2023, 7, 14, 1, 2, 20),
+                LocalDateTime(2023, 7, 14, 1, 2, 20),
+                LocalDateTime(2023, 7, 14, 1, 2, 20),
+            ),
+            (
+                LocalDateTime(2023, 7, 14, 23, 52, 29, nanosecond=999_999_999),
+                10,
+                "minute",
+                LocalDateTime(2023, 7, 14, 23, 50, 0),
+                LocalDateTime(2023, 7, 15),
+                LocalDateTime(2023, 7, 14, 23, 50, 0),
+                LocalDateTime(2023, 7, 14, 23, 50, 0),
+                LocalDateTime(2023, 7, 14, 23, 50, 0),
+            ),
+            (
+                LocalDateTime(2023, 7, 14, 23, 52, 29, nanosecond=999_999_999),
+                60,
+                "minute",
+                LocalDateTime(2023, 7, 14, 23),
+                LocalDateTime(2023, 7, 15),
+                LocalDateTime(2023, 7, 15),
+                LocalDateTime(2023, 7, 15),
+                LocalDateTime(2023, 7, 15),
+            ),
+            (
+                LocalDateTime(2023, 7, 14, 11, 59, 29, nanosecond=999_999_999),
+                12,
+                "hour",
+                LocalDateTime(2023, 7, 14),
+                LocalDateTime(2023, 7, 14, 12, 0, 0),
+                LocalDateTime(2023, 7, 14, 12, 0, 0),
+                LocalDateTime(2023, 7, 14, 12, 0, 0),
+                LocalDateTime(2023, 7, 14, 12, 0, 0),
+            ),
+            (
+                LocalDateTime(2023, 7, 14, 12),
+                1,
+                "day",
+                LocalDateTime(2023, 7, 14),
+                LocalDateTime(2023, 7, 15),
+                LocalDateTime(2023, 7, 14),
+                LocalDateTime(2023, 7, 15),
+                LocalDateTime(2023, 7, 14),
+            ),
+        ],
+    )
+    def test_round(
+        self,
+        d: LocalDateTime,
+        increment,
+        unit,
+        floor,
+        ceil,
+        half_floor,
+        half_ceil,
+        half_even,
+    ):
+        assert d.round(unit, increment=increment) == half_even
+        assert d.round(unit, increment=increment, mode="floor") == floor
+        assert d.round(unit, increment=increment, mode="ceil") == ceil
+        assert (
+            d.round(unit, increment=increment, mode="half_floor") == half_floor
+        )
+        assert (
+            d.round(unit, increment=increment, mode="half_ceil") == half_ceil
+        )
+        assert (
+            d.round(unit, increment=increment, mode="half_even") == half_even
+        )
+
+    def test_default(self):
+        d = LocalDateTime(2023, 7, 14, 1, 2, 3, nanosecond=500_000_000)
+        assert d.round() == LocalDateTime(2023, 7, 14, 1, 2, 4)
+        assert d.replace(second=8).round() == LocalDateTime(
+            2023, 7, 14, 1, 2, 8
+        )
+
+    def test_invalid_mode(self):
+        d = LocalDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
+        with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
+            d.round("second", mode="foo")  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        "unit, increment",
+        [
+            ("minute", 8),
+            ("second", 14),
+            ("millisecond", 15),
+            ("day", 2),
+            ("hour", 48),
+            ("microsecond", 2000),
+        ],
+    )
+    def test_invalid_increment(self, unit, increment):
+        d = LocalDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
+        with pytest.raises(ValueError, match="[Ii]ncrement"):
+            d.round(unit, increment=increment)
+
+    def test_invalid_unit(self):
+        d = LocalDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
+        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+            d.round("foo")  # type: ignore[arg-type]
+
+    def test_out_of_range(self):
+        d = LocalDateTime.MAX.replace(nanosecond=0)
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            d.round("second", increment=5)
+
+
 def test_replace_date():
     d = LocalDateTime(2020, 8, 15, 3, 12, 9)
     assert d.replace_date(Date(1996, 2, 19)) == LocalDateTime(

@@ -8,12 +8,13 @@ use crate::datetime_delta::set_units_from_kwargs;
 use crate::docstrings as doc;
 use crate::local_datetime::set_components_from_kwargs;
 use crate::{
-    date::Date,
+    date::{Date, MAX as MAX_DATE},
     date_delta::DateDelta,
     datetime_delta::DateTimeDelta,
     instant::{Instant, MAX_INSTANT, MIN_INSTANT},
     local_datetime::DateTime,
     offset_datetime::{self, OffsetDateTime},
+    round,
     time::{Time, MIDNIGHT},
     time_delta::{self, TimeDelta},
     State,
@@ -120,6 +121,8 @@ impl ZonedDateTime {
         .ok_or_value_err("Resulting datetime is out of range")
     }
 
+    /// Resolve a local time in a timezone, trying to reuse the given offset
+    /// if it is valid. Otherwise, the "compatible" disambiguation is used.
     unsafe fn resolve_using_offset(
         py_api: &PyDateTime_CAPI,
         date: Date,
@@ -1381,6 +1384,107 @@ unsafe fn day_length(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         .to_obj(time_delta_type)
 }
 
+unsafe fn round(
+    slf: *mut PyObject,
+    cls: *mut PyTypeObject,
+    args: &[*mut PyObject],
+    kwargs: &mut KwargIter,
+) -> PyReturn {
+    let state = State::for_type(cls);
+    let (unit, increment, mode) = round::parse_args(state, args, kwargs, false, false)?;
+
+    match unit {
+        round::Unit::Day => _round_day(slf, state, mode),
+        _ => {
+            let ZonedDateTime {
+                mut date,
+                time,
+                offset_secs,
+                zoneinfo,
+            } = ZonedDateTime::extract(slf);
+            let (time_rounded, next_day) = time.round(increment as u64, mode);
+            if next_day == 1 {
+                if date != MAX_DATE {
+                    date = date.increment();
+                } else {
+                    Err(value_err!("Resulting datetime out of range"))?
+                }
+            };
+            ZonedDateTime::resolve_using_offset(
+                state.py_api,
+                date,
+                time_rounded,
+                zoneinfo,
+                offset_secs,
+            )
+        }
+    }?
+    .to_obj(cls)
+}
+
+unsafe fn _round_day(
+    slf: *mut PyObject,
+    state: &State,
+    mode: round::Mode,
+) -> PyResult<ZonedDateTime> {
+    let ZonedDateTime {
+        date,
+        time,
+        zoneinfo,
+        ..
+    } = ZonedDateTime::extract(slf);
+    let &State {
+        py_api,
+        exc_repeated,
+        exc_skipped,
+        ..
+    } = state;
+    let get_floor = || {
+        ZonedDateTime::resolve_using_disambiguate(
+            py_api,
+            date,
+            MIDNIGHT,
+            zoneinfo,
+            Disambiguate::Compatible,
+            exc_repeated,
+            exc_skipped,
+        )
+    };
+    let get_ceil = || {
+        ZonedDateTime::resolve_using_disambiguate(
+            py_api,
+            date.increment(),
+            MIDNIGHT,
+            zoneinfo,
+            Disambiguate::Compatible,
+            exc_repeated,
+            exc_skipped,
+        )
+    };
+    match mode {
+        round::Mode::Ceil => get_ceil(),
+        round::Mode::Floor => get_floor(),
+        _ => {
+            let time_ns = time.total_nanos();
+            let floor = get_floor()?;
+            let ceil = get_ceil()?;
+            let day_ns = (ceil.instant().total_nanos() - floor.instant().total_nanos()) as u64;
+            debug_assert!(day_ns > 1);
+            let threshold = match mode {
+                round::Mode::HalfEven => day_ns / 2 + (time_ns % 2 == 0) as u64,
+                round::Mode::HalfFloor => day_ns / 2 + 1,
+                round::Mode::HalfCeil => day_ns / 2,
+                _ => unreachable!(),
+            };
+            if time_ns >= threshold {
+                Ok(ceil)
+            } else {
+                Ok(floor)
+            }
+        }
+    }
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     method!(identity2 named "__copy__", c""),
     method!(identity2 named "__deepcopy__", c"", METH_O),
@@ -1433,6 +1537,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(difference, doc::KNOWSINSTANT_DIFFERENCE, METH_O),
     method!(start_of_day, doc::ZONEDDATETIME_START_OF_DAY),
     method!(day_length, doc::ZONEDDATETIME_DAY_LENGTH),
+    method_kwargs!(round, doc::ZONEDDATETIME_ROUND),
     PyMethodDef::zeroed(),
 ];
 

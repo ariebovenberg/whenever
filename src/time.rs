@@ -8,6 +8,7 @@ use crate::common::*;
 use crate::date::Date;
 use crate::docstrings as doc;
 use crate::local_datetime::DateTime;
+use crate::round;
 use crate::State;
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -65,7 +66,7 @@ impl Time {
         self.nanos as u64 + self.total_seconds() as u64 * 1_000_000_000
     }
 
-    pub(crate) const fn from_total_nanos(nanos: u64) -> Self {
+    pub(crate) const fn from_total_nanos_unchecked(nanos: u64) -> Self {
         Time {
             hour: (nanos / 3_600_000_000_000) as u8,
             minute: ((nanos % 3_600_000_000_000) / 60_000_000_000) as u8,
@@ -165,6 +166,31 @@ impl Time {
         let result = Time::new(hour, minute, second, nanos);
         *s = &s[end_index..]; // advance the slice
         result
+    }
+
+    /// Round the time to the specified increment
+    ///
+    /// Returns the rounded time and whether it has wrapped around to the next day (0 or 1)
+    /// The increment is given in ns must be a divisor of 24 hours
+    pub(crate) fn round(self, increment: u64, mode: round::Mode) -> (Self, u64) {
+        debug_assert!(86_400_000_000_000 % increment == 0);
+        let total_nanos = self.total_nanos();
+        let quotient = total_nanos / increment;
+        let remainder = total_nanos % increment;
+
+        let threshold = match mode {
+            round::Mode::HalfEven => std::cmp::max(increment / 2 + (quotient % 2 == 0) as u64, 1),
+            round::Mode::Ceil => 1,
+            round::Mode::Floor => increment + 1,
+            round::Mode::HalfFloor => increment / 2 + 1,
+            round::Mode::HalfCeil => std::cmp::max(increment / 2, 1),
+        };
+        let round_up = remainder >= threshold;
+        let ns_since_midnight = (quotient + round_up as u64) * increment;
+        (
+            Self::from_total_nanos_unchecked(ns_since_midnight % 86_400_000_000_000),
+            ns_since_midnight / 86_400_000_000_000,
+        )
     }
 }
 
@@ -441,6 +467,25 @@ unsafe fn replace(
     }
 }
 
+unsafe fn round(
+    slf: *mut PyObject,
+    cls: *mut PyTypeObject,
+    args: &[*mut PyObject],
+    kwargs: &mut KwargIter,
+) -> PyReturn {
+    let (unit, increment, mode) =
+        round::parse_args(State::for_obj(slf), args, kwargs, false, false)?;
+    if unit == round::Unit::Day {
+        Err(value_err!("Cannot round Time to day"))?;
+    } else if unit == round::Unit::Hour && 86_400_000_000_000 % increment != 0 {
+        Err(value_err!("increment must be a divisor of 24"))?;
+    }
+    Time::extract(slf)
+        .round(increment as u64, mode)
+        .0
+        .to_obj(cls)
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     method!(identity2 named "__copy__", c""),
     method!(identity2 named "__deepcopy__", c"", METH_O),
@@ -455,6 +500,7 @@ static mut METHODS: &[PyMethodDef] = &[
     ),
     method!(from_py_time, doc::TIME_FROM_PY_TIME, METH_O | METH_CLASS),
     method!(on, doc::TIME_ON, METH_O),
+    method_kwargs!(round, doc::TIME_ROUND),
     PyMethodDef::zeroed(),
 ];
 

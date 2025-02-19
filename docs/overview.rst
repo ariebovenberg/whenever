@@ -1,39 +1,32 @@
 .. _overview:
 
-⭐️ Main features
-=================
+🌎 Overview
+============
 
 This page gives an overview of **whenever**'s main features for working
 with date and time.
 For more details, see the :ref:`API reference <api>`.
 
-Different types
----------------
-
-.. epigraph::
-
-   In API design, if you've got two things that are even subtly different,
-   it's worth having them as separate types—because you're representing the
-   meaning of your data more accurately.
-
-   -- Jon Skeet
+Core types
+----------
 
 While the standard library has a single :class:`~datetime.datetime` type
 for all use cases,
-**whenever** provides distinct types similar to other modern datetime libraries [2]_.
+**whenever** provides distinct types similar to other modern datetime libraries [2]_:
 
-- :class:`~whenever.Instant`—the simplest way to represent a point on the timeline
-- :class:`~whenever.LocalDateTime`—"wall clock time", how people typically think of time locally
-- :class:`~whenever.ZonedDateTime`—a point on the timeline with a local time and timezone
+- :class:`~whenever.Instant`—the simplest way to unambiguously represent a point on the timeline,
+  also known as **"exact time"**.
+  This type is analogous to a UNIX timestamp or UTC.
+- :class:`~whenever.LocalDateTime`—how humans represent time (e.g. *"January 23rd, 2023, 3:30pm"*),
+  also known as **"local time"**.
+  This type is analogous to an "naive" datetime in the standard library.
+- :class:`~whenever.ZonedDateTime`—A combination of the two concepts above:
+  an exact time paired with a local time at a specific location.
+  This type is analogous to an "aware" standard library datetime with ``tzinfo`` set to a ``ZoneInfo`` instance.
 
-Less commonly used types are:
-
-- :class:`~whenever.OffsetDateTime`—a point on the timeline with a fixed offset from UTC
-- :class:`~whenever.SystemDateTime`—a point on the timeline in the system timezone
-
-Each is designed to communicate intent, prevent mistakes, and optimize performance.
-You won't need all of them at the same time.
-Read on to find out which one is right for your use case.
+The distinction between these types is crucial for avoiding common pitfalls
+when working with dates and times.
+Read on to find out when to use each type.
 
 .. tip::
 
@@ -123,6 +116,22 @@ ZonedDateTime(2020-03-14 15:00:00-04:00[America/New_York])
 
     Read about ambiguity in more detail :ref:`here <ambiguity>`.
 
+
+Advanced types
+--------------
+
+.. epigraph::
+
+   In API design, if you've got two things that are even subtly different,
+   it's worth having them as separate types—because you're representing the
+   meaning of your data more accurately.
+
+   -- Jon Skeet
+
+Although the main types cover most use cases, **whenever** also provides
+additional types for specific scenarios. Having these as separate types
+makes it clear what you're working with and prevents mistakes.
+
 :class:`~whenever.OffsetDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -172,17 +181,17 @@ SystemDateTime(2022-10-24 13:00:00-04:00)
 
 .. _summary:
 
-Summary
-~~~~~~~
+Comparison of types
+~~~~~~~~~~~~~~~~~~~
 
 Here's a summary of the differences between the types:
 
 +------------------------------+---------+---------+-------+---------+---------+
 |                              | Instant | OffsetDT|ZonedDT| SystemDT|LocalDT  |
 +==============================+=========+=========+=======+=========+=========+
-| knows time since epoch       |   ✅    | ✅      | ✅    |  ✅     |  ❌     |
+| knows the **exact** time     |   ✅    | ✅      | ✅    |  ✅     |  ❌     |
 +------------------------------+---------+---------+-------+---------+---------+
-| knows the local time         |  ❌     |  ✅     |  ✅   |  ✅     |  ✅     |
+| knows the **local** time     |  ❌     |  ✅     |  ✅   |  ✅     |  ✅     |
 +------------------------------+---------+---------+-------+---------+---------+
 | knows about DST rules [6]_   |  ❌     |  ❌     |  ✅   |  ✅     |  ❌     |
 +------------------------------+---------+---------+-------+---------+---------+
@@ -193,10 +202,10 @@ Comparison and equality
 
 All types support equality and comparison.
 However, :class:`~whenever.LocalDateTime` instances are
-never equal or comparable to the exact ("aware") types.
+never equal or comparable to the "exact" types.
 
-Exact types
-~~~~~~~~~~~
+Exact time
+~~~~~~~~~~
 
 For exact types (:class:`~whenever.Instant`, :class:`~whenever.OffsetDateTime`,
 :class:`~whenever.ZonedDateTime`, and :class:`~whenever.SystemDateTime`),
@@ -229,8 +238,8 @@ False
 >>> d.exact_eq(same)
 True
 
-Local datetimes
-~~~~~~~~~~~~~~~
+Local time
+~~~~~~~~~~
 
 For :class:`~whenever.LocalDateTime`, equality is simply based on
 whether the values are the same, since there is no concept of timezones or UTC offset:
@@ -320,8 +329,8 @@ SystemDateTime(2023-12-28 11:30:00+01:00)
 >>> d.to_fixed_offset(4) == d
 True  # always the same moment in time
 
-To and from local datetimes
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+To and from local time
+~~~~~~~~~~~~~~~~~~~~~~
 
 Conversion to local date and time is easy: calling
 :meth:`~whenever._KnowsInstantAndLocal.local` simply
@@ -944,6 +953,27 @@ The system timezone
 When working with the timezone of the current system, there
 are a few things to keep in mind.
 
+Should I use ``SystemDateTime`` or ``ZonedDateTime``?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+There are two approaches to dealing with the system timezone:
+
+1. Use :class:`~whenever.SystemDateTime`
+2. Use :class:`~whenever.ZonedDateTime` and set the ``tz=`` to the system timezone
+   based on user input, or by retrieving it with the ``tzlocal`` third-party library.
+
+Each approach has pros and cons:
+
+- :class:`~whenever.SystemDateTime` is more convenient since no additional parameters are needed.
+- :class:`~whenever.SystemDateTime` has broadest platform support, since
+  not all systems are configured with a IANA timezone ID.
+- Operations on :class:`~whenever.SystemDateTime` always use the up-to-date system timezone.
+  This can be useful, but can also lead to unexpected results.
+- :class:`~whenever.ZonedDateTime` is significantly faster, since it doesn't need to
+  re-check the system timezone with each operation.
+- :class:`~whenever.ZonedDateTime` is easier to test and more explicit
+  about the timezone being used.
+
 Acceptable range
 ~~~~~~~~~~~~~~~~
 
@@ -999,12 +1029,12 @@ SystemDateTime(2020-08-15 08:00:00+02:00)
 
    :ref:`Why does SystemDateTime exist? <faq-why-system-tz>`
 
-.. [2] java.time, Noda Time (C#), and partly Temporal (JavaScript)
-   all use a similar datamodel.
-
 .. [1] The timezone ID is not part of the core ISO 8601 standard,
    but is part of the RFC 9557 extension.
    This format is commonly used by datetime libraries in other languages as well.
+
+.. [2] java.time, Noda Time (C#), and partly Temporal (JavaScript)
+   all use a similar datamodel.
 
 .. [6] Daylight Saving Time isn't the only reason for UTC offset changes.
    Changes can also occur due to political decisions, or historical reasons.
