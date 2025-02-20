@@ -174,11 +174,11 @@ class Time:
             "millisecond",
             "microsecond",
             "nanosecond",
-        ] = ...,
-        increment: int = ...,
+        ] = "second",
+        increment: int = 1,
         mode: Literal[
             "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = ...,
+        ] = "half_even",
     ) -> Time: ...
     def __lt__(self, other: Time) -> bool: ...
     def __le__(self, other: Time) -> bool: ...
@@ -224,11 +224,11 @@ class TimeDelta:
             "millisecond",
             "microsecond",
             "nanosecond",
-        ] = ...,
-        increment: int = ...,
+        ] = "second",
+        increment: int = 1,
         mode: Literal[
             "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = ...,
+        ] = "half_even",
     ) -> TimeDelta: ...
     def __hash__(self) -> int: ...
     def __lt__(self, other: TimeDelta) -> bool: ...
@@ -246,6 +246,8 @@ class TimeDelta:
     def __truediv__(self, other: float) -> TimeDelta: ...
     @overload
     def __truediv__(self, other: TimeDelta) -> float: ...
+    def __floordiv__(self, other: TimeDelta) -> int: ...
+    def __mod__(self, other: TimeDelta) -> TimeDelta: ...
     def __abs__(self) -> TimeDelta: ...
 
 @final
@@ -443,11 +445,11 @@ class Instant(_KnowsInstant):
             "millisecond",
             "microsecond",
             "nanosecond",
-        ] = ...,
-        increment: int = ...,
+        ] = "second",
+        increment: int = 1,
         mode: Literal[
             "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = ...,
+        ] = "half_even",
     ) -> Instant: ...
     def __add__(self, delta: TimeDelta) -> Instant: ...
     @overload
@@ -574,11 +576,11 @@ class OffsetDateTime(_KnowsInstantAndLocal):
             "millisecond",
             "microsecond",
             "nanosecond",
-        ] = ...,
-        increment: int = ...,
+        ] = "second",
+        increment: int = 1,
         mode: Literal[
             "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = ...,
+        ] = "half_even",
         *,
         ignore_dst: Literal[True],
     ) -> OffsetDateTime: ...
@@ -734,11 +736,11 @@ class ZonedDateTime(_KnowsInstantAndLocal):
             "millisecond",
             "microsecond",
             "nanosecond",
-        ] = ...,
-        increment: int = ...,
+        ] = "second",
+        increment: int = 1,
         mode: Literal[
             "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = ...,
+        ] = "half_even",
     ) -> ZonedDateTime: ...
     # FUTURE: disable date components in strict stubs version
     def __add__(self, delta: Delta) -> ZonedDateTime: ...
@@ -891,11 +893,11 @@ class SystemDateTime(_KnowsInstantAndLocal):
             "millisecond",
             "microsecond",
             "nanosecond",
-        ] = ...,
-        increment: int = ...,
+        ] = "second",
+        increment: int = 1,
         mode: Literal[
             "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = ...,
+        ] = "half_even",
     ) -> SystemDateTime: ...
     # FUTURE: disable date components in strict stubs version
     def __add__(self, delta: Delta) -> SystemDateTime: ...
@@ -1021,11 +1023,11 @@ class LocalDateTime(_KnowsLocal):
             "millisecond",
             "microsecond",
             "nanosecond",
-        ] = ...,
-        increment: int = ...,
+        ] = "second",
+        increment: int = 1,
         mode: Literal[
             "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = ...,
+        ] = "half_even",
     ) -> LocalDateTime: ...
     def __add__(self, delta: DateDelta) -> LocalDateTime: ...
     def __sub__(self, other: DateDelta) -> LocalDateTime: ...

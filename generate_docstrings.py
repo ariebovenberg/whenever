@@ -149,10 +149,29 @@ def method_doc(method):
                 "\u0028cls", "\u0028$type"
             )
         )
-    # OPTIMIZE: for 0 and 1-argument function, we might not need to define
-    # the __text_signature__ manually, potentially saving space.
     doc = method.__doc__.replace('"', '\\"')
-    return f"{method.__name__}{sig}\n--\n\n{doc}"
+    sig_prefix = f"{method.__name__}{sig}\n--\n\n"
+    return sig_prefix * _needs_text_signature(method) + doc
+
+
+# In some basic cases, such as 0 or 1-argument functions, Python
+# will automatically generate an adequate signature.
+def _needs_text_signature(method):
+    sig = inspect.signature(method)
+    params = list(sig.parameters.values())
+    if len(params) == 0:
+        return False
+    if params[0].name in {"self", "cls"}:
+        params.pop(0)
+    if len(params) > 1:
+        return True
+    elif len(params) == 0:
+        return False
+    else:
+        return (
+            params[0].kind != inspect.Parameter.POSITIONAL_ONLY
+            or params[0].default is not inspect.Parameter.empty
+        )
 
 
 def print_everything():

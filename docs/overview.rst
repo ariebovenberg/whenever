@@ -650,6 +650,23 @@ Here is a summary of the arithmetic features for each type:
    restrictions to get the result they want, **whenever** provides the
    ``ignore_dst`` option to at least make it explicit when this is happening.
 
+Rounding
+~~~~~~~~
+
+It's often useful to truncate or round a datetime to a specific unit.
+For example, you might want to round a datetime to the nearest hour,
+or truncate it into 15-minute intervals.
+
+The :class:`~whenever._KnowsLocal.round` method allows you to do this:
+
+.. code-block:: python
+
+    >>> d = LocalDateTime(2023, 12, 28, 11, 30)
+    >>> d.round(hours=1)
+    LocalDateTime(2023-12-28 12:00:00)
+    >>> d.round(minutes=15)
+    LocalDateTime(2023-12-28 11:30:00)
+
 Formatting and parsing
 ----------------------
 
