@@ -1,8 +1,11 @@
 🚀 Changelog
 ============
 
-0.7.0 (2025-02-??)
+0.7.0 (2025-02-20)
 ------------------
+
+This release adds rounding functionality,
+along with a small breaking change (see below).
 
 **Breaking changes**
 
@@ -12,7 +15,8 @@
 
 **Added**
 
-- Added ``round()`` to time and ``TimeDelta`` classes
+- Added ``round()`` to all datetime, ``Instant``, and ``TimeDelta`` classes
+- Add floor division and modulo operators to ``TimeDelta``
 - Add ``is_ambiguous()``, ``day_length()`` and ``start_of_day()`` to ``SystemDateTime``,
   for consistency with ``ZonedDateTime``.
 - Improvements to documentation

@@ -466,6 +466,45 @@ unsafe fn __truediv__(slf: *mut PyObject, factor_obj: *mut PyObject) -> PyReturn
     .to_obj(Py_TYPE(slf))
 }
 
+unsafe fn __floordiv__(a_obj: *mut PyObject, b_obj: *mut PyObject) -> PyReturn {
+    if Py_TYPE(b_obj) == Py_TYPE(a_obj) {
+        // NOTE: we can't avoid using i128 *in general*, because the divisor
+        //       may be 1 nanosecond and the dividend TimeDelta.MAX
+        let a = TimeDelta::extract(a_obj).total_nanos();
+        let b = TimeDelta::extract(b_obj).total_nanos();
+        if b == 0 {
+            Err(py_err!(PyExc_ZeroDivisionError, "Division by zero"))?
+        }
+        let mut result = a / b;
+        // Adjust for "correct" (Python style) floor division with mixed signs
+        if a.signum() != b.signum() && a % b != 0 {
+            result -= 1;
+        }
+        result.to_py()
+    } else {
+        Ok(newref(Py_NotImplemented()))
+    }
+}
+
+unsafe fn __mod__(a_obj: *mut PyObject, b_obj: *mut PyObject) -> PyReturn {
+    let type_a = Py_TYPE(a_obj);
+    if type_a == Py_TYPE(b_obj) {
+        let a = TimeDelta::extract(a_obj).total_nanos();
+        let b = TimeDelta::extract(b_obj).total_nanos();
+        if b == 0 {
+            Err(py_err!(PyExc_ZeroDivisionError, "Division by zero"))?
+        }
+        let mut result = a % b;
+        // Adjust for "correct" (Python style) floor division with mixed signs
+        if a.signum() != b.signum() && result != 0 {
+            result += b;
+        }
+        TimeDelta::from_nanos_unchecked(result).to_obj(type_a)
+    } else {
+        Ok(newref(Py_NotImplemented()))
+    }
+}
+
 unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     _add_operator(obj_a, obj_b, false)
 }
@@ -549,6 +588,8 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_nb_add, __add__, 2),
     slotmethod!(Py_nb_subtract, __sub__, 2),
     slotmethod!(Py_nb_absolute, __abs__, 1),
+    slotmethod!(Py_nb_floor_divide, __floordiv__, 2),
+    slotmethod!(Py_nb_remainder, __mod__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: doc::TIMEDELTA.as_ptr() as *mut c_void,

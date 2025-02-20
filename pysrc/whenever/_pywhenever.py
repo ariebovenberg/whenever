@@ -1682,12 +1682,43 @@ class TimeDelta(_ImmutableBase):
         TimeDelta(00:36:00)
         >>> d / TimeDelta(minutes=30)
         3.0
+
+        Note
+        ----
+        Because TimeDelta is limited to nanosecond precision, the result of
+        division may not be exact.
         """
         if isinstance(other, TimeDelta):
             return self._total_ns / other._total_ns
         elif isinstance(other, (int, float)):
             return TimeDelta(nanoseconds=int(self._total_ns / other))
         return NotImplemented
+
+    def __floordiv__(self, other: TimeDelta) -> int:
+        """Floor division by another delta
+
+        Example
+        -------
+        >>> d = TimeDelta(hours=1, minutes=39)
+        >>> d // time_delta(minutes=15)
+        6
+        """
+        if not isinstance(other, TimeDelta):
+            return NotImplemented
+        return self._total_ns // other._total_ns
+
+    def __mod__(self, other: TimeDelta) -> TimeDelta:
+        """Modulo by another delta
+
+        Example
+        -------
+        >>> d = TimeDelta(hours=1, minutes=39)
+        >>> d % TimeDelta(minutes=15)
+        TimeDelta(00:09:00)
+        """
+        if not isinstance(other, TimeDelta):
+            return NotImplemented
+        return TimeDelta(nanoseconds=self._total_ns % other._total_ns)
 
     def __abs__(self) -> TimeDelta:
         """The absolute value

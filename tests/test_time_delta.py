@@ -466,7 +466,7 @@ class TestDivision:
         assert TimeDelta.MAX / 1.0 == TimeDelta.MAX
         assert TimeDelta.MIN / 1.0 == TimeDelta.MIN
 
-    def test_divide_by_duration(self):
+    def test_divide_by_timedelta(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
         assert d / TimeDelta(hours=1) == approx(
             1 + 2 / 60 + 3 / 3_600 + 4 / 3_600_000_000
@@ -496,6 +496,98 @@ class TestDivision:
 
         with pytest.raises(TypeError):
             "invalid" / d  # type: ignore[operator]
+
+
+class TestFloorDiv:
+
+    def test_examples(self):
+        d = TimeDelta(hours=3, minutes=40, seconds=3, microseconds=4)
+        assert d // TimeDelta(hours=1) == 3
+        assert d // TimeDelta(minutes=5) == 44
+        assert d // TimeDelta(minutes=-5) == -45
+        assert -d // TimeDelta(minutes=5) == -45
+        assert -d // TimeDelta(minutes=-5) == 44
+
+        # sub-second dividend
+        assert d // TimeDelta(microseconds=-9) == -1467000001
+        assert -d // TimeDelta(microseconds=9) == -1467000001
+        assert -d // TimeDelta(microseconds=-9) == 1467000000
+        assert d // TimeDelta(microseconds=9) == 1467000000
+
+        # extreme cases
+        assert TimeDelta.ZERO // TimeDelta.MAX == 0
+        assert TimeDelta.ZERO // TimeDelta.MIN == 0
+        assert TimeDelta.MAX // TimeDelta.MAX == 1
+        assert TimeDelta.MIN // TimeDelta.MIN == 1
+        assert TimeDelta.MAX // TimeDelta.MIN == -1
+        assert TimeDelta.MIN // TimeDelta.MAX == -1
+        # result larger than i64
+        assert (
+            TimeDelta.MAX // TimeDelta(nanoseconds=1) == 316192377600000000000
+        )
+
+    def test_divide_by_zero(self):
+        d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+        with pytest.raises(ZeroDivisionError):
+            d // TimeDelta()
+
+    def test_invalid(self):
+        d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+        with pytest.raises(TypeError):
+            d // "invalid"  # type: ignore[operator]
+
+        with pytest.raises(TypeError):
+            "invalid" // d  # type: ignore[operator]
+
+
+class TestRemainder:
+
+    def test_examples(self):
+        d = TimeDelta(hours=3, minutes=40, seconds=3, microseconds=4)
+        assert d % TimeDelta(hours=1) == TimeDelta(
+            minutes=40, seconds=3, microseconds=4
+        )
+        assert d % TimeDelta(minutes=5) == TimeDelta(seconds=3, microseconds=4)
+        assert d % TimeDelta(minutes=-5) == TimeDelta(
+            minutes=-5, seconds=3, microseconds=4
+        )
+        assert -d % TimeDelta(minutes=5) == TimeDelta(
+            minutes=5, seconds=-3, microseconds=-4
+        )
+        assert -d % TimeDelta(minutes=-5) == TimeDelta(
+            seconds=-3, microseconds=-4
+        )
+
+        # sub-second dividend
+        assert d % TimeDelta(microseconds=-9) == TimeDelta(microseconds=-5)
+        assert -d % TimeDelta(microseconds=9) == TimeDelta(microseconds=5)
+        assert -d % TimeDelta(microseconds=-9) == TimeDelta(microseconds=-4)
+        assert d % TimeDelta(microseconds=9) == TimeDelta(microseconds=4)
+
+        # extreme cases
+        assert TimeDelta.ZERO % TimeDelta.MAX == TimeDelta.ZERO
+        assert TimeDelta.ZERO % TimeDelta.MIN == TimeDelta.ZERO
+        assert TimeDelta.MAX % TimeDelta.MAX == TimeDelta.ZERO
+        assert TimeDelta.MIN % TimeDelta.MIN == TimeDelta.ZERO
+        assert TimeDelta.MAX % TimeDelta.MIN == TimeDelta.ZERO
+        assert TimeDelta.MIN % TimeDelta.MAX == TimeDelta.ZERO
+        # result larger than i64
+        assert (TimeDelta.MAX - TimeDelta(nanoseconds=1)) % TimeDelta.MAX == (
+            TimeDelta.MAX - TimeDelta(nanoseconds=1)
+        )
+
+    def test_divide_by_zero(self):
+        d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+        with pytest.raises(ZeroDivisionError):
+            d % TimeDelta()
+
+    def test_invalid(self):
+        d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+        with pytest.raises(TypeError):
+            d % "invalid"  # type: ignore[operator]
+
+        with pytest.raises(TypeError):
+            5.9 % d  # type: ignore[operator]
 
 
 def test_negate():

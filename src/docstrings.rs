@@ -216,9 +216,6 @@ Date(2022-03-05)
 Date(2021-02-28)
 ";
 pub(crate) const DATE_AT: &CStr = c"\
-at($self, t, /)
---
-
 Combine a date with a time to create a datetime
 
 Example
@@ -231,9 +228,6 @@ You can use methods like :meth:`~LocalDateTime.assume_utc`
 or :meth:`~LocalDateTime.assume_tz` to make the result aware.
 ";
 pub(crate) const DATE_DAY_OF_WEEK: &CStr = c"\
-day_of_week($self)
---
-
 The day of the week
 
 Example
@@ -244,9 +238,6 @@ Weekday.SATURDAY
 6  # the ISO value
 ";
 pub(crate) const DATE_DAYS_SINCE: &CStr = c"\
-days_since($self, other, /)
---
-
 Calculate the number of days this day is after another date.
 If the other date is after this date, the result is negative.
 
@@ -261,9 +252,6 @@ If you're interested in calculating the difference
 in terms of days **and** months, use the subtraction operator instead.
 ";
 pub(crate) const DATE_DAYS_UNTIL: &CStr = c"\
-days_until($self, other, /)
---
-
 Calculate the number of days from this date to another date.
 If the other date is before this date, the result is negative.
 
@@ -278,9 +266,6 @@ If you're interested in calculating the difference
 in terms of days **and** months, use the subtraction operator instead.
 ";
 pub(crate) const DATE_FORMAT_COMMON_ISO: &CStr = c"\
-format_common_iso($self)
---
-
 Format as the common ISO 8601 date format.
 
 Inverse of :meth:`parse_common_iso`.
@@ -291,9 +276,6 @@ Example
 '2021-01-02'
 ";
 pub(crate) const DATE_FROM_PY_DATE: &CStr = c"\
-from_py_date(d, /)
---
-
 Create from a :class:`~datetime.date`
 
 Example
@@ -302,9 +284,6 @@ Example
 Date(2021-01-02)
 ";
 pub(crate) const DATE_MONTH_DAY: &CStr = c"\
-month_day($self)
---
-
 The month and day (without a year component)
 
 Example
@@ -313,9 +292,6 @@ Example
 MonthDay(--01-02)
 ";
 pub(crate) const DATE_PARSE_COMMON_ISO: &CStr = c"\
-parse_common_iso(s, /)
---
-
 Create from the common ISO 8601 date format ``YYYY-MM-DD``.
 Does not accept more \"exotic\" ISO 8601 formats.
 
@@ -327,9 +303,6 @@ Example
 Date(2021-01-02)
 ";
 pub(crate) const DATE_PY_DATE: &CStr = c"\
-py_date($self)
---
-
 Convert to a standard library :class:`~datetime.date`";
 pub(crate) const DATE_REPLACE: &CStr = c"\
 replace($self, /, *, year=None, month=None, day=None)
@@ -360,9 +333,6 @@ Date(2019-10-30)
 Date(2020-03-01)
 ";
 pub(crate) const DATE_TODAY_IN_SYSTEM_TZ: &CStr = c"\
-today_in_system_tz()
---
-
 Get the current date in the system's local timezone.
 
 Alias for ``SystemDateTime.now().date()``.
@@ -373,9 +343,6 @@ Example
 Date(2021-01-02)
 ";
 pub(crate) const DATE_YEAR_MONTH: &CStr = c"\
-year_month($self)
---
-
 The year and month (without a day component)
 
 Example
@@ -384,9 +351,6 @@ Example
 YearMonth(2021-01)
 ";
 pub(crate) const DATEDELTA_FORMAT_COMMON_ISO: &CStr = c"\
-format_common_iso($self)
---
-
 Format as the *popular interpretation* of the ISO 8601 duration format.
 May not strictly adhere to (all versions of) the standard.
 See :ref:`here <iso8601-durations>` for more information.
@@ -416,9 +380,6 @@ Example
 'P0D'
 ";
 pub(crate) const DATEDELTA_IN_MONTHS_DAYS: &CStr = c"\
-in_months_days($self)
---
-
 Convert to a tuple of months and days.
 
 Example
@@ -430,9 +391,6 @@ Example
 (-13, -35)
 ";
 pub(crate) const DATEDELTA_IN_YEARS_MONTHS_DAYS: &CStr = c"\
-in_years_months_days($self)
---
-
 Convert to a tuple of years, months, and days.
 
 Example
@@ -442,9 +400,6 @@ Example
 (1, 2, 11)
 ";
 pub(crate) const DATEDELTA_PARSE_COMMON_ISO: &CStr = c"\
-parse_common_iso(s, /)
---
-
 Parse the *popular interpretation* of the ISO 8601 duration format.
 Does not parse all possible ISO 8601 durations.
 See :ref:`here <iso8601-durations>` for more information.
@@ -468,14 +423,8 @@ Note
 The number of digits in each component is limited to 8.
 ";
 pub(crate) const DATETIMEDELTA_DATE_PART: &CStr = c"\
-date_part($self)
---
-
 The date part of the delta";
 pub(crate) const DATETIMEDELTA_FORMAT_COMMON_ISO: &CStr = c"\
-format_common_iso($self)
---
-
 Format as the *popular interpretation* of the ISO 8601 duration format.
 May not strictly adhere to (all versions of) the standard.
 See :ref:`here <iso8601-durations>` for more information.
@@ -500,9 +449,6 @@ Example
 'P1W11DT4H0.012S'
 ";
 pub(crate) const DATETIMEDELTA_IN_MONTHS_DAYS_SECS_NANOS: &CStr = c"\
-in_months_days_secs_nanos($self)
---
-
 Convert to a tuple of (months, days, seconds, nanoseconds)
 
 Example
@@ -512,9 +458,6 @@ Example
 (0, 18, 14_400, 2000)
 ";
 pub(crate) const DATETIMEDELTA_PARSE_COMMON_ISO: &CStr = c"\
-parse_common_iso(s, /)
---
-
 Parse the *popular interpretation* of the ISO 8601 duration format.
 Does not parse all possible ISO 8601 durations.
 See :ref:`here <iso8601-durations>` for more information.
@@ -538,9 +481,6 @@ Example
 DateTimeDelta(-P1W11DT4H)
 ";
 pub(crate) const DATETIMEDELTA_TIME_PART: &CStr = c"\
-time_part($self)
---
-
 The time part of the delta";
 pub(crate) const INSTANT_ADD: &CStr = c"\
 add($self, delta=None, /, *, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0)
@@ -551,17 +491,11 @@ Add a time amount to this instant.
 See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`_ for more information.
 ";
 pub(crate) const INSTANT_FORMAT_COMMON_ISO: &CStr = c"\
-format_common_iso($self)
---
-
 Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SSZ``
 
 The inverse of the ``parse_common_iso()`` method.
 ";
 pub(crate) const INSTANT_FORMAT_RFC2822: &CStr = c"\
-format_rfc2822($self)
---
-
 Format as an RFC 2822 string.
 
 The inverse of the ``parse_rfc2822()`` method.
@@ -572,9 +506,6 @@ Example
 \"Sat, 15 Aug 2020 23:12:00 GMT\"
 ";
 pub(crate) const INSTANT_FORMAT_RFC3339: &CStr = c"\
-format_rfc3339($self)
---
-
 Format as an RFC 3339 string ``YYYY-MM-DD HH:MM:SSZ``
 
 If you prefer the ``T`` separator, use `format_common_iso()` instead.
@@ -587,34 +518,22 @@ Example
 \"2020-08-15 23:12:00Z\"
 ";
 pub(crate) const INSTANT_FROM_PY_DATETIME: &CStr = c"\
-from_py_datetime(d, /)
---
-
 Create an Instant from a standard library ``datetime`` object.
 The datetime must be aware.
 
 The inverse of the ``py_datetime()`` method.
 ";
 pub(crate) const INSTANT_FROM_TIMESTAMP: &CStr = c"\
-from_timestamp(i, /)
---
-
 Create an Instant from a UNIX timestamp (in seconds).
 
 The inverse of the ``timestamp()`` method.
 ";
 pub(crate) const INSTANT_FROM_TIMESTAMP_MILLIS: &CStr = c"\
-from_timestamp_millis(i, /)
---
-
 Create an Instant from a UNIX timestamp (in milliseconds).
 
 The inverse of the ``timestamp_millis()`` method.
 ";
 pub(crate) const INSTANT_FROM_TIMESTAMP_NANOS: &CStr = c"\
-from_timestamp_nanos(i, /)
---
-
 Create an Instant from a UNIX timestamp (in nanoseconds).
 
 The inverse of the ``timestamp_nanos()`` method.
@@ -625,14 +544,8 @@ from_utc(year, month, day, hour=0, minute=0, second=0, *, nanosecond=0)
 
 Create an Instant defined by a UTC date and time.";
 pub(crate) const INSTANT_NOW: &CStr = c"\
-now()
---
-
 Create an Instant from the current time.";
 pub(crate) const INSTANT_PARSE_COMMON_ISO: &CStr = c"\
-parse_common_iso(s, /)
---
-
 Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SSZ``
 
 The inverse of the ``format_common_iso()`` method.
@@ -645,9 +558,6 @@ Use ``OffsetDateTime.parse_common_iso`` if you'd like to
 parse an ISO 8601 string with a nonzero offset.
 ";
 pub(crate) const INSTANT_PARSE_RFC2822: &CStr = c"\
-parse_rfc2822(s, /)
---
-
 Parse a UTC datetime in RFC 2822 format.
 
 The inverse of the ``format_rfc2822()`` method.
@@ -676,9 +586,6 @@ Important
   parse an RFC 2822 string with a nonzero offset.
 ";
 pub(crate) const INSTANT_PARSE_RFC3339: &CStr = c"\
-parse_rfc3339(s, /)
---
-
 Parse a UTC datetime in RFC 3339 format.
 
 The inverse of the ``format_rfc3339()`` method.
@@ -743,9 +650,6 @@ See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-saf
 for more information.
 ";
 pub(crate) const LOCALDATETIME_ASSUME_FIXED_OFFSET: &CStr = c"\
-assume_fixed_offset($self, offset, /)
---
-
 Assume the datetime has the given offset, creating an ``OffsetDateTime``.
 
 Example
@@ -797,9 +701,6 @@ Example
 ZonedDateTime(2020-08-15 23:12:00+02:00[Europe/Amsterdam])
 ";
 pub(crate) const LOCALDATETIME_ASSUME_UTC: &CStr = c"\
-assume_utc($self)
---
-
 Assume the datetime is in UTC, creating an ``Instant``.
 
 Example
@@ -824,22 +725,13 @@ For more information,
 see `the docs <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
 ";
 pub(crate) const LOCALDATETIME_FORMAT_COMMON_ISO: &CStr = c"\
-format_common_iso($self)
---
-
 Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
 
 The inverse of the ``parse_common_iso()`` method.
 ";
 pub(crate) const LOCALDATETIME_FROM_PY_DATETIME: &CStr = c"\
-from_py_datetime(d, /)
---
-
 Create an instance from a \"naive\" standard library ``datetime`` object";
 pub(crate) const LOCALDATETIME_PARSE_COMMON_ISO: &CStr = c"\
-parse_common_iso(s, /)
---
-
 Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
 
 The inverse of the ``format_common_iso()`` method.
@@ -855,14 +747,8 @@ replace($self, /, *, year=None, month=None, day=None, hour=None, minute=None, se
 
 Construct a new instance with the given fields replaced.";
 pub(crate) const LOCALDATETIME_REPLACE_DATE: &CStr = c"\
-replace_date($self, d, /)
---
-
 Construct a new instance with the date replaced.";
 pub(crate) const LOCALDATETIME_REPLACE_TIME: &CStr = c"\
-replace_time($self, t, /)
---
-
 Construct a new instance with the time replaced.";
 pub(crate) const LOCALDATETIME_ROUND: &CStr = c"\
 round($self, unit='second', increment=1, mode='half_even')
@@ -920,9 +806,6 @@ See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-saf
 for more information.
 ";
 pub(crate) const MONTHDAY_FORMAT_COMMON_ISO: &CStr = c"\
-format_common_iso($self)
---
-
 Format as the common ISO 8601 month-day format.
 
 Inverse of ``parse_common_iso``.
@@ -939,9 +822,6 @@ ISO 8601 standard. There is no alternative for month-day
 in the newer editions. However, it is still widely used in other libraries.
 ";
 pub(crate) const MONTHDAY_IN_YEAR: &CStr = c"\
-in_year($self, year, /)
---
-
 Create a date from this month-day with a given day
 
 Example
@@ -955,9 +835,6 @@ This method will raise a ``ValueError`` if the month-day is a leap day
 and the year is not a leap year.
 ";
 pub(crate) const MONTHDAY_IS_LEAP: &CStr = c"\
-is_leap($self)
---
-
 Check if the month-day is February 29th
 
 Example
@@ -968,9 +845,6 @@ True
 False
 ";
 pub(crate) const MONTHDAY_PARSE_COMMON_ISO: &CStr = c"\
-parse_common_iso(s, /)
---
-
 Create from the common ISO 8601 format ``--MM-DD``.
 Does not accept more \"exotic\" ISO 8601 formats.
 
@@ -1012,17 +886,11 @@ For more information, see
 `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
 ";
 pub(crate) const OFFSETDATETIME_FORMAT_COMMON_ISO: &CStr = c"\
-format_common_iso($self)
---
-
 Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
 
 The inverse of the ``parse_common_iso()`` method.
 ";
 pub(crate) const OFFSETDATETIME_FORMAT_RFC2822: &CStr = c"\
-format_rfc2822($self)
---
-
 Format as an RFC 2822 string.
 
 The inverse of the ``parse_rfc2822()`` method.
@@ -1033,9 +901,6 @@ Example
 \"Sat, 15 Aug 2020 23:12:00 +0200\"
 ";
 pub(crate) const OFFSETDATETIME_FORMAT_RFC3339: &CStr = c"\
-format_rfc3339($self)
---
-
 Format as an RFC 3339 string ``YYYY-MM-DD HH:MM:SS±HH:MM``
 
 If you prefer the ``T`` separator, use ``format_common_iso()`` instead.
@@ -1055,9 +920,6 @@ pre-1950s timezones.
 The ``format_common_iso()`` does support this precision.
 ";
 pub(crate) const OFFSETDATETIME_FROM_PY_DATETIME: &CStr = c"\
-from_py_datetime(d, /)
---
-
 Create an instance from a standard library ``datetime`` object.
 The datetime must be aware.
 
@@ -1137,9 +999,6 @@ pass ``ignore_dst=True`` to this method. For more information, see
 `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
 ";
 pub(crate) const OFFSETDATETIME_PARSE_COMMON_ISO: &CStr = c"\
-parse_common_iso(s, /)
---
-
 Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
 
 The inverse of the ``format_common_iso()`` method.
@@ -1150,9 +1009,6 @@ Example
 OffsetDateTime(2020-08-15 23:12:00+02:00)
 ";
 pub(crate) const OFFSETDATETIME_PARSE_RFC2822: &CStr = c"\
-parse_rfc2822(s, /)
---
-
 Parse an offset datetime in RFC 2822 format.
 
 The inverse of the ``format_rfc2822()`` method.
@@ -1176,9 +1032,6 @@ Warning
   Thus, it cannot be parsed to an :class:`OffsetDateTime`.
 ";
 pub(crate) const OFFSETDATETIME_PARSE_RFC3339: &CStr = c"\
-parse_rfc3339(s, /)
---
-
 Parse a fixed-offset datetime in RFC 3339 format.
 
 The inverse of the ``format_rfc3339()`` method.
@@ -1299,9 +1152,6 @@ See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithme
 for more information.
 ";
 pub(crate) const SYSTEMDATETIME_DAY_LENGTH: &CStr = c"\
-day_length($self)
---
-
 The duration between the start of the current day and the next.
 This is usually 24 hours, but may be different due to timezone transitions.
 
@@ -1318,42 +1168,27 @@ Note
 This method may give a different result after a change to the system timezone.
 ";
 pub(crate) const SYSTEMDATETIME_FROM_PY_DATETIME: &CStr = c"\
-from_py_datetime(d, /)
---
-
 Create an instance from a standard library ``datetime`` object.
 The datetime must be aware.
 
 The inverse of the ``py_datetime()`` method.
 ";
 pub(crate) const SYSTEMDATETIME_FROM_TIMESTAMP: &CStr = c"\
-from_timestamp(i, /)
---
-
 Create an instance from a UNIX timestamp (in seconds).
 
 The inverse of the ``timestamp()`` method.
 ";
 pub(crate) const SYSTEMDATETIME_FROM_TIMESTAMP_MILLIS: &CStr = c"\
-from_timestamp_millis(i, /)
---
-
 Create an instance from a UNIX timestamp (in milliseconds).
 
 The inverse of the ``timestamp_millis()`` method.
 ";
 pub(crate) const SYSTEMDATETIME_FROM_TIMESTAMP_NANOS: &CStr = c"\
-from_timestamp_nanos(i, /)
---
-
 Create an instance from a UNIX timestamp (in nanoseconds).
 
 The inverse of the ``timestamp_nanos()`` method.
 ";
 pub(crate) const SYSTEMDATETIME_IS_AMBIGUOUS: &CStr = c"\
-is_ambiguous($self)
---
-
 Whether the local time is ambiguous, e.g. due to a DST transition.
 
 Example
@@ -1369,14 +1204,8 @@ Note
 This method may give a different result after a change to the system timezone.
 ";
 pub(crate) const SYSTEMDATETIME_NOW: &CStr = c"\
-now()
---
-
 Create an instance from the current time in the system timezone.";
 pub(crate) const SYSTEMDATETIME_PARSE_COMMON_ISO: &CStr = c"\
-parse_common_iso(s, /)
---
-
 Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
 
 Important
@@ -1443,9 +1272,6 @@ Notes
 * The result of this method may change if the system timezone changes.
 ";
 pub(crate) const SYSTEMDATETIME_START_OF_DAY: &CStr = c"\
-start_of_day($self)
---
-
 The start of the current calendar day.
 
 This is almost always at midnight the same day, but may be different
@@ -1472,9 +1298,6 @@ See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithme
 for more information.
 ";
 pub(crate) const TIME_FORMAT_COMMON_ISO: &CStr = c"\
-format_common_iso($self)
---
-
 Format as the common ISO 8601 time format.
 
 Inverse of :meth:`parse_common_iso`.
@@ -1485,9 +1308,6 @@ Example
 '12:30:00'
 ";
 pub(crate) const TIME_FROM_PY_TIME: &CStr = c"\
-from_py_time(t, /)
---
-
 Create from a :class:`~datetime.time`
 
 Example
@@ -1498,9 +1318,6 @@ Time(12:30:00)
 `fold` value is ignored.
 ";
 pub(crate) const TIME_ON: &CStr = c"\
-on($self, d, /)
---
-
 Combine a time with a date to create a datetime
 
 Example
@@ -1514,9 +1331,6 @@ or :meth:`~LocalDateTime.assume_tz`
 to make the result aware.
 ";
 pub(crate) const TIME_PARSE_COMMON_ISO: &CStr = c"\
-parse_common_iso(s, /)
---
-
 Create from the common ISO 8601 time format ``HH:MM:SS``.
 Does not accept more \"exotic\" ISO 8601 formats.
 
@@ -1528,9 +1342,6 @@ Example
 Time(12:30:00)
 ";
 pub(crate) const TIME_PY_TIME: &CStr = c"\
-py_time($self)
---
-
 Convert to a standard library :class:`~datetime.time`";
 pub(crate) const TIME_REPLACE: &CStr = c"\
 replace($self, /, *, hour=None, minute=None, second=None, nanosecond=None)
@@ -1560,9 +1371,6 @@ Time(12:45:00)
 Time(08:09:10)
 ";
 pub(crate) const TIMEDELTA_FORMAT_COMMON_ISO: &CStr = c"\
-format_common_iso($self)
---
-
 Format as the *popular interpretation* of the ISO 8601 duration format.
 May not strictly adhere to (all versions of) the standard.
 See :ref:`here <iso8601-durations>` for more information.
@@ -1575,9 +1383,6 @@ Example
 'PT1H30M'
 ";
 pub(crate) const TIMEDELTA_FROM_PY_TIMEDELTA: &CStr = c"\
-from_py_timedelta(td, /)
---
-
 Create from a :class:`~datetime.timedelta`
 
 Inverse of :meth:`py_timedelta`
@@ -1588,9 +1393,6 @@ Example
 TimeDelta(01:30:00)
 ";
 pub(crate) const TIMEDELTA_IN_DAYS_OF_24H: &CStr = c"\
-in_days_of_24h($self)
---
-
 The total size in days (of exactly 24 hours each)
 
 Note
@@ -1599,9 +1401,6 @@ Note that this may not be the same as days on the calendar,
 since some days have 23 or 25 hours due to daylight saving time.
 ";
 pub(crate) const TIMEDELTA_IN_HOURS: &CStr = c"\
-in_hours($self)
---
-
 The total size in hours
 
 Example
@@ -1611,9 +1410,6 @@ Example
 1.5
 ";
 pub(crate) const TIMEDELTA_IN_HRS_MINS_SECS_NANOS: &CStr = c"\
-in_hrs_mins_secs_nanos($self)
---
-
 Convert to a tuple of (hours, minutes, seconds, nanoseconds)
 
 Example
@@ -1623,9 +1419,6 @@ Example
 (1, 30, 5, 90_000)
 ";
 pub(crate) const TIMEDELTA_IN_MICROSECONDS: &CStr = c"\
-in_microseconds($self)
---
-
 The total size in microseconds
 
 >>> d = TimeDelta(seconds=2, nanoseconds=50)
@@ -1633,9 +1426,6 @@ The total size in microseconds
 2_000_000.05
 ";
 pub(crate) const TIMEDELTA_IN_MILLISECONDS: &CStr = c"\
-in_milliseconds($self)
---
-
 The total size in milliseconds
 
 >>> d = TimeDelta(seconds=2, microseconds=50)
@@ -1643,9 +1433,6 @@ The total size in milliseconds
 2_000.05
 ";
 pub(crate) const TIMEDELTA_IN_MINUTES: &CStr = c"\
-in_minutes($self)
---
-
 The total size in minutes
 
 Example
@@ -1655,9 +1442,6 @@ Example
 90.5
 ";
 pub(crate) const TIMEDELTA_IN_NANOSECONDS: &CStr = c"\
-in_nanoseconds($self)
---
-
 The total size in nanoseconds
 
 >>> d = TimeDelta(seconds=2, nanoseconds=50)
@@ -1665,9 +1449,6 @@ The total size in nanoseconds
 2_000_000_050
 ";
 pub(crate) const TIMEDELTA_IN_SECONDS: &CStr = c"\
-in_seconds($self)
---
-
 The total size in seconds
 
 Example
@@ -1677,9 +1458,6 @@ Example
 121.5
 ";
 pub(crate) const TIMEDELTA_PARSE_COMMON_ISO: &CStr = c"\
-parse_common_iso(s, /)
---
-
 Parse the *popular interpretation* of the ISO 8601 duration format.
 Does not parse all possible ISO 8601 durations.
 See :ref:`here <iso8601-durations>` for more information.
@@ -1697,9 +1475,6 @@ Any duration with a date part is considered invalid.
 ``PT0S`` is valid, but ``P0D`` is not.
 ";
 pub(crate) const TIMEDELTA_PY_TIMEDELTA: &CStr = c"\
-py_timedelta($self)
---
-
 Convert to a :class:`~datetime.timedelta`
 
 Inverse of :meth:`from_py_timedelta`
@@ -1732,9 +1507,6 @@ TimeDelta(03:26:00)
 Time(03:25:40)
 ";
 pub(crate) const YEARMONTH_FORMAT_COMMON_ISO: &CStr = c"\
-format_common_iso($self)
---
-
 Format as the common ISO 8601 year-month format.
 
 Inverse of :meth:`parse_common_iso`.
@@ -1745,9 +1517,6 @@ Example
 '2021-01'
 ";
 pub(crate) const YEARMONTH_ON_DAY: &CStr = c"\
-on_day($self, day, /)
---
-
 Create a date from this year-month with a given day
 
 Example
@@ -1756,9 +1525,6 @@ Example
 Date(2021-01-02)
 ";
 pub(crate) const YEARMONTH_PARSE_COMMON_ISO: &CStr = c"\
-parse_common_iso(s, /)
---
-
 Create from the common ISO 8601 format ``YYYY-MM``.
 Does not accept more \"exotic\" ISO 8601 formats.
 
@@ -1798,9 +1564,6 @@ See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithme
 for more information.
 ";
 pub(crate) const ZONEDDATETIME_DAY_LENGTH: &CStr = c"\
-day_length($self)
---
-
 The duration between the start of the current day and the next.
 This is usually 24 hours, but may be different due to timezone transitions.
 
@@ -1812,9 +1575,6 @@ TimeDelta(24:00:00)
 TimeDelta(25:00:00)
 ";
 pub(crate) const ZONEDDATETIME_FORMAT_COMMON_ISO: &CStr = c"\
-format_common_iso($self)
---
-
 Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
 
 The inverse of the ``parse_common_iso()`` method.
@@ -1831,9 +1591,6 @@ Althought it is gaining popularity, it is not yet widely supported
 by ISO 8601 parsers.
 ";
 pub(crate) const ZONEDDATETIME_FROM_PY_DATETIME: &CStr = c"\
-from_py_datetime(d, /)
---
-
 Create an instance from a standard library ``datetime`` object
 with a ``ZoneInfo`` tzinfo.
 
@@ -1869,9 +1626,6 @@ Create an instance from a UNIX timestamp (in nanoseconds).
 The inverse of the ``timestamp_nanos()`` method.
 ";
 pub(crate) const ZONEDDATETIME_IS_AMBIGUOUS: &CStr = c"\
-is_ambiguous($self)
---
-
 Whether the local time is ambiguous, e.g. due to a DST transition.
 
 Example
@@ -1882,14 +1636,8 @@ False
 True
 ";
 pub(crate) const ZONEDDATETIME_NOW: &CStr = c"\
-now(tz, /)
---
-
 Create an instance from the current time in the given timezone.";
 pub(crate) const ZONEDDATETIME_PARSE_COMMON_ISO: &CStr = c"\
-parse_common_iso(s, /)
---
-
 Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
 
 The inverse of the ``format_common_iso()`` method.
@@ -1964,9 +1712,6 @@ Notes
   Temporal objects in JavaScript.
 ";
 pub(crate) const ZONEDDATETIME_START_OF_DAY: &CStr = c"\
-start_of_day($self)
---
-
 The start of the current calendar day.
 
 This is almost always at midnight the same day, but may be different
@@ -1989,9 +1734,6 @@ See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithme
 for more information.
 ";
 pub(crate) const BASICCONVERSIONS_PY_DATETIME: &CStr = c"\
-py_datetime($self)
---
-
 Convert to a standard library :class:`~datetime.datetime`
 
 Note
@@ -2001,9 +1743,6 @@ If you wish to customize the rounding behavior, use
 the ``round()`` method first.
 ";
 pub(crate) const KNOWSINSTANT_DIFFERENCE: &CStr = c"\
-difference($self, other, /)
---
-
 Calculate the difference between two instants in time.
 
 Equivalent to :meth:`__sub__`.
@@ -2011,9 +1750,6 @@ Equivalent to :meth:`__sub__`.
 See :ref:`the docs on arithmetic <arithmetic>` for more information.
 ";
 pub(crate) const KNOWSINSTANT_EXACT_EQ: &CStr = c"\
-exact_eq($self, other, /)
---
-
 Compare objects by their values
 (instead of whether they represent the same instant).
 Different types are never equal.
@@ -2036,9 +1772,6 @@ False  # different values (hour and offset)
 TypeError  # different types
 ";
 pub(crate) const KNOWSINSTANT_TIMESTAMP: &CStr = c"\
-timestamp($self)
---
-
 The UNIX timestamp for this datetime. Inverse of :meth:`from_timestamp`.
 
 Note
@@ -2057,14 +1790,8 @@ Example
 True
 ";
 pub(crate) const KNOWSINSTANT_TIMESTAMP_MILLIS: &CStr = c"\
-timestamp_millis($self)
---
-
 Like :meth:`timestamp`, but with millisecond precision.";
 pub(crate) const KNOWSINSTANT_TIMESTAMP_NANOS: &CStr = c"\
-timestamp_nanos($self)
---
-
 Like :meth:`timestamp`, but with nanosecond precision.";
 pub(crate) const KNOWSINSTANT_TO_FIXED_OFFSET: &CStr = c"\
 to_fixed_offset($self, offset=None, /)
@@ -2075,14 +1802,8 @@ Convert to an OffsetDateTime that represents the same moment in time.
 If not offset is given, the offset is taken from the original datetime.
 ";
 pub(crate) const KNOWSINSTANT_TO_SYSTEM_TZ: &CStr = c"\
-to_system_tz($self)
---
-
 Convert to a SystemDateTime that represents the same moment in time.";
 pub(crate) const KNOWSINSTANT_TO_TZ: &CStr = c"\
-to_tz($self, tz, /)
---
-
 Convert to a ZonedDateTime that represents the same moment in time.
 
 Raises
@@ -2091,9 +1812,6 @@ Raises
     If the timezone ID is not found in the IANA database.
 ";
 pub(crate) const KNOWSINSTANTANDLOCAL_INSTANT: &CStr = c"\
-instant($self)
---
-
 Get the underlying instant in time
 
 Example
@@ -2104,9 +1822,6 @@ Example
 Instant(2020-08-15 21:00:00Z)
 ";
 pub(crate) const KNOWSINSTANTANDLOCAL_LOCAL: &CStr = c"\
-local($self)
---
-
 Get the underlying local date and time
 
 As an inverse, :class:`LocalDateTime` has methods
@@ -2115,9 +1830,6 @@ As an inverse, :class:`LocalDateTime` has methods
 which may require additional arguments.
 ";
 pub(crate) const KNOWSLOCAL_DATE: &CStr = c"\
-date($self)
---
-
 The date part of the datetime
 
 Example
@@ -2133,9 +1845,6 @@ like :meth:`~LocalDateTime.assume_utc` or
 >>> date.at(time).assume_tz(\"Europe/London\")
 ";
 pub(crate) const KNOWSLOCAL_TIME: &CStr = c"\
-time($self)
---
-
 The time-of-day part of the datetime
 
 Example
