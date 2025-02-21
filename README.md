@@ -140,8 +140,8 @@ and many issues remaining unaddressed.
 Instant(2024-07-04 10:36:56Z)
 
 # Simple, explicit conversions
->>> now.to_tz("Europe/Paris").round("minute", increment=5)
-ZonedDateTime(2024-07-04 12:35:00+02:00[Europe/Paris])
+>>> now.to_tz("Europe/Paris")
+ZonedDateTime(2024-07-04 12:36:56+02:00[Europe/Paris])
 
 # A 'naive' local time can't accidentally mix with other types.
 # You need to explicitly convert it and handle ambiguity.
@@ -154,11 +154,15 @@ ZonedDateTime(2023-10-28 22:00:00+02:00[Europe/Amsterdam])
 
 # DST-safe arithmetic
 >>> party_starts.add(hours=6)
-ZonedDateTime(2022-10-29 03:00:00+01:00[Europe/Amsterdam])
+ZonedDateTime(2023-10-29 03:00:00+01:00[Europe/Amsterdam])
 
 # Comparison and equality
 >>> now > party_starts
 True
+
+# Rounding and truncation
+>>> now.round("minute", increment=15)
+Instant(2024-07-04 10:30:00Z)
 
 # Formatting & parsing common formats (ISO8601, RFC3339, RFC2822)
 >>> now.format_rfc2822()

@@ -661,11 +661,14 @@ The :class:`~whenever._KnowsLocal.round` method allows you to do this:
 
 .. code-block:: python
 
-    >>> d = LocalDateTime(2023, 12, 28, 11, 30)
-    >>> d.round(hours=1)
+    >>> d = LocalDateTime(2023, 12, 28, 11, 32, 8)
+    LocalDateTime(2023-12-28 11:32:08)
+    >>> d.round("hour")
     LocalDateTime(2023-12-28 12:00:00)
-    >>> d.round(minutes=15)
-    LocalDateTime(2023-12-28 11:30:00)
+    >>> d.round("minute", increment=15, mode="ceil")
+    LocalDateTime(2023-12-28 11:45:00)
+
+See the method documentation for more details on the available options.
 
 Formatting and parsing
 ----------------------
