@@ -90,8 +90,7 @@ impl DateTime {
 
     pub(crate) fn shift_date(self, months: i32, days: i32) -> Option<Self> {
         let DateTime { date, time } = self;
-        date.shift(0, months, days)
-            .map(|date| DateTime { date, time })
+        date.shift(months, days).map(|date| DateTime { date, time })
     }
 
     pub(crate) fn shift_nanos(self, nanos: i128) -> Option<Self> {

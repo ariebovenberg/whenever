@@ -103,8 +103,8 @@ impl Date {
             })
     }
 
-    pub(crate) fn shift(&self, years: i16, months: i32, days: i32) -> Option<Date> {
-        self.shift_months(months + years as i32 * 12)
+    pub(crate) fn shift(&self, months: i32, days: i32) -> Option<Date> {
+        self.shift_months(months)
             .and_then(|date| date.shift_days(days))
     }
 
@@ -594,62 +594,81 @@ unsafe fn _shift_method(
     negate: bool,
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
-    let &State {
-        str_days,
-        str_months,
-        str_years,
-        str_weeks,
-        ..
-    } = State::for_type(cls);
-    let mut days: i32 = 0;
-    let mut months: i32 = 0;
-    let mut years: i16 = 0;
-
-    if !args.is_empty() {
-        Err(type_err!("{}() takes no positional arguments", fname))?
-    };
-    handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, str_days) {
-            let add_value: i32 = value
-                .to_long()?
-                .ok_or_type_err("days must be an integer")?
-                .try_into()
-                .map_err(|_| value_err!("days out of range"))?;
-            days += add_value;
-        } else if eq(key, str_months) {
-            months = value
-                .to_long()?
-                .ok_or_type_err("months must be an integer")?
-                .try_into()
-                .map_err(|_| value_err!("months out of range"))?;
-        } else if eq(key, str_years) {
-            years = value
-                .to_long()?
-                .ok_or_type_err("years must be an integer")?
-                .try_into()
-                .map_err(|_| value_err!("years out of range"))?;
-        } else if eq(key, str_weeks) {
-            let add_value: i32 = value
-                .to_long()?
-                .ok_or_type_err("weeks must be an integer")?
-                .checked_mul(7)
-                .ok_or_value_err("weeks out of range")?
-                .try_into()
-                .map_err(|_| value_err!("weeks out of range"))?;
-            days += add_value;
-        } else {
-            return Ok(false);
+    let (mut months, mut days) = match (args, kwargs.len()) {
+        (&[arg], 0) => {
+            let delta_type = State::for_type(cls).date_delta_type;
+            if Py_TYPE(arg) == delta_type {
+                let DateDelta { months, days } = DateDelta::extract(args[0]);
+                (months, days)
+            } else {
+                Err(type_err!(
+                    "{}() argument must be a whenever.DateDelta",
+                    fname
+                ))?
+            }
         }
-        Ok(true)
-    })?;
+        ([], _) => {
+            let &State {
+                str_days,
+                str_months,
+                str_years,
+                str_weeks,
+                ..
+            } = State::for_type(cls);
+            let mut days: i32 = 0;
+            let mut months: i32 = 0;
+            handle_kwargs(fname, kwargs, |key, value, eq| {
+                if eq(key, str_days) {
+                    let add_value: i32 = value
+                        .to_long()?
+                        .ok_or_type_err("days must be an integer")?
+                        .try_into()
+                        .map_err(|_| value_err!("days out of range"))?;
+                    days += add_value;
+                } else if eq(key, str_months) {
+                    let add_value: i32 = value
+                        .to_long()?
+                        .ok_or_type_err("months must be an integer")?
+                        .try_into()
+                        .map_err(|_| value_err!("months out of range"))?;
+                    months += add_value;
+                } else if eq(key, str_years) {
+                    let add_value: i32 = value
+                        .to_long()?
+                        .ok_or_type_err("years must be an integer")?
+                        .checked_mul(12)
+                        .ok_or_value_err("years out of range")?
+                        .try_into()
+                        .map_err(|_| value_err!("years out of range"))?;
+                    months += add_value;
+                } else if eq(key, str_weeks) {
+                    let add_value: i32 = value
+                        .to_long()?
+                        .ok_or_type_err("weeks must be an integer")?
+                        .checked_mul(7)
+                        .ok_or_value_err("weeks out of range")?
+                        .try_into()
+                        .map_err(|_| value_err!("weeks out of range"))?;
+                    days += add_value;
+                } else {
+                    return Ok(false);
+                }
+                Ok(true)
+            })?;
+            (months, days)
+        }
+        _ => Err(type_err!(
+            "{}() takes either only kwargs or 1 positional arg",
+            fname
+        ))?,
+    };
     if negate {
         days = -days;
         months = -months;
-        years = -years;
     }
 
     Date::extract(slf)
-        .shift(years, months, days)
+        .shift(months, days)
         .ok_or_value_err("Resulting date out of range")?
         .to_obj(cls)
 }
