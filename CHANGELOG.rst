@@ -1,6 +1,13 @@
 🚀 Changelog
 ============
 
+0.7.1 (2025-02-22)
+------------------
+
+- ``Date.add`` and ``Date.subtract`` now support ``DateDelta`` to be passed
+  as sole positional argument. This is consistent with the behavior of datetime
+  classes.
+
 0.7.0 (2025-02-20)
 ------------------
 

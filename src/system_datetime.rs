@@ -151,7 +151,7 @@ impl OffsetDateTime {
             Self::resolve_system_tz(
                 py_api,
                 self.date
-                    .shift(0, months, days)
+                    .shift(months, days)
                     .ok_or_value_err("Resulting date is out of range")?,
                 self.time,
                 dis,

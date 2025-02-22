@@ -327,9 +327,8 @@ class Date(_ImmutableBase):
         """
         return Date._from_py_unchecked(self._py_date.replace(**kwargs))
 
-    def add(
-        self, *, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0
-    ) -> Date:
+    @no_type_check
+    def add(self, *args, **kwargs) -> Date:
         """Add a components to a date.
 
         See :ref:`the docs on arithmetic <arithmetic>` for more information.
@@ -342,14 +341,10 @@ class Date(_ImmutableBase):
         >>> Date(2020, 2, 29).add(years=1)
         Date(2021-02-28)
         """
-        return Date._from_py_unchecked(
-            self._add_months(12 * years + months)._py_date
-            + _timedelta(days, weeks=weeks)
-        )
+        return self._shift(1, *args, **kwargs)
 
-    def subtract(
-        self, *, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0
-    ) -> Date:
+    @no_type_check
+    def subtract(self, *args, **kwargs) -> Date:
         """Subtract components from a date.
 
         See :ref:`the docs on arithmetic <arithmetic>` for more information.
@@ -362,7 +357,31 @@ class Date(_ImmutableBase):
         >>> Date(2021, 3, 1).subtract(years=1)
         Date(2020-03-01)
         """
-        return self.add(years=-years, months=-months, weeks=-weeks, days=-days)
+        return self._shift(-1, *args, **kwargs)
+
+    @no_type_check
+    def _shift(
+        self, sign: int, delta: DateDelta | _UNSET = _UNSET, /, **kwargs
+    ) -> Date:
+        if kwargs:
+            if delta is not _UNSET:
+                raise TypeError(
+                    "Cannot combine positional and keyword arguments"
+                )
+            return self._shift_kwargs(sign, **kwargs)
+        elif delta is not _UNSET:
+            return self._shift_kwargs(
+                sign, months=delta._months, days=delta._days
+            )
+        else:  # no arguments, just return self
+            return self
+
+    @no_type_check
+    def _shift_kwargs(self, sign, years=0, months=0, weeks=0, days=0) -> Date:
+        return Date._from_py_unchecked(
+            self._add_months(sign * (years * 12 + months))._py_date
+            + _timedelta(weeks * 7 + days) * sign
+        )
 
     def days_until(self, other: Date, /) -> int:
         """Calculate the number of days from this date to another date.
@@ -413,7 +432,7 @@ class Date(_ImmutableBase):
         """Add a delta to a date.
         Behaves the same as :meth:`add`
         """
-        return (
+        return (  # type: ignore[no-any-return]
             self.add(months=p._months, days=p._days)
             if isinstance(p, DateDelta)
             else NotImplemented
@@ -463,7 +482,7 @@ class Date(_ImmutableBase):
         use the :meth:`days_until` or :meth:`days_since` instead.
         """
         if isinstance(d, DateDelta):
-            return self.subtract(months=d._months, days=d._days)
+            return self.subtract(months=d._months, days=d._days)  # type: ignore[no-any-return]
         elif isinstance(d, Date):
             mos = self.month - d.month + 12 * (self.year - d.year)
             shifted = d._add_months(mos)
