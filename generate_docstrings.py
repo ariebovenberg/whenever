@@ -79,21 +79,21 @@ use std::ffi::CStr;
 
 MANUALLY_DEFINED_SIGS: dict[object, str] = {
     W.ZonedDateTime.add: """\
-($self, delta=None, /, *, years=0, months=0, days=0, hours=0, \
+($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, \
 minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
 disambiguate=None)""",
     W.ZonedDateTime.replace: """\
-($self, /, *, year=None, month=None, day=None, hour=None, \
+($self, /, *, year=None, month=None, weeks=0, day=None, hour=None, \
 minute=None, second=None, nanosecond=None, tz=None, disambiguate)""",
     W.OffsetDateTime.add: """\
 ($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, \
 hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
 ignore_dst=False)""",
     W.OffsetDateTime.replace: """\
-($self, /, *, year=None, month=None, day=None, hour=None, \
+($self, /, *, year=None, month=None, weeks=0, day=None, hour=None, \
 minute=None, second=None, nanosecond=None, offset=None, ignore_dst=False)""",
     W.LocalDateTime.add: """\
-($self, delta=None, /, *, years=0, months=0, days=0, \
+($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, \
 hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
 ignore_dst=False)""",
     W.LocalDateTime.replace: """\
@@ -106,6 +106,7 @@ minute=None, second=None, nanosecond=None)""",
     W.Instant.add: """\
 ($self, delta=None, /, *, hours=0, minutes=0, seconds=0, \
 milliseconds=0, microseconds=0, nanoseconds=0)""",
+    W.Date.add: "($self, delta=None, /, *, years=0, months=0, weeks=0, days=0)",
 }
 MANUALLY_DEFINED_SIGS.update(
     {
@@ -118,6 +119,7 @@ MANUALLY_DEFINED_SIGS.update(
         W.OffsetDateTime.subtract: MANUALLY_DEFINED_SIGS[W.OffsetDateTime.add],
         W.LocalDateTime.subtract: MANUALLY_DEFINED_SIGS[W.LocalDateTime.add],
         W.Instant.subtract: MANUALLY_DEFINED_SIGS[W.Instant.add],
+        W.Date.subtract: MANUALLY_DEFINED_SIGS[W.Date.add],
     }
 )
 SKIP = {

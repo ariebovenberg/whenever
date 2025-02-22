@@ -335,11 +335,19 @@ class TestAdd:
                 dict(years=1, months=1, weeks=1),
                 Date(2021, 3, 7),
             ),
+            # this checks that truncation isn't done after years, but after
+            # months *and* years
+            (
+                Date(2020, 2, 29),
+                dict(years=1, months=1),
+                Date(2021, 3, 29),
+            ),
         ],
     )
     def test_valid(self, d, kwargs, expected):
         assert d.add(**kwargs) == expected
         assert d + DateDelta(**kwargs) == expected
+        assert d.add(DateDelta(**kwargs)) == expected
 
     @pytest.mark.parametrize(
         "d, kwargs",
@@ -356,6 +364,12 @@ class TestAdd:
         with pytest.raises((OverflowError, ValueError)):
             d.add(**kwargs)
 
+        with pytest.raises((OverflowError, ValueError)):
+            d + DateDelta(**kwargs)
+
+        with pytest.raises((OverflowError, ValueError)):
+            d.add(DateDelta(**kwargs))
+
     def test_invalid(self):
         with pytest.raises(TypeError):
             Date(2021, 1, 1) + None  # type: ignore[operator]
@@ -366,33 +380,10 @@ class TestAdd:
         with pytest.raises(TypeError):
             py_date(2020, 1, 1) + Date(2021, 1, 1)  # type: ignore[operator]
 
-
-@pytest.mark.parametrize(
-    "d, kwargs, expected",
-    [
-        (Date(2021, 1, 31), dict(), Date(2021, 1, 31)),
-        (Date(2021, 1, 31), dict(days=1), Date(2021, 1, 30)),
-        (Date(2021, 2, 1), dict(days=-1), Date(2021, 2, 2)),
-        (Date(2021, 2, 28), dict(months=2), Date(2020, 12, 28)),
-        (Date(2021, 1, 31), dict(years=1), Date(2020, 1, 31)),
-        (Date(2021, 1, 31), dict(months=37), Date(2017, 12, 31)),
-        (Date(2020, 2, 29), dict(years=1), Date(2019, 2, 28)),
-        (Date(2020, 2, 29), dict(years=1, days=1), Date(2019, 2, 27)),
-        (
-            Date(2020, 1, 30),
-            dict(years=1, months=1, days=1),
-            Date(2018, 12, 29),
-        ),
-        (
-            Date(2020, 1, 30),
-            dict(years=1, months=1, weeks=1),
-            Date(2018, 12, 23),
-        ),
-    ],
-)
-def test_subtract(d, kwargs, expected):
-    assert d.subtract(**kwargs) == expected
-    assert d - DateDelta(**kwargs) == expected
+    def test_no_mix_arg_kwargs(self):
+        d = Date(2020, 1, 1)
+        with pytest.raises(TypeError):
+            d.add(DateDelta(years=1), months=1)  # type: ignore[call-overload]
 
 
 class TestDaysUntilAndSince:
@@ -488,6 +479,7 @@ class TestSubtract:
     def test_valid_delta(self, d, kwargs, expected):
         assert d.subtract(**kwargs) == expected
         assert d - DateDelta(**kwargs) == expected
+        assert d.subtract(DateDelta(**kwargs)) == expected
 
     @pytest.mark.parametrize(
         "delta",
@@ -505,6 +497,8 @@ class TestSubtract:
             Date(2021, 1, 1) - DateDelta(**delta)
         with pytest.raises((OverflowError, ValueError)):
             Date(2021, 1, 1).subtract(**delta)
+        with pytest.raises((OverflowError, ValueError)):
+            Date(2021, 1, 1).subtract(DateDelta(**delta))
 
     @pytest.mark.parametrize(
         "d1, d2, expected",

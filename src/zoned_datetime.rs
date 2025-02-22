@@ -188,7 +188,7 @@ impl ZonedDateTime {
             } = self;
             Self::resolve(
                 py_api,
-                date.shift(0, months, days)
+                date.shift(months, days)
                     .ok_or_value_err("Resulting date is out of range")?,
                 time,
                 zoneinfo,
