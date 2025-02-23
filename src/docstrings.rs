@@ -200,7 +200,7 @@ Create a :class:`~DateDelta` with the given number of years.
 ``years(1) == DateDelta(years=1)``
 ";
 pub(crate) const DATE_ADD: &CStr = c"\
-add($self, *, years=0, months=0, weeks=0, days=0)
+add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0)
 --
 
 Add a components to a date.
@@ -317,7 +317,7 @@ Example
 Date(2021-01-04)
 ";
 pub(crate) const DATE_SUBTRACT: &CStr = c"\
-subtract($self, *, years=0, months=0, weeks=0, days=0)
+subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0)
 --
 
 Subtract components from a date.
@@ -633,7 +633,7 @@ Subtract a time amount from this instant.
 See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`_ for more information.
 ";
 pub(crate) const LOCALDATETIME_ADD: &CStr = c"\
-add($self, delta=None, /, *, years=0, months=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=False)
+add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=False)
 --
 
 Add a time amount to this datetime.
@@ -789,7 +789,7 @@ This means you CANNOT include the directives ``%z``, ``%Z``, or ``%:z``
 in the format string.
 ";
 pub(crate) const LOCALDATETIME_SUBTRACT: &CStr = c"\
-subtract($self, delta=None, /, *, years=0, months=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=False)
+subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=False)
 --
 
 Subtract a time amount from this datetime.
@@ -1046,7 +1046,7 @@ OffsetDateTime(2020-08-15 23:12:00+02:00)
 >>> OffsetDateTime.parse_rfc3339(\"2020-08-15t23:12:00z\")
 ";
 pub(crate) const OFFSETDATETIME_REPLACE: &CStr = c"\
-replace($self, /, *, year=None, month=None, day=None, hour=None, minute=None, second=None, nanosecond=None, offset=None, ignore_dst=False)
+replace($self, /, *, year=None, month=None, weeks=0, day=None, hour=None, minute=None, second=None, nanosecond=None, offset=None, ignore_dst=False)
 --
 
 Construct a new instance with the given fields replaced.
@@ -1136,7 +1136,7 @@ For more information, see
 `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
 ";
 pub(crate) const SYSTEMDATETIME_ADD: &CStr = c"\
-add($self, delta=None, /, *, years=0, months=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
+add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
 --
 
 Add a time amount to this datetime.
@@ -1215,7 +1215,7 @@ See `the docs <https://whenever.rtfd.io/en/latest/overview.html#the-system-timez
 for more information.
 ";
 pub(crate) const SYSTEMDATETIME_REPLACE: &CStr = c"\
-replace($self, /, *, year=None, month=None, day=None, hour=None, minute=None, second=None, nanosecond=None, tz=None, disambiguate)
+replace($self, /, *, year=None, month=None, weeks=0, day=None, hour=None, minute=None, second=None, nanosecond=None, tz=None, disambiguate)
 --
 
 Construct a new instance with the given fields replaced.
@@ -1282,7 +1282,7 @@ Note
 This method may give a different result after a change to the system timezone.
 ";
 pub(crate) const SYSTEMDATETIME_SUBTRACT: &CStr = c"\
-subtract($self, delta=None, /, *, years=0, months=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
+subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
 --
 
 Subtract a time amount from this datetime.
@@ -1548,7 +1548,7 @@ Example
 YearMonth(2021-03)
 ";
 pub(crate) const ZONEDDATETIME_ADD: &CStr = c"\
-add($self, delta=None, /, *, years=0, months=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
+add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
 --
 
 Add a time amount to this datetime.
@@ -1653,7 +1653,7 @@ The timezone ID is a recent extension to the ISO 8601 format (RFC 9557).
 Althought it is gaining popularity, it is not yet widely supported.
 ";
 pub(crate) const ZONEDDATETIME_REPLACE: &CStr = c"\
-replace($self, /, *, year=None, month=None, day=None, hour=None, minute=None, second=None, nanosecond=None, tz=None, disambiguate)
+replace($self, /, *, year=None, month=None, weeks=0, day=None, hour=None, minute=None, second=None, nanosecond=None, tz=None, disambiguate)
 --
 
 Construct a new instance with the given fields replaced.
@@ -1718,7 +1718,7 @@ This is almost always at midnight the same day, but may be different
 for timezones which transition at—and thus skip over—midnight.
 ";
 pub(crate) const ZONEDDATETIME_SUBTRACT: &CStr = c"\
-subtract($self, delta=None, /, *, years=0, months=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
+subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
 --
 
 Subtract a time amount from this datetime.

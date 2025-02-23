@@ -142,7 +142,7 @@ impl OffsetDateTime {
         py_api: &PyDateTime_CAPI,
         months: i32,
         days: i32,
-        nanos: i128,
+        delta: TimeDelta,
         dis: Option<Disambiguate>,
         exc_repeated: *mut PyObject,
         exc_skipped: *mut PyObject,
@@ -163,7 +163,7 @@ impl OffsetDateTime {
             self
         };
         slf.instant()
-            .shift(nanos)
+            .shift(delta)
             .ok_or_value_err("Result is out of range")?
             .to_system_tz(py_api)
     }
@@ -320,10 +320,10 @@ unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bo
     let odt = OffsetDateTime::extract(obj_a);
     let mut months = 0;
     let mut days = 0;
-    let mut nanos = 0;
+    let mut tdelta = TimeDelta::ZERO;
 
     if type_b == time_delta_type {
-        nanos = TimeDelta::extract(obj_b).total_nanos();
+        tdelta = TimeDelta::extract(obj_b);
     } else if type_b == date_delta_type {
         let dd = DateDelta::extract(obj_b);
         months = dd.months;
@@ -332,18 +332,26 @@ unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bo
         let dtd = DateTimeDelta::extract(obj_b);
         months = dtd.ddelta.months;
         days = dtd.ddelta.days;
-        nanos = dtd.tdelta.total_nanos();
+        tdelta = dtd.tdelta;
     } else {
         return Ok(newref(Py_NotImplemented()));
     };
     if negate {
         months = -months;
         days = -days;
-        nanos = -nanos;
+        tdelta = -tdelta;
     };
 
-    odt.shift_in_system_tz(py_api, months, days, nanos, None, exc_repeated, exc_skipped)?
-        .to_obj(type_a)
+    odt.shift_in_system_tz(
+        py_api,
+        months,
+        days,
+        tdelta,
+        None,
+        exc_repeated,
+        exc_skipped,
+    )?
+    .to_obj(type_a)
 }
 
 unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
@@ -386,7 +394,8 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             return Ok(newref(Py_NotImplemented()));
         }
     };
-    TimeDelta::from_nanos_unchecked(inst_a.total_nanos() - inst_b.total_nanos())
+    inst_a
+        .diff(inst_b)
         .to_obj(State::for_type(type_a).time_delta_type)
 }
 
@@ -794,7 +803,7 @@ unsafe fn _shift_method(
     let mut dis = None;
     let mut months = 0;
     let mut days = 0;
-    let mut nanos = 0;
+    let mut tdelta = TimeDelta::ZERO;
 
     match *args {
         [arg] => {
@@ -809,7 +818,7 @@ unsafe fn _shift_method(
                 None => {}
             };
             if Py_TYPE(arg) == state.time_delta_type {
-                nanos = TimeDelta::extract(arg).total_nanos();
+                tdelta = TimeDelta::extract(arg);
             } else if Py_TYPE(arg) == state.date_delta_type {
                 let dd = DateDelta::extract(arg);
                 months = dd.months;
@@ -818,12 +827,13 @@ unsafe fn _shift_method(
                 let dt = DateTimeDelta::extract(arg);
                 months = dt.ddelta.months;
                 days = dt.ddelta.days;
-                nanos = dt.tdelta.total_nanos();
+                tdelta = dt.tdelta;
             } else {
                 Err(type_err!("{}() argument must be a delta", fname))?
             }
         }
         [] => {
+            let mut nanos = 0;
             handle_kwargs(fname, kwargs, |key, value, eq| {
                 if eq(key, state.str_disambiguate) {
                     dis = Some(Disambiguate::from_py(value)?);
@@ -832,6 +842,7 @@ unsafe fn _shift_method(
                     set_units_from_kwargs(key, value, &mut months, &mut days, &mut nanos, state, eq)
                 }
             })?;
+            tdelta = TimeDelta::from_nanos(nanos).ok_or_value_err("Total duration out of range")?;
         }
         _ => Err(type_err!(
             "{}() takes at most 1 positional argument, got {}",
@@ -842,14 +853,14 @@ unsafe fn _shift_method(
     if negate {
         months = -months;
         days = -days;
-        nanos = -nanos;
+        tdelta = -tdelta;
     }
     OffsetDateTime::extract(slf)
         .shift_in_system_tz(
             state.py_api,
             months,
             days,
-            nanos,
+            tdelta,
             dis,
             state.exc_repeated,
             state.exc_skipped,
@@ -876,8 +887,7 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
              Instant, ZonedDateTime, or SystemDateTime"
         ))?
     };
-    TimeDelta::from_nanos_unchecked(inst_a.total_nanos() - inst_b.total_nanos())
-        .to_obj(state.time_delta_type)
+    inst_a.diff(inst_b).to_obj(state.time_delta_type)
 }
 
 unsafe fn is_ambiguous(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -935,8 +945,7 @@ unsafe fn day_length(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         exc_skipped,
     )?
     .instant();
-    TimeDelta::from_nanos_unchecked(start_of_next_day.total_nanos() - start_of_day.total_nanos())
-        .to_obj(time_delta_type)
+    start_of_next_day.diff(start_of_day).to_obj(time_delta_type)
 }
 
 unsafe fn round(
@@ -1014,7 +1023,7 @@ unsafe fn _round_day(
             let time_ns = time.total_nanos();
             let floor = get_floor()?;
             let ceil = get_ceil()?;
-            let day_ns = (ceil.instant().total_nanos() - floor.instant().total_nanos()) as u64;
+            let day_ns = ceil.instant().diff(floor.instant()).total_nanos() as u64;
             debug_assert!(day_ns > 1);
             let threshold = match mode {
                 round::Mode::HalfEven => day_ns / 2 + (time_ns % 2 == 0) as u64,

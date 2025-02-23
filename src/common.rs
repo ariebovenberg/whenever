@@ -2,6 +2,8 @@ use core::ffi::{c_char, c_long, CStr};
 use core::mem;
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
+use std::fmt::Debug;
+use std::ops::Neg;
 
 use crate::date::Date;
 use crate::time::Time;
@@ -1021,6 +1023,14 @@ impl DictItems {
         debug_assert!(!dict.is_null() && unsafe { PyDict_Size(dict) > 0 });
         DictItems { dict, pos: 0 }
     }
+
+    pub(crate) fn new(dict: *mut PyObject) -> Option<Self> {
+        if dict.is_null() || unsafe { PyDict_Size(dict) == 0 } {
+            None
+        } else {
+            Some(Self::new_unchecked(dict))
+        }
+    }
 }
 
 impl Iterator for DictItems {
@@ -1155,6 +1165,29 @@ pub(crate) fn arg_vec(fields: &[&CStr]) -> Vec<*mut c_char> {
 
 pub(crate) static S_PER_DAY: i32 = 86_400;
 pub(crate) static NS_PER_DAY: i128 = 86_400 * 1_000_000_000;
+
+pub(crate) fn in_range<T, U>(value: T, max: U) -> bool
+where
+    T: Copy + PartialOrd + Neg<Output = T>,
+    U: Into<T> + Copy,
+{
+    let max_t: T = max.into();
+    (-max_t..=max_t).contains(&value)
+}
+
+pub(crate) fn clamp<T, U>(value: T, max: U) -> Option<U>
+where
+    T: Copy + PartialOrd + Neg<Output = T> + TryInto<U> + Debug,
+    U: Into<T> + Copy + Debug,
+    <T as TryInto<U>>::Error: Debug,
+{
+    if in_range(value, max) {
+        // Safe to unwrap because we know it's in range
+        Some(value.try_into().unwrap())
+    } else {
+        None
+    }
+}
 
 #[allow(unused_imports)]
 pub(crate) use {

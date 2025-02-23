@@ -47,14 +47,6 @@ impl TimeDelta {
         self.secs as i128 * 1_000_000_000 + self.nanos as i128
     }
 
-    pub(crate) const fn subsec_nanos(&self) -> u32 {
-        self.nanos
-    }
-
-    pub(crate) const fn whole_seconds(&self) -> i64 {
-        self.secs
-    }
-
     #[cfg(target_pointer_width = "64")]
     pub(crate) const fn pyhash(self) -> Py_hash_t {
         hash_combine(self.nanos as Py_hash_t, self.secs as Py_hash_t)

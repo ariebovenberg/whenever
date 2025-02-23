@@ -246,19 +246,16 @@ pub(crate) unsafe fn extract_offset(
             .to_i64()?
             // We've checked before that it's a py int
             .unwrap();
-        if given_int.abs() >= 24 {
-            Err(value_err!("offset must be between -24 and 24 hours"))
-        } else {
-            Ok((given_int * 3600) as _)
-        }
+        Ok(
+            clamp(given_int, 24i32).ok_or_value_err("offset must be between -24 and 24 hours")?
+                * 3600,
+        )
     } else if Py_TYPE(obj) == tdelta_cls {
-        let td = TimeDelta::extract(obj);
-        if td.subsec_nanos() != 0 {
-            Err(value_err!("offset must be a whole number of seconds"))
-        } else if td.whole_seconds().abs() >= 24 * 3600 {
-            Err(value_err!("offset must be between -24 and 24 hours"))
+        let TimeDelta { secs, nanos } = TimeDelta::extract(obj);
+        if nanos == 0 {
+            clamp(secs, 24i32 * 3600).ok_or_value_err("offset must be between -24 and 24 hours")
         } else {
-            Ok(td.whole_seconds() as _)
+            Err(value_err!("offset must be a whole number of seconds"))
         }
     } else {
         Err(type_err!(
@@ -358,7 +355,8 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             return Ok(newref(Py_NotImplemented()));
         }
     };
-    TimeDelta::from_nanos_unchecked(inst_a.total_nanos() - inst_b.total_nanos())
+    inst_a
+        .diff(inst_b)
         .to_obj(State::for_type(type_a).time_delta_type)
 }
 
@@ -806,8 +804,7 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
                 Instant, ZonedDateTime, or SystemDateTime"
         ))?
     };
-    TimeDelta::from_nanos_unchecked(inst_a.total_nanos() - inst_b.total_nanos())
-        .to_obj(state.time_delta_type)
+    inst_a.diff(inst_b).to_obj(state.time_delta_type)
 }
 
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {

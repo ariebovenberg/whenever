@@ -2,12 +2,18 @@ use core::ffi::{c_int, c_long, c_void, CStr};
 use core::{mem, ptr::null_mut as NULL};
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
+use std::ptr::NonNull;
 
 use crate::common::*;
 use crate::docstrings as doc;
 use crate::{
-    date_delta::DateDelta, instant::Instant, local_datetime::DateTime, monthday::MonthDay,
-    time::Time, yearmonth::YearMonth, State,
+    date_delta::{handle_init_kwargs as handle_datedelta_kwargs, DateDelta},
+    instant::Instant,
+    local_datetime::DateTime,
+    monthday::MonthDay,
+    time::Time,
+    yearmonth::YearMonth,
+    State,
 };
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -30,6 +36,7 @@ impl Date {
         mem::transmute(self)
     }
 
+    // OPTIMIZE: Let's use unix days instead of ordinal days since 1-1-1
     pub(crate) const fn ord(self) -> u32 {
         days_before_year(self.year)
             + days_before_month(self.year, self.month) as u32
@@ -42,42 +49,45 @@ impl Date {
             .then(|| Self::from_ord_unchecked(ord as _))
     }
 
-    pub const fn from_ord_unchecked(ord: u32) -> Self {
-        // based on the algorithm from datetime.date.fromordinal
-        let mut n = ord - 1;
-        let n400 = n / DAYS_IN_400Y;
-        n %= DAYS_IN_400Y;
-        let n100 = n / DAYS_IN_100Y;
-        n %= DAYS_IN_100Y;
-        let n4 = n / DAYS_IN_4Y;
-        n %= DAYS_IN_4Y;
-        let n1 = n / 365;
-        n %= 365;
+    // The Neri-Schneider algorithm
+    // From https://github.com/cassioneri/eaf/blob/
+    // 684d3cc32d14eee371d0abe4f683d6d6a49ed5c1/algorithms/
+    // neri_schneider.hpp#L40C3-L40C34
+    // under the MIT license
+    pub fn from_ord_unchecked(ord: u32) -> Self {
+        // Shift and correction constants.
+        const S: u32 = 82;
+        const K: u32 = 305 + 146097 * S;
+        const L: u32 = 400 * S;
+        // Rata die shift.
+        let n = ord.wrapping_add(K);
 
-        let year = (400 * n400 + 100 * n100 + 4 * n4 + n1 + 1) as u16;
-        if (n1 == 4) || (n100 == 4) {
-            Date {
-                year: year - 1,
-                month: 12,
-                day: 31,
-            }
-        } else {
-            let leap = (n1 == 3) && (n4 != 24 || n100 == 3);
-            debug_assert!(is_leap(year) == leap);
-            // first estimate that's at most 1 too high
-            let mut month = ((n + 50) >> 5) as u8;
-            let mut monthdays = days_before_month(year, month);
-            if n < monthdays as u32 {
-                month -= 1;
-                monthdays -= days_in_month(year, month) as u16;
-            }
-            n -= monthdays as u32;
-            debug_assert!((n as u8) < days_in_month(year, month));
-            Date {
-                year,
-                month,
-                day: n as u8 + 1,
-            }
+        // Century.
+        let n_1 = 4 * n + 3;
+        let c = n_1 / 146097;
+        let n_c = n_1 % 146097 / 4;
+
+        // Year.
+        let n_2 = 4 * n_c + 3;
+        let p_2 = 2939745 * n_2 as u64;
+        let z = (p_2 / 4294967296) as u32;
+        let n_y = (p_2 % 4294967296) as u32 / 2939745 / 4;
+        let y = 100 * c + z;
+
+        // Month and day.
+        let n_3 = 2141 * n_y + 197913;
+        let m = n_3 / 65536;
+        let d = n_3 % 65536 / 2141;
+
+        // Map. (Notice the year correction, including type change.)
+        let j = n_y >= 306;
+        let y_g = y.wrapping_sub(L).wrapping_add(j as u32);
+        let m_g = if j { m - 12 } else { m };
+        let d_g = d + 1;
+        Date {
+            year: y_g as u16,
+            month: m_g as u8,
+            day: d_g as u8,
         }
     }
 
@@ -94,30 +104,25 @@ impl Date {
                 Date::new_unchecked(
                     year as u16,
                     month,
-                    if self.day > days_in_month(year as u16, month) {
-                        days_in_month(year as u16, month)
-                    } else {
-                        self.day
-                    },
+                    std::cmp::min(self.day, days_in_month(year as u16, month)),
                 )
             })
     }
 
     pub(crate) fn shift(&self, months: i32, days: i32) -> Option<Date> {
-        self.shift_months(months)
-            .and_then(|date| date.shift_days(days))
+        self.shift_months(months).and_then(|d| d.shift_days(days))
     }
 
-    pub(crate) const fn from_longs(year: c_long, month: c_long, day: c_long) -> Option<Self> {
-        if year < MIN_YEAR || year > MAX_YEAR {
+    pub(crate) fn from_longs(year: c_long, month: c_long, day: c_long) -> Option<Self> {
+        if !(MIN_YEAR..=MAX_YEAR).contains(&year) {
             return None;
         }
-        if month < 1 || month > 12 {
+        if !(1..=12).contains(&month) {
             return None;
         }
         let y = year as u16;
         let m = month as u8;
-        if day >= 1 && day <= days_in_month(y, m) as c_long {
+        if day >= 1 && day <= days_in_month(y, m).into() {
             Some(Date {
                 year: y,
                 month: m,
@@ -227,125 +232,96 @@ pub(crate) const MAX_MONTH_DAYS_IN_LEAP_YEAR: [u8; 13] = [
     0, // 1-indexed
     31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
 ];
+pub(crate) const MAX_MONTH_DAYS: [[u8; 13]; 2] = [
+    // non-leap year
+    [
+        0, // 1-indexed
+        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+    ],
+    MAX_MONTH_DAYS_IN_LEAP_YEAR,
+];
 const MIN_ORD: i32 = 1;
 const MAX_ORD: i32 = 3_652_059;
-const DAYS_BEFORE_MONTH: [u16; 13] = [
-    0, // 1-indexed
-    0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334,
+const DAYS_BEFORE_MONTH: [[u16; 13]; 2] = [
+    // non-leap years
+    [
+        0, // 1-indexed
+        0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334,
+    ],
+    // leap years
+    [
+        0, // 1-indexed
+        0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335,
+    ],
 ];
-const DAYS_IN_400Y: u32 = 146_097;
-const DAYS_IN_100Y: u32 = 36_524;
-const DAYS_IN_4Y: u32 = 1_461;
 
 const fn is_leap(year: u16) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
 
 const fn days_in_month(year: u16, month: u8) -> u8 {
-    debug_assert!(month >= 1 && month <= 12);
-    if month == 2 && !is_leap(year) {
-        28
-    } else {
-        MAX_MONTH_DAYS_IN_LEAP_YEAR[month as usize]
-    }
+    MAX_MONTH_DAYS[is_leap(year) as usize][month as usize]
 }
 
 unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
-    // FUTURE: just use normal arg/kwargs handling. It may be slower, but it's more maintainable.
-    // maybe in the future we can create our own arg/kwargs handling that's faster
     let nargs = PyTuple_GET_SIZE(args);
-    let nkwargs = if kwargs.is_null() {
-        0
-    } else {
-        PyDict_Size(kwargs)
-    };
-
-    // Fast path for the most common case
-    let (year, month, day) = if nargs == 3 && nkwargs == 0 {
-        (
-            PyTuple_GET_ITEM(args, 0)
+    if nargs <= 3 {
+        let mut arg_obj: [Option<NonNull<PyObject>>; 3] = [None, None, None];
+        for i in 0..nargs {
+            arg_obj[i as usize] = Some(NonNull::new_unchecked(PyTuple_GET_ITEM(args, i)));
+        }
+        if let Some(items) = DictItems::new(kwargs) {
+            let &State {
+                str_year,
+                str_month,
+                str_day,
+                ..
+            } = State::for_type(cls);
+            handle_kwargs("Date", items, |key, value, eq| {
+                for (i, &kwname) in [str_year, str_month, str_day].iter().enumerate() {
+                    if eq(key, kwname) {
+                        if arg_obj[i].replace(NonNull::new_unchecked(value)).is_some() {
+                            Err(type_err!(
+                                "Date() got multiple values for argument {}",
+                                kwname.repr()
+                            ))?;
+                        }
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            })?;
+        };
+        Date::from_longs(
+            arg_obj[0]
+                .ok_or_type_err("function missing required argument 'year'")?
+                .as_ptr()
                 .to_long()?
                 .ok_or_type_err("year must be an integer")?,
-            PyTuple_GET_ITEM(args, 1)
+            arg_obj[1]
+                .ok_or_type_err("function missing required argument 'month'")?
+                .as_ptr()
                 .to_long()?
                 .ok_or_type_err("month must be an integer")?,
-            PyTuple_GET_ITEM(args, 2)
+            arg_obj[2]
+                .ok_or_type_err("function missing required argument 'day'")?
+                .as_ptr()
                 .to_long()?
                 .ok_or_type_err("day must be an integer")?,
         )
-    } else if nargs + nkwargs > 3 {
-        Err(type_err!(
-            "Date() takes at most 3 arguments, got {}",
-            nargs + nkwargs
-        ))?
-    // slow path: parse args and kwargs
-    } else {
-        let mut year: Option<c_long> = None;
-        let mut month: Option<c_long> = None;
-        let mut day: Option<c_long> = None;
-
-        if nargs > 0 {
-            year = Some(
-                PyTuple_GET_ITEM(args, 0)
-                    .to_long()?
-                    .ok_or_type_err("year must be an integer")?,
-            );
-            if nargs > 1 {
-                month = Some(
-                    PyTuple_GET_ITEM(args, 1)
-                        .to_long()?
-                        .ok_or_type_err("month must be an integer")?,
-                );
-                debug_assert!(nargs == 2); // follows from the first branches
-            }
-        }
-        let &State {
-            str_year,
-            str_month,
-            str_day,
-            ..
-        } = State::for_type(cls);
-        if nkwargs > 0 {
-            handle_kwargs(
-                "Date()",
-                DictItems::new_unchecked(kwargs),
-                |key, value, eq| {
-                    if eq(key, str_year) {
-                        let None = year
-                            .replace(value.to_long()?.ok_or_type_err("year must be an integer")?)
-                        else {
-                            Err(type_err!("Date() got multiple values for argument 'year"))?
-                        };
-                    } else if eq(key, str_month) {
-                        let None = month.replace(
-                            value
-                                .to_long()?
-                                .ok_or_type_err("month must be an integer")?,
-                        ) else {
-                            Err(type_err!("Date() got multiple values for argument 'month"))?
-                        };
-                    } else if eq(key, str_day) {
-                        let None =
-                            day.replace(value.to_long()?.ok_or_type_err("day must be an integer")?)
-                        else {
-                            Err(type_err!("Date() got multiple values for argument 'day"))?
-                        };
-                    } else {
-                        return Ok(false);
-                    }
-                    Ok(true)
-                },
-            )?;
-        }
-        (
-            year.ok_or_type_err("year is a required argument")?,
-            month.ok_or_type_err("month is a required argument")?,
-            day.ok_or_type_err("day is a required argument")?,
-        )
-    };
-    Date::from_longs(year, month, day)
         .ok_or_value_err("Invalid date components")?
         .to_obj(cls)
+    } else {
+        Err(type_err!(
+            "Date() takes at most 3 arguments, got {}",
+            nargs
+                + if kwargs.is_null() {
+                    0
+                } else {
+                    PyDict_Size(kwargs)
+                }
+        ))?
+    }
 }
 
 unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
@@ -463,11 +439,7 @@ const fn days_before_year(year: u16) -> u32 {
 
 const fn days_before_month(year: u16, month: u8) -> u16 {
     debug_assert!(month >= 1 && month <= 12);
-    let mut days = DAYS_BEFORE_MONTH[month as usize];
-    if month > 2 && is_leap(year) {
-        days += 1;
-    }
-    days
+    DAYS_BEFORE_MONTH[is_leap(year) as usize][month as usize]
 }
 
 unsafe fn day_of_week(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -536,6 +508,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
                 .ok_or_value_err("Resulting date out of range")?
                 .to_obj(type_a)
         } else {
+            // FUTURE: do we unnecessarily eliminate classes implementing __rsub__?
             // We can safely discount other types within our module
             Err(type_err!(
                 "unsupported operand type(s) for -: 'Date' and '{}'",
@@ -615,47 +588,7 @@ unsafe fn _shift_method(
                 str_weeks,
                 ..
             } = State::for_type(cls);
-            let mut days: i32 = 0;
-            let mut months: i32 = 0;
-            handle_kwargs(fname, kwargs, |key, value, eq| {
-                if eq(key, str_days) {
-                    let add_value: i32 = value
-                        .to_long()?
-                        .ok_or_type_err("days must be an integer")?
-                        .try_into()
-                        .map_err(|_| value_err!("days out of range"))?;
-                    days += add_value;
-                } else if eq(key, str_months) {
-                    let add_value: i32 = value
-                        .to_long()?
-                        .ok_or_type_err("months must be an integer")?
-                        .try_into()
-                        .map_err(|_| value_err!("months out of range"))?;
-                    months += add_value;
-                } else if eq(key, str_years) {
-                    let add_value: i32 = value
-                        .to_long()?
-                        .ok_or_type_err("years must be an integer")?
-                        .checked_mul(12)
-                        .ok_or_value_err("years out of range")?
-                        .try_into()
-                        .map_err(|_| value_err!("years out of range"))?;
-                    months += add_value;
-                } else if eq(key, str_weeks) {
-                    let add_value: i32 = value
-                        .to_long()?
-                        .ok_or_type_err("weeks must be an integer")?
-                        .checked_mul(7)
-                        .ok_or_value_err("weeks out of range")?
-                        .try_into()
-                        .map_err(|_| value_err!("weeks out of range"))?;
-                    days += add_value;
-                } else {
-                    return Ok(false);
-                }
-                Ok(true)
-            })?;
-            (months, days)
+            handle_datedelta_kwargs(fname, kwargs, str_years, str_months, str_days, str_weeks)?
         }
         _ => Err(type_err!(
             "{}() takes either only kwargs or 1 positional arg",
