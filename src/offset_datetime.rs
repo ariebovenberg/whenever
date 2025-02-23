@@ -955,6 +955,7 @@ fn parse_hms_offset(s: &[u8]) -> Option<i32> {
             None => Some(secs),
             _ => None,
         }
+        // No risk of overflow since we've parsed few digits
         .filter(|s| s.abs() < 24 * 3600)
         .map(|s| sign * s)
     } else {
@@ -981,6 +982,7 @@ fn parse_rfc3339_offset(s: &[u8]) -> Option<i32> {
             sign * ((parse_digit_max(s, 1, b'2')? * 10 + parse_digit(s, 2)?) as i32 * 3600
                 + (parse_digit_max(s, 4, b'5')? * 10 + parse_digit(s, 5)?) as i32 * 60),
         )
+        // No risk of overflow since we've parsed few digits
         .filter(|secs| secs.abs() < 24 * 3600)
     } else {
         None
