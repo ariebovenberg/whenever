@@ -1,15 +1,14 @@
 🚀 Changelog
 ============
 
-0.7.1 (2025-02-22)
+0.7.1 (2025-02-24)
 ------------------
 
 - ``Date.add`` and ``Date.subtract`` now support ``DateDelta`` to be passed
   as sole positional argument. This is consistent with the behavior of datetime
   classes.
-- Improved robustness of delta calculations at extreme boundaries
-- Improve performance of ``Date`` using Neri-Schneider algorithm,
-  following Jiff's adoption of the same algorithm.
+- Improved performance and robustness of date calculations at extreme boundaries
+- Minor fixes to docstrings
 
 0.7.0 (2025-02-20)
 ------------------
