@@ -20,6 +20,7 @@ from whenever import (
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
 MAX_I64 = 1 << 63
+MAX_I32 = 1 << 31
 
 
 class TestInit:
@@ -358,6 +359,7 @@ class TestAdd:
             (Date(2021, 1, 31), dict(days=MAX_I64 + 3)),
             (Date(2021, 1, 31), dict(weeks=-MAX_I64 - 2)),
             (Date(2021, 1, 31), dict(months=MAX_I64 + 2)),
+            (Date(2021, 1, 31), dict(months=MAX_I32 - 2, years=1)),
         ],
     )
     def test_out_of_range(self, d, kwargs):

@@ -37,44 +37,23 @@ impl DateDelta {
     }
 
     pub(crate) fn new(months: i32, days: i32) -> Result<Self, InitError> {
-        match (months.signum(), days.signum()) {
-            (1, -1) | (-1, 1) => Err(InitError::MixedSign),
-            _ => Ok(Self {
-                months: (months.abs() < MAX_MONTHS)
-                    .then_some(months)
-                    .ok_or(InitError::TooBig)?,
-                days: (days.abs() < MAX_DAYS)
-                    .then_some(days)
-                    .ok_or(InitError::TooBig)?,
-            }),
-        }
-    }
-
-    pub(crate) fn from_longs(months: c_long, days: c_long) -> Result<Self, InitError> {
-        match (months.signum(), days.signum()) {
-            (1, -1) | (-1, 1) => Err(InitError::MixedSign),
-            _ => Ok(Self {
-                months: (months.abs() < MAX_MONTHS as _)
-                    .then_some(months as _)
-                    .ok_or(InitError::TooBig)?,
-                days: (days.abs() < MAX_DAYS as _)
-                    .then_some(days as _)
-                    .ok_or(InitError::TooBig)?,
-            }),
+        match same_sign(months, days) {
+            false => Err(InitError::MixedSign),
+            true => Ok(Self::from_same_sign(months, days).ok_or(InitError::TooBig)?),
         }
     }
 
     pub(crate) fn from_same_sign(months: i32, days: i32) -> Option<Self> {
-        debug_assert!(months >= 0 && days >= 0 || months <= 0 && days <= 0);
-        (months.abs() < MAX_MONTHS && days.abs() < MAX_DAYS).then_some(Self { months, days })
+        debug_assert!(same_sign(months, days));
+        (in_range(months, MAX_MONTHS) && in_range(days, MAX_DAYS)).then_some(Self { months, days })
     }
 
     pub(crate) fn from_months(months: i32) -> Option<Self> {
-        (months.abs() < MAX_MONTHS).then_some(Self { months, days: 0 })
+        in_range(months, MAX_MONTHS).then_some(Self { months, days: 0 })
     }
 
     pub(crate) fn from_days(days: i32) -> Option<Self> {
-        (days.abs() < MAX_DAYS).then_some(Self { months: 0, days })
+        in_range(days, MAX_DAYS).then_some(Self { months: 0, days })
     }
 
     pub(crate) fn checked_mul(self, factor: i32) -> Option<Self> {
@@ -86,6 +65,8 @@ impl DateDelta {
     }
 
     pub(crate) fn checked_add(self, other: Self) -> Result<Self, InitError> {
+        // The maths won't overflow due to the ranges;
+        // the constructor will check the rest.
         Self::new(self.months + other.months, self.days + other.days)
     }
 
@@ -95,6 +76,7 @@ impl DateDelta {
 
     pub(crate) fn abs(self) -> Self {
         Self {
+            // Arithmetic overflow is impossible due to the ranges
             months: self.months.abs(),
             days: self.days.abs(),
         }
@@ -110,17 +92,21 @@ impl Neg for DateDelta {
 
     fn neg(self) -> Self {
         Self {
+            // Arithmetic overflow is impossible due to the ranges
             months: -self.months,
             days: -self.days,
         }
     }
 }
 
-const MAX_MONTHS: i32 = (MAX_YEAR * 12) as i32;
-const MAX_DAYS: i32 = (MAX_YEAR * 366) as i32;
+fn same_sign(months: i32, days: i32) -> bool {
+    months >= 0 && days >= 0 || months <= 0 && days <= 0
+}
 
-pub(crate) const SINGLETONS: &[(&CStr, DateDelta); 1] =
-    &[(c"ZERO", DateDelta { months: 0, days: 0 })];
+pub(crate) const MAX_MONTHS: i32 = (MAX_YEAR * 12) as _;
+pub(crate) const MAX_DAYS: i32 = (MAX_YEAR * 366) as _;
+
+pub(crate) const SINGLETONS: &[(&CStr, DateDelta); 1] = &[(c"ZERO", DateDelta::ZERO)];
 
 impl fmt::Display for DateDelta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -141,6 +127,7 @@ impl fmt::Display for DateDelta {
     }
 }
 
+// NOTE: delta must be positive
 pub(crate) fn format_components(delta: DateDelta, s: &mut String) {
     let DateDelta { mut months, days } = delta;
     debug_assert!(months >= 0 && days >= 0);
@@ -158,37 +145,86 @@ pub(crate) fn format_components(delta: DateDelta, s: &mut String) {
     }
 }
 
-unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
-    let mut years: c_long = 0;
-    let mut months: c_long = 0;
-    let mut weeks: c_long = 0;
+// NOTE: while in range, the signs may be mixed
+pub(crate) unsafe fn handle_init_kwargs<T>(
+    fname: &str,
+    kwargs: T,
+    str_years: *mut PyObject,
+    str_months: *mut PyObject,
+    str_days: *mut PyObject,
+    str_weeks: *mut PyObject,
+) -> PyResult<(i32, i32)>
+where
+    T: IntoIterator<Item = (*mut PyObject, *mut PyObject)>,
+{
     let mut days: c_long = 0;
+    let mut months: c_long = 0;
+    handle_kwargs(fname, kwargs, |key, value, eq| {
+        if eq(key, str_days) {
+            days = value
+                .to_long()?
+                .ok_or_type_err("days must be an integer")?
+                .checked_add(days)
+                .ok_or_value_err("days out of range")?;
+        } else if eq(key, str_months) {
+            months = value
+                .to_long()?
+                .ok_or_type_err("months must be an integer")?
+                .checked_add(months)
+                .ok_or_value_err("months out of range")?;
+        } else if eq(key, str_years) {
+            months = value
+                .to_long()?
+                .ok_or_type_err("years must be an integer")?
+                .checked_mul(12)
+                .and_then(|m| m.checked_add(months))
+                .ok_or_value_err("years out of range")?;
+        } else if eq(key, str_weeks) {
+            days = value
+                .to_long()?
+                .ok_or_type_err("weeks must be an integer")?
+                .checked_mul(7)
+                .and_then(|d| d.checked_add(days))
+                .ok_or_value_err("weeks out of range")?;
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    })?;
+    Ok((
+        clamp(months, MAX_MONTHS).ok_or_value_err("months out of range")?,
+        clamp(days, MAX_DAYS).ok_or_value_err("days out of range")?,
+    ))
+}
 
-    // FUTURE: parse them manually, which is more efficient
-    if PyArg_ParseTupleAndKeywords(
-        args,
-        kwargs,
-        c"|$llll:DateDelta".as_ptr(),
-        arg_vec(&[c"years", c"months", c"weeks", c"days"]).as_mut_ptr(),
-        &mut years,
-        &mut months,
-        &mut weeks,
-        &mut days,
-    ) == 0
-    {
-        return Err(py_err!());
+unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
+    if PyTuple_GET_SIZE(args) != 0 {
+        return Err(type_err!("DateDelta() takes no positional arguments"));
     }
-    match years
-        .checked_mul(12)
-        .and_then(|m| m.checked_add(months))
-        .zip(weeks.checked_mul(7).and_then(|d| d.checked_add(days)))
-        .ok_or(InitError::TooBig)
-        .and_then(|(m, d)| DateDelta::from_longs(m, d))
-    {
-        Ok(delta) => delta.to_obj(cls),
-        Err(InitError::TooBig) => Err(value_err!("DateDelta out of bounds")),
-        Err(InitError::MixedSign) => Err(value_err!("Mixed sign in DateDelta")),
+    let &State {
+        str_years,
+        str_months,
+        str_days,
+        str_weeks,
+        ..
+    } = State::for_type(cls);
+    match DictItems::new(kwargs) {
+        None => DateDelta::ZERO,
+        Some(items) => {
+            let (months, days) = handle_init_kwargs(
+                "DateDelta",
+                items,
+                str_years,
+                str_months,
+                str_days,
+                str_weeks,
+            )?;
+            same_sign(months, days)
+                .then_some(DateDelta { months, days })
+                .ok_or_value_err("Mixed sign in DateDelta")?
+        }
     }
+    .to_obj(cls)
 }
 
 pub(crate) unsafe fn years(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
@@ -264,6 +300,7 @@ unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn __mul__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
+    // These checks are needed because the args could be reversed!
     let (delta_obj, factor) = if obj_a.is_int() {
         (obj_b, obj_a.to_long()?.unwrap())
     } else if obj_b.is_int() {
@@ -350,10 +387,12 @@ unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) 
 
 unsafe fn __abs__(slf: *mut PyObject) -> PyReturn {
     let DateDelta { months, days } = DateDelta::extract(slf);
+    // Optimization: don't allocate a new object if the delta is already positive
     if months >= 0 && days >= 0 {
         Ok(newref(slf))
     } else {
         DateDelta {
+            // No overflow is possible due to the ranges
             months: -months,
             days: -days,
         }
@@ -487,7 +526,7 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
     while !s.is_empty() {
         let (value, unit) = parse_component(s).ok_or_else(raise)?;
         match (unit, prev_unit.replace(unit)) {
-            // Note: overflows are prevented by limiting the number
+            // NOTE: overflows are prevented by limiting the number
             // of digits that are parsed.
             (Unit::Years, None) => {
                 months += value * 12;

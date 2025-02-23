@@ -504,11 +504,9 @@ unsafe fn difference(
     if Py_TYPE(arg) == cls {
         let a = DateTime::extract(slf);
         let b = DateTime::extract(arg);
-        TimeDelta::from_nanos_unchecked(
-            Instant::from_datetime(a.date, a.time).total_nanos()
-                - Instant::from_datetime(b.date, b.time).total_nanos(),
-        )
-        .to_obj(state.time_delta_type)
+        Instant::from_datetime(a.date, a.time)
+            .diff(Instant::from_datetime(b.date, b.time))
+            .to_obj(state.time_delta_type)
     } else {
         Err(type_err!("difference() argument must be a LocalDateTime"))?
     }

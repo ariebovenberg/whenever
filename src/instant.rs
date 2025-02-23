@@ -74,17 +74,15 @@ impl Instant {
         Instant { secs, nanos }
     }
 
-    pub(crate) fn from_nanos(nanos: i128) -> Option<Self> {
-        let secs = (nanos / 1_000_000_000).try_into().ok()?;
-        (secs > MIN_INSTANT && secs < MAX_INSTANT).then_some(Instant {
-            secs,
-            nanos: (nanos % 1_000_000_000) as u32,
-        })
-    }
-
-    // OPTIMIZE: lets see if we can remove the need for i128 in most places...
-    pub(crate) const fn total_nanos(&self) -> i128 {
-        self.secs as i128 * 1_000_000_000 + self.nanos as i128
+    pub(crate) fn diff(self, other: Self) -> TimeDelta {
+        let secs_diff = self.secs - other.secs;
+        let nanos_diff = self.nanos as i32 - other.nanos as i32;
+        let extra_sec = if nanos_diff < 0 { 1 } else { 0 };
+        let nanos_abs = nanos_diff + extra_sec * 1_000_000_000;
+        TimeDelta {
+            secs: secs_diff - extra_sec as i64,
+            nanos: nanos_abs as u32,
+        }
     }
 
     pub(crate) const fn whole_secs(&self) -> i64 {
@@ -142,10 +140,15 @@ impl Instant {
             })
     }
 
-    pub(crate) fn shift(&self, nanos: i128) -> Option<Instant> {
-        self.total_nanos()
-            .checked_add(nanos)
-            .and_then(Instant::from_nanos)
+    pub(crate) fn shift(&self, d: TimeDelta) -> Option<Instant> {
+        let nanos = self.nanos + d.nanos;
+        let secs = self.secs + d.secs + (nanos / 1_000_000_000) as i64;
+        (MIN_INSTANT..=MAX_INSTANT)
+            .contains(&secs)
+            .then_some(Instant {
+                secs,
+                nanos: (nanos % 1_000_000_000),
+            })
     }
 
     pub(crate) const fn shift_secs_unchecked(&self, secs: i64) -> Self {
@@ -260,10 +263,11 @@ impl Instant {
             if is_none(delta) {
                 Err(value_err!("datetime utcoffset() is None"))?;
             }
-            let nanos = i128::from(PyDateTime_DELTA_GET_DAYS(delta)) * NS_PER_DAY
-                + i128::from(PyDateTime_DELTA_GET_SECONDS(delta)) * 1_000_000_000
-                + i128::from(PyDateTime_DELTA_GET_MICROSECONDS(delta)) * 1_000;
-            inst.shift(-nanos)
+            let secs = i64::from(PyDateTime_DELTA_GET_DAYS(delta)) * 86400
+                + i64::from(PyDateTime_DELTA_GET_SECONDS(delta));
+            let nanos = PyDateTime_DELTA_GET_MICROSECONDS(delta) as u32 * 1_000;
+            // No bounds check on TimeDelta needed, as it's < 24 hours in size
+            inst.shift(-TimeDelta { secs, nanos })
         })
     }
 
@@ -414,7 +418,8 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             return Ok(newref(Py_NotImplemented()));
         }
     };
-    TimeDelta::from_nanos_unchecked(inst_a.total_nanos() - inst_b.total_nanos())
+    inst_a
+        .diff(inst_b)
         .to_obj(State::for_type(type_a).time_delta_type)
 }
 
@@ -433,16 +438,16 @@ unsafe fn _shift(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) -> Py
         PyType_GetModule(Py_TYPE(obj_b))
     );
     let type_a = Py_TYPE(obj_a);
-    let mut nanos = if Py_TYPE(obj_b) == State::for_type(type_a).time_delta_type {
-        TimeDelta::extract(obj_b).total_nanos()
+    let mut delta = if Py_TYPE(obj_b) == State::for_type(type_a).time_delta_type {
+        TimeDelta::extract(obj_b)
     } else {
         return Ok(newref(Py_NotImplemented()));
     };
     if negate {
-        nanos = -nanos;
+        delta = -delta;
     }
     Instant::extract(obj_a)
-        .shift(nanos)
+        .shift(delta)
         .ok_or_value_err("Resulting datetime is out of range")?
         .to_obj(type_a)
 }
@@ -685,7 +690,7 @@ unsafe fn _shift_method(
     }
 
     instant
-        .shift(nanos)
+        .shift(TimeDelta::from_nanos(nanos).ok_or_value_err("Total duration out of range")?)
         .ok_or_value_err("Resulting datetime is out of range")?
         .to_obj(cls)
 }
@@ -707,8 +712,7 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
              Instant, ZonedDateTime, or SystemDateTime"
         ))?
     };
-    TimeDelta::from_nanos_unchecked(inst_a.total_nanos() - inst_b.total_nanos())
-        .to_obj(state.time_delta_type)
+    inst_a.diff(inst_b).to_obj(state.time_delta_type)
 }
 
 unsafe fn to_tz(slf: &mut PyObject, tz: &mut PyObject) -> PyReturn {
