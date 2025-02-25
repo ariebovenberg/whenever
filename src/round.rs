@@ -116,6 +116,18 @@ impl Unit {
                 .ok_or_value_err("Increment must be 1 for 'day' unit"),
         }
     }
+
+    unsafe fn default_increment(self) -> i64 {
+        match self {
+            Unit::Nanosecond => 1,
+            Unit::Microsecond => 1_000,
+            Unit::Millisecond => 1_000_000,
+            Unit::Second => 1_000_000_000,
+            Unit::Minute => 60 * 1_000_000_000,
+            Unit::Hour => 3_600 * 1_000_000_000,
+            Unit::Day => 86_400 * 1_000_000_000,
+        }
+    }
 }
 
 // NOTE: the caller still needs to check whenever 'day' is valid for them
@@ -216,7 +228,7 @@ pub(crate) unsafe fn parse_args(
     let increment = arg_obj[1]
         .map(|v| unit.increment_from_py(v.as_ptr(), hours_largest_unit))
         .transpose()?
-        .unwrap_or(1_000_000_000);
+        .unwrap_or_else(|| unit.default_increment());
     let mode = arg_obj[2]
         .map(|v| {
             Mode::from_py(

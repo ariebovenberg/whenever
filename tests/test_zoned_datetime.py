@@ -2526,6 +2526,15 @@ class TestRound:
             2023, 7, 14, 1, 2, 8, tz="Europe/Paris"
         )
 
+    # TODO: test this robustly on all classes
+    def test_default_increment(self):
+        d = ZonedDateTime(
+            2023, 7, 14, 1, 2, 3, nanosecond=800_000, tz="Europe/Paris"
+        )
+        assert d.round("millisecond") == ZonedDateTime(
+            2023, 7, 14, 1, 2, 3, nanosecond=1_000_000, tz="Europe/Paris"
+        )
+
     def test_invalid_mode(self):
         d = ZonedDateTime(
             2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
