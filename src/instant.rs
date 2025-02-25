@@ -69,9 +69,13 @@ impl Instant {
             nanos,
         }: Time,
     ) -> Self {
-        let secs =
-            date.ord() as i64 * 86400 + hour as i64 * 3600 + minute as i64 * 60 + second as i64;
-        Instant { secs, nanos }
+        Instant {
+            secs: date.ord() as i64 * 86400
+                + hour as i64 * 3600
+                + minute as i64 * 60
+                + second as i64,
+            nanos,
+        }
     }
 
     pub(crate) fn diff(self, other: Self) -> TimeDelta {

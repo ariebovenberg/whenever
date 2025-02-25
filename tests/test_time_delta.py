@@ -768,6 +768,10 @@ class TestRound:
             seconds=4
         )
 
+    def test_default_increment(self):
+        d = TimeDelta(seconds=2, nanoseconds=800)
+        assert d.round("microsecond") == TimeDelta(seconds=2, microseconds=1)
+
     def test_invalid_unit(self):
         t = TimeDelta.ZERO
         with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
