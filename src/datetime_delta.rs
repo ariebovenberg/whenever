@@ -1,5 +1,4 @@
 use core::ffi::{c_int, c_void, CStr};
-use core::mem;
 use pyo3_ffi::*;
 use std::fmt;
 use std::ops::Neg;
@@ -88,16 +87,16 @@ pub(crate) unsafe fn handle_exact_unit(
         if (-max..=max).contains(&i) {
             Ok(i as i128 * factor)
         } else {
-            Err(value_err!("{} out of range", name))?
+            raise_value_err(format!("{} out of range", name))?
         }
     } else {
         let f = value
             .to_f64()?
-            .ok_or_else(|| value_err!("{} must be an integer or float", name))?;
+            .ok_or_else_value_err(|| format!("{} must be an integer or float", name))?;
         if (-max as f64..=max as f64).contains(&f) {
             Ok((f * factor as f64) as i128)
         } else {
-            Err(value_err!("{} out of range", name))?
+            raise_value_err(format!("{} out of range", name))?
         }
     }
 }
@@ -232,10 +231,10 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
                         .ok_or_value_err("TimeDelta out of range")?,
                 }
             } else {
-                Err(value_err!("Mixed sign in DateTimeDelta"))?
+                raise_value_err("Mixed sign in DateTimeDelta")?
             }
         }
-        _ => Err(value_err!("TimeDelta() takes no positional arguments"))?,
+        _ => raise_value_err("TimeDelta() takes no positional arguments")?,
     }
     .to_obj(cls)
 }
@@ -332,7 +331,7 @@ unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) 
                 }
             } else {
                 // We can safely discount other types within our module
-                return Err(value_err!(
+                return raise_value_err(format!(
                     "unsupported operand type(s) for +/-: {} and {}",
                     (type_a as *mut PyObject).repr(),
                     (type_b as *mut PyObject).repr()
@@ -348,9 +347,11 @@ unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) 
         b = -b;
     };
     a.checked_add(b)
-        .map_err(|e| match e {
-            InitError::TooBig => value_err!("Addition result out of bounds"),
-            InitError::MixedSign => value_err!("Mixed sign in DateTimeDelta"),
+        .map_err(|e| {
+            value_err(match e {
+                InitError::TooBig => "Addition result out of bounds",
+                InitError::MixedSign => "Mixed sign in DateTimeDelta",
+            })
         })?
         .to_obj(type_a)
 }
@@ -435,23 +436,23 @@ pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let s = &mut s_obj.to_utf8()?.ok_or_value_err("argument must be str")?;
-    let raise = || value_err!("Invalid format: {}", s_obj.repr());
+    let errmsg = || format!("Invalid format: {}", s_obj.repr());
     if s.len() < 3 {
         // at least `P0D`
-        Err(raise())?
+        raise_value_err(errmsg())?
     }
 
-    let negated = parse_prefix(s).ok_or_else(raise)?;
+    let negated = parse_prefix(s).ok_or_else_value_err(errmsg)?;
     if s[s.len() - 1] == b'T' {
         // catch 'empty' cases
-        Err(raise())?
+        raise_value_err(errmsg())?
     }
-    let mut ddelta = parse_date_components(s).ok_or_else(raise)?;
+    let mut ddelta = parse_date_components(s).ok_or_else_value_err(errmsg)?;
     let mut tdelta = if s.is_empty() {
         TimeDelta::ZERO
     } else {
         *s = &s[1..];
-        let (nanos, _) = time_delta::parse_all_components(s).ok_or_else(raise)?;
+        let (nanos, _) = time_delta::parse_all_components(s).ok_or_else_value_err(errmsg)?;
         TimeDelta::from_nanos(nanos).ok_or_value_err("TimeDelta out of range")?
     };
     if negated {
@@ -526,7 +527,7 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, args: &[*mut PyObject]) -> 
             },
         }
         .to_obj(State::for_mod(module).datetime_delta_type),
-        _ => Err(type_err!("Invalid pickle data"))?,
+        _ => raise_type_err("Invalid pickle data")?,
     }
 }
 
@@ -549,4 +550,5 @@ static mut METHODS: &[PyMethodDef] = &[
     PyMethodDef::zeroed(),
 ];
 
-type_spec!(DateTimeDelta, SLOTS);
+pub(crate) static mut SPEC: PyType_Spec =
+    type_spec::<DateTimeDelta>(c"whenever.DateTimeDelta", unsafe { SLOTS });
