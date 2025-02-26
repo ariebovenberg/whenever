@@ -1,5 +1,4 @@
 use core::ffi::{c_int, c_void, CStr};
-use core::mem;
 use pyo3_ffi::*;
 use std::cmp::min;
 use std::fmt;
@@ -266,7 +265,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
             )?;
             TimeDelta::from_nanos(nanos).ok_or_value_err("TimeDelta out of range")?
         }
-        _ => Err(type_err!("TimeDelta() takes no positional arguments"))?,
+        _ => raise_type_err("TimeDelta() takes no positional arguments")?,
     }
     .to_obj(cls)
 }
@@ -407,7 +406,7 @@ unsafe fn _mul_float(delta_obj: *mut PyObject, factor: f64) -> PyReturn {
         let TimeDelta { secs, nanos } = TimeDelta::extract(delta_obj);
         let nanos = (secs as f64 * 1e9 + nanos as f64) * factor;
         if nanos.is_nan() || !(-MAX_NANOSECONDS as f64..MAX_NANOSECONDS as f64).contains(&nanos) {
-            Err(value_err!("Multiplication result out of range"))?
+            raise_value_err("Multiplication result out of range")?
         }
         TimeDelta::from_nanos_unchecked(nanos as i128).to_obj(Py_TYPE(delta_obj))
     }
@@ -422,7 +421,7 @@ unsafe fn __truediv__(slf: *mut PyObject, factor_obj: *mut PyObject) -> PyReturn
         if factor == 1 {
             return Ok(newref(slf));
         } else if factor == 0 {
-            Err(py_err!(PyExc_ZeroDivisionError, "Division by zero"))?
+            raise(PyExc_ZeroDivisionError, "Division by zero")?
         }
         let nanos = TimeDelta::extract(slf).total_nanos();
         TimeDelta::from_nanos_unchecked(if nanos % factor == 0 {
@@ -438,18 +437,18 @@ unsafe fn __truediv__(slf: *mut PyObject, factor_obj: *mut PyObject) -> PyReturn
         if factor == 1.0 {
             return Ok(newref(slf));
         } else if factor == 0.0 {
-            Err(py_err!(PyExc_ZeroDivisionError, "Division by zero"))?
+            raise(PyExc_ZeroDivisionError, "Division by zero")?
         }
         let mut nanos = TimeDelta::extract(slf).total_nanos() as f64;
         nanos /= factor;
         if nanos.is_nan() || (MAX_NANOSECONDS as f64) < nanos || nanos < -MAX_NANOSECONDS as f64 {
-            Err(py_err!(PyExc_ValueError, "Division result out of range"))?
+            raise(PyExc_ValueError, "Division result out of range")?
         };
         TimeDelta::from_nanos_unchecked(nanos as i128)
     } else if Py_TYPE(factor_obj) == Py_TYPE(slf) {
         let factor = TimeDelta::extract(factor_obj).total_nanos();
         if factor == 0 {
-            Err(py_err!(PyExc_ZeroDivisionError, "Division by zero"))?
+            raise(PyExc_ZeroDivisionError, "Division by zero")?
         }
         return (TimeDelta::extract(slf).total_nanos() as f64 / factor as f64).to_py();
     } else {
@@ -465,7 +464,7 @@ unsafe fn __floordiv__(a_obj: *mut PyObject, b_obj: *mut PyObject) -> PyReturn {
         let a = TimeDelta::extract(a_obj).total_nanos();
         let b = TimeDelta::extract(b_obj).total_nanos();
         if b == 0 {
-            Err(py_err!(PyExc_ZeroDivisionError, "Division by zero"))?
+            raise(PyExc_ZeroDivisionError, "Division by zero")?
         }
         let mut result = a / b;
         // Adjust for "correct" (Python style) floor division with mixed signs
@@ -484,7 +483,7 @@ unsafe fn __mod__(a_obj: *mut PyObject, b_obj: *mut PyObject) -> PyReturn {
         let a = TimeDelta::extract(a_obj).total_nanos();
         let b = TimeDelta::extract(b_obj).total_nanos();
         if b == 0 {
-            Err(py_err!(PyExc_ZeroDivisionError, "Division by zero"))?
+            raise(PyExc_ZeroDivisionError, "Division by zero")?
         }
         let mut result = a % b;
         // Adjust for "correct" (Python style) floor division with mixed signs
@@ -541,12 +540,14 @@ unsafe fn _add_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool
                     ddelta: DateDelta::ZERO,
                     tdelta: TimeDelta::extract(obj_a),
                 })
-                .map_err(|e| match e {
-                    InitError::TooBig => value_err!("Result out of range"),
-                    InitError::MixedSign => value_err!("Mixed sign of delta components"),
+                .map_err(|e| {
+                    value_err(match e {
+                        InitError::TooBig => "Result out of range",
+                        InitError::MixedSign => "Mixed sign of delta components",
+                    })
                 })?
             } else {
-                Err(type_err!(
+                raise_type_err(format!(
                     "unsupported operand type(s) for +/-: {} and {}",
                     (type_a as *mut PyObject).repr(),
                     (type_b as *mut PyObject).repr()
@@ -621,7 +622,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let mut data = arg.to_bytes()?.ok_or_value_err("Invalid pickle data")?;
     if data.len() != 12 {
-        Err(value_err!("Invalid pickle data"))?;
+        raise_value_err("Invalid pickle data")?;
     }
     TimeDelta {
         secs: unpack_one!(data, i64),
@@ -666,12 +667,12 @@ unsafe fn in_days_of_24h(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn from_py_timedelta(cls: *mut PyObject, d: *mut PyObject) -> PyReturn {
     if PyDelta_Check(d) == 0 {
-        Err(type_err!("argument must be datetime.timedelta"))?;
+        raise_type_err("argument must be datetime.timedelta")?;
     }
     let secs = i64::from(PyDateTime_DELTA_GET_DAYS(d)) * SECS_PER_DAY
         + i64::from(PyDateTime_DELTA_GET_SECONDS(d));
     if !(-MAX_SECS..=MAX_SECS).contains(&secs) {
-        Err(value_err!("TimeDelta out of range"))?;
+        raise_value_err("TimeDelta out of range")?;
     }
     TimeDelta {
         secs,
@@ -833,6 +834,8 @@ fn parse_component(s: &mut &[u8]) -> Option<(i128, Unit)> {
     None
 }
 
+// Parse all time components of an ISO8601 duration into total nanoseconds
+// also whether it is empty (to distinguish no components from zero components)
 pub(crate) unsafe fn parse_all_components(s: &mut &[u8]) -> Option<(i128, bool)> {
     let mut prev_unit: Option<Unit> = None;
     let mut nanos = 0;
@@ -868,14 +871,14 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
     let sign = (s.len() >= 4)
         .then(|| parse_prefix(s))
         .flatten()
-        .ok_or_else(|| value_err!("Invalid format: {}", s_obj.repr()))?;
+        .ok_or_else_value_err(|| format!("Invalid format: {}", s_obj.repr()))?;
 
-    let (nanos, is_empty) =
-        parse_all_components(s).ok_or_else(|| value_err!("Invalid format: {}", s_obj.repr()))?;
+    let (nanos, is_empty) = parse_all_components(s)
+        .ok_or_else_value_err(|| format!("Invalid format: {}", s_obj.repr()))?;
 
     // i.e. there must be at least one component (`PT` alone is invalid)
     if is_empty {
-        Err(value_err!("Invalid format: {}", s_obj.repr()))?;
+        raise_value_err(format!("Invalid format: {}", s_obj.repr()))?;
     }
     TimeDelta::from_nanos(nanos * sign)
         .ok_or_value_err("Time delta out of range")?
@@ -891,7 +894,7 @@ unsafe fn round(
     let (unit, increment, mode) =
         round::parse_args(State::for_obj(slf), args, kwargs, true, false)?;
     if unit == round::Unit::Day {
-        Err(value_err!(doc::CANNOT_ROUND_DAY_MSG))?;
+        raise_value_err(doc::CANNOT_ROUND_DAY_MSG)?;
     }
     TimeDelta::extract(slf)
         .round(increment, mode)
@@ -930,4 +933,5 @@ static mut METHODS: &[PyMethodDef] = &[
     PyMethodDef::zeroed(),
 ];
 
-type_spec!(TimeDelta, SLOTS);
+pub(crate) static mut SPEC: PyType_Spec =
+    type_spec::<TimeDelta>(c"whenever.TimeDelta", unsafe { SLOTS });
