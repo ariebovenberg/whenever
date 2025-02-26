@@ -1,5 +1,4 @@
 use core::ffi::{c_int, c_long, c_void, CStr};
-use core::mem;
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 use std::ptr::null_mut as NULL;
@@ -245,24 +244,19 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     let mut hour: c_long = 0;
     let mut minute: c_long = 0;
     let mut second: c_long = 0;
-    let mut nanos: c_long = 0;
+    let mut nanosecond: c_long = 0;
 
-    // FUTURE: parse them manually, which is more efficient
-    if PyArg_ParseTupleAndKeywords(
+    parse_args_kwargs!(
         args,
         kwargs,
-        c"|lll$l:Time".as_ptr(),
-        arg_vec(&[c"hour", c"minute", c"second", c"nanosecond"]).as_mut_ptr(),
-        &mut hour,
-        &mut minute,
-        &mut second,
-        &mut nanos,
-    ) == 0
-    {
-        Err(py_err!())?
-    }
+        c"|lll$l:Time",
+        hour,
+        minute,
+        second,
+        nanosecond
+    );
 
-    Time::from_longs(hour, minute, second, nanos)
+    Time::from_longs(hour, minute, second, nanosecond)
         .ok_or_value_err("Invalid time component value")?
         .to_obj(cls)
 }
@@ -350,10 +344,10 @@ unsafe fn py_time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn from_py_time(type_: *mut PyObject, time: *mut PyObject) -> PyReturn {
     if PyTime_Check(time) == 0 {
-        Err(type_err!("argument must be a datetime.time"))?
+        raise_type_err("argument must be a datetime.time")?
     }
     if !is_none(get_time_tzinfo(time)) {
-        Err(value_err!("time with tzinfo is not supported"))?
+        raise_value_err("time with tzinfo is not supported")?
     }
     // FUTURE: check `fold=0`?
     Time {
@@ -399,7 +393,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
     Time::parse_all(s.to_utf8()?.ok_or_type_err("Argument must be a string")?)
-        .ok_or_else(|| value_err!("Invalid format: {}", s.repr()))?
+        .ok_or_else_value_err(|| format!("Invalid format: {}", s.repr()))?
         .to_obj(cls.cast())
 }
 
@@ -416,7 +410,7 @@ unsafe fn on(slf: *mut PyObject, date: *mut PyObject) -> PyReturn {
         }
         .to_obj(local_datetime_type)
     } else {
-        Err(type_err!("argument must be a date"))
+        raise_type_err("argument must be a date")
     }
 }
 
@@ -434,7 +428,7 @@ unsafe fn replace(
         ..
     } = State::for_type(type_);
     if !args.is_empty() {
-        Err(type_err!("replace() takes no positional arguments"))
+        raise_type_err("replace() takes no positional arguments")
     } else {
         let time = Time::extract(slf);
         let mut hour = time.hour.into();
@@ -476,9 +470,9 @@ unsafe fn round(
     let (unit, increment, mode) =
         round::parse_args(State::for_obj(slf), args, kwargs, false, false)?;
     if unit == round::Unit::Day {
-        Err(value_err!("Cannot round Time to day"))?;
+        raise_value_err("Cannot round Time to day")?;
     } else if unit == round::Unit::Hour && 86_400_000_000_000 % increment != 0 {
-        Err(value_err!("increment must be a divisor of 24"))?;
+        raise_value_err("increment must be a divisor of 24")?;
     }
     Time::extract(slf)
         .round(increment as u64, mode)
@@ -507,7 +501,7 @@ static mut METHODS: &[PyMethodDef] = &[
 pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let mut data = arg.to_bytes()?.ok_or_type_err("Invalid pickle data")?;
     if data.len() != 7 {
-        Err(type_err!("Invalid pickle data"))?
+        raise_type_err("Invalid pickle data")?
     }
     Time {
         hour: unpack_one!(data, u8),
@@ -548,4 +542,4 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
     },
 ];
 
-type_spec!(Time, SLOTS);
+pub(crate) static mut SPEC: PyType_Spec = type_spec::<Time>(c"whenever.Time", unsafe { SLOTS });
