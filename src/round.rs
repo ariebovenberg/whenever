@@ -90,7 +90,7 @@ impl Unit {
     ) -> PyResult<i64> {
         let inc = v.to_i64()?.ok_or_type_err("increment must be an integer")?;
         if inc <= 0 || inc >= 1000 {
-            Err(value_err!("increment must be between 0 and 1000"))?;
+            raise_value_err("increment must be between 0 and 1000")?;
         }
         match self {
             Unit::Nanosecond => (1_000 % inc == 0)
@@ -117,7 +117,7 @@ impl Unit {
         }
     }
 
-    unsafe fn default_increment(self) -> i64 {
+    const fn default_increment(self) -> i64 {
         match self {
             Unit::Nanosecond => 1,
             Unit::Microsecond => 1_000,
@@ -160,19 +160,19 @@ pub(crate) unsafe fn parse_args(
     let num_argkwargs = args.len() + kwargs.len() as usize;
     if ignore_dst_kwarg {
         if args.len() > 3 {
-            Err(type_err!(
+            raise_type_err(format!(
                 "round() takes at most 3 positional arguments, got {}",
                 args.len()
             ))?;
         }
         if num_argkwargs > 4 {
-            Err(type_err!(
+            raise_type_err(format!(
                 "round() takes at most 4 arguments, got {}",
                 num_argkwargs
             ))?;
         }
     } else if num_argkwargs > 3 {
-        Err(type_err!(
+        raise_type_err(format!(
             "round() takes at most 3 arguments, got {}",
             num_argkwargs
         ))?;
@@ -186,7 +186,7 @@ pub(crate) unsafe fn parse_args(
         for (i, &kwname) in [str_unit, str_increment, str_mode].iter().enumerate() {
             if eq(key, kwname) {
                 if arg_obj[i].replace(NonNull::new_unchecked(value)).is_some() {
-                    Err(type_err!(
+                    raise_type_err(format!(
                         "round() got multiple values for argument {}",
                         kwname.repr()
                     ))?;
@@ -204,10 +204,10 @@ pub(crate) unsafe fn parse_args(
     })?;
 
     if ignore_dst_kwarg && !ignore_dst {
-        Err(py_err!(
+        raise(
             state.exc_implicitly_ignoring_dst,
-            doc::OFFSET_ROUNDING_DST_MSG
-        ))?
+            doc::OFFSET_ROUNDING_DST_MSG,
+        )?
     }
 
     let unit = arg_obj[0]

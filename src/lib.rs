@@ -95,7 +95,7 @@ unsafe fn _patch_time_keep_ticking(module: *mut PyObject, arg: *mut PyObject) ->
 unsafe fn _patch_time(module: *mut PyObject, arg: *mut PyObject, freeze: bool) -> PyReturn {
     let state: &mut State = PyModule_GetState(module).cast::<State>().as_mut().unwrap();
     if Py_TYPE(arg) != state.instant_type {
-        Err(type_err!("Expected an Instant"))?
+        raise_type_err("Expected an Instant")?
     }
     let inst = instant::Instant::extract(arg);
     let pin = (
@@ -157,7 +157,7 @@ unsafe fn create_enum(name: &CStr, members: &[(&CStr, i32)]) -> PyReturn {
     defer_decref!(members_dict);
     for &(key, value) in members {
         if PyDict_SetItemString(members_dict, key.as_ptr(), steal!(value.to_py()?)) == -1 {
-            return Err(py_err!());
+            return Err(PyErrOccurred());
         }
     }
     let enum_module = PyImport_ImportModule(c"enum".as_ptr()).as_result()?;
@@ -772,7 +772,7 @@ impl State {
                     + SystemTime::now()
                         .duration_since(SystemTime::UNIX_EPOCH)
                         .ok()
-                        .ok_or_py_err(PyExc_OSError, "System time out of range")?
+                        .ok_or_raise(PyExc_OSError, "System time out of range")?
                     - at;
                 Ok((dur.as_secs() as i64, dur.subsec_nanos()))
             }
@@ -784,7 +784,7 @@ impl State {
         defer_decref!(ts);
         let ns = (ts as *mut PyObject)
             .to_i64()?
-            .ok_or_py_err(PyExc_RuntimeError, "time_ns() returned a non-integer")?;
+            .ok_or_raise(PyExc_RuntimeError, "time_ns() returned a non-integer")?;
         Ok((ns / 1_000_000_000, (ns % 1_000_000_000) as u32))
     }
 
@@ -792,7 +792,7 @@ impl State {
         let dur = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .ok()
-            .ok_or_py_err(PyExc_OSError, "System time out of range")?;
+            .ok_or_raise(PyExc_OSError, "System time out of range")?;
         Ok((dur.as_secs() as i64, dur.subsec_nanos()))
     }
 }
