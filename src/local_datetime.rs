@@ -1,5 +1,5 @@
 use core::ffi::{c_int, c_long, c_void, CStr};
-use core::{mem, ptr::null_mut as NULL};
+use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
 use crate::common::*;
@@ -147,38 +147,24 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     let mut hour: c_long = 0;
     let mut minute: c_long = 0;
     let mut second: c_long = 0;
-    let mut nanos: c_long = 0;
+    let mut nanosecond: c_long = 0;
 
-    // FUTURE: parse them manually, which is more efficient
-    if PyArg_ParseTupleAndKeywords(
+    parse_args_kwargs!(
         args,
         kwargs,
-        c"lll|lll$l:LocalDateTime".as_ptr(),
-        arg_vec(&[
-            c"year",
-            c"month",
-            c"day",
-            c"hour",
-            c"minute",
-            c"second",
-            c"nanosecond",
-        ])
-        .as_mut_ptr(),
-        &mut year,
-        &mut month,
-        &mut day,
-        &mut hour,
-        &mut minute,
-        &mut second,
-        &mut nanos,
-    ) == 0
-    {
-        Err(py_err!())?
-    }
+        c"lll|lll$l:LocalDateTime",
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        nanosecond,
+    );
 
     DateTime {
         date: Date::from_longs(year, month, day).ok_or_type_err("Invalid date")?,
-        time: Time::from_longs(hour, minute, second, nanos).ok_or_type_err("Invalid time")?,
+        time: Time::from_longs(hour, minute, second, nanosecond).ok_or_type_err("Invalid time")?,
     }
     .to_obj(cls)
 }
@@ -227,10 +213,10 @@ unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
 unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     // easy case: subtracting two LocalDateTime objects
     if Py_TYPE(obj_a) == Py_TYPE(obj_b) {
-        Err(py_err!(
+        raise(
             State::for_obj(obj_a).exc_implicitly_ignoring_dst,
-            doc::DIFF_OPERATOR_LOCAL_MSG
-        ))?
+            doc::DIFF_OPERATOR_LOCAL_MSG,
+        )?
     } else {
         _shift_operator(obj_a, obj_b, true)
     }
@@ -259,15 +245,12 @@ unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bo
                 days = -days;
             }
             dt.shift_date(months, days)
-                .ok_or_else(|| value_err!("Result of {} out of range", opname))?
+                .ok_or_else_value_err(|| format!("Result of {} out of range", opname))?
                 .to_obj(type_a)
         } else if type_b == state.datetime_delta_type || type_b == state.time_delta_type {
-            Err(py_err!(
-                state.exc_implicitly_ignoring_dst,
-                doc::SHIFT_LOCAL_MSG
-            ))?
+            raise(state.exc_implicitly_ignoring_dst, doc::SHIFT_LOCAL_MSG)?
         } else {
-            Err(type_err!(
+            raise_type_err(format!(
                 "unsupported operand type(s) for {}: 'LocalDateTime' and {}",
                 opname,
                 type_b.cast::<PyObject>().repr()
@@ -361,7 +344,7 @@ unsafe fn replace(
     kwargs: &mut KwargIter,
 ) -> PyReturn {
     if !args.is_empty() {
-        Err(type_err!("replace() takes no positional arguments"))?
+        raise_type_err("replace() takes no positional arguments")?
     }
     let module = State::for_type(cls);
     let dt = DateTime::extract(slf);
@@ -434,7 +417,7 @@ unsafe fn _shift_method(
                 Some((key, value)) if kwargs.len() == 1 && key.kwarg_eq(state.str_ignore_dst) => {
                     ignore_dst = value == Py_True();
                 }
-                Some(_) => Err(type_err!(
+                Some(_) => raise_type_err(format!(
                     "{}() can't mix positional and keyword arguments",
                     fname
                 ))?,
@@ -452,7 +435,7 @@ unsafe fn _shift_method(
                 days = dt.ddelta.days;
                 nanos = dt.tdelta.total_nanos();
             } else {
-                Err(type_err!("{}() argument must be a delta", fname))?
+                raise_type_err(format!("{}() argument must be a delta", fname))?
             }
         }
         [] => {
@@ -465,7 +448,7 @@ unsafe fn _shift_method(
                 }
             })?;
         }
-        _ => Err(type_err!(
+        _ => raise_type_err(format!(
             "{}() takes at most 1 positional argument, got {}",
             fname,
             args.len()
@@ -478,15 +461,15 @@ unsafe fn _shift_method(
         nanos = -nanos;
     }
     if nanos != 0 && !ignore_dst {
-        Err(py_err!(
+        raise(
             state.exc_implicitly_ignoring_dst,
-            doc::ADJUST_LOCAL_DATETIME_MSG
-        ))?
+            doc::ADJUST_LOCAL_DATETIME_MSG,
+        )?
     }
     DateTime::extract(slf)
         .shift_date(months, days)
         .and_then(|dt| dt.shift_nanos(nanos))
-        .ok_or_else(|| value_err!("Result of {}() out of range", fname))?
+        .ok_or_else_value_err(|| format!("Result of {}() out of range", fname))?
         .to_obj(cls)
 }
 
@@ -499,7 +482,7 @@ unsafe fn difference(
     let state = State::for_type(cls);
     check_ignore_dst_kwarg(kwargs, state, doc::DIFF_LOCAL_MSG)?;
     let [arg] = *args else {
-        Err(type_err!("difference() takes exactly 1 argument"))?
+        raise_type_err("difference() takes exactly 1 argument")?
     };
     if Py_TYPE(arg) == cls {
         let a = DateTime::extract(slf);
@@ -508,7 +491,7 @@ unsafe fn difference(
             .diff(Instant::from_datetime(b.date, b.time))
             .to_obj(state.time_delta_type)
     } else {
-        Err(type_err!("difference() argument must be a LocalDateTime"))?
+        raise_type_err("difference() argument must be a LocalDateTime")?
     }
 }
 
@@ -534,7 +517,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let mut packed = arg.to_bytes()?.ok_or_type_err("Invalid pickle data")?;
     if packed.len() != 11 {
-        Err(type_err!("Invalid pickle data"))?
+        raise_type_err("Invalid pickle data")?
     }
     DateTime {
         date: Date {
@@ -554,11 +537,11 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
 
 unsafe fn from_py_datetime(type_: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     if PyDateTime_Check(dt) == 0 {
-        Err(type_err!("argument must be datetime.datetime"))?
+        raise_type_err("argument must be datetime.datetime")?
     }
     let tzinfo = borrow_dt_tzinfo(dt);
     if !is_none(tzinfo) {
-        Err(value_err!(
+        raise_value_err(format!(
             "datetime must be naive, but got tzinfo={}",
             tzinfo.repr()
         ))?
@@ -632,22 +615,21 @@ pub fn parse_date_and_time(s: &[u8]) -> Option<(Date, Time)> {
 unsafe fn parse_common_iso(cls: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let s = arg.to_utf8()?.ok_or_type_err("Expected a string")?;
     if s.len() < 19 || s[10] != b'T' {
-        Err(value_err!("Invalid format: {}", arg.repr()))
+        raise_value_err(format!("Invalid format: {}", arg.repr()))
     } else {
         match parse_date_and_time(s) {
             Some((date, time)) => DateTime { date, time }.to_obj(cls.cast()),
-            None => Err(value_err!("Invalid format: {}", arg.repr())),
+            None => raise_value_err(format!("Invalid format: {}", arg.repr())),
         }
     }
 }
 
 unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
     if args.len() != 2 {
-        type_err!(
+        raise_type_err(format!(
             "strptime() takes exactly 2 arguments ({} given)",
             args.len()
-        )
-        .err()?
+        ))?
     }
     // OPTIMIZE: get this working with vectorcall
     let parsed = PyObject_Call(
@@ -659,7 +641,7 @@ unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
     defer_decref!(parsed);
     let tzinfo = borrow_dt_tzinfo(parsed);
     if !is_none(tzinfo) {
-        Err(value_err!(
+        raise_value_err(format!(
             "datetime must be naive, but got tzinfo={}",
             tzinfo.repr()
         ))?;
@@ -714,7 +696,7 @@ unsafe fn assume_tz(
     } = State::for_type(cls);
     let DateTime { date, time } = DateTime::extract(slf);
     let &[tz] = args else {
-        Err(type_err!(
+        raise_type_err(format!(
             "assume_tz() takes 1 positional argument but {} were given",
             args.len()
         ))?
@@ -751,9 +733,7 @@ unsafe fn assume_system_tz(
     } = State::for_type(cls);
     let DateTime { date, time } = DateTime::extract(slf);
     if !args.is_empty() {
-        Err(type_err!(
-            "assume_system_tz() takes no positional arguments"
-        ))?
+        raise_type_err("assume_system_tz() takes no positional arguments")?
     }
 
     let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_system_tz")?;
@@ -778,7 +758,7 @@ unsafe fn replace_date(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
         }
         .to_obj(cls)
     } else {
-        Err(type_err!("date must be a whenever.Date instance"))
+        raise_type_err("date must be a whenever.Date instance")
     }
 }
 
@@ -792,7 +772,7 @@ unsafe fn replace_time(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
         }
         .to_obj(cls)
     } else {
-        Err(type_err!("time must be a whenever.Time instance"))
+        raise_type_err("time must be a whenever.Time instance")
     }
 }
 
@@ -809,7 +789,7 @@ unsafe fn round(
         if date != MAX_DATE {
             date = date.increment();
         } else {
-            Err(value_err!("Resulting datetime out of range"))?
+            raise_value_err("Resulting datetime out of range")?
         }
     }
     DateTime {
@@ -928,8 +908,8 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
     },
 ];
 
-type LocalDateTime = DateTime;
-type_spec!(LocalDateTime, SLOTS);
+pub(crate) static mut SPEC: PyType_Spec =
+    type_spec::<DateTime>(c"whenever.LocalDateTime", unsafe { SLOTS });
 
 #[cfg(test)]
 mod tests {

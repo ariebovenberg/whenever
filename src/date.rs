@@ -281,7 +281,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
                 for (i, &kwname) in [str_year, str_month, str_day].iter().enumerate() {
                     if eq(key, kwname) {
                         if arg_obj[i].replace(NonNull::new_unchecked(value)).is_some() {
-                            Err(type_err!(
+                            raise_type_err(format!(
                                 "Date() got multiple values for argument {}",
                                 kwname.repr()
                             ))?;
@@ -312,7 +312,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         .ok_or_value_err("Invalid date components")?
         .to_obj(cls)
     } else {
-        Err(type_err!(
+        raise_type_err(format!(
             "Date() takes at most 3 arguments, got {}",
             nargs
                 + if kwargs.is_null() {
@@ -396,7 +396,7 @@ unsafe fn py_date(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn from_py_date(cls: *mut PyObject, date: *mut PyObject) -> PyReturn {
     if PyDate_Check(date) == 0 {
-        Err(type_err!("argument must be a Date"))
+        raise_type_err("argument must be a Date")
     } else {
         Date {
             year: PyDateTime_GET_YEAR(date) as u16,
@@ -427,7 +427,7 @@ unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
     Date::parse_all(s.to_utf8()?.ok_or_type_err("argument must be str")?)
-        .ok_or_else(|| value_err!("Invalid format: {}", s.repr()))?
+        .ok_or_else_value_err(|| format!("Invalid format: {}", s.repr()))?
         .to_obj(cls.cast())
 }
 
@@ -510,7 +510,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
         } else {
             // FUTURE: do we unnecessarily eliminate classes implementing __rsub__?
             // We can safely discount other types within our module
-            Err(type_err!(
+            raise_type_err(format!(
                 "unsupported operand type(s) for -: 'Date' and '{}'",
                 (type_b as *mut PyObject).repr()
             ))?
@@ -533,7 +533,7 @@ unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             .to_obj(type_a)
     } else {
         // We can safely discount other types within our module
-        Err(type_err!(
+        raise_type_err(format!(
             "unsupported operand type(s) for +: 'Date' and '{}'",
             (type_b as *mut PyObject).repr()
         ))?
@@ -574,10 +574,7 @@ unsafe fn _shift_method(
                 let DateDelta { months, days } = DateDelta::extract(args[0]);
                 (months, days)
             } else {
-                Err(type_err!(
-                    "{}() argument must be a whenever.DateDelta",
-                    fname
-                ))?
+                raise_type_err(format!("{}() argument must be a whenever.DateDelta", fname))?
             }
         }
         ([], _) => {
@@ -590,7 +587,7 @@ unsafe fn _shift_method(
             } = State::for_type(cls);
             handle_datedelta_kwargs(fname, kwargs, str_years, str_months, str_days, str_weeks)?
         }
-        _ => Err(type_err!(
+        _ => raise_type_err(format!(
             "{}() takes either only kwargs or 1 positional arg",
             fname
         ))?,
@@ -608,7 +605,7 @@ unsafe fn _shift_method(
 
 unsafe fn days_since(a: *mut PyObject, b: *mut PyObject) -> PyReturn {
     if Py_TYPE(b) != Py_TYPE(a) {
-        Err(type_err!("argument must be a whenever.Date"))?
+        raise_type_err("argument must be a whenever.Date")?
     }
     (Date::extract(a).ord() as i32 - Date::extract(b).ord() as i32).to_py()
 }
@@ -630,7 +627,7 @@ unsafe fn replace(
         ..
     } = State::for_type(cls);
     if !args.is_empty() {
-        Err(type_err!("replace() takes no positional arguments"))
+        raise_type_err("replace() takes no positional arguments")
     } else {
         let date = Date::extract(slf);
         let mut year = date.year.into();
@@ -669,7 +666,7 @@ unsafe fn at(slf: *mut PyObject, time_obj: *mut PyObject) -> PyReturn {
         }
         .to_obj(local_datetime_type)
     } else {
-        Err(type_err!("argument must be a whenever.Time"))
+        raise_type_err("argument must be a whenever.Time")
     }
 }
 
@@ -722,7 +719,7 @@ static mut METHODS: &[PyMethodDef] = &[
 pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let mut packed = arg.to_bytes()?.ok_or_type_err("Invalid pickle data")?;
     if packed.len() != 4 {
-        Err(value_err!("Invalid pickle data"))?
+        raise_value_err("Invalid pickle data")?
     }
     Date {
         year: unpack_one!(packed, u16),
@@ -766,7 +763,7 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
     },
 ];
 
-type_spec!(Date, SLOTS);
+pub(crate) static mut SPEC: PyType_Spec = type_spec::<Date>(c"whenever.Date", unsafe { SLOTS });
 
 #[cfg(test)]
 mod tests {
