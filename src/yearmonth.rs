@@ -1,5 +1,5 @@
 use core::ffi::{c_int, c_long, c_void, CStr};
-use core::{mem, ptr::null_mut as NULL};
+use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
@@ -78,20 +78,7 @@ impl Display for YearMonth {
 unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
     let mut year: c_long = 0;
     let mut month: c_long = 0;
-
-    // FUTURE: parse them manually, which is more efficient
-    if PyArg_ParseTupleAndKeywords(
-        args,
-        kwargs,
-        c"ll:YearMonth".as_ptr(),
-        arg_vec(&[c"year", c"month"]).as_mut_ptr(),
-        &mut year,
-        &mut month,
-    ) == 0
-    {
-        Err(py_err!())?
-    }
-
+    parse_args_kwargs!(args, kwargs, c"ll:YearMonth", year, month);
     YearMonth::from_longs(year, month)
         .ok_or_value_err("Invalid year/month component value")?
         .to_obj(cls)
@@ -165,7 +152,7 @@ unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
     YearMonth::parse_all(s.to_utf8()?.ok_or_type_err("argument must be str")?)
-        .ok_or_else(|| value_err!("Invalid format: {}", s.repr()))?
+        .ok_or_else_value_err(|| format!("Invalid format: {}", s.repr()))?
         .to_obj(cls.cast())
 }
 
@@ -190,7 +177,7 @@ unsafe fn replace(
         ..
     } = State::for_type(cls);
     if !args.is_empty() {
-        Err(type_err!("replace() takes no positional arguments"))
+        raise_type_err("replace() takes no positional arguments")
     } else {
         let ym = YearMonth::extract(slf);
         let mut year = ym.year.into();
@@ -246,7 +233,7 @@ static mut METHODS: &[PyMethodDef] = &[
 pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let mut packed = arg.to_bytes()?.ok_or_type_err("Invalid pickle data")?;
     if packed.len() != 3 {
-        Err(value_err!("Invalid pickle data"))?
+        raise_value_err("Invalid pickle data")?
     }
     YearMonth {
         year: unpack_one!(packed, u16),
@@ -281,4 +268,5 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
     },
 ];
 
-type_spec!(YearMonth, SLOTS);
+pub(crate) static mut SPEC: PyType_Spec =
+    type_spec::<YearMonth>(c"whenever.YearMonth", unsafe { SLOTS });

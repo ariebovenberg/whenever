@@ -1,5 +1,5 @@
 use core::ffi::{c_int, c_long, c_void, CStr};
-use core::{mem, ptr::null_mut as NULL};
+use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
@@ -77,20 +77,7 @@ impl Display for MonthDay {
 unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
     let mut month: c_long = 0;
     let mut day: c_long = 0;
-
-    // FUTURE: parse them manually, which is more efficient
-    if PyArg_ParseTupleAndKeywords(
-        args,
-        kwargs,
-        c"ll:MonthDay".as_ptr(),
-        arg_vec(&[c"month", c"day"]).as_mut_ptr(),
-        &mut month,
-        &mut day,
-    ) == 0
-    {
-        Err(py_err!())?
-    }
-
+    parse_args_kwargs!(args, kwargs, c"ll:MonthDay", month, day);
     MonthDay::from_longs(month, day)
         .ok_or_value_err("Invalid month/day component value")?
         .to_obj(cls)
@@ -164,7 +151,7 @@ unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
     MonthDay::parse_all(s.to_utf8()?.ok_or_type_err("argument must be str")?)
-        .ok_or_else(|| value_err!("Invalid format: {}", s.repr()))?
+        .ok_or_else_value_err(|| format!("Invalid format: {}", s.repr()))?
         .to_obj(cls.cast())
 }
 
@@ -187,7 +174,7 @@ unsafe fn replace(
         str_month, str_day, ..
     } = State::for_type(cls);
     if !args.is_empty() {
-        Err(type_err!("replace() takes no positional arguments"))
+        raise_type_err("replace() takes no positional arguments")
     } else {
         let md = MonthDay::extract(slf);
         let mut month = md.month.into();
@@ -249,7 +236,7 @@ static mut METHODS: &[PyMethodDef] = &[
 pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let mut packed = arg.to_bytes()?.ok_or_type_err("Invalid pickle data")?;
     if packed.len() != 2 {
-        Err(value_err!("Invalid pickle data"))?
+        raise_value_err("Invalid pickle data")?
     }
     MonthDay {
         month: unpack_one!(packed, u8),
@@ -284,4 +271,5 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
     },
 ];
 
-type_spec!(MonthDay, SLOTS);
+pub(crate) static mut SPEC: PyType_Spec =
+    type_spec::<MonthDay>(c"whenever.MonthDay", unsafe { SLOTS });

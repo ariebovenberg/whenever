@@ -1,5 +1,5 @@
 use core::ffi::{c_int, c_void, CStr};
-use core::{mem, ptr::null_mut as NULL};
+use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
 use crate::common::*;
@@ -53,18 +53,16 @@ impl OffsetDateTime {
         exc_skipped: *mut PyObject,
     ) -> PyResult<Self> {
         use OffsetResult::*;
-        Ok(match OffsetResult::for_system_tz(py_api, date, time)? {
+        Ok(match offset_for_system_tz(py_api, date, time)? {
             Unambiguous(offset_secs) => OffsetDateTime::new_unchecked(date, time, offset_secs),
             Fold(offset0, offset1) => {
                 let offset = match dis {
                     Disambiguate::Compatible | Disambiguate::Earlier => offset0,
                     Disambiguate::Later => offset1,
-                    Disambiguate::Raise => Err(py_err!(
+                    Disambiguate::Raise => raise(
                         exc_repeated,
-                        "{} {} is repeated in the system timezone",
-                        date,
-                        time
-                    ))?,
+                        format!("{} {} is repeated in the system timezone", date, time),
+                    )?,
                 };
                 OffsetDateTime::new_unchecked(date, time, offset)
             }
@@ -72,12 +70,10 @@ impl OffsetDateTime {
                 let (offset_secs, shift) = match dis {
                     Disambiguate::Compatible | Disambiguate::Later => (offset1, offset1 - offset0),
                     Disambiguate::Earlier => (offset0, offset0 - offset1),
-                    Disambiguate::Raise => Err(py_err!(
+                    Disambiguate::Raise => raise(
                         exc_skipped,
-                        "{} {} is skipped in the system timezone",
-                        date,
-                        time
-                    ))?,
+                        format!("{} {} is skipped in the system timezone", date, time),
+                    )?,
                 };
                 DateTime { date, time }
                     .small_shift_unchecked(shift)
@@ -93,7 +89,7 @@ impl OffsetDateTime {
         offset: i32,
     ) -> PyResult<Self> {
         use OffsetResult::*;
-        match OffsetResult::for_system_tz(py_api, date, time)? {
+        match offset_for_system_tz(py_api, date, time)? {
             Unambiguous(offset_secs) => OffsetDateTime::new(date, time, offset_secs),
             Fold(offset0, offset1) => OffsetDateTime::new(
                 date,
@@ -169,6 +165,80 @@ impl OffsetDateTime {
     }
 }
 
+unsafe fn offset_for_system_tz(
+    py_api: &PyDateTime_CAPI,
+    date: Date,
+    time: Time,
+) -> PyResult<OffsetResult> {
+    let (offset0, shifted) = system_offset(date, time, 0, py_api)?;
+    let (offset1, _) = system_offset(date, time, 1, py_api)?;
+
+    Ok(if offset0 == offset1 {
+        OffsetResult::Unambiguous(offset0)
+    } else if shifted {
+        // Before Python 3.12, the fold of system times was erroneously reversed
+        // in case of gaps. See cpython/issues/83861
+        #[cfg(Py_3_12)]
+        {
+            OffsetResult::Gap(offset1, offset0)
+        }
+        #[cfg(not(Py_3_12))]
+        {
+            OffsetResult::Gap(offset0, offset1)
+        }
+    } else {
+        OffsetResult::Fold(offset0, offset1)
+    })
+}
+
+unsafe fn system_offset(
+    date: Date,
+    time: Time,
+    fold: i32,
+    &PyDateTime_CAPI {
+        DateTime_FromDateAndTimeAndFold,
+        DateTimeType,
+        ..
+    }: &PyDateTime_CAPI,
+) -> PyResult<(i32, bool)> {
+    // OPTIMIZE: re-use Python string objects
+    let naive = DateTime_FromDateAndTimeAndFold(
+        date.year.into(),
+        date.month.into(),
+        date.day.into(),
+        time.hour.into(),
+        time.minute.into(),
+        time.second.into(),
+        0, // no sub-second ZoneInfo offsets exist
+        Py_None(),
+        fold,
+        DateTimeType,
+    )
+    .as_result()?;
+    defer_decref!(naive);
+    let aware = methcall0(naive, "astimezone")?;
+    defer_decref!(aware);
+    // OPTIMIZE: just create the raw naive datetime instead of going through replace()?
+    let kwargs = PyDict_New().as_result()?;
+    defer_decref!(kwargs);
+    if PyDict_SetItemString(kwargs, c"tzinfo".as_ptr(), Py_None()) == -1 {
+        return Err(PyErrOccurred());
+    }
+    let shifted_naive = PyObject_Call(
+        PyObject_GetAttrString(aware, c"replace".as_ptr()).as_result()?,
+        PyTuple_New(0),
+        kwargs,
+    )
+    .as_result()?;
+    defer_decref!(shifted_naive);
+    let shifted = match PyObject_RichCompareBool(naive, shifted_naive, Py_EQ) {
+        1 => false,
+        0 => true,
+        _ => return Err(PyErrOccurred()),
+    };
+    Ok((offset_from_py_dt(aware)?, shifted))
+}
+
 impl Instant {
     #[inline]
     pub(crate) unsafe fn to_system_tz(self, py_api: &PyDateTime_CAPI) -> PyResult<OffsetDateTime> {
@@ -207,40 +277,26 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     let mut hour = 0;
     let mut minute = 0;
     let mut second = 0;
-    let mut nanos = 0;
+    let mut nanosecond = 0;
     let mut disambiguate: *mut PyObject = str_compatible;
 
-    // FUTURE: parse them manually, which is more efficient
-    if PyArg_ParseTupleAndKeywords(
+    parse_args_kwargs!(
         args,
         kwargs,
-        c"lll|lll$lU:SystemDateTime".as_ptr(),
-        arg_vec(&[
-            c"year",
-            c"month",
-            c"day",
-            c"hour",
-            c"minute",
-            c"second",
-            c"nanosecond",
-            c"disambiguate",
-        ])
-        .as_mut_ptr(),
-        &mut year,
-        &mut month,
-        &mut day,
-        &mut hour,
-        &mut minute,
-        &mut second,
-        &mut nanos,
-        &mut disambiguate,
-    ) == 0
-    {
-        Err(py_err!())?
-    }
+        c"lll|lll$lU:SystemDateTime",
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        nanosecond,
+        disambiguate
+    );
 
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
-    let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?;
+    let time =
+        Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?;
     let dis = Disambiguate::from_py(disambiguate)?;
     OffsetDateTime::resolve_system_tz_using_disambiguate(
         py_api,
@@ -438,17 +494,14 @@ unsafe fn exact_eq(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
             (OffsetDateTime::extract(obj_a) == OffsetDateTime::extract(obj_b)).to_py()?,
         ))
     } else {
-        Err(type_err!(
-            "Argument must be same type, got {}",
-            obj_b.repr()
-        ))
+        raise_type_err(format!("Argument must be same type, got {}", obj_b.repr()))
     }
 }
 
 pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let mut packed = arg.to_bytes()?.ok_or_type_err("Invalid pickle data")?;
     if packed.len() != 15 {
-        Err(value_err!("Invalid pickle data"))?
+        raise_value_err("Invalid pickle data")?
     }
     OffsetDateTime::new_unchecked(
         Date {
@@ -499,7 +552,7 @@ unsafe fn replace_date(
     } = State::for_obj(slf);
 
     let &[arg] = args else {
-        Err(type_err!(
+        raise_type_err(format!(
             "replace_date() takes 1 positional argument but {} were given",
             args.len()
         ))?
@@ -520,7 +573,7 @@ unsafe fn replace_date(
         )?
         .to_obj(cls)
     } else {
-        Err(type_err!("date must be a Date instance"))
+        raise_type_err("date must be a Date instance")
     }
 }
 
@@ -540,7 +593,7 @@ unsafe fn replace_time(
     } = State::for_obj(slf);
 
     let &[arg] = args else {
-        Err(type_err!(
+        raise_type_err(format!(
             "replace_time() takes 1 positional argument but {} were given",
             args.len()
         ))?
@@ -561,7 +614,7 @@ unsafe fn replace_time(
         )?
         .to_obj(cls)
     } else {
-        Err(type_err!("time must be a Time instance"))
+        raise_type_err("time must be a Time instance")
     }
 }
 
@@ -576,7 +629,7 @@ unsafe fn replace(
     kwargs: &mut KwargIter,
 ) -> PyReturn {
     if !args.is_empty() {
-        Err(type_err!("replace() takes no positional arguments"))?
+        raise_type_err("replace() takes no positional arguments")?
     }
     let state = State::for_type(cls);
     let OffsetDateTime {
@@ -642,11 +695,11 @@ unsafe fn now(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     if PyDateTime_Check(dt) == 0 {
-        Err(type_err!("Argument must be a datetime.datetime instance"))?
+        raise_type_err("Argument must be a datetime.datetime instance")?
     }
     OffsetDateTime::from_py(dt, State::for_type(cls.cast()))?
-        .ok_or_else(|| {
-            value_err!(
+        .ok_or_else_value_err(|| {
+            format!(
                 "Argument must have a `datetime.timezone` tzinfo and be within range, got {}",
                 dt.repr()
             )
@@ -714,7 +767,7 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
             .to_utf8()?
             .ok_or_type_err("argument must be a string")?,
     )
-    .ok_or_else(|| value_err!("Invalid format: {}", s_obj.repr()))?
+    .ok_or_else_value_err(|| format!("Invalid format: {}", s_obj.repr()))?
     .to_obj(cls.cast())
 }
 
@@ -746,7 +799,7 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
                 .ok_or_value_err("Resulting local date out of range")?
                 .to_obj(offset_datetime_type)
         }
-        _ => Err(type_err!("to_fixed_offset() takes at most 1 argument")),
+        _ => raise_type_err("to_fixed_offset() takes at most 1 argument"),
     }
 }
 
@@ -811,7 +864,7 @@ unsafe fn _shift_method(
                 Some((key, value)) if kwargs.len() == 1 && key.kwarg_eq(state.str_disambiguate) => {
                     dis = Some(Disambiguate::from_py(value)?)
                 }
-                Some(_) => Err(type_err!(
+                Some(_) => raise_type_err(format!(
                     "{}() can't mix positional and keyword arguments",
                     fname
                 ))?,
@@ -829,7 +882,7 @@ unsafe fn _shift_method(
                 days = dt.ddelta.days;
                 tdelta = dt.tdelta;
             } else {
-                Err(type_err!("{}() argument must be a delta", fname))?
+                raise_type_err(format!("{}() argument must be a delta", fname))?
             }
         }
         [] => {
@@ -844,7 +897,7 @@ unsafe fn _shift_method(
             })?;
             tdelta = TimeDelta::from_nanos(nanos).ok_or_value_err("Total duration out of range")?;
         }
-        _ => Err(type_err!(
+        _ => raise_type_err(format!(
             "{}() takes at most 1 positional argument, got {}",
             fname,
             args.len()
@@ -882,10 +935,10 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     } else if type_b == state.offset_datetime_type {
         OffsetDateTime::extract(obj_b).instant()
     } else {
-        Err(type_err!(
+        raise_type_err(
             "difference() argument must be an OffsetDateTime,
-             Instant, ZonedDateTime, or SystemDateTime"
-        ))?
+             Instant, ZonedDateTime, or SystemDateTime",
+        )?
     };
     inst_a.diff(inst_b).to_obj(state.time_delta_type)
 }
@@ -893,7 +946,7 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
 unsafe fn is_ambiguous(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let OffsetDateTime { date, time, .. } = OffsetDateTime::extract(slf);
     matches!(
-        OffsetResult::for_system_tz(State::for_obj(slf).py_api, date, time)?,
+        offset_for_system_tz(State::for_obj(slf).py_api, date, time)?,
         OffsetResult::Fold(_, _)
     )
     .to_py()
@@ -970,7 +1023,7 @@ unsafe fn round(
                 if date != MAX_DATE {
                     date = date.increment();
                 } else {
-                    Err(value_err!("Resulting datetime out of range"))?
+                    raise_value_err("Resulting datetime out of range")?
                 }
             };
             OffsetDateTime::resolve_system_tz_using_offset(
@@ -1148,5 +1201,5 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
     },
 ];
 
-type SystemDateTime = OffsetDateTime;
-type_spec!(SystemDateTime, SLOTS);
+pub(crate) static mut SPEC: PyType_Spec =
+    type_spec::<OffsetDateTime>(c"whenever.SystemDateTime", unsafe { SLOTS });
