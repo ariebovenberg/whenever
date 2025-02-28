@@ -22,6 +22,7 @@ mod time;
 mod time_delta;
 mod yearmonth;
 mod zoned_datetime;
+mod tzif;
 
 use date::unpickle as _unpkl_date;
 use date_delta::unpickle as _unpkl_ddelta;
