@@ -20,9 +20,9 @@ mod offset_datetime;
 mod system_datetime;
 mod time;
 mod time_delta;
-mod tzif;
 mod yearmonth;
 mod zoned_datetime;
+mod zoneinfo;
 
 use date::unpickle as _unpkl_date;
 use date_delta::unpickle as _unpkl_ddelta;
