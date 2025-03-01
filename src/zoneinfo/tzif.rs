@@ -1,5 +1,5 @@
 use std::fmt;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub(crate) struct Header {
@@ -15,8 +15,9 @@ pub(crate) struct Header {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TZif {
     header: Header,
-    trans_utc: Vec<i64>,
-    trans_idx: Vec<u8>,
+    transitions: Vec<i64>,
+    offsets: Vec<i32>,
+    tz_str: Vec<u8>,
 }
 
 #[allow(dead_code)]
@@ -26,8 +27,7 @@ pub(crate) fn parse(mut s: impl Read + Seek) -> ParseResult<TZif> {
     parse_content(header, &mut s)
 }
 
-// Check if the magic bytes are present
-fn parse_magic(mut s: impl Read) -> ParseResult<()> {
+fn check_magic_bytes(mut s: impl Read) -> ParseResult<()> {
     let mut buffer = [0u8; 4];
     s.read_exact(&mut buffer)?;
     if &buffer != b"TZif" {
@@ -48,7 +48,7 @@ fn parse_version(mut s: impl Read + Seek) -> ParseResult<u8> {
 }
 
 fn parse_header(mut s: impl Read + Seek) -> ParseResult<Header> {
-    parse_magic(&mut s)?;
+    check_magic_bytes(&mut s)?;
     let version = parse_version(&mut s)?;
     let mut buffer = [0u8; 24];
     s.read_exact(&mut buffer)?;
@@ -63,9 +63,8 @@ fn parse_header(mut s: impl Read + Seek) -> ParseResult<Header> {
     })
 }
 
-fn parse_trans_utc(header: Header, mut s: impl Read + Seek) -> ParseResult<Vec<i64>> {
+fn parse_transitions(header: Header, mut s: impl Read + Seek) -> ParseResult<Vec<i64>> {
     debug_assert_eq!(header.version, 2);
-    debug_assert!(header.timecnt > 0);
     // OPTIMIZE: how about using smallvec?
     let mut result = Vec::with_capacity(header.timecnt as usize);
     let mut buffer = [0u8; std::mem::size_of::<i64>()];
@@ -76,9 +75,8 @@ fn parse_trans_utc(header: Header, mut s: impl Read + Seek) -> ParseResult<Vec<i
     Ok(result)
 }
 
-fn parse_trans_idx(header: Header, mut s: impl Read + Seek) -> ParseResult<Vec<u8>> {
+fn parse_offset_indices(header: Header, mut s: impl Read + Seek) -> ParseResult<Vec<u8>> {
     debug_assert_eq!(header.version, 2);
-    debug_assert!(header.timecnt > 0);
     // OPTIMIZE: how about using smallvec?
     let mut result = Vec::with_capacity(header.timecnt as usize);
     let mut buffer = [0u8; std::mem::size_of::<u8>()];
@@ -100,17 +98,69 @@ fn parse_content(first_header: Header, mut s: impl Read + Seek) -> ParseResult<T
     ))?;
     // This "second" header is not the same as the first one
     let header = parse_header(&mut s)?;
+    let transitions = parse_transitions(header, &mut s)?;
+    let offset_indices = parse_offset_indices(header, &mut s)?;
+    debug_assert!(header.typecnt > 0 && header.typecnt < 1_000);
+    let offset_values = parse_offsets(header.typecnt as usize, header.charcnt, &mut s)?;
+    // Skip unused metadata
+    debug_assert_eq!(header.version, 2);
+    s.seek(SeekFrom::Current(
+        (header.isutcnt + header.isstdcnt + header.leapcnt * 12
+         // the extra newline
+         + 1)
+        .into(),
+    ))?;
+    let tz_str = parse_tz_str(&mut s)?;
     Ok(TZif {
         header,
-        trans_utc: parse_trans_utc(header, &mut s)?,
-        trans_idx: parse_trans_idx(header, &mut s)?,
+        transitions,
+        offsets: load_offsets(&offset_values, &offset_indices)?,
+        tz_str,
     })
+}
+
+fn load_offsets(offsets: &[i32], indices: &[u8]) -> ParseResult<Vec<i32>> {
+    let mut trans = Vec::with_capacity(indices.len());
+    for &idx in indices {
+        if let Some(&offset) = offsets.get(idx as usize) {
+            trans.push(offset);
+        } else {
+            Err(ParsingIssue::InvalidData)?;
+        }
+    }
+    Ok(trans)
+}
+
+fn parse_tz_str(s: impl Read) -> ParseResult<Vec<u8>> {
+    let mut buf = BufReader::with_capacity(32, s);
+    let mut tz_str = Vec::with_capacity(32);
+    buf.read_until(b'\n', &mut tz_str)?;
+
+    // Remove the newline character if present
+    if tz_str.last() == Some(&b'\n') {
+        tz_str.pop();
+    }
+    Ok(tz_str)
+}
+
+fn parse_offsets(typecnt: usize, charcnt: i32, mut s: impl Read + Seek) -> ParseResult<Vec<i32>> {
+    let mut utcoff = Vec::with_capacity(typecnt);
+    let mut buffer = [0u8; 6];
+    for _ in 0..typecnt {
+        s.read_exact(&mut buffer)?;
+        utcoff.push(i32::from_be_bytes(buffer[0..4].try_into().unwrap()));
+        // We skip parsing the other fields (isdst, abbrind) for now
+    }
+    // Skip character section
+    s.seek(SeekFrom::Current(charcnt.into()))?;
+    Ok(utcoff)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum ParsingIssue {
     InvalidMagicValue,
     InvalidVersion,
+    InvalidData,
 }
 
 impl std::error::Error for ParsingIssue {}
@@ -120,6 +170,7 @@ impl fmt::Display for ParsingIssue {
         match self {
             ParsingIssue::InvalidVersion => write!(f, "Invalid header"),
             ParsingIssue::InvalidMagicValue => write!(f, "Invalid magic value"),
+            ParsingIssue::InvalidData => write!(f, "Invalid or currpted data"),
         }
     }
 }
@@ -185,7 +236,8 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    const TZFILE: &[u8] = include_bytes!("../tests/tzif/Amsterdam.tzif");
+    const TZ_AMS: &[u8] = include_bytes!("../../tests/tzif/Amsterdam.tzif");
+    const TZ_UTC: &[u8] = include_bytes!("../../tests/tzif/UTC.tzif");
 
     #[test]
     fn test_no_magic_header() {
@@ -210,8 +262,27 @@ mod tests {
     }
 
     #[test]
-    fn test_example() {
-        let tzif = parse(&mut Cursor::new(TZFILE)).unwrap();
+    fn test_utc() {
+        let tzif = parse(&mut Cursor::new(TZ_UTC)).unwrap();
+        assert_eq!(
+            tzif.header,
+            Header {
+                version: 2,
+                isutcnt: 0,
+                isstdcnt: 0,
+                leapcnt: 0,
+                timecnt: 0,
+                typecnt: 1,
+                charcnt: 4
+            }
+        );
+        assert_eq!(tzif.transitions, &[]);
+        assert_eq!(tzif.tz_str, b"UTC0");
+    }
+
+    #[test]
+    fn test_ams() {
+        let tzif = parse(&mut Cursor::new(TZ_AMS)).unwrap();
         assert_eq!(
             tzif.header,
             Header {
@@ -225,7 +296,7 @@ mod tests {
             }
         );
         assert_eq!(
-            tzif.trans_utc,
+            tzif.transitions,
             &[
                 -2840141850,
                 -2450995200,
@@ -415,18 +486,23 @@ mod tests {
             ]
         );
         assert_eq!(
-            tzif.trans_idx,
+            tzif.offsets,
             &[
-                1, 2, 3, 6, 3, 4, 5, 4, 5, 9, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8,
-                7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 4, 5, 4,
-                5, 4, 5, 4, 5, 4, 5, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10,
-                11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11,
-                10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10,
-                11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11,
-                10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10,
-                11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11,
-                10, 11
+                1050, 0, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 0, 3600, 0, 3600, 0, 3600, 0,
+                3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0,
+                3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0,
+                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
+                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
+                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
+                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
+                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
+                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
+                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
+                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
+                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
+                3600, 7200, 3600, 7200, 3600, 7200, 3600
             ]
-        )
+        );
+        assert_eq!(tzif.tz_str, b"CET-1CEST,M3.5.0,M10.5.0/3");
     }
 }
