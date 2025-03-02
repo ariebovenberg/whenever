@@ -6,6 +6,7 @@ use std::time::SystemTime;
 
 use crate::common::*;
 
+// Some modules as pub for benchmarking. FUTURE: find a more elegant way to do this.
 mod common;
 pub mod date;
 mod date_delta;
@@ -20,9 +21,9 @@ mod offset_datetime;
 mod system_datetime;
 mod time;
 mod time_delta;
+pub mod tz;
 mod yearmonth;
 mod zoned_datetime;
-mod zoneinfo;
 
 use date::unpickle as _unpkl_date;
 use date_delta::unpickle as _unpkl_ddelta;
