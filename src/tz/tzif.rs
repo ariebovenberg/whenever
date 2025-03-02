@@ -1,3 +1,4 @@
+use crate::tz::posix;
 use std::fmt;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 
@@ -17,7 +18,7 @@ pub(crate) struct TZif {
     header: Header,
     transitions: Vec<i64>,
     offsets: Vec<i32>,
-    tz_str: Vec<u8>,
+    end: posix::TZ,
 }
 
 #[allow(dead_code)]
@@ -110,12 +111,12 @@ fn parse_content(first_header: Header, mut s: impl Read + Seek) -> ParseResult<T
          + 1)
         .into(),
     ))?;
-    let tz_str = parse_tz_str(&mut s)?;
+    let end = parse_posix_tz(&mut s)?;
     Ok(TZif {
         header,
         transitions,
         offsets: load_offsets(&offset_values, &offset_indices)?,
-        tz_str,
+        end,
     })
 }
 
@@ -131,7 +132,8 @@ fn load_offsets(offsets: &[i32], indices: &[u8]) -> ParseResult<Vec<i32>> {
     Ok(trans)
 }
 
-fn parse_tz_str(s: impl Read) -> ParseResult<Vec<u8>> {
+fn parse_posix_tz(s: impl Read) -> ParseResult<posix::TZ> {
+    // Most POSIX TZ strings are less than 32 bytes
     let mut buf = BufReader::with_capacity(32, s);
     let mut tz_str = Vec::with_capacity(32);
     buf.read_until(b'\n', &mut tz_str)?;
@@ -140,7 +142,7 @@ fn parse_tz_str(s: impl Read) -> ParseResult<Vec<u8>> {
     if tz_str.last() == Some(&b'\n') {
         tz_str.pop();
     }
-    Ok(tz_str)
+    Ok(posix::parse(&tz_str).ok_or(ParsingIssue::InvalidTzString)?)
 }
 
 fn parse_offsets(typecnt: usize, charcnt: i32, mut s: impl Read + Seek) -> ParseResult<Vec<i32>> {
@@ -161,6 +163,7 @@ pub enum ParsingIssue {
     InvalidMagicValue,
     InvalidVersion,
     InvalidData,
+    InvalidTzString,
 }
 
 impl std::error::Error for ParsingIssue {}
@@ -171,6 +174,7 @@ impl fmt::Display for ParsingIssue {
             ParsingIssue::InvalidVersion => write!(f, "Invalid header"),
             ParsingIssue::InvalidMagicValue => write!(f, "Invalid magic value"),
             ParsingIssue::InvalidData => write!(f, "Invalid or currpted data"),
+            ParsingIssue::InvalidTzString => write!(f, "Invalid POSIX TZ string"),
         }
     }
 }
@@ -277,7 +281,7 @@ mod tests {
             }
         );
         assert_eq!(tzif.transitions, &[]);
-        assert_eq!(tzif.tz_str, b"UTC0");
+        assert_eq!(tzif.end, posix::parse(b"UTC0").unwrap());
     }
 
     #[test]
@@ -503,6 +507,9 @@ mod tests {
                 3600, 7200, 3600, 7200, 3600, 7200, 3600
             ]
         );
-        assert_eq!(tzif.tz_str, b"CET-1CEST,M3.5.0,M10.5.0/3");
+        assert_eq!(
+            tzif.end,
+            posix::parse(b"CET-1CEST,M3.5.0,M10.5.0/3").unwrap()
+        );
     }
 }

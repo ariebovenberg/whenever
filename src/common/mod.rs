@@ -1,13 +1,14 @@
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
-use std::fmt::Debug;
+use std::{fmt::Debug, num::NonZeroU8};
 use std::ops::Neg;
 
 pub(crate) mod pydatetime;
 pub(crate) mod pyobject;
 pub(crate) mod pytype;
 
-#[inline]
+/// Try to parse digit at index. No bounds check on the index.
+/// Returns None if the character is not an ASCII digit
 pub(crate) fn parse_digit(s: &[u8], index: usize) -> Option<u8> {
     match s[index] {
         c if c.is_ascii_digit() => Some(c - b'0'),
@@ -15,7 +16,7 @@ pub(crate) fn parse_digit(s: &[u8], index: usize) -> Option<u8> {
     }
 }
 
-#[inline]
+/// Like `parse_digit`, but also checks that the digit is less than or equal to `max`
 pub(crate) fn parse_digit_max(s: &[u8], index: usize, max: u8) -> Option<u8> {
     match s[index] {
         c if c >= b'0' && c <= max => Some(c - b'0'),
@@ -23,9 +24,11 @@ pub(crate) fn parse_digit_max(s: &[u8], index: usize, max: u8) -> Option<u8> {
     }
 }
 
-// Pack various types into a byte array. Used for pickling.
+/// Pack various types into a byte array. Used for pickling.
 macro_rules! pack {
     [$x:expr, $($xs:expr),*] => {{
+        // OPTIMIZE: use Vec::with_capacity, or a fixed-size array
+        // since we know the size at compile time
         let mut result = Vec::new();
         result.extend_from_slice(&$x.to_le_bytes());
         $(
@@ -35,7 +38,7 @@ macro_rules! pack {
     }}
 }
 
-// Unpack a single value from a byte array. Used for unpickling.
+/// Unpack a single value from a byte array. Used for unpickling.
 macro_rules! unpack_one {
     ($arr:ident, $t:ty) => {{
         const SIZE: usize = std::mem::size_of::<$t>();
@@ -48,7 +51,10 @@ macro_rules! unpack_one {
     }};
 }
 
+/// Format an offset in seconds as a string like "+hh:mm",
+/// adding ":ss" only if needed
 pub(crate) fn offset_fmt(secs: i32) -> String {
+    // OPTIMIZE: is it worth avoiding the allocation since we know the max size?
     let (sign, secs) = if secs < 0 { ('-', -secs) } else { ('+', secs) };
     if secs % 60 == 0 {
         format!("{}{:02}:{:02}", sign, secs / 3600, (secs % 3600) / 60)
@@ -73,13 +79,14 @@ pub(crate) enum Disambiguate {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum OffsetResult {
+    // TODO: Offset type alias
     Unambiguous(i32),
     Gap(i32, i32),
     Fold(i32, i32),
 }
 
 impl Disambiguate {
-    pub(crate) fn parse(s: &[u8]) -> Option<Self> {
+    fn parse(s: &[u8]) -> Option<Self> {
         Some(match s {
             b"compatible" => Self::Compatible,
             b"earlier" => Self::Earlier,
@@ -151,6 +158,7 @@ fn value_eq(a: *mut PyObject, b: *mut PyObject) -> bool {
     unsafe { PyObject_RichCompareBool(a, b, Py_EQ) == 1 }
 }
 
+/// A container for iterating over a dictionary's items.
 pub(crate) struct DictItems {
     dict: *mut PyObject,
     pos: Py_ssize_t,
@@ -278,8 +286,16 @@ macro_rules! parse_args_kwargs {
     };
 }
 
+// TODO nonzero?
+pub(crate) type Offset = i32; // -86_399..86_400  (+/- 24 hours)
+pub(crate) type DayOfMonth = u8; // 1..=31  (depending on the month)
+pub(crate) type Month = NonZeroU8; // 1..=12
+pub(crate) type Year = u16; // 1..=9999
+pub(crate) type SecondOfDay = u32; // 0..86_400
+
 pub(crate) static S_PER_DAY: i32 = 86_400;
 pub(crate) static NS_PER_DAY: i128 = 86_400 * 1_000_000_000;
+pub(crate) static MAX_OFFSET: Offset = 24 * 3_600 - 1; // 24 hours exclusive
 
 pub(crate) fn in_range<T, U>(value: T, max: U) -> bool
 where
