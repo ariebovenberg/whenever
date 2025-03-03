@@ -1,7 +1,8 @@
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
-use std::{fmt::Debug, num::NonZeroU8};
+use std::num::NonZeroU16;
 use std::ops::Neg;
+use std::{fmt::Debug, num::NonZeroU8};
 
 pub(crate) mod pydatetime;
 pub(crate) mod pyobject;
@@ -79,10 +80,9 @@ pub(crate) enum Disambiguate {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum OffsetResult {
-    // TODO: Offset type alias
-    Unambiguous(i32),
-    Gap(i32, i32),
-    Fold(i32, i32),
+    Unambiguous(Offset),
+    Gap(Offset, Offset),  // (earlier, later) occurrence
+    Fold(Offset, Offset), // (earlier, later) occurrence
 }
 
 impl Disambiguate {
@@ -286,38 +286,37 @@ macro_rules! parse_args_kwargs {
     };
 }
 
-// TODO nonzero?
-pub(crate) type Offset = i32; // -86_399..86_400  (+/- 24 hours)
-pub(crate) type DayOfMonth = u8; // 1..=31  (depending on the month)
+pub(crate) type Offset = i32; // -86_399..=86_399  (+/- 24 hours)
 pub(crate) type Month = NonZeroU8; // 1..=12
-pub(crate) type Year = u16; // 1..=9999
-pub(crate) type SecondOfDay = u32; // 0..86_400
+pub(crate) type Year = NonZeroU16; // 1..=9999
+pub(crate) type SecondOfDay = u32; // 0..=86_399  (<24 hours)
+pub(crate) type EpochSeconds = i64; // time since epoch in seconds (bounded by 0001-01-01 and 9999-12-31)  TODO: exact bounds
 
 pub(crate) static S_PER_DAY: i32 = 86_400;
-pub(crate) static NS_PER_DAY: i128 = 86_400 * 1_000_000_000;
-pub(crate) static MAX_OFFSET: Offset = 24 * 3_600 - 1; // 24 hours exclusive
+pub(crate) static NS_PER_DAY: i128 = S_PER_DAY as i128 * 1_000_000_000;
+pub(crate) static MAX_OFFSET: Offset = S_PER_DAY - 1; // 24 hours exclusive
 
+/// Check if a value is within a range, casting types safely if needed
 pub(crate) fn in_range<T, U>(value: T, max: U) -> bool
 where
     T: Copy + PartialOrd + Neg<Output = T>,
     U: Into<T> + Copy,
 {
-    let max_t: T = max.into();
+    let max_t = max.into();
     (-max_t..=max_t).contains(&value)
 }
 
+/// Ensure a value is within a range, casting it to the target type if needed
 pub(crate) fn clamp<T, U>(value: T, max: U) -> Option<U>
 where
     T: Copy + PartialOrd + Neg<Output = T> + TryInto<U> + Debug,
     U: Into<T> + Copy + Debug,
     <T as TryInto<U>>::Error: Debug,
 {
-    if in_range(value, max) {
-        // Safe to unwrap because we know it's in range
-        Some(value.try_into().unwrap())
-    } else {
-        None
-    }
+    in_range(value, max).then_some(
+        // Safe to unwrap since we just checked the range
+        value.try_into().unwrap(),
+    )
 }
 
 #[allow(unused_imports)]
