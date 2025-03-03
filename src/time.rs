@@ -50,8 +50,8 @@ impl Time {
             | (self.nanos as Py_hash_t)
     }
 
-    pub(crate) const fn total_seconds(&self) -> i32 {
-        self.hour as i32 * 3600 + self.minute as i32 * 60 + self.second as i32
+    pub(crate) const fn total_seconds(&self) -> u32 {
+        self.hour as u32 * 3600 + self.minute as u32 * 60 + self.second as u32
     }
 
     pub(crate) const fn set_seconds(mut self, seconds: u32) -> Self {

@@ -43,6 +43,14 @@ impl Date {
             + self.day as u32
     }
 
+    pub(crate) const fn unix_days(self) -> i32 {
+        self.ord() as i32 - 719163
+    }
+
+    pub(crate) const fn from_unix_days_unchecked(d: i32) -> Self {
+        Date::from_ord_unchecked((d + 719163) as _)
+    }
+
     pub(crate) fn from_ord(ord: i32) -> Option<Self> {
         (MIN_ORD..=MAX_ORD)
             .contains(&ord)
@@ -54,7 +62,7 @@ impl Date {
     // 684d3cc32d14eee371d0abe4f683d6d6a49ed5c1/algorithms/
     // neri_schneider.hpp#L40C3-L40C34
     // under the MIT license
-    pub fn from_ord_unchecked(ord: u32) -> Self {
+    pub const fn from_ord_unchecked(ord: u32) -> Self {
         // Shift and correction constants.
         const S: u32 = 82;
         const K: u32 = 305 + 146097 * S;
@@ -255,11 +263,11 @@ const DAYS_BEFORE_MONTH: [[u16; 13]; 2] = [
     ],
 ];
 
-const fn is_leap(year: u16) -> bool {
+pub(crate) const fn is_leap(year: u16) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
 
-const fn days_in_month(year: u16, month: u8) -> u8 {
+pub(crate) const fn days_in_month(year: u16, month: u8) -> u8 {
     MAX_MONTH_DAYS[is_leap(year) as usize][month as usize]
 }
 
@@ -431,7 +439,8 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
         .to_obj(cls.cast())
 }
 
-const fn days_before_year(year: u16) -> u32 {
+// TODO: use nonzero Year
+pub(crate) const fn days_before_year(year: u16) -> u32 {
     debug_assert!(year >= 1);
     let y = (year - 1) as u32;
     y * 365 + y / 4 - y / 100 + y / 400
