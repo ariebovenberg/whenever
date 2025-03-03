@@ -112,7 +112,7 @@ impl DateTime {
     pub(crate) fn small_shift_unchecked(self, secs: i32) -> Self {
         debug_assert!(secs.abs() < S_PER_DAY * 2);
         let Self { date, time } = self;
-        let day_seconds = time.total_seconds() + secs;
+        let day_seconds = time.total_seconds() as i32 + secs;
         let (date, time) = match day_seconds.div_euclid(S_PER_DAY) {
             0 => (date, time.set_seconds(day_seconds as u32)),
             1 => (

@@ -41,7 +41,7 @@ impl OffsetDateTime {
     // WARNING: offset seconds should already be checked to be within bounds
     pub(crate) fn new(date: Date, time: Time, offset_secs: i32) -> Option<Self> {
         let ordinal_secs = i64::from(date.ord()) * i64::from(S_PER_DAY)
-            + i64::from(time.total_seconds() - offset_secs);
+            + i64::from(time.total_seconds() as i32 - offset_secs);
         (MIN_INSTANT..=MAX_INSTANT)
             .contains(&ordinal_secs)
             .then_some(Self {
