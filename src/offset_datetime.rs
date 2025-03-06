@@ -233,13 +233,13 @@ pub(crate) unsafe fn extract_offset(
             // We've checked before that it's a py int
             .unwrap();
         Ok(
-            clamp(given_int, 24i32).ok_or_value_err("offset must be between -24 and 24 hours")?
+            cap(given_int, 24i32).ok_or_value_err("offset must be between -24 and 24 hours")?
                 * 3600,
         )
     } else if Py_TYPE(obj) == tdelta_cls {
         let TimeDelta { secs, nanos } = TimeDelta::extract(obj);
         if nanos == 0 {
-            clamp(secs, 24i32 * 3600).ok_or_value_err("offset must be between -24 and 24 hours")
+            cap(secs, 24i32 * 3600).ok_or_value_err("offset must be between -24 and 24 hours")
         } else {
             raise_value_err("offset must be a whole number of seconds")
         }

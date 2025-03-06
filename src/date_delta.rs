@@ -191,8 +191,8 @@ where
         Ok(true)
     })?;
     Ok((
-        clamp(months, MAX_MONTHS).ok_or_value_err("months out of range")?,
-        clamp(days, MAX_DAYS).ok_or_value_err("days out of range")?,
+        cap(months, MAX_MONTHS).ok_or_value_err("months out of range")?,
+        cap(days, MAX_DAYS).ok_or_value_err("days out of range")?,
     ))
 }
 
