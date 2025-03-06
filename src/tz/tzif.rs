@@ -1,4 +1,5 @@
 use crate::tz::posix;
+use crate::{EpochSeconds, Offset};
 use std::fmt;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 
@@ -16,8 +17,8 @@ pub(crate) struct Header {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TZif {
     header: Header,
-    transitions: Vec<i64>,
-    offsets: Vec<i32>,
+    transitions: Vec<EpochSeconds>,
+    offsets: Vec<Offset>,
     end: posix::TZ,
 }
 
@@ -32,7 +33,7 @@ fn check_magic_bytes(mut s: impl Read) -> ParseResult<()> {
     let mut buffer = [0u8; 4];
     s.read_exact(&mut buffer)?;
     if &buffer != b"TZif" {
-        Err(ParsingIssue::InvalidMagicValue)?;
+        Err(ErrorCause::MagicValue)?;
     }
     Ok(())
 }
@@ -44,7 +45,7 @@ fn parse_version(mut s: impl Read + Seek) -> ParseResult<u8> {
     Ok(match buffer[0] {
         0 => 1,
         n if n.is_ascii_digit() => n - b'0',
-        _ => Err(ParsingIssue::InvalidVersion)?,
+        _ => Err(ErrorCause::Version)?,
     })
 }
 
@@ -64,14 +65,13 @@ fn parse_header(mut s: impl Read + Seek) -> ParseResult<Header> {
     })
 }
 
-fn parse_transitions(header: Header, mut s: impl Read + Seek) -> ParseResult<Vec<i64>> {
+fn parse_transitions(header: Header, mut s: impl Read + Seek) -> ParseResult<Vec<EpochSeconds>> {
     debug_assert_eq!(header.version, 2);
-    // OPTIMIZE: how about using smallvec?
     let mut result = Vec::with_capacity(header.timecnt as usize);
-    let mut buffer = [0u8; std::mem::size_of::<i64>()];
+    let mut buffer = [0u8; std::mem::size_of::<EpochSeconds>()];
     for _ in 0..header.timecnt {
         s.read_exact(&mut buffer)?;
-        result.push(i64::from_be_bytes(buffer));
+        result.push(EpochSeconds::from_be_bytes(buffer));
     }
     Ok(result)
 }
@@ -120,13 +120,13 @@ fn parse_content(first_header: Header, mut s: impl Read + Seek) -> ParseResult<T
     })
 }
 
-fn load_offsets(offsets: &[i32], indices: &[u8]) -> ParseResult<Vec<i32>> {
+fn load_offsets(offsets: &[Offset], indices: &[u8]) -> ParseResult<Vec<Offset>> {
     let mut trans = Vec::with_capacity(indices.len());
     for &idx in indices {
         if let Some(&offset) = offsets.get(idx as usize) {
             trans.push(offset);
         } else {
-            Err(ParsingIssue::InvalidData)?;
+            Err(ErrorCause::Body)?;
         }
     }
     Ok(trans)
@@ -142,7 +142,7 @@ fn parse_posix_tz(s: impl Read) -> ParseResult<posix::TZ> {
     if tz_str.last() == Some(&b'\n') {
         tz_str.pop();
     }
-    Ok(posix::parse(&tz_str).ok_or(ParsingIssue::InvalidTzString)?)
+    Ok(posix::parse(&tz_str).ok_or(ErrorCause::TzString)?)
 }
 
 fn parse_offsets(typecnt: usize, charcnt: i32, mut s: impl Read + Seek) -> ParseResult<Vec<i32>> {
@@ -159,22 +159,22 @@ fn parse_offsets(typecnt: usize, charcnt: i32, mut s: impl Read + Seek) -> Parse
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub enum ParsingIssue {
-    InvalidMagicValue,
-    InvalidVersion,
-    InvalidData,
-    InvalidTzString,
+pub enum ErrorCause {
+    MagicValue,
+    Version,
+    Body,
+    TzString,
 }
 
-impl std::error::Error for ParsingIssue {}
+impl std::error::Error for ErrorCause {}
 
-impl fmt::Display for ParsingIssue {
+impl fmt::Display for ErrorCause {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParsingIssue::InvalidVersion => write!(f, "Invalid header"),
-            ParsingIssue::InvalidMagicValue => write!(f, "Invalid magic value"),
-            ParsingIssue::InvalidData => write!(f, "Invalid or currpted data"),
-            ParsingIssue::InvalidTzString => write!(f, "Invalid POSIX TZ string"),
+            ErrorCause::Version => write!(f, "Invalid header"),
+            ErrorCause::MagicValue => write!(f, "Invalid magic value"),
+            ErrorCause::Body => write!(f, "Invalid or currupted data"),
+            ErrorCause::TzString => write!(f, "Invalid POSIX TZ string"),
         }
     }
 }
@@ -182,7 +182,7 @@ impl fmt::Display for ParsingIssue {
 #[derive(Debug)]
 pub enum ParseError {
     Io(io::Error),
-    Parse(ParsingIssue),
+    Parse(ErrorCause),
 }
 
 impl ParseError {
@@ -195,7 +195,7 @@ impl ParseError {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn parsing_failure(&self) -> Option<ParsingIssue> {
+    pub(crate) fn parsing_failure(&self) -> Option<ErrorCause> {
         match self {
             ParseError::Parse(err) => Some(*err),
             _ => None,
@@ -229,8 +229,8 @@ impl From<io::Error> for ParseError {
     }
 }
 
-impl From<ParsingIssue> for ParseError {
-    fn from(err: ParsingIssue) -> Self {
+impl From<ErrorCause> for ParseError {
+    fn from(err: ErrorCause) -> Self {
         ParseError::Parse(err)
     }
 }
@@ -261,7 +261,7 @@ mod tests {
                 .unwrap_err()
                 .parsing_failure()
                 .unwrap(),
-            ParsingIssue::InvalidMagicValue
+            ErrorCause::MagicValue
         );
     }
 
