@@ -258,7 +258,8 @@ pub(crate) unsafe extern "C" fn generic_dealloc(slf: *mut PyObject) {
     let cls = Py_TYPE(slf);
     let tp_free = PyType_GetSlot(cls, Py_tp_free);
     debug_assert_ne!(tp_free, core::ptr::null_mut());
-    std::mem::transmute::<_, freefunc>(tp_free)(slf.cast());
+    let tp_free: freefunc = std::mem::transmute(tp_free);
+    tp_free(slf.cast());
     Py_DECREF(cls.cast());
 }
 

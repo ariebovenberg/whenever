@@ -4,6 +4,7 @@ use std::num::NonZeroU16;
 use std::ops::Neg;
 use std::{fmt::Debug, num::NonZeroU8};
 
+pub(crate) mod parse;
 pub(crate) mod pydatetime;
 pub(crate) mod pyobject;
 pub(crate) mod pytype;
@@ -306,8 +307,9 @@ where
     (-max_t..=max_t).contains(&value)
 }
 
+// TODO: rename
 /// Ensure a value is within a range, casting it to the target type if needed
-pub(crate) fn clamp<T, U>(value: T, max: U) -> Option<U>
+pub(crate) fn cap<T, U>(value: T, max: U) -> Option<U>
 where
     T: Copy + PartialOrd + Neg<Output = T> + TryInto<U> + Debug,
     U: Into<T> + Copy + Debug,
