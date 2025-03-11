@@ -72,7 +72,7 @@ pub(crate) fn offset_fmt(secs: i32) -> String {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Disambiguate {
+pub enum Disambiguate {
     Compatible,
     Earlier,
     Later,
@@ -82,8 +82,8 @@ pub(crate) enum Disambiguate {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum OffsetResult {
     Unambiguous(Offset),
-    Gap(Offset, Offset),  // (earlier, later) occurrence
-    Fold(Offset, Offset), // (earlier, later) occurrence
+    Gap(Offset, Offset),  // (earlier, later) occurrence, (a > b)
+    Fold(Offset, Offset), // (earlier, later) occurrence, (a > b)
 }
 
 impl Disambiguate {
@@ -290,7 +290,6 @@ macro_rules! parse_args_kwargs {
 pub(crate) type Offset = i32; // -86_399..=86_399  (+/- 24 hours)
 pub(crate) type Month = NonZeroU8; // 1..=12
 pub(crate) type Year = NonZeroU16; // 1..=9999
-pub(crate) type SecondOfDay = u32; // 0..=86_399  (<24 hours)
 pub(crate) type EpochSeconds = i64; // time since epoch in seconds (bounded by 0001-01-01 and 9999-12-31)  TODO: exact bounds
 
 pub(crate) static S_PER_DAY: i32 = 86_400;
@@ -307,7 +306,6 @@ where
     (-max_t..=max_t).contains(&value)
 }
 
-// TODO: rename
 /// Ensure a value is within a range, casting it to the target type if needed
 pub(crate) fn cap<T, U>(value: T, max: U) -> Option<U>
 where
@@ -315,10 +313,12 @@ where
     U: Into<T> + Copy + Debug,
     <T as TryInto<U>>::Error: Debug,
 {
-    in_range(value, max).then_some(
-        // Safe to unwrap since we just checked the range
-        value.try_into().unwrap(),
-    )
+    in_range(value, max).then(|| {
+        value
+            // Safe conversion since we just checked the range
+            .try_into()
+            .unwrap()
+    })
 }
 
 #[allow(unused_imports)]

@@ -6,7 +6,6 @@
 use crate::common::parse::Scan;
 use crate::common::{EpochSeconds, Month, Offset, OffsetResult, Year, MAX_OFFSET, S_PER_DAY};
 use crate::date::{days_before_year, days_in_month, is_leap, Date};
-use crate::time::Time;
 use std::num::{NonZeroU16, NonZeroU8};
 
 const DEFAULT_DST: Offset = 3_600;
@@ -81,7 +80,8 @@ impl TZ {
         }
     }
 
-    pub(crate) fn offset_for_local(&self, date: Date, time: Time) -> OffsetResult {
+    /// Get the offset for a local time, given as the number of seconds since the Unix epoch.
+    pub(crate) fn offset_for_local(&self, t: EpochSeconds) -> OffsetResult {
         fn epoch(d: Date, t: TransitionTime) -> i64 {
             // Safety: value ranges save us from overflow
             d.unix_days() as i64 * S_PER_DAY as i64 + t as i64
@@ -96,22 +96,24 @@ impl TZ {
                 end: (end_rule, end_time),
                 offset,
             }) => {
-                let year = date.year.try_into().unwrap(); // known to be >0
-                let instant = epoch(date, time.total_seconds() as _);
+                let year = Date::from_unix_days_unchecked((t / S_PER_DAY as i64) as _)
+                    .year
+                    .try_into()
+                    .unwrap();
                 let dst_start = epoch(start_rule.for_year(year), start_time);
                 let dst_shift = (offset - self.std) as i64;
                 // In rare cases, the dst shift is negative.
                 // We handle the common case first.
                 if dst_shift >= 0 {
-                    if instant < dst_start {
+                    if t < dst_start {
                         OffsetResult::Unambiguous(self.std)
-                    } else if instant < dst_start + dst_shift {
+                    } else if t < dst_start + dst_shift {
                         OffsetResult::Gap(offset, self.std)
                     } else {
                         let dst_end = epoch(end_rule.for_year(year), end_time);
-                        if instant < dst_end - dst_shift {
+                        if t < dst_end - dst_shift {
                             OffsetResult::Unambiguous(offset)
-                        } else if instant < dst_end {
+                        } else if t < dst_end {
                             OffsetResult::Fold(offset, self.std)
                         } else {
                             OffsetResult::Unambiguous(self.std)
@@ -119,15 +121,15 @@ impl TZ {
                     }
                 // These further branches mirror the above, but with the
                 // roles of standard and DST time reversed.
-                } else if instant < dst_start + dst_shift {
+                } else if t < dst_start + dst_shift {
                     OffsetResult::Unambiguous(self.std)
-                } else if instant < dst_start {
+                } else if t < dst_start {
                     OffsetResult::Fold(self.std, offset)
                 } else {
                     let dst_end = epoch(end_rule.for_year(year), end_time);
-                    if instant < dst_end {
+                    if t < dst_end {
                         OffsetResult::Unambiguous(offset)
-                    } else if instant < dst_end - dst_shift {
+                    } else if t < dst_end - dst_shift {
                         OffsetResult::Gap(self.std, offset)
                     } else {
                         OffsetResult::Unambiguous(self.std)
@@ -182,7 +184,7 @@ impl Rule {
 
 #[allow(dead_code)]
 pub fn parse(s: &[u8]) -> Option<TZ> {
-    let mut scan = Scan::new(s)?;
+    let mut scan = Scan::new(s);
     skip_tzname(&mut scan)?;
     let std = parse_offset(&mut scan)?;
 
@@ -231,11 +233,11 @@ fn skip_tzname(s: &mut Scan) -> Option<()> {
     // name is at least 3 characters long and offset is at least 1 char
     // Note also that in Tzif files, TZ names are limited to 6 characters.
     // This might be useful in the future for optimization
-    match s.peek() {
+    let tzname = match s.peek() {
         Some(b'<') => s.take_until(|c| c == b'>')?,
         _ => s.take_until(|c| matches!(c, b'+' | b'-' | b',' | b'0'..=b'9'))?,
     };
-    Some(())
+    tzname.is_ascii().then_some(())
 }
 
 /// Parse an offset like `[+|-]h[h][:mm[:ss]]`
@@ -322,6 +324,7 @@ fn parse_rule(scan: &mut Scan) -> Option<(Rule, TransitionTime)> {
 mod tests {
     use super::*;
     use crate::common::OffsetResult::*;
+    use crate::time::Time;
 
     #[test]
     fn invalid_start() {
@@ -772,12 +775,13 @@ mod tests {
                 nanos: 0,
             };
             assert_eq!(
-                tz.offset_for_local(date, time),
+                tz.offset_for_local(to_epoch_s(date, time, 0)),
                 expected,
-                "{:?} {:?} -> {:?}",
+                "{:?} {:?} -> {:?} (tz: {:?})",
                 ymd,
                 hms,
-                expected
+                expected,
+                tz
             );
             // Test that the inverse operation (epoch->local) works
             match expected {
