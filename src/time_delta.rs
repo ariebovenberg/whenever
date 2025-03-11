@@ -666,9 +666,11 @@ unsafe fn in_days_of_24h(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn from_py_timedelta(cls: *mut PyObject, d: *mut PyObject) -> PyReturn {
+    // TODO: exactly
     if PyDelta_Check(d) == 0 {
         raise_type_err("argument must be datetime.timedelta")?;
     }
+    // TODO: cap
     let secs = i64::from(PyDateTime_DELTA_GET_DAYS(d)) * SECS_PER_DAY
         + i64::from(PyDateTime_DELTA_GET_SECONDS(d));
     if !(-MAX_SECS..=MAX_SECS).contains(&secs) {

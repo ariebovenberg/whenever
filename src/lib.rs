@@ -7,7 +7,7 @@ use std::time::SystemTime;
 use crate::common::*;
 
 // Some modules as pub for benchmarking. FUTURE: find a more elegant way to do this.
-mod common;
+pub mod common;
 pub mod date;
 mod date_delta;
 mod datetime_delta;

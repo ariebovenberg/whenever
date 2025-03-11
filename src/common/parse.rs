@@ -4,9 +4,8 @@ use std::{fmt::Debug, ops::RangeInclusive};
 pub(crate) struct Scan<'a>(&'a [u8]);
 
 impl<'a> Scan<'a> {
-    /// Create a new scanner from a byte slice, checking that it is ASCII.
-    pub(crate) fn new(inner: &'a [u8]) -> Option<Self> {
-        inner.is_ascii().then_some(Self(inner))
+    pub(crate) fn new(inner: &'a [u8]) -> Self {
+        Self(inner)
     }
     pub(crate) fn peek(&self) -> Option<u8> {
         self.0.first().copied()
@@ -18,7 +17,7 @@ impl<'a> Scan<'a> {
         Some(a)
     }
 
-    fn rest(&self) -> &[u8] {
+    pub(crate) fn rest(&self) -> &[u8] {
         self.0
     }
 
@@ -26,6 +25,10 @@ impl<'a> Scan<'a> {
         let (a, b) = self.0.split_at(n);
         self.0 = b;
         a
+    }
+
+    pub(crate) fn take(&mut self, n: usize) -> Option<&'a [u8]> {
+        (self.0.len() >= n).then(|| self.take_unchecked(n))
     }
 
     /// Advance the scanner only if the next byte is the expected one.
