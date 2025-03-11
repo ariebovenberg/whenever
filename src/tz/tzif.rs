@@ -1,7 +1,7 @@
+use crate::common::parse::Scan;
 use crate::tz::posix;
-use crate::{EpochSeconds, Offset};
+use crate::{Disambiguate, EpochSeconds, Offset, OffsetResult};
 use std::fmt;
-use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub(crate) struct Header {
@@ -15,146 +15,293 @@ pub(crate) struct Header {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TZif {
+pub struct TZif {
     header: Header,
-    transitions: Vec<EpochSeconds>,
-    offsets: Vec<Offset>,
+    // The following two fields are used to map UTC time to local time and vice versa.
+    // Read each vector (X, Y) as "from time X onwards (expressed in epoch seconds) the offset is Y".
+    // For UTC -> local, the transition is unambiguous and simple.
+    offsets_by_utc: Vec<(EpochSeconds, Offset)>,
+    // For local -> UTC, the transition is may be ambiguous and therefore requires extra information.
+    offsets_by_local: Vec<(EpochSeconds, (Offset, OffsetChange))>,
     end: posix::TZ,
 }
 
-#[allow(dead_code)]
-pub(crate) fn parse(mut s: impl Read + Seek) -> ParseResult<TZif> {
-    let header = parse_header(&mut s)?;
-    debug_assert_eq!(header.version, 2);
-    parse_content(header, &mut s)
-}
+/// The size of a UTC offset change. "gaps" are positive, "folds" are negative.
+type OffsetChange = i32;
 
-fn check_magic_bytes(mut s: impl Read) -> ParseResult<()> {
-    let mut buffer = [0u8; 4];
-    s.read_exact(&mut buffer)?;
-    if &buffer != b"TZif" {
-        Err(ErrorCause::MagicValue)?;
+impl TZif {
+    /// Get the UTC offset at the given moment in time
+    #[allow(dead_code)]
+    pub(crate) fn offset_for_instant(&self, t: EpochSeconds) -> Offset {
+        // OPTIMIZE: this could be made a bit smarter. E.g. starting
+        // with a reasonable guess.
+        bisect_index(&self.offsets_by_utc, t)
+            .map(|i| self.offsets_by_utc[i].1)
+            .unwrap_or_else(|| self.end.offset_for_instant(t))
     }
-    Ok(())
+
+    /// Get the UTC offset for the given local time (expressed in *local* epoch seconds).
+    /// Returns a tuple of the UTC offset and a potential shift necessary
+    /// in case the time falls in a gap.
+    #[allow(dead_code)]
+    pub fn offset_for_local(
+        &self,
+        t: EpochSeconds,
+        disambiguate: Disambiguate,
+    ) -> Option<(Offset, OffsetChange)> {
+        // Fast path for the default case
+        if disambiguate == Disambiguate::Compatible {
+            Some(self.offset_for_local_compatible(t))
+        } else {
+            let ambiguity = self.ambiguity_for_local(t);
+            if let OffsetResult::Unambiguous(offset) = ambiguity {
+                Some((offset, 0))
+            } else if disambiguate == Disambiguate::Raise {
+                None
+            } else if let OffsetResult::Fold(earlier, later) = ambiguity {
+                if disambiguate == Disambiguate::Later {
+                    Some((later, 0))
+                } else {
+                    debug_assert!(disambiguate == Disambiguate::Earlier);
+                    Some((earlier, 0))
+                }
+            } else if let OffsetResult::Gap(earlier, later) = ambiguity {
+                if disambiguate == Disambiguate::Later {
+                    Some((later, earlier - later))
+                } else {
+                    debug_assert!(disambiguate == Disambiguate::Earlier);
+                    Some((earlier, later - earlier))
+                }
+            } else {
+                unreachable!()
+            }
+        }
+    }
+
+    fn ambiguity_for_local(&self, t: EpochSeconds) -> OffsetResult {
+        bisect_index(&self.offsets_by_local, t)
+            .map(|i| {
+                let (transition, (offset, change)) = self.offsets_by_local[i];
+                let ambiguity = (t < transition + change.abs() as i64) as i32 * change;
+                if ambiguity > 0 {
+                    OffsetResult::Gap(offset, offset - ambiguity)
+                } else {
+                    OffsetResult::Fold(offset - ambiguity, offset)
+                }
+            })
+            .unwrap_or_else(|| self.end.offset_for_local(t))
+    }
+
+    #[inline]
+    fn offset_for_local_compatible(&self, t: EpochSeconds) -> (Offset, OffsetChange) {
+        let offset_lookup = &self.offsets_by_local;
+        bisect_index(offset_lookup, t)
+            .map(|i| {
+                let (transition, (offset, change)) = offset_lookup[i];
+                // Account for when we land in an ambiguous time
+                let ambiguity = (t < transition + change.abs() as i64) as i32 * change;
+                (
+                    offset - ambiguity,
+                    // only gaps (positive) require a shift
+                    ambiguity.max(0),
+                )
+            })
+            .unwrap_or_else(|| match self.end.offset_for_local(t) {
+                OffsetResult::Unambiguous(offset) | OffsetResult::Fold(offset, _) => (offset, 0),
+                OffsetResult::Gap(offset_new, offset) => {
+                    // We are in a gap, so we need to shift the time
+                    // to the earlier offset.
+                    (offset, offset_new - offset)
+                }
+            })
+    }
 }
 
-fn parse_version(mut s: impl Read + Seek) -> ParseResult<u8> {
-    let mut buffer = [0u8; 1];
-    s.read_exact(&mut buffer)?;
-    s.seek(SeekFrom::Current(15))?;
-    Ok(match buffer[0] {
-        0 => 1,
-        n if n.is_ascii_digit() => n - b'0',
-        _ => Err(ErrorCause::Version)?,
-    })
+// Bisect the array of (time, value) pairs to find the INDEX at the given time.
+#[inline]
+pub fn bisect_index<T>(arr: &[(EpochSeconds, T)], x: EpochSeconds) -> Option<usize>
+where
+    T: Copy,
+{
+    let mut size = arr.len();
+    let mut left = 0;
+    let mut right = size;
+    while left < right {
+        let mid = left + size / 2;
+
+        if arr[mid].0 <= x {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+        size = right - left;
+    }
+    (left != arr.len()).then_some(left.saturating_sub(1))
 }
 
-fn parse_header(mut s: impl Read + Seek) -> ParseResult<Header> {
-    check_magic_bytes(&mut s)?;
-    let version = parse_version(&mut s)?;
-    let mut buffer = [0u8; 24];
-    s.read_exact(&mut buffer)?;
+#[allow(dead_code)]
+pub fn parse(s: &[u8]) -> ParseResult<TZif> {
+    let mut scan = Scan::new(s);
+    let header = parse_header(&mut scan)?;
+    debug_assert_eq!(header.version, 2);
+    parse_content(header, &mut scan)
+}
+
+fn check_magic_bytes(s: &mut Scan) -> bool {
+    s.take(4) == Some(b"TZif")
+}
+
+fn parse_version(s: &mut Scan) -> Option<u8> {
+    let version = match &s.take(1)? {
+        [0] => 1,
+        [n] if n.is_ascii_digit() => n - b'0',
+        _ => None?,
+    };
+    s.take(15)?;
+    Some(version)
+}
+
+fn parse_header(s: &mut Scan) -> ParseResult<Header> {
+    if !check_magic_bytes(s) {
+        return Err(ErrorCause::MagicValue);
+    }
+    let version = parse_version(s).ok_or(ErrorCause::Version)?;
+    let content = s.take(24).ok_or(ErrorCause::Body)?;
     Ok(Header {
         version,
-        isutcnt: i32::from_be_bytes(buffer[0..4].try_into().unwrap()),
-        isstdcnt: i32::from_be_bytes(buffer[4..8].try_into().unwrap()),
-        leapcnt: i32::from_be_bytes(buffer[8..12].try_into().unwrap()),
-        timecnt: i32::from_be_bytes(buffer[12..16].try_into().unwrap()),
-        typecnt: i32::from_be_bytes(buffer[16..20].try_into().unwrap()),
-        charcnt: i32::from_be_bytes(buffer[20..24].try_into().unwrap()),
+        isutcnt: i32::from_be_bytes(content[0..4].try_into().unwrap()),
+        isstdcnt: i32::from_be_bytes(content[4..8].try_into().unwrap()),
+        leapcnt: i32::from_be_bytes(content[8..12].try_into().unwrap()),
+        timecnt: i32::from_be_bytes(content[12..16].try_into().unwrap()),
+        typecnt: i32::from_be_bytes(content[16..20].try_into().unwrap()),
+        charcnt: i32::from_be_bytes(content[20..24].try_into().unwrap()),
     })
 }
 
-fn parse_transitions(header: Header, mut s: impl Read + Seek) -> ParseResult<Vec<EpochSeconds>> {
+fn parse_transition_times(header: Header, s: &mut Scan) -> ParseResult<Vec<EpochSeconds>> {
+    // TODO: other versions
     debug_assert_eq!(header.version, 2);
     let mut result = Vec::with_capacity(header.timecnt as usize);
-    let mut buffer = [0u8; std::mem::size_of::<EpochSeconds>()];
-    for _ in 0..header.timecnt {
-        s.read_exact(&mut buffer)?;
-        result.push(EpochSeconds::from_be_bytes(buffer));
+    const I64_SIZE: usize = std::mem::size_of::<i64>();
+    let values = s
+        .take(header.timecnt as usize * I64_SIZE)
+        .ok_or(ErrorCause::Body)?;
+    // NOTE: we assume the values are sorted
+    for i in 0..header.timecnt {
+        result.push(EpochSeconds::from_be_bytes(
+            values[i as usize * I64_SIZE..(i + 1) as usize * I64_SIZE]
+                .try_into()
+                .unwrap(),
+        ));
     }
     Ok(result)
 }
 
-fn parse_offset_indices(header: Header, mut s: impl Read + Seek) -> ParseResult<Vec<u8>> {
+fn parse_offset_indices(header: Header, s: &mut Scan) -> ParseResult<Vec<u8>> {
     debug_assert_eq!(header.version, 2);
     // OPTIMIZE: how about using smallvec?
     let mut result = Vec::with_capacity(header.timecnt as usize);
-    let mut buffer = [0u8; std::mem::size_of::<u8>()];
-    for _ in 0..header.timecnt {
-        s.read_exact(&mut buffer)?;
-        result.push(u8::from_be_bytes(buffer));
+    let values = s.take(header.timecnt as usize).ok_or(ErrorCause::Body)?;
+    for i in 0..header.timecnt {
+        result.push(u8::from_be_bytes(
+            values[i as usize..(i + 1) as usize].try_into().unwrap(),
+        ));
     }
     Ok(result)
 }
 
-fn parse_content(first_header: Header, mut s: impl Read + Seek) -> ParseResult<TZif> {
-    s.seek(SeekFrom::Current(
+fn parse_content(first_header: Header, s: &mut Scan) -> ParseResult<TZif> {
+    s.take(
         (first_header.timecnt * 5
             + first_header.typecnt * 6
             + first_header.charcnt
             + first_header.leapcnt * 8
             + first_header.isstdcnt
-            + first_header.isutcnt) as i64,
-    ))?;
+            + first_header.isutcnt) as _,
+    )
+    .ok_or(ErrorCause::Body)?;
     // This "second" header is not the same as the first one
-    let header = parse_header(&mut s)?;
-    let transitions = parse_transitions(header, &mut s)?;
-    let offset_indices = parse_offset_indices(header, &mut s)?;
+    let header = parse_header(s)?;
+    let transition_times = parse_transition_times(header, s)?;
+    let offset_indices = parse_offset_indices(header, s)?;
     debug_assert!(header.typecnt > 0 && header.typecnt < 1_000);
-    let offset_values = parse_offsets(header.typecnt as usize, header.charcnt, &mut s)?;
-    // Skip unused metadata
+    let offsets = parse_offsets(header.typecnt as usize, header.charcnt, s)?;
     debug_assert_eq!(header.version, 2);
-    s.seek(SeekFrom::Current(
+    // Skip unused metadata
+    s.take(
         (header.isutcnt + header.isstdcnt + header.leapcnt * 12
          // the extra newline
-         + 1)
-        .into(),
-    ))?;
-    let end = parse_posix_tz(&mut s)?;
+         + 1) as usize,
+    )
+    .ok_or(ErrorCause::Body)?;
+    let offsets_by_utc = load_transitions(&transition_times, &offsets, &offset_indices)?;
     Ok(TZif {
         header,
-        transitions,
-        offsets: load_offsets(&offset_values, &offset_indices)?,
-        end,
+        offsets_by_local: local_transitions(&offsets_by_utc),
+        offsets_by_utc,
+        end: parse_posix_tz(s)?,
     })
 }
 
-fn load_offsets(offsets: &[Offset], indices: &[u8]) -> ParseResult<Vec<Offset>> {
+fn local_transitions(
+    transitions: &[(EpochSeconds, Offset)],
+) -> Vec<(EpochSeconds, (Offset, OffsetChange))> {
+    let mut result = Vec::with_capacity(transitions.len());
+    if transitions.is_empty() {
+        return result;
+    }
+    // The first entry is special, as there's no transition
+    let (epoch0, offset0) = transitions[0];
+    result.push((epoch0 + offset0 as i64, (offset0, 0)));
+
+    let mut offset_prev = offset0;
+    for &(epoch, offset) in transitions[1..].iter() {
+        // NOTE: we don't check for "impossible" gaps or folds
+        result.push((
+            epoch + offset_prev.min(offset) as i64,
+            (offset, offset - offset_prev),
+        ));
+        offset_prev = offset;
+    }
+    result
+}
+
+fn load_transitions(
+    transition_times: &[EpochSeconds],
+    offsets: &[Offset],
+    indices: &[u8],
+) -> ParseResult<Vec<(EpochSeconds, Offset)>> {
     let mut trans = Vec::with_capacity(indices.len());
-    for &idx in indices {
-        if let Some(&offset) = offsets.get(idx as usize) {
-            trans.push(offset);
+    for (&idx, &epoch) in indices.iter().zip(transition_times) {
+        if let Some(&offset) = offsets.get(usize::from(idx)) {
+            trans.push((epoch, offset));
         } else {
+            // The supplied index is out of bounds
             Err(ErrorCause::Body)?;
         }
     }
     Ok(trans)
 }
 
-fn parse_posix_tz(s: impl Read) -> ParseResult<posix::TZ> {
-    // Most POSIX TZ strings are less than 32 bytes
-    let mut buf = BufReader::with_capacity(32, s);
-    let mut tz_str = Vec::with_capacity(32);
-    buf.read_until(b'\n', &mut tz_str)?;
-
-    // Remove the newline character if present
-    if tz_str.last() == Some(&b'\n') {
-        tz_str.pop();
-    }
-    Ok(posix::parse(&tz_str).ok_or(ErrorCause::TzString)?)
+fn parse_posix_tz(s: &mut Scan) -> ParseResult<posix::TZ> {
+    let tz_str = match s.take_until(|b| b == b'\n') {
+        Some(x) => x,
+        None => s.rest(),
+    };
+    posix::parse(tz_str).ok_or(ErrorCause::TzString)
 }
 
-fn parse_offsets(typecnt: usize, charcnt: i32, mut s: impl Read + Seek) -> ParseResult<Vec<i32>> {
+fn parse_offsets(typecnt: usize, charcnt: i32, s: &mut Scan) -> ParseResult<Vec<Offset>> {
     let mut utcoff = Vec::with_capacity(typecnt);
-    let mut buffer = [0u8; 6];
-    for _ in 0..typecnt {
-        s.read_exact(&mut buffer)?;
-        utcoff.push(i32::from_be_bytes(buffer[0..4].try_into().unwrap()));
-        // We skip parsing the other fields (isdst, abbrind) for now
+    let values = s.take(typecnt * 6).ok_or(ErrorCause::Body)?;
+    for i in 0..typecnt {
+        // Note: we only parse the first field, skipping the others (for now)
+        utcoff.push(i32::from_be_bytes(
+            values[i * 6..(i + 1) * 6 - 2].try_into().unwrap(),
+        ));
     }
     // Skip character section
-    s.seek(SeekFrom::Current(charcnt.into()))?;
+    s.take(charcnt as _).ok_or(ErrorCause::Body)?;
     Ok(utcoff)
 }
 
@@ -165,8 +312,6 @@ pub enum ErrorCause {
     Body,
     TzString,
 }
-
-impl std::error::Error for ErrorCause {}
 
 impl fmt::Display for ErrorCause {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -179,66 +324,11 @@ impl fmt::Display for ErrorCause {
     }
 }
 
-#[derive(Debug)]
-pub enum ParseError {
-    Io(io::Error),
-    Parse(ErrorCause),
-}
-
-impl ParseError {
-    #[allow(dead_code)]
-    pub(crate) fn io_error_kind(&self) -> Option<io::ErrorKind> {
-        match self {
-            ParseError::Io(err) => Some(err.kind()),
-            _ => None,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn parsing_failure(&self) -> Option<ErrorCause> {
-        match self {
-            ParseError::Parse(err) => Some(*err),
-            _ => None,
-        }
-    }
-}
-
-type ParseResult<T> = Result<T, ParseError>;
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ParseError::Io(err) => write!(f, "IO error: {}", err),
-            ParseError::Parse(err) => write!(f, "Parse error: {}", err),
-        }
-    }
-}
-
-impl std::error::Error for ParseError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            ParseError::Io(err) => Some(err),
-            ParseError::Parse(err) => Some(err),
-        }
-    }
-}
-
-impl From<io::Error> for ParseError {
-    fn from(err: io::Error) -> Self {
-        ParseError::Io(err)
-    }
-}
-
-impl From<ErrorCause> for ParseError {
-    fn from(err: ErrorCause) -> Self {
-        ParseError::Parse(err)
-    }
-}
+type ParseResult<T> = Result<T, ErrorCause>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
 
     const TZ_AMS: &[u8] = include_bytes!("../../tests/tzif/Amsterdam.tzif");
     const TZ_UTC: &[u8] = include_bytes!("../../tests/tzif/UTC.tzif");
@@ -246,28 +336,37 @@ mod tests {
     #[test]
     fn test_no_magic_header() {
         // empty
-        assert!(
-            parse(&mut Cursor::new(b"")).unwrap_err().io_error_kind()
-                == Some(io::ErrorKind::UnexpectedEof)
-        );
+        assert_eq!(parse(b"").unwrap_err(), ErrorCause::MagicValue);
         // too small
-        assert_eq!(
-            parse(&mut Cursor::new(b"TZi")).unwrap_err().io_error_kind(),
-            Some(io::ErrorKind::UnexpectedEof)
-        );
+        assert_eq!(parse(b"TZi").unwrap_err(), ErrorCause::MagicValue);
         // wrong magic value
         assert_eq!(
-            parse(&mut Cursor::new(&b"this-is-not-tzif-file"))
-                .unwrap_err()
-                .parsing_failure()
-                .unwrap(),
+            parse(b"this-is-not-tzif-file").unwrap_err(),
             ErrorCause::MagicValue
         );
     }
 
     #[test]
+    fn test_binary_search() {
+        let arr = &[(4, 10), (9, 20), (12, 30), (16, 40), (24, 50)];
+        // middle of the array
+        assert_eq!(bisect_index(arr, 10), Some(1));
+        assert_eq!(bisect_index(arr, 12), Some(2));
+        assert_eq!(bisect_index(arr, 15), Some(2));
+        assert_eq!(bisect_index(arr, 16), Some(3));
+        // end of the array
+        assert_eq!(bisect_index(arr, 24), None);
+        assert_eq!(bisect_index(arr, 30), None);
+        // start of the array
+        assert_eq!(bisect_index(arr, -99), Some(0));
+        assert_eq!(bisect_index(arr, 3), Some(0));
+        assert_eq!(bisect_index(arr, 4), Some(0));
+        assert_eq!(bisect_index(arr, 5), Some(0));
+    }
+
+    #[test]
     fn test_utc() {
-        let tzif = parse(&mut Cursor::new(TZ_UTC)).unwrap();
+        let tzif = parse(TZ_UTC).unwrap();
         assert_eq!(
             tzif.header,
             Header {
@@ -280,13 +379,19 @@ mod tests {
                 charcnt: 4
             }
         );
-        assert_eq!(tzif.transitions, &[]);
+        assert_eq!(tzif.offsets_by_utc, &[]);
         assert_eq!(tzif.end, posix::parse(b"UTC0").unwrap());
+
+        assert_eq!(tzif.offset_for_instant(2216250001), 0);
+        assert_eq!(
+            tzif.offset_for_local(2216250000, Disambiguate::Compatible),
+            Some((0, 0))
+        )
     }
 
     #[test]
     fn test_ams() {
-        let tzif = parse(&mut Cursor::new(TZ_AMS)).unwrap();
+        let tzif = parse(TZ_AMS).unwrap();
         assert_eq!(
             tzif.header,
             Header {
@@ -300,216 +405,173 @@ mod tests {
             }
         );
         assert_eq!(
-            tzif.transitions,
-            &[
-                -2840141850,
-                -2450995200,
-                -1740355200,
-                -1693702800,
-                -1680483600,
-                -1663455600,
-                -1650150000,
-                -1632006000,
-                -1618700400,
-                -1613826000,
-                -1604278800,
-                -1585530000,
-                -1574038800,
-                -1552266000,
-                -1539997200,
-                -1520557200,
-                -1507510800,
-                -1490576400,
-                -1473642000,
-                -1459126800,
-                -1444006800,
-                -1427677200,
-                -1411952400,
-                -1396227600,
-                -1379293200,
-                -1364778000,
-                -1348448400,
-                -1333328400,
-                -1316394000,
-                -1301263200,
-                -1284328800,
-                -1269813600,
-                -1253484000,
-                -1238364000,
-                -1221429600,
-                -1206914400,
-                -1191189600,
-                -1175464800,
-                -1160344800,
-                -1143410400,
-                -1127685600,
-                -1111960800,
-                -1096840800,
-                -1080511200,
-                -1063576800,
-                -1049061600,
-                -1033336800,
-                -1017612000,
-                -1002492000,
-                -986162400,
-                -969228000,
-                -950479200,
-                -942012000,
-                -934668000,
-                -857257200,
-                -844556400,
-                -828226800,
-                -812502000,
-                -798073200,
-                -781052400,
-                -766623600,
-                -745455600,
-                -733273200,
-                228877200,
-                243997200,
-                260326800,
-                276051600,
-                291776400,
-                307501200,
-                323830800,
-                338950800,
-                354675600,
-                370400400,
-                386125200,
-                401850000,
-                417574800,
-                433299600,
-                449024400,
-                465354000,
-                481078800,
-                496803600,
-                512528400,
-                528253200,
-                543978000,
-                559702800,
-                575427600,
-                591152400,
-                606877200,
-                622602000,
-                638326800,
-                654656400,
-                670381200,
-                686106000,
-                701830800,
-                717555600,
-                733280400,
-                749005200,
-                764730000,
-                780454800,
-                796179600,
-                811904400,
-                828234000,
-                846378000,
-                859683600,
-                877827600,
-                891133200,
-                909277200,
-                922582800,
-                941331600,
-                954032400,
-                972781200,
-                985482000,
-                1004230800,
-                1017536400,
-                1035680400,
-                1048986000,
-                1067130000,
-                1080435600,
-                1099184400,
-                1111885200,
-                1130634000,
-                1143334800,
-                1162083600,
-                1174784400,
-                1193533200,
-                1206838800,
-                1224982800,
-                1238288400,
-                1256432400,
-                1269738000,
-                1288486800,
-                1301187600,
-                1319936400,
-                1332637200,
-                1351386000,
-                1364691600,
-                1382835600,
-                1396141200,
-                1414285200,
-                1427590800,
-                1445734800,
-                1459040400,
-                1477789200,
-                1490490000,
-                1509238800,
-                1521939600,
-                1540688400,
-                1553994000,
-                1572138000,
-                1585443600,
-                1603587600,
-                1616893200,
-                1635642000,
-                1648342800,
-                1667091600,
-                1679792400,
-                1698541200,
-                1711846800,
-                1729990800,
-                1743296400,
-                1761440400,
-                1774746000,
-                1792890000,
-                1806195600,
-                1824944400,
-                1837645200,
-                1856394000,
-                1869094800,
-                1887843600,
-                1901149200,
-                1919293200,
-                1932598800,
-                1950742800,
-                1964048400,
-                1982797200,
-                1995498000,
-                2014246800,
-                2026947600,
-                2045696400,
-                2058397200,
-                2077146000,
-                2090451600,
-                2108595600,
-                2121901200,
-                2140045200
-            ]
-        );
-        assert_eq!(
-            tzif.offsets,
-            &[
-                1050, 0, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 0, 3600, 0, 3600, 0, 3600, 0,
-                3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0,
-                3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0, 3600, 0,
-                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
-                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
-                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
-                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
-                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
-                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
-                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
-                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
-                3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200, 3600, 7200,
-                3600, 7200, 3600, 7200, 3600, 7200, 3600
-            ]
-        );
-        assert_eq!(
             tzif.end,
             posix::parse(b"CET-1CEST,M3.5.0,M10.5.0/3").unwrap()
         );
+
+        let utc_cases = &[
+            // before the entire range
+            (-2850000000, 1050),
+            // at start of range
+            (-2840141851, 1050),
+            (-2840141850, 1050),
+            (-2840141849, 1050),
+            // The first transition
+            (-2450995201, 1050),
+            (-2450995200, 0),
+            (-2450995199, 0),
+            // Arbitrary transition (fold)
+            (1698541199, 7200),
+            (1698541200, 3600),
+            (1698541201, 3600),
+            // Arbitrary transition (gap)
+            (1743296399, 3600),
+            (1743296400, 7200),
+            (1743296401, 7200),
+            // Transitions after the last explicit one need to use the POSIX TZ string
+            (2216249999, 3600),
+            (2216250000, 7200),
+            (2216250001, 7200),
+            (2645053199, 7200),
+            (2645053200, 3600),
+            (2645053201, 3600),
+        ];
+
+        for &(t, expected) in utc_cases {
+            assert_eq!(tzif.offset_for_instant(t), expected, "t={}", t);
+        }
+
+        const ALL_DISAMBIGUATIONS: &[Disambiguate] = &[
+            Disambiguate::Compatible,
+            // Disambiguate::Earlier,
+            // Disambiguate::Later,
+        ];
+
+        let local_cases = &[
+            // before the entire range
+            (-2850000000 + 1050, ALL_DISAMBIGUATIONS, Some((1050, 0))),
+            // At the start of the range
+            (-2840141851 + 1050, ALL_DISAMBIGUATIONS, Some((1050, 0))),
+            (-2840141850 + 1050, ALL_DISAMBIGUATIONS, Some((1050, 0))),
+            (-2840141849 + 1050, ALL_DISAMBIGUATIONS, Some((1050, 0))),
+            // --- The first transition (a fold) ---
+            // well before the fold (no ambiguity)
+            (-2750999299 + 1050, ALL_DISAMBIGUATIONS, Some((1050, 0))),
+            // Just before times become ambiguous
+            (-2450995201, ALL_DISAMBIGUATIONS, Some((1050, 0))),
+            // At the moment times becomes ambiguous
+            (
+                -2450995200,
+                &[Disambiguate::Compatible, Disambiguate::Earlier],
+                Some((1050, 0)),
+            ),
+            (-2450995200, &[Disambiguate::Later], Some((0, 0))),
+            // Short before the clock change, short enough for ambiguity!
+            (
+                -2450995902 + 1050,
+                &[Disambiguate::Compatible, Disambiguate::Earlier],
+                Some((1050, 0)),
+            ),
+            (-2450995902 + 1050, &[Disambiguate::Later], Some((0, 0))),
+            // A second before the clock change (ambiguity!)
+            (
+                -2450995201 + 1050,
+                &[Disambiguate::Compatible, Disambiguate::Earlier],
+                Some((1050, 0)),
+            ),
+            (-2450995201 + 1050, &[Disambiguate::Later], Some((0, 0))),
+            // At the exact clock change (no ambiguity)
+            (-2450995200 + 1050, ALL_DISAMBIGUATIONS, Some((0, 0))),
+            // Directly after the clock change (no ambiguity)
+            (-2450995199 + 1050, ALL_DISAMBIGUATIONS, Some((0, 0))),
+            // --- A "gap" transition ---
+            // Well before the transition
+            (-1698792800, ALL_DISAMBIGUATIONS, Some((3600, 0))),
+            // Just before the clock change
+            (-1693702801 + 3600, ALL_DISAMBIGUATIONS, Some((3600, 0))),
+            // At the exact clock change (ambiguity!)
+            (
+                -1693702800 + 3600,
+                &[Disambiguate::Compatible, Disambiguate::Later],
+                Some((3600, 3600)),
+            ),
+            (
+                -1693702800 + 3600,
+                &[Disambiguate::Earlier],
+                Some((7200, -3600)),
+            ),
+            // Right after the clock change (ambiguity)
+            (
+                -1693702793 + 3600,
+                &[Disambiguate::Compatible, Disambiguate::Later],
+                Some((3600, 3600)),
+            ),
+            (
+                -1693702793 + 3600,
+                &[Disambiguate::Earlier],
+                Some((7200, -3600)),
+            ),
+            // Slightly before the gap ends (ambiguity)
+            (
+                -1693702801 + 7200,
+                &[Disambiguate::Compatible, Disambiguate::Later],
+                Some((3600, 3600)),
+            ),
+            (
+                -1693702801 + 7200,
+                &[Disambiguate::Earlier],
+                Some((7200, -3600)),
+            ),
+            // The gap ends (no ambiguity)
+            (-1693702800 + 7200, ALL_DISAMBIGUATIONS, Some((7200, 0))),
+            // A sample of other times
+            (700387500, ALL_DISAMBIGUATIONS, Some((3600, 0))),
+            (701834700, &[Disambiguate::Compatible], Some((3600, 3600))),
+            (715302300, ALL_DISAMBIGUATIONS, Some((7200, 0))),
+            // ---- Transitions after the last explicit one need to use the POSIX TZ string
+            // before gap
+            (2216249999 + 3600, ALL_DISAMBIGUATIONS, Some((3600, 0))),
+            // gap starts
+            (
+                2216250000 + 3600,
+                &[Disambiguate::Compatible, Disambiguate::Later],
+                Some((3600, 3600)),
+            ),
+            (
+                2216250000 + 3600,
+                &[Disambiguate::Earlier],
+                Some((7200, -3600)),
+            ),
+            // gap ends
+            (2216250000 + 7200, ALL_DISAMBIGUATIONS, Some((7200, 0))),
+            // somewhere in summer
+            (2216290000, ALL_DISAMBIGUATIONS, Some((7200, 0))),
+            // Fold starts
+            (
+                2645056800,
+                &[Disambiguate::Compatible, Disambiguate::Earlier],
+                Some((7200, 0)),
+            ),
+            (2645056800, &[Disambiguate::Later], Some((3600, 0))),
+            // In the fold
+            (
+                2645056940,
+                &[Disambiguate::Compatible, Disambiguate::Earlier],
+                Some((7200, 0)),
+            ),
+            (2645056940, &[Disambiguate::Later], Some((3600, 0))),
+            // end of the fold
+            (2645056800 + 3600, ALL_DISAMBIGUATIONS, Some((3600, 0))),
+        ];
+
+        for &(t, dis, expected) in local_cases {
+            for &d in dis {
+                assert_eq!(tzif.offset_for_local(t, d), expected, "t={}, {:?}", t, d);
+            }
+            // If the result depends on the disambiguation, it should be None for Raise
+            if dis != ALL_DISAMBIGUATIONS {
+                assert_eq!(tzif.offset_for_local(t, Disambiguate::Raise), None);
+            }
+        }
     }
 }
