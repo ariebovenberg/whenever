@@ -261,6 +261,7 @@ unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bo
     }
 }
 
+#[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_tp_new, __new__),
     slotmethod!(Py_tp_repr, __repr__, 1),

@@ -562,6 +562,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
         .to_obj(State::for_type(type_a).time_delta_type)
 }
 
+#[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_tp_new, __new__),
     slotmethod!(Py_tp_str, __str__, 1),

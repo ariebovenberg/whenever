@@ -366,6 +366,8 @@ unsafe fn __abs__(slf: *mut PyObject) -> PyReturn {
     .to_obj(Py_TYPE(slf))
 }
 
+
+#[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_tp_new, __new__),
     slotmethod!(Py_tp_richcompare, __richcmp__),
