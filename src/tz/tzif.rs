@@ -118,6 +118,7 @@ impl TZif {
 }
 
 // Bisect the array of (time, value) pairs to find the INDEX at the given time.
+// Return None if after the last entry.
 #[inline]
 pub fn bisect_index<T>(arr: &[(EpochSeconds, T)], x: EpochSeconds) -> Option<usize>
 where
@@ -143,7 +144,7 @@ where
 pub fn parse(s: &[u8]) -> ParseResult<TZif> {
     let mut scan = Scan::new(s);
     let header = parse_header(&mut scan)?;
-    debug_assert_eq!(header.version, 2);
+    debug_assert!(header.version >= 2);
     parse_content(header, &mut scan)
 }
 
@@ -179,8 +180,6 @@ fn parse_header(s: &mut Scan) -> ParseResult<Header> {
 }
 
 fn parse_transition_times(header: Header, s: &mut Scan) -> ParseResult<Vec<EpochSeconds>> {
-    // TODO: other versions
-    debug_assert_eq!(header.version, 2);
     let mut result = Vec::with_capacity(header.timecnt as usize);
     const I64_SIZE: usize = std::mem::size_of::<i64>();
     let values = s
@@ -198,7 +197,6 @@ fn parse_transition_times(header: Header, s: &mut Scan) -> ParseResult<Vec<Epoch
 }
 
 fn parse_offset_indices(header: Header, s: &mut Scan) -> ParseResult<Vec<u8>> {
-    debug_assert_eq!(header.version, 2);
     // OPTIMIZE: how about using smallvec?
     let mut result = Vec::with_capacity(header.timecnt as usize);
     let values = s.take(header.timecnt as usize).ok_or(ErrorCause::Body)?;
@@ -226,7 +224,6 @@ fn parse_content(first_header: Header, s: &mut Scan) -> ParseResult<TZif> {
     let offset_indices = parse_offset_indices(header, s)?;
     debug_assert!(header.typecnt > 0 && header.typecnt < 1_000);
     let offsets = parse_offsets(header.typecnt as usize, header.charcnt, s)?;
-    debug_assert_eq!(header.version, 2);
     // Skip unused metadata
     s.take(
         (header.isutcnt + header.isstdcnt + header.leapcnt * 12
@@ -332,6 +329,7 @@ mod tests {
 
     const TZ_AMS: &[u8] = include_bytes!("../../tests/tzif/Amsterdam.tzif");
     const TZ_UTC: &[u8] = include_bytes!("../../tests/tzif/UTC.tzif");
+    const TZ_FIXED: &[u8] = include_bytes!("../../tests/tzif/GMT-13.tzif");
 
     #[test]
     fn test_no_magic_header() {
@@ -362,6 +360,9 @@ mod tests {
         assert_eq!(bisect_index(arr, 3), Some(0));
         assert_eq!(bisect_index(arr, 4), Some(0));
         assert_eq!(bisect_index(arr, 5), Some(0));
+
+        // emtpy case
+        assert_eq!(bisect_index::<i64>(&[], 25), None);
     }
 
     #[test]
@@ -386,6 +387,31 @@ mod tests {
         assert_eq!(
             tzif.offset_for_local(2216250000, Disambiguate::Compatible),
             Some((0, 0))
+        )
+    }
+
+    #[test]
+    fn test_fixed() {
+        let tzif = parse(TZ_FIXED).unwrap();
+        assert_eq!(
+            tzif.header,
+            Header {
+                version: 2,
+                isutcnt: 0,
+                isstdcnt: 0,
+                leapcnt: 0,
+                timecnt: 0,
+                typecnt: 1,
+                charcnt: 4
+            }
+        );
+        assert_eq!(tzif.offsets_by_utc, &[]);
+        assert_eq!(tzif.end, posix::parse(b"<+13>-13").unwrap());
+
+        assert_eq!(tzif.offset_for_instant(2216250001), 13 * 3_600);
+        assert_eq!(
+            tzif.offset_for_local(2216250000, Disambiguate::Compatible),
+            Some((13 * 3_600, 0))
         )
     }
 
@@ -443,8 +469,8 @@ mod tests {
 
         const ALL_DISAMBIGUATIONS: &[Disambiguate] = &[
             Disambiguate::Compatible,
-            // Disambiguate::Earlier,
-            // Disambiguate::Later,
+            Disambiguate::Earlier,
+            Disambiguate::Later,
         ];
 
         let local_cases = &[
@@ -571,6 +597,35 @@ mod tests {
             // If the result depends on the disambiguation, it should be None for Raise
             if dis != ALL_DISAMBIGUATIONS {
                 assert_eq!(tzif.offset_for_local(t, Disambiguate::Raise), None);
+            }
+        }
+    }
+
+    /// Smoke test to see we don't crash parsing any TZif files in the tzdata database.
+    /// It doesn't actually check whether the parsing is correct,
+    /// but will give a good indication if the parser is robust.
+    /// Code loosely based on github.com/BurntSushi/jiff/blob/master/src/tz/tzif.rs
+    #[test]
+    fn smoke_test() {
+        const TZDIR: &str = "/usr/share/zoneinfo";
+        for entry in walkdir::WalkDir::new(TZDIR)
+            .into_iter()
+            .filter_map(Result::ok)
+        {
+            let path = entry.path();
+
+            // Skip unreadable files
+            let Ok(bytes) = std::fs::read(path) else {
+                continue;
+            };
+
+            // Skip non-TZif files
+            if !bytes.starts_with(b"TZif") {
+                continue;
+            }
+
+            if let Err(err) = parse(&bytes) {
+                panic!("failed to parse TZif file {:?}: {err}", path);
             }
         }
     }

@@ -1,7 +1,7 @@
 use pyo3_ffi::*;
 
+use crate::common::methcall0;
 use crate::common::pyobject::*;
-use crate::common::*; // TODO precise
 
 // NOTE: assumes it's an "aware" datetime object
 pub(crate) unsafe fn offset_from_py_dt(dt: *mut PyObject) -> PyResult<i32> {
