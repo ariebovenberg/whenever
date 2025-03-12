@@ -41,6 +41,7 @@ use time_delta::{hours, microseconds, milliseconds, minutes, nanoseconds, second
 use yearmonth::unpickle as _unpkl_ym;
 use zoned_datetime::unpickle as _unpkl_zoned;
 
+#[allow(static_mut_refs)]
 static mut MODULE_DEF: PyModuleDef = PyModuleDef {
     m_base: PyModuleDef_HEAD_INIT,
     m_name: c"whenever".as_ptr(),
@@ -232,7 +233,6 @@ macro_rules! unwrap_or_errcode {
 }
 
 #[cold]
-#[cfg_attr(feature = "optimize", optimize(size))]
 unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     let state: &mut State = PyModule_GetState(module).cast::<State>().as_mut().unwrap();
     let module_name = unwrap_or_errcode!("whenever".to_py());
@@ -803,7 +803,6 @@ impl State {
 #[allow(non_snake_case)]
 #[no_mangle]
 #[cold]
-#[cfg_attr(feature = "optimize", optimize(size))]
 pub unsafe extern "C" fn PyInit__whenever() -> *mut PyObject {
     PyModuleDef_Init(ptr::addr_of_mut!(MODULE_DEF))
 }
