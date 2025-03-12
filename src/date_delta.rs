@@ -32,7 +32,7 @@ impl DateDelta {
 
     #[cfg(target_pointer_width = "64")]
     pub(crate) fn pyhash(self) -> Py_hash_t {
-        self.months as Py_hash_t | (self.days as Py_hash_t) << 32
+        self.months as Py_hash_t | ((self.days as Py_hash_t) << 32)
     }
 
     pub(crate) fn new(months: i32, days: i32) -> Result<Self, InitError> {
@@ -383,7 +383,7 @@ unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) 
             }
             .to_obj(state.datetime_delta_type)
         } else {
-            return Ok(newref(Py_NotImplemented()));
+            Ok(newref(Py_NotImplemented()))
         }
     }
 }
