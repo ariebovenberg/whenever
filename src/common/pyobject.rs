@@ -263,12 +263,12 @@ impl<T> OptionExt<T> for Option<T> {
     }
 }
 
-pub(crate) unsafe fn raise_type_err<T, U: ToPy>(msg: U) -> PyResult<T> {
-    raise(PyExc_TypeError, msg)
+pub(crate) fn raise_type_err<T, U: ToPy>(msg: U) -> PyResult<T> {
+    unsafe { raise(PyExc_TypeError, msg) }
 }
 
-pub(crate) unsafe fn raise_value_err<T, U: ToPy>(msg: U) -> PyResult<T> {
-    raise(PyExc_ValueError, msg)
+pub(crate) fn raise_value_err<T, U: ToPy>(msg: U) -> PyResult<T> {
+    unsafe { raise(PyExc_ValueError, msg) }
 }
 
 pub(crate) trait ToPy {
