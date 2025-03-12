@@ -21,7 +21,7 @@ pub(crate) const SINGLETONS: &[(&CStr, YearMonth); 2] = &[
 
 impl YearMonth {
     pub(crate) const unsafe fn hash(self) -> i32 {
-        (self.year as i32) << 4 | self.month as i32
+        ((self.year as i32) << 4) | self.month as i32
     }
 
     pub(crate) const fn from_longs(year: c_long, month: c_long) -> Option<Self> {

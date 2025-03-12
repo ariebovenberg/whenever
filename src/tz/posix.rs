@@ -234,7 +234,10 @@ fn skip_tzname(s: &mut Scan) -> Option<()> {
     // Note also that in Tzif files, TZ names are limited to 6 characters.
     // This might be useful in the future for optimization
     let tzname = match s.peek() {
-        Some(b'<') => s.take_until(|c| c == b'>')?,
+        Some(b'<') => {
+            let name = s.take_until_inclusive(|c| c == b'>')?;
+            &name[1..name.len() - 1]
+        }
         _ => s.take_until(|c| matches!(c, b'+' | b'-' | b',' | b'0'..=b'9'))?,
     };
     tzname.is_ascii().then_some(())
@@ -336,8 +339,8 @@ mod tests {
         assert_eq!(parse(b"FOO"), None);
         // invalid tzname (digit)
         assert_eq!(parse(b"1T"), None);
-        // no offset (bracketed tzname)
         assert_eq!(parse(b"<FOO>"), None);
+        assert_eq!(parse(b"<FOO>>-3"), None);
     }
 
     #[test]
@@ -371,6 +374,7 @@ mod tests {
             (b"FOO+23:59:59", -86_399),
             (b"FOO+23:59", -23 * 3600 - 59 * 60),
             (b"FOO+23", -23 * 3600),
+            (b"<FOO>-3", 3 * 3600),
         ];
 
         for &(s, expected) in cases {

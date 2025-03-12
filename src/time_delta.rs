@@ -671,14 +671,13 @@ unsafe fn from_py_timedelta(cls: *mut PyObject, d: *mut PyObject) -> PyReturn {
     if PyDelta_Check(d) == 0 {
         raise_type_err("argument must be datetime.timedelta")?;
     }
-    // TODO: cap
-    let secs = i64::from(PyDateTime_DELTA_GET_DAYS(d)) * SECS_PER_DAY
-        + i64::from(PyDateTime_DELTA_GET_SECONDS(d));
-    if !(-MAX_SECS..=MAX_SECS).contains(&secs) {
-        raise_value_err("TimeDelta out of range")?;
-    }
     TimeDelta {
-        secs,
+        secs: cap(
+            i64::from(PyDateTime_DELTA_GET_DAYS(d)) * SECS_PER_DAY
+                + i64::from(PyDateTime_DELTA_GET_SECONDS(d)),
+            MAX_SECS,
+        )
+        .ok_or_value_err("TimeDelta out of range")?,
         nanos: PyDateTime_DELTA_GET_MICROSECONDS(d) as u32 * 1_000,
     }
     .to_obj(cls.cast())
