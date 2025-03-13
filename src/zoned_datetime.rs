@@ -313,12 +313,9 @@ impl Instant {
 impl PyWrapped for ZonedDateTime {
     #[inline]
     unsafe fn to_obj(self, type_: *mut PyTypeObject) -> PyReturn {
-        // TODO: this seems to be a false positive
-        #[allow(clippy::manual_inspect)]
-        generic_alloc(type_, self).map(|obj| {
-            Py_INCREF(self.zoneinfo);
-            obj
-        })
+        let obj = generic_alloc(type_, self)?;
+        Py_INCREF(self.zoneinfo);
+        Ok(obj)
     }
 }
 
