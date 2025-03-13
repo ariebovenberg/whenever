@@ -55,7 +55,7 @@ macro_rules! unpack_one {
 
 /// Format an offset in seconds as a string like "+hh:mm",
 /// adding ":ss" only if needed
-pub(crate) fn offset_fmt(secs: i32) -> String {
+pub(crate) fn offset_fmt(secs: Offset) -> String {
     // OPTIMIZE: is it worth avoiding the allocation since we know the max size?
     let (sign, secs) = if secs < 0 { ('-', -secs) } else { ('+', secs) };
     if secs % 60 == 0 {
@@ -112,22 +112,25 @@ impl Disambiguate {
         fname: &str,
     ) -> PyResult<Option<Self>> {
         match kwargs.next() {
-            Some((name, value)) if kwargs.len() == 1 => {
-                if name.kwarg_eq(str_disambiguate) {
-                    Self::from_py(value).map(Some)
+            Some((name, value)) => {
+                if kwargs.len() == 1 {
+                    if name.kwarg_eq(str_disambiguate) {
+                        Self::from_py(value).map(Some)
+                    } else {
+                        raise_type_err(format!(
+                            "{}() got an unexpected keyword argument {}",
+                            fname,
+                            name.repr()
+                        ))
+                    }
                 } else {
                     raise_type_err(format!(
-                        "{}() got an unexpected keyword argument {}",
+                        "{}() takes at most 1 keyword argument, got {}",
                         fname,
-                        name.repr()
+                        kwargs.len()
                     ))
                 }
             }
-            Some(_) => raise_type_err(format!(
-                "{}() takes at most 1 keyword argument, got {}",
-                fname,
-                kwargs.len()
-            )),
             None => Ok(None),
         }
     }
@@ -172,11 +175,7 @@ impl DictItems {
     }
 
     pub(crate) fn new(dict: *mut PyObject) -> Option<Self> {
-        if dict.is_null() || unsafe { PyDict_Size(dict) == 0 } {
-            None
-        } else {
-            Some(Self::new_unchecked(dict))
-        }
+        (!dict.is_null() && unsafe { PyDict_Size(dict) > 0 }).then(|| Self::new_unchecked(dict))
     }
 }
 
