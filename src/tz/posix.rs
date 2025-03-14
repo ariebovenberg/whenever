@@ -4,11 +4,12 @@
 /// - [POSIX TZ strings](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap08.html)
 /// - [GNU libc manual](https://www.gnu.org/software/libc/manual/html_node/TZ-Variable.html)
 use crate::common::parse::Scan;
-use crate::common::{EpochSeconds, Month, Offset, OffsetResult, Year, MAX_OFFSET, S_PER_DAY};
+use crate::common::{Ambiguity, Month, OffsetDelta, OffsetS, Year};
 use crate::date::{days_before_year, days_in_month, is_leap, Date};
+use crate::EpochSecs;
 use std::num::{NonZeroU16, NonZeroU8};
 
-const DEFAULT_DST: Offset = 3_600;
+const DEFAULT_DST: OffsetDelta = OffsetDelta::new_unchecked(3_600);
 pub(crate) type Weekday = u8; // 0 is Sunday, 6 is Saturday
                               // RFC 9636: the transition time may range from -167 to 167 hours! (not just 24)
 pub(crate) type TransitionTime = i32;
@@ -16,14 +17,14 @@ const DEFAULT_RULE_TIME: i32 = 2 * 3_600; // 2 AM
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TZ {
-    std: Offset,
+    std: OffsetS,
     dst: Option<Dst>,
     // We don't store the TZ names since we don't use them (yet)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Dst {
-    offset: Offset,
+    offset: OffsetS,
     start: (Rule, TransitionTime),
     end: (Rule, TransitionTime),
 }
@@ -38,7 +39,7 @@ pub(crate) enum Rule {
 }
 
 impl TZ {
-    pub(crate) fn offset_for_instant(&self, epoch: EpochSeconds) -> Offset {
+    pub(crate) fn offset_for_instant(&self, epoch: EpochSecs) -> OffsetS {
         match self.dst {
             None => self.std, // No DST rule means a fixed offset
             Some(Dst {
@@ -54,22 +55,24 @@ impl TZ {
                 // However, in practice, we can assume that DST isn't active
                 // at the start of the year, and that DST rules don't straddle years.
                 // This is what Python's `zoneinfo` does anyway...
-                let year = Date::from_unix_days_unchecked(
-                    ((epoch + self.std as i64) / S_PER_DAY as i64) as _,
-                )
-                .year
-                .try_into()
-                .unwrap();
-                let dst_start = start_rule.for_year(year).unix_days() as i64 * S_PER_DAY as i64
-                    + start_time as i64
-                    - self.std as i64;
+                let year = epoch
+                    .saturating_offset(self.std)
+                    .date()
+                    .year
+                    .try_into()
+                    .unwrap();
+                let dst_start = start_rule
+                    .for_year(year)
+                    .epoch()
+                    .saturating_add_i32(start_time - self.std.get());
                 // fast path: avoid calculating the end time at all
                 if epoch < dst_start {
                     self.std
                 } else {
-                    let dst_end = end_rule.for_year(year).unix_days() as i64 * S_PER_DAY as i64
-                        + end_time as i64
-                        - dst_offset as i64;
+                    let dst_end = end_rule
+                        .for_year(year)
+                        .epoch()
+                        .saturating_add_i32(end_time - dst_offset.get());
                     if epoch < dst_end {
                         dst_offset
                     } else {
@@ -81,14 +84,9 @@ impl TZ {
     }
 
     /// Get the offset for a local time, given as the number of seconds since the Unix epoch.
-    pub(crate) fn offset_for_local(&self, t: EpochSeconds) -> OffsetResult {
-        fn epoch(d: Date, t: TransitionTime) -> i64 {
-            // Safety: value ranges save us from overflow
-            d.unix_days() as i64 * S_PER_DAY as i64 + t as i64
-        }
-
+    pub(crate) fn ambiguity_for_local(&self, t: EpochSecs) -> Ambiguity {
         match self.dst {
-            None => OffsetResult::Unambiguous(self.std), // No DST
+            None => Ambiguity::Unambiguous(self.std.get()), // No DST
             Some(Dst {
                 // NOTE: There's nothing preventing end from being before start,
                 // but this shouldn't happen in practice. We don't crash, at least.
@@ -96,43 +94,43 @@ impl TZ {
                 end: (end_rule, end_time),
                 offset,
             }) => {
-                let year = Date::from_unix_days_unchecked((t / S_PER_DAY as i64) as _)
-                    .year
-                    .try_into()
-                    .unwrap();
-                let dst_start = epoch(start_rule.for_year(year), start_time);
-                let dst_shift = (offset - self.std) as i64;
+                let year = t.date().year.try_into().unwrap();
+                let dst_start = start_rule
+                    .for_year(year)
+                    .epoch()
+                    .saturating_add_i32(start_time);
+                let dst_shift = offset.get() - self.std.get();
                 // In rare cases, the dst shift is negative.
                 // We handle the common case first.
                 if dst_shift >= 0 {
                     if t < dst_start {
-                        OffsetResult::Unambiguous(self.std)
-                    } else if t < dst_start + dst_shift {
-                        OffsetResult::Gap(offset, self.std)
+                        Ambiguity::Unambiguous(self.std.get())
+                    } else if t < dst_start.saturating_add_i32(dst_shift) {
+                        Ambiguity::Gap(offset.get(), self.std.get())
                     } else {
-                        let dst_end = epoch(end_rule.for_year(year), end_time);
-                        if t < dst_end - dst_shift {
-                            OffsetResult::Unambiguous(offset)
+                        let dst_end = end_rule.for_year(year).epoch().saturating_add_i32(end_time);
+                        if t < dst_end.saturating_add_i32(-dst_shift) {
+                            Ambiguity::Unambiguous(offset.get())
                         } else if t < dst_end {
-                            OffsetResult::Fold(offset, self.std)
+                            Ambiguity::Fold(offset.get(), self.std.get())
                         } else {
-                            OffsetResult::Unambiguous(self.std)
+                            Ambiguity::Unambiguous(self.std.get())
                         }
                     }
                 // These further branches mirror the above, but with the
                 // roles of standard and DST time reversed.
-                } else if t < dst_start + dst_shift {
-                    OffsetResult::Unambiguous(self.std)
+                } else if t < dst_start.saturating_add_i32(dst_shift) {
+                    Ambiguity::Unambiguous(self.std.get())
                 } else if t < dst_start {
-                    OffsetResult::Fold(self.std, offset)
+                    Ambiguity::Fold(self.std.get(), offset.get())
                 } else {
-                    let dst_end = epoch(end_rule.for_year(year), end_time);
+                    let dst_end = end_rule.for_year(year).epoch().saturating_add_i32(end_time);
                     if t < dst_end {
-                        OffsetResult::Unambiguous(offset)
-                    } else if t < dst_end - dst_shift {
-                        OffsetResult::Gap(self.std, offset)
+                        Ambiguity::Unambiguous(offset.get())
+                    } else if t < dst_end.saturating_add_i32(-dst_shift) {
+                        Ambiguity::Gap(self.std.get(), offset.get())
                     } else {
-                        OffsetResult::Unambiguous(self.std)
+                        Ambiguity::Unambiguous(self.std.get())
                     }
                 }
             }
@@ -145,7 +143,6 @@ fn weekday(d: Date) -> Weekday {
 }
 
 impl Rule {
-    #[allow(dead_code)]
     fn for_year(&self, y: Year) -> Date {
         match *self {
             // The 366th day will blow up for non-leap years,
@@ -182,7 +179,6 @@ impl Rule {
     }
 }
 
-#[allow(dead_code)]
 pub fn parse(s: &[u8]) -> Option<TZ> {
     let mut scan = Scan::new(s);
     skip_tzname(&mut scan)?;
@@ -199,9 +195,8 @@ pub fn parse(s: &[u8]) -> Option<TZ> {
         b',' => {
             scan.take_unchecked(1);
             // It's theoretically possible for the DST shift to
-            // bump the offset to over 24 hours. This shouldn't
-            // occur in practice.
-            (std + DEFAULT_DST < MAX_OFFSET).then_some(std + DEFAULT_DST)?
+            // bump the offset to over 24 hours. We reject these cases.
+            std.shift(DEFAULT_DST)?
         }
         // Otherwise, parse the offset
         _ => {
@@ -244,10 +239,10 @@ fn skip_tzname(s: &mut Scan) -> Option<()> {
 }
 
 /// Parse an offset like `[+|-]h[h][:mm[:ss]]`
-fn parse_offset(s: &mut Scan) -> Option<Offset> {
-    parse_hms(s, MAX_OFFSET)
+fn parse_offset(s: &mut Scan) -> Option<OffsetS> {
+    parse_hms(s, OffsetS::MAX.get())
         // POSIX offsets are inverted from how we store them
-        .map(|s| -s)
+        .map(|s| OffsetS::new_unchecked(-s))
 }
 
 /// Parse a `h[hh][:mm[:ss]]` string into a total number of seconds
@@ -326,7 +321,7 @@ fn parse_rule(scan: &mut Scan) -> Option<(Rule, TransitionTime)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::OffsetResult::*;
+    use crate::common::Ambiguity::*;
     use crate::time::Time;
 
     #[test]
@@ -349,7 +344,7 @@ mod tests {
             assert_eq!(
                 parse(s).unwrap(),
                 TZ {
-                    std: expected,
+                    std: expected.try_into().unwrap(),
                     dst: None
                 },
                 "{:?} -> {}",
@@ -433,9 +428,9 @@ mod tests {
         assert_eq!(
             parse(b"FOO-1FOOS,M3.5.0,M10.4.0").unwrap(),
             TZ {
-                std: 3600,
+                std: 3600.try_into().unwrap(),
                 dst: Some(Dst {
-                    offset: 7200,
+                    offset: 7200.try_into().unwrap(),
                     start: (Rule::LastWeekday(0, Nu8!(3)), DEFAULT_RULE_TIME),
                     end: (Rule::NthWeekday(Nu8!(4), 0, Nu8!(10)), DEFAULT_RULE_TIME)
                 })
@@ -445,9 +440,9 @@ mod tests {
         assert_eq!(
             parse(b"FOO+1FOOS2:30,M3.5.0,M10.2.0").unwrap(),
             TZ {
-                std: -3600,
+                std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
-                    offset: -3600 * 2 - 30 * 60,
+                    offset: (-3600 * 2 - 30 * 60).try_into().unwrap(),
                     start: (Rule::LastWeekday(0, Nu8!(3)), DEFAULT_RULE_TIME),
                     end: (Rule::NthWeekday(Nu8!(2), 0, Nu8!(10)), DEFAULT_RULE_TIME)
                 })
@@ -457,9 +452,9 @@ mod tests {
         assert_eq!(
             parse(b"FOO+1FOOS2:30,M3.5.0/8,M10.2.0").unwrap(),
             TZ {
-                std: -3600,
+                std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
-                    offset: -3600 * 2 - 30 * 60,
+                    offset: (-3600 * 2 - 30 * 60).try_into().unwrap(),
                     start: (Rule::LastWeekday(0, Nu8!(3)), 8 * 3_600),
                     end: (Rule::NthWeekday(Nu8!(2), 0, Nu8!(10)), DEFAULT_RULE_TIME)
                 })
@@ -469,9 +464,9 @@ mod tests {
         assert_eq!(
             parse(b"FOO+1FOOS2:30,J023/8:34:01,M10.2.0/03").unwrap(),
             TZ {
-                std: -3600,
+                std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
-                    offset: -3600 * 2 - 30 * 60,
+                    offset: (-3600 * 2 - 30 * 60).try_into().unwrap(),
                     start: (Rule::JulianDayOfYear(Nu16!(23)), 8 * 3_600 + 34 * 60 + 1),
                     end: (Rule::NthWeekday(Nu8!(2), 0, Nu8!(10)), 3 * 3_600)
                 })
@@ -481,9 +476,9 @@ mod tests {
         assert_eq!(
             parse(b"FOO+1FOOS2:30,023/8:34:01,J1/0").unwrap(),
             TZ {
-                std: -3600,
+                std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
-                    offset: -3600 * 2 - 30 * 60,
+                    offset: (-3600 * 2 - 30 * 60).try_into().unwrap(),
                     start: (Rule::DayOfYear(Nu16!(24)), 8 * 3_600 + 34 * 60 + 1),
                     end: (Rule::JulianDayOfYear(Nu16!(1)), 0)
                 })
@@ -493,9 +488,9 @@ mod tests {
         assert_eq!(
             parse(b"FOO+1FOOS2:30,00/8:34:01,J1/0").unwrap(),
             TZ {
-                std: -3600,
+                std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
-                    offset: -3600 * 2 - 30 * 60,
+                    offset: (-3600 * 2 - 30 * 60).try_into().unwrap(),
                     start: (Rule::DayOfYear(Nu16!(1)), 8 * 3_600 + 34 * 60 + 1),
                     end: (Rule::JulianDayOfYear(Nu16!(1)), 0)
                 })
@@ -505,9 +500,9 @@ mod tests {
         assert_eq!(
             parse(b"FOO+2FOOS+1,M3.5.0/24,M10.2.0").unwrap(),
             TZ {
-                std: -7200,
+                std: (-7200).try_into().unwrap(),
                 dst: Some(Dst {
-                    offset: -3600,
+                    offset: (-3600).try_into().unwrap(),
                     start: (Rule::LastWeekday(0, Nu8!(3)), 86_400),
                     end: (Rule::NthWeekday(Nu8!(2), 0, Nu8!(10)), DEFAULT_RULE_TIME)
                 })
@@ -517,9 +512,9 @@ mod tests {
         assert_eq!(
             parse(b"FOO+2FOOS+1,M3.5.0/-89:02,M10.2.0/100").unwrap(),
             TZ {
-                std: -7200,
+                std: (-7200).try_into().unwrap(),
                 dst: Some(Dst {
-                    offset: -3600,
+                    offset: (-3600).try_into().unwrap(),
                     start: (Rule::LastWeekday(0, Nu8!(3)), -89 * 3_600 - 2 * 60),
                     end: (Rule::NthWeekday(Nu8!(2), 0, Nu8!(10)), 100 * 3_600)
                 })
@@ -704,41 +699,41 @@ mod tests {
     #[test]
     fn calculate_offsets() {
         let tz_fixed = TZ {
-            std: 1234,
+            std: 1234.try_into().unwrap(),
             dst: None,
         };
         // A TZ with random-ish DST rules
         let tz = TZ {
-            std: 4800,
+            std: 4800.try_into().unwrap(),
             dst: Some(Dst {
-                offset: 9300,
+                offset: 9300.try_into().unwrap(),
                 start: (Rule::LastWeekday(0, Nu8!(3)), 3600 * 4),
                 end: (Rule::JulianDayOfYear(Nu16!(281)), DEFAULT_RULE_TIME),
             }),
         };
         // A TZ with DST time rules that are very large, or negative!
         let tz_weirdtime = TZ {
-            std: 4800,
+            std: 4800.try_into().unwrap(),
             dst: Some(Dst {
-                offset: 9300,
+                offset: 9300.try_into().unwrap(),
                 start: (Rule::LastWeekday(0, Nu8!(3)), 50 * 3_600),
                 end: (Rule::JulianDayOfYear(Nu16!(281)), -2 * 3_600),
             }),
         };
         // A TZ with DST rules that are 00:00:00
         let tz00 = TZ {
-            std: 4800,
+            std: 4800.try_into().unwrap(),
             dst: Some(Dst {
-                offset: 9300,
+                offset: 9300.try_into().unwrap(),
                 start: (Rule::LastWeekday(0, Nu8!(3)), 0),
                 end: (Rule::JulianDayOfYear(Nu16!(281)), 0),
             }),
         };
         // A TZ with a DST offset smaller than the standard offset (theoretically possible)
         let tz_neg = TZ {
-            std: 4800,
+            std: 4800.try_into().unwrap(),
             dst: Some(Dst {
-                offset: 1200,
+                offset: 1200.try_into().unwrap(),
                 start: (Rule::LastWeekday(0, Nu8!(3)), DEFAULT_RULE_TIME),
                 end: (Rule::JulianDayOfYear(Nu16!(281)), 4 * 3_600),
             }),
@@ -746,29 +741,31 @@ mod tests {
         // start can technically be before end. Behavior isn't defined, but we
         // shouldn't crash
         let tz_inverted = TZ {
-            std: 4800,
+            std: 4800.try_into().unwrap(),
             dst: Some(Dst {
-                offset: 7200,
+                offset: 7200.try_into().unwrap(),
                 end: (Rule::LastWeekday(0, Nu8!(3)), DEFAULT_RULE_TIME),
                 start: (Rule::JulianDayOfYear(Nu16!(281)), 4 * 3_600),
             }),
         };
         // Some timezones appear to be "always DST", like Africa/Casablanca
         let tz_always_dst = TZ {
-            std: 7200,
+            std: 7200.try_into().unwrap(),
             dst: Some(Dst {
-                offset: 3600,
+                offset: 3600.try_into().unwrap(),
                 start: (Rule::DayOfYear(Nu16!(1)), 0),
                 end: (Rule::JulianDayOfYear(Nu16!(365)), 23 * 3600),
             }),
         };
 
-        fn to_epoch_s(d: Date, t: Time, offset: Offset) -> EpochSeconds {
-            d.unix_days() as EpochSeconds * 86_400 + t.total_seconds() as EpochSeconds
-                - offset as EpochSeconds
+        fn to_epoch_s(d: Date, t: Time, offset: i32) -> EpochSecs {
+            EpochSecs::new(d.timestamp_at(t))
+                .unwrap()
+                .offset(OffsetS::new(-offset).unwrap())
+                .unwrap()
         }
 
-        fn test(tz: TZ, ymd: (u16, u8, u8), hms: (u8, u8, u8), expected: OffsetResult) {
+        fn test(tz: TZ, ymd: (u16, u8, u8), hms: (u8, u8, u8), expected: Ambiguity) {
             let (y, m, d) = ymd;
             let (hour, minute, second) = hms;
             let date = Date::new_unchecked(y, m, d);
@@ -779,7 +776,7 @@ mod tests {
                 nanos: 0,
             };
             assert_eq!(
-                tz.offset_for_local(to_epoch_s(date, time, 0)),
+                tz.ambiguity_for_local(to_epoch_s(date, time, 0)),
                 expected,
                 "{:?} {:?} -> {:?} (tz: {:?})",
                 ymd,
@@ -793,8 +790,8 @@ mod tests {
                     let epoch = to_epoch_s(date, time, offset);
                     assert_eq!(
                         tz.offset_for_instant(epoch),
-                        offset,
-                        "tz: {:?} date: {}, time: {}, offset: {}, epoch: {}",
+                        OffsetS::new(offset).unwrap(),
+                        "tz: {:?} date: {}, time: {}, offset: {}, {:?}",
                         tz,
                         date,
                         time,
@@ -807,8 +804,8 @@ mod tests {
                     let epoch_b = to_epoch_s(date, time, b);
                     assert_eq!(
                         tz.offset_for_instant(epoch_a),
-                        a,
-                        "(earlier offset) tz: {:?} date: {}, time: {}, offset: {}, epoch: {}",
+                        OffsetS::new(a).unwrap(),
+                        "(earlier offset) tz: {:?} date: {}, time: {}, offset: {}, {:?}",
                         tz,
                         date,
                         time,
@@ -817,8 +814,8 @@ mod tests {
                     );
                     assert_eq!(
                         tz.offset_for_instant(epoch_b),
-                        b,
-                        "(later offset) tz: {:?} date: {}, time: {}, offset: {}, epoch: {}",
+                        OffsetS::new(b).unwrap(),
+                        "(later offset) tz: {:?} date: {}, time: {}, offset: {}, {:?}",
                         tz,
                         date,
                         time,
@@ -907,5 +904,8 @@ mod tests {
         for &(tz, ymd, hms, expected) in &cases {
             test(tz, ymd, hms, expected);
         }
+
+        // At the MIN/MAX epoch boundaries
+        assert!(tz.offset_for_instant(EpochSecs::MAX) == OffsetS::new(4800).unwrap());
     }
 }

@@ -38,6 +38,7 @@ use system_datetime::unpickle as _unpkl_system;
 use time::unpickle as _unpkl_time;
 use time_delta::unpickle as _unpkl_tdelta;
 use time_delta::{hours, microseconds, milliseconds, minutes, nanoseconds, seconds};
+use tz::cache::TZifCache;
 use yearmonth::unpickle as _unpkl_ym;
 use zoned_datetime::unpickle as _unpkl_zoned;
 
@@ -341,6 +342,8 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     let zoneinfo_module = PyImport_ImportModule(c"zoneinfo".as_ptr());
     defer_decref!(zoneinfo_module);
     state.zoneinfo_type = PyObject_GetAttrString(zoneinfo_module, c"ZoneInfo".as_ptr());
+    state.zoneinfo_notfound =
+        PyObject_GetAttrString(zoneinfo_module, c"ZoneInfoNotFoundError".as_ptr());
 
     PyDateTime_IMPORT();
     state.py_api = match PyDateTimeAPI().as_ref() {
@@ -448,6 +451,8 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     // Only enable it if the time_machine module is available.
     state.time_machine_exists = unwrap_or_errcode!(time_machine_installed());
     state.time_patch = TimePatch::Unset;
+
+    state.tz_cache = TZifCache::new();
 
     0
 }
@@ -639,15 +644,17 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
 
     // imported stuff
     Py_CLEAR(ptr::addr_of_mut!(state.zoneinfo_type));
+    Py_CLEAR(ptr::addr_of_mut!(state.zoneinfo_notfound));
     Py_CLEAR(ptr::addr_of_mut!(state.timezone_type));
     Py_CLEAR(ptr::addr_of_mut!(state.strptime));
     Py_CLEAR(ptr::addr_of_mut!(state.format_rfc2822));
     Py_CLEAR(ptr::addr_of_mut!(state.parse_rfc2822));
-    Py_CLEAR(ptr::addr_of_mut!(state.time_ns));
+    Py_CLEAR(&raw mut state.time_ns);
+
+    // TODO: clear cache
     0
 }
 
-#[repr(C)]
 struct State {
     // types
     date_type: *mut PyTypeObject,
@@ -690,6 +697,7 @@ struct State {
 
     // imported stuff
     zoneinfo_type: *mut PyObject,
+    zoneinfo_notfound: *mut PyObject,
     timezone_type: *mut PyObject,
     strptime: *mut PyObject,
     format_rfc2822: *mut PyObject,
@@ -732,6 +740,8 @@ struct State {
 
     time_patch: TimePatch,
     time_machine_exists: bool,
+
+    tz_cache: TZifCache,
 }
 
 enum TimePatch {
@@ -744,18 +754,34 @@ enum TimePatch {
 }
 
 impl State {
+    // TODO: cleanup redundancy
     unsafe fn for_type<'a>(tp: *mut PyTypeObject) -> &'a Self {
         PyType_GetModuleState(tp).cast::<Self>().as_ref().unwrap()
+    }
+
+    unsafe fn for_type_mut(tp: *mut PyTypeObject) -> &'static mut Self {
+        PyType_GetModuleState(tp).cast::<Self>().as_mut().unwrap()
     }
 
     unsafe fn for_mod<'a>(module: *mut PyObject) -> &'a Self {
         PyModule_GetState(module).cast::<Self>().as_ref().unwrap()
     }
 
+    unsafe fn for_mod_mut(module: *mut PyObject) -> &'static mut Self {
+        PyModule_GetState(module).cast::<Self>().as_mut().unwrap()
+    }
+
     unsafe fn for_obj<'a>(obj: *mut PyObject) -> &'a Self {
         PyType_GetModuleState(Py_TYPE(obj))
             .cast::<Self>()
             .as_ref()
+            .unwrap()
+    }
+
+    unsafe fn for_obj_mut<'a>(obj: *mut PyObject) -> &'static mut Self {
+        PyType_GetModuleState(Py_TYPE(obj))
+            .cast::<Self>()
+            .as_mut()
             .unwrap()
     }
 

@@ -18,7 +18,7 @@ pub(crate) unsafe fn offset_from_py_dt(dt: *mut PyObject) -> PyResult<i32> {
 }
 
 #[inline]
-#[allow(dead_code)]
+#[allow(dead_code)] // only used in <py310
 unsafe fn getattr_tzinfo_unchecked(dt: *mut PyObject) -> *mut PyObject {
     let tzinfo = PyObject_GetAttrString(dt, c"tzinfo".as_ptr());
     // To keep things consistent with the Py3.10 version,

@@ -193,6 +193,7 @@ impl PyObjectExt for *mut PyObject {
 
     // A faster comparison for keyword arguments that leverages
     // the fact that keyword arguments are generally (but not always!) interned.
+    // TODO: useless, since PyUnicode should already do this right?
     unsafe fn kwarg_eq(self, other: *mut PyObject) -> bool {
         self == other || PyObject_RichCompareBool(self, other, Py_EQ) == 1
     }
@@ -339,6 +340,7 @@ impl ToPy for u8 {
     }
 }
 
+// TODO: impl to Deref<target=&str> instead?
 impl ToPy for String {
     unsafe fn to_py(self) -> PyReturn {
         PyUnicode_FromStringAndSize(self.as_ptr().cast(), self.len() as _).as_result()

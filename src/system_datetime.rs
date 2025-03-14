@@ -52,7 +52,7 @@ impl OffsetDateTime {
         exc_repeated: *mut PyObject,
         exc_skipped: *mut PyObject,
     ) -> PyResult<Self> {
-        use OffsetResult::*;
+        use Ambiguity::*;
         Ok(match offset_for_system_tz(py_api, date, time)? {
             Unambiguous(offset_secs) => OffsetDateTime::new_unchecked(date, time, offset_secs),
             Fold(offset0, offset1) => {
@@ -88,7 +88,7 @@ impl OffsetDateTime {
         time: Time,
         offset: i32,
     ) -> PyResult<Self> {
-        use OffsetResult::*;
+        use Ambiguity::*;
         match offset_for_system_tz(py_api, date, time)? {
             Unambiguous(offset_secs) => OffsetDateTime::new(date, time, offset_secs),
             Fold(offset0, offset1) => OffsetDateTime::new(
@@ -169,25 +169,25 @@ unsafe fn offset_for_system_tz(
     py_api: &PyDateTime_CAPI,
     date: Date,
     time: Time,
-) -> PyResult<OffsetResult> {
+) -> PyResult<Ambiguity> {
     let (offset0, shifted) = system_offset(date, time, 0, py_api)?;
     let (offset1, _) = system_offset(date, time, 1, py_api)?;
 
     Ok(if offset0 == offset1 {
-        OffsetResult::Unambiguous(offset0)
+        Ambiguity::Unambiguous(offset0)
     } else if shifted {
         // Before Python 3.12, the fold of system times was erroneously reversed
         // in case of gaps. See cpython/issues/83861
         #[cfg(Py_3_12)]
         {
-            OffsetResult::Gap(offset1, offset0)
+            Ambiguity::Gap(offset1, offset0)
         }
         #[cfg(not(Py_3_12))]
         {
-            OffsetResult::Gap(offset0, offset1)
+            Ambiguity::Gap(offset0, offset1)
         }
     } else {
-        OffsetResult::Fold(offset0, offset1)
+        Ambiguity::Fold(offset0, offset1)
     })
 }
 
@@ -804,18 +804,18 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
     }
 }
 
-unsafe fn to_tz(slf: *mut PyObject, tz: *mut PyObject) -> PyReturn {
-    let &State {
-        zoneinfo_type,
-        py_api,
+unsafe fn to_tz(slf: *mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
+    let &mut State {
         zoned_datetime_type,
+        zoneinfo_notfound,
+        ref mut tz_cache,
         ..
-    } = State::for_obj(slf);
-    let zoneinfo = call1(zoneinfo_type, tz)?;
-    defer_decref!(zoneinfo);
+    } = State::for_obj_mut(slf);
+    let tz = tz_cache.py_get(tz_obj, zoneinfo_notfound)?;
     OffsetDateTime::extract(slf)
         .instant()
-        .to_tz(py_api, zoneinfo)?
+        .to_tz(tz)
+        .ok_or_value_err("Resulting datetime is out of range")?
         .to_obj(zoned_datetime_type)
 }
 
@@ -948,7 +948,7 @@ unsafe fn is_ambiguous(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let OffsetDateTime { date, time, .. } = OffsetDateTime::extract(slf);
     matches!(
         offset_for_system_tz(State::for_obj(slf).py_api, date, time)?,
-        OffsetResult::Fold(_, _)
+        Ambiguity::Fold(_, _)
     )
     .to_py()
 }

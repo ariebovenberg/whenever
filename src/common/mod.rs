@@ -1,3 +1,4 @@
+use crate::date::Date;
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 use std::num::NonZeroU16;
@@ -80,7 +81,7 @@ pub enum Disambiguate {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum OffsetResult {
+pub enum Ambiguity {
     Unambiguous(Offset),
     Gap(Offset, Offset),  // (earlier, later) occurrence, (a > b)
     Fold(Offset, Offset), // (earlier, later) occurrence, (a > b)
@@ -98,6 +99,7 @@ impl Disambiguate {
     }
 
     // OPTIMIZE: use fast string compare, as the values are in most cases interned
+    // TODO: already checked to be string?
     pub(crate) unsafe fn from_py(obj: *mut PyObject) -> PyResult<Self> {
         Disambiguate::parse(
             obj.to_utf8()?
@@ -286,15 +288,179 @@ macro_rules! parse_args_kwargs {
     };
 }
 
-pub(crate) type Offset = i32; // -86_399..=86_399  (+/- 24 hours)
-pub(crate) type Month = NonZeroU8; // 1..=12
-pub(crate) type Year = NonZeroU16; // 1..=9999
-pub(crate) type EpochSeconds = i64; // time since epoch in seconds (bounded by 0001-01-01 and 9999-12-31)  TODO: exact bounds
+/// Offset in seconds from UTC. -86_399..=86_399  (+/- 24 hours)
+pub(crate) type Offset = i32;
+/// Month of the year. 1..=12
+pub(crate) type Month = NonZeroU8;
+/// Year 1..=9999
+pub(crate) type Year = NonZeroU16;
+
+/// Time since UNIX epoch in seconds.
+/// Bounded -62_135_596_800..=25_3402_300_799 (0001-01-01T00..9999-12-31T23:59:59)
+pub(crate) type EpochSeconds = i64;
+
+/// Number of sub-second nanoseconds. 0..=999_999_999
+pub(crate) type SubsecNanos = u32;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
+pub(crate) struct OffsetS(i32);
+
+impl OffsetS {
+    pub const MIN: OffsetS = OffsetS(-86_399);
+    pub const MAX: OffsetS = OffsetS(86_399);
+    pub(crate) fn new_unchecked(secs: i32) -> Self {
+        Self(secs)
+    }
+
+    pub(crate) fn new(secs: i32) -> Option<Self> {
+        (Self::MIN.0..=Self::MAX.0)
+            .contains(&secs)
+            .then(|| Self(secs))
+    }
+
+    pub(crate) fn new_saturating(secs: i32) -> Self {
+        Self(secs.clamp(Self::MIN.0, Self::MAX.0))
+    }
+
+    pub(crate) fn get(self) -> i32 {
+        self.0
+    }
+
+    pub(crate) fn shift(self, x: OffsetDelta) -> Option<Self> {
+        // Safe since both arguments are constrained far below i32::MAX
+        Self::new(self.0 + x.0)
+    }
+}
+
+impl Neg for OffsetS {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Self(-self.0)
+    }
+}
+
+impl TryFrom<i32> for OffsetS {
+    type Error = ();
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        OffsetS::new(value).ok_or(())
+    }
+}
+
+impl From<OffsetS> for i32 {
+    fn from(x: OffsetS) -> Self {
+        x.0
+    }
+}
+
+/// Difference between two offsets in seconds. +/- 48 hours
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
+pub(crate) struct OffsetDelta(i32);
+
+impl OffsetDelta {
+    pub const MIN: OffsetDelta = OffsetDelta(-86_400 * 2);
+    pub const MAX: OffsetDelta = OffsetDelta(86_400 * 2);
+    pub(crate) const fn new_unchecked(secs: i32) -> Self {
+        Self(secs)
+    }
+
+    pub(crate) fn new(secs: i32) -> Option<Self> {
+        (Self::MIN.0..=Self::MAX.0)
+            .contains(&secs)
+            .then(|| Self(secs))
+    }
+
+    pub(crate) fn new_saturating(secs: i32) -> Self {
+        Self(secs.clamp(Self::MIN.0, Self::MAX.0))
+    }
+
+    pub(crate) fn get(self) -> i32 {
+        self.0
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
+pub(crate) struct EpochSecs(i64);
+
+impl EpochSecs {
+    pub const MIN: EpochSecs = EpochSecs(-62_135_596_800);
+    pub const MAX: EpochSecs = EpochSecs(25_402_300_799);
+    pub(crate) fn new_unchecked(secs: i64) -> Self {
+        Self(secs)
+    }
+
+    pub(crate) fn new(secs: i64) -> Option<Self> {
+        (Self::MIN.0..=Self::MAX.0)
+            .contains(&secs)
+            .then(|| Self(secs))
+    }
+
+    pub(crate) fn new_saturating(secs: i64) -> Self {
+        Self(secs.clamp(Self::MIN.0, Self::MAX.0))
+    }
+
+    pub(crate) fn get(self) -> i64 {
+        self.0
+    }
+
+    pub(crate) fn offset(self, x: OffsetS) -> Option<Self> {
+        Self::new(self.0 + x.0 as i64)
+    }
+
+    pub(crate) fn saturating_offset(self, x: OffsetS) -> Self {
+        Self::new_saturating(self.0 + x.get() as i64)
+    }
+
+    pub(crate) fn saturating_add_i32(self, x: i32) -> Self {
+        // Safe since both arguments are constrained far below i64/i32::MIN/MAX
+        Self::new_saturating(self.0 + x as i64)
+    }
+
+    pub(crate) fn as_days(self) -> UnixDay {
+        UnixDay::new_unchecked((self.0 / S_PER_DAY as i64) as _)
+    }
+
+    pub(crate) fn date(self) -> Date {
+        self.as_days().date()
+    }
+}
+
+impl TryFrom<i64> for EpochSecs {
+    type Error = ();
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        EpochSecs::new(value).ok_or(())
+    }
+}
+
+pub(crate) struct UnixDay(i32);
+
+impl UnixDay {
+    const MIN: i32 = 0; // TODO
+    const MAX: i32 = 365_205; // TODO
+    pub(crate) fn new_unchecked(days: i32) -> Self {
+        Self(days)
+    }
+
+    pub(crate) fn new(days: i32) -> Option<Self> {
+        (0..=365_205).contains(&days).then(|| Self(days))
+    }
+
+    pub(crate) fn get(self) -> i32 {
+        self.0
+    }
+
+    pub(crate) fn date(self) -> Date {
+        Date::from_unix_days_unchecked(self.0)
+    }
+}
 
 pub(crate) static S_PER_DAY: i32 = 86_400;
 pub(crate) static NS_PER_DAY: i128 = S_PER_DAY as i128 * 1_000_000_000;
 pub(crate) static MAX_OFFSET: Offset = S_PER_DAY - 1; // 24 hours exclusive
 
+// TODO: rename to abs_lte?
 /// Check if a value is within a range, casting types safely if needed
 pub(crate) fn in_range<T, U>(value: T, max: U) -> bool
 where

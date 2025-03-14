@@ -409,19 +409,19 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
     }
 }
 
-unsafe fn to_tz(slf: *mut PyObject, tz: *mut PyObject) -> PyReturn {
-    let type_ = Py_TYPE(slf);
-    let &State {
-        zoneinfo_type,
-        py_api,
+unsafe fn to_tz(slf: *mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
+    let &mut State {
         zoned_datetime_type,
+        zoneinfo_notfound,
+        ref mut tz_cache,
         ..
-    } = State::for_type(type_);
-    let zoneinfo = call1(zoneinfo_type, tz)?;
-    defer_decref!(zoneinfo);
+    } = State::for_obj_mut(slf);
+
+    let tz = tz_cache.py_get(tz_obj, zoneinfo_notfound)?;
     OffsetDateTime::extract(slf)
         .instant()
-        .to_tz(py_api, zoneinfo)?
+        .to_tz(tz)
+        .ok_or_value_err("Resulting datetime is out of range")?
         .to_obj(zoned_datetime_type)
 }
 

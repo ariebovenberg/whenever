@@ -44,8 +44,8 @@ pub(crate) const SINGLETONS: &[(&CStr, Instant); 2] = &[
 pub(crate) const UNIX_EPOCH_INSTANT: i64 = 62_135_683_200; // 1970-01-01 in seconds after 0000-12-31
 pub(crate) const MIN_INSTANT: i64 = 24 * 60 * 60;
 pub(crate) const MAX_INSTANT: i64 = 315_537_983_999;
-const MIN_EPOCH: i64 = MIN_INSTANT - UNIX_EPOCH_INSTANT;
-const MAX_EPOCH: i64 = MAX_INSTANT - UNIX_EPOCH_INSTANT;
+pub(crate) const MIN_EPOCH: i64 = MIN_INSTANT - UNIX_EPOCH_INSTANT;
+pub(crate) const MAX_EPOCH: i64 = MAX_INSTANT - UNIX_EPOCH_INSTANT;
 
 impl Instant {
     pub(crate) fn to_datetime(self) -> DateTime {
@@ -114,6 +114,15 @@ impl Instant {
             .checked_add(UNIX_EPOCH_INSTANT)
             .filter(|ts| (MIN_INSTANT..=MAX_INSTANT).contains(ts))
             .map(|secs| Instant { secs, nanos: 0 })
+    }
+
+    // TODO: cleanup, docs, clarity
+    pub(crate) fn from_timestamp_and_nanos(timestamp: i64, nanos: u32) -> Option<Self> {
+        debug_assert!(nanos < 1_000_000_000);
+        timestamp
+            .checked_add(UNIX_EPOCH_INSTANT)
+            .filter(|ts| (MIN_INSTANT..=MAX_INSTANT).contains(ts))
+            .map(|secs| Instant { secs, nanos })
     }
 
     pub(crate) fn from_timestamp_f64(timestamp: f64) -> Option<Self> {
@@ -701,17 +710,17 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     inst_a.diff(inst_b).to_obj(state.time_delta_type)
 }
 
-unsafe fn to_tz(slf: &mut PyObject, tz: &mut PyObject) -> PyReturn {
-    let &State {
+unsafe fn to_tz(slf: &mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
+    let &mut State {
         zoned_datetime_type,
-        zoneinfo_type,
-        py_api,
+        zoneinfo_notfound,
+        ref mut tz_cache,
         ..
-    } = State::for_obj(slf);
-    let zoneinfo = call1(zoneinfo_type, tz)?;
-    defer_decref!(zoneinfo);
+    } = State::for_obj_mut(slf);
+    let tz = tz_cache.py_get(tz_obj, zoneinfo_notfound)?;
     Instant::extract(slf)
-        .to_tz(py_api, zoneinfo)?
+        .to_tz(tz)
+        .ok_or_value_err("Resulting datetime is out of range")?
         .to_obj(zoned_datetime_type)
 }
 
