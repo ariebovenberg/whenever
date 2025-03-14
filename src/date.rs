@@ -47,11 +47,21 @@ impl Date {
         self.ord() as i32 - 719163
     }
 
+    /// Get the timestamp at the given time of day (assuming UTC, of course)
+    pub(crate) const fn timestamp_at(self, t: Time) -> EpochSeconds {
+        self.unix_days() as i64 * S_PER_DAY as i64 + t.total_seconds() as i64
+    }
+
+    pub(crate) fn epoch(self) -> EpochSecs {
+        EpochSecs::new_unchecked(self.unix_days() as i64 * S_PER_DAY as i64)
+    }
+
     pub(crate) const fn from_unix_days_unchecked(d: i32) -> Self {
         Date::from_ord_unchecked((d + 719163) as _)
     }
 
     pub(crate) fn from_ord(ord: i32) -> Option<Self> {
+        // TODO: cap
         (MIN_ORD..=MAX_ORD)
             .contains(&ord)
             .then(|| Self::from_ord_unchecked(ord as _))

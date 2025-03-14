@@ -1,22 +1,11 @@
 use crate::common::parse::Scan;
 use crate::tz::posix;
-use crate::{Disambiguate, EpochSeconds, Offset, OffsetResult};
+use crate::{Ambiguity, EpochSeconds, Offset};
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub(crate) struct Header {
-    version: u8,
-    isutcnt: i32,
-    isstdcnt: i32,
-    leapcnt: i32,
-    timecnt: i32,
-    typecnt: i32,
-    charcnt: i32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TZif {
-    header: Header,
+    pub key: String, // The IANA tz ID (e.g. "Europe/Amsterdam")
     // The following two fields are used to map UTC time to local time and vice versa.
     // Read each vector (X, Y) as "from time X onwards (expressed in epoch seconds) the offset is Y".
     // For UTC -> local, the transition is unambiguous and simple.
@@ -31,89 +20,29 @@ type OffsetChange = i32;
 
 impl TZif {
     /// Get the UTC offset at the given moment in time
-    #[allow(dead_code)]
     pub(crate) fn offset_for_instant(&self, t: EpochSeconds) -> Offset {
         // OPTIMIZE: this could be made a bit smarter. E.g. starting
         // with a reasonable guess.
         bisect_index(&self.offsets_by_utc, t)
             .map(|i| self.offsets_by_utc[i].1)
-            .unwrap_or_else(|| self.end.offset_for_instant(t))
+            // TODO: spread checked types!
+            .unwrap_or_else(|| self.end.offset_for_instant(t.try_into().unwrap()).get())
     }
 
-    /// Get the UTC offset for the given local time (expressed in *local* epoch seconds).
-    /// Returns a tuple of the UTC offset and a potential shift necessary
-    /// in case the time falls in a gap.
-    #[allow(dead_code)]
-    pub fn offset_for_local(
-        &self,
-        t: EpochSeconds,
-        disambiguate: Disambiguate,
-    ) -> Option<(Offset, OffsetChange)> {
-        // Fast path for the default case
-        if disambiguate == Disambiguate::Compatible {
-            Some(self.offset_for_local_compatible(t))
-        } else {
-            let ambiguity = self.ambiguity_for_local(t);
-            if let OffsetResult::Unambiguous(offset) = ambiguity {
-                Some((offset, 0))
-            } else if disambiguate == Disambiguate::Raise {
-                None
-            } else if let OffsetResult::Fold(earlier, later) = ambiguity {
-                if disambiguate == Disambiguate::Later {
-                    Some((later, 0))
-                } else {
-                    debug_assert!(disambiguate == Disambiguate::Earlier);
-                    Some((earlier, 0))
-                }
-            } else if let OffsetResult::Gap(earlier, later) = ambiguity {
-                if disambiguate == Disambiguate::Later {
-                    Some((later, earlier - later))
-                } else {
-                    debug_assert!(disambiguate == Disambiguate::Earlier);
-                    Some((earlier, later - earlier))
-                }
-            } else {
-                unreachable!()
-            }
-        }
-    }
-
-    fn ambiguity_for_local(&self, t: EpochSeconds) -> OffsetResult {
+    pub fn ambiguity_for_local(&self, t: EpochSeconds) -> Ambiguity {
         bisect_index(&self.offsets_by_local, t)
             .map(|i| {
                 let (transition, (offset, change)) = self.offsets_by_local[i];
                 let ambiguity = (t < transition + change.abs() as i64) as i32 * change;
-                if ambiguity > 0 {
-                    OffsetResult::Gap(offset, offset - ambiguity)
-                } else {
-                    OffsetResult::Fold(offset - ambiguity, offset)
+                use std::cmp::Ordering::*;
+                match ambiguity.cmp(&0) {
+                    Equal => Ambiguity::Unambiguous(offset),
+                    Less => Ambiguity::Fold(offset - ambiguity, offset),
+                    Greater => Ambiguity::Gap(offset, offset - ambiguity),
                 }
             })
-            .unwrap_or_else(|| self.end.offset_for_local(t))
-    }
-
-    #[inline]
-    fn offset_for_local_compatible(&self, t: EpochSeconds) -> (Offset, OffsetChange) {
-        let offset_lookup = &self.offsets_by_local;
-        bisect_index(offset_lookup, t)
-            .map(|i| {
-                let (transition, (offset, change)) = offset_lookup[i];
-                // Account for when we land in an ambiguous time
-                let ambiguity = (t < transition + change.abs() as i64) as i32 * change;
-                (
-                    offset - ambiguity,
-                    // only gaps (positive) require a shift
-                    ambiguity.max(0),
-                )
-            })
-            .unwrap_or_else(|| match self.end.offset_for_local(t) {
-                OffsetResult::Unambiguous(offset) | OffsetResult::Fold(offset, _) => (offset, 0),
-                OffsetResult::Gap(offset_new, offset) => {
-                    // We are in a gap, so we need to shift the time
-                    // to the earlier offset.
-                    (offset, offset_new - offset)
-                }
-            })
+            // TODO: spread checked types!
+            .unwrap_or_else(|| self.end.ambiguity_for_local(t.try_into().unwrap()))
     }
 }
 
@@ -140,12 +69,22 @@ where
     (left != arr.len()).then_some(left.saturating_sub(1))
 }
 
-#[allow(dead_code)]
-pub fn parse(s: &[u8]) -> ParseResult<TZif> {
+pub fn parse(s: &[u8], key: &str) -> ParseResult<TZif> {
     let mut scan = Scan::new(s);
     let header = parse_header(&mut scan)?;
     debug_assert!(header.version >= 2);
-    parse_content(header, &mut scan)
+    parse_content(header, &mut scan, key)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+struct Header {
+    version: u8,
+    isutcnt: i32,
+    isstdcnt: i32,
+    leapcnt: i32,
+    timecnt: i32,
+    typecnt: i32,
+    charcnt: i32,
 }
 
 fn check_magic_bytes(s: &mut Scan) -> bool {
@@ -197,7 +136,6 @@ fn parse_transition_times(header: Header, s: &mut Scan) -> ParseResult<Vec<Epoch
 }
 
 fn parse_offset_indices(header: Header, s: &mut Scan) -> ParseResult<Vec<u8>> {
-    // OPTIMIZE: how about using smallvec?
     let mut result = Vec::with_capacity(header.timecnt as usize);
     let values = s.take(header.timecnt as usize).ok_or(ErrorCause::Body)?;
     for i in 0..header.timecnt {
@@ -208,7 +146,7 @@ fn parse_offset_indices(header: Header, s: &mut Scan) -> ParseResult<Vec<u8>> {
     Ok(result)
 }
 
-fn parse_content(first_header: Header, s: &mut Scan) -> ParseResult<TZif> {
+fn parse_content(first_header: Header, s: &mut Scan, key: &str) -> ParseResult<TZif> {
     s.take(
         (first_header.timecnt * 5
             + first_header.typecnt * 6
@@ -233,7 +171,7 @@ fn parse_content(first_header: Header, s: &mut Scan) -> ParseResult<TZif> {
     .ok_or(ErrorCause::Body)?;
     let offsets_by_utc = load_transitions(&transition_times, &offsets, &offset_indices)?;
     Ok(TZif {
-        header,
+        key: key.to_string(),
         offsets_by_local: local_transitions(&offsets_by_utc),
         offsets_by_utc,
         end: parse_posix_tz(s)?,
@@ -334,12 +272,12 @@ mod tests {
     #[test]
     fn test_no_magic_header() {
         // empty
-        assert_eq!(parse(b"").unwrap_err(), ErrorCause::MagicValue);
+        assert_eq!(parse(b"", "Foo").unwrap_err(), ErrorCause::MagicValue);
         // too small
-        assert_eq!(parse(b"TZi").unwrap_err(), ErrorCause::MagicValue);
+        assert_eq!(parse(b"TZi", "Foo").unwrap_err(), ErrorCause::MagicValue);
         // wrong magic value
         assert_eq!(
-            parse(b"this-is-not-tzif-file").unwrap_err(),
+            parse(b"this-is-not-tzif-file", "Foo").unwrap_err(),
             ErrorCause::MagicValue
         );
     }
@@ -367,69 +305,33 @@ mod tests {
 
     #[test]
     fn test_utc() {
-        let tzif = parse(TZ_UTC).unwrap();
-        assert_eq!(
-            tzif.header,
-            Header {
-                version: 2,
-                isutcnt: 0,
-                isstdcnt: 0,
-                leapcnt: 0,
-                timecnt: 0,
-                typecnt: 1,
-                charcnt: 4
-            }
-        );
+        let tzif = parse(TZ_UTC, "UTC").unwrap();
         assert_eq!(tzif.offsets_by_utc, &[]);
         assert_eq!(tzif.end, posix::parse(b"UTC0").unwrap());
 
         assert_eq!(tzif.offset_for_instant(2216250001), 0);
         assert_eq!(
-            tzif.offset_for_local(2216250000, Disambiguate::Compatible),
-            Some((0, 0))
+            tzif.ambiguity_for_local(2216250000),
+            Ambiguity::Unambiguous(0)
         )
     }
 
     #[test]
     fn test_fixed() {
-        let tzif = parse(TZ_FIXED).unwrap();
-        assert_eq!(
-            tzif.header,
-            Header {
-                version: 2,
-                isutcnt: 0,
-                isstdcnt: 0,
-                leapcnt: 0,
-                timecnt: 0,
-                typecnt: 1,
-                charcnt: 4
-            }
-        );
+        let tzif = parse(TZ_FIXED, "GMT-13").unwrap();
         assert_eq!(tzif.offsets_by_utc, &[]);
         assert_eq!(tzif.end, posix::parse(b"<+13>-13").unwrap());
 
         assert_eq!(tzif.offset_for_instant(2216250001), 13 * 3_600);
         assert_eq!(
-            tzif.offset_for_local(2216250000, Disambiguate::Compatible),
-            Some((13 * 3_600, 0))
+            tzif.ambiguity_for_local(2216250000),
+            Ambiguity::Unambiguous(13 * 3_600)
         )
     }
 
     #[test]
     fn test_ams() {
-        let tzif = parse(TZ_AMS).unwrap();
-        assert_eq!(
-            tzif.header,
-            Header {
-                version: 2,
-                isutcnt: 12,
-                isstdcnt: 12,
-                leapcnt: 0,
-                timecnt: 185,
-                typecnt: 12,
-                charcnt: 26
-            }
-        );
+        let tzif = parse(TZ_AMS, "Europe/Amsterdam").unwrap();
         assert_eq!(
             tzif.end,
             posix::parse(b"CET-1CEST,M3.5.0,M10.5.0/3").unwrap()
@@ -467,137 +369,64 @@ mod tests {
             assert_eq!(tzif.offset_for_instant(t), expected, "t={}", t);
         }
 
-        const ALL_DISAMBIGUATIONS: &[Disambiguate] = &[
-            Disambiguate::Compatible,
-            Disambiguate::Earlier,
-            Disambiguate::Later,
-        ];
-
         let local_cases = &[
             // before the entire range
-            (-2850000000 + 1050, ALL_DISAMBIGUATIONS, Some((1050, 0))),
+            (-2850000000 + 1050, Ambiguity::Unambiguous(1050)),
             // At the start of the range
-            (-2840141851 + 1050, ALL_DISAMBIGUATIONS, Some((1050, 0))),
-            (-2840141850 + 1050, ALL_DISAMBIGUATIONS, Some((1050, 0))),
-            (-2840141849 + 1050, ALL_DISAMBIGUATIONS, Some((1050, 0))),
+            (-2840141851 + 1050, Ambiguity::Unambiguous(1050)),
+            (-2840141850 + 1050, Ambiguity::Unambiguous(1050)),
+            (-2840141849 + 1050, Ambiguity::Unambiguous(1050)),
             // --- The first transition (a fold) ---
             // well before the fold (no ambiguity)
-            (-2750999299 + 1050, ALL_DISAMBIGUATIONS, Some((1050, 0))),
+            (-2750999299 + 1050, Ambiguity::Unambiguous(1050)),
             // Just before times become ambiguous
-            (-2450995201, ALL_DISAMBIGUATIONS, Some((1050, 0))),
+            (-2450995201, Ambiguity::Unambiguous(1050)),
             // At the moment times becomes ambiguous
-            (
-                -2450995200,
-                &[Disambiguate::Compatible, Disambiguate::Earlier],
-                Some((1050, 0)),
-            ),
-            (-2450995200, &[Disambiguate::Later], Some((0, 0))),
+            (-2450995200, Ambiguity::Fold(1050, 0)),
             // Short before the clock change, short enough for ambiguity!
-            (
-                -2450995902 + 1050,
-                &[Disambiguate::Compatible, Disambiguate::Earlier],
-                Some((1050, 0)),
-            ),
-            (-2450995902 + 1050, &[Disambiguate::Later], Some((0, 0))),
+            (-2450995902 + 1050, Ambiguity::Fold(1050, 0)),
             // A second before the clock change (ambiguity!)
-            (
-                -2450995201 + 1050,
-                &[Disambiguate::Compatible, Disambiguate::Earlier],
-                Some((1050, 0)),
-            ),
-            (-2450995201 + 1050, &[Disambiguate::Later], Some((0, 0))),
+            (-2450995201 + 1050, Ambiguity::Fold(1050, 0)),
             // At the exact clock change (no ambiguity)
-            (-2450995200 + 1050, ALL_DISAMBIGUATIONS, Some((0, 0))),
+            (-2450995200 + 1050, Ambiguity::Unambiguous(0)),
             // Directly after the clock change (no ambiguity)
-            (-2450995199 + 1050, ALL_DISAMBIGUATIONS, Some((0, 0))),
+            (-2450995199 + 1050, Ambiguity::Unambiguous(0)),
             // --- A "gap" transition ---
             // Well before the transition
-            (-1698792800, ALL_DISAMBIGUATIONS, Some((3600, 0))),
+            (-1698792800, Ambiguity::Unambiguous(3600)),
             // Just before the clock change
-            (-1693702801 + 3600, ALL_DISAMBIGUATIONS, Some((3600, 0))),
+            (-1693702801 + 3600, Ambiguity::Unambiguous(3600)),
             // At the exact clock change (ambiguity!)
-            (
-                -1693702800 + 3600,
-                &[Disambiguate::Compatible, Disambiguate::Later],
-                Some((3600, 3600)),
-            ),
-            (
-                -1693702800 + 3600,
-                &[Disambiguate::Earlier],
-                Some((7200, -3600)),
-            ),
+            (-1693702800 + 3600, Ambiguity::Gap(7200, 3600)),
             // Right after the clock change (ambiguity)
-            (
-                -1693702793 + 3600,
-                &[Disambiguate::Compatible, Disambiguate::Later],
-                Some((3600, 3600)),
-            ),
-            (
-                -1693702793 + 3600,
-                &[Disambiguate::Earlier],
-                Some((7200, -3600)),
-            ),
+            (-1693702793 + 3600, Ambiguity::Gap(7200, 3600)),
             // Slightly before the gap ends (ambiguity)
-            (
-                -1693702801 + 7200,
-                &[Disambiguate::Compatible, Disambiguate::Later],
-                Some((3600, 3600)),
-            ),
-            (
-                -1693702801 + 7200,
-                &[Disambiguate::Earlier],
-                Some((7200, -3600)),
-            ),
+            (-1693702801 + 7200, Ambiguity::Gap(7200, 3600)),
             // The gap ends (no ambiguity)
-            (-1693702800 + 7200, ALL_DISAMBIGUATIONS, Some((7200, 0))),
+            (-1693702800 + 7200, Ambiguity::Unambiguous(7200)),
             // A sample of other times
-            (700387500, ALL_DISAMBIGUATIONS, Some((3600, 0))),
-            (701834700, &[Disambiguate::Compatible], Some((3600, 3600))),
-            (715302300, ALL_DISAMBIGUATIONS, Some((7200, 0))),
+            (700387500, Ambiguity::Unambiguous(3600)),
+            (701834700, Ambiguity::Gap(7200, 3600)),
+            (715302300, Ambiguity::Unambiguous(7200)),
             // ---- Transitions after the last explicit one need to use the POSIX TZ string
             // before gap
-            (2216249999 + 3600, ALL_DISAMBIGUATIONS, Some((3600, 0))),
+            (2216249999 + 3600, Ambiguity::Unambiguous(3600)),
             // gap starts
-            (
-                2216250000 + 3600,
-                &[Disambiguate::Compatible, Disambiguate::Later],
-                Some((3600, 3600)),
-            ),
-            (
-                2216250000 + 3600,
-                &[Disambiguate::Earlier],
-                Some((7200, -3600)),
-            ),
+            (2216250000 + 3600, Ambiguity::Gap(7200, 3600)),
             // gap ends
-            (2216250000 + 7200, ALL_DISAMBIGUATIONS, Some((7200, 0))),
+            (2216250000 + 7200, Ambiguity::Unambiguous(7200)),
             // somewhere in summer
-            (2216290000, ALL_DISAMBIGUATIONS, Some((7200, 0))),
+            (2216290000, Ambiguity::Unambiguous(7200)),
             // Fold starts
-            (
-                2645056800,
-                &[Disambiguate::Compatible, Disambiguate::Earlier],
-                Some((7200, 0)),
-            ),
-            (2645056800, &[Disambiguate::Later], Some((3600, 0))),
+            (2645056800, Ambiguity::Fold(7200, 3600)),
             // In the fold
-            (
-                2645056940,
-                &[Disambiguate::Compatible, Disambiguate::Earlier],
-                Some((7200, 0)),
-            ),
-            (2645056940, &[Disambiguate::Later], Some((3600, 0))),
+            (2645056940, Ambiguity::Fold(7200, 3600)),
             // end of the fold
-            (2645056800 + 3600, ALL_DISAMBIGUATIONS, Some((3600, 0))),
+            (2645056800 + 3600, Ambiguity::Unambiguous(3600)),
         ];
 
-        for &(t, dis, expected) in local_cases {
-            for &d in dis {
-                assert_eq!(tzif.offset_for_local(t, d), expected, "t={}, {:?}", t, d);
-            }
-            // If the result depends on the disambiguation, it should be None for Raise
-            if dis != ALL_DISAMBIGUATIONS {
-                assert_eq!(tzif.offset_for_local(t, Disambiguate::Raise), None);
-            }
+        for &(t, expected) in local_cases {
+            assert_eq!(tzif.ambiguity_for_local(t), expected, "t={}", t);
         }
     }
 
@@ -624,7 +453,7 @@ mod tests {
                 continue;
             }
 
-            if let Err(err) = parse(&bytes) {
+            if let Err(err) = parse(&bytes, "foo-key") {
                 panic!("failed to parse TZif file {:?}: {err}", path);
             }
         }

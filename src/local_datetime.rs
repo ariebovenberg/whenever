@@ -4,6 +4,7 @@ use pyo3_ffi::*;
 
 use crate::common::*;
 use crate::docstrings as doc;
+use crate::instant::{MAX_EPOCH, MIN_EPOCH};
 use crate::offset_datetime::check_ignore_dst_kwarg;
 use crate::{
     date::{Date, MAX as MAX_DATE},
@@ -686,36 +687,29 @@ unsafe fn assume_tz(
     args: &[*mut PyObject],
     kwargs: &mut KwargIter,
 ) -> PyReturn {
-    let &State {
-        py_api,
-        zoneinfo_type,
+    let &mut State {
         str_disambiguate,
         zoned_datetime_type,
         exc_skipped,
         exc_repeated,
+        zoneinfo_notfound,
+        ref mut tz_cache,
         ..
-    } = State::for_type(cls);
+    } = State::for_type_mut(cls);
+
     let DateTime { date, time } = DateTime::extract(slf);
-    let &[tz] = args else {
+    let &[tz_obj] = args else {
         raise_type_err(format!(
             "assume_tz() takes 1 positional argument but {} were given",
             args.len()
         ))?
     };
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_tz")?;
-    let zoneinfo = call1(zoneinfo_type, tz)?;
-    defer_decref!(zoneinfo);
-    ZonedDateTime::resolve_using_disambiguate(
-        py_api,
-        date,
-        time,
-        zoneinfo,
-        dis.unwrap_or(Disambiguate::Compatible),
-        exc_repeated,
-        exc_skipped,
-    )?
-    .to_obj(zoned_datetime_type)
+    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_tz")?
+        .unwrap_or(Disambiguate::Compatible);
+    let tzif = tz_cache.py_get(tz_obj, zoneinfo_notfound)?;
+    ZonedDateTime::resolve_using_disambiguate(date, time, tzif, dis, exc_repeated, exc_skipped)?
+        .to_obj(zoned_datetime_type)
 }
 
 unsafe fn assume_system_tz(
