@@ -123,7 +123,7 @@ and many issues remaining unaddressed.
 - 📆 Support for date arithmetic
 - ⏱️ Nanosecond precision
 - 🦀 Rust!—but with a [pure-Python option](https://whenever.readthedocs.io/en/latest/faq.html#how-can-i-use-the-pure-python-version)
-- 🚀 Support for the latest GIL-related improvements (experimental)
+- 🚀 Supports per-interpreter GIL
 
 ## Quickstart
 
