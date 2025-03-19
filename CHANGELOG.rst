@@ -1,6 +1,12 @@
 🚀 Changelog
 ============
 
+0.7.3 (2025-03-19)
+------------------
+
+- Fixed type annotations of ``Weekday`` enum values, so they are properly
+  marked as ``int``.
+
 0.7.2 (2025-02-25)
 ------------------
 
