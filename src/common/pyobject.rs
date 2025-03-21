@@ -11,11 +11,11 @@ use std::fmt::Debug;
 // However, this is a price we can pay in exchange for the convenience
 // of the `?` operator.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct PyErrOccurred(); // sentinel that the Python error indicator is set
-pub(crate) type PyResult<T> = Result<T, PyErrOccurred>;
-pub(crate) type PyReturn = PyResult<&'static mut PyObject>;
+pub struct PyErrOccurred(); // sentinel that the Python error indicator is set
+pub type PyResult<T> = Result<T, PyErrOccurred>;
+pub type PyReturn = PyResult<&'static mut PyObject>;
 
-pub(crate) struct DecrefOnDrop(pub(crate) *mut PyObject);
+pub struct DecrefOnDrop(pub *mut PyObject);
 
 impl Drop for DecrefOnDrop {
     fn drop(&mut self) {
@@ -38,7 +38,7 @@ macro_rules! steal(
     };
 );
 
-pub(crate) trait PyObjectExt {
+pub trait PyObjectExt {
     #[allow(clippy::wrong_self_convention)]
     unsafe fn as_result<'a>(self) -> PyResult<&'a mut PyObject>;
     #[allow(clippy::wrong_self_convention)]
@@ -199,11 +199,11 @@ impl PyObjectExt for *mut PyObject {
     }
 }
 
-pub(crate) unsafe fn raise<T, U: ToPy>(exc: *mut PyObject, msg: U) -> PyResult<T> {
+pub unsafe fn raise<T, U: ToPy>(exc: *mut PyObject, msg: U) -> PyResult<T> {
     Err(exception(exc, msg))
 }
 
-pub(crate) unsafe fn exception<U: ToPy>(exc: *mut PyObject, msg: U) -> PyErrOccurred {
+pub unsafe fn exception<U: ToPy>(exc: *mut PyObject, msg: U) -> PyErrOccurred {
     // If the message conversion fails, an error is set for us.
     // It's mostly likely a MemoryError.
     if let Ok(msg) = msg.to_py() {
@@ -212,11 +212,11 @@ pub(crate) unsafe fn exception<U: ToPy>(exc: *mut PyObject, msg: U) -> PyErrOccu
     PyErrOccurred()
 }
 
-pub(crate) unsafe fn value_err<U: ToPy>(msg: U) -> PyErrOccurred {
+pub unsafe fn value_err<U: ToPy>(msg: U) -> PyErrOccurred {
     exception(PyExc_ValueError, msg)
 }
 
-pub(crate) trait OptionExt<T> {
+pub trait OptionExt<T> {
     unsafe fn ok_or_else_raise<F, M: ToPy>(self, exc: *mut PyObject, fmt: F) -> PyResult<T>
     where
         Self: Sized,
@@ -264,15 +264,15 @@ impl<T> OptionExt<T> for Option<T> {
     }
 }
 
-pub(crate) fn raise_type_err<T, U: ToPy>(msg: U) -> PyResult<T> {
+pub fn raise_type_err<T, U: ToPy>(msg: U) -> PyResult<T> {
     unsafe { raise(PyExc_TypeError, msg) }
 }
 
-pub(crate) fn raise_value_err<T, U: ToPy>(msg: U) -> PyResult<T> {
+pub fn raise_value_err<T, U: ToPy>(msg: U) -> PyResult<T> {
     unsafe { raise(PyExc_ValueError, msg) }
 }
 
-pub(crate) trait ToPy {
+pub trait ToPy {
     unsafe fn to_py(self) -> PyReturn;
 }
 
@@ -389,21 +389,21 @@ impl<T, U, V, W, X> ToPy for (T, U, V, W, X) {
     }
 }
 
-pub(crate) unsafe fn identity1(slf: *mut PyObject) -> PyReturn {
+pub unsafe fn identity1(slf: *mut PyObject) -> PyReturn {
     Ok(newref(slf))
 }
 
-pub(crate) unsafe fn identity2(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+pub unsafe fn identity2(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     Ok(newref(slf))
 }
 
-pub(crate) unsafe fn newref<'a>(obj: *mut PyObject) -> &'a mut PyObject {
+pub unsafe fn newref<'a>(obj: *mut PyObject) -> &'a mut PyObject {
     Py_INCREF(obj);
     obj.as_mut().unwrap()
 }
 
 // FUTURE: replace with Py_IsNone when dropping Py 3.9 support
-pub(crate) unsafe fn is_none(x: *mut PyObject) -> bool {
+pub unsafe fn is_none(x: *mut PyObject) -> bool {
     x == Py_None()
 }
 

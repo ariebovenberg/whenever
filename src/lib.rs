@@ -25,12 +25,13 @@ pub mod tz;
 mod yearmonth;
 mod zoned_datetime;
 
+use common::math::*;
 use date::unpickle as _unpkl_date;
 use date_delta::unpickle as _unpkl_ddelta;
 use date_delta::{days, months, weeks, years};
 use datetime_delta::unpickle as _unpkl_dtdelta;
 use docstrings as doc;
-use instant::{unpickle as _unpkl_utc, UNIX_EPOCH_INSTANT};
+use instant::{unpickle as _unpkl_utc, Instant};
 use local_datetime::unpickle as _unpkl_local;
 use monthday::unpickle as _unpkl_md;
 use offset_datetime::unpickle as _unpkl_offset;
@@ -101,18 +102,16 @@ unsafe fn _patch_time(module: *mut PyObject, arg: *mut PyObject, freeze: bool) -
     if Py_TYPE(arg) != state.instant_type {
         raise_type_err("Expected an Instant")?
     }
-    let inst = instant::Instant::extract(arg);
-    let pin = (
-        inst.whole_secs()
-            .checked_sub(UNIX_EPOCH_INSTANT as _)
-            .ok_or_type_err("Cannot set time before 1970")?,
-        inst.subsec_nanos(),
-    );
+    let instant = Instant::extract(arg);
+    let pos_epoch = u64::try_from(instant.epoch.get())
+        .ok()
+        .ok_or_type_err("Can only set time after 1970")?;
+
     state.time_patch = if freeze {
-        TimePatch::Frozen(pin)
+        TimePatch::Frozen(instant)
     } else {
         TimePatch::KeepTicking {
-            pin: std::time::Duration::new(pin.0 as _, pin.1),
+            pin: std::time::Duration::new(pos_epoch, instant.subsec.get() as _),
             at: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .ok()
@@ -144,12 +143,14 @@ static mut MODULE_SLOTS: &[PyModuleDef_Slot] = &[
         // awaiting https://github.com/python/cpython/pull/102995
         value: Py_MOD_PER_INTERPRETER_GIL_SUPPORTED,
     },
-    #[cfg(Py_3_13)]
-    PyModuleDef_Slot {
-        slot: Py_mod_gil,
-        value: Py_MOD_GIL_NOT_USED,
-    },
-    // FUTURE: set no_gil slot (peps.python.org/pep-0703/#py-mod-gil-slot)
+    // FUTURE: set this once we've ensured that:
+    // - tz cache is threadsafe
+    // - we safely handle non-threadsafe modules: datetime, zoneinfo
+    // #[cfg(Py_3_13)]
+    // PyModuleDef_Slot {
+    //     slot: Py_mod_gil,
+    //     value: Py_MOD_GIL_NOT_USED,
+    // },
     PyModuleDef_Slot {
         slot: 0,
         value: NULL(),
@@ -655,7 +656,7 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     0
 }
 
-struct State {
+pub struct State {
     // types
     date_type: *mut PyTypeObject,
     yearmonth_type: *mut PyTypeObject,
@@ -746,11 +747,28 @@ struct State {
 
 enum TimePatch {
     Unset,
-    Frozen((i64, u32)),
+    Frozen(Instant),
     KeepTicking {
         pin: std::time::Duration,
         at: std::time::Duration,
     },
+}
+
+impl Instant {
+    fn from_duration_since_epoch(d: std::time::Duration) -> Option<Self> {
+        Some(Instant {
+            epoch: EpochSecs::new(d.as_secs() as _)?,
+            // Safe: subsec on Duration is always in range
+            subsec: SubSecNanos::new_unchecked(d.subsec_nanos() as _),
+        })
+    }
+
+    fn from_nanos_i64(ns: i64) -> Option<Self> {
+        Some(Instant {
+            epoch: EpochSecs::new(ns / 1_000_000_000)?,
+            subsec: SubSecNanos::from_remainder(ns),
+        })
+    }
 }
 
 impl State {
@@ -785,7 +803,7 @@ impl State {
             .unwrap()
     }
 
-    unsafe fn time_ns(&self) -> PyResult<(i64, u32)> {
+    unsafe fn time_ns(&self) -> PyResult<Instant> {
         match self.time_patch {
             TimePatch::Unset => {
                 if self.time_machine_exists {
@@ -802,26 +820,28 @@ impl State {
                         .ok()
                         .ok_or_raise(PyExc_OSError, "System time out of range")?
                     - at;
-                Ok((dur.as_secs() as i64, dur.subsec_nanos()))
+                Instant::from_duration_since_epoch(dur)
+                    .ok_or_raise(PyExc_OSError, "System time out of range")
             }
         }
     }
 
-    unsafe fn time_ns_py(&self) -> PyResult<(i64, u32)> {
+    unsafe fn time_ns_py(&self) -> PyResult<Instant> {
         let ts = PyObject_CallNoArgs(self.time_ns).as_result()?;
         defer_decref!(ts);
         let ns = (ts as *mut PyObject)
+            // FUTURE: this will break in the year 2262. Fix it before then.
             .to_i64()?
             .ok_or_raise(PyExc_RuntimeError, "time_ns() returned a non-integer")?;
-        Ok((ns / 1_000_000_000, (ns % 1_000_000_000) as u32))
+        Instant::from_nanos_i64(ns).ok_or_raise(PyExc_OSError, "System time out of range")
     }
 
-    unsafe fn time_ns_rust(&self) -> PyResult<(i64, u32)> {
-        let dur = SystemTime::now()
+    unsafe fn time_ns_rust(&self) -> PyResult<Instant> {
+        SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .ok()
-            .ok_or_raise(PyExc_OSError, "System time out of range")?;
-        Ok((dur.as_secs() as i64, dur.subsec_nanos()))
+            .and_then(Instant::from_duration_since_epoch)
+            .ok_or_raise(PyExc_OSError, "System time out of range")
     }
 }
 

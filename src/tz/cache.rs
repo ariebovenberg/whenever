@@ -66,7 +66,7 @@ impl TzRef {
             // Note that we only need to remove it from the lookup table, not the LRU.
             // The LRU is a strong-reference cache, meaning anything in it
             // by definition has a reference count of at least 1.
-            debug_assert!(cache.lru.contains(&self));
+            debug_assert!(cache.lru.contains(self));
             cache.lookup.remove(&self.key);
             // Ok to drop the data now
             unsafe {
@@ -78,7 +78,6 @@ impl TzRef {
     }
 
     pub fn value(&self) -> &TZif {
-        // Safety:
         unsafe { &self.inner.as_ref().value }
     }
 
@@ -105,11 +104,13 @@ pub struct TZifCache {
     // "Ahash" works significantly faster than the standard hashing algorithm.
     // We don't need the cryptographic security of the standard algorithm,
     // since the keys are trusted (they are limited to valid zoneinfo keys).
+    // Other alternatives that benchmarked *slower* are `BTreeMap`, gxhash,
+    // and phf.
     lookup: AHashMap<TzID, TzRef>,
-    /// Keeps the most recently used entries alive, to prevent over-eager dropping.
-    /// For example, if constantly creating and dropping ZonedDateTimes
-    /// with a particular TZ ID, we don't want to keep reloading the same file.
-    /// Thus, we keep the most recently used entries in the cache.
+    // Keeps the most recently used entries alive, to prevent over-eager dropping.
+    // For example, if constantly creating and dropping ZonedDateTimes
+    // with a particular TZ ID, we don't want to keep reloading the same file.
+    // Thus, we keep the most recently used entries in the cache.
     lru: VecDeque<TzRef>,
 }
 
@@ -120,6 +121,12 @@ const LRU_CAPACITY: usize = 8;
 /// It's designed to be used by the ZonedDateTime class,
 /// which only calls it from a single thread while holding the GIL.
 /// This allows avoiding synchronization.
+impl Default for TZifCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TZifCache {
     pub fn new() -> Self {
         Self {
@@ -149,7 +156,7 @@ impl TZifCache {
                 entry
             }
         };
-        return Some(handle);
+        Some(handle)
     }
 
     /// The `get` function, but with Python exception handling

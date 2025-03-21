@@ -5,6 +5,7 @@ use std::fmt;
 use std::ops::Neg;
 use std::ptr::null_mut as NULL;
 
+use crate::common::math::*;
 use crate::common::*;
 use crate::date::MAX_YEAR;
 use crate::date_delta::{DateDelta, InitError};
@@ -17,80 +18,94 @@ use crate::State;
 ///
 /// The struct design is inspired by datetime.timedelta and chrono::timedelta
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
-pub(crate) struct TimeDelta {
-    pub(crate) secs: i64,  // div_euclid(total_nanos) - may be negative
-    pub(crate) nanos: u32, // rem_euclid(total_nanos) - never negative
+pub struct TimeDelta {
+    pub secs: DeltaSeconds,
+    pub subsec: SubSecNanos,
 }
 
 impl TimeDelta {
-    pub(crate) const fn from_nanos_unchecked(nanos: i128) -> Self {
+    pub const fn from_nanos_unchecked(nanos: i128) -> Self {
         TimeDelta {
-            secs: (nanos.div_euclid(1_000_000_000)) as _,
-            nanos: (nanos.rem_euclid(1_000_000_000)) as _,
+            secs: DeltaSeconds::new_unchecked(nanos.div_euclid(1_000_000_000) as _),
+            subsec: SubSecNanos::new_unchecked(nanos.rem_euclid(1_000_000_000) as _),
         }
     }
 
-    pub(crate) const fn from_nanos(nanos: i128) -> Option<Self> {
-        if nanos < -MAX_NANOSECONDS || nanos > MAX_NANOSECONDS {
-            None
-        } else {
-            Some(Self::from_nanos_unchecked(nanos))
+    pub fn from_nanos(nanos: i128) -> Option<Self> {
+        let (secs, subsec) = DeltaNanos::new(nanos)?.sec_subsec();
+        Some(Self { secs, subsec })
+    }
+
+    // TODO: audit usage
+    pub const fn from_secs_unchecked(secs: i64) -> Self {
+        TimeDelta {
+            secs: DeltaSeconds::new_unchecked(secs),
+            subsec: SubSecNanos::MIN,
         }
     }
 
-    pub(crate) const fn from_secs_unchecked(secs: i64) -> Self {
-        TimeDelta { secs, nanos: 0 }
+    // TODO: audit usage
+    pub const fn total_nanos(&self) -> i128 {
+        self.secs.get() as i128 * 1_000_000_000 + self.subsec.get() as i128
     }
 
-    pub(crate) const fn total_nanos(&self) -> i128 {
-        self.secs as i128 * 1_000_000_000 + self.nanos as i128
+    pub const fn pyhash(self) -> Py_hash_t {
+        #[cfg(target_pointer_width = "64")]
+        {
+            hash_combine(self.subsec.get() as Py_hash_t, self.secs.get() as Py_hash_t)
+        }
+        #[cfg(target_pointer_width = "32")]
+        {
+            hash_combine(
+                self.subsec.get() as Py_hash_t,
+                hash_combine(
+                    self.secs.get() as Py_hash_t,
+                    (self.secs.get() >> 32) as Py_hash_t,
+                ),
+            )
+        }
     }
 
-    #[cfg(target_pointer_width = "64")]
-    pub(crate) const fn pyhash(self) -> Py_hash_t {
-        hash_combine(self.nanos as Py_hash_t, self.secs as Py_hash_t)
+    pub const fn is_zero(&self) -> bool {
+        self.secs.get() == 0 && self.subsec.get() == 0
     }
 
-    #[cfg(target_pointer_width = "32")]
-    pub(crate) const fn pyhash(self) -> Py_hash_t {
-        hash_combine(
-            self.nanos as Py_hash_t,
-            hash_combine(self.secs as Py_hash_t, (self.secs >> 32) as Py_hash_t),
-        )
-    }
-
-    pub(crate) const fn is_zero(&self) -> bool {
-        self.secs == 0 && self.nanos == 0
-    }
-
-    pub(crate) fn abs(self) -> Self {
-        if self.secs >= 0 {
+    pub fn abs(self) -> Self {
+        if self.secs.get() >= 0 {
             self
         } else {
             -self
         }
     }
 
-    pub(crate) fn checked_mul(self, factor: i128) -> Option<Self> {
+    // TODO: audit use
+    pub fn checked_mul(self, factor: i128) -> Option<Self> {
         self.total_nanos()
             .checked_mul(factor)
             .and_then(Self::from_nanos)
     }
 
-    pub(crate) fn checked_add(self, other: Self) -> Option<Self> {
+    pub fn checked_add(self, other: Self) -> Option<Self> {
         // FUTURE: optimize to avoid i128
         Self::from_nanos(self.total_nanos() + other.total_nanos())
     }
 
-    pub(crate) const ZERO: Self = Self { secs: 0, nanos: 0 };
+    pub const ZERO: Self = Self {
+        secs: DeltaSeconds::ZERO,
+        subsec: SubSecNanos::MIN,
+    };
 
-    pub(crate) fn round(self, increment: i64, mode: round::Mode) -> Option<Self> {
+    pub fn round(self, increment: i64, mode: round::Mode) -> Option<Self> {
         debug_assert!(increment > 0);
         let TimeDelta {
-            mut secs,
-            mut nanos,
+            secs,
+            subsec: nanos,
         } = self;
+        let mut nanos = nanos.to_u32();
+        let mut secs = secs.get();
 
+        // TODO: use safe math types
+        // TODO: can't this overflow--even for subsecond increments? .999 -> 1
         if increment < 1_000_000_000 {
             nanos = Self::round_subsec(nanos, increment as u32, mode);
             secs += (nanos / 1_000_000_000) as i64;
@@ -104,9 +119,13 @@ impl TimeDelta {
             }
         }
 
-        Some(Self { secs, nanos })
+        Some(Self {
+            secs: DeltaSeconds::new_unchecked(secs),
+            subsec: SubSecNanos::new_unchecked(nanos as _),
+        })
     }
 
+    // TODO: method in SubSecNanos?
     fn round_subsec(nanos: u32, increment: u32, mode: round::Mode) -> u32 {
         debug_assert!(increment < 1_000_000_000);
         debug_assert!(1_000_000_000 % increment == 0);
@@ -140,6 +159,13 @@ impl TimeDelta {
         let round_up = remainder_ns >= threshold_ns;
         (quotient + i64::from(round_up)) * increment_s
     }
+
+    pub unsafe fn from_py_unsafe(delta: *mut PyObject) -> Self {
+        Self {
+            secs: DeltaSeconds::from_py_unchecked(delta).unwrap(),
+            subsec: SubSecNanos::from_py_delta_unchecked(delta),
+        }
+    }
 }
 
 impl PyWrapped for TimeDelta {}
@@ -148,20 +174,22 @@ impl Neg for TimeDelta {
     type Output = Self;
 
     fn neg(self) -> TimeDelta {
-        let (extra_seconds, nanos) = match self.nanos {
-            0 => (0, 0),
-            nanos => (1, 1_000_000_000 - nanos),
+        // TODO: use diff()
+        let (extra_seconds, nanos) = match self.subsec.get() {
+            0 => (0, self.subsec),
+            nanos => (1, SubSecNanos::new_unchecked(1_000_000_000 - nanos)),
         };
         TimeDelta {
-            secs: -self.secs - extra_seconds,
-            nanos,
+            // TODO checked?
+            secs: DeltaSeconds::new_unchecked(-self.secs.get() - extra_seconds),
+            subsec: nanos,
         }
     }
 }
 
 impl std::fmt::Display for TimeDelta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let delta: TimeDelta = if self.secs < 0 {
+        let delta: TimeDelta = if self.secs.get() < 0 {
             write!(f, "-")?;
             -*self
         } else {
@@ -170,12 +198,13 @@ impl std::fmt::Display for TimeDelta {
         write!(
             f,
             "{:02}:{:02}:{:02}",
-            delta.secs / 3600,
-            (delta.secs % 3600) / 60,
-            delta.secs % 60,
+            delta.secs.get() / 3600,
+            (delta.secs.get() % 3600) / 60,
+            delta.secs.get() % 60,
         )?;
-        if delta.nanos != 0 {
-            f.write_str(format!(".{:09}", delta.nanos).trim_end_matches('0'))
+        // TODO nanos formatter
+        if delta.subsec.get() != 0 {
+            f.write_str(format!(".{:09}", delta.subsec.get()).trim_end_matches('0'))
         } else {
             fmt::Result::Ok(())
         }
@@ -183,29 +212,35 @@ impl std::fmt::Display for TimeDelta {
 }
 
 #[allow(clippy::unnecessary_cast)]
-pub(crate) const MAX_SECS: i64 = (MAX_YEAR as i64) * 366 * 24 * 3600;
-pub(crate) const MAX_HOURS: i64 = MAX_SECS / 3600;
-pub(crate) const MAX_MINUTES: i64 = MAX_SECS / 60;
-pub(crate) const MAX_MILLISECONDS: i64 = MAX_SECS * 1_000;
-pub(crate) const MAX_MICROSECONDS: i64 = MAX_SECS * 1_000_000;
-pub(crate) const MAX_NANOSECONDS: i128 = MAX_SECS as i128 * 1_000_000_000;
+pub const MAX_SECS: i64 = (MAX_YEAR as i64) * 366 * 24 * 3600;
+pub const MAX_HOURS: i64 = MAX_SECS / 3600;
+pub const MAX_MINUTES: i64 = MAX_SECS / 60;
+pub const MAX_MILLISECONDS: i64 = MAX_SECS * 1_000;
+pub const MAX_MICROSECONDS: i64 = MAX_SECS * 1_000_000;
+pub const MAX_NANOSECONDS: i128 = MAX_SECS as i128 * 1_000_000_000;
 const SECS_PER_DAY: i64 = 24 * 3600;
 
-pub(crate) const SINGLETONS: &[(&CStr, TimeDelta); 3] = &[
-    (c"ZERO", TimeDelta { secs: 0, nanos: 0 }),
+pub const SINGLETONS: &[(&CStr, TimeDelta); 3] = &[
     (
-        c"MIN",
+        c"ZERO",
         TimeDelta {
-            secs: -MAX_SECS,
-            nanos: 0,
+            secs: DeltaSeconds::ZERO,
+            subsec: SubSecNanos::MIN,
         },
     ),
     (
-        // FUTURE: should the nanos be 999_999_999?
+        c"MIN",
+        TimeDelta {
+            secs: DeltaSeconds::MIN,
+            subsec: SubSecNanos::MIN,
+        },
+    ),
+    (
+        // TODO: should the nanos be 999_999_999?
         c"MAX",
         TimeDelta {
-            secs: MAX_SECS,
-            nanos: 0,
+            secs: DeltaSeconds::MAX,
+            subsec: SubSecNanos::MIN,
         },
     ),
 ];
@@ -229,7 +264,10 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     } = State::for_type(cls);
 
     match (nargs, nkwargs) {
-        (0, 0) => TimeDelta { secs: 0, nanos: 0 }, // FUTURE: return the singleton?
+        (0, 0) => TimeDelta {
+            secs: DeltaSeconds::ZERO,
+            subsec: SubSecNanos::MIN,
+        }, // FUTURE: return the singleton?
         (0, _) => {
             handle_kwargs(
                 "TimeDelta",
@@ -270,7 +308,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     .to_obj(cls)
 }
 
-pub(crate) unsafe fn hours(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
+pub unsafe fn hours(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
     TimeDelta::from_nanos_unchecked(handle_exact_unit(
         amount,
         MAX_HOURS,
@@ -280,7 +318,7 @@ pub(crate) unsafe fn hours(module: *mut PyObject, amount: *mut PyObject) -> PyRe
     .to_obj(State::for_mod(module).time_delta_type)
 }
 
-pub(crate) unsafe fn minutes(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
+pub unsafe fn minutes(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
     TimeDelta::from_nanos_unchecked(handle_exact_unit(
         amount,
         MAX_MINUTES,
@@ -290,7 +328,7 @@ pub(crate) unsafe fn minutes(module: *mut PyObject, amount: *mut PyObject) -> Py
     .to_obj(State::for_mod(module).time_delta_type)
 }
 
-pub(crate) unsafe fn seconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
+pub unsafe fn seconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
     TimeDelta::from_nanos_unchecked(handle_exact_unit(
         amount,
         MAX_SECS,
@@ -300,7 +338,7 @@ pub(crate) unsafe fn seconds(module: *mut PyObject, amount: *mut PyObject) -> Py
     .to_obj(State::for_mod(module).time_delta_type)
 }
 
-pub(crate) unsafe fn milliseconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
+pub unsafe fn milliseconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
     TimeDelta::from_nanos_unchecked(handle_exact_unit(
         amount,
         MAX_MILLISECONDS,
@@ -310,7 +348,7 @@ pub(crate) unsafe fn milliseconds(module: *mut PyObject, amount: *mut PyObject) 
     .to_obj(State::for_mod(module).time_delta_type)
 }
 
-pub(crate) unsafe fn microseconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
+pub unsafe fn microseconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
     TimeDelta::from_nanos_unchecked(handle_exact_unit(
         amount,
         MAX_MICROSECONDS,
@@ -320,7 +358,7 @@ pub(crate) unsafe fn microseconds(module: *mut PyObject, amount: *mut PyObject) 
     .to_obj(State::for_mod(module).time_delta_type)
 }
 
-pub(crate) unsafe fn nanoseconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
+pub unsafe fn nanoseconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
     TimeDelta::from_nanos(
         amount
             .to_i128()?
@@ -403,8 +441,8 @@ unsafe fn _mul_float(delta_obj: *mut PyObject, factor: f64) -> PyReturn {
     if factor == 1.0 {
         Ok(newref(delta_obj))
     } else {
-        let TimeDelta { secs, nanos } = TimeDelta::extract(delta_obj);
-        let nanos = (secs as f64 * 1e9 + nanos as f64) * factor;
+        let TimeDelta { secs, subsec } = TimeDelta::extract(delta_obj);
+        let nanos = (secs.get() as f64 * 1e9 + subsec.get() as f64) * factor;
         if nanos.is_nan() || !(-MAX_NANOSECONDS as f64..MAX_NANOSECONDS as f64).contains(&nanos) {
             raise_value_err("Multiplication result out of range")?
         }
@@ -562,7 +600,7 @@ unsafe fn _add_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool
 
 unsafe fn __abs__(slf: *mut PyObject) -> PyReturn {
     let delta = TimeDelta::extract(slf);
-    if delta.secs >= 0 {
+    if delta.secs.get() >= 0 {
         Ok(newref(slf))
     } else {
         (-delta).to_obj(Py_TYPE(slf))
@@ -611,8 +649,11 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let TimeDelta { secs, nanos } = TimeDelta::extract(slf);
-    let data = pack![secs, nanos];
+    let TimeDelta {
+        secs,
+        subsec: nanos,
+    } = TimeDelta::extract(slf);
+    let data = pack![secs.get(), nanos.get()];
     (
         State::for_obj(slf).unpickle_time_delta,
         steal!((steal!(data.to_py()?),).to_py()?),
@@ -620,14 +661,14 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         .to_py()
 }
 
-pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
+pub unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let mut data = arg.to_bytes()?.ok_or_value_err("Invalid pickle data")?;
     if data.len() != 12 {
         raise_value_err("Invalid pickle data")?;
     }
     TimeDelta {
-        secs: unpack_one!(data, i64),
-        nanos: unpack_one!(data, u32),
+        secs: DeltaSeconds::new_unchecked(unpack_one!(data, i64)),
+        subsec: SubSecNanos::new_unchecked(unpack_one!(data, i32)),
     }
     .to_obj(State::for_mod(module).time_delta_type)
 }
@@ -637,63 +678,62 @@ unsafe fn in_nanoseconds(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn in_microseconds(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let TimeDelta { secs, nanos } = TimeDelta::extract(slf);
-    (secs as f64 * 1e6 + nanos as f64 * 1e-3).to_py()
+    let TimeDelta { secs, subsec } = TimeDelta::extract(slf);
+    (secs.get() as f64 * 1e6 + subsec.get() as f64 * 1e-3).to_py()
 }
 
 unsafe fn in_milliseconds(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let TimeDelta { secs, nanos } = TimeDelta::extract(slf);
-    (secs as f64 * 1e3 + nanos as f64 * 1e-6).to_py()
+    let TimeDelta { secs, subsec } = TimeDelta::extract(slf);
+    (secs.get() as f64 * 1e3 + subsec.get() as f64 * 1e-6).to_py()
 }
 
 unsafe fn in_seconds(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let TimeDelta { secs, nanos } = TimeDelta::extract(slf);
-    (secs as f64 + nanos as f64 * 1e-9).to_py()
+    let TimeDelta { secs, subsec } = TimeDelta::extract(slf);
+    (secs.get() as f64 + subsec.get() as f64 * 1e-9).to_py()
 }
 
 unsafe fn in_minutes(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let TimeDelta { secs, nanos } = TimeDelta::extract(slf);
-    (secs as f64 / 60.0 + nanos as f64 * 1e-9 / 60.0).to_py()
+    let TimeDelta { secs, subsec } = TimeDelta::extract(slf);
+    (secs.get() as f64 / 60.0 + subsec.get() as f64 * 1e-9 / 60.0).to_py()
 }
 
 unsafe fn in_hours(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let TimeDelta { secs, nanos } = TimeDelta::extract(slf);
-    (secs as f64 / 3600.0 + nanos as f64 * 1e-9 / 3600.0).to_py()
+    let TimeDelta { secs, subsec } = TimeDelta::extract(slf);
+    (secs.get() as f64 / 3600.0 + subsec.get() as f64 * 1e-9 / 3600.0).to_py()
 }
 
 unsafe fn in_days_of_24h(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let TimeDelta { secs, nanos } = TimeDelta::extract(slf);
-    (secs as f64 / 86_400.0 + nanos as f64 * 1e-9 / 86_400.0).to_py()
+    let TimeDelta { secs, subsec } = TimeDelta::extract(slf);
+    (secs.get() as f64 / 86_400.0 + subsec.get() as f64 * 1e-9 / 86_400.0).to_py()
 }
 
 unsafe fn from_py_timedelta(cls: *mut PyObject, d: *mut PyObject) -> PyReturn {
     // TODO: exactly
+    // TODO: wrapping class for PyDelta
     if PyDelta_Check(d) == 0 {
         raise_type_err("argument must be datetime.timedelta")?;
     }
     TimeDelta {
-        secs: cap(
-            i64::from(PyDateTime_DELTA_GET_DAYS(d)) * SECS_PER_DAY
-                + i64::from(PyDateTime_DELTA_GET_SECONDS(d)),
-            MAX_SECS,
-        )
-        .ok_or_value_err("TimeDelta out of range")?,
-        nanos: PyDateTime_DELTA_GET_MICROSECONDS(d) as u32 * 1_000,
+        secs: DeltaSeconds::from_py_unchecked(d).ok_or_value_err("TimeDelta out of range")?,
+        subsec: SubSecNanos::from_py_delta_unchecked(d),
     }
     .to_obj(cls.cast())
 }
 
 unsafe fn py_timedelta(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let TimeDelta { nanos, secs } = TimeDelta::extract(slf);
+    let TimeDelta {
+        subsec: nanos,
+        secs,
+    } = TimeDelta::extract(slf);
     let &PyDateTime_CAPI {
         Delta_FromDelta,
         DeltaType,
         ..
     } = State::for_obj(slf).py_api;
     Delta_FromDelta(
-        secs.div_euclid(SECS_PER_DAY) as _,
-        secs.rem_euclid(SECS_PER_DAY) as _,
-        (nanos / 1_000) as _,
+        secs.get().div_euclid(SECS_PER_DAY) as _,
+        secs.get().rem_euclid(SECS_PER_DAY) as _,
+        (nanos.get() / 1_000) as _,
         0,
         DeltaType,
     )
@@ -714,15 +754,16 @@ fn parse_prefix(s: &mut &[u8]) -> Option<i128> {
 unsafe fn in_hrs_mins_secs_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let TimeDelta {
         secs,
-        nanos: nanos_unsigned,
+        subsec: nanos_unsigned,
     } = TimeDelta::extract(slf);
+    let secs = secs.get();
 
     let (secs, nanos) = if secs >= 0 {
-        (secs, nanos_unsigned as i32)
-    } else if nanos_unsigned == 0 {
+        (secs, nanos_unsigned.get())
+    } else if nanos_unsigned.get() == 0 {
         (secs, 0)
     } else {
-        (secs + 1, nanos_unsigned as i32 - 1_000_000_000)
+        (secs + 1, nanos_unsigned.get() - 1_000_000_000)
     };
     (
         steal!((secs / 3_600).to_py()?),
@@ -734,10 +775,15 @@ unsafe fn in_hrs_mins_secs_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyRetu
 }
 
 #[inline]
-pub(crate) fn format_components(td: TimeDelta, s: &mut String) {
-    let TimeDelta { mut secs, nanos } = td;
+pub fn format_components(td: TimeDelta, s: &mut String) {
+    let TimeDelta {
+        secs,
+        subsec: nanos,
+    } = td;
+    // TODO neater
+    let mut secs = secs.get();
     debug_assert!(secs >= 0);
-    debug_assert!(secs > 0 || nanos > 0);
+    debug_assert!(secs > 0 || nanos.get() > 0);
     let hours = secs / 3600;
     let minutes = secs / 60 % 60;
     secs %= 60;
@@ -747,11 +793,12 @@ pub(crate) fn format_components(td: TimeDelta, s: &mut String) {
     if minutes != 0 {
         s.push_str(&format!("{}M", minutes));
     }
-    match (secs, nanos) {
+    // TODO
+    match (secs, nanos.get()) {
         (0, 0) => {}
         (_, 0) => s.push_str(&format!("{}S", secs)),
         _ => {
-            s.push_str(format!("{}.{:09}", secs, nanos).trim_end_matches('0'));
+            s.push_str(format!("{}.{:09}", secs, nanos.get()).trim_end_matches('0'));
             s.push('S');
         }
     }
@@ -759,11 +806,11 @@ pub(crate) fn format_components(td: TimeDelta, s: &mut String) {
 
 unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let mut delta = TimeDelta::extract(slf);
-    if delta.secs == 0 && delta.nanos == 0 {
+    if delta.secs.get() == 0 && delta.subsec.get() == 0 {
         return "PT0S".to_py();
     }
     let mut s: String = String::with_capacity(8);
-    if delta.secs < 0 {
+    if delta.secs.get() < 0 {
         s.push('-');
         delta = -delta;
     }
@@ -838,7 +885,7 @@ fn parse_component(s: &mut &[u8]) -> Option<(i128, Unit)> {
 
 // Parse all time components of an ISO8601 duration into total nanoseconds
 // also whether it is empty (to distinguish no components from zero components)
-pub(crate) unsafe fn parse_all_components(s: &mut &[u8]) -> Option<(i128, bool)> {
+pub unsafe fn parse_all_components(s: &mut &[u8]) -> Option<(i128, bool)> {
     let mut prev_unit: Option<Unit> = None;
     let mut nanos = 0;
     while !s.is_empty() {
@@ -935,5 +982,4 @@ static mut METHODS: &[PyMethodDef] = &[
     PyMethodDef::zeroed(),
 ];
 
-pub(crate) static mut SPEC: PyType_Spec =
-    type_spec::<TimeDelta>(c"whenever.TimeDelta", unsafe { SLOTS });
+pub static mut SPEC: PyType_Spec = type_spec::<TimeDelta>(c"whenever.TimeDelta", unsafe { SLOTS });

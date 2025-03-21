@@ -4,6 +4,7 @@ use std::fmt;
 use std::ops::Neg;
 use std::ptr::null_mut as NULL;
 
+use crate::common::math::*;
 use crate::common::*;
 use crate::date_delta::{self, parse_prefix, DateDelta, InitError, Unit as DateUnit};
 use crate::docstrings as doc;
@@ -25,8 +26,8 @@ impl DateTimeDelta {
     }
 
     pub(crate) fn new(ddelta: DateDelta, tdelta: TimeDelta) -> Option<Self> {
-        if ddelta.months >= 0 && ddelta.days >= 0 && tdelta.secs >= 0
-            || ddelta.months <= 0 && ddelta.days <= 0 && tdelta.secs <= 0
+        if ddelta.months.get() >= 0 && ddelta.days.get() >= 0 && tdelta.secs.get() >= 0
+            || ddelta.months.get() <= 0 && ddelta.days.get() <= 0 && tdelta.secs.get() <= 0
         {
             Some(Self { ddelta, tdelta })
         } else {
@@ -39,6 +40,7 @@ impl DateTimeDelta {
         ddelta
             .checked_mul(factor)
             .zip(tdelta.checked_mul(factor.into()))
+            // Safe: multiplication can't result in different signs
             .map(|(ddelta, tdelta)| Self { ddelta, tdelta })
     }
 
@@ -49,8 +51,8 @@ impl DateTimeDelta {
             .checked_add(other.tdelta)
             .ok_or(InitError::TooBig)?;
         // Confirm the signs of date- and timedelta didn't get out of sync
-        if ddelta.months >= 0 && ddelta.days >= 0 && tdelta.secs >= 0
-            || ddelta.months <= 0 && ddelta.days <= 0 && tdelta.secs <= 0
+        if ddelta.months.get() >= 0 && ddelta.days.get() >= 0 && tdelta.secs.get() >= 0
+            || ddelta.months.get() <= 0 && ddelta.days.get() <= 0 && tdelta.secs.get() <= 0
         {
             Ok(Self { ddelta, tdelta })
         } else {
@@ -176,16 +178,18 @@ pub(crate) const SINGLETONS: &[(&CStr, DateTimeDelta); 1] = &[(
 
 impl fmt::Display for DateTimeDelta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let DateTimeDelta { ddelta, tdelta } =
-            if self.tdelta.secs < 0 || self.ddelta.months < 0 || self.ddelta.days < 0 {
-                write!(f, "-P")?;
-                -*self
-            } else if self.tdelta.is_zero() && self.ddelta.is_zero() {
-                return write!(f, "P0D");
-            } else {
-                write!(f, "P")?;
-                *self
-            };
+        let DateTimeDelta { ddelta, tdelta } = if self.tdelta.secs.get() < 0
+            || self.ddelta.months.get() < 0
+            || self.ddelta.days.get() < 0
+        {
+            write!(f, "-P")?;
+            -*self
+        } else if self.tdelta.is_zero() && self.ddelta.is_zero() {
+            return write!(f, "P0D");
+        } else {
+            write!(f, "P")?;
+            *self
+        };
 
         let mut s = String::with_capacity(8);
         if !ddelta.is_zero() {
@@ -212,8 +216,14 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     let state = State::for_type(cls);
     match (nargs, nkwargs) {
         (0, 0) => DateTimeDelta {
-            ddelta: DateDelta { months: 0, days: 0 },
-            tdelta: TimeDelta { secs: 0, nanos: 0 },
+            ddelta: DateDelta {
+                months: DeltaMonths::ZERO,
+                days: DeltaDays::ZERO,
+            },
+            tdelta: TimeDelta {
+                secs: DeltaSeconds::ZERO,
+                subsec: SubSecNanos::MIN,
+            },
         }, // OPTIMIZE: return the singleton
         (0, _) => {
             handle_kwargs(
@@ -225,7 +235,9 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
             )?;
             if months >= 0 && days >= 0 && nanos >= 0 || months <= 0 && days <= 0 && nanos <= 0 {
                 DateTimeDelta {
-                    ddelta: DateDelta::from_same_sign(months, days)
+                    ddelta: DeltaMonths::new(months)
+                        .zip(DeltaDays::new(days))
+                        .map(|(m, d)| DateDelta { months: m, days: d })
                         .ok_or_value_err("Out of range")?,
                     tdelta: TimeDelta::from_nanos(nanos)
                         .ok_or_value_err("TimeDelta out of range")?,
@@ -416,6 +428,7 @@ pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
     while !s.is_empty() && s[0] != b'T' {
         let (value, unit) = date_delta::parse_component(s)?;
         match (unit, prev_unit.replace(unit)) {
+            // Note: We prevent overflow by limiting how many digits we parse
             (DateUnit::Years, None) => {
                 months += value * 12;
             }
@@ -432,7 +445,10 @@ pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
             _ => None?, // i.e. the order of the components is wrong
         }
     }
-    Some(DateDelta { months, days })
+    // TODO: test whether this range check fixed a bug
+    DeltaMonths::new(months)
+        .zip(DeltaDays::new(days))
+        .map(|(months, days)| DateDelta { months, days })
 }
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
@@ -466,17 +482,22 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
 unsafe fn in_months_days_secs_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let DateTimeDelta {
         ddelta: DateDelta { months, days },
-        tdelta: TimeDelta { mut secs, nanos },
+        tdelta: TimeDelta {
+            secs,
+            subsec: nanos,
+        },
     } = DateTimeDelta::extract(slf);
-    let signed_nanos = if secs < 0 && nanos > 0 {
+    let mut secs = secs.get();
+    // TODO: nanos diff
+    let signed_nanos = if secs < 0 && nanos.get() > 0 {
         secs += 1;
-        nanos as i32 - 1_000_000_000
+        nanos.get() as i32 - 1_000_000_000
     } else {
-        nanos as i32
+        nanos.get() as i32
     };
     (
-        steal!(months.to_py()?),
-        steal!(days.to_py()?),
+        steal!(months.get().to_py()?),
+        steal!(days.get().to_py()?),
         steal!(secs.to_py()?),
         steal!(signed_nanos.to_py()?),
     )
@@ -498,17 +519,20 @@ unsafe fn time_part(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let DateTimeDelta {
         ddelta: DateDelta { months, days },
-        tdelta: TimeDelta { secs, nanos },
+        tdelta: TimeDelta {
+            secs,
+            subsec: nanos,
+        },
     } = DateTimeDelta::extract(slf);
     (
         State::for_type(Py_TYPE(slf)).unpickle_datetime_delta,
-        // We don't do our own bit packing because the numbers are small
+        // We don't do our own bit packing because the numbers are usually small
         // and Python's pickle protocol handles them more efficiently.
         steal!((
-            steal!(months.to_py()?),
-            steal!(days.to_py()?),
-            steal!(secs.to_py()?),
-            steal!(nanos.to_py()?)
+            steal!(months.get().to_py()?),
+            steal!(days.get().to_py()?),
+            steal!(secs.get().to_py()?),
+            steal!(nanos.get().to_py()?)
         )
             .to_py()?),
     )
@@ -519,12 +543,20 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, args: &[*mut PyObject]) -> 
     match args {
         &[months, days, secs, nanos] => DateTimeDelta {
             ddelta: DateDelta {
-                months: months.to_long()?.ok_or_type_err("Invalid pickle data")? as _,
-                days: days.to_long()?.ok_or_type_err("Invalid pickle data")? as _,
+                months: DeltaMonths::new_unchecked(
+                    months.to_long()?.ok_or_type_err("Invalid pickle data")? as _,
+                ),
+                days: DeltaDays::new_unchecked(
+                    days.to_long()?.ok_or_type_err("Invalid pickle data")? as _,
+                ),
             },
             tdelta: TimeDelta {
-                secs: secs.to_long()?.ok_or_type_err("Invalid pickle data")? as _,
-                nanos: nanos.to_long()?.ok_or_type_err("Invalid pickle data")? as _,
+                secs: DeltaSeconds::new_unchecked(
+                    secs.to_long()?.ok_or_type_err("Invalid pickle data")? as _,
+                ),
+                subsec: SubSecNanos::new_unchecked(
+                    nanos.to_long()?.ok_or_type_err("Invalid pickle data")? as _,
+                ),
             },
         }
         .to_obj(State::for_mod(module).datetime_delta_type),
