@@ -3,14 +3,15 @@ use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
+use crate::common::math::*;
 use crate::common::*;
-use crate::date::{Date, MAX_MONTH_DAYS_IN_LEAP_YEAR};
+use crate::date::Date;
 use crate::docstrings as doc;
 use crate::State;
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
-pub struct MonthDay {
-    pub(crate) month: u8,
+pub(crate) struct MonthDay {
+    pub(crate) month: Month,
     pub(crate) day: u8,
 }
 
@@ -19,31 +20,27 @@ pub(crate) const SINGLETONS: &[(&CStr, MonthDay); 2] = &[
     (c"MAX", MonthDay::new_unchecked(12, 31)),
 ];
 
+const LEAP_YEAR: Year = Year::new_unchecked(4);
+
 impl MonthDay {
     pub(crate) const unsafe fn hash(self) -> i32 {
         ((self.month as i32) << 8) | self.day as i32
     }
 
-    pub(crate) const fn from_longs(month: c_long, day: c_long) -> Option<Self> {
-        if month < 1 || month > 12 {
-            return None;
-        }
-        if day >= 1 && day <= MAX_MONTH_DAYS_IN_LEAP_YEAR[month as usize] as _ {
-            Some(MonthDay {
-                month: month as u8,
-                day: day as u8,
-            })
+    pub(crate) fn from_longs(m: c_long, d: c_long) -> Option<Self> {
+        let month = Month::from_long(m)?;
+        if d >= 1 && d <= LEAP_YEAR.days_in_month(month) as _ {
+            Some(MonthDay { month, day: d as _ })
         } else {
             None
         }
     }
 
-    pub(crate) const fn new(month: u8, day: u8) -> Option<Self> {
-        if month == 0 || month > 12 || day == 0 || day > MAX_MONTH_DAYS_IN_LEAP_YEAR[month as usize]
-        {
-            None
-        } else {
+    pub(crate) const fn new(month: Month, day: u8) -> Option<Self> {
+        if day > 0 || day <= LEAP_YEAR.days_in_month(month) {
             Some(MonthDay { month, day })
+        } else {
+            None
         }
     }
 
@@ -51,13 +48,16 @@ impl MonthDay {
         debug_assert!(month > 0);
         debug_assert!(month <= 12);
         debug_assert!(day > 0 && day <= 31);
-        MonthDay { month, day }
+        MonthDay {
+            month: Month::new_unchecked(month),
+            day,
+        }
     }
 
     pub(crate) fn parse_all(s: &[u8]) -> Option<Self> {
         if s.len() == 7 && s[0] == b'-' && s[1] == b'-' && s[4] == b'-' {
             MonthDay::new(
-                parse_digit(s, 2)? * 10 + parse_digit(s, 3)?,
+                Month::new(parse_digit(s, 2)? * 10 + parse_digit(s, 3)?)?,
                 parse_digit(s, 5)? * 10 + parse_digit(s, 6)?,
             )
         } else {
@@ -70,7 +70,7 @@ impl PyWrapped for MonthDay {}
 
 impl Display for MonthDay {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "--{:02}-{:02}", self.month, self.day)
+        write!(f, "--{:02}-{:02}", self.month.get(), self.day)
     }
 }
 
@@ -160,7 +160,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let MonthDay { month, day } = MonthDay::extract(slf);
     (
         State::for_obj(slf).unpickle_monthday,
-        steal!((steal!(pack![month, day].to_py()?),).to_py()?),
+        steal!((steal!(pack![month.get(), day].to_py()?),).to_py()?),
     )
         .to_py()
 }
@@ -178,7 +178,7 @@ unsafe fn replace(
         raise_type_err("replace() takes no positional arguments")
     } else {
         let md = MonthDay::extract(slf);
-        let mut month = md.month.into();
+        let mut month = md.month.get().into();
         let mut day = md.day.into();
         handle_kwargs("replace", kwargs, |key, value, eq| {
             if eq(key, str_month) {
@@ -201,12 +201,12 @@ unsafe fn replace(
 unsafe fn in_year(slf: *mut PyObject, year_obj: *mut PyObject) -> PyReturn {
     let &State { date_type, .. } = State::for_obj(slf);
     let MonthDay { month, day } = MonthDay::extract(slf);
-    let year = year_obj
-        .to_long()?
-        .ok_or_type_err("year must be an integer")?
-        .try_into()
-        .ok()
-        .ok_or_value_err("year out of range")?;
+    let year = Year::from_long(
+        year_obj
+            .to_long()?
+            .ok_or_type_err("year must be an integer")?,
+    )
+    .ok_or_value_err("year out of range")?;
     // OPTIMIZE: we don't need to check the validity of the month again
     Date::new(year, month, day)
         .ok_or_value_err("Invalid date components")?
@@ -215,7 +215,7 @@ unsafe fn in_year(slf: *mut PyObject, year_obj: *mut PyObject) -> PyReturn {
 
 unsafe fn is_leap(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let MonthDay { month, day } = MonthDay::extract(slf);
-    (day == 29 && month == 2).to_py()
+    (day == 29 && month == Month::February).to_py()
 }
 
 static mut METHODS: &[PyMethodDef] = &[
@@ -240,14 +240,14 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
         raise_value_err("Invalid pickle data")?
     }
     MonthDay {
-        month: unpack_one!(packed, u8),
+        month: Month::new_unchecked(unpack_one!(packed, u8)),
         day: unpack_one!(packed, u8),
     }
     .to_obj(State::for_mod(module).monthday_type)
 }
 
 unsafe fn get_month(slf: *mut PyObject) -> PyReturn {
-    MonthDay::extract(slf).month.to_py()
+    MonthDay::extract(slf).month.get().to_py()
 }
 
 unsafe fn get_day(slf: *mut PyObject) -> PyReturn {

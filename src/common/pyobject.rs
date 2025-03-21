@@ -56,7 +56,7 @@ pub(crate) trait PyObjectExt {
     unsafe fn to_i128(self) -> PyResult<Option<i128>>;
     unsafe fn to_f64(self) -> PyResult<Option<f64>>;
     unsafe fn repr(self) -> String;
-    unsafe fn kwarg_eq(self, other: *mut PyObject) -> bool;
+    unsafe fn py_eq(self, other: *mut PyObject) -> PyResult<bool>;
 }
 
 impl PyObjectExt for *mut PyObject {
@@ -191,11 +191,12 @@ impl PyObjectExt for *mut PyObject {
         .to_string()
     }
 
-    // A faster comparison for keyword arguments that leverages
-    // the fact that keyword arguments are generally (but not always!) interned.
-    // TODO: useless, since PyUnicode should already do this right?
-    unsafe fn kwarg_eq(self, other: *mut PyObject) -> bool {
-        self == other || PyObject_RichCompareBool(self, other, Py_EQ) == 1
+    unsafe fn py_eq(self, other: *mut PyObject) -> PyResult<bool> {
+        match PyObject_RichCompareBool(self, other, Py_EQ) {
+            1 => Ok(true),
+            0 => Ok(false),
+            _ => Err(PyErrOccurred()),
+        }
     }
 }
 
@@ -340,7 +341,6 @@ impl ToPy for u8 {
     }
 }
 
-// TODO: impl to Deref<target=&str> instead?
 impl ToPy for String {
     unsafe fn to_py(self) -> PyReturn {
         PyUnicode_FromStringAndSize(self.as_ptr().cast(), self.len() as _).as_result()

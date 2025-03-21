@@ -2,6 +2,7 @@ use core::ffi::{c_int, c_long, c_void, CStr};
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
+use crate::common::math::*;
 use crate::common::*;
 use crate::datetime_delta::handle_exact_unit;
 use crate::docstrings as doc;
@@ -19,168 +20,109 @@ use crate::{
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub(crate) struct Instant {
-    secs: i64, // MIN_INSTANT <= secs <= MAX_INSTANT
-    nanos: u32, // 0 <= nanos < 1_000_000_000
-               // FUTURE: make use of padding to cache the date value?
+    pub(crate) epoch: EpochSecs,
+    pub(crate) subsec: SubSecNanos,
+    // FUTURE: make use of padding to cache something?
 }
 
 pub(crate) const SINGLETONS: &[(&CStr, Instant); 2] = &[
     (
         c"MIN",
         Instant {
-            secs: MIN_INSTANT,
-            nanos: 0,
+            epoch: EpochSecs::MIN,
+            subsec: SubSecNanos::MIN,
         },
     ),
     (
         c"MAX",
         Instant {
-            secs: MAX_INSTANT,
-            nanos: 999_999_999,
+            epoch: EpochSecs::MAX,
+            subsec: SubSecNanos::MAX,
         },
     ),
 ];
 
-pub(crate) const UNIX_EPOCH_INSTANT: i64 = 62_135_683_200; // 1970-01-01 in seconds after 0000-12-31
-pub(crate) const MIN_INSTANT: i64 = 24 * 60 * 60;
-pub(crate) const MAX_INSTANT: i64 = 315_537_983_999;
-pub(crate) const MIN_EPOCH: i64 = MIN_INSTANT - UNIX_EPOCH_INSTANT;
-pub(crate) const MAX_EPOCH: i64 = MAX_INSTANT - UNIX_EPOCH_INSTANT;
-
 impl Instant {
-    pub(crate) fn to_datetime(self) -> DateTime {
-        DateTime {
-            date: Date::from_ord_unchecked((self.secs / 86400) as _),
-            time: Time {
-                hour: ((self.secs % 86400) / 3600) as _,
-                minute: ((self.secs % 3600) / 60) as _,
-                second: (self.secs % 60) as _,
-                nanos: self.nanos,
-            },
+    pub(crate) fn from_datetime(date: Date, time: Time) -> Self {
+        Instant {
+            epoch: date.epoch_at(time),
+            subsec: time.subsec,
         }
     }
 
-    pub(crate) const fn from_datetime(
-        date: Date,
-        Time {
-            hour,
-            minute,
-            second,
-            nanos,
-        }: Time,
-    ) -> Self {
-        Instant {
-            secs: date.ord() as i64 * 86400
-                + hour as i64 * 3600
-                + minute as i64 * 60
-                + second as i64,
-            nanos,
-        }
+    pub(crate) fn to_datetime(self) -> DateTime {
+        self.epoch.datetime(self.subsec)
     }
 
     pub(crate) fn diff(self, other: Self) -> TimeDelta {
-        let secs_diff = self.secs - other.secs;
-        let nanos_diff = self.nanos as i32 - other.nanos as i32;
-        let extra_sec = if nanos_diff < 0 { 1 } else { 0 };
-        let nanos_abs = nanos_diff + extra_sec * 1_000_000_000;
+        let (extra_sec, subsec) = self.subsec.diff(other.subsec);
         TimeDelta {
-            secs: secs_diff - extra_sec as i64,
-            nanos: nanos_abs as u32,
+            secs: self
+                .epoch
+                .diff(other.epoch)
+                // Safety: we know that the difference between two instants is
+                // always within delta range
+                .add(extra_sec)
+                .unwrap(),
+            subsec,
         }
     }
 
-    pub(crate) const fn whole_secs(&self) -> i64 {
-        self.secs
-    }
-
-    pub(crate) const fn subsec_nanos(&self) -> u32 {
-        self.nanos
-    }
-
-    pub(crate) fn timestamp(&self) -> i64 {
-        self.secs - UNIX_EPOCH_INSTANT
-    }
-
     pub(crate) fn timestamp_millis(&self) -> i64 {
-        (self.secs - UNIX_EPOCH_INSTANT) * 1_000 + self.nanos as i64 / 1_000_000
+        self.epoch.get() * 1_000 + self.subsec.get() as i64 / 1_000_000
     }
 
     pub(crate) fn timestamp_nanos(&self) -> i128 {
-        (self.secs - UNIX_EPOCH_INSTANT) as i128 * 1_000_000_000 + self.nanos as i128
+        self.epoch.get() as i128 * 1_000_000_000 + self.subsec.get() as i128
     }
 
     pub(crate) fn from_timestamp(timestamp: i64) -> Option<Self> {
-        timestamp
-            .checked_add(UNIX_EPOCH_INSTANT)
-            .filter(|ts| (MIN_INSTANT..=MAX_INSTANT).contains(ts))
-            .map(|secs| Instant { secs, nanos: 0 })
-    }
-
-    // TODO: cleanup, docs, clarity
-    pub(crate) fn from_timestamp_and_nanos(timestamp: i64, nanos: u32) -> Option<Self> {
-        debug_assert!(nanos < 1_000_000_000);
-        timestamp
-            .checked_add(UNIX_EPOCH_INSTANT)
-            .filter(|ts| (MIN_INSTANT..=MAX_INSTANT).contains(ts))
-            .map(|secs| Instant { secs, nanos })
+        Some(Instant {
+            epoch: EpochSecs::new(timestamp)?,
+            subsec: SubSecNanos::MIN,
+        })
     }
 
     pub(crate) fn from_timestamp_f64(timestamp: f64) -> Option<Self> {
-        (MIN_EPOCH as f64..MAX_EPOCH as f64)
+        (EpochSecs::MIN.get() as f64..=EpochSecs::MAX.get() as f64)
             .contains(&timestamp)
             .then(|| Instant {
-                secs: (timestamp.floor() as i64 + UNIX_EPOCH_INSTANT),
-                nanos: (timestamp * 1_000_000_000_f64).rem_euclid(1_000_000_000_f64) as u32,
+                epoch: EpochSecs::new_unchecked(timestamp.floor() as i64),
+                subsec: SubSecNanos::from_fract(timestamp),
             })
     }
 
-    pub(crate) fn from_timestamp_millis(timestamp: i64) -> Option<Self> {
-        let secs = timestamp.div_euclid(1_000) + UNIX_EPOCH_INSTANT;
-        ((MIN_INSTANT..=MAX_INSTANT).contains(&secs)).then(|| Instant {
-            secs,
-            nanos: timestamp.rem_euclid(1_000) as u32 * 1_000_000,
+    pub(crate) fn from_timestamp_millis(millis: i64) -> Option<Self> {
+        Some(Instant {
+            epoch: EpochSecs::new(millis.div_euclid(1_000))?,
+            // Safety: we stay under 1_000_000_000
+            subsec: SubSecNanos::new_unchecked(millis.rem_euclid(1_000) as i32 * 1_000_000),
         })
     }
 
     pub(crate) fn from_timestamp_nanos(timestamp: i128) -> Option<Self> {
         i64::try_from(timestamp.div_euclid(1_000_000_000))
             .ok()
-            .map(|s| s + UNIX_EPOCH_INSTANT)
-            .filter(|s| (MIN_INSTANT..=MAX_INSTANT).contains(s))
+            .and_then(EpochSecs::new)
             .map(|secs| Instant {
-                secs,
-                nanos: timestamp.rem_euclid(1_000_000_000) as u32,
+                epoch: secs,
+                subsec: SubSecNanos::from_remainder(timestamp),
             })
     }
 
     pub(crate) fn shift(&self, d: TimeDelta) -> Option<Instant> {
-        let nanos = self.nanos + d.nanos;
-        let secs = self.secs + d.secs + (nanos / 1_000_000_000) as i64;
-        (MIN_INSTANT..=MAX_INSTANT)
-            .contains(&secs)
-            .then_some(Instant {
-                secs,
-                nanos: (nanos % 1_000_000_000),
-            })
+        let (extra_sec, subsec) = self.subsec.add(d.subsec);
+        Some(Instant {
+            epoch: self.epoch.shift(d.secs)?.shift(extra_sec)?,
+            subsec,
+        })
     }
 
-    pub(crate) const fn shift_secs_unchecked(&self, secs: i64) -> Self {
-        Instant {
-            secs: self.secs + secs,
-            nanos: self.nanos,
-        }
-    }
-
-    pub(crate) const fn shift_secs(&self, secs: i64) -> Option<Self> {
-        let new_secs = self.secs + secs;
-        if MIN_INSTANT <= new_secs && new_secs <= MAX_INSTANT {
-            Some(Instant {
-                secs: new_secs,
-                nanos: self.nanos,
-            })
-        } else {
-            None
-        }
+    pub(crate) fn offset(&self, f: Offset) -> Option<Self> {
+        Some(Instant {
+            epoch: self.epoch.offset(f)?,
+            subsec: self.subsec,
+        })
     }
 
     pub(crate) unsafe fn to_py(
@@ -199,108 +141,69 @@ impl Instant {
                     hour,
                     minute,
                     second,
-                    nanos,
+                    subsec: nanos,
                 },
         } = self.to_datetime();
         DateTime_FromDateAndTime(
-            year.into(),
-            month.into(),
+            year.get().into(),
+            month.get().into(),
             day.into(),
             hour.into(),
             minute.into(),
             second.into(),
-            (nanos / 1_000) as _,
+            (nanos.get() / 1_000) as _,
             TimeZone_UTC,
             DateTimeType,
         )
         .as_result()
     }
 
-    pub(crate) unsafe fn to_py_ignore_nanos(
-        self,
-        &PyDateTime_CAPI {
-            DateTime_FromDateAndTime,
-            TimeZone_UTC,
-            DateTimeType,
-            ..
-        }: &PyDateTime_CAPI,
-    ) -> PyReturn {
-        let DateTime {
-            date: Date { year, month, day },
-            time:
-                Time {
-                    hour,
-                    minute,
-                    second,
-                    ..
-                },
-        } = self.to_datetime();
-        DateTime_FromDateAndTime(
-            year.into(),
-            month.into(),
-            day.into(),
-            hour.into(),
-            minute.into(),
-            second.into(),
-            0,
-            TimeZone_UTC,
-            DateTimeType,
-        )
-        .as_result()
-    }
-
+    // Returns None if the datetime is out of range
     unsafe fn from_py(dt: *mut PyObject, state: &State) -> PyResult<Option<Self>> {
         let tzinfo = borrow_dt_tzinfo(dt);
         if is_none(tzinfo) {
             raise_value_err("datetime cannot be naive")?;
         };
-        let inst = Instant::from_datetime(
-            Date {
-                year: PyDateTime_GET_YEAR(dt) as u16,
-                month: PyDateTime_GET_MONTH(dt) as u8,
-                day: PyDateTime_GET_DAY(dt) as u8,
-            },
-            Time {
-                hour: PyDateTime_DATE_GET_HOUR(dt) as u8,
-                minute: PyDateTime_DATE_GET_MINUTE(dt) as u8,
-                second: PyDateTime_DATE_GET_SECOND(dt) as u8,
-                nanos: PyDateTime_DATE_GET_MICROSECOND(dt) as u32 * 1_000,
-            },
-        );
+        let inst =
+            Instant::from_datetime(Date::from_py_unchecked(dt), Time::from_py_dt_unchecked(dt));
         Ok(if tzinfo == state.py_api.TimeZone_UTC {
             // Fast path for the common case
             Some(inst)
         } else {
-            let delta = methcall1(tzinfo, "utcoffset", dt)?;
-            defer_decref!(delta);
-            if is_none(delta) {
+            let py_delta = methcall1(tzinfo, "utcoffset", dt)?;
+            defer_decref!(py_delta);
+            if is_none(py_delta) {
                 raise_value_err("datetime utcoffset() is None")?;
             }
-            let secs = i64::from(PyDateTime_DELTA_GET_DAYS(delta)) * 86400
-                + i64::from(PyDateTime_DELTA_GET_SECONDS(delta));
-            let nanos = PyDateTime_DELTA_GET_MICROSECONDS(delta) as u32 * 1_000;
-            // No bounds check on TimeDelta needed, as it's < 24 hours in size
-            inst.shift(-TimeDelta { secs, nanos })
+            inst.shift(
+                // Safe: Python offsets are already bounded to +/- 24 hours: well within TimeDelta range.
+                -TimeDelta::from_py_unsafe(py_delta),
+            )
         })
     }
 
-    #[cfg(target_pointer_width = "64")]
     pub(crate) const fn pyhash(&self) -> Py_hash_t {
-        hash_combine(self.secs as Py_hash_t, self.nanos as Py_hash_t)
-    }
-
-    #[cfg(target_pointer_width = "32")]
-    pub(crate) const fn pyhash(&self) -> Py_hash_t {
+        #[cfg(target_pointer_width = "64")]
+        {
+            hash_combine(
+                self.epoch.get() as Py_hash_t,
+                self.subsec.get() as Py_hash_t,
+            )
+        }
+        #[cfg(target_pointer_width = "32")]
         hash_combine(
-            self.secs as Py_hash_t,
-            hash_combine((self.secs >> 32) as Py_hash_t, self.nanos as Py_hash_t),
+            self.epoch.get() as Py_hash_t,
+            hash_combine(
+                (self.epoch.get() >> 32) as Py_hash_t,
+                self.subsec.get() as Py_hash_t,
+            ),
         )
     }
 
     fn to_delta(self) -> TimeDelta {
         TimeDelta {
-            secs: self.secs,
-            nanos: self.nanos,
+            secs: self.epoch.to_delta(),
+            subsec: self.subsec,
         }
     }
 }
@@ -487,8 +390,11 @@ unsafe fn exact_eq(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let Instant { secs, nanos } = Instant::extract(slf);
-    let data = pack![secs, nanos];
+    let Instant {
+        epoch: secs,
+        subsec: nanos,
+    } = Instant::extract(slf);
+    let data = pack![secs.get(), nanos.get()];
     (
         State::for_obj(slf).unpickle_instant,
         steal!((steal!(data.to_py()?),).to_py()?),
@@ -501,15 +407,16 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
     if packed.len() != 12 {
         raise_value_err("Invalid pickle data")?;
     }
+    // TODO-LAST: deprecate old unpickler
     Instant {
-        secs: unpack_one!(packed, i64),
-        nanos: unpack_one!(packed, u32),
+        epoch: EpochSecs::new_unchecked(unpack_one!(packed, i64)),
+        subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
     }
     .to_obj(State::for_mod(module).instant_type)
 }
 
 unsafe fn timestamp(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    Instant::extract(slf).timestamp().to_py()
+    Instant::extract(slf).epoch.get().to_py()
 }
 
 unsafe fn timestamp_millis(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -564,12 +471,7 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn now(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let (secs, nanos) = State::for_type(cls.cast()).time_ns()?;
-    Instant {
-        secs: secs + UNIX_EPOCH_INSTANT,
-        nanos,
-    }
-    .to_obj(cls.cast())
+    State::for_type(cls.cast()).time_ns()?.to_obj(cls.cast())
 }
 
 unsafe fn parse_rfc3339(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
@@ -735,14 +637,15 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
     match *args {
         [] => slf
             .to_datetime()
-            .with_offset_unchecked(0)
+            .with_offset_unchecked(Offset::ZERO)
             .to_obj(offset_datetime_type),
-        [offset] => {
-            let offset_secs = offset_datetime::extract_offset(offset, time_delta_type)?;
-            slf.to_offset(offset_secs)
-                .ok_or_value_err("Resulting local date is out of range")?
-                .to_obj(offset_datetime_type)
-        }
+        [offset_obj] => slf
+            .to_offset(offset_datetime::extract_offset(
+                offset_obj,
+                time_delta_type,
+            )?)
+            .ok_or_value_err("Resulting local date is out of range")?
+            .to_obj(offset_datetime_type),
         _ => raise_type_err("to_fixed_offset() takes at most 1 argument"),
     }
 }
@@ -800,20 +703,8 @@ unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     if tzinfo == state.py_api.TimeZone_UTC
         || (is_none(tzinfo) && s_obj.to_str()?.unwrap().contains("-0000"))
     {
-        Instant::from_datetime(
-            Date {
-                year: PyDateTime_GET_YEAR(dt) as u16,
-                month: PyDateTime_GET_MONTH(dt) as u8,
-                day: PyDateTime_GET_DAY(dt) as u8,
-            },
-            Time {
-                hour: PyDateTime_DATE_GET_HOUR(dt) as u8,
-                minute: PyDateTime_DATE_GET_MINUTE(dt) as u8,
-                second: PyDateTime_DATE_GET_SECOND(dt) as u8,
-                nanos: PyDateTime_DATE_GET_MICROSECOND(dt) as u32 * 1_000,
-            },
-        )
-        .to_obj(cls.cast())
+        Instant::from_datetime(Date::from_py_unchecked(dt), Time::from_py_dt_unchecked(dt))
+            .to_obj(cls.cast())
     } else {
         raise_value_err(format!(
             "Could not parse RFC 2822 with nonzero offset: {}",
@@ -833,15 +724,17 @@ unsafe fn round(
     if unit == round::Unit::Day {
         raise_value_err(doc::CANNOT_ROUND_DAY_MSG)?;
     }
-    let TimeDelta { secs, nanos } = Instant::extract(slf)
+    let TimeDelta { secs, subsec } = Instant::extract(slf)
         .to_delta()
         .round(increment, mode)
-        .unwrap(); // safe unwrap: delta has higher range than instant
-
-    if secs > MAX_INSTANT {
-        raise_value_err("Resulting Instant out of range")?;
+        // Safety: TimeDelta has higher range than Instant,
+        // so rounding cannot result in out-of-range
+        .unwrap();
+    Instant {
+        epoch: EpochSecs::new(secs.get()).ok_or_value_err("Resulting instant out of range")?,
+        subsec,
     }
-    Instant { secs, nanos }.to_obj(cls)
+    .to_obj(cls)
 }
 
 static mut METHODS: &[PyMethodDef] = &[

@@ -1,6 +1,26 @@
 🚀 Changelog
 ============
 
+0.8.0 (2025-??-??)
+------------------
+
+A big release touting much faster timezone switching.
+There are also some small breaking changes (see below).
+
+**Improved**
+
+- Implement timezone logic in Rust for a big speedup
+
+**Fixed**
+
+- Fixed incorrect type stubs for ``day_length()`` and ``start_of_day()`` methods
+- Improved robustness of date calculations at extreme boundaries
+
+**Breaking changes**
+
+- Pickled ``Instant`` objects from <0.8 version can no longer be unpickled.
+  This is due to an improved internal representation.
+
 0.7.3 (2025-03-19)
 ------------------
 

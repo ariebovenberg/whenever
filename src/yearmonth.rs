@@ -3,15 +3,16 @@ use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
+use crate::common::math::*;
 use crate::common::*;
-use crate::date::{Date, MAX_YEAR, MIN_YEAR};
+use crate::date::Date;
 use crate::docstrings as doc;
 use crate::State;
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
-pub struct YearMonth {
-    pub(crate) year: u16,
-    pub(crate) month: u8,
+pub(crate) struct YearMonth {
+    pub(crate) year: Year,
+    pub(crate) month: Month,
 }
 
 pub(crate) const SINGLETONS: &[(&CStr, YearMonth); 2] = &[
@@ -20,47 +21,41 @@ pub(crate) const SINGLETONS: &[(&CStr, YearMonth); 2] = &[
 ];
 
 impl YearMonth {
-    pub(crate) const unsafe fn hash(self) -> i32 {
-        ((self.year as i32) << 4) | self.month as i32
-    }
-
-    pub(crate) const fn from_longs(year: c_long, month: c_long) -> Option<Self> {
-        if year < MIN_YEAR || year > MAX_YEAR {
-            return None;
-        }
-        if month < 1 || month > 12 {
-            return None;
-        }
-        Some(YearMonth {
-            year: year as u16,
-            month: month as u8,
-        })
-    }
-
-    pub(crate) const fn new(year: u16, month: u8) -> Option<Self> {
-        if year == 0 || year > MAX_YEAR as _ || month < 1 || month > 12 {
-            None
-        } else {
-            Some(YearMonth { year, month })
-        }
+    pub(crate) const fn new(year: Year, month: Month) -> Self {
+        YearMonth { year, month }
     }
 
     pub(crate) const fn new_unchecked(year: u16, month: u8) -> Self {
         debug_assert!(year != 0);
-        debug_assert!(year <= MAX_YEAR as _);
+        debug_assert!(year <= Year::MAX.get() as _);
         debug_assert!(month >= 1 && month <= 12);
-        YearMonth { year, month }
+        YearMonth {
+            year: Year::new_unchecked(year),
+            month: Month::new_unchecked(month),
+        }
+    }
+    pub(crate) fn from_longs(y: c_long, m: c_long) -> Option<Self> {
+        Some(YearMonth {
+            year: Year::from_long(y)?,
+            month: Month::from_long(m)?,
+        })
+    }
+
+    pub(crate) const unsafe fn hash(self) -> i32 {
+        ((self.year.get() as i32) << 4) | self.month as i32
     }
 
     pub(crate) fn parse_all(s: &[u8]) -> Option<Self> {
         if s.len() == 7 && s[4] == b'-' {
-            YearMonth::new(
-                parse_digit(s, 0)? as u16 * 1000
-                    + parse_digit(s, 1)? as u16 * 100
-                    + parse_digit(s, 2)? as u16 * 10
-                    + parse_digit(s, 3)? as u16,
-                parse_digit(s, 5)? * 10 + parse_digit(s, 6)?,
-            )
+            Some(YearMonth::new(
+                Year::new(
+                    parse_digit(s, 0)? as u16 * 1000
+                        + parse_digit(s, 1)? as u16 * 100
+                        + parse_digit(s, 2)? as u16 * 10
+                        + parse_digit(s, 3)? as u16,
+                )?,
+                Month::new(parse_digit(s, 5)? * 10 + parse_digit(s, 6)?)?,
+            ))
         } else {
             None
         }
@@ -71,7 +66,7 @@ impl PyWrapped for YearMonth {}
 
 impl Display for YearMonth {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{:04}-{:02}", self.year, self.month)
+        write!(f, "{:04}-{:02}", self.year.get(), self.month.get())
     }
 }
 
@@ -161,7 +156,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let YearMonth { year, month } = YearMonth::extract(slf);
     (
         State::for_obj(slf).unpickle_yearmonth,
-        steal!((steal!(pack![year, month].to_py()?),).to_py()?),
+        steal!((steal!(pack![year.get(), month.get()].to_py()?),).to_py()?),
     )
         .to_py()
 }
@@ -181,8 +176,8 @@ unsafe fn replace(
         raise_type_err("replace() takes no positional arguments")
     } else {
         let ym = YearMonth::extract(slf);
-        let mut year = ym.year.into();
-        let mut month = ym.month.into();
+        let mut year = ym.year.get().into();
+        let mut month = ym.month.get().into();
         handle_kwargs("replace", kwargs, |key, value, eq| {
             if eq(key, str_year) {
                 year = value.to_long()?.ok_or_type_err("year must be an integer")?;
@@ -237,18 +232,18 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
         raise_value_err("Invalid pickle data")?
     }
     YearMonth {
-        year: unpack_one!(packed, u16),
-        month: unpack_one!(packed, u8),
+        year: Year::new_unchecked(unpack_one!(packed, u16)),
+        month: Month::new_unchecked(unpack_one!(packed, u8)),
     }
     .to_obj(State::for_mod(module).yearmonth_type)
 }
 
 unsafe fn get_year(slf: *mut PyObject) -> PyReturn {
-    YearMonth::extract(slf).year.to_py()
+    YearMonth::extract(slf).year.get().to_py()
 }
 
 unsafe fn get_month(slf: *mut PyObject) -> PyReturn {
-    YearMonth::extract(slf).month.to_py()
+    YearMonth::extract(slf).month.get().to_py()
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[

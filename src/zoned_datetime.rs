@@ -1,23 +1,24 @@
 use core::ffi::{c_int, c_long, c_void, CStr};
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
-use std::fmt::{self, Display, Formatter};
 
+use crate::common::math::*;
 use crate::common::*;
 use crate::datetime_delta::set_units_from_kwargs;
 use crate::docstrings as doc;
 use crate::local_datetime::set_components_from_kwargs;
+use crate::math::SubSecNanos;
 use crate::tz::cache::TzRef;
 use crate::{
-    date::{Date, MAX as MAX_DATE},
+    date::Date,
     date_delta::DateDelta,
     datetime_delta::DateTimeDelta,
-    instant::{Instant, MAX_EPOCH, MAX_INSTANT, MIN_EPOCH, MIN_INSTANT},
+    instant::Instant,
     local_datetime::DateTime,
     offset_datetime::{self, OffsetDateTime},
     round,
     time::{Time, MIDNIGHT},
-    time_delta::{self, TimeDelta},
+    time_delta::TimeDelta,
     State,
 };
 
@@ -25,7 +26,7 @@ use crate::{
 pub(crate) struct ZonedDateTime {
     date: Date,
     time: Time,
-    offset_secs: Offset,
+    offset: Offset,
     tz: TzRef,
 }
 
@@ -35,17 +36,17 @@ impl ZonedDateTime {
     pub(crate) unsafe fn new(
         date: Date,
         time: Time,
-        offset_secs: Offset,
+        offset: Offset,
         tz: TzRef,
     ) -> Option<ZonedDateTime> {
-        (MIN_EPOCH..=MAX_EPOCH)
-            .contains(&(date.timestamp_at(time) - i64::from(offset_secs)))
-            .then_some(Self {
-                date,
-                time,
-                offset_secs,
-                tz,
-            })
+        // Check: the instant represented by the date and time is within range
+        date.epoch_at(time).offset(-offset)?;
+        Some(Self {
+            date,
+            time,
+            offset,
+            tz,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -74,8 +75,7 @@ impl ZonedDateTime {
         exc_repeated: *mut PyObject,
         exc_skipped: *mut PyObject,
     ) -> PyResult<Self> {
-        let local_epoch = date.timestamp_at(time);
-        let (dt, offset) = match tz.ambiguity_for_local(local_epoch) {
+        let (dt, offset) = match tz.ambiguity_for_local(date.epoch_at(time)) {
             Ambiguity::Unambiguous(offset) => (DateTime { date, time }, offset),
             Ambiguity::Fold(earlier, later) => (
                 DateTime { date, time },
@@ -90,17 +90,22 @@ impl ZonedDateTime {
                 },
             ),
             Ambiguity::Gap(later, earlier) => {
-                let shift = later - earlier;
+                let shift = later.sub(earlier);
                 let dt = DateTime { date, time };
-                match dis {
-                    Disambiguate::Earlier => (dt.small_shift_unchecked(-shift), earlier),
-                    Disambiguate::Later => (dt.small_shift_unchecked(shift), later),
-                    Disambiguate::Compatible => (dt.small_shift_unchecked(shift), later),
+                let (shift, offset) = match dis {
+                    Disambiguate::Earlier => (-shift, earlier),
+                    Disambiguate::Later => (shift, later),
+                    Disambiguate::Compatible => (shift, later),
                     Disambiguate::Raise => raise(
                         exc_skipped,
                         format!("{} {} is skipped in timezone '{}'", date, time, tz.key),
                     )?,
-                }
+                };
+                (
+                    dt.change_offset(shift)
+                        .ok_or_value_err("Resulting date is out of range")?,
+                    offset,
+                )
             }
         };
         dt.assume_tz(offset, tz)
@@ -116,7 +121,7 @@ impl ZonedDateTime {
         offset: Offset,
     ) -> PyResult<Self> {
         use Ambiguity::*;
-        match tz.ambiguity_for_local(date.timestamp_at(time)) {
+        match tz.ambiguity_for_local(date.epoch_at(time)) {
             Unambiguous(offset_secs) => ZonedDateTime::new(date, time, offset_secs, tz),
             Fold(offset0, offset1) => ZonedDateTime::new(
                 date,
@@ -126,24 +131,28 @@ impl ZonedDateTime {
             ),
             Gap(offset0, offset1) => {
                 let (offset_secs, shift) = if offset == offset0 {
-                    (offset0, offset0 - offset1)
+                    (offset0, offset0.sub(offset1))
                 } else {
-                    (offset1, offset1 - offset0)
+                    (offset1, offset1.sub(offset0))
                 };
                 DateTime { date, time }
-                    .small_shift_unchecked(shift)
+                    .change_offset(shift)
+                    .ok_or_value_err("Resulting date is out of range")?
                     .assume_tz(offset_secs, tz)
             }
         }
         .ok_or_value_err("Resulting datetime is out of range")
     }
 
-    pub(crate) const fn instant(self) -> Instant {
-        Instant::from_datetime(self.date, self.time).shift_secs_unchecked(-self.offset_secs as i64)
+    pub(crate) fn instant(self) -> Instant {
+        Instant::from_datetime(self.date, self.time)
+            .offset(-self.offset)
+            // Safe: we know the instant of a ZonedDateTime is always valid
+            .unwrap()
     }
 
     pub(crate) const fn to_offset(self) -> OffsetDateTime {
-        OffsetDateTime::new_unchecked(self.date, self.time, self.offset_secs)
+        OffsetDateTime::new_unchecked(self.date, self.time, self.offset)
     }
 
     pub(crate) const fn without_offset(self) -> DateTime {
@@ -156,19 +165,19 @@ impl ZonedDateTime {
     #[allow(clippy::too_many_arguments)]
     pub(crate) unsafe fn shift(
         self,
-        months: i32,
-        days: i32,
+        months: DeltaMonths,
+        days: DeltaDays,
         delta: TimeDelta,
         dis: Option<Disambiguate>,
         exc_repeated: *mut PyObject,
         exc_skipped: *mut PyObject,
     ) -> PyResult<Self> {
-        let shifted_by_date = if months != 0 || days != 0 {
+        let shifted_by_date = if !months.is_zero() || !days.is_zero() {
             let ZonedDateTime {
                 date,
                 time,
                 tz,
-                offset_secs,
+                offset,
             } = self;
             Self::resolve(
                 date.shift(months, days)
@@ -176,7 +185,7 @@ impl ZonedDateTime {
                 time,
                 tz,
                 dis,
-                offset_secs,
+                offset,
                 exc_repeated,
                 exc_skipped,
             )?
@@ -203,59 +212,45 @@ impl PyWrapped for ZonedDateTime {
 }
 
 impl DateTime {
-    pub(crate) unsafe fn assume_tz(self, offset_secs: i32, tz: TzRef) -> Option<ZonedDateTime> {
-        ZonedDateTime::new(self.date, self.time, offset_secs, tz)
+    pub(crate) unsafe fn assume_tz(self, offset: Offset, tz: TzRef) -> Option<ZonedDateTime> {
+        ZonedDateTime::new(self.date, self.time, offset, tz)
     }
 
-    pub(crate) unsafe fn assume_tz_unchecked(self, offset_secs: i32, tz: TzRef) -> ZonedDateTime {
+    pub(crate) unsafe fn assume_tz_unchecked(self, offset: Offset, tz: TzRef) -> ZonedDateTime {
         ZonedDateTime {
             date: self.date,
             time: self.time,
-            offset_secs,
+            offset,
             tz,
         }
     }
 }
 
 impl Instant {
+    /// Convert an instant to a zoned datetime in the given timezone.
+    /// Returns None if the resulting date would be out of range.
     pub(crate) unsafe fn to_tz(self, tz: TzRef) -> Option<ZonedDateTime> {
-        let epoch = self.timestamp();
-        println!("Epoch: {}", epoch);
+        let epoch = self.epoch;
         let offset = tz.offset_for_instant(epoch);
-        println!("Offset: {}", offset);
-        let local_epoch = epoch + i64::from(offset);
-        println!("Local epoch: {}", local_epoch);
-        if !(MIN_EPOCH..=MAX_EPOCH).contains(&local_epoch) {
-            return None;
-        }
-        let date = Date::from_unix_days_unchecked((local_epoch / i64::from(S_PER_DAY)) as _);
-        let time_secs = (local_epoch % i64::from(S_PER_DAY)) as i32;
-        let time = Time {
-            hour: (time_secs / 3600) as u8,
-            minute: ((time_secs / 60) % 60) as u8,
-            second: (time_secs % 60) as u8,
-            nanos: self.subsec_nanos(),
-        };
-        Some(DateTime { date, time }.assume_tz_unchecked(offset, tz))
+        Some(
+            epoch
+                .offset(offset)?
+                .datetime(self.subsec)
+                // Safe: We've already checked for both out-of-range date and time.
+                .assume_tz_unchecked(offset, tz),
+        )
     }
 }
 
-impl Display for ZonedDateTime {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for ZonedDateTime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let &ZonedDateTime {
             date,
             time,
-            offset_secs,
+            offset,
             tz,
         } = self;
-        write!(
-            f,
-            "{}T{}{}[{}]",
-            date,
-            time,
-            offset_fmt(offset_secs),
-            tz.key
-        )
+        write!(f, "{}T{}{}[{}]", date, time, offset, tz.key)
     }
 }
 
@@ -319,15 +314,12 @@ unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
     let ZonedDateTime {
         date,
         time,
-        offset_secs,
+        offset: offset_secs,
         tz,
     } = ZonedDateTime::extract(slf);
     format!(
         "ZonedDateTime({} {}{}[{}])",
-        date,
-        time,
-        offset_fmt(offset_secs),
-        tz.key
+        date, time, offset_secs, tz.key
     )
     .to_py()
 }
@@ -381,8 +373,8 @@ unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bo
     } = State::for_type(type_a);
 
     let zdt = ZonedDateTime::extract(obj_a);
-    let mut months = 0;
-    let mut days = 0;
+    let mut months = DeltaMonths::ZERO;
+    let mut days = DeltaDays::ZERO;
     let mut tdelta = TimeDelta::ZERO;
 
     if type_b == time_delta_type {
@@ -530,17 +522,17 @@ pub(crate) unsafe fn unpickle(module: &mut PyObject, args: &[*mut PyObject]) -> 
     }
     ZonedDateTime {
         date: Date {
-            year: unpack_one!(packed, u16),
-            month: unpack_one!(packed, u8),
+            year: Year::new_unchecked(unpack_one!(packed, u16)),
+            month: Month::new_unchecked(unpack_one!(packed, u8)),
             day: unpack_one!(packed, u8),
         },
         time: Time {
             hour: unpack_one!(packed, u8),
             minute: unpack_one!(packed, u8),
             second: unpack_one!(packed, u8),
-            nanos: unpack_one!(packed, u32),
+            subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
         },
-        offset_secs: unpack_one!(packed, i32),
+        offset: Offset::new_unchecked(unpack_one!(packed, i32)),
         tz: tz_cache.py_get(tz_obj, zoneinfo_notfound)?,
     }
     .to_obj(zoned_datetime_type)
@@ -548,6 +540,7 @@ pub(crate) unsafe fn unpickle(module: &mut PyObject, args: &[*mut PyObject]) -> 
 
 unsafe fn py_datetime(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
     let zdt = ZonedDateTime::extract(slf);
+    // Chosen approach: get the UTC date and time, then use ZoneInfo.fromutc()
     let DateTime {
         date: Date { year, month, day },
         time:
@@ -555,9 +548,13 @@ unsafe fn py_datetime(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
                 hour,
                 minute,
                 second,
-                nanos,
+                subsec: nanos,
             },
-    } = zdt.without_offset().small_shift_unchecked(-zdt.offset_secs);
+    } = zdt
+        .without_offset()
+        .change_offset(-zdt.offset.as_offset_delta())
+        // Safety: we know the UTC date and time are valid
+        .unwrap();
     let &State {
         py_api:
             &PyDateTime_CAPI {
@@ -571,17 +568,18 @@ unsafe fn py_datetime(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
     let tz_key: &str = &zdt.tz.key;
     let zoneinfo = call1(zoneinfo_type, steal!(tz_key.to_py()?))?;
     defer_decref!(zoneinfo);
+    // TODO-LAST: document that offsets could disagree
     methcall1(
         zoneinfo,
         "fromutc",
         steal!(DateTime_FromDateAndTime(
-            year.into(),
-            month.into(),
+            year.get().into(),
+            month.get().into(),
             day.into(),
             hour.into(),
             minute.into(),
             second.into(),
-            (nanos / 1_000) as _,
+            (nanos.get() / 1_000) as _,
             zoneinfo,
             DateTimeType,
         )),
@@ -602,7 +600,7 @@ unsafe fn to_fixed_offset(slf_obj: &mut PyObject, args: &[*mut PyObject]) -> PyR
         ..
     } = State::for_obj(slf_obj);
     match *args {
-        [] => OffsetDateTime::new_unchecked(slf.date, slf.time, slf.offset_secs)
+        [] => OffsetDateTime::new_unchecked(slf.date, slf.time, slf.offset)
             .to_obj(offset_datetime_type),
         [arg] => slf
             .instant()
@@ -662,7 +660,7 @@ unsafe fn replace_date(
     let ZonedDateTime {
         time,
         tz,
-        offset_secs,
+        offset: offset_secs,
         ..
     } = ZonedDateTime::extract(slf);
     if Py_TYPE(arg) == date_type {
@@ -706,7 +704,7 @@ unsafe fn replace_time(
     let ZonedDateTime {
         date,
         tz,
-        offset_secs,
+        offset: offset_secs,
         ..
     } = ZonedDateTime::extract(slf);
     if Py_TYPE(arg) == time_type {
@@ -747,21 +745,21 @@ unsafe fn replace(
         zoneinfo_notfound,
         ..
     } = state;
-    // TODO: avoid two state lookups
+    // TODO-TZIF: avoid two state lookups
     let tz_cache = &mut State::for_type_mut(cls).tz_cache;
     let ZonedDateTime {
         date,
         time,
         mut tz,
-        offset_secs,
+        offset: offset_secs,
     } = ZonedDateTime::extract(slf);
-    let mut year = date.year.into();
-    let mut month = date.month.into();
+    let mut year = date.year.get().into();
+    let mut month = date.month.get().into();
     let mut day = date.day.into();
     let mut hour = time.hour.into();
     let mut minute = time.minute.into();
     let mut second = time.second.into();
-    let mut nanos = time.nanos as _;
+    let mut nanos = time.subsec.get() as _;
     let mut dis = None;
 
     handle_kwargs("replace", kwargs, |key, value, eq| {
@@ -779,6 +777,7 @@ unsafe fn replace(
             return set_components_from_kwargs(
                 key,
                 value,
+                // TODO-DELTA: from_py for math concepts
                 &mut year,
                 &mut month,
                 &mut day,
@@ -806,10 +805,8 @@ unsafe fn now(cls: *mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
         ..
     } = state;
     let tz = tz_cache.py_get(tz_obj, zoneinfo_notfound)?;
-    let (timestamp, subsec) = state.time_ns()?;
-    // TODO: going through Instant incurrs a performance penalty
-    Instant::from_timestamp_and_nanos(timestamp, subsec)
-        .ok_or_value_err("Current datetime is out of range")? // UTC out of range
+    state
+        .time_ns()?
         .to_tz(tz)
         .ok_or_value_err("Current datetime is out of range")? // local date out of range
         .to_obj(cls.cast())
@@ -839,24 +836,30 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
 
     let tz_obj = PyObject_GetAttrString(tzinfo, c"key".as_ptr()).as_result()?;
     let tz = tz_cache.py_get(tz_obj, zoneinfo_notfound)?;
-
-    // TODO: tz offsets could theoretically disagree!
-
-    ZonedDateTime::new(
-        Date {
-            year: PyDateTime_GET_YEAR(dt) as _,
-            month: PyDateTime_GET_MONTH(dt) as _,
-            day: PyDateTime_GET_DAY(dt) as _,
-        },
-        Time {
-            hour: PyDateTime_DATE_GET_HOUR(dt) as _,
-            minute: PyDateTime_DATE_GET_MINUTE(dt) as _,
-            second: PyDateTime_DATE_GET_SECOND(dt) as _,
-            nanos: PyDateTime_DATE_GET_MICROSECOND(dt) as u32 * 1_000,
-        },
-        offset_from_py_dt(dt)?,
-        tz,
-    )
+    // We use the timestamp() to convert into a ZonedDateTime
+    // Alternatives not chosen:
+    // - resolve offset from date/time -> fold not respected
+    // - reuse the offset -> invalid results for gaps
+    // - reuse the fold -> our calculated offset might be different, theoretically
+    // Thus, the most "safe" way is to use the timestamp. This 100% guarantees
+    // we preserve the same moment in time.
+    let epoch_float = (methcall0(dt, "timestamp")? as *mut PyObject)
+        .to_f64()?
+        .ok_or_raise(
+            PyExc_RuntimeError,
+            "datetime.datetime.timestamp() returned non-float",
+        )?;
+    Instant {
+        // Safety: Python's timestamps are always in range
+        epoch: EpochSecs::new_unchecked(epoch_float.floor() as _),
+        // Note: we don't get the subsecond part from the timestamp,
+        // since floating point precision might lead to inaccuracies.
+        // translating to nanoseconds. Instead, we take it from the datetime.
+        // This is safe because IANA timezones always deal in whole seconds,
+        // meaning the subsecond part is timezone-independent.
+        subsec: SubSecNanos::from_py_dt_unchecked(dt),
+    }
+    .to_tz(tz)
     .ok_or_value_err("Resulting datetime is out of range")?
     .to_obj(cls.cast())
 }
@@ -868,7 +871,7 @@ unsafe fn local(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn timestamp(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    ZonedDateTime::extract(slf).instant().timestamp().to_py()
+    ZonedDateTime::extract(slf).instant().epoch.get().to_py()
 }
 
 unsafe fn timestamp_millis(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -893,12 +896,21 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
                 hour,
                 minute,
                 second,
-                nanos,
+                subsec: nanos,
             },
-        offset_secs,
+        offset,
         tz,
     } = ZonedDateTime::extract(slf);
-    let data = pack![year, month, day, hour, minute, second, nanos, offset_secs];
+    let data = pack![
+        year.get(),
+        month.get(),
+        day,
+        hour,
+        minute,
+        second,
+        nanos.get(),
+        offset.get()
+    ];
     let tz_key: &str = &tz.key;
     (
         State::for_obj(slf).unpickle_zoned_datetime,
@@ -922,7 +934,7 @@ unsafe fn check_from_timestamp_args_return_tz(
 ) -> PyResult<TzRef> {
     match (args, kwargs.next()) {
         (&[_], Some((key, value))) if kwargs.len() == 1 => {
-            if key.kwarg_eq(str_tz) {
+            if key.py_eq(str_tz)? {
                 tz_cache.py_get(value, zoneinfo_notfound)
             } else {
                 raise_type_err(format!(
@@ -984,7 +996,7 @@ unsafe fn from_timestamp_millis(
             .to_i64()?
             .ok_or_type_err("timestamp must be an integer")?,
     )
-    // TODO: fast check for both ranges!
+    // TODO-DELTA: fast check for both ranges!
     .ok_or_value_err("timestamp is out of range")?
     .to_tz(tz)
     .ok_or_value_err("Resulting date out of range")?
@@ -1013,24 +1025,21 @@ unsafe fn from_timestamp_nanos(
 unsafe fn is_ambiguous(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let ZonedDateTime { date, time, tz, .. } = ZonedDateTime::extract(slf);
     matches!(
-        tz.ambiguity_for_local(
-            i64::from(date.unix_days()) * i64::from(S_PER_DAY)
-                + i64::from(time.total_seconds() as i32)
-        ),
+        tz.ambiguity_for_local(date.epoch_at(time)),
         Ambiguity::Fold(_, _)
     )
     .to_py()
 }
 
 // parse ±HH:MM[:SS] (consuming as much as possible of the input)
-fn parse_offset_partial(s: &mut &[u8]) -> Option<i32> {
+fn parse_offset_partial(s: &mut &[u8]) -> Option<Offset> {
     debug_assert!(!s.is_empty());
     let sign = match s[0] {
-        b'+' => 1,
-        b'-' => -1,
+        b'+' => Sign::Plus,
+        b'-' => Sign::Minus,
         b'Z' => {
             *s = &s[1..];
-            return Some(0);
+            return Some(Offset::ZERO);
         }
         _ => return None,
     };
@@ -1038,9 +1047,7 @@ fn parse_offset_partial(s: &mut &[u8]) -> Option<i32> {
         return None;
     }
     // the HH:MM part
-    // FUTURE: technically, this eliminates 2x:00 offsets. There
-    // are no such offsets in the IANA database, but may be possible...
-    let secs = (parse_digit_max(s, 1, b'1')? * 10 + parse_digit(s, 2)?) as i32 * 3600
+    let secs = (parse_digit_max(s, 1, b'2')? * 10 + parse_digit(s, 2)?) as i32 * 3600
         + (parse_digit_max(s, 4, b'5')? * 10 + parse_digit(s, 5)?) as i32 * 60;
     // the optional seconds part
     match s.get(6) {
@@ -1060,7 +1067,8 @@ fn parse_offset_partial(s: &mut &[u8]) -> Option<i32> {
             Some(secs)
         }
     }
-    .map(|s| sign * s)
+    .and_then(Offset::new)
+    .map(|s| s.with_sign(sign))
 }
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
@@ -1097,7 +1105,7 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
             )
         })?;
 
-    let offset_is_valid = match tz.ambiguity_for_local(date.timestamp_at(time)) {
+    let offset_is_valid = match tz.ambiguity_for_local(date.epoch_at(time)) {
         Ambiguity::Unambiguous(o) => o == offset_secs,
         Ambiguity::Gap(o1, o2) | Ambiguity::Fold(o1, o2) => o1 == offset_secs || o2 == offset_secs,
     };
@@ -1142,14 +1150,14 @@ unsafe fn _shift_method(
     let fname = if negate { "subtract" } else { "add" };
     let state = State::for_type(cls);
     let mut dis = None;
-    let mut months = 0;
-    let mut days = 0;
+    let mut monthdelta = DeltaMonths::ZERO;
+    let mut daydelta = DeltaDays::ZERO;
     let mut tdelta = TimeDelta::ZERO;
 
     match *args {
         [arg] => {
             match kwargs.next() {
-                Some((key, value)) if kwargs.len() == 1 && key.kwarg_eq(state.str_disambiguate) => {
+                Some((key, value)) if kwargs.len() == 1 && key.py_eq(state.str_disambiguate)? => {
                     dis = Some(Disambiguate::from_py(value)?)
                 }
                 None => {}
@@ -1162,12 +1170,12 @@ unsafe fn _shift_method(
                 tdelta = TimeDelta::extract(arg);
             } else if Py_TYPE(arg) == state.date_delta_type {
                 let dd = DateDelta::extract(arg);
-                months = dd.months;
-                days = dd.days;
+                monthdelta = dd.months;
+                daydelta = dd.days;
             } else if Py_TYPE(arg) == state.datetime_delta_type {
                 let dtd = DateTimeDelta::extract(arg);
-                months = dtd.ddelta.months;
-                days = dtd.ddelta.days;
+                monthdelta = dtd.ddelta.months;
+                daydelta = dtd.ddelta.days;
                 tdelta = dtd.tdelta;
             } else {
                 raise_type_err(format!("{}() argument must be a delta", fname))?
@@ -1175,6 +1183,8 @@ unsafe fn _shift_method(
         }
         [] => {
             let mut nanos: i128 = 0;
+            let mut months: i32 = 0;
+            let mut days: i32 = 0;
             handle_kwargs(fname, kwargs, |key, value, eq| {
                 if eq(key, state.str_disambiguate) {
                     dis = Some(Disambiguate::from_py(value)?);
@@ -1184,6 +1194,8 @@ unsafe fn _shift_method(
                 }
             })?;
             tdelta = TimeDelta::from_nanos(nanos).ok_or_value_err("Total duration too large")?;
+            monthdelta = DeltaMonths::new(months).ok_or_value_err("Total months out of range")?;
+            daydelta = DeltaDays::new(days).ok_or_value_err("Total days out of range")?;
         }
         _ => raise_type_err(format!(
             "{}() takes at most 1 positional argument, got {}",
@@ -1192,15 +1204,15 @@ unsafe fn _shift_method(
         ))?,
     }
     if negate {
-        months = -months;
-        days = -days;
+        monthdelta = -monthdelta;
+        daydelta = -daydelta;
         tdelta = -tdelta;
     }
 
     ZonedDateTime::extract(slf)
         .shift(
-            months,
-            days,
+            monthdelta,
+            daydelta,
             tdelta,
             dis,
             state.exc_repeated,
@@ -1265,7 +1277,7 @@ unsafe fn day_length(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     )?
     .instant();
     let start_of_next_day = ZonedDateTime::resolve_using_disambiguate(
-        date.increment(),
+        date.tomorrow().ok_or_value_err("Day out of range")?,
         MIDNIGHT,
         tz,
         Disambiguate::Compatible,
@@ -1291,16 +1303,14 @@ unsafe fn round(
             let ZonedDateTime {
                 mut date,
                 time,
-                offset_secs,
+                offset: offset_secs,
                 tz,
             } = ZonedDateTime::extract(slf);
             let (time_rounded, next_day) = time.round(increment as u64, mode);
             if next_day == 1 {
-                if date != MAX_DATE {
-                    date = date.increment();
-                } else {
-                    raise_value_err("Resulting datetime out of range")?
-                }
+                date = date
+                    .tomorrow()
+                    .ok_or_value_err("Resulting date out of range")?;
             };
             ZonedDateTime::resolve_using_offset(date, time_rounded, tz, offset_secs)
         }
@@ -1331,7 +1341,8 @@ unsafe fn _round_day(
     };
     let get_ceil = || {
         ZonedDateTime::resolve_using_disambiguate(
-            date.increment(),
+            date.tomorrow()
+                .ok_or_value_err("Resulting date out of range")?,
             MIDNIGHT,
             tz,
             Disambiguate::Compatible,
@@ -1420,11 +1431,11 @@ static mut METHODS: &[PyMethodDef] = &[
 ];
 
 unsafe fn get_year(slf: *mut PyObject) -> PyReturn {
-    ZonedDateTime::extract(slf).date.year.to_py()
+    ZonedDateTime::extract(slf).date.year.get().to_py()
 }
 
 unsafe fn get_month(slf: *mut PyObject) -> PyReturn {
-    ZonedDateTime::extract(slf).date.month.to_py()
+    ZonedDateTime::extract(slf).date.month.get().to_py()
 }
 
 unsafe fn get_day(slf: *mut PyObject) -> PyReturn {
@@ -1444,7 +1455,7 @@ unsafe fn get_second(slf: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn get_nanos(slf: *mut PyObject) -> PyReturn {
-    ZonedDateTime::extract(slf).time.nanos.to_py()
+    ZonedDateTime::extract(slf).time.subsec.get().to_py()
 }
 
 unsafe fn get_tz(slf: *mut PyObject) -> PyReturn {
@@ -1453,7 +1464,7 @@ unsafe fn get_tz(slf: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn get_offset(slf: *mut PyObject) -> PyReturn {
-    time_delta::TimeDelta::from_secs_unchecked(ZonedDateTime::extract(slf).offset_secs as i64)
+    TimeDelta::from_offset(ZonedDateTime::extract(slf).offset)
         .to_obj(State::for_obj(slf).time_delta_type)
 }
 

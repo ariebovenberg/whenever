@@ -1,55 +1,57 @@
+use crate::common::math::*;
 use crate::common::parse::Scan;
 use crate::tz::posix;
-use crate::{Ambiguity, EpochSeconds, Offset};
+use crate::Ambiguity;
 use std::fmt;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct TZif {
-    pub key: String, // The IANA tz ID (e.g. "Europe/Amsterdam")
+    pub(crate) key: String, // The IANA tz ID (e.g. "Europe/Amsterdam")
     // The following two fields are used to map UTC time to local time and vice versa.
     // Read each vector (X, Y) as "from time X onwards (expressed in epoch seconds) the offset is Y".
     // For UTC -> local, the transition is unambiguous and simple.
-    offsets_by_utc: Vec<(EpochSeconds, Offset)>,
+    offsets_by_utc: Vec<(EpochSecs, Offset)>,
     // For local -> UTC, the transition is may be ambiguous and therefore requires extra information.
-    offsets_by_local: Vec<(EpochSeconds, (Offset, OffsetChange))>,
+    offsets_by_local: Vec<(EpochSecs, (Offset, OffsetDelta))>,
     end: posix::TZ,
 }
 
-/// The size of a UTC offset change. "gaps" are positive, "folds" are negative.
-type OffsetChange = i32;
-
 impl TZif {
     /// Get the UTC offset at the given moment in time
-    pub(crate) fn offset_for_instant(&self, t: EpochSeconds) -> Offset {
+    pub(crate) fn offset_for_instant(&self, t: EpochSecs) -> Offset {
         // OPTIMIZE: this could be made a bit smarter. E.g. starting
         // with a reasonable guess.
         bisect_index(&self.offsets_by_utc, t)
             .map(|i| self.offsets_by_utc[i].1)
-            // TODO: spread checked types!
-            .unwrap_or_else(|| self.end.offset_for_instant(t.try_into().unwrap()).get())
+            .unwrap_or_else(|| self.end.offset_for_instant(t))
     }
 
-    pub fn ambiguity_for_local(&self, t: EpochSeconds) -> Ambiguity {
+    pub fn ambiguity_for_local(&self, t: EpochSecs) -> Ambiguity {
         bisect_index(&self.offsets_by_local, t)
             .map(|i| {
                 let (transition, (offset, change)) = self.offsets_by_local[i];
-                let ambiguity = (t < transition + change.abs() as i64) as i32 * change;
+                let ambiguity_duration = if t >= transition.saturating_add_i32(change.abs().get()) {
+                    OffsetDelta::ZERO
+                } else {
+                    change
+                };
                 use std::cmp::Ordering::*;
-                match ambiguity.cmp(&0) {
+                match ambiguity_duration.get().cmp(&0) {
                     Equal => Ambiguity::Unambiguous(offset),
-                    Less => Ambiguity::Fold(offset - ambiguity, offset),
-                    Greater => Ambiguity::Gap(offset, offset - ambiguity),
+                    // Safe: The shifts here are unchecked since they were
+                    // calculated from the offsets themselves.
+                    Less => Ambiguity::Fold(offset.shift(-ambiguity_duration).unwrap(), offset),
+                    Greater => Ambiguity::Gap(offset, offset.shift(-ambiguity_duration).unwrap()),
                 }
             })
-            // TODO: spread checked types!
-            .unwrap_or_else(|| self.end.ambiguity_for_local(t.try_into().unwrap()))
+            .unwrap_or_else(|| self.end.ambiguity_for_local(t))
     }
 }
 
 // Bisect the array of (time, value) pairs to find the INDEX at the given time.
 // Return None if after the last entry.
 #[inline]
-pub fn bisect_index<T>(arr: &[(EpochSeconds, T)], x: EpochSeconds) -> Option<usize>
+pub(crate) fn bisect_index<T>(arr: &[(EpochSecs, T)], x: EpochSecs) -> Option<usize>
 where
     T: Copy,
 {
@@ -118,21 +120,20 @@ fn parse_header(s: &mut Scan) -> ParseResult<Header> {
     })
 }
 
-fn parse_transition_times(header: Header, s: &mut Scan) -> ParseResult<Vec<EpochSeconds>> {
+fn parse_transition_times(header: Header, s: &mut Scan) -> Option<Vec<EpochSecs>> {
     let mut result = Vec::with_capacity(header.timecnt as usize);
     const I64_SIZE: usize = std::mem::size_of::<i64>();
-    let values = s
-        .take(header.timecnt as usize * I64_SIZE)
-        .ok_or(ErrorCause::Body)?;
+    let values = s.take(header.timecnt as usize * I64_SIZE)?;
     // NOTE: we assume the values are sorted
     for i in 0..header.timecnt {
-        result.push(EpochSeconds::from_be_bytes(
+        // TODO-TZIF: test very lange time values
+        result.push(EpochSecs::clamp(i64::from_be_bytes(
             values[i as usize * I64_SIZE..(i + 1) as usize * I64_SIZE]
                 .try_into()
                 .unwrap(),
-        ));
+        )));
     }
-    Ok(result)
+    Some(result)
 }
 
 fn parse_offset_indices(header: Header, s: &mut Scan) -> ParseResult<Vec<u8>> {
@@ -158,10 +159,11 @@ fn parse_content(first_header: Header, s: &mut Scan, key: &str) -> ParseResult<T
     .ok_or(ErrorCause::Body)?;
     // This "second" header is not the same as the first one
     let header = parse_header(s)?;
-    let transition_times = parse_transition_times(header, s)?;
+    let transition_times = parse_transition_times(header, s).ok_or(ErrorCause::Body)?;
     let offset_indices = parse_offset_indices(header, s)?;
     debug_assert!(header.typecnt > 0 && header.typecnt < 1_000);
-    let offsets = parse_offsets(header.typecnt as usize, header.charcnt, s)?;
+    let offsets =
+        parse_offsets(header.typecnt as usize, header.charcnt, s).ok_or(ErrorCause::Body)?;
     // Skip unused metadata
     s.take(
         (header.isutcnt + header.isstdcnt + header.leapcnt * 12
@@ -169,32 +171,36 @@ fn parse_content(first_header: Header, s: &mut Scan, key: &str) -> ParseResult<T
          + 1) as usize,
     )
     .ok_or(ErrorCause::Body)?;
-    let offsets_by_utc = load_transitions(&transition_times, &offsets, &offset_indices)?;
+    let offsets_by_utc =
+        load_transitions(&transition_times, &offsets, &offset_indices).ok_or(ErrorCause::Body)?;
     Ok(TZif {
         key: key.to_string(),
         offsets_by_local: local_transitions(&offsets_by_utc),
         offsets_by_utc,
-        end: parse_posix_tz(s)?,
+        end: parse_posix_tz(s).ok_or(ErrorCause::TzString)?,
     })
 }
 
 fn local_transitions(
-    transitions: &[(EpochSeconds, Offset)],
-) -> Vec<(EpochSeconds, (Offset, OffsetChange))> {
+    transitions: &[(EpochSecs, Offset)],
+) -> Vec<(EpochSecs, (Offset, OffsetDelta))> {
     let mut result = Vec::with_capacity(transitions.len());
     if transitions.is_empty() {
         return result;
     }
     // The first entry is special, as there's no transition
     let (epoch0, offset0) = transitions[0];
-    result.push((epoch0 + offset0 as i64, (offset0, 0)));
+    result.push((
+        epoch0.saturating_offset(offset0),
+        (offset0, OffsetDelta::new_unchecked(0)),
+    ));
 
     let mut offset_prev = offset0;
     for &(epoch, offset) in transitions[1..].iter() {
         // NOTE: we don't check for "impossible" gaps or folds
         result.push((
-            epoch + offset_prev.min(offset) as i64,
-            (offset, offset - offset_prev),
+            epoch.saturating_offset(offset_prev.min(offset)),
+            (offset, offset.sub(offset_prev)),
         ));
         offset_prev = offset;
     }
@@ -202,42 +208,37 @@ fn local_transitions(
 }
 
 fn load_transitions(
-    transition_times: &[EpochSeconds],
+    transition_times: &[EpochSecs],
     offsets: &[Offset],
     indices: &[u8],
-) -> ParseResult<Vec<(EpochSeconds, Offset)>> {
-    let mut trans = Vec::with_capacity(indices.len());
+) -> Option<Vec<(EpochSecs, Offset)>> {
+    let mut result = Vec::with_capacity(indices.len());
     for (&idx, &epoch) in indices.iter().zip(transition_times) {
-        if let Some(&offset) = offsets.get(usize::from(idx)) {
-            trans.push((epoch, offset));
-        } else {
-            // The supplied index is out of bounds
-            Err(ErrorCause::Body)?;
-        }
+        let &offset = offsets.get(usize::from(idx))?;
+        result.push((epoch, offset));
     }
-    Ok(trans)
+    Some(result)
 }
 
-fn parse_posix_tz(s: &mut Scan) -> ParseResult<posix::TZ> {
-    let tz_str = match s.take_until(|b| b == b'\n') {
+fn parse_posix_tz(s: &mut Scan) -> Option<posix::TZ> {
+    posix::parse(match s.take_until(|b| b == b'\n') {
         Some(x) => x,
         None => s.rest(),
-    };
-    posix::parse(tz_str).ok_or(ErrorCause::TzString)
+    })
 }
 
-fn parse_offsets(typecnt: usize, charcnt: i32, s: &mut Scan) -> ParseResult<Vec<Offset>> {
-    let mut utcoff = Vec::with_capacity(typecnt);
-    let values = s.take(typecnt * 6).ok_or(ErrorCause::Body)?;
+fn parse_offsets(typecnt: usize, charcnt: i32, s: &mut Scan) -> Option<Vec<Offset>> {
+    let mut result = Vec::with_capacity(typecnt);
+    let values = s.take(typecnt * 6)?;
     for i in 0..typecnt {
-        // Note: we only parse the first field, skipping the others (for now)
-        utcoff.push(i32::from_be_bytes(
+        // Note: there are other fields that we don't use (yet)
+        result.push(Offset::new(i32::from_be_bytes(
             values[i * 6..(i + 1) * 6 - 2].try_into().unwrap(),
-        ));
+        ))?);
     }
     // Skip character section
-    s.take(charcnt as _).ok_or(ErrorCause::Body)?;
-    Ok(utcoff)
+    s.take(charcnt as _)?;
+    Some(result)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
@@ -261,13 +262,50 @@ impl fmt::Display for ErrorCause {
 
 type ParseResult<T> = Result<T, ErrorCause>;
 
+// TODO-TZIF test Honolulu and other edge cases
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    impl TryFrom<i32> for Offset {
+        type Error = ();
+
+        fn try_from(value: i32) -> Result<Self, Self::Error> {
+            Offset::new(value).ok_or(())
+        }
+    }
+
+    impl TryFrom<i64> for EpochSecs {
+        type Error = ();
+
+        fn try_from(value: i64) -> Result<Self, Self::Error> {
+            EpochSecs::new(value).ok_or(())
+        }
+    }
+
+    impl TryFrom<u16> for Year {
+        type Error = ();
+
+        fn try_from(value: u16) -> Result<Self, Self::Error> {
+            Year::new(value).ok_or(())
+        }
+    }
+
     const TZ_AMS: &[u8] = include_bytes!("../../tests/tzif/Amsterdam.tzif");
     const TZ_UTC: &[u8] = include_bytes!("../../tests/tzif/UTC.tzif");
     const TZ_FIXED: &[u8] = include_bytes!("../../tests/tzif/GMT-13.tzif");
+
+    fn unambig(offset: i32) -> Ambiguity {
+        Ambiguity::Unambiguous(offset.try_into().unwrap())
+    }
+
+    fn fold(off1: i32, off2: i32) -> Ambiguity {
+        Ambiguity::Fold(off1.try_into().unwrap(), off2.try_into().unwrap())
+    }
+
+    fn gap(off1: i32, off2: i32) -> Ambiguity {
+        Ambiguity::Gap(off1.try_into().unwrap(), off2.try_into().unwrap())
+    }
 
     #[test]
     fn test_no_magic_header() {
@@ -284,23 +322,26 @@ mod tests {
 
     #[test]
     fn test_binary_search() {
-        let arr = &[(4, 10), (9, 20), (12, 30), (16, 40), (24, 50)];
+        let arr = &[(4, 10), (9, 20), (12, 30), (16, 40), (24, 50)]
+            .iter()
+            .map(|&(a, b)| (a.try_into().unwrap(), b))
+            .collect::<Vec<(EpochSecs, _)>>();
         // middle of the array
-        assert_eq!(bisect_index(arr, 10), Some(1));
-        assert_eq!(bisect_index(arr, 12), Some(2));
-        assert_eq!(bisect_index(arr, 15), Some(2));
-        assert_eq!(bisect_index(arr, 16), Some(3));
+        assert_eq!(bisect_index(arr, EpochSecs::new(10).unwrap()), Some(1));
+        assert_eq!(bisect_index(arr, EpochSecs::new(12).unwrap()), Some(2));
+        assert_eq!(bisect_index(arr, EpochSecs::new(15).unwrap()), Some(2));
+        assert_eq!(bisect_index(arr, EpochSecs::new(16).unwrap()), Some(3));
         // end of the array
-        assert_eq!(bisect_index(arr, 24), None);
-        assert_eq!(bisect_index(arr, 30), None);
+        assert_eq!(bisect_index(arr, EpochSecs::new(24).unwrap()), None);
+        assert_eq!(bisect_index(arr, EpochSecs::new(30).unwrap()), None);
         // start of the array
-        assert_eq!(bisect_index(arr, -99), Some(0));
-        assert_eq!(bisect_index(arr, 3), Some(0));
-        assert_eq!(bisect_index(arr, 4), Some(0));
-        assert_eq!(bisect_index(arr, 5), Some(0));
+        assert_eq!(bisect_index(arr, EpochSecs::new(-99).unwrap()), Some(0));
+        assert_eq!(bisect_index(arr, EpochSecs::new(3).unwrap()), Some(0));
+        assert_eq!(bisect_index(arr, EpochSecs::new(4).unwrap()), Some(0));
+        assert_eq!(bisect_index(arr, EpochSecs::new(5).unwrap()), Some(0));
 
         // emtpy case
-        assert_eq!(bisect_index::<i64>(&[], 25), None);
+        assert_eq!(bisect_index::<i64>(&[], EpochSecs::new(25).unwrap()), None);
     }
 
     #[test]
@@ -309,10 +350,13 @@ mod tests {
         assert_eq!(tzif.offsets_by_utc, &[]);
         assert_eq!(tzif.end, posix::parse(b"UTC0").unwrap());
 
-        assert_eq!(tzif.offset_for_instant(2216250001), 0);
         assert_eq!(
-            tzif.ambiguity_for_local(2216250000),
-            Ambiguity::Unambiguous(0)
+            tzif.offset_for_instant(2216250001.try_into().unwrap()),
+            0.try_into().unwrap()
+        );
+        assert_eq!(
+            tzif.ambiguity_for_local(2216250000.try_into().unwrap()),
+            unambig(0)
         )
     }
 
@@ -322,10 +366,13 @@ mod tests {
         assert_eq!(tzif.offsets_by_utc, &[]);
         assert_eq!(tzif.end, posix::parse(b"<+13>-13").unwrap());
 
-        assert_eq!(tzif.offset_for_instant(2216250001), 13 * 3_600);
         assert_eq!(
-            tzif.ambiguity_for_local(2216250000),
-            Ambiguity::Unambiguous(13 * 3_600)
+            tzif.offset_for_instant(2216250001.try_into().unwrap()),
+            (13 * 3_600).try_into().unwrap()
+        );
+        assert_eq!(
+            tzif.ambiguity_for_local(2216250000.try_into().unwrap()),
+            unambig(13 * 3_600)
         )
     }
 
@@ -366,67 +413,77 @@ mod tests {
         ];
 
         for &(t, expected) in utc_cases {
-            assert_eq!(tzif.offset_for_instant(t), expected, "t={}", t);
+            assert_eq!(
+                tzif.offset_for_instant(t.try_into().unwrap()),
+                expected.try_into().unwrap(),
+                "t={}",
+                t
+            );
         }
 
         let local_cases = &[
             // before the entire range
-            (-2850000000 + 1050, Ambiguity::Unambiguous(1050)),
+            (-2850000000 + 1050, unambig(1050)),
             // At the start of the range
-            (-2840141851 + 1050, Ambiguity::Unambiguous(1050)),
-            (-2840141850 + 1050, Ambiguity::Unambiguous(1050)),
-            (-2840141849 + 1050, Ambiguity::Unambiguous(1050)),
+            (-2840141851 + 1050, unambig(1050)),
+            (-2840141850 + 1050, unambig(1050)),
+            (-2840141849 + 1050, unambig(1050)),
             // --- The first transition (a fold) ---
             // well before the fold (no ambiguity)
-            (-2750999299 + 1050, Ambiguity::Unambiguous(1050)),
+            (-2750999299 + 1050, unambig(1050)),
             // Just before times become ambiguous
-            (-2450995201, Ambiguity::Unambiguous(1050)),
+            (-2450995201, unambig(1050)),
             // At the moment times becomes ambiguous
-            (-2450995200, Ambiguity::Fold(1050, 0)),
+            (-2450995200, fold(1050, 0)),
             // Short before the clock change, short enough for ambiguity!
-            (-2450995902 + 1050, Ambiguity::Fold(1050, 0)),
+            (-2450995902 + 1050, fold(1050, 0)),
             // A second before the clock change (ambiguity!)
-            (-2450995201 + 1050, Ambiguity::Fold(1050, 0)),
+            (-2450995201 + 1050, fold(1050, 0)),
             // At the exact clock change (no ambiguity)
-            (-2450995200 + 1050, Ambiguity::Unambiguous(0)),
+            (-2450995200 + 1050, unambig(0)),
             // Directly after the clock change (no ambiguity)
-            (-2450995199 + 1050, Ambiguity::Unambiguous(0)),
+            (-2450995199 + 1050, unambig(0)),
             // --- A "gap" transition ---
             // Well before the transition
-            (-1698792800, Ambiguity::Unambiguous(3600)),
+            (-1698792800, unambig(3600)),
             // Just before the clock change
-            (-1693702801 + 3600, Ambiguity::Unambiguous(3600)),
+            (-1693702801 + 3600, unambig(3600)),
             // At the exact clock change (ambiguity!)
-            (-1693702800 + 3600, Ambiguity::Gap(7200, 3600)),
+            (-1693702800 + 3600, gap(7200, 3600)),
             // Right after the clock change (ambiguity)
-            (-1693702793 + 3600, Ambiguity::Gap(7200, 3600)),
+            (-1693702793 + 3600, gap(7200, 3600)),
             // Slightly before the gap ends (ambiguity)
-            (-1693702801 + 7200, Ambiguity::Gap(7200, 3600)),
+            (-1693702801 + 7200, gap(7200, 3600)),
             // The gap ends (no ambiguity)
-            (-1693702800 + 7200, Ambiguity::Unambiguous(7200)),
+            (-1693702800 + 7200, unambig(7200)),
             // A sample of other times
-            (700387500, Ambiguity::Unambiguous(3600)),
-            (701834700, Ambiguity::Gap(7200, 3600)),
-            (715302300, Ambiguity::Unambiguous(7200)),
+            (700387500, unambig(3600)),
+            (701834700, gap(7200, 3600)),
+            (715302300, unambig(7200)),
             // ---- Transitions after the last explicit one need to use the POSIX TZ string
             // before gap
-            (2216249999 + 3600, Ambiguity::Unambiguous(3600)),
+            (2216249999 + 3600, unambig(3600)),
             // gap starts
-            (2216250000 + 3600, Ambiguity::Gap(7200, 3600)),
+            (2216250000 + 3600, gap(7200, 3600)),
             // gap ends
-            (2216250000 + 7200, Ambiguity::Unambiguous(7200)),
+            (2216250000 + 7200, unambig(7200)),
             // somewhere in summer
-            (2216290000, Ambiguity::Unambiguous(7200)),
+            (2216290000, unambig(7200)),
             // Fold starts
-            (2645056800, Ambiguity::Fold(7200, 3600)),
+            (2645056800, fold(7200, 3600)),
             // In the fold
-            (2645056940, Ambiguity::Fold(7200, 3600)),
+            (2645056940, fold(7200, 3600)),
             // end of the fold
-            (2645056800 + 3600, Ambiguity::Unambiguous(3600)),
+            (2645056800 + 3600, unambig(3600)),
         ];
 
         for &(t, expected) in local_cases {
-            assert_eq!(tzif.ambiguity_for_local(t), expected, "t={}", t);
+            assert_eq!(
+                tzif.ambiguity_for_local(t.try_into().unwrap()),
+                expected,
+                "t={}",
+                t
+            );
         }
     }
 

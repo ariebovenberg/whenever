@@ -3,28 +3,28 @@
 /// Resources:
 /// - [POSIX TZ strings](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap08.html)
 /// - [GNU libc manual](https://www.gnu.org/software/libc/manual/html_node/TZ-Variable.html)
+use crate::common::math::*;
 use crate::common::parse::Scan;
-use crate::common::{Ambiguity, Month, OffsetDelta, OffsetS, Year};
-use crate::date::{days_before_year, days_in_month, is_leap, Date};
-use crate::EpochSecs;
+use crate::common::Ambiguity;
+use crate::date::Date;
 use std::num::{NonZeroU16, NonZeroU8};
 
 const DEFAULT_DST: OffsetDelta = OffsetDelta::new_unchecked(3_600);
-pub(crate) type Weekday = u8; // 0 is Sunday, 6 is Saturday
-                              // RFC 9636: the transition time may range from -167 to 167 hours! (not just 24)
+
+// RFC 9636: the transition time may range from -167 to 167 hours! (not just 24)
 pub(crate) type TransitionTime = i32;
 const DEFAULT_RULE_TIME: i32 = 2 * 3_600; // 2 AM
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TZ {
-    std: OffsetS,
+    std: Offset,
     dst: Option<Dst>,
     // We don't store the TZ names since we don't use them (yet)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Dst {
-    offset: OffsetS,
+    offset: Offset,
     start: (Rule, TransitionTime),
     end: (Rule, TransitionTime),
 }
@@ -39,7 +39,7 @@ pub(crate) enum Rule {
 }
 
 impl TZ {
-    pub(crate) fn offset_for_instant(&self, epoch: EpochSecs) -> OffsetS {
+    pub(crate) fn offset_for_instant(&self, epoch: EpochSecs) -> Offset {
         match self.dst {
             None => self.std, // No DST rule means a fixed offset
             Some(Dst {
@@ -55,12 +55,7 @@ impl TZ {
                 // However, in practice, we can assume that DST isn't active
                 // at the start of the year, and that DST rules don't straddle years.
                 // This is what Python's `zoneinfo` does anyway...
-                let year = epoch
-                    .saturating_offset(self.std)
-                    .date()
-                    .year
-                    .try_into()
-                    .unwrap();
+                let year = epoch.saturating_offset(self.std).date().year;
                 let dst_start = start_rule
                     .for_year(year)
                     .epoch()
@@ -86,7 +81,7 @@ impl TZ {
     /// Get the offset for a local time, given as the number of seconds since the Unix epoch.
     pub(crate) fn ambiguity_for_local(&self, t: EpochSecs) -> Ambiguity {
         match self.dst {
-            None => Ambiguity::Unambiguous(self.std.get()), // No DST
+            None => Ambiguity::Unambiguous(self.std), // No DST
             Some(Dst {
                 // NOTE: There's nothing preventing end from being before start,
                 // but this shouldn't happen in practice. We don't crash, at least.
@@ -94,43 +89,46 @@ impl TZ {
                 end: (end_rule, end_time),
                 offset,
             }) => {
-                let year = t.date().year.try_into().unwrap();
+                // Below are some saturing_add_i32 calls to prevent overflow.
+                // These should only affect DST calculations at the extreme MIN/MAX
+                // boundaries.
+                let year = t.date().year;
                 let dst_start = start_rule
                     .for_year(year)
                     .epoch()
                     .saturating_add_i32(start_time);
-                let dst_shift = offset.get() - self.std.get();
+                let dst_shift = offset.sub(self.std).get();
                 // In rare cases, the dst shift is negative.
                 // We handle the common case first.
                 if dst_shift >= 0 {
                     if t < dst_start {
-                        Ambiguity::Unambiguous(self.std.get())
+                        Ambiguity::Unambiguous(self.std)
                     } else if t < dst_start.saturating_add_i32(dst_shift) {
-                        Ambiguity::Gap(offset.get(), self.std.get())
+                        Ambiguity::Gap(offset, self.std)
                     } else {
                         let dst_end = end_rule.for_year(year).epoch().saturating_add_i32(end_time);
                         if t < dst_end.saturating_add_i32(-dst_shift) {
-                            Ambiguity::Unambiguous(offset.get())
+                            Ambiguity::Unambiguous(offset)
                         } else if t < dst_end {
-                            Ambiguity::Fold(offset.get(), self.std.get())
+                            Ambiguity::Fold(offset, self.std)
                         } else {
-                            Ambiguity::Unambiguous(self.std.get())
+                            Ambiguity::Unambiguous(self.std)
                         }
                     }
                 // These further branches mirror the above, but with the
                 // roles of standard and DST time reversed.
                 } else if t < dst_start.saturating_add_i32(dst_shift) {
-                    Ambiguity::Unambiguous(self.std.get())
+                    Ambiguity::Unambiguous(self.std)
                 } else if t < dst_start {
-                    Ambiguity::Fold(self.std.get(), offset.get())
+                    Ambiguity::Fold(self.std, offset)
                 } else {
                     let dst_end = end_rule.for_year(year).epoch().saturating_add_i32(end_time);
                     if t < dst_end {
-                        Ambiguity::Unambiguous(offset.get())
+                        Ambiguity::Unambiguous(offset)
                     } else if t < dst_end.saturating_add_i32(-dst_shift) {
-                        Ambiguity::Gap(self.std.get(), offset.get())
+                        Ambiguity::Gap(self.std, offset)
                     } else {
-                        Ambiguity::Unambiguous(self.std.get())
+                        Ambiguity::Unambiguous(self.std)
                     }
                 }
             }
@@ -138,40 +136,44 @@ impl TZ {
     }
 }
 
-fn weekday(d: Date) -> Weekday {
-    (d.ord() % 7) as _
-}
-
 impl Rule {
     fn for_year(&self, y: Year) -> Date {
         match *self {
-            // The 366th day will blow up for non-leap years,
-            // It's unlikely that a TZ string would specify this,
-            // so we'll just clamp it to the last day of the year.
-            Rule::DayOfYear(d) => Date::from_ord_unchecked(
-                days_before_year(y.into())
-                    + (d.get().clamp(0, 365 + is_leap(y.get()) as u16) as u32),
-            ),
+            Rule::DayOfYear(d) => y
+                .unix_day()
+                // Safe: no overflow since it stays within the year
+                .add_unchecked(
+                    d.get()
+                        // The 366th day will blow up for non-leap years.
+                        // It's unlikely that a TZ string would specify this,
+                        // so we'll just clamp it to the last day of the year.
+                        .clamp(0, 365 + y.is_leap() as u16) as _,
+                )
+                .date(),
 
-            Rule::JulianDayOfYear(d) => {
-                let doy = d.get() as u32 + (is_leap(y.get()) && d.get() > 59) as u32;
-                Date::from_ord_unchecked(days_before_year(y.into()) + doy)
-            }
+            Rule::JulianDayOfYear(d) => y
+                .unix_day()
+                // Safe: No overflow since it stays within the year
+                .add_unchecked(d.get() as i32 + (y.is_leap() && d.get() > 59) as i32)
+                .date(),
+
             Self::LastWeekday(w, m) => {
                 // Try the last day of the month, and adjust from there
-                let day_last =
-                    Date::new_unchecked(y.get(), m.get(), days_in_month(y.get(), m.get()));
+                let day_last = Date::last_of_month(y, m);
                 Date {
-                    day: day_last.day - (weekday(day_last) + 7 - w) % 7,
+                    day: day_last.day
+                        - (day_last.day_of_week().sunday_is_0() + 7 - w.sunday_is_0()) % 7,
                     ..day_last
                 }
             }
             Self::NthWeekday(n, w, m) => {
                 // Try the first day of the month, and adjust from there
                 debug_assert!(n.get() <= 4);
-                let day1 = Date::new_unchecked(y.get(), m.get(), 1);
+                let day1 = Date::first_of_month(y, m);
                 Date {
-                    day: ((w + 7 - weekday(day1)) % 7) + 7 * (n.get() - 1) + 1,
+                    day: ((w.sunday_is_0() + 7 - day1.day_of_week().sunday_is_0()) % 7)
+                        + 7 * (n.get() - 1)
+                        + 1,
                     ..day1
                 }
             }
@@ -239,10 +241,10 @@ fn skip_tzname(s: &mut Scan) -> Option<()> {
 }
 
 /// Parse an offset like `[+|-]h[h][:mm[:ss]]`
-fn parse_offset(s: &mut Scan) -> Option<OffsetS> {
-    parse_hms(s, OffsetS::MAX.get())
+fn parse_offset(s: &mut Scan) -> Option<Offset> {
+    parse_hms(s, Offset::MAX.get())
         // POSIX offsets are inverted from how we store them
-        .map(|s| OffsetS::new_unchecked(-s))
+        .map(|s| Offset::new_unchecked(-s))
 }
 
 /// Parse a `h[hh][:mm[:ss]]` string into a total number of seconds
@@ -276,21 +278,20 @@ fn parse_hms(s: &mut Scan, max: i32) -> Option<i32> {
 /// Parse `m[m].w.d` string as part of a DST start/end rule
 fn parse_weekday_rule(scan: &mut Scan) -> Option<Rule> {
     // Handle the variable length of months
-    let m = scan
-        .up_to_2_digits()
-        .filter(|&m| m <= 12)
-        .and_then(NonZeroU8::new)?;
+    let m = scan.up_to_2_digits().and_then(Month::new)?;
     scan.expect(b'.')?;
     let w: NonZeroU8 = scan.digit_ranged(b'1'..=b'5')?.try_into().unwrap(); // safe >0 unwrap
     scan.expect(b'.')?;
     let d = scan.digit_ranged(b'0'..=b'6')?;
+    // In Posix TZ strings, Sunday is 0. In ISO, it's 7
+    let day_of_week = Weekday::from_iso_unchecked(if d == 0 { 7 } else { d });
 
     // A "fifth" occurrence of a weekday doesn't always occur.
     // Interpret it as the last weekday, according to the standard.
     Some(if w.get() == 5 {
-        Rule::LastWeekday(d, m)
+        Rule::LastWeekday(day_of_week, m)
     } else {
-        Rule::NthWeekday(w, d, m)
+        Rule::NthWeekday(w, day_of_week, m)
     })
 }
 
@@ -323,6 +324,26 @@ mod tests {
     use super::*;
     use crate::common::Ambiguity::*;
     use crate::time::Time;
+
+    fn unambig(offset: i32) -> Ambiguity {
+        Ambiguity::Unambiguous(offset.try_into().unwrap())
+    }
+
+    fn fold(off1: i32, off2: i32) -> Ambiguity {
+        Ambiguity::Fold(off1.try_into().unwrap(), off2.try_into().unwrap())
+    }
+
+    fn gap(off1: i32, off2: i32) -> Ambiguity {
+        Ambiguity::Gap(off1.try_into().unwrap(), off2.try_into().unwrap())
+    }
+
+    fn mkdate(year: u16, month: u8, day: u8) -> Date {
+        Date {
+            year: Year::new_unchecked(year),
+            month: Month::new_unchecked(month),
+            day,
+        }
+    }
 
     #[test]
     fn invalid_start() {
@@ -410,18 +431,6 @@ mod tests {
         }
     }
 
-    macro_rules! Nu8 {
-        ($x:expr) => {
-            NonZeroU8::new($x).unwrap()
-        };
-    }
-
-    macro_rules! Nu16 {
-        ($x:expr) => {
-            NonZeroU16::new($x).unwrap()
-        };
-    }
-
     #[test]
     fn with_dst() {
         // Implicit DST offset
@@ -431,8 +440,18 @@ mod tests {
                 std: 3600.try_into().unwrap(),
                 dst: Some(Dst {
                     offset: 7200.try_into().unwrap(),
-                    start: (Rule::LastWeekday(0, Nu8!(3)), DEFAULT_RULE_TIME),
-                    end: (Rule::NthWeekday(Nu8!(4), 0, Nu8!(10)), DEFAULT_RULE_TIME)
+                    start: (
+                        Rule::LastWeekday(Weekday::Sunday, 3.try_into().unwrap()),
+                        DEFAULT_RULE_TIME
+                    ),
+                    end: (
+                        Rule::NthWeekday(
+                            4.try_into().unwrap(),
+                            Weekday::Sunday,
+                            10.try_into().unwrap()
+                        ),
+                        DEFAULT_RULE_TIME
+                    )
                 })
             }
         );
@@ -443,8 +462,18 @@ mod tests {
                 std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
                     offset: (-3600 * 2 - 30 * 60).try_into().unwrap(),
-                    start: (Rule::LastWeekday(0, Nu8!(3)), DEFAULT_RULE_TIME),
-                    end: (Rule::NthWeekday(Nu8!(2), 0, Nu8!(10)), DEFAULT_RULE_TIME)
+                    start: (
+                        Rule::LastWeekday(Weekday::Sunday, 3.try_into().unwrap()),
+                        DEFAULT_RULE_TIME
+                    ),
+                    end: (
+                        Rule::NthWeekday(
+                            2.try_into().unwrap(),
+                            Weekday::Sunday,
+                            10.try_into().unwrap()
+                        ),
+                        DEFAULT_RULE_TIME
+                    )
                 })
             }
         );
@@ -455,8 +484,18 @@ mod tests {
                 std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
                     offset: (-3600 * 2 - 30 * 60).try_into().unwrap(),
-                    start: (Rule::LastWeekday(0, Nu8!(3)), 8 * 3_600),
-                    end: (Rule::NthWeekday(Nu8!(2), 0, Nu8!(10)), DEFAULT_RULE_TIME)
+                    start: (
+                        Rule::LastWeekday(Weekday::Sunday, 3.try_into().unwrap()),
+                        8 * 3_600
+                    ),
+                    end: (
+                        Rule::NthWeekday(
+                            2.try_into().unwrap(),
+                            Weekday::Sunday,
+                            10.try_into().unwrap()
+                        ),
+                        DEFAULT_RULE_TIME
+                    )
                 })
             }
         );
@@ -467,8 +506,18 @@ mod tests {
                 std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
                     offset: (-3600 * 2 - 30 * 60).try_into().unwrap(),
-                    start: (Rule::JulianDayOfYear(Nu16!(23)), 8 * 3_600 + 34 * 60 + 1),
-                    end: (Rule::NthWeekday(Nu8!(2), 0, Nu8!(10)), 3 * 3_600)
+                    start: (
+                        Rule::JulianDayOfYear(23.try_into().unwrap()),
+                        8 * 3_600 + 34 * 60 + 1
+                    ),
+                    end: (
+                        Rule::NthWeekday(
+                            2.try_into().unwrap(),
+                            Weekday::Sunday,
+                            10.try_into().unwrap()
+                        ),
+                        3 * 3_600
+                    )
                 })
             }
         );
@@ -479,8 +528,11 @@ mod tests {
                 std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
                     offset: (-3600 * 2 - 30 * 60).try_into().unwrap(),
-                    start: (Rule::DayOfYear(Nu16!(24)), 8 * 3_600 + 34 * 60 + 1),
-                    end: (Rule::JulianDayOfYear(Nu16!(1)), 0)
+                    start: (
+                        Rule::DayOfYear(24.try_into().unwrap()),
+                        8 * 3_600 + 34 * 60 + 1
+                    ),
+                    end: (Rule::JulianDayOfYear(1.try_into().unwrap()), 0)
                 })
             }
         );
@@ -491,8 +543,11 @@ mod tests {
                 std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
                     offset: (-3600 * 2 - 30 * 60).try_into().unwrap(),
-                    start: (Rule::DayOfYear(Nu16!(1)), 8 * 3_600 + 34 * 60 + 1),
-                    end: (Rule::JulianDayOfYear(Nu16!(1)), 0)
+                    start: (
+                        Rule::DayOfYear(1.try_into().unwrap()),
+                        8 * 3_600 + 34 * 60 + 1
+                    ),
+                    end: (Rule::JulianDayOfYear(1.try_into().unwrap()), 0)
                 })
             }
         );
@@ -503,8 +558,18 @@ mod tests {
                 std: (-7200).try_into().unwrap(),
                 dst: Some(Dst {
                     offset: (-3600).try_into().unwrap(),
-                    start: (Rule::LastWeekday(0, Nu8!(3)), 86_400),
-                    end: (Rule::NthWeekday(Nu8!(2), 0, Nu8!(10)), DEFAULT_RULE_TIME)
+                    start: (
+                        Rule::LastWeekday(Weekday::Sunday, 3.try_into().unwrap()),
+                        86_400
+                    ),
+                    end: (
+                        Rule::NthWeekday(
+                            2.try_into().unwrap(),
+                            Weekday::Sunday,
+                            10.try_into().unwrap()
+                        ),
+                        DEFAULT_RULE_TIME
+                    )
                 })
             }
         );
@@ -515,8 +580,18 @@ mod tests {
                 std: (-7200).try_into().unwrap(),
                 dst: Some(Dst {
                     offset: (-3600).try_into().unwrap(),
-                    start: (Rule::LastWeekday(0, Nu8!(3)), -89 * 3_600 - 2 * 60),
-                    end: (Rule::NthWeekday(Nu8!(2), 0, Nu8!(10)), 100 * 3_600)
+                    start: (
+                        Rule::LastWeekday(Weekday::Sunday, 3.try_into().unwrap()),
+                        -89 * 3_600 - 2 * 60
+                    ),
+                    end: (
+                        Rule::NthWeekday(
+                            2.try_into().unwrap(),
+                            Weekday::Sunday,
+                            10.try_into().unwrap()
+                        ),
+                        100 * 3_600
+                    )
                 })
             }
         );
@@ -562,8 +637,8 @@ mod tests {
         fn test(year: u16, doy: u16, expected: (u16, u8, u8)) {
             let (y, m, d) = expected;
             assert_eq!(
-                Rule::DayOfYear(Nu16!(doy)).for_year(Nu16!(year)),
-                Date::new_unchecked(y, m, d),
+                Rule::DayOfYear(doy.try_into().unwrap()).for_year(year.try_into().unwrap()),
+                mkdate(y, m, d),
                 "year: {}, doy: {} -> {:?}",
                 year,
                 doy,
@@ -603,8 +678,8 @@ mod tests {
         fn test(year: u16, doy: u16, expected: (u16, u8, u8)) {
             let (y, m, d) = expected;
             assert_eq!(
-                Rule::JulianDayOfYear(Nu16!(doy)).for_year(Nu16!(year)),
-                Date::new_unchecked(y, m, d),
+                Rule::JulianDayOfYear(doy.try_into().unwrap()).for_year(year.try_into().unwrap()),
+                mkdate(y, m, d),
                 "year: {}, doy: {} -> {:?}",
                 year,
                 doy,
@@ -639,12 +714,13 @@ mod tests {
 
     #[test]
     fn last_weekday_rule_for_year() {
-        fn test(year: u16, month: u8, weekday: u8, expected: (u16, u8, u8)) {
+        fn test(year: u16, month: u8, weekday: Weekday, expected: (u16, u8, u8)) {
             let (y, m, d) = expected;
             assert_eq!(
-                Rule::LastWeekday(weekday, Nu8!(month)).for_year(Nu16!(year)),
-                Date::new_unchecked(y, m, d),
-                "year: {}, month: {}, weekday: {} -> {:?}",
+                Rule::LastWeekday(weekday, month.try_into().unwrap())
+                    .for_year(year.try_into().unwrap()),
+                mkdate(y, m, d),
+                "year: {}, month: {}, {:?} -> {:?}",
                 year,
                 month,
                 weekday,
@@ -653,12 +729,12 @@ mod tests {
         }
 
         let cases = [
-            (2024, 3, 0, (2024, 3, 31)),
-            (2024, 3, 1, (2024, 3, 25)),
-            (1915, 7, 0, (1915, 7, 25)),
-            (1915, 7, 6, (1915, 7, 31)),
-            (1919, 7, 4, (1919, 7, 31)),
-            (1919, 7, 0, (1919, 7, 27)),
+            (2024, 3, Weekday::Sunday, (2024, 3, 31)),
+            (2024, 3, Weekday::Monday, (2024, 3, 25)),
+            (1915, 7, Weekday::Sunday, (1915, 7, 25)),
+            (1915, 7, Weekday::Saturday, (1915, 7, 31)),
+            (1919, 7, Weekday::Thursday, (1919, 7, 31)),
+            (1919, 7, Weekday::Sunday, (1919, 7, 27)),
         ];
 
         for &(year, month, weekday, expected) in &cases {
@@ -668,12 +744,13 @@ mod tests {
 
     #[test]
     fn nth_weekday_rule_for_year() {
-        fn test(year: u16, month: u8, nth: u8, weekday: u8, expected: (u16, u8, u8)) {
+        fn test(year: u16, month: u8, nth: u8, weekday: Weekday, expected: (u16, u8, u8)) {
             let (y, m, d) = expected;
             assert_eq!(
-                Rule::NthWeekday(Nu8!(nth), weekday, Nu8!(month)).for_year(Nu16!(year)),
-                Date::new_unchecked(y, m, d),
-                "year: {}, month: {}, nth: {}, weekday: {} -> {:?}",
+                Rule::NthWeekday(nth.try_into().unwrap(), weekday, month.try_into().unwrap())
+                    .for_year(year.try_into().unwrap()),
+                mkdate(y, m, d),
+                "year: {}, month: {}, nth: {}, {:?} -> {:?}",
                 year,
                 month,
                 nth,
@@ -683,12 +760,12 @@ mod tests {
         }
 
         let cases = [
-            (1919, 7, 1, 0, (1919, 7, 6)),
-            (2002, 12, 1, 0, (2002, 12, 1)),
-            (2002, 12, 2, 0, (2002, 12, 8)),
-            (2002, 12, 3, 6, (2002, 12, 21)),
-            (1992, 2, 1, 6, (1992, 2, 1)),
-            (1992, 2, 4, 6, (1992, 2, 22)),
+            (1919, 7, 1, Weekday::Sunday, (1919, 7, 6)),
+            (2002, 12, 1, Weekday::Sunday, (2002, 12, 1)),
+            (2002, 12, 2, Weekday::Sunday, (2002, 12, 8)),
+            (2002, 12, 3, Weekday::Saturday, (2002, 12, 21)),
+            (1992, 2, 1, Weekday::Saturday, (1992, 2, 1)),
+            (1992, 2, 4, Weekday::Saturday, (1992, 2, 22)),
         ];
 
         for &(year, month, nth, weekday, expected) in &cases {
@@ -707,8 +784,14 @@ mod tests {
             std: 4800.try_into().unwrap(),
             dst: Some(Dst {
                 offset: 9300.try_into().unwrap(),
-                start: (Rule::LastWeekday(0, Nu8!(3)), 3600 * 4),
-                end: (Rule::JulianDayOfYear(Nu16!(281)), DEFAULT_RULE_TIME),
+                start: (
+                    Rule::LastWeekday(Weekday::Sunday, 3.try_into().unwrap()),
+                    3600 * 4,
+                ),
+                end: (
+                    Rule::JulianDayOfYear(281.try_into().unwrap()),
+                    DEFAULT_RULE_TIME,
+                ),
             }),
         };
         // A TZ with DST time rules that are very large, or negative!
@@ -716,8 +799,11 @@ mod tests {
             std: 4800.try_into().unwrap(),
             dst: Some(Dst {
                 offset: 9300.try_into().unwrap(),
-                start: (Rule::LastWeekday(0, Nu8!(3)), 50 * 3_600),
-                end: (Rule::JulianDayOfYear(Nu16!(281)), -2 * 3_600),
+                start: (
+                    Rule::LastWeekday(Weekday::Sunday, 3.try_into().unwrap()),
+                    50 * 3_600,
+                ),
+                end: (Rule::JulianDayOfYear(281.try_into().unwrap()), -2 * 3_600),
             }),
         };
         // A TZ with DST rules that are 00:00:00
@@ -725,8 +811,8 @@ mod tests {
             std: 4800.try_into().unwrap(),
             dst: Some(Dst {
                 offset: 9300.try_into().unwrap(),
-                start: (Rule::LastWeekday(0, Nu8!(3)), 0),
-                end: (Rule::JulianDayOfYear(Nu16!(281)), 0),
+                start: (Rule::LastWeekday(Weekday::Sunday, 3.try_into().unwrap()), 0),
+                end: (Rule::JulianDayOfYear(281.try_into().unwrap()), 0),
             }),
         };
         // A TZ with a DST offset smaller than the standard offset (theoretically possible)
@@ -734,8 +820,11 @@ mod tests {
             std: 4800.try_into().unwrap(),
             dst: Some(Dst {
                 offset: 1200.try_into().unwrap(),
-                start: (Rule::LastWeekday(0, Nu8!(3)), DEFAULT_RULE_TIME),
-                end: (Rule::JulianDayOfYear(Nu16!(281)), 4 * 3_600),
+                start: (
+                    Rule::LastWeekday(Weekday::Sunday, 3.try_into().unwrap()),
+                    DEFAULT_RULE_TIME,
+                ),
+                end: (Rule::JulianDayOfYear(281.try_into().unwrap()), 4 * 3_600),
             }),
         };
         // start can technically be before end. Behavior isn't defined, but we
@@ -744,8 +833,11 @@ mod tests {
             std: 4800.try_into().unwrap(),
             dst: Some(Dst {
                 offset: 7200.try_into().unwrap(),
-                end: (Rule::LastWeekday(0, Nu8!(3)), DEFAULT_RULE_TIME),
-                start: (Rule::JulianDayOfYear(Nu16!(281)), 4 * 3_600),
+                end: (
+                    Rule::LastWeekday(Weekday::Sunday, 3.try_into().unwrap()),
+                    DEFAULT_RULE_TIME,
+                ),
+                start: (Rule::JulianDayOfYear(281.try_into().unwrap()), 4 * 3_600),
             }),
         };
         // Some timezones appear to be "always DST", like Africa/Casablanca
@@ -753,30 +845,27 @@ mod tests {
             std: 7200.try_into().unwrap(),
             dst: Some(Dst {
                 offset: 3600.try_into().unwrap(),
-                start: (Rule::DayOfYear(Nu16!(1)), 0),
-                end: (Rule::JulianDayOfYear(Nu16!(365)), 23 * 3600),
+                start: (Rule::DayOfYear(1.try_into().unwrap()), 0),
+                end: (Rule::JulianDayOfYear(365.try_into().unwrap()), 23 * 3600),
             }),
         };
 
-        fn to_epoch_s(d: Date, t: Time, offset: i32) -> EpochSecs {
-            EpochSecs::new(d.timestamp_at(t))
-                .unwrap()
-                .offset(OffsetS::new(-offset).unwrap())
-                .unwrap()
+        fn to_epoch_s(d: Date, t: Time, offset: Offset) -> EpochSecs {
+            d.unix_days().epoch_at(t).offset(-offset).unwrap()
         }
 
         fn test(tz: TZ, ymd: (u16, u8, u8), hms: (u8, u8, u8), expected: Ambiguity) {
             let (y, m, d) = ymd;
             let (hour, minute, second) = hms;
-            let date = Date::new_unchecked(y, m, d);
+            let date = mkdate(y, m, d);
             let time = Time {
                 hour,
                 minute,
                 second,
-                nanos: 0,
+                subsec: SubSecNanos::MIN,
             };
             assert_eq!(
-                tz.ambiguity_for_local(to_epoch_s(date, time, 0)),
+                tz.ambiguity_for_local(to_epoch_s(date, time, Offset::ZERO)),
                 expected,
                 "{:?} {:?} -> {:?} (tz: {:?})",
                 ymd,
@@ -790,8 +879,8 @@ mod tests {
                     let epoch = to_epoch_s(date, time, offset);
                     assert_eq!(
                         tz.offset_for_instant(epoch),
-                        OffsetS::new(offset).unwrap(),
-                        "tz: {:?} date: {}, time: {}, offset: {}, {:?}",
+                        offset,
+                        "tz: {:?} date: {}, time: {}, {:?}, {:?}",
                         tz,
                         date,
                         time,
@@ -804,8 +893,8 @@ mod tests {
                     let epoch_b = to_epoch_s(date, time, b);
                     assert_eq!(
                         tz.offset_for_instant(epoch_a),
-                        OffsetS::new(a).unwrap(),
-                        "(earlier offset) tz: {:?} date: {}, time: {}, offset: {}, {:?}",
+                        a,
+                        "(earlier offset) tz: {:?} date: {}, time: {}, {:?}, {:?}",
                         tz,
                         date,
                         time,
@@ -814,8 +903,8 @@ mod tests {
                     );
                     assert_eq!(
                         tz.offset_for_instant(epoch_b),
-                        OffsetS::new(b).unwrap(),
-                        "(later offset) tz: {:?} date: {}, time: {}, offset: {}, {:?}",
+                        b,
+                        "(later offset) tz: {:?} date: {}, time: {}, {:?}, {:?}",
                         tz,
                         date,
                         time,
@@ -829,76 +918,76 @@ mod tests {
 
         let cases = [
             // fixed always the same
-            (tz_fixed, (2020, 3, 19), (12, 34, 56), Unambiguous(1234)),
+            (tz_fixed, (2020, 3, 19), (12, 34, 56), unambig(1234)),
             // First second of the year
-            (tz, (1990, 1, 1), (0, 0, 0), Unambiguous(4800)),
+            (tz, (1990, 1, 1), (0, 0, 0), unambig(4800)),
             // Last second of the year
-            (tz, (1990, 12, 31), (23, 59, 59), Unambiguous(4800)),
+            (tz, (1990, 12, 31), (23, 59, 59), unambig(4800)),
             // Well before the transition
-            (tz, (1990, 3, 13), (12, 34, 56), Unambiguous(4800)),
+            (tz, (1990, 3, 13), (12, 34, 56), unambig(4800)),
             // Gap: Before, start, mid, end, after
-            (tz, (1990, 3, 25), (3, 59, 59), Unambiguous(4800)),
-            (tz, (1990, 3, 25), (4, 0, 0), Gap(9300, 4800)),
-            (tz, (1990, 3, 25), (5, 10, 0), Gap(9300, 4800)),
-            (tz, (1990, 3, 25), (5, 14, 59), Gap(9300, 4800)),
-            (tz, (1990, 3, 25), (5, 15, 0), Unambiguous(9300)),
+            (tz, (1990, 3, 25), (3, 59, 59), unambig(4800)),
+            (tz, (1990, 3, 25), (4, 0, 0), gap(9300, 4800)),
+            (tz, (1990, 3, 25), (5, 10, 0), gap(9300, 4800)),
+            (tz, (1990, 3, 25), (5, 14, 59), gap(9300, 4800)),
+            (tz, (1990, 3, 25), (5, 15, 0), unambig(9300)),
             // Well after the transition
-            (tz, (1990, 6, 26), (8, 0, 0), Unambiguous(9300)),
+            (tz, (1990, 6, 26), (8, 0, 0), unambig(9300)),
             // Fold: Before, start, mid, end, after
-            (tz, (1990, 10, 8), (0, 44, 59), Unambiguous(9300)),
-            (tz, (1990, 10, 8), (0, 45, 0), Fold(9300, 4800)),
-            (tz, (1990, 10, 8), (1, 33, 59), Fold(9300, 4800)),
-            (tz, (1990, 10, 8), (1, 59, 59), Fold(9300, 4800)),
-            (tz, (1990, 10, 8), (2, 0, 0), Unambiguous(4800)),
+            (tz, (1990, 10, 8), (0, 44, 59), unambig(9300)),
+            (tz, (1990, 10, 8), (0, 45, 0), fold(9300, 4800)),
+            (tz, (1990, 10, 8), (1, 33, 59), fold(9300, 4800)),
+            (tz, (1990, 10, 8), (1, 59, 59), fold(9300, 4800)),
+            (tz, (1990, 10, 8), (2, 0, 0), unambig(4800)),
             // Well after the end of DST
-            (tz, (1990, 11, 30), (23, 34, 56), Unambiguous(4800)),
+            (tz, (1990, 11, 30), (23, 34, 56), unambig(4800)),
             // time outside 0-24h range is also valid for a rule
-            (tz_weirdtime, (1990, 3, 26), (1, 59, 59), Unambiguous(4800)),
-            (tz_weirdtime, (1990, 3, 27), (2, 0, 0), Gap(9300, 4800)),
-            (tz_weirdtime, (1990, 3, 27), (3, 0, 0), Gap(9300, 4800)),
-            (tz_weirdtime, (1990, 3, 27), (3, 14, 59), Gap(9300, 4800)),
-            (tz_weirdtime, (1990, 3, 27), (3, 15, 0), Unambiguous(9300)),
-            (tz_weirdtime, (1990, 10, 7), (20, 44, 59), Unambiguous(9300)),
-            (tz_weirdtime, (1990, 10, 7), (20, 45, 0), Fold(9300, 4800)),
-            (tz_weirdtime, (1990, 10, 7), (21, 33, 59), Fold(9300, 4800)),
-            (tz_weirdtime, (1990, 10, 7), (21, 59, 59), Fold(9300, 4800)),
-            (tz_weirdtime, (1990, 10, 7), (22, 0, 0), Unambiguous(4800)),
-            (tz_weirdtime, (1990, 10, 7), (22, 0, 1), Unambiguous(4800)),
+            (tz_weirdtime, (1990, 3, 26), (1, 59, 59), unambig(4800)),
+            (tz_weirdtime, (1990, 3, 27), (2, 0, 0), gap(9300, 4800)),
+            (tz_weirdtime, (1990, 3, 27), (3, 0, 0), gap(9300, 4800)),
+            (tz_weirdtime, (1990, 3, 27), (3, 14, 59), gap(9300, 4800)),
+            (tz_weirdtime, (1990, 3, 27), (3, 15, 0), unambig(9300)),
+            (tz_weirdtime, (1990, 10, 7), (20, 44, 59), unambig(9300)),
+            (tz_weirdtime, (1990, 10, 7), (20, 45, 0), fold(9300, 4800)),
+            (tz_weirdtime, (1990, 10, 7), (21, 33, 59), fold(9300, 4800)),
+            (tz_weirdtime, (1990, 10, 7), (21, 59, 59), fold(9300, 4800)),
+            (tz_weirdtime, (1990, 10, 7), (22, 0, 0), unambig(4800)),
+            (tz_weirdtime, (1990, 10, 7), (22, 0, 1), unambig(4800)),
             // 00:00:00 is a valid time for a rule
-            (tz00, (1990, 3, 24), (23, 59, 59), Unambiguous(4800)),
-            (tz00, (1990, 3, 25), (0, 0, 0), Gap(9300, 4800)),
-            (tz00, (1990, 3, 25), (1, 0, 0), Gap(9300, 4800)),
-            (tz00, (1990, 3, 25), (1, 14, 59), Gap(9300, 4800)),
-            (tz00, (1990, 3, 25), (1, 15, 0), Unambiguous(9300)),
-            (tz00, (1990, 10, 7), (22, 44, 59), Unambiguous(9300)),
-            (tz00, (1990, 10, 7), (22, 45, 0), Fold(9300, 4800)),
-            (tz00, (1990, 10, 7), (23, 33, 59), Fold(9300, 4800)),
-            (tz00, (1990, 10, 7), (23, 59, 59), Fold(9300, 4800)),
-            (tz00, (1990, 10, 8), (0, 0, 0), Unambiguous(4800)),
-            (tz00, (1990, 10, 8), (0, 0, 1), Unambiguous(4800)),
+            (tz00, (1990, 3, 24), (23, 59, 59), unambig(4800)),
+            (tz00, (1990, 3, 25), (0, 0, 0), gap(9300, 4800)),
+            (tz00, (1990, 3, 25), (1, 0, 0), gap(9300, 4800)),
+            (tz00, (1990, 3, 25), (1, 14, 59), gap(9300, 4800)),
+            (tz00, (1990, 3, 25), (1, 15, 0), unambig(9300)),
+            (tz00, (1990, 10, 7), (22, 44, 59), unambig(9300)),
+            (tz00, (1990, 10, 7), (22, 45, 0), fold(9300, 4800)),
+            (tz00, (1990, 10, 7), (23, 33, 59), fold(9300, 4800)),
+            (tz00, (1990, 10, 7), (23, 59, 59), fold(9300, 4800)),
+            (tz00, (1990, 10, 8), (0, 0, 0), unambig(4800)),
+            (tz00, (1990, 10, 8), (0, 0, 1), unambig(4800)),
             // Negative DST should be handled gracefully. Gap and fold reversed
             // Fold instead of gap
-            (tz_neg, (1990, 3, 25), (0, 59, 59), Unambiguous(4800)),
-            (tz_neg, (1990, 3, 25), (1, 0, 0), Fold(4800, 1200)),
-            (tz_neg, (1990, 3, 25), (1, 33, 59), Fold(4800, 1200)),
-            (tz_neg, (1990, 3, 25), (1, 59, 59), Fold(4800, 1200)),
-            (tz_neg, (1990, 3, 25), (2, 0, 0), Unambiguous(1200)),
+            (tz_neg, (1990, 3, 25), (0, 59, 59), unambig(4800)),
+            (tz_neg, (1990, 3, 25), (1, 0, 0), fold(4800, 1200)),
+            (tz_neg, (1990, 3, 25), (1, 33, 59), fold(4800, 1200)),
+            (tz_neg, (1990, 3, 25), (1, 59, 59), fold(4800, 1200)),
+            (tz_neg, (1990, 3, 25), (2, 0, 0), unambig(1200)),
             // Gap instead of fold
-            (tz_neg, (1990, 10, 8), (3, 59, 59), Unambiguous(1200)),
-            (tz_neg, (1990, 10, 8), (4, 0, 0), Gap(4800, 1200)),
-            (tz_neg, (1990, 10, 8), (4, 42, 12), Gap(4800, 1200)),
-            (tz_neg, (1990, 10, 8), (4, 59, 59), Gap(4800, 1200)),
-            (tz_neg, (1990, 10, 8), (5, 0, 0), Unambiguous(4800)),
+            (tz_neg, (1990, 10, 8), (3, 59, 59), unambig(1200)),
+            (tz_neg, (1990, 10, 8), (4, 0, 0), gap(4800, 1200)),
+            (tz_neg, (1990, 10, 8), (4, 42, 12), gap(4800, 1200)),
+            (tz_neg, (1990, 10, 8), (4, 59, 59), gap(4800, 1200)),
+            (tz_neg, (1990, 10, 8), (5, 0, 0), unambig(4800)),
             // No crash on inverted rules
-            (tz_inverted, (1990, 2, 9), (15, 0, 0), Unambiguous(4800)),
-            (tz_inverted, (1990, 10, 8), (3, 59, 0), Unambiguous(4800)),
-            (tz_inverted, (1990, 10, 8), (4, 0, 0), Gap(7200, 4800)),
-            (tz_inverted, (1990, 8, 13), (15, 0, 0), Unambiguous(4800)),
-            (tz_inverted, (1990, 11, 1), (4, 0, 0), Unambiguous(4800)),
+            (tz_inverted, (1990, 2, 9), (15, 0, 0), unambig(4800)),
+            (tz_inverted, (1990, 10, 8), (3, 59, 0), unambig(4800)),
+            (tz_inverted, (1990, 10, 8), (4, 0, 0), gap(7200, 4800)),
+            (tz_inverted, (1990, 8, 13), (15, 0, 0), unambig(4800)),
+            (tz_inverted, (1990, 11, 1), (4, 0, 0), unambig(4800)),
             // Always DST
-            (tz_always_dst, (1990, 1, 1), (0, 0, 0), Unambiguous(3600)),
+            (tz_always_dst, (1990, 1, 1), (0, 0, 0), unambig(3600)),
             // This is actually incorrect, but ZoneInfo does the same...
-            (tz_always_dst, (1992, 12, 31), (23, 0, 0), Gap(7200, 3600)),
+            (tz_always_dst, (1992, 12, 31), (23, 0, 0), gap(7200, 3600)),
         ];
 
         for &(tz, ymd, hms, expected) in &cases {
@@ -906,6 +995,6 @@ mod tests {
         }
 
         // At the MIN/MAX epoch boundaries
-        assert!(tz.offset_for_instant(EpochSecs::MAX) == OffsetS::new(4800).unwrap());
+        assert!(tz.offset_for_instant(EpochSecs::MAX) == Offset::new(4800).unwrap());
     }
 }

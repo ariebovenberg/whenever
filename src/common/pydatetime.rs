@@ -1,10 +1,11 @@
 use pyo3_ffi::*;
 
+use crate::common::math::*;
 use crate::common::methcall0;
 use crate::common::pyobject::*;
 
 // NOTE: assumes it's an "aware" datetime object
-pub(crate) unsafe fn offset_from_py_dt(dt: *mut PyObject) -> PyResult<i32> {
+pub(crate) unsafe fn offset_from_py_dt(dt: *mut PyObject) -> PyResult<Offset> {
     let delta = methcall0(dt, "utcoffset")?;
     defer_decref!(delta);
     if is_none(delta) {
@@ -14,7 +15,10 @@ pub(crate) unsafe fn offset_from_py_dt(dt: *mut PyObject) -> PyResult<i32> {
     if PyDateTime_DELTA_GET_MICROSECONDS(delta) != 0 {
         raise_value_err("Sub-second offsets are not supported")?
     }
-    Ok(PyDateTime_DELTA_GET_DAYS(delta) * 86_400 + PyDateTime_DELTA_GET_SECONDS(delta))
+    // Unchecked: Python offsets are already bounded to +/- 24 hours
+    Ok(Offset::new_unchecked(
+        PyDateTime_DELTA_GET_DAYS(delta) * 86_400 + PyDateTime_DELTA_GET_SECONDS(delta),
+    ))
 }
 
 #[inline]
