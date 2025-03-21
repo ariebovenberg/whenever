@@ -11,7 +11,7 @@ use std::{collections::VecDeque, ptr::NonNull};
 /// Since it's just a thin wrapper around a pointer, and
 /// meant to be used in a single-threaded context, it's safe to share and copy
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct TzRef {
+pub(crate) struct TzRef {
     inner: NonNull<Inner>,
 }
 
@@ -35,7 +35,7 @@ impl TzRef {
     }
 
     /// Increments the reference count.
-    pub fn incref(&self) {
+    pub(crate) fn incref(&self) {
         unsafe {
             let refcnt = self.inner.as_ref().refcnt.get();
             *refcnt += 1;
@@ -45,7 +45,7 @@ impl TzRef {
 
     /// Decrement the reference count manually and return true if it drops to zero.
     #[inline]
-    pub fn decref<'a, F>(&self, get_cache: F) -> bool
+    pub(crate) fn decref<'a, F>(&self, get_cache: F) -> bool
     where
         // Passing the cache lazily ensures we only get it if we need it,
         // i.e. if the refcount drops to zero.
@@ -66,7 +66,7 @@ impl TzRef {
             // Note that we only need to remove it from the lookup table, not the LRU.
             // The LRU is a strong-reference cache, meaning anything in it
             // by definition has a reference count of at least 1.
-            debug_assert!(cache.lru.contains(&self));
+            debug_assert!(cache.lru.contains(self));
             cache.lookup.remove(&self.key);
             // Ok to drop the data now
             unsafe {
@@ -77,13 +77,13 @@ impl TzRef {
         false
     }
 
-    pub fn value(&self) -> &TZif {
-        // Safety:
+    pub(crate) fn value(&self) -> &TZif {
         unsafe { &self.inner.as_ref().value }
     }
 
     /// Gets the current reference count (for debugging purposes).
-    pub fn ref_count(&self) -> usize {
+    #[allow(dead_code)]
+    pub(crate) fn ref_count(&self) -> usize {
         unsafe { *self.inner.as_ref().refcnt.get() }
     }
 }
@@ -101,15 +101,17 @@ type TzID = String;
 /// A cache for `TZif` objects, keyed by TZ ID.
 /// It's designed to be used by the `ZonedDateTime` class,
 /// and is based on the cache approach of zoneinfo in Python's standard library.
-pub struct TZifCache {
+pub(crate) struct TZifCache {
     // "Ahash" works significantly faster than the standard hashing algorithm.
     // We don't need the cryptographic security of the standard algorithm,
     // since the keys are trusted (they are limited to valid zoneinfo keys).
+    // Other alternatives that benchmarked *slower* are `BTreeMap`, gxhash,
+    // and phf.
     lookup: AHashMap<TzID, TzRef>,
-    /// Keeps the most recently used entries alive, to prevent over-eager dropping.
-    /// For example, if constantly creating and dropping ZonedDateTimes
-    /// with a particular TZ ID, we don't want to keep reloading the same file.
-    /// Thus, we keep the most recently used entries in the cache.
+    // Keeps the most recently used entries alive, to prevent over-eager dropping.
+    // For example, if constantly creating and dropping ZonedDateTimes
+    // with a particular TZ ID, we don't want to keep reloading the same file.
+    // Thus, we keep the most recently used entries in the cache.
     lru: VecDeque<TzRef>,
 }
 
@@ -120,8 +122,14 @@ const LRU_CAPACITY: usize = 8;
 /// It's designed to be used by the ZonedDateTime class,
 /// which only calls it from a single thread while holding the GIL.
 /// This allows avoiding synchronization.
+impl Default for TZifCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TZifCache {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             lookup: AHashMap::with_capacity(LRU_CAPACITY),
             lru: VecDeque::with_capacity(LRU_CAPACITY),
@@ -149,7 +157,7 @@ impl TZifCache {
                 entry
             }
         };
-        return Some(handle);
+        Some(handle)
     }
 
     /// The `get` function, but with Python exception handling

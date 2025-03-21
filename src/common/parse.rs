@@ -70,7 +70,7 @@ impl<'a> Scan<'a> {
     }
 
     pub(crate) fn digits00_59(&mut self) -> Option<u8> {
-        // TODO: can get stuck halfway through
+        // TODO-BUG: can get stuck halfway through
         self.digit_ranged(b'0'..=b'5')
             .and_then(|tens| self.digit().map(|ones| tens * 10 + ones))
     }

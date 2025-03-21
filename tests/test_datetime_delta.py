@@ -288,12 +288,25 @@ class TestParseCommonIso:
             "P1YX3M",  # invalid separator
             "PT𝟙H",  # non-ascii
             "P3DT",  # a T, but no time part
+            "P9999999999999999999S",  # too many digits
         ],
     )
     def test_invalid(self, s):
         with pytest.raises(
             ValueError, match=r"Invalid format.*" + re.escape(repr(s))
         ):
+            DateTimeDelta.parse_common_iso(s)
+
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "P14000Y",
+            "P180000M",
+            "PT180000000H",
+        ],
+    )
+    def test_out_of_range(self, s):
+        with pytest.raises(ValueError, match="range"):
             DateTimeDelta.parse_common_iso(s)
 
 
