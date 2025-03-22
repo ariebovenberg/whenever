@@ -1,12 +1,13 @@
 use core::ffi::{c_int, c_long, c_void, CStr};
-use core::{mem, ptr::null_mut as NULL};
+use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
+use crate::common::math::*;
 use crate::common::*;
 use crate::docstrings as doc;
 use crate::offset_datetime::check_ignore_dst_kwarg;
 use crate::{
-    date::{Date, MAX as MAX_DATE},
+    date::Date,
     date_delta::DateDelta,
     datetime_delta::{set_units_from_kwargs, DateTimeDelta},
     instant::Instant,
@@ -19,25 +20,25 @@ use crate::{
 };
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
-pub(crate) struct DateTime {
+pub struct DateTime {
     pub date: Date,
     pub time: Time,
 }
 
-pub(crate) const SINGLETONS: &[(&CStr, DateTime); 2] = &[
+pub const SINGLETONS: &[(&CStr, DateTime); 2] = &[
     (
         c"MIN",
         DateTime {
             date: Date {
-                year: 1,
-                month: 1,
+                year: Year::new(1).unwrap(),
+                month: Month::January,
                 day: 1,
             },
             time: Time {
                 hour: 0,
                 minute: 0,
                 second: 0,
-                nanos: 0,
+                subsec: SubSecNanos::MIN,
             },
         },
     ),
@@ -45,15 +46,15 @@ pub(crate) const SINGLETONS: &[(&CStr, DateTime); 2] = &[
         c"MAX",
         DateTime {
             date: Date {
-                year: 9999,
-                month: 12,
+                year: Year::new(9999).unwrap(),
+                month: Month::December,
                 day: 31,
             },
             time: Time {
                 hour: 23,
                 minute: 59,
                 second: 59,
-                nanos: 999_999_999,
+                subsec: SubSecNanos::MAX,
             },
         },
     ),
@@ -61,12 +62,12 @@ pub(crate) const SINGLETONS: &[(&CStr, DateTime); 2] = &[
 
 impl DateTime {
     #[inline]
-    pub(crate) fn default_fmt(&self) -> String {
-        if self.time.nanos == 0 {
+    pub fn default_fmt(&self) -> String {
+        if self.time.subsec.get() == 0 {
             format!(
                 "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
-                self.date.year,
-                self.date.month,
+                self.date.year.get(),
+                self.date.month.get(),
                 self.date.day,
                 self.time.hour,
                 self.time.minute,
@@ -75,31 +76,33 @@ impl DateTime {
         } else {
             format!(
                 "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:09}",
-                self.date.year,
-                self.date.month,
+                self.date.year.get(),
+                self.date.month.get(),
                 self.date.day,
                 self.time.hour,
                 self.time.minute,
                 self.time.second,
-                self.time.nanos,
+                self.time.subsec.get(),
             )
             .trim_end_matches('0')
             .to_string()
         }
     }
 
-    pub(crate) fn shift_date(self, months: i32, days: i32) -> Option<Self> {
+    pub fn shift_date(self, months: DeltaMonths, days: DeltaDays) -> Option<Self> {
         let DateTime { date, time } = self;
         date.shift(months, days).map(|date| DateTime { date, time })
     }
 
-    pub(crate) fn shift_nanos(self, nanos: i128) -> Option<Self> {
+    // TODO: reconsider this
+    pub fn shift_nanos(self, nanos: i128) -> Option<Self> {
         let DateTime { mut date, time } = self;
         let new_time = i128::from(time.total_nanos()) + nanos;
         let days_delta = new_time.div_euclid(NS_PER_DAY) as i32;
         let nano_delta = new_time.rem_euclid(NS_PER_DAY) as u64;
         if days_delta != 0 {
-            date = date.shift_days(days_delta)?
+            // TODO
+            date = date.shift_days(DeltaDays::new_unchecked(days_delta))?
         }
         Some(DateTime {
             date,
@@ -108,33 +111,26 @@ impl DateTime {
     }
 
     // FUTURE: is this actually worth it?
-    // shift by <48 hours, faster than going through date.shift()
-    pub(crate) fn small_shift_unchecked(self, secs: i32) -> Self {
-        debug_assert!(secs.abs() < S_PER_DAY * 2);
+    pub fn change_offset(self, s: OffsetDelta) -> Option<Self> {
         let Self { date, time } = self;
-        let day_seconds = time.total_seconds() + secs;
-        let (date, time) = match day_seconds.div_euclid(S_PER_DAY) {
-            0 => (date, time.set_seconds(day_seconds as u32)),
-            1 => (
-                date.increment(),
-                time.set_seconds((day_seconds - S_PER_DAY) as u32),
+        // Safety: both values sufficiently within i32 range
+        let secs_since_midnight = time.total_seconds() as i32 + s.get();
+        Some(Self {
+            date: match secs_since_midnight.div_euclid(S_PER_DAY) {
+                0 => date,
+                1 => date.tomorrow()?,
+                -1 => date.yesterday()?,
+                // more than 1 day difference is highly unlikely--but possible
+                2 => date.tomorrow()?.tomorrow()?,
+                -2 => date.yesterday()?.yesterday()?,
+                // OffsetDelta is <48 hours, so this is safe
+                _ => unreachable!(),
+            },
+            time: Time::from_sec_subsec(
+                secs_since_midnight.rem_euclid(S_PER_DAY) as u32,
+                time.subsec,
             ),
-            -1 => (
-                date.decrement(),
-                time.set_seconds((day_seconds + S_PER_DAY) as u32),
-            ),
-            // more than 1 day difference is unlikely--but possible
-            2 => (
-                date.increment().increment(),
-                time.set_seconds((day_seconds - S_PER_DAY * 2) as u32),
-            ),
-            -2 => (
-                date.decrement().decrement(),
-                time.set_seconds((day_seconds + S_PER_DAY * 2) as u32),
-            ),
-            _ => unreachable!(),
-        };
-        Self { date, time }
+        })
     }
 }
 
@@ -147,38 +143,24 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     let mut hour: c_long = 0;
     let mut minute: c_long = 0;
     let mut second: c_long = 0;
-    let mut nanos: c_long = 0;
+    let mut nanosecond: c_long = 0;
 
-    // FUTURE: parse them manually, which is more efficient
-    if PyArg_ParseTupleAndKeywords(
+    parse_args_kwargs!(
         args,
         kwargs,
-        c"lll|lll$l:LocalDateTime".as_ptr(),
-        arg_vec(&[
-            c"year",
-            c"month",
-            c"day",
-            c"hour",
-            c"minute",
-            c"second",
-            c"nanosecond",
-        ])
-        .as_mut_ptr(),
-        &mut year,
-        &mut month,
-        &mut day,
-        &mut hour,
-        &mut minute,
-        &mut second,
-        &mut nanos,
-    ) == 0
-    {
-        Err(py_err!())?
-    }
+        c"lll|lll$l:LocalDateTime",
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        nanosecond,
+    );
 
     DateTime {
         date: Date::from_longs(year, month, day).ok_or_type_err("Invalid date")?,
-        time: Time::from_longs(hour, minute, second, nanos).ok_or_type_err("Invalid time")?,
+        time: Time::from_longs(hour, minute, second, nanosecond).ok_or_type_err("Invalid time")?,
     }
     .to_obj(cls)
 }
@@ -227,10 +209,10 @@ unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
 unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     // easy case: subtracting two LocalDateTime objects
     if Py_TYPE(obj_a) == Py_TYPE(obj_b) {
-        Err(py_err!(
+        raise(
             State::for_obj(obj_a).exc_implicitly_ignoring_dst,
-            doc::DIFF_OPERATOR_LOCAL_MSG
-        ))?
+            doc::DIFF_OPERATOR_LOCAL_MSG,
+        )?
     } else {
         _shift_operator(obj_a, obj_b, true)
     }
@@ -259,15 +241,12 @@ unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bo
                 days = -days;
             }
             dt.shift_date(months, days)
-                .ok_or_else(|| value_err!("Result of {} out of range", opname))?
+                .ok_or_else_value_err(|| format!("Result of {} out of range", opname))?
                 .to_obj(type_a)
         } else if type_b == state.datetime_delta_type || type_b == state.time_delta_type {
-            Err(py_err!(
-                state.exc_implicitly_ignoring_dst,
-                doc::SHIFT_LOCAL_MSG
-            ))?
+            raise(state.exc_implicitly_ignoring_dst, doc::SHIFT_LOCAL_MSG)?
         } else {
-            Err(type_err!(
+            raise_type_err(format!(
                 "unsupported operand type(s) for {}: 'LocalDateTime' and {}",
                 opname,
                 type_b.cast::<PyObject>().repr()
@@ -278,6 +257,7 @@ unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bo
     }
 }
 
+#[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_tp_new, __new__),
     slotmethod!(Py_tp_repr, __repr__, 1),
@@ -313,7 +293,7 @@ static mut SLOTS: &[PyType_Slot] = &[
 
 #[inline]
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn set_components_from_kwargs(
+pub unsafe fn set_components_from_kwargs(
     key: *mut PyObject,
     value: *mut PyObject,
     year: &mut c_long,
@@ -361,17 +341,17 @@ unsafe fn replace(
     kwargs: &mut KwargIter,
 ) -> PyReturn {
     if !args.is_empty() {
-        Err(type_err!("replace() takes no positional arguments"))?
+        raise_type_err("replace() takes no positional arguments")?
     }
     let module = State::for_type(cls);
     let dt = DateTime::extract(slf);
-    let mut year = dt.date.year.into();
-    let mut month = dt.date.month.into();
+    let mut year = dt.date.year.get().into();
+    let mut month = dt.date.month.get().into();
     let mut day = dt.date.day.into();
     let mut hour = dt.time.hour.into();
     let mut minute = dt.time.minute.into();
     let mut second = dt.time.second.into();
-    let mut nanos = dt.time.nanos as _;
+    let mut nanos = dt.time.subsec.get() as _;
     handle_kwargs("replace", kwargs, |key, value, eq| {
         set_components_from_kwargs(
             key,
@@ -423,9 +403,9 @@ unsafe fn _shift_method(
     let fname = if negate { "subtract" } else { "add" };
     // FUTURE: get fields all at once from State (this is faster)
     let state = State::for_type(cls);
-    let mut months = 0;
-    let mut days = 0;
-    let mut nanos = 0;
+    let mut months = DeltaMonths::ZERO;
+    let mut days = DeltaDays::ZERO;
+    let mut nanos = 0; // TODO: separate sec/subsec
     let mut ignore_dst = false;
 
     match *args {
@@ -434,7 +414,7 @@ unsafe fn _shift_method(
                 Some((key, value)) if kwargs.len() == 1 && key.kwarg_eq(state.str_ignore_dst) => {
                     ignore_dst = value == Py_True();
                 }
-                Some(_) => Err(type_err!(
+                Some(_) => raise_type_err(format!(
                     "{}() can't mix positional and keyword arguments",
                     fname
                 ))?,
@@ -452,20 +432,32 @@ unsafe fn _shift_method(
                 days = dt.ddelta.days;
                 nanos = dt.tdelta.total_nanos();
             } else {
-                Err(type_err!("{}() argument must be a delta", fname))?
+                raise_type_err(format!("{}() argument must be a delta", fname))?
             }
         }
         [] => {
+            let mut raw_months = 0;
+            let mut raw_days = 0;
             handle_kwargs(fname, kwargs, |key, value, eq| {
                 if eq(key, state.str_ignore_dst) {
                     ignore_dst = value == Py_True();
                     Ok(true)
                 } else {
-                    set_units_from_kwargs(key, value, &mut months, &mut days, &mut nanos, state, eq)
+                    set_units_from_kwargs(
+                        key,
+                        value,
+                        &mut raw_months,
+                        &mut raw_days,
+                        &mut nanos,
+                        state,
+                        eq,
+                    )
                 }
             })?;
+            months = DeltaMonths::new(raw_months).ok_or_value_err("Months out of range")?;
+            days = DeltaDays::new(raw_days).ok_or_value_err("Days out of range")?;
         }
-        _ => Err(type_err!(
+        _ => raise_type_err(format!(
             "{}() takes at most 1 positional argument, got {}",
             fname,
             args.len()
@@ -478,15 +470,15 @@ unsafe fn _shift_method(
         nanos = -nanos;
     }
     if nanos != 0 && !ignore_dst {
-        Err(py_err!(
+        raise(
             state.exc_implicitly_ignoring_dst,
-            doc::ADJUST_LOCAL_DATETIME_MSG
-        ))?
+            doc::ADJUST_LOCAL_DATETIME_MSG,
+        )?
     }
     DateTime::extract(slf)
         .shift_date(months, days)
         .and_then(|dt| dt.shift_nanos(nanos))
-        .ok_or_else(|| value_err!("Result of {}() out of range", fname))?
+        .ok_or_else_value_err(|| format!("Result of {}() out of range", fname))?
         .to_obj(cls)
 }
 
@@ -499,7 +491,7 @@ unsafe fn difference(
     let state = State::for_type(cls);
     check_ignore_dst_kwarg(kwargs, state, doc::DIFF_LOCAL_MSG)?;
     let [arg] = *args else {
-        Err(type_err!("difference() takes exactly 1 argument"))?
+        raise_type_err("difference() takes exactly 1 argument")?
     };
     if Py_TYPE(arg) == cls {
         let a = DateTime::extract(slf);
@@ -508,7 +500,7 @@ unsafe fn difference(
             .diff(Instant::from_datetime(b.date, b.time))
             .to_obj(state.time_delta_type)
     } else {
-        Err(type_err!("difference() argument must be a LocalDateTime"))?
+        raise_type_err("difference() argument must be a LocalDateTime")?
     }
 }
 
@@ -520,10 +512,18 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
                 hour,
                 minute,
                 second,
-                nanos,
+                subsec: nanos,
             },
     } = DateTime::extract(slf);
-    let data = pack![year, month, day, hour, minute, second, nanos];
+    let data = pack![
+        year.get(),
+        month.get(),
+        day,
+        hour,
+        minute,
+        second,
+        nanos.get()
+    ];
     (
         State::for_obj(slf).unpickle_local_datetime,
         steal!((steal!(data.to_py()?),).to_py()?),
@@ -531,22 +531,22 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         .to_py()
 }
 
-pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
+pub unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let mut packed = arg.to_bytes()?.ok_or_type_err("Invalid pickle data")?;
     if packed.len() != 11 {
-        Err(type_err!("Invalid pickle data"))?
+        raise_type_err("Invalid pickle data")?
     }
     DateTime {
         date: Date {
-            year: unpack_one!(packed, u16),
-            month: unpack_one!(packed, u8),
+            year: Year::new_unchecked(unpack_one!(packed, u16)),
+            month: Month::new_unchecked(unpack_one!(packed, u8)),
             day: unpack_one!(packed, u8),
         },
         time: Time {
             hour: unpack_one!(packed, u8),
             minute: unpack_one!(packed, u8),
             second: unpack_one!(packed, u8),
-            nanos: unpack_one!(packed, u32),
+            subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
         },
     }
     .to_obj(State::for_mod(module).local_datetime_type)
@@ -554,27 +554,18 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
 
 unsafe fn from_py_datetime(type_: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     if PyDateTime_Check(dt) == 0 {
-        Err(type_err!("argument must be datetime.datetime"))?
+        raise_type_err("argument must be datetime.datetime")?
     }
     let tzinfo = borrow_dt_tzinfo(dt);
     if !is_none(tzinfo) {
-        Err(value_err!(
+        raise_value_err(format!(
             "datetime must be naive, but got tzinfo={}",
             tzinfo.repr()
         ))?
     }
     DateTime {
-        date: Date {
-            year: PyDateTime_GET_YEAR(dt) as u16,
-            month: PyDateTime_GET_MONTH(dt) as u8,
-            day: PyDateTime_GET_DAY(dt) as u8,
-        },
-        time: Time {
-            hour: PyDateTime_DATE_GET_HOUR(dt) as u8,
-            minute: PyDateTime_DATE_GET_MINUTE(dt) as u8,
-            second: PyDateTime_DATE_GET_SECOND(dt) as u8,
-            nanos: PyDateTime_DATE_GET_MICROSECOND(dt) as u32 * 1_000,
-        },
+        date: Date::from_py_unchecked(dt),
+        time: Time::from_py_dt_unchecked(dt),
     }
     .to_obj(type_.cast())
 }
@@ -587,7 +578,7 @@ unsafe fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
                 hour,
                 minute,
                 second,
-                nanos,
+                subsec: nanos,
             },
     } = DateTime::extract(slf);
     let &PyDateTime_CAPI {
@@ -596,13 +587,13 @@ unsafe fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         ..
     } = State::for_type(Py_TYPE(slf)).py_api;
     DateTime_FromDateAndTime(
-        year.into(),
-        month.into(),
+        year.get().into(),
+        month.get().into(),
         day.into(),
         hour.into(),
         minute.into(),
         second.into(),
-        (nanos / 1_000) as _,
+        (nanos.get() / 1_000) as _,
         Py_None(),
         DateTimeType,
     )
@@ -632,22 +623,21 @@ pub fn parse_date_and_time(s: &[u8]) -> Option<(Date, Time)> {
 unsafe fn parse_common_iso(cls: *mut PyObject, arg: *mut PyObject) -> PyReturn {
     let s = arg.to_utf8()?.ok_or_type_err("Expected a string")?;
     if s.len() < 19 || s[10] != b'T' {
-        Err(value_err!("Invalid format: {}", arg.repr()))
+        raise_value_err(format!("Invalid format: {}", arg.repr()))
     } else {
         match parse_date_and_time(s) {
             Some((date, time)) => DateTime { date, time }.to_obj(cls.cast()),
-            None => Err(value_err!("Invalid format: {}", arg.repr())),
+            None => raise_value_err(format!("Invalid format: {}", arg.repr())),
         }
     }
 }
 
 unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
     if args.len() != 2 {
-        type_err!(
+        raise_type_err(format!(
             "strptime() takes exactly 2 arguments ({} given)",
             args.len()
-        )
-        .err()?
+        ))?
     }
     // OPTIMIZE: get this working with vectorcall
     let parsed = PyObject_Call(
@@ -659,23 +649,14 @@ unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
     defer_decref!(parsed);
     let tzinfo = borrow_dt_tzinfo(parsed);
     if !is_none(tzinfo) {
-        Err(value_err!(
+        raise_value_err(format!(
             "datetime must be naive, but got tzinfo={}",
             tzinfo.repr()
         ))?;
     }
     DateTime {
-        date: Date {
-            year: PyDateTime_GET_YEAR(parsed) as u16,
-            month: PyDateTime_GET_MONTH(parsed) as u8,
-            day: PyDateTime_GET_DAY(parsed) as u8,
-        },
-        time: Time {
-            hour: PyDateTime_DATE_GET_HOUR(parsed) as u8,
-            minute: PyDateTime_DATE_GET_MINUTE(parsed) as u8,
-            second: PyDateTime_DATE_GET_SECOND(parsed) as u8,
-            nanos: PyDateTime_DATE_GET_MICROSECOND(parsed) as u32 * 1_000,
-        },
+        date: Date::from_py_unchecked(parsed),
+        time: Time::from_py_dt_unchecked(parsed),
     }
     .to_obj(cls.cast())
 }
@@ -703,36 +684,29 @@ unsafe fn assume_tz(
     args: &[*mut PyObject],
     kwargs: &mut KwargIter,
 ) -> PyReturn {
-    let &State {
-        py_api,
-        zoneinfo_type,
+    let &mut State {
         str_disambiguate,
         zoned_datetime_type,
         exc_skipped,
         exc_repeated,
+        zoneinfo_notfound,
+        ref mut tz_cache,
         ..
-    } = State::for_type(cls);
+    } = State::for_type_mut(cls);
+
     let DateTime { date, time } = DateTime::extract(slf);
-    let &[tz] = args else {
-        Err(type_err!(
+    let &[tz_obj] = args else {
+        raise_type_err(format!(
             "assume_tz() takes 1 positional argument but {} were given",
             args.len()
         ))?
     };
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_tz")?;
-    let zoneinfo = call1(zoneinfo_type, tz)?;
-    defer_decref!(zoneinfo);
-    ZonedDateTime::resolve_using_disambiguate(
-        py_api,
-        date,
-        time,
-        zoneinfo,
-        dis.unwrap_or(Disambiguate::Compatible),
-        exc_repeated,
-        exc_skipped,
-    )?
-    .to_obj(zoned_datetime_type)
+    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_tz")?
+        .unwrap_or(Disambiguate::Compatible);
+    let tzif = tz_cache.py_get(tz_obj, zoneinfo_notfound)?;
+    ZonedDateTime::resolve_using_disambiguate(date, time, tzif, dis, exc_repeated, exc_skipped)?
+        .to_obj(zoned_datetime_type)
 }
 
 unsafe fn assume_system_tz(
@@ -751,9 +725,7 @@ unsafe fn assume_system_tz(
     } = State::for_type(cls);
     let DateTime { date, time } = DateTime::extract(slf);
     if !args.is_empty() {
-        Err(type_err!(
-            "assume_system_tz() takes no positional arguments"
-        ))?
+        raise_type_err("assume_system_tz() takes no positional arguments")?
     }
 
     let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_system_tz")?;
@@ -778,7 +750,7 @@ unsafe fn replace_date(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
         }
         .to_obj(cls)
     } else {
-        Err(type_err!("date must be a whenever.Date instance"))
+        raise_type_err("date must be a whenever.Date instance")
     }
 }
 
@@ -792,7 +764,7 @@ unsafe fn replace_time(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
         }
         .to_obj(cls)
     } else {
-        Err(type_err!("time must be a whenever.Time instance"))
+        raise_type_err("time must be a whenever.Time instance")
     }
 }
 
@@ -806,11 +778,9 @@ unsafe fn round(
     let DateTime { mut date, time } = DateTime::extract(slf);
     let (time_rounded, next_day) = time.round(increment as u64, mode);
     if next_day == 1 {
-        if date != MAX_DATE {
-            date = date.increment();
-        } else {
-            Err(value_err!("Resulting datetime out of range"))?
-        }
+        date = date
+            .tomorrow()
+            .ok_or_value_err("Resulting date out of range")?;
     }
     DateTime {
         date,
@@ -863,11 +833,11 @@ static mut METHODS: &[PyMethodDef] = &[
 ];
 
 unsafe fn get_year(slf: *mut PyObject) -> PyReturn {
-    DateTime::extract(slf).date.year.to_py()
+    DateTime::extract(slf).date.year.get().to_py()
 }
 
 unsafe fn get_month(slf: *mut PyObject) -> PyReturn {
-    DateTime::extract(slf).date.month.to_py()
+    DateTime::extract(slf).date.month.get().to_py()
 }
 
 unsafe fn get_day(slf: *mut PyObject) -> PyReturn {
@@ -887,7 +857,7 @@ unsafe fn get_second(slf: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn get_nanos(slf: *mut PyObject) -> PyReturn {
-    DateTime::extract(slf).time.nanos.to_py()
+    DateTime::extract(slf).time.subsec.get().to_py()
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
@@ -928,44 +898,44 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
     },
 ];
 
-type LocalDateTime = DateTime;
-type_spec!(LocalDateTime, SLOTS);
+pub static mut SPEC: PyType_Spec =
+    type_spec::<DateTime>(c"whenever.LocalDateTime", unsafe { SLOTS });
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn mkdate(year: u16, month: u8, day: u8) -> Date {
+        Date {
+            year: Year::new_unchecked(year),
+            month: Month::new_unchecked(month),
+            day,
+        }
+    }
 
     #[test]
     fn test_parse_valid() {
         assert_eq!(
             parse_date_and_time(b"2023-03-02 02:09:09"),
             Some((
-                Date {
-                    year: 2023,
-                    month: 3,
-                    day: 2,
-                },
+                mkdate(2023, 3, 2),
                 Time {
                     hour: 2,
                     minute: 9,
                     second: 9,
-                    nanos: 0,
+                    subsec: SubSecNanos::MIN,
                 },
             ))
         );
         assert_eq!(
             parse_date_and_time(b"2023-03-02 02:09:09.123456789"),
             Some((
-                Date {
-                    year: 2023,
-                    month: 3,
-                    day: 2,
-                },
+                mkdate(2023, 3, 2),
                 Time {
                     hour: 2,
                     minute: 9,
                     second: 9,
-                    nanos: 123_456_789,
+                    subsec: SubSecNanos::new_unchecked(123_456_789),
                 },
             ))
         );
@@ -984,173 +954,137 @@ mod tests {
     }
 
     #[test]
-    fn test_small_shift_unchecked() {
+    fn test_change_offset() {
         let d = DateTime {
-            date: Date {
-                year: 2023,
-                month: 3,
-                day: 2,
-            },
+            date: mkdate(2023, 3, 2),
             time: Time {
                 hour: 2,
                 minute: 9,
                 second: 9,
-                nanos: 0,
+                subsec: SubSecNanos::MIN,
             },
         };
-        assert_eq!(d.small_shift_unchecked(0), d);
+        assert_eq!(d.change_offset(OffsetDelta::ZERO).unwrap(), d);
         assert_eq!(
-            d.small_shift_unchecked(1),
+            d.change_offset(OffsetDelta::new_unchecked(1)).unwrap(),
             DateTime {
-                date: Date {
-                    year: 2023,
-                    month: 3,
-                    day: 2,
-                },
+                date: mkdate(2023, 3, 2),
                 time: Time {
                     hour: 2,
                     minute: 9,
                     second: 10,
-                    nanos: 0,
+                    subsec: SubSecNanos::MIN,
                 }
             }
         );
         assert_eq!(
-            d.small_shift_unchecked(-1),
+            d.change_offset(OffsetDelta::new_unchecked(-1)).unwrap(),
             DateTime {
-                date: Date {
-                    year: 2023,
-                    month: 3,
-                    day: 2,
-                },
+                date: mkdate(2023, 3, 2),
                 time: Time {
                     hour: 2,
                     minute: 9,
                     second: 8,
-                    nanos: 0,
+                    subsec: SubSecNanos::MIN,
                 }
             }
         );
         assert_eq!(
-            d.small_shift_unchecked(S_PER_DAY),
+            d.change_offset(OffsetDelta::new_unchecked(86_400)).unwrap(),
             DateTime {
-                date: Date {
-                    year: 2023,
-                    month: 3,
-                    day: 3,
-                },
+                date: mkdate(2023, 3, 3),
                 time: Time {
                     hour: 2,
                     minute: 9,
                     second: 9,
-                    nanos: 0,
+                    subsec: SubSecNanos::MIN,
                 }
             }
         );
         assert_eq!(
-            d.small_shift_unchecked(-S_PER_DAY),
+            d.change_offset(OffsetDelta::new_unchecked(-86_400))
+                .unwrap(),
             DateTime {
-                date: Date {
-                    year: 2023,
-                    month: 3,
-                    day: 1,
-                },
+                date: mkdate(2023, 3, 1),
                 time: Time {
                     hour: 2,
                     minute: 9,
                     second: 9,
-                    nanos: 0,
+                    subsec: SubSecNanos::MIN,
                 }
             }
         );
         let midnight = DateTime {
-            date: Date {
-                year: 2023,
-                month: 3,
-                day: 2,
-            },
+            date: mkdate(2023, 3, 2),
             time: Time {
                 hour: 0,
                 minute: 0,
                 second: 0,
-                nanos: 0,
+                subsec: SubSecNanos::MIN,
             },
         };
-        assert_eq!(midnight.small_shift_unchecked(0), midnight);
+        assert_eq!(midnight.change_offset(OffsetDelta::ZERO).unwrap(), midnight);
         assert_eq!(
-            midnight.small_shift_unchecked(-1),
+            midnight
+                .change_offset(OffsetDelta::new_unchecked(-1))
+                .unwrap(),
             DateTime {
-                date: Date {
-                    year: 2023,
-                    month: 3,
-                    day: 1,
-                },
+                date: mkdate(2023, 3, 1),
                 time: Time {
                     hour: 23,
                     minute: 59,
                     second: 59,
-                    nanos: 0,
+                    subsec: SubSecNanos::MIN,
                 }
             }
         );
         assert_eq!(
-            midnight.small_shift_unchecked(-S_PER_DAY),
+            midnight
+                .change_offset(OffsetDelta::new_unchecked(-86_400))
+                .unwrap(),
             DateTime {
-                date: Date {
-                    year: 2023,
-                    month: 3,
-                    day: 1,
-                },
+                date: mkdate(2023, 3, 1),
                 time: Time {
                     hour: 0,
                     minute: 0,
                     second: 0,
-                    nanos: 0,
+                    subsec: SubSecNanos::MIN,
                 }
             }
         );
         assert_eq!(
-            midnight.small_shift_unchecked(-S_PER_DAY - 1),
+            midnight
+                .change_offset(OffsetDelta::new_unchecked(-86_401))
+                .unwrap(),
             DateTime {
-                date: Date {
-                    year: 2023,
-                    month: 2,
-                    day: 28,
-                },
+                date: mkdate(2023, 2, 28),
                 time: Time {
                     hour: 23,
                     minute: 59,
                     second: 59,
-                    nanos: 0,
+                    subsec: SubSecNanos::MIN,
                 }
             }
         );
         assert_eq!(
             DateTime {
-                date: Date {
-                    year: 2023,
-                    month: 1,
-                    day: 1,
-                },
+                date: mkdate(2023, 1, 1),
                 time: Time {
                     hour: 0,
                     minute: 0,
                     second: 0,
-                    nanos: 0,
+                    subsec: SubSecNanos::MIN,
                 }
             }
-            .small_shift_unchecked(-1),
+            .change_offset(OffsetDelta::new_unchecked(-1))
+            .unwrap(),
             DateTime {
-                date: Date {
-                    year: 2022,
-                    month: 12,
-                    day: 31,
-                },
+                date: mkdate(2022, 12, 31),
                 time: Time {
                     hour: 23,
                     minute: 59,
                     second: 59,
-                    nanos: 0,
+                    subsec: SubSecNanos::MIN,
                 }
             }
         )

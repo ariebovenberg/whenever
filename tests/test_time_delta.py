@@ -595,6 +595,7 @@ def test_negate():
     assert TimeDelta(
         hours=-1, minutes=2, seconds=-3, microseconds=4
     ) == -TimeDelta(hours=1, minutes=-2, seconds=3, microseconds=-4)
+    # TODO: min/max!
 
 
 @pytest.mark.parametrize(
