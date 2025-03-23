@@ -40,7 +40,6 @@ impl TzRef {
             let refcnt = self.inner.as_ref().refcnt.get();
             *refcnt += 1;
         }
-        // println!("Incremented refcount: {:?}", self.ref_count());
     }
 
     /// Decrement the reference count manually and return true if it drops to zero.
@@ -56,18 +55,16 @@ impl TzRef {
             *refcnt -= 1;
             *refcnt
         };
-        // println!("Decremented refcount: {:?}", *refcnt);
         if refcnt == 0 {
             let cache = get_cache();
-            // println!("Dropping TZif: {:?}", self.inner.as_ref().value.key);
 
             // Before dropping the data, we need to remove it from the cache.
             // Otherwise, the cache will keep a dangling pointer!
             // Note that we only need to remove it from the lookup table, not the LRU.
             // The LRU is a strong-reference cache, meaning anything in it
             // by definition has a reference count of at least 1.
-            debug_assert!(cache.lru.contains(self));
-            cache.lookup.remove(&self.key);
+            let removed = cache.lookup.remove(&self.key);
+            debug_assert!(removed.is_some());
             // Ok to drop the data now
             unsafe {
                 drop(Box::from_raw(self.inner.as_ptr()));
@@ -98,30 +95,41 @@ impl std::ops::Deref for TzRef {
 
 type TzID = String;
 
-/// A cache for `TZif` objects, keyed by TZ ID.
-/// It's designed to be used by the `ZonedDateTime` class,
-/// and is based on the cache approach of zoneinfo in Python's standard library.
+/// A simple cache for zoneinfo files.
+/// It's designed to be used by the ZonedDateTime class,
+/// which only calls it from a single thread while holding the GIL.
+/// This avoids the need for synchronization.
+/// It is based on the cache approach of zoneinfo in Python's standard library.
+#[derive(Debug)]
 pub(crate) struct TZifCache {
+    // Weak references to the `TZif` objects, keyed by TZ ID.
+    // ZonedDateTime objects hold strong references to the `TZif` objects,
+    // along with the cache's LRU.
+    //
+    // Choice of data structure:
     // "Ahash" works significantly faster than the standard hashing algorithm.
     // We don't need the cryptographic security of the standard algorithm,
     // since the keys are trusted (they are limited to valid zoneinfo keys).
-    // Other alternatives that benchmarked *slower* are `BTreeMap`, gxhash,
-    // and phf.
+    // Other alternatives that benchmarked *slower* are `BTreeMap`, gxhash, fxhash, and phf.
+    //
+    // Cleanup strategy:
+    // Removal of 0-refcount entries is done by the `decref` method of the `TZif` handle,
     lookup: AHashMap<TzID, TzRef>,
     // Keeps the most recently used entries alive, to prevent over-eager dropping.
+    //
     // For example, if constantly creating and dropping ZonedDateTimes
     // with a particular TZ ID, we don't want to keep reloading the same file.
     // Thus, we keep the most recently used entries in the cache.
+    //
+    // Choice of data structure:
+    // A VecDeque is great for push/popping from both ends, and is simple to use,
+    // although a Vec wasn't much slower in benchmarks.
     lru: VecDeque<TzRef>,
 }
 
 const BASE_PATH: &str = "/usr/share/zoneinfo";
-const LRU_CAPACITY: usize = 8;
+const LRU_CAPACITY: usize = 8; // this value seems to work well for Python's zoneinfo
 
-/// A simple cache for zoneinfo files.
-/// It's designed to be used by the ZonedDateTime class,
-/// which only calls it from a single thread while holding the GIL.
-/// This allows avoiding synchronization.
 impl Default for TZifCache {
     fn default() -> Self {
         Self::new()
@@ -135,25 +143,21 @@ impl TZifCache {
             lru: VecDeque::with_capacity(LRU_CAPACITY),
         }
     }
-    /// BIG TODO: cleanup from cache after decref!
-    /// Fetches a `TZif` for the given `tzid`.
+    /// Fetches a `TZif` for the given IANA time zone ID.
     /// If not already cached, reads the file from the filesystem.
-    pub(crate) fn get(&mut self, tzid_str: &str) -> Option<TzRef> {
-        // println!("Getting TZif: {:?}", tzid_str);
-        let handle = match self.lookup.get(tzid_str) {
+    /// Returns a *borrowed* reference to the `TZif` object.
+    /// Its reference count is *not* incremented.
+    pub(crate) fn get(&mut self, tz_id: &str) -> Option<TzRef> {
+        let handle = match self.lookup.get(tz_id) {
             Some(&entry) => {
-                // println!("Found TZif in cache: {:?}", tzid_str);
-                // TODO does this make sense?
                 self.touch_lru(entry);
                 entry
             }
             // Not in cache: attempt to load and insert
             None => {
-                let tzif = self.load_tzif(Path::new(BASE_PATH), tzid_str)?;
-                // TODO: lru_cache here, with assumptions
-                let entry = TzRef::new(tzif);
-                let tz_id_str = tzid_str.to_string();
-                self.lookup.insert(tz_id_str, entry);
+                let entry = TzRef::new(self.load_tzif(Path::new(BASE_PATH), tz_id)?);
+                self.new_to_lru(entry);
+                self.lookup.insert(tz_id.to_string(), entry);
                 entry
             }
         };
@@ -172,35 +176,47 @@ impl TZifCache {
             })
     }
 
-    /// Adds the given TZ ID to the front of the LRU cache.
-    /// Removes the least recently used entry if the capacity is exceeded.
-    fn touch_lru(&mut self, tzif: TzRef) {
-        // println!("Touching LRU for TZif: {:?}", unsafe { tzif.as_ref() }.key);
-
-        // Remove the pointer if it's already in the LRU
-        if let Some(pos) = self.lru.iter().position(|&ptr| ptr == tzif) {
-            self.lru.remove(pos);
-        } else {
-            // Only increment the refcount if it's not already in the LRU
-            tzif.incref();
-        }
-
-        // Push the pointer to the back (most recently used)
-        self.lru.push_back(tzif);
-
+    /// Insert a new entry into the LRU, assuming it's not already there.
+    /// The entry is assumed to have already ben incref'd.
+    fn new_to_lru(&mut self, tz: TzRef) {
+        debug_assert!(!self.lru.contains(&tz));
+        debug_assert!(tz.ref_count() > 0);
+        self.lru.push_front(tz);
         // If the LRU exceeds capacity, remove the least recently used entry
         if self.lru.len() > LRU_CAPACITY {
             self.lru
-                .pop_front()
-                .unwrap() // Safe: We've just checked len()
+                .pop_back()
+                // Safe: we've just checked the length
+                .unwrap()
+                // Don't forget to decrement the refcount of dropped entries!
                 .decref(|| self);
+        }
+    }
+
+    /// Register the given TZif was "used recently", moving it to the front of the LRU.
+    fn touch_lru(&mut self, tz: TzRef) {
+        match self.lru.iter().position(|&ptr| ptr == tz) {
+            // TODO-PERF: does this branch help?
+            Some(0) => {
+                // Already at the front
+                return;
+            }
+            Some(i) => {
+                // Move it to the front. Note we don't need to increment the refcount,
+                // since it's already in the LRU.
+                self.lru.remove(i);
+                self.lru.push_front(tz);
+            }
+            None => {
+                tz.incref(); // LRU needs a strong refence
+                self.new_to_lru(tz);
+            }
         }
     }
 
     /// Join a TZ id path with a base path, assuming the TZ id is untrusted input.
     /// The base path is assumed to be a trusted directory
     fn load_tzif(&self, base: &Path, tzid: &str) -> Option<TZif> {
-        // println!("Reading TZif from filesystem: {:?}", tzid);
         if !tzid.is_ascii()
             || tzid.contains("..")
             || tzid.contains("//")
@@ -212,5 +228,21 @@ impl TZifCache {
         }
         let fullpath = base.join(tzid).canonicalize().ok()?;
         tzif::parse(&fs::read(fullpath).ok()?, tzid).ok()
+    }
+}
+
+impl Drop for TZifCache {
+    /// Drop the cache, clearing all entries. This should only trigger during module unloading,
+    /// and there should be no ZonedDateTime objects left.
+    fn drop(&mut self) {
+        // Drop all the entries in the LRU
+        let mut lru = std::mem::take(&mut self.lru);
+        for tz in lru.drain(..) {
+            // NOTE: this is a bit hairy, as we pass the cache while it's being cleared.
+            // However, decreffing doesn't touch the LRU, so we should be fine.
+            tz.decref(|| self);
+        }
+        // By now, the lookup table should be empty (it contains only weak references)
+        debug_assert!(self.lookup.is_empty());
     }
 }
