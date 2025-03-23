@@ -206,6 +206,8 @@ impl PyWrapped for ZonedDateTime {
     #[inline]
     unsafe fn to_obj(self, type_: *mut PyTypeObject) -> PyReturn {
         let obj = generic_alloc(type_, self)?;
+        // The Python object maintains a strong reference to the timezone.
+        // It's decreffed again when the object is deallocated.
         self.tz.incref();
         Ok(obj)
     }

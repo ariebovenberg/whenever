@@ -11,7 +11,8 @@ use std::time::SystemTime;
 
 use crate::common::*;
 
-// Some modules as pub(crate) for benchmarking. FUTURE: find a more elegant way to do this.
+// For benchmarking, all modules are public. The crate itself isn't distributed as a library,
+// but is only meant to be accessed through its Python API.
 pub mod common;
 pub mod date;
 pub mod date_delta;
@@ -58,10 +59,7 @@ static mut MODULE_DEF: PyModuleDef = PyModuleDef {
     m_slots: unsafe { MODULE_SLOTS.as_ptr() as *mut _ },
     m_traverse: Some(module_traverse),
     m_clear: Some(module_clear),
-    // XXX: m_free likely not needed, since m_clear clears all references,
-    // and the module state is deallocated along with the module.
-    // See https://github.com/python/cpython/blob/c3b6dbff2c8886de1edade737febe85dd47ff4d0/Modules/xxlimited.c#L429C1-L431C8
-    m_free: None,
+    m_free: Some(module_free),
 };
 
 static mut METHODS: &[PyMethodDef] = &[
@@ -460,7 +458,9 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     state.time_machine_exists = unwrap_or_errcode!(time_machine_installed());
     state.time_patch = TimePatch::Unset;
 
-    state.tz_cache = TZifCache::new();
+    // We write this field manually, to avoid triggering a "drop" of the previous value.
+    // There is no previous value, since Python just allocated this memory for us.
+    std::ptr::write(&mut state.tz_cache as *mut _, TZifCache::new());
 
     0
 }
@@ -659,8 +659,18 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR(ptr::addr_of_mut!(state.parse_rfc2822));
     Py_CLEAR(&raw mut state.time_ns);
 
-    // TODO-TZIF: clear cache
     0
+}
+
+#[cold]
+unsafe extern "C" fn module_free(module: *mut c_void) {
+    let state = PyModule_GetState(module.cast())
+        .cast::<State>()
+        .as_mut()
+        .unwrap();
+    // We clean up the tz cache here because module_clear is not *guaranteed* to be called,
+    // and it would leave dangling resources if not cleaned up.
+    std::ptr::drop_in_place(&mut state.tz_cache);
 }
 
 pub(crate) struct State {
