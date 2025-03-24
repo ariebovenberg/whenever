@@ -2843,14 +2843,14 @@ class _KnowsInstant(_BasicConversions):
             """Create an instance from the current time.
 
             This method on :class:`~ZonedDateTime` and :class:`~OffsetDateTime` requires
-            a ``tz=`` and ``offset=`` kwarg, respectively.
+            an additional timezone or offset argument, respectively.
 
             Example
             -------
 
             >>> Instant.now()
             Instant(2021-08-15T22:12:00.49821Z)
-            >>> ZonedDateTime.now(tz="Europe/London")
+            >>> ZonedDateTime.now("Europe/London")
             ZonedDateTime(2021-08-15 23:12:00.50332+01:00[Europe/London])
 
             """
