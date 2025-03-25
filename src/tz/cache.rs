@@ -197,10 +197,7 @@ impl TZifCache {
     fn touch_lru(&mut self, tz: TzRef) {
         match self.lru.iter().position(|&ptr| ptr == tz) {
             // TODO-PERF: does this branch help?
-            Some(0) => {
-                // Already at the front
-                return;
-            }
+            Some(0) => {} // Already at the front
             Some(i) => {
                 // Move it to the front. Note we don't need to increment the refcount,
                 // since it's already in the LRU.

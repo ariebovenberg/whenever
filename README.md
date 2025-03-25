@@ -218,10 +218,12 @@ For more details, see the licenses included in the distribution.
 
 ## Acknowledgements
 
-This project is inspired by—and borrows most concepts from—the following projects. Check them out!
+Whenever's design is strongly inspired by the following projects:
 
-- [Temporal](https://tc39.es/proposal-temporal/docs/)
-- [Noda Time](https://nodatime.org/) and [Joda Time](https://www.joda.org/joda-time/)
+- [Noda Time](https://nodatime.org/) (which in turn takes after [Joda Time](https://www.joda.org/joda-time/))
+- [Temporal](https://tc39.es/proposal-temporal/docs/) which also takes inspiration from above
+
+Whenever also borrows a few nifty ideas from [Jiff](https://github.com/BurntSushi/jiff).
 
 The benchmark comparison graph is based on the one from the [Ruff](https://github.com/astral-sh/ruff) project.
 For timezone data, **Whenever** uses Python's own `zoneinfo` module.
