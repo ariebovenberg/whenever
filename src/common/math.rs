@@ -51,10 +51,6 @@ impl Offset {
         Self::new(self.0 + x.0)
     }
 
-    pub(crate) fn min(self, x: Self) -> Self {
-        Self(self.0.min(x.0))
-    }
-
     pub(crate) const fn sub(self, x: Self) -> OffsetDelta {
         OffsetDelta::new_unchecked(self.0 - x.0)
     }
@@ -143,6 +139,7 @@ impl Neg for OffsetDelta {
     }
 }
 
+// TODO: limit the range so that we have infallible conversions to local datetime
 /// Number of seconds since 1970-01-01
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub struct EpochSecs(i64);
@@ -154,7 +151,7 @@ impl EpochSecs {
         Self(secs)
     }
 
-    pub(crate) const fn new(secs: i64) -> Option<Self> {
+    pub const fn new(secs: i64) -> Option<Self> {
         if secs >= Self::MIN.0 && secs <= Self::MAX.0 {
             Some(Self(secs))
         } else {
@@ -164,6 +161,11 @@ impl EpochSecs {
 
     pub(crate) fn clamp(secs: i64) -> Self {
         Self(secs.clamp(Self::MIN.0, Self::MAX.0))
+    }
+
+    pub(crate) fn from_i32(secs: i32) -> Self {
+        // Safe: i32 is always within our epoch seconds range
+        Self::new_unchecked(secs.into())
     }
 
     pub(crate) const fn get(self) -> i64 {
@@ -179,12 +181,12 @@ impl EpochSecs {
     }
 
     pub(crate) fn saturating_add_i32(self, x: i32) -> Self {
-        // Safe since both arguments are constrained far below i64/i32::MIN/MAX
+        // Safe: both arguments are constrained far below i64::MIN/MAX
         Self::clamp(self.0 + x as i64)
     }
 
     pub(crate) fn shift(self, d: DeltaSeconds) -> Option<Self> {
-        // Result of addition is within i64::MIN/MAX
+        // Safe: result of addition is always within i64::MIN/MAX
         Self::new(self.0 + d.get())
     }
 

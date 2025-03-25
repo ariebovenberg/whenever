@@ -36,7 +36,7 @@ pub fn offset_for_local_datetime(c: &mut Criterion) {
     let tzif = tzif::parse(TZ_AMS, "Europe/Amsterdam").unwrap();
 
     c.bench_function("offset for local", |b| {
-        let t = EpochSecs::new_unchecked(1719946800);
+        let t = EpochSecs::new(1719946800).unwrap();
         b.iter(|| tzif.ambiguity_for_local(black_box(t)))
     });
 }
