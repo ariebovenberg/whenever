@@ -1,14 +1,18 @@
-use core::ffi::{c_int, c_long, c_void, CStr};
-use core::{mem, ptr::null_mut as NULL};
+use core::{
+    ffi::{c_int, c_long, c_void, CStr},
+    mem,
+    ptr::null_mut as NULL,
+};
 use pyo3_ffi::*;
-use std::fmt::{self, Display, Formatter};
-use std::ptr::NonNull;
+use std::{
+    fmt::{self, Display, Formatter},
+    ptr::NonNull,
+};
 
-use crate::common::math::*;
-use crate::common::*;
-use crate::docstrings as doc;
 use crate::{
+    common::{math::*, *},
     date_delta::{handle_init_kwargs as handle_datedelta_kwargs, DateDelta},
+    docstrings as doc,
     local_datetime::DateTime,
     monthday::MonthDay,
     time::Time,
