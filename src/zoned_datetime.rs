@@ -2,23 +2,20 @@ use core::ffi::{c_int, c_long, c_void, CStr};
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
-use crate::common::math::*;
-use crate::common::*;
-use crate::datetime_delta::set_units_from_kwargs;
-use crate::docstrings as doc;
-use crate::local_datetime::set_components_from_kwargs;
-use crate::math::SubSecNanos;
-use crate::tz::cache::TzRef;
 use crate::{
+    common::{math::*, *},
     date::Date,
     date_delta::DateDelta,
-    datetime_delta::DateTimeDelta,
+    datetime_delta::{set_units_from_kwargs, DateTimeDelta},
+    docstrings as doc,
     instant::Instant,
-    local_datetime::DateTime,
+    local_datetime::{set_components_from_kwargs, DateTime},
+    math::SubSecNanos,
     offset_datetime::{self, OffsetDateTime},
     round,
     time::{Time, MIDNIGHT},
     time_delta::TimeDelta,
+    tz::cache::TzRef,
     State,
 };
 
@@ -196,6 +193,7 @@ impl ZonedDateTime {
         shifted_by_date
             .instant()
             .shift(delta)
+            // TODO-RANGE: limit instant range more than local
             .ok_or_value_err("Instant is out of range")?
             .to_tz(self.tz)
             .ok_or_value_err("Resulting date is out of range")
@@ -261,6 +259,10 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         exc_repeated,
         exc_skipped,
         zoneinfo_notfound,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
         ref mut tz_cache,
         ..
     } = State::for_type_mut(cls);
@@ -299,7 +301,13 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     let dis = if disambiguate.is_null() {
         Disambiguate::Compatible
     } else {
-        Disambiguate::from_py(disambiguate)?
+        Disambiguate::from_py(
+            disambiguate,
+            str_compatible,
+            str_raise,
+            str_earlier,
+            str_later,
+        )?
     };
     ZonedDateTime::resolve_using_disambiguate(date, time, tzref, dis, exc_repeated, exc_skipped)?
         .to_obj(cls)
@@ -648,6 +656,10 @@ unsafe fn replace_date(
         str_disambiguate,
         exc_skipped,
         exc_repeated,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
         ..
     } = State::for_obj(slf);
 
@@ -658,7 +670,15 @@ unsafe fn replace_date(
         ))?
     };
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_date")?;
+    let dis = Disambiguate::from_only_kwarg(
+        kwargs,
+        str_disambiguate,
+        "replace_date",
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+    )?;
     let ZonedDateTime {
         time,
         tz,
@@ -692,6 +712,10 @@ unsafe fn replace_time(
         str_disambiguate,
         exc_skipped,
         exc_repeated,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
         ..
     } = State::for_obj(slf);
 
@@ -702,7 +726,15 @@ unsafe fn replace_time(
         ))?
     };
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_time")?;
+    let dis = Disambiguate::from_only_kwarg(
+        kwargs,
+        str_disambiguate,
+        "replace_time",
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+    )?;
     let ZonedDateTime {
         date,
         tz,
@@ -738,17 +770,26 @@ unsafe fn replace(
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")?;
     }
-    let state = State::for_type(cls);
-    let &State {
+    let &mut State {
         exc_repeated,
         exc_skipped,
         str_tz,
         str_disambiguate,
         zoneinfo_notfound,
+        str_year,
+        str_month,
+        str_day,
+        str_hour,
+        str_minute,
+        str_second,
+        str_nanosecond,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+        ref mut tz_cache,
         ..
-    } = state;
-    // TODO-TZIF: avoid two state lookups
-    let tz_cache = &mut State::for_type_mut(cls).tz_cache;
+    } = State::for_type_mut(cls);
     let ZonedDateTime {
         date,
         time,
@@ -774,7 +815,13 @@ unsafe fn replace(
             };
             tz = tz_new;
         } else if eq(key, str_disambiguate) {
-            dis = Some(Disambiguate::from_py(value)?);
+            dis = Some(Disambiguate::from_py(
+                value,
+                str_compatible,
+                str_raise,
+                str_earlier,
+                str_later,
+            )?);
         } else {
             return set_components_from_kwargs(
                 key,
@@ -787,7 +834,13 @@ unsafe fn replace(
                 &mut minute,
                 &mut second,
                 &mut nanos,
-                state,
+                str_year,
+                str_month,
+                str_day,
+                str_hour,
+                str_minute,
+                str_second,
+                str_nanosecond,
                 eq,
             );
         }
@@ -1151,6 +1204,19 @@ unsafe fn _shift_method(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = State::for_type(cls);
+    let &State {
+        time_delta_type,
+        date_delta_type,
+        datetime_delta_type,
+        str_disambiguate,
+        exc_repeated,
+        exc_skipped,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+        ..
+    } = state;
     let mut dis = None;
     let mut monthdelta = DeltaMonths::ZERO;
     let mut daydelta = DeltaDays::ZERO;
@@ -1159,8 +1225,14 @@ unsafe fn _shift_method(
     match *args {
         [arg] => {
             match kwargs.next() {
-                Some((key, value)) if kwargs.len() == 1 && key.py_eq(state.str_disambiguate)? => {
-                    dis = Some(Disambiguate::from_py(value)?)
+                Some((key, value)) if kwargs.len() == 1 && key.py_eq(str_disambiguate)? => {
+                    dis = Some(Disambiguate::from_py(
+                        value,
+                        str_compatible,
+                        str_raise,
+                        str_earlier,
+                        str_later,
+                    )?)
                 }
                 None => {}
                 _ => raise_type_err(format!(
@@ -1168,13 +1240,13 @@ unsafe fn _shift_method(
                     fname
                 ))?,
             };
-            if Py_TYPE(arg) == state.time_delta_type {
+            if Py_TYPE(arg) == time_delta_type {
                 tdelta = TimeDelta::extract(arg);
-            } else if Py_TYPE(arg) == state.date_delta_type {
+            } else if Py_TYPE(arg) == date_delta_type {
                 let dd = DateDelta::extract(arg);
                 monthdelta = dd.months;
                 daydelta = dd.days;
-            } else if Py_TYPE(arg) == state.datetime_delta_type {
+            } else if Py_TYPE(arg) == datetime_delta_type {
                 let dtd = DateTimeDelta::extract(arg);
                 monthdelta = dtd.ddelta.months;
                 daydelta = dtd.ddelta.days;
@@ -1188,8 +1260,14 @@ unsafe fn _shift_method(
             let mut months: i32 = 0;
             let mut days: i32 = 0;
             handle_kwargs(fname, kwargs, |key, value, eq| {
-                if eq(key, state.str_disambiguate) {
-                    dis = Some(Disambiguate::from_py(value)?);
+                if eq(key, str_disambiguate) {
+                    dis = Some(Disambiguate::from_py(
+                        value,
+                        str_compatible,
+                        str_raise,
+                        str_earlier,
+                        str_later,
+                    )?);
                     Ok(true)
                 } else {
                     set_units_from_kwargs(key, value, &mut months, &mut days, &mut nanos, state, eq)
@@ -1212,14 +1290,7 @@ unsafe fn _shift_method(
     }
 
     ZonedDateTime::extract(slf)
-        .shift(
-            monthdelta,
-            daydelta,
-            tdelta,
-            dis,
-            state.exc_repeated,
-            state.exc_skipped,
-        )?
+        .shift(monthdelta, daydelta, tdelta, dis, exc_repeated, exc_skipped)?
         .to_obj(cls)
 }
 

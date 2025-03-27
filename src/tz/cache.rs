@@ -181,9 +181,8 @@ impl TZifCache {
     fn new_to_lru(&mut self, tz: TzRef) {
         debug_assert!(!self.lru.contains(&tz));
         debug_assert!(tz.ref_count() > 0);
-        self.lru.push_front(tz);
         // If the LRU exceeds capacity, remove the least recently used entry
-        if self.lru.len() > LRU_CAPACITY {
+        if self.lru.len() == LRU_CAPACITY {
             self.lru
                 .pop_back()
                 // Safe: we've just checked the length
@@ -191,12 +190,13 @@ impl TZifCache {
                 // Don't forget to decrement the refcount of dropped entries!
                 .decref(|| self);
         }
+        // Now add the new entry to the front
+        self.lru.push_front(tz);
     }
 
     /// Register the given TZif was "used recently", moving it to the front of the LRU.
     fn touch_lru(&mut self, tz: TzRef) {
         match self.lru.iter().position(|&ptr| ptr == tz) {
-            // TODO-PERF: does this branch help?
             Some(0) => {} // Already at the front
             Some(i) => {
                 // Move it to the front. Note we don't need to increment the refcount,

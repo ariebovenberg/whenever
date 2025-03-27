@@ -266,6 +266,9 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         exc_repeated,
         exc_skipped,
         str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
         ..
     } = State::for_type(cls);
     let mut year = 0;
@@ -294,7 +297,13 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time =
         Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?;
-    let dis = Disambiguate::from_py(disambiguate)?;
+    let dis = Disambiguate::from_py(
+        disambiguate,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+    )?;
     OffsetDateTime::resolve_system_tz_using_disambiguate(
         py_api,
         date,
@@ -536,6 +545,10 @@ unsafe fn replace_date(
         str_disambiguate,
         exc_skipped,
         exc_repeated,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
         ..
     } = State::for_obj(slf);
 
@@ -552,7 +565,15 @@ unsafe fn replace_date(
             py_api,
             Date::extract(arg),
             time,
-            Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_date")?,
+            Disambiguate::from_only_kwarg(
+                kwargs,
+                str_disambiguate,
+                "replace_date",
+                str_compatible,
+                str_raise,
+                str_earlier,
+                str_later,
+            )?,
             offset,
             exc_repeated,
             exc_skipped,
@@ -575,6 +596,10 @@ unsafe fn replace_time(
         str_disambiguate,
         exc_skipped,
         exc_repeated,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
         ..
     } = State::for_obj(slf);
 
@@ -591,7 +616,15 @@ unsafe fn replace_time(
             py_api,
             date,
             Time::extract(arg),
-            Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_time")?,
+            Disambiguate::from_only_kwarg(
+                kwargs,
+                str_disambiguate,
+                "replace_time",
+                str_compatible,
+                str_raise,
+                str_earlier,
+                str_later,
+            )?,
             offset,
             exc_repeated,
             exc_skipped,
@@ -615,7 +648,24 @@ unsafe fn replace(
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")?
     }
-    let state = State::for_type(cls);
+    let &State {
+        str_disambiguate,
+        exc_repeated,
+        exc_skipped,
+        str_year,
+        str_month,
+        str_day,
+        str_hour,
+        str_minute,
+        str_second,
+        str_nanosecond,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+        py_api,
+        ..
+    } = State::for_type(cls);
     let OffsetDateTime { date, time, offset } = OffsetDateTime::extract(slf);
     let mut year = date.year.get().into();
     let mut month = date.month.get().into();
@@ -627,8 +677,14 @@ unsafe fn replace(
     let mut dis = None;
 
     handle_kwargs("replace", kwargs, |key, value, eq| {
-        if eq(key, state.str_disambiguate) {
-            dis = Some(Disambiguate::from_py(value)?);
+        if eq(key, str_disambiguate) {
+            dis = Some(Disambiguate::from_py(
+                value,
+                str_compatible,
+                str_raise,
+                str_earlier,
+                str_later,
+            )?);
             Ok(true)
         } else {
             set_components_from_kwargs(
@@ -641,7 +697,13 @@ unsafe fn replace(
                 &mut minute,
                 &mut second,
                 &mut nanos,
-                state,
+                str_year,
+                str_month,
+                str_day,
+                str_hour,
+                str_minute,
+                str_second,
+                str_nanosecond,
                 eq,
             )
         }
@@ -649,16 +711,8 @@ unsafe fn replace(
 
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?;
-    OffsetDateTime::resolve_system_tz(
-        state.py_api,
-        date,
-        time,
-        dis,
-        offset,
-        state.exc_repeated,
-        state.exc_skipped,
-    )?
-    .to_obj(cls)
+    OffsetDateTime::resolve_system_tz(py_api, date, time, dis, offset, exc_repeated, exc_skipped)?
+        .to_obj(cls)
 }
 
 unsafe fn now(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -840,6 +894,17 @@ unsafe fn _shift_method(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = State::for_type(cls);
+    let &State {
+        str_disambiguate,
+        time_delta_type,
+        date_delta_type,
+        datetime_delta_type,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+        ..
+    } = state;
     let mut dis = None;
     let mut months = DeltaMonths::ZERO;
     let mut days = DeltaDays::ZERO;
@@ -849,7 +914,13 @@ unsafe fn _shift_method(
         [arg] => {
             match kwargs.next() {
                 Some((key, value)) if kwargs.len() == 1 && key.py_eq(state.str_disambiguate)? => {
-                    dis = Some(Disambiguate::from_py(value)?)
+                    dis = Some(Disambiguate::from_py(
+                        value,
+                        str_compatible,
+                        str_raise,
+                        str_earlier,
+                        str_later,
+                    )?)
                 }
                 Some(_) => raise_type_err(format!(
                     "{}() can't mix positional and keyword arguments",
@@ -857,13 +928,13 @@ unsafe fn _shift_method(
                 ))?,
                 None => {}
             };
-            if Py_TYPE(arg) == state.time_delta_type {
+            if Py_TYPE(arg) == time_delta_type {
                 tdelta = TimeDelta::extract(arg);
-            } else if Py_TYPE(arg) == state.date_delta_type {
+            } else if Py_TYPE(arg) == date_delta_type {
                 let dd = DateDelta::extract(arg);
                 months = dd.months;
                 days = dd.days;
-            } else if Py_TYPE(arg) == state.datetime_delta_type {
+            } else if Py_TYPE(arg) == datetime_delta_type {
                 let dt = DateTimeDelta::extract(arg);
                 months = dt.ddelta.months;
                 days = dt.ddelta.days;
@@ -877,8 +948,14 @@ unsafe fn _shift_method(
             let mut raw_months = 0;
             let mut raw_days = 0;
             handle_kwargs(fname, kwargs, |key, value, eq| {
-                if eq(key, state.str_disambiguate) {
-                    dis = Some(Disambiguate::from_py(value)?);
+                if eq(key, str_disambiguate) {
+                    dis = Some(Disambiguate::from_py(
+                        value,
+                        str_compatible,
+                        str_raise,
+                        str_earlier,
+                        str_later,
+                    )?);
                     Ok(true)
                 } else {
                     set_units_from_kwargs(

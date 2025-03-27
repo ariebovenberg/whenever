@@ -77,10 +77,7 @@ impl TZif {
 /// Bisect the array of (time, value) pairs to find the INDEX at the given time.
 /// Return None if after the last entry.
 #[inline]
-pub(crate) fn bisect<T>(arr: &[(EpochSecs, T)], x: EpochSecs) -> Option<usize>
-where
-    T: Copy,
-{
+pub(crate) fn bisect<T>(arr: &[(EpochSecs, T)], x: EpochSecs) -> Option<usize> {
     let mut size = arr.len();
     let mut left = 0;
     let mut right = size;

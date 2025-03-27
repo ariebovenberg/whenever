@@ -3,15 +3,19 @@ use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
-use crate::common::math::*;
-use crate::common::*;
-use crate::datetime_delta::set_units_from_kwargs;
-use crate::docstrings as doc;
-use crate::local_datetime::set_components_from_kwargs;
 use crate::{
-    date::Date, date_delta::DateDelta, datetime_delta::DateTimeDelta, instant::Instant,
-    local_datetime::DateTime, round, time::Time, time_delta::TimeDelta,
-    zoned_datetime::ZonedDateTime, State,
+    common::{math::*, *},
+    date::Date,
+    date_delta::DateDelta,
+    datetime_delta::{set_units_from_kwargs, DateTimeDelta},
+    docstrings as doc,
+    instant::Instant,
+    local_datetime::{set_components_from_kwargs, DateTime},
+    round,
+    time::Time,
+    time_delta::TimeDelta,
+    zoned_datetime::ZonedDateTime,
+    State,
 };
 
 /// A date and time with a fixed offset from UTC.
@@ -538,11 +542,24 @@ unsafe fn replace(
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")?
     }
-    let state = State::for_type(cls);
+    let &State {
+        str_ignore_dst,
+        str_offset,
+        str_year,
+        str_month,
+        str_day,
+        str_hour,
+        str_minute,
+        str_second,
+        str_nanosecond,
+        time_delta_type,
+        exc_implicitly_ignoring_dst,
+        ..
+    } = State::for_type(cls);
     let OffsetDateTime {
         date,
         time,
-        offset: offset_secs,
+        mut offset,
     } = OffsetDateTime::extract(slf);
     let mut year = date.year.get().into();
     let mut month = date.month.get().into();
@@ -551,14 +568,13 @@ unsafe fn replace(
     let mut minute = time.minute.into();
     let mut second = time.second.into();
     let mut nanos = time.subsec.get() as _;
-    let mut offset_secs = offset_secs;
     let mut ignore_dst = false;
 
     handle_kwargs("replace", kwargs, |key, value, eq| {
-        if eq(key, state.str_ignore_dst) {
+        if eq(key, str_ignore_dst) {
             ignore_dst = value == Py_True();
-        } else if eq(key, state.str_offset) {
-            offset_secs = extract_offset(value, state.time_delta_type)?;
+        } else if eq(key, str_offset) {
+            offset = extract_offset(value, time_delta_type)?;
         } else {
             return set_components_from_kwargs(
                 key,
@@ -570,7 +586,13 @@ unsafe fn replace(
                 &mut minute,
                 &mut second,
                 &mut nanos,
-                state,
+                str_year,
+                str_month,
+                str_day,
+                str_hour,
+                str_minute,
+                str_second,
+                str_nanosecond,
                 eq,
             );
         }
@@ -578,15 +600,12 @@ unsafe fn replace(
     })?;
 
     if !ignore_dst {
-        raise(
-            state.exc_implicitly_ignoring_dst,
-            doc::ADJUST_OFFSET_DATETIME_MSG,
-        )?
+        raise(exc_implicitly_ignoring_dst, doc::ADJUST_OFFSET_DATETIME_MSG)?
     }
 
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?;
-    OffsetDateTime::new(date, time, offset_secs)
+    OffsetDateTime::new(date, time, offset)
         .ok_or_value_err("Resulting datetime is out of range")?
         .to_obj(cls)
 }
