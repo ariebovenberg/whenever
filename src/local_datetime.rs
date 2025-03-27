@@ -280,28 +280,34 @@ pub(crate) unsafe fn set_components_from_kwargs(
     minute: &mut c_long,
     second: &mut c_long,
     nanos: &mut c_long,
-    state: &State,
+    str_year: *mut PyObject,
+    str_month: *mut PyObject,
+    str_day: *mut PyObject,
+    str_hour: *mut PyObject,
+    str_minute: *mut PyObject,
+    str_second: *mut PyObject,
+    str_nanosecond: *mut PyObject,
     eq: fn(*mut PyObject, *mut PyObject) -> bool,
 ) -> PyResult<bool> {
-    if eq(key, state.str_year) {
+    if eq(key, str_year) {
         *year = value.to_long()?.ok_or_type_err("year must be an integer")?
-    } else if eq(key, state.str_month) {
+    } else if eq(key, str_month) {
         *month = value
             .to_long()?
             .ok_or_type_err("month must be an integer")?
-    } else if eq(key, state.str_day) {
+    } else if eq(key, str_day) {
         *day = value.to_long()?.ok_or_type_err("day must be an integer")?
-    } else if eq(key, state.str_hour) {
+    } else if eq(key, str_hour) {
         *hour = value.to_long()?.ok_or_type_err("hour must be an integer")?
-    } else if eq(key, state.str_minute) {
+    } else if eq(key, str_minute) {
         *minute = value
             .to_long()?
             .ok_or_type_err("minute must be an integer")?
-    } else if eq(key, state.str_second) {
+    } else if eq(key, str_second) {
         *second = value
             .to_long()?
             .ok_or_type_err("second must be an integer")?
-    } else if eq(key, state.str_nanosecond) {
+    } else if eq(key, str_nanosecond) {
         *nanos = value
             .to_long()?
             .ok_or_type_err("nanosecond must be an integer")?
@@ -320,7 +326,16 @@ unsafe fn replace(
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")?
     }
-    let module = State::for_type(cls);
+    let &State {
+        str_year,
+        str_month,
+        str_day,
+        str_hour,
+        str_minute,
+        str_second,
+        str_nanosecond,
+        ..
+    } = State::for_type(cls);
     let dt = DateTime::extract(slf);
     let mut year = dt.date.year.get().into();
     let mut month = dt.date.month.get().into();
@@ -340,7 +355,13 @@ unsafe fn replace(
             &mut minute,
             &mut second,
             &mut nanos,
-            module,
+            str_year,
+            str_month,
+            str_day,
+            str_hour,
+            str_minute,
+            str_second,
+            str_nanosecond,
             eq,
         )
     })?;
@@ -663,6 +684,10 @@ unsafe fn assume_tz(
 ) -> PyReturn {
     let &mut State {
         str_disambiguate,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
         zoned_datetime_type,
         exc_skipped,
         exc_repeated,
@@ -679,8 +704,16 @@ unsafe fn assume_tz(
         ))?
     };
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_tz")?
-        .unwrap_or(Disambiguate::Compatible);
+    let dis = Disambiguate::from_only_kwarg(
+        kwargs,
+        str_disambiguate,
+        "assume_tz",
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+    )?
+    .unwrap_or(Disambiguate::Compatible);
     let tzif = tz_cache.py_get(tz_obj, zoneinfo_notfound)?;
     ZonedDateTime::resolve_using_disambiguate(date, time, tzif, dis, exc_repeated, exc_skipped)?
         .to_obj(zoned_datetime_type)
@@ -698,6 +731,10 @@ unsafe fn assume_system_tz(
         system_datetime_type,
         exc_skipped,
         exc_repeated,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
         ..
     } = State::for_type(cls);
     let DateTime { date, time } = DateTime::extract(slf);
@@ -705,7 +742,15 @@ unsafe fn assume_system_tz(
         raise_type_err("assume_system_tz() takes no positional arguments")?
     }
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "assume_system_tz")?;
+    let dis = Disambiguate::from_only_kwarg(
+        kwargs,
+        str_disambiguate,
+        "assume_system_tz",
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+    )?;
     OffsetDateTime::resolve_system_tz_using_disambiguate(
         py_api,
         date,

@@ -70,9 +70,13 @@ impl<'a> Scan<'a> {
     }
 
     pub(crate) fn digits00_59(&mut self) -> Option<u8> {
-        // TODO-BUG: can get stuck halfway through
-        self.digit_ranged(b'0'..=b'5')
-            .and_then(|tens| self.digit().map(|ones| tens * 10 + ones))
+        match self.0 {
+            [a @ b'0'..=b'5', b @ b'0'..=b'9', ..] => {
+                self.0 = &self.0[2..];
+                Some((a - b'0') * 10 + b - b'0')
+            }
+            _ => None,
+        }
     }
 
     /// Parse 1-3 digits until encountering a non-digit or end of input.
@@ -153,5 +157,153 @@ impl Debug for Scan<'_> {
                 &std::str::from_utf8_unchecked(self.0).to_string()
             })
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_peek_next_take() {
+        let mut scan = Scan::new(b"1234");
+        assert_eq!(scan.peek(), Some(b'1'));
+        assert_eq!(scan.next(), Some(b'1'));
+        assert_eq!(scan.peek(), Some(b'2'));
+        assert_eq!(scan.take(2).unwrap(), b"23");
+        assert_eq!(scan.peek(), Some(b'4'));
+        assert_eq!(scan.take(2), None);
+        assert_eq!(scan.peek(), Some(b'4'));
+        assert!(!scan.is_done());
+        assert_eq!(scan.take(1).unwrap(), b"4");
+        assert!(scan.is_done());
+        assert_eq!(scan.peek(), None);
+        assert_eq!(scan.take(1), None);
+    }
+
+    #[test]
+    fn test_scan_advance_on() {
+        let mut scan = Scan::new(b"1234");
+        assert_eq!(scan.advance_on(b'1'), Some(true));
+        assert_eq!(scan.rest(), b"234");
+        assert_eq!(scan.advance_on(b'2'), Some(true));
+        assert_eq!(scan.advance_on(b'2'), Some(false));
+        assert_eq!(scan.rest(), b"34");
+        scan.take(2);
+        assert_eq!(scan.advance_on(b'4'), None);
+    }
+
+    #[test]
+    fn test_scan_expect() {
+        let mut scan = Scan::new(b"1234");
+        assert_eq!(scan.expect(b'1'), Some(()));
+        assert_eq!(scan.expect(b'2'), Some(()));
+        assert_eq!(scan.expect(b'2'), None);
+        scan.take(2);
+        assert_eq!(scan.expect(b'9'), None);
+    }
+
+    #[test]
+    fn test_scan_digit() {
+        let mut scan = Scan::new(b"12a4");
+        assert_eq!(scan.digit(), Some(1));
+        assert_eq!(scan.digit(), Some(2));
+        assert_eq!(scan.digit(), None);
+        assert_eq!(scan.digit(), None);
+        scan.next();
+        assert_eq!(scan.digit(), Some(4));
+        assert_eq!(scan.digit(), None);
+    }
+
+    #[test]
+    fn test_scan_digit_ranged() {
+        let mut scan = Scan::new(b"12a4");
+        assert_eq!(scan.digit_ranged(b'1'..=b'3'), Some(1));
+        assert_eq!(scan.digit_ranged(b'1'..=b'2'), Some(2));
+        assert_eq!(scan.digit_ranged(b'1'..=b'9'), None); // no digit at all
+        scan.expect(b'a');
+        assert_eq!(scan.digit_ranged(b'1'..=b'3'), None);
+        assert_eq!(scan.digit_ranged(b'1'..=b'4'), Some(4));
+        assert_eq!(scan.digit_ranged(b'1'..=b'9'), None);
+    }
+
+    #[test]
+    fn test_scan_digits00_59() {
+        let mut scan = Scan::new(b"12a455z492");
+        assert_eq!(scan.digits00_59(), Some(12));
+        assert_eq!(scan.digits00_59(), None);
+        scan.expect(b'a');
+        assert_eq!(scan.digits00_59(), Some(45));
+        assert_eq!(scan.digits00_59(), None);
+        assert_eq!(scan.rest(), b"5z492");
+        scan.take(2);
+        assert_eq!(scan.digits00_59(), Some(49));
+        assert_eq!(scan.digits00_59(), None);
+        assert_eq!(scan.digits00_59(), None);
+    }
+
+    #[test]
+    fn test_scan_up_to_3_digits() {
+        let mut scan = Scan::new(b"1234_k00z92");
+        assert_eq!(scan.up_to_3_digits(), Some(123));
+        assert_eq!(scan.up_to_3_digits(), Some(4));
+        assert_eq!(scan.up_to_3_digits(), None);
+        scan.expect(b'_');
+        assert_eq!(scan.up_to_3_digits(), None);
+        scan.expect(b'k');
+        assert_eq!(scan.up_to_3_digits(), Some(0));
+        scan.expect(b'z');
+        assert_eq!(scan.up_to_3_digits(), Some(92));
+        assert_eq!(scan.up_to_3_digits(), None);
+    }
+
+    #[test]
+    fn test_scan_up_to_2_digits() {
+        let mut scan = Scan::new(b"1234_k0z2");
+        assert_eq!(scan.up_to_2_digits(), Some(12));
+        assert_eq!(scan.up_to_2_digits(), Some(34));
+        assert_eq!(scan.up_to_2_digits(), None);
+        scan.expect(b'_');
+        assert_eq!(scan.up_to_2_digits(), None);
+        scan.expect(b'k');
+        assert_eq!(scan.up_to_2_digits(), Some(0));
+        scan.expect(b'z');
+        assert_eq!(scan.up_to_2_digits(), Some(2));
+        assert_eq!(scan.up_to_2_digits(), None);
+    }
+
+    #[test]
+    fn test_scan_transform() {
+        let mut scan = Scan::new(b"1234");
+        assert_eq!(scan.transform(|c| (c == b'2').then_some(8)), None);
+        assert_eq!(scan.peek(), Some(b'1'));
+        assert_eq!(
+            scan.transform(|c| (c == b'1').then_some("foo")),
+            Some("foo")
+        );
+        assert_eq!(scan.peek(), Some(b'2'));
+        scan.take(3);
+        assert_eq!(scan.transform(|c| (c == b'4').then_some(9)), None);
+    }
+
+    #[test]
+    fn test_scan_take_until() {
+        let mut scan = Scan::new(b"1234_k00z92");
+        assert_eq!(scan.take_until(|c| c == b'_').unwrap(), b"1234");
+        assert_eq!(scan.take_until(|c| c == b'Z'), None);
+        scan.expect(b'_');
+        assert_eq!(scan.take_until(|c| c == b'2').unwrap(), b"k00z9");
+        assert_eq!(scan.take_until(|c| c == b'2').unwrap(), b"");
+    }
+
+    #[test]
+    fn test_scan_take_until_inclusive() {
+        let mut scan = Scan::new(b"1234_k00z92");
+        assert_eq!(scan.take_until_inclusive(|c| c == b'_').unwrap(), b"1234_");
+        scan.expect(b'k');
+        assert_eq!(scan.take_until_inclusive(|c| c == b'Z'), None);
+        scan.expect(b'0');
+        assert_eq!(scan.take_until_inclusive(|c| c == b'2').unwrap(), b"0z92");
+        assert_eq!(scan.take_until_inclusive(|c| c == b'2'), None);
     }
 }

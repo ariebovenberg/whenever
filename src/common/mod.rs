@@ -69,36 +69,43 @@ pub enum Ambiguity {
 }
 
 impl Disambiguate {
-    fn parse(s: &[u8]) -> Option<Self> {
-        Some(match s {
-            b"compatible" => Self::Compatible,
-            b"earlier" => Self::Earlier,
-            b"later" => Self::Later,
-            b"raise" => Self::Raise,
-            _ => None?,
+    pub(crate) unsafe fn from_py(
+        obj: *mut PyObject,
+        str_compatible: *mut PyObject,
+        str_raise: *mut PyObject,
+        str_earlier: *mut PyObject,
+        str_later: *mut PyObject,
+    ) -> PyResult<Self> {
+        match_interned_str("disambiguate", obj, |v, eq| {
+            if eq(v, str_compatible) {
+                Some(Disambiguate::Compatible)
+            } else if eq(v, str_raise) {
+                Some(Disambiguate::Raise)
+            } else if eq(v, str_earlier) {
+                Some(Disambiguate::Earlier)
+            } else if eq(v, str_later) {
+                Some(Disambiguate::Later)
+            } else {
+                None
+            }
         })
-    }
-
-    // OPTIMIZE: use fast string compare, as the values are in most cases interned
-    // TODO-PYOBJ: already checked to be string?
-    pub(crate) unsafe fn from_py(obj: *mut PyObject) -> PyResult<Self> {
-        Disambiguate::parse(
-            obj.to_utf8()?
-                .ok_or_type_err("disambiguate must be a string")?,
-        )
-        .ok_or_value_err("Invalid disambiguate value")
     }
 
     pub(crate) unsafe fn from_only_kwarg(
         kwargs: &mut KwargIter,
         str_disambiguate: *mut PyObject,
         fname: &str,
+        str_compatible: *mut PyObject,
+        str_raise: *mut PyObject,
+        str_earlier: *mut PyObject,
+        str_later: *mut PyObject,
     ) -> PyResult<Option<Self>> {
         match kwargs.next() {
             Some((name, value)) => {
                 if kwargs.len() == 1 {
                     if name.py_eq(str_disambiguate)? {
-                        Self::from_py(value).map(Some)
+                        Self::from_py(value, str_compatible, str_raise, str_earlier, str_later)
+                            .map(Some)
                     } else {
                         raise_type_err(format!(
                             "{}() got an unexpected keyword argument {}",
