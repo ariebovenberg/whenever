@@ -1,4 +1,5 @@
 import pickle
+from pathlib import Path
 import re
 from copy import copy, deepcopy
 from datetime import (
@@ -31,6 +32,7 @@ from whenever import (
     minutes,
     weeks,
     years,
+    # set_tzpath,
 )
 
 from .common import (
@@ -42,6 +44,8 @@ from .common import (
     system_tz_ams,
     system_tz_nyc,
 )
+
+TEST_DIR = Path(__file__).parent
 
 
 class TestInit:
@@ -87,7 +91,19 @@ class TestInit:
             ZonedDateTime(**kwargs, disambiguate="earlier")
         )
 
-    def test_invalid_zone(self):
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "America/Nowhere",  # non-existent
+            "/America/New_York",  # slash at the beginning
+            "America/New_York/",  # slash at the end
+            "../America/New_York/",  # relative path
+            "America/New_York/..",  # other dots
+            "America/../America/New_York",  # not normalized
+            "America/./America/New_York",  # not normalized
+        ],
+    )
+    def test_invalid_zone(self, key: str):
         with pytest.raises(TypeError):
             ZonedDateTime(
                 2020,
@@ -99,7 +115,7 @@ class TestInit:
             )
 
         with pytest.raises(ZoneInfoNotFoundError):
-            ZonedDateTime(2020, 8, 15, 5, 12, tz="America/Nowhere")
+            ZonedDateTime(2020, 8, 15, 5, 12, tz=key)
 
     def test_optionality(self):
         tz = "America/New_York"
@@ -173,6 +189,12 @@ class TestInit:
         assert ZonedDateTime(**kwargs, disambiguate="earlier").exact_eq(
             ZonedDateTime(2023, 3, 26, 1, 15, 30, tz="Europe/Amsterdam")
         )
+
+
+class TestTzPath:
+
+    def test_default(self):
+        pass
 
 
 def test_offset():

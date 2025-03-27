@@ -1,11 +1,13 @@
-use crate::common::*;
-use crate::tz::tzif::{self, TZif};
-use crate::OptionExt;
+// TODO: load from tzdata package
+// TODO: use TZDATA directory
+use crate::{
+    common::*,
+    tz::tzif::{self, TZif},
+    OptionExt,
+};
 use ahash::AHashMap;
 use pyo3_ffi::*;
-use std::fs;
-use std::path::Path;
-use std::{collections::VecDeque, ptr::NonNull};
+use std::{collections::VecDeque, fs, path::PathBuf, ptr::NonNull};
 
 /// A manually reference-counted handle to a `TZif` object.
 /// Since it's just a thin wrapper around a pointer, and
@@ -23,7 +25,7 @@ struct Inner {
 }
 
 impl TzRef {
-    /// Creates a new `RcTZif` with a refcount of 1
+    /// Creates a new instance with a refcount of 1
     fn new(value: TZif) -> Self {
         let inner = Box::new(Inner {
             refcnt: std::cell::UnsafeCell::new(1),
@@ -125,22 +127,19 @@ pub(crate) struct TZifCache {
     // A VecDeque is great for push/popping from both ends, and is simple to use,
     // although a Vec wasn't much slower in benchmarks.
     lru: VecDeque<TzRef>,
+    // The paths to search for zoneinfo files.
+    pub(crate) paths: Vec<PathBuf>,
 }
 
-const BASE_PATH: &str = "/usr/share/zoneinfo";
 const LRU_CAPACITY: usize = 8; // this value seems to work well for Python's zoneinfo
-
-impl Default for TZifCache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 impl TZifCache {
     pub(crate) fn new() -> Self {
         Self {
-            lookup: AHashMap::with_capacity(LRU_CAPACITY),
             lru: VecDeque::with_capacity(LRU_CAPACITY),
+            // Some reasonable initial capacities
+            lookup: AHashMap::with_capacity(8),
+            paths: Vec::with_capacity(8),
         }
     }
     /// Fetches a `TZif` for the given IANA time zone ID.
@@ -155,7 +154,7 @@ impl TZifCache {
             }
             // Not in cache: attempt to load and insert
             None => {
-                let entry = TzRef::new(self.load_tzif(Path::new(BASE_PATH), tz_id)?);
+                let entry = TzRef::new(self.load_tzif(tz_id)?);
                 self.new_to_lru(entry);
                 self.lookup.insert(tz_id.to_string(), entry);
                 entry
@@ -213,18 +212,22 @@ impl TZifCache {
 
     /// Join a TZ id path with a base path, assuming the TZ id is untrusted input.
     /// The base path is assumed to be a trusted directory
-    fn load_tzif(&self, base: &Path, tzid: &str) -> Option<TZif> {
-        if !tzid.is_ascii()
-            || tzid.contains("..")
-            || tzid.contains("//")
-            || tzid.contains('\0')
-            || tzid.starts_with('/')
-            || tzid.ends_with('/')
-        {
+    fn load_tzif(&self, tzid: &str) -> Option<TZif> {
+        if !is_valid_key(tzid) {
             return None;
         }
-        let fullpath = base.join(tzid).canonicalize().ok()?;
-        tzif::parse(&fs::read(fullpath).ok()?, tzid).ok()
+        let mut result = None;
+        for base in self.paths.iter() {
+            let path = base.join(tzid);
+            if path.is_file() {
+                result = Some(
+                    fs::read(path)
+                        .ok()
+                        .and_then(|d| tzif::parse(&d, tzid).ok())?,
+                );
+            }
+        }
+        result
     }
 }
 
@@ -242,4 +245,15 @@ impl Drop for TZifCache {
         // By now, the lookup table should be empty (it contains only weak references)
         debug_assert!(self.lookup.is_empty());
     }
+}
+
+pub(crate) fn is_valid_key(key: &str) -> bool {
+    // TODO: this can be more efficient
+    key.is_ascii()
+        && !key.contains("..")
+        && !key.contains("//")
+        && !key.contains('\0')
+        && !key.starts_with('/')
+        && !key.ends_with('/')
+        && !key.contains("/./")
 }

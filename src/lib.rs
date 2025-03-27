@@ -1,13 +1,10 @@
-// This crate is only meant to be accessed through its Python API.
-// Some items are declated `pub` instead of `pub(crate)`, so they
-// can be benchmarked. They can give "missing safety doc" warnings,
-// but that's fine because the crate is not meant to be used directly by Rust code.
-#![allow(clippy::missing_safety_doc)]
-use core::ffi::{c_int, c_void, CStr};
-use core::ptr::null_mut as NULL;
-use core::{mem, ptr};
+use core::{
+    ffi::{c_int, c_void, CStr},
+    mem,
+    ptr::{self, null_mut as NULL},
+};
 use pyo3_ffi::*;
-use std::time::SystemTime;
+use std::{path::PathBuf, time::SystemTime};
 
 use crate::common::*;
 
@@ -89,6 +86,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(_patch_time_frozen, c"", METH_O),
     method!(_patch_time_keep_ticking, c"", METH_O),
     method!(_unpatch_time, c""),
+    method!(_set_tzpath, c"", METH_O),
     PyMethodDef::zeroed(),
 ];
 
@@ -127,6 +125,25 @@ unsafe fn _patch_time(module: *mut PyObject, arg: *mut PyObject, freeze: bool) -
 unsafe fn _unpatch_time(module: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let state: &mut State = PyModule_GetState(module).cast::<State>().as_mut().unwrap();
     state.time_patch = TimePatch::Unset;
+    Py_None().as_result()
+}
+
+pub(crate) unsafe fn _set_tzpath(module: *mut PyObject, to: *mut PyObject) -> PyReturn {
+    let state = State::for_mod_mut(module);
+
+    if PyTuple_CheckExact(to) == 0 {
+        raise_type_err("Argument must be a tuple")?;
+    }
+    let size = PyTuple_GET_SIZE(to);
+    let mut result = Vec::with_capacity(size as _);
+
+    for i in 0..size {
+        let path = PyTuple_GET_ITEM(to, i);
+        result.push(PathBuf::from(
+            path.to_str()?.ok_or_type_err("Path must be a string")?,
+        ))
+    }
+    state.tz_cache.paths = result;
     Py_None().as_result()
 }
 
@@ -461,10 +478,9 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     state.time_machine_exists = unwrap_or_errcode!(time_machine_installed());
     state.time_patch = TimePatch::Unset;
 
-    // We write this field manually, to avoid triggering a "drop" of the previous value.
-    // There is no previous value, since Python just allocated this memory for us.
+    // We write these fields manually, to avoid triggering a "drop" of the previous value
+    // which isn't there, since Python just allocated this memory for us.
     std::ptr::write(&mut state.tz_cache as *mut _, TZifCache::new());
-
     0
 }
 
@@ -486,7 +502,6 @@ unsafe fn traverse(target: *mut PyObject, visit: visitproc, arg: *mut c_void) {
         (visit)(target, arg);
     }
 }
-
 unsafe fn traverse_type(
     target: *mut PyTypeObject,
     visit: visitproc,
@@ -674,8 +689,8 @@ unsafe extern "C" fn module_free(module: *mut c_void) {
         .cast::<State>()
         .as_mut()
         .unwrap();
-    // We clean up the tz cache here because module_clear is not *guaranteed* to be called,
-    // and it would leave dangling resources if not cleaned up.
+    // We clean up heap allocated stuff here because module_clear is
+    // not *guaranteed* to be called
     std::ptr::drop_in_place(&mut state.tz_cache);
 }
 

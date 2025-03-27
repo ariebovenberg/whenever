@@ -193,7 +193,6 @@ impl ZonedDateTime {
         shifted_by_date
             .instant()
             .shift(delta)
-            // TODO-RANGE: limit instant range more than local
             .ok_or_value_err("Instant is out of range")?
             .to_tz(self.tz)
             .ok_or_value_err("Resulting date is out of range")
