@@ -4,6 +4,7 @@ try:  # pragma: no cover
         _patch_time_frozen,
         _patch_time_keep_ticking,
         _unpatch_time,
+        _set_tzpath,
         _unpkl_date,
         _unpkl_ddelta,
         _unpkl_dtdelta,
@@ -49,11 +50,13 @@ except ModuleNotFoundError as e:
 
     _EXTENSION_LOADED = False
 
+from ._pywhenever import __version__
+
 from contextlib import contextmanager as _contextmanager
 from dataclasses import dataclass as _dataclass
-from typing import Iterator as _Iterator
-
-from ._pywhenever import __version__
+from typing import Iterator as _Iterator, Iterable as _Iterable
+import os as _os
+import sysconfig as _sysconfig
 
 
 @_dataclass
@@ -129,3 +132,40 @@ def patch_current_time(
         yield _TimePatch(dt, keep_ticking)
     finally:
         _unpatch_time()
+
+
+TZPATH: tuple[str, ...] = ()
+
+
+def reset_tzpath(target: _Iterable[_os.PathLike] | None = None, /):
+    """Reset the tzpath to the default value, or to a new value if provided."""
+    global TZPATH
+
+    if target is not None:
+        # check for this common mistake
+        if isinstance(target, (str, bytes)):
+            raise TypeError("tzpath must be an iterable of paths")
+
+        if not all(map(_os.path.isabs, target)):
+            raise ValueError("tzpaths must be absolute paths")
+        TZPATH = tuple(map(str, target))
+    else:
+        TZPATH = _tzpath_from_env()
+    _set_tzpath(TZPATH)
+
+
+def _tzpath_from_env() -> tuple[str, ...]:
+    try:
+        env_var = _os.environ["PYTHONTZPATH"]
+    except KeyError:
+        env_var = _sysconfig.get_config_var("TZPATH")
+
+    if not env_var:
+        return ()
+
+    raw_tzpath = env_var.split(_os.pathsep)
+    # according to spec, we're allowed to silently ignore invalid paths
+    new_tzpath = tuple(filter(_os.path.isabs, raw_tzpath))
+    return new_tzpath
+
+reset_tzpath()

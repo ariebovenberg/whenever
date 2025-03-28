@@ -131,7 +131,7 @@ _UTC = _timezone.utc
 _object_new = object.__new__
 _MAX_DELTA_MONTHS = 9999 * 12
 _MAX_DELTA_DAYS = 9999 * 366
-_MAX_DELTA_NANOS = _MAX_DELTA_DAYS * 24 * 3_600_000_000_000
+_MAX_DELTA_NANOS = _MAX_DELTA_DAYS * 24 * 3_600_000_000_000 + 999_999_999
 _UNSET = object()
 _PY312 = sys.version_info >= (3, 12)
 
@@ -1796,7 +1796,9 @@ def _parse_timedelta_component(s: str, exc: Exception) -> tuple[str, int, str]:
 
 
 TimeDelta.ZERO = TimeDelta()
-TimeDelta.MAX = TimeDelta(seconds=9999 * 366 * 24 * 3_600)
+TimeDelta.MAX = TimeDelta(
+    seconds=9999 * 366 * 24 * 3_600, nanoseconds=999_999_999
+)
 TimeDelta.MIN = TimeDelta(seconds=-9999 * 366 * 24 * 3_600)
 
 
@@ -2841,14 +2843,14 @@ class _KnowsInstant(_BasicConversions):
             """Create an instance from the current time.
 
             This method on :class:`~ZonedDateTime` and :class:`~OffsetDateTime` requires
-            a ``tz=`` and ``offset=`` kwarg, respectively.
+            an additional timezone or offset argument, respectively.
 
             Example
             -------
 
             >>> Instant.now()
             Instant(2021-08-15T22:12:00.49821Z)
-            >>> ZonedDateTime.now(tz="Europe/London")
+            >>> ZonedDateTime.now("Europe/London")
             ZonedDateTime(2021-08-15 23:12:00.50332+01:00[Europe/London])
 
             """
