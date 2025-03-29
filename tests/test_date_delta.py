@@ -439,7 +439,11 @@ def test_in_years_months_days():
     p = DateDelta(years=2, months=14, weeks=3, days=4)
     assert p.in_years_months_days() == (3, 2, 25)
     assert DateDelta.ZERO.in_years_months_days() == (0, 0, 0)
-    assert DateDelta(months=-30).in_years_months_days() == (-2, -6, 0)
+    assert DateDelta(months=-30, days=-2).in_years_months_days() == (
+        -2,
+        -6,
+        -2,
+    )
     assert DateDelta(months=4).in_years_months_days() == (0, 4, 0)
 
 

@@ -6,8 +6,9 @@ from datetime import (
     timedelta as py_timedelta,
     timezone as py_timezone,
 )
+from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 import pytest
 from hypothesis import given
@@ -24,11 +25,14 @@ from whenever import (
     SystemDateTime,
     Time,
     TimeDelta,
+    TimeZoneNotFoundError,
     ZonedDateTime,
+    clear_tzcache,
     days,
     hours,
     milliseconds,
     minutes,
+    reset_tzpath,
     weeks,
     years,
 )
@@ -42,6 +46,8 @@ from .common import (
     system_tz_ams,
     system_tz_nyc,
 )
+
+TEST_DIR = Path(__file__).parent
 
 
 class TestInit:
@@ -88,7 +94,7 @@ class TestInit:
         )
 
     def test_invalid_zone(self):
-        with pytest.raises(TypeError):
+        with pytest.raises((TypeError, AttributeError)):
             ZonedDateTime(
                 2020,
                 8,
@@ -98,8 +104,70 @@ class TestInit:
                 tz=hours(34),  # type: ignore[arg-type]
             )
 
-        with pytest.raises(ZoneInfoNotFoundError):
-            ZonedDateTime(2020, 8, 15, 5, 12, tz="America/Nowhere")
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "America/Nowhere",  # non-existent
+            "/America/New_York",  # slash at the beginning
+            "America/New_York/",  # slash at the end
+            "America/New\0York",  # null byte
+            "America\\New_York",  # backslash
+            "../America/New_York/",  # relative path
+            "America/New_York/..",  # other dots
+            "America/../America/New_York",  # not normalized
+            "America/./America/New_York",  # not normalized
+            # often in a tz directory, but not a tzif file
+            "+VERSION",  # not a tzif file
+            "leapseconds",  # not a tzif file
+            "Europe",  # a directory
+            "",
+            ".",
+            "/",
+            " ",
+        ],
+    )
+    def test_invalid_key(self, key: str):
+        with pytest.raises(TimeZoneNotFoundError):
+            ZonedDateTime(2020, 8, 15, 5, 12, tz=key)
+
+    # This test is run last, because it modifies the tz cache
+    # which can affect other tests (namely those using exact_eq)
+    @pytest.mark.order(-1)
+    def test_tz_cache_adjustments(self):
+        nyc = "America/New_York"
+        # creating a ZDT puts it in the tz cache
+        d = ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc)
+
+        # We now set the TZ path to our test directory
+        # (which contains some tzif files)
+        reset_tzpath([TEST_DIR])
+        try:
+            # We still can find load the NYC timezone even though
+            # it isn't in the new path. This is because it's cached!
+            assert ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
+            # So let's clear the cache and check we can't find it anymore
+            clear_tzcache()
+            with pytest.raises(TimeZoneNotFoundError):
+                ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
+            # Ok, let's see if we can find our custom timezones
+            assert ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Amsterdam.tzif")
+            assert ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Honolulu.tzif")
+        finally:
+            # We need to reset the tzpath to the original one
+            reset_tzpath()
+
+        # Our custom timezones are still in the cache
+        assert ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Amsterdam.tzif")
+        # And clear the cache again
+        clear_tzcache()
+        # ...and now they aren't
+        with pytest.raises(TimeZoneNotFoundError):
+            ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Amsterdam.tzif")
+
+        # We can request proper timezones now again
+        assert ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc) == d
+        # exact_eq() is affected (as documented)
+        assert not ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc).exact_eq(d)
 
     def test_optionality(self):
         tz = "America/New_York"
@@ -173,6 +241,12 @@ class TestInit:
         assert ZonedDateTime(**kwargs, disambiguate="earlier").exact_eq(
             ZonedDateTime(2023, 3, 26, 1, 15, 30, tz="Europe/Amsterdam")
         )
+
+
+class TestTzPath:
+
+    def test_default(self):
+        pass
 
 
 def test_offset():
@@ -687,24 +761,24 @@ class TestDayLength:
 
         # Positive UTC offsets at lower bound are NOT fine
         d_min_pos = ZonedDateTime(1, 1, 1, 12, tz="Asia/Tokyo")
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             d_min_pos.day_length()
         with system_tz("Asia/Tokyo"):
-            with pytest.raises(ValueError, match="range"):
+            with pytest.raises((ValueError, OverflowError), match="range"):
                 SystemDateTime(1, 1, 1, 12).day_length()
 
         # upper bound is NOT fine
         d_max_pos = ZonedDateTime(9999, 12, 31, 4, tz="Asia/Tokyo")
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             d_max_pos.day_length()
         with system_tz("Asia/Tokyo"):
-            with pytest.raises(ValueError, match="range"):
+            with pytest.raises((ValueError, OverflowError), match="range"):
                 SystemDateTime(9999, 12, 31, 4).day_length()
         d_max_neg = ZonedDateTime(9999, 12, 31, 12, tz="America/New_York")
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range"):
             d_max_neg.day_length()
         with system_tz("America/New_York"):
-            with pytest.raises(ValueError, match="range"):
+            with pytest.raises((ValueError, OverflowError), match="range"):
                 SystemDateTime(9999, 12, 31, 12).day_length()
 
 
@@ -1105,20 +1179,20 @@ class TestParseCommonIso:
             ZonedDateTime.parse_common_iso(s)
 
     def test_invalid_tz(self):
-        with pytest.raises(ZoneInfoNotFoundError):
+        with pytest.raises(TimeZoneNotFoundError):
             ZonedDateTime.parse_common_iso(
                 "2020-08-15T12:08:30+02:00[Europe/Nowhere]"
             )
 
-        with pytest.raises(ZoneInfoNotFoundError):
+        with pytest.raises(TimeZoneNotFoundError):
             ZonedDateTime.parse_common_iso("2020-08-15T12:08:30Z[X]")
 
-        with pytest.raises((ZoneInfoNotFoundError, ValueError)):
+        with pytest.raises((TimeZoneNotFoundError, ValueError)):
             ZonedDateTime.parse_common_iso(
                 f"2023-10-29T02:15:30+02:00[{'X'*9999}]"
             )
 
-        with pytest.raises((ZoneInfoNotFoundError, ValueError)):
+        with pytest.raises((TimeZoneNotFoundError, ValueError)):
             ZonedDateTime.parse_common_iso(
                 f"2023-10-29T02:15:30+02:00[{chr(1600)}]",
             )
@@ -1267,13 +1341,13 @@ class TestFromTimestamp:
         with pytest.raises((OSError, OverflowError, ValueError)):
             method(-1_000_000_000_000_000_000 * factor, tz="America/Nuuk")
 
-        with pytest.raises(TypeError):
+        with pytest.raises((TypeError, AttributeError)):
             method(0, tz=3)
 
         with pytest.raises(TypeError):
             method("0", tz="America/New_York")
 
-        with pytest.raises(ZoneInfoNotFoundError):
+        with pytest.raises(TimeZoneNotFoundError):
             method(0, tz="America/Nowhere")
 
         with pytest.raises(TypeError, match="got 3|foo"):
@@ -1587,6 +1661,9 @@ def test_py_datetime():
     assert d2.py_datetime().fold == 0
     assert d2.replace(disambiguate="later").py_datetime().fold == 1
 
+    # ensure the ZoneInfo isn't file-based, and can this be pickled
+    pickle.dumps(d2)
+
 
 def test_from_py_datetime():
     d = py_datetime(
@@ -1719,6 +1796,11 @@ class TestExactEquality:
         b = a.to_tz("America/New_York")
         assert a == b
         assert not a.exact_eq(b)
+
+        # Different zone but same offset
+        c = a.to_tz("Europe/Paris")
+        assert a == c
+        assert not a.exact_eq(c)
 
     def test_same_timezone_ambiguity(self):
         a = ZonedDateTime(
@@ -1866,7 +1948,7 @@ class TestReplace:
         with pytest.raises(TypeError, match="foo"):
             d.replace(foo="bar", disambiguate="compatible")  # type: ignore[call-arg]
 
-        with pytest.raises(ZoneInfoNotFoundError, match="Nowhere"):
+        with pytest.raises(TimeZoneNotFoundError, match="Nowhere"):
             d.replace(tz="Nowhere", disambiguate="compatible")
 
         with pytest.raises(ValueError, match="date|day"):
@@ -2713,3 +2795,7 @@ def test_cannot_subclass():
 
         class Subclass(ZonedDateTime):  # type: ignore[misc]
             pass
+
+
+def test_timezone_notfound_is_keyerror():
+    assert issubclass(TimeZoneNotFoundError, KeyError)

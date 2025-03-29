@@ -193,7 +193,6 @@ impl ZonedDateTime {
         shifted_by_date
             .instant()
             .shift(delta)
-            // TODO-RANGE: limit instant range more than local
             .ok_or_value_err("Instant is out of range")?
             .to_tz(self.tz)
             .ok_or_value_err("Resulting date is out of range")
@@ -258,7 +257,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     let &mut State {
         exc_repeated,
         exc_skipped,
-        zoneinfo_notfound,
+        exc_tz_notfound,
         str_compatible,
         str_raise,
         str_earlier,
@@ -294,7 +293,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     if tz.is_null() {
         return raise_type_err("tz argument is required");
     }
-    let tzref = tz_cache.py_get(tz, zoneinfo_notfound)?;
+    let tzref = tz_cache.obj_get(tz, exc_tz_notfound)?;
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time =
         Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?;
@@ -504,11 +503,11 @@ unsafe fn exact_eq(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
 unsafe fn to_tz(slf: &mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
     let cls = Py_TYPE(slf);
     let &mut State {
-        zoneinfo_notfound,
+        exc_tz_notfound,
         ref mut tz_cache,
         ..
     } = State::for_type_mut(cls);
-    let tz_new = tz_cache.py_get(tz_obj, zoneinfo_notfound)?;
+    let tz_new = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
     ZonedDateTime::extract(slf)
         .instant()
         .to_tz(tz_new)
@@ -522,7 +521,7 @@ pub(crate) unsafe fn unpickle(module: &mut PyObject, args: &[*mut PyObject]) -> 
     };
     let &mut State {
         zoned_datetime_type,
-        zoneinfo_notfound,
+        exc_tz_notfound,
         ref mut tz_cache,
         ..
     } = State::for_mod_mut(module);
@@ -543,7 +542,7 @@ pub(crate) unsafe fn unpickle(module: &mut PyObject, args: &[*mut PyObject]) -> 
             subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
         },
         offset: Offset::new_unchecked(unpack_one!(packed, i32)),
-        tz: tz_cache.py_get(tz_obj, zoneinfo_notfound)?,
+        tz: tz_cache.obj_get(tz_obj, exc_tz_notfound)?,
     }
     .to_obj(zoned_datetime_type)
 }
@@ -775,7 +774,7 @@ unsafe fn replace(
         exc_skipped,
         str_tz,
         str_disambiguate,
-        zoneinfo_notfound,
+        exc_tz_notfound,
         str_year,
         str_month,
         str_day,
@@ -807,7 +806,7 @@ unsafe fn replace(
 
     handle_kwargs("replace", kwargs, |key, value, eq| {
         if eq(key, str_tz) {
-            let tz_new = tz_cache.py_get(value, zoneinfo_notfound)?;
+            let tz_new = tz_cache.obj_get(value, exc_tz_notfound)?;
             // If we change timezones, forget about trying to preserve the offset.
             // Just use compatible disambiguation.
             if tz_new != tz {
@@ -856,10 +855,10 @@ unsafe fn now(cls: *mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
     let state = State::for_type_mut(cls.cast());
     let &mut State {
         ref mut tz_cache,
-        zoneinfo_notfound,
+        exc_tz_notfound,
         ..
     } = state;
-    let tz = tz_cache.py_get(tz_obj, zoneinfo_notfound)?;
+    let tz = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
     state
         .time_ns()?
         .to_tz(tz)
@@ -870,7 +869,7 @@ unsafe fn now(cls: *mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
 unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     let &mut State {
         zoneinfo_type,
-        zoneinfo_notfound,
+        exc_tz_notfound,
         ref mut tz_cache,
         ..
     } = State::for_type_mut(cls.cast());
@@ -890,7 +889,7 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     }
 
     let tz_obj = PyObject_GetAttrString(tzinfo, c"key".as_ptr()).as_result()?;
-    let tz = tz_cache.py_get(tz_obj, zoneinfo_notfound)?;
+    let tz = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
     // We use the timestamp() to convert into a ZonedDateTime
     // Alternatives not chosen:
     // - resolve offset from date/time -> fold not respected
@@ -981,7 +980,7 @@ unsafe fn check_from_timestamp_args_return_tz(
     kwargs: &mut KwargIter,
     &mut State {
         ref mut tz_cache,
-        zoneinfo_notfound,
+        exc_tz_notfound,
         str_tz,
         ..
     }: &mut State,
@@ -990,7 +989,7 @@ unsafe fn check_from_timestamp_args_return_tz(
     match (args, kwargs.next()) {
         (&[_], Some((key, value))) if kwargs.len() == 1 => {
             if key.py_eq(str_tz)? {
-                tz_cache.py_get(value, zoneinfo_notfound)
+                tz_cache.obj_get(value, exc_tz_notfound)
             } else {
                 raise_type_err(format!(
                     "{}() got an unexpected keyword argument {}",
@@ -1147,18 +1146,14 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
     }
     let &mut State {
         exc_invalid_offset,
-        zoneinfo_notfound,
+        exc_tz_notfound,
         ref mut tz_cache,
         ..
     } = State::for_type_mut(cls.cast());
-    let tz = tz_cache
-        .get(std::str::from_utf8_unchecked(&s[1..s.len() - 1]))
-        .ok_or_else_raise(zoneinfo_notfound, || {
-            format!(
-                "No time zone found with key {}",
-                std::str::from_utf8_unchecked(&s[1..s.len() - 1])
-            )
-        })?;
+    let tz = tz_cache.get(
+        std::str::from_utf8_unchecked(&s[1..s.len() - 1]),
+        exc_tz_notfound,
+    )?;
 
     let offset_is_valid = match tz.ambiguity_for_local(date.epoch_at(time)) {
         Ambiguity::Unambiguous(o) => o == offset_secs,

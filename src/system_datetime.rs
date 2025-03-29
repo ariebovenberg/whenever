@@ -847,11 +847,11 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
 unsafe fn to_tz(slf: *mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
     let &mut State {
         zoned_datetime_type,
-        zoneinfo_notfound,
+        exc_tz_notfound,
         ref mut tz_cache,
         ..
     } = State::for_obj_mut(slf);
-    let tz = tz_cache.py_get(tz_obj, zoneinfo_notfound)?;
+    let tz = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
     OffsetDateTime::extract(slf)
         .instant()
         .to_tz(tz)

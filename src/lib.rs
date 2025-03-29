@@ -1,13 +1,10 @@
-// This crate is only meant to be accessed through its Python API.
-// Some items are declated `pub` instead of `pub(crate)`, so they
-// can be benchmarked. They can give "missing safety doc" warnings,
-// but that's fine because the crate is not meant to be used directly by Rust code.
-#![allow(clippy::missing_safety_doc)]
-use core::ffi::{c_int, c_void, CStr};
-use core::ptr::null_mut as NULL;
-use core::{mem, ptr};
+use core::{
+    ffi::{c_int, c_void, CStr},
+    mem,
+    ptr::{self, null_mut as NULL},
+};
 use pyo3_ffi::*;
-use std::time::SystemTime;
+use std::{path::PathBuf, ptr::NonNull, time::SystemTime};
 
 use crate::common::*;
 
@@ -89,6 +86,9 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(_patch_time_frozen, c"", METH_O),
     method!(_patch_time_keep_ticking, c"", METH_O),
     method!(_unpatch_time, c""),
+    method!(_set_tzpath, c"", METH_O),
+    method!(_clear_tz_cache, c""),
+    method!(_clear_tz_cache_by_keys, c"", METH_O),
     PyMethodDef::zeroed(),
 ];
 
@@ -127,6 +127,53 @@ unsafe fn _patch_time(module: *mut PyObject, arg: *mut PyObject, freeze: bool) -
 unsafe fn _unpatch_time(module: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let state: &mut State = PyModule_GetState(module).cast::<State>().as_mut().unwrap();
     state.time_patch = TimePatch::Unset;
+    Py_None().as_result()
+}
+
+pub(crate) unsafe fn _set_tzpath(module: *mut PyObject, to: *mut PyObject) -> PyReturn {
+    let state = State::for_mod_mut(module);
+
+    if PyTuple_CheckExact(to) == 0 {
+        raise_type_err("Argument must be a tuple")?;
+    }
+    let size = PyTuple_GET_SIZE(to);
+    let mut result = Vec::with_capacity(size as _);
+
+    for i in 0..size {
+        let path = PyTuple_GET_ITEM(to, i);
+        result.push(PathBuf::from(
+            path.to_str()?.ok_or_type_err("Path must be a string")?,
+        ))
+    }
+    state.tz_cache.paths = result;
+    Py_None().as_result()
+}
+
+pub(crate) unsafe fn _clear_tz_cache(module: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    let state = State::for_mod_mut(module);
+    state.tz_cache.clear_all();
+    Py_None().as_result()
+}
+
+pub(crate) unsafe fn _clear_tz_cache_by_keys(
+    module: *mut PyObject,
+    keys_obj: *mut PyObject,
+) -> PyReturn {
+    let state = State::for_mod_mut(module);
+    if PyTuple_CheckExact(keys_obj) == 0 {
+        raise_type_err("Argument must be a tuple")?;
+    }
+    let size = PyTuple_GET_SIZE(keys_obj);
+    let mut keys = Vec::with_capacity(size as _);
+    for i in 0..size {
+        let path = PyTuple_GET_ITEM(keys_obj, i);
+        keys.push(
+            path.to_str()?
+                .ok_or_type_err("Path must be a string")?
+                .to_string(),
+        )
+    }
+    state.tz_cache.clear_only(&keys);
     Py_None().as_result()
 }
 
@@ -193,6 +240,12 @@ unsafe fn new_exc(
         return NULL();
     }
     e
+}
+
+unsafe fn import_from(module: &CStr, name: &CStr) -> PyReturn {
+    let module = PyImport_ImportModule(module.as_ptr()).as_result()?;
+    defer_decref!(module);
+    PyObject_GetAttrString(module, name.as_ptr()).as_result()
 }
 
 // Return the new type and the unpickler function
@@ -345,11 +398,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         return -1;
     }
 
-    let zoneinfo_module = PyImport_ImportModule(c"zoneinfo".as_ptr());
-    defer_decref!(zoneinfo_module);
-    state.zoneinfo_type = PyObject_GetAttrString(zoneinfo_module, c"ZoneInfo".as_ptr());
-    state.zoneinfo_notfound =
-        PyObject_GetAttrString(zoneinfo_module, c"ZoneInfoNotFoundError".as_ptr());
+    state.zoneinfo_type = unwrap_or_errcode!(import_from(c"zoneinfo", c"ZoneInfo"));
 
     PyDateTime_IMPORT();
     state.py_api = match PyDateTimeAPI().as_ref() {
@@ -374,9 +423,8 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     state.parse_rfc2822 =
         PyObject_GetAttrString(email_utils, c"parsedate_to_datetime".as_ptr()).cast();
 
-    let time_module = PyImport_ImportModule(c"time".as_ptr());
-    defer_decref!(time_module);
-    state.time_ns = PyObject_GetAttrString(time_module, c"time_ns".as_ptr()).cast();
+    state.time_ns = unwrap_or_errcode!(import_from(c"time", c"time_ns"));
+    state.import_binary = unwrap_or_errcode!(import_from(c"importlib.resources", c"read_binary"));
 
     let weekday_enum = unwrap_or_errcode!(create_enum(
         c"Weekday",
@@ -455,16 +503,27 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         doc::IMPLICITLYIGNORINGDST,
         PyExc_TypeError,
     );
+    state.exc_tz_notfound = new_exc(
+        module,
+        c"whenever.TimeZoneNotFoundError",
+        doc::TIMEZONENOTFOUNDERROR,
+        PyExc_KeyError,
+    );
 
     // Making time patcheable results in a performance hit.
     // Only enable it if the time_machine module is available.
     state.time_machine_exists = unwrap_or_errcode!(time_machine_installed());
     state.time_patch = TimePatch::Unset;
 
-    // We write this field manually, to avoid triggering a "drop" of the previous value.
-    // There is no previous value, since Python just allocated this memory for us.
-    std::ptr::write(&mut state.tz_cache as *mut _, TZifCache::new());
-
+    // We write these fields manually, to avoid triggering a "drop" of the previous value
+    // which isn't there, since Python just allocated this memory for us.
+    std::ptr::write(
+        &mut state.tz_cache as *mut _,
+        TZifCache::new(
+            // The case lives at least as long as the module, so a borrowed ref is safe
+            NonNull::new_unchecked(state.import_binary),
+        ),
+    );
     0
 }
 
@@ -486,7 +545,6 @@ unsafe fn traverse(target: *mut PyObject, visit: visitproc, arg: *mut c_void) {
         (visit)(target, arg);
     }
 }
-
 unsafe fn traverse_type(
     target: *mut PyTypeObject,
     visit: visitproc,
@@ -575,6 +633,7 @@ unsafe extern "C" fn module_traverse(
     traverse(state.exc_skipped, visit, arg);
     traverse(state.exc_invalid_offset, visit, arg);
     traverse(state.exc_implicitly_ignoring_dst, visit, arg);
+    traverse(state.exc_tz_notfound, visit, arg);
 
     // Imported modules
     traverse(state.zoneinfo_type, visit, arg);
@@ -583,6 +642,7 @@ unsafe extern "C" fn module_traverse(
     traverse(state.format_rfc2822, visit, arg);
     traverse(state.parse_rfc2822, visit, arg);
     traverse(state.time_ns, visit, arg);
+    traverse(state.import_binary, visit, arg);
 
     0
 }
@@ -655,15 +715,16 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR(ptr::addr_of_mut!(state.exc_skipped));
     Py_CLEAR(ptr::addr_of_mut!(state.exc_invalid_offset));
     Py_CLEAR(ptr::addr_of_mut!(state.exc_implicitly_ignoring_dst));
+    Py_CLEAR(ptr::addr_of_mut!(state.exc_tz_notfound));
 
     // imported stuff
     Py_CLEAR(ptr::addr_of_mut!(state.zoneinfo_type));
-    Py_CLEAR(ptr::addr_of_mut!(state.zoneinfo_notfound));
     Py_CLEAR(ptr::addr_of_mut!(state.timezone_type));
     Py_CLEAR(ptr::addr_of_mut!(state.strptime));
     Py_CLEAR(ptr::addr_of_mut!(state.format_rfc2822));
     Py_CLEAR(ptr::addr_of_mut!(state.parse_rfc2822));
-    Py_CLEAR(&raw mut state.time_ns);
+    Py_CLEAR(ptr::addr_of_mut!(state.time_ns));
+    Py_CLEAR(ptr::addr_of_mut!(state.import_binary));
 
     0
 }
@@ -674,8 +735,8 @@ unsafe extern "C" fn module_free(module: *mut c_void) {
         .cast::<State>()
         .as_mut()
         .unwrap();
-    // We clean up the tz cache here because module_clear is not *guaranteed* to be called,
-    // and it would leave dangling resources if not cleaned up.
+    // We clean up heap allocated stuff here because module_clear is
+    // not *guaranteed* to be called
     std::ptr::drop_in_place(&mut state.tz_cache);
 }
 
@@ -702,6 +763,7 @@ pub(crate) struct State {
     exc_skipped: *mut PyObject,
     exc_invalid_offset: *mut PyObject,
     exc_implicitly_ignoring_dst: *mut PyObject,
+    exc_tz_notfound: *mut PyObject,
 
     // unpickling functions
     unpickle_date: *mut PyObject,
@@ -721,12 +783,12 @@ pub(crate) struct State {
 
     // imported stuff
     zoneinfo_type: *mut PyObject,
-    zoneinfo_notfound: *mut PyObject,
     timezone_type: *mut PyObject,
     strptime: *mut PyObject,
     format_rfc2822: *mut PyObject,
     parse_rfc2822: *mut PyObject,
     time_ns: *mut PyObject,
+    import_binary: *mut PyObject,
 
     // strings
     str_years: *mut PyObject,

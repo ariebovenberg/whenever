@@ -15,6 +15,7 @@ from whenever import (
     OffsetDateTime,
     SystemDateTime,
     Time,
+    TimeZoneNotFoundError,
     ZonedDateTime,
     days,
     hours,
@@ -30,7 +31,6 @@ from .common import (
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
-    ZoneInfoNotFoundError,
     system_tz_ams,
     system_tz_nyc,
 )
@@ -1080,7 +1080,7 @@ def test_to_tz():
             tz="America/New_York",
         )
     )
-    with pytest.raises(ZoneInfoNotFoundError):
+    with pytest.raises(TimeZoneNotFoundError):
         d.to_tz("America/Not_A_Real_Zone")
 
     small_dt = OffsetDateTime(1, 1, 1, offset=0)

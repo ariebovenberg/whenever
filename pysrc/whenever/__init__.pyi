@@ -7,7 +7,18 @@ from datetime import (
     time as _time,
     timedelta as _timedelta,
 )
-from typing import Any, ClassVar, Iterator, Literal, TypeVar, final, overload
+from os import PathLike
+from typing import (
+    Any,
+    ClassVar,
+    Final,
+    Iterable,
+    Iterator,
+    Literal,
+    TypeVar,
+    final,
+    overload,
+)
 
 __all__ = [
     "Date",
@@ -1038,6 +1049,9 @@ class InvalidOffset(ValueError): ...
 @final
 class ImplicitlyIgnoringDST(TypeError): ...
 
+@final
+class TimeZoneNotFoundError(KeyError): ...
+
 class Weekday(enum.Enum):
     MONDAY = 1
     TUESDAY = 2
@@ -1073,3 +1087,10 @@ class _TimePatch:
 def patch_current_time(
     i: _KnowsInstant, /, *, keep_ticking: bool
 ) -> Iterator[_TimePatch]: ...
+
+TZPATH: Final[tuple[str, ...]]
+
+def reset_tzpath(
+    to: Iterable[str | PathLike[str]] | None = None, /
+) -> None: ...
+def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None: ...

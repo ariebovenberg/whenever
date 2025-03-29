@@ -1,8 +1,11 @@
 try:  # pragma: no cover
     from ._whenever import *
     from ._whenever import (
+        _clear_tz_cache,
+        _clear_tz_cache_by_keys,
         _patch_time_frozen,
         _patch_time_keep_ticking,
+        _set_tzpath,
         _unpatch_time,
         _unpkl_date,
         _unpkl_ddelta,
@@ -27,11 +30,14 @@ except ModuleNotFoundError as e:
     from ._pywhenever import (  # for the docs
         __all__,
         _BasicConversions,
+        _clear_tz_cache,
+        _clear_tz_cache_by_keys,
         _KnowsInstant,
         _KnowsInstantAndLocal,
         _KnowsLocal,
         _patch_time_frozen,
         _patch_time_keep_ticking,
+        _set_tzpath,
         _unpatch_time,
         _unpkl_date,
         _unpkl_ddelta,
@@ -49,9 +55,12 @@ except ModuleNotFoundError as e:
 
     _EXTENSION_LOADED = False
 
+import os as _os
+import sysconfig as _sysconfig
 from contextlib import contextmanager as _contextmanager
 from dataclasses import dataclass as _dataclass
-from typing import Iterator as _Iterator
+from pathlib import Path as _Path
+from typing import Iterable as _Iterable, Iterator as _Iterator
 
 from ._pywhenever import __version__
 
@@ -129,3 +138,77 @@ def patch_current_time(
         yield _TimePatch(dt, keep_ticking)
     finally:
         _unpatch_time()
+
+
+TZPATH: tuple[str, ...] = ()
+"""The paths in which ``whenever`` will search for timezone data.
+By default, this determined the same way as :data:`zoneinfo.TZPATH`,
+although you can override it using :func:`whenever.reset_tzpath` for ``whenever`` specifically.
+"""
+
+
+def reset_tzpath(target: _Iterable[str | _os.PathLike[str]] | None = None, /):
+    """Reset or set the paths in which ``whenever`` will search for timezone data.
+
+    It does not affect the :mod:`zoneinfo` module or other libraries.
+
+    Note
+    ----
+    Due to caching, you may find that looking up a timezone after setting the tzpath
+    doesn't load the timezone data from the new path. You may need to call
+    :func:`clear_cache` if you want to force loading *all* timezones from the new path.
+    Note that clearing the cache may have unexpected side effects, however.
+
+    Behaves similarly to :func:`zoneinfo.reset_tzpath`
+    """
+    global TZPATH
+
+    if target is not None:
+        # This is such a common mistake, that we raise a descriptive error
+        if isinstance(target, (str, bytes)):
+            raise TypeError("tzpath must be an iterable of paths")
+
+        if not all(map(_os.path.isabs, target)):
+            raise ValueError("tzpaths must be absolute paths")
+        TZPATH = tuple(str(_Path(p)) for p in target)
+    else:
+        TZPATH = _tzpath_from_env()
+    _set_tzpath(TZPATH)
+
+
+def _tzpath_from_env() -> tuple[str, ...]:
+    try:
+        env_var = _os.environ["PYTHONTZPATH"]
+    except KeyError:
+        env_var = _sysconfig.get_config_var("TZPATH")
+
+    if not env_var:
+        return ()
+
+    raw_tzpath = env_var.split(_os.pathsep)
+    # according to spec, we're allowed to silently ignore invalid paths
+    new_tzpath = tuple(filter(_os.path.isabs, raw_tzpath))
+    return new_tzpath
+
+
+def clear_tzcache(*, only_keys: _Iterable[str] | None = None) -> None:
+    """Clear the timezone cache. If ``only_keys`` is provided, only the cache for those
+    keys will be cleared.
+
+    Warning
+    -------
+    Calling this function may change the behavior existing :class:`~whenever.ZonedDateTime` instances
+    in surprising ways. Most significantly, the :meth:`~whenever._KnowsInstant.exact_eq()`
+    method will return ``False`` between instances created before and after clearing the cache.
+
+    **Use this function only if you know that you need to.**
+
+    Behaves similarly to :meth:`zoneinfo.ZoneInfo.clear_cache`.
+    """
+    if only_keys is None:
+        _clear_tz_cache()
+    else:
+        _clear_tz_cache_by_keys(tuple(only_keys))
+
+
+reset_tzpath()  # populate the tzpath once at startup

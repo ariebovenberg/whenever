@@ -615,11 +615,11 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
 unsafe fn to_tz(slf: &mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
     let &mut State {
         zoned_datetime_type,
-        zoneinfo_notfound,
+        exc_tz_notfound,
         ref mut tz_cache,
         ..
     } = State::for_obj_mut(slf);
-    let tz = tz_cache.py_get(tz_obj, zoneinfo_notfound)?;
+    let tz = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
     Instant::extract(slf)
         .to_tz(tz)
         .ok_or_value_err("Resulting datetime is out of range")?
