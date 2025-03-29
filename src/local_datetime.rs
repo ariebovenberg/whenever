@@ -691,7 +691,7 @@ unsafe fn assume_tz(
         zoned_datetime_type,
         exc_skipped,
         exc_repeated,
-        zoneinfo_notfound,
+        exc_tz_notfound,
         ref mut tz_cache,
         ..
     } = State::for_type_mut(cls);
@@ -714,7 +714,7 @@ unsafe fn assume_tz(
         str_later,
     )?
     .unwrap_or(Disambiguate::Compatible);
-    let tzif = tz_cache.py_get(tz_obj, zoneinfo_notfound)?;
+    let tzif = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
     ZonedDateTime::resolve_using_disambiguate(date, time, tzif, dis, exc_repeated, exc_skipped)?
         .to_obj(zoned_datetime_type)
 }

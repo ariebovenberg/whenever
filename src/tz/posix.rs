@@ -68,9 +68,9 @@ impl Tz {
                     .for_year(year)
                     .epoch()
                     .saturating_add_i32(end_time - dst_offset.get());
-                if (start < end && (epoch < start || epoch >= end))
-                    || (start >= end && epoch < start && epoch >= end)
-                {
+
+                // Q: Why so complicated? A: Because end may be before start
+                if (epoch >= end || epoch < start) && start < end || epoch < start && epoch >= end {
                     self.std
                 } else {
                     dst_offset
@@ -93,7 +93,7 @@ impl Tz {
                 // Below are some saturing_add_i32 calls to prevent overflow.
                 // These should only affect DST calculations at the extreme MIN/MAX
                 // boundaries. We just want to avoid crashing.
-                let year = t.date().year; // TODO-PERF
+                let year = t.date().year; // OPTIMIZE: pass the year as an argument
                 let start = start_rule
                     .for_year(year)
                     .epoch()

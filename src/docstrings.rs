@@ -132,6 +132,8 @@ A shorter way to instantiate a timedelta is to use the helper functions
 :func:`~whenever.hours`, :func:`~whenever.minutes`, etc.
 
 ";
+pub(crate) const TIMEZONENOTFOUNDERROR: &CStr = c"\
+A timezone with the given ID was not found";
 pub(crate) const YEARMONTH: &CStr = c"\
 A year and month without a day component
 

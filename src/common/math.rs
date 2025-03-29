@@ -139,7 +139,6 @@ impl Neg for OffsetDelta {
     }
 }
 
-// TODO: limit the range so that we have infallible conversions to local datetime
 /// Number of seconds since 1970-01-01
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub struct EpochSecs(i64);
