@@ -436,7 +436,7 @@ mod tests {
         );
     }
 
-    // Thanks to Jiff for the test data
+    // Thanks to Jiff for the test tzif file
     #[test]
     fn test_clamp_transitions_to_range() {
         const TZ_OUT_OF_RANGE: &[u8] = include_bytes!("../../tests/tzif/Sydney_widerange.tzif");
@@ -452,13 +452,10 @@ mod tests {
         );
     }
 
-    // Thanks to Jiff for bringing this edge case to my attention
     #[test]
     fn test_last_transition_is_gap() {
         const TZ_HON: &[u8] = include_bytes!("../../tests/tzif/Honolulu.tzif");
         let tzif = parse(TZ_HON, "Pacific/Honolulu").unwrap();
-        println!("{:?}", tzif.offsets_by_utc);
-        println!("{:?}", tzif.offsets_by_local);
         assert_eq!(tzif.end, posix::parse(b"HST10"));
         assert_eq!(
             tzif.offset_for_instant(EpochSecs::new_unchecked(-712150201)),

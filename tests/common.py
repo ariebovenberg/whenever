@@ -8,7 +8,6 @@ import pytest
 
 __all__ = [
     "ZoneInfo",
-    "ZoneInfoNotFoundError",
     "AlwaysEqual",
     "NeverEqual",
     "AlwaysLarger",
@@ -19,9 +18,9 @@ IS_WINDOWS = sys.platform == "win32"
 
 
 if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    from zoneinfo import ZoneInfo
 else:
-    from backports.zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    from backports.zoneinfo import ZoneInfo
 
 
 class AlwaysEqual:
@@ -66,30 +65,33 @@ class AlwaysSmaller:
 def system_tz_ams():
     if IS_WINDOWS:
         pytest.skip("tzset is not available on Windows")
-    with patch.dict(os.environ, {"TZ": "Europe/Amsterdam"}):
+    try:
+        with patch.dict(os.environ, {"TZ": "Europe/Amsterdam"}):
+            time.tzset()
+            yield
+    finally:
         time.tzset()
-        yield
-
-    time.tzset()  # don't forget to set the old timezone back
 
 
 @contextmanager
 def system_tz(name):
     if IS_WINDOWS:
         pytest.skip("tzset is not available on Windows")
-    with patch.dict(os.environ, {"TZ": name}):
+    try:
+        with patch.dict(os.environ, {"TZ": name}):
+            time.tzset()
+            yield
+    finally:
         time.tzset()
-        yield
-
-    time.tzset()
 
 
 @contextmanager
 def system_tz_nyc():
     if IS_WINDOWS:
         pytest.skip("tzset is not available on Windows")
-    with patch.dict(os.environ, {"TZ": "America/New_York"}):
+    try:
+        with patch.dict(os.environ, {"TZ": "America/New_York"}):
+            time.tzset()
+            yield
+    finally:
         time.tzset()
-        yield
-
-    time.tzset()  # don't forget to set the old timezone back

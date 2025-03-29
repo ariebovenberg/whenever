@@ -25,20 +25,22 @@
 # - Why is everything in one file?
 #   - Flat is better than nested
 #   - It prevents circular imports since the classes 'know' about each other
-#   - It's easier to vendor (i.e. copy-paste) this library if needed
+#   - It's easier to vendor the main functionality, if needed.
 # - There is some code duplication in this file. This is intentional:
 #   - It makes it easier to understand the code
 #   - It's sometimes necessary for the type checker
 #   - It saves some overhead
 from __future__ import annotations
 
-__version__ = "0.7.3"
+__version__ = "0.8.0"
 
 import enum
+import importlib.resources
 import re
 import sys
 from abc import ABC, abstractmethod
 from calendar import monthrange
+from collections import OrderedDict
 from datetime import (
     date as _date,
     datetime as _datetime,
@@ -47,7 +49,9 @@ from datetime import (
     timezone as _timezone,
 )
 from email.utils import format_datetime, parsedate_to_datetime
+from io import BytesIO
 from math import fmod
+from pathlib import Path
 from struct import pack, unpack
 from time import time_ns
 from typing import (
@@ -57,11 +61,13 @@ from typing import (
     ClassVar,
     Literal,
     Mapping,
+    NewType,
     TypeVar,
     Union,
     no_type_check,
     overload,
 )
+from weakref import WeakValueDictionary
 from zoneinfo import ZoneInfo
 
 __all__ = [
@@ -94,6 +100,7 @@ __all__ = [
     "RepeatedTime",
     "InvalidOffset",
     "ImplicitlyIgnoringDST",
+    "TimeZoneNotFoundError",
     # Constants
     "MONDAY",
     "TUESDAY",
@@ -2948,11 +2955,11 @@ class _KnowsInstant(_BasicConversions):
 
         Raises
         ------
-        ~zoneinfo.ZoneInfoNotFoundError
-            If the timezone ID is not found in the IANA database.
+        ~whenever.TimeZoneNotFoundError
+            If the timezone ID is not found in the system's timezone database.
         """
         return ZonedDateTime._from_py_unchecked(
-            self._py_dt.astimezone(ZoneInfo(tz)), self._nanos
+            self._py_dt.astimezone(_get_tz(tz)), self._nanos
         )
 
     def to_system_tz(self) -> SystemDateTime:
@@ -2989,12 +2996,12 @@ class _KnowsInstant(_BasicConversions):
             self._py_dt,  # type: ignore[attr-defined]
             self._py_dt.utcoffset(),  # type: ignore[attr-defined]
             self._nanos,  # type: ignore[attr-defined]
-            type(self._py_dt.tzinfo),  # type: ignore[attr-defined]
+            self._py_dt.tzinfo,  # type: ignore[attr-defined]
         ) == (
             other._py_dt,  # type: ignore[attr-defined]
             other._py_dt.utcoffset(),  # type: ignore[attr-defined]
             other._nanos,  # type: ignore[attr-defined]
-            type(other._py_dt.tzinfo),  # type: ignore[attr-defined]
+            other._py_dt.tzinfo,  # type: ignore[attr-defined]
         )
 
     def difference(
@@ -4280,7 +4287,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
                 minute,
                 second,
                 0,
-                zone := ZoneInfo(tz),
+                zone := _get_tz(tz),
             ),
             zone,
             disambiguate,
@@ -4293,9 +4300,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
     def now(cls, tz: str, /) -> ZonedDateTime:
         """Create an instance from the current time in the given timezone."""
         secs, nanos = divmod(time_ns(), 1_000_000_000)
-        return cls._from_py_unchecked(
-            _fromtimestamp(secs, ZoneInfo(tz)), nanos
-        )
+        return cls._from_py_unchecked(_fromtimestamp(secs, _get_tz(tz)), nanos)
 
     def format_common_iso(self) -> str:
         """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
@@ -4360,7 +4365,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
             naive_dt = _fromisoformat(s[:19])
         except ValueError:
             raise ValueError(f"Invalid format: {s!r}")
-        dt = _check_utc_bounds(naive_dt.replace(tzinfo=ZoneInfo(match[12])))
+        dt = _check_utc_bounds(naive_dt.replace(tzinfo=_get_tz(match[12])))
         return cls._from_py_unchecked(
             _adjust_fold_to_offset(dt, offset), nanos
         )
@@ -4373,7 +4378,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         """
         secs, fract = divmod(i, 1)
         return cls._from_py_unchecked(
-            _fromtimestamp(secs, ZoneInfo(tz)), int(fract * 1_000_000_000)
+            _fromtimestamp(secs, _get_tz(tz)), int(fract * 1_000_000_000)
         )
 
     @classmethod
@@ -4386,7 +4391,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
             raise TypeError("method requires an integer")
         secs, millis = divmod(i, 1_000)
         return cls._from_py_unchecked(
-            _fromtimestamp(secs, ZoneInfo(tz)), millis * 1_000_000
+            _fromtimestamp(secs, _get_tz(tz)), millis * 1_000_000
         )
 
     @classmethod
@@ -4398,9 +4403,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
-        return cls._from_py_unchecked(
-            _fromtimestamp(secs, ZoneInfo(tz)), nanos
-        )
+        return cls._from_py_unchecked(_fromtimestamp(secs, _get_tz(tz)), nanos)
 
     # FUTURE: optional `disambiguate` to override fold?
     @classmethod
@@ -4422,7 +4425,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
             )
 
         # This ensures skipped times are disambiguated according to the fold.
-        d = d.astimezone(_UTC).astimezone(d.tzinfo)
+        d = d.astimezone(_UTC).astimezone(_get_tz(d.tzinfo.key))
         return cls._from_py_unchecked(
             _strip_subclasses(d.replace(microsecond=0)), d.microsecond * 1_000
         )
@@ -4489,7 +4492,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         except KeyError:
             pass
         else:
-            kwargs["tzinfo"] = zoneinfo_new = ZoneInfo(tz)
+            kwargs["tzinfo"] = zoneinfo_new = _get_tz(tz)
             if zoneinfo_new is not self._py_dt.tzinfo:
                 disambiguate = disambiguate or "compatible"
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
@@ -4750,6 +4753,14 @@ class ZonedDateTime(_KnowsInstantAndLocal):
             rounded_local._nanos,
         )
 
+    # Override this method to ensure the file-backed ZoneInfo doesn't
+    # "leak" out
+    def py_datetime(self) -> _datetime:
+        return self._py_dt.replace(
+            microsecond=self._nanos // 1_000,
+            tzinfo=ZoneInfo(self._py_dt.tzinfo.key),  # type: ignore[union-attr]
+        )
+
     def __repr__(self) -> str:
         return f"ZonedDateTime({str(self).replace('T', ' ', 1)})"
 
@@ -4778,7 +4789,7 @@ def _unpkl_zoned(
     tz: str,
 ) -> ZonedDateTime:
     *args, nanos, offset_secs = unpack("<HBBBBBIl", data)
-    args += (0, ZoneInfo(tz))
+    args += (0, _get_tz(tz))
     return ZonedDateTime._from_py_unchecked(
         _adjust_fold_to_offset(
             _datetime(*args), _timedelta(seconds=offset_secs)
@@ -5635,7 +5646,7 @@ class LocalDateTime(_KnowsLocal):
         """
         return ZonedDateTime._from_py_unchecked(
             _resolve_ambiguity(
-                self._py_dt.replace(tzinfo=(zone := ZoneInfo(tz))),
+                self._py_dt.replace(tzinfo=(zone := _get_tz(tz))),
                 zone,
                 disambiguate,
             ),
@@ -5771,6 +5782,14 @@ class InvalidOffset(ValueError):
 
 class ImplicitlyIgnoringDST(TypeError):
     """A calculation was performed that implicitly ignored DST"""
+
+
+class TimeZoneNotFoundError(KeyError):
+    """A timezone with the given ID was not found"""
+
+    @classmethod
+    def for_key(cls, key: str) -> TimeZoneNotFoundError:
+        return cls(f"No time zone found for key: {key!r}")
 
 
 _IGNORE_DST_SUGGESTION = (
@@ -6214,3 +6233,93 @@ def _unpatch_time() -> None:
     global time_ns
 
     from time import time_ns
+
+
+_TZPATH: tuple[str, ...] = ()
+
+# Our cache for loaded tz files. The design is based off zoneinfo.
+# Why roll our own? To ensure it works independently of zoneinfo,
+# and thus works identically to the Rust extension.
+_TZCACHE_LRU_SIZE = 8
+_tzcache_lru: OrderedDict[str, ZoneInfo] = OrderedDict()
+_tzcache_lookup: WeakValueDictionary[str, ZoneInfo] = WeakValueDictionary()
+
+
+def _set_tzpath(to: tuple[str, ...]) -> None:
+    global _TZPATH
+    _TZPATH = to
+
+
+def _clear_tz_cache() -> None:
+    _tzcache_lru.clear()
+    _tzcache_lookup.clear()
+
+
+def _clear_tz_cache_by_keys(keys: tuple[str, ...]) -> None:
+    for k in keys:
+        _tzcache_lookup.pop(k, None)
+        _tzcache_lru.pop(k, None)
+
+
+def _get_tz(key: str) -> ZoneInfo:
+    instance = _tzcache_lookup.get(key, None)
+    if instance is None:
+        instance = _tzcache_lookup.setdefault(
+            key, _load_tz(_validate_key(key))
+        )
+    # Update the LRU
+    _tzcache_lru[key] = _tzcache_lru.pop(key, instance)
+    if len(_tzcache_lru) > _TZCACHE_LRU_SIZE:
+        _tzcache_lru.popitem(last=False)
+    return instance
+
+
+def _validate_key(key: str) -> _ValidKey:
+    """Checks for invalid characters and path traversal in the key."""
+    if (
+        key.isascii()
+        and "\\" not in key
+        and "//" not in key
+        and ".." not in key
+        and "\0" not in key
+        and "/./" not in key
+        and not key.startswith("/")
+        and not key.endswith("/")
+    ):
+        return _ValidKey(key)
+    else:
+        raise TimeZoneNotFoundError.for_key(key)
+
+
+_ValidKey = NewType("_ValidKey", str)  # alias for a valid timezone key
+
+
+def _try_tzif_from_path(key: _ValidKey) -> bytes | None:
+    for search_path in _TZPATH:
+        target = Path(search_path).joinpath(key)
+        if target.is_file():
+            return target.read_bytes()
+    return None
+
+
+# TODO: test absence/presence of tzdata
+def _tzif_from_tzdata(key: _ValidKey) -> bytes:
+    *components, resource = key.split("/")
+    package = ".".join(["tzdata.zoneinfo", *components])
+
+    try:
+        return importlib.resources.read_binary(package, resource)
+    # Several exceptions amount to "can't find the key"
+    except (ImportError, FileNotFoundError, UnicodeEncodeError):
+        raise TimeZoneNotFoundError.for_key(key)
+
+
+def _load_tz(key: _ValidKey) -> ZoneInfo:
+    # Reminder: we load manually from files to ensure we operate
+    # independently of zoneinfo's own caching mechanism
+    tzif = _try_tzif_from_path(key) or _tzif_from_tzdata(key)
+    if not tzif.startswith(b"TZif"):
+        # We've found a file, but doesn't look like a TZif file.
+        # Stop here instead of getting a cryptic error later.
+        raise TimeZoneNotFoundError.for_key(key)
+    return ZoneInfo.from_file(BytesIO(tzif), key)

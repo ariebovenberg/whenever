@@ -72,6 +72,7 @@ macro_rules! method_vararg(
     };
 );
 
+// TODO: ownership of keys/values???
 pub(crate) struct KwargIter {
     keys: *mut PyObject,
     values: *const *mut PyObject,

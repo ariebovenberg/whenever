@@ -165,4 +165,11 @@ Miscellaneous
 .. autoexception:: whenever.InvalidOffset
    :show-inheritance:
 
+.. autoexception:: whenever.TimeZoneNotFoundError
+   :show-inheritance:
+
 .. autoclass:: whenever.patch_current_time
+
+.. autodata:: whenever.TZPATH
+.. autofunction:: whenever.clear_tzcache
+.. autofunction:: whenever.reset_tzpath

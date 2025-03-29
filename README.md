@@ -18,8 +18,8 @@ There’s no way to be sure...
 
 *Whenever* helps you write **correct** and **type checked** datetime code,
 using **well-established concepts** from [modern libraries](#acknowledgements) in other languages.
-It's also **way faster** than other third-party libraries—and usually the standard library as well.
-If performance isn't your top priority, a **pure Python** version is available as well.
+It's also **way faster** than other third-party libraries, and usually the standard library as well.
+Don't buy the Rust hype?—don't worry: a **pure Python** version is available as well.
 
   <p align="center">
     <picture align="center">
@@ -204,10 +204,6 @@ Until the 1.0 version, the API may change with minor releases.
 Breaking changes will be meticulously explained in the changelog.
 Since the API is fully typed, your typechecker and/or IDE
 will help you adjust to any API changes.
-
-> ⚠️ **Note**: until 1.x, pickled objects may not be unpicklable across
-> versions. After 1.0, backwards compatibility of pickles will be maintained
-> as much as possible.
 
 ## License
 
