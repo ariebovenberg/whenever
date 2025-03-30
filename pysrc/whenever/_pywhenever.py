@@ -3605,27 +3605,27 @@ class Instant(_KnowsInstant):
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
         return (
-            _unpkl_utc,
-            (
-                pack(
-                    "<qL",
-                    int(self._py_dt.timestamp()) + _UNIX_INSTANT,
-                    self._nanos,
-                ),
-            ),
+            _unpkl_inst,
+            (pack("<qL", int(self._py_dt.timestamp()), self._nanos),),
         )
 
 
 _UNIX_INSTANT = -int(_datetime(1, 1, 1, tzinfo=_UTC).timestamp()) + 86_400
 
 
-# A separate unpickling function allows us to make backwards-compatible changes
-# to the pickling format in the future
+# Backwards compatibility for instances pickled before 0.8.0
 def _unpkl_utc(data: bytes) -> Instant:
     secs, nanos = unpack("<qL", data)
     return Instant._from_py_unchecked(
         _fromtimestamp(secs - _UNIX_INSTANT, _UTC), nanos
     )
+
+
+# A separate unpickling function allows us to make backwards-compatible changes
+# to the pickling format in the future
+def _unpkl_inst(data: bytes) -> Instant:
+    secs, nanos = unpack("<qL", data)
+    return Instant._from_py_unchecked(_fromtimestamp(secs, _UTC), nanos)
 
 
 @final
