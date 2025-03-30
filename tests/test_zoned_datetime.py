@@ -131,6 +131,7 @@ class TestInit:
             ".",
             "/",
             " ",
+            "Foo" * 1000,  # too long
         ],
     )
     def test_invalid_key(self, key: str):

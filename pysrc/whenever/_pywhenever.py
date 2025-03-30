@@ -6277,6 +6277,9 @@ def _validate_key(key: str) -> _ValidKey:
     """Checks for invalid characters and path traversal in the key."""
     if (
         key.isascii()
+        # There's no standard limit on IANA tz IDs, but we have to draw
+        # the line somewhere to prevent abuse.
+        and len(key) < 100
         and "\\" not in key
         and "//" not in key
         and ".." not in key
