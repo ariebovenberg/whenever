@@ -30,8 +30,8 @@ from whenever import (
     TimeDelta,
     TimeZoneNotFoundError,
     ZonedDateTime,
-    clear_tzcache,
     available_timezones,
+    clear_tzcache,
     days,
     hours,
     milliseconds,
@@ -52,7 +52,7 @@ from .common import (
 )
 
 try:
-    import tzdata
+    import tzdata  # noqa
 except ImportError:
     HAS_TZDATA = False
 else:
