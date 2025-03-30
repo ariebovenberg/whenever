@@ -8,7 +8,10 @@ from datetime import (
 )
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
+from zoneinfo import (
+    ZoneInfo,
+    available_timezones as zoneinfo_available_timezones,
+)
 
 import pytest
 from hypothesis import given
@@ -28,6 +31,7 @@ from whenever import (
     TimeZoneNotFoundError,
     ZonedDateTime,
     clear_tzcache,
+    available_timezones,
     days,
     hours,
     milliseconds,
@@ -146,10 +150,14 @@ class TestInit:
         # creating a ZDT puts it in the tz cache
         d = ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc)
 
+        assert available_timezones() == zoneinfo_available_timezones()
+
         # We now set the TZ path to our test directory
         # (which contains some tzif files)
         reset_tzpath([TEST_DIR])
         try:
+            # Available timezones should now be different
+            assert available_timezones() != zoneinfo_available_timezones()
             # We still can find load the NYC timezone even though
             # it isn't in the new path. This is because it's cached!
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
@@ -164,6 +172,9 @@ class TestInit:
         finally:
             # We need to reset the tzpath to the original one
             reset_tzpath()
+
+        # Available timezones should now be the same again
+        assert available_timezones() == zoneinfo_available_timezones()
 
         # Our custom timezones are still in the cache
         assert ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Amsterdam.tzif")
@@ -252,10 +263,10 @@ class TestInit:
         )
 
 
-class TestTzPath:
-
-    def test_default(self):
-        pass
+def test_available_timezones():
+    # So long as we don't mess with the configuration, these should be identical
+    # There's a separate test for changing the tzpath and its effect on available_timezones()
+    assert available_timezones() == zoneinfo_available_timezones()
 
 
 def test_offset():

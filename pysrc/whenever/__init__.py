@@ -63,6 +63,8 @@ from contextlib import contextmanager as _contextmanager
 from dataclasses import dataclass as _dataclass
 from pathlib import Path as _Path
 from typing import Iterable as _Iterable, Iterator as _Iterator
+from importlib.resources import read_text as _read_resource
+from itertools import chain as _chain
 
 from ._pywhenever import __version__
 
@@ -199,9 +201,9 @@ def clear_tzcache(*, only_keys: _Iterable[str] | None = None) -> None:
 
     Warning
     -------
-    Calling this function may change the behavior existing :class:`~whenever.ZonedDateTime` instances
-    in surprising ways. Most significantly, the :meth:`~whenever._KnowsInstant.exact_eq()`
-    method will return ``False`` between instances created before and after clearing the cache.
+    Calling this function may change the behavior of existing ``ZonedDateTime``
+    instances in surprising ways. Most significantly, the
+    ``exact_eq()`` method will return ``False`` between instances created before and after clearing the cache.
 
     **Use this function only if you know that you need to.**
 
@@ -211,6 +213,65 @@ def clear_tzcache(*, only_keys: _Iterable[str] | None = None) -> None:
         _clear_tz_cache()
     else:
         _clear_tz_cache_by_keys(tuple(only_keys))
+
+
+def available_timezones() -> set[str]:
+    """Get a set of all available timezones.
+
+    Behaves similarly to :func:`zoneinfo.available_timezones`.
+    It should give the same result as zoneinfo, unless you configured
+    ``whenever`` to use a different tzpath using :func:`reset_tzpath`.
+
+    """
+    zones = set()
+    # tzdata includes a newline-separated list of timezones included
+    try:
+        zones.update(_read_resource("tzdata", "zones").splitlines())
+    except (ImportError, FileNotFoundError):
+        pass
+
+    # Walk the tzpath directories
+    for base in TZPATH:
+        zones.update(_find_all_tznames(_Path(base)))
+
+    zones.discard("posixrules")  # a special file that shouldn't be included
+    return zones
+
+
+# Recursively find all tzfiles in the tzpath directories.
+# Recursion is safe here since the file tree is trusted, and nesting doesn't
+# even approach the recursion limit.
+def _find_all_tznames(base: _Path) -> _Iterator[str]:
+    if not base.is_dir():
+        return
+    for entry in base.iterdir():
+        if entry.is_dir():
+            if entry.name in ("right", "posix"):
+                # These directories contain special files that shouldn't be included
+                continue
+            else:
+                for p in _find_nested_tzfiles(entry):
+                    yield p.relative_to(base).as_posix()
+        elif _is_tzifile(entry):
+            yield entry.name
+
+
+def _find_nested_tzfiles(path: _Path) -> _Iterator[_Path]:
+    assert path.is_dir()
+    for entry in path.iterdir():
+        if entry.is_dir():
+            yield from _find_nested_tzfiles(entry)
+        elif _is_tzifile(entry):
+            yield entry
+
+
+def _is_tzifile(p: _Path) -> bool:
+    """Check if the file is a tzifile."""
+    try:
+        with p.open("rb") as f:
+            return f.read(4) == b"TZif"
+    except OSError:
+        return False
 
 
 reset_tzpath()  # populate the tzpath once at startup
