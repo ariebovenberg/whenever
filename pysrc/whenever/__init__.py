@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 try:  # pragma: no cover
     from ._whenever import *
     from ._whenever import (
@@ -61,7 +63,7 @@ import os as _os
 import sysconfig as _sysconfig
 from contextlib import contextmanager as _contextmanager
 from dataclasses import dataclass as _dataclass
-from importlib.resources import read_text as _read_resource
+from importlib.resources import open_text as _open_resource
 from itertools import chain as _chain
 from pathlib import Path as _Path
 from typing import Iterable as _Iterable, Iterator as _Iterator
@@ -199,7 +201,7 @@ def clear_tzcache(*, only_keys: _Iterable[str] | None = None) -> None:
     """Clear the timezone cache. If ``only_keys`` is provided, only the cache for those
     keys will be cleared.
 
-    Warning
+    Caution
     -------
     Calling this function may change the behavior of existing ``ZonedDateTime``
     instances in surprising ways. Most significantly, the
@@ -216,21 +218,37 @@ def clear_tzcache(*, only_keys: _Iterable[str] | None = None) -> None:
 
 
 def available_timezones() -> set[str]:
-    """Get a set of all available timezones.
+    """Gather the set of all available timezones.
 
-    Behaves similarly to :func:`zoneinfo.available_timezones`.
-    It should give the same result as zoneinfo, unless you configured
-    ``whenever`` to use a different tzpath using :func:`reset_tzpath`.
+    Each call to this function will recalculate the available timezone names
+    depending on the currently configured ``TZPATH``, and the
+    presence of the ``tzdata`` package.
+
+    Warning
+    -------
+    This function may open a large number of files, since the first few bytes
+    of timezone files must be read to determine if they are valid.
+
+    Note
+    ----
+
+    This function behaves similarly to :func:`zoneinfo.available_timezones`,
+    which means it ignores the "special" zones (e.g. posixrules, right/posix, etc.)
+
+    It should give the same result as :func:`zoneinfo.available_timezones`,
+    unless ``whenever`` was configured to use a different tzpath
+    using :func:`reset_tzpath`.
 
     """
     zones = set()
-    # tzdata includes a newline-separated list of timezones included
+    # Get the zones from the tzdata package, if available
     try:
-        zones.update(_read_resource("tzdata", "zones").splitlines())
+        with _open_resource("tzdata", "zones") as f:
+            zones.update(map(str.strip, f))
     except (ImportError, FileNotFoundError):
         pass
 
-    # Walk the tzpath directories
+    # Get the zones from the tzpath directories
     for base in TZPATH:
         zones.update(_find_all_tznames(_Path(base)))
 

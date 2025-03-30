@@ -1810,8 +1810,8 @@ Convert to a ZonedDateTime that represents the same moment in time.
 
 Raises
 ------
-~zoneinfo.ZoneInfoNotFoundError
-    If the timezone ID is not found in the IANA database.
+~whenever.TimeZoneNotFoundError
+    If the timezone ID is not found in the system's timezone database.
 ";
 pub(crate) const KNOWSINSTANTANDLOCAL_INSTANT: &CStr = c"\
 Get the underlying instant in time

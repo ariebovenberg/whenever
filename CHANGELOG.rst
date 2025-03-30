@@ -7,8 +7,8 @@
 **New**
 
 Timezone operations are now a lot faster, due to a new implementation in Rust.
-The behavior is unchanged (i.e. the same as ``zoneinfo``), but can now be configured
-independently.
+The behavior is unchanged (i.e. the same as ``zoneinfo``), but can be configured
+independently if needed.
 
 **Fixed**
 
@@ -23,7 +23,7 @@ independently.
 - Passing invalid timezone names now raise a ``whenever.TimeZoneNotFoundError`` instead of
   ``zoneinfo.ZoneInfoNotFoundError``.
 - Whenever is no longer affected by ``ZoneInfo.clear_cache()``
-  or ``zoneinfo.reset_tzpath()``. Calling these functions is rare.
+  or ``zoneinfo.reset_tzpath()``, since it now uses its own cache.
 
 0.7.3 (2025-03-19)
 ------------------
