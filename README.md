@@ -18,8 +18,8 @@ There’s no way to be sure...
 
 *Whenever* helps you write **correct** and **type checked** datetime code,
 using **well-established concepts** from [modern libraries](#acknowledgements) in other languages.
-It's also **way faster** than other third-party libraries—and usually the standard library as well.
-If performance isn't your top priority, a **pure Python** version is available as well.
+It's also **way faster** than other third-party libraries, and usually the standard library as well.
+Don't buy the Rust hype?—don't worry: a **pure Python** version is available as well.
 
   <p align="center">
     <picture align="center">
@@ -123,7 +123,7 @@ and many issues remaining unaddressed.
 - 📆 Support for date arithmetic
 - ⏱️ Nanosecond precision
 - 🦀 Rust!—but with a [pure-Python option](https://whenever.readthedocs.io/en/latest/faq.html#how-can-i-use-the-pure-python-version)
-- 🚀 Support for the latest GIL-related improvements (experimental)
+- 🚀 Supports per-interpreter GIL
 
 ## Quickstart
 
@@ -205,10 +205,6 @@ Breaking changes will be meticulously explained in the changelog.
 Since the API is fully typed, your typechecker and/or IDE
 will help you adjust to any API changes.
 
-> ⚠️ **Note**: until 1.x, pickled objects may not be unpicklable across
-> versions. After 1.0, backwards compatibility of pickles will be maintained
-> as much as possible.
-
 ## License
 
 **Whenever** is licensed under the MIT License.
@@ -218,10 +214,12 @@ For more details, see the licenses included in the distribution.
 
 ## Acknowledgements
 
-This project is inspired by—and borrows most concepts from—the following projects. Check them out!
+Whenever's design is strongly inspired by the following projects:
 
-- [Temporal](https://tc39.es/proposal-temporal/docs/)
-- [Noda Time](https://nodatime.org/) and [Joda Time](https://www.joda.org/joda-time/)
+- [Noda Time](https://nodatime.org/) (which in turn takes after [Joda Time](https://www.joda.org/joda-time/))
+- [Temporal](https://tc39.es/proposal-temporal/docs/) which also takes inspiration from above
+
+Whenever also borrows a few nifty ideas from [Jiff](https://github.com/BurntSushi/jiff).
 
 The benchmark comparison graph is based on the one from the [Ruff](https://github.com/astral-sh/ruff) project.
 For timezone data, **Whenever** uses Python's own `zoneinfo` module.

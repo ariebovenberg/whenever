@@ -6,8 +6,12 @@ from datetime import (
     timedelta as py_timedelta,
     timezone as py_timezone,
 )
+from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import (
+    ZoneInfo,
+    available_timezones as zoneinfo_available_timezones,
+)
 
 import pytest
 from hypothesis import given
@@ -24,11 +28,15 @@ from whenever import (
     SystemDateTime,
     Time,
     TimeDelta,
+    TimeZoneNotFoundError,
     ZonedDateTime,
+    available_timezones,
+    clear_tzcache,
     days,
     hours,
     milliseconds,
     minutes,
+    reset_tzpath,
     weeks,
     years,
 )
@@ -42,6 +50,15 @@ from .common import (
     system_tz_ams,
     system_tz_nyc,
 )
+
+try:
+    import tzdata  # noqa
+except ImportError:
+    HAS_TZDATA = False
+else:
+    HAS_TZDATA = True
+
+TEST_DIR = Path(__file__).parent
 
 
 class TestInit:
@@ -88,7 +105,7 @@ class TestInit:
         )
 
     def test_invalid_zone(self):
-        with pytest.raises(TypeError):
+        with pytest.raises((TypeError, AttributeError)):
             ZonedDateTime(
                 2020,
                 8,
@@ -98,8 +115,79 @@ class TestInit:
                 tz=hours(34),  # type: ignore[arg-type]
             )
 
-        with pytest.raises(ZoneInfoNotFoundError):
-            ZonedDateTime(2020, 8, 15, 5, 12, tz="America/Nowhere")
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "America/Nowhere",  # non-existent
+            "/America/New_York",  # slash at the beginning
+            "America/New_York/",  # slash at the end
+            "America/New\0York",  # null byte
+            "America\\New_York",  # backslash
+            "../America/New_York/",  # relative path
+            "America/New_York/..",  # other dots
+            "America/../America/New_York",  # not normalized
+            "America/./America/New_York",  # not normalized
+            # often in a tz directory, but not a tzif file
+            "+VERSION",  # not a tzif file
+            "leapseconds",  # not a tzif file
+            "Europe",  # a directory
+            "",
+            ".",
+            "/",
+            " ",
+            "Foo" * 1000,  # too long
+        ],
+    )
+    def test_invalid_key(self, key: str):
+        with pytest.raises(TimeZoneNotFoundError):
+            ZonedDateTime(2020, 8, 15, 5, 12, tz=key)
+
+    # This test is run last, because it modifies the tz cache
+    # which can affect other tests (namely those using exact_eq)
+    @pytest.mark.order(-1)
+    def test_tz_cache_adjustments(self):
+        nyc = "America/New_York"
+        # creating a ZDT puts it in the tz cache
+        d = ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc)
+
+        assert available_timezones() == zoneinfo_available_timezones()
+
+        # We now set the TZ path to our test directory
+        # (which contains some tzif files)
+        reset_tzpath([TEST_DIR])
+        try:
+            # Available timezones should now be different
+            assert available_timezones() != zoneinfo_available_timezones()
+            # We still can find load the NYC timezone even though
+            # it isn't in the new path. This is because it's cached!
+            assert ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
+            # So let's clear the cache and check we can't find it anymore
+            clear_tzcache()
+            if not HAS_TZDATA:
+                with pytest.raises(TimeZoneNotFoundError):
+                    ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
+            # Ok, let's see if we can find our custom timezones
+            assert ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Amsterdam.tzif")
+            assert ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Honolulu.tzif")
+        finally:
+            # We need to reset the tzpath to the original one
+            reset_tzpath()
+
+        # Available timezones should now be the same again
+        assert available_timezones() == zoneinfo_available_timezones()
+
+        # Our custom timezones are still in the cache
+        assert ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Amsterdam.tzif")
+        # And clear the cache again
+        clear_tzcache()
+        # ...and now they aren't
+        with pytest.raises(TimeZoneNotFoundError):
+            ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Amsterdam.tzif")
+
+        # We can request proper timezones now again
+        assert ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc) == d
+        # exact_eq() is affected (as documented)
+        assert not ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc).exact_eq(d)
 
     def test_optionality(self):
         tz = "America/New_York"
@@ -173,6 +261,12 @@ class TestInit:
         assert ZonedDateTime(**kwargs, disambiguate="earlier").exact_eq(
             ZonedDateTime(2023, 3, 26, 1, 15, 30, tz="Europe/Amsterdam")
         )
+
+
+def test_available_timezones():
+    # So long as we don't mess with the configuration, these should be identical
+    # There's a separate test for changing the tzpath and its effect on available_timezones()
+    assert available_timezones() == zoneinfo_available_timezones()
 
 
 def test_offset():
@@ -584,179 +678,276 @@ def test_is_ambiguous(d, expect):
         assert d_system.is_ambiguous() == expect
 
 
-@pytest.mark.parametrize(
-    "d, expect",
-    [
-        # no special day
-        (
-            ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
-            hours(24),
-        ),
-        (ZonedDateTime(1832, 12, 15, 12, 1, 30, tz="UTC"), hours(24)),
-        # Longer day
-        (
-            ZonedDateTime(2023, 10, 29, 12, 8, 30, tz="Europe/Amsterdam"),
-            hours(25),
-        ),
-        (ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam"), hours(25)),
-        (
-            ZonedDateTime(2023, 10, 30, tz="Europe/Amsterdam").subtract(
-                nanoseconds=1
+class TestDayLength:
+    @pytest.mark.parametrize(
+        "d, expect",
+        [
+            # no special day
+            (
+                ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
+                hours(24),
             ),
-            hours(25),
-        ),
-        # Shorter day
-        (
-            ZonedDateTime(2023, 3, 26, 12, 8, 30, tz="Europe/Amsterdam"),
-            hours(23),
-        ),
-        (ZonedDateTime(2023, 3, 26, tz="Europe/Amsterdam"), hours(23)),
-        (
-            ZonedDateTime(2023, 3, 27, tz="Europe/Amsterdam").subtract(
-                nanoseconds=1
+            (ZonedDateTime(1832, 12, 15, 12, 1, 30, tz="UTC"), hours(24)),
+            # Longer day
+            (
+                ZonedDateTime(2023, 10, 29, 12, 8, 30, tz="Europe/Amsterdam"),
+                hours(25),
             ),
-            hours(23),
-        ),
-        # non-hour DST change
-        (ZonedDateTime(2024, 10, 6, 1, tz="Australia/Lord_Howe"), hours(23.5)),
-        (ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"), hours(24.5)),
-        # Non-regular transition
-        (
-            ZonedDateTime(1894, 6, 1, 1, tz="Europe/Zurich"),
-            TimeDelta(hours=24, minutes=-30, seconds=-14),
-        ),
-        # DST starts at midnight
-        (ZonedDateTime(2016, 2, 20, tz="America/Sao_Paulo"), hours(25)),
-        (ZonedDateTime(2016, 2, 21, tz="America/Sao_Paulo"), hours(24)),
-        (ZonedDateTime(2016, 10, 16, tz="America/Sao_Paulo"), hours(23)),
-        (ZonedDateTime(2016, 10, 17, tz="America/Sao_Paulo"), hours(24)),
-        # Samoa skipped a day
-        (ZonedDateTime(2011, 12, 31, 21, tz="Pacific/Apia"), hours(24)),
-        (ZonedDateTime(2011, 12, 29, 21, tz="Pacific/Apia"), hours(24)),
-        # A day that starts twice
-        (
-            ZonedDateTime(
-                2016,
-                2,
-                20,
-                23,
-                45,
-                disambiguate="later",
-                tz="America/Sao_Paulo",
+            (ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam"), hours(25)),
+            (
+                ZonedDateTime(2023, 10, 30, tz="Europe/Amsterdam").subtract(
+                    nanoseconds=1
+                ),
+                hours(25),
             ),
-            hours(25),
-        ),
-        (
-            ZonedDateTime(
-                2016,
-                2,
-                20,
-                23,
-                45,
-                disambiguate="earlier",
-                tz="America/Sao_Paulo",
+            # Shorter day
+            (
+                ZonedDateTime(2023, 3, 26, 12, 8, 30, tz="Europe/Amsterdam"),
+                hours(23),
             ),
-            hours(25),
-        ),
-    ],
-)
-def test_day_length(d, expect):
-    assert d.day_length() == expect
+            (ZonedDateTime(2023, 3, 26, tz="Europe/Amsterdam"), hours(23)),
+            (
+                ZonedDateTime(2023, 3, 27, tz="Europe/Amsterdam").subtract(
+                    nanoseconds=1
+                ),
+                hours(23),
+            ),
+            # non-hour DST change
+            (
+                ZonedDateTime(2024, 10, 6, 1, tz="Australia/Lord_Howe"),
+                hours(23.5),
+            ),
+            (
+                ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"),
+                hours(24.5),
+            ),
+            # Non-regular transition
+            (
+                ZonedDateTime(1894, 6, 1, 1, tz="Europe/Zurich"),
+                TimeDelta(hours=24, minutes=-30, seconds=-14),
+            ),
+            # DST starts at midnight
+            (ZonedDateTime(2016, 2, 20, tz="America/Sao_Paulo"), hours(25)),
+            (ZonedDateTime(2016, 2, 21, tz="America/Sao_Paulo"), hours(24)),
+            (ZonedDateTime(2016, 10, 16, tz="America/Sao_Paulo"), hours(23)),
+            (ZonedDateTime(2016, 10, 17, tz="America/Sao_Paulo"), hours(24)),
+            # Samoa skipped a day
+            (ZonedDateTime(2011, 12, 31, 21, tz="Pacific/Apia"), hours(24)),
+            (ZonedDateTime(2011, 12, 29, 21, tz="Pacific/Apia"), hours(24)),
+            # A day that starts twice
+            (
+                ZonedDateTime(
+                    2016,
+                    2,
+                    20,
+                    23,
+                    45,
+                    disambiguate="later",
+                    tz="America/Sao_Paulo",
+                ),
+                hours(25),
+            ),
+            (
+                ZonedDateTime(
+                    2016,
+                    2,
+                    20,
+                    23,
+                    45,
+                    disambiguate="earlier",
+                    tz="America/Sao_Paulo",
+                ),
+                hours(25),
+            ),
+        ],
+    )
+    def test_typical(self, d: ZonedDateTime, expect):
+        assert d.day_length() == expect
 
-    # test the same behavior on SystemDateTime
-    with system_tz(d.tz):
-        d_system = d.to_system_tz()
-        assert d_system.day_length() == expect
+        # test the same behavior on SystemDateTime
+        with system_tz(d.tz):
+            d_system = d.to_system_tz()
+            assert d_system.day_length() == expect
+
+    def test_extreme_bounds(self):
+        # Negative UTC offsets at lower bound are fine
+        d_min_neg = ZonedDateTime(1, 1, 1, 2, tz="America/New_York")
+        assert d_min_neg.day_length() == hours(24)
+        with system_tz("America/New_York"):
+            try:
+                assert SystemDateTime(1, 1, 1, 2).day_length() == hours(24)
+            except (ValueError, OverflowError):
+                pass  # a controlled exception is also fine--just no crash
+
+        # Positive UTC offsets at lower bound are NOT fine
+        d_min_pos = ZonedDateTime(1, 1, 1, 12, tz="Asia/Tokyo")
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            d_min_pos.day_length()
+        with system_tz("Asia/Tokyo"):
+            with pytest.raises((ValueError, OverflowError), match="range"):
+                SystemDateTime(1, 1, 1, 12).day_length()
+
+        # upper bound is NOT fine
+        d_max_pos = ZonedDateTime(9999, 12, 31, 4, tz="Asia/Tokyo")
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            d_max_pos.day_length()
+        with system_tz("Asia/Tokyo"):
+            with pytest.raises((ValueError, OverflowError), match="range"):
+                SystemDateTime(9999, 12, 31, 4).day_length()
+        d_max_neg = ZonedDateTime(9999, 12, 31, 12, tz="America/New_York")
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            d_max_neg.day_length()
+        with system_tz("America/New_York"):
+            with pytest.raises((ValueError, OverflowError), match="range"):
+                SystemDateTime(9999, 12, 31, 12).day_length()
 
 
-@pytest.mark.parametrize(
-    "d, expect",
-    [
-        # no special day
-        (
-            ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
-            ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam"),
-        ),
-        (
-            ZonedDateTime(1832, 12, 15, 12, 1, 30, tz="UTC"),
-            ZonedDateTime(1832, 12, 15, tz="UTC"),
-        ),
-        # DST at non-midnight
-        (
-            ZonedDateTime(2023, 10, 29, 12, 8, 30, tz="Europe/Amsterdam"),
-            ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam"),
-        ),
-        (
-            ZonedDateTime(2023, 3, 26, 12, 8, 30, tz="Europe/Amsterdam"),
-            ZonedDateTime(2023, 3, 26, tz="Europe/Amsterdam"),
-        ),
-        (
-            ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"),
-            ZonedDateTime(2024, 4, 7, tz="Australia/Lord_Howe"),
-        ),
-        # Non-regular transition
-        (
-            ZonedDateTime(1894, 6, 1, 1, tz="Europe/Zurich"),
-            ZonedDateTime(1894, 6, 1, 0, 30, 14, tz="Europe/Zurich"),
-        ),
-        # DST starts at midnight
-        (
-            ZonedDateTime(2016, 2, 20, 8, tz="America/Sao_Paulo"),
-            ZonedDateTime(2016, 2, 20, tz="America/Sao_Paulo"),
-        ),
-        (
-            ZonedDateTime(2016, 2, 21, 2, tz="America/Sao_Paulo"),
-            ZonedDateTime(2016, 2, 21, tz="America/Sao_Paulo"),
-        ),
-        (
-            ZonedDateTime(2016, 10, 16, 15, tz="America/Sao_Paulo"),
-            ZonedDateTime(2016, 10, 16, 1, tz="America/Sao_Paulo"),
-        ),
-        (
-            ZonedDateTime(2016, 10, 17, 19, tz="America/Sao_Paulo"),
-            ZonedDateTime(2016, 10, 17, tz="America/Sao_Paulo"),
-        ),
-        # Samoa skipped a day
-        (
-            ZonedDateTime(2011, 12, 31, 21, tz="Pacific/Apia"),
-            ZonedDateTime(2011, 12, 31, tz="Pacific/Apia"),
-        ),
-        (
-            ZonedDateTime(2011, 12, 29, 21, tz="Pacific/Apia"),
-            ZonedDateTime(2011, 12, 29, tz="Pacific/Apia"),
-        ),
-        # Another edge case
-        (
-            ZonedDateTime(2010, 11, 7, 23, tz="America/St_Johns"),
-            ZonedDateTime(
-                2010, 11, 7, tz="America/St_Johns", disambiguate="earlier"
-            ),
-        ),
-        # a day that starts twice
-        (
-            ZonedDateTime(
-                2016,
-                2,
-                20,
-                23,
-                45,
-                disambiguate="later",
-                tz="America/Sao_Paulo",
-            ),
-            ZonedDateTime(
-                2016, 2, 20, tz="America/Sao_Paulo", disambiguate="raise"
-            ),
-        ),
-    ],
-)
-def test_start_of_day(d, expect):
-    assert d.start_of_day() == expect
+class TestStartOfDay:
 
-    # test the same behavior on SystemDateTime
-    with system_tz(d.tz):
-        d_system = d.to_system_tz()
-        expect_system = expect.to_system_tz()
-        assert d_system.start_of_day() == expect_system
+    @pytest.mark.parametrize(
+        "d, expect",
+        [
+            # no special day
+            (
+                ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
+                ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam"),
+            ),
+            (
+                ZonedDateTime(1832, 12, 15, 12, 1, 30, tz="UTC"),
+                ZonedDateTime(1832, 12, 15, tz="UTC"),
+            ),
+            # DST at non-midnight
+            (
+                ZonedDateTime(2023, 10, 29, 12, 8, 30, tz="Europe/Amsterdam"),
+                ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam"),
+            ),
+            (
+                ZonedDateTime(2023, 3, 26, 12, 8, 30, tz="Europe/Amsterdam"),
+                ZonedDateTime(2023, 3, 26, tz="Europe/Amsterdam"),
+            ),
+            (
+                ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"),
+                ZonedDateTime(2024, 4, 7, tz="Australia/Lord_Howe"),
+            ),
+            # Non-regular transition
+            (
+                ZonedDateTime(1894, 6, 1, 1, tz="Europe/Zurich"),
+                ZonedDateTime(1894, 6, 1, 0, 30, 14, tz="Europe/Zurich"),
+            ),
+            # DST starts at midnight
+            (
+                ZonedDateTime(2016, 2, 20, 8, tz="America/Sao_Paulo"),
+                ZonedDateTime(2016, 2, 20, tz="America/Sao_Paulo"),
+            ),
+            (
+                ZonedDateTime(2016, 2, 21, 2, tz="America/Sao_Paulo"),
+                ZonedDateTime(2016, 2, 21, tz="America/Sao_Paulo"),
+            ),
+            (
+                ZonedDateTime(2016, 10, 16, 15, tz="America/Sao_Paulo"),
+                ZonedDateTime(2016, 10, 16, 1, tz="America/Sao_Paulo"),
+            ),
+            (
+                ZonedDateTime(2016, 10, 17, 19, tz="America/Sao_Paulo"),
+                ZonedDateTime(2016, 10, 17, tz="America/Sao_Paulo"),
+            ),
+            # Samoa skipped a day
+            (
+                ZonedDateTime(2011, 12, 31, 21, tz="Pacific/Apia"),
+                ZonedDateTime(2011, 12, 31, tz="Pacific/Apia"),
+            ),
+            (
+                ZonedDateTime(2011, 12, 29, 21, tz="Pacific/Apia"),
+                ZonedDateTime(2011, 12, 29, tz="Pacific/Apia"),
+            ),
+            # Another edge case
+            (
+                ZonedDateTime(2010, 11, 7, 23, tz="America/St_Johns"),
+                ZonedDateTime(
+                    2010, 11, 7, tz="America/St_Johns", disambiguate="earlier"
+                ),
+            ),
+            # a day that starts twice
+            (
+                ZonedDateTime(
+                    2016,
+                    2,
+                    20,
+                    23,
+                    45,
+                    disambiguate="later",
+                    tz="America/Sao_Paulo",
+                ),
+                ZonedDateTime(
+                    2016, 2, 20, tz="America/Sao_Paulo", disambiguate="raise"
+                ),
+            ),
+        ],
+    )
+    def test_examples(self, d: ZonedDateTime, expect):
+        assert d.start_of_day().exact_eq(expect)
+
+        # test the same behavior on SystemDateTime
+        with system_tz(d.tz):
+            d_system = d.to_system_tz()
+            expect_system = expect.to_system_tz()
+            assert d_system.start_of_day().exact_eq(expect_system)
+
+    def test_extreme_boundaries(self):
+        # Negative UTC offsets at lower bound are fine
+        assert (
+            ZonedDateTime(1, 1, 1, 2, tz="America/New_York")
+            .start_of_day()
+            .exact_eq(ZonedDateTime(1, 1, 1, tz="America/New_York"))
+        )
+        with system_tz("America/New_York"):
+            try:
+                assert (
+                    SystemDateTime(1, 1, 1, 2)
+                    .start_of_day()
+                    .exact_eq(SystemDateTime(1, 1, 1))
+                )
+            except (ValueError, OverflowError):
+                pass  # a controlled exception is also fine--just no crash
+
+        # Positive UTC offsets at lower bound are NOT fine
+        d_max_pos = ZonedDateTime(1, 1, 1, 12, tz="Asia/Tokyo")
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            d_max_pos.start_of_day()
+        with system_tz("Asia/Tokyo"):
+            with pytest.raises((ValueError, OverflowError), match="range"):
+                SystemDateTime(1, 1, 1, 12).start_of_day()
+
+        # Upper bound is always fine
+        assert (
+            ZonedDateTime(9999, 12, 31, 23, tz="Asia/Tokyo")
+            .start_of_day()
+            .exact_eq(ZonedDateTime(9999, 12, 31, tz="Asia/Tokyo"))
+        )
+        with system_tz("Asia/Tokyo"):
+            try:
+                assert (
+                    SystemDateTime(9999, 12, 31, 23)
+                    .start_of_day()
+                    .exact_eq(SystemDateTime(9999, 12, 31))
+                )
+            except (ValueError, OverflowError):
+                pass  # a controlled exception is also fine--just no crash
+
+        assert (
+            ZonedDateTime(9999, 12, 31, 12, tz="America/New_York")
+            .start_of_day()
+            .exact_eq(ZonedDateTime(9999, 12, 31, tz="America/New_York"))
+        )
+        with system_tz("America/New_York"):
+            try:
+                assert (
+                    SystemDateTime(9999, 12, 31, 12)
+                    .start_of_day()
+                    .exact_eq(SystemDateTime(9999, 12, 31))
+                )
+            except (ValueError, OverflowError):
+                pass  # a controlled exception is also fine--just no crash
 
 
 def test_instant():
@@ -1008,20 +1199,20 @@ class TestParseCommonIso:
             ZonedDateTime.parse_common_iso(s)
 
     def test_invalid_tz(self):
-        with pytest.raises(ZoneInfoNotFoundError):
+        with pytest.raises(TimeZoneNotFoundError):
             ZonedDateTime.parse_common_iso(
                 "2020-08-15T12:08:30+02:00[Europe/Nowhere]"
             )
 
-        with pytest.raises(ZoneInfoNotFoundError):
+        with pytest.raises(TimeZoneNotFoundError):
             ZonedDateTime.parse_common_iso("2020-08-15T12:08:30Z[X]")
 
-        with pytest.raises((ZoneInfoNotFoundError, ValueError)):
+        with pytest.raises((TimeZoneNotFoundError, ValueError)):
             ZonedDateTime.parse_common_iso(
                 f"2023-10-29T02:15:30+02:00[{'X'*9999}]"
             )
 
-        with pytest.raises((ZoneInfoNotFoundError, ValueError)):
+        with pytest.raises((TimeZoneNotFoundError, ValueError)):
             ZonedDateTime.parse_common_iso(
                 f"2023-10-29T02:15:30+02:00[{chr(1600)}]",
             )
@@ -1170,13 +1361,13 @@ class TestFromTimestamp:
         with pytest.raises((OSError, OverflowError, ValueError)):
             method(-1_000_000_000_000_000_000 * factor, tz="America/Nuuk")
 
-        with pytest.raises(TypeError):
+        with pytest.raises((TypeError, AttributeError)):
             method(0, tz=3)
 
         with pytest.raises(TypeError):
             method("0", tz="America/New_York")
 
-        with pytest.raises(ZoneInfoNotFoundError):
+        with pytest.raises(TimeZoneNotFoundError):
             method(0, tz="America/Nowhere")
 
         with pytest.raises(TypeError, match="got 3|foo"):
@@ -1490,6 +1681,9 @@ def test_py_datetime():
     assert d2.py_datetime().fold == 0
     assert d2.replace(disambiguate="later").py_datetime().fold == 1
 
+    # ensure the ZoneInfo isn't file-based, and can this be pickled
+    pickle.dumps(d2)
+
 
 def test_from_py_datetime():
     d = py_datetime(
@@ -1622,6 +1816,11 @@ class TestExactEquality:
         b = a.to_tz("America/New_York")
         assert a == b
         assert not a.exact_eq(b)
+
+        # Different zone but same offset
+        c = a.to_tz("Europe/Paris")
+        assert a == c
+        assert not a.exact_eq(c)
 
     def test_same_timezone_ambiguity(self):
         a = ZonedDateTime(
@@ -1769,7 +1968,7 @@ class TestReplace:
         with pytest.raises(TypeError, match="foo"):
             d.replace(foo="bar", disambiguate="compatible")  # type: ignore[call-arg]
 
-        with pytest.raises(ZoneInfoNotFoundError, match="Nowhere"):
+        with pytest.raises(TimeZoneNotFoundError, match="Nowhere"):
             d.replace(tz="Nowhere", disambiguate="compatible")
 
         with pytest.raises(ValueError, match="date|day"):
@@ -2526,7 +2725,7 @@ class TestRound:
             2023, 7, 14, 1, 2, 8, tz="Europe/Paris"
         )
 
-    # TODO: test this robustly on all classes
+    # TODO-LAST: test this robustly on all classes
     def test_default_increment(self):
         d = ZonedDateTime(
             2023, 7, 14, 1, 2, 3, nanosecond=800_000, tz="Europe/Paris"
@@ -2545,6 +2744,7 @@ class TestRound:
     @pytest.mark.parametrize(
         "unit, increment",
         [
+            # TODO-LAST zero, negative, and floats
             ("minute", 8),
             ("second", 14),
             ("millisecond", 15),
@@ -2572,6 +2772,9 @@ class TestRound:
 
         with pytest.raises((ValueError, OverflowError), match="range"):
             d.round("hour", increment=4)
+
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            d.round("day")
 
 
 def test_pickle():
@@ -2612,3 +2815,7 @@ def test_cannot_subclass():
 
         class Subclass(ZonedDateTime):  # type: ignore[misc]
             pass
+
+
+def test_timezone_notfound_is_keyerror():
+    assert issubclass(TimeZoneNotFoundError, KeyError)

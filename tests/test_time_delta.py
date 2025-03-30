@@ -523,7 +523,8 @@ class TestFloorDiv:
         assert TimeDelta.MIN // TimeDelta.MAX == -1
         # result larger than i64
         assert (
-            TimeDelta.MAX // TimeDelta(nanoseconds=1) == 316192377600000000000
+            TimeDelta.MAX // TimeDelta(nanoseconds=1)
+            == 316192377600_000_000_000
         )
 
     def test_divide_by_zero(self):
@@ -595,6 +596,7 @@ def test_negate():
     assert TimeDelta(
         hours=-1, minutes=2, seconds=-3, microseconds=4
     ) == -TimeDelta(hours=1, minutes=-2, seconds=3, microseconds=-4)
+    assert -TimeDelta.MAX == TimeDelta.MIN
 
 
 @pytest.mark.parametrize(
@@ -787,9 +789,10 @@ class TestRound:
         with pytest.raises(ValueError, match="day.*24 hours"):
             t.round("day")  # type: ignore[arg-type]
 
-    def test_out_of_range(self):
-        t = TimeDelta.MAX - TimeDelta(nanoseconds=1)
-        assert t.round(mode="floor") == TimeDelta.MAX - TimeDelta(seconds=1)
+    def test_extremes(self):
+        t = TimeDelta.MAX
+        assert t.round(mode="floor") == TimeDelta.MAX
+
         with pytest.raises(ValueError, match="range"):
             t.round(unit="hour", increment=10)
 

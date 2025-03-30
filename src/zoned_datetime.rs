@@ -1,31 +1,30 @@
 use core::ffi::{c_int, c_long, c_void, CStr};
-use core::{mem, ptr::null_mut as NULL};
+use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
-use std::fmt::{self, Display, Formatter};
 
-use crate::common::*;
-use crate::datetime_delta::set_units_from_kwargs;
-use crate::docstrings as doc;
-use crate::local_datetime::set_components_from_kwargs;
 use crate::{
-    date::{Date, MAX as MAX_DATE},
+    common::{math::*, *},
+    date::Date,
     date_delta::DateDelta,
-    datetime_delta::DateTimeDelta,
-    instant::{Instant, MAX_INSTANT, MIN_INSTANT},
-    local_datetime::DateTime,
+    datetime_delta::{set_units_from_kwargs, DateTimeDelta},
+    docstrings as doc,
+    instant::Instant,
+    local_datetime::{set_components_from_kwargs, DateTime},
+    math::SubSecNanos,
     offset_datetime::{self, OffsetDateTime},
     round,
     time::{Time, MIDNIGHT},
-    time_delta::{self, TimeDelta},
+    time_delta::TimeDelta,
+    tz::cache::TzRef,
     State,
 };
 
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub(crate) struct ZonedDateTime {
     date: Date,
     time: Time,
-    offset_secs: i32,
-    zoneinfo: *mut PyObject,
+    offset: Offset,
+    tz: TzRef,
 }
 
 pub(crate) const SINGLETONS: &[(&CStr, ZonedDateTime); 0] = &[];
@@ -34,131 +33,123 @@ impl ZonedDateTime {
     pub(crate) unsafe fn new(
         date: Date,
         time: Time,
-        offset_secs: i32,
-        zoneinfo: *mut PyObject,
+        offset: Offset,
+        tz: TzRef,
     ) -> Option<ZonedDateTime> {
-        let ordinal_secs = i64::from(date.ord()) * i64::from(S_PER_DAY)
-            + i64::from(time.total_seconds() - offset_secs);
-        (MIN_INSTANT..=MAX_INSTANT)
-            .contains(&ordinal_secs)
-            .then_some(Self {
-                date,
-                time,
-                offset_secs,
-                zoneinfo,
-            })
+        // Check: the instant represented by the date and time is within range
+        date.epoch_at(time).offset(-offset)?;
+        Some(Self {
+            date,
+            time,
+            offset,
+            tz,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) unsafe fn resolve(
-        py_api: &PyDateTime_CAPI,
         date: Date,
         time: Time,
-        zoneinfo: *mut PyObject,
+        tz: TzRef,
         dis: Option<Disambiguate>,
-        preferred_offset: i32,
+        preferred_offset: Offset,
         exc_repeated: *mut PyObject,
         exc_skipped: *mut PyObject,
     ) -> PyResult<Self> {
         match dis {
-            Some(d) => Self::resolve_using_disambiguate(
-                py_api,
-                date,
-                time,
-                zoneinfo,
-                d,
-                exc_repeated,
-                exc_skipped,
-            ),
-            None => Self::resolve_using_offset(py_api, date, time, zoneinfo, preferred_offset),
+            Some(d) => {
+                Self::resolve_using_disambiguate(date, time, tz, d, exc_repeated, exc_skipped)
+            }
+            None => Self::resolve_using_offset(date, time, tz, preferred_offset),
         }
     }
 
     pub(crate) unsafe fn resolve_using_disambiguate(
-        py_api: &PyDateTime_CAPI,
         date: Date,
         time: Time,
-        zoneinfo: *mut PyObject,
+        tz: TzRef,
         dis: Disambiguate,
         exc_repeated: *mut PyObject,
         exc_skipped: *mut PyObject,
     ) -> PyResult<Self> {
-        use Disambiguate::*;
-        use OffsetResult::*;
-        match OffsetResult::for_tz(py_api, date, time, zoneinfo)? {
-            Unambiguous(offset_secs) => ZonedDateTime::new(date, time, offset_secs, zoneinfo),
-            Fold(offset0, offset1) => {
-                let offset_secs = match dis {
-                    Compatible | Earlier => offset0,
-                    Later => offset1,
-                    Raise => Err(py_err!(
+        let (dt, offset) = match tz.ambiguity_for_local(date.epoch_at(time)) {
+            Ambiguity::Unambiguous(offset) => (DateTime { date, time }, offset),
+            Ambiguity::Fold(earlier, later) => (
+                DateTime { date, time },
+                match dis {
+                    Disambiguate::Earlier => earlier,
+                    Disambiguate::Later => later,
+                    Disambiguate::Compatible => earlier,
+                    Disambiguate::Raise => raise(
                         exc_repeated,
-                        "{} {} is repeated in timezone '{}'",
-                        date,
-                        time,
-                        zoneinfo_key(zoneinfo)
-                    ))?,
-                };
-                ZonedDateTime::new(date, time, offset_secs, zoneinfo)
-            }
-            Gap(offset0, offset1) => {
-                let (offset_secs, shift) = match dis {
-                    Compatible | Later => (offset1, offset1 - offset0),
-                    Earlier => (offset0, offset0 - offset1),
-                    Raise => Err(py_err!(
+                        format!("{} {} is repeated in timezone '{}'", date, time, tz.key),
+                    )?,
+                },
+            ),
+            Ambiguity::Gap(later, earlier) => {
+                let shift = later.sub(earlier);
+                let dt = DateTime { date, time };
+                let (shift, offset) = match dis {
+                    Disambiguate::Earlier => (-shift, earlier),
+                    Disambiguate::Later => (shift, later),
+                    Disambiguate::Compatible => (shift, later),
+                    Disambiguate::Raise => raise(
                         exc_skipped,
-                        "{} {} is skipped in timezone '{}'",
-                        date,
-                        time,
-                        zoneinfo_key(zoneinfo)
-                    ))?,
+                        format!("{} {} is skipped in timezone '{}'", date, time, tz.key),
+                    )?,
                 };
-                DateTime { date, time }
-                    .small_shift_unchecked(shift)
-                    .with_tz(offset_secs, zoneinfo)
+                (
+                    dt.change_offset(shift)
+                        .ok_or_value_err("Resulting date is out of range")?,
+                    offset,
+                )
             }
-        }
-        .ok_or_value_err("Resulting datetime is out of range")
+        };
+        dt.assume_tz(offset, tz)
+            .ok_or_value_err("Resulting datetime is out of range")
     }
 
     /// Resolve a local time in a timezone, trying to reuse the given offset
     /// if it is valid. Otherwise, the "compatible" disambiguation is used.
     unsafe fn resolve_using_offset(
-        py_api: &PyDateTime_CAPI,
         date: Date,
         time: Time,
-        zoneinfo: *mut PyObject,
-        offset: i32,
+        tz: TzRef,
+        offset: Offset,
     ) -> PyResult<Self> {
-        use OffsetResult::*;
-        match OffsetResult::for_tz(py_api, date, time, zoneinfo)? {
-            Unambiguous(offset_secs) => ZonedDateTime::new(date, time, offset_secs, zoneinfo),
+        use Ambiguity::*;
+        match tz.ambiguity_for_local(date.epoch_at(time)) {
+            Unambiguous(offset_secs) => ZonedDateTime::new(date, time, offset_secs, tz),
             Fold(offset0, offset1) => ZonedDateTime::new(
                 date,
                 time,
                 if offset == offset1 { offset1 } else { offset0 },
-                zoneinfo,
+                tz,
             ),
             Gap(offset0, offset1) => {
                 let (offset_secs, shift) = if offset == offset0 {
-                    (offset0, offset0 - offset1)
+                    (offset0, offset0.sub(offset1))
                 } else {
-                    (offset1, offset1 - offset0)
+                    (offset1, offset1.sub(offset0))
                 };
                 DateTime { date, time }
-                    .small_shift_unchecked(shift)
-                    .with_tz(offset_secs, zoneinfo)
+                    .change_offset(shift)
+                    .ok_or_value_err("Resulting date is out of range")?
+                    .assume_tz(offset_secs, tz)
             }
         }
         .ok_or_value_err("Resulting datetime is out of range")
     }
 
-    pub(crate) const fn instant(self) -> Instant {
-        Instant::from_datetime(self.date, self.time).shift_secs_unchecked(-self.offset_secs as i64)
+    pub(crate) fn instant(self) -> Instant {
+        Instant::from_datetime(self.date, self.time)
+            .offset(-self.offset)
+            // Safe: we know the instant of a ZonedDateTime is always valid
+            .unwrap()
     }
 
     pub(crate) const fn to_offset(self) -> OffsetDateTime {
-        OffsetDateTime::new_unchecked(self.date, self.time, self.offset_secs)
+        OffsetDateTime::new_unchecked(self.date, self.time, self.offset)
     }
 
     pub(crate) const fn without_offset(self) -> DateTime {
@@ -171,29 +162,27 @@ impl ZonedDateTime {
     #[allow(clippy::too_many_arguments)]
     pub(crate) unsafe fn shift(
         self,
-        py_api: &PyDateTime_CAPI,
-        months: i32,
-        days: i32,
+        months: DeltaMonths,
+        days: DeltaDays,
         delta: TimeDelta,
         dis: Option<Disambiguate>,
         exc_repeated: *mut PyObject,
         exc_skipped: *mut PyObject,
     ) -> PyResult<Self> {
-        let shifted_by_date = if months != 0 || days != 0 {
+        let shifted_by_date = if !months.is_zero() || !days.is_zero() {
             let ZonedDateTime {
                 date,
                 time,
-                zoneinfo,
-                offset_secs,
+                tz,
+                offset,
             } = self;
             Self::resolve(
-                py_api,
                 date.shift(months, days)
                     .ok_or_value_err("Resulting date is out of range")?,
                 time,
-                zoneinfo,
+                tz,
                 dis,
-                offset_secs,
+                offset,
                 exc_repeated,
                 exc_skipped,
             )?
@@ -204,176 +193,129 @@ impl ZonedDateTime {
         shifted_by_date
             .instant()
             .shift(delta)
-            .ok_or_value_err("Result is out of range")?
-            .to_tz(py_api, self.zoneinfo)
-    }
-}
-
-impl DateTime {
-    pub(crate) unsafe fn with_tz(
-        self,
-        offset_secs: i32,
-        zoneinfo: *mut PyObject,
-    ) -> Option<ZonedDateTime> {
-        ZonedDateTime::new(self.date, self.time, offset_secs, zoneinfo)
-    }
-}
-
-impl Instant {
-    pub(crate) unsafe fn to_tz(
-        self,
-        &PyDateTime_CAPI {
-            DateTime_FromTimestamp,
-            DateTimeType,
-            ..
-        }: &PyDateTime_CAPI,
-        zoneinfo: *mut PyObject,
-    ) -> PyResult<ZonedDateTime> {
-        // FUTURE: compare performance with alternative methods
-        let dt = DateTime_FromTimestamp(
-            DateTimeType,
-            steal!((steal!(self.timestamp().to_py()?), zoneinfo).to_py()?),
-            NULL(),
-        )
-        .as_result()?;
-        defer_decref!(dt);
-
-        // Don't need to use the checked constructor since we know
-        // the UTC datetime is valid.
-        Ok(ZonedDateTime {
-            date: Date {
-                year: PyDateTime_GET_YEAR(dt) as u16,
-                month: PyDateTime_GET_MONTH(dt) as u8,
-                day: PyDateTime_GET_DAY(dt) as u8,
-            },
-            time: Time {
-                hour: PyDateTime_DATE_GET_HOUR(dt) as u8,
-                minute: PyDateTime_DATE_GET_MINUTE(dt) as u8,
-                second: PyDateTime_DATE_GET_SECOND(dt) as u8,
-                nanos: self.subsec_nanos(),
-            },
-            offset_secs: offset_from_py_dt(dt)?,
-            zoneinfo,
-        })
+            .ok_or_value_err("Instant is out of range")?
+            .to_tz(self.tz)
+            .ok_or_value_err("Resulting date is out of range")
     }
 }
 
 impl PyWrapped for ZonedDateTime {
     #[inline]
     unsafe fn to_obj(self, type_: *mut PyTypeObject) -> PyReturn {
-        generic_alloc(type_, self).map(|o| {
-            Py_INCREF(self.zoneinfo);
-            o
-        })
+        let obj = generic_alloc(type_, self)?;
+        // The Python object maintains a strong reference to the timezone.
+        // It's decreffed again when the object is deallocated.
+        self.tz.incref();
+        Ok(obj)
     }
 }
 
-impl Display for ZonedDateTime {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let &ZonedDateTime {
-            date,
-            time,
-            offset_secs,
-            zoneinfo,
-        } = self;
-        write!(
-            f,
-            "{}T{}{}[{}]",
-            date,
-            time,
-            offset_fmt(offset_secs),
-            unsafe { zoneinfo_key(zoneinfo) }
+impl DateTime {
+    pub(crate) unsafe fn assume_tz(self, offset: Offset, tz: TzRef) -> Option<ZonedDateTime> {
+        ZonedDateTime::new(self.date, self.time, offset, tz)
+    }
+
+    pub(crate) unsafe fn assume_tz_unchecked(self, offset: Offset, tz: TzRef) -> ZonedDateTime {
+        ZonedDateTime {
+            date: self.date,
+            time: self.time,
+            offset,
+            tz,
+        }
+    }
+}
+
+impl Instant {
+    /// Convert an instant to a zoned datetime in the given timezone.
+    /// Returns None if the resulting date would be out of range.
+    pub(crate) unsafe fn to_tz(self, tz: TzRef) -> Option<ZonedDateTime> {
+        let epoch = self.epoch;
+        let offset = tz.offset_for_instant(epoch);
+        Some(
+            epoch
+                .offset(offset)?
+                .datetime(self.subsec)
+                // Safe: We've already checked for both out-of-range date and time.
+                .assume_tz_unchecked(offset, tz),
         )
     }
 }
 
-unsafe fn zoneinfo_key(zoneinfo: *mut PyObject) -> String {
-    let key_obj = PyObject_GetAttrString(zoneinfo, c"key".as_ptr());
-    defer_decref!(key_obj);
-    match key_obj.to_str() {
-        Ok(Some(s)) => s,
-        _ => "???",
+impl std::fmt::Display for ZonedDateTime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let &ZonedDateTime {
+            date,
+            time,
+            offset,
+            tz,
+        } = self;
+        write!(f, "{}T{}{}[{}]", date, time, offset, tz.key)
     }
-    .to_string()
 }
 
 unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
-    let &State {
-        zoneinfo_type,
-        py_api,
+    let &mut State {
         exc_repeated,
         exc_skipped,
+        exc_tz_notfound,
         str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+        ref mut tz_cache,
         ..
-    } = State::for_type(cls);
+    } = State::for_type_mut(cls);
     let mut year: c_long = 0;
     let mut month: c_long = 0;
     let mut day: c_long = 0;
     let mut hour: c_long = 0;
     let mut minute: c_long = 0;
     let mut second: c_long = 0;
-    let mut nanos: c_long = 0;
+    let mut nanosecond: c_long = 0;
     let mut tz: *mut PyObject = NULL();
-    let mut disambiguate: *mut PyObject = str_compatible;
+    let mut disambiguate: *mut PyObject = NULL();
 
-    // OPTIMIZE: parse them manually, which is more efficient
-    if PyArg_ParseTupleAndKeywords(
+    parse_args_kwargs!(
         args,
         kwargs,
-        c"lll|lll$lUU:ZonedDateTime".as_ptr(),
-        arg_vec(&[
-            c"year",
-            c"month",
-            c"day",
-            c"hour",
-            c"minute",
-            c"second",
-            c"nanosecond",
-            c"tz",
-            c"disambiguate",
-        ])
-        .as_mut_ptr(),
-        &mut year,
-        &mut month,
-        &mut day,
-        &mut hour,
-        &mut minute,
-        &mut second,
-        &mut nanos,
-        &mut tz,
-        &mut disambiguate,
-    ) == 0
-    {
-        return Err(py_err!());
-    }
+        c"lll|lll$lOO:ZonedDateTime",
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        nanosecond,
+        tz,
+        disambiguate
+    );
 
     if tz.is_null() {
-        return Err(type_err!("tz argument is required"));
+        return raise_type_err("tz argument is required");
     }
-    let zoneinfo = call1(zoneinfo_type, tz)?;
-    defer_decref!(zoneinfo);
-
+    let tzref = tz_cache.obj_get(tz, exc_tz_notfound)?;
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
-    let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?;
-    let dis = Disambiguate::from_py(disambiguate)?;
-    ZonedDateTime::resolve_using_disambiguate(
-        py_api,
-        date,
-        time,
-        zoneinfo,
-        dis,
-        exc_repeated,
-        exc_skipped,
-    )?
-    .to_obj(cls)
+    let time =
+        Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?;
+    let dis = if disambiguate.is_null() {
+        Disambiguate::Compatible
+    } else {
+        Disambiguate::from_py(
+            disambiguate,
+            str_compatible,
+            str_raise,
+            str_earlier,
+            str_later,
+        )?
+    };
+    ZonedDateTime::resolve_using_disambiguate(date, time, tzref, dis, exc_repeated, exc_skipped)?
+        .to_obj(cls)
 }
 
 unsafe extern "C" fn dealloc(slf: *mut PyObject) {
-    // We assume that no circular references are possible between
-    // ZonedDateTime and ZoneInfo objects:
-    // They are both immutable types and guaranteed not to be subclasses.
-    // FUTURE: get 100% certainty about this.
-    Py_DECREF(ZonedDateTime::extract(slf).zoneinfo);
+    ZonedDateTime::extract(slf)
+        .tz
+        .decref(|| &mut State::for_obj_mut(slf).tz_cache);
     generic_dealloc(slf)
 }
 
@@ -381,15 +323,12 @@ unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
     let ZonedDateTime {
         date,
         time,
-        offset_secs,
-        zoneinfo,
+        offset: offset_secs,
+        tz,
     } = ZonedDateTime::extract(slf);
     format!(
         "ZonedDateTime({} {}{}[{}])",
-        date,
-        time,
-        offset_fmt(offset_secs),
-        zoneinfo_key(zoneinfo)
+        date, time, offset_secs, tz.key
     )
     .to_py()
 }
@@ -437,15 +376,14 @@ unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bo
         time_delta_type,
         date_delta_type,
         datetime_delta_type,
-        py_api,
         exc_repeated,
         exc_skipped,
         ..
     } = State::for_type(type_a);
 
     let zdt = ZonedDateTime::extract(obj_a);
-    let mut months = 0;
-    let mut days = 0;
+    let mut months = DeltaMonths::ZERO;
+    let mut days = DeltaDays::ZERO;
     let mut tdelta = TimeDelta::ZERO;
 
     if type_b == time_delta_type {
@@ -468,16 +406,8 @@ unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bo
         tdelta = -tdelta;
     };
 
-    zdt.shift(
-        py_api,
-        months,
-        days,
-        tdelta,
-        None,
-        exc_repeated,
-        exc_skipped,
-    )?
-    .to_obj(type_a)
+    zdt.shift(months, days, tdelta, None, exc_repeated, exc_skipped)?
+        .to_obj(type_a)
 }
 
 unsafe fn __add__(slf: *mut PyObject, arg: *mut PyObject) -> PyReturn {
@@ -525,6 +455,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
         .to_obj(State::for_type(type_a).time_delta_type)
 }
 
+#[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_tp_new, __new__),
     slotmethod!(Py_tp_str, __str__, 1),
@@ -562,63 +493,63 @@ unsafe fn exact_eq(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     if Py_TYPE(obj_a) == Py_TYPE(obj_b) {
         (ZonedDateTime::extract(obj_a) == ZonedDateTime::extract(obj_b)).to_py()
     } else {
-        Err(type_err!(
+        raise_type_err(format!(
             "Argument must be ZonedDateTime, got {}",
             obj_b.repr()
         ))
     }
 }
 
-unsafe fn to_tz(slf: &mut PyObject, tz: &mut PyObject) -> PyReturn {
+unsafe fn to_tz(slf: &mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
     let cls = Py_TYPE(slf);
-    let &State {
-        zoneinfo_type,
-        py_api,
+    let &mut State {
+        exc_tz_notfound,
+        ref mut tz_cache,
         ..
-    } = State::for_type(cls);
-    let new_zoneinfo = call1(zoneinfo_type, tz)?;
-    defer_decref!(new_zoneinfo);
+    } = State::for_type_mut(cls);
+    let tz_new = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
     ZonedDateTime::extract(slf)
         .instant()
-        .to_tz(py_api, new_zoneinfo)?
+        .to_tz(tz_new)
+        .ok_or_value_err("Resulting datetime is out of range")?
         .to_obj(cls)
 }
 
 pub(crate) unsafe fn unpickle(module: &mut PyObject, args: &[*mut PyObject]) -> PyReturn {
-    let &[data, tz] = args else {
-        Err(type_err!("Invalid pickle data"))?
+    let &[data, tz_obj] = args else {
+        raise_type_err("Invalid pickle data")?
     };
-    let &State {
-        zoneinfo_type,
+    let &mut State {
         zoned_datetime_type,
+        exc_tz_notfound,
+        ref mut tz_cache,
         ..
-    } = State::for_mod(module);
+    } = State::for_mod_mut(module);
     let mut packed = data.to_bytes()?.ok_or_type_err("Invalid pickle data")?;
-    let zoneinfo = call1(zoneinfo_type, tz)?;
-    defer_decref!(zoneinfo);
     if packed.len() != 15 {
-        Err(type_err!("Invalid pickle data"))?;
+        raise_type_err("Invalid pickle data")?;
     }
     ZonedDateTime {
         date: Date {
-            year: unpack_one!(packed, u16),
-            month: unpack_one!(packed, u8),
+            year: Year::new_unchecked(unpack_one!(packed, u16)),
+            month: Month::new_unchecked(unpack_one!(packed, u8)),
             day: unpack_one!(packed, u8),
         },
         time: Time {
             hour: unpack_one!(packed, u8),
             minute: unpack_one!(packed, u8),
             second: unpack_one!(packed, u8),
-            nanos: unpack_one!(packed, u32),
+            subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
         },
-        offset_secs: unpack_one!(packed, i32),
-        zoneinfo,
+        offset: Offset::new_unchecked(unpack_one!(packed, i32)),
+        tz: tz_cache.obj_get(tz_obj, exc_tz_notfound)?,
     }
     .to_obj(zoned_datetime_type)
 }
 
 unsafe fn py_datetime(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
     let zdt = ZonedDateTime::extract(slf);
+    // Chosen approach: get the UTC date and time, then use ZoneInfo.fromutc()
     let DateTime {
         date: Date { year, month, day },
         time:
@@ -626,9 +557,13 @@ unsafe fn py_datetime(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
                 hour,
                 minute,
                 second,
-                nanos,
+                subsec: nanos,
             },
-    } = zdt.without_offset().small_shift_unchecked(-zdt.offset_secs);
+    } = zdt
+        .without_offset()
+        .change_offset(-zdt.offset.as_offset_delta())
+        // Safety: we know the UTC date and time are valid
+        .unwrap();
     let &State {
         py_api:
             &PyDateTime_CAPI {
@@ -636,20 +571,25 @@ unsafe fn py_datetime(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
                 DateTimeType,
                 ..
             },
+        zoneinfo_type,
         ..
     } = State::for_obj(slf);
+    let tz_key: &str = &zdt.tz.key;
+    let zoneinfo = call1(zoneinfo_type, steal!(tz_key.to_py()?))?;
+    defer_decref!(zoneinfo);
+    // TODO-LAST: document that offsets could disagree
     methcall1(
-        zdt.zoneinfo,
+        zoneinfo,
         "fromutc",
         steal!(DateTime_FromDateAndTime(
-            year.into(),
-            month.into(),
+            year.get().into(),
+            month.get().into(),
             day.into(),
             hour.into(),
             minute.into(),
             second.into(),
-            (nanos / 1_000) as _,
-            zdt.zoneinfo,
+            (nanos.get() / 1_000) as _,
+            zoneinfo,
             DateTimeType,
         )),
     )
@@ -669,14 +609,14 @@ unsafe fn to_fixed_offset(slf_obj: &mut PyObject, args: &[*mut PyObject]) -> PyR
         ..
     } = State::for_obj(slf_obj);
     match *args {
-        [] => OffsetDateTime::new_unchecked(slf.date, slf.time, slf.offset_secs)
+        [] => OffsetDateTime::new_unchecked(slf.date, slf.time, slf.offset)
             .to_obj(offset_datetime_type),
         [arg] => slf
             .instant()
             .to_offset(offset_datetime::extract_offset(arg, time_delta_type)?)
             .ok_or_value_err("Resulting local date is out of range")?
             .to_obj(offset_datetime_type),
-        _ => Err(type_err!("to_fixed_offset() takes at most 1 argument")),
+        _ => raise_type_err("to_fixed_offset() takes at most 1 argument"),
     }
 }
 
@@ -712,33 +652,43 @@ unsafe fn replace_date(
 ) -> PyReturn {
     let &State {
         date_type,
-        py_api,
         str_disambiguate,
         exc_skipped,
         exc_repeated,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
         ..
     } = State::for_obj(slf);
 
     let &[arg] = args else {
-        Err(type_err!(
+        raise_type_err(format!(
             "replace_date() takes exactly 1 argument but {} were given",
             args.len()
         ))?
     };
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_date")?;
+    let dis = Disambiguate::from_only_kwarg(
+        kwargs,
+        str_disambiguate,
+        "replace_date",
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+    )?;
     let ZonedDateTime {
         time,
-        zoneinfo,
-        offset_secs,
+        tz,
+        offset: offset_secs,
         ..
     } = ZonedDateTime::extract(slf);
     if Py_TYPE(arg) == date_type {
         ZonedDateTime::resolve(
-            py_api,
             Date::extract(arg),
             time,
-            zoneinfo,
+            tz,
             dis,
             offset_secs,
             exc_repeated,
@@ -746,7 +696,7 @@ unsafe fn replace_date(
         )?
         .to_obj(cls)
     } else {
-        Err(type_err!("date must be a whenever.Date instance"))
+        raise_type_err("date must be a whenever.Date instance")
     }
 }
 
@@ -758,33 +708,43 @@ unsafe fn replace_time(
 ) -> PyReturn {
     let &State {
         time_type,
-        py_api,
         str_disambiguate,
         exc_skipped,
         exc_repeated,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
         ..
     } = State::for_obj(slf);
 
     let &[arg] = args else {
-        Err(type_err!(
+        raise_type_err(format!(
             "replace_time() takes exactly 1 argument but {} were given",
             args.len()
         ))?
     };
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, str_disambiguate, "replace_time")?;
+    let dis = Disambiguate::from_only_kwarg(
+        kwargs,
+        str_disambiguate,
+        "replace_time",
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+    )?;
     let ZonedDateTime {
         date,
-        zoneinfo,
-        offset_secs,
+        tz,
+        offset: offset_secs,
         ..
     } = ZonedDateTime::extract(slf);
     if Py_TYPE(arg) == time_type {
         ZonedDateTime::resolve(
-            py_api,
             date,
             Time::extract(arg),
-            zoneinfo,
+            tz,
             dis,
             offset_secs,
             exc_repeated,
@@ -792,7 +752,7 @@ unsafe fn replace_time(
         )?
         .to_obj(cls)
     } else {
-        Err(type_err!("time must be a whenever.Time instance"))
+        raise_type_err("time must be a whenever.Time instance")
     }
 }
 
@@ -807,38 +767,65 @@ unsafe fn replace(
     kwargs: &mut KwargIter,
 ) -> PyReturn {
     if !args.is_empty() {
-        Err(type_err!("replace() takes no positional arguments"))?;
+        raise_type_err("replace() takes no positional arguments")?;
     }
-    let state = State::for_type(cls);
+    let &mut State {
+        exc_repeated,
+        exc_skipped,
+        str_tz,
+        str_disambiguate,
+        exc_tz_notfound,
+        str_year,
+        str_month,
+        str_day,
+        str_hour,
+        str_minute,
+        str_second,
+        str_nanosecond,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+        ref mut tz_cache,
+        ..
+    } = State::for_type_mut(cls);
     let ZonedDateTime {
         date,
         time,
-        mut zoneinfo,
-        offset_secs,
+        mut tz,
+        offset: offset_secs,
     } = ZonedDateTime::extract(slf);
-    let mut year = date.year.into();
-    let mut month = date.month.into();
+    let mut year = date.year.get().into();
+    let mut month = date.month.get().into();
     let mut day = date.day.into();
     let mut hour = time.hour.into();
     let mut minute = time.minute.into();
     let mut second = time.second.into();
-    let mut nanos = time.nanos as _;
+    let mut nanos = time.subsec.get() as _;
     let mut dis = None;
 
     handle_kwargs("replace", kwargs, |key, value, eq| {
-        if eq(key, state.str_tz) {
-            let zoneinfo_new = call1(state.zoneinfo_type, value)?;
-            if (zoneinfo_new as *mut _) != zoneinfo {
+        if eq(key, str_tz) {
+            let tz_new = tz_cache.obj_get(value, exc_tz_notfound)?;
+            // If we change timezones, forget about trying to preserve the offset.
+            // Just use compatible disambiguation.
+            if tz_new != tz {
                 dis.get_or_insert(Disambiguate::Compatible);
             };
-            defer_decref!(zoneinfo_new);
-            zoneinfo = zoneinfo_new;
-        } else if eq(key, state.str_disambiguate) {
-            dis = Some(Disambiguate::from_py(value)?);
+            tz = tz_new;
+        } else if eq(key, str_disambiguate) {
+            dis = Some(Disambiguate::from_py(
+                value,
+                str_compatible,
+                str_raise,
+                str_earlier,
+                str_later,
+            )?);
         } else {
             return set_components_from_kwargs(
                 key,
                 value,
+                // TODO-DELTA: from_py for math concepts
                 &mut year,
                 &mut month,
                 &mut day,
@@ -846,7 +833,13 @@ unsafe fn replace(
                 &mut minute,
                 &mut second,
                 &mut nanos,
-                state,
+                str_year,
+                str_month,
+                str_day,
+                str_hour,
+                str_minute,
+                str_second,
+                str_nanosecond,
                 eq,
             );
         }
@@ -855,114 +848,72 @@ unsafe fn replace(
 
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?;
-    ZonedDateTime::resolve(
-        state.py_api,
-        date,
-        time,
-        zoneinfo,
-        dis,
-        offset_secs,
-        state.exc_repeated,
-        state.exc_skipped,
-    )?
-    .to_obj(cls)
+    ZonedDateTime::resolve(date, time, tz, dis, offset_secs, exc_repeated, exc_skipped)?.to_obj(cls)
 }
 
-unsafe fn now(cls: *mut PyObject, tz: *mut PyObject) -> PyReturn {
-    let state = State::for_type(cls.cast());
-    let &State {
-        py_api:
-            &PyDateTime_CAPI {
-                DateTime_FromTimestamp,
-                DateTimeType,
-                ..
-            },
-        zoneinfo_type,
+unsafe fn now(cls: *mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
+    let state = State::for_type_mut(cls.cast());
+    let &mut State {
+        ref mut tz_cache,
+        exc_tz_notfound,
         ..
     } = state;
-    let zoneinfo = call1(zoneinfo_type, tz)? as *mut PyObject;
-    defer_decref!(zoneinfo);
-    let (timestamp, subsec) = state.time_ns()?;
-    // OPTIMIZE: faster way without fromtimestamp?
-    let dt = DateTime_FromTimestamp(
-        DateTimeType,
-        steal!((steal!(timestamp.to_py()?), zoneinfo).to_py()?),
-        NULL(),
-    )
-    .as_result()?;
-    defer_decref!(dt);
-    ZonedDateTime {
-        date: Date {
-            year: PyDateTime_GET_YEAR(dt) as u16,
-            month: PyDateTime_GET_MONTH(dt) as u8,
-            day: PyDateTime_GET_DAY(dt) as u8,
-        },
-        time: Time {
-            hour: PyDateTime_DATE_GET_HOUR(dt) as u8,
-            minute: PyDateTime_DATE_GET_MINUTE(dt) as u8,
-            second: PyDateTime_DATE_GET_SECOND(dt) as u8,
-            nanos: subsec,
-        },
-        offset_secs: offset_from_py_dt(dt)?,
-        zoneinfo,
-    }
-    .to_obj(cls.cast())
+    let tz = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
+    state
+        .time_ns()?
+        .to_tz(tz)
+        .ok_or_value_err("Current datetime is out of range")? // local date out of range
+        .to_obj(cls.cast())
 }
 
 unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
-    let &State {
-        py_api,
+    let &mut State {
         zoneinfo_type,
+        exc_tz_notfound,
+        ref mut tz_cache,
         ..
-    } = State::for_type(cls.cast());
+    } = State::for_type_mut(cls.cast());
     if PyDateTime_Check(dt) == 0 {
-        Err(type_err!("Argument must be a datetime.datetime instance"))?;
+        raise_type_err("Argument must be a datetime.datetime instance")?;
     }
     let tzinfo = borrow_dt_tzinfo(dt);
 
-    // NOTE: it has to be exactly a `ZoneInfo`, since subclasses
-    // could theoretically introduce circular references.
-    // Since ZonedDateTime doesn't implement the GC protocol,
-    // this could lead to memory leaks.
+    // NOTE: it has to be exactly a `ZoneInfo`, since
+    // we only know how to handle that type.  Even subclasses could
+    // theoretically break the assumptions we make.
     if Py_TYPE(tzinfo) != zoneinfo_type.cast() {
-        Err(value_err!(
+        raise_value_err(format!(
             "tzinfo must be of type ZoneInfo (exactly), got {}",
             (Py_TYPE(tzinfo) as *mut PyObject).repr()
         ))?;
     }
 
-    let fold = PyDateTime_DATE_GET_FOLD(dt);
-    let date = Date {
-        year: PyDateTime_GET_YEAR(dt) as _,
-        month: PyDateTime_GET_MONTH(dt) as _,
-        day: PyDateTime_GET_DAY(dt) as _,
-    };
-    let time = Time {
-        hour: PyDateTime_DATE_GET_HOUR(dt) as _,
-        minute: PyDateTime_DATE_GET_MINUTE(dt) as _,
-        second: PyDateTime_DATE_GET_SECOND(dt) as _,
-        nanos: PyDateTime_DATE_GET_MICROSECOND(dt) as u32 * 1_000,
-    };
-    use OffsetResult::*;
-    match OffsetResult::for_tz(py_api, date, time, tzinfo)? {
-        Unambiguous(offset_secs) => ZonedDateTime::new(date, time, offset_secs, tzinfo),
-        Fold(offset0, offset1) => ZonedDateTime::new(
-            date,
-            time,
-            if fold == 0 { offset0 } else { offset1 },
-            tzinfo,
-        ),
-        Gap(offset0, offset1) => {
-            let (offset_secs, shift) = if fold == 0 {
-                (offset1, offset1 - offset0)
-            } else {
-                (offset0, offset0 - offset1)
-            };
-            DateTime { date, time }
-                .small_shift_unchecked(shift)
-                .with_tz(offset_secs, tzinfo)
-        }
+    let tz_obj = PyObject_GetAttrString(tzinfo, c"key".as_ptr()).as_result()?;
+    let tz = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
+    // We use the timestamp() to convert into a ZonedDateTime
+    // Alternatives not chosen:
+    // - resolve offset from date/time -> fold not respected
+    // - reuse the offset -> invalid results for gaps
+    // - reuse the fold -> our calculated offset might be different, theoretically
+    // Thus, the most "safe" way is to use the timestamp. This 100% guarantees
+    // we preserve the same moment in time.
+    let epoch_float = (methcall0(dt, "timestamp")? as *mut PyObject)
+        .to_f64()?
+        .ok_or_raise(
+            PyExc_RuntimeError,
+            "datetime.datetime.timestamp() returned non-float",
+        )?;
+    Instant {
+        // Safety: Python's timestamps are always in range
+        epoch: EpochSecs::new_unchecked(epoch_float.floor() as _),
+        // Note: we don't get the subsecond part from the timestamp,
+        // since floating point precision might lead to inaccuracies.
+        // translating to nanoseconds. Instead, we take it from the datetime.
+        // This is safe because IANA timezones always deal in whole seconds,
+        // meaning the subsecond part is timezone-independent.
+        subsec: SubSecNanos::from_py_dt_unchecked(dt),
     }
+    .to_tz(tz)
     .ok_or_value_err("Resulting datetime is out of range")?
     .to_obj(cls.cast())
 }
@@ -974,7 +925,7 @@ unsafe fn local(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn timestamp(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    ZonedDateTime::extract(slf).instant().timestamp().to_py()
+    ZonedDateTime::extract(slf).instant().epoch.get().to_py()
 }
 
 unsafe fn timestamp_millis(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -999,56 +950,63 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
                 hour,
                 minute,
                 second,
-                nanos,
+                subsec: nanos,
             },
-        offset_secs,
-        zoneinfo,
+        offset,
+        tz,
     } = ZonedDateTime::extract(slf);
-    let data = pack![year, month, day, hour, minute, second, nanos, offset_secs];
+    let data = pack![
+        year.get(),
+        month.get(),
+        day,
+        hour,
+        minute,
+        second,
+        nanos.get(),
+        offset.get()
+    ];
+    let tz_key: &str = &tz.key;
     (
         State::for_obj(slf).unpickle_zoned_datetime,
-        steal!((
-            steal!(data.to_py()?),
-            steal!(PyObject_GetAttrString(zoneinfo, c"key".as_ptr()).as_result()?),
-        )
-            .to_py()?),
+        steal!((steal!(data.to_py()?), steal!(tz_key.to_py()?),).to_py()?),
     )
         .to_py()
 }
 
 // checks the args comply with (ts, /, *, tz: str)
 #[inline]
-unsafe fn check_from_timestamp_args_return_zoneinfo(
+unsafe fn check_from_timestamp_args_return_tz(
     args: &[*mut PyObject],
     kwargs: &mut KwargIter,
-    &State {
-        zoneinfo_type,
+    &mut State {
+        ref mut tz_cache,
+        exc_tz_notfound,
         str_tz,
         ..
-    }: &State,
+    }: &mut State,
     fname: &str,
-) -> PyReturn {
+) -> PyResult<TzRef> {
     match (args, kwargs.next()) {
         (&[_], Some((key, value))) if kwargs.len() == 1 => {
-            if key.kwarg_eq(str_tz) {
-                call1(zoneinfo_type, value)
+            if key.py_eq(str_tz)? {
+                tz_cache.obj_get(value, exc_tz_notfound)
             } else {
-                Err(type_err!(
+                raise_type_err(format!(
                     "{}() got an unexpected keyword argument {}",
                     fname,
                     key.repr()
                 ))
             }
         }
-        (&[_], None) => Err(type_err!(
+        (&[_], None) => raise_type_err(format!(
             "{}() missing 1 required keyword-only argument: 'tz'",
             fname
         )),
-        (&[], _) => Err(type_err!(
+        (&[], _) => raise_type_err(format!(
             "{}() missing 1 required positional argument",
             fname
         )),
-        _ => Err(type_err!(
+        _ => raise_type_err(format!(
             "{}() expected 2 arguments, got {}",
             fname,
             args.len() + (kwargs.len() as usize)
@@ -1062,10 +1020,8 @@ unsafe fn from_timestamp(
     args: &[*mut PyObject],
     kwargs: &mut KwargIter,
 ) -> PyReturn {
-    let state = State::for_type(cls);
-    let zoneinfo =
-        check_from_timestamp_args_return_zoneinfo(args, kwargs, state, "from_timestamp")?;
-    defer_decref!(zoneinfo);
+    let state = &mut State::for_type_mut(cls);
+    let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp")?;
 
     match args[0].to_i64()? {
         Some(ts) => Instant::from_timestamp(ts),
@@ -1076,7 +1032,8 @@ unsafe fn from_timestamp(
         ),
     }
     .ok_or_value_err("timestamp is out of range")?
-    .to_tz(state.py_api, zoneinfo)?
+    .to_tz(tz)
+    .ok_or_value_err("Resulting date out of range")?
     .to_obj(cls)
 }
 
@@ -1086,17 +1043,17 @@ unsafe fn from_timestamp_millis(
     args: &[*mut PyObject],
     kwargs: &mut KwargIter,
 ) -> PyReturn {
-    let state = State::for_type(cls);
-    let zoneinfo =
-        check_from_timestamp_args_return_zoneinfo(args, kwargs, state, "from_timestamp_millis")?;
-    defer_decref!(zoneinfo);
+    let state = &mut State::for_type_mut(cls);
+    let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp_millis")?;
     Instant::from_timestamp_millis(
         args[0]
             .to_i64()?
             .ok_or_type_err("timestamp must be an integer")?,
     )
+    // TODO-DELTA: fast check for both ranges!
     .ok_or_value_err("timestamp is out of range")?
-    .to_tz(state.py_api, zoneinfo)?
+    .to_tz(tz)
+    .ok_or_value_err("Resulting date out of range")?
     .to_obj(cls)
 }
 
@@ -1106,43 +1063,37 @@ unsafe fn from_timestamp_nanos(
     args: &[*mut PyObject],
     kwargs: &mut KwargIter,
 ) -> PyReturn {
-    let state = State::for_type(cls);
-    let zoneinfo =
-        check_from_timestamp_args_return_zoneinfo(args, kwargs, state, "from_timestamp_nanos")?;
-    defer_decref!(zoneinfo);
+    let state = &mut State::for_type_mut(cls);
+    let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp_nanos")?;
     Instant::from_timestamp_nanos(
         args[0]
             .to_i128()?
             .ok_or_type_err("timestamp must be an integer")?,
     )
     .ok_or_value_err("timestamp is out of range")?
-    .to_tz(state.py_api, zoneinfo)?
+    .to_tz(tz)
+    .ok_or_value_err("Resulting date out of range")?
     .to_obj(cls)
 }
 
 unsafe fn is_ambiguous(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let ZonedDateTime {
-        date,
-        time,
-        zoneinfo,
-        ..
-    } = ZonedDateTime::extract(slf);
+    let ZonedDateTime { date, time, tz, .. } = ZonedDateTime::extract(slf);
     matches!(
-        OffsetResult::for_tz(State::for_obj(slf).py_api, date, time, zoneinfo)?,
-        OffsetResult::Fold(_, _)
+        tz.ambiguity_for_local(date.epoch_at(time)),
+        Ambiguity::Fold(_, _)
     )
     .to_py()
 }
 
 // parse ±HH:MM[:SS] (consuming as much as possible of the input)
-fn parse_offset_partial(s: &mut &[u8]) -> Option<i32> {
+fn parse_offset_partial(s: &mut &[u8]) -> Option<Offset> {
     debug_assert!(!s.is_empty());
     let sign = match s[0] {
-        b'+' => 1,
-        b'-' => -1,
+        b'+' => Sign::Plus,
+        b'-' => Sign::Minus,
         b'Z' => {
             *s = &s[1..];
-            return Some(0);
+            return Some(Offset::ZERO);
         }
         _ => return None,
     };
@@ -1150,9 +1101,7 @@ fn parse_offset_partial(s: &mut &[u8]) -> Option<i32> {
         return None;
     }
     // the HH:MM part
-    // FUTURE: technically, this eliminates 2x:00 offsets. There
-    // are no such offsets in the IANA database, but may be possible...
-    let secs = (parse_digit_max(s, 1, b'1')? * 10 + parse_digit(s, 2)?) as i32 * 3600
+    let secs = (parse_digit_max(s, 1, b'2')? * 10 + parse_digit(s, 2)?) as i32 * 3600
         + (parse_digit_max(s, 4, b'5')? * 10 + parse_digit(s, 5)?) as i32 * 60;
     // the optional seconds part
     match s.get(6) {
@@ -1172,55 +1121,53 @@ fn parse_offset_partial(s: &mut &[u8]) -> Option<i32> {
             Some(secs)
         }
     }
-    .map(|s| sign * s)
+    .and_then(Offset::new)
+    .map(|s| s.with_sign(sign))
 }
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let s = &mut s_obj.to_utf8()?.ok_or_type_err("Argument must be string")?;
-    let raise = || value_err!("Invalid format: {}", s_obj.repr());
+    let errmsg = || format!("Invalid format: {}", s_obj.repr());
     // at least: "YYYY-MM-DD HH:MM:SSZ[_]"
     if s.len() < 23 || s[10] != b'T' {
-        return Err(raise());
+        raise_value_err(errmsg())?;
     }
-    let date = Date::parse_partial(s).ok_or_else(raise)?;
+    let date = Date::parse_partial(s).ok_or_else_value_err(errmsg)?;
     *s = &s[1..]; // skip the separator
-    let time = Time::parse_partial(s).ok_or_else(raise)?;
+    let time = Time::parse_partial(s).ok_or_else_value_err(errmsg)?;
 
     // at least "Z[_]" remains
     if s.len() < 4 {
-        return Err(raise());
+        raise_value_err(errmsg())?;
     }
-    let offset_secs = parse_offset_partial(s).ok_or_else(raise)?;
+    let offset_secs = parse_offset_partial(s).ok_or_else_value_err(errmsg)?;
     if s.len() < 3 || s.len() > 255 || s[0] != b'[' || s[s.len() - 1] != b']' || !s.is_ascii() {
-        return Err(raise());
+        raise_value_err(errmsg())?;
     }
-    let &State {
-        py_api,
-        zoneinfo_type,
+    let &mut State {
         exc_invalid_offset,
+        exc_tz_notfound,
+        ref mut tz_cache,
         ..
-    } = State::for_type(cls.cast());
-    let zoneinfo = call1(
-        zoneinfo_type,
-        steal!(std::str::from_utf8_unchecked(&s[1..s.len() - 1]).to_py()?),
+    } = State::for_type_mut(cls.cast());
+    let tz = tz_cache.get(
+        std::str::from_utf8_unchecked(&s[1..s.len() - 1]),
+        exc_tz_notfound,
     )?;
-    defer_decref!(zoneinfo);
-    let offset_is_valid = match OffsetResult::for_tz(py_api, date, time, zoneinfo)? {
-        OffsetResult::Unambiguous(o) => o == offset_secs,
-        OffsetResult::Gap(o1, o2) | OffsetResult::Fold(o1, o2) => {
-            o1 == offset_secs || o2 == offset_secs
-        }
+
+    let offset_is_valid = match tz.ambiguity_for_local(date.epoch_at(time)) {
+        Ambiguity::Unambiguous(o) => o == offset_secs,
+        Ambiguity::Gap(o1, o2) | Ambiguity::Fold(o1, o2) => o1 == offset_secs || o2 == offset_secs,
     };
     if offset_is_valid {
-        ZonedDateTime::new(date, time, offset_secs, zoneinfo)
+        ZonedDateTime::new(date, time, offset_secs, tz)
             .ok_or_value_err("Datetime out of range")?
             .to_obj(cls.cast())
     } else {
-        Err(py_err!(
+        raise(
             exc_invalid_offset,
-            "Invalid offset for timezone {}",
-            zoneinfo_key(zoneinfo)
-        ))
+            format!("Invalid offset for timezone {}", tz.key),
+        )
     }
 }
 
@@ -1252,72 +1199,93 @@ unsafe fn _shift_method(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = State::for_type(cls);
+    let &State {
+        time_delta_type,
+        date_delta_type,
+        datetime_delta_type,
+        str_disambiguate,
+        exc_repeated,
+        exc_skipped,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+        ..
+    } = state;
     let mut dis = None;
-    let mut months = 0;
-    let mut days = 0;
+    let mut monthdelta = DeltaMonths::ZERO;
+    let mut daydelta = DeltaDays::ZERO;
     let mut tdelta = TimeDelta::ZERO;
 
     match *args {
         [arg] => {
             match kwargs.next() {
-                Some((key, value)) if kwargs.len() == 1 && key.kwarg_eq(state.str_disambiguate) => {
-                    dis = Some(Disambiguate::from_py(value)?)
+                Some((key, value)) if kwargs.len() == 1 && key.py_eq(str_disambiguate)? => {
+                    dis = Some(Disambiguate::from_py(
+                        value,
+                        str_compatible,
+                        str_raise,
+                        str_earlier,
+                        str_later,
+                    )?)
                 }
                 None => {}
-                _ => Err(type_err!(
+                _ => raise_type_err(format!(
                     "{}() can't mix positional and keyword arguments",
                     fname
                 ))?,
             };
-            if Py_TYPE(arg) == state.time_delta_type {
+            if Py_TYPE(arg) == time_delta_type {
                 tdelta = TimeDelta::extract(arg);
-            } else if Py_TYPE(arg) == state.date_delta_type {
+            } else if Py_TYPE(arg) == date_delta_type {
                 let dd = DateDelta::extract(arg);
-                months = dd.months;
-                days = dd.days;
-            } else if Py_TYPE(arg) == state.datetime_delta_type {
+                monthdelta = dd.months;
+                daydelta = dd.days;
+            } else if Py_TYPE(arg) == datetime_delta_type {
                 let dtd = DateTimeDelta::extract(arg);
-                months = dtd.ddelta.months;
-                days = dtd.ddelta.days;
+                monthdelta = dtd.ddelta.months;
+                daydelta = dtd.ddelta.days;
                 tdelta = dtd.tdelta;
             } else {
-                Err(type_err!("{}() argument must be a delta", fname))?
+                raise_type_err(format!("{}() argument must be a delta", fname))?
             }
         }
         [] => {
             let mut nanos: i128 = 0;
+            let mut months: i32 = 0;
+            let mut days: i32 = 0;
             handle_kwargs(fname, kwargs, |key, value, eq| {
-                if eq(key, state.str_disambiguate) {
-                    dis = Some(Disambiguate::from_py(value)?);
+                if eq(key, str_disambiguate) {
+                    dis = Some(Disambiguate::from_py(
+                        value,
+                        str_compatible,
+                        str_raise,
+                        str_earlier,
+                        str_later,
+                    )?);
                     Ok(true)
                 } else {
                     set_units_from_kwargs(key, value, &mut months, &mut days, &mut nanos, state, eq)
                 }
             })?;
             tdelta = TimeDelta::from_nanos(nanos).ok_or_value_err("Total duration too large")?;
+            monthdelta = DeltaMonths::new(months).ok_or_value_err("Total months out of range")?;
+            daydelta = DeltaDays::new(days).ok_or_value_err("Total days out of range")?;
         }
-        _ => Err(type_err!(
+        _ => raise_type_err(format!(
             "{}() takes at most 1 positional argument, got {}",
             fname,
             args.len()
         ))?,
     }
     if negate {
-        months = -months;
-        days = -days;
+        monthdelta = -monthdelta;
+        daydelta = -daydelta;
         tdelta = -tdelta;
     }
 
     ZonedDateTime::extract(slf)
-        .shift(
-            state.py_api,
-            months,
-            days,
-            tdelta,
-            dis,
-            state.exc_repeated,
-            state.exc_skipped,
-        )?
+        .shift(monthdelta, daydelta, tdelta, dis, exc_repeated, exc_skipped)?
         .to_obj(cls)
 }
 
@@ -1333,27 +1301,25 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     } else if type_b == state.system_datetime_type || type_b == state.offset_datetime_type {
         OffsetDateTime::extract(obj_b).instant()
     } else {
-        Err(type_err!(
+        raise_type_err(
             "difference() argument must be an OffsetDateTime, 
-             Instant, ZonedDateTime, or SystemDateTime"
-        ))?
+             Instant, ZonedDateTime, or SystemDateTime",
+        )?
     };
     inst_a.diff(inst_b).to_obj(state.time_delta_type)
 }
 
 unsafe fn start_of_day(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let ZonedDateTime { date, zoneinfo, .. } = ZonedDateTime::extract(slf);
+    let ZonedDateTime { date, tz, .. } = ZonedDateTime::extract(slf);
     let &State {
-        py_api,
         exc_repeated,
         exc_skipped,
         ..
     } = State::for_obj(slf);
     ZonedDateTime::resolve_using_disambiguate(
-        py_api,
         date,
         MIDNIGHT,
-        zoneinfo,
+        tz,
         Disambiguate::Compatible,
         exc_repeated,
         exc_skipped,
@@ -1362,29 +1328,26 @@ unsafe fn start_of_day(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn day_length(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let ZonedDateTime { date, zoneinfo, .. } = ZonedDateTime::extract(slf);
+    let ZonedDateTime { date, tz, .. } = ZonedDateTime::extract(slf);
     let &State {
-        py_api,
         exc_repeated,
         exc_skipped,
         time_delta_type,
         ..
     } = State::for_obj(slf);
     let start_of_day = ZonedDateTime::resolve_using_disambiguate(
-        py_api,
         date,
         MIDNIGHT,
-        zoneinfo,
+        tz,
         Disambiguate::Compatible,
         exc_repeated,
         exc_skipped,
     )?
     .instant();
     let start_of_next_day = ZonedDateTime::resolve_using_disambiguate(
-        py_api,
-        date.increment(),
+        date.tomorrow().ok_or_value_err("Day out of range")?,
         MIDNIGHT,
-        zoneinfo,
+        tz,
         Disambiguate::Compatible,
         exc_repeated,
         exc_skipped,
@@ -1408,24 +1371,16 @@ unsafe fn round(
             let ZonedDateTime {
                 mut date,
                 time,
-                offset_secs,
-                zoneinfo,
+                offset: offset_secs,
+                tz,
             } = ZonedDateTime::extract(slf);
             let (time_rounded, next_day) = time.round(increment as u64, mode);
             if next_day == 1 {
-                if date != MAX_DATE {
-                    date = date.increment();
-                } else {
-                    Err(value_err!("Resulting datetime out of range"))?
-                }
+                date = date
+                    .tomorrow()
+                    .ok_or_value_err("Resulting date out of range")?;
             };
-            ZonedDateTime::resolve_using_offset(
-                state.py_api,
-                date,
-                time_rounded,
-                zoneinfo,
-                offset_secs,
-            )
+            ZonedDateTime::resolve_using_offset(date, time_rounded, tz, offset_secs)
         }
     }?
     .to_obj(cls)
@@ -1436,24 +1391,17 @@ unsafe fn _round_day(
     state: &State,
     mode: round::Mode,
 ) -> PyResult<ZonedDateTime> {
-    let ZonedDateTime {
-        date,
-        time,
-        zoneinfo,
-        ..
-    } = ZonedDateTime::extract(slf);
+    let ZonedDateTime { date, time, tz, .. } = ZonedDateTime::extract(slf);
     let &State {
-        py_api,
         exc_repeated,
         exc_skipped,
         ..
     } = state;
     let get_floor = || {
         ZonedDateTime::resolve_using_disambiguate(
-            py_api,
             date,
             MIDNIGHT,
-            zoneinfo,
+            tz,
             Disambiguate::Compatible,
             exc_repeated,
             exc_skipped,
@@ -1461,10 +1409,10 @@ unsafe fn _round_day(
     };
     let get_ceil = || {
         ZonedDateTime::resolve_using_disambiguate(
-            py_api,
-            date.increment(),
+            date.tomorrow()
+                .ok_or_value_err("Resulting date out of range")?,
             MIDNIGHT,
-            zoneinfo,
+            tz,
             Disambiguate::Compatible,
             exc_repeated,
             exc_skipped,
@@ -1551,11 +1499,11 @@ static mut METHODS: &[PyMethodDef] = &[
 ];
 
 unsafe fn get_year(slf: *mut PyObject) -> PyReturn {
-    ZonedDateTime::extract(slf).date.year.to_py()
+    ZonedDateTime::extract(slf).date.year.get().to_py()
 }
 
 unsafe fn get_month(slf: *mut PyObject) -> PyReturn {
-    ZonedDateTime::extract(slf).date.month.to_py()
+    ZonedDateTime::extract(slf).date.month.get().to_py()
 }
 
 unsafe fn get_day(slf: *mut PyObject) -> PyReturn {
@@ -1575,15 +1523,16 @@ unsafe fn get_second(slf: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn get_nanos(slf: *mut PyObject) -> PyReturn {
-    ZonedDateTime::extract(slf).time.nanos.to_py()
+    ZonedDateTime::extract(slf).time.subsec.get().to_py()
 }
 
 unsafe fn get_tz(slf: *mut PyObject) -> PyReturn {
-    PyObject_GetAttrString(ZonedDateTime::extract(slf).zoneinfo, c"key".as_ptr()).as_result()
+    let key: &str = &ZonedDateTime::extract(slf).tz.key;
+    key.to_py()
 }
 
 unsafe fn get_offset(slf: *mut PyObject) -> PyReturn {
-    time_delta::TimeDelta::from_secs_unchecked(ZonedDateTime::extract(slf).offset_secs as i64)
+    TimeDelta::from_offset(ZonedDateTime::extract(slf).offset)
         .to_obj(State::for_obj(slf).time_delta_type)
 }
 
@@ -1606,4 +1555,5 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
     },
 ];
 
-type_spec!(ZonedDateTime, SLOTS);
+pub(crate) static mut SPEC: PyType_Spec =
+    type_spec::<ZonedDateTime>(c"whenever.ZonedDateTime", unsafe { SLOTS });

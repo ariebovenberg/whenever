@@ -1,6 +1,30 @@
 🚀 Changelog
 ============
 
+0.8.0 (2025-??-??)
+------------------
+
+**New**
+
+Timezone operations are now a lot faster, due to a new implementation in Rust.
+The behavior is unchanged (i.e. the same as ``zoneinfo``), but can now be configured
+independently.
+
+**Fixed**
+
+- Improved robustness of date calculations at extreme boundaries
+- Fixed a bug in the pure-Python version of ``ZonedDateTime.exact_eq()`` that
+  could cause false positives in some cases
+- Fixed incorrect type stubs for ``day_length()`` and ``start_of_day()`` methods
+- Corrected the description of parameters accepted by ``now()`` (#213)
+
+**Breaking changes**
+
+- Passing invalid timezone names now raise a ``whenever.TimeZoneNotFoundError`` instead of
+  ``zoneinfo.ZoneInfoNotFoundError``.
+- Whenever is no longer affected by ``ZoneInfo.clear_cache()``
+  or ``zoneinfo.reset_tzpath()``. Calling these functions is rare.
+
 0.7.3 (2025-03-19)
 ------------------
 
