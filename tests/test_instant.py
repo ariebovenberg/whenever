@@ -767,17 +767,28 @@ def test_pickle():
     assert pickle.loads(pickle.dumps(d)) == d
 
 
-# # TODO-LAST solution
-# def test_old_pickle_data_remains_unpicklable():
-#     # Don't update this value after 1.x release -- the whole idea is that it's
-#     # a pickle at a specific version of the library.
-#     dumped = (
-#         b"\x80\x04\x95.\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\n_unpkl_u"
-#         b"tc\x94\x93\x94C\x0cI\xb4\xcb\xd6\x0e\x00\x00\x008h\xde:\x94\x85\x94R\x94."
-#     )
-#     assert pickle.loads(dumped) == Instant.from_utc(
-#         2020, 8, 15, 23, 12, 9, nanosecond=987_654_200
-#     )
+def test_existing_pickle_data_remains_unpicklable():
+    # Don't update this value: the whole idea is that it's
+    # a pickle at a specific version of the library.
+    dumped = (
+        b"\x80\x04\x95/\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0b_unp"
+        b"kl_inst\x94\x93\x94C\x0c\xc9k8_\x00\x00\x00\x008h\xde:\x94\x85\x94R\x94."
+    )
+    assert pickle.loads(dumped) == Instant.from_utc(
+        2020, 8, 15, 23, 12, 9, nanosecond=987_654_200
+    )
+
+
+def test_unpickle_pre_v08_data():
+    # Don't update this value: the whole idea is that it's
+    # a pickle at <0.8.0 version of the library.
+    dumped = (
+        b"\x80\x04\x95.\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\n_unpkl_u"
+        b"tc\x94\x93\x94C\x0cI\xb4\xcb\xd6\x0e\x00\x00\x008h\xde:\x94\x85\x94R\x94."
+    )
+    assert pickle.loads(dumped) == Instant.from_utc(
+        2020, 8, 15, 23, 12, 9, nanosecond=987_654_200
+    )
 
 
 def test_copy():

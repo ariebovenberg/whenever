@@ -34,7 +34,7 @@ use date_delta::unpickle as _unpkl_ddelta;
 use date_delta::{days, months, weeks, years};
 use datetime_delta::unpickle as _unpkl_dtdelta;
 use docstrings as doc;
-use instant::{unpickle as _unpkl_utc, Instant};
+use instant::{unpickle as _unpkl_inst, unpickle_v07 as _unpkl_utc, Instant};
 use local_datetime::unpickle as _unpkl_local;
 use monthday::unpickle as _unpkl_md;
 use offset_datetime::unpickle as _unpkl_offset;
@@ -68,7 +68,8 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(_unpkl_tdelta, c"", METH_O),
     method_vararg!(_unpkl_dtdelta, c""),
     method!(_unpkl_local, c"", METH_O),
-    method!(_unpkl_utc, c"", METH_O),
+    method!(_unpkl_inst, c"", METH_O),
+    method!(_unpkl_utc, c"", METH_O), // for backwards compatibility
     method!(_unpkl_offset, c"", METH_O),
     method_vararg!(_unpkl_zoned, c""),
     method!(_unpkl_system, c"", METH_O),
@@ -292,6 +293,23 @@ macro_rules! unwrap_or_errcode {
     };
 }
 
+// Sets __module__ on <module>.<attrname> to <module_name>
+unsafe fn patch_dunder_module(
+    module: *mut PyObject,
+    module_name: *mut PyObject,
+    attrname: &CStr,
+) -> bool {
+    let obj = PyObject_GetAttrString(module, attrname.as_ptr());
+    if obj.is_null() {
+        return false;
+    }
+    defer_decref!(obj);
+    if PyObject_SetAttrString(module, c"__module__".as_ptr(), module_name) != 0 {
+        return false;
+    }
+    true
+}
+
 #[cold]
 unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     let state: &mut State = PyModule_GetState(module).cast::<State>().as_mut().unwrap();
@@ -366,7 +384,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         module,
         module_name,
         ptr::addr_of_mut!(instant::SPEC),
-        c"_unpkl_utc",
+        c"_unpkl_inst",
         instant::SINGLETONS,
         ptr::addr_of_mut!(state.instant_type),
         ptr::addr_of_mut!(state.unpickle_instant),
@@ -394,7 +412,8 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         system_datetime::SINGLETONS,
         ptr::addr_of_mut!(state.system_datetime_type),
         ptr::addr_of_mut!(state.unpickle_system_datetime),
-    ) {
+    ) || !patch_dunder_module(module, module_name, c"_unpkl_utc")
+    {
         return -1;
     }
 
@@ -520,7 +539,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     std::ptr::write(
         &mut state.tz_cache as *mut _,
         TZifCache::new(
-            // The case lives at least as long as the module, so a borrowed ref is safe
+            // The cache lives at least as long as the module, so a borrowed ref is safe
             NonNull::new_unchecked(state.import_binary),
         ),
     );
@@ -528,12 +547,9 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
 }
 
 unsafe fn time_machine_installed() -> PyResult<bool> {
-    // Important: we don't import the `time_machine` here,
+    // Important: we don't import `time_machine` here,
     // because that would be slower. We only need to check its existence.
-    let find_spec = PyObject_GetAttrString(
-        steal!(PyImport_ImportModule(c"importlib.util".as_ptr()).as_result()?),
-        c"find_spec".as_ptr(),
-    );
+    let find_spec = import_from(c"importlib.util", c"find_spec")?;
     defer_decref!(find_spec);
     let spec = call1(find_spec, steal!("time_machine".to_py()?))?;
     defer_decref!(spec);
