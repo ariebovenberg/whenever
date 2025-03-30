@@ -173,3 +173,4 @@ Miscellaneous
 .. autodata:: whenever.TZPATH
 .. autofunction:: whenever.clear_tzcache
 .. autofunction:: whenever.reset_tzpath
+.. autofunction:: whenever.available_timezones

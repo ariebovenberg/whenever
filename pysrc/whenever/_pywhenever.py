@@ -6310,7 +6310,6 @@ def _try_tzif_from_path(key: _ValidKey) -> bytes | None:
     return None
 
 
-# TODO: test absence/presence of tzdata
 def _tzif_from_tzdata(key: _ValidKey) -> bytes:
     *components, resource = key.split("/")
     package = ".".join(["tzdata.zoneinfo", *components])
@@ -6318,7 +6317,12 @@ def _tzif_from_tzdata(key: _ValidKey) -> bytes:
     try:
         return importlib.resources.read_binary(package, resource)
     # Several exceptions amount to "can't find the key"
-    except (ImportError, FileNotFoundError, UnicodeEncodeError):
+    except (
+        ImportError,
+        FileNotFoundError,
+        UnicodeEncodeError,
+        IsADirectoryError,
+    ):
         raise TimeZoneNotFoundError.for_key(key)
 
 
