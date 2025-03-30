@@ -1,5 +1,3 @@
-// TODO: load from tzdata package
-// TODO: use TZDATA directory
 use crate::{
     common::*,
     tz::tzif::{self, TZif},
@@ -317,8 +315,7 @@ impl Drop for TZifCache {
 
 /// Check whether a TZ ID has a valid format (not whether it actually exists though).
 fn is_valid_key(key: &str) -> bool {
-    // TODO: this can be more efficient
-    // TODO: test
+    // Somewhat inefficient, but fine for small strings
     key.is_ascii()
         && !key.contains("..")
         && !key.contains("//")

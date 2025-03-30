@@ -6262,16 +6262,15 @@ def _clear_tz_cache_by_keys(keys: tuple[str, ...]) -> None:
 
 
 def _get_tz(key: str) -> ZoneInfo:
-    instance = _tzcache_lookup.get(key, None)
-    if instance is None:
-        instance = _tzcache_lookup.setdefault(
-            key, _load_tz(_validate_key(key))
-        )
+    try:
+        zinfo = _tzcache_lookup[key]
+    except KeyError:
+        zinfo = _tzcache_lookup[key] = _load_tz(_validate_key(key))
     # Update the LRU
-    _tzcache_lru[key] = _tzcache_lru.pop(key, instance)
+    _tzcache_lru[key] = _tzcache_lru.pop(key, zinfo)
     if len(_tzcache_lru) > _TZCACHE_LRU_SIZE:
         _tzcache_lru.popitem(last=False)
-    return instance
+    return zinfo
 
 
 def _validate_key(key: str) -> _ValidKey:
