@@ -263,10 +263,17 @@ class TestInit:
         )
 
 
+# Note: there's a separate test for changing the tzpath and
+# its effect on available_timezones()
 def test_available_timezones():
+    tzs = available_timezones()
+
     # So long as we don't mess with the configuration, these should be identical
-    # There's a separate test for changing the tzpath and its effect on available_timezones()
-    assert available_timezones() == zoneinfo_available_timezones()
+    assert tzs == zoneinfo_available_timezones()
+
+    # We should be able to load all of them
+    for tz in tzs:
+        ZonedDateTime(2020, 1, 1, tz=tz)
 
 
 def test_offset():
