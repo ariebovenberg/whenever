@@ -6,21 +6,23 @@
         "tool": "Whenever",
         "time": 0.41,
         "timeFormat": "0.41s"
+
       },
       {
         "tool": "datetime",
-        "time": 0.64,
-        "timeFormat": "0.64s"
+        "time": 1.68,
+        "timeFormat": "1.68s"
+
       },
       {
         "tool": "Arrow",
-        "time": 38.8,
-        "timeFormat": "38.8s"
+        "time": 44.8,
+        "timeFormat": "44.8s"
       },
       {
         "tool": "Pendulum",
-        "time": 69.7,
-        "timeFormat": "69.7s"
+        "time": 89,
+        "timeFormat": ">100s"
       },
     ]
   },
@@ -32,14 +34,14 @@
       },
       {
         "name": "titleColor",
-        "value": "#333333"
-        //"value": "#C9D1D9"
+        //"value": "#333333"
+        "value": "#C9D1D9"
 
       },
       {
         "name": "labelColor",
-        "value": "#333333"
-        //"value": "#C9D1D9"
+        //"value": "#333333"
+        "value": "#C9D1D9"
       }
     ],
     "header": {
@@ -201,3 +203,4 @@
     }
   ]
 }
+
