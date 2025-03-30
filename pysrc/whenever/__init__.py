@@ -10,6 +10,7 @@ try:  # pragma: no cover
         _unpkl_date,
         _unpkl_ddelta,
         _unpkl_dtdelta,
+        _unpkl_inst,
         _unpkl_local,
         _unpkl_md,
         _unpkl_offset,
@@ -17,7 +18,6 @@ try:  # pragma: no cover
         _unpkl_tdelta,
         _unpkl_time,
         _unpkl_utc,
-        _unpkl_inst,
         _unpkl_ym,
         _unpkl_zoned,
     )
@@ -43,6 +43,7 @@ except ModuleNotFoundError as e:
         _unpkl_date,
         _unpkl_ddelta,
         _unpkl_dtdelta,
+        _unpkl_inst,
         _unpkl_local,
         _unpkl_md,
         _unpkl_offset,
@@ -50,7 +51,6 @@ except ModuleNotFoundError as e:
         _unpkl_tdelta,
         _unpkl_time,
         _unpkl_utc,
-        _unpkl_inst,
         _unpkl_ym,
         _unpkl_zoned,
     )
@@ -61,10 +61,10 @@ import os as _os
 import sysconfig as _sysconfig
 from contextlib import contextmanager as _contextmanager
 from dataclasses import dataclass as _dataclass
-from pathlib import Path as _Path
-from typing import Iterable as _Iterable, Iterator as _Iterator
 from importlib.resources import read_text as _read_resource
 from itertools import chain as _chain
+from pathlib import Path as _Path
+from typing import Iterable as _Iterable, Iterator as _Iterator
 
 from ._pywhenever import __version__
 
