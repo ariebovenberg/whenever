@@ -47,6 +47,13 @@ from .common import (
     system_tz_nyc,
 )
 
+try:
+    import tzdata
+except ImportError:
+    HAS_TZDATA = False
+else:
+    HAS_TZDATA = True
+
 TEST_DIR = Path(__file__).parent
 
 
@@ -147,8 +154,9 @@ class TestInit:
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
             # So let's clear the cache and check we can't find it anymore
             clear_tzcache()
-            with pytest.raises(TimeZoneNotFoundError):
-                ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
+            if not HAS_TZDATA:
+                with pytest.raises(TimeZoneNotFoundError):
+                    ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
             # Ok, let's see if we can find our custom timezones
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Amsterdam.tzif")
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Honolulu.tzif")

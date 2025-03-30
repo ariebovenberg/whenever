@@ -158,7 +158,7 @@ def reset_tzpath(target: _Iterable[str | _os.PathLike[str]] | None = None, /):
     ----
     Due to caching, you may find that looking up a timezone after setting the tzpath
     doesn't load the timezone data from the new path. You may need to call
-    :func:`clear_cache` if you want to force loading *all* timezones from the new path.
+    :func:`clear_tzcache` if you want to force loading *all* timezones from the new path.
     Note that clearing the cache may have unexpected side effects, however.
 
     Behaves similarly to :func:`zoneinfo.reset_tzpath`
