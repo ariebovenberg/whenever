@@ -317,13 +317,16 @@ impl Drop for TZifCache {
 fn is_valid_key(key: &str) -> bool {
     // Somewhat inefficient, but fine for small strings
     key.is_ascii()
+        // There's no standard limit on IANA tz IDs, but we have to draw
+        // the line somewhere to prevent abuse.
+        && key.len() < 100
         && !key.contains("..")
         && !key.contains("//")
         && !key.contains("\\")
         && !key.contains('\0')
+        && !key.contains("/./")
         && !key.starts_with('/')
         && !key.ends_with('/')
-        && !key.contains("/./")
 }
 
 /// Translate a TZ ID to a resource path in the tzdata package.
