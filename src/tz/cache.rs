@@ -138,10 +138,10 @@ impl TZifCache {
     pub(crate) fn new(import_binary: NonNull<PyObject>) -> Self {
         Self {
             lru: VecDeque::with_capacity(LRU_CAPACITY),
-            // Some reasonable initial capacities
-            lookup: AHashMap::with_capacity(8),
-            paths: Vec::with_capacity(4),
+            lookup: AHashMap::with_capacity(8), // a reasonable default size
             import_binary,
+            // Empty. The actual search paths are patched in at module import
+            paths: Vec::with_capacity(4),
         }
     }
     /// Fetches a `TZif` for the given IANA time zone ID.

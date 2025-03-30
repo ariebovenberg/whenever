@@ -407,9 +407,21 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
     if packed.len() != 12 {
         raise_value_err("Invalid pickle data")?;
     }
-    // TODO-LAST: deprecate old unpickler
     Instant {
         epoch: EpochSecs::new_unchecked(unpack_one!(packed, i64)),
+        subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
+    }
+    .to_obj(State::for_mod(module).instant_type)
+}
+
+// Backwards compatibility: an unpickler for Instants pickled before 0.8.0
+pub(crate) unsafe fn unpickle_v07(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
+    let mut packed = arg.to_bytes()?.ok_or_value_err("Invalid pickle data")?;
+    if packed.len() != 12 {
+        raise_value_err("Invalid pickle data")?;
+    }
+    Instant {
+        epoch: EpochSecs::new_unchecked(unpack_one!(packed, i64) + EpochSecs::MIN.get() - 86_400),
         subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
     }
     .to_obj(State::for_mod(module).instant_type)
