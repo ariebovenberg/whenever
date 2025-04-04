@@ -127,15 +127,18 @@ class TestInit:
             "America/New_York/..",  # other dots
             "America/../America/New_York",  # not normalized
             "America/./America/New_York",  # not normalized
-            # often in a tz directory, but not a tzif file
-            "+VERSION",  # not a tzif file
-            "leapseconds",  # not a tzif file
+            "+VERSION",  # in tz path, but not a tzif file
+            "leapseconds",  # in tz path, but not a tzif file
             "Europe",  # a directory
             "",
             ".",
             "/",
             " ",
             "Foo" * 1000,  # too long
+            # invalid file path characters
+            "foo:bar",
+            "bla*"
+            "&",
         ],
     )
     def test_invalid_key(self, key: str):
