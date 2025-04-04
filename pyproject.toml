@@ -81,6 +81,7 @@ disable_error_code = ["no-untyped-def"]
 module = [
     "whenever._whenever",
     "_interpreters",
+    "tzdata",
 ]
 ignore_missing_imports = true
 
