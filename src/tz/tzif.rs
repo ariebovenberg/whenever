@@ -13,7 +13,7 @@ pub struct TZif {
     // Read this as "FROM time X onwards (expressed in epoch seconds) the offset is Y".
     offsets_by_utc: Vec<(EpochSecs, Offset)>,
     // For local -> UTC, the transition is may be ambiguous and therefore requires extra information.
-    // Read this as "UNTIL time X (expressed in local epoch seconds) the offset is Y.1. At this point
+    // Read Vec<(X, Y)> as "UNTIL time X (expressed in local epoch seconds) the offset is Y.1. At this point
     // it shifts by Y.2.
     offsets_by_local: Vec<(EpochSecs, (Offset, OffsetDelta))>,
     // Invariant: if posix TZ isn't given, there must be at least one entry in each of the above
