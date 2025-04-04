@@ -21,9 +21,17 @@ The behavior is unchanged, but can be configured independently of ``zoneinfo`` i
 
 - Passing invalid timezone names now raise a ``whenever.TimeZoneNotFoundError`` instead of
   ``zoneinfo.ZoneInfoNotFoundError``.
+
+  **Rationale**: This ensures whenever is independent of zoneinfo, and
+  zoneinfo specifics don't leak into the whenever API.
+
 - Whenever is no longer affected by ``ZoneInfo.clear_cache()``
   or ``zoneinfo.reset_tzpath()``, since it now uses its own cache
   with corresponding methods.
+
+  **Rationale**: This ensures whenever is independent of zoneinfo
+  in both Rust and pure Python implementations.
+  It remains possible to clear both caches, of course.
 
 0.7.3 (2025-03-19)
 ------------------
