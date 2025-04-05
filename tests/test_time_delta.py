@@ -828,13 +828,12 @@ def test_from_py_timedelta():
         py_timedelta(weeks=8, hours=1, minutes=2, seconds=3, microseconds=4)
     ) == TimeDelta(hours=1 + 7 * 24 * 8, minutes=2, seconds=3, microseconds=4)
 
-    # subclass
+    # subclass not allowed
     class SubclassTimedelta(py_timedelta):
         pass
 
-    assert TimeDelta.from_py_timedelta(SubclassTimedelta(1)) == TimeDelta(
-        hours=24
-    )
+    with pytest.raises(TypeError, match="timedelta.*exact"):
+        TimeDelta.from_py_timedelta(SubclassTimedelta(1))
 
     with pytest.raises(ValueError, match="range"):
         TimeDelta.from_py_timedelta(py_timedelta.max)

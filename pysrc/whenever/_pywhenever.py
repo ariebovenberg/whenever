@@ -1436,6 +1436,8 @@ class TimeDelta(_ImmutableBase):
         >>> TimeDelta.from_py_timedelta(timedelta(seconds=5400))
         TimeDelta(01:30:00)
         """
+        if type(td) is not _timedelta:
+            raise TypeError(f"Expected datetime.timedelta exactly")
         return TimeDelta(
             microseconds=td.microseconds,
             seconds=td.seconds,
