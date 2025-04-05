@@ -1498,6 +1498,14 @@ class TestRound:
         with pytest.raises(ValueError, match="[Ii]ncrement"):
             d.round(unit, increment=increment, ignore_dst=True)
 
+    def test_default_increment(self):
+        d = OffsetDateTime(2023, 7, 14, 1, 2, 3, nanosecond=800_000, offset=-9)
+        assert d.round("millisecond", ignore_dst=True).exact_eq(
+            OffsetDateTime(
+                2023, 7, 14, 1, 2, 3, nanosecond=1_000_000, offset=-9
+            )
+        )
+
     def test_invalid_unit(self):
         d = OffsetDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000, offset=2)
         with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
