@@ -434,7 +434,6 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
             hour: unpack_one!(packed, u8),
             minute: unpack_one!(packed, u8),
             second: unpack_one!(packed, u8),
-            // TODO-LAST: change pickling format in python code too!
             subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
         },
         Offset::new_unchecked(unpack_one!(packed, i32)),
@@ -746,7 +745,7 @@ unsafe fn _shift_method(
                     )
                 }
             })?;
-            // TODO-DELTA deduplicate checks
+            // FUTURE: some redundancy in checks
             months = DeltaMonths::new(raw_months).ok_or_value_err("Months out of range")?;
             days = DeltaDays::new(raw_days).ok_or_value_err("Days out of range")?;
         }
@@ -769,15 +768,6 @@ unsafe fn _shift_method(
         )?
     }
     let OffsetDateTime { date, time, offset } = OffsetDateTime::extract(slf);
-    // TODO-DELTA
-    // date.shift(
-    //     months, days)
-    //     .map(
-    //         |d| Instant::from_datetime(d, time)
-    //     )
-    //     .and_then(
-    //         |inst| inst
-    //     )
     DateTime { date, time }
         .shift_date(months, days)
         .and_then(|dt| dt.shift_nanos(nanos))

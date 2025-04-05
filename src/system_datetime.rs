@@ -970,7 +970,7 @@ unsafe fn _shift_method(
                 }
             })?;
             tdelta = TimeDelta::from_nanos(nanos).ok_or_value_err("Total duration out of range")?;
-            // TODO-DELTA: double range checks
+            // FUTURE: these range checks are double
             months = DeltaMonths::new(raw_months).ok_or_value_err("Months out of range")?;
             days = DeltaDays::new(raw_days).ok_or_value_err("Days out of range")?;
         }

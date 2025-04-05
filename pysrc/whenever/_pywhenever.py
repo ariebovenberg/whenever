@@ -4753,12 +4753,20 @@ class ZonedDateTime(_KnowsInstantAndLocal):
             rounded_local._nanos,
         )
 
-    # Override this method to ensure the file-backed ZoneInfo doesn't
-    # "leak" out
     def py_datetime(self) -> _datetime:
-        return self._py_dt.replace(
-            microsecond=self._nanos // 1_000,
-            tzinfo=ZoneInfo(self._py_dt.tzinfo.key),  # type: ignore[union-attr]
+        # We convert to UTC first, then to a *non* file based ZoneInfo.
+        # We don't just `replace()` the timezone, because in theory
+        # they could disagree about the offset. This ensures we keep the
+        # same moment in time.
+        # FUTURE: write a test for this (a bit complicated)
+        return (
+            self._py_dt.astimezone(_UTC)
+            .astimezone(
+                ZoneInfo(self._py_dt.tzinfo.key)  # type: ignore[union-attr]
+            )
+            .replace(
+                microsecond=self._nanos // 1_000,
+            )
         )
 
     def __repr__(self) -> str:

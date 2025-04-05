@@ -66,7 +66,6 @@ impl DateTime {
         date.shift(months, days).map(|date| DateTime { date, time })
     }
 
-    // TODO-DELTA
     pub(crate) fn shift_nanos(self, nanos: i128) -> Option<Self> {
         let DateTime { mut date, time } = self;
         let new_time = i128::from(time.total_nanos()) + nanos;
@@ -403,7 +402,7 @@ unsafe fn _shift_method(
     let state = State::for_type(cls);
     let mut months = DeltaMonths::ZERO;
     let mut days = DeltaDays::ZERO;
-    let mut nanos = 0; // TODO-DELTA
+    let mut nanos = 0;
     let mut ignore_dst = false;
 
     match *args {

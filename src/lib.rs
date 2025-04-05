@@ -876,12 +876,11 @@ impl Instant {
 }
 
 impl State {
-    // TODO-PYOBJ: cleanup redundancy
     unsafe fn for_type<'a>(tp: *mut PyTypeObject) -> &'a Self {
         PyType_GetModuleState(tp).cast::<Self>().as_ref().unwrap()
     }
 
-    unsafe fn for_type_mut(tp: *mut PyTypeObject) -> &'static mut Self {
+    unsafe fn for_type_mut<'a>(tp: *mut PyTypeObject) -> &'a mut Self {
         PyType_GetModuleState(tp).cast::<Self>().as_mut().unwrap()
     }
 
@@ -889,7 +888,7 @@ impl State {
         PyModule_GetState(module).cast::<Self>().as_ref().unwrap()
     }
 
-    unsafe fn for_mod_mut(module: *mut PyObject) -> &'static mut Self {
+    unsafe fn for_mod_mut<'a>(module: *mut PyObject) -> &'a mut Self {
         PyModule_GetState(module).cast::<Self>().as_mut().unwrap()
     }
 

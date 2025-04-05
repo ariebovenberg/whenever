@@ -22,18 +22,17 @@ The behavior is unchanged, but can be configured independently of ``zoneinfo`` i
 - Passing invalid timezone names now raise a ``whenever.TimeZoneNotFoundError`` instead of
   ``zoneinfo.ZoneInfoNotFoundError``.
 
-  **Rationale**: This ensures whenever is independent of zoneinfo, and
-  zoneinfo specifics don't leak into the whenever API.
+  **Rationale**: This ensures whenever is independent of the ``zoneinfo`` module,
+  and its particularities don't leak into the ``whenever`` API.
 
 - Whenever is no longer affected by ``ZoneInfo.clear_cache()``
   or ``zoneinfo.reset_tzpath()``, since it now uses its own cache
   with corresponding methods.
 
-  **Rationale**: This ensures whenever is independent of zoneinfo
+  **Rationale**: This ensures whenever is independent of ``zoneinfo``
   in both Rust and pure Python implementations.
-  It remains possible to clear both caches, of course.
 
-- ``TimeDelta.from_py_timedelta`` no longer accepts subclasses.
+- ``TimeDelta.from_py_timedelta`` no longer accepts ``timedelta`` subclasses.
 
   **Rationale**: timedelta subclasses (like pendulum.Duration) often add other
   time components, which risk not being handled correctly. To avoid confusion,

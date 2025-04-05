@@ -72,7 +72,6 @@ macro_rules! method_vararg(
     };
 );
 
-// TODO: ownership of keys/values???
 pub(crate) struct KwargIter {
     keys: *mut PyObject,
     values: *const *mut PyObject,
@@ -106,14 +105,14 @@ impl Iterator for KwargIter {
         if self.pos == self.size {
             return None;
         }
-        unsafe {
-            let item = (
+        let item = unsafe {
+            (
                 PyTuple_GET_ITEM(self.keys, self.pos),
                 *self.values.offset(self.pos),
-            );
-            self.pos += 1;
-            Some(item)
-        }
+            )
+        };
+        self.pos += 1;
+        Some(item)
     }
 }
 
