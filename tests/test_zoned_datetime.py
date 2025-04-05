@@ -125,6 +125,7 @@ class TestInit:
             "America\\New_York",  # backslash
             "../America/New_York/",  # relative path
             "America/New_York/..",  # other dots
+            "America//New_York",  # double slash
             "America/../America/New_York",  # not normalized
             "America/./America/New_York",  # not normalized
             "+VERSION",  # in tz path, but not a tzif file
@@ -137,7 +138,10 @@ class TestInit:
             "Foo" * 1000,  # too long
             # invalid file path characters
             "foo:bar",
-            "bla*"
+            "bla*",
+            "*",
+            "**",
+            ":",
             "&",
         ],
     )
@@ -2735,13 +2739,14 @@ class TestRound:
             2023, 7, 14, 1, 2, 8, tz="Europe/Paris"
         )
 
-    # TODO-LAST: test this robustly on all classes
     def test_default_increment(self):
         d = ZonedDateTime(
             2023, 7, 14, 1, 2, 3, nanosecond=800_000, tz="Europe/Paris"
         )
-        assert d.round("millisecond") == ZonedDateTime(
-            2023, 7, 14, 1, 2, 3, nanosecond=1_000_000, tz="Europe/Paris"
+        assert d.round("millisecond").exact_eq(
+            ZonedDateTime(
+                2023, 7, 14, 1, 2, 3, nanosecond=1_000_000, tz="Europe/Paris"
+            )
         )
 
     def test_invalid_mode(self):
@@ -2754,13 +2759,14 @@ class TestRound:
     @pytest.mark.parametrize(
         "unit, increment",
         [
-            # TODO-LAST zero, negative, and floats
             ("minute", 8),
             ("second", 14),
             ("millisecond", 15),
             ("day", 2),
             ("hour", 48),
             ("microsecond", 1500),
+            ("second", -1),
+            ("second", 0),
         ],
     )
     def test_invalid_increment(self, unit, increment):
