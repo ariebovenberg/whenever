@@ -69,7 +69,6 @@ impl Time {
         self.subsec.get() as u64 + self.total_seconds() as u64 * 1_000_000_000
     }
 
-    // TODO-DELTA: eliminate the need for this function?
     pub(crate) fn from_total_nanos_unchecked(nanos: u64) -> Self {
         Time {
             hour: (nanos / 3_600_000_000_000) as u8,

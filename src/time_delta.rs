@@ -93,7 +93,6 @@ impl TimeDelta {
         }
     }
 
-    // TODO-DELTA: audit use
     pub(crate) fn checked_mul(self, factor: i128) -> Option<Self> {
         self.total_nanos()
             .checked_mul(factor)

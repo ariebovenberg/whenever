@@ -549,7 +549,10 @@ pub(crate) unsafe fn unpickle(module: &mut PyObject, args: &[*mut PyObject]) -> 
 
 unsafe fn py_datetime(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
     let zdt = ZonedDateTime::extract(slf);
-    // Chosen approach: get the UTC date and time, then use ZoneInfo.fromutc()
+    // Chosen approach: get the UTC date and time, then use ZoneInfo.fromutc().
+    // This ensures we preserve the instant in time in the rare case
+    // that ZoneInfo disagrees with our offset.
+    // FUTURE: document the rare case that offsets could disagree
     let DateTime {
         date: Date { year, month, day },
         time:
@@ -577,7 +580,6 @@ unsafe fn py_datetime(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
     let tz_key: &str = &zdt.tz.key;
     let zoneinfo = call1(zoneinfo_type, steal!(tz_key.to_py()?))?;
     defer_decref!(zoneinfo);
-    // TODO-LAST: document that offsets could disagree
     methcall1(
         zoneinfo,
         "fromutc",
@@ -825,7 +827,6 @@ unsafe fn replace(
             return set_components_from_kwargs(
                 key,
                 value,
-                // TODO-DELTA: from_py for math concepts
                 &mut year,
                 &mut month,
                 &mut day,
@@ -1050,7 +1051,7 @@ unsafe fn from_timestamp_millis(
             .to_i64()?
             .ok_or_type_err("timestamp must be an integer")?,
     )
-    // TODO-DELTA: fast check for both ranges!
+    // FUTURE: a faster way to check both bounds
     .ok_or_value_err("timestamp is out of range")?
     .to_tz(tz)
     .ok_or_value_err("Resulting date out of range")?

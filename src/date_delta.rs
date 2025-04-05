@@ -579,7 +579,7 @@ unsafe fn in_months_days(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     (steal!(months.get().to_py()?), steal!(days.get().to_py()?)).to_py()
 }
 
-// TODO-LAST: negative???
+// FUTURE: maybe also return the sign?
 unsafe fn in_years_months_days(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let DateDelta { months, days } = DateDelta::extract(slf);
     let years = months.get() / 12;

@@ -222,4 +222,3 @@ Whenever's design is strongly inspired by the following projects:
 Whenever also borrows a few nifty ideas from [Jiff](https://github.com/BurntSushi/jiff).
 
 The benchmark comparison graph is based on the one from the [Ruff](https://github.com/astral-sh/ruff) project.
-For timezone data, **Whenever** uses Python's own `zoneinfo` module.
