@@ -33,6 +33,12 @@ The behavior is unchanged, but can be configured independently of ``zoneinfo`` i
   in both Rust and pure Python implementations.
   It remains possible to clear both caches, of course.
 
+- ``TimeDelta.from_py_timedelta`` no longer accepts subclasses.
+
+  **Rationale**: timedelta subclasses (like pendulum.Duration) often add other
+  time components, which risk not being handled correctly. To avoid confusion,
+  this method now only accepts the standard ``datetime.timedelta`` class.
+
 0.7.3 (2025-03-19)
 ------------------
 

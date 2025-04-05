@@ -689,10 +689,8 @@ unsafe fn in_days_of_24h(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn from_py_timedelta(cls: *mut PyObject, d: *mut PyObject) -> PyReturn {
-    // TODO-LAST: exactly
-    // TODO-PYOBJ: wrapping class for PyDelta
-    if PyDelta_Check(d) == 0 {
-        raise_type_err("argument must be datetime.timedelta")?;
+    if PyDelta_CheckExact(d) == 0 {
+        raise_type_err("Argument must be datetime.timedelta exactly")?;
     }
     TimeDelta {
         secs: DeltaSeconds::from_py_unchecked(d).ok_or_value_err("TimeDelta out of range")?,
