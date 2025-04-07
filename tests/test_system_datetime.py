@@ -11,8 +11,8 @@ from hypothesis.strategies import text
 from whenever import (
     Date,
     Instant,
-    PlainDateTime,
     OffsetDateTime,
+    PlainDateTime,
     RepeatedTime,
     SkippedTime,
     SystemDateTime,

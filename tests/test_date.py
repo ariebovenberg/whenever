@@ -9,8 +9,8 @@ import pytest
 from whenever import (
     Date,
     DateDelta,
-    PlainDateTime,
     MonthDay,
+    PlainDateTime,
     Time,
     Weekday,
     YearMonth,

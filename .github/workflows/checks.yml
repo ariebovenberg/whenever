@@ -8,6 +8,20 @@ on:
   workflow_dispatch:
 
 jobs:
+  test-rust:
+    name: Test Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: "1.85"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build and test
+        run: |
+          cargo test
   test-python-versions:
     name: Test Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
@@ -21,6 +35,10 @@ jobs:
           "3.12",
           "3.13",
         ]
+        tzdata: [false]
+        include:
+          - python-version: "3.13"
+            tzdata: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -30,10 +48,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: "Test Rust"
-        if: ${{ (matrix.os == 'ubuntu-latest') && (matrix.python-version == '3.12') }}
+      - if: ${{ matrix.tzdata }}
         run: |
-          cargo test
+          pip install tzdata
 
       - name: Install and test
         shell: bash
@@ -43,12 +60,13 @@ jobs:
           pytest tests/
 
   test-os:
-    name: Test on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: Test on ${{ matrix.os }} ${{ matrix.no_build_ext && 'with Rust' || 'pure Python' }}
+    runs-on: ${{ matrix.os }}-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu, windows, macos]
+        no_build_ext: ["", "1"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -56,32 +74,34 @@ jobs:
           toolchain: "1.85"
 
       - name: Add win32 target
-        if: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ matrix.os == 'windows' }}
         run: rustup target add i686-pc-windows-msvc
 
       - uses: actions/setup-python@v5
-        if: ${{ !(matrix.os == 'windows-latest') }}
+        if: ${{ !(matrix.os == 'windows') }}
         with:
           python-version: '3.13'
 
       # ensure 32-bit target is tested
       # FUTURE: Add a linux 32-bit target
       - uses: actions/setup-python@v5
-        if: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ matrix.os == 'windows' }}
         with:
           python-version: '3.13'
           architecture: x86
 
-
+      # TODO: fix windows TZ handling
       - name: Install and test
         shell: bash
         run: |
           pip install -e .
           pip install -r requirements/test.txt
           pytest tests/
+        env:
+          WHENEVER_NO_BUILD_RUST_EXT: ${{ matrix.no_build_ext }}
 
   test-pure-python:
-    name: Test pure Python version
+    name: Test pure Python ${{ matrix.python-version }} ${{ matrix.tzdata && 'with tzdata' || '' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -92,29 +112,34 @@ jobs:
           "3.11",
           "3.12",
           "3.13",
-          # # NOTE: pypy/pytest fails sometimes (https://github.com/pypy/pypy/issues/3959)
+          # NOTE: pypy/pytest fails sometimes (https://github.com/pypy/pypy/issues/3959)
           "pypy3.9",
           "pypy3.10"
         ]
+        tzdata: [false]
+        include:
+          - python-version: "3.13"
+            tzdata: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      # only run coverage once
-      - if: ${{ matrix.python-version == '3.12' }}
+      - if: ${{ matrix.tzdata }}
         run: |
-          pip install .
-          pip install -r requirements/test.txt
-          pytest tests/ --cov=whenever --cov-report=xml
-        env:
-          WHENEVER_NO_BUILD_RUST_EXT: "1"
+          pip install tzdata
       - run: |
           pip install .
           pip install -r requirements/test.txt
-          pytest tests/
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
+      - if: ${{ matrix.python-version == '3.12' }}
+        run: |
+          pip install tzdata
+          pytest tests/ --cov=whenever --cov-report term-missing
+      - if: ${{ matrix.python-version != '3.12' }}
+        run: |
+          pytest tests/
 
   lint:
     name: Linting

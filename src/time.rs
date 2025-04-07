@@ -6,8 +6,8 @@ use std::ptr::null_mut as NULL;
 use crate::common::*;
 use crate::date::Date;
 use crate::docstrings as doc;
-use crate::plain_datetime::DateTime;
 use crate::math::*;
+use crate::plain_datetime::DateTime;
 use crate::round;
 use crate::State;
 

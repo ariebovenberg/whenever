@@ -21,8 +21,8 @@ from whenever import (
     Date,
     Instant,
     InvalidOffset,
-    PlainDateTime,
     OffsetDateTime,
+    PlainDateTime,
     RepeatedTime,
     SkippedTime,
     SystemDateTime,
@@ -135,7 +135,7 @@ class TestInit:
             ".",
             "/",
             " ",
-            "Foo" * 1000,  # too long
+            "Foo" * 100,  # too long
             # invalid file path characters
             "foo:bar",
             "bla*",
@@ -143,6 +143,14 @@ class TestInit:
             "**",
             ":",
             "&",
+            # non-ascii
+            "🇨🇦",
+            "America/Bogotá",
+            # invalid start characters
+            "+B",
+            "+",
+            "-",
+            "-foo",
         ],
     )
     def test_invalid_key(self, key: str):
@@ -154,8 +162,10 @@ class TestInit:
     @pytest.mark.order(-1)
     def test_tz_cache_adjustments(self):
         nyc = "America/New_York"
+        ams = "Europe/Amsterdam"
         # creating a ZDT puts it in the tz cache
         d = ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc)
+        ZonedDateTime(2020, 8, 15, 5, 12, tz=ams)
 
         assert available_timezones() == zoneinfo_available_timezones()
 
@@ -168,11 +178,19 @@ class TestInit:
             # We still can find load the NYC timezone even though
             # it isn't in the new path. This is because it's cached!
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
+            assert ZonedDateTime(1982, 8, 15, 5, 12, tz=ams)
             # So let's clear the cache and check we can't find it anymore
-            clear_tzcache()
+            clear_tzcache(only_keys=[nyc])
             if not HAS_TZDATA:
                 with pytest.raises(TimeZoneNotFoundError):
                     ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
+
+            assert ZonedDateTime(1982, 8, 15, 5, 12, tz=ams)
+            clear_tzcache()
+            if not HAS_TZDATA:
+                with pytest.raises(TimeZoneNotFoundError):
+                    ZonedDateTime(1982, 8, 15, 5, 12, tz=ams)
+
             # Ok, let's see if we can find our custom timezones
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Amsterdam.tzif")
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Honolulu.tzif")
@@ -195,6 +213,12 @@ class TestInit:
         assert ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc) == d
         # exact_eq() is affected (as documented)
         assert not ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc).exact_eq(d)
+
+        # check exception handling invalid arguments
+        with pytest.raises(TypeError, match="iterable"):
+            reset_tzpath("/usr/share/zoneinfo")  # must be a list!
+        with pytest.raises(ValueError, match="absolute"):
+            reset_tzpath(["../../share/zoneinfo"])
 
     def test_optionality(self):
         tz = "America/New_York"
@@ -801,7 +825,9 @@ class TestDayLength:
         with pytest.raises((ValueError, OverflowError), match="range"):
             d_min_pos.day_length()
         with system_tz("Asia/Tokyo"):
-            with pytest.raises((ValueError, OverflowError), match="range|year"):
+            with pytest.raises(
+                (ValueError, OverflowError), match="range|year"
+            ):
                 SystemDateTime(1, 1, 1, 12).day_length()
 
         # upper bound is NOT fine
@@ -932,7 +958,9 @@ class TestStartOfDay:
         with pytest.raises((ValueError, OverflowError), match="range"):
             d_max_pos.start_of_day()
         with system_tz("Asia/Tokyo"):
-            with pytest.raises((ValueError, OverflowError), match="range|year"):
+            with pytest.raises(
+                (ValueError, OverflowError), match="range|year"
+            ):
                 SystemDateTime(1, 1, 1, 12).start_of_day()
 
         # Upper bound is always fine
