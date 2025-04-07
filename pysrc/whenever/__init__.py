@@ -35,9 +35,9 @@ except ModuleNotFoundError as e:
         _BasicConversions,
         _clear_tz_cache,
         _clear_tz_cache_by_keys,
-        _KnowsInstant,
-        _KnowsInstantAndLocal,
-        _KnowsLocal,
+        _ExactTime,
+        _ExactAndLocalTime,
+        _LocalTime,
         _patch_time_frozen,
         _patch_time_keep_ticking,
         _set_tzpath,
@@ -293,3 +293,17 @@ def _is_tzifile(p: _Path) -> bool:
 
 
 reset_tzpath()  # populate the tzpath once at startup
+
+
+# Handle deprecated names
+def __getattr__(name: str) -> object:
+    import warnings
+
+    if name in ("NaiveDateTime", "LocalDateTime"):
+        warnings.warn(
+            f"whenever.{name} has been renamed to PlainDateTime.",
+            DeprecationWarning,
+        )
+        return PlainDateTime
+
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")

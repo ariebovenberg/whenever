@@ -3,7 +3,7 @@
 🌎 Overview
 ============
 
-This page gives an overview of **whenever**'s main features for working
+This page gives an overview of ``whenever``'s main features for working
 with date and time.
 For more details, see the :ref:`API reference <api>`.
 
@@ -12,12 +12,12 @@ Core types
 
 While the standard library has a single :class:`~datetime.datetime` type
 for all use cases,
-**whenever** provides distinct types similar to other modern datetime libraries [2]_:
+``whenever`` provides distinct types similar to other modern datetime libraries [2]_:
 
 - :class:`~whenever.Instant`—the simplest way to unambiguously represent a point on the timeline,
   also known as **"exact time"**.
   This type is analogous to a UNIX timestamp or UTC.
-- :class:`~whenever.LocalDateTime`—how humans represent time (e.g. *"January 23rd, 2023, 3:30pm"*),
+- :class:`~whenever.PlainDateTime`—how humans represent time (e.g. *"January 23rd, 2023, 3:30pm"*),
   also known as **"local time"**.
   This type is analogous to an "naive" datetime in the standard library.
 - :class:`~whenever.ZonedDateTime`—A combination of the two concepts above:
@@ -51,45 +51,48 @@ True
 The value of this type is in its simplicity. It's straightforward to compare,
 add, and subtract. It's always clear what moment in time
 you're referring to—without having to worry about timezones,
-daylight saving time, or the calendar.
+Daylight Saving Time (DST), or the calendar.
 
 .. seealso::
 
    :ref:`Why does Instant exist? <faq-why-instant>`
 
-:class:`~whenever.LocalDateTime`
+:class:`~whenever.PlainDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Local datetimes represent date and time as humans typically interact with them,
-for example: *January 23rd, 2023, 3:30pm*.
+Humans typically represent time as a combination of date and time-of-day.
+For example: *January 23rd, 2023, 3:30pm*.
 While this information makes sense to people within a certain context,
-it doesn't refer to a moment on the timeline on its own.
-This is because this date and time occur at different moments
+it doesn't by itself refer to a moment on the timeline.
+This is because this date and time-of-day occur at different moments
 depending on whether you're in Australia or Mexico, for example.
 
-Another limitation is that local datetimes can't account for daylight saving time.
-Therefore, it's not possible to add or subtract an exact time from a local datetime.
-This is because—strictly speaking—you don't know what time it will be in 3 hours:
-perhaps the clock will be moved forward or back due to daylight saving time.
+Another limitation is that you can't account for Daylight Saving Time
+if you only have a date and time-of-day without a timezone.
+Therefore, it's not possible to add exact time units to "plain" datetimes.
+This is because—strictly speaking—you don't know what the
+local time will be in 3 hours:
+perhaps the clock will be moved forward or back due to Daylight Saving Time.
 
->>> bus_departs = LocalDateTime(2020, 3, 14, hour=15)
-LocalDateTime(2020-03-14 15:00:00)
+>>> bus_departs = PlainDateTime(2020, 3, 14, hour=15)
+PlainDateTime(2020-03-14 15:00:00)
 # NOT possible:
->>> Instant.now() > bus_departs                 # comparison with exact moments
->>> bus_departs.add(hours=3)                    # adding an exact time
+>>> Instant.now() > bus_departs                 # comparison with exact time
+>>> bus_departs.add(hours=3)                    # adding exact time units
 # IS possible:
->>> LocalDateTime(2020, 3, 15) > bus_departs    # comparison with other local datetimes
+>>> PlainDateTime(2020, 3, 15) > bus_departs    # comparison with other plain datetimes
 >>> bus_departs.add(hours=3, ignore_dst=True)   # explicitly ignore DST
 >>> bus_departs.add(days=2)                     # calendar operations are OK
 
-So how do you account for daylight saving time? Or place a local datetime on the timeline?
+So how do you account for daylight saving time?
+Or find the corresponding exact time for a date and time-of-day?
 That's what the next type is for.
 
 :class:`~whenever.ZonedDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-This is a combination of an instant *and* a local time at a specific location,
-with rules about daylight saving time and other timezone changes.
+This is a combination of an exact *and* a local time at a specific location,
+with rules about Daylight Saving Time and other timezone changes.
 
 >>> bedtime = ZonedDateTime(2024, 3, 9, 22, tz="America/New_York")
 ZonedDateTime(2024-03-09 22:00:00-05:00[America/New_York])
@@ -100,7 +103,7 @@ ZonedDateTime(2024-03-10 07:00:00-04:00[America/New_York])
 A timezone defines a UTC offset for each point on the timeline.
 As a result, any :class:`~whenever.Instant` can
 be converted to a :class:`~whenever.ZonedDateTime`.
-Converting from a :class:`~whenever.LocalDateTime`, however,
+Converting from a :class:`~whenever.PlainDateTime`, however,
 may be ambiguous,
 because changes to the offset can result in local times
 occuring twice or not at all.
@@ -128,17 +131,17 @@ Advanced types
 
    -- Jon Skeet
 
-Although the main types cover most use cases, **whenever** also provides
+Although the main types cover most use cases, ``whenever`` also provides
 additional types for specific scenarios. Having these as separate types
 makes it clear what you're working with and prevents mistakes.
 
 :class:`~whenever.OffsetDateTime`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Like :class:`~whenever.ZonedDateTime`, this type represents a moment on the timeline
-with a local time. The difference is that :class:`~whenever.OffsetDateTime`
+Like :class:`~whenever.ZonedDateTime`, this type represents an exact time
+*and* a local time. The difference is that :class:`~whenever.OffsetDateTime`
 has a *fixed* offset from UTC rather than a timezone.
-As a result, it doesn't know about daylight saving time or other timezone changes.
+As a result, it doesn't know about Daylight Saving Time or other timezone changes.
 
 Then why use it? Firstly, most datetime formats (e.g. ISO 8601 and RFC 3339) only have fixed offsets,
 making :class:`~whenever.OffsetDateTime` ideal for representing datetimes in these formats.
@@ -187,7 +190,7 @@ Comparison of types
 Here's a summary of the differences between the types:
 
 +------------------------------+---------+---------+-------+---------+---------+
-|                              | Instant | OffsetDT|ZonedDT| SystemDT|LocalDT  |
+|                              | Instant | OffsetDT|ZonedDT| SystemDT|PlainDT  |
 +==============================+=========+=========+=======+=========+=========+
 | knows the **exact** time     |   ✅    | ✅      | ✅    |  ✅     |  ❌     |
 +------------------------------+---------+---------+-------+---------+---------+
@@ -201,7 +204,7 @@ Comparison and equality
 -----------------------
 
 All types support equality and comparison.
-However, :class:`~whenever.LocalDateTime` instances are
+However, :class:`~whenever.PlainDateTime` instances are
 never equal or comparable to the "exact" types.
 
 Exact time
@@ -226,7 +229,7 @@ True
 
 Note that if you want to compare for exact equality on the values
 (i.e. exactly the same year, month, day, hour, minute, etc.), you can use
-the :meth:`~whenever._KnowsInstant.exact_eq` method.
+the :meth:`~whenever._ExactTime.exact_eq` method.
 
 >>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=5)
 >>> same = OffsetDateTime(2023, 12, 28, 11, 30, offset=5)
@@ -241,12 +244,12 @@ True
 Local time
 ~~~~~~~~~~
 
-For :class:`~whenever.LocalDateTime`, equality is simply based on
+For :class:`~whenever.PlainDateTime`, equality is simply based on
 whether the values are the same, since there is no concept of timezones or UTC offset:
 
->>> d = LocalDateTime(2023, 12, 28, 11, 30)
->>> same = LocalDateTime(2023, 12, 28, 11, 30)
->>> different = LocalDateTime(2023, 12, 28, 11, 31)
+>>> d = PlainDateTime(2023, 12, 28, 11, 30)
+>>> same = PlainDateTime(2023, 12, 28, 11, 30)
+>>> different = PlainDateTime(2023, 12, 28, 11, 31)
 >>> d == same
 True
 >>> d == different
@@ -254,8 +257,8 @@ False
 
 .. seealso::
 
-   See the documentation of :meth:`__eq__ (exact) <whenever._KnowsInstant.__eq__>`
-   and :meth:`LocalDateTime.__eq__ <whenever.LocalDateTime.__eq__>` for more details.
+   See the documentation of :meth:`__eq__ (exact) <whenever._ExactTime.__eq__>`
+   and :meth:`PlainDateTime.__eq__ <whenever.PlainDateTime.__eq__>` for more details.
 
 
 Strict equality
@@ -269,7 +272,7 @@ To prevent these mix-ups, use mypy's ``--strict-equality``
 
 >>> # These are never equal, but Python won't stop you from comparing them.
 >>> # Mypy will catch this mix-up if you use enable --strict-equality flag.
->>> Instant.from_utc(2023, 12, 28) == LocalDateTime(2023, 12, 28)
+>>> Instant.from_utc(2023, 12, 28) == PlainDateTime(2023, 12, 28)
 False
 
 .. admonition:: Why not raise a TypeError?
@@ -311,9 +314,9 @@ Conversion
 Between exact types
 ~~~~~~~~~~~~~~~~~~~
 
-You can convert between exact types with the :meth:`~whenever._KnowsInstantAndLocal.instant`,
-:meth:`~whenever._KnowsInstant.to_fixed_offset`, :meth:`~whenever._KnowsInstant.to_tz`,
-and :meth:`~whenever._KnowsInstant.to_system_tz` methods. These methods return a new
+You can convert between exact types with the :meth:`~whenever._ExactAndLocalTime.instant`,
+:meth:`~whenever._ExactTime.to_fixed_offset`, :meth:`~whenever._ExactTime.to_tz`,
+and :meth:`~whenever._ExactTime.to_system_tz` methods. These methods return a new
 instance of the appropriate type, representing the same moment in time.
 This means the results will always compare equal to the original datetime.
 
@@ -329,23 +332,24 @@ SystemDateTime(2023-12-28 11:30:00+01:00)
 >>> d.to_fixed_offset(4) == d
 True  # always the same moment in time
 
-To and from local time
-~~~~~~~~~~~~~~~~~~~~~~
+To and from "plain" date and time
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Conversion to local date and time is easy: calling
-:meth:`~whenever._KnowsInstantAndLocal.local` simply
-retrieves the local date and time part of the datetime.
+Conversion to a "plain" datetime is easy: calling
+:meth:`~whenever._ExactAndLocalTime.to_plain` simply
+retrieves the date and time part of the datetime, and discards the any timezone
+or offset information.
 
 >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
->>> n = d.local()
-LocalDateTime(2023-12-28 11:30:00)
+>>> n = d.to_plain()
+PlainDateTime(2023-12-28 11:30:00)
 
-You can convert from local datetimes with the :meth:`~whenever.LocalDateTime.assume_utc`,
-:meth:`~whenever.LocalDateTime.assume_fixed_offset`, and
-:meth:`~whenever.LocalDateTime.assume_tz`, and
-:meth:`~whenever.LocalDateTime.assume_system_tz` methods.
+You can convert from plain datetimes with the :meth:`~whenever.PlainDateTime.assume_utc`,
+:meth:`~whenever.PlainDateTime.assume_fixed_offset`, and
+:meth:`~whenever.PlainDateTime.assume_tz`, and
+:meth:`~whenever.PlainDateTime.assume_system_tz` methods.
 
->>> n = LocalDateTime(2023, 12, 28, 11, 30)
+>>> n = PlainDateTime(2023, 12, 28, 11, 30)
 >>> n.assume_utc()
 Instant(2023-12-28 11:30:00Z)
 >>> n.assume_tz("Europe/Amsterdam")
@@ -370,7 +374,7 @@ Ambiguity in timezones
 
 In timezones, local clocks are often moved backwards and forwards
 due to Daylight Saving Time (DST) or political decisions.
-This makes it complicated to map a local datetime to a point on the timeline.
+This makes it complicated to map a local time to a point on the timeline.
 Two common situations arise:
 
 - When the clock moves backwards, there is a period of time that repeats.
@@ -397,7 +401,7 @@ Two common situations arise:
 
      The figure in the Python docs `here <https://peps.python.org/pep-0495/#mind-the-gap>`_ also shows how this "extrapolation" makes sense graphically.
 
-**Whenever** allows you to customize how to handle these situations
+``Whenever`` allows you to customize how to handle these situations
 using the ``disambiguate`` argument:
 
 +------------------+-------------------------------------------------+
@@ -457,15 +461,15 @@ Difference
 ~~~~~~~~~~
 
 You can get the duration between two datetimes or instants with the ``-`` operator or
-the :meth:`~whenever._KnowsInstant.difference` method.
+the :meth:`~whenever._ExactTime.difference` method.
 Exact and local types cannot be mixed, although exact types can be mixed with each other:
 
->>> # difference between moments in time
+>>> # difference in exact time
 >>> Instant.from_utc(2023, 12, 28, 11, 30) - ZonedDateTime(2023, 12, 28, tz="Europe/Amsterdam")
 TimeDelta(12:30:00)
->>> # difference between local datetimes
->>> LocalDateTime(2023, 12, 28, 11).difference(
-...     LocalDateTime(2023, 12, 27, 11),
+>>> # difference in local time
+>>> PlainDateTime(2023, 12, 28, 11).difference(
+...     PlainDateTime(2023, 12, 27, 11),
 ...     ignore_dst=True
 ... )
 TimeDelta(24:00:00)
@@ -489,9 +493,9 @@ The behavior arithmetic behavior is different for three categories of units:
 
    .. code-block:: python
 
-      >>> d = LocalDateTime(2023, 8, 31, hour=12)
+      >>> d = PlainDateTime(2023, 8, 31, hour=12)
       >>> d.add(months=1)
-      LocalDateTime(2023-09-30 12:00:00)
+      PlainDateTime(2023-09-30 12:00:00)
 
    .. note::
 
@@ -601,22 +605,22 @@ to the correct usage.
     ...
   whenever.RepeatedTime: 2024-11-03 01:15:00 is repeated in timezone 'America/Denver'
 
-- :class:`~whenever.LocalDateTime` doesn't have a timezone,
+- :class:`~whenever.PlainDateTime` doesn't have a timezone,
   so it can't account for DST or other clock changes.
   Calendar units can be added without any complications,
   but, adding precise time units is only possible with explicit ``ignore_dst=True``,
   because it doesn't know about DST or other timezone changes:
 
-  >>> d = LocalDateTime(2023, 10, 29, 1, 30)
+  >>> d = PlainDateTime(2023, 10, 29, 1, 30)
   >>> d.add(hours=2)  # There could be a DST transition for all we know!
   Traceback (most recent call last):
     ...
-  whenever.ImplicitlyIgnoringDST: Adjusting a local datetime by time units
+  whenever.ImplicitlyIgnoringDST: Adjusting a plain datetime by time units
   ignores DST and other timezone changes. [...]
   >>> d.assume_tz("Europe/Amsterdam").add(hours=2)
   ZonedDateTime(2023-10-29 02:30:00+01:00[Europe/Amsterdam])
   >>> d.add(hours=2, ignore_dst=True)  # NOT recommended
-  LocalDateTime(2024-10-03 03:30:00)
+  PlainDateTime(2024-10-03 03:30:00)
 
 .. attention::
 
@@ -647,7 +651,7 @@ Here is a summary of the arithmetic features for each type:
    While DST-safe arithmetic is certainly the way to go, there are cases where
    it's simply not possible due to lack of information.
    Because there's no way to to stop users from working around
-   restrictions to get the result they want, **whenever** provides the
+   restrictions to get the result they want, ``whenever`` provides the
    ``ignore_dst`` option to at least make it explicit when this is happening.
 
 Rounding
@@ -657,23 +661,23 @@ It's often useful to truncate or round a datetime to a specific unit.
 For example, you might want to round a datetime to the nearest hour,
 or truncate it into 15-minute intervals.
 
-The :class:`~whenever._KnowsLocal.round` method allows you to do this:
+The :class:`~whenever._LocalTime.round` method allows you to do this:
 
 .. code-block:: python
 
-    >>> d = LocalDateTime(2023, 12, 28, 11, 32, 8)
-    LocalDateTime(2023-12-28 11:32:08)
+    >>> d = PlainDateTime(2023, 12, 28, 11, 32, 8)
+    PlainDateTime(2023-12-28 11:32:08)
     >>> d.round("hour")
-    LocalDateTime(2023-12-28 12:00:00)
+    PlainDateTime(2023-12-28 12:00:00)
     >>> d.round("minute", increment=15, mode="ceil")
-    LocalDateTime(2023-12-28 11:45:00)
+    PlainDateTime(2023-12-28 11:45:00)
 
 See the method documentation for more details on the available options.
 
 Formatting and parsing
 ----------------------
 
-**Whenever** supports formatting and parsing standardized formats
+``Whenever`` supports formatting and parsing standardized formats
 
 .. _iso8601:
 
@@ -683,7 +687,7 @@ ISO 8601
 The `ISO 8601 <https://en.wikipedia.org/wiki/ISO_8601>`_ standard
 is probably the format you're most familiar with.
 What you may not know is that it's a very complex standard with many options.
-Like most libraries, **whenever** supports a only subset of the standard
+Like most libraries, ``whenever`` supports a only subset of the standard
 which is the most commonly used.
 
 Here are the ISO formats for each type:
@@ -693,7 +697,7 @@ Here are the ISO formats for each type:
 +=========================================+================================================+
 | :class:`~whenever.Instant`              | ``YYYY-MM-DDTHH:MM:SSZ``                       |
 +-----------------------------------------+------------------------------------------------+
-| :class:`~whenever.LocalDateTime`        | ``YYYY-MM-DDTHH:MM:SS``                        |
+| :class:`~whenever.PlainDateTime`        | ``YYYY-MM-DDTHH:MM:SS``                        |
 +-----------------------------------------+------------------------------------------------+
 | :class:`~whenever.ZonedDateTime`        | ``YYYY-MM-DDTHH:MM:SS±HH:MM[IANA TZ ID]`` [1]_ |
 +-----------------------------------------+------------------------------------------------+
@@ -720,7 +724,7 @@ OffsetDateTime(2021-07-13 09:45:00-09:00)
 
 .. note::
 
-   The ISO formats in **whenever** are designed so you can format and parse
+   The ISO formats in ``whenever`` are designed so you can format and parse
    them without losing information.
    This makes it ideal for JSON serialization and other data interchange formats.
 
@@ -734,7 +738,7 @@ OffsetDateTime(2021-07-13 09:45:00-09:00)
    - The full specification is not freely available
 
    This isn't a problem in practice since people referring to "ISO 8601"
-   often mean the most common subset, which is what **whenever** supports.
+   often mean the most common subset, which is what ``whenever`` supports.
    It's rare for libraries to support the full standard.
    The method name ``parse_common_iso`` makes this assumption explicit.
 
@@ -804,28 +808,28 @@ Custom formats
 ~~~~~~~~~~~~~~
 
 For now, basic customized parsing functionality is implemented in the ``strptime()`` methods
-of :class:`~whenever.OffsetDateTime` and :class:`~whenever.LocalDateTime`.
+of :class:`~whenever.OffsetDateTime` and :class:`~whenever.PlainDateTime`.
 As the name suggests, these methods are thin wrappers around the standard library
 :meth:`~datetime.datetime.strptime` function.
 The same `formatting rules <https://docs.python.org/3/library/datetime.html#format-codes>`_ apply.
 
 >>> OffsetDateTime.strptime("2023-01-01+05:00", "%Y-%m-%d%z")
 OffsetDateTime(2023-01-01 00:00:00+05:00)
->>> LocalDateTime.strptime("2023-01-01 15:00", "%Y-%m-%d %H:%M")
-LocalDateTime(2023-01-01 15:00:00)
+>>> PlainDateTime.strptime("2023-01-01 15:00", "%Y-%m-%d %H:%M")
+PlainDateTime(2023-01-01 15:00:00)
 
 :class:`~whenever.ZonedDateTime` and :class:`~whenever.SystemDateTime` do not (yet)
 implement ``strptime()`` methods, because they require disambiguation.
 If you'd like to parse into these types,
-use :meth:`LocalDateTime.strptime() <whenever.LocalDateTime.strptime>`
-to parse them, and then use the :meth:`~whenever.LocalDateTime.assume_utc`,
-:meth:`~whenever.LocalDateTime.assume_fixed_offset`,
-:meth:`~whenever.LocalDateTime.assume_tz`,
-or :meth:`~whenever.LocalDateTime.assume_system_tz`
+use :meth:`PlainDateTime.strptime() <whenever.PlainDateTime.strptime>`
+to parse them, and then use the :meth:`~whenever.PlainDateTime.assume_utc`,
+:meth:`~whenever.PlainDateTime.assume_fixed_offset`,
+:meth:`~whenever.PlainDateTime.assume_tz`,
+or :meth:`~whenever.PlainDateTime.assume_system_tz`
 methods to convert them.
 This makes it explicit what information is being assumed.
 
->>> d = LocalDateTime.strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S")
+>>> d = PlainDateTime.strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S")
 >>> d.assume_tz("Europe/Amsterdam")
 ZonedDateTime(2023-10-29 02:30:00+02:00[Europe/Amsterdam])
 
@@ -837,7 +841,7 @@ ZonedDateTime(2023-10-29 02:30:00+02:00[Europe/Amsterdam])
 To and from the standard library
 --------------------------------
 
-Each **whenever** datetime class can be converted to a standard
+Each ``whenever`` datetime class can be converted to a standard
 library :class:`~datetime.datetime`
 with the :meth:`~whenever._BasicConversions.py_datetime` method.
 Conversely, you can create instances from a standard library datetime with the
@@ -858,7 +862,7 @@ datetime(2023, 1, 1, 0, 0, tzinfo=ZoneInfo('Europe/Amsterdam'))
 Date and time components
 ------------------------
 
-Aside from the datetimes themselves, **whenever** also provides
+Aside from the datetimes themselves, ``whenever`` also provides
 :class:`~whenever.Date` for calendar dates and :class:`~whenever.Time` for
 representing times of day.
 
@@ -871,7 +875,7 @@ Time(12:30:00)
 These types can be converted to datetimes and vice versa:
 
 >>> Date(2023, 1, 1).at(Time(12, 30))
-LocalDateTime(2023-01-01 12:30:00)
+PlainDateTime(2023-01-01 12:30:00)
 >>> ZonedDateTime.now("Asia/Tokyo").date()
 Date(2023-07-13)
 
@@ -897,10 +901,10 @@ Patching the current time
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Sometimes you need to 'fake' the output of ``.now()`` functions, typically for testing.
-**Whenever** supports various ways to do this, depending on your needs:
+``Whenever`` supports various ways to do this, depending on your needs:
 
 1. With :class:`whenever.patch_current_time`. This patcher
-   only affects **whenever**, not the standard library or other libraries.
+   only affects ``whenever``, not the standard library or other libraries.
    See its documentation for more details.
 2. With the `time-machine <https://github.com/adamchainz/time-machine>`_ package.
    Using ``time-machine`` *does* affect the standard library and other libraries,
@@ -911,7 +915,7 @@ Sometimes you need to 'fake' the output of ``.now()`` functions, typically for t
 
    It's also possible to use the
    `freezegun <https://github.com/spulec/freezegun>`_ library,
-   but it will *only work on the Pure-Python version* of **whenever**.
+   but it will *only work on the Pure-Python version* of ``whenever``.
 
 .. tip::
 
@@ -939,7 +943,7 @@ Patching the system timezone
 
 For changing the system timezone in tests,
 use the :func:`~time.tzset` function from the standard library.
-Since **whenever** uses the standard library to operate with the system timezone,
+Since ``whenever`` uses the standard library to operate with the system timezone,
 ``tzset`` will behave as expected from the documentation.
 Do note that this function is not available on Windows.
 This is a limitation of ``tzset`` itself.
@@ -1032,7 +1036,7 @@ SystemDateTime(2020-08-15 08:00:00-04:00)
 
 If you'd like to preserve the moment in time
 and calculate the new local time, simply call
-:meth:`~whenever._KnowsInstant.to_system_tz`.
+:meth:`~whenever._ExactTime.to_system_tz`.
 
 >>> # same moment, but now with the clock time in Amsterdam
 >>> d.to_system_tz()
@@ -1042,7 +1046,7 @@ On the other hand, if you'd like to preserve the local time on the clock
 and calculate the corresponding moment in time:
 
 >>> # take the wall clock time and assume the (new) system timezone (Amsterdam)
->>> d.local().assume_system_tz()
+>>> d.to_plain().assume_system_tz()
 SystemDateTime(2020-08-15 08:00:00+02:00)
 
 .. seealso::

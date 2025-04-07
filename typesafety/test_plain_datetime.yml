@@ -1,0 +1,27 @@
+- case: ymd_arguments
+  regex: true
+  main: |
+    from whenever import PlainDateTime
+    d = PlainDateTime(2020, 8, 9)
+    d = PlainDateTime(2020, 8, '15')  # E: .*incompatible type "str".* "int"
+- case: strict_equality
+  regex: true
+  main: |
+    from whenever import PlainDateTime, Instant
+    d = PlainDateTime(2020, 8, 9)
+    d == 3  # E: .*comparison.*
+    d == Instant.from_utc(2020, 8, 9)  # E: .*comparison.*
+- case: addition
+  regex: true
+  main: |
+    from whenever import PlainDateTime, months
+    d = PlainDateTime(2020, 8, 9)
+    reveal_type(d + months(4))  # N: .*whenever.PlainDateTime
+    d + 12  # E: .*Unsupported
+
+- case: subtraction
+  regex: true
+  main: |
+    from whenever import PlainDateTime, months
+    d = PlainDateTime(2020, 8, 9)
+    reveal_type(d - months(4))  # N: .*type is "whenever.PlainDateTime"

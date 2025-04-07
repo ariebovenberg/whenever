@@ -13,7 +13,7 @@ use crate::{
     common::{math::*, *},
     date_delta::{handle_init_kwargs as handle_datedelta_kwargs, DateDelta},
     docstrings as doc,
-    local_datetime::DateTime,
+    plain_datetime::DateTime,
     monthday::MonthDay,
     time::Time,
     yearmonth::YearMonth,
@@ -611,7 +611,7 @@ unsafe fn replace(
 unsafe fn at(slf: *mut PyObject, time_obj: *mut PyObject) -> PyReturn {
     let &State {
         time_type,
-        local_datetime_type,
+        plain_datetime_type,
         ..
     } = State::for_obj(slf);
     if Py_TYPE(time_obj) == time_type {
@@ -619,7 +619,7 @@ unsafe fn at(slf: *mut PyObject, time_obj: *mut PyObject) -> PyReturn {
             date: Date::extract(slf),
             time: Time::extract(time_obj),
         }
-        .to_obj(local_datetime_type)
+        .to_obj(plain_datetime_type)
     } else {
         raise_type_err("argument must be a whenever.Time")
     }

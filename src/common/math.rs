@@ -1,6 +1,6 @@
 /// Checked arithmetic for date and time concepts
 use crate::date::Date;
-use crate::local_datetime::DateTime;
+use crate::plain_datetime::DateTime;
 use crate::round;
 use crate::time::Time;
 use pyo3_ffi::*;

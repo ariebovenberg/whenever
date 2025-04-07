@@ -45,9 +45,9 @@ methods = {
         (
             # some methods are documented in their ABCs
             W._BasicConversions,
-            W._KnowsLocal,
-            W._KnowsInstant,
-            W._KnowsInstantAndLocal,
+            W._LocalTime,
+            W._ExactTime,
+            W._ExactAndLocalTime,
         ),
     )
     for name, m in cls.__dict__.items()
@@ -92,11 +92,11 @@ ignore_dst=False)""",
     W.OffsetDateTime.replace: """\
 ($self, /, *, year=None, month=None, weeks=0, day=None, hour=None, \
 minute=None, second=None, nanosecond=None, offset=None, ignore_dst=False)""",
-    W.LocalDateTime.add: """\
+    W.PlainDateTime.add: """\
 ($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, \
 hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
 ignore_dst=False)""",
-    W.LocalDateTime.replace: """\
+    W.PlainDateTime.replace: """\
 ($self, /, *, year=None, month=None, day=None, hour=None, \
 minute=None, second=None, nanosecond=None)""",
     W.Date.replace: "($self, /, *, year=None, month=None, day=None)",
@@ -117,7 +117,7 @@ MANUALLY_DEFINED_SIGS.update(
             W.ZonedDateTime.replace
         ],
         W.OffsetDateTime.subtract: MANUALLY_DEFINED_SIGS[W.OffsetDateTime.add],
-        W.LocalDateTime.subtract: MANUALLY_DEFINED_SIGS[W.LocalDateTime.add],
+        W.PlainDateTime.subtract: MANUALLY_DEFINED_SIGS[W.PlainDateTime.add],
         W.Instant.subtract: MANUALLY_DEFINED_SIGS[W.Instant.add],
         W.Date.subtract: MANUALLY_DEFINED_SIGS[W.Date.add],
     }
@@ -126,16 +126,16 @@ SKIP = {
     W._BasicConversions.format_common_iso,
     W._BasicConversions.from_py_datetime,
     W._BasicConversions.parse_common_iso,
-    W._KnowsInstant.from_timestamp,
-    W._KnowsInstant.from_timestamp_millis,
-    W._KnowsInstant.from_timestamp_nanos,
-    W._KnowsInstant.now,
-    W._KnowsLocal.add,
-    W._KnowsLocal.subtract,
-    W._KnowsLocal.replace,
-    W._KnowsLocal.replace_date,
-    W._KnowsLocal.replace_time,
-    W._KnowsLocal.round,
+    W._ExactTime.from_timestamp,
+    W._ExactTime.from_timestamp_millis,
+    W._ExactTime.from_timestamp_nanos,
+    W._ExactTime.now,
+    W._LocalTime.add,
+    W._LocalTime.subtract,
+    W._LocalTime.replace,
+    W._LocalTime.replace_date,
+    W._LocalTime.replace_time,
+    W._LocalTime.round,
 }
 
 

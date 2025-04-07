@@ -9,9 +9,9 @@ use crate::{
     datetime_delta::{set_units_from_kwargs, DateTimeDelta},
     docstrings as doc,
     instant::Instant,
-    local_datetime::{set_components_from_kwargs, DateTime},
     math::SubSecNanos,
     offset_datetime::{self, OffsetDateTime},
+    plain_datetime::{set_components_from_kwargs, DateTime},
     round,
     time::{Time, MIDNIGHT},
     time_delta::TimeDelta,
@@ -919,10 +919,19 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     .to_obj(cls.cast())
 }
 
-unsafe fn local(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+unsafe fn to_plain(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     ZonedDateTime::extract(slf)
         .without_offset()
-        .to_obj(State::for_obj(slf).local_datetime_type)
+        .to_obj(State::for_obj(slf).plain_datetime_type)
+}
+
+unsafe fn local(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    PyErr_WarnEx(
+        PyExc_DeprecationWarning,
+        c"local() method is deprecated. Use to_plain() instead".as_ptr(),
+        1,
+    );
+    to_plain(slf, NULL())
 }
 
 unsafe fn timestamp(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -1447,15 +1456,16 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(identity2 named "__copy__", c""),
     method!(identity2 named "__deepcopy__", c"", METH_O),
     method!(__reduce__, c""),
-    method!(to_tz, doc::KNOWSINSTANT_TO_TZ, METH_O),
-    method!(to_system_tz, doc::KNOWSINSTANT_TO_SYSTEM_TZ),
-    method_vararg!(to_fixed_offset, doc::KNOWSINSTANT_TO_FIXED_OFFSET),
-    method!(exact_eq, doc::KNOWSINSTANT_EXACT_EQ, METH_O),
+    method!(to_tz, doc::EXACTTIME_TO_TZ, METH_O),
+    method!(to_system_tz, doc::EXACTTIME_TO_SYSTEM_TZ),
+    method_vararg!(to_fixed_offset, doc::EXACTTIME_TO_FIXED_OFFSET),
+    method!(exact_eq, doc::EXACTTIME_EXACT_EQ, METH_O),
     method!(py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
-    method!(instant, doc::KNOWSINSTANTANDLOCAL_INSTANT),
-    method!(local, doc::KNOWSINSTANTANDLOCAL_LOCAL),
-    method!(date, doc::KNOWSLOCAL_DATE),
-    method!(time, doc::KNOWSLOCAL_TIME),
+    method!(instant, doc::EXACTANDLOCALTIME_INSTANT),
+    method!(to_plain, doc::EXACTANDLOCALTIME_TO_PLAIN),
+    method!(local, c""), // deprecated alias
+    method!(date, doc::LOCALTIME_DATE),
+    method!(time, doc::LOCALTIME_TIME),
     method!(format_common_iso, doc::ZONEDDATETIME_FORMAT_COMMON_ISO),
     method!(
         parse_common_iso,
@@ -1468,9 +1478,9 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::ZONEDDATETIME_FROM_PY_DATETIME,
         METH_O | METH_CLASS
     ),
-    method!(timestamp, doc::KNOWSINSTANT_TIMESTAMP),
-    method!(timestamp_millis, doc::KNOWSINSTANT_TIMESTAMP_MILLIS),
-    method!(timestamp_nanos, doc::KNOWSINSTANT_TIMESTAMP_NANOS),
+    method!(timestamp, doc::EXACTTIME_TIMESTAMP),
+    method!(timestamp_millis, doc::EXACTTIME_TIMESTAMP_MILLIS),
+    method!(timestamp_nanos, doc::EXACTTIME_TIMESTAMP_NANOS),
     method!(is_ambiguous, doc::ZONEDDATETIME_IS_AMBIGUOUS),
     method_kwargs!(
         from_timestamp,
@@ -1492,7 +1502,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(replace_time, doc::ZONEDDATETIME_REPLACE_TIME),
     method_kwargs!(add, doc::ZONEDDATETIME_ADD),
     method_kwargs!(subtract, doc::ZONEDDATETIME_SUBTRACT),
-    method!(difference, doc::KNOWSINSTANT_DIFFERENCE, METH_O),
+    method!(difference, doc::EXACTTIME_DIFFERENCE, METH_O),
     method!(start_of_day, doc::ZONEDDATETIME_START_OF_DAY),
     method!(day_length, doc::ZONEDDATETIME_DAY_LENGTH),
     method_kwargs!(round, doc::ZONEDDATETIME_ROUND),

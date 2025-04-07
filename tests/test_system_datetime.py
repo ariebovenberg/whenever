@@ -11,7 +11,7 @@ from hypothesis.strategies import text
 from whenever import (
     Date,
     Instant,
-    LocalDateTime,
+    PlainDateTime,
     OffsetDateTime,
     RepeatedTime,
     SkippedTime,
@@ -146,9 +146,12 @@ class TestInstant:
         )
 
 
-def test_local():
+def test_to_plain():
     d = SystemDateTime(2020, 8, 15, 12, 8, 30)
-    assert d.local() == LocalDateTime(2020, 8, 15, 12, 8, 30)
+    assert d.to_plain() == PlainDateTime(2020, 8, 15, 12, 8, 30)
+
+    with pytest.deprecated_call():
+        assert d.local() == PlainDateTime(2020, 8, 15, 12, 8, 30)
 
 
 @system_tz_ams()
@@ -568,27 +571,27 @@ class TestParseCommonIso:
         [
             (
                 "2020-08-15T12:08:30+05:00",
-                LocalDateTime(2020, 8, 15, 12, 8, 30),
+                PlainDateTime(2020, 8, 15, 12, 8, 30),
                 hours(5),
             ),
             (
                 "2020-08-15T12:08:30+20:00",
-                LocalDateTime(2020, 8, 15, 12, 8, 30),
+                PlainDateTime(2020, 8, 15, 12, 8, 30),
                 hours(20),
             ),
             (
                 "2020-08-15T12:08:30.0034+05:00",
-                LocalDateTime(2020, 8, 15, 12, 8, 30, nanosecond=3_400_000),
+                PlainDateTime(2020, 8, 15, 12, 8, 30, nanosecond=3_400_000),
                 hours(5),
             ),
             (
                 "2020-08-15T12:08:30.000000010+05:00",
-                LocalDateTime(2020, 8, 15, 12, 8, 30, nanosecond=10),
+                PlainDateTime(2020, 8, 15, 12, 8, 30, nanosecond=10),
                 hours(5),
             ),
             (
                 "2020-08-15T12:08:30.0034-05:00:01",
-                LocalDateTime(
+                PlainDateTime(
                     2020,
                     8,
                     15,
@@ -601,24 +604,24 @@ class TestParseCommonIso:
             ),
             (
                 "2020-08-15T12:08:30+00:00",
-                LocalDateTime(2020, 8, 15, 12, 8, 30),
+                PlainDateTime(2020, 8, 15, 12, 8, 30),
                 hours(0),
             ),
             (
                 "2020-08-15T12:08:30-00:00",
-                LocalDateTime(2020, 8, 15, 12, 8, 30),
+                PlainDateTime(2020, 8, 15, 12, 8, 30),
                 hours(0),
             ),
             (
                 "2020-08-15T12:08:30Z",
-                LocalDateTime(2020, 8, 15, 12, 8, 30),
+                PlainDateTime(2020, 8, 15, 12, 8, 30),
                 hours(0),
             ),
         ],
     )
     def test_valid(self, s, expect, offset):
         dt = SystemDateTime.parse_common_iso(s)
-        assert dt.local() == expect
+        assert dt.to_plain() == expect
         assert dt.offset == offset
 
     @pytest.mark.parametrize(
