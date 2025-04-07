@@ -34,7 +34,7 @@ dependencies = [
 ]
 keywords = [
     "datetime", "typesafe", "rust", "date", "time", "timezone", "utc",
-    "aware", "zoneinfo", "tzdata", "tzdb"
+    "zoneinfo", "tzdata", "tzdb"
 ]
 
 

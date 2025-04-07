@@ -6,7 +6,7 @@ use std::ptr::null_mut as NULL;
 use crate::common::*;
 use crate::date::Date;
 use crate::docstrings as doc;
-use crate::local_datetime::DateTime;
+use crate::plain_datetime::DateTime;
 use crate::math::*;
 use crate::round;
 use crate::State;
@@ -391,7 +391,7 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
 
 unsafe fn on(slf: *mut PyObject, date: *mut PyObject) -> PyReturn {
     let &State {
-        local_datetime_type,
+        plain_datetime_type,
         date_type,
         ..
     } = State::for_obj(slf);
@@ -400,7 +400,7 @@ unsafe fn on(slf: *mut PyObject, date: *mut PyObject) -> PyReturn {
             date: Date::extract(date),
             time: Time::extract(slf),
         }
-        .to_obj(local_datetime_type)
+        .to_obj(plain_datetime_type)
     } else {
         raise_type_err("argument must be a date")
     }

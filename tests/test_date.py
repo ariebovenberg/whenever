@@ -9,7 +9,7 @@ import pytest
 from whenever import (
     Date,
     DateDelta,
-    LocalDateTime,
+    PlainDateTime,
     MonthDay,
     Time,
     Weekday,
@@ -245,7 +245,7 @@ def test_kwarg_interning_bug_issue_149():
 
 def test_at():
     d = Date(2021, 1, 2)
-    assert d.at(Time(3, 4, 5)) == LocalDateTime(2021, 1, 2, 3, 4, 5)
+    assert d.at(Time(3, 4, 5)) == PlainDateTime(2021, 1, 2, 3, 4, 5)
 
 
 def test_repr():
@@ -409,7 +409,7 @@ class TestDaysUntilAndSince:
 
     def test_invalid(self):
         with pytest.raises((TypeError, AttributeError)):
-            Date(2021, 1, 1).days_until(LocalDateTime(2021, 1, 1, 1, 2, 3))  # type: ignore[arg-type]
+            Date(2021, 1, 1).days_until(PlainDateTime(2021, 1, 1, 1, 2, 3))  # type: ignore[arg-type]
 
 
 _EXAMPLE_DATES = [

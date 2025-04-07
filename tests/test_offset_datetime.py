@@ -11,7 +11,7 @@ from whenever import (
     Date,
     ImplicitlyIgnoringDST,
     Instant,
-    LocalDateTime,
+    PlainDateTime,
     OffsetDateTime,
     SystemDateTime,
     Time,
@@ -1111,9 +1111,12 @@ def test_to_system_tz():
             big_dt.to_system_tz()
 
 
-def test_local():
+def test_to_plain():
     d = OffsetDateTime(2020, 8, 15, 20, nanosecond=1, offset=3)
-    assert d.local() == LocalDateTime(2020, 8, 15, 20, nanosecond=1)
+    assert d.to_plain() == PlainDateTime(2020, 8, 15, 20, nanosecond=1)
+
+    with pytest.deprecated_call():
+        assert d.local() == PlainDateTime(2020, 8, 15, 20, nanosecond=1)
 
 
 @pytest.mark.parametrize(
@@ -1512,7 +1515,7 @@ class TestRound:
             d.round("foo", ignore_dst=True)  # type: ignore[arg-type]
 
     def test_out_of_range(self):
-        d = LocalDateTime.MAX.replace(nanosecond=0).assume_fixed_offset(0)
+        d = PlainDateTime.MAX.replace(nanosecond=0).assume_fixed_offset(0)
         with pytest.raises((ValueError, OverflowError), match="range"):
             d.round("second", increment=5, ignore_dst=True)
 

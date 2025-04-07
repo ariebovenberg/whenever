@@ -10,7 +10,7 @@ from hypothesis.strategies import floats, integers, text
 
 from whenever import (
     Instant,
-    LocalDateTime,
+    PlainDateTime,
     OffsetDateTime,
     SystemDateTime,
     ZonedDateTime,
@@ -690,7 +690,7 @@ class TestShiftOperators:
             None + d  # type: ignore[operator]
 
         with pytest.raises(TypeError, match="unsupported operand type"):
-            LocalDateTime(2020, 1, 1) + d  # type: ignore[operator]
+            PlainDateTime(2020, 1, 1) + d  # type: ignore[operator]
 
 
 class TestDifference:

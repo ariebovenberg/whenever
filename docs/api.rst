@@ -19,19 +19,19 @@ They are not meant to be used directly.
    :inherited-members:
    :member-order: bysource
 
-.. autoclass:: whenever._KnowsInstant
+.. autoclass:: whenever._ExactTime
    :members:
    :member-order: bysource
    :special-members: __eq__, __lt__, __le__, __gt__, __ge__, __sub__
    :show-inheritance:
 
-.. autoclass:: whenever._KnowsLocal
+.. autoclass:: whenever._LocalTime
    :members:
    :undoc-members: year, month, day, hour, minute, second, nanosecond
    :member-order: bysource
    :show-inheritance:
 
-.. autoclass:: whenever._KnowsInstantAndLocal
+.. autoclass:: whenever._ExactAndLocalTime
    :members:
    :member-order: bysource
    :show-inheritance:
@@ -56,7 +56,7 @@ Concrete classes
    .. autoattribute:: MIN
    .. autoattribute:: MAX
 
-.. autoclass:: whenever.LocalDateTime
+.. autoclass:: whenever.PlainDateTime
    :members:
      assume_utc,
      assume_fixed_offset,

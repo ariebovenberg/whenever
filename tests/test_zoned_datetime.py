@@ -21,7 +21,7 @@ from whenever import (
     Date,
     Instant,
     InvalidOffset,
-    LocalDateTime,
+    PlainDateTime,
     OffsetDateTime,
     RepeatedTime,
     SkippedTime,
@@ -306,12 +306,15 @@ def test_time():
     assert d.time() == Time(14, 30, 45)
 
 
-def test_local():
+def test_to_plain():
     d = ZonedDateTime(2020, 8, 15, 13, tz="Europe/Amsterdam")
-    assert d.local() == LocalDateTime(2020, 8, 15, 13)
-    assert d.replace(disambiguate="later").local() == LocalDateTime(
+    assert d.to_plain() == PlainDateTime(2020, 8, 15, 13)
+    assert d.replace(disambiguate="later").to_plain() == PlainDateTime(
         2020, 8, 15, 13
     )
+
+    with pytest.deprecated_call():
+        assert d.local() == PlainDateTime(2020, 8, 15, 13)
 
 
 class TestReplaceDate:
@@ -621,7 +624,7 @@ class TestEquality:
         assert a == b
 
     @system_tz_nyc()
-    def test_other_aware(self):
+    def test_other_exact(self):
         d: ZonedDateTime | OffsetDateTime | SystemDateTime = ZonedDateTime(
             2023,
             10,
@@ -1026,7 +1029,7 @@ def test_to_tz():
         .exact_eq(ams)
     )
 
-    # catch local datetimes sliding out of range
+    # catch local time sliding out of range
     small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
     with pytest.raises((ValueError, OverflowError, OSError)):
         small_zdt.to_tz("America/New_York")
@@ -1059,7 +1062,7 @@ def test_to_fixed_offset():
         OffsetDateTime(2020, 8, 15, 6, 8, 30, offset=hours(-4))
     )
 
-    # catch local datetimes sliding out of range
+    # catch local time sliding out of range
     small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
     with pytest.raises((ValueError, OverflowError), match="range|year"):
         small_zdt.to_fixed_offset(-3)
@@ -1079,7 +1082,7 @@ def test_to_system_tz():
         .exact_eq(SystemDateTime(2023, 10, 29, 2, 15, disambiguate="later"))
     )
 
-    # catch local datetimes sliding out of range
+    # catch local time sliding out of range
     small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
     with system_tz_nyc():
         with pytest.raises((ValueError, OverflowError), match="range|year"):

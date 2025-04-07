@@ -132,7 +132,7 @@ while many serious and long-standing issues remain unaddressed.
 ...    # Explicit types for different use cases
 ...    Instant,
 ...    ZonedDateTime,
-...    LocalDateTime,
+...    PlainDateTime,
 ... )
 
 # Identify moments in time, without timezone/calendar complexity
@@ -143,9 +143,9 @@ Instant(2024-07-04 10:36:56Z)
 >>> now.to_tz("Europe/Paris")
 ZonedDateTime(2024-07-04 12:36:56+02:00[Europe/Paris])
 
-# A 'naive' local time can't accidentally mix with other types.
+# A 'naive' datetime can't accidentally mix with other types.
 # You need to explicitly convert it and handle ambiguity.
->>> party_invite = LocalDateTime(2023, 10, 28, hour=22)
+>>> party_invite = PlainDateTime(2023, 10, 28, hour=22)
 >>> party_invite.add(hours=6)
 Traceback (most recent call last):
   ImplicitlyIgnoringDST: Adjusting a local datetime implicitly ignores DST [...]

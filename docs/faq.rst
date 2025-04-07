@@ -57,6 +57,45 @@ Of course, feel free to work with :class:`~whenever.ZonedDateTime` if
 you know the system's IANA timezone. You can use
 the `tzlocal <https://pypi.org/project/tzlocal/>`_ library to help with this.
 
+Why the name ``PlainDateTime``?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This has been an oft-discussed topic. Several names were considered
+for the concept of a "datetime without a timezone".
+
+Each option had its pros and cons.
+
+- Why not ``NaiveDateTime``? This name is already used in the standard library,
+  which does give it recognition. However, "naive" is a decidedly negative term.
+  While datetimes without a timezone *can* be used in a naive way
+  by developers who don't understand the implications, they are not inherently wrong to use.
+- Why not ``CivilDateTime``? This is the most "technically correct" name,
+  as it refers to the `time as used in civilian life <https://en.wikipedia.org/wiki/Civil_time>`_.
+  This name is most notably used in Jiff (Rust) and Abseil (C++) libraries.
+  While this niche name is a boon to these langauges,
+  Python tends to favor more common, non-jargon names:
+  "dict" over "hashmap", "list" over "array", etc.
+- Why not ``LocalDateTime``? This is the name that ISO8601 gives to the concept,
+  also making it a "technically correct" name.
+  However, the term "local" has become overloaded in the Python world
+  where it often refers to the system timezone.
+
+While ``PlainDateTime`` is not perfect, it has the following advantages:
+
+- Javascript's new Temporal API uses this name. There's significant
+  overlap between Python and Javascript developers, so this name is likely to be familiar.
+- It's a name that is easy to understand and remember, also for non-native speakers.
+
+Common critiques of ``PlainDateTime`` are:
+
+- *The name doesn't convey any meaning in itself.*
+  This is also a strength. It *is* simply a date+time. Yes, it can
+  be used to represent a local time, but it doesn't have to be.
+- *The name is defined by what it is not.*
+  Actually, it's actually really common to name things in opposition to something else.
+  Think of: "*stainless* steel", "*plain* text", or "*serverless* computing".
+
+
 .. _faq-leap-seconds:
 
 Are leap seconds supported?
@@ -87,8 +126,8 @@ I did consider this initially, but decided against it for the following reasons:
 
 .. _faq-why-not-dropin:
 
-Why isn't it a drop-in replacement for the standard library?
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Why no drop-in replacement for ``datetime``?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Fixing the issues with the standard library requires a different API.
 Keeping the same API would mean that the same issues would remain.

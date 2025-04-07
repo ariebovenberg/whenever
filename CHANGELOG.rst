@@ -19,6 +19,17 @@ The behavior is unchanged, but can be configured independently of ``zoneinfo`` i
 
 **Breaking changes**
 
+- ``LocalDateTime`` has been renamed to ``PlainDateTime``,
+  and the ``local()`` method has been renamed to ``to_plain()``.
+  The old names are still available (but deprecated) to ease the transition.
+
+  **Rationale**: In observing adoption of the library,
+  the term "local" causes confusion for a number of users,
+  since the term "local" is so overloaded in the Python world.
+  ``PlainDateTime`` is used in Javascript's Temporal API,
+  and seems to resonate better with users.
+  See the FAQ for a detailed discussion on the name.
+
 - Passing invalid timezone names now raise a ``whenever.TimeZoneNotFoundError`` instead of
   ``zoneinfo.ZoneInfoNotFoundError``.
 

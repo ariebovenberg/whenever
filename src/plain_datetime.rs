@@ -124,7 +124,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     parse_args_kwargs!(
         args,
         kwargs,
-        c"lll|lll$l:LocalDateTime",
+        c"lll|lll$l:PlainDateTime",
         year,
         month,
         day,
@@ -143,7 +143,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
 
 unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
     let DateTime { date, time } = DateTime::extract(slf);
-    format!("LocalDateTime({} {})", date, time).to_py()
+    format!("PlainDateTime({} {})", date, time).to_py()
 }
 
 unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
@@ -183,7 +183,7 @@ unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
-    // easy case: subtracting two LocalDateTime objects
+    // easy case: subtracting two PlainDateTime objects
     if Py_TYPE(obj_a) == Py_TYPE(obj_b) {
         raise(
             State::for_obj(obj_a).exc_implicitly_ignoring_dst,
@@ -210,7 +210,7 @@ unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bo
                 mut months,
                 mut days,
             } = DateDelta::extract(obj_b);
-            debug_assert_eq!(type_a, state.local_datetime_type);
+            debug_assert_eq!(type_a, state.plain_datetime_type);
             let dt = DateTime::extract(obj_a);
             if negate {
                 months = -months;
@@ -223,7 +223,7 @@ unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bo
             raise(state.exc_implicitly_ignoring_dst, doc::SHIFT_LOCAL_MSG)?
         } else {
             raise_type_err(format!(
-                "unsupported operand type(s) for {}: 'LocalDateTime' and {}",
+                "unsupported operand type(s) for {}: 'PlainDateTime' and {}",
                 opname,
                 type_b.cast::<PyObject>().repr()
             ))?
@@ -243,7 +243,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Py_nb_subtract, __sub__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
-        pfunc: doc::LOCALDATETIME.as_ptr() as *mut c_void,
+        pfunc: doc::PLAINDATETIME.as_ptr() as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_hash,
@@ -497,7 +497,7 @@ unsafe fn difference(
             .diff(Instant::from_datetime(b.date, b.time))
             .to_obj(state.time_delta_type)
     } else {
-        raise_type_err("difference() argument must be a LocalDateTime")?
+        raise_type_err("difference() argument must be a PlainDateTime")?
     }
 }
 
@@ -522,7 +522,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         nanos.get()
     ];
     (
-        State::for_obj(slf).unpickle_local_datetime,
+        State::for_obj(slf).unpickle_plain_datetime,
         steal!((steal!(data.to_py()?),).to_py()?),
     )
         .to_py()
@@ -546,7 +546,7 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
             subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
         },
     }
-    .to_obj(State::for_mod(module).local_datetime_type)
+    .to_obj(State::for_mod(module).plain_datetime_type)
 }
 
 unsafe fn from_py_datetime(type_: *mut PyObject, dt: *mut PyObject) -> PyReturn {
@@ -816,40 +816,40 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(__reduce__, c""),
     method!(
         from_py_datetime,
-        doc::LOCALDATETIME_FROM_PY_DATETIME,
+        doc::PLAINDATETIME_FROM_PY_DATETIME,
         METH_CLASS | METH_O
     ),
     method!(py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
     method!(
         get_date named "date",
-        doc::KNOWSLOCAL_DATE
+        doc::LOCALTIME_DATE
     ),
     method!(
         get_time named "time",
-        doc::KNOWSLOCAL_TIME
+        doc::LOCALTIME_TIME
     ),
-    method!(format_common_iso, doc::LOCALDATETIME_FORMAT_COMMON_ISO),
+    method!(format_common_iso, doc::PLAINDATETIME_FORMAT_COMMON_ISO),
     method!(
         parse_common_iso,
-        doc::LOCALDATETIME_PARSE_COMMON_ISO,
+        doc::PLAINDATETIME_PARSE_COMMON_ISO,
         METH_O | METH_CLASS
     ),
-    method_vararg!(strptime, doc::LOCALDATETIME_STRPTIME, METH_CLASS),
-    method_kwargs!(replace, doc::LOCALDATETIME_REPLACE),
-    method!(assume_utc, doc::LOCALDATETIME_ASSUME_UTC),
+    method_vararg!(strptime, doc::PLAINDATETIME_STRPTIME, METH_CLASS),
+    method_kwargs!(replace, doc::PLAINDATETIME_REPLACE),
+    method!(assume_utc, doc::PLAINDATETIME_ASSUME_UTC),
     method!(
         assume_fixed_offset,
-        doc::LOCALDATETIME_ASSUME_FIXED_OFFSET,
+        doc::PLAINDATETIME_ASSUME_FIXED_OFFSET,
         METH_O
     ),
-    method_kwargs!(assume_tz, doc::LOCALDATETIME_ASSUME_TZ),
-    method_kwargs!(assume_system_tz, doc::LOCALDATETIME_ASSUME_SYSTEM_TZ),
-    method!(replace_date, doc::LOCALDATETIME_REPLACE_DATE, METH_O),
-    method!(replace_time, doc::LOCALDATETIME_REPLACE_TIME, METH_O),
-    method_kwargs!(add, doc::LOCALDATETIME_ADD),
-    method_kwargs!(subtract, doc::LOCALDATETIME_SUBTRACT),
-    method_kwargs!(difference, doc::LOCALDATETIME_DIFFERENCE),
-    method_kwargs!(round, doc::LOCALDATETIME_ROUND),
+    method_kwargs!(assume_tz, doc::PLAINDATETIME_ASSUME_TZ),
+    method_kwargs!(assume_system_tz, doc::PLAINDATETIME_ASSUME_SYSTEM_TZ),
+    method!(replace_date, doc::PLAINDATETIME_REPLACE_DATE, METH_O),
+    method!(replace_time, doc::PLAINDATETIME_REPLACE_TIME, METH_O),
+    method_kwargs!(add, doc::PLAINDATETIME_ADD),
+    method_kwargs!(subtract, doc::PLAINDATETIME_SUBTRACT),
+    method_kwargs!(difference, doc::PLAINDATETIME_DIFFERENCE),
+    method_kwargs!(round, doc::PLAINDATETIME_ROUND),
     PyMethodDef::zeroed(),
 ];
 
@@ -920,7 +920,7 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
 ];
 
 pub(crate) static mut SPEC: PyType_Spec =
-    type_spec::<DateTime>(c"whenever.LocalDateTime", unsafe { SLOTS });
+    type_spec::<DateTime>(c"whenever.PlainDateTime", unsafe { SLOTS });
 
 #[cfg(test)]
 mod tests {

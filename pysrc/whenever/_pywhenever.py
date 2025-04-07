@@ -80,7 +80,7 @@ __all__ = [
     "OffsetDateTime",
     "ZonedDateTime",
     "SystemDateTime",
-    "LocalDateTime",
+    "PlainDateTime",
     # Deltas and time units
     "DateDelta",
     "TimeDelta",
@@ -249,19 +249,19 @@ class Date(_ImmutableBase):
         """
         return Weekday(self._py_date.isoweekday())
 
-    def at(self, t: Time, /) -> LocalDateTime:
+    def at(self, t: Time, /) -> PlainDateTime:
         """Combine a date with a time to create a datetime
 
         Example
         -------
         >>> d = Date(2021, 1, 2)
         >>> d.at(Time(12, 30))
-        LocalDateTime(2021-01-02 12:30:00)
+        PlainDateTime(2021-01-02 12:30:00)
 
-        You can use methods like :meth:`~LocalDateTime.assume_utc`
-        or :meth:`~LocalDateTime.assume_tz` to make the result aware.
+        You can use methods like :meth:`~PlainDateTime.assume_utc`
+        or :meth:`~PlainDateTime.assume_tz` to find the corresponding exact time.
         """
-        return LocalDateTime._from_py_unchecked(
+        return PlainDateTime._from_py_unchecked(
             _datetime.combine(self._py_date, t._py_time), t._nanos
         )
 
@@ -970,20 +970,20 @@ class Time(_ImmutableBase):
     def nanosecond(self) -> int:
         return self._nanos
 
-    def on(self, d: Date, /) -> LocalDateTime:
+    def on(self, d: Date, /) -> PlainDateTime:
         """Combine a time with a date to create a datetime
 
         Example
         -------
         >>> t = Time(12, 30)
         >>> t.on(Date(2021, 1, 2))
-        LocalDateTime(2021-01-02 12:30:00)
+        PlainDateTime(2021-01-02 12:30:00)
 
-        Then, use methods like :meth:`~LocalDateTime.assume_utc`
-        or :meth:`~LocalDateTime.assume_tz`
-        to make the result aware.
+        Then, use methods like :meth:`~PlainDateTime.assume_utc`
+        or :meth:`~PlainDateTime.assume_tz`
+        to find the corresponding exact time.
         """
-        return LocalDateTime._from_py_unchecked(
+        return PlainDateTime._from_py_unchecked(
             _datetime.combine(d._py_date, self._py_time),
             self._nanos,
         )
@@ -2524,7 +2524,7 @@ class _BasicConversions(_ImmutableBase, ABC):
     """Methods for types converting to/from the standard library and ISO8601:
 
     - :class:`Instant`
-    - :class:`LocalDateTime`
+    - :class:`PlainDateTime`
     - :class:`ZonedDateTime`
     - :class:`OffsetDateTime`
     - :class:`SystemDateTime`
@@ -2599,10 +2599,10 @@ class _BasicConversions(_ImmutableBase, ABC):
         return self
 
 
-class _KnowsLocal(_BasicConversions, ABC):
-    """Methods for types that know a local date and time:
+class _LocalTime(_BasicConversions, ABC):
+    """Methods for types that know a local date and time-of-day:
 
-    - :class:`LocalDateTime`
+    - :class:`PlainDateTime`
     - :class:`ZonedDateTime`
     - :class:`OffsetDateTime`
     - :class:`SystemDateTime`
@@ -2650,8 +2650,8 @@ class _KnowsLocal(_BasicConversions, ABC):
         Date(2021-01-02)
 
         To perform the inverse, use :meth:`Date.at` and a method
-        like :meth:`~LocalDateTime.assume_utc` or
-        :meth:`~LocalDateTime.assume_tz`:
+        like :meth:`~PlainDateTime.assume_utc` or
+        :meth:`~PlainDateTime.assume_tz`:
 
         >>> date.at(time).assume_tz("Europe/London")
         """
@@ -2668,8 +2668,8 @@ class _KnowsLocal(_BasicConversions, ABC):
         Time(03:04:05)
 
         To perform the inverse, use :meth:`Time.on` and a method
-        like :meth:`~LocalDateTime.assume_utc` or
-        :meth:`~LocalDateTime.assume_tz`:
+        like :meth:`~PlainDateTime.assume_utc` or
+        :meth:`~PlainDateTime.assume_tz`:
 
         >>> time.on(date).assume_tz("Europe/Paris")
         """
@@ -2702,9 +2702,9 @@ class _KnowsLocal(_BasicConversions, ABC):
 
             Example
             -------
-            >>> d = LocalDateTime(2020, 8, 15, 23, 12)
+            >>> d = PlainDateTime(2020, 8, 15, 23, 12)
             >>> d.replace(year=2021)
-            LocalDateTime(2021-08-15 23:12:00)
+            PlainDateTime(2021-08-15 23:12:00)
             >>>
             >>> z = ZonedDateTime(2020, 8, 15, 23, 12, tz="Europe/London")
             >>> z.replace(year=2021)
@@ -2716,9 +2716,9 @@ class _KnowsLocal(_BasicConversions, ABC):
 
             Example
             -------
-            >>> d = LocalDateTime(2020, 8, 15, hour=4)
+            >>> d = PlainDateTime(2020, 8, 15, hour=4)
             >>> d.replace_date(Date(2021, 1, 1))
-            LocalDateTime(2021-01-01T04:00:00)
+            PlainDateTime(2021-01-01T04:00:00)
             >>> zdt = ZonedDateTime.now("Europe/London")
             >>> zdt.replace_date(Date(2021, 1, 1))
             ZonedDateTime(2021-01-01T13:00:00.23439+00:00[Europe/London])
@@ -2731,9 +2731,9 @@ class _KnowsLocal(_BasicConversions, ABC):
 
             Example
             -------
-            >>> d = LocalDateTime(2020, 8, 15, hour=4)
+            >>> d = PlainDateTime(2020, 8, 15, hour=4)
             >>> d.replace_time(Time(12, 30))
-            LocalDateTime(2020-08-15T12:30:00)
+            PlainDateTime(2020-08-15T12:30:00)
             >>> zdt = ZonedDateTime.now("Europe/London")
             >>> zdt.replace_time(Time(12, 30))
             ZonedDateTime(2024-06-15T12:30:00+01:00[Europe/London])
@@ -2826,7 +2826,7 @@ class _KnowsLocal(_BasicConversions, ABC):
             """
 
 
-class _KnowsInstant(_BasicConversions):
+class _ExactTime(_BasicConversions):
     """Methods for types that represent a specific moment in time.
 
     Implemented by:
@@ -2895,7 +2895,7 @@ class _KnowsInstant(_BasicConversions):
         @classmethod
         def from_timestamp(cls: type[_T], i: int | float, /, **kwargs) -> _T:
             """Create an instance from a UNIX timestamp.
-            The inverse of :meth:`~_KnowsInstant.timestamp`.
+            The inverse of :meth:`~_ExactTime.timestamp`.
 
             :class:`~ZonedDateTime` and :class:`~OffsetDateTime` require
             a ``tz=`` and ``offset=`` kwarg, respectively.
@@ -3036,7 +3036,7 @@ class _KnowsInstant(_BasicConversions):
         ... )
         True
         """
-        if not isinstance(other, _KnowsInstant):
+        if not isinstance(other, _ExactTime):
             return NotImplemented
         # We can't rely on simple equality, because it isn't equal
         # between two datetimes with different timezones if one of the
@@ -3048,7 +3048,7 @@ class _KnowsInstant(_BasicConversions):
             other._nanos,
         )
 
-    def __lt__(self, other: _KnowsInstant) -> bool:
+    def __lt__(self, other: _ExactTime) -> bool:
         """Compare two datetimes by when they occur in time
 
         ``a < b`` is equivalent to ``a.instant() < b.instant()``
@@ -3060,14 +3060,14 @@ class _KnowsInstant(_BasicConversions):
         ... )
         True
         """
-        if not isinstance(other, _KnowsInstant):
+        if not isinstance(other, _ExactTime):
             return NotImplemented
         return (self._py_dt.astimezone(_UTC), self._nanos) < (
             other._py_dt.astimezone(_UTC),
             other._nanos,
         )
 
-    def __le__(self, other: _KnowsInstant) -> bool:
+    def __le__(self, other: _ExactTime) -> bool:
         """Compare two datetimes by when they occur in time
 
         ``a <= b`` is equivalent to ``a.instant() <= b.instant()``
@@ -3079,14 +3079,14 @@ class _KnowsInstant(_BasicConversions):
         ... )
         True
         """
-        if not isinstance(other, _KnowsInstant):
+        if not isinstance(other, _ExactTime):
             return NotImplemented
         return (self._py_dt.astimezone(_UTC), self._nanos) <= (
             other._py_dt.astimezone(_UTC),
             other._nanos,
         )
 
-    def __gt__(self, other: _KnowsInstant) -> bool:
+    def __gt__(self, other: _ExactTime) -> bool:
         """Compare two datetimes by when they occur in time
 
         ``a > b`` is equivalent to ``a.instant() > b.instant()``
@@ -3098,14 +3098,14 @@ class _KnowsInstant(_BasicConversions):
         ... )
         True
         """
-        if not isinstance(other, _KnowsInstant):
+        if not isinstance(other, _ExactTime):
             return NotImplemented
         return (self._py_dt.astimezone(_UTC), self._nanos) > (
             other._py_dt.astimezone(_UTC),
             other._nanos,
         )
 
-    def __ge__(self, other: _KnowsInstant) -> bool:
+    def __ge__(self, other: _ExactTime) -> bool:
         """Compare two datetimes by when they occur in time
 
         ``a >= b`` is equivalent to ``a.instant() >= b.instant()``
@@ -3117,7 +3117,7 @@ class _KnowsInstant(_BasicConversions):
         ... )
         True
         """
-        if not isinstance(other, _KnowsInstant):
+        if not isinstance(other, _ExactTime):
             return NotImplemented
         return (self._py_dt.astimezone(_UTC), self._nanos) >= (
             other._py_dt.astimezone(_UTC),
@@ -3129,7 +3129,7 @@ class _KnowsInstant(_BasicConversions):
     if not TYPE_CHECKING:  # pragma: no branch
 
         @abstractmethod
-        def __sub__(self, other: _KnowsInstant) -> TimeDelta:
+        def __sub__(self, other: _ExactTime) -> TimeDelta:
             """Calculate the duration between two datetimes
 
             ``a - b`` is equivalent to ``a.instant() - b.instant()``
@@ -3144,7 +3144,7 @@ class _KnowsInstant(_BasicConversions):
             >>> d - ZonedDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
             TimeDelta(05:00:00)
             """
-            if isinstance(other, _KnowsInstant):
+            if isinstance(other, _ExactTime):
                 py_delta = self._py_dt.astimezone(_UTC) - other._py_dt
                 return TimeDelta(
                     seconds=py_delta.days * 86_400 + py_delta.seconds,
@@ -3153,8 +3153,9 @@ class _KnowsInstant(_BasicConversions):
             return NotImplemented
 
 
-class _KnowsInstantAndLocal(_KnowsLocal, _KnowsInstant):
-    """Common behavior for all types that know both a local time and an instant:
+class _ExactAndLocalTime(_LocalTime, _ExactTime):
+    """Common behavior for all types that know an exact time and
+    corresponding local date and time-of-day.
 
     - :class:`ZonedDateTime`
     - :class:`OffsetDateTime`
@@ -3189,22 +3190,31 @@ class _KnowsInstantAndLocal(_KnowsLocal, _KnowsInstant):
             self._py_dt.astimezone(_UTC), self._nanos
         )
 
-    def local(self) -> LocalDateTime:
-        """Get the underlying local date and time
+    def to_plain(self) -> PlainDateTime:
+        """Get the underlying date and time (without offset or timezone)
 
-        As an inverse, :class:`LocalDateTime` has methods
-        :meth:`~LocalDateTime.assume_utc`, :meth:`~LocalDateTime.assume_fixed_offset`
-        , :meth:`~LocalDateTime.assume_tz`, and :meth:`~LocalDateTime.assume_system_tz`
+        As an inverse, :class:`PlainDateTime` has methods
+        :meth:`~PlainDateTime.assume_utc`, :meth:`~PlainDateTime.assume_fixed_offset`
+        , :meth:`~PlainDateTime.assume_tz`, and :meth:`~PlainDateTime.assume_system_tz`
         which may require additional arguments.
         """
-        return LocalDateTime._from_py_unchecked(
+        return PlainDateTime._from_py_unchecked(
             self._py_dt.replace(tzinfo=None),
             self._nanos,
         )
 
+    def local(self) -> PlainDateTime:
+        import warnings
+
+        warnings.warn(
+            "local() is deprecated. Use to_plain() instead.",
+            DeprecationWarning,
+        )
+        return self.to_plain()
+
 
 @final
-class Instant(_KnowsInstant):
+class Instant(_ExactTime):
     """Represents a moment in time with nanosecond precision.
 
     This class is great for representing a specific point in time independent
@@ -3304,7 +3314,7 @@ class Instant(_KnowsInstant):
         if d.tzinfo is None:
             raise ValueError(
                 "Cannot create Instant from a naive datetime. "
-                "Use LocalDateTime.from_py_datetime() for this."
+                "Use PlainDateTime.from_py_datetime() for this."
             )
         if d.utcoffset() is None:
             raise ValueError(
@@ -3569,16 +3579,16 @@ class Instant(_KnowsInstant):
         return NotImplemented
 
     @overload
-    def __sub__(self, other: _KnowsInstant) -> TimeDelta: ...
+    def __sub__(self, other: _ExactTime) -> TimeDelta: ...
 
     @overload
     def __sub__(self, other: TimeDelta) -> Instant: ...
 
-    def __sub__(self, other: TimeDelta | _KnowsInstant) -> Instant | TimeDelta:
+    def __sub__(self, other: TimeDelta | _ExactTime) -> Instant | TimeDelta:
         """Subtract another exact time or timedelta
 
         Subtraction of deltas happens in the same way as the :meth:`subtract` method.
-        Subtraction of instants happens the same way as the :meth:`~_KnowsInstant.difference` method.
+        Subtraction of instants happens the same way as the :meth:`~_ExactTime.difference` method.
 
         See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`_ for more information.
 
@@ -3590,7 +3600,7 @@ class Instant(_KnowsInstant):
         >>> d - Instant.from_utc(2020, 8, 14)
         TimeDelta(47:12:00)
         """
-        if isinstance(other, _KnowsInstant):
+        if isinstance(other, _ExactTime):
             return super().__sub__(other)  # type: ignore[misc, no-any-return]
         elif isinstance(other, TimeDelta):
             return self + -other
@@ -3629,9 +3639,10 @@ def _unpkl_inst(data: bytes) -> Instant:
 
 
 @final
-class OffsetDateTime(_KnowsInstantAndLocal):
+class OffsetDateTime(_ExactAndLocalTime):
     """A datetime with a fixed UTC offset.
-    Useful for representing the local time at a specific location.
+    Useful for representing a "static" local date and time-of-day
+    at a specific location.
 
     Example
     -------
@@ -3840,7 +3851,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         if d.tzinfo is None:
             raise ValueError(
                 "Cannot create from a naive datetime. "
-                "Use LocalDateTime.from_py_datetime() for this."
+                "Use PlainDateTime.from_py_datetime() for this."
             )
         if (offset := d.utcoffset()) is None:
             raise ValueError(
@@ -3920,7 +3931,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
 
-    def __sub__(self, other: _KnowsInstant) -> TimeDelta:
+    def __sub__(self, other: _ExactTime) -> TimeDelta:
         """Calculate the duration relative to another exact time."""
         if isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
             raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
@@ -4207,7 +4218,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
         if ignore_dst is not True:
             raise ImplicitlyIgnoringDST(OFFSET_ROUNDING_DST_MSG)
         return (
-            self.local()
+            self.to_plain()
             ._round_unchecked(
                 increment_to_ns(unit, increment, any_hour_ok=False),
                 mode,
@@ -4225,7 +4236,7 @@ class OffsetDateTime(_KnowsInstantAndLocal):
             _unpkl_offset,
             (
                 pack(
-                    "<HBBBBBIl",
+                    "<HBBBBBil",
                     *self._py_dt.timetuple()[:6],
                     self._nanos,
                     int(self._py_dt.utcoffset().total_seconds()),  # type: ignore[union-attr]
@@ -4239,13 +4250,13 @@ class OffsetDateTime(_KnowsInstantAndLocal):
 # required by __reduce__.
 # Also, it allows backwards-compatible changes to the pickling format.
 def _unpkl_offset(data: bytes) -> OffsetDateTime:
-    *args, nanos, offset_secs = unpack("<HBBBBBIl", data)
+    *args, nanos, offset_secs = unpack("<HBBBBBil", data)
     args += (0, _timezone(_timedelta(seconds=offset_secs)))
     return OffsetDateTime._from_py_unchecked(_datetime(*args), nanos)
 
 
 @final
-class ZonedDateTime(_KnowsInstantAndLocal):
+class ZonedDateTime(_ExactAndLocalTime):
     """A datetime associated with a timezone in the IANA database.
     Useful for representing the exact time at a specific location.
 
@@ -4542,20 +4553,18 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         return NotImplemented
 
     @overload
-    def __sub__(self, other: _KnowsInstant) -> TimeDelta: ...
+    def __sub__(self, other: _ExactTime) -> TimeDelta: ...
 
     @overload
     def __sub__(self, other: TimeDelta) -> ZonedDateTime: ...
 
-    def __sub__(
-        self, other: TimeDelta | _KnowsInstant
-    ) -> _KnowsInstant | TimeDelta:
+    def __sub__(self, other: TimeDelta | _ExactTime) -> _ExactTime | TimeDelta:
         """Subtract another datetime or duration.
 
         See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
         for more information.
         """
-        if isinstance(other, _KnowsInstant):
+        if isinstance(other, _ExactTime):
             return super().__sub__(other)  # type: ignore[misc, no-any-return]
         elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
             return self + -other
@@ -4654,7 +4663,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         )
 
     def is_ambiguous(self) -> bool:
-        """Whether the local time is ambiguous, e.g. due to a DST transition.
+        """Whether the date and time-of-day are ambiguous, e.g. due to a DST transition.
 
         Example
         -------
@@ -4742,7 +4751,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
         else:
             day_ns = 86_400_000_000_000
 
-        rounded_local = self.local()._round_unchecked(
+        rounded_local = self.to_plain()._round_unchecked(
             increment_ns, mode, day_ns
         )
         return self._from_py_unchecked(
@@ -4778,7 +4787,7 @@ class ZonedDateTime(_KnowsInstantAndLocal):
             _unpkl_zoned,
             (
                 pack(
-                    "<HBBBBBIl",
+                    "<HBBBBBil",
                     *self._py_dt.timetuple()[:6],
                     self._nanos,
                     int(self._py_dt.utcoffset().total_seconds()),  # type: ignore[union-attr]
@@ -4796,7 +4805,7 @@ def _unpkl_zoned(
     data: bytes,
     tz: str,
 ) -> ZonedDateTime:
-    *args, nanos, offset_secs = unpack("<HBBBBBIl", data)
+    *args, nanos, offset_secs = unpack("<HBBBBBil", data)
     args += (0, _get_tz(tz))
     return ZonedDateTime._from_py_unchecked(
         _adjust_fold_to_offset(
@@ -4807,7 +4816,7 @@ def _unpkl_zoned(
 
 
 @final
-class SystemDateTime(_KnowsInstantAndLocal):
+class SystemDateTime(_ExactAndLocalTime):
     """Represents a time in the system timezone.
     It is similar to ``OffsetDateTime``,
     but it knows about the system timezone and its DST transitions.
@@ -5027,20 +5036,18 @@ class SystemDateTime(_KnowsInstantAndLocal):
         return NotImplemented
 
     @overload
-    def __sub__(self, other: _KnowsInstant) -> TimeDelta: ...
+    def __sub__(self, other: _ExactTime) -> TimeDelta: ...
 
     @overload
     def __sub__(self, other: TimeDelta) -> SystemDateTime: ...
 
-    def __sub__(
-        self, other: TimeDelta | _KnowsInstant
-    ) -> _KnowsInstant | Delta:
+    def __sub__(self, other: TimeDelta | _ExactTime) -> _ExactTime | Delta:
         """Subtract another datetime or duration
 
         See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
         for more information.
         """
-        if isinstance(other, _KnowsInstant):
+        if isinstance(other, _ExactTime):
             return super().__sub__(other)  # type: ignore[misc, no-any-return]
         elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
             return self + -other
@@ -5139,7 +5146,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         )
 
     def is_ambiguous(self) -> bool:
-        """Whether the local time is ambiguous, e.g. due to a DST transition.
+        """Whether the date and time-of-day is ambiguous, e.g. due to a DST transition.
 
         Example
         -------
@@ -5238,7 +5245,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
         else:
             day_ns = 86_400_000_000_000
 
-        rounded_local = self.local()._round_unchecked(
+        rounded_local = self.to_plain()._round_unchecked(
             increment_ns, mode, day_ns
         )
         return self._from_py_unchecked(
@@ -5255,7 +5262,7 @@ class SystemDateTime(_KnowsInstantAndLocal):
             _unpkl_system,
             (
                 pack(
-                    "<HBBBBBIl",
+                    "<HBBBBBil",
                     *self._py_dt.timetuple()[:6],
                     self._nanos,
                     int(self._py_dt.utcoffset().total_seconds()),  # type: ignore[union-attr]
@@ -5269,17 +5276,20 @@ class SystemDateTime(_KnowsInstantAndLocal):
 # required by __reduce__.
 # Also, it allows backwards-compatible changes to the pickling format.
 def _unpkl_system(data: bytes) -> SystemDateTime:
-    *args, nanos, offset_secs = unpack("<HBBBBBIl", data)
+    *args, nanos, offset_secs = unpack("<HBBBBBil", data)
     args += (0, _timezone(_timedelta(seconds=offset_secs)))
     return SystemDateTime._from_py_unchecked(_datetime(*args), nanos)
 
 
 @final
-class LocalDateTime(_KnowsLocal):
-    """A local date and time, i.e. it would appear to people on a wall clock.
+class PlainDateTime(_LocalTime):
+    """A combination of date and time-of-day, without a timezone.
 
-    It can't be mixed with aware datetimes.
-    Conversion to aware datetimes can only be done by
+    Can be used to represent local time, i.e. how time appears to people
+    on a wall clock.
+
+    It can't be mixed with exact time types (e.g. ``Instant``, ``ZonedDateTime``)
+    Conversion to exact time types can only be done by
     explicitly assuming a timezone or offset.
 
     Examples of when to use this type:
@@ -5319,15 +5329,15 @@ class LocalDateTime(_KnowsLocal):
         )
 
     @classmethod
-    def parse_common_iso(cls, s: str, /) -> LocalDateTime:
+    def parse_common_iso(cls, s: str, /) -> PlainDateTime:
         """Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
 
         The inverse of the ``format_common_iso()`` method.
 
         Example
         -------
-        >>> LocalDateTime.parse_common_iso("2020-08-15T23:12:00")
-        LocalDateTime(2020-08-15 23:12:00)
+        >>> PlainDateTime.parse_common_iso("2020-08-15T23:12:00")
+        PlainDateTime(2020-08-15 23:12:00)
         """
         if (match := _match_local_str(s)) is None:
             raise ValueError(f"Invalid format: {s!r}")
@@ -5338,18 +5348,18 @@ class LocalDateTime(_KnowsLocal):
         )
 
     @classmethod
-    def from_py_datetime(cls, d: _datetime, /) -> LocalDateTime:
+    def from_py_datetime(cls, d: _datetime, /) -> PlainDateTime:
         """Create an instance from a "naive" standard library ``datetime`` object"""
         if d.tzinfo is not None:
             raise ValueError(
-                "Can only create LocalDateTime from a naive datetime, "
+                "Can only create PlainDateTime from a naive datetime, "
                 f"got datetime with tzinfo={d.tzinfo!r}"
             )
         return cls._from_py_unchecked(
             _strip_subclasses(d.replace(microsecond=0)), d.microsecond * 1_000
         )
 
-    def replace(self, /, **kwargs: Any) -> LocalDateTime:
+    def replace(self, /, **kwargs: Any) -> PlainDateTime:
         """Construct a new instance with the given fields replaced."""
         if not _no_tzinfo_fold_or_ms(kwargs):
             raise TypeError(
@@ -5358,13 +5368,13 @@ class LocalDateTime(_KnowsLocal):
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
         return self._from_py_unchecked(self._py_dt.replace(**kwargs), nanos)
 
-    def replace_date(self, d: Date, /) -> LocalDateTime:
+    def replace_date(self, d: Date, /) -> PlainDateTime:
         """Construct a new instance with the date replaced."""
         return self._from_py_unchecked(
             _datetime.combine(d._py_date, self._py_dt.time()), self._nanos
         )
 
-    def replace_time(self, t: Time, /) -> LocalDateTime:
+    def replace_time(self, t: Time, /) -> PlainDateTime:
         """Construct a new instance with the time replaced."""
         return self._from_py_unchecked(
             _datetime.combine(self._py_dt.date(), t._py_time), t._nanos
@@ -5375,7 +5385,7 @@ class LocalDateTime(_KnowsLocal):
 
     def __eq__(self, other: object) -> bool:
         """Compare objects for equality.
-        Only ever equal to other :class:`LocalDateTime` instances with the
+        Only ever equal to other :class:`PlainDateTime` instances with the
         same values.
 
         Warning
@@ -5390,43 +5400,43 @@ class LocalDateTime(_KnowsLocal):
 
         Example
         -------
-        >>> LocalDateTime(2020, 8, 15, 23) == LocalDateTime(2020, 8, 15, 23)
+        >>> PlainDateTime(2020, 8, 15, 23) == PlainDateTime(2020, 8, 15, 23)
         True
-        >>> LocalDateTime(2020, 8, 15, 23, 1) == LocalDateTime(2020, 8, 15, 23)
+        >>> PlainDateTime(2020, 8, 15, 23, 1) == PlainDateTime(2020, 8, 15, 23)
         False
-        >>> LocalDateTime(2020, 8, 15) == Instant.from_utc(2020, 8, 15)
+        >>> PlainDateTime(2020, 8, 15) == Instant.from_utc(2020, 8, 15)
         False  # Use mypy's --strict-equality flag to detect this.
         """
-        if not isinstance(other, LocalDateTime):
+        if not isinstance(other, PlainDateTime):
             return NotImplemented
         return (self._py_dt, self._nanos) == (other._py_dt, other._nanos)
 
-    MIN: ClassVar[LocalDateTime]
+    MIN: ClassVar[PlainDateTime]
     """The minimum representable value of this type."""
-    MAX: ClassVar[LocalDateTime]
+    MAX: ClassVar[PlainDateTime]
     """The maximum representable value of this type."""
 
-    def __lt__(self, other: LocalDateTime) -> bool:
-        if not isinstance(other, LocalDateTime):
+    def __lt__(self, other: PlainDateTime) -> bool:
+        if not isinstance(other, PlainDateTime):
             return NotImplemented
         return (self._py_dt, self._nanos) < (other._py_dt, other._nanos)
 
-    def __le__(self, other: LocalDateTime) -> bool:
-        if not isinstance(other, LocalDateTime):
+    def __le__(self, other: PlainDateTime) -> bool:
+        if not isinstance(other, PlainDateTime):
             return NotImplemented
         return (self._py_dt, self._nanos) <= (other._py_dt, other._nanos)
 
-    def __gt__(self, other: LocalDateTime) -> bool:
-        if not isinstance(other, LocalDateTime):
+    def __gt__(self, other: PlainDateTime) -> bool:
+        if not isinstance(other, PlainDateTime):
             return NotImplemented
         return (self._py_dt, self._nanos) > (other._py_dt, other._nanos)
 
-    def __ge__(self, other: LocalDateTime) -> bool:
-        if not isinstance(other, LocalDateTime):
+    def __ge__(self, other: PlainDateTime) -> bool:
+        if not isinstance(other, PlainDateTime):
             return NotImplemented
         return (self._py_dt, self._nanos) >= (other._py_dt, other._nanos)
 
-    def __add__(self, delta: DateDelta) -> LocalDateTime:
+    def __add__(self, delta: DateDelta) -> PlainDateTime:
         """Add a delta to this datetime.
 
         See :ref:`the docs on arithmetic <arithmetic>` for more information.
@@ -5443,7 +5453,7 @@ class LocalDateTime(_KnowsLocal):
             raise ImplicitlyIgnoringDST(SHIFT_LOCAL_MSG)
         return NotImplemented
 
-    def __sub__(self, other: DateDelta) -> LocalDateTime:
+    def __sub__(self, other: DateDelta) -> PlainDateTime:
         """Subtract another datetime or delta
 
         See :ref:`the docs on arithmetic <arithmetic>` for more information.
@@ -5451,18 +5461,18 @@ class LocalDateTime(_KnowsLocal):
         # Handling these extra types allows for descriptive error messages
         if isinstance(other, (DateDelta, TimeDelta, DateTimeDelta)):
             return self + -other
-        elif isinstance(other, LocalDateTime):
+        elif isinstance(other, PlainDateTime):
             raise ImplicitlyIgnoringDST(DIFF_OPERATOR_LOCAL_MSG)
         return NotImplemented
 
     def difference(
-        self, other: LocalDateTime, /, *, ignore_dst: bool = False
+        self, other: PlainDateTime, /, *, ignore_dst: bool = False
     ) -> TimeDelta:
-        """Calculate the difference between two local datetimes.
+        """Calculate the difference between two times without a timezone.
 
         Important
         ---------
-        The difference between two local datetimes implicitly ignores
+        The difference between two datetimes without a timezone implicitly ignores
         DST transitions and other timezone changes.
         To perform DST-safe operations, convert to a ``ZonedDateTime`` first.
         Or, if you don't know the timezone and accept potentially incorrect results
@@ -5480,12 +5490,12 @@ class LocalDateTime(_KnowsLocal):
         )
 
     @no_type_check
-    def add(self, *args, **kwargs) -> LocalDateTime:
+    def add(self, *args, **kwargs) -> PlainDateTime:
         """Add a time amount to this datetime.
 
         Important
         ---------
-        Shifting a ``LocalDateTime`` with **exact units** (e.g. hours, seconds)
+        Shifting a ``PlainDateTime`` with **exact units** (e.g. hours, seconds)
         implicitly ignores DST transitions and other timezone changes.
         If you need to account for these, convert to a ``ZonedDateTime`` first.
         Or, if you don't know the timezone and accept potentially incorrect results
@@ -5497,12 +5507,12 @@ class LocalDateTime(_KnowsLocal):
         return self._shift(1, *args, **kwargs)
 
     @no_type_check
-    def subtract(self, *args, **kwargs) -> LocalDateTime:
+    def subtract(self, *args, **kwargs) -> PlainDateTime:
         """Subtract a time amount from this datetime.
 
         Important
         ---------
-        Shifting a ``LocalDateTime`` with **exact units** (e.g. hours, seconds)
+        Shifting a ``PlainDateTime`` with **exact units** (e.g. hours, seconds)
         implicitly ignores DST transitions and other timezone changes.
         If you need to account for these, convert to a ``ZonedDateTime`` first.
         Or, if you don't know the timezone and accept potentially incorrect results
@@ -5522,7 +5532,7 @@ class LocalDateTime(_KnowsLocal):
         *,
         ignore_dst: bool = False,
         **kwargs,
-    ) -> LocalDateTime:
+    ) -> PlainDateTime:
         if kwargs:
             if arg is _UNSET:
                 return self._shift_kwargs(sign, ignore_dst, **kwargs)
@@ -5554,7 +5564,7 @@ class LocalDateTime(_KnowsLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-    ) -> LocalDateTime:
+    ) -> PlainDateTime:
         py_dt_with_new_date = self.replace_date(
             self.date()
             ._add_months(sign * (years * 12 + months))
@@ -5581,14 +5591,14 @@ class LocalDateTime(_KnowsLocal):
         )
 
     @classmethod
-    def strptime(cls, s: str, /, fmt: str) -> LocalDateTime:
+    def strptime(cls, s: str, /, fmt: str) -> PlainDateTime:
         """Simple alias for
-        ``LocalDateTime.from_py_datetime(datetime.strptime(s, fmt))``
+        ``PlainDateTime.from_py_datetime(datetime.strptime(s, fmt))``
 
         Example
         -------
-        >>> LocalDateTime.strptime("2020-08-15", "%Y-%m-%d")
-        LocalDateTime(2020-08-15 00:00:00)
+        >>> PlainDateTime.strptime("2020-08-15", "%Y-%m-%d")
+        PlainDateTime(2020-08-15 00:00:00)
 
         Note
         ----
@@ -5611,7 +5621,7 @@ class LocalDateTime(_KnowsLocal):
 
         Example
         -------
-        >>> LocalDateTime(2020, 8, 15, 23, 12).assume_utc()
+        >>> PlainDateTime(2020, 8, 15, 23, 12).assume_utc()
         Instant(2020-08-15 23:12:00Z)
         """
         return Instant._from_py_unchecked(
@@ -5625,7 +5635,7 @@ class LocalDateTime(_KnowsLocal):
 
         Example
         -------
-        >>> LocalDateTime(2020, 8, 15, 23, 12).assume_fixed_offset(+2)
+        >>> PlainDateTime(2020, 8, 15, 23, 12).assume_fixed_offset(+2)
         OffsetDateTime(2020-08-15 23:12:00+02:00)
         """
         return OffsetDateTime._from_py_unchecked(
@@ -5640,7 +5650,7 @@ class LocalDateTime(_KnowsLocal):
 
         Note
         ----
-        The local datetime may be ambiguous in the given timezone
+        The local time may be ambiguous in the given timezone
         (e.g. during a DST transition). Therefore, you must explicitly
         specify how to handle such a situation using the ``disambiguate`` argument.
         See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
@@ -5648,7 +5658,7 @@ class LocalDateTime(_KnowsLocal):
 
         Example
         -------
-        >>> d = LocalDateTime(2020, 8, 15, 23, 12)
+        >>> d = PlainDateTime(2020, 8, 15, 23, 12)
         >>> d.assume_tz("Europe/Amsterdam", disambiguate="raise")
         ZonedDateTime(2020-08-15 23:12:00+02:00[Europe/Amsterdam])
         """
@@ -5669,7 +5679,7 @@ class LocalDateTime(_KnowsLocal):
 
         Note
         ----
-        The local datetime may be ambiguous in the system timezone
+        The local time may be ambiguous in the system timezone
         (e.g. during a DST transition). Therefore, you must explicitly
         specify how to handle such a situation using the ``disambiguate`` argument.
         See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
@@ -5677,7 +5687,7 @@ class LocalDateTime(_KnowsLocal):
 
         Example
         -------
-        >>> d = LocalDateTime(2020, 8, 15, 23, 12)
+        >>> d = PlainDateTime(2020, 8, 15, 23, 12)
         >>> # assuming system timezone is America/New_York
         >>> d.assume_system_tz(disambiguate="raise")
         SystemDateTime(2020-08-15 23:12:00-04:00)
@@ -5702,17 +5712,17 @@ class LocalDateTime(_KnowsLocal):
         mode: Literal[
             "ceil", "floor", "half_ceil", "half_floor", "half_even"
         ] = "half_even",
-    ) -> LocalDateTime:
+    ) -> PlainDateTime:
         """Round the datetime to the specified unit and increment.
         Different rounding modes are available.
 
         Examples
         --------
-        >>> d = LocalDateTime(2020, 8, 15, 23, 24, 18)
+        >>> d = PlainDateTime(2020, 8, 15, 23, 24, 18)
         >>> d.round("day")
-        LocalDateTime(2020-08-16 00:00:00)
+        PlainDateTime(2020-08-16 00:00:00)
         >>> d.round("minute", increment=15, mode="floor")
-        LocalDateTime(2020-08-15 23:15:00)
+        PlainDateTime(2020-08-15 23:15:00)
 
         Note
         ----
@@ -5727,29 +5737,29 @@ class LocalDateTime(_KnowsLocal):
 
     def _round_unchecked(
         self, increment_ns: int, mode: str, day_ns: int
-    ) -> LocalDateTime:
+    ) -> PlainDateTime:
         rounded_time, next_day = self.time()._round_unchecked(
             increment_ns, mode, day_ns
         )
         return self.date()._add_days(next_day).at(rounded_time)
 
     def __repr__(self) -> str:
-        return f"LocalDateTime({str(self).replace('T', ' ')})"
+        return f"PlainDateTime({str(self).replace('T', ' ')})"
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
         return (
             _unpkl_local,
-            (pack("<HBBBBBI", *self._py_dt.timetuple()[:6], self._nanos),),
+            (pack("<HBBBBBi", *self._py_dt.timetuple()[:6], self._nanos),),
         )
 
 
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
 @no_type_check
-def _unpkl_local(data: bytes) -> LocalDateTime:
-    *args, nanos = unpack("<HBBBBBI", data)
-    return LocalDateTime._from_py_unchecked(_datetime(*args), nanos)
+def _unpkl_local(data: bytes) -> PlainDateTime:
+    *args, nanos = unpack("<HBBBBBi", data)
+    return PlainDateTime._from_py_unchecked(_datetime(*args), nanos)
 
 
 class RepeatedTime(Exception):
@@ -5809,19 +5819,19 @@ _IGNORE_DST_SUGGESTION = (
 
 
 SHIFT_LOCAL_MSG = (
-    "Adding or subtracting a (date)time delta to a local datetime "
+    "Adding or subtracting a (date)time delta to a datetime without timezone "
     "implicitly ignores DST transitions and other timezone "
     "changes. Use the `add` or `subtract` method instead."
 )
 
 DIFF_OPERATOR_LOCAL_MSG = (
-    "The difference between two local datetimes implicitly ignores "
+    "The difference between two datetimes without timezone implicitly ignores "
     "DST transitions and other timezone changes. "
     "Use the `difference` method instead."
 )
 
 DIFF_LOCAL_MSG = (
-    "The difference between two local datetimes implicitly ignores "
+    "The difference between two datetimes without timezone implicitly ignores "
     "DST transitions and other timezone changes. " + _IGNORE_DST_SUGGESTION
 )
 
@@ -5860,7 +5870,7 @@ ADJUST_OFFSET_DATETIME_MSG = (
 )
 
 ADJUST_LOCAL_DATETIME_MSG = (
-    "Adjusting a local datetime by time units (e.g. hours and minutess) ignores "
+    "Adjusting a datetime without timezone by time units (e.g. hours and minutess) ignores "
     "DST and other timezone changes. " + _IGNORE_DST_SUGGESTION
 )
 
@@ -6082,8 +6092,8 @@ Instant.MAX = Instant._from_py_unchecked(
     _datetime.max.replace(tzinfo=_UTC, microsecond=0),
     999_999_999,
 )
-LocalDateTime.MIN = LocalDateTime._from_py_unchecked(_datetime.min, 0)
-LocalDateTime.MAX = LocalDateTime._from_py_unchecked(
+PlainDateTime.MIN = PlainDateTime._from_py_unchecked(_datetime.min, 0)
+PlainDateTime.MAX = PlainDateTime._from_py_unchecked(
     _datetime.max.replace(microsecond=0), 999_999_999
 )
 Disambiguate = Literal["compatible", "earlier", "later", "raise"]
@@ -6184,9 +6194,7 @@ def nanoseconds(i: int, /) -> TimeDelta:
 # We expose the public members in the root of the module.
 # For clarity, we remove the "_pywhenever" part from the names,
 # since this is an implementation detail.
-for name in (
-    __all__ + "_KnowsLocal _KnowsInstant _KnowsInstantAndLocal".split()
-):
+for name in __all__ + "_LocalTime _ExactTime _ExactAndLocalTime".split():
     member = locals()[name]
     if getattr(member, "__module__", None) == __name__:  # pragma: no branch
         member.__module__ = "whenever"
@@ -6214,9 +6222,9 @@ for _unpkl in (
 
 # disable further subclassing
 final(_ImmutableBase)
-final(_KnowsInstant)
-final(_KnowsLocal)
-final(_KnowsInstantAndLocal)
+final(_ExactTime)
+final(_LocalTime)
+final(_ExactAndLocalTime)
 final(_BasicConversions)
 
 

@@ -6,7 +6,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use _whenever::common::math::{EpochSecs, UnixDays};
 use _whenever::common::math::{Month, Year};
 use _whenever::date::Date;
-use _whenever::local_datetime;
+use _whenever::plain_datetime;
 use _whenever::tz::posix;
 use _whenever::tz::tzif;
 
@@ -17,10 +17,10 @@ pub fn date_from_unix_days(c: &mut Criterion) {
     });
 }
 
-pub fn parse_local_datetime(c: &mut Criterion) {
+pub fn parse_plain_datetime(c: &mut Criterion) {
     c.bench_function("Parse local datetime", |b| {
         b.iter(|| {
-            local_datetime::parse_date_and_time(black_box(b"2023-03-02 02:09:09")).unwrap();
+            plain_datetime::parse_date_and_time(black_box(b"2023-03-02 02:09:09")).unwrap();
         })
     });
 }
@@ -31,7 +31,7 @@ pub fn parse_posix_tz(c: &mut Criterion) {
     });
 }
 
-pub fn offset_for_local_datetime(c: &mut Criterion) {
+pub fn offset_for_local_time(c: &mut Criterion) {
     const TZ_AMS: &[u8] = include_bytes!("../../tests/tzif/Amsterdam.tzif");
     let tzif = tzif::parse(TZ_AMS, "Europe/Amsterdam").unwrap();
 
@@ -53,9 +53,9 @@ pub fn tomorrow(c: &mut Criterion) {
 criterion_group!(
     benches,
     date_from_unix_days,
-    parse_local_datetime,
+    parse_plain_datetime,
     parse_posix_tz,
-    offset_for_local_datetime,
+    offset_for_plain_datetime,
     tomorrow,
 );
 criterion_main!(benches);
