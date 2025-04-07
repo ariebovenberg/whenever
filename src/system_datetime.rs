@@ -12,7 +12,8 @@ use crate::{
     datetime_delta::DateTimeDelta,
     instant::Instant,
     offset_datetime::{
-        self, local, timestamp, timestamp_millis, timestamp_nanos, to_plain, OffsetDateTime,
+        self, instant, local, timestamp, timestamp_millis, timestamp_nanos, to_instant, to_plain,
+        OffsetDateTime,
     },
     plain_datetime::{set_components_from_kwargs, DateTime},
     round,
@@ -814,12 +815,6 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
     .to_obj(cls.cast())
 }
 
-unsafe fn instant(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf)
-        .instant()
-        .to_obj(State::for_obj(slf).instant_type)
-}
-
 unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
     let slf = OffsetDateTime::extract(slf_obj);
     match *args {
@@ -1174,7 +1169,8 @@ static mut METHODS: &[PyMethodDef] = &[
     method_vararg!(to_fixed_offset, doc::EXACTTIME_TO_FIXED_OFFSET),
     method!(exact_eq, doc::EXACTTIME_EXACT_EQ, METH_O),
     method!(py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
-    method!(instant, doc::EXACTANDLOCALTIME_INSTANT),
+    method!(to_instant, doc::EXACTANDLOCALTIME_TO_INSTANT),
+    method!(instant, c""), // deprecated alias
     method!(to_plain, doc::EXACTANDLOCALTIME_TO_PLAIN),
     method!(local, c""), // deprecated alias
     method!(date, doc::LOCALTIME_DATE),

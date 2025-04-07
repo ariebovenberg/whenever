@@ -30,6 +30,10 @@ The behavior is unchanged, but can be configured independently of ``zoneinfo`` i
   and seems to resonate better with users.
   See the FAQ for a detailed discussion on the name.
 
+- Rename ``instant()`` method to ``to_instant()``
+
+  **Rationale**: The new name is more consistent with the rest of the API.
+
 - Passing invalid timezone names now raise a ``whenever.TimeZoneNotFoundError`` instead of
   ``zoneinfo.ZoneInfoNotFoundError``.
 

@@ -69,6 +69,7 @@ from typing import (
 )
 from weakref import WeakValueDictionary
 from zoneinfo import ZoneInfo
+import warnings
 
 __all__ = [
     # Date and time
@@ -1437,7 +1438,7 @@ class TimeDelta(_ImmutableBase):
         TimeDelta(01:30:00)
         """
         if type(td) is not _timedelta:
-            raise TypeError(f"Expected datetime.timedelta exactly")
+            raise TypeError("Expected datetime.timedelta exactly")
         return TimeDelta(
             microseconds=td.microseconds,
             seconds=td.seconds,
@@ -3176,7 +3177,7 @@ class _ExactAndLocalTime(_LocalTime, _ExactTime):
             )
         )
 
-    def instant(self) -> Instant:
+    def to_instant(self) -> Instant:
         """Get the underlying instant in time
 
         Example
@@ -3189,6 +3190,13 @@ class _ExactAndLocalTime(_LocalTime, _ExactTime):
         return Instant._from_py_unchecked(
             self._py_dt.astimezone(_UTC), self._nanos
         )
+
+    def instant(self) -> Instant:
+        warnings.warn(
+            "instant() is deprecated. Use to_instant() instead.",
+            DeprecationWarning,
+        )
+        return self.to_instant()
 
     def to_plain(self) -> PlainDateTime:
         """Get the underlying date and time (without offset or timezone)
@@ -3204,8 +3212,6 @@ class _ExactAndLocalTime(_LocalTime, _ExactTime):
         )
 
     def local(self) -> PlainDateTime:
-        import warnings
-
         warnings.warn(
             "local() is deprecated. Use to_plain() instead.",
             DeprecationWarning,

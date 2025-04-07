@@ -82,12 +82,12 @@ class _TimePatch:
                 *args, **kwargs
             )
             _patch_time_keep_ticking(
-                new if isinstance(new, Instant) else new.instant()
+                new if isinstance(new, Instant) else new.to_instant()
             )
         else:
             self._pin = new = self._pin.add(*args, **kwargs)
             _patch_time_frozen(
-                new if isinstance(new, Instant) else new.instant()
+                new if isinstance(new, Instant) else new.to_instant()
             )
 
 
@@ -134,7 +134,7 @@ def patch_current_time(
     ...     sleep(0.000001)
     ...     assert hours(8) < (Instant.now() - i) < hours(8.1)
     """
-    instant = dt if isinstance(dt, Instant) else dt.instant()
+    instant = dt if isinstance(dt, Instant) else dt.to_instant()
     if keep_ticking:
         _patch_time_keep_ticking(instant)
     else:

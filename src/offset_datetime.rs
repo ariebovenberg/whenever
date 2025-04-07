@@ -368,10 +368,19 @@ unsafe fn exact_eq(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     }
 }
 
-unsafe fn instant(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+pub(crate) unsafe fn to_instant(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     OffsetDateTime::extract(slf)
         .instant()
         .to_obj(State::for_obj(slf).instant_type)
+}
+
+pub(crate) unsafe fn instant(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+    PyErr_WarnEx(
+        PyExc_DeprecationWarning,
+        c"instant() method is deprecated. Use to_instant() instead".as_ptr(),
+        1,
+    );
+    to_instant(slf, NULL())
 }
 
 unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
@@ -1146,7 +1155,8 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::OFFSETDATETIME_FROM_PY_DATETIME,
         METH_O | METH_CLASS
     ),
-    method!(instant, doc::EXACTANDLOCALTIME_INSTANT),
+    method!(to_instant, doc::EXACTANDLOCALTIME_TO_INSTANT),
+    method!(instant, c""), // deprecated alias
     method!(to_plain, doc::EXACTANDLOCALTIME_TO_PLAIN),
     method!(local, c""), // deprecated alias
     method!(to_tz, doc::EXACTTIME_TO_TZ, METH_O),
