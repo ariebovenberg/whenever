@@ -10,8 +10,8 @@ from whenever import (
     Date,
     ImplicitlyIgnoringDST,
     Instant,
-    PlainDateTime,
     OffsetDateTime,
+    PlainDateTime,
     RepeatedTime,
     SkippedTime,
     SystemDateTime,
@@ -740,6 +740,10 @@ def test_cannot_subclass():
 
 def test_deprecated_old_names():
     with pytest.deprecated_call(match="PlainDateTime"):
-        from whenever import NaiveDateTime  # type: ignore[attr-defined]  # noqa
+        from whenever import (  # type: ignore[attr-defined]  # noqa
+            NaiveDateTime,
+        )
     with pytest.deprecated_call(match="PlainDateTime"):
-        from whenever import LocalDateTime  # type: ignore[attr-defined]  # noqa
+        from whenever import (  # type: ignore[attr-defined]  # noqa
+            LocalDateTime,
+        )

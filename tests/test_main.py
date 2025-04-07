@@ -13,8 +13,8 @@ from whenever import (
     ImplicitlyIgnoringDST,
     Instant,
     InvalidOffset,
-    PlainDateTime,
     OffsetDateTime,
+    PlainDateTime,
     SystemDateTime,
     Time,
     TimeDelta,
@@ -52,6 +52,11 @@ def test_version():
     from whenever import __version__
 
     assert isinstance(__version__, str)
+
+
+def test_no_attr_on_module():
+    with pytest.raises((AttributeError, ImportError), match="DoesntExist"):
+        from whenever import DoesntExist  # type: ignore[attr-defined] # noqa
 
 
 @pytest.mark.skipif(

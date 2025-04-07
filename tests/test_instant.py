@@ -10,8 +10,8 @@ from hypothesis.strategies import floats, integers, text
 
 from whenever import (
     Instant,
-    PlainDateTime,
     OffsetDateTime,
+    PlainDateTime,
     SystemDateTime,
     ZonedDateTime,
     hours,

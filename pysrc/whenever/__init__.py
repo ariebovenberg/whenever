@@ -35,8 +35,8 @@ except ModuleNotFoundError as e:
         _BasicConversions,
         _clear_tz_cache,
         _clear_tz_cache_by_keys,
-        _ExactTime,
         _ExactAndLocalTime,
+        _ExactTime,
         _LocalTime,
         _patch_time_frozen,
         _patch_time_keep_ticking,
@@ -188,8 +188,9 @@ def _tzpath_from_env() -> tuple[str, ...]:
     except KeyError:
         env_var = _sysconfig.get_config_var("TZPATH")
 
+    # FUTURE: include in test coverage
     if not env_var:
-        return ()
+        return ()  # pragma: no cover
 
     raw_tzpath = env_var.split(_os.pathsep)
     # according to spec, we're allowed to silently ignore invalid paths
@@ -245,7 +246,7 @@ def available_timezones() -> set[str]:
     try:
         with _open_resource("tzdata", "zones") as f:
             zones.update(map(str.strip, f))
-    except (ImportError, FileNotFoundError):
+    except (ImportError, FileNotFoundError):  # pragma: no cover
         pass
 
     # Get the zones from the tzpath directories
@@ -264,7 +265,8 @@ def _find_all_tznames(base: _Path) -> _Iterator[str]:
         return
     for entry in base.iterdir():
         if entry.is_dir():
-            if entry.name in ("right", "posix"):
+            # FUTURE: expand test coverage for this
+            if entry.name in ("right", "posix"):  # pragma: no cover
                 # These directories contain special files that shouldn't be included
                 continue
             else:
@@ -288,7 +290,7 @@ def _is_tzifile(p: _Path) -> bool:
     try:
         with p.open("rb") as f:
             return f.read(4) == b"TZif"
-    except OSError:
+    except OSError:  # pragma: no cover
         return False
 
 

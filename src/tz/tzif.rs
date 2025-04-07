@@ -310,6 +310,40 @@ impl fmt::Display for ErrorCause {
 
 type ParseResult<T> = Result<T, ErrorCause>;
 
+/// Check whether a TZ ID has a valid format (not whether it actually exists though).
+pub(crate) fn is_valid_key(key: &str) -> bool {
+    let Some(&first) = key.as_bytes().first() else {
+        return false; // empty is invalid
+    };
+    let &last = key.as_bytes().last().unwrap(); // we know it's not empty
+
+    // There's no standard limit on IANA tz IDs, but we have to draw
+    // the line somewhere to prevent abuse, since we'll be using them
+    // to traverse the filesystem.
+    key.len() < 100
+        // Here we eliminate most "nasty" characters like null bytes,
+        // or invalid path characters.
+        // Note this is a more relaxed check than the TZDB uses.
+        && key.as_bytes().iter().all(|&b| b.is_ascii_alphanumeric()
+            || b == b'_'
+            || b == b'-'
+            || b == b'+'
+            || b == b'/'
+            || b == b'.')
+        // Some specific sequences are not allowed, that'd mess up path traversal.
+        // These checks re-scan the string. Somewhat inefficient,
+        // but fine for small strings
+        && !key.contains("..")
+        && !key.contains("//")
+        && !key.contains("/./")
+        // Extra restrictions for the first...
+        && (
+            first != b'-' || first != b'+' || first != b'/'
+        )
+        // ... and last character
+        && last != b'/'
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -604,7 +638,7 @@ mod tests {
     /// Smoke test to see we don't crash parsing any TZif files in the tzdata database.
     /// It doesn't actually check whether the parsing is correct,
     /// but will give a good indication if the parser is robust.
-    /// Code loosely based on github.com/BurntSushi/jiff/blob/master/src/tz/tzif.rs
+    /// Code based on github.com/BurntSushi/jiff/blob/master/src/tz/tzif.rs
     #[test]
     fn smoke_test() {
         const TZDIR: &str = "/usr/share/zoneinfo";
@@ -613,7 +647,13 @@ mod tests {
             .filter_map(Result::ok)
         {
             let path = entry.path();
-
+            let Some(name) = path.to_str() else {
+                continue;
+            };
+            // Special directories we should ignore
+            if name.contains("right/") || name.contains("posix/") {
+                continue;
+            }
             // Skip unreadable files
             let Ok(bytes) = std::fs::read(path) else {
                 continue;
@@ -622,6 +662,12 @@ mod tests {
             // Skip non-TZif files
             if !bytes.starts_with(b"TZif") {
                 continue;
+            }
+
+            // Ensure our key filter isn't too strict
+            let tzname = name.strip_prefix(TZDIR).unwrap().strip_prefix('/').unwrap();
+            if !is_valid_key(tzname) {
+                panic!("invalid tz key: {tzname}");
             }
 
             if let Err(err) = parse(&bytes, "") {

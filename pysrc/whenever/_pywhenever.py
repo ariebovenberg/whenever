@@ -38,6 +38,7 @@ import enum
 import importlib.resources
 import re
 import sys
+import warnings
 from abc import ABC, abstractmethod
 from calendar import monthrange
 from collections import OrderedDict
@@ -69,7 +70,6 @@ from typing import (
 )
 from weakref import WeakValueDictionary
 from zoneinfo import ZoneInfo
-import warnings
 
 __all__ = [
     # Date and time
@@ -6301,14 +6301,15 @@ def _validate_key(key: str) -> _ValidKey:
         key.isascii()
         # There's no standard limit on IANA tz IDs, but we have to draw
         # the line somewhere to prevent abuse.
-        and len(key) < 100
-        and "\\" not in key
-        and "//" not in key
+        and 0 < len(key) < 100
+        and all(b.isalnum() or b in "-_+/." for b in key)
+        # specific sequences not allowed
         and ".." not in key
-        and "\0" not in key
+        and "//" not in key
         and "/./" not in key
-        and not key.startswith("/")
-        and not key.endswith("/")
+        # specic restrictions on the first and list characters
+        and key[0] not in "-+/"
+        and key[-1] != "/"
     ):
         return _ValidKey(key)
     else:
