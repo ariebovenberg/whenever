@@ -133,15 +133,15 @@ class TestInstant:
     @system_tz_ams()
     def test_common_time(self):
         d = SystemDateTime(2020, 8, 15, 11)
-        assert d.instant().exact_eq(Instant.from_utc(2020, 8, 15, 9))
+        assert d.to_instant().exact_eq(Instant.from_utc(2020, 8, 15, 9))
 
     @system_tz_ams()
     def test_amibiguous_time(self):
         d = SystemDateTime(2023, 10, 29, 2, 15, disambiguate="earlier")
-        assert d.instant().exact_eq(Instant.from_utc(2023, 10, 29, 0, 15))
+        assert d.to_instant().exact_eq(Instant.from_utc(2023, 10, 29, 0, 15))
         assert (
             d.replace(disambiguate="later")
-            .instant()
+            .to_instant()
             .exact_eq(Instant.from_utc(2023, 10, 29, 1, 15))
         )
 
@@ -151,7 +151,7 @@ def test_to_plain():
     assert d.to_plain() == PlainDateTime(2020, 8, 15, 12, 8, 30)
 
     with pytest.deprecated_call():
-        assert d.local() == PlainDateTime(2020, 8, 15, 12, 8, 30)
+        assert d.local() == d.to_plain()  # type: ignore[attr-defined]
 
 
 @system_tz_ams()
@@ -488,7 +488,7 @@ class TestComparison:
     @system_tz_ams()
     def test_utc(self):
         d = SystemDateTime(2020, 8, 15, 12, 30)
-        same = d.instant()
+        same = d.to_instant()
         later = same + minutes(1)
         earlier = same - minutes(1)
         assert d >= same
@@ -548,7 +548,7 @@ def test_exact_equality():
     same = a.replace(disambiguate="raise")
     with system_tz_nyc():
         same_moment = SystemDateTime(2020, 8, 15, 6, 8, 30, nanosecond=450)
-    assert same.instant() == same_moment.instant()
+    assert same.to_instant() == same_moment.to_instant()
     different = a.replace(hour=13, disambiguate="raise")
 
     assert a.exact_eq(same)
@@ -562,7 +562,7 @@ def test_exact_equality():
         a.exact_eq(42)  # type: ignore[arg-type]
 
     with pytest.raises(TypeError):
-        a.exact_eq(a.instant())  # type: ignore[arg-type]
+        a.exact_eq(a.to_instant())  # type: ignore[arg-type]
 
 
 class TestParseCommonIso:
@@ -761,11 +761,11 @@ class TestFromTimestamp:
 
         assert SystemDateTime.from_timestamp_millis(
             -4,
-        ).instant() == Instant.from_timestamp(0).subtract(milliseconds=4)
+        ).to_instant() == Instant.from_timestamp(0).subtract(milliseconds=4)
 
         assert SystemDateTime.from_timestamp_nanos(
             -4,
-        ).instant() == Instant.from_timestamp(0).subtract(nanoseconds=4)
+        ).to_instant() == Instant.from_timestamp(0).subtract(nanoseconds=4)
 
     @system_tz_ams()
     def test_nanos(self):

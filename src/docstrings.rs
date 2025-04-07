@@ -46,7 +46,7 @@ MonthDay(--11-23)
 ";
 pub(crate) const OFFSETDATETIME: &CStr = c"\
 A datetime with a fixed UTC offset.
-Useful for representing a \"static\" local date and time-of-day 
+Useful for representing a \"static\" local date and time-of-day
 at a specific location.
 
 Example
@@ -65,7 +65,7 @@ This class knows when the offset changes.
 pub(crate) const PLAINDATETIME: &CStr = c"\
 A combination of date and time-of-day, without a timezone.
 
-Can be used to represent local time, i.e. how time appears to people 
+Can be used to represent local time, i.e. how time appears to people
 on a wall clock.
 
 It can't be mixed with exact time types (e.g. ``Instant``, ``ZonedDateTime``)
@@ -1748,7 +1748,7 @@ Nanoseconds are truncated to microseconds.
 If you wish to customize the rounding behavior, use
 the ``round()`` method first.
 ";
-pub(crate) const EXACTANDLOCALTIME_INSTANT: &CStr = c"\
+pub(crate) const EXACTANDLOCALTIME_TO_INSTANT: &CStr = c"\
 Get the underlying instant in time
 
 Example

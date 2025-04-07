@@ -740,6 +740,6 @@ def test_cannot_subclass():
 
 def test_deprecated_old_names():
     with pytest.deprecated_call(match="PlainDateTime"):
-        from whenever import NaiveDateTime  # noqa
+        from whenever import NaiveDateTime  # type: ignore[attr-defined]  # noqa
     with pytest.deprecated_call(match="PlainDateTime"):
-        from whenever import LocalDateTime
+        from whenever import LocalDateTime  # type: ignore[attr-defined]  # noqa

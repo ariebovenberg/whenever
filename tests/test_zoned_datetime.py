@@ -314,7 +314,7 @@ def test_to_plain():
     )
 
     with pytest.deprecated_call():
-        assert d.local() == PlainDateTime(2020, 8, 15, 13)
+        assert d.local() == d.to_plain()  # type: ignore[attr-defined]
 
 
 class TestReplaceDate:
@@ -619,7 +619,7 @@ class TestEquality:
             disambiguate="later",
         )
         b = a.to_tz("America/New_York")
-        assert a.instant() == b.instant()  # sanity check
+        assert a.to_instant() == b.to_instant()  # sanity check
         assert hash(a) == hash(b)
         assert a == b
 
@@ -634,9 +634,9 @@ class TestEquality:
             tz="Europe/Amsterdam",
             disambiguate="earlier",
         )
-        assert d == d.instant()  # type: ignore[comparison-overlap]
-        assert hash(d) == hash(d.instant())
-        assert d != d.instant() + hours(2)  # type: ignore[comparison-overlap]
+        assert d == d.to_instant()  # type: ignore[comparison-overlap]
+        assert hash(d) == hash(d.to_instant())
+        assert d != d.to_instant() + hours(2)  # type: ignore[comparison-overlap]
 
         assert d == d.to_system_tz()
         assert d != d.to_system_tz().replace(hour=8, disambiguate="raise")
@@ -801,7 +801,7 @@ class TestDayLength:
         with pytest.raises((ValueError, OverflowError), match="range"):
             d_min_pos.day_length()
         with system_tz("Asia/Tokyo"):
-            with pytest.raises((ValueError, OverflowError), match="range"):
+            with pytest.raises((ValueError, OverflowError), match="range|year"):
                 SystemDateTime(1, 1, 1, 12).day_length()
 
         # upper bound is NOT fine
@@ -932,7 +932,7 @@ class TestStartOfDay:
         with pytest.raises((ValueError, OverflowError), match="range"):
             d_max_pos.start_of_day()
         with system_tz("Asia/Tokyo"):
-            with pytest.raises((ValueError, OverflowError), match="range"):
+            with pytest.raises((ValueError, OverflowError), match="range|year"):
                 SystemDateTime(1, 1, 1, 12).start_of_day()
 
         # Upper bound is always fine
@@ -970,7 +970,7 @@ class TestStartOfDay:
 def test_instant():
     assert (
         ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
-        .instant()
+        .to_instant()
         .exact_eq(Instant.from_utc(2020, 8, 15, 10, 8, 30))
     )
     d = ZonedDateTime(
@@ -983,7 +983,7 @@ def test_instant():
         tz="Europe/Amsterdam",
         disambiguate="earlier",
     )
-    assert d.instant().exact_eq(Instant.from_utc(2023, 10, 29, 0, 15, 30))
+    assert d.to_instant().exact_eq(Instant.from_utc(2023, 10, 29, 0, 15, 30))
     assert (
         ZonedDateTime(
             2023,
@@ -995,9 +995,12 @@ def test_instant():
             tz="Europe/Amsterdam",
             disambiguate="later",
         )
-        .instant()
+        .to_instant()
         .exact_eq(Instant.from_utc(2023, 10, 29, 1, 15, 30))
     )
+
+    with pytest.deprecated_call():
+        assert d.to_instant() == d.instant()  # type: ignore[attr-defined]
 
 
 def test_to_tz():
@@ -1404,11 +1407,11 @@ class TestFromTimestamp:
 
         assert ZonedDateTime.from_timestamp_millis(
             -4, tz="America/Nuuk"
-        ).instant() == Instant.from_timestamp(0) - milliseconds(4)
+        ).to_instant() == Instant.from_timestamp(0) - milliseconds(4)
 
         assert ZonedDateTime.from_timestamp_nanos(
             -4, tz="America/Nuuk"
-        ).instant() == Instant.from_timestamp(0).subtract(nanoseconds=4)
+        ).to_instant() == Instant.from_timestamp(0).subtract(nanoseconds=4)
 
     def test_nanos(self):
         assert ZonedDateTime.from_timestamp_nanos(
@@ -1581,7 +1584,7 @@ class TestComparison:
             2023, 10, 29, 2, 30, tz="Europe/Amsterdam", disambiguate="later"
         )
 
-        inst_eq = d.instant()
+        inst_eq = d.to_instant()
         inst_lt = inst_eq - minutes(1)
         inst_gt = inst_eq + minutes(1)
 
@@ -1882,7 +1885,7 @@ class TestExactEquality:
             a.exact_eq(42)  # type: ignore[arg-type]
 
         with pytest.raises(TypeError):
-            a.exact_eq(a.instant())  # type: ignore[arg-type]
+            a.exact_eq(a.to_instant())  # type: ignore[arg-type]
 
 
 class TestReplace:

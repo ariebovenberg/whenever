@@ -279,7 +279,7 @@ def test_exact_equality():
     assert not d.exact_eq(d.replace(nanosecond=1, ignore_dst=True))
 
     with pytest.raises(TypeError):
-        d.exact_eq(d.instant())  # type: ignore[arg-type]
+        d.exact_eq(d.to_instant())  # type: ignore[arg-type]
 
 
 class TestEquality:
@@ -446,11 +446,11 @@ class TestFromTimestamp:
 
         assert OffsetDateTime.from_timestamp_millis(
             -4, offset=1, ignore_dst=True
-        ).instant() == Instant.from_timestamp(0) - milliseconds(4)
+        ).to_instant() == Instant.from_timestamp(0) - milliseconds(4)
 
         assert OffsetDateTime.from_timestamp_nanos(
             -4, offset=-3, ignore_dst=True
-        ).instant() == Instant.from_timestamp(0) - nanoseconds(4)
+        ).to_instant() == Instant.from_timestamp(0) - nanoseconds(4)
 
     def test_float(self):
         assert OffsetDateTime.from_timestamp(
@@ -541,7 +541,7 @@ class TestComparison:
 
     def test_instant(self):
         d = OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
-        inst_eq = d.instant()
+        inst_eq = d.to_instant()
         inst_gt = inst_eq + minutes(1)
         inst_lt = inst_eq - minutes(1)
 
@@ -1036,9 +1036,12 @@ def test_instant():
     d = OffsetDateTime(
         2020, 8, 15, 23, 12, 9, nanosecond=987_654_321, offset=3
     )
-    assert d.instant() == Instant.from_utc(
+    assert d.to_instant() == Instant.from_utc(
         2020, 8, 15, 20, 12, 9, nanosecond=987_654_321
     )
+
+    with pytest.deprecated_call():
+        assert d.to_instant() == d.instant()  # type: ignore[attr-defined]
 
 
 def test_to_fixed_offset():
@@ -1116,7 +1119,7 @@ def test_to_plain():
     assert d.to_plain() == PlainDateTime(2020, 8, 15, 20, nanosecond=1)
 
     with pytest.deprecated_call():
-        assert d.local() == PlainDateTime(2020, 8, 15, 20, nanosecond=1)
+        assert d.local() == d.to_plain()  # type: ignore[attr-defined]
 
 
 @pytest.mark.parametrize(
