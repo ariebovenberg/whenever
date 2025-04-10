@@ -6,7 +6,7 @@ runner = pyperf.Runner()
 
 runner.timeit(
     "various operations",
-    "d = arrow.get('2020-04-05 22:04:00-04:00')"
+    "d = arrow.get('2020-04-05T22:04:00-04:00')"
     ".to('utc');"
     "d - arrow.utcnow();"
     "d.shift(hours=4, minutes=30)"

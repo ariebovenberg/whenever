@@ -5,7 +5,7 @@ runner = pyperf.Runner()
 
 runner.timeit(
     "various operations",
-    "d = datetime.fromisoformat('2020-04-05 22:04:00-04:00')"
+    "d = datetime.fromisoformat('2020-04-05T22:04:00-04:00')"
     ".astimezone(UTC);"
     "d - datetime.now(UTC);"
     "(d + timedelta(hours=4, minutes=30))"

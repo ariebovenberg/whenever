@@ -11,9 +11,10 @@ use crate::{
     instant::Instant,
     math::SubSecNanos,
     offset_datetime::{self, OffsetDateTime},
+    parse::Scan,
     plain_datetime::{set_components_from_kwargs, DateTime},
     round,
-    time::{Time, MIDNIGHT},
+    time::Time,
     time_delta::TimeDelta,
     tz::cache::TzRef,
     State,
@@ -197,6 +198,25 @@ impl ZonedDateTime {
             .to_tz(self.tz)
             .ok_or_value_err("Resulting date is out of range")
     }
+}
+
+fn read_offset_and_tzname<'a>(s: &'a mut Scan) -> Option<(Option<Offset>, &'a str)> {
+    let offset = match s.peek() {
+        Some(b'[') => None,
+        _ => Some(Offset::read_iso(s)?),
+    };
+    let tz = s.rest();
+    (tz.len() > 2
+        && tz[0] == b'['
+        // This scanning check ensures there's no other closing bracket
+        && tz.iter().position(|&b| b == b']') == Some(tz.len() - 1)
+        && tz.is_ascii())
+    .then(|| {
+        (offset, unsafe {
+            // Safe: we've just checked that it's ASCII-only
+            std::str::from_utf8_unchecked(&tz[1..tz.len() - 1])
+        })
+    })
 }
 
 impl PyWrapped for ZonedDateTime {
@@ -902,7 +922,7 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     let tz = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
     // We use the timestamp() to convert into a ZonedDateTime
     // Alternatives not chosen:
-    // - resolve offset from date/time -> fold not respected
+    // - resolve offset from date/time -> fold not respected, instant may be different
     // - reuse the offset -> invalid results for gaps
     // - reuse the fold -> our calculated offset might be different, theoretically
     // Thus, the most "safe" way is to use the timestamp. This 100% guarantees
@@ -914,8 +934,7 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
             "datetime.datetime.timestamp() returned non-float",
         )?;
     Instant {
-        // Safety: Python's timestamps are always in range
-        epoch: EpochSecs::new_unchecked(epoch_float.floor() as _),
+        epoch: EpochSecs::new(epoch_float.floor() as _).ok_or_value_err("instant out of range")?,
         // Note: we don't get the subsecond part from the timestamp,
         // since floating point precision might lead to inaccuracies.
         // translating to nanoseconds. Instead, we take it from the datetime.
@@ -1104,90 +1123,44 @@ unsafe fn is_ambiguous(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     .to_py()
 }
 
-// parse ±HH:MM[:SS] (consuming as much as possible of the input)
-fn parse_offset_partial(s: &mut &[u8]) -> Option<Offset> {
-    debug_assert!(!s.is_empty());
-    let sign = match s[0] {
-        b'+' => Sign::Plus,
-        b'-' => Sign::Minus,
-        b'Z' => {
-            *s = &s[1..];
-            return Some(Offset::ZERO);
-        }
-        _ => return None,
-    };
-    if s[3] != b':' {
-        return None;
-    }
-    // the HH:MM part
-    let secs = (parse_digit_max(s, 1, b'2')? * 10 + parse_digit(s, 2)?) as i32 * 3600
-        + (parse_digit_max(s, 4, b'5')? * 10 + parse_digit(s, 5)?) as i32 * 60;
-    // the optional seconds part
-    match s.get(6) {
-        Some(b':') => {
-            if s.len() > 8 {
-                let result = Some(
-                    secs + parse_digit_max(s, 7, b'5')? as i32 * 10 + parse_digit(s, 8)? as i32,
-                );
-                *s = &s[9..];
-                result
-            } else {
-                None
-            }
-        }
-        _ => {
-            *s = &s[6..];
-            Some(secs)
-        }
-    }
-    .and_then(Offset::new)
-    .map(|s| s.with_sign(sign))
-}
-
 unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
-    let s = &mut s_obj.to_utf8()?.ok_or_type_err("Argument must be string")?;
-    let errmsg = || format!("Invalid format: {}", s_obj.repr());
-    // at least: "YYYY-MM-DD HH:MM:SSZ[_]"
-    if s.len() < 23 || s[10] != b'T' {
-        raise_value_err(errmsg())?;
-    }
-    let date = Date::parse_partial(s).ok_or_else_value_err(errmsg)?;
-    *s = &s[1..]; // skip the separator
-    let time = Time::parse_partial(s).ok_or_else_value_err(errmsg)?;
-
-    // at least "Z[_]" remains
-    if s.len() < 4 {
-        raise_value_err(errmsg())?;
-    }
-    let offset_secs = parse_offset_partial(s).ok_or_else_value_err(errmsg)?;
-    if s.len() < 3 || s.len() > 255 || s[0] != b'[' || s[s.len() - 1] != b']' || !s.is_ascii() {
-        raise_value_err(errmsg())?;
-    }
+    let mut s = Scan::new(
+        s_obj
+            .to_utf8()?
+            .ok_or_type_err("Argument must be a string")?,
+    );
+    let (DateTime { date, time }, (offset, tzstr)) = DateTime::read_iso(&mut s)
+        .zip(read_offset_and_tzname(&mut s))
+        .ok_or_else_value_err(|| format!("Invalid format: {}", s_obj.repr()))?;
     let &mut State {
         exc_invalid_offset,
         exc_tz_notfound,
         ref mut tz_cache,
         ..
     } = State::for_type_mut(cls.cast());
-    let tz = tz_cache.get(
-        std::str::from_utf8_unchecked(&s[1..s.len() - 1]),
-        exc_tz_notfound,
-    )?;
-
-    let offset_is_valid = match tz.ambiguity_for_local(date.epoch_at(time)) {
-        Ambiguity::Unambiguous(o) => o == offset_secs,
-        Ambiguity::Gap(o1, o2) | Ambiguity::Fold(o1, o2) => o1 == offset_secs || o2 == offset_secs,
-    };
-    if offset_is_valid {
-        ZonedDateTime::new(date, time, offset_secs, tz)
-            .ok_or_value_err("Datetime out of range")?
-            .to_obj(cls.cast())
-    } else {
-        raise(
-            exc_invalid_offset,
-            format!("Invalid offset for timezone {}", tz.key),
-        )
+    let tz = tz_cache.get(tzstr, exc_tz_notfound)?;
+    match offset {
+        Some(offset) => {
+            // Make sure the offset is valid
+            match tz.ambiguity_for_local(date.epoch_at(time)) {
+                Ambiguity::Unambiguous(f) if f == offset => (),
+                Ambiguity::Fold(f1, f2) if f1 == offset || f2 == offset => (),
+                _ => raise(exc_invalid_offset, format!("Invalid offset for {}", tz.key))?,
+            }
+            ZonedDateTime::new(date, time, offset, tz).ok_or_value_err("Instant out of range")?
+        }
+        None => ZonedDateTime::resolve_using_disambiguate(
+            date,
+            time,
+            tz,
+            Disambiguate::Compatible,
+            // TODO: what if tz is [foo][bar]?
+            // TODO: this isn't very nice
+            NULL(),
+            NULL(),
+        )?,
     }
+    .to_obj(cls.cast())
 }
 
 unsafe fn add(
@@ -1337,7 +1310,7 @@ unsafe fn start_of_day(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     } = State::for_obj(slf);
     ZonedDateTime::resolve_using_disambiguate(
         date,
-        MIDNIGHT,
+        Time::MIDNIGHT,
         tz,
         Disambiguate::Compatible,
         exc_repeated,
@@ -1356,7 +1329,7 @@ unsafe fn day_length(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     } = State::for_obj(slf);
     let start_of_day = ZonedDateTime::resolve_using_disambiguate(
         date,
-        MIDNIGHT,
+        Time::MIDNIGHT,
         tz,
         Disambiguate::Compatible,
         exc_repeated,
@@ -1365,7 +1338,7 @@ unsafe fn day_length(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     .instant();
     let start_of_next_day = ZonedDateTime::resolve_using_disambiguate(
         date.tomorrow().ok_or_value_err("Day out of range")?,
-        MIDNIGHT,
+        Time::MIDNIGHT,
         tz,
         Disambiguate::Compatible,
         exc_repeated,
@@ -1419,7 +1392,7 @@ unsafe fn _round_day(
     let get_floor = || {
         ZonedDateTime::resolve_using_disambiguate(
             date,
-            MIDNIGHT,
+            Time::MIDNIGHT,
             tz,
             Disambiguate::Compatible,
             exc_repeated,
@@ -1430,7 +1403,7 @@ unsafe fn _round_day(
         ZonedDateTime::resolve_using_disambiguate(
             date.tomorrow()
                 .ok_or_value_err("Resulting date out of range")?,
-            MIDNIGHT,
+            Time::MIDNIGHT,
             tz,
             Disambiguate::Compatible,
             exc_repeated,

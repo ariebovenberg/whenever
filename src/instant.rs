@@ -170,6 +170,7 @@ impl Instant {
             // Fast path for the common case
             Some(inst)
         } else {
+            // TODO: since which version was this accepted?
             let py_delta = methcall1(tzinfo, "utcoffset", dt)?;
             defer_decref!(py_delta);
             if is_none(py_delta) {

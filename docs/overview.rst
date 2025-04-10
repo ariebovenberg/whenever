@@ -314,14 +314,14 @@ Conversion
 Between exact types
 ~~~~~~~~~~~~~~~~~~~
 
-You can convert between exact types with the :meth:`~whenever._ExactAndLocalTime.instant`,
+You can convert between exact types with the :meth:`~whenever._ExactAndLocalTime.to_instant`,
 :meth:`~whenever._ExactTime.to_fixed_offset`, :meth:`~whenever._ExactTime.to_tz`,
 and :meth:`~whenever._ExactTime.to_system_tz` methods. These methods return a new
 instance of the appropriate type, representing the same moment in time.
 This means the results will always compare equal to the original datetime.
 
 >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
->>> d.instant()  # The underlying moment in time
+>>> d.to_instant()  # The underlying moment in time
 Instant(2023-12-28 10:30:00Z)
 >>> d.to_fixed_offset(5)  # same moment with a +5:00 offset
 OffsetDateTime(2023-12-28 15:30:00+05:00)
@@ -684,11 +684,31 @@ Formatting and parsing
 ISO 8601
 ~~~~~~~~
 
+TODO reflect implementation
+TODO Instant, PlainDateTime
+
 The `ISO 8601 <https://en.wikipedia.org/wiki/ISO_8601>`_ standard
 is probably the format you're most familiar with.
 What you may not know is that it's a very complex standard with many options.
-Like most libraries, ``whenever`` supports a only subset of the standard
-which is the most commonly used.
+Asking whether something "is proper ISO" is like asking whether
+something "is proper English"—there are many dialects and variations.
+
+Like all datetime libraries, ``whenever`` makes some choices about which
+parts of the standard to support. ``whenever`` aims to support the most common
+and widely-used subset of the standard, while avoiding the more obscure
+and rarely-used parts, which are often the source of confusion and bugs.
+
+Below are the main features of the ISO 8601 format supported by ``whenever``:
+
+- Extended and basic formats (e.g. both ``2023-12-28`` and ``20231228``).
+- Weekday and ordinal dates are *not* supported: e.g. ``2023-W52-5`` or ``2023-365``
+- For date, time, and offset parts may independently choose to use extended or basic formats,
+  so long as they are themselves consistent. e.g. ``2023-12-28T113000+03`` is OK, but
+  ``2023-1228T11:23`` is not.
+- Characters may be lowercase or uppercase (e.g. ``2023-12-28T11:30:00Z`` is the same as ``2023-12-28t11:30:00z``).
+- Only seconds may be fractional (e.g. ``11:30:00.123456789Z`` but not ``11:30.5``).
+- Offset ``Z``, ``+00:00``, and ``-00:00`` are all equivalent.
+
 
 Here are the ISO formats for each type:
 

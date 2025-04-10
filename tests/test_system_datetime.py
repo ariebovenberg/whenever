@@ -27,6 +27,8 @@ from whenever import (
     years,
 )
 
+from .test_offset_datetime import INVALID_ISO_STRINGS
+
 from .common import (
     AlwaysEqual,
     AlwaysLarger,
@@ -624,32 +626,7 @@ class TestParseCommonIso:
         assert dt.to_plain() == expect
         assert dt.offset == offset
 
-    @pytest.mark.parametrize(
-        "s",
-        [
-            "2020-08-15T2:08:30+05:00:01",  # unpadded
-            "2020-8-15T12:8:30+05:00",  # unpadded
-            "2020-08-15T12:08:30+05",  # no minutes offset
-            "2020-08-15T12:08:30.0000000001+05:00",  # overly precise
-            "2020-08-15T12:08:30+05:00:01.0",  # fractional seconds in offset
-            "2020-08-15T12:08:30+05:00stuff",  # trailing stuff
-            "2020-08-15T12:08+04:00",  # no seconds
-            "2020-08-15",  # date only
-            "2020-08-15 12:08:30+05:00"  # wrong separator
-            "2020-08-15T12:08.30+05:00",  # wrong time separator
-            "2020-08-15T12:08:30+24:00",  # too large offset
-            "2020-08-15T23:12:09-99:00",  # invalid offset
-            "2020-08-15T12:08:30+09:80",  # invalid minutes
-            "2020-08-15T12:08:30-02:80:40",  # invalid minutes
-            "2020-08-15T12:08:30+09:40:80",  # invalid seconds
-            "2020-08-15T12:08:30-00:40:60",  # invalid seconds
-            "2020-08-15T12:𝟘8:30+00:00",  # non-ASCII
-            "2020-08-15T12:08:30.0034+05:𝟙0",  # non-ASCII
-            "",  # empty
-            "garbage",  # garbage
-            "20𝟚0-08-15T12:08:30+00:00",  # non-ASCII
-        ],
-    )
+    @pytest.mark.parametrize("s", INVALID_ISO_STRINGS)
     def test_invalid(self, s):
         with pytest.raises(ValueError, match="format.*" + re.escape(repr(s))):
             SystemDateTime.parse_common_iso(s)

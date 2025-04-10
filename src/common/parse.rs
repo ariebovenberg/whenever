@@ -1,4 +1,8 @@
-use std::{fmt::Debug, ops::RangeInclusive};
+use crate::SubSecNanos;
+use std::{
+    fmt::Debug,
+    ops::{Index, RangeInclusive, RangeTo},
+};
 
 #[derive(PartialEq, Eq)]
 pub(crate) struct Scan<'a>(&'a [u8]);
@@ -12,6 +16,15 @@ impl<'a> Scan<'a> {
     /// Return the next byte in the scanner without consuming it.
     pub(crate) fn peek(&self) -> Option<u8> {
         self.0.first().copied()
+    }
+
+    pub(crate) fn get(&self, n: usize) -> Option<u8> {
+        self.0.get(n).copied()
+    }
+
+    pub(crate) fn skip(&mut self, n: usize) -> &mut Self {
+        self.0 = &self.0[n..];
+        self
     }
 
     /// Consume the next byte in the scanner.
@@ -39,7 +52,9 @@ impl<'a> Scan<'a> {
     }
 
     /// Advance the scanner only if the next byte is the expected one.
-    /// Returns true if the byte was consumed.
+    /// Some(true) -> the expected byte was consumed
+    /// Some(false) -> the expected byte was not consumed
+    /// None -> the scanner is empty
     pub(crate) fn advance_on(&mut self, x: u8) -> Option<bool> {
         self.peek().map(|b| {
             if b == x {
@@ -79,6 +94,16 @@ impl<'a> Scan<'a> {
         }
     }
 
+    pub(crate) fn digits00_23(&mut self) -> Option<u8> {
+        match self.0 {
+            [a @ b'0'..=b'2', b @ b'0'..=b'9', ..] => {
+                self.0 = &self.0[2..];
+                Some((a - b'0') * 10 + b - b'0').filter(|&n| n < 24)
+            }
+            _ => None,
+        }
+    }
+
     /// Parse 1-3 digits until encountering a non-digit or end of input.
     /// Only returns None if the first character is not a digit, or if the scanner is empty.
     pub(crate) fn up_to_3_digits(&mut self) -> Option<u16> {
@@ -102,6 +127,33 @@ impl<'a> Scan<'a> {
             total = total * 10 + d
         }
         Some(total)
+    }
+
+    /// Parse '.' and up to 9 digits after it. If empty, return 0.
+    pub(crate) fn subsec(&mut self) -> Option<SubSecNanos> {
+        Some(match self.advance_on(b'.') {
+            Some(true) => {
+                // If there's a decimal point, the first digit is required
+                let mut total = self.digit()? as i32 * 100_000_000;
+                for (byte, pwr) in self.0.iter().zip((0..8).rev()) {
+                    if byte.is_ascii_digit() {
+                        total += (byte - b'0') as i32 * 10_i32.pow(pwr);
+                    } else {
+                        self.0 = &self.0[(7 - pwr) as usize..];
+                        // Safe: 9 digits are always in range of SubSecNanos
+                        return Some(SubSecNanos::new_unchecked(total));
+                    }
+                }
+                // At this point, we've parsed up to 9 characters
+                // OR we've reached the end of the scanner.
+                // Remember we've already skipped the first digit,
+                // so we skip ahead 8 more (at most).
+                self.0 = &self.0[self.0.len().min(8)..];
+                SubSecNanos::new_unchecked(total)
+            }
+            // No decimal point, so subsec is 0
+            _ => SubSecNanos::MIN,
+        })
     }
 
     /// Apply a function to the next byte in the scanner,
@@ -147,6 +199,44 @@ impl<'a> Scan<'a> {
     /// Check if the scanner is done (empty).
     pub(crate) fn is_done(&self) -> bool {
         self.peek().is_none()
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub(crate) fn parse_all<F, R>(&mut self, mut f: F) -> Option<R>
+    where
+        F: FnMut(&mut Self) -> Option<R>,
+    {
+        let result = f(self)?;
+        self.is_done().then_some(result)
+    }
+}
+
+impl Index<RangeInclusive<usize>> for Scan<'_> {
+    type Output = [u8];
+
+    fn index(&self, index: RangeInclusive<usize>) -> &[u8] {
+        let start = *index.start();
+        let end = *index.end();
+        &self.0[start..=end]
+    }
+}
+
+impl Index<RangeTo<usize>> for Scan<'_> {
+    type Output = [u8];
+
+    fn index(&self, index: RangeTo<usize>) -> &[u8] {
+        &self.0[..index.end]
+    }
+}
+
+impl Index<usize> for Scan<'_> {
+    type Output = u8;
+
+    fn index(&self, index: usize) -> &u8 {
+        &self.0[index]
     }
 }
 

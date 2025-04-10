@@ -75,7 +75,7 @@ impl Date {
         })
     }
 
-    pub(crate) const fn unix_days(self) -> UnixDays {
+    pub(crate) fn unix_days(self) -> UnixDays {
         // Safety: unix days and dates have the same range, conversions are always valid
         UnixDays::new_unchecked(
             days_before_year(self.year)
@@ -114,6 +114,61 @@ impl Date {
             // Remember to cap the day to the last day of the month
             day: self.day.min(year.days_in_month(month)),
         })
+    }
+
+    /// Parse YYYY-MM-DD
+    pub(crate) fn parse_iso_extended(s: [u8; 10]) -> Option<Self> {
+        // Should have been checked by the caller
+        (s[4] == b'-' && s[7] == b'-')
+            .then(|| {
+                Date::new(
+                    extract_year(&s, 0)?,
+                    extract_2_digits(&s, 5).and_then(Month::new)?,
+                    extract_2_digits(&s, 8)?,
+                )
+            })
+            .flatten()
+    }
+
+    /// Parse YYYYMMDD
+    pub(crate) fn parse_iso_basic(s: [u8; 8]) -> Option<Self> {
+        Date::new(
+            extract_year(&s, 0)?,
+            extract_2_digits(&s, 4).and_then(Month::new)?,
+            extract_2_digits(&s, 6)?,
+        )
+    }
+
+    pub(crate) fn parse_iso(s: &[u8]) -> Option<Self> {
+        match s.len() {
+            8 => Self::parse_iso_basic(s.try_into().unwrap()),
+            10 => Self::parse_iso_extended(s.try_into().unwrap()),
+            _ => None,
+        }
+    }
+
+    // TODO: use
+    #[allow(dead_code)]
+    pub(crate) fn from_iso_week(year: Year, week: u8, day: Weekday) -> Option<Self> {
+        let first_day = year.unix_days_at_jan1();
+        if week == 0
+            || week > 53
+            || week == 53
+            // 53-week years occur on all years that have Thursday as 1
+            // January and on leap years that start on Wednesday.
+            && first_day.day_of_week()
+            .iso()
+                + year.is_leap() as u8
+                != 4
+        {
+            return None;
+        }
+        let day_offset = (week - 1) as i32 * 7 + (day.iso() as i32);
+        let first_weekday = first_day.day_of_week();
+        // Safe: unix days well within i32
+        let first_monday_offset = first_day.get() - first_weekday.iso() as i32
+            + 7 * (first_weekday > Weekday::Thursday) as i32;
+        UnixDays::new(first_monday_offset + day_offset).map(|u| u.date())
     }
 
     // FUTURE: use the scanner parser we use elsewhere
@@ -192,7 +247,7 @@ impl Date {
     }
 
     pub(crate) fn day_of_week(self) -> Weekday {
-        Weekday::from_iso_unchecked(((self.unix_days().get() + 3).rem_euclid(7) + 1) as _)
+        self.unix_days().day_of_week()
     }
 
     pub(crate) const unsafe fn hash(self) -> i32 {
@@ -217,6 +272,7 @@ impl Display for Date {
     }
 }
 
+// TODO remove
 pub(crate) const MAX_YEAR: c_long = 9999;
 
 unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
@@ -378,7 +434,7 @@ unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
-    Date::parse_all(s.to_utf8()?.ok_or_type_err("argument must be str")?)
+    Date::parse_iso(s.to_utf8()?.ok_or_type_err("argument must be str")?)
         .ok_or_else_value_err(|| format!("Invalid format: {}", s.repr()))?
         .to_obj(cls.cast())
 }
@@ -794,6 +850,85 @@ mod tests {
         assert_eq!(
             mkdate(2021, 1, 1).yesterday().unwrap(),
             mkdate(2020, 12, 31)
+        );
+    }
+
+    #[test]
+    fn from_iso_week() {
+        let cases = &[
+            (2020, 1, 1, 2019, 12, 30),
+            (2020, 1, 2, 2019, 12, 31),
+            (2020, 1, 3, 2020, 1, 1),
+            (2020, 1, 4, 2020, 1, 2),
+            (2020, 1, 5, 2020, 1, 3),
+            (2020, 1, 6, 2020, 1, 4),
+            (2020, 1, 7, 2020, 1, 5),
+            // a random sample
+            (8216, 44, 2, 8216, 10, 29),
+            (3098, 51, 5, 3098, 12, 23),
+            (7372, 29, 4, 7372, 7, 16),
+            (6839, 52, 5, 6839, 12, 30),
+            (4223, 33, 4, 4223, 8, 14),
+            (5770, 42, 7, 5770, 10, 21),
+            (1915, 45, 1, 1915, 11, 8),
+            (858, 15, 6, 858, 4, 13),
+            (3743, 41, 1, 3743, 10, 7),
+            (4197, 6, 5, 4197, 2, 10),
+            (4204, 33, 1, 4204, 8, 13),
+            (8459, 46, 5, 8459, 11, 14),
+            (5431, 26, 5, 5431, 7, 1),
+            (6692, 49, 5, 6692, 12, 9),
+            (3373, 17, 7, 3373, 5, 2),
+            (5055, 2, 3, 5055, 1, 10),
+            (2633, 14, 5, 2633, 4, 5),
+            (6620, 13, 6, 6620, 4, 1),
+            (1412, 21, 2, 1412, 5, 19),
+            (1067, 42, 1, 1067, 10, 14),
+            // extremes
+            (1, 1, 1, 1, 1, 1),
+            (1, 1, 2, 1, 1, 2),
+            (1, 1, 3, 1, 1, 3),
+            (1, 1, 4, 1, 1, 4),
+            (1, 1, 5, 1, 1, 5),
+            (1, 1, 6, 1, 1, 6),
+            (1, 1, 7, 1, 1, 7),
+            (1, 2, 1, 1, 1, 8),
+            (9999, 51, 6, 9999, 12, 25),
+            (9999, 51, 7, 9999, 12, 26),
+            (9999, 52, 1, 9999, 12, 27),
+            (9999, 52, 2, 9999, 12, 28),
+            (9999, 52, 3, 9999, 12, 29),
+            (9999, 52, 4, 9999, 12, 30),
+            (9999, 52, 5, 9999, 12, 31),
+        ];
+
+        for &(year, week, weekday, exp_year, exp_month, exp_day) in cases {
+            assert_eq!(
+                Date::from_iso_week(
+                    Year::new(year).unwrap(),
+                    week,
+                    Weekday::from_iso_unchecked(weekday)
+                ),
+                Some(mkdate(exp_year, exp_month, exp_day)),
+                "Failed for year: {}, week: {}, weekday: {}",
+                year,
+                week,
+                weekday
+            );
+        }
+
+        // Outside boundaries
+        assert_eq!(
+            Date::from_iso_week(Year::new(9999).unwrap(), 52, Weekday::Saturday),
+            None
+        );
+        assert_eq!(
+            Date::from_iso_week(Year::new(9999).unwrap(), 52, Weekday::Sunday),
+            None
+        );
+        assert_eq!(
+            Date::from_iso_week(Year::new(9999).unwrap(), 53, Weekday::Monday),
+            None
         );
     }
 }

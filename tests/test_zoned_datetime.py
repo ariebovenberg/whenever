@@ -293,6 +293,8 @@ class TestInit:
             ZonedDateTime(2023, 3, 26, 1, 15, 30, tz="Europe/Amsterdam")
         )
 
+        assert issubclass(SkippedTime, ValueError)
+
 
 # Note: there's a separate test for changing the tzpath and
 # its effect on available_timezones()
@@ -1202,6 +1204,20 @@ class TestParseCommonIso:
                     disambiguate="earlier",
                 ),
             ),
+            # Skipped times
+            # Alternate formats
+            (
+                "20200815 12:08:30+02:00[Europe/Amsterdam]",
+                ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
+            ),
+            (
+                "2020-02-15t120830z[Europe/London]",
+                ZonedDateTime(2020, 2, 15, 12, 8, 30, tz="Europe/London"),
+            ),
+            (
+                "2020-08-15T12:08:30+02[Europe/Amsterdam]",
+                ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
+            ),
         ],
     )
     def test_valid(self, s, expect):
@@ -1211,22 +1227,28 @@ class TestParseCommonIso:
         "s",
         [
             "2020-08-15T12:08:30+02:00",  # no tz
-            "2020-08-15T12:08:30[Europe/Amsterdam]",  # no offset
-            "2020-08-15T12:08:30+02:00[Europe/Amsterdam",  # mismatched brackets
-            "2020-08-15T12:08:30+02:00Europe/Amsterdam]",  # mismatched brackets
-            "2020-08-15 12:08:30+02:00[Europe/Amsterdam]",  # wrong separator
-            "2020-08-15T12.08:30+02:00[Europe/Amsterdam]",  # wrong separator
-            "2020_08-15T12:08:30+02:00[Europe/Amsterdam]",  # wrong separator
-            "2020-08-15T12:8:30+02:00[Europe/Amsterdam]",  # unpadded
-            "2020-08-32T12:08:30+02:00[Europe/Amsterdam]",  # invalid date
-            "2020-08-12T12:68:30+02:00[Europe/Amsterdam]",  # invalid time
-            "2020-08-12T12:68:30+99:00[Europe/Amsterdam]",  # invalid offset
-            "2020-08-12T12:68:30+14:89[Europe/Amsterdam]",  # invalid offset
-            "2020-08-12T12:68:30+14:29:60[Europe/Amsterdam]",  # invalid offset
-            "2023-10-29T02:15:30>02:00[Europe/Amsterdam]",  # invalid offset
-            " 2023-10-29T02:15:30+02:00[Europe/Amsterdam]",  # leading space
-            "2023-10-29T02:15:30+02:00[Europe/Amsterdam] ",  # trailing space
-            "2023-10-29T02:15:30+02:00(Europe/Amsterdam)",  # wrong brackets
+            # bracket problems
+            "2020-08-15T12:08:30+02:00[Europe/Amsterdam",
+            "2020-08-15T12:08:30+02:00[Europe][Amsterdam]",
+            "2020-08-15T12:08:30+02:00Europe/Amsterdam]",
+            "2023-10-29T02:15:30+02:00(Europe/Amsterdam)",
+            # separator problems
+            "2020-08-15_12:08:30+02:00[Europe/Amsterdam]",
+            "2020-08-15T12.08:30+02:00[Europe/Amsterdam]",
+            "2020_08-15T12:08:30+02:00[Europe/Amsterdam]",
+            # padding problems
+            "2020-08-15T12:8:30+02:00[Europe/Amsterdam]",
+            # invalid values
+            "2020-08-32T12:08:30+02:00[Europe/Amsterdam]",
+            "2020-08-12T12:68:30+02:00[Europe/Amsterdam]",
+            "2020-08-12T12:68:30+99:00[Europe/Amsterdam]",
+            "2020-08-12T12:68:30+14:89[Europe/Amsterdam]",
+            "2020-08-12T12:68:30+01:00[Europe/Amsterdam]",
+            "2020-08-12T12:68:30+14:29:60[Europe/Amsterdam]",
+            "2023-10-29T02:15:30>02:00[Europe/Amsterdam]",
+            # trailing/leading space
+            " 2023-10-29T02:15:30+02:00[Europe/Amsterdam]",
+            "2023-10-29T02:15:30+02:00[Europe/Amsterdam] ",
             # invalid offset seconds, even though total offset is correct
             "1900-01-01T23:34:39.01-00:24:81[Europe/Dublin]",
             # invalid offset minutes, even though total offset is correct
@@ -1265,6 +1287,8 @@ class TestParseCommonIso:
                 f"2023-10-29T02:15:30+02:00[{chr(1600)}]",
             )
 
+        assert issubclass(TimeZoneNotFoundError, ValueError)
+
     @pytest.mark.parametrize(
         "s",
         [
@@ -1286,6 +1310,14 @@ class TestParseCommonIso:
             # some other time in the year
             ZonedDateTime.parse_common_iso(
                 "2020-08-15T12:08:30+01:00:01[Europe/Amsterdam]"
+            )
+
+        assert issubclass(InvalidOffset, ValueError)
+
+    def test_skipped_time(self):
+        with pytest.raises(InvalidOffset):
+            ZonedDateTime.parse_common_iso(
+                "2023-03-26T02:15:30+01:00[Europe/Amsterdam]"
             )
 
     @given(text())
@@ -1841,6 +1873,11 @@ def test_from_py_datetime():
     with pytest.raises((ValueError, OverflowError), match="range|year"):
         ZonedDateTime.from_py_datetime(
             py_datetime(1, 1, 1, tzinfo=ZoneInfo("Asia/Kolkata"))
+        )
+
+    with pytest.raises((ValueError, OverflowError), match="range|year"):
+        ZonedDateTime.from_py_datetime(
+            py_datetime(9999, 12, 31, 22, tzinfo=ZoneInfo("America/New_York"))
         )
 
 
@@ -2865,7 +2902,3 @@ def test_cannot_subclass():
 
         class Subclass(ZonedDateTime):  # type: ignore[misc]
             pass
-
-
-def test_timezone_notfound_is_keyerror():
-    assert issubclass(TimeZoneNotFoundError, KeyError)

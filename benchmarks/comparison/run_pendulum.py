@@ -5,7 +5,7 @@ runner = pyperf.Runner()
 
 runner.timeit(
     "various operations",
-    "d = parse('2020-04-05 22:04:00-04:00')"
+    "d = parse('2020-04-05T22:04:00-04:00')"
     ".in_tz('UTC');"
     "d.diff();"
     "d.add(hours=4, minutes=30)"

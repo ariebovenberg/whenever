@@ -90,12 +90,18 @@ class TestParseCommonIso:
     @pytest.mark.parametrize(
         "input, expect",
         [
+            # extended format
             ("00:00:00.000000", Time()),
             ("01:02:03.004000", Time(1, 2, 3, nanosecond=4_000_000)),
             ("23:59:59.999999", Time(23, 59, 59, nanosecond=999_999_000)),
             ("23:59:59.99", Time(23, 59, 59, nanosecond=990_000_000)),
             ("23:59:59.123456789", Time(23, 59, 59, nanosecond=123_456_789)),
             ("23:59:59", Time(23, 59, 59)),
+            # basic format
+            ("235959", Time(23, 59, 59)),
+            ("235959.123456789", Time(23, 59, 59, nanosecond=123_456_789)),
+            ("010203.004000", Time(1, 2, 3, nanosecond=4_000_000)),
+            ("010203.0", Time(1, 2, 3)),
         ],
     )
     def test_valid(self, input, expect):
@@ -104,16 +110,34 @@ class TestParseCommonIso:
     @pytest.mark.parametrize(
         "input",
         [
-            "01:02:03.004.0",
-            "01:02:03+00:00",
+            # invalid values
             "32:02:03",
             "22:72:03",
-            "22:72:93",
-            "22112:23",
-            "22:12:23,123",
-            "garbage",
+            "22:32:63",
+            "320203",
+            "227203",
+            "223263",
+            # separator issues
+            "2212:23",
+            "22:1223.123",
+            "22:12.23",
+            "01:02:03.004.0",
+            # other
+            "22:12:23,123",  # comma instead of dot
             "12:02:03.1234567890",  # too many digits
             "23:59:59.99999𝟙",  # non-ASCII
+            "01:02:03+00:00",  # offset
+            "010203Z",  # offset
+            "01:02:034",  # trailing
+            "01:02:03 ",  # trailing
+            "010203 ",  # trailing
+            "01023",  # too short
+            "011",  # too short
+            "2",  # too short
+            # garbage
+            "garbage",
+            "",
+            "**",
         ],
     )
     def test_invalid(self, input):

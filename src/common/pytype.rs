@@ -278,7 +278,7 @@ pub(crate) unsafe fn generic_alloc<T>(type_: *mut PyTypeObject, d: T) -> PyRetur
 pub(crate) trait PyWrapped: Copy {
     #[inline]
     unsafe fn extract(obj: *mut PyObject) -> Self {
-        generic_extract(obj)
+        (*obj.cast::<PyWrap<Self>>()).data
     }
 
     #[inline]
@@ -293,16 +293,14 @@ pub(crate) struct PyWrap<T> {
     data: T,
 }
 
-#[inline]
-pub(crate) unsafe fn generic_extract<T: Copy>(obj: *mut PyObject) -> T {
-    (*obj.cast::<PyWrap<T>>()).data
-}
-
 pub(crate) const fn type_spec<T>(name: &CStr, slots: &'static [PyType_Slot]) -> PyType_Spec {
     PyType_Spec {
         name: name.as_ptr().cast(),
         basicsize: mem::size_of::<PyWrap<T>>() as _,
         itemsize: 0,
+        // NOTE: IMMUTABLETYPE flag is required to prevent additional refcycles
+        // between the class and the instance.
+        // This allows us to keep our types GC-free.
         #[cfg(Py_3_10)]
         flags: (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_IMMUTABLETYPE) as _,
         // XXX: implement a way to prevent refcycles on Python 3.9
@@ -315,7 +313,7 @@ pub(crate) const fn type_spec<T>(name: &CStr, slots: &'static [PyType_Slot]) -> 
         // since subinterpreters aren't a concern.
         #[cfg(not(Py_3_10))]
         flags: Py_TPFLAGS_DEFAULT as _,
-        slots: slots as *const [_] as *mut _,
+        slots: slots.as_ptr().cast_mut(),
     }
 }
 

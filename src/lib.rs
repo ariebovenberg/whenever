@@ -508,8 +508,18 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     state.str_half_ceil = PyUnicode_InternFromString(c"half_ceil".as_ptr());
     state.str_half_even = PyUnicode_InternFromString(c"half_even".as_ptr());
 
-    state.exc_repeated = new_exc(module, c"whenever.RepeatedTime", doc::REPEATEDTIME, NULL());
-    state.exc_skipped = new_exc(module, c"whenever.SkippedTime", doc::SKIPPEDTIME, NULL());
+    state.exc_repeated = new_exc(
+        module,
+        c"whenever.RepeatedTime",
+        doc::REPEATEDTIME,
+        PyExc_ValueError,
+    );
+    state.exc_skipped = new_exc(
+        module,
+        c"whenever.SkippedTime",
+        doc::SKIPPEDTIME,
+        PyExc_ValueError,
+    );
     state.exc_invalid_offset = new_exc(
         module,
         c"whenever.InvalidOffset",
@@ -526,7 +536,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         module,
         c"whenever.TimeZoneNotFoundError",
         doc::TIMEZONENOTFOUNDERROR,
-        PyExc_KeyError,
+        PyExc_ValueError,
     );
 
     // Making time patcheable results in a performance hit.

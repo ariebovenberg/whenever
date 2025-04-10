@@ -160,90 +160,125 @@ class TestFormatCommonIso:
         assert d.format_common_iso() == expected
 
 
+INVALID_ISO_STRINGS = [
+    # padding issues
+    "2020-08-15T2:08:30+05:00:01",
+    "2020-8-15T12:8:30+05:00",
+    # fraction issues
+    "2020-08-15T12:08:30.0000000001+05:00",
+    "2020-08-15T12:08:30.+05:00",
+    "2020-08-15T12:08:30+05:00:21.0",
+    "2020-08-15T12:08:30+05:00:21.",
+    # separators
+    "2020-08-15T12:08.30+05:00",
+    "2020-08-15T12:08.30+05.00",
+    "2020-08-15T12:08.30+05 00",
+    # invalid offset
+    "2020-08-15T12:08:30+24:00",
+    "2020-08-15T12:08:30-24:00",
+    "2020-08-15T12:08:30+09:80",
+    "2020-08-15T12:08:30-09:30:60",
+    "2020-08-15T12:08:30-99:00",
+    # other
+    "2020-08-15T12:08:30+05:00stuff",  # trailing stuff
+    "2020-08-15T12:𝟘8:30+00:00",  # non-ASCII
+    "2020-08-15T12:08:30.0034+05:𝟙0",  # non-ASCII
+    # not enough content
+    "",
+    "T",
+    "2020",
+    "2020-08-15",
+    "2020-08-15T",
+    "garbage",
+    # out-of-bounds
+    "9999-12-31T22:08:30-05:00",
+    "0001-01-01 02:08:30+05:00",
+    # invalid tz format
+    "2020-08-15T12:08:30+05:00[",
+    "2020-08-15T12:08:30+05:00[]",
+    "2020-08-15T12:08:30+05:00[abc]foo",
+]
+
+VALID_ISO_STRINGS = [
+    (
+        "2020-08-15T12:08:30+05:00",
+        OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=5),
+    ),
+    (
+        "2020-08-15T12:08:30+20:00",
+        OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=20),
+    ),
+    (
+        "2020-08-15T12:08:30.0034+05:00",
+        OffsetDateTime(2020, 8, 15, 12, 8, 30, nanosecond=3_400_000, offset=5),
+    ),
+    (
+        "2020-08-15T12:08:30.000000010+05:00",
+        OffsetDateTime(2020, 8, 15, 12, 8, 30, nanosecond=10, offset=5),
+    ),
+    (
+        "2020-08-15T12:08:30.0034-05:00:01",
+        OffsetDateTime(
+            2020,
+            8,
+            15,
+            12,
+            8,
+            30,
+            nanosecond=3_400_000,
+            offset=-hours(5) - seconds(1),
+        ),
+    ),
+    (
+        "2020-08-15T12:08:30+00:00",
+        OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=0),
+    ),
+    (
+        "2020-08-15T12:08:30-00:00",
+        OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=0),
+    ),
+    (
+        "2020-08-15T12:08:30Z",
+        OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=0),
+    ),
+    (
+        "2020-08-15T12:08:30z",
+        OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=0),
+    ),
+    # Shorter and alternative time formats
+    (
+        "1924-12-02T12+00",
+        OffsetDateTime(1924, 12, 2, 12, offset=0),
+    ),
+    (
+        "19241203t12:00:12+003059",
+        OffsetDateTime(
+            1924,
+            12,
+            3,
+            12,
+            0,
+            12,
+            offset=minutes(30) + seconds(59),
+        ),
+    ),
+    (
+        "1924-08-15T120012-0030",
+        OffsetDateTime(1924, 8, 15, 12, 0, 12, offset=minutes(-30)),
+    ),
+    (
+        "2020-08-15T120012-0030[Foo]",
+        OffsetDateTime(2020, 8, 15, 12, 0, 12, offset=minutes(-30)),
+    ),
+]
+
+
 class TestParseCommonIso:
-    @pytest.mark.parametrize(
-        "s, expect",
-        [
-            (
-                "2020-08-15T12:08:30+05:00",
-                OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=5),
-            ),
-            (
-                "2020-08-15T12:08:30+20:00",
-                OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=20),
-            ),
-            (
-                "2020-08-15T12:08:30.0034+05:00",
-                OffsetDateTime(
-                    2020, 8, 15, 12, 8, 30, nanosecond=3_400_000, offset=5
-                ),
-            ),
-            (
-                "2020-08-15T12:08:30.000000010+05:00",
-                OffsetDateTime(
-                    2020, 8, 15, 12, 8, 30, nanosecond=10, offset=5
-                ),
-            ),
-            (
-                "2020-08-15T12:08:30.0034-05:00:01",
-                OffsetDateTime(
-                    2020,
-                    8,
-                    15,
-                    12,
-                    8,
-                    30,
-                    nanosecond=3_400_000,
-                    offset=-hours(5) - seconds(1),
-                ),
-            ),
-            (
-                "2020-08-15T12:08:30+00:00",
-                OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=0),
-            ),
-            # Technically, -00:00 is forbidden by ISO8601, but
-            # this isn't checked in most parsers.
-            (
-                "2020-08-15T12:08:30-00:00",
-                OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=0),
-            ),
-            # FUTURE: consider whether to allow `Z` since this strictly
-            # means there is no offset known
-            (
-                "2020-08-15T12:08:30Z",
-                OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=0),
-            ),
-        ],
-    )
+    @pytest.mark.parametrize("s, expect", VALID_ISO_STRINGS)
     def test_valid(self, s, expect):
         assert OffsetDateTime.parse_common_iso(s).exact_eq(expect)
 
-    @pytest.mark.parametrize(
-        "s",
-        [
-            "2020-08-15T2:08:30+05:00:01",  # unpadded
-            "2020-8-15T12:8:30+05:00",  # unpadded
-            "2020-08-15T12:08:30+05",  # no minutes offset
-            "2020-08-15T12:08:30.0000000001+05:00",  # overly precise
-            "2020-08-15T12:08:30+05:00:01.0",  # fractional seconds in offset
-            "2020-08-15T12:08:30+05:00stuff",  # trailing stuff
-            "2020-08-15T12:08+04:00",  # no seconds
-            "2020-08-15",  # date only
-            "2020-08-15 12:08:30+05:00"  # wrong separator
-            "2020-08-15T12:08.30+05:00",  # wrong time separator
-            "2020-08-15T12:08:30+24:00",  # too large offset
-            "2020-08-15T12:08:30+09:80",  # invalid minutes
-            "2020-08-15T12:08:30-02:80:40",  # invalid minutes
-            "2020-08-15T12:08:30+09:40:80",  # invalid seconds
-            "2020-08-15T12:08:30-00:40:60",  # invalid seconds
-            "2020-08-15T23:12:09-99:00",  # invalid offset
-            "2020-08-15T12:𝟘8:30+00:00",  # non-ASCII
-            "2020-08-15T12:08:30.0034+05:𝟙0",  # non-ASCII
-            "",  # empty
-            "garbage",  # garbage
-            "2020-08-15T12:08:30z",  # lowercase Z
-        ],
-    )
+    @pytest.mark.parametrize("s", INVALID_ISO_STRINGS)
     def test_invalid(self, s):
         with pytest.raises(ValueError, match="format.*" + re.escape(repr(s))):
             OffsetDateTime.parse_common_iso(s)

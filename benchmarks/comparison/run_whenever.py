@@ -5,8 +5,8 @@ runner = pyperf.Runner()
 
 runner.timeit(
     "various operations",
-    "d = OffsetDateTime.parse_rfc3339('2020-04-05 22:04:00-04:00')"
-    ".instant();"
+    "d = OffsetDateTime.parse_common_iso('2020-04-05T22:04:00-04:00')"
+    ".to_instant();"
     "d - Instant.now();"
     "d.add(hours=4, minutes=30)"
     ".to_tz('Europe/Amsterdam')",
