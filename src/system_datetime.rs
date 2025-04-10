@@ -17,7 +17,7 @@ use crate::{
     },
     plain_datetime::{set_components_from_kwargs, DateTime},
     round,
-    time::{Time, MIDNIGHT},
+    time::Time,
     time_delta::TimeDelta,
     zoned_datetime::ZonedDateTime,
     State,
@@ -1037,7 +1037,7 @@ unsafe fn start_of_day(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     OffsetDateTime::resolve_system_tz_using_disambiguate(
         py_api,
         date,
-        MIDNIGHT,
+        Time::MIDNIGHT,
         Disambiguate::Compatible,
         exc_repeated,
         exc_skipped,
@@ -1057,7 +1057,7 @@ unsafe fn day_length(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let start_of_day = OffsetDateTime::resolve_system_tz_using_disambiguate(
         py_api,
         date,
-        MIDNIGHT,
+        Time::MIDNIGHT,
         Disambiguate::Compatible,
         exc_repeated,
         exc_skipped,
@@ -1066,7 +1066,7 @@ unsafe fn day_length(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let start_of_next_day = OffsetDateTime::resolve_system_tz_using_disambiguate(
         py_api,
         date.tomorrow().ok_or_value_err("Date is out of range")?,
-        MIDNIGHT,
+        Time::MIDNIGHT,
         Disambiguate::Compatible,
         exc_repeated,
         exc_skipped,
@@ -1120,7 +1120,7 @@ unsafe fn _round_day(
         OffsetDateTime::resolve_system_tz_using_disambiguate(
             py_api,
             date,
-            MIDNIGHT,
+            Time::MIDNIGHT,
             Disambiguate::Compatible,
             exc_repeated,
             exc_skipped,
@@ -1130,7 +1130,7 @@ unsafe fn _round_day(
         OffsetDateTime::resolve_system_tz_using_disambiguate(
             py_api,
             date.tomorrow().ok_or_value_err("Date out of range")?,
-            MIDNIGHT,
+            Time::MIDNIGHT,
             Disambiguate::Compatible,
             exc_repeated,
             exc_skipped,

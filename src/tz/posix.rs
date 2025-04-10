@@ -142,21 +142,22 @@ impl Rule {
     fn for_year(self, y: Year) -> Date {
         match self {
             Rule::DayOfYear(d) => y
-                .unix_day()
+                .unix_days_at_jan1()
                 // Safe: no overflow since it stays within the year
                 .add_unchecked(
-                    d.get()
+                    (d.get()
                         // The 366th day will blow up for non-leap years.
                         // It's unlikely that a TZ string would specify this,
                         // so we'll just clamp it to the last day of the year.
-                        .clamp(0, 365 + y.is_leap() as u16) as _,
+                        .min(365 + y.is_leap() as u16)
+                        - 1) as _,
                 )
                 .date(),
 
             Rule::JulianDayOfYear(d) => y
-                .unix_day()
+                .unix_days_at_jan1()
                 // Safe: No overflow since it stays within the year
-                .add_unchecked(d.get() as i32 + (y.is_leap() && d.get() > 59) as i32)
+                .add_unchecked((d.get() - 1) as i32 + (y.is_leap() && d.get() > 59) as i32)
                 .date(),
 
             Self::LastWeekday(w, m) => {

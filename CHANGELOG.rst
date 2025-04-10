@@ -6,8 +6,9 @@
 
 **New**
 
-Timezone operations are now a lot faster, due to a new implementation in Rust.
-The behavior is unchanged, but can be configured independently of ``zoneinfo`` if needed.
+- Timezone operations are now a lot (5-8x) faster, due to a new implementation in Rust.
+  Previously the ``zoneinfo`` module was used, which resulted in a lot of overhead.
+- Parsing supports a wider range of ISO 8601 formats.
 
 **Fixed**
 
@@ -34,8 +35,9 @@ The behavior is unchanged, but can be configured independently of ``zoneinfo`` i
 
   **Rationale**: The new name is more consistent with the rest of the API.
 
-- Passing invalid timezone names now raise a ``whenever.TimeZoneNotFoundError`` instead of
-  ``zoneinfo.ZoneInfoNotFoundError``.
+- Passing invalid timezone names now raise a
+  ``whenever.TimeZoneNotFoundError`` (subclass of ``ValueError``) instead of
+  ``zoneinfo.ZoneInfoNotFoundError`` (subclass of ``KeyError``).
 
   **Rationale**: This ensures whenever is independent of the ``zoneinfo`` module,
   and its particularities don't leak into the ``whenever`` API.
@@ -52,6 +54,11 @@ The behavior is unchanged, but can be configured independently of ``zoneinfo`` i
   **Rationale**: timedelta subclasses (like pendulum.Duration) often add other
   time components, which risk not being handled correctly. To avoid confusion,
   this method now only accepts the standard ``datetime.timedelta`` class.
+
+- ``SkippedTime`` and ``RepeatedTime`` are now subclasses of ``ValueError``.
+
+  **Rationale**: it ensures these exceptions can be caught together with other
+  exceptions like ``InvalidOffset`` and ``TimeZoneNotFoundError`` during parsing.
 
 0.7.3 (2025-03-19)
 ------------------

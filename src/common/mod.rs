@@ -9,6 +9,8 @@ pub mod pydatetime;
 pub mod pyobject;
 pub mod pytype;
 
+use crate::math::Year;
+
 /// Try to parse digit at index. No bounds check on the index.
 /// Returns None if the character is not an ASCII digit
 pub(crate) fn parse_digit(s: &[u8], index: usize) -> Option<u8> {
@@ -24,6 +26,22 @@ pub(crate) fn parse_digit_max(s: &[u8], index: usize, max: u8) -> Option<u8> {
         c if c >= b'0' && c <= max => Some(c - b'0'),
         _ => None,
     }
+}
+
+pub(crate) fn extract_year(s: &[u8], index: usize) -> Option<Year> {
+    Some(
+        parse_digit(s, index)? as u16 * 1000
+            + parse_digit(s, index + 1)? as u16 * 100
+            + parse_digit(s, index + 2)? as u16 * 10
+            + parse_digit(s, index + 3)? as u16,
+    )
+    .filter(|&y| y > 0)
+    .map(Year::new_unchecked)
+}
+
+// TODO naming
+pub(crate) fn extract_2_digits(s: &[u8], index: usize) -> Option<u8> {
+    Some(parse_digit(s, index)? * 10 + parse_digit(s, index + 1)?)
 }
 
 /// Pack various types into a byte array. Used for pickling.

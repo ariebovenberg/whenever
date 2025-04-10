@@ -6,7 +6,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use _whenever::common::math::{EpochSecs, UnixDays};
 use _whenever::common::math::{Month, Year};
 use _whenever::date::Date;
-use _whenever::plain_datetime;
+use _whenever::plain_datetime::DateTime;
 use _whenever::tz::posix;
 use _whenever::tz::tzif;
 
@@ -18,9 +18,9 @@ pub fn date_from_unix_days(c: &mut Criterion) {
 }
 
 pub fn parse_plain_datetime(c: &mut Criterion) {
-    c.bench_function("Parse local datetime", |b| {
+    c.bench_function("Parse plain datetime", |b| {
         b.iter(|| {
-            plain_datetime::parse_date_and_time(black_box(b"2023-03-02 02:09:09")).unwrap();
+            DateTime::parse(black_box(b"2023-03-02 02:09:09")).unwrap();
         })
     });
 }
@@ -55,7 +55,7 @@ criterion_group!(
     date_from_unix_days,
     parse_plain_datetime,
     parse_posix_tz,
-    offset_for_plain_datetime,
+    offset_for_local_time,
     tomorrow,
 );
 criterion_main!(benches);

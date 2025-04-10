@@ -1,11 +1,9 @@
 /// Checked arithmetic for date and time concepts
-use crate::date::Date;
-use crate::plain_datetime::DateTime;
-use crate::round;
-use crate::time::Time;
+use crate::{date::Date, plain_datetime::DateTime, round, time::Time};
 use pyo3_ffi::*;
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Sign {
     Plus,
     Minus,
@@ -20,6 +18,7 @@ impl Offset {
     pub(crate) const MAX: Offset = Offset(86_399);
     pub(crate) const ZERO: Offset = Offset(0);
     pub(crate) const fn new_unchecked(secs: i32) -> Self {
+        debug_assert!(secs >= Self::MIN.0 && secs <= Self::MAX.0);
         Self(secs)
     }
 
@@ -109,6 +108,7 @@ impl OffsetDelta {
     pub(crate) const MAX: OffsetDelta = OffsetDelta(Offset::MAX.get() * 2);
     pub(crate) const ZERO: OffsetDelta = OffsetDelta(0);
     pub(crate) const fn new_unchecked(secs: i32) -> Self {
+        debug_assert!(secs >= Self::MIN.0 && secs <= Self::MAX.0);
         Self(secs)
     }
 
@@ -147,6 +147,7 @@ impl EpochSecs {
     pub(crate) const MIN: EpochSecs = EpochSecs(-62_135_596_800);
     pub(crate) const MAX: EpochSecs = EpochSecs(253_402_300_799);
     pub const fn new_unchecked(secs: i64) -> Self {
+        debug_assert!(secs >= Self::MIN.0 && secs <= Self::MAX.0);
         Self(secs)
     }
 
@@ -232,7 +233,8 @@ pub struct UnixDays(i32);
 impl UnixDays {
     pub(crate) const MIN: UnixDays = UnixDays(-719_162);
     pub(crate) const MAX: UnixDays = UnixDays(2_932_896);
-    pub const fn new_unchecked(days: i32) -> Self {
+    pub fn new_unchecked(days: i32) -> Self {
+        debug_assert!((Self::MIN.0..=Self::MAX.0).contains(&days));
         Self(days)
     }
 
@@ -309,6 +311,10 @@ impl UnixDays {
         // Safe: result is always within bounds
         EpochSecs::new_unchecked(self.0 as i64 * S_PER_DAY as i64 + time.total_seconds() as i64)
     }
+
+    pub(crate) fn day_of_week(self) -> Weekday {
+        Weekday::from_iso_unchecked(((self.get() + 3).rem_euclid(7) + 1) as _)
+    }
 }
 
 const MAX_MONTH_DAYS: [[u8; 13]; 2] = [
@@ -378,9 +384,9 @@ impl Year {
         (self.get() % 4 == 0 && self.get() % 100 != 0) || self.get() % 400 == 0
     }
 
-    pub(crate) const fn unix_day(self) -> UnixDays {
+    pub(crate) fn unix_days_at_jan1(self) -> UnixDays {
         let y = (self.get() - 1) as i32;
-        UnixDays::new_unchecked(y * 365 + y / 4 - y / 100 + y / 400 - 719_163)
+        UnixDays::new_unchecked(y * 365 + y / 4 - y / 100 + y / 400 - 719_162)
     }
 
     pub(crate) const fn days_in_month(self, month: Month) -> u8 {
@@ -523,6 +529,7 @@ impl DeltaDays {
     }
 
     pub(crate) const fn new_unchecked(days: i32) -> Self {
+        debug_assert!(days >= Self::MIN.0 && days <= Self::MAX.0);
         Self(days)
     }
 
@@ -579,6 +586,7 @@ impl DeltaSeconds {
     }
 
     pub(crate) const fn new_unchecked(secs: i64) -> Self {
+        debug_assert!(secs >= Self::MIN.0 && secs <= Self::MAX.0);
         Self(secs)
     }
 
@@ -657,6 +665,7 @@ impl SubSecNanos {
     pub(crate) const MAX: SubSecNanos = SubSecNanos(999_999_999);
 
     pub(crate) const fn new_unchecked(nanos: i32) -> Self {
+        debug_assert!(nanos >= Self::MIN.0 && nanos <= Self::MAX.0);
         Self(nanos)
     }
 

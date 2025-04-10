@@ -30,7 +30,7 @@ Don't buy the Rust hype?—don't worry: a **pure Python** version is available a
   </p>
 
   <p align="center" style="font-size: 14px">
-    <i>RFC3339-parse, normalize, compare to now, shift, and change timezone (1M times)</i>
+    <i>Parse, normalize, compare to now, shift, and change timezone (1M times)</i>
   </p>
 
 <div align="center">
@@ -46,7 +46,7 @@ Don't buy the Rust hype?—don't worry: a **pure Python** version is available a
 
 </div>
 
-> ⚠️ **Note**: A 1.0 release is coming soon. Until then, the API may change
+> ⚠️ **Note**: A 1.0 release is expected this year. Until then, the API may change
 > as we gather feedback and improve the library.
 > Leave a ⭐️ on GitHub if you'd like to see how this project develops!
 
@@ -199,7 +199,7 @@ or [API reference](https://whenever.readthedocs.io/en/latest/api.html).
 
 ## Versioning and compatibility policy
 
-**Whenever** follows semantic versioning.
+*Whenever* follows semantic versioning.
 Until the 1.0 version, the API may change with minor releases.
 Breaking changes will be meticulously explained in the changelog.
 Since the API is fully typed, your typechecker and/or IDE
@@ -207,18 +207,29 @@ will help you adjust to any API changes.
 
 ## License
 
-**Whenever** is licensed under the MIT License.
+*Whenever* is licensed under the MIT License.
 The binary wheels contain Rust dependencies which are licensed under
 similarly permissive licenses (MIT, Apache-2.0, and others).
 For more details, see the licenses included in the distribution.
 
 ## Acknowledgements
 
-Whenever's design is strongly inspired by the following projects:
+*Whenever* stands on the shoulders of giants:
 
-- [Noda Time](https://nodatime.org/) (which in turn takes after [Joda Time](https://www.joda.org/joda-time/))
-- [Temporal](https://tc39.es/proposal-temporal/docs/) which also takes inspiration from above
+- Its core datamodel takes big inspiration from [Noda Time](https://nodatime.org/),
+  which in turn is inspired by the influential [Joda Time](https://www.joda.org/joda-time/).
 
-Whenever also borrows a few nifty ideas from [Jiff](https://github.com/BurntSushi/jiff).
+- *Whenever* also takes a lot of inspiration from the [Temporal proposal for JavaScript](https://tc39.es/proposal-temporal/docs/).
+  After years of design work and gathering feedback,
+  TC39 has come up with an extraodrinarily well-specified API fit for a dynamic language.
 
-The benchmark comparison graph is based on the one from the [Ruff](https://github.com/astral-sh/ruff) project.
+- *Whenever* gratefully makes use of ``datetime``'s
+  robust and cross-platform handling of the system local timezone.
+
+- The pure-Python version of *whenever* also makes extensive use of Python's ``datetime``
+  and ``zoneinfo`` libraries for its internals.
+
+- *Whenever* also borrows a few nifty ideas from [Jiff](https://github.com/BurntSushi/jiff):
+  A modern datetime library in Rust which takes inspiration from Temporal.
+
+- The benchmark comparison graph is adapted from the [Ruff](https://github.com/astral-sh/ruff) project.

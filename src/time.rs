@@ -3,13 +3,10 @@ use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 use std::ptr::null_mut as NULL;
 
-use crate::common::*;
-use crate::date::Date;
-use crate::docstrings as doc;
-use crate::math::*;
-use crate::plain_datetime::DateTime;
-use crate::round;
-use crate::State;
+use crate::{
+    common::*, date::Date, docstrings as doc, math::*, parse::Scan, plain_datetime::DateTime,
+    round, State,
+};
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub struct Time {
@@ -96,36 +93,62 @@ impl Time {
         }
     }
 
-    pub(crate) fn parse_all(s: &[u8]) -> Option<Self> {
-        if s.len() < 8 || s.len() == 9 || s.len() > 18 || s[2] != b':' || s[5] != b':' {
-            return None;
-        }
-        let hour = parse_digit_max(s, 0, b'2')? * 10 + parse_digit(s, 1)?;
-        let minute = parse_digit_max(s, 3, b'5')? * 10 + parse_digit(s, 4)?;
-        let second = parse_digit_max(s, 6, b'5')? * 10 + parse_digit(s, 7)?;
-        let mut nanos: i32 = 0;
-        if s.len() > 8 {
-            if s[8] != b'.' {
-                return None;
+    /// Read a time string in the ISO 8601 extended format (i.e. with ':' separators)
+    pub(crate) fn read_iso_extended(s: &mut Scan) -> Option<Self> {
+        // FUTURE: potential double checks coming from some callers
+        let hour = s.digits00_23()?;
+        let (minute, second, subsec) = match s.advance_on(b':') {
+            // The "extended" format with mandatory ':' between components
+            Some(true) => {
+                let min = s.digits00_59()?;
+                // seconds are still optional at this point
+                let (sec, subsec) = match s.advance_on(b':') {
+                    Some(true) => s.digits00_59().zip(s.subsec())?,
+                    _ => (0, SubSecNanos::MIN),
+                };
+                (min, sec, subsec)
             }
-            for (i, factor) in s[9..].iter().zip(&[
-                100_000_000,
-                10_000_000,
-                1_000_000,
-                100_000,
-                10_000,
-                1_000,
-                100,
-                10,
-                1,
-            ]) {
-                if !i.is_ascii_digit() {
-                    return None;
-                }
-                nanos += ((i - b'0') as i32) * factor;
+            // No components besides hour
+            _ => (0, 0, SubSecNanos::MIN),
+        };
+        Some(Time {
+            hour,
+            minute,
+            second,
+            subsec,
+        })
+    }
+
+    pub(crate) fn read_iso_basic(s: &mut Scan) -> Option<Self> {
+        let hour = s.digits00_23()?;
+        let (minute, second, subsec) = match s.digits00_59() {
+            Some(m) => {
+                let (sec, sub) = match s.digits00_59() {
+                    Some(n) => (n, s.subsec().unwrap_or(SubSecNanos::MIN)),
+                    None => (0, SubSecNanos::MIN),
+                };
+                (m, sec, sub)
             }
+            None => (0, 0, SubSecNanos::MIN),
+        };
+        Some(Time {
+            hour,
+            minute,
+            second,
+            subsec,
+        })
+    }
+
+    pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
+        match s.get(2) {
+            Some(b':') => Self::read_iso_extended(s),
+            _ => Self::read_iso_basic(s),
         }
-        Time::new(hour, minute, second, SubSecNanos::new_unchecked(nanos))
+    }
+
+    pub(crate) fn parse_iso(s: &[u8]) -> Option<Self> {
+        let mut scan = Scan::new(s);
+        scan.parse_all(Self::read_iso)
     }
 
     pub(crate) fn parse_partial(s: &mut &[u8]) -> Option<Self> {
@@ -205,6 +228,13 @@ impl Time {
             subsec: SubSecNanos::from_py_dt_unchecked(dt),
         }
     }
+
+    pub(crate) const MIDNIGHT: Time = Time {
+        hour: 0,
+        minute: 0,
+        second: 0,
+        subsec: SubSecNanos::MIN,
+    };
 }
 
 impl PyWrapped for Time {}
@@ -221,15 +251,8 @@ impl Display for Time {
     }
 }
 
-pub(crate) const MIDNIGHT: Time = Time {
-    hour: 0,
-    minute: 0,
-    second: 0,
-    subsec: SubSecNanos::MIN,
-};
-
 pub(crate) const SINGLETONS: &[(&CStr, Time); 3] = &[
-    (c"MIDNIGHT", MIDNIGHT),
+    (c"MIDNIGHT", Time::MIDNIGHT),
     (
         c"NOON",
         Time {
@@ -384,7 +407,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
-    Time::parse_all(s.to_utf8()?.ok_or_type_err("Argument must be a string")?)
+    Time::parse_iso(s.to_utf8()?.ok_or_type_err("Argument must be a string")?)
         .ok_or_else_value_err(|| format!("Invalid format: {}", s.repr()))?
         .to_obj(cls.cast())
 }

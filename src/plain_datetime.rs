@@ -2,16 +2,15 @@ use core::ffi::{c_int, c_long, c_void, CStr};
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
-use crate::common::math::*;
-use crate::common::*;
-use crate::docstrings as doc;
-use crate::offset_datetime::check_ignore_dst_kwarg;
 use crate::{
+    common::{math::*, *},
     date::Date,
     date_delta::DateDelta,
     datetime_delta::{set_units_from_kwargs, DateTimeDelta},
+    docstrings as doc,
     instant::Instant,
-    offset_datetime::{self, OffsetDateTime},
+    offset_datetime::{self, check_ignore_dst_kwarg, OffsetDateTime},
+    parse::Scan,
     round,
     time::Time,
     time_delta::TimeDelta,
@@ -20,7 +19,7 @@ use crate::{
 };
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
-pub(crate) struct DateTime {
+pub struct DateTime {
     pub(crate) date: Date,
     pub(crate) time: Time,
 }
@@ -101,6 +100,26 @@ impl DateTime {
                 time.subsec,
             ),
         })
+    }
+
+    pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
+        // Minimal length is 11 (YYYYMMDDTHH)
+        if s.len() < 11 {
+            return None;
+        }
+        let date = if is_datetime_sep(s[10]) {
+            Date::parse_iso_extended(s.take_unchecked(10).try_into().unwrap())
+        } else if is_datetime_sep(s[8]) {
+            Date::parse_iso_basic(s.take_unchecked(8).try_into().unwrap())
+        } else {
+            return None;
+        }?;
+        let time = Time::read_iso(s.skip(1))?;
+        Some(DateTime { date, time })
+    }
+
+    pub fn parse(s: &[u8]) -> Option<Self> {
+        Scan::new(s).parse_all(Self::read_iso)
     }
 }
 
@@ -609,24 +628,14 @@ unsafe fn get_time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         .to_obj(State::for_obj(slf).time_type)
 }
 
-pub fn parse_date_and_time(s: &[u8]) -> Option<(Date, Time)> {
-    // This should have already been checked by caller
-    debug_assert!(
-        s.len() >= 19 && (s[10] == b' ' || s[10] == b'T' || s[10] == b't' || s[10] == b'_')
-    );
-    Date::parse_all(&s[..10]).zip(Time::parse_all(&s[11..]))
+pub(crate) fn is_datetime_sep(c: u8) -> bool {
+    c == b'T' || c == b' ' || c == b't'
 }
 
 unsafe fn parse_common_iso(cls: *mut PyObject, arg: *mut PyObject) -> PyReturn {
-    let s = arg.to_utf8()?.ok_or_type_err("Expected a string")?;
-    if s.len() < 19 || s[10] != b'T' {
-        raise_value_err(format!("Invalid format: {}", arg.repr()))
-    } else {
-        match parse_date_and_time(s) {
-            Some((date, time)) => DateTime { date, time }.to_obj(cls.cast()),
-            None => raise_value_err(format!("Invalid format: {}", arg.repr())),
-        }
-    }
+    DateTime::parse(arg.to_utf8()?.ok_or_type_err("Expected a string")?)
+        .ok_or_else_value_err(|| format!("Invalid format: {}", arg.repr()))?
+        .to_obj(cls.cast())
 }
 
 unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
@@ -936,42 +945,45 @@ mod tests {
 
     #[test]
     fn test_parse_valid() {
-        assert_eq!(
-            parse_date_and_time(b"2023-03-02 02:09:09"),
-            Some((
-                mkdate(2023, 3, 2),
-                Time {
-                    hour: 2,
-                    minute: 9,
-                    second: 9,
-                    subsec: SubSecNanos::MIN,
-                },
-            ))
-        );
-        assert_eq!(
-            parse_date_and_time(b"2023-03-02 02:09:09.123456789"),
-            Some((
-                mkdate(2023, 3, 2),
-                Time {
-                    hour: 2,
-                    minute: 9,
-                    second: 9,
-                    subsec: SubSecNanos::new_unchecked(123_456_789),
-                },
-            ))
-        );
+        let cases = &[
+            (&b"2023-03-02 02:09:09"[..], 2023, 3, 2, 2, 9, 9, 0),
+            (
+                b"2023-03-02 02:09:09.123456789",
+                2023,
+                3,
+                2,
+                2,
+                9,
+                9,
+                123_456_789,
+            ),
+        ];
+        for &(str, y, m, d, h, min, s, ns) in cases {
+            assert_eq!(
+                DateTime::parse(str),
+                Some(DateTime {
+                    date: mkdate(y, m, d),
+                    time: Time {
+                        hour: h,
+                        minute: min,
+                        second: s,
+                        subsec: SubSecNanos::new_unchecked(ns),
+                    },
+                })
+            );
+        }
     }
 
     #[test]
     fn test_parse_invalid() {
         // dot but no fractional digits
-        assert_eq!(parse_date_and_time(b"2023-03-02 02:09:09."), None);
+        assert_eq!(DateTime::parse(b"2023-03-02 02:09:09."), None);
         // too many fractions
-        assert_eq!(parse_date_and_time(b"2023-03-02 02:09:09.1234567890"), None);
+        assert_eq!(DateTime::parse(b"2023-03-02 02:09:09.1234567890"), None);
         // invalid minute
-        assert_eq!(parse_date_and_time(b"2023-03-02 02:69:09.123456789"), None);
+        assert_eq!(DateTime::parse(b"2023-03-02 02:69:09.123456789"), None);
         // invalid date
-        assert_eq!(parse_date_and_time(b"2023-02-29 02:29:09.123456789"), None);
+        assert_eq!(DateTime::parse(b"2023-02-29 02:29:09.123456789"), None);
     }
 
     #[test]

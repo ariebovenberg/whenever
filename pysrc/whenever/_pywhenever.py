@@ -69,7 +69,7 @@ from typing import (
     overload,
 )
 from weakref import WeakValueDictionary
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 __all__ = [
     # Date and time
@@ -306,8 +306,15 @@ class Date(_ImmutableBase):
 
     @classmethod
     def parse_common_iso(cls, s: str, /) -> Date:
-        """Create from the common ISO 8601 date format ``YYYY-MM-DD``.
-        Does not accept more "exotic" ISO 8601 formats.
+        """Parse a date from an ISO8601 string
+
+        The following formats are accepted:
+        - ``YYYY-MM-DD``
+        - ``YYYYMMDD``
+        - ``YYYY-Www[-D]``
+        - ``YYYYWww[D]``
+        - ``YYYYDDD``
+        - ``YYYY-DDD``
 
         Inverse of :meth:`format_common_iso`
 
@@ -2557,6 +2564,7 @@ class _BasicConversions(_ImmutableBase, ABC):
         Its ``fold`` attribute is used to disambiguate.
         """
 
+    # TODO: rename?
     def py_datetime(self) -> _datetime:
         """Convert to a standard library :class:`~datetime.datetime`
 
@@ -5808,7 +5816,7 @@ class ImplicitlyIgnoringDST(TypeError):
     """A calculation was performed that implicitly ignored DST"""
 
 
-class TimeZoneNotFoundError(KeyError):
+class TimeZoneNotFoundError(ValueError):
     """A timezone with the given ID was not found"""
 
     @classmethod

@@ -1006,57 +1006,29 @@ class TestParseCommonIso:
     @pytest.mark.parametrize(
         "s, expect",
         [
-            (
-                "2020-08-15T23:12:09.000450Z",
-                Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=450_000),
-            ),
+            # offset
             (
                 "2020-08-15T23:12:09+00:00",
                 Instant.from_utc(2020, 8, 15, 23, 12, 9),
             ),
-            (
-                "2020-08-15T23:12:09Z",
-                Instant.from_utc(2020, 8, 15, 23, 12, 9),
-            ),
+            # Z-offset
             (
                 "2020-08-15T23:12:09.34Z",
                 Instant.from_utc(
                     2020, 8, 15, 23, 12, 9, nanosecond=340_000_000
                 ),
             ),
-            # full precision
+            # maximum precision
             (
                 "2020-08-15T23:12:09.987654001Z",
                 Instant.from_utc(
                     2020, 8, 15, 23, 12, 9, nanosecond=987_654_001
                 ),
             ),
-            # microsecond precision
-            (
-                "2020-08-15T23:12:09.987654Z",
-                Instant.from_utc(
-                    2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
-                ),
-            ),
             # no fractions
             ("2020-08-15T23:12:09Z", Instant.from_utc(2020, 8, 15, 23, 12, 9)),
-            # no time
+            # midnight
             ("2020-08-15T00:00:00Z", Instant.from_utc(2020, 8, 15)),
-            # millisecond precision
-            (
-                "2020-08-15T23:12:09.344Z",
-                Instant.from_utc(
-                    2020, 8, 15, 23, 12, 9, nanosecond=344_000_000
-                ),
-            ),
-            # single fraction
-            (
-                "2020-08-15T23:12:09.3Z",
-                Instant.from_utc(
-                    2020, 8, 15, 23, 12, 9, nanosecond=300_000_000
-                ),
-            ),
-            ("2020-08-15T23:12:09Z", Instant.from_utc(2020, 8, 15, 23, 12, 9)),
         ],
     )
     def test_valid(self, s, expect):

@@ -10,6 +10,7 @@ use crate::{
     datetime_delta::{set_units_from_kwargs, DateTimeDelta},
     docstrings as doc,
     instant::Instant,
+    parse::Scan,
     plain_datetime::{set_components_from_kwargs, DateTime},
     round,
     time::Time,
@@ -54,15 +55,17 @@ impl OffsetDateTime {
         }
     }
 
-    pub(crate) fn parse(string: &[u8]) -> Option<Self> {
-        let s = &mut &*string;
-        // at least: "YYYY-MM-DDTHH:MM:SSZ"
-        if s.len() < 20 || s[10] != b'T' {
-            return None;
-        }
-        let date = Date::parse_partial(s)?;
-        *s = &s[1..]; // skip the separator
-        Self::new(date, Time::parse_partial(s)?, parse_hms_offset(s)?)
+    pub(crate) fn parse(s: &[u8]) -> Option<Self> {
+        Scan::new(s).parse_all(Self::read_iso)
+    }
+
+    pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
+        DateTime::read_iso(s)?
+            .with_offset(Offset::read_iso(s)?)
+            .and_then(|d| {
+                skip_tzname(s)?;
+                Some(d)
+            })
     }
 
     pub(crate) unsafe fn to_py(
@@ -162,6 +165,62 @@ impl Instant {
                 .with_offset_unchecked(secs),
         )
     }
+}
+
+impl Offset {
+    pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
+        let sign = match s.next() {
+            Some(b'+') => Sign::Plus,
+            Some(b'-') => Sign::Minus,
+            Some(b'Z' | b'z') => return Some(Offset::ZERO),
+            _ => None?, // sign is required
+        };
+        let mut total = 0;
+
+        // hours (required)
+        total += s.digits00_23()? as i32 * 3600;
+
+        match s.advance_on(b':') {
+            // we're parsing: HH:MM[:SS]
+            Some(true) => {
+                // minutes (required after the ':')
+                total += s.digits00_59()? as i32 * 60;
+                // Let's see if we have seconds too (optional)
+                if let Some(true) = s.advance_on(b':') {
+                    total += s.digits00_59()? as i32;
+                }
+            }
+            // we *may* be parsing HHMM[SS]
+            Some(false) => {
+                // Let's see if we have minutes (optional)
+                if let Some(n) = s.digits00_59() {
+                    total += n as i32 * 60;
+                    // Let's see if we have seconds too (optional)
+                    if let Some(n) = s.digits00_59() {
+                        total += n as i32;
+                    }
+                }
+            }
+            // end of string. We're done
+            None => {}
+        }
+        // Safe: we've bounded the values on parsing so we're in range
+        Some(Offset::new_unchecked(total).with_sign(sign))
+    }
+}
+
+fn skip_tzname(s: &mut Scan) -> Option<()> {
+    Some(match s.advance_on(b'[') {
+        Some(true) => {
+            match s.take_until_inclusive(|c| c == b']') {
+                Some(b"]") => None?, // Fail: empty tzname
+                Some(tz) if tz.is_ascii() => (),
+                _ => None?, // Fail: no closing ']'
+            }
+        }
+        // Success: no timezone to parse
+        _ => (),
+    })
 }
 
 impl PyWrapped for OffsetDateTime {}
@@ -949,33 +1008,6 @@ unsafe fn from_timestamp_nanos(
     .to_obj(cls)
 }
 
-// parse ±HH:MM[:SS] or [Zz]
-fn parse_hms_offset(s: &[u8]) -> Option<Offset> {
-    let sign = match s.first() {
-        Some(b'+') => Sign::Plus,
-        Some(b'-') => Sign::Minus,
-        Some(b'Z') if s.len() == 1 => return Some(Offset::ZERO),
-        _ => return None,
-    };
-    if s.len() >= 6 && s[3] == b':' {
-        // the HH:MM part
-        let secs = (parse_digit_max(s, 1, b'2')? * 10 + parse_digit(s, 2)?) as i32 * 3600
-            + (parse_digit_max(s, 4, b'5')? * 10 + parse_digit(s, 5)?) as i32 * 60;
-        // the optional seconds part
-        match s.get(6) {
-            Some(b':') if s.len() == 9 => {
-                Some(secs + parse_digit_max(s, 7, b'5')? as i32 * 10 + parse_digit(s, 8)? as i32)
-            }
-            None => Some(secs),
-            _ => None,
-        }
-        .and_then(Offset::new)
-        .map(|s| s.with_sign(sign))
-    } else {
-        None
-    }
-}
-
 unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     OffsetDateTime::parse(s_obj.to_utf8()?.ok_or_type_err("Expected a string")?)
         .ok_or_else_value_err(|| format!("Invalid format: {}", s_obj.repr()))?
@@ -1003,6 +1035,7 @@ fn parse_rfc3339_offset(s: &[u8]) -> Option<Offset> {
     }
 }
 
+// TODO: clarify role of these functions now that ISO is more permissive
 unsafe fn parse_rfc3339(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let s = &mut s_obj.to_utf8()?.ok_or_type_err("Expected a string")?;
     let errmsg = || format!("Invalid RFC 3339 format: {}", s_obj.repr());
