@@ -6191,11 +6191,7 @@ final(_KnowsInstantAndLocal)
 final(_BasicConversions)
 
 
-_time_patch = None
-
-
 def _patch_time_frozen(inst: Instant) -> None:
-    global _time_patch
     global time_ns
 
     def time_ns() -> int:
@@ -6203,7 +6199,6 @@ def _patch_time_frozen(inst: Instant) -> None:
 
 
 def _patch_time_keep_ticking(inst: Instant) -> None:
-    global _time_patch
     global time_ns
 
     _patched_at = time_ns()
@@ -6214,7 +6209,6 @@ def _patch_time_keep_ticking(inst: Instant) -> None:
 
 
 def _unpatch_time() -> None:
-    global _time_patch
     global time_ns
 
     from time import time_ns
