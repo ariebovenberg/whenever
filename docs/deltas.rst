@@ -135,9 +135,9 @@ This is not the case for date units. The result of adding two date units depends
 
 >>> d = Date(2020, 1, 29)
 >>> d + months(1) + days(3)
-Date(2021-03-03)
+Date(2020-03-03)
 >>> d + days(3) + months(1)
-Date(2021-03-01)
+Date(2020-03-01)
 
 Reversibility
 -------------
