@@ -1,6 +1,5 @@
 import enum
 from abc import ABC
-from collections.abc import Iterator
 from contextlib import _GeneratorContextManager
 from datetime import (
     date as _date,
