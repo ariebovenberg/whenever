@@ -15,6 +15,7 @@ from typing import (
     overload,
     type_check_only,
 )
+
 from typing_extensions import Self, override
 
 __all__ = [
