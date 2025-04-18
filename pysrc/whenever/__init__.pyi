@@ -13,7 +13,6 @@ from typing import (
     Iterator,
     Literal,
     TypeAlias,
-    TypeVar,
     final,
     overload,
 )
@@ -324,8 +323,6 @@ class DateTimeDelta:
     def __abs__(self) -> Self: ...
 
 Delta: TypeAlias = DateTimeDelta | TimeDelta | DateDelta
-
-_T = TypeVar("_T")
 
 class _KnowsLocal(ABC):
     @property
