@@ -52,24 +52,6 @@ __all__ = [
 _EXTENSION_LOADED: bool
 __version__: str
 
-_RoundUnitTime: TypeAlias = Literal[
-    "hour",
-    "minute",
-    "second",
-    "millisecond",
-    "microsecond",
-    "nanosecond",
-]
-_RoundUnitDate: TypeAlias = Literal["day", _RoundUnitTime]
-_RoundMode: TypeAlias = Literal[
-    "ceil",
-    "floor",
-    "half_ceil",
-    "half_floor",
-    "half_even",
-]
-_Disambiguate: TypeAlias = Literal["compatible", "raise", "earlier", "later"]
-
 @type_check_only
 class _CommonISOMixin:
     @classmethod
@@ -184,9 +166,18 @@ class Time(_DateOrTimeMixin):
     ) -> Self: ...
     def round(
         self,
-        unit: _RoundUnitTime = "second",
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = "second",
         increment: int = 1,
-        mode: _RoundMode = "half_even",
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "half_even",
     ) -> Self: ...
 
 @type_check_only
@@ -224,9 +215,18 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
     def from_py_timedelta(cls, td: _timedelta, /) -> Self: ...
     def round(
         self,
-        unit: _RoundUnitTime = "second",
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = "second",
         increment: int = 1,
-        mode: _RoundMode = "half_even",
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "half_even",
     ) -> Self: ...
     def __add__(self, other: Self, /) -> Self: ...
     def __sub__(self, other: Self, /) -> Self: ...
@@ -386,9 +386,18 @@ class Instant(_PyDateTimeMixin, _KnowsInstant):
     ) -> Self: ...
     def round(
         self,
-        unit: _RoundUnitTime = "second",
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = "second",
         increment: int = 1,
-        mode: _RoundMode = "half_even",
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "half_even",
     ) -> Self: ...
     def __add__(self, delta: TimeDelta, /) -> Self: ...
     @overload
@@ -497,9 +506,19 @@ class OffsetDateTime(_PyDateTimeMixin, _KnowsInstantAndLocal):
     def subtract(self, d: Delta, /, ignore_dst: Literal[True]) -> Self: ...
     def round(
         self,
-        unit: _RoundUnitDate = "second",
+        unit: Literal[
+            "day",
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = "second",
         increment: int = 1,
-        mode: _RoundMode = "half_even",
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "half_even",
         *,
         ignore_dst: Literal[True],
     ) -> Self: ...
@@ -518,7 +537,7 @@ class ZonedDateTime(_PyDateTimeMixin, _KnowsInstantAndLocal):
         *,
         nanosecond: int = 0,
         tz: str,
-        disambiguate: _Disambiguate = ...,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> None: ...
     @property
     def tz(self) -> str: ...
@@ -542,13 +561,21 @@ class ZonedDateTime(_PyDateTimeMixin, _KnowsInstantAndLocal):
         second: int = ...,
         nanosecond: int = ...,
         tz: str = ...,
-        disambiguate: _Disambiguate = ...,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     def replace_date(
-        self, d: Date, /, *, disambiguate: _Disambiguate = ...
+        self,
+        d: Date,
+        /,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     def replace_time(
-        self, t: Time, /, *, disambiguate: _Disambiguate = ...
+        self,
+        t: Time,
+        /,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @overload
     def add(
@@ -564,7 +591,7 @@ class ZonedDateTime(_PyDateTimeMixin, _KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: _Disambiguate = ...,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     # FUTURE: include this in strict stubs version
     # @overload
@@ -586,7 +613,7 @@ class ZonedDateTime(_PyDateTimeMixin, _KnowsInstantAndLocal):
         d: DateDelta | DateTimeDelta,
         /,
         *,
-        disambiguate: _Disambiguate = ...,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @overload
     def subtract(
@@ -602,7 +629,7 @@ class ZonedDateTime(_PyDateTimeMixin, _KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: _Disambiguate = ...,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     # FUTURE: include this in strict stubs version
     # @overload
@@ -624,16 +651,26 @@ class ZonedDateTime(_PyDateTimeMixin, _KnowsInstantAndLocal):
         d: DateDelta | DateTimeDelta,
         /,
         *,
-        disambiguate: _Disambiguate = ...,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     def is_ambiguous(self) -> bool: ...
     def hours_in_day(self) -> float: ...
     def start_of_day(self) -> Self: ...
     def round(
         self,
-        unit: _RoundUnitDate = "second",
+        unit: Literal[
+            "day",
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = "second",
         increment: int = 1,
-        mode: _RoundMode = "half_even",
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "half_even",
     ) -> Self: ...
     # FUTURE: disable date components in strict stubs version
     def __add__(self, delta: Delta, /) -> Self: ...
@@ -654,7 +691,7 @@ class SystemDateTime(_PyDateTimeMixin, _KnowsInstantAndLocal):
         second: int = 0,
         *,
         nanosecond: int = 0,
-        disambiguate: _Disambiguate = ...,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> None: ...
     @classmethod
     def now(cls) -> Self: ...
@@ -675,13 +712,21 @@ class SystemDateTime(_PyDateTimeMixin, _KnowsInstantAndLocal):
         minute: int = ...,
         second: int = ...,
         nanosecond: int = ...,
-        disambiguate: _Disambiguate = ...,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     def replace_date(
-        self, d: Date, /, *, disambiguate: _Disambiguate = ...
+        self,
+        d: Date,
+        /,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     def replace_time(
-        self, t: Time, /, *, disambiguate: _Disambiguate = ...
+        self,
+        t: Time,
+        /,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @overload
     def add(
@@ -697,7 +742,7 @@ class SystemDateTime(_PyDateTimeMixin, _KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: _Disambiguate = ...,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     # FUTURE: include this in strict stubs version
     # @overload
@@ -719,7 +764,7 @@ class SystemDateTime(_PyDateTimeMixin, _KnowsInstantAndLocal):
         d: DateDelta | DateTimeDelta,
         /,
         *,
-        disambiguate: _Disambiguate = ...,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @overload
     def subtract(
@@ -735,7 +780,7 @@ class SystemDateTime(_PyDateTimeMixin, _KnowsInstantAndLocal):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: _Disambiguate = ...,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     # FUTURE: include this in strict stubs version
     # @overload
@@ -757,16 +802,26 @@ class SystemDateTime(_PyDateTimeMixin, _KnowsInstantAndLocal):
         d: DateDelta | DateTimeDelta,
         /,
         *,
-        disambiguate: _Disambiguate = ...,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     def is_ambiguous(self) -> bool: ...
     def hours_in_day(self) -> float: ...
     def start_of_day(self) -> ZonedDateTime: ...
     def round(
         self,
-        unit: _RoundUnitDate = "second",
+        unit: Literal[
+            "day",
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = "second",
         increment: int = 1,
-        mode: _RoundMode = "half_even",
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "half_even",
     ) -> Self: ...
     # FUTURE: disable date components in strict stubs version
     def __add__(self, delta: Delta, /) -> Self: ...
@@ -793,10 +848,16 @@ class LocalDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _KnowsLocal):
         self, offset: int | TimeDelta, /
     ) -> OffsetDateTime: ...
     def assume_tz(
-        self, tz: str, /, *, disambiguate: _Disambiguate = ...
+        self,
+        tz: str,
+        /,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> ZonedDateTime: ...
     def assume_system_tz(
-        self, *, disambiguate: _Disambiguate = ...
+        self,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> SystemDateTime: ...
     @classmethod
     def strptime(cls, s: str, fmt: str, /) -> Self: ...
@@ -870,9 +931,19 @@ class LocalDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _KnowsLocal):
     ) -> TimeDelta: ...
     def round(
         self,
-        unit: _RoundUnitDate = "second",
+        unit: Literal[
+            "day",
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = "second",
         increment: int = 1,
-        mode: _RoundMode = "half_even",
+        mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "half_even",
     ) -> Self: ...
     def __add__(self, delta: DateDelta, /) -> Self: ...
     def __sub__(self, other: DateDelta, /) -> Self: ...
