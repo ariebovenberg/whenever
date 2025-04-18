@@ -1,7 +1,7 @@
 import enum
 from abc import ABC
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import _GeneratorContextManager
 from datetime import (
     date as _date,
     datetime as _datetime,
@@ -982,7 +982,6 @@ def nanoseconds(i: int, /) -> TimeDelta: ...
 class _TimePatch:
     def shift(self, *args: Any, **kwargs: Any) -> None: ...
 
-@contextmanager
 def patch_current_time(
     i: _KnowsInstant, /, *, keep_ticking: bool
-) -> Iterator[_TimePatch]: ...
+) -> _GeneratorContextManager[_TimePatch]: ...
