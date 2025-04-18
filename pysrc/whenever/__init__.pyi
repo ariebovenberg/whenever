@@ -8,7 +8,6 @@ from datetime import (
     timedelta as _timedelta,
 )
 from typing import (
-    Any,
     ClassVar,
     Literal,
     TypeAlias,
@@ -918,7 +917,7 @@ def microseconds(i: float, /) -> TimeDelta: ...
 def nanoseconds(i: int, /) -> TimeDelta: ...
 
 class _TimePatch:
-    def shift(self, *args: Any, **kwargs: Any) -> None: ...
+    def shift(self, *args: object, **kwargs: object) -> None: ...
 
 def patch_current_time(
     i: _KnowsInstant, /, *, keep_ticking: bool
