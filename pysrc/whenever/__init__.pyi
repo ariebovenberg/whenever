@@ -241,7 +241,6 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
     def __floordiv__(self, other: Self, /) -> int: ...
     def __mod__(self, other: Self, /) -> Self: ...
 
-
 @final
 class DateDelta(_DeltaMixin):
     def __init__(
