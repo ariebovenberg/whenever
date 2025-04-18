@@ -1,5 +1,6 @@
 import enum
 from abc import ABC
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import (
     date as _date,
@@ -7,15 +8,7 @@ from datetime import (
     time as _time,
     timedelta as _timedelta,
 )
-from typing import (
-    Any,
-    ClassVar,
-    Iterator,
-    Literal,
-    TypeAlias,
-    final,
-    overload,
-)
+from typing import Any, ClassVar, Literal, TypeAlias, final, overload
 from typing_extensions import Self
 
 __all__ = [
