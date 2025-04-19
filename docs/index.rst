@@ -9,6 +9,7 @@ Contents
    :maxdepth: 2
 
    self
+   examples.rst
    overview.rst
    deltas.rst
    faq.rst
