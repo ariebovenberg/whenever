@@ -171,31 +171,6 @@ impl Date {
         UnixDays::new(first_monday_offset + day_offset).map(|u| u.date())
     }
 
-    // FUTURE: use the scanner parser we use elsewhere
-    pub(crate) fn parse_all(s: &[u8]) -> Option<Self> {
-        if s.len() == 10 && s[4] == b'-' && s[7] == b'-' {
-            Date::new(
-                Year::new(
-                    parse_digit(s, 0)? as u16 * 1000
-                        + parse_digit(s, 1)? as u16 * 100
-                        + parse_digit(s, 2)? as u16 * 10
-                        + parse_digit(s, 3)? as u16,
-                )?,
-                Month::new(parse_digit(s, 5)? * 10 + parse_digit(s, 6)?)?,
-                parse_digit(s, 8)? * 10 + parse_digit(s, 9)?,
-            )
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn parse_partial(s: &mut &[u8]) -> Option<Self> {
-        debug_assert!(s.len() >= 10);
-        let result = Self::parse_all(&s[..10]);
-        *s = &s[10..];
-        result
-    }
-
     // For small adjustments, this is faster than converting to/from UnixDays
     pub fn tomorrow(self) -> Option<Self> {
         let Date {
@@ -258,6 +233,21 @@ impl Date {
     }
 }
 
+pub(crate) fn extract_year(s: &[u8], index: usize) -> Option<Year> {
+    Some(
+        extract_digit(s, index)? as u16 * 1000
+            + extract_digit(s, index + 1)? as u16 * 100
+            + extract_digit(s, index + 2)? as u16 * 10
+            + extract_digit(s, index + 3)? as u16,
+    )
+    .filter(|&y| y > 0)
+    .map(Year::new_unchecked)
+}
+
+pub(crate) fn extract_2_digits(s: &[u8], index: usize) -> Option<u8> {
+    Some(extract_digit(s, index)? * 10 + extract_digit(s, index + 1)?)
+}
+
 impl PyWrapped for Date {}
 
 impl Display for Date {
@@ -271,9 +261,6 @@ impl Display for Date {
         )
     }
 }
-
-// TODO remove
-pub(crate) const MAX_YEAR: c_long = 9999;
 
 unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
     let nargs = PyTuple_GET_SIZE(args);
@@ -422,7 +409,7 @@ unsafe fn year_month(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 
 unsafe fn month_day(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let Date { month, day, .. } = Date::extract(slf);
-    MonthDay::new_unchecked(month.get(), day).to_obj(State::for_obj(slf).monthday_type)
+    MonthDay::new_unchecked(month, day).to_obj(State::for_obj(slf).monthday_type)
 }
 
 unsafe fn __str__(slf: *mut PyObject) -> PyReturn {

@@ -60,21 +60,21 @@ except ModuleNotFoundError as e:
     _EXTENSION_LOADED = False
 
 import os as _os
+import os.path as _os_path
 import sysconfig as _sysconfig
 from contextlib import contextmanager as _contextmanager
-from dataclasses import dataclass as _dataclass
-from importlib.resources import open_text as _open_resource
-from itertools import chain as _chain
-from pathlib import Path as _Path
 from typing import Iterable as _Iterable, Iterator as _Iterator
 
 from ._pywhenever import __version__
 
 
-@_dataclass
 class _TimePatch:
-    _pin: "Instant | ZonedDateTime | OffsetDateTime | SystemDateTime"
+    _pin: "Instant"
     _keep_ticking: bool
+
+    def __init__(self, pin: "Instant", keep_ticking: bool):
+        self._pin = pin
+        self._keep_ticking = keep_ticking
 
     def shift(self, *args, **kwargs):
         if self._keep_ticking:
@@ -176,7 +176,7 @@ def reset_tzpath(target: _Iterable[str | _os.PathLike[str]] | None = None, /):
 
         if not all(map(_os.path.isabs, target)):
             raise ValueError("tzpaths must be absolute paths")
-        TZPATH = tuple(str(_Path(p)) for p in target)
+        TZPATH = tuple(map(_os.fspath, target))
     else:
         TZPATH = _tzpath_from_env()
     _set_tzpath(TZPATH)
@@ -244,14 +244,17 @@ def available_timezones() -> set[str]:
     zones = set()
     # Get the zones from the tzdata package, if available
     try:
-        with _open_resource("tzdata", "zones") as f:
+        # NOTE: we don't use importlib.resources here,
+        # to keep our imports lighter
+        tzdata = __import__("tzdata").__path__[0]
+        with open(_os_path.join(tzdata, "zones")) as f:
             zones.update(map(str.strip, f))
     except (ImportError, FileNotFoundError):  # pragma: no cover
         pass
 
     # Get the zones from the tzpath directories
     for base in TZPATH:
-        zones.update(_find_all_tznames(_Path(base)))
+        zones.update(_find_all_tznames(base))
 
     zones.discard("posixrules")  # a special file that shouldn't be included
     return zones
@@ -260,35 +263,38 @@ def available_timezones() -> set[str]:
 # Recursively find all tzfiles in the tzpath directories.
 # Recursion is safe here since the file tree is trusted, and nesting doesn't
 # even approach the recursion limit.
-def _find_all_tznames(base: _Path) -> _Iterator[str]:
-    if not base.is_dir():
+# NOTE: we don't use pathlib here, since we want to keep our imports light
+def _find_all_tznames(base: str) -> _Iterator[str]:
+    if not _os_path.isdir(base):
         return
-    for entry in base.iterdir():
-        if entry.is_dir():
+    for name in _os.listdir(base):
+        entry = _os_path.join(base, name)
+        if _os_path.isdir(entry):
             # FUTURE: expand test coverage for this
-            if entry.name in ("right", "posix"):  # pragma: no cover
+            if name in ("right", "posix"):  # pragma: no cover
                 # These directories contain special files that shouldn't be included
                 continue
             else:
-                for p in _find_nested_tzfiles(entry):
-                    yield p.relative_to(base).as_posix()
+                for path in _find_nested_tzfiles(entry):
+                    yield _os_path.relpath(path, base).replace("\\", "/")
         elif _is_tzifile(entry):
-            yield entry.name
+            yield name
 
 
-def _find_nested_tzfiles(path: _Path) -> _Iterator[_Path]:
-    assert path.is_dir()
-    for entry in path.iterdir():
-        if entry.is_dir():
+def _find_nested_tzfiles(path: str) -> _Iterator[str]:
+    assert _os.path.isdir(path)
+    for name in _os.listdir(path):
+        entry = _os_path.join(path, name)
+        if _os_path.isdir(entry):
             yield from _find_nested_tzfiles(entry)
         elif _is_tzifile(entry):
             yield entry
 
 
-def _is_tzifile(p: _Path) -> bool:
+def _is_tzifile(p: str) -> bool:
     """Check if the file is a tzifile."""
     try:
-        with p.open("rb") as f:
+        with open(p, "rb") as f:
             return f.read(4) == b"TZif"
     except OSError:  # pragma: no cover
         return False

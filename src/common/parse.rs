@@ -39,6 +39,12 @@ impl<'a> Scan<'a> {
         self.0
     }
 
+    pub(crate) fn drain(&mut self) -> &'a [u8] {
+        let a = self.0;
+        self.0 = &[];
+        a
+    }
+
     /// Take the next `n` bytes from the scanner without checking if they exist.
     pub(crate) fn take_unchecked(&mut self, n: usize) -> &'a [u8] {
         let (a, b) = self.0.split_at(n);
@@ -129,10 +135,11 @@ impl<'a> Scan<'a> {
         Some(total)
     }
 
-    /// Parse '.' and up to 9 digits after it. If empty, return 0.
+    /// Parse '.' or ',' and up to 9 digits after it. If empty, return 0.
     pub(crate) fn subsec(&mut self) -> Option<SubSecNanos> {
-        Some(match self.advance_on(b'.') {
-            Some(true) => {
+        Some(match self.peek() {
+            Some(b'.' | b',') => {
+                self.skip(1);
                 // If there's a decimal point, the first digit is required
                 let mut total = self.digit()? as i32 * 100_000_000;
                 for (byte, pwr) in self.0.iter().zip((0..8).rev()) {
@@ -151,7 +158,6 @@ impl<'a> Scan<'a> {
                 self.0 = &self.0[self.0.len().min(8)..];
                 SubSecNanos::new_unchecked(total)
             }
-            // No decimal point, so subsec is 0
             _ => SubSecNanos::MIN,
         })
     }
@@ -194,6 +200,31 @@ impl<'a> Scan<'a> {
             .iter()
             .position(|&b| f(b))
             .map(|i| self.take_unchecked(i + 1))
+    }
+
+    /// Consume (consecutive) ASCII whitespace. None if no whitespace is found.
+    pub(crate) fn ascii_whitespace(&mut self) -> bool {
+        match self.rest().iter().position(|&b| !Self::is_whitespace(b)) {
+            // Non-whitespace character found immediately
+            Some(0) => false,
+            // Found non-whitespace character to skip to
+            Some(i) => {
+                self.skip(i);
+                true
+            }
+            // No whitespace: we're at the end of input
+            None if self.0.is_empty() => false,
+            // Found whitespace until end of input
+            None => {
+                self.0 = &[];
+                true
+            }
+        }
+    }
+
+    /// Include the extra '\x0B' character to be consistent with Python
+    pub(crate) fn is_whitespace(c: u8) -> bool {
+        c.is_ascii_whitespace() || c == b'\x0B'
     }
 
     /// Check if the scanner is done (empty).
@@ -395,5 +426,29 @@ mod tests {
         scan.expect(b'0');
         assert_eq!(scan.take_until_inclusive(|c| c == b'2').unwrap(), b"0z92");
         assert_eq!(scan.take_until_inclusive(|c| c == b'2'), None);
+    }
+
+    #[test]
+    fn test_skip_ascii_whitespace() {
+        let mut scan = Scan::new(b"  \t\n\r 123 a4   ");
+        assert_eq!(scan.peek(), Some(b' '));
+        println!("{:?}", scan);
+        assert!(scan.ascii_whitespace());
+        println!("{:?}", scan);
+        assert!(!scan.ascii_whitespace());
+        assert_eq!(scan.peek(), Some(b'1'));
+        scan.skip(2);
+        assert_eq!(scan.peek(), Some(b'3'));
+        assert!(!scan.ascii_whitespace());
+        assert_eq!(scan.peek(), Some(b'3'));
+        scan.skip(1);
+        assert!(scan.ascii_whitespace());
+        assert_eq!(scan.peek(), Some(b'a'));
+        scan.skip(2);
+        println!("{:?}", scan);
+        assert!(scan.ascii_whitespace());
+        // Repeated calls OK
+        assert!(!scan.ascii_whitespace());
+        assert!(!scan.ascii_whitespace());
     }
 }

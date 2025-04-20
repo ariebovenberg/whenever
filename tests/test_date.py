@@ -246,11 +246,14 @@ class TestParseCommonIso:
             "1989-W53",
             "1989-W22-8",
             "1989-W22-0",
-            # Week and ordinal not implemented (yet)
+            # Week and ordinal not implemented
             "2021-W01-01",
             "2021-344",
             "2021W134",
             "2021214",
+            # incomplete
+            "2021-01",
+            "202101",
         ],
     )
     def test_invalid(self, s):

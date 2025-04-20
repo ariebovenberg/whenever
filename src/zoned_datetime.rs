@@ -65,6 +65,27 @@ impl ZonedDateTime {
         }
     }
 
+    /// Resolve with the default disambiguation strategy. Only fails
+    /// in the (very rare) case that a gap requires a shift AND this shift
+    /// would lead to an out-of-range date.
+    pub(crate) fn resolve_default(date: Date, time: Time, tz: TzRef) -> Option<Self> {
+        let (DateTime { date, time }, offset) = match tz.ambiguity_for_local(date.epoch_at(time)) {
+            Ambiguity::Unambiguous(offset) | Ambiguity::Fold(offset, _) => {
+                (DateTime { date, time }, offset)
+            }
+            Ambiguity::Gap(offset, offset_prev) => {
+                let shift = offset.sub(offset_prev);
+                (DateTime { date, time }.change_offset(shift)?, offset)
+            }
+        };
+        Some(ZonedDateTime {
+            date,
+            time,
+            offset,
+            tz,
+        })
+    }
+
     pub(crate) unsafe fn resolve_using_disambiguate(
         date: Date,
         time: Time,
@@ -200,10 +221,20 @@ impl ZonedDateTime {
     }
 }
 
-fn read_offset_and_tzname<'a>(s: &'a mut Scan) -> Option<(Option<Offset>, &'a str)> {
+enum OffsetInIsoString {
+    Some(Offset),
+    Z,
+    Missing,
+}
+
+fn read_offset_and_tzname<'a>(s: &'a mut Scan) -> Option<(OffsetInIsoString, &'a str)> {
     let offset = match s.peek() {
-        Some(b'[') => None,
-        _ => Some(Offset::read_iso(s)?),
+        Some(b'[') => OffsetInIsoString::Missing,
+        Some(b'Z' | b'z') => {
+            s.take_unchecked(1);
+            OffsetInIsoString::Z
+        }
+        _ => OffsetInIsoString::Some(Offset::read_iso(s)?),
     };
     let tz = s.rest();
     (tz.len() > 2
@@ -1140,7 +1171,7 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
     } = State::for_type_mut(cls.cast());
     let tz = tz_cache.get(tzstr, exc_tz_notfound)?;
     match offset {
-        Some(offset) => {
+        OffsetInIsoString::Some(offset) => {
             // Make sure the offset is valid
             match tz.ambiguity_for_local(date.epoch_at(time)) {
                 Ambiguity::Unambiguous(f) if f == offset => (),
@@ -1149,16 +1180,11 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
             }
             ZonedDateTime::new(date, time, offset, tz).ok_or_value_err("Instant out of range")?
         }
-        None => ZonedDateTime::resolve_using_disambiguate(
-            date,
-            time,
-            tz,
-            Disambiguate::Compatible,
-            // TODO: what if tz is [foo][bar]?
-            // TODO: this isn't very nice
-            NULL(),
-            NULL(),
-        )?,
+        OffsetInIsoString::Z => Instant::from_datetime(date, time)
+            .to_tz(tz)
+            .ok_or_value_err("Resulting date out of range")?,
+        OffsetInIsoString::Missing => ZonedDateTime::resolve_default(date, time, tz)
+            .ok_or_value_err("Resulting date out of range")?,
     }
     .to_obj(cls.cast())
 }

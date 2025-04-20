@@ -170,7 +170,6 @@ impl Instant {
             // Fast path for the common case
             Some(inst)
         } else {
-            // TODO: since which version was this accepted?
             let py_delta = methcall1(tzinfo, "utcoffset", dt)?;
             defer_decref!(py_delta);
             if is_none(py_delta) {
@@ -252,11 +251,6 @@ unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
 unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
     let DateTime { date, time } = Instant::extract(slf).to_datetime();
     format!("{}T{}Z", date, time).to_py()
-}
-
-unsafe fn format_rfc3339(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let DateTime { date, time } = Instant::extract(slf).to_datetime();
-    format!("{} {}Z", date, time).to_py()
 }
 
 unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> PyReturn {
@@ -487,48 +481,15 @@ unsafe fn now(cls: *mut PyObject, _: *mut PyObject) -> PyReturn {
     State::for_type(cls.cast()).time_ns()?.to_obj(cls.cast())
 }
 
-unsafe fn parse_rfc3339(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
-    let s = &mut s_obj.to_utf8()?.ok_or_type_err("Expected a string")?;
-    let errmsg = || format!("Invalid RFC 3339 format: {}", s_obj.repr());
-    if s.len() < 20 || !(s[10] == b' ' || s[10] == b'T' || s[10] == b't' || s[10] == b'_') {
-        raise_value_err(errmsg())?;
-    };
-    let date = Date::parse_partial(s).ok_or_else_value_err(errmsg)?;
-    // parse the separator
-    if !(s[0] == b'T' || s[0] == b't' || s[0] == b' ' || s[0] == b'_') {
-        raise_value_err(errmsg())?;
-    }
-    *s = &s[1..];
-    let time = Time::parse_partial(s).ok_or_else_value_err(errmsg)?;
-    if let b"Z" | b"z" | b"+00:00" | b"-00:00" = &s[..] {
-        Instant::from_datetime(date, time).to_obj(cls.cast())
-    } else {
-        raise_value_err(errmsg())
-    }
-}
-
 unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     __str__(slf)
 }
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
-    let s = &mut s_obj.to_utf8()?.ok_or_type_err("Expected a string")?;
-    let errmsg = || format!("Invalid format: {}", s_obj.repr());
-    if s.len() < 20 || s[10] != b'T' {
-        raise_value_err(errmsg())?;
-    };
-    let date = Date::parse_partial(s).ok_or_else_value_err(errmsg)?;
-    // parse the separator
-    if s[0] != b'T' {
-        raise_value_err(errmsg())?;
-    }
-    *s = &s[1..];
-    let time = Time::parse_partial(s).ok_or_else_value_err(errmsg)?;
-    if let b"Z" | b"+00:00" | b"+00:00:00" = &s[..] {
-        Instant::from_datetime(date, time).to_obj(cls.cast())
-    } else {
-        raise_value_err(errmsg())
-    }
+    OffsetDateTime::parse(s_obj.to_utf8()?.ok_or_type_err("Expected a string")?)
+        .ok_or_else_value_err(|| format!("Invalid format: {}", s_obj.repr()))?
+        .instant()
+        .to_obj(cls.cast())
 }
 
 unsafe fn add(
@@ -675,55 +636,17 @@ unsafe fn to_system_tz(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn format_rfc2822(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let state = State::for_obj(slf);
-    // FUTURE: use vectorcall
-    PyObject_Call(
-        state.format_rfc2822,
-        steal!((
-            steal!(Instant::extract(slf).to_py(state.py_api)?),
-            Py_True(),
-        )
-            .to_py()?),
-        NULL(),
-    )
-    .as_result()
+    std::str::from_utf8_unchecked(&rfc2822::write_gmt(Instant::extract(slf))[..]).to_py()
 }
 
 unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
-    let state = State::for_type(cls.cast());
-    let dt: &mut PyObject;
-    // On python 3.9, parsing RFC2822 is more flaky in returning TypeError
-    #[cfg(not(Py_3_10))]
-    {
-        if !s_obj.is_str() {
-            raise_type_err("Expected a string")?;
-        }
-        dt = call1(state.parse_rfc2822, s_obj).map_err(|e| {
-            if PyErr_ExceptionMatches(PyExc_TypeError) != 0 {
-                PyErr_Clear();
-                value_err(format!("Invalid format: {}", s_obj.repr()))
-            } else {
-                e
-            }
-        })?;
-    }
-    #[cfg(Py_3_10)]
-    {
-        dt = call1(state.parse_rfc2822, s_obj)?;
-    }
-    defer_decref!(dt);
-    let tzinfo = borrow_dt_tzinfo(dt);
-    if tzinfo == state.py_api.TimeZone_UTC
-        || (is_none(tzinfo) && s_obj.to_str()?.unwrap().contains("-0000"))
-    {
-        Instant::from_datetime(Date::from_py_unchecked(dt), Time::from_py_dt_unchecked(dt))
-            .to_obj(cls.cast())
-    } else {
-        raise_value_err(format!(
-            "Could not parse RFC 2822 with nonzero offset: {}",
-            s_obj.repr()
-        ))
-    }
+    let s = s_obj.to_utf8()?.ok_or_type_err("Expected a string")?;
+    let (date, time, offset) =
+        rfc2822::parse(s).ok_or_else_value_err(|| format!("Invalid format: {}", s_obj.repr()))?;
+    OffsetDateTime::new(date, time, offset)
+        .ok_or_value_err("Instant out of range")?
+        .instant()
+        .to_obj(cls.cast())
 }
 
 unsafe fn round(
@@ -800,12 +723,6 @@ static mut METHODS: &[PyMethodDef] = &[
         METH_O | METH_CLASS
     ),
     method!(now, doc::INSTANT_NOW, METH_CLASS | METH_NOARGS),
-    method!(format_rfc3339, doc::INSTANT_FORMAT_RFC3339),
-    method!(
-        parse_rfc3339,
-        doc::INSTANT_PARSE_RFC3339,
-        METH_CLASS | METH_O
-    ),
     method!(format_rfc2822, doc::INSTANT_FORMAT_RFC2822),
     method!(
         parse_rfc2822,

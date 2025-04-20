@@ -4,7 +4,7 @@ use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
 use crate::{
-    common::{math::*, *},
+    common::{math::*, rfc2822, *},
     date::Date,
     date_delta::DateDelta,
     datetime_delta::{set_units_from_kwargs, DateTimeDelta},
@@ -15,6 +15,7 @@ use crate::{
     round,
     time::Time,
     time_delta::TimeDelta,
+    tz::tzif::is_valid_key,
     zoned_datetime::ZonedDateTime,
     State,
 };
@@ -214,8 +215,8 @@ fn skip_tzname(s: &mut Scan) -> Option<()> {
         Some(true) => {
             match s.take_until_inclusive(|c| c == b']') {
                 Some(b"]") => None?, // Fail: empty tzname
-                Some(tz) if tz.is_ascii() => (),
-                _ => None?, // Fail: no closing ']'
+                Some(tz) if is_valid_key(std::str::from_utf8(&tz[..tz.len() - 1]).ok()?) => (),
+                _ => None?,
             }
         }
         // Success: no timezone to parse
@@ -883,7 +884,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
                 hour,
                 minute,
                 second,
-                subsec: nanos,
+                subsec,
             },
         offset,
     } = OffsetDateTime::extract(slf);
@@ -894,7 +895,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         hour,
         minute,
         second,
-        nanos.get(),
+        subsec.get(),
         offset.get()
     ];
     (
@@ -1014,48 +1015,6 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
         .to_obj(cls.cast())
 }
 
-// exactly "±HH:MM" or "Z|z"
-fn parse_rfc3339_offset(s: &[u8]) -> Option<Offset> {
-    let sign = match s.first() {
-        Some(b'+') => Sign::Plus,
-        Some(b'-') => Sign::Minus,
-        Some(b'Z' | b'z') if s.len() == 1 => return Some(Offset::ZERO),
-        _ => return None,
-    };
-    if s.len() == 6 && s[3] == b':' {
-        Some(
-            (parse_digit_max(s, 1, b'2')? * 10 + parse_digit(s, 2)?) as i32 * 3600
-                + (parse_digit_max(s, 4, b'5')? * 10 + parse_digit(s, 5)?) as i32 * 60,
-        )
-        // No risk of overflow since we've parsed few digits
-        .and_then(Offset::new)
-        .map(|s| s.with_sign(sign))
-    } else {
-        None
-    }
-}
-
-// TODO: clarify role of these functions now that ISO is more permissive
-unsafe fn parse_rfc3339(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
-    let s = &mut s_obj.to_utf8()?.ok_or_type_err("Expected a string")?;
-    let errmsg = || format!("Invalid RFC 3339 format: {}", s_obj.repr());
-    // at least: "YYYY-MM-DDTHH:MM:SSZ"
-    if s.len() < 20 {
-        raise_value_err(errmsg())?
-    }
-    let date = Date::parse_partial(s).ok_or_else_value_err(errmsg)?;
-    // parse the separator
-    if !(s[0] == b'T' || s[0] == b't' || s[0] == b' ' || s[0] == b'_') {
-        raise_value_err(errmsg())?
-    }
-    *s = &s[1..];
-    let time = Time::parse_partial(s).ok_or_else_value_err(errmsg)?;
-    let offset_secs = parse_rfc3339_offset(s).ok_or_else_value_err(errmsg)?;
-    OffsetDateTime::new(date, time, offset_secs)
-        .ok_or_else_value_err(errmsg)?
-        .to_obj(cls.cast())
-}
-
 unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
     let state = State::for_type(cls.cast());
     if args.len() != 2 {
@@ -1076,76 +1035,16 @@ unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
         .to_obj(cls.cast())
 }
 
-// Different from the Display impl, this is only exact to the minute, not second.
-pub(crate) fn offset_fmt_rfc3339(x: Offset) -> String {
-    let secs = x.get();
-    let (sign, secs) = if secs < 0 { ('-', -secs) } else { ('+', secs) };
-    format!("{}{:02}:{:02}", sign, secs / 3600, (secs % 3600) / 60)
-}
-
-unsafe fn format_rfc3339(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let OffsetDateTime { date, time, offset } = OffsetDateTime::extract(slf);
-    format!("{} {}{}", date, time, offset_fmt_rfc3339(offset)).to_py()
-}
-
 unsafe fn format_rfc2822(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let &State {
-        format_rfc2822,
-        py_api,
-        ..
-    } = State::for_obj(slf);
-    call1(format_rfc2822, OffsetDateTime::extract(slf).to_py(py_api)?)
+    std::str::from_utf8_unchecked(&rfc2822::write(OffsetDateTime::extract(slf))[..]).to_py()
 }
 
-#[cfg(Py_3_10)]
 unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
-    let state = State::for_type(cls.cast());
-    let py_dt = call1(state.parse_rfc2822, s_obj)?;
-    defer_decref!(py_dt);
-    if is_none(borrow_dt_tzinfo(py_dt)) {
-        raise_value_err(format!(
-            "parsed datetime must have a timezone, got {}",
-            s_obj.repr()
-        ))?
-    };
-    OffsetDateTime::from_py(py_dt, state)?
-        .ok_or_value_err(format!(
-            "parsed datetime must have a timezone and be in range, got {}",
-            s_obj.repr()
-        ))?
-        .to_obj(cls.cast())
-}
-
-// On python 3.9, parsing sometimes raises a TypeError.
-// We need special handling for this case.
-#[cfg(not(Py_3_10))]
-unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
-    let state = State::for_type(cls.cast());
-    if !s_obj.is_str() {
-        raise_type_err("Argument must be a string")?
-    }
-    let py_dt = call1(state.parse_rfc2822, s_obj).map_err(|e| {
-        if PyErr_ExceptionMatches(PyExc_TypeError) != 0 {
-            PyErr_Clear();
-            value_err(format!("Invalid format: {}", s_obj.repr()))
-        } else {
-            e
-        }
-    })?;
-    defer_decref!(py_dt);
-    if is_none(borrow_dt_tzinfo(py_dt)) {
-        raise_value_err(format!(
-            "parsed datetime must have a timezone, got {}",
-            s_obj.repr()
-        ))?
-    };
-    OffsetDateTime::from_py(py_dt, state)?
-        .ok_or_else_value_err(|| {
-            format!(
-                "parsed datetime must have a timezone and be in range, got {}",
-                s_obj.repr()
-            )
-        })?
+    let s = s_obj.to_utf8()?.ok_or_type_err("Expected a string")?;
+    let (date, time, offset) =
+        rfc2822::parse(s).ok_or_else_value_err(|| format!("Invalid format: {}", s_obj.repr()))?;
+    OffsetDateTime::new(date, time, offset)
+        .ok_or_value_err("Instant out of range")?
         .to_obj(cls.cast())
 }
 
@@ -1197,12 +1096,6 @@ static mut METHODS: &[PyMethodDef] = &[
     method!(to_system_tz, doc::EXACTTIME_TO_SYSTEM_TZ),
     method!(date, doc::LOCALTIME_DATE),
     method!(time, doc::LOCALTIME_TIME),
-    method!(format_rfc3339, doc::OFFSETDATETIME_FORMAT_RFC3339),
-    method!(
-        parse_rfc3339,
-        doc::OFFSETDATETIME_PARSE_RFC3339,
-        METH_O | METH_CLASS
-    ),
     method!(format_rfc2822, doc::OFFSETDATETIME_FORMAT_RFC2822),
     method!(
         parse_rfc2822,

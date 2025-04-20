@@ -1,6 +1,5 @@
 use core::ffi::{c_int, c_long, c_void, CStr};
 use pyo3_ffi::*;
-use std::cmp::min;
 use std::fmt;
 use std::ops::Neg;
 use std::ptr::null_mut as NULL;
@@ -90,6 +89,22 @@ impl DateDelta {
         months: DeltaMonths::ZERO,
         days: DeltaDays::ZERO,
     };
+
+    fn fmt_iso(self) -> String {
+        let mut s = String::with_capacity(8);
+        let Self { months, days } = self;
+        let self_abs = if months.get() < 0 || days.get() < 0 {
+            s.push('-');
+            -self
+        } else if months.get() == 0 && days.get() == 0 {
+            return "P0D".to_string();
+        } else {
+            self
+        };
+        s.push('P');
+        format_components(self_abs, &mut s);
+        s
+    }
 }
 
 impl PyWrapped for DateDelta {}
@@ -114,20 +129,13 @@ pub(crate) const SINGLETONS: &[(&CStr, DateDelta); 1] = &[(c"ZERO", DateDelta::Z
 
 impl fmt::Display for DateDelta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let &Self { months, days } = self;
-        let delta = if months.get() < 0 || days.get() < 0 {
-            write!(f, "-P")?;
-            -*self
-        } else if months.get() == 0 && days.get() == 0 {
-            return write!(f, "P0D");
-        } else {
-            write!(f, "P")?;
-            *self
-        };
-        let s = &mut String::with_capacity(8);
-        format_components(delta, s);
-        f.write_str(s)?;
-        Ok(())
+        // A bit wasteful, but this isn't performance critical
+        let mut isofmt = self.fmt_iso().into_bytes();
+        // Safe: we know the string is valid ASCII
+        for i in 2..isofmt.len() {
+            isofmt[i] = isofmt[i].to_ascii_lowercase();
+        }
+        f.write_str(&unsafe { String::from_utf8_unchecked(isofmt) })
     }
 }
 
@@ -297,7 +305,7 @@ unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
-    format!("{}", DateDelta::extract(slf)).to_py()
+    DateDelta::extract(slf).fmt_iso().to_py()
 }
 
 unsafe fn __mul__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
@@ -444,24 +452,24 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    __str__(slf)
+    DateDelta::extract(slf).fmt_iso().to_py()
 }
 
 // parse the prefix of an ISO8601 duration, e.g. `P`, `-P`, `+P`,
 pub(crate) fn parse_prefix(s: &mut &[u8]) -> Option<bool> {
     debug_assert!(s.len() >= 2);
     match s[0] {
-        b'P' => {
+        b'P' | b'p' => {
             let result = Some(false);
             *s = &s[1..];
             result
         }
-        b'-' if s[1] == b'P' => {
+        b'-' if s[1].eq_ignore_ascii_case(&b'P') => {
             let result = Some(true);
             *s = &s[2..];
             result
         }
-        b'+' if s[1] == b'P' => {
+        b'+' if s[1].eq_ignore_ascii_case(&b'P') => {
             let result = Some(false);
             *s = &s[2..];
             result
@@ -480,22 +488,22 @@ pub(crate) enum Unit {
 
 fn finish_parsing_component(s: &mut &[u8], mut value: i32) -> Option<(i32, Unit)> {
     // We limit parsing to a number of digits to prevent overflow
-    for i in 1..min(s.len(), 7) {
+    for i in 1..s.len().min(7) {
         match s[i] {
             c if c.is_ascii_digit() => value = value * 10 + i32::from(c - b'0'),
-            b'D' => {
+            b'D' | b'd' => {
                 *s = &s[i + 1..];
                 return Some((value, Unit::Days));
             }
-            b'W' => {
+            b'W' | b'w' => {
                 *s = &s[i + 1..];
                 return Some((value, Unit::Weeks));
             }
-            b'M' => {
+            b'M' | b'm' => {
                 *s = &s[i + 1..];
                 return Some((value, Unit::Months));
             }
-            b'Y' => {
+            b'Y' | b'y' => {
                 *s = &s[i + 1..];
                 return Some((value, Unit::Years));
             }
@@ -518,19 +526,19 @@ pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, Unit)> {
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let s = &mut s_obj.to_utf8()?.ok_or_type_err("argument must be str")?;
-    let errmsg = || format!("Invalid format: {}", s_obj.repr());
+    let err = || format!("Invalid format: {}", s_obj.repr());
     if s.len() < 3 {
         // at least `P0D`
-        raise_value_err(errmsg())?
+        raise_value_err(err())?
     }
     let mut months = 0;
     let mut days = 0;
     let mut prev_unit: Option<Unit> = None;
 
-    let negated = parse_prefix(s).ok_or_else_value_err(errmsg)?;
+    let negated = parse_prefix(s).ok_or_else_value_err(err)?;
 
     while !s.is_empty() {
-        let (value, unit) = parse_component(s).ok_or_else_value_err(errmsg)?;
+        let (value, unit) = parse_component(s).ok_or_else_value_err(err)?;
         match (unit, prev_unit.replace(unit)) {
             // NOTE: overflows are prevented by limiting the number
             // of digits that are parsed.
@@ -549,18 +557,18 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
                     break;
                 }
                 // i.e. there's more after the days component
-                raise_value_err(errmsg())?;
+                raise_value_err(err())?;
             }
             _ => {
                 // i.e. the order of the components is wrong
-                raise_value_err(errmsg())?;
+                raise_value_err(err())?;
             }
         }
     }
 
     // i.e. there must be at least one component (`P` alone is invalid)
     if prev_unit.is_none() {
-        raise_value_err(errmsg())?;
+        raise_value_err(err())?;
     }
 
     if negated {

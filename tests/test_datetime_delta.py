@@ -7,6 +7,8 @@ import pytest
 from whenever import DateDelta, DateTimeDelta, TimeDelta
 
 from .common import AlwaysEqual, NeverEqual
+from .test_date_delta import INVALID_DDELTAS, VALID_DDELTAS
+from .test_time_delta import INVALID_TDELTAS, VALID_TDELTAS
 
 
 class TestInit:
@@ -188,6 +190,42 @@ def test_format_common_iso(p, expect):
     assert str(p) == expect
 
 
+INVALID_DELTAS = [
+    "P",
+    "PT0.0000000001S",  # too many decimal places
+    "",
+    "3D",
+    "-PT",
+    "PT",
+    "+PT",
+    "P1YX3M",  # invalid separator
+    "PT𝟙H",  # non-ascii
+    # incomplete
+    "P3DT",
+    "P3DT4",
+    "P3DT4h0",
+    "P3D4",
+    "P3D4T",
+    # too many digits
+    "P9999999999999999999S",
+    # out of range
+    "P14000Y",
+    "P180000M",
+    "PT180000000H",
+    *INVALID_DDELTAS,
+    *INVALID_TDELTAS,
+]
+
+
+# some invalid datedeltas are valid datetime deltas
+INVALID_DELTAS.remove("PT3M")
+INVALID_DELTAS.remove("P1Y2M3W4DT1H2M3S")
+INVALID_DELTAS.remove("P1YT0S")
+INVALID_DELTAS.remove("P1D")
+INVALID_DELTAS.remove("P1YT4M")
+INVALID_DELTAS.remove("PT4M3H")
+
+
 class TestParseCommonIso:
 
     def test_empty(self):
@@ -205,6 +243,7 @@ class TestParseCommonIso:
             ("PT1H", DateTimeDelta(hours=1)),
             ("PT0H", DateTimeDelta()),
             ("PT1M", DateTimeDelta(minutes=1)),
+            ("PT1m", DateTimeDelta(minutes=1)),
             ("PT1S", DateTimeDelta(seconds=1)),
             ("PT0.000001S", DateTimeDelta(microseconds=1)),
             ("PT0.0043S", DateTimeDelta(microseconds=4300)),
@@ -270,44 +309,47 @@ class TestParseCommonIso:
                     years=-1, months=-3, seconds=-4, microseconds=-999_000
                 ),
             ),
+            # lowercase
+            ("pT0.0043s", DateTimeDelta(microseconds=4300)),
+            ("P3w", DateTimeDelta(weeks=3)),
+            ("P3wt8m", DateTimeDelta(weeks=3, minutes=8)),
+            # comma instead of dot
+            ("P8wT0,0043s", DateTimeDelta(weeks=8, microseconds=4300)),
         ],
     )
     def test_multiple_units(self, input, expect):
         assert DateTimeDelta.parse_common_iso(input) == expect
 
-    @pytest.mark.parametrize(
-        "s",
-        [
-            "P",
-            "PT0.0000000001S",  # too many decimal places
-            "",
-            "3D",
-            "-PT",
-            "PT",
-            "+PT",
-            "P1YX3M",  # invalid separator
-            "PT𝟙H",  # non-ascii
-            "P3DT",  # a T, but no time part
-            "P9999999999999999999S",  # too many digits
-        ],
-    )
+    @pytest.mark.parametrize("input, expect", VALID_DDELTAS)
+    def test_date_only(self, input, expect):
+        assert DateTimeDelta.parse_common_iso(input) == (expect + TimeDelta())
+
+    @pytest.mark.parametrize("input, expect", VALID_TDELTAS)
+    def test_time_only(self, input, expect):
+        assert DateTimeDelta.parse_common_iso(input) == (expect + DateDelta())
+
+    @pytest.mark.parametrize("s", INVALID_DELTAS)
     def test_invalid(self, s):
         with pytest.raises(
             ValueError, match=r"Invalid format.*" + re.escape(repr(s))
         ):
             DateTimeDelta.parse_common_iso(s)
 
-    @pytest.mark.parametrize(
-        "s",
-        [
-            "P14000Y",
-            "P180000M",
-            "PT180000000H",
-        ],
-    )
-    def test_out_of_range(self, s):
-        with pytest.raises(ValueError, match="range"):
-            DateTimeDelta.parse_common_iso(s)
+
+@pytest.mark.parametrize(
+    "d, expect",
+    [
+        (DateTimeDelta(), "DateTimeDelta(P0d)"),
+        (DateTimeDelta(years=1), "DateTimeDelta(P1y)"),
+        (
+            DateTimeDelta(months=1, days=55, minutes=80),
+            "DateTimeDelta(P1m55dT1h20m)",
+        ),
+        (DateTimeDelta(seconds=-0.83), "DateTimeDelta(-PT0.83s)"),
+    ],
+)
+def test_repr(d, expect):
+    assert repr(d) == expect
 
 
 class TestAdd:

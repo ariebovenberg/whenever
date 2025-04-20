@@ -32,3 +32,18 @@ make format  # apply autoformatting
 make ci-lint  # various static checks
 make typecheck  # run mypy and typing tests
 ```
+
+## Maintainer's notes
+
+Below are some points to keep in mind when making changes to the codebase:
+
+- The Rust code contains a lot of unsafe code. This is because it
+  mostly interacts with C code (Python's C API), which is inherently unsafe.
+  It's planned to refactor the code to use safer abstractions. However,
+  there will always be awkward cases since Python and Rust's memory model is
+  different.
+- The tests and documentation of the Rust code are sparse. This is because
+  it has no public interface and is only used through its Python bindings.
+  You can find comprehensive tests and documentation in the Python codebase.
+- To keep import time fast, some "obvious" Python modules (pathlib, re,
+  importlib.resources) are not used, or imported lazily.

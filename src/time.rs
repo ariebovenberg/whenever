@@ -17,19 +17,6 @@ pub struct Time {
 }
 
 impl Time {
-    pub(crate) const fn new(hour: u8, minute: u8, second: u8, nanos: SubSecNanos) -> Option<Self> {
-        if hour < 24 && minute < 60 && second < 60 {
-            Some(Time {
-                hour,
-                minute,
-                second,
-                subsec: nanos,
-            })
-        } else {
-            None
-        }
-    }
-
     pub(crate) const fn pyhash(&self) -> Py_hash_t {
         #[cfg(target_pointer_width = "64")]
         {
@@ -151,41 +138,6 @@ impl Time {
         scan.parse_all(Self::read_iso)
     }
 
-    pub(crate) fn parse_partial(s: &mut &[u8]) -> Option<Self> {
-        debug_assert!(s.len() > 7);
-        if s[2] != b':' || s[5] != b':' {
-            return None;
-        }
-        let hour = parse_digit_max(s, 0, b'2')? * 10 + parse_digit(s, 1)?;
-        let minute = parse_digit_max(s, 3, b'5')? * 10 + parse_digit(s, 4)?;
-        let second = parse_digit_max(s, 6, b'5')? * 10 + parse_digit(s, 7)?;
-        let mut nanos = 0;
-        let mut end_index = 8;
-        if s.len() > 8 && s[8] == b'.' {
-            for (i, factor) in (9..s.len()).zip(&[
-                100_000_000,
-                10_000_000,
-                1_000_000,
-                100_000,
-                10_000,
-                1_000,
-                100,
-                10,
-                1,
-            ]) {
-                if !s[i].is_ascii_digit() {
-                    end_index = i;
-                    break;
-                }
-                end_index = i + 1;
-                nanos += ((s[i] - b'0') as i32) * factor;
-            }
-        }
-        let result = Time::new(hour, minute, second, SubSecNanos::new_unchecked(nanos));
-        *s = &s[end_index..]; // advance the slice
-        result
-    }
-
     /// Round the time to the specified increment
     ///
     /// Returns the rounded time and whether it has wrapped around to the next day (0 or 1)
@@ -197,11 +149,11 @@ impl Time {
         let remainder = total_nanos % increment;
 
         let threshold = match mode {
-            round::Mode::HalfEven => std::cmp::max(increment / 2 + (quotient % 2 == 0) as u64, 1),
+            round::Mode::HalfEven => 1.max(increment / 2 + (quotient % 2 == 0) as u64),
             round::Mode::Ceil => 1,
             round::Mode::Floor => increment + 1,
             round::Mode::HalfFloor => increment / 2 + 1,
-            round::Mode::HalfCeil => std::cmp::max(increment / 2, 1),
+            round::Mode::HalfCeil => 1.max(increment / 2),
         };
         let round_up = remainder >= threshold;
         let ns_since_midnight = (quotient + round_up as u64) * increment;

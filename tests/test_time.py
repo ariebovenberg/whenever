@@ -95,13 +95,17 @@ class TestParseCommonIso:
             ("01:02:03.004000", Time(1, 2, 3, nanosecond=4_000_000)),
             ("23:59:59.999999", Time(23, 59, 59, nanosecond=999_999_000)),
             ("23:59:59.99", Time(23, 59, 59, nanosecond=990_000_000)),
-            ("23:59:59.123456789", Time(23, 59, 59, nanosecond=123_456_789)),
+            ("23:59:59,123456789", Time(23, 59, 59, nanosecond=123_456_789)),
             ("23:59:59", Time(23, 59, 59)),
+            ("23:59", Time(23, 59)),
             # basic format
             ("235959", Time(23, 59, 59)),
             ("235959.123456789", Time(23, 59, 59, nanosecond=123_456_789)),
             ("010203.004000", Time(1, 2, 3, nanosecond=4_000_000)),
             ("010203.0", Time(1, 2, 3)),
+            ("010203,03", Time(1, 2, 3, nanosecond=30_000_000)),
+            ("0102", Time(1, 2)),
+            ("13", Time(13)),
         ],
     )
     def test_valid(self, input, expect):
@@ -120,24 +124,37 @@ class TestParseCommonIso:
             # separator issues
             "2212:23",
             "22:1223.123",
-            "22:12.23",
+            "22:12|23",
             "01:02:03.004.0",
+            "22:12:23:34",
+            # invalid fractional units
+            "22:12.0",
+            "2212.0",
+            "22.2",
+            # fractional issues
+            "22:12:23, 23",
+            "22:12:23.-23",
+            "12:02:03.1234567890",
+            "12:02:03;123456789",
+            # offset
+            "01:02:03+00:00",
+            "010203Z",
+            # trailing/padding
+            "01:02:034",
+            "01:02:03 ",
+            "010203 ",
+            " 010203",
+            # too short
+            "01023",
+            "011",
+            "2",
             # other
-            "22:12:23,123",  # comma instead of dot
-            "12:02:03.1234567890",  # too many digits
-            "23:59:59.99999𝟙",  # non-ASCII
-            "01:02:03+00:00",  # offset
-            "010203Z",  # offset
-            "01:02:034",  # trailing
-            "01:02:03 ",  # trailing
-            "010203 ",  # trailing
-            "01023",  # too short
-            "011",  # too short
-            "2",  # too short
-            # garbage
             "garbage",
             "",
             "**",
+            # non-ascii
+            "23:59:59.99999𝟙",
+            "2𝟙:23",
         ],
     )
     def test_invalid(self, input):

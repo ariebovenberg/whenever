@@ -5,7 +5,7 @@ use std::fmt::{self, Display, Formatter};
 
 use crate::common::math::*;
 use crate::common::*;
-use crate::date::Date;
+use crate::date::{extract_2_digits, Date};
 use crate::docstrings as doc;
 use crate::State;
 
@@ -16,8 +16,8 @@ pub(crate) struct MonthDay {
 }
 
 pub(crate) const SINGLETONS: &[(&CStr, MonthDay); 2] = &[
-    (c"MIN", MonthDay::new_unchecked(1, 1)),
-    (c"MAX", MonthDay::new_unchecked(12, 31)),
+    (c"MIN", MonthDay::new_unchecked(Month::January, 1)),
+    (c"MAX", MonthDay::new_unchecked(Month::December, 31)),
 ];
 
 const LEAP_YEAR: Year = Year::new_unchecked(4);
@@ -37,28 +37,31 @@ impl MonthDay {
     }
 
     pub(crate) const fn new(month: Month, day: u8) -> Option<Self> {
-        if day > 0 || day <= LEAP_YEAR.days_in_month(month) {
+        if day > 0 && day <= LEAP_YEAR.days_in_month(month) {
             Some(MonthDay { month, day })
         } else {
             None
         }
     }
 
-    pub(crate) const fn new_unchecked(month: u8, day: u8) -> Self {
-        debug_assert!(month > 0);
-        debug_assert!(month <= 12);
-        debug_assert!(day > 0 && day <= 31);
-        MonthDay {
-            month: Month::new_unchecked(month),
-            day,
-        }
+    pub(crate) const fn new_unchecked(month: Month, day: u8) -> Self {
+        debug_assert!(day > 0 && day <= LEAP_YEAR.days_in_month(month));
+        MonthDay { month, day }
     }
 
-    pub(crate) fn parse_all(s: &[u8]) -> Option<Self> {
-        if s.len() == 7 && s[0] == b'-' && s[1] == b'-' && s[4] == b'-' {
+    pub(crate) fn parse(s: &[u8]) -> Option<Self> {
+        if &s[..2] != b"--" {
+            return None;
+        }
+        if s.len() == 7 && s[4] == b'-' {
             MonthDay::new(
-                Month::new(parse_digit(s, 2)? * 10 + parse_digit(s, 3)?)?,
-                parse_digit(s, 5)? * 10 + parse_digit(s, 6)?,
+                extract_2_digits(s, 2).and_then(Month::new)?,
+                extract_2_digits(s, 5)?,
+            )
+        } else if s.len() == 6 {
+            MonthDay::new(
+                extract_2_digits(s, 2).and_then(Month::new)?,
+                extract_2_digits(s, 4)?,
             )
         } else {
             None
@@ -151,7 +154,7 @@ unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
-    MonthDay::parse_all(s.to_utf8()?.ok_or_type_err("argument must be str")?)
+    MonthDay::parse(s.to_utf8()?.ok_or_type_err("argument must be str")?)
         .ok_or_else_value_err(|| format!("Invalid format: {}", s.repr()))?
         .to_obj(cls.cast())
 }
