@@ -909,8 +909,8 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     let tzinfo = borrow_dt_tzinfo(dt);
 
     // NOTE: it has to be exactly a `ZoneInfo`, since
-    // we only know how to handle that type.  Even subclasses could
-    // theoretically break the assumptions we make.
+    // we *know* that this corresponds to a TZ database entry.
+    // Other types could be making up their own rules.
     if Py_TYPE(tzinfo) != zoneinfo_type.cast() {
         raise_value_err(format!(
             "tzinfo must be of type ZoneInfo (exactly), got {}",
@@ -937,7 +937,7 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
         epoch: EpochSecs::new(epoch_float.floor() as _).ok_or_value_err("instant out of range")?,
         // Note: we don't get the subsecond part from the timestamp,
         // since floating point precision might lead to inaccuracies.
-        // translating to nanoseconds. Instead, we take it from the datetime.
+        // Instead, we take it from the original datetime.
         // This is safe because IANA timezones always deal in whole seconds,
         // meaning the subsecond part is timezone-independent.
         subsec: SubSecNanos::from_py_dt_unchecked(dt),

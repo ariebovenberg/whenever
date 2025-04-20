@@ -42,7 +42,7 @@ keywords = [
 Documentation = "https://whenever.readthedocs.io"
 Repository = "https://github.com/ariebovenberg/whenever"
 Issues = "https://github.com/ariebovenberg/whenever/issues"
-Changelog = "https://github.com/ariebovenberg/whenever/blob/master/CHANGELOG.rst"
+Changelog = "https://github.com/ariebovenberg/whenever/blob/main/CHANGELOG.md"
 
 [tool.black]
 line-length = 79

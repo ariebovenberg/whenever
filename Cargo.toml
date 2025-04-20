@@ -10,7 +10,6 @@ readme = "README.md"
 keywords = []
 include = [
     "Cargo.toml",
-    "CHANGELOG.md",
     "pyproject.toml",
     "README.md",
     "src",
