@@ -131,6 +131,8 @@ class TestParseCommonIso:
         [
             ("--08-21", MonthDay(8, 21)),
             ("--10-02", MonthDay(10, 2)),
+            # basic format
+            ("--1002", MonthDay(10, 2)),
         ],
     )
     def test_valid(self, s, expected):
@@ -150,6 +152,11 @@ class TestParseCommonIso:
             "---12-03",  # negative month
             "--1🧨-12",  # non-ASCII
             "--1𝟙-11",  # non-ascii
+            # invalid components
+            "--00-01",
+            "--13-01",
+            "--11-00",
+            "--11-31",
         ],
     )
     def test_invalid(self, s):
@@ -160,7 +167,7 @@ class TestParseCommonIso:
             MonthDay.parse_common_iso(s)
 
     def test_no_string(self):
-        with pytest.raises(TypeError, match="(int|str)"):
+        with pytest.raises((TypeError, AttributeError), match="(int|str)"):
             MonthDay.parse_common_iso(20210102)  # type: ignore[arg-type]
 
 

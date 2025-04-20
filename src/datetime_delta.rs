@@ -59,6 +59,31 @@ impl DateTimeDelta {
             Err(InitError::MixedSign)
         }
     }
+
+    fn fmt_iso(self) -> String {
+        let mut s = String::with_capacity(8);
+        let DateTimeDelta { ddelta, tdelta } = if self.tdelta.secs.get() < 0
+            || self.ddelta.months.get() < 0
+            || self.ddelta.days.get() < 0
+        {
+            s.push('-');
+            -self
+        } else if self.tdelta.is_zero() && self.ddelta.is_zero() {
+            return "P0D".to_string();
+        } else {
+            self
+        };
+        s.push('P');
+
+        if !ddelta.is_zero() {
+            date_delta::format_components(ddelta, &mut s);
+        }
+        if !tdelta.is_zero() {
+            s.push('T');
+            time_delta::fmt_components_abs(tdelta, &mut s);
+        }
+        s
+    }
 }
 
 impl PyWrapped for DateTimeDelta {}
@@ -178,28 +203,15 @@ pub(crate) const SINGLETONS: &[(&CStr, DateTimeDelta); 1] = &[(
 
 impl fmt::Display for DateTimeDelta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let DateTimeDelta { ddelta, tdelta } = if self.tdelta.secs.get() < 0
-            || self.ddelta.months.get() < 0
-            || self.ddelta.days.get() < 0
-        {
-            write!(f, "-P")?;
-            -*self
-        } else if self.tdelta.is_zero() && self.ddelta.is_zero() {
-            return write!(f, "P0D");
-        } else {
-            write!(f, "P")?;
-            *self
-        };
-
-        let mut s = String::with_capacity(8);
-        if !ddelta.is_zero() {
-            date_delta::format_components(ddelta, &mut s);
+        // A bit inefficient, but this isn't performance-critical
+        let mut isofmt = self.fmt_iso().into_bytes();
+        // Safe: we know the string is valid ASCII
+        for i in 2..isofmt.len() {
+            if isofmt[i] != b'T' {
+                isofmt[i] = isofmt[i].to_ascii_lowercase();
+            }
         }
-        if !tdelta.is_zero() {
-            s.push('T');
-            time_delta::fmt_components_abs(tdelta, &mut s);
-        }
-        f.write_str(&s)
+        f.write_str(&unsafe { std::str::from_utf8_unchecked(&isofmt) })
     }
 }
 
@@ -283,7 +295,7 @@ unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
-    format!("{}", DateTimeDelta::extract(slf)).to_py()
+    DateTimeDelta::extract(slf).fmt_iso().to_py()
 }
 
 unsafe fn __mul__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
@@ -417,7 +429,7 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    __str__(slf)
+    DateTimeDelta::extract(slf).fmt_iso().to_py()
 }
 
 pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
@@ -425,7 +437,7 @@ pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
     let mut days = 0;
     let mut prev_unit: Option<DateUnit> = None;
 
-    while !s.is_empty() && s[0] != b'T' {
+    while !s.is_empty() && !s[0].eq_ignore_ascii_case(&b'T') {
         let (value, unit) = date_delta::parse_component(s)?;
         match (unit, prev_unit.replace(unit)) {
             // Note: We prevent overflow by limiting how many digits we parse
@@ -452,24 +464,27 @@ pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
     let s = &mut s_obj.to_utf8()?.ok_or_value_err("argument must be str")?;
-    let errmsg = || format!("Invalid format or out of range: {}", s_obj.repr());
+    let err = || format!("Invalid format or out of range: {}", s_obj.repr());
     if s.len() < 3 {
         // at least `P0D`
-        raise_value_err(errmsg())?
+        raise_value_err(err())?
     }
 
-    let negated = parse_prefix(s).ok_or_else_value_err(errmsg)?;
-    if s[s.len() - 1] == b'T' {
+    let negated = parse_prefix(s).ok_or_else_value_err(err)?;
+    // Safe: we checked the string is at least 3 bytes long
+    if s[s.len() - 1].eq_ignore_ascii_case(&b'T') {
         // catch 'empty' cases
-        raise_value_err(errmsg())?
+        raise_value_err(err())?
     }
-    let mut ddelta = parse_date_components(s).ok_or_else_value_err(errmsg)?;
+    let mut ddelta = parse_date_components(s).ok_or_else_value_err(err)?;
     let mut tdelta = if s.is_empty() {
         TimeDelta::ZERO
-    } else {
+    } else if s[0].eq_ignore_ascii_case(&b'T') {
         *s = &s[1..];
-        let (nanos, _) = time_delta::parse_all_components(s).ok_or_else_value_err(errmsg)?;
-        TimeDelta::from_nanos(nanos).ok_or_value_err("TimeDelta out of range")?
+        let (nanos, _) = time_delta::parse_all_components(s).ok_or_else_value_err(err)?;
+        TimeDelta::from_nanos(nanos).ok_or_else_value_err(err)?
+    } else {
+        raise_value_err(err())?
     };
     if negated {
         ddelta = -ddelta;

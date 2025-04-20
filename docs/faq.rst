@@ -83,7 +83,8 @@ Each option had its pros and cons.
 While ``PlainDateTime`` is not perfect, it has the following advantages:
 
 - Javascript's new Temporal API uses this name. There's significant
-  overlap between Python and Javascript developers, so this name is likely to be familiar.
+  overlap between Python and Javascript developers,
+  so this name is likely to be familiar as its popularity grows.
 - It's a name that is easy to understand and remember, also for non-native speakers.
 
 Common critiques of ``PlainDateTime`` are:
@@ -92,7 +93,7 @@ Common critiques of ``PlainDateTime`` are:
   This is also a strength. It *is* simply a date+time. Yes, it can
   be used to represent a local time, but it doesn't have to be.
 - *The name is defined by what it is not.*
-  Actually, it's actually really common to name things in opposition to something else.
+  Actually, it's really common to name things in opposition to something else.
   Think of: "*stainless* steel", "*plain* text", or "*serverless* computing".
 
 
@@ -108,10 +109,8 @@ This decision is consistent with other modern libraries
 (e.g. NodaTime, Temporal) and standards (RFC 5545, Unix time) which
 do not support leap seconds.
 
-Nonetheless, these improvements are possible in the future:
-
-- Allow parsing of leap seconds, e.g. ``23:59:60``.
-- Allow representation of leap seconds (similar to rust Chrono)
+One improvement that is planned: allowing the parsing of leap seconds,
+which are then truncated to 59 seconds.
 
 Why not adopt Rust's Chrono API?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

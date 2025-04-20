@@ -27,8 +27,6 @@ from whenever import (
     years,
 )
 
-from .test_offset_datetime import INVALID_ISO_STRINGS
-
 from .common import (
     AlwaysEqual,
     AlwaysLarger,
@@ -39,6 +37,7 @@ from .common import (
     system_tz_ams,
     system_tz_nyc,
 )
+from .test_offset_datetime import INVALID_ISO_STRINGS
 
 
 class TestInit:

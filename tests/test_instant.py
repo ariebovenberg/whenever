@@ -29,6 +29,12 @@ from .common import (
     system_tz_ams,
     system_tz_nyc,
 )
+from .test_offset_datetime import (
+    INVALID_ISO_STRINGS,
+    INVALID_RFC2822,
+    VALID_ISO_STRINGS,
+    VALID_RFC2822,
+)
 
 BIG_INT = 1 << 64 + 1  # a big int that may cause an overflow error
 
@@ -852,133 +858,33 @@ def test_to_system_tz():
             Instant.MAX.to_system_tz()
 
 
-def test_rfc2822():
-    assert (
-        Instant.from_utc(
-            2020, 8, 15, 23, 12, 9, nanosecond=450
-        ).format_rfc2822()
-        == "Sat, 15 Aug 2020 23:12:09 GMT"
-    )
+@pytest.mark.parametrize(
+    "i, expect",
+    [
+        (
+            Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=450),
+            "Sat, 15 Aug 2020 23:12:09 GMT",
+        ),
+        (
+            Instant.from_utc(1, 1, 1, 9, 9),
+            "Mon, 01 Jan 0001 09:09:00 GMT",
+        ),
+    ],
+)
+def test_rfc2822(i, expect):
+    assert i.format_rfc2822() == expect
 
 
 class TestParseRFC2822:
 
-    @pytest.mark.parametrize(
-        "s, expected",
-        [
-            (
-                "Sat, 15 Aug 2020 23:12:09 GMT",
-                Instant.from_utc(2020, 8, 15, 23, 12, 9),
-            ),
-            (
-                "Sat, 15 Aug 2020 23:12:09 +0000",
-                Instant.from_utc(2020, 8, 15, 23, 12, 9),
-            ),
-            (
-                "Sat, 15 Aug 2020 23:12:09 -0000",
-                Instant.from_utc(2020, 8, 15, 23, 12, 9),
-            ),
-            (
-                "Sat, 15 Aug 2020 23:12:09 UTC",
-                Instant.from_utc(2020, 8, 15, 23, 12, 9),
-            ),
-            (
-                "15      Aug 2020\n23:12 UTC",
-                Instant.from_utc(2020, 8, 15, 23, 12),
-            ),
-        ],
-    )
-    def test_valid(self, s, expected):
-        assert Instant.parse_rfc2822(s) == expected
+    @pytest.mark.parametrize("s, expected", VALID_RFC2822)
+    def test_valid(self, s, expected: OffsetDateTime):
+        assert Instant.parse_rfc2822(s) == expected.to_instant()
 
-    @pytest.mark.parametrize(
-        "s",
-        [
-            "Sat, 15 Aug 2020 23:12:09 +0200",  # non-UTC offset
-            "Sat, 15 Aug 2020 23:12:09,0 GMT",  # fraction
-            "Sat, 15 Aug 2020 23:12:09.0 GMT",  # fraction
-            "Sat, 15 Aug 2020 23:12:09",  # missing zone/offset
-            "blurb",  # garbage
-            # FUTURE: is this a bug in the stdlib?
-            # "Sat, 𝟙5 Aug 2020 23:12:09 UTC",  # non-ascii
-        ],
-    )
+    @pytest.mark.parametrize("s", INVALID_RFC2822)
     def test_invalid(self, s):
-        with pytest.raises(
-            ValueError,
-            match=r"(Could not parse.*RFC 2822|Invalid).*" + re.escape(s),
-        ):
+        with pytest.raises(ValueError, match=re.escape(repr(s))):
             Instant.parse_rfc2822(s)
-
-
-def test_format_rfc3339():
-    assert (
-        Instant.from_utc(
-            2020, 8, 15, 23, 12, 9, nanosecond=450
-        ).format_rfc3339()
-        == "2020-08-15 23:12:09.00000045Z"
-    )
-
-
-class TestParseRFC3339:
-
-    @pytest.mark.parametrize(
-        "s, expect",
-        [
-            (
-                "2020-08-15T23:12:09.000450Z",
-                Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=450_000),
-            ),
-            (
-                "2020-08-15T23:12:09.000002001Z",
-                Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=2_001),
-            ),
-            (
-                "2020-08-15t23:12:09z",
-                Instant.from_utc(2020, 8, 15, 23, 12, 9),
-            ),
-            (
-                "2020-08-15_23:12:09-00:00",
-                Instant.from_utc(2020, 8, 15, 23, 12, 9),
-            ),
-            (
-                "2020-08-15_23:12:09+00:00",
-                Instant.from_utc(2020, 8, 15, 23, 12, 9),
-            ),
-            (
-                "2020-08-15T23:12:09.34Z",
-                Instant.from_utc(
-                    2020, 8, 15, 23, 12, 9, nanosecond=340_000_000
-                ),
-            ),
-        ],
-    )
-    def test_parse_rfc3339(self, s, expect):
-        assert Instant.parse_rfc3339(s) == expect
-
-    @pytest.mark.parametrize(
-        "s",
-        [
-            "2020-8-15T23:12:45Z",  # invalid padding
-            "2020-08-15T23:12Z",  # no seconds
-            "2020-08-15_23Z",  # no time
-            "2020-08Z",  # no time or date
-            "",  # empty
-            "garbage",  # garbage
-            "2020-08-15T23:12:09.1234567890Z",  # too precise
-            "2020-09-15T22:44:20+01:00",  # non-UTC offset
-            "2020-08-15T23:12:09.34ZZ",  # extra Z
-            "2020-08-15T23:12:09.34Z01:00",  # offset and Z
-            "2020-08-15T23:12:09.3𝟜Z",  # non ascii
-        ],
-    )
-    def test_invalid(self, s):
-        # no timezone
-        with pytest.raises(
-            ValueError,
-            match=r"Invalid.*RFC 3339.*" + re.escape(s),
-        ):
-            Instant.parse_rfc3339(s)
 
 
 @pytest.mark.parametrize(
@@ -1003,62 +909,11 @@ def test_format_common_iso(d, expect):
 
 class TestParseCommonIso:
 
-    @pytest.mark.parametrize(
-        "s, expect",
-        [
-            # offset
-            (
-                "2020-08-15T23:12:09+00:00",
-                Instant.from_utc(2020, 8, 15, 23, 12, 9),
-            ),
-            # Z-offset
-            (
-                "2020-08-15T23:12:09.34Z",
-                Instant.from_utc(
-                    2020, 8, 15, 23, 12, 9, nanosecond=340_000_000
-                ),
-            ),
-            # maximum precision
-            (
-                "2020-08-15T23:12:09.987654001Z",
-                Instant.from_utc(
-                    2020, 8, 15, 23, 12, 9, nanosecond=987_654_001
-                ),
-            ),
-            # no fractions
-            ("2020-08-15T23:12:09Z", Instant.from_utc(2020, 8, 15, 23, 12, 9)),
-            # midnight
-            ("2020-08-15T00:00:00Z", Instant.from_utc(2020, 8, 15)),
-        ],
-    )
-    def test_valid(self, s, expect):
-        assert Instant.parse_common_iso(s) == expect
+    @pytest.mark.parametrize("s, expect", VALID_ISO_STRINGS)
+    def test_valid(self, s: str, expect: OffsetDateTime):
+        assert Instant.parse_common_iso(s) == expect.to_instant()
 
-    @pytest.mark.parametrize(
-        "s",
-        [
-            "2020-8-15T23:12:45Z",  # invalid padding
-            "2020-08-15T23:12Z",  # no seconds
-            "2020-08-15_23Z",  # no time
-            "2020-08Z",  # no time or date
-            "2020Z",  # no time or date
-            "Z",  # no time or date
-            "garbage",  # garbage
-            "",  # empty
-            "2020-08-15T23:12:09.000450",  # no offset
-            "2020-08-15T23:12:09+02:00",  # non-UTC offset
-            "2020-08-15 23:12:09Z",  # non-T separator
-            "2020-08-15t23:12:09Z",  # non-T separator
-            "2020-08-15T23:12:09z",  # lowercase Z
-            "2020-08-15T23:12:09-00:00",  # forbidden offset
-            "2020-08-15T23:12:09-02:00:03",  # seconds in offset
-            "2020-08-15T23:12:09.3𝟜Z",  # non ascii
-            "2020-08-15T23:12:09.1234567890Z",  # too precise
-            "2020-09-15T22:44:20",  # no trailing z
-            "2020-09-15T\x0012:32",  # NULL byte
-            "2020-08-15T23:12:09.3𝟙Z",  # non ascii
-        ],
-    )
+    @pytest.mark.parametrize("s", INVALID_ISO_STRINGS)
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,

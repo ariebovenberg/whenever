@@ -119,9 +119,8 @@ ZonedDateTime(2020-03-14 15:00:00-04:00[America/New_York])
 
     Read about ambiguity in more detail :ref:`here <ambiguity>`.
 
-
 Advanced types
---------------
+~~~~~~~~~~~~~~
 
 .. epigraph::
 
@@ -136,17 +135,17 @@ additional types for specific scenarios. Having these as separate types
 makes it clear what you're working with and prevents mistakes.
 
 :class:`~whenever.OffsetDateTime`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++++++++++++++++++++++++++++++++++
 
 Like :class:`~whenever.ZonedDateTime`, this type represents an exact time
 *and* a local time. The difference is that :class:`~whenever.OffsetDateTime`
 has a *fixed* offset from UTC rather than a timezone.
 As a result, it doesn't know about Daylight Saving Time or other timezone changes.
 
-Then why use it? Firstly, most datetime formats (e.g. ISO 8601 and RFC 3339) only have fixed offsets,
+Then why use it? Firstly, most datetime formats (e.g. ISO 8601 and RFC 2822) only have fixed offsets,
 making :class:`~whenever.OffsetDateTime` ideal for representing datetimes in these formats.
 Second, a :class:`~whenever.OffsetDateTime` is simpler—so long as you
-don't need the ability to adjust it. This makes :class:`~whenever.OffsetDateTime`
+don't need the ability to shift it. This makes :class:`~whenever.OffsetDateTime`
 an efficient and compatible choice for representing times in the past.
 
 >>> flight_departure = OffsetDateTime(2023, 4, 21, hour=9, offset=-4)
@@ -165,7 +164,7 @@ an efficient and compatible choice for representing times in the past.
    - :ref:`Performing DST-safe arithmetic <arithmetic-dst>`
 
 :class:`~whenever.SystemDateTime`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++++++++++++++++++++++++++++++++++
 
 This is a datetime in the timezone of the system running the code.
 Unless your code specifically runs on the user's
@@ -332,8 +331,8 @@ SystemDateTime(2023-12-28 11:30:00+01:00)
 >>> d.to_fixed_offset(4) == d
 True  # always the same moment in time
 
-To and from "plain" date and time
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+To and from "plain" datetime
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Conversion to a "plain" datetime is easy: calling
 :meth:`~whenever._ExactAndLocalTime.to_plain` simply
@@ -368,7 +367,7 @@ Ambiguity in timezones
 
 .. note::
 
-   The API for handling ambiguity is inspired by that of
+   The API for handling ambiguity is largely inspired by that of
    `Temporal <https://tc39.es/proposal-temporal/docs/ambiguity.html>`_,
    the redesigned date and time API for JavaScript.
 
@@ -555,8 +554,8 @@ The behavior arithmetic behavior is different for three categories of units:
 
 .. _arithmetic-dst:
 
-DST-safe arithmetic
-~~~~~~~~~~~~~~~~~~~
+DST-safety
+~~~~~~~~~~
 
 Date and time arithmetic can be tricky due to daylight saving time (DST)
 and other timezone changes.
@@ -684,36 +683,47 @@ Formatting and parsing
 ISO 8601
 ~~~~~~~~
 
-TODO reflect implementation
-TODO Instant, PlainDateTime
-
 The `ISO 8601 <https://en.wikipedia.org/wiki/ISO_8601>`_ standard
 is probably the format you're most familiar with.
 What you may not know is that it's a very complex standard with many options.
 Asking whether something "is proper ISO" is like asking whether
-something "is proper English"—there are many dialects and variations.
+something "is proper English"—there are many dialects and variations
+and people hold different opinions on what is "proper".
 
-Like all datetime libraries, ``whenever`` makes some choices about which
-parts of the standard to support. ``whenever`` aims to support the most common
+Like all datetime libraries, ``whenever`` has to make some choices about which
+parts of the standard to support. ``whenever`` targets the most common
 and widely-used subset of the standard, while avoiding the more obscure
 and rarely-used parts, which are often the source of confusion and bugs.
 
-Below are the main features of the ISO 8601 format supported by ``whenever``:
+``whenever`` takes mostly `after Temporal <https://tc39.es/proposal-temporal/#sec-temporal-iso8601grammar>`_,
+namely:
 
-- Extended and basic formats (e.g. both ``2023-12-28`` and ``20231228``).
-- Weekday and ordinal dates are *not* supported: e.g. ``2023-W52-5`` or ``2023-365``
-- For date, time, and offset parts may independently choose to use extended or basic formats,
+- Both "extended" (e.g. ``2023-12-28``) and "basic" (e.g. ``20231228``) formats are supported.
+- Weekday and ordinal date formats are *not* supported: e.g. ``2023-W52-5`` or ``2023-365``.
+- A space (``" "``) may be used instead of ``T`` to separate the date and time parts.
+- The date, time, and offset parts may independently choose to use extended or basic formats,
   so long as they are themselves consistent. e.g. ``2023-12-28T113000+03`` is OK, but
   ``2023-1228T11:23`` is not.
 - Characters may be lowercase or uppercase (e.g. ``2023-12-28T11:30:00Z`` is the same as ``2023-12-28t11:30:00z``).
-- Only seconds may be fractional (e.g. ``11:30:00.123456789Z`` but not ``11:30.5``).
-- Offset ``Z``, ``+00:00``, and ``-00:00`` are all equivalent.
+- Only seconds may be fractional (e.g. ``11:30:00.123456789Z`` but not minutes like ``11:30.5``).
+- Seconds may be precise up to 9 digits (nanoseconds).
+- Both ``.`` and ``,`` may be used as decimal separators
+- The offset ``-00:00`` is allowed, and is equivalent to ``+00:00``
+- Offsets may be specified up to second-level precision (e.g. ``2023-12-28T11:30:00+01:23:45``).
+- A IANA timezone identifier may be included in square brackets after the offset,
+  like ``2023-12-28T11:30:00+01[Europe/Paris]``.
+  This is part of the recent RFC 9557 extension to ISO 8601.
+- The offset ``+00:00`` is slightly different from ``Z``.
+  ``+00:00`` indicates an offset known to be 0 hours and 0 minutes,
+  while ``Z`` indicates no offset is unspecified.
+- In the duration format, the ``W`` unit may be used alongside other calendar units
+  (``Y``, ``M``, ``D``).
 
-
-Here are the ISO formats for each type:
+Below are the default string formats you get for calling each type's
+``format_common_iso()`` method:
 
 +-----------------------------------------+------------------------------------------------+
-| Type                                    | Canonical string format                        |
+| Type                                    | Default string format                          |
 +=========================================+================================================+
 | :class:`~whenever.Instant`              | ``YYYY-MM-DDTHH:MM:SSZ``                       |
 +-----------------------------------------+------------------------------------------------+
@@ -764,42 +774,6 @@ OffsetDateTime(2021-07-13 09:45:00-09:00)
 
    If you do need to parse the full spectrum of ISO 8601, you can use
    a specialized library such as `dateutil.parser <https://dateutil.readthedocs.io/en/stable/parser.html>`_.
-   If possible, it's recommend to use the :ref:`RFC 3339 <rfc3339>` format instead.
-
-.. _rfc3339:
-
-RFC 3339
-~~~~~~~~
-
-`RFC 3339 <https://tools.ietf.org/html/rfc3339>`_ is a subset of ISO 8601
-with a few deviations. The format is:
-
-.. code-block:: text
-
-   YYYY-MM-DDTHH:MM:SS±HH:MM
-
-For example: ``2023-12-28T11:30:00+05:00``
-
-Where:
-
-- Seconds may be fractional
-- The offset may be replaced with a ``"Z"`` to indicate UTC
-- ``T`` may be replaced with a space or ``_`` (unlike ISO 8601)
-- ``T`` and ``Z`` may be lowercase (unlike ISO 8601)
-- The offset is limited to whole minutes (unlike ISO 8601)
-
-Use the methods :meth:`~whenever.OffsetDateTime.format_rfc3339` and
-:meth:`~whenever.OffsetDateTime.parse_rfc3339` to format and parse
-to this format, respectively:
-
->>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=+5)
->>> d.format_rfc3339()
-'2023-12-28 11:30:00+05:00'
->>> OffsetDateTime.parse_rfc3339('2021-07-13_09:45:00Z')
-OffsetDateTime(2021-07-13 09:45:00Z)
-
-The RFC3339 formatter uses a space separator by default.
-If you prefer the ``T`` separator, use ``format_common_iso()`` instead.
 
 RFC 2822
 ~~~~~~~~

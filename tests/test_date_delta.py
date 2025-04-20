@@ -168,74 +168,68 @@ def test_format_common_iso(p, expect):
     assert str(p) == expect
 
 
+INVALID_DDELTAS = [
+    "P3D7Y",  # components out of order
+    "P3M7Y",  # components out of order
+    "P𝟙Y",  # non-ASCII
+    "P--2D",
+    "P++2D",
+    "P+-2D",
+    "--P2D",
+    "++P2D",
+    "1P2",
+    f"P{MAX_I64+2}Y",
+    f"P-{MAX_I64+2}Y",
+    "P3R",  # invalid unit
+    "PT3M",  # time component
+    "P3.4Y",  # decimal
+    "P1,5D",  # comma
+    "P1Y2M3W4DT1H2M3S",  # time component
+    "P1YT0S",  # zero time component still invalid
+    "P99999Y",  # too large
+    # incomplete
+    "",
+    "P",  # no components
+    "P34m4",
+    "P34",
+    "P-D",
+    "P+D",
+    "P-",
+    "P+",
+    "Y",
+    "5Y",
+    "-5Y",
+    "P8",
+    "P8M3",
+]
+
+VALID_DDELTAS = [
+    ("P0D", DateDelta()),
+    ("P2Y", DateDelta(years=2)),
+    ("P1M", DateDelta(months=1)),
+    ("P1W", DateDelta(weeks=1)),
+    ("P1D", DateDelta(days=1)),
+    ("P1Y2M3W4D", DateDelta(years=1, months=2, weeks=3, days=4)),
+    ("P2M3W", DateDelta(months=2, weeks=3)),
+    ("-P2M", DateDelta(months=-2)),
+    ("-P2Y3W", DateDelta(years=-2, weeks=-3)),
+    ("P1Y2M3W4D", DateDelta(years=1, months=2, weeks=3, days=4)),
+    ("+P2M3W", DateDelta(months=2, weeks=3)),
+    ("-P2M", DateDelta(months=-2)),
+    ("+P2Y3W", DateDelta(years=2, weeks=3)),
+    # non-uppercase
+    ("+P2y3w", DateDelta(years=2, weeks=3)),
+    ("-p2y3w0d", DateDelta(years=-2, weeks=-3)),
+]
+
+
 class TestParseCommonIso:
 
-    def test_empty(self):
-        assert DateDelta.parse_common_iso("P0D") == DateDelta()
-
-    @pytest.mark.parametrize(
-        "input, expect",
-        [
-            ("P0D", DateDelta()),
-            ("P2Y", DateDelta(years=2)),
-            ("P1M", DateDelta(months=1)),
-            ("P1W", DateDelta(weeks=1)),
-            ("P1D", DateDelta(days=1)),
-        ],
-    )
-    def test_single_unit(self, input, expect):
+    @pytest.mark.parametrize("input, expect", VALID_DDELTAS)
+    def test_valid(self, input, expect):
         assert DateDelta.parse_common_iso(input) == expect
 
-    @pytest.mark.parametrize(
-        "input, expect",
-        [
-            ("P1Y2M3W4D", DateDelta(years=1, months=2, weeks=3, days=4)),
-            ("P2M3W", DateDelta(months=2, weeks=3)),
-            ("-P2M", DateDelta(months=-2)),
-            ("-P2Y3W", DateDelta(years=-2, weeks=-3)),
-            ("P1Y2M3W4D", DateDelta(years=1, months=2, weeks=3, days=4)),
-            ("+P2M3W", DateDelta(months=2, weeks=3)),
-            ("-P2M", DateDelta(months=-2)),
-            ("+P2Y3W", DateDelta(years=2, weeks=3)),
-        ],
-    )
-    def test_multiple_units(self, input, expect):
-        assert DateDelta.parse_common_iso(input) == expect
-
-    @pytest.mark.parametrize(
-        "s",
-        [
-            "",
-            "P",  # no components
-            "Y",
-            "5Y",  # no prefix
-            "-5Y",  # no prefix
-            "P8",  # digits without units
-            "P8M3",  # digits without units
-            "P3D7Y",  # components out of order
-            "P3M7Y",  # components out of order
-            "P𝟙Y",  # non-ASCII
-            "P--2D",
-            "P++2D",
-            "P+-2D",
-            "--P2D",
-            "++P2D",
-            "1P2",
-            "P-D",
-            "P+D",
-            "P-",
-            "P+",
-            f"P{MAX_I64+2}Y",
-            f"P-{MAX_I64+2}Y",
-            "P3R",  # invalid unit
-            "PT3M",  # time component
-            "P3.4Y",  # decimal
-            "P1,5D",  # comma
-            "P1Y2M3W4DT1H2M3S",  # time component
-            "P1YT0S",  # zero time component still invalid
-            "P99999Y",  # too large
-        ],
-    )
+    @pytest.mark.parametrize("s", INVALID_DDELTAS)
     def test_invalid_format(self, s):
         with pytest.raises(
             ValueError, match=f"Invalid format.*{re.escape(s)}|range"
@@ -247,9 +241,16 @@ class TestParseCommonIso:
             DateDelta.parse_common_iso(1)  # type: ignore[arg-type]
 
 
-def test_repr():
-    p = DateDelta(years=1, months=2, weeks=3, days=4)
-    assert repr(p) == "DateDelta(P1Y2M25D)"
+@pytest.mark.parametrize(
+    "p, expect",
+    [
+        (DateDelta(years=1, months=2, weeks=3, days=4), "DateDelta(P1y2m25d)"),
+        (DateDelta.ZERO, "DateDelta(P0d)"),
+        (DateDelta(months=14), "DateDelta(P1y2m)"),
+    ],
+)
+def test_repr(p, expect):
+    assert repr(p) == expect
 
 
 def test_negate():

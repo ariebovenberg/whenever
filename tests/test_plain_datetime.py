@@ -255,10 +255,10 @@ class TestParseCommonIso:
             "12:08:30.1234567890",
             "T12:08:30",
             "2020-11   T12:08:30.1234567890",
-            # offsets
-            "2020-08-15T12:08:30.123456789Z",  # Z at the end
-            "2020-08-15T12:08:30.45+0500",  # offset
-            "2020-08-15T12:08:30+05:00",  # offset
+            # offsets not allowed
+            "2020-08-15T12:08:30Z",
+            "2020-08-15T12:08:30.45+0500",
+            "2020-08-15T12:08:30+05:00",
             # incorrect padding
             "2020-08-15T12:8:30",
             "2020-08-15T2",
@@ -271,8 +271,18 @@ class TestParseCommonIso:
             # separator, but incomplete time
             "2020-08-15T",
             "2020-08-15T1",
-            # invalid values
+            # invalid component values
+            "0000-12-15T12:08:30",
             "2020-18-15T12:08:30",
+            "2020-11-31T12:08:30",
+            "2020-11-21T24:08:30",
+            "2020-11-21T22:68:30",
+            "2020-11-21T22:48:62",
+            # ordinal and week days
+            "2020-W08-1T12:08:30",
+            "2020W081T12:08:30",
+            "2020081T12:08:30",
+            "2020-081T12:08:30",
         ],
     )
     def test_invalid(self, s):
@@ -501,6 +511,9 @@ class TestShiftMethods:
         with pytest.raises(TypeError):
             d.add(hours(48), seconds=5, ignore_dst=True)  # type: ignore[call-overload]
 
+    # TODO: find the segfault hiding here:
+    # thread '<unnamed>' panicked at src/common/math.rs:532:9:
+    # assertion failed: days >= Self::MIN.0 && days <= Self::MAX.0
     @given(
         years=integers(),
         months=integers(),

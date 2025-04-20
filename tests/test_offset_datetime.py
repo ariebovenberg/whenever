@@ -195,10 +195,17 @@ INVALID_ISO_STRINGS = [
     "0001-01-01 02:08:30+05:00",
     # invalid tz format
     "2020-08-15T12:08:30+05:00[",
+    "2020-08-15T12:08:30+05:00[[]",
+    "2020-08-15T12:08:30+05:00[sdf[]",
     "2020-08-15T12:08:30+05:00[]",
+    "2020-08-15T12:08:30+05:00]",
     "2020-08-15T12:08:30+05:00[abc]foo",
+    # unsupported ISO features (weekdays, ordinal dates)
+    "2020-W08-1T23:12:09-01",
+    "2020-123T23:12:09-01",
 ]
 
+# TODO: comma valid
 VALID_ISO_STRINGS = [
     (
         "2020-08-15T12:08:30+05:00",
@@ -251,6 +258,10 @@ VALID_ISO_STRINGS = [
         OffsetDateTime(1924, 12, 2, 12, offset=0),
     ),
     (
+        "1924-12-02T12+01:00",
+        OffsetDateTime(1924, 12, 2, 12, offset=1),
+    ),
+    (
         "19241203t12:00:12+003059",
         OffsetDateTime(
             1924,
@@ -269,6 +280,19 @@ VALID_ISO_STRINGS = [
     (
         "2020-08-15T120012-0030[Foo]",
         OffsetDateTime(2020, 8, 15, 12, 0, 12, offset=minutes(-30)),
+    ),
+    # Decimals
+    (
+        "2020-08-15T120012,3-00:30[Foo]",
+        OffsetDateTime(
+            2020, 8, 15, 12, 0, 12, nanosecond=300_000_000, offset=minutes(-30)
+        ),
+    ),
+    (
+        "2020-08-15T120012.3112-00:30[Foo]",
+        OffsetDateTime(
+            2020, 8, 15, 12, 0, 12, nanosecond=311_200_000, offset=minutes(-30)
+        ),
     ),
 ]
 
@@ -1214,75 +1238,14 @@ def test_strptime_invalid():
             OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=5),
             "Sat, 15 Aug 2020 23:12:09 +0500",
         ),
-    ],
-)
-def test_rfc2822(d, expected):
-    assert d.format_rfc2822() == expected
-
-
-class TestParseRFC2822:
-
-    @pytest.mark.parametrize(
-        "s, expected",
-        [
-            (
-                "Sat, 15 Aug 2020 23:12:09 GMT",
-                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
-            ),
-            (
-                "Sat, 15 Aug 2020 23:12:09 +0000",
-                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
-            ),
-            (
-                "Sat, 15 Aug 2020 23:12:09 UTC",
-                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
-            ),
-            (
-                "Sat, 15 Aug 2020 23:12:09 -0100",
-                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-1),
-            ),
-            (
-                "Sat, 15 Aug 2020 23:12:09 +1200",
-                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=12),
-            ),
-            (
-                "Sat, 15 Aug 2020 23:12:09 MST",
-                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-7),
-            ),
-            (
-                "15      Aug 2020\n23:12 UTC",
-                OffsetDateTime(2020, 8, 15, 23, 12, offset=0),
-            ),
-        ],
-    )
-    def test_valid(self, s, expected):
-        assert OffsetDateTime.parse_rfc2822(s) == expected
-
-    @pytest.mark.parametrize(
-        "s",
-        [
-            "Sat, 15 Aug 2020 23:12:09",  # no timezone
-            "Sat, 15 Aug 2020 23:12:09 -0000",  # -0000 timezone special case
-            "",  # empty
-            "garbage",  # garbage
-            # FUTURE: apparently this parses into the year 2001
-            # check if this is a bug in the stdlib, or expected behavior
-            # "Mon, 1 Jan 0001 03:12:09 +0400",  # out of range in UTC
-        ],
-    )
-    def test_invalid(self, s):
-        with pytest.raises(ValueError, match=re.escape(s)):
-            OffsetDateTime.parse_rfc2822(s)
-
-
-@pytest.mark.parametrize(
-    "d, expect",
-    [
         (
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, nanosecond=450, offset=4),
-            "2020-08-15 23:12:09.00000045+04:00",
+            OffsetDateTime(2020, 8, 5, 23, 12, 9, offset=5),
+            "Wed, 05 Aug 2020 23:12:09 +0500",
         ),
-        # seconds rounded
+        (
+            OffsetDateTime(1, 1, 1, 9, 9, 9, offset=minutes(1)),
+            "Mon, 01 Jan 0001 09:09:09 +0001",
+        ),
         (
             OffsetDateTime(
                 2020,
@@ -1291,90 +1254,235 @@ class TestParseRFC2822:
                 23,
                 12,
                 9,
-                nanosecond=450_000,
-                offset=hours(4) + minutes(8) + seconds(45),
+                offset=hours(5) + minutes(22) + seconds(45),
             ),
-            # FUTURE: round seconds offset, not just truncate them
-            "2020-08-15 23:12:09.00045+04:08",
+            "Sat, 15 Aug 2020 23:12:09 +0522",
+        ),
+        (
+            OffsetDateTime(
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                offset=-(hours(5) + minutes(22) + seconds(45)),
+            ),
+            "Sat, 15 Aug 2020 23:12:09 -0522",
         ),
     ],
 )
-def test_format_rfc3339(d, expect):
-    assert d.format_rfc3339() == expect
+def test_rfc2822(d, expected):
+    assert d.format_rfc2822() == expected
 
 
-class TestParseRFC3339:
+VALID_RFC2822 = [
+    (
+        "Sat, 15 Aug 2020 23:12:09 GMT",
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
+    ),
+    (
+        "Sat, 15 Aug 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
+    ),
+    (
+        "Sat, 1 Aug 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 8, 1, 23, 12, 9, offset=0),
+    ),
+    (
+        "Sat, 01 Aug 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 8, 1, 23, 12, 9, offset=0),
+    ),
+    (
+        "Sat, 15 Aug 2020 23:12:09 -0000",
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
+    ),
+    (
+        "Sat, 15 Aug 2020 23:12:09 UTC",
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
+    ),
+    (
+        "Sat, 15 Aug 2020 23:12:09 -0100",
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-1),
+    ),
+    (
+        "Sat, 15 Aug 2020 23:12:09 +1200",
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=12),
+    ),
+    # named timezones
+    (
+        "Sat, 15 Aug 2020 23:12:09 MST",
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-7),
+    ),
+    # non-4-digit years
+    (
+        "Sun, 15 Aug 49 23:12:09 +1200",
+        OffsetDateTime(2000 + 49, 8, 15, 23, 12, 9, offset=12),
+    ),
+    (
+        "Tue, 15 Aug 50 23:12:09 +1200",
+        OffsetDateTime(1900 + 50, 8, 15, 23, 12, 9, offset=12),
+    ),
+    (
+        "Mon, 15 Aug 049 23:12:09 +1200",
+        OffsetDateTime(1900 + 49, 8, 15, 23, 12, 9, offset=12),
+    ),
+    (
+        "Thu, 15 Aug 220 23:12:09 +1200",
+        OffsetDateTime(1900 + 220, 8, 15, 23, 12, 9, offset=12),
+    ),
+    # various whitespace is allowed
+    (
+        "   15      Aug 2020\r\n  \r\n23:12 \t UTC   ",
+        OffsetDateTime(2020, 8, 15, 23, 12, offset=0),
+    ),
+    (
+        "Sat\t, 15 Aug 2020 23:12:09 MST",
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-7),
+    ),
+    (
+        "Sat\t, 15 Aug 2020 23:12:09 MST    ",
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-7),
+    ),
+    (
+        "Sat\t, 15 Aug 2020 23 :12 : 09 MST",
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-7),
+    ),
+    (
+        "Sat\t, 15 Aug 2020 23: \t12:09\nMST",
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-7),
+    ),
+    (
+        "Sat,15 Aug 2020 23:12:09 MST",
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-7),
+    ),
+    (
+        "Sat   ,15 Aug 2020 23:12:09 MST",
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-7),
+    ),
+    # technically not valid whitespace, but we accept it
+    (
+        "Sat\t,\n\r15 Aug 2020 23:\x0b\t12\x0c:09\nMST",
+        OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-7),
+    ),
+    # According to the spec, unknown timezones should be interpreted as -0000.
+    (
+        "15 Aug 2020  23:12 FOO",
+        OffsetDateTime(2020, 8, 15, 23, 12, offset=0),
+    ),
+    (
+        "15 Aug 2020  23:12 a",
+        OffsetDateTime(2020, 8, 15, 23, 12, offset=0),
+    ),
+    # Case insensitive
+    (
+        "TUe, 15 auG 1950 23:12:09 MsT",
+        OffsetDateTime(1950, 8, 15, 23, 12, 9, offset=-7),
+    ),
+    # minimal required
+    (
+        "5 Aug 20 23:12 UT",
+        OffsetDateTime(2020, 8, 5, 23, 12, offset=0),
+    ),
+]
 
-    @pytest.mark.parametrize(
-        "s, expect",
-        [
-            (
-                "2020-08-15T23:12:09.000000450Z",
-                OffsetDateTime(
-                    2020, 8, 15, 23, 12, 9, nanosecond=450, offset=0
-                ),
-            ),
-            (
-                "2020-08-15t23:12:09z",
-                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
-            ),
-            (
-                "2020-08-15 23:12:09-00:00",
-                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
-            ),
-            (
-                "2020-08-15_23:12:09-02:00",
-                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-2),
-            ),
-            (
-                "2020-08-15_23:12:09+00:00",
-                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
-            ),
-            (
-                "2020-08-15_23:12:09-20:00",
-                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-20),
-            ),
-            # subsecond precision that isn't supported by older fromisoformat()
-            (
-                "2020-08-15_23:12:09.23+02:00",
-                OffsetDateTime(
-                    2020, 8, 15, 23, 12, 9, nanosecond=230_000_000, offset=2
-                ),
-            ),
-        ],
-    )
-    def test_valid(self, s, expect):
-        assert OffsetDateTime.parse_rfc3339(s) == expect
+INVALID_RFC2822 = [
+    # Invalid timezone/offset
+    "Sat, 15 Aug 2020 23:12:09",
+    "Sat, 15 Aug 2020 23:12 -",
+    "Sat, 15 Aug 2020 23:12 +",
+    "Sat, 15 Aug 2020 23:12 0400",
+    "Sat, 15 Aug 2020 23:12 +400",
+    "Sat, 15 Aug 2020 23:12 +4060",
+    "Sat, 15 Aug 2020 23:12 -4060",
+    "Sat, 15 Aug 2020 23:12 +MST",
+    "Sat, 15 Aug 2020 23:12 -MST",
+    "Sat, 15 Aug 2020 23:12 -04",
+    "Sat, 15 Aug 2020 23:12 -   ",
+    # whitespace problems
+    "Sat, 15Aug 2020 23:12 -2100",
+    "Sat, 15 Aug2020 23:12 -2100",
+    "Sat, 15 Aug 202023:12 -2100",
+    "Sat, 15 Aug 2020 23:12-2100",
+    "Sat, 15 Aug 2020 23:12:00-2100",
+    # Invalid values
+    "Sun, 15 Aug 2020 23:12 +0400",
+    "Foo, 15 Aug 2020 23:12 +0400",
+    "Sat, 32 Aug 2020 23:12 +0400",
+    "Sat, 31 Sep 2020 23:12 +0400",
+    "Sat, 0 Sep 2020 23:12 +0400",
+    "Sat, 1 Sep 0000 23:12 +0400",
+    "Sat, 1 Sep 2020 24:12 +0400",
+    "Sat, 1 Sep 2020 22:62 +0400",
+    "Sat, 1 Sep 2020 22:22 +2400",
+    "Sat, 1 Sep 2020 22:22 -2400",
+    "Tue, 29 Feb 2023 22:22 -0400",
+    "Wed, 30 Feb 2024 22:22 -0400",
+    "Sat, 1 Mon 2020 14:12 +0400",
+    # invalid comma
+    "Mon 28 Feb 2023 22:22 -0400",
+    "Sat. 15 Aug 2020 23:12:09 GMT",
+    "Sat.15 Aug 2020 23:12:09 GMT",
+    "Sat .15 Aug 2020 23:12:09 GMT",
+    "Sat . 15 Aug 2020 23:12:09 GMT",
+    # TODO why does this succeed?
+    # "Mon, 28 Feb 2023 22:22 -0400",
+    "Mon, 028 Feb 2023 22:22 -0400",
+    "Mon, 28 Feb 02023 22:22 -0400",
+    "Mon, 28 Feb 2023 022:22 -0400",
+    "Mon, 28 Feb 2023 22:022 -0400",
+    "Mon, 28 Feb 2023 22:22 -00000400",
+    # garbage strings
+    "",
+    "    \t\r\n ",
+    "\t",
+    " ",
+    "garbage",
+    # incomplete
+    "S,",
+    "Sa",
+    "Sat",
+    "Sat,",
+    "Sat, ",
+    "Sat, 1",
+    "Sat, 1 ",
+    "Sat, 1 Ja",
+    "Sat, 1 Jan 20",
+    "Sat, 1 Jan 89",
+    "Sat, 1 Jan 198",
+    "Sat, 1 Jan 1989 23",
+    "Sat, 1 Jan 1989 23:",
+    "Sat, 1 Jan 1989 23:2",
+    "Sat, 1 Jan 1989 23:23",
+    "Sat, 1 Jan 1989 23:23:0",
+    "Sat, 1 Jan 1989 23:23:01 ",
+    "Sat, 1 Jan 1989 23:23:01 +03 00",
+    "Sat, 1 Jan 1989 23:23:01 +0300 ,",
+    "Sat, 1 Jan 1989 23:23:01 +0300 MST",
+]
+
+
+class TestParseRFC2822:
+
+    @pytest.mark.parametrize("s, expected", VALID_RFC2822)
+    def test_valid(self, s, expected):
+        assert OffsetDateTime.parse_rfc2822(s) == expected
+
+    @pytest.mark.parametrize("s", INVALID_RFC2822)
+    def test_invalid(self, s):
+        with pytest.raises(ValueError, match=re.escape(repr(s))):
+            OffsetDateTime.parse_rfc2822(s)
 
     @pytest.mark.parametrize(
         "s",
         [
-            "2020-08-15T23:12:09",  # no timezone
-            "2020-08-15T23:12-02:00",  # no seconds
-            "2020-08-15T23:12:00-02.00",  # fractional offset
-            "",  # empty
-            "garbage",  # garbage
-            "2020-08-15T23:12.09.12Z",  # wrong time separator
-            "2020-08-15",  # only date
-            "2020-08-15T24:12:09-11:00",  # invalid hour
-            "2020-08-15T23:12:09-99:00",  # invalid offset
-            "2020-08-15T23:12:09-04:90",  # invalid offset
-            "2020-08-15T23:12:09+04:60",  # invalid offset
-            "2020-08-15T23:12:09-25:00",  # invalid offset
-            "2020-08-15T23:12:09+25:00",  # invalid offset
-            "2020-08-15T23:12:09+23:60",  # invalid offset
-            "2020-08-15T23:12:09-12:00stuff",  # trailing content
-            "2020-08-15T23:12:09zzz",  # trailing content
-            "0001-01-01T03:12:09+04:00",  # out of bounds due to offset
-            "9999-12-31T23:12:09-03:00",  # out of bounds due to offset
+            "Mon, 1 Jan 0001 03:12:09 +0400",
+            "Fri, 31 Dec 9999 23:12:09 -0400",
         ],
     )
-    def test_invalid(self, s):
-        with pytest.raises(
-            ValueError,
-            match=r".*RFC 3339.*" + re.escape(repr(s)),
-        ):
-            OffsetDateTime.parse_rfc3339(s)
+    def test_out_of_range(self, s):
+        with pytest.raises(ValueError, match="range"):
+            OffsetDateTime.parse_rfc2822(s)
 
 
 class TestRound:

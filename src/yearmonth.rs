@@ -5,7 +5,7 @@ use std::fmt::{self, Display, Formatter};
 
 use crate::common::math::*;
 use crate::common::*;
-use crate::date::Date;
+use crate::date::{extract_2_digits, extract_year, Date};
 use crate::docstrings as doc;
 use crate::State;
 
@@ -45,16 +45,16 @@ impl YearMonth {
         ((self.year.get() as i32) << 4) | self.month as i32
     }
 
-    pub(crate) fn parse_all(s: &[u8]) -> Option<Self> {
+    pub(crate) fn parse(s: &[u8]) -> Option<Self> {
         if s.len() == 7 && s[4] == b'-' {
             Some(YearMonth::new(
-                Year::new(
-                    parse_digit(s, 0)? as u16 * 1000
-                        + parse_digit(s, 1)? as u16 * 100
-                        + parse_digit(s, 2)? as u16 * 10
-                        + parse_digit(s, 3)? as u16,
-                )?,
-                Month::new(parse_digit(s, 5)? * 10 + parse_digit(s, 6)?)?,
+                extract_year(s, 0)?,
+                extract_2_digits(s, 5).and_then(Month::new)?,
+            ))
+        } else if s.len() == 6 {
+            Some(YearMonth::new(
+                extract_year(s, 0)?,
+                extract_2_digits(s, 4).and_then(Month::new)?,
             ))
         } else {
             None
@@ -147,7 +147,7 @@ unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
-    YearMonth::parse_all(s.to_utf8()?.ok_or_type_err("argument must be str")?)
+    YearMonth::parse(s.to_utf8()?.ok_or_type_err("argument must be str")?)
         .ok_or_else_value_err(|| format!("Invalid format: {}", s.repr()))?
         .to_obj(cls.cast())
 }

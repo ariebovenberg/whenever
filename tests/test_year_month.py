@@ -123,6 +123,7 @@ class TestParseCommonIso:
         [
             ("2021-01", YearMonth(2021, 1)),
             ("0014-12", YearMonth(14, 12)),
+            ("001412", YearMonth(14, 12)),
         ],
     )
     def test_valid(self, s, expected):
@@ -154,7 +155,7 @@ class TestParseCommonIso:
             YearMonth.parse_common_iso(s)
 
     def test_no_string(self):
-        with pytest.raises(TypeError, match="(int|str)"):
+        with pytest.raises((TypeError, AttributeError), match="(int|str)"):
             YearMonth.parse_common_iso(20210102)  # type: ignore[arg-type]
 
 

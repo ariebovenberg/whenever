@@ -436,12 +436,6 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     );
     state.timezone_type = PyObject_GetAttrString(datetime_module, c"timezone".as_ptr()).cast();
 
-    let email_utils = PyImport_ImportModule(c"email.utils".as_ptr());
-    defer_decref!(email_utils);
-    state.format_rfc2822 = PyObject_GetAttrString(email_utils, c"format_datetime".as_ptr()).cast();
-    state.parse_rfc2822 =
-        PyObject_GetAttrString(email_utils, c"parsedate_to_datetime".as_ptr()).cast();
-
     state.time_ns = unwrap_or_errcode!(import_from(c"time", c"time_ns"));
     state.import_binary = unwrap_or_errcode!(import_from(c"importlib.resources", c"read_binary"));
 
@@ -665,8 +659,6 @@ unsafe extern "C" fn module_traverse(
     traverse(state.zoneinfo_type, visit, arg);
     traverse(state.timezone_type, visit, arg);
     traverse(state.strptime, visit, arg);
-    traverse(state.format_rfc2822, visit, arg);
-    traverse(state.parse_rfc2822, visit, arg);
     traverse(state.time_ns, visit, arg);
     traverse(state.import_binary, visit, arg);
 
@@ -747,8 +739,6 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR(ptr::addr_of_mut!(state.zoneinfo_type));
     Py_CLEAR(ptr::addr_of_mut!(state.timezone_type));
     Py_CLEAR(ptr::addr_of_mut!(state.strptime));
-    Py_CLEAR(ptr::addr_of_mut!(state.format_rfc2822));
-    Py_CLEAR(ptr::addr_of_mut!(state.parse_rfc2822));
     Py_CLEAR(ptr::addr_of_mut!(state.time_ns));
     Py_CLEAR(ptr::addr_of_mut!(state.import_binary));
 
@@ -811,8 +801,6 @@ pub(crate) struct State {
     zoneinfo_type: *mut PyObject,
     timezone_type: *mut PyObject,
     strptime: *mut PyObject,
-    format_rfc2822: *mut PyObject,
-    parse_rfc2822: *mut PyObject,
     time_ns: *mut PyObject,
     import_binary: *mut PyObject,
 

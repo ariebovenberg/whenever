@@ -42,8 +42,6 @@ Concrete classes
 .. autoclass:: whenever.Instant
    :members:
      from_utc,
-     format_rfc3339,
-     parse_rfc3339,
      format_rfc2822,
      parse_rfc2822,
      add,
@@ -73,9 +71,7 @@ Concrete classes
 
 .. autoclass:: whenever.OffsetDateTime
    :members:
-     format_rfc3339,
      format_rfc2822,
-     parse_rfc3339,
      parse_rfc2822,
      strptime,
    :member-order: bysource

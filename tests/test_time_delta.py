@@ -307,74 +307,98 @@ def test_format_common_iso(d, expected):
 
 
 def test_repr():
-    d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
-    assert repr(d) == "TimeDelta(01:02:03.000004)"
+    assert (
+        repr(TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4))
+        == "TimeDelta(PT1h2m3.000004s)"
+    )
+    assert repr(TimeDelta()) == "TimeDelta(PT0s)"
+    assert repr(TimeDelta(minutes=23, seconds=1)) == "TimeDelta(PT23m1s)"
+
+
+VALID_TDELTAS = [
+    (
+        "PT1H2M3.000004S",
+        TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4),
+    ),
+    (
+        "PT58M2.999996S",
+        TimeDelta(hours=1, minutes=-2, seconds=3, microseconds=-4),
+    ),
+    (
+        "PT1H2M3.05S",
+        TimeDelta(hours=1, minutes=2, seconds=3, microseconds=50_000),
+    ),
+    ("PT3H3S", TimeDelta(hours=1, minutes=120, seconds=3)),
+    ("PT0S", TimeDelta()),
+    ("PT0.000000001S", TimeDelta(nanoseconds=1)),
+    ("PT450.000000001S", TimeDelta(seconds=450, nanoseconds=1)),
+    ("PT0.000001S", TimeDelta(microseconds=1)),
+    ("-PT0.000001S", TimeDelta(microseconds=-1)),
+    ("PT1.999997S", TimeDelta(seconds=2, microseconds=-3)),
+    ("PT5H", TimeDelta(hours=5)),
+    ("PT400H", TimeDelta(hours=400)),
+    ("PT400H0M0.0S", TimeDelta(hours=400)),
+    ("-PT4M", TimeDelta(minutes=-4)),
+    ("PT0S", TimeDelta()),
+    ("PT3M", TimeDelta(minutes=3)),
+    ("+PT3M", TimeDelta(minutes=3)),
+    ("PT0M", TimeDelta()),
+    ("PT0.000000000S", TimeDelta()),
+    # extremely long but still valid
+    (
+        "PT0H0M000000000000000300000000000.000000000S",
+        TimeDelta(seconds=300_000_000_000),
+    ),
+    ("PT316192377600S", TimeDelta.MAX),
+    # non-uppercase
+    (
+        "pt58m2.999996s",
+        TimeDelta(hours=1, minutes=-2, seconds=3, microseconds=-4),
+    ),
+    ("PT316192377600s", TimeDelta.MAX),
+    ("PT400h", TimeDelta(hours=400)),
+    # comma instead of dot
+    ("PT1,999997S", TimeDelta(seconds=2, microseconds=-3)),
+]
+
+INVALID_TDELTAS = [
+    "P1D",  # date units
+    "P1YT4M",  # date units
+    "T1H",  # wrong prefix
+    "PT4M3H",  # wrong order
+    "PT1.5H",  # fractional hours
+    "PT1H2M3.000004S9H",  # stuff after nanoseconds
+    "PT1H2M3.000004S ",  # stuff after nanoseconds
+    "PT34.S",  # missing fractions
+    "PTS",  # no digits
+    "PT4HS",  # no digits
+    "PT-3M",  # sign not at the beginning
+    "PT5H.9S",  # wrong fraction
+    "PT5H13.S",  # wrong fraction
+    "PT𝟙H",  # non-ascii
+    # spacing
+    "PT 3M",
+    "PT-3M",
+    "PT3 M",
+    "PT3M4 S"
+    # too precise
+    "PT1.0000000001S",
+    # too small
+    "",
+    "P",
+    "PTM",
+    # way too many digits (there's a limit...)
+    "PT000000000000000000000000000000000000000000000000000000000001S",
+]
 
 
 class TestParseCommonIso:
 
-    @pytest.mark.parametrize(
-        "s, expected",
-        [
-            (
-                "PT1H2M3.000004S",
-                TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4),
-            ),
-            (
-                "PT58M2.999996S",
-                TimeDelta(hours=1, minutes=-2, seconds=3, microseconds=-4),
-            ),
-            (
-                "PT1H2M3.05S",
-                TimeDelta(hours=1, minutes=2, seconds=3, microseconds=50_000),
-            ),
-            ("PT3H3S", TimeDelta(hours=1, minutes=120, seconds=3)),
-            ("PT0S", TimeDelta()),
-            ("PT0.000000001S", TimeDelta(nanoseconds=1)),
-            ("PT450.000000001S", TimeDelta(seconds=450, nanoseconds=1)),
-            ("PT0.000001S", TimeDelta(microseconds=1)),
-            ("-PT0.000001S", TimeDelta(microseconds=-1)),
-            ("PT1.999997S", TimeDelta(seconds=2, microseconds=-3)),
-            ("PT5H", TimeDelta(hours=5)),
-            ("PT400H", TimeDelta(hours=400)),
-            ("-PT4M", TimeDelta(minutes=-4)),
-            ("PT0S", TimeDelta()),
-            ("PT3M", TimeDelta(minutes=3)),
-            ("+PT3M", TimeDelta(minutes=3)),
-            ("PT0M", TimeDelta()),
-            ("PT0.000000000S", TimeDelta()),
-            # extremely long but still valid
-            (
-                "PT0H0M000000000000000300000000000.000000000S",
-                TimeDelta(seconds=300_000_000_000),
-            ),
-            ("PT316192377600S", TimeDelta.MAX),
-        ],
-    )
+    @pytest.mark.parametrize("s, expected", VALID_TDELTAS)
     def test_valid(self, s, expected):
         assert TimeDelta.parse_common_iso(s) == expected
 
-    @pytest.mark.parametrize(
-        "s",
-        [
-            "P1D",  # date units
-            "P1YT4M",  # date units
-            "T1H",  # wrong prefix
-            "PT4M3H",  # wrong order
-            "PT1.5H",  # fractional hours
-            "PT1H2M3.000004S9H",  # stuff after nanoseconds
-            "PT1H2M3.000004S ",  # stuff after nanoseconds
-            "PT34.S",  # missing fractions
-            "PTS",  # no digits
-            "PT4HS",  # no digits
-            "PT-3M",  # sign not at the beginning
-            "PT5H.9S",  # wrong fraction
-            "PT5H13.S",  # wrong fraction
-            "PT𝟙H",  # non-ascii
-            # way too many digits (there's a limit...)
-            "PT000000000000000000000000000000000000000000000000000000000001S",
-        ],
-    )
+    @pytest.mark.parametrize("s", INVALID_TDELTAS)
     def test_invalid(self, s) -> None:
         with pytest.raises(
             ValueError,

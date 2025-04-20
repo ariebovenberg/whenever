@@ -1140,7 +1140,7 @@ class TestParseCommonIso:
             ),
             # fractions
             (
-                "2020-08-15T12:08:30.0232+02:00[Europe/Amsterdam]",
+                "2020-08-15T12:08:30.02320+02:00[Europe/Amsterdam]",
                 ZonedDateTime(
                     2020,
                     8,
@@ -1152,7 +1152,19 @@ class TestParseCommonIso:
                     tz="Europe/Amsterdam",
                 ),
             ),
-            # nano precision
+            (
+                "2020-08-15T12:08:30,02320+02:00[Europe/Amsterdam]",
+                ZonedDateTime(
+                    2020,
+                    8,
+                    15,
+                    12,
+                    8,
+                    30,
+                    nanosecond=23_200_000,
+                    tz="Europe/Amsterdam",
+                ),
+            ),
             (
                 "2020-08-15T12:08:30.000000001+02:00[Europe/Berlin]",
                 ZonedDateTime(
@@ -1218,6 +1230,11 @@ class TestParseCommonIso:
                 "2020-08-15T12:08:30+02[Europe/Amsterdam]",
                 ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
             ),
+            # Z is also valid for non-0 offset timezones!
+            (
+                "2020-02-15t120830z[America/New_York]",
+                ZonedDateTime(2020, 2, 15, 7, 8, 30, tz="America/New_York"),
+            ),
         ],
     )
     def test_valid(self, s, expect):
@@ -1249,9 +1266,8 @@ class TestParseCommonIso:
             # trailing/leading space
             " 2023-10-29T02:15:30+02:00[Europe/Amsterdam]",
             "2023-10-29T02:15:30+02:00[Europe/Amsterdam] ",
-            # invalid offset seconds, even though total offset is correct
+            # invalid offsets
             "1900-01-01T23:34:39.01-00:24:81[Europe/Dublin]",
-            # invalid offset minutes, even though total offset is correct
             "2020-01-01T00:00:00+04:90[Asia/Calcutta]",
             "2023-10-29",  # only date
             "02:15:30",  # only time
@@ -1262,6 +1278,11 @@ class TestParseCommonIso:
             "2023-10-29T02:15:30+02:00:00.00[Europe/Amsterdam]",  # subsecond offset
             "2023-10-29T02:15:30+0𝟙:00[Europe/Amsterdam]",
             "2020-08-15T12:08:30.000000001+29:00[Europe/Berlin]",  # out of range offset
+            # decimal problems
+            "2020-08-15T12:08:30.+02:00[Europe/Paris]",
+            "2020-08-15T12:08:30. +02:00[Europe/Paris]",
+            "2020-08-15T12:08:30,+02:00[Europe/Paris]",
+            "2020-08-15T12:08:30,Z[Europe/Paris]",
         ],
     )
     def test_invalid(self, s):
@@ -1294,6 +1315,8 @@ class TestParseCommonIso:
         [
             "0001-01-01T00:15:30+09:00[Etc/GMT-9]",
             "9999-12-31T20:15:30-09:00[Etc/GMT+9]",
+            "9999-12-31T20:15:30Z[Asia/Tokyo]",
+            "0001-01-01T00:15:30Z[America/New_York]",
         ],
     )
     def test_out_of_range(self, s):
@@ -1310,6 +1333,12 @@ class TestParseCommonIso:
             # some other time in the year
             ZonedDateTime.parse_common_iso(
                 "2020-08-15T12:08:30+01:00:01[Europe/Amsterdam]"
+            )
+
+        with pytest.raises(InvalidOffset):
+            # some other time in the year
+            ZonedDateTime.parse_common_iso(
+                "2020-08-15T12:08:30+00:00[Europe/Amsterdam]"
             )
 
         assert issubclass(InvalidOffset, ValueError)

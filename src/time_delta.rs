@@ -1,13 +1,11 @@
 use core::ffi::{c_int, c_void, CStr};
 use pyo3_ffi::*;
-use std::cmp::min;
 use std::fmt;
 use std::ops::Neg;
 use std::ptr::null_mut as NULL;
 
 use crate::common::math::*;
 use crate::common::*;
-use crate::date::MAX_YEAR;
 use crate::date_delta::{DateDelta, InitError};
 use crate::datetime_delta::{handle_exact_unit, DateTimeDelta};
 use crate::docstrings as doc;
@@ -33,7 +31,7 @@ impl TimeDelta {
         secs: DeltaSeconds::MAX,
         // Note: we don't max the subsecs out, because then we couldn't convert min/max
         // into each other. This would be a no-go as you can't have a reliable negation
-        // operation!
+        // operation! I've tried this and it doesn't work out. Do not attempt.
         subsec: SubSecNanos::MIN,
     };
 
@@ -156,6 +154,22 @@ impl TimeDelta {
             )
         }
     }
+
+    pub(crate) fn fmt_iso(self) -> String {
+        if self.is_zero() {
+            return "PT0S".to_string();
+        }
+        let mut s = String::with_capacity(8);
+        let self_abs = if self.secs.get() < 0 {
+            s.push('-');
+            -self
+        } else {
+            self
+        };
+        s.push_str("PT");
+        fmt_components_abs(self_abs, &mut s);
+        s
+    }
 }
 
 impl PyWrapped for TimeDelta {}
@@ -176,20 +190,14 @@ impl Neg for TimeDelta {
 
 impl std::fmt::Display for TimeDelta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let delta: TimeDelta = if self.secs.get() < 0 {
-            write!(f, "-")?;
-            -*self
-        } else {
-            *self
-        };
-        write!(
-            f,
-            "{:02}:{:02}:{:02}{}",
-            delta.secs.get() / 3600,
-            (delta.secs.get() % 3600) / 60,
-            delta.secs.get() % 60,
-            delta.subsec
-        )
+        // This is a bit wasteful, but we don't use it in performance critical
+        // places.
+        // Safe: we know the string is ASCII
+        let mut isofmt = self.fmt_iso().into_bytes();
+        for i in 3..isofmt.len() {
+            isofmt[i] = isofmt[i].to_ascii_lowercase();
+        }
+        f.write_str(unsafe { std::str::from_utf8_unchecked(&isofmt) })
     }
 }
 
@@ -212,7 +220,7 @@ impl DeltaSeconds {
 }
 
 #[allow(clippy::unnecessary_cast)]
-pub(crate) const MAX_SECS: i64 = (MAX_YEAR as i64) * 366 * 24 * 3600;
+pub(crate) const MAX_SECS: i64 = (Year::MAX.get() as i64) * 366 * 24 * 3600;
 pub(crate) const MAX_HOURS: i64 = MAX_SECS / 3600;
 pub(crate) const MAX_MINUTES: i64 = MAX_SECS / 60;
 pub(crate) const MAX_MILLISECONDS: i64 = MAX_SECS * 1_000;
@@ -436,7 +444,7 @@ unsafe fn __truediv__(slf: *mut PyObject, factor_obj: *mut PyObject) -> PyReturn
     if factor_obj.is_int() {
         let factor = factor_obj
             .to_i128()?
-            // safe to unwrap since we already know it's an int
+            // Safe: we already know it's an int here
             .unwrap();
         if factor == 1 {
             return Ok(newref(slf));
@@ -719,14 +727,21 @@ unsafe fn py_timedelta(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 }
 
 fn parse_prefix(s: &mut &[u8]) -> Option<i128> {
-    let (result, cursor) = match &s[..3] {
-        b"+PT" => (Some(1), 3),
-        b"-PT" => (Some(-1), 3),
-        [b'P', b'T', _] => (Some(1), 2),
-        _ => return None,
+    let sign = match s[0] {
+        b'+' => {
+            *s = &s[1..];
+            1
+        }
+        b'-' => {
+            *s = &s[1..];
+            -1
+        }
+        _ => 1,
     };
-    *s = &s[cursor..];
-    result
+    s[..2].eq_ignore_ascii_case(b"PT").then(|| {
+        *s = &s[2..];
+        sign
+    })
 }
 
 unsafe fn in_hrs_mins_secs_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -769,18 +784,7 @@ pub(crate) fn fmt_components_abs(td: TimeDelta, s: &mut String) {
 }
 
 unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let mut delta = TimeDelta::extract(slf);
-    if delta.secs.get() == 0 && delta.subsec.get() == 0 {
-        return "PT0S".to_py();
-    }
-    let mut s: String = String::with_capacity(8);
-    if delta.secs.get() < 0 {
-        s.push('-');
-        delta = -delta;
-    }
-    s.push_str("PT");
-    fmt_components_abs(delta, &mut s);
-    s.to_py()
+    TimeDelta::extract(slf).fmt_iso().to_py()
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -792,14 +796,14 @@ enum Unit {
 
 // 001234 -> 1_234_000
 fn parse_nano_fractions(s: &[u8]) -> Option<i128> {
-    let mut tally = parse_digit(s, 0)? as i128 * 100_000_000;
-    for i in 1..min(s.len(), 9) {
+    let mut tally = extract_digit(s, 0)? as i128 * 100_000_000;
+    for i in 1..s.len().min(9) {
         match s[i] {
             c if c.is_ascii_digit() => {
                 tally += i128::from(c - b'0') * i128::from(10_u32.pow(8 - i as u32))
             }
             // S is only valid at the very end
-            b'S' if i + 1 == s.len() => {
+            b'S' | b's' if i + 1 == s.len() => {
                 return Some(tally);
             }
             _ => return None,
@@ -808,7 +812,7 @@ fn parse_nano_fractions(s: &[u8]) -> Option<i128> {
     // at this point we've parsed 9 fractional digits successfully.
     // Only encountering `S` is valid. Nothing more, nothing less.
     match s[9..] {
-        [b'S'] => Some(tally),
+        [b'S' | b's'] => Some(tally),
         _ => None,
     }
 }
@@ -820,22 +824,22 @@ fn parse_component(s: &mut &[u8]) -> Option<(i128, Unit)> {
     }
     let mut tally: i128 = 0;
     // We limit parsing to 35 characters to prevent overflow of i128
-    for i in 0..min(s.len(), 35) {
+    for i in 0..s.len().min(35) {
         match s[i] {
             c if c.is_ascii_digit() => tally = tally * 10 + i128::from(c - b'0'),
-            b'H' => {
+            b'H' | b'h' => {
                 *s = &s[i + 1..];
                 return Some((tally, Unit::Hours));
             }
-            b'M' => {
+            b'M' | b'm' => {
                 *s = &s[i + 1..];
                 return Some((tally, Unit::Minutes));
             }
-            b'S' => {
+            b'S' | b's' => {
                 *s = &s[i + 1..];
                 return Some((tally * 1_000_000_000, Unit::Nanoseconds));
             }
-            b'.' if i > 0 => {
+            b'.' | b',' if i > 0 => {
                 let result = parse_nano_fractions(&s[i + 1..])
                     .map(|ns| (tally * 1_000_000_000 + ns, Unit::Nanoseconds));
                 *s = &[];
@@ -865,9 +869,10 @@ pub(crate) unsafe fn parse_all_components(s: &mut &[u8]) -> Option<(i128, bool)>
                 nanos += value;
                 if s.is_empty() {
                     break;
+                } else {
+                    // i.e. there's still something left after the nanoseconds
+                    return None;
                 }
-                // i.e. there's still something left after the nanoseconds
-                return None;
             }
             // i.e. the order of the components is wrong
             _ => return None,
@@ -880,18 +885,18 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
     let s = &mut s_obj
         .to_utf8()?
         .ok_or_type_err("argument must be a string")?;
+    let err = || format!("Invalid format: {}", s_obj.repr());
 
     let sign = (s.len() >= 4)
         .then(|| parse_prefix(s))
         .flatten()
-        .ok_or_else_value_err(|| format!("Invalid format: {}", s_obj.repr()))?;
+        .ok_or_else_value_err(err)?;
 
-    let (nanos, is_empty) = parse_all_components(s)
-        .ok_or_else_value_err(|| format!("Invalid format: {}", s_obj.repr()))?;
+    let (nanos, is_empty) = parse_all_components(s).ok_or_else_value_err(err)?;
 
     // i.e. there must be at least one component (`PT` alone is invalid)
     if is_empty {
-        raise_value_err(format!("Invalid format: {}", s_obj.repr()))?;
+        raise_value_err(err())?;
     }
     TimeDelta::from_nanos(nanos * sign)
         .ok_or_value_err("Time delta out of range")?

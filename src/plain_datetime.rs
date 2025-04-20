@@ -119,6 +119,7 @@ impl DateTime {
     }
 
     pub fn parse(s: &[u8]) -> Option<Self> {
+        println!("[parse] s: {:?}", s);
         Scan::new(s).parse_all(Self::read_iso)
     }
 }
@@ -493,6 +494,7 @@ unsafe fn _shift_method(
     }
     DateTime::extract(slf)
         .shift_date(months, days)
+        // TODO: this is where overflow can happen with large nanos
         .and_then(|dt| dt.shift_nanos(nanos))
         .ok_or_else_value_err(|| format!("Result of {}() out of range", fname))?
         .to_obj(cls)

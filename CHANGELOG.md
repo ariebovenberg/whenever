@@ -2,24 +2,16 @@
 
 ## 0.8.0 (2025-??-??)
 
-**New**
+**Improved**
 
 - Timezone operations in the Rust extension are now a lot faster (5-8x),
   due to a new implementation replacing the use of the standard library
-  `zoneinfo` module.
+  `zoneinfo` module. (#202)
 - The `parse_common_iso()` methods support a wider range of ISO 8601
-  formats.
-- Added an "examples" page to the documentation with practical
-  examples
-
-**Fixed**
-
-- Improved robustness of date calculations at extreme boundaries
-- Fixed a bug in the pure-Python version of `ZonedDateTime.exact_eq()`
-  that could cause false positives in some cases
-- Fixed incorrect type stubs for `day_length()` and `start_of_day()`
-  methods
-- Corrected the description of parameters accepted by `now()` (#213)
+  formats. See the [updated documentation](https://whenever.readthedocs.io/en/latest/overview.html#iso-8601) for details.
+  (#204)
+- Added an "examples" page to the documentation with practical snippets. (#198)
+- RFC2822 parsing is now more robust and faster. (#200)
 
 **Breaking changes**
 
@@ -30,13 +22,20 @@
   **Rationale**: In observing adoption of the library, the term
   "local" causes confusion for a number of users, since the term
   "local" is so overloaded in the Python world. `PlainDateTime` is
-  used in Javascript\'s Temporal API, and seems to resonate better with
-  users. See the FAQ for a detailed discussion on the name.
+  used in Javascript's Temporal API, and seems to resonate better with
+  users. See the [FAQ](https://whenever.readthedocs.io/en/latest/faq.html#why-the-name-plaindatetime)
+  for a detailed discussion on the name.
 
 - Rename `instant()` method to `to_instant()`
 
   **Rationale**: The new name is more consistent with the rest of the
   API.
+
+- Removed the `[format|parse]_rfc3339` method.
+
+  **Rationale**: The improved ISO 8601 parsing method is now RFC 3339
+  compatible, making this method unnecessary.
+  Strict RFC 3339 parsing can still be done with ``strptime``, if desired
 
 - Passing invalid timezone names now raise a
   `whenever.TimeZoneNotFoundError` (subclass of `ValueError`) instead of
@@ -65,6 +64,14 @@
   **Rationale**: This ensures whenever is independent of `zoneinfo` in
   both Rust and pure Python implementations.
 
+**Fixed**
+
+- Improved robustness of date calculations at extreme boundaries.
+- Fixed a bug in the pure-Python version of `ZonedDateTime.exact_eq()`
+  that could cause false positives in some cases.
+- Fixed incorrect type stubs for `day_length()` and `start_of_day()`
+  methods.
+- Corrected the description of parameters accepted by `now()`. (#213)
 
 ## 0.7.3 (2025-03-19)
 
