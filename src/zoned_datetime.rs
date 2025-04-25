@@ -625,11 +625,11 @@ unsafe fn py_datetime(slf: &mut PyObject, _: &mut PyObject) -> PyReturn {
                 DateTimeType,
                 ..
             },
-        zoneinfo_type,
+        ref zoneinfo_type,
         ..
     } = State::for_obj(slf);
     let tz_key: &str = &zdt.tz.key;
-    let zoneinfo = call1(zoneinfo_type, steal!(tz_key.to_py()?))?;
+    let zoneinfo = call1(zoneinfo_type.get()?, steal!(tz_key.to_py()?))?;
     defer_decref!(zoneinfo);
     methcall1(
         zoneinfo,
@@ -929,7 +929,7 @@ unsafe fn now(cls: *mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
 
 unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     let &mut State {
-        zoneinfo_type,
+        ref zoneinfo_type,
         exc_tz_notfound,
         ref mut tz_cache,
         ..
@@ -942,7 +942,7 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     // NOTE: it has to be exactly a `ZoneInfo`, since
     // we *know* that this corresponds to a TZ database entry.
     // Other types could be making up their own rules.
-    if Py_TYPE(tzinfo) != zoneinfo_type.cast() {
+    if Py_TYPE(tzinfo).cast() != (zoneinfo_type.get()? as *mut PyObject) {
         raise_value_err(format!(
             "tzinfo must be of type ZoneInfo (exactly), got {}",
             (Py_TYPE(tzinfo) as *mut PyObject).repr()

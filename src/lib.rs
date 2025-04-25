@@ -4,7 +4,7 @@ use core::{
     ptr::{self, null_mut as NULL},
 };
 use pyo3_ffi::*;
-use std::{path::PathBuf, ptr::NonNull, time::SystemTime};
+use std::{path::PathBuf, time::SystemTime};
 
 use crate::common::*;
 
@@ -243,12 +243,6 @@ unsafe fn new_exc(
     e
 }
 
-unsafe fn import_from(module: &CStr, name: &CStr) -> PyReturn {
-    let module = PyImport_ImportModule(module.as_ptr()).as_result()?;
-    defer_decref!(module);
-    PyObject_GetAttrString(module, name.as_ptr()).as_result()
-}
-
 // Return the new type and the unpickler function
 unsafe fn new_type<T: PyWrapped>(
     module: *mut PyObject,
@@ -417,8 +411,6 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
         return -1;
     }
 
-    state.zoneinfo_type = unwrap_or_errcode!(import_from(c"zoneinfo", c"ZoneInfo"));
-
     PyDateTime_IMPORT();
     state.py_api = match PyDateTimeAPI().as_ref() {
         Some(api) => api,
@@ -437,7 +429,6 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     state.timezone_type = PyObject_GetAttrString(datetime_module, c"timezone".as_ptr()).cast();
 
     state.time_ns = unwrap_or_errcode!(import_from(c"time", c"time_ns"));
-    state.import_binary = unwrap_or_errcode!(import_from(c"importlib.resources", c"read_binary"));
 
     let weekday_enum = unwrap_or_errcode!(create_enum(
         c"Weekday",
@@ -540,12 +531,10 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
 
     // We write these fields manually, to avoid triggering a "drop" of the previous value
     // which isn't there, since Python just allocated this memory for us.
+    std::ptr::write(&mut state.tz_cache as *mut _, TZifCache::new());
     std::ptr::write(
-        &mut state.tz_cache as *mut _,
-        TZifCache::new(
-            // The cache lives at least as long as the module, so a borrowed ref is safe
-            NonNull::new_unchecked(state.import_binary),
-        ),
+        &mut state.zoneinfo_type as *mut _,
+        LazyImport::new(c"zoneinfo", c"ZoneInfo"),
     );
     0
 }
@@ -656,11 +645,11 @@ unsafe extern "C" fn module_traverse(
     traverse(state.exc_tz_notfound, visit, arg);
 
     // Imported modules
-    traverse(state.zoneinfo_type, visit, arg);
     traverse(state.timezone_type, visit, arg);
     traverse(state.strptime, visit, arg);
     traverse(state.time_ns, visit, arg);
-    traverse(state.import_binary, visit, arg);
+    state.zoneinfo_type.traverse(visit, arg);
+    state.tz_cache.traverse(visit, arg);
 
     0
 }
@@ -736,11 +725,9 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR(ptr::addr_of_mut!(state.exc_tz_notfound));
 
     // imported stuff
-    Py_CLEAR(ptr::addr_of_mut!(state.zoneinfo_type));
     Py_CLEAR(ptr::addr_of_mut!(state.timezone_type));
     Py_CLEAR(ptr::addr_of_mut!(state.strptime));
     Py_CLEAR(ptr::addr_of_mut!(state.time_ns));
-    Py_CLEAR(ptr::addr_of_mut!(state.import_binary));
 
     0
 }
@@ -754,6 +741,7 @@ unsafe extern "C" fn module_free(module: *mut c_void) {
     // We clean up heap allocated stuff here because module_clear is
     // not *guaranteed* to be called
     std::ptr::drop_in_place(&mut state.tz_cache);
+    std::ptr::drop_in_place(&mut state.zoneinfo_type);
 }
 
 pub(crate) struct State {
@@ -798,11 +786,10 @@ pub(crate) struct State {
     py_api: &'static PyDateTime_CAPI,
 
     // imported stuff
-    zoneinfo_type: *mut PyObject,
     timezone_type: *mut PyObject,
     strptime: *mut PyObject,
     time_ns: *mut PyObject,
-    import_binary: *mut PyObject,
+    zoneinfo_type: LazyImport,
 
     // strings
     str_years: *mut PyObject,

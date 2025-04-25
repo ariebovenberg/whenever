@@ -65,7 +65,7 @@ import sysconfig as _sysconfig
 from contextlib import contextmanager as _contextmanager
 from typing import Iterable as _Iterable, Iterator as _Iterator
 
-from ._pywhenever import __version__
+__version__ = "0.8.0"
 
 
 class _TimePatch:

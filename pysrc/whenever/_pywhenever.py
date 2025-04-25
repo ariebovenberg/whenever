@@ -34,8 +34,6 @@
 #   This is to keep the import time down.
 from __future__ import annotations
 
-__version__ = "0.8.0"
-
 import enum
 import os.path
 import sys

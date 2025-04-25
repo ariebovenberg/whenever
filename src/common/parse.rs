@@ -432,9 +432,7 @@ mod tests {
     fn test_skip_ascii_whitespace() {
         let mut scan = Scan::new(b"  \t\n\r 123 a4   ");
         assert_eq!(scan.peek(), Some(b' '));
-        println!("{:?}", scan);
         assert!(scan.ascii_whitespace());
-        println!("{:?}", scan);
         assert!(!scan.ascii_whitespace());
         assert_eq!(scan.peek(), Some(b'1'));
         scan.skip(2);
@@ -445,7 +443,6 @@ mod tests {
         assert!(scan.ascii_whitespace());
         assert_eq!(scan.peek(), Some(b'a'));
         scan.skip(2);
-        println!("{:?}", scan);
         assert!(scan.ascii_whitespace());
         // Repeated calls OK
         assert!(!scan.ascii_whitespace());

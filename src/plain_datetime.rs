@@ -119,7 +119,6 @@ impl DateTime {
     }
 
     pub fn parse(s: &[u8]) -> Option<Self> {
-        println!("[parse] s: {:?}", s);
         Scan::new(s).parse_all(Self::read_iso)
     }
 }
