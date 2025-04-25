@@ -12,6 +12,8 @@
   (#204)
 - Added an "examples" page to the documentation with practical snippets. (#198)
 - RFC2822 parsing is now more robust and faster. (#200)
+- Import speed is improved significantly for both the Rust and pure
+  Python versions (#228)
 
 **Breaking changes**
 

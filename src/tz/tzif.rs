@@ -7,14 +7,16 @@ use std::{cmp::Ordering, fmt};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct TZif {
-    pub(crate) key: String, // The IANA tz ID (e.g. "Europe/Amsterdam")
+    // The IANA tz ID (e.g. "Europe/Amsterdam"). Not actually parsed from the file,
+    // but essential because in our case we always associate a tzif file with a tz ID.
+    pub(crate) key: String,
     // The following two fields are used to map UTC time to local time and vice versa.
     // For UTC -> local, the transition is unambiguous and simple.
-    // Read this as "FROM time X onwards (expressed in epoch seconds) the offset is Y".
+    // Read Vec(X, Y) as "FROM time X onwards (expressed in epoch seconds) the offset is Y".
     offsets_by_utc: Vec<(EpochSecs, Offset)>,
     // For local -> UTC, the transition is may be ambiguous and therefore requires extra information.
-    // Read Vec<(X, Y)> as "UNTIL time X (expressed in local epoch seconds) the offset is Y.1. At this point
-    // it shifts by Y.2.
+    // Read Vec<(X, (Y, Z))> as "UNTIL time X (expressed in local epoch seconds) the offset is Y. At this point
+    // it shifts by Z.
     offsets_by_local: Vec<(EpochSecs, (Offset, OffsetDelta))>,
     // Invariant: if posix TZ isn't given, there must be at least one entry in each of the above
     // vectors.
@@ -22,7 +24,7 @@ pub struct TZif {
 }
 
 impl TZif {
-    /// Get the UTC offset at the given moment in time
+    /// Get the UTC offset at the given exact time
     pub(crate) fn offset_for_instant(&self, t: EpochSecs) -> Offset {
         // OPTIMIZE: this could be made a bit smarter. E.g. starting
         // with a reasonable guess.
@@ -30,7 +32,8 @@ impl TZif {
             .map(|i| self.offsets_by_utc[i.saturating_sub(1)].1)
             // If the time is after the last transition, use the POSIX TZ string
             .or_else(|| self.end.map(|tz| tz.offset_for_instant(t)))
-            // If there's no POSIX TZ string, use the last offset. Better than panicking.
+            // If there's no POSIX TZ string, use the last offset.
+            // There's not much else we can do.
             .unwrap_or_else(|| {
                 self.offsets_by_utc
                     .last()
@@ -41,10 +44,12 @@ impl TZif {
             })
     }
 
+    /// Get the UTC offset at the given local time (expressed in epoch seconds).
     pub fn ambiguity_for_local(&self, t: EpochSecs) -> Ambiguity {
         bisect(&self.offsets_by_local, t)
             .map(|i| {
                 let (next_transition, (offset, change)) = self.offsets_by_local[i];
+                // If we've landed in an ambiguous region, determine its size
                 let ambiguity = if t < next_transition.saturating_add_i32(-change.abs().get()) {
                     OffsetDelta::ZERO
                 } else {
@@ -60,7 +65,8 @@ impl TZif {
             })
             // If the time is after the last transition, use the POSIX TZ string
             .or_else(|| self.end.map(|tz| tz.ambiguity_for_local(t)))
-            // If there's no POSIX TZ string, use the last offset. Better than panicking.
+            // If there's no POSIX TZ string, use the last offset.
+            // There's not much else we can do.
             .unwrap_or_else(|| {
                 let (offset, _) = self
                     .offsets_by_local

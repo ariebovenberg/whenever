@@ -132,8 +132,8 @@ impl fmt::Display for DateDelta {
         // A bit wasteful, but this isn't performance critical
         let mut isofmt = self.fmt_iso().into_bytes();
         // Safe: we know the string is valid ASCII
-        for i in 2..isofmt.len() {
-            isofmt[i] = isofmt[i].to_ascii_lowercase();
+        for c in isofmt.iter_mut().skip(2) {
+            *c = c.to_ascii_lowercase();
         }
         f.write_str(&unsafe { String::from_utf8_unchecked(isofmt) })
     }

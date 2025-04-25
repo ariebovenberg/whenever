@@ -206,12 +206,12 @@ impl fmt::Display for DateTimeDelta {
         // A bit inefficient, but this isn't performance-critical
         let mut isofmt = self.fmt_iso().into_bytes();
         // Safe: we know the string is valid ASCII
-        for i in 2..isofmt.len() {
-            if isofmt[i] != b'T' {
-                isofmt[i] = isofmt[i].to_ascii_lowercase();
+        for c in isofmt.iter_mut().skip(2) {
+            if *c != b'T' {
+                *c = c.to_ascii_lowercase();
             }
         }
-        f.write_str(&unsafe { std::str::from_utf8_unchecked(&isofmt) })
+        f.write_str(unsafe { std::str::from_utf8_unchecked(&isofmt) })
     }
 }
 

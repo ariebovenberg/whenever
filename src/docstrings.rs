@@ -562,21 +562,15 @@ Instant(2020-08-15 23:12:00Z)
 
 >>> # also valid:
 >>> Instant.parse_rfc2822(\"Sat, 15 Aug 2020 23:12:00 +0000\")
+>>> Instant.parse_rfc2822(\"Sat, 15 Aug 2020 23:12:00 +0800\")
 >>> Instant.parse_rfc2822(\"Sat, 15 Aug 2020 23:12:00 -0000\")
 >>> Instant.parse_rfc2822(\"Sat, 15 Aug 2020 23:12:00 UT\")
->>> Instant.parse_rfc2822(\"Sat, 15 Aug 2020 23:12:00 UTC\")
+>>> Instant.parse_rfc2822(\"Sat, 15 Aug 2020 23:12:00 MST\")
 
->>> # Error: includes offset. Use OffsetDateTime.parse_rfc2822() instead
->>> Instant.parse_rfc2822(\"Sat, 15 Aug 2020 23:12:00 +0200\")
-
-Important
----------
-- This function parses, but **does not validate** the input (yet).
-  This is due to the limitations of the underlying
-  function ``email.utils.parsedate_to_datetime()``.
-- Nonzero offsets will not be implicitly converted to UTC.
-  Use ``OffsetDateTime.parse_rfc2822()`` if you'd like to
-  parse an RFC 2822 string with a nonzero offset.
+Note
+----
+- Although technically part of the RFC 2822 standard,
+  comments within folding whitespace are not supported.
 ";
 pub(crate) const INSTANT_ROUND: &CStr = c"\
 round($self, unit='second', increment=1, mode='half_even')
@@ -797,14 +791,12 @@ OffsetDateTime(2020-08-15 23:12:00+02:00)
 >>> OffsetDateTime.parse_rfc2822(\"Sat, 15 Aug 2020 23:12:00 GMT\")
 >>> OffsetDateTime.parse_rfc2822(\"Sat, 15 Aug 2020 23:12:00 MST\")
 
-Warning
--------
-- This function parses, but **does not validate** the input (yet).
-  This is due to the limitations of the underlying
-  function ``email.utils.parsedate_to_datetime()``.
-- The offset ``-0000`` has special meaning in RFC 2822,
-  indicating a UTC time with unknown local offset.
-  Thus, it cannot be parsed to an :class:`OffsetDateTime`.
+Note
+----
+- Strictly speaking, an offset of ``-0000`` means that the offset
+  is \"unknown\". Here, we treat it the same as +0000.
+- Although technically part of the RFC 2822 standard,
+  comments within folding whitespace are not supported.
 ";
 pub(crate) const OFFSETDATETIME_REPLACE: &CStr = c"\
 replace($self, /, *, year=None, month=None, weeks=0, day=None, hour=None, minute=None, second=None, nanosecond=None, offset=None, ignore_dst=False)
