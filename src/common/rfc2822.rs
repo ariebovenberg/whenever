@@ -26,7 +26,6 @@ pub(crate) fn write(odt: OffsetDateTime) -> [u8; 31] {
     } = odt;
     let Date { year, month, day } = date;
 
-    // We start with a blank buffer (all spaces) and write into it
     let mut buf = TEMPLATE;
     buf[..3].copy_from_slice(WEEKDAY_NAMES[date.day_of_week() as usize - 1]);
     write_2_digits(day, &mut buf[5..7]);
@@ -55,7 +54,6 @@ pub(crate) fn write_gmt(i: Instant) -> [u8; 29] {
     } = i.to_datetime();
     let Date { year, month, day } = date;
 
-    // We start with a blank buffer (all spaces) and write into it
     let mut buf = TEMPLATE_GMT;
     buf[..3].copy_from_slice(WEEKDAY_NAMES[date.day_of_week() as usize - 1]);
     write_2_digits(day, &mut buf[5..7]);
@@ -87,46 +85,46 @@ fn write_4_digits(n: u16, buf: &mut [u8]) {
 pub(crate) fn parse(s: &[u8]) -> Option<(Date, Time, Offset)> {
     let mut scan = Scan::new(s);
     scan.ascii_whitespace();
-
-    let weekday_opt = match scan.peek()? {
+    let expected_weekday = match scan.peek()? {
         c if c.is_ascii_alphabetic() => Some(parse_weekday(&mut scan)?),
         _ => None,
     };
+    let date = parse_date(&mut scan, expected_weekday)?;
+    let time = parse_time(&mut scan)?;
+    let offset = parse_offset(&mut scan)?;
+    scan.ascii_whitespace();
+    scan.is_done().then_some((date, time, offset))
+}
 
-    // Parse the date
-    let day = scan.up_to_2_digits()?;
-    scan.ascii_whitespace().then_some(())?;
-    let month = scan.take(3).and_then(|month_str| {
-        Some(if month_str.eq_ignore_ascii_case(b"Jan") {
-            Month::January
-        } else if month_str.eq_ignore_ascii_case(b"Feb") {
-            Month::February
-        } else if month_str.eq_ignore_ascii_case(b"Mar") {
-            Month::March
-        } else if month_str.eq_ignore_ascii_case(b"Apr") {
-            Month::April
-        } else if month_str.eq_ignore_ascii_case(b"May") {
-            Month::May
-        } else if month_str.eq_ignore_ascii_case(b"Jun") {
-            Month::June
-        } else if month_str.eq_ignore_ascii_case(b"Jul") {
-            Month::July
-        } else if month_str.eq_ignore_ascii_case(b"Aug") {
-            Month::August
-        } else if month_str.eq_ignore_ascii_case(b"Sep") {
-            Month::September
-        } else if month_str.eq_ignore_ascii_case(b"Oct") {
-            Month::October
-        } else if month_str.eq_ignore_ascii_case(b"Nov") {
-            Month::November
-        } else if month_str.eq_ignore_ascii_case(b"Dec") {
-            Month::December
-        } else {
-            None?
+fn parse_weekday(s: &mut Scan) -> Option<Weekday> {
+    s.take(3)
+        .and_then(|day_str| {
+            WEEKDAY_NAMES.iter().enumerate().find_map(|(i, &b)| {
+                day_str
+                    .eq_ignore_ascii_case(b)
+                    .then(|| Weekday::from_iso_unchecked(i as u8 + 1))
+            })
+        })
+        .and_then(|day| {
+            s.ascii_whitespace();
+            s.expect(b',')?;
+            s.ascii_whitespace();
+            Some(day)
+        })
+}
+
+fn parse_date(s: &mut Scan, expect_weekday: Option<Weekday>) -> Option<Date> {
+    let day = s.up_to_2_digits()?;
+    s.ascii_whitespace().then_some(())?;
+    let month = s.take(3).and_then(|month_str| {
+        MONTH_NAMES.iter().enumerate().find_map(|(i, &b)| {
+            month_str
+                .eq_ignore_ascii_case(b)
+                .then(|| Month::new_unchecked(i as u8 + 1))
         })
     })?;
-    scan.ascii_whitespace().then_some(())?;
-    let year = scan
+    s.ascii_whitespace().then_some(())?;
+    let year = s
         .take_until(Scan::is_whitespace)
         .and_then(|y_str| match y_str.len() {
             4 => extract_year(y_str, 0),
@@ -144,108 +142,74 @@ pub(crate) fn parse(s: &[u8]) -> Option<(Date, Time, Offset)> {
             )),
             _ => None,
         })?;
-    scan.ascii_whitespace();
+    s.ascii_whitespace();
     let date = Date::new(year, month, day)?;
-    if let Some(weekday) = weekday_opt {
+    if let Some(weekday) = expect_weekday {
         if date.day_of_week() != weekday {
             return None;
         }
     }
+    Some(date)
+}
 
-    // Parse the time
-    let hour = scan.digits00_23()?;
-    scan.ascii_whitespace();
-    scan.expect(b':')?;
-    scan.ascii_whitespace();
-    let minute = scan.digits00_59()?;
-    let whitespace_after_mins = scan.ascii_whitespace();
-    let second = match scan.peek()? {
+fn parse_time(s: &mut Scan) -> Option<Time> {
+    let hour = s.digits00_23()?;
+    s.ascii_whitespace();
+    s.expect(b':')?;
+    s.ascii_whitespace();
+    let minute = s.digits00_59()?;
+    let whitespace_after_mins = s.ascii_whitespace();
+    let second = match s.peek()? {
         b':' => {
-            scan.skip(1).ascii_whitespace();
-            let val = scan.digits00_59()?;
+            s.skip(1).ascii_whitespace();
+            let val = s.digits00_59()?;
             // Whitespace after seconds is required!
-            scan.ascii_whitespace().then_some(())?;
+            s.ascii_whitespace().then_some(())?;
             val
         }
         _ if whitespace_after_mins => 0,
         _ => None?,
     };
 
-    let time = Time {
+    Some(Time {
         hour,
         minute,
         second,
         subsec: SubSecNanos::MIN,
-    };
+    })
+}
 
-    // Parse the offset
-    let offset = Offset::new_unchecked(match scan.peek()? {
-        b'+' => scan.skip(1).digits00_23()? as i32 * 3600 + scan.digits00_59()? as i32 * 60,
-        b'-' => -(scan.skip(1).digits00_23()? as i32 * 3600 + scan.digits00_59()? as i32 * 60),
+const TIMEZONES: [(&[u8], i32); 10] = [
+    (b"GMT", 0),
+    (b"UT", 0),
+    (b"EST", -5 * 3600),
+    (b"EDT", -4 * 3600),
+    (b"CST", -6 * 3600),
+    (b"CDT", -5 * 3600),
+    (b"MST", -7 * 3600),
+    (b"MDT", -6 * 3600),
+    (b"PST", -8 * 3600),
+    (b"PDT", -7 * 3600),
+];
+
+fn parse_offset(s: &mut Scan) -> Option<Offset> {
+    Some(Offset::new_unchecked(match s.peek()? {
+        b'+' => s.skip(1).digits00_23()? as i32 * 3600 + s.digits00_59()? as i32 * 60,
+        b'-' => -(s.skip(1).digits00_23()? as i32 * 3600 + s.digits00_59()? as i32 * 60),
         _ => {
-            let tz = match scan.take_until(|b| !b.is_ascii_alphabetic()) {
+            let tz = match s.take_until(|b| !b.is_ascii_alphabetic()) {
                 Some(tz) => tz,
-                None => scan.drain(),
+                None => s.drain(),
             };
             if tz.is_empty() {
                 return None;
             }
-            (if tz.eq_ignore_ascii_case(b"GMT") {
-                0
-            } else if tz.eq_ignore_ascii_case(b"UT") {
-                0
-            } else if tz.eq_ignore_ascii_case(b"EST") {
-                -5
-            } else if tz.eq_ignore_ascii_case(b"EDT") {
-                -4
-            } else if tz.eq_ignore_ascii_case(b"CST") {
-                -6
-            } else if tz.eq_ignore_ascii_case(b"CDT") {
-                -5
-            } else if tz.eq_ignore_ascii_case(b"MST") {
-                -7
-            } else if tz.eq_ignore_ascii_case(b"MDT") {
-                -6
-            } else if tz.eq_ignore_ascii_case(b"PST") {
-                -8
-            } else if tz.eq_ignore_ascii_case(b"PDT") {
-                -7
-            } else {
-                0
-            }) * 3_600
+            TIMEZONES
+                .iter()
+                .find_map(|&(tz_name, offset)| tz.eq_ignore_ascii_case(tz_name).then_some(offset))
+                // According to specification, if the timezone is not recognized, it should be
+                // treated as GMT.
+                .unwrap_or(0)
         }
-    });
-
-    scan.ascii_whitespace();
-    scan.is_done().then_some((date, time, offset))
-}
-
-// TODO: abstract out other functions
-fn parse_weekday(s: &mut Scan) -> Option<Weekday> {
-    s.take(3)
-        .and_then(|day_str| {
-            Some(if day_str.eq_ignore_ascii_case(b"Mon") {
-                Weekday::Monday
-            } else if day_str.eq_ignore_ascii_case(b"Tue") {
-                Weekday::Tuesday
-            } else if day_str.eq_ignore_ascii_case(b"Wed") {
-                Weekday::Wednesday
-            } else if day_str.eq_ignore_ascii_case(b"Thu") {
-                Weekday::Thursday
-            } else if day_str.eq_ignore_ascii_case(b"Fri") {
-                Weekday::Friday
-            } else if day_str.eq_ignore_ascii_case(b"Sat") {
-                Weekday::Saturday
-            } else if day_str.eq_ignore_ascii_case(b"Sun") {
-                Weekday::Sunday
-            } else {
-                None?
-            })
-        })
-        .and_then(|day| {
-            s.ascii_whitespace();
-            s.expect(b',')?;
-            s.ascii_whitespace();
-            Some(day)
-        })
+    }))
 }

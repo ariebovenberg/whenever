@@ -60,7 +60,7 @@ jobs:
           pytest tests/
 
   test-os:
-    name: Test on ${{ matrix.os }} ${{ matrix.no_build_ext && 'with Rust' || 'pure Python' }}
+    name: Test on ${{ matrix.os }} ${{ matrix.no_build_ext && 'pure Python' || 'with Rust' }}
     runs-on: ${{ matrix.os }}-latest
     strategy:
       fail-fast: false

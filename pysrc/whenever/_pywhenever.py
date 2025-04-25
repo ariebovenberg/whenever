@@ -3469,9 +3469,7 @@ class Instant(_ExactTime):
         - Although technically part of the RFC 2822 standard,
           comments within folding whitespace are not supported.
         """
-        return cls._from_py_unchecked(
-            _parse_rfc2822_offset(s).astimezone(_UTC), 0
-        )
+        return cls._from_py_unchecked(_parse_rfc2822(s).astimezone(_UTC), 0)
 
     def add(
         self,
@@ -3990,7 +3988,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         - Although technically part of the RFC 2822 standard,
           comments within folding whitespace are not supported.
         """
-        return cls._from_py_unchecked(_parse_rfc2822_offset(s), 0)
+        return cls._from_py_unchecked(_parse_rfc2822(s), 0)
 
     @no_type_check
     def add(self, *args, **kwargs) -> OffsetDateTime:
@@ -6135,6 +6133,8 @@ else:
         raise ValueError()
 
     def _date_from_iso(s: str) -> _date:
+        if not s.isascii():
+            _parse_err(s)
         try:
             if len(s) == 8:
                 return __date_from_iso_basic(s)
@@ -6187,7 +6187,7 @@ _RFC2822_ZONES = {
 }
 
 
-def _parse_rfc2822_offset(s: str) -> _datetime:
+def _parse_rfc2822(s: str) -> _datetime:
     # Technically, only tab, space and CRLF are allowed in RFC2822,
     # but we allow any ASCII whitespace
     if not s.isascii():
@@ -6225,6 +6225,8 @@ def _parse_rfc2822_offset(s: str) -> _datetime:
     # Parse the date
     try:
         day_raw, month_raw, year_raw, *parts = parts
+        if len(day_raw) > 2:
+            _parse_err(s)
         day = int(day_raw)
         month = _RFC2822_MONTH_NAMES[month_raw.lower()]
         if len(year_raw) == 4:

@@ -211,7 +211,7 @@ impl Offset {
 }
 
 fn skip_tzname(s: &mut Scan) -> Option<()> {
-    Some(match s.advance_on(b'[') {
+    match s.advance_on(b'[') {
         Some(true) => {
             match s.take_until_inclusive(|c| c == b']') {
                 Some(b"]") => None?, // Fail: empty tzname
@@ -221,7 +221,8 @@ fn skip_tzname(s: &mut Scan) -> Option<()> {
         }
         // Success: no timezone to parse
         _ => (),
-    })
+    };
+    Some(())
 }
 
 impl PyWrapped for OffsetDateTime {}

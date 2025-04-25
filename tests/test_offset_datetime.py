@@ -205,7 +205,6 @@ INVALID_ISO_STRINGS = [
     "2020-123T23:12:09-01",
 ]
 
-# TODO: comma valid
 VALID_ISO_STRINGS = [
     (
         "2020-08-15T12:08:30+05:00",
@@ -1309,6 +1308,74 @@ VALID_RFC2822 = [
         "Sat, 15 Aug 2020 23:12:09 +1200",
         OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=12),
     ),
+    (
+        "Sun, 2 Aug 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 8, 2, 23, 12, 9, offset=0),
+    ),
+    (
+        "Mon, 3 Aug 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 8, 3, 23, 12, 9, offset=0),
+    ),
+    (
+        "Tue, 4 Aug 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 8, 4, 23, 12, 9, offset=0),
+    ),
+    (
+        "Wed, 5 Aug 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 8, 5, 23, 12, 9, offset=0),
+    ),
+    (
+        "Thu, 6 Aug 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 8, 6, 23, 12, 9, offset=0),
+    ),
+    (
+        "Fri, 7 Aug 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 8, 7, 23, 12, 9, offset=0),
+    ),
+    (
+        "7 Jan 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 1, 7, 23, 12, 9, offset=0),
+    ),
+    (
+        "7 Feb 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 2, 7, 23, 12, 9, offset=0),
+    ),
+    (
+        "7 Mar 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 3, 7, 23, 12, 9, offset=0),
+    ),
+    (
+        "7 Apr 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 4, 7, 23, 12, 9, offset=0),
+    ),
+    (
+        "7 May 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 5, 7, 23, 12, 9, offset=0),
+    ),
+    (
+        "7 Jun 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 6, 7, 23, 12, 9, offset=0),
+    ),
+    (
+        "7 Jul 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 7, 7, 23, 12, 9, offset=0),
+    ),
+    (
+        "7 Sep 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 9, 7, 23, 12, 9, offset=0),
+    ),
+    (
+        "7 Oct 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 10, 7, 23, 12, 9, offset=0),
+    ),
+    (
+        "7 Nov 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 11, 7, 23, 12, 9, offset=0),
+    ),
+    (
+        "7 Dec 2020 23:12:09 +0000",
+        OffsetDateTime(2020, 12, 7, 23, 12, 9, offset=0),
+    ),
     # named timezones
     (
         "Sat, 15 Aug 2020 23:12:09 MST",
@@ -1341,15 +1408,11 @@ VALID_RFC2822 = [
         OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-7),
     ),
     (
-        "Sat\t, 15 Aug 2020 23:12:09 MST    ",
+        "Sat, 15 Aug 2020 23 :12 : 09 MST",
         OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-7),
     ),
     (
-        "Sat\t, 15 Aug 2020 23 :12 : 09 MST",
-        OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-7),
-    ),
-    (
-        "Sat\t, 15 Aug 2020 23: \t12:09\nMST",
+        "Sat, 15 Aug 2020 23: \t12:09\nMST",
         OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-7),
     ),
     (
@@ -1397,6 +1460,7 @@ INVALID_RFC2822 = [
     "Sat, 15 Aug 2020 23:12 -4060",
     "Sat, 15 Aug 2020 23:12 +MST",
     "Sat, 15 Aug 2020 23:12 -MST",
+    "Sat, 15 Aug 2020 23:12 MST4",
     "Sat, 15 Aug 2020 23:12 -04",
     "Sat, 15 Aug 2020 23:12 -   ",
     # whitespace problems
@@ -1425,13 +1489,11 @@ INVALID_RFC2822 = [
     "Sat.15 Aug 2020 23:12:09 GMT",
     "Sat .15 Aug 2020 23:12:09 GMT",
     "Sat . 15 Aug 2020 23:12:09 GMT",
-    # TODO why does this succeed?
-    # "Mon, 28 Feb 2023 22:22 -0400",
-    "Mon, 028 Feb 2023 22:22 -0400",
-    "Mon, 28 Feb 02023 22:22 -0400",
-    "Mon, 28 Feb 2023 022:22 -0400",
-    "Mon, 28 Feb 2023 22:022 -0400",
-    "Mon, 28 Feb 2023 22:22 -00000400",
+    "Tue, 028 Feb 2023 22:22 -0400",
+    "Tue, 28 Feb 02023 22:22 -0400",
+    "Tue, 28 Feb 2023 022:22 -0400",
+    "Tue, 28 Feb 2023 22:022 -0400",
+    "Tue, 28 Feb 2023 22:22 -00000400",
     # garbage strings
     "",
     "    \t\r\n ",

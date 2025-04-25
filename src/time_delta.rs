@@ -194,8 +194,8 @@ impl std::fmt::Display for TimeDelta {
         // places.
         // Safe: we know the string is ASCII
         let mut isofmt = self.fmt_iso().into_bytes();
-        for i in 3..isofmt.len() {
-            isofmt[i] = isofmt[i].to_ascii_lowercase();
+        for c in isofmt.iter_mut().skip(3) {
+            *c = c.to_ascii_lowercase();
         }
         f.write_str(unsafe { std::str::from_utf8_unchecked(&isofmt) })
     }
