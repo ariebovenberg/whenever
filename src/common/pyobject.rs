@@ -1,7 +1,9 @@
-use core::ffi::c_long;
-use core::mem;
+use core::{
+    ffi::{c_long, c_void},
+    mem,
+};
 use pyo3_ffi::*;
-use std::fmt::Debug;
+use std::{ffi::CStr, fmt::Debug, ptr::null_mut as NULL};
 
 // We use `Result` to implement Python's error handling.
 // Note that Python's error handling doesn't map exactly onto Rust's `Result` type,
@@ -405,6 +407,60 @@ pub(crate) unsafe fn newref<'a>(obj: *mut PyObject) -> &'a mut PyObject {
 // FUTURE: replace with Py_IsNone when dropping Py 3.9 support
 pub(crate) unsafe fn is_none(x: *mut PyObject) -> bool {
     x == Py_None()
+}
+
+#[derive(Debug)]
+pub(crate) struct LazyImport {
+    module: &'static CStr,
+    name: &'static CStr,
+    obj: std::cell::UnsafeCell<*mut PyObject>, // Wrap in UnsafeCell for interior mutability
+}
+
+impl LazyImport {
+    pub(crate) fn new(module: &'static CStr, name: &'static CStr) -> Self {
+        Self {
+            module,
+            name,
+            obj: std::cell::UnsafeCell::new(NULL()),
+        }
+    }
+
+    pub(crate) unsafe fn get(&self) -> PyReturn {
+        unsafe {
+            let obj = *self.obj.get(); // Access the current value
+            if obj.is_null() {
+                let imported = import_from(self.module, self.name)?;
+                self.obj.get().write(imported); // Update the value
+                Ok(imported)
+            } else {
+                Ok(obj.as_mut().unwrap())
+            }
+        }
+    }
+
+    pub(crate) unsafe fn traverse(&self, visit: visitproc, arg: *mut c_void) {
+        let obj = *self.obj.get();
+        if !obj.is_null() {
+            (visit)(obj, arg);
+        }
+    }
+}
+
+impl Drop for LazyImport {
+    fn drop(&mut self) {
+        unsafe {
+            let obj = self.obj.get();
+            if !(*obj).is_null() {
+                Py_CLEAR(obj);
+            }
+        }
+    }
+}
+
+pub(crate) unsafe fn import_from(module: &CStr, name: &CStr) -> PyReturn {
+    let module = PyImport_ImportModule(module.as_ptr()).as_result()?;
+    defer_decref!(module);
+    PyObject_GetAttrString(module, name.as_ptr()).as_result()
 }
 
 #[allow(unused_imports)]

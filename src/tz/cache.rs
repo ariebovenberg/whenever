@@ -5,7 +5,9 @@ use crate::{
 };
 use ahash::AHashMap;
 use pyo3_ffi::*;
-use std::{collections::VecDeque, fs, path::PathBuf, ptr::null_mut as NULL, ptr::NonNull};
+use std::{
+    collections::VecDeque, ffi::c_void, fs, path::PathBuf, ptr::null_mut as NULL, ptr::NonNull,
+};
 
 /// A manually reference-counted handle to a `TZif` object.
 /// Since it's just a thin wrapper around a pointer, and
@@ -127,17 +129,17 @@ pub(crate) struct TZifCache {
     // The paths to search for zoneinfo files.
     pub(crate) paths: Vec<PathBuf>,
     // The importlib.resources.read_binary function, used to load from tzdata package.
-    import_binary: NonNull<PyObject>,
+    import_binary: LazyImport,
 }
 
 const LRU_CAPACITY: usize = 8; // this value seems to work well for Python's zoneinfo
 
 impl TZifCache {
-    pub(crate) fn new(import_binary: NonNull<PyObject>) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             lru: VecDeque::with_capacity(LRU_CAPACITY),
             lookup: AHashMap::with_capacity(8), // a reasonable default size
-            import_binary,
+            import_binary: LazyImport::new(c"importlib.resources", c"read_binary"),
             // Empty. The actual search paths are patched in at module import
             paths: Vec::with_capacity(4),
         }
@@ -248,7 +250,7 @@ impl TZifCache {
             defer_decref!(args);
             PyTuple_SetItem(args, 0, package.to_py()?);
             PyTuple_SetItem(args, 1, resource_name.to_py()?);
-            let resource = PyObject_Call(self.import_binary.as_ptr(), args, NULL());
+            let resource = PyObject_Call(self.import_binary.get()?, args, NULL());
             // There a quite some exceptions we can expect here,
             // which all mean the resource doesn't exist.
             if resource.is_null() {
@@ -294,6 +296,10 @@ impl TZifCache {
                     .decref(|| self);
             };
         }
+    }
+
+    pub(crate) unsafe fn traverse(&self, visit: visitproc, arg: *mut c_void) {
+        self.import_binary.traverse(visit, arg);
     }
 }
 
