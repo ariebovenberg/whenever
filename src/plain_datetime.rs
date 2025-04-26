@@ -67,11 +67,11 @@ impl DateTime {
 
     pub(crate) fn shift_nanos(self, nanos: i128) -> Option<Self> {
         let DateTime { mut date, time } = self;
-        let new_time = i128::from(time.total_nanos()) + nanos;
-        let days_delta = new_time.div_euclid(NS_PER_DAY) as i32;
+        let new_time = i128::from(time.total_nanos()).checked_add(nanos)?;
+        let days_delta = i32::try_from(new_time.div_euclid(NS_PER_DAY)).ok()?;
         let nano_delta = new_time.rem_euclid(NS_PER_DAY) as u64;
         if days_delta != 0 {
-            date = date.shift_days(DeltaDays::new_unchecked(days_delta))?
+            date = DeltaDays::new(days_delta).and_then(|d| date.shift_days(d))?;
         }
         Some(DateTime {
             date,
@@ -493,7 +493,6 @@ unsafe fn _shift_method(
     }
     DateTime::extract(slf)
         .shift_date(months, days)
-        // TODO: this is where overflow can happen with large nanos
         .and_then(|dt| dt.shift_nanos(nanos))
         .ok_or_else_value_err(|| format!("Result of {}() out of range", fname))?
         .to_obj(cls)
