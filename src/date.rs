@@ -147,30 +147,6 @@ impl Date {
         }
     }
 
-    // TODO: use
-    #[allow(dead_code)]
-    pub(crate) fn from_iso_week(year: Year, week: u8, day: Weekday) -> Option<Self> {
-        let first_day = year.unix_days_at_jan1();
-        if week == 0
-            || week > 53
-            || week == 53
-            // 53-week years occur on all years that have Thursday as 1
-            // January and on leap years that start on Wednesday.
-            && first_day.day_of_week()
-            .iso()
-                + year.is_leap() as u8
-                != 4
-        {
-            return None;
-        }
-        let day_offset = (week - 1) as i32 * 7 + (day.iso() as i32);
-        let first_weekday = first_day.day_of_week();
-        // Safe: unix days well within i32
-        let first_monday_offset = first_day.get() - first_weekday.iso() as i32
-            + 7 * (first_weekday > Weekday::Thursday) as i32;
-        UnixDays::new(first_monday_offset + day_offset).map(|u| u.date())
-    }
-
     // For small adjustments, this is faster than converting to/from UnixDays
     pub fn tomorrow(self) -> Option<Self> {
         let Date {
