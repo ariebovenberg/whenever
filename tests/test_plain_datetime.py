@@ -511,9 +511,10 @@ class TestShiftMethods:
         with pytest.raises(TypeError):
             d.add(hours(48), seconds=5, ignore_dst=True)  # type: ignore[call-overload]
 
-    # TODO: find the segfault hiding here:
-    # thread '<unnamed>' panicked at src/common/math.rs:532:9:
-    # assertion failed: days >= Self::MIN.0 && days <= Self::MAX.0
+        # out of i128 range
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
+            d.add(nanoseconds=1 << 127 - 1, ignore_dst=True)
+
     @given(
         years=integers(),
         months=integers(),

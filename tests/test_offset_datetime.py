@@ -976,6 +976,10 @@ class TestShiftMethods:
         with pytest.raises(TypeError):
             d.add(seconds(4), hours=48, seconds=5, ignore_dst=True)  # type: ignore[call-overload]
 
+        # out of i128 range
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
+            d.add(nanoseconds=1 << 127 - 1, ignore_dst=True)
+
     @given(
         years=integers(),
         months=integers(),
