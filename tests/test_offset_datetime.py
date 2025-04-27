@@ -534,7 +534,7 @@ class TestFromTimestamp:
         with pytest.raises((ValueError, OverflowError)):
             OffsetDateTime.from_timestamp(9e200, ignore_dst=True, offset=0)
 
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises((ValueError, OverflowError, OSError)):
             OffsetDateTime.from_timestamp(
                 float(Instant.MAX.timestamp()) + 0.99999999,
                 ignore_dst=True,

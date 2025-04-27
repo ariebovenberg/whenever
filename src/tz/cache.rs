@@ -6,7 +6,10 @@ use crate::{
 use ahash::AHashMap;
 use pyo3_ffi::*;
 use std::{
-    collections::VecDeque, ffi::c_void, fs, path::PathBuf, ptr::null_mut as NULL, ptr::NonNull,
+    collections::VecDeque,
+    fs,
+    path::{Path, PathBuf},
+    ptr::NonNull,
 };
 
 /// A manually reference-counted handle to a `TZif` object.
@@ -129,21 +132,22 @@ pub(crate) struct TZifCache {
     // The paths to search for zoneinfo files.
     pub(crate) paths: Vec<PathBuf>,
     // The importlib.resources.read_binary function, used to load from tzdata package.
-    import_binary: LazyImport,
+    tzdata_path: Option<PathBuf>,
 }
 
 const LRU_CAPACITY: usize = 8; // this value seems to work well for Python's zoneinfo
 
 impl TZifCache {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(tzdata_path: Option<PathBuf>) -> Self {
         Self {
             lru: VecDeque::with_capacity(LRU_CAPACITY),
             lookup: AHashMap::with_capacity(8), // a reasonable default size
-            import_binary: LazyImport::new(c"importlib.resources", c"read_binary"),
+            tzdata_path,
             // Empty. The actual search paths are patched in at module import
             paths: Vec::with_capacity(4),
         }
     }
+
     /// Fetches a `TZif` for the given IANA time zone ID.
     /// If not already cached, reads the file from the filesystem.
     /// Returns a *borrowed* reference to the `TZif` object.
@@ -161,7 +165,7 @@ impl TZifCache {
             // Not in cache: attempt to load and insert
             None => {
                 let entry =
-                    TzRef::new(self.load_tzif(tz_id)?.ok_or_else_raise(exc_notfound, || {
+                    TzRef::new(self.load_tzif(tz_id).ok_or_else_raise(exc_notfound, || {
                         format!("No time zone found with key {}", tz_id)
                     })?);
                 self.new_to_lru(entry);
@@ -172,7 +176,7 @@ impl TZifCache {
         Ok(handle)
     }
 
-    /// The `get` function, but with Python exception handling
+    /// The `get` function, but accepts a Python Object as the key.
     pub(crate) unsafe fn obj_get(
         &mut self,
         tz_obj: *mut PyObject,
@@ -184,8 +188,9 @@ impl TZifCache {
         )
     }
 
-    /// Insert a new entry into the LRU, assuming it's not already there.
-    /// The entry is assumed to have already ben incref'd.
+    /// Insert a new entry into the LRU, assuming the caller ensures:
+    /// - it's not already in the LRU.
+    /// - the refcount has been incremented.
     fn new_to_lru(&mut self, tz: TzRef) {
         debug_assert!(!self.lru.contains(&tz));
         debug_assert!(tz.ref_count() > 0);
@@ -221,57 +226,39 @@ impl TZifCache {
 
     /// Join a TZ id path with a base path, assuming the TZ id is untrusted input.
     /// The base path is assumed to be a trusted directory
-    fn load_tzif(&self, tzid: &str) -> PyResult<Option<TZif>> {
+    fn load_tzif(&self, tzid: &str) -> Option<TZif> {
         if !is_valid_key(tzid) {
-            return Ok(None);
+            return None;
         }
-        match self.load_tzif_from_path(tzid) {
-            Some(tz) => Ok(Some(tz)),
-            None => self.load_tzif_from_tzdata(tzid),
+        self.load_tzif_from_tzpath(tzid)
+            .or_else(|| self.load_tzif_from_tzdata(tzid))
+    }
+
+    /// Load a TZif from the TZPATH directory, assuming a benign TZ ID.
+    fn load_tzif_from_tzpath(&self, tzid: &str) -> Option<TZif> {
+        self.paths
+            .iter()
+            .find_map(|base| self.read_tzif_at_path(&base.join(tzid), tzid))
+    }
+
+    /// Load a TZif from the tzdata package, assuming a benign TZ ID.
+    fn load_tzif_from_tzdata(&self, tzid: &str) -> Option<TZif> {
+        self.tzdata_path
+            .as_ref()
+            .and_then(|base| self.read_tzif_at_path(&base.join(tzid), tzid))
+    }
+
+    /// Read a TZif file from the given path, returning None if it doesn't exist
+    /// or otherwise cannot be read.
+    fn read_tzif_at_path(&self, path: &Path, tzid: &str) -> Option<TZif> {
+        if path.is_file() {
+            fs::read(path).ok().and_then(|d| tzif::parse(&d, tzid).ok())
+        } else {
+            None
         }
     }
 
-    fn load_tzif_from_path(&self, tzid: &str) -> Option<TZif> {
-        for base in self.paths.iter() {
-            let path = base.join(tzid);
-            if path.is_file() {
-                return fs::read(path).ok().and_then(|d| tzif::parse(&d, tzid).ok());
-            }
-        }
-        None
-    }
-
-    fn load_tzif_from_tzdata(&self, tzid: &str) -> PyResult<Option<TZif>> {
-        let Some((package, resource_name)) = tzid_to_resource(tzid) else {
-            return Ok(None);
-        };
-        unsafe {
-            let args = PyTuple_New(2);
-            defer_decref!(args);
-            PyTuple_SetItem(args, 0, package.to_py()?);
-            PyTuple_SetItem(args, 1, resource_name.to_py()?);
-            let resource = PyObject_Call(self.import_binary.get()?, args, NULL());
-            // There a quite some exceptions we can expect here,
-            // which all mean the resource doesn't exist.
-            if resource.is_null() {
-                if PyErr_ExceptionMatches(PyExc_UnicodeEncodeError) == 1
-                    || PyErr_ExceptionMatches(PyExc_ImportError) == 1
-                    || PyErr_ExceptionMatches(PyExc_FileNotFoundError) == 1
-                {
-                    PyErr_Clear();
-                    return Ok(None);
-                } else {
-                    return Err(PyErrOccurred());
-                }
-            }
-            defer_decref!(resource);
-            let file_bytes = resource
-                .to_bytes()?
-                .ok_or_type_err("tzdata resource must be bytes")?;
-            Ok(tzif::parse(file_bytes, tzid).ok())
-        }
-    }
-
+    /// Clear the cache, dropping all entries.
     pub(crate) fn clear_all(&mut self) {
         // Clear the LRU, dropping all entries
         let mut lru = std::mem::replace(&mut self.lru, VecDeque::with_capacity(LRU_CAPACITY));
@@ -283,8 +270,9 @@ impl TZifCache {
         self.lookup.clear();
     }
 
-    pub(crate) fn clear_only(&mut self, keys: &[String]) {
-        for k in keys {
+    /// Clear specific entries from the cache.
+    pub(crate) fn clear_only(&mut self, keys: &[&str]) {
+        for &k in keys {
             self.lookup.remove(k);
             if let Some(i) = self.lru.iter().position(|tz| tz.key == *k) {
                 self.lru
@@ -296,10 +284,6 @@ impl TZifCache {
                     .decref(|| self);
             };
         }
-    }
-
-    pub(crate) unsafe fn traverse(&self, visit: visitproc, arg: *mut c_void) {
-        self.import_binary.traverse(visit, arg);
     }
 }
 
@@ -317,14 +301,4 @@ impl Drop for TZifCache {
         // By now, the lookup table should be empty (it contains only weak references)
         debug_assert!(self.lookup.is_empty());
     }
-}
-
-/// Translate a TZ ID to a resource path in the tzdata package.
-fn tzid_to_resource(key: &str) -> Option<(String, &str)> {
-    key.rfind('/').map(|pos| {
-        let package_loc = &key[..pos];
-        let resource = &key[pos + 1..];
-        let package = format!("tzdata.zoneinfo.{}", package_loc.replace("/", "."));
-        (package, resource)
-    })
 }

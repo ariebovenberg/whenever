@@ -168,11 +168,7 @@ pub(crate) unsafe fn _clear_tz_cache_by_keys(
     let mut keys = Vec::with_capacity(size as _);
     for i in 0..size {
         let path = PyTuple_GET_ITEM(keys_obj, i);
-        keys.push(
-            path.to_str()?
-                .ok_or_type_err("Path must be a string")?
-                .to_string(),
-        )
+        keys.push(path.to_str()?.ok_or_type_err("Path must be a string")?)
     }
     state.tz_cache.clear_only(&keys);
     Py_None().as_result()
@@ -531,7 +527,10 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
 
     // We write these fields manually, to avoid triggering a "drop" of the previous value
     // which isn't there, since Python just allocated this memory for us.
-    std::ptr::write(&mut state.tz_cache as *mut _, TZifCache::new());
+    std::ptr::write(
+        &mut state.tz_cache as *mut _,
+        TZifCache::new(unwrap_or_errcode!(get_tzdata_path())),
+    );
     std::ptr::write(
         &mut state.zoneinfo_type as *mut _,
         LazyImport::new(c"zoneinfo", c"ZoneInfo"),
@@ -547,6 +546,26 @@ unsafe fn time_machine_installed() -> PyResult<bool> {
     let spec = call1(find_spec, steal!("time_machine".to_py()?))?;
     defer_decref!(spec);
     Ok(!is_none(spec))
+}
+
+fn get_tzdata_path() -> PyResult<Option<PathBuf>> {
+    Ok(Some(PathBuf::from(unsafe {
+        let __path__ = match import_from(c"tzdata.zoneinfo", c"__path__") {
+            Ok(obj) => Ok(obj),
+            _ if PyErr_ExceptionMatches(PyExc_ImportError) == 1 => {
+                PyErr_Clear();
+                return Ok(None);
+            }
+            e => e,
+        }?;
+        defer_decref!(__path__);
+        // __path__ is a list of paths. It will only have one element,
+        // unless somebody is doing something strange.
+        (PyObject_GetItem(__path__, steal!((0).to_py()?)).as_result()? as *mut PyObject)
+            .to_str()?
+            .ok_or_type_err("tzdata module path must be a string")?
+            .to_owned()
+    })))
 }
 
 unsafe fn traverse(target: *mut PyObject, visit: visitproc, arg: *mut c_void) {
@@ -649,7 +668,6 @@ unsafe extern "C" fn module_traverse(
     traverse(state.strptime, visit, arg);
     traverse(state.time_ns, visit, arg);
     state.zoneinfo_type.traverse(visit, arg);
-    state.tz_cache.traverse(visit, arg);
 
     0
 }
