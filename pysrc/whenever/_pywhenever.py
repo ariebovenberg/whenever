@@ -100,7 +100,7 @@ __all__ = [
     # Exceptions
     "SkippedTime",
     "RepeatedTime",
-    "InvalidOffset",
+    "InvalidOffsetError",
     "ImplicitlyIgnoringDST",
     "TimeZoneNotFoundError",
     # Constants
@@ -3436,10 +3436,14 @@ class Instant(_ExactTime):
 
         The inverse of the ``parse_rfc2822()`` method.
 
+        Note
+        ----
+        The output is also compatible with the (stricter) RFC 9110 standard.
+
         Example
         -------
-        >>> Instant.from_utc(2020, 8, 15, hour=23, minute=12).format_rfc2822()
-        "Sat, 15 Aug 2020 23:12:00 GMT"
+        >>> Instant.from_utc(2020, 8, 8, hour=23, minute=12).format_rfc2822()
+        "Sat, 08 Aug 2020 23:12:00 GMT"
         """
         return (
             f"{_WEEKDAY_TO_RFC2822[self._py_dt.weekday()]}, "
@@ -3916,30 +3920,34 @@ class OffsetDateTime(_ExactAndLocalTime):
         return super().__sub__(other)  # type: ignore[misc, no-any-return]
 
     @classmethod
-    def strptime(cls, s: str, /, fmt: str) -> OffsetDateTime:
-        """Simple alias for
-        ``OffsetDateTime.from_py_datetime(datetime.strptime(s, fmt))``
+    def parse_strptime(cls, s: str, /, *, format: str) -> OffsetDateTime:
+        """Parse a datetime with offset using the standard library ``strptime()`` method.
 
         Example
         -------
-        >>> OffsetDateTime.strptime("2020-08-15+0200", "%Y-%m-%d%z")
+        >>> OffsetDateTime.parse_strptime("2020-08-15+0200", format="%Y-%m-%d%z")
         OffsetDateTime(2020-08-15 00:00:00+02:00)
+
+        Note
+        ----
+        This method defers to the standard library ``strptime()`` method,
+        which may behave differently in different Python versions.
+        It also only supports up to microsecond precision.
 
         Important
         ---------
-        The parsed ``tzinfo`` must be a fixed offset
-        (``datetime.timezone`` instance).
-        This means you MUST include the directive ``%z``, ``%Z``, or ``%:z``
-        in the format string.
+        An offset *must* be present in the format string.
+        This means you MUST include the directive ``%z``, ``%Z``, or ``%:z``.
+        To parse a datetime without an offset, use ``PlainDateTime`` instead.
         """
-        parsed = _datetime.strptime(s, fmt)
-        # We only need to check for None, because the only other tzinfo
-        # returned from strptime is a fixed offset
-        if parsed.tzinfo is None:
+        parsed = _datetime.strptime(s, format)
+        if (offset := parsed.utcoffset()) is None:
             raise ValueError(
                 "Parsed datetime must have an offset. "
                 "Use %z, %Z, or %:z in the format string"
             )
+        if offset.microseconds:
+            raise ValueError("Sub-second offsets are not supported")
         return cls._from_py_unchecked(
             _check_utc_bounds(parsed.replace(microsecond=0)),
             parsed.microsecond * 1_000,
@@ -3956,7 +3964,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         "Sat, 15 Aug 2020 23:12:00 +0200"
         """
         offset = int(self._py_dt.utcoffset().total_seconds())  # type: ignore[union-attr]
-        sign = "-" if offset < 0 else "+"
+        offset_sign = "-" if offset < 0 else "+"
         offset = abs(offset)
         offset_h = offset // 3600
         offset_m = (offset % 3600) // 60
@@ -3965,7 +3973,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             f"{self._py_dt.day:02} "
             f"{_MONTH_TO_RFC2822[self._py_dt.month]} {self._py_dt.year:04} "
             f"{self._py_dt.time()} "
-            f"{sign}{offset_h:02}{offset_m:02}"
+            f"{offset_sign}{offset_h:02}{offset_m:02}"
         )
 
     @classmethod
@@ -5478,22 +5486,27 @@ class PlainDateTime(_LocalTime):
         )
 
     @classmethod
-    def strptime(cls, s: str, /, fmt: str) -> PlainDateTime:
-        """Simple alias for
-        ``PlainDateTime.from_py_datetime(datetime.strptime(s, fmt))``
+    def parse_strptime(cls, s: str, /, *, format: str) -> PlainDateTime:
+        """Parse a plain datetime using the standard library ``strptime()`` method.
 
         Example
         -------
-        >>> PlainDateTime.strptime("2020-08-15", "%Y-%m-%d")
+        >>> PlainDateTime.parse_strptime("2020-08-15", format="%d/%m/%Y_%H:%M")
         PlainDateTime(2020-08-15 00:00:00)
 
         Note
         ----
-        The parsed ``tzinfo`` must be be ``None``.
-        This means you CANNOT include the directives ``%z``, ``%Z``, or ``%:z``
-        in the format string.
+        This method defers to the standard library ``strptime()`` method,
+        which may behave differently in different Python versions.
+        It also only supports up to microsecond precision.
+
+        Important
+        ---------
+        There may not be an offset in the format string.
+        This means you CANNOT use the directives ``%z``, ``%Z``, or ``%:z``.
+        Use ``OffsetDateTime`` to parse datetimes with an offset.
         """
-        parsed = _datetime.strptime(s, fmt)
+        parsed = _datetime.strptime(s, format)
         if parsed.tzinfo is not None:
             raise ValueError(
                 "Parsed datetime can't have an offset. "
@@ -5681,7 +5694,7 @@ class SkippedTime(ValueError):
         )
 
 
-class InvalidOffset(ValueError):
+class InvalidOffsetError(ValueError):
     """A string has an invalid offset for the given zone"""
 
 
@@ -6012,11 +6025,11 @@ def _zdt_from_iso(s: str) -> tuple[_datetime, _Nanos]:
         # detect a gap
         dt_norm = dt.astimezone(_UTC).astimezone(tz)
         if dt_norm != dt:
-            raise InvalidOffset()
+            raise InvalidOffsetError()
         elif dt.utcoffset() != offset:
             dt = dt.replace(fold=1)
             if dt.utcoffset() != offset:
-                raise InvalidOffset()
+                raise InvalidOffsetError()
 
     return (dt, nanos)
 
@@ -6372,7 +6385,7 @@ def _adjust_fold_to_offset(dt: _datetime, offset: _timedelta) -> _datetime:
     if offset != dt.utcoffset():  # offset/zone mismatch: try other fold
         dt = dt.replace(fold=1)
         if dt.utcoffset() != offset:  # pragma: no cover (#39)
-            raise InvalidOffset()
+            raise InvalidOffsetError()
     return dt
 
 

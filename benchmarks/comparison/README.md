@@ -19,7 +19,7 @@ Make sure that:
 - Comment-out parts to get the light and dark versions
 - Export as svg
 - Add `font-weight="bold"` to the first appearance of "Whenever"
-- Set `width="500"` and `height="127"`
+- Set `width="500"` and `height="125"`
 
 ## Setup for the benchmark in the main README
 

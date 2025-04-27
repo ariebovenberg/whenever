@@ -134,8 +134,7 @@ impl Time {
     }
 
     pub(crate) fn parse_iso(s: &[u8]) -> Option<Self> {
-        let mut scan = Scan::new(s);
-        scan.parse_all(Self::read_iso)
+        Scan::new(s).parse_all(Self::read_iso)
     }
 
     /// Round the time to the specified increment
@@ -310,7 +309,7 @@ unsafe fn py_time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         hour,
         minute,
         second,
-        subsec: nanos,
+        subsec,
     } = Time::extract(slf);
     let &PyDateTime_CAPI {
         Time_FromTime,
@@ -321,7 +320,7 @@ unsafe fn py_time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         hour.into(),
         minute.into(),
         second.into(),
-        (nanos.get() / 1_000) as c_int,
+        (subsec.get() / 1_000) as c_int,
         Py_None(),
         TimeType,
     )

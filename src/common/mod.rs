@@ -70,17 +70,17 @@ impl Disambiguate {
         str_later: *mut PyObject,
     ) -> PyResult<Self> {
         match_interned_str("disambiguate", obj, |v, eq| {
-            if eq(v, str_compatible) {
-                Some(Disambiguate::Compatible)
+            Some(if eq(v, str_compatible) {
+                Disambiguate::Compatible
             } else if eq(v, str_raise) {
-                Some(Disambiguate::Raise)
+                Disambiguate::Raise
             } else if eq(v, str_earlier) {
-                Some(Disambiguate::Earlier)
+                Disambiguate::Earlier
             } else if eq(v, str_later) {
-                Some(Disambiguate::Later)
+                Disambiguate::Later
             } else {
-                None
-            }
+                None?
+            })
         })
     }
 
@@ -184,7 +184,7 @@ where
     K: IntoIterator<Item = (*mut PyObject, *mut PyObject)>,
 {
     for (key, value) in kwargs {
-        // First we try to match on pointer equality.
+        // First we try to match *all kwargs* on pointer equality.
         // This is actually the common case, as static strings are interned.
         // In the rare case they aren't, we fall back to value comparison.
         // Doing it this way is faster than always doing value comparison outright.

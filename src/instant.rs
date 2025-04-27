@@ -385,11 +385,8 @@ unsafe fn exact_eq(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let Instant {
-        epoch: secs,
-        subsec: nanos,
-    } = Instant::extract(slf);
-    let data = pack![secs.get(), nanos.get()];
+    let Instant { epoch, subsec } = Instant::extract(slf);
+    let data = pack![epoch.get(), subsec.get()];
     (
         State::for_obj(slf).unpickle_instant,
         steal!((steal!(data.to_py()?),).to_py()?),
@@ -618,7 +615,7 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
                 offset_obj,
                 time_delta_type,
             )?)
-            .ok_or_value_err("Resulting local date is out of range")?
+            .ok_or_value_err("Resulting date is out of range")?
             .to_obj(offset_datetime_type),
         _ => raise_type_err("to_fixed_offset() takes at most 1 argument"),
     }

@@ -1,6 +1,9 @@
 # 🚀 Changelog
 
-## 0.8.0 (2025-??-??)
+## 0.8.0 (2025-05-01)
+
+A big release with several improvements and breaking changes that lay
+the groundwork for the eventual 1.0 release.
 
 **Improved**
 
@@ -44,7 +47,7 @@
   `zoneinfo.ZoneInfoNotFoundError` (subclass of `KeyError`).
 
   **Rationale**: This ensures whenever is independent of the `zoneinfo`
-  module, and its particularities don\'t leak into the `whenever` API.
+  module, and its particularities don't leak into the `whenever` API.
 
 - `TimeDelta.from_py_timedelta` no longer accepts `timedelta`
   subclasses.
@@ -53,10 +56,22 @@
   other time components, which cannot be guaranteed to be handled
   correctly.
 
+- The `strptime` methods have been renamed `parse_strptime`,
+  and its ``format`` argument is now a keyword-only argument.
+
+  **Rationale**: This ensures all parsing methods have the `parse_` prefix,
+  helping in API consistency and discoverability. The keyword-only argument
+  helps distinguish between the format string and the string to parse.
+
+- The `InvalidOffset` exception has been renamed `InvalidOffsetError`
+
+  **Rationale**: this more clearly indicates that this is an error condition.
+  See #154 for discussion.
+
 - `SkippedTime` and `RepeatedTime` are now subclasses of `ValueError`.
 
   **Rationale**: it ensures these exceptions can be caught together with
-  other exceptions like `InvalidOffset` and `TimeZoneNotFoundError`
+  other exceptions like `InvalidOffsetError` and `TimeZoneNotFoundError`
   during parsing.
 
 - Whenever is no longer affected by `ZoneInfo.clear_cache()` or
@@ -68,7 +83,7 @@
 
 **Fixed**
 
-- Improved robustness of date calculations at extreme boundaries.
+- Improved robustness of date calculations at extreme boundaries. (#219)
 - Fixed a bug in the pure-Python version of `ZonedDateTime.exact_eq()`
   that could cause false positives in some cases.
 - Fixed incorrect type stubs for `day_length()` and `start_of_day()`

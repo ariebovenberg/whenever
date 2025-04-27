@@ -18,10 +18,12 @@ impl<'a> Scan<'a> {
         self.0.first().copied()
     }
 
+    /// Get the byte at the given index without consuming it.
     pub(crate) fn get(&self, n: usize) -> Option<u8> {
         self.0.get(n).copied()
     }
 
+    /// Consume the next `n` bytes in the scanner.
     pub(crate) fn skip(&mut self, n: usize) -> &mut Self {
         self.0 = &self.0[n..];
         self
@@ -39,6 +41,7 @@ impl<'a> Scan<'a> {
         self.0
     }
 
+    /// Return the rest of the scanner as a byte slice and consume it.
     pub(crate) fn drain(&mut self) -> &'a [u8] {
         let a = self.0;
         self.0 = &[];
@@ -90,6 +93,7 @@ impl<'a> Scan<'a> {
         self.transform(|c| range.contains(&c).then(|| c - b'0'))
     }
 
+    /// Parse two digits in the range 00-59.
     pub(crate) fn digits00_59(&mut self) -> Option<u8> {
         match self.0 {
             [a @ b'0'..=b'5', b @ b'0'..=b'9', ..] => {
@@ -100,6 +104,7 @@ impl<'a> Scan<'a> {
         }
     }
 
+    /// Parse two digits in the range 00-23.
     pub(crate) fn digits00_23(&mut self) -> Option<u8> {
         match self.0 {
             [a @ b'0'..=b'2', b @ b'0'..=b'9', ..] => {
@@ -232,10 +237,13 @@ impl<'a> Scan<'a> {
         self.peek().is_none()
     }
 
+    /// Return the remaining length of the scanner.
     pub(crate) fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Pass the scanner to the function, and check if the scanner is done
+    /// afterwards.
     pub(crate) fn parse_all<F, R>(&mut self, mut f: F) -> Option<R>
     where
         F: FnMut(&mut Self) -> Option<R>,

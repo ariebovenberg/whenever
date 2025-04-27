@@ -8,6 +8,13 @@ All classes are immutable.
 Datetimes
 ---------
 
+Below is a simplified overview of the datetime classes and how they relate to each other.
+
+.. image:: api-overview.png
+  :width: 80%
+  :align: center
+  :alt: Alternative text
+
 Common behavior
 ~~~~~~~~~~~~~~~
 
@@ -60,7 +67,7 @@ Concrete classes
      assume_fixed_offset,
      assume_tz,
      assume_system_tz,
-     strptime,
+     parse_strptime,
      difference,
    :special-members: __eq__
    :member-order: bysource
@@ -73,7 +80,7 @@ Concrete classes
    :members:
      format_rfc2822,
      parse_rfc2822,
-     strptime,
+     parse_strptime,
    :member-order: bysource
    :show-inheritance:
 
@@ -158,7 +165,7 @@ Miscellaneous
 .. autoexception:: whenever.SkippedTime
    :show-inheritance:
 
-.. autoexception:: whenever.InvalidOffset
+.. autoexception:: whenever.InvalidOffsetError
    :show-inheritance:
 
 .. autoexception:: whenever.TimeZoneNotFoundError

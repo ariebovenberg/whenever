@@ -35,8 +35,21 @@ Convert a date to datetime
 >>> date.at(Time(12, 30))
 PlainDateTime(2023-10-01 12:30:00)
 
-Place a datetime with a timezone
---------------------------------
+Calculate somebody's age
+------------------------
+
+>>> from whenever import Date
+>>> birth_date = Date(2023, 11, 2)
+>>> age = Date.today_in_system_tz() - birth_date
+DateDelta(P1y5m26d)
+>>> months, days = age.in_months_days()
+(17, 26)
+>>> age.in_years_months_days()
+(1, 5, 26)
+
+
+Assign a timezone to a datetime
+-------------------------------
 
 >>> from whenever import PlainDateTime
 >>> datetime = PlainDateTime(2023, 10, 1, 12, 30)
@@ -49,9 +62,9 @@ Integrate with the standard library
 >>> import datetime
 >>> py_dt = datetime.datetime.now(datetime.UTC)
 >>> from whenever import Instant
+>>> # create an Instant from any aware datetime
 >>> i = Instant.from_py_datetime(py_dt)
 Instant(2025-04-19 19:02:56.39569Z)
->>> # create a ZonedDateTime for the sake of the example
 >>> zdt = i.to_tz("America/New_York")
 ZonedDateTime(2025-04-19 15:02:56.39569-04:00[America/New_York])
 >>> # convert back to the standard library

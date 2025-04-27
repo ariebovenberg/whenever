@@ -37,6 +37,8 @@ make typecheck  # run mypy and typing tests
 
 Below are some points to keep in mind when making changes to the codebase:
 
+- I purposefully opted for ``pyo3_ffi`` over ``pyo3``. See the FAQ for the
+  rationale.
 - The Rust code contains a lot of unsafe code. This is because it
   mostly interacts with C code (Python's C API), which is inherently unsafe.
   It's planned to refactor the code to use safer abstractions. However,

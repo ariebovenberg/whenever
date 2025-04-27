@@ -268,7 +268,7 @@ pub(crate) unsafe fn generic_alloc<T>(type_: *mut PyTypeObject, d: T) -> PyRetur
     let slf = (*type_).tp_alloc.unwrap()(type_, 0).cast::<PyWrap<T>>();
     match slf.cast::<PyObject>().as_mut() {
         Some(r) => {
-            core::ptr::addr_of_mut!((*slf).data).write(d);
+            (&raw mut (*slf).data).write(d);
             Ok(r)
         }
         None => Err(PyErrOccurred()),

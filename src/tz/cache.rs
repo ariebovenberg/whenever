@@ -80,10 +80,6 @@ impl TzRef {
         false
     }
 
-    pub(crate) fn value(&self) -> &TZif {
-        unsafe { &self.inner.as_ref().value }
-    }
-
     /// Gets the current reference count (for debugging purposes).
     #[allow(dead_code)]
     pub(crate) fn ref_count(&self) -> usize {
@@ -95,7 +91,7 @@ impl std::ops::Deref for TzRef {
     type Target = TZif;
 
     fn deref(&self) -> &Self::Target {
-        self.value()
+        unsafe { &self.inner.as_ref().value }
     }
 }
 
@@ -117,7 +113,7 @@ pub(crate) struct TZifCache {
     // Other alternatives that benchmarked *slower* are `BTreeMap`, gxhash, fxhash, and phf.
     //
     // Cleanup strategy:
-    // Removal of 0-refcount entries is done by the `decref` method of the `TZif` handle,
+    // Removal of 0-refcount entries is done by the `decref` method of the `TZRef` handle.
     lookup: AHashMap<String, TzRef>,
     // Keeps the most recently used entries alive, to prevent over-eager dropping.
     //
@@ -131,7 +127,7 @@ pub(crate) struct TZifCache {
     lru: VecDeque<TzRef>,
     // The paths to search for zoneinfo files.
     pub(crate) paths: Vec<PathBuf>,
-    // The importlib.resources.read_binary function, used to load from tzdata package.
+    // The path to the tzdata package contents, if any.
     tzdata_path: Option<PathBuf>,
 }
 
@@ -157,7 +153,8 @@ impl TZifCache {
         tz_id: &str,
         exc_notfound: *mut PyObject,
     ) -> PyResult<TzRef> {
-        let handle = match self.lookup.get(tz_id) {
+        Ok(match self.lookup.get(tz_id) {
+            // Found in cache. Mark it as recently used
             Some(&entry) => {
                 self.touch_lru(entry);
                 entry
@@ -172,8 +169,7 @@ impl TZifCache {
                 self.lookup.insert(tz_id.to_string(), entry);
                 entry
             }
-        };
-        Ok(handle)
+        })
     }
 
     /// The `get` function, but accepts a Python Object as the key.
@@ -224,8 +220,7 @@ impl TZifCache {
         }
     }
 
-    /// Join a TZ id path with a base path, assuming the TZ id is untrusted input.
-    /// The base path is assumed to be a trusted directory
+    /// Load a TZif file by key, assuming the key is untrusted input.
     fn load_tzif(&self, tzid: &str) -> Option<TZif> {
         if !is_valid_key(tzid) {
             return None;

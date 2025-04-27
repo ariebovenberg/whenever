@@ -1,23 +1,30 @@
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": {
     "values": [
       {
         "tool": "Whenever",
-        "time": 0.41,
-        "timeFormat": "0.41s"
+        "time": 0.43,
+        "timeFormat": "0.4s"
+
+      },
+
+      {
+        "tool": "datetime",
+        "time": 1.59,
+        "timeFormat": "1.6s"
 
       },
       {
-        "tool": "datetime",
-        "time": 1.68,
-        "timeFormat": "1.68s"
+        "tool": "Whenever (pure python)",
+        "time": 8.47,
+        "timeFormat": "8.5s"
 
       },
       {
         "tool": "Arrow",
         "time": 44.8,
-        "timeFormat": "44.8s"
+        "timeFormat": "45s"
       },
       {
         "tool": "Pendulum",
@@ -34,14 +41,14 @@
       },
       {
         "name": "titleColor",
-        //"value": "#333333"
-        "value": "#C9D1D9"
+        "value": "#333333",
+        //"value": "#C9D1D9"
 
       },
       {
         "name": "labelColor",
-        //"value": "#333333"
-        "value": "#C9D1D9"
+        "value": "#333333",
+        //"value": "#C9D1D9"
       }
     ],
     "header": {
@@ -148,7 +155,7 @@
       //"scale": {"type": "log"}
     }
   },
-  "height": 75,
+  "height": 105,
   "width": "container",
   "layer": [
     {

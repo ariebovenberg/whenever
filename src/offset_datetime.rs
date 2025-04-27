@@ -87,15 +87,12 @@ impl OffsetDateTime {
                     hour,
                     minute,
                     second,
-                    subsec: nanos,
+                    subsec,
                 },
-            offset: offset_secs,
+            offset,
             ..
         } = self;
-        let tz = TimeZone_FromTimeZone(
-            Delta_FromDelta(0, offset_secs.get(), 0, 0, DeltaType),
-            NULL(),
-        );
+        let tz = TimeZone_FromTimeZone(Delta_FromDelta(0, offset.get(), 0, 0, DeltaType), NULL());
         defer_decref!(tz);
         DateTime_FromDateAndTime(
             year.get().into(),
@@ -104,7 +101,7 @@ impl OffsetDateTime {
             hour.into(),
             minute.into(),
             second.into(),
-            (nanos.get() / 1_000) as _,
+            (subsec.get() / 1_000) as _,
             tz,
             DateTimeType,
         )
@@ -126,7 +123,7 @@ impl OffsetDateTime {
 
     pub(crate) unsafe fn from_py_and_nanos_unchecked(
         dt: *mut PyObject,
-        nanos: SubSecNanos,
+        subsec: SubSecNanos,
     ) -> PyResult<Self> {
         OffsetDateTime::new(
             Date::from_py_unchecked(dt),
@@ -134,7 +131,7 @@ impl OffsetDateTime {
                 hour: PyDateTime_DATE_GET_HOUR(dt) as u8,
                 minute: PyDateTime_DATE_GET_MINUTE(dt) as u8,
                 second: PyDateTime_DATE_GET_SECOND(dt) as u8,
-                subsec: nanos,
+                subsec,
             },
             offset_from_py_dt(dt)?,
         )
@@ -229,12 +226,8 @@ impl PyWrapped for OffsetDateTime {}
 
 impl Display for OffsetDateTime {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let &OffsetDateTime {
-            date,
-            time,
-            offset: offset_secs,
-        } = self;
-        write!(f, "{}T{}{}", date, time, offset_secs)
+        let &OffsetDateTime { date, time, offset } = self;
+        write!(f, "{}T{}{}", date, time, offset)
     }
 }
 
@@ -265,8 +258,8 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time =
         Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?;
-    let offset_secs = extract_offset(offset, State::for_type(cls).time_delta_type)?;
-    OffsetDateTime::new(date, time, offset_secs)
+    let offset = extract_offset(offset, State::for_type(cls).time_delta_type)?;
+    OffsetDateTime::new(date, time, offset)
         .ok_or_value_err("Time is out of range")?
         .to_obj(cls)
 }
@@ -300,12 +293,8 @@ pub(crate) unsafe fn extract_offset(
 }
 
 unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
-    let OffsetDateTime {
-        date,
-        time,
-        offset: offset_secs,
-    } = OffsetDateTime::extract(slf);
-    format!("OffsetDateTime({} {}{})", date, time, offset_secs).to_py()
+    let OffsetDateTime { date, time, offset } = OffsetDateTime::extract(slf);
+    format!("OffsetDateTime({} {}{})", date, time, offset).to_py()
 }
 
 unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
@@ -550,11 +539,7 @@ unsafe fn replace_date(
     args: &[*mut PyObject],
     kwargs: &mut KwargIter,
 ) -> PyReturn {
-    let OffsetDateTime {
-        time,
-        offset: offset_secs,
-        ..
-    } = OffsetDateTime::extract(slf);
+    let OffsetDateTime { time, offset, .. } = OffsetDateTime::extract(slf);
     let state = State::for_type(cls);
 
     check_ignore_dst_kwarg(kwargs, state, doc::ADJUST_OFFSET_DATETIME_MSG)?;
@@ -563,7 +548,7 @@ unsafe fn replace_date(
         raise_type_err("replace() takes exactly 1 positional argument")?
     };
     if Py_TYPE(arg) == state.date_type {
-        OffsetDateTime::new(Date::extract(arg), time, offset_secs)
+        OffsetDateTime::new(Date::extract(arg), time, offset)
             .ok_or_value_err("New datetime is out of range")?
             .to_obj(cls)
     } else {
@@ -577,11 +562,7 @@ unsafe fn replace_time(
     args: &[*mut PyObject],
     kwargs: &mut KwargIter,
 ) -> PyReturn {
-    let OffsetDateTime {
-        date,
-        offset: offset_secs,
-        ..
-    } = OffsetDateTime::extract(slf);
+    let OffsetDateTime { date, offset, .. } = OffsetDateTime::extract(slf);
     let state = State::for_type(cls);
     check_ignore_dst_kwarg(kwargs, state, doc::ADJUST_OFFSET_DATETIME_MSG)?;
 
@@ -590,7 +571,7 @@ unsafe fn replace_time(
     };
 
     if Py_TYPE(arg) == state.time_type {
-        OffsetDateTime::new(date, Time::extract(arg), offset_secs)
+        OffsetDateTime::new(date, Time::extract(arg), offset)
             .ok_or_value_err("New datetime is out of range")?
             .to_obj(cls)
     } else {
@@ -920,7 +901,7 @@ unsafe fn check_from_timestamp_args_return_offset(
     }: &State,
 ) -> PyResult<Offset> {
     let mut ignore_dst = false;
-    let mut offset_secs = None;
+    let mut offset = None;
     if args.len() != 1 {
         raise_type_err(format!(
             "{}() takes 1 positional argument but {} were given",
@@ -933,7 +914,7 @@ unsafe fn check_from_timestamp_args_return_offset(
         if eq(key, str_ignore_dst) {
             ignore_dst = value == Py_True();
         } else if eq(key, str_offset) {
-            offset_secs = Some(extract_offset(value, time_delta_type)?);
+            offset = Some(extract_offset(value, time_delta_type)?);
         } else {
             return Ok(false);
         }
@@ -944,7 +925,7 @@ unsafe fn check_from_timestamp_args_return_offset(
         raise(exc_implicitly_ignoring_dst, doc::TIMESTAMP_DST_MSG)?
     }
 
-    offset_secs.ok_or_type_err("Missing required keyword argument: 'offset'")
+    offset.ok_or_type_err("Missing required keyword argument: 'offset'")
 }
 
 unsafe fn from_timestamp(
@@ -1016,14 +997,31 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
         .to_obj(cls.cast())
 }
 
-unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
-    let state = State::for_type(cls.cast());
-    if args.len() != 2 {
-        raise_type_err("strptime() takes exactly 2 arguments")?;
-    }
+unsafe fn parse_strptime(
+    _: *mut PyObject,
+    cls: *mut PyTypeObject,
+    args: &[*mut PyObject],
+    kwargs: &mut KwargIter,
+) -> PyReturn {
+    let state = State::for_type(cls);
+    let format_obj = match kwargs.next() {
+        Some((key, value)) if kwargs.len() == 1 && key.py_eq(state.str_format)? => value,
+        _ => raise_type_err("parse_strptime() requires exactly one keyword argument `format`")?,
+    };
+    let &[arg_obj] = args else {
+        raise_type_err(format!(
+            "parse_strptime() takes exactly 1 positional argument, got {}",
+            args.len()
+        ))?
+    };
+
     // OPTIMIZE: get this working with vectorcall
-    let parsed =
-        PyObject_Call(state.strptime, steal!((args[0], args[1]).to_py()?), NULL()).as_result()?;
+    let parsed = PyObject_Call(
+        state.strptime,
+        steal!((arg_obj, format_obj).to_py()?),
+        NULL(),
+    )
+    .as_result()?;
     defer_decref!(parsed);
 
     OffsetDateTime::from_py(parsed, state)?
@@ -1033,7 +1031,7 @@ unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
                 (parsed as *mut PyObject).repr()
             )
         })?
-        .to_obj(cls.cast())
+        .to_obj(cls)
 }
 
 unsafe fn format_rfc2822(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -1059,7 +1057,7 @@ unsafe fn round(
     let OffsetDateTime {
         mut date,
         time,
-        offset: offset_secs,
+        offset,
     } = OffsetDateTime::extract(slf);
     let (time_rounded, next_day) = time.round(increment as u64, mode);
     if next_day == 1 {
@@ -1070,7 +1068,7 @@ unsafe fn round(
     OffsetDateTime {
         date,
         time: time_rounded,
-        offset: offset_secs,
+        offset,
     }
     .to_obj(cls)
 }
@@ -1130,7 +1128,11 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(replace, doc::OFFSETDATETIME_REPLACE),
     method_kwargs!(replace_date, doc::OFFSETDATETIME_REPLACE_DATE),
     method_kwargs!(replace_time, doc::OFFSETDATETIME_REPLACE_TIME),
-    method_vararg!(strptime, doc::OFFSETDATETIME_STRPTIME, METH_CLASS),
+    method_kwargs!(
+        parse_strptime,
+        doc::OFFSETDATETIME_PARSE_STRPTIME,
+        METH_CLASS
+    ),
     method_kwargs!(add, doc::OFFSETDATETIME_ADD),
     method_kwargs!(subtract, doc::OFFSETDATETIME_SUBTRACT),
     method!(difference, doc::EXACTTIME_DIFFERENCE, METH_O),

@@ -637,11 +637,8 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let TimeDelta {
-        secs,
-        subsec: nanos,
-    } = TimeDelta::extract(slf);
-    let data = pack![secs.get(), nanos.get()];
+    let TimeDelta { secs, subsec } = TimeDelta::extract(slf);
+    let data = pack![secs.get(), subsec.get()];
     (
         State::for_obj(slf).unpickle_time_delta,
         steal!((steal!(data.to_py()?),).to_py()?),
@@ -707,10 +704,7 @@ unsafe fn from_py_timedelta(cls: *mut PyObject, d: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn py_timedelta(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let TimeDelta {
-        subsec: nanos,
-        secs,
-    } = TimeDelta::extract(slf);
+    let TimeDelta { subsec, secs } = TimeDelta::extract(slf);
     let &PyDateTime_CAPI {
         Delta_FromDelta,
         DeltaType,
@@ -719,7 +713,7 @@ unsafe fn py_timedelta(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     Delta_FromDelta(
         secs.get().div_euclid(S_PER_DAY.into()) as _,
         secs.get().rem_euclid(S_PER_DAY.into()) as _,
-        (nanos.get() / 1_000) as _,
+        (subsec.get() / 1_000) as _,
         0,
         DeltaType,
     )
@@ -745,18 +739,14 @@ fn parse_prefix(s: &mut &[u8]) -> Option<i128> {
 }
 
 unsafe fn in_hrs_mins_secs_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let TimeDelta {
-        secs,
-        subsec: nanos_unsigned,
-    } = TimeDelta::extract(slf);
+    let TimeDelta { secs, subsec } = TimeDelta::extract(slf);
     let secs = secs.get();
-
     let (secs, nanos) = if secs >= 0 {
-        (secs, nanos_unsigned.get())
-    } else if nanos_unsigned.get() == 0 {
+        (secs, subsec.get())
+    } else if subsec.get() == 0 {
         (secs, 0)
     } else {
-        (secs + 1, nanos_unsigned.get() - 1_000_000_000)
+        (secs + 1, subsec.get() - 1_000_000_000)
     };
     (
         steal!((secs / 3_600).to_py()?),

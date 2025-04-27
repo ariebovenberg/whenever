@@ -4,7 +4,6 @@
 [![](https://img.shields.io/pypi/pyversions/whenever.svg?style=flat-square)](https://pypi.python.org/pypi/whenever)
 [![](https://img.shields.io/pypi/l/whenever.svg?style=flat-square&color=blue)](https://pypi.python.org/pypi/whenever)
 [![](https://img.shields.io/badge/mypy-strict-forestgreen?style=flat-square)](https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-strict)
-[![](https://img.shields.io/badge/coverage-100%25-forestgreen?style=flat-square)](https://github.com/ariebovenberg/whenever)
 [![](https://img.shields.io/github/actions/workflow/status/ariebovenberg/whenever/checks.yml?branch=main&style=flat-square)](https://github.com/ariebovenberg/whenever)
 [![](https://img.shields.io/readthedocs/whenever.svg?style=flat-square)](http://whenever.readthedocs.io/)
 
@@ -23,9 +22,9 @@ Don't buy the Rust hype?—don't worry: a **pure Python** version is available a
 
   <p align="center">
     <picture align="center">
-        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ariebovenberg/whenever/tzif/benchmarks/comparison/graph-dark.svg">
-        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/ariebovenberg/whenever/tzif/benchmarks/comparison/graph-light.svg">
-        <img alt="Shows a bar chart with benchmark results." src="https://raw.githubusercontent.com/ariebovenberg/whenever/tzif/benchmarks/comparison/graph-light.svg">
+        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ariebovenberg/whenever/main/benchmarks/comparison/graph-dark.svg">
+        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/ariebovenberg/whenever/main/benchmarks/comparison/graph-light.svg">
+        <img alt="Shows a bar chart with benchmark results." src="https://raw.githubusercontent.com/ariebovenberg/whenever/main/benchmarks/comparison/graph-light.svg">
     </picture>
   </p>
 
@@ -227,7 +226,7 @@ For more details, see the licenses included in the distribution.
   robust and cross-platform handling of the system local timezone.
 
 - The pure-Python version of *whenever* also makes extensive use of Python's ``datetime``
-  and ``zoneinfo`` libraries for its internals.
+  and ``zoneinfo`` libraries internally.
 
 - *Whenever* also borrows a few nifty ideas from [Jiff](https://github.com/BurntSushi/jiff):
   A modern datetime library in Rust which takes inspiration from Temporal.
