@@ -183,6 +183,7 @@ INVALID_ISO_STRINGS = [
     "2020-08-15T12:08:30+05:00stuff",  # trailing stuff
     "2020-08-15T12:𝟘8:30+00:00",  # non-ASCII
     "2020-08-15T12:08:30.0034+05:𝟙0",  # non-ASCII
+    "2020-08-15T12:08:30[Iceland]",  # TZ ID but no offset
     # not enough content
     "",
     "T",
@@ -1486,7 +1487,8 @@ INVALID_RFC2822 = [
     "Sat, 1 Sep 2020 22:22 -2400",
     "Tue, 29 Feb 2023 22:22 -0400",
     "Wed, 30 Feb 2024 22:22 -0400",
-    "Sat, 1 Mon 2020 14:12 +0400",
+    "Sat, 1 Foo 2020 14:12 +0400",
+    "Sat, 15 Aug 2𝟘2𝟘 23:12:09 +0400",  # non-ascii
     # invalid comma
     "Mon 28 Feb 2023 22:22 -0400",
     "Sat. 15 Aug 2020 23:12:09 GMT",

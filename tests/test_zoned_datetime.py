@@ -305,9 +305,11 @@ def test_available_timezones():
     # So long as we don't mess with the configuration, these should be identical
     assert tzs == zoneinfo_available_timezones()
 
+    d = Instant.from_utc(2025, 3, 26, 1, 15, 30)
+
     # We should be able to load all of them
     for tz in tzs:
-        ZonedDateTime(2020, 1, 1, tz=tz)
+        d = d.to_tz(tz)
 
 
 def test_offset():
@@ -1217,7 +1219,25 @@ class TestParseCommonIso:
                     disambiguate="earlier",
                 ),
             ),
-            # Skipped times
+            # Offsets are optional
+            (
+                "2023-08-25T12:15:30[Europe/Amsterdam]",
+                ZonedDateTime(2023, 8, 25, 12, 15, 30, tz="Europe/Amsterdam"),
+            ),
+            # no offset for skipped time
+            (
+                "2023-03-26T02:15:30[Europe/Amsterdam]",
+                ZonedDateTime(
+                    2023,
+                    3,
+                    26,
+                    2,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                    disambiguate="compatible",
+                ),
+            ),
             # Alternate formats
             (
                 "20200815 12:08:30+02:00[Europe/Amsterdam]",
@@ -2894,13 +2914,29 @@ class TestRound:
             d.round("day")
 
 
-def test_pickle():
-    d = ZonedDateTime(
-        2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
-    )
-    dumped = pickle.dumps(d)
-    assert len(dumped) <= len(pickle.dumps(d.py_datetime()))
-    assert pickle.loads(pickle.dumps(d)).exact_eq(d)
+class TestPickle:
+    def test_simple(self):
+        d = ZonedDateTime(
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
+        )
+        dumped = pickle.dumps(d)
+        assert len(dumped) <= len(pickle.dumps(d.py_datetime()))
+        assert pickle.loads(pickle.dumps(d)).exact_eq(d)
+
+    def test_ambiguous(self):
+        d1 = ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            tz="Europe/Amsterdam",
+            disambiguate="earlier",
+        )
+        d2 = d1.replace(disambiguate="later")
+        assert pickle.loads(pickle.dumps(d1)).exact_eq(d1)
+        assert pickle.loads(pickle.dumps(d2)).exact_eq(d2)
 
 
 def test_old_pickle_data_remains_unpicklable():
