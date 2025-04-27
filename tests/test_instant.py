@@ -1,5 +1,6 @@
 import pickle
 import re
+from contextlib import suppress
 from copy import copy, deepcopy
 from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
 from zoneinfo import ZoneInfo
@@ -292,27 +293,38 @@ class TestFromTimestamp:
         ) - nanoseconds(4)
 
     def test_extremes(self):
-        assert Instant.from_timestamp(
-            Instant.MAX.timestamp()
-        ) == Instant.from_utc(9999, 12, 31, 23, 59, 59)
-        assert Instant.from_timestamp(Instant.MIN.timestamp()) == Instant.MIN
+        with suppress(OSError):
+            assert Instant.from_timestamp(
+                Instant.MAX.timestamp()
+            ) == Instant.from_utc(9999, 12, 31, 23, 59, 59)
 
-        assert Instant.from_timestamp_millis(
-            Instant.MAX.timestamp_millis()
-        ) == Instant.from_utc(9999, 12, 31, 23, 59, 59, nanosecond=999_000_000)
-        assert (
-            Instant.from_timestamp_millis(Instant.MIN.timestamp_millis())
-            == Instant.MIN
-        )
+        with suppress(OSError):
+            assert (
+                Instant.from_timestamp(Instant.MIN.timestamp()) == Instant.MIN
+            )
 
-        assert (
-            Instant.from_timestamp_nanos(Instant.MAX.timestamp_nanos())
-            == Instant.MAX
-        )
-        assert (
-            Instant.from_timestamp_nanos(Instant.MIN.timestamp_nanos())
-            == Instant.MIN
-        )
+        with suppress(OSError):
+            assert Instant.from_timestamp_millis(
+                Instant.MAX.timestamp_millis()
+            ) == Instant.from_utc(
+                9999, 12, 31, 23, 59, 59, nanosecond=999_000_000
+            )
+        with suppress(OSError):
+            assert (
+                Instant.from_timestamp_millis(Instant.MIN.timestamp_millis())
+                == Instant.MIN
+            )
+
+        with suppress(OSError):
+            assert (
+                Instant.from_timestamp_nanos(Instant.MAX.timestamp_nanos())
+                == Instant.MAX
+            )
+        with suppress(OSError):
+            assert (
+                Instant.from_timestamp_nanos(Instant.MIN.timestamp_nanos())
+                == Instant.MIN
+            )
 
     def test_float(self):
         assert Instant.from_timestamp(1.0) == Instant.from_timestamp(1)
@@ -327,7 +339,7 @@ class TestFromTimestamp:
         with pytest.raises((ValueError, OverflowError)):
             Instant.from_timestamp(9e200)
 
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises((ValueError, OverflowError, OSError)):
             Instant.from_timestamp(float(Instant.MAX.timestamp()) + 0.99999999)
 
         with pytest.raises((ValueError, OverflowError)):

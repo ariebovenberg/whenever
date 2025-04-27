@@ -6587,14 +6587,20 @@ def _try_tzif_from_path(key: _BenignKey) -> bytes | None:
 def _tzif_from_tzdata(key: _BenignKey) -> bytes:
     try:
         tzdata_path = __import__("tzdata.zoneinfo").zoneinfo.__path__[0]
-        with open(os.path.join(tzdata_path, *key.split("/")), "rb") as f:
-            return f.read()
+        # We check before we read, since the resulting exceptions vary
+        # on different platforms
+        if os.path.isfile(
+            relpath := os.path.join(tzdata_path, *key.split("/"))
+        ):
+            with open(relpath, "rb") as f:
+                return f.read()
+        else:
+            raise FileNotFoundError()
     # Several exceptions amount to "can't find the key"
     except (
         ImportError,
         FileNotFoundError,
         UnicodeEncodeError,
-        IsADirectoryError,
     ):
         raise TimeZoneNotFoundError.for_key(key)
 

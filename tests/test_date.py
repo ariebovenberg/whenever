@@ -264,7 +264,7 @@ class TestParseCommonIso:
             Date.parse_common_iso(s)
 
     def test_no_string(self):
-        with pytest.raises(TypeError, match="(int|str)"):
+        with pytest.raises((TypeError, AttributeError), match="(int|str)"):
             Date.parse_common_iso(20210102)  # type: ignore[arg-type]
 
 

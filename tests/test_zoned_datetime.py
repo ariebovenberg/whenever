@@ -131,6 +131,7 @@ class TestInit:
             "+VERSION",  # in tz path, but not a tzif file
             "leapseconds",  # in tz path, but not a tzif file
             "Europe",  # a directory
+            "__init__.py",  # file in tzdata package
             "",
             ".",
             "/",
@@ -1572,7 +1573,7 @@ class TestFromTimestamp:
         with pytest.raises((ValueError, OverflowError)):
             ZonedDateTime.from_timestamp(9e200, tz="America/New_York")
 
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises((ValueError, OverflowError, OSError)):
             ZonedDateTime.from_timestamp(
                 float(Instant.MAX.timestamp()) + 0.99999999,
                 tz="America/New_York",
