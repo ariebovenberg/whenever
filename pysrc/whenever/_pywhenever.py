@@ -1776,7 +1776,7 @@ _MAX_TDELTA_DIGITS = 35  # consistent with Rust extension
 
 def _parse_timedelta_component(
     fullstr: str, exc: Exception
-) -> tuple[str, int, str]:
+) -> tuple[str, int, Literal["H", "M", "S"]]:
     try:
         split_index, unit = next(
             (i, c) for i, c in enumerate(fullstr) if c in "HMS"
@@ -1787,7 +1787,6 @@ def _parse_timedelta_component(
     raw, rest = fullstr[:split_index], fullstr[split_index + 1 :]
 
     if unit == "S":
-        value = 3
         digits, sep, nanos_raw = _split_nextchar(raw, ".,")
 
         if (
@@ -2374,6 +2373,8 @@ class DateTimeDelta(_ImmutableBase):
                 break
             else:
                 raise exc
+
+            prev_unit = unit
 
         if nanos > _MAX_DELTA_NANOS:
             raise exc
@@ -6116,7 +6117,7 @@ if _PY311:
         except ValueError:
             _parse_err(s)
 
-else:
+else:  # pragma: no cover
 
     def __date_from_iso_basic(s: str, /) -> _date:
         return _date.fromisoformat(s[:4] + "-" + s[4:6] + "-" + s[6:8])
@@ -6369,7 +6370,7 @@ _disambiguate_to_fold: Mapping[str, Fold] = {
 def _adjust_fold_to_offset(dt: _datetime, offset: _timedelta) -> _datetime:
     if offset != dt.utcoffset():  # offset/zone mismatch: try other fold
         dt = dt.replace(fold=1)
-        if dt.utcoffset() != offset:
+        if dt.utcoffset() != offset:  # pragma: no cover (#39)
             raise InvalidOffset()
     return dt
 
