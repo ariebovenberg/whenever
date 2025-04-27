@@ -62,6 +62,7 @@ from typing import (
     NoReturn,
     TypeVar,
     Union,
+    cast,
     no_type_check,
     overload,
 )
@@ -1803,7 +1804,7 @@ def _parse_timedelta_component(
             raise exc
         value = int(raw)
 
-    return rest, value, unit
+    return rest, value, cast(Literal["H", "M", "S"], unit)
 
 
 TimeDelta.ZERO = TimeDelta()

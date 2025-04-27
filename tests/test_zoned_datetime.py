@@ -305,7 +305,7 @@ def test_available_timezones():
     # So long as we don't mess with the configuration, these should be identical
     assert tzs == zoneinfo_available_timezones()
 
-    d = Instant.from_utc(2025, 3, 26, 1, 15, 30)
+    d = ZonedDateTime(2025, 3, 26, 1, 15, 30, tz="UTC")
 
     # We should be able to load all of them
     for tz in tzs:
