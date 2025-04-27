@@ -528,7 +528,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
                 hour,
                 minute,
                 second,
-                subsec: nanos,
+                subsec,
             },
     } = DateTime::extract(slf);
     let data = pack![
@@ -538,7 +538,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         hour,
         minute,
         second,
-        nanos.get()
+        subsec.get()
     ];
     (
         State::for_obj(slf).unpickle_plain_datetime,
@@ -594,7 +594,7 @@ unsafe fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
                 hour,
                 minute,
                 second,
-                subsec: nanos,
+                subsec,
             },
     } = DateTime::extract(slf);
     let &PyDateTime_CAPI {
@@ -609,7 +609,7 @@ unsafe fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         hour.into(),
         minute.into(),
         second.into(),
-        (nanos.get() / 1_000) as _,
+        (subsec.get() / 1_000) as _,
         Py_None(),
         DateTimeType,
     )
@@ -638,20 +638,31 @@ unsafe fn parse_common_iso(cls: *mut PyObject, arg: *mut PyObject) -> PyReturn {
         .to_obj(cls.cast())
 }
 
-unsafe fn strptime(cls: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
-    if args.len() != 2 {
+unsafe fn parse_strptime(
+    _: *mut PyObject,
+    cls: *mut PyTypeObject,
+    args: &[*mut PyObject],
+    kwargs: &mut KwargIter,
+) -> PyReturn {
+    let &State {
+        str_format,
+        strptime,
+        ..
+    } = State::for_type(cls);
+    let format_obj = match kwargs.next() {
+        Some((key, value)) if kwargs.len() == 1 && key.py_eq(str_format)? => value,
+        _ => raise_type_err("parse_strptime() requires exactly one keyword argument `format`")?,
+    };
+    let &[arg_obj] = args else {
         raise_type_err(format!(
-            "strptime() takes exactly 2 arguments ({} given)",
+            "parse_strptime() takes exactly 1 positional argument, got {}",
             args.len()
         ))?
-    }
+    };
+
     // OPTIMIZE: get this working with vectorcall
-    let parsed = PyObject_Call(
-        State::for_type(cls.cast()).strptime,
-        steal!((args[0], args[1]).to_py()?),
-        NULL(),
-    )
-    .as_result()?;
+    let parsed =
+        PyObject_Call(strptime, steal!((arg_obj, format_obj).to_py()?), NULL()).as_result()?;
     defer_decref!(parsed);
     let tzinfo = borrow_dt_tzinfo(parsed);
     if !is_none(tzinfo) {
@@ -843,7 +854,11 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::PLAINDATETIME_PARSE_COMMON_ISO,
         METH_O | METH_CLASS
     ),
-    method_vararg!(strptime, doc::PLAINDATETIME_STRPTIME, METH_CLASS),
+    method_kwargs!(
+        parse_strptime,
+        doc::PLAINDATETIME_PARSE_STRPTIME,
+        METH_CLASS
+    ),
     method_kwargs!(replace, doc::PLAINDATETIME_REPLACE),
     method!(assume_utc, doc::PLAINDATETIME_ASSUME_UTC),
     method!(

@@ -144,6 +144,7 @@ impl Neg for OffsetDelta {
 pub struct EpochSecs(i64);
 
 impl EpochSecs {
+    // 0000-01-01 00:00 to 9999-12-31 23:59
     pub(crate) const MIN: EpochSecs = EpochSecs(-62_135_596_800);
     pub(crate) const MAX: EpochSecs = EpochSecs(253_402_300_799);
     pub const fn new_unchecked(secs: i64) -> Self {
@@ -231,6 +232,7 @@ impl EpochSecs {
 pub struct UnixDays(i32);
 
 impl UnixDays {
+    // 0000-01-01 to 9999-12-31
     pub(crate) const MIN: UnixDays = UnixDays(-719_162);
     pub(crate) const MAX: UnixDays = UnixDays(2_932_896);
     pub fn new_unchecked(days: i32) -> Self {
@@ -405,7 +407,6 @@ impl From<Year> for u16 {
 }
 
 #[repr(u8)]
-#[allow(dead_code)] // enum members aren't explicitly constructed
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Month {
     January = 1,

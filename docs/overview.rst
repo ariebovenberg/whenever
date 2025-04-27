@@ -695,7 +695,9 @@ parts of the standard to support. ``whenever`` targets the most common
 and widely-used subset of the standard, while avoiding the more obscure
 and rarely-used parts, which are often the source of confusion and bugs.
 
-``whenever`` takes mostly `after Temporal <https://tc39.es/proposal-temporal/#sec-temporal-iso8601grammar>`_,
+``whenever``'s 
+:meth:`~whenever._BasicConversions.parse_common_iso` methods take
+mostly `after Temporal <https://tc39.es/proposal-temporal/#sec-temporal-iso8601grammar>`_,
 namely:
 
 - Both "extended" (e.g. ``2023-12-28``) and "basic" (e.g. ``20231228``) formats are supported.
@@ -705,7 +707,7 @@ namely:
   so long as they are themselves consistent. e.g. ``2023-12-28T113000+03`` is OK, but
   ``2023-1228T11:23`` is not.
 - Characters may be lowercase or uppercase (e.g. ``2023-12-28T11:30:00Z`` is the same as ``2023-12-28t11:30:00z``).
-- Only seconds may be fractional (e.g. ``11:30:00.123456789Z`` but not minutes like ``11:30.5``).
+- Only seconds may be fractional (e.g. ``11:30:00.123456789Z`` is OK but ``11:30.5`` is not).
 - Seconds may be precise up to 9 digits (nanoseconds).
 - Both ``.`` and ``,`` may be used as decimal separators
 - The offset ``-00:00`` is allowed, and is equivalent to ``+00:00``
@@ -713,14 +715,11 @@ namely:
 - A IANA timezone identifier may be included in square brackets after the offset,
   like ``2023-12-28T11:30:00+01[Europe/Paris]``.
   This is part of the recent RFC 9557 extension to ISO 8601.
-- The offset ``+00:00`` is slightly different from ``Z``.
-  ``+00:00`` indicates an offset known to be 0 hours and 0 minutes,
-  while ``Z`` indicates no offset is unspecified.
 - In the duration format, the ``W`` unit may be used alongside other calendar units
   (``Y``, ``M``, ``D``).
 
 Below are the default string formats you get for calling each type's
-``format_common_iso()`` method:
+:meth:`~whenever._BasicConversions.format_common_iso` method:
 
 +-----------------------------------------+------------------------------------------------+
 | Type                                    | Default string format                          |
@@ -736,15 +735,7 @@ Below are the default string formats you get for calling each type's
 | :class:`~whenever.SystemDateTime`       | ``YYYY-MM-DDTHH:MM:SS±HH:MM``                  |
 +-----------------------------------------+------------------------------------------------+
 
-Where:
-
-- Seconds may be fractional
-- Offsets may have second precision
-- The offset may be replaced with a ``"Z"`` to indicate UTC
-
-Use the methods :meth:`~whenever._BasicConversions.format_common_iso` and
-:meth:`~whenever._BasicConversions.parse_common_iso` to format and parse
-to this format, respectively:
+Example usage:
 
 >>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=+5)
 >>> d.format_common_iso()
@@ -801,21 +792,26 @@ OffsetDateTime(2021-07-13 09:45:00-09:00)
 Custom formats
 ~~~~~~~~~~~~~~
 
-For now, basic customized parsing functionality is implemented in the ``strptime()`` methods
+.. admonition:: Future plans
+
+   Python's builtin ``strptime`` has its limitations, so a more full-featured
+   parsing API may be added in the future.
+
+For now, basic customized parsing functionality is implemented in the ``parse_strptime()`` methods
 of :class:`~whenever.OffsetDateTime` and :class:`~whenever.PlainDateTime`.
 As the name suggests, these methods are thin wrappers around the standard library
 :meth:`~datetime.datetime.strptime` function.
 The same `formatting rules <https://docs.python.org/3/library/datetime.html#format-codes>`_ apply.
 
->>> OffsetDateTime.strptime("2023-01-01+05:00", "%Y-%m-%d%z")
+>>> OffsetDateTime.parse_strptime("2023-01-01+05:00", "%Y-%m-%d%z")
 OffsetDateTime(2023-01-01 00:00:00+05:00)
->>> PlainDateTime.strptime("2023-01-01 15:00", "%Y-%m-%d %H:%M")
+>>> PlainDateTime.parse_strptime("2023-01-01 15:00", "%Y-%m-%d %H:%M")
 PlainDateTime(2023-01-01 15:00:00)
 
 :class:`~whenever.ZonedDateTime` and :class:`~whenever.SystemDateTime` do not (yet)
-implement ``strptime()`` methods, because they require disambiguation.
+implement ``parse_strptime()`` methods, because they require disambiguation.
 If you'd like to parse into these types,
-use :meth:`PlainDateTime.strptime() <whenever.PlainDateTime.strptime>`
+use :meth:`PlainDateTime.parse_strptime() <whenever.PlainDateTime.parse_strptime>`
 to parse them, and then use the :meth:`~whenever.PlainDateTime.assume_utc`,
 :meth:`~whenever.PlainDateTime.assume_fixed_offset`,
 :meth:`~whenever.PlainDateTime.assume_tz`,
@@ -823,14 +819,10 @@ or :meth:`~whenever.PlainDateTime.assume_system_tz`
 methods to convert them.
 This makes it explicit what information is being assumed.
 
->>> d = PlainDateTime.strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S")
+>>> d = PlainDateTime.parse_strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S")
 >>> d.assume_tz("Europe/Amsterdam")
 ZonedDateTime(2023-10-29 02:30:00+02:00[Europe/Amsterdam])
 
-.. admonition:: Future plans
-
-   Python's builtin ``strptime`` has its limitations, so a more full-featured
-   parsing API may be added in the future.
 
 To and from the standard library
 --------------------------------

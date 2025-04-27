@@ -25,7 +25,7 @@ impl Drop for DecrefOnDrop {
     }
 }
 
-// Automatically decref the object when it goes out of scope
+// Helper to automatically decref the object when it goes out of scope
 macro_rules! defer_decref(
     ($name:ident) => {
         let _deferred = DecrefOnDrop($name);
@@ -361,6 +361,8 @@ impl ToPy for &[u8] {
     }
 }
 
+// REFACTOR: instead of this trait, have an explicit macro/function
+// that is more readable in typical usage scenarios.
 impl<T> ToPy for (T,) {
     unsafe fn to_py(self) -> PyReturn {
         PyTuple_Pack(1, self.0).as_result()
@@ -425,12 +427,13 @@ impl LazyImport {
         }
     }
 
+    /// Get the object, importing it if necessary.
     pub(crate) unsafe fn get(&self) -> PyReturn {
         unsafe {
-            let obj = *self.obj.get(); // Access the current value
+            let obj = *self.obj.get();
             if obj.is_null() {
                 let imported = import_from(self.module, self.name)?;
-                self.obj.get().write(imported); // Update the value
+                self.obj.get().write(imported);
                 Ok(imported)
             } else {
                 Ok(obj.as_mut().unwrap())
@@ -438,6 +441,7 @@ impl LazyImport {
         }
     }
 
+    /// Ensure Python's GC can traverse this object.
     pub(crate) unsafe fn traverse(&self, visit: visitproc, arg: *mut c_void) {
         let obj = *self.obj.get();
         if !obj.is_null() {

@@ -58,7 +58,7 @@ impl OffsetDateTime {
     ) -> PyResult<Self> {
         use Ambiguity::*;
         Ok(match offset_for_system_tz(py_api, date, time)? {
-            Unambiguous(offset_secs) => OffsetDateTime::new_unchecked(date, time, offset_secs),
+            Unambiguous(offset) => OffsetDateTime::new_unchecked(date, time, offset),
             Fold(offset0, offset1) => {
                 let offset = match dis {
                     Disambiguate::Compatible | Disambiguate::Earlier => offset0,
@@ -71,7 +71,7 @@ impl OffsetDateTime {
                 OffsetDateTime::new_unchecked(date, time, offset)
             }
             Gap(offset0, offset1) => {
-                let (offset_secs, shift) = match dis {
+                let (offset, shift) = match dis {
                     Disambiguate::Compatible | Disambiguate::Later => {
                         (offset1, offset1.sub(offset0))
                     }
@@ -84,7 +84,7 @@ impl OffsetDateTime {
                 DateTime { date, time }
                     .change_offset(shift)
                     .ok_or_value_err("Resulting date is out of range")?
-                    .with_offset_unchecked(offset_secs)
+                    .with_offset_unchecked(offset)
             }
         })
     }
@@ -93,18 +93,18 @@ impl OffsetDateTime {
         py_api: &PyDateTime_CAPI,
         date: Date,
         time: Time,
-        offset: Offset,
+        target: Offset,
     ) -> PyResult<Self> {
         use Ambiguity::*;
         match offset_for_system_tz(py_api, date, time)? {
-            Unambiguous(offset_secs) => OffsetDateTime::new(date, time, offset_secs),
+            Unambiguous(offset) => OffsetDateTime::new(date, time, offset),
             Fold(offset0, offset1) => OffsetDateTime::new(
                 date,
                 time,
-                if offset == offset1 { offset1 } else { offset0 },
+                if target == offset1 { offset1 } else { offset0 },
             ),
             Gap(offset0, offset1) => {
-                let (offset_secs, shift) = if offset == offset0 {
+                let (offset, shift) = if target == offset0 {
                     (offset0, offset0.sub(offset1))
                 } else {
                     (offset1, offset1.sub(offset0))
@@ -112,7 +112,7 @@ impl OffsetDateTime {
                 DateTime { date, time }
                     .change_offset(shift)
                     .ok_or_value_err("Resulting date is out of range")?
-                    .with_offset(offset_secs)
+                    .with_offset(offset)
             }
         }
         .ok_or_value_err("Resulting datetime is out of range")
@@ -750,7 +750,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
                 hour,
                 minute,
                 second,
-                subsec: nanos,
+                subsec,
                 ..
             },
         offset,
@@ -762,7 +762,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         hour,
         minute,
         second,
-        nanos.get(),
+        subsec.get(),
         offset.get()
     ];
     (
@@ -831,9 +831,9 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
                 time_delta_type,
                 ..
             } = State::for_obj(slf_obj);
-            let offset_secs = offset_datetime::extract_offset(arg, time_delta_type)?;
+            let offset = offset_datetime::extract_offset(arg, time_delta_type)?;
             slf.instant()
-                .to_offset(offset_secs)
+                .to_offset(offset)
                 .ok_or_value_err("Resulting local date out of range")?
                 .to_obj(offset_datetime_type)
         }

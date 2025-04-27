@@ -977,7 +977,7 @@ class TestShiftMethods:
         with pytest.raises(TypeError):
             d.add(seconds(4), hours=48, seconds=5, ignore_dst=True)  # type: ignore[call-overload]
 
-        # out of i128 range
+        # tempt a i128 overflow
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.add(nanoseconds=1 << 127 - 1, ignore_dst=True)
 
@@ -1185,54 +1185,73 @@ def test_to_plain():
         assert d.local() == d.to_plain()  # type: ignore[attr-defined]
 
 
-@pytest.mark.parametrize(
-    "string, fmt, expected",
-    [
-        (
-            "2020-08-15 23:12+0315",
-            "%Y-%m-%d %H:%M%z",
-            OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(3) + minutes(15)),
-        ),
-        (
-            "2020-08-15 23:12:09+0550",
-            "%Y-%m-%d %H:%M:%S%z",
-            OffsetDateTime(
-                2020,
-                8,
-                15,
-                23,
-                12,
-                9,
-                offset=hours(5) + minutes(50),
+class TestParseStrptime:
+
+    @pytest.mark.parametrize(
+        "string, fmt, expected",
+        [
+            (
+                "2020-08-15 23:12+0315",
+                "%Y-%m-%d %H:%M%z",
+                OffsetDateTime(
+                    2020, 8, 15, 23, 12, offset=hours(3) + minutes(15)
+                ),
             ),
-        ),
-        (
-            "2020-08-15 23:12:09Z",
-            "%Y-%m-%d %H:%M:%S%z",
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
-        ),
-        (
-            "2020-08-15 23:12:09.234678Z",
-            "%Y-%m-%d %H:%M:%S.%f%z",
-            OffsetDateTime(
-                2020, 8, 15, 23, 12, 9, nanosecond=234_678_000, offset=0
+            (
+                "2020-08-15 23:12:09+05:50:12",
+                "%Y-%m-%d %H:%M:%S%z",
+                OffsetDateTime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    offset=hours(5) + minutes(50) + seconds(12),
+                ),
             ),
-        ),
-    ],
-)
-def test_strptime(string, fmt, expected):
-    assert OffsetDateTime.strptime(string, fmt) == expected
+            (
+                "2020-08-15 23:12:09Z",
+                "%Y-%m-%d %H:%M:%S%z",
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=0),
+            ),
+            (
+                "2020-08-15 23:12:09.234678Z",
+                "%Y-%m-%d %H:%M:%S.%f%z",
+                OffsetDateTime(
+                    2020, 8, 15, 23, 12, 9, nanosecond=234_678_000, offset=0
+                ),
+            ),
+        ],
+    )
+    def test_valid(self, string, fmt, expected):
+        assert OffsetDateTime.parse_strptime(string, format=fmt) == expected
 
+    def test_invalid(self):
+        # no offset
+        with pytest.raises(ValueError):
+            OffsetDateTime.parse_strptime(
+                "2020-08-15 23:12:09", format="%Y-%m-%d %H:%M:%S"
+            )
 
-def test_strptime_invalid():
-    # no offset
-    with pytest.raises(ValueError):
-        OffsetDateTime.strptime("2020-08-15 23:12:09", "%Y-%m-%d %H:%M:%S")
+        # format is keyword-only
+        with pytest.raises(TypeError, match="format|argument"):
+            OffsetDateTime.parse_strptime(
+                "2020-08-15 23:12:09 +0400", "%Y-%m-%d %H:%M:%S %z"  # type: ignore[misc]
+            )
 
-    with pytest.raises(ValueError, match="range"):
-        OffsetDateTime.strptime(
-            "0001-01-01 03:12:09+0550", "%Y-%m-%d %H:%M:%S%z"
-        )
+        # out of range
+        with pytest.raises(ValueError, match="range"):
+            OffsetDateTime.parse_strptime(
+                "0001-01-01 03:12:09+0550", format="%Y-%m-%d %H:%M:%S%z"
+            )
+
+        # sub-second offset
+        with pytest.raises(ValueError):
+            OffsetDateTime.parse_strptime(
+                "2020-08-15 23:12:09 +01:22:01.43",
+                format="%Y-%m-%d %H:%M:%S %z",
+            )
 
 
 @pytest.mark.parametrize(

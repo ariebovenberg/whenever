@@ -12,7 +12,7 @@ from whenever import (
     DateTimeDelta,
     ImplicitlyIgnoringDST,
     Instant,
-    InvalidOffset,
+    InvalidOffsetError,
     OffsetDateTime,
     PlainDateTime,
     SystemDateTime,
@@ -45,7 +45,7 @@ def test_multiple_interpreters():
 
 def test_exceptions():
     assert issubclass(ImplicitlyIgnoringDST, TypeError)
-    assert issubclass(InvalidOffset, ValueError)
+    assert issubclass(InvalidOffsetError, ValueError)
 
 
 def test_version():

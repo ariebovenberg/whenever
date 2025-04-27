@@ -211,6 +211,8 @@ There are two main reasons:
    The overhead has decreased in recent versions of PyO3, but it's still there.
 2. I was eager to learn to use the bare C API of Python, in order to better
    understand how Python extension modules and PyO3 work under the hood.
+3. ``whenever``'s use case is quite simple: it only contains immutable data types
+   with small methods. It doesn't need the full power of PyO3.
 
 Additional advantages of ``pyo3_ffi`` are:
 

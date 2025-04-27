@@ -32,7 +32,7 @@ Instant(2022-10-24 17:00:00Z)
 >>> py311_release.add(hours=3).timestamp()
 1666641600
 ";
-pub(crate) const INVALIDOFFSET: &CStr = c"\
+pub(crate) const INVALIDOFFSETERROR: &CStr = c"\
 A string has an invalid offset for the given zone";
 pub(crate) const MONTHDAY: &CStr = c"\
 A month and day without a year component.
@@ -509,10 +509,14 @@ Format as an RFC 2822 string.
 
 The inverse of the ``parse_rfc2822()`` method.
 
+Note
+----
+The output is also compatible with the (stricter) RFC 9110 standard.
+
 Example
 -------
->>> Instant.from_utc(2020, 8, 15, hour=23, minute=12).format_rfc2822()
-\"Sat, 15 Aug 2020 23:12:00 GMT\"
+>>> Instant.from_utc(2020, 8, 8, hour=23, minute=12).format_rfc2822()
+\"Sat, 08 Aug 2020 23:12:00 GMT\"
 ";
 pub(crate) const INSTANT_FROM_PY_DATETIME: &CStr = c"\
 Create an Instant from a standard library ``datetime`` object.
@@ -798,6 +802,29 @@ Note
 - Although technically part of the RFC 2822 standard,
   comments within folding whitespace are not supported.
 ";
+pub(crate) const OFFSETDATETIME_PARSE_STRPTIME: &CStr = c"\
+parse_strptime(s, /, *, format)
+--
+
+Parse a datetime with offset using the standard library ``strptime()`` method.
+
+Example
+-------
+>>> OffsetDateTime.parse_strptime(\"2020-08-15+0200\", format=\"%Y-%m-%d%z\")
+OffsetDateTime(2020-08-15 00:00:00+02:00)
+
+Note
+----
+This method defers to the standard library ``strptime()`` method,
+which may behave differently in different Python versions.
+It also only supports up to microsecond precision.
+
+Important
+---------
+An offset *must* be present in the format string.
+This means you MUST include the directive ``%z``, ``%Z``, or ``%:z``.
+To parse a datetime without an offset, use ``PlainDateTime`` instead.
+";
 pub(crate) const OFFSETDATETIME_REPLACE: &CStr = c"\
 replace($self, /, *, year=None, month=None, weeks=0, day=None, hour=None, minute=None, second=None, nanosecond=None, offset=None, ignore_dst=False)
 --
@@ -850,25 +877,6 @@ Note
   (though unlikely) that the rounded datetime will not have the same offset.
 * This method has similar behavior to the ``round()`` method of
   Temporal objects in JavaScript.
-";
-pub(crate) const OFFSETDATETIME_STRPTIME: &CStr = c"\
-strptime(s, /, fmt)
---
-
-Simple alias for
-``OffsetDateTime.from_py_datetime(datetime.strptime(s, fmt))``
-
-Example
--------
->>> OffsetDateTime.strptime(\"2020-08-15+0200\", \"%Y-%m-%d%z\")
-OffsetDateTime(2020-08-15 00:00:00+02:00)
-
-Important
----------
-The parsed ``tzinfo`` must be a fixed offset
-(``datetime.timezone`` instance).
-This means you MUST include the directive ``%z``, ``%Z``, or ``%:z``
-in the format string.
 ";
 pub(crate) const OFFSETDATETIME_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=False)
@@ -997,6 +1005,29 @@ Example
 >>> PlainDateTime.parse_common_iso(\"2020-08-15T23:12:00\")
 PlainDateTime(2020-08-15 23:12:00)
 ";
+pub(crate) const PLAINDATETIME_PARSE_STRPTIME: &CStr = c"\
+parse_strptime(s, /, *, format)
+--
+
+Parse a plain datetime using the standard library ``strptime()`` method.
+
+Example
+-------
+>>> PlainDateTime.parse_strptime(\"2020-08-15\", format=\"%d/%m/%Y_%H:%M\")
+PlainDateTime(2020-08-15 00:00:00)
+
+Note
+----
+This method defers to the standard library ``strptime()`` method,
+which may behave differently in different Python versions.
+It also only supports up to microsecond precision.
+
+Important
+---------
+There may not be an offset in the format string.
+This means you CANNOT use the directives ``%z``, ``%Z``, or ``%:z``.
+Use ``OffsetDateTime`` to parse datetimes with an offset.
+";
 pub(crate) const PLAINDATETIME_REPLACE: &CStr = c"\
 replace($self, /, *, year=None, month=None, day=None, hour=None, minute=None, second=None, nanosecond=None)
 --
@@ -1025,24 +1056,6 @@ Note
 ----
 This method has similar behavior to the ``round()`` method of
 Temporal objects in JavaScript.
-";
-pub(crate) const PLAINDATETIME_STRPTIME: &CStr = c"\
-strptime(s, /, fmt)
---
-
-Simple alias for
-``PlainDateTime.from_py_datetime(datetime.strptime(s, fmt))``
-
-Example
--------
->>> PlainDateTime.strptime(\"2020-08-15\", \"%Y-%m-%d\")
-PlainDateTime(2020-08-15 00:00:00)
-
-Note
-----
-The parsed ``tzinfo`` must be be ``None``.
-This means you CANNOT include the directives ``%z``, ``%Z``, or ``%:z``
-in the format string.
 ";
 pub(crate) const PLAINDATETIME_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=False)

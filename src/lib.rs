@@ -488,6 +488,7 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     state.str_half_floor = PyUnicode_InternFromString(c"half_floor".as_ptr());
     state.str_half_ceil = PyUnicode_InternFromString(c"half_ceil".as_ptr());
     state.str_half_even = PyUnicode_InternFromString(c"half_even".as_ptr());
+    state.str_format = PyUnicode_InternFromString(c"format".as_ptr());
 
     state.exc_repeated = new_exc(
         module,
@@ -503,8 +504,8 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
     );
     state.exc_invalid_offset = new_exc(
         module,
-        c"whenever.InvalidOffset",
-        doc::INVALIDOFFSET,
+        c"whenever.InvalidOffsetError",
+        doc::INVALIDOFFSETERROR,
         PyExc_ValueError,
     );
     state.exc_implicitly_ignoring_dst = new_exc(
@@ -527,14 +528,9 @@ unsafe extern "C" fn module_exec(module: *mut PyObject) -> c_int {
 
     // We write these fields manually, to avoid triggering a "drop" of the previous value
     // which isn't there, since Python just allocated this memory for us.
-    std::ptr::write(
-        &mut state.tz_cache as *mut _,
-        TZifCache::new(unwrap_or_errcode!(get_tzdata_path())),
-    );
-    std::ptr::write(
-        &mut state.zoneinfo_type as *mut _,
-        LazyImport::new(c"zoneinfo", c"ZoneInfo"),
-    );
+    // std::ptr::write(
+    (&raw mut state.tz_cache).write(TZifCache::new(unwrap_or_errcode!(get_tzdata_path())));
+    (&raw mut state.zoneinfo_type).write(LazyImport::new(c"zoneinfo", c"ZoneInfo"));
     0
 }
 
@@ -734,6 +730,7 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR(ptr::addr_of_mut!(state.str_half_floor));
     Py_CLEAR(ptr::addr_of_mut!(state.str_half_ceil));
     Py_CLEAR(ptr::addr_of_mut!(state.str_half_even));
+    Py_CLEAR(ptr::addr_of_mut!(state.str_format));
 
     // exceptions
     Py_CLEAR(ptr::addr_of_mut!(state.exc_repeated));
@@ -845,6 +842,7 @@ pub(crate) struct State {
     str_half_floor: *mut PyObject,
     str_half_ceil: *mut PyObject,
     str_half_even: *mut PyObject,
+    str_format: *mut PyObject,
 
     time_patch: TimePatch,
     time_machine_exists: bool,
@@ -902,7 +900,7 @@ impl State {
             .unwrap()
     }
 
-    unsafe fn for_obj_mut(obj: *mut PyObject) -> &'static mut Self {
+    unsafe fn for_obj_mut<'a>(obj: *mut PyObject) -> &'a mut Self {
         PyType_GetModuleState(Py_TYPE(obj))
             .cast::<Self>()
             .as_mut()

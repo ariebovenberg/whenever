@@ -69,10 +69,14 @@ __version__ = "0.8.0"
 
 
 class _TimePatch:
-    _pin: "Instant"
+    _pin: "Instant | ZonedDateTime | OffsetDateTime | SystemDateTime"
     _keep_ticking: bool
 
-    def __init__(self, pin: "Instant", keep_ticking: bool):
+    def __init__(
+        self,
+        pin: "Instant | ZonedDateTime | OffsetDateTime | SystemDateTime",
+        keep_ticking: bool,
+    ):
         self._pin = pin
         self._keep_ticking = keep_ticking
 
@@ -249,6 +253,7 @@ def available_timezones() -> set[str]:
         tzdata = __import__("tzdata").__path__[0]
         with open(_os_path.join(tzdata, "zones")) as f:
             zones.update(map(str.strip, f))
+    # coverage note: we *do* test tzdata and non-tzdata installs in CI
     except (ImportError, FileNotFoundError):  # pragma: no cover
         pass
 

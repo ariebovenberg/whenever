@@ -30,6 +30,7 @@ source_suffix = {
     ".md": "markdown",
     ".rst": "restructuredtext",
 }
+html_static_path = ["_static"]
 
 master_doc = "index"
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]

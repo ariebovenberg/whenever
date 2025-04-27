@@ -9,7 +9,7 @@ on:
 
 jobs:
   test-rust:
-    name: Test Rust
+    name: Test Rust (internal tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,8 +22,8 @@ jobs:
       - name: Build and test
         run: |
           cargo test
-  test-python-versions:
-    name: Test Python ${{ matrix.python-version }}
+  test-rust-ext:
+    name: Test ubuntu, ${{ matrix.python-version }} Rust extension ${{ matrix.tzdata && 'with tzdata' || '' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -33,7 +33,7 @@ jobs:
           "3.10",
           "3.11",
           "3.12",
-          "3.13",
+          # NOTE: 3.13 is absent since we test it in the OS job matrix
         ]
         tzdata: [false]
         include:
@@ -60,7 +60,7 @@ jobs:
           pytest tests/
 
   test-os:
-    name: Test on ${{ matrix.os }} ${{ matrix.no_build_ext && 'pure Python' || 'with Rust' }}
+    name: Test ${{ matrix.os }}, 3.13 ${{ matrix.no_build_ext && 'pure Python' || 'Rust extension' }}
     runs-on: ${{ matrix.os }}-latest
     strategy:
       fail-fast: false
@@ -90,7 +90,6 @@ jobs:
           python-version: '3.13'
           architecture: x86
 
-      # TODO: fix windows TZ handling
       - name: Install and test
         shell: bash
         run: |
@@ -101,7 +100,7 @@ jobs:
           WHENEVER_NO_BUILD_RUST_EXT: ${{ matrix.no_build_ext }}
 
   test-pure-python:
-    name: Test pure Python ${{ matrix.python-version }} ${{ matrix.tzdata && 'with tzdata' || '' }}
+    name: Test ubuntu, ${{ matrix.python-version }} pure Python ${{ matrix.tzdata && 'with tzdata' || '' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -111,8 +110,9 @@ jobs:
           "3.10",
           "3.11",
           "3.12",
-          "3.13",
-          # NOTE: pypy/pytest fails sometimes (https://github.com/pypy/pypy/issues/3959)
+          # NOTE: 3.13 is absent since we test it in the OS job matrix
+          # NOTE: If pypy/pytest fails, if could be due to
+          #       https://github.com/pypy/pypy/issues/3959
           "pypy3.9",
           "pypy3.10"
         ]
@@ -203,7 +203,7 @@ jobs:
     name: Are all checks green?
     if: always()
     needs:
-      - test-python-versions
+      - test-rust-ext
       - test-os
       - test-pure-python
       - lint

@@ -84,8 +84,6 @@ impl Tz {
         match self.dst {
             None => Ambiguity::Unambiguous(self.std), // No DST
             Some(Dst {
-                // NOTE: There's nothing preventing end from being before start,
-                // but this shouldn't happen in practice. We don't crash, at least.
                 start: (start_rule, start_time),
                 end: (end_rule, end_time),
                 offset: dst,
@@ -227,8 +225,7 @@ pub fn parse(s: &[u8]) -> Option<Tz> {
     })
 }
 
-/// Skip the TZ name and return the remaining slice,
-/// which is guaranteed to be non-empty.
+/// Skip the TZ name
 fn skip_tzname(s: &mut Scan) -> Option<()> {
     // Note also that in Tzif files, TZ names are limited to 6 characters.
     // This might be useful in the future for optimization
@@ -268,6 +265,7 @@ fn parse_hms(s: &mut Scan, max: i32) -> Option<i32> {
     };
     total += hrs * 3_600;
 
+    // parse the optional minutes and seconds
     if let Some(true) = s.advance_on(b':') {
         total += s.digits00_59()? as i32 * 60;
         if let Some(true) = s.advance_on(b':') {
@@ -279,7 +277,6 @@ fn parse_hms(s: &mut Scan, max: i32) -> Option<i32> {
 
 /// Parse `m[m].w.d` string as part of a DST start/end rule
 fn parse_weekday_rule(scan: &mut Scan) -> Option<Rule> {
-    // Handle the variable length of months
     let m = scan.up_to_2_digits().and_then(Month::new)?;
     scan.expect(b'.')?;
     let w: NonZeroU8 = scan.digit_ranged(b'1'..=b'5')?.try_into().unwrap(); // safe >0 unwrap

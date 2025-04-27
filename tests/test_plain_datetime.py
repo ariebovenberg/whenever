@@ -511,7 +511,7 @@ class TestShiftMethods:
         with pytest.raises(TypeError):
             d.add(hours(48), seconds=5, ignore_dst=True)  # type: ignore[call-overload]
 
-        # out of i128 range
+        # tempt an i128 overflow
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.add(nanoseconds=1 << 127 - 1, ignore_dst=True)
 
@@ -775,20 +775,25 @@ def test_old_pickle_data_remains_unpicklable():
     )
 
 
-def test_strptime():
-    assert PlainDateTime.strptime(
-        "2020-08-15 23:12", "%Y-%m-%d %H:%M"
-    ) == PlainDateTime(2020, 8, 15, 23, 12)
+class TestParseStrptime:
 
+    def test_strptime(self):
+        assert PlainDateTime.parse_strptime(
+            "2020-08-15 23:12", format="%Y-%m-%d %H:%M"
+        ) == PlainDateTime(2020, 8, 15, 23, 12)
 
-def test_strptime_invalid():
-    with pytest.raises(ValueError):
-        PlainDateTime.strptime(
-            "2020-08-15 23:12:09+0500", "%Y-%m-%d %H:%M:%S%z"
-        )
+    def test_strptime_invalid(self):
+        # offset now allowed
+        with pytest.raises(ValueError):
+            PlainDateTime.parse_strptime(
+                "2020-08-15 23:12:09+0500", format="%Y-%m-%d %H:%M:%S%z"
+            )
 
-    with pytest.raises(TypeError):
-        PlainDateTime.strptime("2020-08-15 23:12:09+0500")  # type: ignore[call-arg]
+        # format is keyword-only
+        with pytest.raises(TypeError, match="format|argument"):
+            OffsetDateTime.parse_strptime(
+                "2020-08-15 23:12:09", "%Y-%m-%d %H:%M:%S"  # type: ignore[misc]
+            )
 
 
 def test_cannot_subclass():

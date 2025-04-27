@@ -41,12 +41,8 @@ impl Date {
         day: 1,
     };
 
-    pub fn new(year: Year, month: Month, d: u8) -> Option<Self> {
-        (d >= 1 && d <= year.days_in_month(month)).then_some(Date {
-            year,
-            month,
-            day: d,
-        })
+    pub fn new(year: Year, month: Month, day: u8) -> Option<Self> {
+        (day >= 1 && day <= year.days_in_month(month)).then_some(Date { year, month, day })
     }
 
     pub(crate) fn last_of_month(year: Year, month: Month) -> Self {
@@ -118,7 +114,6 @@ impl Date {
 
     /// Parse YYYY-MM-DD
     pub(crate) fn parse_iso_extended(s: [u8; 10]) -> Option<Self> {
-        // Should have been checked by the caller
         (s[4] == b'-' && s[7] == b'-')
             .then(|| {
                 Date::new(

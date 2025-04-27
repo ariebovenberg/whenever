@@ -20,7 +20,7 @@ from hypothesis.strategies import text
 from whenever import (
     Date,
     Instant,
-    InvalidOffset,
+    InvalidOffsetError,
     OffsetDateTime,
     PlainDateTime,
     RepeatedTime,
@@ -186,14 +186,20 @@ class TestInit:
                 with pytest.raises(TimeZoneNotFoundError):
                     ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
 
+            # We can still use the old instance without problems
+            d.add(hours=24)
+
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz=ams)
             clear_tzcache()
             if not HAS_TZDATA:
                 with pytest.raises(TimeZoneNotFoundError):
                     ZonedDateTime(1982, 8, 15, 5, 12, tz=ams)
 
+            # We can still use the old instance without problems
+            d.add(hours=24)
+
             # Ok, let's see if we can find our custom timezones
-            assert ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Amsterdam.tzif")
+            d2 = ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Amsterdam.tzif")
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Honolulu.tzif")
         finally:
             # We need to reset the tzpath to the original one
@@ -209,6 +215,9 @@ class TestInit:
         # ...and now they aren't
         with pytest.raises(TimeZoneNotFoundError):
             ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Amsterdam.tzif")
+
+        # but we can still use an old instance
+        d2.add(hours=24)
 
         # We can request proper timezones now again
         assert ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc) == d
@@ -297,8 +306,12 @@ class TestInit:
         assert issubclass(SkippedTime, ValueError)
 
 
-# Note: there's a separate test for changing the tzpath and
+# NOTE: there's a separate test for changing the tzpath and
 # its effect on available_timezones()
+# We run this test relatively late to allow the cache to be used more
+# organically throughout other tests instead of immediately loading everything
+# here beforehand
+@pytest.mark.order(-2)
 def test_available_timezones():
     tzs = available_timezones()
 
@@ -1345,27 +1358,27 @@ class TestParseCommonIso:
             ZonedDateTime.parse_common_iso(s)
 
     def test_offset_timezone_mismatch(self):
-        with pytest.raises(InvalidOffset):
+        with pytest.raises(InvalidOffsetError):
             # at the exact DST transition
             ZonedDateTime.parse_common_iso(
                 "2023-10-29T02:15:30+03:00[Europe/Amsterdam]"
             )
-        with pytest.raises(InvalidOffset):
+        with pytest.raises(InvalidOffsetError):
             # some other time in the year
             ZonedDateTime.parse_common_iso(
                 "2020-08-15T12:08:30+01:00:01[Europe/Amsterdam]"
             )
 
-        with pytest.raises(InvalidOffset):
+        with pytest.raises(InvalidOffsetError):
             # some other time in the year
             ZonedDateTime.parse_common_iso(
                 "2020-08-15T12:08:30+00:00[Europe/Amsterdam]"
             )
 
-        assert issubclass(InvalidOffset, ValueError)
+        assert issubclass(InvalidOffsetError, ValueError)
 
     def test_skipped_time(self):
-        with pytest.raises(InvalidOffset):
+        with pytest.raises(InvalidOffsetError):
             ZonedDateTime.parse_common_iso(
                 "2023-03-26T02:15:30+01:00[Europe/Amsterdam]"
             )
@@ -1811,7 +1824,7 @@ def test_py_datetime():
     assert d2.py_datetime().fold == 0
     assert d2.replace(disambiguate="later").py_datetime().fold == 1
 
-    # ensure the ZoneInfo isn't file-based, and can this be pickled
+    # ensure the ZoneInfo isn't file-based, and can thus be pickled
     pickle.dumps(d2)
 
 
