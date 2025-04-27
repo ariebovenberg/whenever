@@ -23,9 +23,9 @@ Don't buy the Rust hype?—don't worry: a **pure Python** version is available a
 
   <p align="center">
     <picture align="center">
-        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ariebovenberg/whenever/main/benchmarks/comparison/graph-dark.svg">
-        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/ariebovenberg/whenever/main/benchmarks/comparison/graph-light.svg">
-        <img alt="Shows a bar chart with benchmark results." src="https://raw.githubusercontent.com/ariebovenberg/whenever/main/benchmarks/comparison/graph-light.svg">
+        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ariebovenberg/whenever/tzif/benchmarks/comparison/graph-dark.svg">
+        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/ariebovenberg/whenever/tzif/benchmarks/comparison/graph-light.svg">
+        <img alt="Shows a bar chart with benchmark results." src="https://raw.githubusercontent.com/ariebovenberg/whenever/tzif/benchmarks/comparison/graph-light.svg">
     </picture>
   </p>
 
