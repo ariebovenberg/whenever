@@ -3,6 +3,6 @@ flake8>=6,<8
 isort>=6,<7
 slotscheck>=0.17,<0.20
 build
-twine<6.1  # https://github.com/pypa/twine/issues/1216
+twine<6.2  # https://github.com/pypa/twine/issues/1216
 packaging>=24
 pyperf>2,<3
