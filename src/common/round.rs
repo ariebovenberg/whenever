@@ -1,6 +1,9 @@
 use std::ptr::NonNull;
 
-use crate::{common::*, docstrings as doc, State};
+use crate::{
+    common::{pyobject::*, pytype::*},
+    docstrings as doc, State,
+};
 use pyo3_ffi::*;
 
 #[derive(Debug, Copy, Clone)]
