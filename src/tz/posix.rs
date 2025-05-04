@@ -5,8 +5,8 @@
 /// - [POSIX TZ strings](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap08.html)
 /// - [GNU libc manual](https://www.gnu.org/software/libc/manual/html_node/TZ-Variable.html)
 use crate::{
+    classes::date::Date,
     common::{ambiguity::Ambiguity, math::*, parse::Scan},
-    date::Date,
 };
 use std::num::{NonZeroU16, NonZeroU8};
 

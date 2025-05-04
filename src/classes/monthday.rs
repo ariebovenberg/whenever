@@ -4,9 +4,10 @@ use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
 use crate::{
+    classes::date::Date,
     common::{math::*, parse::extract_2_digits, pyobject::*, pytype::*},
-    date::Date,
-    docstrings as doc, State,
+    docstrings as doc,
+    pymodule::State,
 };
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]

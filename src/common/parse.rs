@@ -1,4 +1,4 @@
-use crate::SubSecNanos;
+use crate::common::math::SubSecNanos;
 use std::{
     fmt::Debug,
     ops::{Index, RangeInclusive, RangeTo},
