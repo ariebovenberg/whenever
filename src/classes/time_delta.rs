@@ -4,13 +4,12 @@ use std::fmt;
 use std::ops::Neg;
 use std::ptr::null_mut as NULL;
 
-use crate::common::math::*;
-use crate::common::*;
-use crate::date_delta::{DateDelta, InitError};
-use crate::datetime_delta::{handle_exact_unit, DateTimeDelta};
-use crate::docstrings as doc;
-use crate::round;
-use crate::State;
+use crate::{
+    common::{math::*, parse::extract_digit, pyobject::*, pytype::*, round},
+    date_delta::{DateDelta, InitError},
+    datetime_delta::{handle_exact_unit, DateTimeDelta},
+    docstrings as doc, State,
+};
 
 /// TimeDelta represents a duration of time with nanosecond precision.
 ///

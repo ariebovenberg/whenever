@@ -2,18 +2,15 @@ use core::ffi::{c_int, c_long, c_void, CStr};
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
-use crate::common::math::*;
-use crate::common::*;
-use crate::datetime_delta::handle_exact_unit;
-use crate::docstrings as doc;
-use crate::time_delta::{MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS};
 use crate::{
+    common::{math::*, pydatetime::*, pyobject::*, pytype::*, rfc2822, round},
     date::Date,
+    datetime_delta::handle_exact_unit,
+    docstrings as doc,
     offset_datetime::{self, OffsetDateTime},
     plain_datetime::DateTime,
-    round,
     time::Time,
-    time_delta::TimeDelta,
+    time_delta::{TimeDelta, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS},
     zoned_datetime::ZonedDateTime,
     State,
 };
@@ -584,13 +581,13 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn to_tz(slf: &mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
-    let &mut State {
+    let &State {
         zoned_datetime_type,
         exc_tz_notfound,
-        ref mut tz_cache,
+        ref tz_store,
         ..
-    } = State::for_obj_mut(slf);
-    let tz = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
+    } = State::for_obj(slf);
+    let tz = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
     Instant::extract(slf)
         .to_tz(tz)
         .ok_or_value_err("Resulting datetime is out of range")?

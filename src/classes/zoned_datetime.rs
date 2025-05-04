@@ -3,17 +3,14 @@ use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
 use crate::{
-    common::{math::*, *},
+    common::{ambiguity::*, math::*, parse::Scan, pydatetime::*, pyobject::*, pytype::*, round},
     date::Date,
     date_delta::DateDelta,
     datetime_delta::{set_units_from_kwargs, DateTimeDelta},
     docstrings as doc,
     instant::Instant,
-    math::SubSecNanos,
     offset_datetime::{self, OffsetDateTime},
-    parse::Scan,
     plain_datetime::{set_components_from_kwargs, DateTime},
-    round,
     time::Time,
     time_delta::TimeDelta,
     tz::cache::TzRef,
@@ -305,7 +302,7 @@ impl std::fmt::Display for ZonedDateTime {
 }
 
 unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
-    let &mut State {
+    let &State {
         exc_repeated,
         exc_skipped,
         exc_tz_notfound,
@@ -313,9 +310,9 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         str_raise,
         str_earlier,
         str_later,
-        ref mut tz_cache,
+        ref tz_store,
         ..
-    } = State::for_type_mut(cls);
+    } = State::for_type(cls);
     let mut year: c_long = 0;
     let mut month: c_long = 0;
     let mut day: c_long = 0;
@@ -344,7 +341,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     if tz.is_null() {
         return raise_type_err("tz argument is required");
     }
-    let tzref = tz_cache.obj_get(tz, exc_tz_notfound)?;
+    let tzref = tz_store.obj_get(tz, exc_tz_notfound)?;
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time =
         Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?;
@@ -366,7 +363,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
 unsafe extern "C" fn dealloc(slf: *mut PyObject) {
     ZonedDateTime::extract(slf)
         .tz
-        .decref(|| &mut State::for_obj_mut(slf).tz_cache);
+        .decref(|| &State::for_obj(slf).tz_store);
     generic_dealloc(slf)
 }
 
@@ -549,12 +546,12 @@ unsafe fn exact_eq(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
 
 unsafe fn to_tz(slf: &mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
     let cls = Py_TYPE(slf);
-    let &mut State {
+    let &State {
         exc_tz_notfound,
-        ref mut tz_cache,
+        ref tz_store,
         ..
-    } = State::for_type_mut(cls);
-    let tz_new = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
+    } = State::for_type(cls);
+    let tz_new = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
     ZonedDateTime::extract(slf)
         .instant()
         .to_tz(tz_new)
@@ -566,12 +563,12 @@ pub(crate) unsafe fn unpickle(module: &mut PyObject, args: &[*mut PyObject]) -> 
     let &[data, tz_obj] = args else {
         raise_type_err("Invalid pickle data")?
     };
-    let &mut State {
+    let &State {
         zoned_datetime_type,
         exc_tz_notfound,
-        ref mut tz_cache,
+        ref tz_store,
         ..
-    } = State::for_mod_mut(module);
+    } = State::for_mod(module);
     let mut packed = data.to_bytes()?.ok_or_type_err("Invalid pickle data")?;
     if packed.len() != 15 {
         raise_type_err("Invalid pickle data")?;
@@ -589,7 +586,7 @@ pub(crate) unsafe fn unpickle(module: &mut PyObject, args: &[*mut PyObject]) -> 
             subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
         },
         offset: Offset::new_unchecked(unpack_one!(packed, i32)),
-        tz: tz_cache.obj_get(tz_obj, exc_tz_notfound)?,
+        tz: tz_store.obj_get(tz_obj, exc_tz_notfound)?,
     }
     .to_obj(zoned_datetime_type)
 }
@@ -821,7 +818,7 @@ unsafe fn replace(
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")?;
     }
-    let &mut State {
+    let &State {
         exc_repeated,
         exc_skipped,
         str_tz,
@@ -838,9 +835,9 @@ unsafe fn replace(
         str_raise,
         str_earlier,
         str_later,
-        ref mut tz_cache,
+        ref tz_store,
         ..
-    } = State::for_type_mut(cls);
+    } = State::for_type(cls);
     let ZonedDateTime {
         date,
         time,
@@ -858,7 +855,7 @@ unsafe fn replace(
 
     handle_kwargs("replace", kwargs, |key, value, eq| {
         if eq(key, str_tz) {
-            let tz_new = tz_cache.obj_get(value, exc_tz_notfound)?;
+            let tz_new = tz_store.obj_get(value, exc_tz_notfound)?;
             // If we change timezones, forget about trying to preserve the offset.
             // Just use compatible disambiguation.
             if tz_new != tz {
@@ -903,13 +900,13 @@ unsafe fn replace(
 }
 
 unsafe fn now(cls: *mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
-    let state = State::for_type_mut(cls.cast());
-    let &mut State {
-        ref mut tz_cache,
+    let state = State::for_type(cls.cast());
+    let &State {
+        ref tz_store,
         exc_tz_notfound,
         ..
     } = state;
-    let tz = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
+    let tz = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
     state
         .time_ns()?
         .to_tz(tz)
@@ -918,12 +915,12 @@ unsafe fn now(cls: *mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
 }
 
 unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
-    let &mut State {
+    let &State {
         ref zoneinfo_type,
         exc_tz_notfound,
-        ref mut tz_cache,
+        ref tz_store,
         ..
-    } = State::for_type_mut(cls.cast());
+    } = State::for_type(cls.cast());
     if PyDateTime_Check(dt) == 0 {
         raise_type_err("Argument must be a datetime.datetime instance")?;
     }
@@ -940,7 +937,7 @@ unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
     }
 
     let tz_obj = PyObject_GetAttrString(tzinfo, c"key".as_ptr()).as_result()?;
-    let tz = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
+    let tz = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
     // We use the timestamp() to convert into a ZonedDateTime
     // Alternatives not chosen:
     // - resolve offset from date/time -> fold not respected, instant may be different
@@ -1037,18 +1034,18 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 unsafe fn check_from_timestamp_args_return_tz(
     args: &[*mut PyObject],
     kwargs: &mut KwargIter,
-    &mut State {
-        ref mut tz_cache,
+    &State {
+        ref tz_store,
         exc_tz_notfound,
         str_tz,
         ..
-    }: &mut State,
+    }: &State,
     fname: &str,
 ) -> PyResult<TzRef> {
     match (args, kwargs.next()) {
         (&[_], Some((key, value))) if kwargs.len() == 1 => {
             if key.py_eq(str_tz)? {
-                tz_cache.obj_get(value, exc_tz_notfound)
+                tz_store.obj_get(value, exc_tz_notfound)
             } else {
                 raise_type_err(format!(
                     "{}() got an unexpected keyword argument {}",
@@ -1079,7 +1076,7 @@ unsafe fn from_timestamp(
     args: &[*mut PyObject],
     kwargs: &mut KwargIter,
 ) -> PyReturn {
-    let state = &mut State::for_type_mut(cls);
+    let state = State::for_type(cls);
     let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp")?;
 
     match args[0].to_i64()? {
@@ -1102,7 +1099,7 @@ unsafe fn from_timestamp_millis(
     args: &[*mut PyObject],
     kwargs: &mut KwargIter,
 ) -> PyReturn {
-    let state = &mut State::for_type_mut(cls);
+    let state = State::for_type(cls);
     let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp_millis")?;
     Instant::from_timestamp_millis(
         args[0]
@@ -1122,7 +1119,7 @@ unsafe fn from_timestamp_nanos(
     args: &[*mut PyObject],
     kwargs: &mut KwargIter,
 ) -> PyReturn {
-    let state = &mut State::for_type_mut(cls);
+    let state = State::for_type(cls);
     let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp_nanos")?;
     Instant::from_timestamp_nanos(
         args[0]
@@ -1153,13 +1150,13 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
     let (DateTime { date, time }, (offset, tzstr)) = DateTime::read_iso(&mut s)
         .zip(read_offset_and_tzname(&mut s))
         .ok_or_else_value_err(|| format!("Invalid format: {}", s_obj.repr()))?;
-    let &mut State {
+    let &State {
         exc_invalid_offset,
         exc_tz_notfound,
-        ref mut tz_cache,
+        ref tz_store,
         ..
-    } = State::for_type_mut(cls.cast());
-    let tz = tz_cache.get(tzstr, exc_tz_notfound)?;
+    } = State::for_type(cls.cast());
+    let tz = tz_store.get(tzstr, exc_tz_notfound)?;
     match offset {
         OffsetInIsoString::Some(offset) => {
             // Make sure the offset is valid

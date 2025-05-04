@@ -3,15 +3,13 @@ use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
 use crate::{
-    common::{math::*, *},
+    common::{ambiguity::*, math::*, parse::Scan, pydatetime::*, pyobject::*, pytype::*, round},
     date::Date,
     date_delta::DateDelta,
     datetime_delta::{set_units_from_kwargs, DateTimeDelta},
     docstrings as doc,
     instant::Instant,
     offset_datetime::{self, check_ignore_dst_kwarg, OffsetDateTime},
-    parse::Scan,
-    round,
     time::Time,
     time_delta::TimeDelta,
     zoned_datetime::ZonedDateTime,
@@ -701,7 +699,7 @@ unsafe fn assume_tz(
     args: &[*mut PyObject],
     kwargs: &mut KwargIter,
 ) -> PyReturn {
-    let &mut State {
+    let &State {
         str_disambiguate,
         str_compatible,
         str_raise,
@@ -711,9 +709,9 @@ unsafe fn assume_tz(
         exc_skipped,
         exc_repeated,
         exc_tz_notfound,
-        ref mut tz_cache,
+        ref tz_store,
         ..
-    } = State::for_type_mut(cls);
+    } = State::for_type(cls);
 
     let DateTime { date, time } = DateTime::extract(slf);
     let &[tz_obj] = args else {
@@ -733,7 +731,7 @@ unsafe fn assume_tz(
         str_later,
     )?
     .unwrap_or(Disambiguate::Compatible);
-    let tzif = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
+    let tzif = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
     ZonedDateTime::resolve_using_disambiguate(date, time, tzif, dis, exc_repeated, exc_skipped)?
         .to_obj(zoned_datetime_type)
 }

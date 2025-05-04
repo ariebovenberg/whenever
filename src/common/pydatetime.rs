@@ -1,8 +1,6 @@
 use pyo3_ffi::*;
 
-use crate::common::math::*;
-use crate::common::methcall0;
-use crate::common::pyobject::*;
+use crate::common::{math::*, pyobject::*};
 
 pub(crate) unsafe fn offset_from_py_dt(dt: *mut PyObject) -> PyResult<Offset> {
     let delta = methcall0(dt, "utcoffset")?;

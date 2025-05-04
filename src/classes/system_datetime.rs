@@ -2,21 +2,18 @@ use core::ffi::{c_int, c_void, CStr};
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
-use crate::common::math::*;
-use crate::common::*;
-use crate::docstrings as doc;
 use crate::{
+    common::{ambiguity::*, math::*, pydatetime::*, pyobject::*, pytype::*, round},
     date::Date,
     date_delta::DateDelta,
-    datetime_delta::set_units_from_kwargs,
-    datetime_delta::DateTimeDelta,
+    datetime_delta::{set_units_from_kwargs, DateTimeDelta},
+    docstrings as doc,
     instant::Instant,
     offset_datetime::{
         self, instant, local, timestamp, timestamp_millis, timestamp_nanos, to_instant, to_plain,
         OffsetDateTime,
     },
     plain_datetime::{set_components_from_kwargs, DateTime},
-    round,
     time::Time,
     time_delta::TimeDelta,
     zoned_datetime::ZonedDateTime,
@@ -842,13 +839,13 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
 }
 
 unsafe fn to_tz(slf: *mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
-    let &mut State {
+    let &State {
         zoned_datetime_type,
         exc_tz_notfound,
-        ref mut tz_cache,
+        ref tz_store,
         ..
-    } = State::for_obj_mut(slf);
-    let tz = tz_cache.obj_get(tz_obj, exc_tz_notfound)?;
+    } = State::for_obj(slf);
+    let tz = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
     OffsetDateTime::extract(slf)
         .instant()
         .to_tz(tz)

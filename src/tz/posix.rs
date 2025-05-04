@@ -5,7 +5,7 @@
 /// - [POSIX TZ strings](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap08.html)
 /// - [GNU libc manual](https://www.gnu.org/software/libc/manual/html_node/TZ-Variable.html)
 use crate::{
-    common::{math::*, parse::Scan, Ambiguity},
+    common::{ambiguity::Ambiguity, math::*, parse::Scan},
     date::Date,
 };
 use std::num::{NonZeroU16, NonZeroU8};
@@ -322,7 +322,7 @@ fn parse_rule(scan: &mut Scan) -> Option<(Rule, TransitionTime)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::Ambiguity::*;
+    use crate::common::ambiguity::Ambiguity::*;
     use crate::time::Time;
 
     fn unambig(offset: i32) -> Ambiguity {

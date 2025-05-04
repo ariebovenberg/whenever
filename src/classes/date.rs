@@ -10,7 +10,12 @@ use std::{
 };
 
 use crate::{
-    common::{math::*, *},
+    common::{
+        math::*,
+        parse::{extract_2_digits, extract_digit},
+        pyobject::*,
+        pytype::*,
+    },
     date_delta::{handle_init_kwargs as handle_datedelta_kwargs, DateDelta},
     docstrings as doc,
     monthday::MonthDay,
@@ -213,10 +218,6 @@ pub(crate) fn extract_year(s: &[u8], index: usize) -> Option<Year> {
     )
     .filter(|&y| y > 0)
     .map(Year::new_unchecked)
-}
-
-pub(crate) fn extract_2_digits(s: &[u8], index: usize) -> Option<u8> {
-    Some(extract_digit(s, index)? * 10 + extract_digit(s, index + 1)?)
 }
 
 impl PyWrapped for Date {}

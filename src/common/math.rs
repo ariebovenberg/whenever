@@ -1,5 +1,5 @@
 /// Checked arithmetic for date and time concepts
-use crate::{date::Date, plain_datetime::DateTime, round, time::Time};
+use crate::{common::round, date::Date, plain_datetime::DateTime, time::Time};
 use pyo3_ffi::*;
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
 
@@ -823,3 +823,5 @@ impl Weekday {
         self.iso() % 7
     }
 }
+
+pub(crate) static NS_PER_DAY: i128 = S_PER_DAY as i128 * 1_000_000_000;
