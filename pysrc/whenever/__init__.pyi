@@ -997,7 +997,7 @@ def patch_current_time(
     i: _ExactTime, /, *, keep_ticking: bool
 ) -> _GeneratorContextManager[_TimePatch]: ...
 
-TZPATH: Final[tuple[str, ...]]
+TZPATH: tuple[str, ...]
 
 def reset_tzpath(
     to: Iterable[str | PathLike[str]] | None = None, /

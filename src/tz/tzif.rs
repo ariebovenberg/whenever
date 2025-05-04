@@ -1,7 +1,6 @@
 use crate::{
-    common::{math::*, parse::Scan},
+    common::{ambiguity::Ambiguity, math::*, parse::Scan},
     tz::posix,
-    Ambiguity,
 };
 use std::{cmp::Ordering, fmt};
 
