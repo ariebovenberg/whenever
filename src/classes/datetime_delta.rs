@@ -4,14 +4,16 @@ use std::fmt;
 use std::ops::Neg;
 use std::ptr::null_mut as NULL;
 
-use crate::State;
 use crate::{
-    common::{math::*, pyobject::*, pytype::*},
-    date_delta::{self, parse_prefix, DateDelta, InitError, Unit as DateUnit},
-    docstrings as doc,
-    time_delta::{
-        self, TimeDelta, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS,
+    classes::{
+        date_delta::{self, parse_prefix, DateDelta, InitError, Unit as DateUnit},
+        time_delta::{
+            self, TimeDelta, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS,
+        },
     },
+    common::{math::*, pyobject::*, pytype::*},
+    docstrings as doc,
+    pymodule::State,
 };
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]

@@ -2,7 +2,6 @@
 use crate::{
     common::pyobject::*,
     tz::tzif::{self, is_valid_key, TZif},
-    OptionExt,
 };
 use ahash::AHashMap;
 use pyo3_ffi::*;
@@ -280,13 +279,13 @@ struct CacheInner {
 const LRU_CAPACITY: usize = 8; // this value seems to work well for Python's zoneinfo
 
 impl TzStore {
-    pub(crate) fn new(tzdata_path: Option<PathBuf>) -> Self {
-        Self {
+    pub(crate) fn new() -> PyResult<Self> {
+        Ok(Self {
             cache: Cache::new(),
-            tzdata_path,
+            tzdata_path: get_tzdata_path()?,
             // Empty. The actual search paths are patched in at module import
             paths: Vec::with_capacity(4),
-        }
+        })
     }
 
     /// Fetches a `TZif` for the given IANA time zone ID.
@@ -357,4 +356,24 @@ impl TzStore {
     fn clear_weakref(&self, tz: TzRef) {
         self.cache.clear_weakref(tz);
     }
+}
+
+fn get_tzdata_path() -> PyResult<Option<PathBuf>> {
+    Ok(Some(PathBuf::from(unsafe {
+        let __path__ = match import_from(c"tzdata.zoneinfo", c"__path__") {
+            Ok(obj) => Ok(obj),
+            _ if PyErr_ExceptionMatches(PyExc_ImportError) == 1 => {
+                PyErr_Clear();
+                return Ok(None);
+            }
+            e => e,
+        }?;
+        defer_decref!(__path__);
+        // __path__ is a list of paths. It will only have one element,
+        // unless somebody is doing something strange.
+        (PyObject_GetItem(__path__, steal!((0).to_py()?)).as_result()? as *mut PyObject)
+            .to_str()?
+            .ok_or_type_err("tzdata module path must be a string")?
+            .to_owned()
+    })))
 }

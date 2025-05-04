@@ -1,11 +1,15 @@
 use crate::{
-    common::math::*,
-    common::parse::{extract_2_digits, extract_digit, Scan},
-    date::{extract_year, Date},
-    instant::Instant,
-    offset_datetime::OffsetDateTime,
-    plain_datetime::DateTime,
-    time::Time,
+    classes::{
+        date::{extract_year, Date},
+        instant::Instant,
+        offset_datetime::OffsetDateTime,
+        plain_datetime::DateTime,
+        time::Time,
+    },
+    common::{
+        math::*,
+        parse::{extract_2_digits, extract_digit, Scan},
+    },
 };
 
 const TEMPLATE: [u8; 31] = *b"DDD, 00 MMM 0000 00:00:00 +0000";

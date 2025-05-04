@@ -3,17 +3,19 @@ use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
 use crate::{
+    classes::{
+        date::Date,
+        date_delta::DateDelta,
+        datetime_delta::{set_units_from_kwargs, DateTimeDelta},
+        instant::Instant,
+        offset_datetime::{self, check_ignore_dst_kwarg, OffsetDateTime},
+        time::Time,
+        time_delta::TimeDelta,
+        zoned_datetime::ZonedDateTime,
+    },
     common::{ambiguity::*, math::*, parse::Scan, pydatetime::*, pyobject::*, pytype::*, round},
-    date::Date,
-    date_delta::DateDelta,
-    datetime_delta::{set_units_from_kwargs, DateTimeDelta},
     docstrings as doc,
-    instant::Instant,
-    offset_datetime::{self, check_ignore_dst_kwarg, OffsetDateTime},
-    time::Time,
-    time_delta::TimeDelta,
-    zoned_datetime::ZonedDateTime,
-    State,
+    pymodule::State,
 };
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
