@@ -3,21 +3,23 @@ use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
 use crate::{
-    common::{ambiguity::*, math::*, pydatetime::*, pyobject::*, pytype::*, round},
-    date::Date,
-    date_delta::DateDelta,
-    datetime_delta::{set_units_from_kwargs, DateTimeDelta},
-    docstrings as doc,
-    instant::Instant,
-    offset_datetime::{
-        self, instant, local, timestamp, timestamp_millis, timestamp_nanos, to_instant, to_plain,
-        OffsetDateTime,
+    classes::{
+        date::Date,
+        date_delta::DateDelta,
+        datetime_delta::{set_units_from_kwargs, DateTimeDelta},
+        instant::Instant,
+        offset_datetime::{
+            self, instant, local, timestamp, timestamp_millis, timestamp_nanos, to_instant,
+            to_plain, OffsetDateTime,
+        },
+        plain_datetime::{set_components_from_kwargs, DateTime},
+        time::Time,
+        time_delta::TimeDelta,
+        zoned_datetime::ZonedDateTime,
     },
-    plain_datetime::{set_components_from_kwargs, DateTime},
-    time::Time,
-    time_delta::TimeDelta,
-    zoned_datetime::ZonedDateTime,
-    State,
+    common::{ambiguity::*, math::*, pydatetime::*, pyobject::*, pytype::*, round},
+    docstrings as doc,
+    pymodule::State,
 };
 
 pub(crate) const SINGLETONS: &[(&CStr, OffsetDateTime); 0] = &[];

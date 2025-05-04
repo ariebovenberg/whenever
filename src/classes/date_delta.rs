@@ -5,11 +5,10 @@ use std::ops::Neg;
 use std::ptr::null_mut as NULL;
 
 use crate::{
+    classes::{datetime_delta::DateTimeDelta, time_delta::TimeDelta},
     common::{math::*, pyobject::*, pytype::*},
-    datetime_delta::DateTimeDelta,
     docstrings as doc,
-    time_delta::TimeDelta,
-    State,
+    pymodule::State,
 };
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]

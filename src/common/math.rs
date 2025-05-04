@@ -1,5 +1,8 @@
 /// Checked arithmetic for date and time concepts
-use crate::{common::round, date::Date, plain_datetime::DateTime, time::Time};
+/// TODO rename to scalars
+use crate::{
+    classes::date::Date, classes::plain_datetime::DateTime, classes::time::Time, common::round,
+};
 use pyo3_ffi::*;
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
 

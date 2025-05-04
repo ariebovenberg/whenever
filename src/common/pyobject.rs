@@ -27,8 +27,8 @@ impl Drop for DecrefOnDrop {
 
 // Helper to automatically decref the object when it goes out of scope
 macro_rules! defer_decref(
-    ($name:ident) => {
-        let _deferred = DecrefOnDrop($name);
+    ($e:expr) => {
+        let _deferred = DecrefOnDrop($e);
     };
 );
 

@@ -2,7 +2,8 @@ use std::ptr::NonNull;
 
 use crate::{
     common::{pyobject::*, pytype::*},
-    docstrings as doc, State,
+    docstrings as doc,
+    pymodule::State,
 };
 use pyo3_ffi::*;
 

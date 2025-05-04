@@ -5,10 +5,13 @@ use std::ops::Neg;
 use std::ptr::null_mut as NULL;
 
 use crate::{
+    classes::{
+        date_delta::{DateDelta, InitError},
+        datetime_delta::{handle_exact_unit, DateTimeDelta},
+    },
     common::{math::*, parse::extract_digit, pyobject::*, pytype::*, round},
-    date_delta::{DateDelta, InitError},
-    datetime_delta::{handle_exact_unit, DateTimeDelta},
-    docstrings as doc, State,
+    docstrings as doc,
+    pymodule::State,
 };
 
 /// TimeDelta represents a duration of time with nanosecond precision.
