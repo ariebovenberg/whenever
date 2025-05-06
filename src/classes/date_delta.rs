@@ -135,7 +135,9 @@ impl fmt::Display for DateDelta {
         for c in isofmt.iter_mut().skip(2) {
             *c = c.to_ascii_lowercase();
         }
-        f.write_str(&unsafe { String::from_utf8_unchecked(isofmt) })
+        f.write_str(&
+            // SAFETY: We've built the string ourselves from ASCII
+            unsafe { String::from_utf8_unchecked(isofmt) })
     }
 }
 
@@ -158,44 +160,48 @@ pub(crate) fn format_components(delta: DateDelta, s: &mut String) {
     }
 }
 
-// NOTE: The result is checked for range, but not mixed signs!
-pub(crate) unsafe fn handle_init_kwargs<T>(
+// TODO name
+pub(crate) fn handle_init_kwargs2<T>(
     fname: &str,
     kwargs: T,
-    str_years: *mut PyObject,
-    str_months: *mut PyObject,
-    str_days: *mut PyObject,
-    str_weeks: *mut PyObject,
+    str_years: PyObj,
+    str_months: PyObj,
+    str_days: PyObj,
+    str_weeks: PyObj,
 ) -> PyResult<(DeltaMonths, DeltaDays)>
 where
-    T: IntoIterator<Item = (*mut PyObject, *mut PyObject)>,
+    T: IntoIterator<Item = (PyObj, PyObj)>,
 {
     let mut days: c_long = 0;
     let mut months: c_long = 0;
-    handle_kwargs(fname, kwargs, |key, value, eq| {
+    handle_kwargs2(fname, kwargs, |key, value, eq| {
         if eq(key, str_days) {
             days = value
-                .to_long()?
+                .cast::<PyInt>()
                 .ok_or_type_err("days must be an integer")?
+                .to_long()?
                 .checked_add(days)
                 .ok_or_value_err("days out of range")?;
         } else if eq(key, str_months) {
             months = value
-                .to_long()?
+                .cast::<PyInt>()
                 .ok_or_type_err("months must be an integer")?
+                .to_long()?
                 .checked_add(months)
                 .ok_or_value_err("months out of range")?;
         } else if eq(key, str_years) {
             months = value
-                .to_long()?
+                .cast::<PyInt>()
                 .ok_or_type_err("years must be an integer")?
+                .to_long()?
                 .checked_mul(12)
                 .and_then(|m| m.checked_add(months))
                 .ok_or_value_err("years out of range")?;
         } else if eq(key, str_weeks) {
             days = value
-                .to_long()?
+                .cast::<PyInt>()
                 .ok_or_type_err("weeks must be an integer")?
+                .to_long()?
                 .checked_mul(7)
                 .and_then(|d| d.checked_add(days))
                 .ok_or_value_err("weeks out of range")?;
@@ -210,8 +216,8 @@ where
     ))
 }
 
-unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
-    if PyTuple_GET_SIZE(args) != 0 {
+fn __new__(cls: PyType, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn2 {
+    if args.len() != 0 {
         return raise_type_err("DateDelta() takes no positional arguments");
     }
     let &State {
@@ -220,13 +226,13 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         str_days,
         str_weeks,
         ..
-    } = State::for_type(cls);
-    match DictItems::new(kwargs) {
+    } = cls.state();
+    match kwargs {
         None => DateDelta::ZERO,
-        Some(items) => {
-            let (months, days) = handle_init_kwargs(
+        Some(kwarg_dict) => {
+            let (months, days) = handle_init_kwargs2(
                 "DateDelta",
-                items,
+                &mut kwarg_dict.iteritems(),
                 str_years,
                 str_months,
                 str_days,
@@ -235,117 +241,122 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
             DateDelta::new(months, days).ok_or_value_err("Mixed sign in DateDelta")?
         }
     }
-    .to_obj(cls)
+    .to_obj2(cls)
 }
 
-pub(crate) unsafe fn years(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
+pub(crate) fn years(state: &State, amount: PyObj) -> PyReturn2 {
     amount
-        .to_long()?
+        .cast::<PyInt>()
         .ok_or_type_err("argument must be int")?
+        .to_long()?
         .checked_mul(12)
         .and_then(DeltaMonths::from_long)
         .map(DateDelta::from_months)
         .ok_or_value_err("value out of bounds")?
-        .to_obj(State::for_mod(module).date_delta_type)
+        .to_obj2(state.date_delta_type)
 }
 
-pub(crate) unsafe fn months(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
-    DeltaMonths::from_long(amount.to_long()?.ok_or_type_err("argument must be int")?)
-        .map(DateDelta::from_months)
-        .ok_or_value_err("value out of bounds")?
-        .to_obj(State::for_mod(module).date_delta_type)
+pub(crate) fn months(state: &State, amount: PyObj) -> PyReturn2 {
+    DeltaMonths::from_long(
+        amount
+            .cast::<PyInt>()
+            .ok_or_type_err("argument must be int")?
+            .to_long()?,
+    )
+    .map(DateDelta::from_months)
+    .ok_or_value_err("value out of bounds")?
+    .to_obj2(state.date_delta_type)
 }
 
-pub(crate) unsafe fn weeks(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
+pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn2 {
     amount
-        .to_long()?
+        .cast::<PyInt>()
         .ok_or_type_err("argument must be int")?
+        .to_long()?
         .checked_mul(7)
         .and_then(DeltaDays::from_long)
         .map(DateDelta::from_days)
         .ok_or_value_err("value out of bounds")?
-        .to_obj(State::for_mod(module).date_delta_type)
+        .to_obj2(state.date_delta_type)
 }
 
-pub(crate) unsafe fn days(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
-    DeltaDays::from_long(amount.to_long()?.ok_or_type_err("argument must be int")?)
-        .map(DateDelta::from_days)
-        .ok_or_value_err("value out of bounds")?
-        .to_obj(State::for_mod(module).date_delta_type)
+pub(crate) fn days(state: &State, amount: PyObj) -> PyReturn2 {
+    DeltaDays::from_long(
+        amount
+            .cast::<PyInt>()
+            .ok_or_type_err("argument must be int")?
+            .to_long()?,
+    )
+    .map(DateDelta::from_days)
+    .ok_or_value_err("value out of bounds")?
+    .to_obj2(state.date_delta_type)
 }
 
-unsafe fn richcmp(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> PyReturn {
-    Ok(if Py_TYPE(b_obj) == Py_TYPE(a_obj) {
-        let a = DateDelta::extract(a_obj);
-        let b = DateDelta::extract(b_obj);
-        match op {
-            pyo3_ffi::Py_EQ => (a == b).to_py()?,
-            pyo3_ffi::Py_NE => (a != b).to_py()?,
-            _ => newref(Py_NotImplemented()),
+fn __richcmp__(cls: PyType, a: DateDelta, b_obj: PyObj, op: c_int) -> PyReturn2 {
+    match b_obj.extract2::<DateDelta>(cls) {
+        Some(b) => match op {
+            pyo3_ffi::Py_EQ => a == b,
+            pyo3_ffi::Py_NE => a != b,
+            _ => return Ok(not_implemented()),
         }
-    } else {
-        newref(Py_NotImplemented())
-    })
+        .to_py2(),
+        None => Ok(not_implemented()),
+    }
 }
 
-unsafe extern "C" fn __hash__(slf: *mut PyObject) -> Py_hash_t {
-    hashmask(DateDelta::extract(slf).pyhash())
+fn __neg__(cls: PyType, d: DateDelta) -> PyReturn2 {
+    (-d).to_obj2(cls)
 }
 
-unsafe fn __neg__(slf: *mut PyObject) -> PyReturn {
-    (-DateDelta::extract(slf)).to_obj(Py_TYPE(slf))
+fn __repr__(_: PyType, d: DateDelta) -> PyReturn2 {
+    format!("DateDelta({})", d).to_py2()
 }
 
-unsafe extern "C" fn __bool__(slf: *mut PyObject) -> c_int {
-    (!DateDelta::extract(slf).is_zero()).into()
+fn __str__(_: PyType, d: DateDelta) -> PyReturn2 {
+    d.fmt_iso().to_py2()
 }
 
-unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
-    format!("DateDelta({})", DateDelta::extract(slf)).to_py()
-}
-
-unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
-    DateDelta::extract(slf).fmt_iso().to_py()
-}
-
-unsafe fn __mul__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
+fn __mul__(a: PyObj, b: PyObj) -> PyReturn2 {
     // These checks are needed because the args could be reversed!
-    let (delta_obj, factor) = if obj_a.is_int() {
-        (obj_b, obj_a.to_long()?.unwrap())
-    } else if obj_b.is_int() {
-        (obj_a, obj_b.to_long()?.unwrap())
+    let (delta_obj, factor) = if let Some(i) = b.cast::<PyInt>() {
+        (a, i.to_long()?)
+    } else if let Some(i) = a.cast::<PyInt>() {
+        (b, i.to_long()?)
     } else {
-        return Ok(newref(Py_NotImplemented()));
+        return Ok(not_implemented());
     };
+
     if factor == 1 {
-        return Ok(newref(delta_obj));
+        return Ok(delta_obj.newref());
     };
-    let delta = DateDelta::extract(delta_obj);
-    // FUTURE: optimize zero delta case
+
+    // SAFETY: At this point we know that delta_obj is a DateDelta
+    let delta = unsafe { delta_obj.extract_unchecked::<DateDelta>() };
     i32::try_from(factor)
         .ok()
         .and_then(|f| delta.checked_mul(f))
         .ok_or_value_err("Multiplication factor or result out of bounds")?
-        .to_obj(Py_TYPE(delta_obj))
+        .to_obj2(delta_obj.class())
 }
 
-unsafe fn __add__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
+fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn2 {
     _add_method(obj_a, obj_b, false)
 }
 
-unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
+fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn2 {
     _add_method(obj_a, obj_b, true)
 }
 
 #[inline]
-unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) -> PyReturn {
-    let type_a = Py_TYPE(obj_a);
-    let type_b = Py_TYPE(obj_b);
+fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn2 {
+    let type_a = obj_a.class();
+    let type_b = obj_b.class();
 
-    // The easy case: both are DateDelta
+    // Case: both are DateDelta
     if type_a == type_b {
-        let a = DateDelta::extract(obj_a);
-        let mut b = DateDelta::extract(obj_b);
+        // SAFETY: The only way to get here is if *both* are DateDelta
+        let a = unsafe { obj_a.extract_unchecked::<DateDelta>() };
+        let mut b = unsafe { obj_b.extract_unchecked::<DateDelta>() };
         if negate {
             b = -b;
         }
@@ -356,26 +367,30 @@ unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) 
                     InitError::MixedSign => "Mixed sign in DateDelta",
                 })
             })?
-            .to_obj(type_a)
-    } else {
-        let mod_a = PyType_GetModule(type_a);
-        let mod_b = PyType_GetModule(type_b);
-        if mod_a == mod_b {
-            let state = State::for_mod(mod_a);
-            if type_b == state.time_delta_type {
-                let mut b = TimeDelta::extract(obj_b);
-                if negate {
-                    b = -b;
-                }
-                DateTimeDelta::new(DateDelta::extract(obj_a), b)
-                    .ok_or_value_err("Mixed sign in DateTimeDelta")?
-            } else if type_b == state.datetime_delta_type {
-                let mut b = DateTimeDelta::extract(obj_b);
-                if negate {
-                    b = -b;
-                }
-                b.checked_add(DateTimeDelta {
-                    ddelta: DateDelta::extract(obj_a),
+            .to_obj2(type_a)
+    // Case: two `whenever` types
+    } else if type_a.same_module(type_b) {
+        // TODO: ensure reflexivity
+        let state = type_a.state(); // TODO: double lookup
+        if let Some(mut tdelta) = obj_b.extract2::<TimeDelta>(state.time_delta_type) {
+            if negate {
+                tdelta = -tdelta;
+            }
+            DateTimeDelta::new(
+                // SAFETY: At least one of the two is a DateDelta
+                unsafe { obj_a.extract_unchecked() },
+                tdelta,
+            )
+            .ok_or_value_err("Mixed sign in delta")?
+        } else if let Some(mut dtdelta) = obj_b.extract2::<DateTimeDelta>(state.datetime_delta_type)
+        {
+            if negate {
+                dtdelta = -dtdelta;
+            }
+            dtdelta
+                .checked_add(DateTimeDelta {
+                    // SAFETY: At least one of the two is a DateDelta
+                    ddelta: unsafe { obj_a.extract_unchecked() },
                     tdelta: TimeDelta::ZERO,
                 })
                 .map_err(|e| {
@@ -384,47 +399,46 @@ unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) 
                         InitError::MixedSign => "Mixed sign in DateTimeDelta",
                     })
                 })?
-            } else {
-                raise_type_err(format!(
-                    "unsupported operand type(s) for +/-: {} and {}",
-                    (type_a as *mut PyObject).repr(),
-                    (type_b as *mut PyObject).repr()
-                ))?
-            }
-            .to_obj(state.datetime_delta_type)
         } else {
-            Ok(newref(Py_NotImplemented()))
+            raise_type_err(format!(
+                "unsupported operand type(s) for +/-: {} and {}",
+                type_a.repr(),
+                type_b.repr()
+            ))?
         }
+        .to_obj2(state.datetime_delta_type)
+    } else {
+        Ok(not_implemented())
     }
 }
 
-unsafe fn __abs__(slf: *mut PyObject) -> PyReturn {
-    let DateDelta { months, days } = DateDelta::extract(slf);
-    // Optimization: don't allocate a new object if the delta is already positive
+fn __abs__(cls: PyType, slf: PyObj) -> PyReturn2 {
+    // SAFETY: self argument to __abs__ is always a DateDelta
+    let DateDelta { months, days } = unsafe { slf.extract_unchecked() };
     if months.get() >= 0 && days.get() >= 0 {
-        Ok(newref(slf))
+        Ok(slf.newref())
     } else {
         DateDelta {
-            // No overflow is possible due to the ranges
+            // SAFETY: No overflow is possible due to the ranges
             months: -months,
             days: -days,
         }
-        .to_obj(Py_TYPE(slf))
+        .to_obj2(cls)
     }
 }
 
 #[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
-    slotmethod!(Py_tp_new, __new__),
-    slotmethod!(Py_tp_richcompare, richcmp),
-    slotmethod!(Py_nb_negative, __neg__, 1),
-    slotmethod!(Py_tp_repr, __repr__, 1),
-    slotmethod!(Py_tp_str, __str__, 1),
-    slotmethod!(Py_nb_positive, identity1, 1),
-    slotmethod!(Py_nb_absolute, __abs__, 1),
-    slotmethod!(Py_nb_multiply, __mul__, 2),
-    slotmethod!(Py_nb_add, __add__, 2),
-    slotmethod!(Py_nb_subtract, __sub__, 2),
+    slotmethod2!(Py_tp_new, __new__),
+    slotmethod2!(Py_tp_richcompare, __richcmp__),
+    slotmethod2!(Py_nb_negative, __neg__, 1),
+    slotmethod2!(Py_tp_repr, __repr__, 1),
+    slotmethod2!(Py_tp_str, __str__, 1),
+    slotmethod2!(Py_nb_positive, identity1b, 1),
+    slotmethod2!(Py_nb_absolute, __abs__, 1),
+    slotmethod2!(Py_nb_multiply, __mul__, 2),
+    slotmethod2!(Py_nb_add, __add__, 2),
+    slotmethod2!(Py_nb_subtract, __sub__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: doc::DATEDELTA.as_ptr() as *mut c_void,
@@ -435,11 +449,21 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_hash,
-        pfunc: __hash__ as *mut c_void,
+        pfunc: {
+            unsafe extern "C" fn __hash__(slf: *mut PyObject) -> Py_hash_t {
+                hashmask(DateDelta::extract(slf).pyhash())
+            }
+            __hash__
+        } as *mut c_void,
     },
     PyType_Slot {
         slot: Py_nb_bool,
-        pfunc: __bool__ as *mut c_void,
+        pfunc: {
+            unsafe extern "C" fn __bool__(slf: *mut PyObject) -> c_int {
+                (!DateDelta::extract(slf).is_zero()).into()
+            }
+            __bool__
+        } as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_dealloc,
@@ -451,8 +475,8 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    DateDelta::extract(slf).fmt_iso().to_py()
+fn format_common_iso(_: PyType, slf: DateDelta) -> PyReturn2 {
+    slf.fmt_iso().to_py2()
 }
 
 // parse the prefix of an ISO8601 duration, e.g. `P`, `-P`, `+P`,
@@ -524,8 +548,13 @@ pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, Unit)> {
     }
 }
 
-unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
-    let s = &mut s_obj.to_utf8()?.ok_or_type_err("argument must be str")?;
+fn parse_common_iso(cls: PyType, s_obj: PyObj) -> PyReturn2 {
+    let binding = s_obj
+        .cast::<PyStr>()
+        .ok_or_type_err("argument must be str")?;
+
+    // TODO inline?
+    let s = &mut binding.as_utf8()?;
     let err = || format!("Invalid format: {}", s_obj.repr());
     if s.len() < 3 {
         // at least `P0D`
@@ -579,64 +608,65 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn
         .zip(DeltaDays::new(days))
         .map(|(months, days)| DateDelta { months, days })
         .ok_or_value_err("DateDelta out of range")?
-        .to_obj(cls.cast())
+        .to_obj2(cls)
 }
 
-unsafe fn in_months_days(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let DateDelta { months, days } = DateDelta::extract(slf);
-    (steal!(months.get().to_py()?), steal!(days.get().to_py()?)).to_py()
+fn in_months_days(_: PyType, DateDelta { months, days }: DateDelta) -> PyResult<Owned<PyTuple>> {
+    (months.get().to_py2()?, days.get().to_py2()?).into_pytuple()
 }
 
 // FUTURE: maybe also return the sign?
-unsafe fn in_years_months_days(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let DateDelta { months, days } = DateDelta::extract(slf);
+fn in_years_months_days(
+    _: PyType,
+    DateDelta { months, days }: DateDelta,
+) -> PyResult<Owned<PyTuple>> {
     let years = months.get() / 12;
     let months = months.get() % 12;
-    (
-        steal!(years.to_py()?),
-        steal!(months.to_py()?),
-        steal!(days.get().to_py()?),
-    )
-        .to_py()
+    (years.to_py2()?, months.to_py2()?, days.get().to_py2()?).into_pytuple()
 }
 
-unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let DateDelta { months, days } = DateDelta::extract(slf);
+// TODO: return PyReturn2
+fn __reduce__(cls: PyType, DateDelta { months, days }: DateDelta) -> PyResult<Owned<PyTuple>> {
     (
-        State::for_type(Py_TYPE(slf)).unpickle_date_delta,
-        steal!((steal!(months.get().to_py()?), steal!(days.get().to_py()?)).to_py()?),
+        PyObj::new(cls.state().unpickle_date_delta)
+            .unwrap()
+            .newref(),
+        (months.get().to_py2()?, days.get().to_py2()?).into_pytuple()?,
     )
-        .to_py()
+        .into_pytuple()
 }
 
-pub(crate) unsafe fn unpickle(module: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
-    if args.len() == 2 {
-        DateDelta {
-            months: DeltaMonths::new_unchecked(
-                args[0].to_long()?.ok_or_type_err("Invalid pickle data")? as _,
-            ),
-            days: DeltaDays::new_unchecked(
-                args[1].to_long()?.ok_or_type_err("Invalid pickle data")? as _,
-            ),
+pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn2 {
+    match args {
+        &[months_obj, days_obj] => {
+            let months = DeltaMonths::new_unchecked(
+                months_obj
+                    .cast::<PyInt>()
+                    .ok_or_type_err("Invalid pickle data")?
+                    .to_long()? as _,
+            );
+            let days = DeltaDays::new_unchecked(
+                days_obj
+                    .cast::<PyInt>()
+                    .ok_or_type_err("Invalid pickle data")?
+                    .to_long()? as _,
+            );
+            DateDelta::new(months, days)
+                .ok_or_value_err("Invalid pickle data")?
+                .to_obj2(state.date_delta_type)
         }
-        .to_obj(State::for_mod(module).date_delta_type)
-    } else {
-        raise_type_err("Invalid pickle data")
+        _ => raise_type_err("Invalid pickle data")?,
     }
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method!(identity2 named "__copy__", c""),
-    method!(identity2 named "__deepcopy__", c"", METH_O),
-    method!(format_common_iso, doc::DATEDELTA_FORMAT_COMMON_ISO),
-    method!(
-        parse_common_iso,
-        doc::DATEDELTA_PARSE_COMMON_ISO,
-        METH_O | METH_CLASS
-    ),
-    method!(in_months_days, doc::DATEDELTA_IN_MONTHS_DAYS),
-    method!(in_years_months_days, doc::DATEDELTA_IN_YEARS_MONTHS_DAYS),
-    method!(__reduce__, c""),
+    method0!(__copy__, c""),
+    method1!(__deepcopy__, c""),
+    method0!(format_common_iso, doc::DATEDELTA_FORMAT_COMMON_ISO),
+    classmethod1!(parse_common_iso, doc::DATEDELTA_PARSE_COMMON_ISO),
+    method0!(in_months_days, doc::DATEDELTA_IN_MONTHS_DAYS),
+    method0!(in_years_months_days, doc::DATEDELTA_IN_YEARS_MONTHS_DAYS),
+    method0!(__reduce__, c""),
     PyMethodDef::zeroed(),
 ];
 

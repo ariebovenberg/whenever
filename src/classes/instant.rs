@@ -260,10 +260,10 @@ unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> 
     let inst_a = Instant::extract(a_obj);
     let inst_b = if type_b == type_a {
         Instant::extract(b_obj)
-    } else if type_b == State::for_type(type_a).zoned_datetime_type {
+    } else if type_b == State::for_type(type_a).zoned_datetime_type.as_ptr().cast() {
         ZonedDateTime::extract(b_obj).instant()
-    } else if type_b == State::for_type(type_a).offset_datetime_type
-        || type_b == State::for_type(type_a).system_datetime_type
+    } else if type_b == State::for_type(type_a).offset_datetime_type.as_ptr().cast()
+        || type_b == State::for_type(type_a).system_datetime_type.as_ptr().cast()
     {
         OffsetDateTime::extract(b_obj).instant()
     } else {
@@ -299,10 +299,10 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
         let mod_a = PyType_GetModule(type_a);
         let mod_b = PyType_GetModule(type_b);
         if mod_a == mod_b {
-            let inst_b = if type_b == State::for_mod(mod_a).zoned_datetime_type {
+            let inst_b = if type_b == State::for_mod(mod_a).zoned_datetime_type.as_ptr().cast() {
                 ZonedDateTime::extract(obj_b).instant()
-            } else if type_b == State::for_mod(mod_a).offset_datetime_type
-                || type_b == State::for_mod(mod_a).system_datetime_type
+            } else if type_b == State::for_mod(mod_a).offset_datetime_type.as_ptr().cast()
+                || type_b == State::for_mod(mod_a).system_datetime_type.as_ptr().cast()
             {
                 OffsetDateTime::extract(obj_b).instant()
             } else {
@@ -315,7 +315,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     };
     inst_a
         .diff(inst_b)
-        .to_obj(State::for_type(type_a).time_delta_type)
+        .to_obj(State::for_type(type_a).time_delta_type.as_ptr().cast())
 }
 
 unsafe fn __add__(dt: *mut PyObject, delta_obj: *mut PyObject) -> PyReturn {
@@ -333,7 +333,7 @@ unsafe fn _shift(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) -> Py
         PyType_GetModule(Py_TYPE(obj_b))
     );
     let type_a = Py_TYPE(obj_a);
-    let mut delta = if Py_TYPE(obj_b) == State::for_type(type_a).time_delta_type {
+    let mut delta = if Py_TYPE(obj_b) == State::for_type(type_a).time_delta_type.as_ptr().cast() {
         TimeDelta::extract(obj_b)
     } else {
         return Ok(newref(Py_NotImplemented()));
@@ -404,7 +404,7 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
         epoch: EpochSecs::new_unchecked(unpack_one!(packed, i64)),
         subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
     }
-    .to_obj(State::for_mod(module).instant_type)
+    .to_obj(State::for_mod(module).instant_type.as_ptr().cast())
 }
 
 // Backwards compatibility: an unpickler for Instants pickled before 0.8.0
@@ -417,7 +417,7 @@ pub(crate) unsafe fn unpickle_v07(module: *mut PyObject, arg: *mut PyObject) -> 
         epoch: EpochSecs::new_unchecked(unpack_one!(packed, i64) + EpochSecs::MIN.get() - 86_400),
         subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
     }
-    .to_obj(State::for_mod(module).instant_type)
+    .to_obj(State::for_mod(module).instant_type.as_ptr().cast())
 }
 
 unsafe fn timestamp(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -533,17 +533,17 @@ unsafe fn _shift_method(
         raise_type_err(format!("{}() takes no positional arguments", fname))?;
     }
     handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, str_hours) {
+        if eq(key, str_hours.as_ptr()) {
             nanos += handle_exact_unit(value, MAX_HOURS, "hours", 3_600_000_000_000_i128)?;
-        } else if eq(key, str_minutes) {
+        } else if eq(key, str_minutes.as_ptr()) {
             nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", 60_000_000_000_i128)?;
-        } else if eq(key, str_seconds) {
+        } else if eq(key, str_seconds.as_ptr()) {
             nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000_i128)?;
-        } else if eq(key, str_milliseconds) {
+        } else if eq(key, str_milliseconds.as_ptr()) {
             nanos += handle_exact_unit(value, MAX_MILLISECONDS, "milliseconds", 1_000_000_i128)?;
-        } else if eq(key, str_microseconds) {
+        } else if eq(key, str_microseconds.as_ptr()) {
             nanos += handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000_i128)?;
-        } else if eq(key, str_nanoseconds) {
+        } else if eq(key, str_nanoseconds.as_ptr()) {
             nanos = value
                 .to_i128()?
                 .ok_or_value_err("nanoseconds must be an integer")?
@@ -571,9 +571,11 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     let inst_a = Instant::extract(obj_a);
     let inst_b = if type_b == Py_TYPE(obj_a) {
         Instant::extract(obj_b)
-    } else if type_b == state.zoned_datetime_type {
+    } else if type_b == state.zoned_datetime_type.as_ptr().cast() {
         ZonedDateTime::extract(obj_b).instant()
-    } else if type_b == state.system_datetime_type || type_b == state.offset_datetime_type {
+    } else if type_b == state.system_datetime_type.as_ptr().cast()
+        || type_b == state.offset_datetime_type.as_ptr().cast()
+    {
         OffsetDateTime::extract(obj_b).instant()
     } else {
         raise_type_err(
@@ -581,7 +583,9 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
              Instant, ZonedDateTime, or SystemDateTime",
         )?
     };
-    inst_a.diff(inst_b).to_obj(state.time_delta_type)
+    inst_a
+        .diff(inst_b)
+        .to_obj(state.time_delta_type.as_ptr().cast())
 }
 
 unsafe fn to_tz(slf: &mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
@@ -595,7 +599,7 @@ unsafe fn to_tz(slf: &mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
     Instant::extract(slf)
         .to_tz(tz)
         .ok_or_value_err("Resulting datetime is out of range")?
-        .to_obj(zoned_datetime_type)
+        .to_obj(zoned_datetime_type.as_ptr().cast())
 }
 
 unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
@@ -610,14 +614,14 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
         [] => slf
             .to_datetime()
             .with_offset_unchecked(Offset::ZERO)
-            .to_obj(offset_datetime_type),
+            .to_obj(offset_datetime_type.as_ptr().cast()),
         [offset_obj] => slf
             .to_offset(offset_datetime::extract_offset(
                 offset_obj,
-                time_delta_type,
+                time_delta_type.as_ptr().cast(),
             )?)
             .ok_or_value_err("Resulting date is out of range")?
-            .to_obj(offset_datetime_type),
+            .to_obj(offset_datetime_type.as_ptr().cast()),
         _ => raise_type_err("to_fixed_offset() takes at most 1 argument"),
     }
 }
@@ -630,7 +634,7 @@ unsafe fn to_system_tz(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     } = State::for_obj(slf);
     Instant::extract(slf)
         .to_system_tz(py_api)?
-        .to_obj(system_datetime_type)
+        .to_obj(system_datetime_type.as_ptr().cast())
 }
 
 unsafe fn format_rfc2822(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
