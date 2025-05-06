@@ -649,6 +649,15 @@ class TestSubtract:
         with pytest.raises(TypeError):
             3 - Date(2021, 1, 1)  # type: ignore[operator]
 
+        with pytest.raises(TypeError):
+            DateDelta() - Date(2021, 1, 1)  # type: ignore[operator]
+
+        with pytest.raises(TypeError):
+            Date(2021, 1, 1) - PlainDateTime(2020, 3, 2)  # type: ignore[operator]
+
+        with pytest.raises(TypeError):
+            PlainDateTime(2021, 1, 1) - Date(2020, 3, 2)  # type: ignore[operator]
+
     def test_fuzzing(self):
         for d1, d2 in product(_EXAMPLE_DATES, _EXAMPLE_DATES):
             delta = d1 - d2

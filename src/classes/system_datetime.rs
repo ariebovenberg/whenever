@@ -280,7 +280,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     let mut minute = 0;
     let mut second = 0;
     let mut nanosecond = 0;
-    let mut disambiguate: *mut PyObject = str_compatible;
+    let mut disambiguate: *mut PyObject = str_compatible.as_ptr();
 
     parse_args_kwargs!(
         args,
@@ -301,10 +301,10 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?;
     let dis = Disambiguate::from_py(
         disambiguate,
-        str_compatible,
-        str_raise,
-        str_earlier,
-        str_later,
+        str_compatible.as_ptr(),
+        str_raise.as_ptr(),
+        str_earlier.as_ptr(),
+        str_later.as_ptr(),
     )?;
     OffsetDateTime::resolve_system_tz_using_disambiguate(
         py_api,
@@ -332,11 +332,11 @@ unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> 
     let inst_a = OffsetDateTime::extract(a_obj).instant();
     let inst_b = if type_b == type_a {
         OffsetDateTime::extract(b_obj).instant()
-    } else if type_b == State::for_type(type_a).instant_type {
+    } else if type_b == State::for_type(type_a).instant_type.as_ptr().cast() {
         Instant::extract(b_obj)
-    } else if type_b == State::for_type(type_a).zoned_datetime_type {
+    } else if type_b == State::for_type(type_a).zoned_datetime_type.as_ptr().cast() {
         ZonedDateTime::extract(b_obj).instant()
-    } else if type_b == State::for_type(type_a).offset_datetime_type {
+    } else if type_b == State::for_type(type_a).offset_datetime_type.as_ptr().cast() {
         OffsetDateTime::extract(b_obj).instant()
     } else {
         return Ok(newref(Py_NotImplemented()));
@@ -376,13 +376,13 @@ unsafe fn _shift_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bo
     let mut days = DeltaDays::ZERO;
     let mut tdelta = TimeDelta::ZERO;
 
-    if type_b == time_delta_type {
+    if type_b == time_delta_type.as_ptr().cast() {
         tdelta = TimeDelta::extract(obj_b);
-    } else if type_b == date_delta_type {
+    } else if type_b == date_delta_type.as_ptr().cast() {
         let dd = DateDelta::extract(obj_b);
         months = dd.months;
         days = dd.days;
-    } else if type_b == datetime_delta_type {
+    } else if type_b == datetime_delta_type.as_ptr().cast() {
         let dtd = DateTimeDelta::extract(obj_b);
         months = dtd.ddelta.months;
         days = dtd.ddelta.days;
@@ -433,16 +433,19 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
         let mod_a = PyType_GetModule(type_a);
         let mod_b = PyType_GetModule(type_b);
         if mod_a == mod_b {
-            let inst_b = if type_b == State::for_mod(mod_a).instant_type {
+            let inst_b = if type_b == State::for_mod(mod_a).instant_type.as_ptr().cast() {
                 Instant::extract(obj_b)
-            } else if type_b == State::for_mod(mod_a).zoned_datetime_type {
+            } else if type_b == State::for_mod(mod_a).zoned_datetime_type.as_ptr().cast() {
                 ZonedDateTime::extract(obj_b).instant()
-            } else if type_b == State::for_mod(mod_a).offset_datetime_type {
+            } else if type_b == State::for_mod(mod_a).offset_datetime_type.as_ptr().cast() {
                 OffsetDateTime::extract(obj_b).instant()
             } else {
                 return _shift_operator(obj_a, obj_b, true);
             };
-            debug_assert_eq!(type_a, State::for_type(type_a).system_datetime_type);
+            debug_assert_eq!(
+                type_a,
+                State::for_type(type_a).system_datetime_type.as_ptr().cast()
+            );
             (OffsetDateTime::extract(obj_a).instant(), inst_b)
         } else {
             return Ok(newref(Py_NotImplemented()));
@@ -450,7 +453,7 @@ unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     };
     inst_a
         .diff(inst_b)
-        .to_obj(State::for_type(type_a).time_delta_type)
+        .to_obj(State::for_type(type_a).time_delta_type.as_ptr().cast())
 }
 
 #[allow(static_mut_refs)]
@@ -516,7 +519,7 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
         },
         Offset::new_unchecked(unpack_one!(packed, i32)),
     )
-    .to_obj(State::for_mod(module).system_datetime_type)
+    .to_obj(State::for_mod(module).system_datetime_type.as_ptr().cast())
 }
 
 unsafe fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -526,13 +529,13 @@ unsafe fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
 unsafe fn date(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     OffsetDateTime::extract(slf)
         .date
-        .to_obj(State::for_obj(slf).date_type)
+        .to_obj(State::for_obj(slf).date_type.as_ptr().cast())
 }
 
 unsafe fn time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     OffsetDateTime::extract(slf)
         .time
-        .to_obj(State::for_obj(slf).time_type)
+        .to_obj(State::for_obj(slf).time_type.as_ptr().cast())
 }
 
 unsafe fn replace_date(
@@ -561,7 +564,7 @@ unsafe fn replace_date(
         ))?
     };
 
-    if Py_TYPE(arg) == date_type {
+    if Py_TYPE(arg) == date_type.as_ptr().cast() {
         let OffsetDateTime { time, offset, .. } = OffsetDateTime::extract(slf);
         OffsetDateTime::resolve_system_tz(
             py_api,
@@ -569,12 +572,12 @@ unsafe fn replace_date(
             time,
             Disambiguate::from_only_kwarg(
                 kwargs,
-                str_disambiguate,
+                str_disambiguate.as_ptr(),
                 "replace_date",
-                str_compatible,
-                str_raise,
-                str_earlier,
-                str_later,
+                str_compatible.as_ptr(),
+                str_raise.as_ptr(),
+                str_earlier.as_ptr(),
+                str_later.as_ptr(),
             )?,
             offset,
             exc_repeated,
@@ -612,7 +615,7 @@ unsafe fn replace_time(
         ))?
     };
 
-    if Py_TYPE(arg) == time_type {
+    if Py_TYPE(arg) == time_type.as_ptr().cast() {
         let OffsetDateTime { date, offset, .. } = OffsetDateTime::extract(slf);
         OffsetDateTime::resolve_system_tz(
             py_api,
@@ -620,12 +623,12 @@ unsafe fn replace_time(
             Time::extract(arg),
             Disambiguate::from_only_kwarg(
                 kwargs,
-                str_disambiguate,
+                str_disambiguate.as_ptr(),
                 "replace_time",
-                str_compatible,
-                str_raise,
-                str_earlier,
-                str_later,
+                str_compatible.as_ptr(),
+                str_raise.as_ptr(),
+                str_earlier.as_ptr(),
+                str_later.as_ptr(),
             )?,
             offset,
             exc_repeated,
@@ -679,13 +682,13 @@ unsafe fn replace(
     let mut dis = None;
 
     handle_kwargs("replace", kwargs, |key, value, eq| {
-        if eq(key, str_disambiguate) {
+        if eq(key, str_disambiguate.as_ptr()) {
             dis = Some(Disambiguate::from_py(
                 value,
-                str_compatible,
-                str_raise,
-                str_earlier,
-                str_later,
+                str_compatible.as_ptr(),
+                str_raise.as_ptr(),
+                str_earlier.as_ptr(),
+                str_later.as_ptr(),
             )?);
             Ok(true)
         } else {
@@ -699,13 +702,13 @@ unsafe fn replace(
                 &mut minute,
                 &mut second,
                 &mut nanos,
-                str_year,
-                str_month,
-                str_day,
-                str_hour,
-                str_minute,
-                str_second,
-                str_nanosecond,
+                str_year.as_ptr(),
+                str_month.as_ptr(),
+                str_day.as_ptr(),
+                str_hour.as_ptr(),
+                str_minute.as_ptr(),
+                str_second.as_ptr(),
+                str_nanosecond.as_ptr(),
                 eq,
             )
         }
@@ -822,7 +825,7 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
                 offset_datetime_type,
                 ..
             } = State::for_obj(slf_obj);
-            slf.to_obj(offset_datetime_type)
+            slf.to_obj(offset_datetime_type.as_ptr().cast())
         }
         [arg] => {
             let &State {
@@ -830,11 +833,11 @@ unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyR
                 time_delta_type,
                 ..
             } = State::for_obj(slf_obj);
-            let offset = offset_datetime::extract_offset(arg, time_delta_type)?;
+            let offset = offset_datetime::extract_offset(arg, time_delta_type.as_ptr().cast())?;
             slf.instant()
                 .to_offset(offset)
                 .ok_or_value_err("Resulting local date out of range")?
-                .to_obj(offset_datetime_type)
+                .to_obj(offset_datetime_type.as_ptr().cast())
         }
         _ => raise_type_err("to_fixed_offset() takes at most 1 argument"),
     }
@@ -852,7 +855,7 @@ unsafe fn to_tz(slf: *mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
         .instant()
         .to_tz(tz)
         .ok_or_value_err("Resulting datetime is out of range")?
-        .to_obj(zoned_datetime_type)
+        .to_obj(zoned_datetime_type.as_ptr().cast())
 }
 
 unsafe fn to_system_tz(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -909,13 +912,15 @@ unsafe fn _shift_method(
     match *args {
         [arg] => {
             match kwargs.next() {
-                Some((key, value)) if kwargs.len() == 1 && key.py_eq(state.str_disambiguate)? => {
+                Some((key, value))
+                    if kwargs.len() == 1 && key.py_eq(state.str_disambiguate.as_ptr())? =>
+                {
                     dis = Some(Disambiguate::from_py(
                         value,
-                        str_compatible,
-                        str_raise,
-                        str_earlier,
-                        str_later,
+                        str_compatible.as_ptr(),
+                        str_raise.as_ptr(),
+                        str_earlier.as_ptr(),
+                        str_later.as_ptr(),
                     )?)
                 }
                 Some(_) => raise_type_err(format!(
@@ -924,13 +929,13 @@ unsafe fn _shift_method(
                 ))?,
                 None => {}
             };
-            if Py_TYPE(arg) == time_delta_type {
+            if Py_TYPE(arg) == time_delta_type.as_ptr().cast() {
                 tdelta = TimeDelta::extract(arg);
-            } else if Py_TYPE(arg) == date_delta_type {
+            } else if Py_TYPE(arg) == date_delta_type.as_ptr().cast() {
                 let dd = DateDelta::extract(arg);
                 months = dd.months;
                 days = dd.days;
-            } else if Py_TYPE(arg) == datetime_delta_type {
+            } else if Py_TYPE(arg) == datetime_delta_type.as_ptr().cast() {
                 let dt = DateTimeDelta::extract(arg);
                 months = dt.ddelta.months;
                 days = dt.ddelta.days;
@@ -944,13 +949,13 @@ unsafe fn _shift_method(
             let mut raw_months = 0;
             let mut raw_days = 0;
             handle_kwargs(fname, kwargs, |key, value, eq| {
-                if eq(key, str_disambiguate) {
+                if eq(key, str_disambiguate.as_ptr()) {
                     dis = Some(Disambiguate::from_py(
                         value,
-                        str_compatible,
-                        str_raise,
-                        str_earlier,
-                        str_later,
+                        str_compatible.as_ptr(),
+                        str_raise.as_ptr(),
+                        str_earlier.as_ptr(),
+                        str_later.as_ptr(),
                     )?);
                     Ok(true)
                 } else {
@@ -1001,11 +1006,11 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
     let inst_a = OffsetDateTime::extract(obj_a).instant();
     let inst_b = if type_b == Py_TYPE(obj_a) {
         OffsetDateTime::extract(obj_b).instant()
-    } else if type_b == state.instant_type {
+    } else if type_b == state.instant_type.as_ptr().cast() {
         Instant::extract(obj_b)
-    } else if type_b == state.zoned_datetime_type {
+    } else if type_b == state.zoned_datetime_type.as_ptr().cast() {
         ZonedDateTime::extract(obj_b).instant()
-    } else if type_b == state.offset_datetime_type {
+    } else if type_b == state.offset_datetime_type.as_ptr().cast() {
         OffsetDateTime::extract(obj_b).instant()
     } else {
         raise_type_err(
@@ -1013,7 +1018,9 @@ unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
              Instant, ZonedDateTime, or SystemDateTime",
         )?
     };
-    inst_a.diff(inst_b).to_obj(state.time_delta_type)
+    inst_a
+        .diff(inst_b)
+        .to_obj(state.time_delta_type.as_ptr().cast())
 }
 
 unsafe fn is_ambiguous(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -1071,7 +1078,9 @@ unsafe fn day_length(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         exc_skipped,
     )?
     .instant();
-    start_of_next_day.diff(start_of_day).to_obj(time_delta_type)
+    start_of_next_day
+        .diff(start_of_day)
+        .to_obj(time_delta_type.as_ptr().cast())
 }
 
 unsafe fn round(
@@ -1247,7 +1256,7 @@ unsafe fn get_nanos(slf: *mut PyObject) -> PyReturn {
 
 unsafe fn get_offset(slf: *mut PyObject) -> PyReturn {
     TimeDelta::from_offset(OffsetDateTime::extract(slf).offset)
-        .to_obj(State::for_obj(slf).time_delta_type)
+        .to_obj(State::for_obj(slf).time_delta_type.as_ptr().cast())
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[

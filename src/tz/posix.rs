@@ -322,8 +322,8 @@ fn parse_rule(scan: &mut Scan) -> Option<(Rule, TransitionTime)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::classes::time::Time;
     use crate::common::ambiguity::Ambiguity::*;
-    use crate::time::Time;
 
     fn unambig(offset: i32) -> Ambiguity {
         Ambiguity::Unambiguous(offset.try_into().unwrap())

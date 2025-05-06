@@ -401,6 +401,11 @@ impl Year {
     pub(crate) const fn days_before_month(self, month: Month) -> u16 {
         DAYS_BEFORE_MONTH[self.is_leap() as usize][month as usize]
     }
+
+    pub(crate) const fn days_before(self) -> i32 {
+        let y = (self.get() - 1) as i32;
+        y * 365 + y / 4 - y / 100 + y / 400
+    }
 }
 
 impl From<Year> for u16 {

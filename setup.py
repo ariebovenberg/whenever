@@ -1,7 +1,6 @@
 import os
 
 import platform
-import sysconfig
 from setuptools import setup
 from setuptools_rust import Binding, RustExtension, build_rust
 
@@ -30,17 +29,7 @@ setup(
         []
         if os.getenv("WHENEVER_NO_BUILD_RUST_EXT")
         or platform.python_implementation() == "PyPy"
-        else [
-            RustExtension(
-                "whenever._whenever",
-                binding=Binding.NoBinding,
-                features=(
-                    ["whenever/gil-disabled"]
-                    if sysconfig.get_config_var("Py_GIL_DISABLED")
-                    else []
-                ),
-            )
-        ]
+        else [RustExtension("whenever._whenever", binding=Binding.NoBinding)]
     ),
     cmdclass={"build_rust": CustomBuildExtCommand},
 )
