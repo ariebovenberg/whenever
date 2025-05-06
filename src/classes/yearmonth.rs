@@ -180,9 +180,9 @@ unsafe fn replace(
         let mut year = ym.year.get().into();
         let mut month = ym.month.get().into();
         handle_kwargs("replace", kwargs, |key, value, eq| {
-            if eq(key, str_year) {
+            if eq(key, str_year.as_ptr()) {
                 year = value.to_long()?.ok_or_type_err("year must be an integer")?;
-            } else if eq(key, str_month) {
+            } else if eq(key, str_month.as_ptr()) {
                 month = value
                     .to_long()?
                     .ok_or_type_err("month must be an integer")?;
@@ -209,7 +209,7 @@ unsafe fn on_day(slf: *mut PyObject, day_obj: *mut PyObject) -> PyReturn {
     // OPTIMIZE: we don't need to check the validity of the year and month again
     Date::new(year, month, day)
         .ok_or_value_err("Invalid date components")?
-        .to_obj(date_type)
+        .to_obj(date_type.as_ptr().cast())
 }
 
 static mut METHODS: &[PyMethodDef] = &[
@@ -236,7 +236,7 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
         year: Year::new_unchecked(unpack_one!(packed, u16)),
         month: Month::new_unchecked(unpack_one!(packed, u8)),
     }
-    .to_obj(State::for_mod(module).yearmonth_type)
+    .to_obj(State::for_mod(module).yearmonth_type.as_ptr().cast())
 }
 
 unsafe fn get_year(slf: *mut PyObject) -> PyReturn {

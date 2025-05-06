@@ -227,10 +227,10 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
             let (months, days) = handle_init_kwargs(
                 "DateDelta",
                 items,
-                str_years,
-                str_months,
-                str_days,
-                str_weeks,
+                str_years.as_ptr(),
+                str_months.as_ptr(),
+                str_days.as_ptr(),
+                str_weeks.as_ptr(),
             )?;
             DateDelta::new(months, days).ok_or_value_err("Mixed sign in DateDelta")?
         }
@@ -246,14 +246,14 @@ pub(crate) unsafe fn years(module: *mut PyObject, amount: *mut PyObject) -> PyRe
         .and_then(DeltaMonths::from_long)
         .map(DateDelta::from_months)
         .ok_or_value_err("value out of bounds")?
-        .to_obj(State::for_mod(module).date_delta_type)
+        .to_obj(State::for_mod(module).date_delta_type.as_ptr().cast())
 }
 
 pub(crate) unsafe fn months(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
     DeltaMonths::from_long(amount.to_long()?.ok_or_type_err("argument must be int")?)
         .map(DateDelta::from_months)
         .ok_or_value_err("value out of bounds")?
-        .to_obj(State::for_mod(module).date_delta_type)
+        .to_obj(State::for_mod(module).date_delta_type.as_ptr().cast())
 }
 
 pub(crate) unsafe fn weeks(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
@@ -264,14 +264,14 @@ pub(crate) unsafe fn weeks(module: *mut PyObject, amount: *mut PyObject) -> PyRe
         .and_then(DeltaDays::from_long)
         .map(DateDelta::from_days)
         .ok_or_value_err("value out of bounds")?
-        .to_obj(State::for_mod(module).date_delta_type)
+        .to_obj(State::for_mod(module).date_delta_type.as_ptr().cast())
 }
 
 pub(crate) unsafe fn days(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
     DeltaDays::from_long(amount.to_long()?.ok_or_type_err("argument must be int")?)
         .map(DateDelta::from_days)
         .ok_or_value_err("value out of bounds")?
-        .to_obj(State::for_mod(module).date_delta_type)
+        .to_obj(State::for_mod(module).date_delta_type.as_ptr().cast())
 }
 
 unsafe fn richcmp(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> PyReturn {
@@ -362,14 +362,14 @@ unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) 
         let mod_b = PyType_GetModule(type_b);
         if mod_a == mod_b {
             let state = State::for_mod(mod_a);
-            if type_b == state.time_delta_type {
+            if type_b == state.time_delta_type.as_ptr().cast() {
                 let mut b = TimeDelta::extract(obj_b);
                 if negate {
                     b = -b;
                 }
                 DateTimeDelta::new(DateDelta::extract(obj_a), b)
                     .ok_or_value_err("Mixed sign in DateTimeDelta")?
-            } else if type_b == state.datetime_delta_type {
+            } else if type_b == state.datetime_delta_type.as_ptr().cast() {
                 let mut b = DateTimeDelta::extract(obj_b);
                 if negate {
                     b = -b;
@@ -391,7 +391,7 @@ unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) 
                     (type_b as *mut PyObject).repr()
                 ))?
             }
-            .to_obj(state.datetime_delta_type)
+            .to_obj(state.datetime_delta_type.as_ptr().cast())
         } else {
             Ok(newref(Py_NotImplemented()))
         }
@@ -619,7 +619,7 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, args: &[*mut PyObject]) -> 
                 args[1].to_long()?.ok_or_type_err("Invalid pickle data")? as _,
             ),
         }
-        .to_obj(State::for_mod(module).date_delta_type)
+        .to_obj(State::for_mod(module).date_delta_type.as_ptr().cast())
     } else {
         raise_type_err("Invalid pickle data")
     }
