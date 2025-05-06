@@ -187,7 +187,10 @@ pub(crate) unsafe fn parse_args(
         arg_obj[i] = Some(NonNull::new_unchecked(args[i]));
     }
     handle_kwargs("round", kwargs, |key, value, eq| {
-        for (i, &kwname) in [str_unit, str_increment, str_mode].iter().enumerate() {
+        for (i, &kwname) in [str_unit.as_ptr(), str_increment.as_ptr(), str_mode.as_ptr()]
+            .iter()
+            .enumerate()
+        {
             if eq(key, kwname) {
                 if arg_obj[i].replace(NonNull::new_unchecked(value)).is_some() {
                     raise_type_err(format!(
@@ -198,7 +201,7 @@ pub(crate) unsafe fn parse_args(
                 return Ok(true);
             }
         }
-        if ignore_dst_kwarg && eq(key, state.str_ignore_dst) {
+        if ignore_dst_kwarg && eq(key, state.str_ignore_dst.as_ptr()) {
             if value == Py_True() {
                 ignore_dst = true;
             }
@@ -218,13 +221,13 @@ pub(crate) unsafe fn parse_args(
         .map(|v| {
             Unit::from_py(
                 v.as_ptr(),
-                str_nanosecond,
-                str_microsecond,
-                str_millisecond,
-                str_second,
-                str_minute,
-                str_hour,
-                str_day,
+                str_nanosecond.as_ptr(),
+                str_microsecond.as_ptr(),
+                str_millisecond.as_ptr(),
+                str_second.as_ptr(),
+                str_minute.as_ptr(),
+                str_hour.as_ptr(),
+                str_day.as_ptr(),
             )
         })
         .transpose()?
@@ -237,11 +240,11 @@ pub(crate) unsafe fn parse_args(
         .map(|v| {
             Mode::from_py(
                 v.as_ptr(),
-                str_floor,
-                str_ceil,
-                str_half_floor,
-                str_half_ceil,
-                str_half_even,
+                str_floor.as_ptr(),
+                str_ceil.as_ptr(),
+                str_half_floor.as_ptr(),
+                str_half_ceil.as_ptr(),
+                str_half_even.as_ptr(),
             )
         })
         .transpose()?

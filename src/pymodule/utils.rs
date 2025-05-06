@@ -4,32 +4,35 @@ use std::ffi::CStr;
 use std::ptr::null_mut as NULL;
 
 /// Create and add a new enum type to the module
-pub(crate) unsafe fn new_enum(
-    module: *mut PyObject,
+pub(crate) fn new_enum(
+    module: PyObj,
     name: &CStr,
     members: &[(&CStr, i32)],
-) -> PyReturn {
-    let members_dict = PyDict_New().as_result()?;
-    defer_decref!(members_dict);
+) -> PyResult<Owned<PyType>> {
+    let members_dict = PyDict::new()?;
     for &(key, value) in members {
-        if PyDict_SetItemString(members_dict, key.as_ptr(), steal!(value.to_py()?)) == -1 {
-            return Err(PyErrOccurred());
-        }
+        members_dict.set_item_str(key, value.to_py2()?.borrow())?;
     }
-    let enum_module = PyImport_ImportModule(c"enum".as_ptr()).as_result()?;
-    defer_decref!(enum_module);
-    let enum_cls = PyObject_CallMethod(
-        enum_module,
-        c"Enum".as_ptr(),
-        c"sO".as_ptr(),
-        name.as_ptr(),
-        members_dict,
-    )
-    .as_result()?;
-    if PyModule_AddType(module, (enum_cls as *mut PyObject).cast()) == 0 {
-        Ok(enum_cls)
+    let enum_module = import(c"enum")?;
+    let enum_cls = unsafe {
+        PyObject_CallMethod(
+            enum_module.as_ptr(),
+            c"Enum".as_ptr(),
+            c"sO".as_ptr(),
+            name.as_ptr(),
+            members_dict,
+        )
+        .rust_owned()?
+        .cast_unchecked::<PyType>()
+    };
+    add_type_to_module(module, enum_cls.borrow())?;
+    Ok(enum_cls)
+}
+
+pub(crate) fn add_type_to_module(module: PyObj, cls: PyType) -> PyResult<()> {
+    if unsafe { PyModule_AddType(module.as_ptr(), cls.as_ptr().cast()) } == 0 {
+        Ok(())
     } else {
-        defer_decref!(enum_cls);
         Err(PyErrOccurred())
     }
 }
@@ -58,7 +61,7 @@ pub(crate) unsafe fn new_class<T: PyWrapped>(
     spec: *mut PyType_Spec,
     unpickle_name: &CStr,
     singletons: &[(&CStr, T)],
-    dest: &mut *mut PyTypeObject,
+    dest: &mut PyType,
     unpickle_ptr: &mut *mut PyObject,
 ) -> PyResult<()> {
     // TODO: nicer way to track decref of cls?
@@ -83,7 +86,7 @@ pub(crate) unsafe fn new_class<T: PyWrapped>(
             Err(PyErrOccurred())?;
         }
     }
-    *dest = cls;
+    *dest = PyType::from_ptr_unchecked(cls.cast());
     *unpickle_ptr = unpickler;
     Ok(())
 }
@@ -104,6 +107,12 @@ pub(crate) unsafe fn patch_dunder_module(
 }
 
 /// Intern a string in the Python interpreter
-pub(crate) unsafe fn intern(s: &CStr) -> PyReturn {
-    PyUnicode_InternFromString(s.as_ptr()).as_result()
+pub(crate) unsafe fn intern(s: &CStr) -> PyAny {
+    let ptr = PyUnicode_InternFromString(s.as_ptr());
+    if ptr.is_null() {
+        Err(PyErrOccurred())
+    } else {
+        // TODO: from ptr checked
+        Ok(PyObj::from_ptr_unchecked(ptr))
+    }
 }

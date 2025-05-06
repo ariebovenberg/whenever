@@ -47,13 +47,13 @@ pub(crate) static mut MODULE_DEF: PyModuleDef = PyModuleDef {
 };
 
 static mut METHODS: &mut [PyMethodDef] = &mut [
-    method!(_unpkl_date, c"", METH_O),
+    modmethod1!(_unpkl_date, c""),
     method!(_unpkl_ym, c"", METH_O),
     method!(_unpkl_md, c"", METH_O),
     method!(_unpkl_time, c"", METH_O),
-    method_vararg!(_unpkl_ddelta, c""),
+    modmethod_vararg!(_unpkl_ddelta, c""),
     method!(_unpkl_tdelta, c"", METH_O),
-    method_vararg!(_unpkl_dtdelta, c""),
+    modmethod_vararg!(_unpkl_dtdelta, c""),
     method!(_unpkl_local, c"", METH_O),
     method!(_unpkl_inst, c"", METH_O),
     method!(_unpkl_utc, c"", METH_O), // for backwards compatibility
@@ -61,10 +61,10 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     method_vararg!(_unpkl_zoned, c""),
     method!(_unpkl_system, c"", METH_O),
     // FUTURE: set __module__ on these
-    method!(years, doc::YEARS, METH_O),
-    method!(months, doc::MONTHS, METH_O),
-    method!(weeks, doc::WEEKS, METH_O),
-    method!(days, doc::DAYS, METH_O),
+    modmethod1!(years, doc::YEARS),
+    modmethod1!(months, doc::MONTHS),
+    modmethod1!(weeks, doc::WEEKS),
+    modmethod1!(days, doc::DAYS),
     method!(hours, doc::HOURS, METH_O),
     method!(minutes, doc::MINUTES, METH_O),
     method!(seconds, doc::SECONDS, METH_O),
@@ -92,13 +92,6 @@ macro_rules! wrap_errcode {
     }};
 }
 
-#[allow(non_upper_case_globals)]
-#[allow(dead_code)]
-const Py_mod_gil: c_int = 4;
-#[allow(non_upper_case_globals)]
-#[allow(dead_code)]
-const Py_MOD_GIL_NOT_USED: *mut c_void = 1 as *mut c_void;
-
 static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
     PyModuleDef_Slot {
         slot: Py_mod_exec,
@@ -113,11 +106,11 @@ static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
     // FUTURE: set this once we've ensured that:
     // - tz cache is threadsafe
     // - we safely handle non-threadsafe modules: datetime, zoneinfo
-    // #[cfg(Py_3_13)]
-    // PyModuleDef_Slot {
-    //     slot: Py_mod_gil,
-    //     value: Py_MOD_GIL_NOT_USED,
-    // },
+    #[cfg(Py_3_13)]
+    PyModuleDef_Slot {
+        slot: Py_mod_gil,
+        value: Py_MOD_GIL_USED,
+    },
     PyModuleDef_Slot {
         slot: 0,
         value: NULL(),
@@ -253,7 +246,7 @@ unsafe fn module_exec(module: *mut PyObject) -> PyResult<()> {
     state.time_ns = import_from(c"time", c"time_ns")?;
 
     let weekday_enum = new_enum(
-        module,
+        PyObj::from_ptr_unchecked(module),
         c"Weekday",
         &[
             (c"MONDAY", 1),
@@ -264,17 +257,16 @@ unsafe fn module_exec(module: *mut PyObject) -> PyResult<()> {
             (c"SATURDAY", 6),
             (c"SUNDAY", 7),
         ],
-    )? as *mut _;
-    defer_decref!(weekday_enum);
+    )?;
 
     state.weekday_enum_members = [
-        PyObject_GetAttrString(weekday_enum, c"MONDAY".as_ptr()),
-        PyObject_GetAttrString(weekday_enum, c"TUESDAY".as_ptr()),
-        PyObject_GetAttrString(weekday_enum, c"WEDNESDAY".as_ptr()),
-        PyObject_GetAttrString(weekday_enum, c"THURSDAY".as_ptr()),
-        PyObject_GetAttrString(weekday_enum, c"FRIDAY".as_ptr()),
-        PyObject_GetAttrString(weekday_enum, c"SATURDAY".as_ptr()),
-        PyObject_GetAttrString(weekday_enum, c"SUNDAY".as_ptr()),
+        weekday_enum.getattr(c"MONDAY")?.into_py(),
+        weekday_enum.getattr(c"TUESDAY")?.into_py(),
+        weekday_enum.getattr(c"WEDNESDAY")?.into_py(),
+        weekday_enum.getattr(c"THURSDAY")?.into_py(),
+        weekday_enum.getattr(c"FRIDAY")?.into_py(),
+        weekday_enum.getattr(c"SATURDAY")?.into_py(),
+        weekday_enum.getattr(c"SUNDAY")?.into_py(),
     ];
 
     state.str_years = intern(c"years")?;
@@ -406,12 +398,12 @@ unsafe extern "C" fn module_traverse(
             system_datetime::SINGLETONS.len(),
         ),
     ] {
-        traverse_type(class, visit, arg, num_singletons);
+        traverse_type(class.as_ptr().cast(), visit, arg, num_singletons);
     }
 
     // enum members
     for &member in state.weekday_enum_members.iter() {
-        traverse(member, visit, arg);
+        traverse(member.as_ptr(), visit, arg);
     }
 
     // exceptions
@@ -452,51 +444,51 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
     Py_CLEAR((&raw mut state.system_datetime_type).cast());
 
     // enum members
-    Py_CLEAR(&raw mut state.weekday_enum_members[0]);
-    Py_CLEAR(&raw mut state.weekday_enum_members[1]);
-    Py_CLEAR(&raw mut state.weekday_enum_members[2]);
-    Py_CLEAR(&raw mut state.weekday_enum_members[3]);
-    Py_CLEAR(&raw mut state.weekday_enum_members[4]);
-    Py_CLEAR(&raw mut state.weekday_enum_members[5]);
-    Py_CLEAR(&raw mut state.weekday_enum_members[6]);
+    Py_CLEAR((&raw mut state.weekday_enum_members[0]).cast());
+    Py_CLEAR((&raw mut state.weekday_enum_members[1]).cast());
+    Py_CLEAR((&raw mut state.weekday_enum_members[2]).cast());
+    Py_CLEAR((&raw mut state.weekday_enum_members[3]).cast());
+    Py_CLEAR((&raw mut state.weekday_enum_members[4]).cast());
+    Py_CLEAR((&raw mut state.weekday_enum_members[5]).cast());
+    Py_CLEAR((&raw mut state.weekday_enum_members[6]).cast());
 
     // interned strings
-    Py_CLEAR(&raw mut state.str_years);
-    Py_CLEAR(&raw mut state.str_months);
-    Py_CLEAR(&raw mut state.str_weeks);
-    Py_CLEAR(&raw mut state.str_days);
-    Py_CLEAR(&raw mut state.str_hours);
-    Py_CLEAR(&raw mut state.str_minutes);
-    Py_CLEAR(&raw mut state.str_seconds);
-    Py_CLEAR(&raw mut state.str_milliseconds);
-    Py_CLEAR(&raw mut state.str_microseconds);
-    Py_CLEAR(&raw mut state.str_nanoseconds);
-    Py_CLEAR(&raw mut state.str_year);
-    Py_CLEAR(&raw mut state.str_month);
-    Py_CLEAR(&raw mut state.str_day);
-    Py_CLEAR(&raw mut state.str_hour);
-    Py_CLEAR(&raw mut state.str_minute);
-    Py_CLEAR(&raw mut state.str_second);
-    Py_CLEAR(&raw mut state.str_millisecond);
-    Py_CLEAR(&raw mut state.str_microsecond);
-    Py_CLEAR(&raw mut state.str_nanosecond);
-    Py_CLEAR(&raw mut state.str_compatible);
-    Py_CLEAR(&raw mut state.str_raise);
-    Py_CLEAR(&raw mut state.str_earlier);
-    Py_CLEAR(&raw mut state.str_later);
-    Py_CLEAR(&raw mut state.str_tz);
-    Py_CLEAR(&raw mut state.str_disambiguate);
-    Py_CLEAR(&raw mut state.str_offset);
-    Py_CLEAR(&raw mut state.str_ignore_dst);
-    Py_CLEAR(&raw mut state.str_unit);
-    Py_CLEAR(&raw mut state.str_increment);
-    Py_CLEAR(&raw mut state.str_mode);
-    Py_CLEAR(&raw mut state.str_floor);
-    Py_CLEAR(&raw mut state.str_ceil);
-    Py_CLEAR(&raw mut state.str_half_floor);
-    Py_CLEAR(&raw mut state.str_half_ceil);
-    Py_CLEAR(&raw mut state.str_half_even);
-    Py_CLEAR(&raw mut state.str_format);
+    Py_CLEAR((&raw mut state.str_years).cast());
+    Py_CLEAR((&raw mut state.str_months).cast());
+    Py_CLEAR((&raw mut state.str_weeks).cast());
+    Py_CLEAR((&raw mut state.str_days).cast());
+    Py_CLEAR((&raw mut state.str_hours).cast());
+    Py_CLEAR((&raw mut state.str_minutes).cast());
+    Py_CLEAR((&raw mut state.str_seconds).cast());
+    Py_CLEAR((&raw mut state.str_milliseconds).cast());
+    Py_CLEAR((&raw mut state.str_microseconds).cast());
+    Py_CLEAR((&raw mut state.str_nanoseconds).cast());
+    Py_CLEAR((&raw mut state.str_year).cast());
+    Py_CLEAR((&raw mut state.str_month).cast());
+    Py_CLEAR((&raw mut state.str_day).cast());
+    Py_CLEAR((&raw mut state.str_hour).cast());
+    Py_CLEAR((&raw mut state.str_minute).cast());
+    Py_CLEAR((&raw mut state.str_second).cast());
+    Py_CLEAR((&raw mut state.str_millisecond).cast());
+    Py_CLEAR((&raw mut state.str_microsecond).cast());
+    Py_CLEAR((&raw mut state.str_nanosecond).cast());
+    Py_CLEAR((&raw mut state.str_compatible).cast());
+    Py_CLEAR((&raw mut state.str_raise).cast());
+    Py_CLEAR((&raw mut state.str_earlier).cast());
+    Py_CLEAR((&raw mut state.str_later).cast());
+    Py_CLEAR((&raw mut state.str_tz).cast());
+    Py_CLEAR((&raw mut state.str_disambiguate).cast());
+    Py_CLEAR((&raw mut state.str_offset).cast());
+    Py_CLEAR((&raw mut state.str_ignore_dst).cast());
+    Py_CLEAR((&raw mut state.str_unit).cast());
+    Py_CLEAR((&raw mut state.str_increment).cast());
+    Py_CLEAR((&raw mut state.str_mode).cast());
+    Py_CLEAR((&raw mut state.str_floor).cast());
+    Py_CLEAR((&raw mut state.str_ceil).cast());
+    Py_CLEAR((&raw mut state.str_half_floor).cast());
+    Py_CLEAR((&raw mut state.str_half_ceil).cast());
+    Py_CLEAR((&raw mut state.str_half_even).cast());
+    Py_CLEAR((&raw mut state.str_format).cast());
 
     // exceptions
     Py_CLEAR(&raw mut state.exc_repeated);
@@ -523,21 +515,21 @@ unsafe extern "C" fn module_free(module: *mut c_void) {
 
 pub(crate) struct State {
     // types
-    pub(crate) date_type: *mut PyTypeObject,
-    pub(crate) yearmonth_type: *mut PyTypeObject,
-    pub(crate) monthday_type: *mut PyTypeObject,
-    pub(crate) time_type: *mut PyTypeObject,
-    pub(crate) date_delta_type: *mut PyTypeObject,
-    pub(crate) time_delta_type: *mut PyTypeObject,
-    pub(crate) datetime_delta_type: *mut PyTypeObject,
-    pub(crate) plain_datetime_type: *mut PyTypeObject,
-    pub(crate) instant_type: *mut PyTypeObject,
-    pub(crate) offset_datetime_type: *mut PyTypeObject,
-    pub(crate) zoned_datetime_type: *mut PyTypeObject,
-    pub(crate) system_datetime_type: *mut PyTypeObject,
+    pub(crate) date_type: PyType,
+    pub(crate) yearmonth_type: PyType,
+    pub(crate) monthday_type: PyType,
+    pub(crate) time_type: PyType,
+    pub(crate) date_delta_type: PyType,
+    pub(crate) time_delta_type: PyType,
+    pub(crate) datetime_delta_type: PyType,
+    pub(crate) plain_datetime_type: PyType,
+    pub(crate) instant_type: PyType,
+    pub(crate) offset_datetime_type: PyType,
+    pub(crate) zoned_datetime_type: PyType,
+    pub(crate) system_datetime_type: PyType,
 
     // weekday enum
-    pub(crate) weekday_enum_members: [*mut PyObject; 7],
+    pub(crate) weekday_enum_members: [PyObj; 7],
 
     // exceptions
     pub(crate) exc_repeated: *mut PyObject,
@@ -547,6 +539,7 @@ pub(crate) struct State {
     pub(crate) exc_tz_notfound: *mut PyObject,
 
     // unpickling functions
+    // TODO safety
     pub(crate) unpickle_date: *mut PyObject,
     pub(crate) unpickle_yearmonth: *mut PyObject,
     pub(crate) unpickle_monthday: *mut PyObject,
@@ -568,42 +561,42 @@ pub(crate) struct State {
     pub(crate) zoneinfo_type: LazyImport,
 
     // strings
-    pub(crate) str_years: *mut PyObject,
-    pub(crate) str_months: *mut PyObject,
-    pub(crate) str_weeks: *mut PyObject,
-    pub(crate) str_days: *mut PyObject,
-    pub(crate) str_hours: *mut PyObject,
-    pub(crate) str_minutes: *mut PyObject,
-    pub(crate) str_seconds: *mut PyObject,
-    pub(crate) str_milliseconds: *mut PyObject,
-    pub(crate) str_microseconds: *mut PyObject,
-    pub(crate) str_nanoseconds: *mut PyObject,
-    pub(crate) str_year: *mut PyObject,
-    pub(crate) str_month: *mut PyObject,
-    pub(crate) str_day: *mut PyObject,
-    pub(crate) str_hour: *mut PyObject,
-    pub(crate) str_minute: *mut PyObject,
-    pub(crate) str_second: *mut PyObject,
-    pub(crate) str_millisecond: *mut PyObject,
-    pub(crate) str_microsecond: *mut PyObject,
-    pub(crate) str_nanosecond: *mut PyObject,
-    pub(crate) str_compatible: *mut PyObject,
-    pub(crate) str_raise: *mut PyObject,
-    pub(crate) str_earlier: *mut PyObject,
-    pub(crate) str_later: *mut PyObject,
-    pub(crate) str_tz: *mut PyObject,
-    pub(crate) str_disambiguate: *mut PyObject,
-    pub(crate) str_offset: *mut PyObject,
-    pub(crate) str_ignore_dst: *mut PyObject,
-    pub(crate) str_unit: *mut PyObject,
-    pub(crate) str_increment: *mut PyObject,
-    pub(crate) str_mode: *mut PyObject,
-    pub(crate) str_floor: *mut PyObject,
-    pub(crate) str_ceil: *mut PyObject,
-    pub(crate) str_half_floor: *mut PyObject,
-    pub(crate) str_half_ceil: *mut PyObject,
-    pub(crate) str_half_even: *mut PyObject,
-    pub(crate) str_format: *mut PyObject,
+    pub(crate) str_years: PyObj,
+    pub(crate) str_months: PyObj,
+    pub(crate) str_weeks: PyObj,
+    pub(crate) str_days: PyObj,
+    pub(crate) str_hours: PyObj,
+    pub(crate) str_minutes: PyObj,
+    pub(crate) str_seconds: PyObj,
+    pub(crate) str_milliseconds: PyObj,
+    pub(crate) str_microseconds: PyObj,
+    pub(crate) str_nanoseconds: PyObj,
+    pub(crate) str_year: PyObj,
+    pub(crate) str_month: PyObj,
+    pub(crate) str_day: PyObj,
+    pub(crate) str_hour: PyObj,
+    pub(crate) str_minute: PyObj,
+    pub(crate) str_second: PyObj,
+    pub(crate) str_millisecond: PyObj,
+    pub(crate) str_microsecond: PyObj,
+    pub(crate) str_nanosecond: PyObj,
+    pub(crate) str_compatible: PyObj,
+    pub(crate) str_raise: PyObj,
+    pub(crate) str_earlier: PyObj,
+    pub(crate) str_later: PyObj,
+    pub(crate) str_tz: PyObj,
+    pub(crate) str_disambiguate: PyObj,
+    pub(crate) str_offset: PyObj,
+    pub(crate) str_ignore_dst: PyObj,
+    pub(crate) str_unit: PyObj,
+    pub(crate) str_increment: PyObj,
+    pub(crate) str_mode: PyObj,
+    pub(crate) str_floor: PyObj,
+    pub(crate) str_ceil: PyObj,
+    pub(crate) str_half_floor: PyObj,
+    pub(crate) str_half_ceil: PyObj,
+    pub(crate) str_half_even: PyObj,
+    pub(crate) str_format: PyObj,
 
     pub(crate) time_patch: Patch,
 

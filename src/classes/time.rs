@@ -371,12 +371,12 @@ unsafe fn on(slf: *mut PyObject, date: *mut PyObject) -> PyReturn {
         date_type,
         ..
     } = State::for_obj(slf);
-    if Py_TYPE(date) == date_type {
+    if Py_TYPE(date) == date_type.as_ptr().cast() {
         DateTime {
             date: Date::extract(date),
             time: Time::extract(slf),
         }
-        .to_obj(plain_datetime_type)
+        .to_obj(plain_datetime_type.as_ptr().cast())
     } else {
         raise_type_err("argument must be a date")
     }
@@ -404,17 +404,17 @@ unsafe fn replace(
         let mut second = time.second.into();
         let mut nanos = time.subsec.get() as _;
         handle_kwargs("replace", kwargs, |key, value, eq| {
-            if eq(key, str_hour) {
+            if eq(key, str_hour.as_ptr()) {
                 hour = value.to_long()?.ok_or_type_err("hour must be an integer")?;
-            } else if eq(key, str_minute) {
+            } else if eq(key, str_minute.as_ptr()) {
                 minute = value
                     .to_long()?
                     .ok_or_type_err("minute must be an integer")?;
-            } else if eq(key, str_second) {
+            } else if eq(key, str_second.as_ptr()) {
                 second = value
                     .to_long()?
                     .ok_or_type_err("second must be an integer")?;
-            } else if eq(key, str_nanosecond) {
+            } else if eq(key, str_nanosecond.as_ptr()) {
                 nanos = value
                     .to_long()?
                     .ok_or_type_err("nanosecond must be an integer")?;
@@ -477,7 +477,7 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
         second: unpack_one!(data, u8),
         subsec: SubSecNanos::new_unchecked(unpack_one!(data, i32)),
     }
-    .to_obj(State::for_mod(module).time_type)
+    .to_obj(State::for_mod(module).time_type.as_ptr().cast())
 }
 
 unsafe fn get_hour(slf: *mut PyObject) -> PyReturn {

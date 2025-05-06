@@ -24,7 +24,7 @@ pub(crate) unsafe fn _patch_time(
     freeze: bool,
 ) -> PyReturn {
     let state = State::for_mod_mut(module);
-    if Py_TYPE(arg) != state.instant_type {
+    if Py_TYPE(arg) != state.instant_type.as_ptr().cast() {
         raise_type_err("Expected an Instant")?
     }
     let instant = Instant::extract(arg);
@@ -111,7 +111,7 @@ impl Instant {
 }
 
 impl State {
-    pub(crate) unsafe fn time_ns(&self) -> PyResult<Instant> {
+    pub(crate) fn time_ns(&self) -> PyResult<Instant> {
         let Patch {
             state: status,
             time_machine_installed,
@@ -119,7 +119,7 @@ impl State {
         match status {
             PatchState::Unset => {
                 if time_machine_installed {
-                    self.time_ns_py()
+                    unsafe { self.time_ns_py() }
                 } else {
                     self.time_ns_rust()
                 }
@@ -130,14 +130,15 @@ impl State {
                     + SystemTime::now()
                         .duration_since(SystemTime::UNIX_EPOCH)
                         .ok()
-                        .ok_or_raise(PyExc_OSError, "System time out of range")?
+                        .ok_or_raise(unsafe { PyExc_OSError }, "System time out of range")?
                     - at;
                 Instant::from_duration_since_epoch(dur)
-                    .ok_or_raise(PyExc_OSError, "System time out of range")
+                    .ok_or_raise(unsafe { PyExc_OSError }, "System time out of range")
             }
         }
     }
 
+    // TODO safety
     unsafe fn time_ns_py(&self) -> PyResult<Instant> {
         let ts = PyObject_CallNoArgs(self.time_ns).as_result()?;
         defer_decref!(ts);
@@ -148,11 +149,11 @@ impl State {
         Instant::from_nanos_i64(ns).ok_or_raise(PyExc_OSError, "System time out of range")
     }
 
-    unsafe fn time_ns_rust(&self) -> PyResult<Instant> {
+    fn time_ns_rust(&self) -> PyResult<Instant> {
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .ok()
             .and_then(Instant::from_duration_since_epoch)
-            .ok_or_raise(PyExc_OSError, "System time out of range")
+            .ok_or_raise(unsafe { PyExc_OSError }, "System time out of range")
     }
 }
