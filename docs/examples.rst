@@ -124,6 +124,7 @@ Find the duration between two datetimes
 >>> from whenever import ZonedDateTime
 >>> d = ZonedDateTime(2025, 1, 3, hour=15, tz="America/New_York")
 >>> d2 = ZonedDateTime(2025, 1, 5, hour=8, minute=24, tz="Europe/Paris")
+>>> d2 - d
 TimeDelta(PT35h24m)
 
 Move a date by six months
