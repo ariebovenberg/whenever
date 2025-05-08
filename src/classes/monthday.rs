@@ -3,11 +3,12 @@ use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
-use crate::common::math::*;
-use crate::common::*;
-use crate::date::{extract_2_digits, Date};
-use crate::docstrings as doc;
-use crate::State;
+use crate::{
+    classes::date::Date,
+    common::{math::*, parse::extract_2_digits, pyobject::*, pytype::*},
+    docstrings as doc,
+    pymodule::State,
+};
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub(crate) struct MonthDay {
@@ -184,11 +185,11 @@ unsafe fn replace(
         let mut month = md.month.get().into();
         let mut day = md.day.into();
         handle_kwargs("replace", kwargs, |key, value, eq| {
-            if eq(key, str_month) {
+            if eq(key, str_month.as_ptr()) {
                 month = value
                     .to_long()?
                     .ok_or_type_err("month must be an integer")?;
-            } else if eq(key, str_day) {
+            } else if eq(key, str_day.as_ptr()) {
                 day = value.to_long()?.ok_or_type_err("day must be an integer")?;
             } else {
                 return Ok(false);
@@ -213,7 +214,7 @@ unsafe fn in_year(slf: *mut PyObject, year_obj: *mut PyObject) -> PyReturn {
     // OPTIMIZE: we don't need to check the validity of the month again
     Date::new(year, month, day)
         .ok_or_value_err("Invalid date components")?
-        .to_obj(date_type)
+        .to_obj(date_type.as_ptr().cast())
 }
 
 unsafe fn is_leap(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -246,7 +247,7 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
         month: Month::new_unchecked(unpack_one!(packed, u8)),
         day: unpack_one!(packed, u8),
     }
-    .to_obj(State::for_mod(module).monthday_type)
+    .to_obj(State::for_mod(module).monthday_type.as_ptr().cast())
 }
 
 unsafe fn get_month(slf: *mut PyObject) -> PyReturn {

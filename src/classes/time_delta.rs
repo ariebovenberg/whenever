@@ -4,13 +4,15 @@ use std::fmt;
 use std::ops::Neg;
 use std::ptr::null_mut as NULL;
 
-use crate::common::math::*;
-use crate::common::*;
-use crate::date_delta::{DateDelta, InitError};
-use crate::datetime_delta::{handle_exact_unit, DateTimeDelta};
-use crate::docstrings as doc;
-use crate::round;
-use crate::State;
+use crate::{
+    classes::{
+        date_delta::{DateDelta, InitError},
+        datetime_delta::{handle_exact_unit, DateTimeDelta},
+    },
+    common::{math::*, parse::extract_digit, pyobject::*, pytype::*, round},
+    docstrings as doc,
+    pymodule::State,
+};
 
 /// TimeDelta represents a duration of time with nanosecond precision.
 ///
@@ -266,25 +268,25 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
                 "TimeDelta",
                 DictItems::new_unchecked(kwargs),
                 |key, value, eq| {
-                    if eq(key, str_hours) {
+                    if eq(key, str_hours.as_ptr()) {
                         nanos +=
                             handle_exact_unit(value, MAX_HOURS, "hours", 3_600_000_000_000_i128)?;
-                    } else if eq(key, str_minutes) {
+                    } else if eq(key, str_minutes.as_ptr()) {
                         nanos +=
                             handle_exact_unit(value, MAX_MINUTES, "minutes", 60_000_000_000_i128)?;
-                    } else if eq(key, str_seconds) {
+                    } else if eq(key, str_seconds.as_ptr()) {
                         nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000_i128)?;
-                    } else if eq(key, str_milliseconds) {
+                    } else if eq(key, str_milliseconds.as_ptr()) {
                         nanos += handle_exact_unit(
                             value,
                             MAX_MILLISECONDS,
                             "milliseconds",
                             1_000_000_i128,
                         )?;
-                    } else if eq(key, str_microseconds) {
+                    } else if eq(key, str_microseconds.as_ptr()) {
                         nanos +=
                             handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000_i128)?;
-                    } else if eq(key, str_nanoseconds) {
+                    } else if eq(key, str_nanoseconds.as_ptr()) {
                         nanos += value
                             .to_i128()?
                             .ok_or_value_err("nanoseconds must be an integer")?;
@@ -308,7 +310,7 @@ pub(crate) unsafe fn hours(module: *mut PyObject, amount: *mut PyObject) -> PyRe
         "hours",
         3_600_000_000_000_i128,
     )?)
-    .to_obj(State::for_mod(module).time_delta_type)
+    .to_obj(State::for_mod(module).time_delta_type.as_ptr().cast())
 }
 
 pub(crate) unsafe fn minutes(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
@@ -318,7 +320,7 @@ pub(crate) unsafe fn minutes(module: *mut PyObject, amount: *mut PyObject) -> Py
         "minutes",
         60_000_000_000_i128,
     )?)
-    .to_obj(State::for_mod(module).time_delta_type)
+    .to_obj(State::for_mod(module).time_delta_type.as_ptr().cast())
 }
 
 pub(crate) unsafe fn seconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
@@ -328,7 +330,7 @@ pub(crate) unsafe fn seconds(module: *mut PyObject, amount: *mut PyObject) -> Py
         "seconds",
         1_000_000_000_i128,
     )?)
-    .to_obj(State::for_mod(module).time_delta_type)
+    .to_obj(State::for_mod(module).time_delta_type.as_ptr().cast())
 }
 
 pub(crate) unsafe fn milliseconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
@@ -338,7 +340,7 @@ pub(crate) unsafe fn milliseconds(module: *mut PyObject, amount: *mut PyObject) 
         "milliseconds",
         1_000_000_i128,
     )?)
-    .to_obj(State::for_mod(module).time_delta_type)
+    .to_obj(State::for_mod(module).time_delta_type.as_ptr().cast())
 }
 
 pub(crate) unsafe fn microseconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
@@ -348,7 +350,7 @@ pub(crate) unsafe fn microseconds(module: *mut PyObject, amount: *mut PyObject) 
         "microseconds",
         1_000_i128,
     )?)
-    .to_obj(State::for_mod(module).time_delta_type)
+    .to_obj(State::for_mod(module).time_delta_type.as_ptr().cast())
 }
 
 pub(crate) unsafe fn nanoseconds(module: *mut PyObject, amount: *mut PyObject) -> PyReturn {
@@ -358,7 +360,7 @@ pub(crate) unsafe fn nanoseconds(module: *mut PyObject, amount: *mut PyObject) -
             .ok_or_value_err("nanoseconds must be an integer")?,
     )
     .ok_or_value_err("TimeDelta out of range")?
-    .to_obj(State::for_mod(module).time_delta_type)
+    .to_obj(State::for_mod(module).time_delta_type.as_ptr().cast())
 }
 
 unsafe fn __richcmp__(obj_a: *mut PyObject, obj_b: *mut PyObject, op: c_int) -> PyReturn {
@@ -550,14 +552,14 @@ unsafe fn _add_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool
         let mod_b = PyType_GetModule(type_b);
         if mod_a == mod_b {
             let state = State::for_mod(mod_a);
-            if type_b == state.date_delta_type {
+            if type_b == state.date_delta_type.as_ptr().cast() {
                 let mut b = DateDelta::extract(obj_b);
                 if negate {
                     b = -b;
                 }
                 DateTimeDelta::new(b, TimeDelta::extract(obj_a))
                     .ok_or_value_err("Mixed sign of delta components")?
-            } else if type_b == state.datetime_delta_type {
+            } else if type_b == state.datetime_delta_type.as_ptr().cast() {
                 let mut b = DateTimeDelta::extract(obj_b);
                 if negate {
                     b = -b;
@@ -579,7 +581,7 @@ unsafe fn _add_operator(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool
                     (type_b as *mut PyObject).repr()
                 ))?
             }
-            .to_obj(state.datetime_delta_type)
+            .to_obj(state.datetime_delta_type.as_ptr().cast())
         } else {
             Ok(newref(Py_NotImplemented()))
         }
@@ -655,7 +657,7 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
         secs: DeltaSeconds::new_unchecked(unpack_one!(data, i64)),
         subsec: SubSecNanos::new_unchecked(unpack_one!(data, i32)),
     }
-    .to_obj(State::for_mod(module).time_delta_type)
+    .to_obj(State::for_mod(module).time_delta_type.as_ptr().cast())
 }
 
 unsafe fn in_nanoseconds(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {

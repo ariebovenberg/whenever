@@ -4,14 +4,17 @@ use std::fmt;
 use std::ops::Neg;
 use std::ptr::null_mut as NULL;
 
-use crate::common::math::*;
-use crate::common::*;
-use crate::date_delta::{self, parse_prefix, DateDelta, InitError, Unit as DateUnit};
-use crate::docstrings as doc;
-use crate::time_delta::{
-    self, TimeDelta, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS,
+use crate::{
+    classes::{
+        date_delta::{self, parse_prefix, DateDelta, InitError, Unit as DateUnit},
+        time_delta::{
+            self, TimeDelta, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS,
+        },
+    },
+    common::{math::*, pyobject::*, pytype::*},
+    docstrings as doc,
+    pymodule::State,
 };
-use crate::State;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub(crate) struct DateTimeDelta {
@@ -139,7 +142,7 @@ pub(crate) unsafe fn set_units_from_kwargs(
     state: &State,
     eq: fn(*mut PyObject, *mut PyObject) -> bool,
 ) -> PyResult<bool> {
-    if eq(key, state.str_years) {
+    if eq(key, state.str_years.as_ptr()) {
         *months = value
             .to_long()?
             .ok_or_value_err("years must be an integer")?
@@ -147,7 +150,7 @@ pub(crate) unsafe fn set_units_from_kwargs(
             .and_then(|y| y.try_into().ok())
             .and_then(|y| months.checked_add(y))
             .ok_or_value_err("total years out of range")?;
-    } else if eq(key, state.str_months) {
+    } else if eq(key, state.str_months.as_ptr()) {
         *months = value
             .to_long()?
             .ok_or_value_err("months must be an integer")?
@@ -155,7 +158,7 @@ pub(crate) unsafe fn set_units_from_kwargs(
             .ok()
             .and_then(|m| months.checked_add(m))
             .ok_or_value_err("total months out of range")?;
-    } else if eq(key, state.str_weeks) {
+    } else if eq(key, state.str_weeks.as_ptr()) {
         *days = value
             .to_long()?
             .ok_or_value_err("weeks must be an integer")?
@@ -163,7 +166,7 @@ pub(crate) unsafe fn set_units_from_kwargs(
             .and_then(|d| d.try_into().ok())
             .and_then(|d| days.checked_add(d))
             .ok_or_value_err("total days out of range")?;
-    } else if eq(key, state.str_days) {
+    } else if eq(key, state.str_days.as_ptr()) {
         *days = value
             .to_long()?
             .ok_or_value_err("days must be an integer")?
@@ -171,17 +174,17 @@ pub(crate) unsafe fn set_units_from_kwargs(
             .ok()
             .and_then(|d| days.checked_add(d))
             .ok_or_value_err("total days out of range")?;
-    } else if eq(key, state.str_hours) {
+    } else if eq(key, state.str_hours.as_ptr()) {
         *nanos += handle_exact_unit(value, MAX_HOURS, "hours", 3_600_000_000_000_i128)?;
-    } else if eq(key, state.str_minutes) {
+    } else if eq(key, state.str_minutes.as_ptr()) {
         *nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", 60_000_000_000_i128)?;
-    } else if eq(key, state.str_seconds) {
+    } else if eq(key, state.str_seconds.as_ptr()) {
         *nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000_i128)?;
-    } else if eq(key, state.str_milliseconds) {
+    } else if eq(key, state.str_milliseconds.as_ptr()) {
         *nanos += handle_exact_unit(value, MAX_MILLISECONDS, "milliseconds", 1_000_000_i128)?;
-    } else if eq(key, state.str_microseconds) {
+    } else if eq(key, state.str_microseconds.as_ptr()) {
         *nanos += handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000_i128)?;
-    } else if eq(key, state.str_nanoseconds) {
+    } else if eq(key, state.str_nanoseconds.as_ptr()) {
         *nanos = value
             .to_i128()?
             .ok_or_value_err("nanoseconds must be an integer")?
@@ -343,12 +346,12 @@ unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) 
         let mod_b = PyType_GetModule(type_b);
         if mod_a == mod_b {
             let state = State::for_mod(mod_a);
-            let delta_b = if type_b == state.date_delta_type {
+            let delta_b = if type_b == state.date_delta_type.as_ptr().cast() {
                 DateTimeDelta {
                     ddelta: DateDelta::extract(obj_b),
                     tdelta: TimeDelta::ZERO,
                 }
-            } else if type_b == state.time_delta_type {
+            } else if type_b == state.time_delta_type.as_ptr().cast() {
                 DateTimeDelta {
                     ddelta: DateDelta::ZERO,
                     tdelta: TimeDelta::extract(obj_b),
@@ -361,7 +364,7 @@ unsafe fn _add_method(obj_a: *mut PyObject, obj_b: *mut PyObject, negate: bool) 
                     (type_b as *mut PyObject).repr()
                 ));
             };
-            debug_assert_eq!(type_a, state.datetime_delta_type);
+            debug_assert_eq!(type_a, state.datetime_delta_type.as_ptr().cast());
             (DateTimeDelta::extract(obj_a), delta_b)
         } else {
             return Ok(newref(Py_NotImplemented()));
@@ -517,13 +520,13 @@ unsafe fn in_months_days_secs_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyR
 unsafe fn date_part(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     DateTimeDelta::extract(slf)
         .ddelta
-        .to_obj(State::for_obj(slf).date_delta_type)
+        .to_obj(State::for_obj(slf).date_delta_type.as_ptr().cast())
 }
 
 unsafe fn time_part(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     DateTimeDelta::extract(slf)
         .tdelta
-        .to_obj(State::for_obj(slf).time_delta_type)
+        .to_obj(State::for_obj(slf).time_delta_type.as_ptr().cast())
 }
 
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
@@ -566,7 +569,7 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, args: &[*mut PyObject]) -> 
                 ),
             },
         }
-        .to_obj(State::for_mod(module).datetime_delta_type),
+        .to_obj(State::for_mod(module).datetime_delta_type.as_ptr().cast()),
         _ => raise_type_err("Invalid pickle data")?,
     }
 }

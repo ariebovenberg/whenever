@@ -1,4 +1,4 @@
-use crate::SubSecNanos;
+use crate::common::math::SubSecNanos;
 use std::{
     fmt::Debug,
     ops::{Index, RangeInclusive, RangeTo},
@@ -287,6 +287,19 @@ impl Debug for Scan<'_> {
             })
             .finish()
     }
+}
+
+/// Try to parse digit at index. No bounds check on the index.
+/// Returns None if the character is not an ASCII digit
+pub(crate) fn extract_digit(s: &[u8], index: usize) -> Option<u8> {
+    match s[index] {
+        c if c.is_ascii_digit() => Some(c - b'0'),
+        _ => None,
+    }
+}
+
+pub(crate) fn extract_2_digits(s: &[u8], index: usize) -> Option<u8> {
+    Some(extract_digit(s, index)? * 10 + extract_digit(s, index + 1)?)
 }
 
 #[cfg(test)]

@@ -1,5 +1,8 @@
 /// Checked arithmetic for date and time concepts
-use crate::{date::Date, plain_datetime::DateTime, round, time::Time};
+/// TODO rename to scalars
+use crate::{
+    classes::date::Date, classes::plain_datetime::DateTime, classes::time::Time, common::round,
+};
 use pyo3_ffi::*;
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
 
@@ -397,6 +400,11 @@ impl Year {
 
     pub(crate) const fn days_before_month(self, month: Month) -> u16 {
         DAYS_BEFORE_MONTH[self.is_leap() as usize][month as usize]
+    }
+
+    pub(crate) const fn days_before(self) -> i32 {
+        let y = (self.get() - 1) as i32;
+        y * 365 + y / 4 - y / 100 + y / 400
     }
 }
 
@@ -823,3 +831,5 @@ impl Weekday {
         self.iso() % 7
     }
 }
+
+pub(crate) static NS_PER_DAY: i128 = S_PER_DAY as i128 * 1_000_000_000;
