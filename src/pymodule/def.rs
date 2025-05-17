@@ -48,7 +48,7 @@ pub(crate) static mut MODULE_DEF: PyModuleDef = PyModuleDef {
 
 static mut METHODS: &mut [PyMethodDef] = &mut [
     modmethod1!(_unpkl_date, c""),
-    method!(_unpkl_ym, c"", METH_O),
+    modmethod1!(_unpkl_ym, c""),
     modmethod1!(_unpkl_md, c""),
     modmethod1!(_unpkl_time, c""),
     modmethod_vararg!(_unpkl_ddelta, c""),
@@ -58,7 +58,7 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     modmethod1!(_unpkl_inst, c""),
     modmethod1!(_unpkl_utc, c""), // for backwards compatibility
     modmethod1!(_unpkl_offset, c""),
-    method_vararg!(_unpkl_zoned, c""),
+    modmethod_vararg!(_unpkl_zoned, c""),
     modmethod1!(_unpkl_system, c""),
     // FUTURE: set __module__ on these
     modmethod1!(years, doc::YEARS),
@@ -249,7 +249,7 @@ unsafe fn module_exec(module: *mut PyObject) -> PyResult<()> {
 
     let weekday_enum = new_enum(
         PyObj::from_ptr_unchecked(module),
-        c"Weekday",
+        "Weekday",
         &[
             (c"MONDAY", 1),
             (c"TUESDAY", 2),
@@ -625,12 +625,5 @@ impl State {
 
     pub(crate) unsafe fn for_mod_mut<'a>(module: *mut PyObject) -> &'a mut Self {
         PyModule_GetState(module).cast::<Self>().as_mut().unwrap()
-    }
-
-    pub(crate) unsafe fn for_obj<'a>(obj: *mut PyObject) -> &'a Self {
-        PyType_GetModuleState(Py_TYPE(obj))
-            .cast::<Self>()
-            .as_ref()
-            .unwrap()
     }
 }

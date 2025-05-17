@@ -165,43 +165,6 @@ macro_rules! classmethod0(
     };
 );
 
-macro_rules! method_vararg(
-    ($meth:ident, $doc:expr) => {
-        method_vararg!($meth named stringify!($meth), $doc, 0)
-    };
-
-    ($meth:ident, $doc:expr, $flags:expr) => {
-        method_vararg!($meth named stringify!($meth), $doc, $flags)
-    };
-
-    ($meth:ident named $name:expr, $doc:expr) => {
-        method_vararg!($meth named $name, $doc, 0)
-    };
-
-    ($meth:ident named $name:expr, $doc:expr, $flags:expr) => {
-        PyMethodDef {
-            ml_name: concat!($name, "\0").as_ptr().cast(),
-            ml_meth: PyMethodDefPointer {
-                PyCFunctionFast: {
-                    unsafe extern "C" fn _wrap(
-                        slf: *mut PyObject,
-                        args: *mut *mut PyObject,
-                        nargs: Py_ssize_t,
-                    ) -> *mut PyObject {
-                        match $meth(&mut *slf, std::slice::from_raw_parts(args, nargs as usize)) {
-                            Ok(x) => x,
-                            Err(PyErrOccurred()) => core::ptr::null_mut(),
-                        }
-                    }
-                    _wrap
-                },
-            },
-            ml_flags: METH_FASTCALL | $flags,
-            ml_doc: $doc.as_ptr()
-        }
-    };
-);
-
 macro_rules! method_vararg2(
     ($typ:ident, $meth:ident, $doc:expr) => {
         method_vararg2!($typ, $meth named stringify!($meth), $doc)
@@ -258,92 +221,6 @@ macro_rules! modmethod_vararg(
                 },
             },
             ml_flags: METH_FASTCALL,
-            ml_doc: $doc.as_ptr()
-        }
-    };
-);
-
-pub(crate) struct KwargIter {
-    keys: *mut PyObject,
-    values: *const *mut PyObject,
-    size: isize,
-    pos: isize,
-}
-
-impl KwargIter {
-    pub(crate) unsafe fn new(keys: *mut PyObject, values: *const *mut PyObject) -> Self {
-        Self {
-            keys,
-            values,
-            size: if keys.is_null() {
-                0
-            } else {
-                PyTuple_GET_SIZE(keys) as isize
-            },
-            pos: 0,
-        }
-    }
-
-    pub(crate) fn len(&self) -> isize {
-        self.size
-    }
-}
-
-impl Iterator for KwargIter {
-    type Item = (*mut PyObject, *mut PyObject);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.pos == self.size {
-            return None;
-        }
-        let item = unsafe {
-            (
-                PyTuple_GET_ITEM(self.keys, self.pos),
-                *self.values.offset(self.pos),
-            )
-        };
-        self.pos += 1;
-        Some(item)
-    }
-}
-
-macro_rules! method_kwargs(
-    ($meth:ident, $doc:expr) => {
-        method_kwargs!($meth named stringify!($meth), $doc)
-    };
-
-    ($meth:ident, $doc:expr, $flags:expr) => {
-        method_kwargs!($meth named stringify!($meth), $doc, $flags)
-    };
-
-    ($meth:ident named $name:expr, $doc:expr) => {
-        method_kwargs!($meth named $name, $doc, 0)
-    };
-
-    ($meth:ident named $name:expr, $doc:expr, $flags:expr) => {
-        PyMethodDef {
-            ml_name: concat!($name, "\0").as_ptr().cast(),
-            ml_meth: PyMethodDefPointer {
-                PyCMethod: {
-                    unsafe extern "C" fn _wrap(
-                        slf: *mut PyObject,
-                        cls: *mut PyTypeObject,
-                        args_raw: *const *mut PyObject,
-                        nargsf: Py_ssize_t,
-                        kwnames: *mut PyObject,
-                    ) -> *mut PyObject {
-                        let nargs = PyVectorcall_NARGS(nargsf as usize);
-                        let args = std::slice::from_raw_parts(args_raw, nargs as usize);
-                        let mut kwargs = KwargIter::new(kwnames, args_raw.offset(nargs as isize));
-                        match $meth(slf, cls, args, &mut kwargs) {
-                            Ok(x) => x as *mut PyObject,
-                            Err(PyErrOccurred()) => core::ptr::null_mut(),
-                        }
-                    }
-                    _wrap
-                },
-            },
-            ml_flags: $flags | METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
             ml_doc: $doc.as_ptr()
         }
     };
@@ -461,79 +338,6 @@ macro_rules! classmethod_kwargs(
     };
 );
 
-macro_rules! slotmethod {
-    (Py_tp_new, $name:ident) => {
-        PyType_Slot {
-            slot: Py_tp_new,
-            pfunc: {
-                unsafe extern "C" fn _wrap(
-                    cls: *mut PyTypeObject,
-                    args: *mut PyObject,
-                    kwargs: *mut PyObject,
-                ) -> *mut PyObject {
-                    match $name(cls, args, kwargs) {
-                        Ok(x) => x,
-                        Err(PyErrOccurred()) => core::ptr::null_mut(),
-                    }
-                }
-                _wrap as *mut c_void
-            },
-        }
-    };
-
-    (Py_tp_richcompare, $name:ident) => {
-        PyType_Slot {
-            slot: Py_tp_richcompare,
-            pfunc: {
-                unsafe extern "C" fn _wrap(
-                    a: *mut PyObject,
-                    b: *mut PyObject,
-                    op: c_int,
-                ) -> *mut PyObject {
-                    match $name(a, b, op) {
-                        Ok(x) => x,
-                        Err(PyErrOccurred()) => core::ptr::null_mut(),
-                    }
-                }
-                _wrap as *mut c_void
-            },
-        }
-    };
-
-    ($slot:ident, $name:ident, 2) => {
-        PyType_Slot {
-            slot: $slot,
-            pfunc: {
-                unsafe extern "C" fn _wrap(
-                    slf: *mut PyObject,
-                    arg: *mut PyObject,
-                ) -> *mut PyObject {
-                    match $name(slf, arg) {
-                        Ok(x) => x,
-                        Err(PyErrOccurred()) => core::ptr::null_mut(),
-                    }
-                }
-                _wrap as *mut c_void
-            },
-        }
-    };
-
-    ($slot:ident, $name:ident, 1) => {
-        PyType_Slot {
-            slot: $slot,
-            pfunc: {
-                unsafe extern "C" fn _wrap(slf: *mut PyObject) -> *mut PyObject {
-                    match $name(slf) {
-                        Ok(x) => x,
-                        Err(PyErrOccurred()) => core::ptr::null_mut(),
-                    }
-                }
-                _wrap as *mut c_void
-            },
-        }
-    };
-}
-
 macro_rules! slotmethod2 {
     ($typ:ident, Py_tp_new, $name:ident) => {
         PyType_Slot {
@@ -608,29 +412,6 @@ macro_rules! slotmethod2 {
     };
 }
 
-macro_rules! getter(
-    ($meth:ident named $name:expr, $doc:expr) => {
-        PyGetSetDef {
-            name: concat!($name, "\0").as_ptr().cast(),
-            get: Some({
-                unsafe extern "C" fn _wrap(
-                    slf: *mut PyObject,
-                    _: *mut c_void,
-                ) -> *mut PyObject {
-                    match $meth(&mut *slf) {
-                        Ok(x) => x,
-                        Err(PyErrOccurred()) => core::ptr::null_mut(),
-                    }
-                }
-                _wrap
-            }),
-            set: None,
-            doc: concat!($doc, "\0").as_ptr().cast(),
-            closure: core::ptr::null_mut(),
-        }
-    };
-);
-
 macro_rules! getter2(
     ($typ:ident, $meth:ident named $name:expr, $doc:expr) => {
         PyGetSetDef {
@@ -655,13 +436,15 @@ macro_rules! getter2(
     };
 );
 
-pub(crate) unsafe extern "C" fn generic_dealloc(slf: *mut PyObject) {
-    let cls = Py_TYPE(slf);
-    let tp_free = PyType_GetSlot(cls, Py_tp_free);
-    debug_assert_ne!(tp_free, core::ptr::null_mut());
-    let tp_free: freefunc = std::mem::transmute(tp_free);
-    tp_free(slf.cast());
-    Py_DECREF(cls.cast());
+pub(crate) extern "C" fn generic_dealloc(slf: PyObj) {
+    let cls = slf.class().as_ptr().cast::<PyTypeObject>();
+    unsafe {
+        let tp_free = PyType_GetSlot(cls, Py_tp_free);
+        debug_assert_ne!(tp_free, core::ptr::null_mut());
+        let tp_free: freefunc = std::mem::transmute(tp_free);
+        tp_free(slf.as_ptr().cast());
+        Py_DECREF(cls.cast());
+    }
 }
 
 #[inline]
@@ -746,7 +529,6 @@ pub(crate) const fn type_spec<T: PyWrapped>(
 
 #[allow(unused_imports)]
 pub(crate) use {
-    classmethod0, classmethod1, classmethod_kwargs, getter, getter2, method, method0, method1,
-    method_kwargs, method_kwargs2, method_vararg, method_vararg2, modmethod1, modmethod_vararg,
-    slotmethod, slotmethod2,
+    classmethod0, classmethod1, classmethod_kwargs, getter2, method, method0, method1,
+    method_kwargs2, method_vararg2, modmethod1, modmethod_vararg, slotmethod2,
 };

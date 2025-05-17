@@ -68,47 +68,6 @@ impl OffsetDateTime {
             })
     }
 
-    // TODO remove
-    pub(crate) unsafe fn to_py(
-        self,
-        &PyDateTime_CAPI {
-            DateTime_FromDateAndTime,
-            DateTimeType,
-            TimeZone_FromTimeZone,
-            Delta_FromDelta,
-            DeltaType,
-            ..
-        }: &PyDateTime_CAPI,
-    ) -> PyReturn {
-        let OffsetDateTime {
-            date: Date { year, month, day },
-            time:
-                Time {
-                    hour,
-                    minute,
-                    second,
-                    subsec,
-                },
-            offset,
-            ..
-        } = self;
-        // TODO no normalization!
-        let tz = TimeZone_FromTimeZone(Delta_FromDelta(0, offset.get(), 0, 0, DeltaType), NULL());
-        defer_decref!(tz);
-        DateTime_FromDateAndTime(
-            year.get().into(),
-            month.get().into(),
-            day.into(),
-            hour.into(),
-            minute.into(),
-            second.into(),
-            (subsec.get() / 1_000) as _,
-            tz,
-            DateTimeType,
-        )
-        .as_result()
-    }
-
     pub(crate) fn to_py2(
         self,
         &PyDateTime_CAPI {
@@ -320,35 +279,6 @@ fn __new__(cls: HeapType<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>)
     OffsetDateTime::new(date, time, offset)
         .ok_or_value_err("Time is out of range")?
         .to_obj3(cls)
-}
-
-// TODO remove
-pub(crate) unsafe fn extract_offset(
-    obj: *mut PyObject,
-    tdelta_cls: *mut PyTypeObject,
-) -> PyResult<Offset> {
-    if obj.is_null() {
-        raise_type_err("Missing required keyword argument: 'offset'")
-    } else if obj.is_int() {
-        Offset::from_hours(
-            obj.to_long()?
-                // We've checked before that it's a py int
-                .unwrap(),
-        )
-        .ok_or_value_err("offset must be between -24 and 24 hours")
-    } else if Py_TYPE(obj) == tdelta_cls {
-        let TimeDelta { secs, subsec } = TimeDelta::extract(obj);
-        if subsec.get() == 0 {
-            Offset::from_i64(secs.get()).ok_or_value_err("offset must be between -24 and 24 hours")
-        } else {
-            raise_value_err("offset must be a whole number of seconds")
-        }
-    } else {
-        raise_type_err(format!(
-            "offset must be an integer or TimeDelta instance, got {}",
-            obj.repr()
-        ))
-    }
 }
 
 pub(crate) fn extract_offset2(obj: PyObj, tdelta_cls: HeapType<TimeDelta>) -> PyResult<Offset> {

@@ -41,6 +41,7 @@ impl<T: PyWrapped> HeapType<T> {
         self.inner.as_ptr()
     }
 
+    // TODO: lifetime story
     pub(crate) fn state(&self) -> &'static State {
         // SAFETY: we assume the pointer is valid and points to a PyType object
         unsafe { State::for_type(self.as_ptr().cast()) }
@@ -90,19 +91,12 @@ pub(crate) trait PyObjectExt {
     #[allow(clippy::wrong_self_convention)]
     fn rust_owned(self) -> PyResult<Owned<PyObj>>;
     #[allow(clippy::wrong_self_convention)]
-    unsafe fn is_int(self) -> bool;
-    #[allow(clippy::wrong_self_convention)]
     unsafe fn is_str(self) -> bool;
     // FUTURE: unchecked versions of these in case we know the type
-    unsafe fn to_bytes<'a>(self) -> PyResult<Option<&'a [u8]>>;
     unsafe fn to_utf8<'a>(self) -> PyResult<Option<&'a [u8]>>;
     unsafe fn to_str<'a>(self) -> PyResult<Option<&'a str>>;
-    unsafe fn to_long(self) -> PyResult<Option<c_long>>;
     unsafe fn to_i64(self) -> PyResult<Option<i64>>;
-    unsafe fn to_i128(self) -> PyResult<Option<i128>>;
-    unsafe fn to_f64(self) -> PyResult<Option<f64>>;
     unsafe fn repr(self) -> String;
-    unsafe fn py_eq(self, other: *mut PyObject) -> PyResult<bool>;
 }
 
 impl PyObjectExt for *mut PyObject {
@@ -114,28 +108,9 @@ impl PyObjectExt for *mut PyObject {
     fn rust_owned(self) -> PyResult<Owned<PyObj>> {
         PyObj::new(self).map(Owned::new)
     }
-    unsafe fn is_int(self) -> bool {
-        PyLong_Check(self) != 0
-    }
 
     unsafe fn is_str(self) -> bool {
         PyUnicode_Check(self) != 0
-    }
-
-    // WARNING: the string lifetime is only valid so long as the
-    // Python object is alive
-    unsafe fn to_bytes<'a>(self) -> PyResult<Option<&'a [u8]>> {
-        if PyBytes_Check(self) == 0 {
-            return Ok(None);
-        };
-        let p = PyBytes_AsString(self);
-        if p.is_null() {
-            return Err(PyErrOccurred());
-        };
-        Ok(Some(std::slice::from_raw_parts(
-            p.cast::<u8>(),
-            PyBytes_Size(self) as usize,
-        )))
     }
 
     // WARNING: the string lifetime is only valid so long as the
@@ -161,17 +136,6 @@ impl PyObjectExt for *mut PyObject {
         Ok(self.to_utf8()?.map(|s| std::str::from_utf8_unchecked(s)))
     }
 
-    unsafe fn to_long(self) -> PyResult<Option<c_long>> {
-        if PyLong_Check(self) == 0 {
-            return Ok(None);
-        }
-        match PyLong_AsLong(self) {
-            x if x != -1 || PyErr_Occurred().is_null() => Ok(Some(x)),
-            // The error message is set for us
-            _ => Err(PyErrOccurred()),
-        }
-    }
-
     unsafe fn to_i64(self) -> PyResult<Option<i64>> {
         // Although PyLong_AsLongLong can handle non-ints, we want to be strict and
         // opt out of accepting __int__, __index__ results.
@@ -180,36 +144,6 @@ impl PyObjectExt for *mut PyObject {
         }
         match PyLong_AsLongLong(self) {
             x if x != -1 || PyErr_Occurred().is_null() => Ok(Some(x)),
-            // The error message is set for us
-            _ => Err(PyErrOccurred()),
-        }
-    }
-
-    unsafe fn to_i128(self) -> PyResult<Option<i128>> {
-        if PyLong_Check(self) == 0 {
-            return Ok(None);
-        }
-        let mut bytes: [u8; 16] = [0; 16];
-        // Yes, this is a private API, but it's the only way to get a 128-bit integer
-        // on Python < 3.13. Other libraries do this too.
-        if _PyLong_AsByteArray(self.cast(), &mut bytes as *mut _, 16, 1, 1) == 0 {
-            Ok(Some(i128::from_le_bytes(bytes)))
-        } else {
-            raise(
-                PyExc_OverflowError,
-                "Python int too large to convert to i128",
-            )
-        }
-    }
-
-    unsafe fn to_f64(self) -> PyResult<Option<f64>> {
-        // Although PyFloat_AsDouble can handle non-floats, we want to be strict and
-        // opt out of accepting __float__ and __index__ results.
-        if PyFloat_Check(self) == 0 {
-            return Ok(None);
-        }
-        match PyFloat_AsDouble(self) {
-            x if x != -1.0 || PyErr_Occurred().is_null() => Ok(Some(x)),
             // The error message is set for us
             _ => Err(PyErrOccurred()),
         }
@@ -237,14 +171,6 @@ impl PyObjectExt for *mut PyObject {
         // anyway, so this is acceptable.
         .to_string()
     }
-
-    unsafe fn py_eq(self, other: *mut PyObject) -> PyResult<bool> {
-        match PyObject_RichCompareBool(self, other, Py_EQ) {
-            1 => Ok(true),
-            0 => Ok(false),
-            _ => Err(PyErrOccurred()),
-        }
-    }
 }
 
 // TODO a non-raw version?
@@ -267,7 +193,7 @@ pub(crate) fn value_err<U: ToPy>(msg: U) -> PyErrOccurred {
 }
 
 pub(crate) trait OptionExt<T> {
-    unsafe fn ok_or_else_raise<F, M: ToPy>(self, exc: *mut PyObject, fmt: F) -> PyResult<T>
+    fn ok_or_else_raise<F, M: ToPy>(self, exc: *mut PyObject, fmt: F) -> PyResult<T>
     where
         Self: Sized,
         F: FnOnce() -> M;
@@ -276,7 +202,7 @@ pub(crate) trait OptionExt<T> {
     where
         Self: Sized,
     {
-        unsafe { self.ok_or_else_raise(exc, || msg) }
+        self.ok_or_else_raise(exc, || msg)
     }
 
     fn ok_or_value_err<U: ToPy>(self, msg: U) -> PyResult<T>
@@ -311,7 +237,7 @@ pub(crate) trait OptionExt<T> {
 }
 
 impl<T> OptionExt<T> for Option<T> {
-    unsafe fn ok_or_else_raise<F, M: ToPy>(self, exc: *mut PyObject, fmt: F) -> PyResult<T>
+    fn ok_or_else_raise<F, M: ToPy>(self, exc: *mut PyObject, fmt: F) -> PyResult<T>
     where
         F: FnOnce() -> M,
     {
@@ -479,10 +405,6 @@ pub(crate) fn identity1b(_: PyType, slf: PyObj) -> Owned<PyObj> {
     slf.newref()
 }
 
-pub(crate) unsafe fn identity2(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    Ok(newref(slf))
-}
-
 pub(crate) fn __copy__(_: PyType, slf: PyObj) -> Owned<PyObj> {
     slf.newref()
 }
@@ -517,16 +439,17 @@ impl LazyImport {
         }
     }
 
+    // TODO
     /// Get the object, importing it if necessary.
-    pub(crate) unsafe fn get(&self) -> PyReturn {
+    pub(crate) fn get2(&self) -> PyResult<PyObj> {
         unsafe {
             let obj = *self.obj.get();
             if obj.is_null() {
                 let imported = import_from(self.module, self.name)?;
                 self.obj.get().write(imported);
-                Ok(imported)
+                Ok(PyObj::from_py_ptr_unchecked(imported))
             } else {
-                Ok(obj.as_mut().unwrap())
+                Ok(PyObj::from_py_ptr_unchecked(obj))
             }
         }
     }
@@ -551,7 +474,7 @@ impl Drop for LazyImport {
     }
 }
 
-// TODO
+// TODO refactor
 pub(crate) unsafe fn import_from(module: &CStr, name: &CStr) -> PyReturn {
     let module = PyImport_ImportModule(module.as_ptr()).as_result()?;
     defer_decref!(module);
@@ -563,63 +486,16 @@ pub(crate) unsafe fn call1(func: *mut PyObject, arg: *mut PyObject) -> PyReturn 
     PyObject_CallOneArg(func, arg).as_result()
 }
 
-#[inline]
-pub(crate) unsafe fn methcall1(slf: *mut PyObject, name: &str, arg: *mut PyObject) -> PyReturn {
-    // OPTIMIZE: what if we use an interned string for the method name?
-    PyObject_CallMethodOneArg(slf, steal!(name.to_py()?), arg).as_result()
-}
-
-#[inline]
-pub(crate) unsafe fn methcall0(slf: *mut PyObject, name: &str) -> PyReturn {
-    PyObject_CallMethodNoArgs(slf, steal!(name.to_py()?)).as_result()
-}
-
-#[inline]
-fn ptr_eq(a: *mut PyObject, b: *mut PyObject) -> bool {
-    a == b
-}
-
 // TODO
 #[inline]
 fn ptr_eq2(a: PyObj, b: PyObj) -> bool {
     a == b
 }
 
-#[inline]
-fn value_eq(a: *mut PyObject, b: *mut PyObject) -> bool {
-    unsafe { PyObject_RichCompareBool(a, b, Py_EQ) == 1 }
-}
-
 // TODO
 #[inline]
 fn value_eq2(a: PyObj, b: PyObj) -> bool {
     unsafe { PyObject_RichCompareBool(a.as_ptr(), b.as_ptr(), Py_EQ) == 1 }
-}
-
-#[inline]
-pub(crate) unsafe fn handle_kwargs<F, K>(fname: &str, kwargs: K, mut handler: F) -> PyResult<()>
-where
-    F: FnMut(
-        *mut PyObject,
-        *mut PyObject,
-        fn(*mut PyObject, *mut PyObject) -> bool,
-    ) -> PyResult<bool>,
-    K: IntoIterator<Item = (*mut PyObject, *mut PyObject)>,
-{
-    for (key, value) in kwargs {
-        // First we try to match *all kwargs* on pointer equality.
-        // This is actually the common case, as static strings are interned.
-        // In the rare case they aren't, we fall back to value comparison.
-        // Doing it this way is faster than always doing value comparison outright.
-        if !handler(key, value, ptr_eq)? && !handler(key, value, value_eq)? {
-            return raise_type_err(format!(
-                "{}() got an unexpected keyword argument: {}",
-                fname,
-                key.repr()
-            ));
-        }
-    }
-    Ok(())
 }
 
 pub(crate) fn handle_kwargs2<F, K>(fname: &str, kwargs: K, mut handler: F) -> PyResult<()>
@@ -641,19 +517,6 @@ where
         }
     }
     Ok(())
-}
-
-pub(crate) unsafe fn match_interned_str<T, F>(
-    name: &str,
-    value: *mut PyObject,
-    mut handler: F,
-) -> PyResult<T>
-where
-    F: FnMut(*mut PyObject, fn(*mut PyObject, *mut PyObject) -> bool) -> Option<T>,
-{
-    handler(value, ptr_eq)
-        .or_else(|| handler(value, value_eq))
-        .ok_or_else_value_err(|| format!("Invalid value for {}: {}", name, value.repr()))
 }
 
 // TODO: is this actually worth it?
@@ -693,39 +556,6 @@ pub(crate) const fn hash_combine(lhs: Py_hash_t, rhs: Py_hash_t) -> Py_hash_t {
     }
 }
 
-macro_rules! parse_args_kwargs {
-    ($args:expr, $kwargs:expr, $fmt:expr, $($var:ident),* $(,)?) => {
-        // SAFETY: calling CPython API with valid arguments
-        unsafe {
-            const _ARGNAMES: *mut *const std::ffi::c_char = [
-                $(
-                    concat!(stringify!($var), "\0").as_ptr() as *const std::ffi::c_char,
-                )*
-                std::ptr::null(),
-            ].as_ptr() as *mut _;
-            if PyArg_ParseTupleAndKeywords(
-                $args,
-                $kwargs,
-                $fmt.as_ptr(),
-                {
-                    // This API was changed in Python 3.13
-                    #[cfg(Py_3_13)]
-                    {
-                        _ARGNAMES
-                    }
-                    #[cfg(not(Py_3_13))]
-                    {
-                        _ARGNAMES as *mut *mut _
-                    }
-                },
-                $(&mut $var,)*
-            ) == 0 {
-                return Err(PyErrOccurred());
-            }
-        }
-    };
-}
-
 macro_rules! parse_args_kwargs2 {
     ($args:ident, $kwargs:ident, $fmt:expr, $($var:ident),* $(,)?) => {
         // SAFETY: calling CPython API with valid arguments
@@ -738,7 +568,7 @@ macro_rules! parse_args_kwargs2 {
             ].as_ptr() as *mut _;
             if PyArg_ParseTupleAndKeywords(
                 $args.as_ptr(),
-                $kwargs.map(|d| d.as_ptr()).unwrap_or(NULL()),
+                $kwargs.map_or(NULL(), |d| d.as_ptr()),
                 $fmt.as_ptr(),
                 {
                     // This API was changed in Python 3.13
@@ -953,7 +783,6 @@ pub(crate) trait PyBase: Copy {
     }
 
     /// Call the object with one argument.
-    #[expect(dead_code)]
     fn call1(&self, arg: impl PyBase) -> PyReturn2 {
         unsafe { PyObject_CallOneArg(self.as_ptr(), arg.as_ptr()) }.rust_owned()
     }
@@ -1066,9 +895,24 @@ impl PyDateTime {
         unsafe { PyDateTime_DATE_GET_MICROSECOND(self.obj.as_ptr()) }
     }
 
+    /// Get a borrowed reference to the tzinfo object.
     pub(crate) fn tzinfo(&self) -> PyObj {
-        // TODO
-        unsafe { PyObj::from_ptr_unchecked(borrow_dt_tzinfo(self.as_ptr())) }
+        // SAFETY: calling CPython API with valid arguments
+        unsafe {
+            PyObj::from_ptr_unchecked({
+                #[cfg(Py_3_10)]
+                {
+                    PyDateTime_DATE_GET_TZINFO(self.as_ptr())
+                }
+                #[cfg(not(Py_3_10))]
+                {
+                    // NOTE: casting to a pointer and back will ensure
+                    // the reference is dropped (it's kept alive by the
+                    // PyDateTime object)
+                    dt.getattr(c"tzinfo")?.as_ptr()
+                }
+            })
+        }
     }
 
     pub(crate) fn date(&self) -> PyDate {
@@ -1616,6 +1460,20 @@ impl<T: PyBase> Owned<T> {
         })
     }
 
+    pub(crate) fn cast_allow_subclass<U: PyBase>(self) -> Option<Owned<U>> {
+        // TODO rename method?
+        let inner = self.into_py();
+        inner
+            .as_py_obj()
+            .cast_allow_subclass()
+            .map(Owned::new)
+            .or_else(|| {
+                // Casting failed, but don't forget to decref the original object
+                unsafe { Py_DECREF(inner.as_ptr()) };
+                None
+            })
+    }
+
     // TODO rename method?
     // TODO unsafe?
     pub(crate) unsafe fn cast_unchecked<U: PyBase>(self) -> Owned<U> {
@@ -1654,7 +1512,5 @@ pub(crate) fn not_implemented() -> PyReturn2 {
     })
 }
 
-use super::pydatetime::borrow_dt_tzinfo;
-
 #[allow(unused_imports)]
-pub(crate) use {defer_decref, pack, parse_args_kwargs, parse_args_kwargs2, steal, unpack_one};
+pub(crate) use {defer_decref, pack, parse_args_kwargs2, steal, unpack_one};

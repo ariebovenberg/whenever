@@ -1,5 +1,7 @@
-use core::ffi::{c_int, c_long, c_void, CStr};
-use core::ptr::null_mut as NULL;
+use core::{
+    ffi::{c_int, c_long, c_void, CStr},
+    ptr::null_mut as NULL,
+};
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
@@ -42,7 +44,7 @@ impl YearMonth {
         })
     }
 
-    pub(crate) const unsafe fn hash(self) -> i32 {
+    pub(crate) const fn hash(self) -> i32 {
         ((self.year.get() as i32) << 4) | self.month as i32
     }
 
@@ -71,48 +73,50 @@ impl Display for YearMonth {
     }
 }
 
-unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
+fn __new__(cls: HeapType<YearMonth>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn2 {
     let mut year: c_long = 0;
     let mut month: c_long = 0;
-    parse_args_kwargs!(args, kwargs, c"ll:YearMonth", year, month);
+    parse_args_kwargs2!(args, kwargs, c"ll:YearMonth", year, month);
     YearMonth::from_longs(year, month)
         .ok_or_value_err("Invalid year/month component value")?
-        .to_obj(cls)
+        .to_obj3(cls)
 }
 
-unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
-    format!("YearMonth({})", YearMonth::extract(slf)).to_py()
+fn __repr__(_: PyType, slf: YearMonth) -> PyReturn2 {
+    format!("YearMonth({})", slf).to_py2()
 }
 
-unsafe extern "C" fn __hash__(slf: *mut PyObject) -> Py_hash_t {
-    YearMonth::extract(slf).hash() as Py_hash_t
+fn __str__(_: PyType, slf: YearMonth) -> PyReturn2 {
+    format!("{}", slf).to_py2()
 }
 
-unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> PyReturn {
-    Ok(if Py_TYPE(b_obj) == Py_TYPE(a_obj) {
-        let a = YearMonth::extract(a_obj);
-        let b = YearMonth::extract(b_obj);
-        match op {
-            pyo3_ffi::Py_LT => a < b,
-            pyo3_ffi::Py_LE => a <= b,
+extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
+    // SAFETY: we know self is passed to this method
+    unsafe { slf.extract_unchecked::<YearMonth>() }.hash() as Py_hash_t
+}
+
+fn __richcmp__(cls: HeapType<YearMonth>, a: YearMonth, b_obj: PyObj, op: c_int) -> PyReturn2 {
+    match b_obj.extract3(cls) {
+        Some(b) => match op {
             pyo3_ffi::Py_EQ => a == b,
             pyo3_ffi::Py_NE => a != b,
+            pyo3_ffi::Py_LT => a < b,
+            pyo3_ffi::Py_LE => a <= b,
             pyo3_ffi::Py_GT => a > b,
             pyo3_ffi::Py_GE => a >= b,
             _ => unreachable!(),
         }
-        .to_py()?
-    } else {
-        newref(Py_NotImplemented())
-    })
+        .to_py2(),
+        None => not_implemented(),
+    }
 }
 
 #[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
-    slotmethod!(Py_tp_new, __new__),
-    slotmethod!(Py_tp_str, __str__, 1),
-    slotmethod!(Py_tp_repr, __repr__, 1),
-    slotmethod!(Py_tp_richcompare, __richcmp__),
+    slotmethod2!(YearMonth, Py_tp_new, __new__),
+    slotmethod2!(YearMonth, Py_tp_str, __str__, 1),
+    slotmethod2!(YearMonth, Py_tp_repr, __repr__, 1),
+    slotmethod2!(YearMonth, Py_tp_richcompare, __richcmp__),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: doc::YEARMONTH.as_ptr() as *mut c_void,
@@ -139,53 +143,53 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
-    format!("{}", YearMonth::extract(slf)).to_py()
+fn format_common_iso(cls: PyType, slf: YearMonth) -> PyReturn2 {
+    __str__(cls, slf)
 }
 
-unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    __str__(slf)
+fn parse_common_iso(cls: HeapType<YearMonth>, arg: PyObj) -> PyReturn2 {
+    let py_str = arg.cast::<PyStr>().ok_or_type_err("argument must be str")?;
+    YearMonth::parse(py_str.as_utf8()?)
+        .ok_or_else_value_err(|| format!("Invalid format: {}", arg.repr()))?
+        .to_obj3(cls)
 }
 
-unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
-    YearMonth::parse(s.to_utf8()?.ok_or_type_err("argument must be str")?)
-        .ok_or_else_value_err(|| format!("Invalid format: {}", s.repr()))?
-        .to_obj(cls.cast())
-}
-
-unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let YearMonth { year, month } = YearMonth::extract(slf);
+fn __reduce__(cls: HeapType<YearMonth>, slf: YearMonth) -> PyResult<Owned<PyTuple>> {
+    let YearMonth { year, month } = slf;
     (
-        State::for_obj(slf).unpickle_yearmonth.as_ptr(),
-        steal!((steal!(pack![year.get(), month.get()].to_py()?),).to_py()?),
+        cls.state().unpickle_yearmonth.newref(),
+        (pack![year.get(), month.get()].to_py2()?,).into_pytuple()?,
     )
-        .to_py()
+        .into_pytuple()
 }
 
-unsafe fn replace(
-    slf: *mut PyObject,
-    cls: *mut PyTypeObject,
-    args: &[*mut PyObject],
-    kwargs: &mut KwargIter,
-) -> PyReturn {
+fn replace(
+    cls: HeapType<YearMonth>,
+    slf: YearMonth,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn2 {
     let &State {
         str_year,
         str_month,
         ..
-    } = State::for_type(cls);
+    } = cls.state();
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")
     } else {
-        let ym = YearMonth::extract(slf);
-        let mut year = ym.year.get().into();
-        let mut month = ym.month.get().into();
-        handle_kwargs("replace", kwargs, |key, value, eq| {
-            if eq(key, str_year.as_ptr()) {
-                year = value.to_long()?.ok_or_type_err("year must be an integer")?;
-            } else if eq(key, str_month.as_ptr()) {
+        let mut year = slf.year.get().into();
+        let mut month = slf.month.get().into();
+        handle_kwargs2("replace", kwargs, |key, value, eq| {
+            if eq(key, str_year) {
+                year = value
+                    .cast::<PyInt>()
+                    .ok_or_type_err("year must be an integer")?
+                    .to_long()?;
+            } else if eq(key, str_month) {
                 month = value
-                    .to_long()?
-                    .ok_or_type_err("month must be an integer")?;
+                    .cast::<PyInt>()
+                    .ok_or_type_err("month must be an integer")?
+                    .to_long()?;
             } else {
                 return Ok(false);
             }
@@ -193,42 +197,45 @@ unsafe fn replace(
         })?;
         YearMonth::from_longs(year, month)
             .ok_or_value_err("Invalid year/month components")?
-            .to_obj(cls)
+            .to_obj3(cls)
     }
 }
 
-unsafe fn on_day(slf: *mut PyObject, day_obj: *mut PyObject) -> PyReturn {
-    let &State { date_type, .. } = State::for_obj(slf);
-    let YearMonth { year, month } = YearMonth::extract(slf);
-    let day = day_obj
-        .to_long()?
+fn on_day(cls: HeapType<YearMonth>, slf: YearMonth, arg: PyObj) -> PyReturn2 {
+    let YearMonth { year, month } = slf;
+    let day = arg
+        .cast::<PyInt>()
         .ok_or_type_err("day must be an integer")?
+        .to_long()?
         .try_into()
         .ok()
         .ok_or_value_err("day out of range")?;
     // OPTIMIZE: we don't need to check the validity of the year and month again
     Date::new(year, month, day)
         .ok_or_value_err("Invalid date components")?
-        .to_obj(date_type.as_ptr().cast())
+        .to_obj3(cls.state().date_type)
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method!(identity2 named "__copy__", c""),
-    method!(identity2 named "__deepcopy__", c"", METH_O),
-    method!(__reduce__, c""),
-    method!(format_common_iso, doc::YEARMONTH_FORMAT_COMMON_ISO),
-    method!(
-        parse_common_iso,
-        doc::YEARMONTH_PARSE_COMMON_ISO,
-        METH_O | METH_CLASS
+    method0!(YearMonth, __copy__, c""),
+    method1!(YearMonth, __deepcopy__, c""),
+    method0!(YearMonth, __reduce__, c""),
+    method0!(
+        YearMonth,
+        format_common_iso,
+        doc::YEARMONTH_FORMAT_COMMON_ISO
     ),
-    method!(on_day, doc::YEARMONTH_ON_DAY, METH_O),
-    method_kwargs!(replace, doc::YEARMONTH_REPLACE),
+    classmethod1!(YearMonth, parse_common_iso, doc::YEARMONTH_PARSE_COMMON_ISO),
+    method1!(YearMonth, on_day, doc::YEARMONTH_ON_DAY),
+    method_kwargs2!(YearMonth, replace, doc::YEARMONTH_REPLACE),
     PyMethodDef::zeroed(),
 ];
 
-pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
-    let mut packed = arg.to_bytes()?.ok_or_type_err("Invalid pickle data")?;
+pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn2 {
+    let py_bytes = arg
+        .cast::<PyBytes>()
+        .ok_or_type_err("argument must be bytes")?;
+    let mut packed = py_bytes.as_bytes()?;
     if packed.len() != 3 {
         raise_value_err("Invalid pickle data")?
     }
@@ -236,23 +243,23 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
         year: Year::new_unchecked(unpack_one!(packed, u16)),
         month: Month::new_unchecked(unpack_one!(packed, u8)),
     }
-    .to_obj(State::for_mod(module).yearmonth_type.as_ptr().cast())
+    .to_obj3(state.yearmonth_type)
 }
 
-unsafe fn get_year(slf: *mut PyObject) -> PyReturn {
-    YearMonth::extract(slf).year.get().to_py()
+fn get_year(_: PyType, slf: YearMonth) -> PyReturn2 {
+    slf.year.get().to_py2()
 }
 
-unsafe fn get_month(slf: *mut PyObject) -> PyReturn {
-    YearMonth::extract(slf).month.get().to_py()
+fn get_month(_: PyType, slf: YearMonth) -> PyReturn2 {
+    slf.month.get().to_py2()
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter!(
+    getter2!(YearMonth,
         get_year named "year",
         "The year component"
     ),
-    getter!(
+    getter2!(YearMonth,
         get_month named "month",
         "The month component"
     ),

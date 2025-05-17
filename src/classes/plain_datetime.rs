@@ -302,56 +302,6 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-// TODO remove
-#[inline]
-#[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn set_components_from_kwargs(
-    key: *mut PyObject,
-    value: *mut PyObject,
-    year: &mut c_long,
-    month: &mut c_long,
-    day: &mut c_long,
-    hour: &mut c_long,
-    minute: &mut c_long,
-    second: &mut c_long,
-    nanos: &mut c_long,
-    str_year: *mut PyObject,
-    str_month: *mut PyObject,
-    str_day: *mut PyObject,
-    str_hour: *mut PyObject,
-    str_minute: *mut PyObject,
-    str_second: *mut PyObject,
-    str_nanosecond: *mut PyObject,
-    eq: fn(*mut PyObject, *mut PyObject) -> bool,
-) -> PyResult<bool> {
-    if eq(key, str_year) {
-        *year = value.to_long()?.ok_or_type_err("year must be an integer")?
-    } else if eq(key, str_month) {
-        *month = value
-            .to_long()?
-            .ok_or_type_err("month must be an integer")?
-    } else if eq(key, str_day) {
-        *day = value.to_long()?.ok_or_type_err("day must be an integer")?
-    } else if eq(key, str_hour) {
-        *hour = value.to_long()?.ok_or_type_err("hour must be an integer")?
-    } else if eq(key, str_minute) {
-        *minute = value
-            .to_long()?
-            .ok_or_type_err("minute must be an integer")?
-    } else if eq(key, str_second) {
-        *second = value
-            .to_long()?
-            .ok_or_type_err("second must be an integer")?
-    } else if eq(key, str_nanosecond) {
-        *nanos = value
-            .to_long()?
-            .ok_or_type_err("nanosecond must be an integer")?
-    } else {
-        return Ok(false);
-    }
-    Ok(true)
-}
-
 #[inline]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn set_components_from_kwargs2(
