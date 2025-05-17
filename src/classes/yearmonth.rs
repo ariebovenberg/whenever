@@ -3,11 +3,12 @@ use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
-use crate::common::math::*;
-use crate::common::*;
-use crate::date::{extract_2_digits, extract_year, Date};
-use crate::docstrings as doc;
-use crate::State;
+use crate::{
+    classes::date::{extract_year, Date},
+    common::{math::*, parse::extract_2_digits, pyobject::*, pytype::*},
+    docstrings as doc,
+    pymodule::State,
+};
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub(crate) struct YearMonth {
@@ -155,7 +156,7 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let YearMonth { year, month } = YearMonth::extract(slf);
     (
-        State::for_obj(slf).unpickle_yearmonth,
+        State::for_obj(slf).unpickle_yearmonth.as_ptr(),
         steal!((steal!(pack![year.get(), month.get()].to_py()?),).to_py()?),
     )
         .to_py()
@@ -179,9 +180,9 @@ unsafe fn replace(
         let mut year = ym.year.get().into();
         let mut month = ym.month.get().into();
         handle_kwargs("replace", kwargs, |key, value, eq| {
-            if eq(key, str_year) {
+            if eq(key, str_year.as_ptr()) {
                 year = value.to_long()?.ok_or_type_err("year must be an integer")?;
-            } else if eq(key, str_month) {
+            } else if eq(key, str_month.as_ptr()) {
                 month = value
                     .to_long()?
                     .ok_or_type_err("month must be an integer")?;
@@ -208,7 +209,7 @@ unsafe fn on_day(slf: *mut PyObject, day_obj: *mut PyObject) -> PyReturn {
     // OPTIMIZE: we don't need to check the validity of the year and month again
     Date::new(year, month, day)
         .ok_or_value_err("Invalid date components")?
-        .to_obj(date_type)
+        .to_obj(date_type.as_ptr().cast())
 }
 
 static mut METHODS: &[PyMethodDef] = &[
@@ -235,7 +236,7 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
         year: Year::new_unchecked(unpack_one!(packed, u16)),
         month: Month::new_unchecked(unpack_one!(packed, u8)),
     }
-    .to_obj(State::for_mod(module).yearmonth_type)
+    .to_obj(State::for_mod(module).yearmonth_type.as_ptr().cast())
 }
 
 unsafe fn get_year(slf: *mut PyObject) -> PyReturn {

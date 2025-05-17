@@ -1,3 +1,5 @@
+"""The pure-Python implenentation of the whenever library."""
+
 # The MIT License (MIT)
 #
 # Copyright (c) Arie Bovenberg

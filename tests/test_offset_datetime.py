@@ -687,20 +687,50 @@ class TestComparison:
             d >= 42  # type: ignore[operator]
 
 
-def test_py_datetime():
-    d = OffsetDateTime(
-        2020, 8, 15, 23, 12, 9, nanosecond=987_654_999, offset=5
-    )
-    assert d.py_datetime() == py_datetime(
-        2020,
-        8,
-        15,
-        23,
-        12,
-        9,
-        987_654,
-        tzinfo=timezone(timedelta(hours=5)),
-    )
+@pytest.mark.parametrize(
+    "d, expect",
+    [
+        (
+            OffsetDateTime(
+                2020, 8, 15, 23, 12, 9, nanosecond=987_654_999, offset=5
+            ),
+            py_datetime(
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                987_654,
+                tzinfo=timezone(timedelta(hours=5)),
+            ),
+        ),
+        (
+            OffsetDateTime(
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                nanosecond=987_654_999,
+                offset=minutes(-73),
+            ),
+            py_datetime(
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                987_654,
+                tzinfo=timezone(timedelta(minutes=-73)),
+            ),
+        ),
+    ],
+)
+def test_py_datetime(d: OffsetDateTime, expect: py_datetime):
+    assert d.py_datetime() == expect
 
 
 class TestFromPyDatetime:
@@ -756,7 +786,7 @@ class TestFromPyDatetime:
             def utcoffset(self, _):
                 return None
 
-        with pytest.raises(ValueError, match="utcoffset.*"):
+        with pytest.raises(ValueError, match="naive"):
             OffsetDateTime.from_py_datetime(
                 py_datetime(2020, 8, 15, tzinfo=MyTz())  # type: ignore[abstract]
             )
@@ -815,7 +845,7 @@ def test_replace_time():
     with pytest.raises(ValueError, match="range"):
         d2.replace_time(Time(1), ignore_dst=True)
 
-    with pytest.raises((TypeError, AttributeError), match="time"):
+    with pytest.raises((TypeError, AttributeError), match="Time"):
         d.replace_time(42, ignore_dst=True)  # type: ignore[arg-type]
 
     # ignore_dst required
@@ -844,6 +874,7 @@ class TestNow:
 
     def test_int(self):
         now = OffsetDateTime.now(-5, ignore_dst=True)
+        print("doing assert")
         assert now.offset == hours(-5)
         py_now = py_datetime.now(timezone.utc)
         assert py_now - now.py_datetime() < timedelta(seconds=1)

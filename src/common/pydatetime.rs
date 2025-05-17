@@ -1,8 +1,6 @@
 use pyo3_ffi::*;
 
-use crate::common::math::*;
-use crate::common::methcall0;
-use crate::common::pyobject::*;
+use crate::common::{math::*, pyobject::*};
 
 pub(crate) unsafe fn offset_from_py_dt(dt: *mut PyObject) -> PyResult<Offset> {
     let delta = methcall0(dt, "utcoffset")?;
@@ -17,6 +15,17 @@ pub(crate) unsafe fn offset_from_py_dt(dt: *mut PyObject) -> PyResult<Offset> {
     // Unchecked: Python offsets are already bounded to +/- 24 hours
     Ok(Offset::new_unchecked(
         PyDateTime_DELTA_GET_DAYS(delta) * 86_400 + PyDateTime_DELTA_GET_SECONDS(delta),
+    ))
+}
+
+// TODO method?
+pub(crate) fn offset_from_py_delta_unchecked(delta: PyTimeDelta) -> PyResult<Offset> {
+    if delta.microseconds() != 0 {
+        raise_value_err("Sub-second offsets are not supported")?
+    }
+    // Unchecked: Python offsets are already bounded to +/- 24 hours
+    Ok(Offset::new_unchecked(
+        delta.days() * 86_400 + delta.seconds(),
     ))
 }
 
@@ -36,18 +45,6 @@ pub(crate) unsafe fn borrow_dt_tzinfo(dt: *mut PyObject) -> *mut PyObject {
     #[cfg(Py_3_10)]
     {
         PyDateTime_DATE_GET_TZINFO(dt)
-    }
-    #[cfg(not(Py_3_10))]
-    {
-        getattr_tzinfo_unchecked(dt)
-    }
-}
-
-#[inline]
-pub(crate) unsafe fn get_time_tzinfo(dt: *mut PyObject) -> *mut PyObject {
-    #[cfg(Py_3_10)]
-    {
-        PyDateTime_TIME_GET_TZINFO(dt)
     }
     #[cfg(not(Py_3_10))]
     {

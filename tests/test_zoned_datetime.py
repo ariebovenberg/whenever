@@ -170,9 +170,15 @@ class TestInit:
 
         assert available_timezones() == zoneinfo_available_timezones()
 
+        from whenever import TZPATH
+
+        prev_tzpath = TZPATH
         # We now set the TZ path to our test directory
         # (which contains some tzif files)
         reset_tzpath([TEST_DIR])
+        from whenever import TZPATH
+
+        assert TZPATH == (str(TEST_DIR),)
         try:
             # Available timezones should now be different
             assert available_timezones() != zoneinfo_available_timezones()
@@ -204,6 +210,10 @@ class TestInit:
         finally:
             # We need to reset the tzpath to the original one
             reset_tzpath()
+
+        from whenever import TZPATH
+
+        assert TZPATH == prev_tzpath
 
         # Available timezones should now be the same again
         assert available_timezones() == zoneinfo_available_timezones()
