@@ -23,10 +23,10 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 ahash = "^0.8.11"
-pyo3-ffi = { version = "^0.24.0", default-features = false, features = ["extension-module"]}
+pyo3-ffi = { version = "^0.25.0", default-features = false, features = ["extension-module"]}
 
 [build-dependencies]
-pyo3-build-config = { version = "^0.24.0" }
+pyo3-build-config = { version = "^0.25.0" }
 
 [dev-dependencies]
 criterion = "^0.5.1"

@@ -17,6 +17,7 @@ pub enum Ambiguity {
 }
 
 impl Disambiguate {
+    // TODO
     pub(crate) unsafe fn from_py(
         obj: *mut PyObject,
         str_compatible: *mut PyObject,
@@ -39,6 +40,7 @@ impl Disambiguate {
         })
     }
 
+    // TODO
     pub(crate) unsafe fn from_only_kwarg(
         kwargs: &mut KwargIter,
         str_disambiguate: *mut PyObject,
@@ -71,5 +73,61 @@ impl Disambiguate {
             }
             None => Ok(None),
         }
+    }
+
+    pub(crate) fn from_only_kwarg2(
+        kwargs: &mut IterKwargs,
+        str_disambiguate: PyObj,
+        fname: &str,
+        str_compatible: PyObj,
+        str_raise: PyObj,
+        str_earlier: PyObj,
+        str_later: PyObj,
+    ) -> PyResult<Option<Self>> {
+        match kwargs.next() {
+            Some((name, value)) => {
+                if kwargs.len() == 1 {
+                    if name.py_eq(str_disambiguate)? {
+                        Self::from_py2(value, str_compatible, str_raise, str_earlier, str_later)
+                            .map(Some)
+                    } else {
+                        raise_type_err(format!(
+                            "{}() got an unexpected keyword argument {}",
+                            fname,
+                            name.repr()
+                        ))
+                    }
+                } else {
+                    raise_type_err(format!(
+                        "{}() takes at most 1 keyword argument, got {}",
+                        fname,
+                        kwargs.len()
+                    ))
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub(crate) fn from_py2(
+        obj: PyObj,
+        str_compatible: PyObj,
+        str_raise: PyObj,
+        str_earlier: PyObj,
+        str_later: PyObj,
+    ) -> PyResult<Self> {
+        match_interned_str2("disambiguate", obj, |v, eq| {
+            Some(if eq(v, str_compatible) {
+                Disambiguate::Compatible
+            } else if eq(v, str_raise) {
+                Disambiguate::Raise
+            } else if eq(v, str_earlier) {
+                Disambiguate::Earlier
+            } else if eq(v, str_later) {
+                Disambiguate::Later
+            } else {
+                None?
+            })
+        })
     }
 }

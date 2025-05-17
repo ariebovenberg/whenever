@@ -55,9 +55,11 @@ jobs:
       - name: Install and test
         shell: bash
         run: |
-          pip install .
+          pip install -e .
           pip install -r requirements/test.txt
-          pytest tests/
+          pytest tests/ -s -v
+        env:
+          RUST_BACKTRACE: 1
 
   test-os:
     name: Test ${{ matrix.os }}, 3.13 ${{ matrix.no_build_ext && 'pure Python' || 'Rust extension' }}
@@ -95,9 +97,10 @@ jobs:
         run: |
           pip install -e .
           pip install -r requirements/test.txt
-          pytest tests/
+          pytest tests/ -s -v
         env:
           WHENEVER_NO_BUILD_RUST_EXT: ${{ matrix.no_build_ext }}
+          RUST_BACKTRACE: 1
 
   test-pure-python:
     name: Test ubuntu, ${{ matrix.python-version }} pure Python ${{ matrix.tzdata && 'with tzdata' || '' }}
@@ -155,7 +158,6 @@ jobs:
           components: "clippy, rustfmt"
       - run: |
           pip install .
-          pip install -U pip
           pip install -r requirements/lint.txt
           make ci-lint
         env:

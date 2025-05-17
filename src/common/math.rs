@@ -6,6 +6,8 @@ use crate::{
 use pyo3_ffi::*;
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
 
+use super::pyobject::PyTimeDelta;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Sign {
     Plus,
@@ -608,12 +610,11 @@ impl DeltaSeconds {
         Self::new(self.0 + d.get())
     }
 
-    pub(crate) fn from_py_unchecked(delta: *mut PyObject) -> Option<Self> {
-        // Safety: delta is a valid Python timedelta object
-        Self::new(
-            i64::from(unsafe { PyDateTime_DELTA_GET_DAYS(delta) }) * 86400
-                + i64::from(unsafe { PyDateTime_DELTA_GET_SECONDS(delta) }),
-        )
+    // TODO name
+    // TODO document range checks
+    pub(crate) fn from_py_unchecked2(delta: PyTimeDelta) -> Option<Self> {
+        // SAFETY: delta is a valid Python timedelta object
+        Self::new(i64::from(delta.days()) * 86400 + i64::from(delta.seconds()))
     }
 
     /// Get the absolute value of the delta in hours, minutes, and seconds
@@ -729,14 +730,9 @@ impl SubSecNanos {
         Self::new_unchecked(unsafe { PyDateTime_DATE_GET_MICROSECOND(obj) * 1_000 })
     }
 
-    pub(crate) unsafe fn from_py_delta_unchecked(obj: *mut PyObject) -> Self {
-        // Safety: obj is a valid Python timedelta object
-        Self::new_unchecked(unsafe { PyDateTime_DELTA_GET_MICROSECONDS(obj) * 1_000 })
-    }
-
-    pub(crate) unsafe fn from_py_time_unchecked(obj: *mut PyObject) -> Self {
-        // Safety: obj is a valid Python time object
-        Self::new_unchecked(unsafe { PyDateTime_TIME_GET_MICROSECOND(obj) * 1_000 })
+    // TODO name, place? it's not unchecked
+    pub(crate) fn from_py_delta_unchecked2(obj: PyTimeDelta) -> Self {
+        Self::new_unchecked(obj.microseconds() * 1_000)
     }
 
     pub(crate) fn round(self, increment: i32, mode: round::Mode) -> (DeltaSeconds, Self) {
