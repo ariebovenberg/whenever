@@ -156,7 +156,7 @@ unsafe fn parse_common_iso(cls: *mut PyObject, s: *mut PyObject) -> PyReturn {
 unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     let YearMonth { year, month } = YearMonth::extract(slf);
     (
-        State::for_obj(slf).unpickle_yearmonth,
+        State::for_obj(slf).unpickle_yearmonth.as_ptr(),
         steal!((steal!(pack![year.get(), month.get()].to_py()?),).to_py()?),
     )
         .to_py()

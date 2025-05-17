@@ -22,6 +22,45 @@ pub(crate) type PyReturn = PyResult<&'static mut PyObject>;
 pub(crate) type PyAny = PyResult<PyObj>;
 pub(crate) type PyReturn2 = PyResult<Owned<PyObj>>;
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct HeapType<T: PyWrapped> {
+    // TODO name
+    pub(crate) inner: PyType,
+    layout: std::marker::PhantomData<T>,
+}
+
+impl<T: PyWrapped> HeapType<T> {
+    pub(crate) unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
+        Self {
+            inner: PyType::from_ptr_unchecked(ptr),
+            layout: std::marker::PhantomData,
+        }
+    }
+
+    pub(crate) fn as_ptr(&self) -> *mut PyObject {
+        self.inner.as_ptr()
+    }
+
+    pub(crate) fn state(&self) -> &'static State {
+        // SAFETY: we assume the pointer is valid and points to a PyType object
+        unsafe { State::for_type(self.as_ptr().cast()) }
+    }
+}
+
+// TODO move
+impl PyType {
+    pub(crate) unsafe fn link_type<T: PyWrapped>(self) -> HeapType<T> {
+        // SAFETY: we assume the pointer is valid and points to a PyType object
+        unsafe { HeapType::from_ptr_unchecked(self.as_ptr()) }
+    }
+}
+
+impl<T: PyWrapped> From<HeapType<T>> for PyType {
+    fn from(t: HeapType<T>) -> Self {
+        t.inner
+    }
+}
+
 pub(crate) struct DecrefOnDrop(pub(crate) *mut PyObject);
 
 impl Drop for DecrefOnDrop {
@@ -54,8 +93,6 @@ pub(crate) trait PyObjectExt {
     unsafe fn is_int(self) -> bool;
     #[allow(clippy::wrong_self_convention)]
     unsafe fn is_str(self) -> bool;
-    #[allow(clippy::wrong_self_convention)]
-    unsafe fn is_float(self) -> bool;
     // FUTURE: unchecked versions of these in case we know the type
     unsafe fn to_bytes<'a>(self) -> PyResult<Option<&'a [u8]>>;
     unsafe fn to_utf8<'a>(self) -> PyResult<Option<&'a [u8]>>;
@@ -73,15 +110,12 @@ impl PyObjectExt for *mut PyObject {
         self.as_mut().ok_or(PyErrOccurred())
     }
     // TODO: name
+    // TODO a version without checking for null
     fn rust_owned(self) -> PyResult<Owned<PyObj>> {
         PyObj::new(self).map(Owned::new)
     }
     unsafe fn is_int(self) -> bool {
         PyLong_Check(self) != 0
-    }
-
-    unsafe fn is_float(self) -> bool {
-        PyFloat_Check(self) != 0
     }
 
     unsafe fn is_str(self) -> bool {
@@ -213,6 +247,7 @@ impl PyObjectExt for *mut PyObject {
     }
 }
 
+// TODO a non-raw version?
 pub(crate) fn raise<T, U: ToPy>(exc: *mut PyObject, msg: U) -> PyResult<T> {
     Err(exception(exc, msg))
 }
@@ -228,7 +263,7 @@ pub(crate) fn exception<U: ToPy>(exc: *mut PyObject, msg: U) -> PyErrOccurred {
 }
 
 pub(crate) fn value_err<U: ToPy>(msg: U) -> PyErrOccurred {
-    unsafe { exception(PyExc_ValueError, msg) }
+    exception(unsafe { PyExc_ValueError }, msg)
 }
 
 pub(crate) trait OptionExt<T> {
@@ -288,11 +323,11 @@ impl<T> OptionExt<T> for Option<T> {
 }
 
 pub(crate) fn raise_type_err<T, U: ToPy>(msg: U) -> PyResult<T> {
-    unsafe { raise(PyExc_TypeError, msg) }
+    raise(unsafe { PyExc_TypeError }, msg)
 }
 
 pub(crate) fn raise_value_err<T, U: ToPy>(msg: U) -> PyResult<T> {
-    unsafe { raise(PyExc_ValueError, msg) }
+    raise(unsafe { PyExc_ValueError }, msg)
 }
 
 pub(crate) trait FromPy: Sized {
@@ -444,10 +479,6 @@ pub(crate) fn identity1b(_: PyType, slf: PyObj) -> Owned<PyObj> {
     slf.newref()
 }
 
-pub(crate) unsafe fn identity1(slf: *mut PyObject) -> PyReturn {
-    Ok(newref(slf))
-}
-
 pub(crate) unsafe fn identity2(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
     Ok(newref(slf))
 }
@@ -474,7 +505,7 @@ pub(crate) unsafe fn is_none(x: *mut PyObject) -> bool {
 pub(crate) struct LazyImport {
     module: &'static CStr,
     name: &'static CStr,
-    obj: std::cell::UnsafeCell<*mut PyObject>, // Wrap in UnsafeCell for interior mutability
+    obj: std::cell::UnsafeCell<*mut PyObject>,
 }
 
 impl LazyImport {
@@ -520,6 +551,7 @@ impl Drop for LazyImport {
     }
 }
 
+// TODO
 pub(crate) unsafe fn import_from(module: &CStr, name: &CStr) -> PyReturn {
     let module = PyImport_ImportModule(module.as_ptr()).as_result()?;
     defer_decref!(module);
@@ -547,6 +579,7 @@ fn ptr_eq(a: *mut PyObject, b: *mut PyObject) -> bool {
     a == b
 }
 
+// TODO
 #[inline]
 fn ptr_eq2(a: PyObj, b: PyObj) -> bool {
     a == b
@@ -557,37 +590,10 @@ fn value_eq(a: *mut PyObject, b: *mut PyObject) -> bool {
     unsafe { PyObject_RichCompareBool(a, b, Py_EQ) == 1 }
 }
 
+// TODO
 #[inline]
 fn value_eq2(a: PyObj, b: PyObj) -> bool {
     unsafe { PyObject_RichCompareBool(a.as_ptr(), b.as_ptr(), Py_EQ) == 1 }
-}
-
-/// A container for iterating over a dictionary's items.
-pub(crate) struct DictItems {
-    dict: *mut PyObject,
-    pos: Py_ssize_t,
-}
-
-impl DictItems {
-    pub(crate) fn new_unchecked(dict: *mut PyObject) -> Self {
-        debug_assert!(!dict.is_null() && unsafe { PyDict_Size(dict) > 0 });
-        DictItems { dict, pos: 0 }
-    }
-
-    pub(crate) fn new(dict: *mut PyObject) -> Option<Self> {
-        (!dict.is_null() && unsafe { PyDict_Size(dict) > 0 }).then(|| Self::new_unchecked(dict))
-    }
-}
-
-impl Iterator for DictItems {
-    type Item = (*mut PyObject, *mut PyObject);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut key = NULL();
-        let mut value = NULL();
-        (unsafe { PyDict_Next(self.dict, &mut self.pos, &mut key, &mut value) } != 0)
-            .then_some((key, value))
-    }
 }
 
 #[inline]
@@ -650,6 +656,16 @@ where
         .ok_or_else_value_err(|| format!("Invalid value for {}: {}", name, value.repr()))
 }
 
+// TODO: is this actually worth it?
+pub(crate) fn match_interned_str2<T, F>(name: &str, value: PyObj, mut handler: F) -> PyResult<T>
+where
+    F: FnMut(PyObj, fn(PyObj, PyObj) -> bool) -> Option<T>,
+{
+    handler(value, ptr_eq2)
+        .or_else(|| handler(value, value_eq2))
+        .ok_or_else_value_err(|| format!("Invalid value for {}: {}", name, value.repr()))
+}
+
 // FUTURE: a more efficient way for specific cases?
 pub(crate) const fn hashmask(hash: Py_hash_t) -> Py_hash_t {
     if hash == -1 {
@@ -678,34 +694,71 @@ pub(crate) const fn hash_combine(lhs: Py_hash_t, rhs: Py_hash_t) -> Py_hash_t {
 }
 
 macro_rules! parse_args_kwargs {
-    ($args:ident, $kwargs:ident, $fmt:expr, $($var:ident),* $(,)?) => {
-        const _ARGNAMES: *mut *const std::ffi::c_char = [
-            $(
-                concat!(stringify!($var), "\0").as_ptr() as *const std::ffi::c_char,
-            )*
-            std::ptr::null(),
-        ].as_ptr() as *mut _;
-        if PyArg_ParseTupleAndKeywords(
-            $args,
-            $kwargs,
-            $fmt.as_ptr(),
-            {
-                // This API was changed in Python 3.13
-                #[cfg(Py_3_13)]
+    ($args:expr, $kwargs:expr, $fmt:expr, $($var:ident),* $(,)?) => {
+        // SAFETY: calling CPython API with valid arguments
+        unsafe {
+            const _ARGNAMES: *mut *const std::ffi::c_char = [
+                $(
+                    concat!(stringify!($var), "\0").as_ptr() as *const std::ffi::c_char,
+                )*
+                std::ptr::null(),
+            ].as_ptr() as *mut _;
+            if PyArg_ParseTupleAndKeywords(
+                $args,
+                $kwargs,
+                $fmt.as_ptr(),
                 {
-                    _ARGNAMES
-                }
-                #[cfg(not(Py_3_13))]
-                {
-                    _ARGNAMES as *mut *mut _
-                }
-            },
-            $(&mut $var,)*
-        ) == 0 {
-            return Err(PyErrOccurred());
+                    // This API was changed in Python 3.13
+                    #[cfg(Py_3_13)]
+                    {
+                        _ARGNAMES
+                    }
+                    #[cfg(not(Py_3_13))]
+                    {
+                        _ARGNAMES as *mut *mut _
+                    }
+                },
+                $(&mut $var,)*
+            ) == 0 {
+                return Err(PyErrOccurred());
+            }
         }
     };
 }
+
+macro_rules! parse_args_kwargs2 {
+    ($args:ident, $kwargs:ident, $fmt:expr, $($var:ident),* $(,)?) => {
+        // SAFETY: calling CPython API with valid arguments
+        unsafe {
+            const _ARGNAMES: *mut *const std::ffi::c_char = [
+                $(
+                    concat!(stringify!($var), "\0").as_ptr() as *const std::ffi::c_char,
+                )*
+                std::ptr::null(),
+            ].as_ptr() as *mut _;
+            if PyArg_ParseTupleAndKeywords(
+                $args.as_ptr(),
+                $kwargs.map(|d| d.as_ptr()).unwrap_or(NULL()),
+                $fmt.as_ptr(),
+                {
+                    // This API was changed in Python 3.13
+                    #[cfg(Py_3_13)]
+                    {
+                        _ARGNAMES
+                    }
+                    #[cfg(not(Py_3_13))]
+                    {
+                        _ARGNAMES as *mut *mut _
+                    }
+                },
+                $(&mut $var,)*
+            ) == 0 {
+                return Err(PyErrOccurred());
+            }
+        }
+    };
+}
+
 /// Pack various types into a byte array. Used for pickling.
 macro_rules! pack {
     [$x:expr, $($xs:expr),*] => {{
@@ -743,6 +796,7 @@ impl IntoPyPtr for *mut PyObject {
     }
 }
 
+// TODO: remove this impl? Since we *require* a fresh reference to cross the Py boundary?
 impl IntoPyPtr for PyReturn {
     fn into_py_ptr(self) -> *mut PyObject {
         match self {
@@ -793,6 +847,10 @@ impl PyObj {
         }
     }
 
+    pub(crate) fn wrap(inner: NonNull<PyObject>) -> Self {
+        Self { inner }
+    }
+
     pub(crate) fn incref(&self) {
         unsafe { Py_INCREF(self.inner.as_ptr()) }
     }
@@ -807,13 +865,20 @@ impl PyObj {
     }
 
     // TODO name
+    // TODO remove
     pub(crate) unsafe fn extract_unchecked<T: FromPy>(&self) -> T {
         unsafe { T::from_py_ptr_unchecked(self.inner.as_ptr()) }
     }
 
-    // TODO name
-    pub(crate) fn extract2<T: FromPy>(&self, t: PyType) -> Option<T> {
-        (self.class() == t).then(
+    pub(crate) unsafe fn assume_heaptype<T: PyWrapped>(&self) -> (HeapType<T>, T) {
+        (
+            unsafe { HeapType::from_ptr_unchecked(self.class().as_ptr()) },
+            unsafe { T::extract(self.inner.as_ptr()) },
+        )
+    }
+
+    pub(crate) fn extract3<T: FromPy + PyWrapped>(&self, t: HeapType<T>) -> Option<T> {
+        (self.class() == t.inner).then(
             // SAFETY: we've just checked the type, so this is safe
             || unsafe { self.extract_unchecked() },
         )
@@ -824,6 +889,11 @@ impl PyObj {
     }
 
     pub(crate) fn cast<T: PyBase>(self) -> Option<T> {
+        T::isinstance_exact(self)
+            .then_some(unsafe { T::from_ptr_unchecked(self.as_py_obj().inner.as_ptr()) })
+    }
+
+    pub(crate) fn cast_allow_subclass<T: PyBase>(self) -> Option<T> {
         T::isinstance(self)
             .then_some(unsafe { T::from_ptr_unchecked(self.as_py_obj().inner.as_ptr()) })
     }
@@ -855,6 +925,7 @@ impl PyBase for PyObj {
     }
 }
 
+// TODO rename "static type"?
 // Define a trait for common Python object behavior
 pub(crate) trait PyBase: Copy {
     fn as_py_obj(&self) -> PyObj;
@@ -876,11 +947,46 @@ pub(crate) trait PyBase: Copy {
         self.as_py_obj().repr()
     }
 
+    /// Get the attribute of the object.
     fn getattr(&self, name: &CStr) -> PyReturn2 {
         unsafe { PyObject_GetAttrString(self.as_ptr(), name.as_ptr()) }.rust_owned()
     }
 
+    /// Call the object with one argument.
     #[expect(dead_code)]
+    fn call1(&self, arg: impl PyBase) -> PyReturn2 {
+        unsafe { PyObject_CallOneArg(self.as_ptr(), arg.as_ptr()) }.rust_owned()
+    }
+
+    /// Call the object with no arguments.
+    fn call0(&self) -> PyReturn2 {
+        unsafe { PyObject_CallNoArgs(self.as_ptr()) }.rust_owned()
+    }
+
+    /// Call the object with a tuple of arguments.
+    fn call(&self, args: PyTuple) -> PyReturn2 {
+        // OPTIMIZE: use vectorcall?
+        unsafe { PyObject_Call(self.as_ptr(), args.as_ptr(), NULL()) }.rust_owned()
+    }
+
+    fn is_none(&self) -> bool {
+        // TODO
+        unsafe { is_none(self.as_ptr()) }
+    }
+
+    fn py_eq(&self, other: impl PyBase) -> PyResult<bool> {
+        // SAFETY: calling CPython API with valid arguments
+        match unsafe { PyObject_RichCompareBool(self.as_ptr(), other.as_ptr(), Py_EQ) } {
+            1 => Ok(true),
+            0 => Ok(false),
+            _ => Err(PyErrOccurred()),
+        }
+    }
+
+    fn is_true(&self) -> bool {
+        unsafe { self.as_ptr() == Py_True() }
+    }
+
     fn isinstance_exact(obj: impl PyBase) -> bool;
     fn isinstance(obj: impl PyBase) -> bool;
     // TODO: nonnull variant?
@@ -926,6 +1032,157 @@ impl PyBase for PyDate {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PyDateTime {
+    obj: PyObj,
+}
+
+impl PyDateTime {
+    pub(crate) fn year(&self) -> i32 {
+        unsafe { PyDateTime_GET_YEAR(self.obj.as_ptr()) }
+    }
+
+    pub(crate) fn month(&self) -> i32 {
+        unsafe { PyDateTime_GET_MONTH(self.obj.as_ptr()) }
+    }
+
+    pub(crate) fn day(&self) -> i32 {
+        unsafe { PyDateTime_GET_DAY(self.obj.as_ptr()) }
+    }
+
+    pub(crate) fn hour(&self) -> i32 {
+        unsafe { PyDateTime_DATE_GET_HOUR(self.obj.as_ptr()) }
+    }
+
+    pub(crate) fn minute(&self) -> i32 {
+        unsafe { PyDateTime_DATE_GET_MINUTE(self.obj.as_ptr()) }
+    }
+
+    pub(crate) fn second(&self) -> i32 {
+        unsafe { PyDateTime_DATE_GET_SECOND(self.obj.as_ptr()) }
+    }
+
+    pub(crate) fn microsecond(&self) -> i32 {
+        unsafe { PyDateTime_DATE_GET_MICROSECOND(self.obj.as_ptr()) }
+    }
+
+    pub(crate) fn tzinfo(&self) -> PyObj {
+        // TODO
+        unsafe { PyObj::from_ptr_unchecked(borrow_dt_tzinfo(self.as_ptr())) }
+    }
+
+    pub(crate) fn date(&self) -> PyDate {
+        // SAFETY: Date has the same layout
+        unsafe { PyDate::from_ptr_unchecked(self.obj.as_ptr()) }
+    }
+
+    pub(crate) fn utcoffset(&self) -> PyReturn2 {
+        self.getattr(c"utcoffset")?.call0()
+    }
+}
+
+impl PyBase for PyDateTime {
+    fn as_py_obj(&self) -> PyObj {
+        self.obj
+    }
+
+    fn isinstance_exact(obj: impl PyBase) -> bool {
+        unsafe { PyDateTime_CheckExact(obj.as_ptr()) != 0 }
+    }
+
+    fn isinstance(obj: impl PyBase) -> bool {
+        unsafe { PyDateTime_Check(obj.as_ptr()) != 0 }
+    }
+
+    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
+        Self {
+            obj: PyObj::from_ptr_unchecked(ptr),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PyTimeDelta {
+    obj: PyObj,
+}
+
+impl PyTimeDelta {
+    pub(crate) fn days(&self) -> i32 {
+        unsafe { PyDateTime_DELTA_GET_DAYS(self.obj.as_ptr()) }
+    }
+
+    pub(crate) fn seconds(&self) -> i32 {
+        unsafe { PyDateTime_DELTA_GET_SECONDS(self.obj.as_ptr()) }
+    }
+
+    pub(crate) fn microseconds(&self) -> i32 {
+        unsafe { PyDateTime_DELTA_GET_MICROSECONDS(self.obj.as_ptr()) }
+    }
+}
+
+impl PyBase for PyTimeDelta {
+    fn as_py_obj(&self) -> PyObj {
+        self.obj
+    }
+
+    fn isinstance_exact(obj: impl PyBase) -> bool {
+        unsafe { PyDelta_CheckExact(obj.as_ptr()) != 0 }
+    }
+
+    fn isinstance(obj: impl PyBase) -> bool {
+        unsafe { PyDelta_Check(obj.as_ptr()) != 0 }
+    }
+
+    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
+        Self {
+            obj: PyObj::from_ptr_unchecked(ptr),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PyTime {
+    obj: PyObj,
+}
+
+impl PyTime {
+    pub(crate) fn hour(&self) -> i32 {
+        unsafe { PyDateTime_TIME_GET_HOUR(self.obj.as_ptr()) }
+    }
+
+    pub(crate) fn minute(&self) -> i32 {
+        unsafe { PyDateTime_TIME_GET_MINUTE(self.obj.as_ptr()) }
+    }
+
+    pub(crate) fn second(&self) -> i32 {
+        unsafe { PyDateTime_TIME_GET_SECOND(self.obj.as_ptr()) }
+    }
+
+    pub(crate) fn microsecond(&self) -> i32 {
+        unsafe { PyDateTime_TIME_GET_MICROSECOND(self.obj.as_ptr()) }
+    }
+}
+
+impl PyBase for PyTime {
+    fn as_py_obj(&self) -> PyObj {
+        self.obj
+    }
+
+    fn isinstance_exact(obj: impl PyBase) -> bool {
+        unsafe { PyTime_CheckExact(obj.as_ptr()) != 0 }
+    }
+
+    fn isinstance(obj: impl PyBase) -> bool {
+        unsafe { PyTime_Check(obj.as_ptr()) != 0 }
+    }
+
+    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
+        Self {
+            obj: PyObj::from_ptr_unchecked(ptr),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PyType {
     obj: PyObj,
@@ -952,13 +1209,15 @@ impl PyBase for PyType {
 }
 
 impl PyType {
-    pub(crate) fn state(&self) -> &State {
-        unsafe { State::for_type(self.as_ptr().cast()) }
-    }
-
-    pub(crate) fn same_module(&self, other: PyType) -> bool {
+    // TODO return module state
+    pub(crate) fn are_both_whenever(&self, other: PyType) -> Option<&State> {
         // TODO: need to account for errors!
-        unsafe { PyType_GetModule(self.as_ptr().cast()) == PyType_GetModule(other.as_ptr().cast()) }
+        let mod_a = unsafe { PyType_GetModule(self.as_ptr().cast()) };
+        let mod_b = unsafe { PyType_GetModule(other.as_ptr().cast()) };
+        (mod_a == mod_b).then(|| {
+            // SAFETY: we just checked the pointers, so this is safe
+            unsafe { State::for_mod(mod_a) }
+        })
     }
 }
 
@@ -1247,6 +1506,7 @@ impl PyBase for PyBytes {
 }
 
 impl PyBytes {
+    // TODO rename as_slice?
     pub(crate) fn as_bytes(&self) -> PyResult<&[u8]> {
         let p = unsafe { PyBytes_AsString(self.as_ptr()) };
         // TODO: this check shouldn't be necessary, PyBytes_AS_STRING?
@@ -1318,7 +1578,7 @@ impl<T: PyBase, U: PyBase, V: PyBase, W: PyBase, X: PyBase> IntoPyTuple
     }
 }
 
-// TODO: naming
+// TODO: naming (newref? rust_owned?)
 /// A wrapper for Python objects that are owned by Rust.
 pub(crate) struct Owned<T: PyBase> {
     inner: T,
@@ -1338,13 +1598,13 @@ impl<T: PyBase> Owned<T> {
         }
     }
 
+    // TODO don't use this name
     pub(crate) fn borrow(&self) -> T {
         self.inner
     }
 }
 
 impl<T: PyBase> Owned<T> {
-    #[expect(dead_code)]
     // TODO: return Result type to keep ownership?
     pub(crate) fn cast<U: PyBase>(self) -> Option<Owned<U>> {
         // TODO rename method?
@@ -1386,9 +1646,15 @@ pub(crate) fn import(module: &CStr) -> PyReturn2 {
     unsafe { PyImport_ImportModule(module.as_ptr()) }.rust_owned()
 }
 
-pub(crate) fn not_implemented() -> Owned<PyObj> {
-    unsafe { Py_NotImplemented() }.rust_owned().unwrap()
+// TODO wrap in result
+pub(crate) fn not_implemented() -> PyReturn2 {
+    Ok(Owned {
+        // SAFETY: Py_NotImplemented is always non-null
+        inner: unsafe { PyObj::from_ptr_unchecked(Py_NewRef(Py_NotImplemented())) },
+    })
 }
 
+use super::pydatetime::borrow_dt_tzinfo;
+
 #[allow(unused_imports)]
-pub(crate) use {defer_decref, pack, parse_args_kwargs, steal, unpack_one};
+pub(crate) use {defer_decref, pack, parse_args_kwargs, parse_args_kwargs2, steal, unpack_one};

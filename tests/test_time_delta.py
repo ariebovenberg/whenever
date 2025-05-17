@@ -7,6 +7,8 @@ import pytest
 from pytest import approx
 
 from whenever import (
+    DateDelta,
+    PlainDateTime,
     TimeDelta,
     hours,
     microseconds,
@@ -129,6 +131,7 @@ class TestInit:
             dict(minutes=float("inf")),
             dict(seconds=float("-inf")),
             dict(milliseconds=float("nan")),
+            dict(milliseconds=1e273),
         ],
     )
     def test_invalid_out_of_range(self, kwargs):
@@ -520,6 +523,12 @@ class TestDivision:
 
         with pytest.raises(TypeError):
             "invalid" / d  # type: ignore[operator]
+
+        with pytest.raises(TypeError):
+            PlainDateTime(2020, 3, 1) / d  # type: ignore[operator]
+
+        with pytest.raises(TypeError):
+            DateDelta(days=5) / d  # type: ignore[operator]
 
 
 class TestFloorDiv:

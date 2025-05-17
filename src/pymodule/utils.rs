@@ -43,10 +43,11 @@ pub(crate) unsafe fn new_exception(
     name: &CStr,
     doc: &CStr,
     base: *mut PyObject,
-) -> PyReturn {
+) -> PyResult<PyObj> {
     let e = PyErr_NewExceptionWithDoc(name.as_ptr(), doc.as_ptr(), base, NULL()).as_result()?;
     if PyModule_AddType(module, (e as *mut PyObject).cast()) == 0 {
-        Ok(e)
+        // TODO: are references in order?
+        Ok(PyObj::from_ptr_unchecked(e))
     } else {
         defer_decref!(e);
         Err(PyErrOccurred())
@@ -61,8 +62,8 @@ pub(crate) unsafe fn new_class<T: PyWrapped>(
     spec: *mut PyType_Spec,
     unpickle_name: &CStr,
     singletons: &[(&CStr, T)],
-    dest: &mut PyType,
-    unpickle_ptr: &mut *mut PyObject,
+    dest: &mut HeapType<T>,
+    unpickle_ref: &mut PyObj,
 ) -> PyResult<()> {
     // TODO: nicer way to track decref of cls?
     let cls: *mut PyTypeObject = PyType_FromModuleAndSpec(module, spec, NULL()).cast();
@@ -86,8 +87,8 @@ pub(crate) unsafe fn new_class<T: PyWrapped>(
             Err(PyErrOccurred())?;
         }
     }
-    *dest = PyType::from_ptr_unchecked(cls.cast());
-    *unpickle_ptr = unpickler;
+    *dest = HeapType::from_ptr_unchecked(cls.cast());
+    *unpickle_ref = PyObj::from_ptr_unchecked(unpickler);
     Ok(())
 }
 
