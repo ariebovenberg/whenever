@@ -1,5 +1,11 @@
 # 🚀 Changelog
 
+## 0.9.0 (2025-??-??)
+
+- `Time.from_py()` now ignores any `tzinfo`, instead of raising an error.
+- A comprehensive refactor of the Rust extension module eliminates
+  most unnecessary `unsafe` code, making it safer and more idiomatic.
+
 ## 0.8.0 (2025-05-01)
 
 A big release with several improvements and breaking changes that lay

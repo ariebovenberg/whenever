@@ -301,15 +301,18 @@ impl TzStore {
     }
 
     /// The `get` function, but accepts a Python Object as the key.
-    pub(crate) unsafe fn obj_get(
+    pub(crate) fn obj_get(
         &self,
         tz_obj: *mut PyObject,
         exc_notfound: *mut PyObject,
     ) -> PyResult<TzRef> {
-        self.get(
-            tz_obj.to_str()?.ok_or_type_err("tz must be a string")?,
-            exc_notfound,
-        )
+        // TODO
+        unsafe {
+            self.get(
+                tz_obj.to_str()?.ok_or_type_err("tz must be a string")?,
+                exc_notfound,
+            )
+        }
     }
 
     /// Load a TZif file by key, assuming the key is untrusted input.

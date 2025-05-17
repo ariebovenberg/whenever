@@ -593,7 +593,7 @@ class TestFromPyDatetime:
             def utcoffset(self, _):
                 return None
 
-        with pytest.raises(ValueError, match="utcoffset.*"):
+        with pytest.raises(ValueError, match="naive"):
             Instant.from_py_datetime(py_datetime(2020, 8, 15, tzinfo=MyTz()))  # type: ignore[abstract]
 
 

@@ -218,7 +218,6 @@ impl Date {
     }
 
     pub(crate) fn from_py(d: PyDate) -> Self {
-        println!("from_py inner");
         Date {
             // SAFETY: dates coming from Python are always valid
             year: Year::new_unchecked(d.year() as _),
@@ -264,14 +263,13 @@ impl Display for Date {
     }
 }
 
-fn __new__(cls: PyType, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn2 {
+fn __new__(cls: HeapType<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn2 {
     if args.len() > 3 {
         raise_type_err(format!(
             "Date() takes at most 3 arguments, got {}",
             args.len() + kwargs.map(|x| x.len()).unwrap_or(0)
         ))?
     }
-
     let mut arg_obj: [Option<PyObj>; 3] = [None, None, None];
     for (i, arg) in args.iter().enumerate() {
         arg_obj[i] = Some(arg);
@@ -316,11 +314,11 @@ fn __new__(cls: PyType, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn2 {
             .to_long()?,
     )
     .ok_or_value_err("Invalid date components")?
-    .to_obj2(cls)
+    .to_obj3(cls)
 }
 
-fn __richcmp__(cls: PyType, a: Date, b_obj: PyObj, op: c_int) -> PyReturn2 {
-    match b_obj.extract2::<Date>(cls) {
+fn __richcmp__(cls: HeapType<Date>, a: Date, b_obj: PyObj, op: c_int) -> PyReturn2 {
+    match b_obj.extract3(cls) {
         Some(b) => match op {
             pyo3_ffi::Py_EQ => a == b,
             pyo3_ffi::Py_NE => a != b,
@@ -331,7 +329,7 @@ fn __richcmp__(cls: PyType, a: Date, b_obj: PyObj, op: c_int) -> PyReturn2 {
             _ => unreachable!(),
         }
         .to_py2(),
-        None => Ok(not_implemented()),
+        None => not_implemented(),
     }
 }
 
@@ -345,12 +343,17 @@ fn __repr__(_: PyType, slf: Date) -> PyReturn2 {
     format!("Date({})", slf).to_py2()
 }
 
+extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
+    // SAFETY: we know self is passed to this method
+    unsafe { slf.extract_unchecked::<Date>() }.hash() as Py_hash_t
+}
+
 #[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
-    slotmethod2!(Py_tp_new, __new__),
-    slotmethod2!(Py_tp_str, __str__, 1),
-    slotmethod2!(Py_tp_repr, __repr__, 1),
-    slotmethod2!(Py_tp_richcompare, __richcmp__),
+    slotmethod2!(Date, Py_tp_new, __new__),
+    slotmethod2!(Date, Py_tp_str, __str__, 1),
+    slotmethod2!(Date, Py_tp_repr, __repr__, 1),
+    slotmethod2!(Date, Py_tp_richcompare, __richcmp__),
     slotmethod2!(Py_nb_subtract, __sub__, 2),
     slotmethod2!(Py_nb_add, __add__, 2),
     PyType_Slot {
@@ -367,12 +370,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_hash,
-        pfunc: {
-            unsafe extern "C" fn __hash__(slf: *mut PyObject) -> Py_hash_t {
-                Date::extract(slf).hash() as Py_hash_t
-            }
-            __hash__
-        } as *mut c_void,
+        pfunc: __hash__ as *mut c_void,
     },
     PyType_Slot {
         slot: Py_tp_dealloc,
@@ -384,49 +382,49 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn py_date(cls: PyType, slf: Date) -> PyReturn2 {
+fn py_date(cls: HeapType<Date>, slf: Date) -> PyReturn2 {
     slf.to_py(cls.state().py_api)
 }
 
-fn from_py_date(cls: PyType, arg: PyObj) -> PyReturn2 {
+fn from_py_date(cls: HeapType<Date>, arg: PyObj) -> PyReturn2 {
     Date::from_py(
-        arg.cast::<PyDate>()
+        arg.cast_allow_subclass::<PyDate>()
             .ok_or_type_err("argument must be a datetime.date")?,
     )
-    .to_obj2(cls)
+    .to_obj3(cls)
 }
 
-fn year_month(cls: PyType, Date { year, month, .. }: Date) -> PyReturn2 {
-    YearMonth::new(year, month).to_obj2(cls.state().yearmonth_type)
+fn year_month(cls: HeapType<Date>, Date { year, month, .. }: Date) -> PyReturn2 {
+    YearMonth::new(year, month).to_obj3(cls.state().yearmonth_type)
 }
 
-fn month_day(cls: PyType, Date { month, day, .. }: Date) -> PyReturn2 {
-    MonthDay::new_unchecked(month, day).to_obj2(cls.state().monthday_type)
+fn month_day(cls: HeapType<Date>, Date { month, day, .. }: Date) -> PyReturn2 {
+    MonthDay::new_unchecked(month, day).to_obj3(cls.state().monthday_type)
 }
 
 fn format_common_iso(_: PyType, slf: Date) -> PyReturn2 {
     format!("{}", slf).to_py2()
 }
 
-fn parse_common_iso(cls: PyType, s: PyObj) -> PyReturn2 {
+fn parse_common_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn2 {
     Date::parse_iso(
         s.cast::<PyStr>()
             .ok_or_type_err("argument must be str")?
             .as_utf8()?,
     )
     .ok_or_else_value_err(|| format!("Invalid format: {}", s.repr()))?
-    .to_obj2(cls)
+    .to_obj3(cls)
 }
 
-fn day_of_week(cls: PyType, slf: Date) -> PyReturn2 {
+fn day_of_week(cls: HeapType<Date>, slf: Date) -> PyReturn2 {
     let enum_members = cls.state().weekday_enum_members;
     Ok(enum_members[slf.day_of_week() as usize - 1].newref())
 }
 
-fn __reduce__(cls: PyType, Date { year, month, day }: Date) -> PyResult<Owned<PyTuple>> {
+fn __reduce__(cls: HeapType<Date>, Date { year, month, day }: Date) -> PyResult<Owned<PyTuple>> {
     let data = pack![year.get(), month.get(), day];
     (
-        PyObj::new(cls.state().unpickle_date).unwrap().newref(),
+        cls.state().unpickle_date.newref(),
         (data.to_py2()?,).into_pytuple()?,
     )
         .into_pytuple()
@@ -439,8 +437,8 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn2 {
     // Easy case: Date - Date
     if type_b == type_a {
         // SAFETY: the only way to get here is if *both* are Date
-        let a: Date = unsafe { obj_a.extract_unchecked() };
-        let b: Date = unsafe { obj_b.extract_unchecked() };
+        let (date_type, a) = unsafe { obj_a.assume_heaptype::<Date>() };
+        let (_, b) = unsafe { obj_b.assume_heaptype::<Date>() };
 
         let year_a = a.year.get() as i32;
         let year_b = b.year.get() as i32;
@@ -471,30 +469,27 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn2 {
             months,
             days: DeltaDays::new_unchecked(days - moved_a.day as i32),
         }
-        .to_obj2(type_a.state().date_delta_type)
+        .to_obj3(date_type.state().date_delta_type)
     // Case: types within whenever module.
-    //       This is more complicated than it seems since we can have
-    //       reflective operations like Date - DateDelta or DateDelta - Date
-    } else if type_a.same_module(type_b) {
+    } else if let Some(state) = type_a.are_both_whenever(type_b) {
+        // SAFETY: the way we've structured binary operations within whenever
+        // ensures that the first operand is the self type.
+        let (date_type, date) = unsafe { obj_a.assume_heaptype::<Date>() };
         let DateDelta { months, days } = obj_b
-            .extract2(type_a.state().date_delta_type)
-            // It's important that we don't return NotImplemented here,
-            // in order not to trigger reflexive calls
+            .extract3(state.date_delta_type)
             .ok_or_else_type_err(|| {
                 format!(
                     "unsupported operand type(s) for -: 'Date' and '{}'",
                     type_b.repr()
                 )
             })?;
-        // SAFETY: at least one of the operands must be a Date
-        unsafe { obj_a.extract_unchecked::<Date>() }
-            .shift_months(-months)
+        date.shift_months(-months)
             .and_then(|date| date.shift_days(-days))
             .ok_or_value_err("Resulting date out of range")?
-            .to_obj2(type_a)
+            .to_obj3(date_type)
     // Case: other types
     } else {
-        Ok(not_implemented())
+        not_implemented()
     }
 }
 
@@ -502,9 +497,12 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn2 {
     // We need to be careful since this method can be called reflexively
     let type_a = obj_a.class();
     let type_b = obj_b.class();
-    if type_a.same_module(type_b) {
+    if let Some(state) = type_a.are_both_whenever(type_b) {
+        // SAFETY: the way we've structured binary operations within whenever
+        // ensures that the first operand is the self type.
+        let (date_type, date) = unsafe { obj_a.assume_heaptype::<Date>() };
         let DateDelta { months, days } = obj_b
-            .extract2(type_a.state().date_delta_type)
+            .extract3(state.date_delta_type)
             .ok_or_else_type_err(|| {
                 format!(
                     "unsupported operand type(s) for +: 'Date' and '{}'",
@@ -512,27 +510,26 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn2 {
                 )
             })?;
         // SAFETY: at least one of the operands must be a Date
-        unsafe { obj_a.extract_unchecked::<Date>() }
-            .shift_months(months)
+        date.shift_months(months)
             .and_then(|date| date.shift_days(days))
             .ok_or_value_err("Resulting date out of range")?
-            .to_obj2(type_a)
+            .to_obj3(date_type)
     } else {
-        Ok(not_implemented())
+        not_implemented()
     }
 }
 
-fn add(cls: PyType, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn2 {
+fn add(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn2 {
     _shift_method(cls, slf, args, kwargs, false)
 }
 
-fn subtract(cls: PyType, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn2 {
+fn subtract(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn2 {
     _shift_method(cls, slf, args, kwargs, true)
 }
 
 #[inline]
 fn _shift_method(
-    cls: PyType,
+    cls: HeapType<Date>,
     slf: Date,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -543,7 +540,7 @@ fn _shift_method(
         (&[arg], 0) => {
             let delta_type = cls.state().date_delta_type;
             let DateDelta { months, days } = arg
-                .extract2::<DateDelta>(delta_type)
+                .extract3(delta_type)
                 .ok_or_type_err(format!("{}() argument must be a whenever.DateDelta", fname))?;
             (months, days)
         }
@@ -569,14 +566,14 @@ fn _shift_method(
 
     slf.shift(months, days)
         .ok_or_value_err("Resulting date out of range")?
-        .to_obj2(cls)
+        .to_obj3(cls)
 }
 
-fn days_since(cls: PyType, slf: Date, other: PyObj) -> PyReturn2 {
+fn days_since(cls: HeapType<Date>, slf: Date, other: PyObj) -> PyReturn2 {
     slf.unix_days()
         .diff(
             other
-                .extract2::<Date>(cls)
+                .extract3(cls)
                 .ok_or_type_err("argument must be a whenever.Date")?
                 .unix_days(),
         )
@@ -584,9 +581,9 @@ fn days_since(cls: PyType, slf: Date, other: PyObj) -> PyReturn2 {
         .to_py2()
 }
 
-fn days_until(cls: PyType, slf: Date, other: PyObj) -> PyReturn2 {
+fn days_until(cls: HeapType<Date>, slf: Date, other: PyObj) -> PyReturn2 {
     other
-        .extract2::<Date>(cls)
+        .extract3(cls)
         .ok_or_type_err("argument must be a whenever.Date")?
         .unix_days()
         .diff(slf.unix_days())
@@ -594,7 +591,7 @@ fn days_until(cls: PyType, slf: Date, other: PyObj) -> PyReturn2 {
         .to_py2()
 }
 
-fn replace(cls: PyType, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn2 {
+fn replace(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn2 {
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")?
     }
@@ -631,25 +628,25 @@ fn replace(cls: PyType, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> P
     })?;
     Date::from_longs(year, month, day)
         .ok_or_value_err("Invalid date components")?
-        .to_obj2(cls)
+        .to_obj3(cls)
 }
 
-fn at(cls: PyType, date: Date, time_obj: PyObj) -> PyReturn2 {
+fn at(cls: HeapType<Date>, date: Date, time_obj: PyObj) -> PyReturn2 {
     let &State {
         time_type,
         plain_datetime_type,
         ..
     } = cls.state();
-    let time: Time = time_obj
-        .extract2(time_type)
+    let time = time_obj
+        .extract3(time_type)
         .ok_or_type_err("argument must be a whenever.Time")?;
-    DateTime { date, time }.to_obj2(plain_datetime_type)
+    DateTime { date, time }.to_obj3(plain_datetime_type)
 }
 
-fn today_in_system_tz(cls: PyType) -> PyReturn2 {
+fn today_in_system_tz(cls: HeapType<Date>) -> PyReturn2 {
     let state = cls.state();
     let epoch = state.time_ns()?.epoch;
-    Date::from_py(system_tz_today_from_timestamp(state.py_api, epoch)?.borrow()).to_obj2(cls)
+    Date::from_py(system_tz_today_from_timestamp(state.py_api, epoch)?.borrow()).to_obj3(cls)
 }
 
 fn system_tz_today_from_timestamp(
@@ -674,23 +671,23 @@ fn system_tz_today_from_timestamp(
 }
 
 static mut METHODS: &mut [PyMethodDef] = &mut [
-    method0!(py_date, doc::DATE_PY_DATE),
-    method0!(format_common_iso, doc::DATE_FORMAT_COMMON_ISO),
-    classmethod0!(today_in_system_tz, doc::DATE_TODAY_IN_SYSTEM_TZ),
-    classmethod1!(parse_common_iso, doc::DATE_PARSE_COMMON_ISO),
-    classmethod1!(from_py_date, doc::DATE_FROM_PY_DATE),
-    method0!(__copy__, c""),
-    method1!(__deepcopy__, c""),
-    method0!(year_month, doc::DATE_YEAR_MONTH),
-    method0!(month_day, doc::DATE_MONTH_DAY),
-    method1!(at, doc::DATE_AT),
-    method0!(day_of_week, doc::DATE_DAY_OF_WEEK),
-    method0!(__reduce__, c""),
-    method_kwargs2!(add, doc::DATE_ADD),
-    method_kwargs2!(subtract, doc::DATE_SUBTRACT),
-    method1!(days_since, doc::DATE_DAYS_SINCE),
-    method1!(days_until, doc::DATE_DAYS_UNTIL),
-    method_kwargs2!(replace, doc::DATE_REPLACE),
+    method0!(Date, py_date, doc::DATE_PY_DATE),
+    method0!(Date, format_common_iso, doc::DATE_FORMAT_COMMON_ISO),
+    classmethod0!(Date, today_in_system_tz, doc::DATE_TODAY_IN_SYSTEM_TZ),
+    classmethod1!(Date, parse_common_iso, doc::DATE_PARSE_COMMON_ISO),
+    classmethod1!(Date, from_py_date, doc::DATE_FROM_PY_DATE),
+    method0!(Date, __copy__, c""),
+    method1!(Date, __deepcopy__, c""),
+    method0!(Date, year_month, doc::DATE_YEAR_MONTH),
+    method0!(Date, month_day, doc::DATE_MONTH_DAY),
+    method1!(Date, at, doc::DATE_AT),
+    method0!(Date, day_of_week, doc::DATE_DAY_OF_WEEK),
+    method0!(Date, __reduce__, c""),
+    method_kwargs2!(Date, add, doc::DATE_ADD),
+    method_kwargs2!(Date, subtract, doc::DATE_SUBTRACT),
+    method1!(Date, days_since, doc::DATE_DAYS_SINCE),
+    method1!(Date, days_until, doc::DATE_DAYS_UNTIL),
+    method_kwargs2!(Date, replace, doc::DATE_REPLACE),
     PyMethodDef::zeroed(),
 ];
 
@@ -707,7 +704,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn2 {
         month: Month::new_unchecked(unpack_one!(packed, u8)),
         day: unpack_one!(packed, u8),
     }
-    .to_obj2(state.date_type)
+    .to_obj3(state.date_type)
 }
 
 fn get_year(_: PyType, slf: Date) -> PyReturn2 {
@@ -725,14 +722,17 @@ fn get_day(_: PyType, slf: Date) -> PyReturn2 {
 
 static mut GETSETTERS: &mut [PyGetSetDef] = &mut [
     getter2!(
+        Date,
         get_year named "year",
         "The year component"
     ),
     getter2!(
+        Date,
         get_month named "month",
         "The month component"
     ),
     getter2!(
+        Date,
         get_day named "day",
         "The day component"
     ),

@@ -1,20 +1,18 @@
 use core::ffi::{c_int, c_long, c_void, CStr};
-use core::ptr::null_mut as NULL;
+use core::ptr::{null_mut as NULL, NonNull};
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
 use crate::{
     classes::{
         date::Date,
-        date_delta::DateDelta,
-        datetime_delta::{set_units_from_kwargs, DateTimeDelta},
+        datetime_delta::set_units_from_kwargs2,
         instant::Instant,
-        plain_datetime::{set_components_from_kwargs, DateTime},
+        plain_datetime::{set_components_from_kwargs2, DateTime},
         time::Time,
         time_delta::TimeDelta,
-        zoned_datetime::ZonedDateTime,
     },
-    common::{math::*, parse::Scan, pydatetime::*, pyobject::*, pytype::*, rfc2822, round},
+    common::{math::*, parse::Scan, pyobject::*, pytype::*, rfc2822, round},
     docstrings as doc,
     pymodule::State,
     tz::tzif::is_valid_key,
@@ -32,6 +30,7 @@ pub(crate) struct OffsetDateTime {
 pub(crate) const SINGLETONS: &[(&CStr, OffsetDateTime); 0] = &[];
 
 impl OffsetDateTime {
+    // TODO unsafe?
     pub(crate) const fn new_unchecked(date: Date, time: Time, offset: Offset) -> Self {
         OffsetDateTime { date, time, offset }
     }
@@ -69,6 +68,7 @@ impl OffsetDateTime {
             })
     }
 
+    // TODO remove
     pub(crate) unsafe fn to_py(
         self,
         &PyDateTime_CAPI {
@@ -92,6 +92,7 @@ impl OffsetDateTime {
             offset,
             ..
         } = self;
+        // TODO no normalization!
         let tz = TimeZone_FromTimeZone(Delta_FromDelta(0, offset.get(), 0, 0, DeltaType), NULL());
         defer_decref!(tz);
         DateTime_FromDateAndTime(
@@ -108,32 +109,72 @@ impl OffsetDateTime {
         .as_result()
     }
 
-    // Returns None if the tzinfo is incorrect, or the UTC time is out of bounds
-    pub(crate) unsafe fn from_py(dt: *mut PyObject, state: &State) -> PyResult<Option<Self>> {
-        debug_assert!(PyObject_IsInstance(dt, state.py_api.DateTimeType.cast()).is_positive());
-        if is_none(borrow_dt_tzinfo(dt)) {
-            raise_value_err("Datetime cannot be naive")?
+    pub(crate) fn to_py2(
+        self,
+        &PyDateTime_CAPI {
+            DateTime_FromDateAndTime,
+            DateTimeType,
+            TimeZone_FromTimeZone,
+            Delta_FromDelta,
+            DeltaType,
+            ..
+        }: &PyDateTime_CAPI,
+    ) -> PyResult<Owned<PyDateTime>> {
+        let OffsetDateTime {
+            date: Date { year, month, day },
+            time:
+                Time {
+                    hour,
+                    minute,
+                    second,
+                    subsec,
+                },
+            offset,
+            ..
+        } = self;
+        // SAFETY: calling CPython API with valid arguments
+        let delta = unsafe {
+            Delta_FromDelta(
+                // Important that we normalize so seconds >= 0
+                offset.get().div_euclid(S_PER_DAY),
+                offset.get().rem_euclid(S_PER_DAY),
+                0,
+                0,
+                DeltaType,
+            )
         }
-        Ok(OffsetDateTime::new(
-            Date::from_py_unchecked(dt),
-            Time::from_py_dt_unchecked(dt),
-            offset_from_py_dt(dt)?,
-        ))
+        .rust_owned()?;
+        let tz = unsafe { TimeZone_FromTimeZone(delta.as_ptr(), NULL()) }.rust_owned()?;
+        unsafe {
+            DateTime_FromDateAndTime(
+                year.get().into(),
+                month.get().into(),
+                day.into(),
+                hour.into(),
+                minute.into(),
+                second.into(),
+                (subsec.get() / 1_000) as _,
+                tz.as_ptr(),
+                DateTimeType,
+            )
+        }
+        .rust_owned()
+        // SAFETY: safe to assume result of C API function is the proper type
+        .map(|d| unsafe { d.cast_unchecked::<PyDateTime>() })
     }
 
-    pub(crate) unsafe fn from_py_and_nanos_unchecked(
-        dt: *mut PyObject,
-        subsec: SubSecNanos,
-    ) -> PyResult<Self> {
+    pub(crate) fn from_py2(dt: PyDateTime) -> PyResult<Self> {
+        let date = Date::from_py(dt.date());
+        let time = Time::from_py_dt(dt);
+        OffsetDateTime::new(date, time, Offset::from_py(dt)?)
+            .ok_or_value_err("Datetime is out of range")
+    }
+
+    pub(crate) fn from_py_with_subsec(dt: PyDateTime, subsec: SubSecNanos) -> PyResult<Self> {
         OffsetDateTime::new(
-            Date::from_py_unchecked(dt),
-            Time {
-                hour: PyDateTime_DATE_GET_HOUR(dt) as u8,
-                minute: PyDateTime_DATE_GET_MINUTE(dt) as u8,
-                second: PyDateTime_DATE_GET_SECOND(dt) as u8,
-                subsec,
-            },
-            offset_from_py_dt(dt)?,
+            Date::from_py(dt.date()),
+            Time::from_py_dt_with_subsec(dt, subsec),
+            Offset::from_py(dt)?,
         )
         .ok_or_value_err("Datetime is out of range")
     }
@@ -205,19 +246,33 @@ impl Offset {
         // Safe: we've bounded the values on parsing so we're in range
         Some(Offset::new_unchecked(total).with_sign(sign))
     }
+
+    /// Get the offset from a Python datetime
+    pub(crate) fn from_py(dt: PyDateTime) -> PyResult<Self> {
+        Ok({
+            let offset = dt.utcoffset()?;
+            if let Some(py_delta) = offset.borrow().cast::<PyTimeDelta>() {
+                if py_delta.microseconds() != 0 {
+                    raise_value_err("Sub-second offset precision not supported")?
+                }
+                // SAFETY: Python datetime offsets are limited to +/- 24 hours
+                Offset::new_unchecked(py_delta.days() * S_PER_DAY + py_delta.seconds())
+            } else if offset.is_none() {
+                raise_value_err("Datetime is naive")?
+            } else {
+                raise_value_err("Datetime utcoffset() returned non-delta value")?
+            }
+        })
+    }
 }
 
+/// Skip over the timezone in the string, if present.
 fn skip_tzname(s: &mut Scan) -> Option<()> {
-    match s.advance_on(b'[') {
-        Some(true) => {
-            match s.take_until_inclusive(|c| c == b']') {
-                Some(b"]") => None?, // Fail: empty tzname
-                Some(tz) if is_valid_key(std::str::from_utf8(&tz[..tz.len() - 1]).ok()?) => (),
-                _ => None?,
-            }
+    if let Some(true) = s.advance_on(b'[') {
+        match s.take_until_inclusive(|c| c == b']') {
+            Some(tz) if is_valid_key(std::str::from_utf8(&tz[..tz.len() - 1]).ok()?) => (),
+            _ => None?,
         }
-        // Success: no timezone to parse
-        _ => (),
     };
     Some(())
 }
@@ -231,7 +286,7 @@ impl Display for OffsetDateTime {
     }
 }
 
-unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyObject) -> PyReturn {
+fn __new__(cls: HeapType<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn2 {
     let mut year: c_long = 0;
     let mut month: c_long = 0;
     let mut day: c_long = 0;
@@ -241,7 +296,7 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
     let mut nanosecond: c_long = 0;
     let mut offset: *mut PyObject = NULL();
 
-    parse_args_kwargs!(
+    parse_args_kwargs2!(
         args,
         kwargs,
         c"lll|lll$lO:OffsetDateTime",
@@ -255,15 +310,19 @@ unsafe fn __new__(cls: *mut PyTypeObject, args: *mut PyObject, kwargs: *mut PyOb
         offset
     );
 
+    let Some(offset_obj) = NonNull::new(offset).map(PyObj::wrap) else {
+        raise_type_err("Missing required keyword argument: 'offset'")?
+    };
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time =
         Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?;
-    let offset = extract_offset(offset, State::for_type(cls).time_delta_type.as_ptr().cast())?;
+    let offset = extract_offset2(offset_obj, cls.state().time_delta_type)?;
     OffsetDateTime::new(date, time, offset)
         .ok_or_value_err("Time is out of range")?
-        .to_obj(cls)
+        .to_obj3(cls)
 }
 
+// TODO remove
 pub(crate) unsafe fn extract_offset(
     obj: *mut PyObject,
     tdelta_cls: *mut PyTypeObject,
@@ -292,27 +351,59 @@ pub(crate) unsafe fn extract_offset(
     }
 }
 
-unsafe fn __repr__(slf: *mut PyObject) -> PyReturn {
-    let OffsetDateTime { date, time, offset } = OffsetDateTime::extract(slf);
-    format!("OffsetDateTime({} {}{})", date, time, offset).to_py()
-}
-
-unsafe fn __str__(slf: *mut PyObject) -> PyReturn {
-    format!("{}", OffsetDateTime::extract(slf)).to_py()
-}
-
-unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> PyReturn {
-    let type_a = Py_TYPE(a_obj);
-    let type_b = Py_TYPE(b_obj);
-    let inst_a = OffsetDateTime::extract(a_obj).instant();
-    let inst_b = if type_b == type_a {
-        OffsetDateTime::extract(b_obj).instant()
-    } else if type_b == State::for_type(type_a).instant_type.as_ptr().cast() {
-        Instant::extract(b_obj)
-    } else if type_b == State::for_type(type_a).zoned_datetime_type.as_ptr().cast() {
-        ZonedDateTime::extract(b_obj).instant()
+pub(crate) fn extract_offset2(obj: PyObj, tdelta_cls: HeapType<TimeDelta>) -> PyResult<Offset> {
+    if let Some(py_int) = obj.cast::<PyInt>() {
+        Offset::from_hours(py_int.to_long()?)
+            .ok_or_value_err("offset must be between -24 and 24 hours")
+    } else if let Some(TimeDelta { secs, subsec }) = obj.extract3(tdelta_cls) {
+        if subsec.get() == 0 {
+            Offset::from_i64(secs.get()).ok_or_value_err("offset must be between -24 and 24 hours")
+        } else {
+            raise_value_err("offset must be a whole number of seconds")?
+        }
     } else {
-        return Ok(newref(Py_NotImplemented()));
+        raise_type_err(format!(
+            "offset must be an integer or TimeDelta instance, got {}",
+            obj.repr()
+        ))?
+    }
+}
+
+fn __repr__(_: PyType, slf: OffsetDateTime) -> PyReturn2 {
+    let OffsetDateTime { date, time, offset } = slf;
+    format!("OffsetDateTime({} {}{})", date, time, offset).to_py2()
+}
+
+fn __str__(_: PyType, slf: OffsetDateTime) -> PyReturn2 {
+    format!("{}", slf).to_py2()
+}
+
+fn __richcmp__(
+    cls: HeapType<OffsetDateTime>,
+    a: OffsetDateTime,
+    b_obj: PyObj,
+    op: c_int,
+) -> PyReturn2 {
+    let inst_a = a.instant();
+    let inst_b = if let Some(odt) = b_obj.extract3(cls) {
+        odt.instant()
+    } else {
+        let &State {
+            instant_type,
+            zoned_datetime_type,
+            system_datetime_type,
+            ..
+        } = cls.state();
+
+        if let Some(inst) = b_obj.extract3(instant_type) {
+            inst
+        } else if let Some(zdt) = b_obj.extract3(zoned_datetime_type) {
+            zdt.instant()
+        } else if let Some(odt) = b_obj.extract3(system_datetime_type) {
+            odt.instant()
+        } else {
+            return not_implemented();
+        }
     };
     match op {
         pyo3_ffi::Py_EQ => inst_a == inst_b,
@@ -323,70 +414,71 @@ unsafe fn __richcmp__(a_obj: *mut PyObject, b_obj: *mut PyObject, op: c_int) -> 
         pyo3_ffi::Py_GE => inst_a >= inst_b,
         _ => unreachable!(),
     }
-    .to_py()
+    .to_py2()
 }
 
-pub(crate) unsafe extern "C" fn __hash__(slf: *mut PyObject) -> Py_hash_t {
-    hashmask(OffsetDateTime::extract(slf).instant().pyhash())
+pub(crate) extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
+    hashmask(
+        // SAFETY: self type is always passed to __hash__
+        unsafe { slf.assume_heaptype::<OffsetDateTime>() }
+            .1
+            .instant()
+            .pyhash(),
+    )
 }
 
-unsafe fn __sub__(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
-    let type_a = Py_TYPE(obj_a);
-    let type_b = Py_TYPE(obj_b);
+fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn2 {
+    let type_a = obj_a.class();
+    let type_b = obj_b.class();
 
     // Easy case: OffsetDT - OffsetDT
-    let (inst_a, inst_b) = if type_a == type_b {
-        (
-            OffsetDateTime::extract(obj_a).instant(),
-            OffsetDateTime::extract(obj_b).instant(),
-        )
+    let (state, inst_a, inst_b) = if type_a == type_b {
+        // SAFETY: at least one of the objects is an OffsetDateTime, so both are
+        let (odt_type, slf) = unsafe { obj_a.assume_heaptype::<OffsetDateTime>() };
+        let (_, other) = unsafe { obj_b.assume_heaptype::<OffsetDateTime>() };
+        (odt_type.state(), slf.instant(), other.instant())
     // Other cases are more difficult, as they can be triggered
     // by reflexive operations with arbitrary types.
     // We need to eliminate them carefully.
-    } else {
-        let mod_a = PyType_GetModule(type_a);
-        let mod_b = PyType_GetModule(type_b);
-        if mod_a == mod_b {
-            let state = State::for_mod(mod_a);
-            let inst_b = if type_b == state.instant_type.as_ptr().cast() {
-                Instant::extract(obj_b)
-            } else if type_b == state.zoned_datetime_type.as_ptr().cast() {
-                ZonedDateTime::extract(obj_b).instant()
-            } else if type_b == state.system_datetime_type.as_ptr().cast() {
-                OffsetDateTime::extract(obj_b).instant()
-            } else if type_b == state.time_delta_type.as_ptr().cast()
-                || type_b == state.date_delta_type.as_ptr().cast()
-                || type_b == state.datetime_delta_type.as_ptr().cast()
-            {
-                raise(
-                    state.exc_implicitly_ignoring_dst,
-                    doc::ADJUST_OFFSET_DATETIME_MSG,
-                )?
-            } else {
-                return Ok(newref(Py_NotImplemented()));
-            };
-            debug_assert_eq!(
-                type_a,
-                State::for_mod(mod_a).offset_datetime_type.as_ptr().cast()
-            );
-            let inst_a = OffsetDateTime::extract(obj_a).instant();
-            (inst_a, inst_b)
+    } else if let Some(state) = type_a.are_both_whenever(type_b) {
+        // SAFETY: the way we've structured binary operations within whenever
+        // ensures that the first operand is the self type.
+        let (_, slf) = unsafe { obj_a.assume_heaptype::<OffsetDateTime>() };
+        let inst_b = if let Some(inst) = obj_b.extract3(state.instant_type) {
+            inst
+        } else if let Some(zdt) = obj_b.extract3(state.zoned_datetime_type) {
+            zdt.instant()
+        } else if let Some(odt) = obj_b.extract3(state.system_datetime_type) {
+            odt.instant()
+        } else if type_b == state.time_delta_type.inner
+            || type_b == state.date_delta_type.inner
+            || type_b == state.datetime_delta_type.inner
+        {
+            raise(
+                state.exc_implicitly_ignoring_dst.as_ptr(),
+                doc::ADJUST_OFFSET_DATETIME_MSG,
+            )?
         } else {
-            return Ok(newref(Py_NotImplemented()));
-        }
+            raise_type_err(format!(
+                "unsupported operand type(s) for +/-: {} and {}",
+                type_a.repr(),
+                type_b.repr()
+            ))?
+        };
+        (state, slf.instant(), inst_b)
+    } else {
+        return not_implemented();
     };
-    inst_a
-        .diff(inst_b)
-        .to_obj(State::for_type(type_a).time_delta_type.as_ptr().cast())
+    inst_a.diff(inst_b).to_obj3(state.time_delta_type)
 }
 
 #[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
-    slotmethod!(Py_tp_new, __new__),
-    slotmethod!(Py_tp_str, __str__, 1),
-    slotmethod!(Py_tp_repr, __repr__, 1),
-    slotmethod!(Py_tp_richcompare, __richcmp__),
-    slotmethod!(Py_nb_subtract, __sub__, 2),
+    slotmethod2!(OffsetDateTime, Py_tp_new, __new__),
+    slotmethod2!(OffsetDateTime, Py_tp_str, __str__, 1),
+    slotmethod2!(OffsetDateTime, Py_tp_repr, __repr__, 1),
+    slotmethod2!(OffsetDateTime, Py_tp_richcompare, __richcmp__),
+    slotmethod2!(Py_nb_subtract, __sub__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: doc::OFFSETDATETIME.as_ptr() as *mut c_void,
@@ -413,76 +505,76 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-unsafe fn exact_eq(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
-    if Py_TYPE(obj_a) == Py_TYPE(obj_b) {
-        (OffsetDateTime::extract(obj_a) == OffsetDateTime::extract(obj_b)).to_py()
+fn exact_eq(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime, obj_b: PyObj) -> PyReturn2 {
+    if let Some(odt) = obj_b.extract3(cls) {
+        (slf == odt).to_py2()
     } else {
-        raise_type_err("Can't compare different types")
+        raise_type_err("Can't compare different types")?
     }
 }
 
-pub(crate) unsafe fn to_instant(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf)
-        .instant()
-        .to_obj(State::for_obj(slf).instant_type.as_ptr().cast())
+pub(crate) fn to_instant(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn2 {
+    slf.instant().to_obj3(cls.state().instant_type)
 }
 
-pub(crate) unsafe fn instant(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    PyErr_WarnEx(
-        PyExc_DeprecationWarning,
-        c"instant() method is deprecated. Use to_instant() instead".as_ptr(),
-        1,
-    );
-    to_instant(slf, NULL())
+pub(crate) fn instant(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn2 {
+    // SAFETY: calling CPython API with valid arguments
+    unsafe {
+        PyErr_WarnEx(
+            PyExc_DeprecationWarning,
+            c"instant() method is deprecated. Use to_instant() instead".as_ptr(),
+            1,
+        )
+    };
+    to_instant(cls, slf)
 }
 
-unsafe fn to_fixed_offset(slf_obj: *mut PyObject, args: &[*mut PyObject]) -> PyReturn {
+fn to_fixed_offset(cls: HeapType<OffsetDateTime>, slf_obj: PyObj, args: &[PyObj]) -> PyReturn2 {
     match *args {
-        [] => Ok(newref(slf_obj)),
+        [] => Ok(slf_obj.newref()),
         [offset_obj] => {
-            let cls = Py_TYPE(slf_obj);
-            OffsetDateTime::extract(slf_obj)
+            // SAFETY: self argument is always of OffsetDateTime type
+            unsafe { slf_obj.assume_heaptype::<OffsetDateTime>() }
+                .1
                 .instant()
-                .to_offset(extract_offset(
-                    offset_obj,
-                    State::for_type(cls).time_delta_type.as_ptr().cast(),
-                )?)
+                .to_offset(extract_offset2(offset_obj, cls.state().time_delta_type)?)
                 .ok_or_value_err("Resulting date is out of range")?
-                .to_obj(cls)
+                .to_obj3(cls)
         }
         _ => raise_type_err("to_fixed_offset() takes at most 1 argument"),
     }
 }
 
-unsafe fn to_tz(slf: *mut PyObject, tz_obj: *mut PyObject) -> PyReturn {
+fn to_tz(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime, tz_obj: PyObj) -> PyReturn2 {
     let &State {
         zoned_datetime_type,
         exc_tz_notfound,
         ref tz_store,
         ..
-    } = State::for_obj(slf);
-
-    let tz = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
-    OffsetDateTime::extract(slf)
-        .instant()
+    } = cls.state();
+    let tz = tz_store.obj_get(tz_obj.as_ptr(), exc_tz_notfound.as_ptr())?;
+    slf.instant()
         .to_tz(tz)
         .ok_or_value_err("Resulting datetime is out of range")?
-        .to_obj(zoned_datetime_type.as_ptr().cast())
+        .to_obj3(zoned_datetime_type)
 }
 
-unsafe fn to_system_tz(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+fn to_system_tz(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn2 {
     let &State {
         py_api,
         system_datetime_type,
         ..
-    } = State::for_obj(slf);
-    OffsetDateTime::extract(slf)
-        .to_system_tz(py_api)?
-        .to_obj(system_datetime_type.as_ptr().cast())
+    } = cls.state();
+    slf.instant()
+        .to_system_tz2(py_api)?
+        .to_obj3(system_datetime_type)
 }
 
-pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
-    let mut packed = arg.to_bytes()?.ok_or_type_err("Invalid pickle data")?;
+pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn2 {
+    let py_bytes = arg
+        .cast::<PyBytes>()
+        .ok_or_type_err("Invalid pickle data")?;
+    let mut packed = py_bytes.as_bytes()?;
     if packed.len() != 15 {
         raise_value_err("Invalid pickle data")?;
     }
@@ -500,100 +592,92 @@ pub(crate) unsafe fn unpickle(module: *mut PyObject, arg: *mut PyObject) -> PyRe
         },
         Offset::new_unchecked(unpack_one!(packed, i32)),
     )
-    .to_obj(State::for_mod(module).offset_datetime_type.as_ptr().cast())
+    .to_obj3(state.offset_datetime_type)
 }
 
-unsafe fn py_datetime(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).to_py(State::for_obj(slf).py_api)
+fn py_datetime(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyResult<Owned<PyDateTime>> {
+    slf.to_py2(cls.state().py_api)
 }
 
-unsafe fn date(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf)
-        .date
-        .to_obj(State::for_obj(slf).date_type.as_ptr().cast())
+fn date(cls: HeapType<OffsetDateTime>, OffsetDateTime { date, .. }: OffsetDateTime) -> PyReturn2 {
+    date.to_obj3(cls.state().date_type)
 }
 
-unsafe fn time(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf)
-        .time
-        .to_obj(State::for_obj(slf).time_type.as_ptr().cast())
+fn time(cls: HeapType<OffsetDateTime>, OffsetDateTime { time, .. }: OffsetDateTime) -> PyReturn2 {
+    time.to_obj3(cls.state().time_type)
 }
 
 #[inline]
-pub(crate) unsafe fn check_ignore_dst_kwarg(
-    kwargs: &mut KwargIter,
-    state: &State,
+pub(crate) fn check_ignore_dst_kwarg(
+    kwargs: &mut IterKwargs,
+    &State {
+        str_ignore_dst,
+        exc_implicitly_ignoring_dst,
+        ..
+    }: &State,
     msg: &str,
 ) -> PyResult<()> {
     match kwargs.next() {
         Some((key, value))
-            if kwargs.len() == 1
-                && key.py_eq(state.str_ignore_dst.as_ptr())?
-                && value == Py_True() =>
+            if kwargs.len() == 1 && key.py_eq(str_ignore_dst)? && value.is_true() =>
         {
             Ok(())
         }
         Some((key, _)) => raise_type_err(format!("Unknown keyword argument: {}", key.repr())),
-        _ => raise(state.exc_implicitly_ignoring_dst, msg),
+        _ => raise(exc_implicitly_ignoring_dst.as_ptr(), msg),
     }
 }
 
-unsafe fn replace_date(
-    slf: *mut PyObject,
-    cls: *mut PyTypeObject,
-    args: &[*mut PyObject],
-    kwargs: &mut KwargIter,
-) -> PyReturn {
-    let OffsetDateTime { time, offset, .. } = OffsetDateTime::extract(slf);
-    let state = State::for_type(cls);
-
+fn replace_date(
+    cls: HeapType<OffsetDateTime>,
+    OffsetDateTime { time, offset, .. }: OffsetDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn2 {
+    let state = cls.state();
     check_ignore_dst_kwarg(kwargs, state, doc::ADJUST_OFFSET_DATETIME_MSG)?;
-
     let &[arg] = args else {
         raise_type_err("replace() takes exactly 1 positional argument")?
     };
-    if Py_TYPE(arg) == state.date_type.as_ptr().cast() {
-        OffsetDateTime::new(Date::extract(arg), time, offset)
+    if let Some(date) = arg.extract3(state.date_type) {
+        OffsetDateTime::new(date, time, offset)
             .ok_or_value_err("New datetime is out of range")?
-            .to_obj(cls)
+            .to_obj3(cls)
     } else {
         raise_type_err("date must be a whenever.Date instance")
     }
 }
 
-unsafe fn replace_time(
-    slf: *mut PyObject,
-    cls: *mut PyTypeObject,
-    args: &[*mut PyObject],
-    kwargs: &mut KwargIter,
-) -> PyReturn {
-    let OffsetDateTime { date, offset, .. } = OffsetDateTime::extract(slf);
-    let state = State::for_type(cls);
+fn replace_time(
+    cls: HeapType<OffsetDateTime>,
+    OffsetDateTime { date, offset, .. }: OffsetDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn2 {
+    let state = cls.state();
     check_ignore_dst_kwarg(kwargs, state, doc::ADJUST_OFFSET_DATETIME_MSG)?;
-
     let &[arg] = args else {
         raise_type_err("replace() takes exactly 1 positional argument")?
     };
-
-    if Py_TYPE(arg) == state.time_type.as_ptr().cast() {
-        OffsetDateTime::new(date, Time::extract(arg), offset)
+    if let Some(time) = arg.extract3(state.time_type) {
+        OffsetDateTime::new(date, time, offset)
             .ok_or_value_err("New datetime is out of range")?
-            .to_obj(cls)
+            .to_obj3(cls)
     } else {
-        raise_type_err("time must be a whenever.Time instance")
+        raise_type_err("date must be a whenever.Time instance")
     }
 }
 
-unsafe fn format_common_iso(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    __str__(slf)
+fn format_common_iso(cls: PyType, slf: OffsetDateTime) -> PyReturn2 {
+    __str__(cls, slf)
 }
 
-unsafe fn replace(
-    slf: *mut PyObject,
-    cls: *mut PyTypeObject,
-    args: &[*mut PyObject],
-    kwargs: &mut KwargIter,
-) -> PyReturn {
+fn replace(
+    cls: HeapType<OffsetDateTime>,
+    slf: OffsetDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn2 {
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")?
     }
@@ -610,12 +694,12 @@ unsafe fn replace(
         time_delta_type,
         exc_implicitly_ignoring_dst,
         ..
-    } = State::for_type(cls);
+    } = cls.state();
     let OffsetDateTime {
         date,
         time,
         mut offset,
-    } = OffsetDateTime::extract(slf);
+    } = slf;
     let mut year = date.year.get().into();
     let mut month = date.month.get().into();
     let mut day = date.day.into();
@@ -625,13 +709,13 @@ unsafe fn replace(
     let mut nanos = time.subsec.get() as _;
     let mut ignore_dst = false;
 
-    handle_kwargs("replace", kwargs, |key, value, eq| {
-        if eq(key, str_ignore_dst.as_ptr()) {
-            ignore_dst = value == Py_True();
-        } else if eq(key, str_offset.as_ptr()) {
-            offset = extract_offset(value, time_delta_type.as_ptr().cast())?;
+    handle_kwargs2("replace", kwargs, |key, value, eq| {
+        if eq(key, str_ignore_dst) {
+            ignore_dst = value.is_true();
+        } else if eq(key, str_offset) {
+            offset = extract_offset2(value, time_delta_type)?;
         } else {
-            return set_components_from_kwargs(
+            return set_components_from_kwargs2(
                 key,
                 value,
                 &mut year,
@@ -641,13 +725,13 @@ unsafe fn replace(
                 &mut minute,
                 &mut second,
                 &mut nanos,
-                str_year.as_ptr(),
-                str_month.as_ptr(),
-                str_day.as_ptr(),
-                str_hour.as_ptr(),
-                str_minute.as_ptr(),
-                str_second.as_ptr(),
-                str_nanosecond.as_ptr(),
+                str_year,
+                str_month,
+                str_day,
+                str_hour,
+                str_minute,
+                str_second,
+                str_nanosecond,
                 eq,
             );
         }
@@ -655,110 +739,99 @@ unsafe fn replace(
     })?;
 
     if !ignore_dst {
-        raise(exc_implicitly_ignoring_dst, doc::ADJUST_OFFSET_DATETIME_MSG)?
+        raise(
+            exc_implicitly_ignoring_dst.as_ptr(),
+            doc::ADJUST_OFFSET_DATETIME_MSG,
+        )?
     }
 
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?;
     OffsetDateTime::new(date, time, offset)
         .ok_or_value_err("Resulting datetime is out of range")?
-        .to_obj(cls)
+        .to_obj3(cls)
 }
 
-unsafe fn now(
-    _: *mut PyObject,
-    cls: *mut PyTypeObject,
-    args: &[*mut PyObject],
-    kwargs: &mut KwargIter,
-) -> PyReturn {
-    let state = State::for_type(cls);
+fn now(cls: HeapType<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn2 {
+    let state = cls.state();
     let &[offset_obj] = args else {
         raise_type_err("now() takes exactly 1 positional argument")?
     };
     check_ignore_dst_kwarg(kwargs, state, doc::OFFSET_NOW_DST_MSG)?;
-    let offset = extract_offset(offset_obj, state.time_delta_type.as_ptr().cast())?;
+    let offset = extract_offset2(offset_obj, state.time_delta_type)?;
     state
         .time_ns()?
         .to_offset(offset)
-        .ok_or_raise(PyExc_OSError, "Date is out of range")?
-        .to_obj(cls.cast())
+        // SAFETY: Exception types are safe to reference during Python runtime
+        .ok_or_raise(unsafe { PyExc_OSError }, "Date is out of range")?
+        .to_obj3(cls)
 }
 
-unsafe fn from_py_datetime(cls: *mut PyObject, dt: *mut PyObject) -> PyReturn {
-    if PyDateTime_Check(dt) == 0 {
+fn from_py_datetime(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn2 {
+    if let Some(py_dt) = arg.cast_allow_subclass::<PyDateTime>() {
+        OffsetDateTime::from_py2(py_dt)?.to_obj3(cls)
+    } else {
         raise_type_err("Argument must be a datetime.datetime instance")?
     }
-    OffsetDateTime::from_py(dt, State::for_type(cls.cast()))?
-        .ok_or_else_value_err(|| {
-            format!(
-                "Argument must have a `datetime.timezone` tzinfo and be within range, got {}",
-                dt.repr()
-            )
-        })?
-        .to_obj(cls.cast())
 }
 
-pub(crate) unsafe fn to_plain(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf)
-        .without_offset()
-        .to_obj(State::for_obj(slf).plain_datetime_type.as_ptr().cast())
+pub(crate) fn to_plain(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn2 {
+    slf.without_offset()
+        .to_obj3(cls.state().plain_datetime_type)
 }
 
-pub(crate) unsafe fn local(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    PyErr_WarnEx(
-        PyExc_DeprecationWarning,
-        c"local() method is deprecated. Use to_plain() instead".as_ptr(),
-        1,
-    );
-    to_plain(slf, NULL())
+pub(crate) fn local(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn2 {
+    // SAFETY: calling CPython API with valid arguments
+    unsafe {
+        PyErr_WarnEx(
+            PyExc_DeprecationWarning,
+            c"local() method is deprecated. Use to_plain() instead".as_ptr(),
+            1,
+        )
+    };
+    to_plain(cls, slf)
 }
 
-pub(crate) unsafe fn timestamp(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).instant().epoch.get().to_py()
+pub(crate) fn timestamp(_: PyType, slf: OffsetDateTime) -> PyReturn2 {
+    slf.instant().epoch.get().to_py2()
 }
 
-pub(crate) unsafe fn timestamp_millis(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf)
-        .instant()
-        .timestamp_millis()
-        .to_py()
+pub(crate) fn timestamp_millis(_: PyType, slf: OffsetDateTime) -> PyReturn2 {
+    slf.instant().timestamp_millis().to_py2()
 }
 
-pub(crate) unsafe fn timestamp_nanos(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf)
-        .instant()
-        .timestamp_nanos()
-        .to_py()
+pub(crate) fn timestamp_nanos(_: PyType, slf: OffsetDateTime) -> PyReturn2 {
+    slf.instant().timestamp_nanos().to_py2()
 }
 
-unsafe fn add(
-    slf: *mut PyObject,
-    cls: *mut PyTypeObject,
-    args: &[*mut PyObject],
-    kwargs: &mut KwargIter,
-) -> PyReturn {
-    _shift_method(slf, cls, args, kwargs, false)
+fn add(
+    cls: HeapType<OffsetDateTime>,
+    slf: OffsetDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn2 {
+    _shift_method(cls, slf, args, kwargs, false)
 }
 
-unsafe fn subtract(
-    slf: *mut PyObject,
-    cls: *mut PyTypeObject,
-    args: &[*mut PyObject],
-    kwargs: &mut KwargIter,
-) -> PyReturn {
-    _shift_method(slf, cls, args, kwargs, true)
+fn subtract(
+    cls: HeapType<OffsetDateTime>,
+    slf: OffsetDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn2 {
+    _shift_method(cls, slf, args, kwargs, true)
 }
 
 #[inline]
-unsafe fn _shift_method(
-    slf: *mut PyObject,
-    cls: *mut PyTypeObject,
-    args: &[*mut PyObject],
-    kwargs: &mut KwargIter,
+fn _shift_method(
+    cls: HeapType<OffsetDateTime>,
+    slf: OffsetDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
     negate: bool,
-) -> PyReturn {
+) -> PyReturn2 {
     let fname = if negate { "subtract" } else { "add" };
-    let state = State::for_type(cls);
+    let state = cls.state();
     let mut months = DeltaMonths::ZERO;
     let mut days = DeltaDays::ZERO;
     let mut nanos = 0;
@@ -767,10 +840,8 @@ unsafe fn _shift_method(
     match *args {
         [arg] => {
             match kwargs.next() {
-                Some((key, value))
-                    if kwargs.len() == 1 && key.py_eq(state.str_ignore_dst.as_ptr())? =>
-                {
-                    ignore_dst = value == Py_True();
+                Some((key, value)) if kwargs.len() == 1 && key.py_eq(state.str_ignore_dst)? => {
+                    ignore_dst = value.is_true();
                 }
                 None => {}
                 _ => raise_type_err(format!(
@@ -778,14 +849,12 @@ unsafe fn _shift_method(
                     fname
                 ))?,
             }
-            if Py_TYPE(arg) == state.time_delta_type.as_ptr().cast() {
-                nanos = TimeDelta::extract(arg).total_nanos();
-            } else if Py_TYPE(arg) == state.date_delta_type.as_ptr().cast() {
-                let dd = DateDelta::extract(arg);
-                months = dd.months;
-                days = dd.days;
-            } else if Py_TYPE(arg) == state.datetime_delta_type.as_ptr().cast() {
-                let dt = DateTimeDelta::extract(arg);
+            if let Some(tdelta) = arg.extract3(state.time_delta_type) {
+                nanos = tdelta.total_nanos();
+            } else if let Some(ddelta) = arg.extract3(state.date_delta_type) {
+                months = ddelta.months;
+                days = ddelta.days;
+            } else if let Some(dt) = arg.extract3(state.datetime_delta_type) {
                 months = dt.ddelta.months;
                 days = dt.ddelta.days;
                 nanos = dt.tdelta.total_nanos();
@@ -796,12 +865,12 @@ unsafe fn _shift_method(
         [] => {
             let mut raw_months = 0;
             let mut raw_days = 0;
-            handle_kwargs(fname, kwargs, |key, value, eq| {
-                if eq(key, state.str_ignore_dst.as_ptr()) {
-                    ignore_dst = value == Py_True();
+            handle_kwargs2(fname, kwargs, |key, value, eq| {
+                if eq(key, state.str_ignore_dst) {
+                    ignore_dst = value.is_true();
                     Ok(true)
                 } else {
-                    set_units_from_kwargs(
+                    set_units_from_kwargs2(
                         key,
                         value,
                         &mut raw_months,
@@ -830,44 +899,42 @@ unsafe fn _shift_method(
     }
     if !ignore_dst {
         raise(
-            state.exc_implicitly_ignoring_dst,
+            state.exc_implicitly_ignoring_dst.as_ptr(),
             doc::ADJUST_OFFSET_DATETIME_MSG,
         )?
     }
-    let OffsetDateTime { date, time, offset } = OffsetDateTime::extract(slf);
+    let OffsetDateTime { date, time, offset } = slf;
     DateTime { date, time }
         .shift_date(months, days)
         .and_then(|dt| dt.shift_nanos(nanos))
         .and_then(|dt| dt.with_offset(offset))
         .ok_or_else_value_err(|| format!("Result of {}() out of range", fname))?
-        .to_obj(cls)
+        .to_obj3(cls)
 }
 
-unsafe fn difference(obj_a: *mut PyObject, obj_b: *mut PyObject) -> PyReturn {
-    let type_b = Py_TYPE(obj_b);
-    let type_a = Py_TYPE(obj_a);
-    let state = State::for_type(type_a);
-    let inst_a = OffsetDateTime::extract(obj_a).instant();
-    let inst_b = if type_b == Py_TYPE(obj_a) {
-        OffsetDateTime::extract(obj_b).instant()
-    } else if type_b == state.instant_type.as_ptr().cast() {
-        Instant::extract(obj_b)
-    } else if type_b == state.zoned_datetime_type.as_ptr().cast() {
-        ZonedDateTime::extract(obj_b).instant()
-    } else if type_b == state.system_datetime_type.as_ptr().cast() {
-        OffsetDateTime::extract(obj_b).instant()
+fn difference(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime, arg: PyObj) -> PyReturn2 {
+    let state = cls.state();
+    let other_inst = if let Some(odt) = arg.extract3(cls) {
+        odt.instant()
+    } else if let Some(inst) = arg.extract3(state.instant_type) {
+        inst
+    } else if let Some(zdt) = arg.extract3(state.zoned_datetime_type) {
+        zdt.instant()
+    } else if let Some(odt) = arg.extract3(state.system_datetime_type) {
+        odt.instant()
     } else {
         raise_type_err(
             "difference() argument must be an OffsetDateTime, 
                 Instant, ZonedDateTime, or SystemDateTime",
         )?
     };
-    inst_a
-        .diff(inst_b)
-        .to_obj(state.time_delta_type.as_ptr().cast())
+
+    slf.instant()
+        .diff(other_inst)
+        .to_obj3(state.time_delta_type)
 }
 
-unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
+fn __reduce__(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyResult<Owned<PyTuple>> {
     let OffsetDateTime {
         date: Date { year, month, day },
         time:
@@ -878,7 +945,7 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
                 subsec,
             },
         offset,
-    } = OffsetDateTime::extract(slf);
+    } = slf;
     let data = pack![
         year.get(),
         month.get(),
@@ -890,17 +957,17 @@ unsafe fn __reduce__(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
         offset.get()
     ];
     (
-        State::for_obj(slf).unpickle_offset_datetime,
-        steal!((steal!(data.to_py()?),).to_py()?),
+        cls.state().unpickle_offset_datetime.newref(),
+        (data.to_py2()?,).into_pytuple()?,
     )
-        .to_py()
+        .into_pytuple()
 }
 
-// checks the args comply with (ts: ?, /, *, offset: ?, ignore_dst: true)
-unsafe fn check_from_timestamp_args_return_offset(
+/// checks the args comply with (ts: ?, /, *, offset: ?, ignore_dst: true)
+fn check_from_timestamp_args_return_offset(
     fname: &str,
-    args: &[*mut PyObject],
-    kwargs: &mut KwargIter,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
     &State {
         str_offset,
         str_ignore_dst,
@@ -919,11 +986,11 @@ unsafe fn check_from_timestamp_args_return_offset(
         ))?
     }
 
-    handle_kwargs("from_timestamp", kwargs, |key, value, eq| {
-        if eq(key, str_ignore_dst.as_ptr()) {
-            ignore_dst = value == Py_True();
-        } else if eq(key, str_offset.as_ptr()) {
-            offset = Some(extract_offset(value, time_delta_type.as_ptr().cast())?);
+    handle_kwargs2("from_timestamp", kwargs, |key, value, eq| {
+        if eq(key, str_ignore_dst) {
+            ignore_dst = value.is_true();
+        } else if eq(key, str_offset) {
+            offset = Some(extract_offset2(value, time_delta_type)?);
         } else {
             return Ok(false);
         }
@@ -931,90 +998,91 @@ unsafe fn check_from_timestamp_args_return_offset(
     })?;
 
     if !ignore_dst {
-        raise(exc_implicitly_ignoring_dst, doc::TIMESTAMP_DST_MSG)?
+        raise(exc_implicitly_ignoring_dst.as_ptr(), doc::TIMESTAMP_DST_MSG)?
     }
 
     offset.ok_or_type_err("Missing required keyword argument: 'offset'")
 }
 
-unsafe fn from_timestamp(
-    _: *mut PyObject,
-    cls: *mut PyTypeObject,
-    args: &[*mut PyObject],
-    kwargs: &mut KwargIter,
-) -> PyReturn {
-    let state = State::for_type(cls);
+fn from_timestamp(
+    cls: HeapType<OffsetDateTime>,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn2 {
+    let state = cls.state();
     let offset = check_from_timestamp_args_return_offset("from_timestamp", args, kwargs, state)?;
 
-    match args[0].to_i64()? {
-        Some(ts) => Instant::from_timestamp(ts),
-        None => Instant::from_timestamp_f64(
-            args[0]
-                .to_f64()?
-                .ok_or_type_err("Timestamp must be an integer or float")?,
-        ),
+    if let Some(py_int) = args[0].cast::<PyInt>() {
+        Instant::from_timestamp(py_int.to_i64()?)
+    } else if let Some(py_float) = args[0].cast::<PyFloat>() {
+        Instant::from_timestamp_f64(py_float.to_f64()?)
+    } else {
+        raise_type_err("Timestamp must be an integer or float")?
     }
     .ok_or_value_err("Timestamp is out of range")?
     .to_offset(offset)
     .ok_or_value_err("Resulting date is out of range")?
-    .to_obj(cls)
+    .to_obj3(cls)
 }
 
-unsafe fn from_timestamp_millis(
-    _: *mut PyObject,
-    cls: *mut PyTypeObject,
-    args: &[*mut PyObject],
-    kwargs: &mut KwargIter,
-) -> PyReturn {
-    let state = State::for_type(cls);
+fn from_timestamp_millis(
+    cls: HeapType<OffsetDateTime>,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn2 {
+    let state = cls.state();
     let offset =
         check_from_timestamp_args_return_offset("from_timestamp_millis", args, kwargs, state)?;
     Instant::from_timestamp_millis(
         args[0]
-            .to_i64()?
-            .ok_or_type_err("timestamp must be an integer")?,
+            .cast::<PyInt>()
+            .ok_or_type_err("Timestamp must be an integer")?
+            .to_i64()?,
     )
     .ok_or_value_err("timestamp is out of range")?
     .to_offset(offset)
     .ok_or_value_err("Resulting date is out of range")?
-    .to_obj(cls)
+    .to_obj3(cls)
 }
 
-unsafe fn from_timestamp_nanos(
-    _: *mut PyObject,
-    cls: *mut PyTypeObject,
-    args: &[*mut PyObject],
-    kwargs: &mut KwargIter,
-) -> PyReturn {
-    let state = State::for_type(cls);
+fn from_timestamp_nanos(
+    cls: HeapType<OffsetDateTime>,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn2 {
+    let state = cls.state();
     let offset =
         check_from_timestamp_args_return_offset("from_timestamp_nanos", args, kwargs, state)?;
     Instant::from_timestamp_nanos(
         args[0]
-            .to_i128()?
-            .ok_or_type_err("timestamp must be an integer")?,
+            .cast::<PyInt>()
+            .ok_or_type_err("timestamp must be an integer")?
+            .to_i128()?,
     )
     .ok_or_value_err("Timestamp is out of range")?
     .to_offset(offset)
     .ok_or_value_err("Resulting date is out of range")?
-    .to_obj(cls)
+    .to_obj3(cls)
 }
 
-unsafe fn parse_common_iso(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
-    OffsetDateTime::parse(s_obj.to_utf8()?.ok_or_type_err("Expected a string")?)
-        .ok_or_else_value_err(|| format!("Invalid format: {}", s_obj.repr()))?
-        .to_obj(cls.cast())
+fn parse_common_iso(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn2 {
+    OffsetDateTime::parse(
+        arg.cast::<PyStr>()
+            .ok_or_type_err("Expected a string")?
+            .as_utf8()?,
+    )
+    .ok_or_else_value_err(|| format!("Invalid format: {}", arg.repr()))?
+    .to_obj3(cls)
 }
 
-unsafe fn parse_strptime(
-    _: *mut PyObject,
-    cls: *mut PyTypeObject,
-    args: &[*mut PyObject],
-    kwargs: &mut KwargIter,
-) -> PyReturn {
-    let state = State::for_type(cls);
+fn parse_strptime(
+    cls: HeapType<OffsetDateTime>,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn2 {
+    let state = cls.state();
     let format_obj = match kwargs.next() {
-        Some((key, value)) if kwargs.len() == 1 && key.py_eq(state.str_format.as_ptr())? => value,
+        Some((key, value)) if kwargs.len() == 1 && key.py_eq(state.str_format)? => value,
         _ => raise_type_err("parse_strptime() requires exactly one keyword argument `format`")?,
     };
     let &[arg_obj] = args else {
@@ -1024,50 +1092,43 @@ unsafe fn parse_strptime(
         ))?
     };
 
-    // OPTIMIZE: get this working with vectorcall
-    let parsed = PyObject_Call(
-        state.strptime,
-        steal!((arg_obj, format_obj).to_py()?),
-        NULL(),
-    )
-    .as_result()?;
-    defer_decref!(parsed);
+    let args = (arg_obj.newref(), format_obj.newref()).into_pytuple()?;
+    let parsed = state
+        .strptime
+        .call(*args)?
+        .cast::<PyDateTime>()
+        .ok_or_type_err("strptime() returned non-datetime")?;
 
-    OffsetDateTime::from_py(parsed, state)?
-        .ok_or_else_value_err(|| {
-            format!(
-                "parsed datetime must have a timezone and be within range, got {}",
-                (parsed as *mut PyObject).repr()
-            )
-        })?
-        .to_obj(cls)
+    OffsetDateTime::from_py2(*parsed)?.to_obj3(cls)
 }
 
-unsafe fn format_rfc2822(slf: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    std::str::from_utf8_unchecked(&rfc2822::write(OffsetDateTime::extract(slf))[..]).to_py()
+fn format_rfc2822(_: PyType, slf: OffsetDateTime) -> PyReturn2 {
+    let fmt = rfc2822::write(slf);
+    // SAFETY: we know the format is ASCII only
+    unsafe { std::str::from_utf8_unchecked(&fmt[..]) }.to_py2()
 }
 
-unsafe fn parse_rfc2822(cls: *mut PyObject, s_obj: *mut PyObject) -> PyReturn {
-    let s = s_obj.to_utf8()?.ok_or_type_err("Expected a string")?;
-    let (date, time, offset) =
-        rfc2822::parse(s).ok_or_else_value_err(|| format!("Invalid format: {}", s_obj.repr()))?;
+fn parse_rfc2822(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn2 {
+    let s = arg.cast::<PyStr>().ok_or_type_err("Expected a string")?;
+    let (date, time, offset) = rfc2822::parse(s.as_utf8()?)
+        .ok_or_else_value_err(|| format!("Invalid format: {}", arg.repr()))?;
     OffsetDateTime::new(date, time, offset)
         .ok_or_value_err("Instant out of range")?
-        .to_obj(cls.cast())
+        .to_obj3(cls)
 }
 
-unsafe fn round(
-    slf: *mut PyObject,
-    cls: *mut PyTypeObject,
-    args: &[*mut PyObject],
-    kwargs: &mut KwargIter,
-) -> PyReturn {
-    let (_, increment, mode) = round::parse_args(State::for_obj(slf), args, kwargs, false, true)?;
+fn round(
+    cls: HeapType<OffsetDateTime>,
+    slf: OffsetDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn2 {
+    let (_, increment, mode) = round::parse_args2(cls.state(), args, kwargs, false, true)?;
     let OffsetDateTime {
         mut date,
         time,
         offset,
-    } = OffsetDateTime::extract(slf);
+    } = slf;
     let (time_rounded, next_day) = time.round(increment as u64, mode);
     if next_day == 1 {
         date = date
@@ -1079,118 +1140,153 @@ unsafe fn round(
         time: time_rounded,
         offset,
     }
-    .to_obj(cls)
+    .to_obj3(cls)
 }
 
 static mut METHODS: &[PyMethodDef] = &[
     // FUTURE: get docstrings from Python implementation
-    method!(identity2 named "__copy__", c""),
-    method!(identity2 named "__deepcopy__", c"", METH_O),
-    method!(__reduce__, c""),
-    method_kwargs!(now, doc::OFFSETDATETIME_NOW, METH_CLASS),
-    method!(exact_eq, doc::EXACTTIME_EXACT_EQ, METH_O),
-    method!(py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
-    method!(
+    method0!(OffsetDateTime, __copy__, c""),
+    method1!(OffsetDateTime, __deepcopy__, c""),
+    method0!(OffsetDateTime, __reduce__, c""),
+    classmethod_kwargs!(OffsetDateTime, now, doc::OFFSETDATETIME_NOW),
+    method1!(OffsetDateTime, exact_eq, doc::EXACTTIME_EXACT_EQ),
+    method0!(
+        OffsetDateTime,
+        py_datetime,
+        doc::BASICCONVERSIONS_PY_DATETIME
+    ),
+    classmethod1!(
+        OffsetDateTime,
         from_py_datetime,
-        doc::OFFSETDATETIME_FROM_PY_DATETIME,
-        METH_O | METH_CLASS
+        doc::OFFSETDATETIME_FROM_PY_DATETIME
     ),
-    method!(to_instant, doc::EXACTANDLOCALTIME_TO_INSTANT),
-    method!(instant, c""), // deprecated alias
-    method!(to_plain, doc::EXACTANDLOCALTIME_TO_PLAIN),
-    method!(local, c""), // deprecated alias
-    method!(to_tz, doc::EXACTTIME_TO_TZ, METH_O),
-    method_vararg!(to_fixed_offset, doc::EXACTTIME_TO_FIXED_OFFSET),
-    method!(to_system_tz, doc::EXACTTIME_TO_SYSTEM_TZ),
-    method!(date, doc::LOCALTIME_DATE),
-    method!(time, doc::LOCALTIME_TIME),
-    method!(format_rfc2822, doc::OFFSETDATETIME_FORMAT_RFC2822),
-    method!(
+    method0!(
+        OffsetDateTime,
+        to_instant,
+        doc::EXACTANDLOCALTIME_TO_INSTANT
+    ),
+    method0!(OffsetDateTime, instant, c""), // deprecated alias
+    method0!(OffsetDateTime, to_plain, doc::EXACTANDLOCALTIME_TO_PLAIN),
+    method0!(OffsetDateTime, local, c""), // deprecated alias
+    method1!(OffsetDateTime, to_tz, doc::EXACTTIME_TO_TZ),
+    method_vararg2!(
+        OffsetDateTime,
+        to_fixed_offset,
+        doc::EXACTTIME_TO_FIXED_OFFSET
+    ),
+    method0!(OffsetDateTime, to_system_tz, doc::EXACTTIME_TO_SYSTEM_TZ),
+    method0!(OffsetDateTime, date, doc::LOCALTIME_DATE),
+    method0!(OffsetDateTime, time, doc::LOCALTIME_TIME),
+    method0!(
+        OffsetDateTime,
+        format_rfc2822,
+        doc::OFFSETDATETIME_FORMAT_RFC2822
+    ),
+    classmethod1!(
+        OffsetDateTime,
         parse_rfc2822,
-        doc::OFFSETDATETIME_PARSE_RFC2822,
-        METH_O | METH_CLASS
+        doc::OFFSETDATETIME_PARSE_RFC2822
     ),
-    method!(format_common_iso, doc::OFFSETDATETIME_FORMAT_COMMON_ISO),
-    method!(
+    method0!(
+        OffsetDateTime,
+        format_common_iso,
+        doc::OFFSETDATETIME_FORMAT_COMMON_ISO
+    ),
+    classmethod1!(
+        OffsetDateTime,
         parse_common_iso,
-        doc::OFFSETDATETIME_PARSE_COMMON_ISO,
-        METH_O | METH_CLASS
+        doc::OFFSETDATETIME_PARSE_COMMON_ISO
     ),
-    method!(timestamp, doc::EXACTTIME_TIMESTAMP),
-    method!(timestamp_millis, doc::EXACTTIME_TIMESTAMP_MILLIS),
-    method!(timestamp_nanos, doc::EXACTTIME_TIMESTAMP_NANOS),
-    method_kwargs!(
+    method0!(OffsetDateTime, timestamp, doc::EXACTTIME_TIMESTAMP),
+    method0!(
+        OffsetDateTime,
+        timestamp_millis,
+        doc::EXACTTIME_TIMESTAMP_MILLIS
+    ),
+    method0!(
+        OffsetDateTime,
+        timestamp_nanos,
+        doc::EXACTTIME_TIMESTAMP_NANOS
+    ),
+    classmethod_kwargs!(
+        OffsetDateTime,
         from_timestamp,
-        doc::OFFSETDATETIME_FROM_TIMESTAMP,
-        METH_CLASS
+        doc::OFFSETDATETIME_FROM_TIMESTAMP
     ),
-    method_kwargs!(
+    classmethod_kwargs!(
+        OffsetDateTime,
         from_timestamp_millis,
-        doc::OFFSETDATETIME_FROM_TIMESTAMP_MILLIS,
-        METH_CLASS
+        doc::OFFSETDATETIME_FROM_TIMESTAMP_MILLIS
     ),
-    method_kwargs!(
+    classmethod_kwargs!(
+        OffsetDateTime,
         from_timestamp_nanos,
-        doc::OFFSETDATETIME_FROM_TIMESTAMP_NANOS,
-        METH_CLASS
+        doc::OFFSETDATETIME_FROM_TIMESTAMP_NANOS
     ),
-    method_kwargs!(replace, doc::OFFSETDATETIME_REPLACE),
-    method_kwargs!(replace_date, doc::OFFSETDATETIME_REPLACE_DATE),
-    method_kwargs!(replace_time, doc::OFFSETDATETIME_REPLACE_TIME),
-    method_kwargs!(
+    method_kwargs2!(OffsetDateTime, replace, doc::OFFSETDATETIME_REPLACE),
+    method_kwargs2!(
+        OffsetDateTime,
+        replace_date,
+        doc::OFFSETDATETIME_REPLACE_DATE
+    ),
+    method_kwargs2!(
+        OffsetDateTime,
+        replace_time,
+        doc::OFFSETDATETIME_REPLACE_TIME
+    ),
+    classmethod_kwargs!(
+        OffsetDateTime,
         parse_strptime,
-        doc::OFFSETDATETIME_PARSE_STRPTIME,
-        METH_CLASS
+        doc::OFFSETDATETIME_PARSE_STRPTIME
     ),
-    method_kwargs!(add, doc::OFFSETDATETIME_ADD),
-    method_kwargs!(subtract, doc::OFFSETDATETIME_SUBTRACT),
-    method!(difference, doc::EXACTTIME_DIFFERENCE, METH_O),
-    method_kwargs!(round, doc::OFFSETDATETIME_ROUND),
+    method_kwargs2!(OffsetDateTime, add, doc::OFFSETDATETIME_ADD),
+    method_kwargs2!(OffsetDateTime, subtract, doc::OFFSETDATETIME_SUBTRACT),
+    method1!(OffsetDateTime, difference, doc::EXACTTIME_DIFFERENCE),
+    method_kwargs2!(OffsetDateTime, round, doc::OFFSETDATETIME_ROUND),
     PyMethodDef::zeroed(),
 ];
 
-unsafe fn get_year(slf: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).date.year.get().to_py()
+fn get_year(_: PyType, slf: OffsetDateTime) -> PyReturn2 {
+    slf.date.year.get().to_py2()
 }
 
-unsafe fn get_month(slf: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).date.month.get().to_py()
+fn get_month(_: PyType, slf: OffsetDateTime) -> PyReturn2 {
+    slf.date.month.get().to_py2()
 }
 
-unsafe fn get_day(slf: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).date.day.to_py()
+fn get_day(_: PyType, slf: OffsetDateTime) -> PyReturn2 {
+    slf.date.day.to_py2()
 }
 
-unsafe fn get_hour(slf: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).time.hour.to_py()
+fn get_hour(_: PyType, slf: OffsetDateTime) -> PyReturn2 {
+    slf.time.hour.to_py2()
 }
 
-unsafe fn get_minute(slf: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).time.minute.to_py()
+fn get_minute(_: PyType, slf: OffsetDateTime) -> PyReturn2 {
+    slf.time.minute.to_py2()
 }
 
-unsafe fn get_second(slf: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).time.second.to_py()
+fn get_second(_: PyType, slf: OffsetDateTime) -> PyReturn2 {
+    slf.time.second.to_py2()
 }
 
-unsafe fn get_nanos(slf: *mut PyObject) -> PyReturn {
-    OffsetDateTime::extract(slf).time.subsec.get().to_py()
+fn get_nanos(_: PyType, slf: OffsetDateTime) -> PyReturn2 {
+    slf.time.subsec.get().to_py2()
 }
 
-unsafe fn get_offset(slf: *mut PyObject) -> PyReturn {
-    TimeDelta::from_offset(OffsetDateTime::extract(slf).offset)
-        .to_obj(State::for_obj(slf).time_delta_type.as_ptr().cast())
+fn get_offset(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn2 {
+    TimeDelta::from_offset(slf.offset).to_obj3(cls.state().time_delta_type)
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter!(get_year named "year", "The year component"),
-    getter!(get_month named "month", "The month component"),
-    getter!(get_day named "day", "The day component"),
-    getter!(get_hour named "hour", "The hour component"),
-    getter!(get_minute named "minute", "The minute component"),
-    getter!(get_second named "second", "The second component"),
-    getter!(get_nanos named "nanosecond", "The nanosecond component"),
-    getter!(get_offset named "offset", "The offset from UTC"),
+    getter2!(OffsetDateTime, get_year named "year", "The year component"),
+    getter2!(OffsetDateTime, get_month named "month", "The month component"),
+    getter2!(OffsetDateTime, get_day named "day", "The day component"),
+    getter2!(OffsetDateTime, get_hour named "hour", "The hour component"),
+    getter2!(OffsetDateTime, get_minute named "minute", "The minute component"),
+    getter2!(OffsetDateTime, get_second named "second", "The second component"),
+    getter2!(OffsetDateTime, get_nanos named "nanosecond", "The nanosecond component"),
+    getter2!(OffsetDateTime, get_offset named "offset", "The offset from UTC"),
     PyGetSetDef {
         name: NULL(),
         get: None,
