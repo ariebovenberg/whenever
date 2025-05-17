@@ -292,7 +292,7 @@ impl TzStore {
     /// If not already cached, reads the file from the filesystem.
     /// Returns a *borrowed* reference to the `TZif` object.
     /// Its reference count is *not* incremented.
-    pub(crate) unsafe fn get(&self, key: &str, exc_notfound: *mut PyObject) -> PyResult<TzRef> {
+    pub(crate) fn get(&self, key: &str, exc_notfound: *mut PyObject) -> PyResult<TzRef> {
         self.cache
             .get_or_load(key, || self.load_tzif(key))
             .ok_or_else_raise(exc_notfound, || {

@@ -186,17 +186,6 @@ impl Date {
         Some(Date { year, month, day })
     }
 
-    // TODO: remove
-    pub(crate) unsafe fn from_py_unchecked(obj: *mut PyObject) -> Self {
-        debug_assert!(PyDate_Check(obj) == 1);
-        Date {
-            // Safety: dates coming from Python are always valid
-            year: Year::new_unchecked(PyDateTime_GET_YEAR(obj) as _),
-            month: Month::new_unchecked(PyDateTime_GET_MONTH(obj) as _),
-            day: PyDateTime_GET_DAY(obj) as _,
-        }
-    }
-
     pub(crate) fn to_py(
         self,
         &PyDateTime_CAPI {
@@ -267,7 +256,7 @@ fn __new__(cls: HeapType<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetu
     if args.len() > 3 {
         raise_type_err(format!(
             "Date() takes at most 3 arguments, got {}",
-            args.len() + kwargs.map(|x| x.len()).unwrap_or(0)
+            args.len() + kwargs.map_or(0, |x| x.len())
         ))?
     }
     let mut arg_obj: [Option<PyObj>; 3] = [None, None, None];

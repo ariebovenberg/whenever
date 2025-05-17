@@ -6,7 +6,7 @@ use std::ptr::null_mut as NULL;
 /// Create and add a new enum type to the module
 pub(crate) fn new_enum(
     module: PyObj,
-    name: &CStr,
+    name: &str,
     members: &[(&CStr, i32)],
 ) -> PyResult<Owned<PyType>> {
     let members_dict = PyDict::new()?;
@@ -14,22 +14,20 @@ pub(crate) fn new_enum(
         members_dict.set_item_str(key, value.to_py2()?.borrow())?;
     }
     let enum_module = import(c"enum")?;
-    let enum_cls = unsafe {
-        PyObject_CallMethod(
-            enum_module.as_ptr(),
-            c"Enum".as_ptr(),
-            c"sO".as_ptr(),
-            name.as_ptr(),
-            members_dict,
-        )
-        .rust_owned()?
-        .cast_unchecked::<PyType>()
-    };
+    // TODO: set __module__ on the enum class
+    let enum_cls = enum_module
+        .getattr(c"Enum")?
+        .call((name.to_py2()?, members_dict).into_pytuple()?.borrow())?
+        .cast_allow_subclass::<PyType>()
+        .unwrap();
+
     add_type_to_module(module, enum_cls.borrow())?;
     Ok(enum_cls)
 }
 
 pub(crate) fn add_type_to_module(module: PyObj, cls: PyType) -> PyResult<()> {
+    // TODO double-check refcount story
+    // SAFETY: calling C API with valid arguments
     if unsafe { PyModule_AddType(module.as_ptr(), cls.as_ptr().cast()) } == 0 {
         Ok(())
     } else {

@@ -3,7 +3,6 @@
 use crate::{
     classes::date::Date, classes::plain_datetime::DateTime, classes::time::Time, common::round,
 };
-use pyo3_ffi::*;
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
 
 use super::pyobject::PyTimeDelta;
@@ -723,11 +722,6 @@ impl SubSecNanos {
             DeltaSeconds::new_unchecked(sum.div_euclid(1_000_000_000) as _),
             SubSecNanos::from_remainder(sum),
         )
-    }
-
-    pub(crate) unsafe fn from_py_dt_unchecked(obj: *mut PyObject) -> Self {
-        // Safety: obj is a valid Python datetime object
-        Self::new_unchecked(unsafe { PyDateTime_DATE_GET_MICROSECOND(obj) * 1_000 })
     }
 
     // TODO name, place? it's not unchecked

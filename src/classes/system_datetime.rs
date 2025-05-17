@@ -15,7 +15,7 @@ use crate::{
         time::Time,
         time_delta::TimeDelta,
     },
-    common::{ambiguity::*, math::*, pydatetime::*, pyobject::*, pytype::*, round},
+    common::{ambiguity::*, math::*, pyobject::*, pytype::*, round},
     docstrings as doc,
     pymodule::State,
 };
@@ -113,24 +113,6 @@ impl OffsetDateTime {
             }
         }
         .ok_or_value_err("Resulting datetime is out of range")
-    }
-
-    pub(crate) unsafe fn to_system_tz(self, py_api: &PyDateTime_CAPI) -> PyResult<Self> {
-        let dt_original = self.to_py(py_api)?;
-        defer_decref!(dt_original);
-        // FUTURE: define `astimezone` string once, then reuse it?
-        let dt_new = methcall0(dt_original, "astimezone")?;
-        defer_decref!(dt_new);
-        Ok(OffsetDateTime::new_unchecked(
-            Date::from_py_unchecked(dt_new),
-            Time {
-                hour: PyDateTime_DATE_GET_HOUR(dt_new) as u8,
-                minute: PyDateTime_DATE_GET_MINUTE(dt_new) as u8,
-                second: PyDateTime_DATE_GET_SECOND(dt_new) as u8,
-                subsec: self.time.subsec,
-            },
-            offset_from_py_dt(dt_new)?,
-        ))
     }
 
     pub(crate) fn to_system_tz2(self, py_api: &PyDateTime_CAPI) -> PyResult<Self> {
@@ -276,14 +258,7 @@ impl Instant {
                 //       This is OK since system offsets are always whole seconds.
                 subsec: self.subsec,
             },
-            offset_from_py_delta_unchecked(
-                dt_new
-                    .utcoffset()?
-                    .cast::<PyTimeDelta>()
-                    // SAFETY: we can be sure that dt_new is an aware datetime
-                    .unwrap()
-                    .borrow(),
-            )?,
+            Offset::from_py(dt_new.borrow())?,
         ))
     }
 }

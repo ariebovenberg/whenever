@@ -102,101 +102,6 @@ impl Neg for DateTimeDelta {
     }
 }
 
-// TODO: remove
-#[inline]
-pub(crate) unsafe fn handle_exact_unit(
-    value: *mut PyObject,
-    max: i64,
-    name: &str,
-    factor: i128,
-) -> PyResult<i128> {
-    if value.is_int() {
-        let i = value
-            .to_i64()?
-            // Safe to unwrap since we just checked that it's an int
-            .unwrap();
-        if (-max..=max).contains(&i) {
-            Ok(i as i128 * factor)
-        } else {
-            raise_value_err(format!("{} out of range", name))?
-        }
-    } else {
-        let f = value
-            .to_f64()?
-            .ok_or_else_value_err(|| format!("{} must be an integer or float", name))?;
-        if (-max as f64..=max as f64).contains(&f) {
-            Ok((f * factor as f64) as i128)
-        } else {
-            raise_value_err(format!("{} out of range", name))?
-        }
-    }
-}
-
-// OPTIMIZE: a version for cases in which days are a fixed amount of nanos
-#[inline]
-pub(crate) unsafe fn set_units_from_kwargs(
-    key: *mut PyObject,
-    value: *mut PyObject,
-    months: &mut i32,
-    days: &mut i32,
-    nanos: &mut i128,
-    state: &State,
-    eq: fn(*mut PyObject, *mut PyObject) -> bool,
-) -> PyResult<bool> {
-    if eq(key, state.str_years.as_ptr()) {
-        *months = value
-            .to_long()?
-            .ok_or_value_err("years must be an integer")?
-            .checked_mul(12)
-            .and_then(|y| y.try_into().ok())
-            .and_then(|y| months.checked_add(y))
-            .ok_or_value_err("total years out of range")?;
-    } else if eq(key, state.str_months.as_ptr()) {
-        *months = value
-            .to_long()?
-            .ok_or_value_err("months must be an integer")?
-            .try_into()
-            .ok()
-            .and_then(|m| months.checked_add(m))
-            .ok_or_value_err("total months out of range")?;
-    } else if eq(key, state.str_weeks.as_ptr()) {
-        *days = value
-            .to_long()?
-            .ok_or_value_err("weeks must be an integer")?
-            .checked_mul(7)
-            .and_then(|d| d.try_into().ok())
-            .and_then(|d| days.checked_add(d))
-            .ok_or_value_err("total days out of range")?;
-    } else if eq(key, state.str_days.as_ptr()) {
-        *days = value
-            .to_long()?
-            .ok_or_value_err("days must be an integer")?
-            .try_into()
-            .ok()
-            .and_then(|d| days.checked_add(d))
-            .ok_or_value_err("total days out of range")?;
-    } else if eq(key, state.str_hours.as_ptr()) {
-        *nanos += handle_exact_unit(value, MAX_HOURS, "hours", 3_600_000_000_000_i128)?;
-    } else if eq(key, state.str_minutes.as_ptr()) {
-        *nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", 60_000_000_000_i128)?;
-    } else if eq(key, state.str_seconds.as_ptr()) {
-        *nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000_i128)?;
-    } else if eq(key, state.str_milliseconds.as_ptr()) {
-        *nanos += handle_exact_unit(value, MAX_MILLISECONDS, "milliseconds", 1_000_000_i128)?;
-    } else if eq(key, state.str_microseconds.as_ptr()) {
-        *nanos += handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000_i128)?;
-    } else if eq(key, state.str_nanoseconds.as_ptr()) {
-        *nanos = value
-            .to_i128()?
-            .ok_or_value_err("nanoseconds must be an integer")?
-            .checked_add(*nanos)
-            .ok_or_value_err("total nanoseconds out of range")?;
-    } else {
-        return Ok(false);
-    }
-    Ok(true)
-}
-
 #[inline]
 pub(crate) fn handle_exact_unit2(
     value: PyObj,
@@ -317,7 +222,7 @@ impl fmt::Display for DateTimeDelta {
 
 fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn2 {
     let nargs = args.len();
-    let nkwargs = kwargs.map(|k| k.len()).unwrap_or(0);
+    let nkwargs = kwargs.map_or(0, |k| k.len());
 
     let mut months: i32 = 0;
     let mut days: i32 = 0;
