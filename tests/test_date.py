@@ -682,6 +682,8 @@ def test_day_of_week():
     assert Date(1915, 7, 24).day_of_week() is Weekday.SATURDAY
     assert Date(1915, 7, 25).day_of_week() is Weekday.SUNDAY
 
+    assert pickle.loads(pickle.dumps(Weekday.SATURDAY)) is Weekday.SATURDAY
+
 
 def test_pickling():
     d = Date(2021, 1, 2)

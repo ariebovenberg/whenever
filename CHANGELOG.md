@@ -2,6 +2,12 @@
 
 ## 0.9.0 (2025-??-??)
 
+**Fixed**
+
+- ``Weekday`` enum values are now pickleable.
+
+**Improved**
+
 - `Time.from_py()` now ignores any `tzinfo`, instead of raising an error.
 - A comprehensive refactor of the Rust extension module eliminates
   most unnecessary `unsafe` code, making it safer and more idiomatic.

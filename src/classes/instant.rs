@@ -13,8 +13,9 @@ use crate::{
             TimeDelta, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS,
         },
     },
-    common::{math::*, pyobject::*, pytype::*, rfc2822, round},
+    common::{math::*, rfc2822, round},
     docstrings as doc,
+    py::*,
     pymodule::State,
 };
 
@@ -133,7 +134,7 @@ impl Instant {
             DateTimeType,
             ..
         }: &PyDateTime_CAPI,
-    ) -> PyReturn2 {
+    ) -> PyReturn {
         let DateTime {
             date: Date { year, month, day },
             time:
@@ -203,11 +204,11 @@ impl Instant {
     }
 }
 
-fn __new__(_: HeapType<Instant>, _: PyTuple, _: Option<PyDict>) -> PyReturn2 {
+fn __new__(_: HeapType<Instant>, _: PyTuple, _: Option<PyDict>) -> PyReturn {
     raise_type_err("Instant cannot be instantiated directly. Use .now() or .from_utc()")
 }
 
-fn from_utc(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn2 {
+fn from_utc(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let mut year: c_long = 0;
     let mut month: c_long = 0;
     let mut day: c_long = 0;
@@ -238,17 +239,17 @@ fn from_utc(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> Py
 
 impl PyWrapped for Instant {}
 
-fn __repr__(_: PyType, i: Instant) -> PyReturn2 {
+fn __repr__(_: PyType, i: Instant) -> PyReturn {
     let DateTime { date, time } = i.to_datetime();
     format!("Instant({} {}Z)", date, time).to_py2()
 }
 
-fn __str__(_: PyType, i: Instant) -> PyReturn2 {
+fn __str__(_: PyType, i: Instant) -> PyReturn {
     let DateTime { date, time } = i.to_datetime();
     format!("{}T{}Z", date, time).to_py2()
 }
 
-fn __richcmp__(cls: HeapType<Instant>, inst_a: Instant, b_obj: PyObj, op: c_int) -> PyReturn2 {
+fn __richcmp__(cls: HeapType<Instant>, inst_a: Instant, b_obj: PyObj, op: c_int) -> PyReturn {
     let inst_b = if let Some(i) = b_obj.extract3(cls) {
         i
     } else {
@@ -279,11 +280,11 @@ fn __richcmp__(cls: HeapType<Instant>, inst_a: Instant, b_obj: PyObj, op: c_int)
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     hashmask(
         // SAFETY: we know the self object is an Instant
-        unsafe { slf.extract_unchecked::<Instant>() }.pyhash(),
+        unsafe { slf.assume_heaptype::<Instant>() }.1.pyhash(),
     )
 }
 
-fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn2 {
+fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     let type_a = obj_a.class();
     let type_b = obj_b.class();
 
@@ -316,7 +317,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn2 {
     inst_a.diff(inst_b).to_obj3(state.time_delta_type)
 }
 
-fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn2 {
+fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     // TODO cleanup
     if let Some(state) = obj_a.class().are_both_whenever(obj_b.class()) {
         // SAFETY: the way we've structured binary operations within whenever
@@ -335,7 +336,7 @@ fn _shift(
     tdelta_cls: HeapType<TimeDelta>,
     obj_b: PyObj,
     negate: bool,
-) -> PyReturn2 {
+) -> PyReturn {
     // TODO cleanup
     let mut delta = match obj_b.extract3(tdelta_cls) {
         Some(d) => d,
@@ -380,7 +381,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn exact_eq(cls: HeapType<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn2 {
+fn exact_eq(cls: HeapType<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     if let Some(i) = obj_b.extract3(cls) {
         (slf == i).to_py2()
     } else {
@@ -400,7 +401,7 @@ fn __reduce__(
         .into_pytuple()
 }
 
-pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn2 {
+pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let binding = arg
         .cast::<PyBytes>()
         .ok_or_type_err("Pickle date must be `bytes` object")?;
@@ -416,7 +417,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn2 {
 }
 
 // Backwards compatibility: an unpickler for Instants pickled before 0.8.0
-pub(crate) fn unpickle_pre_0_8(state: &State, arg: PyObj) -> PyReturn2 {
+pub(crate) fn unpickle_pre_0_8(state: &State, arg: PyObj) -> PyReturn {
     let binding = arg
         .cast::<PyBytes>()
         .ok_or_type_err("Pickle date must be `bytes` object")?;
@@ -431,19 +432,19 @@ pub(crate) fn unpickle_pre_0_8(state: &State, arg: PyObj) -> PyReturn2 {
     .to_obj3(state.instant_type)
 }
 
-fn timestamp(_: PyType, slf: Instant) -> PyReturn2 {
+fn timestamp(_: PyType, slf: Instant) -> PyReturn {
     slf.epoch.get().to_py2()
 }
 
-fn timestamp_millis(_: PyType, slf: Instant) -> PyReturn2 {
+fn timestamp_millis(_: PyType, slf: Instant) -> PyReturn {
     slf.timestamp_millis().to_py2()
 }
 
-fn timestamp_nanos(_: PyType, slf: Instant) -> PyReturn2 {
+fn timestamp_nanos(_: PyType, slf: Instant) -> PyReturn {
     slf.timestamp_nanos().to_py2()
 }
 
-fn from_timestamp(cls: HeapType<Instant>, ts: PyObj) -> PyReturn2 {
+fn from_timestamp(cls: HeapType<Instant>, ts: PyObj) -> PyReturn {
     if let Some(py_int) = ts.cast::<PyInt>() {
         Instant::from_timestamp(py_int.to_i64()?)
     } else if let Some(py_float) = ts.cast::<PyFloat>() {
@@ -455,7 +456,7 @@ fn from_timestamp(cls: HeapType<Instant>, ts: PyObj) -> PyReturn2 {
     .to_obj3(cls)
 }
 
-fn from_timestamp_millis(cls: HeapType<Instant>, ts: PyObj) -> PyReturn2 {
+fn from_timestamp_millis(cls: HeapType<Instant>, ts: PyObj) -> PyReturn {
     if let Some(py_int) = ts.cast::<PyInt>() {
         Instant::from_timestamp_millis(py_int.to_i64()?)
     } else {
@@ -465,7 +466,7 @@ fn from_timestamp_millis(cls: HeapType<Instant>, ts: PyObj) -> PyReturn2 {
     .to_obj3(cls)
 }
 
-fn from_timestamp_nanos(cls: HeapType<Instant>, ts: PyObj) -> PyReturn2 {
+fn from_timestamp_nanos(cls: HeapType<Instant>, ts: PyObj) -> PyReturn {
     if let Some(py_int) = ts.cast::<PyInt>() {
         Instant::from_timestamp_nanos(py_int.to_i128()?)
     } else {
@@ -475,11 +476,11 @@ fn from_timestamp_nanos(cls: HeapType<Instant>, ts: PyObj) -> PyReturn2 {
     .to_obj3(cls)
 }
 
-fn py_datetime(cls: HeapType<Instant>, slf: Instant) -> PyReturn2 {
+fn py_datetime(cls: HeapType<Instant>, slf: Instant) -> PyReturn {
     slf.to_py2(cls.state().py_api)
 }
 
-fn from_py_datetime(cls: HeapType<Instant>, obj: PyObj) -> PyReturn2 {
+fn from_py_datetime(cls: HeapType<Instant>, obj: PyObj) -> PyReturn {
     if let Some(dt) = obj.cast_allow_subclass::<PyDateTime>() {
         Instant::from_py2(dt)?
             .ok_or_else_value_err(|| format!("datetime {} out of range", dt.repr()))?
@@ -489,15 +490,15 @@ fn from_py_datetime(cls: HeapType<Instant>, obj: PyObj) -> PyReturn2 {
     }
 }
 
-fn now(cls: HeapType<Instant>) -> PyReturn2 {
+fn now(cls: HeapType<Instant>) -> PyReturn {
     cls.state().time_ns()?.to_obj3(cls)
 }
 
-fn format_common_iso(cls: PyType, slf: Instant) -> PyReturn2 {
+fn format_common_iso(cls: PyType, slf: Instant) -> PyReturn {
     __str__(cls, slf)
 }
 
-fn parse_common_iso(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn2 {
+fn parse_common_iso(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
     OffsetDateTime::parse(
         s_obj
             .cast::<PyStr>()
@@ -509,7 +510,7 @@ fn parse_common_iso(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn2 {
     .to_obj3(cls)
 }
 
-fn add(cls: HeapType<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn2 {
+fn add(cls: HeapType<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     _shift_method(cls, slf, args, kwargs, false)
 }
 
@@ -518,7 +519,7 @@ fn subtract(
     slf: Instant,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
-) -> PyReturn2 {
+) -> PyReturn {
     _shift_method(cls, slf, args, kwargs, true)
 }
 
@@ -529,7 +530,7 @@ fn _shift_method(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
     negate: bool,
-) -> PyReturn2 {
+) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let &State {
         str_hours,
@@ -578,7 +579,7 @@ fn _shift_method(
         .to_obj3(cls)
 }
 
-fn difference(cls: HeapType<Instant>, inst_a: Instant, obj_b: PyObj) -> PyReturn2 {
+fn difference(cls: HeapType<Instant>, inst_a: Instant, obj_b: PyObj) -> PyReturn {
     let state = cls.state();
 
     let inst_b = if let Some(i) = obj_b.extract3(cls) {
@@ -598,21 +599,20 @@ fn difference(cls: HeapType<Instant>, inst_a: Instant, obj_b: PyObj) -> PyReturn
     inst_a.diff(inst_b).to_obj3(state.time_delta_type)
 }
 
-fn to_tz(cls: HeapType<Instant>, slf: Instant, tz_obj: PyObj) -> PyReturn2 {
+fn to_tz(cls: HeapType<Instant>, slf: Instant, tz_obj: PyObj) -> PyReturn {
     let &State {
         zoned_datetime_type,
         exc_tz_notfound,
         ref tz_store,
         ..
     } = cls.state();
-    // TODO: PyObj
-    let tz = tz_store.obj_get(tz_obj.as_ptr(), exc_tz_notfound.as_ptr())?;
+    let tz = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
     slf.to_tz(tz)
         .ok_or_value_err("Resulting datetime is out of range")?
         .to_obj3(zoned_datetime_type)
 }
 
-fn to_fixed_offset(cls: HeapType<Instant>, slf: Instant, args: &[PyObj]) -> PyReturn2 {
+fn to_fixed_offset(cls: HeapType<Instant>, slf: Instant, args: &[PyObj]) -> PyReturn {
     let &State {
         offset_datetime_type,
         time_delta_type,
@@ -628,7 +628,7 @@ fn to_fixed_offset(cls: HeapType<Instant>, slf: Instant, args: &[PyObj]) -> PyRe
     .to_obj3(offset_datetime_type)
 }
 
-fn to_system_tz(cls: HeapType<Instant>, slf: Instant) -> PyReturn2 {
+fn to_system_tz(cls: HeapType<Instant>, slf: Instant) -> PyReturn {
     let &State {
         py_api,
         system_datetime_type,
@@ -637,13 +637,13 @@ fn to_system_tz(cls: HeapType<Instant>, slf: Instant) -> PyReturn2 {
     slf.to_system_tz2(py_api)?.to_obj3(system_datetime_type)
 }
 
-fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn2 {
+fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn {
     let fmt = rfc2822::write_gmt(slf);
     // SAFETY: we know the bytes are ASCII
     unsafe { std::str::from_utf8_unchecked(&fmt[..]) }.to_py2()
 }
 
-fn parse_rfc2822(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn2 {
+fn parse_rfc2822(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
     let s = s_obj.cast::<PyStr>().ok_or_type_err("Expected a string")?;
     let (date, time, offset) = rfc2822::parse(s.as_utf8()?)
         .ok_or_else_value_err(|| format!("Invalid format: {}", s_obj.repr()))?;
@@ -658,7 +658,7 @@ fn round(
     slf: Instant,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
-) -> PyReturn2 {
+) -> PyReturn {
     let (unit, increment, mode) = round::parse_args2(cls.state(), args, kwargs, false, false)?;
     if unit == round::Unit::Day {
         raise_value_err(doc::CANNOT_ROUND_DAY_MSG)?;

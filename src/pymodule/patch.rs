@@ -1,57 +1,45 @@
 /// Functionality related to patching the current time
-use crate::{
-    classes::instant::Instant,
-    common::{math::*, pyobject::*, pytype::*},
-    pymodule::State,
-};
+use crate::{classes::instant::Instant, common::math::*, py::*, pymodule::State};
 use pyo3_ffi::*;
 use std::time::SystemTime;
 
-pub(crate) unsafe fn _patch_time_frozen(module: *mut PyObject, arg: *mut PyObject) -> PyReturn {
-    _patch_time(module, arg, true)
+pub(crate) fn _patch_time_frozen(state: &mut State, arg: PyObj) -> PyReturn {
+    _patch_time(state, arg, true)
 }
 
-pub(crate) unsafe fn _patch_time_keep_ticking(
-    module: *mut PyObject,
-    arg: *mut PyObject,
-) -> PyReturn {
-    _patch_time(module, arg, false)
+pub(crate) fn _patch_time_keep_ticking(state: &mut State, arg: PyObj) -> PyReturn {
+    _patch_time(state, arg, false)
 }
 
-pub(crate) unsafe fn _patch_time(
-    module: *mut PyObject,
-    arg: *mut PyObject,
-    freeze: bool,
-) -> PyReturn {
-    let state = State::for_mod_mut(module);
-    if Py_TYPE(arg) != state.instant_type.as_ptr().cast() {
-        raise_type_err("Expected an Instant")?
-    }
-    let instant = Instant::extract(arg);
-    let pos_epoch = u64::try_from(instant.epoch.get())
+pub(crate) fn _patch_time(state: &mut State, arg: PyObj, freeze: bool) -> PyReturn {
+    let Some(inst) = arg.extract3(state.instant_type) else {
+        return raise_type_err("Expected an Instant")?;
+    };
+
+    let pos_epoch = u64::try_from(inst.epoch.get())
         .ok()
         .ok_or_type_err("Can only set time after 1970")?;
 
     let patch = &mut state.time_patch;
 
     patch.set_state(if freeze {
-        PatchState::Frozen(instant)
+        PatchState::Frozen(inst)
     } else {
         PatchState::KeepTicking {
-            pin: std::time::Duration::new(pos_epoch, instant.subsec.get() as _),
+            pin: std::time::Duration::new(pos_epoch, inst.subsec.get() as _),
             at: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .ok()
                 .ok_or_type_err("System time before 1970")?,
         }
     });
-    Py_None().as_result()
+    Ok(none())
 }
 
-pub(crate) unsafe fn _unpatch_time(module: *mut PyObject, _: *mut PyObject) -> PyReturn {
-    let patch = &mut State::for_mod_mut(module).time_patch;
+pub(crate) fn _unpatch_time(state: &mut State) -> PyReturn {
+    let patch = &mut state.time_patch;
     patch.set_state(PatchState::Unset);
-    Py_None().as_result()
+    Ok(none())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -61,7 +49,7 @@ pub(crate) struct Patch {
 }
 
 impl Patch {
-    pub(crate) unsafe fn new() -> PyResult<Self> {
+    pub(crate) fn new() -> PyResult<Self> {
         Ok(Self {
             state: PatchState::Unset,
             time_machine_installed: time_machine_installed()?,
@@ -73,14 +61,13 @@ impl Patch {
     }
 }
 
-unsafe fn time_machine_installed() -> PyResult<bool> {
+fn time_machine_installed() -> PyResult<bool> {
     // Important: we don't import `time_machine` here,
     // because that would be slower. We only need to check its existence.
-    let find_spec = import_from(c"importlib.util", c"find_spec")?;
-    defer_decref!(find_spec);
-    let spec = call1(find_spec, steal!("time_machine".to_py()?))?;
-    defer_decref!(spec);
-    Ok(!is_none(spec))
+    Ok(!import(c"importlib.util")?
+        .getattr(c"find_spec")?
+        .call1("time_machine".to_py2()?.borrow())?
+        .is_none())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -119,7 +106,7 @@ impl State {
         match status {
             PatchState::Unset => {
                 if time_machine_installed {
-                    unsafe { self.time_ns_py() }
+                    self.time_ns_py()
                 } else {
                     self.time_ns_rust()
                 }
@@ -138,15 +125,18 @@ impl State {
         }
     }
 
-    // TODO safety
-    unsafe fn time_ns_py(&self) -> PyResult<Instant> {
-        let ts = PyObject_CallNoArgs(self.time_ns).as_result()?;
-        defer_decref!(ts);
-        let ns = (ts as *mut PyObject)
+    fn time_ns_py(&self) -> PyResult<Instant> {
+        let ts = self.time_ns.call0()?;
+        let ns = ts
+            .cast::<PyInt>()
+            .ok_or_raise(
+                unsafe { PyExc_RuntimeError },
+                "time_ns() returned a non-integer",
+            )?
             // FUTURE: this will break in the year 2262. Fix it before then.
-            .to_i64()?
-            .ok_or_raise(PyExc_RuntimeError, "time_ns() returned a non-integer")?;
-        Instant::from_nanos_i64(ns).ok_or_raise(PyExc_OSError, "System time out of range")
+            .to_i64()?;
+        Instant::from_nanos_i64(ns)
+            .ok_or_raise(unsafe { PyExc_OSError }, "System time out of range")
     }
 
     fn time_ns_rust(&self) -> PyResult<Instant> {

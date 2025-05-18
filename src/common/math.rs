@@ -5,7 +5,7 @@ use crate::{
 };
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
 
-use super::pyobject::PyTimeDelta;
+use crate::py::PyTimeDelta;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Sign {
@@ -609,6 +609,7 @@ impl DeltaSeconds {
         Self::new(self.0 + d.get())
     }
 
+    // TODO move
     // TODO name
     // TODO document range checks
     pub(crate) fn from_py_unchecked2(delta: PyTimeDelta) -> Option<Self> {

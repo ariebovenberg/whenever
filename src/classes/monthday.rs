@@ -5,8 +5,9 @@ use std::fmt::{self, Display, Formatter};
 
 use crate::{
     classes::date::Date,
-    common::{math::*, parse::extract_2_digits, pyobject::*, pytype::*},
+    common::{math::*, parse::extract_2_digits},
     docstrings as doc,
+    py::*,
     pymodule::State,
 };
 
@@ -79,7 +80,7 @@ impl Display for MonthDay {
     }
 }
 
-fn __new__(cls: HeapType<MonthDay>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn2 {
+fn __new__(cls: HeapType<MonthDay>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let mut month: c_long = 0;
     let mut day: c_long = 0;
     parse_args_kwargs2!(args, kwargs, c"ll:MonthDay", month, day);
@@ -88,20 +89,20 @@ fn __new__(cls: HeapType<MonthDay>, args: PyTuple, kwargs: Option<PyDict>) -> Py
         .to_obj3(cls)
 }
 
-fn __repr__(_: PyType, slf: MonthDay) -> PyReturn2 {
+fn __repr__(_: PyType, slf: MonthDay) -> PyReturn {
     format!("MonthDay({})", slf).to_py2()
 }
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     // SAFETY: we know self is passed to this method
-    unsafe { slf.extract_unchecked::<MonthDay>() }.hash() as Py_hash_t
+    unsafe { slf.assume_heaptype::<MonthDay>() }.1.hash() as Py_hash_t
 }
 
-fn __str__(_: PyType, slf: MonthDay) -> PyReturn2 {
+fn __str__(_: PyType, slf: MonthDay) -> PyReturn {
     format!("{}", slf).to_py2()
 }
 
-fn __richcmp__(cls: HeapType<MonthDay>, a: MonthDay, b_obj: PyObj, op: c_int) -> PyReturn2 {
+fn __richcmp__(cls: HeapType<MonthDay>, a: MonthDay, b_obj: PyObj, op: c_int) -> PyReturn {
     match b_obj.extract3(cls) {
         Some(b) => match op {
             pyo3_ffi::Py_LT => a < b,
@@ -149,11 +150,11 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn format_common_iso(cls: PyType, slf: MonthDay) -> PyReturn2 {
+fn format_common_iso(cls: PyType, slf: MonthDay) -> PyReturn {
     __str__(cls, slf)
 }
 
-fn parse_common_iso(cls: HeapType<MonthDay>, s: PyObj) -> PyReturn2 {
+fn parse_common_iso(cls: HeapType<MonthDay>, s: PyObj) -> PyReturn {
     MonthDay::parse(
         s.cast::<PyStr>()
             .ok_or_type_err("argument must be str")?
@@ -179,7 +180,7 @@ fn replace(
     md: MonthDay,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
-) -> PyReturn2 {
+) -> PyReturn {
     let &State {
         str_month, str_day, ..
     } = cls.state();
@@ -214,7 +215,7 @@ fn in_year(
     cls: HeapType<MonthDay>,
     MonthDay { month, day }: MonthDay,
     year_obj: PyObj,
-) -> PyReturn2 {
+) -> PyReturn {
     let year = Year::from_long(
         year_obj
             .cast::<PyInt>()
@@ -228,7 +229,7 @@ fn in_year(
         .to_obj3(cls.state().date_type)
 }
 
-fn is_leap(_: PyType, MonthDay { month, day }: MonthDay) -> PyReturn2 {
+fn is_leap(_: PyType, MonthDay { month, day }: MonthDay) -> PyReturn {
     (day == 29 && month == Month::February).to_py2()
 }
 
@@ -244,7 +245,7 @@ static mut METHODS: &[PyMethodDef] = &[
     PyMethodDef::zeroed(),
 ];
 
-pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn2 {
+pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let py_bytes = arg
         .cast::<PyBytes>()
         .ok_or_type_err("Invalid pickle data")?;
@@ -259,25 +260,17 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn2 {
     .to_obj3(state.monthday_type)
 }
 
-fn get_month(_: PyType, slf: MonthDay) -> PyReturn2 {
+fn month(_: PyType, slf: MonthDay) -> PyReturn {
     slf.month.get().to_py2()
 }
 
-fn get_day(_: PyType, slf: MonthDay) -> PyReturn2 {
+fn day(_: PyType, slf: MonthDay) -> PyReturn {
     slf.day.to_py2()
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter2!(
-        MonthDay,
-        get_month named "month",
-        "The month component"
-    ),
-    getter2!(
-        MonthDay,
-        get_day named "day",
-        "The day component"
-    ),
+    getter3!(MonthDay, month, "The month component"),
+    getter3!(MonthDay, day, "The day component"),
     PyGetSetDef {
         name: NULL(),
         get: None,

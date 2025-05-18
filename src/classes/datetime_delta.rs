@@ -11,8 +11,9 @@ use crate::{
             self, TimeDelta, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS,
         },
     },
-    common::{math::*, pyobject::*, pytype::*},
+    common::math::*,
     docstrings as doc,
+    py::*,
     pymodule::State,
 };
 
@@ -220,7 +221,7 @@ impl fmt::Display for DateTimeDelta {
     }
 }
 
-fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn2 {
+fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let nargs = args.len();
     let nkwargs = kwargs.map_or(0, |k| k.len());
 
@@ -279,7 +280,7 @@ fn __richcmp__(
     a: DateTimeDelta,
     b_obj: PyObj,
     op: c_int,
-) -> PyReturn2 {
+) -> PyReturn {
     match b_obj.extract3(cls) {
         Some(b) => match op {
             pyo3_ffi::Py_EQ => (a == b).to_py2(),
@@ -293,29 +294,29 @@ fn __richcmp__(
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     hashmask(
         // SAFETY: first argument guaranteed to be self type
-        unsafe { slf.extract_unchecked::<DateTimeDelta>() }.pyhash(),
+        unsafe { slf.assume_heaptype::<DateTimeDelta>() }.1.pyhash(),
     )
 }
 
-fn __neg__(cls: HeapType<DateTimeDelta>, d: DateTimeDelta) -> PyReturn2 {
+fn __neg__(cls: HeapType<DateTimeDelta>, d: DateTimeDelta) -> PyReturn {
     (-d).to_obj3(cls)
 }
 
 extern "C" fn __bool__(slf: PyObj) -> c_int {
     // SAFETY: first argument guaranteed to be self type
-    let DateTimeDelta { ddelta, tdelta } = unsafe { slf.extract_unchecked() };
+    let (_, DateTimeDelta { ddelta, tdelta }) = unsafe { slf.assume_heaptype() };
     (!(ddelta.is_zero() && tdelta.is_zero())).into()
 }
 
-fn __repr__(_: PyType, d: DateTimeDelta) -> PyReturn2 {
+fn __repr__(_: PyType, d: DateTimeDelta) -> PyReturn {
     format!("DateTimeDelta({})", d).to_py2()
 }
 
-fn __str__(_: PyType, d: DateTimeDelta) -> PyReturn2 {
+fn __str__(_: PyType, d: DateTimeDelta) -> PyReturn {
     d.fmt_iso().to_py2()
 }
 
-fn __mul__(a: PyObj, b: PyObj) -> PyReturn2 {
+fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
     // These checks are needed because the args could be reversed!
     let (delta_obj, factor) = if let Some(i) = b.cast::<PyInt>() {
         (a, i.to_long()?)
@@ -338,16 +339,16 @@ fn __mul__(a: PyObj, b: PyObj) -> PyReturn2 {
         .to_obj3(delta_type)
 }
 
-fn __add__(a_obj: PyObj, b_obj: PyObj) -> PyReturn2 {
+fn __add__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
     _add_method(a_obj, b_obj, false)
 }
 
-fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn2 {
+fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     _add_method(obj_a, obj_b, true)
 }
 
 #[inline]
-fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn2 {
+fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     // FUTURE: optimize zero cases
     let type_a = obj_a.class();
     let type_b = obj_b.class();
@@ -403,7 +404,7 @@ fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn2 {
 fn __abs__(
     cls: HeapType<DateTimeDelta>,
     DateTimeDelta { ddelta, tdelta }: DateTimeDelta,
-) -> PyReturn2 {
+) -> PyReturn {
     // FUTURE: optimize case where self is already positive
     DateTimeDelta {
         ddelta: ddelta.abs(),
@@ -419,7 +420,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod2!(DateTimeDelta, Py_nb_negative, __neg__, 1),
     slotmethod2!(DateTimeDelta, Py_tp_repr, __repr__, 1),
     slotmethod2!(DateTimeDelta, Py_tp_str, __str__, 1),
-    slotmethod2!(DateTimeDelta, Py_nb_positive, identity1b, 1),
+    slotmethod2!(DateTimeDelta, Py_nb_positive, identity1, 1),
     slotmethod2!(DateTimeDelta, Py_nb_absolute, __abs__, 1),
     slotmethod2!(Py_nb_multiply, __mul__, 2),
     slotmethod2!(Py_nb_add, __add__, 2),
@@ -450,7 +451,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn format_common_iso(_: PyType, d: DateTimeDelta) -> PyReturn2 {
+fn format_common_iso(_: PyType, d: DateTimeDelta) -> PyReturn {
     d.fmt_iso().to_py2()
 }
 
@@ -484,7 +485,7 @@ pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
         .map(|(months, days)| DateDelta { months, days })
 }
 
-fn parse_common_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn2 {
+fn parse_common_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
     let binding = arg
         .cast::<PyStr>()
         .ok_or_value_err("argument must be str")?;
@@ -542,11 +543,11 @@ fn in_months_days_secs_nanos(
         .into_pytuple()
 }
 
-fn date_part(cls: HeapType<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn2 {
+fn date_part(cls: HeapType<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
     slf.ddelta.to_obj3(cls.state().date_delta_type)
 }
 
-fn time_part(cls: HeapType<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn2 {
+fn time_part(cls: HeapType<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
     slf.tdelta.to_obj3(cls.state().time_delta_type)
 }
 
@@ -572,7 +573,7 @@ fn __reduce__(
         .into_pytuple()
 }
 
-pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn2 {
+pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     match args {
         &[months, days, secs, nanos] => DateTimeDelta {
             ddelta: DateDelta {
