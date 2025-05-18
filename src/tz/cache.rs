@@ -1,6 +1,6 @@
 // TODO: rename this file to store.rs
 use crate::{
-    common::pyobject::*,
+    py::*,
     tz::tzif::{self, is_valid_key, TZif},
 };
 use ahash::AHashMap;
@@ -216,9 +216,9 @@ impl Cache {
     }
 
     /// Clear specific entries from the cache.
-    fn clear_only(&self, keys: &[&str]) {
+    fn clear_only(&self, keys: &[String]) {
         let CacheInner { lookup, lru } = unsafe { self.inner.get().as_mut().unwrap() };
-        for &k in keys {
+        for k in keys {
             lookup.remove(k); // Always remove, regardless of refcount
             if let Some(i) = lru.iter().position(|tz| tz.key == *k) {
                 Self::decref(lru.remove(i).unwrap(), || {
@@ -292,27 +292,24 @@ impl TzStore {
     /// If not already cached, reads the file from the filesystem.
     /// Returns a *borrowed* reference to the `TZif` object.
     /// Its reference count is *not* incremented.
-    pub(crate) fn get(&self, key: &str, exc_notfound: *mut PyObject) -> PyResult<TzRef> {
+    pub(crate) fn get(&self, key: &str, exc_notfound: PyObj) -> PyResult<TzRef> {
         self.cache
             .get_or_load(key, || self.load_tzif(key))
-            .ok_or_else_raise(exc_notfound, || {
+            .ok_or_else_raise(exc_notfound.as_ptr(), || {
                 format!("No time zone found with key {}", key)
             })
     }
 
     /// The `get` function, but accepts a Python Object as the key.
-    pub(crate) fn obj_get(
-        &self,
-        tz_obj: *mut PyObject,
-        exc_notfound: *mut PyObject,
-    ) -> PyResult<TzRef> {
+    pub(crate) fn obj_get(&self, tz_obj: PyObj, exc_notfound: PyObj) -> PyResult<TzRef> {
         // TODO
-        unsafe {
-            self.get(
-                tz_obj.to_str()?.ok_or_type_err("tz must be a string")?,
-                exc_notfound,
-            )
-        }
+        self.get(
+            tz_obj
+                .cast::<PyStr>()
+                .ok_or_type_err("tz must be a string")?
+                .as_str()?,
+            exc_notfound,
+        )
     }
 
     /// Load a TZif file by key, assuming the key is untrusted input.
@@ -352,7 +349,7 @@ impl TzStore {
         self.cache.clear_all();
     }
 
-    pub(crate) fn clear_only(&self, keys: &[&str]) {
+    pub(crate) fn clear_only(&self, keys: &[String]) {
         self.cache.clear_only(keys);
     }
 
@@ -362,21 +359,24 @@ impl TzStore {
 }
 
 fn get_tzdata_path() -> PyResult<Option<PathBuf>> {
-    Ok(Some(PathBuf::from(unsafe {
-        let __path__ = match import_from(c"tzdata.zoneinfo", c"__path__") {
+    Ok(Some(PathBuf::from({
+        let __path__ = match import(c"tzdata.zoneinfo") {
             Ok(obj) => Ok(obj),
-            _ if PyErr_ExceptionMatches(PyExc_ImportError) == 1 => {
-                PyErr_Clear();
+            _ if unsafe { PyErr_ExceptionMatches(PyExc_ImportError) } == 1 => {
+                unsafe { PyErr_Clear() };
                 return Ok(None);
             }
             e => e,
-        }?;
-        defer_decref!(__path__);
+        }?
+        .getattr(c"__path__")?;
         // __path__ is a list of paths. It will only have one element,
         // unless somebody is doing something strange.
-        (PyObject_GetItem(__path__, steal!((0).to_py()?)).as_result()? as *mut PyObject)
-            .to_str()?
-            .ok_or_type_err("tzdata module path must be a string")?
-            .to_owned()
+        let py_str = __path__
+            .getitem((0).to_py2()?.borrow())?
+            .cast::<PyStr>()
+            .ok_or_type_err("tzdata module path must be a string")?;
+
+        // SAFETY: Python guarantees that the string is valid UTF-8.
+        unsafe { std::str::from_utf8_unchecked(py_str.as_utf8()?) }.to_owned()
     })))
 }

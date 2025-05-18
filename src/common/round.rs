@@ -1,8 +1,4 @@
-use crate::{
-    common::{pyobject::*, pytype::*},
-    docstrings as doc,
-    pymodule::State,
-};
+use crate::{docstrings as doc, py::*, pymodule::State};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) enum Mode {

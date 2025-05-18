@@ -12,8 +12,9 @@ use crate::{
         time::Time,
         zoned_datetime::ZonedDateTime,
     },
-    common::{ambiguity::*, math::*, parse::Scan, pyobject::*, pytype::*, round},
+    common::{ambiguity::*, math::*, parse::Scan, round},
     docstrings as doc,
+    py::*,
     pymodule::State,
 };
 
@@ -144,7 +145,7 @@ impl std::fmt::Display for DateTime {
     }
 }
 
-fn __new__(cls: HeapType<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn2 {
+fn __new__(cls: HeapType<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let mut year: c_long = 0;
     let mut month: c_long = 0;
     let mut day: c_long = 0;
@@ -173,20 +174,20 @@ fn __new__(cls: HeapType<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> Py
     .to_obj3(cls)
 }
 
-fn __repr__(_: PyType, slf: DateTime) -> PyReturn2 {
+fn __repr__(_: PyType, slf: DateTime) -> PyReturn {
     let DateTime { date, time } = slf;
     format!("PlainDateTime({} {})", date, time).to_py2()
 }
 
-fn __str__(_: PyType, slf: DateTime) -> PyReturn2 {
+fn __str__(_: PyType, slf: DateTime) -> PyReturn {
     format!("{}", slf).to_py2()
 }
 
-fn format_common_iso(cls: PyType, slf: DateTime) -> PyReturn2 {
+fn format_common_iso(cls: PyType, slf: DateTime) -> PyReturn {
     __str__(cls, slf)
 }
 
-fn __richcmp__(cls: HeapType<DateTime>, slf: DateTime, other: PyObj, op: c_int) -> PyReturn2 {
+fn __richcmp__(cls: HeapType<DateTime>, slf: DateTime, other: PyObj, op: c_int) -> PyReturn {
     if let Some(dt) = other.extract3(cls) {
         match op {
             pyo3_ffi::Py_LT => slf < dt,
@@ -209,11 +210,11 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     hashmask(hash_combine(date.hash() as Py_hash_t, time.pyhash()))
 }
 
-fn __add__(a: PyObj, b: PyObj) -> PyReturn2 {
+fn __add__(a: PyObj, b: PyObj) -> PyReturn {
     _shift_operator(a, b, false)
 }
 
-fn __sub__(a: PyObj, b: PyObj) -> PyReturn2 {
+fn __sub__(a: PyObj, b: PyObj) -> PyReturn {
     // easy case: subtracting two PlainDateTime objects
     if a.class() == b.class() {
         // SAFETY: at least one of the args is a PlainDateTime so both are.
@@ -228,7 +229,7 @@ fn __sub__(a: PyObj, b: PyObj) -> PyReturn2 {
 }
 
 #[inline]
-fn _shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn2 {
+fn _shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     let opname = if negate { "-" } else { "+" };
     let type_a = obj_a.class();
     let type_b = obj_b.class();
@@ -250,7 +251,8 @@ fn _shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn2 {
             a.shift_date(months, days)
                 .ok_or_else_value_err(|| format!("Result of {} out of range", opname))?
                 .to_obj3(dt_type)
-        } else if type_b == state.datetime_delta_type.inner || type_b == state.time_delta_type.inner
+        } else if type_b == state.datetime_delta_type.into()
+            || type_b == state.time_delta_type.into()
         {
             raise(
                 state.exc_implicitly_ignoring_dst.as_ptr(),
@@ -369,7 +371,7 @@ fn replace(
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
-) -> PyReturn2 {
+) -> PyReturn {
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")?
     }
@@ -423,7 +425,7 @@ fn add(
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
-) -> PyReturn2 {
+) -> PyReturn {
     _shift_method(cls, slf, args, kwargs, false)
 }
 
@@ -432,7 +434,7 @@ fn subtract(
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
-) -> PyReturn2 {
+) -> PyReturn {
     _shift_method(cls, slf, args, kwargs, true)
 }
 
@@ -443,7 +445,7 @@ fn _shift_method(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
     negate: bool,
-) -> PyReturn2 {
+) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     // FUTURE: get fields all at once from State (this is faster)
     let state = cls.state();
@@ -528,7 +530,7 @@ fn difference(
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
-) -> PyReturn2 {
+) -> PyReturn {
     let state = cls.state();
     check_ignore_dst_kwarg(kwargs, state, doc::DIFF_LOCAL_MSG)?;
     let [arg] = *args else {
@@ -570,7 +572,7 @@ fn __reduce__(cls: HeapType<DateTime>, slf: DateTime) -> PyResult<Owned<PyTuple>
         .into_pytuple()
 }
 
-pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn2 {
+pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let py_bytes = arg
         .cast::<PyBytes>()
         .ok_or_type_err("Invalid pickle data")?;
@@ -595,7 +597,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn2 {
     .to_obj3(state.plain_datetime_type)
 }
 
-fn from_py_datetime(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn2 {
+fn from_py_datetime(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
     let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() else {
         raise_type_err("argument must be datetime.datetime")?
     };
@@ -634,11 +636,11 @@ fn py_datetime(cls: HeapType<DateTime>, slf: DateTime) -> *mut PyObject {
     }
 }
 
-fn get_date(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn2 {
+fn date(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
     slf.date.to_obj3(cls.state().date_type)
 }
 
-fn get_time(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn2 {
+fn time(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
     slf.time.to_obj3(cls.state().time_type)
 }
 
@@ -646,7 +648,7 @@ fn is_datetime_sep(c: u8) -> bool {
     c == b'T' || c == b' ' || c == b't'
 }
 
-fn parse_common_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn2 {
+fn parse_common_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
     DateTime::parse(
         arg.cast::<PyStr>()
             .ok_or_type_err("Expected a string")?
@@ -656,7 +658,7 @@ fn parse_common_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn2 {
     .to_obj3(cls)
 }
 
-fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn2 {
+fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let &State {
         str_format,
         strptime,
@@ -682,11 +684,11 @@ fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwar
     DateTime::from_py(*parsed)?.to_obj3(cls)
 }
 
-fn assume_utc(cls: HeapType<DateTime>, DateTime { date, time }: DateTime) -> PyReturn2 {
+fn assume_utc(cls: HeapType<DateTime>, DateTime { date, time }: DateTime) -> PyReturn {
     Instant::from_datetime(date, time).to_obj3(cls.state().instant_type)
 }
 
-fn assume_fixed_offset(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn2 {
+fn assume_fixed_offset(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn {
     let &State {
         time_delta_type,
         offset_datetime_type,
@@ -702,7 +704,7 @@ fn assume_tz(
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
-) -> PyReturn2 {
+) -> PyReturn {
     let &State {
         str_disambiguate,
         str_compatible,
@@ -735,7 +737,7 @@ fn assume_tz(
         str_later,
     )?
     .unwrap_or(Disambiguate::Compatible);
-    let tzif = tz_store.obj_get(tz_obj.as_ptr(), exc_tz_notfound.as_ptr())?;
+    let tzif = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
     ZonedDateTime::resolve_using_disambiguate2(date, time, tzif, dis, exc_repeated, exc_skipped)?
         .to_obj3(zoned_datetime_type)
 }
@@ -745,7 +747,7 @@ fn assume_system_tz(
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
-) -> PyReturn2 {
+) -> PyReturn {
     let &State {
         py_api,
         str_disambiguate,
@@ -783,14 +785,14 @@ fn assume_system_tz(
     .to_obj3(system_datetime_type)
 }
 
-fn replace_date(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn2 {
+fn replace_date(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn {
     let Some(date) = arg.extract3(cls.state().date_type) else {
         raise_type_err("argument must be a whenever.Date")?
     };
     DateTime { date, ..slf }.to_obj3(cls)
 }
 
-fn replace_time(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn2 {
+fn replace_time(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn {
     let Some(time) = arg.extract3(cls.state().time_type) else {
         raise_type_err("argument must be a whenever.Time")?
     };
@@ -802,7 +804,7 @@ fn round(
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
-) -> PyReturn2 {
+) -> PyReturn {
     let (_, increment, mode) = round::parse_args2(cls.state(), args, kwargs, false, false)?;
     let DateTime { mut date, time } = slf;
     let (time_rounded, next_day) = time.round(increment as u64, mode);
@@ -828,16 +830,8 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::PLAINDATETIME_FROM_PY_DATETIME
     ),
     method0!(DateTime, py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
-    method0!(
-        DateTime,
-        get_date named "date",
-        doc::LOCALTIME_DATE
-    ),
-    method0!(
-        DateTime,
-        get_time named "time",
-        doc::LOCALTIME_TIME
-    ),
+    method0!(DateTime, date, doc::LOCALTIME_DATE),
+    method0!(DateTime, time, doc::LOCALTIME_TIME),
     method0!(
         DateTime,
         format_common_iso,
@@ -871,70 +865,42 @@ static mut METHODS: &[PyMethodDef] = &[
     PyMethodDef::zeroed(),
 ];
 
-fn get_year(_: PyType, slf: DateTime) -> PyReturn2 {
+fn year(_: PyType, slf: DateTime) -> PyReturn {
     slf.date.year.get().to_py2()
 }
 
-fn get_month(_: PyType, slf: DateTime) -> PyReturn2 {
+fn month(_: PyType, slf: DateTime) -> PyReturn {
     slf.date.month.get().to_py2()
 }
 
-fn get_day(_: PyType, slf: DateTime) -> PyReturn2 {
+fn day(_: PyType, slf: DateTime) -> PyReturn {
     slf.date.day.to_py2()
 }
 
-fn get_hour(_: PyType, slf: DateTime) -> PyReturn2 {
+fn hour(_: PyType, slf: DateTime) -> PyReturn {
     slf.time.hour.to_py2()
 }
 
-fn get_minute(_: PyType, slf: DateTime) -> PyReturn2 {
+fn minute(_: PyType, slf: DateTime) -> PyReturn {
     slf.time.minute.to_py2()
 }
 
-fn get_second(_: PyType, slf: DateTime) -> PyReturn2 {
+fn second(_: PyType, slf: DateTime) -> PyReturn {
     slf.time.second.to_py2()
 }
 
-fn get_nanos(_: PyType, slf: DateTime) -> PyReturn2 {
+fn nanosecond(_: PyType, slf: DateTime) -> PyReturn {
     slf.time.subsec.get().to_py2()
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter2!(
-        DateTime,
-        get_year named "year",
-        "The year component"
-    ),
-    getter2!(
-        DateTime,
-        get_month named "month",
-        "The month component"
-    ),
-    getter2!(
-        DateTime,
-        get_day named "day",
-        "The day component"
-    ),
-    getter2!(
-        DateTime,
-        get_hour named "hour",
-        "The hour component"
-    ),
-    getter2!(
-        DateTime,
-        get_minute named "minute",
-        "The minute component"
-    ),
-    getter2!(
-        DateTime,
-        get_second named "second",
-        "The second component"
-    ),
-    getter2!(
-        DateTime,
-        get_nanos named "nanosecond",
-        "The nanosecond component"
-    ),
+    getter3!(DateTime, year, "The year component"),
+    getter3!(DateTime, month, "The month component"),
+    getter3!(DateTime, day, "The day component"),
+    getter3!(DateTime, hour, "The hour component"),
+    getter3!(DateTime, minute, "The minute component"),
+    getter3!(DateTime, second, "The second component"),
+    getter3!(DateTime, nanosecond, "The nanosecond component"),
     PyGetSetDef {
         name: NULL(),
         get: None,

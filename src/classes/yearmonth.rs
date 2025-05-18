@@ -7,8 +7,9 @@ use std::fmt::{self, Display, Formatter};
 
 use crate::{
     classes::date::{extract_year, Date},
-    common::{math::*, parse::extract_2_digits, pyobject::*, pytype::*},
+    common::{math::*, parse::extract_2_digits},
     docstrings as doc,
+    py::*,
     pymodule::State,
 };
 
@@ -73,7 +74,7 @@ impl Display for YearMonth {
     }
 }
 
-fn __new__(cls: HeapType<YearMonth>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn2 {
+fn __new__(cls: HeapType<YearMonth>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let mut year: c_long = 0;
     let mut month: c_long = 0;
     parse_args_kwargs2!(args, kwargs, c"ll:YearMonth", year, month);
@@ -82,20 +83,20 @@ fn __new__(cls: HeapType<YearMonth>, args: PyTuple, kwargs: Option<PyDict>) -> P
         .to_obj3(cls)
 }
 
-fn __repr__(_: PyType, slf: YearMonth) -> PyReturn2 {
+fn __repr__(_: PyType, slf: YearMonth) -> PyReturn {
     format!("YearMonth({})", slf).to_py2()
 }
 
-fn __str__(_: PyType, slf: YearMonth) -> PyReturn2 {
+fn __str__(_: PyType, slf: YearMonth) -> PyReturn {
     format!("{}", slf).to_py2()
 }
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     // SAFETY: we know self is passed to this method
-    unsafe { slf.extract_unchecked::<YearMonth>() }.hash() as Py_hash_t
+    unsafe { slf.assume_heaptype::<YearMonth>() }.1.hash() as Py_hash_t
 }
 
-fn __richcmp__(cls: HeapType<YearMonth>, a: YearMonth, b_obj: PyObj, op: c_int) -> PyReturn2 {
+fn __richcmp__(cls: HeapType<YearMonth>, a: YearMonth, b_obj: PyObj, op: c_int) -> PyReturn {
     match b_obj.extract3(cls) {
         Some(b) => match op {
             pyo3_ffi::Py_EQ => a == b,
@@ -143,11 +144,11 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn format_common_iso(cls: PyType, slf: YearMonth) -> PyReturn2 {
+fn format_common_iso(cls: PyType, slf: YearMonth) -> PyReturn {
     __str__(cls, slf)
 }
 
-fn parse_common_iso(cls: HeapType<YearMonth>, arg: PyObj) -> PyReturn2 {
+fn parse_common_iso(cls: HeapType<YearMonth>, arg: PyObj) -> PyReturn {
     let py_str = arg.cast::<PyStr>().ok_or_type_err("argument must be str")?;
     YearMonth::parse(py_str.as_utf8()?)
         .ok_or_else_value_err(|| format!("Invalid format: {}", arg.repr()))?
@@ -168,7 +169,7 @@ fn replace(
     slf: YearMonth,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
-) -> PyReturn2 {
+) -> PyReturn {
     let &State {
         str_year,
         str_month,
@@ -201,7 +202,7 @@ fn replace(
     }
 }
 
-fn on_day(cls: HeapType<YearMonth>, slf: YearMonth, arg: PyObj) -> PyReturn2 {
+fn on_day(cls: HeapType<YearMonth>, slf: YearMonth, arg: PyObj) -> PyReturn {
     let YearMonth { year, month } = slf;
     let day = arg
         .cast::<PyInt>()
@@ -231,7 +232,7 @@ static mut METHODS: &[PyMethodDef] = &[
     PyMethodDef::zeroed(),
 ];
 
-pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn2 {
+pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let py_bytes = arg
         .cast::<PyBytes>()
         .ok_or_type_err("argument must be bytes")?;
@@ -246,23 +247,17 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn2 {
     .to_obj3(state.yearmonth_type)
 }
 
-fn get_year(_: PyType, slf: YearMonth) -> PyReturn2 {
+fn year(_: PyType, slf: YearMonth) -> PyReturn {
     slf.year.get().to_py2()
 }
 
-fn get_month(_: PyType, slf: YearMonth) -> PyReturn2 {
+fn month(_: PyType, slf: YearMonth) -> PyReturn {
     slf.month.get().to_py2()
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter2!(YearMonth,
-        get_year named "year",
-        "The year component"
-    ),
-    getter2!(YearMonth,
-        get_month named "month",
-        "The month component"
-    ),
+    getter3!(YearMonth, year, "The year component"),
+    getter3!(YearMonth, month, "The month component"),
     PyGetSetDef {
         name: NULL(),
         get: None,

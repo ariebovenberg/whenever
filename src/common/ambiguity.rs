@@ -1,4 +1,4 @@
-use crate::common::{math::Offset, pyobject::*, pytype::*};
+use crate::{common::math::Offset, py::*};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum Disambiguate {

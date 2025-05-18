@@ -6,8 +6,9 @@ use std::ptr::null_mut as NULL;
 
 use crate::{
     classes::{datetime_delta::DateTimeDelta, time_delta::TimeDelta},
-    common::{math::*, pyobject::*, pytype::*},
+    common::math::*,
     docstrings as doc,
+    py::*,
     pymodule::State,
 };
 
@@ -160,8 +161,7 @@ pub(crate) fn format_components(delta: DateDelta, s: &mut String) {
     }
 }
 
-// TODO name
-pub(crate) fn handle_init_kwargs2<T>(
+pub(crate) fn handle_init_kwargs<T>(
     fname: &str,
     kwargs: T,
     str_years: PyObj,
@@ -216,7 +216,7 @@ where
     ))
 }
 
-fn __new__(cls: HeapType<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn2 {
+fn __new__(cls: HeapType<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() != 0 {
         return raise_type_err("DateDelta() takes no positional arguments");
     }
@@ -230,7 +230,7 @@ fn __new__(cls: HeapType<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> P
     match kwargs {
         None => DateDelta::ZERO,
         Some(kwarg_dict) => {
-            let (months, days) = handle_init_kwargs2(
+            let (months, days) = handle_init_kwargs(
                 "DateDelta",
                 kwarg_dict.iteritems(),
                 str_years,
@@ -244,7 +244,7 @@ fn __new__(cls: HeapType<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> P
     .to_obj3(cls)
 }
 
-pub(crate) fn years(state: &State, amount: PyObj) -> PyReturn2 {
+pub(crate) fn years(state: &State, amount: PyObj) -> PyReturn {
     amount
         .cast::<PyInt>()
         .ok_or_type_err("argument must be int")?
@@ -256,7 +256,7 @@ pub(crate) fn years(state: &State, amount: PyObj) -> PyReturn2 {
         .to_obj3(state.date_delta_type)
 }
 
-pub(crate) fn months(state: &State, amount: PyObj) -> PyReturn2 {
+pub(crate) fn months(state: &State, amount: PyObj) -> PyReturn {
     DeltaMonths::from_long(
         amount
             .cast::<PyInt>()
@@ -268,7 +268,7 @@ pub(crate) fn months(state: &State, amount: PyObj) -> PyReturn2 {
     .to_obj3(state.date_delta_type)
 }
 
-pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn2 {
+pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn {
     amount
         .cast::<PyInt>()
         .ok_or_type_err("argument must be int")?
@@ -280,7 +280,7 @@ pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn2 {
         .to_obj3(state.date_delta_type)
 }
 
-pub(crate) fn days(state: &State, amount: PyObj) -> PyReturn2 {
+pub(crate) fn days(state: &State, amount: PyObj) -> PyReturn {
     DeltaDays::from_long(
         amount
             .cast::<PyInt>()
@@ -292,7 +292,7 @@ pub(crate) fn days(state: &State, amount: PyObj) -> PyReturn2 {
     .to_obj3(state.date_delta_type)
 }
 
-fn __richcmp__(cls: HeapType<DateDelta>, a: DateDelta, b_obj: PyObj, op: c_int) -> PyReturn2 {
+fn __richcmp__(cls: HeapType<DateDelta>, a: DateDelta, b_obj: PyObj, op: c_int) -> PyReturn {
     match b_obj.extract3(cls) {
         Some(b) => match op {
             pyo3_ffi::Py_EQ => a == b,
@@ -304,19 +304,19 @@ fn __richcmp__(cls: HeapType<DateDelta>, a: DateDelta, b_obj: PyObj, op: c_int) 
     }
 }
 
-fn __neg__(cls: HeapType<DateDelta>, d: DateDelta) -> PyReturn2 {
+fn __neg__(cls: HeapType<DateDelta>, d: DateDelta) -> PyReturn {
     (-d).to_obj3(cls)
 }
 
-fn __repr__(_: PyType, d: DateDelta) -> PyReturn2 {
+fn __repr__(_: PyType, d: DateDelta) -> PyReturn {
     format!("DateDelta({})", d).to_py2()
 }
 
-fn __str__(_: PyType, d: DateDelta) -> PyReturn2 {
+fn __str__(_: PyType, d: DateDelta) -> PyReturn {
     d.fmt_iso().to_py2()
 }
 
-fn __mul__(a: PyObj, b: PyObj) -> PyReturn2 {
+fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
     // These checks are needed because the args could be reversed!
     let (delta_obj, factor) = if let Some(i) = b.cast::<PyInt>() {
         (a, i.to_long()?)
@@ -339,16 +339,16 @@ fn __mul__(a: PyObj, b: PyObj) -> PyReturn2 {
         .to_obj3(delta_type)
 }
 
-fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn2 {
+fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     _add_method(obj_a, obj_b, false)
 }
 
-fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn2 {
+fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     _add_method(obj_a, obj_b, true)
 }
 
 #[inline]
-fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn2 {
+fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     let type_a = obj_a.class();
     let type_b = obj_b.class();
 
@@ -385,7 +385,7 @@ fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn2 {
             dtdelta
                 .checked_add(DateTimeDelta {
                     // SAFETY: At least one of the two is a DateDelta
-                    ddelta: unsafe { obj_a.extract_unchecked() },
+                    ddelta,
                     tdelta: TimeDelta::ZERO,
                 })
                 .map_err(|e| {
@@ -408,9 +408,9 @@ fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn2 {
     }
 }
 
-fn __abs__(cls: HeapType<DateDelta>, slf: PyObj) -> PyReturn2 {
+fn __abs__(cls: HeapType<DateDelta>, slf: PyObj) -> PyReturn {
     // SAFETY: self argument to __abs__ is always a DateDelta
-    let DateDelta { months, days } = unsafe { slf.extract_unchecked() };
+    let (_, DateDelta { months, days }) = unsafe { slf.assume_heaptype() };
     if months.get() >= 0 && days.get() >= 0 {
         Ok(slf.newref())
     } else {
@@ -426,13 +426,13 @@ fn __abs__(cls: HeapType<DateDelta>, slf: PyObj) -> PyReturn2 {
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     hashmask(
         // SAFETY: self argument is always the DateDelta type
-        unsafe { slf.extract_unchecked::<DateDelta>() }.pyhash(),
+        unsafe { slf.assume_heaptype::<DateDelta>() }.1.pyhash(),
     )
 }
 
 extern "C" fn __bool__(slf: PyObj) -> c_int {
     // SAFETY: self argument is always the DateDelta type
-    (!unsafe { slf.extract_unchecked::<DateDelta>() }.is_zero()).into()
+    (!unsafe { slf.assume_heaptype::<DateDelta>() }.1.is_zero()).into()
 }
 
 #[allow(static_mut_refs)]
@@ -442,7 +442,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod2!(DateDelta, Py_nb_negative, __neg__, 1),
     slotmethod2!(DateDelta, Py_tp_repr, __repr__, 1),
     slotmethod2!(DateDelta, Py_tp_str, __str__, 1),
-    slotmethod2!(DateDelta, Py_nb_positive, identity1b, 1),
+    slotmethod2!(DateDelta, Py_nb_positive, identity1, 1),
     slotmethod2!(DateDelta, Py_nb_absolute, __abs__, 1),
     slotmethod2!(Py_nb_multiply, __mul__, 2),
     slotmethod2!(Py_nb_add, __add__, 2),
@@ -473,7 +473,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn format_common_iso(_: PyType, slf: DateDelta) -> PyReturn2 {
+fn format_common_iso(_: PyType, slf: DateDelta) -> PyReturn {
     slf.fmt_iso().to_py2()
 }
 
@@ -546,7 +546,7 @@ pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, Unit)> {
     }
 }
 
-fn parse_common_iso(cls: HeapType<DateDelta>, s_obj: PyObj) -> PyReturn2 {
+fn parse_common_iso(cls: HeapType<DateDelta>, s_obj: PyObj) -> PyReturn {
     let binding = s_obj
         .cast::<PyStr>()
         .ok_or_type_err("argument must be str")?;
@@ -623,7 +623,6 @@ fn in_years_months_days(
     (years.to_py2()?, months.to_py2()?, days.get().to_py2()?).into_pytuple()
 }
 
-// TODO: return PyReturn2
 fn __reduce__(
     cls: HeapType<DateDelta>,
     DateDelta { months, days }: DateDelta,
@@ -635,7 +634,7 @@ fn __reduce__(
         .into_pytuple()
 }
 
-pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn2 {
+pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     match args {
         &[months_obj, days_obj] => {
             let months = DeltaMonths::new_unchecked(

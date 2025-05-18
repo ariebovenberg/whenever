@@ -5,8 +5,9 @@ use std::ptr::null_mut as NULL;
 
 use crate::{
     classes::plain_datetime::DateTime,
-    common::{math::*, parse::Scan, pyobject::*, pytype::*, round},
+    common::{math::*, parse::Scan, round},
     docstrings as doc,
+    py::*,
     pymodule::State,
 };
 
@@ -237,7 +238,7 @@ pub(crate) const SINGLETONS: &[(&CStr, Time); 3] = &[
     ),
 ];
 
-fn __new__(cls: HeapType<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn2 {
+fn __new__(cls: HeapType<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let mut hour: c_long = 0;
     let mut minute: c_long = 0;
     let mut second: c_long = 0;
@@ -258,7 +259,7 @@ fn __new__(cls: HeapType<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetu
         .to_obj3(cls)
 }
 
-fn __repr__(_: PyType, slf: Time) -> PyReturn2 {
+fn __repr__(_: PyType, slf: Time) -> PyReturn {
     format!("Time({})", slf).to_py2()
 }
 
@@ -267,7 +268,7 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     hashmask(unsafe { slf.assume_heaptype::<Time>() }.1.pyhash())
 }
 
-fn __richcmp__(cls: HeapType<Time>, slf: Time, arg: PyObj, op: c_int) -> PyReturn2 {
+fn __richcmp__(cls: HeapType<Time>, slf: Time, arg: PyObj, op: c_int) -> PyReturn {
     match arg.extract3(cls) {
         Some(b) => match op {
             pyo3_ffi::Py_EQ => slf == b,
@@ -315,7 +316,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn2 {
+fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn {
     let Time {
         hour,
         minute,
@@ -342,7 +343,7 @@ fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn2 {
     .rust_owned()
 }
 
-fn from_py_time(cls: HeapType<Time>, arg: PyObj) -> PyReturn2 {
+fn from_py_time(cls: HeapType<Time>, arg: PyObj) -> PyReturn {
     Time::from_py(
         arg.cast_allow_subclass::<PyTime>()
             .ok_or_type_err("argument must be a datetime.time")?,
@@ -350,7 +351,7 @@ fn from_py_time(cls: HeapType<Time>, arg: PyObj) -> PyReturn2 {
     .to_obj3(cls)
 }
 
-fn format_common_iso(_: PyType, slf: Time) -> PyReturn2 {
+fn format_common_iso(_: PyType, slf: Time) -> PyReturn {
     format!("{}", slf).to_py2()
 }
 
@@ -369,7 +370,7 @@ fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyResult<Owned<PyTuple>> {
         .into_pytuple()
 }
 
-fn parse_common_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn2 {
+fn parse_common_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn {
     Time::parse_iso(
         s.cast::<PyStr>()
             .ok_or_type_err("Argument must be a string")?
@@ -379,7 +380,7 @@ fn parse_common_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn2 {
     .to_obj3(cls)
 }
 
-fn on(cls: HeapType<Time>, slf: Time, arg: PyObj) -> PyReturn2 {
+fn on(cls: HeapType<Time>, slf: Time, arg: PyObj) -> PyReturn {
     let &State {
         plain_datetime_type,
         date_type,
@@ -393,7 +394,7 @@ fn on(cls: HeapType<Time>, slf: Time, arg: PyObj) -> PyReturn2 {
     }
 }
 
-fn replace(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn2 {
+fn replace(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let &State {
         str_hour,
         str_minute,
@@ -440,7 +441,7 @@ fn replace(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwar
     }
 }
 
-fn round(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn2 {
+fn round(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let (unit, increment, mode) = round::parse_args2(cls.state(), args, kwargs, false, false)?;
     if unit == round::Unit::Day {
         raise_value_err("Cannot round Time to day")?;
@@ -464,7 +465,7 @@ static mut METHODS: &[PyMethodDef] = &[
     PyMethodDef::zeroed(),
 ];
 
-pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn2 {
+pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let py_bytes = arg
         .cast::<PyBytes>()
         .ok_or_type_err("Invalid pickle data")?;
@@ -482,27 +483,27 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn2 {
     .to_obj3(state.time_type)
 }
 
-fn get_hour(_: PyType, slf: Time) -> PyReturn2 {
+fn hour(_: PyType, slf: Time) -> PyReturn {
     slf.hour.to_py2()
 }
 
-fn get_minute(_: PyType, slf: Time) -> PyReturn2 {
+fn minute(_: PyType, slf: Time) -> PyReturn {
     slf.minute.to_py2()
 }
 
-fn get_second(_: PyType, slf: Time) -> PyReturn2 {
+fn second(_: PyType, slf: Time) -> PyReturn {
     slf.second.to_py2()
 }
 
-fn get_nanos(_: PyType, slf: Time) -> PyReturn2 {
+fn nanosecond(_: PyType, slf: Time) -> PyReturn {
     slf.subsec.get().to_py2()
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter2!(Time, get_hour named "hour", "The hour component"),
-    getter2!(Time, get_minute named "minute", "The minute component"),
-    getter2!(Time, get_second named "second", "The second component"),
-    getter2!(Time, get_nanos named "nanosecond", "The nanosecond component"),
+    getter3!(Time, hour, "The hour component"),
+    getter3!(Time, minute, "The minute component"),
+    getter3!(Time, second, "The second component"),
+    getter3!(Time, nanosecond, "The nanosecond component"),
     PyGetSetDef {
         name: NULL(),
         get: None,

@@ -874,7 +874,6 @@ class TestNow:
 
     def test_int(self):
         now = OffsetDateTime.now(-5, ignore_dst=True)
-        print("doing assert")
         assert now.offset == hours(-5)
         py_now = py_datetime.now(timezone.utc)
         assert py_now - now.py_datetime() < timedelta(seconds=1)
