@@ -1,5 +1,5 @@
 //! Functions for manipulating Python dictionaries.
-use super::{base::*, exc::*, refs::*};
+use super::{base::*, exc::*};
 use core::{ffi::CStr, ptr::null_mut as NULL};
 use pyo3_ffi::*;
 
@@ -33,11 +33,6 @@ impl PyStaticType for PyDict {
 }
 
 impl PyDict {
-    pub(crate) fn new() -> PyResult<Owned<PyDict>> {
-        // SAFETY: PyDict_New() returns a new reference to a PyDict
-        Ok(unsafe { PyDict_New().rust_owned()?.cast_unchecked() })
-    }
-
     pub(crate) fn set_item_str(&self, key: &CStr, value: PyObj) -> PyResult<()> {
         if unsafe { PyDict_SetItemString(self.obj.as_ptr(), key.as_ptr(), value.as_ptr()) } == -1 {
             return Err(PyErrMarker());

@@ -39,7 +39,19 @@ pub(crate) static mut MODULE_DEF: PyModuleDef = PyModuleDef {
     m_size: mem::size_of::<State>() as _,
     m_methods: unsafe { METHODS.as_mut_ptr() },
     m_slots: unsafe { MODULE_SLOTS.as_mut_ptr() },
-    m_traverse: Some(module_traverse),
+    m_traverse: Some({
+        unsafe extern "C" fn _wrap(
+            module: *mut PyObject,
+            visit: visitproc,
+            arg: *mut c_void,
+        ) -> c_int {
+            match module_traverse(module, visit, arg) {
+                Ok(()) => 0,
+                Err(n) => n,
+            }
+        }
+        _wrap
+    }),
     m_clear: Some(module_clear),
     m_free: Some(module_free),
 };
@@ -78,22 +90,34 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     PyMethodDef::zeroed(),
 ];
 
-macro_rules! wrap_errcode {
-    ($meth:ident) => {{
-        unsafe extern "C" fn _wrap(arg: *mut PyObject) -> c_int {
-            match $meth(unsafe { PyModule::from_ptr_unchecked(arg) }) {
-                Ok(_) => 0,
-                Err(_) => -1,
-            }
-        }
-        _wrap
-    }};
-}
-
 static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
     PyModuleDef_Slot {
         slot: Py_mod_exec,
-        value: wrap_errcode!(module_exec) as *mut c_void,
+        value: {
+            extern "C" fn _wrap(arg: *mut PyObject) -> c_int {
+                // NOTE: we disable GC while executing the module to avoid
+                // traversing the module state while it's being initialized,
+                // which would cause a crash (even with null checks)
+                let Ok(gc_was_already_disabled) = disable_gc() else {
+                    return -1;
+                };
+                let result = match module_exec(unsafe { PyModule::from_ptr_unchecked(arg) }) {
+                    Ok(_) => 0,
+                    Err(_) => -1,
+                };
+                if !gc_was_already_disabled {
+                    // XXX: Theoretically, there could be an issue here if disabling
+                    // GC fails. However, this is only possible on Python 3.9
+                    // (where GC doesn't expose a C API) and in the rare case the
+                    // gc module is somehow not functioning properly.
+                    let Ok(_) = enable_gc() else {
+                        return -1;
+                    };
+                }
+                result
+            }
+            _wrap
+        } as *mut c_void,
     },
     #[cfg(Py_3_13)]
     PyModuleDef_Slot {
@@ -123,7 +147,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     state.date_type = new_class(
         module,
         module_name.borrow(),
-        &raw mut date::SPEC,
+        &mut unsafe { date::SPEC },
         c"_unpkl_date",
         date::SINGLETONS,
         &mut state.unpickle_date,
@@ -132,7 +156,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     state.yearmonth_type = new_class(
         module,
         module_name.borrow(),
-        &raw mut yearmonth::SPEC,
+        &mut unsafe { yearmonth::SPEC },
         c"_unpkl_ym",
         yearmonth::SINGLETONS,
         &mut state.unpickle_yearmonth,
@@ -141,7 +165,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     state.monthday_type = new_class(
         module,
         module_name.borrow(),
-        &raw mut monthday::SPEC,
+        &mut unsafe { monthday::SPEC },
         c"_unpkl_md",
         monthday::SINGLETONS,
         &mut state.unpickle_monthday,
@@ -150,7 +174,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     state.time_type = new_class(
         module,
         module_name.borrow(),
-        &raw mut time::SPEC,
+        &mut unsafe { time::SPEC },
         c"_unpkl_time",
         time::SINGLETONS,
         &mut state.unpickle_time,
@@ -159,7 +183,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     state.date_delta_type = new_class(
         module,
         module_name.borrow(),
-        &raw mut date_delta::SPEC,
+        &mut unsafe { date_delta::SPEC },
         c"_unpkl_ddelta",
         date_delta::SINGLETONS,
         &mut state.unpickle_date_delta,
@@ -168,7 +192,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     state.time_delta_type = new_class(
         module,
         module_name.borrow(),
-        &raw mut time_delta::SPEC,
+        &mut unsafe { time_delta::SPEC },
         c"_unpkl_tdelta",
         time_delta::SINGLETONS,
         &mut state.unpickle_time_delta,
@@ -177,7 +201,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     state.datetime_delta_type = new_class(
         module,
         module_name.borrow(),
-        &raw mut datetime_delta::SPEC,
+        &mut unsafe { datetime_delta::SPEC },
         c"_unpkl_dtdelta",
         datetime_delta::SINGLETONS,
         &mut state.unpickle_datetime_delta,
@@ -186,7 +210,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     state.plain_datetime_type = new_class(
         module,
         module_name.borrow(),
-        &raw mut plain_datetime::SPEC,
+        &mut unsafe { plain_datetime::SPEC },
         c"_unpkl_local",
         plain_datetime::SINGLETONS,
         &mut state.unpickle_plain_datetime,
@@ -195,7 +219,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     state.instant_type = new_class(
         module,
         module_name.borrow(),
-        &raw mut instant::SPEC,
+        &mut unsafe { instant::SPEC },
         c"_unpkl_inst",
         instant::SINGLETONS,
         &mut state.unpickle_instant,
@@ -204,7 +228,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     state.offset_datetime_type = new_class(
         module,
         module_name.borrow(),
-        &raw mut offset_datetime::SPEC,
+        &mut unsafe { offset_datetime::SPEC },
         c"_unpkl_offset",
         offset_datetime::SINGLETONS,
         &mut state.unpickle_offset_datetime,
@@ -213,7 +237,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     state.zoned_datetime_type = new_class(
         module,
         module_name.borrow(),
-        &raw mut zoned_datetime::SPEC,
+        &mut unsafe { zoned_datetime::SPEC },
         c"_unpkl_zoned",
         zoned_datetime::SINGLETONS,
         &mut state.unpickle_zoned_datetime,
@@ -222,7 +246,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     state.system_datetime_type = new_class(
         module,
         module_name.borrow(),
-        &raw mut system_datetime::SPEC,
+        &mut unsafe { system_datetime::SPEC },
         c"_unpkl_system",
         system_datetime::SINGLETONS,
         &mut state.unpickle_system_datetime,
@@ -246,30 +270,13 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         .py_owned();
     state.time_ns = import(c"time")?.getattr(c"time_ns")?.py_owned();
 
-    let weekday_enum = new_enum(
+    state.weekday_enum = new_enum(
         module,
         module_name.borrow(),
         "Weekday",
-        &[
-            (c"MONDAY", 1),
-            (c"TUESDAY", 2),
-            (c"WEDNESDAY", 3),
-            (c"THURSDAY", 4),
-            (c"FRIDAY", 5),
-            (c"SATURDAY", 6),
-            (c"SUNDAY", 7),
-        ],
-    )?;
-
-    state.weekday_enum_members = [
-        weekday_enum.getattr(c"MONDAY")?.py_owned(),
-        weekday_enum.getattr(c"TUESDAY")?.py_owned(),
-        weekday_enum.getattr(c"WEDNESDAY")?.py_owned(),
-        weekday_enum.getattr(c"THURSDAY")?.py_owned(),
-        weekday_enum.getattr(c"FRIDAY")?.py_owned(),
-        weekday_enum.getattr(c"SATURDAY")?.py_owned(),
-        weekday_enum.getattr(c"SUNDAY")?.py_owned(),
-    ];
+        "MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY SUNDAY",
+    )?
+    .py_owned();
 
     state.str_years = intern(c"years")?.py_owned();
     state.str_months = intern(c"months")?.py_owned();
@@ -356,17 +363,12 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     Ok(())
 }
 
-unsafe fn traverse(target: *mut PyObject, visit: visitproc, arg: *mut c_void) {
-    if !target.is_null() {
-        unsafe { (visit)(target, arg) };
-    }
-}
-unsafe fn traverse_type(
+fn traverse_type(
     target: *mut PyTypeObject,
     visit: visitproc,
     arg: *mut c_void,
     num_singletons: usize,
-) {
+) -> TraverseResult {
     if !target.is_null() {
         // XXX: This trick SEEMS to let us avoid adding GC support to our types.
         // Since our types are atomic and immutable this should be allowed...
@@ -375,109 +377,101 @@ unsafe fn traverse_type(
         // Visiting the type once for each singleton should make GC aware of this.
         // NOTE: the +1 is for the type itself
         for _ in 0..(num_singletons + 1) {
-            unsafe { (visit)(target.cast(), arg) };
+            traverse(target.cast(), visit, arg)?;
         }
     }
+    Ok(())
 }
 
-unsafe extern "C" fn module_traverse(
-    module: *mut PyObject,
-    visit: visitproc,
-    arg: *mut c_void,
-) -> c_int {
-    unsafe {
-        let state = State::for_mod(module);
+fn module_traverse(module: *mut PyObject, visit: visitproc, arg: *mut c_void) -> TraverseResult {
+    let state = unsafe { State::for_mod(module) };
 
-        // types
-        for (cls, unpkl, num_singletons) in [
-            (
-                state.date_type.inner(),
-                state.unpickle_date,
-                date::SINGLETONS.len(),
-            ),
-            (
-                state.yearmonth_type.inner(),
-                state.unpickle_yearmonth,
-                yearmonth::SINGLETONS.len(),
-            ),
-            (
-                state.monthday_type.inner(),
-                state.unpickle_monthday,
-                monthday::SINGLETONS.len(),
-            ),
-            (
-                state.time_type.inner(),
-                state.unpickle_time,
-                time::SINGLETONS.len(),
-            ),
-            (
-                state.date_delta_type.inner(),
-                state.unpickle_date_delta,
-                date_delta::SINGLETONS.len(),
-            ),
-            (
-                state.time_delta_type.inner(),
-                state.unpickle_time_delta,
-                time_delta::SINGLETONS.len(),
-            ),
-            (
-                state.datetime_delta_type.inner(),
-                state.unpickle_datetime_delta,
-                datetime_delta::SINGLETONS.len(),
-            ),
-            (
-                state.plain_datetime_type.inner(),
-                state.unpickle_plain_datetime,
-                plain_datetime::SINGLETONS.len(),
-            ),
-            (
-                state.instant_type.inner(),
-                state.unpickle_instant,
-                instant::SINGLETONS.len(),
-            ),
-            (
-                state.offset_datetime_type.inner(),
-                state.unpickle_offset_datetime,
-                offset_datetime::SINGLETONS.len(),
-            ),
-            (
-                state.zoned_datetime_type.inner(),
-                state.unpickle_zoned_datetime,
-                zoned_datetime::SINGLETONS.len(),
-            ),
-            (
-                state.system_datetime_type.inner(),
-                state.unpickle_system_datetime,
-                system_datetime::SINGLETONS.len(),
-            ),
-        ] {
-            traverse_type(cls.as_ptr().cast(), visit, arg, num_singletons);
-            traverse(unpkl.as_ptr(), visit, arg);
-        }
-
-        // enum members
-        for &member in state.weekday_enum_members.iter() {
-            traverse(member.as_ptr(), visit, arg);
-        }
-
-        // exceptions
-        for exc in [
-            state.exc_repeated,
-            state.exc_skipped,
-            state.exc_invalid_offset,
-            state.exc_implicitly_ignoring_dst,
-            state.exc_tz_notfound,
-        ] {
-            traverse(exc.as_ptr(), visit, arg);
-        }
-
-        // Imported stuff
-        traverse(state.strptime.as_ptr(), visit, arg);
-        traverse(state.time_ns.as_ptr(), visit, arg);
-        state.zoneinfo_type.traverse(visit, arg);
-        state.get_pydantic_schema.traverse(visit, arg);
+    // types
+    for (cls, unpkl, num_singletons) in [
+        (
+            state.date_type.inner(),
+            state.unpickle_date,
+            date::SINGLETONS.len(),
+        ),
+        (
+            state.yearmonth_type.inner(),
+            state.unpickle_yearmonth,
+            yearmonth::SINGLETONS.len(),
+        ),
+        (
+            state.monthday_type.inner(),
+            state.unpickle_monthday,
+            monthday::SINGLETONS.len(),
+        ),
+        (
+            state.time_type.inner(),
+            state.unpickle_time,
+            time::SINGLETONS.len(),
+        ),
+        (
+            state.date_delta_type.inner(),
+            state.unpickle_date_delta,
+            date_delta::SINGLETONS.len(),
+        ),
+        (
+            state.time_delta_type.inner(),
+            state.unpickle_time_delta,
+            time_delta::SINGLETONS.len(),
+        ),
+        (
+            state.datetime_delta_type.inner(),
+            state.unpickle_datetime_delta,
+            datetime_delta::SINGLETONS.len(),
+        ),
+        (
+            state.plain_datetime_type.inner(),
+            state.unpickle_plain_datetime,
+            plain_datetime::SINGLETONS.len(),
+        ),
+        (
+            state.instant_type.inner(),
+            state.unpickle_instant,
+            instant::SINGLETONS.len(),
+        ),
+        (
+            state.offset_datetime_type.inner(),
+            state.unpickle_offset_datetime,
+            offset_datetime::SINGLETONS.len(),
+        ),
+        (
+            state.zoned_datetime_type.inner(),
+            state.unpickle_zoned_datetime,
+            zoned_datetime::SINGLETONS.len(),
+        ),
+        (
+            state.system_datetime_type.inner(),
+            state.unpickle_system_datetime,
+            system_datetime::SINGLETONS.len(),
+        ),
+    ] {
+        traverse_type(cls.as_ptr().cast(), visit, arg, num_singletons)?;
+        traverse(unpkl.as_ptr(), visit, arg)?;
     }
-    0
+
+    traverse(state.weekday_enum.as_ptr(), visit, arg)?;
+
+    // exceptions
+    for exc in [
+        state.exc_repeated,
+        state.exc_skipped,
+        state.exc_invalid_offset,
+        state.exc_implicitly_ignoring_dst,
+        state.exc_tz_notfound,
+    ] {
+        traverse(exc.as_ptr(), visit, arg)?;
+    }
+
+    // Imported stuff
+    traverse(state.strptime.as_ptr(), visit, arg)?;
+    traverse(state.time_ns.as_ptr(), visit, arg)?;
+    state.zoneinfo_type.traverse(visit, arg)?;
+    state.get_pydantic_schema.traverse(visit, arg)?;
+    Ok(())
 }
 
 #[cold]
@@ -498,14 +492,7 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.zoned_datetime_type).cast());
         Py_CLEAR((&raw mut state.system_datetime_type).cast());
 
-        // enum members
-        Py_CLEAR((&raw mut state.weekday_enum_members[0]).cast());
-        Py_CLEAR((&raw mut state.weekday_enum_members[1]).cast());
-        Py_CLEAR((&raw mut state.weekday_enum_members[2]).cast());
-        Py_CLEAR((&raw mut state.weekday_enum_members[3]).cast());
-        Py_CLEAR((&raw mut state.weekday_enum_members[4]).cast());
-        Py_CLEAR((&raw mut state.weekday_enum_members[5]).cast());
-        Py_CLEAR((&raw mut state.weekday_enum_members[6]).cast());
+        Py_CLEAR((&raw mut state.weekday_enum).cast());
 
         // interned strings
         Py_CLEAR((&raw mut state.str_years).cast());
@@ -606,10 +593,7 @@ pub(crate) struct State {
     pub(crate) zoned_datetime_type: HeapType<zoned_datetime::ZonedDateTime>,
     pub(crate) system_datetime_type: HeapType<offset_datetime::OffsetDateTime>,
 
-    // NOTE: The module state owns references to the enum *members*,
-    // but not the enum type itself. The enum type itself is kept alive by
-    // references from its members.
-    pub(crate) weekday_enum_members: [PyObj; 7],
+    pub(crate) weekday_enum: PyType,
 
     // exceptions
     pub(crate) exc_repeated: PyObj,

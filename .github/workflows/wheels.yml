@@ -77,7 +77,7 @@ jobs:
           args: --release --strip --out dist --interpreter '3.9 3.10 3.11 3.12 3.13'
           manylinux: ${{ matrix.manylinux || 'auto' }}
           sccache: 'true'
-          rust-toolchain: "1.85"
+          rust-toolchain: "1.87"
       - run: pip install -U twine packaging
       - run: twine check --strict dist/*
       - name: Upload wheels

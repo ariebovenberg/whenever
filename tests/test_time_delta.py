@@ -379,6 +379,9 @@ INVALID_TDELTAS = [
     "PT5H.9S",  # wrong fraction
     "PT5H13.S",  # wrong fraction
     "PT𝟙H",  # non-ascii
+    "PT0.0001",
+    "PT.0001",
+    "PT0.0000",
     # spacing
     "PT 3M",
     "PT-3M",

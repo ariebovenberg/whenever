@@ -44,14 +44,26 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install and test
+      # NOTE: We test multiple times in different dependency configurations
+      - name: Test (no extra deps)
+        shell: bash
+        run: |
+          pip install .
+          pip install -r requirements/test.txt
+          pytest tests/ -s -v
+        env:
+          RUST_BACKTRACE: 1
+      - name: Test (all deps)
+        shell: bash
+        run: |
+          pip install tzdata pydantic
+          pytest tests/ -s -v
+        env:
+          RUST_BACKTRACE: 1
+      - name: Test (debug mode)
         shell: bash
         run: |
           pip install -e .
-          pip install -r requirements/test.txt
-          pytest tests/ -s -v
-          # NOTE: yes, we test twice: once with optional deps, once without
-          pip install tzdata pydantic
           pytest tests/ -s -v
         env:
           RUST_BACKTRACE: 1
@@ -90,7 +102,7 @@ jobs:
       - name: Install and test
         shell: bash
         run: |
-          pip install -e .
+          pip install .
           pip install -r requirements/test.txt
           pytest tests/ -s -v
           # NOTE: yes, we test twice: once with optional deps, once without

@@ -3,10 +3,10 @@
 // - find a better way to organize these benchmarks
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
-use _whenever::common::math::{EpochSecs, UnixDays};
-use _whenever::common::math::{Month, Year};
-use _whenever::date::Date;
-use _whenever::plain_datetime::DateTime;
+use _whenever::classes::date::Date;
+use _whenever::classes::plain_datetime::DateTime;
+use _whenever::common::scalar::{EpochSecs, UnixDays};
+use _whenever::common::scalar::{Month, Year};
 use _whenever::tz::posix;
 use _whenever::tz::tzif;
 
