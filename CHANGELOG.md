@@ -1,10 +1,10 @@
 # 🚀 Changelog
 
-## 0.9.0 (2025-??-??)
+## 0.8.1 (2025-??-??)
 
 **Fixed**
 
-- ``Weekday`` enum values are now pickleable.
+- ``Weekday`` enum values from the Rust extension are now pickleable.
 
 **Improved**
 

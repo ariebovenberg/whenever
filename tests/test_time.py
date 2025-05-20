@@ -192,7 +192,9 @@ class TestFromPyTime:
 
     def test_tzinfo(self):
         assert Time.from_py_time(
-            py_time(1, 2, 3, 4, tzinfo=py_timezone(py_timedelta(hours=1)))
+            py_time(
+                1, 2, 3, 4, tzinfo=py_timezone(py_timedelta(hours=1)), fold=1
+            )
         ) == Time(1, 2, 3, nanosecond=4_000)
 
     def test_fold_ignored(self):

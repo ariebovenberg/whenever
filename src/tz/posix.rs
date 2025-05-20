@@ -1,14 +1,14 @@
-/// Functionality for working with POSIX TZ strings.
-/// Note this includes extensions to the POSIX standard as part of the TZif format.
-///
-/// Resources:
-/// - [POSIX TZ strings](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap08.html)
-/// - [GNU libc manual](https://www.gnu.org/software/libc/manual/html_node/TZ-Variable.html)
+//! Functionality for working with POSIX TZ strings.
+//! Note this includes extensions to the POSIX standard as part of the TZif format.
+//!
+//! Resources:
+//! - [POSIX TZ strings](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap08.html)
+//! - [GNU libc manual](https://www.gnu.org/software/libc/manual/html_node/TZ-Variable.html)
 use crate::{
     classes::date::Date,
-    common::{ambiguity::Ambiguity, math::*, parse::Scan},
+    common::{ambiguity::Ambiguity, parse::Scan, scalar::*},
 };
-use std::num::{NonZeroU16, NonZeroU8};
+use std::num::{NonZeroU8, NonZeroU16};
 
 const DEFAULT_DST: OffsetDelta = OffsetDelta::new_unchecked(3_600);
 

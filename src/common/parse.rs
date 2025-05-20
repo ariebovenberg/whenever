@@ -1,4 +1,5 @@
-use crate::common::math::SubSecNanos;
+//! Helpers related to parsing
+use crate::common::scalar::SubSecNanos;
 use std::{
     fmt::Debug,
     ops::{Index, RangeInclusive, RangeTo},
@@ -281,11 +282,8 @@ impl Index<usize> for Scan<'_> {
 
 impl Debug for Scan<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Scan")
-            .field("s", unsafe {
-                &std::str::from_utf8_unchecked(self.0).to_string()
-            })
-            .finish()
+        let s = std::str::from_utf8(self.0).unwrap_or("<invalid utf8>");
+        f.debug_struct("Scan").field("s", &s).finish()
     }
 }
 

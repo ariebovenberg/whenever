@@ -1,7 +1,7 @@
+//! Module with reusable components used elsewhere in the crate
 pub mod ambiguity;
-pub mod math;
+pub mod fmt;
 pub mod parse;
-pub mod pyobject;
-pub mod pytype;
 pub mod rfc2822;
 pub mod round;
+pub mod scalar;

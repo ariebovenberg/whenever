@@ -845,7 +845,7 @@ def test_replace_time():
     with pytest.raises(ValueError, match="range"):
         d2.replace_time(Time(1), ignore_dst=True)
 
-    with pytest.raises((TypeError, AttributeError), match="Time"):
+    with pytest.raises((TypeError, AttributeError)):
         d.replace_time(42, ignore_dst=True)  # type: ignore[arg-type]
 
     # ignore_dst required

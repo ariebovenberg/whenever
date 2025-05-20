@@ -1,7 +1,7 @@
-// TODO: rename this file to store.rs
+//! Abstraction layer for dealing with timezone data on the file system
 use crate::{
     py::*,
-    tz::tzif::{self, is_valid_key, TZif},
+    tz::tzif::{self, TZif, is_valid_key},
 };
 use ahash::AHashMap;
 use pyo3_ffi::*;
@@ -23,8 +23,6 @@ pub(crate) struct TzRef {
 
 struct Inner {
     value: TZif,
-    // For interior mutability. UnsafeCell is OK here because we're not sharing
-    // it between threads.
     refcnt: std::cell::UnsafeCell<usize>,
 }
 
@@ -73,7 +71,9 @@ impl TzRef {
     }
 
     unsafe fn drop_in_place(&self) {
-        drop(Box::from_raw(self.inner.as_ptr()));
+        // SAFETY: the pointer was allocated with Box::new,
+        // and the caller should know when to drop it.
+        drop(unsafe { Box::from_raw(self.inner.as_ptr()) });
     }
 }
 
@@ -95,7 +95,6 @@ pub(crate) struct TzStore {
     tzdata_path: Option<PathBuf>,
 }
 
-// TODO: make this conditional on thread-safety build flag
 /// Timezone cache meant for single-threaded use.
 /// It's designed to be used by the ZonedDateTime class,
 /// which only calls it from a single thread while holding the GIL.
@@ -127,7 +126,7 @@ impl Cache {
         // to the inner cache.
         let CacheInner { lookup, lru } = unsafe { self.inner.get().as_mut().unwrap() };
 
-        let result = match lookup.get(key) {
+        match lookup.get(key) {
             // Found in cache. Mark it as recently used
             Some(&tz) => {
                 Self::promote_lru(tz, lru, lookup);
@@ -138,9 +137,7 @@ impl Cache {
                 Self::new_to_lru(tz, lru, lookup);
                 lookup.insert(tz.key.clone(), tz);
             }),
-        };
-
-        result
+        }
     }
 
     fn decref<F>(tz: TzRef, cleanup: F)
@@ -302,7 +299,6 @@ impl TzStore {
 
     /// The `get` function, but accepts a Python Object as the key.
     pub(crate) fn obj_get(&self, tz_obj: PyObj, exc_notfound: PyObj) -> PyResult<TzRef> {
-        // TODO
         self.get(
             tz_obj
                 .cast::<PyStr>()
@@ -372,7 +368,7 @@ fn get_tzdata_path() -> PyResult<Option<PathBuf>> {
         // __path__ is a list of paths. It will only have one element,
         // unless somebody is doing something strange.
         let py_str = __path__
-            .getitem((0).to_py2()?.borrow())?
+            .getitem((0).to_py()?.borrow())?
             .cast::<PyStr>()
             .ok_or_type_err("tzdata module path must be a string")?;
 

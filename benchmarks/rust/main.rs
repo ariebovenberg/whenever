@@ -1,7 +1,7 @@
 // FUTURE:
 // - find a better way to access function other than making them public
 // - find a better way to organize these benchmarks
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 use _whenever::common::math::{EpochSecs, UnixDays};
 use _whenever::common::math::{Month, Year};

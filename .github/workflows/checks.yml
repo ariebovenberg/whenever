@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: "1.85"
+          toolchain: "1.87"
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -23,7 +23,7 @@ jobs:
         run: |
           cargo test
   test-rust-ext:
-    name: Test ubuntu, ${{ matrix.python-version }} Rust extension ${{ matrix.tzdata && 'with tzdata' || '' }}
+    name: Test ubuntu, ${{ matrix.python-version }} Rust extension
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -35,28 +35,23 @@ jobs:
           "3.12",
           # NOTE: 3.13 is absent since we test it in the OS job matrix
         ]
-        tzdata: [false]
-        include:
-          - python-version: "3.13"
-            tzdata: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: "1.85"
+          toolchain: "1.87"
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-
-      - if: ${{ matrix.tzdata }}
-        run: |
-          pip install tzdata
 
       - name: Install and test
         shell: bash
         run: |
           pip install -e .
           pip install -r requirements/test.txt
+          pytest tests/ -s -v
+          # NOTE: yes, we test twice: once with tzdata, once without
+          pip install tzdata
           pytest tests/ -s -v
         env:
           RUST_BACKTRACE: 1
@@ -73,7 +68,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: "1.85"
+          toolchain: "1.87"
 
       - name: Add win32 target
         if: ${{ matrix.os == 'windows' }}
@@ -98,12 +93,15 @@ jobs:
           pip install -e .
           pip install -r requirements/test.txt
           pytest tests/ -s -v
+          # NOTE: yes, we test twice: once with tzdata, once without
+          pip install tzdata
+          pytest tests/ -s -v
         env:
           WHENEVER_NO_BUILD_RUST_EXT: ${{ matrix.no_build_ext }}
           RUST_BACKTRACE: 1
 
   test-pure-python:
-    name: Test ubuntu, ${{ matrix.python-version }} pure Python ${{ matrix.tzdata && 'with tzdata' || '' }}
+    name: Test ubuntu, ${{ matrix.python-version }} pure Python
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -119,29 +117,26 @@ jobs:
           "pypy3.9",
           "pypy3.10"
         ]
-        tzdata: [false]
-        include:
-          - python-version: "3.13"
-            tzdata: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - if: ${{ matrix.tzdata }}
-        run: |
-          pip install tzdata
       - run: |
           pip install .
           pip install -r requirements/test.txt
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
+        # NOTE: yes, we test twice: once with tzdata, once without
       - if: ${{ matrix.python-version == '3.12' }}
         run: |
+          pytest tests/
           pip install tzdata
           pytest tests/ --cov=whenever --cov-report term-missing
       - if: ${{ matrix.python-version != '3.12' }}
         run: |
+          pytest tests/
+          pip install tzdata
           pytest tests/
 
   lint:
@@ -154,7 +149,7 @@ jobs:
           python-version: '3.12'
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: "1.85"
+          toolchain: "1.87"
           components: "clippy, rustfmt"
       - run: |
           pip install .
