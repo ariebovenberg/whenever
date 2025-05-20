@@ -406,16 +406,16 @@ fn __abs__(
 
 #[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
-    slotmethod2!(DateTimeDelta, Py_tp_new, __new__),
-    slotmethod2!(DateTimeDelta, Py_tp_richcompare, __richcmp__),
-    slotmethod2!(DateTimeDelta, Py_nb_negative, __neg__, 1),
-    slotmethod2!(DateTimeDelta, Py_tp_repr, __repr__, 1),
-    slotmethod2!(DateTimeDelta, Py_tp_str, __str__, 1),
-    slotmethod2!(DateTimeDelta, Py_nb_positive, identity1, 1),
-    slotmethod2!(DateTimeDelta, Py_nb_absolute, __abs__, 1),
-    slotmethod2!(Py_nb_multiply, __mul__, 2),
-    slotmethod2!(Py_nb_add, __add__, 2),
-    slotmethod2!(Py_nb_subtract, __sub__, 2),
+    slotmethod!(DateTimeDelta, Py_tp_new, __new__),
+    slotmethod!(DateTimeDelta, Py_tp_richcompare, __richcmp__),
+    slotmethod!(DateTimeDelta, Py_nb_negative, __neg__, 1),
+    slotmethod!(DateTimeDelta, Py_tp_repr, __repr__, 1),
+    slotmethod!(DateTimeDelta, Py_tp_str, __str__, 1),
+    slotmethod!(DateTimeDelta, Py_nb_positive, identity1, 1),
+    slotmethod!(DateTimeDelta, Py_nb_absolute, __abs__, 1),
+    slotmethod!(Py_nb_multiply, __mul__, 2),
+    slotmethod!(Py_nb_add, __add__, 2),
+    slotmethod!(Py_nb_subtract, __sub__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: doc::DATETIMEDELTA.as_ptr() as *mut c_void,
@@ -620,6 +620,7 @@ static mut METHODS: &[PyMethodDef] = &[
         in_months_days_secs_nanos,
         doc::DATETIMEDELTA_IN_MONTHS_DAYS_SECS_NANOS
     ),
+    classmethod_kwargs!(DateTimeDelta, __get_pydantic_core_schema__, c""),
     PyMethodDef::zeroed(),
 ];
 

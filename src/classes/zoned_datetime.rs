@@ -513,12 +513,12 @@ fn _shift_operator(
 
 #[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
-    slotmethod2!(ZonedDateTime, Py_tp_new, __new__),
-    slotmethod2!(ZonedDateTime, Py_tp_str, __str__, 1),
-    slotmethod2!(ZonedDateTime, Py_tp_repr, __repr__, 1),
-    slotmethod2!(ZonedDateTime, Py_tp_richcompare, __richcmp__),
-    slotmethod2!(Py_nb_add, __add__, 2),
-    slotmethod2!(Py_nb_subtract, __sub__, 2),
+    slotmethod!(ZonedDateTime, Py_tp_new, __new__),
+    slotmethod!(ZonedDateTime, Py_tp_str, __str__, 1),
+    slotmethod!(ZonedDateTime, Py_tp_repr, __repr__, 1),
+    slotmethod!(ZonedDateTime, Py_tp_richcompare, __richcmp__),
+    slotmethod!(Py_nb_add, __add__, 2),
+    slotmethod!(Py_nb_subtract, __sub__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: doc::ZONEDDATETIME.as_ptr() as *mut c_void,
@@ -1490,15 +1490,16 @@ static mut METHODS: &[PyMethodDef] = &[
         from_timestamp_nanos,
         doc::ZONEDDATETIME_FROM_TIMESTAMP_NANOS
     ),
-    method_kwargs2!(ZonedDateTime, replace, doc::ZONEDDATETIME_REPLACE),
-    method_kwargs2!(ZonedDateTime, replace_date, doc::ZONEDDATETIME_REPLACE_DATE),
-    method_kwargs2!(ZonedDateTime, replace_time, doc::ZONEDDATETIME_REPLACE_TIME),
-    method_kwargs2!(ZonedDateTime, add, doc::ZONEDDATETIME_ADD),
-    method_kwargs2!(ZonedDateTime, subtract, doc::ZONEDDATETIME_SUBTRACT),
+    method_kwargs!(ZonedDateTime, replace, doc::ZONEDDATETIME_REPLACE),
+    method_kwargs!(ZonedDateTime, replace_date, doc::ZONEDDATETIME_REPLACE_DATE),
+    method_kwargs!(ZonedDateTime, replace_time, doc::ZONEDDATETIME_REPLACE_TIME),
+    method_kwargs!(ZonedDateTime, add, doc::ZONEDDATETIME_ADD),
+    method_kwargs!(ZonedDateTime, subtract, doc::ZONEDDATETIME_SUBTRACT),
     method1!(ZonedDateTime, difference, doc::EXACTTIME_DIFFERENCE),
     method0!(ZonedDateTime, start_of_day, doc::ZONEDDATETIME_START_OF_DAY),
     method0!(ZonedDateTime, day_length, doc::ZONEDDATETIME_DAY_LENGTH),
-    method_kwargs2!(ZonedDateTime, round, doc::ZONEDDATETIME_ROUND),
+    method_kwargs!(ZonedDateTime, round, doc::ZONEDDATETIME_ROUND),
+    classmethod_kwargs!(ZonedDateTime, __get_pydantic_core_schema__, c""),
     PyMethodDef::zeroed(),
 ];
 

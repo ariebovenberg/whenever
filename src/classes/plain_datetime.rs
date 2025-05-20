@@ -268,12 +268,12 @@ fn _shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
 
 #[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
-    slotmethod2!(DateTime, Py_tp_new, __new__),
-    slotmethod2!(DateTime, Py_tp_repr, __repr__, 1),
-    slotmethod2!(DateTime, Py_tp_str, __str__, 1),
-    slotmethod2!(DateTime, Py_tp_richcompare, __richcmp__),
-    slotmethod2!(Py_nb_add, __add__, 2),
-    slotmethod2!(Py_nb_subtract, __sub__, 2),
+    slotmethod!(DateTime, Py_tp_new, __new__),
+    slotmethod!(DateTime, Py_tp_repr, __repr__, 1),
+    slotmethod!(DateTime, Py_tp_str, __str__, 1),
+    slotmethod!(DateTime, Py_tp_richcompare, __richcmp__),
+    slotmethod!(Py_nb_add, __add__, 2),
+    slotmethod!(Py_nb_subtract, __sub__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: doc::PLAINDATETIME.as_ptr() as *mut c_void,
@@ -839,25 +839,26 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::PLAINDATETIME_PARSE_COMMON_ISO
     ),
     classmethod_kwargs!(DateTime, parse_strptime, doc::PLAINDATETIME_PARSE_STRPTIME),
-    method_kwargs2!(DateTime, replace, doc::PLAINDATETIME_REPLACE),
+    method_kwargs!(DateTime, replace, doc::PLAINDATETIME_REPLACE),
     method0!(DateTime, assume_utc, doc::PLAINDATETIME_ASSUME_UTC),
     method1!(
         DateTime,
         assume_fixed_offset,
         doc::PLAINDATETIME_ASSUME_FIXED_OFFSET
     ),
-    method_kwargs2!(DateTime, assume_tz, doc::PLAINDATETIME_ASSUME_TZ),
-    method_kwargs2!(
+    method_kwargs!(DateTime, assume_tz, doc::PLAINDATETIME_ASSUME_TZ),
+    method_kwargs!(
         DateTime,
         assume_system_tz,
         doc::PLAINDATETIME_ASSUME_SYSTEM_TZ
     ),
     method1!(DateTime, replace_date, doc::PLAINDATETIME_REPLACE_DATE),
     method1!(DateTime, replace_time, doc::PLAINDATETIME_REPLACE_TIME),
-    method_kwargs2!(DateTime, add, doc::PLAINDATETIME_ADD),
-    method_kwargs2!(DateTime, subtract, doc::PLAINDATETIME_SUBTRACT),
-    method_kwargs2!(DateTime, difference, doc::PLAINDATETIME_DIFFERENCE),
-    method_kwargs2!(DateTime, round, doc::PLAINDATETIME_ROUND),
+    method_kwargs!(DateTime, add, doc::PLAINDATETIME_ADD),
+    method_kwargs!(DateTime, subtract, doc::PLAINDATETIME_SUBTRACT),
+    method_kwargs!(DateTime, difference, doc::PLAINDATETIME_DIFFERENCE),
+    method_kwargs!(DateTime, round, doc::PLAINDATETIME_ROUND),
+    classmethod_kwargs!(DateTime, __get_pydantic_core_schema__, c""),
     PyMethodDef::zeroed(),
 ];
 

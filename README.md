@@ -121,6 +121,7 @@ while many serious and long-standing issues remain unaddressed.
 - 💎 Thoroughly tested and documented
 - 📆 Support for date arithmetic
 - ⏱️ Nanosecond precision
+- 🪃 Pydantic serialization support
 - 🦀 Rust!—but with a [pure-Python option](https://whenever.readthedocs.io/en/latest/faq.html#how-can-i-use-the-pure-python-version)
 - 🚀 Supports per-interpreter GIL
 

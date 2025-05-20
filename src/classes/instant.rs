@@ -352,12 +352,12 @@ fn _shift(
 
 #[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
-    slotmethod2!(Instant, Py_tp_new, __new__),
-    slotmethod2!(Instant, Py_tp_repr, __repr__, 1),
-    slotmethod2!(Instant, Py_tp_str, __str__, 1),
-    slotmethod2!(Instant, Py_tp_richcompare, __richcmp__),
-    slotmethod2!(Py_nb_subtract, __sub__, 2),
-    slotmethod2!(Py_nb_add, __add__, 2),
+    slotmethod!(Instant, Py_tp_new, __new__),
+    slotmethod!(Instant, Py_tp_repr, __repr__, 1),
+    slotmethod!(Instant, Py_tp_str, __str__, 1),
+    slotmethod!(Instant, Py_tp_richcompare, __richcmp__),
+    slotmethod!(Py_nb_subtract, __sub__, 2),
+    slotmethod!(Py_nb_add, __add__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: doc::INSTANT.as_ptr() as *mut c_void,
@@ -726,13 +726,14 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod1!(Instant, parse_rfc2822, doc::INSTANT_PARSE_RFC2822),
     method0!(Instant, format_common_iso, doc::INSTANT_FORMAT_COMMON_ISO),
     classmethod1!(Instant, parse_common_iso, doc::INSTANT_PARSE_COMMON_ISO),
-    method_kwargs2!(Instant, add, doc::INSTANT_ADD),
-    method_kwargs2!(Instant, subtract, doc::INSTANT_SUBTRACT),
+    method_kwargs!(Instant, add, doc::INSTANT_ADD),
+    method_kwargs!(Instant, subtract, doc::INSTANT_SUBTRACT),
     method1!(Instant, to_tz, doc::EXACTTIME_TO_TZ),
     method0!(Instant, to_system_tz, doc::EXACTTIME_TO_SYSTEM_TZ),
     method_vararg!(Instant, to_fixed_offset, doc::EXACTTIME_TO_FIXED_OFFSET),
     method1!(Instant, difference, doc::EXACTTIME_DIFFERENCE),
-    method_kwargs2!(Instant, round, doc::INSTANT_ROUND),
+    method_kwargs!(Instant, round, doc::INSTANT_ROUND),
+    classmethod_kwargs!(Instant, __get_pydantic_core_schema__, c""),
     PyMethodDef::zeroed(),
 ];
 

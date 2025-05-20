@@ -823,6 +823,32 @@ This makes it explicit what information is being assumed.
 >>> d.assume_tz("Europe/Amsterdam")
 ZonedDateTime(2023-10-29 02:30:00+02:00[Europe/Amsterdam])
 
+Pydantic
+~~~~~~~~
+
+``Whenever`` types support basic serialization and deserialization
+with `Pydantic <https://docs.pydantic.dev>`_. The behavior is identical to
+the ``parse_common_iso()`` and ``format_common_iso()`` methods.
+
+>>> from pydantic import BaseModel
+>>> from whenever import ZonedDateTime
+...
+>>> class Event(BaseModel):
+...     start: ZonedDateTime
+...     duration: TimeDelta
+...
+>>> event = Event(
+...     start=ZonedDateTime(2023, 2, 23, hour=20, tz="Europe/Amsterdam"),
+...     duration=TimeDelta(hours=2, minutes=30),
+... )
+>>> d = event.model_dump_json()
+'{"start":"2023-02-23T20:00:00+01:00[Europe/Amsterdam]","duration":"PT2H30M"}'
+
+.. note::
+
+   Whenever's parsing is stricter then Pydantic's default ``datetime`` parsing
+   behavior. More flexible parsing may be added in the future.
+
 
 To and from the standard library
 --------------------------------

@@ -185,7 +185,7 @@ macro_rules! modmethod_vararg(
         }
     };
 );
-macro_rules! method_kwargs2(
+macro_rules! method_kwargs(
     ($typ:ident, $meth:ident, $doc:expr) => {
         PyMethodDef {
             ml_name: concat!(stringify!($meth), "\0").as_ptr().cast(),
@@ -244,7 +244,7 @@ macro_rules! classmethod_kwargs(
     };
 );
 
-macro_rules! slotmethod2 {
+macro_rules! slotmethod {
     ($typ:ident, Py_tp_new, $name:ident) => {
         PyType_Slot {
             slot: Py_tp_new,
@@ -346,6 +346,6 @@ macro_rules! getter(
 
 #[allow(unused_imports)]
 pub(crate) use {
-    classmethod_kwargs, classmethod0, classmethod1, getter, method_kwargs2, method_vararg, method0,
-    method1, modmethod_vararg, modmethod0, modmethod1, slotmethod2,
+    classmethod_kwargs, classmethod0, classmethod1, getter, method_kwargs, method_vararg, method0,
+    method1, modmethod_vararg, modmethod0, modmethod1, slotmethod,
 };
