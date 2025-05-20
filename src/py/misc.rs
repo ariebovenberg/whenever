@@ -1,5 +1,5 @@
 //! Miscellaneous utility functions and constants.
-use super::{base::*, exc::*, refs::*, types::*};
+use super::{args::*, base::*, exc::*, refs::*, types::*};
 use core::{
     ffi::{CStr, c_void},
     ptr::null_mut as NULL,
@@ -25,6 +25,14 @@ pub(crate) fn __deepcopy__(_: PyType, slf: PyObj, _: PyObj) -> Owned<PyObj> {
 
 pub(crate) fn import(module: &CStr) -> PyReturn {
     unsafe { PyImport_ImportModule(module.as_ptr()) }.rust_owned()
+}
+
+pub(crate) fn __get_pydantic_core_schema__<T: PyWrapped>(
+    cls: HeapType<T>,
+    _: &[PyObj],
+    _: &mut IterKwargs,
+) -> PyReturn {
+    cls.state().get_pydantic_schema.get()?.call1(cls)
 }
 
 pub(crate) fn not_implemented() -> PyReturn {

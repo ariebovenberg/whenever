@@ -343,12 +343,12 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
 
 #[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
-    slotmethod2!(Date, Py_tp_new, __new__),
-    slotmethod2!(Date, Py_tp_str, __str__, 1),
-    slotmethod2!(Date, Py_tp_repr, __repr__, 1),
-    slotmethod2!(Date, Py_tp_richcompare, __richcmp__),
-    slotmethod2!(Py_nb_subtract, __sub__, 2),
-    slotmethod2!(Py_nb_add, __add__, 2),
+    slotmethod!(Date, Py_tp_new, __new__),
+    slotmethod!(Date, Py_tp_str, __str__, 1),
+    slotmethod!(Date, Py_tp_repr, __repr__, 1),
+    slotmethod!(Date, Py_tp_richcompare, __richcmp__),
+    slotmethod!(Py_nb_subtract, __sub__, 2),
+    slotmethod!(Py_nb_add, __add__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: doc::DATE.as_ptr() as *mut c_void,
@@ -672,11 +672,12 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     method1!(Date, at, doc::DATE_AT),
     method0!(Date, day_of_week, doc::DATE_DAY_OF_WEEK),
     method0!(Date, __reduce__, c""),
-    method_kwargs2!(Date, add, doc::DATE_ADD),
-    method_kwargs2!(Date, subtract, doc::DATE_SUBTRACT),
+    method_kwargs!(Date, add, doc::DATE_ADD),
+    method_kwargs!(Date, subtract, doc::DATE_SUBTRACT),
     method1!(Date, days_since, doc::DATE_DAYS_SINCE),
     method1!(Date, days_until, doc::DATE_DAYS_UNTIL),
-    method_kwargs2!(Date, replace, doc::DATE_REPLACE),
+    method_kwargs!(Date, replace, doc::DATE_REPLACE),
+    classmethod_kwargs!(Date, __get_pydantic_core_schema__, c""),
     PyMethodDef::zeroed(),
 ];
 

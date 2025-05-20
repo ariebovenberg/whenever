@@ -349,6 +349,8 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     unsafe {
         (&raw mut state.tz_store).write(TzStore::new()?);
         (&raw mut state.zoneinfo_type).write(LazyImport::new(c"zoneinfo", c"ZoneInfo"));
+        (&raw mut state.get_pydantic_schema)
+            .write(LazyImport::new(c"whenever._utils", c"pydantic_schema"));
     }
 
     Ok(())
@@ -473,6 +475,7 @@ unsafe extern "C" fn module_traverse(
         traverse(state.strptime.as_ptr(), visit, arg);
         traverse(state.time_ns.as_ptr(), visit, arg);
         state.zoneinfo_type.traverse(visit, arg);
+        state.get_pydantic_schema.traverse(visit, arg);
     }
     0
 }
@@ -581,6 +584,7 @@ unsafe extern "C" fn module_free(module: *mut c_void) {
         // SAFETY: Python will do the actual deallocation of the State memory
         (&raw mut state.tz_store).drop_in_place();
         (&raw mut state.zoneinfo_type).drop_in_place();
+        (&raw mut state.get_pydantic_schema).drop_in_place();
     }
 }
 
@@ -634,6 +638,7 @@ pub(crate) struct State {
     pub(crate) strptime: PyObj,
     pub(crate) time_ns: PyObj,
     pub(crate) zoneinfo_type: LazyImport,
+    pub(crate) get_pydantic_schema: LazyImport,
 
     // strings
     pub(crate) str_years: PyObj,

@@ -50,8 +50,8 @@ jobs:
           pip install -e .
           pip install -r requirements/test.txt
           pytest tests/ -s -v
-          # NOTE: yes, we test twice: once with tzdata, once without
-          pip install tzdata
+          # NOTE: yes, we test twice: once with optional deps, once without
+          pip install tzdata pydantic
           pytest tests/ -s -v
         env:
           RUST_BACKTRACE: 1
@@ -93,8 +93,8 @@ jobs:
           pip install -e .
           pip install -r requirements/test.txt
           pytest tests/ -s -v
-          # NOTE: yes, we test twice: once with tzdata, once without
-          pip install tzdata
+          # NOTE: yes, we test twice: once with optional deps, once without
+          pip install tzdata pydantic
           pytest tests/ -s -v
         env:
           WHENEVER_NO_BUILD_RUST_EXT: ${{ matrix.no_build_ext }}
@@ -127,16 +127,16 @@ jobs:
           pip install -r requirements/test.txt
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
-        # NOTE: yes, we test twice: once with tzdata, once without
+        # NOTE: yes, we test twice: once with optional deps, once without
       - if: ${{ matrix.python-version == '3.12' }}
         run: |
           pytest tests/
-          pip install tzdata
+          pip install tzdata pydantic
           pytest tests/ --cov=whenever --cov-report term-missing
       - if: ${{ matrix.python-version != '3.12' }}
         run: |
           pytest tests/
-          pip install tzdata
+          pip install tzdata pydantic
           pytest tests/
 
   lint:

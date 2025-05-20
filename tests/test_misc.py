@@ -1,7 +1,9 @@
+import json
 import sys
 from inspect import signature
 from itertools import chain
 from time import sleep
+from typing import no_type_check
 
 import pytest
 
@@ -13,11 +15,13 @@ from whenever import (
     ImplicitlyIgnoringDST,
     Instant,
     InvalidOffsetError,
+    MonthDay,
     OffsetDateTime,
     PlainDateTime,
     SystemDateTime,
     Time,
     TimeDelta,
+    YearMonth,
     ZonedDateTime,
     hours,
     patch_current_time,
@@ -130,6 +134,106 @@ def test_text_signature():
     )
 
     for m in methods:
+        if m.__name__.startswith("_"):
+            continue
         sig = m.__text_signature__
         assert sig is not None
         signature(m)  # raises ValueError if invalid
+
+
+@no_type_check
+def test_pydantic_serialization():
+    try:
+        import pydantic
+    except ImportError:
+        pytest.skip("pydantic not installed")
+
+    class Model(pydantic.BaseModel):  # type: ignore[misc]
+        field0: Instant
+        field1: ZonedDateTime
+        field2: OffsetDateTime
+        field3: SystemDateTime
+        field4: Date
+        field5: Time
+        field6: DateDelta
+        field7: TimeDelta
+        field8: DateTimeDelta
+        field9: MonthDay
+        field10: YearMonth
+
+    obj0 = Instant.from_utc(2024, 1, 1, hour=12)
+    obj1 = ZonedDateTime(2024, 1, 1, hour=12, tz="Europe/Amsterdam")
+    obj2 = OffsetDateTime(2024, 1, 1, hour=12, offset=1)
+    obj3 = SystemDateTime(2024, 1, 1, hour=12)
+    obj4 = Date(2024, 1, 1)
+    obj5 = Time(12, 0, 0)
+    obj6 = DateDelta(days=3, months=9)
+    obj7 = TimeDelta(hours=3, minutes=9)
+    obj8 = DateTimeDelta(days=3, months=9, hours=3, minutes=9)
+    obj9 = MonthDay(month=1, day=1)
+    obj10 = YearMonth(year=2024, month=1)
+
+    m = Model(
+        field0=obj0,
+        field1=obj1,
+        field2=obj2,
+        field3=obj3,
+        field4=obj4,
+        field5=obj5,
+        field6=obj6,
+        field7=obj7,
+        field8=obj8,
+        field9=obj9,
+        field10=obj10,
+    )
+
+    assert m.field0 is obj0
+    assert m.field1 is obj1
+    assert m.field2 is obj2
+    assert m.field3 is obj3
+    assert m.field4 is obj4
+    assert m.field5 is obj5
+    assert m.field6 is obj6
+    assert m.field7 is obj7
+    assert m.field8 is obj8
+    assert m.field9 is obj9
+    assert m.field10 is obj10
+
+    data = m.model_dump()
+    m2 = Model.model_validate(data)
+    assert m2.field0 is obj0
+    assert m2.field1 is obj1
+    assert m2.field2 is obj2
+    assert m2.field3 is obj3
+    assert m2.field4 is obj4
+    assert m2.field5 is obj5
+    assert m2.field6 is obj6
+    assert m2.field7 is obj7
+    assert m2.field8 is obj8
+
+    json_str = m.model_dump_json()
+    json_data = json.loads(json_str)
+    assert json_data["field0"] == obj0.format_common_iso()
+    assert json_data["field1"] == obj1.format_common_iso()
+    assert json_data["field2"] == obj2.format_common_iso()
+    assert json_data["field3"] == obj3.format_common_iso()
+    assert json_data["field4"] == obj4.format_common_iso()
+    assert json_data["field5"] == obj5.format_common_iso()
+    assert json_data["field6"] == obj6.format_common_iso()
+    assert json_data["field7"] == obj7.format_common_iso()
+    assert json_data["field8"] == obj8.format_common_iso()
+    assert json_data["field9"] == obj9.format_common_iso()
+    assert json_data["field10"] == obj10.format_common_iso()
+
+    m3 = Model.model_validate_json(json_str)
+    assert m3.field0 == obj0
+    assert m3.field1 == obj1
+    assert m3.field2 == obj2
+    assert m3.field3 == obj3
+    assert m3.field4 == obj4
+    assert m3.field5 == obj5
+    assert m3.field6 == obj6
+    assert m3.field7 == obj7
+    assert m3.field8 == obj8
+    assert m3.field9 == obj9
+    assert m3.field10 == obj10

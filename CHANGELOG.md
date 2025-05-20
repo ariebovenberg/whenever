@@ -1,6 +1,12 @@
 # 🚀 Changelog
 
-## 0.8.1 (2025-??-??)
+## 0.8.1 (2025-05-??)
+
+**New**
+
+- Added support for Pydantic serialization/deserialization of
+  `whenever` types. For now, only the ISO 8601 format is supported, but
+  more flexible parsing may be added in the future. (#175)
 
 **Fixed**
 

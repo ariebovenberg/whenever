@@ -286,10 +286,10 @@ fn __richcmp__(cls: HeapType<Time>, slf: Time, arg: PyObj, op: c_int) -> PyRetur
 
 #[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
-    slotmethod2!(Time, Py_tp_new, __new__),
-    slotmethod2!(Time, Py_tp_str, format_common_iso, 1),
-    slotmethod2!(Time, Py_tp_repr, __repr__, 1),
-    slotmethod2!(Time, Py_tp_richcompare, __richcmp__),
+    slotmethod!(Time, Py_tp_new, __new__),
+    slotmethod!(Time, Py_tp_str, format_common_iso, 1),
+    slotmethod!(Time, Py_tp_repr, __repr__, 1),
+    slotmethod!(Time, Py_tp_richcompare, __richcmp__),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: doc::TIME.as_ptr() as *mut c_void,
@@ -455,12 +455,13 @@ static mut METHODS: &[PyMethodDef] = &[
     method1!(Time, __deepcopy__, c""),
     method0!(Time, __reduce__, c""),
     method0!(Time, py_time, doc::TIME_PY_TIME),
-    method_kwargs2!(Time, replace, doc::TIME_REPLACE),
+    method_kwargs!(Time, replace, doc::TIME_REPLACE),
     method0!(Time, format_common_iso, doc::TIME_FORMAT_COMMON_ISO),
     classmethod1!(Time, parse_common_iso, doc::TIME_PARSE_COMMON_ISO),
     classmethod1!(Time, from_py_time, doc::TIME_FROM_PY_TIME),
     method1!(Time, on, doc::TIME_ON),
-    method_kwargs2!(Time, round, doc::TIME_ROUND),
+    method_kwargs!(Time, round, doc::TIME_ROUND),
+    classmethod_kwargs!(Time, __get_pydantic_core_schema__, c""),
     PyMethodDef::zeroed(),
 ];
 

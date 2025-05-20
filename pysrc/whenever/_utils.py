@@ -5,7 +5,7 @@ from __future__ import annotations
 import os.path  # NOTE: we don't use pathlib here to keep our imports light
 import sysconfig
 from contextlib import contextmanager
-from typing import Any, Iterable, Iterator, Union
+from typing import Any, Iterable, Iterator, Union, no_type_check
 
 from ._core import (
     Instant,
@@ -270,3 +270,16 @@ def _is_tzifile(p: str) -> bool:
             return f.read(4) == b"TZif"
     except OSError:  # pragma: no cover
         return False
+
+
+@no_type_check
+def pydantic_schema(cls):
+    from pydantic_core import core_schema
+
+    return core_schema.no_info_plain_validator_function(
+        lambda v: v if type(v) is cls else cls.parse_common_iso(v),
+        serialization=core_schema.plain_serializer_function_ser_schema(
+            cls.format_common_iso,
+            when_used="json-unless-none",
+        ),
+    )

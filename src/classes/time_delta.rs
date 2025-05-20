@@ -615,19 +615,19 @@ fn __abs__(cls: HeapType<TimeDelta>, slf: PyObj) -> PyReturn {
 
 #[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
-    slotmethod2!(TimeDelta, Py_tp_new, __new__),
-    slotmethod2!(TimeDelta, Py_tp_richcompare, __richcmp__),
-    slotmethod2!(TimeDelta, Py_nb_negative, __neg__, 1),
-    slotmethod2!(TimeDelta, Py_tp_repr, __repr__, 1),
-    slotmethod2!(TimeDelta, Py_tp_str, __str__, 1),
-    slotmethod2!(TimeDelta, Py_nb_positive, identity1, 1),
-    slotmethod2!(Py_nb_multiply, __mul__, 2),
-    slotmethod2!(Py_nb_true_divide, __truediv__, 2),
-    slotmethod2!(Py_nb_add, __add__, 2),
-    slotmethod2!(Py_nb_subtract, __sub__, 2),
-    slotmethod2!(TimeDelta, Py_nb_absolute, __abs__, 1),
-    slotmethod2!(Py_nb_floor_divide, __floordiv__, 2),
-    slotmethod2!(Py_nb_remainder, __mod__, 2),
+    slotmethod!(TimeDelta, Py_tp_new, __new__),
+    slotmethod!(TimeDelta, Py_tp_richcompare, __richcmp__),
+    slotmethod!(TimeDelta, Py_nb_negative, __neg__, 1),
+    slotmethod!(TimeDelta, Py_tp_repr, __repr__, 1),
+    slotmethod!(TimeDelta, Py_tp_str, __str__, 1),
+    slotmethod!(TimeDelta, Py_nb_positive, identity1, 1),
+    slotmethod!(Py_nb_multiply, __mul__, 2),
+    slotmethod!(Py_nb_true_divide, __truediv__, 2),
+    slotmethod!(Py_nb_add, __add__, 2),
+    slotmethod!(Py_nb_subtract, __sub__, 2),
+    slotmethod!(TimeDelta, Py_nb_absolute, __abs__, 1),
+    slotmethod!(Py_nb_floor_divide, __floordiv__, 2),
+    slotmethod!(Py_nb_remainder, __mod__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: doc::TIMEDELTA.as_ptr() as *mut c_void,
@@ -959,7 +959,8 @@ static mut METHODS: &[PyMethodDef] = &[
         in_hrs_mins_secs_nanos,
         doc::TIMEDELTA_IN_HRS_MINS_SECS_NANOS
     ),
-    method_kwargs2!(TimeDelta, round, doc::TIMEDELTA_ROUND),
+    method_kwargs!(TimeDelta, round, doc::TIMEDELTA_ROUND),
+    classmethod_kwargs!(TimeDelta, __get_pydantic_core_schema__, c""),
     PyMethodDef::zeroed(),
 ];
 

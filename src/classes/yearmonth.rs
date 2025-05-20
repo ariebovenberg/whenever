@@ -114,10 +114,10 @@ fn __richcmp__(cls: HeapType<YearMonth>, a: YearMonth, b_obj: PyObj, op: c_int) 
 
 #[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
-    slotmethod2!(YearMonth, Py_tp_new, __new__),
-    slotmethod2!(YearMonth, Py_tp_str, __str__, 1),
-    slotmethod2!(YearMonth, Py_tp_repr, __repr__, 1),
-    slotmethod2!(YearMonth, Py_tp_richcompare, __richcmp__),
+    slotmethod!(YearMonth, Py_tp_new, __new__),
+    slotmethod!(YearMonth, Py_tp_str, __str__, 1),
+    slotmethod!(YearMonth, Py_tp_repr, __repr__, 1),
+    slotmethod!(YearMonth, Py_tp_richcompare, __richcmp__),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: doc::YEARMONTH.as_ptr() as *mut c_void,
@@ -228,7 +228,8 @@ static mut METHODS: &[PyMethodDef] = &[
     ),
     classmethod1!(YearMonth, parse_common_iso, doc::YEARMONTH_PARSE_COMMON_ISO),
     method1!(YearMonth, on_day, doc::YEARMONTH_ON_DAY),
-    method_kwargs2!(YearMonth, replace, doc::YEARMONTH_REPLACE),
+    method_kwargs!(YearMonth, replace, doc::YEARMONTH_REPLACE),
+    classmethod_kwargs!(YearMonth, __get_pydantic_core_schema__, c""),
     PyMethodDef::zeroed(),
 ];
 

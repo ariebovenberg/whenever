@@ -161,6 +161,13 @@ class _ImmutableBase:
     def __deepcopy__(self, _):
         return self
 
+    @no_type_check
+    @classmethod
+    def __get_pydantic_core_schema__(cls, *_, **kwargs):
+        from ._utils import pydantic_schema
+
+        return pydantic_schema(cls)
+
 
 if TYPE_CHECKING:
     from typing import final

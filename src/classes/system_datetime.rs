@@ -472,12 +472,12 @@ fn _shift_operator(
 
 #[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
-    slotmethod2!(OffsetDateTime, Py_tp_new, __new__),
-    slotmethod2!(OffsetDateTime, Py_tp_str, __str__, 1),
-    slotmethod2!(OffsetDateTime, Py_tp_repr, __repr__, 1),
-    slotmethod2!(OffsetDateTime, Py_tp_richcompare, __richcmp__),
-    slotmethod2!(Py_nb_add, __add__, 2),
-    slotmethod2!(Py_nb_subtract, __sub__, 2),
+    slotmethod!(OffsetDateTime, Py_tp_new, __new__),
+    slotmethod!(OffsetDateTime, Py_tp_str, __str__, 1),
+    slotmethod!(OffsetDateTime, Py_tp_repr, __repr__, 1),
+    slotmethod!(OffsetDateTime, Py_tp_richcompare, __richcmp__),
+    slotmethod!(Py_nb_add, __add__, 2),
+    slotmethod!(Py_nb_subtract, __sub__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: doc::SYSTEMDATETIME.as_ptr() as *mut c_void,
@@ -1225,19 +1225,19 @@ static mut METHODS: &[PyMethodDef] = &[
         from_timestamp_nanos,
         doc::SYSTEMDATETIME_FROM_TIMESTAMP_NANOS
     ),
-    method_kwargs2!(OffsetDateTime, replace, doc::SYSTEMDATETIME_REPLACE),
-    method_kwargs2!(
+    method_kwargs!(OffsetDateTime, replace, doc::SYSTEMDATETIME_REPLACE),
+    method_kwargs!(
         OffsetDateTime,
         replace_date,
         doc::SYSTEMDATETIME_REPLACE_DATE
     ),
-    method_kwargs2!(
+    method_kwargs!(
         OffsetDateTime,
         replace_time,
         doc::SYSTEMDATETIME_REPLACE_TIME
     ),
-    method_kwargs2!(OffsetDateTime, add, doc::SYSTEMDATETIME_ADD),
-    method_kwargs2!(OffsetDateTime, subtract, doc::SYSTEMDATETIME_SUBTRACT),
+    method_kwargs!(OffsetDateTime, add, doc::SYSTEMDATETIME_ADD),
+    method_kwargs!(OffsetDateTime, subtract, doc::SYSTEMDATETIME_SUBTRACT),
     method1!(OffsetDateTime, difference, doc::EXACTTIME_DIFFERENCE),
     method0!(
         OffsetDateTime,
@@ -1250,7 +1250,8 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::SYSTEMDATETIME_START_OF_DAY
     ),
     method0!(OffsetDateTime, day_length, doc::SYSTEMDATETIME_DAY_LENGTH),
-    method_kwargs2!(OffsetDateTime, round, doc::SYSTEMDATETIME_ROUND),
+    method_kwargs!(OffsetDateTime, round, doc::SYSTEMDATETIME_ROUND),
+    classmethod_kwargs!(OffsetDateTime, __get_pydantic_core_schema__, c""),
     PyMethodDef::zeroed(),
 ];
 
