@@ -1,3 +1,4 @@
+//! Each sub module corresponds to one of `whenever`s Python classes.
 pub mod date;
 pub mod date_delta;
 pub mod datetime_delta;

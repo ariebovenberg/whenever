@@ -1,13 +1,13 @@
 use core::{
-    ffi::{c_int, c_long, c_void, CStr},
+    ffi::{CStr, c_int, c_long, c_void},
     ptr::null_mut as NULL,
 };
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
 use crate::{
-    classes::date::{extract_year, Date},
-    common::{math::*, parse::extract_2_digits},
+    classes::date::{Date, extract_year},
+    common::{parse::extract_2_digits, scalar::*},
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -77,18 +77,18 @@ impl Display for YearMonth {
 fn __new__(cls: HeapType<YearMonth>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let mut year: c_long = 0;
     let mut month: c_long = 0;
-    parse_args_kwargs2!(args, kwargs, c"ll:YearMonth", year, month);
+    parse_args_kwargs!(args, kwargs, c"ll:YearMonth", year, month);
     YearMonth::from_longs(year, month)
         .ok_or_value_err("Invalid year/month component value")?
-        .to_obj3(cls)
+        .to_obj(cls)
 }
 
 fn __repr__(_: PyType, slf: YearMonth) -> PyReturn {
-    format!("YearMonth({})", slf).to_py2()
+    format!("YearMonth({})", slf).to_py()
 }
 
 fn __str__(_: PyType, slf: YearMonth) -> PyReturn {
-    format!("{}", slf).to_py2()
+    format!("{}", slf).to_py()
 }
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
@@ -97,7 +97,7 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
 }
 
 fn __richcmp__(cls: HeapType<YearMonth>, a: YearMonth, b_obj: PyObj, op: c_int) -> PyReturn {
-    match b_obj.extract3(cls) {
+    match b_obj.extract(cls) {
         Some(b) => match op {
             pyo3_ffi::Py_EQ => a == b,
             pyo3_ffi::Py_NE => a != b,
@@ -107,7 +107,7 @@ fn __richcmp__(cls: HeapType<YearMonth>, a: YearMonth, b_obj: PyObj, op: c_int) 
             pyo3_ffi::Py_GE => a >= b,
             _ => unreachable!(),
         }
-        .to_py2(),
+        .to_py(),
         None => not_implemented(),
     }
 }
@@ -151,15 +151,15 @@ fn format_common_iso(cls: PyType, slf: YearMonth) -> PyReturn {
 fn parse_common_iso(cls: HeapType<YearMonth>, arg: PyObj) -> PyReturn {
     let py_str = arg.cast::<PyStr>().ok_or_type_err("argument must be str")?;
     YearMonth::parse(py_str.as_utf8()?)
-        .ok_or_else_value_err(|| format!("Invalid format: {}", arg.repr()))?
-        .to_obj3(cls)
+        .ok_or_else_value_err(|| format!("Invalid format: {}", arg))?
+        .to_obj(cls)
 }
 
 fn __reduce__(cls: HeapType<YearMonth>, slf: YearMonth) -> PyResult<Owned<PyTuple>> {
     let YearMonth { year, month } = slf;
     (
         cls.state().unpickle_yearmonth.newref(),
-        (pack![year.get(), month.get()].to_py2()?,).into_pytuple()?,
+        (pack![year.get(), month.get()].to_py()?,).into_pytuple()?,
     )
         .into_pytuple()
 }
@@ -180,7 +180,7 @@ fn replace(
     } else {
         let mut year = slf.year.get().into();
         let mut month = slf.month.get().into();
-        handle_kwargs2("replace", kwargs, |key, value, eq| {
+        handle_kwargs("replace", kwargs, |key, value, eq| {
             if eq(key, str_year) {
                 year = value
                     .cast::<PyInt>()
@@ -198,7 +198,7 @@ fn replace(
         })?;
         YearMonth::from_longs(year, month)
             .ok_or_value_err("Invalid year/month components")?
-            .to_obj3(cls)
+            .to_obj(cls)
     }
 }
 
@@ -214,7 +214,7 @@ fn on_day(cls: HeapType<YearMonth>, slf: YearMonth, arg: PyObj) -> PyReturn {
     // OPTIMIZE: we don't need to check the validity of the year and month again
     Date::new(year, month, day)
         .ok_or_value_err("Invalid date components")?
-        .to_obj3(cls.state().date_type)
+        .to_obj(cls.state().date_type)
 }
 
 static mut METHODS: &[PyMethodDef] = &[
@@ -235,7 +235,7 @@ static mut METHODS: &[PyMethodDef] = &[
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let py_bytes = arg
         .cast::<PyBytes>()
-        .ok_or_type_err("argument must be bytes")?;
+        .ok_or_type_err("Invalid pickle data")?;
     let mut packed = py_bytes.as_bytes()?;
     if packed.len() != 3 {
         raise_value_err("Invalid pickle data")?
@@ -244,20 +244,20 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
         year: Year::new_unchecked(unpack_one!(packed, u16)),
         month: Month::new_unchecked(unpack_one!(packed, u8)),
     }
-    .to_obj3(state.yearmonth_type)
+    .to_obj(state.yearmonth_type)
 }
 
 fn year(_: PyType, slf: YearMonth) -> PyReturn {
-    slf.year.get().to_py2()
+    slf.year.get().to_py()
 }
 
 fn month(_: PyType, slf: YearMonth) -> PyReturn {
-    slf.month.get().to_py2()
+    slf.month.get().to_py()
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter3!(YearMonth, year, "The year component"),
-    getter3!(YearMonth, month, "The month component"),
+    getter!(YearMonth, year, "The year component"),
+    getter!(YearMonth, month, "The month component"),
     PyGetSetDef {
         name: NULL(),
         get: None,

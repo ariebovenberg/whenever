@@ -1,11 +1,11 @@
-use core::ffi::{c_int, c_long, c_void, CStr};
+use core::ffi::{CStr, c_int, c_long, c_void};
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 
 use crate::{
     classes::date::Date,
-    common::{math::*, parse::extract_2_digits},
+    common::{parse::extract_2_digits, scalar::*},
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -75,7 +75,6 @@ impl PyWrapped for MonthDay {}
 
 impl Display for MonthDay {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        // TODO: fixed length avoid heap allocation
         write!(f, "--{:02}-{:02}", self.month.get(), self.day)
     }
 }
@@ -83,14 +82,14 @@ impl Display for MonthDay {
 fn __new__(cls: HeapType<MonthDay>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let mut month: c_long = 0;
     let mut day: c_long = 0;
-    parse_args_kwargs2!(args, kwargs, c"ll:MonthDay", month, day);
+    parse_args_kwargs!(args, kwargs, c"ll:MonthDay", month, day);
     MonthDay::from_longs(month, day)
         .ok_or_value_err("Invalid month/day component value")?
-        .to_obj3(cls)
+        .to_obj(cls)
 }
 
 fn __repr__(_: PyType, slf: MonthDay) -> PyReturn {
-    format!("MonthDay({})", slf).to_py2()
+    format!("MonthDay({})", slf).to_py()
 }
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
@@ -99,11 +98,11 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
 }
 
 fn __str__(_: PyType, slf: MonthDay) -> PyReturn {
-    format!("{}", slf).to_py2()
+    format!("{}", slf).to_py()
 }
 
 fn __richcmp__(cls: HeapType<MonthDay>, a: MonthDay, b_obj: PyObj, op: c_int) -> PyReturn {
-    match b_obj.extract3(cls) {
+    match b_obj.extract(cls) {
         Some(b) => match op {
             pyo3_ffi::Py_LT => a < b,
             pyo3_ffi::Py_LE => a <= b,
@@ -113,7 +112,7 @@ fn __richcmp__(cls: HeapType<MonthDay>, a: MonthDay, b_obj: PyObj, op: c_int) ->
             pyo3_ffi::Py_GE => a >= b,
             _ => unreachable!(),
         }
-        .to_py2(),
+        .to_py(),
         None => not_implemented(),
     }
 }
@@ -160,8 +159,8 @@ fn parse_common_iso(cls: HeapType<MonthDay>, s: PyObj) -> PyReturn {
             .ok_or_type_err("argument must be str")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("Invalid format: {}", s.repr()))?
-    .to_obj3(cls)
+    .ok_or_else_value_err(|| format!("Invalid format: {}", s))?
+    .to_obj(cls)
 }
 
 fn __reduce__(
@@ -170,7 +169,7 @@ fn __reduce__(
 ) -> PyResult<Owned<PyTuple>> {
     (
         cls.state().unpickle_monthday.newref(),
-        (pack![month.get(), day].to_py2()?,).into_pytuple()?,
+        (pack![month.get(), day].to_py()?,).into_pytuple()?,
     )
         .into_pytuple()
 }
@@ -189,7 +188,7 @@ fn replace(
     } else {
         let mut month = md.month.get().into();
         let mut day = md.day.into();
-        handle_kwargs2("replace", kwargs, |key, value, eq| {
+        handle_kwargs("replace", kwargs, |key, value, eq| {
             if eq(key, str_month) {
                 month = value
                     .cast::<PyInt>()
@@ -207,7 +206,7 @@ fn replace(
         })?;
         MonthDay::from_longs(month, day)
             .ok_or_value_err("Invalid month/day components")?
-            .to_obj3(cls)
+            .to_obj(cls)
     }
 }
 
@@ -226,11 +225,11 @@ fn in_year(
     // OPTIMIZE: we don't need to check the validity of the month again
     Date::new(year, month, day)
         .ok_or_value_err("Invalid date components")?
-        .to_obj3(cls.state().date_type)
+        .to_obj(cls.state().date_type)
 }
 
 fn is_leap(_: PyType, MonthDay { month, day }: MonthDay) -> PyReturn {
-    (day == 29 && month == Month::February).to_py2()
+    (day == 29 && month == Month::February).to_py()
 }
 
 static mut METHODS: &[PyMethodDef] = &[
@@ -257,20 +256,20 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
         month: Month::new_unchecked(unpack_one!(packed, u8)),
         day: unpack_one!(packed, u8),
     }
-    .to_obj3(state.monthday_type)
+    .to_obj(state.monthday_type)
 }
 
 fn month(_: PyType, slf: MonthDay) -> PyReturn {
-    slf.month.get().to_py2()
+    slf.month.get().to_py()
 }
 
 fn day(_: PyType, slf: MonthDay) -> PyReturn {
-    slf.day.to_py2()
+    slf.day.to_py()
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter3!(MonthDay, month, "The month component"),
-    getter3!(MonthDay, day, "The day component"),
+    getter!(MonthDay, month, "The month component"),
+    getter!(MonthDay, day, "The day component"),
     PyGetSetDef {
         name: NULL(),
         get: None,

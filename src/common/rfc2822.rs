@@ -1,14 +1,16 @@
+//! Functionality for parsing/writing RFC 2822 formatted date strings.
 use crate::{
     classes::{
-        date::{extract_year, Date},
+        date::{Date, extract_year},
         instant::Instant,
         offset_datetime::OffsetDateTime,
         plain_datetime::DateTime,
         time::Time,
     },
     common::{
-        math::*,
-        parse::{extract_2_digits, extract_digit, Scan},
+        fmt::*,
+        parse::{Scan, extract_2_digits, extract_digit},
+        scalar::*,
     },
 };
 
@@ -72,18 +74,6 @@ const WEEKDAY_NAMES: [&[u8]; 7] = [b"Mon", b"Tue", b"Wed", b"Thu", b"Fri", b"Sat
 const MONTH_NAMES: [&[u8]; 12] = [
     b"Jan", b"Feb", b"Mar", b"Apr", b"May", b"Jun", b"Jul", b"Aug", b"Sep", b"Oct", b"Nov", b"Dec",
 ];
-
-fn write_2_digits(n: u8, buf: &mut [u8]) {
-    buf[0] = n / 10 + b'0';
-    buf[1] = n % 10 + b'0';
-}
-
-fn write_4_digits(n: u16, buf: &mut [u8]) {
-    buf[0] = (n / 1000) as u8 + b'0';
-    buf[1] = (n / 100 % 10) as u8 + b'0';
-    buf[2] = (n / 10 % 10) as u8 + b'0';
-    buf[3] = (n % 10) as u8 + b'0';
-}
 
 pub(crate) fn parse(s: &[u8]) -> Option<(Date, Time, Offset)> {
     let mut scan = Scan::new(s);

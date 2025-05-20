@@ -710,6 +710,9 @@ class TestShiftOperators:
         with pytest.raises(TypeError, match="unsupported operand type"):
             PlainDateTime(2020, 1, 1) + d  # type: ignore[operator]
 
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            d + PlainDateTime(2020, 1, 1)  # type: ignore[operator]
+
 
 class TestDifference:
 

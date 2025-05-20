@@ -1,3 +1,5 @@
+//! Miscellaneous utilities for the `whenever` module definition.
+use super::def::State;
 use crate::py::*;
 use pyo3_ffi::*;
 use std::{ffi::CStr, ptr::null_mut as NULL};
@@ -11,12 +13,12 @@ pub(crate) fn new_enum(
 ) -> PyResult<Owned<PyType>> {
     let members_dict = PyDict::new()?;
     for &(key, value) in members {
-        members_dict.set_item_str(key, value.to_py2()?.borrow())?;
+        members_dict.set_item_str(key, value.to_py()?.borrow())?;
     }
     let enum_module = import(c"enum")?;
     let enum_cls = enum_module
         .getattr(c"Enum")?
-        .call((name.to_py2()?, members_dict).into_pytuple()?.borrow())?
+        .call((name.to_py()?, members_dict).into_pytuple()?.borrow())?
         .cast_allow_subclass::<PyType>()
         .unwrap();
 
@@ -61,7 +63,7 @@ pub(crate) fn new_class<T: PyWrapped>(
     let cls_dict =
         unsafe { PyDict::from_ptr_unchecked((*cls.as_ptr().cast::<PyTypeObject>()).tp_dict) };
     for (name, value) in singletons {
-        let pyvalue = value.to_obj3(cls.borrow())?;
+        let pyvalue = value.to_obj(cls.borrow())?;
         cls_dict
             // NOTE: We drop the value here, but count on the class dict to
             // keep the reference alive. This is safe since the dict is blocked
@@ -71,11 +73,58 @@ pub(crate) fn new_class<T: PyWrapped>(
 
     let unpickler = module.getattr(unpickle_name)?;
     unpickler.setattr(c"__module__", module_nameobj)?;
-    *unpickle_ref = unpickler.into_py();
+    *unpickle_ref = unpickler.py_owned();
     Ok(cls)
 }
 
 /// Intern a string in the Python interpreter
 pub(crate) fn intern(s: &CStr) -> PyReturn {
     unsafe { PyUnicode_InternFromString(s.as_ptr()) }.rust_owned()
+}
+
+/// Wrapper around PyModuleObject.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PyModule {
+    obj: PyObj,
+}
+
+impl PyBase for PyModule {
+    fn as_py_obj(&self) -> PyObj {
+        self.obj
+    }
+}
+
+impl FromPy for PyModule {
+    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
+        Self {
+            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
+        }
+    }
+}
+
+impl PyStaticType for PyModule {
+    fn isinstance_exact(obj: impl PyBase) -> bool {
+        unsafe { PyModule_CheckExact(obj.as_ptr()) != 0 }
+    }
+
+    fn isinstance(obj: impl PyBase) -> bool {
+        unsafe { PyModule_Check(obj.as_ptr()) != 0 }
+    }
+}
+
+impl PyModule {
+    #[allow(clippy::mut_from_ref)]
+    pub(crate) fn state(&self) -> &mut State {
+        // SAFETY: calling CPython API with valid arguments
+        unsafe { PyModule_GetState(self.as_ptr()).cast::<State>().as_mut() }.unwrap()
+    }
+
+    pub(crate) fn add_type(&self, cls: PyType) -> PyResult<()> {
+        // SAFETY: calling CPython API with valid arguments
+        if unsafe { PyModule_AddType(self.as_ptr(), cls.as_ptr().cast()) } == 0 {
+            Ok(())
+        } else {
+            Err(PyErrMarker())
+        }
+    }
 }

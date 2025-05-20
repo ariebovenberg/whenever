@@ -1,3 +1,4 @@
+//! Macros for defining methods in Python C extensions.
 macro_rules! method0(
     ($typ:ident, $meth:ident, $doc:expr) => {
         PyMethodDef {
@@ -6,11 +7,11 @@ macro_rules! method0(
                 PyCFunction: {
                     use crate::py::*;
                     unsafe extern "C" fn _wrap(slf_ptr: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
-                        let slf = PyObj::from_ptr_unchecked(slf_ptr);
+                        let slf = unsafe { PyObj::from_ptr_unchecked(slf_ptr) };
                         $meth(
-                            slf.class().link_type::<$typ>().into(),
-                            slf.extract_unchecked()
-                        ).into_py_ptr()
+                            unsafe {slf.type_().link_type::<$typ>().into()},
+                            unsafe {slf.into_unchecked() }
+                        ).to_py_owned_ptr()
                     }
                     _wrap
                 },
@@ -29,13 +30,13 @@ macro_rules! method1(
                 PyCFunction: {
                     use crate::py::*;
                     unsafe extern "C" fn _wrap(slf_ptr: *mut PyObject, arg_obj: *mut PyObject) -> *mut PyObject {
-                        let slf = PyObj::from_ptr_unchecked(slf_ptr);
-                        let arg = PyObj::from_ptr_unchecked(arg_obj);
+                        let slf = unsafe {PyObj::from_ptr_unchecked(slf_ptr)};
+                        let arg = unsafe {PyObj::from_ptr_unchecked(arg_obj)};
                         $meth(
-                            slf.class().link_type::<$typ>().into(),
-                            slf.extract_unchecked(),
-                            arg.extract_unchecked()
-                        ).into_py_ptr()
+                            unsafe {slf.type_().link_type::<$typ>().into()},
+                            unsafe {slf.into_unchecked()},
+                            unsafe {arg.into_unchecked()},
+                        ).to_py_owned_ptr()
                     }
                     _wrap
                 },
@@ -54,7 +55,10 @@ macro_rules! modmethod1(
                 PyCFunction: {
                     use crate::py::*;
                     unsafe extern "C" fn _wrap(mod_obj: *mut PyObject, arg_obj: *mut PyObject) -> *mut PyObject {
-                        $meth(State::for_mod_mut(mod_obj), PyObj::from_ptr_unchecked(arg_obj)).into_py_ptr()
+                        $meth(
+                            unsafe {State::for_mod_mut(mod_obj)},
+                            unsafe {PyObj::from_ptr_unchecked(arg_obj)},
+                        ).to_py_owned_ptr()
                     }
                     _wrap
                 },
@@ -73,7 +77,9 @@ macro_rules! modmethod0(
                 PyCFunction: {
                     use crate::py::*;
                     unsafe extern "C" fn _wrap(mod_obj: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
-                        $meth(State::for_mod_mut(mod_obj)).into_py_ptr()
+                        $meth(
+                            unsafe {State::for_mod_mut(mod_obj)},
+                        ).to_py_owned_ptr()
                     }
                     _wrap
                 },
@@ -93,9 +99,9 @@ macro_rules! classmethod1(
                     use crate::py::*;
                     unsafe extern "C" fn _wrap(cls: *mut PyObject, arg: *mut PyObject) -> *mut PyObject {
                         $meth(
-                            PyType::from_ptr_unchecked(cls).link_type::<$typ>().into(),
-                            PyObj::from_ptr_unchecked(arg)
-                        ).into_py_ptr()
+                            unsafe {PyType::from_ptr_unchecked(cls).link_type::<$typ>().into()},
+                            unsafe {PyObj::from_ptr_unchecked(arg)},
+                        ).to_py_owned_ptr()
                     }
                     _wrap
                 },
@@ -115,8 +121,8 @@ macro_rules! classmethod0(
                     use crate::py::*;
                     unsafe extern "C" fn _wrap(cls: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
                         $meth(
-                            PyType::from_ptr_unchecked(cls).link_type::<$typ>().into(),
-                        ).into_py_ptr()
+                            unsafe {PyType::from_ptr_unchecked(cls).link_type::<$typ>().into()},
+                        ).to_py_owned_ptr()
                     }
                     _wrap
                 },
@@ -127,7 +133,7 @@ macro_rules! classmethod0(
     };
 );
 
-macro_rules! method_vararg2(
+macro_rules! method_vararg(
     ($typ:ident, $meth:ident, $doc:expr) => {
         PyMethodDef {
             ml_name: concat!(stringify!($meth), "\0").as_ptr().cast(),
@@ -138,12 +144,12 @@ macro_rules! method_vararg2(
                         args: *mut *mut PyObject,
                         nargs: Py_ssize_t,
                     ) -> *mut PyObject {
-                        let slf = PyObj::from_ptr_unchecked(slf_obj);
+                        let slf = unsafe {PyObj::from_ptr_unchecked(slf_obj)};
                         $meth(
-                            slf.class().link_type::<$typ>().into(),
-                            slf.extract_unchecked(),
-                            std::slice::from_raw_parts(args.cast::<PyObj>(), nargs as usize)
-                        ).into_py_ptr()
+                            unsafe {slf.type_().link_type::<$typ>().into()},
+                            unsafe {slf.into_unchecked()},
+                            unsafe {std::slice::from_raw_parts(args.cast::<PyObj>(), nargs as usize)},
+                        ).to_py_owned_ptr()
                     }
                     _wrap
                 },
@@ -166,10 +172,10 @@ macro_rules! modmethod_vararg(
                         nargs: Py_ssize_t,
                     ) -> *mut PyObject {
                         $meth(
-                            State::for_mod(slf),
-                            std::slice::from_raw_parts(args.cast::<PyObj>(), nargs as usize)
+                            unsafe {State::for_mod(slf)},
+                            unsafe {std::slice::from_raw_parts(args.cast::<PyObj>(), nargs as usize)},
                         )
-                        .into_py_ptr()
+                        .to_py_owned_ptr()
                     }
                     _wrap
                 },
@@ -192,13 +198,13 @@ macro_rules! method_kwargs2(
                         nargsf: Py_ssize_t,
                         kwnames: *mut PyObject,
                     ) -> *mut PyObject {
-                        let nargs = PyVectorcall_NARGS(nargsf as usize);
+                        let nargs = unsafe {PyVectorcall_NARGS(nargsf as usize)};
                         $meth(
-                            PyType::from_ptr_unchecked(cls.cast()).link_type::<$typ>().into(),
-                            PyObj::from_ptr_unchecked(slf).extract_unchecked(),
-                            std::slice::from_raw_parts(args_raw.cast::<PyObj>(), nargs as usize),
-                            &mut IterKwargs::new(kwnames, args_raw.offset(nargs as isize)),
-                        ).into_py_ptr()
+                            unsafe {PyType::from_ptr_unchecked(cls.cast()).link_type::<$typ>().into()},
+                            unsafe {PyObj::from_ptr_unchecked(slf).into_unchecked()},
+                            unsafe {std::slice::from_raw_parts(args_raw.cast::<PyObj>(), nargs as usize)},
+                            &mut unsafe {IterKwargs::new(kwnames, args_raw.offset(nargs as isize))},
+                        ).to_py_owned_ptr()
                     }
                     _wrap
                 },
@@ -222,12 +228,12 @@ macro_rules! classmethod_kwargs(
                         nargsf: Py_ssize_t,
                         kwnames: *mut PyObject,
                     ) -> *mut PyObject {
-                        let nargs = PyVectorcall_NARGS(nargsf as usize);
+                        let nargs = unsafe {PyVectorcall_NARGS(nargsf as usize)};
                         $meth(
-                            PyType::from_ptr_unchecked(cls.cast()).link_type::<$typ>().into(),
-                            std::slice::from_raw_parts(args_raw.cast::<PyObj>(), nargs as usize),
-                            &mut IterKwargs::new(kwnames, args_raw.offset(nargs as isize)),
-                        ).into_py_ptr()
+                            unsafe {PyType::from_ptr_unchecked(cls.cast()).link_type::<$typ>().into()},
+                            unsafe {std::slice::from_raw_parts(args_raw.cast::<PyObj>(), nargs as usize)},
+                            &mut unsafe {IterKwargs::new(kwnames, args_raw.offset(nargs as isize))},
+                        ).to_py_owned_ptr()
                     }
                     _wrap
                 },
@@ -249,11 +255,11 @@ macro_rules! slotmethod2 {
                     kwargs: *mut PyObject,
                 ) -> *mut PyObject {
                     $name(
-                        HeapType::<$typ>::from_ptr_unchecked(cls.cast()),
-                        PyTuple::from_ptr_unchecked(args),
-                        (!kwargs.is_null()).then(|| PyDict::from_ptr_unchecked(kwargs)),
+                        unsafe { HeapType::<$typ>::from_ptr_unchecked(cls.cast()) },
+                        unsafe { PyTuple::from_ptr_unchecked(args) },
+                        (!kwargs.is_null()).then(|| unsafe { PyDict::from_ptr_unchecked(kwargs) }),
                     )
-                    .into_py_ptr()
+                    .to_py_owned_ptr()
                 }
                 _wrap as *mut c_void
             },
@@ -269,14 +275,14 @@ macro_rules! slotmethod2 {
                     b: *mut PyObject,
                     op: c_int,
                 ) -> *mut PyObject {
-                    let a = PyObj::from_ptr_unchecked(a);
+                    let a = unsafe { PyObj::from_ptr_unchecked(a) };
                     $name(
-                        a.class().link_type::<$typ>().into(),
-                        a.extract_unchecked(),
-                        PyObj::from_ptr_unchecked(b),
+                        unsafe { a.type_().link_type::<$typ>().into() },
+                        unsafe { a.into_unchecked() },
+                        unsafe { PyObj::from_ptr_unchecked(b) },
                         op,
                     )
-                    .into_py_ptr()
+                    .to_py_owned_ptr()
                 }
                 _wrap as *mut c_void
             },
@@ -287,7 +293,10 @@ macro_rules! slotmethod2 {
             slot: $slot,
             pfunc: {
                 unsafe extern "C" fn _wrap(a: *mut PyObject, b: *mut PyObject) -> *mut PyObject {
-                    $name(PyObj::from_ptr_unchecked(a), PyObj::from_ptr_unchecked(b)).into_py_ptr()
+                    $name(unsafe { PyObj::from_ptr_unchecked(a) }, unsafe {
+                        PyObj::from_ptr_unchecked(b)
+                    })
+                    .to_py_owned_ptr()
                 }
                 _wrap as *mut c_void
             },
@@ -299,12 +308,11 @@ macro_rules! slotmethod2 {
             slot: $slot,
             pfunc: {
                 unsafe extern "C" fn _wrap(slf: *mut PyObject) -> *mut PyObject {
-                    let slf = PyObj::from_ptr_unchecked(slf);
-                    $name(
-                        slf.class().link_type::<$typ>().into(),
-                        slf.extract_unchecked(),
-                    )
-                    .into_py_ptr()
+                    let slf = unsafe { PyObj::from_ptr_unchecked(slf) };
+                    $name(unsafe { slf.type_().link_type::<$typ>().into() }, unsafe {
+                        slf.into_unchecked()
+                    })
+                    .to_py_owned_ptr()
                 }
                 _wrap as *mut c_void
             },
@@ -312,7 +320,7 @@ macro_rules! slotmethod2 {
     };
 }
 
-macro_rules! getter3(
+macro_rules! getter(
     ($typ:ident, $meth:ident, $doc:expr) => {
         PyGetSetDef {
             name: concat!(stringify!($meth), "\0").as_ptr().cast(),
@@ -321,11 +329,11 @@ macro_rules! getter3(
                     slf_obj: *mut PyObject,
                     _: *mut c_void,
                 ) -> *mut PyObject {
-                    let slf = PyObj::from_ptr_unchecked(slf_obj);
+                    let slf = unsafe {PyObj::from_ptr_unchecked(slf_obj)};
                     $meth(
-                        slf.class().link_type::<$typ>().into(),
-                        slf.extract_unchecked()
-                    ).into_py_ptr()
+                        unsafe {slf.type_().link_type::<$typ>().into()},
+                        unsafe {slf.into_unchecked()},
+                    ).to_py_owned_ptr()
                 }
                 _wrap
             }),
@@ -338,6 +346,6 @@ macro_rules! getter3(
 
 #[allow(unused_imports)]
 pub(crate) use {
-    classmethod0, classmethod1, classmethod_kwargs, getter3, method0, method1, method_kwargs2,
-    method_vararg2, modmethod0, modmethod1, modmethod_vararg, slotmethod2,
+    classmethod_kwargs, classmethod0, classmethod1, getter, method_kwargs2, method_vararg, method0,
+    method1, modmethod_vararg, modmethod0, modmethod1, slotmethod2,
 };

@@ -871,6 +871,9 @@ def test_from_py_timedelta():
     with pytest.raises(ValueError, match="range"):
         TimeDelta.from_py_timedelta(py_timedelta.max)
 
+    with pytest.raises(ValueError, match="range"):
+        TimeDelta.from_py_timedelta(py_timedelta.min)
+
 
 def test_as_hrs_mins_secs_nanos():
     d = TimeDelta(hours=1, minutes=2, seconds=-3, microseconds=4_060_000)

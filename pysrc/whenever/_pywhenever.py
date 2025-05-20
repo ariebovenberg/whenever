@@ -1,4 +1,4 @@
-"""The pure-Python implenentation of the whenever library."""
+"""The pure-Python implementation of the whenever library."""
 
 # The MIT License (MIT)
 #
@@ -999,8 +999,7 @@ class Time(_ImmutableBase):
         `fold` value is ignored.
         """
         if type(t) is _time:
-            if t.tzinfo is not None:
-                raise ValueError("Time must be naive")
+            t = t.replace(tzinfo=None, fold=0)
         elif isinstance(t, _time):
             # subclass-safe way to ensure we have exactly a datetime.time
             t = _time(t.hour, t.minute, t.second, t.microsecond)
@@ -3395,14 +3394,10 @@ class Instant(_ExactTime):
 
         The inverse of the ``py_datetime()`` method.
         """
-        if d.tzinfo is None:
+        if d.tzinfo is None or d.utcoffset() is None:
             raise ValueError(
                 "Cannot create Instant from a naive datetime. "
                 "Use PlainDateTime.from_py_datetime() for this."
-            )
-        if d.utcoffset() is None:
-            raise ValueError(
-                "Cannot create from datetime with utcoffset() None"
             )
         as_utc = d.astimezone(_UTC)
         return cls._from_py_unchecked(
@@ -3832,14 +3827,10 @@ class OffsetDateTime(_ExactAndLocalTime):
         The inverse of the ``py_datetime()`` method.
 
         """
-        if d.tzinfo is None:
+        if d.tzinfo is None or (offset := d.utcoffset()) is None:
             raise ValueError(
                 "Cannot create from a naive datetime. "
                 "Use PlainDateTime.from_py_datetime() for this."
-            )
-        if (offset := d.utcoffset()) is None:
-            raise ValueError(
-                "Cannot create from datetime with utcoffset() None"
             )
         elif offset.microseconds:
             raise ValueError("Sub-second offsets are not supported")

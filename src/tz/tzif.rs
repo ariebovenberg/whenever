@@ -1,5 +1,6 @@
+//! Parsing of TZif files
 use crate::{
-    common::{ambiguity::Ambiguity, math::*, parse::Scan},
+    common::{ambiguity::Ambiguity, parse::Scan, scalar::*},
     tz::posix,
 };
 use std::{cmp::Ordering, fmt};

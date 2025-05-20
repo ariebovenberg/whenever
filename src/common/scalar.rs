@@ -1,11 +1,8 @@
-/// Checked arithmetic for date and time concepts
-/// TODO rename to scalars
+//! Checked arithmetic for scalar date and time concepts
 use crate::{
     classes::date::Date, classes::plain_datetime::DateTime, classes::time::Time, common::round,
 };
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
-
-use crate::py::PyTimeDelta;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Sign {
@@ -609,14 +606,6 @@ impl DeltaSeconds {
         Self::new(self.0 + d.get())
     }
 
-    // TODO move
-    // TODO name
-    // TODO document range checks
-    pub(crate) fn from_py_unchecked2(delta: PyTimeDelta) -> Option<Self> {
-        // SAFETY: delta is a valid Python timedelta object
-        Self::new(i64::from(delta.days()) * 86400 + i64::from(delta.seconds()))
-    }
-
     /// Get the absolute value of the delta in hours, minutes, and seconds
     pub(crate) fn abs_hms(self) -> (i64, u8, u8) {
         let secs = self.0.abs();
@@ -723,11 +712,6 @@ impl SubSecNanos {
             DeltaSeconds::new_unchecked(sum.div_euclid(1_000_000_000) as _),
             SubSecNanos::from_remainder(sum),
         )
-    }
-
-    // TODO name, place? it's not unchecked
-    pub(crate) fn from_py_delta_unchecked2(obj: PyTimeDelta) -> Self {
-        Self::new_unchecked(obj.microseconds() * 1_000)
     }
 
     pub(crate) fn round(self, increment: i32, mode: round::Mode) -> (DeltaSeconds, Self) {

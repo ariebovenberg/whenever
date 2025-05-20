@@ -1,3 +1,4 @@
+//! Functionality for rounding datetime values
 use crate::{docstrings as doc, py::*, pymodule::State};
 
 #[derive(Debug, Copy, Clone)]
@@ -10,7 +11,7 @@ pub(crate) enum Mode {
 }
 
 impl Mode {
-    fn from_py2(
+    fn from_py(
         s: PyObj,
         str_floor: PyObj,
         str_ceil: PyObj,
@@ -18,7 +19,7 @@ impl Mode {
         str_half_ceil: PyObj,
         str_half_even: PyObj,
     ) -> PyResult<Mode> {
-        match_interned_str2("mode", s, |v, eq| {
+        match_interned_str("mode", s, |v, eq| {
             Some(if eq(v, str_floor) {
                 Mode::Floor
             } else if eq(v, str_ceil) {
@@ -49,7 +50,7 @@ pub(crate) enum Unit {
 
 impl Unit {
     #[allow(clippy::too_many_arguments)]
-    fn from_py2(
+    fn from_py(
         s: PyObj,
         str_nanosecond: PyObj,
         str_microsecond: PyObj,
@@ -60,7 +61,7 @@ impl Unit {
         str_day: PyObj,
     ) -> PyResult<Unit> {
         // OPTIMIZE: run the comparisons in order if likelyhood
-        match_interned_str2("unit", s, |v, eq| {
+        match_interned_str("unit", s, |v, eq| {
             Some(if eq(v, str_nanosecond) {
                 Unit::Nanosecond
             } else if eq(v, str_microsecond) {
@@ -81,7 +82,7 @@ impl Unit {
         })
     }
 
-    fn increment_from_py2(self, v: PyObj, hours_increment_always_ok: bool) -> PyResult<i64> {
+    fn increment_from_py(self, v: PyObj, hours_increment_always_ok: bool) -> PyResult<i64> {
         let inc = v
             .cast::<PyInt>()
             .ok_or_type_err("increment must be an integer")?
@@ -127,7 +128,7 @@ impl Unit {
     }
 }
 
-pub(crate) fn parse_args2(
+pub(crate) fn parse_args(
     state: &State,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -180,13 +181,13 @@ pub(crate) fn parse_args2(
     for (i, &obj) in args.iter().enumerate() {
         arg_obj[i] = Some(obj)
     }
-    handle_kwargs2("round", kwargs, |key, value, eq| {
+    handle_kwargs("round", kwargs, |key, value, eq| {
         for (i, &kwname) in [str_unit, str_increment, str_mode].iter().enumerate() {
             if eq(key, kwname) {
                 if arg_obj[i].replace(value).is_some() {
                     raise_type_err(format!(
                         "round() got multiple values for argument {}",
-                        kwname.repr()
+                        kwname
                     ))?;
                 }
                 return Ok(true);
@@ -210,7 +211,7 @@ pub(crate) fn parse_args2(
 
     let unit = arg_obj[0]
         .map(|v| {
-            Unit::from_py2(
+            Unit::from_py(
                 v,
                 str_nanosecond,
                 str_microsecond,
@@ -224,12 +225,12 @@ pub(crate) fn parse_args2(
         .transpose()?
         .unwrap_or(Unit::Second);
     let increment = arg_obj[1]
-        .map(|v| unit.increment_from_py2(v, hours_largest_unit))
+        .map(|v| unit.increment_from_py(v, hours_largest_unit))
         .transpose()?
         .unwrap_or_else(|| unit.default_increment());
     let mode = arg_obj[2]
         .map(|v| {
-            Mode::from_py2(
+            Mode::from_py(
                 v,
                 str_floor,
                 str_ceil,

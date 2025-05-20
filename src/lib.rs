@@ -1,5 +1,4 @@
-// TODO
-// #![warn(unsafe_op_in_unsafe_fn)]
+#![warn(unsafe_op_in_unsafe_fn)]
 use pyo3_ffi::*;
 
 // For benchmarking, all modules are public. The crate itself isn't distributed as a library,
@@ -16,7 +15,7 @@ use crate::pymodule::MODULE_DEF;
 
 #[allow(clippy::missing_safety_doc)]
 #[allow(non_snake_case)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cold]
 pub unsafe extern "C" fn PyInit__whenever() -> *mut PyObject {
     unsafe { PyModuleDef_Init(&raw mut MODULE_DEF) }

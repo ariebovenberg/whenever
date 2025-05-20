@@ -1,4 +1,4 @@
-use core::ffi::{c_int, c_void, CStr};
+use core::ffi::{CStr, c_int, c_void};
 use pyo3_ffi::*;
 use std::fmt;
 use std::ops::Neg;
@@ -6,12 +6,12 @@ use std::ptr::null_mut as NULL;
 
 use crate::{
     classes::{
-        date_delta::{self, parse_prefix, DateDelta, InitError, Unit as DateUnit},
+        date_delta::{self, DateDelta, InitError, Unit as DateUnit, parse_prefix},
         time_delta::{
-            self, TimeDelta, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS,
+            self, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS, TimeDelta,
         },
     },
-    common::math::*,
+    common::scalar::*,
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -104,7 +104,7 @@ impl Neg for DateTimeDelta {
 }
 
 #[inline]
-pub(crate) fn handle_exact_unit2(
+pub(crate) fn handle_exact_unit(
     value: PyObj,
     max: i64,
     name: &str,
@@ -128,7 +128,7 @@ pub(crate) fn handle_exact_unit2(
 }
 
 #[inline]
-pub(crate) fn set_units_from_kwargs2(
+pub(crate) fn set_units_from_kwargs(
     key: PyObj,
     value: PyObj,
     months: &mut i32,
@@ -174,15 +174,15 @@ pub(crate) fn set_units_from_kwargs2(
             .and_then(|d| days.checked_add(d))
             .ok_or_value_err("total days out of range")?;
     } else if eq(key, state.str_hours) {
-        *nanos += handle_exact_unit2(value, MAX_HOURS, "hours", 3_600_000_000_000)?;
+        *nanos += handle_exact_unit(value, MAX_HOURS, "hours", 3_600_000_000_000)?;
     } else if eq(key, state.str_minutes) {
-        *nanos += handle_exact_unit2(value, MAX_MINUTES, "minutes", 60_000_000_000)?;
+        *nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", 60_000_000_000)?;
     } else if eq(key, state.str_seconds) {
-        *nanos += handle_exact_unit2(value, MAX_SECS, "seconds", 1_000_000_000)?;
+        *nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000)?;
     } else if eq(key, state.str_milliseconds) {
-        *nanos += handle_exact_unit2(value, MAX_MILLISECONDS, "milliseconds", 1_000_000)?;
+        *nanos += handle_exact_unit(value, MAX_MILLISECONDS, "milliseconds", 1_000_000)?;
     } else if eq(key, state.str_microseconds) {
-        *nanos += handle_exact_unit2(value, MAX_MICROSECONDS, "microseconds", 1_000)?;
+        *nanos += handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000)?;
     } else if eq(key, state.str_nanoseconds) {
         *nanos = value
             .cast::<PyInt>()
@@ -241,20 +241,12 @@ fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) 
             },
         }, // OPTIMIZE: return the singleton
         (0, _) => {
-            handle_kwargs2(
+            handle_kwargs(
                 "DateTimeDelta",
                 // SAFETY: if nkwargs > 0, kwargs is Some
                 kwargs.unwrap().iteritems(),
                 |key, value, eq| {
-                    set_units_from_kwargs2(
-                        key,
-                        value,
-                        &mut months,
-                        &mut days,
-                        &mut nanos,
-                        state,
-                        eq,
-                    )
+                    set_units_from_kwargs(key, value, &mut months, &mut days, &mut nanos, state, eq)
                 },
             )?;
             if months >= 0 && days >= 0 && nanos >= 0 || months <= 0 && days <= 0 && nanos <= 0 {
@@ -272,7 +264,7 @@ fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) 
         }
         _ => raise_value_err("TimeDelta() takes no positional arguments")?,
     }
-    .to_obj3(cls)
+    .to_obj(cls)
 }
 
 fn __richcmp__(
@@ -281,10 +273,10 @@ fn __richcmp__(
     b_obj: PyObj,
     op: c_int,
 ) -> PyReturn {
-    match b_obj.extract3(cls) {
+    match b_obj.extract(cls) {
         Some(b) => match op {
-            pyo3_ffi::Py_EQ => (a == b).to_py2(),
-            pyo3_ffi::Py_NE => (a != b).to_py2(),
+            pyo3_ffi::Py_EQ => (a == b).to_py(),
+            pyo3_ffi::Py_NE => (a != b).to_py(),
             _ => not_implemented(),
         },
         None => not_implemented(),
@@ -299,7 +291,7 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
 }
 
 fn __neg__(cls: HeapType<DateTimeDelta>, d: DateTimeDelta) -> PyReturn {
-    (-d).to_obj3(cls)
+    (-d).to_obj(cls)
 }
 
 extern "C" fn __bool__(slf: PyObj) -> c_int {
@@ -309,11 +301,11 @@ extern "C" fn __bool__(slf: PyObj) -> c_int {
 }
 
 fn __repr__(_: PyType, d: DateTimeDelta) -> PyReturn {
-    format!("DateTimeDelta({})", d).to_py2()
+    format!("DateTimeDelta({})", d).to_py()
 }
 
 fn __str__(_: PyType, d: DateTimeDelta) -> PyReturn {
-    d.fmt_iso().to_py2()
+    d.fmt_iso().to_py()
 }
 
 fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
@@ -336,7 +328,7 @@ fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
         .ok()
         .and_then(|f| delta.checked_mul(f))
         .ok_or_value_err("Multiplication factor or result out of bounds")?
-        .to_obj3(delta_type)
+        .to_obj(delta_type)
 }
 
 fn __add__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
@@ -350,8 +342,8 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
 #[inline]
 fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     // FUTURE: optimize zero cases
-    let type_a = obj_a.class();
-    let type_b = obj_b.class();
+    let type_a = obj_a.type_();
+    let type_b = obj_b.type_();
     // The easy case: DateTimeDelta + DateTimeDelta
     let (delta_type, a, mut b) = if type_a == type_b {
         // SAFETY: Both are the same type, and one of them *must* be a DateTimeDelta
@@ -361,16 +353,16 @@ fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     // Other cases are more difficult, as they can be triggered
     // by reflexive operations with arbitrary types.
     // We need to eliminate them carefully.
-    } else if let Some(state) = type_a.are_both_whenever(type_b) {
+    } else if let Some(state) = type_a.same_module(type_b) {
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
         let (delta_type, a) = unsafe { obj_a.assume_heaptype::<DateTimeDelta>() };
-        let delta_b = if let Some(ddelta) = obj_b.extract3(state.date_delta_type) {
+        let delta_b = if let Some(ddelta) = obj_b.extract(state.date_delta_type) {
             DateTimeDelta {
                 ddelta,
                 tdelta: TimeDelta::ZERO,
             }
-        } else if let Some(tdelta) = obj_b.extract3(state.time_delta_type) {
+        } else if let Some(tdelta) = obj_b.extract(state.time_delta_type) {
             DateTimeDelta {
                 ddelta: DateDelta::ZERO,
                 tdelta,
@@ -379,8 +371,7 @@ fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
             // We can safely discount other types within our module
             return raise_value_err(format!(
                 "unsupported operand type(s) for +/-: {} and {}",
-                type_a.repr(),
-                type_b.repr()
+                type_a, type_b
             ));
         };
         // SAFETY: at least one of the objects is a DateTimeDelta
@@ -398,7 +389,7 @@ fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                 InitError::MixedSign => "Mixed sign in DateTimeDelta",
             })
         })?
-        .to_obj3(delta_type)
+        .to_obj(delta_type)
 }
 
 fn __abs__(
@@ -410,7 +401,7 @@ fn __abs__(
         ddelta: ddelta.abs(),
         tdelta: tdelta.abs(),
     }
-    .to_obj3(cls)
+    .to_obj(cls)
 }
 
 #[allow(static_mut_refs)]
@@ -452,7 +443,7 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 fn format_common_iso(_: PyType, d: DateTimeDelta) -> PyReturn {
-    d.fmt_iso().to_py2()
+    d.fmt_iso().to_py()
 }
 
 pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
@@ -491,7 +482,7 @@ fn parse_common_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
         .ok_or_value_err("argument must be str")?;
 
     let s = &mut binding.as_utf8()?;
-    let err = || format!("Invalid format or out of range: {}", arg.repr());
+    let err = || format!("Invalid format or out of range: {}", arg);
     if s.len() < 3 {
         // at least `P0D`
         raise_value_err(err())?
@@ -517,7 +508,7 @@ fn parse_common_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
         ddelta = -ddelta;
         tdelta = -tdelta;
     }
-    DateTimeDelta { ddelta, tdelta }.to_obj3(cls)
+    DateTimeDelta { ddelta, tdelta }.to_obj(cls)
 }
 
 fn in_months_days_secs_nanos(
@@ -535,20 +526,20 @@ fn in_months_days_secs_nanos(
         subsec.get()
     };
     (
-        months.get().to_py2()?,
-        days.get().to_py2()?,
-        secs.to_py2()?,
-        nanos.to_py2()?,
+        months.get().to_py()?,
+        days.get().to_py()?,
+        secs.to_py()?,
+        nanos.to_py()?,
     )
         .into_pytuple()
 }
 
 fn date_part(cls: HeapType<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
-    slf.ddelta.to_obj3(cls.state().date_delta_type)
+    slf.ddelta.to_obj(cls.state().date_delta_type)
 }
 
 fn time_part(cls: HeapType<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
-    slf.tdelta.to_obj3(cls.state().time_delta_type)
+    slf.tdelta.to_obj(cls.state().time_delta_type)
 }
 
 fn __reduce__(
@@ -563,10 +554,10 @@ fn __reduce__(
         // We don't do our own bit packing because the numbers are usually small
         // and Python's pickle protocol handles them more efficiently.
         (
-            months.get().to_py2()?,
-            days.get().to_py2()?,
-            secs.get().to_py2()?,
-            subsec.get().to_py2()?,
+            months.get().to_py()?,
+            days.get().to_py()?,
+            secs.get().to_py()?,
+            subsec.get().to_py()?,
         )
             .into_pytuple()?,
     )
@@ -603,7 +594,7 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
                 ),
             },
         }
-        .to_obj3(state.datetime_delta_type),
+        .to_obj(state.datetime_delta_type),
         _ => raise_type_err("Invalid pickle data")?,
     }
 }

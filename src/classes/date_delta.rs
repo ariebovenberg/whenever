@@ -1,4 +1,4 @@
-use core::ffi::{c_int, c_long, c_void, CStr};
+use core::ffi::{CStr, c_int, c_long, c_void};
 use pyo3_ffi::*;
 use std::fmt;
 use std::ops::Neg;
@@ -6,7 +6,7 @@ use std::ptr::null_mut as NULL;
 
 use crate::{
     classes::{datetime_delta::DateTimeDelta, time_delta::TimeDelta},
-    common::math::*,
+    common::scalar::*,
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -174,7 +174,7 @@ where
 {
     let mut days: c_long = 0;
     let mut months: c_long = 0;
-    handle_kwargs2(fname, kwargs, |key, value, eq| {
+    handle_kwargs(fname, kwargs, |key, value, eq| {
         if eq(key, str_days) {
             days = value
                 .cast::<PyInt>()
@@ -241,7 +241,7 @@ fn __new__(cls: HeapType<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> P
             DateDelta::new(months, days).ok_or_value_err("Mixed sign in DateDelta")?
         }
     }
-    .to_obj3(cls)
+    .to_obj(cls)
 }
 
 pub(crate) fn years(state: &State, amount: PyObj) -> PyReturn {
@@ -253,7 +253,7 @@ pub(crate) fn years(state: &State, amount: PyObj) -> PyReturn {
         .and_then(DeltaMonths::from_long)
         .map(DateDelta::from_months)
         .ok_or_value_err("value out of bounds")?
-        .to_obj3(state.date_delta_type)
+        .to_obj(state.date_delta_type)
 }
 
 pub(crate) fn months(state: &State, amount: PyObj) -> PyReturn {
@@ -265,7 +265,7 @@ pub(crate) fn months(state: &State, amount: PyObj) -> PyReturn {
     )
     .map(DateDelta::from_months)
     .ok_or_value_err("value out of bounds")?
-    .to_obj3(state.date_delta_type)
+    .to_obj(state.date_delta_type)
 }
 
 pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn {
@@ -277,7 +277,7 @@ pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn {
         .and_then(DeltaDays::from_long)
         .map(DateDelta::from_days)
         .ok_or_value_err("value out of bounds")?
-        .to_obj3(state.date_delta_type)
+        .to_obj(state.date_delta_type)
 }
 
 pub(crate) fn days(state: &State, amount: PyObj) -> PyReturn {
@@ -289,31 +289,31 @@ pub(crate) fn days(state: &State, amount: PyObj) -> PyReturn {
     )
     .map(DateDelta::from_days)
     .ok_or_value_err("value out of bounds")?
-    .to_obj3(state.date_delta_type)
+    .to_obj(state.date_delta_type)
 }
 
 fn __richcmp__(cls: HeapType<DateDelta>, a: DateDelta, b_obj: PyObj, op: c_int) -> PyReturn {
-    match b_obj.extract3(cls) {
+    match b_obj.extract(cls) {
         Some(b) => match op {
             pyo3_ffi::Py_EQ => a == b,
             pyo3_ffi::Py_NE => a != b,
             _ => return not_implemented(),
         }
-        .to_py2(),
+        .to_py(),
         None => not_implemented(),
     }
 }
 
 fn __neg__(cls: HeapType<DateDelta>, d: DateDelta) -> PyReturn {
-    (-d).to_obj3(cls)
+    (-d).to_obj(cls)
 }
 
 fn __repr__(_: PyType, d: DateDelta) -> PyReturn {
-    format!("DateDelta({})", d).to_py2()
+    format!("DateDelta({})", d).to_py()
 }
 
 fn __str__(_: PyType, d: DateDelta) -> PyReturn {
-    d.fmt_iso().to_py2()
+    d.fmt_iso().to_py()
 }
 
 fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
@@ -336,7 +336,7 @@ fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
         .ok()
         .and_then(|f| delta.checked_mul(f))
         .ok_or_value_err("Multiplication factor or result out of bounds")?
-        .to_obj3(delta_type)
+        .to_obj(delta_type)
 }
 
 fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
@@ -349,8 +349,8 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
 
 #[inline]
 fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
-    let type_a = obj_a.class();
-    let type_b = obj_b.class();
+    let type_a = obj_a.type_();
+    let type_b = obj_b.type_();
 
     // Case: both are DateDelta
     if type_a == type_b {
@@ -367,18 +367,18 @@ fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                     InitError::MixedSign => "Mixed sign in DateDelta",
                 })
             })?
-            .to_obj3(ddelta_type)
+            .to_obj(ddelta_type)
     // Case: two `whenever` types
-    } else if let Some(state) = type_a.are_both_whenever(type_b) {
+    } else if let Some(state) = type_a.same_module(type_b) {
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
         let (_, ddelta) = unsafe { obj_a.assume_heaptype::<DateDelta>() };
-        if let Some(mut tdelta) = obj_b.extract3(state.time_delta_type) {
+        if let Some(mut tdelta) = obj_b.extract(state.time_delta_type) {
             if negate {
                 tdelta = -tdelta;
             }
             DateTimeDelta::new(ddelta, tdelta).ok_or_value_err("Mixed sign in delta")?
-        } else if let Some(mut dtdelta) = obj_b.extract3(state.datetime_delta_type) {
+        } else if let Some(mut dtdelta) = obj_b.extract(state.datetime_delta_type) {
             if negate {
                 dtdelta = -dtdelta;
             }
@@ -397,12 +397,10 @@ fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
         } else {
             raise_type_err(format!(
                 "unsupported operand type(s) for +/-: {} and {}",
-                // TODO: implement Display?
-                type_a.repr(),
-                type_b.repr()
+                type_a, type_b
             ))?
         }
-        .to_obj3(state.datetime_delta_type)
+        .to_obj(state.datetime_delta_type)
     } else {
         not_implemented()
     }
@@ -419,7 +417,7 @@ fn __abs__(cls: HeapType<DateDelta>, slf: PyObj) -> PyReturn {
             months: -months,
             days: -days,
         }
-        .to_obj3(cls)
+        .to_obj(cls)
     }
 }
 
@@ -474,7 +472,7 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 fn format_common_iso(_: PyType, slf: DateDelta) -> PyReturn {
-    slf.fmt_iso().to_py2()
+    slf.fmt_iso().to_py()
 }
 
 // parse the prefix of an ISO8601 duration, e.g. `P`, `-P`, `+P`,
@@ -546,14 +544,10 @@ pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, Unit)> {
     }
 }
 
-fn parse_common_iso(cls: HeapType<DateDelta>, s_obj: PyObj) -> PyReturn {
-    let binding = s_obj
-        .cast::<PyStr>()
-        .ok_or_type_err("argument must be str")?;
-
-    // TODO inline?
-    let s = &mut binding.as_utf8()?;
-    let err = || format!("Invalid format: {}", s_obj.repr());
+fn parse_common_iso(cls: HeapType<DateDelta>, arg: PyObj) -> PyReturn {
+    let py_str = arg.cast::<PyStr>().ok_or_type_err("argument must be str")?;
+    let s = &mut py_str.as_utf8()?;
+    let err = || format!("Invalid format: {}", arg);
     if s.len() < 3 {
         // at least `P0D`
         raise_value_err(err())?
@@ -606,11 +600,11 @@ fn parse_common_iso(cls: HeapType<DateDelta>, s_obj: PyObj) -> PyReturn {
         .zip(DeltaDays::new(days))
         .map(|(months, days)| DateDelta { months, days })
         .ok_or_value_err("DateDelta out of range")?
-        .to_obj3(cls)
+        .to_obj(cls)
 }
 
 fn in_months_days(_: PyType, DateDelta { months, days }: DateDelta) -> PyResult<Owned<PyTuple>> {
-    (months.get().to_py2()?, days.get().to_py2()?).into_pytuple()
+    (months.get().to_py()?, days.get().to_py()?).into_pytuple()
 }
 
 // FUTURE: maybe also return the sign?
@@ -620,7 +614,7 @@ fn in_years_months_days(
 ) -> PyResult<Owned<PyTuple>> {
     let years = months.get() / 12;
     let months = months.get() % 12;
-    (years.to_py2()?, months.to_py2()?, days.get().to_py2()?).into_pytuple()
+    (years.to_py()?, months.to_py()?, days.get().to_py()?).into_pytuple()
 }
 
 fn __reduce__(
@@ -629,7 +623,7 @@ fn __reduce__(
 ) -> PyResult<Owned<PyTuple>> {
     (
         cls.state().unpickle_date_delta.newref(),
-        (months.get().to_py2()?, days.get().to_py2()?).into_pytuple()?,
+        (months.get().to_py()?, days.get().to_py()?).into_pytuple()?,
     )
         .into_pytuple()
 }
@@ -651,7 +645,7 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
             );
             DateDelta::new(months, days)
                 .ok_or_value_err("Invalid pickle data")?
-                .to_obj3(state.date_delta_type)
+                .to_obj(state.date_delta_type)
         }
         _ => raise_type_err("Invalid pickle data")?,
     }
