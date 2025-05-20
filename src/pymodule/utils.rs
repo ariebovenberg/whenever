@@ -9,16 +9,12 @@ pub(crate) fn new_enum(
     module: PyModule,
     module_name: PyObj,
     name: &str,
-    members: &[(&CStr, i32)],
+    members: &str, // space-separated list of members
 ) -> PyResult<Owned<PyType>> {
-    let members_dict = PyDict::new()?;
-    for &(key, value) in members {
-        members_dict.set_item_str(key, value.to_py()?.borrow())?;
-    }
-    let enum_module = import(c"enum")?;
-    let enum_cls = enum_module
+    let tp = (name.to_py()?, members.to_py()?).into_pytuple()?;
+    let enum_cls = import(c"enum")?
         .getattr(c"Enum")?
-        .call((name.to_py()?, members_dict).into_pytuple()?.borrow())?
+        .call(tp.borrow())?
         .cast_allow_subclass::<PyType>()
         .unwrap();
 
@@ -47,7 +43,7 @@ pub(crate) fn new_exception(
 pub(crate) fn new_class<T: PyWrapped>(
     module: PyModule,
     module_nameobj: PyObj,
-    spec: *mut PyType_Spec,
+    spec: &mut PyType_Spec,
     unpickle_name: &CStr,
     singletons: &[(&CStr, T)],
     unpickle_ref: &mut PyObj,

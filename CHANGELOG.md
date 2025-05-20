@@ -1,16 +1,18 @@
 # 🚀 Changelog
 
-## 0.8.1 (2025-05-??)
+## 0.8.1 (2025-05-21)
 
 **New**
 
 - Added support for Pydantic serialization/deserialization of
-  `whenever` types. For now, only the ISO 8601 format is supported, but
-  more flexible parsing may be added in the future. (#175)
+  `whenever` types in the ISO 8601 format. This functionality is in
+  preview, and may be subject to change in the future. (#175)
 
 **Fixed**
 
 - ``Weekday`` enum values from the Rust extension are now pickleable.
+- Solve crash in Rust extention module import if Python's garbage collection
+  happens to occurs at the same time.
 
 **Improved**
 

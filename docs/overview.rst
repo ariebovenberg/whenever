@@ -695,7 +695,7 @@ parts of the standard to support. ``whenever`` targets the most common
 and widely-used subset of the standard, while avoiding the more obscure
 and rarely-used parts, which are often the source of confusion and bugs.
 
-``whenever``'s 
+``whenever``'s
 :meth:`~whenever._BasicConversions.parse_common_iso` methods take
 mostly `after Temporal <https://tc39.es/proposal-temporal/#sec-temporal-iso8601grammar>`_,
 namely:
@@ -823,15 +823,19 @@ This makes it explicit what information is being assumed.
 >>> d.assume_tz("Europe/Amsterdam")
 ZonedDateTime(2023-10-29 02:30:00+02:00[Europe/Amsterdam])
 
-Pydantic
-~~~~~~~~
+Pydantic integration
+~~~~~~~~~~~~~~~~~~~~
+
+.. warning::
+
+   Pydantic support is still in preview and may change in the future.
 
 ``Whenever`` types support basic serialization and deserialization
 with `Pydantic <https://docs.pydantic.dev>`_. The behavior is identical to
 the ``parse_common_iso()`` and ``format_common_iso()`` methods.
 
 >>> from pydantic import BaseModel
->>> from whenever import ZonedDateTime
+>>> from whenever import ZonedDateTime, TimeDelta
 ...
 >>> class Event(BaseModel):
 ...     start: ZonedDateTime

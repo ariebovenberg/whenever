@@ -1,8 +1,7 @@
 //! Basic types and traits for PyObject and its subtypes.
 use super::{exc::*, refs::*, string::*, tuple::*, types::*};
-use core::{ffi::CStr, ptr::null_mut as NULL};
+use core::{ffi::CStr, fmt::Debug, ptr::NonNull, ptr::null_mut as NULL};
 use pyo3_ffi::*;
-use std::{fmt::Debug, ptr::NonNull};
 
 pub(crate) trait FromPy: Sized + Copy {
     unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self;

@@ -1,7 +1,7 @@
 //! Miscellaneous utility functions and constants.
 use super::{args::*, base::*, exc::*, refs::*, types::*};
 use core::{
-    ffi::{CStr, c_void},
+    ffi::{CStr, c_int, c_void},
     ptr::null_mut as NULL,
 };
 use pyo3_ffi::*;
@@ -106,13 +106,9 @@ impl LazyImport {
     }
 
     /// Ensure Python's GC can traverse this object.
-    pub(crate) unsafe fn traverse(&self, visit: visitproc, arg: *mut c_void) {
-        unsafe {
-            let obj = *self.obj.get();
-            if !obj.is_null() {
-                visit(obj, arg);
-            }
-        }
+    pub(crate) fn traverse(&self, visit: visitproc, arg: *mut c_void) -> TraverseResult {
+        let obj = unsafe { *self.obj.get() };
+        traverse(obj, visit, arg)
     }
 }
 
@@ -152,6 +148,53 @@ pub(crate) const fn hash_combine(lhs: Py_hash_t, rhs: Py_hash_t) -> Py_hash_t {
             .wrapping_add(lhs << 6)
             .wrapping_add(lhs >> 2))
     }
+}
+
+/// Result from traversing a Python object for garbage collection.
+pub(crate) type TraverseResult = Result<(), c_int>;
+
+pub(crate) fn traverse(
+    target: *mut PyObject,
+    visit: visitproc,
+    arg: *mut c_void,
+) -> TraverseResult {
+    if target.is_null() {
+        Ok(())
+    } else {
+        match unsafe { (visit)(target, arg) } {
+            0 => Ok(()),
+            n => Err(n),
+        }
+    }
+}
+
+/// Disable the garbage collector, returning true if it was already disabled.
+pub(crate) fn disable_gc() -> PyResult<bool> {
+    #[cfg(Py_3_10)]
+    {
+        Ok(unsafe { PyGC_Disable() } == 0)
+    }
+    #[cfg(not(Py_3_10))]
+    {
+        let gc = import(c"gc")?;
+        if gc.getattr(c"isenabled")?.call0()?.is_true() {
+            gc.getattr(c"disable")?.call0()?;
+            return Ok(false);
+        }
+        Ok(true)
+    }
+}
+
+pub(crate) fn enable_gc() -> PyResult<()> {
+    #[cfg(Py_3_10)]
+    {
+        unsafe { PyGC_Enable() };
+    }
+    #[cfg(not(Py_3_10))]
+    {
+        import(c"gc")?.getattr(c"enable")?.call0()?;
+    }
+    Ok(())
 }
 
 #[allow(unused_imports)]
