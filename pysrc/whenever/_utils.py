@@ -278,6 +278,7 @@ def pydantic_schema(cls):
 
     return core_schema.no_info_plain_validator_function(
         lambda v: v if type(v) is cls else cls.parse_common_iso(v),
+        json_schema_input_schema={"type": "str"},
         serialization=core_schema.plain_serializer_function_ser_schema(
             cls.format_common_iso,
             when_used="json-unless-none",
