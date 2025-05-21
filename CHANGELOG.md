@@ -11,8 +11,9 @@
 **Fixed**
 
 - ``Weekday`` enum values from the Rust extension are now pickleable.
-- Solve crash in Rust extention module import if Python's garbage collection
-  happens to occurs at the same time.
+- Solve crash if Python's garbage collection occurs while the Rust
+  extension is still initializing.
+- Fixed a crash in parsing malformed fractional ``TimeDelta`` seconds (#234)
 
 **Improved**
 
