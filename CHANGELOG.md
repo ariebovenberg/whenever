@@ -1,5 +1,10 @@
 # 🚀 Changelog
 
+## 0.8.2 (2025-05-21)
+
+- Allow Pydantic to generate JSON schema for `whenever` types. This is
+  particularly useful for generating OpenAPI schemas for FastAPI.
+
 ## 0.8.1 (2025-05-21)
 
 **New**

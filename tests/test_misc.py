@@ -161,6 +161,8 @@ def test_pydantic_serialization():
         field9: MonthDay
         field10: YearMonth
 
+    assert Model.model_json_schema() is not None
+
     obj0 = Instant.from_utc(2024, 1, 1, hour=12)
     obj1 = ZonedDateTime(2024, 1, 1, hour=12, tz="Europe/Amsterdam")
     obj2 = OffsetDateTime(2024, 1, 1, hour=12, offset=1)
