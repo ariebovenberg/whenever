@@ -808,6 +808,9 @@ enum Unit {
 
 // 001234 -> 1_234_000
 fn parse_nano_fractions(s: &[u8]) -> Option<i128> {
+    if s.is_empty() {
+        return None;
+    }
     let mut tally = extract_digit(s, 0)? as i128 * 100_000_000;
     for i in 1..s.len().min(9) {
         match s[i] {
@@ -821,12 +824,9 @@ fn parse_nano_fractions(s: &[u8]) -> Option<i128> {
             _ => return None,
         }
     }
-    // at this point we've parsed 9 fractional digits successfully.
-    // Only encountering `S` is valid. Nothing more, nothing less.
-    match s[9..] {
-        [b'S' | b's'] => Some(tally),
-        _ => None,
-    }
+
+    // We only end up here if we didn't encounter a `S` or `s` in the first 9 places
+    (s.len() == 10 && s[9].eq_ignore_ascii_case(&b's')).then_some(tally)
 }
 
 /// parse a component of a ISO8601 duration, e.g. `6M`, `56.3S`, `0H`

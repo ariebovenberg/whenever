@@ -381,7 +381,12 @@ INVALID_TDELTAS = [
     "PT𝟙H",  # non-ascii
     "PT0.0001",
     "PT.0001",
+    "PT.S",
     "PT0.0000",
+    "PT0.123456789",
+    "PT0.123456789Sbla",
+    "PT4M0.",
+    "PT4M0.S",
     # spacing
     "PT 3M",
     "PT-3M",
