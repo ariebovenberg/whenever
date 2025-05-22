@@ -5,6 +5,7 @@ from __future__ import annotations
 import os.path  # NOTE: we don't use pathlib here to keep our imports light
 import sysconfig
 from contextlib import contextmanager
+from functools import partial
 from typing import Any, Iterable, Iterator, Union, no_type_check
 
 from ._core import (
@@ -273,11 +274,23 @@ def _is_tzifile(p: str) -> bool:
 
 
 @no_type_check
+def _pydantic_parse(cls: type, v: object) -> object:
+    # exact type comparison is OK: whenever types don't allow subclassing
+    if type(v) is cls:
+        return v
+    # whenever also doesn't allow string subclasses
+    elif type(v) is str:
+        return cls.parse_common_iso(v)
+    else:
+        raise ValueError(f"Cannot parse {cls.__name__} from type {type(v)}")
+
+
+@no_type_check
 def pydantic_schema(cls):
     from pydantic_core import core_schema
 
     return core_schema.no_info_plain_validator_function(
-        lambda v: v if type(v) is cls else cls.parse_common_iso(v),
+        partial(_pydantic_parse, cls),
         json_schema_input_schema={"type": "str"},
         serialization=core_schema.plain_serializer_function_ser_schema(
             cls.format_common_iso,
