@@ -1,5 +1,10 @@
 # 🚀 Changelog
 
+## 0.8.3 (2025-05-22)
+
+- Ensure Pydantic parsing failures of `whenever` types always result in
+  a proper `ValidationError`, not a `TypeError`.
+
 ## 0.8.2 (2025-05-21)
 
 - Allow Pydantic to generate JSON schema for `whenever` types. This is
