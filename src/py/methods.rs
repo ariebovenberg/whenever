@@ -61,7 +61,7 @@ macro_rules! modmethod1(
                         $meth(
                             // SAFETY: module state is initialized before this function is called
                             unsafe { mod_obj
-                                .state_uninit()
+                                .state()
                                 .assume_init_mut()
                                 .as_mut()
                                 .unwrap()
@@ -91,7 +91,7 @@ macro_rules! modmethod0(
                         $meth(
                             // SAFETY: module state is initialized before this function is called
                             unsafe { mod_obj
-                                .state_uninit()
+                                .state()
                                 .assume_init_mut()
                                 .as_mut()
                                 .unwrap()
@@ -193,7 +193,7 @@ macro_rules! modmethod_vararg(
                         $meth(
                             // SAFETY: module state is initialized before this function is called
                             unsafe { mod_obj
-                                .state_uninit()
+                                .state()
                                 .assume_init_mut()
                                 .as_mut()
                                 .unwrap()

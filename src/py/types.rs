@@ -1,7 +1,11 @@
 //! Functionality related to Python type objects
 use super::{base::*, exc::*, module::*, refs::*};
 use crate::pymodule::State;
-use core::{ffi::CStr, mem, ptr::NonNull};
+use core::{
+    ffi::CStr,
+    mem::{self, MaybeUninit},
+    ptr::NonNull,
+};
 use pyo3_ffi::*;
 
 /// Wrapper around PyTypeObject.
@@ -48,7 +52,7 @@ impl PyType {
             // SAFETY: we only use this function after module initialization
             unsafe {
                 PyModule::from_ptr_unchecked(mod_a.as_ptr())
-                    .state_uninit()
+                    .state()
                     .assume_init_ref()
                     .as_ref()
             }
@@ -80,10 +84,14 @@ pub(crate) struct HeapType<T: PyWrapped> {
 impl<T: PyWrapped> HeapType<T> {
     /// Get the module state
     pub(crate) fn state<'a>(&self) -> &'a State {
-        // SAFETY: we assume the pointer is valid and points to a PyType object
+        // SAFETY: the type pointer is valid, and the retrieved module
+        // state is valid once the Python module is initialized.
         unsafe {
             PyType_GetModuleState(self.type_py.as_ptr().cast())
-                .cast::<State>()
+                .cast::<MaybeUninit<Option<State>>>()
+                .as_ref()
+                .unwrap()
+                .assume_init_ref()
                 .as_ref()
                 .unwrap()
         }
