@@ -1,5 +1,5 @@
 //! Functionality related to Python type objects
-use super::{base::*, exc::*, refs::*};
+use super::{base::*, exc::*, module::*, refs::*};
 use crate::pymodule::State;
 use core::{ffi::CStr, mem, ptr::NonNull};
 use pyo3_ffi::*;
@@ -44,10 +44,17 @@ impl PyType {
             unsafe { PyErr_Clear() };
             return None;
         };
-        (mod_a == mod_b).then(|| {
-            // SAFETY: we just checked the pointers, so this is safe
-            unsafe { State::for_mod(mod_a.as_ptr()) }
-        })
+        if mod_a == mod_b {
+            // SAFETY: we only use this function after module initialization
+            unsafe {
+                PyModule::from_ptr_unchecked(mod_a.as_ptr())
+                    .state_uninit()
+                    .assume_init_ref()
+                    .as_ref()
+            }
+        } else {
+            None
+        }
     }
 
     /// Associate the type with the given Rust type.

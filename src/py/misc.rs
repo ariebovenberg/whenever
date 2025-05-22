@@ -168,34 +168,5 @@ pub(crate) fn traverse(
     }
 }
 
-/// Disable the garbage collector, returning true if it was already disabled.
-pub(crate) fn disable_gc() -> PyResult<bool> {
-    #[cfg(Py_3_10)]
-    {
-        Ok(unsafe { PyGC_Disable() } == 0)
-    }
-    #[cfg(not(Py_3_10))]
-    {
-        let gc = import(c"gc")?;
-        if gc.getattr(c"isenabled")?.call0()?.is_true() {
-            gc.getattr(c"disable")?.call0()?;
-            return Ok(false);
-        }
-        Ok(true)
-    }
-}
-
-pub(crate) fn enable_gc() -> PyResult<()> {
-    #[cfg(Py_3_10)]
-    {
-        unsafe { PyGC_Enable() };
-    }
-    #[cfg(not(Py_3_10))]
-    {
-        import(c"gc")?.getattr(c"enable")?.call0()?;
-    }
-    Ok(())
-}
-
 #[allow(unused_imports)]
 pub(crate) use {pack, unpack_one};

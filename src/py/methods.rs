@@ -54,10 +54,19 @@ macro_rules! modmethod1(
             ml_meth: PyMethodDefPointer {
                 PyCFunction: {
                     use crate::py::*;
-                    unsafe extern "C" fn _wrap(mod_obj: *mut PyObject, arg_obj: *mut PyObject) -> *mut PyObject {
+                    unsafe extern "C" fn _wrap(mod_ptr: *mut PyObject, arg_obj: *mut PyObject) -> *mut PyObject {
+                        // SAFETY: valid pointers are passed to this function
+                        let mod_obj = unsafe{ PyModule::from_ptr_unchecked(mod_ptr) };
+                        let arg = unsafe {PyObj::from_ptr_unchecked(arg_obj)};
                         $meth(
-                            unsafe {State::for_mod_mut(mod_obj)},
-                            unsafe {PyObj::from_ptr_unchecked(arg_obj)},
+                            // SAFETY: module state is initialized before this function is called
+                            unsafe { mod_obj
+                                .state_uninit()
+                                .assume_init_mut()
+                                .as_mut()
+                                .unwrap()
+                            },
+                            arg
                         ).to_py_owned_ptr()
                     }
                     _wrap
@@ -76,9 +85,17 @@ macro_rules! modmethod0(
             ml_meth: PyMethodDefPointer {
                 PyCFunction: {
                     use crate::py::*;
-                    unsafe extern "C" fn _wrap(mod_obj: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
+                    unsafe extern "C" fn _wrap(mod_ptr: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
+                        // SAFETY: valid pointers are passed to this function
+                        let mod_obj = unsafe{ PyModule::from_ptr_unchecked(mod_ptr) };
                         $meth(
-                            unsafe {State::for_mod_mut(mod_obj)},
+                            // SAFETY: module state is initialized before this function is called
+                            unsafe { mod_obj
+                                .state_uninit()
+                                .assume_init_mut()
+                                .as_mut()
+                                .unwrap()
+                            },
                         ).to_py_owned_ptr()
                     }
                     _wrap
@@ -167,12 +184,20 @@ macro_rules! modmethod_vararg(
             ml_meth: PyMethodDefPointer {
                 PyCFunctionFast: {
                     unsafe extern "C" fn _wrap(
-                        slf: *mut PyObject,
+                        mod_ptr: *mut PyObject,
                         args: *mut *mut PyObject,
                         nargs: Py_ssize_t,
                     ) -> *mut PyObject {
+                        // SAFETY: valid pointers are passed to this function
+                        let mod_obj = unsafe{ PyModule::from_ptr_unchecked(mod_ptr) };
                         $meth(
-                            unsafe {State::for_mod(slf)},
+                            // SAFETY: module state is initialized before this function is called
+                            unsafe { mod_obj
+                                .state_uninit()
+                                .assume_init_mut()
+                                .as_mut()
+                                .unwrap()
+                            },
                             unsafe {std::slice::from_raw_parts(args.cast::<PyObj>(), nargs as usize)},
                         )
                         .to_py_owned_ptr()
