@@ -11,7 +11,7 @@ pub mod py;
 pub mod pymodule;
 pub mod tz;
 
-use crate::pymodule::MODULE_DEF;
+use crate::pymodule::def::MODULE_DEF;
 
 #[allow(clippy::missing_safety_doc)]
 #[allow(non_snake_case)]

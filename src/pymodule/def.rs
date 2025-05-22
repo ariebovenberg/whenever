@@ -26,7 +26,7 @@ use crate::{
 };
 use core::{
     ffi::{c_int, c_void},
-    mem,
+    mem::{self, MaybeUninit},
     ptr::null_mut as NULL,
 };
 use pyo3_ffi::*;
@@ -36,7 +36,7 @@ pub(crate) static mut MODULE_DEF: PyModuleDef = PyModuleDef {
     m_base: PyModuleDef_HEAD_INIT,
     m_name: c"whenever".as_ptr(),
     m_doc: c"Modern datetime library for Python".as_ptr(),
-    m_size: mem::size_of::<State>() as _,
+    m_size: mem::size_of::<MaybeUninit<Option<State>>>() as _,
     m_methods: unsafe { METHODS.as_mut_ptr() },
     m_slots: unsafe { MODULE_SLOTS.as_mut_ptr() },
     m_traverse: Some({
@@ -95,26 +95,10 @@ static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
         slot: Py_mod_exec,
         value: {
             extern "C" fn _wrap(arg: *mut PyObject) -> c_int {
-                // NOTE: we disable GC while executing the module to avoid
-                // traversing the module state while it's being initialized,
-                // which would cause a crash (even with null checks)
-                let Ok(gc_was_already_disabled) = disable_gc() else {
-                    return -1;
-                };
-                let result = match module_exec(unsafe { PyModule::from_ptr_unchecked(arg) }) {
+                match module_exec(unsafe { PyModule::from_ptr_unchecked(arg) }) {
                     Ok(_) => 0,
                     Err(_) => -1,
-                };
-                if !gc_was_already_disabled {
-                    // XXX: Theoretically, there could be an issue here if disabling
-                    // GC fails. However, this is only possible on Python 3.9
-                    // (where GC doesn't expose a C API) and in the rare case the
-                    // gc module is somehow not functioning properly.
-                    let Ok(_) = enable_gc() else {
-                        return -1;
-                    };
                 }
-                result
             }
             _wrap
         } as *mut c_void,
@@ -126,8 +110,9 @@ static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
         value: Py_MOD_PER_INTERPRETER_GIL_SUPPORTED,
     },
     // FUTURE: set this once we've ensured that:
-    // - tz cache is threadsafe
+    // - tz store is threadsafe
     // - we safely handle non-threadsafe modules: datetime, zoneinfo
+    // - GC traversal is threadsafe
     #[cfg(Py_3_13)]
     PyModuleDef_Slot {
         slot: Py_mod_gil,
@@ -141,225 +126,233 @@ static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
 
 #[cold]
 fn module_exec(module: PyModule) -> PyResult<()> {
-    let state = module.state();
+    // Initialize state to None to get it out of uninitialized state ASAP,
+    // as any further calls could trigger a GC cycle which would retrieve
+    // the state.
+    let state = module.state_uninit().write(None);
     let module_name = "whenever".to_py()?;
 
-    state.date_type = new_class(
+    let (date_type, unpickle_date) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { date::SPEC },
         c"_unpkl_date",
         date::SINGLETONS,
-        &mut state.unpickle_date,
-    )?
-    .py_owned();
-    state.yearmonth_type = new_class(
+    )?;
+    let (yearmonth_type, unpickle_yearmonth) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { yearmonth::SPEC },
         c"_unpkl_ym",
         yearmonth::SINGLETONS,
-        &mut state.unpickle_yearmonth,
-    )?
-    .py_owned();
-    state.monthday_type = new_class(
+    )?;
+    let (monthday_type, unpickle_monthday) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { monthday::SPEC },
         c"_unpkl_md",
         monthday::SINGLETONS,
-        &mut state.unpickle_monthday,
-    )?
-    .py_owned();
-    state.time_type = new_class(
+    )?;
+    let (time_type, unpickle_time) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { time::SPEC },
         c"_unpkl_time",
         time::SINGLETONS,
-        &mut state.unpickle_time,
-    )?
-    .py_owned();
-    state.date_delta_type = new_class(
+    )?;
+    let (date_delta_type, unpickle_date_delta) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { date_delta::SPEC },
         c"_unpkl_ddelta",
         date_delta::SINGLETONS,
-        &mut state.unpickle_date_delta,
-    )?
-    .py_owned();
-    state.time_delta_type = new_class(
+    )?;
+    let (time_delta_type, unpickle_time_delta) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { time_delta::SPEC },
         c"_unpkl_tdelta",
         time_delta::SINGLETONS,
-        &mut state.unpickle_time_delta,
-    )?
-    .py_owned();
-    state.datetime_delta_type = new_class(
+    )?;
+    let (datetime_delta_type, unpickle_datetime_delta) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { datetime_delta::SPEC },
         c"_unpkl_dtdelta",
         datetime_delta::SINGLETONS,
-        &mut state.unpickle_datetime_delta,
-    )?
-    .py_owned();
-    state.plain_datetime_type = new_class(
+    )?;
+    let (plain_datetime_type, unpickle_plain_datetime) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { plain_datetime::SPEC },
         c"_unpkl_local",
         plain_datetime::SINGLETONS,
-        &mut state.unpickle_plain_datetime,
-    )?
-    .py_owned();
-    state.instant_type = new_class(
+    )?;
+    let (instant_type, unpickle_instant) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { instant::SPEC },
         c"_unpkl_inst",
         instant::SINGLETONS,
-        &mut state.unpickle_instant,
-    )?
-    .py_owned();
-    state.offset_datetime_type = new_class(
+    )?;
+    let (offset_datetime_type, unpickle_offset_datetime) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { offset_datetime::SPEC },
         c"_unpkl_offset",
         offset_datetime::SINGLETONS,
-        &mut state.unpickle_offset_datetime,
-    )?
-    .py_owned();
-    state.zoned_datetime_type = new_class(
+    )?;
+    let (zoned_datetime_type, unpickle_zoned_datetime) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { zoned_datetime::SPEC },
         c"_unpkl_zoned",
         zoned_datetime::SINGLETONS,
-        &mut state.unpickle_zoned_datetime,
-    )?
-    .py_owned();
-    state.system_datetime_type = new_class(
+    )?;
+    let (system_datetime_type, unpickle_system_datetime) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { system_datetime::SPEC },
         c"_unpkl_system",
         system_datetime::SINGLETONS,
-        &mut state.unpickle_system_datetime,
-    )?
-    .py_owned();
+    )?;
     module
         .getattr(c"_unpkl_utc")?
         .setattr(c"__module__", module_name.borrow())?;
 
     unsafe { PyDateTime_IMPORT() };
-    state.py_api = match unsafe { PyDateTimeAPI().as_ref() } {
+    let py_api = match unsafe { PyDateTimeAPI().as_ref() } {
         Some(api) => api,
         None => Err(PyErrMarker())?,
     };
 
     // NOTE: getting strptime from the C API `DateTimeType` results in crashes
     // with subinterpreters. Thus we import it through Python.
-    state.strptime = import(c"datetime")?
+    let strptime = import(c"datetime")?
         .getattr(c"datetime")?
-        .getattr(c"strptime")?
-        .py_owned();
-    state.time_ns = import(c"time")?.getattr(c"time_ns")?.py_owned();
+        .getattr(c"strptime")?;
+    let time_ns = import(c"time")?.getattr(c"time_ns")?;
 
-    state.weekday_enum = new_enum(
+    let weekday_enum = new_enum(
         module,
         module_name.borrow(),
         "Weekday",
         "MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY SUNDAY",
-    )?
-    .py_owned();
+    )?;
 
-    state.str_years = intern(c"years")?.py_owned();
-    state.str_months = intern(c"months")?.py_owned();
-    state.str_weeks = intern(c"weeks")?.py_owned();
-    state.str_days = intern(c"days")?.py_owned();
-    state.str_hours = intern(c"hours")?.py_owned();
-    state.str_minutes = intern(c"minutes")?.py_owned();
-    state.str_seconds = intern(c"seconds")?.py_owned();
-    state.str_milliseconds = intern(c"milliseconds")?.py_owned();
-    state.str_microseconds = intern(c"microseconds")?.py_owned();
-    state.str_nanoseconds = intern(c"nanoseconds")?.py_owned();
-    state.str_year = intern(c"year")?.py_owned();
-    state.str_month = intern(c"month")?.py_owned();
-    state.str_day = intern(c"day")?.py_owned();
-    state.str_hour = intern(c"hour")?.py_owned();
-    state.str_minute = intern(c"minute")?.py_owned();
-    state.str_second = intern(c"second")?.py_owned();
-    state.str_millisecond = intern(c"millisecond")?.py_owned();
-    state.str_microsecond = intern(c"microsecond")?.py_owned();
-    state.str_nanosecond = intern(c"nanosecond")?.py_owned();
-    state.str_compatible = intern(c"compatible")?.py_owned();
-    state.str_raise = intern(c"raise")?.py_owned();
-    state.str_earlier = intern(c"earlier")?.py_owned();
-    state.str_later = intern(c"later")?.py_owned();
-    state.str_tz = intern(c"tz")?.py_owned();
-    state.str_disambiguate = intern(c"disambiguate")?.py_owned();
-    state.str_offset = intern(c"offset")?.py_owned();
-    state.str_ignore_dst = intern(c"ignore_dst")?.py_owned();
-    state.str_unit = intern(c"unit")?.py_owned();
-    state.str_increment = intern(c"increment")?.py_owned();
-    state.str_mode = intern(c"mode")?.py_owned();
-    state.str_floor = intern(c"floor")?.py_owned();
-    state.str_ceil = intern(c"ceil")?.py_owned();
-    state.str_half_floor = intern(c"half_floor")?.py_owned();
-    state.str_half_ceil = intern(c"half_ceil")?.py_owned();
-    state.str_half_even = intern(c"half_even")?.py_owned();
-    state.str_format = intern(c"format")?.py_owned();
-
-    state.exc_repeated = new_exception(
+    let exc_repeated = new_exception(
         module,
         c"whenever.RepeatedTime",
         doc::REPEATEDTIME,
         unsafe { PyExc_ValueError },
-    )?
-    .py_owned();
-    state.exc_skipped = new_exception(module, c"whenever.SkippedTime", doc::SKIPPEDTIME, unsafe {
+    )?;
+    let exc_skipped = new_exception(module, c"whenever.SkippedTime", doc::SKIPPEDTIME, unsafe {
         PyExc_ValueError
-    })?
-    .py_owned();
-    state.exc_invalid_offset = new_exception(
+    })?;
+    let exc_invalid_offset = new_exception(
         module,
         c"whenever.InvalidOffsetError",
         doc::INVALIDOFFSETERROR,
         unsafe { PyExc_ValueError },
-    )?
-    .py_owned();
-    state.exc_implicitly_ignoring_dst = new_exception(
+    )?;
+    let exc_implicitly_ignoring_dst = new_exception(
         module,
         c"whenever.ImplicitlyIgnoringDST",
         doc::IMPLICITLYIGNORINGDST,
         unsafe { PyExc_TypeError },
-    )?
-    .py_owned();
-    state.exc_tz_notfound = new_exception(
+    )?;
+    let exc_tz_notfound = new_exception(
         module,
         c"whenever.TimeZoneNotFoundError",
         doc::TIMEZONENOTFOUNDERROR,
         unsafe { PyExc_ValueError },
-    )?
-    .py_owned();
+    )?;
 
-    state.time_patch = Patch::new()?;
+    let time_patch = Patch::new()?;
+    let tz_store = TzStore::new()?;
 
-    // Fields with heap allocated data.
-    // We write these fields manually, to avoid triggering a "drop" of the previous value
-    // which isn't there, since Python just allocated this memory for us.
-    unsafe {
-        (&raw mut state.tz_store).write(TzStore::new()?);
-        (&raw mut state.zoneinfo_type).write(LazyImport::new(c"zoneinfo", c"ZoneInfo"));
-        (&raw mut state.get_pydantic_schema)
-            .write(LazyImport::new(c"whenever._utils", c"pydantic_schema"));
-    }
+    // Only write the state once everything is initialized,
+    // to ensure we don't leak references to the above.
+    state.replace(State {
+        date_type: date_type.py_owned(),
+        yearmonth_type: yearmonth_type.py_owned(),
+        monthday_type: monthday_type.py_owned(),
+        time_type: time_type.py_owned(),
+        date_delta_type: date_delta_type.py_owned(),
+        time_delta_type: time_delta_type.py_owned(),
+        datetime_delta_type: datetime_delta_type.py_owned(),
+        plain_datetime_type: plain_datetime_type.py_owned(),
+        instant_type: instant_type.py_owned(),
+        offset_datetime_type: offset_datetime_type.py_owned(),
+        zoned_datetime_type: zoned_datetime_type.py_owned(),
+        system_datetime_type: system_datetime_type.py_owned(),
 
+        py_api,
+        strptime: strptime.py_owned(),
+        time_ns: time_ns.py_owned(),
+        weekday_enum: weekday_enum.py_owned(),
+        zoneinfo_type: LazyImport::new(c"zoneinfo", c"ZoneInfo"),
+        get_pydantic_schema: LazyImport::new(c"whenever._utils", c"pydantic_schema"),
+
+        str_years: intern(c"years")?.py_owned(),
+        str_months: intern(c"months")?.py_owned(),
+        str_weeks: intern(c"weeks")?.py_owned(),
+        str_days: intern(c"days")?.py_owned(),
+        str_hours: intern(c"hours")?.py_owned(),
+        str_minutes: intern(c"minutes")?.py_owned(),
+        str_seconds: intern(c"seconds")?.py_owned(),
+        str_milliseconds: intern(c"milliseconds")?.py_owned(),
+        str_microseconds: intern(c"microseconds")?.py_owned(),
+        str_nanoseconds: intern(c"nanoseconds")?.py_owned(),
+        str_year: intern(c"year")?.py_owned(),
+        str_month: intern(c"month")?.py_owned(),
+        str_day: intern(c"day")?.py_owned(),
+        str_hour: intern(c"hour")?.py_owned(),
+        str_minute: intern(c"minute")?.py_owned(),
+        str_second: intern(c"second")?.py_owned(),
+        str_millisecond: intern(c"millisecond")?.py_owned(),
+        str_microsecond: intern(c"microsecond")?.py_owned(),
+        str_nanosecond: intern(c"nanosecond")?.py_owned(),
+        str_compatible: intern(c"compatible")?.py_owned(),
+        str_raise: intern(c"raise")?.py_owned(),
+        str_earlier: intern(c"earlier")?.py_owned(),
+        str_later: intern(c"later")?.py_owned(),
+        str_tz: intern(c"tz")?.py_owned(),
+        str_disambiguate: intern(c"disambiguate")?.py_owned(),
+        str_offset: intern(c"offset")?.py_owned(),
+        str_ignore_dst: intern(c"ignore_dst")?.py_owned(),
+        str_unit: intern(c"unit")?.py_owned(),
+        str_increment: intern(c"increment")?.py_owned(),
+        str_mode: intern(c"mode")?.py_owned(),
+        str_floor: intern(c"floor")?.py_owned(),
+        str_ceil: intern(c"ceil")?.py_owned(),
+        str_half_floor: intern(c"half_floor")?.py_owned(),
+        str_half_ceil: intern(c"half_ceil")?.py_owned(),
+        str_half_even: intern(c"half_even")?.py_owned(),
+        str_format: intern(c"format")?.py_owned(),
+
+        exc_repeated: exc_repeated.py_owned(),
+        exc_skipped: exc_skipped.py_owned(),
+        exc_invalid_offset: exc_invalid_offset.py_owned(),
+        exc_implicitly_ignoring_dst: exc_implicitly_ignoring_dst.py_owned(),
+        exc_tz_notfound: exc_tz_notfound.py_owned(),
+
+        unpickle_date: unpickle_date.py_owned(),
+        unpickle_yearmonth: unpickle_yearmonth.py_owned(),
+        unpickle_monthday: unpickle_monthday.py_owned(),
+        unpickle_time: unpickle_time.py_owned(),
+        unpickle_date_delta: unpickle_date_delta.py_owned(),
+        unpickle_time_delta: unpickle_time_delta.py_owned(),
+        unpickle_datetime_delta: unpickle_datetime_delta.py_owned(),
+        unpickle_plain_datetime: unpickle_plain_datetime.py_owned(),
+        unpickle_instant: unpickle_instant.py_owned(),
+        unpickle_offset_datetime: unpickle_offset_datetime.py_owned(),
+        unpickle_zoned_datetime: unpickle_zoned_datetime.py_owned(),
+        unpickle_system_datetime: unpickle_system_datetime.py_owned(),
+
+        time_patch,
+        tz_store,
+    });
     Ok(())
 }
 
@@ -383,8 +376,15 @@ fn traverse_type(
     Ok(())
 }
 
-fn module_traverse(module: *mut PyObject, visit: visitproc, arg: *mut c_void) -> TraverseResult {
-    let state = unsafe { State::for_mod(module) };
+fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -> TraverseResult {
+    // SAFETY: We're passed a valid PyModule pointer
+    let module = unsafe { PyModule::from_ptr_unchecked(mod_ptr) };
+    // SAFETY: `module_exec` initialized the state immediately to `None`
+    // so it's safe to access--even though it hasn't been fully populated yet.
+    let Some(state) = (unsafe { module.state_uninit().assume_init_mut() }) else {
+        // i.e. `module_exec` hasn't finished yet
+        return Ok(());
+    };
 
     // types
     for (cls, unpkl, num_singletons) in [
@@ -475,9 +475,16 @@ fn module_traverse(module: *mut PyObject, visit: visitproc, arg: *mut c_void) ->
 }
 
 #[cold]
-unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
+unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
+    // SAFETY: We're passed a valid PyModule pointer
+    let module = unsafe { PyModule::from_ptr_unchecked(mod_ptr) };
+    // SAFETY: `module_exec` initialized the state immediately to `None`
+    // so it's safe to access--even though it hasn't been fully populated yet.
+    let Some(state) = (unsafe { module.state_uninit().assume_init_mut() }) else {
+        // i.e. `module_exec` hasn't finished yet
+        return 0;
+    };
     unsafe {
-        let state = State::for_mod_mut(module);
         // types
         Py_CLEAR((&raw mut state.date_type).cast());
         Py_CLEAR((&raw mut state.yearmonth_type).cast());
@@ -562,17 +569,12 @@ unsafe extern "C" fn module_clear(module: *mut PyObject) -> c_int {
 }
 
 #[cold]
-unsafe extern "C" fn module_free(module: *mut c_void) {
-    unsafe {
-        // SAFETY: We're called with a valid module pointer
-        let state = State::for_mod_mut(module.cast());
-        // We clean up heap allocated stuff here because module_clear is
-        // not *guaranteed* to be called
-        // SAFETY: Python will do the actual deallocation of the State memory
-        (&raw mut state.tz_store).drop_in_place();
-        (&raw mut state.zoneinfo_type).drop_in_place();
-        (&raw mut state.get_pydantic_schema).drop_in_place();
-    }
+unsafe extern "C" fn module_free(mod_ptr: *mut c_void) {
+    // SAFETY: We're passed a valid PyModule pointer
+    let module = unsafe { PyModule::from_ptr_unchecked(mod_ptr.cast()) };
+    // SAFETY: `module_exec` initialized the state immediately to `None`
+    // so it's safe to access--even though it hasn't been fully populated yet.
+    (unsafe { module.state_uninit().assume_init_mut() }).take();
 }
 
 // NOTE: The module state owns references to all the listed fields.
@@ -664,16 +666,4 @@ pub(crate) struct State {
 
     pub(crate) time_patch: Patch,
     pub(crate) tz_store: TzStore,
-}
-
-impl State {
-    pub(crate) unsafe fn for_mod<'a>(module: *mut PyObject) -> &'a Self {
-        // SAFETY: the caller must ensure that the object is a valid module
-        unsafe { PyModule_GetState(module).cast::<Self>().as_ref() }.unwrap()
-    }
-
-    pub(crate) unsafe fn for_mod_mut<'a>(module: *mut PyObject) -> &'a mut Self {
-        // SAFETY: the caller must ensure that the object is a valid module
-        unsafe { PyModule_GetState(module).cast::<Self>().as_mut() }.unwrap()
-    }
 }

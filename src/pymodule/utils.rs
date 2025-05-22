@@ -1,5 +1,4 @@
 //! Miscellaneous utilities for the `whenever` module definition.
-use super::def::State;
 use crate::py::*;
 use pyo3_ffi::*;
 use std::{ffi::CStr, ptr::null_mut as NULL};
@@ -46,8 +45,7 @@ pub(crate) fn new_class<T: PyWrapped>(
     spec: &mut PyType_Spec,
     unpickle_name: &CStr,
     singletons: &[(&CStr, T)],
-    unpickle_ref: &mut PyObj,
-) -> PyResult<Owned<HeapType<T>>> {
+) -> PyResult<(Owned<HeapType<T>>, Owned<PyObj>)> {
     let cls = unsafe { PyType_FromModuleAndSpec(module.as_ptr(), spec, NULL()) }
         .rust_owned()?
         .cast_allow_subclass::<PyType>()
@@ -69,58 +67,10 @@ pub(crate) fn new_class<T: PyWrapped>(
 
     let unpickler = module.getattr(unpickle_name)?;
     unpickler.setattr(c"__module__", module_nameobj)?;
-    *unpickle_ref = unpickler.py_owned();
-    Ok(cls)
+    Ok((cls, unpickler))
 }
 
 /// Intern a string in the Python interpreter
 pub(crate) fn intern(s: &CStr) -> PyReturn {
     unsafe { PyUnicode_InternFromString(s.as_ptr()) }.rust_owned()
-}
-
-/// Wrapper around PyModuleObject.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct PyModule {
-    obj: PyObj,
-}
-
-impl PyBase for PyModule {
-    fn as_py_obj(&self) -> PyObj {
-        self.obj
-    }
-}
-
-impl FromPy for PyModule {
-    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
-        Self {
-            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
-        }
-    }
-}
-
-impl PyStaticType for PyModule {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
-        unsafe { PyModule_CheckExact(obj.as_ptr()) != 0 }
-    }
-
-    fn isinstance(obj: impl PyBase) -> bool {
-        unsafe { PyModule_Check(obj.as_ptr()) != 0 }
-    }
-}
-
-impl PyModule {
-    #[allow(clippy::mut_from_ref)]
-    pub(crate) fn state(&self) -> &mut State {
-        // SAFETY: calling CPython API with valid arguments
-        unsafe { PyModule_GetState(self.as_ptr()).cast::<State>().as_mut() }.unwrap()
-    }
-
-    pub(crate) fn add_type(&self, cls: PyType) -> PyResult<()> {
-        // SAFETY: calling CPython API with valid arguments
-        if unsafe { PyModule_AddType(self.as_ptr(), cls.as_ptr().cast()) } == 0 {
-            Ok(())
-        } else {
-            Err(PyErrMarker())
-        }
-    }
 }
