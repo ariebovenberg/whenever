@@ -36,7 +36,7 @@ impl PyStaticType for PyModule {
 
 impl PyModule {
     #[allow(clippy::mut_from_ref)]
-    pub(crate) fn state_uninit<'a>(&self) -> &'a mut MaybeUninit<Option<State>> {
+    pub(crate) fn state<'a>(&self) -> &'a mut MaybeUninit<Option<State>> {
         // SAFETY: calling CPython API with valid arguments
         unsafe {
             PyModule_GetState(self.as_ptr())

@@ -129,7 +129,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     // Initialize state to None to get it out of uninitialized state ASAP,
     // as any further calls could trigger a GC cycle which would retrieve
     // the state.
-    let state = module.state_uninit().write(None);
+    let state = module.state().write(None);
     let module_name = "whenever".to_py()?;
 
     let (date_type, unpickle_date) = new_class(
@@ -381,7 +381,7 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
     let module = unsafe { PyModule::from_ptr_unchecked(mod_ptr) };
     // SAFETY: `module_exec` initialized the state immediately to `None`
     // so it's safe to access--even though it hasn't been fully populated yet.
-    let Some(state) = (unsafe { module.state_uninit().assume_init_mut() }) else {
+    let Some(state) = (unsafe { module.state().assume_init_mut() }) else {
         // i.e. `module_exec` hasn't finished yet
         return Ok(());
     };
@@ -480,7 +480,7 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
     let module = unsafe { PyModule::from_ptr_unchecked(mod_ptr) };
     // SAFETY: `module_exec` initialized the state immediately to `None`
     // so it's safe to access--even though it hasn't been fully populated yet.
-    let Some(state) = (unsafe { module.state_uninit().assume_init_mut() }) else {
+    let Some(state) = (unsafe { module.state().assume_init_mut() }) else {
         // i.e. `module_exec` hasn't finished yet
         return 0;
     };
@@ -574,7 +574,7 @@ unsafe extern "C" fn module_free(mod_ptr: *mut c_void) {
     let module = unsafe { PyModule::from_ptr_unchecked(mod_ptr.cast()) };
     // SAFETY: `module_exec` initialized the state immediately to `None`
     // so it's safe to access--even though it hasn't been fully populated yet.
-    (unsafe { module.state_uninit().assume_init_mut() }).take();
+    (unsafe { module.state().assume_init_mut() }).take();
 }
 
 // NOTE: The module state owns references to all the listed fields.
