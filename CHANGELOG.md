@@ -1,5 +1,10 @@
 # 🚀 Changelog
 
+## 0.8.4 (2025-05-??)
+
+- Fix Pydantic JSON schema generation in certain contexts, 
+  which affected FastAPI doc generation.
+
 ## 0.8.3 (2025-05-22)
 
 - Ensure Pydantic parsing failures of `whenever` types always result in

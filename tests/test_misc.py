@@ -242,6 +242,7 @@ def test_pydantic():
 
     # JSON schema is essential for use in FastAPI
     assert Model.model_json_schema() is not None
+    assert Model.model_json_schema(mode="serialization") is not None
 
     # The constructor should be able to handle strings
     assert (
@@ -275,4 +276,24 @@ def test_pydantic():
             dtdelta=dtdelta.format_common_iso(),
             monthday=monthday.format_common_iso(),
             yearmonth=yearmonth.format_common_iso(),
+        )
+
+    # JSON parsing errors
+    with pytest.raises(pydantic.ValidationError):
+        Model.model_validate_json(
+            json.dumps(
+                {
+                    "inst": 123,  # not a string
+                    "zdt": zdt.format_common_iso(),
+                    "odt": odt.format_common_iso(),
+                    "sdt": sdt.format_common_iso(),
+                    "date": date.format_common_iso(),
+                    "time": time.format_common_iso(),
+                    "ddelta": ddelta.format_common_iso(),
+                    "tdelta": tdelta.format_common_iso(),
+                    "dtdelta": dtdelta.format_common_iso(),
+                    "monthday": monthday.format_common_iso(),
+                    "yearmonth": yearmonth.format_common_iso(),
+                }
+            )
         )

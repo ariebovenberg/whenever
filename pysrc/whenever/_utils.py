@@ -289,11 +289,21 @@ def _pydantic_parse(cls: type, v: object) -> object:
 def pydantic_schema(cls):
     from pydantic_core import core_schema
 
-    return core_schema.no_info_plain_validator_function(
-        partial(_pydantic_parse, cls),
-        json_schema_input_schema={"type": "str"},
-        serialization=core_schema.plain_serializer_function_ser_schema(
-            cls.format_common_iso,
-            when_used="json-unless-none",
+    return core_schema.json_or_python_schema(
+        # NOTE: we can't use no_info_plain_validator_function here,
+        # because this breaks when used with in "serialization" mode apparently...
+        # We need to link it to a string schema to get it to work.
+        json_schema=core_schema.no_info_after_validator_function(
+            cls.parse_common_iso,
+            core_schema.str_schema(strict=True),
+            serialization=core_schema.to_string_ser_schema(
+                when_used="json-unless-none",
+            ),
+        ),
+        python_schema=core_schema.no_info_plain_validator_function(
+            partial(_pydantic_parse, cls),
+            serialization=core_schema.to_string_ser_schema(
+                when_used="json-unless-none",
+            ),
         ),
     )
