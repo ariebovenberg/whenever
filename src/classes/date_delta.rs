@@ -667,7 +667,11 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::DATEDELTA_IN_YEARS_MONTHS_DAYS
     ),
     method0!(DateDelta, __reduce__, c""),
-    classmethod_kwargs!(DateDelta, __get_pydantic_core_schema__, c""),
+    classmethod_kwargs!(
+        DateDelta,
+        __get_pydantic_core_schema__,
+        doc::PYDANTIC_SCHEMA
+    ),
     PyMethodDef::zeroed(),
 ];
 

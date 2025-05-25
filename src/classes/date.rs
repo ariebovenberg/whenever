@@ -678,7 +678,7 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     method1!(Date, days_since, doc::DATE_DAYS_SINCE),
     method1!(Date, days_until, doc::DATE_DAYS_UNTIL),
     method_kwargs!(Date, replace, doc::DATE_REPLACE),
-    classmethod_kwargs!(Date, __get_pydantic_core_schema__, c""),
+    classmethod_kwargs!(Date, __get_pydantic_core_schema__, doc::PYDANTIC_SCHEMA),
     PyMethodDef::zeroed(),
 ];
 

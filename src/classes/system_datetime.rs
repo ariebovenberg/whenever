@@ -1251,7 +1251,11 @@ static mut METHODS: &[PyMethodDef] = &[
     ),
     method0!(OffsetDateTime, day_length, doc::SYSTEMDATETIME_DAY_LENGTH),
     method_kwargs!(OffsetDateTime, round, doc::SYSTEMDATETIME_ROUND),
-    classmethod_kwargs!(OffsetDateTime, __get_pydantic_core_schema__, c""),
+    classmethod_kwargs!(
+        OffsetDateTime,
+        __get_pydantic_core_schema__,
+        doc::PYDANTIC_SCHEMA
+    ),
     PyMethodDef::zeroed(),
 ];
 

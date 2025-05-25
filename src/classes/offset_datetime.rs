@@ -1172,7 +1172,11 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(OffsetDateTime, subtract, doc::OFFSETDATETIME_SUBTRACT),
     method1!(OffsetDateTime, difference, doc::EXACTTIME_DIFFERENCE),
     method_kwargs!(OffsetDateTime, round, doc::OFFSETDATETIME_ROUND),
-    classmethod_kwargs!(OffsetDateTime, __get_pydantic_core_schema__, c""),
+    classmethod_kwargs!(
+        OffsetDateTime,
+        __get_pydantic_core_schema__,
+        doc::PYDANTIC_SCHEMA
+    ),
     PyMethodDef::zeroed(),
 ];
 

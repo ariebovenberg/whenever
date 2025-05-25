@@ -620,7 +620,11 @@ static mut METHODS: &[PyMethodDef] = &[
         in_months_days_secs_nanos,
         doc::DATETIMEDELTA_IN_MONTHS_DAYS_SECS_NANOS
     ),
-    classmethod_kwargs!(DateTimeDelta, __get_pydantic_core_schema__, c""),
+    classmethod_kwargs!(
+        DateTimeDelta,
+        __get_pydantic_core_schema__,
+        doc::PYDANTIC_SCHEMA
+    ),
     PyMethodDef::zeroed(),
 ];
 

@@ -733,7 +733,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method_vararg!(Instant, to_fixed_offset, doc::EXACTTIME_TO_FIXED_OFFSET),
     method1!(Instant, difference, doc::EXACTTIME_DIFFERENCE),
     method_kwargs!(Instant, round, doc::INSTANT_ROUND),
-    classmethod_kwargs!(Instant, __get_pydantic_core_schema__, c""),
+    classmethod_kwargs!(Instant, __get_pydantic_core_schema__, doc::PYDANTIC_SCHEMA),
     PyMethodDef::zeroed(),
 ];
 
