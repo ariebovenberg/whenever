@@ -858,7 +858,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(DateTime, subtract, doc::PLAINDATETIME_SUBTRACT),
     method_kwargs!(DateTime, difference, doc::PLAINDATETIME_DIFFERENCE),
     method_kwargs!(DateTime, round, doc::PLAINDATETIME_ROUND),
-    classmethod_kwargs!(DateTime, __get_pydantic_core_schema__, c""),
+    classmethod_kwargs!(DateTime, __get_pydantic_core_schema__, doc::PYDANTIC_SCHEMA),
     PyMethodDef::zeroed(),
 ];
 

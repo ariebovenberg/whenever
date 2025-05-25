@@ -1499,7 +1499,11 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(ZonedDateTime, start_of_day, doc::ZONEDDATETIME_START_OF_DAY),
     method0!(ZonedDateTime, day_length, doc::ZONEDDATETIME_DAY_LENGTH),
     method_kwargs!(ZonedDateTime, round, doc::ZONEDDATETIME_ROUND),
-    classmethod_kwargs!(ZonedDateTime, __get_pydantic_core_schema__, c""),
+    classmethod_kwargs!(
+        ZonedDateTime,
+        __get_pydantic_core_schema__,
+        doc::PYDANTIC_SCHEMA
+    ),
     PyMethodDef::zeroed(),
 ];
 

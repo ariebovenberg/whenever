@@ -290,20 +290,18 @@ def pydantic_schema(cls):
     from pydantic_core import core_schema
 
     return core_schema.json_or_python_schema(
-        # NOTE: we can't use no_info_plain_validator_function here,
-        # because this breaks when used with in "serialization" mode apparently...
-        # We need to link it to a string schema to get it to work.
+        # NOTE: We can't use no_info_plain_validator_function here, because
+        # this breaks JSON schema generation...but only when used with the
+        # "serialization" mode for some reason...
         json_schema=core_schema.no_info_after_validator_function(
             cls.parse_common_iso,
             core_schema.str_schema(strict=True),
-            serialization=core_schema.to_string_ser_schema(
-                when_used="json-unless-none",
-            ),
+            serialization=core_schema.to_string_ser_schema(),
         ),
         python_schema=core_schema.no_info_plain_validator_function(
             partial(_pydantic_parse, cls),
-            serialization=core_schema.to_string_ser_schema(
-                when_used="json-unless-none",
-            ),
+            # NOTE: not setting serializer here somehow breaks the JSON schema
+            # generation when defaults are present...yeah...
+            serialization=core_schema.to_string_ser_schema(),
         ),
     )

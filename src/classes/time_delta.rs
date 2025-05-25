@@ -960,7 +960,11 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::TIMEDELTA_IN_HRS_MINS_SECS_NANOS
     ),
     method_kwargs!(TimeDelta, round, doc::TIMEDELTA_ROUND),
-    classmethod_kwargs!(TimeDelta, __get_pydantic_core_schema__, c""),
+    classmethod_kwargs!(
+        TimeDelta,
+        __get_pydantic_core_schema__,
+        doc::PYDANTIC_SCHEMA
+    ),
     PyMethodDef::zeroed(),
 ];
 

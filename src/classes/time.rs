@@ -461,7 +461,7 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod1!(Time, from_py_time, doc::TIME_FROM_PY_TIME),
     method1!(Time, on, doc::TIME_ON),
     method_kwargs!(Time, round, doc::TIME_ROUND),
-    classmethod_kwargs!(Time, __get_pydantic_core_schema__, c""),
+    classmethod_kwargs!(Time, __get_pydantic_core_schema__, doc::PYDANTIC_SCHEMA),
     PyMethodDef::zeroed(),
 ];
 

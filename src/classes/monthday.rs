@@ -241,7 +241,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method1!(MonthDay, in_year, doc::MONTHDAY_IN_YEAR),
     method0!(MonthDay, is_leap, doc::MONTHDAY_IS_LEAP),
     method_kwargs!(MonthDay, replace, doc::MONTHDAY_REPLACE),
-    classmethod_kwargs!(MonthDay, __get_pydantic_core_schema__, c""),
+    classmethod_kwargs!(MonthDay, __get_pydantic_core_schema__, doc::PYDANTIC_SCHEMA),
     PyMethodDef::zeroed(),
 ];
 
