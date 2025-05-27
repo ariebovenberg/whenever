@@ -229,7 +229,11 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod1!(YearMonth, parse_common_iso, doc::YEARMONTH_PARSE_COMMON_ISO),
     method1!(YearMonth, on_day, doc::YEARMONTH_ON_DAY),
     method_kwargs!(YearMonth, replace, doc::YEARMONTH_REPLACE),
-    classmethod_kwargs!(YearMonth, __get_pydantic_core_schema__, c""),
+    classmethod_kwargs!(
+        YearMonth,
+        __get_pydantic_core_schema__,
+        doc::PYDANTIC_SCHEMA
+    ),
     PyMethodDef::zeroed(),
 ];
 

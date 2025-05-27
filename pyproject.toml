@@ -7,7 +7,7 @@ maintainers = [
     {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com"},
 ]
 readme = "README.md"
-version = "0.8.4rc1"
+version = "0.8.4"
 license = "MIT"
 description = "Modern datetime library for Python"
 requires-python = ">=3.9"

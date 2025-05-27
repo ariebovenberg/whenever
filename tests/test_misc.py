@@ -197,7 +197,7 @@ def test_pydantic():
     assert m.zdt is zdt
     assert m.odt is odt
     assert m.sdt is sdt
-    assert m.date == Date(2024, 1, 4)  # default value
+    assert m.date == date  # default value
     assert m.time is time
     assert m.ddelta is ddelta
     assert m.tdelta is tdelta
@@ -211,7 +211,7 @@ def test_pydantic():
     assert m2.zdt is zdt
     assert m2.odt is odt
     assert m2.sdt is sdt
-    assert m2.date == Date(2024, 1, 4)  # default value
+    assert m2.date == date  # default value
     assert m2.time is time
     assert m2.ddelta is ddelta
     assert m2.tdelta is tdelta
@@ -302,7 +302,7 @@ def test_pydantic():
     )
 
     # Parsing errors
-    with pytest.raises(pydantic.ValidationError):
+    try:
         Model(
             inst=123,  # not a string
             zdt=zdt.format_common_iso().encode(),  # bytes instead of str
@@ -316,9 +316,13 @@ def test_pydantic():
             monthday=monthday.format_common_iso(),
             yearmonth=yearmonth.format_common_iso(),
         )
+    except pydantic.ValidationError as e:
+        assert e.error_count() == 2
+    else:
+        assert False, "Expected ValidationError not raised"
 
     # JSON parsing errors
-    with pytest.raises(pydantic.ValidationError):
+    try:
         Model.model_validate_json(
             json.dumps(
                 {
@@ -336,3 +340,7 @@ def test_pydantic():
                 }
             )
         )
+    except pydantic.ValidationError as e:
+        assert e.error_count() == 4
+    else:
+        assert False, "Expected ValidationError not raised"

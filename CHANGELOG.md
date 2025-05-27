@@ -1,6 +1,6 @@
 # 🚀 Changelog
 
-## 0.8.4 (2025-05-26)
+## 0.8.4 (2025-05-28)
 
 - Fix Pydantic JSON schema generation in certain contexts, 
   which affected FastAPI doc generation.
