@@ -1073,7 +1073,6 @@ fn round(
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    // FUTURE: get docstrings from Python implementation
     method0!(OffsetDateTime, __copy__, c""),
     method1!(OffsetDateTime, __deepcopy__, c""),
     method0!(OffsetDateTime, __reduce__, c""),
