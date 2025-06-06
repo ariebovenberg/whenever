@@ -932,7 +932,7 @@ creating a ``SystemDateTime``.
 Note
 ----
 The local time may be ambiguous in the system timezone
-(e.g. during a DST transition). Therefore, you must explicitly
+(e.g. during a DST transition). You can explicitly
 specify how to handle such a situation using the ``disambiguate`` argument.
 See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
 for more information.
@@ -954,7 +954,7 @@ creating a ``ZonedDateTime``.
 Note
 ----
 The local time may be ambiguous in the given timezone
-(e.g. during a DST transition). Therefore, you must explicitly
+(e.g. during a DST transition). You can explicitly
 specify how to handle such a situation using the ``disambiguate`` argument.
 See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
 for more information.
