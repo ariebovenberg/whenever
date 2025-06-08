@@ -4411,7 +4411,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         return self._from_py_unchecked(
             _resolve_ambiguity(
                 self._py_dt.replace(**kwargs),
-                kwargs.get("tzinfo", self._py_dt.tzinfo),
+                kwargs.get("tzinfo", self._py_dt.tzinfo),  # type: ignore[arg-type]
                 # mypy doesn't know that offset is never None here
                 disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
             ),
