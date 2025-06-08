@@ -1,8 +1,15 @@
 # 🚀 Changelog
 
+## 0.8.5 (2025-07-09)
+
+- Relax build requirements. It now only depends on `setuptools_rust` if opting
+  to build the Rust extension (#240)
+- Fixed not all Rust files included in source distribution.
+- Update some outdated docstrings.
+
 ## 0.8.4 (2025-05-28)
 
-- Fix Pydantic JSON schema generation in certain contexts, 
+- Fix Pydantic JSON schema generation in certain contexts,
   which affected FastAPI doc generation.
 
 ## 0.8.3 (2025-05-22)

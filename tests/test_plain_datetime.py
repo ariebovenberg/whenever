@@ -286,7 +286,7 @@ class TestParseCommonIso:
         ],
     )
     def test_invalid(self, s):
-        with pytest.raises(ValueError, match=re.escape(s)):
+        with pytest.raises(ValueError, match=re.escape(repr(s))):
             PlainDateTime.parse_common_iso(s)
 
     @given(text())

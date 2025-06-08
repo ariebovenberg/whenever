@@ -7,7 +7,7 @@ maintainers = [
     {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com"},
 ]
 readme = "README.md"
-version = "0.8.4"
+version = "0.8.5"
 license = "MIT"
 description = "Modern datetime library for Python"
 requires-python = ">=3.9"
@@ -90,16 +90,24 @@ ignore_missing_imports = true
 [tool.setuptools.packages]
 find = { where = ["pysrc"] }
 
-# Notes about the build configuration:
-# We need setuptools_rust to support enabling/disabling building the Rust
-# extension from source distributions.
-# However, we also use maturin to build the binary distributions (wheels)
-# since it is *very* convenient for this purpose.
+# We essentially use three build systems:
+# - We use maturin to build the binary distributions for different
+#   platforms in CI, since it is very convenient for this purpose.
+# - We need setuptools to allow enabling/disabling building the Rust
+#   extension using the environment variable, since maturin does not support this.
+# - To actually build the Rust extension with setuptools, we need
+#   setuptools_rust.
 [tool.maturin]
 python-source = "pysrc"
 module-name = "whenever._whenever"
-# include = ["LICENSE*"]
 
 [build-system]
-build-backend = "setuptools.build_meta"
-requires = ["setuptools", "wheel", "setuptools-rust>=1.9"]
+requires = [
+    "setuptools",
+    "wheel",
+]
+# We need a custom backend to make the inclusion of setuptools_rust conditional
+# on the environment variable.
+# Follows the approach from setuptools.pypa.io/en/latest/build_meta.html#dynamic-build-dependencies-and-other-build-meta-tweaks
+build-backend = "backend"
+backend-path = ["_custom_pybuild"]

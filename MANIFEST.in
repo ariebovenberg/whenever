@@ -1,7 +1,9 @@
 include Cargo.toml
 include Cargo.lock
-include include/**/*
-include .cargo/*
-include src/*
-include pysrc/*
 include build.rs
+graft .cargo
+graft src
+graft pysrc
+graft _custom_pybuild
+global-exclude __pycache__
+global-exclude *.py[co]
