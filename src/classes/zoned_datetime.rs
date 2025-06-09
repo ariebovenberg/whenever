@@ -923,8 +923,12 @@ fn from_py_datetime(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
             tzinfo
         ))?;
     }
+    let key = tzinfo.getattr(c"key")?;
+    if key.is_none() {
+        raise_value_err(doc::ZONEINFO_NO_KEY_MSG)?;
+    };
 
-    let tz = tz_store.obj_get(tzinfo.getattr(c"key")?.borrow(), exc_tz_notfound)?;
+    let tz = tz_store.obj_get(key.borrow(), exc_tz_notfound)?;
     // We use the timestamp() to convert into a ZonedDateTime
     // Alternatives not chosen:
     // - resolve offset from date/time -> fold not respected, instant may be different
