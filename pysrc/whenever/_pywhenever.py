@@ -4334,6 +4334,8 @@ class ZonedDateTime(_ExactAndLocalTime):
                 "Can only create ZonedDateTime from tzinfo=ZoneInfo (exactly), "
                 f"got datetime with tzinfo={d.tzinfo!r}"
             )
+        if d.tzinfo.key is None:
+            raise ValueError(ZONEINFO_NO_KEY_MSG)
 
         # This ensures skipped times are disambiguated according to the fold.
         d = d.astimezone(_UTC).astimezone(_get_tz(d.tzinfo.key))
@@ -5779,6 +5781,19 @@ CANNOT_ROUND_DAY_MSG = (
     "Due to daylight saving time, some days have 23 or 25 hours."
     "If you wish to round to exaxtly 24 hours, use `round('hour', increment=24)`."
 )
+
+ZONEINFO_NO_KEY_MSG = """\
+The 'key' attribute of the datetime's ZoneInfo object is None.
+
+A ZonedDateTime requires a full IANA timezone ID (e.g., 'Europe/Paris') \
+to be created. This error typically means the ZoneInfo object was loaded from \
+a file without its 'key' parameter being specified.
+To fix this, provide the correct IANA ID when you create the ZoneInfo object. \
+If the ID is truly unknown, you can use OffsetDateTime.from_py_datetime() as \
+an alternative, but be aware this is a lossy conversion that only preserves \
+the current UTC offset and discards future daylight saving rules. \
+Please note that a timezone abbreviation like 'CEST' from tzinfo.tzname() \
+is not a valid IANA ID and cannot be used here."""
 
 
 def _resolve_ambiguity(
