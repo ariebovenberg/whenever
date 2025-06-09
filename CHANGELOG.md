@@ -1,5 +1,10 @@
 # 🚀 Changelog
 
+## 0.8.6 (2025-06-09)
+
+- Improve error message of `ZonedDateTime.from_py_datetime()` in case
+  the datetime's `ZoneInfo.key` is `None`.
+
 ## 0.8.5 (2025-06-09)
 
 - Relax build requirements. It now only depends on `setuptools_rust` if opting
