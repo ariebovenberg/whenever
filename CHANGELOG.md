@@ -1,6 +1,6 @@
 # 🚀 Changelog
 
-## 0.8.5 (2025-07-09)
+## 0.8.5 (2025-06-09)
 
 - Relax build requirements. It now only depends on `setuptools_rust` if opting
   to build the Rust extension (#240)
