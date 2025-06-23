@@ -290,7 +290,15 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         py_api,
         strptime: strptime.py_owned(),
         time_ns: time_ns.py_owned(),
-        weekday_enum: weekday_enum.py_owned(),
+        weekday_enum_members: [
+            weekday_enum.getattr(c"MONDAY")?.py_owned(),
+            weekday_enum.getattr(c"TUESDAY")?.py_owned(),
+            weekday_enum.getattr(c"WEDNESDAY")?.py_owned(),
+            weekday_enum.getattr(c"THURSDAY")?.py_owned(),
+            weekday_enum.getattr(c"FRIDAY")?.py_owned(),
+            weekday_enum.getattr(c"SATURDAY")?.py_owned(),
+            weekday_enum.getattr(c"SUNDAY")?.py_owned(),
+        ],
         zoneinfo_type: LazyImport::new(c"zoneinfo", c"ZoneInfo"),
         get_pydantic_schema: LazyImport::new(c"whenever._utils", c"pydantic_schema"),
 
@@ -453,7 +461,10 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
         traverse(unpkl.as_ptr(), visit, arg)?;
     }
 
-    traverse(state.weekday_enum.as_ptr(), visit, arg)?;
+    // enum members
+    for member in state.weekday_enum_members.into_iter() {
+        traverse(member.as_ptr(), visit, arg)?;
+    }
 
     // exceptions
     for exc in [
@@ -499,7 +510,14 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.zoned_datetime_type).cast());
         Py_CLEAR((&raw mut state.system_datetime_type).cast());
 
-        Py_CLEAR((&raw mut state.weekday_enum).cast());
+        // enum members
+        Py_CLEAR((&raw mut state.weekday_enum_members[0]).cast());
+        Py_CLEAR((&raw mut state.weekday_enum_members[1]).cast());
+        Py_CLEAR((&raw mut state.weekday_enum_members[2]).cast());
+        Py_CLEAR((&raw mut state.weekday_enum_members[3]).cast());
+        Py_CLEAR((&raw mut state.weekday_enum_members[4]).cast());
+        Py_CLEAR((&raw mut state.weekday_enum_members[5]).cast());
+        Py_CLEAR((&raw mut state.weekday_enum_members[6]).cast());
 
         // interned strings
         Py_CLEAR((&raw mut state.str_years).cast());
@@ -595,7 +613,7 @@ pub(crate) struct State {
     pub(crate) zoned_datetime_type: HeapType<zoned_datetime::ZonedDateTime>,
     pub(crate) system_datetime_type: HeapType<offset_datetime::OffsetDateTime>,
 
-    pub(crate) weekday_enum: PyType,
+    pub(crate) weekday_enum_members: [PyObj; 7],
 
     // exceptions
     pub(crate) exc_repeated: PyObj,

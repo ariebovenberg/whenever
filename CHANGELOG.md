@@ -1,9 +1,10 @@
 # 🚀 Changelog
 
-## 0.8.6 (2025-06-09)
+## 0.8.6 (2025-06-23)
 
 - Improve error message of `ZonedDateTime.from_py_datetime()` in case
   the datetime's `ZoneInfo.key` is `None`.
+- Fix performance regression in `Date.day_of_week()` (#244)
 
 ## 0.8.5 (2025-06-09)
 
