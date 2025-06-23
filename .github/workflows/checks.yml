@@ -223,6 +223,7 @@ jobs:
     if: always()
     needs:
       - test-rust-ext
+      - test-rust
       - test-os
       - test-pure-python
       - lint

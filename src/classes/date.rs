@@ -409,10 +409,8 @@ fn parse_common_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn day_of_week(cls: HeapType<Date>, slf: Date) -> PyReturn {
-    cls.state()
-        .weekday_enum
-        .call1((slf.day_of_week() as u8).to_py()?.borrow())
+fn day_of_week(cls: HeapType<Date>, slf: Date) -> Owned<PyObj> {
+    cls.state().weekday_enum_members[(slf.day_of_week() as u8 - 1) as usize].newref()
 }
 
 fn __reduce__(cls: HeapType<Date>, Date { year, month, day }: Date) -> PyResult<Owned<PyTuple>> {
