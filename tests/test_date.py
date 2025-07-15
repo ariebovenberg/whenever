@@ -674,15 +674,26 @@ def test_day_of_week():
     assert Date(2021, 1, 7).day_of_week() is Weekday.THURSDAY
     assert Date(2021, 1, 8).day_of_week() is Weekday.FRIDAY
 
-    assert Date(1915, 7, 19).day_of_week() is Weekday.MONDAY
-    assert Date(1915, 7, 20).day_of_week() is Weekday.TUESDAY
-    assert Date(1915, 7, 21).day_of_week() is Weekday.WEDNESDAY
-    assert Date(1915, 7, 22).day_of_week() is Weekday.THURSDAY
-    assert Date(1915, 7, 23).day_of_week() is Weekday.FRIDAY
-    assert Date(1915, 7, 24).day_of_week() is Weekday.SATURDAY
-    assert Date(1915, 7, 25).day_of_week() is Weekday.SUNDAY
+    # test that days can be imported directly from the module too
+    from whenever import (
+        FRIDAY,
+        MONDAY,
+        SATURDAY,
+        SUNDAY,
+        THURSDAY,
+        TUESDAY,
+        WEDNESDAY,
+    )
 
-    assert pickle.loads(pickle.dumps(Weekday.SATURDAY)) is Weekday.SATURDAY
+    assert Date(1915, 7, 19).day_of_week() is MONDAY
+    assert Date(1915, 7, 20).day_of_week() is TUESDAY
+    assert Date(1915, 7, 21).day_of_week() is WEDNESDAY
+    assert Date(1915, 7, 22).day_of_week() is THURSDAY
+    assert Date(1915, 7, 23).day_of_week() is FRIDAY
+    assert Date(1915, 7, 24).day_of_week() is SATURDAY
+    assert Date(1915, 7, 25).day_of_week() is SUNDAY
+
+    assert pickle.loads(pickle.dumps(SATURDAY)) is SATURDAY
 
 
 def test_pickling():

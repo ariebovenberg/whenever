@@ -121,6 +121,9 @@ Deltas
    :special-members: __eq__, __neg__, __add__, __sub__, __mul__, __truediv__, __bool__, __abs__, __gt__
    :member-order: bysource
 
+   .. autoattribute:: MIN
+   .. autoattribute:: MAX
+
 .. autoclass:: whenever.DateDelta
    :members:
    :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __mul__, __bool__
@@ -140,17 +143,31 @@ Date and time components
    :members:
    :special-members: __eq__, __lt__, __le__, __gt__, __ge__, __sub__, __add__
 
+   .. autoattribute:: MIN
+   .. autoattribute:: MAX
+
 .. autoclass:: whenever.YearMonth
    :members:
    :special-members: __eq__, __lt__, __le__, __gt__, __ge__
+
+   .. autoattribute:: MIN
+   .. autoattribute:: MAX
 
 .. autoclass:: whenever.MonthDay
    :members:
    :special-members: __eq__, __lt__, __le__, __gt__, __ge__
 
+   .. autoattribute:: MIN
+   .. autoattribute:: MAX
+
 .. autoclass:: whenever.Time
    :members:
    :special-members: __eq__, __lt__, __le__, __gt__, __ge__
+
+   .. autoattribute:: MIDNIGHT
+   .. autoattribute:: NOON
+   .. autoattribute:: MAX
+
 
 Miscellaneous
 -------------
@@ -158,6 +175,14 @@ Miscellaneous
 .. autoenum:: whenever.Weekday
    :members:
    :member-order: bysource
+
+.. autodata:: whenever.MONDAY
+.. autodata:: whenever.TUESDAY
+.. autodata:: whenever.WEDNESDAY
+.. autodata:: whenever.THURSDAY
+.. autodata:: whenever.FRIDAY
+.. autodata:: whenever.SATURDAY
+.. autodata:: whenever.SUNDAY
 
 .. autoexception:: whenever.RepeatedTime
    :show-inheritance:

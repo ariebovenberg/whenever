@@ -216,7 +216,8 @@ impl Display for Time {
     }
 }
 
-pub(crate) const SINGLETONS: &[(&CStr, Time); 3] = &[
+pub(crate) const SINGLETONS: &[(&CStr, Time); 4] = &[
+    (c"MIN", Time::MIDNIGHT),
     (c"MIDNIGHT", Time::MIDNIGHT),
     (
         c"NOON",
