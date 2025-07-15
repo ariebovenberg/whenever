@@ -1,5 +1,11 @@
 # 🚀 Changelog
 
+## 0.8.7 (2025-07-??)
+
+- Fix some `MIN` and `MAX` constants not documented in the API reference.
+- Add `Time.MIN` alias for `Time.MIDNIGHT` for consistency (#245)
+
+
 ## 0.8.6 (2025-06-23)
 
 - Improve error message of `ZonedDateTime.from_py_datetime()` in case

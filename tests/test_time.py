@@ -247,6 +247,7 @@ def test_comparison():
 
 
 def test_constants():
+    assert Time.MIN == Time()
     assert Time.MIDNIGHT == Time()
     assert Time.NOON == Time(12)
     assert Time.MAX == Time(23, 59, 59, nanosecond=999_999_999)

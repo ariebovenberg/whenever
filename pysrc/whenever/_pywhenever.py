@@ -105,20 +105,12 @@ __all__ = [
     "InvalidOffsetError",
     "ImplicitlyIgnoringDST",
     "TimeZoneNotFoundError",
-    # Constants
-    "MONDAY",
-    "TUESDAY",
-    "WEDNESDAY",
-    "THURSDAY",
-    "FRIDAY",
-    "SATURDAY",
-    "SUNDAY",
     "Weekday",
 ]
 
 
 class Weekday(enum.Enum):
-    """The days of the week; ``.value`` corresponds with ISO numbering."""
+    """Day of the week; ``.value`` corresponds with ISO numbering."""
 
     MONDAY = 1
     TUESDAY = 2
@@ -128,14 +120,6 @@ class Weekday(enum.Enum):
     SATURDAY = 6
     SUNDAY = 7
 
-
-MONDAY = Weekday.MONDAY
-TUESDAY = Weekday.TUESDAY
-WEDNESDAY = Weekday.WEDNESDAY
-THURSDAY = Weekday.THURSDAY
-FRIDAY = Weekday.FRIDAY
-SATURDAY = Weekday.SATURDAY
-SUNDAY = Weekday.SUNDAY
 
 # Helpers that pre-compute/lookup as much as possible
 _UTC = _timezone.utc
@@ -936,8 +920,10 @@ class Time(_ImmutableBase):
 
     __slots__ = ("_py_time", "_nanos")
 
+    MIN: ClassVar[Time]
+    """The minimum time, at midnight"""
     MIDNIGHT: ClassVar[Time]
-    """The time at midnight"""
+    """Alias for :attr:`MIN`"""
     NOON: ClassVar[Time]
     """The time at noon"""
     MAX: ClassVar[Time]
@@ -1247,6 +1233,7 @@ def _unpkl_time(data: bytes) -> Time:
     return Time._from_py_unchecked(_time(*args), nanos)
 
 
+Time.MIN = Time()
 Time.MIDNIGHT = Time()
 Time.NOON = Time(12)
 Time.MAX = Time(23, 59, 59, nanosecond=999_999_999)
