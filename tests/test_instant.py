@@ -1018,6 +1018,16 @@ class TestRound:
                 Instant.from_utc(2023, 7, 14, 12, 0, 0),
                 Instant.from_utc(2023, 7, 14, 12, 0, 0),
             ),
+            (
+                Instant.from_utc(2023, 7, 14),
+                24,
+                "hour",
+                Instant.from_utc(2023, 7, 14),
+                Instant.from_utc(2023, 7, 14),
+                Instant.from_utc(2023, 7, 14),
+                Instant.from_utc(2023, 7, 14),
+                Instant.from_utc(2023, 7, 14),
+            ),
         ],
     )
     def test_round(

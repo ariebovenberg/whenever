@@ -1133,7 +1133,14 @@ fn _round_day(slf: OffsetDateTime, state: &State, mode: round::Mode) -> PyResult
         )
     };
     match mode {
-        round::Mode::Ceil => get_ceil(),
+        round::Mode::Ceil => {
+            // Round up anything *except* midnight (which is a no-op)
+            if time == Time::MIDNIGHT {
+                Ok(slf)
+            } else {
+                get_ceil()
+            }
+        }
         round::Mode::Floor => get_floor(),
         _ => {
             let time_ns = time.total_nanos();

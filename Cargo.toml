@@ -21,6 +21,11 @@ include = [
 name = "_whenever"
 crate-type = ["cdylib", "rlib"]
 
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+
 [dependencies]
 ahash = "^0.8.11"
 pyo3-ffi = { version = "^0.25.0", default-features = false, features = ["extension-module"]}

@@ -2811,6 +2811,17 @@ class TestRound:
                 ZonedDateTime(2023, 7, 14, 12, 0, 0, tz="Europe/Paris"),
                 ZonedDateTime(2023, 7, 14, 12, 0, 0, tz="Europe/Paris"),
             ),
+            # normal, 24-hour day at midnight
+            (
+                ZonedDateTime(2023, 7, 14, tz="Europe/Paris"),
+                1,
+                "day",
+                ZonedDateTime(2023, 7, 14, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, tz="Europe/Paris"),
+            ),
             # normal, 24-hour day
             (
                 ZonedDateTime(2023, 7, 14, 12, tz="Europe/Paris"),
