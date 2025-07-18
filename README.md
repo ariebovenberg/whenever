@@ -222,6 +222,8 @@ For more details, see the licenses included in the distribution.
 - *Whenever* also takes a lot of inspiration from the [Temporal proposal for JavaScript](https://tc39.es/proposal-temporal/docs/).
   After years of design work and gathering feedback,
   TC39 has come up with an extraodrinarily well-specified API fit for a dynamic language.
+  Whenever takes a lot of cues from Temporal for complex APIs such as handling
+  ambiguity and rounding.
 
 - *Whenever* gratefully makes use of ``datetime``'s
   robust and cross-platform handling of the system local timezone.

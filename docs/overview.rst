@@ -395,7 +395,7 @@ Two common situations arise:
      The reason for the "extrapolation" approach is:
 
      * It fits the most likely reason the time is skipped: we forgot to adjust the clock, or adjusted it too early
-     * This is how other datetime libraries do it (e.g. Javascript (Temporal), C# (Nodatime), Java, Python itself)
+     * This is how other datetime libraries do it (e.g. JavaScript (Temporal), C# (Nodatime), Java, Python itself)
      * It corresponds with the iCalendar (RFC5545) standard of handling gaps
 
      The figure in the Python docs `here <https://peps.python.org/pep-0495/#mind-the-gap>`_ also shows how this "extrapolation" makes sense graphically.
@@ -655,6 +655,10 @@ Here is a summary of the arithmetic features for each type:
 
 Rounding
 ~~~~~~~~
+
+.. note::
+
+   The API for rounding is largely inspired by that of Temporal (JavaScript)
 
 It's often useful to truncate or round a datetime to a specific unit.
 For example, you might want to round a datetime to the nearest hour,

@@ -1687,6 +1687,16 @@ class TestRound:
                 OffsetDateTime(2023, 7, 15, offset=2),
                 OffsetDateTime(2023, 7, 14, offset=2),
             ),
+            (
+                OffsetDateTime(2023, 7, 14, offset=2),
+                1,
+                "day",
+                OffsetDateTime(2023, 7, 14, offset=2),
+                OffsetDateTime(2023, 7, 14, offset=2),
+                OffsetDateTime(2023, 7, 14, offset=2),
+                OffsetDateTime(2023, 7, 14, offset=2),
+                OffsetDateTime(2023, 7, 14, offset=2),
+            ),
         ],
     )
     def test_round(

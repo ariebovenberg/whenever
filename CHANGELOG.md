@@ -1,10 +1,10 @@
 # 🚀 Changelog
 
-## 0.8.7 (2025-07-??)
+## 0.8.7 (2025-07-18)
 
 - Fix some `MIN` and `MAX` constants not documented in the API reference.
 - Add `Time.MIN` alias for `Time.MIDNIGHT` for consistency (#245)
-
+- Fix bug in rounding of midnight ``ZonedDateTime`` values in "ceil"/day mode (#249)
 
 ## 0.8.6 (2025-06-23)
 

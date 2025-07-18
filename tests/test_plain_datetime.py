@@ -668,6 +668,16 @@ class TestRound:
                 PlainDateTime(2023, 7, 15),
                 PlainDateTime(2023, 7, 14),
             ),
+            (
+                PlainDateTime(2023, 7, 14),
+                1,
+                "day",
+                PlainDateTime(2023, 7, 14),
+                PlainDateTime(2023, 7, 14),
+                PlainDateTime(2023, 7, 14),
+                PlainDateTime(2023, 7, 14),
+                PlainDateTime(2023, 7, 14),
+            ),
         ],
     )
     def test_round(
