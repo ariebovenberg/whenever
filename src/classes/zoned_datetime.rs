@@ -1043,9 +1043,7 @@ fn check_from_timestamp_args_return_tz(
         (&[_], None) => raise_type_err(format!(
             "{fname}() missing 1 required keyword-only argument: 'tz'"
         )),
-        (&[], _) => raise_type_err(format!(
-            "{fname}() missing 1 required positional argument"
-        )),
+        (&[], _) => raise_type_err(format!("{fname}() missing 1 required positional argument")),
         _ => raise_type_err(format!(
             "{}() expected 2 arguments, got {}",
             fname,

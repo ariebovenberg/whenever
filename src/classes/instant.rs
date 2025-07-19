@@ -644,8 +644,8 @@ fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn {
 
 fn parse_rfc2822(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
     let s = s_obj.cast::<PyStr>().ok_or_type_err("Expected a string")?;
-    let (date, time, offset) = rfc2822::parse(s.as_utf8()?)
-        .ok_or_else_value_err(|| format!("Invalid format: {s_obj}"))?;
+    let (date, time, offset) =
+        rfc2822::parse(s.as_utf8()?).ok_or_else_value_err(|| format!("Invalid format: {s_obj}"))?;
     OffsetDateTime::new(date, time, offset)
         .ok_or_value_err("Instant out of range")?
         .instant()
