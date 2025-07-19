@@ -239,8 +239,7 @@ impl Offset {
             }
         } else {
             raise_type_err(format!(
-                "offset must be an integer or TimeDelta instance, got {}",
-                obj
+                "offset must be an integer or TimeDelta instance, got {obj}"
             ))?
         }
     }
@@ -262,7 +261,7 @@ impl PyWrapped for OffsetDateTime {}
 impl Display for OffsetDateTime {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let &OffsetDateTime { date, time, offset } = self;
-        write!(f, "{}T{}{}", date, time, offset)
+        write!(f, "{date}T{time}{offset}")
     }
 }
 
@@ -304,11 +303,11 @@ fn __new__(cls: HeapType<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>)
 
 fn __repr__(_: PyType, slf: OffsetDateTime) -> PyReturn {
     let OffsetDateTime { date, time, offset } = slf;
-    format!("OffsetDateTime({} {}{})", date, time, offset).to_py()
+    format!("OffsetDateTime({date} {time}{offset})").to_py()
 }
 
 fn __str__(_: PyType, slf: OffsetDateTime) -> PyReturn {
-    format!("{}", slf).to_py()
+    format!("{slf}").to_py()
 }
 
 fn __richcmp__(
@@ -393,8 +392,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
             )?
         } else {
             raise_type_err(format!(
-                "unsupported operand type(s) for +/-: {} and {}",
-                type_a, type_b
+                "unsupported operand type(s) for +/-: {type_a} and {type_b}"
             ))?
         };
         (state, slf.instant(), inst_b)
@@ -555,7 +553,7 @@ pub(crate) fn check_ignore_dst_kwarg(
         {
             Ok(())
         }
-        Some((key, _)) => raise_type_err(format!("Unknown keyword argument: {}", key)),
+        Some((key, _)) => raise_type_err(format!("Unknown keyword argument: {key}")),
         _ => raise(exc_implicitly_ignoring_dst.as_ptr(), msg),
     }
 }
@@ -776,8 +774,7 @@ fn _shift_method(
                 }
                 None => {}
                 _ => raise_type_err(format!(
-                    "{}() can't mix positional and keyword arguments",
-                    fname
+                    "{fname}() can't mix positional and keyword arguments"
                 ))?,
             }
             if let Some(tdelta) = arg.extract(state.time_delta_type) {
@@ -790,7 +787,7 @@ fn _shift_method(
                 days = dt.ddelta.days;
                 nanos = dt.tdelta.total_nanos();
             } else {
-                raise_type_err(format!("{}() argument must be a delta", fname))?
+                raise_type_err(format!("{fname}() argument must be a delta"))?
             }
         }
         [] => {
@@ -839,7 +836,7 @@ fn _shift_method(
         .shift_date(months, days)
         .and_then(|dt| dt.shift_nanos(nanos))
         .and_then(|dt| dt.with_offset(offset))
-        .ok_or_else_value_err(|| format!("Result of {}() out of range", fname))?
+        .ok_or_else_value_err(|| format!("Result of {fname}() out of range"))?
         .to_obj(cls)
 }
 
@@ -1000,7 +997,7 @@ fn parse_common_iso(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn {
             .ok_or_type_err("Expected a string")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("Invalid format: {}", arg))?
+    .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?
     .to_obj(cls)
 }
 
@@ -1040,7 +1037,7 @@ fn format_rfc2822(_: PyType, slf: OffsetDateTime) -> PyReturn {
 fn parse_rfc2822(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn {
     let s = arg.cast::<PyStr>().ok_or_type_err("Expected a string")?;
     let (date, time, offset) =
-        rfc2822::parse(s.as_utf8()?).ok_or_else_value_err(|| format!("Invalid format: {}", arg))?;
+        rfc2822::parse(s.as_utf8()?).ok_or_else_value_err(|| format!("Invalid format: {arg}"))?;
     OffsetDateTime::new(date, time, offset)
         .ok_or_value_err("Instant out of range")?
         .to_obj(cls)

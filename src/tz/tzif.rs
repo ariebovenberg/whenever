@@ -466,7 +466,7 @@ mod tests {
         // A TZif file using the old version 1 format.
         const TZ_V1: &[u8] = include_bytes!("../../tests/tzif/Paris_v1.tzif");
         let tzif = parse(TZ_V1, "Europe/Paris").unwrap();
-        assert!(tzif.offsets_by_utc.len() > 0);
+        assert!(!tzif.offsets_by_utc.is_empty());
         assert_eq!(tzif.end, None);
 
         // a timestamp out of the range of the file should return the last offset (best guess)
@@ -481,7 +481,7 @@ mod tests {
     fn test_clamp_transitions_to_range() {
         const TZ_OUT_OF_RANGE: &[u8] = include_bytes!("../../tests/tzif/Sydney_widerange.tzif");
         let tzif = parse(TZ_OUT_OF_RANGE, "Australia/Sydney").unwrap();
-        assert!(tzif.offsets_by_utc.len() > 0);
+        assert!(!tzif.offsets_by_utc.is_empty());
         assert_eq!(
             tzif.offset_for_instant(EpochSecs::MIN),
             Offset::new_unchecked(36292)
@@ -570,8 +570,7 @@ mod tests {
             assert_eq!(
                 tzif.offset_for_instant(t.try_into().unwrap()),
                 expected.try_into().unwrap(),
-                "t={}",
-                t
+                "t={t}"
             );
         }
 
@@ -635,8 +634,7 @@ mod tests {
             assert_eq!(
                 tzif.ambiguity_for_local(t.try_into().unwrap()),
                 expected,
-                "t={}",
-                t
+                "t={t}"
             );
         }
     }
@@ -677,7 +675,7 @@ mod tests {
             }
 
             if let Err(err) = parse(&bytes, "") {
-                panic!("failed to parse TZif file {:?}: {err}", path);
+                panic!("failed to parse TZif file {path:?}: {err}");
             }
         }
     }

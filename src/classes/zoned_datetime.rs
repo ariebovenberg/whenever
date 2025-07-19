@@ -373,7 +373,7 @@ fn __repr__(_: PyType, slf: ZonedDateTime) -> PyReturn {
 }
 
 fn __str__(_: PyType, slf: ZonedDateTime) -> PyReturn {
-    format!("{}", slf).to_py()
+    format!("{slf}").to_py()
 }
 
 fn __richcmp__(
@@ -919,8 +919,7 @@ fn from_py_datetime(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
     // Other types could be making up their own rules.
     if tzinfo.type_().as_ptr() != zoneinfo_type.get()?.as_ptr() {
         raise_value_err(format!(
-            "tzinfo must be of type ZoneInfo (exactly), got {}",
-            tzinfo
+            "tzinfo must be of type ZoneInfo (exactly), got {tzinfo}"
         ))?;
     }
     let key = tzinfo.getattr(c"key")?;
@@ -1037,18 +1036,15 @@ fn check_from_timestamp_args_return_tz(
                 tz_store.obj_get(value, exc_tz_notfound)
             } else {
                 raise_type_err(format!(
-                    "{}() got an unexpected keyword argument {}",
-                    fname, key
+                    "{fname}() got an unexpected keyword argument {key}"
                 ))
             }
         }
         (&[_], None) => raise_type_err(format!(
-            "{}() missing 1 required keyword-only argument: 'tz'",
-            fname
+            "{fname}() missing 1 required keyword-only argument: 'tz'"
         )),
         (&[], _) => raise_type_err(format!(
-            "{}() missing 1 required positional argument",
-            fname
+            "{fname}() missing 1 required positional argument"
         )),
         _ => raise_type_err(format!(
             "{}() expected 2 arguments, got {}",
@@ -1134,7 +1130,7 @@ fn parse_common_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
     let mut s = Scan::new(py_str.as_utf8()?);
     let (DateTime { date, time }, (offset, tzstr)) = DateTime::read_iso(&mut s)
         .zip(read_offset_and_tzname(&mut s))
-        .ok_or_else_value_err(|| format!("Invalid format: {}", arg))?;
+        .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?;
     let &State {
         exc_invalid_offset,
         exc_tz_notfound,
@@ -1224,8 +1220,7 @@ fn _shift_method(
                 }
                 None => {}
                 _ => raise_type_err(format!(
-                    "{}() can't mix positional and keyword arguments",
-                    fname
+                    "{fname}() can't mix positional and keyword arguments"
                 ))?,
             };
             if let Some(d) = arg.extract(time_delta_type) {
@@ -1238,7 +1233,7 @@ fn _shift_method(
                 daydelta = d.ddelta.days;
                 tdelta = d.tdelta;
             } else {
-                raise_type_err(format!("{}() argument must be a delta", fname))?
+                raise_type_err(format!("{fname}() argument must be a delta"))?
             }
         }
         [] => {

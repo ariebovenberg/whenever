@@ -293,7 +293,7 @@ impl TzStore {
         self.cache
             .get_or_load(key, || self.load_tzif(key))
             .ok_or_else_raise(exc_notfound.as_ptr(), || {
-                format!("No time zone found with key {}", key)
+                format!("No time zone found with key {key}")
             })
     }
 

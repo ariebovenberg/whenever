@@ -166,14 +166,12 @@ pub(crate) fn parse_args(
         }
         if num_argkwargs > 4 {
             raise_type_err(format!(
-                "round() takes at most 4 arguments, got {}",
-                num_argkwargs
+                "round() takes at most 4 arguments, got {num_argkwargs}"
             ))?;
         }
     } else if num_argkwargs > 3 {
         raise_type_err(format!(
-            "round() takes at most 3 arguments, got {}",
-            num_argkwargs
+            "round() takes at most 3 arguments, got {num_argkwargs}"
         ))?;
     }
     let mut ignore_dst = false;
@@ -186,8 +184,7 @@ pub(crate) fn parse_args(
             if eq(key, kwname) {
                 if arg_obj[i].replace(value).is_some() {
                     raise_type_err(format!(
-                        "round() got multiple values for argument {}",
-                        kwname
+                        "round() got multiple values for argument {kwname}"
                     ))?;
                 }
                 return Ok(true);

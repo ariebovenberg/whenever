@@ -241,12 +241,12 @@ impl PyWrapped for Instant {}
 
 fn __repr__(_: PyType, i: Instant) -> PyReturn {
     let DateTime { date, time } = i.to_datetime();
-    format!("Instant({} {}Z)", date, time).to_py()
+    format!("Instant({date} {time}Z)").to_py()
 }
 
 fn __str__(_: PyType, i: Instant) -> PyReturn {
     let DateTime { date, time } = i.to_datetime();
-    format!("{}T{}Z", date, time).to_py()
+    format!("{date}T{time}Z").to_py()
 }
 
 fn __richcmp__(cls: HeapType<Instant>, inst_a: Instant, b_obj: PyObj, op: c_int) -> PyReturn {
@@ -482,7 +482,7 @@ fn py_datetime(cls: HeapType<Instant>, slf: Instant) -> PyReturn {
 fn from_py_datetime(cls: HeapType<Instant>, obj: PyObj) -> PyReturn {
     if let Some(dt) = obj.cast_allow_subclass::<PyDateTime>() {
         Instant::from_py(dt)?
-            .ok_or_else_value_err(|| format!("datetime {} out of range", dt))?
+            .ok_or_else_value_err(|| format!("datetime {dt} out of range"))?
             .to_obj(cls)
     } else {
         raise_type_err("Expected a datetime object")
@@ -504,7 +504,7 @@ fn parse_common_iso(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
             .ok_or_type_err("Expected a string")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("Invalid format: {}", s_obj))?
+    .ok_or_else_value_err(|| format!("Invalid format: {s_obj}"))?
     .instant()
     .to_obj(cls)
 }
@@ -543,7 +543,7 @@ fn _shift_method(
     let mut nanos: i128 = 0;
 
     if !args.is_empty() {
-        raise_type_err(format!("{}() takes no positional arguments", fname))?;
+        raise_type_err(format!("{fname}() takes no positional arguments"))?;
     }
     handle_kwargs(fname, kwargs, |key, value, eq| {
         if eq(key, str_hours) {
@@ -645,7 +645,7 @@ fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn {
 fn parse_rfc2822(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
     let s = s_obj.cast::<PyStr>().ok_or_type_err("Expected a string")?;
     let (date, time, offset) = rfc2822::parse(s.as_utf8()?)
-        .ok_or_else_value_err(|| format!("Invalid format: {}", s_obj))?;
+        .ok_or_else_value_err(|| format!("Invalid format: {s_obj}"))?;
     OffsetDateTime::new(date, time, offset)
         .ok_or_value_err("Instant out of range")?
         .instant()

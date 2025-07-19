@@ -280,8 +280,7 @@ fn __new__(cls: HeapType<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetu
                 if eq(key, kwname) {
                     if arg_obj[i].replace(value).is_some() {
                         raise_type_err(format!(
-                            "Date() got multiple values for argument {}",
-                            kwname
+                            "Date() got multiple values for argument {kwname}"
                         ))?;
                     }
                     return Ok(true);
@@ -333,7 +332,7 @@ fn __str__(_: PyType, slf: Date) -> PyReturn {
 }
 
 fn __repr__(_: PyType, slf: Date) -> PyReturn {
-    format!("Date({})", slf).to_py()
+    format!("Date({slf})").to_py()
 }
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
@@ -396,7 +395,7 @@ fn month_day(cls: HeapType<Date>, Date { month, day, .. }: Date) -> PyReturn {
 }
 
 fn format_common_iso(_: PyType, slf: Date) -> PyReturn {
-    format!("{}", slf).to_py()
+    format!("{slf}").to_py()
 }
 
 fn parse_common_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn {
@@ -405,7 +404,7 @@ fn parse_common_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn {
             .ok_or_type_err("argument must be str")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("Invalid format: {}", s))?
+    .ok_or_else_value_err(|| format!("Invalid format: {s}"))?
     .to_obj(cls)
 }
 
@@ -471,7 +470,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
             obj_b
                 .extract(state.date_delta_type)
                 .ok_or_else_type_err(|| {
-                    format!("unsupported operand type(s) for -: 'Date' and '{}'", type_b)
+                    format!("unsupported operand type(s) for -: 'Date' and '{type_b}'")
                 })?;
         date.shift_months(-months)
             .and_then(|date| date.shift_days(-days))
@@ -495,7 +494,7 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
             obj_b
                 .extract(state.date_delta_type)
                 .ok_or_else_type_err(|| {
-                    format!("unsupported operand type(s) for +: 'Date' and '{}'", type_b)
+                    format!("unsupported operand type(s) for +: 'Date' and '{type_b}'")
                 })?;
         // SAFETY: at least one of the operands must be a Date
         date.shift_months(months)
@@ -529,7 +528,7 @@ fn _shift_method(
             let delta_type = cls.state().date_delta_type;
             let DateDelta { months, days } = arg
                 .extract(delta_type)
-                .ok_or_type_err(format!("{}() argument must be a whenever.DateDelta", fname))?;
+                .ok_or_type_err(format!("{fname}() argument must be a whenever.DateDelta"))?;
             (months, days)
         }
         ([], _) => {
@@ -543,8 +542,7 @@ fn _shift_method(
             handle_datedelta_kwargs(fname, kwargs, str_years, str_months, str_days, str_weeks)?
         }
         _ => raise_type_err(format!(
-            "{}() takes either only kwargs or 1 positional arg",
-            fname
+            "{fname}() takes either only kwargs or 1 positional arg"
         ))?,
     };
     if negate {

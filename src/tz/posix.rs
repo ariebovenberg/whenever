@@ -647,10 +647,7 @@ mod tests {
             assert_eq!(
                 Rule::DayOfYear(doy.try_into().unwrap()).for_year(year.try_into().unwrap()),
                 mkdate(y, m, d),
-                "year: {}, doy: {} -> {:?}",
-                year,
-                doy,
-                expected
+                "year: {year}, doy: {doy} -> {expected:?}"
             );
         }
         let cases = [
@@ -688,10 +685,7 @@ mod tests {
             assert_eq!(
                 Rule::JulianDayOfYear(doy.try_into().unwrap()).for_year(year.try_into().unwrap()),
                 mkdate(y, m, d),
-                "year: {}, doy: {} -> {:?}",
-                year,
-                doy,
-                expected
+                "year: {year}, doy: {doy} -> {expected:?}"
             );
         }
         let cases = [
@@ -728,11 +722,7 @@ mod tests {
                 Rule::LastWeekday(weekday, month.try_into().unwrap())
                     .for_year(year.try_into().unwrap()),
                 mkdate(y, m, d),
-                "year: {}, month: {}, {:?} -> {:?}",
-                year,
-                month,
-                weekday,
-                expected
+                "year: {year}, month: {month}, {weekday:?} -> {expected:?}"
             );
         }
 
@@ -758,12 +748,7 @@ mod tests {
                 Rule::NthWeekday(nth.try_into().unwrap(), weekday, month.try_into().unwrap())
                     .for_year(year.try_into().unwrap()),
                 mkdate(y, m, d),
-                "year: {}, month: {}, nth: {}, {:?} -> {:?}",
-                year,
-                month,
-                nth,
-                weekday,
-                expected
+                "year: {year}, month: {month}, nth: {nth}, {weekday:?} -> {expected:?}"
             );
         }
 
@@ -874,11 +859,7 @@ mod tests {
             assert_eq!(
                 tz.ambiguity_for_local(to_epoch_s(date, time, Offset::ZERO)),
                 expected,
-                "{:?} {:?} -> {:?} (tz: {:?})",
-                ymd,
-                hms,
-                expected,
-                tz
+                "{ymd:?} {hms:?} -> {expected:?} (tz: {tz:?})"
             );
             // Test that the inverse operation (epoch->local) works
             match expected {
@@ -887,12 +868,7 @@ mod tests {
                     assert_eq!(
                         tz.offset_for_instant(epoch),
                         offset,
-                        "tz: {:?} date: {}, time: {}, {:?}, {:?}",
-                        tz,
-                        date,
-                        time,
-                        offset,
-                        epoch
+                        "tz: {tz:?} date: {date}, time: {time}, {offset:?}, {epoch:?}"
                     );
                 }
                 Fold(a, b) => {
@@ -901,22 +877,12 @@ mod tests {
                     assert_eq!(
                         tz.offset_for_instant(epoch_a),
                         a,
-                        "(earlier offset) tz: {:?} date: {}, time: {}, {:?}, {:?}",
-                        tz,
-                        date,
-                        time,
-                        a,
-                        epoch_a
+                        "(earlier offset) tz: {tz:?} date: {date}, time: {time}, {a:?}, {epoch_a:?}"
                     );
                     assert_eq!(
                         tz.offset_for_instant(epoch_b),
                         b,
-                        "(later offset) tz: {:?} date: {}, time: {}, {:?}, {:?}",
-                        tz,
-                        date,
-                        time,
-                        b,
-                        epoch_b
+                        "(later offset) tz: {tz:?} date: {date}, time: {time}, {b:?}, {epoch_b:?}"
                     );
                 }
                 Gap(_, _) => {} // Times in a gap aren't reversible
