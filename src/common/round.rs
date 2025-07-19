@@ -183,9 +183,7 @@ pub(crate) fn parse_args(
         for (i, &kwname) in [str_unit, str_increment, str_mode].iter().enumerate() {
             if eq(key, kwname) {
                 if arg_obj[i].replace(value).is_some() {
-                    raise_type_err(format!(
-                        "round() got multiple values for argument {kwname}"
-                    ))?;
+                    raise_type_err(format!("round() got multiple values for argument {kwname}"))?;
                 }
                 return Ok(true);
             }
