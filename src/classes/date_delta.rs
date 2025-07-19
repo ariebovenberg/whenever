@@ -151,13 +151,13 @@ pub(crate) fn format_components(delta: DateDelta, s: &mut String) {
     let years = months / 12;
     months %= 12;
     if years != 0 {
-        s.push_str(&format!("{}Y", years));
+        s.push_str(&format!("{years}Y"));
     }
     if months != 0 {
-        s.push_str(&format!("{}M", months));
+        s.push_str(&format!("{months}M"));
     }
     if days != 0 {
-        s.push_str(&format!("{}D", days));
+        s.push_str(&format!("{days}D"));
     }
 }
 
@@ -309,7 +309,7 @@ fn __neg__(cls: HeapType<DateDelta>, d: DateDelta) -> PyReturn {
 }
 
 fn __repr__(_: PyType, d: DateDelta) -> PyReturn {
-    format!("DateDelta({})", d).to_py()
+    format!("DateDelta({d})").to_py()
 }
 
 fn __str__(_: PyType, d: DateDelta) -> PyReturn {
@@ -396,8 +396,7 @@ fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                 })?
         } else {
             raise_type_err(format!(
-                "unsupported operand type(s) for +/-: {} and {}",
-                type_a, type_b
+                "unsupported operand type(s) for +/-: {type_a} and {type_b}"
             ))?
         }
         .to_obj(state.datetime_delta_type)
@@ -547,7 +546,7 @@ pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, Unit)> {
 fn parse_common_iso(cls: HeapType<DateDelta>, arg: PyObj) -> PyReturn {
     let py_str = arg.cast::<PyStr>().ok_or_type_err("argument must be str")?;
     let s = &mut py_str.as_utf8()?;
-    let err = || format!("Invalid format: {}", arg);
+    let err = || format!("Invalid format: {arg}");
     if s.len() < 3 {
         // at least `P0D`
         raise_value_err(err())?

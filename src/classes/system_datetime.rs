@@ -63,7 +63,7 @@ impl OffsetDateTime {
                     Disambiguate::Later => offset1,
                     Disambiguate::Raise => raise(
                         exc_repeated.as_ptr(),
-                        format!("{} {} is repeated in the system timezone", date, time),
+                        format!("{date} {time} is repeated in the system timezone"),
                     )?,
                 };
                 OffsetDateTime::new_unchecked(date, time, offset)
@@ -76,7 +76,7 @@ impl OffsetDateTime {
                     Disambiguate::Earlier => (offset0, offset0.sub(offset1)),
                     Disambiguate::Raise => raise(
                         exc_skipped.as_ptr(),
-                        format!("{} {} is skipped in the system timezone", date, time),
+                        format!("{date} {time} is skipped in the system timezone"),
                     )?,
                 };
                 DateTime { date, time }
@@ -324,11 +324,11 @@ fn __new__(cls: HeapType<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>)
 
 fn __repr__(_: PyType, slf: OffsetDateTime) -> PyReturn {
     let OffsetDateTime { date, time, offset } = slf;
-    format!("SystemDateTime({} {}{})", date, time, offset).to_py()
+    format!("SystemDateTime({date} {time}{offset})").to_py()
 }
 
 fn __str__(_: PyType, slf: OffsetDateTime) -> PyReturn {
-    format!("{}", slf).to_py()
+    format!("{slf}").to_py()
 }
 
 fn __richcmp__(
@@ -508,7 +508,7 @@ fn exact_eq(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime, arg: PyObj) -> P
     if let Some(other) = arg.extract(cls) {
         (slf == other).to_py()
     } else {
-        raise_type_err(format!("Argument must be same type, got {}", arg))
+        raise_type_err(format!("Argument must be same type, got {arg}"))
     }
 }
 
@@ -826,7 +826,7 @@ fn parse_common_iso(cls: HeapType<OffsetDateTime>, s_obj: PyObj) -> PyReturn {
             .ok_or_type_err("argument must be a string")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("Invalid format: {}", s_obj))?
+    .ok_or_else_value_err(|| format!("Invalid format: {s_obj}"))?
     .to_obj(cls)
 }
 
@@ -924,8 +924,7 @@ fn _shift_method(
                     )?)
                 }
                 Some(_) => raise_type_err(format!(
-                    "{}() can't mix positional and keyword arguments",
-                    fname
+                    "{fname}() can't mix positional and keyword arguments"
                 ))?,
                 None => {}
             };
@@ -941,7 +940,7 @@ fn _shift_method(
                 months = x.ddelta.months;
                 days = x.ddelta.days;
             } else {
-                raise_type_err(format!("{}() argument must be a delta", fname))?
+                raise_type_err(format!("{fname}() argument must be a delta"))?
             }
         }
         [] => {

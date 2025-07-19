@@ -34,8 +34,7 @@ impl Disambiguate {
                             .map(Some)
                     } else {
                         raise_type_err(format!(
-                            "{}() got an unexpected keyword argument {}",
-                            fname, name
+                            "{fname}() got an unexpected keyword argument {name}"
                         ))
                     }
                 } else {

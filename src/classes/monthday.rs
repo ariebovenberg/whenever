@@ -89,7 +89,7 @@ fn __new__(cls: HeapType<MonthDay>, args: PyTuple, kwargs: Option<PyDict>) -> Py
 }
 
 fn __repr__(_: PyType, slf: MonthDay) -> PyReturn {
-    format!("MonthDay({})", slf).to_py()
+    format!("MonthDay({slf})").to_py()
 }
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
@@ -98,7 +98,7 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
 }
 
 fn __str__(_: PyType, slf: MonthDay) -> PyReturn {
-    format!("{}", slf).to_py()
+    format!("{slf}").to_py()
 }
 
 fn __richcmp__(cls: HeapType<MonthDay>, a: MonthDay, b_obj: PyObj, op: c_int) -> PyReturn {
@@ -159,7 +159,7 @@ fn parse_common_iso(cls: HeapType<MonthDay>, s: PyObj) -> PyReturn {
             .ok_or_type_err("argument must be str")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("Invalid format: {}", s))?
+    .ok_or_else_value_err(|| format!("Invalid format: {s}"))?
     .to_obj(cls)
 }
 

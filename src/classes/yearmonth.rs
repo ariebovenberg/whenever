@@ -84,11 +84,11 @@ fn __new__(cls: HeapType<YearMonth>, args: PyTuple, kwargs: Option<PyDict>) -> P
 }
 
 fn __repr__(_: PyType, slf: YearMonth) -> PyReturn {
-    format!("YearMonth({})", slf).to_py()
+    format!("YearMonth({slf})").to_py()
 }
 
 fn __str__(_: PyType, slf: YearMonth) -> PyReturn {
-    format!("{}", slf).to_py()
+    format!("{slf}").to_py()
 }
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
@@ -151,7 +151,7 @@ fn format_common_iso(cls: PyType, slf: YearMonth) -> PyReturn {
 fn parse_common_iso(cls: HeapType<YearMonth>, arg: PyObj) -> PyReturn {
     let py_str = arg.cast::<PyStr>().ok_or_type_err("argument must be str")?;
     YearMonth::parse(py_str.as_utf8()?)
-        .ok_or_else_value_err(|| format!("Invalid format: {}", arg))?
+        .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?
         .to_obj(cls)
 }
 

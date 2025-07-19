@@ -102,8 +102,7 @@ where
         // Doing it this way is faster than always doing value comparison outright.
         if !handler(key, value, ptr_eq)? && !handler(key, value, value_eq)? {
             return raise_type_err(format!(
-                "{}() got an unexpected keyword argument: {}",
-                fname, key
+                "{fname}() got an unexpected keyword argument: {key}"
             ));
         }
     }
@@ -116,7 +115,7 @@ where
 {
     handler(value, ptr_eq)
         .or_else(|| handler(value, value_eq))
-        .ok_or_else_value_err(|| format!("Invalid value for {}: {}", name, value))
+        .ok_or_else_value_err(|| format!("Invalid value for {name}: {value}"))
 }
 
 pub(crate) use parse_args_kwargs;

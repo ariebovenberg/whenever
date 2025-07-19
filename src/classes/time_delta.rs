@@ -395,7 +395,7 @@ extern "C" fn __bool__(slf: PyObj) -> c_int {
 }
 
 fn __repr__(_: PyType, slf: TimeDelta) -> PyReturn {
-    format!("TimeDelta({})", slf).to_py()
+    format!("TimeDelta({slf})").to_py()
 }
 
 fn __str__(cls: PyType, slf: TimeDelta) -> PyReturn {
@@ -594,8 +594,7 @@ fn _add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                 .to_obj(state.datetime_delta_type)
         } else {
             raise_type_err(format!(
-                "unsupported operand type(s) for +/-: {} and {}",
-                a_cls, b_cls
+                "unsupported operand type(s) for +/-: {a_cls} and {b_cls}"
             ))?
         }
     } else {
@@ -771,13 +770,13 @@ pub(crate) fn fmt_components_abs(td: TimeDelta, s: &mut String) {
     debug_assert!(secs.get() >= 0);
     let (hours, mins, secs) = secs.abs_hms();
     if hours != 0 {
-        s.push_str(&format!("{}H", hours));
+        s.push_str(&format!("{hours}H"));
     }
     if mins != 0 {
-        s.push_str(&format!("{}M", mins));
+        s.push_str(&format!("{mins}M"));
     }
     if secs != 0 || subsec.get() != 0 {
-        s.push_str(&format!("{}{}S", secs, subsec));
+        s.push_str(&format!("{secs}{subsec}S"));
     }
 }
 
@@ -898,7 +897,7 @@ fn parse_common_iso(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
         .cast::<PyStr>()
         .ok_or_type_err("argument must be a string")?;
     let s = &mut py_str.as_utf8()?;
-    let err = || format!("Invalid format: {}", arg);
+    let err = || format!("Invalid format: {arg}");
 
     let sign = (s.len() >= 4)
         .then(|| parse_prefix(s))

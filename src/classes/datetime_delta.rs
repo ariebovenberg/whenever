@@ -115,15 +115,15 @@ pub(crate) fn handle_exact_unit(
         (-max..=max)
             .contains(&i)
             .then(|| i as i128 * factor)
-            .ok_or_else_value_err(|| format!("{} out of range", name))
+            .ok_or_else_value_err(|| format!("{name} out of range"))
     } else if let Some(py_float) = value.cast::<PyFloat>() {
         let f = py_float.to_f64()?;
         (-max as f64..=max as f64)
             .contains(&f)
             .then_some((f * factor as f64) as i128)
-            .ok_or_else_value_err(|| format!("{} out of range", name))
+            .ok_or_else_value_err(|| format!("{name} out of range"))
     } else {
-        raise_value_err(format!("{} must be an integer or float", name))?
+        raise_value_err(format!("{name} must be an integer or float"))?
     }
 }
 
@@ -301,7 +301,7 @@ extern "C" fn __bool__(slf: PyObj) -> c_int {
 }
 
 fn __repr__(_: PyType, d: DateTimeDelta) -> PyReturn {
-    format!("DateTimeDelta({})", d).to_py()
+    format!("DateTimeDelta({d})").to_py()
 }
 
 fn __str__(_: PyType, d: DateTimeDelta) -> PyReturn {
@@ -370,8 +370,7 @@ fn _add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
         } else {
             // We can safely discount other types within our module
             return raise_value_err(format!(
-                "unsupported operand type(s) for +/-: {} and {}",
-                type_a, type_b
+                "unsupported operand type(s) for +/-: {type_a} and {type_b}"
             ));
         };
         // SAFETY: at least one of the objects is a DateTimeDelta
@@ -482,7 +481,7 @@ fn parse_common_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
         .ok_or_value_err("argument must be str")?;
 
     let s = &mut binding.as_utf8()?;
-    let err = || format!("Invalid format or out of range: {}", arg);
+    let err = || format!("Invalid format or out of range: {arg}");
     if s.len() < 3 {
         // at least `P0D`
         raise_value_err(err())?

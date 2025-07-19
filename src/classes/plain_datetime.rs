@@ -125,7 +125,7 @@ impl DateTime {
     fn from_py(dt: PyDateTime) -> PyResult<Self> {
         let tzinfo = dt.tzinfo();
         if !tzinfo.is_none() {
-            raise_value_err(format!("datetime must be naive, but got tzinfo={}", tzinfo))?
+            raise_value_err(format!("datetime must be naive, but got tzinfo={tzinfo}"))?
         }
         Ok(DateTime {
             date: Date::from_py(dt.date()),
@@ -173,11 +173,11 @@ fn __new__(cls: HeapType<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> Py
 
 fn __repr__(_: PyType, slf: DateTime) -> PyReturn {
     let DateTime { date, time } = slf;
-    format!("PlainDateTime({} {})", date, time).to_py()
+    format!("PlainDateTime({date} {time})").to_py()
 }
 
 fn __str__(_: PyType, slf: DateTime) -> PyReturn {
-    format!("{}", slf).to_py()
+    format!("{slf}").to_py()
 }
 
 fn format_common_iso(cls: PyType, slf: DateTime) -> PyReturn {
@@ -246,7 +246,7 @@ fn _shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                 days = -days;
             }
             a.shift_date(months, days)
-                .ok_or_else_value_err(|| format!("Result of {} out of range", opname))?
+                .ok_or_else_value_err(|| format!("Result of {opname} out of range"))?
                 .to_obj(dt_type)
         } else if type_b == state.datetime_delta_type.into()
             || type_b == state.time_delta_type.into()
@@ -257,8 +257,7 @@ fn _shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
             )?
         } else {
             raise_type_err(format!(
-                "unsupported operand type(s) for {}: 'PlainDateTime' and {}",
-                opname, type_b
+                "unsupported operand type(s) for {opname}: 'PlainDateTime' and {type_b}"
             ))?
         }
     } else {
@@ -457,8 +456,7 @@ fn _shift_method(
                     ignore_dst = value.is_true();
                 }
                 Some(_) => raise_type_err(format!(
-                    "{}() can't mix positional and keyword arguments",
-                    fname
+                    "{fname}() can't mix positional and keyword arguments"
                 ))?,
                 None => {}
             };
@@ -472,7 +470,7 @@ fn _shift_method(
                 days = dt.ddelta.days;
                 nanos = dt.tdelta.total_nanos();
             } else {
-                raise_type_err(format!("{}() argument must be a delta", fname))?
+                raise_type_err(format!("{fname}() argument must be a delta"))?
             }
         }
         [] => {
@@ -517,7 +515,7 @@ fn _shift_method(
     }
     slf.shift_date(months, days)
         .and_then(|dt| dt.shift_nanos(nanos))
-        .ok_or_else_value_err(|| format!("Result of {}() out of range", fname))?
+        .ok_or_else_value_err(|| format!("Result of {fname}() out of range"))?
         .to_obj(cls)
 }
 
@@ -650,7 +648,7 @@ fn parse_common_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
             .ok_or_type_err("Expected a string")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("Invalid format: {}", arg))?
+    .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?
     .to_obj(cls)
 }
 

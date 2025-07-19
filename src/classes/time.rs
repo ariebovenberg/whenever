@@ -261,7 +261,7 @@ fn __new__(cls: HeapType<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetu
 }
 
 fn __repr__(_: PyType, slf: Time) -> PyReturn {
-    format!("Time({})", slf).to_py()
+    format!("Time({slf})").to_py()
 }
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
@@ -352,7 +352,7 @@ fn from_py_time(cls: HeapType<Time>, arg: PyObj) -> PyReturn {
 }
 
 fn format_common_iso(_: PyType, slf: Time) -> PyReturn {
-    format!("{}", slf).to_py()
+    format!("{slf}").to_py()
 }
 
 fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyResult<Owned<PyTuple>> {
@@ -376,7 +376,7 @@ fn parse_common_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn {
             .ok_or_type_err("Argument must be a string")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("Invalid format: {}", s))?
+    .ok_or_else_value_err(|| format!("Invalid format: {s}"))?
     .to_obj(cls)
 }
 
