@@ -33,7 +33,7 @@ pub struct Date {
 
 pub(crate) const SINGLETONS: &[(&CStr, Date); 2] = &[(c"MIN", Date::MIN), (c"MAX", Date::MAX)];
 
-const ISO_TEMPLATE: [u8; 10] = *b"YYYY-MM-DD";
+const ISO_TEMPLATE: [u8; 10] = *b"0000-00-00";
 
 impl Date {
     pub(crate) const MAX: Date = Date {
@@ -154,6 +154,21 @@ impl Date {
         write_2_digits(self.month.get(), &mut s[5..7]);
         write_2_digits(self.day, &mut s[8..]);
         s
+    }
+
+    pub(crate) fn format_iso_custom(self, extended: bool) -> AsciiArrayVec<10> {
+        let mut data = ISO_TEMPLATE;
+        write_4_digits(self.year.get(), &mut data[..4]);
+        let len = if extended {
+            write_2_digits(self.month.get(), &mut data[5..7]);
+            write_2_digits(self.day, &mut data[8..]);
+            10
+        } else {
+            write_2_digits(self.month.get(), &mut data[4..6]);
+            write_2_digits(self.day, &mut data[6..]);
+            8
+        };
+        AsciiArrayVec { data, len }
     }
 
     // For small adjustments, this is faster than converting to/from UnixDays

@@ -3,9 +3,15 @@ use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 use std::ptr::null_mut as NULL;
 
+use crate::common::fmt::Precision;
 use crate::{
     classes::plain_datetime::DateTime,
-    common::{parse::Scan, round, scalar::*},
+    common::{
+        fmt::{AsciiArrayVec, write_2_digits},
+        parse::Scan,
+        round,
+        scalar::*,
+    },
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -138,6 +144,75 @@ impl Time {
 
     pub(crate) fn parse_iso(s: &[u8]) -> Option<Self> {
         Scan::new(s).parse_all(Self::read_iso)
+    }
+
+    /// Format the time in ISO 8601 format "HH:MM:SS.sssssssss"
+    /// and returning the "significant length" of the string (to eliminate trailing zeros)
+    pub(crate) fn format_iso_extended(self) -> AsciiArrayVec<18> {
+        let mut buf = *b"00:00:00.000000000";
+
+        write_2_digits(self.hour, &mut buf[0..2]);
+        write_2_digits(self.minute, &mut buf[3..5]);
+        write_2_digits(self.second, &mut buf[6..8]);
+
+        let (str_subsec, len_subsec) = self.subsec.format_iso();
+        buf[8..].copy_from_slice(&str_subsec);
+
+        AsciiArrayVec {
+            data: buf,
+            len: 8 + len_subsec,
+        }
+    }
+
+    /// Format the time in ISO 8601 format "HHMMSS.sssssssss"
+    pub(crate) fn format_iso_basic(self) -> AsciiArrayVec<18> {
+        let mut buf = *b"000000.00000000000";
+
+        write_2_digits(self.hour, &mut buf[0..2]);
+        write_2_digits(self.minute, &mut buf[2..4]);
+        write_2_digits(self.second, &mut buf[4..6]);
+
+        let (str_subsec, len_subsec) = self.subsec.format_iso();
+        buf[6..16].copy_from_slice(&str_subsec);
+
+        AsciiArrayVec {
+            data: buf,
+            len: 6 + len_subsec,
+        }
+    }
+
+    /// Format the time in ISO 8601 format "HH:MM:SS.sssssssss"
+    /// and returning the "significant length" of the string (to eliminate trailing zeros)
+    pub(crate) fn format_iso_custom(self, unit: Precision, extended: bool) -> AsciiArrayVec<18> {
+        if extended {
+            let vec = self.format_iso_extended();
+            AsciiArrayVec {
+                len: match unit {
+                    Precision::Hour => 2,
+                    Precision::Minute => 5,
+                    Precision::Second => 8,
+                    Precision::Millisecond => 12,
+                    Precision::Microsecond => 15,
+                    Precision::Nanosecond => 18,
+                    Precision::Auto => vec.len,
+                },
+                ..vec
+            }
+        } else {
+            let vec = self.format_iso_basic();
+            AsciiArrayVec {
+                len: match unit {
+                    Precision::Hour => 2,
+                    Precision::Minute => 4,
+                    Precision::Second => 6,
+                    Precision::Millisecond => 10,
+                    Precision::Microsecond => 13,
+                    Precision::Nanosecond => 16,
+                    Precision::Auto => vec.len,
+                },
+                ..vec
+            }
+        }
     }
 
     /// Round the time to the specified increment
@@ -515,3 +590,65 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
 ];
 
 pub(crate) static mut SPEC: PyType_Spec = type_spec::<Time>(c"whenever.Time", unsafe { SLOTS });
+
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+
+    #[test]
+    fn format_iso() {
+        let t1 = Time {
+            hour: 1,
+            minute: 2,
+            second: 3,
+            subsec: SubSecNanos::MIN,
+        };
+        let t2 = Time {
+            hour: 12,
+            minute: 34,
+            second: 56,
+            subsec: SubSecNanos::new_unchecked(123_400_000),
+        };
+        let t3 = Time {
+            hour: 12,
+            minute: 34,
+            second: 56,
+            subsec: SubSecNanos::new_unchecked(8),
+        };
+        let t4 = Time {
+            hour: 12,
+            minute: 34,
+            second: 56,
+            subsec: SubSecNanos::new_unchecked(34_090),
+        };
+        assert_eq!(
+            t1.format_iso_extended(),
+            AsciiArrayVec {
+                data: *b"01:02:03.000000000",
+                len: 8
+            }
+        );
+        assert_eq!(
+            t2.format_iso_extended(),
+            AsciiArrayVec {
+                data: *b"12:34:56.123400000",
+                len: 8 + 5
+            }
+        );
+        assert_eq!(
+            t3.format_iso_extended(),
+            AsciiArrayVec {
+                data: *b"12:34:56.000000008",
+                len: 18
+            }
+        );
+        assert_eq!(
+            t4.format_iso_extended(),
+            AsciiArrayVec {
+                data: *b"12:34:56.000034090",
+                len: 17
+            }
+        );
+    }
+}

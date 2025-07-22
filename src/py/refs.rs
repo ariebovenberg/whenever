@@ -85,6 +85,12 @@ impl<T: PyBase> std::ops::Deref for Owned<T> {
     }
 }
 
+impl<T: PyBase> std::ops::DerefMut for Owned<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
 pub(crate) trait PyObjectExt {
     fn rust_owned(self) -> PyResult<Owned<PyObj>>;
 }
