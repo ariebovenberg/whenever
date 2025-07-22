@@ -1,6 +1,12 @@
 //! Checked arithmetic for scalar date and time concepts
 use crate::{
-    classes::date::Date, classes::plain_datetime::DateTime, classes::time::Time, common::round,
+    classes::date::Date,
+    classes::plain_datetime::DateTime,
+    classes::time::Time,
+    common::{
+        fmt::{AsciiArrayVec, write_2_digits},
+        round,
+    },
 };
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
 
@@ -65,6 +71,28 @@ impl Offset {
     pub(crate) const fn as_offset_delta(self) -> OffsetDelta {
         // Safe: range of Offset fits within OffsetDelta
         OffsetDelta::new_unchecked(self.0)
+    }
+
+    pub(crate) fn format_iso_custom(self, extended: bool) -> AsciiArrayVec<9> {
+        let mut data = *b" 00:00:00";
+        let total_secs = self.0.abs();
+        data[0] = if self.0 < 0 { b'-' } else { b'+' };
+        let secs = total_secs % 60;
+        let mins = (total_secs / 60) % 60;
+        let hrs = total_secs / 3600;
+        write_2_digits(hrs as u8, &mut data[1..3]);
+
+        let len = if extended {
+            write_2_digits(mins as u8, &mut data[4..6]);
+            write_2_digits(secs as u8, &mut data[7..9]);
+            if secs == 0 { 6 } else { 9 }
+        } else {
+            write_2_digits(mins as u8, &mut data[3..5]);
+            write_2_digits(secs as u8, &mut data[5..7]);
+            if secs == 0 { 5 } else { 7 }
+        };
+
+        AsciiArrayVec { data, len }
     }
 }
 
@@ -734,6 +762,33 @@ impl SubSecNanos {
             SubSecNanos::from_remainder(rounded),
         )
     }
+
+    /// Convert the nanoseconds to a string representation,
+    /// returning the buffer and the "significant" length (i.e. without trailing zeros)
+    pub(crate) fn format_iso(self) -> ([u8; 10], usize) {
+        // Don't write anything if the nanoseconds are zero
+        let mut buf: [u8; 10] = *b".000000000";
+        if self.0 == 0 {
+            return (buf, 0);
+        }
+
+        let mut len_significant = buf.len();
+        let mut remaining = self.0;
+        let mut digit = (remaining % 10) as u8;
+        // Handle trailing zeros
+        while digit == 0 {
+            len_significant -= 1;
+            remaining /= 10;
+            digit = (remaining % 10) as u8;
+        }
+        // Write the digits in reverse order
+        for i in (1..len_significant).rev() {
+            buf[i] = b'0' + digit;
+            remaining /= 10;
+            digit = (remaining % 10) as u8;
+        }
+        (buf, len_significant as _)
+    }
 }
 
 // Display sub-second nanos in a way that:
@@ -808,3 +863,36 @@ impl Weekday {
 }
 
 pub(crate) static NS_PER_DAY: i128 = S_PER_DAY as i128 * 1_000_000_000;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn subsec_format_iso() {
+        assert_eq!(
+            SubSecNanos::new_unchecked(123_456_789).format_iso(),
+            (*b".123456789", 10)
+        );
+        assert_eq!(
+            SubSecNanos::new_unchecked(0).format_iso(),
+            (*b".000000000", 0)
+        );
+        assert_eq!(
+            SubSecNanos::new_unchecked(123_000_000).format_iso(),
+            (*b".123000000", 4)
+        );
+        assert_eq!(
+            SubSecNanos::new_unchecked(023_456_009).format_iso(),
+            (*b".023456009", 10)
+        );
+        assert_eq!(
+            SubSecNanos::new_unchecked(000_000_080).format_iso(),
+            (*b".000000080", 9)
+        );
+        assert_eq!(
+            SubSecNanos::new_unchecked(100_000_000).format_iso(),
+            (*b".100000000", 2)
+        );
+    }
+}

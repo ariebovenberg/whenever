@@ -4224,10 +4224,28 @@ class ZonedDateTime(_ExactAndLocalTime):
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(_fromtimestamp(secs, _get_tz(tz)), nanos)
 
-    def format_common_iso(self) -> str:
-        """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
+    def format_common_iso(
+        self,
+        *,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+            "auto",
+        ] = "auto",
+        basic: bool = False,
+        sep: Literal["T", " "] = "T",
+    ) -> str:
+        """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``.
 
         The inverse of the ``parse_common_iso()`` method.
+
+        Use the ``unit`` parameter to control the precision of the time part,
+        the ``sep`` parameter to control the separator,
+        and the ``basic`` parameter to use the basic ISO format instead of the extended one.
 
         Example
         -------
@@ -4240,12 +4258,16 @@ class ZonedDateTime(_ExactAndLocalTime):
         Althought it is gaining popularity, it is not yet widely supported
         by ISO 8601 parsers.
         """
-        py_isofmt = self._py_dt.isoformat()
+        if sep not in ("T", " "):
+            raise ValueError("sep must be either 'T' or ' '")
+        elif type(basic) is not bool:
+            raise TypeError("basic must be a boolean")
+
         return (
-            py_isofmt[:19]  # without the offset
-            + bool(self._nanos) * f".{self._nanos:09d}".rstrip("0")
-            + py_isofmt[19:]
-            + f"[{self._py_dt.tzinfo.key}]"  # type: ignore[union-attr]
+            f"{_format_date(self._py_dt, basic)}{sep}"
+            f"{_format_time(self._py_dt, self._nanos, unit, basic)}"
+            f"{_format_offset(self._py_dt.utcoffset(), basic)}"  # type: ignore[arg-type]
+            f"[{self._py_dt.tzinfo.key}]"  # type: ignore[union-attr]
         )
 
     @classmethod
@@ -6304,6 +6326,53 @@ def _parse_rfc2822(s: str) -> _datetime:
         _parse_err(s)
 
     return _check_utc_bounds(_datetime.combine(date, time, tzinfo=tzinfo))
+
+
+def _format_date(d: _date, basic: bool) -> str:
+    sep = "" if basic else "-"
+    return f"{d.year:04d}{sep}{d.month:02d}{sep}{d.day:02d}"
+
+
+def _format_time(
+    t: Union[_time, _datetime], ns: _Nanos, precision: str, basic: bool
+) -> str:
+    sep = "" if basic else ":"
+    if precision == "hour":
+        return f"{t.hour:02d}"
+    elif precision == "minute":
+        return f"{t.hour:02d}{sep}{t.minute:02d}"
+    else:
+        return (
+            f"{t.hour:02d}{sep}{t.minute:02d}{sep}{t.second:02d}"
+            + _format_nanos(ns, precision)
+        )
+
+
+def _format_offset(offset: _timedelta, basic: bool) -> str:
+    sep = "" if basic else ":"
+    sign = "-" if offset.days == -1 else "+"
+    hours, remainder = divmod(abs(int(offset.total_seconds())), 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if seconds:
+        return f"{sign}{int(hours):02d}{sep}{int(minutes):02d}{sep}{int(seconds):02d}"
+    else:
+        return f"{sign}{int(hours):02d}{sep}{int(minutes):02d}"
+
+
+def _format_nanos(ns: _Nanos, precision: str) -> str:
+    ns_str = f".{ns:09d}"
+    if precision == "auto":
+        return bool(ns) * ns_str.rstrip("0")
+    elif precision == "nanosecond":
+        return ns_str
+    elif precision == "microsecond":
+        return ns_str[:7]
+    elif precision == "millisecond":
+        return ns_str[:4]
+    elif precision in ("second", "hour", "minute"):
+        return ""
+    else:
+        raise ValueError(f"Invalid precision unit: {precision!r}. ")
 
 
 def _check_utc_bounds(dt: _datetime) -> _datetime:
