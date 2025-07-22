@@ -338,6 +338,11 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         str_half_ceil: intern(c"half_ceil")?.py_owned(),
         str_half_even: intern(c"half_even")?.py_owned(),
         str_format: intern(c"format")?.py_owned(),
+        str_sep: intern(c"sep")?.py_owned(),
+        str_space: intern(c" ")?.py_owned(),
+        str_t: intern(c"T")?.py_owned(),
+        str_auto: intern(c"auto")?.py_owned(),
+        str_basic: intern(c"basic")?.py_owned(),
 
         exc_repeated: exc_repeated.py_owned(),
         exc_skipped: exc_skipped.py_owned(),
@@ -556,6 +561,11 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.str_half_ceil).cast());
         Py_CLEAR((&raw mut state.str_half_even).cast());
         Py_CLEAR((&raw mut state.str_format).cast());
+        Py_CLEAR((&raw mut state.str_sep).cast());
+        Py_CLEAR((&raw mut state.str_space).cast());
+        Py_CLEAR((&raw mut state.str_t).cast());
+        Py_CLEAR((&raw mut state.str_auto).cast());
+        Py_CLEAR((&raw mut state.str_basic).cast());
 
         // unpickling functions
         Py_CLEAR((&raw mut state.unpickle_date).cast());
@@ -681,6 +691,11 @@ pub(crate) struct State {
     pub(crate) str_half_ceil: PyObj,
     pub(crate) str_half_even: PyObj,
     pub(crate) str_format: PyObj,
+    pub(crate) str_sep: PyObj,
+    pub(crate) str_space: PyObj,
+    pub(crate) str_t: PyObj,
+    pub(crate) str_auto: PyObj,
+    pub(crate) str_basic: PyObj,
 
     pub(crate) time_patch: Patch,
     pub(crate) tz_store: TzStore,

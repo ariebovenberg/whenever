@@ -15,7 +15,7 @@ use crate::{
         time::Time,
         time_delta::TimeDelta,
     },
-    common::{ambiguity::*, parse::Scan, round, scalar::*},
+    common::{ambiguity::*, fmt::Precision, parse::Scan, round, scalar::*},
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -793,8 +793,103 @@ fn replace_time(
     }
 }
 
-fn format_common_iso(cls: PyType, slf: ZonedDateTime) -> PyReturn {
-    __str__(cls, slf)
+fn format_common_iso(
+    cls: HeapType<ZonedDateTime>,
+    slf: ZonedDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    if !args.is_empty() {
+        raise_type_err("format_common_iso() takes no positional arguments")?;
+    }
+    let mut sep = b'T';
+    let mut unit = Precision::Auto;
+    let mut extended = true; // Whether to use ISO "extended" format (or basic)
+    let &State {
+        str_sep,
+        str_space,
+        str_t,
+        str_unit,
+        str_hour,
+        str_minute,
+        str_second,
+        str_millisecond,
+        str_microsecond,
+        str_nanosecond,
+        str_auto,
+        str_basic,
+        ..
+    } = cls.state();
+    handle_kwargs("format_common_iso", kwargs, |key, value, eq| {
+        if eq(key, str_sep) {
+            sep = match_interned_str("sep", value, |v, eq| {
+                if eq(v, str_space) {
+                    Some(b' ')
+                } else if eq(v, str_t) {
+                    Some(b'T')
+                } else {
+                    None
+                }
+            })?;
+            Ok(true)
+        } else if eq(key, str_unit) {
+            unit = match_interned_str("unit", value, |v, eq| {
+                // Milliseconds is probably the most common choice, so
+                // we check it first.
+                if eq(v, str_millisecond) {
+                    Some(Precision::Millisecond)
+                } else if eq(v, str_hour) {
+                    Some(Precision::Hour)
+                } else if eq(v, str_minute) {
+                    Some(Precision::Minute)
+                } else if eq(v, str_second) {
+                    Some(Precision::Second)
+                } else if eq(v, str_microsecond) {
+                    Some(Precision::Microsecond)
+                } else if eq(v, str_nanosecond) {
+                    Some(Precision::Nanosecond)
+                } else if eq(v, str_auto) {
+                    Some(Precision::Auto) // Auto cutoff
+                } else {
+                    None
+                }
+            })?;
+            Ok(true)
+        } else if eq(key, str_basic) {
+            if value.is_true() {
+                extended = false;
+            } else if value.is_false() {
+                extended = true;
+            } else {
+                raise_type_err("`basic` must be a boolean value")?;
+            }
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    })?;
+    let date_str = slf.date.format_iso_custom(extended);
+    let time_str = slf.time.format_iso_custom(unit, extended);
+    let offset_str = slf.offset.format_iso_custom(extended);
+
+    let mut b = PyAsciiStrBuilder::new(
+        date_str.len
+        + 1 // separator
+        + time_str.len
+        + offset_str.len
+        + slf.tz.key.len()
+        + 2, // two brackets around the tz name
+    )?;
+
+    b.write_slice(&date_str)?;
+    b.write_char(sep)?;
+    b.write_slice(&time_str)?;
+    b.write_slice(&offset_str)?;
+    b.write_char(b'[')?;
+    b.write_slice(slf.tz.key.as_bytes())?;
+    b.write_char(b']')?;
+
+    Ok(b.finish())
 }
 
 fn replace(
@@ -1451,7 +1546,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(ZonedDateTime, local, c""), // deprecated alias
     method0!(ZonedDateTime, date, doc::LOCALTIME_DATE),
     method0!(ZonedDateTime, time, doc::LOCALTIME_TIME),
-    method0!(
+    method_kwargs!(
         ZonedDateTime,
         format_common_iso,
         doc::ZONEDDATETIME_FORMAT_COMMON_ISO

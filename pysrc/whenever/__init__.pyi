@@ -71,7 +71,12 @@ class _OrderMixin:
     def __ge__(self, other: Self, /) -> bool: ...
 
 @type_check_only
-class _DateOrTimeMixin(_CommonISOMixin, _OrderMixin): ...
+class _DateOrTimeMixin(_CommonISOMixin, _OrderMixin):
+    def format_common_iso(
+        self,
+        *,
+        basic: bool = False,
+    ) -> str: ...
 
 @final
 class Date(_DateOrTimeMixin):
@@ -182,6 +187,20 @@ class Time(_DateOrTimeMixin):
             "ceil", "floor", "half_ceil", "half_floor", "half_even"
         ] = "half_even",
     ) -> Self: ...
+    def format_common_iso(
+        self,
+        *,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+            "auto",
+        ] = "auto",
+        basic: bool = False,
+    ) -> str: ...
 
 @type_check_only
 class _DeltaMixin(_CommonISOMixin):
@@ -336,6 +355,21 @@ class _PyDateTimeMixin(_CommonISOMixin):
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> Self: ...
     def py_datetime(self) -> _datetime: ...
+    def format_common_iso(
+        self,
+        *,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+            "auto",
+        ] = "auto",
+        basic: bool = False,
+        sep: Literal["T", " "] = "T",
+    ) -> str: ...
 
 @final
 class Instant(_PyDateTimeMixin, _ExactTime):
