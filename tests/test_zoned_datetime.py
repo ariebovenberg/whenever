@@ -534,6 +534,24 @@ class TestReplaceTime:
             d2.replace_time(Time(23), disambiguate="compatible")
 
 
+ZDT1 = ZonedDateTime(
+    2020,
+    8,
+    15,
+    23,
+    12,
+    9,
+    nanosecond=987_654_321,
+    tz="Europe/Amsterdam",
+)
+ZDT2 = ZonedDateTime(
+    1900,
+    1,
+    1,
+    tz="Europe/Dublin",
+)
+
+
 class TestFormatCommonIso:
 
     @pytest.mark.parametrize(
@@ -579,19 +597,102 @@ class TestFormatCommonIso:
                 "2023-10-29T02:15:30+01:00[Europe/Amsterdam]",
             ),
             (
-                ZonedDateTime(
-                    1900,
-                    1,
-                    1,
-                    tz="Europe/Dublin",
-                ),
+                ZDT2,
                 "1900-01-01T00:00:00-00:25:21[Europe/Dublin]",
             ),
         ],
     )
-    def test_common_iso(self, d: ZonedDateTime, expected: str):
+    def test_defaults(self, d: ZonedDateTime, expected: str):
         assert str(d) == expected
         assert d.format_common_iso() == expected
+
+    @pytest.mark.parametrize(
+        "zdt, kwargs, expected",
+        [
+            (
+                ZDT1,
+                {"unit": "nanosecond"},
+                "2020-08-15T23:12:09.987654321+02:00[Europe/Amsterdam]",
+            ),
+            (
+                ZDT1,
+                {"unit": "microsecond", "sep": " "},
+                "2020-08-15 23:12:09.987654+02:00[Europe/Amsterdam]",
+            ),
+            (
+                ZDT1,
+                {"unit": "millisecond", "basic": True},
+                "20200815T231209.987+0200[Europe/Amsterdam]",
+            ),
+            (
+                ZDT1,
+                {"unit": "second", "sep": "T", "basic": True},
+                "20200815T231209+0200[Europe/Amsterdam]",
+            ),
+            (
+                ZDT1,
+                {"unit": "minute"},
+                "2020-08-15T23:12+02:00[Europe/Amsterdam]",
+            ),
+            (
+                ZDT1,
+                {"unit": "hour", "basic": True},
+                "20200815T23+0200[Europe/Amsterdam]",
+            ),
+            (
+                ZDT1,
+                {"unit": "auto", "basic": False},
+                "2020-08-15T23:12:09.987654321+02:00[Europe/Amsterdam]",
+            ),
+            (
+                ZDT2,
+                {"unit": "auto"},
+                "1900-01-01T00:00:00-00:25:21[Europe/Dublin]",
+            ),
+            (
+                ZDT2,
+                {"unit": "millisecond"},
+                "1900-01-01T00:00:00.000-00:25:21[Europe/Dublin]",
+            ),
+            (
+                ZDT2,
+                {"unit": "microsecond"},
+                "1900-01-01T00:00:00.000000-00:25:21[Europe/Dublin]",
+            ),
+            (
+                ZDT2,
+                {"unit": "nanosecond", "basic": True, "sep": " "},
+                "19000101 000000.000000000-002521[Europe/Dublin]",
+            ),
+            (
+                ZDT2,
+                {"unit": "hour", "basic": True, "sep": "T"},
+                "19000101T00-002521[Europe/Dublin]",
+            ),
+        ],
+    )
+    def test_variations(self, zdt, kwargs, expected):
+        assert zdt.format_common_iso(**kwargs) == expected
+
+    def test_invalid(self):
+        with pytest.raises(ValueError, match="unit"):
+            ZDT1.format_common_iso(unit="foo")  # type: ignore[arg-type]
+
+        with pytest.raises(
+            (ValueError, TypeError, AttributeError), match="unit"
+        ):
+            ZDT1.format_common_iso(unit=True)  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError, match="sep"):
+            ZDT1.format_common_iso(sep="_")  # type: ignore[arg-type]
+
+        with pytest.raises(
+            (ValueError, TypeError, AttributeError), match="sep"
+        ):
+            ZDT1.format_common_iso(sep=1)  # type: ignore[arg-type]
+
+        with pytest.raises(TypeError, match="basic"):
+            ZDT1.format_common_iso(basic=1)  # type: ignore[arg-type]
 
 
 class TestEquality:
@@ -1282,6 +1383,10 @@ class TestParseCommonIso:
             (
                 "2020-02-15t120830z[America/New_York]",
                 ZonedDateTime(2020, 2, 15, 7, 8, 30, tz="America/New_York"),
+            ),
+            (
+                "19000101 00-002521[Europe/Dublin]",
+                ZDT2,
             ),
         ],
     )
