@@ -119,3 +119,56 @@ impl<const N: usize> ToPy for [u8; N] {
         unsafe { PyBytes_FromStringAndSize(self.as_ptr().cast(), N as _) }.rust_owned()
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PyAsciiStrBuilder {
+    obj: PyObj,
+    index: Py_ssize_t,
+}
+
+impl PyBase for PyAsciiStrBuilder {
+    fn as_py_obj(&self) -> PyObj {
+        self.obj
+    }
+}
+
+impl FromPy for PyAsciiStrBuilder {
+    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
+        // TODO: this implementation isn't used
+        Self {
+            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
+            index: 0,
+        }
+    }
+}
+
+impl PyAsciiStrBuilder {
+    pub(crate) fn new(len: usize) -> PyResult<Owned<Self>> {
+        Ok(unsafe {
+            PyUnicode_New(len as _, 0)
+                .rust_owned()?
+                .cast_unchecked::<Self>()
+        })
+    }
+
+    pub(crate) fn write_slice(&mut self, s: &[u8]) -> PyResult<()> {
+        for &c in s {
+            self.write_char(c)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn write_char(&mut self, c: u8) -> PyResult<()> {
+        if unsafe { PyUnicode_WriteChar(self.as_ptr(), self.index, c as _) } == -1 {
+            return Err(PyErrMarker());
+        }
+        self.index += 1;
+        Ok(())
+    }
+}
+
+impl Owned<PyAsciiStrBuilder> {
+    pub(crate) fn finish(self) -> Owned<PyObj> {
+        unsafe { self.cast_unchecked::<PyObj>() }
+    }
+}

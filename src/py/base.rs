@@ -193,6 +193,10 @@ pub(crate) trait PyBase: FromPy {
     fn is_true(&self) -> bool {
         unsafe { self.as_ptr() == Py_True() }
     }
+
+    fn is_false(&self) -> bool {
+        unsafe { self.as_ptr() == Py_False() }
+    }
 }
 
 impl std::fmt::Display for PyObj {
