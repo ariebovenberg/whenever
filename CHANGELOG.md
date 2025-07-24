@@ -1,5 +1,12 @@
 # 🚀 Changelog
 
+## 0.8.8 (2025-07-24)
+
+- Add wheels for Python 3.14 now that its ABI is stable.
+- Add a pure Python wheel so platforms without binary wheels can use
+  `whenever`'s pure Python version without having to go through the source
+  build process (#256)
+
 ## 0.8.7 (2025-07-18)
 
 - Fix some `MIN` and `MAX` constants not documented in the API reference.

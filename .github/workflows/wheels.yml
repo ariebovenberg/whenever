@@ -86,27 +86,31 @@ jobs:
           name: wheels-binary-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux || 'auto' }}
           path: dist/*
 
-  sdist:
+  pure-python:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build sdist
+      - run: pip install -U twine packaging build
+      - name: Build source distribution
         run: |
-          pip install build
           python -m build --sdist --outdir dist
-      - run: pip install -U twine packaging
+      - name: Build pure Python wheel
+        run: |
+          python -m build --wheel --outdir dist
+        env:
+          WHENEVER_NO_BUILD_RUST_EXT: 1
       - run: twine check --strict dist/*
-      - name: Upload sdist
+      - name: Upload pure Python wheels and sdist
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-sdist
+          name: wheels-pure-python
           path: dist/*
 
   release:
     name: Release
     runs-on: ubuntu-latest
     if: "startsWith(github.ref, 'refs/tags/')"
-    needs: [binary, sdist]
+    needs: [binary, pure-python]
     steps:
       - uses: actions/download-artifact@v4
       - run: pip install -U twine packaging

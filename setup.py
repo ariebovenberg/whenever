@@ -18,7 +18,7 @@ extra_setup_kwargs = {}
 
 if (
     os.getenv("WHENEVER_NO_BUILD_RUST_EXT")
-    or platform.python_implementation() == "PyPy"
+    or platform.python_implementation() in ("PyPy", "GraalVM")
 ):
     print("Skipping Whenever Rust extension build")
 else:

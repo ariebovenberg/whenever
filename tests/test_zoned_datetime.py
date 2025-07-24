@@ -850,7 +850,7 @@ class TestDayLength:
 
         # Positive UTC offsets at lower bound are NOT fine
         d_min_pos = ZonedDateTime(1, 1, 1, 12, tz="Asia/Tokyo")
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d_min_pos.day_length()
         with system_tz("Asia/Tokyo"):
             with pytest.raises(
@@ -860,16 +860,20 @@ class TestDayLength:
 
         # upper bound is NOT fine
         d_max_pos = ZonedDateTime(9999, 12, 31, 4, tz="Asia/Tokyo")
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d_max_pos.day_length()
         with system_tz("Asia/Tokyo"):
-            with pytest.raises((ValueError, OverflowError), match="range"):
+            with pytest.raises(
+                (ValueError, OverflowError), match="range|year"
+            ):
                 SystemDateTime(9999, 12, 31, 4).day_length()
         d_max_neg = ZonedDateTime(9999, 12, 31, 12, tz="America/New_York")
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
             d_max_neg.day_length()
         with system_tz("America/New_York"):
-            with pytest.raises((ValueError, OverflowError), match="range"):
+            with pytest.raises(
+                (ValueError, OverflowError), match="range|year"
+            ):
                 SystemDateTime(9999, 12, 31, 12).day_length()
 
 
