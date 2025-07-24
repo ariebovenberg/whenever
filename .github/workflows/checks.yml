@@ -34,6 +34,7 @@ jobs:
           "3.11",
           "3.12",
           # NOTE: 3.13 is absent since we test it in the OS job matrix
+          "3.14",
         ]
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +44,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
 
       # NOTE: We test multiple times in different dependency configurations
       - name: Test (no extra deps)
@@ -57,13 +59,17 @@ jobs:
           pytest tests/ -s -v
         env:
           RUST_BACKTRACE: 1
+      # Pydantic doesn't support 3.14 yet
+      - if: ${{ matrix.python-version != '3.14' }}
+        run: pip install pydantic
       - name: Test (all deps)
         shell: bash
         run: |
-          pip install tzdata pydantic
+          pip install tzdata
           pytest tests/ -s -v
         env:
           RUST_BACKTRACE: 1
+      # Debug mode sometimes surfaces issues not seen in release mode
       - name: Test (debug mode)
         shell: bash
         run: |
@@ -134,6 +140,7 @@ jobs:
           # NOTE: 3.13 is absent since we test it in the OS job matrix
           # NOTE: If pypy/pytest fails, if could be due to
           #       https://github.com/pypy/pypy/issues/3959
+          "3.14",
           "pypy3.9",
           "pypy3.10"
         ]
@@ -142,6 +149,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
       - run: |
           pip install -r requirements/test.txt
           pip install build
@@ -149,16 +157,19 @@ jobs:
           pip install dist/*.whl
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
-        # NOTE: yes, we test twice: once with optional deps, once without
+      # NOTE: we end up running pytest twice in the following sections.
+      # This is because we want to test the code with and without optional dependencies.
+      - run: pytest tests/
+      - run: pip install tzdata
+      # Pydantic doesn't support 3.14 yet
+      - if: ${{ matrix.python-version != '3.14' }}
+        run: pip install pydantic
+      # NOTE: we only care about coverage once. We arbitrarily choose 3.12 for that
       - if: ${{ matrix.python-version == '3.12' }}
         run: |
-          pytest tests/
-          pip install tzdata pydantic
           pytest tests/ --cov=whenever --cov-report term-missing
       - if: ${{ matrix.python-version != '3.12' }}
         run: |
-          pytest tests/
-          pip install tzdata pydantic
           pytest tests/
 
   lint:

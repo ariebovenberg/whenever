@@ -150,7 +150,7 @@ which has a smaller disk footprint and works on all platforms.
 
 .. note::
 
-   On PyPy, the Python implementation is automatically used. No need to configure anything.
+   On PyPy and GraalVM, the Python implementation is automatically used. No need to configure anything.
 
 To opt out of the Rust extension and use the pure-Python version,
 install from the source distribution with the ``WHENEVER_NO_BUILD_RUST_EXT`` environment variable set:
