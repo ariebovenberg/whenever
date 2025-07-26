@@ -344,3 +344,13 @@ def test_pydantic():
         assert e.error_count() == 4
     else:
         assert False, "Expected ValidationError not raised"
+
+
+def test_system_tz_file_and_key():
+    from whenever._tz.system import tz_file_and_key
+
+    (file, key) = tz_file_and_key()
+    # We're not going to assert much here. Just ensure no crash.
+    assert isinstance(file, str) or file is None
+    assert isinstance(key, str) or key is None
+    assert file or key, "At least one of file or key should be set"
