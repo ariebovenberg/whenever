@@ -1,5 +1,24 @@
 # 🚀 Changelog
 
+## 0.9.0 (2025-??-??)
+
+**Added**
+
+- The output of `format_common_iso()` methods can now be customized. You can
+  now specify the separator, unit, and whether to use the "basic" or "extended"
+  format.
+
+**Breaking changes**
+
+- `SystemDateTime` has been removed. System timezone handling is now
+  done with `ZonedDateTime`.
+
+  **Rationale**: The `SystemDateTime` class was always an awkward corner of the API,
+  mostly driven by the fact that the Python standard library was used to power it.
+  It's semantics became increasingly overlapping `ZonedDateTime`, while also
+  being inconsistent with it.
+  The new design fixes this, while supporting the same use cases as before.
+
 ## 0.8.9 (2025-09-21)
 
 - Fixed not all test files included in source distribution (#266)

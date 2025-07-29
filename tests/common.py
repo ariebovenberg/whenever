@@ -1,97 +1,73 @@
 import os
-import sys
-import time
 from contextlib import contextmanager
 from unittest.mock import patch
 
-import pytest
-
-__all__ = [
-    "ZoneInfo",
-    "AlwaysEqual",
-    "NeverEqual",
-    "AlwaysLarger",
-    "AlwaysSmaller",
-]
-
-IS_WINDOWS = sys.platform == "win32"
-
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-else:
-    from backports.zoneinfo import ZoneInfo
+from whenever import reset_system_tz
 
 
 class AlwaysEqual:
-    def __eq__(self, other):
+    def __eq__(self, _):
         return True
 
 
 class NeverEqual:
-    def __eq__(self, other):
+    def __eq__(self, _):
         return False
 
 
 class AlwaysLarger:
-    def __lt__(self, other):
+    def __lt__(self, _):
         return False
 
-    def __le__(self, other):
+    def __le__(self, _):
         return False
 
-    def __gt__(self, other):
+    def __gt__(self, _):
         return True
 
-    def __ge__(self, other):
+    def __ge__(self, _):
         return True
 
 
 class AlwaysSmaller:
-    def __lt__(self, other):
+    def __lt__(self, _):
         return True
 
-    def __le__(self, other):
+    def __le__(self, _):
         return True
 
-    def __gt__(self, other):
+    def __gt__(self, _):
         return False
 
-    def __ge__(self, other):
+    def __ge__(self, _):
         return False
 
 
 @contextmanager
 def system_tz_ams():
-    if IS_WINDOWS:
-        pytest.skip("tzset is not available on Windows")
     try:
         with patch.dict(os.environ, {"TZ": "Europe/Amsterdam"}):
-            time.tzset()
+            reset_system_tz()
             yield
     finally:
-        time.tzset()
+        reset_system_tz()  # don't forget to reset the timezone after the patch!
 
 
 @contextmanager
 def system_tz(name):
-    if IS_WINDOWS:
-        pytest.skip("tzset is not available on Windows")
     try:
         with patch.dict(os.environ, {"TZ": name}):
-            time.tzset()
+            reset_system_tz()
             yield
     finally:
-        time.tzset()
+        reset_system_tz()  # don't forget to reset the timezone after the patch!
 
 
 @contextmanager
 def system_tz_nyc():
-    if IS_WINDOWS:
-        pytest.skip("tzset is not available on Windows")
     try:
         with patch.dict(os.environ, {"TZ": "America/New_York"}):
-            time.tzset()
+            reset_system_tz()
             yield
     finally:
-        time.tzset()
+        reset_system_tz()  # don't forget to reset the timezone after the patch!

@@ -11,7 +11,6 @@ from typing import Any, Iterable, Iterator, Union, no_type_check
 from ._core import (
     Instant,
     OffsetDateTime,
-    SystemDateTime,
     ZonedDateTime,
     _clear_tz_cache,
     _clear_tz_cache_by_keys,
@@ -37,12 +36,12 @@ __all__ = [
 
 
 class _TimePatch:
-    _pin: Union[Instant, ZonedDateTime, OffsetDateTime, SystemDateTime]
+    _pin: Union[Instant, ZonedDateTime, OffsetDateTime]
     _keep_ticking: bool
 
     def __init__(
         self,
-        pin: Union[Instant, ZonedDateTime, OffsetDateTime, SystemDateTime],
+        pin: Union[Instant, ZonedDateTime, OffsetDateTime],
         keep_ticking: bool,
     ):
         self._pin = pin
@@ -66,7 +65,7 @@ class _TimePatch:
 
 @contextmanager
 def patch_current_time(
-    dt: Union[Instant, ZonedDateTime, OffsetDateTime, SystemDateTime],
+    dt: Union[Instant, ZonedDateTime, OffsetDateTime],
     /,
     *,
     keep_ticking: bool,

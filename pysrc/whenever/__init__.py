@@ -10,7 +10,6 @@ from ._core import (  # The unpickle functions must be findable at module-level
     _unpkl_local,
     _unpkl_md,
     _unpkl_offset,
-    _unpkl_system,
     _unpkl_tdelta,
     _unpkl_time,
     _unpkl_utc,
