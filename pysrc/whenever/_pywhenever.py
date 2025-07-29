@@ -56,7 +56,6 @@ from time import time_ns
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     Literal,
     Mapping,
@@ -70,9 +69,10 @@ from typing import (
 )
 from weakref import WeakValueDictionary
 
-# zoneinfo is a relatively expensive import, so we import it lazily
+# These are relatively expensive imports, so we delay importing them
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
+    from ._tz import PosixTz
 
 __all__ = [
     # Date and time
@@ -83,7 +83,6 @@ __all__ = [
     "Instant",
     "OffsetDateTime",
     "ZonedDateTime",
-    "SystemDateTime",
     "PlainDateTime",
     # Deltas and time units
     "DateDelta",
@@ -106,6 +105,7 @@ __all__ = [
     "ImplicitlyIgnoringDST",
     "TimeZoneNotFoundError",
     "Weekday",
+    "reset_system_tz",
 ]
 
 
@@ -190,7 +190,7 @@ class Date(_ImmutableBase):
     def today_in_system_tz(cls) -> Date:
         """Get the current date in the system's local timezone.
 
-        Alias for ``SystemDateTime.now().date()``.
+        Alias for ``Instant.now().to_system_tz().date()``.
 
         Example
         -------
@@ -198,7 +198,7 @@ class Date(_ImmutableBase):
         Date(2021-01-02)
         """
         # Use now() so this function gets patched like the other now functions
-        return SystemDateTime.now().date()
+        return Instant.now().to_system_tz().date()
 
     @property
     def year(self) -> int:
@@ -2599,7 +2599,6 @@ class _BasicConversions(_ImmutableBase, ABC):
     - :class:`PlainDateTime`
     - :class:`ZonedDateTime`
     - :class:`OffsetDateTime`
-    - :class:`SystemDateTime`
 
     (This base class class itself is not for public use.)
     """
@@ -2677,7 +2676,6 @@ class _LocalTime(_BasicConversions, ABC):
     - :class:`PlainDateTime`
     - :class:`ZonedDateTime`
     - :class:`OffsetDateTime`
-    - :class:`SystemDateTime`
 
     (The class itself is not for public use.)
     """
@@ -2906,7 +2904,6 @@ class _ExactTime(_BasicConversions):
     - :class:`Instant`
     - :class:`ZonedDateTime`
     - :class:`OffsetDateTime`
-    - :class:`SystemDateTime`
 
     (This base class class itself is not for public use.)
     """
@@ -3034,10 +3031,10 @@ class _ExactTime(_BasicConversions):
             self._py_dt.astimezone(_get_tz(tz)), self._nanos
         )
 
-    def to_system_tz(self) -> SystemDateTime:
-        """Convert to a SystemDateTime that represents the same moment in time."""
-        return SystemDateTime._from_py_unchecked(
-            self._py_dt.astimezone(), self._nanos
+    def to_system_tz(self) -> ZonedDateTime:
+        """Convert to a ZonedDateTime of the system's timezone."""
+        return ZonedDateTime._from_py_unchecked(
+            self._py_dt.astimezone(_system_tz()), self._nanos
         )
 
     def exact_eq(self: _T, other: _T, /) -> bool:
@@ -3078,7 +3075,7 @@ class _ExactTime(_BasicConversions):
 
     def difference(
         self,
-        other: Instant | OffsetDateTime | ZonedDateTime | SystemDateTime,
+        other: Instant | OffsetDateTime | ZonedDateTime,
         /,
     ) -> TimeDelta:
         """Calculate the difference between two instants in time.
@@ -3231,7 +3228,6 @@ class _ExactAndLocalTime(_LocalTime, _ExactTime):
 
     - :class:`ZonedDateTime`
     - :class:`OffsetDateTime`
-    - :class:`SystemDateTime`
 
     (The class itself it not for public use.)
     """
@@ -4729,471 +4725,6 @@ def _unpkl_zoned(
 
 
 @final
-class SystemDateTime(_ExactAndLocalTime):
-    """Represents a time in the system timezone.
-    It is similar to ``OffsetDateTime``,
-    but it knows about the system timezone and its DST transitions.
-
-    Example
-    -------
-    >>> # 8:00 in the system timezone—Paris in this case
-    >>> alarm = SystemDateTime(2024, 3, 31, hour=6)
-    SystemDateTime(2024-03-31 06:00:00+02:00)
-    >>> # Conversion based on Paris' offset
-    >>> alarm.instant()
-    Instant(2024-03-31 04:00:00Z)
-    >>> # DST-safe arithmetic
-    >>> bedtime = alarm - hours(8)
-    SystemDateTime(2024-03-30 21:00:00+01:00)
-
-    Attention
-    ---------
-    To use this type properly, read more about `ambiguity <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
-    and `working with the system timezone <https://whenever.rtfd.io/en/latest/overview.html#the-system-timezone>`_.
-    """
-
-    __slots__ = ()
-
-    def __init__(
-        self,
-        year: int,
-        month: int,
-        day: int,
-        hour: int = 0,
-        minute: int = 0,
-        second: int = 0,
-        *,
-        nanosecond: int = 0,
-        disambiguate: Disambiguate = "compatible",
-    ) -> None:
-        self._py_dt = _resolve_system_ambiguity(
-            _datetime(
-                year,
-                month,
-                day,
-                hour,
-                minute,
-                second,
-                0,
-            ),
-            disambiguate,
-        )
-        if nanosecond < 0 or nanosecond >= 1_000_000_000:
-            raise ValueError("nanosecond out of range")
-        self._nanos = nanosecond
-
-    @classmethod
-    def now(cls) -> SystemDateTime:
-        """Create an instance from the current time in the system timezone."""
-        secs, nanos = divmod(time_ns(), 1_000_000_000)
-        return cls._from_py_unchecked(
-            _fromtimestamp(secs, _UTC).astimezone(None), nanos
-        )
-
-    format_common_iso = OffsetDateTime.format_common_iso
-    """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
-
-    The inverse of the ``parse_common_iso()`` method.
-
-    Important
-    ---------
-    Information about the system timezone name is *not* included in the output.
-    """
-
-    @classmethod
-    def parse_common_iso(cls, s: str, /) -> SystemDateTime:
-        """Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
-
-        Important
-        ---------
-        The offset isn't adjusted to the current system timezone.
-        See `the docs <https://whenever.rtfd.io/en/latest/overview.html#the-system-timezone>`_
-        for more information.
-        """
-        return cls._from_py_unchecked(*_offset_dt_from_iso(s))
-
-    @classmethod
-    def from_timestamp(cls, i: int | float, /) -> SystemDateTime:
-        """Create an instance from a UNIX timestamp (in seconds).
-
-        The inverse of the ``timestamp()`` method.
-        """
-        secs, fract = divmod(i, 1)
-        return cls._from_py_unchecked(
-            _fromtimestamp(secs, _UTC).astimezone(), int(fract * 1_000_000_000)
-        )
-
-    @classmethod
-    def from_timestamp_millis(cls, i: int, /) -> SystemDateTime:
-        """Create an instance from a UNIX timestamp (in milliseconds).
-
-        The inverse of the ``timestamp_millis()`` method.
-        """
-        if not isinstance(i, int):
-            raise TypeError("method requires an integer")
-        secs, millis = divmod(i, 1_000)
-        return cls._from_py_unchecked(
-            _fromtimestamp(secs, _UTC).astimezone(), millis * 1_000_000
-        )
-
-    @classmethod
-    def from_timestamp_nanos(cls, i: int, /) -> SystemDateTime:
-        """Create an instance from a UNIX timestamp (in nanoseconds).
-
-        The inverse of the ``timestamp_nanos()`` method.
-        """
-        if not isinstance(i, int):
-            raise TypeError("method requires an integer")
-        secs, nanos = divmod(i, 1_000_000_000)
-        return cls._from_py_unchecked(
-            _fromtimestamp(secs, _UTC).astimezone(), nanos
-        )
-
-    @classmethod
-    def from_py_datetime(cls, d: _datetime, /) -> SystemDateTime:
-        """Create an instance from a standard library ``datetime`` object.
-        The datetime must be aware.
-
-        The inverse of the ``py_datetime()`` method.
-        """
-        odt = OffsetDateTime.from_py_datetime(d)
-        return cls._from_py_unchecked(odt._py_dt, odt._nanos)
-
-    def __repr__(self) -> str:
-        return f"SystemDateTime({str(self).replace('T', ' ')})"
-
-    # FUTURE: expose the tzname?
-
-    def replace_date(
-        self, date: Date, /, disambiguate: Disambiguate | None = None
-    ) -> SystemDateTime:
-        """Construct a new instance with the date replaced.
-
-        See the ``replace()`` method for more information.
-        """
-        return self._from_py_unchecked(
-            _resolve_system_ambiguity(
-                _datetime.combine(date._py_date, self._py_dt.time()),
-                # mypy doesn't know that offset is never None here
-                disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
-            ),
-            self._nanos,
-        )
-
-    def replace_time(
-        self, time: Time, /, disambiguate: Disambiguate | None = None
-    ) -> SystemDateTime:
-        """Construct a new instance with the time replaced.
-
-        See the ``replace()`` method for more information.
-        """
-        return self._from_py_unchecked(
-            _resolve_system_ambiguity(
-                _datetime.combine(self._py_dt, time._py_time),
-                # mypy doesn't know that offset is never None here
-                disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
-            ),
-            time._nanos,
-        )
-
-    def replace(
-        self, /, disambiguate: Disambiguate | None = None, **kwargs: Any
-    ) -> SystemDateTime:
-        """Construct a new instance with the given fields replaced.
-
-        Important
-        ---------
-        Replacing fields of a SystemDateTime may result in an ambiguous time
-        (e.g. during a DST transition). Therefore, it's recommended to
-        specify how to handle such a situation using the ``disambiguate`` argument.
-
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
-        for more information.
-        """
-        _check_invalid_replace_kwargs(kwargs)
-        nanos = _pop_nanos_kwarg(kwargs, self._nanos)
-        return self._from_py_unchecked(
-            _resolve_system_ambiguity(
-                self._py_dt.replace(tzinfo=None, **kwargs),
-                # mypy doesn't know that offset is never None here
-                disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
-            ),
-            nanos,
-        )
-
-    def __hash__(self) -> int:
-        return hash((self._py_dt, self._nanos))
-
-    def __add__(self, delta: TimeDelta) -> SystemDateTime:
-        """Add an amount of time, accounting for timezone changes (e.g. DST).
-
-        See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
-        for more information.
-        """
-        if isinstance(delta, TimeDelta):
-            py_dt = self._py_dt
-            delta_secs, nanos = divmod(
-                delta._time_part._total_ns + self._nanos, 1_000_000_000
-            )
-            return self._from_py_unchecked(
-                (py_dt + _timedelta(seconds=delta_secs)).astimezone(), nanos
-            )
-        elif isinstance(delta, DateDelta):
-            return self.replace_date(self.date() + delta)
-        elif isinstance(delta, DateTimeDelta):
-            return (
-                self.replace_date(self.date() + delta._date_part)
-                + delta._time_part
-            )
-        return NotImplemented
-
-    @overload
-    def __sub__(self, other: _ExactTime) -> TimeDelta: ...
-
-    @overload
-    def __sub__(self, other: TimeDelta) -> SystemDateTime: ...
-
-    def __sub__(self, other: TimeDelta | _ExactTime) -> _ExactTime | Delta:
-        """Subtract another datetime or duration
-
-        See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
-        for more information.
-        """
-        if isinstance(other, _ExactTime):
-            return super().__sub__(other)  # type: ignore[misc, no-any-return]
-        elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
-            return self + -other
-        return NotImplemented
-
-    @no_type_check
-    def add(self, *args, **kwargs) -> SystemDateTime:
-        """Add a time amount to this datetime.
-
-        Important
-        ---------
-        Shifting a ``SystemDateTime`` with **calendar units** (e.g. months, weeks)
-        may result in an ambiguous time (e.g. during a DST transition).
-        Therefore, when adding calendar units, it's recommended to
-        specify how to handle such a situation using the ``disambiguate`` argument.
-
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
-        for more information.
-        """
-        return self._shift(1, *args, **kwargs)
-
-    @no_type_check
-    def subtract(self, *args, **kwargs) -> SystemDateTime:
-        """Subtract a time amount from this datetime.
-
-        Important
-        ---------
-        Shifting a ``SystemDateTime`` with **calendar units** (e.g. months, weeks)
-        may result in an ambiguous time (e.g. during a DST transition).
-        Therefore, when adding calendar units, it's recommended to
-        specify how to handle such a situation using the ``disambiguate`` argument.
-
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
-        for more information.
-        """
-        return self._shift(-1, *args, **kwargs)
-
-    @no_type_check
-    def _shift(
-        self,
-        sign: int,
-        delta: Delta | _UNSET = _UNSET,
-        /,
-        *,
-        disambiguate: Disambiguate | None = None,
-        **kwargs,
-    ) -> SystemDateTime:
-        if kwargs:
-            if delta is _UNSET:
-                return self._shift_kwargs(
-                    sign, disambiguate=disambiguate, **kwargs
-                )
-            raise TypeError("Cannot mix positional and keyword arguments")
-
-        elif delta is not _UNSET:
-            return self._shift_kwargs(
-                sign,
-                months=delta._date_part._months,
-                days=delta._date_part._days,
-                nanoseconds=delta._time_part._total_ns,
-                disambiguate=disambiguate,
-            )
-        else:
-            return self
-
-    def _shift_kwargs(
-        self,
-        sign: int,
-        *,
-        years: int = 0,
-        months: int = 0,
-        weeks: int = 0,
-        days: int = 0,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-        disambiguate: Disambiguate | None,
-    ) -> SystemDateTime:
-        months_total = sign * (years * 12 + months)
-        days_total = sign * (weeks * 7 + days)
-        if months_total or days_total:
-            self = self.replace_date(
-                self.date()._add_months(months_total)._add_days(days_total),
-                disambiguate=disambiguate,
-            )
-        return self + sign * TimeDelta(
-            hours=hours,
-            minutes=minutes,
-            seconds=seconds,
-            milliseconds=milliseconds,
-            microseconds=microseconds,
-            nanoseconds=nanoseconds,
-        )
-
-    def is_ambiguous(self) -> bool:
-        """Whether the date and time-of-day is ambiguous, e.g. due to a DST transition.
-
-        Example
-        -------
-        >>> # with system configured in Europe/Paris
-        >>> SystemDateTime(2020, 8, 15, 23).is_ambiguous()
-        False
-        >>> SystemDateTime(2023, 10, 29, 2, 15).is_ambiguous()
-        True
-
-        Note
-        ----
-        This method may give a different result after a change to the system timezone.
-        """
-        naive = self._py_dt.replace(tzinfo=None)
-        return naive.astimezone(_UTC) != naive.replace(fold=1).astimezone(_UTC)
-
-    def day_length(self) -> TimeDelta:
-        """The duration between the start of the current day and the next.
-        This is usually 24 hours, but may be different due to timezone transitions.
-
-        Example
-        -------
-        >>> # with system configured in Europe/Paris
-        >>> SystemDateTime(2020, 8, 15).day_length()
-        TimeDelta(24:00:00)
-        >>> SystemDateTime(2023, 10, 29).day_length()
-        TimeDelta(25:00:00)
-
-        Note
-        ----
-        This method may give a different result after a change to the system timezone.
-        """
-        midnight = _datetime.combine(self._py_dt.date(), _time())
-        next_midnight = midnight + _timedelta(days=1)
-        return TimeDelta.from_py_timedelta(
-            _resolve_system_ambiguity(next_midnight, "compatible")
-            - _resolve_system_ambiguity(midnight, "compatible")
-        )
-
-    def start_of_day(self) -> SystemDateTime:
-        """The start of the current calendar day.
-
-        This is almost always at midnight the same day, but may be different
-        for timezones which transition at—and thus skip over—midnight.
-
-        Note
-        ----
-        This method may give a different result after a change to the system timezone.
-        """
-        midnight = _datetime.combine(self._py_dt.date(), _time())
-        return self._from_py_unchecked(
-            _resolve_system_ambiguity(midnight, "compatible"), 0
-        )
-
-    def round(
-        self,
-        unit: Literal[
-            "day",
-            "hour",
-            "minute",
-            "second",
-            "millisecond",
-            "microsecond",
-            "nanosecond",
-        ] = "second",
-        increment: int = 1,
-        mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "half_even",
-    ) -> SystemDateTime:
-        """Round the datetime to the specified unit and increment.
-        Different rounding modes are available.
-
-        Examples
-        --------
-        >>> d = SystemDateTime(2020, 8, 15, 23, 24, 18)
-        >>> d.round("day")
-        SystemDateTime(2020-08-16 00:00:00+02:00)
-        >>> d.round("minute", increment=15, mode="floor")
-        SystemDateTime(2020-08-15 23:15:00+02:00)
-
-        Notes
-        -----
-        * In the rare case that rounding results in an ambiguous time,
-          the offset is preserved if possible.
-          Otherwise, the time is resolved according to the "compatible" strategy.
-        * Rounding in "day" mode may be affected by DST transitions.
-          i.e. on 23-hour days, 11:31 AM is rounded up.
-        * This method has similar behavior to the ``round()`` method of
-          Temporal objects in JavaScript.
-        * The result of this method may change if the system timezone changes.
-        """
-        increment_ns = increment_to_ns(unit, increment, any_hour_ok=False)
-        if unit == "day":
-            increment_ns = day_ns = self.day_length()._total_ns
-        else:
-            day_ns = 86_400_000_000_000
-
-        rounded_local = self.to_plain()._round_unchecked(
-            increment_ns, mode, day_ns
-        )
-        return self._from_py_unchecked(
-            _resolve_system_ambiguity_using_prev_offset(
-                rounded_local._py_dt,
-                self._py_dt.utcoffset(),  # type: ignore[arg-type]
-            ),
-            rounded_local._nanos,
-        )
-
-    # a custom pickle implementation with a smaller payload
-    def __reduce__(self) -> tuple[object, ...]:
-        return (
-            _unpkl_system,
-            (
-                pack(
-                    "<HBBBBBil",
-                    *self._py_dt.timetuple()[:6],
-                    self._nanos,
-                    int(self._py_dt.utcoffset().total_seconds()),  # type: ignore[union-attr]
-                ),
-            ),
-        )
-
-
-# A separate function is needed for unpickling, because the
-# constructor doesn't accept positional fold arguments as
-# required by __reduce__.
-# Also, it allows backwards-compatible changes to the pickling format.
-def _unpkl_system(data: bytes) -> SystemDateTime:
-    *args, nanos, offset_secs = unpack("<HBBBBBil", data)
-    args += (0, _timezone(_timedelta(seconds=offset_secs)))
-    return SystemDateTime._from_py_unchecked(_datetime(*args), nanos)
-
-
-@final
 class PlainDateTime(_LocalTime):
     """A combination of date and time-of-day, without a timezone.
 
@@ -5584,9 +5115,9 @@ class PlainDateTime(_LocalTime):
 
     def assume_system_tz(
         self, disambiguate: Disambiguate = "compatible"
-    ) -> SystemDateTime:
+    ) -> ZonedDateTime:
         """Assume the datetime is in the system timezone,
-        creating a ``SystemDateTime``.
+        creating a ``ZonedDateTime``.
 
         Note
         ----
@@ -5601,10 +5132,13 @@ class PlainDateTime(_LocalTime):
         >>> d = PlainDateTime(2020, 8, 15, 23, 12)
         >>> # assuming system timezone is America/New_York
         >>> d.assume_system_tz(disambiguate="raise")
-        SystemDateTime(2020-08-15 23:12:00-04:00)
+        ZonedDateTime(2020-08-15 23:12:00-04:00[America/New_York])
         """
-        return SystemDateTime._from_py_unchecked(
-            _resolve_system_ambiguity(self._py_dt, disambiguate),
+        tz = _system_tz()
+        return ZonedDateTime._from_py_unchecked(
+            _resolve_ambiguity(
+                self._py_dt.replace(tzinfo=tz), tz, disambiguate
+            ),
             self._nanos,
         )
 
@@ -5673,19 +5207,24 @@ def _unpkl_local(data: bytes) -> PlainDateTime:
     return PlainDateTime._from_py_unchecked(_datetime(*args), nanos)
 
 
+def _tz_err_display(tz: Union[PosixTz, ZoneInfo]) -> str:
+    try:
+        return f"timezone '{tz.key}'"  # type: ignore[union-attr]
+    except AttributeError:
+        # Either a PosixTz or a ZoneInfo without a key (i.e. file-based).
+        # This is only the case for the system timezone.
+        return "the system timezone (with unknown ID)"
+
+
 class RepeatedTime(ValueError):
     """A datetime is repeated in a timezone, e.g. because of DST"""
 
     @classmethod
-    def _for_tz(cls, d: _datetime, tz: ZoneInfo) -> RepeatedTime:
+    def _for_tz(
+        cls, d: _datetime, tz: Union[ZoneInfo, PosixTz]
+    ) -> RepeatedTime:
         return cls(
-            f"{d.replace(tzinfo=None)} is repeated " f"in timezone {tz.key!r}"
-        )
-
-    @classmethod
-    def _for_system_tz(cls, d: _datetime) -> RepeatedTime:
-        return cls(
-            f"{d.replace(tzinfo=None)} is repeated in the system timezone"
+            f"{d.replace(tzinfo=None)} is repeated in {_tz_err_display(tz)}"
         )
 
 
@@ -5693,15 +5232,11 @@ class SkippedTime(ValueError):
     """A datetime is skipped in a timezone, e.g. because of DST"""
 
     @classmethod
-    def _for_tz(cls, d: _datetime, tz: ZoneInfo) -> SkippedTime:
+    def _for_tz(
+        cls, d: _datetime, tz: Union[ZoneInfo, PosixTz]
+    ) -> SkippedTime:
         return cls(
-            f"{d.replace(tzinfo=None)} is skipped " f"in timezone {tz.key!r}"
-        )
-
-    @classmethod
-    def _for_system_tz(cls, d: _datetime) -> SkippedTime:
-        return cls(
-            f"{d.replace(tzinfo=None)} is skipped in the system timezone"
+            f"{d.replace(tzinfo=None)} is skipped in {_tz_err_display(tz)}"
         )
 
 
@@ -5806,7 +5341,9 @@ is not a valid IANA ID and cannot be used here."""
 
 
 def _resolve_ambiguity(
-    dt: _datetime, zone: ZoneInfo, disambiguate: Disambiguate | _timedelta
+    dt: _datetime,
+    zone: ZoneInfo | PosixTz,
+    disambiguate: Disambiguate | _timedelta,
 ) -> _datetime:
     if isinstance(disambiguate, _timedelta):
         return _resolve_ambiguity_using_prev_offset(dt, disambiguate)
@@ -5842,61 +5379,6 @@ def _resolve_ambiguity_using_prev_offset(
 
     # This roundtrip ensures skipped times are shifted
     return dt.astimezone(_UTC).astimezone(dt.tzinfo)
-
-
-# Whether the fold of a system time needs to be flipped in a gap
-# was changed (fixed) in Python 3.12. See cpython/issues/83861
-_requires_flip: Callable[[Disambiguate], bool] = (
-    "compatible".__ne__ if _PY312 else "compatible".__eq__
-)
-
-
-# FUTURE: document that this isn't threadsafe (system tz may change)
-def _resolve_system_ambiguity(
-    dt: _datetime, disambiguate: Disambiguate | _timedelta
-) -> _datetime:
-    assert dt.tzinfo is None
-    if isinstance(disambiguate, _timedelta):
-        return _resolve_system_ambiguity_using_prev_offset(dt, disambiguate)
-    dt = dt.replace(fold=_as_fold(disambiguate))
-    norm = dt.astimezone(_UTC).astimezone()  # going through UTC resolves gaps
-    # Non-existent times: they don't survive a UTC roundtrip
-    if norm.replace(tzinfo=None) != dt:
-        if disambiguate == "raise":
-            raise SkippedTime._for_system_tz(dt)
-        elif _requires_flip(disambiguate):
-            dt = dt.replace(fold=not dt.fold)
-        # perform the normalisation, shifting away from non-existent times
-        norm = dt.astimezone(_UTC).astimezone()
-    # Ambiguous times: their UTC depends on the fold
-    elif disambiguate == "raise" and norm != dt.replace(fold=1).astimezone(
-        _UTC
-    ):
-        raise RepeatedTime._for_system_tz(dt)
-    return norm
-
-
-def _resolve_system_ambiguity_using_prev_offset(
-    dt: _datetime, prev_offset: _timedelta
-) -> _datetime:
-    if dt.astimezone(_UTC).astimezone().utcoffset() == prev_offset:
-        pass
-    elif (
-        dt.replace(fold=not dt.fold).astimezone(_UTC).astimezone().utcoffset()
-        == prev_offset
-    ):
-        dt = dt.replace(fold=not dt.fold)
-    else:  # rare: no offset match.
-        # We account for this CPython bug: cpython/issues/83861
-        if (
-            not _PY312
-            # i.e. it's in a gap
-            and dt.astimezone(_UTC).astimezone().replace(tzinfo=None) != dt
-        ):  # pragma: no cover
-            dt = dt.replace(fold=not dt.fold)
-        else:
-            dt = dt.replace(fold=0)
-    return dt.astimezone(_UTC).astimezone()
 
 
 def _load_offset(offset: int | TimeDelta, /) -> _timezone:
@@ -6537,43 +6019,6 @@ def nanoseconds(i: int, /) -> TimeDelta:
     return TimeDelta(nanoseconds=i)
 
 
-# We expose the public members in the root of the module.
-# For clarity, we remove the "_pywhenever" part from the names,
-# since this is an implementation detail.
-for name in __all__ + "_LocalTime _ExactTime _ExactAndLocalTime".split():
-    member = locals()[name]
-    if getattr(member, "__module__", None) == __name__:  # pragma: no branch
-        member.__module__ = "whenever"
-
-# clear up loop variables so they don't leak into the namespace
-del name
-del member
-
-for _unpkl in (
-    _unpkl_date,
-    _unpkl_ym,
-    _unpkl_md,
-    _unpkl_time,
-    _unpkl_tdelta,
-    _unpkl_dtdelta,
-    _unpkl_ddelta,
-    _unpkl_utc,
-    _unpkl_offset,
-    _unpkl_zoned,
-    _unpkl_system,
-    _unpkl_local,
-):
-    _unpkl.__module__ = "whenever"
-
-
-# disable further subclassing
-final(_ImmutableBase)
-final(_ExactTime)
-final(_LocalTime)
-final(_ExactAndLocalTime)
-final(_BasicConversions)
-
-
 def _patch_time_frozen(inst: Instant) -> None:
     global time_ns
 
@@ -6703,3 +6148,87 @@ def _load_tz(key: _BenignKey) -> ZoneInfo:
         raise TimeZoneNotFoundError.for_key(key)
 
     return ZoneInfo.from_file(BytesIO(tzif), key)
+
+
+_CACHED_SYSTEM_TZ: PosixTz | ZoneInfo | None = None
+
+
+def _system_tz() -> Union[PosixTz, ZoneInfo]:
+    global _CACHED_SYSTEM_TZ
+    if _CACHED_SYSTEM_TZ is None:
+        _CACHED_SYSTEM_TZ = _get_system_tz()
+    return _CACHED_SYSTEM_TZ
+
+
+def reset_system_tz() -> None:
+    """Resets the cached system timezone to the current system timezone."""
+    global _CACHED_SYSTEM_TZ
+    _CACHED_SYSTEM_TZ = _get_system_tz()
+
+
+def _get_system_tz() -> Union[PosixTz, ZoneInfo]:
+    # delayed import since they're relatively expensive
+    from ._tz import posix, system
+
+    try:
+        tz_env = os.environ["TZ"]
+    except KeyError:
+        tz_file, tz_name = system.tz_file_and_key()
+
+        if tz_name:
+            return _get_tz(tz_name)
+        else:
+            assert tz_file, "No system tz file found"
+            with open(tz_file, "rb") as f:
+                return ZoneInfo.from_file(f)
+    else:
+        if tz_env.startswith(":"):
+            tz_env = tz_env[1:]  # strip leading colon
+
+        # case 1: absolute path
+        if tz_env.startswith("/"):
+            # TODO: symlink traversal
+            with open(tz_env, "rb") as f:
+                return ZoneInfo.from_file(f)
+        try:
+            # case 2: zoneinfo key
+            return _get_tz(tz_env)
+        except TimeZoneNotFoundError:
+            # case 3: posix TZ string
+            return posix.parse(tz_env)
+
+
+# We expose the public members in the root of the module.
+# For clarity, we remove the "_pywhenever" part from the names,
+# since this is an implementation detail.
+for name in __all__ + "_LocalTime _ExactTime _ExactAndLocalTime".split():
+    member = locals()[name]
+    if getattr(member, "__module__", None) == __name__:  # pragma: no branch
+        member.__module__ = "whenever"
+
+# clear up loop variables so they don't leak into the namespace
+del name
+del member
+
+for _unpkl in (
+    _unpkl_date,
+    _unpkl_ym,
+    _unpkl_md,
+    _unpkl_time,
+    _unpkl_tdelta,
+    _unpkl_dtdelta,
+    _unpkl_ddelta,
+    _unpkl_utc,
+    _unpkl_offset,
+    _unpkl_zoned,
+    _unpkl_local,
+):
+    _unpkl.__module__ = "whenever"
+
+
+# disable further subclassing
+final(_ImmutableBase)
+final(_ExactTime)
+final(_LocalTime)
+final(_ExactAndLocalTime)
+final(_BasicConversions)

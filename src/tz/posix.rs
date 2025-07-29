@@ -356,6 +356,7 @@ mod tests {
             b"1T",
             b"<FOO>",
             b"<FOO>>-3",
+            b"<>3",
             // Invalid components
             b"FOO+01:",
             b"FOO+01:9:03",
