@@ -18,7 +18,6 @@ from whenever import (
     MonthDay,
     OffsetDateTime,
     PlainDateTime,
-    SystemDateTime,
     Time,
     TimeDelta,
     YearMonth,
@@ -120,7 +119,6 @@ def test_text_signature():
         Instant,
         OffsetDateTime,
         ZonedDateTime,
-        SystemDateTime,
         PlainDateTime,
         Date,
         Time,
@@ -155,7 +153,6 @@ def test_pydantic():
         inst: Instant
         zdt: ZonedDateTime
         odt: OffsetDateTime
-        sdt: SystemDateTime
         date: Date = Date(2024, 1, 4)  # default value for testing
         time: Time
         ddelta: DateDelta
@@ -171,7 +168,6 @@ def test_pydantic():
     inst = Instant.from_utc(2024, 1, 1, hour=12)
     zdt = ZonedDateTime(2024, 1, 1, hour=12, tz="Europe/Amsterdam")
     odt = OffsetDateTime(2024, 1, 1, hour=12, offset=1)
-    sdt = SystemDateTime(2024, 1, 1, hour=12)
     time = Time(12, 0, 0)
     date = Date(2024, 1, 4)
     ddelta = DateDelta(days=3, months=9)
@@ -184,7 +180,6 @@ def test_pydantic():
         inst=inst,
         zdt=zdt,
         odt=odt,
-        sdt=sdt,
         time=time,
         ddelta=ddelta,
         tdelta=tdelta,
@@ -196,7 +191,6 @@ def test_pydantic():
     assert m.inst is inst
     assert m.zdt is zdt
     assert m.odt is odt
-    assert m.sdt is sdt
     assert m.date == date  # default value
     assert m.time is time
     assert m.ddelta is ddelta
@@ -210,7 +204,6 @@ def test_pydantic():
     assert m2.inst is inst
     assert m2.zdt is zdt
     assert m2.odt is odt
-    assert m2.sdt is sdt
     assert m2.date == date  # default value
     assert m2.time is time
     assert m2.ddelta is ddelta
@@ -224,7 +217,6 @@ def test_pydantic():
     assert json_data["inst"] == inst.format_common_iso()
     assert json_data["zdt"] == zdt.format_common_iso()
     assert json_data["odt"] == odt.format_common_iso()
-    assert json_data["sdt"] == sdt.format_common_iso()
     assert json_data["date"] == date.format_common_iso()
     assert json_data["time"] == time.format_common_iso()
     assert json_data["ddelta"] == ddelta.format_common_iso()
@@ -237,7 +229,6 @@ def test_pydantic():
     assert m3.inst == inst
     assert m3.zdt == zdt
     assert m3.odt == odt
-    assert m3.sdt == sdt
     assert m3.date == date
     assert m3.time == time
     assert m3.ddelta == ddelta
@@ -259,7 +250,6 @@ def test_pydantic():
             "inst": {"title": "Inst", "type": "string"},
             "monthday": {"title": "Monthday", "type": "string"},
             "odt": {"title": "Odt", "type": "string"},
-            "sdt": {"title": "Sdt", "type": "string"},
             "tdelta": {"title": "Tdelta", "type": "string"},
             "time": {"title": "Time", "type": "string"},
             "yearmonth": {"title": "Yearmonth", "type": "string"},
@@ -269,7 +259,6 @@ def test_pydantic():
             "inst",
             "zdt",
             "odt",
-            "sdt",
             "time",
             "ddelta",
             "tdelta",
@@ -289,7 +278,6 @@ def test_pydantic():
             inst=inst.format_common_iso(),
             zdt=zdt.format_common_iso(),
             odt=odt.format_common_iso(),
-            sdt=sdt.format_common_iso(),
             date=date.format_common_iso(),
             time=time.format_common_iso(),
             ddelta=ddelta.format_common_iso(),
@@ -307,7 +295,6 @@ def test_pydantic():
             inst=123,  # not a string
             zdt=zdt.format_common_iso().encode(),  # bytes instead of str
             odt=odt.format_common_iso(),
-            sdt=sdt.format_common_iso(),
             date=date.format_common_iso(),
             time=time.format_common_iso(),
             ddelta=ddelta.format_common_iso(),
@@ -329,8 +316,7 @@ def test_pydantic():
                     "inst": 123,  # not a string
                     "zdt": "INVALID",
                     "odt": "",
-                    "sdt": None,
-                    "date": date.format_common_iso(),
+                    "date": None,
                     "time": time.format_common_iso(),
                     "ddelta": ddelta.format_common_iso(),
                     "tdelta": tdelta.format_common_iso(),
@@ -344,3 +330,13 @@ def test_pydantic():
         assert e.error_count() == 4
     else:
         assert False, "Expected ValidationError not raised"
+
+
+def test_system_tz_file_and_key():
+    from whenever._tz.system import tz_file_and_key
+
+    (file, key) = tz_file_and_key()
+    # We're not going to assert much here. Just ensure no crash.
+    assert isinstance(file, str) or file is None
+    assert isinstance(key, str) or key is None
+    assert file or key, "At least one of file or key should be set"
