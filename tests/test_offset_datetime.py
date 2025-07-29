@@ -13,7 +13,6 @@ from whenever import (
     Instant,
     OffsetDateTime,
     PlainDateTime,
-    SystemDateTime,
     Time,
     TimeZoneNotFoundError,
     ZonedDateTime,
@@ -381,23 +380,6 @@ class TestEquality:
         assert hash(d) == hash(zoned_same)
         assert hash(d) != hash(zoned_different)
 
-    @system_tz_ams()
-    def test_system_tz(self):
-        d: OffsetDateTime | SystemDateTime = OffsetDateTime(
-            2023, 10, 29, 0, 15, offset=-1
-        )
-        sys_same = SystemDateTime(2023, 10, 29, 2, 15, disambiguate="later")
-        sys_different = SystemDateTime(
-            2023, 10, 29, 2, 15, disambiguate="earlier"
-        )
-        assert d == sys_same
-        assert not d != sys_same
-        assert not d == sys_different
-        assert d != sys_different
-
-        assert hash(d) == hash(sys_same)
-        assert hash(d) != hash(sys_different)
-
     def test_utc(self):
         d: Instant | OffsetDateTime = OffsetDateTime(2020, 8, 15, 12, offset=5)
         utc_same = Instant.from_utc(2020, 8, 15, 7)
@@ -639,28 +621,6 @@ class TestComparison:
         assert d >= zoned_lt
         assert not d < zoned_lt
         assert not d <= zoned_lt
-
-    @system_tz_nyc()
-    def test_system_tz(self):
-        d = OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
-        sys_eq = d.to_system_tz()
-        sys_gt = sys_eq + minutes(1)
-        sys_lt = sys_eq - minutes(1)
-
-        assert d >= sys_eq
-        assert d <= sys_eq
-        assert not d > sys_eq
-        assert not d < sys_eq
-
-        assert d < sys_gt
-        assert d <= sys_gt
-        assert not d > sys_gt
-        assert not d >= sys_gt
-
-        assert d > sys_lt
-        assert d >= sys_lt
-        assert not d < sys_lt
-        assert not d <= sys_lt
 
     def test_not_implemented(self):
         d = OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
@@ -1073,22 +1033,6 @@ class TestDifference:
         # same result with method
         assert d.difference(other) == d - other
 
-    @system_tz_ams()
-    def test_system_tz(self):
-        d = OffsetDateTime(2023, 10, 29, 6, offset=2)
-        other = SystemDateTime(2023, 10, 29, 3, disambiguate="later")
-        assert d - other == hours(2)
-        assert d - SystemDateTime(
-            2023, 10, 29, 2, disambiguate="later"
-        ) == hours(3)
-        assert d - SystemDateTime(
-            2023, 10, 29, 2, disambiguate="earlier"
-        ) == hours(4)
-        assert d - SystemDateTime(2023, 10, 29, 1) == hours(5)
-
-        # same result with method
-        assert d.difference(other) == d - other
-
     def test_invalid(self):
         d = OffsetDateTime(
             2020, 8, 15, 23, 12, 9, nanosecond=987_654, offset=5
@@ -1194,7 +1138,16 @@ def test_to_system_tz():
         2020, 8, 15, 20, 12, 9, nanosecond=987_654_321, offset=3
     )
     assert d.to_system_tz().exact_eq(
-        SystemDateTime(2020, 8, 15, 13, 12, 9, nanosecond=987_654_321)
+        ZonedDateTime(
+            2020,
+            8,
+            15,
+            13,
+            12,
+            9,
+            nanosecond=987_654_321,
+            tz="America/New_York",
+        )
     )
 
     small_dt = OffsetDateTime(1, 1, 1, offset=0)

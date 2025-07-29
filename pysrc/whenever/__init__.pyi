@@ -10,7 +10,6 @@ from datetime import (
 from os import PathLike
 from typing import (
     ClassVar,
-    Final,
     Iterable,
     Literal,
     TypeAlias,
@@ -27,7 +26,6 @@ __all__ = [
     "Instant",
     "OffsetDateTime",
     "ZonedDateTime",
-    "SystemDateTime",
     "PlainDateTime",
     "DateDelta",
     "TimeDelta",
@@ -336,7 +334,7 @@ class _ExactTime(ABC):
         self, offset: int | TimeDelta, /
     ) -> OffsetDateTime: ...
     def to_tz(self, tz: str, /) -> ZonedDateTime: ...
-    def to_system_tz(self) -> SystemDateTime: ...
+    def to_system_tz(self) -> ZonedDateTime: ...
     def difference(self, other: _ExactTime, /) -> TimeDelta: ...
     def __lt__(self, other: _ExactTime, /) -> bool: ...
     def __le__(self, other: _ExactTime, /) -> bool: ...
@@ -709,156 +707,6 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     def __sub__(self, other: Delta, /) -> Self: ...
 
 @final
-class SystemDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
-    def __init__(
-        self,
-        year: int,
-        month: int,
-        day: int,
-        hour: int = 0,
-        minute: int = 0,
-        second: int = 0,
-        *,
-        nanosecond: int = 0,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> None: ...
-    @classmethod
-    def now(cls) -> Self: ...
-    @classmethod
-    def from_timestamp(cls, i: int | float, /) -> Self: ...
-    @classmethod
-    def from_timestamp_millis(cls, i: int, /) -> Self: ...
-    @classmethod
-    def from_timestamp_nanos(cls, i: int, /) -> Self: ...
-    def replace(
-        self,
-        *,
-        year: int = ...,
-        month: int = ...,
-        day: int = ...,
-        hour: int = ...,
-        minute: int = ...,
-        second: int = ...,
-        nanosecond: int = ...,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> Self: ...
-    def replace_date(
-        self,
-        d: Date,
-        /,
-        *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> Self: ...
-    def replace_time(
-        self,
-        t: Time,
-        /,
-        *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> Self: ...
-    @overload
-    def add(
-        self,
-        *,
-        years: int = 0,
-        months: int = 0,
-        weeks: int = 0,
-        days: int = 0,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> Self: ...
-    # FUTURE: include this in strict stubs version
-    # @overload
-    # def add(
-    #     self,
-    #     *,
-    #     hours: float = 0,
-    #     minutes: float = 0,
-    #     seconds: float = 0,
-    #     milliseconds: float = 0,
-    #     microseconds: float = 0,
-    #     nanoseconds: int = 0,
-    # ) -> Self: ...
-    @overload
-    def add(self, d: TimeDelta, /) -> Self: ...
-    @overload
-    def add(
-        self,
-        d: DateDelta | DateTimeDelta,
-        /,
-        *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> Self: ...
-    @overload
-    def subtract(
-        self,
-        *,
-        years: int = 0,
-        months: int = 0,
-        weeks: int = 0,
-        days: int = 0,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> Self: ...
-    # FUTURE: include this in strict stubs version
-    # @overload
-    # def subtract(
-    #     self,
-    #     *,
-    #     hours: float = 0,
-    #     minutes: float = 0,
-    #     seconds: float = 0,
-    #     milliseconds: float = 0,
-    #     microseconds: float = 0,
-    #     nanoseconds: int = 0,
-    # ) -> Self: ...
-    @overload
-    def subtract(self, d: TimeDelta, /) -> Self: ...
-    @overload
-    def subtract(
-        self,
-        d: DateDelta | DateTimeDelta,
-        /,
-        *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> Self: ...
-    def is_ambiguous(self) -> bool: ...
-    def day_length(self) -> TimeDelta: ...
-    def start_of_day(self) -> SystemDateTime: ...
-    def round(
-        self,
-        unit: Literal[
-            "day",
-            "hour",
-            "minute",
-            "second",
-            "millisecond",
-            "microsecond",
-            "nanosecond",
-        ] = "second",
-        increment: int = 1,
-        mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "half_even",
-    ) -> Self: ...
-    # FUTURE: disable date components in strict stubs version
-    def __add__(self, delta: Delta, /) -> Self: ...
-    @overload
-    def __sub__(self, other: _ExactTime, /) -> TimeDelta: ...
-    @overload
-    def __sub__(self, other: Delta, /) -> Self: ...
-
-@final
 class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
     def __init__(
         self,
@@ -886,7 +734,7 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         self,
         *,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> SystemDateTime: ...
+    ) -> ZonedDateTime: ...
     @classmethod
     def parse_strptime(cls, s: str, /, *, format: str) -> Self: ...
     def replace(
@@ -1038,3 +886,4 @@ def reset_tzpath(
 ) -> None: ...
 def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None: ...
 def available_timezones() -> set[str]: ...
+def reset_system_tz() -> None: ...

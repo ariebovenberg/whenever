@@ -17,7 +17,7 @@ Convert UTC to the system timezone
 >>> from whenever import Instant
 >>> i = Instant.now()
 >>> i.to_system_tz()
-SystemDateTime(2025-04-19 21:02:56.39569+02:00)
+ZonedDateTime(2025-04-19 21:02:56.39569+02:00[Europe/Berlin])
 
 Convert from one timezone to another
 ------------------------------------
