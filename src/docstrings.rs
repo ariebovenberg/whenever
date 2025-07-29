@@ -1513,9 +1513,16 @@ TimeDelta(24:00:00)
 TimeDelta(25:00:00)
 ";
 pub(crate) const ZONEDDATETIME_FORMAT_COMMON_ISO: &CStr = c"\
-Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
+format_common_iso($self, *, unit='auto', basic=False, sep='T')
+--
+
+Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``.
 
 The inverse of the ``parse_common_iso()`` method.
+
+Use the ``unit`` parameter to control the precision of the time part,
+the ``sep`` parameter to control the separator,
+and the ``basic`` parameter to use the basic ISO format instead of the extended one.
 
 Example
 -------

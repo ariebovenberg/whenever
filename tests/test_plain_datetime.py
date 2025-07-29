@@ -14,7 +14,6 @@ from whenever import (
     PlainDateTime,
     RepeatedTime,
     SkippedTime,
-    SystemDateTime,
     Time,
     ZonedDateTime,
     days,
@@ -147,41 +146,83 @@ class TestAssumeSystemTz:
         assert (
             PlainDateTime(2020, 8, 15, 23)
             .assume_system_tz(disambiguate="raise")
-            .exact_eq(SystemDateTime(2020, 8, 15, 23))
+            .exact_eq(ZonedDateTime(2020, 8, 15, 23, tz="Europe/Amsterdam"))
         )
 
     @system_tz_ams()
     def test_ambiguous(self):
         d = PlainDateTime(2023, 10, 29, 2, 15)
 
-        with pytest.raises(RepeatedTime, match="02:15.*system"):
+        with pytest.raises(RepeatedTime, match="02:15.*Amsterdam"):
             d.assume_system_tz(disambiguate="raise")
 
         assert d.assume_system_tz(disambiguate="earlier").exact_eq(
-            SystemDateTime(2023, 10, 29, 2, 15, disambiguate="earlier")
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                15,
+                disambiguate="earlier",
+                tz="Europe/Amsterdam",
+            )
         )
         assert d.assume_system_tz(disambiguate="compatible").exact_eq(
-            SystemDateTime(2023, 10, 29, 2, 15, disambiguate="earlier")
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                15,
+                disambiguate="earlier",
+                tz="Europe/Amsterdam",
+            )
         )
         assert d.assume_system_tz(disambiguate="later").exact_eq(
-            SystemDateTime(2023, 10, 29, 2, 15, disambiguate="later")
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                15,
+                disambiguate="later",
+                tz="Europe/Amsterdam",
+            )
         )
 
     @system_tz_ams()
     def test_nonexistent(self):
         d = PlainDateTime(2023, 3, 26, 2, 15)
 
-        with pytest.raises(SkippedTime, match="02:15.*system"):
+        with pytest.raises(SkippedTime, match="02:15.*Amsterdam"):
             d.assume_system_tz(disambiguate="raise")
 
         assert d.assume_system_tz(disambiguate="earlier").exact_eq(
-            SystemDateTime(2023, 3, 26, 2, 15, disambiguate="earlier")
+            ZonedDateTime(
+                2023,
+                3,
+                26,
+                2,
+                15,
+                disambiguate="earlier",
+                tz="Europe/Amsterdam",
+            )
         )
         assert d.assume_system_tz(disambiguate="later").exact_eq(
-            SystemDateTime(2023, 3, 26, 2, 15, disambiguate="later")
+            ZonedDateTime(
+                2023, 3, 26, 2, 15, disambiguate="later", tz="Europe/Amsterdam"
+            )
         )
         assert d.assume_system_tz(disambiguate="compatible").exact_eq(
-            SystemDateTime(2023, 3, 26, 2, 15, disambiguate="compatible")
+            ZonedDateTime(
+                2023,
+                3,
+                26,
+                2,
+                15,
+                disambiguate="compatible",
+                tz="Europe/Amsterdam",
+            )
         )
 
 

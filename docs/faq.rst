@@ -36,27 +36,6 @@ In the second, you communicate that you also store the user's local time.
 This intent is crucial for reasoning about the code,
 and extending it correctly (e.g. with migrations, API endpoints, etc).
 
-.. _faq-why-system-tz:
-
-Why does :class:`~whenever.SystemDateTime` exist?
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-While it may not make sense for server-type applications to use the system timezone,
-it's often useful for CLI tools or desktop applications.
-
-Using :class:`~whenever.SystemDateTime` has the following advantages:
-
-- In contrast to :class:`~whenever.OffsetDateTime`,
-  :class:`~whenever.SystemDateTime` knows about the system's timezone changes,
-  enabling DST-safe arithmetic.
-- In contrast to :class:`~whenever.ZonedDateTime`,
-  :class:`~whenever.SystemDateTime` doesn't require the system be configured with an IANA timezone.
-  While this is often the case, it's not guaranteed.
-
-Of course, feel free to work with :class:`~whenever.ZonedDateTime` if
-you know the system's IANA timezone. You can use
-the `tzlocal <https://pypi.org/project/tzlocal/>`_ library to help with this.
-
 Why the name ``PlainDateTime``?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -174,7 +153,7 @@ What about ``dateutil``?
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 I haven't included it in the comparison since dateutil is more of an
-*extension* to datetime, while Whenever (and Pendulum and Arrow)
+*extension* to datetime, while *whenever* (and Pendulum and Arrow)
 are more like replacements.
 
 That said, here are my thoughts on dateutil: while it certainly provides
@@ -182,10 +161,29 @@ useful helpers (especially for parsing and arithmetic), it doesn't solve the
 (IMHO) most glaring issues with the standard library: DST-safety and typing
 for naive/aware. These are issues that only a full replacement can solve.
 
-Why can't I subclass Whenever classes?
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Why not simply wrap Rust's ``jiff`` library?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Whenever classes aren't meant to be subclassed.
+Jiff is a modern datetime library in Rust with similar goals and inspiration as *whenever*.
+There are several reasons that *whenever* doesn't simply wrap jiff though:
+
+1. Jiff didn't exist when *whenever* was created. Wrapping jiff was only an
+   option after most of the functionality was already implemented.
+2. In order to provide a pure-Python version of *whenever*,
+   jiff's logic would need to be re-implemented in Python--and kept in sync.
+3. Jiff has a slightly different design philosophy, most notably
+   de-emphasizing the difference between offset and zoned datetimes.
+4. Jiff can't make use of Python's bundled timezone database (`tzdata`) if present.
+5. Writing a rust library with Python bindings primarily in mind allows for 
+   some optimizations.
+
+If you're interested in a straightforward wrapper around jiff,
+check out `Ry <https://pypi.org/project/ry/>`_.
+
+Why can't I subclass *whenever* classes?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+*Whenever* classes aren't meant to be subclassed.
 There's no plan to change this due to the following reasons:
 
 1. The benefits of subclassing are limited.

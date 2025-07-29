@@ -13,11 +13,9 @@ from whenever import (
     Instant,
     OffsetDateTime,
     PlainDateTime,
-    SystemDateTime,
     ZonedDateTime,
     hours,
     milliseconds,
-    minutes,
     nanoseconds,
     seconds,
 )
@@ -180,24 +178,6 @@ class TestEquality:
 
         with pytest.raises(TypeError):
             d.exact_eq(zoned_same)  # type: ignore[arg-type]
-
-    @system_tz_ams()
-    def test_system_tz(self):
-        d: Instant | SystemDateTime = Instant.from_utc(2023, 10, 29, 1, 15)
-        sys_same = SystemDateTime(2023, 10, 29, 2, 15, disambiguate="later")
-        sys_different = SystemDateTime(
-            2023, 10, 29, 2, 15, disambiguate="earlier"
-        )
-        assert d == sys_same
-        assert not d != sys_same
-        assert not d == sys_different
-        assert d != sys_different
-
-        assert hash(d) == hash(sys_same)
-        assert hash(d) != hash(sys_different)
-
-        with pytest.raises(TypeError):
-            d.exact_eq(sys_same)  # type: ignore[arg-type]
 
     def test_offset(self):
         d: Instant | OffsetDateTime = Instant.from_utc(2023, 4, 5, 4)
@@ -435,28 +415,6 @@ class TestComparison:
         assert d <= zoned_gt
         assert not d > zoned_gt
         assert not d >= zoned_gt
-
-    @system_tz_nyc()
-    def test_system_tz(self):
-        d = Instant.from_utc(2020, 8, 15, 12, 30)
-
-        sys_eq = d.to_system_tz()
-        sys_gt = sys_eq + minutes(1)
-        sys_lt = sys_eq - minutes(1)
-        assert d >= sys_eq
-        assert d <= sys_eq
-        assert not d > sys_eq
-        assert not d < sys_eq
-
-        assert d > sys_lt
-        assert d >= sys_lt
-        assert not d < sys_lt
-        assert not d <= sys_lt
-
-        assert d < sys_gt
-        assert d <= sys_gt
-        assert not d > sys_gt
-        assert not d >= sys_gt
 
     def test_notimplemented(self):
         d = Instant.from_utc(2020, 8, 15)
@@ -753,22 +711,6 @@ class TestDifference:
         # same with method
         assert d.difference(other) == d - other
 
-    @system_tz_ams()
-    def test_system_tz(self):
-        d = Instant.from_utc(2023, 10, 29, 6)
-        other = SystemDateTime(2023, 10, 29, 3, disambiguate="later")
-        assert d - other == hours(4)
-        assert d - SystemDateTime(
-            2023, 10, 29, 2, disambiguate="later"
-        ) == hours(5)
-        assert d - SystemDateTime(
-            2023, 10, 29, 2, disambiguate="earlier"
-        ) == hours(6)
-        assert d - SystemDateTime(2023, 10, 29, 1) == hours(7)
-
-        # same with method
-        assert d.difference(other) == d - other
-
     def test_invalid(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.raises(TypeError, match="unsupported operand type"):
@@ -853,16 +795,24 @@ def test_to_tz():
 @system_tz_nyc()
 def test_to_system_tz():
     d = Instant.from_utc(2020, 8, 15, 20)
-    assert d.to_system_tz().exact_eq(SystemDateTime(2020, 8, 15, 16))
+    assert d.to_system_tz().exact_eq(
+        ZonedDateTime(2020, 8, 15, 16, tz="America/New_York")
+    )
     # ensure disembiguation is correct
     d = Instant.from_utc(2022, 11, 6, 5)
     assert d.to_system_tz().exact_eq(
-        SystemDateTime(2022, 11, 6, 1, disambiguate="earlier")
+        ZonedDateTime(
+            2022, 11, 6, 1, disambiguate="earlier", tz="America/New_York"
+        )
     )
     assert (
         Instant.from_utc(2022, 11, 6, 6)
         .to_system_tz()
-        .exact_eq(SystemDateTime(2022, 11, 6, 1, disambiguate="later"))
+        .exact_eq(
+            ZonedDateTime(
+                2022, 11, 6, 1, disambiguate="later", tz="America/New_York"
+            )
+        )
     )
 
     with pytest.raises((ValueError, OverflowError)):

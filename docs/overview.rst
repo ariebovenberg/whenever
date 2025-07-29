@@ -119,8 +119,8 @@ ZonedDateTime(2020-03-14 15:00:00-04:00[America/New_York])
 
     Read about ambiguity in more detail :ref:`here <ambiguity>`.
 
-Advanced types
-~~~~~~~~~~~~~~
+:class:`~whenever.OffsetDateTime`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. epigraph::
 
@@ -129,13 +129,6 @@ Advanced types
    meaning of your data more accurately.
 
    -- Jon Skeet
-
-Although the main types cover most use cases, ``whenever`` also provides
-additional types for specific scenarios. Having these as separate types
-makes it clear what you're working with and prevents mistakes.
-
-:class:`~whenever.OffsetDateTime`
-+++++++++++++++++++++++++++++++++
 
 Like :class:`~whenever.ZonedDateTime`, this type represents an exact time
 *and* a local time. The difference is that :class:`~whenever.OffsetDateTime`
@@ -163,24 +156,6 @@ an efficient and compatible choice for representing times in the past.
 
    - :ref:`Performing DST-safe arithmetic <arithmetic-dst>`
 
-:class:`~whenever.SystemDateTime`
-+++++++++++++++++++++++++++++++++
-
-This is a datetime in the timezone of the system running the code.
-Unless your code specifically runs on the user's
-machine (such as a CLI), you shouldn't need to use this type.
-
->>> # assuming system timezone is America/New_York
->>> backup_performed = SystemDateTime(2023, 12, 28, hour=2)
-SystemDateTime(2023-12-28 02:00:00-05:00)
->>> livestream_starts.to_system_tz()
-SystemDateTime(2022-10-24 13:00:00-04:00)
-
-.. seealso::
-
-   - :ref:`Why does SystemDateTime exist? <faq-why-system-tz>`
-   - :ref:`Working with the system timezone <systemtime>`
-
 .. _summary:
 
 Comparison of types
@@ -188,15 +163,15 @@ Comparison of types
 
 Here's a summary of the differences between the types:
 
-+------------------------------+---------+---------+-------+---------+---------+
-|                              | Instant | OffsetDT|ZonedDT| SystemDT|PlainDT  |
-+==============================+=========+=========+=======+=========+=========+
-| knows the **exact** time     |   ✅    | ✅      | ✅    |  ✅     |  ❌     |
-+------------------------------+---------+---------+-------+---------+---------+
-| knows the **local** time     |  ❌     |  ✅     |  ✅   |  ✅     |  ✅     |
-+------------------------------+---------+---------+-------+---------+---------+
-| knows about DST rules [6]_   |  ❌     |  ❌     |  ✅   |  ✅     |  ❌     |
-+------------------------------+---------+---------+-------+---------+---------+
++------------------------------+---------+---------+-------+---------+
+|                              | Instant | OffsetDT|ZonedDT|PlainDT  |
++==============================+=========+=========+=======+=========+
+| knows the **exact** time     |   ✅    | ✅      | ✅    |  ❌     |
++------------------------------+---------+---------+-------+---------+
+| knows the **local** time     |  ❌     |  ✅     |  ✅   |  ✅     |
++------------------------------+---------+---------+-------+---------+
+| knows about DST rules [6]_   |  ❌     |  ❌     |  ✅   |  ❌     |
++------------------------------+---------+---------+-------+---------+
 
 
 Comparison and equality
@@ -210,7 +185,7 @@ Exact time
 ~~~~~~~~~~
 
 For exact types (:class:`~whenever.Instant`, :class:`~whenever.OffsetDateTime`,
-:class:`~whenever.ZonedDateTime`, and :class:`~whenever.SystemDateTime`),
+:class:`~whenever.ZonedDateTime`),
 comparison and equality are based on whether they represent the same moment in
 time. This means that two objects with different values can be equal:
 
@@ -327,7 +302,7 @@ OffsetDateTime(2023-12-28 15:30:00+05:00)
 >>> d.to_tz("America/New_York")  # same moment in New York
 ZonedDateTime(2023-12-28 05:30:00-05:00[America/New_York])
 >>> d.to_system_tz()  # same moment in the system timezone (e.g. Europe/Paris)
-SystemDateTime(2023-12-28 11:30:00+01:00)
+ZonedDateTime(2023-12-28 11:30:00+01:00[Europe/Paris])
 >>> d.to_fixed_offset(4) == d
 True  # always the same moment in time
 
@@ -498,7 +473,7 @@ The behavior arithmetic behavior is different for three categories of units:
 
    .. note::
 
-      In case of dealing with :class:`~whenever.ZonedDateTime` or :class:`~whenever.SystemDateTime`,
+      In case of dealing with :class:`~whenever.ZonedDateTime`
       there is a rare case where the resulting date might put the datetime in the middle of a DST transition.
       For this reason, adding years or months to these types accepts the
       ``disambiguate`` argument. By default, it tries to keep the same UTC offset,
@@ -534,7 +509,7 @@ The behavior arithmetic behavior is different for three categories of units:
    .. note::
 
       As with months and years, adding days to a :class:`~whenever.ZonedDateTime`
-      or :class:`~whenever.SystemDateTime` accepts the ``disambiguate`` argument,
+      accepts the ``disambiguate`` argument,
       since the resulting date might put the datetime in a DST transition.
 
 3. Adding **precise time units** (hours, minutes, seconds) never results
@@ -589,9 +564,8 @@ to the correct usage.
      :class:`~whenever.ZonedDateTime`. This is because political decisions
      in the future can also change the offset!
 
-- :class:`~whenever.ZonedDateTime` and :class:`~whenever.SystemDateTime`
-  account for DST and other timezone changes, thus adding
-  precise time units is always correct.
+- :class:`~whenever.ZonedDateTime` accounts for DST and other timezone changes, 
+  thus adding precise time units is always correct.
   Adding calendar units is also possible, but may result in ambiguity in rare cases,
   if the resulting datetime is in the middle of a DST transition:
 
@@ -629,17 +603,17 @@ to the correct usage.
 
 Here is a summary of the arithmetic features for each type:
 
-+-----------------------+---------+---------+---------+----------+---------+
-|                       | Instant | OffsetDT|ZonedDT  |SystemDT  |LocalDT  |
-+=======================+=========+=========+=========+==========+=========+
-| Difference            | ✅      |  ✅     |   ✅    | ✅       |⚠️  [3]_ |
-+-----------------------+---------+---------+---------+----------+---------+
-| add/subtract years,   | ❌      |⚠️  [3]_ |✅  [4]_ | ✅  [4]_ |    ✅   |
-| months, days          |         |         |         |          |         |
-+-----------------------+---------+---------+---------+----------+---------+
-| add/subtract hours,   | ✅      |⚠️  [3]_ |  ✅     |    ✅    |⚠️  [3]_ |
-| minutes, seconds, ... |         |         |         |          |         |
-+-----------------------+---------+---------+---------+----------+---------+
++-----------------------+---------+---------+---------+---------+
+|                       | Instant | OffsetDT|ZonedDT  |LocalDT  |
++=======================+=========+=========+=========+=========+
+| Difference            | ✅      |  ✅     |   ✅    |⚠️  [3]_ |
++-----------------------+---------+---------+---------+---------+
+| add/subtract years,   | ❌      |⚠️  [3]_ |✅  [4]_ |    ✅   |
+| months, days          |         |         |         |         |
++-----------------------+---------+---------+---------+---------+
+| add/subtract hours,   | ✅      |⚠️  [3]_ |  ✅     |⚠️  [3]_ |
+| minutes, seconds, ... |         |         |         |         |
++-----------------------+---------+---------+---------+---------+
 
 .. [3] Only possible by passing ``ignore_dst=True`` to the method.
 .. [4] The result by be ambiguous in rare cases. Accepts the ``disambiguate`` argument.
@@ -736,8 +710,6 @@ Below are the default string formats you get for calling each type's
 +-----------------------------------------+------------------------------------------------+
 | :class:`~whenever.OffsetDateTime`       | ``YYYY-MM-DDTHH:MM:SS±HH:MM``                  |
 +-----------------------------------------+------------------------------------------------+
-| :class:`~whenever.SystemDateTime`       | ``YYYY-MM-DDTHH:MM:SS±HH:MM``                  |
-+-----------------------------------------+------------------------------------------------+
 
 Example usage:
 
@@ -812,7 +784,7 @@ OffsetDateTime(2023-01-01 00:00:00+05:00)
 >>> PlainDateTime.parse_strptime("2023-01-01 15:00", "%Y-%m-%d %H:%M")
 PlainDateTime(2023-01-01 15:00:00)
 
-:class:`~whenever.ZonedDateTime` and :class:`~whenever.SystemDateTime` do not (yet)
+:class:`~whenever.ZonedDateTime` does not (yet)
 implement ``parse_strptime()`` methods, because they require disambiguation.
 If you'd like to parse into these types,
 use :meth:`PlainDateTime.parse_strptime() <whenever.PlainDateTime.parse_strptime>`
@@ -875,8 +847,10 @@ datetime(2023, 1, 1, 0, 0, tzinfo=ZoneInfo('Europe/Amsterdam'))
 
 .. note::
 
-   ``from_py_datetime`` also works for subclasses, so you can also ingest types
-   from ``pendulum`` and ``arrow`` libraries.
+   - Converting to the standard library is not always lossless.
+     Nanoseconds will be truncated to microseconds.
+   - ``from_py_datetime`` also works for subclasses, so you can also ingest types
+     from ``pendulum`` and ``arrow`` libraries.
 
 
 Date and time components
@@ -961,12 +935,10 @@ Sometimes you need to 'fake' the output of ``.now()`` functions, typically for t
 Patching the system timezone
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-For changing the system timezone in tests,
-use the :func:`~time.tzset` function from the standard library.
-Since ``whenever`` uses the standard library to operate with the system timezone,
-``tzset`` will behave as expected from the documentation.
-Do note that this function is not available on Windows.
-This is a limitation of ``tzset`` itself.
+For changing the system timezone in tests, set the `TZ` environment variable
+and use the :func:`~whenever.reset_system_tz` helper function to update the timezone cache.
+Do note that this function only affects *whenever*, and not the standard library's
+behavior.
 
 Below is an example of a testing helper that can be used with ``pytest``:
 
@@ -974,20 +946,18 @@ Below is an example of a testing helper that can be used with ``pytest``:
 
    import os
    import pytest
-   import sys
-   import time
    from contextlib import contextmanager
    from unittest.mock import patch
+   from whenever import reset_system_tz
 
    @contextmanager
    def system_tz_ams():
-       if sys.platform == "win32":
-           pytest.skip("tzset is not available on Windows")
-       with patch.dict(os.environ, {"TZ": "Europe/Amsterdam"}):
-           time.tzset()
-           yield
-
-       time.tzset()  # don't forget to set the old timezone back
+       try:
+           with patch.dict(os.environ, {"TZ": "Europe/Amsterdam"}):
+               reset_system_tz()  # update the timezone cache
+               yield
+       finally:
+           reset_system_tz()  # don't forget to set the old timezone back!
 
 .. _systemtime:
 
@@ -997,62 +967,39 @@ The system timezone
 When working with the timezone of the current system, there
 are a few things to keep in mind.
 
-Should I use ``SystemDateTime`` or ``ZonedDateTime``?
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Non-IANA system timezones
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
-There are two approaches to dealing with the system timezone:
+While most systems use IANA timezone IDs (like ``Europe/Amsterdam``),
+some systems use custom timezone definitions that don't (unambiguously) 
+map to a IANA timezone ID. 
+Nonetheless, they can still account for Daylight Saving Time (DST) and other timezone changes.
 
-1. Use :class:`~whenever.SystemDateTime`
-2. Use :class:`~whenever.ZonedDateTime` and set the ``tz=`` to the system timezone
-   based on user input, or by retrieving it with the ``tzlocal`` third-party library.
-
-Each approach has pros and cons:
-
-- :class:`~whenever.SystemDateTime` is more convenient since no additional parameters are needed.
-- :class:`~whenever.SystemDateTime` has broadest platform support, since
-  not all systems are configured with a IANA timezone ID.
-- Operations on :class:`~whenever.SystemDateTime` always use the up-to-date system timezone.
-  This can be useful, but can also lead to unexpected results.
-- :class:`~whenever.ZonedDateTime` is significantly faster, since it doesn't need to
-  re-check the system timezone with each operation.
-- :class:`~whenever.ZonedDateTime` is easier to test and more explicit
-  about the timezone being used.
-
-Acceptable range
-~~~~~~~~~~~~~~~~
-
-The range of possible times is limited depending on the platform.
-This means that operations with ``SystemDateTime`` may raise
-exceptions in rare cases.
-For example, Windows only supports time after 1970,
-and 32-bit systems often can't handle dates after 2038.
+TODO example
 
 Changes to the system timezone
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 It's important to be aware that the system timezone can change.
-Instances of :class:`~whenever.SystemDateTime` have the fixed offset
-of the system timezone at the time of initialization.
-The system timezone may change afterwards,
-but instances of this type will not reflect that change.
-This is because:
+`whenever` caches the system timezone at time you access it first.
+Thies ensures predictable and fast behavior.
 
-- There are several ways to deal with such a change:
-  should the moment in time be preserved, or the local time on the clock?
-- Automatically reflecting that change would mean that the object could
-  change at any time, depending on some global mutable state.
-  This would make it harder to reason about and use.
+In the rare case that you need to change the system timezone
+while your program is running, you can use the
+:meth:`~whenever.reset_system_tz` method to determine the new system timezone.
+Existing datetimes will not be affected by this change,
+but new datetimes will use the updated system timezone.
 
 >>> # initialization where the system timezone is America/New_York
->>> d = SystemDateTime(2020, 8, 15, hour=8)
-SystemDateTime(2020-08-15 08:00:00-04:00)
+>>> d = PlainDateTime(2020, 8, 15, hour=8).assume_system_tz()
+ZonedDateTime(2020-08-15 08:00:00-04:00[America/New_York])
 ...
 >>> # we change the system timezone to Amsterdam
 >>> os.environ["TZ"] = "Europe/Amsterdam"
->>> time.tzset()
+>>> whenever.reset_system_tz()
 ...
 >>> d  # object remains unchanged
-SystemDateTime(2020-08-15 08:00:00-04:00)
+ZonedDateTime(2020-08-15 08:00:00-04:00[America/New_York])
 
 If you'd like to preserve the moment in time
 and calculate the new local time, simply call
@@ -1060,18 +1007,14 @@ and calculate the new local time, simply call
 
 >>> # same moment, but now with the clock time in Amsterdam
 >>> d.to_system_tz()
-DateTime(2020-08-15 14:00:00+02:00)
+ZonedDateTime(2020-08-15 14:00:00+02:00[Europe/Amsterdam])
 
 On the other hand, if you'd like to preserve the local time on the clock
 and calculate the corresponding moment in time:
 
 >>> # take the wall clock time and assume the (new) system timezone (Amsterdam)
 >>> d.to_plain().assume_system_tz()
-SystemDateTime(2020-08-15 08:00:00+02:00)
-
-.. seealso::
-
-   :ref:`Why does SystemDateTime exist? <faq-why-system-tz>`
+ZonedDateTime(2020-08-15 08:00:00+02:00[Europe/Amsterdam])
 
 .. [1] The timezone ID is not part of the core ISO 8601 standard,
    but is part of the RFC 9557 extension.

@@ -93,14 +93,6 @@ Concrete classes
    :member-order: bysource
    :show-inheritance:
 
-.. autoclass:: whenever.SystemDateTime
-   :members:
-     is_ambiguous,
-     start_of_day,
-     day_length,
-   :member-order: bysource
-   :show-inheritance:
-
 Deltas
 ------
 
@@ -208,3 +200,4 @@ Miscellaneous
 .. autofunction:: whenever.clear_tzcache
 .. autofunction:: whenever.reset_tzpath
 .. autofunction:: whenever.available_timezones
+.. autofunction:: whenever.reset_system_tz

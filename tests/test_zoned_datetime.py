@@ -25,7 +25,6 @@ from whenever import (
     PlainDateTime,
     RepeatedTime,
     SkippedTime,
-    SystemDateTime,
     Time,
     TimeDelta,
     TimeZoneNotFoundError,
@@ -46,7 +45,6 @@ from .common import (
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
-    system_tz,
     system_tz_ams,
     system_tz_nyc,
 )
@@ -778,7 +776,7 @@ class TestEquality:
 
     @system_tz_nyc()
     def test_other_exact(self):
-        d: ZonedDateTime | OffsetDateTime | SystemDateTime = ZonedDateTime(
+        d: ZonedDateTime | OffsetDateTime = ZonedDateTime(
             2023,
             10,
             29,
@@ -790,9 +788,6 @@ class TestEquality:
         assert d == d.to_instant()  # type: ignore[comparison-overlap]
         assert hash(d) == hash(d.to_instant())
         assert d != d.to_instant() + hours(2)  # type: ignore[comparison-overlap]
-
-        assert d == d.to_system_tz()
-        assert d != d.to_system_tz().replace(hour=8, disambiguate="raise")
 
         assert d == d.to_fixed_offset()
         assert hash(d) == hash(d.to_fixed_offset())
@@ -841,11 +836,6 @@ class TestEquality:
 )
 def test_is_ambiguous(d, expect):
     assert d.is_ambiguous() == expect
-
-    # the same result with SystemDateTime
-    with system_tz(d.tz):
-        d_system = d.to_system_tz()
-        assert d_system.is_ambiguous() == expect
 
 
 class TestDayLength:
@@ -934,48 +924,24 @@ class TestDayLength:
     def test_typical(self, d: ZonedDateTime, expect):
         assert d.day_length() == expect
 
-        # test the same behavior on SystemDateTime
-        with system_tz(d.tz):
-            d_system = d.to_system_tz()
-            assert d_system.day_length() == expect
-
     def test_extreme_bounds(self):
         # Negative UTC offsets at lower bound are fine
         d_min_neg = ZonedDateTime(1, 1, 1, 2, tz="America/New_York")
         assert d_min_neg.day_length() == hours(24)
-        with system_tz("America/New_York"):
-            try:
-                assert SystemDateTime(1, 1, 1, 2).day_length() == hours(24)
-            except (ValueError, OverflowError):
-                pass  # a controlled exception is also fine--just no crash
 
         # Positive UTC offsets at lower bound are NOT fine
         d_min_pos = ZonedDateTime(1, 1, 1, 12, tz="Asia/Tokyo")
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             d_min_pos.day_length()
-        with system_tz("Asia/Tokyo"):
-            with pytest.raises(
-                (ValueError, OverflowError), match="range|year"
-            ):
-                SystemDateTime(1, 1, 1, 12).day_length()
 
         # upper bound is NOT fine
         d_max_pos = ZonedDateTime(9999, 12, 31, 4, tz="Asia/Tokyo")
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             d_max_pos.day_length()
-        with system_tz("Asia/Tokyo"):
-            with pytest.raises(
-                (ValueError, OverflowError), match="range|year"
-            ):
-                SystemDateTime(9999, 12, 31, 4).day_length()
+
         d_max_neg = ZonedDateTime(9999, 12, 31, 12, tz="America/New_York")
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             d_max_neg.day_length()
-        with system_tz("America/New_York"):
-            with pytest.raises(
-                (ValueError, OverflowError), match="range|year"
-            ):
-                SystemDateTime(9999, 12, 31, 12).day_length()
 
 
 class TestStartOfDay:
@@ -1063,12 +1029,6 @@ class TestStartOfDay:
     def test_examples(self, d: ZonedDateTime, expect):
         assert d.start_of_day().exact_eq(expect)
 
-        # test the same behavior on SystemDateTime
-        with system_tz(d.tz):
-            d_system = d.to_system_tz()
-            expect_system = expect.to_system_tz()
-            assert d_system.start_of_day().exact_eq(expect_system)
-
     def test_extreme_boundaries(self):
         # Negative UTC offsets at lower bound are fine
         assert (
@@ -1076,25 +1036,11 @@ class TestStartOfDay:
             .start_of_day()
             .exact_eq(ZonedDateTime(1, 1, 1, tz="America/New_York"))
         )
-        with system_tz("America/New_York"):
-            try:
-                assert (
-                    SystemDateTime(1, 1, 1, 2)
-                    .start_of_day()
-                    .exact_eq(SystemDateTime(1, 1, 1))
-                )
-            except (ValueError, OverflowError):
-                pass  # a controlled exception is also fine--just no crash
 
         # Positive UTC offsets at lower bound are NOT fine
         d_max_pos = ZonedDateTime(1, 1, 1, 12, tz="Asia/Tokyo")
         with pytest.raises((ValueError, OverflowError), match="range"):
             d_max_pos.start_of_day()
-        with system_tz("Asia/Tokyo"):
-            with pytest.raises(
-                (ValueError, OverflowError), match="range|year"
-            ):
-                SystemDateTime(1, 1, 1, 12).start_of_day()
 
         # Upper bound is always fine
         assert (
@@ -1102,30 +1048,12 @@ class TestStartOfDay:
             .start_of_day()
             .exact_eq(ZonedDateTime(9999, 12, 31, tz="Asia/Tokyo"))
         )
-        with system_tz("Asia/Tokyo"):
-            try:
-                assert (
-                    SystemDateTime(9999, 12, 31, 23)
-                    .start_of_day()
-                    .exact_eq(SystemDateTime(9999, 12, 31))
-                )
-            except (ValueError, OverflowError):
-                pass  # a controlled exception is also fine--just no crash
 
         assert (
             ZonedDateTime(9999, 12, 31, 12, tz="America/New_York")
             .start_of_day()
             .exact_eq(ZonedDateTime(9999, 12, 31, tz="America/New_York"))
         )
-        with system_tz("America/New_York"):
-            try:
-                assert (
-                    SystemDateTime(9999, 12, 31, 12)
-                    .start_of_day()
-                    .exact_eq(SystemDateTime(9999, 12, 31))
-                )
-            except (ValueError, OverflowError):
-                pass  # a controlled exception is also fine--just no crash
 
 
 def test_instant():
@@ -1239,11 +1167,23 @@ def test_to_fixed_offset():
 @system_tz_ams()
 def test_to_system_tz():
     d = ZonedDateTime(2023, 10, 28, 2, 15, tz="Europe/Amsterdam")
-    assert d.to_system_tz().exact_eq(SystemDateTime(2023, 10, 28, 2, 15))
+    assert d.to_system_tz().exact_eq(
+        ZonedDateTime(2023, 10, 28, 2, 15, tz="Europe/Amsterdam")
+    )
     assert (
         d.replace(day=29, disambiguate="later")
         .to_system_tz()
-        .exact_eq(SystemDateTime(2023, 10, 29, 2, 15, disambiguate="later"))
+        .exact_eq(
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                15,
+                disambiguate="later",
+                tz="Europe/Amsterdam",
+            )
+        )
     )
 
     # catch local time sliding out of range
@@ -1922,6 +1862,7 @@ class TestComparison:
             42 >= d  # type: ignore[operator]
 
 
+# TODO: test system timezone conversion. Plus everywhere else!
 def test_py_datetime():
     d = ZonedDateTime(
         2020, 8, 15, 23, 12, 9, nanosecond=987_654_999, tz="Europe/Amsterdam"
@@ -2819,18 +2760,6 @@ class TestDifference:
         other = OffsetDateTime(2023, 10, 28, 20, offset=hours(1))
         assert d - other == hours(5)
         assert d.replace(disambiguate="later") - other == hours(6)
-
-        # same with the method
-        assert d.difference(other) == d - other
-
-    @system_tz_nyc()
-    def test_system_tz(self):
-        d = ZonedDateTime(
-            2023, 10, 29, 2, tz="Europe/Amsterdam", disambiguate="earlier"
-        )
-        other = SystemDateTime(2023, 10, 28, 19)
-        assert d - other == hours(1)
-        assert d.replace(disambiguate="later") - other == hours(2)
 
         # same with the method
         assert d.difference(other) == d - other
