@@ -128,15 +128,6 @@ impl OffsetDateTime {
         OffsetDateTime::new(date, time, Offset::from_py(dt)?)
             .ok_or_value_err("Datetime is out of range")
     }
-
-    pub(crate) fn from_py_with_subsec(dt: PyDateTime, subsec: SubSecNanos) -> PyResult<Self> {
-        OffsetDateTime::new(
-            Date::from_py(dt.date()),
-            Time::from_py_dt_with_subsec(dt, subsec),
-            Offset::from_py(dt)?,
-        )
-        .ok_or_value_err("Datetime is out of range")
-    }
 }
 
 impl DateTime {
@@ -323,7 +314,6 @@ fn __richcmp__(
         let &State {
             instant_type,
             zoned_datetime_type,
-            system_datetime_type,
             ..
         } = cls.state();
 
@@ -331,8 +321,6 @@ fn __richcmp__(
             inst
         } else if let Some(zdt) = b_obj.extract(zoned_datetime_type) {
             zdt.instant()
-        } else if let Some(odt) = b_obj.extract(system_datetime_type) {
-            odt.instant()
         } else {
             return not_implemented();
         }
@@ -380,8 +368,6 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
             inst
         } else if let Some(zdt) = obj_b.extract(state.zoned_datetime_type) {
             zdt.instant()
-        } else if let Some(odt) = obj_b.extract(state.system_datetime_type) {
-            odt.instant()
         } else if type_b == state.time_delta_type.into()
             || type_b == state.date_delta_type.into()
             || type_b == state.datetime_delta_type.into()
@@ -483,21 +469,18 @@ fn to_tz(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime, tz_obj: PyObj) -> P
         ..
     } = cls.state();
     let tz = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
-    slf.instant()
-        .to_tz(tz)
-        .ok_or_value_err("Resulting datetime is out of range")?
-        .to_obj(zoned_datetime_type)
+    slf.instant().to_tz(tz, zoned_datetime_type)
 }
 
 fn to_system_tz(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     let &State {
-        py_api,
-        system_datetime_type,
+        exc_tz_notfound,
+        zoned_datetime_type,
+        ref tz_store,
         ..
     } = cls.state();
-    slf.instant()
-        .to_system_tz(py_api)?
-        .to_obj(system_datetime_type)
+    let tz = tz_store.get_system_tz(exc_tz_notfound)?;
+    slf.instant().to_tz(tz, zoned_datetime_type)
 }
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
@@ -848,12 +831,10 @@ fn difference(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime, arg: PyObj) ->
         inst
     } else if let Some(zdt) = arg.extract(state.zoned_datetime_type) {
         zdt.instant()
-    } else if let Some(odt) = arg.extract(state.system_datetime_type) {
-        odt.instant()
     } else {
         raise_type_err(
             "difference() argument must be an OffsetDateTime, 
-                Instant, ZonedDateTime, or SystemDateTime",
+                Instant, or ZonedDateTime",
         )?
     };
 

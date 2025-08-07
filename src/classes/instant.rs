@@ -179,21 +179,20 @@ impl Instant {
     }
 
     pub(crate) const fn pyhash(&self) -> Py_hash_t {
-        #[cfg(target_pointer_width = "64")]
-        {
+        if cfg!(target_pointer_width = "64") {
             hash_combine(
                 self.epoch.get() as Py_hash_t,
                 self.subsec.get() as Py_hash_t,
             )
-        }
-        #[cfg(target_pointer_width = "32")]
-        hash_combine(
-            self.epoch.get() as Py_hash_t,
+        } else {
             hash_combine(
-                (self.epoch.get() >> 32) as Py_hash_t,
-                self.subsec.get() as Py_hash_t,
-            ),
-        )
+                self.epoch.get() as Py_hash_t,
+                hash_combine(
+                    (self.epoch.get() >> 32) as Py_hash_t,
+                    self.subsec.get() as Py_hash_t,
+                ),
+            )
+        }
     }
 
     fn to_delta(self) -> TimeDelta {
@@ -258,8 +257,6 @@ fn __richcmp__(cls: HeapType<Instant>, inst_a: Instant, b_obj: PyObj, op: c_int)
             i.instant()
         } else if let Some(odt) = b_obj.extract(state.offset_datetime_type) {
             odt.instant()
-        } else if let Some(odt) = b_obj.extract(state.system_datetime_type) {
-            odt.instant()
         } else {
             return not_implemented();
         }
@@ -304,8 +301,6 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         let inst_b = if let Some(zdt) = obj_b.extract(state.zoned_datetime_type) {
             zdt.instant()
         } else if let Some(odt) = obj_b.extract(state.offset_datetime_type) {
-            odt.instant()
-        } else if let Some(odt) = obj_b.extract(state.system_datetime_type) {
             odt.instant()
         } else {
             return _shift(inst_type, inst_a, state.time_delta_type, obj_b, true);
@@ -587,12 +582,10 @@ fn difference(cls: HeapType<Instant>, inst_a: Instant, obj_b: PyObj) -> PyReturn
         zdt.instant()
     } else if let Some(odt) = obj_b.extract(state.offset_datetime_type) {
         odt.instant()
-    } else if let Some(odt) = obj_b.extract(state.system_datetime_type) {
-        odt.instant()
     } else {
         raise_type_err(
             "difference() argument must be an OffsetDateTime, 
-             Instant, ZonedDateTime, or SystemDateTime",
+             Instant, or ZonedDateTime",
         )?
     };
     inst_a.diff(inst_b).to_obj(state.time_delta_type)
@@ -606,9 +599,7 @@ fn to_tz(cls: HeapType<Instant>, slf: Instant, tz_obj: PyObj) -> PyReturn {
         ..
     } = cls.state();
     let tz = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
-    slf.to_tz(tz)
-        .ok_or_value_err("Resulting datetime is out of range")?
-        .to_obj(zoned_datetime_type)
+    slf.to_tz(tz, zoned_datetime_type)
 }
 
 fn to_fixed_offset(cls: HeapType<Instant>, slf: Instant, args: &[PyObj]) -> PyReturn {
@@ -629,11 +620,13 @@ fn to_fixed_offset(cls: HeapType<Instant>, slf: Instant, args: &[PyObj]) -> PyRe
 
 fn to_system_tz(cls: HeapType<Instant>, slf: Instant) -> PyReturn {
     let &State {
-        py_api,
-        system_datetime_type,
+        exc_tz_notfound,
+        zoned_datetime_type,
+        ref tz_store,
         ..
     } = cls.state();
-    slf.to_system_tz(py_api)?.to_obj(system_datetime_type)
+    let tz = tz_store.get_system_tz(exc_tz_notfound)?;
+    slf.to_tz(tz, zoned_datetime_type)
 }
 
 fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn {

@@ -1,5 +1,33 @@
 # 🚀 Changelog
 
+## 0.9.0 (2025-??-??)
+
+**Breaking Changes**
+
+- `SystemDateTime` has been removed and its functionality is now integrated into `ZonedDateTime`.
+  **Migration:**
+  - `SystemDateTime.now()` can be replaced with `Instant.now().to_system_tz()`.
+  - `to_system_tz()` and `assume_system_tz()` now return a `ZonedDateTime` instead of a `SystemDateTime`.
+
+  **Rationale:** The `SystemDateTime` class was an awkward corner of the API, 
+  creating inconsistencies and overlapping with `ZonedDateTime`. 
+  This change unifies the API, providing a single, consistent way to handle 
+  all timezone-aware datetimes. The original use cases are fully supported 
+  by the improved `ZonedDateTime`.
+
+**Added**
+
+- Customizable ISO 8601 Formatting: The `format_common_iso()` methods on all 
+  datetime objects now accept parameters to customize the output. 
+  You can control the `separator` (e.g., `'T'` or `' '`), 
+  the smallest second `unit` (from `hour` to `nanosecond`), 
+  and toggle the `basic` (compact) or `extended` format.
+
+**Fixed**
+
+- Resolved a memory leak in the Rust extension where timezone objects that 
+  were no longer in use were not properly evicted from the cache.
+
 ## 0.8.8 (2025-07-24)
 
 - Add wheels for Python 3.14 now that its ABI is stable.
