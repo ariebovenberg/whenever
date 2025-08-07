@@ -112,11 +112,6 @@ milliseconds=0, microseconds=0, nanoseconds=0)""",
 MANUALLY_DEFINED_SIGS.update(
     {
         W.ZonedDateTime.subtract: MANUALLY_DEFINED_SIGS[W.ZonedDateTime.add],
-        W.SystemDateTime.add: MANUALLY_DEFINED_SIGS[W.ZonedDateTime.add],
-        W.SystemDateTime.subtract: MANUALLY_DEFINED_SIGS[W.ZonedDateTime.add],
-        W.SystemDateTime.replace: MANUALLY_DEFINED_SIGS[
-            W.ZonedDateTime.replace
-        ],
         W.OffsetDateTime.subtract: MANUALLY_DEFINED_SIGS[W.OffsetDateTime.add],
         W.PlainDateTime.subtract: MANUALLY_DEFINED_SIGS[W.PlainDateTime.add],
         W.Instant.subtract: MANUALLY_DEFINED_SIGS[W.Instant.add],

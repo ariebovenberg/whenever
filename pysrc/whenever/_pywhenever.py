@@ -72,6 +72,7 @@ from weakref import WeakValueDictionary
 # These are relatively expensive imports, so we delay importing them
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
+
     from ._tz import PosixTz
 
 __all__ = [
@@ -6170,32 +6171,19 @@ def _get_system_tz() -> Union[PosixTz, ZoneInfo]:
     # delayed import since they're relatively expensive
     from ._tz import posix, system
 
-    try:
-        tz_env = os.environ["TZ"]
-    except KeyError:
-        tz_file, tz_name = system.tz_file_and_key()
-
-        if tz_name:
-            return _get_tz(tz_name)
-        else:
-            assert tz_file, "No system tz file found"
-            with open(tz_file, "rb") as f:
-                return ZoneInfo.from_file(f)
-    else:
-        if tz_env.startswith(":"):
-            tz_env = tz_env[1:]  # strip leading colon
-
-        # case 1: absolute path
-        if tz_env.startswith("/"):
-            # TODO: symlink traversal
-            with open(tz_env, "rb") as f:
-                return ZoneInfo.from_file(f)
+    tz_type, tz_value = system.get_tz()
+    if tz_type == 0:  # ZoneInfo key
+        return _get_tz(tz_value)
+    elif tz_type == 2:  # ZoneInfo or PosixTz
         try:
-            # case 2: zoneinfo key
-            return _get_tz(tz_env)
+            return _get_tz(tz_value)
         except TimeZoneNotFoundError:
-            # case 3: posix TZ string
-            return posix.parse(tz_env)
+            # If the key is not found, it might be a PosixTz string
+            return posix.parse(tz_value)
+    else:  # file-based timezone (no key)
+        assert tz_type == 1, "Unknown system timezone type"
+        with open(tz_value, "rb") as f:
+            return ZoneInfo.from_file(f)
 
 
 # We expose the public members in the root of the module.

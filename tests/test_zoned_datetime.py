@@ -41,10 +41,13 @@ from whenever import (
 )
 
 from .common import (
+    AMS_TZ_POSIX,
+    AMS_TZ_RAWFILE,
     AlwaysEqual,
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
+    system_tz,
     system_tz_ams,
     system_tz_nyc,
 )
@@ -548,6 +551,14 @@ ZDT2 = ZonedDateTime(
     1,
     tz="Europe/Dublin",
 )
+with system_tz(AMS_TZ_POSIX):
+    ZDT_POSIX = PlainDateTime(
+        2020, 8, 15, 23, 12, 9, nanosecond=987_654_321
+    ).assume_system_tz()
+with system_tz(AMS_TZ_RAWFILE):
+    ZDT_RAWFILE = PlainDateTime(
+        2020, 8, 15, 23, 12, 9, nanosecond=987_654_321
+    ).assume_system_tz()
 
 
 class TestFormatCommonIso:
@@ -666,6 +677,16 @@ class TestFormatCommonIso:
                 ZDT2,
                 {"unit": "hour", "basic": True, "sep": "T"},
                 "19000101T00-002521[Europe/Dublin]",
+            ),
+            (
+                ZDT_POSIX,
+                {"unit": "nanosecond", "basic": True, "sep": "T"},
+                "20200815T231209.987654321+0200",
+            ),
+            (
+                ZDT_RAWFILE,
+                {"unit": "millisecond", "basic": False, "sep": " "},
+                "2020-08-15 23:12:09.987+02:00",
             ),
         ],
     )

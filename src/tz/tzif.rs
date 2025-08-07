@@ -78,6 +78,16 @@ impl TZif {
                 Ambiguity::Unambiguous(offset)
             })
     }
+
+    // TODO: not a nice API
+    pub(crate) fn from_posix(posix_tz: posix::Tz) -> Self {
+        Self {
+            key: "<unknown>".to_string(),
+            offsets_by_utc: vec![],
+            offsets_by_local: vec![],
+            end: Some(posix_tz),
+        }
+    }
 }
 
 /// Bisect the array of (time, value) pairs to find the INDEX at the given time.
@@ -277,7 +287,7 @@ fn load_transitions(
 }
 
 fn parse_posix_tz(s: &mut Scan) -> Option<posix::Tz> {
-    posix::parse(match s.take_until(|b| b == b'\n') {
+    posix::Tz::parse(match s.take_until(|b| b == b'\n') {
         Some(x) => x,
         None => s.rest(),
     })

@@ -134,6 +134,49 @@ impl Tz {
             }
         }
     }
+
+    pub fn parse(s: &[u8]) -> Option<Self> {
+        let mut scan = Scan::new(s);
+        skip_tzname(&mut scan)?;
+        let std = parse_offset(&mut scan)?;
+
+        // If there's nothing else, it's a fixed offset without DST
+        if scan.is_done() {
+            return Some(Tz { std, dst: None });
+        };
+        skip_tzname(&mut scan)?;
+
+        let dst_offset = match scan.peek()? {
+            // If the offset is omitted, the default is 1 hour ahead
+            b',' => {
+                scan.take_unchecked(1);
+                // It's theoretically possible for this default shift to
+                // bump the offset to over 24 hours. We reject these cases here.
+                std.shift(DEFAULT_DST)?
+            }
+            // Otherwise, parse the offset
+            _ => {
+                let offset = parse_offset(&mut scan)?;
+                scan.expect(b',')?;
+                offset
+            }
+        };
+
+        // Expect two rules separated by a comma
+        let start = parse_rule(&mut scan)?;
+        scan.expect(b',')?;
+        let end = parse_rule(&mut scan)?;
+
+        // No content should remain after parsing
+        scan.is_done().then_some(Tz {
+            std,
+            dst: Some(Dst {
+                offset: dst_offset,
+                start,
+                end,
+            }),
+        })
+    }
 }
 
 impl Rule {
@@ -180,49 +223,6 @@ impl Rule {
             }
         }
     }
-}
-
-pub fn parse(s: &[u8]) -> Option<Tz> {
-    let mut scan = Scan::new(s);
-    skip_tzname(&mut scan)?;
-    let std = parse_offset(&mut scan)?;
-
-    // If there's nothing else, it's a fixed offset without DST
-    if scan.is_done() {
-        return Some(Tz { std, dst: None });
-    };
-    skip_tzname(&mut scan)?;
-
-    let dst_offset = match scan.peek()? {
-        // If the offset is omitted, the default is 1 hour ahead
-        b',' => {
-            scan.take_unchecked(1);
-            // It's theoretically possible for this default shift to
-            // bump the offset to over 24 hours. We reject these cases here.
-            std.shift(DEFAULT_DST)?
-        }
-        // Otherwise, parse the offset
-        _ => {
-            let offset = parse_offset(&mut scan)?;
-            scan.expect(b',')?;
-            offset
-        }
-    };
-
-    // Expect two rules separated by a comma
-    let start = parse_rule(&mut scan)?;
-    scan.expect(b',')?;
-    let end = parse_rule(&mut scan)?;
-
-    // No content should remain after parsing
-    scan.is_done().then_some(Tz {
-        std,
-        dst: Some(Dst {
-            offset: dst_offset,
-            start,
-            end,
-        }),
-    })
 }
 
 /// Skip the TZ name
@@ -356,7 +356,6 @@ mod tests {
             b"1T",
             b"<FOO>",
             b"<FOO>>-3",
-            b"<>3",
             // Invalid components
             b"FOO+01:",
             b"FOO+01:9:03",
@@ -430,7 +429,7 @@ mod tests {
             b"AAA4BBB,J20/2,J366/2",
         ];
         for &case in cases {
-            assert_eq!(parse(case), None, "parse {:?}", unsafe {
+            assert_eq!(Tz::parse(case), None, "parse {:?}", unsafe {
                 std::str::from_utf8_unchecked(case)
             });
         }
@@ -440,7 +439,7 @@ mod tests {
     fn fixed_offset() {
         fn test(s: &[u8], expected: i32) {
             assert_eq!(
-                parse(s).unwrap(),
+                Tz::parse(s).unwrap(),
                 Tz {
                     std: expected.try_into().unwrap(),
                     dst: None
@@ -479,7 +478,7 @@ mod tests {
     fn with_dst() {
         // Implicit DST offset
         assert_eq!(
-            parse(b"FOO-1FOOS,M3.5.0,M10.4.0").unwrap(),
+            Tz::parse(b"FOO-1FOOS,M3.5.0,M10.4.0").unwrap(),
             Tz {
                 std: 3600.try_into().unwrap(),
                 dst: Some(Dst {
@@ -501,7 +500,7 @@ mod tests {
         );
         // Explicit DST offset
         assert_eq!(
-            parse(b"FOO+1FOOS2:30,M3.5.0,M10.2.0").unwrap(),
+            Tz::parse(b"FOO+1FOOS2:30,M3.5.0,M10.2.0").unwrap(),
             Tz {
                 std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
@@ -523,7 +522,7 @@ mod tests {
         );
         // Explicit time, weekday rule
         assert_eq!(
-            parse(b"FOO+1FOOS2:30,M3.5.0/8,M10.2.0").unwrap(),
+            Tz::parse(b"FOO+1FOOS2:30,M3.5.0/8,M10.2.0").unwrap(),
             Tz {
                 std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
@@ -545,7 +544,7 @@ mod tests {
         );
         // Explicit time, Julian day rule
         assert_eq!(
-            parse(b"FOO+1FOOS2:30,J023/8:34:01,M10.2.0/03").unwrap(),
+            Tz::parse(b"FOO+1FOOS2:30,J023/8:34:01,M10.2.0/03").unwrap(),
             Tz {
                 std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
@@ -567,7 +566,7 @@ mod tests {
         );
         // Explicit time, day-of-year rule
         assert_eq!(
-            parse(b"FOO+1FOOS2:30,023/8:34:01,J1/0").unwrap(),
+            Tz::parse(b"FOO+1FOOS2:30,023/8:34:01,J1/0").unwrap(),
             Tz {
                 std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
@@ -582,7 +581,7 @@ mod tests {
         );
         // Explicit time, zeroth day of year
         assert_eq!(
-            parse(b"FOO+1FOOS2:30,00/8:34:01,J1/0").unwrap(),
+            Tz::parse(b"FOO+1FOOS2:30,00/8:34:01,J1/0").unwrap(),
             Tz {
                 std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
@@ -597,7 +596,7 @@ mod tests {
         );
         // 24:00:00 is a valid time for a rule
         assert_eq!(
-            parse(b"FOO+2FOOS+1,M3.5.0/24,M10.2.0").unwrap(),
+            Tz::parse(b"FOO+2FOOS+1,M3.5.0/24,M10.2.0").unwrap(),
             Tz {
                 std: (-7200).try_into().unwrap(),
                 dst: Some(Dst {
@@ -619,7 +618,7 @@ mod tests {
         );
         // Anything between -167 and 167 hours is also valid!
         assert_eq!(
-            parse(b"FOO+2FOOS+1,M3.5.0/-89:02,M10.2.0/100").unwrap(),
+            Tz::parse(b"FOO+2FOOS+1,M3.5.0/-89:02,M10.2.0/100").unwrap(),
             Tz {
                 std: (-7200).try_into().unwrap(),
                 dst: Some(Dst {

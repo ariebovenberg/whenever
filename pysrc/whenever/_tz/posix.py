@@ -1,4 +1,3 @@
-# TODO: only lazy import due to dataclass dependency
 from __future__ import annotations
 
 import calendar

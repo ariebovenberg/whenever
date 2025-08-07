@@ -16,6 +16,7 @@ impl<T: PyBase> Owned<T> {
         Self { inner }
     }
 
+    // TODO: rename into_py?
     pub(crate) fn py_owned(self) -> T {
         // By transferring ownership to Python, we essentially say
         // Rust is no longer responsible for the memory (i.e. Drop)

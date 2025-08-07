@@ -130,6 +130,7 @@ pub(crate) trait PyWrapped: FromPy {
         unsafe { (*obj.cast::<PyWrap<Self>>()).data }
     }
 
+    // TODO: remove from this interface
     #[inline]
     fn to_obj(self, type_: HeapType<Self>) -> PyReturn {
         generic_alloc(type_.type_py, self)
