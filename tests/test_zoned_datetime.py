@@ -1207,6 +1207,18 @@ def test_to_system_tz():
         )
     )
 
+    # posix tz
+    with system_tz("FOO9"):
+        assert d.to_system_tz().to_plain() == PlainDateTime(
+            2023, 10, 27, 15, 15
+        )
+
+    # colon prefix
+    with system_tz(":America/New_York"):
+        assert d.to_system_tz().exact_eq(
+            ZonedDateTime(2023, 10, 27, 20, 15, tz="America/New_York")
+        )
+
     # catch local time sliding out of range
     small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
     with system_tz_nyc():

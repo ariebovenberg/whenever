@@ -16,15 +16,15 @@ if SYSTEM in ("Linux", "Darwin"):
     def _key_or_file() -> tuple[Literal[0, 1], str]:
         if (tzif_path := os.path.realpath(LOCALTIME)) == LOCALTIME:
             # If the file is not a symlink, we can't determine the tzid
-            return (1, LOCALTIME)
+            return (1, LOCALTIME)  # pragma: no cover
         try:
             tzid_start = tzif_path.rindex(ZONEINFO)
-        except ValueError:
+        except ValueError:  # pragma: no cover
             # If the file is not in a zoneinfo directory, we can't determine the tzid
             return (1, tzif_path)
         return (0, tzif_path[tzid_start + len(ZONEINFO) + 1 :])
 
-else:
+else:  # pragma: no cover
     import tzlocal
 
     def _key_or_file() -> tuple[Literal[0, 1], str]:
