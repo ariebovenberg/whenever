@@ -20,7 +20,7 @@
 - Customizable ISO 8601 Formatting: The `format_common_iso()` methods on all 
   datetime objects now accept parameters to customize the output. 
   You can control the `separator` (e.g., `'T'` or `' '`), 
-  the smallest second `unit` (from `hour` to `nanosecond`), 
+  the smallest `unit` (from `hour` to `nanosecond`), 
   and toggle the `basic` (compact) or `extended` format.
 
 **Fixed**

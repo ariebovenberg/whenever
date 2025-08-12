@@ -564,7 +564,7 @@ to the correct usage.
      :class:`~whenever.ZonedDateTime`. This is because political decisions
      in the future can also change the offset!
 
-- :class:`~whenever.ZonedDateTime` accounts for DST and other timezone changes, 
+- :class:`~whenever.ZonedDateTime` accounts for DST and other timezone changes,
   thus adding precise time units is always correct.
   Adding calendar units is also possible, but may result in ambiguity in rare cases,
   if the resulting datetime is in the middle of a DST transition:
@@ -964,57 +964,78 @@ Below is an example of a testing helper that can be used with ``pytest``:
 The system timezone
 -------------------
 
+The system timezone is the timezone that your operating system is set to.
+You can create datetimes in the system timezone by using the
+:meth:`~whenever.PlainDateTime.assume_system_tz`
+or :meth:`~whenever._ExactTime.to_system_tz` methods:
+
+>>> from whenever import PlainDateTime, Instant
+>>> plain = PlainDateTime(2020, 8, 15, hour=8)
+>>> d = plain.assume_system_tz()
+ZonedDateTime(2020-08-15 08:00:00-04:00[America/New_York])
+>>> Instant.now().to_system_tz()
+ZonedDateTime(2023-12-28 11:30:00-05:00[America/New_York])
+
 When working with the timezone of the current system, there
 are a few things to keep in mind.
 
-Non-IANA system timezones
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-While most systems use IANA timezone IDs (like ``Europe/Amsterdam``),
-some systems use custom timezone definitions that don't (unambiguously) 
-map to a IANA timezone ID. 
-Nonetheless, they can still account for Daylight Saving Time (DST) and other timezone changes.
-
-TODO example
-
-Changes to the system timezone
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+System timezone changes
+~~~~~~~~~~~~~~~~~~~~~~~
 
 It's important to be aware that the system timezone can change.
-`whenever` caches the system timezone at time you access it first.
-Thies ensures predictable and fast behavior.
+``whenever`` caches the system timezone at time you access it first.
+This ensures predictable and fast behavior.
 
 In the rare case that you need to change the system timezone
 while your program is running, you can use the
-:meth:`~whenever.reset_system_tz` method to determine the new system timezone.
+:meth:`~whenever.reset_system_tz` method to determine the system timezone again.
 Existing datetimes will not be affected by this change,
 but new datetimes will use the updated system timezone.
 
 >>> # initialization where the system timezone is America/New_York
->>> d = PlainDateTime(2020, 8, 15, hour=8).assume_system_tz()
+>>> plain = PlainDateTime(2020, 8, 15, hour=8)
+>>> d = plain.assume_system_tz()
 ZonedDateTime(2020-08-15 08:00:00-04:00[America/New_York])
 ...
 >>> # we change the system timezone to Amsterdam
 >>> os.environ["TZ"] = "Europe/Amsterdam"
 >>> whenever.reset_system_tz()
 ...
->>> d  # object remains unchanged
+>>> d  # existing objects remain unchanged
 ZonedDateTime(2020-08-15 08:00:00-04:00[America/New_York])
+>>> # new objects will use the new system timezone
+>>> Instant.now().to_system_tz()
+ZonedDateTime(2025-08-15 15:03:28+01:00[Europe/Amsterdam])
 
-If you'd like to preserve the moment in time
-and calculate the new local time, simply call
-:meth:`~whenever._ExactTime.to_system_tz`.
+Non-IANA system timezones
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
->>> # same moment, but now with the clock time in Amsterdam
->>> d.to_system_tz()
-ZonedDateTime(2020-08-15 14:00:00+02:00[Europe/Amsterdam])
+While most system timezones can be matched with a IANA timezone ID
+(like ``Europe/Amsterdam``),
+some systems use custom timezone definitions that don't (unambiguously)
+map to a IANA timezone ID.
+For example, some systems may set the ``TZ`` environment variable to a POSIX TZ
+string like ``CET-1CEST,M3.5.0,M10.5.0/3``,
+or specify a custom timezone file.
 
-On the other hand, if you'd like to preserve the local time on the clock
-and calculate the corresponding moment in time:
+>>> os.environ["TZ"] = "CET-1CEST,M3.5.0,M10.5.0/3"
+>>> whenever.reset_system_tz()
 
->>> # take the wall clock time and assume the (new) system timezone (Amsterdam)
->>> d.to_plain().assume_system_tz()
-ZonedDateTime(2020-08-15 08:00:00+02:00[Europe/Amsterdam])
+These type of timezone definitions can still account for Daylight Saving Time
+(DST) and other timezone changes:
+
+>>> d = plain.assume_system_tz()
+ZonedDateTime(2024-06-04 12:00:00+02:00[<system timezone without ID>])
+>>> # Correct UTC offset after adding 5 months
+>>> d.add(months=5)
+ZonedDateTime(2024-11-04 12:00:00+01:00[<system timezone without ID>])
+
+However there are some limitations of such instances of :class:`~whenever.ZonedDateTime`:
+
+1. Their ``tz`` attribute is ``None``
+2. They cannot be pickled
+3. Their ISO 8601 string representation does not include a IANA timezone ID
+4. The result of ``py_datetime()`` will have a fixed offset, not a ``ZoneInfo`` object.
 
 .. [1] The timezone ID is not part of the core ISO 8601 standard,
    but is part of the RFC 9557 extension.
