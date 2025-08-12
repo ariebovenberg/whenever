@@ -250,15 +250,6 @@ impl Time {
         }
     }
 
-    pub(crate) fn from_py_dt_with_subsec(dt: PyDateTime, subsec: SubSecNanos) -> Self {
-        Time {
-            hour: dt.hour() as _,
-            minute: dt.minute() as _,
-            second: dt.second() as _,
-            subsec,
-        }
-    }
-
     pub(crate) fn from_py_dt(dt: PyDateTime) -> Self {
         Time {
             hour: dt.hour() as _,

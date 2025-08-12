@@ -44,3 +44,8 @@ pub(crate) fn _clear_tz_cache_by_keys(state: &mut State, keys_obj: PyObj) -> PyR
     state.tz_store.clear_only(&keys);
     Ok(none())
 }
+
+pub(crate) fn reset_system_tz(state: &mut State) -> PyReturn {
+    state.tz_store.reset_system_tz(state.exc_tz_notfound)?;
+    Ok(none())
+}
