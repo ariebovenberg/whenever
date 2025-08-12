@@ -121,6 +121,8 @@ class TestParse:
             # Invalid julian offset
             "AAA4BBB,J0/2,J20/2",
             "AAA4BBB,J20/2,J366/2",
+            # non-ascii
+            "AAÄ8",
         ],
     )
     def test_invalid(self, s):

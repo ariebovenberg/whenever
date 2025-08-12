@@ -201,7 +201,7 @@ class Tz(tzinfo):
     # This class is only meant for internal use anyway.
     def utcoffset(self, dt: Optional[datetime]) -> Optional[timedelta]:
         if dt is None:
-            return None
+            return None  # pragma: no cover
         return self.ambiguity_for_local(
             int(dt.replace(tzinfo=UTC).timestamp())
         ).fold(dt.fold)
@@ -230,9 +230,6 @@ def parse(s: str) -> Tz:
 
     s = skip_tzname(s)
     std, s = parse_offset(s)
-
-    if abs(std) >= MAX_OFFSET:
-        raise ValueError("Invalid POSIX TZ string: std offset out of range")
 
     # If there's nothing else, it's a fixed offset without DST
     if not s:
