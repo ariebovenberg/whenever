@@ -1,5 +1,8 @@
 version: 2
 
+formats:
+  - htmlzip
+
 sphinx:
   builder: html
   configuration: docs/conf.py
