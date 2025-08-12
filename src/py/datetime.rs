@@ -58,14 +58,17 @@ pub(crate) struct PyDateTime {
 }
 
 impl PyDateTime {
+    #[allow(dead_code)]
     pub(crate) fn year(&self) -> i32 {
         unsafe { PyDateTime_GET_YEAR(self.obj.as_ptr()) }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn month(&self) -> i32 {
         unsafe { PyDateTime_GET_MONTH(self.obj.as_ptr()) }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn day(&self) -> i32 {
         unsafe { PyDateTime_GET_DAY(self.obj.as_ptr()) }
     }

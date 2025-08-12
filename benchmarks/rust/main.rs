@@ -27,13 +27,13 @@ pub fn parse_plain_datetime(c: &mut Criterion) {
 
 pub fn parse_posix_tz(c: &mut Criterion) {
     c.bench_function("Parse POSIX TZ", |b| {
-        b.iter(|| posix::parse(black_box(b"PST8PDT,M3.2.0,M11.1.0")).unwrap())
+        b.iter(|| posix::Tz::parse(black_box(b"PST8PDT,M3.2.0,M11.1.0")).unwrap())
     });
 }
 
 pub fn offset_for_local_time(c: &mut Criterion) {
     const TZ_AMS: &[u8] = include_bytes!("../../tests/tzif/Amsterdam.tzif");
-    let tzif = tzif::parse(TZ_AMS, "Europe/Amsterdam").unwrap();
+    let tzif = tzif::parse(TZ_AMS, None).unwrap();
 
     c.bench_function("offset for local", |b| {
         let t = EpochSecs::new(1719946800).unwrap();

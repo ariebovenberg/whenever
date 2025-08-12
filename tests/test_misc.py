@@ -1,9 +1,11 @@
 import json
+import os
 import sys
 from inspect import signature
 from itertools import chain
 from time import sleep
 from typing import no_type_check
+from unittest.mock import patch
 
 import pytest
 
@@ -24,6 +26,7 @@ from whenever import (
     ZonedDateTime,
     hours,
     patch_current_time,
+    reset_system_tz,
     seconds,
 )
 
@@ -332,11 +335,34 @@ def test_pydantic():
         assert False, "Expected ValidationError not raised"
 
 
-def test_system_tz_file_and_key():
-    from whenever._tz.system import tz_file_and_key
+def test_get_system_tz():
+    from whenever._tz.system import get_tz
 
-    (file, key) = tz_file_and_key()
-    # We're not going to assert much here. Just ensure no crash.
-    assert isinstance(file, str) or file is None
-    assert isinstance(key, str) or key is None
-    assert file or key, "At least one of file or key should be set"
+    (tz_type, tz_value) = get_tz()
+    assert tz_type in (0, 1, 2)
+    assert isinstance(tz_value, str)
+
+
+@system_tz_ams()
+def test_reset_system_tz():
+    plain = PlainDateTime(2020, 1, 1)
+    d1 = plain.assume_system_tz()
+    assert d1.tz == "Europe/Amsterdam"
+
+    with patch.dict(os.environ, {"TZ": "America/New_York"}):
+        # The system timezone is now set to America/New_York
+        # ...but the cache isn't updated until we call reset_system_tz()
+        assert plain.assume_system_tz().tz == "Europe/Amsterdam"
+
+        reset_system_tz()
+        d2 = plain.assume_system_tz()
+        assert d2.tz == "America/New_York"
+
+        # old instances should not change
+        assert d1.tz == "Europe/Amsterdam"
+
+    # Cache not yet updated again...
+    assert plain.assume_system_tz().tz == "America/New_York"
+
+    reset_system_tz()
+    assert plain.assume_system_tz().tz == "Europe/Amsterdam"

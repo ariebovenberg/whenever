@@ -4,13 +4,8 @@ use pyo3_ffi::*;
 
 use crate::{
     classes::{
-        date::Date,
-        date_delta::DateDelta,
-        datetime_delta::set_units_from_kwargs,
-        instant::Instant,
-        offset_datetime::{OffsetDateTime, check_ignore_dst_kwarg},
-        time::Time,
-        zoned_datetime::ZonedDateTime,
+        date::Date, date_delta::DateDelta, datetime_delta::set_units_from_kwargs, instant::Instant,
+        offset_datetime::check_ignore_dst_kwarg, time::Time, zoned_datetime::ZonedDateTime,
     },
     common::{ambiguity::*, parse::Scan, round, scalar::*},
     docstrings as doc,
@@ -731,9 +726,9 @@ fn assume_tz(
         str_later,
     )?
     .unwrap_or(Disambiguate::Compatible);
-    let tzif = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
-    ZonedDateTime::resolve_using_disambiguate(date, time, tzif, dis, exc_repeated, exc_skipped)?
-        .to_obj(zoned_datetime_type)
+    let tz = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
+    ZonedDateTime::resolve_using_disambiguate(date, time, &tz, dis, exc_repeated, exc_skipped)?
+        .assume_tz_unchecked(tz, zoned_datetime_type)
 }
 
 fn assume_system_tz(
@@ -743,9 +738,10 @@ fn assume_system_tz(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let &State {
-        py_api,
+        exc_tz_notfound,
+        ref tz_store,
+        zoned_datetime_type,
         str_disambiguate,
-        system_datetime_type,
         exc_skipped,
         exc_repeated,
         str_compatible,
@@ -762,21 +758,16 @@ fn assume_system_tz(
     let dis = Disambiguate::from_only_kwarg(
         kwargs,
         str_disambiguate,
-        "assume_system_tz",
+        "assume_tz",
         str_compatible,
         str_raise,
         str_earlier,
         str_later,
-    )?;
-    OffsetDateTime::resolve_system_tz_using_disambiguate(
-        py_api,
-        date,
-        time,
-        dis.unwrap_or(Disambiguate::Compatible),
-        exc_repeated,
-        exc_skipped,
     )?
-    .to_obj(system_datetime_type)
+    .unwrap_or(Disambiguate::Compatible);
+    let tz = tz_store.get_system_tz(exc_tz_notfound)?;
+    ZonedDateTime::resolve_using_disambiguate(date, time, &tz, dis, exc_repeated, exc_skipped)?
+        .assume_tz_unchecked(tz, zoned_datetime_type)
 }
 
 fn replace_date(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn {

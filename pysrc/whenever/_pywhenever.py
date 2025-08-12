@@ -72,6 +72,7 @@ from weakref import WeakValueDictionary
 # These are relatively expensive imports, so we delay importing them
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
+
     from ._tz import PosixTz
 
 __all__ = [
@@ -4263,7 +4264,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             f"{_format_date(self._py_dt, basic)}{sep}"
             f"{_format_time(self._py_dt, self._nanos, unit, basic)}"
             f"{_format_offset(self._py_dt.utcoffset(), basic)}"  # type: ignore[arg-type]
-            f"[{self._py_dt.tzinfo.key}]"  # type: ignore[union-attr]
+            + _tz_suffix(self._py_dt.tzinfo)  # type: ignore[arg-type]
         )
 
     @classmethod
@@ -5208,12 +5209,13 @@ def _unpkl_local(data: bytes) -> PlainDateTime:
 
 
 def _tz_err_display(tz: Union[PosixTz, ZoneInfo]) -> str:
-    try:
-        return f"timezone '{tz.key}'"  # type: ignore[union-attr]
-    except AttributeError:
+    if (key := getattr(tz, "key", None)) is None:
         # Either a PosixTz or a ZoneInfo without a key (i.e. file-based).
         # This is only the case for the system timezone.
         return "the system timezone (with unknown ID)"
+    else:
+        # A ZoneInfo with a key, which is the common case.
+        return f"timezone '{key}'"
 
 
 class RepeatedTime(ValueError):
@@ -6168,34 +6170,31 @@ def reset_system_tz() -> None:
 
 def _get_system_tz() -> Union[PosixTz, ZoneInfo]:
     # delayed import since they're relatively expensive
+    from zoneinfo import ZoneInfo
+
     from ._tz import posix, system
 
-    try:
-        tz_env = os.environ["TZ"]
-    except KeyError:
-        tz_file, tz_name = system.tz_file_and_key()
-
-        if tz_name:
-            return _get_tz(tz_name)
-        else:
-            assert tz_file, "No system tz file found"
-            with open(tz_file, "rb") as f:
-                return ZoneInfo.from_file(f)
-    else:
-        if tz_env.startswith(":"):
-            tz_env = tz_env[1:]  # strip leading colon
-
-        # case 1: absolute path
-        if tz_env.startswith("/"):
-            # TODO: symlink traversal
-            with open(tz_env, "rb") as f:
-                return ZoneInfo.from_file(f)
+    tz_type, tz_value = system.get_tz()
+    if tz_type == 0:  # ZoneInfo key
+        return _get_tz(tz_value)
+    elif tz_type == 2:  # ZoneInfo or PosixTz
         try:
-            # case 2: zoneinfo key
-            return _get_tz(tz_env)
+            return _get_tz(tz_value)
         except TimeZoneNotFoundError:
-            # case 3: posix TZ string
-            return posix.parse(tz_env)
+            # If the key is not found, it might be a PosixTz string
+            return posix.parse(tz_value)
+    else:  # file-based timezone (no key)
+        assert tz_type == 1, "Unknown system timezone type"
+        with open(tz_value, "rb") as f:
+            return ZoneInfo.from_file(f)
+
+
+def _tz_suffix(tz: Union[PosixTz, ZoneInfo]) -> str:
+    """Returns the suffix for the timezone, e.g. 'Europe/Paris'."""
+    if (key := getattr(tz, "key", None)) is None:
+        return ""
+    else:
+        return f"[{key}]"
 
 
 # We expose the public members in the root of the module.

@@ -9,7 +9,7 @@ use std::{cmp::Ordering, fmt};
 pub struct TZif {
     // The IANA tz ID (e.g. "Europe/Amsterdam"). Not actually parsed from the file,
     // but essential because in our case we always associate a tzif file with a tz ID.
-    pub(crate) key: String,
+    pub(crate) key: Option<String>,
     // The following two fields are used to map UTC time to local time and vice versa.
     // For UTC -> local, the transition is unambiguous and simple.
     // Read Vec(X, Y) as "FROM time X onwards (expressed in epoch seconds) the offset is Y".
@@ -78,6 +78,16 @@ impl TZif {
                 Ambiguity::Unambiguous(offset)
             })
     }
+
+    // TODO: not a nice API
+    pub(crate) fn from_posix(posix_tz: posix::Tz) -> Self {
+        Self {
+            key: None,
+            offsets_by_utc: vec![],
+            offsets_by_local: vec![],
+            end: Some(posix_tz),
+        }
+    }
 }
 
 /// Bisect the array of (time, value) pairs to find the INDEX at the given time.
@@ -100,7 +110,7 @@ pub(crate) fn bisect<T>(arr: &[(EpochSecs, T)], x: EpochSecs) -> Option<usize> {
     (left != arr.len()).then_some(left)
 }
 
-pub fn parse(s: &[u8], key: &str) -> ParseResult<TZif> {
+pub fn parse(s: &[u8], key: Option<&str>) -> ParseResult<TZif> {
     let mut scan = Scan::new(s);
     let header = parse_header(&mut scan).ok_or(ErrorCause::Header)?;
     parse_content(header, &mut scan, key)
@@ -192,7 +202,7 @@ fn parse_offset_indices(header: Header, s: &mut Scan) -> Option<Vec<u8>> {
     Some(result)
 }
 
-fn parse_content(header: Header, s: &mut Scan, key: &str) -> ParseResult<TZif> {
+fn parse_content(header: Header, s: &mut Scan, key: Option<&str>) -> ParseResult<TZif> {
     let (transition_times, header) = if header.version >= 2 {
         s.take(
             (header.timecnt * 5
@@ -236,7 +246,7 @@ fn parse_content(header: Header, s: &mut Scan, key: &str) -> ParseResult<TZif> {
         return Err(ErrorCause::Body);
     }
     Ok(TZif {
-        key: key.to_string(),
+        key: key.map(String::from),
         offsets_by_local: local_transitions(&offsets_by_utc),
         offsets_by_utc,
         end,
@@ -277,7 +287,7 @@ fn load_transitions(
 }
 
 fn parse_posix_tz(s: &mut Scan) -> Option<posix::Tz> {
-    posix::parse(match s.take_until(|b| b == b'\n') {
+    posix::Tz::parse(match s.take_until(|b| b == b'\n') {
         Some(x) => x,
         None => s.rest(),
     })
@@ -393,12 +403,12 @@ mod tests {
     #[test]
     fn test_no_magic_header() {
         // empty
-        assert_eq!(parse(b"", "Foo").unwrap_err(), ErrorCause::Header);
+        assert_eq!(parse(b"", None).unwrap_err(), ErrorCause::Header);
         // too small
-        assert_eq!(parse(b"TZi", "Foo").unwrap_err(), ErrorCause::Header);
+        assert_eq!(parse(b"TZi", None).unwrap_err(), ErrorCause::Header);
         // wrong magic value
         assert_eq!(
-            parse(b"this-is-not-tzif-file", "Foo").unwrap_err(),
+            parse(b"this-is-not-tzif-file", None).unwrap_err(),
             ErrorCause::Header
         );
     }
@@ -430,9 +440,9 @@ mod tests {
     #[test]
     fn test_utc() {
         const TZ_UTC: &[u8] = include_bytes!("../../tests/tzif/UTC.tzif");
-        let tzif = parse(TZ_UTC, "UTC").unwrap();
+        let tzif = parse(TZ_UTC, None).unwrap();
         assert_eq!(tzif.offsets_by_utc, &[]);
-        assert_eq!(tzif.end, posix::parse(b"UTC0"));
+        assert_eq!(tzif.end, posix::Tz::parse(b"UTC0"));
 
         assert_eq!(
             tzif.offset_for_instant(2216250001.try_into().unwrap()),
@@ -447,9 +457,9 @@ mod tests {
     #[test]
     fn test_fixed() {
         const TZ_FIXED: &[u8] = include_bytes!("../../tests/tzif/GMT-13.tzif");
-        let tzif = parse(TZ_FIXED, "GMT-13").unwrap();
+        let tzif = parse(TZ_FIXED, None).unwrap();
         assert_eq!(tzif.offsets_by_utc, &[]);
-        assert_eq!(tzif.end, posix::parse(b"<+13>-13"));
+        assert_eq!(tzif.end, posix::Tz::parse(b"<+13>-13"));
 
         assert_eq!(
             tzif.offset_for_instant(2216250001.try_into().unwrap()),
@@ -465,7 +475,7 @@ mod tests {
     fn test_v1() {
         // A TZif file using the old version 1 format.
         const TZ_V1: &[u8] = include_bytes!("../../tests/tzif/Paris_v1.tzif");
-        let tzif = parse(TZ_V1, "Europe/Paris").unwrap();
+        let tzif = parse(TZ_V1, None).unwrap();
         assert!(!tzif.offsets_by_utc.is_empty());
         assert_eq!(tzif.end, None);
 
@@ -480,7 +490,7 @@ mod tests {
     #[test]
     fn test_clamp_transitions_to_range() {
         const TZ_OUT_OF_RANGE: &[u8] = include_bytes!("../../tests/tzif/Sydney_widerange.tzif");
-        let tzif = parse(TZ_OUT_OF_RANGE, "Australia/Sydney").unwrap();
+        let tzif = parse(TZ_OUT_OF_RANGE, None).unwrap();
         assert!(!tzif.offsets_by_utc.is_empty());
         assert_eq!(
             tzif.offset_for_instant(EpochSecs::MIN),
@@ -495,8 +505,8 @@ mod tests {
     #[test]
     fn test_last_transition_is_gap() {
         const TZ_HON: &[u8] = include_bytes!("../../tests/tzif/Honolulu.tzif");
-        let tzif = parse(TZ_HON, "Pacific/Honolulu").unwrap();
-        assert_eq!(tzif.end, posix::parse(b"HST10"));
+        let tzif = parse(TZ_HON, None).unwrap();
+        assert_eq!(tzif.end, posix::Tz::parse(b"HST10"));
         assert_eq!(
             tzif.offset_for_instant(EpochSecs::new_unchecked(-712150201)),
             Offset::new_unchecked(-37800),
@@ -535,8 +545,8 @@ mod tests {
     #[test]
     fn test_typical_tzif_example() {
         const TZ_AMS: &[u8] = include_bytes!("../../tests/tzif/Amsterdam.tzif");
-        let tzif = parse(TZ_AMS, "Europe/Amsterdam").unwrap();
-        assert_eq!(tzif.end, posix::parse(b"CET-1CEST,M3.5.0,M10.5.0/3"));
+        let tzif = parse(TZ_AMS, None).unwrap();
+        assert_eq!(tzif.end, posix::Tz::parse(b"CET-1CEST,M3.5.0,M10.5.0/3"));
 
         let utc_cases = &[
             // before the entire range
@@ -674,7 +684,7 @@ mod tests {
                 panic!("invalid tz key: {tzname}");
             }
 
-            if let Err(err) = parse(&bytes, "") {
+            if let Err(err) = parse(&bytes, None) {
                 panic!("failed to parse TZif file {path:?}: {err}");
             }
         }

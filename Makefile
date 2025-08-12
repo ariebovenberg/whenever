@@ -45,7 +45,7 @@ ci-lint: check-readme
 	isort --check pysrc/ tests/ generate_docstrings.py
 	cargo fmt -- --check
 	env PYTHONPATH=pysrc/ slotscheck pysrc
-	cargo clippy -- -D warnings
+	cargo clippy --all-targets --all-features -- -D warnings
 
 .PHONY: clean
 clean:

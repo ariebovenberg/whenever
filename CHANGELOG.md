@@ -2,22 +2,31 @@
 
 ## 0.9.0 (2025-??-??)
 
+**Breaking Changes**
+
+- `SystemDateTime` has been removed and its functionality is now integrated into `ZonedDateTime`.
+  **Migration:**
+  - `SystemDateTime.now()` can be replaced with `Instant.now().to_system_tz()`.
+  - `to_system_tz()` and `assume_system_tz()` now return a `ZonedDateTime` instead of a `SystemDateTime`.
+
+  **Rationale:** The `SystemDateTime` class was an awkward corner of the API, 
+  creating inconsistencies and overlapping with `ZonedDateTime`. 
+  This change unifies the API, providing a single, consistent way to handle 
+  all timezone-aware datetimes. The original use cases are fully supported 
+  by the improved `ZonedDateTime`.
+
 **Added**
 
-- The output of `format_common_iso()` methods can now be customized. You can
-  now specify the separator, unit, and whether to use the "basic" or "extended"
-  format.
+- Customizable ISO 8601 Formatting: The `format_common_iso()` methods on all 
+  datetime objects now accept parameters to customize the output. 
+  You can control the `separator` (e.g., `'T'` or `' '`), 
+  the smallest second `unit` (from `hour` to `nanosecond`), 
+  and toggle the `basic` (compact) or `extended` format.
 
-**Breaking changes**
+**Fixed**
 
-- `SystemDateTime` has been removed. System timezone handling is now
-  done with `ZonedDateTime`.
-
-  **Rationale**: The `SystemDateTime` class was always an awkward corner of the API,
-  mostly driven by the fact that the Python standard library was used to power it.
-  It's semantics became increasingly overlapping `ZonedDateTime`, while also
-  being inconsistent with it.
-  The new design fixes this, while supporting the same use cases as before.
+- Resolved a memory leak in the Rust extension where timezone objects that 
+  were no longer in use were not properly evicted from the cache.
 
 ## 0.8.9 (2025-09-21)
 

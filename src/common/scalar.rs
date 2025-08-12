@@ -883,11 +883,11 @@ mod tests {
             (*b".123000000", 4)
         );
         assert_eq!(
-            SubSecNanos::new_unchecked(023_456_009).format_iso(),
+            SubSecNanos::new_unchecked(23_456_009).format_iso(),
             (*b".023456009", 10)
         );
         assert_eq!(
-            SubSecNanos::new_unchecked(000_000_080).format_iso(),
+            SubSecNanos::new_unchecked(80).format_iso(),
             (*b".000000080", 9)
         );
         assert_eq!(
