@@ -87,28 +87,6 @@ pub(crate) const REPEATEDTIME: &CStr = c"\
 A datetime is repeated in a timezone, e.g. because of DST";
 pub(crate) const SKIPPEDTIME: &CStr = c"\
 A datetime is skipped in a timezone, e.g. because of DST";
-pub(crate) const SYSTEMDATETIME: &CStr = c"\
-Represents a time in the system timezone.
-It is similar to ``OffsetDateTime``,
-but it knows about the system timezone and its DST transitions.
-
-Example
--------
->>> # 8:00 in the system timezone—Paris in this case
->>> alarm = SystemDateTime(2024, 3, 31, hour=6)
-SystemDateTime(2024-03-31 06:00:00+02:00)
->>> # Conversion based on Paris' offset
->>> alarm.instant()
-Instant(2024-03-31 04:00:00Z)
->>> # DST-safe arithmetic
->>> bedtime = alarm - hours(8)
-SystemDateTime(2024-03-30 21:00:00+01:00)
-
-Attention
----------
-To use this type properly, read more about `ambiguity <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
-and `working with the system timezone <https://whenever.rtfd.io/en/latest/overview.html#the-system-timezone>`_.
-";
 pub(crate) const TIME: &CStr = c"\
 Time of day without a date component
 
@@ -194,6 +172,8 @@ pub(crate) const NANOSECONDS: &CStr = c"\
 Create a :class:`TimeDelta` with the given number of nanoseconds.
 ``nanoseconds(1) == TimeDelta(nanoseconds=1)``
 ";
+pub(crate) const RESET_SYSTEM_TZ: &CStr = c"\
+Resets the cached system timezone to the current system timezone.";
 pub(crate) const SECONDS: &CStr = c"\
 Create a :class:`TimeDelta` with the given number of seconds.
 ``seconds(1) == TimeDelta(seconds=1)``
@@ -345,7 +325,7 @@ Date(2020-03-01)
 pub(crate) const DATE_TODAY_IN_SYSTEM_TZ: &CStr = c"\
 Get the current date in the system's local timezone.
 
-Alias for ``SystemDateTime.now().date()``.
+Alias for ``Instant.now().to_system_tz().date()``.
 
 Example
 -------
@@ -927,7 +907,7 @@ assume_system_tz($self, disambiguate='compatible')
 --
 
 Assume the datetime is in the system timezone,
-creating a ``SystemDateTime``.
+creating a ``ZonedDateTime``.
 
 Note
 ----
@@ -942,7 +922,7 @@ Example
 >>> d = PlainDateTime(2020, 8, 15, 23, 12)
 >>> # assuming system timezone is America/New_York
 >>> d.assume_system_tz(disambiguate=\"raise\")
-SystemDateTime(2020-08-15 23:12:00-04:00)
+ZonedDateTime(2020-08-15 23:12:00-04:00[America/New_York])
 ";
 pub(crate) const PLAINDATETIME_ASSUME_TZ: &CStr = c"\
 assume_tz($self, tz, /, disambiguate='compatible')
@@ -1073,168 +1053,6 @@ Or, if you don't know the timezone and accept potentially incorrect results
 during DST transitions, pass ``ignore_dst=True``.
 
 See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_
-for more information.
-";
-pub(crate) const SYSTEMDATETIME_ADD: &CStr = c"\
-add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
---
-
-Add a time amount to this datetime.
-
-Important
----------
-Shifting a ``SystemDateTime`` with **calendar units** (e.g. months, weeks)
-may result in an ambiguous time (e.g. during a DST transition).
-Therefore, when adding calendar units, it's recommended to
-specify how to handle such a situation using the ``disambiguate`` argument.
-
-See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
-for more information.
-";
-pub(crate) const SYSTEMDATETIME_DAY_LENGTH: &CStr = c"\
-The duration between the start of the current day and the next.
-This is usually 24 hours, but may be different due to timezone transitions.
-
-Example
--------
->>> # with system configured in Europe/Paris
->>> SystemDateTime(2020, 8, 15).day_length()
-TimeDelta(24:00:00)
->>> SystemDateTime(2023, 10, 29).day_length()
-TimeDelta(25:00:00)
-
-Note
-----
-This method may give a different result after a change to the system timezone.
-";
-pub(crate) const SYSTEMDATETIME_FROM_PY_DATETIME: &CStr = c"\
-Create an instance from a standard library ``datetime`` object.
-The datetime must be aware.
-
-The inverse of the ``py_datetime()`` method.
-";
-pub(crate) const SYSTEMDATETIME_FROM_TIMESTAMP: &CStr = c"\
-Create an instance from a UNIX timestamp (in seconds).
-
-The inverse of the ``timestamp()`` method.
-";
-pub(crate) const SYSTEMDATETIME_FROM_TIMESTAMP_MILLIS: &CStr = c"\
-Create an instance from a UNIX timestamp (in milliseconds).
-
-The inverse of the ``timestamp_millis()`` method.
-";
-pub(crate) const SYSTEMDATETIME_FROM_TIMESTAMP_NANOS: &CStr = c"\
-Create an instance from a UNIX timestamp (in nanoseconds).
-
-The inverse of the ``timestamp_nanos()`` method.
-";
-pub(crate) const SYSTEMDATETIME_IS_AMBIGUOUS: &CStr = c"\
-Whether the date and time-of-day is ambiguous, e.g. due to a DST transition.
-
-Example
--------
->>> # with system configured in Europe/Paris
->>> SystemDateTime(2020, 8, 15, 23).is_ambiguous()
-False
->>> SystemDateTime(2023, 10, 29, 2, 15).is_ambiguous()
-True
-
-Note
-----
-This method may give a different result after a change to the system timezone.
-";
-pub(crate) const SYSTEMDATETIME_NOW: &CStr = c"\
-Create an instance from the current time in the system timezone.";
-pub(crate) const SYSTEMDATETIME_PARSE_COMMON_ISO: &CStr = c"\
-Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
-
-Important
----------
-The offset isn't adjusted to the current system timezone.
-See `the docs <https://whenever.rtfd.io/en/latest/overview.html#the-system-timezone>`_
-for more information.
-";
-pub(crate) const SYSTEMDATETIME_REPLACE: &CStr = c"\
-replace($self, /, *, year=None, month=None, weeks=0, day=None, hour=None, minute=None, second=None, nanosecond=None, tz=None, disambiguate)
---
-
-Construct a new instance with the given fields replaced.
-
-Important
----------
-Replacing fields of a SystemDateTime may result in an ambiguous time
-(e.g. during a DST transition). Therefore, it's recommended to
-specify how to handle such a situation using the ``disambiguate`` argument.
-
-See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
-for more information.
-";
-pub(crate) const SYSTEMDATETIME_REPLACE_DATE: &CStr = c"\
-replace_date($self, date, /, disambiguate=None)
---
-
-Construct a new instance with the date replaced.
-
-See the ``replace()`` method for more information.
-";
-pub(crate) const SYSTEMDATETIME_REPLACE_TIME: &CStr = c"\
-replace_time($self, time, /, disambiguate=None)
---
-
-Construct a new instance with the time replaced.
-
-See the ``replace()`` method for more information.
-";
-pub(crate) const SYSTEMDATETIME_ROUND: &CStr = c"\
-round($self, unit='second', increment=1, mode='half_even')
---
-
-Round the datetime to the specified unit and increment.
-Different rounding modes are available.
-
-Examples
---------
->>> d = SystemDateTime(2020, 8, 15, 23, 24, 18)
->>> d.round(\"day\")
-SystemDateTime(2020-08-16 00:00:00+02:00)
->>> d.round(\"minute\", increment=15, mode=\"floor\")
-SystemDateTime(2020-08-15 23:15:00+02:00)
-
-Notes
------
-* In the rare case that rounding results in an ambiguous time,
-  the offset is preserved if possible.
-  Otherwise, the time is resolved according to the \"compatible\" strategy.
-* Rounding in \"day\" mode may be affected by DST transitions.
-  i.e. on 23-hour days, 11:31 AM is rounded up.
-* This method has similar behavior to the ``round()`` method of
-  Temporal objects in JavaScript.
-* The result of this method may change if the system timezone changes.
-";
-pub(crate) const SYSTEMDATETIME_START_OF_DAY: &CStr = c"\
-The start of the current calendar day.
-
-This is almost always at midnight the same day, but may be different
-for timezones which transition at—and thus skip over—midnight.
-
-Note
-----
-This method may give a different result after a change to the system timezone.
-";
-pub(crate) const SYSTEMDATETIME_SUBTRACT: &CStr = c"\
-subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
---
-
-Subtract a time amount from this datetime.
-
-Important
----------
-Shifting a ``SystemDateTime`` with **calendar units** (e.g. months, weeks)
-may result in an ambiguous time (e.g. during a DST transition).
-Therefore, when adding calendar units, it's recommended to
-specify how to handle such a situation using the ``disambiguate`` argument.
-
-See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
 for more information.
 ";
 pub(crate) const TIME_FORMAT_COMMON_ISO: &CStr = c"\
@@ -1765,7 +1583,7 @@ Convert to an OffsetDateTime that represents the same moment in time.
 If not offset is given, the offset is taken from the original datetime.
 ";
 pub(crate) const EXACTTIME_TO_SYSTEM_TZ: &CStr = c"\
-Convert to a SystemDateTime that represents the same moment in time.";
+Convert to a ZonedDateTime of the system's timezone.";
 pub(crate) const EXACTTIME_TO_TZ: &CStr = c"\
 Convert to a ZonedDateTime that represents the same moment in time.
 

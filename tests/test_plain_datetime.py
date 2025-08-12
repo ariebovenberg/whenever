@@ -26,10 +26,12 @@ from whenever import (
 )
 
 from .common import (
+    AMS_TZ_POSIX,
     AlwaysEqual,
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
+    system_tz,
     system_tz_ams,
 )
 
@@ -141,89 +143,91 @@ class TestAssumeTz:
 
 
 class TestAssumeSystemTz:
-    @system_tz_ams()
-    def test_typical(self):
-        assert (
-            PlainDateTime(2020, 8, 15, 23)
-            .assume_system_tz(disambiguate="raise")
-            .exact_eq(ZonedDateTime(2020, 8, 15, 23, tz="Europe/Amsterdam"))
-        )
+    @pytest.mark.parametrize(
+        "tz",
+        [
+            "Europe/Amsterdam",
+            AMS_TZ_POSIX,
+        ],
+    )
+    def test_typical(self, tz):
+        with system_tz(tz):
+            dt = PlainDateTime(2020, 8, 15, 23)
 
-    @system_tz_ams()
-    def test_ambiguous(self):
-        d = PlainDateTime(2023, 10, 29, 2, 15)
+            with system_tz(tz):
+                zdt = dt.assume_system_tz(disambiguate="raise")
+                assert isinstance(zdt, ZonedDateTime)
+                assert zdt.to_plain() == dt
+                assert zdt.offset == hours(2)
 
-        with pytest.raises(RepeatedTime, match="02:15.*Amsterdam"):
-            d.assume_system_tz(disambiguate="raise")
+                if tz == "Europe/Amsterdam":
+                    assert zdt.tz == "Europe/Amsterdam"
 
-        assert d.assume_system_tz(disambiguate="earlier").exact_eq(
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                disambiguate="earlier",
-                tz="Europe/Amsterdam",
-            )
-        )
-        assert d.assume_system_tz(disambiguate="compatible").exact_eq(
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                disambiguate="earlier",
-                tz="Europe/Amsterdam",
-            )
-        )
-        assert d.assume_system_tz(disambiguate="later").exact_eq(
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                disambiguate="later",
-                tz="Europe/Amsterdam",
-            )
-        )
+    @pytest.mark.parametrize(
+        "tz",
+        [
+            "Europe/Amsterdam",
+            AMS_TZ_POSIX,
+        ],
+    )
+    def test_ambiguous(self, tz):
+        with system_tz(tz):
+            d = PlainDateTime(2023, 10, 29, 2, 15)
 
-    @system_tz_ams()
-    def test_nonexistent(self):
-        d = PlainDateTime(2023, 3, 26, 2, 15)
+            with pytest.raises(RepeatedTime, match="02:15.*is repeated"):
+                d.assume_system_tz(disambiguate="raise")
 
-        with pytest.raises(SkippedTime, match="02:15.*Amsterdam"):
-            d.assume_system_tz(disambiguate="raise")
+            zdt1 = d.assume_system_tz(disambiguate="earlier")
+            assert isinstance(zdt1, ZonedDateTime)
+            assert zdt1.to_plain() == d
+            assert zdt1.offset == hours(2)
 
-        assert d.assume_system_tz(disambiguate="earlier").exact_eq(
-            ZonedDateTime(
-                2023,
-                3,
-                26,
-                2,
-                15,
-                disambiguate="earlier",
-                tz="Europe/Amsterdam",
-            )
-        )
-        assert d.assume_system_tz(disambiguate="later").exact_eq(
-            ZonedDateTime(
-                2023, 3, 26, 2, 15, disambiguate="later", tz="Europe/Amsterdam"
-            )
-        )
-        assert d.assume_system_tz(disambiguate="compatible").exact_eq(
-            ZonedDateTime(
-                2023,
-                3,
-                26,
-                2,
-                15,
-                disambiguate="compatible",
-                tz="Europe/Amsterdam",
-            )
-        )
+            # posix TZ string cannot be checked
+            if tz == "Europe/Amsterdam":
+                assert zdt1.tz == "Europe/Amsterdam"
+
+            assert d.assume_system_tz(disambiguate="compatible").exact_eq(zdt1)
+
+            zdt2 = d.assume_system_tz(disambiguate="later")
+            assert isinstance(zdt2, ZonedDateTime)
+            assert zdt2.to_plain() == d
+            assert zdt2.offset == hours(1)
+
+            # posix TZ string cannot be checked
+            if tz == "Europe/Amsterdam":
+                assert zdt2.tz == "Europe/Amsterdam"
+
+    @pytest.mark.parametrize(
+        "tz",
+        [
+            "Europe/Amsterdam",
+            AMS_TZ_POSIX,
+        ],
+    )
+    def test_nonexistent(self, tz):
+        with system_tz(tz):
+            d = PlainDateTime(2023, 3, 26, 2, 15)
+
+            with pytest.raises(SkippedTime, match="02:15.*is skipped"):
+                d.assume_system_tz(disambiguate="raise")
+
+            zdt1 = d.assume_system_tz(disambiguate="earlier")
+            assert isinstance(zdt1, ZonedDateTime)
+            assert zdt1.to_plain() == d.subtract(hours=1, ignore_dst=True)
+            assert zdt1.offset == hours(1)
+            # posix TZ string cannot be checked
+            if tz == "Europe/Amsterdam":
+                assert zdt1.tz == "Europe/Amsterdam"
+
+            zdt2 = d.assume_system_tz(disambiguate="later")
+            assert isinstance(zdt2, ZonedDateTime)
+            assert zdt2.to_plain() == d.add(hours=1, ignore_dst=True)
+            assert zdt2.offset == hours(2)
+            # posix TZ string cannot be checked
+            if tz == "Europe/Amsterdam":
+                assert zdt2.tz == "Europe/Amsterdam"
+
+            assert d.assume_system_tz(disambiguate="compatible").exact_eq(zdt2)
 
 
 def test_immutable():

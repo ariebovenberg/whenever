@@ -1,8 +1,15 @@
 import os
 from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import patch
 
 from whenever import reset_system_tz
+
+# The POSIX TZ string for the Amsterdam timezone.
+AMS_TZ_POSIX = "CET-1CEST,M3.5.0,M10.5.0/3"
+# A non-standard path to the Amsterdam timezone file, that can't be traced
+# back to the zoneinfo database.
+AMS_TZ_RAWFILE = str(Path(__file__).parent / "tzif" / "Amsterdam.tzif")
 
 
 class AlwaysEqual:
