@@ -6158,7 +6158,7 @@ _CACHED_SYSTEM_TZ: PosixTz | ZoneInfo | None = None
 def _system_tz() -> Union[PosixTz, ZoneInfo]:
     global _CACHED_SYSTEM_TZ
     if _CACHED_SYSTEM_TZ is None:
-        _CACHED_SYSTEM_TZ = _get_system_tz()
+        _CACHED_SYSTEM_TZ = _get_system_tz()  # pragma: no cover
     return _CACHED_SYSTEM_TZ
 
 
