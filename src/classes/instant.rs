@@ -594,11 +594,10 @@ fn difference(cls: HeapType<Instant>, inst_a: Instant, obj_b: PyObj) -> PyReturn
 fn to_tz(cls: HeapType<Instant>, slf: Instant, tz_obj: PyObj) -> PyReturn {
     let &State {
         zoned_datetime_type,
-        exc_tz_notfound,
         ref tz_store,
         ..
     } = cls.state();
-    let tz = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
+    let tz = tz_store.obj_get(tz_obj)?;
     slf.to_tz(tz, zoned_datetime_type)
 }
 
@@ -620,12 +619,11 @@ fn to_fixed_offset(cls: HeapType<Instant>, slf: Instant, args: &[PyObj]) -> PyRe
 
 fn to_system_tz(cls: HeapType<Instant>, slf: Instant) -> PyReturn {
     let &State {
-        exc_tz_notfound,
         zoned_datetime_type,
         ref tz_store,
         ..
     } = cls.state();
-    let tz = tz_store.get_system_tz(exc_tz_notfound)?;
+    let tz = tz_store.get_system_tz()?;
     slf.to_tz(tz, zoned_datetime_type)
 }
 

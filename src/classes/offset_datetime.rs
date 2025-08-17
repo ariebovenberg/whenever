@@ -464,22 +464,20 @@ fn to_fixed_offset(cls: HeapType<OffsetDateTime>, slf_obj: PyObj, args: &[PyObj]
 fn to_tz(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime, tz_obj: PyObj) -> PyReturn {
     let &State {
         zoned_datetime_type,
-        exc_tz_notfound,
         ref tz_store,
         ..
     } = cls.state();
-    let tz = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
+    let tz = tz_store.obj_get(tz_obj)?;
     slf.instant().to_tz(tz, zoned_datetime_type)
 }
 
 fn to_system_tz(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     let &State {
-        exc_tz_notfound,
         zoned_datetime_type,
         ref tz_store,
         ..
     } = cls.state();
-    let tz = tz_store.get_system_tz(exc_tz_notfound)?;
+    let tz = tz_store.get_system_tz()?;
     slf.instant().to_tz(tz, zoned_datetime_type)
 }
 
