@@ -329,7 +329,6 @@ fn __new__(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
     let &State {
         exc_repeated,
         exc_skipped,
-        exc_tz_notfound,
         str_compatible,
         str_raise,
         str_earlier,
@@ -366,7 +365,7 @@ fn __new__(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
         return raise_type_err("tz argument is required");
     };
 
-    let tz = tz_store.obj_get(PyObj::wrap(tz), exc_tz_notfound)?;
+    let tz = tz_store.obj_get(PyObj::wrap(tz))?;
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time =
         Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?;
@@ -592,12 +591,8 @@ fn exact_eq(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, obj_b: PyObj) -> P
 }
 
 fn to_tz(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, tz_obj: PyObj) -> PyReturn {
-    let &State {
-        exc_tz_notfound,
-        ref tz_store,
-        ..
-    } = cls.state();
-    let tz_new = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
+    let &State { ref tz_store, .. } = cls.state();
+    let tz_new = tz_store.obj_get(tz_obj)?;
     slf.instant().to_tz(tz_new, cls)
 }
 
@@ -607,7 +602,6 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     };
     let &State {
         zoned_datetime_type,
-        exc_tz_notfound,
         ref tz_store,
         ..
     } = state;
@@ -632,7 +626,7 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
             subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
         },
         Offset::new_unchecked(unpack_one!(packed, i32)),
-        tz_store.obj_get(tz_obj, exc_tz_notfound)?,
+        tz_store.obj_get(tz_obj)?,
         zoned_datetime_type,
     )
 }
@@ -745,12 +739,8 @@ fn to_fixed_offset(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, args: &[PyO
 }
 
 fn to_system_tz(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
-    let &State {
-        exc_tz_notfound,
-        ref tz_store,
-        ..
-    } = cls.state();
-    let tz_new = tz_store.get_system_tz(exc_tz_notfound)?;
+    let &State { ref tz_store, .. } = cls.state();
+    let tz_new = tz_store.get_system_tz()?;
     slf.instant().to_tz(tz_new, cls)
 }
 
@@ -973,7 +963,6 @@ fn replace(
         exc_skipped,
         str_tz,
         str_disambiguate,
-        exc_tz_notfound,
         str_year,
         str_month,
         str_day,
@@ -1006,7 +995,7 @@ fn replace(
 
     handle_kwargs("replace", kwargs, |key, value, eq| {
         if eq(key, str_tz) {
-            let tz_new = tz_store.obj_get(value, exc_tz_notfound)?;
+            let tz_new = tz_store.obj_get(value)?;
             // If we change timezones, forget about trying to preserve the offset.
             // Just use compatible disambiguation.
             if tz_new.as_ptr() != tz.as_ptr() {
@@ -1053,19 +1042,14 @@ fn replace(
 
 fn now(cls: HeapType<ZonedDateTime>, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
-    let &State {
-        ref tz_store,
-        exc_tz_notfound,
-        ..
-    } = state;
-    let tz = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
+    let &State { ref tz_store, .. } = state;
+    let tz = tz_store.obj_get(tz_obj)?;
     state.time_ns()?.to_tz(tz, cls)
 }
 
 fn from_py_datetime(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
     let &State {
         ref zoneinfo_type,
-        exc_tz_notfound,
         ref tz_store,
         ..
     } = cls.state();
@@ -1087,7 +1071,7 @@ fn from_py_datetime(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
         raise_value_err(doc::ZONEINFO_NO_KEY_MSG)?;
     };
 
-    let tz = tz_store.obj_get(key.borrow(), exc_tz_notfound)?;
+    let tz = tz_store.obj_get(*key)?;
     // We use the timestamp() to convert into a ZonedDateTime
     // Alternatives not chosen:
     // - resolve offset from date/time -> fold not respected, instant may be different
@@ -1185,7 +1169,6 @@ fn check_from_timestamp_args_return_tz<'a>(
     kwargs: &mut IterKwargs,
     &State {
         ref tz_store,
-        exc_tz_notfound,
         str_tz,
         ..
     }: &'a State,
@@ -1194,7 +1177,7 @@ fn check_from_timestamp_args_return_tz<'a>(
     match (args, kwargs.next()) {
         (&[_], Some((key, value))) if kwargs.len() == 1 => {
             if key.py_eq(str_tz)? {
-                tz_store.obj_get(value, exc_tz_notfound)
+                tz_store.obj_get(value)
             } else {
                 raise_type_err(format!(
                     "{fname}() got an unexpected keyword argument {key}"
@@ -1286,11 +1269,10 @@ fn parse_common_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
         .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?;
     let &State {
         exc_invalid_offset,
-        exc_tz_notfound,
         ref tz_store,
         ..
     } = cls.state();
-    let tz = tz_store.get(tzstr, exc_tz_notfound)?;
+    let tz = tz_store.get(tzstr)?;
     match offset {
         OffsetInIsoString::Some(offset) => {
             // Make sure the offset is valid

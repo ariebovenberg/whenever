@@ -358,11 +358,12 @@ pub(crate) struct TzStore {
     // We cache the system timezone here, since it's expensive to determine.
     // The pointer represents a strong reference to a `TZif` object.
     system_tz_cache: UnsafeCell<Option<TzPtr>>,
-    // TODO: store exc_notfound exception!
+    // This reference is borrowed from the module, which outlives this store.
+    exc_notfound: PyObj,
 }
 
 impl TzStore {
-    pub(crate) fn new() -> PyResult<Self> {
+    pub(crate) fn new(exc_notfound: PyObj) -> PyResult<Self> {
         Ok(Self {
             cache: Cache::new(),
             tzdata_path: get_tzdata_path()?,
@@ -370,6 +371,7 @@ impl TzStore {
             // because this is determined in Python code.
             paths: Vec::with_capacity(4),
             system_tz_cache: UnsafeCell::new(None),
+            exc_notfound,
         })
     }
 
@@ -377,24 +379,23 @@ impl TzStore {
     /// If not already cached, reads the file from the filesystem.
     /// Returns a *borrowed* reference to the `TZif` object.
     /// Its reference count is *not* incremented.
-    pub(crate) fn get(&self, key: &str, exc_notfound: PyObj) -> PyResult<TzHandle<'_>> {
+    pub(crate) fn get(&self, key: &str) -> PyResult<TzHandle<'_>> {
         let ptr = self
             .cache
             .get_or_load(key, || self.load_tzif(key))
-            .ok_or_else_raise(exc_notfound.as_ptr(), || {
+            .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
                 format!("No time zone found with key {key}")
             })?;
         Ok(TzHandle::Ptr(ptr, self))
     }
 
     /// The `get` function, but accepts a Python Object as the key.
-    pub(crate) fn obj_get(&self, tz_obj: PyObj, exc_notfound: PyObj) -> PyResult<TzHandle<'_>> {
+    pub(crate) fn obj_get(&self, tz_obj: PyObj) -> PyResult<TzHandle<'_>> {
         self.get(
             tz_obj
                 .cast::<PyStr>()
                 .ok_or_type_err("tz must be a string")?
                 .as_str()?,
-            exc_notfound,
         )
     }
 
@@ -431,7 +432,7 @@ impl TzStore {
         }
     }
 
-    pub(crate) fn get_system_tz(&self, exc_notfound: PyObj) -> PyResult<TzHandle<'_>> {
+    pub(crate) fn get_system_tz(&self) -> PyResult<TzHandle<'_>> {
         // Check if we already have the system timezone cached
         let ptr = match unsafe { *self.system_tz_cache.get() } {
             Some(p) => {
@@ -439,7 +440,7 @@ impl TzStore {
                 p
             }
             None => {
-                let p = self.determine_system_tz(exc_notfound)?;
+                let p = self.determine_system_tz()?;
                 unsafe { *self.system_tz_cache.get() = Some(p) };
                 p
             }
@@ -447,9 +448,9 @@ impl TzStore {
         Ok(TzHandle::Ptr(ptr, self))
     }
 
-    pub(crate) fn reset_system_tz(&self, exc_notfound: PyObj) -> PyResult<()> {
+    pub(crate) fn reset_system_tz(&self) -> PyResult<()> {
         // Clear the cached system timezone
-        let new_ptr = self.determine_system_tz(exc_notfound)?;
+        let new_ptr = self.determine_system_tz()?;
         let old_ptr = unsafe { *self.system_tz_cache.get() };
         old_ptr.inspect(|ptr| {
             ptr.decref_with_cleanup(|| self);
@@ -460,7 +461,7 @@ impl TzStore {
 
     /// Get a pointer to what is currently considered the system timezone.
     /// The pointer is already a strong reference.
-    fn determine_system_tz(&self, exc_notfound: PyObj) -> PyResult<TzPtr> {
+    fn determine_system_tz(&self) -> PyResult<TzPtr> {
         const ERR_MSG: &str = "get_tz() gave unexpected result";
         let tz_tuple = import(c"whenever._tz.system")?
             .getattr(c"get_tz")?
@@ -485,7 +486,7 @@ impl TzStore {
             0 => self
                 .cache
                 .get_or_load(tz_value, || self.load_tzif(tz_value))
-                .ok_or_else_raise(exc_notfound.as_ptr(), || {
+                .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
                     format!("No time zone found with key {tz_value}")
                 }),
             // type 1: Path to a TZif file
@@ -493,7 +494,7 @@ impl TzStore {
                 let path = PathBuf::from(tz_value);
                 let tzif = self
                     .read_tzif_at_path(&path, None)
-                    .ok_or_else_raise(exc_notfound.as_ptr(), || {
+                    .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
                         format!("No time zone found at path {path:?}")
                     })?;
                 Ok(TzPtr::new(tzif))
@@ -508,7 +509,7 @@ impl TzStore {
                         let tz = Tz::parse(tz_value.as_bytes())?;
                         Some(TzPtr::new(TZif::from_posix(tz)))
                     })
-                    .ok_or_else_raise(exc_notfound.as_ptr(), || {
+                    .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
                         format!("No time zone found with key or posix TZ string {tz_value}")
                     })
             }
