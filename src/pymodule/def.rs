@@ -23,7 +23,6 @@ use crate::{
         tzconf::*,
         utils::*,
     },
-    // TODO: better import path
     tz::store::TzStore,
 };
 use core::{
@@ -264,7 +263,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     )?;
 
     let time_patch = Patch::new()?;
-    let tz_store = TzStore::new()?;
+    let tz_store = TzStore::new(*exc_tz_notfound)?;
 
     // Only write the state once everything is initialized,
     // to ensure we don't leak references to the above.

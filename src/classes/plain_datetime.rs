@@ -703,7 +703,6 @@ fn assume_tz(
         zoned_datetime_type,
         exc_skipped,
         exc_repeated,
-        exc_tz_notfound,
         ref tz_store,
         ..
     } = cls.state();
@@ -726,7 +725,7 @@ fn assume_tz(
         str_later,
     )?
     .unwrap_or(Disambiguate::Compatible);
-    let tz = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
+    let tz = tz_store.obj_get(tz_obj)?;
     ZonedDateTime::resolve_using_disambiguate(date, time, &tz, dis, exc_repeated, exc_skipped)?
         .assume_tz_unchecked(tz, zoned_datetime_type)
 }
@@ -738,7 +737,6 @@ fn assume_system_tz(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let &State {
-        exc_tz_notfound,
         ref tz_store,
         zoned_datetime_type,
         str_disambiguate,
@@ -765,7 +763,7 @@ fn assume_system_tz(
         str_later,
     )?
     .unwrap_or(Disambiguate::Compatible);
-    let tz = tz_store.get_system_tz(exc_tz_notfound)?;
+    let tz = tz_store.get_system_tz()?;
     ZonedDateTime::resolve_using_disambiguate(date, time, &tz, dis, exc_repeated, exc_skipped)?
         .assume_tz_unchecked(tz, zoned_datetime_type)
 }
