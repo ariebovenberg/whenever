@@ -13,7 +13,7 @@ pub(crate) enum Disambiguate {
 pub enum Ambiguity {
     Unambiguous(Offset),
     Gap(Offset, Offset),  // (earlier, later) occurrence, (a > b)
-    Fold(Offset, Offset), // (earlier, later) occurrence, (a > b)
+    Fold(Offset, Offset), // (later, earlier) occurrence, (a > b)
 }
 
 impl Disambiguate {

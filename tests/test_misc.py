@@ -143,6 +143,9 @@ def test_text_signature():
         signature(m)  # raises ValueError if invalid
 
 
+# TODO: test __module__
+
+
 @no_type_check
 def test_pydantic():
     try:

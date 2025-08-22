@@ -1,15 +1,21 @@
+"""Posix TZ string parser and timezone implementation.
+
+This is pretty much a reimplementation of the Tust version located in the
+`src/tz/posix.rs` file.
+"""
+
 from __future__ import annotations
 
 import calendar
-from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone, tzinfo
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional, Union
+
+from .common import Ambiguity, Fold, Gap, Unambiguous
 
 DEFAULT_DST = 3600
 DEFAULT_RULE_TIME = 2 * 3600
 MAX_OFFSET = 24 * 3600
 Weekday = int  # Different than usual! Sunday=0, Saturday=6
-
 UTC = timezone.utc
 
 
@@ -22,41 +28,15 @@ def epoch_for_date(d: date) -> int:
     return int(datetime.combine(d, time.min).replace(tzinfo=UTC).timestamp())
 
 
-@dataclass(frozen=True)
-class Unambiguous:
-    offset: int
-
-    def fold(self, fold: int) -> timedelta:
-        return timedelta(seconds=self.offset)
-
-
-@dataclass(frozen=True)
-class Gap:
-    earlier: int
-    later: int
-
-    def fold(self, fold: int) -> timedelta:
-        return timedelta(seconds=self.earlier if fold == 1 else self.later)
-
-
-@dataclass(frozen=True)
-class Fold:
-    earlier: int
-    later: int
-
-    def fold(self, fold: int) -> timedelta:
-        return timedelta(seconds=self.later if fold == 1 else self.earlier)
-
-
-Ambiguity = Union[Unambiguous, Gap, Fold]
-
-# --- Rule ---
-
-
-@dataclass(frozen=True)
 class LastWeekday:
     month: int
     weekday: Weekday
+
+    __slots__ = ("month", "weekday")
+
+    def __init__(self, month: int, weekday: Weekday):
+        self.month = month
+        self.weekday = weekday
 
     def apply(self, year: int) -> date:
         last_day_any_weekday = calendar.monthrange(year, self.month)[1]
@@ -71,12 +51,26 @@ class LastWeekday:
         )
         return date(year, self.month, last_weekday)
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, LastWeekday):
+            return NotImplemented
+        return self.month == other.month and self.weekday == other.weekday
 
-@dataclass(frozen=True)
+    def __repr__(self) -> str:
+        return f"LastWeekday({self.month}, {self.weekday})"
+
+
 class NthWeekday:
     month: int
     nth: int
     weekday: Weekday
+
+    __slots__ = ("month", "nth", "weekday")
+
+    def __init__(self, month: int, nth: int, weekday: Weekday):
+        self.month = month
+        self.nth = nth
+        self.weekday = weekday
 
     def apply(self, year: int) -> date:
         first_day_any_weekday = date(year, self.month, 1)
@@ -87,19 +81,44 @@ class NthWeekday:
         )
         return first_day_any_weekday.replace(day=first_weekday)
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, NthWeekday):
+            return NotImplemented
+        return (
+            self.month == other.month
+            and self.nth == other.nth
+            and self.weekday == other.weekday
+        )
 
-@dataclass(frozen=True)
+
 class DayOfYear:
     nth: int  # 1-365, 366 for leap years
+
+    __slots__ = ("nth",)
+
+    def __init__(self, nth: int):
+        self.nth = nth
 
     def apply(self, year: int) -> date:
         day = min(self.nth, 365 + calendar.isleap(year))
         return date(year, 1, 1) + timedelta(day - 1)
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, DayOfYear):
+            return NotImplemented
+        return self.nth == other.nth
 
-@dataclass(frozen=True)
+    def __repr__(self) -> str:
+        return f"DayOfYear({self.nth})"
+
+
 class JulianDayOfYear:
     nth: int  # 1-365
+
+    __slots__ = ("nth",)
+
+    def __init__(self, nth: int):
+        self.nth = nth
 
     def apply(self, year: int) -> date:
         day = self.nth
@@ -107,24 +126,57 @@ class JulianDayOfYear:
             day += 1
         return date(year, 1, 1) + timedelta(day - 1)
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, JulianDayOfYear):
+            return NotImplemented
+        return self.nth == other.nth
+
+    def __repr__(self) -> str:
+        return f"JulianDayOfYear({self.nth})"
+
 
 Rule = Union[LastWeekday, NthWeekday, DayOfYear, JulianDayOfYear]
 
 
-@dataclass(frozen=True)
 class Dst:
     offset: int
     start: tuple[Rule, int]
     end: tuple[Rule, int]
 
+    __slots__ = ("offset", "start", "end")
 
-@dataclass(frozen=True)
-class Tz(tzinfo):
+    def __init__(
+        self, offset: int, start: tuple[Rule, int], end: tuple[Rule, int]
+    ):
+        self.offset = offset
+        self.start = start
+        self.end = end
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Dst):
+            return NotImplemented
+        return (
+            self.offset == other.offset
+            and self.start == other.start
+            and self.end == other.end
+        )
+
+    def __repr__(self) -> str:
+        return f"Dst(offset={self.offset}, start={self.start}, end={self.end})"
+
+
+class TzStr:
     std: int
-    dst_: Optional[Dst]
+    dst: Optional[Dst]  # TODO rename
+
+    __slots__ = ("std", "dst")
+
+    def __init__(self, std: int, dst: Optional[Dst] = None):
+        self.std = std
+        self.dst = dst
 
     def offset_for_instant(self, epoch: int) -> int:
-        if not self.dst_:
+        if not self.dst:
             return self.std
         # Theoretically, the epoch year could be different from the
         # local year. However, in practice, we can assume that the year of
@@ -132,9 +184,9 @@ class Tz(tzinfo):
         # This is what Python's `zoneinfo` does anyway...
         year = year_for_epoch(epoch + self.std)
 
-        start_rule, start_time = self.dst_.start
-        end_rule, end_time = self.dst_.end
-        dst_offset = self.dst_.offset
+        start_rule, start_time = self.dst.start
+        end_rule, end_time = self.dst.end
+        dst_offset = self.dst.offset
 
         start = epoch_for_date(start_rule.apply(year)) + start_time - self.std
         end = epoch_for_date(end_rule.apply(year)) + end_time - dst_offset
@@ -153,13 +205,13 @@ class Tz(tzinfo):
 
     # NOTE: `epoch` is the datetime in seconds since the LOCAL epoch.
     def ambiguity_for_local(self, epoch: int) -> Ambiguity:
-        if not self.dst_:
+        if not self.dst:
             return Unambiguous(self.std)
         year = year_for_epoch(epoch)
 
-        start_rule, start_time = self.dst_.start
-        end_rule, end_time = self.dst_.end
-        dst_offset = self.dst_.offset
+        start_rule, start_time = self.dst.start
+        end_rule, end_time = self.dst.end
+        dst_offset = self.dst.offset
 
         start = epoch_for_date(start_rule.apply(year)) + start_time
         end = epoch_for_date(end_rule.apply(year)) + end_time
@@ -196,67 +248,55 @@ class Tz(tzinfo):
             else:
                 return Unambiguous(off1)
 
-    # Two overrides of the tzinfo interface.
-    # We don't implement `tzname` or `dst` since we don't use them.
-    # This class is only meant for internal use anyway.
-    def utcoffset(self, dt: Optional[datetime]) -> Optional[timedelta]:
-        if dt is None:
-            return None  # pragma: no cover
-        return self.ambiguity_for_local(
-            int(dt.replace(tzinfo=UTC).timestamp())
-        ).fold(dt.fold)
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, TzStr):
+            return NotImplemented
+        return self.std == other.std and self.dst == other.dst
 
-    def fromutc(self, dt: datetime) -> datetime:
-        offset = timedelta(
-            seconds=self.offset_for_instant(
-                int(dt.replace(tzinfo=UTC).timestamp())
-            )
-        )
-        local = dt + offset
-        if self.utcoffset(local) != offset:
-            local = local.replace(fold=1)
-        return local
+    def __repr__(self) -> str:
+        if not self.dst:
+            return f"TzStr(std={self.std})"
+        else:
+            return f"TzStr(std={self.std}, dst={self.dst})"
 
-    def dst(self, _: Optional[datetime]) -> Optional[timedelta]:
-        raise NotImplementedError()
-
-    def tzname(self, _: Optional[datetime]) -> Optional[str]:
-        raise NotImplementedError()
-
-
-def parse(s: str) -> Tz:
-    if not s.isascii():
-        raise ValueError("Invalid POSIX TZ string: non-ASCII characters found")
-
-    s = skip_tzname(s)
-    std, s = parse_offset(s)
-
-    # If there's nothing else, it's a fixed offset without DST
-    if not s:
-        return Tz(std, dst_=None)
-
-    s = skip_tzname(s)
-
-    if s[:1] == ",":
-        # No offset given, the default is std + 1hr
-        s = s[1:]
-        dst = std + DEFAULT_DST
-        if dst >= MAX_OFFSET:
+    @classmethod
+    def parse(cls, s: str) -> TzStr:
+        if not s.isascii():
             raise ValueError(
-                "Invalid POSIX TZ string: DST offset out of range"
+                "Invalid POSIX TZ string: non-ASCII characters found"
             )
-    else:
-        dst, s = parse_offset(s)
+
+        s = skip_tzname(s)
+        std, s = parse_offset(s)
+
+        # If there's nothing else, it's a fixed offset without DST
+        if not s:
+            return cls(std, dst=None)
+
+        s = skip_tzname(s)
+
+        if s[:1] == ",":
+            # No offset given, the default is std + 1hr
+            s = s[1:]
+            dst = std + DEFAULT_DST
+            if dst >= MAX_OFFSET:
+                raise ValueError(
+                    "Invalid POSIX TZ string: DST offset out of range"
+                )
+        else:
+            dst, s = parse_offset(s)
+            s = expect_char(s, ",")
+
+        start, s = parse_rule(s)
         s = expect_char(s, ",")
+        end, s = parse_rule(s)
 
-    start, s = parse_rule(s)
-    s = expect_char(s, ",")
-    end, s = parse_rule(s)
-
-    if s:
-        raise ValueError(f"Invalid POSIX TZ string: unexpected trailing '{s}'")
-    else:
-        return Tz(std, Dst(dst, start, end))
+        if s:
+            raise ValueError(
+                f"Invalid POSIX TZ string: unexpected trailing '{s}'"
+            )
+        else:
+            return cls(std, Dst(dst, start, end))
 
 
 def skip_tzname(s: str) -> str:
