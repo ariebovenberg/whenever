@@ -32,8 +32,6 @@
 #   - It makes it easier to understand the code
 #   - It's sometimes necessary for the type checker
 #   - It saves some overhead
-# - We don't make use of certain "obvious" modules like re or pathlib.
-#   This is to keep the import time down.
 from __future__ import annotations
 
 import enum
@@ -49,7 +47,6 @@ from datetime import (
     timedelta as _timedelta,
     timezone as _timezone,
 )
-from io import BytesIO
 from math import fmod
 from struct import pack, unpack
 from time import time_ns
@@ -58,9 +55,9 @@ from typing import (
     Any,
     ClassVar,
     Literal,
-    Mapping,
     NewType,
     NoReturn,
+    Optional,
     TypeVar,
     Union,
     cast,
@@ -69,11 +66,14 @@ from typing import (
 )
 from weakref import WeakValueDictionary
 
-# These are relatively expensive imports, so we delay importing them
-if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
-
-    from ._tz import PosixTz
+from ._tz import (
+    Disambiguate,
+    Fold,
+    Gap,
+    TimeZone,
+    Unambiguous,
+    system,
+)
 
 __all__ = [
     # Date and time
@@ -129,7 +129,6 @@ _MAX_DELTA_MONTHS = 9999 * 12
 _MAX_DELTA_DAYS = 9999 * 366
 _MAX_DELTA_NANOS = _MAX_DELTA_DAYS * 24 * 3_600_000_000_000
 _UNSET = object()
-_PY312 = sys.version_info >= (3, 12)
 _PY311 = sys.version_info >= (3, 11)
 _Nanos = int  # type alias for subsecond nanoseconds
 
@@ -3026,16 +3025,18 @@ class _ExactTime(_BasicConversions):
         Raises
         ------
         ~whenever.TimeZoneNotFoundError
-            If the timezone ID is not found in the system's timezone database.
+            If the timezone ID is not found in the timezone database.
         """
+        _tz = _get_tz(tz)
         return ZonedDateTime._from_py_unchecked(
-            self._py_dt.astimezone(_get_tz(tz)), self._nanos
+            _from_epoch(int(self._py_dt.timestamp()), _tz), self._nanos, _tz
         )
 
     def to_system_tz(self) -> ZonedDateTime:
         """Convert to a ZonedDateTime of the system's timezone."""
+        tz = _system_tz()
         return ZonedDateTime._from_py_unchecked(
-            self._py_dt.astimezone(_system_tz()), self._nanos
+            _from_epoch(int(self._py_dt.timestamp()), tz), self._nanos, tz
         )
 
     def exact_eq(self: _T, other: _T, /) -> bool:
@@ -3066,12 +3067,10 @@ class _ExactTime(_BasicConversions):
             self._py_dt,  # type: ignore[attr-defined]
             self._py_dt.utcoffset(),  # type: ignore[attr-defined]
             self._nanos,  # type: ignore[attr-defined]
-            self._py_dt.tzinfo,  # type: ignore[attr-defined]
         ) == (
             other._py_dt,  # type: ignore[attr-defined]
             other._py_dt.utcoffset(),  # type: ignore[attr-defined]
             other._nanos,  # type: ignore[attr-defined]
-            other._py_dt.tzinfo,  # type: ignore[attr-defined]
         )
 
     def difference(
@@ -4182,7 +4181,7 @@ class ZonedDateTime(_ExactAndLocalTime):
     `ambiguity in timezones <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_.
     """
 
-    __slots__ = ()
+    __slots__ = ("_tz",)
 
     def __init__(
         self,
@@ -4206,20 +4205,21 @@ class ZonedDateTime(_ExactAndLocalTime):
                 minute,
                 second,
                 0,
-                zone := _get_tz(tz),
             ),
-            zone,
+            (_tz := _get_tz(tz)),
             disambiguate,
         )
         if nanosecond < 0 or nanosecond >= 1_000_000_000:
             raise ValueError(f"nanosecond out of range: {nanosecond}")
         self._nanos = nanosecond
+        self._tz = _tz
 
     @classmethod
     def now(cls, tz: str, /) -> ZonedDateTime:
         """Create an instance from the current time in the given timezone."""
         secs, nanos = divmod(time_ns(), 1_000_000_000)
-        return cls._from_py_unchecked(_fromtimestamp(secs, _get_tz(tz)), nanos)
+        _tz = _get_tz(tz)
+        return cls._from_py_unchecked(_from_epoch(secs, _tz), nanos, _tz)
 
     def format_common_iso(
         self,
@@ -4264,7 +4264,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             f"{_format_date(self._py_dt, basic)}{sep}"
             f"{_format_time(self._py_dt, self._nanos, unit, basic)}"
             f"{_format_offset(self._py_dt.utcoffset(), basic)}"  # type: ignore[arg-type]
-            + _tz_suffix(self._py_dt.tzinfo)  # type: ignore[arg-type]
+            + _tz_suffix(self._tz.key)
         )
 
     @classmethod
@@ -4286,14 +4286,17 @@ class ZonedDateTime(_ExactAndLocalTime):
         return cls._from_py_unchecked(*_zdt_from_iso(s))
 
     @classmethod
-    def from_timestamp(cls, i: int, /, *, tz: str) -> ZonedDateTime:
+    def from_timestamp(
+        cls, i: Union[int, float], /, *, tz: str
+    ) -> ZonedDateTime:
         """Create an instance from a UNIX timestamp (in seconds).
 
         The inverse of the ``timestamp()`` method.
         """
         secs, fract = divmod(i, 1)
+        _tz = _get_tz(tz)
         return cls._from_py_unchecked(
-            _fromtimestamp(secs, _get_tz(tz)), int(fract * 1_000_000_000)
+            _from_epoch(int(secs), _tz), int(fract * 1_000_000_000), _tz
         )
 
     @classmethod
@@ -4305,8 +4308,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, millis = divmod(i, 1_000)
+        _tz = _get_tz(tz)
         return cls._from_py_unchecked(
-            _fromtimestamp(secs, _get_tz(tz)), millis * 1_000_000
+            _from_epoch(secs, _tz), millis * 1_000_000, _tz
         )
 
     @classmethod
@@ -4318,7 +4322,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
-        return cls._from_py_unchecked(_fromtimestamp(secs, _get_tz(tz)), nanos)
+        _tz = _get_tz(tz)
+        return cls._from_py_unchecked(_from_epoch(secs, _tz), nanos, _tz)
 
     # FUTURE: optional `disambiguate` to override fold?
     @classmethod
@@ -4343,11 +4348,12 @@ class ZonedDateTime(_ExactAndLocalTime):
         if d.tzinfo.key is None:
             raise ValueError(ZONEINFO_NO_KEY_MSG)
 
-        # This ensures skipped times are disambiguated according to the fold.
-        d = d.astimezone(_UTC).astimezone(_get_tz(d.tzinfo.key))
-        return cls._from_py_unchecked(
-            _strip_subclasses(d.replace(microsecond=0)), d.microsecond * 1_000
-        )
+        epoch = int(d.timestamp())
+        _tz = _get_tz(d.tzinfo.key)
+        offset = _tz.offset_for_instant(int(epoch))
+        # Recalculating from epoch ensures we shift times within a gap
+        dt = _from_epoch(int(epoch), _tz).astimezone(_mk_fixed_tzinfo(offset))
+        return cls._from_py_unchecked(dt, d.microsecond * 1_000, _tz)
 
     def replace_date(
         self, date: Date, /, disambiguate: Disambiguate | None = None
@@ -4358,13 +4364,13 @@ class ZonedDateTime(_ExactAndLocalTime):
         """
         return self._from_py_unchecked(
             _resolve_ambiguity(
-                _datetime.combine(date._py_date, self._py_dt.timetz()),
-                # mypy doesn't know that tzinfo is always a ZoneInfo here
-                self._py_dt.tzinfo,  # type: ignore[arg-type]
+                _datetime.combine(date._py_date, self._py_dt.time()),
+                self._tz,
                 # mypy doesn't know that offset is never None here
                 disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
             ),
             self._nanos,
+            self._tz,
         )
 
     def replace_time(
@@ -4376,15 +4382,13 @@ class ZonedDateTime(_ExactAndLocalTime):
         """
         return self._from_py_unchecked(
             _resolve_ambiguity(
-                _datetime.combine(
-                    self._py_dt, time._py_time, self._py_dt.tzinfo
-                ),
-                # mypy doesn't know that tzinfo is always a ZoneInfo here
-                self._py_dt.tzinfo,  # type: ignore[arg-type]
+                _datetime.combine(self._py_dt, time._py_time),
+                self._tz,
                 # mypy doesn't know that offset is never None here
                 disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
             ),
             time._nanos,
+            self._tz,
         )
 
     def replace(
@@ -4407,32 +4411,34 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         _check_invalid_replace_kwargs(kwargs)
         try:
-            tz = kwargs.pop("tz")
+            tzid = kwargs.pop("tz")
         except KeyError:
-            pass
+            tz = self._tz
         else:
-            kwargs["tzinfo"] = zoneinfo_new = _get_tz(tz)
-            if zoneinfo_new is not self._py_dt.tzinfo:
+            tz = _get_tz(tzid)
+            # Don't attempt to preserve offset when changing tz
+            if tz is not self._tz:
                 disambiguate = disambiguate or "compatible"
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
 
         return self._from_py_unchecked(
             _resolve_ambiguity(
-                self._py_dt.replace(**kwargs),
-                kwargs.get("tzinfo", self._py_dt.tzinfo),  # type: ignore[arg-type]
+                self._py_dt.replace(**kwargs, tzinfo=None),
+                tz,
                 # mypy doesn't know that offset is never None here
                 disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
             ),
             nanos,
+            tz,
         )
 
     @property
-    def tz(self) -> str:
+    def tz(self) -> Optional[str]:
         """The timezone ID"""
-        return self._py_dt.tzinfo.key  # type: ignore[union-attr,no-any-return]
+        return self._tz.key
 
     def __hash__(self) -> int:
-        return hash((self._py_dt.astimezone(_UTC), self._nanos))
+        return hash((self._py_dt, self._nanos))
 
     def __add__(self, delta: Delta) -> ZonedDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
@@ -4444,12 +4450,11 @@ class ZonedDateTime(_ExactAndLocalTime):
             delta_secs, nanos = divmod(
                 delta._time_part._total_ns + self._nanos, 1_000_000_000
             )
+            new_epoch = int(self._py_dt.timestamp()) + delta_secs
             return self._from_py_unchecked(
-                (
-                    self._py_dt.astimezone(_UTC)
-                    + _timedelta(seconds=delta_secs)
-                ).astimezone(self._py_dt.tzinfo),
+                _from_epoch(new_epoch, self._tz),
                 nanos,
+                self._tz,
             )
         elif isinstance(delta, DateDelta):
             return self.replace_date(self.date() + delta)
@@ -4580,9 +4585,14 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> ZonedDateTime(2023, 10, 29, 2, 15, tz="Europe/Amsterdam").is_ambiguous()
         True
         """
-        # We make use of a quirk of the standard library here:
-        # ambiguous datetimes are never equal across timezones
-        return self._py_dt.astimezone(_UTC) != self._py_dt
+        return (
+            type(
+                self._tz.ambiguity_for_local(
+                    int(self._py_dt.replace(tzinfo=_UTC).timestamp())
+                )
+            )
+            is not Unambiguous
+        )
 
     def day_length(self) -> TimeDelta:
         """The duration between the start of the current day and the next.
@@ -4595,13 +4605,18 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam").day_length()
         TimeDelta(25:00:00)
         """
-        midnight = _datetime.combine(
-            self._py_dt.date(), _time(), self._py_dt.tzinfo
+        midnight_naive = _datetime.combine(self._py_dt.date(), _time.min)
+        midnight = _resolve_ambiguity(
+            midnight_naive,
+            self._tz,
+            "compatible",
         )
-        next_midnight = midnight + _timedelta(days=1)
-        return TimeDelta.from_py_timedelta(
-            next_midnight.astimezone(_UTC) - midnight.astimezone(_UTC)
+        next_midnight = _resolve_ambiguity(
+            midnight_naive + _timedelta(days=1),
+            self._tz,
+            "compatible",
         )
+        return TimeDelta.from_py_timedelta(next_midnight - midnight)
 
     def start_of_day(self) -> ZonedDateTime:
         """The start of the current calendar day.
@@ -4609,11 +4624,14 @@ class ZonedDateTime(_ExactAndLocalTime):
         This is almost always at midnight the same day, but may be different
         for timezones which transition at—and thus skip over—midnight.
         """
-        midnight = _datetime.combine(
-            self._py_dt.date(), _time(), self._py_dt.tzinfo
-        )
         return self._from_py_unchecked(
-            midnight.astimezone(_UTC).astimezone(self._py_dt.tzinfo), 0
+            _resolve_ambiguity(
+                _datetime.combine(self._py_dt.date(), _time.min),
+                self._tz,
+                "compatible",
+            ),
+            0,
+            self._tz,
         )
 
     def round(
@@ -4664,28 +4682,49 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
         return self._from_py_unchecked(
             _resolve_ambiguity_using_prev_offset(
-                rounded_local._py_dt.replace(tzinfo=self._py_dt.tzinfo),
+                rounded_local._py_dt,
                 self._py_dt.utcoffset(),  # type: ignore[arg-type]
+                self._tz,
             ),
             rounded_local._nanos,
+            self._tz,
         )
 
     def py_datetime(self) -> _datetime:
-        # We convert to UTC first, then to a *non* file based ZoneInfo.
-        # We don't just `replace()` the timezone, because in theory
-        # they could disagree about the offset. This ensures we keep the
-        # same moment in time.
-        # FUTURE: write a test for this (a bit complicated)
+        # We go through astimezone because, in theory, ZoneInfo could disagree
+        # with our offset. This ensures we keep the same moment in time.
+        # TODO: test system datetime
         from zoneinfo import ZoneInfo
 
+        key = self._tz.key
+        if key is None:
+            raise ValueError("TODO")
+
+        return self._py_dt.astimezone(ZoneInfo(key)).replace(
+            microsecond=self._nanos // 1_000,
+        )
+
+    # This override is technically incompatible, but it's not part of the public API
+    @classmethod
+    def _from_py_unchecked(
+        cls, d: _datetime, nanos: int, tz: TimeZone, /
+    ) -> ZonedDateTime:
+        assert not d.microsecond
+        assert 0 <= nanos < 1_000_000_000
+        self = _object_new(cls)
+        self._py_dt = d  # type: ignore[attr-defined]
+        self._nanos = nanos  # type: ignore[attr-defined]
+        self._tz = tz
+        return self
+
+    def exact_eq(self, other: ZonedDateTime, /) -> bool:
+        if type(other) is not type(self):
+            raise TypeError("exact_eq() requires same-type arguments")
         return (
-            self._py_dt.astimezone(_UTC)
-            .astimezone(
-                ZoneInfo(self._py_dt.tzinfo.key)  # type: ignore[union-attr]
-            )
-            .replace(
-                microsecond=self._nanos // 1_000,
-            )
+            self._py_dt == other._py_dt
+            and self._py_dt.tzinfo == other._py_dt.tzinfo
+            and self._nanos == other._nanos
+            and self._tz == other._tz
         )
 
     def __repr__(self) -> str:
@@ -4693,6 +4732,11 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
+        if (key := self._tz.key) is None:
+            raise ValueError(
+                # TODO message
+                "ZonedDateTime with unknown tz ID cannot be pickled"
+            )
         return (
             _unpkl_zoned,
             (
@@ -4702,7 +4746,7 @@ class ZonedDateTime(_ExactAndLocalTime):
                     self._nanos,
                     int(self._py_dt.utcoffset().total_seconds()),  # type: ignore[union-attr]
                 ),
-                self._py_dt.tzinfo.key,  # type: ignore[union-attr]
+                key,
             ),
         )
 
@@ -4711,17 +4755,13 @@ class ZonedDateTime(_ExactAndLocalTime):
 # constructor doesn't accept positional tz and fold arguments as
 # required by __reduce__.
 # Also, it allows backwards-compatible changes to the pickling format.
-def _unpkl_zoned(
-    data: bytes,
-    tz: str,
-) -> ZonedDateTime:
+def _unpkl_zoned(data: bytes, tzid: str) -> ZonedDateTime:
     *args, nanos, offset_secs = unpack("<HBBBBBil", data)
-    args += (0, _get_tz(tz))
+    # TODO: handle wrong offset value!
     return ZonedDateTime._from_py_unchecked(
-        _adjust_fold_to_offset(
-            _datetime(*args), _timedelta(seconds=offset_secs)
-        ),
+        _datetime(*args, tzinfo=_mk_fixed_tzinfo(offset_secs)),
         nanos,
+        _get_tz(tzid),
     )
 
 
@@ -5105,13 +5145,11 @@ class PlainDateTime(_LocalTime):
         >>> d.assume_tz("Europe/Amsterdam", disambiguate="raise")
         ZonedDateTime(2020-08-15 23:12:00+02:00[Europe/Amsterdam])
         """
+        _tz = _get_tz(tz)
         return ZonedDateTime._from_py_unchecked(
-            _resolve_ambiguity(
-                self._py_dt.replace(tzinfo=(zone := _get_tz(tz))),
-                zone,
-                disambiguate,
-            ),
+            _resolve_ambiguity(self._py_dt, _tz, disambiguate),
             self._nanos,
+            _tz,
         )
 
     def assume_system_tz(
@@ -5137,10 +5175,7 @@ class PlainDateTime(_LocalTime):
         """
         tz = _system_tz()
         return ZonedDateTime._from_py_unchecked(
-            _resolve_ambiguity(
-                self._py_dt.replace(tzinfo=tz), tz, disambiguate
-            ),
-            self._nanos,
+            _resolve_ambiguity(self._py_dt, tz, disambiguate), self._nanos, tz
         )
 
     def round(
@@ -5208,40 +5243,6 @@ def _unpkl_local(data: bytes) -> PlainDateTime:
     return PlainDateTime._from_py_unchecked(_datetime(*args), nanos)
 
 
-def _tz_err_display(tz: Union[PosixTz, ZoneInfo]) -> str:
-    if (key := getattr(tz, "key", None)) is None:
-        # Either a PosixTz or a ZoneInfo without a key (i.e. file-based).
-        # This is only the case for the system timezone.
-        return "the system timezone (with unknown ID)"
-    else:
-        # A ZoneInfo with a key, which is the common case.
-        return f"timezone '{key}'"
-
-
-class RepeatedTime(ValueError):
-    """A datetime is repeated in a timezone, e.g. because of DST"""
-
-    @classmethod
-    def _for_tz(
-        cls, d: _datetime, tz: Union[ZoneInfo, PosixTz]
-    ) -> RepeatedTime:
-        return cls(
-            f"{d.replace(tzinfo=None)} is repeated in {_tz_err_display(tz)}"
-        )
-
-
-class SkippedTime(ValueError):
-    """A datetime is skipped in a timezone, e.g. because of DST"""
-
-    @classmethod
-    def _for_tz(
-        cls, d: _datetime, tz: Union[ZoneInfo, PosixTz]
-    ) -> SkippedTime:
-        return cls(
-            f"{d.replace(tzinfo=None)} is skipped in {_tz_err_display(tz)}"
-        )
-
-
 class InvalidOffsetError(ValueError):
     """A string has an invalid offset for the given zone"""
 
@@ -5256,6 +5257,29 @@ class TimeZoneNotFoundError(ValueError):
     @classmethod
     def for_key(cls, key: str) -> TimeZoneNotFoundError:
         return cls(f"No time zone found for key: {key!r}")
+
+
+class RepeatedTime(ValueError):
+    """A datetime is repeated in a timezone, e.g. because of DST"""
+
+    @classmethod
+    def _for_tz(cls, d: _datetime, tzid: Optional[str]) -> RepeatedTime:
+        return cls(f"{d} is repeated in {_tzid_display(tzid)}")
+
+
+class SkippedTime(ValueError):
+    """A datetime is skipped in a timezone, e.g. because of DST"""
+
+    @classmethod
+    def _for_tz(cls, d: _datetime, tzid: Optional[str]) -> SkippedTime:
+        return cls(f"{d} is skipped in {_tzid_display(tzid)}")
+
+
+def _tzid_display(tzid: Optional[str]) -> str:
+    if tzid is None:
+        return "system timezone (with unknown ID)"
+    else:
+        return f"timezone '{tzid}'"
 
 
 _IGNORE_DST_SUGGESTION = (
@@ -5338,49 +5362,81 @@ To fix this, provide the correct IANA ID when you create the ZoneInfo object. \
 If the ID is truly unknown, you can use OffsetDateTime.from_py_datetime() as \
 an alternative, but be aware this is a lossy conversion that only preserves \
 the current UTC offset and discards future daylight saving rules. \
-Please note that a timezone abbreviation like 'CEST' from tzinfo.tzname() \
-is not a valid IANA ID and cannot be used here."""
+Please note that a timezone abbreviation like 'CEST' from datetime.tzname() \
+is not a valid IANA timezone ID and cannot be used here."""
+
+
+def _from_epoch(timestamp: int, tz: TimeZone) -> _datetime:
+    return _fromtimestamp(
+        timestamp, tz=_mk_fixed_tzinfo(tz.offset_for_instant(timestamp))
+    )
 
 
 def _resolve_ambiguity(
-    dt: _datetime,
-    zone: ZoneInfo | PosixTz,
-    disambiguate: Disambiguate | _timedelta,
+    dt: _datetime, tz: TimeZone, disambiguate: Disambiguate | _timedelta
 ) -> _datetime:
+    assert dt.tzinfo is None, "dt must be naive"
     if isinstance(disambiguate, _timedelta):
-        return _resolve_ambiguity_using_prev_offset(dt, disambiguate)
-    dt = dt.replace(fold=_as_fold(disambiguate))
-    dt_utc = dt.astimezone(_UTC)
-    # Non-existent times: they don't survive a UTC roundtrip
-    if dt_utc.astimezone(zone) != dt:
-        if disambiguate == "raise":
-            raise SkippedTime._for_tz(dt, zone)
-        elif disambiguate != "compatible":  # i.e. "earlier" or "later"
-            # In gaps, the relationship between
-            # fold and earlier/later is reversed
-            dt = dt.replace(fold=not dt.fold)
-        # Perform the normalisation, shifting away from non-existent times
-        dt = dt.astimezone(_UTC).astimezone(zone)
-    # Ambiguous times: they're never equal to other timezones
-    elif disambiguate == "raise" and dt_utc != dt:
-        raise RepeatedTime._for_tz(dt, zone)
-    return dt
+        return _resolve_ambiguity_using_prev_offset(dt, disambiguate, tz)
+    elif disambiguate not in ("compatible", "earlier", "later", "raise"):
+        raise ValueError(
+            "disambiguate must be 'compatible', 'earlier', 'later', or 'raise'"
+        )
+
+    ambiguity = tz.ambiguity_for_local(
+        int(dt.replace(tzinfo=_UTC).timestamp())
+    )
+    if isinstance(ambiguity, Unambiguous):
+        offset = ambiguity.offset
+    elif isinstance(ambiguity, Fold):
+        if disambiguate in ("compatible", "earlier"):
+            offset = ambiguity.before
+        elif disambiguate == "later":
+            offset = ambiguity.after
+        else:  # disambiguate == "raise"
+            raise RepeatedTime._for_tz(dt, tz.key)
+    else:  # isinstance(ambiguity, Gap):
+        if disambiguate in ("compatible", "later"):
+            offset = ambiguity.before  # TODO: rename
+            shift = ambiguity.before - ambiguity.after
+        elif disambiguate == "earlier":
+            offset = ambiguity.after
+            shift = ambiguity.after - ambiguity.before
+        else:  # disambiguate == "raise"
+            raise SkippedTime._for_tz(dt, tz.key)
+        # shift the datetime out of the gap
+        dt += _timedelta(seconds=shift)
+
+    resolved = dt.replace(tzinfo=_mk_fixed_tzinfo(offset))
+    # This ensures we raise an exception if the instant is out of range,
+    # even if the local time is valid.
+    resolved.astimezone(_UTC)
+    return resolved
 
 
 def _resolve_ambiguity_using_prev_offset(
-    dt: _datetime,
-    prev_offset: _timedelta,
+    dt: _datetime, prev_offset: _timedelta, tz: TimeZone
 ) -> _datetime:
-    if prev_offset == dt.utcoffset():
-        pass
-    elif prev_offset == dt.replace(fold=not dt.fold).utcoffset():
-        dt = dt.replace(fold=not dt.fold)
-    else:
-        # No offset match. Setting fold=0 adopts the 'compatible' strategy
-        dt = dt.replace(fold=0)
+    ambiguity = tz.ambiguity_for_local(
+        int(dt.replace(tzinfo=_UTC).timestamp())
+    )
+    offset = int(prev_offset.total_seconds())
+    if isinstance(ambiguity, Unambiguous):
+        offset = ambiguity.offset
+    elif isinstance(ambiguity, Fold):
+        # If the offset is already valid, there's nothing to do
+        # otherwise, always use the earlier offset
+        if ambiguity.after != offset:
+            offset = ambiguity.before
+    elif isinstance(ambiguity, Gap):
+        if ambiguity.before == offset:
+            shift = offset - ambiguity.before
+        else:
+            offset = ambiguity.after
+            shift = ambiguity.after - ambiguity.before
+        dt += _timedelta(seconds=shift)
 
-    # This roundtrip ensures skipped times are shifted
-    return dt.astimezone(_UTC).astimezone(dt.tzinfo)
+    return dt.replace(tzinfo=_mk_fixed_tzinfo(offset))
 
 
 def _load_offset(offset: int | TimeDelta, /) -> _timezone:
@@ -5484,8 +5540,8 @@ def _offset_dt_from_iso(s: str) -> tuple[_datetime, _Nanos]:
         elif offset == "Z":
             tzinfo = _UTC
         else:
-            assert isinstance(offset, _timedelta)
-            tzinfo = _timezone(offset)
+            assert isinstance(offset, _timezone)
+            tzinfo = offset
 
         return (
             _check_utc_bounds(_datetime.combine(date, time, tzinfo)),
@@ -5495,7 +5551,7 @@ def _offset_dt_from_iso(s: str) -> tuple[_datetime, _Nanos]:
         _parse_err(s)
 
 
-def _zdt_from_iso(s: str) -> tuple[_datetime, _Nanos]:
+def _zdt_from_iso(s: str) -> tuple[_datetime, _Nanos, TimeZone]:
     if len(s) < 11 or "W" in s[:11] or not s.isascii():
         _parse_err(s)
 
@@ -5517,29 +5573,23 @@ def _zdt_from_iso(s: str) -> tuple[_datetime, _Nanos]:
 
     if offset is None:
         dt = _resolve_ambiguity(
-            _datetime.combine(date, time, tz),
-            tz,
-            "compatible",
+            _datetime.combine(date, time), tz, "compatible"
         )
     elif offset == "Z":
-        dt = _datetime.combine(date, time, _UTC).astimezone(tz)
+        dt = _from_epoch(
+            int(_datetime.combine(date, time, _UTC).timestamp()), tz
+        )
     else:
-        assert isinstance(offset, _timedelta)
-        try:
-            _timezone(offset)  # check if offset is <24 hours
-        except ValueError:
-            _parse_err(s)
-        dt = _datetime.combine(date, time, tz)
-        # detect a gap
-        dt_norm = dt.astimezone(_UTC).astimezone(tz)
-        if dt_norm != dt:
+        assert isinstance(offset, _timezone)
+        dt = _datetime.combine(date, time, offset)
+        # Raise an exception if instant is out of range
+        dt.astimezone(_UTC)
+        # Ensure the offset is correct for the given instant
+        expected_offset = tz.offset_for_instant(int(dt.timestamp()))
+        if dt.utcoffset().total_seconds() != expected_offset:
             raise InvalidOffsetError()
-        elif dt.utcoffset() != offset:
-            dt = dt.replace(fold=1)
-            if dt.utcoffset() != offset:
-                raise InvalidOffsetError()
 
-    return (dt, nanos)
+    return (dt, nanos, tz)
 
 
 def _time_from_iso(s_orig: str) -> tuple[_time, _Nanos]:
@@ -5557,7 +5607,7 @@ def _time_from_iso(s_orig: str) -> tuple[_time, _Nanos]:
 # Parse the time, UTC offset, and timezone ID
 def _time_offset_tz_from_iso(
     s: str,
-) -> tuple[_time, _Nanos, _timedelta | Literal["Z"] | None, _BenignKey | None]:
+) -> tuple[_time, _Nanos, _timezone | Literal["Z"] | None, _BenignKey | None]:
     # ditch the bracketted timezone (if present)
     if s.endswith("]"):
         # NOTE: sorry for the unicode escape sequences. Literal brackets
@@ -5568,7 +5618,7 @@ def _time_offset_tz_from_iso(
         tz = None
 
     # determine the offset
-    offset: Literal["Z"] | _timedelta | None
+    offset: Literal["Z"] | _timezone | None
     if s.endswith(("Z", "z")):
         s_time = s[:-1]
         offset = "Z"
@@ -5577,9 +5627,11 @@ def _time_offset_tz_from_iso(
         if sign is None:
             offset = None
         else:
-            offset = _offset_from_iso(s_offset)
+            delta = _offset_from_iso(s_offset)
             if sign == "-":
-                offset = -offset
+                delta = -delta
+            # TODO: use the cache
+            offset = _timezone(delta)
 
     time, nanos = _time_from_iso(s_time)
     return (time, nanos, offset, tz)
@@ -5926,29 +5978,6 @@ PlainDateTime.MIN = PlainDateTime._from_py_unchecked(_datetime.min, 0)
 PlainDateTime.MAX = PlainDateTime._from_py_unchecked(
     _datetime.max.replace(microsecond=0), 999_999_999
 )
-Disambiguate = Literal["compatible", "earlier", "later", "raise"]
-Fold = Literal[0, 1]
-_disambiguate_to_fold: Mapping[str, Fold] = {
-    "compatible": 0,
-    "earlier": 0,
-    "later": 1,
-    "raise": 0,
-}
-
-
-def _adjust_fold_to_offset(dt: _datetime, offset: _timedelta) -> _datetime:
-    if offset != dt.utcoffset():  # offset/zone mismatch: try other fold
-        dt = dt.replace(fold=1)
-        if dt.utcoffset() != offset:  # pragma: no cover (#39)
-            raise InvalidOffsetError()
-    return dt
-
-
-def _as_fold(s: str) -> Fold:
-    try:
-        return _disambiguate_to_fold[s]
-    except KeyError:
-        raise ValueError(f"Invalid disambiguate setting: {s!r}")
 
 
 def years(i: int, /) -> DateDelta:
@@ -6050,8 +6079,8 @@ _TZPATH: tuple[str, ...] = ()
 # Why roll our own? To ensure it works independently of zoneinfo,
 # and thus works identically to the Rust extension.
 _TZCACHE_LRU_SIZE = 8
-_tzcache_lru: OrderedDict[str, ZoneInfo] = OrderedDict()
-_tzcache_lookup: WeakValueDictionary[str, ZoneInfo] = WeakValueDictionary()
+_tzcache_lru: OrderedDict[str, TimeZone] = OrderedDict()
+_tzcache_lookup: WeakValueDictionary[str, TimeZone] = WeakValueDictionary()
 
 
 def _set_tzpath(to: tuple[str, ...]) -> None:
@@ -6070,7 +6099,12 @@ def _clear_tz_cache_by_keys(keys: tuple[str, ...]) -> None:
         _tzcache_lru.pop(k, None)
 
 
-def _get_tz(key: str) -> ZoneInfo:
+def _mk_fixed_tzinfo(offset: int) -> _timezone:
+    # cache these in the future
+    return _timezone(_timedelta(seconds=offset))
+
+
+def _get_tz(key: str) -> TimeZone:
     try:
         zinfo = _tzcache_lookup[key]
     except KeyError:
@@ -6138,24 +6172,20 @@ def _tzif_from_tzdata(key: _BenignKey) -> bytes:
         raise TimeZoneNotFoundError.for_key(key)
 
 
-def _load_tz(key: _BenignKey) -> ZoneInfo:
-    from zoneinfo import ZoneInfo
-
-    # Reminder: we load manually from files to ensure we operate
-    # independently of zoneinfo's own caching mechanism
+def _load_tz(key: _BenignKey) -> TimeZone:
     tzif = _try_tzif_from_path(key) or _tzif_from_tzdata(key)
     if not tzif.startswith(b"TZif"):
         # We've found a file, but doesn't look like a TZif file.
         # Stop here instead of getting a cryptic error later.
         raise TimeZoneNotFoundError.for_key(key)
 
-    return ZoneInfo.from_file(BytesIO(tzif), key)
+    return TimeZone.parse_tzif(tzif, key)
 
 
-_CACHED_SYSTEM_TZ: PosixTz | ZoneInfo | None = None
+_CACHED_SYSTEM_TZ: TimeZone | None = None
 
 
-def _system_tz() -> Union[PosixTz, ZoneInfo]:
+def _system_tz() -> TimeZone:
     global _CACHED_SYSTEM_TZ
     if _CACHED_SYSTEM_TZ is None:
         _CACHED_SYSTEM_TZ = _get_system_tz()  # pragma: no cover
@@ -6168,33 +6198,27 @@ def reset_system_tz() -> None:
     _CACHED_SYSTEM_TZ = _get_system_tz()
 
 
-def _get_system_tz() -> Union[PosixTz, ZoneInfo]:
-    # delayed import since they're relatively expensive
-    from zoneinfo import ZoneInfo
-
-    from ._tz import posix, system
-
+# TODO: key -> ID rename
+def _get_system_tz() -> TimeZone:
     tz_type, tz_value = system.get_tz()
-    if tz_type == 0:  # ZoneInfo key
+    if tz_type == 0:  # IANA TZID
         return _get_tz(tz_value)
-    elif tz_type == 2:  # ZoneInfo or PosixTz
+    elif tz_type == 2:  # IANA TZID or Posix string (we don't know which)
         try:
             return _get_tz(tz_value)
         except TimeZoneNotFoundError:
             # If the key is not found, it might be a PosixTz string
-            return posix.parse(tz_value)
+            return TimeZone.parse_posix(tz_value)
     else:  # file-based timezone (no key)
         assert tz_type == 1, "Unknown system timezone type"
         with open(tz_value, "rb") as f:
-            return ZoneInfo.from_file(f)
+            return TimeZone.parse_tzif(f.read())
 
 
-def _tz_suffix(tz: Union[PosixTz, ZoneInfo]) -> str:
+def _tz_suffix(tzid: Optional[str]) -> str:
     """Returns the suffix for the timezone, e.g. 'Europe/Paris'."""
-    if (key := getattr(tz, "key", None)) is None:
-        return ""
-    else:
-        return f"[{key}]"
+    # Sorry, I couldn't resist the temptation to use binary operators here
+    return (tzid or "") and f"[{tzid}]"
 
 
 # We expose the public members in the root of the module.
