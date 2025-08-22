@@ -12,9 +12,8 @@ from whenever._tz.posix import (
     JulianDayOfYear,
     LastWeekday,
     NthWeekday,
-    Tz,
+    TzStr,
     Unambiguous,
-    parse,
 )
 
 UTC = timezone.utc
@@ -31,10 +30,6 @@ def mk_epoch(
 ) -> int:
     dt = datetime(year, month, day, hour, minute, second, tzinfo=UTC)
     return int(dt.timestamp())
-
-
-def mkdate(year: int, month: int, day: int) -> tuple[int, int, int]:
-    return (year, month, day)
 
 
 class TestParse:
@@ -127,7 +122,7 @@ class TestParse:
     )
     def test_invalid(self, s):
         with pytest.raises(ValueError):
-            parse(s)
+            TzStr.parse(s)
 
     @pytest.mark.parametrize(
         "s, expected",
@@ -151,14 +146,14 @@ class TestParse:
         ],
     )
     def test_fixed_offset(self, s, expected):
-        assert parse(s) == Tz(expected, dst_=None)
+        assert TzStr.parse(s) == TzStr(expected, dst=None)
 
     def test_with_dst(self):
         # Implicit DST offset
-        tz = parse("FOO-1FOOS,M3.5.0,M10.4.0")
-        expected = Tz(
+        tz = TzStr.parse("FOO-1FOOS,M3.5.0,M10.4.0")
+        expected = TzStr(
             std=3600,
-            dst_=Dst(
+            dst=Dst(
                 offset=7200,
                 start=(LastWeekday(3, 0), DEFAULT_RULE_TIME),
                 end=(NthWeekday(10, 4, 0), DEFAULT_RULE_TIME),
@@ -167,10 +162,10 @@ class TestParse:
         assert tz == expected
 
         # Explicit DST offset
-        tz = parse("FOO+1FOOS2:30,M3.5.0,M10.2.0")
-        expected = Tz(
+        tz = TzStr.parse("FOO+1FOOS2:30,M3.5.0,M10.2.0")
+        expected = TzStr(
             std=-3600,
-            dst_=Dst(
+            dst=Dst(
                 offset=-2 * 3600 - 30 * 60,
                 start=(LastWeekday(3, 0), DEFAULT_RULE_TIME),
                 end=(NthWeekday(10, 2, 0), DEFAULT_RULE_TIME),
@@ -179,10 +174,10 @@ class TestParse:
         assert tz == expected
 
         # Explicit time, weekday rule
-        tz = parse("FOO+1FOOS2:30,M3.5.0/8,M10.2.0")
-        expected = Tz(
+        tz = TzStr.parse("FOO+1FOOS2:30,M3.5.0/8,M10.2.0")
+        expected = TzStr(
             std=-3600,
-            dst_=Dst(
+            dst=Dst(
                 offset=-2 * 3600 - 30 * 60,
                 start=(LastWeekday(3, 0), 8 * 3600),
                 end=(NthWeekday(10, 2, 0), DEFAULT_RULE_TIME),
@@ -191,10 +186,10 @@ class TestParse:
         assert tz == expected
 
         # Explicit time, Julian day rule
-        tz = parse("FOO+1FOOS2:30,J023/8:34:01,M10.2.0/03")
-        expected = Tz(
+        tz = TzStr.parse("FOO+1FOOS2:30,J023/8:34:01,M10.2.0/03")
+        expected = TzStr(
             std=-3600,
-            dst_=Dst(
+            dst=Dst(
                 offset=-2 * 3600 - 30 * 60,
                 start=(JulianDayOfYear(23), 8 * 3600 + 34 * 60 + 1),
                 end=(NthWeekday(10, 2, 0), 3 * 3600),
@@ -203,10 +198,10 @@ class TestParse:
         assert tz == expected
 
         # Explicit time, day-of-year rule
-        tz = parse("FOO+1FOOS2:30,023/8:34:01,J1/0")
-        expected = Tz(
+        tz = TzStr.parse("FOO+1FOOS2:30,023/8:34:01,J1/0")
+        expected = TzStr(
             std=-3600,
-            dst_=Dst(
+            dst=Dst(
                 offset=-2 * 3600 - 30 * 60,
                 start=(DayOfYear(24), 8 * 3600 + 34 * 60 + 1),
                 end=(JulianDayOfYear(1), 0),
@@ -214,11 +209,11 @@ class TestParse:
         )
         assert tz == expected
 
-        # Explicit time, zeroth day of year
-        tz = parse("FOO+1FOOS2:30,00/8:34:01,J1/0")
-        expected = Tz(
+        # Explicit time, zero'th day of year
+        tz = TzStr.parse("FOO+1FOOS2:30,00/8:34:01,J1/0")
+        expected = TzStr(
             std=-3600,
-            dst_=Dst(
+            dst=Dst(
                 offset=-2 * 3600 - 30 * 60,
                 start=(DayOfYear(1), 8 * 3600 + 34 * 60 + 1),
                 end=(JulianDayOfYear(1), 0),
@@ -227,10 +222,10 @@ class TestParse:
         assert tz == expected
 
         # 24:00:00 is a valid time for a rule
-        tz = parse("FOO+2FOOS+1,M3.5.0/24,M10.2.0")
-        expected = Tz(
+        tz = TzStr.parse("FOO+2FOOS+1,M3.5.0/24,M10.2.0")
+        expected = TzStr(
             std=-7200,
-            dst_=Dst(
+            dst=Dst(
                 offset=-3600,
                 start=(LastWeekday(3, 0), 24 * 3600),
                 end=(NthWeekday(10, 2, 0), DEFAULT_RULE_TIME),
@@ -239,10 +234,10 @@ class TestParse:
         assert tz == expected
 
         # Anything between -167 and 167 hours is also valid!
-        tz = parse("FOO+2FOOS+1,M3.5.0/-89:02,M10.2.0/100")
-        expected = Tz(
+        tz = TzStr.parse("FOO+2FOOS+1,M3.5.0/-89:02,M10.2.0/100")
+        expected = TzStr(
             std=-7200,
-            dst_=Dst(
+            dst=Dst(
                 offset=-3600,
                 start=(LastWeekday(3, 0), -89 * 3600 - 2 * 60),
                 end=(NthWeekday(10, 2, 0), 100 * 3600),
@@ -338,12 +333,12 @@ class TestApplyRule:
 
 class TestCalculateOffsets:
 
-    TZ_FIXED = Tz(std=1234, dst_=None)
+    TZ_FIXED = TzStr(std=1234, dst=None)
 
     # A TZ with random-ish DST rules
-    TZ = Tz(
+    TZ = TzStr(
         std=4800,
-        dst_=Dst(
+        dst=Dst(
             offset=9300,
             start=(LastWeekday(3, 0), 4 * 3600),
             end=(JulianDayOfYear(281), DEFAULT_RULE_TIME),
@@ -351,9 +346,9 @@ class TestCalculateOffsets:
     )
 
     # A TZ with DST time rules that are very large, or negative!
-    TZ_WEIRDTIME = Tz(
+    TZ_WEIRDTIME = TzStr(
         std=4800,
-        dst_=Dst(
+        dst=Dst(
             offset=9300,
             start=(LastWeekday(3, 0), 50 * 3600),
             end=(JulianDayOfYear(281), -2 * 3600),
@@ -361,9 +356,9 @@ class TestCalculateOffsets:
     )
 
     # A TZ with DST rules that are 00:00:00
-    TZ00 = Tz(
+    TZ00 = TzStr(
         std=4800,
-        dst_=Dst(
+        dst=Dst(
             offset=9300,
             start=(LastWeekday(3, 0), 0),
             end=(JulianDayOfYear(281), 0),
@@ -371,9 +366,9 @@ class TestCalculateOffsets:
     )
 
     # A TZ with a DST offset smaller than the standard offset (theoretically possible)
-    TZ_NEG = Tz(
+    TZ_NEG = TzStr(
         std=4800,
-        dst_=Dst(
+        dst=Dst(
             offset=1200,
             start=(LastWeekday(3, 0), DEFAULT_RULE_TIME),
             end=(JulianDayOfYear(281), 4 * 3600),
@@ -381,9 +376,9 @@ class TestCalculateOffsets:
     )
 
     # Some timezones have DST end before start
-    TZ_INVERTED = Tz(
+    TZ_INVERTED = TzStr(
         std=4800,
-        dst_=Dst(
+        dst=Dst(
             offset=7200,
             end=(LastWeekday(3, 0), DEFAULT_RULE_TIME),
             start=(JulianDayOfYear(281), 4 * 3600),  # oct 8th
@@ -391,9 +386,9 @@ class TestCalculateOffsets:
     )
 
     # Some timezones appear to be "always DST", like Africa/Casablanca
-    TZ_ALWAYS_DST = Tz(
+    TZ_ALWAYS_DST = TzStr(
         std=7200,
-        dst_=Dst(
+        dst=Dst(
             offset=3600,
             start=(DayOfYear(1), 0),
             end=(JulianDayOfYear(365), 23 * 3600),
@@ -537,7 +532,7 @@ class TestCalculateOffsets:
             ),  # DST not in effect
         ],
     )
-    def test_calculate_offsets(self, tz: Tz, ymd, hms, expected):
+    def test_calculate_offsets(self, tz: TzStr, ymd, hms, expected):
 
         def to_epoch_s(
             year: int,
@@ -558,12 +553,6 @@ class TestCalculateOffsets:
 
         actual = tz.ambiguity_for_local(local_epoch)
         assert actual == expected
-        assert tz.utcoffset(
-            datetime(y, m, d, hour, minute, second)
-        ) == expected.fold(0)
-        assert tz.utcoffset(
-            datetime(y, m, d, hour, minute, second, fold=1)
-        ) == expected.fold(1)
 
         # Test that the inverse operation (epoch->local) works
         if isinstance(expected, Unambiguous):
@@ -575,24 +564,10 @@ class TestCalculateOffsets:
             )
         elif isinstance(expected, Fold):
             epoch_a = to_epoch_s(
-                y, m, d, hour, minute, second, expected.earlier
+                y, m, d, hour, minute, second, expected.before
             )
-            epoch_b = to_epoch_s(y, m, d, hour, minute, second, expected.later)
-            assert tz.offset_for_instant(epoch_a) == expected.earlier
-            assert tz.offset_for_instant(epoch_b) == expected.later
-            local_a = tz.fromutc(
-                datetime.fromtimestamp(epoch_a, tz=UTC).replace(tzinfo=tz)
-            )
-            assert local_a == datetime(
-                y, m, d, hour, minute, second, tzinfo=tz
-            )
-            assert local_a.fold == 0
-            local_b = tz.fromutc(
-                datetime.fromtimestamp(epoch_b, tz=UTC).replace(tzinfo=tz)
-            )
-            assert local_b == datetime(
-                y, m, d, hour, minute, second, tzinfo=tz
-            )
-            assert local_b.fold == 1
+            epoch_b = to_epoch_s(y, m, d, hour, minute, second, expected.after)
+            assert tz.offset_for_instant(epoch_a) == expected.before
+            assert tz.offset_for_instant(epoch_b) == expected.after
         else:
             pass  # Gap times aren't reversible

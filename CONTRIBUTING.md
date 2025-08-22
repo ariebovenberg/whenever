@@ -57,5 +57,5 @@ Below are some points to keep in mind when making changes to the codebase:
 - The tests and documentation of the Rust code are sparse. This is because
   it has no public interface and is only used through its Python bindings.
   You can find comprehensive tests and documentation in the Python codebase.
-- To keep import time fast, some "obvious" Python modules (pathlib, re,
+- To keep import time fast, some "obvious" Python modules (pathlib, re, dataclasses,
   importlib.resources) are not used, or imported lazily.

@@ -232,8 +232,8 @@ class TestInit:
 
         # We can request proper timezones now again
         assert ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc) == d
-        # exact_eq() is affected (as documented)
-        assert not ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc).exact_eq(d)
+        # exact_eq() works again
+        assert ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc).exact_eq(d)
 
         # check exception handling invalid arguments
         with pytest.raises(TypeError, match="iterable"):
