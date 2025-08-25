@@ -17,7 +17,7 @@ pub(crate) type TransitionTime = i32;
 const DEFAULT_RULE_TIME: i32 = 2 * 3_600; // 2 AM
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Tz {
+pub struct TzStr {
     std: Offset,
     dst: Option<Dst>,
     // We don't store the TZ names since we don't use them (yet)
@@ -39,7 +39,7 @@ pub(crate) enum Rule {
     JulianDayOfYear(NonZeroU16),           // 1..=365, ignores leap days
 }
 
-impl Tz {
+impl TzStr {
     pub(crate) fn offset_for_instant(&self, epoch: EpochSecs) -> Offset {
         match self.dst {
             None => self.std, // No DST rule means a fixed offset
@@ -142,7 +142,7 @@ impl Tz {
 
         // If there's nothing else, it's a fixed offset without DST
         if scan.is_done() {
-            return Some(Tz { std, dst: None });
+            return Some(TzStr { std, dst: None });
         };
         skip_tzname(&mut scan)?;
 
@@ -168,7 +168,7 @@ impl Tz {
         let end = parse_rule(&mut scan)?;
 
         // No content should remain after parsing
-        scan.is_done().then_some(Tz {
+        scan.is_done().then_some(TzStr {
             std,
             dst: Some(Dst {
                 offset: dst_offset,
@@ -429,7 +429,7 @@ mod tests {
             b"AAA4BBB,J20/2,J366/2",
         ];
         for &case in cases {
-            assert_eq!(Tz::parse(case), None, "parse {:?}", unsafe {
+            assert_eq!(TzStr::parse(case), None, "parse {:?}", unsafe {
                 std::str::from_utf8_unchecked(case)
             });
         }
@@ -439,8 +439,8 @@ mod tests {
     fn fixed_offset() {
         fn test(s: &[u8], expected: i32) {
             assert_eq!(
-                Tz::parse(s).unwrap(),
-                Tz {
+                TzStr::parse(s).unwrap(),
+                TzStr {
                     std: expected.try_into().unwrap(),
                     dst: None
                 },
@@ -478,8 +478,8 @@ mod tests {
     fn with_dst() {
         // Implicit DST offset
         assert_eq!(
-            Tz::parse(b"FOO-1FOOS,M3.5.0,M10.4.0").unwrap(),
-            Tz {
+            TzStr::parse(b"FOO-1FOOS,M3.5.0,M10.4.0").unwrap(),
+            TzStr {
                 std: 3600.try_into().unwrap(),
                 dst: Some(Dst {
                     offset: 7200.try_into().unwrap(),
@@ -500,8 +500,8 @@ mod tests {
         );
         // Explicit DST offset
         assert_eq!(
-            Tz::parse(b"FOO+1FOOS2:30,M3.5.0,M10.2.0").unwrap(),
-            Tz {
+            TzStr::parse(b"FOO+1FOOS2:30,M3.5.0,M10.2.0").unwrap(),
+            TzStr {
                 std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
                     offset: (-3600 * 2 - 30 * 60).try_into().unwrap(),
@@ -522,8 +522,8 @@ mod tests {
         );
         // Explicit time, weekday rule
         assert_eq!(
-            Tz::parse(b"FOO+1FOOS2:30,M3.5.0/8,M10.2.0").unwrap(),
-            Tz {
+            TzStr::parse(b"FOO+1FOOS2:30,M3.5.0/8,M10.2.0").unwrap(),
+            TzStr {
                 std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
                     offset: (-3600 * 2 - 30 * 60).try_into().unwrap(),
@@ -544,8 +544,8 @@ mod tests {
         );
         // Explicit time, Julian day rule
         assert_eq!(
-            Tz::parse(b"FOO+1FOOS2:30,J023/8:34:01,M10.2.0/03").unwrap(),
-            Tz {
+            TzStr::parse(b"FOO+1FOOS2:30,J023/8:34:01,M10.2.0/03").unwrap(),
+            TzStr {
                 std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
                     offset: (-3600 * 2 - 30 * 60).try_into().unwrap(),
@@ -566,8 +566,8 @@ mod tests {
         );
         // Explicit time, day-of-year rule
         assert_eq!(
-            Tz::parse(b"FOO+1FOOS2:30,023/8:34:01,J1/0").unwrap(),
-            Tz {
+            TzStr::parse(b"FOO+1FOOS2:30,023/8:34:01,J1/0").unwrap(),
+            TzStr {
                 std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
                     offset: (-3600 * 2 - 30 * 60).try_into().unwrap(),
@@ -581,8 +581,8 @@ mod tests {
         );
         // Explicit time, zeroth day of year
         assert_eq!(
-            Tz::parse(b"FOO+1FOOS2:30,00/8:34:01,J1/0").unwrap(),
-            Tz {
+            TzStr::parse(b"FOO+1FOOS2:30,00/8:34:01,J1/0").unwrap(),
+            TzStr {
                 std: (-3600).try_into().unwrap(),
                 dst: Some(Dst {
                     offset: (-3600 * 2 - 30 * 60).try_into().unwrap(),
@@ -596,8 +596,8 @@ mod tests {
         );
         // 24:00:00 is a valid time for a rule
         assert_eq!(
-            Tz::parse(b"FOO+2FOOS+1,M3.5.0/24,M10.2.0").unwrap(),
-            Tz {
+            TzStr::parse(b"FOO+2FOOS+1,M3.5.0/24,M10.2.0").unwrap(),
+            TzStr {
                 std: (-7200).try_into().unwrap(),
                 dst: Some(Dst {
                     offset: (-3600).try_into().unwrap(),
@@ -618,8 +618,8 @@ mod tests {
         );
         // Anything between -167 and 167 hours is also valid!
         assert_eq!(
-            Tz::parse(b"FOO+2FOOS+1,M3.5.0/-89:02,M10.2.0/100").unwrap(),
-            Tz {
+            TzStr::parse(b"FOO+2FOOS+1,M3.5.0/-89:02,M10.2.0/100").unwrap(),
+            TzStr {
                 std: (-7200).try_into().unwrap(),
                 dst: Some(Dst {
                     offset: (-3600).try_into().unwrap(),
@@ -768,12 +768,12 @@ mod tests {
 
     #[test]
     fn calculate_offsets() {
-        let tz_fixed = Tz {
+        let tz_fixed = TzStr {
             std: 1234.try_into().unwrap(),
             dst: None,
         };
         // A TZ with random-ish DST rules
-        let tz = Tz {
+        let tz = TzStr {
             std: 4800.try_into().unwrap(),
             dst: Some(Dst {
                 offset: 9300.try_into().unwrap(),
@@ -788,7 +788,7 @@ mod tests {
             }),
         };
         // A TZ with DST time rules that are very large, or negative!
-        let tz_weirdtime = Tz {
+        let tz_weirdtime = TzStr {
             std: 4800.try_into().unwrap(),
             dst: Some(Dst {
                 offset: 9300.try_into().unwrap(),
@@ -800,7 +800,7 @@ mod tests {
             }),
         };
         // A TZ with DST rules that are 00:00:00
-        let tz00 = Tz {
+        let tz00 = TzStr {
             std: 4800.try_into().unwrap(),
             dst: Some(Dst {
                 offset: 9300.try_into().unwrap(),
@@ -809,7 +809,7 @@ mod tests {
             }),
         };
         // A TZ with a DST offset smaller than the standard offset (theoretically possible)
-        let tz_neg = Tz {
+        let tz_neg = TzStr {
             std: 4800.try_into().unwrap(),
             dst: Some(Dst {
                 offset: 1200.try_into().unwrap(),
@@ -821,7 +821,7 @@ mod tests {
             }),
         };
         // Some timezones have DST end before start
-        let tz_inverted = Tz {
+        let tz_inverted = TzStr {
             std: 4800.try_into().unwrap(),
             dst: Some(Dst {
                 offset: 7200.try_into().unwrap(),
@@ -833,7 +833,7 @@ mod tests {
             }),
         };
         // Some timezones appear to be "always DST", like Africa/Casablanca
-        let tz_always_dst = Tz {
+        let tz_always_dst = TzStr {
             std: 7200.try_into().unwrap(),
             dst: Some(Dst {
                 offset: 3600.try_into().unwrap(),
@@ -846,7 +846,7 @@ mod tests {
             d.unix_days().epoch_at(t).offset(-offset).unwrap()
         }
 
-        fn test(tz: Tz, ymd: (u16, u8, u8), hms: (u8, u8, u8), expected: Ambiguity) {
+        fn test(tz: TzStr, ymd: (u16, u8, u8), hms: (u8, u8, u8), expected: Ambiguity) {
             let (y, m, d) = ymd;
             let (hour, minute, second) = hms;
             let date = mkdate(y, m, d);

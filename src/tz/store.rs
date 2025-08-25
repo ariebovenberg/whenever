@@ -1,9 +1,6 @@
 use crate::{
     py::*,
-    tz::{
-        posix::Tz,
-        tzif::{self, TZif, is_valid_key},
-    },
+    tz::tzif::{TimeZone, is_valid_key},
 };
 use ahash::AHashMap;
 use pyo3_ffi::*;
@@ -25,13 +22,13 @@ pub(crate) struct TzPtr {
 }
 
 struct Inner {
-    value: TZif,
+    value: TimeZone,
     refcnt: UnsafeCell<usize>,
 }
 
 impl TzPtr {
     /// Creates a new instance with specified refcount.
-    fn new(value: TZif) -> Self {
+    fn new(value: TimeZone) -> Self {
         let inner = Box::new(Inner {
             // We start with refcount of 2:
             // - one to share outside of the tzstore
@@ -95,7 +92,7 @@ impl TzPtr {
 }
 
 impl Deref for TzPtr {
-    type Target = TZif;
+    type Target = TimeZone;
 
     fn deref(&self) -> &Self::Target {
         unsafe { &self.inner.as_ref().value }
@@ -154,7 +151,7 @@ impl Drop for TzHandle<'_> {
 }
 
 impl Deref for TzHandle<'_> {
-    type Target = TZif;
+    type Target = TimeZone;
 
     fn deref(&self) -> &Self::Target {
         match self {
@@ -189,7 +186,7 @@ impl Cache {
     /// Returns a strong reference.
     fn get_or_load<F>(&self, key: &str, load: F) -> Option<TzPtr>
     where
-        F: FnOnce() -> Option<TZif>,
+        F: FnOnce() -> Option<TimeZone>,
     {
         // SAFETY: this is safe because we only access the cache from a single thread
         // while holding the GIL. The UnsafeCell is only used to allow mutable access
@@ -400,7 +397,7 @@ impl TzStore {
     }
 
     /// Load a TZif file by key, assuming the key is untrusted input.
-    fn load_tzif(&self, key: &str) -> Option<TZif> {
+    fn load_tzif(&self, key: &str) -> Option<TimeZone> {
         if !is_valid_key(key) {
             return None;
         }
@@ -409,14 +406,14 @@ impl TzStore {
     }
 
     /// Load a TZif from the TZPATH directory, assuming a benign TZ ID.
-    fn load_tzif_from_tzpath(&self, key: &str) -> Option<TZif> {
+    fn load_tzif_from_tzpath(&self, key: &str) -> Option<TimeZone> {
         self.paths
             .iter()
             .find_map(|base| self.read_tzif_at_path(&base.join(key), Some(key)))
     }
 
     /// Load a TZif from the tzdata package, assuming a benign TZ ID.
-    fn load_tzif_from_tzdata(&self, key: &str) -> Option<TZif> {
+    fn load_tzif_from_tzdata(&self, key: &str) -> Option<TimeZone> {
         self.tzdata_path
             .as_ref()
             .and_then(|base| self.read_tzif_at_path(&base.join(key), Some(key)))
@@ -424,9 +421,11 @@ impl TzStore {
 
     /// Read a TZif file from the given path, returning None if it doesn't exist
     /// or otherwise cannot be read.
-    fn read_tzif_at_path(&self, path: &Path, key: Option<&str>) -> Option<TZif> {
+    fn read_tzif_at_path(&self, path: &Path, key: Option<&str>) -> Option<TimeZone> {
         if path.is_file() {
-            fs::read(path).ok().and_then(|d| tzif::parse(&d, key).ok())
+            fs::read(path)
+                .ok()
+                .and_then(|d| TimeZone::parse_tzif(&d, key).ok())
         } else {
             None
         }
@@ -505,10 +504,7 @@ impl TzStore {
                     // Try to load it as a zoneinfo key first.
                     .get_or_load(tz_value, || self.load_tzif(tz_value))
                     // If this fails, try to parse it as a posix TZ string.
-                    .or_else(|| {
-                        let tz = Tz::parse(tz_value.as_bytes())?;
-                        Some(TzPtr::new(TZif::from_posix(tz)))
-                    })
+                    .or_else(|| TimeZone::parse_posix(tz_value).map(TzPtr::new))
                     .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
                         format!("No time zone found with key or posix TZ string {tz_value}")
                     })

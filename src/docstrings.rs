@@ -1590,7 +1590,7 @@ Convert to a ZonedDateTime that represents the same moment in time.
 Raises
 ------
 ~whenever.TimeZoneNotFoundError
-    If the timezone ID is not found in the system's timezone database.
+    If the timezone ID is not found in the timezone database.
 ";
 pub(crate) const LOCALTIME_DATE: &CStr = c"\
 The date part of the datetime
@@ -1635,4 +1635,4 @@ pub(crate) const TIMESTAMP_DST_MSG: &str = "Converting from a timestamp with a f
 pub(crate) const ZONEINFO_NO_KEY_MSG: &str = "The 'key' attribute of the datetime's ZoneInfo object is None.
 
 A ZonedDateTime requires a full IANA timezone ID (e.g., 'Europe/Paris') to be created. This error typically means the ZoneInfo object was loaded from a file without its 'key' parameter being specified.
-To fix this, provide the correct IANA ID when you create the ZoneInfo object. If the ID is truly unknown, you can use OffsetDateTime.from_py_datetime() as an alternative, but be aware this is a lossy conversion that only preserves the current UTC offset and discards future daylight saving rules. Please note that a timezone abbreviation like 'CEST' from tzinfo.tzname() is not a valid IANA ID and cannot be used here.";
+To fix this, provide the correct IANA ID when you create the ZoneInfo object. If the ID is truly unknown, you can use OffsetDateTime.from_py_datetime() as an alternative, but be aware this is a lossy conversion that only preserves the current UTC offset and discards future daylight saving rules. Please note that a timezone abbreviation like 'CEST' from datetime.tzname() is not a valid IANA timezone ID and cannot be used here.";
