@@ -21,16 +21,25 @@ use crate::{
     pymodule::State,
     tz::{
         store::{TzHandle, TzPtr},
-        tzif::TZif,
+        tzif::TimeZone,
     },
 };
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub(crate) struct ZonedDateTime {
     date: Date,
     time: Time,
     offset: Offset,
     tz: TzPtr,
+}
+
+impl std::cmp::PartialEq for ZonedDateTime {
+    fn eq(&self, other: &Self) -> bool {
+        self.date == other.date
+            && self.time == other.time
+            && self.offset == other.offset
+            && *self.tz == *other.tz
+    }
 }
 
 pub(crate) const SINGLETONS: &[(&CStr, ZonedDateTime); 0] = &[];
@@ -95,7 +104,7 @@ impl ZonedDateTime {
     pub(crate) fn resolve(
         date: Date,
         time: Time,
-        tz: &TZif,
+        tz: &TimeZone,
         dis: Option<Disambiguate>,
         preferred_offset: Offset,
         exc_repeated: PyObj,
@@ -112,7 +121,7 @@ impl ZonedDateTime {
     pub(crate) fn resolve_using_disambiguate(
         date: Date,
         time: Time,
-        tz: &TZif,
+        tz: &TimeZone,
         dis: Disambiguate,
         exc_repeated: PyObj,
         exc_skipped: PyObj,
@@ -169,7 +178,7 @@ impl ZonedDateTime {
     fn resolve_using_offset(
         date: Date,
         time: Time,
-        tz: &TZif,
+        tz: &TimeZone,
         target: Offset,
     ) -> PyResult<OffsetDateTime> {
         use Ambiguity::*;
@@ -591,8 +600,7 @@ fn exact_eq(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, obj_b: PyObj) -> P
 }
 
 fn to_tz(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, tz_obj: PyObj) -> PyReturn {
-    let &State { ref tz_store, .. } = cls.state();
-    let tz_new = tz_store.obj_get(tz_obj)?;
+    let tz_new = cls.state().tz_store.obj_get(tz_obj)?;
     slf.instant().to_tz(tz_new, cls)
 }
 
@@ -739,8 +747,7 @@ fn to_fixed_offset(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, args: &[PyO
 }
 
 fn to_system_tz(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
-    let &State { ref tz_store, .. } = cls.state();
-    let tz_new = tz_store.get_system_tz()?;
+    let tz_new = cls.state().tz_store.get_system_tz()?;
     slf.instant().to_tz(tz_new, cls)
 }
 
@@ -1042,15 +1049,14 @@ fn replace(
 
 fn now(cls: HeapType<ZonedDateTime>, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
-    let &State { ref tz_store, .. } = state;
-    let tz = tz_store.obj_get(tz_obj)?;
+    let tz = state.tz_store.obj_get(tz_obj)?;
     state.time_ns()?.to_tz(tz, cls)
 }
 
 fn from_py_datetime(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
-    let &State {
-        ref zoneinfo_type,
-        ref tz_store,
+    let State {
+        zoneinfo_type,
+        tz_store,
         ..
     } = cls.state();
 

@@ -4704,7 +4704,8 @@ class ZonedDateTime(_ExactAndLocalTime):
             microsecond=self._nanos // 1_000,
         )
 
-    # This override is technically incompatible, but it's not part of the public API
+    # This override is technically incompatible, but it's very convenient
+    # and it's not part of the public API
     @classmethod
     def _from_py_unchecked(
         cls, d: _datetime, nanos: int, tz: TimeZone, /
