@@ -1378,11 +1378,11 @@ class TimeDelta(_ImmutableBase):
         """
         hours, rem = divmod(abs(self._total_ns), 3_600_000_000_000)
         mins, rem = divmod(rem, 60_000_000_000)
-        secs, ms = divmod(rem, 1_000_000_000)
+        secs, ns = divmod(rem, 1_000_000_000)
         return (
-            (hours, mins, secs, ms)
+            (hours, mins, secs, ns)
             if self._total_ns >= 0
-            else (-hours, -mins, -secs, -ms)
+            else (-hours, -mins, -secs, -ns)
         )
 
     def py_timedelta(self) -> _timedelta:
