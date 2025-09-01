@@ -308,6 +308,13 @@ impl Drop for Cache {
             });
         }
         // By now, the lookup table should be empty (it contains only weak references)
+
+        // print the contents of lookup for debugging
+        for (k, v) in lookup.iter() {
+            println!("Leaked key: {}, refcount: {}", k, v.ref_count());
+        }
+
+        // TODO: this triggers on some pytest failures
         debug_assert!(lookup.is_empty());
     }
 }

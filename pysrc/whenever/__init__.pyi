@@ -699,6 +699,22 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
             "ceil", "floor", "half_ceil", "half_floor", "half_even"
         ] = "half_even",
     ) -> Self: ...
+    def format_common_iso(
+        self,
+        *,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+            "auto",
+        ] = "auto",
+        basic: bool = False,
+        sep: Literal["T", " "] = "T",
+        tz: Literal["always", "never", "auto"] = "always",
+    ) -> str: ...
     # FUTURE: disable date components in strict stubs version
     def __add__(self, delta: Delta, /) -> Self: ...
     @overload

@@ -1,9 +1,10 @@
 import os
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Literal
 from unittest.mock import patch
 
-from whenever import reset_system_tz
+from whenever import PlainDateTime, ZonedDateTime, reset_system_tz
 
 # The POSIX TZ string for the Amsterdam timezone.
 AMS_TZ_POSIX = "CET-1CEST,M3.5.0,M10.5.0/3"
@@ -78,3 +79,64 @@ def system_tz_nyc():
             yield
     finally:
         reset_system_tz()  # don't forget to reset the timezone after the patch!
+
+
+with system_tz(AMS_TZ_POSIX):
+    _AMS_POSIX_DT = PlainDateTime(2023, 3, 26, 2, 30).assume_system_tz()
+
+with system_tz(AMS_TZ_RAWFILE):
+    _AMS_RAWFILE_DT = PlainDateTime(2023, 3, 26, 2, 30).assume_system_tz()
+
+
+# TODO: we can do this without patching every single time
+def create_zdt(
+    year: int,
+    month: int,
+    day: int,
+    hour: int = 0,
+    minute: int = 0,
+    second: int = 0,
+    nanosecond: int = 0,
+    *,
+    tz: str = "",
+    disambiguate: Literal[
+        "compatible", "earlier", "later", "raise"
+    ] = "compatible",
+) -> ZonedDateTime:
+    """Convenience method to create a ZonedDateTime object, potentially
+    with system timezone."""
+    # A special check that is only useful in tests of course
+    if tz == AMS_TZ_POSIX:
+        return _AMS_POSIX_DT.replace(
+            year=year,
+            month=month,
+            day=day,
+            hour=hour,
+            minute=minute,
+            second=second,
+            nanosecond=nanosecond,
+            disambiguate=disambiguate,
+        )
+    elif tz == AMS_TZ_RAWFILE:
+        return _AMS_RAWFILE_DT.replace(
+            year=year,
+            month=month,
+            day=day,
+            hour=hour,
+            minute=minute,
+            second=second,
+            nanosecond=nanosecond,
+            disambiguate=disambiguate,
+        )
+    else:
+        return ZonedDateTime(
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            nanosecond=nanosecond,
+            tz=tz,
+            disambiguate=disambiguate,
+        )

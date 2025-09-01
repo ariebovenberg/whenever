@@ -9,12 +9,12 @@ class Unambiguous:
     def __init__(self, offset: int):
         self.offset = offset
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, Unambiguous):
             return self.offset == other.offset
         return False
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Unambiguous({self.offset})"
 
 
@@ -26,12 +26,12 @@ class Gap:
         self.before = before
         self.after = after
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, Gap):
             return self.before == other.before and self.after == other.after
         return False
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Gap({self.before}, {self.after})"
 
 
@@ -43,12 +43,12 @@ class Fold:
         self.before = before
         self.after = after
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, Fold):
             return self.before == other.before and self.after == other.after
         return False
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Fold({self.before}, {self.after})"
 
 

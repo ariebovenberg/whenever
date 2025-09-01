@@ -6,14 +6,12 @@ from pathlib import Path
 
 import pytest
 
+from whenever._tz.common import Fold, Gap, Unambiguous
 from whenever._tz.posix import TzStr
 from whenever._tz.tzif import (
     EPOCH_SECS_MAX,
     EPOCH_SECS_MIN,
-    Fold,
-    Gap,
     TimeZone,
-    Unambiguous,
     bisect,
 )
 

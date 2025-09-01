@@ -1331,7 +1331,7 @@ TimeDelta(24:00:00)
 TimeDelta(25:00:00)
 ";
 pub(crate) const ZONEDDATETIME_FORMAT_COMMON_ISO: &CStr = c"\
-format_common_iso($self, *, unit='auto', basic=False, sep='T')
+format_common_iso($self, *, unit='auto', basic=False, sep='T', tz='always')
 --
 
 Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``.
@@ -1501,9 +1501,12 @@ Convert to a standard library :class:`~datetime.datetime`
 
 Note
 ----
-Nanoseconds are truncated to microseconds.
-If you wish to customize the rounding behavior, use
-the ``round()`` method first.
+- Nanoseconds are truncated to microseconds.
+  If you wish to customize the rounding behavior, use
+  the ``round()`` method first.
+- In case of a ZonedDateTime linked to a system timezone without a
+  IANA timezone ID, the returned Python datetime will have
+  a fixed offset (:class:`~datetime.timezone` tzinfo)
 ";
 pub(crate) const EXACTANDLOCALTIME_TO_INSTANT: &CStr = c"\
 Get the underlying instant in time
@@ -1628,11 +1631,12 @@ pub(crate) const ADJUST_OFFSET_DATETIME_MSG: &str = "Adjusting a fixed offset da
 pub(crate) const CANNOT_ROUND_DAY_MSG: &str = "Cannot round to day, because days do not have a fixed length. Due to daylight saving time, some days have 23 or 25 hours.If you wish to round to exaxtly 24 hours, use `round('hour', increment=24)`.";
 pub(crate) const DIFF_LOCAL_MSG: &str = "The difference between two datetimes without timezone implicitly ignores DST transitions and other timezone changes. To perform DST-safe operations, convert to a ZonedDateTime first. Or, if you don't know the timezone and accept potentially incorrect results during DST transitions, pass `ignore_dst=True`. For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";
 pub(crate) const DIFF_OPERATOR_LOCAL_MSG: &str = "The difference between two datetimes without timezone implicitly ignores DST transitions and other timezone changes. Use the `difference` method instead.";
+pub(crate) const FORMAT_ISO_NO_TZ_MSG: &str = "This ZonedDateTime has no timezone ID and cannot be formatted in the standard ISO format, which requires it. This typically means the ZonedDateTime was created from a system timezone with an unknown ID. To format without the timezone designator, set the `tz=` argument to 'never' or 'auto'.";
 pub(crate) const OFFSET_NOW_DST_MSG: &str = "Getting the current time with a fixed offset implicitly ignores DST and other timezone changes. Instead, use `Instant.now()` or `ZonedDateTime.now(<tz name>)` if you know the timezone. Or, if you want to ignore DST and accept potentially incorrect offsets, pass `ignore_dst=True` to this method. For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";
 pub(crate) const OFFSET_ROUNDING_DST_MSG: &str = "Rounding a fixed offset datetime may (in rare cases) result in a datetime for which the offset is incorrect. This is because the offset may change during DST transitions. To perform DST-safe rounding, convert to a ZonedDateTime first. Or, if you don't know the timezone and accept potentially incorrect results during DST transitions, pass `ignore_dst=True`. For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";
 pub(crate) const SHIFT_LOCAL_MSG: &str = "Adding or subtracting a (date)time delta to a datetime without timezone implicitly ignores DST transitions and other timezone changes. Use the `add` or `subtract` method instead.";
 pub(crate) const TIMESTAMP_DST_MSG: &str = "Converting from a timestamp with a fixed offset implicitly ignores DST and other timezone changes. To perform a DST-safe conversion, use ZonedDateTime.from_timestamp() instead. Or, if you don't know the timezone and accept potentially incorrect results during DST transitions, pass `ignore_dst=True`. For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic";
-pub(crate) const ZONEINFO_NO_KEY_MSG: &str = "The 'key' attribute of the datetime's ZoneInfo object is None.
+pub(crate) const ZONEINFO_NO_KEY_MSG: &str = "Can't determine the IANA timezone ID of the given datetime:
+The 'key' attribute of the datetime's ZoneInfo object is None.
 
-A ZonedDateTime requires a full IANA timezone ID (e.g., 'Europe/Paris') to be created. This error typically means the ZoneInfo object was loaded from a file without its 'key' parameter being specified.
-To fix this, provide the correct IANA ID when you create the ZoneInfo object. If the ID is truly unknown, you can use OffsetDateTime.from_py_datetime() as an alternative, but be aware this is a lossy conversion that only preserves the current UTC offset and discards future daylight saving rules. Please note that a timezone abbreviation like 'CEST' from datetime.tzname() is not a valid IANA timezone ID and cannot be used here.";
+This typically means the ZoneInfo object represents the system timezone with an unknown ID. As an alternative, you can use OffsetDateTime.from_py_datetime(), but be aware this is a lossy conversion that only preserves the current UTC offset and discards future daylight saving rules. Please note that a timezone abbreviation like 'CEST' from datetime.tzname() is not a valid IANA timezone ID and cannot be used here.";
