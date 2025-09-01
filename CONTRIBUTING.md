@@ -10,12 +10,6 @@ Contributions are welcome, but be sure to read the guidelines below first.
 - Before picking up an issue, please comment on it to let others know you're working on it.
   This will help avoid duplicated effort.
 
-- Some tests are skipped on Windows.
-  These tests use unix-specific features to set the timezone for the current process.
-  As a result, Windows isn't able to run certain tests that rely on the system timezone.
-  It appears that this functionality (only needed for the tests) is
-  [not available on Windows](https://stackoverflow.com/questions/62004265/python-3-time-tzset-alternative-for-windows).
-
 ## Setting up a development environment
 
 An example of setting up things up on a Unix-like system:
@@ -27,6 +21,9 @@ make init
 # build the rust extension
 make build
 
+# clear the build artifacts (useful if you want to test the pure Python version)
+make clean
+
 make test  # run the tests (Python and Rust)
 make format  # apply autoformatting
 make ci-lint  # various static checks
@@ -37,7 +34,7 @@ make typecheck  # run mypy and typing tests
 
 Below are some points to keep in mind when making changes to the codebase:
 
-- I purposefully opted for ``pyo3_ffi`` over ``pyo3``. There are two main reasons:
+- I purposefully opted for ``pyo3_ffi`` over ``pyo3``. There are the main reasons:
 
     1. The higher-level binding library PyO3 has a small additional overhead for function calls,
        which can be significant for small functions. Whenever has a lot of small functions.

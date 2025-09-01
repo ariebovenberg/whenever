@@ -2632,9 +2632,12 @@ class _BasicConversions(_ImmutableBase, ABC):
 
         Note
         ----
-        Nanoseconds are truncated to microseconds.
-        If you wish to customize the rounding behavior, use
-        the ``round()`` method first.
+        - Nanoseconds are truncated to microseconds.
+          If you wish to customize the rounding behavior, use
+          the ``round()`` method first.
+        - In case of a ZonedDateTime linked to a system timezone without a
+          IANA timezone ID, the returned Python datetime will have
+          a fixed offset (:class:`~datetime.timezone` tzinfo)
         """
         return self._py_dt.replace(microsecond=self._nanos // 1_000)
 
@@ -3019,6 +3022,7 @@ class _ExactTime(_BasicConversions):
             self._nanos,
         )
 
+    # TODO: shortcut if already in the right timezone?
     def to_tz(self, tz: str, /) -> ZonedDateTime:
         """Convert to a ZonedDateTime that represents the same moment in time.
 
@@ -4235,6 +4239,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         ] = "auto",
         basic: bool = False,
         sep: Literal["T", " "] = "T",
+        tz: Literal["always", "never", "auto"] = "always",
     ) -> str:
         """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``.
 
@@ -4260,11 +4265,20 @@ class ZonedDateTime(_ExactAndLocalTime):
         elif type(basic) is not bool:
             raise TypeError("basic must be a boolean")
 
+        if tz == "always":
+            if self._tz.key is None:
+                raise ValueError(FORMAT_ISO_NO_TZ_MSG)
+            suffix = f"[{self._tz.key}]"
+        elif tz == "auto" and self._tz.key is not None:
+            suffix = f"[{self._tz.key}]"
+        else:  # never
+            suffix = ""
+
         return (
             f"{_format_date(self._py_dt, basic)}{sep}"
             f"{_format_time(self._py_dt, self._nanos, unit, basic)}"
             f"{_format_offset(self._py_dt.utcoffset(), basic)}"  # type: ignore[arg-type]
-            + _tz_suffix(self._tz.key)
+            + suffix
         )
 
     @classmethod
@@ -4691,15 +4705,15 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
 
     def py_datetime(self) -> _datetime:
-        # We go through astimezone because, in theory, ZoneInfo could disagree
-        # with our offset. This ensures we keep the same moment in time.
-        # TODO: test system datetime
+        if (key := self._tz.key) is None:
+            # For system timezoned datetimes without a key,
+            # there's nothing else we can do. This is documented behavior.
+            return self._py_dt.replace(microsecond=self._nanos // 1_000)
+
         from zoneinfo import ZoneInfo
 
-        key = self._tz.key
-        if key is None:
-            raise ValueError("TODO")
-
+        # We go through astimezone because, in theory, ZoneInfo could disagree
+        # with our offset. This ensures we keep the same moment in time.
         return self._py_dt.astimezone(ZoneInfo(key)).replace(
             microsecond=self._nanos // 1_000,
         )
@@ -4707,14 +4721,14 @@ class ZonedDateTime(_ExactAndLocalTime):
     # This override is technically incompatible, but it's very convenient
     # and it's not part of the public API
     @classmethod
-    def _from_py_unchecked(
+    def _from_py_unchecked(  # type: ignore[override]
         cls, d: _datetime, nanos: int, tz: TimeZone, /
     ) -> ZonedDateTime:
         assert not d.microsecond
         assert 0 <= nanos < 1_000_000_000
         self = _object_new(cls)
-        self._py_dt = d  # type: ignore[attr-defined]
-        self._nanos = nanos  # type: ignore[attr-defined]
+        self._py_dt = d
+        self._nanos = nanos
         self._tz = tz
         return self
 
@@ -4729,14 +4743,18 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
 
     def __repr__(self) -> str:
-        return f"ZonedDateTime({str(self).replace('T', ' ', 1)})"
+        return (
+            f"ZonedDateTime({_format_date(self._py_dt, False)} "
+            f"{_format_time(self._py_dt, self._nanos, 'auto', False)}"
+            f"{_format_offset(self._py_dt.utcoffset(), False)}"  # type: ignore[arg-type]
+            f"[{self._tz.key or '<system timezone without ID>'}])"
+        )
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
         if (key := self._tz.key) is None:
             raise ValueError(
-                # TODO message
-                "ZonedDateTime with unknown tz ID cannot be pickled"
+                "ZonedDateTime with unknown timezone ID cannot be pickled"
             )
         return (
             _unpkl_zoned,
@@ -4760,7 +4778,8 @@ def _unpkl_zoned(data: bytes, tzid: str) -> ZonedDateTime:
     *args, nanos, offset_secs = unpack("<HBBBBBil", data)
     # TODO: handle wrong offset value!
     return ZonedDateTime._from_py_unchecked(
-        _datetime(*args, tzinfo=_mk_fixed_tzinfo(offset_secs)),
+        # mypy thinks tzinfo is passed twice. We know it's not.
+        _datetime(*args, tzinfo=_mk_fixed_tzinfo(offset_secs)),  # type: ignore[misc]
         nanos,
         _get_tz(tzid),
     )
@@ -5354,17 +5373,23 @@ CANNOT_ROUND_DAY_MSG = (
 )
 
 ZONEINFO_NO_KEY_MSG = """\
+Can't determine the IANA timezone ID of the given datetime:
 The 'key' attribute of the datetime's ZoneInfo object is None.
 
-A ZonedDateTime requires a full IANA timezone ID (e.g., 'Europe/Paris') \
-to be created. This error typically means the ZoneInfo object was loaded from \
-a file without its 'key' parameter being specified.
-To fix this, provide the correct IANA ID when you create the ZoneInfo object. \
-If the ID is truly unknown, you can use OffsetDateTime.from_py_datetime() as \
-an alternative, but be aware this is a lossy conversion that only preserves \
+This typically means the ZoneInfo object represents the system timezone with \
+an unknown ID. As an alternative, you can use OffsetDateTime.from_py_datetime(), \
+but be aware this is a lossy conversion that only preserves \
 the current UTC offset and discards future daylight saving rules. \
 Please note that a timezone abbreviation like 'CEST' from datetime.tzname() \
 is not a valid IANA timezone ID and cannot be used here."""
+
+FORMAT_ISO_NO_TZ_MSG = (
+    "This ZonedDateTime has no timezone ID and cannot be formatted in the "
+    "standard ISO format, which requires it. "
+    "This typically means the ZonedDateTime was created from a system timezone "
+    "with an unknown ID. To format without the timezone designator, set the "
+    "`tz=` argument to 'never' or 'auto'."
+)
 
 
 def _from_epoch(timestamp: int, tz: TimeZone) -> _datetime:
@@ -5587,7 +5612,8 @@ def _zdt_from_iso(s: str) -> tuple[_datetime, _Nanos, TimeZone]:
         dt.astimezone(_UTC)
         # Ensure the offset is correct for the given instant
         expected_offset = tz.offset_for_instant(int(dt.timestamp()))
-        if dt.utcoffset().total_seconds() != expected_offset:
+        # NOTE: mypy doesn't know utcoffset() can never return None here
+        if dt.utcoffset().total_seconds() != expected_offset:  # type: ignore[union-attr]
             raise InvalidOffsetError()
 
     return (dt, nanos, tz)
@@ -6214,12 +6240,6 @@ def _get_system_tz() -> TimeZone:
         assert tz_type == 1, "Unknown system timezone type"
         with open(tz_value, "rb") as f:
             return TimeZone.parse_tzif(f.read())
-
-
-def _tz_suffix(tzid: Optional[str]) -> str:
-    """Returns the suffix for the timezone, e.g. 'Europe/Paris'."""
-    # Sorry, I couldn't resist the temptation to use binary operators here
-    return (tzid or "") and f"[{tzid}]"
 
 
 # We expose the public members in the root of the module.

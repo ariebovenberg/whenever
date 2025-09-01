@@ -16,7 +16,7 @@ use crate::{
         time_delta::TimeDelta,
     },
     common::{ambiguity::*, fmt::Precision, parse::Scan, round, scalar::*},
-    docstrings as doc,
+    docstrings::{self as doc, FORMAT_ISO_NO_TZ_MSG},
     py::*,
     pymodule::State,
     tz::{
@@ -420,7 +420,7 @@ fn tz_suffix(key: &Option<String>) -> String {
     if let Some(key) = key {
         format!("[{key}]")
     } else {
-        "<unknown TZ ID>".to_string()
+        "[<system timezone without ID>]".to_string()
     }
 }
 
@@ -854,6 +854,12 @@ fn replace_time(
     .assume_tz_unchecked(tz.new_non_unique(), cls)
 }
 
+enum TzDisplay {
+    Always,
+    Never,
+    Auto,
+}
+
 fn format_common_iso(
     cls: HeapType<ZonedDateTime>,
     slf: ZonedDateTime,
@@ -866,6 +872,7 @@ fn format_common_iso(
     let mut sep = b'T';
     let mut unit = Precision::Auto;
     let mut extended = true; // Whether to use ISO "extended" format (or basic)
+    let mut tz_display = TzDisplay::Always;
     let &State {
         str_sep,
         str_space,
@@ -879,6 +886,9 @@ fn format_common_iso(
         str_nanosecond,
         str_auto,
         str_basic,
+        str_always,
+        str_never,
+        str_tz,
         ..
     } = cls.state();
     handle_kwargs("format_common_iso", kwargs, |key, value, eq| {
@@ -925,6 +935,19 @@ fn format_common_iso(
                 raise_type_err("`basic` must be a boolean value")?;
             }
             Ok(true)
+        } else if eq(key, str_tz) {
+            tz_display = match_interned_str("tz", value, |v, eq| {
+                if eq(v, str_auto) {
+                    Some(TzDisplay::Auto)
+                } else if eq(v, str_never) {
+                    Some(TzDisplay::Never)
+                } else if eq(v, str_always) {
+                    Some(TzDisplay::Always)
+                } else {
+                    None
+                }
+            })?;
+            Ok(true)
         } else {
             Ok(false)
         }
@@ -933,12 +956,23 @@ fn format_common_iso(
     let time_str = slf.time.format_iso_custom(unit, extended);
     let offset_str = slf.offset.format_iso_custom(extended);
 
+    let tzid = match tz_display {
+        TzDisplay::Always => Some(
+            slf.tz
+                .key
+                .as_deref()
+                .ok_or_value_err(FORMAT_ISO_NO_TZ_MSG)?,
+        ),
+        TzDisplay::Never => None,
+        TzDisplay::Auto => slf.tz.key.as_deref(),
+    };
+
     let mut b = PyAsciiStrBuilder::new(
         date_str.len
         + 1 // separator
         + time_str.len
         + offset_str.len
-        + slf.tz.key.as_ref()
+        + tzid
             .map(|s| s.len() + 2 // two brackets around the tz name
             ).unwrap_or(0),
     )?;
@@ -947,7 +981,7 @@ fn format_common_iso(
     b.write_char(sep)?;
     b.write_slice(&time_str)?;
     b.write_slice(&offset_str)?;
-    if let Some(key) = slf.tz.key.as_ref() {
+    if let Some(key) = tzid {
         b.write_char(b'[')?;
         b.write_slice(key.as_bytes())?;
         b.write_char(b']')?;
@@ -1147,6 +1181,9 @@ fn __reduce__(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyResult<Owne
         offset,
         tz,
     } = slf;
+    if tz.key.is_none() {
+        return raise_value_err("Cannot pickle ZonedDateTime with unknown timezone ID");
+    }
     let data = pack![
         year.get(),
         month.get(),

@@ -367,12 +367,12 @@ def _local_transitions(
     transitions: Sequence[tuple[EpochSecs, Offset]],
 ) -> Sequence[tuple[EpochSecs, tuple[Offset, OffsetDelta]]]:
     """Convert UTC transitions to local transitions"""
-    result = []
+    result: list[tuple[EpochSecs, tuple[Offset, OffsetDelta]]] = []
     if not transitions:
         return result
 
-    _, offset_prev = transitions[0]
-    for epoch, offset in transitions[1:]:
+    (_, offset_prev), *remaining = transitions
+    for epoch, offset in remaining:
         # NOTE: we don't check for "impossible" gaps or folds
         local_time = epoch + max(offset_prev, offset)
         # Saturating add to be consistent with Rust version
