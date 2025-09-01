@@ -336,6 +336,8 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         str_t: intern(c"T")?.py_owned(),
         str_auto: intern(c"auto")?.py_owned(),
         str_basic: intern(c"basic")?.py_owned(),
+        str_always: intern(c"always")?.py_owned(),
+        str_never: intern(c"never")?.py_owned(),
 
         exc_repeated: exc_repeated.py_owned(),
         exc_skipped: exc_skipped.py_owned(),
@@ -552,6 +554,8 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.str_t).cast());
         Py_CLEAR((&raw mut state.str_auto).cast());
         Py_CLEAR((&raw mut state.str_basic).cast());
+        Py_CLEAR((&raw mut state.str_always).cast());
+        Py_CLEAR((&raw mut state.str_never).cast());
 
         // unpickling functions
         Py_CLEAR((&raw mut state.unpickle_date).cast());
@@ -679,6 +683,8 @@ pub(crate) struct State {
     pub(crate) str_t: PyObj,
     pub(crate) str_auto: PyObj,
     pub(crate) str_basic: PyObj,
+    pub(crate) str_always: PyObj,
+    pub(crate) str_never: PyObj,
 
     pub(crate) time_patch: Patch,
     pub(crate) tz_store: TzStore,

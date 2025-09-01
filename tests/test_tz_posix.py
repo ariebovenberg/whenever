@@ -3,17 +3,15 @@ from functools import partial
 
 import pytest
 
+from whenever._tz.common import Fold, Gap, Unambiguous
 from whenever._tz.posix import (
     DEFAULT_RULE_TIME,
     DayOfYear,
     Dst,
-    Fold,
-    Gap,
     JulianDayOfYear,
     LastWeekday,
     NthWeekday,
     TzStr,
-    Unambiguous,
 )
 
 UTC = timezone.utc
