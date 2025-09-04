@@ -713,8 +713,6 @@ class TestFormatCommonIso:
             ),
         ],
     )
-    # TODO: change `tz` argument to `missing_tzid`
-    # TODO: add note about formatting as UTC
     def test_defaults(self, d: ZonedDateTime, expected: str):
         assert str(d) == expected
         assert d.format_common_iso() == expected
@@ -1590,6 +1588,7 @@ class TestParseCommonIso:
             "2020-08-12T12:68:30+01:00[Europe/Amsterdam]",
             "2020-08-12T12:68:30+14:29:60[Europe/Amsterdam]",
             "2023-10-29T02:15:30>02:00[Europe/Amsterdam]",
+            "2020-08-15T12:08:30+015960[Europe/Amsterdam]",
             # trailing/leading space
             " 2023-10-29T02:15:30+02:00[Europe/Amsterdam]",
             "2023-10-29T02:15:30+02:00[Europe/Amsterdam] ",

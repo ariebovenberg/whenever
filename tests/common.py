@@ -88,7 +88,6 @@ with system_tz(AMS_TZ_RAWFILE):
     _AMS_RAWFILE_DT = PlainDateTime(2023, 3, 26, 2, 30).assume_system_tz()
 
 
-# TODO: we can do this without patching every single time
 def create_zdt(
     year: int,
     month: int,

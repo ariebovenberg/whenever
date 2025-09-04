@@ -53,7 +53,7 @@ class LastWeekday:
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, LastWeekday):
-            return NotImplemented
+            return NotImplemented  # pragma: no cover
         return self.month == other.month and self.weekday == other.weekday
 
     def __repr__(self) -> str:
@@ -83,7 +83,7 @@ class NthWeekday:
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, NthWeekday):
-            return NotImplemented
+            return NotImplemented  # pragma: no cover
         return (
             self.month == other.month
             and self.nth == other.nth
@@ -105,7 +105,7 @@ class DayOfYear:
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, DayOfYear):
-            return NotImplemented
+            return NotImplemented  # pragma: no cover
         return self.nth == other.nth
 
     def __repr__(self) -> str:
@@ -128,7 +128,7 @@ class JulianDayOfYear:
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, JulianDayOfYear):
-            return NotImplemented
+            return NotImplemented  # pragma: no cover
         return self.nth == other.nth
 
     def __repr__(self) -> str:
@@ -154,7 +154,7 @@ class Dst:
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Dst):
-            return NotImplemented
+            return NotImplemented  # pragma: no cover
         return (
             self.offset == other.offset
             and self.start == other.start
@@ -167,7 +167,7 @@ class Dst:
 
 class TzStr:
     std: int
-    dst: Optional[Dst]  # TODO rename
+    dst: Optional[Dst]
 
     __slots__ = ("std", "dst")
 
@@ -250,7 +250,7 @@ class TzStr:
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TzStr):
-            return NotImplemented
+            return NotImplemented  # pragma: no cover
         return self.std == other.std and self.dst == other.dst
 
     def __repr__(self) -> str:

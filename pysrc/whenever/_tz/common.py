@@ -12,7 +12,7 @@ class Unambiguous:
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Unambiguous):
             return self.offset == other.offset
-        return False
+        return False  # pragma: no cover
 
     def __repr__(self) -> str:
         return f"Unambiguous({self.offset})"
@@ -29,7 +29,7 @@ class Gap:
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Gap):
             return self.before == other.before and self.after == other.after
-        return False
+        return False  # pragma: no cover
 
     def __repr__(self) -> str:
         return f"Gap({self.before}, {self.after})"
@@ -46,7 +46,7 @@ class Fold:
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Fold):
             return self.before == other.before and self.after == other.after
-        return False
+        return False  # pragma: no cover
 
     def __repr__(self) -> str:
         return f"Fold({self.before}, {self.after})"

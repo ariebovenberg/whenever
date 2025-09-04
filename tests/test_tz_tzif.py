@@ -94,7 +94,8 @@ class TestTZifFiles:
         assert tzif._end is None
 
         # a timestamp out of the range of the file should return the last offset (best guess)
-        assert tzif.offset_for_instant(3155760000) == 3600
+        assert tzif.offset_for_instant(3_155_760_000) == 3600
+        assert tzif.ambiguity_for_local(4_000_000_000) == Unambiguous(3600)
 
     def test_clamp_transitions_to_range(self):
         """Test clamping of out-of-range transitions"""
