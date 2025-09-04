@@ -69,7 +69,6 @@ from weakref import WeakValueDictionary
 from ._tz import (
     Disambiguate,
     Fold,
-    Gap,
     TimeZone,
     Unambiguous,
     system,
@@ -3022,7 +3021,6 @@ class _ExactTime(_BasicConversions):
             self._nanos,
         )
 
-    # TODO: shortcut if already in the right timezone?
     def to_tz(self, tz: str, /) -> ZonedDateTime:
         """Convert to a ZonedDateTime that represents the same moment in time.
 
@@ -4339,7 +4337,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         _tz = _get_tz(tz)
         return cls._from_py_unchecked(_from_epoch(secs, _tz), nanos, _tz)
 
-    # FUTURE: optional `disambiguate` to override fold?
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> ZonedDateTime:
         """Create an instance from a standard library ``datetime`` object
@@ -4742,6 +4739,14 @@ class ZonedDateTime(_ExactAndLocalTime):
             and self._tz == other._tz
         )
 
+    # An override with shortcut for efficiency if the timezone stays the same
+    def to_tz(self, tz: str, /) -> ZonedDateTime:
+        if (_tz := _get_tz(tz)) == self._tz:
+            return self
+        return self._from_py_unchecked(
+            _from_epoch(int(self._py_dt.timestamp()), _tz), self._nanos, _tz
+        )
+
     def __repr__(self) -> str:
         return (
             f"ZonedDateTime({_format_date(self._py_dt, False)} "
@@ -4776,7 +4781,6 @@ class ZonedDateTime(_ExactAndLocalTime):
 # Also, it allows backwards-compatible changes to the pickling format.
 def _unpkl_zoned(data: bytes, tzid: str) -> ZonedDateTime:
     *args, nanos, offset_secs = unpack("<HBBBBBil", data)
-    # TODO: handle wrong offset value!
     return ZonedDateTime._from_py_unchecked(
         # mypy thinks tzinfo is passed twice. We know it's not.
         _datetime(*args, tzinfo=_mk_fixed_tzinfo(offset_secs)),  # type: ignore[misc]
@@ -5423,7 +5427,7 @@ def _resolve_ambiguity(
             raise RepeatedTime._for_tz(dt, tz.key)
     else:  # isinstance(ambiguity, Gap):
         if disambiguate in ("compatible", "later"):
-            offset = ambiguity.before  # TODO: rename
+            offset = ambiguity.before
             shift = ambiguity.before - ambiguity.after
         elif disambiguate == "earlier":
             offset = ambiguity.after
@@ -5454,7 +5458,7 @@ def _resolve_ambiguity_using_prev_offset(
         # otherwise, always use the earlier offset
         if ambiguity.after != offset:
             offset = ambiguity.before
-    elif isinstance(ambiguity, Gap):
+    else:  # isinstance(ambiguity, Gap)
         if ambiguity.before == offset:
             shift = offset - ambiguity.before
         else:
@@ -5505,13 +5509,17 @@ def _split_nextchar(
 _is_sep = " Tt".__contains__
 
 
-def _offset_from_iso(s: str) -> _timedelta:
+def _offset_from_iso(s: str) -> int:
+    minutes = 0
+    seconds = 0
     if len(s) == 5 and s[2] == ":" and s[3] < "6":  # most common: HH:MM
-        return _timedelta(hours=int(s[:2]), minutes=int(s[3:]))
+        hours = int(s[:2])
+        minutes = int(s[3:])
     elif len(s) == 4 and s[2] < "6":  # HHMM
-        return _timedelta(hours=int(s[:2]), minutes=int(s[2:]))
+        hours = int(s[:2])
+        minutes = int(s[2:])
     elif len(s) == 2:  # HH
-        return _timedelta(hours=int(s))
+        hours = int(s)
     elif (
         len(s) == 8
         and s[2] == ":"
@@ -5519,15 +5527,16 @@ def _offset_from_iso(s: str) -> _timedelta:
         and s[3] < "6"
         and s[6] < "6"
     ):  # HH:MM:SS
-        return _timedelta(
-            hours=int(s[:2]), minutes=int(s[3:5]), seconds=int(s[6:])
-        )
-    elif len(s) == 6:  # HHMMSS
-        return _timedelta(
-            hours=int(s[:2]), minutes=int(s[2:4]), seconds=int(s[4:])
-        )
+        hours = int(s[:2])
+        minutes = int(s[3:5])
+        seconds = int(s[6:])
+    elif len(s) == 6 and s[2] < "6" and s[4] < "6":  # HHMMSS
+        hours = int(s[:2])
+        minutes = int(s[2:4])
+        seconds = int(s[4:])
     else:
         raise ValueError("Invalid offset format")
+    return hours * 3600 + minutes * 60 + seconds
 
 
 def _datetime_from_iso(s: str) -> tuple[_datetime, _Nanos]:
@@ -5654,11 +5663,10 @@ def _time_offset_tz_from_iso(
         if sign is None:
             offset = None
         else:
-            delta = _offset_from_iso(s_offset)
+            offset_secs = _offset_from_iso(s_offset)
             if sign == "-":
-                delta = -delta
-            # TODO: use the cache
-            offset = _timezone(delta)
+                offset_secs = -offset_secs
+            offset = _mk_fixed_tzinfo(offset_secs)
 
     time, nanos = _time_from_iso(s_time)
     return (time, nanos, offset, tz)
@@ -6225,7 +6233,6 @@ def reset_system_tz() -> None:
     _CACHED_SYSTEM_TZ = _get_system_tz()
 
 
-# TODO: key -> ID rename
 def _get_system_tz() -> TimeZone:
     tz_type, tz_value = system.get_tz()
     if tz_type == 0:  # IANA TZID

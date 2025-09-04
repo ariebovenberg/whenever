@@ -135,15 +135,15 @@ def test_text_signature():
         if callable(m)
     )
 
+    for c in classes:
+        assert c.__module__ == "whenever"
+
     for m in methods:
         if m.__name__.startswith("_"):
             continue
         sig = m.__text_signature__
         assert sig is not None
         signature(m)  # raises ValueError if invalid
-
-
-# TODO: test __module__
 
 
 @no_type_check

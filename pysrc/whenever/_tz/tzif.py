@@ -7,7 +7,8 @@ unpythonic edges.
 from __future__ import annotations
 
 import struct
-from typing import Optional, Sequence, final
+from io import BytesIO
+from typing import IO, Optional, Sequence, final
 
 from .common import Ambiguity, Fold, Gap, Unambiguous
 from .posix import TzStr
@@ -80,9 +81,9 @@ class TimeZone:
             return self._end.offset_for_instant(t)
         # If there's no POSIX TZ string, use the last offset.
         # There's not much else we can do.
-        elif self._offsets_by_utc:
+        else:
+            assert self._offsets_by_utc  # ensured during parsing
             return self._offsets_by_utc[-1][1]
-        raise ValueError("No offset data available")
 
     def ambiguity_for_local(self, t: EpochSecs) -> Ambiguity:
         """Get the UTC offset at the given local time (expressed in epoch seconds)"""
@@ -105,21 +106,30 @@ class TimeZone:
 
         # If there's no POSIX TZ string, use the last offset.
         # There's not much else we can do.
-        if self._offsets_by_local:
-            _, (offset, _) = self._offsets_by_local[-1]
-            return Unambiguous(offset)
-
-        raise ValueError("No offset data available")
+        else:
+            assert self._offsets_by_local  # ensured during parsing
+            _, (prev_offset, last_shift) = self._offsets_by_local[-1]
+            return Unambiguous(prev_offset + last_shift)
 
     def __eq__(self, other: object) -> bool:
-        if type(other) is TimeZone:
+        # We first check for identity, as that's the cheapest check
+        # and makes the common case fast. Note that identity inequality
+        # doesn't rule out equality, as two different instances may represent
+        # the same timezone due to cache clearing.
+        if self is other:
+            return True
+        elif type(other) is TimeZone:
             return (
+                # NOTE: it's important we compare the key first, as it's the
+                # cheapest to compare, and most likely to differ
                 self.key == other.key
+                # Even timezones with the same key may differ in content,
+                # because we may have cleared the cache.
                 and self._offsets_by_utc == other._offsets_by_utc
                 and self._offsets_by_local == other._offsets_by_local
                 and self._end == other._end
             )
-        return NotImplemented
+        return NotImplemented  # pragma: no cover
 
     @classmethod
     def parse_posix(cls, s: str) -> TimeZone:
@@ -134,9 +144,9 @@ class TimeZone:
     @classmethod
     def parse_tzif(cls, data: bytes, key: Optional[str] = None) -> TimeZone:
         """Create a TimeZone from TZif file data"""
-        offset = 0
-        header, offset = _parse_header(data, offset)
-        return _parse_content(header, data, offset, key)
+        read = BytesIO(data)
+        header = _parse_header(read)
+        return _parse_content(header, read, key)
 
 
 def bisect(
@@ -206,52 +216,34 @@ class Header:
         self.charcnt = charcnt
 
 
-# TODO: use IO reader instead of offset tracking
-def _parse_header(data: bytes, offset: int) -> tuple[Header, int]:
+def _parse_header(data: IO[bytes]) -> Header:
     """Parse TZif header and return header with new offset"""
     # Check magic bytes
-    if data[offset : offset + 4] != b"TZif":
+    if data.read(4) != b"TZif":
         raise ValueError("Invalid header value")
-    offset += 4
 
     # Parse version
-    version_byte = data[offset : offset + 1]
+    version_byte = data.read(1)
     if version_byte == b"\x00":
         version = 1
     elif version_byte.isdigit():
         version = int(version_byte)
     else:
-        raise ValueError("Invalid header value")
-    offset += 1
+        raise ValueError("Invalid header value")  # pragma: no cover
 
-    # Skip reserved bytes
-    offset += 15
+    data.read(15)  # Skip reserved bytes
 
-    # Parse header fields
-    header_data = data[offset : offset + 24]
-    offset += 24
-
-    header = Header(
-        version=version,
-        isutcnt=struct.unpack(">i", header_data[0:4])[0],
-        isstdcnt=struct.unpack(">i", header_data[4:8])[0],
-        leapcnt=struct.unpack(">i", header_data[8:12])[0],
-        timecnt=struct.unpack(">i", header_data[12:16])[0],
-        typecnt=struct.unpack(">i", header_data[16:20])[0],
-        charcnt=struct.unpack(">i", header_data[20:24])[0],
-    )
-
-    return header, offset
+    return Header(version, *struct.unpack(">6i", data.read(24)))
 
 
 def _parse_content(
-    header: Header, data: bytes, offset: int, key: Optional[str]
+    header: Header, data: IO[bytes], key: Optional[str]
 ) -> TimeZone:
     """Parse the content section of a TZif file"""
     # Handle version 2+ files
     if header.version >= 2:
         # Skip v1 data section
-        v1_size = (
+        data.read(
             header.timecnt * 5
             + header.typecnt * 6
             + header.charcnt
@@ -259,26 +251,17 @@ def _parse_content(
             + header.isstdcnt
             + header.isutcnt
         )
-        offset += v1_size
-
         # Parse second header
-        header, offset = _parse_header(data, offset)
-
+        header = _parse_header(data)
         # Parse v2 transitions (64-bit)
-        transition_times = _parse_v2_transitions(header, data, offset)
-        offset += header.timecnt * 8
+        transition_times = _parse_v2_transitions(header, data)
     else:
         # Parse v1 transitions (32-bit)
-        transition_times = _parse_v1_transitions(header, data, offset)
-        offset += header.timecnt * 4
+        transition_times = _parse_v1_transitions(header, data)
 
-    offset_indices = []
-    for i in range(header.timecnt):
-        offset_indices.append(data[offset + i])
-    offset += header.timecnt
-
-    offsets = _parse_offsets(header.typecnt, data, offset)
-    offset += header.typecnt * 6 + header.charcnt
+    offset_indices = list(data.read(header.timecnt))
+    offsets = _parse_offsets(header.typecnt, data)
+    data.read(header.charcnt)  # skip charcnt
 
     offsets_by_utc = _load_transitions(
         transition_times, offsets, offset_indices
@@ -288,22 +271,15 @@ def _parse_content(
     end = None
     if header.version >= 2:
         # Skip unused metadata and newline before tz string
-        skip_size = header.isutcnt + header.isstdcnt + header.leapcnt * 12 + 1
-        offset += skip_size
-
+        data.read(header.isutcnt + header.isstdcnt + header.leapcnt * 12 + 1)
         # Find the TZ string (until newline or end of data)
-        tz_start = offset
-        tz_end = tz_start
-        while tz_end < len(data) and data[tz_end : tz_end + 1] != b"\n":
-            tz_end += 1
+        tz_string, *_ = data.read().split(b"\n", 1)
 
-        if tz_end > tz_start:
-            tz_string = data[tz_start:tz_end]
+        if tz_string:  # pragma: no branch
             end = TzStr.parse(tz_string.decode("ascii"))
 
-    if end is None and not offsets_by_utc:
-        # There doesn't seem to be any transition data in the file!
-        raise ValueError("Invalid or corrupted data")
+    if not (end or offsets_by_utc):
+        raise ValueError("No transition data in file")  # pragma: no cover
 
     return TimeZone(
         key=key,
@@ -314,42 +290,26 @@ def _parse_content(
 
 
 def _parse_v2_transitions(
-    header: Header, data: bytes, offset: int
+    header: Header, data: IO[bytes]
 ) -> Sequence[EpochSecs]:
-    result = []
-    for i in range(header.timecnt):
-        start_idx = offset + i * 8
-        end_idx = start_idx + 8
-        value = struct.unpack(">q", data[start_idx:end_idx])[0]
-        # Clamp values that are out of range
-        result.append(clamp_epoch_secs(value))
-
-    return result
+    return list(
+        map(
+            clamp_epoch_secs,
+            struct.unpack(
+                f">{header.timecnt}q", data.read(8 * header.timecnt)
+            ),
+        )
+    )
 
 
 def _parse_v1_transitions(
-    header: Header, data: bytes, offset: int
+    header: Header, data: IO[bytes]
 ) -> Sequence[EpochSecs]:
-    """Parse 32-bit transition times"""
-    result = []
-    for i in range(header.timecnt):
-        start_idx = offset + i * 4
-        end_idx = start_idx + 4
-        value = struct.unpack(">i", data[start_idx:end_idx])[0]
-        result.append(value)
-
-    return result
+    return struct.unpack(f">{header.timecnt}i", data.read(4 * header.timecnt))
 
 
-def _parse_offsets(typecnt: int, data: bytes, offset: int) -> Sequence[Offset]:
-    result = []
-    for i in range(typecnt):
-        start_idx = offset + i * 6
-        end_idx = start_idx + 4  # Only first 4 bytes are the offset
-        offset_value = struct.unpack(">i", data[start_idx:end_idx])[0]
-        result.append(offset_value)
-
-    return result
+def _parse_offsets(typecnt: int, data: IO[bytes]) -> Sequence[Offset]:
+    return [f for f, *_ in struct.iter_unpack(">ixx", data.read(6 * typecnt))]
 
 
 def _load_transitions(
@@ -363,10 +323,10 @@ def _load_transitions(
     ]
 
 
+# See the TimeZone class definition for explanation of these data structures
 def _local_transitions(
     transitions: Sequence[tuple[EpochSecs, Offset]],
 ) -> Sequence[tuple[EpochSecs, tuple[Offset, OffsetDelta]]]:
-    """Convert UTC transitions to local transitions"""
     result: list[tuple[EpochSecs, tuple[Offset, OffsetDelta]]] = []
     if not transitions:
         return result

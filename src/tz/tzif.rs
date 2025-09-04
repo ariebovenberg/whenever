@@ -58,7 +58,7 @@ impl TimeZone {
                 };
                 match ambiguity.get().cmp(&0) {
                     Ordering::Equal => Ambiguity::Unambiguous(offset),
-                    // Safe: The shifts here are unchecked since they were
+                    // SAFETY: The shifts here are unchecked since they were
                     // calculated from the offsets themselves.
                     Ordering::Less => Ambiguity::Fold(offset, offset.shift(ambiguity).unwrap()),
                     Ordering::Greater => Ambiguity::Gap(offset.shift(ambiguity).unwrap(), offset),
@@ -69,18 +69,22 @@ impl TimeZone {
             // If there's no POSIX TZ string, use the last offset.
             // There's not much else we can do.
             .unwrap_or_else(|| {
-                let (offset, _) = self
+                let (prev_offset, last_shift) = self
                     .offsets_by_local
                     .last()
-                    // Safe: We've ensured during parsing that there's at least one entry
+                    // SAFETY: We've ensured during parsing that there's at least one entry
                     // if there's no POSIX TZ string.
                     .unwrap()
                     .1;
-                Ambiguity::Unambiguous(offset)
+                Ambiguity::Unambiguous(
+                    prev_offset
+                        .shift(last_shift)
+                        // SAFETY: last_shift was calculated from prev_offset itself
+                        .unwrap(),
+                )
             })
     }
 
-    // TODO: not a nice API
     pub(crate) fn parse_posix(s: &str) -> Option<Self> {
         Some(Self {
             key: None,
@@ -490,6 +494,10 @@ mod tests {
         assert_eq!(
             tzif.offset_for_instant(EpochSecs::new_unchecked(3155760000)),
             3600.try_into().unwrap()
+        );
+        assert_eq!(
+            tzif.ambiguity_for_local(EpochSecs::new_unchecked(3155760000)),
+            unambig(3600)
         );
     }
 

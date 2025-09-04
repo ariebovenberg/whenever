@@ -27,6 +27,7 @@
 
 - Resolved a memory leak in the Rust extension where timezone objects that 
   were no longer in use were not properly evicted from the cache.
+- Fixed a rare bug in determining the UTC offset for times far in the future
 
 ## 0.8.8 (2025-07-24)
 

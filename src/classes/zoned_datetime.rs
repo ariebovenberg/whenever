@@ -1582,7 +1582,6 @@ fn _round_day(slf: ZonedDateTime, state: &State, mode: round::Mode) -> PyResult<
         round::Mode::Ceil => {
             // Round up anything *except* midnight (which is a no-op)
             if time == Time::MIDNIGHT {
-                // TODO: hmmm maybe a bit nicer
                 Ok(slf.without_tz())
             } else {
                 get_ceil()
