@@ -439,10 +439,6 @@ def test_to_plain(d: ZonedDateTime):
     assert plain.second == d.second
     assert plain.nanosecond == d.nanosecond
 
-    # TODO: remove
-    with pytest.deprecated_call():
-        assert d.local() == d.to_plain()  # type: ignore[attr-defined]
-
 
 class TestReplaceDate:
     @pytest.mark.parametrize(
@@ -1294,9 +1290,6 @@ def test_instant(tz: str):
         .to_instant()
         .exact_eq(Instant.from_utc(2023, 10, 29, 1, 15, 30))
     )
-
-    with pytest.deprecated_call():
-        assert d.to_instant() == d.instant()  # type: ignore[attr-defined]
 
 
 @pytest.mark.parametrize(

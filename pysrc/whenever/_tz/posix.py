@@ -20,7 +20,9 @@ UTC = timezone.utc
 
 
 def year_for_epoch(ts: int) -> int:
-    return datetime.fromtimestamp(ts, tz=UTC).year
+    # Note: we can't use fromtimestamp() because it fails on extreme values
+    # on some platforms. Instead, we go through the ordinal.
+    return date.fromordinal(ts // 86400 + 719163).year
 
 
 def epoch_for_date(d: date) -> int:

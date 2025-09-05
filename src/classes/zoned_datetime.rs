@@ -716,19 +716,6 @@ fn to_instant(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
     slf.instant().to_obj(cls.state().instant_type)
 }
 
-// TODO: remove
-fn instant(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
-    // SAFETY: calling C API with valid arguments
-    unsafe {
-        PyErr_WarnEx(
-            PyExc_DeprecationWarning,
-            c"instant() method is deprecated. Use to_instant() instead".as_ptr(),
-            1,
-        );
-    }
-    to_instant(cls, slf)
-}
-
 fn to_fixed_offset(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, args: &[PyObj]) -> PyReturn {
     let &State {
         offset_datetime_type,
@@ -1142,18 +1129,6 @@ fn from_py_datetime(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
 
 fn to_plain(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
     slf.without_offset().to_obj(cls.state().plain_datetime_type)
-}
-
-fn local(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
-    // SAFE: calling C API with valid arguments
-    unsafe {
-        PyErr_WarnEx(
-            PyExc_DeprecationWarning,
-            c"local() method is deprecated. Use to_plain() instead".as_ptr(),
-            1,
-        );
-    }
-    to_plain(cls, slf)
 }
 
 fn timestamp(_: PyType, slf: ZonedDateTime) -> PyReturn {
@@ -1634,9 +1609,7 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::BASICCONVERSIONS_PY_DATETIME
     ),
     method0!(ZonedDateTime, to_instant, doc::EXACTANDLOCALTIME_TO_INSTANT),
-    method0!(ZonedDateTime, instant, c""), // deprecated alias
     method0!(ZonedDateTime, to_plain, doc::EXACTANDLOCALTIME_TO_PLAIN),
-    method0!(ZonedDateTime, local, c""), // deprecated alias
     method0!(ZonedDateTime, date, doc::LOCALTIME_DATE),
     method0!(ZonedDateTime, time, doc::LOCALTIME_TIME),
     method_kwargs!(
