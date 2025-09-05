@@ -37,7 +37,6 @@ from __future__ import annotations
 import enum
 import os.path
 import sys
-import warnings
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from datetime import (
@@ -3091,7 +3090,7 @@ class _ExactTime(_BasicConversions):
     def __eq__(self, other: object) -> bool:
         """Check if two datetimes represent at the same moment in time
 
-        ``a == b`` is equivalent to ``a.instant() == b.instant()``
+        ``a == b`` is equivalent to ``a.to_instant() == b.to_instant()``
 
         Note
         ----
@@ -3122,7 +3121,7 @@ class _ExactTime(_BasicConversions):
     def __lt__(self, other: _ExactTime) -> bool:
         """Compare two datetimes by when they occur in time
 
-        ``a < b`` is equivalent to ``a.instant() < b.instant()``
+        ``a < b`` is equivalent to ``a.to_instant() < b.to_instant()``
 
         Example
         -------
@@ -3141,7 +3140,7 @@ class _ExactTime(_BasicConversions):
     def __le__(self, other: _ExactTime) -> bool:
         """Compare two datetimes by when they occur in time
 
-        ``a <= b`` is equivalent to ``a.instant() <= b.instant()``
+        ``a <= b`` is equivalent to ``a.to_instant() <= b.to_instant()``
 
         Example
         -------
@@ -3160,7 +3159,7 @@ class _ExactTime(_BasicConversions):
     def __gt__(self, other: _ExactTime) -> bool:
         """Compare two datetimes by when they occur in time
 
-        ``a > b`` is equivalent to ``a.instant() > b.instant()``
+        ``a > b`` is equivalent to ``a.to_instant() > b.to_instant()``
 
         Example
         -------
@@ -3179,7 +3178,7 @@ class _ExactTime(_BasicConversions):
     def __ge__(self, other: _ExactTime) -> bool:
         """Compare two datetimes by when they occur in time
 
-        ``a >= b`` is equivalent to ``a.instant() >= b.instant()``
+        ``a >= b`` is equivalent to ``a.to_instant() >= b.to_instant()``
 
         Example
         -------
@@ -3203,7 +3202,7 @@ class _ExactTime(_BasicConversions):
         def __sub__(self, other: _ExactTime) -> TimeDelta:
             """Calculate the duration between two datetimes
 
-            ``a - b`` is equivalent to ``a.instant() - b.instant()``
+            ``a - b`` is equivalent to ``a.to_instant() - b.to_instant()``
 
             Equivalent to :meth:`difference`.
 
@@ -3253,19 +3252,12 @@ class _ExactAndLocalTime(_LocalTime, _ExactTime):
         -------
 
         >>> d = ZonedDateTime(2020, 8, 15, hour=23, tz="Europe/Amsterdam")
-        >>> d.instant()
+        >>> d.to_instant()
         Instant(2020-08-15 21:00:00Z)
         """
         return Instant._from_py_unchecked(
             self._py_dt.astimezone(_UTC), self._nanos
         )
-
-    def instant(self) -> Instant:
-        warnings.warn(
-            "instant() is deprecated. Use to_instant() instead.",
-            DeprecationWarning,
-        )
-        return self.to_instant()
 
     def to_plain(self) -> PlainDateTime:
         """Get the underlying date and time (without offset or timezone)
@@ -3279,13 +3271,6 @@ class _ExactAndLocalTime(_LocalTime, _ExactTime):
             self._py_dt.replace(tzinfo=None),
             self._nanos,
         )
-
-    def local(self) -> PlainDateTime:
-        warnings.warn(
-            "local() is deprecated. Use to_plain() instead.",
-            DeprecationWarning,
-        )
-        return self.to_plain()
 
 
 @final

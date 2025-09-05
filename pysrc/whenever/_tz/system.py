@@ -54,5 +54,10 @@ def get_tz() -> tuple[Literal[0, 1, 2], str]:
         # if this is a zoneinfo key or a posix TZ string.
         if os.path.isabs(tz_env):
             return (1, tz_env)
-        else:
+        # If there's a digit, it may be a posix TZ string. Theoretically
+        # a zoneinfo key could contain a digit too.
+        elif any(c.isdigit() for c in tz_env):
             return (2, tz_env)
+        else:
+            # no digit: it's certainly a zoneinfo key
+            return (0, tz_env)

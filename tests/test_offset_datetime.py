@@ -1077,9 +1077,6 @@ def test_instant():
         2020, 8, 15, 20, 12, 9, nanosecond=987_654_321
     )
 
-    with pytest.deprecated_call():
-        assert d.to_instant() == d.instant()  # type: ignore[attr-defined]
-
 
 def test_to_fixed_offset():
     d = OffsetDateTime(
@@ -1163,9 +1160,6 @@ def test_to_system_tz():
 def test_to_plain():
     d = OffsetDateTime(2020, 8, 15, 20, nanosecond=1, offset=3)
     assert d.to_plain() == PlainDateTime(2020, 8, 15, 20, nanosecond=1)
-
-    with pytest.deprecated_call():
-        assert d.local() == d.to_plain()  # type: ignore[attr-defined]
 
 
 class TestParseStrptime:
