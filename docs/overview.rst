@@ -273,7 +273,7 @@ To work around this, you can either convert explicitly:
 
 .. code-block:: python
 
-    x == OffsetDateTime(2023, 12, 28, 11, offset=1).instant()
+    x == OffsetDateTime(2023, 12, 28, 11, offset=1).to_instant()
 
 Or annotate with a union:
 

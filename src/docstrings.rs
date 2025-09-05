@@ -1515,7 +1515,7 @@ Example
 -------
 
 >>> d = ZonedDateTime(2020, 8, 15, hour=23, tz=\"Europe/Amsterdam\")
->>> d.instant()
+>>> d.to_instant()
 Instant(2020-08-15 21:00:00Z)
 ";
 pub(crate) const EXACTANDLOCALTIME_TO_PLAIN: &CStr = c"\

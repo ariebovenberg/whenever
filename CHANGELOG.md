@@ -14,6 +14,8 @@
   This change unifies the API, providing a single, consistent way to handle 
   all timezone-aware datetimes. The original use cases are fully supported 
   by the improved `ZonedDateTime`.
+- Remove the deprecated `local()` methods (use `to_plain()` instead).
+- Remove the deprecated `instant()` method (use `to_instant()` instead).
 
 **Added**
 

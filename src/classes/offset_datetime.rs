@@ -433,18 +433,6 @@ pub(crate) fn to_instant(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> 
     slf.instant().to_obj(cls.state().instant_type)
 }
 
-pub(crate) fn instant(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    // SAFETY: calling CPython API with valid arguments
-    unsafe {
-        PyErr_WarnEx(
-            PyExc_DeprecationWarning,
-            c"instant() method is deprecated. Use to_instant() instead".as_ptr(),
-            1,
-        )
-    };
-    to_instant(cls, slf)
-}
-
 fn to_fixed_offset(cls: HeapType<OffsetDateTime>, slf_obj: PyObj, args: &[PyObj]) -> PyReturn {
     match *args {
         [] => Ok(slf_obj.newref()),
@@ -688,18 +676,6 @@ fn from_py_datetime(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn {
 
 pub(crate) fn to_plain(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     slf.without_offset().to_obj(cls.state().plain_datetime_type)
-}
-
-pub(crate) fn local(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    // SAFETY: calling CPython API with valid arguments
-    unsafe {
-        PyErr_WarnEx(
-            PyExc_DeprecationWarning,
-            c"local() method is deprecated. Use to_plain() instead".as_ptr(),
-            1,
-        )
-    };
-    to_plain(cls, slf)
 }
 
 pub(crate) fn timestamp(_: PyType, slf: OffsetDateTime) -> PyReturn {
@@ -1069,9 +1045,7 @@ static mut METHODS: &[PyMethodDef] = &[
         to_instant,
         doc::EXACTANDLOCALTIME_TO_INSTANT
     ),
-    method0!(OffsetDateTime, instant, c""), // deprecated alias
     method0!(OffsetDateTime, to_plain, doc::EXACTANDLOCALTIME_TO_PLAIN),
-    method0!(OffsetDateTime, local, c""), // deprecated alias
     method1!(OffsetDateTime, to_tz, doc::EXACTTIME_TO_TZ),
     method_vararg!(
         OffsetDateTime,
