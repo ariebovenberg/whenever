@@ -11,7 +11,7 @@ LOCALTIME = "/etc/localtime"
 # On unix-like systems it's relatively straightforward.
 # On other platforms, we use the tzlocal package.
 # This keeps dependencies minimal for linux.
-if SYSTEM in ("Linux", "Darwin"):
+if SYSTEM in ("Linux", "Darwin"):  # pragma: no cover
 
     def _key_or_file() -> tuple[Literal[0, 1], str]:
         if (tzif_path := os.path.realpath(LOCALTIME)) == LOCALTIME:
@@ -44,7 +44,7 @@ def get_tz() -> tuple[Literal[0, 1, 2], str]:
     """
     try:
         tz_env = os.environ["TZ"]
-    except KeyError:
+    except KeyError:  # pragma: no cover
         return _key_or_file()
     else:
         if tz_env.startswith(":"):

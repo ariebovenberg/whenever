@@ -3030,14 +3030,14 @@ class _ExactTime(_BasicConversions):
         """
         _tz = _get_tz(tz)
         return ZonedDateTime._from_py_unchecked(
-            _from_epoch(int(self._py_dt.timestamp()), _tz), self._nanos, _tz
+            _to_tz(self._py_dt, _tz), self._nanos, _tz
         )
 
     def to_system_tz(self) -> ZonedDateTime:
         """Convert to a ZonedDateTime of the system's timezone."""
         tz = _system_tz()
         return ZonedDateTime._from_py_unchecked(
-            _from_epoch(int(self._py_dt.timestamp()), tz), self._nanos, tz
+            _to_tz(self._py_dt, tz), self._nanos, tz
         )
 
     def exact_eq(self: _T, other: _T, /) -> bool:
@@ -4729,7 +4729,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         if (_tz := _get_tz(tz)) == self._tz:
             return self
         return self._from_py_unchecked(
-            _from_epoch(int(self._py_dt.timestamp()), _tz), self._nanos, _tz
+            _to_tz(self._py_dt, _tz), self._nanos, _tz
         )
 
     def __repr__(self) -> str:
@@ -5381,9 +5381,25 @@ FORMAT_ISO_NO_TZ_MSG = (
 )
 
 
-def _from_epoch(timestamp: int, tz: TimeZone) -> _datetime:
-    return _fromtimestamp(
-        timestamp, tz=_mk_fixed_tzinfo(tz.offset_for_instant(timestamp))
+def _to_tz(dt: _datetime, tz: TimeZone) -> _datetime:
+    return dt.astimezone(
+        _mk_fixed_tzinfo(tz.offset_for_instant(int(dt.timestamp())))
+    )
+
+
+_MAX_ORDINAL = _date.max.toordinal()
+
+
+def _from_epoch(ts: int, tz: TimeZone) -> _datetime:
+    # NOTE: we can't use the obvious datetime.fromtimestamp() here, because it
+    # may give errors on extreme values on some platforms.
+    if (ordinal := ts // 86_400 + 719163) < 1 or ordinal > _MAX_ORDINAL:
+        raise OverflowError("Time out of range")
+    return _to_tz(
+        (
+            _datetime.fromordinal(ordinal) + _timedelta(seconds=ts % 86_400)
+        ).replace(tzinfo=_UTC),
+        tz,
     )
 
 
@@ -5596,9 +5612,7 @@ def _zdt_from_iso(s: str) -> tuple[_datetime, _Nanos, TimeZone]:
             _datetime.combine(date, time), tz, "compatible"
         )
     elif offset == "Z":
-        dt = _from_epoch(
-            int(_datetime.combine(date, time, _UTC).timestamp()), tz
-        )
+        dt = _to_tz(_datetime.combine(date, time, _UTC), tz)
     else:
         assert isinstance(offset, _timezone)
         dt = _datetime.combine(date, time, offset)
