@@ -3684,17 +3684,26 @@ class OffsetDateTime(_ExactAndLocalTime):
             _fromtimestamp(secs, _load_offset(offset)), nanos
         )
 
-    def format_iso(self) -> str:
+    def format_iso(
+        self,
+        *,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+            "auto",
+        ] = "auto",
+        basic: bool = False,
+        sep: Literal["T", " "] = "T",
+    ) -> str:
         """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
 
         The inverse of the ``parse_iso()`` method.
         """
-        iso_without_fracs = self._py_dt.isoformat()
-        return (
-            iso_without_fracs[:19]
-            + bool(self._nanos) * f".{self._nanos:09d}".rstrip("0")
-            + iso_without_fracs[19:]
-        )
+        return _format_offset_dt(self._py_dt, self._nanos, unit, sep, basic)
 
     @classmethod
     def parse_iso(cls, s: str, /) -> OffsetDateTime:
@@ -4239,11 +4248,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         Althought it is gaining popularity, it is not yet widely supported
         by ISO 8601 parsers.
         """
-        if sep not in ("T", " "):
-            raise ValueError("sep must be either 'T' or ' '")
-        elif type(basic) is not bool:
-            raise TypeError("basic must be a boolean")
-
         if tz == "always":
             if self._tz.key is None:
                 raise ValueError(FORMAT_ISO_NO_TZ_MSG)
@@ -4254,9 +4258,13 @@ class ZonedDateTime(_ExactAndLocalTime):
             suffix = ""
 
         return (
-            f"{_format_date(self._py_dt, basic)}{sep}"
-            f"{_format_time(self._py_dt, self._nanos, unit, basic)}"
-            f"{_format_offset(self._py_dt.utcoffset(), basic)}"  # type: ignore[arg-type]
+            _format_offset_dt(
+                self._py_dt,
+                self._nanos,
+                unit,
+                sep,
+                basic,
+            )
             + suffix
         )
 
@@ -5939,6 +5947,25 @@ def _format_nanos(ns: _Nanos, precision: str) -> str:
         return ""
     else:
         raise ValueError(f"Invalid precision unit: {precision!r}. ")
+
+
+def _format_offset_dt(
+    dt: _datetime,
+    ns: _Nanos,
+    unit: str,
+    sep: Literal["T", " "] = "T",
+    basic: bool = False,
+) -> str:
+    if sep not in ("T", " "):
+        raise ValueError("sep must be either 'T' or ' '")
+    elif type(basic) is not bool:
+        raise TypeError("basic must be a boolean")
+
+    return (
+        f"{_format_date(dt, basic)}{sep}"
+        f"{_format_time(dt, ns, unit, basic)}"
+        f"{_format_offset(dt.utcoffset(), basic)}"  # type: ignore[arg-type]
+    )
 
 
 def _check_utc_bounds(dt: _datetime) -> _datetime:

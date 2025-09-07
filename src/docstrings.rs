@@ -659,6 +659,9 @@ For more information, see
 `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
 ";
 pub(crate) const OFFSETDATETIME_FORMAT_ISO: &CStr = c"\
+format_iso($self, *, unit='auto', basic=False, sep='T')
+--
+
 Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
 
 The inverse of the ``parse_iso()`` method.

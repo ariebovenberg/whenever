@@ -14,6 +14,7 @@ from whenever import (
     OffsetDateTime,
     PlainDateTime,
     Time,
+    TimeDelta,
     TimeZoneNotFoundError,
     ZonedDateTime,
     days,
@@ -157,6 +158,78 @@ class TestFormatIso:
     def test_default(self, d: OffsetDateTime, expected: str):
         assert str(d) == expected
         assert d.format_iso() == expected
+
+    @pytest.mark.parametrize(
+        "dt, kwargs, expected",
+        [
+            (
+                OffsetDateTime(
+                    2020, 8, 15, 23, 12, 9, nanosecond=1_234, offset=5
+                ),
+                {"unit": "nanosecond", "basic": False},
+                "2020-08-15T23:12:09.000001234+05:00",
+            ),
+            (
+                OffsetDateTime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    nanosecond=1_230,
+                    offset=TimeDelta(seconds=-5),
+                ),
+                {"unit": "auto"},
+                "2020-08-15T23:12:09.00000123-00:00:05",
+            ),
+            (
+                OffsetDateTime(
+                    1993,
+                    12,
+                    3,
+                    offset=0,
+                ),
+                {"unit": "auto", "basic": True, "sep": " "},
+                "19931203 000000+0000",
+            ),
+            (
+                OffsetDateTime(
+                    1993,
+                    12,
+                    3,
+                    0,
+                    15,
+                    offset=-19,
+                ),
+                {"unit": "hour", "basic": True, "sep": " "},
+                "19931203 00-1900",
+            ),
+        ],
+    )
+    def test_variations(self, dt, kwargs, expected):
+        assert dt.format_iso(**kwargs) == expected
+
+    def test_invalid(self):
+        dt = OffsetDateTime(2020, 4, 9, 13, offset=-4)
+        with pytest.raises(ValueError, match="unit"):
+            dt.format_iso(unit="foo")  # type: ignore[arg-type]
+
+        with pytest.raises(
+            (ValueError, TypeError, AttributeError), match="unit"
+        ):
+            dt.format_iso(unit=True)  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError, match="sep"):
+            dt.format_iso(sep="_")  # type: ignore[arg-type]
+
+        with pytest.raises(
+            (ValueError, TypeError, AttributeError), match="sep"
+        ):
+            dt.format_iso(sep=1)  # type: ignore[arg-type]
+
+        with pytest.raises(TypeError, match="basic"):
+            dt.format_iso(basic=1)  # type: ignore[arg-type]
 
 
 INVALID_ISO_STRINGS = [
