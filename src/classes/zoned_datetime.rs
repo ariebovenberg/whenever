@@ -15,8 +15,8 @@ use crate::{
         time::Time,
         time_delta::TimeDelta,
     },
-    common::{ambiguity::*, fmt::Precision, parse::Scan, round, scalar::*},
-    docstrings::{self as doc, FORMAT_ISO_NO_TZ_MSG},
+    common::{ambiguity::*, fmt::format_iso as format_iso_common, parse::Scan, round, scalar::*},
+    docstrings as doc,
     py::*,
     pymodule::State,
     tz::{
@@ -841,140 +841,13 @@ fn replace_time(
     .assume_tz_unchecked(tz.new_non_unique(), cls)
 }
 
-enum TzDisplay {
-    Always,
-    Never,
-    Auto,
-}
-
 fn format_iso(
     cls: HeapType<ZonedDateTime>,
     slf: ZonedDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    if !args.is_empty() {
-        raise_type_err("format_iso() takes no positional arguments")?;
-    }
-    let mut sep = b'T';
-    let mut unit = Precision::Auto;
-    let mut extended = true; // Whether to use ISO "extended" format (or basic)
-    let mut tz_display = TzDisplay::Always;
-    let &State {
-        str_sep,
-        str_space,
-        str_t,
-        str_unit,
-        str_hour,
-        str_minute,
-        str_second,
-        str_millisecond,
-        str_microsecond,
-        str_nanosecond,
-        str_auto,
-        str_basic,
-        str_always,
-        str_never,
-        str_tz,
-        ..
-    } = cls.state();
-    handle_kwargs("format_iso", kwargs, |key, value, eq| {
-        if eq(key, str_sep) {
-            sep = match_interned_str("sep", value, |v, eq| {
-                if eq(v, str_space) {
-                    Some(b' ')
-                } else if eq(v, str_t) {
-                    Some(b'T')
-                } else {
-                    None
-                }
-            })?;
-            Ok(true)
-        } else if eq(key, str_unit) {
-            unit = match_interned_str("unit", value, |v, eq| {
-                // Milliseconds is probably the most common choice, so
-                // we check it first.
-                if eq(v, str_millisecond) {
-                    Some(Precision::Millisecond)
-                } else if eq(v, str_hour) {
-                    Some(Precision::Hour)
-                } else if eq(v, str_minute) {
-                    Some(Precision::Minute)
-                } else if eq(v, str_second) {
-                    Some(Precision::Second)
-                } else if eq(v, str_microsecond) {
-                    Some(Precision::Microsecond)
-                } else if eq(v, str_nanosecond) {
-                    Some(Precision::Nanosecond)
-                } else if eq(v, str_auto) {
-                    Some(Precision::Auto) // Auto cutoff
-                } else {
-                    None
-                }
-            })?;
-            Ok(true)
-        } else if eq(key, str_basic) {
-            if value.is_true() {
-                extended = false;
-            } else if value.is_false() {
-                extended = true;
-            } else {
-                raise_type_err("`basic` must be a boolean value")?;
-            }
-            Ok(true)
-        } else if eq(key, str_tz) {
-            tz_display = match_interned_str("tz", value, |v, eq| {
-                if eq(v, str_auto) {
-                    Some(TzDisplay::Auto)
-                } else if eq(v, str_never) {
-                    Some(TzDisplay::Never)
-                } else if eq(v, str_always) {
-                    Some(TzDisplay::Always)
-                } else {
-                    None
-                }
-            })?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    })?;
-    let date_str = slf.date.format_iso_custom(extended);
-    let time_str = slf.time.format_iso_custom(unit, extended);
-    let offset_str = slf.offset.format_iso_custom(extended);
-
-    let tzid = match tz_display {
-        TzDisplay::Always => Some(
-            slf.tz
-                .key
-                .as_deref()
-                .ok_or_value_err(FORMAT_ISO_NO_TZ_MSG)?,
-        ),
-        TzDisplay::Never => None,
-        TzDisplay::Auto => slf.tz.key.as_deref(),
-    };
-
-    let mut b = PyAsciiStrBuilder::new(
-        date_str.len
-        + 1 // separator
-        + time_str.len
-        + offset_str.len
-        + tzid
-            .map(|s| s.len() + 2 // two brackets around the tz name
-            ).unwrap_or(0),
-    )?;
-
-    b.write_slice(&date_str)?;
-    b.write_char(sep)?;
-    b.write_slice(&time_str)?;
-    b.write_slice(&offset_str)?;
-    if let Some(key) = tzid {
-        b.write_char(b'[')?;
-        b.write_slice(key.as_bytes())?;
-        b.write_char(b']')?;
-    }
-
-    Ok(b.finish())
+    format_iso_common(slf.without_tz(), cls.state(), args, kwargs, Some(slf.tz))
 }
 
 fn replace(

@@ -1,6 +1,7 @@
 //! Functionality for working with Python's `str` and `bytes` objects.
 use super::{base::*, exc::*, refs::*};
 use pyo3_ffi::*;
+use std::{ffi::c_uint, ptr::copy_nonoverlapping};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PyStr {
@@ -120,55 +121,51 @@ impl<const N: usize> ToPy for [u8; N] {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+/// Helper for building a Python `str` object incrementally, without
+/// having to allocate a Rust `String` first.
+///
+/// SAFETY: This only supports ASCII strings (i.e. code points 0..=127).
+/// There is no bounds checking, so the caller must ensure that only
+/// valid ASCII characters are written, and that the total length does
+/// not exceed the length specified at creation.
+#[derive(Debug)]
 pub(crate) struct PyAsciiStrBuilder {
-    obj: PyObj,
-    index: Py_ssize_t,
+    obj: Owned<PyObj>, // the PyUnicode object being built
+    index: Py_ssize_t, // current write index
+    data: *mut u8,     // PyUnicode_DATA() pointer
 }
 
-impl PyBase for PyAsciiStrBuilder {
-    fn as_py_obj(&self) -> PyObj {
-        self.obj
-    }
-}
-
-impl FromPy for PyAsciiStrBuilder {
-    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
-        // TODO: this implementation isn't used
-        Self {
-            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
-            index: 0,
-        }
-    }
-}
+const ASCII_STR_KIND: c_uint = 1;
 
 impl PyAsciiStrBuilder {
-    pub(crate) fn new(len: usize) -> PyResult<Owned<Self>> {
-        Ok(unsafe {
-            PyUnicode_New(len as _, 0)
-                .rust_owned()?
-                .cast_unchecked::<Self>()
+    /// Create a new builder for a string of the given length.
+    pub(crate) fn new(len: usize) -> PyResult<Self> {
+        let obj = unsafe { PyUnicode_New(len as _, 127) }.rust_owned()?;
+        debug_assert!(unsafe { PyUnicode_KIND(obj.as_ptr()) == ASCII_STR_KIND });
+        Ok(Self {
+            data: unsafe { PyUnicode_DATA(obj.as_ptr()).cast() },
+            index: 0,
+            obj,
         })
     }
 
-    pub(crate) fn write_slice(&mut self, s: &[u8]) -> PyResult<()> {
-        for &c in s {
-            self.write_char(c)?;
-        }
-        Ok(())
+    /// Write a byte slice to the builder.
+    pub(crate) fn write_slice(&mut self, s: &[u8]) {
+        debug_assert!(s.is_ascii());
+        unsafe { copy_nonoverlapping(s.as_ptr(), self.data.offset(self.index), s.len()) };
+        self.index += s.len() as Py_ssize_t;
     }
 
-    pub(crate) fn write_char(&mut self, c: u8) -> PyResult<()> {
-        if unsafe { PyUnicode_WriteChar(self.as_ptr(), self.index, c as _) } == -1 {
-            return Err(PyErrMarker());
-        }
+    /// Write a single ASCII character to the builder.
+    pub(crate) fn write_char(&mut self, c: u8) {
+        debug_assert!(c.is_ascii());
+        // Essentially the PyUnicode_WRITE() macro from the CPython API
+        unsafe { *self.data.offset(self.index) = c };
         self.index += 1;
-        Ok(())
     }
-}
 
-impl Owned<PyAsciiStrBuilder> {
-    pub(crate) fn finish(self) -> Owned<PyObj> {
-        unsafe { self.cast_unchecked::<PyObj>() }
+    /// Finalize the builder and return the built `str` object.
+    pub(crate) fn build(self) -> Owned<PyObj> {
+        self.obj
     }
 }
