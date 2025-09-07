@@ -533,6 +533,17 @@ impl TzStore {
     }
 }
 
+impl Drop for TzStore {
+    fn drop(&mut self) {
+        // Clear the system timezone cache
+        if let Some(ptr) = unsafe { *self.system_tz_cache.get() } {
+            ptr.decref_with_cleanup(|| self);
+            unsafe { *self.system_tz_cache.get() = None };
+        }
+        // The rest of the fields will be dropped automatically
+    }
+}
+
 fn get_tzdata_path() -> PyResult<Option<PathBuf>> {
     Ok(Some(PathBuf::from({
         let __path__ = match import(c"tzdata.zoneinfo") {
