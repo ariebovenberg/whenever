@@ -12,7 +12,7 @@ use crate::{
         time::Time,
         time_delta::TimeDelta,
     },
-    common::{parse::Scan, rfc2822, round, scalar::*},
+    common::{fmt::format_iso as format_iso_common, parse::Scan, rfc2822, round, scalar::*},
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -567,8 +567,13 @@ fn replace_time(
     }
 }
 
-fn format_iso(cls: PyType, slf: OffsetDateTime) -> PyReturn {
-    __str__(cls, slf)
+fn format_iso(
+    cls: HeapType<OffsetDateTime>,
+    slf: OffsetDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    format_iso_common(slf, cls.state(), args, kwargs, None)
 }
 
 fn replace(
@@ -1065,7 +1070,7 @@ static mut METHODS: &[PyMethodDef] = &[
         parse_rfc2822,
         doc::OFFSETDATETIME_PARSE_RFC2822
     ),
-    method0!(OffsetDateTime, format_iso, doc::OFFSETDATETIME_FORMAT_ISO),
+    method_kwargs!(OffsetDateTime, format_iso, doc::OFFSETDATETIME_FORMAT_ISO),
     classmethod1!(OffsetDateTime, parse_iso, doc::OFFSETDATETIME_PARSE_ISO),
     method0!(OffsetDateTime, timestamp, doc::EXACTTIME_TIMESTAMP),
     method0!(
