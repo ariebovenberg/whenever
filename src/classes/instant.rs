@@ -488,11 +488,11 @@ fn now(cls: HeapType<Instant>) -> PyReturn {
     cls.state().time_ns()?.to_obj(cls)
 }
 
-fn format_common_iso(cls: PyType, slf: Instant) -> PyReturn {
+fn format_iso(cls: PyType, slf: Instant) -> PyReturn {
     __str__(cls, slf)
 }
 
-fn parse_common_iso(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
+fn parse_iso(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
     OffsetDateTime::parse(
         s_obj
             .cast::<PyStr>()
@@ -715,8 +715,8 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod0!(Instant, now, doc::INSTANT_NOW),
     method0!(Instant, format_rfc2822, doc::INSTANT_FORMAT_RFC2822),
     classmethod1!(Instant, parse_rfc2822, doc::INSTANT_PARSE_RFC2822),
-    method0!(Instant, format_common_iso, doc::INSTANT_FORMAT_COMMON_ISO),
-    classmethod1!(Instant, parse_common_iso, doc::INSTANT_PARSE_COMMON_ISO),
+    method0!(Instant, format_iso, doc::INSTANT_FORMAT_ISO),
+    classmethod1!(Instant, parse_iso, doc::INSTANT_PARSE_ISO),
     method_kwargs!(Instant, add, doc::INSTANT_ADD),
     method_kwargs!(Instant, subtract, doc::INSTANT_SUBTRACT),
     method1!(Instant, to_tz, doc::EXACTTIME_TO_TZ),

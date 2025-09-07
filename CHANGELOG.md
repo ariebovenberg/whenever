@@ -2,6 +2,14 @@
 
 ## 0.9.0 (2025-??-??)
 
+**Improved**
+
+- Customizable ISO 8601 Formatting: The `format_common_iso()` methods on all
+  datetime objects now accept parameters to customize the output.
+  You can control the `separator` (e.g., `'T'` or `' '`),
+  the smallest `unit` (from `hour` to `nanosecond`),
+  and toggle the `basic` (compact) or `extended` format.
+
 **Breaking Changes**
 
 - `SystemDateTime` has been removed and its functionality is now integrated into `ZonedDateTime`.
@@ -9,25 +17,21 @@
   - `SystemDateTime.now()` can be replaced with `Instant.now().to_system_tz()`.
   - `to_system_tz()` and `assume_system_tz()` now return a `ZonedDateTime` instead of a `SystemDateTime`.
 
-  **Rationale:** The `SystemDateTime` class was an awkward corner of the API, 
-  creating inconsistencies and overlapping with `ZonedDateTime`. 
-  This change unifies the API, providing a single, consistent way to handle 
-  all timezone-aware datetimes. The original use cases are fully supported 
+  **Rationale:** The `SystemDateTime` class was an awkward corner of the API,
+  creating inconsistencies and overlapping with `ZonedDateTime`.
+  This change unifies the API, providing a single, consistent way to handle
+  all timezone-aware datetimes. The original use cases are fully supported
   by the improved `ZonedDateTime`.
 - Remove the deprecated `local()` methods (use `to_plain()` instead).
 - Remove the deprecated `instant()` method (use `to_instant()` instead).
+- Renamed `[format|parse]_common_iso` methods to `[format|parse]_iso`.
 
-**Added**
-
-- Customizable ISO 8601 Formatting: The `format_common_iso()` methods on all 
-  datetime objects now accept parameters to customize the output. 
-  You can control the `separator` (e.g., `'T'` or `' '`), 
-  the smallest `unit` (from `hour` to `nanosecond`), 
-  and toggle the `basic` (compact) or `extended` format.
+  **Rationale:** The "common" qualifier is no longer necessary because
+  these methods have been expanded to handle a wider range of ISO 8601 formats.
 
 **Fixed**
 
-- Resolved a memory leak in the Rust extension where timezone objects that 
+- Resolved a memory leak in the Rust extension where timezone objects that
   were no longer in use were not properly evicted from the cache.
 - Fixed a rare bug in determining the UTC offset for times far in the future
 

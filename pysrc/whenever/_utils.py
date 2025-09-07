@@ -280,7 +280,7 @@ def _pydantic_parse(cls: type, v: object) -> object:
         return v
     # whenever also doesn't allow string subclasses
     elif type(v) is str:
-        return cls.parse_common_iso(v)
+        return cls.parse_iso(v)
     else:
         raise ValueError(f"Cannot parse {cls.__name__} from type {type(v)}")
 
@@ -294,7 +294,7 @@ def pydantic_schema(cls):
         # this breaks JSON schema generation...but only when used with the
         # "serialization" mode for some reason...
         json_schema=core_schema.no_info_after_validator_function(
-            cls.parse_common_iso,
+            cls.parse_iso,
             core_schema.str_schema(strict=True),
             serialization=core_schema.to_string_ser_schema(),
         ),

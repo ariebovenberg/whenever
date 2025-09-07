@@ -847,14 +847,14 @@ enum TzDisplay {
     Auto,
 }
 
-fn format_common_iso(
+fn format_iso(
     cls: HeapType<ZonedDateTime>,
     slf: ZonedDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     if !args.is_empty() {
-        raise_type_err("format_common_iso() takes no positional arguments")?;
+        raise_type_err("format_iso() takes no positional arguments")?;
     }
     let mut sep = b'T';
     let mut unit = Precision::Auto;
@@ -878,7 +878,7 @@ fn format_common_iso(
         str_tz,
         ..
     } = cls.state();
-    handle_kwargs("format_common_iso", kwargs, |key, value, eq| {
+    handle_kwargs("format_iso", kwargs, |key, value, eq| {
         if eq(key, str_sep) {
             sep = match_interned_str("sep", value, |v, eq| {
                 if eq(v, str_space) {
@@ -1277,7 +1277,7 @@ fn is_ambiguous(_: PyType, slf: ZonedDateTime) -> PyReturn {
     .to_py()
 }
 
-fn parse_common_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
+fn parse_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
     let py_str = arg
         .cast::<PyStr>()
         .ok_or_type_err("Argument must be a string")?;
@@ -1612,16 +1612,8 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(ZonedDateTime, to_plain, doc::EXACTANDLOCALTIME_TO_PLAIN),
     method0!(ZonedDateTime, date, doc::LOCALTIME_DATE),
     method0!(ZonedDateTime, time, doc::LOCALTIME_TIME),
-    method_kwargs!(
-        ZonedDateTime,
-        format_common_iso,
-        doc::ZONEDDATETIME_FORMAT_COMMON_ISO
-    ),
-    classmethod1!(
-        ZonedDateTime,
-        parse_common_iso,
-        doc::ZONEDDATETIME_PARSE_COMMON_ISO
-    ),
+    method_kwargs!(ZonedDateTime, format_iso, doc::ZONEDDATETIME_FORMAT_ISO),
+    classmethod1!(ZonedDateTime, parse_iso, doc::ZONEDDATETIME_PARSE_ISO),
     classmethod1!(ZonedDateTime, now, doc::ZONEDDATETIME_NOW),
     classmethod1!(
         ZonedDateTime,

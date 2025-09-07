@@ -867,16 +867,16 @@ class TestParseRFC2822:
         (Instant.from_utc(2020, 8, 15, 23, 12, 9), "2020-08-15T23:12:09Z"),
     ],
 )
-def test_format_common_iso(d, expect):
-    assert d.format_common_iso() == expect
+def test_format_iso(d, expect):
+    assert d.format_iso() == expect
     assert str(d) == expect
 
 
-class TestParseCommonIso:
+class TestParseIso:
 
     @pytest.mark.parametrize("s, expect", VALID_ISO_STRINGS)
     def test_valid(self, s: str, expect: OffsetDateTime):
-        assert Instant.parse_common_iso(s) == expect.to_instant()
+        assert Instant.parse_iso(s) == expect.to_instant()
 
     @pytest.mark.parametrize("s", INVALID_ISO_STRINGS)
     def test_invalid(self, s):
@@ -884,7 +884,7 @@ class TestParseCommonIso:
             ValueError,
             match=r"Invalid format.*" + re.escape(repr(s)),
         ):
-            Instant.parse_common_iso(s)
+            Instant.parse_iso(s)
 
     @given(text())
     def test_fuzzing(self, s: str):
@@ -892,7 +892,7 @@ class TestParseCommonIso:
             ValueError,
             match=r"Invalid format.*" + re.escape(repr(s)),
         ):
-            Instant.parse_common_iso(s)
+            Instant.parse_iso(s)
 
 
 class TestRound:

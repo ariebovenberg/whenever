@@ -567,7 +567,7 @@ fn replace_time(
     }
 }
 
-fn format_common_iso(cls: PyType, slf: OffsetDateTime) -> PyReturn {
+fn format_iso(cls: PyType, slf: OffsetDateTime) -> PyReturn {
     __str__(cls, slf)
 }
 
@@ -946,7 +946,7 @@ fn from_timestamp_nanos(
     .to_obj(cls)
 }
 
-fn parse_common_iso(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn {
+fn parse_iso(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn {
     OffsetDateTime::parse(
         arg.cast::<PyStr>()
             .ok_or_type_err("Expected a string")?
@@ -1065,16 +1065,8 @@ static mut METHODS: &[PyMethodDef] = &[
         parse_rfc2822,
         doc::OFFSETDATETIME_PARSE_RFC2822
     ),
-    method0!(
-        OffsetDateTime,
-        format_common_iso,
-        doc::OFFSETDATETIME_FORMAT_COMMON_ISO
-    ),
-    classmethod1!(
-        OffsetDateTime,
-        parse_common_iso,
-        doc::OFFSETDATETIME_PARSE_COMMON_ISO
-    ),
+    method0!(OffsetDateTime, format_iso, doc::OFFSETDATETIME_FORMAT_ISO),
+    classmethod1!(OffsetDateTime, parse_iso, doc::OFFSETDATETIME_PARSE_ISO),
     method0!(OffsetDateTime, timestamp, doc::EXACTTIME_TIMESTAMP),
     method0!(
         OffsetDateTime,

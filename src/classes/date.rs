@@ -409,11 +409,11 @@ fn month_day(cls: HeapType<Date>, Date { month, day, .. }: Date) -> PyReturn {
     MonthDay::new_unchecked(month, day).to_obj(cls.state().monthday_type)
 }
 
-fn format_common_iso(_: PyType, slf: Date) -> PyReturn {
+fn format_iso(_: PyType, slf: Date) -> PyReturn {
     format!("{slf}").to_py()
 }
 
-fn parse_common_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn {
+fn parse_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn {
     Date::parse_iso(
         s.cast::<PyStr>()
             .ok_or_type_err("argument must be str")?
@@ -673,9 +673,9 @@ fn system_tz_today_from_timestamp(
 
 static mut METHODS: &mut [PyMethodDef] = &mut [
     method0!(Date, py_date, doc::DATE_PY_DATE),
-    method0!(Date, format_common_iso, doc::DATE_FORMAT_COMMON_ISO),
+    method0!(Date, format_iso, doc::DATE_FORMAT_ISO),
     classmethod0!(Date, today_in_system_tz, doc::DATE_TODAY_IN_SYSTEM_TZ),
-    classmethod1!(Date, parse_common_iso, doc::DATE_PARSE_COMMON_ISO),
+    classmethod1!(Date, parse_iso, doc::DATE_PARSE_ISO),
     classmethod1!(Date, from_py_date, doc::DATE_FROM_PY_DATE),
     method0!(Date, __copy__, c""),
     method1!(Date, __deepcopy__, c""),

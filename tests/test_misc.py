@@ -220,16 +220,16 @@ def test_pydantic():
 
     json_str = m.model_dump_json()
     json_data = json.loads(json_str)
-    assert json_data["inst"] == inst.format_common_iso()
-    assert json_data["zdt"] == zdt.format_common_iso()
-    assert json_data["odt"] == odt.format_common_iso()
-    assert json_data["date"] == date.format_common_iso()
-    assert json_data["time"] == time.format_common_iso()
-    assert json_data["ddelta"] == ddelta.format_common_iso()
-    assert json_data["tdelta"] == tdelta.format_common_iso()
-    assert json_data["dtdelta"] == dtdelta.format_common_iso()
-    assert json_data["monthday"] == monthday.format_common_iso()
-    assert json_data["yearmonth"] == yearmonth.format_common_iso()
+    assert json_data["inst"] == inst.format_iso()
+    assert json_data["zdt"] == zdt.format_iso()
+    assert json_data["odt"] == odt.format_iso()
+    assert json_data["date"] == date.format_iso()
+    assert json_data["time"] == time.format_iso()
+    assert json_data["ddelta"] == ddelta.format_iso()
+    assert json_data["tdelta"] == tdelta.format_iso()
+    assert json_data["dtdelta"] == dtdelta.format_iso()
+    assert json_data["monthday"] == monthday.format_iso()
+    assert json_data["yearmonth"] == yearmonth.format_iso()
 
     m3 = Model.model_validate_json(json_str)
     assert m3.inst == inst
@@ -281,16 +281,16 @@ def test_pydantic():
     # The constructor should be able to handle strings
     assert (
         Model(
-            inst=inst.format_common_iso(),
-            zdt=zdt.format_common_iso(),
-            odt=odt.format_common_iso(),
-            date=date.format_common_iso(),
-            time=time.format_common_iso(),
-            ddelta=ddelta.format_common_iso(),
-            tdelta=tdelta.format_common_iso(),
-            dtdelta=dtdelta.format_common_iso(),
-            monthday=monthday.format_common_iso(),
-            yearmonth=yearmonth.format_common_iso(),
+            inst=inst.format_iso(),
+            zdt=zdt.format_iso(),
+            odt=odt.format_iso(),
+            date=date.format_iso(),
+            time=time.format_iso(),
+            ddelta=ddelta.format_iso(),
+            tdelta=tdelta.format_iso(),
+            dtdelta=dtdelta.format_iso(),
+            monthday=monthday.format_iso(),
+            yearmonth=yearmonth.format_iso(),
         )
         == m2
     )
@@ -299,15 +299,15 @@ def test_pydantic():
     try:
         Model(
             inst=123,  # not a string
-            zdt=zdt.format_common_iso().encode(),  # bytes instead of str
-            odt=odt.format_common_iso(),
-            date=date.format_common_iso(),
-            time=time.format_common_iso(),
-            ddelta=ddelta.format_common_iso(),
-            tdelta=tdelta.format_common_iso(),
-            dtdelta=dtdelta.format_common_iso(),
-            monthday=monthday.format_common_iso(),
-            yearmonth=yearmonth.format_common_iso(),
+            zdt=zdt.format_iso().encode(),  # bytes instead of str
+            odt=odt.format_iso(),
+            date=date.format_iso(),
+            time=time.format_iso(),
+            ddelta=ddelta.format_iso(),
+            tdelta=tdelta.format_iso(),
+            dtdelta=dtdelta.format_iso(),
+            monthday=monthday.format_iso(),
+            yearmonth=yearmonth.format_iso(),
         )
     except pydantic.ValidationError as e:
         assert e.error_count() == 2
@@ -323,12 +323,12 @@ def test_pydantic():
                     "zdt": "INVALID",
                     "odt": "",
                     "date": None,
-                    "time": time.format_common_iso(),
-                    "ddelta": ddelta.format_common_iso(),
-                    "tdelta": tdelta.format_common_iso(),
-                    "dtdelta": dtdelta.format_common_iso(),
-                    "monthday": monthday.format_common_iso(),
-                    "yearmonth": yearmonth.format_common_iso(),
+                    "time": time.format_iso(),
+                    "ddelta": ddelta.format_iso(),
+                    "tdelta": tdelta.format_iso(),
+                    "dtdelta": dtdelta.format_iso(),
+                    "monthday": monthday.format_iso(),
+                    "yearmonth": yearmonth.format_iso(),
                 }
             )
         )

@@ -149,11 +149,11 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn format_common_iso(cls: PyType, slf: MonthDay) -> PyReturn {
+fn format_iso(cls: PyType, slf: MonthDay) -> PyReturn {
     __str__(cls, slf)
 }
 
-fn parse_common_iso(cls: HeapType<MonthDay>, s: PyObj) -> PyReturn {
+fn parse_iso(cls: HeapType<MonthDay>, s: PyObj) -> PyReturn {
     MonthDay::parse(
         s.cast::<PyStr>()
             .ok_or_type_err("argument must be str")?
@@ -236,8 +236,8 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(MonthDay, __reduce__, c""),
     method0!(MonthDay, __copy__, c""),
     method1!(MonthDay, __deepcopy__, c""),
-    method0!(MonthDay, format_common_iso, doc::MONTHDAY_FORMAT_COMMON_ISO),
-    classmethod1!(MonthDay, parse_common_iso, doc::MONTHDAY_PARSE_COMMON_ISO),
+    method0!(MonthDay, format_iso, doc::MONTHDAY_FORMAT_ISO),
+    classmethod1!(MonthDay, parse_iso, doc::MONTHDAY_PARSE_ISO),
     method1!(MonthDay, in_year, doc::MONTHDAY_IN_YEAR),
     method0!(MonthDay, is_leap, doc::MONTHDAY_IS_LEAP),
     method_kwargs!(MonthDay, replace, doc::MONTHDAY_REPLACE),

@@ -6,4 +6,4 @@ def test_new(benchmark):
 
 
 def test_parse_canonical(benchmark):
-    benchmark(PlainDateTime.parse_common_iso, "2023-09-03T23:01:00")
+    benchmark(PlainDateTime.parse_iso, "2023-09-03T23:01:00")
