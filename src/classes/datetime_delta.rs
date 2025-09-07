@@ -441,7 +441,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn format_common_iso(_: PyType, d: DateTimeDelta) -> PyReturn {
+fn format_iso(_: PyType, d: DateTimeDelta) -> PyReturn {
     d.fmt_iso().to_py()
 }
 
@@ -475,7 +475,7 @@ pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
         .map(|(months, days)| DateDelta { months, days })
 }
 
-fn parse_common_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
+fn parse_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
     let binding = arg
         .cast::<PyStr>()
         .ok_or_value_err("argument must be str")?;
@@ -601,18 +601,10 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
 static mut METHODS: &[PyMethodDef] = &[
     method0!(DateTimeDelta, __copy__, c""),
     method1!(DateTimeDelta, __deepcopy__, c""),
-    method0!(
-        DateTimeDelta,
-        format_common_iso,
-        doc::DATETIMEDELTA_FORMAT_COMMON_ISO
-    ),
+    method0!(DateTimeDelta, format_iso, doc::DATETIMEDELTA_FORMAT_ISO),
     method0!(DateTimeDelta, date_part, doc::DATETIMEDELTA_DATE_PART),
     method0!(DateTimeDelta, time_part, doc::DATETIMEDELTA_TIME_PART),
-    classmethod1!(
-        DateTimeDelta,
-        parse_common_iso,
-        doc::DATETIMEDELTA_PARSE_COMMON_ISO
-    ),
+    classmethod1!(DateTimeDelta, parse_iso, doc::DATETIMEDELTA_PARSE_ISO),
     method0!(DateTimeDelta, __reduce__, c""),
     method0!(
         DateTimeDelta,

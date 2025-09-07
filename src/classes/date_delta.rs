@@ -470,7 +470,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn format_common_iso(_: PyType, slf: DateDelta) -> PyReturn {
+fn format_iso(_: PyType, slf: DateDelta) -> PyReturn {
     slf.fmt_iso().to_py()
 }
 
@@ -543,7 +543,7 @@ pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, Unit)> {
     }
 }
 
-fn parse_common_iso(cls: HeapType<DateDelta>, arg: PyObj) -> PyReturn {
+fn parse_iso(cls: HeapType<DateDelta>, arg: PyObj) -> PyReturn {
     let py_str = arg.cast::<PyStr>().ok_or_type_err("argument must be str")?;
     let s = &mut py_str.as_utf8()?;
     let err = || format!("Invalid format: {arg}");
@@ -653,12 +653,8 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
 static mut METHODS: &[PyMethodDef] = &[
     method0!(DateDelta, __copy__, c""),
     method1!(DateDelta, __deepcopy__, c""),
-    method0!(
-        DateDelta,
-        format_common_iso,
-        doc::DATEDELTA_FORMAT_COMMON_ISO
-    ),
-    classmethod1!(DateDelta, parse_common_iso, doc::DATEDELTA_PARSE_COMMON_ISO),
+    method0!(DateDelta, format_iso, doc::DATEDELTA_FORMAT_ISO),
+    classmethod1!(DateDelta, parse_iso, doc::DATEDELTA_PARSE_ISO),
     method0!(DateDelta, in_months_days, doc::DATEDELTA_IN_MONTHS_DAYS),
     method0!(
         DateDelta,

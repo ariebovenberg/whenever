@@ -252,14 +252,14 @@ Note
 If you're interested in calculating the difference
 in terms of days **and** months, use the subtraction operator instead.
 ";
-pub(crate) const DATE_FORMAT_COMMON_ISO: &CStr = c"\
-Format as the common ISO 8601 date format.
+pub(crate) const DATE_FORMAT_ISO: &CStr = c"\
+Format as the ISO 8601 date format.
 
-Inverse of :meth:`parse_common_iso`.
+Inverse of :meth:`parse_iso`.
 
 Example
 -------
->>> Date(2021, 1, 2).format_common_iso()
+>>> Date(2021, 1, 2).format_iso()
 '2021-01-02'
 ";
 pub(crate) const DATE_FROM_PY_DATE: &CStr = c"\
@@ -278,18 +278,18 @@ Example
 >>> Date(2021, 1, 2).month_day()
 MonthDay(--01-02)
 ";
-pub(crate) const DATE_PARSE_COMMON_ISO: &CStr = c"\
+pub(crate) const DATE_PARSE_ISO: &CStr = c"\
 Parse a date from an ISO8601 string
 
 The following formats are accepted:
 - ``YYYY-MM-DD`` (\"extended\" format)
 - ``YYYYMMDD`` (\"basic\" format)
 
-Inverse of :meth:`format_common_iso`
+Inverse of :meth:`format_iso`
 
 Example
 -------
->>> Date.parse_common_iso(\"2021-01-02\")
+>>> Date.parse_iso(\"2021-01-02\")
 Date(2021-01-02)
 ";
 pub(crate) const DATE_PY_DATE: &CStr = c"\
@@ -340,12 +340,12 @@ Example
 >>> Date(2021, 1, 2).year_month()
 YearMonth(2021-01)
 ";
-pub(crate) const DATEDELTA_FORMAT_COMMON_ISO: &CStr = c"\
+pub(crate) const DATEDELTA_FORMAT_ISO: &CStr = c"\
 Format as the *popular interpretation* of the ISO 8601 duration format.
 May not strictly adhere to (all versions of) the standard.
 See :ref:`here <iso8601-durations>` for more information.
 
-Inverse of :meth:`parse_common_iso`.
+Inverse of :meth:`parse_iso`.
 
 The format looks like this:
 
@@ -364,9 +364,9 @@ For example:
 Example
 -------
 >>> p = DateDelta(years=1, months=2, weeks=3, days=11)
->>> p.format_common_iso()
+>>> p.format_iso()
 'P1Y2M3W11D'
->>> DateDelta().format_common_iso()
+>>> DateDelta().format_iso()
 'P0D'
 ";
 pub(crate) const DATEDELTA_IN_MONTHS_DAYS: &CStr = c"\
@@ -389,18 +389,18 @@ Example
 >>> p.in_years_months_days()
 (1, 2, 11)
 ";
-pub(crate) const DATEDELTA_PARSE_COMMON_ISO: &CStr = c"\
+pub(crate) const DATEDELTA_PARSE_ISO: &CStr = c"\
 Parse the *popular interpretation* of the ISO 8601 duration format.
 Does not parse all possible ISO 8601 durations.
 See :ref:`here <iso8601-durations>` for more information.
 
-Inverse of :meth:`format_common_iso`
+Inverse of :meth:`format_iso`
 
 Example
 -------
->>> DateDelta.parse_common_iso(\"P1W11D\")
+>>> DateDelta.parse_iso(\"P1W11D\")
 DateDelta(P1w11d)
->>> DateDelta.parse_common_iso(\"-P3m\")
+>>> DateDelta.parse_iso(\"-P3m\")
 DateDelta(-P3m)
 
 Note
@@ -414,12 +414,12 @@ The number of digits in each component is limited to 8.
 ";
 pub(crate) const DATETIMEDELTA_DATE_PART: &CStr = c"\
 The date part of the delta";
-pub(crate) const DATETIMEDELTA_FORMAT_COMMON_ISO: &CStr = c"\
+pub(crate) const DATETIMEDELTA_FORMAT_ISO: &CStr = c"\
 Format as the *popular interpretation* of the ISO 8601 duration format.
 May not strictly adhere to (all versions of) the standard.
 See :ref:`here <iso8601-durations>` for more information.
 
-Inverse of :meth:`parse_common_iso`.
+Inverse of :meth:`parse_iso`.
 
 The format is:
 
@@ -435,7 +435,7 @@ Example
 ...     hours=4,
 ...     milliseconds=12,
 ... )
->>> d.format_common_iso()
+>>> d.format_iso()
 'P1W11DT4H0.012S'
 ";
 pub(crate) const DATETIMEDELTA_IN_MONTHS_DAYS_SECS_NANOS: &CStr = c"\
@@ -447,7 +447,7 @@ Example
 >>> d.in_months_days_secs_nanos()
 (0, 18, 14_400, 2000)
 ";
-pub(crate) const DATETIMEDELTA_PARSE_COMMON_ISO: &CStr = c"\
+pub(crate) const DATETIMEDELTA_PARSE_ISO: &CStr = c"\
 Parse the *popular interpretation* of the ISO 8601 duration format.
 Does not parse all possible ISO 8601 durations.
 See :ref:`here <iso8601-durations>` for more information.
@@ -463,11 +463,11 @@ Examples:
    -PT7H4M    # -7 hours and -4 minutes (-7:04:00)
    +PT7H4M    # 7 hours and 4 minutes (7:04:00)
 
-Inverse of :meth:`format_common_iso`
+Inverse of :meth:`format_iso`
 
 Example
 -------
->>> DateTimeDelta.parse_common_iso(\"-P1W11DT4H\")
+>>> DateTimeDelta.parse_iso(\"-P1W11DT4H\")
 DateTimeDelta(-P1w11dT4h)
 ";
 pub(crate) const DATETIMEDELTA_TIME_PART: &CStr = c"\
@@ -480,10 +480,10 @@ Add a time amount to this instant.
 
 See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`_ for more information.
 ";
-pub(crate) const INSTANT_FORMAT_COMMON_ISO: &CStr = c"\
+pub(crate) const INSTANT_FORMAT_ISO: &CStr = c"\
 Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SSZ``
 
-The inverse of the ``parse_common_iso()`` method.
+The inverse of the ``parse_iso()`` method.
 ";
 pub(crate) const INSTANT_FORMAT_RFC2822: &CStr = c"\
 Format as an RFC 2822 string.
@@ -527,13 +527,13 @@ from_utc(year, month, day, hour=0, minute=0, second=0, *, nanosecond=0)
 Create an Instant defined by a UTC date and time.";
 pub(crate) const INSTANT_NOW: &CStr = c"\
 Create an Instant from the current time.";
-pub(crate) const INSTANT_PARSE_COMMON_ISO: &CStr = c"\
+pub(crate) const INSTANT_PARSE_ISO: &CStr = c"\
 Parse an ISO 8601 string. Supports basic and extended formats,
 but not week dates or ordinal dates.
 
 See the `docs on ISO8601 support <https://whenever.readthedocs.io/en/latest/overview.html#iso-8601>`_ for more information.
 
-The inverse of the ``format_common_iso()`` method.
+The inverse of the ``format_iso()`` method.
 ";
 pub(crate) const INSTANT_PARSE_RFC2822: &CStr = c"\
 Parse a UTC datetime in RFC 2822 format.
@@ -579,14 +579,14 @@ Subtract a time amount from this instant.
 
 See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`_ for more information.
 ";
-pub(crate) const MONTHDAY_FORMAT_COMMON_ISO: &CStr = c"\
-Format as the common ISO 8601 month-day format.
+pub(crate) const MONTHDAY_FORMAT_ISO: &CStr = c"\
+Format as the ISO 8601 month-day format.
 
-Inverse of ``parse_common_iso``.
+Inverse of ``parse_iso``.
 
 Example
 -------
->>> MonthDay(10, 8).format_common_iso()
+>>> MonthDay(10, 8).format_iso()
 '--10-08'
 
 Note
@@ -618,14 +618,14 @@ True
 >>> MonthDay(3, 1).is_leap()
 False
 ";
-pub(crate) const MONTHDAY_PARSE_COMMON_ISO: &CStr = c"\
-Create from the common ISO 8601 format ``--MM-DD`` or ``--MMDD``.
+pub(crate) const MONTHDAY_PARSE_ISO: &CStr = c"\
+Create from the ISO 8601 format ``--MM-DD`` or ``--MMDD``.
 
-Inverse of :meth:`format_common_iso`
+Inverse of :meth:`format_iso`
 
 Example
 -------
->>> MonthDay.parse_common_iso(\"--11-23\")
+>>> MonthDay.parse_iso(\"--11-23\")
 MonthDay(--11-23)
 ";
 pub(crate) const MONTHDAY_REPLACE: &CStr = c"\
@@ -658,10 +658,10 @@ pass ``ignore_dst=True`` to this method.
 For more information, see
 `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
 ";
-pub(crate) const OFFSETDATETIME_FORMAT_COMMON_ISO: &CStr = c"\
+pub(crate) const OFFSETDATETIME_FORMAT_ISO: &CStr = c"\
 Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
 
-The inverse of the ``parse_common_iso()`` method.
+The inverse of the ``parse_iso()`` method.
 ";
 pub(crate) const OFFSETDATETIME_FORMAT_RFC2822: &CStr = c"\
 Format as an RFC 2822 string.
@@ -752,14 +752,14 @@ Or, if you want to ignore DST and accept potentially incorrect offsets,
 pass ``ignore_dst=True`` to this method. For more information, see
 `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
 ";
-pub(crate) const OFFSETDATETIME_PARSE_COMMON_ISO: &CStr = c"\
+pub(crate) const OFFSETDATETIME_PARSE_ISO: &CStr = c"\
 Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
 
-The inverse of the ``format_common_iso()`` method.
+The inverse of the ``format_iso()`` method.
 
 Example
 -------
->>> OffsetDateTime.parse_common_iso(\"2020-08-15T23:12:00+02:00\")
+>>> OffsetDateTime.parse_iso(\"2020-08-15T23:12:00+02:00\")
 OffsetDateTime(2020-08-15 23:12:00+02:00)
 ";
 pub(crate) const OFFSETDATETIME_PARSE_RFC2822: &CStr = c"\
@@ -969,21 +969,21 @@ during DST transitions, pass ``ignore_dst=True``.
 For more information,
 see `the docs <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
 ";
-pub(crate) const PLAINDATETIME_FORMAT_COMMON_ISO: &CStr = c"\
+pub(crate) const PLAINDATETIME_FORMAT_ISO: &CStr = c"\
 Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
 
-The inverse of the ``parse_common_iso()`` method.
+The inverse of the ``parse_iso()`` method.
 ";
 pub(crate) const PLAINDATETIME_FROM_PY_DATETIME: &CStr = c"\
 Create an instance from a \"naive\" standard library ``datetime`` object";
-pub(crate) const PLAINDATETIME_PARSE_COMMON_ISO: &CStr = c"\
+pub(crate) const PLAINDATETIME_PARSE_ISO: &CStr = c"\
 Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
 
-The inverse of the ``format_common_iso()`` method.
+The inverse of the ``format_iso()`` method.
 
 Example
 -------
->>> PlainDateTime.parse_common_iso(\"2020-08-15T23:12:00\")
+>>> PlainDateTime.parse_iso(\"2020-08-15T23:12:00\")
 PlainDateTime(2020-08-15 23:12:00)
 ";
 pub(crate) const PLAINDATETIME_PARSE_STRPTIME: &CStr = c"\
@@ -1055,14 +1055,14 @@ during DST transitions, pass ``ignore_dst=True``.
 See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_
 for more information.
 ";
-pub(crate) const TIME_FORMAT_COMMON_ISO: &CStr = c"\
-Format as the common ISO 8601 time format.
+pub(crate) const TIME_FORMAT_ISO: &CStr = c"\
+Format as the ISO 8601 time format.
 
-Inverse of :meth:`parse_common_iso`.
+Inverse of :meth:`parse_iso`.
 
 Example
 -------
->>> Time(12, 30, 0).format_common_iso()
+>>> Time(12, 30, 0).format_iso()
 '12:30:00'
 ";
 pub(crate) const TIME_FROM_PY_TIME: &CStr = c"\
@@ -1088,14 +1088,14 @@ Then, use methods like :meth:`~PlainDateTime.assume_utc`
 or :meth:`~PlainDateTime.assume_tz`
 to find the corresponding exact time.
 ";
-pub(crate) const TIME_PARSE_COMMON_ISO: &CStr = c"\
-Create from the common ISO 8601 time format
+pub(crate) const TIME_PARSE_ISO: &CStr = c"\
+Create from the ISO 8601 time format
 
-Inverse of :meth:`format_common_iso`
+Inverse of :meth:`format_iso`
 
 Example
 -------
->>> Time.parse_common_iso(\"12:30:00\")
+>>> Time.parse_iso(\"12:30:00\")
 Time(12:30:00)
 ";
 pub(crate) const TIME_PY_TIME: &CStr = c"\
@@ -1127,16 +1127,16 @@ Time(12:45:00)
 >>> Time(8, 9, 13).round(\"second\", 5, mode=\"floor\")
 Time(08:09:10)
 ";
-pub(crate) const TIMEDELTA_FORMAT_COMMON_ISO: &CStr = c"\
+pub(crate) const TIMEDELTA_FORMAT_ISO: &CStr = c"\
 Format as the *popular interpretation* of the ISO 8601 duration format.
 May not strictly adhere to (all versions of) the standard.
 See :ref:`here <iso8601-durations>` for more information.
 
-Inverse of :meth:`parse_common_iso`.
+Inverse of :meth:`parse_iso`.
 
 Example
 -------
->>> TimeDelta(hours=1, minutes=30).format_common_iso()
+>>> TimeDelta(hours=1, minutes=30).format_iso()
 'PT1H30M'
 ";
 pub(crate) const TIMEDELTA_FROM_PY_TIMEDELTA: &CStr = c"\
@@ -1214,16 +1214,16 @@ Example
 >>> d.in_seconds()
 121.5
 ";
-pub(crate) const TIMEDELTA_PARSE_COMMON_ISO: &CStr = c"\
+pub(crate) const TIMEDELTA_PARSE_ISO: &CStr = c"\
 Parse the *popular interpretation* of the ISO 8601 duration format.
 Does not parse all possible ISO 8601 durations.
 See :ref:`here <iso8601-durations>` for more information.
 
-Inverse of :meth:`format_common_iso`
+Inverse of :meth:`format_iso`
 
 Example
 -------
->>> TimeDelta.parse_common_iso(\"PT1H80M\")
+>>> TimeDelta.parse_iso(\"PT1H80M\")
 TimeDelta(PT2h20m)
 
 Note
@@ -1263,14 +1263,14 @@ TimeDelta(PT3h26m)
 >>> t.round(\"second\", increment=10, mode=\"floor\")
 TimeDelta(PT3h25m40s)
 ";
-pub(crate) const YEARMONTH_FORMAT_COMMON_ISO: &CStr = c"\
-Format as the common ISO 8601 year-month format.
+pub(crate) const YEARMONTH_FORMAT_ISO: &CStr = c"\
+Format as the ISO 8601 year-month format.
 
-Inverse of :meth:`parse_common_iso`.
+Inverse of :meth:`parse_iso`.
 
 Example
 -------
->>> YearMonth(2021, 1).format_common_iso()
+>>> YearMonth(2021, 1).format_iso()
 '2021-01'
 ";
 pub(crate) const YEARMONTH_ON_DAY: &CStr = c"\
@@ -1281,14 +1281,14 @@ Example
 >>> YearMonth(2021, 1).on_day(2)
 Date(2021-01-02)
 ";
-pub(crate) const YEARMONTH_PARSE_COMMON_ISO: &CStr = c"\
-Create from the common ISO 8601 format ``YYYY-MM`` or ``YYYYMM``.
+pub(crate) const YEARMONTH_PARSE_ISO: &CStr = c"\
+Create from the ISO 8601 format ``YYYY-MM`` or ``YYYYMM``.
 
-Inverse of :meth:`format_common_iso`
+Inverse of :meth:`format_iso`
 
 Example
 -------
->>> YearMonth.parse_common_iso(\"2021-01\")
+>>> YearMonth.parse_iso(\"2021-01\")
 YearMonth(2021-01)
 ";
 pub(crate) const YEARMONTH_REPLACE: &CStr = c"\
@@ -1330,13 +1330,13 @@ TimeDelta(24:00:00)
 >>> ZonedDateTime(2023, 10, 29, tz=\"Europe/Amsterdam\").day_length()
 TimeDelta(25:00:00)
 ";
-pub(crate) const ZONEDDATETIME_FORMAT_COMMON_ISO: &CStr = c"\
-format_common_iso($self, *, unit='auto', basic=False, sep='T', tz='always')
+pub(crate) const ZONEDDATETIME_FORMAT_ISO: &CStr = c"\
+format_iso($self, *, unit='auto', basic=False, sep='T', tz='always')
 --
 
 Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``.
 
-The inverse of the ``parse_common_iso()`` method.
+The inverse of the ``parse_iso()`` method.
 
 Use the ``unit`` parameter to control the precision of the time part,
 the ``sep`` parameter to control the separator,
@@ -1400,14 +1400,14 @@ True
 ";
 pub(crate) const ZONEDDATETIME_NOW: &CStr = c"\
 Create an instance from the current time in the given timezone.";
-pub(crate) const ZONEDDATETIME_PARSE_COMMON_ISO: &CStr = c"\
+pub(crate) const ZONEDDATETIME_PARSE_ISO: &CStr = c"\
 Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
 
-The inverse of the ``format_common_iso()`` method.
+The inverse of the ``format_iso()`` method.
 
 Example
 -------
->>> ZonedDateTime.parse_common_iso(\"2020-08-15T23:12:00+01:00[Europe/London]\")
+>>> ZonedDateTime.parse_iso(\"2020-08-15T23:12:00+01:00[Europe/London]\")
 ZonedDateTime(2020-08-15 23:12:00+01:00[Europe/London])
 
 Important

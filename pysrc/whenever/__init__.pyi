@@ -54,10 +54,10 @@ _EXTENSION_LOADED: bool
 __version__: str
 
 @type_check_only
-class _CommonISOMixin:
+class _ISOMixin:
     @classmethod
-    def parse_common_iso(cls, s: str, /) -> Self: ...
-    def format_common_iso(self) -> str: ...
+    def parse_iso(cls, s: str, /) -> Self: ...
+    def format_iso(self) -> str: ...
 
 @type_check_only
 class _OrderMixin:
@@ -69,8 +69,8 @@ class _OrderMixin:
     def __ge__(self, other: Self, /) -> bool: ...
 
 @type_check_only
-class _DateOrTimeMixin(_CommonISOMixin, _OrderMixin):
-    def format_common_iso(
+class _DateOrTimeMixin(_ISOMixin, _OrderMixin):
+    def format_iso(
         self,
         *,
         basic: bool = False,
@@ -185,7 +185,7 @@ class Time(_DateOrTimeMixin):
             "ceil", "floor", "half_ceil", "half_floor", "half_even"
         ] = "half_even",
     ) -> Self: ...
-    def format_common_iso(
+    def format_iso(
         self,
         *,
         unit: Literal[
@@ -201,7 +201,7 @@ class Time(_DateOrTimeMixin):
     ) -> str: ...
 
 @type_check_only
-class _DeltaMixin(_CommonISOMixin):
+class _DeltaMixin(_ISOMixin):
     ZERO: ClassVar[Self]
     def __bool__(self) -> bool: ...
     def __neg__(self) -> Self: ...
@@ -349,11 +349,11 @@ class _ExactAndLocalTime(_ExactTime, _LocalTime, ABC):
     def offset(self) -> TimeDelta: ...
 
 @type_check_only
-class _PyDateTimeMixin(_CommonISOMixin):
+class _PyDateTimeMixin(_ISOMixin):
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> Self: ...
     def py_datetime(self) -> _datetime: ...
-    def format_common_iso(
+    def format_iso(
         self,
         *,
         unit: Literal[
@@ -699,7 +699,7 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
             "ceil", "floor", "half_ceil", "half_floor", "half_even"
         ] = "half_even",
     ) -> Self: ...
-    def format_common_iso(
+    def format_iso(
         self,
         *,
         unit: Literal[

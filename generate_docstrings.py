@@ -119,9 +119,9 @@ MANUALLY_DEFINED_SIGS.update(
     }
 )
 SKIP = {
-    W._BasicConversions.format_common_iso,
+    W._BasicConversions.format_iso,
     W._BasicConversions.from_py_datetime,
-    W._BasicConversions.parse_common_iso,
+    W._BasicConversions.parse_iso,
     W._ExactTime.from_timestamp,
     W._ExactTime.from_timestamp_millis,
     W._ExactTime.from_timestamp_nanos,
