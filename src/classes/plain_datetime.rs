@@ -175,7 +175,7 @@ fn __str__(_: PyType, slf: DateTime) -> PyReturn {
     format!("{slf}").to_py()
 }
 
-fn format_common_iso(cls: PyType, slf: DateTime) -> PyReturn {
+fn format_iso(cls: PyType, slf: DateTime) -> PyReturn {
     __str__(cls, slf)
 }
 
@@ -637,7 +637,7 @@ fn is_datetime_sep(c: u8) -> bool {
     c == b'T' || c == b' ' || c == b't'
 }
 
-fn parse_common_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
+fn parse_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
     DateTime::parse(
         arg.cast::<PyStr>()
             .ok_or_type_err("Expected a string")?
@@ -815,16 +815,8 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(DateTime, py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
     method0!(DateTime, date, doc::LOCALTIME_DATE),
     method0!(DateTime, time, doc::LOCALTIME_TIME),
-    method0!(
-        DateTime,
-        format_common_iso,
-        doc::PLAINDATETIME_FORMAT_COMMON_ISO
-    ),
-    classmethod1!(
-        DateTime,
-        parse_common_iso,
-        doc::PLAINDATETIME_PARSE_COMMON_ISO
-    ),
+    method0!(DateTime, format_iso, doc::PLAINDATETIME_FORMAT_ISO),
+    classmethod1!(DateTime, parse_iso, doc::PLAINDATETIME_PARSE_ISO),
     classmethod_kwargs!(DateTime, parse_strptime, doc::PLAINDATETIME_PARSE_STRPTIME),
     method_kwargs!(DateTime, replace, doc::PLAINDATETIME_REPLACE),
     method0!(DateTime, assume_utc, doc::PLAINDATETIME_ASSUME_UTC),

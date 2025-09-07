@@ -144,11 +144,11 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn format_common_iso(cls: PyType, slf: YearMonth) -> PyReturn {
+fn format_iso(cls: PyType, slf: YearMonth) -> PyReturn {
     __str__(cls, slf)
 }
 
-fn parse_common_iso(cls: HeapType<YearMonth>, arg: PyObj) -> PyReturn {
+fn parse_iso(cls: HeapType<YearMonth>, arg: PyObj) -> PyReturn {
     let py_str = arg.cast::<PyStr>().ok_or_type_err("argument must be str")?;
     YearMonth::parse(py_str.as_utf8()?)
         .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?
@@ -221,12 +221,8 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(YearMonth, __copy__, c""),
     method1!(YearMonth, __deepcopy__, c""),
     method0!(YearMonth, __reduce__, c""),
-    method0!(
-        YearMonth,
-        format_common_iso,
-        doc::YEARMONTH_FORMAT_COMMON_ISO
-    ),
-    classmethod1!(YearMonth, parse_common_iso, doc::YEARMONTH_PARSE_COMMON_ISO),
+    method0!(YearMonth, format_iso, doc::YEARMONTH_FORMAT_ISO),
+    classmethod1!(YearMonth, parse_iso, doc::YEARMONTH_PARSE_ISO),
     method1!(YearMonth, on_day, doc::YEARMONTH_ON_DAY),
     method_kwargs!(YearMonth, replace, doc::YEARMONTH_REPLACE),
     classmethod_kwargs!(

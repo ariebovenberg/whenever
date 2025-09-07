@@ -236,7 +236,7 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-class TestParseCommonIso:
+class TestParseIso:
     @pytest.mark.parametrize(
         "s, expected",
         [
@@ -270,7 +270,7 @@ class TestParseCommonIso:
         ],
     )
     def test_valid(self, s, expected):
-        assert PlainDateTime.parse_common_iso(s) == PlainDateTime(
+        assert PlainDateTime.parse_iso(s) == PlainDateTime(
             *expected[:6], nanosecond=expected[6]
         )
 
@@ -332,12 +332,12 @@ class TestParseCommonIso:
     )
     def test_invalid(self, s):
         with pytest.raises(ValueError, match=re.escape(repr(s))):
-            PlainDateTime.parse_common_iso(s)
+            PlainDateTime.parse_iso(s)
 
     @given(text())
     def test_fuzzing(self, s: str):
         with pytest.raises(ValueError, match=re.escape(repr(s))):
-            PlainDateTime.parse_common_iso(s)
+            PlainDateTime.parse_iso(s)
 
 
 def test_equality():
@@ -383,10 +383,10 @@ def test_repr():
     )
 
 
-def test_format_common_iso():
+def test_format_iso():
     d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
     assert str(d) == "2020-08-15T23:12:09.000987654"
-    assert d.format_common_iso() == "2020-08-15T23:12:09.000987654"
+    assert d.format_iso() == "2020-08-15T23:12:09.000987654"
 
 
 def test_comparison():

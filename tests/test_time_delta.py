@@ -305,8 +305,8 @@ def test_comparison():
         (TimeDelta(minutes=-4), "-PT4M"),
     ],
 )
-def test_format_common_iso(d, expected):
-    assert d.format_common_iso() == expected
+def test_format_iso(d, expected):
+    assert d.format_iso() == expected
 
 
 def test_repr():
@@ -403,11 +403,11 @@ INVALID_TDELTAS = [
 ]
 
 
-class TestParseCommonIso:
+class TestParseIso:
 
     @pytest.mark.parametrize("s, expected", VALID_TDELTAS)
     def test_valid(self, s, expected):
-        assert TimeDelta.parse_common_iso(s) == expected
+        assert TimeDelta.parse_iso(s) == expected
 
     @pytest.mark.parametrize("s", INVALID_TDELTAS)
     def test_invalid(self, s) -> None:
@@ -415,7 +415,7 @@ class TestParseCommonIso:
             ValueError,
             match=r"Invalid format.*" + re.escape(repr(s)),
         ):
-            TimeDelta.parse_common_iso(s)
+            TimeDelta.parse_iso(s)
 
     @pytest.mark.parametrize(
         "s",
@@ -426,7 +426,7 @@ class TestParseCommonIso:
     )
     def test_too_large(self, s) -> None:
         with pytest.raises(ValueError, match="range"):
-            TimeDelta.parse_common_iso(s)
+            TimeDelta.parse_iso(s)
 
 
 def test_addition():

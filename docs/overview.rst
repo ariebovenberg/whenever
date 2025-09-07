@@ -674,7 +674,7 @@ and widely-used subset of the standard, while avoiding the more obscure
 and rarely-used parts, which are often the source of confusion and bugs.
 
 ``whenever``'s
-:meth:`~whenever._BasicConversions.parse_common_iso` methods take
+:meth:`~whenever._BasicConversions.parse_iso` methods take
 mostly `after Temporal <https://tc39.es/proposal-temporal/#sec-temporal-iso8601grammar>`_,
 namely:
 
@@ -697,7 +697,7 @@ namely:
   (``Y``, ``M``, ``D``).
 
 Below are the default string formats you get for calling each type's
-:meth:`~whenever._BasicConversions.format_common_iso` method:
+:meth:`~whenever._BasicConversions.format_iso` method:
 
 +-----------------------------------------+------------------------------------------------+
 | Type                                    | Default string format                          |
@@ -714,9 +714,9 @@ Below are the default string formats you get for calling each type's
 Example usage:
 
 >>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=+5)
->>> d.format_common_iso()
+>>> d.format_iso()
 '2023-12-28T11:30:00+05:00'
->>> OffsetDateTime.parse_common_iso('2021-07-13T09:45:00-09:00')
+>>> OffsetDateTime.parse_iso('2021-07-13T09:45:00-09:00')
 OffsetDateTime(2021-07-13 09:45:00-09:00)
 
 .. note::
@@ -730,14 +730,13 @@ OffsetDateTime(2021-07-13 09:45:00-09:00)
    The full ISO 8601 standard is not supported for several reasons:
 
    - It allows for a lot of rarely-used flexibility:
-     e.g. fractional hours, omitting separators, week-based years, etc.
+     e.g. fractional hours, week-based years, etc.
    - There are different versions of the standard with different rules
    - The full specification is not freely available
 
    This isn't a problem in practice since people referring to "ISO 8601"
    often mean the most common subset, which is what ``whenever`` supports.
    It's rare for libraries to support the full standard.
-   The method name ``parse_common_iso`` makes this assumption explicit.
 
    If you do need to parse the full spectrum of ISO 8601, you can use
    a specialized library such as `dateutil.parser <https://dateutil.readthedocs.io/en/stable/parser.html>`_.
@@ -808,7 +807,7 @@ Pydantic integration
 
 ``Whenever`` types support basic serialization and deserialization
 with `Pydantic <https://docs.pydantic.dev>`_. The behavior is identical to
-the ``parse_common_iso()`` and ``format_common_iso()`` methods.
+the ``parse_iso()`` and ``format_iso()`` methods.
 
 >>> from pydantic import BaseModel
 >>> from whenever import ZonedDateTime, TimeDelta

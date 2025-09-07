@@ -75,13 +75,13 @@ Parse an ISO8601 datetime string
 --------------------------------
 
 >>> from whenever import Instant
->>> Instant.parse_common_iso("2025-04-19T19:02+04:00")
+>>> Instant.parse_iso("2025-04-19T19:02+04:00")
 Instant(2025-04-19 15:02:00Z)
 
 Or, if you want to keep the offset value:
 
 >>> from whenever import OffsetDateTime
->>> OffsetDateTime.parse_common_iso("2025-04-19T19:02+04:00")
+>>> OffsetDateTime.parse_iso("2025-04-19T19:02+04:00")
 OffsetDateTime(2025-04-19 19:02:00+04:00)
 
 Determine the start of the hour

@@ -655,7 +655,7 @@ class TestReplaceTime:
             d2.replace_time(Time(23), disambiguate="compatible")
 
 
-class TestFormatCommonIso:
+class TestFormatIso:
 
     @pytest.mark.parametrize(
         "d, expected",
@@ -711,7 +711,7 @@ class TestFormatCommonIso:
     )
     def test_defaults(self, d: ZonedDateTime, expected: str):
         assert str(d) == expected
-        assert d.format_common_iso() == expected
+        assert d.format_iso() == expected
 
     @pytest.mark.parametrize(
         "d",
@@ -722,7 +722,7 @@ class TestFormatCommonIso:
     )
     def test_no_timezone_id(self, d: ZonedDateTime):
         with pytest.raises(ValueError, match="timezone ID"):
-            d.format_common_iso()
+            d.format_iso()
 
     @pytest.mark.parametrize(
         "zdt, kwargs, expected",
@@ -815,27 +815,27 @@ class TestFormatCommonIso:
         ],
     )
     def test_variations(self, zdt, kwargs, expected):
-        assert zdt.format_common_iso(**kwargs) == expected
+        assert zdt.format_iso(**kwargs) == expected
 
     def test_invalid(self):
         with pytest.raises(ValueError, match="unit"):
-            ZDT1.format_common_iso(unit="foo")  # type: ignore[arg-type]
+            ZDT1.format_iso(unit="foo")  # type: ignore[arg-type]
 
         with pytest.raises(
             (ValueError, TypeError, AttributeError), match="unit"
         ):
-            ZDT1.format_common_iso(unit=True)  # type: ignore[arg-type]
+            ZDT1.format_iso(unit=True)  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="sep"):
-            ZDT1.format_common_iso(sep="_")  # type: ignore[arg-type]
+            ZDT1.format_iso(sep="_")  # type: ignore[arg-type]
 
         with pytest.raises(
             (ValueError, TypeError, AttributeError), match="sep"
         ):
-            ZDT1.format_common_iso(sep=1)  # type: ignore[arg-type]
+            ZDT1.format_iso(sep=1)  # type: ignore[arg-type]
 
         with pytest.raises(TypeError, match="basic"):
-            ZDT1.format_common_iso(basic=1)  # type: ignore[arg-type]
+            ZDT1.format_iso(basic=1)  # type: ignore[arg-type]
 
 
 class TestEquality:
@@ -1422,7 +1422,7 @@ def test_to_system_tz():
         big_zdt.to_system_tz()
 
 
-class TestParseCommonIso:
+class TestParseIso:
     @pytest.mark.parametrize(
         "s, expect",
         [
@@ -1556,7 +1556,7 @@ class TestParseCommonIso:
         ],
     )
     def test_valid(self, s, expect):
-        assert ZonedDateTime.parse_common_iso(s).exact_eq(expect)
+        assert ZonedDateTime.parse_iso(s).exact_eq(expect)
 
     @pytest.mark.parametrize(
         "s",
@@ -1606,24 +1606,22 @@ class TestParseCommonIso:
     )
     def test_invalid(self, s):
         with pytest.raises(ValueError, match="format.*" + re.escape(s)):
-            ZonedDateTime.parse_common_iso(s)
+            ZonedDateTime.parse_iso(s)
 
     def test_invalid_tz(self):
         with pytest.raises(TimeZoneNotFoundError):
-            ZonedDateTime.parse_common_iso(
+            ZonedDateTime.parse_iso(
                 "2020-08-15T12:08:30+02:00[Europe/Nowhere]"
             )
 
         with pytest.raises(TimeZoneNotFoundError):
-            ZonedDateTime.parse_common_iso("2020-08-15T12:08:30Z[X]")
+            ZonedDateTime.parse_iso("2020-08-15T12:08:30Z[X]")
 
         with pytest.raises((TimeZoneNotFoundError, ValueError)):
-            ZonedDateTime.parse_common_iso(
-                f"2023-10-29T02:15:30+02:00[{'X'*9999}]"
-            )
+            ZonedDateTime.parse_iso(f"2023-10-29T02:15:30+02:00[{'X'*9999}]")
 
         with pytest.raises((TimeZoneNotFoundError, ValueError)):
-            ZonedDateTime.parse_common_iso(
+            ZonedDateTime.parse_iso(
                 f"2023-10-29T02:15:30+02:00[{chr(1600)}]",
             )
 
@@ -1640,23 +1638,23 @@ class TestParseCommonIso:
     )
     def test_out_of_range(self, s):
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            ZonedDateTime.parse_common_iso(s)
+            ZonedDateTime.parse_iso(s)
 
     def test_offset_timezone_mismatch(self):
         with pytest.raises(InvalidOffsetError):
             # at the exact DST transition
-            ZonedDateTime.parse_common_iso(
+            ZonedDateTime.parse_iso(
                 "2023-10-29T02:15:30+03:00[Europe/Amsterdam]"
             )
         with pytest.raises(InvalidOffsetError):
             # some other time in the year
-            ZonedDateTime.parse_common_iso(
+            ZonedDateTime.parse_iso(
                 "2020-08-15T12:08:30+01:00:01[Europe/Amsterdam]"
             )
 
         with pytest.raises(InvalidOffsetError):
             # some other time in the year
-            ZonedDateTime.parse_common_iso(
+            ZonedDateTime.parse_iso(
                 "2020-08-15T12:08:30+00:00[Europe/Amsterdam]"
             )
 
@@ -1664,7 +1662,7 @@ class TestParseCommonIso:
 
     def test_skipped_time(self):
         with pytest.raises(InvalidOffsetError):
-            ZonedDateTime.parse_common_iso(
+            ZonedDateTime.parse_iso(
                 "2023-03-26T02:15:30+01:00[Europe/Amsterdam]"
             )
 
@@ -1674,7 +1672,7 @@ class TestParseCommonIso:
             ValueError,
             match=r"Invalid format.*" + re.escape(repr(s)),
         ):
-            ZonedDateTime.parse_common_iso(s)
+            ZonedDateTime.parse_iso(s)
 
 
 class TestTimestamp:

@@ -3,11 +3,10 @@ use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
 use std::ptr::null_mut as NULL;
 
-use crate::common::fmt::Precision;
 use crate::{
     classes::plain_datetime::DateTime,
     common::{
-        fmt::{AsciiArrayVec, write_2_digits},
+        fmt::{AsciiArrayVec, Precision, write_2_digits},
         parse::Scan,
         round,
         scalar::*,
@@ -354,7 +353,7 @@ fn __richcmp__(cls: HeapType<Time>, slf: Time, arg: PyObj, op: c_int) -> PyRetur
 #[allow(static_mut_refs)]
 static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Time, Py_tp_new, __new__),
-    slotmethod!(Time, Py_tp_str, format_common_iso, 1),
+    slotmethod!(Time, Py_tp_str, format_iso, 1),
     slotmethod!(Time, Py_tp_repr, __repr__, 1),
     slotmethod!(Time, Py_tp_richcompare, __richcmp__),
     PyType_Slot {
@@ -417,7 +416,7 @@ fn from_py_time(cls: HeapType<Time>, arg: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn format_common_iso(_: PyType, slf: Time) -> PyReturn {
+fn format_iso(_: PyType, slf: Time) -> PyReturn {
     format!("{slf}").to_py()
 }
 
@@ -436,7 +435,7 @@ fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyResult<Owned<PyTuple>> {
         .into_pytuple()
 }
 
-fn parse_common_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn {
+fn parse_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn {
     Time::parse_iso(
         s.cast::<PyStr>()
             .ok_or_type_err("Argument must be a string")?
@@ -523,8 +522,8 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(Time, __reduce__, c""),
     method0!(Time, py_time, doc::TIME_PY_TIME),
     method_kwargs!(Time, replace, doc::TIME_REPLACE),
-    method0!(Time, format_common_iso, doc::TIME_FORMAT_COMMON_ISO),
-    classmethod1!(Time, parse_common_iso, doc::TIME_PARSE_COMMON_ISO),
+    method0!(Time, format_iso, doc::TIME_FORMAT_ISO),
+    classmethod1!(Time, parse_iso, doc::TIME_PARSE_ISO),
     classmethod1!(Time, from_py_time, doc::TIME_FROM_PY_TIME),
     method1!(Time, on, doc::TIME_ON),
     method_kwargs!(Time, round, doc::TIME_ROUND),

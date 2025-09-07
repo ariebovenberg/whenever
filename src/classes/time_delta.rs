@@ -1,8 +1,6 @@
 use core::ffi::{CStr, c_int, c_void};
 use pyo3_ffi::*;
-use std::fmt;
-use std::ops::Neg;
-use std::ptr::null_mut as NULL;
+use std::{fmt, ops::Neg, ptr::null_mut as NULL};
 
 use crate::{
     classes::{
@@ -399,7 +397,7 @@ fn __repr__(_: PyType, slf: TimeDelta) -> PyReturn {
 }
 
 fn __str__(cls: PyType, slf: TimeDelta) -> PyReturn {
-    format_common_iso(cls, slf)
+    format_iso(cls, slf)
 }
 
 fn __mul__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
@@ -760,7 +758,7 @@ fn in_hrs_mins_secs_nanos(_: PyType, slf: TimeDelta) -> PyResult<Owned<PyTuple>>
         .into_pytuple()
 }
 
-fn format_common_iso(_: PyType, slf: TimeDelta) -> PyReturn {
+fn format_iso(_: PyType, slf: TimeDelta) -> PyReturn {
     slf.fmt_iso().to_py()
 }
 
@@ -892,7 +890,7 @@ pub(crate) fn parse_all_components(s: &mut &[u8]) -> Option<(i128, bool)> {
     Some((nanos, prev_unit.is_none()))
 }
 
-fn parse_common_iso(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
+fn parse_iso(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
     let py_str = arg
         .cast::<PyStr>()
         .ok_or_type_err("argument must be a string")?;
@@ -934,12 +932,8 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(TimeDelta, __copy__, c""),
     method1!(TimeDelta, __deepcopy__, c""),
     method0!(TimeDelta, __reduce__, c""),
-    method0!(
-        TimeDelta,
-        format_common_iso,
-        doc::TIMEDELTA_FORMAT_COMMON_ISO
-    ),
-    classmethod1!(TimeDelta, parse_common_iso, doc::TIMEDELTA_PARSE_COMMON_ISO),
+    method0!(TimeDelta, format_iso, doc::TIMEDELTA_FORMAT_ISO),
+    classmethod1!(TimeDelta, parse_iso, doc::TIMEDELTA_PARSE_ISO),
     method0!(TimeDelta, in_nanoseconds, doc::TIMEDELTA_IN_NANOSECONDS),
     method0!(TimeDelta, in_microseconds, doc::TIMEDELTA_IN_MICROSECONDS),
     method0!(TimeDelta, in_milliseconds, doc::TIMEDELTA_IN_MILLISECONDS),

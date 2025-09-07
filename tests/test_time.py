@@ -50,9 +50,9 @@ class TestInit:
         (Time(1), "01:00:00"),
     ],
 )
-def test_format_common_iso(t, expect):
+def test_format_iso(t, expect):
     assert str(t) == expect
-    assert t.format_common_iso() == expect
+    assert t.format_iso() == expect
 
 
 def test_py_time():
@@ -85,7 +85,7 @@ def test_replace():
         t.replace(fold=0)  # type: ignore[call-arg]
 
 
-class TestParseCommonIso:
+class TestParseIso:
 
     @pytest.mark.parametrize(
         "input, expect",
@@ -109,7 +109,7 @@ class TestParseCommonIso:
         ],
     )
     def test_valid(self, input, expect):
-        assert Time.parse_common_iso(input) == expect
+        assert Time.parse_iso(input) == expect
 
     @pytest.mark.parametrize(
         "input",
@@ -162,7 +162,7 @@ class TestParseCommonIso:
             ValueError,
             match=r"Invalid format.*" + re.escape(repr(input)),
         ):
-            Time.parse_common_iso(input)
+            Time.parse_iso(input)
 
 
 def test_eq():

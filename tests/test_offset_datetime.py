@@ -116,7 +116,7 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-class TestFormatCommonIso:
+class TestFormatIso:
 
     @pytest.mark.parametrize(
         "d, expected",
@@ -156,7 +156,7 @@ class TestFormatCommonIso:
     )
     def test_default(self, d: OffsetDateTime, expected: str):
         assert str(d) == expected
-        assert d.format_common_iso() == expected
+        assert d.format_iso() == expected
 
 
 INVALID_ISO_STRINGS = [
@@ -296,15 +296,15 @@ VALID_ISO_STRINGS = [
 ]
 
 
-class TestParseCommonIso:
+class TestParseIso:
     @pytest.mark.parametrize("s, expect", VALID_ISO_STRINGS)
     def test_valid(self, s, expect):
-        assert OffsetDateTime.parse_common_iso(s).exact_eq(expect)
+        assert OffsetDateTime.parse_iso(s).exact_eq(expect)
 
     @pytest.mark.parametrize("s", INVALID_ISO_STRINGS)
     def test_invalid(self, s):
         with pytest.raises(ValueError, match="format.*" + re.escape(repr(s))):
-            OffsetDateTime.parse_common_iso(s)
+            OffsetDateTime.parse_iso(s)
 
     @pytest.mark.parametrize(
         "s",
@@ -315,7 +315,7 @@ class TestParseCommonIso:
     )
     def test_bounds(self, s):
         with pytest.raises(ValueError):
-            OffsetDateTime.parse_common_iso(s)
+            OffsetDateTime.parse_iso(s)
 
     @given(text())
     def test_fuzzing(self, s: str):
@@ -323,7 +323,7 @@ class TestParseCommonIso:
             ValueError,
             match=r"format.*" + re.escape(repr(s)),
         ):
-            OffsetDateTime.parse_common_iso(s)
+            OffsetDateTime.parse_iso(s)
 
 
 def test_exact_equality():

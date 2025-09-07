@@ -286,31 +286,31 @@ class Date(_ImmutableBase):
         self._py_date = d
         return self
 
-    def format_common_iso(self) -> str:
-        """Format as the common ISO 8601 date format.
+    def format_iso(self) -> str:
+        """Format as the ISO 8601 date format.
 
-        Inverse of :meth:`parse_common_iso`.
+        Inverse of :meth:`parse_iso`.
 
         Example
         -------
-        >>> Date(2021, 1, 2).format_common_iso()
+        >>> Date(2021, 1, 2).format_iso()
         '2021-01-02'
         """
         return self._py_date.isoformat()
 
     @classmethod
-    def parse_common_iso(cls, s: str, /) -> Date:
+    def parse_iso(cls, s: str, /) -> Date:
         """Parse a date from an ISO8601 string
 
         The following formats are accepted:
         - ``YYYY-MM-DD`` ("extended" format)
         - ``YYYYMMDD`` ("basic" format)
 
-        Inverse of :meth:`format_common_iso`
+        Inverse of :meth:`format_iso`
 
         Example
         -------
-        >>> Date.parse_common_iso("2021-01-02")
+        >>> Date.parse_iso("2021-01-02")
         Date(2021-01-02)
         """
         return cls._from_py_unchecked(_date_from_iso(s))
@@ -512,7 +512,7 @@ class Date(_ImmutableBase):
             return DateDelta(months=mos, days=dys)
         return NotImplemented
 
-    __str__ = format_common_iso
+    __str__ = format_iso
 
     def __repr__(self) -> str:
         return f"Date({self})"
@@ -610,27 +610,27 @@ class YearMonth(_ImmutableBase):
     def month(self) -> int:
         return self._py_date.month
 
-    def format_common_iso(self) -> str:
-        """Format as the common ISO 8601 year-month format.
+    def format_iso(self) -> str:
+        """Format as the ISO 8601 year-month format.
 
-        Inverse of :meth:`parse_common_iso`.
+        Inverse of :meth:`parse_iso`.
 
         Example
         -------
-        >>> YearMonth(2021, 1).format_common_iso()
+        >>> YearMonth(2021, 1).format_iso()
         '2021-01'
         """
         return self._py_date.isoformat()[:7]
 
     @classmethod
-    def parse_common_iso(cls, s: str, /) -> YearMonth:
-        """Create from the common ISO 8601 format ``YYYY-MM`` or ``YYYYMM``.
+    def parse_iso(cls, s: str, /) -> YearMonth:
+        """Create from the ISO 8601 format ``YYYY-MM`` or ``YYYYMM``.
 
-        Inverse of :meth:`format_common_iso`
+        Inverse of :meth:`format_iso`
 
         Example
         -------
-        >>> YearMonth.parse_common_iso("2021-01")
+        >>> YearMonth.parse_iso("2021-01")
         YearMonth(2021-01)
         """
         return cls._from_py_unchecked(_yearmonth_from_iso(s))
@@ -660,7 +660,7 @@ class YearMonth(_ImmutableBase):
         """
         return Date._from_py_unchecked(self._py_date.replace(day=day))
 
-    __str__ = format_common_iso
+    __str__ = format_iso
 
     def __repr__(self) -> str:
         return f"YearMonth({self})"
@@ -762,14 +762,14 @@ class MonthDay(_ImmutableBase):
     def day(self) -> int:
         return self._py_date.day
 
-    def format_common_iso(self) -> str:
-        """Format as the common ISO 8601 month-day format.
+    def format_iso(self) -> str:
+        """Format as the ISO 8601 month-day format.
 
-        Inverse of ``parse_common_iso``.
+        Inverse of ``parse_iso``.
 
         Example
         -------
-        >>> MonthDay(10, 8).format_common_iso()
+        >>> MonthDay(10, 8).format_iso()
         '--10-08'
 
         Note
@@ -781,14 +781,14 @@ class MonthDay(_ImmutableBase):
         return f"-{self._py_date.isoformat()[4:]}"
 
     @classmethod
-    def parse_common_iso(cls, s: str, /) -> MonthDay:
-        """Create from the common ISO 8601 format ``--MM-DD`` or ``--MMDD``.
+    def parse_iso(cls, s: str, /) -> MonthDay:
+        """Create from the ISO 8601 format ``--MM-DD`` or ``--MMDD``.
 
-        Inverse of :meth:`format_common_iso`
+        Inverse of :meth:`format_iso`
 
         Example
         -------
-        >>> MonthDay.parse_common_iso("--11-23")
+        >>> MonthDay.parse_iso("--11-23")
         MonthDay(--11-23)
         """
         return cls._from_py_unchecked(_monthday_from_iso(s))
@@ -835,7 +835,7 @@ class MonthDay(_ImmutableBase):
         """
         return self._py_date.month == 2 and self._py_date.day == 29
 
-    __str__ = format_common_iso
+    __str__ = format_iso
 
     def __repr__(self) -> str:
         return f"MonthDay({self})"
@@ -1000,14 +1000,14 @@ class Time(_ImmutableBase):
             t.replace(microsecond=0), t.microsecond * 1_000
         )
 
-    def format_common_iso(self) -> str:
-        """Format as the common ISO 8601 time format.
+    def format_iso(self) -> str:
+        """Format as the ISO 8601 time format.
 
-        Inverse of :meth:`parse_common_iso`.
+        Inverse of :meth:`parse_iso`.
 
         Example
         -------
-        >>> Time(12, 30, 0).format_common_iso()
+        >>> Time(12, 30, 0).format_iso()
         '12:30:00'
         """
         return (
@@ -1017,14 +1017,14 @@ class Time(_ImmutableBase):
         )
 
     @classmethod
-    def parse_common_iso(cls, s: str, /) -> Time:
-        """Create from the common ISO 8601 time format
+    def parse_iso(cls, s: str, /) -> Time:
+        """Create from the ISO 8601 time format
 
-        Inverse of :meth:`format_common_iso`
+        Inverse of :meth:`format_iso`
 
         Example
         -------
-        >>> Time.parse_common_iso("12:30:00")
+        >>> Time.parse_iso("12:30:00")
         Time(12:30:00)
         """
         return cls._from_py_unchecked(*_time_from_iso(s))
@@ -1129,7 +1129,7 @@ class Time(_ImmutableBase):
         self._nanos = nanos
         return self
 
-    __str__ = format_common_iso
+    __str__ = format_iso
 
     def __repr__(self) -> str:
         return f"Time({self})"
@@ -1420,16 +1420,16 @@ class TimeDelta(_ImmutableBase):
             hours=td.days * 24,
         )
 
-    def format_common_iso(self) -> str:
+    def format_iso(self) -> str:
         """Format as the *popular interpretation* of the ISO 8601 duration format.
         May not strictly adhere to (all versions of) the standard.
         See :ref:`here <iso8601-durations>` for more information.
 
-        Inverse of :meth:`parse_common_iso`.
+        Inverse of :meth:`parse_iso`.
 
         Example
         -------
-        >>> TimeDelta(hours=1, minutes=30).format_common_iso()
+        >>> TimeDelta(hours=1, minutes=30).format_iso()
         'PT1H30M'
         """
         hrs, mins, secs, ns = abs(self).in_hrs_mins_secs_nanos()
@@ -1446,16 +1446,16 @@ class TimeDelta(_ImmutableBase):
         )
 
     @classmethod
-    def parse_common_iso(cls, s: str, /) -> TimeDelta:
+    def parse_iso(cls, s: str, /) -> TimeDelta:
         """Parse the *popular interpretation* of the ISO 8601 duration format.
         Does not parse all possible ISO 8601 durations.
         See :ref:`here <iso8601-durations>` for more information.
 
-        Inverse of :meth:`format_common_iso`
+        Inverse of :meth:`format_iso`
 
         Example
         -------
-        >>> TimeDelta.parse_common_iso("PT1H80M")
+        >>> TimeDelta.parse_iso("PT1H80M")
         TimeDelta(PT2h20m)
 
         Note
@@ -1736,10 +1736,10 @@ class TimeDelta(_ImmutableBase):
         """
         return TimeDelta._from_nanos_unchecked(abs(self._total_ns))
 
-    __str__ = format_common_iso
+    __str__ = format_iso
 
     def __repr__(self) -> str:
-        iso = self.format_common_iso()
+        iso = self.format_iso()
         # lowercase everything besides the prefix (don't forget the sign!)
         cased = iso[:3] + iso[3:].lower()
         return f"TimeDelta({cased})"
@@ -1860,12 +1860,12 @@ class DateDelta(_ImmutableBase):
         months = int(fmod(self._months, 12))
         return years, months, self._days
 
-    def format_common_iso(self) -> str:
+    def format_iso(self) -> str:
         """Format as the *popular interpretation* of the ISO 8601 duration format.
         May not strictly adhere to (all versions of) the standard.
         See :ref:`here <iso8601-durations>` for more information.
 
-        Inverse of :meth:`parse_common_iso`.
+        Inverse of :meth:`parse_iso`.
 
         The format looks like this:
 
@@ -1884,9 +1884,9 @@ class DateDelta(_ImmutableBase):
         Example
         -------
         >>> p = DateDelta(years=1, months=2, weeks=3, days=11)
-        >>> p.format_common_iso()
+        >>> p.format_iso()
         'P1Y2M3W11D'
-        >>> DateDelta().format_common_iso()
+        >>> DateDelta().format_iso()
         'P0D'
         """
         if self._months < 0 or self._days < 0:
@@ -1906,21 +1906,21 @@ class DateDelta(_ImmutableBase):
         )
         return sign + "P" + ("".join(date) or "0D")
 
-    __str__ = format_common_iso
+    __str__ = format_iso
 
     @classmethod
-    def parse_common_iso(cls, s: str, /) -> DateDelta:
+    def parse_iso(cls, s: str, /) -> DateDelta:
         """Parse the *popular interpretation* of the ISO 8601 duration format.
         Does not parse all possible ISO 8601 durations.
         See :ref:`here <iso8601-durations>` for more information.
 
-        Inverse of :meth:`format_common_iso`
+        Inverse of :meth:`format_iso`
 
         Example
         -------
-        >>> DateDelta.parse_common_iso("P1W11D")
+        >>> DateDelta.parse_iso("P1W11D")
         DateDelta(P1w11d)
-        >>> DateDelta.parse_common_iso("-P3m")
+        >>> DateDelta.parse_iso("-P3m")
         DateDelta(-P3m)
 
         Note
@@ -2083,7 +2083,7 @@ class DateDelta(_ImmutableBase):
         return bool(self._months or self._days)
 
     def __repr__(self) -> str:
-        iso = self.format_common_iso()
+        iso = self.format_iso()
         # lowercase everything besides the prefix (don't forget the sign!)
         cased = iso[:2] + iso[2:].lower()
         return f"DateDelta({cased})"
@@ -2241,12 +2241,12 @@ class DateTimeDelta(_ImmutableBase):
         whole_seconds = int(self._time_part._total_ns / 1_000_000_000)
         return self._date_part.in_months_days() + (whole_seconds, subsec_nanos)
 
-    def format_common_iso(self) -> str:
+    def format_iso(self) -> str:
         """Format as the *popular interpretation* of the ISO 8601 duration format.
         May not strictly adhere to (all versions of) the standard.
         See :ref:`here <iso8601-durations>` for more information.
 
-        Inverse of :meth:`parse_common_iso`.
+        Inverse of :meth:`parse_iso`.
 
         The format is:
 
@@ -2262,7 +2262,7 @@ class DateTimeDelta(_ImmutableBase):
         ...     hours=4,
         ...     milliseconds=12,
         ... )
-        >>> d.format_common_iso()
+        >>> d.format_iso()
         'P1W11DT4H0.012S'
         """
         sign = (
@@ -2270,16 +2270,12 @@ class DateTimeDelta(_ImmutableBase):
             or self._date_part._days < 0
             or self._time_part._total_ns < 0
         ) * "-"
-        date = abs(self._date_part).format_common_iso()[1:] * bool(
-            self._date_part
-        )
-        time = abs(self._time_part).format_common_iso()[1:] * bool(
-            self._time_part
-        )
+        date = abs(self._date_part).format_iso()[1:] * bool(self._date_part)
+        time = abs(self._time_part).format_iso()[1:] * bool(self._time_part)
         return sign + "P" + ((date + time) or "0D")
 
     @classmethod
-    def parse_common_iso(cls, s: str, /) -> DateTimeDelta:
+    def parse_iso(cls, s: str, /) -> DateTimeDelta:
         """Parse the *popular interpretation* of the ISO 8601 duration format.
         Does not parse all possible ISO 8601 durations.
         See :ref:`here <iso8601-durations>` for more information.
@@ -2295,11 +2291,11 @@ class DateTimeDelta(_ImmutableBase):
            -PT7H4M    # -7 hours and -4 minutes (-7:04:00)
            +PT7H4M    # 7 hours and 4 minutes (7:04:00)
 
-        Inverse of :meth:`format_common_iso`
+        Inverse of :meth:`format_iso`
 
         Example
         -------
-        >>> DateTimeDelta.parse_common_iso("-P1W11DT4H")
+        >>> DateTimeDelta.parse_iso("-P1W11DT4H")
         DateTimeDelta(-P1w11dT4h)
         """
         exc = ValueError(f"Invalid format: {s!r}")
@@ -2545,10 +2541,10 @@ class DateTimeDelta(_ImmutableBase):
         new._time_part = abs(self._time_part)
         return new
 
-    __str__ = format_common_iso
+    __str__ = format_iso
 
     def __repr__(self) -> str:
-        iso = self.format_common_iso()
+        iso = self.format_iso()
         # lowercase everything besides the prefix and separator
         cased = "".join(c if c in "PT" else c.lower() for c in iso)
         return f"DateTimeDelta({cased})"
@@ -2640,8 +2636,8 @@ class _BasicConversions(_ImmutableBase, ABC):
         return self._py_dt.replace(microsecond=self._nanos // 1_000)
 
     @abstractmethod
-    def format_common_iso(self) -> str:
-        """Format as common ISO string representation. Each
+    def format_iso(self) -> str:
+        """Format an ISO8601 string representation. Each
         subclass has a different format.
 
         See :ref:`here <iso8601>` for more information.
@@ -2650,16 +2646,16 @@ class _BasicConversions(_ImmutableBase, ABC):
 
     @classmethod
     @abstractmethod
-    def parse_common_iso(cls: type[_T], s: str, /) -> _T:
-        """Create an instance from common ISO 8601 representation,
+    def parse_iso(cls: type[_T], s: str, /) -> _T:
+        """Create an instance from an ISO 8601 representation,
         which is different for each subclass.
 
         See :ref:`here <iso8601>` for more information.
         """
 
     def __str__(self) -> str:
-        """Same as :meth:`format_common_iso`"""
-        return self.format_common_iso()
+        """Same as :meth:`format_iso`"""
+        return self.format_iso()
 
     @classmethod
     def _from_py_unchecked(cls: type[_T], d: _datetime, nanos: int, /) -> _T:
@@ -3382,10 +3378,10 @@ class Instant(_ExactTime):
             as_utc.microsecond * 1_000,
         )
 
-    def format_common_iso(self) -> str:
+    def format_iso(self) -> str:
         """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SSZ``
 
-        The inverse of the ``parse_common_iso()`` method.
+        The inverse of the ``parse_iso()`` method.
         """
         return (
             self._py_dt.isoformat()[:-6]
@@ -3394,13 +3390,13 @@ class Instant(_ExactTime):
         )
 
     @classmethod
-    def parse_common_iso(cls, s: str, /) -> Instant:
+    def parse_iso(cls, s: str, /) -> Instant:
         """Parse an ISO 8601 string. Supports basic and extended formats,
         but not week dates or ordinal dates.
 
         See the `docs on ISO8601 support <https://whenever.readthedocs.io/en/latest/overview.html#iso-8601>`_ for more information.
 
-        The inverse of the ``format_common_iso()`` method.
+        The inverse of the ``format_iso()`` method.
         """
         dt, nanos = _offset_dt_from_iso(s)
         return cls._from_py_unchecked(dt.astimezone(_UTC), nanos)
@@ -3688,10 +3684,10 @@ class OffsetDateTime(_ExactAndLocalTime):
             _fromtimestamp(secs, _load_offset(offset)), nanos
         )
 
-    def format_common_iso(self) -> str:
+    def format_iso(self) -> str:
         """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
 
-        The inverse of the ``parse_common_iso()`` method.
+        The inverse of the ``parse_iso()`` method.
         """
         iso_without_fracs = self._py_dt.isoformat()
         return (
@@ -3701,14 +3697,14 @@ class OffsetDateTime(_ExactAndLocalTime):
         )
 
     @classmethod
-    def parse_common_iso(cls, s: str, /) -> OffsetDateTime:
+    def parse_iso(cls, s: str, /) -> OffsetDateTime:
         """Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
 
-        The inverse of the ``format_common_iso()`` method.
+        The inverse of the ``format_iso()`` method.
 
         Example
         -------
-        >>> OffsetDateTime.parse_common_iso("2020-08-15T23:12:00+02:00")
+        >>> OffsetDateTime.parse_iso("2020-08-15T23:12:00+02:00")
         OffsetDateTime(2020-08-15 23:12:00+02:00)
         """
         return cls._from_py_unchecked(*_offset_dt_from_iso(s))
@@ -4208,7 +4204,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         _tz = _get_tz(tz)
         return cls._from_py_unchecked(_from_epoch(secs, _tz), nanos, _tz)
 
-    def format_common_iso(
+    def format_iso(
         self,
         *,
         unit: Literal[
@@ -4226,7 +4222,7 @@ class ZonedDateTime(_ExactAndLocalTime):
     ) -> str:
         """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``.
 
-        The inverse of the ``parse_common_iso()`` method.
+        The inverse of the ``parse_iso()`` method.
 
         Use the ``unit`` parameter to control the precision of the time part,
         the ``sep`` parameter to control the separator,
@@ -4265,14 +4261,14 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
 
     @classmethod
-    def parse_common_iso(cls, s: str, /) -> ZonedDateTime:
+    def parse_iso(cls, s: str, /) -> ZonedDateTime:
         """Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
 
-        The inverse of the ``format_common_iso()`` method.
+        The inverse of the ``format_iso()`` method.
 
         Example
         -------
-        >>> ZonedDateTime.parse_common_iso("2020-08-15T23:12:00+01:00[Europe/London]")
+        >>> ZonedDateTime.parse_iso("2020-08-15T23:12:00+01:00[Europe/London]")
         ZonedDateTime(2020-08-15 23:12:00+01:00[Europe/London])
 
         Important
@@ -4810,10 +4806,10 @@ class PlainDateTime(_LocalTime):
         self._py_dt = _datetime(year, month, day, hour, minute, second)
         self._nanos = nanosecond
 
-    def format_common_iso(self) -> str:
+    def format_iso(self) -> str:
         """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
 
-        The inverse of the ``parse_common_iso()`` method.
+        The inverse of the ``parse_iso()`` method.
         """
         return (
             (self._py_dt.isoformat() + f".{self._nanos:09d}").rstrip("0")
@@ -4822,14 +4818,14 @@ class PlainDateTime(_LocalTime):
         )
 
     @classmethod
-    def parse_common_iso(cls, s: str, /) -> PlainDateTime:
+    def parse_iso(cls, s: str, /) -> PlainDateTime:
         """Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
 
-        The inverse of the ``format_common_iso()`` method.
+        The inverse of the ``format_iso()`` method.
 
         Example
         -------
-        >>> PlainDateTime.parse_common_iso("2020-08-15T23:12:00")
+        >>> PlainDateTime.parse_iso("2020-08-15T23:12:00")
         PlainDateTime(2020-08-15 23:12:00)
         """
         return cls._from_py_unchecked(*_datetime_from_iso(s))

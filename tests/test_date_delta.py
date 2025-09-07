@@ -163,8 +163,8 @@ def test_bool():
         (DateDelta(months=-2, weeks=-3), "-P2M21D"),
     ],
 )
-def test_format_common_iso(p, expect):
-    assert p.format_common_iso() == expect
+def test_format_iso(p, expect):
+    assert p.format_iso() == expect
     assert str(p) == expect
 
 
@@ -223,22 +223,22 @@ VALID_DDELTAS = [
 ]
 
 
-class TestParseCommonIso:
+class TestParseIso:
 
     @pytest.mark.parametrize("input, expect", VALID_DDELTAS)
     def test_valid(self, input, expect):
-        assert DateDelta.parse_common_iso(input) == expect
+        assert DateDelta.parse_iso(input) == expect
 
     @pytest.mark.parametrize("s", INVALID_DDELTAS)
     def test_invalid_format(self, s):
         with pytest.raises(
             ValueError, match=f"Invalid format.*{re.escape(s)}|range"
         ):
-            DateDelta.parse_common_iso(s)
+            DateDelta.parse_iso(s)
 
     def test_invalid_type(self):
         with pytest.raises(TypeError):
-            DateDelta.parse_common_iso(1)  # type: ignore[arg-type]
+            DateDelta.parse_iso(1)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
