@@ -66,7 +66,7 @@ impl YearMonth {
     }
 }
 
-impl PyWrapped for YearMonth {}
+impl PySimpleAlloc for YearMonth {}
 
 impl Display for YearMonth {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

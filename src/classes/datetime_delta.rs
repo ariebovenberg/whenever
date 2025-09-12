@@ -90,7 +90,7 @@ impl DateTimeDelta {
     }
 }
 
-impl PyWrapped for DateTimeDelta {}
+impl PySimpleAlloc for DateTimeDelta {}
 
 impl Neg for DateTimeDelta {
     type Output = Self;

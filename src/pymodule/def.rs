@@ -138,77 +138,75 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         module_name.borrow(),
         &mut unsafe { date::SPEC },
         c"_unpkl_date",
-        date::SINGLETONS,
     )?;
+    create_singletons(*date_type, date::SINGLETONS)?;
     let (yearmonth_type, unpickle_yearmonth) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { yearmonth::SPEC },
         c"_unpkl_ym",
-        yearmonth::SINGLETONS,
     )?;
+    create_singletons(*yearmonth_type, yearmonth::SINGLETONS)?;
     let (monthday_type, unpickle_monthday) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { monthday::SPEC },
         c"_unpkl_md",
-        monthday::SINGLETONS,
     )?;
+    create_singletons(*monthday_type, monthday::SINGLETONS)?;
     let (time_type, unpickle_time) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { time::SPEC },
         c"_unpkl_time",
-        time::SINGLETONS,
     )?;
+    create_singletons(*time_type, time::SINGLETONS)?;
     let (date_delta_type, unpickle_date_delta) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { date_delta::SPEC },
         c"_unpkl_ddelta",
-        date_delta::SINGLETONS,
     )?;
+    create_singletons(*date_delta_type, date_delta::SINGLETONS)?;
     let (time_delta_type, unpickle_time_delta) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { time_delta::SPEC },
         c"_unpkl_tdelta",
-        time_delta::SINGLETONS,
     )?;
+    create_singletons(*time_delta_type, time_delta::SINGLETONS)?;
     let (datetime_delta_type, unpickle_datetime_delta) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { datetime_delta::SPEC },
         c"_unpkl_dtdelta",
-        datetime_delta::SINGLETONS,
     )?;
+    create_singletons(*datetime_delta_type, datetime_delta::SINGLETONS)?;
     let (plain_datetime_type, unpickle_plain_datetime) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { plain_datetime::SPEC },
         c"_unpkl_local",
-        plain_datetime::SINGLETONS,
     )?;
+    create_singletons(*plain_datetime_type, plain_datetime::SINGLETONS)?;
     let (instant_type, unpickle_instant) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { instant::SPEC },
         c"_unpkl_inst",
-        instant::SINGLETONS,
     )?;
+    create_singletons(*instant_type, instant::SINGLETONS)?;
     let (offset_datetime_type, unpickle_offset_datetime) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { offset_datetime::SPEC },
         c"_unpkl_offset",
-        offset_datetime::SINGLETONS,
     )?;
     let (zoned_datetime_type, unpickle_zoned_datetime) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { zoned_datetime::SPEC },
         c"_unpkl_zoned",
-        zoned_datetime::SINGLETONS,
     )?;
     module
         .getattr(c"_unpkl_utc")?
@@ -443,12 +441,12 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
         (
             state.offset_datetime_type.inner(),
             state.unpickle_offset_datetime,
-            offset_datetime::SINGLETONS.len(),
+            0,
         ),
         (
             state.zoned_datetime_type.inner(),
             state.unpickle_zoned_datetime,
-            zoned_datetime::SINGLETONS.len(),
+            0,
         ),
     ] {
         traverse_type(cls.as_ptr().cast(), visit, arg, num_singletons)?;
