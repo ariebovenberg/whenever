@@ -176,7 +176,7 @@ impl TimeDelta {
     }
 }
 
-impl PyWrapped for TimeDelta {}
+impl PySimpleAlloc for TimeDelta {}
 
 impl Neg for TimeDelta {
     type Output = Self;

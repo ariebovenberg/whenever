@@ -129,7 +129,7 @@ impl DateTime {
     }
 }
 
-impl PyWrapped for DateTime {}
+impl PySimpleAlloc for DateTime {}
 
 impl std::fmt::Display for DateTime {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {

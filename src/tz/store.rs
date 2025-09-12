@@ -313,8 +313,6 @@ impl Drop for Cache {
         for (k, v) in lookup.iter() {
             println!("Leaked key: {}, refcount: {}", k, v.ref_count());
         }
-
-        // TODO: this triggers on some pytest failures
         debug_assert!(lookup.is_empty());
     }
 }

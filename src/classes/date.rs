@@ -263,7 +263,7 @@ pub(crate) fn extract_year(s: &[u8], index: usize) -> Option<Year> {
     .map(Year::new_unchecked)
 }
 
-impl PyWrapped for Date {}
+impl PySimpleAlloc for Date {}
 
 impl Display for Date {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

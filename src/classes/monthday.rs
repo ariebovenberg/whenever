@@ -71,7 +71,7 @@ impl MonthDay {
     }
 }
 
-impl PyWrapped for MonthDay {}
+impl PySimpleAlloc for MonthDay {}
 
 impl Display for MonthDay {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

@@ -1,4 +1,4 @@
-use core::ffi::{CStr, c_int, c_long, c_void};
+use core::ffi::{c_int, c_long, c_void};
 use core::ptr::{NonNull, null_mut as NULL};
 use pyo3_ffi::*;
 use std::fmt::{self, Display, Formatter};
@@ -27,8 +27,6 @@ pub(crate) struct OffsetDateTime {
     pub(crate) time: Time,
     pub(crate) offset: Offset,
 }
-
-pub(crate) const SINGLETONS: &[(&CStr, OffsetDateTime); 0] = &[];
 
 impl OffsetDateTime {
     pub(crate) const fn new_unchecked(date: Date, time: Time, offset: Offset) -> Self {
@@ -247,7 +245,7 @@ fn skip_tzname(s: &mut Scan) -> Option<()> {
     Some(())
 }
 
-impl PyWrapped for OffsetDateTime {}
+impl PySimpleAlloc for OffsetDateTime {}
 
 impl Display for OffsetDateTime {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

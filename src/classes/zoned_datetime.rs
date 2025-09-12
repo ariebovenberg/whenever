@@ -1,5 +1,5 @@
 use core::{
-    ffi::{CStr, c_int, c_long, c_void},
+    ffi::{c_int, c_long, c_void},
     ptr::null_mut as NULL,
 };
 use pyo3_ffi::*;
@@ -41,8 +41,6 @@ impl std::cmp::PartialEq for ZonedDateTime {
             && *self.tz == *other.tz
     }
 }
-
-pub(crate) const SINGLETONS: &[(&CStr, ZonedDateTime); 0] = &[];
 
 impl ZonedDateTime {
     pub(crate) fn create(

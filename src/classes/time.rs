@@ -267,7 +267,7 @@ impl Time {
     };
 }
 
-impl PyWrapped for Time {}
+impl PySimpleAlloc for Time {}
 
 // FUTURE: a trait for faster formatting since timestamp are small and
 // limited in length?
