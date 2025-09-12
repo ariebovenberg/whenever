@@ -236,7 +236,7 @@ fn from_utc(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> Py
     .to_obj(cls)
 }
 
-impl PyWrapped for Instant {}
+impl PySimpleAlloc for Instant {}
 
 fn __repr__(_: PyType, i: Instant) -> PyReturn {
     let DateTime { date, time } = i.to_datetime();

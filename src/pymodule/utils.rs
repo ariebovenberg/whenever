@@ -44,7 +44,6 @@ pub(crate) fn new_class<T: PyWrapped>(
     module_nameobj: PyObj,
     spec: &mut PyType_Spec,
     unpickle_name: &CStr,
-    singletons: &[(&CStr, T)],
 ) -> PyResult<(Owned<HeapType<T>>, Owned<PyObj>)> {
     let cls = unsafe { PyType_FromModuleAndSpec(module.as_ptr(), spec, NULL()) }
         .rust_owned()?
@@ -53,21 +52,27 @@ pub(crate) fn new_class<T: PyWrapped>(
         .map(|t| unsafe { t.link_type::<T>() });
     module.add_type(cls.borrow().into())?;
 
+    let unpickler = module.getattr(unpickle_name)?;
+    unpickler.setattr(c"__module__", module_nameobj)?;
+    Ok((cls, unpickler))
+}
+
+pub(crate) fn create_singletons<T: PySimpleAlloc>(
+    cls: HeapType<T>,
+    objs: &[(&CStr, T)],
+) -> PyResult<()> {
     // SAFETY: each type is guaranteed to have tp_dict
     let cls_dict =
         unsafe { PyDict::from_ptr_unchecked((*cls.as_ptr().cast::<PyTypeObject>()).tp_dict) };
-    for (name, value) in singletons {
-        let pyvalue = value.to_obj(cls.borrow())?;
+    for (name, value) in objs {
+        let pyvalue = value.to_obj(cls)?;
         cls_dict
             // NOTE: We drop the value here, but count on the class dict to
             // keep the reference alive. This is safe since the dict is blocked
             // from mutation by the Py_TPFLAGS_IMMUTABLETYPE flag.
             .set_item_str(name, pyvalue.borrow())?;
     }
-
-    let unpickler = module.getattr(unpickle_name)?;
-    unpickler.setattr(c"__module__", module_nameobj)?;
-    Ok((cls, unpickler))
+    Ok(())
 }
 
 /// Intern a string in the Python interpreter
