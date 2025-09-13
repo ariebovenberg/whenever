@@ -155,7 +155,7 @@ def test_pydantic():
 
     # NOTE: the type ignore is needed because we generally don't install pydantic
     # when type-checking.
-    class Model(pydantic.BaseModel):  # type: ignore[misc]
+    class Model(pydantic.BaseModel):  # type: ignore[misc, unused-ignore]
         inst: Instant
         zdt: ZonedDateTime
         odt: OffsetDateTime
