@@ -4,7 +4,7 @@ use core::{
     ptr::null_mut as NULL,
 };
 use pyo3_ffi::*;
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{Display, Formatter};
 
 use crate::{
     classes::{
@@ -15,7 +15,7 @@ use crate::{
         yearmonth::YearMonth,
     },
     common::{
-        fmt::*,
+        fmt::{self, Chunk},
         parse::{extract_2_digits, extract_digit},
         scalar::*,
     },
@@ -237,22 +237,22 @@ pub(crate) struct IsoFormat {
     basic: bool,
 }
 
-impl IsoFormat {
-    pub(crate) fn len(self) -> usize {
+impl fmt::Chunk for IsoFormat {
+    fn len(&self) -> usize {
         if self.basic { 8 } else { 10 }
     }
 
-    pub(crate) fn write(self, buf: &mut impl ByteWrite) {
+    fn write(&self, buf: &mut impl fmt::Sink) {
         let Date { year, month, day } = self.date;
-        buf.write(format_4_digits(year.get()).as_ref());
+        buf.write(fmt::format_4_digits(year.get()).as_ref());
         if self.basic {
-            buf.write(format_2_digits(month.get()).as_ref());
+            buf.write(fmt::format_2_digits(month.get()).as_ref());
         } else {
             buf.write(b"-");
-            buf.write(format_2_digits(month.get()).as_ref());
+            buf.write(fmt::format_2_digits(month.get()).as_ref());
             buf.write(b"-");
         }
-        buf.write(format_2_digits(day).as_ref());
+        buf.write(fmt::format_2_digits(day).as_ref());
     }
 }
 
@@ -269,10 +269,9 @@ pub(crate) fn extract_year(s: &[u8], index: usize) -> Option<Year> {
 
 impl PySimpleAlloc for Date {}
 
-// TODO remove
 impl Display for Date {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut s = ArrayWriter::<10>::new();
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut s = fmt::ArrayWriter::<10>::new();
         let fmt = self.format_iso(false);
         fmt.write(&mut s);
         f.write_str(s.finish())
@@ -349,14 +348,11 @@ fn __richcmp__(cls: HeapType<Date>, a: Date, b_obj: PyObj, op: c_int) -> PyRetur
 }
 
 fn __str__(_: PyType, slf: Date) -> PyReturn {
-    let fmt = slf.format_iso(false);
-    let mut s = PyAsciiStrBuilder::new(fmt.len())?;
-    fmt.write(&mut s);
-    Ok(s.finish())
+    PyAsciiStrBuilder::format(slf.format_iso(false))
 }
 
 fn __repr__(_: PyType, slf: Date) -> PyReturn {
-    format!("Date({slf})").to_py()
+    PyAsciiStrBuilder::format((b"Date(", slf.format_iso(false), b')'))
 }
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
@@ -441,10 +437,7 @@ fn format_iso(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterK
         Ok(true)
     })?;
 
-    let fmt = slf.format_iso(basic);
-    let mut s = PyAsciiStrBuilder::new(fmt.len())?;
-    fmt.write(&mut s);
-    Ok(s.finish())
+    PyAsciiStrBuilder::format(slf.format_iso(basic))
 }
 
 fn parse_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn {

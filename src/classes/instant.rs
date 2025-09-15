@@ -244,12 +244,23 @@ impl PySimpleAlloc for Instant {}
 
 fn __repr__(_: PyType, i: Instant) -> PyReturn {
     let DateTime { date, time } = i.to_datetime();
-    format!("Instant({date} {time}Z)").to_py()
+    PyAsciiStrBuilder::format((
+        b"Instant(",
+        date.format_iso(false),
+        b" ",
+        time.format_iso(fmt::Unit::Auto, false),
+        b"Z)",
+    ))
 }
 
 fn __str__(_: PyType, i: Instant) -> PyReturn {
     let DateTime { date, time } = i.to_datetime();
-    format!("{date}T{time}Z").to_py()
+    PyAsciiStrBuilder::format((
+        date.format_iso(false),
+        b"T",
+        time.format_iso(fmt::Unit::Auto, false),
+        b"Z",
+    ))
 }
 
 fn __richcmp__(cls: HeapType<Instant>, inst_a: Instant, b_obj: PyObj, op: c_int) -> PyReturn {
@@ -594,7 +605,7 @@ fn difference(cls: HeapType<Instant>, inst_a: Instant, obj_b: PyObj) -> PyReturn
         odt.instant()
     } else {
         raise_type_err(
-            "difference() argument must be an OffsetDateTime, 
+            "difference() argument must be an OffsetDateTime,
              Instant, or ZonedDateTime",
         )?
     };
