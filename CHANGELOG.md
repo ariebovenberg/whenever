@@ -2,14 +2,6 @@
 
 ## 0.9.0 (2025-??-??)
 
-**Improved**
-
-- Customizable ISO 8601 Formatting: The `format_common_iso()` methods on all
-  datetime objects now accept parameters to customize the output.
-  You can control the `separator` (e.g., `'T'` or `' '`),
-  the smallest `unit` (from `hour` to `nanosecond`),
-  and toggle the `basic` (compact) or `extended` format.
-
 **Breaking Changes**
 
 - `SystemDateTime` has been removed and its functionality is now integrated into `ZonedDateTime`.
@@ -28,6 +20,16 @@
 
   **Rationale:** The "common" qualifier is no longer necessary because
   these methods have been expanded to handle a wider range of ISO 8601 formats.
+
+**Improved**
+
+- Customizable ISO 8601 Formatting: The `format_iso()` methods now accept 
+  parameters to customize the output. You can control the `separator` 
+  (e.g., `'T'` or `' '`), the smallest `unit` (from `hour` to `nanosecond`),
+  and toggle the `basic` (compact) or `extended` format.
+
+  Also, the formatting is now significantly faster. Up to 5x faster for 
+  ``ZonedDateTime``, which is now 10x faster than the standard library's `datetime.isoformat()`.
 
 **Fixed**
 

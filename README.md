@@ -31,7 +31,7 @@ Don't buy the Rust hype?—don't worry: a **pure Python** version is available a
   </p>
 
   <p align="center" style="font-size: 14px">
-    <i>Parse, normalize, compare to now, shift, and change timezone (1M times)</i>
+    <i>Parse, normalize, compare to now, shift, change timezone, and format (1M times)</i>
   </p>
 
 <div align="center">

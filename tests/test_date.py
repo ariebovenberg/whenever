@@ -171,6 +171,13 @@ def test_from_py_date():
 def test_format_iso():
     d = Date(2021, 1, 2)
     assert d.format_iso() == "2021-01-02"
+    assert d.format_iso(basic=True) == "20210102"
+
+    with pytest.raises(TypeError):
+        d.format_iso(3)  # type: ignore[arg-type, misc]
+
+    with pytest.raises(TypeError):
+        d.format_iso(sep="T")  # type: ignore[call-arg]
 
 
 def test_str():

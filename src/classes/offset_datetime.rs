@@ -1,7 +1,7 @@
 use core::ffi::{c_int, c_long, c_void};
 use core::ptr::{NonNull, null_mut as NULL};
 use pyo3_ffi::*;
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{Display, Formatter};
 
 use crate::{
     classes::{
@@ -12,7 +12,12 @@ use crate::{
         time::Time,
         time_delta::TimeDelta,
     },
-    common::{fmt::format_iso as format_iso_common, parse::Scan, rfc2822, round, scalar::*},
+    common::{
+        fmt::{self, Suffix},
+        parse::Scan,
+        rfc2822, round,
+        scalar::*,
+    },
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -248,7 +253,7 @@ fn skip_tzname(s: &mut Scan) -> Option<()> {
 impl PySimpleAlloc for OffsetDateTime {}
 
 impl Display for OffsetDateTime {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let &OffsetDateTime { date, time, offset } = self;
         write!(f, "{date}T{time}{offset}")
     }
@@ -571,7 +576,14 @@ fn format_iso(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    format_iso_common(slf, cls.state(), args, kwargs, None)
+    fmt::format_iso(
+        slf.date,
+        slf.time,
+        cls.state(),
+        args,
+        kwargs,
+        Suffix::Offset(slf.offset),
+    )
 }
 
 fn replace(
@@ -987,7 +999,7 @@ fn parse_strptime(
 }
 
 fn format_rfc2822(_: PyType, slf: OffsetDateTime) -> PyReturn {
-    let fmt = rfc2822::write(slf);
+    let fmt = rfc2822::format(slf);
     // SAFETY: we know the format is ASCII only
     unsafe { std::str::from_utf8_unchecked(&fmt[..]) }.to_py()
 }

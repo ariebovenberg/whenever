@@ -70,11 +70,7 @@ class _OrderMixin:
 
 @type_check_only
 class _DateOrTimeMixin(_ISOMixin, _OrderMixin):
-    def format_iso(
-        self,
-        *,
-        basic: bool = False,
-    ) -> str: ...
+    pass
 
 @final
 class Date(_DateOrTimeMixin):
@@ -94,6 +90,7 @@ class Date(_DateOrTimeMixin):
     def py_date(self) -> _date: ...
     @classmethod
     def from_py_date(cls, d: _date, /) -> Self: ...
+    def format_iso(self, *, basic: bool = False) -> str: ...
     def replace(
         self, *, year: int = ..., month: int = ..., day: int = ...
     ) -> Self: ...

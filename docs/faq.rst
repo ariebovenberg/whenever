@@ -1,6 +1,8 @@
 ❓ FAQ
 ======
 
+.. TODO: performance topic
+
 .. _faq-why-instant:
 
 Why does :class:`~whenever.Instant` exist?

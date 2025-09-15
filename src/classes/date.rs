@@ -33,8 +33,6 @@ pub struct Date {
 
 pub(crate) const SINGLETONS: &[(&CStr, Date); 2] = &[(c"MIN", Date::MIN), (c"MAX", Date::MAX)];
 
-const ISO_TEMPLATE: [u8; 10] = *b"0000-00-00";
-
 impl Date {
     pub(crate) const MAX: Date = Date {
         year: Year::MAX,
@@ -148,27 +146,8 @@ impl Date {
         }
     }
 
-    pub(crate) fn format_iso(self) -> [u8; 10] {
-        let mut s = ISO_TEMPLATE;
-        write_4_digits(self.year.get(), &mut s[..4]);
-        write_2_digits(self.month.get(), &mut s[5..7]);
-        write_2_digits(self.day, &mut s[8..]);
-        s
-    }
-
-    pub(crate) fn format_iso_custom(self, extended: bool) -> AsciiArrayVec<10> {
-        let mut data = ISO_TEMPLATE;
-        write_4_digits(self.year.get(), &mut data[..4]);
-        let len = if extended {
-            write_2_digits(self.month.get(), &mut data[5..7]);
-            write_2_digits(self.day, &mut data[8..]);
-            10
-        } else {
-            write_2_digits(self.month.get(), &mut data[4..6]);
-            write_2_digits(self.day, &mut data[6..]);
-            8
-        };
-        AsciiArrayVec { data, len }
+    pub(crate) fn format_iso(self, basic: bool) -> IsoFormat {
+        IsoFormat { date: self, basic }
     }
 
     // For small adjustments, this is faster than converting to/from UnixDays
@@ -252,6 +231,31 @@ impl Date {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct IsoFormat {
+    date: Date,
+    basic: bool,
+}
+
+impl IsoFormat {
+    pub(crate) fn len(self) -> usize {
+        if self.basic { 8 } else { 10 }
+    }
+
+    pub(crate) fn write(self, buf: &mut impl ByteWrite) {
+        let Date { year, month, day } = self.date;
+        buf.write(format_4_digits(year.get()).as_ref());
+        if self.basic {
+            buf.write(format_2_digits(month.get()).as_ref());
+        } else {
+            buf.write(b"-");
+            buf.write(format_2_digits(month.get()).as_ref());
+            buf.write(b"-");
+        }
+        buf.write(format_2_digits(day).as_ref());
+    }
+}
+
 pub(crate) fn extract_year(s: &[u8], index: usize) -> Option<Year> {
     Some(
         extract_digit(s, index)? as u16 * 1000
@@ -265,10 +269,13 @@ pub(crate) fn extract_year(s: &[u8], index: usize) -> Option<Year> {
 
 impl PySimpleAlloc for Date {}
 
+// TODO remove
 impl Display for Date {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let s = self.format_iso();
-        f.write_str(unsafe { std::str::from_utf8_unchecked(&s) })
+        let mut s = ArrayWriter::<10>::new();
+        let fmt = self.format_iso(false);
+        fmt.write(&mut s);
+        f.write_str(s.finish())
     }
 }
 
@@ -342,8 +349,10 @@ fn __richcmp__(cls: HeapType<Date>, a: Date, b_obj: PyObj, op: c_int) -> PyRetur
 }
 
 fn __str__(_: PyType, slf: Date) -> PyReturn {
-    let s = slf.format_iso();
-    unsafe { std::str::from_utf8_unchecked(&s) }.to_py()
+    let fmt = slf.format_iso(false);
+    let mut s = PyAsciiStrBuilder::new(fmt.len())?;
+    fmt.write(&mut s);
+    Ok(s.finish())
 }
 
 fn __repr__(_: PyType, slf: Date) -> PyReturn {
@@ -409,8 +418,33 @@ fn month_day(cls: HeapType<Date>, Date { month, day, .. }: Date) -> PyReturn {
     MonthDay::new_unchecked(month, day).to_obj(cls.state().monthday_type)
 }
 
-fn format_iso(_: PyType, slf: Date) -> PyReturn {
-    format!("{slf}").to_py()
+fn format_iso(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+    if !args.is_empty() {
+        raise_type_err("format_iso() takes no positional arguments")?
+    }
+
+    let mut basic = false;
+    let str_basic = cls.state().str_basic;
+
+    handle_kwargs("format_iso", kwargs, |key, value, eq| {
+        if eq(key, str_basic) {
+            if value.is_true() {
+                basic = true;
+            } else if value.is_false() {
+                basic = false;
+            } else {
+                raise_type_err("basic must be a bool")?
+            }
+        } else {
+            return Ok(false);
+        };
+        Ok(true)
+    })?;
+
+    let fmt = slf.format_iso(basic);
+    let mut s = PyAsciiStrBuilder::new(fmt.len())?;
+    fmt.write(&mut s);
+    Ok(s.finish())
 }
 
 fn parse_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn {
@@ -673,7 +707,7 @@ fn system_tz_today_from_timestamp(
 
 static mut METHODS: &mut [PyMethodDef] = &mut [
     method0!(Date, py_date, doc::DATE_PY_DATE),
-    method0!(Date, format_iso, doc::DATE_FORMAT_ISO),
+    method_kwargs!(Date, format_iso, doc::DATE_FORMAT_ISO),
     classmethod0!(Date, today_in_system_tz, doc::DATE_TODAY_IN_SYSTEM_TZ),
     classmethod1!(Date, parse_iso, doc::DATE_PARSE_ISO),
     classmethod1!(Date, from_py_date, doc::DATE_FROM_PY_DATE),
