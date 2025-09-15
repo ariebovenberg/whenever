@@ -852,24 +852,98 @@ class TestParseRFC2822:
             Instant.parse_rfc2822(s)
 
 
-@pytest.mark.parametrize(
-    "d, expect",
-    [
-        (
-            Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654),
-            "2020-08-15T23:12:09.000987654Z",
-        ),
-        (
-            Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=980_000_000),
-            "2020-08-15T23:12:09.98Z",
-        ),
-        (Instant.from_utc(2020, 8, 15), "2020-08-15T00:00:00Z"),
-        (Instant.from_utc(2020, 8, 15, 23, 12, 9), "2020-08-15T23:12:09Z"),
-    ],
-)
-def test_format_iso(d, expect):
-    assert d.format_iso() == expect
-    assert str(d) == expect
+class TestFormatIso:
+
+    @pytest.mark.parametrize(
+        "d, expect",
+        [
+            (
+                Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654),
+                "2020-08-15T23:12:09.000987654Z",
+            ),
+            (
+                Instant.from_utc(
+                    2020, 8, 15, 23, 12, 9, nanosecond=980_000_000
+                ),
+                "2020-08-15T23:12:09.98Z",
+            ),
+            (Instant.from_utc(2020, 8, 15), "2020-08-15T00:00:00Z"),
+            (Instant.from_utc(2020, 8, 15, 23, 12, 9), "2020-08-15T23:12:09Z"),
+        ],
+    )
+    def test_default(self, d, expect):
+        assert d.format_iso() == expect
+        assert str(d) == expect
+
+    @pytest.mark.parametrize(
+        "ins, kwargs, expected",
+        [
+            (
+                Instant.from_utc(1993, 4, 1, 14),
+                {"unit": "nanosecond"},
+                "1993-04-01T14:00:00.000000000Z",
+            ),
+            (
+                Instant.from_utc(2025, 11, 1, 14, nanosecond=40_000),
+                {"unit": "microsecond", "sep": " "},
+                "2025-11-01 14:00:00.000040Z",
+            ),
+            (
+                Instant.from_utc(2025, 11, 1, 14, 59, 42, nanosecond=40_000),
+                {"unit": "millisecond", "basic": True},
+                "20251101T145942.000Z",
+            ),
+            (
+                Instant.from_utc(
+                    2020, 8, 15, 23, 12, 9, nanosecond=987_654_321
+                ),
+                {"unit": "second", "sep": "T", "basic": True},
+                "20200815T231209Z",
+            ),
+            (
+                Instant.from_utc(2020, 8, 15, 23, 12, 49),
+                {"unit": "minute"},
+                "2020-08-15T23:12Z",
+            ),
+            (
+                Instant.from_utc(2020, 8, 15, 23, 45),
+                {"unit": "hour", "basic": True},
+                "20200815T23Z",
+            ),
+            (
+                Instant.from_utc(2020, 8, 15, nanosecond=40_000),
+                {"unit": "auto", "basic": False},
+                "2020-08-15T00:00:00.00004Z",
+            ),
+        ],
+    )
+    def test_variations(self, ins, kwargs, expected):
+        assert ins.format_iso(**kwargs) == expected
+
+    def test_invalid(self):
+        dt = Instant.from_utc(2020, 4, 9, 13)
+        with pytest.raises(ValueError, match="unit"):
+            dt.format_iso(unit="foo")  # type: ignore[arg-type]
+
+        with pytest.raises(
+            (ValueError, TypeError, AttributeError), match="unit"
+        ):
+            dt.format_iso(unit=True)  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError, match="sep"):
+            dt.format_iso(sep="_")  # type: ignore[arg-type]
+
+        with pytest.raises(
+            (ValueError, TypeError, AttributeError), match="sep"
+        ):
+            dt.format_iso(sep=1)  # type: ignore[arg-type]
+
+        with pytest.raises(TypeError, match="basic"):
+            dt.format_iso(basic=1)  # type: ignore[arg-type]
+
+        # tz is a valid kwarg for ZonedDateTime.format_iso(), but not here
+        with pytest.raises(TypeError, match="tz"):
+            dt.format_iso(tz="always")  # type: ignore[call-arg]
 
 
 class TestParseIso:

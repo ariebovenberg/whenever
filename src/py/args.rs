@@ -109,6 +109,14 @@ where
     Ok(())
 }
 
+/// Helper to efficiently match a value against a set of known interned strings.
+/// The handler closure is called twice, first with pointer equality (very fast),
+/// and only if that fails, with value equality (slower).
+///
+/// NOTE: although Python's string equality also uses this trick, it does so
+/// on a per-object basis, so it will still end up running slower equality checks
+/// multiple times. By doing it this way, we end up with only pointer equality
+/// checks for the common case of interned strings.
 pub(crate) fn match_interned_str<T, F>(name: &str, value: PyObj, mut handler: F) -> PyResult<T>
 where
     F: FnMut(PyObj, fn(PyObj, PyObj) -> bool) -> Option<T>,

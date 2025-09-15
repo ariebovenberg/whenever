@@ -13,7 +13,11 @@ use crate::{
             MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS, TimeDelta,
         },
     },
-    common::{rfc2822, round, scalar::*},
+    common::{
+        fmt::{self, Suffix},
+        rfc2822, round,
+        scalar::*,
+    },
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -488,8 +492,14 @@ fn now(cls: HeapType<Instant>) -> PyReturn {
     cls.state().time_ns()?.to_obj(cls)
 }
 
-fn format_iso(cls: PyType, slf: Instant) -> PyReturn {
-    __str__(cls, slf)
+fn format_iso(
+    cls: HeapType<Instant>,
+    slf: Instant,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    let DateTime { date, time } = slf.to_datetime();
+    fmt::format_iso(date, time, cls.state(), args, kwargs, Suffix::Zulu)
 }
 
 fn parse_iso(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
@@ -628,7 +638,7 @@ fn to_system_tz(cls: HeapType<Instant>, slf: Instant) -> PyReturn {
 }
 
 fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn {
-    let fmt = rfc2822::write_gmt(slf);
+    let fmt = rfc2822::format_gmt(slf);
     // SAFETY: we know the bytes are ASCII
     unsafe { std::str::from_utf8_unchecked(&fmt[..]) }.to_py()
 }
@@ -715,7 +725,7 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod0!(Instant, now, doc::INSTANT_NOW),
     method0!(Instant, format_rfc2822, doc::INSTANT_FORMAT_RFC2822),
     classmethod1!(Instant, parse_rfc2822, doc::INSTANT_PARSE_RFC2822),
-    method0!(Instant, format_iso, doc::INSTANT_FORMAT_ISO),
+    method_kwargs!(Instant, format_iso, doc::INSTANT_FORMAT_ISO),
     classmethod1!(Instant, parse_iso, doc::INSTANT_PARSE_ISO),
     method_kwargs!(Instant, add, doc::INSTANT_ADD),
     method_kwargs!(Instant, subtract, doc::INSTANT_SUBTRACT),

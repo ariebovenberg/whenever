@@ -1,10 +1,8 @@
 //! Checked arithmetic for scalar date and time concepts
 use crate::{
-    classes::date::Date,
-    classes::plain_datetime::DateTime,
-    classes::time::Time,
+    classes::{date::Date, plain_datetime::DateTime, time::Time},
     common::{
-        fmt::{AsciiArrayVec, write_2_digits},
+        fmt::{ByteWrite, format_2_digits},
         round,
     },
 };
@@ -73,26 +71,56 @@ impl Offset {
         OffsetDelta::new_unchecked(self.0)
     }
 
-    pub(crate) fn format_iso_custom(self, extended: bool) -> AsciiArrayVec<9> {
-        let mut data = *b" 00:00:00";
+    pub(crate) fn format_iso(self, basic: bool) -> OffsetFormat {
         let total_secs = self.0.abs();
-        data[0] = if self.0 < 0 { b'-' } else { b'+' };
+        let sign_char = if self.0 < 0 { b'-' } else { b'+' };
         let secs = total_secs % 60;
         let mins = (total_secs / 60) % 60;
         let hrs = total_secs / 3600;
-        write_2_digits(hrs as u8, &mut data[1..3]);
+        OffsetFormat {
+            sign_char,
+            hrs: hrs as _,
+            mins: mins as _,
+            secs: secs as _,
+            basic,
+        }
+    }
+}
 
-        let len = if extended {
-            write_2_digits(mins as u8, &mut data[4..6]);
-            write_2_digits(secs as u8, &mut data[7..9]);
-            if secs == 0 { 6 } else { 9 }
-        } else {
-            write_2_digits(mins as u8, &mut data[3..5]);
-            write_2_digits(secs as u8, &mut data[5..7]);
-            if secs == 0 { 5 } else { 7 }
-        };
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct OffsetFormat {
+    sign_char: u8,
+    hrs: u8,
+    mins: u8,
+    secs: u8,
+    basic: bool,
+}
 
-        AsciiArrayVec { data, len }
+impl OffsetFormat {
+    pub(crate) fn len(self) -> usize {
+        // Always at least +hhmm
+        5
+        // First seperator adds 1
+        + !self.basic as usize
+        // Seconds part is optional and adds 2
+        + if self.secs == 0 { 0 } else { 2
+        // But it also adds a separator if not basic
+        + !self.basic as usize }
+    }
+
+    pub(crate) fn write(self, b: &mut impl ByteWrite) {
+        b.write_byte(self.sign_char);
+        b.write(format_2_digits(self.hrs).as_ref());
+        if !self.basic {
+            b.write_byte(b':');
+        }
+        b.write(format_2_digits(self.mins).as_ref());
+        if self.secs != 0 {
+            if !self.basic {
+                b.write_byte(b':');
+            }
+            b.write(format_2_digits(self.secs).as_ref());
+        }
     }
 }
 
