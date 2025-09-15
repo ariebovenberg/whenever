@@ -15,7 +15,13 @@ use crate::{
         time::Time,
         time_delta::TimeDelta,
     },
-    common::{ambiguity::*, fmt::format_iso as format_iso_common, parse::Scan, round, scalar::*},
+    common::{
+        ambiguity::*,
+        fmt::{self, ByteWrite, Suffix},
+        parse::Scan,
+        round,
+        scalar::*,
+    },
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -320,18 +326,6 @@ impl OffsetDateTime {
     }
 }
 
-impl std::fmt::Display for ZonedDateTime {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let &ZonedDateTime {
-            date,
-            time,
-            offset,
-            tz,
-        } = self;
-        write!(f, "{}T{}{}{}", date, time, offset, tz_suffix(&tz.key))
-    }
-}
-
 fn __new__(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let &State {
         exc_repeated,
@@ -404,26 +398,62 @@ fn __repr__(_: PyType, slf: ZonedDateTime) -> PyReturn {
         offset,
         tz,
     } = slf;
-    format!(
-        "ZonedDateTime({} {}{}{})",
-        date,
-        time,
-        offset,
-        tz_suffix(&tz.key)
-    )
-    .to_py()
-}
-
-fn tz_suffix(key: &Option<String>) -> String {
-    if let Some(key) = key {
-        format!("[{key}]")
-    } else {
-        "[<system timezone without ID>]".to_string()
-    }
+    let date_fmt = date.format_iso(false);
+    let time_fmt = time.format_iso(fmt::Unit::Auto, false);
+    let offset_fmt = offset.format_iso(false);
+    let tz_key = match tz.key.as_ref() {
+        Some(key) => key,
+        None => "<system timezone without ID>",
+    };
+    let prefix_fmt = b"ZonedDateTime(";
+    let mut s = PyAsciiStrBuilder::new(
+        prefix_fmt.len()
+        + date_fmt.len()
+        + 1 // space separator
+        + time_fmt.len()
+        + offset_fmt.len()
+        + tz_key.len()
+        + 2 // brackets around tz
+        + 1, // closing parenthesis
+    )?;
+    s.write(prefix_fmt);
+    date_fmt.write(&mut s);
+    s.write_byte(b' ');
+    time_fmt.write(&mut s);
+    offset_fmt.write(&mut s);
+    s.write_byte(b'[');
+    s.write(tz_key.as_bytes());
+    s.write(b"])");
+    Ok(s.finish())
 }
 
 fn __str__(_: PyType, slf: ZonedDateTime) -> PyReturn {
-    format!("{slf}").to_py()
+    let ZonedDateTime {
+        date,
+        time,
+        offset,
+        tz,
+    } = slf;
+    let date_fmt = date.format_iso(false);
+    let time_fmt = time.format_iso(fmt::Unit::Auto, false);
+    let offset_fmt = offset.format_iso(false);
+    let mut s = PyAsciiStrBuilder::new(
+        date_fmt.len()
+        + 1 // space separator
+        + time_fmt.len()
+        + offset_fmt.len()
+        + tz.key.as_ref().map_or(0, |k| k.len() + 2), // +2 for brackets around tz
+    )?;
+    date_fmt.write(&mut s);
+    s.write_byte(b'T');
+    time_fmt.write(&mut s);
+    offset_fmt.write(&mut s);
+    if let Some(ref tz_key) = tz.key {
+        s.write_byte(b'[');
+        s.write(tz_key.as_bytes());
+        s.write_byte(b']');
+    }
+    Ok(s.finish())
 }
 
 fn __richcmp__(
@@ -845,7 +875,14 @@ fn format_iso(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    format_iso_common(slf.without_tz(), cls.state(), args, kwargs, Some(slf.tz))
+    fmt::format_iso(
+        slf.date,
+        slf.time,
+        cls.state(),
+        args,
+        kwargs,
+        Suffix::OffsetTz(slf.offset, slf.tz),
+    )
 }
 
 fn replace(

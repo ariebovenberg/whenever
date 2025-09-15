@@ -4,32 +4,32 @@
     "values": [
       {
         "tool": "Whenever",
-        "time": 0.43,
+        "time": 0.37,
         "timeFormat": "0.4s"
 
       },
 
       {
         "tool": "datetime",
-        "time": 1.59,
-        "timeFormat": "1.6s"
+        "time": 1.88,
+        "timeFormat": "1.9s"
 
       },
       {
         "tool": "Whenever (pure python)",
-        "time": 8.47,
-        "timeFormat": "8.5s"
+        "time": 9.1,
+        "timeFormat": "9.1s"
 
       },
       {
         "tool": "Arrow",
-        "time": 44.8,
-        "timeFormat": "45s"
+        "time": 34,
+        "timeFormat": "34s"
       },
       {
         "tool": "Pendulum",
         "time": 89,
-        "timeFormat": ">100s"
+        "timeFormat": "91s"
       },
     ]
   },
@@ -210,4 +210,3 @@
     }
   ]
 }
-

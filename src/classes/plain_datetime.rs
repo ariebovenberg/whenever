@@ -2,12 +2,13 @@ use core::ffi::{CStr, c_int, c_long, c_void};
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
+use crate::common::fmt::Suffix;
 use crate::{
     classes::{
         date::Date, date_delta::DateDelta, datetime_delta::set_units_from_kwargs, instant::Instant,
         offset_datetime::check_ignore_dst_kwarg, time::Time, zoned_datetime::ZonedDateTime,
     },
-    common::{ambiguity::*, parse::Scan, round, scalar::*},
+    common::{ambiguity::*, fmt::format_iso as format_iso_common, parse::Scan, round, scalar::*},
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -175,8 +176,20 @@ fn __str__(_: PyType, slf: DateTime) -> PyReturn {
     format!("{slf}").to_py()
 }
 
-fn format_iso(cls: PyType, slf: DateTime) -> PyReturn {
-    __str__(cls, slf)
+fn format_iso(
+    cls: HeapType<DateTime>,
+    slf: DateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    format_iso_common(
+        slf.date,
+        slf.time,
+        cls.state(),
+        args,
+        kwargs,
+        Suffix::Absent,
+    )
 }
 
 fn __richcmp__(cls: HeapType<DateTime>, slf: DateTime, other: PyObj, op: c_int) -> PyReturn {
@@ -815,7 +828,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(DateTime, py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
     method0!(DateTime, date, doc::LOCALTIME_DATE),
     method0!(DateTime, time, doc::LOCALTIME_TIME),
-    method0!(DateTime, format_iso, doc::PLAINDATETIME_FORMAT_ISO),
+    method_kwargs!(DateTime, format_iso, doc::PLAINDATETIME_FORMAT_ISO),
     classmethod1!(DateTime, parse_iso, doc::PLAINDATETIME_PARSE_ISO),
     classmethod_kwargs!(DateTime, parse_strptime, doc::PLAINDATETIME_PARSE_STRPTIME),
     method_kwargs!(DateTime, replace, doc::PLAINDATETIME_REPLACE),

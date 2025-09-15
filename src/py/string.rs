@@ -1,4 +1,6 @@
 //! Functionality for working with Python's `str` and `bytes` objects.
+use crate::common::fmt::ByteWrite;
+
 use super::{base::*, exc::*, refs::*};
 use pyo3_ffi::*;
 use std::{ffi::c_uint, ptr::copy_nonoverlapping};
@@ -130,9 +132,11 @@ impl<const N: usize> ToPy for [u8; N] {
 /// not exceed the length specified at creation.
 #[derive(Debug)]
 pub(crate) struct PyAsciiStrBuilder {
-    obj: Owned<PyObj>, // the PyUnicode object being built
+    obj: Owned<PyObj>, // the PyUnicode object being built. Owned ensures cleanup.
     index: Py_ssize_t, // current write index
     data: *mut u8,     // PyUnicode_DATA() pointer
+    #[cfg(debug_assertions)]
+    _len: Py_ssize_t, // length of the string (for debug assertions)
 }
 
 const ASCII_STR_KIND: c_uint = 1;
@@ -146,26 +150,36 @@ impl PyAsciiStrBuilder {
             data: unsafe { PyUnicode_DATA(obj.as_ptr()).cast() },
             index: 0,
             obj,
+            #[cfg(debug_assertions)]
+            _len: len as Py_ssize_t,
         })
     }
 
-    /// Write a byte slice to the builder.
-    pub(crate) fn write_slice(&mut self, s: &[u8]) {
-        debug_assert!(s.is_ascii());
-        unsafe { copy_nonoverlapping(s.as_ptr(), self.data.offset(self.index), s.len()) };
-        self.index += s.len() as Py_ssize_t;
+    /// Finalize the builder and return the built `str` object.
+    pub(crate) fn finish(self) -> Owned<PyObj> {
+        #[cfg(debug_assertions)]
+        assert_eq!(self.index, self._len); // DEBUG: full length written
+        self.obj
     }
+}
 
-    /// Write a single ASCII character to the builder.
-    pub(crate) fn write_char(&mut self, c: u8) {
-        debug_assert!(c.is_ascii());
+impl ByteWrite for PyAsciiStrBuilder {
+    #[inline]
+    fn write_byte(&mut self, b: u8) {
+        debug_assert!(b.is_ascii());
+        #[cfg(debug_assertions)]
+        assert!(self.index < self._len);
         // Essentially the PyUnicode_WRITE() macro from the CPython API
-        unsafe { *self.data.offset(self.index) = c };
+        unsafe { *self.data.offset(self.index) = b };
         self.index += 1;
     }
 
-    /// Finalize the builder and return the built `str` object.
-    pub(crate) fn build(self) -> Owned<PyObj> {
-        self.obj
+    #[inline]
+    fn write(&mut self, s: &[u8]) {
+        debug_assert!(s.is_ascii());
+        #[cfg(debug_assertions)]
+        assert!(self.index + s.len() as Py_ssize_t <= self._len);
+        unsafe { copy_nonoverlapping(s.as_ptr(), self.data.offset(self.index), s.len()) };
+        self.index += s.len() as Py_ssize_t;
     }
 }

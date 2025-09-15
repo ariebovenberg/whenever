@@ -253,6 +253,9 @@ If you're interested in calculating the difference
 in terms of days **and** months, use the subtraction operator instead.
 ";
 pub(crate) const DATE_FORMAT_ISO: &CStr = c"\
+format_iso($self, *, basic=False)
+--
+
 Format as the ISO 8601 date format.
 
 Inverse of :meth:`parse_iso`.
@@ -481,6 +484,9 @@ Add a time amount to this instant.
 See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`_ for more information.
 ";
 pub(crate) const INSTANT_FORMAT_ISO: &CStr = c"\
+format_iso($self, *, unit='auto', basic=False, sep='T')
+--
+
 Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SSZ``
 
 The inverse of the ``parse_iso()`` method.
@@ -973,6 +979,9 @@ For more information,
 see `the docs <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
 ";
 pub(crate) const PLAINDATETIME_FORMAT_ISO: &CStr = c"\
+format_iso($self, *, unit='auto', basic=False, sep='T')
+--
+
 Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
 
 The inverse of the ``parse_iso()`` method.
@@ -1059,14 +1068,17 @@ See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-saf
 for more information.
 ";
 pub(crate) const TIME_FORMAT_ISO: &CStr = c"\
+format_iso($self, *, unit='auto', basic=False)
+--
+
 Format as the ISO 8601 time format.
 
 Inverse of :meth:`parse_iso`.
 
 Example
 -------
->>> Time(12, 30, 0).format_iso()
-'12:30:00'
+>>> Time(12, 30, 0).format_iso(unit='millisecond')
+'12:30:00.000'
 ";
 pub(crate) const TIME_FROM_PY_TIME: &CStr = c"\
 Create from a :class:`~datetime.time`

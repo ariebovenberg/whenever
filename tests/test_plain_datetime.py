@@ -383,10 +383,80 @@ def test_repr():
     )
 
 
-def test_format_iso():
-    d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-    assert str(d) == "2020-08-15T23:12:09.000987654"
-    assert d.format_iso() == "2020-08-15T23:12:09.000987654"
+class TestFormatIso:
+
+    def test_default(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_650)
+        assert str(d) == "2020-08-15T23:12:09.00098765"
+        assert d.format_iso() == "2020-08-15T23:12:09.00098765"
+
+    @pytest.mark.parametrize(
+        "dt, kwargs, expected",
+        [
+            (
+                PlainDateTime(1993, 4, 1, 14),
+                {"unit": "nanosecond"},
+                "1993-04-01T14:00:00.000000000",
+            ),
+            (
+                PlainDateTime(2025, 11, 1, 14, nanosecond=40_000),
+                {"unit": "microsecond", "sep": " "},
+                "2025-11-01 14:00:00.000040",
+            ),
+            (
+                PlainDateTime(2025, 11, 1, 14, 59, 42, nanosecond=40_000),
+                {"unit": "millisecond", "basic": True},
+                "20251101T145942.000",
+            ),
+            (
+                PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321),
+                {"unit": "second", "sep": "T", "basic": True},
+                "20200815T231209",
+            ),
+            (
+                PlainDateTime(2020, 8, 15, 23, 12, 49),
+                {"unit": "minute"},
+                "2020-08-15T23:12",
+            ),
+            (
+                PlainDateTime(2020, 8, 15, 23, 45),
+                {"unit": "hour", "basic": True},
+                "20200815T23",
+            ),
+            (
+                PlainDateTime(2020, 8, 15, nanosecond=40_000),
+                {"unit": "auto", "basic": False},
+                "2020-08-15T00:00:00.00004",
+            ),
+        ],
+    )
+    def test_variations(self, dt, kwargs, expected):
+        assert dt.format_iso(**kwargs) == expected
+
+    def test_invalid(self):
+        dt = PlainDateTime(2020, 4, 9, 13)
+        with pytest.raises(ValueError, match="unit"):
+            dt.format_iso(unit="foo")  # type: ignore[arg-type]
+
+        with pytest.raises(
+            (ValueError, TypeError, AttributeError), match="unit"
+        ):
+            dt.format_iso(unit=True)  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError, match="sep"):
+            dt.format_iso(sep="_")  # type: ignore[arg-type]
+
+        with pytest.raises(
+            (ValueError, TypeError, AttributeError), match="sep"
+        ):
+            dt.format_iso(sep=1)  # type: ignore[arg-type]
+
+        with pytest.raises(TypeError, match="basic"):
+            dt.format_iso(basic=1)  # type: ignore[arg-type]
+
+        # tz is a valid kwarg for ZonedDateTime.format_iso(), but not here
+        with pytest.raises(TypeError, match="tz"):
+            dt.format_iso(tz="always")  # type: ignore[call-arg]
 
 
 def test_comparison():

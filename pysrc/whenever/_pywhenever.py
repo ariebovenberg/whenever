@@ -286,7 +286,7 @@ class Date(_ImmutableBase):
         self._py_date = d
         return self
 
-    def format_iso(self) -> str:
+    def format_iso(self, *, basic: bool = False) -> str:
         """Format as the ISO 8601 date format.
 
         Inverse of :meth:`parse_iso`.
@@ -296,7 +296,7 @@ class Date(_ImmutableBase):
         >>> Date(2021, 1, 2).format_iso()
         '2021-01-02'
         """
-        return self._py_date.isoformat()
+        return _format_date(self._py_date, basic)
 
     @classmethod
     def parse_iso(cls, s: str, /) -> Date:
@@ -1000,21 +1000,30 @@ class Time(_ImmutableBase):
             t.replace(microsecond=0), t.microsecond * 1_000
         )
 
-    def format_iso(self) -> str:
+    def format_iso(
+        self,
+        *,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+            "auto",
+        ] = "auto",
+        basic: bool = False,
+    ) -> str:
         """Format as the ISO 8601 time format.
 
         Inverse of :meth:`parse_iso`.
 
         Example
         -------
-        >>> Time(12, 30, 0).format_iso()
-        '12:30:00'
+        >>> Time(12, 30, 0).format_iso(unit='millisecond')
+        '12:30:00.000'
         """
-        return (
-            (self._py_time.isoformat() + f".{self._nanos:09d}").rstrip("0")
-            if self._nanos
-            else self._py_time.isoformat()
-        )
+        return _format_time(self._py_time, self._nanos, unit, basic)
 
     @classmethod
     def parse_iso(cls, s: str, /) -> Time:
@@ -3378,16 +3387,26 @@ class Instant(_ExactTime):
             as_utc.microsecond * 1_000,
         )
 
-    def format_iso(self) -> str:
+    def format_iso(
+        self,
+        *,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+            "auto",
+        ] = "auto",
+        basic: bool = False,
+        sep: Literal["T", " "] = "T",
+    ) -> str:
         """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SSZ``
 
         The inverse of the ``parse_iso()`` method.
         """
-        return (
-            self._py_dt.isoformat()[:-6]
-            + bool(self._nanos) * f".{self._nanos:09d}".rstrip("0")
-            + "Z"
-        )
+        return _format_dt(self._py_dt, self._nanos, "Z", unit, sep, basic)
 
     @classmethod
     def parse_iso(cls, s: str, /) -> Instant:
@@ -3703,7 +3722,14 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         The inverse of the ``parse_iso()`` method.
         """
-        return _format_offset_dt(self._py_dt, self._nanos, unit, sep, basic)
+        return _format_dt(
+            self._py_dt,
+            self._nanos,
+            self._py_dt.utcoffset(),  # type: ignore[arg-type]
+            unit,
+            sep,
+            basic,
+        )
 
     @classmethod
     def parse_iso(cls, s: str, /) -> OffsetDateTime:
@@ -4258,9 +4284,10 @@ class ZonedDateTime(_ExactAndLocalTime):
             suffix = ""
 
         return (
-            _format_offset_dt(
+            _format_dt(
                 self._py_dt,
                 self._nanos,
+                self._py_dt.utcoffset(),  # type: ignore[arg-type]
                 unit,
                 sep,
                 basic,
@@ -4814,16 +4841,26 @@ class PlainDateTime(_LocalTime):
         self._py_dt = _datetime(year, month, day, hour, minute, second)
         self._nanos = nanosecond
 
-    def format_iso(self) -> str:
+    def format_iso(
+        self,
+        *,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+            "auto",
+        ] = "auto",
+        basic: bool = False,
+        sep: Literal["T", " "] = "T",
+    ) -> str:
         """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
 
         The inverse of the ``parse_iso()`` method.
         """
-        return (
-            (self._py_dt.isoformat() + f".{self._nanos:09d}").rstrip("0")
-            if self._nanos
-            else self._py_dt.isoformat()
-        )
+        return _format_dt(self._py_dt, self._nanos, "", unit, sep, basic)
 
     @classmethod
     def parse_iso(cls, s: str, /) -> PlainDateTime:
@@ -5922,7 +5959,9 @@ def _format_time(
         )
 
 
-def _format_offset(offset: _timedelta, basic: bool) -> str:
+def _format_offset(offset: _timedelta | Literal["Z", ""], basic: bool) -> str:
+    if isinstance(offset, str):
+        return offset
     sep = "" if basic else ":"
     sign = "-" if offset.days == -1 else "+"
     hours, remainder = divmod(abs(int(offset.total_seconds())), 3600)
@@ -5949,9 +5988,10 @@ def _format_nanos(ns: _Nanos, precision: str) -> str:
         raise ValueError(f"Invalid precision unit: {precision!r}. ")
 
 
-def _format_offset_dt(
+def _format_dt(
     dt: _datetime,
     ns: _Nanos,
+    offset: _timedelta | Literal["Z", ""],
     unit: str,
     sep: Literal["T", " "] = "T",
     basic: bool = False,
@@ -5964,7 +6004,7 @@ def _format_offset_dt(
     return (
         f"{_format_date(dt, basic)}{sep}"
         f"{_format_time(dt, ns, unit, basic)}"
-        f"{_format_offset(dt.utcoffset(), basic)}"  # type: ignore[arg-type]
+        f"{_format_offset(offset, basic)}"
     )
 
 
