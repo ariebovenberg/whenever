@@ -17,7 +17,7 @@ use crate::{
     },
     common::{
         ambiguity::*,
-        fmt::{self, ByteWrite, Suffix},
+        fmt::{self, Sink, Suffix},
         parse::Scan,
         round,
         scalar::*,
@@ -398,33 +398,19 @@ fn __repr__(_: PyType, slf: ZonedDateTime) -> PyReturn {
         offset,
         tz,
     } = slf;
-    let date_fmt = date.format_iso(false);
-    let time_fmt = time.format_iso(fmt::Unit::Auto, false);
-    let offset_fmt = offset.format_iso(false);
-    let tz_key = match tz.key.as_ref() {
-        Some(key) => key,
-        None => "<system timezone without ID>",
-    };
-    let prefix_fmt = b"ZonedDateTime(";
-    let mut s = PyAsciiStrBuilder::new(
-        prefix_fmt.len()
-        + date_fmt.len()
-        + 1 // space separator
-        + time_fmt.len()
-        + offset_fmt.len()
-        + tz_key.len()
-        + 2 // brackets around tz
-        + 1, // closing parenthesis
-    )?;
-    s.write(prefix_fmt);
-    date_fmt.write(&mut s);
-    s.write_byte(b' ');
-    time_fmt.write(&mut s);
-    offset_fmt.write(&mut s);
-    s.write_byte(b'[');
-    s.write(tz_key.as_bytes());
-    s.write(b"])");
-    Ok(s.finish())
+    PyAsciiStrBuilder::format((
+        b"ZonedDateTime(",
+        date.format_iso(false),
+        b' ',
+        time.format_iso(fmt::Unit::Auto, false),
+        offset.format_iso(false),
+        b'[',
+        &tz.key
+            .as_deref()
+            .unwrap_or("<system timezone without ID>")
+            .as_bytes(),
+        b"])",
+    ))
 }
 
 fn __str__(_: PyType, slf: ZonedDateTime) -> PyReturn {
@@ -434,26 +420,31 @@ fn __str__(_: PyType, slf: ZonedDateTime) -> PyReturn {
         offset,
         tz,
     } = slf;
-    let date_fmt = date.format_iso(false);
-    let time_fmt = time.format_iso(fmt::Unit::Auto, false);
-    let offset_fmt = offset.format_iso(false);
-    let mut s = PyAsciiStrBuilder::new(
-        date_fmt.len()
-        + 1 // space separator
-        + time_fmt.len()
-        + offset_fmt.len()
-        + tz.key.as_ref().map_or(0, |k| k.len() + 2), // +2 for brackets around tz
-    )?;
-    date_fmt.write(&mut s);
-    s.write_byte(b'T');
-    time_fmt.write(&mut s);
-    offset_fmt.write(&mut s);
-    if let Some(ref tz_key) = tz.key {
-        s.write_byte(b'[');
-        s.write(tz_key.as_bytes());
-        s.write_byte(b']');
+    PyAsciiStrBuilder::format((
+        date.format_iso(false),
+        b'T',
+        time.format_iso(fmt::Unit::Auto, false),
+        offset.format_iso(false),
+        TzFormat { tz },
+    ))
+}
+
+struct TzFormat {
+    tz: TzPtr,
+}
+
+impl fmt::Chunk for TzFormat {
+    fn len(&self) -> usize {
+        self.tz.key.as_ref().map_or(0, |k| k.len() + 2) // +2 for brackets around tz
     }
-    Ok(s.finish())
+
+    fn write(&self, sink: &mut impl Sink) {
+        if let Some(ref tz_key) = self.tz.key {
+            sink.write_byte(b'[');
+            sink.write(tz_key.as_bytes());
+            sink.write_byte(b']');
+        }
+    }
 }
 
 fn __richcmp__(

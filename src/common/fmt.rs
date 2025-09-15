@@ -26,11 +26,62 @@ pub(crate) fn format_4_digits(n: u16) -> [u8; 4] {
     [first[0], first[1], second[0], second[1]]
 }
 
-pub trait ByteWrite {
+/// Something you can write bytes into.
+pub(crate) trait Sink {
     fn write_byte(&mut self, b: u8);
-
     fn write(&mut self, s: &[u8]);
 }
+
+/// Something with a fixed length that can write itself into a `Sink`.
+/// Used for "fast" formatting of known-size chunks.
+pub(crate) trait Chunk {
+    fn len(&self) -> usize;
+    fn write(&self, b: &mut impl Sink);
+}
+
+impl<T: AsRef<[u8]>> Chunk for &T {
+    fn len(&self) -> usize {
+        self.as_ref().len()
+    }
+    fn write(&self, b: &mut impl Sink) {
+        b.write(self.as_ref());
+    }
+}
+
+impl Chunk for u8 {
+    fn len(&self) -> usize {
+        1
+    }
+
+    fn write(&self, b: &mut impl Sink) {
+        b.write_byte(*self);
+    }
+}
+
+macro_rules! impl_chunk_for_tuples {
+    ( $( $name:ident : $idx:tt ),+ ) => {
+        impl<$( $name: Chunk ),+> Chunk for ( $( $name ),+ ) {
+            fn len(&self) -> usize {
+                0 $( + self.$idx.len() )+
+            }
+
+            fn write(&self, b: &mut impl Sink) {
+                $( self.$idx.write(b); )+
+            }
+        }
+    };
+}
+
+// Generate the impls
+impl_chunk_for_tuples!(T0:0, T1:1);
+impl_chunk_for_tuples!(T0:0, T1:1, T2:2);
+impl_chunk_for_tuples!(T0:0, T1:1, T2:2, T3:3);
+impl_chunk_for_tuples!(T0:0, T1:1, T2:2, T3:3, T4:4);
+impl_chunk_for_tuples!(T0:0, T1:1, T2:2, T3:3, T4:4, T5:5);
+impl_chunk_for_tuples!(T0:0, T1:1, T2:2, T3:3, T4:4, T5:5, T6:6);
+impl_chunk_for_tuples!(T0:0, T1:1, T2:2, T3:3, T4:4, T5:5, T6:6, T7:7);
+impl_chunk_for_tuples!(T0:0, T1:1, T2:2, T3:3, T4:4, T5:5, T6:6, T7:7, T8:8);
+impl_chunk_for_tuples!(T0:0, T1:1, T2:2, T3:3, T4:4, T5:5, T6:6, T7:7, T8:8, T9:9);
 
 pub(crate) struct ArrayWriter<const N: usize> {
     buf: [u8; N],
@@ -52,7 +103,7 @@ impl<const N: usize> ArrayWriter<N> {
     }
 }
 
-impl<const N: usize> ByteWrite for ArrayWriter<N> {
+impl<const N: usize> Sink for ArrayWriter<N> {
     fn write_byte(&mut self, b: u8) {
         debug_assert!(self.pos < N);
         self.buf[self.pos] = b;
@@ -66,7 +117,6 @@ impl<const N: usize> ByteWrite for ArrayWriter<N> {
     }
 }
 
-// TODO: rename
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Unit {
     Auto,
@@ -128,8 +178,8 @@ pub(crate) enum SuffixFormat<'a> {
     OffsetTz(OffsetFormat, &'a str),
 }
 
-impl SuffixFormat<'_> {
-    pub(crate) fn len(self) -> usize {
+impl Chunk for SuffixFormat<'_> {
+    fn len(&self) -> usize {
         match self {
             Self::Absent => 0,
             Self::Zulu => 1,
@@ -140,7 +190,7 @@ impl SuffixFormat<'_> {
         }
     }
 
-    pub(crate) fn write(self, b: &mut impl ByteWrite) {
+    fn write(&self, b: &mut impl Sink) {
         match self {
             Self::Absent => {}
             Self::Zulu => b.write_byte(b'Z'),
@@ -271,18 +321,7 @@ pub(crate) fn format_iso(
         },
     };
 
-    // Allocate the required space and write the parts
-    let mut b = PyAsciiStrBuilder::new(
-        date_fmt.len()
-        + 1 // separator
-        + time_fmt.len()
-        + suffix_fmt.len(),
-    )?;
-    date_fmt.write(&mut b);
-    b.write_byte(sep);
-    time_fmt.write(&mut b);
-    suffix_fmt.write(&mut b);
-    Ok(b.finish())
+    PyAsciiStrBuilder::format((date_fmt, sep, time_fmt, suffix_fmt))
 }
 
 #[cfg(test)]

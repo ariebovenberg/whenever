@@ -264,6 +264,8 @@ Example
 -------
 >>> Date(2021, 1, 2).format_iso()
 '2021-01-02'
+>>> Date(1992, 9, 4).format_iso(basic=True)
+'19920904'
 ";
 pub(crate) const DATE_FROM_PY_DATE: &CStr = c"\
 Create from a :class:`~datetime.date`
@@ -1079,6 +1081,8 @@ Example
 -------
 >>> Time(12, 30, 0).format_iso(unit='millisecond')
 '12:30:00.000'
+>>> Time(4, 0, 59, nanosecond=40_000).format_iso(basic=True)
+'040059.00004'
 ";
 pub(crate) const TIME_FROM_PY_TIME: &CStr = c"\
 Create from a :class:`~datetime.time`

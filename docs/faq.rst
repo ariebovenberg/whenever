@@ -1,7 +1,16 @@
 ❓ FAQ
 ======
 
-.. TODO: performance topic
+Does performance really matter for a datetime library?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Most of the time, datetime handling isn’t the main bottleneck in Python
+programs—but then again, very few things are.
+Still, datetime logic is arithmetic-heavy and often applied in bulk,
+making it a classic case where faster code pays off.
+That's why many core Python components are backed by optimized implementations,
+and why this library offers a Rust version for speed alongside a pure-Python version
+for portability.
 
 .. _faq-why-instant:
 
@@ -176,7 +185,7 @@ There are several reasons that *whenever* doesn't simply wrap jiff though:
 3. Jiff has a slightly different design philosophy, most notably
    de-emphasizing the difference between offset and zoned datetimes.
 4. Jiff can't make use of Python's bundled timezone database (`tzdata`) if present.
-5. Writing a rust library with Python bindings primarily in mind allows for 
+5. Writing a rust library with Python bindings primarily in mind allows for
    some optimizations.
 
 If you're interested in a straightforward wrapper around jiff,
