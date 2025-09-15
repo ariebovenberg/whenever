@@ -711,6 +711,9 @@ Below are the default string formats you get for calling each type's
 | :class:`~whenever.OffsetDateTime`       | ``YYYY-MM-DDTHH:MM:SS±HH:MM``                  |
 +-----------------------------------------+------------------------------------------------+
 
+Where applicable, the outputs can be customized using the ``unit``, ``basic``, ``sep``,
+and ``tz`` keyword arguments. See the method documentation for details.
+
 Example usage:
 
 >>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=+5)

@@ -295,6 +295,8 @@ class Date(_ImmutableBase):
         -------
         >>> Date(2021, 1, 2).format_iso()
         '2021-01-02'
+        >>> Date(1992, 9, 4).format_iso(basic=True)
+        '19920904'
         """
         return _format_date(self._py_date, basic)
 
@@ -1022,6 +1024,8 @@ class Time(_ImmutableBase):
         -------
         >>> Time(12, 30, 0).format_iso(unit='millisecond')
         '12:30:00.000'
+        >>> Time(4, 0, 59, nanosecond=40_000).format_iso(basic=True)
+        '040059.00004'
         """
         return _format_time(self._py_time, self._nanos, unit, basic)
 
@@ -2649,6 +2653,9 @@ class _BasicConversions(_ImmutableBase, ABC):
         """Format an ISO8601 string representation. Each
         subclass has a different format.
 
+        Where applicable, keyword arguments ``unit``, ``basic``, ``sep``,
+        and ``tz`` are supported to customize the output.
+
         See :ref:`here <iso8601>` for more information.
         """
         raise NotImplementedError()
@@ -2663,7 +2670,6 @@ class _BasicConversions(_ImmutableBase, ABC):
         """
 
     def __str__(self) -> str:
-        """Same as :meth:`format_iso`"""
         return self.format_iso()
 
     @classmethod
@@ -4375,6 +4381,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         if d.tzinfo.key is None:
             raise ValueError(ZONEINFO_NO_KEY_MSG)
 
+        # We go through the epoch to ensure the result represents the same instant.
+        # If we'd use the local time, ZoneInfo could theoretically pick a different
+        # offset than we get from our database.
         epoch = int(d.timestamp())
         _tz = _get_tz(d.tzinfo.key)
         offset = _tz.offset_for_instant(int(epoch))
@@ -4749,10 +4758,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         if type(other) is not type(self):
             raise TypeError("exact_eq() requires same-type arguments")
         return (
-            self._py_dt == other._py_dt
-            and self._py_dt.tzinfo == other._py_dt.tzinfo
+            self._py_dt == other._py_dt  # same moment in time
             and self._nanos == other._nanos
-            and self._tz == other._tz
+            and self._tz == other._tz  # same timezone
+            # don't need to check the offset, it's implied by the above
         )
 
     # An override with shortcut for efficiency if the timezone stays the same

@@ -217,6 +217,9 @@ class TestInit:
 
         assert TZPATH == prev_tzpath
 
+        # strict equality is impacted
+        assert not d2.to_plain().assume_tz("Europe/Amsterdam").exact_eq(d2)
+
         # Available timezones should now be the same again
         assert available_timezones() == zoneinfo_available_timezones()
 

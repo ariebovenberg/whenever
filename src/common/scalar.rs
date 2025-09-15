@@ -2,7 +2,7 @@
 use crate::{
     classes::{date::Date, plain_datetime::DateTime, time::Time},
     common::{
-        fmt::{ByteWrite, format_2_digits},
+        fmt::{self, Sink, format_2_digits},
         round,
     },
 };
@@ -96,8 +96,8 @@ pub(crate) struct OffsetFormat {
     basic: bool,
 }
 
-impl OffsetFormat {
-    pub(crate) fn len(self) -> usize {
+impl fmt::Chunk for OffsetFormat {
+    fn len(&self) -> usize {
         // Always at least +hhmm
         5
         // First seperator adds 1
@@ -108,7 +108,7 @@ impl OffsetFormat {
         + !self.basic as usize }
     }
 
-    pub(crate) fn write(self, b: &mut impl ByteWrite) {
+    fn write(&self, b: &mut impl Sink) {
         b.write_byte(self.sign_char);
         b.write(format_2_digits(self.hrs).as_ref());
         if !self.basic {

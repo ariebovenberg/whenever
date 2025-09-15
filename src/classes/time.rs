@@ -1,15 +1,20 @@
-use core::ffi::{CStr, c_int, c_long, c_void};
-use pyo3_ffi::*;
-use std::fmt::{Display, Formatter};
-use std::ptr::null_mut as NULL;
-
-use crate::common::fmt::{ByteWrite, format_2_digits};
 use crate::{
     classes::plain_datetime::DateTime,
-    common::{fmt, parse::Scan, round, scalar::*},
+    common::{
+        fmt::{self, Sink, format_2_digits},
+        parse::Scan,
+        round,
+        scalar::*,
+    },
     docstrings as doc,
     py::*,
     pymodule::State,
+};
+use core::ffi::{CStr, c_int, c_long, c_void};
+use pyo3_ffi::*;
+use std::{
+    fmt::{Display, Formatter},
+    ptr::null_mut as NULL,
 };
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -217,8 +222,8 @@ pub(crate) struct IsoFormat {
     subsec_len: usize,
 }
 
-impl IsoFormat {
-    pub(crate) fn len(self) -> usize {
+impl fmt::Chunk for IsoFormat {
+    fn len(&self) -> usize {
         (match self.unit {
             fmt::Unit::Hour => 2,
             fmt::Unit::Minute => 4,
@@ -236,8 +241,8 @@ impl IsoFormat {
         }
     }
 
-    pub(crate) fn write(self, buf: &mut impl ByteWrite) {
-        let IsoFormat {
+    fn write(&self, buf: &mut impl Sink) {
+        let &IsoFormat {
             time:
                 Time {
                     hour,
@@ -281,7 +286,6 @@ impl IsoFormat {
 
 impl PySimpleAlloc for Time {}
 
-// TODO: remove
 // FUTURE: a trait for faster formatting since timestamp are small and
 // limited in length?
 impl Display for Time {
@@ -338,10 +342,6 @@ fn __new__(cls: HeapType<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetu
         .to_obj(cls)
 }
 
-fn __repr__(_: PyType, slf: Time) -> PyReturn {
-    format!("Time({slf})").to_py()
-}
-
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     // SAFETY: self type is always passed to __hash__
     hashmask(unsafe { slf.assume_heaptype::<Time>() }.1.pyhash())
@@ -364,10 +364,11 @@ fn __richcmp__(cls: HeapType<Time>, slf: Time, arg: PyObj, op: c_int) -> PyRetur
 }
 
 fn __str__(_: PyType, slf: Time) -> PyReturn {
-    let fmt = slf.format_iso(fmt::Unit::Auto, false);
-    let mut s = PyAsciiStrBuilder::new(fmt.len())?;
-    fmt.write(&mut s);
-    Ok(s.finish())
+    PyAsciiStrBuilder::format(slf.format_iso(fmt::Unit::Auto, false))
+}
+
+fn __repr__(_: PyType, slf: Time) -> PyReturn {
+    PyAsciiStrBuilder::format((b"Time(", slf.format_iso(fmt::Unit::Auto, false), b')'))
 }
 
 #[allow(static_mut_refs)]
@@ -482,10 +483,7 @@ fn format_iso(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterK
         Ok(true)
     })?;
 
-    let fmt = slf.format_iso(unit, basic);
-    let mut s = PyAsciiStrBuilder::new(fmt.len())?;
-    fmt.write(&mut s);
-    Ok(s.finish())
+    PyAsciiStrBuilder::format(slf.format_iso(unit, basic))
 }
 
 fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyResult<Owned<PyTuple>> {
@@ -652,8 +650,9 @@ pub(crate) static mut SPEC: PyType_Spec = type_spec::<Time>(c"whenever.Time", un
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::fmt::Chunk;
 
-    impl ByteWrite for Vec<u8> {
+    impl Sink for Vec<u8> {
         fn write(&mut self, bytes: &[u8]) {
             self.extend_from_slice(bytes);
         }

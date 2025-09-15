@@ -1,7 +1,3 @@
-use core::ffi::{CStr, c_int, c_long, c_void};
-use core::ptr::null_mut as NULL;
-use pyo3_ffi::*;
-
 use crate::common::fmt::Suffix;
 use crate::{
     classes::{
@@ -13,6 +9,11 @@ use crate::{
     py::*,
     pymodule::State,
 };
+use core::{
+    ffi::{CStr, c_int, c_long, c_void},
+    ptr::null_mut as NULL,
+};
+use pyo3_ffi::*;
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub struct DateTime {

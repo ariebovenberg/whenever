@@ -295,13 +295,24 @@ fn __new__(cls: HeapType<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>)
         .to_obj(cls)
 }
 
-fn __repr__(_: PyType, slf: OffsetDateTime) -> PyReturn {
-    let OffsetDateTime { date, time, offset } = slf;
-    format!("OffsetDateTime({date} {time}{offset})").to_py()
+fn __repr__(_: PyType, OffsetDateTime { date, time, offset }: OffsetDateTime) -> PyReturn {
+    PyAsciiStrBuilder::format((
+        b"OffsetDateTime(",
+        date.format_iso(false),
+        b' ',
+        time.format_iso(fmt::Unit::Auto, false),
+        offset.format_iso(false),
+        b')',
+    ))
 }
 
-fn __str__(_: PyType, slf: OffsetDateTime) -> PyReturn {
-    format!("{slf}").to_py()
+fn __str__(_: PyType, OffsetDateTime { date, time, offset }: OffsetDateTime) -> PyReturn {
+    PyAsciiStrBuilder::format((
+        date.format_iso(false),
+        b'T',
+        time.format_iso(fmt::Unit::Auto, false),
+        offset.format_iso(false),
+    ))
 }
 
 fn __richcmp__(
