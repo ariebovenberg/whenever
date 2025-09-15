@@ -1,7 +1,7 @@
 .PHONY: init
 init:
-	pip install -U setuptools-rust setuptools build pyperf packaging twine
-	pip install -r requirements/all.txt
+	pip install -U setuptools-rust setuptools build pyperf
+	pip install -U -r requirements/all.txt
 	pip install -e .
 
 .PHONY: typecheck
