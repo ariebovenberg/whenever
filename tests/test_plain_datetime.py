@@ -54,6 +54,9 @@ def test_minimal():
         == PlainDateTime(2020, 8, 15, 12, 0, 0, nanosecond=0)
     )
 
+    with pytest.raises(ValueError, match="nano|time"):
+        PlainDateTime(2020, 8, 15, 12, 0, 0, nanosecond=1_000_000_000)
+
 
 def test_components():
     d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_123)

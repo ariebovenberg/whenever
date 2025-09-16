@@ -9,7 +9,8 @@ use std::{cmp::Ordering, fmt};
 #[derive(Debug, PartialEq, Eq)]
 pub struct TimeZone {
     // The IANA tz ID (e.g. "Europe/Amsterdam"). Not actually parsed from the file,
-    // but essential because in our case we always associate a tzif file with a tz ID.
+    // but essential because in our case we almost always associate a tzif file with a tz ID.
+    // Notable exception is the system timezone in some cases.
     pub(crate) key: Option<String>,
     // The following two fields are used to map UTC time to local time and vice versa.
     // For UTC -> local, the transition is unambiguous and simple.

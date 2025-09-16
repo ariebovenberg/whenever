@@ -1,6 +1,6 @@
 """Posix TZ string parser and timezone implementation.
 
-This is pretty much a reimplementation of the Tust version located in the
+This is pretty much a reimplementation of the Rust version located in the
 `src/tz/posix.rs` file.
 """
 

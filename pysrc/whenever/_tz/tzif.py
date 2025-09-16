@@ -111,20 +111,23 @@ class TimeZone:
             _, (prev_offset, last_shift) = self._offsets_by_local[-1]
             return Unambiguous(prev_offset + last_shift)
 
+    # NOTE: this equality check needs to be fast, since it's used in
+    # some routines to check if the timezone is indeed changing.
     def __eq__(self, other: object) -> bool:
         # We first check for identity, as that's the cheapest check
-        # and makes the common case fast. Note that identity inequality
-        # doesn't rule out equality, as two different instances may represent
-        # the same timezone due to cache clearing.
+        # and makes the common case fast.
         if self is other:
             return True
+        # Identity inequality doesn't rule out equality, as two different
+        # instances may represent the same timezone due to cache clearing.
         elif type(other) is TimeZone:
             return (
-                # NOTE: it's important we compare the key first, as it's the
-                # cheapest to compare, and most likely to differ
+                # We compare the key first, as it's the cheapest to compare,
+                # and most likely to differ
                 self.key == other.key
-                # Even timezones with the same key may differ in content,
-                # because we may have cleared the cache.
+                # Only in rare cases (i.e. system timezone changes or cache clears)
+                # should we need to compare the rest of the data. It's relatively
+                # expensive, so we do it last.
                 and self._offsets_by_utc == other._offsets_by_utc
                 and self._offsets_by_local == other._offsets_by_local
                 and self._end == other._end
