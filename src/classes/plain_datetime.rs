@@ -162,8 +162,8 @@ fn __new__(cls: HeapType<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> Py
     );
 
     DateTime {
-        date: Date::from_longs(year, month, day).ok_or_type_err("Invalid date")?,
-        time: Time::from_longs(hour, minute, second, nanosecond).ok_or_type_err("Invalid time")?,
+        date: Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?,
+        time: Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?,
     }
     .to_obj(cls)
 }

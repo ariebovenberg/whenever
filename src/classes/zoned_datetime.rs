@@ -44,7 +44,7 @@ impl std::cmp::PartialEq for ZonedDateTime {
         self.date == other.date
             && self.time == other.time
             && self.offset == other.offset
-            && *self.tz == *other.tz
+            && self.tz.is_same_tz(other.tz)
     }
 }
 
@@ -266,7 +266,7 @@ impl ZonedDateTime {
             .instant()
             .shift(delta)
             .ok_or_value_err("Instant is out of range")?
-            .to_tz(self.tz.new_non_unique(), cls)
+            .to_tz(self.tz.newref(), cls)
     }
 }
 
@@ -611,8 +611,9 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 fn exact_eq(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, obj_b: PyObj) -> PyReturn {
-    if let Some(odt) = obj_b.extract(cls) {
-        (slf == odt).to_py()
+    if let Some(zdt) = obj_b.extract(cls) {
+        println!("Exact eq ZonedDateTime");
+        (slf == zdt).to_py()
     } else {
         raise_type_err("Can't compare different types")?
     }
@@ -804,7 +805,7 @@ fn replace_date(
     } = slf;
     if let Some(date) = arg.extract(date_type) {
         ZonedDateTime::resolve(date, time, &tz, dis, offset, exc_repeated, exc_skipped)?
-            .assume_tz_unchecked(tz.new_non_unique(), cls)
+            .assume_tz_unchecked(tz.newref(), cls)
     } else {
         raise_type_err("date must be a whenever.Date instance")
     }
@@ -857,7 +858,7 @@ fn replace_time(
         exc_repeated,
         exc_skipped,
     )?
-    .assume_tz_unchecked(tz.new_non_unique(), cls)
+    .assume_tz_unchecked(tz.newref(), cls)
 }
 
 fn format_iso(
@@ -918,16 +919,16 @@ fn replace(
     let mut second = time.second.into();
     let mut nanos = time.subsec.get() as _;
     let mut dis = None;
-    let mut tz = tz.new_non_unique();
+    let mut tz = tz.newref();
 
     handle_kwargs("replace", kwargs, |key, value, eq| {
         if eq(key, str_tz) {
             let tz_new = tz_store.obj_get(value)?;
             // If we change timezones, forget about trying to preserve the offset.
             // Just use compatible disambiguation.
-            if tz_new.as_ptr() != tz.as_ptr() {
-                dis.get_or_insert(Disambiguate::Compatible);
-            };
+            if !tz.is_same_tz(*tz_new) {
+                dis = Some(Disambiguate::Compatible);
+            }
             tz = tz_new;
         } else if eq(key, str_disambiguate) {
             dis = Some(Disambiguate::from_py(
@@ -1362,7 +1363,7 @@ fn start_of_day(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
         exc_repeated,
         exc_skipped,
     )?
-    .assume_tz_unchecked(tz.new_non_unique(), cls)
+    .assume_tz_unchecked(tz.newref(), cls)
 }
 
 fn day_length(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
@@ -1421,7 +1422,7 @@ fn round(
             ZonedDateTime::resolve_using_offset(date, time_rounded, &tz, offset)
         }
     }?
-    .assume_tz_unchecked(slf.tz.new_non_unique(), cls)
+    .assume_tz_unchecked(slf.tz.newref(), cls)
 }
 
 fn _round_day(slf: ZonedDateTime, state: &State, mode: round::Mode) -> PyResult<OffsetDateTime> {
