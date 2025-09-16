@@ -794,28 +794,30 @@ impl SubSecNanos {
     /// Convert the nanoseconds to a string representation,
     /// returning the buffer and the "significant" length (i.e. without trailing zeros)
     pub(crate) fn format_iso(self) -> ([u8; 10], usize) {
-        // Don't write anything if the nanoseconds are zero
-        let mut buf: [u8; 10] = *b".000000000";
+        // Early exit for zero
         if self.0 == 0 {
-            return (buf, 0);
+            return (*b".000000000", 0);
         }
 
-        let mut len_significant = buf.len();
-        let mut remaining = self.0;
-        let mut digit = (remaining % 10) as u8;
-        // Handle trailing zeros
-        while digit == 0 {
+        let mut buf = [b'.'; 10];
+        let n = self.0;
+        for (i, item) in buf.iter_mut().enumerate().skip(1) {
+            let d = (n / 10i32.pow(9 - i as u32)) % 10;
+            *item = b'0' + d as u8;
+        }
+
+        // Find last non-zero digit (after the dot)
+        let mut len_significant = 9;
+        while len_significant > 0 && buf[len_significant] == b'0' {
             len_significant -= 1;
-            remaining /= 10;
-            digit = (remaining % 10) as u8;
         }
-        // Write the digits in reverse order
-        for i in (1..len_significant).rev() {
-            buf[i] = b'0' + digit;
-            remaining /= 10;
-            digit = (remaining % 10) as u8;
+
+        // include the dot if there's any significant digit
+        if len_significant != 0 {
+            len_significant += 1;
         }
-        (buf, len_significant as _)
+
+        (buf, len_significant)
     }
 }
 

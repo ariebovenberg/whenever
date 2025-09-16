@@ -177,10 +177,10 @@ class TestInit:
         prev_tzpath = TZPATH
         # We now set the TZ path to our test directory
         # (which contains some tzif files)
-        reset_tzpath([TEST_DIR])
+        reset_tzpath([TEST_DIR / "tzif"])
         from whenever import TZPATH
 
-        assert TZPATH == (str(TEST_DIR),)
+        assert TZPATH == (f"{TEST_DIR}/tzif",)
         try:
             # Available timezones should now be different
             assert available_timezones() != zoneinfo_available_timezones()
@@ -207,8 +207,8 @@ class TestInit:
             d.add(hours=24)
 
             # Ok, let's see if we can find our custom timezones
-            d2 = ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Amsterdam.tzif")
-            assert ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Honolulu.tzif")
+            d2 = ZonedDateTime(1982, 8, 15, 5, 12, tz="Amsterdam.tzif")
+            d3 = ZonedDateTime(1982, 8, 15, 5, 12, tz="Iceland")
         finally:
             # We need to reset the tzpath to the original one
             reset_tzpath()
@@ -217,19 +217,25 @@ class TestInit:
 
         assert TZPATH == prev_tzpath
 
-        # strict equality is impacted
-        assert not d2.to_plain().assume_tz("Europe/Amsterdam").exact_eq(d2)
-
         # Available timezones should now be the same again
         assert available_timezones() == zoneinfo_available_timezones()
 
         # Our custom timezones are still in the cache
-        assert ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Amsterdam.tzif")
+        assert ZonedDateTime(1982, 8, 15, 5, 12, tz="Amsterdam.tzif")
         # And clear the cache again
         clear_tzcache()
         # ...and now they aren't
         with pytest.raises(TimeZoneNotFoundError):
-            ZonedDateTime(1982, 8, 15, 5, 12, tz="tzif/Amsterdam.tzif")
+            ZonedDateTime(1982, 8, 15, 5, 12, tz="Amsterdam.tzif")
+
+        # strict equality is impacted
+        assert not d2.to_plain().assume_tz("Europe/Amsterdam").exact_eq(d2)
+        # Note the "Iceland" file in our tzif directory is an older version,
+        # so they shouldn't compare equal
+        assert not d3.to_plain().assume_tz("Iceland").exact_eq(d3)
+        # the NYC instance is still the same value (but a different instance/pointer)
+        print("comparing cached NYC")
+        assert d.to_plain().assume_tz(nyc).exact_eq(d)
 
         # but we can still use an old instance
         d2.add(hours=24)
@@ -2172,6 +2178,18 @@ class TestPyDatetime:
 
         # ensure the ZoneInfo isn't file-based, and can thus be pickled
         pickle.dumps(d2)
+
+        # negative offset
+        d3 = ZonedDateTime(
+            2020,
+            8,
+            15,
+            12,
+            8,
+            30,
+            tz="America/New_York",
+        )
+        assert d3.py_datetime().timestamp() == d3.timestamp()
 
     @pytest.mark.parametrize(
         "tz",

@@ -13,7 +13,7 @@ use std::{
     ptr::NonNull,
 };
 
-/// A manually reference-counted handle to a `TZif` object.
+/// A manually reference-counted pointer to a timezone definition.
 /// Since it's just a thin wrapper around a pointer, and
 /// meant to be used in a single-threaded context, it's safe to share and copy
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -32,7 +32,7 @@ impl TzPtr {
         let inner = Box::new(Inner {
             // We start with refcount of 2:
             // - one to share outside of the tzstore
-            // - one to keep the pointer alive in the cache
+            // - one to keep the pointer alive in the LRU
             refcnt: UnsafeCell::new(2),
             value,
         });
@@ -41,26 +41,9 @@ impl TzPtr {
         }
     }
 
-    /// Increments the reference count.
-    fn incref(&self) {
-        unsafe {
-            let refcnt = self.inner.as_ref().refcnt.get();
-            *refcnt += 1;
-        }
-    }
-
-    pub(crate) fn new_non_unique<'a>(self) -> TzHandle<'a> {
-        TzHandle::non_unique(self)
-    }
-
-    /// Decrement the reference count manually and return the new count.
-    #[inline]
-    fn decref(&self) -> usize {
-        unsafe {
-            let refcnt = self.inner.as_ref().refcnt.get();
-            *refcnt -= 1;
-            *refcnt
-        }
+    /// Create a new handle that shares ownership of the same pointer.
+    pub(crate) fn newref<'a>(self) -> TzHandle<'a> {
+        TzHandle::new_nonunique(self)
     }
 
     /// Decrement the reference count and clean up if it reaches zero.
@@ -78,8 +61,31 @@ impl TzPtr {
         }
     }
 
-    /// Gets the current reference count (for debugging purposes).
-    #[allow(dead_code)]
+    /// Determine if two timezone pointers point to the same timezone.
+    /// Two different pointers may point to the same timezone data,
+    /// for example after cache clearing and reloading.
+    pub(crate) fn is_same_tz(self, other: TzPtr) -> bool {
+        // The first check is crucial in avoiding unnecessary value comparisons
+        // in the common case where pointers are unique.
+        self == other || self.deref() == other.deref()
+    }
+
+    fn decref(&self) -> usize {
+        unsafe {
+            let refcnt = self.inner.as_ref().refcnt.get();
+            *refcnt -= 1;
+            *refcnt
+        }
+    }
+
+    fn incref(&self) {
+        unsafe {
+            let refcnt = self.inner.as_ref().refcnt.get();
+            *refcnt += 1;
+        }
+    }
+
+    #[cfg(debug_assertions)]
     pub(crate) fn ref_count(&self) -> usize {
         unsafe { *self.inner.as_ref().refcnt.get() }
     }
@@ -103,12 +109,12 @@ impl Deref for TzPtr {
 /// It automatically decrements the reference count when it goes out of scope.
 ///
 /// There are two variants:
-/// - `New`: pointer that has a refcount of >=1, and thus requires a reference to the `TzStore`
+/// - a pointer that has a refcount of >=1, and thus requires a reference to the `TzStore`
 ///   to manage proper cleanup.
-/// - `NonUnique`: pointer that has a refcount of >= 2, will never trigger cleanup,
+/// - a "non-unique" pointer that has a refcount of >= 2, will never trigger cleanup on Drop,
 ///   and therefore does not require a reference to the `TzStore`.
 ///   This is typically useful if copying from a Python object
-///   that already holds a strong reference to the `TZif` object.
+///   that already holds a strong reference to the timezone.
 #[derive(Debug)]
 pub(crate) enum TzHandle<'a> {
     Ptr(TzPtr, &'a TzStore),
@@ -116,24 +122,24 @@ pub(crate) enum TzHandle<'a> {
 }
 
 impl TzHandle<'_> {
-    fn non_unique(ptr: TzPtr) -> Self {
-        ptr.incref();
-        Self::NonUniquePtr(ptr)
+    /// Transfer ownership of the pointer to Python.
+    /// Rust is no longer responsible for the memory (i.e. Drop)
+    pub(crate) fn into_py(self) -> TzPtr {
+        let ptr = self.as_ptr();
+        std::mem::forget(self);
+        ptr
     }
 
-    pub(crate) fn as_ptr(&self) -> TzPtr {
+    fn as_ptr(&self) -> TzPtr {
         match *self {
             TzHandle::Ptr(ptr, _) => ptr,
             TzHandle::NonUniquePtr(ptr) => ptr,
         }
     }
 
-    pub(crate) fn into_py(self) -> TzPtr {
-        let ptr = self.as_ptr();
-        // By transferring ownership to Python, we essentially say
-        // Rust is no longer responsible for the memory (i.e. Drop)
-        std::mem::forget(self);
-        ptr
+    fn new_nonunique(ptr: TzPtr) -> Self {
+        ptr.incref();
+        Self::NonUniquePtr(ptr)
     }
 }
 
@@ -143,7 +149,7 @@ impl Drop for TzHandle<'_> {
             TzHandle::Ptr(ptr, store) => ptr.decref_with_cleanup(|| store),
             TzHandle::NonUniquePtr(ptr) => {
                 // Non-unique pointers do not require cleanup,
-                // since they are not the last strong reference.
+                // since they are never the last strong reference.
                 ptr.decref();
             }
         }
@@ -151,7 +157,7 @@ impl Drop for TzHandle<'_> {
 }
 
 impl Deref for TzHandle<'_> {
-    type Target = TimeZone;
+    type Target = TzPtr;
 
     fn deref(&self) -> &Self::Target {
         match self {
@@ -181,10 +187,9 @@ impl Cache {
         }
     }
 
-    /// Get an entry from the cache, or try to load it from the supplied function
-    /// and insert it into the cache.
+    /// Get an entry from the cache, or insert it from the supplied function.
     /// Returns a strong reference.
-    fn get_or_load<F>(&self, key: &str, load: F) -> Option<TzPtr>
+    fn get_or_insert_with<F>(&self, key: &str, load: F) -> Option<TzPtr>
     where
         F: FnOnce() -> Option<TimeZone>,
     {
@@ -215,7 +220,7 @@ impl Cache {
         if tz.decref() == 0 {
             cleanup();
             // SAFETY: this is safe because we are the last strong reference
-            // to the TZif object.
+            // to the timezone.
             unsafe {
                 tz.drop_in_place();
             }
@@ -229,7 +234,8 @@ impl Cache {
 
     fn new_to_lru(tz: TzPtr, lru: &mut Lru, lookup: &mut Lookup) {
         debug_assert!(!lru.contains(&tz));
-        debug_assert!(tz.ref_count() > 0);
+        #[cfg(debug_assertions)]
+        assert!(tz.ref_count() > 0);
         debug_assert!(tz.key.is_some());
         // If the LRU exceeds capacity, remove the least recently used entry
         if lru.len() == LRU_CAPACITY {
@@ -243,7 +249,7 @@ impl Cache {
         lru.push_front(tz);
     }
 
-    /// Register the given TZif was "used recently", moving it to the front of the LRU.
+    /// Register the given timezone was "used recently", moving it to the front of the LRU.
     fn promote_lru(tz: TzPtr, lru: &mut Lru, lookup: &mut Lookup) {
         match lru.iter().position(|&ptr| ptr == tz) {
             Some(0) => {} // Already at the front
@@ -308,11 +314,6 @@ impl Drop for Cache {
             });
         }
         // By now, the lookup table should be empty (it contains only weak references)
-
-        // print the contents of lookup for debugging
-        for (k, v) in lookup.iter() {
-            println!("Leaked key: {}, refcount: {}", k, v.ref_count());
-        }
         debug_assert!(lookup.is_empty());
     }
 }
@@ -321,9 +322,8 @@ type Lru = VecDeque<TzPtr>;
 type Lookup = AHashMap<String, TzPtr>;
 
 struct CacheInner {
-    // Weak references to the `TZif` objects, keyed by TZ ID.
-    // ZonedDateTime objects hold strong references to the `TZif` objects,
-    // along with the cache's LRU.
+    // Weak references to the timezones, keyed by TZ ID.
+    // String references are held by (1) the ZonedDateTime objects, and (2) the LRU
     //
     // Choice of data structure:
     // "Ahash" works significantly faster than the standard hashing algorithm.
@@ -332,7 +332,7 @@ struct CacheInner {
     // Other alternatives that benchmarked *slower* are `BTreeMap`, gxhash, fxhash, and phf.
     //
     // Cleanup strategy:
-    // Removal of 0-refcount entries is done by the `decref` method of the `TzRef` handle.
+    // Removal of 0-refcount entries is done by the `decref` method of the tz pointer.
     lookup: Lookup,
     // Keeps the most recently used entries alive, to prevent over-eager dropping.
     //
@@ -358,7 +358,7 @@ pub(crate) struct TzStore {
     // The paths to search for zoneinfo files. Patchable during runtime.
     pub(crate) paths: Vec<PathBuf>,
     // We cache the system timezone here, since it's expensive to determine.
-    // The pointer represents a strong reference to a `TZif` object.
+    // The pointer represents a strong reference to a timezone.
     system_tz_cache: UnsafeCell<Option<TzPtr>>,
     // This reference is borrowed from the module, which outlives this store.
     exc_notfound: PyObj,
@@ -377,14 +377,11 @@ impl TzStore {
         })
     }
 
-    /// Fetches a `TZif` for the given IANA time zone ID.
-    /// If not already cached, reads the file from the filesystem.
-    /// Returns a *borrowed* reference to the `TZif` object.
-    /// Its reference count is *not* incremented.
+    /// Fetches the timezone definition for the given IANA time zone ID.
     pub(crate) fn get(&self, key: &str) -> PyResult<TzHandle<'_>> {
         let ptr = self
             .cache
-            .get_or_load(key, || self.load_tzif(key))
+            .get_or_insert_with(key, || self.load_tzif(key))
             .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
                 format!("No time zone found with key {key}")
             })?;
@@ -401,41 +398,7 @@ impl TzStore {
         )
     }
 
-    /// Load a TZif file by key, assuming the key is untrusted input.
-    fn load_tzif(&self, key: &str) -> Option<TimeZone> {
-        if !is_valid_key(key) {
-            return None;
-        }
-        self.load_tzif_from_tzpath(key)
-            .or_else(|| self.load_tzif_from_tzdata(key))
-    }
-
-    /// Load a TZif from the TZPATH directory, assuming a benign TZ ID.
-    fn load_tzif_from_tzpath(&self, key: &str) -> Option<TimeZone> {
-        self.paths
-            .iter()
-            .find_map(|base| self.read_tzif_at_path(&base.join(key), Some(key)))
-    }
-
-    /// Load a TZif from the tzdata package, assuming a benign TZ ID.
-    fn load_tzif_from_tzdata(&self, key: &str) -> Option<TimeZone> {
-        self.tzdata_path
-            .as_ref()
-            .and_then(|base| self.read_tzif_at_path(&base.join(key), Some(key)))
-    }
-
-    /// Read a TZif file from the given path, returning None if it doesn't exist
-    /// or otherwise cannot be read.
-    fn read_tzif_at_path(&self, path: &Path, key: Option<&str>) -> Option<TimeZone> {
-        if path.is_file() {
-            fs::read(path)
-                .ok()
-                .and_then(|d| TimeZone::parse_tzif(&d, key).ok())
-        } else {
-            None
-        }
-    }
-
+    /// Retrieve the system timezone definition (cached for repeat calls).
     pub(crate) fn get_system_tz(&self) -> PyResult<TzHandle<'_>> {
         // Check if we already have the system timezone cached
         let ptr = match unsafe { *self.system_tz_cache.get() } {
@@ -452,6 +415,7 @@ impl TzStore {
         Ok(TzHandle::Ptr(ptr, self))
     }
 
+    /// Reset the cached system timezone.
     pub(crate) fn reset_system_tz(&self) -> PyResult<()> {
         // Clear the cached system timezone
         let new_ptr = self.determine_system_tz()?;
@@ -461,6 +425,49 @@ impl TzStore {
         });
         unsafe { *self.system_tz_cache.get() = Some(new_ptr) }
         Ok(())
+    }
+
+    /// Clear the entire cache, dropping all entries.
+    pub(crate) fn clear_all(&self) {
+        self.cache.clear_all();
+    }
+
+    /// Clear specific entries from the cache.
+    pub(crate) fn clear_only(&self, keys: &[String]) {
+        self.cache.clear_only(keys);
+    }
+
+    /// Load a TZif file by key, assuming the key is untrusted input.
+    fn load_tzif(&self, raw_key: &str) -> Option<TimeZone> {
+        let key = BenignKey::new(raw_key)?;
+        self.load_tzif_from_tzpath(key)
+            .or_else(|| self.load_tzif_from_tzdata(key))
+    }
+
+    /// Load a TZif from the TZPATH directory, assuming a benign TZ ID.
+    fn load_tzif_from_tzpath(&self, key: BenignKey) -> Option<TimeZone> {
+        self.paths
+            .iter()
+            .find_map(|base| self.read_tzif_at_path(&base.join(key), Some(key)))
+    }
+
+    /// Load a TZif from the tzdata package, assuming a benign TZ ID.
+    fn load_tzif_from_tzdata(&self, key: BenignKey) -> Option<TimeZone> {
+        self.tzdata_path
+            .as_ref()
+            .and_then(|base| self.read_tzif_at_path(&base.join(key), Some(key)))
+    }
+
+    /// Read a TZif file from the given path, returning None if it doesn't exist
+    /// or otherwise cannot be read.
+    fn read_tzif_at_path(&self, path: &Path, key: Option<BenignKey>) -> Option<TimeZone> {
+        if path.is_file() {
+            fs::read(path)
+                .ok()
+                .and_then(|d| TimeZone::parse_tzif(&d, key.as_ref().map(|k| k.as_ref())).ok())
+        } else {
+            None
+        }
     }
 
     /// Get a pointer to what is currently considered the system timezone.
@@ -489,7 +496,7 @@ impl TzStore {
             // type 0: a zoneinfo key
             0 => self
                 .cache
-                .get_or_load(tz_value, || self.load_tzif(tz_value))
+                .get_or_insert_with(tz_value, || self.load_tzif(tz_value))
                 .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
                     format!("No time zone found with key {tz_value}")
                 }),
@@ -507,7 +514,7 @@ impl TzStore {
             2 => {
                 self.cache
                     // Try to load it as a zoneinfo key first.
-                    .get_or_load(tz_value, || self.load_tzif(tz_value))
+                    .get_or_insert_with(tz_value, || self.load_tzif(tz_value))
                     // If this fails, try to parse it as a posix TZ string.
                     .or_else(|| TimeZone::parse_posix(tz_value).map(TzPtr::new))
                     .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
@@ -516,14 +523,6 @@ impl TzStore {
             }
             _ => raise_type_err(ERR_MSG)?,
         }
-    }
-
-    pub(crate) fn clear_all(&self) {
-        self.cache.clear_all();
-    }
-
-    pub(crate) fn clear_only(&self, keys: &[String]) {
-        self.cache.clear_only(keys);
     }
 
     fn remove_key(&self, key: &str) {
@@ -546,6 +545,7 @@ fn get_tzdata_path() -> PyResult<Option<PathBuf>> {
     Ok(Some(PathBuf::from({
         let __path__ = match import(c"tzdata.zoneinfo") {
             Ok(obj) => Ok(obj),
+            // i.e. catch ImportError: no tzdata installed.
             _ if unsafe { PyErr_ExceptionMatches(PyExc_ImportError) } == 1 => {
                 unsafe { PyErr_Clear() };
                 return Ok(None);
@@ -560,7 +560,30 @@ fn get_tzdata_path() -> PyResult<Option<PathBuf>> {
             .cast::<PyStr>()
             .ok_or_type_err("tzdata module path must be a string")?;
 
-        // SAFETY: Python guarantees that the string is valid UTF-8.
-        unsafe { std::str::from_utf8_unchecked(py_str.as_utf8()?) }.to_owned()
+        py_str.as_str()?.to_owned()
     })))
+}
+
+/// Wrapper around a timezone key that has been validated to be "benign",
+/// i.e. it only contains characters that are safe to use in file paths.
+/// This is used to prevent directory traversal attacks when loading TZif files.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+struct BenignKey<'a>(&'a str);
+
+impl<'a> BenignKey<'a> {
+    fn new(key: &'a str) -> Option<Self> {
+        is_valid_key(key).then_some(Self(key))
+    }
+}
+
+impl<'a> AsRef<str> for BenignKey<'a> {
+    fn as_ref(&self) -> &str {
+        self.0
+    }
+}
+
+impl<'a> AsRef<Path> for BenignKey<'a> {
+    fn as_ref(&self) -> &Path {
+        Path::new(self.0)
+    }
 }

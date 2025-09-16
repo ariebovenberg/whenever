@@ -4847,6 +4847,8 @@ class PlainDateTime(_LocalTime):
         *,
         nanosecond: int = 0,
     ) -> None:
+        if nanosecond < 0 or nanosecond >= 1_000_000_000:
+            raise ValueError(f"nanosecond out of range: {nanosecond}")
         self._py_dt = _datetime(year, month, day, hour, minute, second)
         self._nanos = nanosecond
 
