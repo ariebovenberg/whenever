@@ -37,7 +37,7 @@ from __future__ import annotations
 import enum
 import os.path
 import sys
-from abc import ABC, abstractmethod
+from abc import ABC, ABCMeta, abstractmethod
 from collections import OrderedDict
 from datetime import (
     date as _date,
@@ -108,6 +108,15 @@ __all__ = [
 ]
 
 
+# A self-set variable to detect if we're being run by sphinx. A simple hack.
+try:
+    from sphinx import (  # type: ignore[attr-defined, import-not-found, unused-ignore]
+        SPHINXBUILD,
+    )
+except ImportError:
+    SPHINXBUILD = False
+
+
 class Weekday(enum.Enum):
     """Day of the week; ``.value`` corresponds with ISO numbering."""
 
@@ -129,9 +138,37 @@ _MAX_DELTA_NANOS = _MAX_DELTA_DAYS * 24 * 3_600_000_000_000
 _UNSET = object()
 _PY311 = sys.version_info >= (3, 11)
 _Nanos = int  # type alias for subsecond nanoseconds
+_T = TypeVar("_T")
+
+# Metaclass ugh...it proved the most lightway way to achieve this:
+# allowing the constructors of many classes to take an ISO string as well as the
+# regular arguments (i.e. the __init__ signature).
+# Alternatives tried:
+# - A special __new__: but this still calls __init__ afterwards, so no good.
+# - adjusting __init__: this makes the signature awkward--plus a lot of custom
+#   code in every class
+
+# NOTE: typing doesn't need to know about this feature, since the stub files
+# obscure anything happening in this file anyways...for the outside world, that is.
+# The autodocs also shouldn't be affected, since we want them to document
+# the regular __init__ signature.
+if TYPE_CHECKING or SPHINXBUILD:
+    _ConstructorSupportsIsoString = type
+else:
+
+    class _ConstructorSupportsIsoString(ABCMeta):
+
+        def __call__(cls, *args, **kwargs):
+            if len(args) == 1 and not kwargs and isinstance(args[0], str):
+                return cls.parse_iso(args[0])
+            else:
+                self = _object_new(cls)
+                self.__init__(*args, **kwargs)
+                return self
 
 
-class _ImmutableBase:
+# Basic behavior common to all classes
+class _Base(metaclass=_ConstructorSupportsIsoString):
     __slots__ = ()
 
     # Immutable classes don't need to be copied
@@ -150,6 +187,10 @@ class _ImmutableBase:
 
         return pydantic_schema(cls)
 
+    @classmethod
+    @abstractmethod
+    def parse_iso(cls: type[_T], s: str, /) -> _T: ...  # pragma: no cover
+
 
 if TYPE_CHECKING:
     from typing import final
@@ -165,13 +206,16 @@ else:
 
 
 @final
-class Date(_ImmutableBase):
-    """A date without a time component
+class Date(_Base):
+    """A date without a time component.
 
-    Example
-    -------
     >>> d = Date(2021, 1, 2)
-    Date(2021-01-02)
+    Date("2021-01-02")
+
+    Can also be constructed directly from an ISO 8601 string.
+
+    >>> Date("2021-01-02")
+    Date("2021-01-02")
     """
 
     __slots__ = ("_py_date",)
@@ -193,7 +237,7 @@ class Date(_ImmutableBase):
         Example
         -------
         >>> Date.today_in_system_tz()
-        Date(2021-01-02)
+        Date("2021-01-02")
         """
         # Use now() so this function gets patched like the other now functions
         return Instant.now().to_system_tz().date()
@@ -216,7 +260,7 @@ class Date(_ImmutableBase):
         Example
         -------
         >>> Date(2021, 1, 2).year_month()
-        YearMonth(2021-01)
+        YearMonth("2021-01")
         """
         return YearMonth._from_py_unchecked(self._py_date.replace(day=1))
 
@@ -226,7 +270,7 @@ class Date(_ImmutableBase):
         Example
         -------
         >>> Date(2021, 1, 2).month_day()
-        MonthDay(--01-02)
+        MonthDay("--01-02")
         """
         return MonthDay._from_py_unchecked(
             self._py_date.replace(year=_DUMMY_LEAP_YEAR)
@@ -251,7 +295,7 @@ class Date(_ImmutableBase):
         -------
         >>> d = Date(2021, 1, 2)
         >>> d.at(Time(12, 30))
-        PlainDateTime(2021-01-02 12:30:00)
+        PlainDateTime("2021-01-02 12:30:00")
 
         You can use methods like :meth:`~PlainDateTime.assume_utc`
         or :meth:`~PlainDateTime.assume_tz` to find the corresponding exact time.
@@ -271,7 +315,7 @@ class Date(_ImmutableBase):
         Example
         -------
         >>> Date.from_py_date(date(2021, 1, 2))
-        Date(2021-01-02)
+        Date("2021-01-02")
         """
         self = _object_new(cls)
         if type(d) is _date:
@@ -313,7 +357,7 @@ class Date(_ImmutableBase):
         Example
         -------
         >>> Date.parse_iso("2021-01-02")
-        Date(2021-01-02)
+        Date("2021-01-02")
         """
         return cls._from_py_unchecked(_date_from_iso(s))
 
@@ -324,7 +368,7 @@ class Date(_ImmutableBase):
         -------
         >>> d = Date(2021, 1, 2)
         >>> d.replace(day=4)
-        Date(2021-01-04)
+        Date("2021-01-04")
         """
         return Date._from_py_unchecked(self._py_date.replace(**kwargs))
 
@@ -338,9 +382,9 @@ class Date(_ImmutableBase):
         -------
         >>> d = Date(2021, 1, 2)
         >>> d.add(years=1, months=2, days=3)
-        Date(2022-03-05)
+        Date("2022-03-05")
         >>> Date(2020, 2, 29).add(years=1)
-        Date(2021-02-28)
+        Date("2021-02-28")
         """
         return self._shift(1, *args, **kwargs)
 
@@ -354,9 +398,9 @@ class Date(_ImmutableBase):
         -------
         >>> d = Date(2021, 1, 2)
         >>> d.subtract(years=1, months=2, days=3)
-        Date(2019-10-30)
+        Date("2019-10-30")
         >>> Date(2021, 3, 1).subtract(years=1)
-        Date(2020-03-01)
+        Date("2020-03-01")
         """
         return self._shift(-1, *args, **kwargs)
 
@@ -451,7 +495,7 @@ class Date(_ImmutableBase):
         Subtracting a delta works the same as :meth:`subtract`.
 
         >>> Date(2021, 1, 2) - DateDelta(weeks=1, days=3)
-        Date(2020-12-26)
+        Date("2020-12-26")
 
         The difference between two dates is calculated in months and days,
         such that:
@@ -467,12 +511,12 @@ class Date(_ImmutableBase):
         Examples:
 
         >>> Date(2023, 4, 15) - Date(2011, 6, 24)
-        DateDelta(P12Y9M22D)
+        DateDelta("P12Y9M22D")
         >>> # Truncation
         >>> Date(2024, 4, 30) - Date(2023, 5, 31)
-        DateDelta(P11M)
+        DateDelta("P11M")
         >>> Date(2024, 3, 31) - Date(2023, 6, 30)
-        DateDelta(P9M1D)
+        DateDelta("P9M1D")
         >>> # the other way around, the result is different
         >>> Date(2023, 6, 30) - Date(2024, 3, 31)
         DateDelta(-P9M)
@@ -517,7 +561,7 @@ class Date(_ImmutableBase):
     __str__ = format_iso
 
     def __repr__(self) -> str:
-        return f"Date({self})"
+        return f'Date("{self}")'
 
     def __eq__(self, other: object) -> bool:
         """Compare for equality
@@ -580,7 +624,7 @@ Date.MAX = Date._from_py_unchecked(_date.max)
 
 
 @final
-class YearMonth(_ImmutableBase):
+class YearMonth(_Base):
     """A year and month without a day component
 
     Useful for representing recurring events or billing periods.
@@ -588,7 +632,7 @@ class YearMonth(_ImmutableBase):
     Example
     -------
     >>> ym = YearMonth(2021, 1)
-    YearMonth(2021-01)
+    YearMonth("2021-01")
     """
 
     # We store the underlying data in a datetime.date object,
@@ -633,7 +677,7 @@ class YearMonth(_ImmutableBase):
         Example
         -------
         >>> YearMonth.parse_iso("2021-01")
-        YearMonth(2021-01)
+        YearMonth("2021-01")
         """
         return cls._from_py_unchecked(_yearmonth_from_iso(s))
 
@@ -644,7 +688,7 @@ class YearMonth(_ImmutableBase):
         -------
         >>> d = YearMonth(2021, 12)
         >>> d.replace(month=3)
-        YearMonth(2021-03)
+        YearMonth("2021-03")
         """
         if "day" in kwargs:
             raise TypeError(
@@ -658,14 +702,14 @@ class YearMonth(_ImmutableBase):
         Example
         -------
         >>> YearMonth(2021, 1).on_day(2)
-        Date(2021-01-02)
+        Date("2021-01-02")
         """
         return Date._from_py_unchecked(self._py_date.replace(day=day))
 
     __str__ = format_iso
 
     def __repr__(self) -> str:
-        return f"YearMonth({self})"
+        return f'YearMonth("{self}")'
 
     def __eq__(self, other: object) -> bool:
         """Compare for equality
@@ -732,7 +776,7 @@ _DUMMY_LEAP_YEAR = 4
 
 
 @final
-class MonthDay(_ImmutableBase):
+class MonthDay(_Base):
     """A month and day without a year component.
 
     Useful for representing recurring events or birthdays.
@@ -740,7 +784,7 @@ class MonthDay(_ImmutableBase):
     Example
     -------
     >>> MonthDay(11, 23)
-    MonthDay(--11-23)
+    MonthDay("--11-23")
     """
 
     # We store the underlying data in a datetime.date object,
@@ -791,7 +835,7 @@ class MonthDay(_ImmutableBase):
         Example
         -------
         >>> MonthDay.parse_iso("--11-23")
-        MonthDay(--11-23)
+        MonthDay("--11-23")
         """
         return cls._from_py_unchecked(_monthday_from_iso(s))
 
@@ -802,7 +846,7 @@ class MonthDay(_ImmutableBase):
         -------
         >>> d = MonthDay(11, 23)
         >>> d.replace(month=3)
-        MonthDay(--03-23)
+        MonthDay("--03-23")
         """
         if "year" in kwargs:
             raise TypeError(
@@ -816,7 +860,7 @@ class MonthDay(_ImmutableBase):
         Example
         -------
         >>> MonthDay(8, 1).in_year(2025)
-        Date(2025-08-01)
+        Date("2025-08-01")
 
         Note
         ----
@@ -840,7 +884,7 @@ class MonthDay(_ImmutableBase):
     __str__ = format_iso
 
     def __repr__(self) -> str:
-        return f"MonthDay({self})"
+        return f'MonthDay("{self}")'
 
     def __eq__(self, other: object) -> bool:
         """Compare for equality
@@ -908,7 +952,7 @@ MonthDay.MAX = MonthDay._from_py_unchecked(
 
 
 @final
-class Time(_ImmutableBase):
+class Time(_Base):
     """Time of day without a date component
 
     Example
@@ -965,7 +1009,7 @@ class Time(_ImmutableBase):
         -------
         >>> t = Time(12, 30)
         >>> t.on(Date(2021, 1, 2))
-        PlainDateTime(2021-01-02 12:30:00)
+        PlainDateTime("2021-01-02 12:30:00")
 
         Then, use methods like :meth:`~PlainDateTime.assume_utc`
         or :meth:`~PlainDateTime.assume_tz`
@@ -1145,7 +1189,7 @@ class Time(_ImmutableBase):
     __str__ = format_iso
 
     def __repr__(self) -> str:
-        return f"Time({self})"
+        return f'Time("{self}")'
 
     def __eq__(self, other: object) -> bool:
         """Compare for equality
@@ -1251,7 +1295,7 @@ Time.MAX = Time(23, 59, 59, nanosecond=999_999_999)
 
 
 @final
-class TimeDelta(_ImmutableBase):
+class TimeDelta(_Base):
     """A duration consisting of a precise time: hours, minutes, (nano)seconds
 
     The inputs are normalized, so 90 minutes becomes 1 hour and 30 minutes,
@@ -1260,7 +1304,7 @@ class TimeDelta(_ImmutableBase):
     Examples
     --------
     >>> d = TimeDelta(hours=1, minutes=30)
-    TimeDelta(PT1h30m)
+    TimeDelta("PT1h30m")
     >>> d.in_minutes()
     90.0
 
@@ -1423,7 +1467,7 @@ class TimeDelta(_ImmutableBase):
         Example
         -------
         >>> TimeDelta.from_py_timedelta(timedelta(seconds=5400))
-        TimeDelta(PT1h30m)
+        TimeDelta("PT1h30m")
         """
         if type(td) is not _timedelta:
             raise TypeError("Expected datetime.timedelta exactly")
@@ -1469,7 +1513,7 @@ class TimeDelta(_ImmutableBase):
         Example
         -------
         >>> TimeDelta.parse_iso("PT1H80M")
-        TimeDelta(PT2h20m)
+        TimeDelta("PT2h20m")
 
         Note
         ----
@@ -1539,11 +1583,11 @@ class TimeDelta(_ImmutableBase):
         Examples
         --------
         >>> t = TimeDelta(seconds=12345)
-        TimeDelta(PT3h25m45s)
+        TimeDelta("PT3h25m45s")
         >>> t.round("minute")
-        TimeDelta(PT3h26m)
+        TimeDelta("PT3h26m")
         >>> t.round("second", increment=10, mode="floor")
-        TimeDelta(PT3h25m40s)
+        TimeDelta("PT3h25m40s")
         """
         if unit == "day":  # type: ignore[comparison-overlap]
             raise ValueError(CANNOT_ROUND_DAY_MSG)
@@ -1577,7 +1621,7 @@ class TimeDelta(_ImmutableBase):
         -------
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d + TimeDelta(minutes=30)
-        TimeDelta(PT2h)
+        TimeDelta("PT2h")
         """
         if not isinstance(other, TimeDelta):
             return NotImplemented
@@ -1590,7 +1634,7 @@ class TimeDelta(_ImmutableBase):
         -------
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d - TimeDelta(minutes=30)
-        TimeDelta(PT1h)
+        TimeDelta("PT1h")
         """
         if not isinstance(other, TimeDelta):
             return NotImplemented
@@ -1653,7 +1697,7 @@ class TimeDelta(_ImmutableBase):
         -------
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d * 2.5
-        TimeDelta(PT3h45m)
+        TimeDelta("PT3h45m")
         """
         if not isinstance(other, (int, float)):
             return NotImplemented
@@ -1680,7 +1724,7 @@ class TimeDelta(_ImmutableBase):
         -------
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> +d
-        TimeDelta(PT1h30m)
+        TimeDelta("PT1h30m")
         """
         return self
 
@@ -1697,7 +1741,7 @@ class TimeDelta(_ImmutableBase):
         -------
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d / 2.5
-        TimeDelta(PT36m)
+        TimeDelta("PT36m")
         >>> d / TimeDelta(minutes=30)
         3.0
 
@@ -1732,7 +1776,7 @@ class TimeDelta(_ImmutableBase):
         -------
         >>> d = TimeDelta(hours=1, minutes=39)
         >>> d % TimeDelta(minutes=15)
-        TimeDelta(PT9m)
+        TimeDelta("PT9m")
         """
         if not isinstance(other, TimeDelta):
             return NotImplemented
@@ -1745,7 +1789,7 @@ class TimeDelta(_ImmutableBase):
         -------
         >>> d = TimeDelta(hours=-1, minutes=-30)
         >>> abs(d)
-        TimeDelta(PT1h30m)
+        TimeDelta("PT1h30m")
         """
         return TimeDelta._from_nanos_unchecked(abs(self._total_ns))
 
@@ -1755,7 +1799,7 @@ class TimeDelta(_ImmutableBase):
         iso = self.format_iso()
         # lowercase everything besides the prefix (don't forget the sign!)
         cased = iso[:3] + iso[3:].lower()
-        return f"TimeDelta({cased})"
+        return f'TimeDelta("{cased}")'
 
     @no_type_check
     def __reduce__(self):
@@ -1819,7 +1863,7 @@ TimeDelta.MIN = TimeDelta(seconds=-9999 * 366 * 24 * 3_600)
 
 
 @final
-class DateDelta(_ImmutableBase):
+class DateDelta(_Base):
     """A duration of time consisting of calendar units
     (years, months, weeks, and days)
     """
@@ -1932,7 +1976,7 @@ class DateDelta(_ImmutableBase):
         Example
         -------
         >>> DateDelta.parse_iso("P1W11D")
-        DateDelta(P1w11d)
+        DateDelta("P1w11d")
         >>> DateDelta.parse_iso("-P3m")
         DateDelta(-P3m)
 
@@ -2005,7 +2049,7 @@ class DateDelta(_ImmutableBase):
         -------
         >>> p = DateDelta(weeks=2, months=1)
         >>> p + DateDelta(weeks=1, days=4)
-        DateDelta(P1m25d)
+        DateDelta("P1m25d")
         """
         if isinstance(other, DateDelta):
             return DateDelta(
@@ -2043,7 +2087,7 @@ class DateDelta(_ImmutableBase):
         -------
         >>> p = DateDelta(weeks=2, days=3)
         >>> p - DateDelta(days=2)
-        DateDelta(P15d)
+        DateDelta("P15d")
         """
         if isinstance(other, DateDelta):
             return DateDelta(
@@ -2068,7 +2112,7 @@ class DateDelta(_ImmutableBase):
         Example
         -------
         >>> p = DateDelta(weeks=4, days=2)
-        DateDelta(P30d)
+        DateDelta("P30d")
         >>> p == DateDelta(weeks=3, days=9)
         True
         >>> p == DateDelta(weeks=2, days=4)
@@ -2099,7 +2143,7 @@ class DateDelta(_ImmutableBase):
         iso = self.format_iso()
         # lowercase everything besides the prefix (don't forget the sign!)
         cased = iso[:2] + iso[2:].lower()
-        return f"DateDelta({cased})"
+        return f'DateDelta("{cased}")'
 
     def __neg__(self) -> DateDelta:
         """Negate the contents
@@ -2118,9 +2162,9 @@ class DateDelta(_ImmutableBase):
         Example
         -------
         >>> p = DateDelta(weeks=2, days=-3)
-        DateDelta(P11d)
+        DateDelta("P11d")
         >>> +p
-        DateDelta(P11d)
+        DateDelta("P11d")
         """
         return self
 
@@ -2131,7 +2175,7 @@ class DateDelta(_ImmutableBase):
         -------
         >>> p = DateDelta(years=1, weeks=2)
         >>> p * 2
-        DateDelta(P2y28d)
+        DateDelta("P2y28d")
         """
         if not isinstance(other, int):
             return NotImplemented
@@ -2152,7 +2196,7 @@ class DateDelta(_ImmutableBase):
         -------
         >>> p = DateDelta(months=-2, days=-3)
         >>> abs(p)
-        DateDelta(P2m3d)
+        DateDelta("P2m3d")
         """
         return DateDelta(months=abs(self._months), days=abs(self._days))
 
@@ -2191,7 +2235,7 @@ TimeDelta._date_part = DateDelta.ZERO
 
 
 @final
-class DateTimeDelta(_ImmutableBase):
+class DateTimeDelta(_Base):
     """A duration with both a date and time component."""
 
     __slots__ = ("_date_part", "_time_part")
@@ -2393,7 +2437,7 @@ class DateTimeDelta(_ImmutableBase):
         -------
         >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
         >>> d + DateTimeDelta(months=2, days=3, minutes=90)
-        DateTimeDelta(P1m1w14dT5h30m)
+        DateTimeDelta("P1m1w14dT5h30m")
         """
         new = _object_new(DateTimeDelta)
         if isinstance(other, DateTimeDelta):
@@ -2507,7 +2551,7 @@ class DateTimeDelta(_ImmutableBase):
         -------
         >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
         >>> d * 2
-        DateTimeDelta(P2w22dT8h)
+        DateTimeDelta("P2w22dT8h")
         """
         # OPTIMIZE: use unchecked constructor
         return self._from_parts(
@@ -2536,7 +2580,7 @@ class DateTimeDelta(_ImmutableBase):
         -------
         >>> d = DateTimeDelta(weeks=1, days=-11, hours=4)
         >>> +d
-        DateTimeDelta(P1W11DT4H)
+        DateTimeDelta("P1W11DT4H")
         """
         return self
 
@@ -2547,7 +2591,7 @@ class DateTimeDelta(_ImmutableBase):
         -------
         >>> d = DateTimeDelta(weeks=1, days=-11, hours=4)
         >>> abs(d)
-        DateTimeDelta(P1w11dT4h)
+        DateTimeDelta("P1w11dT4h")
         """
         new = _object_new(DateTimeDelta)
         new._date_part = abs(self._date_part)
@@ -2560,7 +2604,7 @@ class DateTimeDelta(_ImmutableBase):
         iso = self.format_iso()
         # lowercase everything besides the prefix and separator
         cased = "".join(c if c in "PT" else c.lower() for c in iso)
-        return f"DateTimeDelta({cased})"
+        return f'DateTimeDelta("{cased}")'
 
     @classmethod
     def _from_parts(cls, d: DateDelta, t: TimeDelta) -> DateTimeDelta:
@@ -2596,10 +2640,9 @@ def _unpkl_dtdelta(
 
 DateTimeDelta.ZERO = DateTimeDelta()
 Delta = Union[DateTimeDelta, TimeDelta, DateDelta]
-_T = TypeVar("_T")
 
 
-class _BasicConversions(_ImmutableBase, ABC):
+class _BasicConversions(_Base, ABC):
     """Methods for types converting to/from the standard library and ISO8601:
 
     - :class:`Instant`
@@ -2729,7 +2772,7 @@ class _LocalTime(_BasicConversions, ABC):
         -------
         >>> d = Instant.from_utc(2021, 1, 2, 3, 4, 5)
         >>> d.date()
-        Date(2021-01-02)
+        Date("2021-01-02")
 
         To perform the inverse, use :meth:`Date.at` and a method
         like :meth:`~PlainDateTime.assume_utc` ortestoffset
@@ -2745,7 +2788,7 @@ class _LocalTime(_BasicConversions, ABC):
         Example
         -------
         >>> d = ZonedDateTime(2021, 1, 2, 3, 4, 5, tz="Europe/Paris")
-        ZonedDateTime(2021-01-02T03:04:05+01:00[Europe/Paris])
+        ZonedDateTime("2021-01-02T03:04:05+01:00[Europe/Paris]")
         >>> d.time()
         Time(03:04:05)
 
@@ -2786,11 +2829,11 @@ class _LocalTime(_BasicConversions, ABC):
             -------
             >>> d = PlainDateTime(2020, 8, 15, 23, 12)
             >>> d.replace(year=2021)
-            PlainDateTime(2021-08-15 23:12:00)
+            PlainDateTime("2021-08-15 23:12:00")
             >>>
             >>> z = ZonedDateTime(2020, 8, 15, 23, 12, tz="Europe/London")
             >>> z.replace(year=2021)
-            ZonedDateTime(2021-08-15T23:12:00+01:00)
+            ZonedDateTime("2021-08-15T23:12:00+01:00")
             """
 
         def replace_date(self: _T, date: Date, /, **kwargs) -> _T:
@@ -2800,10 +2843,10 @@ class _LocalTime(_BasicConversions, ABC):
             -------
             >>> d = PlainDateTime(2020, 8, 15, hour=4)
             >>> d.replace_date(Date(2021, 1, 1))
-            PlainDateTime(2021-01-01T04:00:00)
+            PlainDateTime("2021-01-01T04:00:00")
             >>> zdt = ZonedDateTime.now("Europe/London")
             >>> zdt.replace_date(Date(2021, 1, 1))
-            ZonedDateTime(2021-01-01T13:00:00.23439+00:00[Europe/London])
+            ZonedDateTime("2021-01-01T13:00:00.23439+00:00[Europe/London]")
 
             See :meth:`replace` for more information.
             """
@@ -2815,10 +2858,10 @@ class _LocalTime(_BasicConversions, ABC):
             -------
             >>> d = PlainDateTime(2020, 8, 15, hour=4)
             >>> d.replace_time(Time(12, 30))
-            PlainDateTime(2020-08-15T12:30:00)
+            PlainDateTime("2020-08-15T12:30:00")
             >>> zdt = ZonedDateTime.now("Europe/London")
             >>> zdt.replace_time(Time(12, 30))
-            ZonedDateTime(2024-06-15T12:30:00+01:00[Europe/London])
+            ZonedDateTime("2024-06-15T12:30:00+01:00[Europe/London]")
 
             See :meth:`replace` for more information.
             """
@@ -2889,9 +2932,9 @@ class _LocalTime(_BasicConversions, ABC):
             --------
             >>> d = ZonedDateTime(2020, 8, 15, 23, 24, 18, tz="Europe/Paris")
             >>> d.round("day")
-            ZonedDateTime(2020-08-16 00:00:00+02:00[Europe/Paris])
+            ZonedDateTime("2020-08-16 00:00:00+02:00[Europe/Paris]")
             >>> d.round("minute", increment=15, mode="floor")
-            ZonedDateTime(2020-08-15 23:15:00+02:00[Europe/Paris])
+            ZonedDateTime("2020-08-15 23:15:00+02:00[Europe/Paris]")
 
             Notes
             -----
@@ -2937,9 +2980,9 @@ class _ExactTime(_BasicConversions):
             -------
 
             >>> Instant.now()
-            Instant(2021-08-15T22:12:00.49821Z)
+            Instant("2021-08-15T22:12:00.49821Z")
             >>> ZonedDateTime.now("Europe/London")
-            ZonedDateTime(2021-08-15 23:12:00.50332+01:00[Europe/London])
+            ZonedDateTime("2021-08-15 23:12:00.50332+01:00[Europe/London]")
 
             """
 
@@ -2992,9 +3035,9 @@ class _ExactTime(_BasicConversions):
             Example
             -------
             >>> Instant.from_timestamp(0)
-            Instant(1970-01-01T00:00:00Z)
+            Instant("1970-01-01T00:00:00Z")
             >>> ZonedDateTime.from_timestamp(1_123_000_000, tz="America/New_York")
-            ZonedDateTime(2005-08-02 12:26:40-04:00[America/New_York])
+            ZonedDateTime("2005-08-02 12:26:40-04:00[America/New_York]")
 
             """
 
@@ -3264,7 +3307,7 @@ class _ExactAndLocalTime(_LocalTime, _ExactTime):
 
         >>> d = ZonedDateTime(2020, 8, 15, hour=23, tz="Europe/Amsterdam")
         >>> d.to_instant()
-        Instant(2020-08-15 21:00:00Z)
+        Instant("2020-08-15 21:00:00Z")
         """
         return Instant._from_py_unchecked(
             self._py_dt.astimezone(_UTC), self._nanos
@@ -3295,14 +3338,14 @@ class Instant(_ExactTime):
     -------
     >>> from whenever import Instant
     >>> py311_release = Instant.from_utc(2022, 10, 24, hour=17)
-    Instant(2022-10-24 17:00:00Z)
+    Instant("2022-10-24 17:00:00Z")
     >>> py311_release.add(hours=3).timestamp()
     1666641600
     """
 
     __slots__ = ()
 
-    def __init__(self) -> None:
+    def __init__(self) -> None:  # pragma: no cover
         raise TypeError(
             "Instant instances cannot be created through the constructor. "
             "Use `Instant.from_utc` or `Instant.now` instead."
@@ -3456,7 +3499,7 @@ class Instant(_ExactTime):
         Example
         -------
         >>> Instant.parse_rfc2822("Sat, 15 Aug 2020 23:12:00 GMT")
-        Instant(2020-08-15 23:12:00Z)
+        Instant("2020-08-15 23:12:00Z")
 
         >>> # also valid:
         >>> Instant.parse_rfc2822("Sat, 15 Aug 2020 23:12:00 +0000")
@@ -3539,9 +3582,9 @@ class Instant(_ExactTime):
         Examples
         --------
         >>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round("minute", 15)
-        Instant(2020-01-01 12:45:00Z)
+        Instant("2020-01-01 12:45:00Z")
         >>> Instant.from_utc(2020, 1, 1, 8, 9, 13).round("second", 5, mode="floor")
-        Instant(2020-01-01 08:09:10Z)
+        Instant("2020-01-01 08:09:10Z")
         """
         if unit == "day":  # type: ignore[comparison-overlap]
             raise ValueError(CANNOT_ROUND_DAY_MSG)
@@ -3595,7 +3638,7 @@ class Instant(_ExactTime):
         -------
         >>> d = Instant.from_utc(2020, 8, 15, hour=23, minute=12)
         >>> d - hours(24) - seconds(5)
-        Instant(2020-08-14 23:11:55Z)
+        Instant("2020-08-14 23:11:55Z")
         >>> d - Instant.from_utc(2020, 8, 14)
         TimeDelta(47:12:00)
         """
@@ -3609,7 +3652,7 @@ class Instant(_ExactTime):
         return hash((self._py_dt, self._nanos))
 
     def __repr__(self) -> str:
-        return f"Instant({str(self).replace('T', ' ')})"
+        return f"Instant(\"{str(self).replace('T', ' ')}\")"
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
@@ -3647,7 +3690,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     -------
     >>> # Midnight in Salt Lake City
     >>> OffsetDateTime(2023, 4, 21, offset=-6)
-    OffsetDateTime(2023-04-21 00:00:00-06:00)
+    OffsetDateTime("2023-04-21 00:00:00-06:00")
 
     Note
     ----
@@ -3746,7 +3789,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         Example
         -------
         >>> OffsetDateTime.parse_iso("2020-08-15T23:12:00+02:00")
-        OffsetDateTime(2020-08-15 23:12:00+02:00)
+        OffsetDateTime("2020-08-15 23:12:00+02:00")
         """
         return cls._from_py_unchecked(*_offset_dt_from_iso(s))
 
@@ -3933,7 +3976,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         Example
         -------
         >>> OffsetDateTime.parse_strptime("2020-08-15+0200", format="%Y-%m-%d%z")
-        OffsetDateTime(2020-08-15 00:00:00+02:00)
+        OffsetDateTime("2020-08-15 00:00:00+02:00")
 
         Note
         ----
@@ -3992,7 +4035,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         Example
         -------
         >>> OffsetDateTime.parse_rfc2822("Sat, 15 Aug 2020 23:12:00 +0200")
-        OffsetDateTime(2020-08-15 23:12:00+02:00)
+        OffsetDateTime("2020-08-15 23:12:00+02:00")
         >>> # also valid:
         >>> OffsetDateTime.parse_rfc2822("Sat, 15 Aug 2020 23:12:00 UT")
         >>> OffsetDateTime.parse_rfc2822("Sat, 15 Aug 2020 23:12:00 GMT")
@@ -4135,9 +4178,9 @@ class OffsetDateTime(_ExactAndLocalTime):
         --------
         >>> d = OffsetDateTime(2020, 8, 15, 23, 24, 18, offset=+4)
         >>> d.round("day")
-        OffsetDateTime(2020-08-16 00:00:00[+04:00])
+        OffsetDateTime("2020-08-16 00:00:00[+04:00]")
         >>> d.round("minute", increment=15, mode="floor")
-        OffsetDateTime(2020-08-15 23:15:00[+04:00])
+        OffsetDateTime("2020-08-15 23:15:00[+04:00]")
 
         Note
         ----
@@ -4159,7 +4202,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         )
 
     def __repr__(self) -> str:
-        return f"OffsetDateTime({str(self).replace('T', ' ')})"
+        return f"OffsetDateTime(\"{str(self).replace('T', ' ')}\")"
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
@@ -4194,10 +4237,10 @@ class ZonedDateTime(_ExactAndLocalTime):
     Example
     -------
     >>> ZonedDateTime(2024, 12, 8, hour=11, tz="Europe/Paris")
-    ZonedDateTime(2024-12-08 11:00:00+01:00[Europe/Paris])
+    ZonedDateTime("2024-12-08 11:00:00+01:00[Europe/Paris]")
     >>> # Explicitly resolve ambiguities during DST transitions
     >>> ZonedDateTime(2023, 10, 29, 1, 15, tz="Europe/London", disambiguate="earlier")
-    ZonedDateTime(2023-10-29 01:15:00+01:00[Europe/London])
+    ZonedDateTime("2023-10-29 01:15:00+01:00[Europe/London]")
 
     Important
     ---------
@@ -4272,7 +4315,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         Example
         -------
         >>> ZonedDateTime(2020, 8, 15, hour=23, minute=12, tz="Europe/London")
-        ZonedDateTime(2020-08-15 23:12:00+01:00[Europe/London])
+        ZonedDateTime("2020-08-15 23:12:00+01:00[Europe/London]")
 
         Important
         ---------
@@ -4310,7 +4353,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         Example
         -------
         >>> ZonedDateTime.parse_iso("2020-08-15T23:12:00+01:00[Europe/London]")
-        ZonedDateTime(2020-08-15 23:12:00+01:00[Europe/London])
+        ZonedDateTime("2020-08-15 23:12:00+01:00[Europe/London]")
 
         Important
         ---------
@@ -4693,9 +4736,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         --------
         >>> d = ZonedDateTime(2020, 8, 15, 23, 24, 18, tz="Europe/Paris")
         >>> d.round("day")
-        ZonedDateTime(2020-08-16 00:00:00+02:00[Europe/Paris])
+        ZonedDateTime("2020-08-16 00:00:00+02:00[Europe/Paris]")
         >>> d.round("minute", increment=15, mode="floor")
-        ZonedDateTime(2020-08-15 23:15:00+02:00[Europe/Paris])
+        ZonedDateTime("2020-08-15 23:15:00+02:00[Europe/Paris]")
 
         Notes
         -----
@@ -4774,10 +4817,10 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     def __repr__(self) -> str:
         return (
-            f"ZonedDateTime({_format_date(self._py_dt, False)} "
+            f'ZonedDateTime("{_format_date(self._py_dt, False)} '
             f"{_format_time(self._py_dt, self._nanos, 'auto', False)}"
             f"{_format_offset(self._py_dt.utcoffset(), False)}"  # type: ignore[arg-type]
-            f"[{self._tz.key or '<system timezone without ID>'}])"
+            f"[{self._tz.key or '<system timezone without ID>'}]\")"
         )
 
     # a custom pickle implementation with a smaller payload
@@ -4882,7 +4925,7 @@ class PlainDateTime(_LocalTime):
         Example
         -------
         >>> PlainDateTime.parse_iso("2020-08-15T23:12:00")
-        PlainDateTime(2020-08-15 23:12:00)
+        PlainDateTime("2020-08-15 23:12:00")
         """
         return cls._from_py_unchecked(*_datetime_from_iso(s))
 
@@ -5136,7 +5179,7 @@ class PlainDateTime(_LocalTime):
         Example
         -------
         >>> PlainDateTime.parse_strptime("2020-08-15", format="%d/%m/%Y_%H:%M")
-        PlainDateTime(2020-08-15 00:00:00)
+        PlainDateTime("2020-08-15 00:00:00")
 
         Note
         ----
@@ -5166,7 +5209,7 @@ class PlainDateTime(_LocalTime):
         Example
         -------
         >>> PlainDateTime(2020, 8, 15, 23, 12).assume_utc()
-        Instant(2020-08-15 23:12:00Z)
+        Instant("2020-08-15 23:12:00Z")
         """
         return Instant._from_py_unchecked(
             self._py_dt.replace(tzinfo=_UTC), self._nanos
@@ -5180,7 +5223,7 @@ class PlainDateTime(_LocalTime):
         Example
         -------
         >>> PlainDateTime(2020, 8, 15, 23, 12).assume_fixed_offset(+2)
-        OffsetDateTime(2020-08-15 23:12:00+02:00)
+        OffsetDateTime("2020-08-15 23:12:00+02:00")
         """
         return OffsetDateTime._from_py_unchecked(
             self._py_dt.replace(tzinfo=_load_offset(offset)), self._nanos
@@ -5204,7 +5247,7 @@ class PlainDateTime(_LocalTime):
         -------
         >>> d = PlainDateTime(2020, 8, 15, 23, 12)
         >>> d.assume_tz("Europe/Amsterdam", disambiguate="raise")
-        ZonedDateTime(2020-08-15 23:12:00+02:00[Europe/Amsterdam])
+        ZonedDateTime("2020-08-15 23:12:00+02:00[Europe/Amsterdam]")
         """
         _tz = _get_tz(tz)
         return ZonedDateTime._from_py_unchecked(
@@ -5232,7 +5275,7 @@ class PlainDateTime(_LocalTime):
         >>> d = PlainDateTime(2020, 8, 15, 23, 12)
         >>> # assuming system timezone is America/New_York
         >>> d.assume_system_tz(disambiguate="raise")
-        ZonedDateTime(2020-08-15 23:12:00-04:00[America/New_York])
+        ZonedDateTime("2020-08-15 23:12:00-04:00[America/New_York]")
         """
         tz = _system_tz()
         return ZonedDateTime._from_py_unchecked(
@@ -5262,9 +5305,9 @@ class PlainDateTime(_LocalTime):
         --------
         >>> d = PlainDateTime(2020, 8, 15, 23, 24, 18)
         >>> d.round("day")
-        PlainDateTime(2020-08-16 00:00:00)
+        PlainDateTime("2020-08-16 00:00:00")
         >>> d.round("minute", increment=15, mode="floor")
-        PlainDateTime(2020-08-15 23:15:00)
+        PlainDateTime("2020-08-15 23:15:00")
 
         Note
         ----
@@ -5286,7 +5329,7 @@ class PlainDateTime(_LocalTime):
         return self.date()._add_days(next_day).at(rounded_time)
 
     def __repr__(self) -> str:
-        return f"PlainDateTime({str(self).replace('T', ' ')})"
+        return f"PlainDateTime(\"{str(self).replace('T', ' ')}\")"
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
@@ -6351,7 +6394,7 @@ for _unpkl in (
 
 
 # disable further subclassing
-final(_ImmutableBase)
+final(_Base)
 final(_ExactTime)
 final(_LocalTime)
 final(_ExactAndLocalTime)

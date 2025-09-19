@@ -80,6 +80,9 @@ impl Display for MonthDay {
 }
 
 fn __new__(cls: HeapType<MonthDay>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+    if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
+        return parse_iso(cls, args.iter().next().unwrap());
+    }
     let mut month: c_long = 0;
     let mut day: c_long = 0;
     parse_args_kwargs!(args, kwargs, c"ll:MonthDay", month, day);
@@ -89,7 +92,7 @@ fn __new__(cls: HeapType<MonthDay>, args: PyTuple, kwargs: Option<PyDict>) -> Py
 }
 
 fn __repr__(_: PyType, slf: MonthDay) -> PyReturn {
-    format!("MonthDay({slf})").to_py()
+    format!("MonthDay(\"{slf}\")").to_py()
 }
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
@@ -156,7 +159,9 @@ fn format_iso(cls: PyType, slf: MonthDay) -> PyReturn {
 fn parse_iso(cls: HeapType<MonthDay>, s: PyObj) -> PyReturn {
     MonthDay::parse(
         s.cast::<PyStr>()
-            .ok_or_type_err("argument must be str")?
+            // NOTE: this exception message also needs to make sense when
+            // called through the constructor
+            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
             .as_utf8()?,
     )
     .ok_or_else_value_err(|| format!("Invalid format: {s}"))?

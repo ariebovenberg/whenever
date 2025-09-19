@@ -279,56 +279,16 @@ impl Display for Date {
 }
 
 fn __new__(cls: HeapType<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
-    if args.len() > 3 {
-        raise_type_err(format!(
-            "Date() takes at most 3 arguments, got {}",
-            args.len() + kwargs.map_or(0, |x| x.len())
-        ))?
+    if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
+        return parse_iso(cls, args.iter().next().unwrap());
     }
-    let mut arg_obj: [Option<PyObj>; 3] = [None, None, None];
-    for (i, arg) in args.iter().enumerate() {
-        arg_obj[i] = Some(arg);
-    }
-    if let Some(kwarg_dict) = kwargs {
-        let &State {
-            str_year,
-            str_month,
-            str_day,
-            ..
-        } = cls.state();
-        handle_kwargs("Date", kwarg_dict.iteritems(), |key, value, eq| {
-            for (i, &kwname) in [str_year, str_month, str_day].iter().enumerate() {
-                if eq(key, kwname) {
-                    if arg_obj[i].replace(value).is_some() {
-                        raise_type_err(format!(
-                            "Date() got multiple values for argument {kwname}"
-                        ))?;
-                    }
-                    return Ok(true);
-                }
-            }
-            Ok(false)
-        })?;
-    };
-    Date::from_longs(
-        arg_obj[0]
-            .ok_or_type_err("function missing required argument 'year'")?
-            .cast::<PyInt>()
-            .ok_or_type_err("year must be an integer")?
-            .to_long()?,
-        arg_obj[1]
-            .ok_or_type_err("function missing required argument 'month'")?
-            .cast::<PyInt>()
-            .ok_or_type_err("month must be an integer")?
-            .to_long()?,
-        arg_obj[2]
-            .ok_or_type_err("function missing required argument 'day'")?
-            .cast::<PyInt>()
-            .ok_or_type_err("day must be an integer")?
-            .to_long()?,
-    )
-    .ok_or_value_err("Invalid date components")?
-    .to_obj(cls)
+    let mut year: c_long = 0;
+    let mut month: c_long = 0;
+    let mut day: c_long = 0;
+    parse_args_kwargs!(args, kwargs, c"lll:Date", year, month, day);
+    Date::from_longs(year, month, day)
+        .ok_or_value_err("Invalid date value")?
+        .to_obj(cls)
 }
 
 fn __richcmp__(cls: HeapType<Date>, a: Date, b_obj: PyObj, op: c_int) -> PyReturn {
@@ -352,7 +312,7 @@ fn __str__(_: PyType, slf: Date) -> PyReturn {
 }
 
 fn __repr__(_: PyType, slf: Date) -> PyReturn {
-    PyAsciiStrBuilder::format((b"Date(", slf.format_iso(false), b')'))
+    PyAsciiStrBuilder::format((b"Date(\"", slf.format_iso(false), b"\")"))
 }
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
@@ -443,7 +403,9 @@ fn format_iso(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterK
 fn parse_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn {
     Date::parse_iso(
         s.cast::<PyStr>()
-            .ok_or_type_err("argument must be str")?
+            // NOTE: this exception message also needs to make sense when
+            // called through the constructor
+            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
             .as_utf8()?,
     )
     .ok_or_else_value_err(|| format!("Invalid format: {s}"))?

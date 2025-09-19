@@ -33,13 +33,16 @@ class TestInit:
 
     def test_invalid(self):
         with pytest.raises(TypeError):
-            YearMonth(2000)  # type: ignore[call-arg]
+            YearMonth(2000)  # type: ignore[call-overload]
 
         with pytest.raises(TypeError):
-            YearMonth("2001", "SEP")  # type: ignore[arg-type]
+            YearMonth("2001", "SEP")  # type: ignore[call-overload]
 
         with pytest.raises(TypeError):
-            YearMonth()  # type: ignore[call-arg]
+            YearMonth()  # type: ignore[call-overload]
+
+    def test_iso(self):
+        assert YearMonth("2021-12") == YearMonth(2021, 12)
 
 
 def test_properties():
@@ -112,8 +115,8 @@ def test_str():
 
 
 def test_repr():
-    assert repr(YearMonth(2021, 12)) == "YearMonth(2021-12)"
-    assert repr(YearMonth(2, 1)) == "YearMonth(0002-01)"
+    assert repr(YearMonth(2021, 12)) == 'YearMonth("2021-12")'
+    assert repr(YearMonth(2, 1)) == 'YearMonth("0002-01")'
 
 
 class TestParseIso:

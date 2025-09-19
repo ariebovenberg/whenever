@@ -576,13 +576,13 @@ impl<'a> BenignKey<'a> {
     }
 }
 
-impl<'a> AsRef<str> for BenignKey<'a> {
+impl AsRef<str> for BenignKey<'_> {
     fn as_ref(&self) -> &str {
         self.0
     }
 }
 
-impl<'a> AsRef<Path> for BenignKey<'a> {
+impl AsRef<Path> for BenignKey<'_> {
     fn as_ref(&self) -> &Path {
         Path::new(self.0)
     }

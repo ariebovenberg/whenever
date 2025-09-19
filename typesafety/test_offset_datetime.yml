@@ -1,12 +1,4 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/typeddjango/pytest-mypy-plugins/master/pytest_mypy_plugins/schema.json
-- case: ymd_arguments
-  regex: true
-  main: |
-    from whenever import OffsetDateTime
-    d = OffsetDateTime(2020, 8, 9, offset=5)
-    d = OffsetDateTime(2020, 8, 15, offset='str')  # E: .*"str"
-  out: |
-    # all this needed to match a single overload match failure...
 - case: strict_equality
   regex: true
   main: |

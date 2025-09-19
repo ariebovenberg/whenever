@@ -322,6 +322,12 @@ pub(crate) const SINGLETONS: &[(&CStr, Time); 4] = &[
 ];
 
 fn __new__(cls: HeapType<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+    if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
+        let obj = args.iter().next().unwrap();
+        if PyStr::isinstance(obj) {
+            return parse_iso(cls, args.iter().next().unwrap());
+        }
+    }
     let mut hour: c_long = 0;
     let mut minute: c_long = 0;
     let mut second: c_long = 0;
@@ -368,7 +374,7 @@ fn __str__(_: PyType, slf: Time) -> PyReturn {
 }
 
 fn __repr__(_: PyType, slf: Time) -> PyReturn {
-    PyAsciiStrBuilder::format((b"Time(", slf.format_iso(fmt::Unit::Auto, false), b')'))
+    PyAsciiStrBuilder::format((b"Time(\"", slf.format_iso(fmt::Unit::Auto, false), b"\")"))
 }
 
 #[allow(static_mut_refs)]
@@ -504,7 +510,9 @@ fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyResult<Owned<PyTuple>> {
 fn parse_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn {
     Time::parse_iso(
         s.cast::<PyStr>()
-            .ok_or_type_err("Argument must be a string")?
+            // NOTE: this exception message also needs to make sense when
+            // called through the constructor
+            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
             .as_utf8()?,
     )
     .ok_or_else_value_err(|| format!("Invalid format: {s}"))?

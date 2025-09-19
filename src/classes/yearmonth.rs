@@ -75,6 +75,9 @@ impl Display for YearMonth {
 }
 
 fn __new__(cls: HeapType<YearMonth>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+    if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
+        return parse_iso(cls, args.iter().next().unwrap());
+    }
     let mut year: c_long = 0;
     let mut month: c_long = 0;
     parse_args_kwargs!(args, kwargs, c"ll:YearMonth", year, month);
@@ -84,7 +87,7 @@ fn __new__(cls: HeapType<YearMonth>, args: PyTuple, kwargs: Option<PyDict>) -> P
 }
 
 fn __repr__(_: PyType, slf: YearMonth) -> PyReturn {
-    format!("YearMonth({slf})").to_py()
+    format!("YearMonth(\"{slf}\")").to_py()
 }
 
 fn __str__(_: PyType, slf: YearMonth) -> PyReturn {
@@ -149,7 +152,11 @@ fn format_iso(cls: PyType, slf: YearMonth) -> PyReturn {
 }
 
 fn parse_iso(cls: HeapType<YearMonth>, arg: PyObj) -> PyReturn {
-    let py_str = arg.cast::<PyStr>().ok_or_type_err("argument must be str")?;
+    let py_str = arg
+        .cast::<PyStr>()
+        // NOTE: this exception message also needs to make sense when
+        // called through the constructor
+        .ok_or_type_err("When parsing from ISO format, the argument must be str")?;
     YearMonth::parse(py_str.as_utf8()?)
         .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?
         .to_obj(cls)

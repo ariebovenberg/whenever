@@ -14,21 +14,32 @@
   This change unifies the API, providing a single, consistent way to handle
   all timezone-aware datetimes. The original use cases are fully supported
   by the improved `ZonedDateTime`.
-- Remove the deprecated `local()` methods (use `to_plain()` instead).
-- Remove the deprecated `instant()` method (use `to_instant()` instead).
+
+- All classes can now be directly instantiated from an ISO 8601 formatted string
+  passed as a sole argument. For example, `Date("2023-10-05")` can is equivalent to
+  `Date(2023, 10, 5)`. The ``repr()`` of all classes now includes quotes,
+  so that the output can be directly used as input and thus `eval(repr(obj)) == obj`.
+
+  **Rationale:** This makes the types a lot easier to use in interactive sessions
+  and tests. It also makes `repr()` round-trippable, which is a common
+  expectation for primitive types.
+
 - Renamed `[format|parse]_common_iso` methods to `[format|parse]_iso`.
 
   **Rationale:** The "common" qualifier is no longer necessary because
   these methods have been expanded to handle a wider range of ISO 8601 formats.
 
+- Remove the deprecated `local()` methods (use `to_plain()` instead).
+- Remove the deprecated `instant()` method (use `to_instant()` instead).
+
 **Improved**
 
-- Customizable ISO 8601 Formatting: The `format_iso()` methods now accept 
-  parameters to customize the output. You can control the `separator` 
+- Customizable ISO 8601 Formatting: The `format_iso()` methods now accept
+  parameters to customize the output. You can control the `separator`
   (e.g., `'T'` or `' '`), the smallest `unit` (from `hour` to `nanosecond`),
   and toggle the `basic` (compact) or `extended` format.
 
-  Also, the formatting is now significantly faster. Up to 5x faster for 
+  Also, the formatting is now significantly faster. Up to 5x faster for
   ``ZonedDateTime``, which is now 10x faster than the standard library's `datetime.isoformat()`.
 
 **Fixed**

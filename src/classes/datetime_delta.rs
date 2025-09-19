@@ -230,6 +230,7 @@ fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) 
     let mut nanos: i128 = 0;
     let state = cls.state();
     match (nargs, nkwargs) {
+        (1, 0) => parse_iso(cls, args.iter().next().unwrap()),
         (0, 0) => DateTimeDelta {
             ddelta: DateDelta {
                 months: DeltaMonths::ZERO,
@@ -239,7 +240,8 @@ fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) 
                 secs: DeltaSeconds::ZERO,
                 subsec: SubSecNanos::MIN,
             },
-        }, // OPTIMIZE: return the singleton
+        }
+        .to_obj(cls), // OPTIMIZE: return the singleton
         (0, _) => {
             handle_kwargs(
                 "DateTimeDelta",
@@ -258,13 +260,15 @@ fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) 
                     tdelta: TimeDelta::from_nanos(nanos)
                         .ok_or_value_err("TimeDelta out of range")?,
                 }
+                .to_obj(cls)
             } else {
                 raise_value_err("Mixed sign in DateTimeDelta")?
             }
         }
-        _ => raise_value_err("TimeDelta() takes no positional arguments")?,
+        _ => {
+            raise_value_err("DateTimeDelta() takes either 1 positional argument, or only keywords")?
+        }
     }
-    .to_obj(cls)
 }
 
 fn __richcmp__(
@@ -301,7 +305,7 @@ extern "C" fn __bool__(slf: PyObj) -> c_int {
 }
 
 fn __repr__(_: PyType, d: DateTimeDelta) -> PyReturn {
-    format!("DateTimeDelta({d})").to_py()
+    format!("DateTimeDelta(\"{d}\")").to_py()
 }
 
 fn __str__(_: PyType, d: DateTimeDelta) -> PyReturn {
@@ -478,7 +482,9 @@ pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
 fn parse_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
     let binding = arg
         .cast::<PyStr>()
-        .ok_or_value_err("argument must be str")?;
+        // NOTE: this exception message also needs to make sense when
+        // called through the constructor
+        .ok_or_type_err("When parsing from ISO format, the argument must be str")?;
 
     let s = &mut binding.as_utf8()?;
     let err = || format!("Invalid format or out of range: {arg}");

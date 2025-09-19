@@ -40,6 +40,9 @@ class TestInit:
         with pytest.raises(ValueError):
             Time(0, 0, 0, nanosecond=1_000_000_000)
 
+    def test_iso(self):
+        assert Time("01:02:03.000004") == Time(1, 2, 3, nanosecond=4_000)
+
 
 class TestFormatIso:
 
@@ -115,7 +118,7 @@ def test_py_time():
 
 def test_repr():
     t = Time(1, 2, 3, nanosecond=40_000_000)
-    assert repr(t) == "Time(01:02:03.04)"
+    assert repr(t) == 'Time("01:02:03.04")'
 
 
 def test_replace():
