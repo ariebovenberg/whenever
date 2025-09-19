@@ -70,13 +70,13 @@ class TestInit:
 
     def test_not_enough_args(self):
         with pytest.raises(TypeError, match=r"day"):
-            Date(2021, 1)  # type: ignore[call-arg]
+            Date(2021, 1)  # type: ignore[call-overload]
 
-        with pytest.raises(TypeError, match=r"month"):
-            Date(2021)  # type: ignore[call-arg]
+        with pytest.raises(TypeError):
+            Date(2021)  # type: ignore[call-overload]
 
-        with pytest.raises(TypeError, match=r"year"):
-            Date()  # type: ignore[call-arg]
+        with pytest.raises(TypeError):
+            Date()  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
         "year, month, day",
@@ -129,6 +129,9 @@ class TestInit:
             (ValueError, OverflowError), match="int|range|date|day"
         ):
             Date(year, month, day)
+
+    def test_iso_string(self):
+        assert Date("2023-01-02") == Date(2023, 1, 2)
 
 
 def test_year_month():
@@ -309,7 +312,7 @@ def test_at():
 
 def test_repr():
     d = Date(221, 1, 2)
-    assert repr(d) == "Date(0221-01-02)"
+    assert repr(d) == 'Date("0221-01-02")'
 
 
 def test_hash():

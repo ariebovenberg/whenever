@@ -30,15 +30,15 @@ TimeDelta(01:47:30)
 ...
 >>> # Calendar units create a DateDelta, with more limited arithmetic
 >>> project_estimate = months(1) + days(10)
-DateDelta(P1M10D)
+DateDelta("P1M10D")
 >>> Date(2023, 1, 29) + project_estimate
-Date(2023-03-10)
+Date("2023-03-10")
 >>> project_estimate * 2  # make it pessimistic
-DateDelta(P2M20D)
+DateDelta("P2M20D")
 ...
 >>> # Mixing date and time units creates a generic DateTimeDelta
 >>> project_estimate + movie_runtime
-DateTimeDelta(P1M10DT2H9M)
+DateTimeDelta("P1M10DT2H9M")
 ...
 >>> # API ensures common mistakes are caught early:
 >>> project_estimate * 1.3             # Impossible arithmetic on calendar units
@@ -109,7 +109,7 @@ Date units can only be multiplied by integers.
 "1.3 months" isn't a well-defined concept, so it's not supported:
 
 >>> months(3) * 2
-DateDelta(P6M)
+DateDelta("P6M")
 
 Division
 --------
@@ -128,16 +128,16 @@ The result of adding two time durations is the same, regardless of what order yo
 
 >>> dt = Instant.from_utc(2020, 1, 29)
 >>> dt + hours(2) + minutes(30)
-Instant(2020-01-29 02:30:00Z)
+Instant("2020-01-29 02:30:00Z")
 >>> dt + minutes(30) + hours(2)  # same result
 
 This is not the case for date units. The result of adding two date units depends on the order:
 
 >>> d = Date(2020, 1, 29)
 >>> d + months(1) + days(3)
-Date(2020-03-03)
+Date("2020-03-03")
 >>> d + days(3) + months(1)
-Date(2020-03-01)
+Date("2020-03-01")
 
 Reversibility
 -------------
@@ -151,9 +151,9 @@ This is not the case for date units:
 
 >>> jan30 = Date(2020, 1, 30)
 >>> jan30 + months(1)
-Date(2020-02-29)
+Date("2020-02-29")
 >>> jan30 + months(1) - months(1)
-Date(2020-01-29)
+Date("2020-01-29")
 
 Comparison
 ----------
@@ -183,11 +183,11 @@ One day also doesn't correspond to a fixed number of hours,
 as this can change depending on Daylight Saving Time, for example.
 
 >>> months(13)
-DateDelta(P1Y1M)
+DateDelta("P1Y1M")
 >>> months(1) + weeks(4)
-DateDelta(P1M28D)
+DateDelta("P1M28D")
 >>> days(1) + hours(24)
-DateTimeDelta(P1DT24H)
+DateTimeDelta("P1DT24H")
 
 Equality
 --------
@@ -242,7 +242,7 @@ and :meth:`~whenever.DateTimeDelta.parse_iso`.
 >>> DateDelta.parse_iso('-P2M')
 DateDelta(-2M)
 >>> DateTimeDelta.parse_iso('P3YT90M')
-DateTimeDelta(P3YT1H30M)
+DateTimeDelta("P3YT1H30M")
 
 .. attention::
 

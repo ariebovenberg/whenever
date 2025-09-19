@@ -114,7 +114,7 @@ class TestInit:
                 15,
                 5,
                 12,
-                tz=hours(34),  # type: ignore[arg-type]
+                tz=hours(34),  # type: ignore[call-overload]
             )
 
     @pytest.mark.parametrize(
@@ -180,7 +180,7 @@ class TestInit:
         reset_tzpath([TEST_DIR / "tzif"])
         from whenever import TZPATH
 
-        assert TZPATH == (f"{TEST_DIR}/tzif",)
+        assert TZPATH == (str(TEST_DIR / "tzif"),)
         try:
             # Available timezones should now be different
             assert available_timezones() != zoneinfo_available_timezones()
@@ -208,7 +208,7 @@ class TestInit:
 
             # Ok, let's see if we can find our custom timezones
             d2 = ZonedDateTime(1982, 8, 15, 5, 12, tz="Amsterdam.tzif")
-            d3 = ZonedDateTime(1982, 8, 15, 5, 12, tz="Iceland")
+            d3 = ZonedDateTime(1982, 8, 15, 5, 12, tz="Asia/Amman")
         finally:
             # We need to reset the tzpath to the original one
             reset_tzpath()
@@ -230,11 +230,10 @@ class TestInit:
 
         # strict equality is impacted
         assert not d2.to_plain().assume_tz("Europe/Amsterdam").exact_eq(d2)
-        # Note the "Iceland" file in our tzif directory is an older version,
-        # so they shouldn't compare equal
-        assert not d3.to_plain().assume_tz("Iceland").exact_eq(d3)
+        # Note the "Asia/Amman" file in our tzif directory is purposefully
+        # an older version, so they shouldn't compare equal
+        assert not d3.to_plain().assume_tz("Asia/Amman").exact_eq(d3)
         # the NYC instance is still the same value (but a different instance/pointer)
-        print("comparing cached NYC")
         assert d.to_plain().assume_tz(nyc).exact_eq(d)
 
         # but we can still use an old instance
@@ -269,7 +268,7 @@ class TestInit:
 
     def test_tz_required(self):
         with pytest.raises(TypeError):
-            ZonedDateTime(2020, 8, 15, 12)  # type: ignore[call-arg]
+            ZonedDateTime(2020, 8, 15, 12)  # type: ignore[call-overload]
 
     def test_out_of_range_due_to_offset(self):
         with pytest.raises((ValueError, OverflowError), match="range|year"):
@@ -325,6 +324,22 @@ class TestInit:
         )
 
         assert issubclass(SkippedTime, ValueError)
+
+    def test_from_iso(self):
+        assert ZonedDateTime(
+            "2020-08-15T23:12:09.987654321-04:00[America/New_York]"
+        ).exact_eq(
+            ZonedDateTime(
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                nanosecond=987_654_321,
+                tz="America/New_York",
+            )
+        )
 
 
 # NOTE: there's a separate test for changing the tzpath and
@@ -1925,23 +1940,23 @@ class TestFromTimestamp:
                 nanosecond=9_876_543,
                 tz="Australia/Darwin",
             ),
-            "ZonedDateTime(2020-08-15 23:12:09.009876543+09:30[Australia/Darwin])",
+            'ZonedDateTime("2020-08-15 23:12:09.009876543+09:30[Australia/Darwin]")',
         ),
         (
             ZonedDateTime(2020, 8, 15, 23, 12, tz="Iceland"),
-            "ZonedDateTime(2020-08-15 23:12:00+00:00[Iceland])",
+            'ZonedDateTime("2020-08-15 23:12:00+00:00[Iceland]")',
         ),
         (
             ZonedDateTime(2020, 8, 15, 23, 12, tz="UTC"),
-            "ZonedDateTime(2020-08-15 23:12:00+00:00[UTC])",
+            'ZonedDateTime("2020-08-15 23:12:00+00:00[UTC]")',
         ),
         (
             create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_POSIX),
-            "ZonedDateTime(2020-08-15 12:08:30+02:00[<system timezone without ID>])",
+            'ZonedDateTime("2020-08-15 12:08:30+02:00[<system timezone without ID>]")',
         ),
         (
             create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_RAWFILE),
-            "ZonedDateTime(2020-08-15 12:08:30+02:00[<system timezone without ID>])",
+            'ZonedDateTime("2020-08-15 12:08:30+02:00[<system timezone without ID>]")',
         ),
     ],
 )

@@ -75,6 +75,12 @@ class TestInit:
         with pytest.raises((ValueError, OverflowError)):
             DateTimeDelta(**kwargs)
 
+    def test_iso_format(self):
+        assert DateTimeDelta("P1YT5M") == DateTimeDelta(
+            years=1,
+            minutes=5,
+        )
+
 
 def test_equality():
     p = DateTimeDelta(
@@ -342,13 +348,13 @@ class TestParseIso:
 @pytest.mark.parametrize(
     "d, expect",
     [
-        (DateTimeDelta(), "DateTimeDelta(P0d)"),
-        (DateTimeDelta(years=1), "DateTimeDelta(P1y)"),
+        (DateTimeDelta(), 'DateTimeDelta("P0d")'),
+        (DateTimeDelta(years=1), 'DateTimeDelta("P1y")'),
         (
             DateTimeDelta(months=1, days=55, minutes=80),
-            "DateTimeDelta(P1m55dT1h20m)",
+            'DateTimeDelta("P1m55dT1h20m")',
         ),
-        (DateTimeDelta(seconds=-0.83), "DateTimeDelta(-PT0.83s)"),
+        (DateTimeDelta(seconds=-0.83), 'DateTimeDelta("-PT0.83s")'),
     ],
 )
 def test_repr(d, expect):

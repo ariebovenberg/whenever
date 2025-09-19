@@ -74,7 +74,10 @@ class _DateOrTimeMixin(_ISOMixin, _OrderMixin):
 
 @final
 class Date(_DateOrTimeMixin):
+    @overload
     def __init__(self, year: int, month: int, day: int) -> None: ...
+    @overload
+    def __init__(self, iso_string: str, /) -> None: ...
     @staticmethod
     def today_in_system_tz() -> Date: ...
     @property
@@ -116,7 +119,10 @@ class Date(_DateOrTimeMixin):
 
 @final
 class YearMonth(_DateOrTimeMixin):
+    @overload
     def __init__(self, year: int, month: int) -> None: ...
+    @overload
+    def __init__(self, iso_string: str, /) -> None: ...
     @property
     def year(self) -> int: ...
     @property
@@ -126,7 +132,10 @@ class YearMonth(_DateOrTimeMixin):
 
 @final
 class MonthDay(_DateOrTimeMixin):
+    @overload
     def __init__(self, month: int, day: int) -> None: ...
+    @overload
+    def __init__(self, iso_string: str, /) -> None: ...
     @property
     def month(self) -> int: ...
     @property
@@ -137,6 +146,7 @@ class MonthDay(_DateOrTimeMixin):
 
 @final
 class Time(_DateOrTimeMixin):
+    @overload
     def __init__(
         self,
         hour: int = 0,
@@ -145,6 +155,8 @@ class Time(_DateOrTimeMixin):
         *,
         nanosecond: int = 0,
     ) -> None: ...
+    @overload
+    def __init__(self, iso_string: str, /) -> None: ...
     MIDNIGHT: ClassVar[Self]
     NOON: ClassVar[Self]
     @property
@@ -209,6 +221,7 @@ class _DeltaMixin(_ISOMixin):
 
 @final
 class TimeDelta(_DeltaMixin, _OrderMixin):
+    @overload
     def __init__(
         self,
         *,
@@ -219,6 +232,8 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         microseconds: float = 0,
         nanoseconds: int = 0,
     ) -> None: ...
+    @overload
+    def __init__(self, iso_string: str, /) -> None: ...
     def in_days_of_24h(self) -> float: ...
     def in_hours(self) -> float: ...
     def in_minutes(self) -> float: ...
@@ -260,9 +275,12 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
 
 @final
 class DateDelta(_DeltaMixin):
+    @overload
     def __init__(
         self, *, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0
     ) -> None: ...
+    @overload
+    def __init__(self, s: str, /) -> None: ...
     def in_months_days(self) -> tuple[int, int]: ...
     def in_years_months_days(self) -> tuple[int, int, int]: ...
     @overload
@@ -278,6 +296,7 @@ class DateDelta(_DeltaMixin):
 
 @final
 class DateTimeDelta(_DeltaMixin):
+    @overload
     def __init__(
         self,
         *,
@@ -292,6 +311,8 @@ class DateTimeDelta(_DeltaMixin):
         microseconds: float = 0,
         nanoseconds: int = 0,
     ) -> None: ...
+    @overload
+    def __init__(self, iso_string: str, /) -> None: ...
     def date_part(self) -> DateDelta: ...
     def time_part(self) -> TimeDelta: ...
     def in_months_days_secs_nanos(self) -> tuple[int, int, int, int]: ...
@@ -368,6 +389,7 @@ class _PyDateTimeMixin(_ISOMixin):
 
 @final
 class Instant(_PyDateTimeMixin, _ExactTime):
+    def __init__(self, iso_string: str, /) -> None: ...
     @classmethod
     def from_utc(
         cls,
@@ -436,6 +458,7 @@ class Instant(_PyDateTimeMixin, _ExactTime):
 
 @final
 class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
+    @overload
     def __init__(
         self,
         year: int,
@@ -448,6 +471,8 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         nanosecond: int = 0,
         offset: int | TimeDelta,
     ) -> None: ...
+    @overload
+    def __init__(self, iso_string: str, /) -> None: ...
     @classmethod
     def now(
         cls, offset: int | TimeDelta, /, *, ignore_dst: Literal[True]
@@ -551,6 +576,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
 
 @final
 class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
+    @overload
     def __init__(
         self,
         year: int,
@@ -564,6 +590,8 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         tz: str,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> None: ...
+    @overload
+    def __init__(self, s: str, /) -> None: ...
     @property
     def tz(self) -> str: ...
     @classmethod
@@ -721,6 +749,7 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
 
 @final
 class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
+    @overload
     def __init__(
         self,
         year: int,
@@ -732,6 +761,8 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         *,
         nanosecond: int = 0,
     ) -> None: ...
+    @overload
+    def __init__(self, iso_string: str, /) -> None: ...
     def assume_utc(self) -> Instant: ...
     def assume_fixed_offset(
         self, offset: int | TimeDelta, /

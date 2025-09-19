@@ -260,6 +260,9 @@ impl Display for OffsetDateTime {
 }
 
 fn __new__(cls: HeapType<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+    if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
+        return parse_iso(cls, args.iter().next().unwrap());
+    }
     let mut year: c_long = 0;
     let mut month: c_long = 0;
     let mut day: c_long = 0;
@@ -297,12 +300,12 @@ fn __new__(cls: HeapType<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>)
 
 fn __repr__(_: PyType, OffsetDateTime { date, time, offset }: OffsetDateTime) -> PyReturn {
     PyAsciiStrBuilder::format((
-        b"OffsetDateTime(",
+        b"OffsetDateTime(\"",
         date.format_iso(false),
         b' ',
         time.format_iso(fmt::Unit::Auto, false),
         offset.format_iso(false),
-        b')',
+        b"\")",
     ))
 }
 
@@ -975,7 +978,9 @@ fn from_timestamp_nanos(
 fn parse_iso(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn {
     OffsetDateTime::parse(
         arg.cast::<PyStr>()
-            .ok_or_type_err("Expected a string")?
+            // NOTE: this exception message also needs to make sense when
+            // called through the constructor
+            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
             .as_utf8()?,
     )
     .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?

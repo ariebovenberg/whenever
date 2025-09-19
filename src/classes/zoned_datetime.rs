@@ -327,6 +327,17 @@ impl OffsetDateTime {
 }
 
 fn __new__(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+    // Alternate constructor: one ISO 8601 string argument
+    if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
+        return parse_iso(
+            cls,
+            args.iter()
+                .next()
+                // SAFETY: we've checked the length is 1
+                .unwrap(),
+        );
+    };
+
     let &State {
         exc_repeated,
         exc_skipped,
@@ -399,7 +410,7 @@ fn __repr__(_: PyType, slf: ZonedDateTime) -> PyReturn {
         tz,
     } = slf;
     PyAsciiStrBuilder::format((
-        b"ZonedDateTime(",
+        b"ZonedDateTime(\"",
         date.format_iso(false),
         b' ',
         time.format_iso(fmt::Unit::Auto, false),
@@ -409,7 +420,7 @@ fn __repr__(_: PyType, slf: ZonedDateTime) -> PyReturn {
             .as_deref()
             .unwrap_or("<system timezone without ID>")
             .as_bytes(),
-        b"])",
+        b"]\")",
     ))
 }
 
@@ -612,7 +623,6 @@ static mut SLOTS: &[PyType_Slot] = &[
 
 fn exact_eq(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, obj_b: PyObj) -> PyReturn {
     if let Some(zdt) = obj_b.extract(cls) {
-        println!("Exact eq ZonedDateTime");
         (slf == zdt).to_py()
     } else {
         raise_type_err("Can't compare different types")?
@@ -1180,7 +1190,9 @@ fn is_ambiguous(_: PyType, slf: ZonedDateTime) -> PyReturn {
 fn parse_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
     let py_str = arg
         .cast::<PyStr>()
-        .ok_or_type_err("Argument must be a string")?;
+        // NOTE: this exception message also needs to make sense when
+        // called through the constructor
+        .ok_or_type_err("When parsing from ISO format, the argument must be str")?;
     let mut s = Scan::new(py_str.as_utf8()?);
     let (DateTime { date, time }, (offset, tzstr)) = DateTime::read_iso(&mut s)
         .zip(read_offset_and_tzname(&mut s))

@@ -94,6 +94,9 @@ class TestInit:
         with pytest.raises((ValueError, OverflowError)):
             DateDelta(**kwargs)
 
+    def test_iso_format(self):
+        assert DateDelta("P4Y9d") == DateDelta(years=4, days=9)
+
 
 class TestFactories:
     def test_valid(self):
@@ -244,9 +247,12 @@ class TestParseIso:
 @pytest.mark.parametrize(
     "p, expect",
     [
-        (DateDelta(years=1, months=2, weeks=3, days=4), "DateDelta(P1y2m25d)"),
-        (DateDelta.ZERO, "DateDelta(P0d)"),
-        (DateDelta(months=14), "DateDelta(P1y2m)"),
+        (
+            DateDelta(years=1, months=2, weeks=3, days=4),
+            'DateDelta("P1y2m25d")',
+        ),
+        (DateDelta.ZERO, 'DateDelta("P0d")'),
+        (DateDelta(months=14), 'DateDelta("P1y2m")'),
     ],
 )
 def test_repr(p, expect):
