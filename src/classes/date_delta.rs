@@ -217,8 +217,16 @@ where
 }
 
 fn __new__(cls: HeapType<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
-    if args.len() != 0 {
-        return raise_type_err("DateDelta() takes no positional arguments");
+    match args.len() {
+        0 => {}
+        1 if kwargs.map_or(0, |s| s.len()) == 0 => {
+            return parse_iso(cls, args.iter().next().unwrap());
+        }
+        _ => {
+            return raise_type_err(
+                "DateDelta() takes at either 1 positional argument or only keyword arguments",
+            );
+        }
     }
     let &State {
         str_years,
@@ -309,7 +317,7 @@ fn __neg__(cls: HeapType<DateDelta>, d: DateDelta) -> PyReturn {
 }
 
 fn __repr__(_: PyType, d: DateDelta) -> PyReturn {
-    format!("DateDelta({d})").to_py()
+    format!("DateDelta(\"{d}\")").to_py()
 }
 
 fn __str__(_: PyType, d: DateDelta) -> PyReturn {
@@ -544,7 +552,11 @@ pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, Unit)> {
 }
 
 fn parse_iso(cls: HeapType<DateDelta>, arg: PyObj) -> PyReturn {
-    let py_str = arg.cast::<PyStr>().ok_or_type_err("argument must be str")?;
+    let py_str = arg
+        .cast::<PyStr>()
+        // NOTE: this exception message also needs to make sense when
+        // called through the constructor
+        .ok_or_type_err("When parsing from ISO format, the argument must be str")?;
     let s = &mut py_str.as_utf8()?;
     let err = || format!("Invalid format: {arg}");
     if s.len() < 3 {

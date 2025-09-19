@@ -36,26 +36,33 @@ from .common import (
 )
 
 
-def test_minimal():
-    d = PlainDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)
+class TestInit:
 
-    assert d.year == 2020
-    assert d.month == 8
-    assert d.day == 15
-    assert d.hour == 5
-    assert d.minute == 12
-    assert d.second == 30
-    assert d.nanosecond == 450
+    def test_simple(self):
+        d = PlainDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)
 
-    assert (
-        PlainDateTime(2020, 8, 15, 12)
-        == PlainDateTime(2020, 8, 15, 12, 0)
-        == PlainDateTime(2020, 8, 15, 12, 0, 0)
-        == PlainDateTime(2020, 8, 15, 12, 0, 0, nanosecond=0)
-    )
+        assert d.year == 2020
+        assert d.month == 8
+        assert d.day == 15
+        assert d.hour == 5
+        assert d.minute == 12
+        assert d.second == 30
+        assert d.nanosecond == 450
 
-    with pytest.raises(ValueError, match="nano|time"):
-        PlainDateTime(2020, 8, 15, 12, 0, 0, nanosecond=1_000_000_000)
+        assert (
+            PlainDateTime(2020, 8, 15, 12)
+            == PlainDateTime(2020, 8, 15, 12, 0)
+            == PlainDateTime(2020, 8, 15, 12, 0, 0)
+            == PlainDateTime(2020, 8, 15, 12, 0, 0, nanosecond=0)
+        )
+
+        with pytest.raises(ValueError, match="nano|time"):
+            PlainDateTime(2020, 8, 15, 12, 0, 0, nanosecond=1_000_000_000)
+
+    def test_iso(self):
+        assert PlainDateTime("2020-08-15T05:12:30.000000450") == PlainDateTime(
+            2020, 8, 15, 5, 12, 30, nanosecond=450
+        )
 
 
 def test_components():
@@ -378,11 +385,11 @@ def test_equality():
 
 def test_repr():
     d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-    assert repr(d) == "PlainDateTime(2020-08-15 23:12:09.000987654)"
+    assert repr(d) == 'PlainDateTime("2020-08-15 23:12:09.000987654")'
     # no fractional seconds
     assert (
         repr(PlainDateTime(2020, 8, 15, 23, 12))
-        == "PlainDateTime(2020-08-15 23:12:00)"
+        == 'PlainDateTime("2020-08-15 23:12:00")'
     )
 
 

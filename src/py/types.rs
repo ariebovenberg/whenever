@@ -123,7 +123,7 @@ impl<T: PyWrapped> From<HeapType<T>> for PyType {
     }
 }
 
-/// A trait for types that can be wrapped in a `whenever` Python class.
+/// A trait for Rust structs that can be wrapped in a PyObject.
 pub(crate) trait PyWrapped: FromPy {
     #[inline]
     unsafe fn from_obj(obj: *mut PyObject) -> Self {

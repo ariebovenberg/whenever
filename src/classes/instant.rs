@@ -207,8 +207,16 @@ impl Instant {
     }
 }
 
-fn __new__(_: HeapType<Instant>, _: PyTuple, _: Option<PyDict>) -> PyReturn {
-    raise_type_err("Instant cannot be instantiated directly. Use .now() or .from_utc()")
+fn __new__(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+    if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
+        parse_iso(cls, args.iter().next().unwrap())
+    } else {
+        raise_type_err(
+            "Instant() can only be called with an ISO 8601 string passed
+            as the sole positional argument. To construct from UTC date and time components,
+            use Instant.from_utc().",
+        )
+    }
 }
 
 fn from_utc(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
@@ -245,11 +253,11 @@ impl PySimpleAlloc for Instant {}
 fn __repr__(_: PyType, i: Instant) -> PyReturn {
     let DateTime { date, time } = i.to_datetime();
     PyAsciiStrBuilder::format((
-        b"Instant(",
+        b"Instant(\"",
         date.format_iso(false),
         b" ",
         time.format_iso(fmt::Unit::Auto, false),
-        b"Z)",
+        b"Z\")",
     ))
 }
 
@@ -517,7 +525,9 @@ fn parse_iso(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
     OffsetDateTime::parse(
         s_obj
             .cast::<PyStr>()
-            .ok_or_type_err("Expected a string")?
+            // NOTE: this exception message also needs to make sense when
+            // called through the constructor
+            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
             .as_utf8()?,
     )
     .ok_or_else_value_err(|| format!("Invalid format: {s_obj}"))?

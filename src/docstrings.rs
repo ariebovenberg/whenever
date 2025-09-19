@@ -4,12 +4,15 @@ use std::ffi::CStr;
 
 pub(crate) const PYDANTIC_SCHEMA: &CStr = c"__get_pydantic_core_schema__(source_type, handler)\n--\n\n";
 pub(crate) const DATE: &CStr = c"\
-A date without a time component
+A date without a time component.
 
-Example
--------
 >>> d = Date(2021, 1, 2)
-Date(2021-01-02)
+Date(\"2021-01-02\")
+
+Can also be constructed directly from an ISO 8601 string.
+
+>>> Date(\"2021-01-02\")
+Date(\"2021-01-02\")
 ";
 pub(crate) const DATEDELTA: &CStr = c"\
 A duration of time consisting of calendar units
@@ -29,7 +32,7 @@ Example
 -------
 >>> from whenever import Instant
 >>> py311_release = Instant.from_utc(2022, 10, 24, hour=17)
-Instant(2022-10-24 17:00:00Z)
+Instant(\"2022-10-24 17:00:00Z\")
 >>> py311_release.add(hours=3).timestamp()
 1666641600
 ";
@@ -43,7 +46,7 @@ Useful for representing recurring events or birthdays.
 Example
 -------
 >>> MonthDay(11, 23)
-MonthDay(--11-23)
+MonthDay(\"--11-23\")
 ";
 pub(crate) const OFFSETDATETIME: &CStr = c"\
 A datetime with a fixed UTC offset.
@@ -54,7 +57,7 @@ Example
 -------
 >>> # Midnight in Salt Lake City
 >>> OffsetDateTime(2023, 4, 21, offset=-6)
-OffsetDateTime(2023-04-21 00:00:00-06:00)
+OffsetDateTime(\"2023-04-21 00:00:00-06:00\")
 
 Note
 ----
@@ -105,7 +108,7 @@ for example.
 Examples
 --------
 >>> d = TimeDelta(hours=1, minutes=30)
-TimeDelta(PT1h30m)
+TimeDelta(\"PT1h30m\")
 >>> d.in_minutes()
 90.0
 
@@ -125,7 +128,7 @@ Useful for representing recurring events or billing periods.
 Example
 -------
 >>> ym = YearMonth(2021, 1)
-YearMonth(2021-01)
+YearMonth(\"2021-01\")
 ";
 pub(crate) const ZONEDDATETIME: &CStr = c"\
 A datetime associated with a timezone in the IANA database.
@@ -134,10 +137,10 @@ Useful for representing the exact time at a specific location.
 Example
 -------
 >>> ZonedDateTime(2024, 12, 8, hour=11, tz=\"Europe/Paris\")
-ZonedDateTime(2024-12-08 11:00:00+01:00[Europe/Paris])
+ZonedDateTime(\"2024-12-08 11:00:00+01:00[Europe/Paris]\")
 >>> # Explicitly resolve ambiguities during DST transitions
 >>> ZonedDateTime(2023, 10, 29, 1, 15, tz=\"Europe/London\", disambiguate=\"earlier\")
-ZonedDateTime(2023-10-29 01:15:00+01:00[Europe/London])
+ZonedDateTime(\"2023-10-29 01:15:00+01:00[Europe/London]\")
 
 Important
 ---------
@@ -198,9 +201,9 @@ Example
 -------
 >>> d = Date(2021, 1, 2)
 >>> d.add(years=1, months=2, days=3)
-Date(2022-03-05)
+Date(\"2022-03-05\")
 >>> Date(2020, 2, 29).add(years=1)
-Date(2021-02-28)
+Date(\"2021-02-28\")
 ";
 pub(crate) const DATE_AT: &CStr = c"\
 Combine a date with a time to create a datetime
@@ -209,7 +212,7 @@ Example
 -------
 >>> d = Date(2021, 1, 2)
 >>> d.at(Time(12, 30))
-PlainDateTime(2021-01-02 12:30:00)
+PlainDateTime(\"2021-01-02 12:30:00\")
 
 You can use methods like :meth:`~PlainDateTime.assume_utc`
 or :meth:`~PlainDateTime.assume_tz` to find the corresponding exact time.
@@ -273,7 +276,7 @@ Create from a :class:`~datetime.date`
 Example
 -------
 >>> Date.from_py_date(date(2021, 1, 2))
-Date(2021-01-02)
+Date(\"2021-01-02\")
 ";
 pub(crate) const DATE_MONTH_DAY: &CStr = c"\
 The month and day (without a year component)
@@ -281,7 +284,7 @@ The month and day (without a year component)
 Example
 -------
 >>> Date(2021, 1, 2).month_day()
-MonthDay(--01-02)
+MonthDay(\"--01-02\")
 ";
 pub(crate) const DATE_PARSE_ISO: &CStr = c"\
 Parse a date from an ISO8601 string
@@ -295,7 +298,7 @@ Inverse of :meth:`format_iso`
 Example
 -------
 >>> Date.parse_iso(\"2021-01-02\")
-Date(2021-01-02)
+Date(\"2021-01-02\")
 ";
 pub(crate) const DATE_PY_DATE: &CStr = c"\
 Convert to a standard library :class:`~datetime.date`";
@@ -309,7 +312,7 @@ Example
 -------
 >>> d = Date(2021, 1, 2)
 >>> d.replace(day=4)
-Date(2021-01-04)
+Date(\"2021-01-04\")
 ";
 pub(crate) const DATE_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0)
@@ -323,9 +326,9 @@ Example
 -------
 >>> d = Date(2021, 1, 2)
 >>> d.subtract(years=1, months=2, days=3)
-Date(2019-10-30)
+Date(\"2019-10-30\")
 >>> Date(2021, 3, 1).subtract(years=1)
-Date(2020-03-01)
+Date(\"2020-03-01\")
 ";
 pub(crate) const DATE_TODAY_IN_SYSTEM_TZ: &CStr = c"\
 Get the current date in the system's local timezone.
@@ -335,7 +338,7 @@ Alias for ``Instant.now().to_system_tz().date()``.
 Example
 -------
 >>> Date.today_in_system_tz()
-Date(2021-01-02)
+Date(\"2021-01-02\")
 ";
 pub(crate) const DATE_YEAR_MONTH: &CStr = c"\
 The year and month (without a day component)
@@ -343,7 +346,7 @@ The year and month (without a day component)
 Example
 -------
 >>> Date(2021, 1, 2).year_month()
-YearMonth(2021-01)
+YearMonth(\"2021-01\")
 ";
 pub(crate) const DATEDELTA_FORMAT_ISO: &CStr = c"\
 Format as the *popular interpretation* of the ISO 8601 duration format.
@@ -404,7 +407,7 @@ Inverse of :meth:`format_iso`
 Example
 -------
 >>> DateDelta.parse_iso(\"P1W11D\")
-DateDelta(P1w11d)
+DateDelta(\"P1w11d\")
 >>> DateDelta.parse_iso(\"-P3m\")
 DateDelta(-P3m)
 
@@ -551,7 +554,7 @@ The inverse of the ``format_rfc2822()`` method.
 Example
 -------
 >>> Instant.parse_rfc2822(\"Sat, 15 Aug 2020 23:12:00 GMT\")
-Instant(2020-08-15 23:12:00Z)
+Instant(\"2020-08-15 23:12:00Z\")
 
 >>> # also valid:
 >>> Instant.parse_rfc2822(\"Sat, 15 Aug 2020 23:12:00 +0000\")
@@ -575,9 +578,9 @@ Various rounding modes are available.
 Examples
 --------
 >>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round(\"minute\", 15)
-Instant(2020-01-01 12:45:00Z)
+Instant(\"2020-01-01 12:45:00Z\")
 >>> Instant.from_utc(2020, 1, 1, 8, 9, 13).round(\"second\", 5, mode=\"floor\")
-Instant(2020-01-01 08:09:10Z)
+Instant(\"2020-01-01 08:09:10Z\")
 ";
 pub(crate) const INSTANT_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0)
@@ -609,7 +612,7 @@ Create a date from this month-day with a given day
 Example
 -------
 >>> MonthDay(8, 1).in_year(2025)
-Date(2025-08-01)
+Date(\"2025-08-01\")
 
 Note
 ----
@@ -634,7 +637,7 @@ Inverse of :meth:`format_iso`
 Example
 -------
 >>> MonthDay.parse_iso(\"--11-23\")
-MonthDay(--11-23)
+MonthDay(\"--11-23\")
 ";
 pub(crate) const MONTHDAY_REPLACE: &CStr = c"\
 replace($self, /, *, month=None, day=None)
@@ -646,7 +649,7 @@ Example
 -------
 >>> d = MonthDay(11, 23)
 >>> d.replace(month=3)
-MonthDay(--03-23)
+MonthDay(\"--03-23\")
 ";
 pub(crate) const OFFSETDATETIME_ADD: &CStr = c"\
 add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=False)
@@ -771,7 +774,7 @@ The inverse of the ``format_iso()`` method.
 Example
 -------
 >>> OffsetDateTime.parse_iso(\"2020-08-15T23:12:00+02:00\")
-OffsetDateTime(2020-08-15 23:12:00+02:00)
+OffsetDateTime(\"2020-08-15 23:12:00+02:00\")
 ";
 pub(crate) const OFFSETDATETIME_PARSE_RFC2822: &CStr = c"\
 Parse an offset datetime in RFC 2822 format.
@@ -781,7 +784,7 @@ The inverse of the ``format_rfc2822()`` method.
 Example
 -------
 >>> OffsetDateTime.parse_rfc2822(\"Sat, 15 Aug 2020 23:12:00 +0200\")
-OffsetDateTime(2020-08-15 23:12:00+02:00)
+OffsetDateTime(\"2020-08-15 23:12:00+02:00\")
 >>> # also valid:
 >>> OffsetDateTime.parse_rfc2822(\"Sat, 15 Aug 2020 23:12:00 UT\")
 >>> OffsetDateTime.parse_rfc2822(\"Sat, 15 Aug 2020 23:12:00 GMT\")
@@ -803,7 +806,7 @@ Parse a datetime with offset using the standard library ``strptime()`` method.
 Example
 -------
 >>> OffsetDateTime.parse_strptime(\"2020-08-15+0200\", format=\"%Y-%m-%d%z\")
-OffsetDateTime(2020-08-15 00:00:00+02:00)
+OffsetDateTime(\"2020-08-15 00:00:00+02:00\")
 
 Note
 ----
@@ -859,9 +862,9 @@ Examples
 --------
 >>> d = OffsetDateTime(2020, 8, 15, 23, 24, 18, offset=+4)
 >>> d.round(\"day\")
-OffsetDateTime(2020-08-16 00:00:00[+04:00])
+OffsetDateTime(\"2020-08-16 00:00:00[+04:00]\")
 >>> d.round(\"minute\", increment=15, mode=\"floor\")
-OffsetDateTime(2020-08-15 23:15:00[+04:00])
+OffsetDateTime(\"2020-08-15 23:15:00[+04:00]\")
 
 Note
 ----
@@ -911,7 +914,7 @@ Assume the datetime has the given offset, creating an ``OffsetDateTime``.
 Example
 -------
 >>> PlainDateTime(2020, 8, 15, 23, 12).assume_fixed_offset(+2)
-OffsetDateTime(2020-08-15 23:12:00+02:00)
+OffsetDateTime(\"2020-08-15 23:12:00+02:00\")
 ";
 pub(crate) const PLAINDATETIME_ASSUME_SYSTEM_TZ: &CStr = c"\
 assume_system_tz($self, disambiguate='compatible')
@@ -933,7 +936,7 @@ Example
 >>> d = PlainDateTime(2020, 8, 15, 23, 12)
 >>> # assuming system timezone is America/New_York
 >>> d.assume_system_tz(disambiguate=\"raise\")
-ZonedDateTime(2020-08-15 23:12:00-04:00[America/New_York])
+ZonedDateTime(\"2020-08-15 23:12:00-04:00[America/New_York]\")
 ";
 pub(crate) const PLAINDATETIME_ASSUME_TZ: &CStr = c"\
 assume_tz($self, tz, /, disambiguate='compatible')
@@ -954,7 +957,7 @@ Example
 -------
 >>> d = PlainDateTime(2020, 8, 15, 23, 12)
 >>> d.assume_tz(\"Europe/Amsterdam\", disambiguate=\"raise\")
-ZonedDateTime(2020-08-15 23:12:00+02:00[Europe/Amsterdam])
+ZonedDateTime(\"2020-08-15 23:12:00+02:00[Europe/Amsterdam]\")
 ";
 pub(crate) const PLAINDATETIME_ASSUME_UTC: &CStr = c"\
 Assume the datetime is in UTC, creating an ``Instant``.
@@ -962,7 +965,7 @@ Assume the datetime is in UTC, creating an ``Instant``.
 Example
 -------
 >>> PlainDateTime(2020, 8, 15, 23, 12).assume_utc()
-Instant(2020-08-15 23:12:00Z)
+Instant(\"2020-08-15 23:12:00Z\")
 ";
 pub(crate) const PLAINDATETIME_DIFFERENCE: &CStr = c"\
 difference($self, other, /, *, ignore_dst=False)
@@ -998,7 +1001,7 @@ The inverse of the ``format_iso()`` method.
 Example
 -------
 >>> PlainDateTime.parse_iso(\"2020-08-15T23:12:00\")
-PlainDateTime(2020-08-15 23:12:00)
+PlainDateTime(\"2020-08-15 23:12:00\")
 ";
 pub(crate) const PLAINDATETIME_PARSE_STRPTIME: &CStr = c"\
 parse_strptime(s, /, *, format)
@@ -1009,7 +1012,7 @@ Parse a plain datetime using the standard library ``strptime()`` method.
 Example
 -------
 >>> PlainDateTime.parse_strptime(\"2020-08-15\", format=\"%d/%m/%Y_%H:%M\")
-PlainDateTime(2020-08-15 00:00:00)
+PlainDateTime(\"2020-08-15 00:00:00\")
 
 Note
 ----
@@ -1043,9 +1046,9 @@ Examples
 --------
 >>> d = PlainDateTime(2020, 8, 15, 23, 24, 18)
 >>> d.round(\"day\")
-PlainDateTime(2020-08-16 00:00:00)
+PlainDateTime(\"2020-08-16 00:00:00\")
 >>> d.round(\"minute\", increment=15, mode=\"floor\")
-PlainDateTime(2020-08-15 23:15:00)
+PlainDateTime(\"2020-08-15 23:15:00\")
 
 Note
 ----
@@ -1101,7 +1104,7 @@ Example
 -------
 >>> t = Time(12, 30)
 >>> t.on(Date(2021, 1, 2))
-PlainDateTime(2021-01-02 12:30:00)
+PlainDateTime(\"2021-01-02 12:30:00\")
 
 Then, use methods like :meth:`~PlainDateTime.assume_utc`
 or :meth:`~PlainDateTime.assume_tz`
@@ -1166,7 +1169,7 @@ Inverse of :meth:`py_timedelta`
 Example
 -------
 >>> TimeDelta.from_py_timedelta(timedelta(seconds=5400))
-TimeDelta(PT1h30m)
+TimeDelta(\"PT1h30m\")
 ";
 pub(crate) const TIMEDELTA_IN_DAYS_OF_24H: &CStr = c"\
 The total size in days (of exactly 24 hours each)
@@ -1243,7 +1246,7 @@ Inverse of :meth:`format_iso`
 Example
 -------
 >>> TimeDelta.parse_iso(\"PT1H80M\")
-TimeDelta(PT2h20m)
+TimeDelta(\"PT2h20m\")
 
 Note
 ----
@@ -1276,11 +1279,11 @@ Various rounding modes are available.
 Examples
 --------
 >>> t = TimeDelta(seconds=12345)
-TimeDelta(PT3h25m45s)
+TimeDelta(\"PT3h25m45s\")
 >>> t.round(\"minute\")
-TimeDelta(PT3h26m)
+TimeDelta(\"PT3h26m\")
 >>> t.round(\"second\", increment=10, mode=\"floor\")
-TimeDelta(PT3h25m40s)
+TimeDelta(\"PT3h25m40s\")
 ";
 pub(crate) const YEARMONTH_FORMAT_ISO: &CStr = c"\
 Format as the ISO 8601 year-month format.
@@ -1298,7 +1301,7 @@ Create a date from this year-month with a given day
 Example
 -------
 >>> YearMonth(2021, 1).on_day(2)
-Date(2021-01-02)
+Date(\"2021-01-02\")
 ";
 pub(crate) const YEARMONTH_PARSE_ISO: &CStr = c"\
 Create from the ISO 8601 format ``YYYY-MM`` or ``YYYYMM``.
@@ -1308,7 +1311,7 @@ Inverse of :meth:`format_iso`
 Example
 -------
 >>> YearMonth.parse_iso(\"2021-01\")
-YearMonth(2021-01)
+YearMonth(\"2021-01\")
 ";
 pub(crate) const YEARMONTH_REPLACE: &CStr = c"\
 replace($self, /, *, year=None, month=None)
@@ -1320,7 +1323,7 @@ Example
 -------
 >>> d = YearMonth(2021, 12)
 >>> d.replace(month=3)
-YearMonth(2021-03)
+YearMonth(\"2021-03\")
 ";
 pub(crate) const ZONEDDATETIME_ADD: &CStr = c"\
 add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
@@ -1364,7 +1367,7 @@ and the ``basic`` parameter to use the basic ISO format instead of the extended 
 Example
 -------
 >>> ZonedDateTime(2020, 8, 15, hour=23, minute=12, tz=\"Europe/London\")
-ZonedDateTime(2020-08-15 23:12:00+01:00[Europe/London])
+ZonedDateTime(\"2020-08-15 23:12:00+01:00[Europe/London]\")
 
 Important
 ---------
@@ -1427,7 +1430,7 @@ The inverse of the ``format_iso()`` method.
 Example
 -------
 >>> ZonedDateTime.parse_iso(\"2020-08-15T23:12:00+01:00[Europe/London]\")
-ZonedDateTime(2020-08-15 23:12:00+01:00[Europe/London])
+ZonedDateTime(\"2020-08-15 23:12:00+01:00[Europe/London]\")
 
 Important
 ---------
@@ -1479,9 +1482,9 @@ Examples
 --------
 >>> d = ZonedDateTime(2020, 8, 15, 23, 24, 18, tz=\"Europe/Paris\")
 >>> d.round(\"day\")
-ZonedDateTime(2020-08-16 00:00:00+02:00[Europe/Paris])
+ZonedDateTime(\"2020-08-16 00:00:00+02:00[Europe/Paris]\")
 >>> d.round(\"minute\", increment=15, mode=\"floor\")
-ZonedDateTime(2020-08-15 23:15:00+02:00[Europe/Paris])
+ZonedDateTime(\"2020-08-15 23:15:00+02:00[Europe/Paris]\")
 
 Notes
 -----
@@ -1535,7 +1538,7 @@ Example
 
 >>> d = ZonedDateTime(2020, 8, 15, hour=23, tz=\"Europe/Amsterdam\")
 >>> d.to_instant()
-Instant(2020-08-15 21:00:00Z)
+Instant(\"2020-08-15 21:00:00Z\")
 ";
 pub(crate) const EXACTANDLOCALTIME_TO_PLAIN: &CStr = c"\
 Get the underlying date and time (without offset or timezone)
@@ -1621,7 +1624,7 @@ Example
 -------
 >>> d = Instant.from_utc(2021, 1, 2, 3, 4, 5)
 >>> d.date()
-Date(2021-01-02)
+Date(\"2021-01-02\")
 
 To perform the inverse, use :meth:`Date.at` and a method
 like :meth:`~PlainDateTime.assume_utc` ortestoffset
@@ -1635,7 +1638,7 @@ The time-of-day part of the datetime
 Example
 -------
 >>> d = ZonedDateTime(2021, 1, 2, 3, 4, 5, tz=\"Europe/Paris\")
-ZonedDateTime(2021-01-02T03:04:05+01:00[Europe/Paris])
+ZonedDateTime(\"2021-01-02T03:04:05+01:00[Europe/Paris]\")
 >>> d.time()
 Time(03:04:05)
 

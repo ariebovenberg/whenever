@@ -142,13 +142,18 @@ class TestInit:
 
     def test_invalid_kwargs(self):
         with pytest.raises(TypeError, match="foo"):
-            TimeDelta(foo=1)  # type: ignore[call-arg]
+            TimeDelta(foo=1)  # type: ignore[call-overload]
 
         with pytest.raises(TypeError):
-            TimeDelta(1)  # type: ignore[misc]
+            TimeDelta(1)  # type: ignore[call-overload]
 
         with pytest.raises(TypeError):
             TimeDelta(**{1: 43})  # type: ignore[misc]
+
+    def test_iso(self):
+        assert TimeDelta("PT1H2M3.000004S") == TimeDelta(
+            hours=1, minutes=2, seconds=3, microseconds=4
+        )
 
 
 class TestFactories:
@@ -312,10 +317,10 @@ def test_format_iso(d, expected):
 def test_repr():
     assert (
         repr(TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4))
-        == "TimeDelta(PT1h2m3.000004s)"
+        == 'TimeDelta("PT1h2m3.000004s")'
     )
-    assert repr(TimeDelta()) == "TimeDelta(PT0s)"
-    assert repr(TimeDelta(minutes=23, seconds=1)) == "TimeDelta(PT23m1s)"
+    assert repr(TimeDelta()) == 'TimeDelta("PT0s")'
+    assert repr(TimeDelta(minutes=23, seconds=1)) == 'TimeDelta("PT23m1s")'
 
 
 VALID_TDELTAS = [

@@ -1,10 +1,9 @@
-use crate::common::fmt::Suffix;
 use crate::{
     classes::{
         date::Date, date_delta::DateDelta, datetime_delta::set_units_from_kwargs, instant::Instant,
         offset_datetime::check_ignore_dst_kwarg, time::Time, zoned_datetime::ZonedDateTime,
     },
-    common::{ambiguity::*, fmt::format_iso as format_iso_common, parse::Scan, round, scalar::*},
+    common::{ambiguity::*, fmt, parse::Scan, round, scalar::*},
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -140,6 +139,9 @@ impl std::fmt::Display for DateTime {
 }
 
 fn __new__(cls: HeapType<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+    if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
+        return parse_iso(cls, args.iter().next().unwrap());
+    }
     let mut year: c_long = 0;
     let mut month: c_long = 0;
     let mut day: c_long = 0;
@@ -170,7 +172,13 @@ fn __new__(cls: HeapType<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> Py
 
 fn __repr__(_: PyType, slf: DateTime) -> PyReturn {
     let DateTime { date, time } = slf;
-    format!("PlainDateTime({date} {time})").to_py()
+    PyAsciiStrBuilder::format((
+        b"PlainDateTime(\"",
+        date.format_iso(false),
+        b' ',
+        time.format_iso(fmt::Unit::Auto, false),
+        b"\")",
+    ))
 }
 
 fn __str__(_: PyType, slf: DateTime) -> PyReturn {
@@ -183,13 +191,13 @@ fn format_iso(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    format_iso_common(
+    fmt::format_iso(
         slf.date,
         slf.time,
         cls.state(),
         args,
         kwargs,
-        Suffix::Absent,
+        fmt::Suffix::Absent,
     )
 }
 
@@ -654,7 +662,9 @@ fn is_datetime_sep(c: u8) -> bool {
 fn parse_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
     DateTime::parse(
         arg.cast::<PyStr>()
-            .ok_or_type_err("Expected a string")?
+            // NOTE: this exception message also needs to make sense when
+            // called through the constructor
+            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
             .as_utf8()?,
     )
     .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?

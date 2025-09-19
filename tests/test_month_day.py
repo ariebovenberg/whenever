@@ -33,13 +33,16 @@ class TestInit:
 
     def test_invalid(self):
         with pytest.raises(TypeError):
-            MonthDay(2)  # type: ignore[call-arg]
+            MonthDay(2)  # type: ignore[call-overload]
 
         with pytest.raises(TypeError):
-            MonthDay("20", "SEP")  # type: ignore[arg-type]
+            MonthDay("20", "SEP")  # type: ignore[call-overload]
 
         with pytest.raises(TypeError):
-            MonthDay()  # type: ignore[call-arg]
+            MonthDay()  # type: ignore[call-overload]
+
+    def test_iso(self):
+        assert MonthDay("--12-25") == MonthDay(12, 25)
 
 
 def test_properties():
@@ -120,8 +123,8 @@ def test_str():
 
 
 def test_repr():
-    assert repr(MonthDay(11, 12)) == "MonthDay(--11-12)"
-    assert repr(MonthDay(2, 1)) == "MonthDay(--02-01)"
+    assert repr(MonthDay(11, 12)) == 'MonthDay("--11-12")'
+    assert repr(MonthDay(2, 1)) == 'MonthDay("--02-01")'
 
 
 class TestParseIso:

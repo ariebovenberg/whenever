@@ -42,7 +42,7 @@ It's great for storing when something happened (or will happen)
 regardless of location.
 
 >>> livestream_starts = Instant.from_utc(2022, 10, 24, hour=17)
-Instant(2022-10-24 17:00:00Z)
+Instant("2022-10-24 17:00:00Z")
 >>> Instant.now() > livestream_starts
 True
 >>> livestream_starts.add(hours=3).timestamp()
@@ -75,7 +75,7 @@ local time will be in 3 hours:
 perhaps the clock will be moved forward or back due to Daylight Saving Time.
 
 >>> bus_departs = PlainDateTime(2020, 3, 14, hour=15)
-PlainDateTime(2020-03-14 15:00:00)
+PlainDateTime("2020-03-14 15:00:00")
 # NOT possible:
 >>> Instant.now() > bus_departs                 # comparison with exact time
 >>> bus_departs.add(hours=3)                    # adding exact time units
@@ -95,10 +95,10 @@ This is a combination of an exact *and* a local time at a specific location,
 with rules about Daylight Saving Time and other timezone changes.
 
 >>> bedtime = ZonedDateTime(2024, 3, 9, 22, tz="America/New_York")
-ZonedDateTime(2024-03-09 22:00:00-05:00[America/New_York])
+ZonedDateTime("2024-03-09 22:00:00-05:00[America/New_York]")
 # accounts for the DST transition overnight:
 >>> bedtime.add(hours=8)
-ZonedDateTime(2024-03-10 07:00:00-04:00[America/New_York])
+ZonedDateTime("2024-03-10 07:00:00-04:00[America/New_York]")
 
 A timezone defines a UTC offset for each point on the timeline.
 As a result, any :class:`~whenever.Instant` can
@@ -110,10 +110,10 @@ occuring twice or not at all.
 
 >>> # Instant->Zoned is always straightforward
 >>> livestream_starts.to_tz("America/New_York")
-ZonedDateTime(2022-10-24 13:00:00-04:00[America/New_York])
+ZonedDateTime("2022-10-24 13:00:00-04:00[America/New_York]")
 >>> # Local->Zoned may be ambiguous
 >>> bus_departs.assume_tz("America/New_York")
-ZonedDateTime(2020-03-14 15:00:00-04:00[America/New_York])
+ZonedDateTime("2020-03-14 15:00:00-04:00[America/New_York]")
 
 .. seealso::
 
@@ -296,13 +296,13 @@ This means the results will always compare equal to the original datetime.
 
 >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
 >>> d.to_instant()  # The underlying moment in time
-Instant(2023-12-28 10:30:00Z)
+Instant("2023-12-28 10:30:00Z")
 >>> d.to_fixed_offset(5)  # same moment with a +5:00 offset
-OffsetDateTime(2023-12-28 15:30:00+05:00)
+OffsetDateTime("2023-12-28 15:30:00+05:00")
 >>> d.to_tz("America/New_York")  # same moment in New York
-ZonedDateTime(2023-12-28 05:30:00-05:00[America/New_York])
+ZonedDateTime("2023-12-28 05:30:00-05:00[America/New_York]")
 >>> d.to_system_tz()  # same moment in the system timezone (e.g. Europe/Paris)
-ZonedDateTime(2023-12-28 11:30:00+01:00[Europe/Paris])
+ZonedDateTime("2023-12-28 11:30:00+01:00[Europe/Paris]")
 >>> d.to_fixed_offset(4) == d
 True  # always the same moment in time
 
@@ -316,7 +316,7 @@ or offset information.
 
 >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
 >>> n = d.to_plain()
-PlainDateTime(2023-12-28 11:30:00)
+PlainDateTime("2023-12-28 11:30:00")
 
 You can convert from plain datetimes with the :meth:`~whenever.PlainDateTime.assume_utc`,
 :meth:`~whenever.PlainDateTime.assume_fixed_offset`, and
@@ -325,9 +325,9 @@ You can convert from plain datetimes with the :meth:`~whenever.PlainDateTime.ass
 
 >>> n = PlainDateTime(2023, 12, 28, 11, 30)
 >>> n.assume_utc()
-Instant(2023-12-28 11:30:00Z)
+Instant("2023-12-28 11:30:00Z")
 >>> n.assume_tz("Europe/Amsterdam")
-ZonedDateTime(2023-12-28 11:30:00+01:00[Europe/Amsterdam])
+ZonedDateTime("2023-12-28 11:30:00+01:00[Europe/Amsterdam]")
 
 .. note::
 
@@ -402,7 +402,7 @@ using the ``disambiguate`` argument:
 
     >>> # Not ambiguous: everything is fine
     >>> ZonedDateTime(2023, 1, 1, tz=paris)
-    ZonedDateTime(2023-01-01 00:00:00+01:00[Europe/Paris])
+    ZonedDateTime("2023-01-01 00:00:00+01:00[Europe/Paris]")
 
     >>> # 1:30am occurs twice. Use 'raise' to reject ambiguous times.
     >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="raise")
@@ -422,7 +422,7 @@ using the ``disambiguate`` argument:
 
     >>> # Default behavior is compatible with other libraries and standards
     >>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris)
-    ZonedDateTime(2023-03-26 03:30:00+02:00[Europe/Paris])
+    ZonedDateTime("2023-03-26 03:30:00+02:00[Europe/Paris]")
 
 .. _arithmetic:
 
@@ -457,7 +457,7 @@ You can add or subtract various units of time from a datetime instance.
 
 >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
 >>> d.add(hours=5, minutes=30)
-ZonedDateTime(2023-12-28 17:00:00+01:00[Europe/Amsterdam])
+ZonedDateTime("2023-12-28 17:00:00+01:00[Europe/Amsterdam]")
 
 The behavior arithmetic behavior is different for three categories of units:
 
@@ -469,7 +469,7 @@ The behavior arithmetic behavior is different for three categories of units:
 
       >>> d = PlainDateTime(2023, 8, 31, hour=12)
       >>> d.add(months=1)
-      PlainDateTime(2023-09-30 12:00:00)
+      PlainDateTime("2023-09-30 12:00:00")
 
    .. note::
 
@@ -502,9 +502,9 @@ The behavior arithmetic behavior is different for three categories of units:
       >>> # on the eve of a DST transition
       >>> d = ZonedDateTime(2023, 3, 25, hour=12, tz="Europe/Amsterdam")
       >>> d.add(days=1)  # a day later, still 12 o'clock
-      ZonedDateTime(2023-03-26 12:00:00+02:00[Europe/Amsterdam])
+      ZonedDateTime("2023-03-26 12:00:00+02:00[Europe/Amsterdam]")
       >>> d.add(hours=24)  # 24 hours later (we skipped an hour overnight!)
-      ZonedDateTime(2023-03-26 13:00:00+02:00[Europe/Amsterdam])
+      ZonedDateTime("2023-03-26 13:00:00+02:00[Europe/Amsterdam]")
 
    .. note::
 
@@ -520,7 +520,7 @@ The behavior arithmetic behavior is different for three categories of units:
 
       >>> d = ZonedDateTime(2023, 3, 25, hour=12, tz="Europe/Amsterdam")
       >>> d.add(hours=24)  # we skipped an hour overnight!
-      ZonedDateTime(2023-03-26 13:00:00+02:00[Europe/Amsterdam])
+      ZonedDateTime("2023-03-26 13:00:00+02:00[Europe/Amsterdam]")
 
 .. seealso::
 
@@ -554,9 +554,9 @@ to the correct usage.
     ...
   ImplicitlyIgnoringDST: Adjusting a fixed offset datetime implicitly ignores DST [...]
   >>> d.to_tz("America/Denver").add(hours=24)
-  ZonedDateTime(2024-03-10 14:00:00-06:00[America/Denver])
+  ZonedDateTime("2024-03-10 14:00:00-06:00[America/Denver]")
   >>> d.add(hours=24, ignore_dst=True)  # NOT recommended
-  OffsetDateTime(2024-03-10 13:00:00-07:00)
+  OffsetDateTime("2024-03-10 13:00:00-07:00")
 
   .. attention::
 
@@ -570,9 +570,9 @@ to the correct usage.
   if the resulting datetime is in the middle of a DST transition:
 
   >>> d = ZonedDateTime(2024, 10, 3, 1, 15, tz="America/Denver")
-  ZonedDateTime(2024-10-03 01:15:00-06:00[America/Denver])
+  ZonedDateTime("2024-10-03 01:15:00-06:00[America/Denver]")
   >>> d.add(months=1)
-  ZonedDateTime(2024-11-03 01:15:00-06:00[America/Denver])
+  ZonedDateTime("2024-11-03 01:15:00-06:00[America/Denver]")
   >>> d.add(months=1, disambiguate="raise")
   Traceback (most recent call last):
     ...
@@ -591,9 +591,9 @@ to the correct usage.
   whenever.ImplicitlyIgnoringDST: Adjusting a plain datetime by time units
   ignores DST and other timezone changes. [...]
   >>> d.assume_tz("Europe/Amsterdam").add(hours=2)
-  ZonedDateTime(2023-10-29 02:30:00+01:00[Europe/Amsterdam])
+  ZonedDateTime("2023-10-29 02:30:00+01:00[Europe/Amsterdam]")
   >>> d.add(hours=2, ignore_dst=True)  # NOT recommended
-  PlainDateTime(2024-10-03 03:30:00)
+  PlainDateTime("2024-10-03 03:30:00")
 
 .. attention::
 
@@ -643,11 +643,11 @@ The :class:`~whenever._LocalTime.round` method allows you to do this:
 .. code-block:: python
 
     >>> d = PlainDateTime(2023, 12, 28, 11, 32, 8)
-    PlainDateTime(2023-12-28 11:32:08)
+    PlainDateTime("2023-12-28 11:32:08")
     >>> d.round("hour")
-    PlainDateTime(2023-12-28 12:00:00)
+    PlainDateTime("2023-12-28 12:00:00")
     >>> d.round("minute", increment=15, mode="ceil")
-    PlainDateTime(2023-12-28 11:45:00)
+    PlainDateTime("2023-12-28 11:45:00")
 
 See the method documentation for more details on the available options.
 
@@ -720,7 +720,7 @@ Example usage:
 >>> d.format_iso()
 '2023-12-28T11:30:00+05:00'
 >>> OffsetDateTime.parse_iso('2021-07-13T09:45:00-09:00')
-OffsetDateTime(2021-07-13 09:45:00-09:00)
+OffsetDateTime("2021-07-13 09:45:00-09:00")
 
 .. note::
 
@@ -765,7 +765,7 @@ to this format, respectively:
 >>> d.format_rfc2822()
 'Thu, 28 Dec 2023 11:30:00 +0500'
 >>> OffsetDateTime.parse_rfc2822('Tue, 13 Jul 2021 09:45:00 -0900')
-OffsetDateTime(2021-07-13 09:45:00-09:00)
+OffsetDateTime("2021-07-13 09:45:00-09:00")
 
 Custom formats
 ~~~~~~~~~~~~~~
@@ -782,9 +782,9 @@ As the name suggests, these methods are thin wrappers around the standard librar
 The same `formatting rules <https://docs.python.org/3/library/datetime.html#format-codes>`_ apply.
 
 >>> OffsetDateTime.parse_strptime("2023-01-01+05:00", "%Y-%m-%d%z")
-OffsetDateTime(2023-01-01 00:00:00+05:00)
+OffsetDateTime("2023-01-01 00:00:00+05:00")
 >>> PlainDateTime.parse_strptime("2023-01-01 15:00", "%Y-%m-%d %H:%M")
-PlainDateTime(2023-01-01 15:00:00)
+PlainDateTime("2023-01-01 15:00:00")
 
 :class:`~whenever.ZonedDateTime` does not (yet)
 implement ``parse_strptime()`` methods, because they require disambiguation.
@@ -799,7 +799,7 @@ This makes it explicit what information is being assumed.
 
 >>> d = PlainDateTime.parse_strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S")
 >>> d.assume_tz("Europe/Amsterdam")
-ZonedDateTime(2023-10-29 02:30:00+02:00[Europe/Amsterdam])
+ZonedDateTime("2023-10-29 02:30:00+02:00[Europe/Amsterdam]")
 
 Pydantic integration
 ~~~~~~~~~~~~~~~~~~~~
@@ -843,7 +843,7 @@ Conversely, you can create instances from a standard library datetime with the
 
 >>> from datetime import datetime, UTC
 >>> Instant.from_py_datetime(datetime(2023, 1, 1, tzinfo=UTC))
-Instant(2023-01-01 00:00:00Z)
+Instant("2023-01-01 00:00:00Z")
 >>> ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam").py_datetime()
 datetime(2023, 1, 1, 0, 0, tzinfo=ZoneInfo('Europe/Amsterdam'))
 
@@ -864,25 +864,25 @@ representing times of day.
 
 >>> from whenever import Date, Time
 >>> Date(2023, 1, 1)
-Date(2023-01-01)
+Date("2023-01-01")
 >>> Time(12, 30)
 Time(12:30:00)
 
 These types can be converted to datetimes and vice versa:
 
 >>> Date(2023, 1, 1).at(Time(12, 30))
-PlainDateTime(2023-01-01 12:30:00)
+PlainDateTime("2023-01-01 12:30:00")
 >>> ZonedDateTime.now("Asia/Tokyo").date()
-Date(2023-07-13)
+Date("2023-07-13")
 
 Dates support arithmetic with months and years,
 with similar semantics to modern datetime libraries:
 
 >>> d = Date(2023, 1, 31)
 >>> d.add(months=1)
-Date(2023-02-28)
+Date("2023-02-28")
 >>> d - Date(2022, 10, 15)
-DateDelta(P3M16D)
+DateDelta("P3M16D")
 
 There's also :class:`~whenever.YearMonth` and :class:`~whenever.MonthDay` for representing
 year-month and month-day combinations, respectively.
@@ -974,9 +974,9 @@ or :meth:`~whenever._ExactTime.to_system_tz` methods:
 >>> from whenever import PlainDateTime, Instant
 >>> plain = PlainDateTime(2020, 8, 15, hour=8)
 >>> d = plain.assume_system_tz()
-ZonedDateTime(2020-08-15 08:00:00-04:00[America/New_York])
+ZonedDateTime("2020-08-15 08:00:00-04:00[America/New_York]")
 >>> Instant.now().to_system_tz()
-ZonedDateTime(2023-12-28 11:30:00-05:00[America/New_York])
+ZonedDateTime("2023-12-28 11:30:00-05:00[America/New_York]")
 
 When working with the timezone of the current system, there
 are a few things to keep in mind.
@@ -997,17 +997,17 @@ but new datetimes will use the updated system timezone.
 >>> # initialization where the system timezone is America/New_York
 >>> plain = PlainDateTime(2020, 8, 15, hour=8)
 >>> d = plain.assume_system_tz()
-ZonedDateTime(2020-08-15 08:00:00-04:00[America/New_York])
+ZonedDateTime("2020-08-15 08:00:00-04:00[America/New_York]")
 ...
 >>> # we change the system timezone to Amsterdam
 >>> os.environ["TZ"] = "Europe/Amsterdam"
 >>> whenever.reset_system_tz()
 ...
 >>> d  # existing objects remain unchanged
-ZonedDateTime(2020-08-15 08:00:00-04:00[America/New_York])
+ZonedDateTime("2020-08-15 08:00:00-04:00[America/New_York]")
 >>> # new objects will use the new system timezone
 >>> Instant.now().to_system_tz()
-ZonedDateTime(2025-08-15 15:03:28+01:00[Europe/Amsterdam])
+ZonedDateTime("2025-08-15 15:03:28+01:00[Europe/Amsterdam]")
 
 Non-IANA system timezones
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1027,10 +1027,10 @@ These type of timezone definitions can still account for Daylight Saving Time
 (DST) and other timezone changes:
 
 >>> d = plain.assume_system_tz()
-ZonedDateTime(2024-06-04 12:00:00+02:00[<system timezone without ID>])
+ZonedDateTime("2024-06-04 12:00:00+02:00[<system timezone without ID>]")
 >>> # Correct UTC offset after adding 5 months
 >>> d.add(months=5)
-ZonedDateTime(2024-11-04 12:00:00+01:00[<system timezone without ID>])
+ZonedDateTime("2024-11-04 12:00:00+01:00[<system timezone without ID>]")
 
 However there are some limitations of such instances of :class:`~whenever.ZonedDateTime`:
 

@@ -56,7 +56,7 @@ class TestInit:
 
     def test_offset_missing(self):
         with pytest.raises(TypeError, match="required.*offset"):
-            OffsetDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)  # type: ignore[call-arg]
+            OffsetDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)  # type: ignore[call-overload]
 
     def test_invalid_offset_int(self):
         with pytest.raises(ValueError, match="offset.*24.*hours"):
@@ -109,6 +109,11 @@ class TestInit:
     def test_bounds(self):
         with pytest.raises(ValueError, match="range"):
             OffsetDateTime(1, 1, 1, 0, offset=1)
+
+    def test_iso_format(self):
+        assert OffsetDateTime("2020-08-15T12:30:00+05:00").exact_eq(
+            OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
+        )
 
 
 def test_immutable():
@@ -641,10 +646,10 @@ def test_repr():
         nanosecond=1_987_654,
         offset=hours(5) + minutes(22),
     )
-    assert repr(d) == "OffsetDateTime(2020-08-15 23:12:09.001987654+05:22)"
+    assert repr(d) == 'OffsetDateTime("2020-08-15 23:12:09.001987654+05:22")'
     assert (
         repr(OffsetDateTime(2020, 8, 15, 23, 12, offset=0))
-        == "OffsetDateTime(2020-08-15 23:12:00+00:00)"
+        == 'OffsetDateTime("2020-08-15 23:12:00+00:00")'
     )
 
 

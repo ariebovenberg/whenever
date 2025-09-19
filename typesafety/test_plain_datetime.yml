@@ -1,9 +1,3 @@
-- case: ymd_arguments
-  regex: true
-  main: |
-    from whenever import PlainDateTime
-    d = PlainDateTime(2020, 8, 9)
-    d = PlainDateTime(2020, 8, '15')  # E: .*incompatible type "str".* "int"
 - case: strict_equality
   regex: true
   main: |

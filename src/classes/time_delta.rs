@@ -257,10 +257,12 @@ fn __new__(cls: HeapType<TimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> P
     } = cls.state();
 
     match (args.len(), nkwargs) {
+        (1, 0) => parse_iso(cls, args.iter().next().unwrap()),
         (0, 0) => TimeDelta {
             secs: DeltaSeconds::ZERO,
             subsec: SubSecNanos::MIN,
-        }, // FUTURE: return the singleton?
+        }
+        .to_obj(cls), // FUTURE: return the singleton?
         (0, _) => {
             handle_kwargs(
                 "TimeDelta",
@@ -295,11 +297,12 @@ fn __new__(cls: HeapType<TimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> P
                     Ok(true)
                 },
             )?;
-            TimeDelta::from_nanos(nanos).ok_or_value_err("TimeDelta out of range")?
+            TimeDelta::from_nanos(nanos)
+                .ok_or_value_err("TimeDelta out of range")?
+                .to_obj(cls)
         }
         _ => raise_type_err("TimeDelta() takes no positional arguments")?,
     }
-    .to_obj(cls)
 }
 
 pub(crate) fn hours(state: &State, arg: PyObj) -> PyReturn {
@@ -393,7 +396,7 @@ extern "C" fn __bool__(slf: PyObj) -> c_int {
 }
 
 fn __repr__(_: PyType, slf: TimeDelta) -> PyReturn {
-    format!("TimeDelta({slf})").to_py()
+    format!("TimeDelta(\"{slf}\")").to_py()
 }
 
 fn __str__(cls: PyType, slf: TimeDelta) -> PyReturn {
@@ -893,7 +896,9 @@ pub(crate) fn parse_all_components(s: &mut &[u8]) -> Option<(i128, bool)> {
 fn parse_iso(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
     let py_str = arg
         .cast::<PyStr>()
-        .ok_or_type_err("argument must be a string")?;
+        // NOTE: this exception message also needs to make sense when
+        // called through the constructor
+        .ok_or_type_err("When parsing from ISO format, the argument must be str")?;
     let s = &mut py_str.as_utf8()?;
     let err = || format!("Invalid format: {arg}");
 

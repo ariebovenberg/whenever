@@ -38,9 +38,13 @@ from .test_offset_datetime import (
 BIG_INT = 1 << 64 + 1  # a big int that may cause an overflow error
 
 
-def test_no_init():
-    with pytest.raises(TypeError, match="cannot"):
-        Instant()
+def test_init_is_parse_iso():
+    assert Instant("2020-08-15T12:30:45Z") == Instant.from_utc(
+        2020, 8, 15, 12, 30, 45
+    )
+
+    with pytest.raises(TypeError):
+        Instant(2020, 3, 4)  # type: ignore[call-arg,arg-type]
 
 
 class TestFromUTC:
@@ -335,10 +339,10 @@ class TestFromTimestamp:
 
 def test_repr():
     d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-    assert repr(d) == "Instant(2020-08-15 23:12:09.000987654Z)"
+    assert repr(d) == 'Instant("2020-08-15 23:12:09.000987654Z")'
     assert (
         repr(Instant.from_utc(2020, 8, 15, 23, 12))
-        == "Instant(2020-08-15 23:12:00Z)"
+        == 'Instant("2020-08-15 23:12:00Z")'
     )
 
 
