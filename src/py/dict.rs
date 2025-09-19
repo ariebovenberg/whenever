@@ -30,6 +30,8 @@ impl PyStaticType for PyDict {
     fn isinstance(obj: impl PyBase) -> bool {
         unsafe { PyDict_Check(obj.as_ptr()) != 0 }
     }
+
+    const NAME: &'static str = "dict";
 }
 
 impl PyDict {

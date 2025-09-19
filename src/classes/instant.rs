@@ -232,6 +232,41 @@ fn from_utc(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> Py
         second,
         nanosecond
     );
+    // let &State {
+    //     str_year,
+    //     str_month,
+    //     str_day,
+    //     str_hour,
+    //     str_minute,
+    //     str_second,
+    //     str_nanosecond,
+    //     ..
+    // } = cls.state();
+    // let BoundArgs {
+    //     pos_or_kw: [year, month, day, hour, minute, second],
+    //     kw_only: [nanosecond],
+    //     ..
+    // } = Signature::new("Date", [str_year, str_month, str_day, str_hour, str_minute, str_second],
+    //     [str_nanosecond])
+    //     .bind(args.iter(), kwargs.as_ref().map(PyDict::iteritems))?;
+
+    // Date::from_longs(
+    //     year.ok_or_type_err("missing required argument 'year'")?
+    //         .cast::<PyInt>()
+    //         .ok_or_type_err("year must be an integer")?
+    //         .to_long()?,
+    //     month
+    //         .ok_or_type_err("missing required argument 'month'")?
+    //         .cast::<PyInt>()
+    //         .ok_or_type_err("month must be an integer")?
+    //         .to_long()?,
+    //     day.ok_or_type_err("missing required argument 'day'")?
+    //         .cast::<PyInt>()
+    //         .ok_or_type_err("day must be an integer")?
+    //         .to_long()?,
+    // )
+    // .ok_or_value_err("Invalid date components")?
+    // .to_obj(cls)
 
     Instant::from_datetime(
         Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?,

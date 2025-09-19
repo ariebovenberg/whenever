@@ -32,6 +32,8 @@ impl PyStaticType for PyModule {
     fn isinstance(obj: impl PyBase) -> bool {
         unsafe { PyModule_Check(obj.as_ptr()) != 0 }
     }
+
+    const NAME: &'static str = "ModuleType";
 }
 
 impl PyModule {

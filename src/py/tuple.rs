@@ -29,6 +29,8 @@ impl PyStaticType for PyTuple {
     fn isinstance(obj: impl PyBase) -> bool {
         unsafe { PyTuple_Check(obj.as_ptr()) != 0 }
     }
+
+    const NAME: &'static str = "tuple";
 }
 
 impl PyTuple {

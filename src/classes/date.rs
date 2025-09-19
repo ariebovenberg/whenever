@@ -279,56 +279,29 @@ impl Display for Date {
 }
 
 fn __new__(cls: HeapType<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
-    if args.len() > 3 {
-        raise_type_err(format!(
-            "Date() takes at most 3 arguments, got {}",
-            args.len() + kwargs.map_or(0, |x| x.len())
-        ))?
+    if args.len() == 1 && kwargs.map_or(0, |x| x.len()) == 0 {
+        // Single argument, try ISO parse
+        return parse_iso(cls, args.iter().next().unwrap());
     }
-    let mut arg_obj: [Option<PyObj>; 3] = [None, None, None];
-    for (i, arg) in args.iter().enumerate() {
-        arg_obj[i] = Some(arg);
-    }
-    if let Some(kwarg_dict) = kwargs {
-        let &State {
-            str_year,
-            str_month,
-            str_day,
-            ..
-        } = cls.state();
-        handle_kwargs("Date", kwarg_dict.iteritems(), |key, value, eq| {
-            for (i, &kwname) in [str_year, str_month, str_day].iter().enumerate() {
-                if eq(key, kwname) {
-                    if arg_obj[i].replace(value).is_some() {
-                        raise_type_err(format!(
-                            "Date() got multiple values for argument {kwname}"
-                        ))?;
-                    }
-                    return Ok(true);
-                }
-            }
-            Ok(false)
-        })?;
-    };
-    Date::from_longs(
-        arg_obj[0]
-            .ok_or_type_err("function missing required argument 'year'")?
-            .cast::<PyInt>()
-            .ok_or_type_err("year must be an integer")?
-            .to_long()?,
-        arg_obj[1]
-            .ok_or_type_err("function missing required argument 'month'")?
-            .cast::<PyInt>()
-            .ok_or_type_err("month must be an integer")?
-            .to_long()?,
-        arg_obj[2]
-            .ok_or_type_err("function missing required argument 'day'")?
-            .cast::<PyInt>()
-            .ok_or_type_err("day must be an integer")?
-            .to_long()?,
-    )
-    .ok_or_value_err("Invalid date components")?
-    .to_obj(cls)
+
+    let &State {
+        str_year,
+        str_month,
+        str_day,
+        ..
+    } = cls.state();
+    let (year, month, day): (PyInt, PyInt, PyInt) = bind_simple(
+        "Date",
+        [str_year, str_month, str_day],
+        args.iter(),
+        kwargs.as_ref().map(PyDict::iteritems),
+    )?
+    .all_required()?
+    .extract_types()?;
+
+    Date::from_longs(year.to_long()?, month.to_long()?, day.to_long()?)
+        .ok_or_value_err("Invalid date components")?
+        .to_obj(cls)
 }
 
 fn __richcmp__(cls: HeapType<Date>, a: Date, b_obj: PyObj, op: c_int) -> PyReturn {

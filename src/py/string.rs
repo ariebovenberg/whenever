@@ -54,6 +54,8 @@ impl PyStaticType for PyStr {
     fn isinstance(obj: impl PyBase) -> bool {
         unsafe { PyUnicode_Check(obj.as_ptr()) != 0 }
     }
+
+    const NAME: &'static str = "str";
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +85,8 @@ impl PyStaticType for PyBytes {
     fn isinstance(obj: impl PyBase) -> bool {
         unsafe { PyBytes_Check(obj.as_ptr()) != 0 }
     }
+
+    const NAME: &'static str = "bytes";
 }
 
 impl PyBytes {

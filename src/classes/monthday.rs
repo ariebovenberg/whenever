@@ -83,6 +83,20 @@ fn __new__(cls: HeapType<MonthDay>, args: PyTuple, kwargs: Option<PyDict>) -> Py
     let mut month: c_long = 0;
     let mut day: c_long = 0;
     parse_args_kwargs!(args, kwargs, c"ll:MonthDay", month, day);
+
+    // let &State {
+    //     str_month, str_day, ..
+    // } = cls.state();
+    // let (month, day): (PyInt, PyInt) = bind_simple(
+    //     "MonthDay",
+    //     [str_month, str_day],
+    //     args.iter(),
+    //     kwargs.as_ref().map(PyDict::iteritems),
+    // )?
+    // .all_required()?
+    // .extract_types()?;
+
+    // MonthDay::from_longs(month.to_long()?, day.to_long()?)
     MonthDay::from_longs(month, day)
         .ok_or_value_err("Invalid month/day component value")?
         .to_obj(cls)

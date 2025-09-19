@@ -31,6 +31,8 @@ impl PyStaticType for PyInt {
     fn isinstance(obj: impl PyBase) -> bool {
         unsafe { PyLong_Check(obj.as_ptr()) != 0 }
     }
+
+    const NAME: &'static str = "int";
 }
 
 impl PyInt {
@@ -93,6 +95,8 @@ impl PyStaticType for PyFloat {
     fn isinstance(obj: impl PyBase) -> bool {
         unsafe { PyFloat_Check(obj.as_ptr()) != 0 }
     }
+
+    const NAME: &'static str = "float";
 }
 
 impl PyFloat {

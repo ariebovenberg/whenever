@@ -44,6 +44,8 @@ impl PyStaticType for PyDate {
     fn isinstance(obj: impl PyBase) -> bool {
         unsafe { PyDate_Check(obj.as_ptr()) != 0 }
     }
+
+    const NAME: &'static str = "datetime.date";
 }
 
 impl std::fmt::Display for PyDate {
@@ -142,6 +144,8 @@ impl PyStaticType for PyDateTime {
     fn isinstance(obj: impl PyBase) -> bool {
         unsafe { PyDateTime_Check(obj.as_ptr()) != 0 }
     }
+
+    const NAME: &'static str = "datetime.datetime";
 }
 
 impl std::fmt::Display for PyDateTime {
@@ -203,6 +207,8 @@ impl PyStaticType for PyTimeDelta {
     fn isinstance(obj: impl PyBase) -> bool {
         unsafe { PyDelta_Check(obj.as_ptr()) != 0 }
     }
+
+    const NAME: &'static str = "datetime.timedelta";
 }
 
 impl std::fmt::Display for PyTimeDelta {
@@ -256,6 +262,8 @@ impl PyStaticType for PyTime {
     fn isinstance(obj: impl PyBase) -> bool {
         unsafe { PyTime_Check(obj.as_ptr()) != 0 }
     }
+
+    const NAME: &'static str = "datetime.timedelta";
 }
 
 impl std::fmt::Display for PyTime {
