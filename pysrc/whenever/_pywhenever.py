@@ -46,6 +46,7 @@ from datetime import (
     timedelta as _timedelta,
     timezone as _timezone,
 )
+from functools import lru_cache
 from math import fmod
 from struct import pack, unpack
 from time import time_ns
@@ -6250,9 +6251,11 @@ def _clear_tz_cache_by_keys(keys: tuple[str, ...]) -> None:
         _tzcache_lru.pop(k, None)
 
 
-def _mk_fixed_tzinfo(offset: int) -> _timezone:
-    # cache these in the future
-    return _timezone(_timedelta(seconds=offset))
+# We cache fixed-offset tzinfo objects to avoid creating multiple identical ones.
+# It's very common to only have whole-hour offsets, so this helps a lot.
+@lru_cache
+def _mk_fixed_tzinfo(secs: int, /) -> _timezone:
+    return _timezone(_timedelta(seconds=secs))
 
 
 def _get_tz(key: str) -> TimeZone:
