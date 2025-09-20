@@ -49,6 +49,8 @@
 - Fixed a rare bug in determining the UTC offset for times far in the future
 - Fixed ``PlainDateTime`` constructor raising ``TypeError`` instead of
   ``ValueError`` when passed invalid parameters.
+- TZ IDs starting with a `./` are now properly rejected. Other path traversal
+  attempts were already handled correctly.
 
 ## 0.8.8 (2025-07-24)
 
