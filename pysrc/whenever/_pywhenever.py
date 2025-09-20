@@ -6283,7 +6283,7 @@ def _validate_key(key: str) -> _BenignKey:
         and "//" not in key
         and "/./" not in key
         # specic restrictions on the first and list characters
-        and key[0] not in "-+/"
+        and key[0] not in ".-+/"
         and key[-1] != "/"
     ):
         return _BenignKey(key)
