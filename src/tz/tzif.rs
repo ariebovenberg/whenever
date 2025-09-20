@@ -360,7 +360,7 @@ pub(crate) fn is_valid_key(key: &str) -> bool {
         && !key.contains("/./")
         // Extra restrictions for the first...
         && (
-            first != b'-' || first != b'+' || first != b'/'
+            first != b'-' && first != b'+' && first != b'/' && first != b'.'
         )
         // ... and last character
         && last != b'/'

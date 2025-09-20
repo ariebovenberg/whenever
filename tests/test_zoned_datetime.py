@@ -128,6 +128,7 @@ class TestInit:
             "../America/New_York/",  # relative path
             "America/New_York/..",  # other dots
             "America//New_York",  # double slash
+            "./America/New_York",  # start with dot
             "America/../America/New_York",  # not normalized
             "America/./America/New_York",  # not normalized
             "+VERSION",  # in tz path, but not a tzif file
