@@ -1,5 +1,9 @@
 # 🚀 Changelog
 
+## 0.8.9 (2025-09-21)
+
+- Fixed not all test files included in source distribution (#266)
+
 ## 0.8.8 (2025-07-24)
 
 - Add wheels for Python 3.14 now that its ABI is stable.
