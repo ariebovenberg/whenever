@@ -96,10 +96,14 @@ static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
         slot: Py_mod_exec,
         value: {
             extern "C" fn _wrap(arg: *mut PyObject) -> c_int {
-                match module_exec(unsafe { PyModule::from_ptr_unchecked(arg) }) {
-                    Ok(_) => 0,
-                    Err(_) => -1,
-                }
+                catch_panic!(
+                    match module_exec(unsafe { PyModule::from_ptr_unchecked(arg) }) {
+                        Ok(_) => 0,
+                        Err(_) => -1,
+                    },
+                    -1,
+                    "Rust panic in module exec: "
+                )
             }
             _wrap
         } as *mut c_void,

@@ -16,9 +16,10 @@
   by the improved `ZonedDateTime`.
 
 - All classes can now be directly instantiated from an ISO 8601 formatted string
-  passed as a sole argument. For example, `Date("2023-10-05")` can is equivalent to
-  `Date(2023, 10, 5)`. The ``repr()`` of all classes now includes quotes,
-  so that the output can be directly used as input and thus `eval(repr(obj)) == obj`.
+  passed as a sole argument. For example, `Date("2023-10-05")` is equivalent to
+  `Date(2023, 10, 5)` (which is still supported, of course).
+  The ``repr()`` of all classes now includes quotes, so that the output
+  can be directly used as input and thus `eval(repr(obj)) == obj`.
 
   **Rationale:** This makes the types a lot easier to use in interactive sessions
   and tests. It also makes `repr()` round-trippable, which is a common
@@ -51,6 +52,9 @@
   ``ValueError`` when passed invalid parameters.
 - TZ IDs starting with a `./` are now properly rejected. Other path traversal
   attempts were already handled correctly.
+- More robust timezone refcounting in the Rust extension, preventing crashes
+  in rare cases (#270)
+- Panics in Rust extension no longer crash the interpreter, raise `RuntimeError` instead
 
 ## 0.8.9 (2025-09-21)
 
