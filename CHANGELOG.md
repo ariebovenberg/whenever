@@ -3,6 +3,7 @@
 ## 0.8.9 (2025-09-21)
 
 - Fixed not all test files included in source distribution (#266)
+- Uploaded missing Python 3.14 wheels
 
 ## 0.8.8 (2025-07-24)
 
