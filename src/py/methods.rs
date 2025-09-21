@@ -8,10 +8,10 @@ macro_rules! method0(
                     use crate::py::*;
                     unsafe extern "C" fn _wrap(slf_ptr: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
                         let slf = unsafe { PyObj::from_ptr_unchecked(slf_ptr) };
-                        $meth(
+                        catch_panic!($meth(
                             unsafe {slf.type_().link_type::<$typ>().into()},
                             unsafe {slf.into_unchecked() }
-                        ).to_py_owned_ptr()
+                        ).to_py_owned_ptr())
                     }
                     _wrap
                 },
@@ -32,11 +32,11 @@ macro_rules! method1(
                     unsafe extern "C" fn _wrap(slf_ptr: *mut PyObject, arg_obj: *mut PyObject) -> *mut PyObject {
                         let slf = unsafe {PyObj::from_ptr_unchecked(slf_ptr)};
                         let arg = unsafe {PyObj::from_ptr_unchecked(arg_obj)};
-                        $meth(
+                        catch_panic!($meth(
                             unsafe {slf.type_().link_type::<$typ>().into()},
                             unsafe {slf.into_unchecked()},
                             unsafe {arg.into_unchecked()},
-                        ).to_py_owned_ptr()
+                        ).to_py_owned_ptr())
                     }
                     _wrap
                 },
@@ -58,7 +58,7 @@ macro_rules! modmethod1(
                         // SAFETY: valid pointers are passed to this function
                         let mod_obj = unsafe{ PyModule::from_ptr_unchecked(mod_ptr) };
                         let arg = unsafe {PyObj::from_ptr_unchecked(arg_obj)};
-                        $meth(
+                        catch_panic!($meth(
                             // SAFETY: module state is initialized before this function is called
                             unsafe { mod_obj
                                 .state()
@@ -67,7 +67,7 @@ macro_rules! modmethod1(
                                 .unwrap()
                             },
                             arg
-                        ).to_py_owned_ptr()
+                        ).to_py_owned_ptr())
                     }
                     _wrap
                 },
@@ -88,7 +88,7 @@ macro_rules! modmethod0(
                     unsafe extern "C" fn _wrap(mod_ptr: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
                         // SAFETY: valid pointers are passed to this function
                         let mod_obj = unsafe{ PyModule::from_ptr_unchecked(mod_ptr) };
-                        $meth(
+                        catch_panic!($meth(
                             // SAFETY: module state is initialized before this function is called
                             unsafe { mod_obj
                                 .state()
@@ -96,7 +96,7 @@ macro_rules! modmethod0(
                                 .as_mut()
                                 .unwrap()
                             },
-                        ).to_py_owned_ptr()
+                        ).to_py_owned_ptr())
                     }
                     _wrap
                 },
@@ -115,10 +115,10 @@ macro_rules! classmethod1(
                 PyCFunction: {
                     use crate::py::*;
                     unsafe extern "C" fn _wrap(cls: *mut PyObject, arg: *mut PyObject) -> *mut PyObject {
-                        $meth(
+                        catch_panic!($meth(
                             unsafe {PyType::from_ptr_unchecked(cls).link_type::<$typ>().into()},
                             unsafe {PyObj::from_ptr_unchecked(arg)},
-                        ).to_py_owned_ptr()
+                        ).to_py_owned_ptr())
                     }
                     _wrap
                 },
@@ -137,9 +137,9 @@ macro_rules! classmethod0(
                 PyCFunction: {
                     use crate::py::*;
                     unsafe extern "C" fn _wrap(cls: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
-                        $meth(
+                        catch_panic!($meth(
                             unsafe {PyType::from_ptr_unchecked(cls).link_type::<$typ>().into()},
-                        ).to_py_owned_ptr()
+                        ).to_py_owned_ptr())
                     }
                     _wrap
                 },
@@ -162,11 +162,11 @@ macro_rules! method_vararg(
                         nargs: Py_ssize_t,
                     ) -> *mut PyObject {
                         let slf = unsafe {PyObj::from_ptr_unchecked(slf_obj)};
-                        $meth(
+                        catch_panic!($meth(
                             unsafe {slf.type_().link_type::<$typ>().into()},
                             unsafe {slf.into_unchecked()},
                             unsafe {std::slice::from_raw_parts(args.cast::<PyObj>(), nargs as usize)},
-                        ).to_py_owned_ptr()
+                        ).to_py_owned_ptr())
                     }
                     _wrap
                 },
@@ -190,7 +190,7 @@ macro_rules! modmethod_vararg(
                     ) -> *mut PyObject {
                         // SAFETY: valid pointers are passed to this function
                         let mod_obj = unsafe{ PyModule::from_ptr_unchecked(mod_ptr) };
-                        $meth(
+                        catch_panic!($meth(
                             // SAFETY: module state is initialized before this function is called
                             unsafe { mod_obj
                                 .state()
@@ -200,7 +200,7 @@ macro_rules! modmethod_vararg(
                             },
                             unsafe {std::slice::from_raw_parts(args.cast::<PyObj>(), nargs as usize)},
                         )
-                        .to_py_owned_ptr()
+                        .to_py_owned_ptr())
                     }
                     _wrap
                 },
@@ -224,12 +224,12 @@ macro_rules! method_kwargs(
                         kwnames: *mut PyObject,
                     ) -> *mut PyObject {
                         let nargs = unsafe {PyVectorcall_NARGS(nargsf as usize)};
-                        $meth(
+                        catch_panic!($meth(
                             unsafe {PyType::from_ptr_unchecked(cls.cast()).link_type::<$typ>().into()},
                             unsafe {PyObj::from_ptr_unchecked(slf).into_unchecked()},
                             unsafe {std::slice::from_raw_parts(args_raw.cast::<PyObj>(), nargs as usize)},
                             &mut unsafe {IterKwargs::new(kwnames, args_raw.offset(nargs as isize))},
-                        ).to_py_owned_ptr()
+                        ).to_py_owned_ptr())
                     }
                     _wrap
                 },
@@ -254,11 +254,11 @@ macro_rules! classmethod_kwargs(
                         kwnames: *mut PyObject,
                     ) -> *mut PyObject {
                         let nargs = unsafe {PyVectorcall_NARGS(nargsf as usize)};
-                        $meth(
+                        catch_panic!($meth(
                             unsafe {PyType::from_ptr_unchecked(cls.cast()).link_type::<$typ>().into()},
                             unsafe {std::slice::from_raw_parts(args_raw.cast::<PyObj>(), nargs as usize)},
                             &mut unsafe {IterKwargs::new(kwnames, args_raw.offset(nargs as isize))},
-                        ).to_py_owned_ptr()
+                        ).to_py_owned_ptr())
                     }
                     _wrap
                 },
@@ -279,12 +279,15 @@ macro_rules! slotmethod {
                     args: *mut PyObject,
                     kwargs: *mut PyObject,
                 ) -> *mut PyObject {
-                    $name(
-                        unsafe { HeapType::<$typ>::from_ptr_unchecked(cls.cast()) },
-                        unsafe { PyTuple::from_ptr_unchecked(args) },
-                        (!kwargs.is_null()).then(|| unsafe { PyDict::from_ptr_unchecked(kwargs) }),
+                    catch_panic!(
+                        $name(
+                            unsafe { HeapType::<$typ>::from_ptr_unchecked(cls.cast()) },
+                            unsafe { PyTuple::from_ptr_unchecked(args) },
+                            (!kwargs.is_null())
+                                .then(|| unsafe { PyDict::from_ptr_unchecked(kwargs) }),
+                        )
+                        .to_py_owned_ptr()
                     )
-                    .to_py_owned_ptr()
                 }
                 _wrap as *mut c_void
             },
@@ -301,13 +304,15 @@ macro_rules! slotmethod {
                     op: c_int,
                 ) -> *mut PyObject {
                     let a = unsafe { PyObj::from_ptr_unchecked(a) };
-                    $name(
-                        unsafe { a.type_().link_type::<$typ>().into() },
-                        unsafe { a.into_unchecked() },
-                        unsafe { PyObj::from_ptr_unchecked(b) },
-                        op,
+                    catch_panic!(
+                        $name(
+                            unsafe { a.type_().link_type::<$typ>().into() },
+                            unsafe { a.into_unchecked() },
+                            unsafe { PyObj::from_ptr_unchecked(b) },
+                            op,
+                        )
+                        .to_py_owned_ptr()
                     )
-                    .to_py_owned_ptr()
                 }
                 _wrap as *mut c_void
             },
@@ -318,10 +323,12 @@ macro_rules! slotmethod {
             slot: $slot,
             pfunc: {
                 unsafe extern "C" fn _wrap(a: *mut PyObject, b: *mut PyObject) -> *mut PyObject {
-                    $name(unsafe { PyObj::from_ptr_unchecked(a) }, unsafe {
-                        PyObj::from_ptr_unchecked(b)
-                    })
-                    .to_py_owned_ptr()
+                    catch_panic!(
+                        $name(unsafe { PyObj::from_ptr_unchecked(a) }, unsafe {
+                            PyObj::from_ptr_unchecked(b)
+                        })
+                        .to_py_owned_ptr()
+                    )
                 }
                 _wrap as *mut c_void
             },
@@ -334,10 +341,12 @@ macro_rules! slotmethod {
             pfunc: {
                 unsafe extern "C" fn _wrap(slf: *mut PyObject) -> *mut PyObject {
                     let slf = unsafe { PyObj::from_ptr_unchecked(slf) };
-                    $name(unsafe { slf.type_().link_type::<$typ>().into() }, unsafe {
-                        slf.into_unchecked()
-                    })
-                    .to_py_owned_ptr()
+                    catch_panic!(
+                        $name(unsafe { slf.type_().link_type::<$typ>().into() }, unsafe {
+                            slf.into_unchecked()
+                        })
+                        .to_py_owned_ptr()
+                    )
                 }
                 _wrap as *mut c_void
             },
@@ -355,10 +364,10 @@ macro_rules! getter(
                     _: *mut c_void,
                 ) -> *mut PyObject {
                     let slf = unsafe {PyObj::from_ptr_unchecked(slf_obj)};
-                    $meth(
+                    catch_panic!($meth(
                         unsafe {slf.type_().link_type::<$typ>().into()},
                         unsafe {slf.into_unchecked()},
-                    ).to_py_owned_ptr()
+                    ).to_py_owned_ptr())
                 }
                 _wrap
             }),
@@ -369,8 +378,50 @@ macro_rules! getter(
     };
 );
 
+macro_rules! catch_panic {
+    ($e:expr) => {
+        catch_panic!($e, std::ptr::null_mut(), "Panic in Rust extension")
+    };
+    ($e:expr, $returns:expr, $context:literal) => {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| $e)) {
+            Ok(v) => v,
+            Err(payload) => {
+                let msg = if let Some(s) = payload.downcast_ref::<&str>() {
+                    *s
+                } else if let Some(s) = payload.downcast_ref::<String>() {
+                    s.as_str()
+                } else {
+                    "panic with non-string payload"
+                };
+                unsafe {
+                    pyo3_ffi::PyErr_SetString(
+                        PyExc_RuntimeError,
+                        std::ffi::CString::new(format!(
+                            concat!($context, ": {}. Please report an issue in the bug tracker."),
+                            msg
+                        ))
+                        // A cautious unwrap here to avoid double panic.
+                        // I don't expect this to ever fail--but then again
+                        // you can't anticipate every possible panic message.
+                        .unwrap_or(
+                            std::ffi::CString::new(concat!(
+                                $context,
+                                ". Please report an issue in the bug tracker."
+                            ))
+                            .unwrap(),
+                        )
+                        .as_ptr()
+                        .cast(),
+                    )
+                };
+                $returns
+            }
+        }
+    };
+}
+
 #[allow(unused_imports)]
 pub(crate) use {
-    classmethod_kwargs, classmethod0, classmethod1, getter, method_kwargs, method_vararg, method0,
-    method1, modmethod_vararg, modmethod0, modmethod1, slotmethod,
+    catch_panic, classmethod_kwargs, classmethod0, classmethod1, getter, method_kwargs,
+    method_vararg, method0, method1, modmethod_vararg, modmethod0, modmethod1, slotmethod,
 };

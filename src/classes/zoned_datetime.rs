@@ -1,10 +1,3 @@
-use core::{
-    ffi::{c_int, c_long, c_void},
-    ptr::null_mut as NULL,
-};
-use pyo3_ffi::*;
-use std::ptr::NonNull;
-
 use crate::{
     classes::{
         date::Date,
@@ -30,6 +23,12 @@ use crate::{
         tzif::TimeZone,
     },
 };
+use core::{
+    ffi::{c_int, c_long, c_void},
+    ptr::null_mut as NULL,
+};
+use pyo3_ffi::*;
+use std::ptr::NonNull;
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ZonedDateTime {
@@ -398,7 +397,19 @@ fn __new__(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
 extern "C" fn dealloc(arg: PyObj) {
     // SAFETY: the first arg to this function is the self type
     let (cls, slf) = unsafe { arg.assume_heaptype::<ZonedDateTime>() };
-    slf.tz.decref_with_cleanup(|| &cls.state().tz_store);
+    catch_panic!(
+        slf.tz.decref_with_cleanup(|| &cls.state().tz_store),
+        {
+            unsafe {
+                // NOTE: we can't pass our instance as a context, since
+                // its timezone pointer may be invalid at this point.
+                PyErr_WriteUnraisable(NULL());
+            }
+        },
+        "Panic in ZonedDateTime dealloc"
+    );
+    // As per recommendation, we free the memory regardless of whether
+    // the destructor panicked. Worst case: we leak memory of timezone data.
     generic_dealloc(arg)
 }
 
