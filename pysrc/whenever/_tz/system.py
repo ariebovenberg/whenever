@@ -14,21 +14,33 @@ LOCALTIME = "/etc/localtime"
 if SYSTEM in ("Linux", "Darwin"):  # pragma: no cover
 
     def _key_or_file() -> tuple[Literal[0, 1], str]:
-        if (tzif_path := os.path.realpath(LOCALTIME)) == LOCALTIME:
+        tzif_path = os.path.realpath(LOCALTIME)
+        if tzif_path == LOCALTIME:
             # If the file is not a symlink, we can't determine the tzid
             return (1, LOCALTIME)  # pragma: no cover
-        try:
-            tzid_start = tzif_path.rindex(ZONEINFO)
-        except ValueError:  # pragma: no cover
+
+        if (tzid := _tzid_from_path(tzif_path)) is None:
             # If the file is not in a zoneinfo directory, we can't determine the tzid
             return (1, tzif_path)
-        return (0, tzif_path[tzid_start + len(ZONEINFO) + 1 :])
+        else:
+            return (0, tzid)
 
 else:  # pragma: no cover
     import tzlocal
 
     def _key_or_file() -> tuple[Literal[0, 1], str]:
         return (0, tzlocal.get_localzone_name())
+
+
+def _tzid_from_path(path: str) -> str | None:
+    """Find the IANA timezone ID from a path to a zoneinfo file.
+    Returns None if the path is not in a zoneinfo directory.
+    """
+    # Find the path segment containing 'zoneinfo',
+    # e.g. `zoneinfo/` or `zoneinfo.default/`
+    if (index := path.find("/", path.rfind("zoneinfo"))) == -1:
+        return None
+    return path[index + 1 :]
 
 
 def get_tz() -> tuple[Literal[0, 1, 2], str]:
