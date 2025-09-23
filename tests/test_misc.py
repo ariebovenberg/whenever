@@ -29,6 +29,7 @@ from whenever import (
     reset_system_tz,
     seconds,
 )
+from whenever._tz.system import _tzid_from_path, get_tz
 
 from .common import system_tz_ams
 
@@ -341,7 +342,6 @@ def test_pydantic():
 
 
 def test_get_system_tz():
-    from whenever._tz.system import get_tz
 
     (tz_type, tz_value) = get_tz()
     assert tz_type in (0, 1, 2)
@@ -371,3 +371,20 @@ def test_reset_system_tz():
 
     reset_system_tz()
     assert plain.assume_system_tz().tz == "Europe/Amsterdam"
+
+
+@pytest.mark.parametrize(
+    "path, expect",
+    [
+        ("/usr/share/foo", None),
+        ("", None),
+        ("/etc/timezone", None),
+        ("/usr/share/zoneinfo/Europe/Amsterdam", "Europe/Amsterdam"),
+        ("/usr/share/zoneinfo.default/America/New_York", "America/New_York"),
+        ("/usr/share/zoneinfo.default/", ""),
+        ("/usr/share/zoneinfo/zoneinfo.default/UTC", "UTC"),
+        ("/usr/share/zoneinfo", None),
+    ],
+)
+def test_tzid_from_path(path, expect):
+    assert _tzid_from_path(path) == expect

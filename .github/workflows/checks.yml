@@ -7,9 +7,6 @@ on:
   pull_request:
   workflow_dispatch:
 
-env:
-  TZ: UTC
-
 jobs:
   test-rust:
     name: Test Rust (internal tests)
