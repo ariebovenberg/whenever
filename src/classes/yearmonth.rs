@@ -162,6 +162,16 @@ fn parse_iso(cls: HeapType<YearMonth>, arg: PyObj) -> PyReturn {
         .to_obj(cls)
 }
 
+fn format_common_iso(cls: PyType, slf: YearMonth) -> PyReturn {
+    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
+    format_iso(cls, slf)
+}
+
+fn parse_common_iso(cls: HeapType<YearMonth>, arg: PyObj) -> PyReturn {
+    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
+    parse_iso(cls, arg)
+}
+
 fn __reduce__(cls: HeapType<YearMonth>, slf: YearMonth) -> PyResult<Owned<PyTuple>> {
     let YearMonth { year, month } = slf;
     (
@@ -229,7 +239,9 @@ static mut METHODS: &[PyMethodDef] = &[
     method1!(YearMonth, __deepcopy__, c""),
     method0!(YearMonth, __reduce__, c""),
     method0!(YearMonth, format_iso, doc::YEARMONTH_FORMAT_ISO),
+    method0!(YearMonth, format_common_iso, c""), // deprecated alias
     classmethod1!(YearMonth, parse_iso, doc::YEARMONTH_PARSE_ISO),
+    classmethod1!(YearMonth, parse_common_iso, c""), // deprecated alias
     method1!(YearMonth, on_day, doc::YEARMONTH_ON_DAY),
     method_kwargs!(YearMonth, replace, doc::YEARMONTH_REPLACE),
     classmethod_kwargs!(

@@ -449,36 +449,6 @@ fn format_iso(_: PyType, d: DateTimeDelta) -> PyReturn {
     d.fmt_iso().to_py()
 }
 
-pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
-    let mut months = 0;
-    let mut days = 0;
-    let mut prev_unit: Option<DateUnit> = None;
-
-    while !s.is_empty() && !s[0].eq_ignore_ascii_case(&b'T') {
-        let (value, unit) = date_delta::parse_component(s)?;
-        match (unit, prev_unit.replace(unit)) {
-            // Note: We prevent overflow by limiting how many digits we parse
-            (DateUnit::Years, None) => {
-                months += value * 12;
-            }
-            (DateUnit::Months, None | Some(DateUnit::Years)) => {
-                months += value;
-            }
-            (DateUnit::Weeks, None | Some(DateUnit::Years | DateUnit::Months)) => {
-                days += value * 7;
-            }
-            (DateUnit::Days, _) => {
-                days += value;
-                break;
-            }
-            _ => None?, // i.e. the order of the components is wrong
-        }
-    }
-    DeltaMonths::new(months)
-        .zip(DeltaDays::new(days))
-        .map(|(months, days)| DateDelta { months, days })
-}
-
 fn parse_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
     let binding = arg
         .cast::<PyStr>()
@@ -514,6 +484,46 @@ fn parse_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
         tdelta = -tdelta;
     }
     DateTimeDelta { ddelta, tdelta }.to_obj(cls)
+}
+
+fn format_common_iso(cls: PyType, slf: DateTimeDelta) -> PyReturn {
+    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
+    format_iso(cls, slf)
+}
+
+fn parse_common_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
+    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
+    parse_iso(cls, arg)
+}
+
+pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
+    let mut months = 0;
+    let mut days = 0;
+    let mut prev_unit: Option<DateUnit> = None;
+
+    while !s.is_empty() && !s[0].eq_ignore_ascii_case(&b'T') {
+        let (value, unit) = date_delta::parse_component(s)?;
+        match (unit, prev_unit.replace(unit)) {
+            // Note: We prevent overflow by limiting how many digits we parse
+            (DateUnit::Years, None) => {
+                months += value * 12;
+            }
+            (DateUnit::Months, None | Some(DateUnit::Years)) => {
+                months += value;
+            }
+            (DateUnit::Weeks, None | Some(DateUnit::Years | DateUnit::Months)) => {
+                days += value * 7;
+            }
+            (DateUnit::Days, _) => {
+                days += value;
+                break;
+            }
+            _ => None?, // i.e. the order of the components is wrong
+        }
+    }
+    DeltaMonths::new(months)
+        .zip(DeltaDays::new(days))
+        .map(|(months, days)| DateDelta { months, days })
 }
 
 fn in_months_days_secs_nanos(
@@ -608,9 +618,11 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(DateTimeDelta, __copy__, c""),
     method1!(DateTimeDelta, __deepcopy__, c""),
     method0!(DateTimeDelta, format_iso, doc::DATETIMEDELTA_FORMAT_ISO),
+    method0!(DateTimeDelta, format_common_iso, c""), // deprecated alias
     method0!(DateTimeDelta, date_part, doc::DATETIMEDELTA_DATE_PART),
     method0!(DateTimeDelta, time_part, doc::DATETIMEDELTA_TIME_PART),
     classmethod1!(DateTimeDelta, parse_iso, doc::DATETIMEDELTA_PARSE_ISO),
+    classmethod1!(DateTimeDelta, parse_common_iso, c""), // deprecated alias
     method0!(DateTimeDelta, __reduce__, c""),
     method0!(
         DateTimeDelta,

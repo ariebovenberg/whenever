@@ -600,6 +600,33 @@ fn format_iso(
     )
 }
 
+fn parse_iso(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn {
+    OffsetDateTime::parse(
+        arg.cast::<PyStr>()
+            // NOTE: this exception message also needs to make sense when
+            // called through the constructor
+            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
+            .as_utf8()?,
+    )
+    .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?
+    .to_obj(cls)
+}
+
+fn format_common_iso(
+    cls: HeapType<OffsetDateTime>,
+    slf: OffsetDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
+    format_iso(cls, slf, args, kwargs)
+}
+
+fn parse_common_iso(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn {
+    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
+    parse_iso(cls, arg)
+}
+
 fn replace(
     cls: HeapType<OffsetDateTime>,
     slf: OffsetDateTime,
@@ -975,18 +1002,6 @@ fn from_timestamp_nanos(
     .to_obj(cls)
 }
 
-fn parse_iso(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn {
-    OffsetDateTime::parse(
-        arg.cast::<PyStr>()
-            // NOTE: this exception message also needs to make sense when
-            // called through the constructor
-            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
-            .as_utf8()?,
-    )
-    .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?
-    .to_obj(cls)
-}
-
 fn parse_strptime(
     cls: HeapType<OffsetDateTime>,
     args: &[PyObj],
@@ -1097,7 +1112,9 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::OFFSETDATETIME_PARSE_RFC2822
     ),
     method_kwargs!(OffsetDateTime, format_iso, doc::OFFSETDATETIME_FORMAT_ISO),
+    method_kwargs!(OffsetDateTime, format_common_iso, c""), // deprecated alias
     classmethod1!(OffsetDateTime, parse_iso, doc::OFFSETDATETIME_PARSE_ISO),
+    classmethod1!(OffsetDateTime, parse_common_iso, c""), // deprecated alias
     method0!(OffsetDateTime, timestamp, doc::EXACTTIME_TIMESTAMP),
     method0!(
         OffsetDateTime,

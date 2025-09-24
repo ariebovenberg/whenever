@@ -898,6 +898,55 @@ fn format_iso(
     )
 }
 
+fn parse_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
+    let py_str = arg
+        .cast::<PyStr>()
+        // NOTE: this exception message also needs to make sense when
+        // called through the constructor
+        .ok_or_type_err("When parsing from ISO format, the argument must be str")?;
+    let mut s = Scan::new(py_str.as_utf8()?);
+    let (DateTime { date, time }, (offset, tzstr)) = DateTime::read_iso(&mut s)
+        .zip(read_offset_and_tzname(&mut s))
+        .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?;
+    let &State {
+        exc_invalid_offset,
+        ref tz_store,
+        ..
+    } = cls.state();
+    let tz = tz_store.get(tzstr)?;
+    match offset {
+        OffsetInIsoString::Some(offset) => {
+            // Make sure the offset is valid
+            match tz.ambiguity_for_local(date.epoch_at(time)) {
+                Ambiguity::Unambiguous(f) if f == offset => (),
+                Ambiguity::Fold(f1, f2) if f1 == offset || f2 == offset => (),
+                _ => raise(
+                    exc_invalid_offset.as_ptr(),
+                    format!("Invalid offset for {tzstr}"),
+                )?,
+            }
+            ZonedDateTime::create(date, time, offset, tz, cls)
+        }
+        OffsetInIsoString::Z => Instant::from_datetime(date, time).to_tz(tz, cls),
+        OffsetInIsoString::Missing => ZonedDateTime::resolve_default(date, time, tz, cls),
+    }
+}
+
+fn format_common_iso(
+    cls: HeapType<ZonedDateTime>,
+    slf: ZonedDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
+    format_iso(cls, slf, args, kwargs)
+}
+
+fn parse_common_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
+    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
+    parse_iso(cls, arg)
+}
+
 fn replace(
     cls: HeapType<ZonedDateTime>,
     slf: ZonedDateTime,
@@ -1196,40 +1245,6 @@ fn is_ambiguous(_: PyType, slf: ZonedDateTime) -> PyReturn {
         Ambiguity::Fold(_, _)
     )
     .to_py()
-}
-
-fn parse_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
-    let py_str = arg
-        .cast::<PyStr>()
-        // NOTE: this exception message also needs to make sense when
-        // called through the constructor
-        .ok_or_type_err("When parsing from ISO format, the argument must be str")?;
-    let mut s = Scan::new(py_str.as_utf8()?);
-    let (DateTime { date, time }, (offset, tzstr)) = DateTime::read_iso(&mut s)
-        .zip(read_offset_and_tzname(&mut s))
-        .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?;
-    let &State {
-        exc_invalid_offset,
-        ref tz_store,
-        ..
-    } = cls.state();
-    let tz = tz_store.get(tzstr)?;
-    match offset {
-        OffsetInIsoString::Some(offset) => {
-            // Make sure the offset is valid
-            match tz.ambiguity_for_local(date.epoch_at(time)) {
-                Ambiguity::Unambiguous(f) if f == offset => (),
-                Ambiguity::Fold(f1, f2) if f1 == offset || f2 == offset => (),
-                _ => raise(
-                    exc_invalid_offset.as_ptr(),
-                    format!("Invalid offset for {tzstr}"),
-                )?,
-            }
-            ZonedDateTime::create(date, time, offset, tz, cls)
-        }
-        OffsetInIsoString::Z => Instant::from_datetime(date, time).to_tz(tz, cls),
-        OffsetInIsoString::Missing => ZonedDateTime::resolve_default(date, time, tz, cls),
-    }
 }
 
 fn add(
@@ -1536,7 +1551,9 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(ZonedDateTime, date, doc::LOCALTIME_DATE),
     method0!(ZonedDateTime, time, doc::LOCALTIME_TIME),
     method_kwargs!(ZonedDateTime, format_iso, doc::ZONEDDATETIME_FORMAT_ISO),
+    method_kwargs!(ZonedDateTime, format_common_iso, c""), // deprecated alias
     classmethod1!(ZonedDateTime, parse_iso, doc::ZONEDDATETIME_PARSE_ISO),
+    classmethod1!(ZonedDateTime, parse_common_iso, c""), // deprecated alias
     classmethod1!(ZonedDateTime, now, doc::ZONEDDATETIME_NOW),
     classmethod1!(
         ZonedDateTime,

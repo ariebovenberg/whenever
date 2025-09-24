@@ -737,14 +737,10 @@ class TestFormatIso:
     def test_defaults(self, d: ZonedDateTime, expected: str):
         assert str(d) == expected
         assert d.format_iso() == expected
+        with pytest.deprecated_call():
+            assert d.format_common_iso() == expected
 
-    @pytest.mark.parametrize(
-        "d",
-        [
-            ZDT_POSIX,
-            ZDT_RAWFILE,
-        ],
-    )
+    @pytest.mark.parametrize("d", [ZDT_POSIX, ZDT_RAWFILE])
     def test_no_timezone_id(self, d: ZonedDateTime):
         with pytest.raises(ValueError, match="timezone ID"):
             d.format_iso()
@@ -1582,6 +1578,8 @@ class TestParseIso:
     )
     def test_valid(self, s, expect):
         assert ZonedDateTime.parse_iso(s).exact_eq(expect)
+        with pytest.deprecated_call():
+            assert ZonedDateTime.parse_common_iso(s).exact_eq(expect)
 
     @pytest.mark.parametrize(
         "s",
