@@ -765,6 +765,41 @@ fn format_iso(_: PyType, slf: TimeDelta) -> PyReturn {
     slf.fmt_iso().to_py()
 }
 
+fn parse_iso(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
+    let py_str = arg
+        .cast::<PyStr>()
+        // NOTE: this exception message also needs to make sense when
+        // called through the constructor
+        .ok_or_type_err("When parsing from ISO format, the argument must be str")?;
+    let s = &mut py_str.as_utf8()?;
+    let err = || format!("Invalid format: {arg}");
+
+    let sign = (s.len() >= 4)
+        .then(|| parse_prefix(s))
+        .flatten()
+        .ok_or_else_value_err(err)?;
+
+    let (nanos, is_empty) = parse_all_components(s).ok_or_else_value_err(err)?;
+
+    // i.e. there must be at least one component (`PT` alone is invalid)
+    if is_empty {
+        raise_value_err(err())?;
+    }
+    TimeDelta::from_nanos(nanos * sign)
+        .ok_or_value_err("Time delta out of range")?
+        .to_obj(cls)
+}
+
+fn format_common_iso(cls: PyType, slf: TimeDelta) -> PyReturn {
+    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
+    format_iso(cls, slf)
+}
+
+fn parse_common_iso(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
+    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
+    parse_iso(cls, arg)
+}
+
 #[inline]
 pub(crate) fn fmt_components_abs(td: TimeDelta, s: &mut String) {
     let TimeDelta { secs, subsec } = td;
@@ -893,31 +928,6 @@ pub(crate) fn parse_all_components(s: &mut &[u8]) -> Option<(i128, bool)> {
     Some((nanos, prev_unit.is_none()))
 }
 
-fn parse_iso(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
-    let py_str = arg
-        .cast::<PyStr>()
-        // NOTE: this exception message also needs to make sense when
-        // called through the constructor
-        .ok_or_type_err("When parsing from ISO format, the argument must be str")?;
-    let s = &mut py_str.as_utf8()?;
-    let err = || format!("Invalid format: {arg}");
-
-    let sign = (s.len() >= 4)
-        .then(|| parse_prefix(s))
-        .flatten()
-        .ok_or_else_value_err(err)?;
-
-    let (nanos, is_empty) = parse_all_components(s).ok_or_else_value_err(err)?;
-
-    // i.e. there must be at least one component (`PT` alone is invalid)
-    if is_empty {
-        raise_value_err(err())?;
-    }
-    TimeDelta::from_nanos(nanos * sign)
-        .ok_or_value_err("Time delta out of range")?
-        .to_obj(cls)
-}
-
 fn round(
     cls: HeapType<TimeDelta>,
     slf: TimeDelta,
@@ -938,7 +948,9 @@ static mut METHODS: &[PyMethodDef] = &[
     method1!(TimeDelta, __deepcopy__, c""),
     method0!(TimeDelta, __reduce__, c""),
     method0!(TimeDelta, format_iso, doc::TIMEDELTA_FORMAT_ISO),
+    method0!(TimeDelta, format_common_iso, c""), // deprecated alias
     classmethod1!(TimeDelta, parse_iso, doc::TIMEDELTA_PARSE_ISO),
+    classmethod1!(TimeDelta, parse_common_iso, c""), // deprecated alias
     method0!(TimeDelta, in_nanoseconds, doc::TIMEDELTA_IN_NANOSECONDS),
     method0!(TimeDelta, in_microseconds, doc::TIMEDELTA_IN_MICROSECONDS),
     method0!(TimeDelta, in_milliseconds, doc::TIMEDELTA_IN_MILLISECONDS),

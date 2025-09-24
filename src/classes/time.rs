@@ -492,6 +492,33 @@ fn format_iso(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterK
     PyAsciiStrBuilder::format(slf.format_iso(unit, basic))
 }
 
+fn parse_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn {
+    Time::parse_iso(
+        s.cast::<PyStr>()
+            // NOTE: this exception message also needs to make sense when
+            // called through the constructor
+            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
+            .as_utf8()?,
+    )
+    .ok_or_else_value_err(|| format!("Invalid format: {s}"))?
+    .to_obj(cls)
+}
+
+fn format_common_iso(
+    cls: HeapType<Time>,
+    slf: Time,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
+    format_iso(cls, slf, args, kwargs)
+}
+
+fn parse_common_iso(cls: HeapType<Time>, arg: PyObj) -> PyReturn {
+    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
+    parse_iso(cls, arg)
+}
+
 fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyResult<Owned<PyTuple>> {
     let Time {
         hour,
@@ -506,19 +533,6 @@ fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyResult<Owned<PyTuple>> {
     )
         .into_pytuple()
 }
-
-fn parse_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn {
-    Time::parse_iso(
-        s.cast::<PyStr>()
-            // NOTE: this exception message also needs to make sense when
-            // called through the constructor
-            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
-            .as_utf8()?,
-    )
-    .ok_or_else_value_err(|| format!("Invalid format: {s}"))?
-    .to_obj(cls)
-}
-
 fn on(cls: HeapType<Time>, slf: Time, arg: PyObj) -> PyReturn {
     let &State {
         plain_datetime_type,
@@ -597,7 +611,9 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(Time, py_time, doc::TIME_PY_TIME),
     method_kwargs!(Time, replace, doc::TIME_REPLACE),
     method_kwargs!(Time, format_iso, doc::TIME_FORMAT_ISO),
+    method_kwargs!(Time, format_common_iso, c""), // deprecated alias
     classmethod1!(Time, parse_iso, doc::TIME_PARSE_ISO),
+    classmethod1!(Time, parse_common_iso, c""), // deprecated alias
     classmethod1!(Time, from_py_time, doc::TIME_FROM_PY_TIME),
     method1!(Time, on, doc::TIME_ON),
     method_kwargs!(Time, round, doc::TIME_ROUND),

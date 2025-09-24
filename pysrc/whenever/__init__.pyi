@@ -1,4 +1,5 @@
 import enum
+import sys
 from abc import ABC
 from contextlib import _GeneratorContextManager
 from datetime import (
@@ -17,6 +18,11 @@ from typing import (
     overload,
     type_check_only,
 )
+
+if sys.version_info >= (3, 13):
+    from warnings import deprecated
+else:
+    from typing_extensions import deprecated
 
 from typing_extensions import Self, override
 
@@ -57,7 +63,12 @@ __version__: str
 class _ISOMixin:
     @classmethod
     def parse_iso(cls, s: str, /) -> Self: ...
+    @classmethod
+    @deprecated("Use parse_iso() instead")
+    def parse_common_iso(cls, s: str, /) -> Self: ...
     def format_iso(self) -> str: ...
+    @deprecated("Use format_iso() instead")
+    def format_common_iso(self) -> str: ...
 
 @type_check_only
 class _OrderMixin:

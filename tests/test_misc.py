@@ -130,6 +130,7 @@ def test_text_signature():
         DateDelta,
         DateTimeDelta,
     ]
+    deprecated = ["format_common_iso", "parse_common_iso"]
     methods = (
         m
         for m in chain.from_iterable(cls.__dict__.values() for cls in classes)
@@ -140,7 +141,7 @@ def test_text_signature():
         assert c.__module__ == "whenever"
 
     for m in methods:
-        if m.__name__.startswith("_"):
+        if m.__name__.startswith("_") or m.__name__ in deprecated:
             continue
         sig = m.__text_signature__
         assert (

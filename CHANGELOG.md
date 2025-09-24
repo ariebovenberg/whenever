@@ -26,12 +26,13 @@
   expectation for primitive types.
 
 - Renamed `[format|parse]_common_iso` methods to `[format|parse]_iso`.
+  The old methods are still available (but deprecated) to ease the transition.
 
   **Rationale:** The "common" qualifier is no longer necessary because
   these methods have been expanded to handle a wider range of ISO 8601 formats.
 
-- Remove the deprecated `local()` methods (use `to_plain()` instead).
-- Remove the deprecated `instant()` method (use `to_instant()` instead).
+- Removed the deprecated `local()` methods (use `to_plain()` instead).
+- Removed the deprecated `instant()` method (use `to_instant()` instead).
 
 **Improved**
 

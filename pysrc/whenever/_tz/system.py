@@ -1,7 +1,7 @@
 import os
 import os.path
 import platform
-from typing import Literal
+from typing import Literal, Optional
 
 ZONEINFO = "zoneinfo"
 SYSTEM = platform.system()
@@ -32,7 +32,7 @@ else:  # pragma: no cover
         return (0, tzlocal.get_localzone_name())
 
 
-def _tzid_from_path(path: str) -> str | None:
+def _tzid_from_path(path: str) -> Optional[str]:
     """Find the IANA timezone ID from a path to a zoneinfo file.
     Returns None if the path is not in a zoneinfo directory.
     """

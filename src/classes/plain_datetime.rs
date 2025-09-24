@@ -201,6 +201,33 @@ fn format_iso(
     )
 }
 
+fn parse_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
+    DateTime::parse(
+        arg.cast::<PyStr>()
+            // NOTE: this exception message also needs to make sense when
+            // called through the constructor
+            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
+            .as_utf8()?,
+    )
+    .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?
+    .to_obj(cls)
+}
+
+fn format_common_iso(
+    cls: HeapType<DateTime>,
+    slf: DateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
+    format_iso(cls, slf, args, kwargs)
+}
+
+fn parse_common_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
+    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
+    parse_iso(cls, arg)
+}
+
 fn __richcmp__(cls: HeapType<DateTime>, slf: DateTime, other: PyObj, op: c_int) -> PyReturn {
     if let Some(dt) = other.extract(cls) {
         match op {
@@ -659,18 +686,6 @@ fn is_datetime_sep(c: u8) -> bool {
     c == b'T' || c == b' ' || c == b't'
 }
 
-fn parse_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
-    DateTime::parse(
-        arg.cast::<PyStr>()
-            // NOTE: this exception message also needs to make sense when
-            // called through the constructor
-            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
-            .as_utf8()?,
-    )
-    .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?
-    .to_obj(cls)
-}
-
 fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let &State {
         str_format,
@@ -840,7 +855,9 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(DateTime, date, doc::LOCALTIME_DATE),
     method0!(DateTime, time, doc::LOCALTIME_TIME),
     method_kwargs!(DateTime, format_iso, doc::PLAINDATETIME_FORMAT_ISO),
+    method_kwargs!(DateTime, format_common_iso, c""), // deprecated alias
     classmethod1!(DateTime, parse_iso, doc::PLAINDATETIME_PARSE_ISO),
+    classmethod1!(DateTime, parse_common_iso, c""), // deprecated alias
     classmethod_kwargs!(DateTime, parse_strptime, doc::PLAINDATETIME_PARSE_STRPTIME),
     method_kwargs!(DateTime, replace, doc::PLAINDATETIME_REPLACE),
     method0!(DateTime, assume_utc, doc::PLAINDATETIME_ASSUME_UTC),

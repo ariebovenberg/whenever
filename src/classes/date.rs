@@ -412,6 +412,21 @@ fn parse_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
+fn format_common_iso(
+    cls: HeapType<Date>,
+    slf: Date,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
+    format_iso(cls, slf, args, kwargs)
+}
+
+fn parse_common_iso(cls: HeapType<Date>, arg: PyObj) -> PyReturn {
+    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
+    parse_iso(cls, arg)
+}
+
 fn day_of_week(cls: HeapType<Date>, slf: Date) -> Owned<PyObj> {
     cls.state().weekday_enum_members[(slf.day_of_week() as u8 - 1) as usize].newref()
 }
@@ -663,8 +678,10 @@ fn system_tz_today_from_timestamp(
 static mut METHODS: &mut [PyMethodDef] = &mut [
     method0!(Date, py_date, doc::DATE_PY_DATE),
     method_kwargs!(Date, format_iso, doc::DATE_FORMAT_ISO),
+    method_kwargs!(Date, format_common_iso, c""), // deprecated alias
     classmethod0!(Date, today_in_system_tz, doc::DATE_TODAY_IN_SYSTEM_TZ),
     classmethod1!(Date, parse_iso, doc::DATE_PARSE_ISO),
+    classmethod1!(Date, parse_common_iso, c""), // deprecated alias
     classmethod1!(Date, from_py_date, doc::DATE_FROM_PY_DATE),
     method0!(Date, __copy__, c""),
     method1!(Date, __deepcopy__, c""),

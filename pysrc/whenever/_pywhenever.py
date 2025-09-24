@@ -64,6 +64,7 @@ from typing import (
     no_type_check,
     overload,
 )
+from warnings import warn
 from weakref import WeakValueDictionary
 
 from ._tz import (
@@ -191,6 +192,21 @@ class _Base(metaclass=_ConstructorSupportsIsoString):
     @classmethod
     @abstractmethod
     def parse_iso(cls: type[_T], s: str, /) -> _T: ...  # pragma: no cover
+
+    @classmethod
+    def parse_common_iso(cls: type[_T], s: str, /) -> _T:
+        warn(
+            "parse_common_iso() has been renamed to parse_iso()",
+            DeprecationWarning,
+        )
+        return cls.parse_iso(s)  # type: ignore[no-any-return, attr-defined]
+
+    def format_common_iso(self) -> str:
+        warn(
+            "format_common_iso() has been renamed to format_iso()",
+            DeprecationWarning,
+        )
+        return self.format_iso()  # type: ignore[no-any-return, attr-defined]
 
 
 if TYPE_CHECKING:
