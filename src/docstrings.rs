@@ -1386,6 +1386,21 @@ Attention
 If the datetime is ambiguous (e.g. during a DST transition),
 the ``fold`` attribute is used to disambiguate the time.
 ";
+pub(crate) const ZONEDDATETIME_FROM_SYSTEM_TZ: &CStr = c"\
+from_system_tz(year, month, day, hour=0, minute=0, second=0, *, nanosecond=0, disambiguate='compatible')
+--
+
+Create an instance in the system timezone.
+
+Equivalent to ``ZonedDateTime(..., tz=<the system timezone>)``,
+except it also works for system timezones whose corresponding
+IANA timezone ID is unknown.
+
+Example
+-------
+>>> ZonedDateTime.from_system_tz(2020, 8, 15, hour=23, minute=12)
+ZonedDateTime(\"2020-08-15 23:12:00+02:00[Europe/Berlin]\")
+";
 pub(crate) const ZONEDDATETIME_FROM_TIMESTAMP: &CStr = c"\
 from_timestamp(i, /, *, tz)
 --
@@ -1422,6 +1437,11 @@ True
 ";
 pub(crate) const ZONEDDATETIME_NOW: &CStr = c"\
 Create an instance from the current time in the given timezone.";
+pub(crate) const ZONEDDATETIME_NOW_IN_SYSTEM_TZ: &CStr = c"\
+Create an instance from the current time in the system timezone.
+
+Equivalent to ``Instant.now().to_system_tz()``.
+";
 pub(crate) const ZONEDDATETIME_PARSE_ISO: &CStr = c"\
 Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
 

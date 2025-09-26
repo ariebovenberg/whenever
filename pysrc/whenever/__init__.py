@@ -52,5 +52,10 @@ def __getattr__(name: str) -> object:
             DeprecationWarning,
         )
         return PlainDateTime
+    elif name == "SystemDateTime":  # pragma: no cover
+        raise ImportError(
+            "whenever.SystemDateTime has been removed. See the changelog for "
+            "migration instructions.",
+        )
 
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")

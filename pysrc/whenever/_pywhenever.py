@@ -149,7 +149,7 @@ _T = TypeVar("_T")
 # - A special __new__: but this still calls __init__ afterwards, so no good.
 # - adjusting __init__: this makes the signature awkward--plus a lot of custom
 #   code in every class
-
+#
 # NOTE: typing doesn't need to know about this feature, since the stub files
 # obscure anything happening in this file anyways...for the outside world, that is.
 # The autodocs also shouldn't be affected, since we want them to document
@@ -4299,11 +4299,63 @@ class ZonedDateTime(_ExactAndLocalTime):
         self._tz = _tz
 
     @classmethod
+    def from_system_tz(
+        cls,
+        year: int,
+        month: int,
+        day: int,
+        hour: int = 0,
+        minute: int = 0,
+        second: int = 0,
+        *,
+        nanosecond: int = 0,
+        disambiguate: Disambiguate = "compatible",
+    ) -> ZonedDateTime:
+        """Create an instance in the system timezone.
+
+        Equivalent to ``ZonedDateTime(..., tz=<the system timezone>)``,
+        except it also works for system timezones whose corresponding
+        IANA timezone ID is unknown.
+
+        Example
+        -------
+        >>> ZonedDateTime.from_system_tz(2020, 8, 15, hour=23, minute=12)
+        ZonedDateTime("2020-08-15 23:12:00+02:00[Europe/Berlin]")
+        """
+        tz = _get_system_tz()
+        dt = _resolve_ambiguity(
+            _datetime(
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+                0,
+            ),
+            tz,
+            disambiguate,
+        )
+        if nanosecond < 0 or nanosecond >= 1_000_000_000:
+            raise ValueError(f"nanosecond out of range: {nanosecond}")
+        return cls._from_py_unchecked(dt, nanosecond, tz)
+
+    @classmethod
     def now(cls, tz: str, /) -> ZonedDateTime:
         """Create an instance from the current time in the given timezone."""
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         _tz = _get_tz(tz)
         return cls._from_py_unchecked(_from_epoch(secs, _tz), nanos, _tz)
+
+    @classmethod
+    def now_in_system_tz(cls) -> ZonedDateTime:
+        """Create an instance from the current time in the system timezone.
+
+        Equivalent to ``Instant.now().to_system_tz()``.
+        """
+        tz = _get_system_tz()
+        secs, nanos = divmod(time_ns(), 1_000_000_000)
+        return cls._from_py_unchecked(_from_epoch(secs, tz), nanos, tz)
 
     def format_iso(
         self,
@@ -4530,7 +4582,10 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     @property
     def tz(self) -> Optional[str]:
-        """The timezone ID"""
+        """The timezone ID. In rare cases, this may be ``None``,
+        if the ``ZonedDateTime`` was created from a system timezone
+        without a known IANA key.
+        """
         return self._tz.key
 
     def __hash__(self) -> int:

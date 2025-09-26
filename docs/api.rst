@@ -11,7 +11,7 @@ Datetimes
 Below is a simplified overview of the datetime classes and how they relate to each other.
 
 .. image:: api-overview.png
-  :width: 80%
+  :width: 60%
   :align: center
   :alt: Alternative text
 
@@ -86,6 +86,8 @@ Concrete classes
 
 .. autoclass:: whenever.ZonedDateTime
    :members:
+     now_in_system_tz,
+     from_system_tz,
      tz,
      is_ambiguous,
      start_of_day,

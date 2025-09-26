@@ -1044,6 +1044,64 @@ fn now(cls: HeapType<ZonedDateTime>, tz_obj: PyObj) -> PyReturn {
     state.time_ns()?.to_tz(tz, cls)
 }
 
+fn now_in_system_tz(cls: HeapType<ZonedDateTime>) -> PyReturn {
+    let state = cls.state();
+    let tz = state.tz_store.get_system_tz()?;
+    state.time_ns()?.to_tz(tz, cls)
+}
+
+fn from_system_tz(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+    let &State {
+        exc_repeated,
+        exc_skipped,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+        ref tz_store,
+        ..
+    } = cls.state();
+    let mut year: c_long = 0;
+    let mut month: c_long = 0;
+    let mut day: c_long = 0;
+    let mut hour: c_long = 0;
+    let mut minute: c_long = 0;
+    let mut second: c_long = 0;
+    let mut nanosecond: c_long = 0;
+    let mut disambiguate: *mut PyObject = NULL();
+
+    parse_args_kwargs!(
+        args,
+        kwargs,
+        c"lll|lll$lO:ZonedDateTime",
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        nanosecond,
+        disambiguate
+    );
+
+    let tz = tz_store.get_system_tz()?;
+    let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
+    let time =
+        Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?;
+    let dis = match NonNull::new(disambiguate) {
+        None => Disambiguate::Compatible,
+        Some(dis) => Disambiguate::from_py(
+            PyObj::wrap(dis),
+            str_compatible,
+            str_raise,
+            str_earlier,
+            str_later,
+        )?,
+    };
+    ZonedDateTime::resolve_using_disambiguate(date, time, &tz, dis, exc_repeated, exc_skipped)?
+        .assume_tz_unchecked(tz, cls)
+}
+
 fn from_py_datetime(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
     let State {
         zoneinfo_type,
@@ -1555,6 +1613,36 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod1!(ZonedDateTime, parse_iso, doc::ZONEDDATETIME_PARSE_ISO),
     classmethod1!(ZonedDateTime, parse_common_iso, c""), // deprecated alias
     classmethod1!(ZonedDateTime, now, doc::ZONEDDATETIME_NOW),
+    classmethod0!(
+        ZonedDateTime,
+        now_in_system_tz,
+        doc::ZONEDDATETIME_NOW_IN_SYSTEM_TZ
+    ),
+    // This method is defined different because it
+    // makes use of the arg/kwargs processing macro.
+    // Other types only use it for the __new__ method.
+    PyMethodDef {
+        ml_name: c"from_system_tz".as_ptr(),
+        ml_meth: PyMethodDefPointer {
+            PyCFunctionWithKeywords: {
+                unsafe extern "C" fn _wrap(
+                    cls: *mut PyObject,
+                    args: *mut PyObject,
+                    kwargs: *mut PyObject,
+                ) -> *mut PyObject {
+                    from_system_tz(
+                        unsafe { HeapType::<ZonedDateTime>::from_ptr_unchecked(cls.cast()) },
+                        unsafe { PyTuple::from_ptr_unchecked(args) },
+                        (!kwargs.is_null()).then(|| unsafe { PyDict::from_ptr_unchecked(kwargs) }),
+                    )
+                    .to_py_owned_ptr()
+                }
+                _wrap
+            },
+        },
+        ml_flags: METH_CLASS | METH_VARARGS | METH_KEYWORDS,
+        ml_doc: doc::ZONEDDATETIME_FROM_SYSTEM_TZ.as_ptr(),
+    },
     classmethod1!(
         ZonedDateTime,
         from_py_datetime,
