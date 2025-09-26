@@ -1,29 +1,83 @@
 # 🚀 Changelog
 
-## 0.9.0 (2025-??-??)
+## 0.9.1 (2025-09-28)
+
+- Added `ZonedDateTime.now_in_system_tz()` and
+  `ZonedDateTime.from_system_tz()` as convenience methods to ease
+  migration away from `SystemDateTime`.
+
+## 0.9.0 (2025-09-25)
 
 **Breaking Changes**
 
-- `SystemDateTime` has been removed and its functionality is now integrated into `ZonedDateTime`.
+- `SystemDateTime` has been removed and merged into `ZonedDateTime`
+
+  To create a more consistent and intuitive API, the SystemDateTime class
+  has been removed. Its functionality is now fully integrated into an
+  enhanced ZonedDateTime, which now serves as the single, canonical class
+  for all timezone-aware datetimes, including those based on the system's
+  local timezone.
+
+  **Rationale:**
+
+  The SystemDateTime class, while useful, created several challenges that
+  compromised the library's consistency and predictability:
+
+   * Inconsistent Behavior: Methods like replace() and add() on a
+     SystemDateTime instance would use the current system timezone definition,
+     not necessarily the one that was active when the instance was created.
+     This could lead to subtle and unpredictable bugs if the system timezone
+     changed during the program's execution.
+   * API Division: Despite having nearly identical interfaces, SystemDateTime
+     and ZonedDateTime were not interchangeable. A function expecting a
+     ZonedDateTime could not accept a SystemDateTime, forcing users to write
+     more complex code with Union type hints.
+   * Maintenance Overhead: Maintaining two parallel APIs for timezone-aware
+     datetimes led to significant code duplication and a higher maintenance
+     burden.
+
+  This change unifies the API by integrating system timezone support
+  directly into ZonedDateTime, providing a single, consistent way to handle
+  all timezone-aware datetimes. The original use cases for SystemDateTime
+  are fully supported by the improved ZonedDateTime.
+
+  This new, unified approach also provides two major benefits:
+
+   * Performance: Operations on a ZonedDateTime representing a system time are
+     now orders of magnitude faster than they were on the old SystemDateTime.
+   * Cross-Platform Consistency: The new whenever.reset_system_tz() function
+     provides a reliable, cross-platform way to update the library's view of
+     the system timezone, replacing the previous reliance on the Unix-only
+     time.tzset().
+
   **Migration:**
-  - `SystemDateTime.now()` can be replaced with `Instant.now().to_system_tz()`.
-  - `to_system_tz()` and `assume_system_tz()` now return a `ZonedDateTime` instead of a `SystemDateTime`.
+  - Replace all `SystemDateTime` with `ZonedDateTime` in all type hints.
+  - Replace `SystemDateTime.now()` with `ZonedDateTime.now_in_system_tz()` (whenever >=0.9.1)
+    or `Instant.now().to_system_tz()` (whenever <0.9.1)
+  - Replace `SystemDateTime(...)` constructor calls with `ZonedDateTime.from_system_tz(...)`
+    (whenever >=0.9.1) or `PlainDateTime(...).assume_system_tz()` (whenever <0.9.1)
+  - Check calls to `.to_system_tz()` and `.assume_system_tz()`: these
+    methods now return a `ZonedDateTime` instance. In most cases,
+    no code change is needed.
+  - Instead of `time.tzset()`, use `whenever.reset_system_tz()` to
+    update the system timezone (for `whenever` only).
 
-  **Rationale:** The `SystemDateTime` class was an awkward corner of the API,
-  creating inconsistencies and overlapping with `ZonedDateTime`.
-  This change unifies the API, providing a single, consistent way to handle
-  all timezone-aware datetimes. The original use cases are fully supported
-  by the improved `ZonedDateTime`.
+- `ZonedDateTime` instances with a system timezone may in rare cases
+  not have a known IANA timezone ID (the `tz` property will be `None`).
+  This is an unfortunate limitation of some platforms.
+  Such `ZonedDateTime` instances can still be used for all operations,
+  and will account for DST correctly. However, these instances cannot be pickled,
+  and their ISO format will not be able to include the timezone ID.
 
-- All classes can now be directly instantiated from an ISO 8601 formatted string
-  passed as a sole argument. For example, `Date("2023-10-05")` is equivalent to
-  `Date(2023, 10, 5)` (which is still supported, of course).
-  The ``repr()`` of all classes now includes quotes, so that the output
+  **Rationale:** This is an necessary compromise for broad system timezone support.
+  Other libraries (and Python's own `zoneinfo`) have similar limitations.
+
+- The ``repr()`` of all classes now includes quotes: e.g. `Date("2023-10-05")`.
+  Since all constructors now also accept ISO 8601 strings, the ``repr()`` output
   can be directly used as input and thus `eval(repr(obj)) == obj`.
 
-  **Rationale:** This makes the types a lot easier to use in interactive sessions
-  and tests. It also makes `repr()` round-trippable, which is a common
-  expectation for primitive types.
+  **Rationale:** This makes the types easier to use in interactive sessions
+  and tests. A round-trippable `repr()` is also a common expectation for primitive types.
 
 - Renamed `[format|parse]_common_iso` methods to `[format|parse]_iso`.
   The old methods are still available (but deprecated) to ease the transition.
@@ -36,10 +90,14 @@
 
 **Improved**
 
+- All classes can now be directly instantiated from an ISO 8601 formatted string
+  passed as a sole argument. For example, `Date("2023-10-05")` is equivalent to
+  `Date(2023, 10, 5)` (which is still supported, of course).
+
 - Customizable ISO 8601 Formatting: The `format_iso()` methods now accept
-  parameters to customize the output. You can control the `separator`
-  (e.g., `'T'` or `' '`), the smallest `unit` (from `hour` to `nanosecond`),
-  and toggle the `basic` (compact) or `extended` format.
+  parameters to customize the output. You can control the separator
+  (e.g., `'T'` or `' '`), the smallest unit (from `hour` to `nanosecond`),
+  and toggle the "basic" (compact) or "extended" format.
 
   Also, the formatting is now significantly faster. Up to 5x faster for
   ``ZonedDateTime``, which is now 10x faster than the standard library's `datetime.isoformat()`.

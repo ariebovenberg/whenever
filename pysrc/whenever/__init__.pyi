@@ -606,7 +606,22 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @property
     def tz(self) -> str: ...
     @classmethod
+    def from_system_tz(
+        cls,
+        year: int,
+        month: int,
+        day: int,
+        hour: int = 0,
+        minute: int = 0,
+        second: int = 0,
+        *,
+        nanosecond: int = 0,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
+    ) -> Self: ...
+    @classmethod
     def now(cls, tz: str, /) -> Self: ...
+    @classmethod
+    def now_in_system_tz(cls) -> Self: ...
     @classmethod
     def from_timestamp(cls, i: int | float, /, *, tz: str) -> Self: ...
     @classmethod

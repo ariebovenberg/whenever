@@ -343,6 +343,45 @@ class TestInit:
         )
 
 
+@system_tz_ams()
+def test_from_system_tz():
+    d = ZonedDateTime.from_system_tz(
+        2020,
+        8,
+        15,
+        23,
+        12,
+        9,
+        nanosecond=987_654_321,
+        disambiguate="later",
+    )
+    assert d.tz == "Europe/Amsterdam"
+    assert d.offset == hours(2)
+    assert d.exact_eq(
+        ZonedDateTime(
+            2020,
+            8,
+            15,
+            23,
+            12,
+            9,
+            nanosecond=987_654_321,
+            tz="Europe/Amsterdam",
+        )
+    )
+
+    # check variations of the call
+    assert ZonedDateTime.from_system_tz(2020, 8, 15).exact_eq(
+        ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
+    )
+
+    with pytest.raises(TypeError):
+        ZonedDateTime.from_system_tz(2020, 8, 15, tz="America/New_York")  # type: ignore[call-arg]
+
+    with pytest.raises(ValueError):
+        ZonedDateTime.from_system_tz(2020, 8, 15, nanosecond=1_000_000_000)
+
+
 # NOTE: there's a separate test for changing the tzpath and
 # its effect on available_timezones()
 # We run this test relatively late to allow the cache to be used more
@@ -2398,6 +2437,14 @@ def test_now():
     now = ZonedDateTime.now("Iceland")
     assert now.tz == "Iceland"
     py_now = py_datetime.now(ZoneInfo("Iceland"))
+    assert py_now - now.py_datetime() < py_timedelta(seconds=1)
+
+
+@system_tz_ams()
+def test_now_in_system_tz():
+    now = ZonedDateTime.now_in_system_tz()
+    py_now = py_datetime.now().astimezone()
+    assert now.tz == "Europe/Amsterdam"
     assert py_now - now.py_datetime() < py_timedelta(seconds=1)
 
 
