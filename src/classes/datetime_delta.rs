@@ -90,7 +90,7 @@ impl DateTimeDelta {
     }
 }
 
-impl PyWrapped for DateTimeDelta {}
+impl PySimpleAlloc for DateTimeDelta {}
 
 impl Neg for DateTimeDelta {
     type Output = Self;
@@ -230,6 +230,7 @@ fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) 
     let mut nanos: i128 = 0;
     let state = cls.state();
     match (nargs, nkwargs) {
+        (1, 0) => parse_iso(cls, args.iter().next().unwrap()),
         (0, 0) => DateTimeDelta {
             ddelta: DateDelta {
                 months: DeltaMonths::ZERO,
@@ -239,7 +240,8 @@ fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) 
                 secs: DeltaSeconds::ZERO,
                 subsec: SubSecNanos::MIN,
             },
-        }, // OPTIMIZE: return the singleton
+        }
+        .to_obj(cls), // OPTIMIZE: return the singleton
         (0, _) => {
             handle_kwargs(
                 "DateTimeDelta",
@@ -258,13 +260,15 @@ fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) 
                     tdelta: TimeDelta::from_nanos(nanos)
                         .ok_or_value_err("TimeDelta out of range")?,
                 }
+                .to_obj(cls)
             } else {
                 raise_value_err("Mixed sign in DateTimeDelta")?
             }
         }
-        _ => raise_value_err("TimeDelta() takes no positional arguments")?,
+        _ => {
+            raise_value_err("DateTimeDelta() takes either 1 positional argument, or only keywords")?
+        }
     }
-    .to_obj(cls)
 }
 
 fn __richcmp__(
@@ -301,7 +305,7 @@ extern "C" fn __bool__(slf: PyObj) -> c_int {
 }
 
 fn __repr__(_: PyType, d: DateTimeDelta) -> PyReturn {
-    format!("DateTimeDelta({d})").to_py()
+    format!("DateTimeDelta(\"{d}\")").to_py()
 }
 
 fn __str__(_: PyType, d: DateTimeDelta) -> PyReturn {
@@ -441,8 +445,55 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn format_common_iso(_: PyType, d: DateTimeDelta) -> PyReturn {
+fn format_iso(_: PyType, d: DateTimeDelta) -> PyReturn {
     d.fmt_iso().to_py()
+}
+
+fn parse_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
+    let binding = arg
+        .cast::<PyStr>()
+        // NOTE: this exception message also needs to make sense when
+        // called through the constructor
+        .ok_or_type_err("When parsing from ISO format, the argument must be str")?;
+
+    let s = &mut binding.as_utf8()?;
+    let err = || format!("Invalid format or out of range: {arg}");
+    if s.len() < 3 {
+        // at least `P0D`
+        raise_value_err(err())?
+    }
+
+    let negated = parse_prefix(s).ok_or_else_value_err(err)?;
+    // Safe: we checked the string is at least 3 bytes long
+    if s[s.len() - 1].eq_ignore_ascii_case(&b'T') {
+        // catch 'empty' cases
+        raise_value_err(err())?
+    }
+    let mut ddelta = parse_date_components(s).ok_or_else_value_err(err)?;
+    let mut tdelta = if s.is_empty() {
+        TimeDelta::ZERO
+    } else if s[0].eq_ignore_ascii_case(&b'T') {
+        *s = &s[1..];
+        let (nanos, _) = time_delta::parse_all_components(s).ok_or_else_value_err(err)?;
+        TimeDelta::from_nanos(nanos).ok_or_else_value_err(err)?
+    } else {
+        raise_value_err(err())?
+    };
+    if negated {
+        ddelta = -ddelta;
+        tdelta = -tdelta;
+    }
+    DateTimeDelta { ddelta, tdelta }.to_obj(cls)
+}
+
+fn format_common_iso(cls: PyType, slf: DateTimeDelta) -> PyReturn {
+    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
+    format_iso(cls, slf)
+}
+
+fn parse_common_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
+    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
+    parse_iso(cls, arg)
 }
 
 pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
@@ -473,41 +524,6 @@ pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
     DeltaMonths::new(months)
         .zip(DeltaDays::new(days))
         .map(|(months, days)| DateDelta { months, days })
-}
-
-fn parse_common_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
-    let binding = arg
-        .cast::<PyStr>()
-        .ok_or_value_err("argument must be str")?;
-
-    let s = &mut binding.as_utf8()?;
-    let err = || format!("Invalid format or out of range: {arg}");
-    if s.len() < 3 {
-        // at least `P0D`
-        raise_value_err(err())?
-    }
-
-    let negated = parse_prefix(s).ok_or_else_value_err(err)?;
-    // Safe: we checked the string is at least 3 bytes long
-    if s[s.len() - 1].eq_ignore_ascii_case(&b'T') {
-        // catch 'empty' cases
-        raise_value_err(err())?
-    }
-    let mut ddelta = parse_date_components(s).ok_or_else_value_err(err)?;
-    let mut tdelta = if s.is_empty() {
-        TimeDelta::ZERO
-    } else if s[0].eq_ignore_ascii_case(&b'T') {
-        *s = &s[1..];
-        let (nanos, _) = time_delta::parse_all_components(s).ok_or_else_value_err(err)?;
-        TimeDelta::from_nanos(nanos).ok_or_else_value_err(err)?
-    } else {
-        raise_value_err(err())?
-    };
-    if negated {
-        ddelta = -ddelta;
-        tdelta = -tdelta;
-    }
-    DateTimeDelta { ddelta, tdelta }.to_obj(cls)
 }
 
 fn in_months_days_secs_nanos(
@@ -601,18 +617,12 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
 static mut METHODS: &[PyMethodDef] = &[
     method0!(DateTimeDelta, __copy__, c""),
     method1!(DateTimeDelta, __deepcopy__, c""),
-    method0!(
-        DateTimeDelta,
-        format_common_iso,
-        doc::DATETIMEDELTA_FORMAT_COMMON_ISO
-    ),
+    method0!(DateTimeDelta, format_iso, doc::DATETIMEDELTA_FORMAT_ISO),
+    method0!(DateTimeDelta, format_common_iso, c""), // deprecated alias
     method0!(DateTimeDelta, date_part, doc::DATETIMEDELTA_DATE_PART),
     method0!(DateTimeDelta, time_part, doc::DATETIMEDELTA_TIME_PART),
-    classmethod1!(
-        DateTimeDelta,
-        parse_common_iso,
-        doc::DATETIMEDELTA_PARSE_COMMON_ISO
-    ),
+    classmethod1!(DateTimeDelta, parse_iso, doc::DATETIMEDELTA_PARSE_ISO),
+    classmethod1!(DateTimeDelta, parse_common_iso, c""), // deprecated alias
     method0!(DateTimeDelta, __reduce__, c""),
     method0!(
         DateTimeDelta,

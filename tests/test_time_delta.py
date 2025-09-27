@@ -142,13 +142,18 @@ class TestInit:
 
     def test_invalid_kwargs(self):
         with pytest.raises(TypeError, match="foo"):
-            TimeDelta(foo=1)  # type: ignore[call-arg]
+            TimeDelta(foo=1)  # type: ignore[call-overload]
 
         with pytest.raises(TypeError):
-            TimeDelta(1)  # type: ignore[misc]
+            TimeDelta(1)  # type: ignore[call-overload]
 
         with pytest.raises(TypeError):
             TimeDelta(**{1: 43})  # type: ignore[misc]
+
+    def test_iso(self):
+        assert TimeDelta("PT1H2M3.000004S") == TimeDelta(
+            hours=1, minutes=2, seconds=3, microseconds=4
+        )
 
 
 class TestFactories:
@@ -305,17 +310,17 @@ def test_comparison():
         (TimeDelta(minutes=-4), "-PT4M"),
     ],
 )
-def test_format_common_iso(d, expected):
-    assert d.format_common_iso() == expected
+def test_format_iso(d, expected):
+    assert d.format_iso() == expected
 
 
 def test_repr():
     assert (
         repr(TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4))
-        == "TimeDelta(PT1h2m3.000004s)"
+        == 'TimeDelta("PT1h2m3.000004s")'
     )
-    assert repr(TimeDelta()) == "TimeDelta(PT0s)"
-    assert repr(TimeDelta(minutes=23, seconds=1)) == "TimeDelta(PT23m1s)"
+    assert repr(TimeDelta()) == 'TimeDelta("PT0s")'
+    assert repr(TimeDelta(minutes=23, seconds=1)) == 'TimeDelta("PT23m1s")'
 
 
 VALID_TDELTAS = [
@@ -403,11 +408,11 @@ INVALID_TDELTAS = [
 ]
 
 
-class TestParseCommonIso:
+class TestParseIso:
 
     @pytest.mark.parametrize("s, expected", VALID_TDELTAS)
     def test_valid(self, s, expected):
-        assert TimeDelta.parse_common_iso(s) == expected
+        assert TimeDelta.parse_iso(s) == expected
 
     @pytest.mark.parametrize("s", INVALID_TDELTAS)
     def test_invalid(self, s) -> None:
@@ -415,7 +420,7 @@ class TestParseCommonIso:
             ValueError,
             match=r"Invalid format.*" + re.escape(repr(s)),
         ):
-            TimeDelta.parse_common_iso(s)
+            TimeDelta.parse_iso(s)
 
     @pytest.mark.parametrize(
         "s",
@@ -426,7 +431,7 @@ class TestParseCommonIso:
     )
     def test_too_large(self, s) -> None:
         with pytest.raises(ValueError, match="range"):
-            TimeDelta.parse_common_iso(s)
+            TimeDelta.parse_iso(s)
 
 
 def test_addition():

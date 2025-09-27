@@ -11,7 +11,6 @@ from typing import Any, Iterable, Iterator, Union, no_type_check
 from ._core import (
     Instant,
     OffsetDateTime,
-    SystemDateTime,
     ZonedDateTime,
     _clear_tz_cache,
     _clear_tz_cache_by_keys,
@@ -37,12 +36,12 @@ __all__ = [
 
 
 class _TimePatch:
-    _pin: Union[Instant, ZonedDateTime, OffsetDateTime, SystemDateTime]
+    _pin: Union[Instant, ZonedDateTime, OffsetDateTime]
     _keep_ticking: bool
 
     def __init__(
         self,
-        pin: Union[Instant, ZonedDateTime, OffsetDateTime, SystemDateTime],
+        pin: Union[Instant, ZonedDateTime, OffsetDateTime],
         keep_ticking: bool,
     ):
         self._pin = pin
@@ -66,7 +65,7 @@ class _TimePatch:
 
 @contextmanager
 def patch_current_time(
-    dt: Union[Instant, ZonedDateTime, OffsetDateTime, SystemDateTime],
+    dt: Union[Instant, ZonedDateTime, OffsetDateTime],
     /,
     *,
     keep_ticking: bool,
@@ -177,8 +176,9 @@ def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None:
     Caution
     -------
     Calling this function may change the behavior of existing ``ZonedDateTime``
-    instances in surprising ways. Most significantly, the
-    ``exact_eq()`` method will return ``False`` between instances created before and after clearing the cache.
+    instances in surprising ways. Most significantly, ``exact_eq()`` may
+    return ``False`` between two timezone instances with the same TZ ID,
+    if this timezone definition was changed on disk.
 
     **Use this function only if you know that you need to.**
 
@@ -280,7 +280,7 @@ def _pydantic_parse(cls: type, v: object) -> object:
         return v
     # whenever also doesn't allow string subclasses
     elif type(v) is str:
-        return cls.parse_common_iso(v)
+        return cls.parse_iso(v)
     else:
         raise ValueError(f"Cannot parse {cls.__name__} from type {type(v)}")
 
@@ -294,7 +294,7 @@ def pydantic_schema(cls):
         # this breaks JSON schema generation...but only when used with the
         # "serialization" mode for some reason...
         json_schema=core_schema.no_info_after_validator_function(
-            cls.parse_common_iso,
+            cls.parse_iso,
             core_schema.str_schema(strict=True),
             serialization=core_schema.to_string_ser_schema(),
         ),

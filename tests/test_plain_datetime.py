@@ -14,7 +14,6 @@ from whenever import (
     PlainDateTime,
     RepeatedTime,
     SkippedTime,
-    SystemDateTime,
     Time,
     ZonedDateTime,
     days,
@@ -27,31 +26,43 @@ from whenever import (
 )
 
 from .common import (
+    AMS_TZ_POSIX,
     AlwaysEqual,
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
+    system_tz,
     system_tz_ams,
 )
 
 
-def test_minimal():
-    d = PlainDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)
+class TestInit:
 
-    assert d.year == 2020
-    assert d.month == 8
-    assert d.day == 15
-    assert d.hour == 5
-    assert d.minute == 12
-    assert d.second == 30
-    assert d.nanosecond == 450
+    def test_simple(self):
+        d = PlainDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)
 
-    assert (
-        PlainDateTime(2020, 8, 15, 12)
-        == PlainDateTime(2020, 8, 15, 12, 0)
-        == PlainDateTime(2020, 8, 15, 12, 0, 0)
-        == PlainDateTime(2020, 8, 15, 12, 0, 0, nanosecond=0)
-    )
+        assert d.year == 2020
+        assert d.month == 8
+        assert d.day == 15
+        assert d.hour == 5
+        assert d.minute == 12
+        assert d.second == 30
+        assert d.nanosecond == 450
+
+        assert (
+            PlainDateTime(2020, 8, 15, 12)
+            == PlainDateTime(2020, 8, 15, 12, 0)
+            == PlainDateTime(2020, 8, 15, 12, 0, 0)
+            == PlainDateTime(2020, 8, 15, 12, 0, 0, nanosecond=0)
+        )
+
+        with pytest.raises(ValueError, match="nano|time"):
+            PlainDateTime(2020, 8, 15, 12, 0, 0, nanosecond=1_000_000_000)
+
+    def test_iso(self):
+        assert PlainDateTime("2020-08-15T05:12:30.000000450") == PlainDateTime(
+            2020, 8, 15, 5, 12, 30, nanosecond=450
+        )
 
 
 def test_components():
@@ -142,47 +153,91 @@ class TestAssumeTz:
 
 
 class TestAssumeSystemTz:
-    @system_tz_ams()
-    def test_typical(self):
-        assert (
-            PlainDateTime(2020, 8, 15, 23)
-            .assume_system_tz(disambiguate="raise")
-            .exact_eq(SystemDateTime(2020, 8, 15, 23))
-        )
+    @pytest.mark.parametrize(
+        "tz",
+        [
+            "Europe/Amsterdam",
+            AMS_TZ_POSIX,
+        ],
+    )
+    def test_typical(self, tz):
+        with system_tz(tz):
+            dt = PlainDateTime(2020, 8, 15, 23)
 
-    @system_tz_ams()
-    def test_ambiguous(self):
-        d = PlainDateTime(2023, 10, 29, 2, 15)
+            with system_tz(tz):
+                zdt = dt.assume_system_tz(disambiguate="raise")
+                assert isinstance(zdt, ZonedDateTime)
+                assert zdt.to_plain() == dt
+                assert zdt.offset == hours(2)
 
-        with pytest.raises(RepeatedTime, match="02:15.*system"):
-            d.assume_system_tz(disambiguate="raise")
+                if tz == "Europe/Amsterdam":
+                    assert zdt.tz == "Europe/Amsterdam"
 
-        assert d.assume_system_tz(disambiguate="earlier").exact_eq(
-            SystemDateTime(2023, 10, 29, 2, 15, disambiguate="earlier")
-        )
-        assert d.assume_system_tz(disambiguate="compatible").exact_eq(
-            SystemDateTime(2023, 10, 29, 2, 15, disambiguate="earlier")
-        )
-        assert d.assume_system_tz(disambiguate="later").exact_eq(
-            SystemDateTime(2023, 10, 29, 2, 15, disambiguate="later")
-        )
+    @pytest.mark.parametrize(
+        "tz",
+        [
+            "Europe/Amsterdam",
+            AMS_TZ_POSIX,
+        ],
+    )
+    def test_ambiguous(self, tz):
+        with system_tz(tz):
+            d = PlainDateTime(2023, 10, 29, 2, 15)
 
-    @system_tz_ams()
-    def test_nonexistent(self):
-        d = PlainDateTime(2023, 3, 26, 2, 15)
+            with pytest.raises(RepeatedTime, match="02:15.*is repeated"):
+                d.assume_system_tz(disambiguate="raise")
 
-        with pytest.raises(SkippedTime, match="02:15.*system"):
-            d.assume_system_tz(disambiguate="raise")
+            zdt1 = d.assume_system_tz(disambiguate="earlier")
+            assert isinstance(zdt1, ZonedDateTime)
+            assert zdt1.to_plain() == d
+            assert zdt1.offset == hours(2)
 
-        assert d.assume_system_tz(disambiguate="earlier").exact_eq(
-            SystemDateTime(2023, 3, 26, 2, 15, disambiguate="earlier")
-        )
-        assert d.assume_system_tz(disambiguate="later").exact_eq(
-            SystemDateTime(2023, 3, 26, 2, 15, disambiguate="later")
-        )
-        assert d.assume_system_tz(disambiguate="compatible").exact_eq(
-            SystemDateTime(2023, 3, 26, 2, 15, disambiguate="compatible")
-        )
+            # posix TZ string cannot be checked
+            if tz == "Europe/Amsterdam":
+                assert zdt1.tz == "Europe/Amsterdam"
+
+            assert d.assume_system_tz(disambiguate="compatible").exact_eq(zdt1)
+
+            zdt2 = d.assume_system_tz(disambiguate="later")
+            assert isinstance(zdt2, ZonedDateTime)
+            assert zdt2.to_plain() == d
+            assert zdt2.offset == hours(1)
+
+            # posix TZ string cannot be checked
+            if tz == "Europe/Amsterdam":
+                assert zdt2.tz == "Europe/Amsterdam"
+
+    @pytest.mark.parametrize(
+        "tz",
+        [
+            "Europe/Amsterdam",
+            AMS_TZ_POSIX,
+        ],
+    )
+    def test_nonexistent(self, tz):
+        with system_tz(tz):
+            d = PlainDateTime(2023, 3, 26, 2, 15)
+
+            with pytest.raises(SkippedTime, match="02:15.*is skipped"):
+                d.assume_system_tz(disambiguate="raise")
+
+            zdt1 = d.assume_system_tz(disambiguate="earlier")
+            assert isinstance(zdt1, ZonedDateTime)
+            assert zdt1.to_plain() == d.subtract(hours=1, ignore_dst=True)
+            assert zdt1.offset == hours(1)
+            # posix TZ string cannot be checked
+            if tz == "Europe/Amsterdam":
+                assert zdt1.tz == "Europe/Amsterdam"
+
+            zdt2 = d.assume_system_tz(disambiguate="later")
+            assert isinstance(zdt2, ZonedDateTime)
+            assert zdt2.to_plain() == d.add(hours=1, ignore_dst=True)
+            assert zdt2.offset == hours(2)
+            # posix TZ string cannot be checked
+            if tz == "Europe/Amsterdam":
+                assert zdt2.tz == "Europe/Amsterdam"
+
+            assert d.assume_system_tz(disambiguate="compatible").exact_eq(zdt2)
 
 
 def test_immutable():
@@ -191,7 +246,7 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-class TestParseCommonIso:
+class TestParseIso:
     @pytest.mark.parametrize(
         "s, expected",
         [
@@ -225,7 +280,7 @@ class TestParseCommonIso:
         ],
     )
     def test_valid(self, s, expected):
-        assert PlainDateTime.parse_common_iso(s) == PlainDateTime(
+        assert PlainDateTime.parse_iso(s) == PlainDateTime(
             *expected[:6], nanosecond=expected[6]
         )
 
@@ -287,12 +342,12 @@ class TestParseCommonIso:
     )
     def test_invalid(self, s):
         with pytest.raises(ValueError, match=re.escape(repr(s))):
-            PlainDateTime.parse_common_iso(s)
+            PlainDateTime.parse_iso(s)
 
     @given(text())
     def test_fuzzing(self, s: str):
         with pytest.raises(ValueError, match=re.escape(repr(s))):
-            PlainDateTime.parse_common_iso(s)
+            PlainDateTime.parse_iso(s)
 
 
 def test_equality():
@@ -330,18 +385,88 @@ def test_equality():
 
 def test_repr():
     d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-    assert repr(d) == "PlainDateTime(2020-08-15 23:12:09.000987654)"
+    assert repr(d) == 'PlainDateTime("2020-08-15 23:12:09.000987654")'
     # no fractional seconds
     assert (
         repr(PlainDateTime(2020, 8, 15, 23, 12))
-        == "PlainDateTime(2020-08-15 23:12:00)"
+        == 'PlainDateTime("2020-08-15 23:12:00")'
     )
 
 
-def test_format_common_iso():
-    d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-    assert str(d) == "2020-08-15T23:12:09.000987654"
-    assert d.format_common_iso() == "2020-08-15T23:12:09.000987654"
+class TestFormatIso:
+
+    def test_default(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_650)
+        assert str(d) == "2020-08-15T23:12:09.00098765"
+        assert d.format_iso() == "2020-08-15T23:12:09.00098765"
+
+    @pytest.mark.parametrize(
+        "dt, kwargs, expected",
+        [
+            (
+                PlainDateTime(1993, 4, 1, 14),
+                {"unit": "nanosecond"},
+                "1993-04-01T14:00:00.000000000",
+            ),
+            (
+                PlainDateTime(2025, 11, 1, 14, nanosecond=40_000),
+                {"unit": "microsecond", "sep": " "},
+                "2025-11-01 14:00:00.000040",
+            ),
+            (
+                PlainDateTime(2025, 11, 1, 14, 59, 42, nanosecond=40_000),
+                {"unit": "millisecond", "basic": True},
+                "20251101T145942.000",
+            ),
+            (
+                PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321),
+                {"unit": "second", "sep": "T", "basic": True},
+                "20200815T231209",
+            ),
+            (
+                PlainDateTime(2020, 8, 15, 23, 12, 49),
+                {"unit": "minute"},
+                "2020-08-15T23:12",
+            ),
+            (
+                PlainDateTime(2020, 8, 15, 23, 45),
+                {"unit": "hour", "basic": True},
+                "20200815T23",
+            ),
+            (
+                PlainDateTime(2020, 8, 15, nanosecond=40_000),
+                {"unit": "auto", "basic": False},
+                "2020-08-15T00:00:00.00004",
+            ),
+        ],
+    )
+    def test_variations(self, dt, kwargs, expected):
+        assert dt.format_iso(**kwargs) == expected
+
+    def test_invalid(self):
+        dt = PlainDateTime(2020, 4, 9, 13)
+        with pytest.raises(ValueError, match="unit"):
+            dt.format_iso(unit="foo")  # type: ignore[arg-type]
+
+        with pytest.raises(
+            (ValueError, TypeError, AttributeError), match="unit"
+        ):
+            dt.format_iso(unit=True)  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError, match="sep"):
+            dt.format_iso(sep="_")  # type: ignore[arg-type]
+
+        with pytest.raises(
+            (ValueError, TypeError, AttributeError), match="sep"
+        ):
+            dt.format_iso(sep=1)  # type: ignore[arg-type]
+
+        with pytest.raises(TypeError, match="basic"):
+            dt.format_iso(basic=1)  # type: ignore[arg-type]
+
+        # tz is a valid kwarg for ZonedDateTime.format_iso(), but not here
+        with pytest.raises(TypeError, match="tz"):
+            dt.format_iso(tz="always")  # type: ignore[call-arg]
 
 
 def test_comparison():

@@ -13,11 +13,9 @@ from whenever import (
     Instant,
     OffsetDateTime,
     PlainDateTime,
-    SystemDateTime,
     ZonedDateTime,
     hours,
     milliseconds,
-    minutes,
     nanoseconds,
     seconds,
 )
@@ -40,9 +38,13 @@ from .test_offset_datetime import (
 BIG_INT = 1 << 64 + 1  # a big int that may cause an overflow error
 
 
-def test_no_init():
-    with pytest.raises(TypeError, match="cannot"):
-        Instant()
+def test_init_is_parse_iso():
+    assert Instant("2020-08-15T12:30:45Z") == Instant.from_utc(
+        2020, 8, 15, 12, 30, 45
+    )
+
+    with pytest.raises(TypeError):
+        Instant(2020, 3, 4)  # type: ignore[call-arg,arg-type]
 
 
 class TestFromUTC:
@@ -180,24 +182,6 @@ class TestEquality:
 
         with pytest.raises(TypeError):
             d.exact_eq(zoned_same)  # type: ignore[arg-type]
-
-    @system_tz_ams()
-    def test_system_tz(self):
-        d: Instant | SystemDateTime = Instant.from_utc(2023, 10, 29, 1, 15)
-        sys_same = SystemDateTime(2023, 10, 29, 2, 15, disambiguate="later")
-        sys_different = SystemDateTime(
-            2023, 10, 29, 2, 15, disambiguate="earlier"
-        )
-        assert d == sys_same
-        assert not d != sys_same
-        assert not d == sys_different
-        assert d != sys_different
-
-        assert hash(d) == hash(sys_same)
-        assert hash(d) != hash(sys_different)
-
-        with pytest.raises(TypeError):
-            d.exact_eq(sys_same)  # type: ignore[arg-type]
 
     def test_offset(self):
         d: Instant | OffsetDateTime = Instant.from_utc(2023, 4, 5, 4)
@@ -355,10 +339,10 @@ class TestFromTimestamp:
 
 def test_repr():
     d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-    assert repr(d) == "Instant(2020-08-15 23:12:09.000987654Z)"
+    assert repr(d) == 'Instant("2020-08-15 23:12:09.000987654Z")'
     assert (
         repr(Instant.from_utc(2020, 8, 15, 23, 12))
-        == "Instant(2020-08-15 23:12:00Z)"
+        == 'Instant("2020-08-15 23:12:00Z")'
     )
 
 
@@ -435,28 +419,6 @@ class TestComparison:
         assert d <= zoned_gt
         assert not d > zoned_gt
         assert not d >= zoned_gt
-
-    @system_tz_nyc()
-    def test_system_tz(self):
-        d = Instant.from_utc(2020, 8, 15, 12, 30)
-
-        sys_eq = d.to_system_tz()
-        sys_gt = sys_eq + minutes(1)
-        sys_lt = sys_eq - minutes(1)
-        assert d >= sys_eq
-        assert d <= sys_eq
-        assert not d > sys_eq
-        assert not d < sys_eq
-
-        assert d > sys_lt
-        assert d >= sys_lt
-        assert not d < sys_lt
-        assert not d <= sys_lt
-
-        assert d < sys_gt
-        assert d <= sys_gt
-        assert not d > sys_gt
-        assert not d >= sys_gt
 
     def test_notimplemented(self):
         d = Instant.from_utc(2020, 8, 15)
@@ -753,22 +715,6 @@ class TestDifference:
         # same with method
         assert d.difference(other) == d - other
 
-    @system_tz_ams()
-    def test_system_tz(self):
-        d = Instant.from_utc(2023, 10, 29, 6)
-        other = SystemDateTime(2023, 10, 29, 3, disambiguate="later")
-        assert d - other == hours(4)
-        assert d - SystemDateTime(
-            2023, 10, 29, 2, disambiguate="later"
-        ) == hours(5)
-        assert d - SystemDateTime(
-            2023, 10, 29, 2, disambiguate="earlier"
-        ) == hours(6)
-        assert d - SystemDateTime(2023, 10, 29, 1) == hours(7)
-
-        # same with method
-        assert d.difference(other) == d - other
-
     def test_invalid(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.raises(TypeError, match="unsupported operand type"):
@@ -853,16 +799,24 @@ def test_to_tz():
 @system_tz_nyc()
 def test_to_system_tz():
     d = Instant.from_utc(2020, 8, 15, 20)
-    assert d.to_system_tz().exact_eq(SystemDateTime(2020, 8, 15, 16))
+    assert d.to_system_tz().exact_eq(
+        ZonedDateTime(2020, 8, 15, 16, tz="America/New_York")
+    )
     # ensure disembiguation is correct
     d = Instant.from_utc(2022, 11, 6, 5)
     assert d.to_system_tz().exact_eq(
-        SystemDateTime(2022, 11, 6, 1, disambiguate="earlier")
+        ZonedDateTime(
+            2022, 11, 6, 1, disambiguate="earlier", tz="America/New_York"
+        )
     )
     assert (
         Instant.from_utc(2022, 11, 6, 6)
         .to_system_tz()
-        .exact_eq(SystemDateTime(2022, 11, 6, 1, disambiguate="later"))
+        .exact_eq(
+            ZonedDateTime(
+                2022, 11, 6, 1, disambiguate="later", tz="America/New_York"
+            )
+        )
     )
 
     with pytest.raises((ValueError, OverflowError)):
@@ -902,31 +856,105 @@ class TestParseRFC2822:
             Instant.parse_rfc2822(s)
 
 
-@pytest.mark.parametrize(
-    "d, expect",
-    [
-        (
-            Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654),
-            "2020-08-15T23:12:09.000987654Z",
-        ),
-        (
-            Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=980_000_000),
-            "2020-08-15T23:12:09.98Z",
-        ),
-        (Instant.from_utc(2020, 8, 15), "2020-08-15T00:00:00Z"),
-        (Instant.from_utc(2020, 8, 15, 23, 12, 9), "2020-08-15T23:12:09Z"),
-    ],
-)
-def test_format_common_iso(d, expect):
-    assert d.format_common_iso() == expect
-    assert str(d) == expect
+class TestFormatIso:
+
+    @pytest.mark.parametrize(
+        "d, expect",
+        [
+            (
+                Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654),
+                "2020-08-15T23:12:09.000987654Z",
+            ),
+            (
+                Instant.from_utc(
+                    2020, 8, 15, 23, 12, 9, nanosecond=980_000_000
+                ),
+                "2020-08-15T23:12:09.98Z",
+            ),
+            (Instant.from_utc(2020, 8, 15), "2020-08-15T00:00:00Z"),
+            (Instant.from_utc(2020, 8, 15, 23, 12, 9), "2020-08-15T23:12:09Z"),
+        ],
+    )
+    def test_default(self, d, expect):
+        assert d.format_iso() == expect
+        assert str(d) == expect
+
+    @pytest.mark.parametrize(
+        "ins, kwargs, expected",
+        [
+            (
+                Instant.from_utc(1993, 4, 1, 14),
+                {"unit": "nanosecond"},
+                "1993-04-01T14:00:00.000000000Z",
+            ),
+            (
+                Instant.from_utc(2025, 11, 1, 14, nanosecond=40_000),
+                {"unit": "microsecond", "sep": " "},
+                "2025-11-01 14:00:00.000040Z",
+            ),
+            (
+                Instant.from_utc(2025, 11, 1, 14, 59, 42, nanosecond=40_000),
+                {"unit": "millisecond", "basic": True},
+                "20251101T145942.000Z",
+            ),
+            (
+                Instant.from_utc(
+                    2020, 8, 15, 23, 12, 9, nanosecond=987_654_321
+                ),
+                {"unit": "second", "sep": "T", "basic": True},
+                "20200815T231209Z",
+            ),
+            (
+                Instant.from_utc(2020, 8, 15, 23, 12, 49),
+                {"unit": "minute"},
+                "2020-08-15T23:12Z",
+            ),
+            (
+                Instant.from_utc(2020, 8, 15, 23, 45),
+                {"unit": "hour", "basic": True},
+                "20200815T23Z",
+            ),
+            (
+                Instant.from_utc(2020, 8, 15, nanosecond=40_000),
+                {"unit": "auto", "basic": False},
+                "2020-08-15T00:00:00.00004Z",
+            ),
+        ],
+    )
+    def test_variations(self, ins, kwargs, expected):
+        assert ins.format_iso(**kwargs) == expected
+
+    def test_invalid(self):
+        dt = Instant.from_utc(2020, 4, 9, 13)
+        with pytest.raises(ValueError, match="unit"):
+            dt.format_iso(unit="foo")  # type: ignore[arg-type]
+
+        with pytest.raises(
+            (ValueError, TypeError, AttributeError), match="unit"
+        ):
+            dt.format_iso(unit=True)  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError, match="sep"):
+            dt.format_iso(sep="_")  # type: ignore[arg-type]
+
+        with pytest.raises(
+            (ValueError, TypeError, AttributeError), match="sep"
+        ):
+            dt.format_iso(sep=1)  # type: ignore[arg-type]
+
+        with pytest.raises(TypeError, match="basic"):
+            dt.format_iso(basic=1)  # type: ignore[arg-type]
+
+        # tz is a valid kwarg for ZonedDateTime.format_iso(), but not here
+        with pytest.raises(TypeError, match="tz"):
+            dt.format_iso(tz="always")  # type: ignore[call-arg]
 
 
-class TestParseCommonIso:
+class TestParseIso:
 
     @pytest.mark.parametrize("s, expect", VALID_ISO_STRINGS)
     def test_valid(self, s: str, expect: OffsetDateTime):
-        assert Instant.parse_common_iso(s) == expect.to_instant()
+        assert Instant.parse_iso(s) == expect.to_instant()
 
     @pytest.mark.parametrize("s", INVALID_ISO_STRINGS)
     def test_invalid(self, s):
@@ -934,7 +962,7 @@ class TestParseCommonIso:
             ValueError,
             match=r"Invalid format.*" + re.escape(repr(s)),
         ):
-            Instant.parse_common_iso(s)
+            Instant.parse_iso(s)
 
     @given(text())
     def test_fuzzing(self, s: str):
@@ -942,7 +970,7 @@ class TestParseCommonIso:
             ValueError,
             match=r"Invalid format.*" + re.escape(repr(s)),
         ):
-            Instant.parse_common_iso(s)
+            Instant.parse_iso(s)
 
 
 class TestRound:

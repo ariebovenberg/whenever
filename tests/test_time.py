@@ -40,19 +40,73 @@ class TestInit:
         with pytest.raises(ValueError):
             Time(0, 0, 0, nanosecond=1_000_000_000)
 
+    def test_iso(self):
+        assert Time("01:02:03.000004") == Time(1, 2, 3, nanosecond=4_000)
 
-@pytest.mark.parametrize(
-    "t, expect",
-    [
-        (Time(1, 2, 3, nanosecond=40_000_000), "01:02:03.04"),
-        (Time(1, 2, 3), "01:02:03"),
-        (Time(1, 2), "01:02:00"),
-        (Time(1), "01:00:00"),
-    ],
-)
-def test_format_common_iso(t, expect):
-    assert str(t) == expect
-    assert t.format_common_iso() == expect
+
+class TestFormatIso:
+
+    @pytest.mark.parametrize(
+        "t, expect",
+        [
+            (Time(1, 2, 3, nanosecond=40_000_000), "01:02:03.04"),
+            (Time(1, 2, 3), "01:02:03"),
+            (Time(1, 2), "01:02:00"),
+            (Time(1), "01:00:00"),
+        ],
+    )
+    def test_defaults(self, t, expect):
+        assert str(t) == expect
+        assert t.format_iso() == expect
+
+    @pytest.mark.parametrize(
+        "t, kwargs, expect",
+        [
+            (
+                Time(1, 2, 3, nanosecond=40_000_000),
+                {},
+                "01:02:03.04",
+            ),
+            (
+                Time(1, 2, 3, nanosecond=40_000000),
+                {"unit": "millisecond"},
+                "01:02:03.040",
+            ),
+            (
+                Time(1, 2, 3, nanosecond=40_000000),
+                {"unit": "minute", "basic": True},
+                "0102",
+            ),
+            (
+                Time(0, 0, 59, nanosecond=40_000000),
+                {"unit": "second", "basic": False},
+                "00:00:59",
+            ),
+            (
+                Time(0, 0, 59, nanosecond=40),
+                {"unit": "auto", "basic": False},
+                "00:00:59.00000004",
+            ),
+            (
+                Time(0, 0, 0),
+                {"unit": "auto", "basic": True},
+                "000000",
+            ),
+        ],
+    )
+    def test_with_kwargs(self, t, kwargs, expect):
+        assert t.format_iso(**kwargs) == expect
+
+    def test_invalid(self):
+        t = Time(1, 2, 3, nanosecond=40_000_000)
+        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+            t.format_iso(unit="foo")  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError, match="unit"):
+            t.format_iso(unit="month", basic=True)  # type: ignore[arg-type]
+
+        with pytest.raises(TypeError, match="sep"):
+            t.format_iso(sep="T")  # type: ignore[call-arg]
 
 
 def test_py_time():
@@ -64,7 +118,7 @@ def test_py_time():
 
 def test_repr():
     t = Time(1, 2, 3, nanosecond=40_000_000)
-    assert repr(t) == "Time(01:02:03.04)"
+    assert repr(t) == 'Time("01:02:03.04")'
 
 
 def test_replace():
@@ -85,7 +139,7 @@ def test_replace():
         t.replace(fold=0)  # type: ignore[call-arg]
 
 
-class TestParseCommonIso:
+class TestParseIso:
 
     @pytest.mark.parametrize(
         "input, expect",
@@ -109,7 +163,7 @@ class TestParseCommonIso:
         ],
     )
     def test_valid(self, input, expect):
-        assert Time.parse_common_iso(input) == expect
+        assert Time.parse_iso(input) == expect
 
     @pytest.mark.parametrize(
         "input",
@@ -162,7 +216,7 @@ class TestParseCommonIso:
             ValueError,
             match=r"Invalid format.*" + re.escape(repr(input)),
         ):
-            Time.parse_common_iso(input)
+            Time.parse_iso(input)
 
 
 def test_eq():

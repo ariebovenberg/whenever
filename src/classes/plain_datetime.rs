@@ -1,22 +1,18 @@
-use core::ffi::{CStr, c_int, c_long, c_void};
-use core::ptr::null_mut as NULL;
-use pyo3_ffi::*;
-
 use crate::{
     classes::{
-        date::Date,
-        date_delta::DateDelta,
-        datetime_delta::set_units_from_kwargs,
-        instant::Instant,
-        offset_datetime::{OffsetDateTime, check_ignore_dst_kwarg},
-        time::Time,
-        zoned_datetime::ZonedDateTime,
+        date::Date, date_delta::DateDelta, datetime_delta::set_units_from_kwargs, instant::Instant,
+        offset_datetime::check_ignore_dst_kwarg, time::Time, zoned_datetime::ZonedDateTime,
     },
-    common::{ambiguity::*, parse::Scan, round, scalar::*},
+    common::{ambiguity::*, fmt, parse::Scan, round, scalar::*},
     docstrings as doc,
     py::*,
     pymodule::State,
 };
+use core::{
+    ffi::{CStr, c_int, c_long, c_void},
+    ptr::null_mut as NULL,
+};
+use pyo3_ffi::*;
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub struct DateTime {
@@ -134,7 +130,7 @@ impl DateTime {
     }
 }
 
-impl PyWrapped for DateTime {}
+impl PySimpleAlloc for DateTime {}
 
 impl std::fmt::Display for DateTime {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -143,6 +139,9 @@ impl std::fmt::Display for DateTime {
 }
 
 fn __new__(cls: HeapType<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+    if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
+        return parse_iso(cls, args.iter().next().unwrap());
+    }
     let mut year: c_long = 0;
     let mut month: c_long = 0;
     let mut day: c_long = 0;
@@ -165,23 +164,68 @@ fn __new__(cls: HeapType<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> Py
     );
 
     DateTime {
-        date: Date::from_longs(year, month, day).ok_or_type_err("Invalid date")?,
-        time: Time::from_longs(hour, minute, second, nanosecond).ok_or_type_err("Invalid time")?,
+        date: Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?,
+        time: Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?,
     }
     .to_obj(cls)
 }
 
 fn __repr__(_: PyType, slf: DateTime) -> PyReturn {
     let DateTime { date, time } = slf;
-    format!("PlainDateTime({date} {time})").to_py()
+    PyAsciiStrBuilder::format((
+        b"PlainDateTime(\"",
+        date.format_iso(false),
+        b' ',
+        time.format_iso(fmt::Unit::Auto, false),
+        b"\")",
+    ))
 }
 
 fn __str__(_: PyType, slf: DateTime) -> PyReturn {
     format!("{slf}").to_py()
 }
 
-fn format_common_iso(cls: PyType, slf: DateTime) -> PyReturn {
-    __str__(cls, slf)
+fn format_iso(
+    cls: HeapType<DateTime>,
+    slf: DateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    fmt::format_iso(
+        slf.date,
+        slf.time,
+        cls.state(),
+        args,
+        kwargs,
+        fmt::Suffix::Absent,
+    )
+}
+
+fn parse_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
+    DateTime::parse(
+        arg.cast::<PyStr>()
+            // NOTE: this exception message also needs to make sense when
+            // called through the constructor
+            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
+            .as_utf8()?,
+    )
+    .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?
+    .to_obj(cls)
+}
+
+fn format_common_iso(
+    cls: HeapType<DateTime>,
+    slf: DateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
+    format_iso(cls, slf, args, kwargs)
+}
+
+fn parse_common_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
+    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
+    parse_iso(cls, arg)
 }
 
 fn __richcmp__(cls: HeapType<DateTime>, slf: DateTime, other: PyObj, op: c_int) -> PyReturn {
@@ -642,16 +686,6 @@ fn is_datetime_sep(c: u8) -> bool {
     c == b'T' || c == b' ' || c == b't'
 }
 
-fn parse_common_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
-    DateTime::parse(
-        arg.cast::<PyStr>()
-            .ok_or_type_err("Expected a string")?
-            .as_utf8()?,
-    )
-    .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?
-    .to_obj(cls)
-}
-
 fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let &State {
         str_format,
@@ -708,7 +742,6 @@ fn assume_tz(
         zoned_datetime_type,
         exc_skipped,
         exc_repeated,
-        exc_tz_notfound,
         ref tz_store,
         ..
     } = cls.state();
@@ -731,9 +764,9 @@ fn assume_tz(
         str_later,
     )?
     .unwrap_or(Disambiguate::Compatible);
-    let tzif = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
-    ZonedDateTime::resolve_using_disambiguate(date, time, tzif, dis, exc_repeated, exc_skipped)?
-        .to_obj(zoned_datetime_type)
+    let tz = tz_store.obj_get(tz_obj)?;
+    ZonedDateTime::resolve_using_disambiguate(date, time, &tz, dis, exc_repeated, exc_skipped)?
+        .assume_tz_unchecked(tz, zoned_datetime_type)
 }
 
 fn assume_system_tz(
@@ -743,9 +776,9 @@ fn assume_system_tz(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let &State {
-        py_api,
+        ref tz_store,
+        zoned_datetime_type,
         str_disambiguate,
-        system_datetime_type,
         exc_skipped,
         exc_repeated,
         str_compatible,
@@ -762,21 +795,16 @@ fn assume_system_tz(
     let dis = Disambiguate::from_only_kwarg(
         kwargs,
         str_disambiguate,
-        "assume_system_tz",
+        "assume_tz",
         str_compatible,
         str_raise,
         str_earlier,
         str_later,
-    )?;
-    OffsetDateTime::resolve_system_tz_using_disambiguate(
-        py_api,
-        date,
-        time,
-        dis.unwrap_or(Disambiguate::Compatible),
-        exc_repeated,
-        exc_skipped,
     )?
-    .to_obj(system_datetime_type)
+    .unwrap_or(Disambiguate::Compatible);
+    let tz = tz_store.get_system_tz()?;
+    ZonedDateTime::resolve_using_disambiguate(date, time, &tz, dis, exc_repeated, exc_skipped)?
+        .assume_tz_unchecked(tz, zoned_datetime_type)
 }
 
 fn replace_date(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn {
@@ -826,16 +854,10 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(DateTime, py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
     method0!(DateTime, date, doc::LOCALTIME_DATE),
     method0!(DateTime, time, doc::LOCALTIME_TIME),
-    method0!(
-        DateTime,
-        format_common_iso,
-        doc::PLAINDATETIME_FORMAT_COMMON_ISO
-    ),
-    classmethod1!(
-        DateTime,
-        parse_common_iso,
-        doc::PLAINDATETIME_PARSE_COMMON_ISO
-    ),
+    method_kwargs!(DateTime, format_iso, doc::PLAINDATETIME_FORMAT_ISO),
+    method_kwargs!(DateTime, format_common_iso, c""), // deprecated alias
+    classmethod1!(DateTime, parse_iso, doc::PLAINDATETIME_PARSE_ISO),
+    classmethod1!(DateTime, parse_common_iso, c""), // deprecated alias
     classmethod_kwargs!(DateTime, parse_strptime, doc::PLAINDATETIME_PARSE_STRPTIME),
     method_kwargs!(DateTime, replace, doc::PLAINDATETIME_REPLACE),
     method0!(DateTime, assume_utc, doc::PLAINDATETIME_ASSUME_UTC),

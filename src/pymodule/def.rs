@@ -1,4 +1,4 @@
-//! The `whenever` module definition.
+//! The core definitions of the `whenever` Python module
 use crate::{
     classes::{
         date::{self, unpickle as _unpkl_date},
@@ -8,7 +8,6 @@ use crate::{
         monthday::{self, unpickle as _unpkl_md},
         offset_datetime::{self, unpickle as _unpkl_offset},
         plain_datetime::{self, unpickle as _unpkl_local},
-        system_datetime::{self, unpickle as _unpkl_system},
         time::{self, unpickle as _unpkl_time},
         time_delta::{
             self, hours, microseconds, milliseconds, minutes, nanoseconds, seconds,
@@ -19,9 +18,11 @@ use crate::{
     },
     docstrings as doc,
     py::*,
-    pymodule::patch::{_patch_time_frozen, _patch_time_keep_ticking, _unpatch_time, Patch},
-    pymodule::tzconf::*,
-    pymodule::utils::*,
+    pymodule::{
+        patch::{_patch_time_frozen, _patch_time_keep_ticking, _unpatch_time, Patch},
+        tzconf::*,
+        utils::*,
+    },
     tz::store::TzStore,
 };
 use core::{
@@ -69,7 +70,6 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     modmethod1!(_unpkl_utc, c""), // for backwards compatibility
     modmethod1!(_unpkl_offset, c""),
     modmethod_vararg!(_unpkl_zoned, c""),
-    modmethod1!(_unpkl_system, c""),
     // FUTURE: set __module__ on these
     modmethod1!(years, doc::YEARS),
     modmethod1!(months, doc::MONTHS),
@@ -87,6 +87,7 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     modmethod1!(_set_tzpath, c""),
     modmethod0!(_clear_tz_cache, c""),
     modmethod1!(_clear_tz_cache_by_keys, c""),
+    modmethod0!(reset_system_tz, doc::RESET_SYSTEM_TZ),
     PyMethodDef::zeroed(),
 ];
 
@@ -95,10 +96,14 @@ static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
         slot: Py_mod_exec,
         value: {
             extern "C" fn _wrap(arg: *mut PyObject) -> c_int {
-                match module_exec(unsafe { PyModule::from_ptr_unchecked(arg) }) {
-                    Ok(_) => 0,
-                    Err(_) => -1,
-                }
+                catch_panic!(
+                    match module_exec(unsafe { PyModule::from_ptr_unchecked(arg) }) {
+                        Ok(_) => 0,
+                        Err(_) => -1,
+                    },
+                    -1,
+                    "Rust panic in module exec: "
+                )
             }
             _wrap
         } as *mut c_void,
@@ -137,84 +142,75 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         module_name.borrow(),
         &mut unsafe { date::SPEC },
         c"_unpkl_date",
-        date::SINGLETONS,
     )?;
+    create_singletons(*date_type, date::SINGLETONS)?;
     let (yearmonth_type, unpickle_yearmonth) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { yearmonth::SPEC },
         c"_unpkl_ym",
-        yearmonth::SINGLETONS,
     )?;
+    create_singletons(*yearmonth_type, yearmonth::SINGLETONS)?;
     let (monthday_type, unpickle_monthday) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { monthday::SPEC },
         c"_unpkl_md",
-        monthday::SINGLETONS,
     )?;
+    create_singletons(*monthday_type, monthday::SINGLETONS)?;
     let (time_type, unpickle_time) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { time::SPEC },
         c"_unpkl_time",
-        time::SINGLETONS,
     )?;
+    create_singletons(*time_type, time::SINGLETONS)?;
     let (date_delta_type, unpickle_date_delta) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { date_delta::SPEC },
         c"_unpkl_ddelta",
-        date_delta::SINGLETONS,
     )?;
+    create_singletons(*date_delta_type, date_delta::SINGLETONS)?;
     let (time_delta_type, unpickle_time_delta) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { time_delta::SPEC },
         c"_unpkl_tdelta",
-        time_delta::SINGLETONS,
     )?;
+    create_singletons(*time_delta_type, time_delta::SINGLETONS)?;
     let (datetime_delta_type, unpickle_datetime_delta) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { datetime_delta::SPEC },
         c"_unpkl_dtdelta",
-        datetime_delta::SINGLETONS,
     )?;
+    create_singletons(*datetime_delta_type, datetime_delta::SINGLETONS)?;
     let (plain_datetime_type, unpickle_plain_datetime) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { plain_datetime::SPEC },
         c"_unpkl_local",
-        plain_datetime::SINGLETONS,
     )?;
+    create_singletons(*plain_datetime_type, plain_datetime::SINGLETONS)?;
     let (instant_type, unpickle_instant) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { instant::SPEC },
         c"_unpkl_inst",
-        instant::SINGLETONS,
     )?;
+    create_singletons(*instant_type, instant::SINGLETONS)?;
     let (offset_datetime_type, unpickle_offset_datetime) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { offset_datetime::SPEC },
         c"_unpkl_offset",
-        offset_datetime::SINGLETONS,
     )?;
     let (zoned_datetime_type, unpickle_zoned_datetime) = new_class(
         module,
         module_name.borrow(),
         &mut unsafe { zoned_datetime::SPEC },
         c"_unpkl_zoned",
-        zoned_datetime::SINGLETONS,
-    )?;
-    let (system_datetime_type, unpickle_system_datetime) = new_class(
-        module,
-        module_name.borrow(),
-        &mut unsafe { system_datetime::SPEC },
-        c"_unpkl_system",
-        system_datetime::SINGLETONS,
     )?;
     module
         .getattr(c"_unpkl_utc")?
@@ -269,7 +265,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     )?;
 
     let time_patch = Patch::new()?;
-    let tz_store = TzStore::new()?;
+    let tz_store = TzStore::new(*exc_tz_notfound)?;
 
     // Only write the state once everything is initialized,
     // to ensure we don't leak references to the above.
@@ -285,7 +281,6 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         instant_type: instant_type.py_owned(),
         offset_datetime_type: offset_datetime_type.py_owned(),
         zoned_datetime_type: zoned_datetime_type.py_owned(),
-        system_datetime_type: system_datetime_type.py_owned(),
 
         py_api,
         strptime: strptime.py_owned(),
@@ -338,6 +333,13 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         str_half_ceil: intern(c"half_ceil")?.py_owned(),
         str_half_even: intern(c"half_even")?.py_owned(),
         str_format: intern(c"format")?.py_owned(),
+        str_sep: intern(c"sep")?.py_owned(),
+        str_space: intern(c" ")?.py_owned(),
+        str_t: intern(c"T")?.py_owned(),
+        str_auto: intern(c"auto")?.py_owned(),
+        str_basic: intern(c"basic")?.py_owned(),
+        str_always: intern(c"always")?.py_owned(),
+        str_never: intern(c"never")?.py_owned(),
 
         exc_repeated: exc_repeated.py_owned(),
         exc_skipped: exc_skipped.py_owned(),
@@ -356,7 +358,6 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         unpickle_instant: unpickle_instant.py_owned(),
         unpickle_offset_datetime: unpickle_offset_datetime.py_owned(),
         unpickle_zoned_datetime: unpickle_zoned_datetime.py_owned(),
-        unpickle_system_datetime: unpickle_system_datetime.py_owned(),
 
         time_patch,
         tz_store,
@@ -444,17 +445,12 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
         (
             state.offset_datetime_type.inner(),
             state.unpickle_offset_datetime,
-            offset_datetime::SINGLETONS.len(),
+            0,
         ),
         (
             state.zoned_datetime_type.inner(),
             state.unpickle_zoned_datetime,
-            zoned_datetime::SINGLETONS.len(),
-        ),
-        (
-            state.system_datetime_type.inner(),
-            state.unpickle_system_datetime,
-            system_datetime::SINGLETONS.len(),
+            0,
         ),
     ] {
         traverse_type(cls.as_ptr().cast(), visit, arg, num_singletons)?;
@@ -508,7 +504,6 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.instant_type).cast());
         Py_CLEAR((&raw mut state.offset_datetime_type).cast());
         Py_CLEAR((&raw mut state.zoned_datetime_type).cast());
-        Py_CLEAR((&raw mut state.system_datetime_type).cast());
 
         // enum members
         Py_CLEAR((&raw mut state.weekday_enum_members[0]).cast());
@@ -556,6 +551,13 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.str_half_ceil).cast());
         Py_CLEAR((&raw mut state.str_half_even).cast());
         Py_CLEAR((&raw mut state.str_format).cast());
+        Py_CLEAR((&raw mut state.str_sep).cast());
+        Py_CLEAR((&raw mut state.str_space).cast());
+        Py_CLEAR((&raw mut state.str_t).cast());
+        Py_CLEAR((&raw mut state.str_auto).cast());
+        Py_CLEAR((&raw mut state.str_basic).cast());
+        Py_CLEAR((&raw mut state.str_always).cast());
+        Py_CLEAR((&raw mut state.str_never).cast());
 
         // unpickling functions
         Py_CLEAR((&raw mut state.unpickle_date).cast());
@@ -569,7 +571,6 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.unpickle_instant).cast());
         Py_CLEAR((&raw mut state.unpickle_offset_datetime).cast());
         Py_CLEAR((&raw mut state.unpickle_zoned_datetime).cast());
-        Py_CLEAR((&raw mut state.unpickle_system_datetime).cast());
 
         // exceptions
         Py_CLEAR((&raw mut state.exc_repeated).cast());
@@ -611,7 +612,6 @@ pub(crate) struct State {
     pub(crate) instant_type: HeapType<instant::Instant>,
     pub(crate) offset_datetime_type: HeapType<offset_datetime::OffsetDateTime>,
     pub(crate) zoned_datetime_type: HeapType<zoned_datetime::ZonedDateTime>,
-    pub(crate) system_datetime_type: HeapType<offset_datetime::OffsetDateTime>,
 
     pub(crate) weekday_enum_members: [PyObj; 7],
 
@@ -634,7 +634,6 @@ pub(crate) struct State {
     pub(crate) unpickle_instant: PyObj,
     pub(crate) unpickle_offset_datetime: PyObj,
     pub(crate) unpickle_zoned_datetime: PyObj,
-    pub(crate) unpickle_system_datetime: PyObj,
 
     pub(crate) py_api: &'static PyDateTime_CAPI,
 
@@ -681,6 +680,13 @@ pub(crate) struct State {
     pub(crate) str_half_ceil: PyObj,
     pub(crate) str_half_even: PyObj,
     pub(crate) str_format: PyObj,
+    pub(crate) str_sep: PyObj,
+    pub(crate) str_space: PyObj,
+    pub(crate) str_t: PyObj,
+    pub(crate) str_auto: PyObj,
+    pub(crate) str_basic: PyObj,
+    pub(crate) str_always: PyObj,
+    pub(crate) str_never: PyObj,
 
     pub(crate) time_patch: Patch,
     pub(crate) tz_store: TzStore,

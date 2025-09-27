@@ -4,7 +4,7 @@ use core::{
     ptr::null_mut as NULL,
 };
 use pyo3_ffi::*;
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{Display, Formatter};
 
 use crate::{
     classes::{
@@ -15,7 +15,7 @@ use crate::{
         yearmonth::YearMonth,
     },
     common::{
-        fmt::*,
+        fmt::{self, Chunk},
         parse::{extract_2_digits, extract_digit},
         scalar::*,
     },
@@ -32,8 +32,6 @@ pub struct Date {
 }
 
 pub(crate) const SINGLETONS: &[(&CStr, Date); 2] = &[(c"MIN", Date::MIN), (c"MAX", Date::MAX)];
-
-const ISO_TEMPLATE: [u8; 10] = *b"YYYY-MM-DD";
 
 impl Date {
     pub(crate) const MAX: Date = Date {
@@ -148,12 +146,8 @@ impl Date {
         }
     }
 
-    pub(crate) fn format_iso(self) -> [u8; 10] {
-        let mut s = ISO_TEMPLATE;
-        write_4_digits(self.year.get(), &mut s[..4]);
-        write_2_digits(self.month.get(), &mut s[5..7]);
-        write_2_digits(self.day, &mut s[8..]);
-        s
+    pub(crate) fn format_iso(self, basic: bool) -> IsoFormat {
+        IsoFormat { date: self, basic }
     }
 
     // For small adjustments, this is faster than converting to/from UnixDays
@@ -237,6 +231,31 @@ impl Date {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct IsoFormat {
+    date: Date,
+    basic: bool,
+}
+
+impl fmt::Chunk for IsoFormat {
+    fn len(&self) -> usize {
+        if self.basic { 8 } else { 10 }
+    }
+
+    fn write(&self, buf: &mut impl fmt::Sink) {
+        let Date { year, month, day } = self.date;
+        buf.write(fmt::format_4_digits(year.get()).as_ref());
+        if self.basic {
+            buf.write(fmt::format_2_digits(month.get()).as_ref());
+        } else {
+            buf.write(b"-");
+            buf.write(fmt::format_2_digits(month.get()).as_ref());
+            buf.write(b"-");
+        }
+        buf.write(fmt::format_2_digits(day).as_ref());
+    }
+}
+
 pub(crate) fn extract_year(s: &[u8], index: usize) -> Option<Year> {
     Some(
         extract_digit(s, index)? as u16 * 1000
@@ -248,66 +267,28 @@ pub(crate) fn extract_year(s: &[u8], index: usize) -> Option<Year> {
     .map(Year::new_unchecked)
 }
 
-impl PyWrapped for Date {}
+impl PySimpleAlloc for Date {}
 
 impl Display for Date {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let s = self.format_iso();
-        f.write_str(unsafe { std::str::from_utf8_unchecked(&s) })
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut s = fmt::ArrayWriter::<10>::new();
+        let fmt = self.format_iso(false);
+        fmt.write(&mut s);
+        f.write_str(s.finish())
     }
 }
 
 fn __new__(cls: HeapType<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
-    if args.len() > 3 {
-        raise_type_err(format!(
-            "Date() takes at most 3 arguments, got {}",
-            args.len() + kwargs.map_or(0, |x| x.len())
-        ))?
+    if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
+        return parse_iso(cls, args.iter().next().unwrap());
     }
-    let mut arg_obj: [Option<PyObj>; 3] = [None, None, None];
-    for (i, arg) in args.iter().enumerate() {
-        arg_obj[i] = Some(arg);
-    }
-    if let Some(kwarg_dict) = kwargs {
-        let &State {
-            str_year,
-            str_month,
-            str_day,
-            ..
-        } = cls.state();
-        handle_kwargs("Date", kwarg_dict.iteritems(), |key, value, eq| {
-            for (i, &kwname) in [str_year, str_month, str_day].iter().enumerate() {
-                if eq(key, kwname) {
-                    if arg_obj[i].replace(value).is_some() {
-                        raise_type_err(format!(
-                            "Date() got multiple values for argument {kwname}"
-                        ))?;
-                    }
-                    return Ok(true);
-                }
-            }
-            Ok(false)
-        })?;
-    };
-    Date::from_longs(
-        arg_obj[0]
-            .ok_or_type_err("function missing required argument 'year'")?
-            .cast::<PyInt>()
-            .ok_or_type_err("year must be an integer")?
-            .to_long()?,
-        arg_obj[1]
-            .ok_or_type_err("function missing required argument 'month'")?
-            .cast::<PyInt>()
-            .ok_or_type_err("month must be an integer")?
-            .to_long()?,
-        arg_obj[2]
-            .ok_or_type_err("function missing required argument 'day'")?
-            .cast::<PyInt>()
-            .ok_or_type_err("day must be an integer")?
-            .to_long()?,
-    )
-    .ok_or_value_err("Invalid date components")?
-    .to_obj(cls)
+    let mut year: c_long = 0;
+    let mut month: c_long = 0;
+    let mut day: c_long = 0;
+    parse_args_kwargs!(args, kwargs, c"lll:Date", year, month, day);
+    Date::from_longs(year, month, day)
+        .ok_or_value_err("Invalid date value")?
+        .to_obj(cls)
 }
 
 fn __richcmp__(cls: HeapType<Date>, a: Date, b_obj: PyObj, op: c_int) -> PyReturn {
@@ -327,12 +308,11 @@ fn __richcmp__(cls: HeapType<Date>, a: Date, b_obj: PyObj, op: c_int) -> PyRetur
 }
 
 fn __str__(_: PyType, slf: Date) -> PyReturn {
-    let s = slf.format_iso();
-    unsafe { std::str::from_utf8_unchecked(&s) }.to_py()
+    PyAsciiStrBuilder::format(slf.format_iso(false))
 }
 
 fn __repr__(_: PyType, slf: Date) -> PyReturn {
-    format!("Date({slf})").to_py()
+    PyAsciiStrBuilder::format((b"Date(\"", slf.format_iso(false), b"\")"))
 }
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
@@ -394,18 +374,57 @@ fn month_day(cls: HeapType<Date>, Date { month, day, .. }: Date) -> PyReturn {
     MonthDay::new_unchecked(month, day).to_obj(cls.state().monthday_type)
 }
 
-fn format_common_iso(_: PyType, slf: Date) -> PyReturn {
-    format!("{slf}").to_py()
+fn format_iso(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+    if !args.is_empty() {
+        raise_type_err("format_iso() takes no positional arguments")?
+    }
+
+    let mut basic = false;
+    let str_basic = cls.state().str_basic;
+
+    handle_kwargs("format_iso", kwargs, |key, value, eq| {
+        if eq(key, str_basic) {
+            if value.is_true() {
+                basic = true;
+            } else if value.is_false() {
+                basic = false;
+            } else {
+                raise_type_err("basic must be a bool")?
+            }
+        } else {
+            return Ok(false);
+        };
+        Ok(true)
+    })?;
+
+    PyAsciiStrBuilder::format(slf.format_iso(basic))
 }
 
-fn parse_common_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn {
+fn parse_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn {
     Date::parse_iso(
         s.cast::<PyStr>()
-            .ok_or_type_err("argument must be str")?
+            // NOTE: this exception message also needs to make sense when
+            // called through the constructor
+            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
             .as_utf8()?,
     )
     .ok_or_else_value_err(|| format!("Invalid format: {s}"))?
     .to_obj(cls)
+}
+
+fn format_common_iso(
+    cls: HeapType<Date>,
+    slf: Date,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
+    format_iso(cls, slf, args, kwargs)
+}
+
+fn parse_common_iso(cls: HeapType<Date>, arg: PyObj) -> PyReturn {
+    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
+    parse_iso(cls, arg)
 }
 
 fn day_of_week(cls: HeapType<Date>, slf: Date) -> Owned<PyObj> {
@@ -658,9 +677,11 @@ fn system_tz_today_from_timestamp(
 
 static mut METHODS: &mut [PyMethodDef] = &mut [
     method0!(Date, py_date, doc::DATE_PY_DATE),
-    method0!(Date, format_common_iso, doc::DATE_FORMAT_COMMON_ISO),
+    method_kwargs!(Date, format_iso, doc::DATE_FORMAT_ISO),
+    method_kwargs!(Date, format_common_iso, c""), // deprecated alias
     classmethod0!(Date, today_in_system_tz, doc::DATE_TODAY_IN_SYSTEM_TZ),
-    classmethod1!(Date, parse_common_iso, doc::DATE_PARSE_COMMON_ISO),
+    classmethod1!(Date, parse_iso, doc::DATE_PARSE_ISO),
+    classmethod1!(Date, parse_common_iso, c""), // deprecated alias
     classmethod1!(Date, from_py_date, doc::DATE_FROM_PY_DATE),
     method0!(Date, __copy__, c""),
     method1!(Date, __deepcopy__, c""),

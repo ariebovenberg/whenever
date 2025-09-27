@@ -24,4 +24,4 @@ Make sure that:
 ## Setup for the benchmark in the main README
 
 The benchmarking graph in the main README was generated on
-a 2021 M1 Pro Macbook, MacOS 15.4.1 on Python 3.13
+a 2021 M1 Pro Macbook, MacOS 15.6.1 on Python 3.13.3 (optimized build).

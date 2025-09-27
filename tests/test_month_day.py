@@ -33,13 +33,16 @@ class TestInit:
 
     def test_invalid(self):
         with pytest.raises(TypeError):
-            MonthDay(2)  # type: ignore[call-arg]
+            MonthDay(2)  # type: ignore[call-overload]
 
         with pytest.raises(TypeError):
-            MonthDay("20", "SEP")  # type: ignore[arg-type]
+            MonthDay("20", "SEP")  # type: ignore[call-overload]
 
         with pytest.raises(TypeError):
-            MonthDay()  # type: ignore[call-arg]
+            MonthDay()  # type: ignore[call-overload]
+
+    def test_iso(self):
+        assert MonthDay("--12-25") == MonthDay(12, 25)
 
 
 def test_properties():
@@ -109,9 +112,9 @@ def test_comparison():
     assert md > AlwaysSmaller()
 
 
-def test_format_common_iso():
-    assert MonthDay(11, 12).format_common_iso() == "--11-12"
-    assert MonthDay(2, 1).format_common_iso() == "--02-01"
+def test_format_iso():
+    assert MonthDay(11, 12).format_iso() == "--11-12"
+    assert MonthDay(2, 1).format_iso() == "--02-01"
 
 
 def test_str():
@@ -120,11 +123,11 @@ def test_str():
 
 
 def test_repr():
-    assert repr(MonthDay(11, 12)) == "MonthDay(--11-12)"
-    assert repr(MonthDay(2, 1)) == "MonthDay(--02-01)"
+    assert repr(MonthDay(11, 12)) == 'MonthDay("--11-12")'
+    assert repr(MonthDay(2, 1)) == 'MonthDay("--02-01")'
 
 
-class TestParseCommonIso:
+class TestParseIso:
 
     @pytest.mark.parametrize(
         "s, expected",
@@ -136,7 +139,7 @@ class TestParseCommonIso:
         ],
     )
     def test_valid(self, s, expected):
-        assert MonthDay.parse_common_iso(s) == expected
+        assert MonthDay.parse_iso(s) == expected
 
     @pytest.mark.parametrize(
         "s",
@@ -164,11 +167,11 @@ class TestParseCommonIso:
             ValueError,
             match=r"Invalid format.*" + re.escape(repr(s)),
         ):
-            MonthDay.parse_common_iso(s)
+            MonthDay.parse_iso(s)
 
     def test_no_string(self):
         with pytest.raises((TypeError, AttributeError), match="(int|str)"):
-            MonthDay.parse_common_iso(20210102)  # type: ignore[arg-type]
+            MonthDay.parse_iso(20210102)  # type: ignore[arg-type]
 
 
 def test_replace():

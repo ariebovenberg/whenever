@@ -123,18 +123,25 @@ impl<T: PyWrapped> From<HeapType<T>> for PyType {
     }
 }
 
-/// A trait for types that can be wrapped in a `whenever` Python class.
+/// A trait for Rust structs that can be wrapped in a PyObject.
 pub(crate) trait PyWrapped: FromPy {
     #[inline]
     unsafe fn from_obj(obj: *mut PyObject) -> Self {
         unsafe { (*obj.cast::<PyWrap<Self>>()).data }
     }
+}
 
+// Not all PyWrapped objects can be allocated simply.
+// For example ZonedDateTime is a bit more complex since it needs to
+// refcount timezones.
+pub(crate) trait PySimpleAlloc: PyWrapped {
     #[inline]
     fn to_obj(self, type_: HeapType<Self>) -> PyReturn {
         generic_alloc(type_.type_py, self)
     }
 }
+
+impl<T: PySimpleAlloc> PyWrapped for T {}
 
 impl<T: PyWrapped> FromPy for T {
     unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> T {

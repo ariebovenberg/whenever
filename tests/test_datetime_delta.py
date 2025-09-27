@@ -75,6 +75,12 @@ class TestInit:
         with pytest.raises((ValueError, OverflowError)):
             DateTimeDelta(**kwargs)
 
+    def test_iso_format(self):
+        assert DateTimeDelta("P1YT5M") == DateTimeDelta(
+            years=1,
+            minutes=5,
+        )
+
 
 def test_equality():
     p = DateTimeDelta(
@@ -185,8 +191,8 @@ def test_bool():
         ),
     ],
 )
-def test_format_common_iso(p, expect):
-    assert p.format_common_iso() == expect
+def test_format_iso(p, expect):
+    assert p.format_iso() == expect
     assert str(p) == expect
 
 
@@ -229,10 +235,10 @@ INVALID_DELTAS.remove("P1YT4M")
 INVALID_DELTAS.remove("PT4M3H")
 
 
-class TestParseCommonIso:
+class TestParseIso:
 
     def test_empty(self):
-        assert DateTimeDelta.parse_common_iso("P0D") == DateTimeDelta()
+        assert DateTimeDelta.parse_iso("P0D") == DateTimeDelta()
 
     @pytest.mark.parametrize(
         "input, expect",
@@ -253,7 +259,7 @@ class TestParseCommonIso:
         ],
     )
     def test_single_unit(self, input, expect):
-        assert DateTimeDelta.parse_common_iso(input) == expect
+        assert DateTimeDelta.parse_iso(input) == expect
 
     @pytest.mark.parametrize(
         "input, expect",
@@ -321,34 +327,34 @@ class TestParseCommonIso:
         ],
     )
     def test_multiple_units(self, input, expect):
-        assert DateTimeDelta.parse_common_iso(input) == expect
+        assert DateTimeDelta.parse_iso(input) == expect
 
     @pytest.mark.parametrize("input, expect", VALID_DDELTAS)
     def test_date_only(self, input, expect):
-        assert DateTimeDelta.parse_common_iso(input) == (expect + TimeDelta())
+        assert DateTimeDelta.parse_iso(input) == (expect + TimeDelta())
 
     @pytest.mark.parametrize("input, expect", VALID_TDELTAS)
     def test_time_only(self, input, expect):
-        assert DateTimeDelta.parse_common_iso(input) == (expect + DateDelta())
+        assert DateTimeDelta.parse_iso(input) == (expect + DateDelta())
 
     @pytest.mark.parametrize("s", INVALID_DELTAS)
     def test_invalid(self, s):
         with pytest.raises(
             ValueError, match=r"Invalid format.*" + re.escape(repr(s))
         ):
-            DateTimeDelta.parse_common_iso(s)
+            DateTimeDelta.parse_iso(s)
 
 
 @pytest.mark.parametrize(
     "d, expect",
     [
-        (DateTimeDelta(), "DateTimeDelta(P0d)"),
-        (DateTimeDelta(years=1), "DateTimeDelta(P1y)"),
+        (DateTimeDelta(), 'DateTimeDelta("P0d")'),
+        (DateTimeDelta(years=1), 'DateTimeDelta("P1y")'),
         (
             DateTimeDelta(months=1, days=55, minutes=80),
-            "DateTimeDelta(P1m55dT1h20m)",
+            'DateTimeDelta("P1m55dT1h20m")',
         ),
-        (DateTimeDelta(seconds=-0.83), "DateTimeDelta(-PT0.83s)"),
+        (DateTimeDelta(seconds=-0.83), 'DateTimeDelta("-PT0.83s")'),
     ],
 )
 def test_repr(d, expect):

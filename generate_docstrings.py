@@ -112,11 +112,6 @@ milliseconds=0, microseconds=0, nanoseconds=0)""",
 MANUALLY_DEFINED_SIGS.update(
     {
         W.ZonedDateTime.subtract: MANUALLY_DEFINED_SIGS[W.ZonedDateTime.add],
-        W.SystemDateTime.add: MANUALLY_DEFINED_SIGS[W.ZonedDateTime.add],
-        W.SystemDateTime.subtract: MANUALLY_DEFINED_SIGS[W.ZonedDateTime.add],
-        W.SystemDateTime.replace: MANUALLY_DEFINED_SIGS[
-            W.ZonedDateTime.replace
-        ],
         W.OffsetDateTime.subtract: MANUALLY_DEFINED_SIGS[W.OffsetDateTime.add],
         W.PlainDateTime.subtract: MANUALLY_DEFINED_SIGS[W.PlainDateTime.add],
         W.Instant.subtract: MANUALLY_DEFINED_SIGS[W.Instant.add],
@@ -124,9 +119,9 @@ MANUALLY_DEFINED_SIGS.update(
     }
 )
 SKIP = {
-    W._BasicConversions.format_common_iso,
+    W._BasicConversions.format_iso,
     W._BasicConversions.from_py_datetime,
-    W._BasicConversions.parse_common_iso,
+    W._BasicConversions.parse_iso,
     W._ExactTime.from_timestamp,
     W._ExactTime.from_timestamp_millis,
     W._ExactTime.from_timestamp_nanos,
@@ -147,10 +142,9 @@ def method_doc(method):
     except KeyError:
         sig = (
             str(inspect.signature(method))
-            # We use unicode escape of '(' to avoid messing up LSP in editors
-            .replace("\u0028self", "\u0028$self").replace(
-                "\u0028cls", "\u0028$type"
-            )
+            # I escape the parens (\x28) because they mess up some LSPs
+            # and text editors when viewing this script.
+            .replace("\x28self", "\x28$self").replace("\x28cls", "\x28$type")
         )
     doc = method.__doc__.replace('"', '\\"')
     sig_prefix = f"{method.__name__}{sig}\n--\n\n"

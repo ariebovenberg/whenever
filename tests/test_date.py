@@ -70,13 +70,13 @@ class TestInit:
 
     def test_not_enough_args(self):
         with pytest.raises(TypeError, match=r"day"):
-            Date(2021, 1)  # type: ignore[call-arg]
+            Date(2021, 1)  # type: ignore[call-overload]
 
-        with pytest.raises(TypeError, match=r"month"):
-            Date(2021)  # type: ignore[call-arg]
+        with pytest.raises(TypeError):
+            Date(2021)  # type: ignore[call-overload]
 
-        with pytest.raises(TypeError, match=r"year"):
-            Date()  # type: ignore[call-arg]
+        with pytest.raises(TypeError):
+            Date()  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
         "year, month, day",
@@ -130,6 +130,9 @@ class TestInit:
         ):
             Date(year, month, day)
 
+    def test_iso_string(self):
+        assert Date("2023-01-02") == Date(2023, 1, 2)
+
 
 def test_year_month():
     d = Date(2021, 1, 2)
@@ -168,9 +171,16 @@ def test_from_py_date():
         Date.from_py_date(20210102)  # type: ignore[arg-type]
 
 
-def test_format_common_iso():
+def test_format_iso():
     d = Date(2021, 1, 2)
-    assert d.format_common_iso() == "2021-01-02"
+    assert d.format_iso() == "2021-01-02"
+    assert d.format_iso(basic=True) == "20210102"
+
+    with pytest.raises(TypeError):
+        d.format_iso(3)  # type: ignore[arg-type, misc]
+
+    with pytest.raises(TypeError):
+        d.format_iso(sep="T")  # type: ignore[call-arg]
 
 
 def test_str():
@@ -178,7 +188,7 @@ def test_str():
     assert str(d) == "2021-01-02"
 
 
-class TestParseCommonIso:
+class TestParseIso:
 
     @pytest.mark.parametrize(
         "s, expected",
@@ -196,7 +206,7 @@ class TestParseCommonIso:
         ],
     )
     def test_valid(self, s, expected):
-        assert Date.parse_common_iso(s) == expected
+        assert Date.parse_iso(s) == expected
 
     @pytest.mark.parametrize(
         "s",
@@ -261,11 +271,11 @@ class TestParseCommonIso:
             ValueError,
             match=r"Invalid format.*" + re.escape(repr(s)),
         ):
-            Date.parse_common_iso(s)
+            Date.parse_iso(s)
 
     def test_no_string(self):
         with pytest.raises((TypeError, AttributeError), match="(int|str)"):
-            Date.parse_common_iso(20210102)  # type: ignore[arg-type]
+            Date.parse_iso(20210102)  # type: ignore[arg-type]
 
 
 def test_replace():
@@ -302,7 +312,7 @@ def test_at():
 
 def test_repr():
     d = Date(221, 1, 2)
-    assert repr(d) == "Date(0221-01-02)"
+    assert repr(d) == 'Date("0221-01-02")'
 
 
 def test_hash():

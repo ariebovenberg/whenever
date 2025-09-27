@@ -33,13 +33,16 @@ class TestInit:
 
     def test_invalid(self):
         with pytest.raises(TypeError):
-            YearMonth(2000)  # type: ignore[call-arg]
+            YearMonth(2000)  # type: ignore[call-overload]
 
         with pytest.raises(TypeError):
-            YearMonth("2001", "SEP")  # type: ignore[arg-type]
+            YearMonth("2001", "SEP")  # type: ignore[call-overload]
 
         with pytest.raises(TypeError):
-            YearMonth()  # type: ignore[call-arg]
+            YearMonth()  # type: ignore[call-overload]
+
+    def test_iso(self):
+        assert YearMonth("2021-12") == YearMonth(2021, 12)
 
 
 def test_properties():
@@ -101,9 +104,9 @@ def test_comparison():
     assert ym > AlwaysSmaller()
 
 
-def test_format_common_iso():
-    assert YearMonth(2021, 12).format_common_iso() == "2021-12"
-    assert YearMonth(2, 1).format_common_iso() == "0002-01"
+def test_format_iso():
+    assert YearMonth(2021, 12).format_iso() == "2021-12"
+    assert YearMonth(2, 1).format_iso() == "0002-01"
 
 
 def test_str():
@@ -112,11 +115,11 @@ def test_str():
 
 
 def test_repr():
-    assert repr(YearMonth(2021, 12)) == "YearMonth(2021-12)"
-    assert repr(YearMonth(2, 1)) == "YearMonth(0002-01)"
+    assert repr(YearMonth(2021, 12)) == 'YearMonth("2021-12")'
+    assert repr(YearMonth(2, 1)) == 'YearMonth("0002-01")'
 
 
-class TestParseCommonIso:
+class TestParseIso:
 
     @pytest.mark.parametrize(
         "s, expected",
@@ -127,7 +130,7 @@ class TestParseCommonIso:
         ],
     )
     def test_valid(self, s, expected):
-        assert YearMonth.parse_common_iso(s) == expected
+        assert YearMonth.parse_iso(s) == expected
 
     @pytest.mark.parametrize(
         "s",
@@ -152,11 +155,11 @@ class TestParseCommonIso:
             ValueError,
             match=r"Invalid format.*" + re.escape(repr(s)),
         ):
-            YearMonth.parse_common_iso(s)
+            YearMonth.parse_iso(s)
 
     def test_no_string(self):
         with pytest.raises((TypeError, AttributeError), match="(int|str)"):
-            YearMonth.parse_common_iso(20210102)  # type: ignore[arg-type]
+            YearMonth.parse_iso(20210102)  # type: ignore[arg-type]
 
 
 def test_replace():

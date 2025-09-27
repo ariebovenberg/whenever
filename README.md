@@ -1,11 +1,13 @@
 # ⏰ Whenever
 
-[![](https://img.shields.io/pypi/v/whenever.svg?style=flat-square&color=blue)](https://pypi.python.org/pypi/whenever)
-[![](https://img.shields.io/pypi/pyversions/whenever.svg?style=flat-square)](https://pypi.python.org/pypi/whenever)
-[![](https://img.shields.io/pypi/l/whenever.svg?style=flat-square&color=blue)](https://pypi.python.org/pypi/whenever)
-[![](https://img.shields.io/badge/mypy-strict-forestgreen?style=flat-square)](https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-strict)
-[![](https://img.shields.io/github/actions/workflow/status/ariebovenberg/whenever/checks.yml?branch=main&style=flat-square)](https://github.com/ariebovenberg/whenever)
-[![](https://img.shields.io/readthedocs/whenever.svg?style=flat-square)](http://whenever.readthedocs.io/)
+[![](https://img.shields.io/pypi/v/whenever.svg?color=blue)](https://pypi.python.org/pypi/whenever)
+[![](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fariebovenberg%2Fwhenever%2Fmain%2Fpyproject.toml)](https://pypi.python.org/pypi/whenever)
+[![](https://img.shields.io/pypi/l/whenever.svg?color=blue)](https://pypi.python.org/pypi/whenever)
+[![](https://img.shields.io/badge/mypy-strict-forestgreen)](https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-strict)
+[![](https://img.shields.io/github/actions/workflow/status/ariebovenberg/whenever/checks.yml?branch=main)](https://github.com/ariebovenberg/whenever)
+[![](https://img.shields.io/readthedocs/whenever.svg)](http://whenever.readthedocs.io/)
+[![](https://static.pepy.tech/badge/whenever/month)](https://pypi.python.org/pypi/whenever)
+
 
 **Typed and DST-safe datetimes for Python, available in Rust or pure Python.**
 
@@ -29,7 +31,7 @@ Don't buy the Rust hype?—don't worry: a **pure Python** version is available a
   </p>
 
   <p align="center" style="font-size: 14px">
-    <i>Parse, normalize, compare to now, shift, and change timezone (1M times)</i>
+    <i>Parse, normalize, compare to now, shift, change timezone, and format (1M times)</i>
   </p>
 
 <div align="center">
@@ -137,24 +139,24 @@ while many serious and long-standing issues remain unaddressed.
 
 # Identify moments in time, without timezone/calendar complexity
 >>> now = Instant.now()
-Instant(2024-07-04 10:36:56Z)
+Instant("2024-07-04 10:36:56Z")
 
 # Simple, explicit conversions
 >>> now.to_tz("Europe/Paris")
-ZonedDateTime(2024-07-04 12:36:56+02:00[Europe/Paris])
+ZonedDateTime("2024-07-04 12:36:56+02:00[Europe/Paris]")
 
 # A 'naive' datetime can't accidentally mix with other types.
 # You need to explicitly convert it and handle ambiguity.
->>> party_invite = PlainDateTime(2023, 10, 28, hour=22)
+>>> party_invite = PlainDateTime("2023-10-28 22:00")
 >>> party_invite.add(hours=6)
 Traceback (most recent call last):
   ImplicitlyIgnoringDST: Adjusting a local datetime implicitly ignores DST [...]
 >>> party_starts = party_invite.assume_tz("Europe/Amsterdam")
-ZonedDateTime(2023-10-28 22:00:00+02:00[Europe/Amsterdam])
+ZonedDateTime("2023-10-28 22:00:00+02:00[Europe/Amsterdam]")
 
 # DST-safe arithmetic
 >>> party_starts.add(hours=6)
-ZonedDateTime(2023-10-29 03:00:00+01:00[Europe/Amsterdam])
+ZonedDateTime("2023-10-29 03:00:00+01:00[Europe/Amsterdam]")
 
 # Comparison and equality
 >>> now > party_starts
@@ -162,7 +164,7 @@ True
 
 # Rounding and truncation
 >>> now.round("minute", increment=15)
-Instant(2024-07-04 10:30:00Z)
+Instant("2024-07-04 10:30:00Z")
 
 # Formatting & parsing common formats (ISO8601, RFC3339, RFC2822)
 >>> now.format_rfc2822()
@@ -224,9 +226,6 @@ For more details, see the licenses included in the distribution.
   TC39 has come up with an extraodrinarily well-specified API fit for a dynamic language.
   Whenever takes a lot of cues from Temporal for complex APIs such as handling
   ambiguity and rounding.
-
-- *Whenever* gratefully makes use of ``datetime``'s
-  robust and cross-platform handling of the system local timezone.
 
 - The pure-Python version of *whenever* also makes extensive use of Python's ``datetime``
   and ``zoneinfo`` libraries internally.

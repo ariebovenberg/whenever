@@ -15,13 +15,13 @@ def test_new(benchmark):
     benchmark(Date, 2020, 8, 24)
 
 
-def test_format_common_iso(benchmark):
+def test_format_iso(benchmark):
     d1 = Date(2020, 8, 24)
-    benchmark(d1.format_common_iso)
+    benchmark(d1.format_iso)
 
 
-def test_parse_common_iso(benchmark):
-    benchmark(Date.parse_common_iso, "2020-08-24")
+def test_parse_iso(benchmark):
+    benchmark(Date.parse_iso, "2020-08-24")
 
 
 def test_add(benchmark):

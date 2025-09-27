@@ -1,4 +1,6 @@
 //! Utilities for dealing with Python exceptions.
+use std::ffi::CStr;
+
 use super::{base::*, refs::*};
 use pyo3_ffi::*;
 
@@ -94,4 +96,12 @@ pub(crate) fn raise_type_err<T, U: ToPy>(msg: U) -> PyResult<T> {
 
 pub(crate) fn raise_value_err<T, U: ToPy>(msg: U) -> PyResult<T> {
     raise(unsafe { PyExc_ValueError }, msg)
+}
+
+pub(crate) fn deprecation_warn(msg: &CStr) -> PyResult<()> {
+    // SAFETY: calling C API with valid arguments
+    match unsafe { PyErr_WarnEx(PyExc_DeprecationWarning, msg.as_ptr(), 1) } {
+        0 => Ok(()),
+        _ => Err(PyErrMarker()),
+    }
 }

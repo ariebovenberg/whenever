@@ -13,8 +13,8 @@ from whenever import (
     Instant,
     OffsetDateTime,
     PlainDateTime,
-    SystemDateTime,
     Time,
+    TimeDelta,
     TimeZoneNotFoundError,
     ZonedDateTime,
     days,
@@ -56,7 +56,7 @@ class TestInit:
 
     def test_offset_missing(self):
         with pytest.raises(TypeError, match="required.*offset"):
-            OffsetDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)  # type: ignore[call-arg]
+            OffsetDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)  # type: ignore[call-overload]
 
     def test_invalid_offset_int(self):
         with pytest.raises(ValueError, match="offset.*24.*hours"):
@@ -110,6 +110,11 @@ class TestInit:
         with pytest.raises(ValueError, match="range"):
             OffsetDateTime(1, 1, 1, 0, offset=1)
 
+    def test_iso_format(self):
+        assert OffsetDateTime("2020-08-15T12:30:00+05:00").exact_eq(
+            OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
+        )
+
 
 def test_immutable():
     d = OffsetDateTime(2020, 8, 15, offset=minutes(5))
@@ -117,7 +122,7 @@ def test_immutable():
         d.year = 2021  # type: ignore[misc]
 
 
-class TestFormatCommonIso:
+class TestFormatIso:
 
     @pytest.mark.parametrize(
         "d, expected",
@@ -157,7 +162,83 @@ class TestFormatCommonIso:
     )
     def test_default(self, d: OffsetDateTime, expected: str):
         assert str(d) == expected
-        assert d.format_common_iso() == expected
+        assert d.format_iso() == expected
+
+    @pytest.mark.parametrize(
+        "dt, kwargs, expected",
+        [
+            (
+                OffsetDateTime(
+                    2020, 8, 15, 23, 12, 9, nanosecond=1_234, offset=5
+                ),
+                {"unit": "nanosecond", "basic": False},
+                "2020-08-15T23:12:09.000001234+05:00",
+            ),
+            (
+                OffsetDateTime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    nanosecond=1_230,
+                    offset=TimeDelta(seconds=-5),
+                ),
+                {"unit": "auto"},
+                "2020-08-15T23:12:09.00000123-00:00:05",
+            ),
+            (
+                OffsetDateTime(
+                    1993,
+                    12,
+                    3,
+                    offset=0,
+                ),
+                {"unit": "auto", "basic": True, "sep": " "},
+                "19931203 000000+0000",
+            ),
+            (
+                OffsetDateTime(
+                    1993,
+                    12,
+                    3,
+                    0,
+                    15,
+                    offset=-19,
+                ),
+                {"unit": "hour", "basic": True, "sep": " "},
+                "19931203 00-1900",
+            ),
+        ],
+    )
+    def test_variations(self, dt, kwargs, expected):
+        assert dt.format_iso(**kwargs) == expected
+
+    def test_invalid(self):
+        dt = OffsetDateTime(2020, 4, 9, 13, offset=-4)
+        with pytest.raises(ValueError, match="unit"):
+            dt.format_iso(unit="foo")  # type: ignore[arg-type]
+
+        with pytest.raises(
+            (ValueError, TypeError, AttributeError), match="unit"
+        ):
+            dt.format_iso(unit=True)  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError, match="sep"):
+            dt.format_iso(sep="_")  # type: ignore[arg-type]
+
+        with pytest.raises(
+            (ValueError, TypeError, AttributeError), match="sep"
+        ):
+            dt.format_iso(sep=1)  # type: ignore[arg-type]
+
+        with pytest.raises(TypeError, match="basic"):
+            dt.format_iso(basic=1)  # type: ignore[arg-type]
+
+        # tz is a valid kwarg for ZonedDateTime.format_iso(), but not here
+        with pytest.raises(TypeError, match="tz"):
+            dt.format_iso(tz="always")  # type: ignore[call-arg]
 
 
 INVALID_ISO_STRINGS = [
@@ -297,15 +378,15 @@ VALID_ISO_STRINGS = [
 ]
 
 
-class TestParseCommonIso:
+class TestParseIso:
     @pytest.mark.parametrize("s, expect", VALID_ISO_STRINGS)
     def test_valid(self, s, expect):
-        assert OffsetDateTime.parse_common_iso(s).exact_eq(expect)
+        assert OffsetDateTime.parse_iso(s).exact_eq(expect)
 
     @pytest.mark.parametrize("s", INVALID_ISO_STRINGS)
     def test_invalid(self, s):
         with pytest.raises(ValueError, match="format.*" + re.escape(repr(s))):
-            OffsetDateTime.parse_common_iso(s)
+            OffsetDateTime.parse_iso(s)
 
     @pytest.mark.parametrize(
         "s",
@@ -316,7 +397,7 @@ class TestParseCommonIso:
     )
     def test_bounds(self, s):
         with pytest.raises(ValueError):
-            OffsetDateTime.parse_common_iso(s)
+            OffsetDateTime.parse_iso(s)
 
     @given(text())
     def test_fuzzing(self, s: str):
@@ -324,7 +405,7 @@ class TestParseCommonIso:
             ValueError,
             match=r"format.*" + re.escape(repr(s)),
         ):
-            OffsetDateTime.parse_common_iso(s)
+            OffsetDateTime.parse_iso(s)
 
 
 def test_exact_equality():
@@ -380,23 +461,6 @@ class TestEquality:
 
         assert hash(d) == hash(zoned_same)
         assert hash(d) != hash(zoned_different)
-
-    @system_tz_ams()
-    def test_system_tz(self):
-        d: OffsetDateTime | SystemDateTime = OffsetDateTime(
-            2023, 10, 29, 0, 15, offset=-1
-        )
-        sys_same = SystemDateTime(2023, 10, 29, 2, 15, disambiguate="later")
-        sys_different = SystemDateTime(
-            2023, 10, 29, 2, 15, disambiguate="earlier"
-        )
-        assert d == sys_same
-        assert not d != sys_same
-        assert not d == sys_different
-        assert d != sys_different
-
-        assert hash(d) == hash(sys_same)
-        assert hash(d) != hash(sys_different)
 
     def test_utc(self):
         d: Instant | OffsetDateTime = OffsetDateTime(2020, 8, 15, 12, offset=5)
@@ -582,10 +646,10 @@ def test_repr():
         nanosecond=1_987_654,
         offset=hours(5) + minutes(22),
     )
-    assert repr(d) == "OffsetDateTime(2020-08-15 23:12:09.001987654+05:22)"
+    assert repr(d) == 'OffsetDateTime("2020-08-15 23:12:09.001987654+05:22")'
     assert (
         repr(OffsetDateTime(2020, 8, 15, 23, 12, offset=0))
-        == "OffsetDateTime(2020-08-15 23:12:00+00:00)"
+        == 'OffsetDateTime("2020-08-15 23:12:00+00:00")'
     )
 
 
@@ -639,28 +703,6 @@ class TestComparison:
         assert d >= zoned_lt
         assert not d < zoned_lt
         assert not d <= zoned_lt
-
-    @system_tz_nyc()
-    def test_system_tz(self):
-        d = OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
-        sys_eq = d.to_system_tz()
-        sys_gt = sys_eq + minutes(1)
-        sys_lt = sys_eq - minutes(1)
-
-        assert d >= sys_eq
-        assert d <= sys_eq
-        assert not d > sys_eq
-        assert not d < sys_eq
-
-        assert d < sys_gt
-        assert d <= sys_gt
-        assert not d > sys_gt
-        assert not d >= sys_gt
-
-        assert d > sys_lt
-        assert d >= sys_lt
-        assert not d < sys_lt
-        assert not d <= sys_lt
 
     def test_not_implemented(self):
         d = OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
@@ -1073,22 +1115,6 @@ class TestDifference:
         # same result with method
         assert d.difference(other) == d - other
 
-    @system_tz_ams()
-    def test_system_tz(self):
-        d = OffsetDateTime(2023, 10, 29, 6, offset=2)
-        other = SystemDateTime(2023, 10, 29, 3, disambiguate="later")
-        assert d - other == hours(2)
-        assert d - SystemDateTime(
-            2023, 10, 29, 2, disambiguate="later"
-        ) == hours(3)
-        assert d - SystemDateTime(
-            2023, 10, 29, 2, disambiguate="earlier"
-        ) == hours(4)
-        assert d - SystemDateTime(2023, 10, 29, 1) == hours(5)
-
-        # same result with method
-        assert d.difference(other) == d - other
-
     def test_invalid(self):
         d = OffsetDateTime(
             2020, 8, 15, 23, 12, 9, nanosecond=987_654, offset=5
@@ -1132,9 +1158,6 @@ def test_instant():
     assert d.to_instant() == Instant.from_utc(
         2020, 8, 15, 20, 12, 9, nanosecond=987_654_321
     )
-
-    with pytest.deprecated_call():
-        assert d.to_instant() == d.instant()  # type: ignore[attr-defined]
 
 
 def test_to_fixed_offset():
@@ -1194,7 +1217,16 @@ def test_to_system_tz():
         2020, 8, 15, 20, 12, 9, nanosecond=987_654_321, offset=3
     )
     assert d.to_system_tz().exact_eq(
-        SystemDateTime(2020, 8, 15, 13, 12, 9, nanosecond=987_654_321)
+        ZonedDateTime(
+            2020,
+            8,
+            15,
+            13,
+            12,
+            9,
+            nanosecond=987_654_321,
+            tz="America/New_York",
+        )
     )
 
     small_dt = OffsetDateTime(1, 1, 1, offset=0)
@@ -1210,9 +1242,6 @@ def test_to_system_tz():
 def test_to_plain():
     d = OffsetDateTime(2020, 8, 15, 20, nanosecond=1, offset=3)
     assert d.to_plain() == PlainDateTime(2020, 8, 15, 20, nanosecond=1)
-
-    with pytest.deprecated_call():
-        assert d.local() == d.to_plain()  # type: ignore[attr-defined]
 
 
 class TestParseStrptime:

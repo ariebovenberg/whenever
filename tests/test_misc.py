@@ -1,9 +1,11 @@
 import json
+import os
 import sys
 from inspect import signature
 from itertools import chain
 from time import sleep
 from typing import no_type_check
+from unittest.mock import patch
 
 import pytest
 
@@ -18,15 +20,16 @@ from whenever import (
     MonthDay,
     OffsetDateTime,
     PlainDateTime,
-    SystemDateTime,
     Time,
     TimeDelta,
     YearMonth,
     ZonedDateTime,
     hours,
     patch_current_time,
+    reset_system_tz,
     seconds,
 )
+from whenever._tz.system import _tzid_from_path, get_tz
 
 from .common import system_tz_ams
 
@@ -120,7 +123,6 @@ def test_text_signature():
         Instant,
         OffsetDateTime,
         ZonedDateTime,
-        SystemDateTime,
         PlainDateTime,
         Date,
         Time,
@@ -128,17 +130,23 @@ def test_text_signature():
         DateDelta,
         DateTimeDelta,
     ]
+    deprecated = ["format_common_iso", "parse_common_iso"]
     methods = (
         m
         for m in chain.from_iterable(cls.__dict__.values() for cls in classes)
         if callable(m)
     )
 
+    for c in classes:
+        assert c.__module__ == "whenever"
+
     for m in methods:
-        if m.__name__.startswith("_"):
+        if m.__name__.startswith("_") or m.__name__ in deprecated:
             continue
         sig = m.__text_signature__
-        assert sig is not None
+        assert (
+            sig is not None
+        ), f"{m} missing __text_signature__. Hint: try running `python generate_docstrings.py > src/docstrings.py`"
         signature(m)  # raises ValueError if invalid
 
 
@@ -151,11 +159,10 @@ def test_pydantic():
 
     # NOTE: the type ignore is needed because we generally don't install pydantic
     # when type-checking.
-    class Model(pydantic.BaseModel):  # type: ignore[misc]
+    class Model(pydantic.BaseModel):  # type: ignore[misc, unused-ignore]
         inst: Instant
         zdt: ZonedDateTime
         odt: OffsetDateTime
-        sdt: SystemDateTime
         date: Date = Date(2024, 1, 4)  # default value for testing
         time: Time
         ddelta: DateDelta
@@ -171,7 +178,6 @@ def test_pydantic():
     inst = Instant.from_utc(2024, 1, 1, hour=12)
     zdt = ZonedDateTime(2024, 1, 1, hour=12, tz="Europe/Amsterdam")
     odt = OffsetDateTime(2024, 1, 1, hour=12, offset=1)
-    sdt = SystemDateTime(2024, 1, 1, hour=12)
     time = Time(12, 0, 0)
     date = Date(2024, 1, 4)
     ddelta = DateDelta(days=3, months=9)
@@ -184,7 +190,6 @@ def test_pydantic():
         inst=inst,
         zdt=zdt,
         odt=odt,
-        sdt=sdt,
         time=time,
         ddelta=ddelta,
         tdelta=tdelta,
@@ -196,7 +201,6 @@ def test_pydantic():
     assert m.inst is inst
     assert m.zdt is zdt
     assert m.odt is odt
-    assert m.sdt is sdt
     assert m.date == date  # default value
     assert m.time is time
     assert m.ddelta is ddelta
@@ -210,7 +214,6 @@ def test_pydantic():
     assert m2.inst is inst
     assert m2.zdt is zdt
     assert m2.odt is odt
-    assert m2.sdt is sdt
     assert m2.date == date  # default value
     assert m2.time is time
     assert m2.ddelta is ddelta
@@ -221,23 +224,21 @@ def test_pydantic():
 
     json_str = m.model_dump_json()
     json_data = json.loads(json_str)
-    assert json_data["inst"] == inst.format_common_iso()
-    assert json_data["zdt"] == zdt.format_common_iso()
-    assert json_data["odt"] == odt.format_common_iso()
-    assert json_data["sdt"] == sdt.format_common_iso()
-    assert json_data["date"] == date.format_common_iso()
-    assert json_data["time"] == time.format_common_iso()
-    assert json_data["ddelta"] == ddelta.format_common_iso()
-    assert json_data["tdelta"] == tdelta.format_common_iso()
-    assert json_data["dtdelta"] == dtdelta.format_common_iso()
-    assert json_data["monthday"] == monthday.format_common_iso()
-    assert json_data["yearmonth"] == yearmonth.format_common_iso()
+    assert json_data["inst"] == inst.format_iso()
+    assert json_data["zdt"] == zdt.format_iso()
+    assert json_data["odt"] == odt.format_iso()
+    assert json_data["date"] == date.format_iso()
+    assert json_data["time"] == time.format_iso()
+    assert json_data["ddelta"] == ddelta.format_iso()
+    assert json_data["tdelta"] == tdelta.format_iso()
+    assert json_data["dtdelta"] == dtdelta.format_iso()
+    assert json_data["monthday"] == monthday.format_iso()
+    assert json_data["yearmonth"] == yearmonth.format_iso()
 
     m3 = Model.model_validate_json(json_str)
     assert m3.inst == inst
     assert m3.zdt == zdt
     assert m3.odt == odt
-    assert m3.sdt == sdt
     assert m3.date == date
     assert m3.time == time
     assert m3.ddelta == ddelta
@@ -259,7 +260,6 @@ def test_pydantic():
             "inst": {"title": "Inst", "type": "string"},
             "monthday": {"title": "Monthday", "type": "string"},
             "odt": {"title": "Odt", "type": "string"},
-            "sdt": {"title": "Sdt", "type": "string"},
             "tdelta": {"title": "Tdelta", "type": "string"},
             "time": {"title": "Time", "type": "string"},
             "yearmonth": {"title": "Yearmonth", "type": "string"},
@@ -269,7 +269,6 @@ def test_pydantic():
             "inst",
             "zdt",
             "odt",
-            "sdt",
             "time",
             "ddelta",
             "tdelta",
@@ -286,17 +285,16 @@ def test_pydantic():
     # The constructor should be able to handle strings
     assert (
         Model(
-            inst=inst.format_common_iso(),
-            zdt=zdt.format_common_iso(),
-            odt=odt.format_common_iso(),
-            sdt=sdt.format_common_iso(),
-            date=date.format_common_iso(),
-            time=time.format_common_iso(),
-            ddelta=ddelta.format_common_iso(),
-            tdelta=tdelta.format_common_iso(),
-            dtdelta=dtdelta.format_common_iso(),
-            monthday=monthday.format_common_iso(),
-            yearmonth=yearmonth.format_common_iso(),
+            inst=inst.format_iso(),
+            zdt=zdt.format_iso(),
+            odt=odt.format_iso(),
+            date=date.format_iso(),
+            time=time.format_iso(),
+            ddelta=ddelta.format_iso(),
+            tdelta=tdelta.format_iso(),
+            dtdelta=dtdelta.format_iso(),
+            monthday=monthday.format_iso(),
+            yearmonth=yearmonth.format_iso(),
         )
         == m2
     )
@@ -305,16 +303,15 @@ def test_pydantic():
     try:
         Model(
             inst=123,  # not a string
-            zdt=zdt.format_common_iso().encode(),  # bytes instead of str
-            odt=odt.format_common_iso(),
-            sdt=sdt.format_common_iso(),
-            date=date.format_common_iso(),
-            time=time.format_common_iso(),
-            ddelta=ddelta.format_common_iso(),
-            tdelta=tdelta.format_common_iso(),
-            dtdelta=dtdelta.format_common_iso(),
-            monthday=monthday.format_common_iso(),
-            yearmonth=yearmonth.format_common_iso(),
+            zdt=zdt.format_iso().encode(),  # bytes instead of str
+            odt=odt.format_iso(),
+            date=date.format_iso(),
+            time=time.format_iso(),
+            ddelta=ddelta.format_iso(),
+            tdelta=tdelta.format_iso(),
+            dtdelta=dtdelta.format_iso(),
+            monthday=monthday.format_iso(),
+            yearmonth=yearmonth.format_iso(),
         )
     except pydantic.ValidationError as e:
         assert e.error_count() == 2
@@ -329,14 +326,13 @@ def test_pydantic():
                     "inst": 123,  # not a string
                     "zdt": "INVALID",
                     "odt": "",
-                    "sdt": None,
-                    "date": date.format_common_iso(),
-                    "time": time.format_common_iso(),
-                    "ddelta": ddelta.format_common_iso(),
-                    "tdelta": tdelta.format_common_iso(),
-                    "dtdelta": dtdelta.format_common_iso(),
-                    "monthday": monthday.format_common_iso(),
-                    "yearmonth": yearmonth.format_common_iso(),
+                    "date": None,
+                    "time": time.format_iso(),
+                    "ddelta": ddelta.format_iso(),
+                    "tdelta": tdelta.format_iso(),
+                    "dtdelta": dtdelta.format_iso(),
+                    "monthday": monthday.format_iso(),
+                    "yearmonth": yearmonth.format_iso(),
                 }
             )
         )
@@ -344,3 +340,52 @@ def test_pydantic():
         assert e.error_count() == 4
     else:
         assert False, "Expected ValidationError not raised"
+
+
+def test_get_system_tz():
+
+    (tz_type, tz_value) = get_tz()
+    assert tz_type in (0, 1, 2)
+    assert isinstance(tz_value, str)
+
+
+@system_tz_ams()
+def test_reset_system_tz():
+    plain = PlainDateTime(2020, 1, 1)
+    d1 = plain.assume_system_tz()
+    assert d1.tz == "Europe/Amsterdam"
+
+    with patch.dict(os.environ, {"TZ": "America/New_York"}):
+        # The system timezone is now set to America/New_York
+        # ...but the cache isn't updated until we call reset_system_tz()
+        assert plain.assume_system_tz().tz == "Europe/Amsterdam"
+
+        reset_system_tz()
+        d2 = plain.assume_system_tz()
+        assert d2.tz == "America/New_York"
+
+        # old instances should not change
+        assert d1.tz == "Europe/Amsterdam"
+
+    # Cache not yet updated again...
+    assert plain.assume_system_tz().tz == "America/New_York"
+
+    reset_system_tz()
+    assert plain.assume_system_tz().tz == "Europe/Amsterdam"
+
+
+@pytest.mark.parametrize(
+    "path, expect",
+    [
+        ("/usr/share/foo", None),
+        ("", None),
+        ("/etc/timezone", None),
+        ("/usr/share/zoneinfo/Europe/Amsterdam", "Europe/Amsterdam"),
+        ("/usr/share/zoneinfo.default/America/New_York", "America/New_York"),
+        ("/usr/share/zoneinfo.default/", ""),
+        ("/usr/share/zoneinfo/zoneinfo.default/UTC", "UTC"),
+        ("/usr/share/zoneinfo", None),
+    ],
+)
+def test_tzid_from_path(path, expect):
+    assert _tzid_from_path(path) == expect

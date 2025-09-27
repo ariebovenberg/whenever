@@ -1,15 +1,17 @@
 //! Parsing of TZif files
 use crate::{
     common::{ambiguity::Ambiguity, parse::Scan, scalar::*},
-    tz::posix,
+    tz::posix::TzStr,
 };
 use std::{cmp::Ordering, fmt};
 
+/// A complete timezone representation, enough to represent a TZif file.
 #[derive(Debug, PartialEq, Eq)]
-pub struct TZif {
+pub struct TimeZone {
     // The IANA tz ID (e.g. "Europe/Amsterdam"). Not actually parsed from the file,
-    // but essential because in our case we always associate a tzif file with a tz ID.
-    pub(crate) key: String,
+    // but essential because in our case we almost always associate a tzif file with a tz ID.
+    // Notable exception is the system timezone in some cases.
+    pub(crate) key: Option<String>,
     // The following two fields are used to map UTC time to local time and vice versa.
     // For UTC -> local, the transition is unambiguous and simple.
     // Read Vec(X, Y) as "FROM time X onwards (expressed in epoch seconds) the offset is Y".
@@ -20,10 +22,10 @@ pub struct TZif {
     offsets_by_local: Vec<(EpochSecs, (Offset, OffsetDelta))>,
     // Invariant: if posix TZ isn't given, there must be at least one entry in each of the above
     // vectors.
-    end: Option<posix::Tz>,
+    end: Option<TzStr>,
 }
 
-impl TZif {
+impl TimeZone {
     /// Get the UTC offset at the given exact time
     pub(crate) fn offset_for_instant(&self, t: EpochSecs) -> Offset {
         // OPTIMIZE: this could be made a bit smarter. E.g. starting
@@ -57,7 +59,7 @@ impl TZif {
                 };
                 match ambiguity.get().cmp(&0) {
                     Ordering::Equal => Ambiguity::Unambiguous(offset),
-                    // Safe: The shifts here are unchecked since they were
+                    // SAFETY: The shifts here are unchecked since they were
                     // calculated from the offsets themselves.
                     Ordering::Less => Ambiguity::Fold(offset, offset.shift(ambiguity).unwrap()),
                     Ordering::Greater => Ambiguity::Gap(offset.shift(ambiguity).unwrap(), offset),
@@ -68,15 +70,35 @@ impl TZif {
             // If there's no POSIX TZ string, use the last offset.
             // There's not much else we can do.
             .unwrap_or_else(|| {
-                let (offset, _) = self
+                let (prev_offset, last_shift) = self
                     .offsets_by_local
                     .last()
-                    // Safe: We've ensured during parsing that there's at least one entry
+                    // SAFETY: We've ensured during parsing that there's at least one entry
                     // if there's no POSIX TZ string.
                     .unwrap()
                     .1;
-                Ambiguity::Unambiguous(offset)
+                Ambiguity::Unambiguous(
+                    prev_offset
+                        .shift(last_shift)
+                        // SAFETY: last_shift was calculated from prev_offset itself
+                        .unwrap(),
+                )
             })
+    }
+
+    pub(crate) fn parse_posix(s: &str) -> Option<Self> {
+        Some(Self {
+            key: None,
+            offsets_by_utc: vec![],
+            offsets_by_local: vec![],
+            end: Some(TzStr::parse(s.as_bytes())?),
+        })
+    }
+
+    pub fn parse_tzif(s: &[u8], key: Option<&str>) -> ParseResult<Self> {
+        let mut scan = Scan::new(s);
+        let header = parse_header(&mut scan).ok_or(ErrorCause::Header)?;
+        parse_content(header, &mut scan, key)
     }
 }
 
@@ -98,12 +120,6 @@ pub(crate) fn bisect<T>(arr: &[(EpochSecs, T)], x: EpochSecs) -> Option<usize> {
         size = right - left;
     }
     (left != arr.len()).then_some(left)
-}
-
-pub fn parse(s: &[u8], key: &str) -> ParseResult<TZif> {
-    let mut scan = Scan::new(s);
-    let header = parse_header(&mut scan).ok_or(ErrorCause::Header)?;
-    parse_content(header, &mut scan, key)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
@@ -192,7 +208,7 @@ fn parse_offset_indices(header: Header, s: &mut Scan) -> Option<Vec<u8>> {
     Some(result)
 }
 
-fn parse_content(header: Header, s: &mut Scan, key: &str) -> ParseResult<TZif> {
+fn parse_content(header: Header, s: &mut Scan, key: Option<&str>) -> ParseResult<TimeZone> {
     let (transition_times, header) = if header.version >= 2 {
         s.take(
             (header.timecnt * 5
@@ -235,8 +251,8 @@ fn parse_content(header: Header, s: &mut Scan, key: &str) -> ParseResult<TZif> {
         // There doesn't seem to be any transition data in the file!
         return Err(ErrorCause::Body);
     }
-    Ok(TZif {
-        key: key.to_string(),
+    Ok(TimeZone {
+        key: key.map(String::from),
         offsets_by_local: local_transitions(&offsets_by_utc),
         offsets_by_utc,
         end,
@@ -276,8 +292,8 @@ fn load_transitions(
     Some(result)
 }
 
-fn parse_posix_tz(s: &mut Scan) -> Option<posix::Tz> {
-    posix::parse(match s.take_until(|b| b == b'\n') {
+fn parse_posix_tz(s: &mut Scan) -> Option<TzStr> {
+    TzStr::parse(match s.take_until(|b| b == b'\n') {
         Some(x) => x,
         None => s.rest(),
     })
@@ -344,7 +360,7 @@ pub(crate) fn is_valid_key(key: &str) -> bool {
         && !key.contains("/./")
         // Extra restrictions for the first...
         && (
-            first != b'-' || first != b'+' || first != b'/'
+            first != b'-' && first != b'+' && first != b'/' && first != b'.'
         )
         // ... and last character
         && last != b'/'
@@ -393,12 +409,18 @@ mod tests {
     #[test]
     fn test_no_magic_header() {
         // empty
-        assert_eq!(parse(b"", "Foo").unwrap_err(), ErrorCause::Header);
+        assert_eq!(
+            TimeZone::parse_tzif(b"", None).unwrap_err(),
+            ErrorCause::Header
+        );
         // too small
-        assert_eq!(parse(b"TZi", "Foo").unwrap_err(), ErrorCause::Header);
+        assert_eq!(
+            TimeZone::parse_tzif(b"TZi", None).unwrap_err(),
+            ErrorCause::Header
+        );
         // wrong magic value
         assert_eq!(
-            parse(b"this-is-not-tzif-file", "Foo").unwrap_err(),
+            TimeZone::parse_tzif(b"this-is-not-tzif-file", None).unwrap_err(),
             ErrorCause::Header
         );
     }
@@ -430,9 +452,9 @@ mod tests {
     #[test]
     fn test_utc() {
         const TZ_UTC: &[u8] = include_bytes!("../../tests/tzif/UTC.tzif");
-        let tzif = parse(TZ_UTC, "UTC").unwrap();
+        let tzif = TimeZone::parse_tzif(TZ_UTC, None).unwrap();
         assert_eq!(tzif.offsets_by_utc, &[]);
-        assert_eq!(tzif.end, posix::parse(b"UTC0"));
+        assert_eq!(tzif.end, TzStr::parse(b"UTC0"));
 
         assert_eq!(
             tzif.offset_for_instant(2216250001.try_into().unwrap()),
@@ -447,9 +469,9 @@ mod tests {
     #[test]
     fn test_fixed() {
         const TZ_FIXED: &[u8] = include_bytes!("../../tests/tzif/GMT-13.tzif");
-        let tzif = parse(TZ_FIXED, "GMT-13").unwrap();
+        let tzif = TimeZone::parse_tzif(TZ_FIXED, None).unwrap();
         assert_eq!(tzif.offsets_by_utc, &[]);
-        assert_eq!(tzif.end, posix::parse(b"<+13>-13"));
+        assert_eq!(tzif.end, TzStr::parse(b"<+13>-13"));
 
         assert_eq!(
             tzif.offset_for_instant(2216250001.try_into().unwrap()),
@@ -465,7 +487,7 @@ mod tests {
     fn test_v1() {
         // A TZif file using the old version 1 format.
         const TZ_V1: &[u8] = include_bytes!("../../tests/tzif/Paris_v1.tzif");
-        let tzif = parse(TZ_V1, "Europe/Paris").unwrap();
+        let tzif = TimeZone::parse_tzif(TZ_V1, None).unwrap();
         assert!(!tzif.offsets_by_utc.is_empty());
         assert_eq!(tzif.end, None);
 
@@ -474,13 +496,17 @@ mod tests {
             tzif.offset_for_instant(EpochSecs::new_unchecked(3155760000)),
             3600.try_into().unwrap()
         );
+        assert_eq!(
+            tzif.ambiguity_for_local(EpochSecs::new_unchecked(3155760000)),
+            unambig(3600)
+        );
     }
 
     // Thanks to Jiff for the test tzif file
     #[test]
     fn test_clamp_transitions_to_range() {
         const TZ_OUT_OF_RANGE: &[u8] = include_bytes!("../../tests/tzif/Sydney_widerange.tzif");
-        let tzif = parse(TZ_OUT_OF_RANGE, "Australia/Sydney").unwrap();
+        let tzif = TimeZone::parse_tzif(TZ_OUT_OF_RANGE, None).unwrap();
         assert!(!tzif.offsets_by_utc.is_empty());
         assert_eq!(
             tzif.offset_for_instant(EpochSecs::MIN),
@@ -495,8 +521,8 @@ mod tests {
     #[test]
     fn test_last_transition_is_gap() {
         const TZ_HON: &[u8] = include_bytes!("../../tests/tzif/Honolulu.tzif");
-        let tzif = parse(TZ_HON, "Pacific/Honolulu").unwrap();
-        assert_eq!(tzif.end, posix::parse(b"HST10"));
+        let tzif = TimeZone::parse_tzif(TZ_HON, None).unwrap();
+        assert_eq!(tzif.end, TzStr::parse(b"HST10"));
         assert_eq!(
             tzif.offset_for_instant(EpochSecs::new_unchecked(-712150201)),
             Offset::new_unchecked(-37800),
@@ -535,8 +561,8 @@ mod tests {
     #[test]
     fn test_typical_tzif_example() {
         const TZ_AMS: &[u8] = include_bytes!("../../tests/tzif/Amsterdam.tzif");
-        let tzif = parse(TZ_AMS, "Europe/Amsterdam").unwrap();
-        assert_eq!(tzif.end, posix::parse(b"CET-1CEST,M3.5.0,M10.5.0/3"));
+        let tzif = TimeZone::parse_tzif(TZ_AMS, None).unwrap();
+        assert_eq!(tzif.end, TzStr::parse(b"CET-1CEST,M3.5.0,M10.5.0/3"));
 
         let utc_cases = &[
             // before the entire range
@@ -674,7 +700,7 @@ mod tests {
                 panic!("invalid tz key: {tzname}");
             }
 
-            if let Err(err) = parse(&bytes, "") {
+            if let Err(err) = TimeZone::parse_tzif(&bytes, None) {
                 panic!("failed to parse TZif file {path:?}: {err}");
             }
         }

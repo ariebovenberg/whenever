@@ -17,7 +17,8 @@ use crate::{
 const TEMPLATE: [u8; 31] = *b"DDD, 00 MMM 0000 00:00:00 +0000";
 const TEMPLATE_GMT: [u8; 29] = *b"DDD, 00 MMM 0000 00:00:00 GMT";
 
-pub(crate) fn write(odt: OffsetDateTime) -> [u8; 31] {
+/// Format into a standard RFC 2822 date string.
+pub(crate) fn format(odt: OffsetDateTime) -> [u8; 31] {
     let OffsetDateTime {
         date,
         time:
@@ -33,20 +34,21 @@ pub(crate) fn write(odt: OffsetDateTime) -> [u8; 31] {
 
     let mut buf = TEMPLATE;
     buf[..3].copy_from_slice(WEEKDAY_NAMES[date.day_of_week() as usize - 1]);
-    write_2_digits(day, &mut buf[5..7]);
+    buf[5..7].copy_from_slice(format_2_digits(day).as_ref());
     buf[8..11].copy_from_slice(MONTH_NAMES[month as usize - 1]);
-    write_4_digits(year.get(), &mut buf[12..16]);
-    write_2_digits(hour, &mut buf[17..19]);
-    write_2_digits(minute, &mut buf[20..22]);
-    write_2_digits(second, &mut buf[23..25]);
+    buf[12..16].copy_from_slice(format_4_digits(year.get()).as_ref());
+    buf[17..19].copy_from_slice(format_2_digits(hour).as_ref());
+    buf[20..22].copy_from_slice(format_2_digits(minute).as_ref());
+    buf[23..25].copy_from_slice(format_2_digits(second).as_ref());
     buf[26] = if offset.get() >= 0 { b'+' } else { b'-' };
     let offset_abs = offset.get().abs();
-    write_2_digits((offset_abs / 3600) as u8, &mut buf[27..29]);
-    write_2_digits(((offset_abs % 3600) / 60) as u8, &mut buf[29..]);
+    buf[27..29].copy_from_slice(format_2_digits((offset_abs / 3600) as u8).as_ref());
+    buf[29..31].copy_from_slice(format_2_digits(((offset_abs % 3600) / 60) as u8).as_ref());
     buf
 }
 
-pub(crate) fn write_gmt(i: Instant) -> [u8; 29] {
+/// Format into a standard RFC 2822 date string, using "GMT" as the timezone.
+pub(crate) fn format_gmt(i: Instant) -> [u8; 29] {
     let DateTime {
         date,
         time:
@@ -61,12 +63,12 @@ pub(crate) fn write_gmt(i: Instant) -> [u8; 29] {
 
     let mut buf = TEMPLATE_GMT;
     buf[..3].copy_from_slice(WEEKDAY_NAMES[date.day_of_week() as usize - 1]);
-    write_2_digits(day, &mut buf[5..7]);
+    buf[5..7].copy_from_slice(format_2_digits(day).as_ref());
     buf[8..11].copy_from_slice(MONTH_NAMES[month as usize - 1]);
-    write_4_digits(year.get(), &mut buf[12..16]);
-    write_2_digits(hour, &mut buf[17..19]);
-    write_2_digits(minute, &mut buf[20..22]);
-    write_2_digits(second, &mut buf[23..25]);
+    buf[12..16].copy_from_slice(format_4_digits(year.get()).as_ref());
+    buf[17..19].copy_from_slice(format_2_digits(hour).as_ref());
+    buf[20..22].copy_from_slice(format_2_digits(minute).as_ref());
+    buf[23..25].copy_from_slice(format_2_digits(second).as_ref());
     buf
 }
 

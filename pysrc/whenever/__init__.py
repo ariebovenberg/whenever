@@ -10,7 +10,6 @@ from ._core import (  # The unpickle functions must be findable at module-level
     _unpkl_local,
     _unpkl_md,
     _unpkl_offset,
-    _unpkl_system,
     _unpkl_tdelta,
     _unpkl_time,
     _unpkl_utc,
@@ -31,7 +30,9 @@ if not _EXTENSION_LOADED:  # pragma: no cover
     )
 
 
-__version__ = "0.8.9"
+# Yes, we could get the version with importlib.metadata,
+# but we try to keep our import time as low as possible.
+__version__ = "0.9.0"
 
 reset_tzpath()  # populate the tzpath once at startup
 

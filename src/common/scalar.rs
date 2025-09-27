@@ -1,6 +1,10 @@
 //! Checked arithmetic for scalar date and time concepts
 use crate::{
-    classes::date::Date, classes::plain_datetime::DateTime, classes::time::Time, common::round,
+    classes::{date::Date, plain_datetime::DateTime, time::Time},
+    common::{
+        fmt::{self, Sink, format_2_digits},
+        round,
+    },
 };
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
 
@@ -65,6 +69,58 @@ impl Offset {
     pub(crate) const fn as_offset_delta(self) -> OffsetDelta {
         // Safe: range of Offset fits within OffsetDelta
         OffsetDelta::new_unchecked(self.0)
+    }
+
+    pub(crate) fn format_iso(self, basic: bool) -> OffsetFormat {
+        let total_secs = self.0.abs();
+        let sign_char = if self.0 < 0 { b'-' } else { b'+' };
+        let secs = total_secs % 60;
+        let mins = (total_secs / 60) % 60;
+        let hrs = total_secs / 3600;
+        OffsetFormat {
+            sign_char,
+            hrs: hrs as _,
+            mins: mins as _,
+            secs: secs as _,
+            basic,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct OffsetFormat {
+    sign_char: u8,
+    hrs: u8,
+    mins: u8,
+    secs: u8,
+    basic: bool,
+}
+
+impl fmt::Chunk for OffsetFormat {
+    fn len(&self) -> usize {
+        // Always at least +hhmm
+        5
+        // First seperator adds 1
+        + !self.basic as usize
+        // Seconds part is optional and adds 2
+        + if self.secs == 0 { 0 } else { 2
+        // But it also adds a separator if not basic
+        + !self.basic as usize }
+    }
+
+    fn write(&self, b: &mut impl Sink) {
+        b.write_byte(self.sign_char);
+        b.write(format_2_digits(self.hrs).as_ref());
+        if !self.basic {
+            b.write_byte(b':');
+        }
+        b.write(format_2_digits(self.mins).as_ref());
+        if self.secs != 0 {
+            if !self.basic {
+                b.write_byte(b':');
+            }
+            b.write(format_2_digits(self.secs).as_ref());
+        }
     }
 }
 
@@ -734,6 +790,35 @@ impl SubSecNanos {
             SubSecNanos::from_remainder(rounded),
         )
     }
+
+    /// Convert the nanoseconds to a string representation,
+    /// returning the buffer and the "significant" length (i.e. without trailing zeros)
+    pub(crate) fn format_iso(self) -> ([u8; 10], usize) {
+        // Early exit for zero
+        if self.0 == 0 {
+            return (*b".000000000", 0);
+        }
+
+        let mut buf = [b'.'; 10];
+        let n = self.0;
+        for (i, item) in buf.iter_mut().enumerate().skip(1) {
+            let d = (n / 10i32.pow(9 - i as u32)) % 10;
+            *item = b'0' + d as u8;
+        }
+
+        // Find last non-zero digit (after the dot)
+        let mut len_significant = 9;
+        while len_significant > 0 && buf[len_significant] == b'0' {
+            len_significant -= 1;
+        }
+
+        // include the dot if there's any significant digit
+        if len_significant != 0 {
+            len_significant += 1;
+        }
+
+        (buf, len_significant)
+    }
 }
 
 // Display sub-second nanos in a way that:
@@ -808,3 +893,36 @@ impl Weekday {
 }
 
 pub(crate) static NS_PER_DAY: i128 = S_PER_DAY as i128 * 1_000_000_000;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn subsec_format_iso() {
+        assert_eq!(
+            SubSecNanos::new_unchecked(123_456_789).format_iso(),
+            (*b".123456789", 10)
+        );
+        assert_eq!(
+            SubSecNanos::new_unchecked(0).format_iso(),
+            (*b".000000000", 0)
+        );
+        assert_eq!(
+            SubSecNanos::new_unchecked(123_000_000).format_iso(),
+            (*b".123000000", 4)
+        );
+        assert_eq!(
+            SubSecNanos::new_unchecked(23_456_009).format_iso(),
+            (*b".023456009", 10)
+        );
+        assert_eq!(
+            SubSecNanos::new_unchecked(80).format_iso(),
+            (*b".000000080", 9)
+        );
+        assert_eq!(
+            SubSecNanos::new_unchecked(100_000_000).format_iso(),
+            (*b".100000000", 2)
+        );
+    }
+}

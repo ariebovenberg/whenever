@@ -13,7 +13,11 @@ use crate::{
             MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS, TimeDelta,
         },
     },
-    common::{rfc2822, round, scalar::*},
+    common::{
+        fmt::{self, Suffix},
+        rfc2822, round,
+        scalar::*,
+    },
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -179,21 +183,20 @@ impl Instant {
     }
 
     pub(crate) const fn pyhash(&self) -> Py_hash_t {
-        #[cfg(target_pointer_width = "64")]
-        {
+        if cfg!(target_pointer_width = "64") {
             hash_combine(
                 self.epoch.get() as Py_hash_t,
                 self.subsec.get() as Py_hash_t,
             )
-        }
-        #[cfg(target_pointer_width = "32")]
-        hash_combine(
-            self.epoch.get() as Py_hash_t,
+        } else {
             hash_combine(
-                (self.epoch.get() >> 32) as Py_hash_t,
-                self.subsec.get() as Py_hash_t,
-            ),
-        )
+                self.epoch.get() as Py_hash_t,
+                hash_combine(
+                    (self.epoch.get() >> 32) as Py_hash_t,
+                    self.subsec.get() as Py_hash_t,
+                ),
+            )
+        }
     }
 
     fn to_delta(self) -> TimeDelta {
@@ -204,8 +207,16 @@ impl Instant {
     }
 }
 
-fn __new__(_: HeapType<Instant>, _: PyTuple, _: Option<PyDict>) -> PyReturn {
-    raise_type_err("Instant cannot be instantiated directly. Use .now() or .from_utc()")
+fn __new__(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+    if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
+        parse_iso(cls, args.iter().next().unwrap())
+    } else {
+        raise_type_err(
+            "Instant() can only be called with an ISO 8601 string passed
+            as the sole positional argument. To construct from UTC date and time components,
+            use Instant.from_utc().",
+        )
+    }
 }
 
 fn from_utc(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
@@ -237,16 +248,27 @@ fn from_utc(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> Py
     .to_obj(cls)
 }
 
-impl PyWrapped for Instant {}
+impl PySimpleAlloc for Instant {}
 
 fn __repr__(_: PyType, i: Instant) -> PyReturn {
     let DateTime { date, time } = i.to_datetime();
-    format!("Instant({date} {time}Z)").to_py()
+    PyAsciiStrBuilder::format((
+        b"Instant(\"",
+        date.format_iso(false),
+        b" ",
+        time.format_iso(fmt::Unit::Auto, false),
+        b"Z\")",
+    ))
 }
 
 fn __str__(_: PyType, i: Instant) -> PyReturn {
     let DateTime { date, time } = i.to_datetime();
-    format!("{date}T{time}Z").to_py()
+    PyAsciiStrBuilder::format((
+        date.format_iso(false),
+        b"T",
+        time.format_iso(fmt::Unit::Auto, false),
+        b"Z",
+    ))
 }
 
 fn __richcmp__(cls: HeapType<Instant>, inst_a: Instant, b_obj: PyObj, op: c_int) -> PyReturn {
@@ -257,8 +279,6 @@ fn __richcmp__(cls: HeapType<Instant>, inst_a: Instant, b_obj: PyObj, op: c_int)
         if let Some(i) = b_obj.extract(state.zoned_datetime_type) {
             i.instant()
         } else if let Some(odt) = b_obj.extract(state.offset_datetime_type) {
-            odt.instant()
-        } else if let Some(odt) = b_obj.extract(state.system_datetime_type) {
             odt.instant()
         } else {
             return not_implemented();
@@ -304,8 +324,6 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         let inst_b = if let Some(zdt) = obj_b.extract(state.zoned_datetime_type) {
             zdt.instant()
         } else if let Some(odt) = obj_b.extract(state.offset_datetime_type) {
-            odt.instant()
-        } else if let Some(odt) = obj_b.extract(state.system_datetime_type) {
             odt.instant()
         } else {
             return _shift(inst_type, inst_a, state.time_delta_type, obj_b, true);
@@ -493,20 +511,43 @@ fn now(cls: HeapType<Instant>) -> PyReturn {
     cls.state().time_ns()?.to_obj(cls)
 }
 
-fn format_common_iso(cls: PyType, slf: Instant) -> PyReturn {
-    __str__(cls, slf)
+fn format_iso(
+    cls: HeapType<Instant>,
+    slf: Instant,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    let DateTime { date, time } = slf.to_datetime();
+    fmt::format_iso(date, time, cls.state(), args, kwargs, Suffix::Zulu)
 }
 
-fn parse_common_iso(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
+fn parse_iso(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
     OffsetDateTime::parse(
         s_obj
             .cast::<PyStr>()
-            .ok_or_type_err("Expected a string")?
+            // NOTE: this exception message also needs to make sense when
+            // called through the constructor
+            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
             .as_utf8()?,
     )
     .ok_or_else_value_err(|| format!("Invalid format: {s_obj}"))?
     .instant()
     .to_obj(cls)
+}
+
+fn format_common_iso(
+    cls: HeapType<Instant>,
+    slf: Instant,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
+    format_iso(cls, slf, args, kwargs)
+}
+
+fn parse_common_iso(cls: HeapType<Instant>, arg: PyObj) -> PyReturn {
+    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
+    parse_iso(cls, arg)
 }
 
 fn add(cls: HeapType<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
@@ -587,12 +628,10 @@ fn difference(cls: HeapType<Instant>, inst_a: Instant, obj_b: PyObj) -> PyReturn
         zdt.instant()
     } else if let Some(odt) = obj_b.extract(state.offset_datetime_type) {
         odt.instant()
-    } else if let Some(odt) = obj_b.extract(state.system_datetime_type) {
-        odt.instant()
     } else {
         raise_type_err(
-            "difference() argument must be an OffsetDateTime, 
-             Instant, ZonedDateTime, or SystemDateTime",
+            "difference() argument must be an OffsetDateTime,
+             Instant, or ZonedDateTime",
         )?
     };
     inst_a.diff(inst_b).to_obj(state.time_delta_type)
@@ -601,14 +640,11 @@ fn difference(cls: HeapType<Instant>, inst_a: Instant, obj_b: PyObj) -> PyReturn
 fn to_tz(cls: HeapType<Instant>, slf: Instant, tz_obj: PyObj) -> PyReturn {
     let &State {
         zoned_datetime_type,
-        exc_tz_notfound,
         ref tz_store,
         ..
     } = cls.state();
-    let tz = tz_store.obj_get(tz_obj, exc_tz_notfound)?;
-    slf.to_tz(tz)
-        .ok_or_value_err("Resulting datetime is out of range")?
-        .to_obj(zoned_datetime_type)
+    let tz = tz_store.obj_get(tz_obj)?;
+    slf.to_tz(tz, zoned_datetime_type)
 }
 
 fn to_fixed_offset(cls: HeapType<Instant>, slf: Instant, args: &[PyObj]) -> PyReturn {
@@ -629,15 +665,16 @@ fn to_fixed_offset(cls: HeapType<Instant>, slf: Instant, args: &[PyObj]) -> PyRe
 
 fn to_system_tz(cls: HeapType<Instant>, slf: Instant) -> PyReturn {
     let &State {
-        py_api,
-        system_datetime_type,
+        zoned_datetime_type,
+        ref tz_store,
         ..
     } = cls.state();
-    slf.to_system_tz(py_api)?.to_obj(system_datetime_type)
+    let tz = tz_store.get_system_tz()?;
+    slf.to_tz(tz, zoned_datetime_type)
 }
 
 fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn {
-    let fmt = rfc2822::write_gmt(slf);
+    let fmt = rfc2822::format_gmt(slf);
     // SAFETY: we know the bytes are ASCII
     unsafe { std::str::from_utf8_unchecked(&fmt[..]) }.to_py()
 }
@@ -724,8 +761,10 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod0!(Instant, now, doc::INSTANT_NOW),
     method0!(Instant, format_rfc2822, doc::INSTANT_FORMAT_RFC2822),
     classmethod1!(Instant, parse_rfc2822, doc::INSTANT_PARSE_RFC2822),
-    method0!(Instant, format_common_iso, doc::INSTANT_FORMAT_COMMON_ISO),
-    classmethod1!(Instant, parse_common_iso, doc::INSTANT_PARSE_COMMON_ISO),
+    method_kwargs!(Instant, format_iso, doc::INSTANT_FORMAT_ISO),
+    method_kwargs!(Instant, format_common_iso, c""), // deprecated alias
+    classmethod1!(Instant, parse_iso, doc::INSTANT_PARSE_ISO),
+    classmethod1!(Instant, parse_common_iso, c""), // deprecated alias
     method_kwargs!(Instant, add, doc::INSTANT_ADD),
     method_kwargs!(Instant, subtract, doc::INSTANT_SUBTRACT),
     method1!(Instant, to_tz, doc::EXACTTIME_TO_TZ),
