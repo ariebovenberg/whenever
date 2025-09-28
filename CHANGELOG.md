@@ -12,43 +12,43 @@
 
 - `SystemDateTime` has been removed and merged into `ZonedDateTime`
 
-  To create a more consistent and intuitive API, the SystemDateTime class
+  To create a more consistent and intuitive API, the `SystemDateTime` class
   has been removed. Its functionality is now fully integrated into an
-  enhanced ZonedDateTime, which now serves as the single, canonical class
+  enhanced `ZonedDateTime`, which now serves as the single, canonical class
   for all timezone-aware datetimes, including those based on the system's
   local timezone.
 
   **Rationale:**
 
-  The SystemDateTime class, while useful, created several challenges that
+  The `SystemDateTime` class, while useful, created several challenges that
   compromised the library's consistency and predictability:
 
-   * Inconsistent Behavior: Methods like replace() and add() on a
-     SystemDateTime instance would use the current system timezone definition,
+   * Inconsistent Behavior: Methods like `replace()` and `add()` on a
+     `SystemDateTime` instance would use the current system timezone definition,
      not necessarily the one that was active when the instance was created.
      This could lead to subtle and unpredictable bugs if the system timezone
      changed during the program's execution.
-   * API Division: Despite having nearly identical interfaces, SystemDateTime
-     and ZonedDateTime were not interchangeable. A function expecting a
-     ZonedDateTime could not accept a SystemDateTime, forcing users to write
-     more complex code with Union type hints.
+   * API Division: Despite having nearly identical interfaces, `SystemDateTime`
+     and `ZonedDateTime` were not interchangeable. A function expecting a
+     `ZonedDateTime` could not accept a `SystemDateTime`, forcing users to write
+     more complex code with `Union` type hints.
    * Maintenance Overhead: Maintaining two parallel APIs for timezone-aware
      datetimes led to significant code duplication and a higher maintenance
      burden.
 
   This change unifies the API by integrating system timezone support
-  directly into ZonedDateTime, providing a single, consistent way to handle
-  all timezone-aware datetimes. The original use cases for SystemDateTime
-  are fully supported by the improved ZonedDateTime.
+  directly into `ZonedDateTime`, providing a single, consistent way to handle
+  all timezone-aware datetimes. The original use cases for `SystemDateTime`
+  are fully supported by the improved `ZonedDateTime`.
 
   This new, unified approach also provides two major benefits:
 
-   * Performance: Operations on a ZonedDateTime representing a system time are
-     now orders of magnitude faster than they were on the old SystemDateTime.
-   * Cross-Platform Consistency: The new whenever.reset_system_tz() function
+   * Performance: Operations on a `ZonedDateTime` representing a system time are
+     now orders of magnitude faster than they were on the old `SystemDateTime`.
+   * Cross-Platform Consistency: The new `whenever.reset_system_tz()` function
      provides a reliable, cross-platform way to update the library's view of
      the system timezone, replacing the previous reliance on the Unix-only
-     time.tzset().
+     `time.tzset()`.
 
   **Migration:**
   - Replace all `SystemDateTime` with `ZonedDateTime` in all type hints.

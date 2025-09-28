@@ -3468,7 +3468,7 @@ class Instant(_ExactTime):
         basic: bool = False,
         sep: Literal["T", " "] = "T",
     ) -> str:
-        """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SSZ``
+        """Convert to the ISO 8601 string representation.
 
         The inverse of the ``parse_iso()`` method.
         """
