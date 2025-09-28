@@ -524,7 +524,7 @@ fn format_iso(
 fn parse_iso(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
     OffsetDateTime::parse(
         s_obj
-            .cast::<PyStr>()
+            .cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
             // called through the constructor
             .ok_or_type_err("When parsing from ISO format, the argument must be str")?

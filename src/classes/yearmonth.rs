@@ -153,7 +153,7 @@ fn format_iso(cls: PyType, slf: YearMonth) -> PyReturn {
 
 fn parse_iso(cls: HeapType<YearMonth>, arg: PyObj) -> PyReturn {
     let py_str = arg
-        .cast::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         // NOTE: this exception message also needs to make sense when
         // called through the constructor
         .ok_or_type_err("When parsing from ISO format, the argument must be str")?;
