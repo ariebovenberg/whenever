@@ -402,7 +402,7 @@ fn format_iso(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterK
 
 fn parse_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn {
     Date::parse_iso(
-        s.cast::<PyStr>()
+        s.cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
             // called through the constructor
             .ok_or_type_err("When parsing from ISO format, the argument must be str")?
