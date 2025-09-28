@@ -49,6 +49,7 @@ Concrete classes
 .. autoclass:: whenever.Instant
    :members:
      from_utc,
+     format_iso,
      format_rfc2822,
      parse_rfc2822,
      add,
@@ -63,6 +64,7 @@ Concrete classes
 
 .. autoclass:: whenever.PlainDateTime
    :members:
+     format_iso,
      assume_utc,
      assume_fixed_offset,
      assume_tz,
@@ -78,6 +80,7 @@ Concrete classes
 
 .. autoclass:: whenever.OffsetDateTime
    :members:
+     format_iso,
      format_rfc2822,
      parse_rfc2822,
      parse_strptime,
@@ -86,6 +89,7 @@ Concrete classes
 
 .. autoclass:: whenever.ZonedDateTime
    :members:
+     format_iso,
      now_in_system_tz,
      from_system_tz,
      tz,

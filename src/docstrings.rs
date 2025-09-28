@@ -492,7 +492,7 @@ pub(crate) const INSTANT_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, unit='auto', basic=False, sep='T')
 --
 
-Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SSZ``
+Convert to the ISO 8601 string representation.
 
 The inverse of the ``parse_iso()`` method.
 ";

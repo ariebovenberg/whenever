@@ -673,6 +673,15 @@ parts of the standard to support. ``whenever`` targets the most common
 and widely-used subset of the standard, while avoiding the more obscure
 and rarely-used parts, which are often the source of confusion and bugs.
 
+.. note::
+
+   The ISO formats in ``whenever`` are designed so you can format and parse
+   them without losing information.
+   This makes it ideal for JSON serialization and other data interchange formats.
+
+Parsing
+*******
+
 ``whenever``'s
 :meth:`~whenever._BasicConversions.parse_iso` methods take
 mostly `after Temporal <https://tc39.es/proposal-temporal/#sec-temporal-iso8601grammar>`_,
@@ -696,6 +705,10 @@ namely:
 - In the duration format, the ``W`` unit may be used alongside other calendar units
   (``Y``, ``M``, ``D``).
 
+
+Formatting
+**********
+
 Below are the default string formats you get for calling each type's
 :meth:`~whenever._BasicConversions.format_iso` method:
 
@@ -711,22 +724,44 @@ Below are the default string formats you get for calling each type's
 | :class:`~whenever.OffsetDateTime`       | ``YYYY-MM-DDTHH:MM:SS±HH:MM``                  |
 +-----------------------------------------+------------------------------------------------+
 
-Where applicable, the outputs can be customized using the ``unit``, ``basic``, ``sep``,
-and ``tz`` keyword arguments. See the method documentation for details.
+Where applicable, the outputs can be customized using these parameters:
 
-Example usage:
+- ``unit`` controls the smallest unit to include, ranging from ``"hour"`` to ``"nanosecond"``.
+  The default is ``"auto"``, which includes full precision, but without trailing zeros:
 
->>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=+5)
->>> d.format_iso()
-'2023-12-28T11:30:00+05:00'
->>> OffsetDateTime.parse_iso('2021-07-13T09:45:00-09:00')
-OffsetDateTime("2021-07-13 09:45:00-09:00")
+  >>> i = Instant.now()
+  >>> i.format_iso(unit="auto")
+  '2025-09-28T21:24:17.664328Z'
+  >>> d.format_iso(unit="minute")
+  '2025-09-28T21:24Z'
+  >>> d.format_iso(unit="nanosecond")
+  '2025-09-28T21:24:17.664328000Z'  # fixed number of digits
 
-.. note::
+- ``basic`` controls whether to use the "basic" format (i.e. no date and time separators).
+  By default, the extended format is used.
 
-   The ISO formats in ``whenever`` are designed so you can format and parse
-   them without losing information.
-   This makes it ideal for JSON serialization and other data interchange formats.
+  >>> i.format_iso(basic=True)
+  '20250928T212417.664328Z'
+  >>> i.format_iso(basic=False)
+  '2025-09-28T21:24:17.664328Z'
+
+- ``sep`` controls the separator between the date and time parts. `T` by default,
+  but a space (``" "``) may be used instead. Other separators may be allowed in the future.
+
+  >>> i.format_iso(sep=" ")
+  '2025-09-28 21:24:17.664328Z'
+
+- ``tz`` controls whether to include the IANA timezone identifier in square brackets.
+  Default is ``"always"`` which will raise an error if there is no timezone identifier
+  (this may be the case for some system timezones). Use ``"never"`` to omit the timezone identifier,
+  or ``"auto"`` to include it if available.
+
+  >>> d = ZonedDateTime.now("Europe/Amsterdam")
+  >>> d.format_iso(tz="auto")
+  '2025-09-28T23:24:17.664328+02:00[Europe/Amsterdam]'
+  >>> d.format_iso(tz="never")
+  '2025-09-28T23:24:17.664328+02:00'
+
 
 .. admonition:: Why not support the full ISO 8601 spec?
 
