@@ -187,18 +187,17 @@ or [API reference](https://whenever.readthedocs.io/en/latest/api.html).
   - ✅ Deltas
   - ✅ Date and time of day (separate from datetime)
   - ✅ Implement Rust extension for performance
+  - ✅ Parsing leap seconds
   - 🚧 Tweaks to the delta API
 - 🔒 **1.0**: API stability and backwards compatibility
   - 🚧 Customizable parsing and formatting
   - 🚧 Intervals
   - 🚧 Ranges and recurring times
-  - 🚧 Parsing leap seconds
 
 ## Limitations
 
 - Supports the proleptic Gregorian calendar between 1 and 9999 AD
 - Timezone offsets are limited to whole seconds (consistent with IANA TZ DB)
-- No support for leap seconds (consistent with industry standards and other modern libraries)
 
 ## Versioning and compatibility policy
 
