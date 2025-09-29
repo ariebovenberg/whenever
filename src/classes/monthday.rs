@@ -206,12 +206,12 @@ fn replace(
         handle_kwargs("replace", kwargs, |key, value, eq| {
             if eq(key, str_month) {
                 month = value
-                    .cast::<PyInt>()
+                    .cast_allow_subclass::<PyInt>()
                     .ok_or_type_err("month must be an integer")?
                     .to_long()?;
             } else if eq(key, str_day) {
                 day = value
-                    .cast::<PyInt>()
+                    .cast_allow_subclass::<PyInt>()
                     .ok_or_type_err("day must be an integer")?
                     .to_long()?;
             } else {
@@ -232,7 +232,7 @@ fn in_year(
 ) -> PyReturn {
     let year = Year::from_long(
         year_obj
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("year must be an integer")?
             .to_long()?,
     )
@@ -264,7 +264,7 @@ static mut METHODS: &[PyMethodDef] = &[
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let py_bytes = arg
-        .cast::<PyBytes>()
+        .cast_exact::<PyBytes>()
         .ok_or_type_err("Invalid pickle data")?;
     let mut packed = py_bytes.as_bytes()?;
     if packed.len() != 2 {

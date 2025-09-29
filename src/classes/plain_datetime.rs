@@ -366,37 +366,37 @@ pub(crate) fn set_components_from_kwargs(
 ) -> PyResult<bool> {
     if eq(key, str_year) {
         *year = value
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("year must be an integer")?
             .to_long()?;
     } else if eq(key, str_month) {
         *month = value
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("month must be an integer")?
             .to_long()?;
     } else if eq(key, str_day) {
         *day = value
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("day must be an integer")?
             .to_long()?;
     } else if eq(key, str_hour) {
         *hour = value
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("hour must be an integer")?
             .to_long()?;
     } else if eq(key, str_minute) {
         *minute = value
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("minute must be an integer")?
             .to_long()?;
     } else if eq(key, str_second) {
         *second = value
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("second must be an integer")?
             .to_long()?;
     } else if eq(key, str_nanosecond) {
         *nanos = value
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("nanosecond must be an integer")?
             .to_long()?;
     } else {
@@ -612,7 +612,7 @@ fn __reduce__(cls: HeapType<DateTime>, slf: DateTime) -> PyResult<Owned<PyTuple>
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let py_bytes = arg
-        .cast::<PyBytes>()
+        .cast_exact::<PyBytes>()
         .ok_or_type_err("Invalid pickle data")?;
 
     let mut packed = py_bytes.as_bytes()?;
@@ -706,7 +706,7 @@ fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwar
     let args = (arg_obj.newref(), format_obj.newref()).into_pytuple()?;
     let parsed = strptime
         .call(*args)?
-        .cast::<PyDateTime>()
+        .cast_exact::<PyDateTime>()
         .ok_or_type_err("strptime() returned non-datetime")?;
 
     DateTime::from_py(*parsed)?.to_obj(cls)

@@ -110,13 +110,13 @@ pub(crate) fn handle_exact_unit(
     name: &str,
     factor: i128,
 ) -> PyResult<i128> {
-    if let Some(int) = value.cast::<PyInt>() {
+    if let Some(int) = value.cast_allow_subclass::<PyInt>() {
         let i = int.to_i64()?;
         (-max..=max)
             .contains(&i)
             .then(|| i as i128 * factor)
             .ok_or_else_value_err(|| format!("{name} out of range"))
-    } else if let Some(py_float) = value.cast::<PyFloat>() {
+    } else if let Some(py_float) = value.cast_allow_subclass::<PyFloat>() {
         let f = py_float.to_f64()?;
         (-max as f64..=max as f64)
             .contains(&f)
@@ -139,7 +139,7 @@ pub(crate) fn set_units_from_kwargs(
 ) -> PyResult<bool> {
     if eq(key, state.str_years) {
         *months = value
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_value_err("years must be an integer")?
             .to_long()?
             .checked_mul(12)
@@ -148,7 +148,7 @@ pub(crate) fn set_units_from_kwargs(
             .ok_or_value_err("total years out of range")?;
     } else if eq(key, state.str_months) {
         *months = value
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_value_err("months must be an integer")?
             .to_long()?
             .try_into()
@@ -157,7 +157,7 @@ pub(crate) fn set_units_from_kwargs(
             .ok_or_value_err("total months out of range")?;
     } else if eq(key, state.str_weeks) {
         *days = value
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_value_err("weeks must be an integer")?
             .to_long()?
             .checked_mul(7)
@@ -166,7 +166,7 @@ pub(crate) fn set_units_from_kwargs(
             .ok_or_value_err("total days out of range")?;
     } else if eq(key, state.str_days) {
         *days = value
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_value_err("days must be an integer")?
             .to_long()?
             .try_into()
@@ -185,7 +185,7 @@ pub(crate) fn set_units_from_kwargs(
         *nanos += handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000)?;
     } else if eq(key, state.str_nanoseconds) {
         *nanos = value
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_value_err("nanoseconds must be an integer")?
             .to_i128()?
             .checked_add(*nanos)
@@ -314,9 +314,9 @@ fn __str__(_: PyType, d: DateTimeDelta) -> PyReturn {
 
 fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
     // These checks are needed because the args could be reversed!
-    let (delta_obj, factor) = if let Some(i) = b.cast::<PyInt>() {
+    let (delta_obj, factor) = if let Some(i) = b.cast_allow_subclass::<PyInt>() {
         (a, i.to_long()?)
-    } else if let Some(i) = a.cast::<PyInt>() {
+    } else if let Some(i) = a.cast_allow_subclass::<PyInt>() {
         (b, i.to_long()?)
     } else {
         return not_implemented();
@@ -585,25 +585,25 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
             ddelta: DateDelta {
                 months: DeltaMonths::new_unchecked(
                     months
-                        .cast::<PyInt>()
+                        .cast_exact::<PyInt>()
                         .ok_or_type_err("Invalid pickle data")?
                         .to_long()? as _,
                 ),
                 days: DeltaDays::new_unchecked(
-                    days.cast::<PyInt>()
+                    days.cast_exact::<PyInt>()
                         .ok_or_type_err("Invalid pickle data")?
                         .to_long()? as _,
                 ),
             },
             tdelta: TimeDelta {
                 secs: DeltaSeconds::new_unchecked(
-                    secs.cast::<PyInt>()
+                    secs.cast_exact::<PyInt>()
                         .ok_or_type_err("Invalid pickle data")?
                         .to_long()? as _,
                 ),
                 subsec: SubSecNanos::new_unchecked(
                     nanos
-                        .cast::<PyInt>()
+                        .cast_exact::<PyInt>()
                         .ok_or_type_err("Invalid pickle data")?
                         .to_long()? as _,
                 ),

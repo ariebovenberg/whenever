@@ -1,10 +1,16 @@
 # 🚀 Changelog
 
+## 0.9.2 (2025-09-29)
+
+Methods that take an `int`, `float`, or `str` now also accept subclasses of these types.
+This is consistent with the behavior of the standard library and
+improves compatibility with libraries like `numpy` and `pandas` (#260)
+
 ## 0.9.1 (2025-09-28)
 
-- Added `ZonedDateTime.now_in_system_tz()` and
-  `ZonedDateTime.from_system_tz()` as convenience methods to ease
-  migration away from `SystemDateTime`.
+Added `ZonedDateTime.now_in_system_tz()` and
+`ZonedDateTime.from_system_tz()` as convenience methods to ease
+migration away from `SystemDateTime`.
 
 ## 0.9.0 (2025-09-25)
 

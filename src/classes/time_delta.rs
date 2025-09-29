@@ -288,7 +288,7 @@ fn __new__(cls: HeapType<TimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> P
                             handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000_i128)?;
                     } else if eq(key, str_nanoseconds) {
                         nanos += value
-                            .cast::<PyInt>()
+                            .cast_allow_subclass::<PyInt>()
                             .ok_or_value_err("nanoseconds must be an integer")?
                             .to_i128()?;
                     } else {
@@ -357,7 +357,7 @@ pub(crate) fn microseconds(state: &State, arg: PyObj) -> PyReturn {
 
 pub(crate) fn nanoseconds(state: &State, arg: PyObj) -> PyReturn {
     TimeDelta::from_nanos(
-        arg.cast::<PyInt>()
+        arg.cast_allow_subclass::<PyInt>()
             .ok_or_value_err("nanoseconds must be an integer")?
             .to_i128()?,
     )
@@ -404,13 +404,13 @@ fn __str__(cls: PyType, slf: TimeDelta) -> PyReturn {
 }
 
 fn __mul__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
-    if let Some(py_int) = obj_b.cast::<PyInt>() {
+    if let Some(py_int) = obj_b.cast_allow_subclass::<PyInt>() {
         _mul_int(obj_a, py_int.to_i128()?)
-    } else if let Some(py_int) = obj_a.cast::<PyInt>() {
+    } else if let Some(py_int) = obj_a.cast_allow_subclass::<PyInt>() {
         _mul_int(obj_b, py_int.to_i128()?)
-    } else if let Some(py_float) = obj_b.cast::<PyFloat>() {
+    } else if let Some(py_float) = obj_b.cast_allow_subclass::<PyFloat>() {
         _mul_float(obj_a, py_float.to_f64()?)
-    } else if let Some(py_float) = obj_a.cast::<PyFloat>() {
+    } else if let Some(py_float) = obj_a.cast_allow_subclass::<PyFloat>() {
         _mul_float(obj_b, py_float.to_f64()?)
     } else {
         not_implemented()
@@ -447,7 +447,7 @@ fn _mul_float(delta_obj: PyObj, factor: f64) -> PyReturn {
 }
 
 fn __truediv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
-    if let Some(py_int) = b_obj.cast::<PyInt>() {
+    if let Some(py_int) = b_obj.cast_allow_subclass::<PyInt>() {
         let factor = py_int.to_i128()?;
         // SAFETY: one of the arguments is always the self type (the other is int)
         let (cls, delta) = unsafe { a_obj.assume_heaptype::<TimeDelta>() };
@@ -468,7 +468,7 @@ fn __truediv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
             },
         )
         .to_obj(cls)
-    } else if let Some(py_float) = b_obj.cast::<PyFloat>() {
+    } else if let Some(py_float) = b_obj.cast_allow_subclass::<PyFloat>() {
         // SAFETY: one of the arguments is always the self type (the other is float)
         let (cls, delta) = unsafe { a_obj.assume_heaptype::<TimeDelta>() };
         let factor = py_float.to_f64()?;
@@ -666,7 +666,7 @@ fn __reduce__(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyResult<Owned<PyTupl
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let py_bytes = arg
-        .cast::<PyBytes>()
+        .cast_exact::<PyBytes>()
         .ok_or_type_err("Invalid pickle data")?;
     let mut data = py_bytes.as_bytes()?;
     if data.len() != 12 {
@@ -714,11 +714,12 @@ fn in_days_of_24h(_: PyType, slf: TimeDelta) -> PyReturn {
 }
 
 fn from_py_timedelta(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
-    if let Some(d) = arg.cast::<PyTimeDelta>() {
+    if let Some(d) = arg.cast_exact::<PyTimeDelta>() {
         TimeDelta::from_py(d)
             .ok_or_value_err("TimeDelta out of range")?
             .to_obj(cls)
     } else {
+        // See docstring for why
         raise_type_err("Argument must be datetime.timedelta exactly")
     }
 }

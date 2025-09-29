@@ -177,21 +177,21 @@ where
     handle_kwargs(fname, kwargs, |key, value, eq| {
         if eq(key, str_days) {
             days = value
-                .cast::<PyInt>()
+                .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("days must be an integer")?
                 .to_long()?
                 .checked_add(days)
                 .ok_or_value_err("days out of range")?;
         } else if eq(key, str_months) {
             months = value
-                .cast::<PyInt>()
+                .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("months must be an integer")?
                 .to_long()?
                 .checked_add(months)
                 .ok_or_value_err("months out of range")?;
         } else if eq(key, str_years) {
             months = value
-                .cast::<PyInt>()
+                .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("years must be an integer")?
                 .to_long()?
                 .checked_mul(12)
@@ -199,7 +199,7 @@ where
                 .ok_or_value_err("years out of range")?;
         } else if eq(key, str_weeks) {
             days = value
-                .cast::<PyInt>()
+                .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("weeks must be an integer")?
                 .to_long()?
                 .checked_mul(7)
@@ -254,7 +254,7 @@ fn __new__(cls: HeapType<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> P
 
 pub(crate) fn years(state: &State, amount: PyObj) -> PyReturn {
     amount
-        .cast::<PyInt>()
+        .cast_allow_subclass::<PyInt>()
         .ok_or_type_err("argument must be int")?
         .to_long()?
         .checked_mul(12)
@@ -267,7 +267,7 @@ pub(crate) fn years(state: &State, amount: PyObj) -> PyReturn {
 pub(crate) fn months(state: &State, amount: PyObj) -> PyReturn {
     DeltaMonths::from_long(
         amount
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("argument must be int")?
             .to_long()?,
     )
@@ -278,7 +278,7 @@ pub(crate) fn months(state: &State, amount: PyObj) -> PyReturn {
 
 pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn {
     amount
-        .cast::<PyInt>()
+        .cast_allow_subclass::<PyInt>()
         .ok_or_type_err("argument must be int")?
         .to_long()?
         .checked_mul(7)
@@ -291,7 +291,7 @@ pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn {
 pub(crate) fn days(state: &State, amount: PyObj) -> PyReturn {
     DeltaDays::from_long(
         amount
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("argument must be int")?
             .to_long()?,
     )
@@ -326,9 +326,9 @@ fn __str__(_: PyType, d: DateDelta) -> PyReturn {
 
 fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
     // These checks are needed because the args could be reversed!
-    let (delta_obj, factor) = if let Some(i) = b.cast::<PyInt>() {
+    let (delta_obj, factor) = if let Some(i) = b.cast_allow_subclass::<PyInt>() {
         (a, i.to_long()?)
-    } else if let Some(i) = a.cast::<PyInt>() {
+    } else if let Some(i) = a.cast_allow_subclass::<PyInt>() {
         (b, i.to_long()?)
     } else {
         return not_implemented();
@@ -654,13 +654,13 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
         &[months_obj, days_obj] => {
             let months = DeltaMonths::new_unchecked(
                 months_obj
-                    .cast::<PyInt>()
+                    .cast_exact::<PyInt>()
                     .ok_or_type_err("Invalid pickle data")?
                     .to_long()? as _,
             );
             let days = DeltaDays::new_unchecked(
                 days_obj
-                    .cast::<PyInt>()
+                    .cast_exact::<PyInt>()
                     .ok_or_type_err("Invalid pickle data")?
                     .to_long()? as _,
             );

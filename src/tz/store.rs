@@ -392,7 +392,7 @@ impl TzStore {
     pub(crate) fn obj_get(&self, tz_obj: PyObj) -> PyResult<TzHandle<'_>> {
         self.get(
             tz_obj
-                .cast::<PyStr>()
+                .cast_allow_subclass::<PyStr>()
                 .ok_or_type_err("tz must be a string")?
                 .as_str()?,
         )
@@ -477,14 +477,14 @@ impl TzStore {
         let tz_tuple = import(c"whenever._tz.system")?
             .getattr(c"get_tz")?
             .call0()?
-            .cast::<PyTuple>()
+            .cast_exact::<PyTuple>()
             .ok_or_type_err(ERR_MSG)?;
 
         let mut items = tz_tuple.iter();
         // We expect a tuple of (int, str)
         let (Some(tz_type_obj), Some(tz_value_obj), None) = (
-            items.next().and_then(|x| x.cast::<PyInt>()),
-            items.next().and_then(|x| x.cast::<PyStr>()),
+            items.next().and_then(|x| x.cast_exact::<PyInt>()),
+            items.next().and_then(|x| x.cast_exact::<PyStr>()),
             items.next(),
         ) else {
             raise_type_err(ERR_MSG)?
@@ -557,7 +557,7 @@ fn get_tzdata_path() -> PyResult<Option<PathBuf>> {
         // unless somebody is doing something strange.
         let py_str = __path__
             .getitem((0).to_py()?.borrow())?
-            .cast::<PyStr>()
+            .cast_exact::<PyStr>()
             .ok_or_type_err("tzdata module path must be a string")?;
 
         py_str.as_str()?.to_owned()
