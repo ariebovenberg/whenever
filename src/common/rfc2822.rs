@@ -157,7 +157,7 @@ fn parse_time(s: &mut Scan) -> Option<Time> {
     let second = match s.peek()? {
         b':' => {
             s.skip(1).ascii_whitespace();
-            let val = s.digits00_59()?;
+            let val = s.digits00_60_leap()?;
             // Whitespace after seconds is required!
             s.ascii_whitespace().then_some(())?;
             val

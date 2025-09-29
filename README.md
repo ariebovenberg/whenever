@@ -180,12 +180,10 @@ datetime.datetime(2024, 7, 4, 10, 36, 56, tzinfo=datetime.timezone.utc)
 Read more in the [feature overview](https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html)
 or [API reference](https://whenever.readthedocs.io/en/latest/reference/datetime.html).
 
-
 ## Limitations
 
 - Supports the proleptic Gregorian calendar between 1 and 9999 AD
 - Timezone offsets are limited to whole seconds (consistent with IANA TZ DB)
-- No support for leap seconds (consistent with industry standards and other modern libraries)
 
 ## Stability policy
 
