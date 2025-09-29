@@ -43,6 +43,16 @@ class TestInit:
     def test_iso(self):
         assert Time("01:02:03.000004") == Time(1, 2, 3, nanosecond=4_000)
 
+    def test_leap_seconds_parsing(self):
+        # Leap second (60) should be parsed and normalized to 59
+        assert Time("01:02:60") == Time(1, 2, 59)
+        assert Time("01:02:60.123456") == Time(1, 2, 59, nanosecond=123_456_000)
+        # Basic format
+        assert Time("010260") == Time(1, 2, 59)
+        # Direct construction should still reject 60
+        with pytest.raises(ValueError):
+            Time(1, 2, 60)
+
 
 class TestFormatIso:
 

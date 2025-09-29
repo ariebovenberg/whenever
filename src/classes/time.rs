@@ -99,7 +99,7 @@ impl Time {
                 let min = s.digits00_59()?;
                 // seconds are still optional at this point
                 let (sec, subsec) = match s.advance_on(b':') {
-                    Some(true) => s.digits00_59().zip(s.subsec())?,
+                    Some(true) => s.digits00_60_leap().zip(s.subsec())?,
                     _ => (0, SubSecNanos::MIN),
                 };
                 (min, sec, subsec)
@@ -119,7 +119,7 @@ impl Time {
         let hour = s.digits00_23()?;
         let (minute, second, subsec) = match s.digits00_59() {
             Some(m) => {
-                let (sec, sub) = match s.digits00_59() {
+                let (sec, sub) = match s.digits00_60_leap() {
                     Some(n) => (n, s.subsec().unwrap_or(SubSecNanos::MIN)),
                     None => (0, SubSecNanos::MIN),
                 };

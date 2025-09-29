@@ -64,6 +64,22 @@ class TestInit:
             2020, 8, 15, 5, 12, 30, nanosecond=450
         )
 
+    def test_leap_seconds_parsing(self):
+        # Leap second (60) should be parsed and normalized to 59
+        assert PlainDateTime("2020-08-15T05:12:60") == PlainDateTime(
+            2020, 8, 15, 5, 12, 59
+        )
+        assert PlainDateTime("2020-08-15T05:12:60.123456") == PlainDateTime(
+            2020, 8, 15, 5, 12, 59, nanosecond=123_456_000
+        )
+        # Basic format
+        assert PlainDateTime("20200815T051260") == PlainDateTime(
+            2020, 8, 15, 5, 12, 59
+        )
+        # Direct construction should still reject 60
+        with pytest.raises(ValueError):
+            PlainDateTime(2020, 8, 15, 5, 12, 60)
+
 
 def test_components():
     d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_123)
