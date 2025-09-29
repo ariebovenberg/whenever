@@ -565,22 +565,22 @@ fn replace(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwar
         handle_kwargs("replace", kwargs, |key, value, eq| {
             if eq(key, str_hour) {
                 hour = value
-                    .cast::<PyInt>()
+                    .cast_allow_subclass::<PyInt>()
                     .ok_or_type_err("hour must be an integer")?
                     .to_long()?;
             } else if eq(key, str_minute) {
                 minute = value
-                    .cast::<PyInt>()
+                    .cast_allow_subclass::<PyInt>()
                     .ok_or_type_err("minute must be an integer")?
                     .to_long()?;
             } else if eq(key, str_second) {
                 second = value
-                    .cast::<PyInt>()
+                    .cast_allow_subclass::<PyInt>()
                     .ok_or_type_err("second must be an integer")?
                     .to_long()?;
             } else if eq(key, str_nanosecond) {
                 nanos = value
-                    .cast::<PyInt>()
+                    .cast_allow_subclass::<PyInt>()
                     .ok_or_type_err("nanosecond must be an integer")?
                     .to_long()?;
             } else {
@@ -623,7 +623,7 @@ static mut METHODS: &[PyMethodDef] = &[
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let py_bytes = arg
-        .cast::<PyBytes>()
+        .cast_exact::<PyBytes>()
         .ok_or_type_err("Invalid pickle data")?;
 
     let mut data = py_bytes.as_bytes()?;

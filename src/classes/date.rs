@@ -613,17 +613,17 @@ fn replace(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwar
     handle_kwargs("replace", kwargs, |key, value, eq| {
         if eq(key, str_year) {
             year = value
-                .cast::<PyInt>()
+                .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("year must be an integer")?
                 .to_long()?;
         } else if eq(key, str_month) {
             month = value
-                .cast::<PyInt>()
+                .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("month must be an integer")?
                 .to_long()?;
         } else if eq(key, str_day) {
             day = value
-                .cast::<PyInt>()
+                .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("day must be an integer")?
                 .to_long()?;
         } else {
@@ -701,7 +701,7 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let binding = arg
-        .cast::<PyBytes>()
+        .cast_exact::<PyBytes>()
         .ok_or_type_err("Invalid pickle data")?;
     let mut packed = binding.as_bytes()?;
     if packed.len() != 4 {

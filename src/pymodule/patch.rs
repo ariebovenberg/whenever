@@ -128,7 +128,7 @@ impl State {
     fn time_ns_py(&self) -> PyResult<Instant> {
         let ts = self.time_ns.call0()?;
         let ns = ts
-            .cast::<PyInt>()
+            .cast_exact::<PyInt>()
             .ok_or_raise(
                 unsafe { PyExc_RuntimeError },
                 "time_ns() returned a non-integer",

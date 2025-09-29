@@ -84,7 +84,7 @@ impl Unit {
 
     fn increment_from_py(self, v: PyObj, hours_increment_always_ok: bool) -> PyResult<i64> {
         let inc = v
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("increment must be an integer")?
             .to_i64()?;
         if inc <= 0 || inc >= 1000 {

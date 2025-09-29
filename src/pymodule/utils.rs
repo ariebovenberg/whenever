@@ -33,7 +33,7 @@ pub(crate) fn new_exception(
     // SAFETY: calling C API with valid arguments
     let e = unsafe { PyErr_NewExceptionWithDoc(name.as_ptr(), doc.as_ptr(), base, NULL()) }
         .rust_owned()?;
-    module.add_type(e.borrow().cast::<PyType>().unwrap())?;
+    module.add_type(e.borrow().cast_allow_subclass::<PyType>().unwrap())?;
     Ok(e)
 }
 

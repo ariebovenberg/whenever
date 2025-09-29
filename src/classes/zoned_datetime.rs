@@ -656,7 +656,7 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     } = state;
 
     let py_bytes = data
-        .cast::<PyBytes>()
+        .cast_exact::<PyBytes>()
         .ok_or_type_err("Invalid pickle data")?;
     let mut packed = py_bytes.as_bytes()?;
     if packed.len() != 15 {
@@ -1137,7 +1137,7 @@ fn from_py_datetime(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
     let epoch_float = dt
         .getattr(c"timestamp")?
         .call0()?
-        .cast::<PyFloat>()
+        .cast_exact::<PyFloat>()
         .ok_or_raise(
             unsafe { PyExc_RuntimeError },
             "datetime.datetime.timestamp() returned non-float",
@@ -1250,9 +1250,9 @@ fn from_timestamp(
     let state = cls.state();
     let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp")?;
 
-    if let Some(py_int) = args[0].cast::<PyInt>() {
+    if let Some(py_int) = args[0].cast_allow_subclass::<PyInt>() {
         Instant::from_timestamp(py_int.to_i64()?)
-    } else if let Some(py_float) = args[0].cast::<PyFloat>() {
+    } else if let Some(py_float) = args[0].cast_allow_subclass::<PyFloat>() {
         Instant::from_timestamp_f64(py_float.to_f64()?)
     } else {
         raise_type_err("Timestamp must be an integer or float")?
@@ -1270,7 +1270,7 @@ fn from_timestamp_millis(
     let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp_millis")?;
     Instant::from_timestamp_millis(
         args[0]
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("timestamp must be an integer")?
             .to_i64()?,
     )
@@ -1288,7 +1288,7 @@ fn from_timestamp_nanos(
     let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp_nanos")?;
     Instant::from_timestamp_nanos(
         args[0]
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("timestamp must be an integer")?
             .to_i128()?,
     )

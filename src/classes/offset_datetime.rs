@@ -204,7 +204,7 @@ impl Offset {
     pub(crate) fn from_py(dt: PyDateTime) -> PyResult<Self> {
         Ok({
             let offset = dt.utcoffset()?;
-            if let Some(py_delta) = offset.borrow().cast::<PyTimeDelta>() {
+            if let Some(py_delta) = offset.borrow().cast_exact::<PyTimeDelta>() {
                 if py_delta.microseconds_component() != 0 {
                     raise_value_err("Sub-second offset precision not supported")?
                 }
@@ -221,7 +221,7 @@ impl Offset {
     }
 
     pub(crate) fn from_obj(obj: PyObj, tdelta_cls: HeapType<TimeDelta>) -> PyResult<Self> {
-        if let Some(py_int) = obj.cast::<PyInt>() {
+        if let Some(py_int) = obj.cast_exact::<PyInt>() {
             Offset::from_hours(py_int.to_long()?)
                 .ok_or_value_err("offset must be between -24 and 24 hours")
         } else if let Some(TimeDelta { secs, subsec }) = obj.extract(tdelta_cls) {
@@ -488,7 +488,7 @@ fn to_system_tz(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn 
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let py_bytes = arg
-        .cast::<PyBytes>()
+        .cast_exact::<PyBytes>()
         .ok_or_type_err("Invalid pickle data")?;
     let mut packed = py_bytes.as_bytes()?;
     if packed.len() != 15 {
@@ -949,9 +949,9 @@ fn from_timestamp(
     let state = cls.state();
     let offset = check_from_timestamp_args_return_offset("from_timestamp", args, kwargs, state)?;
 
-    if let Some(py_int) = args[0].cast::<PyInt>() {
+    if let Some(py_int) = args[0].cast_allow_subclass::<PyInt>() {
         Instant::from_timestamp(py_int.to_i64()?)
-    } else if let Some(py_float) = args[0].cast::<PyFloat>() {
+    } else if let Some(py_float) = args[0].cast_allow_subclass::<PyFloat>() {
         Instant::from_timestamp_f64(py_float.to_f64()?)
     } else {
         raise_type_err("Timestamp must be an integer or float")?
@@ -972,7 +972,7 @@ fn from_timestamp_millis(
         check_from_timestamp_args_return_offset("from_timestamp_millis", args, kwargs, state)?;
     Instant::from_timestamp_millis(
         args[0]
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("Timestamp must be an integer")?
             .to_i64()?,
     )
@@ -992,7 +992,7 @@ fn from_timestamp_nanos(
         check_from_timestamp_args_return_offset("from_timestamp_nanos", args, kwargs, state)?;
     Instant::from_timestamp_nanos(
         args[0]
-            .cast::<PyInt>()
+            .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("timestamp must be an integer")?
             .to_i128()?,
     )
@@ -1023,7 +1023,7 @@ fn parse_strptime(
     let parsed = state
         .strptime
         .call(*args)?
-        .cast::<PyDateTime>()
+        .cast_exact::<PyDateTime>()
         .ok_or_type_err("strptime() returned non-datetime")?;
 
     OffsetDateTime::from_py(*parsed)?.to_obj(cls)
@@ -1036,7 +1036,9 @@ fn format_rfc2822(_: PyType, slf: OffsetDateTime) -> PyReturn {
 }
 
 fn parse_rfc2822(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn {
-    let s = arg.cast::<PyStr>().ok_or_type_err("Expected a string")?;
+    let s = arg
+        .cast_allow_subclass::<PyStr>()
+        .ok_or_type_err("Expected a string")?;
     let (date, time, offset) =
         rfc2822::parse(s.as_utf8()?).ok_or_else_value_err(|| format!("Invalid format: {arg}"))?;
     OffsetDateTime::new(date, time, offset)

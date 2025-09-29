@@ -1485,6 +1485,12 @@ class TimeDelta(_Base):
         -------
         >>> TimeDelta.from_py_timedelta(timedelta(seconds=5400))
         TimeDelta("PT1h30m")
+
+        Note
+        ----
+        Subclasses of :class:`~datetime.timedelta` are not accepted
+        because they often add additional state that cannot be represented
+        in a :class:`TimeDelta`.
         """
         if type(td) is not _timedelta:
             raise TypeError("Expected datetime.timedelta exactly")

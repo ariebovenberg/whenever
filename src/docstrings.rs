@@ -1170,6 +1170,12 @@ Example
 -------
 >>> TimeDelta.from_py_timedelta(timedelta(seconds=5400))
 TimeDelta(\"PT1h30m\")
+
+Note
+----
+Subclasses of :class:`~datetime.timedelta` are not accepted
+because they often add additional state that cannot be represented
+in a :class:`TimeDelta`.
 ";
 pub(crate) const TIMEDELTA_IN_DAYS_OF_24H: &CStr = c"\
 The total size in days (of exactly 24 hours each)

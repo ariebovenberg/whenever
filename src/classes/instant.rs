@@ -171,7 +171,7 @@ impl Instant {
         let inst = Instant::from_datetime(Date::from_py(dt.date()), Time::from_py_dt(dt));
         Ok({
             let offset = dt.utcoffset()?;
-            if let Some(py_delta) = offset.borrow().cast::<PyTimeDelta>() {
+            if let Some(py_delta) = offset.borrow().cast_exact::<PyTimeDelta>() {
                 // SAFETY: Python offsets are already bounded to +/- 24 hours: well within TimeDelta range.
                 inst.shift(-TimeDelta::from_py_unchecked(py_delta))
             } else if offset.is_none() {
@@ -420,7 +420,7 @@ fn __reduce__(
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let binding = arg
-        .cast::<PyBytes>()
+        .cast_exact::<PyBytes>()
         .ok_or_type_err("Invalid pickle data")?;
     let mut packed = binding.as_bytes()?;
     if packed.len() != 12 {
@@ -436,7 +436,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
 // Backwards compatibility: an unpickler for Instants pickled before 0.8.0
 pub(crate) fn unpickle_pre_0_8(state: &State, arg: PyObj) -> PyReturn {
     let binding = arg
-        .cast::<PyBytes>()
+        .cast_exact::<PyBytes>()
         .ok_or_type_err("Invalid pickle data")?;
     let mut packed = binding.as_bytes()?;
     if packed.len() != 12 {
@@ -462,9 +462,9 @@ fn timestamp_nanos(_: PyType, slf: Instant) -> PyReturn {
 }
 
 fn from_timestamp(cls: HeapType<Instant>, ts: PyObj) -> PyReturn {
-    if let Some(py_int) = ts.cast::<PyInt>() {
+    if let Some(py_int) = ts.cast_allow_subclass::<PyInt>() {
         Instant::from_timestamp(py_int.to_i64()?)
-    } else if let Some(py_float) = ts.cast::<PyFloat>() {
+    } else if let Some(py_float) = ts.cast_allow_subclass::<PyFloat>() {
         Instant::from_timestamp_f64(py_float.to_f64()?)
     } else {
         return raise_type_err("Timestamp must be an integer or float");
@@ -474,7 +474,7 @@ fn from_timestamp(cls: HeapType<Instant>, ts: PyObj) -> PyReturn {
 }
 
 fn from_timestamp_millis(cls: HeapType<Instant>, ts: PyObj) -> PyReturn {
-    if let Some(py_int) = ts.cast::<PyInt>() {
+    if let Some(py_int) = ts.cast_allow_subclass::<PyInt>() {
         Instant::from_timestamp_millis(py_int.to_i64()?)
     } else {
         return raise_type_err("Timestamp must be an integer");
@@ -484,7 +484,7 @@ fn from_timestamp_millis(cls: HeapType<Instant>, ts: PyObj) -> PyReturn {
 }
 
 fn from_timestamp_nanos(cls: HeapType<Instant>, ts: PyObj) -> PyReturn {
-    if let Some(py_int) = ts.cast::<PyInt>() {
+    if let Some(py_int) = ts.cast_allow_subclass::<PyInt>() {
         Instant::from_timestamp_nanos(py_int.to_i128()?)
     } else {
         return raise_type_err("Timestamp must be an integer");
@@ -599,7 +599,7 @@ fn _shift_method(
             nanos += handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000_i128)?;
         } else if eq(key, str_nanoseconds) {
             nanos = value
-                .cast::<PyInt>()
+                .cast_allow_subclass::<PyInt>()
                 .ok_or_value_err("nanoseconds must be an integer")?
                 .to_i128()?
                 .checked_add(nanos)
@@ -680,7 +680,9 @@ fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn {
 }
 
 fn parse_rfc2822(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
-    let s = s_obj.cast::<PyStr>().ok_or_type_err("Expected a string")?;
+    let s = s_obj
+        .cast_allow_subclass::<PyStr>()
+        .ok_or_type_err("Expected a string")?;
     let (date, time, offset) =
         rfc2822::parse(s.as_utf8()?).ok_or_else_value_err(|| format!("Invalid format: {s_obj}"))?;
     OffsetDateTime::new(date, time, offset)
