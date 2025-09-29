@@ -105,6 +105,24 @@ impl<'a> Scan<'a> {
         }
     }
 
+    /// Parse two digits in the range 00-60 (allowing leap seconds).
+    /// Returns the parsed value, but values of 60 are normalized to 59.
+    pub(crate) fn digits00_60_leap(&mut self) -> Option<u8> {
+        match self.0 {
+            [a @ b'0'..=b'5', b @ b'0'..=b'9', ..] => {
+                // Normal case: 00-59
+                self.0 = &self.0[2..];
+                Some((a - b'0') * 10 + (b - b'0'))
+            }
+            [b'6', b'0', ..] => {
+                // Special case: exactly 60 (leap second) -> normalize to 59
+                self.0 = &self.0[2..];
+                Some(59)
+            }
+            _ => None,
+        }
+    }
+
     /// Parse two digits in the range 00-23.
     pub(crate) fn digits00_23(&mut self) -> Option<u8> {
         match self.0 {
@@ -380,6 +398,19 @@ mod tests {
         assert_eq!(scan.digits00_59(), Some(49));
         assert_eq!(scan.digits00_59(), None);
         assert_eq!(scan.digits00_59(), None);
+    }
+
+    #[test]
+    fn test_scan_digits00_60_leap() {
+        let mut scan = Scan::new(b"12a4560z61");
+        assert_eq!(scan.digits00_60_leap(), Some(12));
+        assert_eq!(scan.digits00_60_leap(), None);
+        scan.expect(b'a');
+        assert_eq!(scan.digits00_60_leap(), Some(45));
+        assert_eq!(scan.digits00_60_leap(), Some(59)); // 60 -> 59
+        scan.expect(b'z');
+        assert_eq!(scan.digits00_60_leap(), None); // 61 is invalid, not consumed
+        assert_eq!(scan.rest(), b"61");
     }
 
     #[test]
