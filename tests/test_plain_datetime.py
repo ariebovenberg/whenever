@@ -82,22 +82,22 @@ class TestInit:
 
     def test_leap_seconds_comprehensive(self):
         # Extended format with various fractional seconds
-        assert PlainDateTime.parse_iso("2020-08-15T23:59:60.999999999") == PlainDateTime(
-            2020, 8, 15, 23, 59, 59, nanosecond=999_999_999
-        )
-        assert PlainDateTime.parse_iso("2020-08-15T12:34:60.5") == PlainDateTime(
-            2020, 8, 15, 12, 34, 59, nanosecond=500_000_000
-        )
+        assert PlainDateTime.parse_iso(
+            "2020-08-15T23:59:60.999999999"
+        ) == PlainDateTime(2020, 8, 15, 23, 59, 59, nanosecond=999_999_999)
+        assert PlainDateTime.parse_iso(
+            "2020-08-15T12:34:60.5"
+        ) == PlainDateTime(2020, 8, 15, 12, 34, 59, nanosecond=500_000_000)
 
         # Basic format with fractional seconds
-        assert PlainDateTime.parse_iso("20200815T123460.123456") == PlainDateTime(
-            2020, 8, 15, 12, 34, 59, nanosecond=123_456_000
-        )
+        assert PlainDateTime.parse_iso(
+            "20200815T123460.123456"
+        ) == PlainDateTime(2020, 8, 15, 12, 34, 59, nanosecond=123_456_000)
 
         # Comma as decimal separator
-        assert PlainDateTime.parse_iso("2020-08-15T12:34:60,5") == PlainDateTime(
-            2020, 8, 15, 12, 34, 59, nanosecond=500_000_000
-        )
+        assert PlainDateTime.parse_iso(
+            "2020-08-15T12:34:60,5"
+        ) == PlainDateTime(2020, 8, 15, 12, 34, 59, nanosecond=500_000_000)
 
         # Various dates with leap seconds
         assert PlainDateTime.parse_iso("1999-12-31T23:59:60") == PlainDateTime(
@@ -120,9 +120,9 @@ class TestInit:
     def test_leap_seconds_normal_seconds_still_work(self):
         # Ensure normal seconds 00-59 still parse correctly
         for sec in range(60):
-            assert PlainDateTime.parse_iso(f"2020-08-15T12:34:{sec:02d}") == PlainDateTime(
-                2020, 8, 15, 12, 34, sec
-            )
+            assert PlainDateTime.parse_iso(
+                f"2020-08-15T12:34:{sec:02d}"
+            ) == PlainDateTime(2020, 8, 15, 12, 34, sec)
 
 
 def test_components():

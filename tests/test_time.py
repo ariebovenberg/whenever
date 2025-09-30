@@ -46,7 +46,9 @@ class TestInit:
     def test_leap_seconds_parsing(self):
         # Leap second (60) should be parsed and normalized to 59
         assert Time("01:02:60") == Time(1, 2, 59)
-        assert Time("01:02:60.123456") == Time(1, 2, 59, nanosecond=123_456_000)
+        assert Time("01:02:60.123456") == Time(
+            1, 2, 59, nanosecond=123_456_000
+        )
         # Basic format
         assert Time("010260") == Time(1, 2, 59)
         # Direct construction should still reject 60
@@ -109,7 +111,9 @@ class TestInit:
 
         # Various minutes with leap seconds
         for minute in range(60):
-            assert Time.parse_iso(f"12:{minute:02d}:60") == Time(12, minute, 59)
+            assert Time.parse_iso(f"12:{minute:02d}:60") == Time(
+                12, minute, 59
+            )
 
     def test_leap_seconds_invalid(self):
         # 61 and above should be rejected in extended format (strict parsing)
