@@ -120,8 +120,12 @@ class TestInit:
         assert OffsetDateTime.parse_iso("2020-08-15T05:12:60+05:00").exact_eq(
             OffsetDateTime(2020, 8, 15, 5, 12, 59, offset=5)
         )
-        assert OffsetDateTime.parse_iso("2020-08-15T05:12:60.123456+05:00").exact_eq(
-            OffsetDateTime(2020, 8, 15, 5, 12, 59, nanosecond=123_456_000, offset=5)
+        assert OffsetDateTime.parse_iso(
+            "2020-08-15T05:12:60.123456+05:00"
+        ).exact_eq(
+            OffsetDateTime(
+                2020, 8, 15, 5, 12, 59, nanosecond=123_456_000, offset=5
+            )
         )
 
         # Basic format
@@ -135,8 +139,12 @@ class TestInit:
         )
 
         # With fractional seconds and various offsets
-        assert OffsetDateTime.parse_iso("2020-08-15T12:34:60.5+00:00").exact_eq(
-            OffsetDateTime(2020, 8, 15, 12, 34, 59, nanosecond=500_000_000, offset=0)
+        assert OffsetDateTime.parse_iso(
+            "2020-08-15T12:34:60.5+00:00"
+        ).exact_eq(
+            OffsetDateTime(
+                2020, 8, 15, 12, 34, 59, nanosecond=500_000_000, offset=0
+            )
         )
 
         # Direct construction should still reject 60
@@ -146,13 +154,19 @@ class TestInit:
     def test_leap_seconds_comprehensive(self):
         # Various offsets with leap seconds
         for offset in [-12, -5, 0, 5, 12]:
-            dt = OffsetDateTime.parse_iso(f"2020-08-15T12:34:60{offset:+03d}:00")
+            dt = OffsetDateTime.parse_iso(
+                f"2020-08-15T12:34:60{offset:+03d}:00"
+            )
             assert dt.second == 59
             assert dt.offset == hours(offset)
 
         # With comma as decimal separator
-        assert OffsetDateTime.parse_iso("2020-08-15T12:34:60,5+05:00").exact_eq(
-            OffsetDateTime(2020, 8, 15, 12, 34, 59, nanosecond=500_000_000, offset=5)
+        assert OffsetDateTime.parse_iso(
+            "2020-08-15T12:34:60,5+05:00"
+        ).exact_eq(
+            OffsetDateTime(
+                2020, 8, 15, 12, 34, 59, nanosecond=500_000_000, offset=5
+            )
         )
 
         # Invalid seconds should be rejected

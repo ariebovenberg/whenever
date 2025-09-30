@@ -354,7 +354,14 @@ class TestInit:
             "2020-08-15T05:12:60.123456-04:00[America/New_York]"
         ).exact_eq(
             ZonedDateTime(
-                2020, 8, 15, 5, 12, 59, nanosecond=123_456_000, tz="America/New_York"
+                2020,
+                8,
+                15,
+                5,
+                12,
+                59,
+                nanosecond=123_456_000,
+                tz="America/New_York",
             )
         )
 
@@ -393,7 +400,9 @@ class TestInit:
 
         # Test with various timezones using their actual offsets
         # America/New_York is UTC-4 in August 2020
-        dt = ZonedDateTime.parse_iso("2020-08-15T12:34:60-04:00[America/New_York]")
+        dt = ZonedDateTime.parse_iso(
+            "2020-08-15T12:34:60-04:00[America/New_York]"
+        )
         assert dt.second == 59
         assert dt.tz == "America/New_York"
 
@@ -401,7 +410,9 @@ class TestInit:
         assert ZonedDateTime.parse_iso(
             "2020-08-15T12:34:60,5+00:00[UTC]"
         ).exact_eq(
-            ZonedDateTime(2020, 8, 15, 12, 34, 59, nanosecond=500_000_000, tz="UTC")
+            ZonedDateTime(
+                2020, 8, 15, 12, 34, 59, nanosecond=500_000_000, tz="UTC"
+            )
         )
 
         # Invalid seconds should be rejected
