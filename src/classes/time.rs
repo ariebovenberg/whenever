@@ -747,4 +747,147 @@ mod tests {
         testcase(t4, false, fmt::Unit::Hour, b"12");
         testcase(t4, true, fmt::Unit::Hour, b"12");
     }
+
+    #[test]
+    fn parse_leap_seconds_extended_format() {
+        // Leap second normalization in extended format
+        let t = Time::parse_iso(b"01:02:60").unwrap();
+        assert_eq!(t.hour, 1);
+        assert_eq!(t.minute, 2);
+        assert_eq!(t.second, 59);
+        assert_eq!(t.subsec, SubSecNanos::MIN);
+
+        // With fractional seconds
+        let t = Time::parse_iso(b"23:59:60.999999999").unwrap();
+        assert_eq!(t.hour, 23);
+        assert_eq!(t.minute, 59);
+        assert_eq!(t.second, 59);
+        assert_eq!(t.subsec, SubSecNanos::new_unchecked(999_999_999));
+
+        let t = Time::parse_iso(b"12:34:60.123456").unwrap();
+        assert_eq!(t.hour, 12);
+        assert_eq!(t.minute, 34);
+        assert_eq!(t.second, 59);
+        assert_eq!(t.subsec, SubSecNanos::new_unchecked(123_456_000));
+
+        // Comma as decimal separator
+        let t = Time::parse_iso(b"12:34:60,5").unwrap();
+        assert_eq!(t.hour, 12);
+        assert_eq!(t.minute, 34);
+        assert_eq!(t.second, 59);
+        assert_eq!(t.subsec, SubSecNanos::new_unchecked(500_000_000));
+    }
+
+    #[test]
+    fn parse_leap_seconds_basic_format() {
+        // Leap second normalization in basic format
+        let t = Time::parse_iso(b"010260").unwrap();
+        assert_eq!(t.hour, 1);
+        assert_eq!(t.minute, 2);
+        assert_eq!(t.second, 59);
+        assert_eq!(t.subsec, SubSecNanos::MIN);
+
+        // With fractional seconds
+        let t = Time::parse_iso(b"235960.999999999").unwrap();
+        assert_eq!(t.hour, 23);
+        assert_eq!(t.minute, 59);
+        assert_eq!(t.second, 59);
+        assert_eq!(t.subsec, SubSecNanos::new_unchecked(999_999_999));
+
+        let t = Time::parse_iso(b"123460.123456").unwrap();
+        assert_eq!(t.hour, 12);
+        assert_eq!(t.minute, 34);
+        assert_eq!(t.second, 59);
+        assert_eq!(t.subsec, SubSecNanos::new_unchecked(123_456_000));
+
+        // Comma as decimal separator
+        let t = Time::parse_iso(b"123460,5").unwrap();
+        assert_eq!(t.hour, 12);
+        assert_eq!(t.minute, 34);
+        assert_eq!(t.second, 59);
+        assert_eq!(t.subsec, SubSecNanos::new_unchecked(500_000_000));
+    }
+
+    #[test]
+    fn parse_leap_seconds_edge_cases() {
+        // Midnight leap second
+        let t = Time::parse_iso(b"00:00:60").unwrap();
+        assert_eq!(t.hour, 0);
+        assert_eq!(t.minute, 0);
+        assert_eq!(t.second, 59);
+
+        // End of day leap second
+        let t = Time::parse_iso(b"23:59:60").unwrap();
+        assert_eq!(t.hour, 23);
+        assert_eq!(t.minute, 59);
+        assert_eq!(t.second, 59);
+
+        // Various minutes with leap seconds
+        for minute in 0..60 {
+            let input = format!("12:{:02}:60", minute);
+            let t = Time::parse_iso(input.as_bytes()).unwrap();
+            assert_eq!(t.hour, 12);
+            assert_eq!(t.minute, minute);
+            assert_eq!(t.second, 59);
+        }
+    }
+
+    #[test]
+    fn parse_invalid_seconds() {
+        // 61 and above should be rejected
+        assert!(Time::parse_iso(b"01:02:61").is_none());
+        assert!(Time::parse_iso(b"01:02:62").is_none());
+        assert!(Time::parse_iso(b"01:02:99").is_none());
+        assert!(Time::parse_iso(b"010261").is_none());
+        assert!(Time::parse_iso(b"010262").is_none());
+        assert!(Time::parse_iso(b"010299").is_none());
+    }
+
+    #[test]
+    fn parse_normal_seconds_still_work() {
+        // Ensure normal seconds 00-59 still parse correctly
+        for sec in 0..60 {
+            let input = format!("12:34:{:02}", sec);
+            let t = Time::parse_iso(input.as_bytes()).unwrap();
+            assert_eq!(t.hour, 12);
+            assert_eq!(t.minute, 34);
+            assert_eq!(t.second, sec);
+
+            let input = format!("1234{:02}", sec);
+            let t = Time::parse_iso(input.as_bytes()).unwrap();
+            assert_eq!(t.hour, 12);
+            assert_eq!(t.minute, 34);
+            assert_eq!(t.second, sec);
+        }
+    }
+
+    #[test]
+    fn read_iso_extended_leap_seconds() {
+        // Test the read_iso_extended function directly
+        let mut scan = Scan::new(b"12:34:60");
+        let t = Time::read_iso_extended(&mut scan).unwrap();
+        assert_eq!(t.second, 59);
+        assert!(scan.is_done());
+
+        let mut scan = Scan::new(b"12:34:60.123");
+        let t = Time::read_iso_extended(&mut scan).unwrap();
+        assert_eq!(t.second, 59);
+        assert_eq!(t.subsec, SubSecNanos::new_unchecked(123_000_000));
+        assert!(scan.is_done());
+    }
+
+    #[test]
+    fn read_iso_basic_leap_seconds() {
+        // Test the read_iso_basic function directly
+        let mut scan = Scan::new(b"123460");
+        let t = Time::read_iso_basic(&mut scan).unwrap();
+        assert_eq!(t.second, 59);
+        assert!(scan.is_done());
+
+        let mut scan = Scan::new(b"123460.123");
+        let t = Time::read_iso_basic(&mut scan).unwrap();
+        assert_eq!(t.second, 59);
+        assert_eq!(t.subsec, SubSecNanos::new_unchecked(123_000_000));
+        assert!(scan.is_done());
+    }
 }
