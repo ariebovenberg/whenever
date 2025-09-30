@@ -53,9 +53,102 @@ class TestInit:
         with pytest.raises(ValueError):
             Time(1, 2, 60)
 
+    def test_leap_seconds_extended_format(self):
+        # Basic leap second
+        assert Time.parse_iso("01:02:60") == Time(1, 2, 59)
+
+        # With various fractional seconds
+        assert Time.parse_iso("23:59:60.999999999") == Time(
+            23, 59, 59, nanosecond=999_999_999
+        )
+        assert Time.parse_iso("12:34:60.123456") == Time(
+            12, 34, 59, nanosecond=123_456_000
+        )
+        assert Time.parse_iso("12:34:60.5") == Time(
+            12, 34, 59, nanosecond=500_000_000
+        )
+
+        # Comma as decimal separator
+        assert Time.parse_iso("12:34:60,5") == Time(
+            12, 34, 59, nanosecond=500_000_000
+        )
+        assert Time.parse_iso("12:34:60,123456789") == Time(
+            12, 34, 59, nanosecond=123_456_789
+        )
+
+    def test_leap_seconds_basic_format(self):
+        # Basic format leap second
+        assert Time.parse_iso("010260") == Time(1, 2, 59)
+
+        # With various fractional seconds
+        assert Time.parse_iso("235960.999999999") == Time(
+            23, 59, 59, nanosecond=999_999_999
+        )
+        assert Time.parse_iso("123460.123456") == Time(
+            12, 34, 59, nanosecond=123_456_000
+        )
+        assert Time.parse_iso("123460.5") == Time(
+            12, 34, 59, nanosecond=500_000_000
+        )
+
+        # Comma as decimal separator
+        assert Time.parse_iso("123460,5") == Time(
+            12, 34, 59, nanosecond=500_000_000
+        )
+
+    def test_leap_seconds_edge_cases(self):
+        # Midnight leap second
+        assert Time.parse_iso("00:00:60") == Time(0, 0, 59)
+
+        # End of day leap second
+        assert Time.parse_iso("23:59:60") == Time(23, 59, 59)
+
+        # Various hours with leap seconds
+        for hour in range(24):
+            assert Time.parse_iso(f"{hour:02d}:30:60") == Time(hour, 30, 59)
+
+        # Various minutes with leap seconds
+        for minute in range(60):
+            assert Time.parse_iso(f"12:{minute:02d}:60") == Time(12, minute, 59)
+
+    def test_leap_seconds_invalid(self):
+        # 61 and above should be rejected in extended format (strict parsing)
+        with pytest.raises(ValueError, match="Invalid format"):
+            Time.parse_iso("01:02:61")
+        with pytest.raises(ValueError, match="Invalid format"):
+            Time.parse_iso("01:02:62")
+        with pytest.raises(ValueError, match="Invalid format"):
+            Time.parse_iso("01:02:99")
+        with pytest.raises(ValueError, match="Invalid format"):
+            Time.parse_iso("010261")
+        with pytest.raises(ValueError, match="Invalid format"):
+            Time.parse_iso("010262")
+
+    def test_leap_seconds_normal_seconds_still_parse_correctly(self):
+        # Ensure all normal seconds 00-59 still work
+        for sec in range(60):
+            assert Time.parse_iso(f"12:34:{sec:02d}") == Time(12, 34, sec)
+            assert Time.parse_iso(f"1234{sec:02d}") == Time(12, 34, sec)
+
+        # With fractional seconds
+        for sec in range(60):
+            assert Time.parse_iso(f"12:34:{sec:02d}.5") == Time(
+                12, 34, sec, nanosecond=500_000_000
+            )
+
+    def test_leap_second_direct_construction_forbidden(self):
+        # Direct construction with second=60 should raise ValueError
+        with pytest.raises(ValueError):
+            Time(0, 0, 60)
+        with pytest.raises(ValueError):
+            Time(12, 34, 60)
+        with pytest.raises(ValueError):
+            Time(23, 59, 60)
+        with pytest.raises(ValueError):
+            Time(hour=12, minute=34, second=60)
+
 
 class TestFormatIso:
-
     @pytest.mark.parametrize(
         "t, expect",
         [
