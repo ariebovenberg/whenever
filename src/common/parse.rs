@@ -414,6 +414,55 @@ mod tests {
     }
 
     #[test]
+    fn test_scan_digits00_60_leap_comprehensive() {
+        // Test all valid seconds 00-59
+        for sec in 0..60 {
+            let input = format!("{:02}", sec);
+            let mut scan = Scan::new(input.as_bytes());
+            assert_eq!(scan.digits00_60_leap(), Some(sec as u8));
+        }
+
+        // Test leap second normalization
+        let mut scan = Scan::new(b"60");
+        assert_eq!(scan.digits00_60_leap(), Some(59));
+        assert!(scan.is_done());
+
+        // Test invalid values
+        let mut scan = Scan::new(b"61");
+        assert_eq!(scan.digits00_60_leap(), None);
+        assert_eq!(scan.rest(), b"61");
+
+        let mut scan = Scan::new(b"62");
+        assert_eq!(scan.digits00_60_leap(), None);
+
+        let mut scan = Scan::new(b"99");
+        assert_eq!(scan.digits00_60_leap(), None);
+
+        // Test edge cases with context
+        let mut scan = Scan::new(b"6000");
+        assert_eq!(scan.digits00_60_leap(), Some(59));
+        assert_eq!(scan.rest(), b"00");
+
+        let mut scan = Scan::new(b"5960");
+        assert_eq!(scan.digits00_60_leap(), Some(59));
+        assert_eq!(scan.digits00_60_leap(), Some(59));
+
+        // Test single digit and incomplete input
+        let mut scan = Scan::new(b"6");
+        assert_eq!(scan.digits00_60_leap(), None);
+
+        let mut scan = Scan::new(b"");
+        assert_eq!(scan.digits00_60_leap(), None);
+
+        // Test non-digit characters
+        let mut scan = Scan::new(b"6x");
+        assert_eq!(scan.digits00_60_leap(), None);
+
+        let mut scan = Scan::new(b"x0");
+        assert_eq!(scan.digits00_60_leap(), None);
+    }
+
+    #[test]
     fn test_scan_up_to_3_digits() {
         let mut scan = Scan::new(b"1234_k00z92");
         assert_eq!(scan.up_to_3_digits(), Some(123));
