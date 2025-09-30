@@ -413,9 +413,7 @@ def parse_rfc2822(s: str) -> _datetime:
             seconds = int(time_raw[6:])
             if seconds == 60:
                 seconds = 59
-            time = _time(
-                int(time_raw[:2]), int(time_raw[3:5]), seconds
-            )
+            time = _time(int(time_raw[:2]), int(time_raw[3:5]), seconds)
         else:
             _parse_err(s)
     except ValueError:
