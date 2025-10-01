@@ -92,15 +92,9 @@ Common critiques of ``PlainDateTime`` are:
 Are leap seconds supported?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Leap seconds are unsupported.
-Taking leap seconds into account is a complex and niche feature,
-which is not needed for the vast majority of applications.
-This decision is consistent with other modern libraries
-(e.g. NodaTime, Temporal) and standards (RFC 5545, Unix time) which
-do not support leap seconds.
-
-One improvement that is planned: allowing the parsing of leap seconds,
-which are then truncated to 59 seconds.
+Leap seconds are now supported by truncating them away.
+This means that a leap second is treated as if it were the same as the
+preceding second. For example, ``23:59:60`` is treated as ``23:59:59``.
 
 .. _faq-why-not-dropin:
 
