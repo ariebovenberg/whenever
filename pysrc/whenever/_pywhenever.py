@@ -5887,7 +5887,7 @@ if _PY311:
             raise ValueError()
         if all(map("0123456789:".__contains__, s)):
             # Normalize leap seconds (60) to 59
-            if s.endswith(":60"):
+            if s.endswith("60"):
                 s = s[:-2] + "59"
             return _time.fromisoformat(s)
         raise ValueError()
