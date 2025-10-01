@@ -1590,6 +1590,11 @@ VALID_RFC2822 = [
         "5 Aug 20 23:12 UT",
         OffsetDateTime(2020, 8, 5, 23, 12, offset=0),
     ),
+    # Leap second normalization (60 -> 59)
+    (
+        "Sat, 31 Dec 2016 23:59:60 +0000",
+        OffsetDateTime(2016, 12, 31, 23, 59, 59, offset=0),
+    ),
 ]
 
 INVALID_RFC2822 = [
