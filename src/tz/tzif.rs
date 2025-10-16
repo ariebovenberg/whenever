@@ -284,7 +284,8 @@ fn load_transitions(
     offsets: &[Offset],
     indices: &[u8],
 ) -> Option<Vec<(EpochSecs, Offset)>> {
-    let mut result = Vec::with_capacity(indices.len());
+    let mut result = Vec::with_capacity(indices.len() + 1);
+    result.push((EpochSecs::MIN, *offsets.first()?)); // Ensure correct initial offset
     for (&idx, &epoch) in indices.iter().zip(transition_times) {
         let &offset = offsets.get(usize::from(idx))?;
         result.push((epoch, offset));
@@ -453,7 +454,10 @@ mod tests {
     fn test_utc() {
         const TZ_UTC: &[u8] = include_bytes!("../../tests/tzif/UTC.tzif");
         let tzif = TimeZone::parse_tzif(TZ_UTC, None).unwrap();
-        assert_eq!(tzif.offsets_by_utc, &[]);
+        assert_eq!(
+            tzif.offsets_by_utc,
+            &[(EpochSecs::MIN, 0.try_into().unwrap())]
+        );
         assert_eq!(tzif.end, TzStr::parse(b"UTC0"));
 
         assert_eq!(
@@ -470,7 +474,10 @@ mod tests {
     fn test_fixed() {
         const TZ_FIXED: &[u8] = include_bytes!("../../tests/tzif/GMT-13.tzif");
         let tzif = TimeZone::parse_tzif(TZ_FIXED, None).unwrap();
-        assert_eq!(tzif.offsets_by_utc, &[]);
+        assert_eq!(
+            tzif.offsets_by_utc,
+            &[(EpochSecs::MIN, (13 * 3_600).try_into().unwrap())]
+        );
         assert_eq!(tzif.end, TzStr::parse(b"<+13>-13"));
 
         assert_eq!(
@@ -515,6 +522,16 @@ mod tests {
         assert_eq!(
             tzif.offset_for_instant(EpochSecs::MAX),
             Offset::new_unchecked(39600)
+        );
+    }
+
+    #[test]
+    fn test_implicit_initial_offset() {
+        const TZ_HON: &[u8] = include_bytes!("../../tests/tzif/Honolulu.tzif");
+        let tzif = TimeZone::parse_tzif(TZ_HON, None).unwrap();
+        assert_eq!(
+            tzif.offset_for_instant(EpochSecs::new_unchecked(-3_000_000_000)),
+            Offset::new_unchecked(-37886),
         );
     }
 

@@ -69,7 +69,7 @@ class TestTZifFiles:
         """Test UTC timezone file"""
         test_file = TZIF_DIR / "UTC.tzif"
         tzif = TimeZone.parse_tzif(test_file.read_bytes())
-        assert tzif._offsets_by_utc == ()
+        assert tzif._offsets_by_utc == ((EPOCH_SECS_MIN, 0),)
         assert tzif._end == TzStr.parse("UTC0")
 
         assert tzif.offset_for_instant(2216250001) == 0
@@ -79,7 +79,7 @@ class TestTZifFiles:
         """Test fixed offset timezone file"""
         test_file = TZIF_DIR / "GMT-13.tzif"
         tzif = TimeZone.parse_tzif(test_file.read_bytes())
-        assert tzif._offsets_by_utc == ()
+        assert tzif._offsets_by_utc == ((EPOCH_SECS_MIN, 13 * 3600),)
         assert tzif._end == TzStr.parse("<+13>-13")
 
         assert tzif.offset_for_instant(2216250001) == 13 * 3600
@@ -106,6 +106,13 @@ class TestTZifFiles:
         # don't take the absolute extreme, since this causes exceptions
         # in Python's datetime module.
         assert tzif.offset_for_instant(EPOCH_SECS_MAX - 50_000) == 39600
+
+    def test_implicit_initial_offset(self):
+        """Test handling implicit initial offset from TZif file"""
+        test_file = TZIF_DIR / "Honolulu.tzif"
+
+        tzif = TimeZone.parse_tzif(test_file.read_bytes())
+        assert tzif.offset_for_instant(-3_000_000_000) == -37886
 
     def test_last_transition_is_gap(self):
         """Test handling of gap at last transition"""
