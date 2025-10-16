@@ -95,7 +95,7 @@ This distinction determines which operations are supported:
 
 .. [1] Only by integers
 .. [2] Years/months and weeks/days are normalized amongst each other,
-       but not with other units. 
+       but not with other units.
 
 Multiplication
 --------------
@@ -255,3 +255,9 @@ DateTimeDelta("P3YT1H30M")
 
    Supporting a commonly used subset is more practical.
    This is also what established libraries such as java.time and Nodatime do.
+
+Instant Limitations
+-------------------
+
+Only time deltas can be added to :class:`~whenever.Instant`. Since, an instant is not assigned a timezone, it cannot
+properly calculate calendar units like days.
