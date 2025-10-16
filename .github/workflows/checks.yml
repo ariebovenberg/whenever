@@ -93,7 +93,7 @@ jobs:
           toolchain: "1.86"
 
       - name: Add win32 target
-        if: ${{ matrix.os == 'windows' }}
+        if: ${{ matrix.os == 'windows' && !matrix.no_build_ext }}
         run: rustup target add i686-pc-windows-msvc
 
       - uses: actions/setup-python@v5
