@@ -1,5 +1,10 @@
 # 🚀 Changelog
 
+## 0.9.3 (2025-10-16)
+
+Fixed incorrect offsets for some timezones before the start of their first
+recorded transition (typically pre-1950) (#296)
+
 ## 0.9.2 (2025-09-29)
 
 Methods that take an `int`, `float`, or `str` now also accept subclasses of these types.

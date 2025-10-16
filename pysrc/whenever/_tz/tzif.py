@@ -322,7 +322,11 @@ def _load_transitions(
 ) -> Sequence[tuple[EpochSecs, Offset]]:
     """Load transitions from parsed data"""
     return [
-        (epoch, offsets[idx]) for idx, epoch in zip(indices, transition_times)
+        (EPOCH_SECS_MIN, offsets[0]),  # Ensure correct initial offset
+        *(
+            (epoch, offsets[idx])
+            for idx, epoch in zip(indices, transition_times)
+        ),
     ]
 
 
@@ -331,8 +335,7 @@ def _local_transitions(
     transitions: Sequence[tuple[EpochSecs, Offset]],
 ) -> Sequence[tuple[EpochSecs, tuple[Offset, OffsetDelta]]]:
     result: list[tuple[EpochSecs, tuple[Offset, OffsetDelta]]] = []
-    if not transitions:
-        return result
+    assert transitions  # we've ensured there's at least one transition
 
     (_, offset_prev), *remaining = transitions
     for epoch, offset in remaining:
