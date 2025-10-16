@@ -68,14 +68,19 @@ impl TZif {
             // If there's no POSIX TZ string, use the last offset.
             // There's not much else we can do.
             .unwrap_or_else(|| {
-                let (offset, _) = self
+                let (prev_offset, last_shift) = self
                     .offsets_by_local
                     .last()
-                    // Safe: We've ensured during parsing that there's at least one entry
+                    // SAFETY: We've ensured during parsing that there's at least one entry
                     // if there's no POSIX TZ string.
                     .unwrap()
                     .1;
-                Ambiguity::Unambiguous(offset)
+                Ambiguity::Unambiguous(
+                    prev_offset
+                        .shift(last_shift)
+                        // SAFETY: last_shift was calculated from prev_offset itself
+                        .unwrap(),
+                )
             })
     }
 }
@@ -268,7 +273,8 @@ fn load_transitions(
     offsets: &[Offset],
     indices: &[u8],
 ) -> Option<Vec<(EpochSecs, Offset)>> {
-    let mut result = Vec::with_capacity(indices.len());
+    let mut result = Vec::with_capacity(indices.len() + 1);
+    result.push((EpochSecs::MIN, *offsets.first()?)); // Ensure correct initial offset
     for (&idx, &epoch) in indices.iter().zip(transition_times) {
         let &offset = offsets.get(usize::from(idx))?;
         result.push((epoch, offset));
@@ -393,12 +399,12 @@ mod tests {
     #[test]
     fn test_no_magic_header() {
         // empty
-        assert_eq!(parse(b"", "Foo").unwrap_err(), ErrorCause::Header);
+        assert_eq!(parse(b"", "").unwrap_err(), ErrorCause::Header);
         // too small
-        assert_eq!(parse(b"TZi", "Foo").unwrap_err(), ErrorCause::Header);
+        assert_eq!(parse(b"TZi", "").unwrap_err(), ErrorCause::Header);
         // wrong magic value
         assert_eq!(
-            parse(b"this-is-not-tzif-file", "Foo").unwrap_err(),
+            parse(b"this-is-not-tzif-file", "").unwrap_err(),
             ErrorCause::Header
         );
     }
@@ -430,8 +436,11 @@ mod tests {
     #[test]
     fn test_utc() {
         const TZ_UTC: &[u8] = include_bytes!("../../tests/tzif/UTC.tzif");
-        let tzif = parse(TZ_UTC, "UTC").unwrap();
-        assert_eq!(tzif.offsets_by_utc, &[]);
+        let tzif = parse(TZ_UTC, "").unwrap();
+        assert_eq!(
+            tzif.offsets_by_utc,
+            &[(EpochSecs::MIN, 0.try_into().unwrap())]
+        );
         assert_eq!(tzif.end, posix::parse(b"UTC0"));
 
         assert_eq!(
@@ -447,8 +456,11 @@ mod tests {
     #[test]
     fn test_fixed() {
         const TZ_FIXED: &[u8] = include_bytes!("../../tests/tzif/GMT-13.tzif");
-        let tzif = parse(TZ_FIXED, "GMT-13").unwrap();
-        assert_eq!(tzif.offsets_by_utc, &[]);
+        let tzif = parse(TZ_FIXED, "").unwrap();
+        assert_eq!(
+            tzif.offsets_by_utc,
+            &[(EpochSecs::MIN, (13 * 3_600).try_into().unwrap())]
+        );
         assert_eq!(tzif.end, posix::parse(b"<+13>-13"));
 
         assert_eq!(
@@ -465,7 +477,7 @@ mod tests {
     fn test_v1() {
         // A TZif file using the old version 1 format.
         const TZ_V1: &[u8] = include_bytes!("../../tests/tzif/Paris_v1.tzif");
-        let tzif = parse(TZ_V1, "Europe/Paris").unwrap();
+        let tzif = parse(TZ_V1, "").unwrap();
         assert!(!tzif.offsets_by_utc.is_empty());
         assert_eq!(tzif.end, None);
 
@@ -474,13 +486,17 @@ mod tests {
             tzif.offset_for_instant(EpochSecs::new_unchecked(3155760000)),
             3600.try_into().unwrap()
         );
+        assert_eq!(
+            tzif.ambiguity_for_local(EpochSecs::new_unchecked(3155760000)),
+            unambig(3600)
+        );
     }
 
     // Thanks to Jiff for the test tzif file
     #[test]
     fn test_clamp_transitions_to_range() {
         const TZ_OUT_OF_RANGE: &[u8] = include_bytes!("../../tests/tzif/Sydney_widerange.tzif");
-        let tzif = parse(TZ_OUT_OF_RANGE, "Australia/Sydney").unwrap();
+        let tzif = parse(TZ_OUT_OF_RANGE, "").unwrap();
         assert!(!tzif.offsets_by_utc.is_empty());
         assert_eq!(
             tzif.offset_for_instant(EpochSecs::MIN),
@@ -493,9 +509,19 @@ mod tests {
     }
 
     #[test]
+    fn test_implicit_initial_offset() {
+        const TZ_HON: &[u8] = include_bytes!("../../tests/tzif/Honolulu.tzif");
+        let tzif = parse(TZ_HON, "").unwrap();
+        assert_eq!(
+            tzif.offset_for_instant(EpochSecs::new_unchecked(-3_000_000_000)),
+            Offset::new_unchecked(-37886),
+        );
+    }
+
+    #[test]
     fn test_last_transition_is_gap() {
         const TZ_HON: &[u8] = include_bytes!("../../tests/tzif/Honolulu.tzif");
-        let tzif = parse(TZ_HON, "Pacific/Honolulu").unwrap();
+        let tzif = parse(TZ_HON, "").unwrap();
         assert_eq!(tzif.end, posix::parse(b"HST10"));
         assert_eq!(
             tzif.offset_for_instant(EpochSecs::new_unchecked(-712150201)),
@@ -535,7 +561,7 @@ mod tests {
     #[test]
     fn test_typical_tzif_example() {
         const TZ_AMS: &[u8] = include_bytes!("../../tests/tzif/Amsterdam.tzif");
-        let tzif = parse(TZ_AMS, "Europe/Amsterdam").unwrap();
+        let tzif = parse(TZ_AMS, "").unwrap();
         assert_eq!(tzif.end, posix::parse(b"CET-1CEST,M3.5.0,M10.5.0/3"));
 
         let utc_cases = &[

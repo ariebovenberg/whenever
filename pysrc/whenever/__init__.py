@@ -31,7 +31,7 @@ if not _EXTENSION_LOADED:  # pragma: no cover
     )
 
 
-__version__ = "0.8.9"
+__version__ = "0.8.10"
 
 reset_tzpath()  # populate the tzpath once at startup
 

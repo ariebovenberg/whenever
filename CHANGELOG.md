@@ -1,5 +1,10 @@
 # 🚀 Changelog
 
+## 0.8.10 (2025-10-16)
+
+Backport of timezone fixes from 0.9.x to 0.8.x that affected some timezones
+far into the future or past
+
 ## 0.8.9 (2025-09-21)
 
 - Fixed not all test files included in source distribution (#266)
