@@ -92,9 +92,10 @@ Common critiques of ``PlainDateTime`` are:
 Are leap seconds supported?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Leap seconds are now supported by truncating them away.
-This means that a leap second is treated as if it were the same as the
-preceding second. For example, ``23:59:60`` is treated as ``23:59:59``.
+``whenever`` does not account for leap seconds.
+However, it does parse timestamps with a second component of 60, truncating them to 59.
+For example, ``23:59:60`` is treated as ``23:59:59``.
+This is consistent with other modern datetime libraries.
 
 .. _faq-why-not-dropin:
 
