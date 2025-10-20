@@ -6044,10 +6044,10 @@ def _parse_rfc2822(s: str) -> _datetime:
         # time components may be separated by whitespace
         *time_parts, offset_raw = parts
         time_raw = "".join(time_parts)
+        # Normalize leap seconds (60) to 59
         if len(time_raw) == 5 and time_raw[2] == ":":
             time = _time(int(time_raw[:2]), int(time_raw[3:]))
         elif len(time_raw) == 8 and time_raw[2] == ":" and time_raw[5] == ":":
-            # Normalize leap seconds (60) to 59
             seconds = int(time_raw[6:])
             if seconds == 60:
                 seconds = 59

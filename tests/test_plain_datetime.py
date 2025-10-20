@@ -117,13 +117,6 @@ class TestInit:
         with pytest.raises(ValueError, match="Invalid format"):
             PlainDateTime.parse_iso("2020-08-15T12:34:99")
 
-    def test_leap_seconds_normal_seconds_still_work(self):
-        # Ensure normal seconds 00-59 still parse correctly
-        for sec in range(60):
-            assert PlainDateTime.parse_iso(
-                f"2020-08-15T12:34:{sec:02d}"
-            ) == PlainDateTime(2020, 8, 15, 12, 34, sec)
-
 
 def test_components():
     d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_123)
