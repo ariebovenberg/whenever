@@ -121,8 +121,6 @@ impl Time {
             Some(m) => {
                 let (sec, sub) = match s.digits00_60_leap() {
                     Some(n) => (n, s.subsec().unwrap_or(SubSecNanos::MIN)),
-                    // If there are more digits but they're not valid seconds, fail the parse
-                    None if s.peek().is_some_and(|c| c.is_ascii_digit()) => return None,
                     None => (0, SubSecNanos::MIN),
                 };
                 (m, sec, sub)
