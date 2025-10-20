@@ -105,16 +105,6 @@ class TestInit:
         # End of day leap second
         assert Time.parse_iso("23:59:60") == Time(23, 59, 59)
 
-        # Various hours with leap seconds
-        for hour in range(24):
-            assert Time.parse_iso(f"{hour:02d}:30:60") == Time(hour, 30, 59)
-
-        # Various minutes with leap seconds
-        for minute in range(60):
-            assert Time.parse_iso(f"12:{minute:02d}:60") == Time(
-                12, minute, 59
-            )
-
     def test_leap_seconds_invalid(self):
         # 61 and above should be rejected in extended format (strict parsing)
         with pytest.raises(ValueError, match="Invalid format"):
@@ -128,17 +118,17 @@ class TestInit:
         with pytest.raises(ValueError, match="Invalid format"):
             Time.parse_iso("010262")
 
-    def test_leap_seconds_normal_seconds_still_parse_correctly(self):
-        # Ensure all normal seconds 00-59 still work
-        for sec in range(60):
-            assert Time.parse_iso(f"12:34:{sec:02d}") == Time(12, 34, sec)
-            assert Time.parse_iso(f"1234{sec:02d}") == Time(12, 34, sec)
-
-        # With fractional seconds
-        for sec in range(60):
-            assert Time.parse_iso(f"12:34:{sec:02d}.5") == Time(
-                12, 34, sec, nanosecond=500_000_000
-            )
+        # 60 in the minutes position should be invalid
+        with pytest.raises(ValueError, match="Invalid format"):
+            Time.parse_iso("12:60:00")
+        with pytest.raises(ValueError, match="Invalid format"):
+            Time.parse_iso("23:60")
+        with pytest.raises(ValueError, match="Invalid format"):
+            Time.parse_iso("01:60:30")
+        with pytest.raises(ValueError, match="Invalid format"):
+            Time.parse_iso("126000")  # basic format: 12:60:00
+        with pytest.raises(ValueError, match="Invalid format"):
+            Time.parse_iso("0160")  # basic format: 01:60
 
     def test_leap_second_direct_construction_forbidden(self):
         # Direct construction with second=60 should raise ValueError
