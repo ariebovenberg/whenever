@@ -6,7 +6,7 @@
 [![](https://img.shields.io/badge/mypy-strict-forestgreen)](https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-strict)
 [![](https://img.shields.io/github/actions/workflow/status/ariebovenberg/whenever/checks.yml?branch=main)](https://github.com/ariebovenberg/whenever)
 [![](https://img.shields.io/readthedocs/whenever.svg)](http://whenever.readthedocs.io/)
-[![](https://static.pepy.tech/badge/whenever/month)](https://pypi.python.org/pypi/whenever)
+[![](https://img.shields.io/pypi/dm/whenever)](https://pypi.python.org/pypi/whenever)
 
 
 **Typed and DST-safe datetimes for Python, available in Rust or pure Python.**
@@ -43,11 +43,12 @@ Don't buy the Rust hype?—don't worry: a **pure Python** version is available a
 [🚀 Changelog](https://whenever.readthedocs.io/en/latest/changelog.html) |
 [❓ FAQ](https://whenever.readthedocs.io/en/latest/faq.html) |
 [🗺️ Roadmap](#roadmap) |
-[💬 Issues & feedback](https://github.com/ariebovenberg/whenever/issues)
+[🐛 Issues](https://github.com/ariebovenberg/whenever/issues) |
+[💬 Q&A](https://github.com/ariebovenberg/whenever/discussions)
 
 </div>
 
-> ⚠️ **Note**: A 1.0 release is expected this year. Until then, the API may change
+> ⚠️ **Note**: A 1.0 release is expected soon. Until then, the API may change
 > as we gather feedback and improve the library.
 > Leave a ⭐️ on GitHub if you'd like to see how this project develops!
 
@@ -126,6 +127,7 @@ while many serious and long-standing issues remain unaddressed.
 - 🪃 Pydantic support (preview)
 - 🦀 Rust!—but with a [pure-Python option](https://whenever.readthedocs.io/en/latest/faq.html#how-can-i-use-the-pure-python-version)
 - 🚀 Supports per-interpreter GIL
+- 🧵 Free-threading support (preview; pure Python only for now)
 
 ## Quickstart
 

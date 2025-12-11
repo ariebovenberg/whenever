@@ -139,6 +139,7 @@ _MAX_DELTA_DAYS = 9999 * 366
 _MAX_DELTA_NANOS = _MAX_DELTA_DAYS * 24 * 3_600_000_000_000
 _UNSET = object()
 _PY311 = sys.version_info >= (3, 11)
+_NOGIL = hasattr(sys, "_is_gil_enabled") and not sys._is_gil_enabled()
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
 
@@ -6310,6 +6311,20 @@ _TZPATH: tuple[str, ...] = ()
 _TZCACHE_LRU_SIZE = 8
 _tzcache_lru: OrderedDict[str, TimeZone] = OrderedDict()
 _tzcache_lookup: WeakValueDictionary[str, TimeZone] = WeakValueDictionary()
+if TYPE_CHECKING or _NOGIL:
+    from threading import Lock as _Lock
+else:
+
+    # When the GIL is enabled, we don't need a real lock.
+    class _Lock:
+        def __enter__(self) -> None:
+            pass
+
+        def __exit__(self, *args) -> None:
+            pass
+
+
+_tz_lock = _Lock()
 
 
 def _set_tzpath(to: tuple[str, ...]) -> None:
@@ -6318,14 +6333,16 @@ def _set_tzpath(to: tuple[str, ...]) -> None:
 
 
 def _clear_tz_cache() -> None:
-    _tzcache_lru.clear()
-    _tzcache_lookup.clear()
+    with _tz_lock:
+        _tzcache_lru.clear()
+        _tzcache_lookup.clear()
 
 
 def _clear_tz_cache_by_keys(keys: tuple[str, ...]) -> None:
-    for k in keys:
-        _tzcache_lookup.pop(k, None)
-        _tzcache_lru.pop(k, None)
+    with _tz_lock:
+        for k in keys:
+            _tzcache_lookup.pop(k, None)
+            _tzcache_lru.pop(k, None)
 
 
 # We cache fixed-offset tzinfo objects to avoid creating multiple identical ones.
@@ -6336,15 +6353,30 @@ def _mk_fixed_tzinfo(secs: int, /) -> _timezone:
 
 
 def _get_tz(key: str) -> TimeZone:
-    try:
-        zinfo = _tzcache_lookup[key]
-    except KeyError:
-        zinfo = _tzcache_lookup[key] = _load_tz(_validate_key(key))
-    # Update the LRU
-    _tzcache_lru[key] = _tzcache_lru.pop(key, zinfo)
-    if len(_tzcache_lru) > _TZCACHE_LRU_SIZE:
-        _tzcache_lru.popitem(last=False)
-    return zinfo
+    with _tz_lock:
+        try:
+            tz = _tzcache_lookup[key]
+        except KeyError:
+            # Release lock during I/O (file loading)
+            pass
+        else:
+            # Update the LRU
+            _tzcache_lru[key] = _tzcache_lru.pop(key, tz)
+            if len(_tzcache_lru) > _TZCACHE_LRU_SIZE:
+                _tzcache_lru.popitem(last=False)
+            return tz
+
+    # Load without holding the lock
+    tz = _load_tz(_validate_key(key))
+
+    with _tz_lock:
+        # Gets the cached value if another thread loaded it in the meantime.
+        tz = _tzcache_lookup.setdefault(key, tz)
+        # Update the LRU
+        _tzcache_lru[key] = _tzcache_lru.pop(key, tz)
+        if len(_tzcache_lru) > _TZCACHE_LRU_SIZE:
+            _tzcache_lru.popitem(last=False)
+        return tz
 
 
 def _validate_key(key: str) -> _BenignKey:
@@ -6414,19 +6446,29 @@ def _load_tz(key: _BenignKey) -> TimeZone:
 
 
 _CACHED_SYSTEM_TZ: TimeZone | None = None
+_system_tz_lock = _Lock()
 
 
 def _system_tz() -> TimeZone:
     global _CACHED_SYSTEM_TZ
-    if _CACHED_SYSTEM_TZ is None:
-        _CACHED_SYSTEM_TZ = _get_system_tz()  # pragma: no cover
-    return _CACHED_SYSTEM_TZ
+    if _CACHED_SYSTEM_TZ is not None:
+        return _CACHED_SYSTEM_TZ
+    else:  # pragma: no cover
+        # Slow path: need to load (does I/O)
+        tz = _get_system_tz()
+        with _system_tz_lock:
+            # Check again in case another thread loaded it
+            if _CACHED_SYSTEM_TZ is None:
+                _CACHED_SYSTEM_TZ = tz
+            return _CACHED_SYSTEM_TZ
 
 
 def reset_system_tz() -> None:
     """Resets the cached system timezone to the current system timezone."""
     global _CACHED_SYSTEM_TZ
-    _CACHED_SYSTEM_TZ = _get_system_tz()
+    tz = _get_system_tz()  # Do I/O outside lock
+    with _system_tz_lock:
+        _CACHED_SYSTEM_TZ = tz
 
 
 def _get_system_tz() -> TimeZone:

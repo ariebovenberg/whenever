@@ -201,11 +201,11 @@ jobs:
           python-version: '3.13'
       - run: |
           pip install .
-          python generate_docstrings.py > fresh_docstrings.rs
+          python scripts/generate_docstrings.py > fresh_docstrings.rs
           if diff -q fresh_docstrings.rs src/docstrings.rs > /dev/null; then
               echo "OK"
           else
-              echo "Rust docstrings are stale. Please run 'python generate_docstrings.py > src/docstrings.rs'";
+              echo "Rust docstrings are stale. Please run 'python scripts/generate_docstrings.py > src/docstrings.rs'";
               # output the actual diff
               diff -u fresh_docstrings.rs src/docstrings.rs
               exit 1

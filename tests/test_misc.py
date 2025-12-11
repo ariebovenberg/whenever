@@ -146,7 +146,7 @@ def test_text_signature():
         sig = m.__text_signature__
         assert (
             sig is not None
-        ), f"{m} missing __text_signature__. Hint: try running `python generate_docstrings.py > src/docstrings.py`"
+        ), f"{m} missing __text_signature__. Hint: try running `python scripts/generate_docstrings.py > src/docstrings.py`"
         signature(m)  # raises ValueError if invalid
 
 
