@@ -12,6 +12,14 @@ That's why many core Python components are backed by optimized implementations,
 and why this library offers a Rust version for speed alongside a pure-Python version
 for portability.
 
+Is free-threaded Python supported?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Currently, only the pure-Python version of *whenever* supports
+free-threaded Python.
+Support for the Rust extension is planned, but is more complex to implement.
+*Whenever*'s free-threading support is considered experimental and may have limitations.
+
 .. _faq-why-instant:
 
 Why does :class:`~whenever.Instant` exist?
@@ -133,7 +141,7 @@ of the repository.
 How can I use the pure-Python version?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Whenever is implemented both in Rust and in pure Python.
+*Whenever* is implemented both in Rust and in pure Python.
 By default, the Rust extension is used, as it's faster and more memory-efficient.
 But you can opt out of it if you prefer the pure-Python version,
 which has a smaller disk footprint and works on all platforms.

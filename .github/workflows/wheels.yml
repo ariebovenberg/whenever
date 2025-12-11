@@ -10,7 +10,29 @@ permissions:
   contents: read
 
 jobs:
+  check-tag:
+    name: Check tag correctness
+    runs-on: ubuntu-latest
+    if: "startsWith(github.ref, 'refs/tags/')"
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          version=$(grep -E '^version\s*=' pyproject.toml | sed -E 's/^version\s*=\s*"([^"]+)".*/\1/')
+
+          tag="${GITHUB_REF_NAME}"
+
+          echo "Detected version in pyproject.toml: $version"
+          echo "Detected tag name: $tag"
+
+          # Compare them
+          if [ "$version" != "$tag" ]; then
+            echo "❌ Tag ($tag) does not match version in pyproject.toml ($version)"
+            exit 1
+          fi
+
+          echo "✅ Tag matches version. Proceeding with release..."
   binary:
+    needs: [check-tag]
     name: build on ${{ matrix.os }} (${{ matrix.target }}) (${{ matrix.manylinux || 'auto' }})
     strategy:
       fail-fast: false
@@ -100,6 +122,7 @@ jobs:
           path: dist/*
 
   pure-python:
+    needs: [check-tag]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

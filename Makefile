@@ -11,8 +11,8 @@ typecheck:
 
 .PHONY: format
 format:
-	black pysrc/ tests/ generate_docstrings.py
-	isort pysrc/ tests/ generate_docstrings.py
+	black pysrc/ tests/ scripts/
+	isort pysrc/ tests/ scripts/
 	cargo fmt
 
 .PHONY: docs
@@ -40,9 +40,9 @@ test: test-py test-rs
 
 .PHONY: ci-lint
 ci-lint: check-readme
-	flake8 pysrc/ tests/ generate_docstrings.py
-	black --check pysrc/ tests/ generate_docstrings.py
-	isort --check pysrc/ tests/ generate_docstrings.py
+	flake8 pysrc/ tests/ scripts/
+	black --check pysrc/ tests/ scripts/
+	isort --check pysrc/ tests/ scripts/
 	cargo fmt -- --check
 	env PYTHONPATH=pysrc/ slotscheck pysrc
 	cargo clippy --all-targets --all-features -- -D warnings
