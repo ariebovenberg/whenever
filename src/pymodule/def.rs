@@ -121,7 +121,7 @@ static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
     #[cfg(Py_3_13)]
     PyModuleDef_Slot {
         slot: Py_mod_gil,
-        value: Py_MOD_GIL_USED,
+        value: Py_MOD_GIL_NOT_USED,
     },
     PyModuleDef_Slot {
         slot: 0,

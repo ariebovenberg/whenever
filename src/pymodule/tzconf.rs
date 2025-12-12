@@ -16,7 +16,7 @@ pub(crate) fn _set_tzpath(state: &mut State, to: PyObj) -> PyReturn {
                 .as_str()?,
         ))
     }
-    state.tz_store.paths = result;
+    state.tz_store.set_paths(result);
     Ok(none())
 }
 
