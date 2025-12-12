@@ -1,11 +1,11 @@
 use crate::{
     py::*,
+    tz::sync::{AtomicRefCount, SyncCell, SyncRwLock},
     tz::tzif::{TimeZone, is_valid_key},
 };
 use ahash::AHashMap;
 use pyo3_ffi::*;
 use std::{
-    cell::UnsafeCell,
     collections::VecDeque,
     fs,
     ops::Deref,
@@ -23,7 +23,7 @@ pub(crate) struct TzPtr {
 
 struct Inner {
     value: TimeZone,
-    refcnt: UnsafeCell<usize>,
+    refcnt: AtomicRefCount,
 }
 
 impl TzPtr {
@@ -33,7 +33,7 @@ impl TzPtr {
             // We start with refcount of 2:
             // - one to share outside of the tzstore
             // - one to keep the pointer alive in the LRU
-            refcnt: UnsafeCell::new(2),
+            refcnt: AtomicRefCount::new(2),
             value,
         });
         Self {
@@ -71,23 +71,22 @@ impl TzPtr {
     }
 
     fn decref(&self) -> usize {
-        unsafe {
-            let refcnt = self.inner.as_ref().refcnt.get();
-            *refcnt -= 1;
-            *refcnt
-        }
+        unsafe { self.inner.as_ref() }.refcnt.decrement()
     }
 
     fn incref(&self) {
-        unsafe {
-            let refcnt = self.inner.as_ref().refcnt.get();
-            *refcnt += 1;
-        }
+        unsafe { self.inner.as_ref() }.refcnt.increment();
+    }
+
+    /// Try to increment the refcount. Returns false if the refcount was zero
+    /// (meaning the object is being freed by another thread).
+    fn try_incref(&self) -> bool {
+        unsafe { self.inner.as_ref() }.refcnt.try_increment()
     }
 
     #[cfg(debug_assertions)]
     pub(crate) fn ref_count(&self) -> usize {
-        unsafe { *self.inner.as_ref().refcnt.get() }
+        unsafe { self.inner.as_ref() }.refcnt.get()
     }
 
     unsafe fn drop_in_place(&self) {
@@ -150,6 +149,7 @@ impl Drop for TzHandle<'_> {
             TzHandle::NonUniquePtr(ptr) => {
                 // Non-unique pointers do not require cleanup,
                 // since they are never the last strong reference.
+                // TODO: debug assert
                 ptr.decref();
             }
         }
@@ -167,20 +167,19 @@ impl Deref for TzHandle<'_> {
     }
 }
 
-/// Timezone cache meant for single-threaded use.
-/// It's designed to be used by the ZonedDateTime class,
-/// which only calls it from a single thread while holding the GIL.
-/// This avoids the need for synchronization.
+/// Timezone cache.
+/// In GIL-enabled builds, access is synchronized by the GIL.
+/// In free-threaded builds, a mutex provides synchronization.
 /// It is based on the cache approach of zoneinfo in Python's standard library.
 #[derive(Debug)]
 struct Cache {
-    inner: UnsafeCell<CacheInner>,
+    inner: SyncCell<CacheInner>,
 }
 
 impl Cache {
     fn new() -> Self {
         Self {
-            inner: UnsafeCell::new(CacheInner {
+            inner: SyncCell::new(CacheInner {
                 lru: VecDeque::with_capacity(LRU_CAPACITY),
                 lookup: AHashMap::with_capacity(8), // a reasonable default size
             }),
@@ -189,28 +188,60 @@ impl Cache {
 
     /// Get an entry from the cache, or insert it from the supplied function.
     /// Returns a strong reference.
+    /// The load function is called outside the lock to avoid holding it during I/O.
     fn get_or_insert_with<F>(&self, key: &str, load: F) -> Option<TzPtr>
     where
         F: FnOnce() -> Option<TimeZone>,
     {
-        // SAFETY: this is safe because we only access the cache from a single thread
-        // while holding the GIL. The UnsafeCell is only used to allow mutable access
-        // to the inner cache.
-        let CacheInner { lookup, lru } = unsafe { self.inner.get().as_mut().unwrap() };
-
-        match lookup.get(key) {
-            // Found in cache. Mark it as recently used
-            Some(&tz) => {
-                tz.incref(); // Increment the refcount to ensure it's not dropped
-                Self::promote_lru(tz, lru, lookup);
-                Some(tz)
+        // First, check the cache under the lock
+        let cached = self.inner.with_mut(|CacheInner { lookup, lru }| {
+            if let Some(&tz) = lookup.get(key) {
+                // Try to increment refcount. If it fails, the entry is being freed
+                // by another thread, so treat it as a cache miss.
+                if tz.try_incref() {
+                    Self::promote_lru(tz, lru, lookup);
+                    Some(tz)
+                } else {
+                    // Entry is stale (being freed). Remove it from lookup.
+                    lookup.remove(key);
+                    None
+                }
+            } else {
+                None
             }
-            // Not found in cache. Load it and insert it into the cache
-            None => load().map(TzPtr::new).inspect(|&tz| {
-                Self::new_to_lru(tz, lru, lookup);
-                lookup.insert(key.to_string(), tz);
-            }),
+        });
+
+        if let Some(tz) = cached {
+            return Some(tz);
         }
+
+        // Cache miss: load outside the lock (may do file I/O)
+        let loaded = load().map(TzPtr::new)?;
+
+        // Re-acquire lock to insert. Another thread may have loaded the same key.
+        let result = self.inner.with_mut(|CacheInner { lookup, lru }| {
+            if let Some(&existing) = lookup.get(key) {
+                // Another thread loaded it. Try to use theirs.
+                if existing.try_incref() {
+                    Self::promote_lru(existing, lru, lookup);
+                    // Drop our loaded pointer (we started with refcount 2)
+                    loaded.decref();
+                    loaded.decref();
+                    // SAFETY: refcount is 0, we can drop
+                    unsafe { loaded.drop_in_place() };
+                    return existing;
+                } else {
+                    // Their entry is stale. Remove it and use ours.
+                    lookup.remove(key);
+                }
+            }
+            // We're first (or the existing entry was stale). Insert into cache.
+            Self::new_to_lru(loaded, lru, lookup);
+            lookup.insert(key.to_string(), loaded);
+            loaded
+        });
+
+        Some(result)
     }
 
     fn decref<F>(tz: TzPtr, cleanup: F)
@@ -228,8 +259,9 @@ impl Cache {
     }
 
     fn remove_key(&self, key: &str) {
-        let lookup = &mut unsafe { self.inner.get().as_mut().unwrap() }.lookup;
-        lookup.remove(key);
+        self.inner.with_mut(|inner| {
+            inner.lookup.remove(key);
+        });
     }
 
     fn new_to_lru(tz: TzPtr, lru: &mut Lru, lookup: &mut Lookup) {
@@ -268,35 +300,36 @@ impl Cache {
 
     /// Clear the cache, dropping all entries.
     fn clear_all(&self) {
-        let CacheInner { lookup, lru } = unsafe { self.inner.get().as_mut().unwrap() };
+        self.inner.with_mut(|CacheInner { lookup, lru }| {
+            // Clear all weak references. Note that strong references may still exist
+            // both in the LRU and in ZonedDateTime objects.
+            lookup.clear();
 
-        // Clear all weak references. Note that strong references may still exist
-        // both in the LRU and in ZonedDateTime objects.
-        lookup.clear();
-
-        // Clear the LRU
-        let mut lru_old = std::mem::replace(lru, VecDeque::with_capacity(LRU_CAPACITY));
-        for tz in lru_old.drain(..) {
-            Self::decref(tz, || {
-                // No cleanup needed: the lookup table is already cleared
-            });
-        }
+            // Clear the LRU
+            let mut lru_old = std::mem::replace(lru, VecDeque::with_capacity(LRU_CAPACITY));
+            for tz in lru_old.drain(..) {
+                Self::decref(tz, || {
+                    // No cleanup needed: the lookup table is already cleared
+                });
+            }
+        });
     }
 
     /// Clear specific entries from the cache.
     fn clear_only(&self, keys: &[String]) {
-        let CacheInner { lookup, lru } = unsafe { self.inner.get().as_mut().unwrap() };
-        for k in keys {
-            lookup.remove(k); // Always remove, regardless of refcount
-            if let Some(i) = lru
-                .iter()
-                .position(|tz| tz.key.as_ref().expect("LRU entries always have a key") == k)
-            {
-                Self::decref(lru.remove(i).unwrap(), || {
-                    // No cleanup needed: the lookup table is already cleared
-                });
-            };
-        }
+        self.inner.with_mut(|CacheInner { lookup, lru }| {
+            for k in keys {
+                lookup.remove(k); // Always remove, regardless of refcount
+                if let Some(i) = lru
+                    .iter()
+                    .position(|tz| tz.key.as_ref().expect("LRU entries always have a key") == k)
+                {
+                    Self::decref(lru.remove(i).unwrap(), || {
+                        // No cleanup needed: the lookup table is already cleared
+                    });
+                };
+            }
+        });
     }
 }
 
@@ -304,17 +337,18 @@ impl Drop for Cache {
     /// Drop the cache, clearing all entries. This should only trigger during module unloading,
     /// and there should be no ZonedDateTime objects left.
     fn drop(&mut self) {
-        let CacheInner { lookup, lru } = unsafe { self.inner.get().as_mut().unwrap() };
-        // At this point, the only strong references should be in the LRU.
-        let mut lru = std::mem::take(lru);
-        for tz in lru.drain(..) {
-            Self::decref(tz, || {
-                // Remove the weak reference too
-                lookup.remove(tz.key.as_ref().expect("LRU entries always have a key"));
-            });
-        }
-        // By now, the lookup table should be empty (it contains only weak references)
-        debug_assert!(lookup.is_empty());
+        self.inner.with_mut(|CacheInner { lookup, lru }| {
+            // At this point, the only strong references should be in the LRU.
+            let mut lru = std::mem::take(lru);
+            for tz in lru.drain(..) {
+                Self::decref(tz, || {
+                    // Remove the weak reference too
+                    lookup.remove(tz.key.as_ref().expect("LRU entries always have a key"));
+                });
+            }
+            // By now, the lookup table should be empty (it contains only weak references)
+            debug_assert!(lookup.is_empty());
+        });
     }
 }
 
@@ -356,10 +390,10 @@ pub(crate) struct TzStore {
     // The path to the `tzdata` Python package contents, if any.
     tzdata_path: Option<PathBuf>,
     // The paths to search for zoneinfo files. Patchable during runtime.
-    pub(crate) paths: Vec<PathBuf>,
+    paths: SyncRwLock<Vec<PathBuf>>,
     // We cache the system timezone here, since it's expensive to determine.
     // The pointer represents a strong reference to a timezone.
-    system_tz_cache: UnsafeCell<Option<TzPtr>>,
+    system_tz_cache: SyncRwLock<Option<TzPtr>>,
     // This reference is borrowed from the module, which outlives this store.
     exc_notfound: PyObj,
 }
@@ -371,10 +405,15 @@ impl TzStore {
             tzdata_path: get_tzdata_path()?,
             // Empty. The actual search paths are patched in at module import
             // because this is determined in Python code.
-            paths: Vec::with_capacity(4),
-            system_tz_cache: UnsafeCell::new(None),
+            paths: SyncRwLock::new(Vec::with_capacity(4)),
+            system_tz_cache: SyncRwLock::new(None),
             exc_notfound,
         })
+    }
+
+    /// Set the timezone search paths.
+    pub(crate) fn set_paths(&self, new_paths: Vec<PathBuf>) {
+        self.paths.with_write(|paths| *paths = new_paths);
     }
 
     /// Fetches the timezone definition for the given IANA time zone ID.
@@ -400,30 +439,43 @@ impl TzStore {
 
     /// Retrieve the system timezone definition (cached for repeat calls).
     pub(crate) fn get_system_tz(&self) -> PyResult<TzHandle<'_>> {
-        // Check if we already have the system timezone cached
-        let ptr = match unsafe { *self.system_tz_cache.get() } {
-            Some(p) => {
+        // Fast path: check if already cached (read lock)
+        let cached = self.system_tz_cache.with_read(|cache| {
+            cache.inspect(|p| {
                 p.incref();
-                p
-            }
-            None => {
+            })
+        });
+
+        if let Some(ptr) = cached {
+            return Ok(TzHandle::Ptr(ptr, self));
+        }
+
+        // Slow path: need to determine and cache (write lock)
+        let ptr = self
+            .system_tz_cache
+            .with_write(|cache| -> PyResult<TzPtr> {
+                // Double-check: another thread may have set it
+                if let Some(p) = *cache {
+                    p.incref();
+                    return Ok(p);
+                }
                 let p = self.determine_system_tz()?;
-                unsafe { *self.system_tz_cache.get() = Some(p) };
-                p
-            }
-        };
+                *cache = Some(p);
+                Ok(p)
+            })?;
         Ok(TzHandle::Ptr(ptr, self))
     }
 
     /// Reset the cached system timezone.
     pub(crate) fn reset_system_tz(&self) -> PyResult<()> {
-        // Clear the cached system timezone
+        // Determine new tz outside the lock (may do I/O)
         let new_ptr = self.determine_system_tz()?;
-        let old_ptr = unsafe { *self.system_tz_cache.get() };
-        old_ptr.inspect(|ptr| {
-            ptr.decref_with_cleanup(|| self);
+        self.system_tz_cache.with_write(|cache| {
+            if let Some(old) = cache.take() {
+                old.decref_with_cleanup(|| self);
+            }
+            *cache = Some(new_ptr);
         });
-        unsafe { *self.system_tz_cache.get() = Some(new_ptr) }
         Ok(())
     }
 
@@ -446,9 +498,11 @@ impl TzStore {
 
     /// Load a TZif from the TZPATH directory, assuming a benign TZ ID.
     fn load_tzif_from_tzpath(&self, key: BenignKey) -> Option<TimeZone> {
-        self.paths
-            .iter()
-            .find_map(|base| self.read_tzif_at_path(&base.join(key), Some(key)))
+        self.paths.with_read(|paths| {
+            paths
+                .iter()
+                .find_map(|base| self.read_tzif_at_path(&base.join(key), Some(key)))
+        })
     }
 
     /// Load a TZif from the tzdata package, assuming a benign TZ ID.
@@ -533,10 +587,11 @@ impl TzStore {
 impl Drop for TzStore {
     fn drop(&mut self) {
         // Clear the system timezone cache
-        if let Some(ptr) = unsafe { *self.system_tz_cache.get() } {
-            ptr.decref_with_cleanup(|| self);
-            unsafe { *self.system_tz_cache.get() = None };
-        }
+        self.system_tz_cache.with_write(|cache| {
+            if let Some(ptr) = cache.take() {
+                ptr.decref_with_cleanup(|| self);
+            }
+        });
         // The rest of the fields will be dropped automatically
     }
 }

@@ -43,4 +43,4 @@ harness = false
 path = "benchmarks/rust/main.rs"
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = [ "cfg(Py_3_9)", "cfg(Py_3_10)", "cfg(Py_3_11)", "cfg(Py_3_12)", "cfg(Py_3_13)", ] }
+unexpected_cfgs = { level = "warn", check-cfg = [ "cfg(Py_3_9)", "cfg(Py_3_10)", "cfg(Py_3_11)", "cfg(Py_3_12)", "cfg(Py_3_13)", "cfg(Py_GIL_DISABLED)"] }
