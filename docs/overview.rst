@@ -841,7 +841,7 @@ Pydantic integration
 
 .. warning::
 
-   Pydantic support is still in preview and may change in the future.
+   Pydantic support is still in beta and may change in the future.
 
 ``Whenever`` types support basic serialization and deserialization
 with `Pydantic <https://docs.pydantic.dev>`_. The behavior is identical to

@@ -1,5 +1,9 @@
 # 🚀 Changelog
 
+## 0.9.4 (2025-12-14)
+
+Added support for free-threaded Python (#166)
+
 ## 0.9.3 (2025-10-16)
 
 Fixed incorrect offsets for some timezones before the start of their first

@@ -32,7 +32,7 @@ if not _EXTENSION_LOADED:  # pragma: no cover
 
 # Yes, we could get the version with importlib.metadata,
 # but we try to keep our import time as low as possible.
-__version__ = "0.9.3"
+__version__ = "0.9.4"
 
 reset_tzpath()  # populate the tzpath once at startup
 

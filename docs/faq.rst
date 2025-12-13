@@ -17,7 +17,7 @@ Is free-threaded Python supported?
 
 Yes, free-threaded Python is supported. However, this support is 
 still in beta. Please report any issues you encounter when using
-whenever in a free-threaded Python environment.
+*whenever* in a free-threaded Python environment.
 
 .. _faq-why-instant:
 
