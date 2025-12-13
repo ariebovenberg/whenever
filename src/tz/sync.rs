@@ -19,13 +19,8 @@ mod gil_enabled {
 
     /// A cell that provides interior mutability without synchronization.
     /// Safe only when the GIL guarantees single-threaded access.
+    #[derive(Debug)]
     pub(crate) struct SyncCell<T>(UnsafeCell<T>);
-
-    impl<T> std::fmt::Debug for SyncCell<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("SyncCell").finish_non_exhaustive()
-        }
-    }
 
     impl<T> SyncCell<T> {
         pub(crate) fn new(value: T) -> Self {
@@ -45,13 +40,8 @@ mod gil_enabled {
 
     /// A read-write "lock" that provides interior mutability without synchronization.
     /// Safe only when the GIL guarantees single-threaded access.
+    #[derive(Debug)]
     pub(crate) struct SyncRwLock<T>(UnsafeCell<T>);
-
-    impl<T> std::fmt::Debug for SyncRwLock<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("SyncRwLock").finish_non_exhaustive()
-        }
-    }
 
     impl<T> SyncRwLock<T> {
         pub(crate) fn new(value: T) -> Self {
@@ -99,7 +89,7 @@ mod gil_enabled {
         }
 
         /// This method always succeeds in GIL-enabled builds.
-        /// Its purpose is to provide a consistent API with free-threaded builds.
+        /// See the free-threaded version for details.
         #[inline]
         pub(crate) fn try_increment(&self) -> bool {
             self.increment();
@@ -134,13 +124,8 @@ mod free_threaded {
     };
 
     /// A cell that provides interior mutability with mutex synchronization.
+    #[derive(Debug)]
     pub(crate) struct SyncCell<T>(Mutex<T>);
-
-    impl<T> std::fmt::Debug for SyncCell<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("SyncCell").finish_non_exhaustive()
-        }
-    }
 
     impl<T> SyncCell<T> {
         pub(crate) fn new(value: T) -> Self {
@@ -156,13 +141,8 @@ mod free_threaded {
     }
 
     /// A read-write lock that provides interior mutability with RwLock synchronization.
+    #[derive(Debug)]
     pub(crate) struct SyncRwLock<T>(RwLock<T>);
-
-    impl<T> std::fmt::Debug for SyncRwLock<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("SyncRwLock").finish_non_exhaustive()
-        }
-    }
 
     impl<T> SyncRwLock<T> {
         pub(crate) fn new(value: T) -> Self {

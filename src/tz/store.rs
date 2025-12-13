@@ -355,6 +355,7 @@ impl Drop for Cache {
 type Lru = VecDeque<TzPtr>;
 type Lookup = AHashMap<String, TzPtr>;
 
+#[derive(Debug)]
 struct CacheInner {
     // Weak references to the timezones, keyed by TZ ID.
     // String references are held by (1) the ZonedDateTime objects, and (2) the LRU
@@ -451,18 +452,16 @@ impl TzStore {
         }
 
         // Slow path: need to determine and cache (write lock)
-        let ptr = self
-            .system_tz_cache
-            .with_write(|cache| -> PyResult<TzPtr> {
-                // Double-check: another thread may have set it
-                if let Some(p) = *cache {
-                    p.incref();
-                    return Ok(p);
-                }
-                let p = self.determine_system_tz()?;
-                *cache = Some(p);
-                Ok(p)
-            })?;
+        let ptr = self.system_tz_cache.with_write(|cache| {
+            // Double-check: another thread may have set it
+            if let Some(p) = *cache {
+                p.incref();
+                return Ok(p);
+            }
+            let p = self.determine_system_tz()?;
+            *cache = Some(p);
+            Ok(p)
+        })?;
         Ok(TzHandle::Ptr(ptr, self))
     }
 

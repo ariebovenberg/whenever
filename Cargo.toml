@@ -27,14 +27,14 @@ codegen-units = 1
 strip = true
 
 [dependencies]
-ahash = "^0.8.11"
-pyo3-ffi = { version = "^0.25.1", default-features = false, features = ["extension-module"]}
+ahash = "^0.8.12"
+pyo3-ffi = { version = "^0.27.2", default-features = false, features = ["extension-module"]}
 
 [build-dependencies]
-pyo3-build-config = { version = "^0.25.1" }
+pyo3-build-config = { version = "^0.27.2" }
 
 [dev-dependencies]
-criterion = "^0.5.1"
+criterion = "^0.8.1"
 walkdir = "^2.5.0"
 
 [[bench]]
