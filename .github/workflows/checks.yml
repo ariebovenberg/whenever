@@ -7,6 +7,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  RUST_BACKTRACE: 1
+
 jobs:
   test-rust:
     name: Test Rust (internal tests)
@@ -34,7 +37,9 @@ jobs:
           "3.11",
           "3.12",
           # NOTE: 3.13 is absent since we test it in the OS job matrix
+          "3.13t",
           "3.14",
+          "3.14t",
         ]
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +50,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true
+
 
       # NOTE: We test multiple times in different dependency configurations
       - name: Test (no extra deps)
@@ -57,26 +63,19 @@ jobs:
           pip install dist/*.whl
 
           pytest tests/ -s -v
-        env:
-          RUST_BACKTRACE: 1
-      # Pydantic doesn't support 3.14 yet
-      - if: ${{ matrix.python-version != '3.14' }}
-        run: pip install pydantic
+
+      - run: python scripts/stresstest_threading.py
       - name: Test (all deps)
         shell: bash
         run: |
-          pip install tzdata
+          pip install tzdata pydantic
           pytest tests/ -s -v
-        env:
-          RUST_BACKTRACE: 1
       # Debug mode sometimes surfaces issues not seen in release mode
       - name: Test (debug mode)
         shell: bash
         run: |
           pip install -e .
           pytest tests/ -s -v
-        env:
-          RUST_BACKTRACE: 1
 
   test-os:
     name: Test ${{ matrix.os }}, 3.13 ${{ matrix.no_build_ext && 'pure Python' || 'Rust extension' }}
@@ -124,7 +123,6 @@ jobs:
           pytest tests/ -s -v
         env:
           WHENEVER_NO_BUILD_RUST_EXT: ${{ matrix.no_build_ext }}
-          RUST_BACKTRACE: 1
 
   test-pure-python:
     name: Test ubuntu, ${{ matrix.python-version }} pure Python
@@ -138,9 +136,11 @@ jobs:
           "3.11",
           "3.12",
           # NOTE: 3.13 is absent since we test it in the OS job matrix
+          "3.13t",
+          "3.14",
+          "3.14t",
           # NOTE: If pypy/pytest fails, if could be due to
           #       https://github.com/pypy/pypy/issues/3959
-          "3.14",
           "pypy3.9",
           "pypy3.10"
         ]
@@ -157,13 +157,11 @@ jobs:
           pip install dist/*.whl
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
+      - run: python scripts/stresstest_threading.py
       # NOTE: we end up running pytest twice in the following sections.
       # This is because we want to test the code with and without optional dependencies.
       - run: pytest tests/
-      - run: pip install tzdata
-      # Pydantic doesn't support 3.14 yet
-      - if: ${{ matrix.python-version != '3.14' }}
-        run: pip install pydantic
+      - run: pip install tzdata pydantic
       # NOTE: we only care about coverage once. We arbitrarily choose 3.12 for that
       - if: ${{ matrix.python-version == '3.12' }}
         run: |

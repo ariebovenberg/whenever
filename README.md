@@ -3,7 +3,7 @@
 [![](https://img.shields.io/pypi/v/whenever.svg?color=blue)](https://pypi.python.org/pypi/whenever)
 [![](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fariebovenberg%2Fwhenever%2Fmain%2Fpyproject.toml)](https://pypi.python.org/pypi/whenever)
 [![](https://img.shields.io/pypi/l/whenever.svg?color=blue)](https://pypi.python.org/pypi/whenever)
-[![](https://img.shields.io/badge/mypy-strict-forestgreen)](https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-strict)
+[![](https://img.shields.io/badge/nogil-beta-yellowgreen)](https://docs.python.org/3/howto/free-threading-python.html)
 [![](https://img.shields.io/github/actions/workflow/status/ariebovenberg/whenever/checks.yml?branch=main)](https://github.com/ariebovenberg/whenever)
 [![](https://img.shields.io/readthedocs/whenever.svg)](http://whenever.readthedocs.io/)
 [![](https://img.shields.io/pypi/dm/whenever)](https://pypi.python.org/pypi/whenever)
