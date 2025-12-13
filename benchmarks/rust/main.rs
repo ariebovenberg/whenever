@@ -1,7 +1,7 @@
 // FUTURE:
 // - find a better way to access function other than making them public
 // - find a better way to organize these benchmarks
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 use _whenever::classes::date::Date;
 use _whenever::classes::plain_datetime::DateTime;
@@ -9,6 +9,7 @@ use _whenever::common::scalar::{EpochSecs, UnixDays};
 use _whenever::common::scalar::{Month, Year};
 use _whenever::tz::posix::TzStr;
 use _whenever::tz::tzif::TimeZone;
+use std::hint::black_box;
 
 pub fn date_from_unix_days(c: &mut Criterion) {
     c.bench_function("unix day to date", |b| {

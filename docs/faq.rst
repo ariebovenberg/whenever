@@ -15,10 +15,9 @@ for portability.
 Is free-threaded Python supported?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Currently, only the pure-Python version of *whenever* supports
-free-threaded Python.
-Support for the Rust extension is planned, but is more complex to implement.
-*Whenever*'s free-threading support is considered experimental and may have limitations.
+Yes, free-threaded Python is supported. However, this support is 
+still in beta. Please report any issues you encounter when using
+whenever in a free-threaded Python environment.
 
 .. _faq-why-instant:
 
