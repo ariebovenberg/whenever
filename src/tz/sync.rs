@@ -76,7 +76,6 @@ mod gil_enabled {
         }
 
         #[inline]
-        #[cfg(debug_assertions)]
         pub(crate) fn get(&self) -> usize {
             // SAFETY: GIL guarantees single-threaded access
             unsafe { *self.0.get() }
@@ -173,7 +172,6 @@ mod free_threaded {
         }
 
         #[inline]
-        #[cfg(debug_assertions)]
         pub(crate) fn get(&self) -> usize {
             self.0.load(Ordering::Acquire)
         }

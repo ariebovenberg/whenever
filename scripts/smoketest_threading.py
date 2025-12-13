@@ -2,9 +2,6 @@
 Stress tests for thread-safety of the timezone cache.
 
 Note this isn't a unit test, because it relies on a clean cache
-
-Run with:
-    python3.13t stresstest_threading.py
 """
 
 import sys

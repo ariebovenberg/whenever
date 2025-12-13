@@ -84,7 +84,6 @@ impl TzPtr {
         unsafe { self.inner.as_ref() }.refcnt.try_increment()
     }
 
-    #[cfg(debug_assertions)]
     pub(crate) fn ref_count(&self) -> usize {
         unsafe { self.inner.as_ref() }.refcnt.get()
     }
@@ -149,7 +148,7 @@ impl Drop for TzHandle<'_> {
             TzHandle::NonUniquePtr(ptr) => {
                 // Non-unique pointers do not require cleanup,
                 // since they are never the last strong reference.
-                // TODO: debug assert
+                debug_assert!(ptr.ref_count() >= 2);
                 ptr.decref();
             }
         }
@@ -195,20 +194,14 @@ impl Cache {
     {
         // First, check the cache under the lock
         let cached = self.inner.with_mut(|CacheInner { lookup, lru }| {
-            if let Some(&tz) = lookup.get(key) {
+            lookup.get(key).copied().and_then(|tz| {
                 // Try to increment refcount. If it fails, the entry is being freed
                 // by another thread, so treat it as a cache miss.
-                if tz.try_incref() {
+                tz.try_incref().then(|| {
                     Self::promote_lru(tz, lru, lookup);
-                    Some(tz)
-                } else {
-                    // Entry is stale (being freed). Remove it from lookup.
-                    lookup.remove(key);
-                    None
-                }
-            } else {
-                None
-            }
+                    tz
+                })
+            })
         });
 
         if let Some(tz) = cached {
@@ -216,32 +209,30 @@ impl Cache {
         }
 
         // Cache miss: load outside the lock (may do file I/O)
-        let loaded = load().map(TzPtr::new)?;
+        let loaded = TzPtr::new(load()?);
 
         // Re-acquire lock to insert. Another thread may have loaded the same key.
-        let result = self.inner.with_mut(|CacheInner { lookup, lru }| {
-            if let Some(&existing) = lookup.get(key) {
-                // Another thread loaded it. Try to use theirs.
-                if existing.try_incref() {
-                    Self::promote_lru(existing, lru, lookup);
-                    // Drop our loaded pointer (we started with refcount 2)
-                    loaded.decref();
-                    loaded.decref();
-                    // SAFETY: refcount is 0, we can drop
-                    unsafe { loaded.drop_in_place() };
-                    return existing;
-                } else {
-                    // Their entry is stale. Remove it and use ours.
-                    lookup.remove(key);
-                }
-            }
-            // We're first (or the existing entry was stale). Insert into cache.
-            Self::new_to_lru(loaded, lru, lookup);
-            lookup.insert(key.to_string(), loaded);
-            loaded
-        });
-
-        Some(result)
+        self.inner.with_mut(|CacheInner { lookup, lru }| {
+            lookup
+                .get(key)
+                .copied()
+                .and_then(|existing| {
+                    // Another thread loaded it. Try to use theirs.
+                    existing.try_incref().then(|| {
+                        Self::promote_lru(existing, lru, lookup);
+                        // Clean up our loaded data (we don't need it)
+                        unsafe { loaded.drop_in_place() };
+                        existing
+                    })
+                })
+                .or_else(|| {
+                    // We're first (or the existing entry was stale).
+                    // Insert into cache.
+                    Self::new_to_lru(loaded, lru, lookup);
+                    lookup.insert(key.to_string(), loaded);
+                    Some(loaded)
+                })
+        })
     }
 
     fn decref<F>(tz: TzPtr, cleanup: F)
@@ -266,8 +257,7 @@ impl Cache {
 
     fn new_to_lru(tz: TzPtr, lru: &mut Lru, lookup: &mut Lookup) {
         debug_assert!(!lru.contains(&tz));
-        #[cfg(debug_assertions)]
-        assert!(tz.ref_count() > 0);
+        debug_assert!(tz.ref_count() > 0);
         debug_assert!(tz.key.is_some());
         // If the LRU exceeds capacity, remove the least recently used entry
         if lru.len() == LRU_CAPACITY {
@@ -334,11 +324,12 @@ impl Cache {
 }
 
 impl Drop for Cache {
-    /// Drop the cache, clearing all entries. This should only trigger during module unloading,
-    /// and there should be no ZonedDateTime objects left.
+    /// Drop the cache, clearing all entries. This should only trigger during
+    /// module unloading, and there should be no ZonedDateTime objects left.
     fn drop(&mut self) {
         self.inner.with_mut(|CacheInner { lookup, lru }| {
-            // At this point, the only strong references should be in the LRU.
+            // Since there are no ZonedDateTime objects left,
+            // the only strong references are in the LRU.
             let mut lru = std::mem::take(lru);
             for tz in lru.drain(..) {
                 Self::decref(tz, || {
@@ -459,6 +450,7 @@ impl TzStore {
                 return Ok(p);
             }
             let p = self.determine_system_tz()?;
+            p.incref(); // An extra ref for the cache
             *cache = Some(p);
             Ok(p)
         })?;

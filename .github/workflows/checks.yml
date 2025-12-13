@@ -64,7 +64,6 @@ jobs:
 
           pytest tests/ -s -v
 
-      - run: python scripts/stresstest_threading.py
       - name: Test (all deps)
         shell: bash
         run: |
@@ -76,6 +75,7 @@ jobs:
         run: |
           pip install -e .
           pytest tests/ -s -v
+      - run: python scripts/smoketest_*.py
 
   test-os:
     name: Test ${{ matrix.os }}, 3.13 ${{ matrix.no_build_ext && 'pure Python' || 'Rust extension' }}
@@ -157,7 +157,7 @@ jobs:
           pip install dist/*.whl
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
-      - run: python scripts/stresstest_threading.py
+      - run: python scripts/smoketest_*.py
       # NOTE: we end up running pytest twice in the following sections.
       # This is because we want to test the code with and without optional dependencies.
       - run: pytest tests/
