@@ -7,9 +7,10 @@ Note this isn't a unit test, because it relies on a clean cache
 import sys
 import time
 from itertools import cycle, islice
+from os import environ
 from threading import Thread
 
-from whenever import PlainDateTime
+from whenever import PlainDateTime, reset_system_tz
 
 if not hasattr(sys, "_is_gil_enabled") or sys._is_gil_enabled():
     # Running with GIL enabled can still be useful to compare performance,
@@ -43,7 +44,10 @@ TIMEZONE_SAMPLE = [
     "America/Argentina/Ushuaia",
     "Brazil/Acre",
 ]
-TZS = list(islice(cycle(TIMEZONE_SAMPLE), NUM_THREADS * NUM_ITERATIONS))
+assert (
+    len(TIMEZONE_SAMPLE) % NUM_THREADS
+), "Timezone sample should not be evenly divisible by number of threads"
+TZS = TIMEZONE_SAMPLE * (NUM_THREADS * NUM_ITERATIONS)
 
 
 def touch_timezones(tzs):
@@ -53,13 +57,23 @@ def touch_timezones(tzs):
         del zdt
 
 
-def main():
+def set_system_tz(tzs):
+    """A function that sets the timezone to system timezone"""
+    for tz in tzs:
+        environ["TZ"] = tz
+        reset_system_tz()
+        zdt = PLAIN_DT.assume_system_tz()
+        del zdt
+
+
+def main(func):
+    print(f"Starting test: {func.__name__}")
     threads = []
 
     start_time = time.time()
 
     for n in range(NUM_THREADS):
-        thread = Thread(target=touch_timezones, args=(TZS[n::NUM_THREADS],))
+        thread = Thread(target=func, args=(TZS[n::NUM_THREADS],))
         threads.append(thread)
         thread.start()
 
@@ -71,4 +85,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(touch_timezones)
+    main(set_system_tz)
