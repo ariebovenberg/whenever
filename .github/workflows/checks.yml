@@ -142,7 +142,8 @@ jobs:
           # NOTE: If pypy/pytest fails, if could be due to
           #       https://github.com/pypy/pypy/issues/3959
           "pypy3.9",
-          "pypy3.10"
+          "pypy3.10",
+          "pypy3.11"
         ]
     steps:
       - uses: actions/checkout@v4
