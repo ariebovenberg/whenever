@@ -6324,7 +6324,9 @@ else:
             pass
 
 
-_tz_lock = _Lock()
+# While the lookup cache (WeakValueDictionary) is thread-safe for individual
+# operations, we need to lock around the LRU (OrderedDict), which is not.
+_tzcache_lru_lock = _Lock()
 
 
 def _set_tzpath(to: tuple[str, ...]) -> None:
@@ -6333,16 +6335,34 @@ def _set_tzpath(to: tuple[str, ...]) -> None:
 
 
 def _clear_tz_cache() -> None:
-    with _tz_lock:
+    _tzcache_lookup.clear()
+    with _tzcache_lru_lock:
         _tzcache_lru.clear()
-        _tzcache_lookup.clear()
 
 
 def _clear_tz_cache_by_keys(keys: tuple[str, ...]) -> None:
-    with _tz_lock:
+    with _tzcache_lru_lock:
         for k in keys:
             _tzcache_lookup.pop(k, None)
             _tzcache_lru.pop(k, None)
+
+
+def _get_tz(key: str) -> TimeZone:
+    instance = _tzcache_lookup.get(key)
+    if instance is None:
+        # Concurrency note: we accept the possibility of multiple threads
+        # loading the same timezone at the same time, since TimeZone instances
+        # are immutable after construction. The last one to write wins.
+        instance = _tzcache_lookup.setdefault(
+            key, _load_tz(_validate_key(key))
+        )
+
+    with _tzcache_lru_lock:
+        _tzcache_lru[key] = _tzcache_lru.pop(key, instance)
+        if len(_tzcache_lru) > _TZCACHE_LRU_SIZE:
+            _tzcache_lru.popitem(last=False)
+
+    return instance
 
 
 # We cache fixed-offset tzinfo objects to avoid creating multiple identical ones.
@@ -6350,33 +6370,6 @@ def _clear_tz_cache_by_keys(keys: tuple[str, ...]) -> None:
 @lru_cache
 def _mk_fixed_tzinfo(secs: int, /) -> _timezone:
     return _timezone(_timedelta(seconds=secs))
-
-
-def _get_tz(key: str) -> TimeZone:
-    with _tz_lock:
-        try:
-            tz = _tzcache_lookup[key]
-        except KeyError:
-            # Release lock during I/O (file loading)
-            pass
-        else:
-            # Update the LRU
-            _tzcache_lru[key] = _tzcache_lru.pop(key, tz)
-            if len(_tzcache_lru) > _TZCACHE_LRU_SIZE:
-                _tzcache_lru.popitem(last=False)
-            return tz
-
-    # Load without holding the lock
-    tz = _load_tz(_validate_key(key))
-
-    with _tz_lock:
-        # Gets the cached value if another thread loaded it in the meantime.
-        tz = _tzcache_lookup.setdefault(key, tz)
-        # Update the LRU
-        _tzcache_lru[key] = _tzcache_lru.pop(key, tz)
-        if len(_tzcache_lru) > _TZCACHE_LRU_SIZE:
-            _tzcache_lru.popitem(last=False)
-        return tz
 
 
 def _validate_key(key: str) -> _BenignKey:
@@ -6446,29 +6439,27 @@ def _load_tz(key: _BenignKey) -> TimeZone:
 
 
 _CACHED_SYSTEM_TZ: TimeZone | None = None
-_system_tz_lock = _Lock()
 
 
 def _system_tz() -> TimeZone:
     global _CACHED_SYSTEM_TZ
-    if _CACHED_SYSTEM_TZ is not None:
-        return _CACHED_SYSTEM_TZ
-    else:  # pragma: no cover
-        # Slow path: need to load (does I/O)
-        tz = _get_system_tz()
-        with _system_tz_lock:
-            # Check again in case another thread loaded it
-            if _CACHED_SYSTEM_TZ is None:
-                _CACHED_SYSTEM_TZ = tz
-            return _CACHED_SYSTEM_TZ
+    # This lookup is intentionally lock-free for performance reasons.
+    # This is valid because:
+    # - TimeZone instances are immutable after construction
+    # - _get_system_tz() is side-effect free
+    # - Last writer wins; all outcomes are acceptable.
+    # - Python guarantees atomic assignment to the module global variables
+    #   since it's a `dict`. This guarantee may change in the future, but for now
+    #   it's safe enough. See docs.python.org/3/howto/free-threading-python.html#thread-safety
+    if _CACHED_SYSTEM_TZ is None:
+        _CACHED_SYSTEM_TZ = _get_system_tz()
+    return _CACHED_SYSTEM_TZ
 
 
 def reset_system_tz() -> None:
     """Resets the cached system timezone to the current system timezone."""
     global _CACHED_SYSTEM_TZ
-    tz = _get_system_tz()  # Do I/O outside lock
-    with _system_tz_lock:
-        _CACHED_SYSTEM_TZ = tz
+    _CACHED_SYSTEM_TZ = _get_system_tz()
 
 
 def _get_system_tz() -> TimeZone:
