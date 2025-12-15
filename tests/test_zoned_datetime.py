@@ -342,6 +342,85 @@ class TestInit:
             )
         )
 
+    def test_leap_seconds_parsing(self):
+        # Leap second (60) should be parsed and normalized to 59
+        assert ZonedDateTime.parse_iso(
+            "2020-08-15T05:12:60-04:00[America/New_York]"
+        ).exact_eq(
+            ZonedDateTime(2020, 8, 15, 5, 12, 59, tz="America/New_York")
+        )
+
+        assert ZonedDateTime.parse_iso(
+            "2020-08-15T05:12:60.123456-04:00[America/New_York]"
+        ).exact_eq(
+            ZonedDateTime(
+                2020,
+                8,
+                15,
+                5,
+                12,
+                59,
+                nanosecond=123_456_000,
+                tz="America/New_York",
+            )
+        )
+
+        # Basic format
+        assert ZonedDateTime.parse_iso(
+            "20200815T051260-0400[America/New_York]"
+        ).exact_eq(
+            ZonedDateTime(2020, 8, 15, 5, 12, 59, tz="America/New_York")
+        )
+
+        # With fractional seconds (using UTC to avoid timezone offset issues)
+        assert ZonedDateTime.parse_iso(
+            "2020-08-15T23:59:60.999999999+00:00[UTC]"
+        ).exact_eq(
+            ZonedDateTime(
+                2020,
+                8,
+                15,
+                23,
+                59,
+                59,
+                nanosecond=999_999_999,
+                tz="UTC",
+            )
+        )
+
+        # Direct construction should still reject 60
+        with pytest.raises(ValueError):
+            ZonedDateTime(2020, 8, 15, 5, 12, 60, tz="America/New_York")
+
+    def test_leap_seconds_comprehensive(self):
+        # Test with UTC - leap second normalization works across timezones
+        dt = ZonedDateTime.parse_iso("2020-08-15T12:34:60+00:00[UTC]")
+        assert dt.second == 59
+        assert dt.tz == "UTC"
+
+        # Test with various timezones using their actual offsets
+        # America/New_York is UTC-4 in August 2020
+        dt = ZonedDateTime.parse_iso(
+            "2020-08-15T12:34:60-04:00[America/New_York]"
+        )
+        assert dt.second == 59
+        assert dt.tz == "America/New_York"
+
+        # With comma as decimal separator
+        assert ZonedDateTime.parse_iso(
+            "2020-08-15T12:34:60,5+00:00[UTC]"
+        ).exact_eq(
+            ZonedDateTime(
+                2020, 8, 15, 12, 34, 59, nanosecond=500_000_000, tz="UTC"
+            )
+        )
+
+        # Invalid seconds should be rejected
+        with pytest.raises(ValueError, match="Invalid format"):
+            ZonedDateTime.parse_iso("2020-08-15T12:34:61+00:00[UTC]")
+        with pytest.raises(ValueError, match="Invalid format"):
+            ZonedDateTime.parse_iso("2020-08-15T12:34:99+00:00[UTC]")
+
 
 @system_tz_ams()
 def test_from_system_tz():

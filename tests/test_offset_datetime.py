@@ -115,7 +115,6 @@ class TestInit:
             OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
         )
 
-
 def test_immutable():
     d = OffsetDateTime(2020, 8, 15, offset=minutes(5))
     with pytest.raises(AttributeError):
@@ -123,7 +122,6 @@ def test_immutable():
 
 
 class TestFormatIso:
-
     @pytest.mark.parametrize(
         "d, expected",
         [
@@ -285,6 +283,9 @@ INVALID_ISO_STRINGS = [
     # unsupported ISO features (weekdays, ordinal dates)
     "2020-W08-1T23:12:09-01",
     "2020-123T23:12:09-01",
+    # invalid seconds (61 and above should be rejected)
+    "2020-08-15T12:34:61+00:00",
+    "2020-08-15T12:34:99+00:00",
 ]
 
 VALID_ISO_STRINGS = [
@@ -375,6 +376,41 @@ VALID_ISO_STRINGS = [
             2020, 8, 15, 12, 0, 12, nanosecond=311_200_000, offset=minutes(-30)
         ),
     ),
+    # Leap second (60) should be parsed and normalized to 59
+    (
+        "2020-08-15T05:12:60+05:00",
+        OffsetDateTime(2020, 8, 15, 5, 12, 59, offset=5),
+    ),
+    (
+        "2020-08-15T05:12:60.123456+05:00",
+        OffsetDateTime(
+            2020, 8, 15, 5, 12, 59, nanosecond=123_456_000, offset=5
+        ),
+    ),
+    # Leap second with basic format
+    (
+        "20200815T051260+0500",
+        OffsetDateTime(2020, 8, 15, 5, 12, 59, offset=5),
+    ),
+    # Leap second with negative offset
+    (
+        "2020-08-15T23:59:60-08:00",
+        OffsetDateTime(2020, 8, 15, 23, 59, 59, offset=-8),
+    ),
+    # Leap second with fractional seconds and various offsets
+    (
+        "2020-08-15T12:34:60.5+00:00",
+        OffsetDateTime(
+            2020, 8, 15, 12, 34, 59, nanosecond=500_000_000, offset=0
+        ),
+    ),
+    # Leap second with comma as decimal separator
+    (
+        "2020-08-15T12:34:60,5+00:00",
+        OffsetDateTime(
+            2020, 8, 15, 12, 34, 59, nanosecond=500_000_000, offset=0
+        ),
+    ),
 ]
 
 
@@ -382,6 +418,11 @@ class TestParseIso:
     @pytest.mark.parametrize("s, expect", VALID_ISO_STRINGS)
     def test_valid(self, s, expect):
         assert OffsetDateTime.parse_iso(s).exact_eq(expect)
+
+    def test_direct_construction_rejects_leap_second(self):
+        # Direct construction should still reject 60
+        with pytest.raises(ValueError):
+            OffsetDateTime(2020, 8, 15, 5, 12, 60, offset=5)
 
     @pytest.mark.parametrize("s", INVALID_ISO_STRINGS)
     def test_invalid(self, s):
@@ -1530,6 +1571,11 @@ VALID_RFC2822 = [
         "5 Aug 20 23:12 UT",
         OffsetDateTime(2020, 8, 5, 23, 12, offset=0),
     ),
+    # Leap second normalization (60 -> 59)
+    (
+        "Sat, 31 Dec 2016 23:59:60 +0000",
+        OffsetDateTime(2016, 12, 31, 23, 59, 59, offset=0),
+    ),
 ]
 
 INVALID_RFC2822 = [
@@ -1605,6 +1651,8 @@ INVALID_RFC2822 = [
     "Sat, 1 Jan 1989 23:23:01 +03 00",
     "Sat, 1 Jan 1989 23:23:01 +0300 ,",
     "Sat, 1 Jan 1989 23:23:01 +0300 MST",
+    # leap second out of range
+    "Sat, 31 Dec 2016 23:59:61 +0000"
 ]
 
 

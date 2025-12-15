@@ -5886,6 +5886,9 @@ if _PY311:
         if s.count(":") > 2:
             raise ValueError()
         if all(map("0123456789:".__contains__, s)):
+            # Normalize leap seconds (60) to 59
+            if s.endswith("60"):
+                s = s[:-2] + "59"
             return _time.fromisoformat(s)
         raise ValueError()
 
@@ -5909,8 +5912,14 @@ else:  # pragma: no cover
         if len(s) == 4:
             s = s[:2] + ":" + s[2:]
         elif len(s) == 6:
+            # Normalize leap seconds (60) to 59 in basic format
+            if s.endswith("60"):
+                s = s[:4] + "59"
             s = s[:2] + ":" + s[2:4] + ":" + s[4:]
         if all(map("0123456789:".__contains__, s)):
+            # Normalize leap seconds (60) to 59 in extended format
+            if s.endswith(":60"):
+                s = s[:-2] + "59"
             return _time.fromisoformat(s)
         raise ValueError()
 
@@ -6035,12 +6044,14 @@ def _parse_rfc2822(s: str) -> _datetime:
         # time components may be separated by whitespace
         *time_parts, offset_raw = parts
         time_raw = "".join(time_parts)
+        # Normalize leap seconds (60) to 59
         if len(time_raw) == 5 and time_raw[2] == ":":
             time = _time(int(time_raw[:2]), int(time_raw[3:]))
         elif len(time_raw) == 8 and time_raw[2] == ":" and time_raw[5] == ":":
-            time = _time(
-                int(time_raw[:2]), int(time_raw[3:5]), int(time_raw[6:])
-            )
+            seconds = int(time_raw[6:])
+            if seconds == 60:
+                seconds = 59
+            time = _time(int(time_raw[:2]), int(time_raw[3:5]), seconds)
         else:
             _parse_err(s)
     except ValueError:
