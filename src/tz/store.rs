@@ -1,6 +1,6 @@
 use crate::{
     py::*,
-    tz::sync::{AtomicRefCount, SyncCell, SyncRwLock},
+    tz::sync::{AtomicRefCount, SwapCell, SwapPtr, SyncCell},
     tz::tzif::{TimeZone, is_valid_key},
 };
 use ahash::AHashMap;
@@ -21,6 +21,7 @@ pub(crate) struct TzPtr {
     inner: NonNull<Inner>,
 }
 
+#[derive(Debug)]
 struct Inner {
     value: TimeZone,
     refcnt: AtomicRefCount,
@@ -382,10 +383,11 @@ pub(crate) struct TzStore {
     // The path to the `tzdata` Python package contents, if any.
     tzdata_path: Option<PathBuf>,
     // The paths to search for zoneinfo files. Patchable during runtime.
-    paths: SyncRwLock<Vec<PathBuf>>,
+    paths: SwapCell<Vec<PathBuf>>,
     // We cache the system timezone here, since it's expensive to determine.
-    // The pointer represents a strong reference to a timezone.
-    system_tz_cache: SyncRwLock<Option<TzPtr>>,
+    // Uses SwapPtr for lock-free reads with atomic swaps for writes.
+    // This holds a strong reference to a TzPtr.
+    system_tz_cache: SwapPtr<Inner>,
     // This reference is borrowed from the module, which outlives this store.
     exc_notfound: PyObj,
 }
@@ -397,15 +399,15 @@ impl TzStore {
             tzdata_path: get_tzdata_path()?,
             // Empty. The actual search paths are patched in at module import
             // because this is determined in Python code.
-            paths: SyncRwLock::new(Vec::with_capacity(4)),
-            system_tz_cache: SyncRwLock::new(None),
+            paths: SwapCell::new(Vec::with_capacity(4)),
+            system_tz_cache: SwapPtr::new(None),
             exc_notfound,
         })
     }
 
     /// Set the timezone search paths.
     pub(crate) fn set_paths(&self, new_paths: Vec<PathBuf>) {
-        self.paths.with_write(|paths| *paths = new_paths);
+        self.paths.swap(new_paths);
     }
 
     /// Fetches the timezone definition for the given IANA time zone ID.
@@ -431,43 +433,28 @@ impl TzStore {
 
     /// Retrieve the system timezone definition (cached for repeat calls).
     pub(crate) fn get_system_tz(&self) -> PyResult<TzHandle<'_>> {
-        // Fast path: check if already cached (read lock)
-        let cached = self.system_tz_cache.with_read(|cache| {
-            cache.inspect(|p| {
-                p.incref();
-            })
-        });
-
-        if let Some(ptr) = cached {
-            return Ok(TzHandle::Ptr(ptr, self));
-        }
-
-        // Slow path: need to determine and cache (write lock)
-        let ptr = self.system_tz_cache.with_write(|cache| {
-            // Double-check: another thread may have set it
-            if let Some(p) = *cache {
-                p.incref();
-                return Ok(p);
+        // Fast path: check cache (lock-free read)
+        if let Some(inner) = self.system_tz_cache.load() {
+            let ptr = TzPtr { inner };
+            if ptr.try_incref() {
+                return Ok(TzHandle::Ptr(ptr, self));
             }
-            let p = self.determine_system_tz()?;
-            p.incref(); // An extra ref for the cache
-            *cache = Some(p);
-            Ok(p)
-        })?;
-        Ok(TzHandle::Ptr(ptr, self))
+            // Refcount was 0 - being freed, fall through to slow path
+        }
+        self.reset_system_tz()
     }
 
     /// Reset the cached system timezone.
-    pub(crate) fn reset_system_tz(&self) -> PyResult<()> {
-        // Determine new tz outside the lock (may do I/O)
+    pub(crate) fn reset_system_tz(&self) -> PyResult<TzHandle<'_>> {
+        // Determine new tz (does I/O)
         let new_ptr = self.determine_system_tz()?;
-        self.system_tz_cache.with_write(|cache| {
-            if let Some(old) = cache.take() {
-                old.decref_with_cleanup(|| self);
-            }
-            *cache = Some(new_ptr);
-        });
-        Ok(())
+        new_ptr.incref(); // Extra ref for system_tz_cache
+
+        // Atomically swap
+        if let Some(old_inner) = self.system_tz_cache.swap(Some(new_ptr.inner)) {
+            TzPtr { inner: old_inner }.decref_with_cleanup(|| self);
+        }
+        Ok(TzHandle::Ptr(new_ptr, self))
     }
 
     /// Clear the entire cache, dropping all entries.
@@ -578,11 +565,10 @@ impl TzStore {
 impl Drop for TzStore {
     fn drop(&mut self) {
         // Clear the system timezone cache
-        self.system_tz_cache.with_write(|cache| {
-            if let Some(ptr) = cache.take() {
-                ptr.decref_with_cleanup(|| self);
-            }
-        });
+        if let Some(inner) = self.system_tz_cache.swap(None) {
+            let ptr = TzPtr { inner };
+            ptr.decref_with_cleanup(|| self);
+        }
         // The rest of the fields will be dropped automatically
     }
 }

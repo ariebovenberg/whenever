@@ -3,9 +3,11 @@
 //!
 //! - `SyncCell<T>`: A mutex-like wrapper. Uses `UnsafeCell` for GIL builds (no overhead),
 //!   `Mutex` for free-threaded builds.
-//! - `SyncRwLock<T>`: A read-write lock wrapper. Uses `UnsafeCell` for GIL builds,
-//!   `RwLock` for free-threaded builds. Useful for data that is read frequently
-//!   but written rarely.
+//! - `SwapCell<T>`: A cell optimized for read-heavy workloads with rare writes.
+//!   Uses `UnsafeCell` for GIL builds, `AtomicPtr` for free-threaded builds.
+//!   Reads are lock-free; writes atomically swap the entire value.
+//! - `SwapPtr<T>`: Like `SwapCell` but for `Option<NonNull<T>>` specifically,
+//!   avoiding the extra Box indirection since it's already pointer-sized.
 //! - `AtomicRefCount`: A reference counter. Uses plain `usize` for GIL builds,
 //!   `AtomicUsize` for free-threaded builds.
 
@@ -16,6 +18,7 @@
 #[cfg(not(Py_GIL_DISABLED))]
 mod gil_enabled {
     use std::cell::UnsafeCell;
+    use std::ptr::NonNull;
 
     /// A cell that provides interior mutability without synchronization.
     /// Safe only when the GIL guarantees single-threaded access.
@@ -38,36 +41,65 @@ mod gil_enabled {
     // SAFETY: With GIL enabled, Python ensures single-threaded access
     unsafe impl<T> Sync for SyncCell<T> {}
 
-    /// A read-write "lock" that provides interior mutability without synchronization.
-    /// Safe only when the GIL guarantees single-threaded access.
+    /// A cell optimized for read-heavy, write-rare access patterns.
+    /// In GIL builds, this is just an UnsafeCell with no overhead.
     #[derive(Debug)]
-    pub(crate) struct SyncRwLock<T>(UnsafeCell<T>);
+    pub(crate) struct SwapCell<T>(UnsafeCell<T>);
 
-    impl<T> SyncRwLock<T> {
+    impl<T> SwapCell<T> {
         pub(crate) fn new(value: T) -> Self {
             Self(UnsafeCell::new(value))
         }
 
-        /// Access the inner value immutably (no actual locking with GIL).
+        /// Read the value. Lock-free (no-op with GIL).
         #[inline]
         pub(crate) fn with_read<R, F: FnOnce(&T) -> R>(&self, f: F) -> R {
             // SAFETY: GIL guarantees single-threaded access
             f(unsafe { &*self.0.get() })
         }
 
-        /// Access the inner value mutably (no actual locking with GIL).
+        /// Replace the value, returning the old one.
         #[inline]
-        pub(crate) fn with_write<R, F: FnOnce(&mut T) -> R>(&self, f: F) -> R {
+        pub(crate) fn swap(&self, new: T) -> T {
             // SAFETY: GIL guarantees single-threaded access
-            f(unsafe { &mut *self.0.get() })
+            std::mem::replace(unsafe { &mut *self.0.get() }, new)
         }
     }
 
     // SAFETY: With GIL enabled, Python ensures single-threaded access
-    unsafe impl<T> Sync for SyncRwLock<T> {}
+    unsafe impl<T> Sync for SwapCell<T> {}
+
+    /// A cell for `Option<NonNull<T>>` optimized for read-heavy, write-rare patterns.
+    /// In GIL builds, this is just an UnsafeCell with no overhead.
+    #[derive(Debug)]
+    pub(crate) struct SwapPtr<T>(UnsafeCell<Option<NonNull<T>>>);
+
+    impl<T> SwapPtr<T> {
+        pub(crate) fn new(value: Option<NonNull<T>>) -> Self {
+            Self(UnsafeCell::new(value))
+        }
+
+        /// Read the pointer. Lock-free (no-op with GIL).
+        #[inline]
+        pub(crate) fn load(&self) -> Option<NonNull<T>> {
+            // SAFETY: GIL guarantees single-threaded access
+            unsafe { *self.0.get() }
+        }
+
+        /// Replace the pointer, returning the old one.
+        #[inline]
+        pub(crate) fn swap(&self, new: Option<NonNull<T>>) -> Option<NonNull<T>> {
+            // SAFETY: GIL guarantees single-threaded access
+            std::mem::replace(unsafe { &mut *self.0.get() }, new)
+        }
+    }
+
+    // SAFETY: With GIL enabled, Python ensures single-threaded access
+    unsafe impl<T> Sync for SwapPtr<T> {}
 
     /// A reference counter without atomic operations.
     /// Safe only when the GIL guarantees single-threaded access.
+    #[derive(Debug)]
     pub(crate) struct AtomicRefCount(UnsafeCell<usize>);
 
     impl AtomicRefCount {
@@ -117,9 +149,10 @@ mod gil_enabled {
 
 #[cfg(Py_GIL_DISABLED)]
 mod free_threaded {
+    use std::ptr::NonNull;
     use std::sync::{
-        Mutex, RwLock,
-        atomic::{AtomicUsize, Ordering},
+        Mutex,
+        atomic::{AtomicPtr, AtomicUsize, Ordering},
     };
 
     /// A cell that provides interior mutability with mutex synchronization.
@@ -139,31 +172,73 @@ mod free_threaded {
         }
     }
 
-    /// A read-write lock that provides interior mutability with RwLock synchronization.
+    /// A cell optimized for read-heavy, write-rare access patterns.
+    /// Uses AtomicPtr for lock-free reads and atomic swaps for writes.
     #[derive(Debug)]
-    pub(crate) struct SyncRwLock<T>(RwLock<T>);
+    pub(crate) struct SwapCell<T>(AtomicPtr<T>);
 
-    impl<T> SyncRwLock<T> {
+    impl<T> SwapCell<T> {
         pub(crate) fn new(value: T) -> Self {
-            Self(RwLock::new(value))
+            Self(AtomicPtr::new(Box::into_raw(Box::new(value))))
         }
 
-        /// Access the inner value immutably under a read lock.
+        /// Read the value. Lock-free.
         #[inline]
         pub(crate) fn with_read<R, F: FnOnce(&T) -> R>(&self, f: F) -> R {
-            let guard = self.0.read().expect("rwlock poisoned");
-            f(&guard)
+            let ptr = self.0.load(Ordering::Acquire);
+            // SAFETY: ptr is always valid - we only store valid Box pointers,
+            // and swap always replaces with another valid pointer.
+            f(unsafe { &*ptr })
         }
 
-        /// Access the inner value mutably under a write lock.
+        /// Replace the value, returning the old one.
         #[inline]
-        pub(crate) fn with_write<R, F: FnOnce(&mut T) -> R>(&self, f: F) -> R {
-            let mut guard = self.0.write().expect("rwlock poisoned");
-            f(&mut guard)
+        pub(crate) fn swap(&self, new: T) -> T {
+            let new_ptr = Box::into_raw(Box::new(new));
+            let old_ptr = self.0.swap(new_ptr, Ordering::AcqRel);
+            // SAFETY: old_ptr was created by Box::into_raw
+            *unsafe { Box::from_raw(old_ptr) }
+        }
+    }
+
+    impl<T> Drop for SwapCell<T> {
+        fn drop(&mut self) {
+            let ptr = *self.0.get_mut();
+            if !ptr.is_null() {
+                // SAFETY: ptr was created by Box::into_raw
+                drop(unsafe { Box::from_raw(ptr) });
+            }
+        }
+    }
+
+    /// A cell for `Option<NonNull<T>>` optimized for read-heavy, write-rare patterns.
+    /// Uses AtomicPtr directly since Option<NonNull<T>> is pointer-sized.
+    /// No Box indirection needed.
+    #[derive(Debug)]
+    pub(crate) struct SwapPtr<T>(AtomicPtr<T>);
+
+    impl<T> SwapPtr<T> {
+        pub(crate) fn new(value: Option<NonNull<T>>) -> Self {
+            let ptr = value.map_or(std::ptr::null_mut(), |p| p.as_ptr());
+            Self(AtomicPtr::new(ptr))
+        }
+
+        /// Read the pointer. Lock-free.
+        #[inline]
+        pub(crate) fn load(&self) -> Option<NonNull<T>> {
+            NonNull::new(self.0.load(Ordering::Acquire))
+        }
+
+        /// Replace the pointer, returning the old one.
+        #[inline]
+        pub(crate) fn swap(&self, new: Option<NonNull<T>>) -> Option<NonNull<T>> {
+            let new_ptr = new.map_or(std::ptr::null_mut(), |p| p.as_ptr());
+            NonNull::new(self.0.swap(new_ptr, Ordering::AcqRel))
         }
     }
 
     /// A reference counter with atomic operations.
+    #[derive(Debug)]
     pub(crate) struct AtomicRefCount(AtomicUsize);
 
     impl AtomicRefCount {

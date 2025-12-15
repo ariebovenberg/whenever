@@ -6,7 +6,6 @@ Note this isn't a unit test, because it relies on a clean cache
 
 import sys
 import time
-from itertools import cycle, islice
 from os import environ
 from threading import Thread
 
@@ -20,7 +19,7 @@ if not hasattr(sys, "_is_gil_enabled") or sys._is_gil_enabled():
 
 PLAIN_DT = PlainDateTime(2024, 6, 15, 12, 0)
 NUM_THREADS = 16
-NUM_ITERATIONS = 10_000
+NUM_ITERATIONS = 500
 TIMEZONE_SAMPLE = [
     "UTC",
     "America/Guyana",
@@ -54,6 +53,7 @@ def touch_timezones(tzs):
     """A minimal function that triggers a timezone lookup"""
     for tz in tzs:
         zdt = PLAIN_DT.assume_tz(tz)
+        # zdt = ZoneInfo(tz)
         del zdt
 
 
