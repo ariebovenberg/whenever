@@ -2823,7 +2823,7 @@ class _LocalTime(_BasicConversions, ABC):
         """
         return Time._from_py_unchecked(self._py_dt.time(), self._nanos)
 
-    # We document these methods as abtract,
+    # We document these methods as abstract,
     # but they are actually implemented slightly different per subclass
     if not TYPE_CHECKING:  # pragma: no cover
 
@@ -4395,7 +4395,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         Important
         ---------
         The timezone ID is a recent extension to the ISO 8601 format (RFC 9557).
-        Althought it is gaining popularity, it is not yet widely supported
+        Although it is gaining popularity, it is not yet widely supported
         by ISO 8601 parsers.
         """
         if tz == "always":
@@ -4433,7 +4433,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         Important
         ---------
         The timezone ID is a recent extension to the ISO 8601 format (RFC 9557).
-        Althought it is gaining popularity, it is not yet widely supported.
+        Although it is gaining popularity, it is not yet widely supported.
         """
         return cls._from_py_unchecked(*_zdt_from_iso(s))
 
@@ -6359,7 +6359,7 @@ def _validate_key(key: str) -> _BenignKey:
         and ".." not in key
         and "//" not in key
         and "/./" not in key
-        # specic restrictions on the first and list characters
+        # specific restrictions on the first and list characters
         and key[0] not in ".-+/"
         and key[-1] != "/"
     ):

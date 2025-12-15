@@ -106,7 +106,7 @@ be converted to a :class:`~whenever.ZonedDateTime`.
 Converting from a :class:`~whenever.PlainDateTime`, however,
 may be ambiguous,
 because changes to the offset can result in local times
-occuring twice or not at all.
+occurring twice or not at all.
 
 >>> # Instant->Zoned is always straightforward
 >>> livestream_starts.to_tz("America/New_York")

@@ -325,7 +325,7 @@ impl fmt::Display for ErrorCause {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ErrorCause::Header => write!(f, "Invalid header value"),
-            ErrorCause::Body => write!(f, "Invalid or currupted data"),
+            ErrorCause::Body => write!(f, "Invalid or corrupted data"),
             ErrorCause::TzString => write!(f, "Invalid POSIX TZ string"),
         }
     }
@@ -446,7 +446,7 @@ mod tests {
         assert_eq!(bisect(arr, EpochSecs::new(4).unwrap()), Some(1));
         assert_eq!(bisect(arr, EpochSecs::new(5).unwrap()), Some(1));
 
-        // emtpy case
+        // empty case
         assert_eq!(bisect::<i64>(&[], EpochSecs::new(25).unwrap()), None);
     }
 

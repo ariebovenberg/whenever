@@ -1378,7 +1378,7 @@ ZonedDateTime(\"2020-08-15 23:12:00+01:00[Europe/London]\")
 Important
 ---------
 The timezone ID is a recent extension to the ISO 8601 format (RFC 9557).
-Althought it is gaining popularity, it is not yet widely supported
+Although it is gaining popularity, it is not yet widely supported
 by ISO 8601 parsers.
 ";
 pub(crate) const ZONEDDATETIME_FROM_PY_DATETIME: &CStr = c"\
@@ -1461,7 +1461,7 @@ ZonedDateTime(\"2020-08-15 23:12:00+01:00[Europe/London]\")
 Important
 ---------
 The timezone ID is a recent extension to the ISO 8601 format (RFC 9557).
-Althought it is gaining popularity, it is not yet widely supported.
+Although it is gaining popularity, it is not yet widely supported.
 ";
 pub(crate) const ZONEDDATETIME_REPLACE: &CStr = c"\
 replace($self, /, *, year=None, month=None, weeks=0, day=None, hour=None, minute=None, second=None, nanosecond=None, tz=None, disambiguate)

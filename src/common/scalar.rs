@@ -100,7 +100,7 @@ impl fmt::Chunk for OffsetFormat {
     fn len(&self) -> usize {
         // Always at least +hhmm
         5
-        // First seperator adds 1
+        // First separator adds 1
         + !self.basic as usize
         // Seconds part is optional and adds 2
         + if self.secs == 0 { 0 } else { 2
