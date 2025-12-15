@@ -60,7 +60,7 @@ impl Unit {
         str_hour: PyObj,
         str_day: PyObj,
     ) -> PyResult<Unit> {
-        // OPTIMIZE: run the comparisons in order if likelyhood
+        // OPTIMIZE: run the comparisons in order if likelihood
         match_interned_str("unit", s, |v, eq| {
             Some(if eq(v, str_nanosecond) {
                 Unit::Nanosecond

@@ -260,7 +260,7 @@ impl Cache {
                 lru.push_front(tz);
             }
             None => {
-                tz.incref(); // LRU needs a strong refence
+                tz.incref(); // LRU needs a strong reference
                 Self::new_to_lru(tz, lru, lookup);
             }
         }

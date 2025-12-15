@@ -728,7 +728,7 @@ possible into this release, to avoid having to do them in the future.
 **Added**
 
 - Support comparison between all aware datetimes
-- upport subtraction between all aware datetimes
+- support subtraction between all aware datetimes
 - Convenience methods for converting between aware/naive
 - More robust handling of zoned/local edge cases
 

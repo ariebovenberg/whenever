@@ -62,7 +62,7 @@ Each option had its pros and cons.
 - Why not ``CivilDateTime``? This is the most "technically correct" name,
   as it refers to the `time as used in civilian life <https://en.wikipedia.org/wiki/Civil_time>`_.
   This name is most notably used in Jiff (Rust) and Abseil (C++) libraries.
-  While this niche name is a boon to these langauges,
+  While this niche name is a boon to these languages,
   Python tends to favor more common, non-jargon names:
   "dict" over "hashmap", "list" over "array", etc.
 - Why not ``LocalDateTime``? This is the name that ISO8601 gives to the concept,
