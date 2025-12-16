@@ -138,7 +138,6 @@ _MAX_DELTA_MONTHS = 9999 * 12
 _MAX_DELTA_DAYS = 9999 * 366
 _MAX_DELTA_NANOS = _MAX_DELTA_DAYS * 24 * 3_600_000_000_000
 _UNSET = object()
-_PY311 = sys.version_info >= (3, 11)
 _NOGIL = hasattr(sys, "_is_gil_enabled") and not sys._is_gil_enabled()
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
@@ -5820,7 +5819,7 @@ def _time_offset_tz_from_iso(
     # ditch the bracketted timezone (if present)
     if s.endswith("]"):
         # NOTE: sorry for the unicode escape sequences. Literal brackets
-        # break my LSP's indentation detection. \x5b is open bracket ']'
+        # break my LSP's indentation detection. \x5b is open bracket '['
         s, tz_raw = s[:-1].rsplit("\x5b", 1)
         tz = _validate_key(tz_raw)
     else:
@@ -5877,7 +5876,7 @@ def _monthday_from_iso(s: str) -> _date:
 
 # The ISO parsing functions were improved in Python 3.11,
 # so we use them if available.
-if _PY311:
+if sys.version_info >= (3, 11):
 
     __date_from_iso_basic = _date.fromisoformat
 
@@ -6305,17 +6304,19 @@ def _unpatch_time() -> None:
 
 _TZPATH: tuple[str, ...] = ()
 
-# Our cache for loaded tz files. The design is based off zoneinfo.
-# Why roll our own? To ensure it works independently of zoneinfo,
-# and thus works identically to the Rust extension.
+# Our cache for loaded tz files. The design is based off that of `zoneinfo`.
 _TZCACHE_LRU_SIZE = 8
 _tzcache_lru: OrderedDict[str, TimeZone] = OrderedDict()
 _tzcache_lookup: WeakValueDictionary[str, TimeZone] = WeakValueDictionary()
-if TYPE_CHECKING or _NOGIL:
+
+# OrderedDict is thread-unsafe in Python < 3.14 under free-threading.
+# Thus we need an extra lock to ensure thread-safety of our LRU cache.
+if TYPE_CHECKING or (
+    _NOGIL and sys.version_info < (3, 14)
+):  # pragma: no cover
     from threading import Lock as _Lock
 else:
 
-    # When the GIL is enabled, we don't need a real lock.
     class _Lock:
         def __enter__(self) -> None:
             pass
@@ -6324,8 +6325,6 @@ else:
             pass
 
 
-# While the lookup cache (WeakValueDictionary) is thread-safe for individual
-# operations, we need to lock around the LRU (OrderedDict), which is not.
 _tzcache_lru_lock = _Lock()
 
 
@@ -6452,7 +6451,7 @@ def _system_tz() -> TimeZone:
     #   since it's a `dict`. This guarantee may change in the future, but for now
     #   it's safe enough. See docs.python.org/3/howto/free-threading-python.html#thread-safety
     if _CACHED_SYSTEM_TZ is None:
-        _CACHED_SYSTEM_TZ = _get_system_tz()
+        _CACHED_SYSTEM_TZ = _get_system_tz()  # pragma: no cover
     return _CACHED_SYSTEM_TZ
 
 
