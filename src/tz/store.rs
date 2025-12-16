@@ -18,23 +18,20 @@ use std::{
 /// meant to be used in a single-threaded context, it's safe to share and copy
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) struct TzPtr {
-    inner: NonNull<Inner>,
+    inner: NonNull<TzRefCounted>,
 }
 
 #[derive(Debug)]
-struct Inner {
+struct TzRefCounted {
     value: TimeZone,
     refcnt: AtomicRefCount,
 }
 
 impl TzPtr {
     /// Creates a new instance with specified refcount.
-    fn new(value: TimeZone) -> Self {
-        let inner = Box::new(Inner {
-            // We start with refcount of 2:
-            // - one to share outside of the tzstore
-            // - one to keep the pointer alive in the LRU
-            refcnt: AtomicRefCount::new(2),
+    fn new(value: TimeZone, refcount: usize) -> Self {
+        let inner = Box::new(TzRefCounted {
+            refcnt: AtomicRefCount::new(refcount),
             value,
         });
         Self {
@@ -210,7 +207,10 @@ impl Cache {
         }
 
         // Cache miss: load outside the lock (may do file I/O)
-        let loaded = TzPtr::new(load()?);
+        // We start with refcount of 2:
+        // - one to return to the caller
+        // - one to keep the pointer alive in the LRU
+        let loaded = TzPtr::new(load()?, 2);
 
         // Re-acquire lock to insert. Another thread may have loaded the same key.
         self.inner.with_mut(|CacheInner { lookup, lru }| {
@@ -333,6 +333,10 @@ impl Drop for Cache {
             // the only strong references are in the LRU.
             let mut lru = std::mem::take(lru);
             for tz in lru.drain(..) {
+                debug_assert!(
+                    tz.ref_count() == 1,
+                    "Dropping cache with strong references still present"
+                );
                 Self::decref(tz, || {
                     // Remove the weak reference too
                     lookup.remove(tz.key.as_ref().expect("LRU entries always have a key"));
@@ -387,7 +391,7 @@ pub(crate) struct TzStore {
     // We cache the system timezone here, since it's expensive to determine.
     // Uses SwapPtr for lock-free reads with atomic swaps for writes.
     // This holds a strong reference to a TzPtr.
-    system_tz_cache: SwapPtr<Inner>,
+    system_tz_cache: SwapPtr<TzRefCounted>,
     // This reference is borrowed from the module, which outlives this store.
     exc_notfound: PyObj,
 }
@@ -503,7 +507,7 @@ impl TzStore {
     }
 
     /// Get a pointer to what is currently considered the system timezone.
-    /// The pointer is already a strong reference.
+    /// The pointer represents a strong reference.
     fn determine_system_tz(&self) -> PyResult<TzPtr> {
         const ERR_MSG: &str = "get_tz() gave unexpected result";
         let tz_tuple = import(c"whenever._tz.system")?
@@ -540,7 +544,7 @@ impl TzStore {
                     .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
                         format!("No time zone found at path {path:?}")
                     })?;
-                Ok(TzPtr::new(tzif))
+                Ok(TzPtr::new(tzif, 1))
             }
             // type 2: zoneinfo key OR posix TZ string (we're unsure which)
             2 => {
@@ -548,7 +552,7 @@ impl TzStore {
                     // Try to load it as a zoneinfo key first.
                     .get_or_insert_with(tz_value, || self.load_tzif(tz_value))
                     // If this fails, try to parse it as a posix TZ string.
-                    .or_else(|| TimeZone::parse_posix(tz_value).map(TzPtr::new))
+                    .or_else(|| TimeZone::parse_posix(tz_value).map(|tz| TzPtr::new(tz, 1)))
                     .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
                         format!("No time zone found with key or posix TZ string {tz_value}")
                     })
@@ -567,6 +571,20 @@ impl Drop for TzStore {
         // Clear the system timezone cache
         if let Some(inner) = self.system_tz_cache.swap(None) {
             let ptr = TzPtr { inner };
+            // When dropping, ensure the refcount is what we expect.
+            #[cfg(debug_assertions)]
+            {
+                let mut expect_refcnt = 1; // only held by system_tz_cache
+                self.cache.inner.with_mut(|CacheInner { lru, .. }| {
+                    if lru.contains(&ptr) {
+                        expect_refcnt += 1; // also held by LRU
+                    }
+                });
+                assert!(
+                    ptr.ref_count() == expect_refcnt,
+                    "Dangling references to system timezone on TzStore drop"
+                );
+            }
             ptr.decref_with_cleanup(|| self);
         }
         // The rest of the fields will be dropped automatically
