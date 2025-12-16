@@ -204,10 +204,8 @@ mod free_threaded {
     impl<T> Drop for SwapCell<T> {
         fn drop(&mut self) {
             let ptr = *self.0.get_mut();
-            if !ptr.is_null() {
-                // SAFETY: ptr was created by Box::into_raw
-                drop(unsafe { Box::from_raw(ptr) });
-            }
+            // SAFETY: ptr was created by Box::into_raw
+            drop(unsafe { Box::from_raw(ptr) });
         }
     }
 

@@ -6359,7 +6359,10 @@ def _get_tz(key: str) -> TimeZone:
     with _tzcache_lru_lock:
         _tzcache_lru[key] = _tzcache_lru.pop(key, instance)
         if len(_tzcache_lru) > _TZCACHE_LRU_SIZE:
-            _tzcache_lru.popitem(last=False)
+            try:
+                _tzcache_lru.popitem(last=False)
+            except KeyError:  # pragma: no cover
+                pass  # theoretically possible if other threads are clearing too
 
     return instance
 

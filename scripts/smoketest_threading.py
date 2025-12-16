@@ -53,7 +53,6 @@ def touch_timezones(tzs):
     """A minimal function that triggers a timezone lookup"""
     for tz in tzs:
         zdt = PLAIN_DT.assume_tz(tz)
-        # zdt = ZoneInfo(tz)
         del zdt
 
 
