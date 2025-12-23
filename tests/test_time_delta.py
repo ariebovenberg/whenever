@@ -10,6 +10,7 @@ from whenever import (
     DateDelta,
     PlainDateTime,
     TimeDelta,
+    VerbatimDelta,
     hours,
     microseconds,
     milliseconds,
@@ -425,8 +426,14 @@ class TestParseIso:
     @pytest.mark.parametrize(
         "s",
         [
-            f"PT{10_000 * 366 * 24}H",  # too big value
-            f"PT{10_000 * 366 * 24 * 3600}S",  # too big value
+            "PT90000000H",
+            "-PT90000000H",
+            "PT5500000000M",
+            "-PT5500000000M",
+            "PT400000000000.00S",
+            "-PT400000000000.00S",
+            f"PT{10_000 * 366 * 24}H",
+            f"PT{10_000 * 366 * 24 * 3600}S",
         ],
     )
     def test_too_large(self, s) -> None:
@@ -909,6 +916,44 @@ def test_abs():
         TimeDelta(hours=-1, minutes=-2, seconds=-3, microseconds=-4)
     ) == TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
     assert abs(TimeDelta(hours=1)) == TimeDelta(hours=1)
+
+
+class TestItemize:
+
+    @pytest.mark.parametrize(
+        "delta, kwargs, expected",
+        [
+            (
+                TimeDelta(minutes=90),
+                {"units": ("hours", "minutes", "seconds")},
+                VerbatimDelta(hours=1, minutes=30, seconds=0),
+            ),
+            (
+                TimeDelta(),
+                {
+                    "units": (
+                        "minutes",
+                        "seconds",
+                    )
+                },
+                VerbatimDelta(minutes=0, seconds=0),
+            ),
+            (
+                TimeDelta(hours=3, minutes=1),
+                {"units": ("minutes", "seconds")},
+                VerbatimDelta(minutes=181, seconds=0),
+            ),
+            (
+                TimeDelta(
+                    hours=-1, minutes=-30, seconds=-15, microseconds=-500
+                ),
+                {"units": ("minutes", "seconds", "nanoseconds")},
+                VerbatimDelta(minutes=-90, seconds=-15, nanoseconds=-500_000),
+            ),
+        ],
+    )
+    def test_itemize(self, delta, kwargs, expected):
+        assert delta.itemize(**kwargs) == expected
 
 
 def test_copy():

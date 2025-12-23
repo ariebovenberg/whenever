@@ -1721,8 +1721,8 @@ fn nanosecond(_: PyType, slf: ZonedDateTime) -> PyReturn {
 }
 
 fn tz(_: PyType, slf: ZonedDateTime) -> PyReturn {
-    match slf.tz.key.as_ref() {
-        Some(key) => key.as_str().to_py(),
+    match slf.tz.key.as_deref() {
+        Some(key) => key.to_py(),
         None => Ok(none()),
     }
 }
