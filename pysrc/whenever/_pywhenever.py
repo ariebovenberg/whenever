@@ -89,6 +89,7 @@ __all__ = [
     "DateDelta",
     "TimeDelta",
     "DateTimeDelta",
+    "VerbatimDelta",
     "years",
     "months",
     "weeks",
@@ -134,13 +135,20 @@ class Weekday(enum.Enum):
 # Helpers that pre-compute/lookup as much as possible
 _UTC = _timezone.utc
 _object_new = object.__new__
+_MAX_DELTA_YEARS = 9999
 _MAX_DELTA_MONTHS = 9999 * 12
+_MAX_DELTA_WEEKS = 9999 * 53
 _MAX_DELTA_DAYS = 9999 * 366
-_MAX_DELTA_NANOS = _MAX_DELTA_DAYS * 24 * 3_600_000_000_000
+_MAX_DELTA_HOURS = _MAX_DELTA_DAYS * 24
+_MAX_DELTA_MINUTES = _MAX_DELTA_HOURS * 60
+_MAX_DELTA_SECONDS = _MAX_DELTA_MINUTES * 60
+_MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * 1_000_000_000
+_MAX_SUBSEC_NANOS = 999_999_999
 _UNSET = object()
 _NOGIL = hasattr(sys, "_is_gil_enabled") and not sys._is_gil_enabled()
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
+_RoundMode = Literal["ceil", "floor", "half_ceil", "half_floor", "half_even"]
 
 # Metaclass ugh...it proved the most lightway way to achieve this:
 # allowing the constructors of many classes to take an ISO string as well as the
@@ -1144,9 +1152,7 @@ class Time(_Base):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "half_even",
+        mode: _RoundMode = "half_even",
     ) -> Time:
         """Round the time to the specified unit and increment.
         Various rounding modes are available.
@@ -1457,6 +1463,44 @@ class TimeDelta(_Base):
             else (-hours, -mins, -secs, -ns)
         )
 
+    def itemize(
+        self,
+        *,
+        units: tuple[str, ...],
+        round_mode: _RoundMode = "half_even",
+        round_increment: int = 1,
+    ) -> VerbatimDelta:
+        """Convert to a :class:`VerbatimDelta` with the specified units
+
+        Example
+        -------
+        >>> d = TimeDelta(hours=1, minutes=90, seconds=30)
+        >>> d.itemize(['hours', 'minutes', 'seconds'])
+        VerbatimDelta(hours=2, minutes=30, seconds=30)
+        """
+        remaining_ns = self._total_ns
+        parts = {}
+        for unit in units:
+            if unit == "hours":
+                unit_ns = 3_600_000_000_000
+            elif unit == "minutes":
+                unit_ns = 60_000_000_000
+            elif unit == "seconds":
+                unit_ns = 1_000_000_000
+            elif unit == "milliseconds":
+                unit_ns = 1_000_000
+            elif unit == "microseconds":
+                unit_ns = 1_000
+            elif unit == "nanoseconds":
+                unit_ns = 1
+            else:
+                raise ValueError(f"Invalid unit: {unit!r}")
+
+            part, remaining_ns = divmod(remaining_ns, unit_ns)
+            parts[unit] = part
+
+        return VerbatimDelta(**parts)
+
     def py_timedelta(self) -> _timedelta:
         """Convert to a :class:`~datetime.timedelta`
 
@@ -1596,9 +1640,7 @@ class TimeDelta(_Base):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "half_even",
+        mode: _RoundMode = "half_even",
     ) -> TimeDelta:
         """Round the delta to the specified unit and increment.
         Various rounding modes are available.
@@ -2237,6 +2279,7 @@ def _unpkl_ddelta(months: int, days: int) -> DateDelta:
 _MAX_DDELTA_DIGITS = 8  # consistent with Rust extension
 
 
+# Returns (rest_of_string, value, unit), e.g. ("3D", 2, "Y")
 def _parse_datedelta_component(s: str, exc: Exception) -> tuple[str, int, str]:
     try:
         split_index, unit = next(
@@ -2255,6 +2298,468 @@ def _parse_datedelta_component(s: str, exc: Exception) -> tuple[str, int, str]:
 
 DateDelta.ZERO = DateDelta()
 TimeDelta._date_part = DateDelta.ZERO
+
+
+Sign = Literal[1, 0, -1]
+
+
+@final
+class VerbatimDelta(_Base):
+    """A duration that preserves the exact fields it was created with.
+    Very closely models the ISO 8601 duration format. See docs for notes.
+
+    Conceptually, you can imagine this behaving like a dictionary with unit keys:
+    `VerbatimDelta(weeks=70, minutes=90)` is like {"weeks": 70, "minutes": 90}
+
+    This allows round-tripping of non-normalized durations.
+    It's also a useful way to render durations in specific units.
+
+    >>> d = VerbatimDelta(weeks=70, minutes=90)
+    VerbatimDelta("P70wT90m")
+
+    Warning
+    -------
+    "Verbatim" extends to the presence of fields. "0 seconds" is different
+    from "no seconds":
+
+    >>> d1 = VerbatimDelta(weeks=1, seconds=0).as_dict()
+    {'weeks': 1, 'seconds': 0}
+    >>> d2 = VerbatimDelta(weeks=1).as_dict()
+    {'weeks': 1}
+    >>> d1 == d2
+    False
+    >>> d1.format_iso()
+    "P1WT0S"
+    >>> d2.format_iso()
+    "P1W"
+    """
+
+    __slots__ = (
+        "_sign",
+        # Values are stored as positive integers or None. The sign
+        # is stored separately (all fields must have the same sign).
+        "_years",
+        "_months",
+        "_weeks",
+        "_days",
+        "_hours",
+        "_minutes",
+        "_seconds",
+        "_nanos",
+    )
+
+    def __init__(
+        self,
+        *,
+        years: Optional[int] = None,
+        months: Optional[int] = None,
+        weeks: Optional[int] = None,
+        days: Optional[int] = None,
+        hours: Optional[int] = None,
+        minutes: Optional[int] = None,
+        seconds: Optional[int] = None,
+        nanoseconds: Optional[int] = None,
+    ) -> None:
+        sign: Sign = 0
+        if nanoseconds is not None and seconds is None:
+            seconds = 0
+
+        (self._years, sign) = _check_component(years, sign, _MAX_DELTA_YEARS)
+        (self._months, sign) = _check_component(
+            months, sign, _MAX_DELTA_MONTHS
+        )
+        (self._weeks, sign) = _check_component(weeks, sign, _MAX_DELTA_WEEKS)
+        (self._days, sign) = _check_component(days, sign, _MAX_DELTA_DAYS)
+        (self._hours, sign) = _check_component(hours, sign, _MAX_DELTA_HOURS)
+        (self._minutes, sign) = _check_component(
+            minutes, sign, _MAX_DELTA_MINUTES
+        )
+        (self._seconds, sign) = _check_component(
+            seconds, sign, _MAX_DELTA_SECONDS
+        )
+        (self._nanos, sign) = _check_component(
+            nanoseconds, sign, _MAX_SUBSEC_NANOS
+        )
+        self._sign: Sign = sign
+        if (
+            self._sign == 0
+            and years is None
+            and months is None
+            and weeks is None
+            and days is None
+            and hours is None
+            and minutes is None
+            and seconds is None
+            and nanoseconds is None
+        ):
+            raise ValueError(
+                "At least one field of a VerbatimDelta must be set"
+            )
+
+    @property
+    def sign(self) -> Sign:
+        """The sign of the delta, 1, 0, or -1"""
+        return self._sign
+
+    # CONSIDER: should these be methods instead of properties?
+    @property
+    def years(self) -> int:
+        """The number of years, 0 if not set"""
+        return self._sign * (self._years or 0)
+
+    @property
+    def months(self) -> int:
+        """The number of months, 0 if not set"""
+        return self._sign * (self._months or 0)
+
+    @property
+    def weeks(self) -> int:
+        """The number of weeks, 0 if not set"""
+        return self._sign * (self._weeks or 0)
+
+    @property
+    def days(self) -> int:
+        """The number of days, 0 if not set"""
+        return self._sign * (self._days or 0)
+
+    @property
+    def hours(self) -> int:
+        """The number of hours, 0 if not set"""
+        return self._sign * (self._hours or 0)
+
+    @property
+    def minutes(self) -> int:
+        """The number of minutes, 0 if not set"""
+        return self._sign * (self._minutes or 0)
+
+    @property
+    def seconds(self) -> int:
+        """The number of seconds, 0 if not set"""
+        return self._sign * (self._seconds or 0)
+
+    @property
+    def nanoseconds(self) -> int:
+        """The number of nanoseconds, 0 if not set"""
+        return self._sign * (self._nanos or 0)
+
+    # TODO: document; type stubs
+    @property
+    def float_seconds(self) -> float:
+        """The total seconds represented by the seconds and nanoseconds fields"""
+        return self._sign * (
+            (self._seconds or 0) + (self._nanos or 0) / 1_000_000_000
+        )
+
+    def values(self) -> tuple[int, ...]:
+        """Return all non-None fields as a tuple, in order."""
+        fields = (
+            self._years,
+            self._months,
+            self._weeks,
+            self._days,
+            self._hours,
+            self._minutes,
+            self._seconds,
+            self._nanos,
+        )
+        return tuple(self._sign * x for x in fields if x is not None)
+
+    def dict(self) -> dict[str, int]:
+        """Return all non-None fields as a dictionary,
+        ordered from largest to smallest unit.
+        """
+        fields = (
+            ("years", self._years),
+            ("months", self._months),
+            ("weeks", self._weeks),
+            ("days", self._days),
+            ("hours", self._hours),
+            ("minutes", self._minutes),
+            ("seconds", self._seconds),
+            ("nanoseconds", self._nanos),
+        )
+        return {k: self._sign * v for k, v in fields if v is not None}
+
+    def format_iso(self, *, lowercase_units: bool = False) -> str:
+        """Format as the *popular interpretation* of the ISO 8601 duration format.
+        May not strictly adhere to (all versions of) the standard.
+        See :ref:`here <iso8601-durations>` for more information.
+
+        Inverse of :meth:`parse_iso`.
+
+        The format is:
+
+        .. code-block:: text
+
+            P(nY)(nM)(nW)(nD)T(nH)(nM)(nS)
+
+        Example
+        -------
+        >>> d = VerbatimDelta(
+        ...     weeks=1,
+        ...     days=11,
+        ...     hours=4,
+        ...     seconds=1,
+        ...     nanoseconds=12_000,
+        ... )
+        >>> d.format_iso()
+        'P1W11DT4H1.000012S'
+        """
+        y, m, w, d, h, s = "ymwdhs" if lowercase_units else "YMWDHS"
+
+        parts = ["-" * (self._sign == -1), "P"]
+        if self._years is not None:
+            parts.append(f"{self._years}{y}")
+        if self._months is not None:
+            parts.append(f"{self._months}{m}")
+        if self._weeks is not None:
+            parts.append(f"{self._weeks}{w}")
+        if self._days is not None:
+            parts.append(f"{self._days}{d}")
+
+        parts.append("T")
+
+        if self._hours is not None:
+            parts.append(f"{self._hours}{h}")
+        if self._minutes is not None:
+            parts.append(f"{self._minutes}{m}")
+        if self._seconds is not None:
+            if self._nanos is None:
+                parts.append(f"{self._seconds}{s}")
+            elif self._nanos:
+                parts.append(
+                    f"{self._seconds}.{self._nanos:09d}".rstrip("0") + s
+                )
+            else:
+                parts.append(f"{self._seconds}.0{s}")
+
+        joined = "".join(parts)
+        if joined.endswith("T"):  # no time part
+            return joined[:-1]
+        return joined
+
+    @classmethod
+    def parse_iso(cls, s: str, /) -> VerbatimDelta:
+        """Parse the *popular interpretation* of the ISO 8601 duration format.
+        Does not parse all possible ISO 8601 durations.
+        See :ref:`here <iso8601-durations>` for more information.
+
+        Examples:
+
+        .. code-block:: text
+
+           P4D        # 4 days
+           PT4H       # 4 hours
+           PT0M       # 0 minutes
+           PT3M40.5S  # 3 minutes and 40.5 seconds
+           P1W11DT90M # 1 week, 11 days, and 90 minutes
+           -PT7H400M  # -7 hours and -400 minutes
+           +PT7H4M    # 7 hours and 4 minutes (7:04:00)
+
+        Inverse of :meth:`format_iso`
+
+        Example
+        -------
+        >>> DateTimeDelta.parse_iso("-P1W11DT4H")
+        DateTimeDelta(-P1w11dT4h)
+        """
+        exc = ValueError(f"Invalid format: {s!r}")
+        prev_unit = ""
+        years, months, weeks, days, hours, minutes, seconds, nanos = (
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+
+        # Catch certain invalid strings early, making parsing easier
+        if len(s) < 3 or not s.isascii() or s.endswith("T"):
+            raise exc
+
+        sign: Sign
+        s = s.upper()
+        if s[0] == "P":
+            sign = 1
+            rest = s[1:]
+        elif s.startswith("-P"):
+            sign = -1
+            rest = s[2:]
+        elif s.startswith("+P"):
+            sign = 1
+            rest = s[2:]
+        else:
+            raise exc
+
+        # parse the date part
+        while rest and not rest.startswith("T"):
+            rest, value, unit = _parse_datedelta_component(rest, exc)
+
+            if unit == "Y" and prev_unit == "":
+                years = value
+            elif unit == "M" and prev_unit in "Y":
+                months = value
+            elif unit == "W" and prev_unit in "YM":
+                weeks = value
+            elif unit == "D" and prev_unit in "YMW":
+                days = value
+                break
+            else:
+                raise exc  # components out of order
+
+            prev_unit = unit
+
+        prev_unit = ""
+        if rest and not rest.startswith("T"):
+            raise exc
+
+        # skip the "T" separator
+        rest = rest[1:]
+
+        while rest:
+            rest_new, value, unit = _parse_timedelta_component(rest, exc)
+
+            if unit == "H" and prev_unit == "":
+                hours = value
+            elif unit == "M" and prev_unit in "H":
+                minutes = value
+            elif unit == "S":
+                seconds = value // 1_000_000_000
+                # Only set nanos if there are fractional digits
+                if "," in rest or "." in rest:
+                    nanos = value % 1_000_000_000
+                if rest_new:
+                    raise exc
+                break
+            else:
+                raise exc
+
+            rest = rest_new
+            prev_unit = unit
+
+        if not (
+            years
+            or months
+            or weeks
+            or days
+            or hours
+            or minutes
+            or seconds
+            or nanos
+        ):
+            sign = 0
+
+        self = _object_new(cls)
+        self._sign = sign
+        self._years = _check_bound(years, _MAX_DELTA_YEARS)
+        self._months = _check_bound(months, _MAX_DELTA_MONTHS)
+        self._weeks = _check_bound(weeks, _MAX_DELTA_WEEKS)
+        self._days = _check_bound(days, _MAX_DELTA_DAYS)
+        self._hours = _check_bound(hours, _MAX_DELTA_HOURS)
+        self._minutes = _check_bound(minutes, _MAX_DELTA_MINUTES)
+        self._seconds = _check_bound(seconds, _MAX_DELTA_SECONDS)
+        self._nanos = nanos
+        return self
+
+    def __eq__(self, other: object) -> bool:
+        """Compare for equality
+
+        Example
+        -------
+        >>> d = VerbatimDelta(weeks=2, minutes=90)
+        >>> d == VerbatimDelta(weeks=2, minutes=90)
+        True
+        >>> d == VerbatimDelta(weeks=2, minutes=91)
+        False
+        """
+        if not isinstance(other, VerbatimDelta):
+            return NotImplemented
+        return (
+            self._sign == other._sign
+            and self._years == other._years
+            and self._months == other._months
+            and self._weeks == other._weeks
+            and self._days == other._days
+            and self._hours == other._hours
+            and self._minutes == other._minutes
+            and self._seconds == other._seconds
+            and self._nanos == other._nanos
+        )
+
+    @no_type_check
+    def __reduce__(self):
+        return (
+            _unpkl_vdelta,
+            (
+                self._sign,
+                self._years,
+                self._months,
+                self._weeks,
+                self._days,
+                self._hours,
+                self._minutes,
+                self._seconds,
+                self._nanos,
+            ),
+        )
+
+    def __repr__(self) -> str:
+        return f'VerbatimDelta("{self.format_iso(lowercase_units=True)}")'
+
+
+# A separate unpickling function allows us to make backwards-compatible changes
+# to the pickling format in the future
+def _unpkl_vdelta(
+    sign: Sign,
+    years: Optional[int],
+    months: Optional[int],
+    weeks: Optional[int],
+    days: Optional[int],
+    hours: Optional[int],
+    minutes: Optional[int],
+    seconds: Optional[int],
+    nanos: Optional[int],
+) -> VerbatimDelta:
+    self = _object_new(VerbatimDelta)
+    self._sign = sign
+    self._years = years
+    self._months = months
+    self._weeks = weeks
+    self._days = days
+    self._hours = hours
+    self._minutes = minutes
+    self._seconds = seconds
+    self._nanos = nanos
+    return self
+
+
+def _check_bound(i: int | None, max_value: int) -> int | None:
+    if i and i > max_value:
+        raise ValueError("Verbatim delta out of range")
+    return i
+
+
+def _check_component(
+    value: Optional[int], sign: Sign, max_value: int
+) -> tuple[Optional[int], Sign]:
+    if not value:  # None or 0: sign unchanged
+        return value, sign
+    if value < 0:
+        if sign == 1:
+            raise ValueError("Mixed sign in verbatim delta")
+        value = -value
+        sign = -1
+    elif value > 0:
+        if sign == -1:
+            raise ValueError("Mixed sign in verbatim delta")
+        sign = 1
+
+    if value > max_value:
+        raise ValueError("Verbatim delta out of range")
+    return value, sign
 
 
 @final
@@ -2944,9 +3449,7 @@ class _LocalTime(_BasicConversions, ABC):
                 "nanosecond",
             ] = "second",
             increment: int = 1,
-            mode: Literal[
-                "ceil", "floor", "half_ceil", "half_floor", "half_even"
-            ] = "half_even",
+            mode: _RoundMode = "half_even",
         ) -> _T:
             """Round the datetime to the specified unit and increment.
             Different rounding modes are available.
@@ -3595,9 +4098,7 @@ class Instant(_ExactTime):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "half_even",
+        mode: _RoundMode = "half_even",
     ) -> Instant:
         """Round the instant to the specified unit and increment.
         Various rounding modes are available.
@@ -4188,9 +4689,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "half_even",
+        mode: _RoundMode = "half_even",
         *,
         ignore_dst: bool = False,
     ) -> OffsetDateTime:
@@ -4803,9 +5302,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "half_even",
+        mode: _RoundMode = "half_even",
     ) -> ZonedDateTime:
         """Round the datetime to the specified unit and increment.
         Different rounding modes are available.
@@ -5372,9 +5869,7 @@ class PlainDateTime(_LocalTime):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "half_even",
+        mode: _RoundMode = "half_even",
     ) -> PlainDateTime:
         """Round the datetime to the specified unit and increment.
         Different rounding modes are available.

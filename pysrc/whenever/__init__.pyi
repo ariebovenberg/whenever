@@ -14,6 +14,7 @@ from typing import (
     Iterable,
     Literal,
     TypeAlias,
+    TypedDict,
     final,
     overload,
     type_check_only,
@@ -253,6 +254,15 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
     def in_microseconds(self) -> float: ...
     def in_nanoseconds(self) -> int: ...
     def in_hrs_mins_secs_nanos(self) -> tuple[int, int, int, int]: ...
+    def itemize(
+        self,
+        *,
+        units: tuple[str, ...],
+        round_mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = ...,
+        round_increment: int = ...,
+    ) -> VerbatimDelta: ...
     def py_timedelta(self) -> _timedelta: ...
     @classmethod
     def from_py_timedelta(cls, td: _timedelta, /) -> Self: ...
@@ -304,6 +314,53 @@ class DateDelta(_DeltaMixin):
     @overload
     def __sub__(self, other: TimeDelta, /) -> DateTimeDelta: ...
     def __rsub__(self, other: TimeDelta, /) -> DateTimeDelta: ...
+
+class DeltaDict(TypedDict, total=False):
+    years: int
+    months: int
+    weeks: int
+    days: int
+    hours: int
+    minutes: int
+    seconds: int
+    nanoseconds: int
+
+@final
+class VerbatimDelta:
+    def __init__(
+        self,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        hours: int = ...,
+        minutes: int = ...,
+        seconds: int = ...,
+        nanoseconds: int = ...,
+    ) -> None: ...
+    @property
+    def sign(self) -> Literal[1, 0, -1]: ...
+    @property
+    def years(self) -> int: ...
+    @property
+    def months(self) -> int: ...
+    @property
+    def weeks(self) -> int: ...
+    @property
+    def days(self) -> int: ...
+    @property
+    def hours(self) -> int: ...
+    @property
+    def minutes(self) -> int: ...
+    @property
+    def seconds(self) -> int: ...
+    def float_seconds(self) -> float: ...
+    def values(self) -> tuple[int, ...]: ...
+    def as_dict(self) -> DeltaDict: ...
+    def format_iso(self, *, lowercase_units: bool = False) -> str: ...
+    @classmethod
+    def parse_iso(cls, s: str, /) -> Self: ...
 
 @final
 class DateTimeDelta(_DeltaMixin):

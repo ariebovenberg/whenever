@@ -13,6 +13,7 @@ use crate::{
             self, hours, microseconds, milliseconds, minutes, nanoseconds, seconds,
             unpickle as _unpkl_tdelta,
         },
+        verbatim_delta::{self, unpickle as _unpkl_vdelta},
         yearmonth::{self, unpickle as _unpkl_ym},
         zoned_datetime::{self, unpickle as _unpkl_zoned},
     },
@@ -65,6 +66,7 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     modmethod_vararg!(_unpkl_ddelta, c""),
     modmethod1!(_unpkl_tdelta, c""),
     modmethod_vararg!(_unpkl_dtdelta, c""),
+    modmethod_vararg!(_unpkl_vdelta, c""),
     modmethod1!(_unpkl_local, c""),
     modmethod1!(_unpkl_inst, c""),
     modmethod1!(_unpkl_utc, c""), // for backwards compatibility
@@ -186,6 +188,13 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         c"_unpkl_dtdelta",
     )?;
     create_singletons(*datetime_delta_type, datetime_delta::SINGLETONS)?;
+    let (verbatim_delta_type, unpickle_verbatim_delta) = new_class(
+        module,
+        module_name.borrow(),
+        &mut unsafe { verbatim_delta::SPEC },
+        c"_unpkl_vdelta",
+    )?;
+    create_singletons(*verbatim_delta_type, verbatim_delta::SINGLETONS)?;
     let (plain_datetime_type, unpickle_plain_datetime) = new_class(
         module,
         module_name.borrow(),
@@ -277,6 +286,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         date_delta_type: date_delta_type.py_owned(),
         time_delta_type: time_delta_type.py_owned(),
         datetime_delta_type: datetime_delta_type.py_owned(),
+        verbatim_delta_type: verbatim_delta_type.py_owned(),
         plain_datetime_type: plain_datetime_type.py_owned(),
         instant_type: instant_type.py_owned(),
         offset_datetime_type: offset_datetime_type.py_owned(),
@@ -340,6 +350,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         str_basic: intern(c"basic")?.py_owned(),
         str_always: intern(c"always")?.py_owned(),
         str_never: intern(c"never")?.py_owned(),
+        str_sign: intern(c"sign")?.py_owned(),
 
         exc_repeated: exc_repeated.py_owned(),
         exc_skipped: exc_skipped.py_owned(),
@@ -354,6 +365,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         unpickle_date_delta: unpickle_date_delta.py_owned(),
         unpickle_time_delta: unpickle_time_delta.py_owned(),
         unpickle_datetime_delta: unpickle_datetime_delta.py_owned(),
+        unpickle_verbatim_delta: unpickle_verbatim_delta.py_owned(),
         unpickle_plain_datetime: unpickle_plain_datetime.py_owned(),
         unpickle_instant: unpickle_instant.py_owned(),
         unpickle_offset_datetime: unpickle_offset_datetime.py_owned(),
@@ -433,6 +445,11 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
             datetime_delta::SINGLETONS.len(),
         ),
         (
+            state.verbatim_delta_type.inner(),
+            state.unpickle_verbatim_delta,
+            verbatim_delta::SINGLETONS.len(),
+        ),
+        (
             state.plain_datetime_type.inner(),
             state.unpickle_plain_datetime,
             plain_datetime::SINGLETONS.len(),
@@ -500,6 +517,7 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.date_delta_type).cast());
         Py_CLEAR((&raw mut state.time_delta_type).cast());
         Py_CLEAR((&raw mut state.datetime_delta_type).cast());
+        Py_CLEAR((&raw mut state.verbatim_delta_type).cast());
         Py_CLEAR((&raw mut state.plain_datetime_type).cast());
         Py_CLEAR((&raw mut state.instant_type).cast());
         Py_CLEAR((&raw mut state.offset_datetime_type).cast());
@@ -608,6 +626,7 @@ pub(crate) struct State {
     pub(crate) date_delta_type: HeapType<date_delta::DateDelta>,
     pub(crate) time_delta_type: HeapType<time_delta::TimeDelta>,
     pub(crate) datetime_delta_type: HeapType<datetime_delta::DateTimeDelta>,
+    pub(crate) verbatim_delta_type: HeapType<verbatim_delta::VerbatimDelta>,
     pub(crate) plain_datetime_type: HeapType<plain_datetime::DateTime>,
     pub(crate) instant_type: HeapType<instant::Instant>,
     pub(crate) offset_datetime_type: HeapType<offset_datetime::OffsetDateTime>,
@@ -630,6 +649,7 @@ pub(crate) struct State {
     pub(crate) unpickle_date_delta: PyObj,
     pub(crate) unpickle_time_delta: PyObj,
     pub(crate) unpickle_datetime_delta: PyObj,
+    pub(crate) unpickle_verbatim_delta: PyObj,
     pub(crate) unpickle_plain_datetime: PyObj,
     pub(crate) unpickle_instant: PyObj,
     pub(crate) unpickle_offset_datetime: PyObj,
@@ -687,6 +707,7 @@ pub(crate) struct State {
     pub(crate) str_basic: PyObj,
     pub(crate) str_always: PyObj,
     pub(crate) str_never: PyObj,
+    pub(crate) str_sign: PyObj,
 
     pub(crate) time_patch: Patch,
     pub(crate) tz_store: TzStore,

@@ -8,5 +8,6 @@ pub mod offset_datetime;
 pub mod plain_datetime;
 pub mod time;
 pub mod time_delta;
+pub mod verbatim_delta;
 pub mod yearmonth;
 pub mod zoned_datetime;
