@@ -1,5 +1,5 @@
-sphinx>8.1,<8.2
-furo>=2025.9.25,<2025.10
+sphinx>8.2,<8.3
+furo>=2025.12.9,<2026
 sphinx-copybutton~=0.5
 myst-parser>=3,<5
 enum-tools[sphinx]==0.13.0

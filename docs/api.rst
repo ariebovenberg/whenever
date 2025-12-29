@@ -102,18 +102,6 @@ Concrete classes
 Deltas
 ------
 
-.. autofunction:: whenever.years
-.. autofunction:: whenever.months
-.. autofunction:: whenever.weeks
-.. autofunction:: whenever.days
-
-.. autofunction:: whenever.hours
-.. autofunction:: whenever.minutes
-.. autofunction:: whenever.seconds
-.. autofunction:: whenever.milliseconds
-.. autofunction:: whenever.microseconds
-.. autofunction:: whenever.nanoseconds
-
 .. autoclass:: whenever.TimeDelta
    :members:
    :special-members: __eq__, __neg__, __add__, __sub__, __mul__, __truediv__, __bool__, __abs__, __gt__
@@ -128,6 +116,11 @@ Deltas
    :member-order: bysource
 
 .. autoclass:: whenever.DateTimeDelta
+   :members:
+   :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __bool__, __mul__
+   :member-order: bysource
+
+.. autoclass:: whenever.ItemizedDelta
    :members:
    :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __bool__, __mul__
    :member-order: bysource

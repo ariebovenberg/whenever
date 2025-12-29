@@ -13,37 +13,48 @@ For example, you might want to reuse a particular duration,
 or perform arithmetic on it.
 For this, **whenever** provides an API
 designed to help you avoid common pitfalls.
-The type annotations and descriptive errors should guide you
-to the correct usage.
 
-Durations are created using the duration units provided.
-Here is a quick demo:
+There are two main kind of deltas:
 
->>> from whenever import years, months, days, hours, minutes
->>> # Precise units create a TimeDelta, supporting broad arithmetic
->>> movie_runtime = hours(2) + minutes(9)
-TimeDelta(02:09:00)
+- :class:`~whenever.TimeDelta` for precise time durations
+  (hours, minutes, seconds, microseconds). This type supports mathematical
+  operations like addition, subtraction, multiplication, and division.
+  Arithmetic on time units is straightforward.
+  It behaves similarly to the :class:`~datetime.timedelta`
+  of the standard library.
+  The drawback is that `TimeDelta` doesn't support calender units
+  like months or years, as their duration varies depending on context.
+  That's where the second type comes in:
+- :class:`~whenever.ItemizedDelta` for calendar-based durations.
+   They don't have a precise duration, as this depends on the context.
+   For example, the number of days in a month varies, and a day may be
+   longer or shorter than 24 hours due to Daylight Saving Time.
+   This makes arithmetic on calendar units less intuitive.
+   In general, arithmetic on these delta's on their own is not supported,
+   a local date/time is needed to provide context.
+
+.. note::
+
+   There also is a third type, :class:`~whenever.ItemizedDateDelta`.
+   It behaves similarly to `ItemizedDelta`, but contains *only* calendar units.
+
+>>> movie_runtime = TimeDelta(hours=2, minutes=9)
+TimeDelta("PT2h9m")
 >>> movie_runtime.in_minutes()
 129.0
 >>> movie_runtime / 1.2  # what if we watch it at 1.2x speed?
-TimeDelta(01:47:30)
-...
->>> # Calendar units create a DateDelta, with more limited arithmetic
->>> project_estimate = months(1) + days(10)
-DateDelta("P1M10D")
->>> Date(2023, 1, 29) + project_estimate
-Date("2023-03-10")
->>> project_estimate * 2  # make it pessimistic
-DateDelta("P2M20D")
-...
->>> # Mixing date and time units creates a generic DateTimeDelta
->>> project_estimate + movie_runtime
-DateTimeDelta("P1M10DT2H9M")
-...
+TimeDelta("Pt1h47m30s")
+>>> Instant.now() + movie_runtime  # when does it end?
+
+
+>>> # If needed, composite, unnormalized durations can be created:
+>>> room_occupied = ItemizedDelta(months=1, days=10, minutes=90)
+ItemizedDelta("P1m10dT90m")
+
 >>> # API ensures common mistakes are caught early:
->>> project_estimate * 1.3             # Impossible arithmetic on calendar units
->>> project_estimate.in_hours()        # Resolving calendar units without context
->>> Date(2023, 1, 29) + movie_runtime  # Adding time to a date
+>>> room_occupied * 1.3        # Impossible arithmetic on calendar units
+>>> room_occupied.in_hours()   # Resolving calendar units without context
+>>> Date(2023, 1, 29) + room_occupied   # Adding time to a date
 
 Types of deltas
 ---------------
@@ -53,18 +64,10 @@ There are three duration types in **whenever**:
 -  :class:`~whenever.TimeDelta`, created by precise units
    :func:`~whenever.hours`, :func:`~whenever.minutes`, :func:`~whenever.seconds`,
    and :func:`~whenever.microseconds`.
-   Their duration is always the same and independent of the calendar.
-   Arithmetic on time units is straightforward.
-   It behaves similarly to the :class:`~datetime.timedelta`
-   of the standard library.
 
 -  :class:`~whenever.DateDelta`, created by the calendar units
    :func:`~whenever.years`, :func:`~whenever.months`, :func:`~whenever.weeks`,
    and :func:`~whenever.days`.
-   They don't have a precise duration, as this depends on the context.
-   For example, the number of days in a month varies, and a day may be
-   longer or shorter than 24 hours due to Daylight Saving Time.
-   This makes arithmetic on calendar units less intuitive.
 
 -  :class:`~whenever.DateTimeDelta`, created when you mix
    time and calendar units.
