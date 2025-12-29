@@ -54,10 +54,12 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
+    Iterator,
     Literal,
     NewType,
     NoReturn,
     Optional,
+    Sequence,
     TypeVar,
     Union,
     cast,
@@ -89,6 +91,7 @@ __all__ = [
     "DateDelta",
     "TimeDelta",
     "DateTimeDelta",
+    "ItemizedDelta",
     "years",
     "months",
     "weeks",
@@ -134,13 +137,20 @@ class Weekday(enum.Enum):
 # Helpers that pre-compute/lookup as much as possible
 _UTC = _timezone.utc
 _object_new = object.__new__
+_MAX_DELTA_YEARS = 9999
 _MAX_DELTA_MONTHS = 9999 * 12
+_MAX_DELTA_WEEKS = 9999 * 53
 _MAX_DELTA_DAYS = 9999 * 366
-_MAX_DELTA_NANOS = _MAX_DELTA_DAYS * 24 * 3_600_000_000_000
+_MAX_DELTA_HOURS = _MAX_DELTA_DAYS * 24
+_MAX_DELTA_MINUTES = _MAX_DELTA_HOURS * 60
+_MAX_DELTA_SECONDS = _MAX_DELTA_MINUTES * 60
+_MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * 1_000_000_000
+_MAX_SUBSEC_NANOS = 999_999_999
 _UNSET = object()
 _NOGIL = hasattr(sys, "_is_gil_enabled") and not sys._is_gil_enabled()
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
+_RoundMode = Literal["ceil", "floor", "half_ceil", "half_floor", "half_even"]
 
 # Metaclass ugh...it proved the most lightway way to achieve this:
 # allowing the constructors of many classes to take an ISO string as well as the
@@ -1144,9 +1154,7 @@ class Time(_Base):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "half_even",
+        mode: _RoundMode = "half_even",
     ) -> Time:
         """Round the time to the specified unit and increment.
         Various rounding modes are available.
@@ -1161,7 +1169,7 @@ class Time(_Base):
         if unit == "day":  # type: ignore[comparison-overlap]
             raise ValueError("Cannot round Time to day")
         return self._round_unchecked(
-            increment_to_ns(unit, increment, any_hour_ok=False),
+            increment_to_ns_for_datetime(unit, increment),
             mode,
             86_400_000_000_000,
         )[0]
@@ -1262,40 +1270,47 @@ class Time(_Base):
         )
 
 
-_NS_PER_UNIT = {
-    "minute": 60_000_000_000,
-    "second": 1_000_000_000,
-    "millisecond": 1_000_000,
-    "microsecond": 1_000,
-    "nanosecond": 1,
+_UNIT_NANOS_AND_MAX_DIVISOR = {
+    "week": (604_800_000_000_000, 0),
+    "day": (86_400_000_000_000, 0),
+    "hour": (3_600_000_000_000, 24),
+    "minute": (60_000_000_000, 60),
+    "second": (1_000_000_000, 60),
+    "millisecond": (1_000_000, 1_000),
+    "microsecond": (1_000, 1_000),
+    "nanosecond": (1, 1_000),
 }
 
 
-def increment_to_ns(unit: str, increment: int, any_hour_ok: bool) -> int:
+def increment_to_ns_for_delta(unit: str, increment: int) -> int:
+    if increment < 1 or increment != int(increment):
+        raise ValueError("Invalid increment")
+    try:
+        ns_per_unit, _ = _UNIT_NANOS_AND_MAX_DIVISOR[unit]
+    except KeyError:
+        raise ValueError(f"Invalid unit: {unit}")
+    return ns_per_unit * increment
+
+
+def increment_to_ns_for_datetime(unit: str, increment: int) -> int:
     if increment < 1 or increment > 1_000 or increment != int(increment):
         raise ValueError("Invalid increment")
-    if unit == "day":
-        if increment == 1:
-            return 86_400_000_000_000
-        else:
-            raise ValueError("Invalid increment for day")
-    elif unit == "hour":
-        if 24 % increment and not any_hour_ok:
-            raise ValueError("Invalid increment for hour")
-        else:
-            return 3_600_000_000_000 * increment
-    elif unit in ("minute", "second"):
-        if 60 % increment:
-            raise ValueError(f"Invalid increment for {unit}")
-        else:
-            return _NS_PER_UNIT[unit] * increment
-    elif unit in ("millisecond", "microsecond", "nanosecond"):
-        if 1_000 % increment:
-            raise ValueError(f"Invalid increment for {unit}")
-        else:
-            return _NS_PER_UNIT[unit] * increment
-    else:
+
+    if unit == "day" and increment != 1:
+        raise ValueError(
+            "Rounding increment for day can only be 1"
+        )  # TODO reason
+
+    try:
+        ns_per_unit, max_divisor = _UNIT_NANOS_AND_MAX_DIVISOR[unit]
+    except KeyError:
         raise ValueError(f"Invalid unit: {unit}")
+
+    if max_divisor % increment:
+        raise ValueError(
+            f"Invalid increment for {unit}. Must divide {max_divisor}."
+        )
+    return ns_per_unit * increment
 
 
 # A separate unpickling function allows us to make backwards-compatible changes
@@ -1457,6 +1472,79 @@ class TimeDelta(_Base):
             else (-hours, -mins, -secs, -ns)
         )
 
+    def in_units(
+        self,
+        units: Sequence[
+            Literal[
+                "weeks", "days", "hours", "minutes", "seconds", "nanoseconds"
+            ]
+        ],
+        /,
+        *,
+        round_mode: _RoundMode = "half_even",
+        round_increment: int = 1,
+        round_unit: Union[
+            Literal[
+                "millisecond",
+                "microsecond",
+                "nanosecond",
+            ],
+            None,
+        ] = None,
+    ) -> ItemizedDelta:
+        """Convert to a :class:`ItemizedDelta` with the specified units
+
+        Example
+        -------
+        >>> d = TimeDelta(hours=2, minutes=30, seconds=23, milliseconds=500)
+        >>> d.in_units(['minutes', 'seconds'])
+        ItemizedDelta("PT150m24s")
+        """
+        if any(u and not u.endswith("s") for u in units):
+            raise ValueError("All units must be plural")
+        if isinstance(
+            units, str
+        ):  # This common mistake is otherwise hard to debug
+            raise TypeError("Units must be a sequence, not a string")
+        # DOC: clearer error if round_unit is invalid
+        try:
+            *_, smallest_unit = units
+        except ValueError:
+            raise ValueError("At least one unit must be specified")
+        self = self.round(
+            unit=round_unit  # type: ignore[arg-type]
+            or smallest_unit[:-1],  # remove plural
+            increment=round_increment,
+            mode=round_mode,
+        )
+        remaining_ns = abs(self._total_ns)
+        values: list[Union[None, int]] = [None] * 6
+        prev_unit_index = -1  # initial value, only used for comparison
+        for u in units:
+            try:
+                divisor, index = _DELTA_ITEMS_NS_AND_PRIO[u]
+            except KeyError:
+                # TODO: clarify error message on milliseconds/microseconds?
+                raise ValueError(f"Invalid unit: {u!r}")
+            if prev_unit_index >= index:
+                raise ValueError(
+                    "Units must be in descending order, and not repeated"
+                )
+            values[index], remaining_ns = divmod(remaining_ns, divisor)
+            prev_unit_index = index
+
+        if smallest_unit == "nanoseconds" and (
+            len(units) == 1 or units[-2] != "seconds"
+        ):
+            raise ValueError(
+                "Nanoseconds can only be specified together with seconds"
+            )
+
+        sign: Sign = (
+            1 if self._total_ns > 0 else -1 if self._total_ns < 0 else 0
+        )
+        return ItemizedDelta._from_signed(sign, None, None, *values)
+
     def py_timedelta(self) -> _timedelta:
         """Convert to a :class:`~datetime.timedelta`
 
@@ -1596,9 +1684,7 @@ class TimeDelta(_Base):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "half_even",
+        mode: _RoundMode = "half_even",
     ) -> TimeDelta:
         """Round the delta to the specified unit and increment.
         Various rounding modes are available.
@@ -1614,8 +1700,9 @@ class TimeDelta(_Base):
         """
         if unit == "day":  # type: ignore[comparison-overlap]
             raise ValueError(CANNOT_ROUND_DAY_MSG)
+        # TODO: catch invalid round_units here?
 
-        increment_ns = increment_to_ns(unit, increment, any_hour_ok=True)
+        increment_ns = increment_to_ns_for_delta(unit, increment)
         quotient, remainder_ns = divmod(self._total_ns, increment_ns)
 
         if mode == "half_even":  # check the default case first
@@ -1846,6 +1933,16 @@ def _unpkl_tdelta(data: bytes) -> TimeDelta:
 
 
 _MAX_TDELTA_DIGITS = 35  # consistent with Rust extension
+
+
+_DELTA_ITEMS_NS_AND_PRIO = {
+    "weeks": (1_000_000_000 * 60 * 60 * 24 * 7, 0),
+    "days": (1_000_000_000 * 60 * 60 * 24, 1),
+    "hours": (1_000_000_000 * 60 * 60, 2),
+    "minutes": (1_000_000_000 * 60, 3),
+    "seconds": (1_000_000_000, 4),
+    "nanoseconds": (1, 5),
+}
 
 
 def _parse_timedelta_component(
@@ -2237,6 +2334,7 @@ def _unpkl_ddelta(months: int, days: int) -> DateDelta:
 _MAX_DDELTA_DIGITS = 8  # consistent with Rust extension
 
 
+# Returns (rest_of_string, value, unit), e.g. ("3D", 2, "Y")
 def _parse_datedelta_component(s: str, exc: Exception) -> tuple[str, int, str]:
     try:
         split_index, unit = next(
@@ -2255,6 +2353,612 @@ def _parse_datedelta_component(s: str, exc: Exception) -> tuple[str, int, str]:
 
 DateDelta.ZERO = DateDelta()
 TimeDelta._date_part = DateDelta.ZERO
+
+
+Sign = Literal[1, 0, -1]
+
+
+@final
+class ItemizedDelta(_Base):
+    """A duration that preserves the exact fields it was created with.
+    Very closely models the ISO 8601 duration format. See docs for notes.
+
+    Conceptually, you can imagine this behaving like a dictionary with unit keys:
+    ``ItemizedDelta(weeks=70, minutes=90)`` is like ``{"weeks": 70, "minutes": 90}``
+
+    This allows round-tripping of non-normalized durations.
+    It's also a useful way to render durations in specific units.
+
+    >>> d = ItemizedDelta(weeks=70, minutes=90)
+    ItemizedDelta("P70wT90m")
+
+    Warning
+    -------
+    "0 seconds" is different from "no seconds":
+
+    >>> d1 = ItemizedDelta(weeks=1, seconds=0).as_dict()
+    {'weeks': 1, 'seconds': 0}
+    >>> d2 = ItemizedDelta(weeks=1).as_dict()
+    {'weeks': 1}
+    >>> d1 == d2
+    False
+    >>> d1.format_iso()
+    "P1WT0S"
+    >>> d2.format_iso()
+    "P1W"
+    """
+
+    __slots__ = (
+        "_sign",
+        # Values are stored as positive integers or None. The sign
+        # is stored separately (all fields must have the same sign).
+        "_years",
+        "_months",
+        "_weeks",
+        "_days",
+        "_hours",
+        "_minutes",
+        "_seconds",
+        "_nanoseconds",
+    )
+
+    def __init__(
+        self,
+        *,
+        years: Optional[int] = None,
+        months: Optional[int] = None,
+        weeks: Optional[int] = None,
+        days: Optional[int] = None,
+        hours: Optional[int] = None,
+        minutes: Optional[int] = None,
+        seconds: Optional[int] = None,
+        nanoseconds: Optional[int] = None,
+    ) -> None:
+        sign: Sign = 0
+        if nanoseconds is not None and seconds is None:
+            seconds = 0
+
+        (self._years, sign) = _check_component(years, sign, _MAX_DELTA_YEARS)
+        (self._months, sign) = _check_component(
+            months, sign, _MAX_DELTA_MONTHS
+        )
+        (self._weeks, sign) = _check_component(weeks, sign, _MAX_DELTA_WEEKS)
+        (self._days, sign) = _check_component(days, sign, _MAX_DELTA_DAYS)
+        (self._hours, sign) = _check_component(hours, sign, _MAX_DELTA_HOURS)
+        (self._minutes, sign) = _check_component(
+            minutes, sign, _MAX_DELTA_MINUTES
+        )
+        (self._seconds, sign) = _check_component(
+            seconds, sign, _MAX_DELTA_SECONDS
+        )
+        (self._nanoseconds, sign) = _check_component(
+            nanoseconds, sign, _MAX_SUBSEC_NANOS
+        )
+        self._sign: Sign = sign
+        if (
+            self._sign == 0
+            and years is None
+            and months is None
+            and weeks is None
+            and days is None
+            and hours is None
+            and minutes is None
+            and seconds is None
+            and nanoseconds is None
+        ):
+            # This is to ensure ISO8601 formatting/parsing is round-trip safe.
+            # There is no "empty" duration in ISO8601; at least one field must be present.
+            raise ValueError(
+                "At least one field of a ItemizedDelta must be set"
+            )
+
+    @property
+    def sign(self) -> Sign:
+        """The sign of the delta, 1, 0, or -1"""
+        return self._sign
+
+    # CONSIDER: should these be methods instead of properties?
+    @property
+    def years(self) -> int:
+        """The number of years, 0 if not set"""
+        return self._sign * (self._years or 0)
+
+    @property
+    def months(self) -> int:
+        """The number of months, 0 if not set"""
+        return self._sign * (self._months or 0)
+
+    @property
+    def weeks(self) -> int:
+        """The number of weeks, 0 if not set"""
+        return self._sign * (self._weeks or 0)
+
+    @property
+    def days(self) -> int:
+        """The number of days, 0 if not set"""
+        return self._sign * (self._days or 0)
+
+    @property
+    def hours(self) -> int:
+        """The number of hours, 0 if not set"""
+        return self._sign * (self._hours or 0)
+
+    @property
+    def minutes(self) -> int:
+        """The number of minutes, 0 if not set"""
+        return self._sign * (self._minutes or 0)
+
+    @property
+    def seconds(self) -> int:
+        """The number of seconds, 0 if not set"""
+        return self._sign * (self._seconds or 0)
+
+    @property
+    def nanoseconds(self) -> int:
+        """The number of nanoseconds, 0 if not set"""
+        return self._sign * (self._nanoseconds or 0)
+
+    def float_seconds(self) -> float:
+        """The the seconds and nanoseconds combined as a float"""
+        return self._sign * (
+            (self._seconds or 0) + (self._nanoseconds or 0) / 1_000_000_000
+        )
+
+    def values(self) -> tuple[int, ...]:
+        """Return all non-None fields as a tuple, in order."""
+        return tuple(self)
+
+    def __iter__(self) -> Iterator[int]:
+        """Iterate over all non-None fields, ordered from largest to smallest unit."""
+        if self._years is not None:
+            yield self._sign * self._years
+        if self._months is not None:
+            yield self._sign * self._months
+        if self._weeks is not None:
+            yield self._sign * self._weeks
+        if self._days is not None:
+            yield self._sign * self._days
+        if self._hours is not None:
+            yield self._sign * self._hours
+        if self._minutes is not None:
+            yield self._sign * self._minutes
+        if self._seconds is not None:
+            yield self._sign * self._seconds
+        if self._nanoseconds is not None:
+            yield self._sign * self._nanoseconds
+
+    def dict(self) -> dict[str, int]:
+        """Return all non-None fields as a dictionary,
+        ordered from largest to smallest unit.
+        """
+        fields = (
+            ("years", self._years),
+            ("months", self._months),
+            ("weeks", self._weeks),
+            ("days", self._days),
+            ("hours", self._hours),
+            ("minutes", self._minutes),
+            ("seconds", self._seconds),
+            ("nanoseconds", self._nanoseconds),
+        )
+        return {k: self._sign * v for k, v in fields if v is not None}
+
+    def keys(self) -> tuple[str, ...]:
+        """Return a tuple of the names of all non-None fields,
+        ordered from largest to smallest unit.
+        """
+        fields = (
+            ("years", self._years),
+            ("months", self._months),
+            ("weeks", self._weeks),
+            ("days", self._days),
+            ("hours", self._hours),
+            ("minutes", self._minutes),
+            ("seconds", self._seconds),
+            ("nanoseconds", self._nanoseconds),
+        )
+        return tuple(k for k, v in fields if v is not None)
+
+    def __getitem__(self, key: str) -> int:
+        """Get the value of a specific field by name.
+
+        Example
+        -------
+        >>> d = ItemizedDelta(weeks=1, days=3)
+        >>> d["weeks"]
+        1
+        >>> d["days"]
+        3
+        >>> d["hours"]
+        KeyError: 'hours'
+        """
+        # DROP-PY39: replace with match statement
+        if key == "years":
+            value = self._years
+        elif key == "months":
+            value = self._months
+        elif key == "weeks":
+            value = self._weeks
+        elif key == "days":
+            value = self._days
+        elif key == "hours":
+            value = self._hours
+        elif key == "minutes":
+            value = self._minutes
+        elif key == "seconds":
+            value = self._seconds
+        elif key == "nanoseconds":
+            value = self._nanoseconds
+        else:
+            raise KeyError(key)
+
+        if value is not None:
+            return self._sign * value
+
+        raise KeyError(key)
+
+    def __len__(self) -> int:
+        """Get the number of fields that are set.
+
+        Example
+        -------
+        >>> d = ItemizedDelta(weeks=1, days=3)
+        >>> len(d)
+        2
+        """
+        return (
+            (self._years is not None)
+            + (self._months is not None)
+            + (self._weeks is not None)
+            + (self._days is not None)
+            + (self._hours is not None)
+            + (self._minutes is not None)
+            + (self._seconds is not None)
+            + (self._nanoseconds is not None)
+        )
+
+    def __contains__(self, key: str) -> bool:
+        """Check if a specific field is set.
+
+        Example
+        -------
+        >>> d = ItemizedDelta(weeks=1, days=3)
+        >>> "weeks" in d
+        True
+        >>> "hours" in d
+        False
+        """
+        if key == "years":
+            return self._years is not None
+        elif key == "months":
+            return self._months is not None
+        elif key == "weeks":
+            return self._weeks is not None
+        elif key == "days":
+            return self._days is not None
+        elif key == "hours":
+            return self._hours is not None
+        elif key == "minutes":
+            return self._minutes is not None
+        elif key == "seconds":
+            return self._seconds is not None
+        elif key == "nanoseconds":
+            return self._nanoseconds is not None
+        return False
+
+    def format_iso(self, *, lowercase_units: bool = False) -> str:
+        """Format as the *popular interpretation* of the ISO 8601 duration format.
+        May not strictly adhere to (all versions of) the standard.
+        See :ref:`here <iso8601-durations>` for more information.
+
+        Inverse of :meth:`parse_iso`.
+
+        The format is:
+
+        .. code-block:: text
+
+            P(nY)(nM)(nW)(nD)T(nH)(nM)(nS)
+
+        Example
+        -------
+        >>> d = ItemizedDelta(
+        ...     weeks=1,
+        ...     days=11,
+        ...     hours=4,
+        ...     seconds=1,
+        ...     nanoseconds=12_000,
+        ... )
+        >>> d.format_iso()
+        'P1W11DT4H1.000012S'
+        """
+        # Mypy complains about string unpacking. But it's valid here. See mypy/issues/13823
+        y, m, w, d, h, s = "ymwdhs" if lowercase_units else "YMWDHS"  # type: ignore[misc]
+
+        parts = ["-" * (self._sign == -1), "P"]
+        if self._years is not None:
+            parts.append(f"{self._years}{y}")
+        if self._months is not None:
+            parts.append(f"{self._months}{m}")
+        if self._weeks is not None:
+            parts.append(f"{self._weeks}{w}")
+        if self._days is not None:
+            parts.append(f"{self._days}{d}")
+
+        parts.append("T")
+
+        if self._hours is not None:
+            parts.append(f"{self._hours}{h}")
+        if self._minutes is not None:
+            parts.append(f"{self._minutes}{m}")
+        if self._seconds is not None:
+            if self._nanoseconds is None:
+                parts.append(f"{self._seconds}{s}")
+            elif self._nanoseconds:
+                parts.append(
+                    f"{self._seconds}.{self._nanoseconds:09d}".rstrip("0") + s
+                )
+            else:
+                parts.append(f"{self._seconds}.0{s}")
+
+        joined = "".join(parts)
+        if joined.endswith("T"):  # skip the T if no time fields
+            return joined[:-1]
+        # NOTE: we always have at least one field,
+        # so we don't need to check for "empty" durations.
+        return joined
+
+    @classmethod
+    def parse_iso(cls, s: str, /) -> ItemizedDelta:
+        """Parse the *popular interpretation* of the ISO 8601 duration format.
+        Does not parse all possible ISO 8601 durations.
+        See :ref:`here <iso8601-durations>` for more information.
+
+        Examples:
+
+        .. code-block:: text
+
+           P4D        # 4 days
+           PT4H       # 4 hours
+           PT0M       # 0 minutes
+           PT3M40.5S  # 3 minutes and 40.5 seconds
+           P1W11DT90M # 1 week, 11 days, and 90 minutes
+           -PT7H400M  # -7 hours and -400 minutes
+           +PT7H4M    # 7 hours and 4 minutes (7:04:00)
+
+        Inverse of :meth:`format_iso`
+
+        Example
+        -------
+        >>> DateTimeDelta.parse_iso("-P1W11DT4H")
+        DateTimeDelta(-P1w11dT4h)
+        """
+        exc = ValueError(f"Invalid format: {s!r}")
+        prev_unit = ""
+        years, months, weeks, days, hours, minutes, seconds, nanos = (
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+
+        # Catch certain invalid strings early, making parsing easier
+        if len(s) < 3 or not s.isascii() or s.endswith("T"):
+            raise exc
+
+        sign: Sign
+        s = s.upper()
+        if s[0] == "P":
+            sign = 1
+            rest = s[1:]
+        elif s.startswith("-P"):
+            sign = -1
+            rest = s[2:]
+        elif s.startswith("+P"):
+            sign = 1
+            rest = s[2:]
+        else:
+            raise exc
+
+        # parse the date part
+        while rest and not rest.startswith("T"):
+            rest, value, unit = _parse_datedelta_component(rest, exc)
+
+            if unit == "Y" and prev_unit == "":
+                years = value
+            elif unit == "M" and prev_unit in "Y":
+                months = value
+            elif unit == "W" and prev_unit in "YM":
+                weeks = value
+            elif unit == "D" and prev_unit in "YMW":
+                days = value
+                break
+            else:
+                raise exc  # components out of order
+
+            prev_unit = unit
+
+        prev_unit = ""
+        if rest and not rest.startswith("T"):
+            raise exc
+
+        # skip the "T" separator
+        rest = rest[1:]
+
+        while rest:
+            rest_new, value, unit = _parse_timedelta_component(rest, exc)
+
+            if unit == "H" and prev_unit == "":
+                hours = value
+            elif unit == "M" and prev_unit in "H":
+                minutes = value
+            elif unit == "S":
+                seconds = value // 1_000_000_000
+                # Only set nanos if there are fractional digits
+                if "," in rest or "." in rest:
+                    nanos = value % 1_000_000_000
+                if rest_new:
+                    raise exc
+                break
+            else:
+                raise exc
+
+            rest = rest_new
+            prev_unit = unit
+
+        if not (
+            years
+            or months
+            or weeks
+            or days
+            or hours
+            or minutes
+            or seconds
+            or nanos
+        ):
+            sign = 0
+
+        # NOTE: we've implicitly validated that at least one field is set
+        return cls._from_signed(
+            sign,
+            years,
+            months,
+            weeks,
+            days,
+            hours,
+            minutes,
+            seconds,
+            nanos,
+        )
+
+    # A private constructor. Checks bounds but *not* signs or presence of > 0 fields.
+    @classmethod
+    def _from_signed(
+        cls,
+        sign: Sign,
+        years: int | None,
+        months: int | None,
+        weeks: int | None,
+        days: int | None,
+        hours: int | None,
+        minutes: int | None,
+        seconds: int | None,
+        nanoseconds: int | None,
+    ) -> ItemizedDelta:
+        self = _object_new(cls)
+        self._sign = sign
+        self._years = _check_bound(years, _MAX_DELTA_YEARS)
+        self._months = _check_bound(months, _MAX_DELTA_MONTHS)
+        self._weeks = _check_bound(weeks, _MAX_DELTA_WEEKS)
+        self._days = _check_bound(days, _MAX_DELTA_DAYS)
+        self._hours = _check_bound(hours, _MAX_DELTA_HOURS)
+        self._minutes = _check_bound(minutes, _MAX_DELTA_MINUTES)
+        self._seconds = _check_bound(seconds, _MAX_DELTA_SECONDS)
+        self._nanoseconds = _check_bound(nanoseconds, _MAX_SUBSEC_NANOS)
+        return self
+
+    def __eq__(self, other: object) -> bool:
+        """Compare for strict equality. All fields *and their presence* must match.
+        No normalization is performed.
+
+        Thus, ``ItemizedDelta(weeks=1, seconds=0) != ItemizedDelta(weeks=1)``
+
+        Example
+        -------
+        >>> d = ItemizedDelta(weeks=2, minutes=90)
+        >>> d == ItemizedDelta(weeks=2, minutes=90)
+        True
+        >>> d == ItemizedDelta(weeks=2, minutes=91)
+        False
+        """
+        if not isinstance(other, ItemizedDelta):
+            return NotImplemented
+        return (
+            self._sign == other._sign
+            and self._years == other._years
+            and self._months == other._months
+            and self._weeks == other._weeks
+            and self._days == other._days
+            and self._hours == other._hours
+            and self._minutes == other._minutes
+            and self._seconds == other._seconds
+            and self._nanoseconds == other._nanoseconds
+        )
+
+    @no_type_check
+    def __reduce__(self):
+        return (
+            _unpkl_vdelta,
+            (
+                self._sign,
+                self._years,
+                self._months,
+                self._weeks,
+                self._days,
+                self._hours,
+                self._minutes,
+                self._seconds,
+                self._nanoseconds,
+            ),
+        )
+
+    def __repr__(self) -> str:
+        return f'ItemizedDelta("{self.format_iso(lowercase_units=True)}")'
+
+
+# A separate unpickling function allows us to make backwards-compatible changes
+# to the pickling format in the future
+def _unpkl_vdelta(
+    sign: Sign,
+    years: Optional[int],
+    months: Optional[int],
+    weeks: Optional[int],
+    days: Optional[int],
+    hours: Optional[int],
+    minutes: Optional[int],
+    seconds: Optional[int],
+    nanos: Optional[int],
+) -> ItemizedDelta:
+    self = _object_new(ItemizedDelta)
+    self._sign = sign
+    self._years = years
+    self._months = months
+    self._weeks = weeks
+    self._days = days
+    self._hours = hours
+    self._minutes = minutes
+    self._seconds = seconds
+    self._nanoseconds = nanos
+    return self
+
+
+def _check_bound(i: int | None, max_value: int) -> int | None:
+    if i and i > max_value:
+        raise ValueError("Delta out of range")
+    return i
+
+
+def _check_component(
+    value: Optional[int], sign: Sign, max_value: int
+) -> tuple[Optional[int], Sign]:
+    if not value:  # None or 0: sign unchanged
+        return value, sign
+    if value < 0:
+        if sign == 1:
+            raise ValueError("Mixed sign in delta")
+        value = -value
+        sign = -1
+    elif value > 0:
+        if sign == -1:
+            raise ValueError("Mixed sign in delta")
+        sign = 1
+
+    if value > max_value:
+        raise ValueError("Delta out of range")
+    return value, sign
 
 
 @final
@@ -2944,9 +3648,7 @@ class _LocalTime(_BasicConversions, ABC):
                 "nanosecond",
             ] = "second",
             increment: int = 1,
-            mode: Literal[
-                "ceil", "floor", "half_ceil", "half_floor", "half_even"
-            ] = "half_even",
+            mode: _RoundMode = "half_even",
         ) -> _T:
             """Round the datetime to the specified unit and increment.
             Different rounding modes are available.
@@ -3595,9 +4297,7 @@ class Instant(_ExactTime):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "half_even",
+        mode: _RoundMode = "half_even",
     ) -> Instant:
         """Round the instant to the specified unit and increment.
         Various rounding modes are available.
@@ -3614,7 +4314,7 @@ class Instant(_ExactTime):
         rounded_time, next_day = Time._from_py_unchecked(
             self._py_dt.time(), self._nanos
         )._round_unchecked(
-            increment_to_ns(unit, increment, any_hour_ok=False),
+            increment_to_ns_for_datetime(unit, increment),
             mode,
             86_400_000_000_000,
         )
@@ -4188,9 +4888,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "half_even",
+        mode: _RoundMode = "half_even",
         *,
         ignore_dst: bool = False,
     ) -> OffsetDateTime:
@@ -4217,7 +4915,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         return (
             self.to_plain()
             ._round_unchecked(
-                increment_to_ns(unit, increment, any_hour_ok=False),
+                increment_to_ns_for_datetime(unit, increment),
                 mode,
                 86_400_000_000_000,
             )
@@ -4803,9 +5501,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "half_even",
+        mode: _RoundMode = "half_even",
     ) -> ZonedDateTime:
         """Round the datetime to the specified unit and increment.
         Different rounding modes are available.
@@ -4828,7 +5524,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         * This method has similar behavior to the ``round()`` method of
           Temporal objects in JavaScript.
         """
-        increment_ns = increment_to_ns(unit, increment, any_hour_ok=False)
+        increment_ns = increment_to_ns_for_datetime(unit, increment)
         if unit == "day":
             increment_ns = day_ns = self.day_length()._total_ns
         else:
@@ -5372,9 +6068,7 @@ class PlainDateTime(_LocalTime):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "half_even",
+        mode: _RoundMode = "half_even",
     ) -> PlainDateTime:
         """Round the datetime to the specified unit and increment.
         Different rounding modes are available.
@@ -5393,7 +6087,7 @@ class PlainDateTime(_LocalTime):
         Temporal objects in JavaScript.
         """
         return self._round_unchecked(
-            increment_to_ns(unit, increment, any_hour_ok=False),
+            increment_to_ns_for_datetime(unit, increment),
             mode,
             86_400_000_000_000,
         )
