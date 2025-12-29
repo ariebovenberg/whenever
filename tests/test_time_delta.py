@@ -8,6 +8,7 @@ from pytest import approx
 
 from whenever import (
     DateDelta,
+    ItemizedDelta,
     PlainDateTime,
     TimeDelta,
     hours,
@@ -425,8 +426,14 @@ class TestParseIso:
     @pytest.mark.parametrize(
         "s",
         [
-            f"PT{10_000 * 366 * 24}H",  # too big value
-            f"PT{10_000 * 366 * 24 * 3600}S",  # too big value
+            "PT90000000H",
+            "-PT90000000H",
+            "PT5500000000M",
+            "-PT5500000000M",
+            "PT400000000000.00S",
+            "-PT400000000000.00S",
+            f"PT{10_000 * 366 * 24}H",
+            f"PT{10_000 * 366 * 24 * 3600}S",
         ],
     )
     def test_too_large(self, s) -> None:
@@ -773,6 +780,17 @@ class TestRound:
                 TimeDelta(hours=10),
                 TimeDelta(hours=10),
             ),
+            # irregular increments are fine for deltas (in contrast to datetimes)
+            (
+                TimeDelta(hours=10, minutes=30),
+                23439118,
+                "millisecond",  # TODO: catch non-plural unit?
+                TimeDelta(hours=6, minutes=30, seconds=39.118),
+                TimeDelta(hours=13, minutes=1, seconds=18.236),
+                TimeDelta(hours=13, minutes=1, seconds=18.236),
+                TimeDelta(hours=13, minutes=1, seconds=18.236),
+                TimeDelta(hours=13, minutes=1, seconds=18.236),
+            ),
         ],
     )
     def test_valid(
@@ -794,12 +812,8 @@ class TestRound:
     @pytest.mark.parametrize(
         "unit, increment",
         [
-            ("minute", 8),
-            ("second", 14),
-            ("millisecond", 15),
-            ("millisecond", 2000),
-            ("second", 90),
-            ("hour", 5000),
+            ("second", -1),
+            ("hour", 0),
             ("millisecond", -100),
         ],
     )
@@ -909,6 +923,180 @@ def test_abs():
         TimeDelta(hours=-1, minutes=-2, seconds=-3, microseconds=-4)
     ) == TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
     assert abs(TimeDelta(hours=1)) == TimeDelta(hours=1)
+
+
+class TestInUnits:
+
+    @pytest.mark.parametrize(
+        "delta, units, kwargs, expected",
+        [
+            # ---
+            # Basic cases
+            # ---
+            (
+                TimeDelta(minutes=90),
+                ("hours", "minutes", "seconds"),
+                {},
+                ItemizedDelta(hours=1, minutes=30, seconds=0),
+            ),
+            (
+                TimeDelta(),
+                ("minutes", "seconds"),
+                {},
+                ItemizedDelta(minutes=0, seconds=0),
+            ),
+            (
+                TimeDelta(hours=3, minutes=1),
+                ("minutes", "seconds"),
+                {},
+                ItemizedDelta(minutes=181, seconds=0),
+            ),
+            (
+                TimeDelta(
+                    hours=-1, minutes=-30, seconds=-15, microseconds=-500
+                ),
+                ("minutes", "seconds", "nanoseconds"),
+                {},
+                ItemizedDelta(minutes=-90, seconds=-15, nanoseconds=-500_000),
+            ),
+            # list instead of tuple argument
+            (
+                TimeDelta(nanoseconds=1),
+                ["seconds", "nanoseconds"],
+                {},
+                ItemizedDelta(seconds=0, nanoseconds=1),
+            ),
+            # ---
+            # Rounding
+            # ---
+            (
+                TimeDelta(hours=2, minutes=30),
+                ("hours",),
+                {},
+                ItemizedDelta(hours=2),
+            ),
+            (
+                TimeDelta(hours=2, minutes=51, seconds=30),
+                ("hours", "minutes"),
+                {},
+                ItemizedDelta(hours=2, minutes=52),
+            ),
+            (
+                TimeDelta(hours=2, minutes=51, seconds=30),
+                ("hours", "minutes"),
+                {"round_mode": "floor"},
+                ItemizedDelta(hours=2, minutes=51),
+            ),
+            (
+                TimeDelta(hours=2, minutes=50, seconds=30),
+                ("hours", "minutes"),
+                {"round_mode": "half_ceil"},
+                ItemizedDelta(hours=2, minutes=51),
+            ),
+            (
+                TimeDelta(hours=2, minutes=50, seconds=1),
+                ("hours", "minutes"),
+                {"round_mode": "ceil"},
+                ItemizedDelta(hours=2, minutes=51),
+            ),
+            (
+                TimeDelta(hours=2),
+                ("hours",),
+                {"round_mode": "ceil"},
+                ItemizedDelta(hours=2),
+            ),
+            (
+                TimeDelta(seconds=1),
+                ("hours", "minutes"),
+                {"round_mode": "floor"},
+                ItemizedDelta(hours=0, minutes=0),
+            ),
+            (
+                TimeDelta(seconds=-1),
+                ("hours", "minutes"),
+                {"round_mode": "floor"},
+                ItemizedDelta(hours=0, minutes=-1),
+            ),
+            # ---
+            # larger units
+            # ---
+            (
+                TimeDelta(hours=49, minutes=121),
+                ("days", "hours"),
+                {},
+                ItemizedDelta(days=2, hours=3),
+            ),
+            (
+                TimeDelta(hours=-50 * 24, minutes=-121),
+                ("weeks", "hours"),
+                {},
+                ItemizedDelta(weeks=-7, hours=-26),
+            ),
+            # Strange set of units and increment, but should work
+            (
+                TimeDelta(hours=49, minutes=121),
+                (
+                    "days",
+                    "seconds",
+                    "nanoseconds",
+                ),
+                {"round_increment": 826549200},
+                ItemizedDelta(days=2, seconds=10860, nanoseconds=58_789_200),
+            ),
+            # TEST round single units with large values
+        ],
+    )
+    def test_valid(self, delta, units, kwargs, expected):
+        assert delta.in_units(units, **kwargs) == expected
+
+    def test_invalid_unit(self):
+        d = TimeDelta(hours=1)
+        with pytest.raises(ValueError, match="plural"):
+            d.in_units(["foo"])  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+            d.in_units(["foos"])  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError, match="Invalid.*unit"):
+            d.in_units([""])  # type: ignore[arg-type]
+
+        # DOC: make this error clearer
+        with pytest.raises(ValueError, match="Invalid.*unit"):
+            d.in_units(["milliseconds"])  # type: ignore[arg-type]
+
+    def test_missing_units(self):
+        d = TimeDelta(hours=1)
+        with pytest.raises(ValueError, match="At least one unit"):
+            d.in_units([])  # type: ignore[call-arg]
+
+    def test_units_out_of_order(self):
+        d = TimeDelta(hours=1)
+        with pytest.raises(ValueError, match="in descending order"):
+            d.in_units(["seconds", "hours"])  # type: ignore[arg-type]
+
+    def test_units_repeated(self):
+        d = TimeDelta(hours=1)
+        # DOC: clarify error message
+        with pytest.raises(ValueError):
+            d.in_units(["hours", "hours", "minutes"])  # type: ignore[arg-type]
+
+    def test_nanoseconds_but_no_seconds(self):
+        d = TimeDelta(hours=1)
+        with pytest.raises(ValueError, match="Nanoseconds.*seconds"):
+            d.in_units(["hours", "nanoseconds"])  # type: ignore[arg-type]
+
+    def test_invalid_round_mode(self):
+        d = TimeDelta(hours=1)
+        with pytest.raises(ValueError, match="Invalid.*rounding mode.*foo"):
+            d.in_units(["hours"], round_mode="foo")  # type: ignore[arg-type]
+
+    # TODO: decide on error message
+    # def test_invalid_round_unit(self):
+    #     d = TimeDelta(hours=1)
+    #     with pytest.raises(ValueError):
+    #         d.in_units(
+    #             ["hours", "seconds", "nanoseconds"], round_unit="millisecond"
+    #         )  # type: ignore[arg-type]
 
 
 def test_copy():

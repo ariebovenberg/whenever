@@ -1,8 +1,25 @@
 # 🚀 Changelog
 
+<<<<<<< HEAD
 ## 0.9.5 (2026-01-11)
 
 Fix issue where not all windows wheels were built and uploaded (#317)
+=======
+## 0.10.0 (2026-??-??)
+
+- **Breaking Changes**
+
+  - ``DateTimeDelta`` and ``DateDelta`` have been replaced by
+    ``ItemizedDelta`` and ``ItemizedDateDelta``, respectively.
+
+    The big change is that these deltas are now fully un-normalized,
+    meaning "90 minutes" and "1 hour and 30 minutes" are distinct values.
+
+**Improved**
+
+- ``TimeDelta.round()`` now supports larger and irregular values for ``increment``.
+  Also, days and weeks can now be used as rounding units (with a warning about 24-hour days).
+>>>>>>> 38a613e (Implement basic ItemizedDelta)
 
 ## 0.9.4 (2025-12-14)
 
