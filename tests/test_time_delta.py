@@ -1,5 +1,6 @@
 import pickle
 import re
+import warnings
 from copy import copy, deepcopy
 from datetime import timedelta as py_timedelta
 
@@ -8,10 +9,12 @@ from pytest import approx
 
 from whenever import (
     DateDelta,
+    DaysAreNotAlways24HoursWarning,
     ItemizedDelta,
     PlainDateTime,
     TimeDelta,
     hours,
+    ignore_days_not_always_24h_warning,
     microseconds,
     milliseconds,
     minutes,
@@ -220,6 +223,7 @@ def test_aggregations():
     assert d.in_hours() == approx(
         1 + 2 / 60 + 0.003 / 3_600 + 4 / 3_600_000_000_000_000
     )
+    # TODO: rename or not?
     assert d.in_days_of_24h() == approx(
         1 / 24
         + 2 / (24 * 60)
@@ -791,23 +795,48 @@ class TestRound:
                 TimeDelta(hours=13, minutes=1, seconds=18.236),
                 TimeDelta(hours=13, minutes=1, seconds=18.236),
             ),
+            (
+                TimeDelta(hours=321, minutes=30),
+                2,
+                "day",
+                TimeDelta(hours=288),
+                TimeDelta(hours=336),
+                TimeDelta(hours=336),
+                TimeDelta(hours=336),
+                TimeDelta(hours=336),
+            ),
+            (
+                TimeDelta(hours=321, minutes=30),
+                1,
+                "week",
+                TimeDelta(hours=168),
+                TimeDelta(hours=336),
+                TimeDelta(hours=336),
+                TimeDelta(hours=336),
+                TimeDelta(hours=336),
+            ),
         ],
     )
     def test_valid(
         self, t, increment, unit, floor, ceil, half_floor, half_ceil, half_even
     ):
-        assert t.round(unit, increment=increment) == half_even
-        assert t.round(unit, increment=increment, mode="ceil") == ceil
-        assert t.round(unit, increment=increment, mode="floor") == floor
-        assert (
-            t.round(unit, increment=increment, mode="half_floor") == half_floor
-        )
-        assert (
-            t.round(unit, increment=increment, mode="half_ceil") == half_ceil
-        )
-        assert (
-            t.round(unit, increment=increment, mode="half_even") == half_even
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DaysAreNotAlways24HoursWarning)
+            assert t.round(unit, increment=increment) == half_even
+            assert t.round(unit, increment=increment, mode="ceil") == ceil
+            assert t.round(unit, increment=increment, mode="floor") == floor
+            assert (
+                t.round(unit, increment=increment, mode="half_floor")
+                == half_floor
+            )
+            assert (
+                t.round(unit, increment=increment, mode="half_ceil")
+                == half_ceil
+            )
+            assert (
+                t.round(unit, increment=increment, mode="half_even")
+                == half_even
+            )
 
     @pytest.mark.parametrize(
         "unit, increment",
@@ -844,10 +873,13 @@ class TestRound:
         with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
             t.round(mode="foo")  # type: ignore[arg-type]
 
-    def test_no_day_unit(self):
+    def test_24h_day_warning(self):
         t = TimeDelta.ZERO
-        with pytest.raises(ValueError, match="day.*24 hours"):
-            t.round("day")  # type: ignore[arg-type]
+        with pytest.warns(DaysAreNotAlways24HoursWarning):
+            t.round("day")
+
+        with pytest.warns(DaysAreNotAlways24HoursWarning):
+            t.round("week")
 
     def test_extremes(self):
         t = TimeDelta.MAX
@@ -1032,6 +1064,18 @@ class TestInUnits:
                 {},
                 ItemizedDelta(weeks=-7, hours=-26),
             ),
+            (
+                TimeDelta(hours=-50 * 24, minutes=-121),
+                ("weeks",),
+                {"round_mode": "floor"},
+                ItemizedDelta(weeks=-8),
+            ),
+            (
+                TimeDelta(hours=-50 * 24, minutes=-121),
+                ("days",),
+                {},
+                ItemizedDelta(days=-50),
+            ),
             # Strange set of units and increment, but should work
             (
                 TimeDelta(hours=49, minutes=121),
@@ -1047,7 +1091,10 @@ class TestInUnits:
         ],
     )
     def test_valid(self, delta, units, kwargs, expected):
-        assert delta.in_units(units, **kwargs) == expected
+        with warnings.catch_warnings():
+            # we test this warning elsewhere
+            warnings.simplefilter("ignore", DaysAreNotAlways24HoursWarning)
+            assert delta.in_units(units, **kwargs) == expected
 
     def test_invalid_unit(self):
         d = TimeDelta(hours=1)
@@ -1089,6 +1136,20 @@ class TestInUnits:
         d = TimeDelta(hours=1)
         with pytest.raises(ValueError, match="Invalid.*rounding mode.*foo"):
             d.in_units(["hours"], round_mode="foo")  # type: ignore[arg-type]
+
+    def test_24h_days_warning(self):
+        d = TimeDelta(hours=49)
+        with pytest.warns(DaysAreNotAlways24HoursWarning):
+            d.in_units(["days", "hours"])
+
+        with pytest.warns(DaysAreNotAlways24HoursWarning):
+            d.in_units(["weeks", "hours"])
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            with ignore_days_not_always_24h_warning():
+                d.in_units(["days"])
+            assert len(w) == 0
 
     # TODO: decide on error message
     # def test_invalid_round_unit(self):

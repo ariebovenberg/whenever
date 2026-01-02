@@ -11,6 +11,8 @@ Fix issue where not all windows wheels were built and uploaded (#317)
 
   - ``DateTimeDelta`` and ``DateDelta`` have been replaced by
     ``ItemizedDelta`` and ``ItemizedDateDelta``, respectively.
+    The helper functions for creating deltas from specific units
+    (``years()``, ``months()``, etc.) have also been deprecated.
 
     The big change is that these deltas are now fully un-normalized,
     meaning "90 minutes" and "1 hour and 30 minutes" are distinct values.

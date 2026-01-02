@@ -34,6 +34,7 @@ except ModuleNotFoundError as e:
     from ._pywhenever import (
         _clear_tz_cache,
         _clear_tz_cache_by_keys,
+        _ignore_days_not_always_24h_warning,
         _patch_time_frozen,
         _patch_time_keep_ticking,
         _set_tzpath,
