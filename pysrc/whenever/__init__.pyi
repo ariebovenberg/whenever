@@ -378,12 +378,57 @@ class ItemizedDelta:
     def minutes(self) -> int: ...
     @property
     def seconds(self) -> int: ...
+    @property
+    def nanoseconds(self) -> int: ...
     def float_seconds(self) -> float: ...
-    def values(self) -> tuple[int, ...]: ...
-    def as_dict(self) -> DeltaDict: ...
+    def dict(self) -> DeltaDict: ...
     def format_iso(self, *, lowercase_units: bool = False) -> str: ...
     @classmethod
     def parse_iso(cls, s: str, /) -> Self: ...
+    def keys(self) -> tuple[
+        Literal[
+            "years",
+            "months",
+            "weeks",
+            "days",
+            "hours",
+            "minutes",
+            "seconds",
+            "nanoseconds",
+        ],
+        ...,
+    ]: ...
+    def values(self) -> tuple[int, ...]: ...
+    def __iter__(self) -> Iterable[int]: ...
+    def __len__(self) -> int: ...
+    def __getitem__(
+        self,
+        item: Literal[
+            "years",
+            "months",
+            "weeks",
+            "days",
+            "hours",
+            "minutes",
+            "seconds",
+            "nanoseconds",
+        ],
+    ) -> int: ...
+    def __contains__(
+        self,
+        item: Literal[
+            "years",
+            "months",
+            "weeks",
+            "days",
+            "hours",
+            "minutes",
+            "seconds",
+            "nanoseconds",
+        ],
+    ) -> bool: ...
+    def __abs__(self) -> Self: ...
+    def __neg__(self) -> Self: ...
 
 @final
 class DateTimeDelta(_DeltaMixin):

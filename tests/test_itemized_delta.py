@@ -350,6 +350,27 @@ class TestParseIso:
             ItemizedDelta.parse_iso(s)
 
 
+def test_abs():
+    d = ItemizedDelta(days=-5, hours=-3, nanoseconds=-200)
+    assert abs(d) == ItemizedDelta(days=5, hours=3, nanoseconds=200)
+
+    d_pos = ItemizedDelta(days=2, minutes=30)
+    assert abs(d_pos) is d_pos
+
+    d_zero = ItemizedDelta(seconds=0)
+    assert abs(d_zero) is d_zero
+
+
+def test_neg():
+    d = ItemizedDelta(days=5, hours=3, nanoseconds=200)
+    assert -d == ItemizedDelta(days=-5, hours=-3, nanoseconds=-200)
+    assert --d == d
+
+    d_zero = ItemizedDelta(seconds=0)
+    neg_zero = -d_zero
+    assert neg_zero is d_zero
+
+
 @pytest.mark.parametrize(
     "d",
     [

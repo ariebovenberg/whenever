@@ -2415,16 +2415,20 @@ class ItemizedDelta(_Base):
     -------
     "0 seconds" is different from "no seconds":
 
-    >>> d1 = ItemizedDelta(weeks=1, seconds=0).as_dict()
-    {'weeks': 1, 'seconds': 0}
-    >>> d2 = ItemizedDelta(weeks=1).as_dict()
-    {'weeks': 1}
+    >>> d1 = ItemizedDelta(weeks=1, seconds=0)
+    ItemizedDelta("P1wT0s")
+    >>> d2 = ItemizedDelta(weeks=1)
+    ItemizedDelta("P1w")
     >>> d1 == d2
     False
     >>> d1.format_iso()
     "P1WT0S"
     >>> d2.format_iso()
     "P1W"
+    >>> dict(d1)
+    {'weeks': 1, 'seconds': 0}
+    >>> dict(d2)
+    {'weeks': 1}
     """
 
     __slots__ = (
@@ -2925,6 +2929,54 @@ class ItemizedDelta(_Base):
             and self._minutes == other._minutes
             and self._seconds == other._seconds
             and self._nanoseconds == other._nanoseconds
+        )
+
+    def __abs__(self) -> ItemizedDelta:
+        """If the contents are negative, return the positive version
+
+        Example
+        -------
+        >>> d = ItemizedDelta(weeks=-2, days=-3)
+        >>> abs(d)
+        ItemizedDelta("P2w3d")
+        """
+        if self._sign >= 0:
+            return self
+        return ItemizedDelta._from_signed(
+            1,
+            self._years,
+            self._months,
+            self._weeks,
+            self._days,
+            self._hours,
+            self._minutes,
+            self._seconds,
+            self._nanoseconds,
+        )
+
+    def __neg__(self) -> ItemizedDelta:
+        """Invert the sign of the contents
+
+        Example
+        -------
+        >>> d = ItemizedDelta(weeks=2, days=3)
+        >>> -d
+        ItemizedDelta("-P2w3d")
+        >>> --d
+        ItemizedDelta("P2w3d")
+        """
+        if self._sign == 0:
+            return self
+        return ItemizedDelta._from_signed(
+            -self._sign,
+            self._years,
+            self._months,
+            self._weeks,
+            self._days,
+            self._hours,
+            self._minutes,
+            self._seconds,
+            self._nanoseconds,
         )
 
     @no_type_check
