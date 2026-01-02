@@ -14,6 +14,7 @@ from ._core import (
     ZonedDateTime,
     _clear_tz_cache,
     _clear_tz_cache_by_keys,
+    _ignore_days_not_always_24h_warning,
     _patch_time_frozen,
     _patch_time_keep_ticking,
     _set_tzpath,
@@ -32,7 +33,28 @@ __all__ = [
     "reset_tzpath",
     "clear_tzcache",
     "available_timezones",
+    "ignore_days_not_always_24h_warning",
 ]
+
+
+@contextmanager
+def ignore_days_not_always_24h_warning() -> Iterator[None]:
+    """Context manager to ignore warnings about days that are not always 24 hours
+    long (due to DST transitions).
+
+    Example
+    -------
+
+    >>> from whenever import TimeDelta
+    >>> d = TimeDelta(hours=100)
+    >>> with ignore_days_not_always_24h_warning():
+    ...     d.in_days()
+    """
+    token = _ignore_days_not_always_24h_warning.set(True)
+    try:
+        yield
+    finally:
+        _ignore_days_not_always_24h_warning.reset(token)
 
 
 class _TimePatch:
