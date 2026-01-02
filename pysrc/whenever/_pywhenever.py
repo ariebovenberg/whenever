@@ -39,6 +39,7 @@ import os.path
 import sys
 from abc import ABC, ABCMeta, abstractmethod
 from collections import OrderedDict
+from contextvars import ContextVar
 from datetime import (
     date as _date,
     datetime as _datetime,
@@ -102,7 +103,8 @@ __all__ = [
     "milliseconds",
     "microseconds",
     "nanoseconds",
-    # Exceptions
+    # Exceptions/warnings
+    "DaysAreNotAlways24HoursWarning",
     "SkippedTime",
     "RepeatedTime",
     "InvalidOffsetError",
@@ -1481,8 +1483,6 @@ class TimeDelta(_Base):
         ],
         /,
         *,
-        round_mode: _RoundMode = "half_even",
-        round_increment: int = 1,
         round_unit: Union[
             Literal[
                 "millisecond",
@@ -1491,14 +1491,35 @@ class TimeDelta(_Base):
             ],
             None,
         ] = None,
+        round_mode: _RoundMode = "half_even",
+        round_increment: int = 1,
     ) -> ItemizedDelta:
         """Convert to a :class:`ItemizedDelta` with the specified units
+
+        Parameters
+        ----------
+        units
+            A sequence of plural unit names, in descending order.
+            Valid unit names are: ``weeks``, ``days``, ``hours``,
+            ``minutes``, ``seconds``, ``nanoseconds``.
+        round_unit
+            The unit to round to before conversion.
+            If omitted, the smallest unit in ``units`` is used.
+            See :meth:`round` for details.
+        round_mode
+            The rounding mode to use when rounding before conversion.
+            See :meth:`round` for details.
+        round_increment
+            The rounding increment to use when rounding before conversion.
+            See :meth:`round` for details.
 
         Example
         -------
         >>> d = TimeDelta(hours=2, minutes=30, seconds=23, milliseconds=500)
         >>> d.in_units(['minutes', 'seconds'])
         ItemizedDelta("PT150m24s")
+        >>> (hrs, mins) = d.in_units(['hours', 'minutes'], round_mode='ceil')
+        (2, 31)
         """
         if any(u and not u.endswith("s") for u in units):
             raise ValueError("All units must be plural")
@@ -1538,6 +1559,15 @@ class TimeDelta(_Base):
         ):
             raise ValueError(
                 "Nanoseconds can only be specified together with seconds"
+            )
+
+        if (
+            "days" in units or "weeks" in units
+        ) and not _ignore_days_not_always_24h_warning.get():
+            warn(
+                DAYS_NOT_ALWAYS_24H_MSG,
+                DaysAreNotAlways24HoursWarning,
+                stacklevel=2,
             )
 
         sign: Sign = (
@@ -1676,6 +1706,8 @@ class TimeDelta(_Base):
     def round(
         self,
         unit: Literal[
+            "week",
+            "day",
             "hour",
             "minute",
             "second",
@@ -1698,8 +1730,15 @@ class TimeDelta(_Base):
         >>> t.round("second", increment=10, mode="floor")
         TimeDelta("PT3h25m40s")
         """
-        if unit == "day":  # type: ignore[comparison-overlap]
-            raise ValueError(CANNOT_ROUND_DAY_MSG)
+        if (
+            unit in ("day", "week")
+            and not _ignore_days_not_always_24h_warning.get()
+        ):
+            warn(
+                DAYS_NOT_ALWAYS_24H_MSG,
+                DaysAreNotAlways24HoursWarning,
+                stacklevel=2,
+            )
         # TODO: catch invalid round_units here?
 
         increment_ns = increment_to_ns_for_delta(unit, increment)
@@ -6119,6 +6158,15 @@ def _unpkl_local(data: bytes) -> PlainDateTime:
     return PlainDateTime._from_py_unchecked(_datetime(*args), nanos)
 
 
+_ignore_days_not_always_24h_warning: ContextVar[bool] = ContextVar(
+    "_ignore_days_not_always_24h_warning", default=False
+)
+
+
+class DaysAreNotAlways24HoursWarning(UserWarning):
+    """An operation assumed days are always 24 hours long"""
+
+
 class InvalidOffsetError(ValueError):
     """A string has an invalid offset for the given zone"""
 
@@ -6245,6 +6293,14 @@ FORMAT_ISO_NO_TZ_MSG = (
     "This typically means the ZonedDateTime was created from a system timezone "
     "with an unknown ID. To format without the timezone designator, set the "
     "`tz=` argument to 'never' or 'auto'."
+)
+
+DAYS_NOT_ALWAYS_24H_MSG = (
+    "This operation assumes days are exactly 24 hours. "
+    "Calendar days may be 23 or 25 hours long during DST transitions. "
+    "If you're working with UTC, or deliberately want fixed-length days, this is correct. "
+    "For DST-aware operations, consider using ZonedDateTime arithmetic instead. "
+    "Suppress this warning with `with whenever.ignore_days_not_always_24h_warning():`."
 )
 
 
