@@ -2979,6 +2979,52 @@ class ItemizedDelta(_Base):
             self._nanoseconds,
         )
 
+    def __add__(self, other: ItemizedDelta) -> ItemizedDelta:
+        """Add the fields of another delta to this one.
+        Fields that are not present in either delta are not present in the result.
+
+        Note
+        ----
+        Fields are added directly without normalization.
+        The only exception is nanoseconds, which roll over into seconds if
+        the result exceeds 1.000.000.000.
+
+        Example
+        -------
+        >>> d1 = ItemizedDelta(weeks=2, minutes=30)
+        >>> d2 = ItemizedDelta(weeks=1, days=3, minutes=45)
+        >>> d1 + d2
+        ItemizedDelta("P3w3dT75m")
+        """
+        if not isinstance(other, ItemizedDelta):
+            return NotImplemented
+
+        def combine_field(a: Optional[int], b: Optional[int]) -> Optional[int]:
+            if a is None and b is None:
+                return None
+            return self._sign * (a or 0) + other._sign * (b or 0)
+
+        seconds = combine_field(self._seconds, other._seconds)
+        nanos = combine_field(self._nanoseconds, other._nanoseconds)
+        if seconds is not None and nanos is not None:
+            total_nanos = seconds * 1_000_000_000 + nanos
+            seconds, nanos = divmod(total_nanos, 1_000_000_000)
+            # compensate for divmod behavior with negative numbers
+            if seconds < 0:
+                seconds += 1
+                nanos -= 1_000_000_000
+
+        return ItemizedDelta(
+            years=combine_field(self._years, other._years),
+            months=combine_field(self._months, other._months),
+            weeks=combine_field(self._weeks, other._weeks),
+            days=combine_field(self._days, other._days),
+            hours=combine_field(self._hours, other._hours),
+            minutes=combine_field(self._minutes, other._minutes),
+            seconds=seconds,
+            nanoseconds=nanos,
+        )
+
     @no_type_check
     def __reduce__(self):
         return (

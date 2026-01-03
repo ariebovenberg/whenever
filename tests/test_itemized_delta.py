@@ -371,6 +371,109 @@ def test_neg():
     assert neg_zero is d_zero
 
 
+class TestAddAndSubtract:
+    def test_valid(self):
+        d1 = ItemizedDelta(
+            years=1,
+            months=2,
+            days=5,
+            hours=3,
+            seconds=41,
+            nanoseconds=987_654_321,
+        )
+        d2 = ItemizedDelta(weeks=1, months=13, hours=4, nanoseconds=500)
+
+        assert d1 + d2 == ItemizedDelta(
+            years=1,
+            months=15,
+            weeks=1,
+            days=5,
+            hours=7,
+            seconds=41,
+            nanoseconds=987_654_821,
+        )
+        assert d1 + ItemizedDelta(days=0) == d1
+        assert d1 + ItemizedDelta(minutes=0) == ItemizedDelta(
+            years=1,
+            months=2,
+            days=5,
+            hours=3,
+            minutes=0,
+            seconds=41,
+            nanoseconds=987_654_321,
+        )
+        assert d1 + ItemizedDelta(days=-3, hours=-3) == ItemizedDelta(
+            years=1,
+            months=2,
+            days=2,
+            hours=0,
+            seconds=41,
+            nanoseconds=987_654_321,
+        )
+
+        # nanosecond overflow
+        assert d1 + ItemizedDelta(nanoseconds=200_000_000) == ItemizedDelta(
+            years=1,
+            months=2,
+            days=5,
+            hours=3,
+            seconds=42,
+            nanoseconds=187_654_321,
+        )
+        # nanosecond underflow
+        assert d1 + ItemizedDelta(nanoseconds=-999_000_000) == ItemizedDelta(
+            years=1,
+            months=2,
+            days=5,
+            hours=3,
+            seconds=40,
+            nanoseconds=988_654_321,
+        )
+
+        # resulting in zero delta
+        assert d1 + (-d1) == ItemizedDelta(
+            years=0, months=0, days=0, hours=0, seconds=0, nanoseconds=0
+        )
+        # resulting in sign swap
+        assert d1 + ItemizedDelta(
+            years=-1,
+            months=-5,
+            days=-10,
+            hours=-4,
+            seconds=-41,
+            nanoseconds=-987_654_321,
+        ) == ItemizedDelta(
+            years=0,
+            months=-3,
+            days=-5,
+            hours=-1,
+            seconds=0,
+            nanoseconds=0,
+        )
+        # pure nanosecond over/underflow
+        assert ItemizedDelta(nanoseconds=900_000_000) + ItemizedDelta(
+            nanoseconds=200_000_000
+        ) == ItemizedDelta(seconds=1, nanoseconds=100_000_000)
+        assert ItemizedDelta(nanoseconds=-900_000_000) + ItemizedDelta(
+            nanoseconds=-200_000_000
+        ) == ItemizedDelta(seconds=-1, nanoseconds=-100_000_000)
+        assert ItemizedDelta(nanoseconds=200) + ItemizedDelta(
+            nanoseconds=-500
+        ) == ItemizedDelta(nanoseconds=-300)
+
+    def test_mixed_sign_error(self):
+        d1 = ItemizedDelta(days=5, hours=3, nanoseconds=200)
+        with pytest.raises(ValueError, match="sign"):
+            d1 + ItemizedDelta(days=-2, hours=-4)
+
+        with pytest.raises(ValueError, match="sign"):
+            d1 + ItemizedDelta(nanoseconds=-201)
+
+        # TODO: max value overflow
+
+        # TODO: ItemizedDelta.in_units() for rebalancing
+
+
 @pytest.mark.parametrize(
     "d",
     [
