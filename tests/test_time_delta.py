@@ -1099,38 +1099,38 @@ class TestInUnits:
     def test_invalid_unit(self):
         d = TimeDelta(hours=1)
         with pytest.raises(ValueError, match="plural"):
-            d.in_units(["foo"])  # type: ignore[arg-type]
+            d.in_units(["foo"])  # type: ignore[list-item]
 
         with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
-            d.in_units(["foos"])  # type: ignore[arg-type]
+            d.in_units(["foos"])  # type: ignore[list-item]
 
         with pytest.raises(ValueError, match="Invalid.*unit"):
-            d.in_units([""])  # type: ignore[arg-type]
+            d.in_units([""])  # type: ignore[list-item]
 
         # DOC: make this error clearer
         with pytest.raises(ValueError, match="Invalid.*unit"):
-            d.in_units(["milliseconds"])  # type: ignore[arg-type]
+            d.in_units(["milliseconds"])  # type: ignore[list-item]
 
     def test_missing_units(self):
         d = TimeDelta(hours=1)
         with pytest.raises(ValueError, match="At least one unit"):
-            d.in_units([])  # type: ignore[call-arg]
+            d.in_units([])
 
     def test_units_out_of_order(self):
         d = TimeDelta(hours=1)
         with pytest.raises(ValueError, match="in descending order"):
-            d.in_units(["seconds", "hours"])  # type: ignore[arg-type]
+            d.in_units(["seconds", "hours"])
 
     def test_units_repeated(self):
         d = TimeDelta(hours=1)
         # DOC: clarify error message
         with pytest.raises(ValueError):
-            d.in_units(["hours", "hours", "minutes"])  # type: ignore[arg-type]
+            d.in_units(["hours", "hours", "minutes"])
 
     def test_nanoseconds_but_no_seconds(self):
         d = TimeDelta(hours=1)
         with pytest.raises(ValueError, match="Nanoseconds.*seconds"):
-            d.in_units(["hours", "nanoseconds"])  # type: ignore[arg-type]
+            d.in_units(["hours", "nanoseconds"])
 
     def test_invalid_round_mode(self):
         d = TimeDelta(hours=1)
