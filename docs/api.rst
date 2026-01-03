@@ -110,6 +110,16 @@ Deltas
    .. autoattribute:: MIN
    .. autoattribute:: MAX
 
+.. autoclass:: whenever.ItemizedDelta
+   :members:
+   :special-members: __eq__, __neg__, __abs__
+   :member-order: bysource
+
+.. autoclass:: whenever.ItemizedDateDelta
+   :members:
+   :special-members: __eq__, __neg__, __abs__
+   :member-order: bysource
+
 .. autoclass:: whenever.DateDelta
    :members:
    :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __mul__, __bool__
@@ -120,10 +130,6 @@ Deltas
    :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __bool__, __mul__
    :member-order: bysource
 
-.. autoclass:: whenever.ItemizedDelta
-   :members:
-   :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __bool__, __mul__
-   :member-order: bysource
 
 .. _date-and-time-api:
 

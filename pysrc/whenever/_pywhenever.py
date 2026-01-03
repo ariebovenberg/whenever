@@ -93,6 +93,7 @@ __all__ = [
     "TimeDelta",
     "DateTimeDelta",
     "ItemizedDelta",
+    "ItemizedDateDelta",
     "years",
     "months",
     "weeks",
@@ -2772,21 +2773,14 @@ class ItemizedDelta(_Base):
 
         Example
         -------
-        >>> DateTimeDelta.parse_iso("-P1W11DT4H")
-        DateTimeDelta(-P1w11dT4h)
+        >>> ItemizeDelta.parse_iso("-P1W11DT4H")
+        ItemizeDelta("-P1w11dT4h")
         """
         exc = ValueError(f"Invalid format: {s!r}")
         prev_unit = ""
         years, months, weeks, days, hours, minutes, seconds, nanos = (
             None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
+        ) * 8
 
         # Catch certain invalid strings early, making parsing easier
         if len(s) < 3 or not s.isascii() or s.endswith("T"):
@@ -3028,7 +3022,7 @@ class ItemizedDelta(_Base):
     @no_type_check
     def __reduce__(self):
         return (
-            _unpkl_vdelta,
+            _unpkl_idelta,
             (
                 self._sign,
                 self._years,
@@ -3048,7 +3042,7 @@ class ItemizedDelta(_Base):
 
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
-def _unpkl_vdelta(
+def _unpkl_idelta(
     sign: Sign,
     years: Optional[int],
     months: Optional[int],
@@ -3057,7 +3051,7 @@ def _unpkl_vdelta(
     hours: Optional[int],
     minutes: Optional[int],
     seconds: Optional[int],
-    nanos: Optional[int],
+    nanoseconds: Optional[int],
 ) -> ItemizedDelta:
     self = _object_new(ItemizedDelta)
     self._sign = sign
@@ -3068,7 +3062,396 @@ def _unpkl_vdelta(
     self._hours = hours
     self._minutes = minutes
     self._seconds = seconds
-    self._nanoseconds = nanos
+    self._nanoseconds = nanoseconds
+    return self
+
+
+@final
+class ItemizedDateDelta(_Base):
+    """TODO"""
+
+    __slots__ = (
+        "_sign",
+        # Values are stored as positive integers or None. The sign
+        # is stored separately (all fields must have the same sign).
+        "_years",
+        "_months",
+        "_weeks",
+        "_days",
+    )
+
+    def __init__(
+        self,
+        *,
+        years: Optional[int] = None,
+        months: Optional[int] = None,
+        weeks: Optional[int] = None,
+        days: Optional[int] = None,
+    ) -> None:
+        sign: Sign = 0
+        (self._years, sign) = _check_component(years, sign, _MAX_DELTA_YEARS)
+        (self._months, sign) = _check_component(
+            months, sign, _MAX_DELTA_MONTHS
+        )
+        (self._weeks, sign) = _check_component(weeks, sign, _MAX_DELTA_WEEKS)
+        (self._days, sign) = _check_component(days, sign, _MAX_DELTA_DAYS)
+        self._sign: Sign = sign
+        if (
+            self._sign == 0
+            and years is None
+            and months is None
+            and weeks is None
+            and days is None
+        ):
+            # This is to ensure ISO8601 formatting/parsing is round-trip safe.
+            # There is no "empty" duration in ISO8601; at least one field must be present.
+            raise ValueError("At least one field must be set")
+
+    @property
+    def sign(self) -> Sign:
+        """The sign of the delta, 1, 0, or -1"""
+        return self._sign
+
+    # CONSIDER: should these be methods instead of properties?
+    @property
+    def years(self) -> int:
+        """The number of years, 0 if not set"""
+        return self._sign * (self._years or 0)
+
+    @property
+    def months(self) -> int:
+        """The number of months, 0 if not set"""
+        return self._sign * (self._months or 0)
+
+    @property
+    def weeks(self) -> int:
+        """The number of weeks, 0 if not set"""
+        return self._sign * (self._weeks or 0)
+
+    @property
+    def days(self) -> int:
+        """The number of days, 0 if not set"""
+        return self._sign * (self._days or 0)
+
+    def values(self) -> tuple[int, ...]:
+        """Return all non-None fields as a tuple, in order."""
+        return tuple(self)
+
+    def __iter__(self) -> Iterator[int]:
+        """Iterate over all non-None fields, ordered from largest to smallest unit."""
+        if self._years is not None:
+            yield self._sign * self._years
+        if self._months is not None:
+            yield self._sign * self._months
+        if self._weeks is not None:
+            yield self._sign * self._weeks
+        if self._days is not None:
+            yield self._sign * self._days
+
+    def dict(self) -> dict[str, int]:
+        """Return all non-None fields as a dictionary,
+        ordered from largest to smallest unit.
+        """
+        fields = (
+            ("years", self._years),
+            ("months", self._months),
+            ("weeks", self._weeks),
+            ("days", self._days),
+        )
+        return {k: self._sign * v for k, v in fields if v is not None}
+
+    def keys(self) -> tuple[str, ...]:
+        """Return a tuple of the names of all non-None fields,
+        ordered from largest to smallest unit.
+        """
+        fields = (
+            ("years", self._years),
+            ("months", self._months),
+            ("weeks", self._weeks),
+            ("days", self._days),
+        )
+        return tuple(k for k, v in fields if v is not None)
+
+    def __getitem__(self, key: str) -> int:
+        """Get the value of a specific field by name.
+
+        Example
+        -------
+        >>> d = ItemizedDateDelta(weeks=1, days=0)
+        >>> d["weeks"]
+        1
+        >>> d["days"]
+        0
+        >>> d["years"]
+        KeyError: 'years'
+        """
+        # DROP-PY39: replace with match statement
+        if key == "years":
+            value = self._years
+        elif key == "months":
+            value = self._months
+        elif key == "weeks":
+            value = self._weeks
+        elif key == "days":
+            value = self._days
+        else:
+            raise KeyError(key)
+
+        if value is not None:
+            return self._sign * value
+
+        raise KeyError(key)
+
+    def __len__(self) -> int:
+        """Get the number of fields that are set.
+
+        Example
+        -------
+        >>> d = ItemizedDateDelta(weeks=1, days=0)
+        >>> len(d)
+        2
+        """
+        return (
+            (self._years is not None)
+            + (self._months is not None)
+            + (self._weeks is not None)
+            + (self._days is not None)
+        )
+
+    def __contains__(self, key: str) -> bool:
+        """Check if a specific field is set.
+
+        Example
+        -------
+        >>> d = ItemizedDateDelta(weeks=1, days=0)
+        >>> "weeks" in d
+        True
+        >>> "days" in d
+        True
+        >>> "months" in d
+        False
+        """
+        if key == "years":
+            return self._years is not None
+        elif key == "months":
+            return self._months is not None
+        elif key == "weeks":
+            return self._weeks is not None
+        elif key == "days":
+            return self._days is not None
+        return False
+
+    def format_iso(self, *, lowercase_units: bool = False) -> str:
+        """Format as the *popular interpretation* of the ISO 8601 duration format.
+        May not strictly adhere to (all versions of) the standard.
+        See :ref:`here <iso8601-durations>` for more information.
+
+        Inverse of :meth:`parse_iso`.
+
+        The format is:
+
+        .. code-block:: text
+
+            P(nY)(nM)(nW)(nD)
+
+        Example
+        -------
+        >>> d = ItemizedDateDelta(
+        ...     weeks=1,
+        ...     days=11,
+        ... )
+        >>> d.format_iso()
+        'P1W11D'
+        """
+        # Mypy complains about string unpacking. But it's valid here. See mypy/issues/13823
+        y, m, w, d = "ymwd" if lowercase_units else "YMWD"  # type: ignore[misc]
+
+        parts = ["-" * (self._sign == -1), "P"]
+        if self._years is not None:
+            parts.append(f"{self._years}{y}")
+        if self._months is not None:
+            parts.append(f"{self._months}{m}")
+        if self._weeks is not None:
+            parts.append(f"{self._weeks}{w}")
+        if self._days is not None:
+            parts.append(f"{self._days}{d}")
+
+        # NOTE: we always have at least one field,
+        # so we don't need to check for "empty" durations.
+        return "".join(parts)
+
+    @classmethod
+    def parse_iso(cls, s: str, /) -> ItemizedDateDelta:
+        """Parse the *popular interpretation* of the ISO 8601 duration format.
+        Does not parse all possible ISO 8601 durations.
+        See :ref:`here <iso8601-durations>` for more information.
+
+        Examples:
+
+        .. code-block:: text
+
+           P4D        # 4 days
+           P0M        # 0 months
+           P7Y99D     # 7 years and 99 days
+           P1M2W3D    # 1 month, 2 weeks, and 3 days
+           -P7D       # -7 days
+           +P9Y2M     # 9 years and 2 months
+
+        Inverse of :meth:`format_iso`
+
+        Example
+        -------
+        >>> ItemizedDateDelta.parse_iso("-P1W11D")
+        ItemizedDateDelta("-P1w11d")
+        """
+        exc = ValueError(f"Invalid format: {s!r}")
+
+        # Catch certain invalid strings early, making parsing easier
+        if len(s) < 3 or not s.isascii():
+            raise exc
+
+        sign: Sign
+        s = s.upper()  # normalize to uppercase for parsing
+        if s[0] == "P":
+            sign = 1
+            rest = s[1:]
+        elif s.startswith("-P"):
+            sign = -1
+            rest = s[2:]
+        elif s.startswith("+P"):
+            sign = 1
+            rest = s[2:]
+        else:
+            raise exc
+
+        years, months, weeks, days = (None,) * 4
+        prev_unit = ""
+        while rest:
+            rest, value, unit = _parse_datedelta_component(rest, exc)
+
+            if unit == "Y" and prev_unit == "":
+                years = value
+            elif unit == "M" and prev_unit in "Y":
+                months = value
+            elif unit == "W" and prev_unit in "YM":
+                weeks = value
+            elif unit == "D" and prev_unit in "YMW":
+                days = value
+                break
+            else:
+                raise exc  # components out of order
+
+            prev_unit = unit
+
+        if rest:
+            raise exc
+
+        if not (years or months or weeks or days):
+            sign = 0
+
+        # NOTE: we've implicitly validated that at least one field is set
+        return cls._from_signed(sign, years, months, weeks, days)
+
+    # A private constructor. Checks bounds but *not* signs or presence of > 0 fields.
+    @classmethod
+    def _from_signed(
+        cls,
+        sign: Sign,
+        years: int | None,
+        months: int | None,
+        weeks: int | None,
+        days: int | None,
+    ) -> ItemizedDateDelta:
+        self = _object_new(cls)
+        self._sign = sign
+        self._years = _check_bound(years, _MAX_DELTA_YEARS)
+        self._months = _check_bound(months, _MAX_DELTA_MONTHS)
+        self._weeks = _check_bound(weeks, _MAX_DELTA_WEEKS)
+        self._days = _check_bound(days, _MAX_DELTA_DAYS)
+        return self
+
+    def __eq__(self, other: object) -> bool:
+        """Compare for strict equality. All fields *and their presence* must match.
+        No normalization is performed.
+
+        Thus, ``ItemizedDateDelta(weeks=1, days=0) != ItemizedDateDelta(weeks=1)``
+
+        Example
+        -------
+        >>> d = ItemizedDateDelta(weeks=2, minutes=90)
+        >>> d == ItemizedDateDelta(weeks=2, minutes=90)
+        True
+        >>> d == ItemizedDateDelta(weeks=2, minutes=91)
+        False
+        """
+        if not isinstance(other, ItemizedDateDelta):
+            return NotImplemented
+        return (
+            self._sign == other._sign
+            and self._years == other._years
+            and self._months == other._months
+            and self._weeks == other._weeks
+            and self._days == other._days
+        )
+
+    def __abs__(self) -> ItemizedDateDelta:
+        """If the contents are negative, return the positive version
+
+        Example
+        -------
+        >>> d = ItemizedDateDelta(weeks=-2, days=-3)
+        >>> abs(d)
+        ItemizedDateDelta("P2w3d")
+        """
+        if self._sign >= 0:
+            return self
+        return ItemizedDateDelta._from_signed(
+            1, self._years, self._months, self._weeks, self._days
+        )
+
+    def __neg__(self) -> ItemizedDateDelta:
+        """Invert the sign of the contents
+
+        Example
+        -------
+        >>> d = ItemizedDateDelta(weeks=2, days=3)
+        >>> -d
+        ItemizedDateDelta("-P2w3d")
+        >>> --d
+        ItemizedDateDelta("P2w3d")
+        """
+        if self._sign == 0:
+            return self
+        return ItemizedDateDelta._from_signed(
+            -self._sign, self._years, self._months, self._weeks, self._days
+        )
+
+    @no_type_check
+    def __reduce__(self):
+        return (
+            _unpkl_iddelta,
+            (self._sign, self._years, self._months, self._weeks, self._days),
+        )
+
+    def __repr__(self) -> str:
+        return f'ItemizedDateDelta("{self.format_iso(lowercase_units=True)}")'
+
+
+# A separate unpickling function allows us to make backwards-compatible changes
+# to the pickling format in the future
+def _unpkl_iddelta(
+    sign: Sign,
+    years: Optional[int],
+    months: Optional[int],
+    weeks: Optional[int],
+    days: Optional[int],
+) -> ItemizedDateDelta:
+    self = _object_new(ItemizedDateDelta)
+    self._sign = sign
+    self._years = years
+    self._months = months
+    self._weeks = weeks
+    self._days = days
     return self
 
 
