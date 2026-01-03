@@ -42,6 +42,8 @@ except ModuleNotFoundError as e:
         _unpkl_date,
         _unpkl_ddelta,
         _unpkl_dtdelta,
+        _unpkl_iddelta,
+        _unpkl_idelta,
         _unpkl_inst,
         _unpkl_local,
         _unpkl_md,
@@ -49,7 +51,6 @@ except ModuleNotFoundError as e:
         _unpkl_tdelta,
         _unpkl_time,
         _unpkl_utc,
-        _unpkl_vdelta,
         _unpkl_ym,
         _unpkl_zoned,
     )

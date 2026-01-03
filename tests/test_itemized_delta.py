@@ -80,7 +80,7 @@ class TestInit:
     )
     def test_range(self, value, unit):
         kwargs = {unit: value}
-        with pytest.raises((ValueError, OverflowError), match="range|inf|NaN"):
+        with pytest.raises(ValueError, match="range"):
             ItemizedDelta(**kwargs)
 
     def test_float_seconds(self):
@@ -256,7 +256,7 @@ INVALID_DELTAS = [
     "P3D4",
     "P3D4T",
     # too many digits
-    "P9999999999999999999S",
+    "PT9999999999999999999S",
     # out of range
     "P14000Y",
     "P180000M",
@@ -265,6 +265,11 @@ INVALID_DELTAS = [
     "P3DT4HM",
     "P3DT4H8X",
     "P3DT4M3H",
+    # trailing stuff
+    "P3DT4SXYZ",
+    "P3DT4S   ",
+    "P3DT4SS",
+    "P3DT4S0",
     *INVALID_DDELTAS,
     *INVALID_TDELTAS,
 ]
@@ -473,6 +478,8 @@ class TestAddAndSubtract:
 
         # TODO: ItemizedDelta.in_units() for rebalancing
 
+        # TODO: method to remove zero components
+
 
 @pytest.mark.parametrize(
     "d",
@@ -503,7 +510,7 @@ def test_compatible_unpickle():
     # We keep this test to ensure backwards compatibility.
     dumped = (
         b"\x80\x04\x95A\x00\x00\x00\x00\x00\x00\x00\x8c\x14whenever._pywheneve"
-        b"r\x94\x8c\r_unpkl_vdelta\x94\x93\x94(K\x01K\x01K\x02K\x03K\x04K\x05K\x06K"
+        b"r\x94\x8c\r_unpkl_idelta\x94\x93\x94(K\x01K\x01K\x02K\x03K\x04K\x05K\x06K"
         b"\x07K\x08t\x94R\x94."
     )
     result = pickle.loads(dumped)
