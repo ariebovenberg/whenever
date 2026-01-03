@@ -13,6 +13,7 @@ from typing import (
     ClassVar,
     Iterable,
     Literal,
+    Sequence,
     TypeAlias,
     TypedDict,
     final,
@@ -256,12 +257,15 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
     def in_hrs_mins_secs_nanos(self) -> tuple[int, int, int, int]: ...
     def in_units(
         self,
-        *units: Literal[
-            "days",
-            "hours",
-            "minutes",
-            "seconds",
-            "nanoseconds",
+        units: Sequence[
+            Literal[
+                "weeks",
+                "days",
+                "hours",
+                "minutes",
+                "seconds",
+                "nanoseconds",
+            ]
         ],
         round_mode: Literal[
             "ceil", "floor", "half_ceil", "half_floor", "half_even"
@@ -292,6 +296,8 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
     def round(
         self,
         unit: Literal[
+            "week",
+            "day",
             "hour",
             "minute",
             "second",
@@ -429,6 +435,7 @@ class ItemizedDelta:
     ) -> bool: ...
     def __abs__(self) -> Self: ...
     def __neg__(self) -> Self: ...
+    def __add__(self, other: Self, /) -> Self: ...
 
 @final
 class DateTimeDelta(_DeltaMixin):
