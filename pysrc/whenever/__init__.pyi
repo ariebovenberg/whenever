@@ -122,6 +122,30 @@ class Date(_DateOrTimeMixin):
     ) -> Self: ...
     @overload
     def subtract(self, delta: DateDelta, /) -> Self: ...
+    @overload
+    def since(
+        self,
+        other: Date,
+        /,
+        *,
+        unit: Literal["years", "months", "weeks", "days"],
+        round_increment: int = 1,
+        round_mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "floor",
+    ) -> int: ...
+    @overload
+    def since(
+        self,
+        other: Date,
+        /,
+        *,
+        units: Sequence[Literal["years", "months", "weeks", "days"]],
+        round_increment: int = 1,
+        round_mode: Literal[
+            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+        ] = "floor",
+    ) -> ItemizedDateDelta: ...
     def days_since(self, other: Self, /) -> int: ...
     def days_until(self, other: Self, /) -> int: ...
     def __add__(self, p: DateDelta, /) -> Self: ...
