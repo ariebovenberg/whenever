@@ -24,10 +24,9 @@
 
 # Maintainer's notes:
 #
-# - Why is everything in one file?
+# - Why is most stuff in one file?
 #   - Flat is better than nested
 #   - It prevents circular imports since the classes 'know' about each other
-#   - It's easier to vendor the main functionality, if needed.
 # - There is some code duplication in this file. This is intentional:
 #   - It makes it easier to understand the code
 #   - It's sometimes necessary for the type checker
@@ -70,6 +69,15 @@ from typing import (
 from warnings import warn
 from weakref import WeakValueDictionary
 
+from ._math import (
+    days_diff,
+    days_in_month,
+    increment_to_ns_for_datetime,
+    increment_to_ns_for_delta,
+    months_diff,
+    weeks_diff,
+    years_diff,
+)
 from ._tz import (
     Disambiguate,
     Fold,
@@ -153,7 +161,20 @@ _UNSET = object()
 _NOGIL = hasattr(sys, "_is_gil_enabled") and not sys._is_gil_enabled()
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
-_RoundMode = Literal["ceil", "floor", "half_ceil", "half_floor", "half_even"]
+# TODO: support other round moves in other operations
+_RoundMode = Literal[
+    "ceil",
+    "expand",
+    "floor",
+    "trunc",
+    "half_ceil",
+    "half_expand",
+    "half_floor",
+    "half_trunc",
+    "half_even",
+]
+_CalendarUnit = Literal["years", "months", "weeks", "days"]
+_CALENDAR_UNITS = cast(tuple[str, ...], _CalendarUnit.__args__)  # type: ignore[attr-defined]
 
 # Metaclass ugh...it proved the most lightway way to achieve this:
 # allowing the constructors of many classes to take an ISO string as well as the
@@ -490,6 +511,135 @@ class Date(_Base):
         """
         return (self._py_date - other._py_date).days
 
+    def since(
+        self,
+        b: Date,
+        /,
+        *,
+        unit: Optional[_CalendarUnit] = None,
+        units: Optional[Sequence[_CalendarUnit]] = None,
+        round_mode: _RoundMode = "trunc",
+        round_increment: int = 1,
+    ) -> Union[ItemizedDateDelta, int]:
+        """Calculate the difference between this date and another date.
+        The difference is calculated in terms of the chosen calendar unit
+        or units.
+
+        Parameters
+        ----------
+        other
+            The date to calculate the difference since.
+        unit
+            If specified, the difference is calculated in terms of this single
+            unit. Cannot be combined with `units`.
+        units
+            If specified, the difference is calculated in terms of these units,
+            in decreasing order of size. Cannot be combined with `unit`.
+        round_mode
+            The rounding mode to apply to the smallest specified unit.
+            Default is "floor".
+        round_increment
+            The increment to round to for the smallest specified unit.
+            Default is 1.
+
+        Returns
+        -------
+        ItemizedDateDelta | int
+            If multiple units are specified, the difference is returned
+            as an :class:`ItemizedDateDelta`,
+            otherwise as an integer number of the specified unit.
+
+        Examples
+        --------
+        >>> d1 = Date(2023, 4, 15)
+
+        """
+        # Normalize the unit/units arguments
+        if unit is not None and units is not None:
+            raise TypeError("Cannot specify both 'unit' and 'units'")
+        elif unit:
+            single_unit_mode = True
+            units = [unit]
+        elif units is None:
+            raise TypeError("Must specify either 'unit' or 'units'")
+        elif not units:  # empty sequence
+            raise ValueError("'units' cannot be an empty sequence")
+        else:
+            single_unit_mode = False
+
+        # Translate the unit names to unique indices (years=0, months=1, weeks=2, days=3)
+        # This makes it easier to work with them later
+        unit_idx: list[Literal[0, 1, 2, 3]] = []
+        for u in units:
+            try:
+                unit_idx.append(_CALENDAR_UNITS.index(u))  # type: ignore[arg-type]
+            except ValueError:
+                raise ValueError(f"Unsupported unit in units argument: {u!r}")
+        results: list[Optional[int]] = [None, None, None, None]
+
+        if sorted(unit_idx) != unit_idx:
+            raise ValueError("units must be in decreasing order of size")
+        elif len(set(unit_idx)) != len(unit_idx):
+            raise ValueError("units cannot contain duplicates")
+
+        # Because years and months are variable length, the calculation is done
+        # by progressively adding each unit to `b` until we reach the target date (`self`).
+        # We keep track of two dates: one that is truncated (not exceeding `self`)
+        # and one that is expanded (exceeding `self`).
+        trunc = b._py_date
+        expand = self._py_date
+        # We only apply the increment logic to the last unit.
+        # The other units get increment 1.
+        increment_per_unit = [*[1] * (len(units) - 1), round_increment]
+        diff_funcs = (years_diff, months_diff, weeks_diff, days_diff)
+        for i, increment in zip(unit_idx, increment_per_unit):
+            results[i], trunc, expand = diff_funcs[i](
+                self._py_date, trunc, increment
+            )
+
+        sign: Sign = 1 if self > b else 0 if self == b else -1
+
+        # Round is expensive, so only do it if needed
+        if round_mode != "trunc":
+            do_expand = False  # 'expand' means round away from 0
+            days_remaining_total = (expand - trunc).days
+            days_remaining = (self._py_date - trunc).days
+            # DROP-PY39: match-case
+            if round_mode == "expand":
+                do_expand = days_remaining * sign > 0
+            elif round_mode == "ceil":
+                do_expand = days_remaining > 0
+            elif round_mode == "floor":
+                do_expand = days_remaining < 0
+            elif round_mode == "half_ceil":
+                do_expand = days_remaining * 2 > days_remaining_total - sign
+            elif round_mode == "half_floor":
+                do_expand = days_remaining * 2 >= days_remaining_total + sign
+            elif round_mode == "half_trunc":
+                do_expand = days_remaining * 2 > days_remaining_total
+            elif round_mode == "half_expand":
+                do_expand = days_remaining * 2 >= days_remaining_total
+            elif round_mode == "half_even":
+                do_expand = days_remaining * 2 > days_remaining_total or (
+                    days_remaining * 2 == days_remaining_total
+                    and (
+                        results[unit_idx[-1]] // round_increment  # type: ignore[operator]
+                    )
+                    % 2
+                    == 1
+                )
+            else:
+                raise ValueError(f"Invalid round_mode: {round_mode!r}")
+
+            if do_expand:
+                # At this point we know this unit was set to non-None
+                results[unit_idx[-1]] += round_increment  # type: ignore[operator]
+
+        if single_unit_mode:
+            return results[unit_idx[0]] * sign  # type: ignore[operator]
+        else:
+            return ItemizedDateDelta._from_signed(sign, *results)
+
     def _add_months(self, mos: int) -> Date:
         year_overflow, month_new = divmod(self.month - 1 + mos, 12)
         month_new += 1
@@ -497,7 +647,7 @@ class Date(_Base):
         return Date(
             year_new,
             month_new,
-            min(self.day, _days_in_month(year_new, month_new)),
+            min(self.day, days_in_month(year_new, month_new)),
         )
 
     def _add_days(self, days: int) -> Date:
@@ -569,7 +719,7 @@ class Date(_Base):
                     shifted = d._add_months(mos)
                     dys = (
                         -shifted.day
-                        - _days_in_month(self.year, self.month)
+                        - days_in_month(self.year, self.month)
                         + self.day
                     )
                 else:
@@ -580,7 +730,7 @@ class Date(_Base):
                     shifted = d._add_months(mos)
                     dys = (
                         -shifted.day
-                        + _days_in_month(shifted.year, shifted.month)
+                        + days_in_month(shifted.year, shifted.month)
                         + self.day
                     )
                 else:
@@ -1271,49 +1421,6 @@ class Time(_Base):
                 ),
             ),
         )
-
-
-_UNIT_NANOS_AND_MAX_DIVISOR = {
-    "week": (604_800_000_000_000, 0),
-    "day": (86_400_000_000_000, 0),
-    "hour": (3_600_000_000_000, 24),
-    "minute": (60_000_000_000, 60),
-    "second": (1_000_000_000, 60),
-    "millisecond": (1_000_000, 1_000),
-    "microsecond": (1_000, 1_000),
-    "nanosecond": (1, 1_000),
-}
-
-
-def increment_to_ns_for_delta(unit: str, increment: int) -> int:
-    if increment < 1 or increment != int(increment):
-        raise ValueError("Invalid increment")
-    try:
-        ns_per_unit, _ = _UNIT_NANOS_AND_MAX_DIVISOR[unit]
-    except KeyError:
-        raise ValueError(f"Invalid unit: {unit}")
-    return ns_per_unit * increment
-
-
-def increment_to_ns_for_datetime(unit: str, increment: int) -> int:
-    if increment < 1 or increment > 1_000 or increment != int(increment):
-        raise ValueError("Invalid increment")
-
-    if unit == "day" and increment != 1:
-        raise ValueError(
-            "Rounding increment for day can only be 1"
-        )  # TODO reason
-
-    try:
-        ns_per_unit, max_divisor = _UNIT_NANOS_AND_MAX_DIVISOR[unit]
-    except KeyError:
-        raise ValueError(f"Invalid unit: {unit}")
-
-    if max_divisor % increment:
-        raise ValueError(
-            f"Invalid increment for {unit}. Must divide {max_divisor}."
-        )
-    return ns_per_unit * increment
 
 
 # A separate unpickling function allows us to make backwards-compatible changes
@@ -4905,14 +5012,11 @@ class Instant(_ExactTime):
         )
 
 
-_UNIX_INSTANT = -int(_datetime(1, 1, 1, tzinfo=_UTC).timestamp()) + 86_400
-
-
 # Backwards compatibility for instances pickled before 0.8.0
 def _unpkl_utc(data: bytes) -> Instant:
     secs, nanos = unpack("<qL", data)
     return Instant._from_py_unchecked(
-        _fromtimestamp(secs - _UNIX_INSTANT, _UTC), nanos
+        _fromtimestamp(secs - 62_135_683_200, _UTC), nanos
     )
 
 
@@ -6237,10 +6341,7 @@ class PlainDateTime(_LocalTime):
 
     def replace(self, /, **kwargs: Any) -> PlainDateTime:
         """Construct a new instance with the given fields replaced."""
-        if not _no_tzinfo_fold_or_ms(kwargs):
-            raise TypeError(
-                "tzinfo, fold, or microsecond are not allowed arguments"
-            )
+        _check_invalid_replace_kwargs(kwargs)
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
         return self._from_py_unchecked(self._py_dt.replace(**kwargs), nanos)
 
@@ -6797,7 +6898,7 @@ _MAX_ORDINAL = _date.max.toordinal()
 def _from_epoch(ts: int, tz: TimeZone) -> _datetime:
     # NOTE: we can't use the obvious datetime.fromtimestamp() here, because it
     # may give errors on extreme values on some platforms.
-    if (ordinal := ts // 86_400 + 719163) < 1 or ordinal > _MAX_ORDINAL:
+    if (ordinal := ts // 86_400 + 719_163) < 1 or ordinal > _MAX_ORDINAL:
         raise OverflowError("Time out of range")
     return _to_tz(
         (
@@ -7395,18 +7496,6 @@ def _pop_nanos_kwarg(kwargs: Any, default: int) -> int:
     return nanos
 
 
-def _isleap(year: int) -> bool:
-    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
-
-
-# 1-indexed days per month
-_monthdays = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-
-
-def _days_in_month(year: int, month: int) -> int:
-    return _monthdays[month] + (month == 2 and _isleap(year))
-
-
 # Use this to strip any incoming datetime classes down to instances
 # of the datetime.datetime class exactly.
 def _strip_subclasses(dt: _datetime) -> _datetime:
@@ -7730,6 +7819,7 @@ for _unpkl in (
     _unpkl_time,
     _unpkl_tdelta,
     _unpkl_dtdelta,
+    _unpkl_idelta,
     _unpkl_ddelta,
     _unpkl_utc,
     _unpkl_offset,
