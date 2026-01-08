@@ -2656,7 +2656,7 @@ class ItemizedDelta(_Base):
         )
         return {k: self._sign * v for k, v in fields if v is not None}
 
-    def keys(self) -> tuple[str, ...]:
+    def units(self) -> tuple[str, ...]:
         """Return a tuple of the names of all non-None fields,
         ordered from largest to smallest unit.
         """
@@ -3229,7 +3229,7 @@ class ItemizedDateDelta(_Base):
         )
         return {k: self._sign * v for k, v in fields if v is not None}
 
-    def keys(self) -> tuple[str, ...]:
+    def units(self) -> tuple[str, ...]:
         """Return a tuple of the names of all non-None fields,
         ordered from largest to smallest unit.
         """

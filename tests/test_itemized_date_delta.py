@@ -115,12 +115,8 @@ def test_dictlike_behavior(d, expected):
     assert d.dict() == expected
     assert list(d.dict()) == list(expected)  # keys in order
 
-    # dict() constructor
-    assert dict(d) == expected
-    assert OrderedDict(d) == OrderedDict(expected)
-
-    # The rest of the mapping interface
-    assert list(d.keys()) == list(expected.keys())
+    # The mapping-like interface
+    assert list(d.units()) == list(expected.keys())
     assert list(d.values()) == list(expected.values())
 
     for key in expected:
