@@ -146,12 +146,17 @@ class Date(_DateOrTimeMixin):
             "ceil", "floor", "half_ceil", "half_floor", "half_even"
         ] = "floor",
     ) -> ItemizedDateDelta: ...
+    @deprecated('Use since(..., unit="days") instead')
     def days_since(self, other: Self, /) -> int: ...
+    @deprecated('Use until(..., unit="days") instead')
     def days_until(self, other: Self, /) -> int: ...
     def __add__(self, p: DateDelta, /) -> Self: ...
     @overload
     def __sub__(self, d: DateDelta, /) -> Self: ...
     @overload
+    @deprecated(
+        "Use the since(..., ) method with explicit `unit` or `units` instead"
+    )
     def __sub__(self, d: Self, /) -> DateDelta: ...
 
 @final
@@ -348,6 +353,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
     def __mod__(self, other: Self, /) -> Self: ...
 
 @final
+@deprecated("Use ItemizedDateDelta instead")
 class DateDelta(_DeltaMixin):
     @overload
     def __init__(
@@ -502,6 +508,7 @@ class ItemizedDateDelta:
     def __add__(self, other: Self, /) -> Self: ...
 
 @final
+@deprecated("Use ItemizedDelta instead")
 class DateTimeDelta(_DeltaMixin):
     @overload
     def __init__(
@@ -528,7 +535,9 @@ class DateTimeDelta(_DeltaMixin):
     def __sub__(self, other: Delta, /) -> Self: ...
     def __rsub__(self, other: TimeDelta | DateDelta, /) -> Self: ...
 
-Delta: TypeAlias = DateTimeDelta | TimeDelta | DateDelta
+Delta: TypeAlias = (
+    DateTimeDelta | TimeDelta | DateDelta | ItemizedDelta | ItemizedDateDelta
+)
 
 class _LocalTime(ABC):
     @property
@@ -1127,15 +1136,25 @@ FRIDAY = Weekday.FRIDAY
 SATURDAY = Weekday.SATURDAY
 SUNDAY = Weekday.SUNDAY
 
+@deprecated("Use ItemizedDelta(years=...) instead")
 def years(i: int, /) -> DateDelta: ...
+@deprecated("Use ItemizedDelta(months=...) instead")
 def months(i: int, /) -> DateDelta: ...
+@deprecated("Use ItemizedDelta(weeks=...) instead")
 def weeks(i: int, /) -> DateDelta: ...
+@deprecated("Use ItemizedDelta(days=...) instead")
 def days(i: int, /) -> DateDelta: ...
+@deprecated("Use TimeDelta(hours=...) instead")
 def hours(i: float, /) -> TimeDelta: ...
+@deprecated("Use TimeDelta(minutes=...) instead")
 def minutes(i: float, /) -> TimeDelta: ...
+@deprecated("Use TimeDelta(seconds=...) instead")
 def seconds(i: float, /) -> TimeDelta: ...
+@deprecated("Use TimeDelta(milliseconds=...) instead")
 def milliseconds(i: float, /) -> TimeDelta: ...
+@deprecated("Use TimeDelta(microseconds=...) instead")
 def microseconds(i: float, /) -> TimeDelta: ...
+@deprecated("Use TimeDelta(nanoseconds=...) instead")
 def nanoseconds(i: int, /) -> TimeDelta: ...
 
 class _TimePatch:
