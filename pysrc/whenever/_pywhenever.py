@@ -1,26 +1,4 @@
-"""The pure-Python implementation of the whenever library."""
-
-# The MIT License (MIT)
-#
-# Copyright (c) Arie Bovenberg
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
+"""The main pure-Python implementation of the whenever library."""
 
 # Maintainer's notes:
 #
@@ -34,10 +12,7 @@
 from __future__ import annotations
 
 import enum
-import os.path
-import sys
 from abc import ABC, ABCMeta, abstractmethod
-from collections import OrderedDict
 from contextvars import ContextVar
 from datetime import (
     date as _date,
@@ -46,7 +21,6 @@ from datetime import (
     timedelta as _timedelta,
     timezone as _timezone,
 )
-from functools import lru_cache
 from math import fmod
 from struct import pack, unpack
 from time import time_ns
@@ -56,8 +30,6 @@ from typing import (
     ClassVar,
     Iterator,
     Literal,
-    NewType,
-    NoReturn,
     Optional,
     Sequence,
     TypeVar,
@@ -67,8 +39,8 @@ from typing import (
     overload,
 )
 from warnings import warn
-from weakref import WeakValueDictionary
 
+from ._common import check_utc_bounds, mk_fixed_tzinfo
 from ._math import (
     days_diff,
     days_in_month,
@@ -78,12 +50,35 @@ from ._math import (
     weeks_diff,
     years_diff,
 )
+from ._parse import _parse_timedelta_component  # TODO
+from ._parse import _time_from_iso  # TODO
+from ._parse import (
+    MONTH_TO_RFC2822,
+    WEEKDAY_TO_RFC2822,
+    InvalidOffsetError,
+    date_from_iso,
+    datetime_from_iso,
+    monthday_from_iso,
+    offset_dt_from_iso,
+    parse_rfc2822,
+    yearmonth_from_iso,
+    zdt_from_iso,
+)
 from ._tz import (
     Disambiguate,
-    Fold,
+    RepeatedTime,
+    SkippedTime,
     TimeZone,
+    TimeZoneNotFoundError,
     Unambiguous,
-    system,
+    _clear_tz_cache,
+    _clear_tz_cache_by_keys,
+    _set_tzpath,
+    get_system_tz,
+    get_tz,
+    reset_system_tz,
+    resolve_ambiguity,
+    resolve_ambiguity_using_prev_offset,
 )
 
 __all__ = [
@@ -121,10 +116,13 @@ __all__ = [
     "TimeZoneNotFoundError",
     "Weekday",
     "reset_system_tz",
+    "_clear_tz_cache",
+    "_clear_tz_cache_by_keys",
+    "_set_tzpath",
 ]
 
 
-# A self-set variable to detect if we're being run by sphinx. A simple hack.
+# A self-set variable to detect if we're being run by sphinx autodoc
 try:
     from sphinx import (  # type: ignore[attr-defined, import-not-found, unused-ignore]
         SPHINXBUILD,
@@ -158,7 +156,6 @@ _MAX_DELTA_SECONDS = _MAX_DELTA_MINUTES * 60
 _MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * 1_000_000_000
 _MAX_SUBSEC_NANOS = 999_999_999
 _UNSET = object()
-_NOGIL = hasattr(sys, "_is_gil_enabled") and not sys._is_gil_enabled()
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
 # TODO: support other round moves in other operations
@@ -176,8 +173,8 @@ _RoundMode = Literal[
 _CalendarUnit = Literal["years", "months", "weeks", "days"]
 _CALENDAR_UNITS = cast(tuple[str, ...], _CalendarUnit.__args__)  # type: ignore[attr-defined]
 
-# Metaclass ugh...it proved the most lightway way to achieve this:
-# allowing the constructors of many classes to take an ISO string as well as the
+# Metaclass ugh...it proved the most lightweight way to achieve the following:
+# Allowing the constructors of many classes to take an ISO string as well as the
 # regular arguments (i.e. the __init__ signature).
 # Alternatives tried:
 # - A special __new__: but this still calls __init__ afterwards, so no good.
@@ -410,7 +407,7 @@ class Date(_Base):
         >>> Date.parse_iso("2021-01-02")
         Date("2021-01-02")
         """
-        return cls._from_py_unchecked(_date_from_iso(s))
+        return cls._from_py_unchecked(date_from_iso(s))
 
     def replace(self, **kwargs: Any) -> Date:
         """Create a new instance with the given fields replaced
@@ -859,7 +856,7 @@ class YearMonth(_Base):
         >>> YearMonth.parse_iso("2021-01")
         YearMonth("2021-01")
         """
-        return cls._from_py_unchecked(_yearmonth_from_iso(s))
+        return cls._from_py_unchecked(yearmonth_from_iso(s))
 
     def replace(self, **kwargs: Any) -> YearMonth:
         """Create a new instance with the given fields replaced
@@ -1017,7 +1014,7 @@ class MonthDay(_Base):
         >>> MonthDay.parse_iso("--11-23")
         MonthDay("--11-23")
         """
-        return cls._from_py_unchecked(_monthday_from_iso(s))
+        return cls._from_py_unchecked(monthday_from_iso(s))
 
     def replace(self, **kwargs: Any) -> MonthDay:
         """Create a new instance with the given fields replaced
@@ -2079,9 +2076,6 @@ def _unpkl_tdelta(data: bytes) -> TimeDelta:
     return TimeDelta(seconds=s, nanoseconds=ns)
 
 
-_MAX_TDELTA_DIGITS = 35  # consistent with Rust extension
-
-
 _DELTA_ITEMS_NS_AND_PRIO = {
     "weeks": (1_000_000_000 * 60 * 60 * 24 * 7, 0),
     "days": (1_000_000_000 * 60 * 60 * 24, 1),
@@ -2090,38 +2084,6 @@ _DELTA_ITEMS_NS_AND_PRIO = {
     "seconds": (1_000_000_000, 4),
     "nanoseconds": (1, 5),
 }
-
-
-def _parse_timedelta_component(
-    fullstr: str, exc: Exception
-) -> tuple[str, int, Literal["H", "M", "S"]]:
-    try:
-        split_index, unit = next(
-            (i, c) for i, c in enumerate(fullstr) if c in "HMS"
-        )
-    except StopIteration:
-        raise exc
-
-    raw, rest = fullstr[:split_index], fullstr[split_index + 1 :]
-
-    if unit == "S":
-        digits, sep, nanos_raw = _split_nextchar(raw, ".,")
-
-        if (
-            len(digits) > _MAX_TDELTA_DIGITS
-            or not digits.isdigit()
-            or len(nanos_raw) > 9
-            or (sep and not nanos_raw.isdigit())
-        ):
-            raise exc
-
-        value = int(digits) * 1_000_000_000 + int(nanos_raw.ljust(9, "0"))
-    else:
-        if len(raw) > _MAX_TDELTA_DIGITS or not raw.isdigit():
-            raise exc
-        value = int(raw)
-
-    return rest, value, cast(Literal["H", "M", "S"], unit)
 
 
 TimeDelta.ZERO = TimeDelta()
@@ -4434,14 +4396,14 @@ class _ExactTime(_BasicConversions):
         ~whenever.TimeZoneNotFoundError
             If the timezone ID is not found in the timezone database.
         """
-        _tz = _get_tz(tz)
+        _tz = get_tz(tz)
         return ZonedDateTime._from_py_unchecked(
             _to_tz(self._py_dt, _tz), self._nanos, _tz
         )
 
     def to_system_tz(self) -> ZonedDateTime:
         """Convert to a ZonedDateTime of the system's timezone."""
-        tz = _system_tz()
+        tz = get_system_tz()
         return ZonedDateTime._from_py_unchecked(
             _to_tz(self._py_dt, tz), self._nanos, tz
         )
@@ -4818,7 +4780,7 @@ class Instant(_ExactTime):
 
         The inverse of the ``format_iso()`` method.
         """
-        dt, nanos = _offset_dt_from_iso(s)
+        dt, nanos = offset_dt_from_iso(s)
         return cls._from_py_unchecked(dt.astimezone(_UTC), nanos)
 
     def format_rfc2822(self) -> str:
@@ -4836,9 +4798,9 @@ class Instant(_ExactTime):
         "Sat, 08 Aug 2020 23:12:00 GMT"
         """
         return (
-            f"{_WEEKDAY_TO_RFC2822[self._py_dt.weekday()]}, "
+            f"{WEEKDAY_TO_RFC2822[self._py_dt.weekday()]}, "
             f"{self._py_dt.day:02} "
-            f"{_MONTH_TO_RFC2822[self._py_dt.month]} {self._py_dt.year:04} "
+            f"{MONTH_TO_RFC2822[self._py_dt.month]} {self._py_dt.year:04} "
             f"{self._py_dt.time()} GMT"
         )
 
@@ -4865,7 +4827,7 @@ class Instant(_ExactTime):
         - Although technically part of the RFC 2822 standard,
           comments within folding whitespace are not supported.
         """
-        return cls._from_py_unchecked(_parse_rfc2822(s).astimezone(_UTC), 0)
+        return cls._from_py_unchecked(parse_rfc2822(s).astimezone(_UTC), 0)
 
     def add(
         self,
@@ -5061,7 +5023,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         nanosecond: int = 0,
         offset: int | TimeDelta,
     ) -> None:
-        self._py_dt = _check_utc_bounds(
+        self._py_dt = check_utc_bounds(
             _datetime(
                 year,
                 month,
@@ -5138,7 +5100,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         >>> OffsetDateTime.parse_iso("2020-08-15T23:12:00+02:00")
         OffsetDateTime("2020-08-15 23:12:00+02:00")
         """
-        return cls._from_py_unchecked(*_offset_dt_from_iso(s))
+        return cls._from_py_unchecked(*offset_dt_from_iso(s))
 
     @classmethod
     def from_timestamp(
@@ -5239,7 +5201,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         elif offset.microseconds:
             raise ValueError("Sub-second offsets are not supported")
         return cls._from_py_unchecked(
-            _check_utc_bounds(
+            check_utc_bounds(
                 _strip_subclasses(
                     d.replace(microsecond=0, tzinfo=_timezone(offset))
                 )
@@ -5270,7 +5232,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             pass
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
         return self._from_py_unchecked(
-            _check_utc_bounds(self._py_dt.replace(**kwargs)), nanos
+            check_utc_bounds(self._py_dt.replace(**kwargs)), nanos
         )
 
     def replace_date(
@@ -5283,7 +5245,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         if ignore_dst is not True:
             raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
         return self._from_py_unchecked(
-            _check_utc_bounds(
+            check_utc_bounds(
                 _datetime.combine(date._py_date, self._py_dt.timetz())
             ),
             self._nanos,
@@ -5299,7 +5261,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         if ignore_dst is not True:
             raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
         return self._from_py_unchecked(
-            _check_utc_bounds(
+            check_utc_bounds(
                 _datetime.combine(
                     self._py_dt.date(), time._py_time, self._py_dt.tzinfo
                 )
@@ -5346,7 +5308,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         if offset.microseconds:
             raise ValueError("Sub-second offsets are not supported")
         return cls._from_py_unchecked(
-            _check_utc_bounds(parsed.replace(microsecond=0)),
+            check_utc_bounds(parsed.replace(microsecond=0)),
             parsed.microsecond * 1_000,
         )
 
@@ -5366,9 +5328,9 @@ class OffsetDateTime(_ExactAndLocalTime):
         offset_h = offset // 3600
         offset_m = (offset % 3600) // 60
         return (
-            f"{_WEEKDAY_TO_RFC2822[self._py_dt.weekday()]}, "
+            f"{WEEKDAY_TO_RFC2822[self._py_dt.weekday()]}, "
             f"{self._py_dt.day:02} "
-            f"{_MONTH_TO_RFC2822[self._py_dt.month]} {self._py_dt.year:04} "
+            f"{MONTH_TO_RFC2822[self._py_dt.month]} {self._py_dt.year:04} "
             f"{self._py_dt.time()} "
             f"{offset_sign}{offset_h:02}{offset_m:02}"
         )
@@ -5395,7 +5357,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         - Although technically part of the RFC 2822 standard,
           comments within folding whitespace are not supported.
         """
-        return cls._from_py_unchecked(_parse_rfc2822(s), 0)
+        return cls._from_py_unchecked(parse_rfc2822(s), 0)
 
     @no_type_check
     def add(self, *args, **kwargs) -> OffsetDateTime:
@@ -5608,7 +5570,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         tz: str,
         disambiguate: Disambiguate = "compatible",
     ) -> None:
-        self._py_dt = _resolve_ambiguity(
+        self._py_dt = resolve_ambiguity(
             _datetime(
                 year,
                 month,
@@ -5618,7 +5580,7 @@ class ZonedDateTime(_ExactAndLocalTime):
                 second,
                 0,
             ),
-            (_tz := _get_tz(tz)),
+            (_tz := get_tz(tz)),
             disambiguate,
         )
         if nanosecond < 0 or nanosecond >= 1_000_000_000:
@@ -5650,8 +5612,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> ZonedDateTime.from_system_tz(2020, 8, 15, hour=23, minute=12)
         ZonedDateTime("2020-08-15 23:12:00+02:00[Europe/Berlin]")
         """
-        tz = _get_system_tz()
-        dt = _resolve_ambiguity(
+        tz = get_system_tz()
+        dt = resolve_ambiguity(
             _datetime(
                 year,
                 month,
@@ -5672,7 +5634,7 @@ class ZonedDateTime(_ExactAndLocalTime):
     def now(cls, tz: str, /) -> ZonedDateTime:
         """Create an instance from the current time in the given timezone."""
         secs, nanos = divmod(time_ns(), 1_000_000_000)
-        _tz = _get_tz(tz)
+        _tz = get_tz(tz)
         return cls._from_py_unchecked(_from_epoch(secs, _tz), nanos, _tz)
 
     @classmethod
@@ -5681,7 +5643,7 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         Equivalent to ``Instant.now().to_system_tz()``.
         """
-        tz = _get_system_tz()
+        tz = get_system_tz()
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(_from_epoch(secs, tz), nanos, tz)
 
@@ -5757,7 +5719,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         The timezone ID is a recent extension to the ISO 8601 format (RFC 9557).
         Although it is gaining popularity, it is not yet widely supported.
         """
-        return cls._from_py_unchecked(*_zdt_from_iso(s))
+        return cls._from_py_unchecked(*zdt_from_iso(s))
 
     @classmethod
     def from_timestamp(
@@ -5768,7 +5730,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         The inverse of the ``timestamp()`` method.
         """
         secs, fract = divmod(i, 1)
-        _tz = _get_tz(tz)
+        _tz = get_tz(tz)
         return cls._from_py_unchecked(
             _from_epoch(int(secs), _tz), int(fract * 1_000_000_000), _tz
         )
@@ -5782,7 +5744,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, millis = divmod(i, 1_000)
-        _tz = _get_tz(tz)
+        _tz = get_tz(tz)
         return cls._from_py_unchecked(
             _from_epoch(secs, _tz), millis * 1_000_000, _tz
         )
@@ -5796,7 +5758,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
-        _tz = _get_tz(tz)
+        _tz = get_tz(tz)
         return cls._from_py_unchecked(_from_epoch(secs, _tz), nanos, _tz)
 
     @classmethod
@@ -5825,10 +5787,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         # If we'd use the local time, ZoneInfo could theoretically pick a different
         # offset than we get from our database.
         epoch = int(d.timestamp())
-        _tz = _get_tz(d.tzinfo.key)
+        _tz = get_tz(d.tzinfo.key)
         offset = _tz.offset_for_instant(int(epoch))
         # Recalculating from epoch ensures we shift times within a gap
-        dt = _from_epoch(int(epoch), _tz).astimezone(_mk_fixed_tzinfo(offset))
+        dt = _from_epoch(int(epoch), _tz).astimezone(mk_fixed_tzinfo(offset))
         return cls._from_py_unchecked(dt, d.microsecond * 1_000, _tz)
 
     def replace_date(
@@ -5839,7 +5801,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         See the ``replace()`` method for more information.
         """
         return self._from_py_unchecked(
-            _resolve_ambiguity(
+            resolve_ambiguity(
                 _datetime.combine(date._py_date, self._py_dt.time()),
                 self._tz,
                 # mypy doesn't know that offset is never None here
@@ -5857,7 +5819,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         See the ``replace()`` method for more information.
         """
         return self._from_py_unchecked(
-            _resolve_ambiguity(
+            resolve_ambiguity(
                 _datetime.combine(self._py_dt, time._py_time),
                 self._tz,
                 # mypy doesn't know that offset is never None here
@@ -5891,14 +5853,14 @@ class ZonedDateTime(_ExactAndLocalTime):
         except KeyError:
             tz = self._tz
         else:
-            tz = _get_tz(tzid)
+            tz = get_tz(tzid)
             # Don't attempt to preserve offset when changing tz
             if tz is not self._tz:
                 disambiguate = disambiguate or "compatible"
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
 
         return self._from_py_unchecked(
-            _resolve_ambiguity(
+            resolve_ambiguity(
                 self._py_dt.replace(**kwargs, tzinfo=None),
                 tz,
                 # mypy doesn't know that offset is never None here
@@ -6085,12 +6047,12 @@ class ZonedDateTime(_ExactAndLocalTime):
         TimeDelta(25:00:00)
         """
         midnight_naive = _datetime.combine(self._py_dt.date(), _time.min)
-        midnight = _resolve_ambiguity(
+        midnight = resolve_ambiguity(
             midnight_naive,
             self._tz,
             "compatible",
         )
-        next_midnight = _resolve_ambiguity(
+        next_midnight = resolve_ambiguity(
             midnight_naive + _timedelta(days=1),
             self._tz,
             "compatible",
@@ -6104,7 +6066,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         for timezones which transition at—and thus skip over—midnight.
         """
         return self._from_py_unchecked(
-            _resolve_ambiguity(
+            resolve_ambiguity(
                 _datetime.combine(self._py_dt.date(), _time.min),
                 self._tz,
                 "compatible",
@@ -6158,7 +6120,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             increment_ns, mode, day_ns
         )
         return self._from_py_unchecked(
-            _resolve_ambiguity_using_prev_offset(
+            resolve_ambiguity_using_prev_offset(
                 rounded_local._py_dt,
                 self._py_dt.utcoffset(),  # type: ignore[arg-type]
                 self._tz,
@@ -6207,7 +6169,7 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     # An override with shortcut for efficiency if the timezone stays the same
     def to_tz(self, tz: str, /) -> ZonedDateTime:
-        if (_tz := _get_tz(tz)) == self._tz:
+        if (_tz := get_tz(tz)) == self._tz:
             return self
         return self._from_py_unchecked(
             _to_tz(self._py_dt, _tz), self._nanos, _tz
@@ -6249,9 +6211,9 @@ def _unpkl_zoned(data: bytes, tzid: str) -> ZonedDateTime:
     *args, nanos, offset_secs = unpack("<HBBBBBil", data)
     return ZonedDateTime._from_py_unchecked(
         # mypy thinks tzinfo is passed twice. We know it's not.
-        _datetime(*args, tzinfo=_mk_fixed_tzinfo(offset_secs)),  # type: ignore[misc]
+        _datetime(*args, tzinfo=mk_fixed_tzinfo(offset_secs)),  # type: ignore[misc]
         nanos,
-        _get_tz(tzid),
+        get_tz(tzid),
     )
 
 
@@ -6325,7 +6287,7 @@ class PlainDateTime(_LocalTime):
         >>> PlainDateTime.parse_iso("2020-08-15T23:12:00")
         PlainDateTime("2020-08-15 23:12:00")
         """
-        return cls._from_py_unchecked(*_datetime_from_iso(s))
+        return cls._from_py_unchecked(*datetime_from_iso(s))
 
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> PlainDateTime:
@@ -6644,9 +6606,9 @@ class PlainDateTime(_LocalTime):
         >>> d.assume_tz("Europe/Amsterdam", disambiguate="raise")
         ZonedDateTime("2020-08-15 23:12:00+02:00[Europe/Amsterdam]")
         """
-        _tz = _get_tz(tz)
+        _tz = get_tz(tz)
         return ZonedDateTime._from_py_unchecked(
-            _resolve_ambiguity(self._py_dt, _tz, disambiguate),
+            resolve_ambiguity(self._py_dt, _tz, disambiguate),
             self._nanos,
             _tz,
         )
@@ -6672,9 +6634,9 @@ class PlainDateTime(_LocalTime):
         >>> d.assume_system_tz(disambiguate="raise")
         ZonedDateTime("2020-08-15 23:12:00-04:00[America/New_York]")
         """
-        tz = _system_tz()
+        tz = get_system_tz()
         return ZonedDateTime._from_py_unchecked(
-            _resolve_ambiguity(self._py_dt, tz, disambiguate), self._nanos, tz
+            resolve_ambiguity(self._py_dt, tz, disambiguate), self._nanos, tz
         )
 
     def round(
@@ -6749,43 +6711,8 @@ class DaysAreNotAlways24HoursWarning(UserWarning):
     """An operation assumed days are always 24 hours long"""
 
 
-class InvalidOffsetError(ValueError):
-    """A string has an invalid offset for the given zone"""
-
-
 class ImplicitlyIgnoringDST(TypeError):
     """A calculation was performed that implicitly ignored DST"""
-
-
-class TimeZoneNotFoundError(ValueError):
-    """A timezone with the given ID was not found"""
-
-    @classmethod
-    def for_key(cls, key: str) -> TimeZoneNotFoundError:
-        return cls(f"No time zone found for key: {key!r}")
-
-
-class RepeatedTime(ValueError):
-    """A datetime is repeated in a timezone, e.g. because of DST"""
-
-    @classmethod
-    def _for_tz(cls, d: _datetime, tzid: Optional[str]) -> RepeatedTime:
-        return cls(f"{d} is repeated in {_tzid_display(tzid)}")
-
-
-class SkippedTime(ValueError):
-    """A datetime is skipped in a timezone, e.g. because of DST"""
-
-    @classmethod
-    def _for_tz(cls, d: _datetime, tzid: Optional[str]) -> SkippedTime:
-        return cls(f"{d} is skipped in {_tzid_display(tzid)}")
-
-
-def _tzid_display(tzid: Optional[str]) -> str:
-    if tzid is None:
-        return "system timezone (with unknown ID)"
-    else:
-        return f"timezone '{tzid}'"
 
 
 _IGNORE_DST_SUGGESTION = (
@@ -6858,16 +6785,16 @@ CANNOT_ROUND_DAY_MSG = (
     "If you wish to round to exaxtly 24 hours, use `round('hour', increment=24)`."
 )
 
-ZONEINFO_NO_KEY_MSG = """\
-Can't determine the IANA timezone ID of the given datetime:
-The 'key' attribute of the datetime's ZoneInfo object is None.
-
-This typically means the ZoneInfo object represents the system timezone with \
-an unknown ID. As an alternative, you can use OffsetDateTime.from_py_datetime(), \
-but be aware this is a lossy conversion that only preserves \
-the current UTC offset and discards future daylight saving rules. \
-Please note that a timezone abbreviation like 'CEST' from datetime.tzname() \
-is not a valid IANA timezone ID and cannot be used here."""
+ZONEINFO_NO_KEY_MSG = (
+    "Can't determine the IANA timezone ID of the given datetime: "
+    "The 'key' attribute of the datetime's ZoneInfo object is None. \n"
+    "This typically means the ZoneInfo object represents the system timezone with "
+    "an unknown ID. As an alternative, you can use OffsetDateTime.from_py_datetime(), "
+    "but be aware this is a lossy conversion that only preserves "
+    "the current UTC offset and discards future daylight saving rules. "
+    "Please note that a timezone abbreviation like 'CEST' from datetime.tzname() "
+    "is not a valid IANA timezone ID and cannot be used here."
+)
 
 FORMAT_ISO_NO_TZ_MSG = (
     "This ZonedDateTime has no timezone ID and cannot be formatted in the "
@@ -6888,7 +6815,7 @@ DAYS_NOT_ALWAYS_24H_MSG = (
 
 def _to_tz(dt: _datetime, tz: TimeZone) -> _datetime:
     return dt.astimezone(
-        _mk_fixed_tzinfo(tz.offset_for_instant(int(dt.timestamp())))
+        mk_fixed_tzinfo(tz.offset_for_instant(int(dt.timestamp())))
     )
 
 
@@ -6908,73 +6835,6 @@ def _from_epoch(ts: int, tz: TimeZone) -> _datetime:
     )
 
 
-def _resolve_ambiguity(
-    dt: _datetime, tz: TimeZone, disambiguate: Disambiguate | _timedelta
-) -> _datetime:
-    assert dt.tzinfo is None, "dt must be naive"
-    if isinstance(disambiguate, _timedelta):
-        return _resolve_ambiguity_using_prev_offset(dt, disambiguate, tz)
-    elif disambiguate not in ("compatible", "earlier", "later", "raise"):
-        raise ValueError(
-            "disambiguate must be 'compatible', 'earlier', 'later', or 'raise'"
-        )
-
-    ambiguity = tz.ambiguity_for_local(
-        int(dt.replace(tzinfo=_UTC).timestamp())
-    )
-    if isinstance(ambiguity, Unambiguous):
-        offset = ambiguity.offset
-    elif isinstance(ambiguity, Fold):
-        if disambiguate in ("compatible", "earlier"):
-            offset = ambiguity.before
-        elif disambiguate == "later":
-            offset = ambiguity.after
-        else:  # disambiguate == "raise"
-            raise RepeatedTime._for_tz(dt, tz.key)
-    else:  # isinstance(ambiguity, Gap):
-        if disambiguate in ("compatible", "later"):
-            offset = ambiguity.before
-            shift = ambiguity.before - ambiguity.after
-        elif disambiguate == "earlier":
-            offset = ambiguity.after
-            shift = ambiguity.after - ambiguity.before
-        else:  # disambiguate == "raise"
-            raise SkippedTime._for_tz(dt, tz.key)
-        # shift the datetime out of the gap
-        dt += _timedelta(seconds=shift)
-
-    resolved = dt.replace(tzinfo=_mk_fixed_tzinfo(offset))
-    # This ensures we raise an exception if the instant is out of range,
-    # even if the local time is valid.
-    resolved.astimezone(_UTC)
-    return resolved
-
-
-def _resolve_ambiguity_using_prev_offset(
-    dt: _datetime, prev_offset: _timedelta, tz: TimeZone
-) -> _datetime:
-    ambiguity = tz.ambiguity_for_local(
-        int(dt.replace(tzinfo=_UTC).timestamp())
-    )
-    offset = int(prev_offset.total_seconds())
-    if isinstance(ambiguity, Unambiguous):
-        offset = ambiguity.offset
-    elif isinstance(ambiguity, Fold):
-        # If the offset is already valid, there's nothing to do
-        # otherwise, always use the earlier offset
-        if ambiguity.after != offset:
-            offset = ambiguity.before
-    else:  # isinstance(ambiguity, Gap)
-        if ambiguity.before == offset:
-            shift = offset - ambiguity.before
-        else:
-            offset = ambiguity.after
-            shift = ambiguity.after - ambiguity.before
-        dt += _timedelta(seconds=shift)
-
-    return dt.replace(tzinfo=_mk_fixed_tzinfo(offset))
-
-
 def _load_offset(offset: int | TimeDelta, /) -> _timezone:
     if isinstance(offset, int):
         return _timezone(_timedelta(hours=offset))
@@ -6991,416 +6851,6 @@ def _load_offset(offset: int | TimeDelta, /) -> _timezone:
 # Helpers that pre-compute/lookup as much as possible
 _no_tzinfo_fold_or_ms = {"tzinfo", "fold", "microsecond"}.isdisjoint
 _fromtimestamp = _datetime.fromtimestamp
-
-
-def _parse_err(s: str) -> NoReturn:
-    raise ValueError(f"Invalid format: {s!r}") from None
-
-
-def _parse_nanos(s: str) -> _Nanos:
-    if len(s) > 9 or not s.isdigit() or not s.isascii():
-        raise ValueError("Invalid decimals")
-    return int(s.ljust(9, "0"))
-
-
-def _split_nextchar(
-    s: str, chars: str, start: int = 0, end: int = -1
-) -> tuple[str, str | None, str]:
-    for c in chars:
-        if (idx := s.find(c, start, end)) != -1:
-            return (s[:idx], c, s[idx + 1 :])
-    return (s, None, "")
-
-
-_is_sep = " Tt".__contains__
-
-
-def _offset_from_iso(s: str) -> int:
-    minutes = 0
-    seconds = 0
-    if len(s) == 5 and s[2] == ":" and s[3] < "6":  # most common: HH:MM
-        hours = int(s[:2])
-        minutes = int(s[3:])
-    elif len(s) == 4 and s[2] < "6":  # HHMM
-        hours = int(s[:2])
-        minutes = int(s[2:])
-    elif len(s) == 2:  # HH
-        hours = int(s)
-    elif (
-        len(s) == 8
-        and s[2] == ":"
-        and s[5] == ":"
-        and s[3] < "6"
-        and s[6] < "6"
-    ):  # HH:MM:SS
-        hours = int(s[:2])
-        minutes = int(s[3:5])
-        seconds = int(s[6:])
-    elif len(s) == 6 and s[2] < "6" and s[4] < "6":  # HHMMSS
-        hours = int(s[:2])
-        minutes = int(s[2:4])
-        seconds = int(s[4:])
-    else:
-        raise ValueError("Invalid offset format")
-    return hours * 3600 + minutes * 60 + seconds
-
-
-def _datetime_from_iso(s: str) -> tuple[_datetime, _Nanos]:
-    if len(s) < 11 or "W" in s or not s.isascii():
-        _parse_err(s)
-
-    # OPTIMIZE: the happy path can be faster
-    try:
-        if _is_sep(s[10]):  # date in extended format
-            rest, date = s[11:], _date.fromisoformat(s[:10])
-        elif _is_sep(s[8]):  # date in basic format
-            rest, date = s[9:], __date_from_iso_basic(s[:8])
-        else:
-            _parse_err(s)
-        time, nanos = _time_from_iso(rest)
-    except ValueError:
-        _parse_err(s)
-
-    return _datetime.combine(date, time), nanos
-
-
-def _offset_dt_from_iso(s: str) -> tuple[_datetime, _Nanos]:
-    if len(s) < 11 or "W" in s[:11] or not s.isascii():
-        _parse_err(s)
-
-    try:
-        if _is_sep(s[10]):  # date in extended format
-            rest, date = s[11:], _date.fromisoformat(s[:10])
-        elif _is_sep(s[8]):  # date in basic format
-            rest, date = s[9:], __date_from_iso_basic(s[:8])
-        else:
-            _parse_err(s)
-        time, nanos, offset, _ = _time_offset_tz_from_iso(rest)
-        if offset is None:
-            raise ValueError("Missing offset")
-        elif offset == "Z":
-            tzinfo = _UTC
-        else:
-            assert isinstance(offset, _timezone)
-            tzinfo = offset
-
-        return (
-            _check_utc_bounds(_datetime.combine(date, time, tzinfo)),
-            nanos,
-        )
-    except ValueError:
-        _parse_err(s)
-
-
-def _zdt_from_iso(s: str) -> tuple[_datetime, _Nanos, TimeZone]:
-    if len(s) < 11 or "W" in s[:11] or not s.isascii():
-        _parse_err(s)
-
-    try:
-        if _is_sep(s[10]):  # date in extended format
-            rest, date = s[11:], _date.fromisoformat(s[:10])
-        elif _is_sep(s[8]):  # date in basic format
-            rest, date = s[9:], __date_from_iso_basic(s[:8])
-        else:
-            _parse_err(s)
-        time, nanos, offset, tzid = _time_offset_tz_from_iso(rest)
-    except ValueError:
-        _parse_err(s)
-
-    if tzid is None:
-        _parse_err(s)
-
-    tz = _get_tz(tzid)
-
-    if offset is None:
-        dt = _resolve_ambiguity(
-            _datetime.combine(date, time), tz, "compatible"
-        )
-    elif offset == "Z":
-        dt = _to_tz(_datetime.combine(date, time, _UTC), tz)
-    else:
-        assert isinstance(offset, _timezone)
-        dt = _datetime.combine(date, time, offset)
-        # Raise an exception if instant is out of range
-        dt.astimezone(_UTC)
-        # Ensure the offset is correct for the given instant
-        expected_offset = tz.offset_for_instant(int(dt.timestamp()))
-        # NOTE: mypy doesn't know utcoffset() can never return None here
-        if dt.utcoffset().total_seconds() != expected_offset:  # type: ignore[union-attr]
-            raise InvalidOffsetError()
-
-    return (dt, nanos, tz)
-
-
-def _time_from_iso(s_orig: str) -> tuple[_time, _Nanos]:
-    s, sep, nanos_raw = _split_nextchar(s_orig, ".,", 6, 9)
-
-    try:
-        return (
-            __time_from_iso_nofrac(s),
-            _parse_nanos(nanos_raw) if sep else 0,
-        )
-    except ValueError:
-        _parse_err(s_orig)
-
-
-# Parse the time, UTC offset, and timezone ID
-def _time_offset_tz_from_iso(
-    s: str,
-) -> tuple[_time, _Nanos, _timezone | Literal["Z"] | None, _BenignKey | None]:
-    # ditch the bracketted timezone (if present)
-    if s.endswith("]"):
-        # NOTE: sorry for the unicode escape sequences. Literal brackets
-        # break my LSP's indentation detection. \x5b is open bracket '['
-        s, tz_raw = s[:-1].rsplit("\x5b", 1)
-        tz = _validate_key(tz_raw)
-    else:
-        tz = None
-
-    # determine the offset
-    offset: Literal["Z"] | _timezone | None
-    if s.endswith(("Z", "z")):
-        s_time = s[:-1]
-        offset = "Z"
-    else:
-        s_time, sign, s_offset = _split_nextchar(s, "+-")
-        if sign is None:
-            offset = None
-        else:
-            offset_secs = _offset_from_iso(s_offset)
-            if sign == "-":
-                offset_secs = -offset_secs
-            offset = _mk_fixed_tzinfo(offset_secs)
-
-    time, nanos = _time_from_iso(s_time)
-    return (time, nanos, offset, tz)
-
-
-def _yearmonth_from_iso(s: str) -> _date:
-    if not s.isascii():
-        _parse_err(s)
-    try:
-        if len(s) == 7 and s[4] == "-":
-            year, month = int(s[:4]), int(s[5:])
-        elif len(s) == 6:
-            year, month = int(s[:4]), int(s[4:])
-        else:
-            _parse_err(s)
-        return _date(year, month, 1)
-    except ValueError:
-        _parse_err(s)
-
-
-def _monthday_from_iso(s: str) -> _date:
-    if not (s.startswith("--") and s.isascii()):
-        _parse_err(s)
-    try:
-        if len(s) == 7 and s[4] == "-":
-            month, day = int(s[2:4]), int(s[5:])
-        elif len(s) == 6:
-            month, day = int(s[2:4]), int(s[4:])
-        else:
-            _parse_err(s)
-        return _date(_DUMMY_LEAP_YEAR, month, day)
-    except ValueError:
-        _parse_err(s)
-
-
-# The ISO parsing functions were improved in Python 3.11,
-# so we use them if available.
-if sys.version_info >= (3, 11):
-
-    __date_from_iso_basic = _date.fromisoformat
-
-    def __time_from_iso_nofrac(s: str) -> _time:
-        # Compensate for a bug in CPython where times like "12:34:56:78" are
-        # accepted as valid times. This is only fixed in Python 3.14+
-        if s.count(":") > 2:
-            raise ValueError()
-        if all(map("0123456789:".__contains__, s)):
-            return _time.fromisoformat(s)
-        raise ValueError()
-
-    def _date_from_iso(s: str) -> _date:
-        # prevent isoformat from parsing stuff we don't want it to
-        if "W" in s or not s.isascii():
-            _parse_err(s)
-        try:
-            return _date.fromisoformat(s)
-        except ValueError:
-            _parse_err(s)
-
-else:  # pragma: no cover
-
-    def __date_from_iso_basic(s: str, /) -> _date:
-        return _date.fromisoformat(s[:4] + "-" + s[4:6] + "-" + s[6:8])
-
-    def __time_from_iso_nofrac(s: str) -> _time:
-        # Compensate for the fact that Python's isoformat
-        # doesn't support basic ISO 8601 formats
-        if len(s) == 4:
-            s = s[:2] + ":" + s[2:]
-        elif len(s) == 6:
-            s = s[:2] + ":" + s[2:4] + ":" + s[4:]
-        if all(map("0123456789:".__contains__, s)):
-            return _time.fromisoformat(s)
-        raise ValueError()
-
-    def _date_from_iso(s: str) -> _date:
-        if not s.isascii():
-            _parse_err(s)
-        try:
-            if len(s) == 8:
-                return __date_from_iso_basic(s)
-            return _date.fromisoformat(s)
-        except ValueError:
-            _parse_err(s)
-
-
-_RFC2822_WEEKDAY_TO_ISO = {
-    "mon": 1,
-    "tue": 2,
-    "wed": 3,
-    "thu": 4,
-    "fri": 5,
-    "sat": 6,
-    "sun": 7,
-}
-
-_WEEKDAY_TO_RFC2822 = [s.title() for s in _RFC2822_WEEKDAY_TO_ISO]
-
-_RFC2822_MONTH_NAMES = {
-    "jan": 1,
-    "feb": 2,
-    "mar": 3,
-    "apr": 4,
-    "may": 5,
-    "jun": 6,
-    "jul": 7,
-    "aug": 8,
-    "sep": 9,
-    "oct": 10,
-    "nov": 11,
-    "dec": 12,
-}
-
-_MONTH_TO_RFC2822 = [s.title() for s in _RFC2822_MONTH_NAMES]
-_MONTH_TO_RFC2822.insert(0, "")  # 1-indexed
-
-_RFC2822_ZONES = {
-    "EST": -5,
-    "EDT": -4,
-    "CST": -6,
-    "CDT": -5,
-    "MST": -7,
-    "MDT": -6,
-    "PST": -8,
-    "PDT": -7,
-    "UT": 0,
-    "GMT": 0,
-}
-
-
-def _parse_rfc2822(s: str) -> _datetime:
-    # Technically, only tab, space and CRLF are allowed in RFC2822,
-    # but we allow any ASCII whitespace
-    if not s.isascii():
-        _parse_err(s)
-
-    # Parse the weekday
-    try:
-        first, second, *parts = s.split()
-        if first.isdigit():
-            iso_weekday = None
-            parts = [first, second, *parts]
-        else:
-            # Case: Mon, 23 Jan
-            if len(first) == 4 and first[3] == ",":
-                weekday_raw = first[:3]
-                parts = [second, *parts]
-            # Case: Mon , 23 Jan
-            elif len(first) == 3 and second == ",":
-                weekday_raw = first
-            # Case: Mon ,23 Jan
-            elif len(first) == 3 and second.startswith(","):
-                weekday_raw = first
-                parts = [second[1:], *parts]
-            # Case: Mon,23 Jan
-            elif len(first) > 4 and first[3] == ",":
-                weekday_raw = first[:3]
-                parts = [first[4:], second, *parts]
-            else:
-                _parse_err(s)
-
-            iso_weekday = _RFC2822_WEEKDAY_TO_ISO[weekday_raw.lower()]
-    except (ValueError, KeyError):
-        _parse_err(s)
-
-    # Parse the date
-    try:
-        day_raw, month_raw, year_raw, *parts = parts
-        if len(day_raw) > 2:
-            _parse_err(s)
-        day = int(day_raw)
-        month = _RFC2822_MONTH_NAMES[month_raw.lower()]
-        if len(year_raw) == 4:
-            year = int(year_raw)
-        elif len(year_raw) == 2:
-            year = int(year_raw)
-            if year < 50:
-                year += 2000
-            else:
-                year += 1900
-        elif len(year_raw) == 3:
-            year = int(year_raw) + 1900
-        else:
-            _parse_err(s)
-        date = _date(year, month, day)
-    except (ValueError, KeyError):
-        _parse_err(s)
-
-    if iso_weekday and iso_weekday != date.isoweekday():
-        _parse_err(s)
-
-    # Parse the time
-    try:
-        # time components may be separated by whitespace
-        *time_parts, offset_raw = parts
-        time_raw = "".join(time_parts)
-        if len(time_raw) == 5 and time_raw[2] == ":":
-            time = _time(int(time_raw[:2]), int(time_raw[3:]))
-        elif len(time_raw) == 8 and time_raw[2] == ":" and time_raw[5] == ":":
-            time = _time(
-                int(time_raw[:2]), int(time_raw[3:5]), int(time_raw[6:])
-            )
-        else:
-            _parse_err(s)
-    except ValueError:
-        _parse_err(s)
-
-    # Parse the offset
-    try:
-        if offset_raw.startswith(("+", "-")) and len(offset_raw) == 5:
-            sign = 1 if offset_raw[0] == "+" else -1
-            offset = (
-                _timedelta(
-                    hours=int(offset_raw[1:3]), minutes=int(offset_raw[3:5])
-                )
-                * sign
-            )
-        elif offset_raw.isalpha():
-            # According to the spec, unknown timezones should
-            # just be treated at -0000 (UTC with unknown offset)
-            offset = _timedelta(
-                hours=_RFC2822_ZONES.get(offset_raw.upper(), 0)
-            )
-        else:
-            _parse_err(s)
-        tzinfo = _timezone(offset)
-    except ValueError:
-        _parse_err(s)
-
-    return _check_utc_bounds(_datetime.combine(date, time, tzinfo=tzinfo))
 
 
 def _format_date(d: _date, basic: bool) -> str:
@@ -7470,14 +6920,6 @@ def _format_dt(
         f"{_format_time(dt, ns, unit, basic)}"
         f"{_format_offset(offset, basic)}"
     )
-
-
-def _check_utc_bounds(dt: _datetime) -> _datetime:
-    try:
-        dt.astimezone(_UTC)
-    except (OverflowError, ValueError):
-        raise ValueError("Instant out of range")
-    return dt
 
 
 def _check_invalid_replace_kwargs(kwargs: Any) -> None:
@@ -7620,184 +7062,6 @@ def _unpatch_time() -> None:
     global time_ns
 
     from time import time_ns
-
-
-_TZPATH: tuple[str, ...] = ()
-
-# Our cache for loaded tz files. The design is based off that of `zoneinfo`.
-_TZCACHE_LRU_SIZE = 8
-_tzcache_lru: OrderedDict[str, TimeZone] = OrderedDict()
-_tzcache_lookup: WeakValueDictionary[str, TimeZone] = WeakValueDictionary()
-
-# OrderedDict is thread-unsafe in Python < 3.14 under free-threading.
-# Thus we need an extra lock to ensure thread-safety of our LRU cache.
-if TYPE_CHECKING or (
-    _NOGIL and sys.version_info < (3, 14)
-):  # pragma: no cover
-    from threading import Lock as _Lock
-else:
-
-    class _Lock:
-        def __enter__(self) -> None:
-            pass
-
-        def __exit__(self, *args) -> None:
-            pass
-
-
-_tzcache_lru_lock = _Lock()
-
-
-def _set_tzpath(to: tuple[str, ...]) -> None:
-    global _TZPATH
-    _TZPATH = to
-
-
-def _clear_tz_cache() -> None:
-    _tzcache_lookup.clear()
-    with _tzcache_lru_lock:
-        _tzcache_lru.clear()
-
-
-def _clear_tz_cache_by_keys(keys: tuple[str, ...]) -> None:
-    with _tzcache_lru_lock:
-        for k in keys:
-            _tzcache_lookup.pop(k, None)
-            _tzcache_lru.pop(k, None)
-
-
-def _get_tz(key: str) -> TimeZone:
-    instance = _tzcache_lookup.get(key)
-    if instance is None:
-        # Concurrency note: we accept the possibility of multiple threads
-        # loading the same timezone at the same time, since TimeZone instances
-        # are immutable after construction. The last one to write wins.
-        instance = _tzcache_lookup.setdefault(
-            key, _load_tz(_validate_key(key))
-        )
-
-    with _tzcache_lru_lock:
-        _tzcache_lru[key] = _tzcache_lru.pop(key, instance)
-        if len(_tzcache_lru) > _TZCACHE_LRU_SIZE:
-            try:
-                _tzcache_lru.popitem(last=False)
-            except KeyError:  # pragma: no cover
-                pass  # theoretically possible if other threads are clearing too
-
-    return instance
-
-
-# We cache fixed-offset tzinfo objects to avoid creating multiple identical ones.
-# It's very common to only have whole-hour offsets, so this helps a lot.
-@lru_cache
-def _mk_fixed_tzinfo(secs: int, /) -> _timezone:
-    return _timezone(_timedelta(seconds=secs))
-
-
-def _validate_key(key: str) -> _BenignKey:
-    """Checks for invalid characters and path traversal in the key."""
-    if (
-        key.isascii()
-        # There's no standard limit on IANA tz IDs, but we have to draw
-        # the line somewhere to prevent abuse.
-        and 0 < len(key) < 100
-        and all(b.isalnum() or b in "-_+/." for b in key)
-        # specific sequences not allowed
-        and ".." not in key
-        and "//" not in key
-        and "/./" not in key
-        # specific restrictions on the first and list characters
-        and key[0] not in ".-+/"
-        and key[-1] != "/"
-    ):
-        return _BenignKey(key)
-    else:
-        raise TimeZoneNotFoundError.for_key(key)
-
-
-# Alias for a TZ key that has been confirmed not to be a path traversal
-# or contain other "bad" characters.
-_BenignKey = NewType("_BenignKey", str)
-
-
-def _try_tzif_from_path(key: _BenignKey) -> bytes | None:
-    for search_path in _TZPATH:
-        target = os.path.join(search_path, key)
-        if os.path.isfile(target):
-            with open(target, "rb") as f:
-                return f.read()
-    return None
-
-
-def _tzif_from_tzdata(key: _BenignKey) -> bytes:
-    try:
-        tzdata_path = __import__("tzdata.zoneinfo").zoneinfo.__path__[0]
-        # We check before we read, since the resulting exceptions vary
-        # on different platforms
-        if os.path.isfile(
-            relpath := os.path.join(tzdata_path, *key.split("/"))
-        ):
-            with open(relpath, "rb") as f:
-                return f.read()
-        else:
-            raise FileNotFoundError()
-    # Several exceptions amount to "can't find the key"
-    except (
-        ImportError,
-        FileNotFoundError,
-        UnicodeEncodeError,
-    ):
-        raise TimeZoneNotFoundError.for_key(key)
-
-
-def _load_tz(key: _BenignKey) -> TimeZone:
-    tzif = _try_tzif_from_path(key) or _tzif_from_tzdata(key)
-    if not tzif.startswith(b"TZif"):
-        # We've found a file, but doesn't look like a TZif file.
-        # Stop here instead of getting a cryptic error later.
-        raise TimeZoneNotFoundError.for_key(key)
-
-    return TimeZone.parse_tzif(tzif, key)
-
-
-_CACHED_SYSTEM_TZ: TimeZone | None = None
-
-
-def _system_tz() -> TimeZone:
-    global _CACHED_SYSTEM_TZ
-    # This lookup is intentionally lock-free for performance reasons.
-    # This is valid because:
-    # - TimeZone instances are immutable after construction
-    # - _get_system_tz() is side-effect free
-    # - Last writer wins; all outcomes are acceptable.
-    # - Python guarantees atomic assignment to the module global variables
-    #   since it's a `dict`. This guarantee may change in the future, but for now
-    #   it's safe enough. See docs.python.org/3/howto/free-threading-python.html#thread-safety
-    if _CACHED_SYSTEM_TZ is None:
-        _CACHED_SYSTEM_TZ = _get_system_tz()  # pragma: no cover
-    return _CACHED_SYSTEM_TZ
-
-
-def reset_system_tz() -> None:
-    """Resets the cached system timezone to the current system timezone."""
-    global _CACHED_SYSTEM_TZ
-    _CACHED_SYSTEM_TZ = _get_system_tz()
-
-
-def _get_system_tz() -> TimeZone:
-    tz_type, tz_value = system.get_tz()
-    if tz_type == 0:  # IANA TZID
-        return _get_tz(tz_value)
-    elif tz_type == 2:  # IANA TZID or Posix string (we don't know which)
-        try:
-            return _get_tz(tz_value)
-        except TimeZoneNotFoundError:
-            # If the key is not found, it might be a PosixTz string
-            return TimeZone.parse_posix(tz_value)
-    else:  # file-based timezone (no key)
-        assert tz_type == 1, "Unknown system timezone type"
-        with open(tz_value, "rb") as f:
-            return TimeZone.parse_tzif(f.read())
 
 
 # We expose the public members in the root of the module.
