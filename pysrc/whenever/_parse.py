@@ -83,10 +83,10 @@ def datetime_from_iso(s: str) -> tuple[_datetime, Nanos]:
         if _is_sep(s[10]):  # date in extended format
             rest, date = s[11:], _date.fromisoformat(s[:10])
         elif _is_sep(s[8]):  # date in basic format
-            rest, date = s[9:], __date_from_iso_basic(s[:8])
+            rest, date = s[9:], _date_from_iso_basic(s[:8])
         else:
             _parse_err(s)
-        time, nanos = _time_from_iso(rest)
+        time, nanos = time_from_iso(rest)
     except ValueError:
         _parse_err(s)
 
@@ -101,7 +101,7 @@ def offset_dt_from_iso(s: str) -> tuple[_datetime, Nanos]:
         if _is_sep(s[10]):  # date in extended format
             rest, date = s[11:], _date.fromisoformat(s[:10])
         elif _is_sep(s[8]):  # date in basic format
-            rest, date = s[9:], __date_from_iso_basic(s[:8])
+            rest, date = s[9:], _date_from_iso_basic(s[:8])
         else:
             _parse_err(s)
         time, nanos, offset, _ = _time_offset_tz_from_iso(rest)
@@ -129,7 +129,7 @@ def zdt_from_iso(s: str) -> tuple[_datetime, Nanos, TimeZone]:
         if _is_sep(s[10]):  # date in extended format
             rest, date = s[11:], _date.fromisoformat(s[:10])
         elif _is_sep(s[8]):  # date in basic format
-            rest, date = s[9:], __date_from_iso_basic(s[:8])
+            rest, date = s[9:], _date_from_iso_basic(s[:8])
         else:
             _parse_err(s)
         time, nanos, offset, tzid = _time_offset_tz_from_iso(rest)
@@ -162,12 +162,12 @@ def zdt_from_iso(s: str) -> tuple[_datetime, Nanos, TimeZone]:
     return (dt, nanos, tz)
 
 
-def _time_from_iso(s_orig: str) -> tuple[_time, Nanos]:
+def time_from_iso(s_orig: str) -> tuple[_time, Nanos]:
     s, sep, nanos_raw = _split_nextchar(s_orig, ".,", 6, 9)
 
     try:
         return (
-            __time_from_iso_nofrac(s),
+            _time_from_iso_nofrac(s),
             _parse_nanos(nanos_raw) if sep else 0,
         )
     except ValueError:
@@ -202,7 +202,7 @@ def _time_offset_tz_from_iso(
                 offset_secs = -offset_secs
             offset = mk_fixed_tzinfo(offset_secs)
 
-    time, nanos = _time_from_iso(s_time)
+    time, nanos = time_from_iso(s_time)
     return (time, nanos, offset, tz)
 
 
@@ -240,9 +240,9 @@ def monthday_from_iso(s: str) -> _date:
 # so we use them if available.
 if sys.version_info >= (3, 11):
 
-    __date_from_iso_basic = _date.fromisoformat
+    _date_from_iso_basic = _date.fromisoformat
 
-    def __time_from_iso_nofrac(s: str) -> _time:
+    def _time_from_iso_nofrac(s: str) -> _time:
         # Compensate for a bug in CPython where times like "12:34:56:78" are
         # accepted as valid times. This is only fixed in Python 3.14+
         if s.count(":") > 2:
@@ -262,10 +262,10 @@ if sys.version_info >= (3, 11):
 
 else:  # pragma: no cover
 
-    def __date_from_iso_basic(s: str, /) -> _date:
+    def _date_from_iso_basic(s: str, /) -> _date:
         return _date.fromisoformat(s[:4] + "-" + s[4:6] + "-" + s[6:8])
 
-    def __time_from_iso_nofrac(s: str) -> _time:
+    def _time_from_iso_nofrac(s: str) -> _time:
         # Compensate for the fact that Python's isoformat
         # doesn't support basic ISO 8601 formats
         if len(s) == 4:
@@ -281,7 +281,7 @@ else:  # pragma: no cover
             _parse_err(s)
         try:
             if len(s) == 8:
-                return __date_from_iso_basic(s)
+                return _date_from_iso_basic(s)
             return _date.fromisoformat(s)
         except ValueError:
             _parse_err(s)
@@ -436,7 +436,7 @@ def parse_rfc2822(s: str) -> _datetime:
 _MAX_TDELTA_DIGITS = 35  # consistent with Rust extension
 
 
-def _parse_timedelta_component(
+def parse_timedelta_component(
     fullstr: str, exc: Exception
 ) -> tuple[str, int, Literal["H", "M", "S"]]:
     try:
