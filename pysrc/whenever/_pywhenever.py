@@ -50,8 +50,6 @@ from ._math import (
     weeks_diff,
     years_diff,
 )
-from ._parse import _parse_timedelta_component  # TODO
-from ._parse import _time_from_iso  # TODO
 from ._parse import (
     MONTH_TO_RFC2822,
     WEEKDAY_TO_RFC2822,
@@ -61,6 +59,8 @@ from ._parse import (
     monthday_from_iso,
     offset_dt_from_iso,
     parse_rfc2822,
+    parse_timedelta_component,
+    time_from_iso,
     yearmonth_from_iso,
     zdt_from_iso,
 )
@@ -1261,7 +1261,7 @@ class Time(_Base):
         >>> Time.parse_iso("12:30:00")
         Time(12:30:00)
         """
-        return cls._from_py_unchecked(*_time_from_iso(s))
+        return cls._from_py_unchecked(*time_from_iso(s))
 
     def replace(self, **kwargs: Any) -> Time:
         """Create a new instance with the given fields replaced
@@ -1787,7 +1787,7 @@ class TimeDelta(_Base):
             raise exc
 
         while rest:
-            rest, value, unit = _parse_timedelta_component(rest, exc)
+            rest, value, unit = parse_timedelta_component(rest, exc)
 
             if unit == "H" and prev_unit == "":
                 nanos += value * 3_600_000_000_000
@@ -2895,7 +2895,7 @@ class ItemizedDelta(_Base):
         rest = rest[1:]
 
         while rest:
-            rest_new, value, unit = _parse_timedelta_component(rest, exc)
+            rest_new, value, unit = parse_timedelta_component(rest, exc)
 
             if unit == "H" and prev_unit == "":
                 hours = value
@@ -3723,7 +3723,7 @@ class DateTimeDelta(_Base):
         rest = rest[1:]
 
         while rest:
-            rest, value, unit = _parse_timedelta_component(rest, exc)
+            rest, value, unit = parse_timedelta_component(rest, exc)
 
             if unit == "H" and prev_unit == "":
                 nanos += value * 3_600_000_000_000
