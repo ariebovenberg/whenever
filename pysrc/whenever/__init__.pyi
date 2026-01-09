@@ -131,8 +131,16 @@ class Date(_DateOrTimeMixin):
         unit: Literal["years", "months", "weeks", "days"],
         round_increment: int = 1,
         round_mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "floor",
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
     ) -> int: ...
     @overload
     def since(
@@ -143,8 +151,56 @@ class Date(_DateOrTimeMixin):
         units: Sequence[Literal["years", "months", "weeks", "days"]],
         round_increment: int = 1,
         round_mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = "floor",
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+    ) -> ItemizedDateDelta: ...
+    @overload
+    def until(
+        self,
+        other: Date,
+        /,
+        *,
+        unit: Literal["years", "months", "weeks", "days"],
+        round_increment: int = 1,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+    ) -> int: ...
+    @overload
+    def until(
+        self,
+        other: Date,
+        /,
+        *,
+        units: Sequence[Literal["years", "months", "weeks", "days"]],
+        round_increment: int = 1,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
     ) -> ItemizedDateDelta: ...
     @deprecated('Use since(..., unit="days") instead')
     def days_since(self, other: Self, /) -> int: ...

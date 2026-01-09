@@ -515,18 +515,8 @@ _EXAMPLE_DATES = [
     Date(2020, 2, 29),
 ]
 
-# TODO: remove
-# from typing import Any
 
-# a: Any = ...
-# b: Any = ...
-
-# # demo to see how the API would be used
-# years = a.since(b, unit="years")
-# years, months = a.since(b, unit=["years", "months"])
-
-
-class TestSince:
+class TestSinceAndUntil:
 
     @pytest.mark.parametrize(
         "d1, d2, unit, delta, kwargs",
@@ -1047,6 +1037,89 @@ class TestSince:
         d = Date(2021, 1, 1)
         with pytest.raises(ValueError, match="round.*mode.*foobar"):
             d.since(Date(2020, 1, 1), unit="years", round_mode="foobar")  # type: ignore[call-overload]
+
+        with pytest.raises(ValueError, match="round.*mode.*foobar"):
+            d.until(Date(2020, 1, 1), unit="years", round_mode="foobar")  # type: ignore[call-overload]
+
+    # `until` behaves very similarly to `since`,
+    # so we can just do a few spot checks here.
+    # The main tricky differences are regarding rounding direction.
+    @pytest.mark.parametrize(
+        "d1, d2, units, delta, kwargs",
+        [
+            (
+                Date(2019, 1, 30),
+                Date(2020, 2, 1),
+                ("years", "months"),
+                ItemizedDateDelta(years=1, months=0),
+                {"round_mode": "trunc"},
+            ),
+            (
+                Date(2019, 1, 30),
+                Date(2020, 2, 1),
+                ("years", "months"),
+                ItemizedDateDelta(years=1, months=0),
+                {"round_mode": "floor"},
+            ),
+            (
+                Date(2019, 1, 30),
+                Date(2020, 2, 1),
+                ("years", "months"),
+                ItemizedDateDelta(years=1, months=1),
+                {"round_mode": "ceil"},
+            ),
+            (
+                Date(2019, 1, 30),
+                Date(2020, 2, 1),
+                ("years", "months"),
+                ItemizedDateDelta(years=1, months=1),
+                {"round_mode": "expand"},
+            ),
+            # negative deltas
+            (
+                Date(2020, 2, 1),
+                Date(2019, 1, 30),
+                ("years", "months"),
+                ItemizedDateDelta(years=-1, months=0),
+                {"round_mode": "trunc"},
+            ),
+            (
+                Date(2020, 2, 1),
+                Date(2019, 1, 30),
+                ("years", "months"),
+                ItemizedDateDelta(years=-1, months=-1),
+                {"round_mode": "expand"},
+            ),
+            (
+                Date(2020, 2, 1),
+                Date(2019, 1, 30),
+                ("years", "months"),
+                ItemizedDateDelta(years=-1, months=0),
+                {"round_mode": "ceil"},
+            ),
+            (
+                Date(2020, 2, 1),
+                Date(2019, 1, 30),
+                ("years", "months"),
+                ItemizedDateDelta(years=-1, months=-1),
+                {"round_mode": "floor"},
+            ),
+        ],
+    )
+    def test_until(self, d1, d2, units, delta, kwargs):
+        result = d1.until(d2, units=units, **kwargs)
+        assert result == delta
+        # verify by adding back the delta
+        if "days" in units and kwargs.get("round_increment", 1) == 1:
+            assert (
+                d1.add(
+                    years=result.years,
+                    months=result.months,
+                    weeks=result.weeks,
+                    days=result.days,
+                )
+                == d2
+            )
 
 
 class TestSubtract:
