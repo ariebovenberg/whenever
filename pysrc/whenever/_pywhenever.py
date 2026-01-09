@@ -637,6 +637,29 @@ class Date(_Base):
         else:
             return ItemizedDateDelta._from_signed(sign, *results)
 
+    def until(
+        self,
+        b: Date,
+        /,
+        *,
+        unit: Optional[_CalendarUnit] = None,
+        units: Optional[Sequence[_CalendarUnit]] = None,
+        round_mode: _RoundMode = "trunc",
+        round_increment: int = 1,
+    ) -> Union[ItemizedDateDelta, int]:
+        """Companion to :meth:`since` that calculates the difference until another date.
+        See :meth:`since` for more information.
+        """
+        return -self.since(
+            b,
+            unit=unit,
+            units=units,
+            # Although until() is the inverse of since(),
+            # the rounding mode needs to be flipped to achieve the same effect.
+            round_mode=_FLIP_FLOOR_CEIL.get(round_mode, round_mode),
+            round_increment=round_increment,
+        )
+
     def _add_months(self, mos: int) -> Date:
         year_overflow, month_new = divmod(self.month - 1 + mos, 12)
         month_new += 1
@@ -787,6 +810,14 @@ class Date(_Base):
     @no_type_check
     def __reduce__(self):
         return _unpkl_date, (pack("<HBB", self.year, self.month, self.day),)
+
+
+_FLIP_FLOOR_CEIL: dict[_RoundMode, _RoundMode] = {
+    "ceil": "floor",
+    "floor": "ceil",
+    "half_ceil": "half_floor",
+    "half_floor": "half_ceil",
+}
 
 
 # A separate unpickling function allows us to make backwards-compatible changes
