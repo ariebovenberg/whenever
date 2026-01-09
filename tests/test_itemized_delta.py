@@ -505,9 +505,8 @@ def test_compatible_unpickle():
     # This is a pickle of ItemizedDelta created with the initial implementation.
     # We keep this test to ensure backwards compatibility.
     dumped = (
-        b"\x80\x04\x95A\x00\x00\x00\x00\x00\x00\x00\x8c\x14whenever._pywheneve"
-        b"r\x94\x8c\r_unpkl_idelta\x94\x93\x94(K\x01K\x01K\x02K\x03K\x04K\x05K\x06K"
-        b"\x07K\x08t\x94R\x94."
+        b"\x80\x04\x955\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_i"
+        b"delta\x94\x93\x94(K\x01K\x01K\x02K\x03K\x04K\x05K\x06K\x07K\x08t\x94R\x94."
     )
     result = pickle.loads(dumped)
     assert result == ItemizedDelta(

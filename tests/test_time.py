@@ -466,12 +466,20 @@ class TestRound:
     ):
         assert t.round(unit, increment=increment) == half_even
         assert t.round(unit, increment=increment, mode="floor") == floor
+        assert t.round(unit, increment=increment, mode="trunc") == floor
         assert t.round(unit, increment=increment, mode="ceil") == ceil
+        assert t.round(unit, increment=increment, mode="expand") == ceil
         assert (
             t.round(unit, increment=increment, mode="half_floor") == half_floor
         )
         assert (
+            t.round(unit, increment=increment, mode="half_trunc") == half_floor
+        )
+        assert (
             t.round(unit, increment=increment, mode="half_ceil") == half_ceil
+        )
+        assert (
+            t.round(unit, increment=increment, mode="half_expand") == half_ceil
         )
         assert (
             t.round(unit, increment=increment, mode="half_even") == half_even

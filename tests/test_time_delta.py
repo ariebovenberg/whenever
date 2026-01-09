@@ -703,6 +703,26 @@ class TestRound:
                 TimeDelta.ZERO,
             ),
             (
+                TimeDelta(nanoseconds=-105),
+                10,
+                "nanosecond",
+                TimeDelta(nanoseconds=-110),
+                TimeDelta(nanoseconds=-100),
+                TimeDelta(nanoseconds=-110),
+                TimeDelta(nanoseconds=-100),
+                TimeDelta(nanoseconds=-100),
+            ),
+            (
+                TimeDelta(hours=-107),
+                10,
+                "hour",
+                TimeDelta(hours=-110),
+                TimeDelta(hours=-100),
+                TimeDelta(hours=-110),
+                TimeDelta(hours=-110),
+                TimeDelta(hours=-110),
+            ),
+            (
                 TimeDelta(hours=1, minutes=2, seconds=3, nanoseconds=4),
                 1,
                 "nanosecond",
@@ -824,14 +844,26 @@ class TestRound:
             warnings.simplefilter("ignore", DaysAreNotAlways24HoursWarning)
             assert t.round(unit, increment=increment) == half_even
             assert t.round(unit, increment=increment, mode="ceil") == ceil
+            assert t.round(unit, increment=increment, mode="expand") == (
+                ceil if t > TimeDelta.ZERO else floor
+            )
             assert t.round(unit, increment=increment, mode="floor") == floor
+            assert t.round(unit, increment=increment, mode="trunc") == (
+                floor if t > TimeDelta.ZERO else ceil
+            )
             assert (
                 t.round(unit, increment=increment, mode="half_floor")
                 == half_floor
             )
+            assert t.round(unit, increment=increment, mode="half_expand") == (
+                half_ceil if t > TimeDelta.ZERO else half_floor
+            )
             assert (
                 t.round(unit, increment=increment, mode="half_ceil")
                 == half_ceil
+            )
+            assert t.round(unit, increment=increment, mode="half_trunc") == (
+                half_floor if t > TimeDelta.ZERO else half_ceil
             )
             assert (
                 t.round(unit, increment=increment, mode="half_even")
@@ -1011,7 +1043,7 @@ class TestInUnits:
                 TimeDelta(hours=2, minutes=51, seconds=30),
                 ("hours", "minutes"),
                 {},
-                ItemizedDelta(hours=2, minutes=52),
+                ItemizedDelta(hours=2, minutes=51),
             ),
             (
                 TimeDelta(hours=2, minutes=51, seconds=30),
@@ -1024,6 +1056,24 @@ class TestInUnits:
                 ("hours", "minutes"),
                 {"round_mode": "half_ceil"},
                 ItemizedDelta(hours=2, minutes=51),
+            ),
+            (
+                TimeDelta(hours=2, minutes=50, seconds=30),
+                ("hours", "minutes"),
+                {"round_mode": "half_expand"},
+                ItemizedDelta(hours=2, minutes=51),
+            ),
+            (
+                TimeDelta(hours=2, minutes=50, seconds=30),
+                ("hours", "minutes"),
+                {"round_mode": "half_floor"},
+                ItemizedDelta(hours=2, minutes=50),
+            ),
+            (
+                TimeDelta(hours=2, minutes=50, seconds=30),
+                ("hours", "minutes"),
+                {"round_mode": "half_trunc"},
+                ItemizedDelta(hours=2, minutes=50),
             ),
             (
                 TimeDelta(hours=2, minutes=50, seconds=1),
@@ -1059,10 +1109,58 @@ class TestInUnits:
                 ItemizedDelta(days=2, hours=3),
             ),
             (
+                TimeDelta(hours=49, minutes=121),
+                ("days", "hours"),
+                {"round_mode": "ceil"},
+                ItemizedDelta(days=2, hours=4),
+            ),
+            (
+                TimeDelta(hours=49, minutes=121),
+                ("days", "hours"),
+                {"round_mode": "expand"},
+                ItemizedDelta(days=2, hours=4),
+            ),
+            (
+                TimeDelta(hours=49, minutes=121),
+                ("days", "hours"),
+                {"round_mode": "trunc"},
+                ItemizedDelta(days=2, hours=3),
+            ),
+            (
+                TimeDelta(hours=49, minutes=121),
+                ("days", "hours"),
+                {"round_mode": "floor"},
+                ItemizedDelta(days=2, hours=3),
+            ),
+            (
                 TimeDelta(hours=-50 * 24, minutes=-121),
                 ("weeks", "hours"),
                 {},
                 ItemizedDelta(weeks=-7, hours=-26),
+            ),
+            (
+                TimeDelta(hours=-50 * 24, minutes=-121),
+                ("weeks", "hours"),
+                {"round_mode": "ceil"},
+                ItemizedDelta(weeks=-7, hours=-26),
+            ),
+            (
+                TimeDelta(hours=-50 * 24, minutes=-121),
+                ("weeks", "hours"),
+                {"round_mode": "trunc"},
+                ItemizedDelta(weeks=-7, hours=-26),
+            ),
+            (
+                TimeDelta(hours=-50 * 24, minutes=-121),
+                ("weeks", "hours"),
+                {"round_mode": "expand"},
+                ItemizedDelta(weeks=-7, hours=-27),
+            ),
+            (
+                TimeDelta(hours=-50 * 24, minutes=-121),
+                ("weeks", "hours"),
+                {"round_mode": "floor"},
+                ItemizedDelta(weeks=-7, hours=-27),
             ),
             (
                 TimeDelta(hours=-50 * 24, minutes=-121),
@@ -1079,13 +1177,9 @@ class TestInUnits:
             # Strange set of units and increment, but should work
             (
                 TimeDelta(hours=49, minutes=121),
-                (
-                    "days",
-                    "seconds",
-                    "nanoseconds",
-                ),
+                ("days", "seconds", "nanoseconds"),
                 {"round_increment": 826549200},
-                ItemizedDelta(days=2, seconds=10860, nanoseconds=58_789_200),
+                ItemizedDelta(days=2, seconds=10859, nanoseconds=232_240_000),
             ),
             # TEST round single units with large values
         ],
