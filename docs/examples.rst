@@ -40,13 +40,11 @@ Calculate somebody's age
 
 >>> from whenever import Date
 >>> birth_date = Date(2023, 11, 2)
->>> age = Date.today_in_system_tz() - birth_date
-DateDelta("P1y5m26d")
->>> months, days = age.in_months_days()
-(17, 26)
->>> age.in_years_months_days()
-(1, 5, 26)
-
+>>> today = Date.today_in_system_tz()
+>>> today.since(birth_date, unit="years")
+2
+>>> years, months = today.since(birth_date, units=("years", "months"))
+(2, 4)
 
 Assign a timezone to a datetime
 -------------------------------
@@ -75,13 +73,13 @@ Parse an ISO8601 datetime string
 --------------------------------
 
 >>> from whenever import Instant
->>> Instant.parse_iso("2025-04-19T19:02+04:00")
+>>> Instant("2025-04-19T19:02+04:00")
 Instant("2025-04-19 15:02:00Z")
 
 Or, if you want to keep the offset value:
 
 >>> from whenever import OffsetDateTime
->>> OffsetDateTime.parse_iso("2025-04-19T19:02+04:00")
+>>> OffsetDateTime("2025-04-19T19:02+04:00")
 OffsetDateTime("2025-04-19 19:02:00+04:00")
 
 Determine the start of the hour
