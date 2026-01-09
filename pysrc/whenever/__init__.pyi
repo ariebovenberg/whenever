@@ -289,7 +289,15 @@ class Time(_DateOrTimeMixin):
         ] = "second",
         increment: int = 1,
         mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
         ] = "half_even",
     ) -> Self: ...
     def format_iso(
@@ -353,8 +361,16 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
             ]
         ],
         round_mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = ...,
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
         round_increment: int = ...,
         round_unit: Literal[
             "day",
@@ -366,15 +382,6 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
             "nanosecond",
         ] = ...,
     ) -> float: ...
-    def itemize(
-        self,
-        *,
-        units: tuple[str, ...],
-        round_mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
-        ] = ...,
-        round_increment: int = ...,
-    ) -> ItemizedDelta: ...
     def py_timedelta(self) -> _timedelta: ...
     @classmethod
     def from_py_timedelta(cls, td: _timedelta, /) -> Self: ...
@@ -392,7 +399,15 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         ] = "second",
         increment: int = 1,
         mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
         ] = "half_even",
     ) -> Self: ...
     def __add__(self, other: Self, /) -> Self: ...
@@ -719,7 +734,15 @@ class Instant(_PyDateTimeMixin, _ExactTime):
         ] = "second",
         increment: int = 1,
         mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
         ] = "half_even",
     ) -> Self: ...
     def __add__(self, delta: TimeDelta, /) -> Self: ...
@@ -839,7 +862,15 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         ] = "second",
         increment: int = 1,
         mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
         ] = "half_even",
         *,
         ignore_dst: Literal[True],
@@ -1008,7 +1039,15 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         ] = "second",
         increment: int = 1,
         mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
         ] = "half_even",
     ) -> Self: ...
     def format_iso(
@@ -1149,7 +1188,15 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         ] = "second",
         increment: int = 1,
         mode: Literal[
-            "ceil", "floor", "half_ceil", "half_floor", "half_even"
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
         ] = "half_even",
     ) -> Self: ...
     def __add__(self, delta: DateDelta, /) -> Self: ...
