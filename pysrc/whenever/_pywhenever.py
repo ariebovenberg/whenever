@@ -158,7 +158,6 @@ _MAX_SUBSEC_NANOS = 999_999_999
 _UNSET = object()
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
-# TODO: support other round moves in other operations
 _RoundMode = Literal[
     "ceil",
     "expand",
@@ -1368,13 +1367,13 @@ class Time(_Base):
 
         if mode == "half_even":  # check the default mode first
             threshold_ns = increment_ns // 2 + (quotient % 2 == 0) or 1
-        elif mode == "ceil":
+        elif mode in ("ceil", "expand"):
             threshold_ns = 1  # Always round up
-        elif mode == "floor":
+        elif mode in ("floor", "trunc"):
             threshold_ns = increment_ns + 1  # Never round up
-        elif mode == "half_floor":
+        elif mode in ("half_floor", "half_trunc"):
             threshold_ns = increment_ns // 2 + 1
-        elif mode == "half_ceil":
+        elif mode in ("half_ceil", "half_expand"):
             threshold_ns = increment_ns // 2 or 1
         else:
             raise ValueError(f"Invalid rounding mode: {mode!r}")
@@ -1627,7 +1626,7 @@ class TimeDelta(_Base):
             ],
             None,
         ] = None,
-        round_mode: _RoundMode = "half_even",
+        round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDelta:
         """Convert to a :class:`ItemizedDelta` with the specified units
@@ -1654,7 +1653,7 @@ class TimeDelta(_Base):
         >>> d = TimeDelta(hours=2, minutes=30, seconds=23, milliseconds=500)
         >>> d.in_units(['minutes', 'seconds'])
         ItemizedDelta("PT150m24s")
-        >>> (hrs, mins) = d.in_units(['hours', 'minutes'], round_mode='ceil')
+        >>> (hrs, mins) = d.in_units(('hours', 'minutes'), round_mode='ceil')
         (2, 31)
         """
         if any(u and not u.endswith("s") for u in units):
@@ -1875,21 +1874,33 @@ class TimeDelta(_Base):
                 DaysAreNotAlways24HoursWarning,
                 stacklevel=2,
             )
-        # TODO: catch invalid round_units here?
-
         increment_ns = increment_to_ns_for_delta(unit, increment)
         quotient, remainder_ns = divmod(self._total_ns, increment_ns)
+
+        neg = self._total_ns < 0
 
         if mode == "half_even":  # check the default case first
             threshold_ns = increment_ns // 2 + (quotient % 2 == 0) or 1
         elif mode == "ceil":
             threshold_ns = 1  # Always round up
+        elif mode == "expand":
+            threshold_ns = (
+                increment_ns * neg + 1
+            )  # Always round up *IF* positive
         elif mode == "floor":
             threshold_ns = increment_ns + 1  # Never round up
-        elif mode == "half_floor":
-            threshold_ns = increment_ns // 2 + 1
+        elif mode == "trunc":
+            threshold_ns = (
+                increment_ns * (not neg) + 1
+            )  # Never round up *IF* positive
         elif mode == "half_ceil":
             threshold_ns = increment_ns // 2 or 1
+        elif mode == "half_expand":
+            threshold_ns = (increment_ns // 2 + neg) or 1
+        elif mode == "half_floor":
+            threshold_ns = increment_ns // 2 + 1
+        elif mode == "half_trunc":
+            threshold_ns = (increment_ns // 2 + (not neg)) or 1
         else:
             raise ValueError(f"Invalid rounding mode: {mode!r}")
 

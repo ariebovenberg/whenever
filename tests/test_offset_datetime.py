@@ -1745,7 +1745,15 @@ class TestRound:
             == floor
         )
         assert (
+            d.round(unit, increment=increment, mode="trunc", ignore_dst=True)
+            == floor
+        )
+        assert (
             d.round(unit, increment=increment, mode="ceil", ignore_dst=True)
+            == ceil
+        )
+        assert (
+            d.round(unit, increment=increment, mode="expand", ignore_dst=True)
             == ceil
         )
         assert (
@@ -1756,7 +1764,19 @@ class TestRound:
         )
         assert (
             d.round(
+                unit, increment=increment, mode="half_trunc", ignore_dst=True
+            )
+            == half_floor
+        )
+        assert (
+            d.round(
                 unit, increment=increment, mode="half_ceil", ignore_dst=True
+            )
+            == half_ceil
+        )
+        assert (
+            d.round(
+                unit, increment=increment, mode="half_expand", ignore_dst=True
             )
             == half_ceil
         )
