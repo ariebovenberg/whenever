@@ -171,7 +171,7 @@ impl Time {
         let remainder = total_nanos % increment;
 
         let threshold = match mode {
-            round::Mode::HalfEven => 1.max(increment / 2 + (quotient % 2 == 0) as u64),
+            round::Mode::HalfEven => 1.max(increment / 2 + (quotient.is_multiple_of(2)) as u64),
             round::Mode::Ceil => 1,
             round::Mode::Floor => increment + 1,
             round::Mode::HalfFloor => increment / 2 + 1,

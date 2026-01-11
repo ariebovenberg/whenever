@@ -7,7 +7,7 @@ maintainers = [
     {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com"},
 ]
 readme = "README.md"
-version = "0.9.4"
+version = "0.9.5rc0"
 license = "MIT"
 description = "Modern datetime library for Python"
 requires-python = ">=3.9"
@@ -104,6 +104,7 @@ find = { where = ["pysrc"] }
 [tool.maturin]
 python-source = "pysrc"
 module-name = "whenever._whenever"
+bindings = "pyo3-ffi"
 
 [build-system]
 requires = [

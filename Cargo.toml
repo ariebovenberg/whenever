@@ -4,7 +4,7 @@ version = "0.1.0"  # Dummy value. Isn't actually used in distribution of the Pyt
 authors = []
 description = "Rust extension module for whenever"
 edition = "2024"
-rust-version = "1.86"
+rust-version = "1.92"
 license = "MIT"
 readme = "README.md"
 keywords = []
@@ -28,7 +28,11 @@ strip = true
 
 [dependencies]
 ahash = "^0.8.12"
-pyo3-ffi = { version = "^0.27.2", default-features = false, features = ["extension-module"]}
+
+[dependencies.pyo3-ffi]
+version = "^0.27.2"
+default-features = false
+features = ["extension-module", "generate-import-lib"]
 
 [build-dependencies]
 pyo3-build-config = { version = "^0.27.2" }

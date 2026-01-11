@@ -440,7 +440,8 @@ impl Year {
     }
 
     pub(crate) const fn is_leap(self) -> bool {
-        (self.get() % 4 == 0 && self.get() % 100 != 0) || self.get() % 400 == 0
+        (self.get().is_multiple_of(4) && !self.get().is_multiple_of(100))
+            || self.get().is_multiple_of(400)
     }
 
     pub(crate) fn unix_days_at_jan1(self) -> UnixDays {
