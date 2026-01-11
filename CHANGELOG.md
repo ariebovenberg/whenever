@@ -2,7 +2,7 @@
 
 ## 0.9.5 (2026-01-11)
 
-Fix issue where not all windows wheels were built and uploaded (#303)
+Fix issue where not all windows wheels were built and uploaded (#317)
 
 ## 0.9.4 (2025-12-14)
 
