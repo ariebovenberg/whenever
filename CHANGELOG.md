@@ -1,5 +1,9 @@
 # 🚀 Changelog
 
+## 0.9.5 (2026-01-11)
+
+Fix issue where not all windows wheels were built and uploaded (#303)
+
 ## 0.9.4 (2025-12-14)
 
 Added support for free-threaded Python (#166)

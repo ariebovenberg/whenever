@@ -82,26 +82,6 @@ jobs:
     runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-latest
     steps:
       - uses: actions/checkout@v4
-      # Older Python versions are missing from 32-bit windows runners
-      - uses: actions/setup-python@v5
-        if: ${{ matrix.os == 'windows' && matrix.python-architecture == 'x86' }}
-        with:
-          python-version: |
-            3.9
-            3.10
-            3.11
-            3.12
-          architecture: x86
-      # Some Python versions missing from all windows runners
-      - uses: actions/setup-python@v5
-        if: ${{ matrix.os == 'windows'}}
-        with:
-          python-version: |
-            3.13
-            3.13t
-            3.14
-            3.14t
-          architecture: "${{ matrix.python-architecture || 'x64' }}"
       - name: Generate third-party license information
         run: |
           cargo install cargo-3pl --version 0.1.3
@@ -110,10 +90,9 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --strip --out dist --interpreter '3.9 3.10 3.11 3.12 3.13 3.14 3.13t 3.14t'
+          args: --release --strip --out dist --interpreter '3.9 3.10 3.11 3.12 3.13 3.13t 3.14 3.14t'
           manylinux: ${{ matrix.manylinux || 'auto' }}
-          sccache: "true"
-          rust-toolchain: "1.87"
+          rust-toolchain: "1.92"
       - run: pip install -U twine packaging
       - run: twine check --strict dist/*
       - name: Upload wheels
@@ -151,6 +130,15 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
       - run: pip install -U twine packaging
+      - name: Sanity check wheel count
+        run: |
+          COUNT=$(find wheels-* -maxdepth 1 -type f | wc -l)
+          EXPECTED=114
+
+          if [ "$COUNT" -ne "$EXPECTED" ]; then
+            echo "Expected exactly $EXPECTED wheels, found $COUNT"
+            exit 1
+          fi
       - name: Publish to PyPI
         run: |
           twine upload --non-interactive --disable-progress-bar --skip-existing wheels-*/*
