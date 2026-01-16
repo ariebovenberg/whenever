@@ -42,13 +42,10 @@ from warnings import warn
 
 from ._common import check_utc_bounds, mk_fixed_tzinfo
 from ._math import (
-    days_diff,
+    DIFF_FUNCS,
     days_in_month,
     increment_to_ns_for_datetime,
     increment_to_ns_for_delta,
-    months_diff,
-    weeks_diff,
-    years_diff,
 )
 from ._parse import (
     MONTH_TO_RFC2822,
@@ -109,6 +106,7 @@ __all__ = [
     "nanoseconds",
     # Exceptions/warnings
     "DaysAreNotAlways24HoursWarning",
+    "WheneverDeprecationWarning",
     "SkippedTime",
     "RepeatedTime",
     "InvalidOffsetError",
@@ -116,9 +114,6 @@ __all__ = [
     "TimeZoneNotFoundError",
     "Weekday",
     "reset_system_tz",
-    "_clear_tz_cache",
-    "_clear_tz_cache_by_keys",
-    "_set_tzpath",
 ]
 
 
@@ -227,14 +222,14 @@ class _Base(metaclass=_ConstructorSupportsIsoString):
     def parse_common_iso(cls: type[_T], s: str, /) -> _T:
         warn(
             "parse_common_iso() has been renamed to parse_iso()",
-            DeprecationWarning,
+            WheneverDeprecationWarning,
         )
         return cls.parse_iso(s)  # type: ignore[no-any-return, attr-defined]
 
     def format_common_iso(self) -> str:
         warn(
             "format_common_iso() has been renamed to format_iso()",
-            DeprecationWarning,
+            WheneverDeprecationWarning,
         )
         return self.format_iso()  # type: ignore[no-any-return, attr-defined]
 
@@ -563,19 +558,11 @@ class Date(_Base):
         else:
             single_unit_mode = False
 
-        # Translate the unit names to unique indices (years=0, months=1, weeks=2, days=3)
-        # This makes it easier to work with them later
-        unit_idx: list[Literal[0, 1, 2, 3]] = []
-        for u in units:
-            try:
-                unit_idx.append(_CALENDAR_UNITS.index(u))  # type: ignore[arg-type]
-            except ValueError:
-                raise ValueError(f"Unsupported unit in units argument: {u!r}")
-        results: list[Optional[int]] = [None, None, None, None]
-
-        if sorted(unit_idx) != unit_idx:
+        # TODO check unit validity!
+        results: dict[_CalendarUnit, int] = {}
+        if sorted(units, key=list(DIFF_FUNCS).index) != list(units):
             raise ValueError("units must be in decreasing order of size")
-        elif len(set(unit_idx)) != len(unit_idx):
+        elif len(set(units)) != len(units):
             raise ValueError("units cannot contain duplicates")
 
         # Because years and months are variable length, the calculation is done
@@ -587,54 +574,52 @@ class Date(_Base):
         # We only apply the increment logic to the last unit.
         # The other units get increment 1.
         increment_per_unit = [*[1] * (len(units) - 1), round_increment]
-        diff_funcs = (years_diff, months_diff, weeks_diff, days_diff)
-        for i, increment in zip(unit_idx, increment_per_unit):
-            results[i], trunc, expand = diff_funcs[i](
+        for u, increment in zip(units, increment_per_unit):
+            results[u], trunc, expand = DIFF_FUNCS[u](
                 self._py_date, trunc, increment
             )
+
+        assert u  # it's always set since we've made sure units is non-empty
 
         sign: Sign = 1 if self > b else 0 if self == b else -1
 
         # Round is expensive, so only do it if needed
         if round_mode != "trunc":
             do_expand = False  # 'expand' means round away from 0
-            days_remaining_total = (expand - trunc).days
-            days_remaining = (self._py_date - trunc).days
+            limit = (expand - trunc).days
+            remainder = (self._py_date - trunc).days
             # DROP-PY39: match-case
             if round_mode == "expand":
-                do_expand = days_remaining * sign > 0
+                do_expand = remainder * sign > 0
             elif round_mode == "ceil":
-                do_expand = days_remaining > 0
+                do_expand = remainder > 0
             elif round_mode == "floor":
-                do_expand = days_remaining < 0
+                do_expand = remainder < 0
             elif round_mode == "half_ceil":
-                do_expand = days_remaining * 2 > days_remaining_total - sign
+                do_expand = remainder * 2 * sign > limit * sign - sign
             elif round_mode == "half_floor":
-                do_expand = days_remaining * 2 >= days_remaining_total + sign
+                do_expand = remainder * 2 * sign >= limit * sign + sign
             elif round_mode == "half_trunc":
-                do_expand = days_remaining * 2 > days_remaining_total
+                do_expand = remainder * 2 * sign > limit * sign
             elif round_mode == "half_expand":
-                do_expand = days_remaining * 2 >= days_remaining_total
+                # Ok there's something wrong here (negative months)
+                do_expand = remainder * 2 * sign >= limit * sign
             elif round_mode == "half_even":
-                do_expand = days_remaining * 2 > days_remaining_total or (
-                    days_remaining * 2 == days_remaining_total
-                    and (
-                        results[unit_idx[-1]] // round_increment  # type: ignore[operator]
-                    )
-                    % 2
-                    == 1
+                do_expand = remainder * 2 > limit or (
+                    remainder * 2 == limit
+                    and (results[u] // round_increment) % 2 == 1
                 )
             else:
                 raise ValueError(f"Invalid round_mode: {round_mode!r}")
 
             if do_expand:
                 # At this point we know this unit was set to non-None
-                results[unit_idx[-1]] += round_increment  # type: ignore[operator]
+                results[u] += round_increment
 
         if single_unit_mode:
-            return results[unit_idx[0]] * sign  # type: ignore[operator]
+            return results.pop(u) * sign
         else:
-            return ItemizedDateDelta._from_signed(sign, *results)
+            return ItemizedDateDelta._from_signed(sign, **results)
 
     def until(
         self,
@@ -1450,6 +1435,18 @@ class Time(_Base):
         )
 
 
+_NS_PER_UNIT_PLURAL = {
+    "weeks": 604_800_000_000_000,
+    "days": 86_400_000_000_000,
+    "hours": 3_600_000_000_000,
+    "minutes": 60_000_000_000,
+    "seconds": 1_000_000_000,
+    "milliseconds": 1_000_000,
+    "microseconds": 1_000,
+    "nanoseconds": 1,
+}
+
+
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
 def _unpkl_time(data: bytes) -> Time:
@@ -1521,6 +1518,71 @@ class TimeDelta(_Base):
     def _time_part(self) -> TimeDelta:
         return self
 
+    def total(
+        self,
+        unit: Literal[
+            "years",
+            "months",
+            "weeks",
+            "days",
+            "hours",
+            "minutes",
+            "seconds",
+            "milliseconds",
+            "microseconds",
+            "nanoseconds",
+        ],
+        relative_to: ZonedDateTime | None = None,
+    ) -> float:
+        """The total size in the given unit, as a floating point number
+
+        Example
+        -------
+        >>> d = TimeDelta(hours=1, minutes=30)
+        >>> d.total('minutes')
+        90.0
+        """
+        if unit in ("days", "weeks", "years", "months"):
+            if relative_to:
+                shifted = relative_to + self
+
+                sign = 1 if self._total_ns >= 0 else -1
+                shifted_date = shifted.date()
+                if shifted.time() > relative_to.time():
+                    shifted_date = shifted_date.add(days=1)
+                elif sign == 1 and shifted.time() < relative_to.time():
+                    shifted_date = shifted_date.subtract(days=1)
+
+                trunc_amount, trunc_date, expanded_date = DIFF_FUNCS[unit](
+                    shifted_date._py_date, relative_to._py_dt.date(), 1
+                )
+                trunc_zdt = relative_to.replace_date(
+                    Date._from_py_unchecked(trunc_date)
+                )
+                return (
+                    trunc_amount
+                    + (shifted - trunc_zdt)
+                    / (
+                        relative_to.replace_date(
+                            Date._from_py_unchecked(expanded_date)
+                        )
+                        - trunc_zdt
+                    )
+                ) * sign
+            elif unit in ("days", "weeks"):
+                if not _ignore_days_not_always_24h_warning.get():
+                    warn(
+                        DaysAreNotAlways24HoursWarning(DAYS_NOT_ALWAYS_24H_MSG)
+                    )
+            else:
+                raise ValueError(
+                    f"Cannot convert TimeDelta to {unit!r} without a `relative_to` parameter"
+                )
+        try:
+            return self._total_ns / _NS_PER_UNIT_PLURAL[unit]
+        except KeyError:
+            raise ValueError(f"Invalid unit: {unit!r}")
+
     def in_days_of_24h(self) -> float:
         """The total size in days (of exactly 24 hours each)
 
@@ -1528,7 +1590,16 @@ class TimeDelta(_Base):
         ----
         Note that this may not be the same as days on the calendar,
         since some days have 23 or 25 hours due to daylight saving time.
+
+        .. deprecated:: 0.10.0
+
+            Use :meth:`total` with ``'days'`` instead.
         """
+        warn(
+            "in_days_of_24h is deprecated, use total('days') instead",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         return self._total_ns / 86_400_000_000_000
 
     def in_hours(self) -> float:
@@ -1539,7 +1610,16 @@ class TimeDelta(_Base):
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d.in_hours()
         1.5
+
+        .. deprecated:: 0.10.0
+
+            Use :meth:`total` with ``'hours'`` instead.
         """
+        warn(
+            "in_hours is deprecated, use total('hours') instead",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         return self._total_ns / 3_600_000_000_000
 
     def in_minutes(self) -> float:
@@ -1550,7 +1630,16 @@ class TimeDelta(_Base):
         >>> d = TimeDelta(hours=1, minutes=30, seconds=30)
         >>> d.in_minutes()
         90.5
+
+        .. deprecated:: 0.10.0
+
+            Use :meth:`total` with ``'minutes'`` instead.
         """
+        warn(
+            "in_minutes is deprecated, use total('minutes') instead",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         return self._total_ns / 60_000_000_000
 
     def in_seconds(self) -> float:
@@ -1561,7 +1650,16 @@ class TimeDelta(_Base):
         >>> d = TimeDelta(minutes=2, seconds=1, microseconds=500_000)
         >>> d.in_seconds()
         121.5
+
+        .. deprecated:: 0.10.0
+
+            Use :meth:`total` with ``'seconds'`` instead.
         """
+        warn(
+            "in_seconds is deprecated, use total('seconds') instead",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         return self._total_ns / 1_000_000_000
 
     def in_milliseconds(self) -> float:
@@ -1570,7 +1668,16 @@ class TimeDelta(_Base):
         >>> d = TimeDelta(seconds=2, microseconds=50)
         >>> d.in_milliseconds()
         2_000.05
+
+        .. deprecated:: 0.10.0
+
+            Use :meth:`total` with ``'milliseconds'`` instead.
         """
+        warn(
+            "in_milliseconds is deprecated, use total('milliseconds') instead",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         return self._total_ns / 1_000_000
 
     def in_microseconds(self) -> float:
@@ -1579,7 +1686,16 @@ class TimeDelta(_Base):
         >>> d = TimeDelta(seconds=2, nanoseconds=50)
         >>> d.in_microseconds()
         2_000_000.05
+
+        .. deprecated:: 0.10.0
+
+            Use :meth:`total` with ``'microseconds'`` instead.
         """
+        warn(
+            "in_microseconds is deprecated, use total('microseconds') instead",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         return self._total_ns / 1_000
 
     def in_nanoseconds(self) -> int:
@@ -1588,7 +1704,16 @@ class TimeDelta(_Base):
         >>> d = TimeDelta(seconds=2, nanoseconds=50)
         >>> d.in_nanoseconds()
         2_000_000_050
+
+        .. deprecated:: 0.10.0
+
+            Use :meth:`total` with ``'nanoseconds'`` instead.
         """
+        warn(
+            "in_nanoseconds is deprecated, use total('nanoseconds') instead",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         return self._total_ns
 
     def in_hrs_mins_secs_nanos(self) -> tuple[int, int, int, int]:
@@ -1599,6 +1724,10 @@ class TimeDelta(_Base):
         >>> d = TimeDelta(hours=1, minutes=30, microseconds=5_000_090)
         >>> d.in_hrs_mins_secs_nanos()
         (1, 30, 5, 90_000)
+
+        ... deprecated:: 0.10.0
+
+            Use :meth:`itemize` with ``['hours', 'minutes', 'seconds', 'nanoseconds']`` instead.
         """
         hours, rem = divmod(abs(self._total_ns), 3_600_000_000_000)
         mins, rem = divmod(rem, 60_000_000_000)
@@ -1609,7 +1738,7 @@ class TimeDelta(_Base):
             else (-hours, -mins, -secs, -ns)
         )
 
-    def in_units(
+    def itemize(
         self,
         units: Sequence[
             Literal[
@@ -3468,10 +3597,10 @@ class ItemizedDateDelta(_Base):
     def _from_signed(
         cls,
         sign: Sign,
-        years: int | None,
-        months: int | None,
-        weeks: int | None,
-        days: int | None,
+        years: int | None = None,
+        months: int | None = None,
+        weeks: int | None = None,
+        days: int | None = None,
     ) -> ItemizedDateDelta:
         self = _object_new(cls)
         self._sign = sign
@@ -6753,6 +6882,12 @@ class DaysAreNotAlways24HoursWarning(UserWarning):
     """An operation assumed days are always 24 hours long"""
 
 
+# A custom warnings class to prevent silent deprecation warnings in user code
+# https://sethmlarson.dev/deprecations-via-warnings-dont-work-for-python-libraries
+class WheneverDeprecationWarning(UserWarning):
+    """A deprecated feature of the Whenever library was used."""
+
+
 class ImplicitlyIgnoringDST(TypeError):
     """A calculation was performed that implicitly ignored DST"""
 
@@ -7013,6 +7148,7 @@ PlainDateTime.MAX = PlainDateTime._from_py_unchecked(
 )
 
 
+# TODO: mark deprecated
 def years(i: int, /) -> DateDelta:
     """Create a :class:`~DateDelta` with the given number of years.
     ``years(1) == DateDelta(years=1)``

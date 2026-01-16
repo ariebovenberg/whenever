@@ -1,5 +1,4 @@
 import pickle
-from collections import OrderedDict
 
 import pytest
 
