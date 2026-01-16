@@ -13,10 +13,11 @@ _AbsoluteDiff = tuple[int, _date, _date]
 def years_diff(a: _date, b: _date, increment: int) -> _AbsoluteDiff:
     diff = (a.year - b.year) // increment * increment
     shift = _replace_year_saturating(b, b.year + diff)
+    sign = 1 if diff >= 0 else -1
 
     # Check if we overshot
     if (diff > 0 and shift > a) or (diff < 0 and shift < a):
-        diff -= increment * (-1 if diff < 0 else 1)
+        diff -= increment * sign
         return (
             abs(diff),
             _replace_year_saturating(b, b.year + diff),
@@ -26,7 +27,7 @@ def years_diff(a: _date, b: _date, increment: int) -> _AbsoluteDiff:
         return (
             abs(diff),
             shift,
-            _replace_year_saturating(b, b.year + diff + increment),
+            _replace_year_saturating(b, b.year + diff + increment * sign),
         )
 
 
@@ -35,13 +36,14 @@ def months_diff(a: _date, b: _date, increment: int) -> _AbsoluteDiff:
         ((a.year - b.year) * 12 + (a.month - b.month)) // increment
     ) * increment
     shift = _add_months(b, diff)
+    sign = 1 if diff >= 0 else -1
 
     # Check if we overshot
     if (diff > 0 and shift > a) or (diff < 0 and shift < a):
-        diff -= increment * (1 if diff > 0 else -1)
+        diff -= increment * sign
         return (abs(diff), _add_months(b, diff), shift)
     else:
-        return (abs(diff), shift, _add_months(b, diff + increment))
+        return (abs(diff), shift, _add_months(b, diff + increment * sign))
 
 
 def weeks_diff(a: _date, b: _date, increment: int) -> _AbsoluteDiff:
@@ -58,6 +60,14 @@ def days_diff(a: _date, b: _date, increment: int) -> _AbsoluteDiff:
         b + _timedelta(diff * sign),
         b + _timedelta((diff + increment) * sign),
     )
+
+
+DIFF_FUNCS = {
+    "years": years_diff,
+    "months": months_diff,
+    "weeks": weeks_diff,
+    "days": days_diff,
+}
 
 
 def _replace_year_saturating(d: _date, year: int, /) -> _date:

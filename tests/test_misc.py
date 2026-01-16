@@ -24,10 +24,8 @@ from whenever import (
     TimeDelta,
     YearMonth,
     ZonedDateTime,
-    hours,
     patch_current_time,
     reset_system_tz,
-    seconds,
 )
 from whenever._tz.system import _tzid_from_path, get_tz
 
@@ -98,15 +96,15 @@ def test_patch_time():
     with patch_current_time(
         i.to_tz("Europe/Amsterdam"), keep_ticking=True
     ) as p:
-        assert (Instant.now() - i) < seconds(1)
+        assert (Instant.now() - i).total("seconds") < 1
         p.shift(hours=2)
         sleep(0.000001)
-        assert hours(2) < (Instant.now() - i) < hours(2.1)
+        assert 2 < (Instant.now() - i).total("hours") < 2.1
         p.shift(days=2, disambiguate="raise")
         sleep(0.000001)
-        assert hours(50) < (Instant.now() - i) < hours(50.1)
+        assert 50 < (Instant.now() - i).total("hours") < 50.1
 
-    assert Instant.now() - i > hours(40_000)
+    assert Instant.now() - i > TimeDelta(hours=40_000)
 
 
 @pytest.mark.skipif(

@@ -28,6 +28,7 @@ from whenever import (
     Time,
     TimeDelta,
     TimeZoneNotFoundError,
+    WheneverDeprecationWarning,
     ZonedDateTime,
     available_timezones,
     clear_tzcache,
@@ -776,7 +777,7 @@ class TestFormatIso:
     def test_defaults(self, d: ZonedDateTime, expected: str):
         assert str(d) == expected
         assert d.format_iso() == expected
-        with pytest.deprecated_call():
+        with pytest.warns(WheneverDeprecationWarning):
             assert d.format_common_iso() == expected
 
     @pytest.mark.parametrize("d", [ZDT_POSIX, ZDT_RAWFILE])
@@ -1617,7 +1618,7 @@ class TestParseIso:
     )
     def test_valid(self, s, expect):
         assert ZonedDateTime.parse_iso(s).exact_eq(expect)
-        with pytest.deprecated_call():
+        with pytest.warns(WheneverDeprecationWarning):
             assert ZonedDateTime.parse_common_iso(s).exact_eq(expect)
 
     @pytest.mark.parametrize(
