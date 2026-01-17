@@ -371,6 +371,19 @@ def test_neg():
     assert neg_zero is d_zero
 
 
+def test_bool():
+    d_zero = ItemizedDelta(seconds=0)
+    assert not d_zero
+    assert d_zero.sign == 0
+
+    assert not ItemizedDelta(years=0)
+    assert ItemizedDelta(hours=0, seconds=0).sign == 0
+
+    d_nonzero = ItemizedDelta(weeks=1, seconds=0)
+    assert d_nonzero
+    assert d_nonzero.sign == 1
+
+
 class TestAddAndSubtract:
     def test_valid(self):
         d1 = ItemizedDelta(
