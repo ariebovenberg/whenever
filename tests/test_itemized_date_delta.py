@@ -296,6 +296,19 @@ def test_neg():
     assert -d_zero is d_zero
 
 
+def test_bool():
+    d_zero = ItemizedDateDelta(days=0)
+    assert not d_zero
+    assert d_zero.sign == 0
+
+    assert not ItemizedDateDelta(years=0)
+    assert ItemizedDateDelta(weeks=0).sign == 0
+
+    d_nonzero = ItemizedDateDelta(weeks=1, days=0)
+    assert d_nonzero
+    assert d_nonzero.sign == 1
+
+
 @pytest.mark.parametrize(
     "d",
     [

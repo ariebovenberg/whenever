@@ -2930,6 +2930,18 @@ class ItemizedDelta(_Base):
             return self._nanoseconds is not None
         return False
 
+    def __bool__(self) -> bool:
+        """An ItemizedDelta is considered False if its sign is 0.
+
+        Example
+        -------
+        >>> bool(ItemizedDelta(weeks=0))
+        False
+        >>> bool(ItemizedDelta(weeks=1))
+        True
+        """
+        return bool(self._sign)
+
     def format_iso(self, *, lowercase_units: bool = False) -> str:
         """Format as the *popular interpretation* of the ISO 8601 duration format.
         May not strictly adhere to (all versions of) the standard.
@@ -3480,6 +3492,20 @@ class ItemizedDateDelta(_Base):
         elif key == "days":
             return self._days is not None
         return False
+
+    def __bool__(self) -> bool:
+        """An ItemizedDateDelta is considered False if its sign is 0.
+
+        Example
+        -------
+        >>> d = ItemizedDateDelta(weeks=0)
+        >>> bool(d)
+        False
+        >>> d = ItemizedDateDelta(weeks=1)
+        >>> bool(d)
+        True
+        """
+        return bool(self._sign)
 
     def format_iso(self, *, lowercase_units: bool = False) -> str:
         """Format as the *popular interpretation* of the ISO 8601 duration format.
