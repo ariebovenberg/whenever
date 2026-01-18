@@ -2,7 +2,7 @@ import pickle
 
 import pytest
 
-from whenever import ItemizedDelta
+from whenever import ItemizedDateDelta, ItemizedDelta, TimeDelta
 
 from .common import AlwaysEqual, NeverEqual
 from .test_date_delta import INVALID_DDELTAS
@@ -86,23 +86,9 @@ class TestInit:
         d = ItemizedDelta(seconds=9_000, nanoseconds=1)
         assert d.float_seconds() == 9_000.000000001
 
-
-@pytest.mark.parametrize(
-    "d, expected",
-    [
-        (ItemizedDelta(days=5), (5,)),
-        (ItemizedDelta(weeks=1, years=2, minutes=8), (2, 1, 8)),
-        (ItemizedDelta(weeks=-1, minutes=0), (-1, 0)),
-        (
-            ItemizedDelta(years=1, seconds=9_000, nanoseconds=20),
-            (1, 9_000, 20),
-        ),
-    ],
-)
-def test_values(d, expected):
-    assert d.values() == expected
-    # Values are also emitted from iteration
-    assert list(d) == list(expected)
+    def test_none_not_allowed(self):
+        with pytest.raises(TypeError):
+            ItemizedDelta(days=None)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -125,8 +111,8 @@ def test_values(d, expected):
 )
 def test_dictlike_behavior(d, expected):
     # explicit method
-    assert d.dict() == expected
-    assert list(d.dict()) == list(expected)  # keys in order
+    assert d.asdict() == expected
+    assert list(d.asdict()) == list(expected)  # keys in order
 
     # The mapping-like interface
     assert list(d.units()) == list(expected.keys())
@@ -174,11 +160,24 @@ class TestEq:
         assert d1 != d3
         assert not d1 == d3
 
-    def test_zero_is_not_same_as_missing(self):
+    def test_zero_is_the_same_as_missing(self):
         d1 = ItemizedDelta(weeks=1)
         d2 = ItemizedDelta(weeks=1, seconds=0)
-        assert d1 != d2
-        assert not d1 == d2
+        assert d1 == d2
+        assert not d1 != d2
+
+
+def test_exact_eq():
+    d1 = ItemizedDelta(years=2, months=0, minutes=5, seconds=0)
+    d2 = ItemizedDelta(years=2, minutes=5)
+    d3 = ItemizedDelta(years=2, months=1, minutes=5)
+    d4 = ItemizedDelta(years=2, months=1, minutes=5, seconds=0)
+    d5 = ItemizedDelta(years=2, months=0, minutes=5, seconds=0)
+    assert d1.exact_eq(d1)
+    assert d1.exact_eq(d5)
+    assert not d1.exact_eq(d2)
+    assert not d1.exact_eq(d3)
+    assert not d1.exact_eq(d4)
 
 
 class TestFormatIso:
@@ -342,7 +341,7 @@ class TestParseIso:
         ],
     )
     def test_valid(self, s: str, expected: ItemizedDelta):
-        assert ItemizedDelta.parse_iso(s) == expected
+        assert ItemizedDelta.parse_iso(s).exact_eq(expected)
 
     @pytest.mark.parametrize("s", INVALID_DELTAS)
     def test_invalid(self, s: str):
@@ -352,7 +351,7 @@ class TestParseIso:
 
 def test_abs():
     d = ItemizedDelta(days=-5, hours=-3, nanoseconds=-200)
-    assert abs(d) == ItemizedDelta(days=5, hours=3, nanoseconds=200)
+    assert abs(d).exact_eq(ItemizedDelta(days=5, hours=3, nanoseconds=200))
 
     d_pos = ItemizedDelta(days=2, minutes=30)
     assert abs(d_pos) is d_pos
@@ -363,8 +362,8 @@ def test_abs():
 
 def test_neg():
     d = ItemizedDelta(days=5, hours=3, nanoseconds=200)
-    assert -d == ItemizedDelta(days=-5, hours=-3, nanoseconds=-200)
-    assert --d == d
+    assert (-d).exact_eq(ItemizedDelta(days=-5, hours=-3, nanoseconds=-200))
+    assert (--d).exact_eq(d)
 
     d_zero = ItemizedDelta(seconds=0)
     neg_zero = -d_zero
@@ -384,109 +383,66 @@ def test_bool():
     assert d_nonzero.sign == 1
 
 
-class TestAddAndSubtract:
-    def test_valid(self):
-        d1 = ItemizedDelta(
-            years=1,
-            months=2,
-            days=5,
-            hours=3,
-            seconds=41,
-            nanoseconds=987_654_321,
-        )
-        d2 = ItemizedDelta(weeks=1, months=13, hours=4, nanoseconds=500)
+@pytest.mark.parametrize(
+    "d, expected_date, expected_time",
+    [
+        (
+            ItemizedDelta(
+                years=1,
+                months=2,
+                weeks=3,
+                days=4,
+                hours=5,
+                minutes=6,
+                seconds=7,
+                nanoseconds=8,
+            ),
+            ItemizedDateDelta(years=1, months=2, weeks=3, days=4),
+            TimeDelta(hours=5, minutes=6, seconds=7, nanoseconds=8),
+        ),
+        (
+            ItemizedDelta(days=5),
+            ItemizedDateDelta(days=5),
+            None,
+        ),
+        (
+            ItemizedDelta(days=5, minutes=0),
+            ItemizedDateDelta(days=5),
+            TimeDelta.ZERO,
+        ),
+        (
+            ItemizedDelta(days=0, months=0, minutes=-1),
+            ItemizedDateDelta(months=0, days=0),
+            TimeDelta(minutes=-1),
+        ),
+        (
+            ItemizedDelta(days=0, months=0, minutes=0),
+            ItemizedDateDelta(months=0, days=0),
+            TimeDelta.ZERO,
+        ),
+        (
+            ItemizedDelta(days=-5, hours=0),
+            ItemizedDateDelta(days=-5),
+            TimeDelta.ZERO,
+        ),
+    ],
+)
+def test_parts(
+    d: ItemizedDelta,
+    expected_date: ItemizedDateDelta,
+    expected_time: TimeDelta,
+):
+    (date_part, time_part) = d.parts()
+    if date_part is None:
+        assert expected_date is None
+    else:
+        assert date_part.exact_eq(expected_date)
+    assert time_part == expected_time
 
-        assert d1 + d2 == ItemizedDelta(
-            years=1,
-            months=15,
-            weeks=1,
-            days=5,
-            hours=7,
-            seconds=41,
-            nanoseconds=987_654_821,
-        )
-        assert d1 + ItemizedDelta(days=0) == d1
-        assert d1 + ItemizedDelta(minutes=0) == ItemizedDelta(
-            years=1,
-            months=2,
-            days=5,
-            hours=3,
-            minutes=0,
-            seconds=41,
-            nanoseconds=987_654_321,
-        )
-        assert d1 + ItemizedDelta(days=-3, hours=-3) == ItemizedDelta(
-            years=1,
-            months=2,
-            days=2,
-            hours=0,
-            seconds=41,
-            nanoseconds=987_654_321,
-        )
 
-        # nanosecond overflow
-        assert d1 + ItemizedDelta(nanoseconds=200_000_000) == ItemizedDelta(
-            years=1,
-            months=2,
-            days=5,
-            hours=3,
-            seconds=42,
-            nanoseconds=187_654_321,
-        )
-        # nanosecond underflow
-        assert d1 + ItemizedDelta(nanoseconds=-999_000_000) == ItemizedDelta(
-            years=1,
-            months=2,
-            days=5,
-            hours=3,
-            seconds=40,
-            nanoseconds=988_654_321,
-        )
+# TODO: ItemizedDelta.in_units() for rebalancing
 
-        # resulting in zero delta
-        assert d1 + (-d1) == ItemizedDelta(
-            years=0, months=0, days=0, hours=0, seconds=0, nanoseconds=0
-        )
-        # resulting in sign swap
-        assert d1 + ItemizedDelta(
-            years=-1,
-            months=-5,
-            days=-10,
-            hours=-4,
-            seconds=-41,
-            nanoseconds=-987_654_321,
-        ) == ItemizedDelta(
-            years=0,
-            months=-3,
-            days=-5,
-            hours=-1,
-            seconds=0,
-            nanoseconds=0,
-        )
-        # pure nanosecond over/underflow
-        assert ItemizedDelta(nanoseconds=900_000_000) + ItemizedDelta(
-            nanoseconds=200_000_000
-        ) == ItemizedDelta(seconds=1, nanoseconds=100_000_000)
-        assert ItemizedDelta(nanoseconds=-900_000_000) + ItemizedDelta(
-            nanoseconds=-200_000_000
-        ) == ItemizedDelta(seconds=-1, nanoseconds=-100_000_000)
-        assert ItemizedDelta(nanoseconds=200) + ItemizedDelta(
-            nanoseconds=-500
-        ) == ItemizedDelta(nanoseconds=-300)
-
-    def test_mixed_sign_error(self):
-        d1 = ItemizedDelta(days=5, hours=3, nanoseconds=200)
-        with pytest.raises(ValueError, match="sign"):
-            d1 + ItemizedDelta(days=-2, hours=-4)
-
-        with pytest.raises(ValueError, match="sign"):
-            d1 + ItemizedDelta(nanoseconds=-201)
-
-        # TODO: max value overflow
-
-        # TODO: ItemizedDelta.in_units() for rebalancing
-
-        # TODO: method to remove zero components
+# TODO: method to remove zero components
 
 
 @pytest.mark.parametrize(
@@ -510,7 +466,7 @@ class TestAddAndSubtract:
 def test_pickle(d):
     dumped = pickle.dumps(d)
     assert len(dumped) < 100
-    assert pickle.loads(dumped) == d
+    assert pickle.loads(dumped).exact_eq(d)
 
 
 def test_compatible_unpickle():
@@ -521,13 +477,15 @@ def test_compatible_unpickle():
         b"delta\x94\x93\x94(K\x01K\x01K\x02K\x03K\x04K\x05K\x06K\x07K\x08t\x94R\x94."
     )
     result = pickle.loads(dumped)
-    assert result == ItemizedDelta(
-        years=1,
-        months=2,
-        weeks=3,
-        days=4,
-        hours=5,
-        minutes=6,
-        seconds=7,
-        nanoseconds=8,
+    assert result.exact_eq(
+        ItemizedDelta(
+            years=1,
+            months=2,
+            weeks=3,
+            days=4,
+            hours=5,
+            minutes=6,
+            seconds=7,
+            nanoseconds=8,
+        )
     )

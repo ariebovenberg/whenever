@@ -1420,68 +1420,68 @@ class TestItemize:
         with warnings.catch_warnings():
             # we test this warning elsewhere
             warnings.simplefilter("ignore", DaysAreNotAlways24HoursWarning)
-            assert delta.itemize(units, **kwargs) == expected
+            assert delta.in_units(units, **kwargs) == expected
 
     def test_invalid_unit(self):
         d = TimeDelta(hours=1)
         with pytest.raises(ValueError, match="plural"):
-            d.itemize(["foo"])  # type: ignore[list-item]
+            d.in_units(["foo"])  # type: ignore[list-item]
 
         with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
-            d.itemize(["foos"])  # type: ignore[list-item]
+            d.in_units(["foos"])  # type: ignore[list-item]
 
         with pytest.raises(ValueError, match="Invalid.*unit"):
-            d.itemize([""])  # type: ignore[list-item]
+            d.in_units([""])  # type: ignore[list-item]
 
         # DOC: make this error clearer
         with pytest.raises(ValueError, match="Invalid.*unit"):
-            d.itemize(["milliseconds"])  # type: ignore[list-item]
+            d.in_units(["milliseconds"])  # type: ignore[list-item]
 
     def test_missing_units(self):
         d = TimeDelta(hours=1)
         with pytest.raises(ValueError, match="At least one unit"):
-            d.itemize([])
+            d.in_units([])
 
     def test_units_out_of_order(self):
         d = TimeDelta(hours=1)
         with pytest.raises(ValueError, match="in descending order"):
-            d.itemize(["seconds", "hours"])
+            d.in_units(["seconds", "hours"])
 
     def test_units_repeated(self):
         d = TimeDelta(hours=1)
         # DOC: clarify error message
         with pytest.raises(ValueError):
-            d.itemize(["hours", "hours", "minutes"])
+            d.in_units(["hours", "hours", "minutes"])
 
     def test_nanoseconds_but_no_seconds(self):
         d = TimeDelta(hours=1)
         with pytest.raises(ValueError, match="Nanoseconds.*seconds"):
-            d.itemize(["hours", "nanoseconds"])
+            d.in_units(["hours", "nanoseconds"])
 
     def test_invalid_round_mode(self):
         d = TimeDelta(hours=1)
         with pytest.raises(ValueError, match="Invalid.*rounding mode.*foo"):
-            d.itemize(["hours"], round_mode="foo")  # type: ignore[arg-type]
+            d.in_units(["hours"], round_mode="foo")  # type: ignore[arg-type]
 
     def test_24h_days_warning(self):
         d = TimeDelta(hours=49)
         with pytest.warns(DaysAreNotAlways24HoursWarning):
-            d.itemize(["days", "hours"])
+            d.in_units(["days", "hours"])
 
         with pytest.warns(DaysAreNotAlways24HoursWarning):
-            d.itemize(["weeks", "hours"])
+            d.in_units(["weeks", "hours"])
 
         # test warnings suppression
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             with ignore_days_not_always_24h_warning():
-                d.itemize(["days"])
+                d.in_units(["days"])
             assert len(w) == 0
 
     def test_invalid_round_unit(self):
         d = TimeDelta(hours=1)
         with pytest.raises(ValueError, match="foo"):
-            d.itemize(
+            d.in_units(
                 ["hours", "seconds", "nanoseconds"], round_unit="foo"  # type: ignore[arg-type]
             )
 
