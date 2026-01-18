@@ -1738,7 +1738,7 @@ class TimeDelta(_Base):
             else (-hours, -mins, -secs, -ns)
         )
 
-    def itemize(
+    def in_units(
         self,
         units: Sequence[
             Literal[
@@ -2266,6 +2266,10 @@ TimeDelta.MIN = TimeDelta(seconds=-9999 * 366 * 24 * 3_600)
 class DateDelta(_Base):
     """A duration of time consisting of calendar units
     (years, months, weeks, and days)
+
+    .. deprecated:: 0.10.0
+
+        Use :class:`ItemizedDateDelta` instead.
     """
 
     __slots__ = ("_months", "_days")
@@ -2689,17 +2693,17 @@ class ItemizedDelta(_Base):
     def __init__(
         self,
         *,
-        years: Optional[int] = None,
-        months: Optional[int] = None,
-        weeks: Optional[int] = None,
-        days: Optional[int] = None,
-        hours: Optional[int] = None,
-        minutes: Optional[int] = None,
-        seconds: Optional[int] = None,
-        nanoseconds: Optional[int] = None,
+        years: int = _UNSET,  # type: ignore[assignment]
+        months: int = _UNSET,  # type: ignore[assignment]
+        weeks: int = _UNSET,  # type: ignore[assignment]
+        days: int = _UNSET,  # type: ignore[assignment]
+        hours: int = _UNSET,  # type: ignore[assignment]
+        minutes: int = _UNSET,  # type: ignore[assignment]
+        seconds: int = _UNSET,  # type: ignore[assignment]
+        nanoseconds: int = _UNSET,  # type: ignore[assignment]
     ) -> None:
         sign: Sign = 0
-        if nanoseconds is not None and seconds is None:
+        if nanoseconds is not _UNSET and seconds is _UNSET:
             seconds = 0
 
         (self._years, sign) = _check_component(years, sign, _MAX_DELTA_YEARS)
@@ -2721,14 +2725,14 @@ class ItemizedDelta(_Base):
         self._sign: Sign = sign
         if (
             self._sign == 0
-            and years is None
-            and months is None
-            and weeks is None
-            and days is None
-            and hours is None
-            and minutes is None
-            and seconds is None
-            and nanoseconds is None
+            and years is _UNSET
+            and months is _UNSET
+            and weeks is _UNSET
+            and days is _UNSET
+            and hours is _UNSET
+            and minutes is _UNSET
+            and seconds is _UNSET
+            and nanoseconds is _UNSET
         ):
             # This is to ensure ISO8601 formatting/parsing is round-trip safe.
             # There is no "empty" duration in ISO8601; at least one field must be present.
@@ -2811,7 +2815,7 @@ class ItemizedDelta(_Base):
         if self._nanoseconds is not None:
             yield self._sign * self._nanoseconds
 
-    def dict(self) -> dict[str, int]:
+    def asdict(self) -> dict[str, int]:
         """Return all non-None fields as a dictionary,
         ordered from largest to smallest unit.
         """
@@ -3123,6 +3127,69 @@ class ItemizedDelta(_Base):
             nanos,
         )
 
+    def parts(self) -> tuple[Optional[ItemizedDateDelta], Optional[TimeDelta]]:
+        """Split into date and time parts.
+
+        Either part may be None if no fields were set of that type.
+        At least one part will be non-None, since at least one field must be set.
+
+        Example
+        -------
+        >>> d = ItemizedDelta(
+        ...     years=1,
+        ...     months=2,
+        ...     weeks=3,
+        ...     days=4,
+        ...     hours=5,
+        ...     minutes=6,
+        ...     seconds=7,
+        ...     nanoseconds=8,
+        ... )
+        >>> date_part, time_part = d.parts()
+        >>> date_part
+        ItemizedDateDelta("P1y2m3w4d")
+        >>> time_part
+        TimeDelta("P5h6m7.000000008s")
+        >>> ItemizedDelta(weeks=2).parts()
+        (ItemizedDateDelta("P2w"), None)
+
+        """
+        years, months, weeks, days = date_values = (
+            self._years,
+            self._months,
+            self._weeks,
+            self._days,
+        )
+        if all(v is None for v in date_values):
+            date_part = None
+        else:
+            date_part = ItemizedDateDelta._from_signed(
+                self._sign if any(date_values) else 0,
+                years=years,
+                months=months,
+                weeks=weeks,
+                days=days,
+            )
+
+        hours, minutes, seconds, nanoseconds = time_values = (
+            self._hours,
+            self._minutes,
+            self._seconds,
+            self._nanoseconds,
+        )
+        if all(v is None for v in time_values):
+            time_part = None
+        else:
+            time_part = TimeDelta(
+                hours=hours or 0,
+                minutes=minutes or 0,
+                seconds=seconds or 0,
+                nanoseconds=nanoseconds or 0,
+            )
+            if self._sign == -1:
+                time_part = -time_part
+        return date_part, time_part
+
     # A private constructor. Checks bounds but *not* signs or presence of > 0 fields.
     @classmethod
     def _from_signed(
@@ -3150,10 +3217,14 @@ class ItemizedDelta(_Base):
         return self
 
     def __eq__(self, other: object) -> bool:
-        """Compare for strict equality. All fields *and their presence* must match.
-        No normalization is performed.
+        """Compare for equality. Each field is individually compared.
+        No normalization is performed. Zero values are considered the same
+        as missing values.
 
-        Thus, ``ItemizedDelta(weeks=1, seconds=0) != ItemizedDelta(weeks=1)``
+        Thus, ``ItemizedDelta(weeks=1, seconds=0) == ItemizedDelta(weeks=1)``
+
+        If you want strict equality (including presence of fields),
+        use :meth:`exact_eq`.
 
         Example
         -------
@@ -3165,6 +3236,20 @@ class ItemizedDelta(_Base):
         """
         if not isinstance(other, ItemizedDelta):
             return NotImplemented
+        return (
+            self._sign == other._sign
+            and (self._years or 0) == (other._years or 0)
+            and (self._months or 0) == (other._months or 0)
+            and (self._weeks or 0) == (other._weeks or 0)
+            and (self._days or 0) == (other._days or 0)
+            and (self._hours or 0) == (other._hours or 0)
+            and (self._minutes or 0) == (other._minutes or 0)
+            and (self._seconds or 0) == (other._seconds or 0)
+            and (self._nanoseconds or 0) == (other._nanoseconds or 0)
+        )
+
+    def exact_eq(self, other: ItemizedDelta, /) -> bool:
+        """Check for strict equality. All fields *and their presence* must match."""
         return (
             self._sign == other._sign
             and self._years == other._years
@@ -3223,52 +3308,6 @@ class ItemizedDelta(_Base):
             self._minutes,
             self._seconds,
             self._nanoseconds,
-        )
-
-    def __add__(self, other: ItemizedDelta) -> ItemizedDelta:
-        """Add the fields of another delta to this one.
-        Fields that are not present in either delta are not present in the result.
-
-        Note
-        ----
-        Fields are added directly without normalization.
-        The only exception is nanoseconds, which roll over into seconds if
-        the result exceeds 1.000.000.000.
-
-        Example
-        -------
-        >>> d1 = ItemizedDelta(weeks=2, minutes=30)
-        >>> d2 = ItemizedDelta(weeks=1, days=3, minutes=45)
-        >>> d1 + d2
-        ItemizedDelta("P3w3dT75m")
-        """
-        if not isinstance(other, ItemizedDelta):
-            return NotImplemented
-
-        def combine_field(a: Optional[int], b: Optional[int]) -> Optional[int]:
-            if a is None and b is None:
-                return None
-            return self._sign * (a or 0) + other._sign * (b or 0)
-
-        seconds = combine_field(self._seconds, other._seconds)
-        nanos = combine_field(self._nanoseconds, other._nanoseconds)
-        if seconds is not None and nanos is not None:
-            total_nanos = seconds * 1_000_000_000 + nanos
-            seconds, nanos = divmod(total_nanos, 1_000_000_000)
-            # compensate for divmod behavior with negative numbers
-            if seconds < 0:
-                seconds += 1
-                nanos -= 1_000_000_000
-
-        return ItemizedDelta(
-            years=combine_field(self._years, other._years),
-            months=combine_field(self._months, other._months),
-            weeks=combine_field(self._weeks, other._weeks),
-            days=combine_field(self._days, other._days),
-            hours=combine_field(self._hours, other._hours),
-            minutes=combine_field(self._minutes, other._minutes),
-            seconds=seconds,
-            nanoseconds=nanos,
         )
 
     @no_type_check
@@ -3335,10 +3374,10 @@ class ItemizedDateDelta(_Base):
     def __init__(
         self,
         *,
-        years: Optional[int] = None,
-        months: Optional[int] = None,
-        weeks: Optional[int] = None,
-        days: Optional[int] = None,
+        years: int = _UNSET,  # type: ignore[assignment]
+        months: int = _UNSET,  # type: ignore[assignment]
+        weeks: int = _UNSET,  # type: ignore[assignment]
+        days: int = _UNSET,  # type: ignore[assignment]
     ) -> None:
         sign: Sign = 0
         (self._years, sign) = _check_component(years, sign, _MAX_DELTA_YEARS)
@@ -3350,10 +3389,10 @@ class ItemizedDateDelta(_Base):
         self._sign: Sign = sign
         if (
             self._sign == 0
-            and years is None
-            and months is None
-            and weeks is None
-            and days is None
+            and years is _UNSET
+            and months is _UNSET
+            and weeks is _UNSET
+            and days is _UNSET
         ):
             # This is to ensure ISO8601 formatting/parsing is round-trip safe.
             # There is no "empty" duration in ISO8601; at least one field must be present.
@@ -3400,7 +3439,7 @@ class ItemizedDateDelta(_Base):
         if self._days is not None:
             yield self._sign * self._days
 
-    def dict(self) -> dict[str, int]:
+    def asdict(self) -> dict[str, int]:
         """Return all non-None fields as a dictionary,
         ordered from largest to smallest unit.
         """
@@ -3637,10 +3676,14 @@ class ItemizedDateDelta(_Base):
         return self
 
     def __eq__(self, other: object) -> bool:
-        """Compare for strict equality. All fields *and their presence* must match.
-        No normalization is performed.
+        """Compare for equality. Each field is individually compared.
+        No normalization is performed. Zero values are considered the same
+        as missing values.
 
-        Thus, ``ItemizedDateDelta(weeks=1, days=0) != ItemizedDateDelta(weeks=1)``
+        Thus, ``ItemizedDateDelta(weeks=1, days=0) == ItemizedDateDelta(weeks=1)``
+
+        If you want strict equality (including presence of fields),
+        use :meth:`exact_eq`.
 
         Example
         -------
@@ -3652,6 +3695,16 @@ class ItemizedDateDelta(_Base):
         """
         if not isinstance(other, ItemizedDateDelta):
             return NotImplemented
+        return (
+            self._sign == other._sign
+            and (self._years or 0) == (other._years or 0)
+            and (self._months or 0) == (other._months or 0)
+            and (self._weeks or 0) == (other._weeks or 0)
+            and (self._days or 0) == (other._days or 0)
+        )
+
+    def exact_eq(self, other: ItemizedDateDelta, /) -> bool:
+        """Check for strict equality. All fields *and their presence* must match."""
         return (
             self._sign == other._sign
             and self._years == other._years
@@ -3728,10 +3781,12 @@ def _check_bound(i: int | None, max_value: int) -> int | None:
 
 
 def _check_component(
-    value: Optional[int], sign: Sign, max_value: int
+    value: int, sign: Sign, max_value: int  # may also be _UNSET
 ) -> tuple[Optional[int], Sign]:
-    if not value:  # None or 0: sign unchanged
-        return value, sign
+    if value is _UNSET:
+        return None, sign
+    elif value == 0:
+        return 0, sign
     if value < 0:
         if sign == 1:
             raise ValueError("Mixed sign in delta")

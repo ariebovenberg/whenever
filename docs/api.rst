@@ -165,6 +165,17 @@ Date and time components
    .. autoattribute:: NOON
    .. autoattribute:: MAX
 
+.. autofunction:: whenever.years
+.. autofunction:: whenever.months
+.. autofunction:: whenever.weeks
+.. autofunction:: whenever.days
+.. autofunction:: whenever.hours
+.. autofunction:: whenever.minutes
+.. autofunction:: whenever.seconds
+.. autofunction:: whenever.milliseconds
+.. autofunction:: whenever.microseconds
+.. autofunction:: whenever.nanoseconds
+
 
 Miscellaneous
 -------------

@@ -76,24 +76,6 @@ class TestInit:
 @pytest.mark.parametrize(
     "d, expected",
     [
-        (ItemizedDateDelta(days=5), (5,)),
-        (ItemizedDateDelta(weeks=1, years=2, months=8), (2, 8, 1)),
-        (ItemizedDateDelta(weeks=-1, days=0), (-1, 0)),
-        (
-            ItemizedDateDelta(years=1, weeks=9_000, months=20),
-            (1, 20, 9_000),
-        ),
-    ],
-)
-def test_values(d, expected):
-    assert d.values() == expected
-    # Values are also emitted from iteration
-    assert list(d) == list(expected)
-
-
-@pytest.mark.parametrize(
-    "d, expected",
-    [
         (ItemizedDateDelta(days=5), {"days": 5}),
         (
             ItemizedDateDelta(weeks=1, years=2, months=8),
@@ -111,8 +93,8 @@ def test_values(d, expected):
 )
 def test_dictlike_behavior(d, expected):
     # explicit method
-    assert d.dict() == expected
-    assert list(d.dict()) == list(expected)  # keys in order
+    assert d.asdict() == expected
+    assert list(d.asdict()) == list(expected)  # keys in order
 
     # The mapping-like interface
     assert list(d.units()) == list(expected.keys())
@@ -160,11 +142,20 @@ class TestEq:
         assert d1 != d3
         assert not d1 == d3
 
-    def test_zero_is_not_same_as_missing(self):
+    def test_zero_is_same_as_missing(self):
         d1 = ItemizedDateDelta(weeks=1)
         d2 = ItemizedDateDelta(weeks=1, days=0)
-        assert d1 != d2
-        assert not d1 == d2
+        assert d1 == d2
+        assert not d1 != d2
+
+
+def test_exact_eq():
+    d1 = ItemizedDateDelta(years=2, months=0, weeks=5, days=0)
+    d2 = ItemizedDateDelta(years=2, weeks=5)
+    d3 = ItemizedDateDelta(years=2, months=1, weeks=5)
+    assert d1.exact_eq(d1)
+    assert not d1.exact_eq(d2)
+    assert not d1.exact_eq(d3)
 
 
 class TestFormatIso:
@@ -268,7 +259,7 @@ class TestParseIso:
         ],
     )
     def test_valid(self, s: str, expected: ItemizedDateDelta):
-        assert ItemizedDateDelta.parse_iso(s) == expected
+        assert ItemizedDateDelta.parse_iso(s).exact_eq(expected)
 
     @pytest.mark.parametrize("s", INVALID_DELTAS)
     def test_invalid(self, s: str):
@@ -278,7 +269,7 @@ class TestParseIso:
 
 def test_abs():
     d = ItemizedDateDelta(days=-5, weeks=-3)
-    assert abs(d) == ItemizedDateDelta(days=5, weeks=3)
+    assert abs(d).exact_eq(ItemizedDateDelta(days=5, weeks=3))
 
     d_pos = ItemizedDateDelta(days=2, years=30)
     assert abs(d_pos) is d_pos
@@ -289,8 +280,8 @@ def test_abs():
 
 def test_neg():
     d = ItemizedDateDelta(days=5, weeks=3, years=200)
-    assert -d == ItemizedDateDelta(days=-5, weeks=-3, years=-200)
-    assert --d == d
+    assert (-d).exact_eq(ItemizedDateDelta(days=-5, weeks=-3, years=-200))
+    assert (--d).exact_eq(d)
 
     d_zero = ItemizedDateDelta(weeks=0)
     assert -d_zero is d_zero
@@ -326,7 +317,7 @@ def test_bool():
 def test_pickle(d):
     dumped = pickle.dumps(d)
     assert len(dumped) < 100
-    assert pickle.loads(dumped) == d
+    assert pickle.loads(dumped).exact_eq(d)
 
 
 def test_compatible_unpickle():
@@ -337,4 +328,6 @@ def test_compatible_unpickle():
         b"kl_iddelta\x94\x93\x94(K\x01K\x01K\x02K\x03K\x04t\x94R\x94."
     )
     result = pickle.loads(dumped)
-    assert result == ItemizedDateDelta(years=1, months=2, weeks=3, days=4)
+    assert result.exact_eq(
+        ItemizedDateDelta(years=1, months=2, weeks=3, days=4)
+    )
