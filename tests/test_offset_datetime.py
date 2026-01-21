@@ -35,6 +35,10 @@ from .common import (
     system_tz_nyc,
 )
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::whenever.WheneverDeprecationWarning"
+)
+
 
 class TestInit:
     def test_init_and_attributes(self):
