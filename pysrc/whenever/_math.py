@@ -1,37 +1,77 @@
 """Date, calendar, and time arithmetic helpers."""
 
+from __future__ import annotations
+
 from datetime import date as _date, timedelta as _timedelta
+from typing import Union
+
+
+# A special class to represent February 29th on a year that is not a leap year.
+# Used internally during date difference calculations.
+class PendingLeapDay:
+    __slots__ = ("resolved",)
+    resolved: _date
+
+    @property
+    def year(self) -> int:
+        return self.resolved.year
+
+    # Fixed month and day for leap day. Added for duck-typing compatibility with datetime.date.
+    month = 2
+    day = 29
+
+    def __init__(self, year: int) -> None:
+        self.resolved = _date(year, 2, 28)
+
+
+InterimDate = Union[_date, PendingLeapDay]
+
+
+def resolve_leap_day(d: InterimDate) -> _date:
+    if isinstance(d, PendingLeapDay):
+        return d.resolved
+    return d
+
 
 # Type alias for various date difference functions used for rounding.
 # Consists of:
 # 1. The absolute difference between two dates in the given unit and increment.
 # 2. The truncated date resulting from this difference.
 # 3. The expanded date resulting from this difference EXPANDED with the increment.
-_AbsoluteDiff = tuple[int, _date, _date]
+_AbsoluteDiff = tuple[int, InterimDate, InterimDate]
 
 
-def years_diff(a: _date, b: _date, increment: int) -> _AbsoluteDiff:
-    diff = (a.year - b.year) // increment * increment
-    shift = _replace_year_saturating(b, b.year + diff)
+def years_diff(_a: _date, b: InterimDate, increment: int, /) -> _AbsoluteDiff:
+    # This function has a permissive signature to match the others, but
+    # only datetime.date is expected for b, since "years" is the largest
+    # (and thus first) unit encountered when diffing.
+    assert isinstance(b, _date)
+    diff = (_a.year - b.year) // increment * increment
+    shift = _replace_year(b, b.year + diff)
     sign = 1 if diff >= 0 else -1
 
     # Check if we overshot
-    if (diff > 0 and shift > a) or (diff < 0 and shift < a):
+    if (diff > 0 and resolve_leap_day(shift) > _a) or (
+        diff < 0 and resolve_leap_day(shift) < _a
+    ):
         diff -= increment * sign
-        return (
-            abs(diff),
-            _replace_year_saturating(b, b.year + diff),
-            shift,
-        )
+        return (abs(diff), _replace_year(b, b.year + diff), shift)
     else:
         return (
             abs(diff),
             shift,
-            _replace_year_saturating(b, b.year + diff + increment * sign),
+            _replace_year(b, b.year + diff + increment * sign),
         )
 
 
-def months_diff(a: _date, b: _date, increment: int) -> _AbsoluteDiff:
+def _replace_year(d: _date, year: int) -> InterimDate:
+    try:
+        return d.replace(year=year)
+    except ValueError:  # only happens for Feb 29 on non-leap years
+        return PendingLeapDay(year)
+
+
+def months_diff(a: _date, b: InterimDate, increment: int, /) -> _AbsoluteDiff:
     diff = (
         ((a.year - b.year) * 12 + (a.month - b.month)) // increment
     ) * increment
@@ -46,12 +86,21 @@ def months_diff(a: _date, b: _date, increment: int) -> _AbsoluteDiff:
         return (abs(diff), shift, _add_months(b, diff + increment * sign))
 
 
-def weeks_diff(a: _date, b: _date, increment: int) -> _AbsoluteDiff:
+def _add_months(d: InterimDate, delta: int, /) -> _date:
+    year_delta, month0_new = divmod(d.month - 1 + delta, 12)
+    year_new = d.year + year_delta
+    month_new = month0_new + 1
+    day_new = min(d.day, days_in_month(year_new, month_new))
+    return _date(year_new, month_new, day_new)
+
+
+def weeks_diff(a: _date, b: InterimDate, increment: int, /) -> _AbsoluteDiff:
     days, trunc, expand = days_diff(a, b, increment * 7)
     return days // 7, trunc, expand
 
 
-def days_diff(a: _date, b: _date, increment: int) -> _AbsoluteDiff:
+def days_diff(a: _date, _b: InterimDate, increment: int, /) -> _AbsoluteDiff:
+    b = resolve_leap_day(_b)
     diff = abs((a - b).days) // increment * increment
     sign = 1 if a > b else -1
 
@@ -68,29 +117,6 @@ DIFF_FUNCS = {
     "weeks": weeks_diff,
     "days": days_diff,
 }
-
-
-def _replace_year_saturating(d: _date, year: int, /) -> _date:
-    try:
-        return d.replace(year=year)
-    except ValueError:
-        # only happens when we move Feb 29 to a non-leap year
-        return d.replace(year=year, day=28)
-
-
-def _add_months(d: _date, months: int) -> _date:
-    year_delta, month0_new = divmod(d.month - 1 + months, 12)
-    year_new = d.year + year_delta
-    month_new = month0_new + 1
-    try:
-        return d.replace(year=year_new, month=month_new)
-    except ValueError:
-        # only happens when we move to a month with fewer days
-        return d.replace(
-            year=year_new,
-            month=month_new,
-            day=days_in_month(year_new, month_new),
-        )
 
 
 def is_leap(year: int) -> bool:

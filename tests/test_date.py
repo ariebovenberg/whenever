@@ -3,6 +3,7 @@ import re
 from copy import copy, deepcopy
 from datetime import date as py_date, datetime as py_datetime
 from itertools import chain, product
+from warnings import catch_warnings
 
 import pytest
 
@@ -14,14 +15,23 @@ from whenever import (
     PlainDateTime,
     Time,
     Weekday,
+    WheneverDeprecationWarning,
     YearMonth,
     days,
 )
 
-from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
+from .common import (
+    AlwaysEqual,
+    AlwaysLarger,
+    AlwaysSmaller,
+    NeverEqual,
+)
 
 MAX_I64 = 1 << 63
 MAX_I32 = 1 << 31
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::whenever.WheneverDeprecationWarning"
+)
 
 
 class TestInit:
@@ -410,8 +420,21 @@ class TestAdd:
     )
     def test_valid(self, d, kwargs, expected):
         assert d.add(**kwargs) == expected
-        assert d + DateDelta(**kwargs) == expected
+
         assert d.add(DateDelta(**kwargs)) == expected
+        assert d + DateDelta(**kwargs) == expected
+
+        if kwargs:  # skip the empty delta case
+            assert d.add(ItemizedDateDelta(**kwargs)) == expected
+
+    def test_operator_deprecation_warning(self):
+
+        d = Date(2021, 1, 31)
+        delta = DateDelta(months=2)
+        with pytest.warns(
+            WheneverDeprecationWarning, match=r"\+ operator.*add"
+        ):
+            assert (d + delta) is not None
 
     @pytest.mark.parametrize(
         "d, kwargs",
@@ -435,6 +458,9 @@ class TestAdd:
         with pytest.raises((OverflowError, ValueError)):
             d.add(DateDelta(**kwargs))
 
+        with pytest.raises((OverflowError, ValueError)):
+            d.add(ItemizedDateDelta(**kwargs))
+
     def test_invalid(self):
         with pytest.raises(TypeError):
             Date(2021, 1, 1) + None  # type: ignore[operator]
@@ -449,6 +475,9 @@ class TestAdd:
         d = Date(2020, 1, 1)
         with pytest.raises(TypeError):
             d.add(DateDelta(years=1), months=1)  # type: ignore[call-overload]
+
+        with pytest.raises(TypeError):
+            d.add(ItemizedDateDelta(years=1), months=1)  # type: ignore[call-overload]
 
 
 class TestDaysUntilAndSince:
@@ -1076,6 +1105,15 @@ class TestSinceAndUntil:
                 ItemizedDateDelta(months=-7, days=-29),
                 {},
             ),
+            # Leap year edge case where it matters that years and months
+            # are considered together
+            (
+                Date(2025, 8, 29),
+                Date(2024, 2, 29),
+                ("years", "months", "days"),
+                ItemizedDateDelta(years=1, months=6, days=0),
+                {},
+            ),
         ],
     )
     def test_multiple_units(self, d1, d2, units, expected, kwargs):
@@ -1125,11 +1163,11 @@ class TestSinceAndUntil:
     def test_invalid_units(self):
         d = Date(2021, 1, 1)
         # invalid unit in list
-        with pytest.raises(ValueError, match="foos"):
+        with pytest.raises(ValueError, match="unit.*|foos"):
             d.since(Date(2020, 1, 1), units=["days", "foos"])  # type: ignore[list-item]
 
         # invalid single unit
-        with pytest.raises(ValueError, match="foos"):
+        with pytest.raises(ValueError, match="unit.*|foos"):
             d.since(Date(2020, 1, 1), unit="foos")  # type: ignore[call-overload]
 
         # empty units list
@@ -1243,6 +1281,7 @@ class TestSubtract:
         "d, kwargs, expected",
         [
             (Date(2021, 1, 31), dict(), Date(2021, 1, 31)),
+            (Date(2021, 1, 31), dict(months=0), Date(2021, 1, 31)),
             (Date(2021, 1, 31), dict(days=1), Date(2021, 1, 30)),
             (Date(2021, 2, 1), dict(days=-1), Date(2021, 2, 2)),
             (Date(2021, 2, 28), dict(months=2), Date(2020, 12, 28)),
@@ -1267,8 +1306,24 @@ class TestSubtract:
         assert d - DateDelta(**kwargs) == expected
         assert d.subtract(DateDelta(**kwargs)) == expected
 
+        if kwargs:  # skip the zero-delta case
+            assert d.subtract(ItemizedDateDelta(**kwargs)) == expected
+
+    def test_operator_is_deprecated(self):
+        d = Date(2021, 1, 1)
+        delta = DateDelta(days=1)
+        with pytest.warns(
+            WheneverDeprecationWarning, match="-.*operator.*subtract"
+        ):
+            d - delta
+
+        with pytest.warns(
+            WheneverDeprecationWarning, match="-.*operator.*since"
+        ):
+            d - d
+
     @pytest.mark.parametrize(
-        "delta",
+        "kwargs",
         [
             {"years": 3000},
             {"days": 3000 * 365},
@@ -1278,13 +1333,16 @@ class TestSubtract:
             {"months": MAX_I64 + 2},
         ],
     )
-    def test_delta_out_of_bounds(self, delta):
+    def test_delta_out_of_bounds(self, kwargs):
         with pytest.raises((OverflowError, ValueError)):
-            Date(2021, 1, 1) - DateDelta(**delta)
+            Date(2021, 1, 1) - DateDelta(**kwargs)
         with pytest.raises((OverflowError, ValueError)):
-            Date(2021, 1, 1).subtract(**delta)
+            Date(2021, 1, 1).subtract(**kwargs)
         with pytest.raises((OverflowError, ValueError)):
-            Date(2021, 1, 1).subtract(DateDelta(**delta))
+            Date(2021, 1, 1).subtract(DateDelta(**kwargs))
+
+        with pytest.raises((OverflowError, ValueError)):
+            Date(2021, 1, 1).subtract(ItemizedDateDelta(**kwargs))
 
     @pytest.mark.parametrize(
         "d1, d2, expected",

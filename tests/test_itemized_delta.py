@@ -9,6 +9,9 @@ from .test_date_delta import INVALID_DDELTAS
 from .test_time_delta import INVALID_TDELTAS
 
 UNITS = "years months weeks days hours minutes seconds nanoseconds".split()
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::whenever.WheneverDeprecationWarning"
+)
 
 
 class TestInit:

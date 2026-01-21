@@ -1,13 +1,17 @@
 import pickle
+from typing import Literal, Sequence
 
 import pytest
 
-from whenever import ItemizedDateDelta
+from whenever import Date, ItemizedDateDelta
 
 from .common import AlwaysEqual, NeverEqual
 from .test_date_delta import INVALID_DDELTAS
 
 UNITS = "years months weeks days".split()
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::whenever.WheneverDeprecationWarning"
+)
 
 
 class TestInit:
@@ -265,6 +269,33 @@ class TestParseIso:
     def test_invalid(self, s: str):
         with pytest.raises(ValueError):
             ItemizedDateDelta.parse_iso(s)
+
+
+@pytest.mark.parametrize(
+    "d, relative_to, units, expect",
+    [
+        (
+            ItemizedDateDelta(years=2, months=3, weeks=4, days=5),
+            Date("2021-12-31"),
+            ["years", "days"],
+            ItemizedDateDelta(years=2, days=124),
+        ),
+        (
+            ItemizedDateDelta(days=0),
+            Date("0023-02-28"),
+            ["years", "months", "weeks"],
+            ItemizedDateDelta(years=0, months=0, weeks=0),
+        ),
+    ],
+)
+def test_in_units(
+    d: ItemizedDateDelta,
+    relative_to: Date,
+    units: Sequence[Literal["years", "months", "weeks", "days"]],
+    expect: ItemizedDateDelta,
+):
+    assert d.in_units(units, relative_to=relative_to).exact_eq(expect)
+    assert relative_to.add(expect) == relative_to.add(d)
 
 
 def test_abs():

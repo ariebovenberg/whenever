@@ -36,6 +36,9 @@ from .test_offset_datetime import (
 )
 
 BIG_INT = 1 << 64 + 1  # a big int that may cause an overflow error
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::whenever.WheneverDeprecationWarning"
+)
 
 
 def test_init_is_parse_iso():
