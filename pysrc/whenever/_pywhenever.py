@@ -43,9 +43,11 @@ from warnings import warn
 from ._common import check_utc_bounds, mk_fixed_tzinfo
 from ._math import (
     DIFF_FUNCS,
+    InterimDate,
     days_in_month,
     increment_to_ns_for_datetime,
     increment_to_ns_for_delta,
+    resolve_leap_day,
 )
 from ._parse import (
     MONTH_TO_RFC2822,
@@ -448,20 +450,26 @@ class Date(_Base):
 
     @no_type_check
     def _shift(
-        self, sign: int, delta: DateDelta | _UNSET = _UNSET, /, **kwargs
+        self,
+        sign: int,
+        delta: ItemizedDateDelta | DateDelta | _UNSET = _UNSET,
+        /,
+        **kwargs,
     ) -> Date:
         if kwargs:
             if delta is not _UNSET:
                 raise TypeError(
                     "Cannot combine positional and keyword arguments"
                 )
-            return self._shift_kwargs(sign, **kwargs)
         elif delta is not _UNSET:
-            return self._shift_kwargs(
-                sign, months=delta._months, days=delta._days
-            )
+            if isinstance(delta, ItemizedDateDelta):
+                kwargs = delta.asdict()
+            else:
+                assert isinstance(delta, DateDelta)
+                kwargs = {"months": delta._months, "days": delta._days}
         else:  # no arguments, just return self
             return self
+        return self._shift_kwargs(sign, **kwargs)
 
     @no_type_check
     def _shift_kwargs(self, sign, years=0, months=0, weeks=0, days=0) -> Date:
@@ -501,6 +509,28 @@ class Date(_Base):
         in terms of days **and** months, use the subtraction operator instead.
         """
         return (self._py_date - other._py_date).days
+
+    @overload
+    def since(
+        self,
+        b: Date,
+        /,
+        *,
+        unit: _CalendarUnit,
+        round_mode: _RoundMode = "trunc",
+        round_increment: int = 1,
+    ) -> int: ...
+
+    @overload
+    def since(
+        self,
+        b: Date,
+        /,
+        *,
+        units: Sequence[_CalendarUnit],
+        round_mode: _RoundMode = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDateDelta: ...
 
     def since(
         self,
@@ -553,14 +583,20 @@ class Date(_Base):
             units = [unit]
         elif units is None:
             raise TypeError("Must specify either 'unit' or 'units'")
-        elif not units:  # empty sequence
+        elif not units:
             raise ValueError("'units' cannot be an empty sequence")
         else:
             single_unit_mode = False
 
-        # TODO check unit validity!
-        results: dict[_CalendarUnit, int] = {}
-        if sorted(units, key=list(DIFF_FUNCS).index) != list(units):
+        try:
+            sorted_units = sorted(units, key=list(DIFF_FUNCS).index)
+        except ValueError:
+            raise ValueError(
+                "units must be one of "
+                + ", ".join(repr(u) for u in _CALENDAR_UNITS)
+            )
+
+        if sorted_units != list(units):
             raise ValueError("units must be in decreasing order of size")
         elif len(set(units)) != len(units):
             raise ValueError("units cannot contain duplicates")
@@ -571,10 +607,12 @@ class Date(_Base):
         # and one that is expanded (exceeding `self`).
         trunc = b._py_date
         expand = self._py_date
+
         # We only apply the increment logic to the last unit.
         # The other units get increment 1.
-        increment_per_unit = [*[1] * (len(units) - 1), round_increment]
-        for u, increment in zip(units, increment_per_unit):
+        increments = [*[1] * (len(units) - 1), round_increment]
+        results: dict[_CalendarUnit, int] = {}
+        for u, increment in zip(units, increments):
             results[u], trunc, expand = DIFF_FUNCS[u](
                 self._py_date, trunc, increment
             )
@@ -586,8 +624,10 @@ class Date(_Base):
         # Round is expensive, so only do it if needed
         if round_mode != "trunc":
             do_expand = False  # 'expand' means round away from 0
-            limit = (expand - trunc).days
-            remainder = (self._py_date - trunc).days
+            expand_date = resolve_leap_day(expand)
+            trunc_date = resolve_leap_day(trunc)
+            limit = (expand_date - trunc_date).days
+            remainder = (self._py_date - trunc_date).days
             # DROP-PY39: match-case
             if round_mode == "expand":
                 do_expand = remainder * sign > 0
@@ -660,7 +700,18 @@ class Date(_Base):
     def __add__(self, p: DateDelta) -> Date:
         """Add a delta to a date.
         Behaves the same as :meth:`add`
+
+        .. deprecated:: 0.10.0
+
+            Using the ``+`` operator on :class:`Date` is deprecated;
+            use the :meth:`add` method instead.
         """
+        warn(
+            "Using the + operator on Date is deprecated; "
+            "use the .add() method instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         return (  # type: ignore[no-any-return]
             self.add(months=p._months, days=p._days)
             if isinstance(p, DateDelta)
@@ -705,14 +756,27 @@ class Date(_Base):
         >>> Date(2023, 6, 30) - Date(2024, 3, 31)
         DateDelta(-P9M)
 
-        Note
-        ----
-        If you'd like to calculate the difference in days only (no months),
-        use the :meth:`days_until` or :meth:`days_since` instead.
+        ... deprecated:: 0.10.0
+
+            Using the ``-`` operator on :class:`Date` is deprecated;
+            use the :meth:`subtract` method or the :meth:`since` method instead.
+
         """
         if isinstance(d, DateDelta):
+            warn(
+                "Using the - operator on Date is deprecated; "
+                "use the .subtract() method instead.",
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
             return self.subtract(months=d._months, days=d._days)  # type: ignore[no-any-return]
         elif isinstance(d, Date):
+            warn(
+                "Using the - operator on Date is deprecated; "
+                "use the .since() method with explicit units instead.",
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
             mos = self.month - d.month + 12 * (self.year - d.year)
             shifted = d._add_months(mos)
 
@@ -1554,17 +1618,21 @@ class TimeDelta(_Base):
                     shifted_date = shifted_date.subtract(days=1)
 
                 trunc_amount, trunc_date, expanded_date = DIFF_FUNCS[unit](
-                    shifted_date._py_date, relative_to._py_dt.date(), 1
+                    shifted_date._py_date,
+                    relative_to._py_dt.date(),
+                    1,
                 )
                 trunc_zdt = relative_to.replace_date(
-                    Date._from_py_unchecked(trunc_date)
+                    Date._from_py_unchecked(resolve_leap_day(trunc_date))
                 )
                 return (
                     trunc_amount
                     + (shifted - trunc_zdt)
                     / (
                         relative_to.replace_date(
-                            Date._from_py_unchecked(expanded_date)
+                            Date._from_py_unchecked(
+                                resolve_leap_day(expanded_date)
+                            )
                         )
                         - trunc_zdt
                     )
@@ -3127,6 +3195,12 @@ class ItemizedDelta(_Base):
             nanos,
         )
 
+    # def in_units(
+    #     self, units: Sequence[str], /, *, relative_to: Date
+    # ) -> ItemizedDateDelta:
+    #     """TODO"""
+    #     shifted = relative_to.add(
+
     def parts(self) -> tuple[Optional[ItemizedDateDelta], Optional[TimeDelta]]:
         """Split into date and time parts.
 
@@ -3462,6 +3536,23 @@ class ItemizedDateDelta(_Base):
             ("days", self._days),
         )
         return tuple(k for k, v in fields if v is not None)
+
+    def in_units(
+        self, units: Sequence[_CalendarUnit], /, relative_to: Date
+    ) -> ItemizedDateDelta:
+        """Calculate the difference between this date and another date
+        in terms of the specified units.
+
+        This is a shorthand for :meth:`since` with multiple units.
+
+        Example
+        -------
+        >>> d1 = Date(2023, 4, 15)
+        >>> d2 = Date(2011, 6, 24)
+        >>> d1.in_units(["years", "months", "days"], relative_to=d2)
+        DateDelta("P12Y9M22D")
+        """
+        return relative_to.add(self).since(relative_to, units=units)
 
     def __getitem__(self, key: str) -> int:
         """Get the value of a specific field by name.

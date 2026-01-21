@@ -12,6 +12,10 @@ from whenever import Date, PlainDateTime, Time
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::whenever.WheneverDeprecationWarning"
+)
+
 
 class TestInit:
 
