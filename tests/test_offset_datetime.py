@@ -478,6 +478,10 @@ class TestEquality:
         assert hash(d) == hash(utc_same)
         assert hash(d) != hash(utc_different)
 
+        # important: check typing errors in case of strict-comparison mode
+        d2 = OffsetDateTime(2020, 8, 15, 12, offset=5)
+        assert d2 == d2.to_instant()  # type: ignore[comparison-overlap]
+
     def test_not_implemented(self):
         d = OffsetDateTime(2020, 8, 15, 12, offset=5)
         assert d == AlwaysEqual()

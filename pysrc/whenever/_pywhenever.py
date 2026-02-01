@@ -63,16 +63,16 @@ from ._parse import (
     yearmonth_from_iso,
     zdt_from_iso,
 )
-from ._tz import (
+from ._tz import (  # noqa: F401
     Disambiguate,
     RepeatedTime,
     SkippedTime,
     TimeZone,
     TimeZoneNotFoundError,
     Unambiguous,
-    _clear_tz_cache,
-    _clear_tz_cache_by_keys,
-    _set_tzpath,
+    _clear_tz_cache as _clear_tz_cache,
+    _clear_tz_cache_by_keys as _clear_tz_cache_by_keys,
+    _set_tzpath as _set_tzpath,
     get_system_tz,
     get_tz,
     reset_system_tz,
@@ -129,7 +129,13 @@ except ImportError:
 
 
 class Weekday(enum.Enum):
-    """Day of the week; ``.value`` corresponds with ISO numbering."""
+    """Day of the week; ``.value`` corresponds with ISO numbering.
+
+    All members are also available as constants in the module namespace:
+
+    >>> from whenever import Weekday, MONDAY, SUNDAY
+
+    """
 
     MONDAY = 1
     TUESDAY = 2
@@ -152,7 +158,8 @@ _MAX_DELTA_MINUTES = _MAX_DELTA_HOURS * 60
 _MAX_DELTA_SECONDS = _MAX_DELTA_MINUTES * 60
 _MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * 1_000_000_000
 _MAX_SUBSEC_NANOS = 999_999_999
-_UNSET = object()
+# a sentinel value that looks nice in autodoc
+_UNSET = type("UNSET", (), {"__repr__": lambda _: "..."})()
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
 _RoundMode = Literal[
@@ -166,8 +173,13 @@ _RoundMode = Literal[
     "half_trunc",
     "half_even",
 ]
-_CalendarUnit = Literal["years", "months", "weeks", "days"]
-_CALENDAR_UNITS = cast(tuple[str, ...], _CalendarUnit.__args__)  # type: ignore[attr-defined]
+_CalendarUnitPlural = Literal["years", "months", "weeks", "days"]
+_CALENDAR_UNITS = cast(tuple[str, ...], _CalendarUnitPlural.__args__)  # type: ignore[attr-defined]
+
+# if SPHINXBUILD:
+#     type(_CalendarUnitPlural).__repr__= lambda self: "Literal[...]"
+#     type(_CalendarUnitPlural).__str__= lambda self: "Literal[...]"
+#     breakpoint()
 
 # Metaclass ugh...it proved the most lightweight way to achieve the following:
 # Allowing the constructors of many classes to take an ISO string as well as the
@@ -269,6 +281,12 @@ class Date(_Base):
     MAX: ClassVar[Date]
     """The maximum possible date"""
 
+    @overload
+    def __init__(self, iso_string: str, /) -> None: ...
+
+    @overload
+    def __init__(self, year: int, month: int, day: int) -> None: ...
+
     def __init__(self, year: int, month: int, day: int) -> None:
         self._py_date = _date(year, month, day)
 
@@ -278,8 +296,6 @@ class Date(_Base):
 
         Alias for ``Instant.now().to_system_tz().date()``.
 
-        Example
-        -------
         >>> Date.today_in_system_tz()
         Date("2021-01-02")
         """
@@ -288,21 +304,34 @@ class Date(_Base):
 
     @property
     def year(self) -> int:
+        """The year component of the date
+
+        >>> Date(2021, 1, 2).year
+        2021
+        """
         return self._py_date.year
 
     @property
     def month(self) -> int:
+        """The month component of the date
+
+        >>> Date(2021, 1, 2).month
+        1
+        """
         return self._py_date.month
 
     @property
     def day(self) -> int:
+        """The day component of the date
+
+        >>> Date(2021, 1, 2).day
+        2
+        """
         return self._py_date.day
 
     def year_month(self) -> YearMonth:
         """The year and month (without a day component)
 
-        Example
-        -------
         >>> Date(2021, 1, 2).year_month()
         YearMonth("2021-01")
         """
@@ -311,8 +340,6 @@ class Date(_Base):
     def month_day(self) -> MonthDay:
         """The month and day (without a year component)
 
-        Example
-        -------
         >>> Date(2021, 1, 2).month_day()
         MonthDay("--01-02")
         """
@@ -323,8 +350,6 @@ class Date(_Base):
     def day_of_week(self) -> Weekday:
         """The day of the week
 
-        Example
-        -------
         >>> Date(2021, 1, 2).day_of_week()
         Weekday.SATURDAY
         >>> Weekday.SATURDAY.value
@@ -335,14 +360,15 @@ class Date(_Base):
     def at(self, t: Time, /) -> PlainDateTime:
         """Combine a date with a time to create a datetime
 
-        Example
-        -------
         >>> d = Date(2021, 1, 2)
         >>> d.at(Time(12, 30))
         PlainDateTime("2021-01-02 12:30:00")
 
         You can use methods like :meth:`~PlainDateTime.assume_utc`
         or :meth:`~PlainDateTime.assume_tz` to find the corresponding exact time.
+
+        >>> d.at(Time(12, 30)).assume_tz("America/New_York")
+        ZonedDateTime("2021-01-02 12:30:00-05:00[America/New_York]")
         """
         return PlainDateTime._from_py_unchecked(
             _datetime.combine(self._py_date, t._py_time), t._nanos
@@ -356,8 +382,6 @@ class Date(_Base):
     def from_py_date(cls, d: _date, /) -> Date:
         """Create from a :class:`~datetime.date`
 
-        Example
-        -------
         >>> Date.from_py_date(date(2021, 1, 2))
         Date("2021-01-02")
         """
@@ -379,8 +403,6 @@ class Date(_Base):
 
         Inverse of :meth:`parse_iso`.
 
-        Example
-        -------
         >>> Date(2021, 1, 2).format_iso()
         '2021-01-02'
         >>> Date(1992, 9, 4).format_iso(basic=True)
@@ -398,8 +420,6 @@ class Date(_Base):
 
         Inverse of :meth:`format_iso`
 
-        Example
-        -------
         >>> Date.parse_iso("2021-01-02")
         Date("2021-01-02")
         """
@@ -408,13 +428,24 @@ class Date(_Base):
     def replace(self, **kwargs: Any) -> Date:
         """Create a new instance with the given fields replaced
 
-        Example
-        -------
         >>> d = Date(2021, 1, 2)
         >>> d.replace(day=4)
         Date("2021-01-04")
         """
         return Date._from_py_unchecked(self._py_date.replace(**kwargs))
+
+    @overload
+    def add(self, delta: ItemizedDateDelta | DateDelta, /) -> Date: ...
+
+    @overload
+    def add(
+        self,
+        *,
+        years: int = _UNSET,
+        months: int = _UNSET,
+        weeks: int = _UNSET,
+        days: int = _UNSET,
+    ) -> Date: ...
 
     @no_type_check
     def add(self, *args, **kwargs) -> Date:
@@ -422,8 +453,6 @@ class Date(_Base):
 
         See :ref:`the docs on arithmetic <arithmetic>` for more information.
 
-        Example
-        -------
         >>> d = Date(2021, 1, 2)
         >>> d.add(years=1, months=2, days=3)
         Date("2022-03-05")
@@ -432,14 +461,24 @@ class Date(_Base):
         """
         return self._shift(1, *args, **kwargs)
 
+    @overload
+    def subtract(self, delta: ItemizedDateDelta | DateDelta, /) -> Date: ...
+    @overload
+    def subtract(
+        self,
+        *,
+        years: int = _UNSET,
+        months: int = _UNSET,
+        weeks: int = _UNSET,
+        days: int = _UNSET,
+    ) -> Date: ...
+
     @no_type_check
     def subtract(self, *args, **kwargs) -> Date:
         """Subtract components from a date.
 
         See :ref:`the docs on arithmetic <arithmetic>` for more information.
 
-        Example
-        -------
         >>> d = Date(2021, 1, 2)
         >>> d.subtract(years=1, months=2, days=3)
         Date("2019-10-30")
@@ -452,7 +491,7 @@ class Date(_Base):
     def _shift(
         self,
         sign: int,
-        delta: ItemizedDateDelta | DateDelta | _UNSET = _UNSET,
+        delta: ItemizedDateDelta | DateDelta = _UNSET,
         /,
         **kwargs,
     ) -> Date:
@@ -471,44 +510,39 @@ class Date(_Base):
             return self
         return self._shift_kwargs(sign, **kwargs)
 
-    @no_type_check
-    def _shift_kwargs(self, sign, years=0, months=0, weeks=0, days=0) -> Date:
+    def _shift_kwargs(
+        self,
+        sign: int,
+        years: int = 0,
+        months: int = 0,
+        weeks: int = 0,
+        days: int = 0,
+    ) -> Date:
         return Date._from_py_unchecked(
             self._add_months(sign * (years * 12 + months))._py_date
             + _timedelta(weeks * 7 + days) * sign
         )
 
-    def days_until(self, other: Date, /) -> int:
-        """Calculate the number of days from this date to another date.
-        If the other date is before this date, the result is negative.
-
-        Example
-        -------
-        >>> Date(2021, 1, 2).days_until(Date(2021, 1, 5))
-        3
-
-        Note
-        ----
-        If you're interested in calculating the difference
-        in terms of days **and** months, use the subtraction operator instead.
-        """
-        return (other._py_date - self._py_date).days
-
     def days_since(self, other: Date, /) -> int:
         """Calculate the number of days this day is after another date.
-        If the other date is after this date, the result is negative.
 
-        Example
-        -------
-        >>> Date(2021, 1, 5).days_since(Date(2021, 1, 2))
-        3
+        .. deprecated:: 0.10.0
 
-        Note
-        ----
-        If you're interested in calculating the difference
-        in terms of days **and** months, use the subtraction operator instead.
+            Use :meth:`since` with `unit="days"` instead.
+
         """
+        # TODO: test deprecate
         return (self._py_date - other._py_date).days
+
+    def days_until(self, other: Date, /) -> int:
+        """Calculate the number of days from this date to another date.
+
+        .. deprecated:: 0.10.0
+
+            Use :meth:`until` with `unit="days"` instead.
+        """
+        # TODO: test deprecate
+        return (other._py_date - self._py_date).days
 
     @overload
     def since(
@@ -516,7 +550,7 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        unit: _CalendarUnit,
+        unit: _CalendarUnitPlural,
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> int: ...
@@ -527,7 +561,7 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        units: Sequence[_CalendarUnit],
+        units: Sequence[_CalendarUnitPlural],
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
@@ -537,8 +571,8 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        unit: Optional[_CalendarUnit] = None,
-        units: Optional[Sequence[_CalendarUnit]] = None,
+        unit: Optional[_CalendarUnitPlural] = None,
+        units: Optional[Sequence[_CalendarUnitPlural]] = None,
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> Union[ItemizedDateDelta, int]:
@@ -570,8 +604,6 @@ class Date(_Base):
             as an :class:`ItemizedDateDelta`,
             otherwise as an integer number of the specified unit.
 
-        Examples
-        --------
         >>> d1 = Date(2023, 4, 15)
 
         """
@@ -605,13 +637,13 @@ class Date(_Base):
         # by progressively adding each unit to `b` until we reach the target date (`self`).
         # We keep track of two dates: one that is truncated (not exceeding `self`)
         # and one that is expanded (exceeding `self`).
-        trunc = b._py_date
-        expand = self._py_date
+        trunc: InterimDate = b._py_date
+        expand: InterimDate = self._py_date
 
         # We only apply the increment logic to the last unit.
         # The other units get increment 1.
         increments = [*[1] * (len(units) - 1), round_increment]
-        results: dict[_CalendarUnit, int] = {}
+        results: dict[str, int] = {}
         for u, increment in zip(units, increments):
             results[u], trunc, expand = DIFF_FUNCS[u](
                 self._py_date, trunc, increment
@@ -661,20 +693,42 @@ class Date(_Base):
         else:
             return ItemizedDateDelta._from_signed(sign, **results)
 
+    @overload
     def until(
         self,
         b: Date,
         /,
         *,
-        unit: Optional[_CalendarUnit] = None,
-        units: Optional[Sequence[_CalendarUnit]] = None,
+        unit: _CalendarUnitPlural,
+        round_mode: _RoundMode = "trunc",
+        round_increment: int = 1,
+    ) -> int: ...
+
+    @overload
+    def until(
+        self,
+        b: Date,
+        /,
+        *,
+        units: Sequence[_CalendarUnitPlural],
+        round_mode: _RoundMode = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDateDelta: ...
+
+    def until(
+        self,
+        b: Date,
+        /,
+        *,
+        unit: Optional[_CalendarUnitPlural] = None,
+        units: Optional[Sequence[_CalendarUnitPlural]] = None,
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> Union[ItemizedDateDelta, int]:
         """Companion to :meth:`since` that calculates the difference until another date.
         See :meth:`since` for more information.
         """
-        return -self.since(
+        return -self.since(  # type: ignore[no-any-return,call-overload]
             b,
             unit=unit,
             units=units,
@@ -712,7 +766,7 @@ class Date(_Base):
             WheneverDeprecationWarning,
             stacklevel=2,
         )
-        return (  # type: ignore[no-any-return]
+        return (
             self.add(months=p._months, days=p._days)
             if isinstance(p, DateDelta)
             else NotImplemented
@@ -743,8 +797,6 @@ class Date(_Base):
         >>> d1 - (d1 - d2) == d2  # not always true!
         >>> -(d2 - d1) == d1 - d2  # not always true!
 
-        Examples:
-
         >>> Date(2023, 4, 15) - Date(2011, 6, 24)
         DateDelta("P12Y9M22D")
         >>> # Truncation
@@ -756,11 +808,10 @@ class Date(_Base):
         >>> Date(2023, 6, 30) - Date(2024, 3, 31)
         DateDelta(-P9M)
 
-        ... deprecated:: 0.10.0
+        .. deprecated:: 0.10.0
 
             Using the ``-`` operator on :class:`Date` is deprecated;
             use the :meth:`subtract` method or the :meth:`since` method instead.
-
         """
         if isinstance(d, DateDelta):
             warn(
@@ -769,7 +820,7 @@ class Date(_Base):
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
-            return self.subtract(months=d._months, days=d._days)  # type: ignore[no-any-return]
+            return self.subtract(months=d._months, days=d._days)
         elif isinstance(d, Date):
             warn(
                 "Using the - operator on Date is deprecated; "
@@ -814,8 +865,6 @@ class Date(_Base):
     def __eq__(self, other: object) -> bool:
         """Compare for equality
 
-        Example
-        -------
         >>> d = Date(2021, 1, 2)
         >>> d == Date(2021, 1, 2)
         True
@@ -885,8 +934,6 @@ class YearMonth(_Base):
 
     Useful for representing recurring events or billing periods.
 
-    Example
-    -------
     >>> ym = YearMonth(2021, 1)
     YearMonth("2021-01")
     """
@@ -906,10 +953,20 @@ class YearMonth(_Base):
 
     @property
     def year(self) -> int:
+        """The year component of the year-month
+
+        >>> YearMonth(2021, 1).year
+        2021
+        """
         return self._py_date.year
 
     @property
     def month(self) -> int:
+        """The month component of the year-month
+
+        >>> YearMonth(2021, 1).month
+        1
+        """
         return self._py_date.month
 
     def format_iso(self) -> str:
@@ -917,8 +974,6 @@ class YearMonth(_Base):
 
         Inverse of :meth:`parse_iso`.
 
-        Example
-        -------
         >>> YearMonth(2021, 1).format_iso()
         '2021-01'
         """
@@ -930,8 +985,6 @@ class YearMonth(_Base):
 
         Inverse of :meth:`format_iso`
 
-        Example
-        -------
         >>> YearMonth.parse_iso("2021-01")
         YearMonth("2021-01")
         """
@@ -940,8 +993,6 @@ class YearMonth(_Base):
     def replace(self, **kwargs: Any) -> YearMonth:
         """Create a new instance with the given fields replaced
 
-        Example
-        -------
         >>> d = YearMonth(2021, 12)
         >>> d.replace(month=3)
         YearMonth("2021-03")
@@ -955,8 +1006,6 @@ class YearMonth(_Base):
     def on_day(self, day: int, /) -> Date:
         """Create a date from this year-month with a given day
 
-        Example
-        -------
         >>> YearMonth(2021, 1).on_day(2)
         Date("2021-01-02")
         """
@@ -970,8 +1019,6 @@ class YearMonth(_Base):
     def __eq__(self, other: object) -> bool:
         """Compare for equality
 
-        Example
-        -------
         >>> ym = YearMonth(2021, 1)
         >>> ym == YearMonth(2021, 1)
         True
@@ -1037,8 +1084,6 @@ class MonthDay(_Base):
 
     Useful for representing recurring events or birthdays.
 
-    Example
-    -------
     >>> MonthDay(11, 23)
     MonthDay("--11-23")
     """
@@ -1058,10 +1103,20 @@ class MonthDay(_Base):
 
     @property
     def month(self) -> int:
+        """The month component of the month-day
+
+        >>> MonthDay(11, 23).month
+        11
+        """
         return self._py_date.month
 
     @property
     def day(self) -> int:
+        """The day component of the month-day
+
+        >>> MonthDay(11, 23).day
+        23
+        """
         return self._py_date.day
 
     def format_iso(self) -> str:
@@ -1069,8 +1124,6 @@ class MonthDay(_Base):
 
         Inverse of ``parse_iso``.
 
-        Example
-        -------
         >>> MonthDay(10, 8).format_iso()
         '--10-08'
 
@@ -1088,8 +1141,6 @@ class MonthDay(_Base):
 
         Inverse of :meth:`format_iso`
 
-        Example
-        -------
         >>> MonthDay.parse_iso("--11-23")
         MonthDay("--11-23")
         """
@@ -1098,8 +1149,6 @@ class MonthDay(_Base):
     def replace(self, **kwargs: Any) -> MonthDay:
         """Create a new instance with the given fields replaced
 
-        Example
-        -------
         >>> d = MonthDay(11, 23)
         >>> d.replace(month=3)
         MonthDay("--03-23")
@@ -1113,8 +1162,6 @@ class MonthDay(_Base):
     def in_year(self, year: int, /) -> Date:
         """Create a date from this month-day with a given day
 
-        Example
-        -------
         >>> MonthDay(8, 1).in_year(2025)
         Date("2025-08-01")
 
@@ -1128,8 +1175,6 @@ class MonthDay(_Base):
     def is_leap(self) -> bool:
         """Check if the month-day is February 29th
 
-        Example
-        -------
         >>> MonthDay(2, 29).is_leap()
         True
         >>> MonthDay(3, 1).is_leap()
@@ -1145,8 +1190,6 @@ class MonthDay(_Base):
     def __eq__(self, other: object) -> bool:
         """Compare for equality
 
-        Example
-        -------
         >>> md = MonthDay(10, 1)
         >>> md == MonthDay(10, 1)
         True
@@ -1211,8 +1254,6 @@ MonthDay.MAX = MonthDay._from_py_unchecked(
 class Time(_Base):
     """Time of day without a date component
 
-    Example
-    -------
     >>> t = Time(12, 30, 0)
     Time(12:30:00)
 
@@ -1244,32 +1285,52 @@ class Time(_Base):
 
     @property
     def hour(self) -> int:
+        """The hour component of the time
+
+        >>> Time(12, 30, 0).hour
+        12
+        """
         return self._py_time.hour
 
     @property
     def minute(self) -> int:
+        """The minute component of the time
+
+        >>> Time(12, 30, 0).minute
+        30
+        """
         return self._py_time.minute
 
     @property
     def second(self) -> int:
+        """The second component of the time
+        >>> Time(12, 30, 0).second
+        0
+        """
         return self._py_time.second
 
     @property
     def nanosecond(self) -> int:
+        """The nanosecond component of the time
+
+        >>> Time("12:30:00.003).nanosecond
+        3000000
+        """
         return self._nanos
 
     def on(self, d: Date, /) -> PlainDateTime:
         """Combine a time with a date to create a datetime
 
-        Example
-        -------
         >>> t = Time(12, 30)
         >>> t.on(Date(2021, 1, 2))
         PlainDateTime("2021-01-02 12:30:00")
 
         Then, use methods like :meth:`~PlainDateTime.assume_utc`
         or :meth:`~PlainDateTime.assume_tz`
-        to find the corresponding exact time.
+        to find the corresponding exact time:
+
+        >>> t.on(Date(2021, 1, 2)).assume_tz("America/New_York")
+        ExactDateTime("2021-01-02 12:30:00-05:00[America/New_York]")
         """
         return PlainDateTime._from_py_unchecked(
             _datetime.combine(d._py_date, self._py_time),
@@ -1284,8 +1345,6 @@ class Time(_Base):
     def from_py_time(cls, t: _time, /) -> Time:
         """Create from a :class:`~datetime.time`
 
-        Example
-        -------
         >>> Time.from_py_time(time(12, 30, 0))
         Time(12:30:00)
 
@@ -1320,8 +1379,6 @@ class Time(_Base):
 
         Inverse of :meth:`parse_iso`.
 
-        Example
-        -------
         >>> Time(12, 30, 0).format_iso(unit='millisecond')
         '12:30:00.000'
         >>> Time(4, 0, 59, nanosecond=40_000).format_iso(basic=True)
@@ -1335,8 +1392,6 @@ class Time(_Base):
 
         Inverse of :meth:`format_iso`
 
-        Example
-        -------
         >>> Time.parse_iso("12:30:00")
         Time(12:30:00)
         """
@@ -1345,8 +1400,6 @@ class Time(_Base):
     def replace(self, **kwargs: Any) -> Time:
         """Create a new instance with the given fields replaced
 
-        Example
-        -------
         >>> t = Time(12, 30, 0)
         >>> d.replace(minute=3, nanosecond=4_000)
         Time(12:03:00.000004)
@@ -1388,8 +1441,6 @@ class Time(_Base):
         """Round the time to the specified unit and increment.
         Various rounding modes are available.
 
-        Examples
-        --------
         >>> Time(12, 39, 59).round("minute", 15)
         Time(12:45:00)
         >>> Time(8, 9, 13).round("second", 5, mode="floor")
@@ -1448,8 +1499,6 @@ class Time(_Base):
     def __eq__(self, other: object) -> bool:
         """Compare for equality
 
-        Example
-        -------
         >>> t = Time(12, 30, 0)
         >>> t == Time(12, 30, 0)
         True
@@ -1526,27 +1575,27 @@ Time.MAX = Time(23, 59, 59, nanosecond=999_999_999)
 
 @final
 class TimeDelta(_Base):
-    """A duration consisting of a precise time: hours, minutes, (nano)seconds
+    """A duration consisting of a precise time: hours, minutes, (nano)seconds.
+    For durations including months or days, use :class:`~ItemizedDelta`,
+    or :class:`~whenever.ItemizedDateDelta` for date-only durations.
 
     The inputs are normalized, so 90 minutes becomes 1 hour and 30 minutes,
     for example.
 
-    Examples
-    --------
-    >>> d = TimeDelta(hours=1, minutes=30)
-    TimeDelta("PT1h30m")
-    >>> d.in_minutes()
-    90.0
+    >>> d = TimeDelta(hours=1, minutes=90)
+    TimeDelta("PT2h30m")
+    >>> d.total("minutes")
+    150.0
 
     Note
     ----
     A shorter way to instantiate a timedelta is to use the helper functions
     :func:`~whenever.hours`, :func:`~whenever.minutes`, etc.
-
     """
 
     __slots__ = ("_total_ns",)
 
+    # FUTURE: allow weeks and days (with 24 hour warning)?
     def __init__(
         self,
         *,
@@ -1596,18 +1645,16 @@ class TimeDelta(_Base):
             "microseconds",
             "nanoseconds",
         ],
-        relative_to: ZonedDateTime | None = None,
+        relative_to: ZonedDateTime = _UNSET,
     ) -> float:
         """The total size in the given unit, as a floating point number
 
-        Example
-        -------
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d.total('minutes')
         90.0
         """
         if unit in ("days", "weeks", "years", "months"):
-            if relative_to:
+            if relative_to is not _UNSET:
                 shifted = relative_to + self
 
                 sign = 1 if self._total_ns >= 0 else -1
@@ -1673,8 +1720,6 @@ class TimeDelta(_Base):
     def in_hours(self) -> float:
         """The total size in hours
 
-        Example
-        -------
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d.in_hours()
         1.5
@@ -1693,8 +1738,6 @@ class TimeDelta(_Base):
     def in_minutes(self) -> float:
         """The total size in minutes
 
-        Example
-        -------
         >>> d = TimeDelta(hours=1, minutes=30, seconds=30)
         >>> d.in_minutes()
         90.5
@@ -1713,8 +1756,6 @@ class TimeDelta(_Base):
     def in_seconds(self) -> float:
         """The total size in seconds
 
-        Example
-        -------
         >>> d = TimeDelta(minutes=2, seconds=1, microseconds=500_000)
         >>> d.in_seconds()
         121.5
@@ -1787,15 +1828,13 @@ class TimeDelta(_Base):
     def in_hrs_mins_secs_nanos(self) -> tuple[int, int, int, int]:
         """Convert to a tuple of (hours, minutes, seconds, nanoseconds)
 
-        Example
-        -------
         >>> d = TimeDelta(hours=1, minutes=30, microseconds=5_000_090)
         >>> d.in_hrs_mins_secs_nanos()
         (1, 30, 5, 90_000)
 
         ... deprecated:: 0.10.0
 
-            Use :meth:`itemize` with ``['hours', 'minutes', 'seconds', 'nanoseconds']`` instead.
+            Use :meth:`in_units` with ``['hours', 'minutes', 'seconds', 'nanoseconds']`` instead.
         """
         hours, rem = divmod(abs(self._total_ns), 3_600_000_000_000)
         mins, rem = divmod(rem, 60_000_000_000)
@@ -1828,6 +1867,12 @@ class TimeDelta(_Base):
     ) -> ItemizedDelta:
         """Convert to a :class:`ItemizedDelta` with the specified units
 
+        >>> d = TimeDelta(hours=2, minutes=30, seconds=23, milliseconds=500)
+        >>> d.in_units(['minutes', 'seconds'])
+        ItemizedDelta("PT150m24s")
+        >>> (hrs, mins) = d.in_units(('hours', 'minutes'), round_mode='ceil')
+        (2, 31)
+
         Parameters
         ----------
         units
@@ -1844,14 +1889,6 @@ class TimeDelta(_Base):
         round_increment
             The rounding increment to use when rounding before conversion.
             See :meth:`round` for details.
-
-        Example
-        -------
-        >>> d = TimeDelta(hours=2, minutes=30, seconds=23, milliseconds=500)
-        >>> d.in_units(['minutes', 'seconds'])
-        ItemizedDelta("PT150m24s")
-        >>> (hrs, mins) = d.in_units(('hours', 'minutes'), round_mode='ceil')
-        (2, 31)
         """
         if any(u and not u.endswith("s") for u in units):
             raise ValueError("All units must be plural")
@@ -1912,16 +1949,14 @@ class TimeDelta(_Base):
 
         Inverse of :meth:`from_py_timedelta`
 
+        >>> d = TimeDelta(hours=1, minutes=30)
+        >>> d.py_timedelta()
+        timedelta(seconds=5400)
+
         Note
         ----
         Nanoseconds are truncated to microseconds.
         If you need more control over rounding, use :meth:`round` first.
-
-        Example
-        -------
-        >>> d = TimeDelta(hours=1, minutes=30)
-        >>> d.py_timedelta()
-        timedelta(seconds=5400)
         """
         return _timedelta(microseconds=self._total_ns // 1_000)
 
@@ -1931,8 +1966,6 @@ class TimeDelta(_Base):
 
         Inverse of :meth:`py_timedelta`
 
-        Example
-        -------
         >>> TimeDelta.from_py_timedelta(timedelta(seconds=5400))
         TimeDelta("PT1h30m")
 
@@ -1957,8 +1990,6 @@ class TimeDelta(_Base):
 
         Inverse of :meth:`parse_iso`.
 
-        Example
-        -------
         >>> TimeDelta(hours=1, minutes=30).format_iso()
         'PT1H30M'
         """
@@ -1983,8 +2014,6 @@ class TimeDelta(_Base):
 
         Inverse of :meth:`format_iso`
 
-        Example
-        -------
         >>> TimeDelta.parse_iso("PT1H80M")
         TimeDelta("PT2h20m")
 
@@ -2053,8 +2082,6 @@ class TimeDelta(_Base):
         """Round the delta to the specified unit and increment.
         Various rounding modes are available.
 
-        Examples
-        --------
         >>> t = TimeDelta(seconds=12345)
         TimeDelta("PT3h25m45s")
         >>> t.round("minute")
@@ -2107,11 +2134,17 @@ class TimeDelta(_Base):
             raise ValueError("Resulting TimeDelta out of range")
         return self._from_nanos_unchecked(rounded_ns)
 
+    def add(self, *args, **kwargs: Any) -> TimeDelta:
+        """Add time to this delta, returning a new delta"""
+        raise NotImplementedError()  # TODO
+
+    def subtract(self, *args, **kwargs: Any) -> TimeDelta:
+        """Subtract time from this delta, returning a new delta"""
+        raise NotImplementedError()  # TODO
+
     def __add__(self, other: TimeDelta) -> TimeDelta:
         """Add two deltas together
 
-        Example
-        -------
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d + TimeDelta(minutes=30)
         TimeDelta("PT2h")
@@ -2123,8 +2156,6 @@ class TimeDelta(_Base):
     def __sub__(self, other: TimeDelta) -> TimeDelta:
         """Subtract two deltas
 
-        Example
-        -------
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d - TimeDelta(minutes=30)
         TimeDelta("PT1h")
@@ -2136,8 +2167,6 @@ class TimeDelta(_Base):
     def __eq__(self, other: object) -> bool:
         """Compare for equality
 
-        Example
-        -------
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d == TimeDelta(minutes=90)
         True
@@ -2174,8 +2203,6 @@ class TimeDelta(_Base):
     def __bool__(self) -> bool:
         """True if the value is non-zero
 
-        Example
-        -------
         >>> bool(TimeDelta())
         False
         >>> bool(TimeDelta(minutes=1))
@@ -2186,8 +2213,6 @@ class TimeDelta(_Base):
     def __mul__(self, other: float) -> TimeDelta:
         """Multiply by a number
 
-        Example
-        -------
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d * 2.5
         TimeDelta("PT3h45m")
@@ -2202,8 +2227,6 @@ class TimeDelta(_Base):
     def __neg__(self) -> TimeDelta:
         """Negate the value
 
-        Example
-        -------
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> -d
         TimeDelta(-PT1h30m)
@@ -2213,8 +2236,6 @@ class TimeDelta(_Base):
     def __pos__(self) -> TimeDelta:
         """Return the value unchanged
 
-        Example
-        -------
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> +d
         TimeDelta("PT1h30m")
@@ -2230,8 +2251,6 @@ class TimeDelta(_Base):
     def __truediv__(self, other: float | TimeDelta) -> TimeDelta | float:
         """Divide by a number or another delta
 
-        Example
-        -------
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d / 2.5
         TimeDelta("PT36m")
@@ -2252,8 +2271,6 @@ class TimeDelta(_Base):
     def __floordiv__(self, other: TimeDelta) -> int:
         """Floor division by another delta
 
-        Example
-        -------
         >>> d = TimeDelta(hours=1, minutes=39)
         >>> d // time_delta(minutes=15)
         6
@@ -2265,8 +2282,6 @@ class TimeDelta(_Base):
     def __mod__(self, other: TimeDelta) -> TimeDelta:
         """Modulo by another delta
 
-        Example
-        -------
         >>> d = TimeDelta(hours=1, minutes=39)
         >>> d % TimeDelta(minutes=15)
         TimeDelta("PT9m")
@@ -2278,8 +2293,6 @@ class TimeDelta(_Base):
     def __abs__(self) -> TimeDelta:
         """The absolute value
 
-        Example
-        -------
         >>> d = TimeDelta(hours=-1, minutes=-30)
         >>> abs(d)
         TimeDelta("PT1h30m")
@@ -2366,8 +2379,6 @@ class DateDelta(_Base):
     def in_months_days(self) -> tuple[int, int]:
         """Convert to a tuple of months and days.
 
-        Example
-        -------
         >>> p = DateDelta(months=25, days=9)
         >>> p.in_months_days()
         (25, 9)
@@ -2379,8 +2390,6 @@ class DateDelta(_Base):
     def in_years_months_days(self) -> tuple[int, int, int]:
         """Convert to a tuple of years, months, and days.
 
-        Example
-        -------
         >>> p = DateDelta(years=1, months=2, days=11)
         >>> p.in_years_months_days()
         (1, 2, 11)
@@ -2396,6 +2405,12 @@ class DateDelta(_Base):
 
         Inverse of :meth:`parse_iso`.
 
+        >>> p = DateDelta(years=1, months=2, weeks=3, days=11)
+        >>> p.format_iso()
+        'P1Y2M3W11D'
+        >>> DateDelta().format_iso()
+        'P0D'
+
         The format looks like this:
 
         .. code-block:: text
@@ -2410,13 +2425,6 @@ class DateDelta(_Base):
             P2M
             P1Y2M3W4D
 
-        Example
-        -------
-        >>> p = DateDelta(years=1, months=2, weeks=3, days=11)
-        >>> p.format_iso()
-        'P1Y2M3W11D'
-        >>> DateDelta().format_iso()
-        'P0D'
         """
         if self._months < 0 or self._days < 0:
             sign = "-"
@@ -2445,8 +2453,6 @@ class DateDelta(_Base):
 
         Inverse of :meth:`format_iso`
 
-        Example
-        -------
         >>> DateDelta.parse_iso("P1W11D")
         DateDelta("P1w11d")
         >>> DateDelta.parse_iso("-P3m")
@@ -2517,8 +2523,6 @@ class DateDelta(_Base):
     ) -> DateDelta | DateTimeDelta:
         """Add the fields of another delta to this one
 
-        Example
-        -------
         >>> p = DateDelta(weeks=2, months=1)
         >>> p + DateDelta(weeks=1, days=4)
         DateDelta("P1m25d")
@@ -2555,8 +2559,6 @@ class DateDelta(_Base):
     ) -> DateDelta | DateTimeDelta:
         """Subtract the fields of another delta from this one
 
-        Example
-        -------
         >>> p = DateDelta(weeks=2, days=3)
         >>> p - DateDelta(days=2)
         DateDelta("P15d")
@@ -2581,8 +2583,6 @@ class DateDelta(_Base):
 
         `a == b` is equivalent to `a.in_months_days() == b.in_months_days()`
 
-        Example
-        -------
         >>> p = DateDelta(weeks=4, days=2)
         DateDelta("P30d")
         >>> p == DateDelta(weeks=3, days=9)
@@ -2602,8 +2602,6 @@ class DateDelta(_Base):
     def __bool__(self) -> bool:
         """True if any contains any non-zero data
 
-        Example
-        -------
         >>> bool(DateDelta())
         False
         >>> bool(DateDelta(days=-1))
@@ -2620,8 +2618,6 @@ class DateDelta(_Base):
     def __neg__(self) -> DateDelta:
         """Negate the contents
 
-        Example
-        -------
         >>> p = DateDelta(weeks=2, days=3)
         >>> -p
         DateDelta(-P17d)
@@ -2631,8 +2627,6 @@ class DateDelta(_Base):
     def __pos__(self) -> DateDelta:
         """Return the value unchanged
 
-        Example
-        -------
         >>> p = DateDelta(weeks=2, days=-3)
         DateDelta("P11d")
         >>> +p
@@ -2643,8 +2637,6 @@ class DateDelta(_Base):
     def __mul__(self, other: int) -> DateDelta:
         """Multiply the contents by a round number
 
-        Example
-        -------
         >>> p = DateDelta(years=1, weeks=2)
         >>> p * 2
         DateDelta("P2y28d")
@@ -2664,8 +2656,6 @@ class DateDelta(_Base):
     def __abs__(self) -> DateDelta:
         """If the contents are negative, return the positive version
 
-        Example
-        -------
         >>> p = DateDelta(months=-2, days=-3)
         >>> abs(p)
         DateDelta("P2m3d")
@@ -2761,14 +2751,14 @@ class ItemizedDelta(_Base):
     def __init__(
         self,
         *,
-        years: int = _UNSET,  # type: ignore[assignment]
-        months: int = _UNSET,  # type: ignore[assignment]
-        weeks: int = _UNSET,  # type: ignore[assignment]
-        days: int = _UNSET,  # type: ignore[assignment]
-        hours: int = _UNSET,  # type: ignore[assignment]
-        minutes: int = _UNSET,  # type: ignore[assignment]
-        seconds: int = _UNSET,  # type: ignore[assignment]
-        nanoseconds: int = _UNSET,  # type: ignore[assignment]
+        years: int = _UNSET,
+        months: int = _UNSET,
+        weeks: int = _UNSET,
+        days: int = _UNSET,
+        hours: int = _UNSET,
+        minutes: int = _UNSET,
+        seconds: int = _UNSET,
+        nanoseconds: int = _UNSET,
     ) -> None:
         sign: Sign = 0
         if nanoseconds is not _UNSET and seconds is _UNSET:
@@ -2814,6 +2804,7 @@ class ItemizedDelta(_Base):
         return self._sign
 
     # CONSIDER: should these be methods instead of properties?
+    # TODO: consistent with ItemizedDateDelta?
     @property
     def years(self) -> int:
         """The number of years, 0 if not set"""
@@ -2918,8 +2909,6 @@ class ItemizedDelta(_Base):
     def __getitem__(self, key: str) -> int:
         """Get the value of a specific field by name.
 
-        Example
-        -------
         >>> d = ItemizedDelta(weeks=1, days=3)
         >>> d["weeks"]
         1
@@ -2956,8 +2945,6 @@ class ItemizedDelta(_Base):
     def __len__(self) -> int:
         """Get the number of fields that are set.
 
-        Example
-        -------
         >>> d = ItemizedDelta(weeks=1, days=3)
         >>> len(d)
         2
@@ -2976,8 +2963,6 @@ class ItemizedDelta(_Base):
     def __contains__(self, key: str) -> bool:
         """Check if a specific field is set.
 
-        Example
-        -------
         >>> d = ItemizedDelta(weeks=1, days=3)
         >>> "weeks" in d
         True
@@ -3005,8 +2990,6 @@ class ItemizedDelta(_Base):
     def __bool__(self) -> bool:
         """An ItemizedDelta is considered False if its sign is 0.
 
-        Example
-        -------
         >>> bool(ItemizedDelta(weeks=0))
         False
         >>> bool(ItemizedDelta(weeks=1))
@@ -3027,8 +3010,6 @@ class ItemizedDelta(_Base):
 
             P(nY)(nM)(nW)(nD)T(nH)(nM)(nS)
 
-        Example
-        -------
         >>> d = ItemizedDelta(
         ...     weeks=1,
         ...     days=11,
@@ -3081,8 +3062,6 @@ class ItemizedDelta(_Base):
         Does not parse all possible ISO 8601 durations.
         See :ref:`here <iso8601-durations>` for more information.
 
-        Examples:
-
         .. code-block:: text
 
            P4D        # 4 days
@@ -3095,8 +3074,6 @@ class ItemizedDelta(_Base):
 
         Inverse of :meth:`format_iso`
 
-        Example
-        -------
         >>> ItemizeDelta.parse_iso("-P1W11DT4H")
         ItemizeDelta("-P1w11dT4h")
         """
@@ -3195,20 +3172,12 @@ class ItemizedDelta(_Base):
             nanos,
         )
 
-    # def in_units(
-    #     self, units: Sequence[str], /, *, relative_to: Date
-    # ) -> ItemizedDateDelta:
-    #     """TODO"""
-    #     shifted = relative_to.add(
-
     def parts(self) -> tuple[Optional[ItemizedDateDelta], Optional[TimeDelta]]:
         """Split into date and time parts.
 
         Either part may be None if no fields were set of that type.
         At least one part will be non-None, since at least one field must be set.
 
-        Example
-        -------
         >>> d = ItemizedDelta(
         ...     years=1,
         ...     months=2,
@@ -3297,16 +3266,15 @@ class ItemizedDelta(_Base):
 
         Thus, ``ItemizedDelta(weeks=1, seconds=0) == ItemizedDelta(weeks=1)``
 
-        If you want strict equality (including presence of fields),
-        use :meth:`exact_eq`.
-
-        Example
-        -------
         >>> d = ItemizedDelta(weeks=2, minutes=90)
         >>> d == ItemizedDelta(weeks=2, minutes=90)
         True
         >>> d == ItemizedDelta(weeks=2, minutes=91)
         False
+
+        If you want strict equality (including presence of fields),
+        use :meth:`exact_eq`.
+
         """
         if not isinstance(other, ItemizedDelta):
             return NotImplemented
@@ -3339,8 +3307,6 @@ class ItemizedDelta(_Base):
     def __abs__(self) -> ItemizedDelta:
         """If the contents are negative, return the positive version
 
-        Example
-        -------
         >>> d = ItemizedDelta(weeks=-2, days=-3)
         >>> abs(d)
         ItemizedDelta("P2w3d")
@@ -3362,8 +3328,6 @@ class ItemizedDelta(_Base):
     def __neg__(self) -> ItemizedDelta:
         """Invert the sign of the contents
 
-        Example
-        -------
         >>> d = ItemizedDelta(weeks=2, days=3)
         >>> -d
         ItemizedDelta("-P2w3d")
@@ -3383,6 +3347,22 @@ class ItemizedDelta(_Base):
             self._seconds,
             self._nanoseconds,
         )
+
+    def add(self, *args, **kwargs: Any) -> ItemizedDelta:
+        """Add time to this delta, returning a new delta"""
+        raise NotImplementedError()  # TODO
+
+    def subtract(self, *args, **kwargs: Any) -> ItemizedDelta:
+        """Subtract time from this delta, returning a new delta"""
+        raise NotImplementedError()  # TODO
+
+    def in_units(self, *args, **kwargs) -> ItemizedDelta:
+        """Return a new delta expressed in the specified units"""
+        raise NotImplementedError()  # TODO
+
+    def total(self, *args, **kwargs) -> float:
+        """Return the total duration expressed in the specified unit as a float"""
+        raise NotImplementedError()  # TODO
 
     @no_type_check
     def __reduce__(self):
@@ -3433,7 +3413,76 @@ def _unpkl_idelta(
 
 @final
 class ItemizedDateDelta(_Base):
-    """TODO"""
+    """A date duration that preserves the exact fields it was created with.
+    It closely models the ISO 8601 duration format for date-only durations.
+
+    >>> d = ItemizedDateDelta(years=2, weeks=3)
+    ItemizedDateDelta("P2Y3W")
+    >>> d = ItemizedDateDelta("P22W")
+    >>> d.weeks
+    22
+    >>> str(d)
+    'P22W'
+
+    Conceptually, you can imagine it behaving like a mapping where the keys are
+    the unit names and the values are the amounts:
+
+    >>> d.asdict()
+    {"years": 2, "weeks": 3}
+    >>> d.units()
+    ("years", "weeks")
+    >>> d.values()
+    (2, 3)
+
+    Individual fields can also be accessed as properties...
+
+    >>> d.years
+    2
+    >>> d.days  # defaults to 0 if not set
+    0
+
+    ...or via indexing like a dictionary:
+
+    >>> d["years"]
+    2
+    >>> d["days"]
+    KeyError: 'days'
+
+    ``ItemizedDateDelta`` also supports a number of collection protocols:
+
+    >>> years, weeks = d  # iterating over values
+    >>> "days" in d  # check for presence of a field
+    False
+    >>> len(d)  # number of fields set
+    2
+
+    Zero values are considered distinct from "missing" values:
+
+    >>> d2 = ItemizedDateDelta(years=2, weeks=3, days=0)
+    >>> d2.asdict()
+    {"years": 2, "weeks": 3, "days": 0}
+
+    Additionally, no normalization is performed.
+    Months are not rolled into years, weeks into days, etc.
+
+    >>> d3 = ItemizedDateDelta(months=24, days=100)
+    ItemizedDateDelta("P24m100d")
+
+    Empty durations are not allowed. At least one field must be set (but it can be zero):
+
+    >>> ItemizedDateDelta()
+    ValueError: At least one field must be set
+    >>> ItemizedDateDelta(days=0)
+    ItemizedDateDelta("P0d")
+
+    Negative durations are supported, but all fields must have the same sign:
+
+    >>> d4 = ItemizedDateDelta(years=-1, weeks=-2, days=0)
+    ItemizedDateDelta("-P1y2w0d")
+    >>> ItemizedDateDelta(years=1, days=-3)
+    ValueError: All fields must have the same sign
+
+    """
 
     __slots__ = (
         "_sign",
@@ -3448,10 +3497,10 @@ class ItemizedDateDelta(_Base):
     def __init__(
         self,
         *,
-        years: int = _UNSET,  # type: ignore[assignment]
-        months: int = _UNSET,  # type: ignore[assignment]
-        weeks: int = _UNSET,  # type: ignore[assignment]
-        days: int = _UNSET,  # type: ignore[assignment]
+        years: int = _UNSET,
+        months: int = _UNSET,
+        weeks: int = _UNSET,
+        days: int = _UNSET,
     ) -> None:
         sign: Sign = 0
         (self._years, sign) = _check_component(years, sign, _MAX_DELTA_YEARS)
@@ -3472,192 +3521,143 @@ class ItemizedDateDelta(_Base):
             # There is no "empty" duration in ISO8601; at least one field must be present.
             raise ValueError("At least one field must be set")
 
-    @property
-    def sign(self) -> Sign:
-        """The sign of the delta, 1, 0, or -1"""
-        return self._sign
-
     # CONSIDER: should these be methods instead of properties?
     @property
     def years(self) -> int:
-        """The number of years, 0 if not set"""
+        """The number of years, or ``0`` if not set.
+
+        Use ``d["years"]`` to get the value only if it was set (``KeyError`` otherwise).
+        """
         return self._sign * (self._years or 0)
 
     @property
     def months(self) -> int:
-        """The number of months, 0 if not set"""
+        """The number of months, or ``0`` if not set.
+
+        Use ``d["months"]`` to get the value only if it was set (``KeyError`` otherwise).
+        """
         return self._sign * (self._months or 0)
 
     @property
     def weeks(self) -> int:
-        """The number of weeks, 0 if not set"""
+        """The number of weeks, or ``0`` if not set.
+
+        Use ``d["weeks"]`` to get the value only if it was set (``KeyError`` otherwise).
+        """
         return self._sign * (self._weeks or 0)
 
     @property
     def days(self) -> int:
-        """The number of days, 0 if not set"""
+        """The number of days, or ``0`` if not set.
+
+        Use ``d["days"]`` to get the value only if it was set (``KeyError`` otherwise).
+        """
         return self._sign * (self._days or 0)
 
+    @property
+    def sign(self) -> Sign:
+        """The sign of the delta, whether it's positive, negative, or zero.
+
+        >>> ItemizedDateDelta(weeks=2).sign
+        1
+        >>> ItemizedDateDelta(days=-3).sign
+        -1
+        >>> ItemizedDateDelta(weeks=0).sign
+        0
+
+        """
+        return self._sign
+
+    def asdict(self) -> dict[_CalendarUnitPlural, int]:
+        """Return all defined fields as a dictionary,
+        ordered from largest to smallest unit.
+
+        >>> d = ItemizedDateDelta(years=3, days=12, months=0)
+        >>> d.asdict()
+        {'years': 3, 'months': 0, 'days': 12}
+        """
+        fields = (
+            ("years", self._years),
+            ("months", self._months),
+            ("weeks", self._weeks),
+            ("days", self._days),
+        )
+        return {k: self._sign * v for k, v in fields if v is not None}  # type: ignore[misc]
+
+    def units(self) -> tuple[_CalendarUnitPlural, ...]:
+        """Return a the names of all defined field units as a tuple,
+        ordered from largest to smallest unit.
+
+        >>> d = ItemizedDateDelta(years=3, days=12, months=0)
+        >>> d.units()
+        ('years', 'months', 'days')
+        """
+        fields = (
+            ("years", self._years),
+            ("months", self._months),
+            ("weeks", self._weeks),
+            ("days", self._days),
+        )
+        return tuple(k for k, v in fields if v is not None)  # type: ignore[misc]
+
     def values(self) -> tuple[int, ...]:
-        """Return all non-None fields as a tuple, in order."""
+        """Return all defined field values as a tuple, in order
+        of largest to smallest unit.
+
+        >>> d = ItemizedDateDelta(years=3, days=12, months=0)
+        >>> d.values()
+        (3, 0, 12)
+
+        The values can also be extracted by iteration instead:
+
+        >>> years, months, days = d
+        (3, 0, 12)
+        """
         return tuple(self)
 
-    def __iter__(self) -> Iterator[int]:
-        """Iterate over all non-None fields, ordered from largest to smallest unit."""
-        if self._years is not None:
-            yield self._sign * self._years
-        if self._months is not None:
-            yield self._sign * self._months
-        if self._weeks is not None:
-            yield self._sign * self._weeks
-        if self._days is not None:
-            yield self._sign * self._days
-
-    def asdict(self) -> dict[str, int]:
-        """Return all non-None fields as a dictionary,
-        ordered from largest to smallest unit.
-        """
-        fields = (
-            ("years", self._years),
-            ("months", self._months),
-            ("weeks", self._weeks),
-            ("days", self._days),
-        )
-        return {k: self._sign * v for k, v in fields if v is not None}
-
-    def units(self) -> tuple[str, ...]:
-        """Return a tuple of the names of all non-None fields,
-        ordered from largest to smallest unit.
-        """
-        fields = (
-            ("years", self._years),
-            ("months", self._months),
-            ("weeks", self._weeks),
-            ("days", self._days),
-        )
-        return tuple(k for k, v in fields if v is not None)
-
     def in_units(
-        self, units: Sequence[_CalendarUnit], /, relative_to: Date
+        self,
+        units: Sequence[_CalendarUnitPlural],
+        /,
+        *,
+        relative_to: Date,
+        round_mode: _RoundMode = "trunc",
+        round_increment: int = 1,
     ) -> ItemizedDateDelta:
-        """Calculate the difference between this date and another date
-        in terms of the specified units.
+        """Convert this delta into the specified units. A `relative_to` date
+        is required to resolve variable-length units (years and months).
 
-        This is a shorthand for :meth:`since` with multiple units.
-
-        Example
-        -------
-        >>> d1 = Date(2023, 4, 15)
-        >>> d2 = Date(2011, 6, 24)
-        >>> d1.in_units(["years", "months", "days"], relative_to=d2)
-        DateDelta("P12Y9M22D")
+        >>> d = ItemizedDateDelta(years=1, months=8)
+        >>> d.in_units(["weeks", "days"], relative_to=Date(2020, 6, 30))
+        ItemizedDateDelta("P86w6d")
         """
-        return relative_to.add(self).since(relative_to, units=units)
-
-    def __getitem__(self, key: str) -> int:
-        """Get the value of a specific field by name.
-
-        Example
-        -------
-        >>> d = ItemizedDateDelta(weeks=1, days=0)
-        >>> d["weeks"]
-        1
-        >>> d["days"]
-        0
-        >>> d["years"]
-        KeyError: 'years'
-        """
-        # DROP-PY39: replace with match statement
-        if key == "years":
-            value = self._years
-        elif key == "months":
-            value = self._months
-        elif key == "weeks":
-            value = self._weeks
-        elif key == "days":
-            value = self._days
-        else:
-            raise KeyError(key)
-
-        if value is not None:
-            return self._sign * value
-
-        raise KeyError(key)
-
-    def __len__(self) -> int:
-        """Get the number of fields that are set.
-
-        Example
-        -------
-        >>> d = ItemizedDateDelta(weeks=1, days=0)
-        >>> len(d)
-        2
-        """
-        return (
-            (self._years is not None)
-            + (self._months is not None)
-            + (self._weeks is not None)
-            + (self._days is not None)
+        return relative_to.add(self).since(
+            relative_to,
+            units=units,
+            round_mode=round_mode,
+            round_increment=round_increment,
         )
-
-    def __contains__(self, key: str) -> bool:
-        """Check if a specific field is set.
-
-        Example
-        -------
-        >>> d = ItemizedDateDelta(weeks=1, days=0)
-        >>> "weeks" in d
-        True
-        >>> "days" in d
-        True
-        >>> "months" in d
-        False
-        """
-        if key == "years":
-            return self._years is not None
-        elif key == "months":
-            return self._months is not None
-        elif key == "weeks":
-            return self._weeks is not None
-        elif key == "days":
-            return self._days is not None
-        return False
-
-    def __bool__(self) -> bool:
-        """An ItemizedDateDelta is considered False if its sign is 0.
-
-        Example
-        -------
-        >>> d = ItemizedDateDelta(weeks=0)
-        >>> bool(d)
-        False
-        >>> d = ItemizedDateDelta(weeks=1)
-        >>> bool(d)
-        True
-        """
-        return bool(self._sign)
 
     def format_iso(self, *, lowercase_units: bool = False) -> str:
-        """Format as the *popular interpretation* of the ISO 8601 duration format.
-        May not strictly adhere to (all versions of) the standard.
-        See :ref:`here <iso8601-durations>` for more information.
-
-        Inverse of :meth:`parse_iso`.
-
-        The format is:
+        """Convert to the canionical ISO 8601 string representation:
 
         .. code-block:: text
 
             P(nY)(nM)(nW)(nD)
 
-        Example
-        -------
-        >>> d = ItemizedDateDelta(
-        ...     weeks=1,
-        ...     days=11,
-        ... )
+        You can also use ``str(d)`` which is equivalent to ``d.format_iso()``.
+
+        Inverse of :meth:`parse_iso`.
+
+        >>> d = ItemizedDateDelta(weeks=1, days=11)
         >>> d.format_iso()
         'P1W11D'
+
+        Note
+        ----
+        Negative durations are prefixed with a minus sign,
+        which is not part of the ISO 8601 standard, but is a common extension.
+        See :ref:`here <iso8601-durations>` for more information.
         """
         # Mypy complains about string unpacking. But it's valid here. See mypy/issues/13823
         y, m, w, d = "ymwd" if lowercase_units else "YMWD"  # type: ignore[misc]
@@ -3679,26 +3679,19 @@ class ItemizedDateDelta(_Base):
     @classmethod
     def parse_iso(cls, s: str, /) -> ItemizedDateDelta:
         """Parse the *popular interpretation* of the ISO 8601 duration format.
-        Does not parse all possible ISO 8601 durations.
-        See :ref:`here <iso8601-durations>` for more information.
-
-        Examples:
-
-        .. code-block:: text
-
-           P4D        # 4 days
-           P0M        # 0 months
-           P7Y99D     # 7 years and 99 days
-           P1M2W3D    # 1 month, 2 weeks, and 3 days
-           -P7D       # -7 days
-           +P9Y2M     # 9 years and 2 months
-
         Inverse of :meth:`format_iso`
 
-        Example
-        -------
         >>> ItemizedDateDelta.parse_iso("-P1W11D")
         ItemizedDateDelta("-P1w11d")
+
+        You can also use the constructor ``ItemizedDateDelta(s)`` which is
+        equivalent to ``ItemizedDateDelta.parse_iso(s)``.
+
+        Note
+        ----
+        Does not parse all possible ISO 8601 durations. In particular,
+        it doesn't allow fractional values.
+        See :ref:`here <iso8601-durations>` for more information.
         """
         exc = ValueError(f"Invalid format: {s!r}")
 
@@ -3748,6 +3741,178 @@ class ItemizedDateDelta(_Base):
         # NOTE: we've implicitly validated that at least one field is set
         return cls._from_signed(sign, years, months, weeks, days)
 
+    def __iter__(self) -> Iterator[int]:
+        """Iterate over all defined field values, ordered from largest to smallest unit.
+
+        >>> d = ItemizedDateDelta(days=11, weeks=1)
+        >>> weeks, days = d
+        """
+        if self._years is not None:
+            yield self._sign * self._years
+        if self._months is not None:
+            yield self._sign * self._months
+        if self._weeks is not None:
+            yield self._sign * self._weeks
+        if self._days is not None:
+            yield self._sign * self._days
+
+    def __getitem__(self, key: str) -> int:
+        """Get the value of a specific field by name.
+
+        >>> d = ItemizedDateDelta(weeks=1, days=0)
+        >>> d["weeks"]
+        1
+        >>> d["days"]
+        0
+        >>> d["years"]
+        KeyError: 'years'
+        """
+        # DROP-PY39: replace with match statement
+        if key == "years":
+            value = self._years
+        elif key == "months":
+            value = self._months
+        elif key == "weeks":
+            value = self._weeks
+        elif key == "days":
+            value = self._days
+        else:
+            raise KeyError(key)
+
+        if value is not None:
+            return self._sign * value
+
+        raise KeyError(key)
+
+    def __len__(self) -> int:
+        """Get the number of fields that are set.
+
+        >>> d = ItemizedDateDelta(weeks=1, days=0)
+        >>> len(d)
+        2
+        """
+        return (
+            (self._years is not None)
+            + (self._months is not None)
+            + (self._weeks is not None)
+            + (self._days is not None)
+        )
+
+    def __contains__(self, key: str) -> bool:
+        """Check if a specific field is set.
+
+        >>> d = ItemizedDateDelta(weeks=1, days=0)
+        >>> "weeks" in d
+        True
+        >>> "days" in d
+        True
+        >>> "months" in d
+        False
+        """
+        if key == "years":
+            return self._years is not None
+        elif key == "months":
+            return self._months is not None
+        elif key == "weeks":
+            return self._weeks is not None
+        elif key == "days":
+            return self._days is not None
+        return False
+
+    def __bool__(self) -> bool:
+        """An ItemizedDateDelta is considered False if its sign is 0.
+
+        >>> d = ItemizedDateDelta(weeks=0)
+        >>> bool(d)
+        False
+        >>> d = ItemizedDateDelta(weeks=1)
+        >>> bool(d)
+        True
+        """
+        return bool(self._sign)
+
+    def __eq__(self, other: object) -> bool:
+        """Compare each field for equality, under the following rules:
+
+        - No normalization is performed. 1 hour is not equal to 60 minutes, etc.
+        - Zero values are considered equivalent to missing values.
+
+        If you want strict equality (including presence of fields),
+        use :meth:`exact_eq`.
+
+        >>> d = ItemizedDateDelta(weeks=2, minutes=90)
+        >>> d == ItemizedDateDelta(weeks=2, minutes=90, seconds=0)
+        True
+        >>> d == ItemizedDateDelta(weeks=2, hour=1, minutes=30)
+        False
+        """
+        if not isinstance(other, ItemizedDateDelta):
+            return NotImplemented
+        return (
+            self._sign == other._sign
+            and (self._years or 0) == (other._years or 0)
+            and (self._months or 0) == (other._months or 0)
+            and (self._weeks or 0) == (other._weeks or 0)
+            and (self._days or 0) == (other._days or 0)
+        )
+
+    def exact_eq(self, other: ItemizedDateDelta, /) -> bool:
+        """Check for strict equality. All fields *and their presence* must match.
+
+        >>> d = ItemizedDateDelta(weeks=2, minutes=90)
+        >>> d == ItemizedDateDelta(weeks=2, minutes=90)
+        True
+        >>> d == ItemizedDateDelta(weeks=2, minutes=90, seconds=0)
+        False
+        """
+        return (
+            self._sign == other._sign
+            and self._years == other._years
+            and self._months == other._months
+            and self._weeks == other._weeks
+            and self._days == other._days
+        )
+
+    def __abs__(self) -> ItemizedDateDelta:
+        """If the contents are negative, return the positive version
+
+        >>> d = ItemizedDateDelta(weeks=-2, days=-3)
+        >>> abs(d)
+        ItemizedDateDelta("P2w3d")
+        """
+        if self._sign >= 0:
+            return self
+        return ItemizedDateDelta._from_signed(
+            1, self._years, self._months, self._weeks, self._days
+        )
+
+    def __neg__(self) -> ItemizedDateDelta:
+        """Invert the sign of the contents
+
+        >>> d = ItemizedDateDelta(weeks=2, days=3)
+        >>> -d
+        ItemizedDateDelta("-P2w3d")
+        >>> --d
+        ItemizedDateDelta("P2w3d")
+        """
+        if self._sign == 0:
+            return self
+        return ItemizedDateDelta._from_signed(
+            -self._sign, self._years, self._months, self._weeks, self._days
+        )
+
+    def add(self, *args, **kwargs: Any) -> ItemizedDateDelta:
+        """Add time to this delta, returning a new delta"""
+        raise NotImplementedError()  # TODO
+
+    def subtract(self, *args, **kwargs: Any) -> ItemizedDateDelta:
+        """Subtract time from this delta, returning a new delta"""
+        raise NotImplementedError()  # TODO
+
+    def total(self, *args, **kwargs) -> float:
+        """Return the total duration expressed in the specified unit as a float"""
+        raise NotImplementedError()  # TODO
+
     # A private constructor. Checks bounds but *not* signs or presence of > 0 fields.
     @classmethod
     def _from_signed(
@@ -3765,76 +3930,6 @@ class ItemizedDateDelta(_Base):
         self._weeks = _check_bound(weeks, _MAX_DELTA_WEEKS)
         self._days = _check_bound(days, _MAX_DELTA_DAYS)
         return self
-
-    def __eq__(self, other: object) -> bool:
-        """Compare for equality. Each field is individually compared.
-        No normalization is performed. Zero values are considered the same
-        as missing values.
-
-        Thus, ``ItemizedDateDelta(weeks=1, days=0) == ItemizedDateDelta(weeks=1)``
-
-        If you want strict equality (including presence of fields),
-        use :meth:`exact_eq`.
-
-        Example
-        -------
-        >>> d = ItemizedDateDelta(weeks=2, minutes=90)
-        >>> d == ItemizedDateDelta(weeks=2, minutes=90)
-        True
-        >>> d == ItemizedDateDelta(weeks=2, minutes=91)
-        False
-        """
-        if not isinstance(other, ItemizedDateDelta):
-            return NotImplemented
-        return (
-            self._sign == other._sign
-            and (self._years or 0) == (other._years or 0)
-            and (self._months or 0) == (other._months or 0)
-            and (self._weeks or 0) == (other._weeks or 0)
-            and (self._days or 0) == (other._days or 0)
-        )
-
-    def exact_eq(self, other: ItemizedDateDelta, /) -> bool:
-        """Check for strict equality. All fields *and their presence* must match."""
-        return (
-            self._sign == other._sign
-            and self._years == other._years
-            and self._months == other._months
-            and self._weeks == other._weeks
-            and self._days == other._days
-        )
-
-    def __abs__(self) -> ItemizedDateDelta:
-        """If the contents are negative, return the positive version
-
-        Example
-        -------
-        >>> d = ItemizedDateDelta(weeks=-2, days=-3)
-        >>> abs(d)
-        ItemizedDateDelta("P2w3d")
-        """
-        if self._sign >= 0:
-            return self
-        return ItemizedDateDelta._from_signed(
-            1, self._years, self._months, self._weeks, self._days
-        )
-
-    def __neg__(self) -> ItemizedDateDelta:
-        """Invert the sign of the contents
-
-        Example
-        -------
-        >>> d = ItemizedDateDelta(weeks=2, days=3)
-        >>> -d
-        ItemizedDateDelta("-P2w3d")
-        >>> --d
-        ItemizedDateDelta("P2w3d")
-        """
-        if self._sign == 0:
-            return self
-        return ItemizedDateDelta._from_signed(
-            -self._sign, self._years, self._months, self._weeks, self._days
-        )
 
     @no_type_check
     def __reduce__(self):
@@ -3947,8 +4042,6 @@ class DateTimeDelta(_Base):
     def in_months_days_secs_nanos(self) -> tuple[int, int, int, int]:
         """Convert to a tuple of (months, days, seconds, nanoseconds)
 
-        Example
-        -------
         >>> d = DateTimeDelta(weeks=1, days=11, hours=4, microseconds=2)
         >>> d.in_months_days_secs_nanos()
         (0, 18, 14_400, 2000)
@@ -3970,8 +4063,6 @@ class DateTimeDelta(_Base):
 
             P(nY)(nM)(nD)T(nH)(nM)(nS)
 
-        Example
-        -------
         >>> d = DateTimeDelta(
         ...     weeks=1,
         ...     days=11,
@@ -3996,8 +4087,6 @@ class DateTimeDelta(_Base):
         Does not parse all possible ISO 8601 durations.
         See :ref:`here <iso8601-durations>` for more information.
 
-        Examples:
-
         .. code-block:: text
 
            P4D        # 4 days
@@ -4009,8 +4098,6 @@ class DateTimeDelta(_Base):
 
         Inverse of :meth:`format_iso`
 
-        Example
-        -------
         >>> DateTimeDelta.parse_iso("-P1W11DT4H")
         DateTimeDelta(-P1w11dT4h)
         """
@@ -4092,8 +4179,6 @@ class DateTimeDelta(_Base):
     def __add__(self, other: Delta) -> DateTimeDelta:
         """Add two deltas together
 
-        Example
-        -------
         >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
         >>> d + DateTimeDelta(months=2, days=3, minutes=90)
         DateTimeDelta("P1m1w14dT5h30m")
@@ -4122,8 +4207,6 @@ class DateTimeDelta(_Base):
     ) -> DateTimeDelta:
         """Subtract two deltas
 
-        Example
-        -------
         >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
         >>> d - DateTimeDelta(months=2, days=3, minutes=90)
         DateTimeDelta(-P2m1w8dT2h30m)
@@ -4156,8 +4239,6 @@ class DateTimeDelta(_Base):
     def __eq__(self, other: object) -> bool:
         """Compare for equality
 
-        Example
-        -------
         >>> d = DateTimeDelta(
         ...     weeks=1,
         ...     days=23,
@@ -4194,8 +4275,6 @@ class DateTimeDelta(_Base):
     def __bool__(self) -> bool:
         """True if any field is non-zero
 
-        Example
-        -------
         >>> bool(DateTimeDelta())
         False
         >>> bool(DateTimeDelta(minutes=1))
@@ -4206,8 +4285,6 @@ class DateTimeDelta(_Base):
     def __mul__(self, other: int) -> DateTimeDelta:
         """Multiply by a number
 
-        Example
-        -------
         >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
         >>> d * 2
         DateTimeDelta("P2w22dT8h")
@@ -4223,8 +4300,6 @@ class DateTimeDelta(_Base):
     def __neg__(self) -> DateTimeDelta:
         """Negate the delta
 
-        Example
-        -------
         >>> d = DateTimeDelta(days=11, hours=4)
         >>> -d
         DateTimeDelta(-P11dT4h)
@@ -4235,8 +4310,6 @@ class DateTimeDelta(_Base):
     def __pos__(self) -> DateTimeDelta:
         """Return the delta unchanged
 
-        Example
-        -------
         >>> d = DateTimeDelta(weeks=1, days=-11, hours=4)
         >>> +d
         DateTimeDelta("P1W11DT4H")
@@ -4246,8 +4319,6 @@ class DateTimeDelta(_Base):
     def __abs__(self) -> DateTimeDelta:
         """The absolute value of the delta
 
-        Example
-        -------
         >>> d = DateTimeDelta(weeks=1, days=-11, hours=4)
         >>> abs(d)
         DateTimeDelta("P1w11dT4h")
@@ -4320,7 +4391,7 @@ class _BasicConversions(_Base, ABC):
     @abstractmethod
     def from_py_datetime(cls: type[_T], d: _datetime, /) -> _T:
         """Create an instance from a :class:`~datetime.datetime` object.
-        Inverse of :meth:`~_BasicConversions.py_datetime`.
+        Inverse of :meth:`py_datetime`.
 
         Note
         ----
@@ -4384,70 +4455,69 @@ class _BasicConversions(_Base, ABC):
         return self
 
 
+# Methods for types that know a local date and time-of-day:
+# - PlainDateTime
+# - ZonedDateTime
+# - OffsetDateTime
+# (The class itself is not for public use.)
 class _LocalTime(_BasicConversions, ABC):
-    """Methods for types that know a local date and time-of-day:
-
-    - :class:`PlainDateTime`
-    - :class:`ZonedDateTime`
-    - :class:`OffsetDateTime`
-
-    (The class itself is not for public use.)
-    """
-
     __slots__ = ()
 
     @property
     def year(self) -> int:
+        """The year component of the datetime"""
         return self._py_dt.year
 
     @property
     def month(self) -> int:
+        """The month component of the datetime"""
         return self._py_dt.month
 
     @property
     def day(self) -> int:
+        """The day component of the datetime"""
         return self._py_dt.day
 
     @property
     def hour(self) -> int:
+        """The hour component of the datetime"""
         return self._py_dt.hour
 
     @property
     def minute(self) -> int:
+        """The minute component of the datetime"""
         return self._py_dt.minute
 
     @property
     def second(self) -> int:
+        """The second component of the datetime"""
         return self._py_dt.second
 
     @property
     def nanosecond(self) -> int:
+        """The nanosecond component of the datetime"""
         return self._nanos
 
     def date(self) -> Date:
         """The date part of the datetime
 
-        Example
-        -------
-        >>> d = Instant.from_utc(2021, 1, 2, 3, 4, 5)
+        >>> d = PlaineDateTime("2020-01-02 03:04:05")
         >>> d.date()
         Date("2021-01-02")
 
         To perform the inverse, use :meth:`Date.at` and a method
-        like :meth:`~PlainDateTime.assume_utc` ortestoffset
+        like :meth:`~PlainDateTime.assume_utc` or
         :meth:`~PlainDateTime.assume_tz`:
 
         >>> date.at(time).assume_tz("Europe/London")
+        ZonedDateTime("2021-01-02T03:04:05+00:00[Europe/London]")
         """
         return Date._from_py_unchecked(self._py_dt.date())
 
     def time(self) -> Time:
         """The time-of-day part of the datetime
 
-        Example
-        -------
-        >>> d = ZonedDateTime(2021, 1, 2, 3, 4, 5, tz="Europe/Paris")
-        ZonedDateTime("2021-01-02T03:04:05+01:00[Europe/Paris]")
+        >>> d = ZonedDateTime("2021-01-02T03:04:05+01:00[Europe/Paris])"
         >>> d.time()
         Time(03:04:05)
 
@@ -4456,6 +4526,7 @@ class _LocalTime(_BasicConversions, ABC):
         :meth:`~PlainDateTime.assume_tz`:
 
         >>> time.on(date).assume_tz("Europe/Paris")
+        ZonedDateTime("2021-01-02T03:04:05+01:00[Europe/Paris]")
         """
         return Time._from_py_unchecked(self._py_dt.time(), self._nanos)
 
@@ -4463,6 +4534,7 @@ class _LocalTime(_BasicConversions, ABC):
     # but they are actually implemented slightly different per subclass
     if not TYPE_CHECKING:  # pragma: no cover
 
+        # TODO: move docs to the subclasses
         @abstractmethod
         def replace(self: _T, /, **kwargs: Any) -> _T:
             """Construct a new instance with the given fields replaced.
@@ -4484,8 +4556,6 @@ class _LocalTime(_BasicConversions, ABC):
             resolve ambiguities explicitly. For more information, see
             whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones
 
-            Example
-            -------
             >>> d = PlainDateTime(2020, 8, 15, 23, 12)
             >>> d.replace(year=2021)
             PlainDateTime("2021-08-15 23:12:00")
@@ -4498,8 +4568,6 @@ class _LocalTime(_BasicConversions, ABC):
         def replace_date(self: _T, date: Date, /, **kwargs) -> _T:
             """Create a new instance with the date replaced
 
-            Example
-            -------
             >>> d = PlainDateTime(2020, 8, 15, hour=4)
             >>> d.replace_date(Date(2021, 1, 1))
             PlainDateTime("2021-01-01T04:00:00")
@@ -4513,8 +4581,6 @@ class _LocalTime(_BasicConversions, ABC):
         def replace_time(self: _T, time: Time, /, **kwargs) -> _T:
             """Create a new instance with the time replaced
 
-            Example
-            -------
             >>> d = PlainDateTime(2020, 8, 15, hour=4)
             >>> d.replace_time(Time(12, 30))
             PlainDateTime("2020-08-15T12:30:00")
@@ -4585,8 +4651,6 @@ class _LocalTime(_BasicConversions, ABC):
             """Round the datetime to the specified unit and increment.
             Different rounding modes are available.
 
-            Examples
-            --------
             >>> d = ZonedDateTime(2020, 8, 15, 23, 24, 18, tz="Europe/Paris")
             >>> d.round("day")
             ZonedDateTime("2020-08-16 00:00:00+02:00[Europe/Paris]")
@@ -4608,43 +4672,24 @@ class _LocalTime(_BasicConversions, ABC):
             """
 
 
+# Methods for types that represent a specific moment in time.
+# Implemented by:
+# - Instant
+# - ZonedDateTime
+# - OffsetDateTime
+# (This base class class itself is not for public use.)
 class _ExactTime(_BasicConversions):
-    """Methods for types that represent a specific moment in time.
-
-    Implemented by:
-
-    - :class:`Instant`
-    - :class:`ZonedDateTime`
-    - :class:`OffsetDateTime`
-
-    (This base class class itself is not for public use.)
-    """
 
     __slots__ = ()
 
-    # These methods aren't strictly abstract (they don't follow LSP),
-    # but we do document them here.
-    if not TYPE_CHECKING:  # pragma: no cover
-
-        @classmethod
-        def now(cls: type[_T], **kwargs) -> _T:
-            """Create an instance from the current time.
-
-            This method on :class:`~ZonedDateTime` and :class:`~OffsetDateTime` requires
-            an additional timezone or offset argument, respectively.
-
-            Example
-            -------
-
-            >>> Instant.now()
-            Instant("2021-08-15T22:12:00.49821Z")
-            >>> ZonedDateTime.now("Europe/London")
-            ZonedDateTime("2021-08-15 23:12:00.50332+01:00[Europe/London]")
-
-            """
-
     def timestamp(self) -> int:
         """The UNIX timestamp for this datetime. Inverse of :meth:`from_timestamp`.
+
+        >>> Instant.from_utc(1970, 1, 1).timestamp()
+        0
+        >>> ts = 1_123_000_000
+        >>> Instant.from_timestamp(ts).timestamp() == ts
+        True
 
         Note
         ----
@@ -4652,14 +4697,6 @@ class _ExactTime(_BasicConversions):
         not a float. This is because floating point timestamps are not precise
         enough to represent all instants to nanosecond precision.
         This decision is consistent with other modern date-time libraries.
-
-        Example
-        -------
-        >>> Instant.from_utc(1970, 1, 1).timestamp()
-        0
-        >>> ts = 1_123_000_000
-        >>> Instant.from_timestamp(ts).timestamp() == ts
-        True
         """
         return int(self._py_dt.timestamp())
 
@@ -4670,41 +4707,6 @@ class _ExactTime(_BasicConversions):
     def timestamp_nanos(self) -> int:
         """Like :meth:`timestamp`, but with nanosecond precision."""
         return int(self._py_dt.timestamp()) * 1_000_000_000 + self._nanos
-
-    if not TYPE_CHECKING:
-
-        @classmethod
-        def from_timestamp(cls: type[_T], i: int | float, /, **kwargs) -> _T:
-            """Create an instance from a UNIX timestamp.
-            The inverse of :meth:`~_ExactTime.timestamp`.
-
-            :class:`~ZonedDateTime` and :class:`~OffsetDateTime` require
-            a ``tz=`` and ``offset=`` kwarg, respectively.
-
-            Note
-            ----
-            ``from_timestamp()`` also accepts floats, in order to ease
-            migration from the standard library.
-            Note however that ``timestamp()`` only returns integers.
-            The reason is that floating point timestamps are not precise
-            enough to represent all instants to nanosecond precision.
-
-            Example
-            -------
-            >>> Instant.from_timestamp(0)
-            Instant("1970-01-01T00:00:00Z")
-            >>> ZonedDateTime.from_timestamp(1_123_000_000, tz="America/New_York")
-            ZonedDateTime("2005-08-02 12:26:40-04:00[America/New_York]")
-
-            """
-
-        @classmethod
-        def from_timestamp_millis(cls: type[_T], i: int, /, **kwargs) -> _T:
-            """Like :meth:`from_timestamp`, but for milliseconds."""
-
-        @classmethod
-        def from_timestamp_nanos(cls: type[_T], i: int, /, **kwargs) -> _T:
-            """Like :meth:`from_timestamp`, but for nanoseconds."""
 
     @overload
     def to_fixed_offset(self, /) -> OffsetDateTime: ...
@@ -4756,14 +4758,6 @@ class _ExactTime(_BasicConversions):
         (instead of whether they represent the same instant).
         Different types are never equal.
 
-        Note
-        ----
-        If ``a.exact_eq(b)`` is true, then
-        ``a == b`` is also true, but the converse is not necessarily true.
-
-        Examples
-        --------
-
         >>> a = OffsetDateTime(2020, 8, 15, hour=12, offset=1)
         >>> b = OffsetDateTime(2020, 8, 15, hour=13, offset=2)
         >>> a == b
@@ -4772,6 +4766,11 @@ class _ExactTime(_BasicConversions):
         False  # different values (hour and offset)
         >>> a.exact_eq(Instant.now())
         TypeError  # different types
+
+        Note
+        ----
+        If ``a.exact_eq(b)`` is true, then
+        ``a == b`` is also true, but the converse is not necessarily true.
         """
         if type(self) is not type(other):
             raise TypeError("Cannot compare different types")
@@ -4808,8 +4807,6 @@ class _ExactTime(_BasicConversions):
         If you want to exactly compare the values on their values
         instead, use :meth:`exact_eq`.
 
-        Example
-        -------
         >>> Instant.from_utc(2020, 8, 15, hour=23) == Instant.from_utc(2020, 8, 15, hour=23)
         True
         >>> OffsetDateTime(2020, 8, 15, hour=23, offset=1) == (
@@ -4829,13 +4826,11 @@ class _ExactTime(_BasicConversions):
             other._nanos,
         )
 
-    def __lt__(self, other: _ExactTime) -> bool:
+    def __lt__(self, other: _ExactTimeAlias) -> bool:
         """Compare two datetimes by when they occur in time
 
         ``a < b`` is equivalent to ``a.to_instant() < b.to_instant()``
 
-        Example
-        -------
         >>> OffsetDateTime(2020, 8, 15, hour=23, offset=8) < (
         ...     ZoneDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
         ... )
@@ -4848,13 +4843,11 @@ class _ExactTime(_BasicConversions):
             other._nanos,
         )
 
-    def __le__(self, other: _ExactTime) -> bool:
+    def __le__(self, other: _ExactTimeAlias) -> bool:
         """Compare two datetimes by when they occur in time
 
         ``a <= b`` is equivalent to ``a.to_instant() <= b.to_instant()``
 
-        Example
-        -------
         >>> OffsetDateTime(2020, 8, 15, hour=23, offset=8) <= (
         ...     ZoneDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
         ... )
@@ -4867,13 +4860,11 @@ class _ExactTime(_BasicConversions):
             other._nanos,
         )
 
-    def __gt__(self, other: _ExactTime) -> bool:
+    def __gt__(self, other: _ExactTimeAlias) -> bool:
         """Compare two datetimes by when they occur in time
 
         ``a > b`` is equivalent to ``a.to_instant() > b.to_instant()``
 
-        Example
-        -------
         >>> OffsetDateTime(2020, 8, 15, hour=19, offset=-8) > (
         ...     ZoneDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
         ... )
@@ -4886,13 +4877,11 @@ class _ExactTime(_BasicConversions):
             other._nanos,
         )
 
-    def __ge__(self, other: _ExactTime) -> bool:
+    def __ge__(self, other: _ExactTimeAlias) -> bool:
         """Compare two datetimes by when they occur in time
 
         ``a >= b`` is equivalent to ``a.to_instant() >= b.to_instant()``
 
-        Example
-        -------
         >>> OffsetDateTime(2020, 8, 15, hour=19, offset=-8) >= (
         ...     ZoneDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
         ... )
@@ -4905,12 +4894,13 @@ class _ExactTime(_BasicConversions):
             other._nanos,
         )
 
+    # TODO: clean up
     # Mypy doesn't like overloaded overrides, but we'd like to document
     # this 'abstract' behaviour anyway
     if not TYPE_CHECKING:  # pragma: no branch
 
         @abstractmethod
-        def __sub__(self, other: _ExactTime) -> TimeDelta:
+        def __sub__(self, other: _ExactTimeAlias) -> TimeDelta:
             """Calculate the duration between two datetimes
 
             ``a - b`` is equivalent to ``a.to_instant() - b.to_instant()``
@@ -4919,8 +4909,6 @@ class _ExactTime(_BasicConversions):
 
             See :ref:`the docs on arithmetic <arithmetic>` for more information.
 
-            Example
-            -------
             >>> d = Instant.from_utc(2020, 8, 15, hour=23)
             >>> d - ZonedDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
             TimeDelta(05:00:00)
@@ -4934,15 +4922,12 @@ class _ExactTime(_BasicConversions):
             return NotImplemented
 
 
+# Common behavior for all types that know an exact time and
+# corresponding local date and time-of-day.
+# - :class:`ZonedDateTime`
+# - :class:`OffsetDateTime`
+# (The class itself it not for public use.)
 class _ExactAndLocalTime(_LocalTime, _ExactTime):
-    """Common behavior for all types that know an exact time and
-    corresponding local date and time-of-day.
-
-    - :class:`ZonedDateTime`
-    - :class:`OffsetDateTime`
-
-    (The class itself it not for public use.)
-    """
 
     __slots__ = ()
 
@@ -4959,9 +4944,6 @@ class _ExactAndLocalTime(_LocalTime, _ExactTime):
     def to_instant(self) -> Instant:
         """Get the underlying instant in time
 
-        Example
-        -------
-
         >>> d = ZonedDateTime(2020, 8, 15, hour=23, tz="Europe/Amsterdam")
         >>> d.to_instant()
         Instant("2020-08-15 21:00:00Z")
@@ -4971,12 +4953,11 @@ class _ExactAndLocalTime(_LocalTime, _ExactTime):
         )
 
     def to_plain(self) -> PlainDateTime:
-        """Get the underlying date and time (without offset or timezone)
+        """Get the underlying date and time without offset or timezone
 
         As an inverse, :class:`PlainDateTime` has methods
         :meth:`~PlainDateTime.assume_utc`, :meth:`~PlainDateTime.assume_fixed_offset`
-        , :meth:`~PlainDateTime.assume_tz`, and :meth:`~PlainDateTime.assume_system_tz`
-        which may require additional arguments.
+        , :meth:`~PlainDateTime.assume_tz`, and :meth:`~PlainDateTime.assume_system_tz`.
         """
         return PlainDateTime._from_py_unchecked(
             self._py_dt.replace(tzinfo=None),
@@ -4991,8 +4972,6 @@ class Instant(_ExactTime):
     This class is great for representing a specific point in time independent
     of location. It maps 1:1 to UTC or a UNIX timestamp.
 
-    Example
-    -------
     >>> from whenever import Instant
     >>> py311_release = Instant.from_utc(2022, 10, 24, hour=17)
     Instant("2022-10-24 17:00:00Z")
@@ -5001,6 +4980,12 @@ class Instant(_ExactTime):
     """
 
     __slots__ = ()
+
+    MIN: ClassVar[Instant]
+    """The minimum representable instant."""
+
+    MAX: ClassVar[Instant]
+    """The maximum representable instant."""
 
     def __init__(self) -> None:  # pragma: no cover
         raise TypeError(
@@ -5028,15 +5013,13 @@ class Instant(_ExactTime):
             nanosecond,
         )
 
-    MIN: ClassVar[Instant]
-    """The minimum representable instant."""
-
-    MAX: ClassVar[Instant]
-    """The maximum representable instant."""
-
     @classmethod
     def now(cls) -> Instant:
-        """Create an Instant from the current time."""
+        """Create an Instant from the current time.
+
+        >>> Instant.now()
+        Instant("2024-06-15 12:34:56.789123456Z")
+        """
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(_fromtimestamp(secs, _UTC), nanos)
 
@@ -5077,8 +5060,7 @@ class Instant(_ExactTime):
 
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> Instant:
-        """Create an Instant from a standard library ``datetime`` object.
-        The datetime must be aware.
+        """Create an ``Instant`` from an *aware* ``datetime`` object.
 
         The inverse of the ``py_datetime()`` method.
         """
@@ -5092,6 +5074,18 @@ class Instant(_ExactTime):
             _strip_subclasses(as_utc.replace(microsecond=0)),
             as_utc.microsecond * 1_000,
         )
+
+    @classmethod
+    def parse_iso(cls, s: str, /) -> Instant:
+        """Parse an ISO 8601 string. Supports basic and extended formats,
+        but not week dates or ordinal dates.
+
+        See the `docs on ISO8601 support <https://whenever.readthedocs.io/en/latest/overview.html#iso-8601>`__ for more information.
+
+        The inverse of the ``format_iso()`` method.
+        """
+        dt, nanos = offset_dt_from_iso(s)
+        return cls._from_py_unchecked(dt.astimezone(_UTC), nanos)
 
     def format_iso(
         self,
@@ -5114,31 +5108,17 @@ class Instant(_ExactTime):
         """
         return _format_dt(self._py_dt, self._nanos, "Z", unit, sep, basic)
 
-    @classmethod
-    def parse_iso(cls, s: str, /) -> Instant:
-        """Parse an ISO 8601 string. Supports basic and extended formats,
-        but not week dates or ordinal dates.
-
-        See the `docs on ISO8601 support <https://whenever.readthedocs.io/en/latest/overview.html#iso-8601>`_ for more information.
-
-        The inverse of the ``format_iso()`` method.
-        """
-        dt, nanos = offset_dt_from_iso(s)
-        return cls._from_py_unchecked(dt.astimezone(_UTC), nanos)
-
     def format_rfc2822(self) -> str:
         """Format as an RFC 2822 string.
-
         The inverse of the ``parse_rfc2822()`` method.
+
+        >>> Instant.from_utc(2020, 8, 8, hour=23, minute=12).format_rfc2822()
+        "Sat, 08 Aug 2020 23:12:00 GMT"
 
         Note
         ----
         The output is also compatible with the (stricter) RFC 9110 standard.
 
-        Example
-        -------
-        >>> Instant.from_utc(2020, 8, 8, hour=23, minute=12).format_rfc2822()
-        "Sat, 08 Aug 2020 23:12:00 GMT"
         """
         return (
             f"{WEEKDAY_TO_RFC2822[self._py_dt.weekday()]}, "
@@ -5153,8 +5133,6 @@ class Instant(_ExactTime):
 
         The inverse of the ``format_rfc2822()`` method.
 
-        Example
-        -------
         >>> Instant.parse_rfc2822("Sat, 15 Aug 2020 23:12:00 GMT")
         Instant("2020-08-15 23:12:00Z")
 
@@ -5184,7 +5162,7 @@ class Instant(_ExactTime):
     ) -> Instant:
         """Add a time amount to this instant.
 
-        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`_ for more information.
+        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`__ for more information.
         """
         return self + TimeDelta(
             hours=hours,
@@ -5207,7 +5185,7 @@ class Instant(_ExactTime):
     ) -> Instant:
         """Subtract a time amount from this instant.
 
-        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`_ for more information.
+        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`__ for more information.
         """
         return self.add(
             hours=-hours,
@@ -5234,8 +5212,6 @@ class Instant(_ExactTime):
         """Round the instant to the specified unit and increment.
         Various rounding modes are available.
 
-        Examples
-        --------
         >>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round("minute", 15)
         Instant("2020-01-01 12:45:00Z")
         >>> Instant.from_utc(2020, 1, 1, 8, 9, 13).round("second", 5, mode="floor")
@@ -5262,7 +5238,7 @@ class Instant(_ExactTime):
     def __add__(self, delta: TimeDelta) -> Instant:
         """Add a time amount to this datetime.
 
-        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`_ for more information.
+        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`__ for more information.
         """
         if isinstance(delta, TimeDelta):
             delta_secs, nanos = divmod(
@@ -5276,21 +5252,21 @@ class Instant(_ExactTime):
         return NotImplemented
 
     @overload
-    def __sub__(self, other: _ExactTime) -> TimeDelta: ...
+    def __sub__(self, other: _ExactTimeAlias) -> TimeDelta: ...
 
     @overload
     def __sub__(self, other: TimeDelta) -> Instant: ...
 
-    def __sub__(self, other: TimeDelta | _ExactTime) -> Instant | TimeDelta:
+    def __sub__(
+        self, other: TimeDelta | _ExactTimeAlias
+    ) -> Instant | TimeDelta:
         """Subtract another exact time or timedelta
 
         Subtraction of deltas happens in the same way as the :meth:`subtract` method.
-        Subtraction of instants happens the same way as the :meth:`~_ExactTime.difference` method.
+        Subtraction of instants happens the same way as the :meth:`difference` method.
 
-        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`_ for more information.
+        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`__ for more information.
 
-        Example
-        -------
         >>> d = Instant.from_utc(2020, 8, 15, hour=23, minute=12)
         >>> d - hours(24) - seconds(5)
         Instant("2020-08-14 23:11:55Z")
@@ -5338,8 +5314,6 @@ class OffsetDateTime(_ExactAndLocalTime):
     Useful for representing a "static" local date and time-of-day
     at a specific location.
 
-    Example
-    -------
     >>> # Midnight in Salt Lake City
     >>> OffsetDateTime(2023, 4, 21, offset=-6)
     OffsetDateTime("2023-04-21 00:00:00-06:00")
@@ -5351,6 +5325,11 @@ class OffsetDateTime(_ExactAndLocalTime):
     and account for DST, convert to a ``ZonedDateTime`` first,
     This class knows when the offset changes.
     """
+
+    # Stub to make sphinx happy, until we implement this method.
+    def __add__(self, other: TimeDelta) -> OffsetDateTime:
+        """TODO"""
+        raise NotImplementedError()
 
     __slots__ = ()
 
@@ -5395,7 +5374,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         ``ZonedDateTime.now(<tz_id>)`` if you know the timezone.
         Or, if you want to ignore DST and accept potentially incorrect offsets,
         pass ``ignore_dst=True`` to this method. For more information, see
-        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
+        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__.
         """
         if ignore_dst is not True:
             raise ImplicitlyIgnoringDST(OFFSET_NOW_DST_MSG)
@@ -5438,8 +5417,6 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         The inverse of the ``format_iso()`` method.
 
-        Example
-        -------
         >>> OffsetDateTime.parse_iso("2020-08-15T23:12:00+02:00")
         OffsetDateTime("2020-08-15 23:12:00+02:00")
         """
@@ -5462,7 +5439,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         or ``ZonedDateTime.from_timestamp()`` if you know the timezone.
         Or, if you want to ignore DST and accept potentially incorrect offsets,
         pass ``ignore_dst=True`` to this method. For more information, see
-        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
+        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__.
         """
         if ignore_dst is not True:
             raise ImplicitlyIgnoringDST(TIMESTAMP_DST_MSG)
@@ -5489,7 +5466,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         or ``ZonedDateTime.from_timestamp_millis()`` if you know the timezone.
         Or, if you want to ignore DST and accept potentially incorrect offsets,
         pass ``ignore_dst=True`` to this method. For more information, see
-        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
+        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__.
         """
         if ignore_dst is not True:
             raise ImplicitlyIgnoringDST(TIMESTAMP_DST_MSG)
@@ -5517,7 +5494,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         or ``ZonedDateTime.from_timestamp_nanos()`` if you know the timezone.
         Or, if you want to ignore DST and accept potentially incorrect offsets,
         pass ``ignore_dst=True`` to this method. For more information, see
-        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
+        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__.
         """
         if ignore_dst is not True:
             raise ImplicitlyIgnoringDST(TIMESTAMP_DST_MSG)
@@ -5615,7 +5592,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
 
-    def __sub__(self, other: _ExactTime) -> TimeDelta:
+    def __sub__(self, other: _ExactTimeAlias) -> TimeDelta:
         """Calculate the duration relative to another exact time."""
         if isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
             raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
@@ -5625,8 +5602,6 @@ class OffsetDateTime(_ExactAndLocalTime):
     def parse_strptime(cls, s: str, /, *, format: str) -> OffsetDateTime:
         """Parse a datetime with offset using the standard library ``strptime()`` method.
 
-        Example
-        -------
         >>> OffsetDateTime.parse_strptime("2020-08-15+0200", format="%Y-%m-%d%z")
         OffsetDateTime("2020-08-15 00:00:00+02:00")
 
@@ -5660,8 +5635,6 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         The inverse of the ``parse_rfc2822()`` method.
 
-        Example
-        -------
         >>> OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(2)).format_rfc2822()
         "Sat, 15 Aug 2020 23:12:00 +0200"
         """
@@ -5684,8 +5657,6 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         The inverse of the ``format_rfc2822()`` method.
 
-        Example
-        -------
         >>> OffsetDateTime.parse_rfc2822("Sat, 15 Aug 2020 23:12:00 +0200")
         OffsetDateTime("2020-08-15 23:12:00+02:00")
         >>> # also valid:
@@ -5716,7 +5687,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         pass ``ignore_dst=True`` to this method.
 
         For more information, see
-        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
+        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__.
         """
         return self._shift(1, *args, **kwargs)
 
@@ -5734,7 +5705,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         pass ``ignore_dst=True`` to this method.
 
         For more information, see
-        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
+        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__.
         """
         return self._shift(-1, *args, **kwargs)
 
@@ -5824,8 +5795,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         """Round the datetime to the specified unit and increment.
         Different rounding modes are available.
 
-        Examples
-        --------
         >>> d = OffsetDateTime(2020, 8, 15, 23, 24, 18, offset=+4)
         >>> d.round("day")
         OffsetDateTime("2020-08-16 00:00:00[+04:00]")
@@ -5884,8 +5853,6 @@ class ZonedDateTime(_ExactAndLocalTime):
     """A datetime associated with a timezone in the IANA database.
     Useful for representing the exact time at a specific location.
 
-    Example
-    -------
     >>> ZonedDateTime(2024, 12, 8, hour=11, tz="Europe/Paris")
     ZonedDateTime("2024-12-08 11:00:00+01:00[Europe/Paris]")
     >>> # Explicitly resolve ambiguities during DST transitions
@@ -5950,8 +5917,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         except it also works for system timezones whose corresponding
         IANA timezone ID is unknown.
 
-        Example
-        -------
         >>> ZonedDateTime.from_system_tz(2020, 8, 15, hour=23, minute=12)
         ZonedDateTime("2020-08-15 23:12:00+02:00[Europe/Berlin]")
         """
@@ -6014,8 +5979,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         the ``sep`` parameter to control the separator,
         and the ``basic`` parameter to use the basic ISO format instead of the extended one.
 
-        Example
-        -------
         >>> ZonedDateTime(2020, 8, 15, hour=23, minute=12, tz="Europe/London")
         ZonedDateTime("2020-08-15 23:12:00+01:00[Europe/London]")
 
@@ -6052,8 +6015,6 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         The inverse of the ``format_iso()`` method.
 
-        Example
-        -------
         >>> ZonedDateTime.parse_iso("2020-08-15T23:12:00+01:00[Europe/London]")
         ZonedDateTime("2020-08-15 23:12:00+01:00[Europe/London]")
 
@@ -6186,7 +6147,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         By default, if the tz remains the same, the offset is used to disambiguate
         if possible, falling back to the "compatible" strategy if needed.
 
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`__
         for more information.
         """
 
@@ -6227,7 +6188,7 @@ class ZonedDateTime(_ExactAndLocalTime):
     def __add__(self, delta: Delta) -> ZonedDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
 
-        See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
+        See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`__
         for more information.
         """
         if isinstance(delta, TimeDelta):
@@ -6250,15 +6211,17 @@ class ZonedDateTime(_ExactAndLocalTime):
         return NotImplemented
 
     @overload
-    def __sub__(self, other: _ExactTime) -> TimeDelta: ...
+    def __sub__(self, other: _ExactTimeAlias) -> TimeDelta: ...
 
     @overload
     def __sub__(self, other: TimeDelta) -> ZonedDateTime: ...
 
-    def __sub__(self, other: TimeDelta | _ExactTime) -> _ExactTime | TimeDelta:
+    def __sub__(
+        self, other: TimeDelta | _ExactTimeAlias
+    ) -> _ExactTimeAlias | TimeDelta:
         """Subtract another datetime or duration.
 
-        See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
+        See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`__
         for more information.
         """
         if isinstance(other, _ExactTime):
@@ -6278,7 +6241,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         Therefore, when adding calendar units, it's recommended to
         specify how to handle such a situation using the ``disambiguate`` argument.
 
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`__
         for more information.
         """
         return self._shift(1, *args, **kwargs)
@@ -6294,7 +6257,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         Therefore, when adding calendar units, it's recommended to
         specify how to handle such a situation using the ``disambiguate`` argument.
 
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`_
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`__
         for more information.
         """
         return self._shift(-1, *args, **kwargs)
@@ -6362,8 +6325,6 @@ class ZonedDateTime(_ExactAndLocalTime):
     def is_ambiguous(self) -> bool:
         """Whether the date and time-of-day are ambiguous, e.g. due to a DST transition.
 
-        Example
-        -------
         >>> ZonedDateTime(2020, 8, 15, 23, tz="Europe/London").is_ambiguous()
         False
         >>> ZonedDateTime(2023, 10, 29, 2, 15, tz="Europe/Amsterdam").is_ambiguous()
@@ -6382,8 +6343,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         """The duration between the start of the current day and the next.
         This is usually 24 hours, but may be different due to timezone transitions.
 
-        Example
-        -------
         >>> ZonedDateTime(2020, 8, 15, tz="Europe/London").day_length()
         TimeDelta(24:00:00)
         >>> ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam").day_length()
@@ -6435,8 +6394,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         """Round the datetime to the specified unit and increment.
         Different rounding modes are available.
 
-        Examples
-        --------
         >>> d = ZonedDateTime(2020, 8, 15, 23, 24, 18, tz="Europe/Paris")
         >>> d.round("day")
         ZonedDateTime("2020-08-16 00:00:00+02:00[Europe/Paris]")
@@ -6625,8 +6582,6 @@ class PlainDateTime(_LocalTime):
 
         The inverse of the ``format_iso()`` method.
 
-        Example
-        -------
         >>> PlainDateTime.parse_iso("2020-08-15T23:12:00")
         PlainDateTime("2020-08-15 23:12:00")
         """
@@ -6675,13 +6630,11 @@ class PlainDateTime(_LocalTime):
         To comply with the Python data model, this method can't
         raise a :exc:`TypeError` when comparing with other types.
         Although it seems to be the sensible response, it would result in
-        `surprising behavior <https://stackoverflow.com/a/33417512>`_
+        `surprising behavior <https://stackoverflow.com/a/33417512>`__
         when using values as dictionary keys.
 
         Use mypy's ``--strict-equality`` flag to detect and prevent this.
 
-        Example
-        -------
         >>> PlainDateTime(2020, 8, 15, 23) == PlainDateTime(2020, 8, 15, 23)
         True
         >>> PlainDateTime(2020, 8, 15, 23, 1) == PlainDateTime(2020, 8, 15, 23)
@@ -6760,7 +6713,7 @@ class PlainDateTime(_LocalTime):
         Or, if you don't know the timezone and accept potentially incorrect results
         during DST transitions, pass ``ignore_dst=True``.
         For more information,
-        see `the docs <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_.
+        see `the docs <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__.
         """
         if ignore_dst is not True:
             raise ImplicitlyIgnoringDST(DIFF_LOCAL_MSG)
@@ -6783,7 +6736,7 @@ class PlainDateTime(_LocalTime):
         Or, if you don't know the timezone and accept potentially incorrect results
         during DST transitions, pass ``ignore_dst=True``.
 
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__
         for more information.
         """
         return self._shift(1, *args, **kwargs)
@@ -6800,7 +6753,7 @@ class PlainDateTime(_LocalTime):
         Or, if you don't know the timezone and accept potentially incorrect results
         during DST transitions, pass ``ignore_dst=True``.
 
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`_
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__
         for more information.
         """
         return self._shift(-1, *args, **kwargs)
@@ -6876,8 +6829,6 @@ class PlainDateTime(_LocalTime):
     def parse_strptime(cls, s: str, /, *, format: str) -> PlainDateTime:
         """Parse a plain datetime using the standard library ``strptime()`` method.
 
-        Example
-        -------
         >>> PlainDateTime.parse_strptime("2020-08-15", format="%d/%m/%Y_%H:%M")
         PlainDateTime("2020-08-15 00:00:00")
 
@@ -6906,8 +6857,6 @@ class PlainDateTime(_LocalTime):
     def assume_utc(self) -> Instant:
         """Assume the datetime is in UTC, creating an ``Instant``.
 
-        Example
-        -------
         >>> PlainDateTime(2020, 8, 15, 23, 12).assume_utc()
         Instant("2020-08-15 23:12:00Z")
         """
@@ -6920,8 +6869,6 @@ class PlainDateTime(_LocalTime):
     ) -> OffsetDateTime:
         """Assume the datetime has the given offset, creating an ``OffsetDateTime``.
 
-        Example
-        -------
         >>> PlainDateTime(2020, 8, 15, 23, 12).assume_fixed_offset(+2)
         OffsetDateTime("2020-08-15 23:12:00+02:00")
         """
@@ -6940,18 +6887,15 @@ class PlainDateTime(_LocalTime):
         The local time may be ambiguous in the given timezone
         (e.g. during a DST transition). You can explicitly
         specify how to handle such a situation using the ``disambiguate`` argument.
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`__
         for more information.
 
-        Example
-        -------
         >>> d = PlainDateTime(2020, 8, 15, 23, 12)
         >>> d.assume_tz("Europe/Amsterdam", disambiguate="raise")
         ZonedDateTime("2020-08-15 23:12:00+02:00[Europe/Amsterdam]")
         """
-        _tz = get_tz(tz)
         return ZonedDateTime._from_py_unchecked(
-            resolve_ambiguity(self._py_dt, _tz, disambiguate),
+            resolve_ambiguity(self._py_dt, _tz := get_tz(tz), disambiguate),
             self._nanos,
             _tz,
         )
@@ -6967,19 +6911,20 @@ class PlainDateTime(_LocalTime):
         The local time may be ambiguous in the system timezone
         (e.g. during a DST transition). You can explicitly
         specify how to handle such a situation using the ``disambiguate`` argument.
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_
+        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`__
         for more information.
 
-        Example
-        -------
         >>> d = PlainDateTime(2020, 8, 15, 23, 12)
         >>> # assuming system timezone is America/New_York
         >>> d.assume_system_tz(disambiguate="raise")
         ZonedDateTime("2020-08-15 23:12:00-04:00[America/New_York]")
         """
-        tz = get_system_tz()
         return ZonedDateTime._from_py_unchecked(
-            resolve_ambiguity(self._py_dt, tz, disambiguate), self._nanos, tz
+            resolve_ambiguity(
+                self._py_dt, tz := get_system_tz(), disambiguate
+            ),
+            self._nanos,
+            tz,
         )
 
     def round(
@@ -6999,8 +6944,6 @@ class PlainDateTime(_LocalTime):
         """Round the datetime to the specified unit and increment.
         Different rounding modes are available.
 
-        Examples
-        --------
         >>> d = PlainDateTime(2020, 8, 15, 23, 24, 18)
         >>> d.round("day")
         PlainDateTime("2020-08-16 00:00:00")
@@ -7054,8 +6997,8 @@ class DaysAreNotAlways24HoursWarning(UserWarning):
     """An operation assumed days are always 24 hours long"""
 
 
-# A custom warnings class to prevent silent deprecation warnings in user code
-# https://sethmlarson.dev/deprecations-via-warnings-dont-work-for-python-libraries
+# A custom warnings class to prevent silent deprecation warnings in user code.
+# See https://sethmlarson.dev/deprecations-via-warnings-dont-work-for-python-libraries
 class WheneverDeprecationWarning(UserWarning):
     """A deprecated feature of the Whenever library was used."""
 
@@ -7320,10 +7263,13 @@ PlainDateTime.MAX = PlainDateTime._from_py_unchecked(
 )
 
 
-# TODO: mark deprecated
 def years(i: int, /) -> DateDelta:
     """Create a :class:`~DateDelta` with the given number of years.
     ``years(1) == DateDelta(years=1)``
+
+    .. deprecated:: 0.10.0
+
+        Use :class:`~whenever.ItemizedDateDelta` instead
     """
     return DateDelta(years=i)
 
@@ -7331,6 +7277,10 @@ def years(i: int, /) -> DateDelta:
 def months(i: int, /) -> DateDelta:
     """Create a :class:`~DateDelta` with the given number of months.
     ``months(1) == DateDelta(months=1)``
+
+    .. deprecated:: 0.10.0
+
+        Use :class:`~whenever.ItemizedDateDelta` instead
     """
     return DateDelta(months=i)
 
@@ -7338,6 +7288,10 @@ def months(i: int, /) -> DateDelta:
 def weeks(i: int, /) -> DateDelta:
     """Create a :class:`~DateDelta` with the given number of weeks.
     ``weeks(1) == DateDelta(weeks=1)``
+
+    .. deprecated:: 0.10.0
+
+        Use :class:`~whenever.ItemizedDateDelta` instead
     """
     return DateDelta(weeks=i)
 
@@ -7345,6 +7299,10 @@ def weeks(i: int, /) -> DateDelta:
 def days(i: int, /) -> DateDelta:
     """Create a :class:`~DateDelta` with the given number of days.
     ``days(1) == DateDelta(days=1)``
+
+    .. deprecated:: 0.10.0
+
+        Use :class:`~whenever.ItemizedDateDelta` instead
     """
     return DateDelta(days=i)
 
@@ -7370,7 +7328,7 @@ def seconds(i: float, /) -> TimeDelta:
     return TimeDelta(seconds=i)
 
 
-def milliseconds(i: int, /) -> TimeDelta:
+def milliseconds(i: float, /) -> TimeDelta:
     """Create a :class:`TimeDelta` with the given number of milliseconds.
     ``milliseconds(1) == TimeDelta(milliseconds=1)``
     """
@@ -7414,17 +7372,31 @@ def _unpatch_time() -> None:
     from time import time_ns
 
 
+# This alias exists because we don't want to expose the _ExactTime abstract class
+# in the public API, but we do want to use it in type annotations.
+_ExactTimeAlias = Union[Instant, OffsetDateTime, ZonedDateTime]
+
+
 # We expose the public members in the root of the module.
 # For clarity, we remove the "_pywhenever" part from the names,
 # since this is an implementation detail.
-for name in __all__ + "_LocalTime _ExactTime _ExactAndLocalTime".split():
-    member = locals()[name]
-    if getattr(member, "__module__", None) == __name__:  # pragma: no branch
-        member.__module__ = "whenever"
+# This is important for usability, as users would otherwise
+# be directed to an internal module they shouldn't use directly,
+# also because these internal modules aren't available in the Rust version!
+# This does mess up sphinx autodoc's introspection a bit, so we fix that below.
+# see https://github.com/sphinx-doc/sphinx/issues/3673
+if not SPHINXBUILD:
+    for name in __all__ + "_LocalTime _ExactTime _ExactAndLocalTime".split():
+        member = locals()[name]
+        if (
+            getattr(member, "__module__", None) == __name__
+        ):  # pragma: no branch
+            member.__module__ = "whenever"
 
-# clear up loop variables so they don't leak into the namespace
-del name
-del member
+    # clear up loop variables so they don't leak into the namespace
+    del name
+    del member
+
 
 for _unpkl in (
     _unpkl_date,

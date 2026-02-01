@@ -186,6 +186,10 @@ class TestEquality:
         with pytest.raises(TypeError):
             d.exact_eq(zoned_same)  # type: ignore[arg-type]
 
+        # important: check typing errors in case of strict-comparison mode
+        d2 = Instant.from_utc(2020, 8, 15)
+        assert d2 == d2.to_fixed_offset(+4)  # type: ignore[comparison-overlap]
+
     def test_offset(self):
         d: Instant | OffsetDateTime = Instant.from_utc(2023, 4, 5, 4)
         offset_same = OffsetDateTime(2023, 4, 5, 6, offset=+2)

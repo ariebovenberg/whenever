@@ -3,7 +3,6 @@ import re
 from copy import copy, deepcopy
 from datetime import date as py_date, datetime as py_datetime
 from itertools import chain, product
-from warnings import catch_warnings
 
 import pytest
 

@@ -378,6 +378,10 @@ def test_equality():
     assert d != 42  # type: ignore[comparison-overlap]
     assert not d == 42  # type: ignore[comparison-overlap]
 
+    # no mixing with aware types:
+    assert d != d.assume_utc()  # type: ignore[comparison-overlap]
+    assert d != d.assume_fixed_offset(+3)  # type: ignore[comparison-overlap]
+
     # Ambiguity in system timezone doesn't affect equality
     with system_tz_ams():
         assert PlainDateTime(

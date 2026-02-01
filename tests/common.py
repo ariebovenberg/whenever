@@ -1,14 +1,11 @@
 import os
-import warnings
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal
 from unittest.mock import patch
 
 from whenever import (
-    DateDelta,
     PlainDateTime,
-    WheneverDeprecationWarning,
     ZonedDateTime,
     reset_system_tz,
 )

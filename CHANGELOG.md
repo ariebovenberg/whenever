@@ -1,4 +1,4 @@
-# 🚀 Changelog
+# Changelog
 
 <<<<<<< HEAD
 ## 0.9.5 (2026-01-11)

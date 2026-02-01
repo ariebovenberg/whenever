@@ -2,22 +2,44 @@
    :parser: myst_parser.sphinx_
 
 
-Contents
-========
+.. toctree::
+   :maxdepth: 2
+   :caption: The basics
+   :hidden:
+
+   fundamentals/index
+   stdlib-pitfalls/index
+   why-not-pendulum
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Overview
+   :hidden:
+
+   guide/index
+   examples
+   faq
 
 .. toctree::
    :maxdepth: 1
+   :caption: API Reference
+   :hidden:
 
-   self
-   examples.rst
-   overview.rst
-   deltas.rst
-   faq.rst
-   api.rst
-   changelog.rst
+   reference/iso8601.rst
+   reference/datetime.rst
+   reference/partial-types
+   reference/deltas.rst
+   reference/misc.rst
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Development
+   :hidden:
+
+   changelog
+   contributing
 
 Indices and tables
 ==================
 
 * :ref:`genindex`
-* :ref:`modindex`
