@@ -1028,6 +1028,10 @@ class TestEquality:
         assert hash(d) == hash(d.to_fixed_offset())
         assert d != d.to_fixed_offset().replace(hour=10, ignore_dst=True)
 
+        # important: check typing errors in case of strict-comparison mode
+        d2 = create_zdt(2020, 8, 15, 12, tz=tz)
+        assert d2 == d2.to_instant()  # type: ignore[comparison-overlap]
+
     @pytest.mark.parametrize(
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],

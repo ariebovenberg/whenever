@@ -6,6 +6,7 @@ try:  # pragma: no cover
     from ._whenever import (
         _clear_tz_cache as _clear_tz_cache,
         _clear_tz_cache_by_keys as _clear_tz_cache_by_keys,
+        _ignore_days_not_always_24h_warning as _ignore_days_not_always_24h_warning,
         _patch_time_frozen as _patch_time_frozen,
         _patch_time_keep_ticking as _patch_time_keep_ticking,
         _set_tzpath as _set_tzpath,

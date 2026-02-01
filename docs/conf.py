@@ -25,7 +25,6 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx_copybutton",
-    "enum_tools.autoenum",
     "myst_parser",
 ]
 templates_path = ["_templates"]
@@ -34,14 +33,21 @@ source_suffix = {
     ".rst": "restructuredtext",
 }
 html_static_path = ["_static"]
+html_title = "Whenever"
 
 master_doc = "index"
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 myst_heading_anchors = 2
+myst_enable_extensions = [
+    "colon_fence",
+    "smartquotes",
+]
 
 # -- Options for HTML output ----------------------------------------------
 
-autodoc_member_order = "bysource"
+autodoc_default_options = {
+    "exclude-members": "__weakref__, __init__, __init_subclass__, __reduce__, __hash__, __repr__",
+}
 html_theme = "furo"
 highlight_language = "python3"
 pygments_style = "default"
@@ -50,3 +56,8 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
 }
 toc_object_entries_show_parents = "hide"
+maximum_signature_line_length = 95
+# Awaiting https://github.com/sphinx-doc/sphinx/issues/14003
+# autodoc_type_aliases = {
+#     "_CalendarUnitPlural": "_CalendarUnitPlural",
+# }
