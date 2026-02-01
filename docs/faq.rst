@@ -1,5 +1,5 @@
-❓ FAQ
-======
+FAQ
+===
 
 Does performance really matter for a datetime library?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

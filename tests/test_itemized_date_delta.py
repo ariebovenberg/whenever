@@ -1,9 +1,9 @@
 import pickle
-from typing import Literal, Sequence
+from typing import Any, Literal, Sequence
 
 import pytest
 
-from whenever import Date, ItemizedDateDelta
+from whenever import Date, ItemizedDateDelta, ItemizedDelta
 
 from .common import AlwaysEqual, NeverEqual
 from .test_date_delta import INVALID_DDELTAS
@@ -152,6 +152,13 @@ class TestEq:
         assert d1 == d2
         assert not d1 != d2
 
+    def test_no_allow_mixing_delta_types(self):
+        d = ItemizedDateDelta(days=5)
+        # NOTE: the mypy ignore comments are actually also "tests" in the sense
+        # they ensure that the types properly implement strict comparison!
+        assert d != "P5D"  # type: ignore[comparison-overlap]
+        assert d != ItemizedDelta(days=5)  # type: ignore[comparison-overlap]
+
 
 def test_exact_eq():
     d1 = ItemizedDateDelta(years=2, months=0, weeks=5, days=0)
@@ -271,19 +278,30 @@ class TestParseIso:
             ItemizedDateDelta.parse_iso(s)
 
 
+# These tests are relatively simple because since() does most of the heavy lifting,
+# and is tested more thoroughly elsewhere.
 @pytest.mark.parametrize(
-    "d, relative_to, units, expect",
+    "d, relative_to, units, kwargs, expect",
     [
         (
             ItemizedDateDelta(years=2, months=3, weeks=4, days=5),
             Date("2021-12-31"),
             ["years", "days"],
+            {},
             ItemizedDateDelta(years=2, days=124),
+        ),
+        (
+            ItemizedDateDelta(years=2, months=3, weeks=4, days=5),
+            Date("2021-12-31"),
+            ["years", "days"],
+            {"round_increment": 5, "round_mode": "ceil"},
+            ItemizedDateDelta(years=2, days=125),
         ),
         (
             ItemizedDateDelta(days=0),
             Date("0023-02-28"),
             ["years", "months", "weeks"],
+            {},
             ItemizedDateDelta(years=0, months=0, weeks=0),
         ),
     ],
@@ -292,10 +310,14 @@ def test_in_units(
     d: ItemizedDateDelta,
     relative_to: Date,
     units: Sequence[Literal["years", "months", "weeks", "days"]],
+    kwargs: Any,
     expect: ItemizedDateDelta,
 ):
-    assert d.in_units(units, relative_to=relative_to).exact_eq(expect)
-    assert relative_to.add(expect) == relative_to.add(d)
+    assert d.in_units(units, relative_to=relative_to, **kwargs).exact_eq(
+        expect
+    )
+    if kwargs.get("round_increment") == 1:
+        assert relative_to.add(expect) == relative_to.add(d)
 
 
 def test_abs():

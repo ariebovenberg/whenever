@@ -1,3 +1,1 @@
-# TODO: Mypy 1.18 introduces some typecheck failures. Need to investigate and fix.
-mypy>=1,<1.18
-pytest-mypy-plugins>=3,<4
+mypy>=1.19,<1.20

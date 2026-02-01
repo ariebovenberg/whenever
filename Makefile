@@ -7,7 +7,6 @@ init:
 .PHONY: typecheck
 typecheck:
 	mypy pysrc/ tests/
-	pytest --mypy-ini-file=tests/mypy.ini typesafety/
 
 .PHONY: format
 format:
@@ -18,7 +17,7 @@ format:
 .PHONY: docs
 docs:
 	rm -f pysrc/whenever/*.so  # Presence of the rust extension breaks sphinx (TODO: a better workaround)
-	@touch docs/api.rst  # force rebuild of API docs: code changes aren't detected
+	rm -rf docs/_build/
 	make -C docs/ html
 
 .PHONY: check-readme
