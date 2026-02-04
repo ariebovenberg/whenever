@@ -447,6 +447,32 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
             "half_even",
         ] = "half_even",
     ) -> Self: ...
+    @overload
+    def add(self, other: TimeDelta, /) -> Self: ...
+    @overload
+    def add(
+        self,
+        *,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
+    ) -> Self: ...
+    @overload
+    def subtract(self, other: TimeDelta, /) -> Self: ...
+    @overload
+    def subtract(
+        self,
+        *,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
+    ) -> Self: ...
     def __add__(self, other: Self, /) -> Self: ...
     def __sub__(self, other: Self, /) -> Self: ...
     @override
