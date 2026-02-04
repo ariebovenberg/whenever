@@ -674,35 +674,64 @@ class TestParseIso:
             TimeDelta.parse_iso(s)
 
 
-def test_addition():
-    d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
-    assert d + TimeDelta() == d
-    assert d + TimeDelta(hours=1) == TimeDelta(
-        hours=2, minutes=2, seconds=3, microseconds=4
+class TestAddition:
+
+    @pytest.mark.parametrize(
+        "kwargs, expected",
+        [
+            (
+                {},
+                TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4),
+            ),
+            (
+                dict(minutes=60),
+                TimeDelta(hours=2, minutes=2, seconds=3, microseconds=4),
+            ),
+            (
+                dict(minutes=-120),
+                TimeDelta(hours=-1, minutes=2, seconds=3, microseconds=4),
+            ),
+        ],
     )
-    assert d + TimeDelta(minutes=-1) == TimeDelta(
-        hours=1, minutes=1, seconds=3, microseconds=4
-    )
+    def test_valid(self, kwargs, expected: TimeDelta):
+        d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+        assert d + TimeDelta(**kwargs) == expected
+        assert d.add(**kwargs) == expected
+        assert d.add(TimeDelta(**kwargs)) == expected
 
-    with pytest.raises(TypeError, match="unsupported operand"):
-        d + Ellipsis  # type: ignore[operator]
+        negated_kwargs = {k: -v for k, v in kwargs.items()}
+        assert d - TimeDelta(**negated_kwargs) == expected
+        assert d.subtract(**negated_kwargs) == expected
+        assert d.subtract(TimeDelta(**negated_kwargs)) == expected
 
-    with pytest.raises(TypeError, match="unsupported operand"):
-        Ellipsis + d  # type: ignore[operator]
+    def test_out_of_range(self):
+        d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+        with pytest.raises(ValueError, match="range"):
+            d + TimeDelta(hours=366 * 24 * 10000)
 
+        with pytest.raises(ValueError, match="range"):
+            d.add(hours=366 * 24 * 10000)
 
-def test_subtraction():
-    d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
-    assert d - TimeDelta() == d
-    assert d - TimeDelta(hours=1) == TimeDelta(
-        hours=0, minutes=2, seconds=3, microseconds=4
-    )
-    assert d - TimeDelta(minutes=-1) == TimeDelta(
-        hours=1, minutes=3, seconds=3, microseconds=4
-    )
+        with pytest.raises(ValueError, match="range"):
+            d - TimeDelta(hours=-366 * 24 * 10000)
 
-    with pytest.raises(TypeError, match="unsupported operand"):
-        d - Ellipsis  # type: ignore[operator]
+        with pytest.raises(ValueError, match="range"):
+            d.subtract(hours=-366 * 24 * 10000)
+
+    def test_operator_not_supported(self):
+        d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+
+        with pytest.raises(TypeError, match="unsupported operand"):
+            d + Ellipsis  # type: ignore[operator]
+
+        with pytest.raises(TypeError, match="unsupported operand"):
+            d - Ellipsis  # type: ignore[operator]
+
+        with pytest.raises(TypeError, match="unsupported operand"):
+            Ellipsis + d  # type: ignore[operator]
+
+        with pytest.raises(TypeError, match="unsupported operand"):
+            Ellipsis - d  # type: ignore[operator]
 
 
 def test_multiply():

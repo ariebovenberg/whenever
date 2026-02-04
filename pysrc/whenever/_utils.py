@@ -72,9 +72,9 @@ class _TimePatch:
     # NOTE: permissively typechecked, but that's OK for a testing utility
     def shift(self, *args: Any, **kwargs: Any) -> None:
         if self._keep_ticking:
-            self._pin = new = (
-                self._pin + (Instant.now() - self._pin)  # type: ignore[operator]
-            ).add(*args, **kwargs)
+            self._pin = new = (self._pin + (Instant.now() - self._pin)).add(
+                *args, **kwargs
+            )
             _patch_time_keep_ticking(
                 new if isinstance(new, Instant) else new.to_instant()
             )

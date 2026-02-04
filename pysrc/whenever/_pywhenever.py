@@ -287,7 +287,8 @@ class Date(_Base):
     @overload
     def __init__(self, year: int, month: int, day: int) -> None: ...
 
-    def __init__(self, year: int, month: int, day: int) -> None:
+    # Mypy doesn't know we handle the ISO string in the metaclass
+    def __init__(self, year: int, month: int, day: int) -> None:  # type: ignore[misc]
         self._py_date = _date(year, month, day)
 
     @classmethod
@@ -2134,13 +2135,57 @@ class TimeDelta(_Base):
             raise ValueError("Resulting TimeDelta out of range")
         return self._from_nanos_unchecked(rounded_ns)
 
-    def add(self, *args, **kwargs: Any) -> TimeDelta:
-        """Add time to this delta, returning a new delta"""
-        raise NotImplementedError()  # TODO
+    @overload
+    def add(self, other: TimeDelta, /) -> TimeDelta: ...
 
-    def subtract(self, *args, **kwargs: Any) -> TimeDelta:
+    @overload
+    def add(
+        self,
+        *,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
+    ) -> TimeDelta: ...
+
+    def add(self, arg: TimeDelta = _UNSET, **kwargs: Any) -> TimeDelta:
+        """Add time to this delta, returning a new delta"""
+        if kwargs:
+            if arg is not _UNSET:
+                raise TypeError("Cannot mix positional and keyword arguments")
+            return self + TimeDelta(**kwargs)
+        elif arg is not _UNSET:
+            return self + arg
+        else:
+            return self
+
+    @overload
+    def subtract(self, other: TimeDelta, /) -> TimeDelta: ...
+
+    @overload
+    def subtract(
+        self,
+        *,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
+    ) -> TimeDelta: ...
+
+    def subtract(self, arg: TimeDelta = _UNSET, **kwargs: Any) -> TimeDelta:
         """Subtract time from this delta, returning a new delta"""
-        raise NotImplementedError()  # TODO
+        if kwargs:
+            if arg is not _UNSET:
+                raise TypeError("Cannot mix positional and keyword arguments")
+            return self - TimeDelta(**kwargs)
+        elif arg is not _UNSET:
+            return self - arg
+        else:
+            return self
 
     def __add__(self, other: TimeDelta) -> TimeDelta:
         """Add two deltas together

@@ -14,8 +14,19 @@
 
 **Improved**
 
+- A huge revamp and expansion of the documentation. 
+  The structure of API reference and overview pages has been improved,
+  and several new pages have been added, including:
+  - An explanation of the fundamental concepts of time
+  - An overview of Python's datetime pitfalls
 - ``TimeDelta.round()`` now supports larger and irregular values for ``increment``.
   Also, days and weeks can now be used as rounding units (with a warning about 24-hour days).
+
+**Added**
+
+- ``TimeDelta.add()`` and ``TimeDelta.subtract()`` methods. The operators
+  ``+`` and ``-`` we supported already, but these methods make it easier 
+  for simple operations, as well as making the API more consistent with other classes.
 
 ## 0.9.4 (2025-12-14)
 
