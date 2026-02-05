@@ -111,13 +111,8 @@ static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
     #[cfg(Py_3_13)]
     PyModuleDef_Slot {
         slot: Py_mod_multiple_interpreters,
-        // awaiting https://github.com/python/cpython/pull/102995
         value: Py_MOD_PER_INTERPRETER_GIL_SUPPORTED,
     },
-    // FUTURE: set this once we've ensured that:
-    // - tz store is threadsafe
-    // - we safely handle non-threadsafe modules: datetime, zoneinfo
-    // - GC traversal is threadsafe
     #[cfg(Py_3_13)]
     PyModuleDef_Slot {
         slot: Py_mod_gil,

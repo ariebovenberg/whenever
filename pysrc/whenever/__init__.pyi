@@ -453,12 +453,12 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
     def add(
         self,
         *,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
+        hours: float = ...,
+        minutes: float = ...,
+        seconds: float = ...,
+        milliseconds: float = ...,
+        microseconds: float = ...,
+        nanoseconds: int = ...,
     ) -> Self: ...
     @overload
     def subtract(self, other: TimeDelta, /) -> Self: ...
@@ -466,12 +466,12 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
     def subtract(
         self,
         *,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
+        hours: float = ...,
+        minutes: float = ...,
+        seconds: float = ...,
+        milliseconds: float = ...,
+        microseconds: float = ...,
+        nanoseconds: int = ...,
     ) -> Self: ...
     def __add__(self, other: Self, /) -> Self: ...
     def __sub__(self, other: Self, /) -> Self: ...
@@ -647,6 +647,94 @@ class ItemizedDateDelta:
     ) -> tuple[Literal["years", "months", "weeks", "days"], ...]: ...
     def values(self) -> tuple[int, ...]: ...
     def exact_eq(self, other: Self, /) -> bool: ...
+    @overload
+    def add(
+        self,
+        other: ItemizedDateDelta,
+        /,
+        *,
+        relative_to: Date,
+        units: Sequence[Literal["years", "months", "weeks", "days"]] = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDateDelta: ...
+    @overload
+    def add(
+        self,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        relative_to: Date,
+        units: Sequence[Literal["years", "months", "weeks", "days"]] = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDateDelta: ...
+    @overload
+    def subtract(
+        self,
+        other: ItemizedDateDelta,
+        /,
+        *,
+        relative_to: Date,
+        units: Sequence[Literal["years", "months", "weeks", "days"]] = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDateDelta: ...
+    @overload
+    def subtract(
+        self,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        relative_to: Date,
+        units: Sequence[Literal["years", "months", "weeks", "days"]] = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDateDelta: ...
     def __iter__(self) -> Iterable[int]: ...
     def __len__(self) -> int: ...
     def __getitem__(

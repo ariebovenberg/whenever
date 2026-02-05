@@ -9,29 +9,29 @@ Fix issue where not all windows wheels were built and uploaded (#317)
 
 - **Breaking Changes**
 
-  - ``DateTimeDelta`` and ``DateDelta`` have been replaced by
-    ``ItemizedDelta`` and ``ItemizedDateDelta``, respectively.
+  - `DateTimeDelta` and `DateDelta` have been replaced by
+    `ItemizedDelta` and `ItemizedDateDelta`, respectively.
     The helper functions for creating deltas from specific units
-    (``years()``, ``months()``, etc.) have also been deprecated.
+    (`years()`, `months()`, etc.) have also been deprecated.
 
     The big change is that these deltas are now fully un-normalized,
     meaning "90 minutes" and "1 hour and 30 minutes" are distinct values.
 
 **Improved**
 
-- A huge revamp and expansion of the documentation. 
-  The structure of API reference and overview pages has been improved,
-  and several new pages have been added, including:
+- A huge revamp and expansion of the documentation.
+  The structure and navigability of API reference and overview pages
+  has been improved. Several new pages have been added, including:
   - An explanation of the fundamental concepts of time
   - An overview of Python's datetime pitfalls
-- ``TimeDelta.round()`` now supports larger and irregular values for ``increment``.
+- `TimeDelta.round()` now supports larger and irregular values for `increment`.
   Also, days and weeks can now be used as rounding units (with a warning about 24-hour days).
 >>>>>>> 38a613e (Implement basic ItemizedDelta)
 
 **Added**
 
-- ``TimeDelta.add()`` and ``TimeDelta.subtract()`` methods. The operators
-  ``+`` and ``-`` we supported already, but these methods make it easier 
+- `TimeDelta.add()` and `TimeDelta.subtract()` methods. The operators
+  `+` and `-` were supported already, but these methods make it easier
   for simple operations, as well as making the API more consistent with other classes.
 
 ## 0.9.4 (2025-12-14)
@@ -121,8 +121,8 @@ migration away from `SystemDateTime`.
   **Rationale:** This is an necessary compromise for broad system timezone support.
   Other libraries (and Python's own `zoneinfo`) have similar limitations.
 
-- The ``repr()`` of all classes now includes quotes: e.g. `Date("2023-10-05")`.
-  Since all constructors now also accept ISO 8601 strings, the ``repr()`` output
+- The `repr()` of all classes now includes quotes: e.g. `Date("2023-10-05")`.
+  Since all constructors now also accept ISO 8601 strings, the `repr()` output
   can be directly used as input and thus `eval(repr(obj)) == obj`.
 
   **Rationale:** This makes the types easier to use in interactive sessions
@@ -149,15 +149,15 @@ migration away from `SystemDateTime`.
   and toggle the "basic" (compact) or "extended" format.
 
   Also, the formatting is now significantly faster. Up to 5x faster for
-  ``ZonedDateTime``, which is now 10x faster than the standard library's `datetime.isoformat()`.
+  `ZonedDateTime`, which is now 10x faster than the standard library's `datetime.isoformat()`.
 
 **Fixed**
 
 - Resolved a memory leak in the Rust extension where timezone objects that
   were no longer in use were not properly evicted from the cache.
 - Fixed a rare bug in determining the UTC offset for times far in the future
-- Fixed ``PlainDateTime`` constructor raising ``TypeError`` instead of
-  ``ValueError`` when passed invalid parameters.
+- Fixed `PlainDateTime` constructor raising `TypeError` instead of
+  `ValueError` when passed invalid parameters.
 - TZ IDs starting with a `./` are now properly rejected. Other path traversal
   attempts were already handled correctly.
 - More robust timezone refcounting in the Rust extension, preventing crashes
@@ -180,7 +180,7 @@ migration away from `SystemDateTime`.
 
 - Fix some `MIN` and `MAX` constants not documented in the API reference.
 - Add `Time.MIN` alias for `Time.MIDNIGHT` for consistency (#245)
-- Fix bug in rounding of midnight ``ZonedDateTime`` values in "ceil"/day mode (#249)
+- Fix bug in rounding of midnight `ZonedDateTime` values in "ceil"/day mode (#249)
 
 ## 0.8.6 (2025-06-23)
 
@@ -220,10 +220,10 @@ migration away from `SystemDateTime`.
 
 **Fixed**
 
-- ``Weekday`` enum values from the Rust extension are now pickleable.
+- `Weekday` enum values from the Rust extension are now pickleable.
 - Solve crash if Python's garbage collection occurs while the Rust
   extension is still initializing.
-- Fixed a crash in parsing malformed fractional ``TimeDelta`` seconds (#234)
+- Fixed a crash in parsing malformed fractional `TimeDelta` seconds (#234)
 
 **Improved**
 
@@ -271,7 +271,7 @@ the groundwork for the eventual 1.0 release.
 
   **Rationale**: The improved ISO 8601 parsing method is now RFC 3339
   compatible, making this method unnecessary.
-  Strict RFC 3339 parsing can still be done with ``strptime``, if desired
+  Strict RFC 3339 parsing can still be done with `strptime`, if desired
 
 - Passing invalid timezone names now raise a
   `whenever.TimeZoneNotFoundError` (subclass of `ValueError`) instead of
@@ -288,7 +288,7 @@ the groundwork for the eventual 1.0 release.
   correctly.
 
 - The `strptime` methods have been renamed `parse_strptime`,
-  and its ``format`` argument is now a keyword-only argument.
+  and its `format` argument is now a keyword-only argument.
 
   **Rationale**: This ensures all parsing methods have the `parse_` prefix,
   helping in API consistency and discoverability. The keyword-only argument
