@@ -718,6 +718,12 @@ class TestAddition:
         with pytest.raises(ValueError, match="range"):
             d.subtract(hours=-366 * 24 * 10000)
 
+    def test_no_positional_arg_and_kwargs(self):
+        d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+
+        with pytest.raises(TypeError, match="mix"):
+            d.add(TimeDelta(hours=1), minutes=2)  # type: ignore[call-overload]
+
     def test_operator_not_supported(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
 

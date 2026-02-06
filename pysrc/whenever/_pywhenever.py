@@ -176,6 +176,18 @@ _RoundMode = Literal[
 _CalendarUnitPlural = Literal["years", "months", "weeks", "days"]
 _CALENDAR_UNITS = cast(tuple[str, ...], _CalendarUnitPlural.__args__)  # type: ignore[attr-defined]
 
+
+# Key for sorting units from largest to smallest, with descriptive error message
+def _calendar_unit_index(u: str) -> int:
+    try:
+        return _CALENDAR_UNITS.index(u)
+    except ValueError:
+        raise ValueError(
+            f"Invalid unit {u!r}. Unit must be one of "
+            + ", ".join(repr(u) for u in _CALENDAR_UNITS)
+        )
+
+
 # if SPHINXBUILD:
 #     type(_CalendarUnitPlural).__repr__= lambda self: "Literal[...]"
 #     type(_CalendarUnitPlural).__str__= lambda self: "Literal[...]"
@@ -442,10 +454,10 @@ class Date(_Base):
     def add(
         self,
         *,
-        years: int = _UNSET,
-        months: int = _UNSET,
-        weeks: int = _UNSET,
-        days: int = _UNSET,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
     ) -> Date: ...
 
     @no_type_check
@@ -468,10 +480,10 @@ class Date(_Base):
     def subtract(
         self,
         *,
-        years: int = _UNSET,
-        months: int = _UNSET,
-        weeks: int = _UNSET,
-        days: int = _UNSET,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
     ) -> Date: ...
 
     @no_type_check
@@ -621,15 +633,7 @@ class Date(_Base):
         else:
             single_unit_mode = False
 
-        try:
-            sorted_units = sorted(units, key=list(DIFF_FUNCS).index)
-        except ValueError:
-            raise ValueError(
-                "units must be one of "
-                + ", ".join(repr(u) for u in _CALENDAR_UNITS)
-            )
-
-        if sorted_units != list(units):
+        if sorted(units, key=_calendar_unit_index) != list(units):
             raise ValueError("units must be in decreasing order of size")
         elif len(set(units)) != len(units):
             raise ValueError("units cannot contain duplicates")
@@ -2141,16 +2145,17 @@ class TimeDelta(_Base):
     @overload
     def add(
         self,
+        /,
         *,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
+        hours: float = ...,
+        minutes: float = ...,
+        seconds: float = ...,
+        milliseconds: float = ...,
+        microseconds: float = ...,
+        nanoseconds: int = ...,
     ) -> TimeDelta: ...
 
-    def add(self, arg: TimeDelta = _UNSET, **kwargs: Any) -> TimeDelta:
+    def add(self, arg: TimeDelta = _UNSET, /, **kwargs: Any) -> TimeDelta:
         """Add time to this delta, returning a new delta"""
         if kwargs:
             if arg is not _UNSET:
@@ -2167,16 +2172,17 @@ class TimeDelta(_Base):
     @overload
     def subtract(
         self,
+        /,
         *,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
+        hours: float = ...,
+        minutes: float = ...,
+        seconds: float = ...,
+        milliseconds: float = ...,
+        microseconds: float = ...,
+        nanoseconds: int = ...,
     ) -> TimeDelta: ...
 
-    def subtract(self, arg: TimeDelta = _UNSET, **kwargs: Any) -> TimeDelta:
+    def subtract(self, arg: TimeDelta = _UNSET, /, **kwargs: Any) -> TimeDelta:
         """Subtract time from this delta, returning a new delta"""
         if kwargs:
             if arg is not _UNSET:
@@ -3946,15 +3952,128 @@ class ItemizedDateDelta(_Base):
             -self._sign, self._years, self._months, self._weeks, self._days
         )
 
-    def add(self, *args, **kwargs: Any) -> ItemizedDateDelta:
+    @overload
+    def add(
+        self,
+        other: ItemizedDateDelta,
+        /,
+        *,
+        relative_to: Date,
+        units: Sequence[_CalendarUnitPlural] = ...,
+        round_mode: _RoundMode = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDateDelta: ...
+
+    @overload
+    def add(
+        self,
+        /,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        relative_to: Date,
+        units: Sequence[_CalendarUnitPlural] = ...,
+        round_mode: _RoundMode = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDateDelta: ...
+
+    def add(
+        self,
+        arg: ItemizedDateDelta = _UNSET,
+        /,
+        *,
+        relative_to: Date,
+        units: Sequence[_CalendarUnitPlural] = _UNSET,
+        round_mode: _RoundMode = "trunc",
+        round_increment: int = 1,
+        **kwargs: Any,
+    ) -> ItemizedDateDelta:
         """Add time to this delta, returning a new delta"""
-        raise NotImplementedError()  # TODO
+        if kwargs:
+            if arg is not _UNSET:
+                raise TypeError("Cannot mix positional and keyword arguments")
+        elif arg is not _UNSET:
+            kwargs = arg.asdict()  # type: ignore[assignment]
+        else:
+            return self
 
-    def subtract(self, *args, **kwargs: Any) -> ItemizedDateDelta:
+        units = cast(
+            Sequence[_CalendarUnitPlural],
+            (
+                sorted(
+                    kwargs.keys() | set(self.units()),
+                    key=_calendar_unit_index,
+                )
+                if units is _UNSET
+                else units
+            ),
+        )
+
+        return (
+            relative_to.add(self)
+            .add(**kwargs)
+            .since(
+                relative_to,
+                units=units,
+                round_mode=round_mode,
+                round_increment=round_increment,
+            )
+        )
+
+    @overload
+    def subtract(
+        self,
+        other: ItemizedDateDelta,
+        /,
+        *,
+        relative_to: Date,
+        units: Sequence[_CalendarUnitPlural] = ...,
+        round_mode: _RoundMode = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDateDelta: ...
+
+    @overload
+    def subtract(
+        self,
+        /,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        relative_to: Date,
+        units: Sequence[_CalendarUnitPlural] = ...,
+        round_mode: _RoundMode = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDateDelta: ...
+
+    def subtract(
+        self,
+        arg: ItemizedDateDelta = _UNSET,
+        /,
+        *,
+        relative_to: Date,
+        units: Sequence[_CalendarUnitPlural] = _UNSET,
+        round_mode: _RoundMode = "trunc",
+        round_increment: int = 1,
+        **kwargs: Any,
+    ) -> ItemizedDateDelta:
         """Subtract time from this delta, returning a new delta"""
-        raise NotImplementedError()  # TODO
+        arg = -arg if arg is not _UNSET else _UNSET
+        return self.add(
+            arg,
+            **{k: -v for k, v in kwargs.items()},
+            relative_to=relative_to,
+            units=units,
+            round_mode=round_mode,
+            round_increment=round_increment,
+        )
 
-    def total(self, *args, **kwargs) -> float:
+    def total(
+        self, unit: _CalendarUnitPlural, /, *, relative_to: Date
+    ) -> float:
         """Return the total duration expressed in the specified unit as a float"""
         raise NotImplementedError()  # TODO
 
@@ -5374,7 +5493,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     # Stub to make sphinx happy, until we implement this method.
     def __add__(self, other: TimeDelta) -> OffsetDateTime:
         """TODO"""
-        raise NotImplementedError()
+        raise TypeError("unsupported operand type")
 
     __slots__ = ()
 
