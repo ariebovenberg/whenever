@@ -320,6 +320,155 @@ def test_in_units(
         assert relative_to.add(expect) == relative_to.add(d)
 
 
+class TestAddSub:
+    # We have a limited number of test cases here since this operation is
+    # mostly a combination of logic tested elsewhere: Date.add() and Date.since()
+    @pytest.mark.parametrize(
+        "d1, d2, relative_to, expected, kwargs",
+        [
+            # simple case with no carry
+            (
+                ItemizedDateDelta(years=2, months=3),
+                ItemizedDateDelta(years=1, months=2),
+                Date("2021-12-31"),
+                ItemizedDateDelta(years=3, months=5),
+                {},
+            ),
+            # with carry
+            (
+                ItemizedDateDelta(years=2, months=3, weeks=4, days=5),
+                ItemizedDateDelta(years=1, months=8, weeks=3, days=30),
+                Date("2021-12-31"),
+                ItemizedDateDelta(years=4, months=1, weeks=3, days=2),
+                {},
+            ),
+            # different units
+            (
+                ItemizedDateDelta(years=2, days=5),
+                ItemizedDateDelta(years=1, months=8, days=30),
+                Date("0021-08-03"),
+                ItemizedDateDelta(years=3, months=9, days=5),
+                {},
+            ),
+            # customized output kwargs
+            (
+                ItemizedDateDelta(years=2, days=5),
+                ItemizedDateDelta(years=1, months=8, days=30),
+                Date("0021-08-03"),
+                ItemizedDateDelta(months=45, weeks=2),
+                {
+                    "units": ["months", "weeks"],
+                    "round_mode": "expand",
+                    "round_increment": 2,
+                },
+            ),
+            # zero result
+            (
+                ItemizedDateDelta(years=2, months=3),
+                ItemizedDateDelta(years=-2, months=-3),
+                Date("2021-12-31"),
+                ItemizedDateDelta(years=0, months=0),
+                {},
+            ),
+            # negative arg, positive result
+            (
+                ItemizedDateDelta(years=2, months=3),
+                ItemizedDateDelta(years=-1, months=-4),
+                Date("2021-12-31"),
+                ItemizedDateDelta(years=0, months=11),
+                {},
+            ),
+            # negative arg, negative result
+            (
+                ItemizedDateDelta(years=2, months=3),
+                ItemizedDateDelta(years=-1, months=-20),
+                Date("2021-12-31"),
+                ItemizedDateDelta(years=-0, months=-5),
+                {},
+            ),
+        ],
+    )
+    def test_success(
+        self,
+        d1: ItemizedDateDelta,
+        d2: ItemizedDateDelta,
+        relative_to: Date,
+        expected: ItemizedDateDelta,
+        kwargs,
+    ):
+        result = d1.add(d2, relative_to=relative_to, **kwargs)
+        assert result.exact_eq(expected)
+
+        # same result with kwargs
+        assert d1.add(
+            **d2.asdict(), relative_to=relative_to, **kwargs
+        ).exact_eq(expected)
+
+        # same result with subtraction
+        if (
+            kwargs.get("round_increment", 1) == 1
+            and kwargs.get("round_mode", "trunc") == "trunc"
+        ):
+            assert d1.subtract(
+                -d2, relative_to=relative_to, **kwargs
+            ).exact_eq(expected)
+
+            assert d1.subtract(
+                **{k: -v for k, v in d2.asdict().items()},  # type: ignore[operator]
+                relative_to=relative_to,
+                **kwargs,
+            ).exact_eq(expected)
+
+    def test_mixed_sign_in_kwargs_allowed(self):
+        assert (
+            ItemizedDateDelta(years=2)
+            .add(years=-1, months=3, relative_to=Date("2021-12-31"))
+            .exact_eq(ItemizedDateDelta(years=1, months=3))
+        )
+
+    def test_no_positional_and_kwarg_mix(self):
+        with pytest.raises(TypeError, match="mix"):
+            ItemizedDateDelta(years=2).add(  # type: ignore[call-overload]
+                ItemizedDateDelta(years=1),
+                years=3,
+                relative_to=Date("2021-12-31"),
+            )
+
+    def test_add_nothing(self):
+        ItemizedDateDelta(years=2).add(
+            relative_to=Date("2021-12-31")
+        ).exact_eq(ItemizedDateDelta(years=2))
+
+    def test_invalid_unit(self):
+        with pytest.raises(ValueError, match="foo"):
+            ItemizedDateDelta(years=2).add(  # type: ignore[call-overload]
+                foo=5, relative_to=Date("2021-12-31")
+            )
+
+    def test_overflows(self):
+        with pytest.raises((ValueError, OverflowError)):
+            ItemizedDateDelta(years=5_000).add(
+                years=5_000, relative_to=Date("2021-12-31")
+            )
+
+        # Overflow due to relative_to
+        with pytest.raises((ValueError, OverflowError)):
+            ItemizedDateDelta(years=5).add(
+                months=29, relative_to=Date("9994-12-31")
+            )
+
+    def test_floor_round_mode_behaves_correctly_on_negative(self):
+        d1 = ItemizedDateDelta(years=4, months=5)
+        d2 = ItemizedDateDelta(years=-8, months=-2)
+
+        assert d1.add(
+            d2,
+            relative_to=Date("2021-11-20"),
+            round_mode="floor",
+            round_increment=2,
+        ).exact_eq(ItemizedDateDelta(years=-3, months=-10))
+
+
 def test_abs():
     d = ItemizedDateDelta(days=-5, weeks=-3)
     assert abs(d).exact_eq(ItemizedDateDelta(days=5, weeks=3))
