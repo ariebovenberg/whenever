@@ -469,6 +469,70 @@ class TestAddSub:
         ).exact_eq(ItemizedDateDelta(years=-3, months=-10))
 
 
+class TestTotal:
+
+    @pytest.mark.parametrize(
+        "d, relative_to, unit, expected",
+        [
+            (
+                ItemizedDateDelta(years=2, months=3, weeks=4, days=5),
+                Date("2021-12-31"),
+                "months",
+                28.096774193548388,
+            ),
+            (
+                ItemizedDateDelta(weeks=2, days=16),
+                Date("2021-04-30"),
+                "months",
+                1.0,
+            ),
+            (
+                ItemizedDateDelta(weeks=-2, days=-18),
+                Date("2021-04-30"),
+                "years",
+                -0.08767123287671233,
+            ),
+            (
+                ItemizedDateDelta(weeks=-2, days=-18),
+                Date("2021-04-30"),
+                "days",
+                -32,
+            ),
+        ],
+    )
+    def test_valid(
+        self,
+        d: ItemizedDateDelta,
+        relative_to: Date,
+        unit: Literal["years", "months", "weeks", "days"],
+        expected: float,
+    ):
+        assert d.total(unit, relative_to=relative_to) == pytest.approx(
+            expected
+        )
+
+    def test_invalid_unit(self):
+        with pytest.raises(ValueError, match="foo"):
+            ItemizedDateDelta(years=2).total(
+                "foo", relative_to=Date("2021-12-31")  # type: ignore[arg-type]
+            )
+
+    def test_no_relative_to(self):
+        with pytest.raises(TypeError, match="relative_to"):
+            ItemizedDateDelta(years=2).total("months")  # type: ignore[call-arg]
+
+    def test_relative_to_overflows(self):
+        with pytest.raises((ValueError, OverflowError)):
+            ItemizedDateDelta(years=2).total(
+                "months", relative_to=Date("9998-04-30")
+            )
+
+        with pytest.raises((ValueError, OverflowError)):
+            ItemizedDateDelta(years=-2).total(
+                "months", relative_to=Date("0001-12-31")
+            )
+
+
 def test_abs():
     d = ItemizedDateDelta(days=-5, weeks=-3)
     assert abs(d).exact_eq(ItemizedDateDelta(days=5, weeks=3))

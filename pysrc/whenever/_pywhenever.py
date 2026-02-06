@@ -188,11 +188,6 @@ def _calendar_unit_index(u: str) -> int:
         )
 
 
-# if SPHINXBUILD:
-#     type(_CalendarUnitPlural).__repr__= lambda self: "Literal[...]"
-#     type(_CalendarUnitPlural).__str__= lambda self: "Literal[...]"
-#     breakpoint()
-
 # Metaclass ugh...it proved the most lightweight way to achieve the following:
 # Allowing the constructors of many classes to take an ISO string as well as the
 # regular arguments (i.e. the __init__ signature).
@@ -665,6 +660,9 @@ class Date(_Base):
             trunc_date = resolve_leap_day(trunc)
             limit = (expand_date - trunc_date).days
             remainder = (self._py_date - trunc_date).days
+            assert (limit >= 0 and remainder >= 0) or (
+                limit <= 0 and remainder <= 0
+            )  # they should have the same sign, or be zero
             # DROP-PY39: match-case
             if round_mode == "expand":
                 do_expand = remainder * sign > 0
@@ -1601,6 +1599,7 @@ class TimeDelta(_Base):
     __slots__ = ("_total_ns",)
 
     # FUTURE: allow weeks and days (with 24 hour warning)?
+    # TODO: allow passing py timedelta (also for other classes)
     def __init__(
         self,
         *,
@@ -1650,6 +1649,7 @@ class TimeDelta(_Base):
             "microseconds",
             "nanoseconds",
         ],
+        # TODO: allow other local time types?
         relative_to: ZonedDateTime = _UNSET,
     ) -> float:
         """The total size in the given unit, as a floating point number
@@ -4074,8 +4074,28 @@ class ItemizedDateDelta(_Base):
     def total(
         self, unit: _CalendarUnitPlural, /, *, relative_to: Date
     ) -> float:
-        """Return the total duration expressed in the specified unit as a float"""
-        raise NotImplementedError()  # TODO
+        """Return the total duration expressed in the specified unit as a float
+
+        >>> ItemizedDateDelta(years=1, months=6).total("months", relative_to=Date(2020, 1, 31))
+        18.0
+        >>> ItemizedDateDelta(days=1000).total("years", relative_to=Date(2020, 4, 10))
+        2.73972602739726
+        """
+        shifted = relative_to.add(self)
+        try:
+            trunc_amount, trunc_date_interim, expand_date_interim = DIFF_FUNCS[
+                unit
+            ](shifted._py_date, relative_to._py_date, 1)
+        except KeyError:
+            raise ValueError(f"Unsupported unit: {unit!r}") from None
+
+        trunc_date = resolve_leap_day(trunc_date_interim)
+        expand_date = resolve_leap_day(expand_date_interim)
+
+        return (
+            trunc_amount
+            + ((shifted._py_date - trunc_date) / (expand_date - trunc_date))
+        ) * self._sign
 
     # A private constructor. Checks bounds but *not* signs or presence of > 0 fields.
     @classmethod
