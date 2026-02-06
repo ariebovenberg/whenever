@@ -735,6 +735,13 @@ class ItemizedDateDelta:
         ] = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
+    def total(
+        self,
+        unit: Literal["years", "months", "weeks", "days"],
+        /,
+        *,
+        relative_to: Date,
+    ) -> int: ...
     def __iter__(self) -> Iterable[int]: ...
     def __len__(self) -> int: ...
     def __getitem__(
