@@ -959,6 +959,21 @@ class TestSinceAndUntil:
                 8,
                 {"round_mode": "half_ceil", "round_increment": 8},
             ),
+            # regression tests for negative deltas close to 0
+            (
+                Date(2020, 1, 1),
+                Date(2020, 12, 31),
+                "years",
+                -1,
+                {"round_mode": "expand"},
+            ),
+            (
+                Date(2020, 12, 1),
+                Date(2020, 12, 31),
+                "months",
+                -1,
+                {"round_mode": "expand"},
+            ),
         ],
     )
     def test_single_unit(self, d1: Date, d2: Date, unit, delta: int, kwargs):

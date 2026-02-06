@@ -48,7 +48,7 @@ def years_diff(_a: _date, b: InterimDate, increment: int, /) -> _AbsoluteDiff:
     assert isinstance(b, _date)
     diff = (_a.year - b.year) // increment * increment
     shift = _replace_year(b, b.year + diff)
-    sign = 1 if diff >= 0 else -1
+    sign = 1 if _a >= b else -1
 
     # Check if we overshot
     if (diff > 0 and resolve_leap_day(shift) > _a) or (
@@ -76,7 +76,7 @@ def months_diff(a: _date, b: InterimDate, increment: int, /) -> _AbsoluteDiff:
         ((a.year - b.year) * 12 + (a.month - b.month)) // increment
     ) * increment
     shift = _add_months(b, diff)
-    sign = 1 if diff >= 0 else -1
+    sign = 1 if a >= resolve_leap_day(b) else -1
 
     # Check if we overshot
     if (diff > 0 and shift > a) or (diff < 0 and shift < a):
