@@ -618,7 +618,7 @@ class TestShiftMethods:
             .subtract(days(-10))
         ) == shifted
 
-        # date units don't require ignore_dst
+        # calendar units don't require ignore_dst
         assert d.subtract(months=3) == d.add(months=-3)
 
     def test_invalid(self):

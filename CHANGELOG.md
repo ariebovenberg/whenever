@@ -7,15 +7,29 @@ Fix issue where not all windows wheels were built and uploaded (#317)
 =======
 ## 0.10.0 (2026-??-??)
 
-- **Breaking Changes**
+**Breaking Changes**
 
-  - `DateTimeDelta` and `DateDelta` have been replaced by
-    `ItemizedDelta` and `ItemizedDateDelta`, respectively.
-    The helper functions for creating deltas from specific units
-    (`years()`, `months()`, etc.) have also been deprecated.
+- `DateTimeDelta` and `DateDelta` have been replaced by
+  `ItemizedDelta` and `ItemizedDateDelta`, respectively.
+  The helper functions for creating deltas from specific units
+  (`years()`, `months()`, etc.) have also been deprecated.
 
-    The big change is that these deltas are now fully un-normalized,
-    meaning "90 minutes" and "1 hour and 30 minutes" are distinct values.
+  The big change is that these deltas are now fully un-normalized,
+  meaning "90 minutes" and "1 hour and 30 minutes" are distinct values.
+
+  **Rationale**: the "partially" normalized approach was confusing to users.
+  A fully denormalized approach also better fits the new API for calcuating deltas
+  between datetimes. This approach is also more consistent with other
+  libraries, and allows for more control over formatting and parsing of deltas.
+
+- Behavior of an edge case is changed: disambiguation of non-existent times
+  as a result of calendar arithmetic (or `replace()`) no longer tries to reuse
+  the previous offset. This change also fixes a rare bug in case a timezone
+  transition skips an entire day (like the Samoa timezone did in 2011) (#252).
+
+  **Rationale**: Unlike the case of repeated times, reusing the previous
+  offset for non-existent times doesn't have the advantage of preventing
+  unexpected jumps in time. The new behavior is consistent with other libraries.
 
 **Improved**
 
@@ -33,6 +47,11 @@ Fix issue where not all windows wheels were built and uploaded (#317)
 - `TimeDelta.add()` and `TimeDelta.subtract()` methods. The operators
   `+` and `-` were supported already, but these methods make it easier
   for simple operations, as well as making the API more consistent with other classes.
+
+**Fixed**
+
+- (Pure-Python version) Fixed incorrect behavior of `<` operator between `Time`
+  instances if nanoseconds are involved.
 
 ## 0.9.4 (2025-12-14)
 

@@ -1199,6 +1199,126 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         *,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
+    @overload
+    def since(
+        self,
+        b: ZonedDateTime,
+        /,
+        *,
+        unit: Literal[
+            "years",
+            "months",
+            "weeks",
+            "days",
+            "hours",
+            "minutes",
+            "seconds",
+            "nanoseconds",
+        ],
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = ...,
+        round_increment: int = ...,
+    ) -> int: ...
+    @overload
+    def since(
+        self,
+        b: ZonedDateTime,
+        /,
+        *,
+        units: Sequence[
+            Literal[
+                "years",
+                "months",
+                "weeks",
+                "days",
+                "hours",
+                "minutes",
+                "seconds",
+                "nanoseconds",
+            ]
+        ],
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+    @overload
+    def until(
+        self,
+        b: ZonedDateTime,
+        /,
+        *,
+        unit: Literal[
+            "years",
+            "months",
+            "weeks",
+            "days",
+            "hours",
+            "minutes",
+            "seconds",
+            "nanoseconds",
+        ],
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = ...,
+        round_increment: int = ...,
+    ) -> int: ...
+    @overload
+    def until(
+        self,
+        b: ZonedDateTime,
+        /,
+        *,
+        units: Sequence[
+            Literal[
+                "years",
+                "months",
+                "weeks",
+                "days",
+                "hours",
+                "minutes",
+                "seconds",
+                "nanoseconds",
+            ]
+        ],
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
     def is_ambiguous(self) -> bool: ...
     def day_length(self) -> TimeDelta: ...
     def start_of_day(self) -> Self: ...

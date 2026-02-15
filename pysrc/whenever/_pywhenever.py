@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import enum
 from abc import ABC, ABCMeta, abstractmethod
+from collections.abc import Callable
 from contextvars import ContextVar
 from datetime import (
     date as _date,
@@ -42,8 +43,16 @@ from warnings import warn
 
 from ._common import check_utc_bounds, mk_fixed_tzinfo
 from ._math import (
+    CALENDAR_UNITS,
+    DELTA_UNITS,
     DIFF_FUNCS,
-    InterimDate,
+    EXACT_UNITS_RELAXED,
+    DateDeltaUnit,
+    DeltaUnit,
+    ExactDeltaUnit,
+    Sign,
+    custom_round,
+    date_diff,
     days_in_month,
     increment_to_ns_for_datetime,
     increment_to_ns_for_delta,
@@ -158,8 +167,6 @@ _MAX_DELTA_MINUTES = _MAX_DELTA_HOURS * 60
 _MAX_DELTA_SECONDS = _MAX_DELTA_MINUTES * 60
 _MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * 1_000_000_000
 _MAX_SUBSEC_NANOS = 999_999_999
-# a sentinel value that looks nice in autodoc
-_UNSET = type("UNSET", (), {"__repr__": lambda _: "..."})()
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
 _RoundMode = Literal[
@@ -173,25 +180,48 @@ _RoundMode = Literal[
     "half_trunc",
     "half_even",
 ]
-_CalendarUnitPlural = Literal["years", "months", "weeks", "days"]
-_CALENDAR_UNITS = cast(tuple[str, ...], _CalendarUnitPlural.__args__)  # type: ignore[attr-defined]
+# A sentinel value that looks nice in autodoc.
+# Used in cases where `None` would be a valid value, or where we want to
+# avoid allowing `None` to be passed in by users.
+_UNSET = type("UNSET", (), {"__repr__": lambda _: "..."})()
 
 
 # Key for sorting units from largest to smallest, with descriptive error message
 def _calendar_unit_index(u: str) -> int:
     try:
-        return _CALENDAR_UNITS.index(u)
+        return CALENDAR_UNITS.index(u)
     except ValueError:
         raise ValueError(
             f"Invalid unit {u!r}. Unit must be one of "
-            + ", ".join(repr(u) for u in _CALENDAR_UNITS)
+            + ", ".join(repr(u) for u in CALENDAR_UNITS)
         )
 
 
-# Metaclass ugh...it proved the most lightweight way to achieve the following:
-# Allowing the constructors of many classes to take an ISO string as well as the
-# regular arguments (i.e. the __init__ signature).
-# Alternatives tried:
+# Key for sorting units from largest to smallest, with descriptive error message
+def _itemized_unit_index(u: str) -> int:
+    try:
+        return DELTA_UNITS.index(u)
+    except ValueError:
+        raise ValueError(
+            f"Invalid unit {u!r}. Unit must be one of "
+            + ", ".join(repr(u) for u in DELTA_UNITS)
+        )
+
+
+def _exact_unit_relaxed_index(u: str) -> int:
+    try:
+        return EXACT_UNITS_RELAXED.index(u)
+    except ValueError:
+        raise ValueError(
+            f"Invalid unit {u!r}. Unit must be one of "
+            + ", ".join(repr(u) for u in EXACT_UNITS_RELAXED)
+        )
+
+
+# Metaclass ugh...it proved the most lightweight way to allow the constructors
+# of many classes to take an ISO string as well as the regular arguments
+# (i.e. the __init__ signature).
+# Alternatives not chosen:
 # - A special __new__: but this still calls __init__ afterwards, so no good.
 # - adjusting __init__: this makes the signature awkward--plus a lot of custom
 #   code in every class
@@ -244,6 +274,7 @@ class _Base(metaclass=_ConstructorSupportsIsoString):
         warn(
             "parse_common_iso() has been renamed to parse_iso()",
             WheneverDeprecationWarning,
+            stacklevel=2,
         )
         return cls.parse_iso(s)  # type: ignore[no-any-return, attr-defined]
 
@@ -251,6 +282,7 @@ class _Base(metaclass=_ConstructorSupportsIsoString):
         warn(
             "format_common_iso() has been renamed to format_iso()",
             WheneverDeprecationWarning,
+            stacklevel=2,
         )
         return self.format_iso()  # type: ignore[no-any-return, attr-defined]
 
@@ -471,6 +503,7 @@ class Date(_Base):
 
     @overload
     def subtract(self, delta: ItemizedDateDelta | DateDelta, /) -> Date: ...
+
     @overload
     def subtract(
         self,
@@ -558,7 +591,7 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        unit: _CalendarUnitPlural,
+        unit: DateDeltaUnit,
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> int: ...
@@ -569,7 +602,7 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        units: Sequence[_CalendarUnitPlural],
+        units: Sequence[DateDeltaUnit],
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
@@ -579,8 +612,8 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        unit: Optional[_CalendarUnitPlural] = None,
-        units: Optional[Sequence[_CalendarUnitPlural]] = None,
+        unit: Optional[DateDeltaUnit] = None,
+        units: Optional[Sequence[DateDeltaUnit]] = None,
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> Union[ItemizedDateDelta, int]:
@@ -612,89 +645,38 @@ class Date(_Base):
             as an :class:`ItemizedDateDelta`,
             otherwise as an integer number of the specified unit.
 
-        >>> d1 = Date(2023, 4, 15)
+        TODO example
 
         """
-        # Normalize the unit/units arguments
-        if unit is not None and units is not None:
-            raise TypeError("Cannot specify both 'unit' and 'units'")
-        elif unit:
-            single_unit_mode = True
-            units = [unit]
-        elif units is None:
-            raise TypeError("Must specify either 'unit' or 'units'")
-        elif not units:
-            raise ValueError("'units' cannot be an empty sequence")
-        else:
-            single_unit_mode = False
-
-        if sorted(units, key=_calendar_unit_index) != list(units):
-            raise ValueError("units must be in decreasing order of size")
-        elif len(set(units)) != len(units):
-            raise ValueError("units cannot contain duplicates")
-
-        # Because years and months are variable length, the calculation is done
-        # by progressively adding each unit to `b` until we reach the target date (`self`).
-        # We keep track of two dates: one that is truncated (not exceeding `self`)
-        # and one that is expanded (exceeding `self`).
-        trunc: InterimDate = b._py_date
-        expand: InterimDate = self._py_date
-
-        # We only apply the increment logic to the last unit.
-        # The other units get increment 1.
-        increments = [*[1] * (len(units) - 1), round_increment]
-        results: dict[str, int] = {}
-        for u, increment in zip(units, increments):
-            results[u], trunc, expand = DIFF_FUNCS[u](
-                self._py_date, trunc, increment
-            )
-
-        assert u  # it's always set since we've made sure units is non-empty
+        units, single_unit_mode = _normalize_unit_or_units(
+            unit, units, index_func=_calendar_unit_index
+        )
+        smallest_unit = units[-1]
+        results, trunc, expand = date_diff(
+            self._py_date,
+            b._py_date,
+            round_increment,
+            units,
+        )
 
         sign: Sign = 1 if self > b else 0 if self == b else -1
-
         # Round is expensive, so only do it if needed
         if round_mode != "trunc":
-            do_expand = False  # 'expand' means round away from 0
-            expand_date = resolve_leap_day(expand)
             trunc_date = resolve_leap_day(trunc)
-            limit = (expand_date - trunc_date).days
-            remainder = (self._py_date - trunc_date).days
-            assert (limit >= 0 and remainder >= 0) or (
-                limit <= 0 and remainder <= 0
-            )  # they should have the same sign, or be zero
-            # DROP-PY39: match-case
-            if round_mode == "expand":
-                do_expand = remainder * sign > 0
-            elif round_mode == "ceil":
-                do_expand = remainder > 0
-            elif round_mode == "floor":
-                do_expand = remainder < 0
-            elif round_mode == "half_ceil":
-                do_expand = remainder * 2 * sign > limit * sign - sign
-            elif round_mode == "half_floor":
-                do_expand = remainder * 2 * sign >= limit * sign + sign
-            elif round_mode == "half_trunc":
-                do_expand = remainder * 2 * sign > limit * sign
-            elif round_mode == "half_expand":
-                # Ok there's something wrong here (negative months)
-                do_expand = remainder * 2 * sign >= limit * sign
-            elif round_mode == "half_even":
-                do_expand = remainder * 2 > limit or (
-                    remainder * 2 == limit
-                    and (results[u] // round_increment) % 2 == 1
-                )
-            else:
-                raise ValueError(f"Invalid round_mode: {round_mode!r}")
-
-            if do_expand:
-                # At this point we know this unit was set to non-None
-                results[u] += round_increment
+            results[smallest_unit] = custom_round(
+                results[smallest_unit],
+                abs((self._py_date - trunc_date).days),
+                abs((resolve_leap_day(expand) - trunc_date).days),
+                round_mode,
+                round_increment,
+                sign,
+            )
 
         if single_unit_mode:
-            return results.pop(u) * sign
+            return results.pop(smallest_unit) * sign
         else:
-            return ItemizedDateDelta._from_signed(sign, **results)
+            # mypy false positive: 'keywords must be strings' (but they're string literals!)
+            return ItemizedDateDelta._from_signed(sign, **results)  # type: ignore[misc]
 
     @overload
     def until(
@@ -702,7 +684,7 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        unit: _CalendarUnitPlural,
+        unit: DateDeltaUnit,
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> int: ...
@@ -713,7 +695,7 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        units: Sequence[_CalendarUnitPlural],
+        units: Sequence[DateDeltaUnit],
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
@@ -723,21 +705,19 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        unit: Optional[_CalendarUnitPlural] = None,
-        units: Optional[Sequence[_CalendarUnitPlural]] = None,
+        unit: Optional[DateDeltaUnit] = None,
+        units: Optional[Sequence[DateDeltaUnit]] = None,
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> Union[ItemizedDateDelta, int]:
         """Companion to :meth:`since` that calculates the difference until another date.
         See :meth:`since` for more information.
         """
-        return -self.since(  # type: ignore[no-any-return,call-overload]
-            b,
+        return b.since(
+            self,
             unit=unit,
             units=units,
-            # Although until() is the inverse of since(),
-            # the rounding mode needs to be flipped to achieve the same effect.
-            round_mode=_FLIP_FLOOR_CEIL.get(round_mode, round_mode),
+            round_mode=round_mode,
             round_increment=round_increment,
         )
 
@@ -1467,23 +1447,17 @@ class Time(_Base):
         quotient, remainder_ns = divmod(
             self._to_ns_since_midnight(), increment_ns
         )
-
-        if mode == "half_even":  # check the default mode first
-            threshold_ns = increment_ns // 2 + (quotient % 2 == 0) or 1
-        elif mode in ("ceil", "expand"):
-            threshold_ns = 1  # Always round up
-        elif mode in ("floor", "trunc"):
-            threshold_ns = increment_ns + 1  # Never round up
-        elif mode in ("half_floor", "half_trunc"):
-            threshold_ns = increment_ns // 2 + 1
-        elif mode in ("half_ceil", "half_expand"):
-            threshold_ns = increment_ns // 2 or 1
-        else:
-            raise ValueError(f"Invalid rounding mode: {mode!r}")
-
-        round_up = remainder_ns >= threshold_ns
-        ns_since_midnight = (quotient + round_up) * increment_ns
-        next_day, ns_since_midnight = divmod(ns_since_midnight, day_in_ns)
+        floor = quotient * increment_ns
+        if mode not in ("floor", "trunc"):
+            floor = custom_round(
+                floor,
+                remainder_ns,
+                increment_ns,
+                mode,
+                increment_ns,
+                1,
+            )
+        next_day, ns_since_midnight = divmod(floor, day_in_ns)
         return self._from_ns_since_midnight(ns_since_midnight), next_day
 
     @classmethod
@@ -1518,7 +1492,7 @@ class Time(_Base):
     def __lt__(self, other: Time) -> bool:
         if not isinstance(other, Time):
             return NotImplemented
-        return (self._py_time, self._nanos) < (other._py_time, self._nanos)
+        return (self._py_time, self._nanos) < (other._py_time, other._nanos)
 
     def __le__(self, other: Time) -> bool:
         if not isinstance(other, Time):
@@ -1859,23 +1833,21 @@ class TimeDelta(_Base):
         ],
         /,
         *,
-        round_unit: Union[
-            Literal[
-                "millisecond",
-                "microsecond",
-                "nanosecond",
-            ],
-            None,
-        ] = None,
+        round_unit: Literal[
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = _UNSET,
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDelta:
+        # TODO: drop direct iterability of ItemizedDelta in favor of .values()
         """Convert to a :class:`ItemizedDelta` with the specified units
 
         >>> d = TimeDelta(hours=2, minutes=30, seconds=23, milliseconds=500)
         >>> d.in_units(['minutes', 'seconds'])
         ItemizedDelta("PT150m24s")
-        >>> (hrs, mins) = d.in_units(('hours', 'minutes'), round_mode='ceil')
+        >>> (hrs, mins) = d.in_units(('hours', 'minutes'), round_mode='ceil').values()
         (2, 31)
 
         Parameters
@@ -1895,47 +1867,25 @@ class TimeDelta(_Base):
             The rounding increment to use when rounding before conversion.
             See :meth:`round` for details.
         """
-        if any(u and not u.endswith("s") for u in units):
-            raise ValueError("All units must be plural")
-        if isinstance(
-            units, str
-        ):  # This common mistake is otherwise hard to debug
-            raise TypeError("Units must be a sequence, not a string")
-        # DOC: clearer error if round_unit is invalid
-        try:
-            *_, smallest_unit = units
-        except ValueError:
+        if not units:
             raise ValueError("At least one unit must be specified")
-        self = self.round(
-            unit=round_unit  # type: ignore[arg-type]
-            or smallest_unit[:-1],  # remove plural
-            increment=round_increment,
-            mode=round_mode,
-        )
-        remaining_ns = abs(self._total_ns)
-        values: list[Union[None, int]] = [None] * 6
-        prev_unit_index = -1  # initial value, only used for comparison
-        for u in units:
-            try:
-                divisor, index = _DELTA_ITEMS_NS_AND_PRIO[u]
-            except KeyError:
-                # TODO: clarify error message on milliseconds/microseconds?
-                raise ValueError(f"Invalid unit: {u!r}")
-            if prev_unit_index >= index:
-                raise ValueError(
-                    "Units must be in descending order, and not repeated"
-                )
-            values[index], remaining_ns = divmod(remaining_ns, divisor)
-            prev_unit_index = index
-
-        if smallest_unit == "nanoseconds" and (
+        elif any(u and not u.endswith("s") for u in units):
+            raise ValueError("All units must be plural")
+        elif isinstance(units, str):  # Hard to debug if not caught here
+            raise TypeError("Units must be a sequence, not a string")
+        elif sorted(units, key=_exact_unit_relaxed_index) != list(units):
+            raise ValueError(
+                "Units must be specified from largest to smallest"
+            )
+        elif len(set(units)) != len(units):
+            raise ValueError("Duplicate units are not allowed")
+        elif units[-1] == "nanoseconds" and (
             len(units) == 1 or units[-2] != "seconds"
         ):
             raise ValueError(
                 "Nanoseconds can only be specified together with seconds"
             )
-
-        if (
+        elif (
             "days" in units or "weeks" in units
         ) and not _ignore_days_not_always_24h_warning.get():
             warn(
@@ -1944,10 +1894,38 @@ class TimeDelta(_Base):
                 stacklevel=2,
             )
 
-        sign: Sign = (
-            1 if self._total_ns > 0 else -1 if self._total_ns < 0 else 0
+        result = self._in_units(units, round_unit, round_mode, round_increment)
+        sign: Sign = 1 if self._total_ns >= 0 else -1
+        if not any(result.values()):
+            sign = 0  # due to rounding, the result may be zero even if self is not zero
+        # mypy false positive: 'keywords must be strings' (but they're string literals!)
+        return ItemizedDelta._from_signed(sign, **result)  # type: ignore[misc]
+
+    # Private version of in_units() without validation and afterprocessing
+    def _in_units(
+        self,
+        units: Sequence[ExactDeltaUnit],
+        round_unit: Literal["millisecond", "microsecond", "nanosecond"],
+        round_mode: _RoundMode,
+        round_increment: int,
+    ) -> dict[ExactDeltaUnit, int]:
+
+        self = self.round(
+            unit=(
+                # trim the last 's' from the smallest unit to get the singular form
+                units[-1][:-1]  # type: ignore[arg-type]
+                if round_unit is _UNSET
+                else round_unit
+            ),
+            increment=round_increment,
+            mode=round_mode,
         )
-        return ItemizedDelta._from_signed(sign, None, None, *values)
+        remaining_ns = abs(self._total_ns)
+        values = {}
+        for u in units:
+            values[u], remaining_ns = divmod(remaining_ns, _DELTA_ITEMS_NS[u])
+
+        return values
 
     def py_timedelta(self) -> _timedelta:
         """Convert to a :class:`~datetime.timedelta`
@@ -2104,40 +2082,23 @@ class TimeDelta(_Base):
                 stacklevel=2,
             )
         increment_ns = increment_to_ns_for_delta(unit, increment)
-        quotient, remainder_ns = divmod(self._total_ns, increment_ns)
+        quotient, remainder_ns = divmod(abs(self._total_ns), increment_ns)
+        sign: Sign = 1 if self._total_ns >= 0 else -1
 
-        neg = self._total_ns < 0
+        abs_result = quotient * increment_ns
+        if mode != "trunc":
+            abs_result = custom_round(
+                abs_result,
+                remainder_ns,
+                increment_ns,
+                mode,
+                increment_ns,
+                sign,
+            )
 
-        if mode == "half_even":  # check the default case first
-            threshold_ns = increment_ns // 2 + (quotient % 2 == 0) or 1
-        elif mode == "ceil":
-            threshold_ns = 1  # Always round up
-        elif mode == "expand":
-            threshold_ns = (
-                increment_ns * neg + 1
-            )  # Always round up *IF* positive
-        elif mode == "floor":
-            threshold_ns = increment_ns + 1  # Never round up
-        elif mode == "trunc":
-            threshold_ns = (
-                increment_ns * (not neg) + 1
-            )  # Never round up *IF* positive
-        elif mode == "half_ceil":
-            threshold_ns = increment_ns // 2 or 1
-        elif mode == "half_expand":
-            threshold_ns = (increment_ns // 2 + neg) or 1
-        elif mode == "half_floor":
-            threshold_ns = increment_ns // 2 + 1
-        elif mode == "half_trunc":
-            threshold_ns = (increment_ns // 2 + (not neg)) or 1
-        else:
-            raise ValueError(f"Invalid rounding mode: {mode!r}")
-
-        round_up = remainder_ns >= threshold_ns
-        rounded_ns = (quotient + round_up) * increment_ns
-        if abs(rounded_ns) > _MAX_DELTA_NANOS:
+        if abs_result > _MAX_DELTA_NANOS:
             raise ValueError("Resulting TimeDelta out of range")
-        return self._from_nanos_unchecked(rounded_ns)
+        return self._from_nanos_unchecked(abs_result * sign)
 
     @overload
     def add(self, other: TimeDelta, /) -> TimeDelta: ...
@@ -2379,13 +2340,13 @@ def _unpkl_tdelta(data: bytes) -> TimeDelta:
     return TimeDelta(seconds=s, nanoseconds=ns)
 
 
-_DELTA_ITEMS_NS_AND_PRIO = {
-    "weeks": (1_000_000_000 * 60 * 60 * 24 * 7, 0),
-    "days": (1_000_000_000 * 60 * 60 * 24, 1),
-    "hours": (1_000_000_000 * 60 * 60, 2),
-    "minutes": (1_000_000_000 * 60, 3),
-    "seconds": (1_000_000_000, 4),
-    "nanoseconds": (1, 5),
+_DELTA_ITEMS_NS = {
+    "weeks": 1_000_000_000 * 60 * 60 * 24 * 7,
+    "days": 1_000_000_000 * 60 * 60 * 24,
+    "hours": 1_000_000_000 * 60 * 60,
+    "minutes": 1_000_000_000 * 60,
+    "seconds": 1_000_000_000,
+    "nanoseconds": 1,
 }
 
 
@@ -2748,9 +2709,6 @@ DateDelta.ZERO = DateDelta()
 TimeDelta._date_part = DateDelta.ZERO
 
 
-Sign = Literal[1, 0, -1]
-
-
 @final
 class ItemizedDelta(_Base):
     """A duration that preserves the exact fields it was created with.
@@ -2854,8 +2812,6 @@ class ItemizedDelta(_Base):
         """The sign of the delta, 1, 0, or -1"""
         return self._sign
 
-    # CONSIDER: should these be methods instead of properties?
-    # TODO: consistent with ItemizedDateDelta?
     @property
     def years(self) -> int:
         """The number of years, 0 if not set"""
@@ -2925,11 +2881,11 @@ class ItemizedDelta(_Base):
         if self._nanoseconds is not None:
             yield self._sign * self._nanoseconds
 
-    def asdict(self) -> dict[str, int]:
+    def asdict(self) -> dict[DeltaUnit, int]:
         """Return all non-None fields as a dictionary,
         ordered from largest to smallest unit.
         """
-        fields = (
+        fields: Sequence[tuple[DeltaUnit, Optional[int]]] = (
             ("years", self._years),
             ("months", self._months),
             ("weeks", self._weeks),
@@ -2941,11 +2897,11 @@ class ItemizedDelta(_Base):
         )
         return {k: self._sign * v for k, v in fields if v is not None}
 
-    def units(self) -> tuple[str, ...]:
+    def units(self) -> tuple[DeltaUnit, ...]:
         """Return a tuple of the names of all non-None fields,
         ordered from largest to smallest unit.
         """
-        fields = (
+        fields: Sequence[tuple[DeltaUnit, Optional[int]]] = (
             ("years", self._years),
             ("months", self._months),
             ("weeks", self._weeks),
@@ -3285,18 +3241,19 @@ class ItemizedDelta(_Base):
         return date_part, time_part
 
     # A private constructor. Checks bounds but *not* signs or presence of > 0 fields.
+    # TODO: one that sidesteps bounds checking entirely
     @classmethod
     def _from_signed(
         cls,
         sign: Sign,
-        years: int | None,
-        months: int | None,
-        weeks: int | None,
-        days: int | None,
-        hours: int | None,
-        minutes: int | None,
-        seconds: int | None,
-        nanoseconds: int | None,
+        years: int | None = None,
+        months: int | None = None,
+        weeks: int | None = None,
+        days: int | None = None,
+        hours: int | None = None,
+        minutes: int | None = None,
+        seconds: int | None = None,
+        nanoseconds: int | None = None,
     ) -> ItemizedDelta:
         self = _object_new(cls)
         self._sign = sign
@@ -3308,6 +3265,20 @@ class ItemizedDelta(_Base):
         self._minutes = _check_bound(minutes, _MAX_DELTA_MINUTES)
         self._seconds = _check_bound(seconds, _MAX_DELTA_SECONDS)
         self._nanoseconds = _check_bound(nanoseconds, _MAX_SUBSEC_NANOS)
+        # Sanity check: if the sign is 0, all fields must be 0 or None
+        if (
+            years
+            or months
+            or weeks
+            or days
+            or hours
+            or minutes
+            or seconds
+            or nanoseconds
+        ):
+            assert sign != 0
+        else:
+            assert sign == 0
         return self
 
     def __eq__(self, other: object) -> bool:
@@ -3619,7 +3590,7 @@ class ItemizedDateDelta(_Base):
         """
         return self._sign
 
-    def asdict(self) -> dict[_CalendarUnitPlural, int]:
+    def asdict(self) -> dict[DateDeltaUnit, int]:
         """Return all defined fields as a dictionary,
         ordered from largest to smallest unit.
 
@@ -3635,7 +3606,7 @@ class ItemizedDateDelta(_Base):
         )
         return {k: self._sign * v for k, v in fields if v is not None}  # type: ignore[misc]
 
-    def units(self) -> tuple[_CalendarUnitPlural, ...]:
+    def units(self) -> tuple[DateDeltaUnit, ...]:
         """Return a the names of all defined field units as a tuple,
         ordered from largest to smallest unit.
 
@@ -3668,7 +3639,7 @@ class ItemizedDateDelta(_Base):
 
     def in_units(
         self,
-        units: Sequence[_CalendarUnitPlural],
+        units: Sequence[DateDeltaUnit],
         /,
         *,
         relative_to: Date,
@@ -3959,7 +3930,7 @@ class ItemizedDateDelta(_Base):
         /,
         *,
         relative_to: Date,
-        units: Sequence[_CalendarUnitPlural] = ...,
+        units: Sequence[DateDeltaUnit] = ...,
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
@@ -3974,7 +3945,7 @@ class ItemizedDateDelta(_Base):
         weeks: int = ...,
         days: int = ...,
         relative_to: Date,
-        units: Sequence[_CalendarUnitPlural] = ...,
+        units: Sequence[DateDeltaUnit] = ...,
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
@@ -3985,7 +3956,7 @@ class ItemizedDateDelta(_Base):
         /,
         *,
         relative_to: Date,
-        units: Sequence[_CalendarUnitPlural] = _UNSET,
+        units: Sequence[DateDeltaUnit] = _UNSET,
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
         **kwargs: Any,
@@ -4000,7 +3971,7 @@ class ItemizedDateDelta(_Base):
             return self
 
         units = cast(
-            Sequence[_CalendarUnitPlural],
+            Sequence[DateDeltaUnit],
             (
                 sorted(
                     kwargs.keys() | set(self.units()),
@@ -4029,7 +4000,7 @@ class ItemizedDateDelta(_Base):
         /,
         *,
         relative_to: Date,
-        units: Sequence[_CalendarUnitPlural] = ...,
+        units: Sequence[DateDeltaUnit] = ...,
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
@@ -4044,7 +4015,7 @@ class ItemizedDateDelta(_Base):
         weeks: int = ...,
         days: int = ...,
         relative_to: Date,
-        units: Sequence[_CalendarUnitPlural] = ...,
+        units: Sequence[DateDeltaUnit] = ...,
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
@@ -4055,7 +4026,7 @@ class ItemizedDateDelta(_Base):
         /,
         *,
         relative_to: Date,
-        units: Sequence[_CalendarUnitPlural] = _UNSET,
+        units: Sequence[DateDeltaUnit] = _UNSET,
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
         **kwargs: Any,
@@ -4071,9 +4042,7 @@ class ItemizedDateDelta(_Base):
             round_increment=round_increment,
         )
 
-    def total(
-        self, unit: _CalendarUnitPlural, /, *, relative_to: Date
-    ) -> float:
+    def total(self, unit: DateDeltaUnit, /, *, relative_to: Date) -> float:
         """Return the total duration expressed in the specified unit as a float
 
         >>> ItemizedDateDelta(years=1, months=6).total("months", relative_to=Date(2020, 1, 31))
@@ -4553,7 +4522,7 @@ def _unpkl_dtdelta(
 
 
 DateTimeDelta.ZERO = DateTimeDelta()
-Delta = Union[DateTimeDelta, TimeDelta, DateDelta]
+Delta = Union[DateTimeDelta, TimeDelta, DateDelta]  # TODO
 
 
 class _BasicConversions(_Base, ABC):
@@ -4968,6 +4937,7 @@ class _ExactTime(_BasicConversions):
             other._nanos,  # type: ignore[attr-defined]
         )
 
+    # TODO: rounding docs page
     def difference(
         self,
         other: Instant | OffsetDateTime | ZonedDateTime,
@@ -4975,10 +4945,15 @@ class _ExactTime(_BasicConversions):
     ) -> TimeDelta:
         """Calculate the difference between two instants in time.
 
-        Equivalent to :meth:`__sub__`.
+        .. deprecated:: 0.10.0
 
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
+           Use the subtraction operator instead
         """
+        warn(
+            "The difference() method is deprecated. Use the subtraction operator instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         return self - other  # type: ignore[operator, no-any-return]
 
     def __eq__(self, other: object) -> bool:
@@ -6414,6 +6389,19 @@ class ZonedDateTime(_ExactAndLocalTime):
             return self + -other
         return NotImplemented
 
+    # TODO
+    @overload
+    def add(self, d: TimeDelta, /) -> ZonedDateTime: ...
+
+    @overload
+    def add(
+        self,
+        d: Union[ItemizedDelta, ItemizedDateDelta, DateDelta, DateTimeDelta],
+        /,
+        *,
+        disambiguate: Disambiguate = ...,
+    ) -> ZonedDateTime: ...
+
     @no_type_check
     def add(self, *args, **kwargs) -> ZonedDateTime:
         """Add a time amount to this datetime.
@@ -6504,6 +6492,150 @@ class ZonedDateTime(_ExactAndLocalTime):
             milliseconds=milliseconds,
             microseconds=microseconds,
             nanoseconds=nanoseconds,
+        )
+
+    @overload
+    def since(
+        self,
+        b: ZonedDateTime,
+        /,
+        *,
+        unit: DeltaUnit,
+        round_mode: _RoundMode = ...,
+        round_increment: int = ...,
+    ) -> int: ...
+
+    @overload
+    def since(
+        self,
+        b: ZonedDateTime,
+        /,
+        *,
+        units: Sequence[DeltaUnit],
+        round_mode: _RoundMode = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+
+    # FUTURE: add round_unit to the signature, for millis, micros, and nanos
+    def since(
+        self,
+        b: ZonedDateTime,
+        /,
+        *,
+        unit: DeltaUnit | None = None,
+        units: Sequence[DeltaUnit] | None = None,
+        round_mode: _RoundMode = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDelta | int:
+        """Calculate the duration since another ZonedDateTime,
+        in terms of the specified units.
+
+        TODO
+
+        """
+        units, single_unit_mode = _normalize_unit_or_units(
+            unit, units, index_func=_itemized_unit_index
+        )
+        cal_units, exact_units = _split_calendar_and_exact_units(units)
+        if cal_units and self.tz != b.tz:
+            raise ValueError(
+                "Calendar units can only be used to compare ZonedDateTimes with the same timezone"
+            )  # TODO message
+
+        # To ensure we don't overshoot the date when adding calendar units.
+        # Note that we may need to do this multiple times in the rare case
+        # of a 24h+ gap, e.g. Samoa in 2011.
+        target_date = self.date()
+        while b.replace_date(target_date) > self:
+            target_date = target_date.subtract(days=1)
+
+        cal_results, trunc_date, expand_date = date_diff(
+            target_date._py_date,
+            b._py_dt.date(),
+            # Rounding only applies to the smallest unit.
+            # Thus if there are any exact units, calendar units aren't rounded.
+            1 if exact_units else round_increment,
+            cal_units,
+        )
+        trunc = b.replace_date(
+            Date._from_py_unchecked(resolve_leap_day(trunc_date)),
+        )
+        expand = b.replace_date(
+            Date._from_py_unchecked(resolve_leap_day(expand_date)),
+        )
+
+        # Rounding is very different for exact units than calendar units
+        smallest_unit = units[-1]
+        sign: Sign = 1 if self >= b else -1
+        result = cast(dict[DeltaUnit, int], cal_results)
+        if exact_units:
+            result.update(
+                (self - trunc)._in_units(  # type: ignore[arg-type]
+                    exact_units,
+                    round_increment=round_increment,
+                    round_mode=round_mode,
+                    round_unit=_UNSET,
+                )
+            )
+        else:
+            # Round is expensive, so only do it if needed
+            if round_mode != "trunc":
+                result[smallest_unit] = custom_round(
+                    result[smallest_unit],
+                    abs((self - trunc)._total_ns),
+                    abs((expand - trunc)._total_ns),
+                    round_mode,
+                    round_increment,
+                    sign,
+                )
+
+        if single_unit_mode:
+            return result.pop(smallest_unit) * sign
+
+        if not any(result.values()):
+            sign = 0
+        # mypy false positive: 'keywords must be strings' (but they're string literals!)
+        return ItemizedDelta._from_signed(sign, **result)  # type: ignore[misc]
+
+    @overload
+    def until(
+        self,
+        b: ZonedDateTime,
+        /,
+        *,
+        unit: DeltaUnit,
+        round_mode: _RoundMode = ...,
+        round_increment: int = ...,
+    ) -> int: ...
+
+    @overload
+    def until(
+        self,
+        b: ZonedDateTime,
+        /,
+        *,
+        units: Sequence[DeltaUnit],
+        round_mode: _RoundMode = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+
+    def until(
+        self,
+        b: ZonedDateTime,
+        /,
+        *,
+        unit: DeltaUnit | None = None,
+        units: Sequence[DeltaUnit] | None = None,
+        round_mode: _RoundMode = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDelta | int:
+        """Inverse of the ``since()`` method."""
+        return b.since(
+            self,
+            unit=unit,
+            units=units,
+            round_mode=round_mode,
+            round_increment=round_increment,
         )
 
     def is_ambiguous(self) -> bool:
@@ -7412,6 +7544,41 @@ def _pop_nanos_kwarg(kwargs: Any, default: int) -> int:
     elif not 0 <= nanos < 1_000_000_000:
         raise ValueError("Invalid nanosecond value")
     return nanos
+
+
+_Tstr = TypeVar("_Tstr", bound=str)
+
+
+def _normalize_unit_or_units(
+    unit: _Tstr | None,
+    units: Sequence[_Tstr] | None,
+    index_func: Callable[[_Tstr], int],
+) -> tuple[Sequence[_Tstr], bool]:
+    if unit is not None and units is not None:
+        raise TypeError("Cannot specify both 'unit' and 'units'")
+    elif unit:
+        index_func(unit)  # validate unit
+        return [unit], True
+    elif units is None:
+        raise TypeError("Must specify either 'unit' or 'units'")
+    elif not units:
+        raise ValueError("'units' cannot be an empty sequence")
+    else:
+        if sorted(units, key=index_func) != list(units):
+            raise ValueError("units must be in decreasing order of size")
+        elif len(set(units)) != len(units):
+            raise ValueError("units cannot contain duplicates")
+        return units, False
+
+
+def _split_calendar_and_exact_units(
+    units: Sequence[DeltaUnit],
+) -> tuple[Sequence[DateDeltaUnit], Sequence[ExactDeltaUnit]]:
+    split_index = next(
+        (i for i, u in enumerate(units) if u not in CALENDAR_UNITS),
+        len(units),
+    )
+    return units[:split_index], units[split_index:]  # type: ignore[return-value]
 
 
 # Use this to strip any incoming datetime classes down to instances
