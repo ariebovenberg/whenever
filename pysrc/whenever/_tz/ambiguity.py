@@ -45,6 +45,7 @@ def resolve_ambiguity(
         )
 
     ambiguity = tz.ambiguity_for_local(int(dt.replace(tzinfo=UTC).timestamp()))
+    # DROP-PY39: replace with match statement
     if isinstance(ambiguity, Unambiguous):
         offset = ambiguity.offset
     elif isinstance(ambiguity, Fold):
@@ -86,11 +87,10 @@ def resolve_ambiguity_using_prev_offset(
         if ambiguity.after != offset:
             offset = ambiguity.before
     else:  # isinstance(ambiguity, Gap)
-        if ambiguity.before == offset:
-            shift = offset - ambiguity.before
-        else:
-            offset = ambiguity.after
-            shift = ambiguity.after - ambiguity.before
-        dt += _timedelta(seconds=shift)
+        # Don't try to reuse the previous offset in case of a gap,
+        # since we can't prevent an unexpected shift anyway.
+        # We just do the default (compatible) behavior.
+        offset = ambiguity.before
+        dt += _timedelta(seconds=offset - ambiguity.after)
 
     return dt.replace(tzinfo=mk_fixed_tzinfo(offset))

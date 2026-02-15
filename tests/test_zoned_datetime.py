@@ -7,7 +7,7 @@ from datetime import (
     timezone as py_timezone,
 )
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Sequence
 from zoneinfo import (
     ZoneInfo,
     available_timezones as zoneinfo_available_timezones,
@@ -21,6 +21,7 @@ from whenever import (
     Date,
     Instant,
     InvalidOffsetError,
+    ItemizedDelta,
     OffsetDateTime,
     PlainDateTime,
     RepeatedTime,
@@ -2752,6 +2753,11 @@ class TestReplace:
         ):
             d.replace(hour=2, disambiguate="raise")
 
+        # default behavior without explicit disambiguation. Unlike in folds,
+        # we *don't* reuse the offset here, since the time doesn't exist at all.
+        # Instead, we go to the later time (same as disambiguate="compatible").
+        assert d.replace(hour=2).exact_eq(d_later)
+
         # Disambiguation may differ depending on whether we change tz.
         # Note that only a named tz is relevant here
         if tz == "Europe/Amsterdam":
@@ -2856,7 +2862,7 @@ class TestReplace:
             )
 
 
-class TestShiftTimeUnits:
+class TestAddSubtractTimeUnits:
     @pytest.mark.parametrize(
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
@@ -2993,7 +2999,7 @@ class TestShiftTimeUnits:
             d.add(hours(34), seconds=3)  # type: ignore[call-overload]
 
 
-class TestShiftDateUnits:
+class TestAddSubtractCalendarUnits:
 
     def test_zero(self):
         d = ZonedDateTime(
@@ -3123,8 +3129,22 @@ class TestShiftDateUnits:
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.add(years=7999, disambiguate="compatible")
 
+    def test_skipped_day(self):
+        zdt = ZonedDateTime("2011-12-29T12-10:00[Pacific/Apia]")
+        assert zdt.add(days=1).exact_eq(
+            ZonedDateTime("2011-12-31 12:00:00+14:00[Pacific/Apia]")
+        )
+
 
 class TestDifference:
+
+    def test_method_is_deprecated_refer_to_operators_instead(self):
+        d1 = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
+        d2 = ZonedDateTime(2020, 8, 14, tz="Europe/Amsterdam")
+        with pytest.warns(
+            WheneverDeprecationWarning, match="subtraction operator"
+        ):
+            d1.difference(d2)
 
     @pytest.mark.parametrize(
         "tz", ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE]
@@ -3182,6 +3202,626 @@ class TestDifference:
 
         # same with the method
         assert d.difference(other) == d - other
+
+
+class TestSince:
+
+    @pytest.mark.parametrize(
+        "a, b, units, kwargs, expect",
+        [
+            # simple cases involving only calendar units
+            (
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    hour=11,
+                    tz="Europe/Amsterdam",
+                    disambiguate="earlier",
+                ),
+                ZonedDateTime(
+                    2023,
+                    10,
+                    28,
+                    hour=11,
+                    tz="Europe/Amsterdam",
+                    disambiguate="earlier",
+                ),
+                ["days"],
+                {},
+                ItemizedDelta(days=1),
+            ),
+            (
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    hour=11,
+                    tz="Europe/Amsterdam",
+                    disambiguate="earlier",
+                ),
+                ZonedDateTime(
+                    2023,
+                    10,
+                    28,
+                    hour=10,
+                    tz="Europe/Amsterdam",
+                    disambiguate="earlier",
+                ),
+                ["days"],
+                {},
+                ItemizedDelta(days=1),
+            ),
+            (
+                ZonedDateTime(
+                    2025,
+                    5,
+                    31,
+                    hour=23,
+                    tz="Europe/Amsterdam",
+                ),
+                ZonedDateTime(
+                    2023,
+                    1,
+                    28,
+                    hour=1,
+                    tz="Europe/Amsterdam",
+                ),
+                ["years", "months", "days"],
+                {"round_increment": 2},
+                ItemizedDelta(years=2, months=4, days=2),
+            ),
+            # calendar units only--but with time-of-day differences that affect rounding
+            (
+                ZonedDateTime(
+                    2025,
+                    5,
+                    31,
+                    hour=4,
+                    tz="Europe/Amsterdam",
+                ),
+                ZonedDateTime(
+                    2023,
+                    1,
+                    28,
+                    hour=4,
+                    nanosecond=1,
+                    tz="Europe/Amsterdam",
+                ),
+                ["years", "months", "days"],
+                {},
+                ItemizedDelta(years=2, months=4, days=2),
+            ),
+            # same but with rounding
+            (
+                ZonedDateTime(
+                    2025,
+                    5,
+                    31,
+                    hour=4,
+                    tz="Europe/Amsterdam",
+                ),
+                ZonedDateTime(
+                    2023,
+                    1,
+                    28,
+                    hour=4,
+                    nanosecond=1,
+                    tz="Europe/Amsterdam",
+                ),
+                ["years", "months", "days"],
+                {"round_increment": 3, "round_mode": "half_ceil"},
+                ItemizedDelta(years=2, months=4, days=3),
+            ),
+            (
+                ZonedDateTime(
+                    2025,
+                    5,
+                    31,
+                    hour=4,
+                    tz="Europe/Amsterdam",
+                ),
+                ZonedDateTime(
+                    2025,
+                    5,
+                    1,
+                    hour=4,
+                    nanosecond=1,
+                    tz="Europe/Amsterdam",
+                ),
+                ["years", "months", "days"],
+                {"round_increment": 40, "round_mode": "floor"},
+                ItemizedDelta(years=0, months=0, days=0),
+            ),
+            # Rounding affected by time-of-day
+            (
+                ZonedDateTime(
+                    2023,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    tz="Europe/Berlin",
+                ),
+                ZonedDateTime(
+                    2021,
+                    7,
+                    3,
+                    hour=1,
+                    tz="Europe/Berlin",
+                ),
+                ["years", "days"],
+                {"round_mode": "floor"},
+                ItemizedDelta(years=1, days=227),
+            ),
+            (
+                ZonedDateTime(
+                    2023,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    tz="Europe/Berlin",
+                ),
+                ZonedDateTime(
+                    2021,
+                    7,
+                    3,
+                    hour=1,
+                    tz="Europe/Berlin",
+                ),
+                ["years", "days"],
+                {"round_mode": "half_even"},
+                ItemizedDelta(years=1, days=228),
+            ),
+            # Rounding affected by shorter days (due to DST)
+            (
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    hour=12,
+                    minute=35,
+                    tz="Europe/Berlin",
+                ),
+                ZonedDateTime(
+                    2021,
+                    7,
+                    3,
+                    hour=1,
+                    tz="Europe/Berlin",
+                ),
+                ["years", "days"],
+                {"round_mode": "half_even"},
+                ItemizedDelta(years=2, days=119),
+            ),
+            (
+                ZonedDateTime(
+                    2023,
+                    3,
+                    26,
+                    hour=13,
+                    minute=25,
+                    tz="Europe/Berlin",
+                ),
+                ZonedDateTime(
+                    2021,
+                    7,
+                    3,
+                    hour=1,
+                    tz="Europe/Berlin",
+                ),
+                ["years", "days"],
+                {"round_mode": "half_even"},
+                ItemizedDelta(years=1, days=266),
+            ),
+            (
+                ZonedDateTime(
+                    2023,
+                    3,
+                    26,
+                    hour=1,
+                    minute=35,
+                    tz="Europe/Berlin",
+                ),
+                ZonedDateTime(
+                    2021,
+                    7,
+                    3,
+                    hour=14,
+                    tz="Europe/Berlin",
+                ),
+                ["years", "days"],
+                {"round_mode": "half_even"},
+                ItemizedDelta(years=1, days=266),
+            ),
+            # Rounding affected by disambiguation
+            (
+                ZonedDateTime(
+                    2023,
+                    3,
+                    31,
+                    hour=19,
+                    minute=35,
+                    tz="Europe/Berlin",
+                ),
+                ZonedDateTime(
+                    2021,
+                    1,
+                    26,
+                    hour=2,
+                    minute=25,
+                    tz="Europe/Berlin",
+                ),
+                ["years", "months"],
+                {"round_mode": "half_even"},
+                ItemizedDelta(years=2, months=2),
+            ),
+            (
+                ZonedDateTime(
+                    2023,
+                    3,
+                    20,
+                    hour=19,
+                    minute=35,
+                    tz="Europe/Berlin",
+                ),
+                ZonedDateTime(
+                    2820,
+                    1,
+                    26,
+                    hour=2,
+                    minute=25,
+                    tz="Europe/Berlin",
+                ),
+                ["years", "months"],
+                {"round_mode": "half_even"},
+                ItemizedDelta(years=-796, months=-10),
+            ),
+            # Beyond calendar units
+            (
+                ZonedDateTime(
+                    2023,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    tz="Europe/Berlin",
+                ),
+                ZonedDateTime(
+                    2021,
+                    7,
+                    3,
+                    hour=1,
+                    tz="Europe/Berlin",
+                ),
+                ["years", "weeks", "hours"],
+                {"round_mode": "floor"},
+                ItemizedDelta(years=1, weeks=32, hours=84),
+            ),
+            (
+                ZonedDateTime(
+                    2023,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    tz="Europe/Berlin",
+                ),
+                ZonedDateTime(
+                    2021,
+                    7,
+                    3,
+                    hour=1,
+                    tz="Europe/Berlin",
+                ),
+                ["years", "weeks", "minutes"],
+                {"round_mode": "ceil", "round_increment": 12},
+                ItemizedDelta(years=1, weeks=32, minutes=5076),
+            ),
+            (
+                ZonedDateTime(
+                    2020,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    tz="Europe/Berlin",
+                ),
+                ZonedDateTime(
+                    2021,
+                    7,
+                    3,
+                    hour=1,
+                    tz="Europe/Berlin",
+                ),
+                ["hours", "minutes"],
+                {"round_mode": "ceil", "round_increment": 12},
+                ItemizedDelta(hours=-12082, minutes=-24),
+            ),
+            # Handling skipped days (rare case involved international date line crossing)
+            (
+                ZonedDateTime("2011-12-31T21+14:00[Pacific/Apia]"),
+                ZonedDateTime("2011-12-29T20-10:00[Pacific/Apia]"),
+                ["days", "hours"],
+                {},
+                ItemizedDelta(days=2, hours=1),
+            ),
+            (
+                ZonedDateTime("2011-12-31T21+14:00[Pacific/Apia]"),
+                ZonedDateTime("2011-12-29T20:50-10:00[Pacific/Apia]"),
+                ["hours", "minutes"],
+                {},
+                ItemizedDelta(hours=24, minutes=10),
+            ),
+            (
+                ZonedDateTime("2011-12-31T17+14:00[Pacific/Apia]"),
+                ZonedDateTime("2011-12-29T17-10:00[Pacific/Apia]"),
+                ["days", "hours"],
+                {},
+                ItemizedDelta(days=2, hours=0),
+            ),
+            (
+                ZonedDateTime("2011-12-31T17+14:00[Pacific/Apia]"),
+                ZonedDateTime("2011-12-29T17-10:00[Pacific/Apia]"),
+                ["hours"],
+                {},
+                ItemizedDelta(hours=24),
+            ),
+            (
+                ZonedDateTime("2011-12-31T17+14:00[Pacific/Apia]"),
+                ZonedDateTime("2011-12-29T18-10:00[Pacific/Apia]"),
+                ["days", "hours"],
+                {},
+                ItemizedDelta(days=0, hours=23),
+            ),
+            (
+                ZonedDateTime("2011-12-31T17+14:00[Pacific/Apia]"),
+                ZonedDateTime("2011-12-29T16-10:00[Pacific/Apia]"),
+                ["days", "hours"],
+                {},
+                ItemizedDelta(days=2, hours=1),
+            ),
+            (
+                ZonedDateTime("2011-12-31T17+14:00[Pacific/Apia]"),
+                ZonedDateTime("2011-12-29T16-10:00[Pacific/Apia]"),
+                ["hours"],
+                {},
+                ItemizedDelta(hours=25),
+            ),
+            # DST-at-midnight case
+            (
+                ZonedDateTime(
+                    2016,
+                    2,
+                    20,
+                    hour=23,
+                    minute=29,
+                    tz="America/Sao_Paulo",
+                    disambiguate="later",
+                ),
+                ZonedDateTime(
+                    2016, 2, 19, hour=23, minute=45, tz="America/Sao_Paulo"
+                ),
+                ["days", "minutes"],
+                {},
+                ItemizedDelta(days=1, minutes=44),
+            ),
+            # Zero situations
+            (
+                ZonedDateTime(
+                    2020,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    tz="Europe/Berlin",
+                ),
+                ZonedDateTime(
+                    2021,
+                    7,
+                    3,
+                    hour=1,
+                    tz="Europe/Berlin",
+                ),
+                ["years"],
+                {"round_mode": "trunc", "round_increment": 4},
+                ItemizedDelta(years=0),
+            ),
+            (
+                ZonedDateTime(
+                    2023,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    tz="Europe/Berlin",
+                ),
+                ZonedDateTime(
+                    2021,
+                    7,
+                    3,
+                    hour=1,
+                    tz="Europe/Berlin",
+                ),
+                ["months"],
+                {"round_mode": "trunc", "round_increment": 50},
+                ItemizedDelta(months=0),
+            ),
+            (
+                ZonedDateTime(
+                    2023,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    tz="Asia/Tokyo",
+                ),
+                ZonedDateTime(
+                    2023,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    tz="Asia/Tokyo",
+                ),
+                ["weeks"],
+                {},
+                ItemizedDelta(weeks=0),
+            ),
+            (
+                ZonedDateTime(
+                    2023,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    tz="Asia/Tokyo",
+                ),
+                ZonedDateTime(
+                    2023,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    tz="Asia/Tokyo",
+                ),
+                ["seconds"],
+                {},
+                ItemizedDelta(seconds=0),
+            ),
+            # single unit cases
+            (
+                ZonedDateTime(
+                    2023,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    tz="Asia/Tokyo",
+                ),
+                ZonedDateTime(
+                    2023,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    nanosecond=1,
+                    tz="Asia/Tokyo",
+                ),
+                ["seconds"],
+                {},
+                ItemizedDelta(seconds=0),
+            ),
+            (
+                ZonedDateTime(
+                    2023,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    tz="Asia/Tokyo",
+                ),
+                ZonedDateTime(
+                    2023,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    second=1,
+                    tz="Asia/Tokyo",
+                ),
+                ["seconds"],
+                {},
+                ItemizedDelta(seconds=-1),
+            ),
+            # different timezone
+            (
+                ZonedDateTime(
+                    2023,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    tz="Asia/Tokyo",
+                ),
+                ZonedDateTime(
+                    2023,
+                    2,
+                    15,
+                    hour=13,
+                    minute=25,
+                    second=1,
+                    tz="America/Los_Angeles",
+                ),
+                ["hours", "minutes"],
+                {},
+                ItemizedDelta(hours=-17, minutes=0),
+            ),
+        ],
+    )
+    def test_examples(
+        self,
+        a: ZonedDateTime,
+        b: ZonedDateTime,
+        units: Sequence[
+            Literal[
+                "years",
+                "months",
+                "weeks",
+                "days",
+                "hours",
+                "minutes",
+                "seconds",
+                "nanoseconds",
+            ]
+        ],
+        kwargs: dict[str, Any],
+        expect: ItemizedDelta,
+    ):
+        assert a.since(b, units=units, **kwargs).exact_eq(expect)
+
+        if len(units) == 1:
+            assert a.since(b, unit=units[0], **kwargs) == expect.values()[0]
+
+    def test_cal_units_with_different_tz_not_supported(self):
+        with pytest.raises(ValueError, match="same timezone"):
+            ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo").since(
+                ZonedDateTime(2023, 2, 15, tz="America/Los_Angeles"),
+                units=["days"],
+            )
+
+    def test_invalid_units(self):
+        with pytest.raises(ValueError, match="[Ii]nvalid unit.*foos"):
+            ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo").since(
+                ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo"),
+                units=["foos"],  # type: ignore[list-item]
+            )
+
+        with pytest.raises(ValueError, match="[Ii]nvalid unit.*foos"):
+            ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo").since(
+                ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo"),
+                unit="foos",  # type: ignore[call-overload]
+            )
+
+    def test_until_is_inverse(self):
+        a = ZonedDateTime(2023, 2, 15, hour=3, tz="Asia/Tokyo")
+        b = ZonedDateTime(2021, 7, 3, tz="Asia/Tokyo")
+        assert a.since(
+            b, units=["years", "months", "days", "hours"]
+        ) == b.until(a, units=["years", "months", "days", "hours"])
+        # floor rounding works correctly
+        assert a.since(
+            b,
+            units=["years", "months", "days", "hours"],
+            round_increment=2,
+            round_mode="floor",
+        ) == b.until(
+            a,
+            units=["years", "months", "days", "hours"],
+            round_increment=2,
+            round_mode="floor",
+        )
 
 
 class TestRound:

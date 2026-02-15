@@ -276,30 +276,40 @@ class TestFromPyTime:
 def test_comparison():
     t = Time(1, 2, 3, nanosecond=4_000)
     same = Time(1, 2, 3, nanosecond=4_000)
-    bigger = Time(2, 2, 3, nanosecond=4_000)
-    smaller = Time(1, 2, 3, nanosecond=3_999)
+    bigger1 = Time(2, 2, 3, nanosecond=4_000)
+    bigger2 = Time(1, 2, 3, nanosecond=4_001)
+    smaller1 = Time(1, 2, 3, nanosecond=3_999)
+    smaller2 = Time(1, 2, 2, nanosecond=999_999_999)
 
     assert t <= same
-    assert t <= bigger
-    assert not t <= smaller
+    assert t <= bigger1
+    assert t <= bigger2
+    assert not t <= smaller1
+    assert not t <= smaller2
     assert t <= AlwaysLarger()
     assert not t <= AlwaysSmaller()
 
     assert not t < same
-    assert t < bigger
-    assert not t < smaller
+    assert t < bigger1
+    assert t < bigger2
+    assert not t < smaller1
+    assert not t < smaller2
     assert t < AlwaysLarger()
     assert not t < AlwaysSmaller()
 
     assert t >= same
-    assert not t >= bigger
-    assert t >= smaller
+    assert not t >= bigger1
+    assert not t >= bigger2
+    assert t >= smaller1
+    assert t >= smaller2
     assert not t >= AlwaysLarger()
     assert t >= AlwaysSmaller()
 
     assert not t > same
-    assert not t > bigger
-    assert t > smaller
+    assert not t > bigger1
+    assert not t > bigger2
+    assert t > smaller1
+    assert t > smaller2
     assert not t > AlwaysLarger()
     assert t > AlwaysSmaller()
 
