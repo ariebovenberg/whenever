@@ -604,8 +604,8 @@ VALID_TDELTAS = [
 ]
 
 INVALID_TDELTAS = [
-    "P1D",  # date units
-    "P1YT4M",  # date units
+    "P1D",  # calencar units
+    "P1YT4M",  # calencar units
     "T1H",  # wrong prefix
     "PT4M3H",  # wrong order
     "PT1.5H",  # fractional hours
@@ -1482,7 +1482,7 @@ class TestItemize:
 
     def test_units_out_of_order(self):
         d = TimeDelta(hours=1)
-        with pytest.raises(ValueError, match="in descending order"):
+        with pytest.raises(ValueError, match="largest to smallest"):
             d.in_units(["seconds", "hours"])
 
     def test_units_repeated(self):

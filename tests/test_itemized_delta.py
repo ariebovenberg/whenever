@@ -13,6 +13,9 @@ pytestmark = pytest.mark.filterwarnings(
     "ignore::whenever.WheneverDeprecationWarning"
 )
 
+# TODO: delta.replace()
+# TODO: delta.clear() or similar
+
 
 class TestInit:
 

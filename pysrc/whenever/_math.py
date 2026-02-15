@@ -2,8 +2,29 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date as _date, timedelta as _timedelta
-from typing import Union
+from typing import Literal, Union
+
+# TODO: rationalize
+CALENDAR_UNITS = ["years", "months", "weeks", "days"]
+EXACT_UNITS = ["hours", "minutes", "seconds", "nanoseconds"]
+EXACT_UNITS_RELAXED = ["weeks", "days", *EXACT_UNITS]
+DeltaUnit = Literal[
+    "years",
+    "months",
+    "weeks",
+    "days",
+    "hours",
+    "minutes",
+    "seconds",
+    "nanoseconds",
+]
+DateDeltaUnit = Literal["years", "months", "weeks", "days"]
+ExactDeltaUnit = Literal[
+    "weeks", "days", "hours", "minutes", "seconds", "nanoseconds"
+]
+DELTA_UNITS = [*CALENDAR_UNITS, *EXACT_UNITS]
 
 
 # A special class to represent February 29th on a year that is not a leap year.
@@ -119,6 +140,29 @@ DIFF_FUNCS = {
 }
 
 
+def date_diff(
+    a: _date,
+    b: _date,
+    round_increment: int,
+    units: Sequence[DateDeltaUnit],
+) -> tuple[dict[DateDeltaUnit, int], InterimDate, InterimDate]:
+    # Because years and months are variable length, the calculation is done
+    # by progressively adding each unit to `b` until we reach the target date (`a`).
+    # We keep track of two dates: one that is truncated (not exceeding `a`)
+    # and one that is expanded (equal to or exceeding `a`).
+    trunc: InterimDate = b
+    expand: InterimDate = a
+
+    # We only apply the increment logic to the last unit.
+    # The other units get increment 1.
+    increments = [*[1] * (len(units) - 1), round_increment]
+    results = {}
+    for u, increment in zip(units, increments):
+        results[u], trunc, expand = DIFF_FUNCS[u](a, trunc, increment)
+
+    return results, trunc, expand
+
+
 def is_leap(year: int) -> bool:
     return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
 
@@ -172,3 +216,59 @@ def increment_to_ns_for_datetime(unit: str, increment: int) -> int:
             f"Invalid increment for {unit}. Must divide {max_divisor}."
         )
     return ns_per_unit * increment
+
+
+Sign = Literal[1, 0, -1]
+
+
+# This rounding function has a bit of a strange signature, due to the fact
+# that it needs to run with calendar units. For example, it needs to be able
+# to round *months* using the difference in *days* to determine whether
+# to round up or down.
+# Hopefully you won't have to come back to this function to make changes.
+# If necessary, read the tests and usage in the main code to understand how this function is used.
+def custom_round(
+    trunc_value: int,
+    remainder: int,
+    expanded: int,
+    mode: str,
+    increment: int,
+    sign: Sign,
+) -> int:
+    do_expand = False  # 'expand' means round away from 0
+
+    # Some internal sanity checks (Should not be triggered by user input, since the main code should guarantee these)
+    assert mode != "trunc"  # should be handled by caller
+
+    # All values are absolute values, and the sign is handled separately.
+    assert expanded > 0
+    assert remainder >= 0
+    assert trunc_value >= 0
+
+    # Rounding should always be done to a different value
+    assert increment > 0
+    assert expanded != remainder
+
+    # DROP-PY39: match-case
+    if mode == "half_even":  # check this mode first, since it's common.
+        do_expand = remainder * 2 > expanded or (
+            remainder * 2 == expanded and (trunc_value // increment) % 2 == 1
+        )
+    elif mode == "expand":
+        do_expand = remainder > 0
+    elif mode == "ceil":
+        do_expand = remainder * sign > 0
+    elif mode == "floor":
+        do_expand = remainder * sign < 0
+    elif mode == "half_ceil":
+        do_expand = remainder * 2 >= (expanded - sign or 1)
+    elif mode == "half_floor":
+        do_expand = remainder * 2 >= (expanded + sign or 1)
+    elif mode == "half_trunc":
+        do_expand = remainder * 2 > expanded
+    elif mode == "half_expand":
+        do_expand = remainder * 2 >= expanded
+    else:
+        raise ValueError(f"Invalid rounding mode: {mode!r}")
+
+    return trunc_value + (increment * do_expand)
