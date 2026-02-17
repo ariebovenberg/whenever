@@ -52,6 +52,14 @@ def test_multiple_interpreters():
         interpreters.destroy(interp_id)
 
 
+def test_type_aliases():
+    from whenever import DateDeltaUnitStr  # noqa
+    from whenever import DeltaUnitStr  # noqa
+    from whenever import DisambiguateStr  # noqa
+    from whenever import ExactDeltaUnitStr  # noqa
+    from whenever import RoundModeStr  # noqa
+
+
 def test_exceptions():
     assert issubclass(ImplicitlyIgnoringDST, TypeError)
     assert issubclass(InvalidOffsetError, ValueError)

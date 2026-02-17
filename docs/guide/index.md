@@ -22,6 +22,7 @@ For more details, see the {ref}`API reference <api>`.
    conversions
    ambiguity
    arithmetic
+   rounding
    parsing
    stdlib-convert
    partial-types

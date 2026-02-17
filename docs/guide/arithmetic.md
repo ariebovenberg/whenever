@@ -202,27 +202,3 @@ Because there's no way to to stop users from working around
 restrictions to get the result they want, `whenever` provides the
 `ignore_dst` option to at least make it explicit when this is happening.
 :::
-
-
-## Rounding
-
-```{note}
-The API for rounding is largely inspired by that of Temporal (JavaScript)
-```
-
-It's often useful to truncate or round a datetime to a specific unit.
-For example, you might want to round a datetime to the nearest hour,
-or truncate it into 15-minute intervals.
-
-The {class}`~whenever.ZonedDateTime.round` method allows you to do this:
-
-```python
->>> d = PlainDateTime(2023, 12, 28, 11, 32, 8)
-PlainDateTime("2023-12-28 11:32:08")
->>> d.round("hour")
-PlainDateTime("2023-12-28 12:00:00")
->>> d.round("minute", increment=15, mode="ceil")
-PlainDateTime("2023-12-28 11:45:00")
-```
-
-See the method documentation for more details on the available options.

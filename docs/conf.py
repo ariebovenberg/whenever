@@ -46,7 +46,7 @@ myst_enable_extensions = [
 # -- Options for HTML output ----------------------------------------------
 
 autodoc_default_options = {
-    "exclude-members": "__weakref__, __init__, __init_subclass__, __reduce__, __hash__, __repr__,__subclasshook__,__class_getitem__",
+    "exclude-members": "__weakref__, __init__, __init_subclass__, __reduce__, __hash__, __repr__, __subclasshook__, __class_getitem__",
 }
 autodoc_member_order = "groupwise"
 html_theme = "furo"
@@ -57,8 +57,13 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
 }
 toc_object_entries_show_parents = "hide"
-maximum_signature_line_length = 95
+maximum_signature_line_length = 150
 # Awaiting https://github.com/sphinx-doc/sphinx/issues/14003
-# autodoc_type_aliases = {
-#     "_CalendarUnitPlural": "_CalendarUnitPlural",
-# }
+autodoc_type_aliases = {
+    "RoundModeStr": "RoundModeStr",
+    "DeltaUnitStr": "DeltaUnitStr",
+    "DateDeltaUnitStr": "DateDeltaUnitStr",
+    "ExactDeltaUnitStr": "ExactDeltaUnitStr",
+    "DisambiguateStr": "DisambiguateStr",
+    "AnyDelta": "AnyDelta",
+}

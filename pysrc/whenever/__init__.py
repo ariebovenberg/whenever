@@ -18,23 +18,26 @@ from ._core import (  # The unpickle functions must be findable at module-level
     _unpkl_ym,
     _unpkl_zoned,
 )
+from ._typing import *
 from ._utils import *
 
 # These imports are only needed for the doc generation, which only
 # runs in pure Python mode.
 if not _EXTENSION_LOADED:  # pragma: no cover
-    from ._pywhenever import (
-        __all__,
-        _BasicConversions,
-        _ExactAndLocalTime,
-        _ExactTime,
-        _LocalTime,
-    )
-
+    from ._pywhenever import __all__
 
 # Yes, we could get the version with importlib.metadata,
 # but we try to keep our import time as low as possible.
 __version__ = "0.10.0"
+
+# We expose these at module-level for convenience
+MONDAY = Weekday.MONDAY
+TUESDAY = Weekday.TUESDAY
+WEDNESDAY = Weekday.WEDNESDAY
+THURSDAY = Weekday.THURSDAY
+FRIDAY = Weekday.FRIDAY
+SATURDAY = Weekday.SATURDAY
+SUNDAY = Weekday.SUNDAY
 
 reset_tzpath()  # populate the tzpath once at startup
 
@@ -61,3 +64,7 @@ def __getattr__(name: str) -> object:
         )
 
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
+
+# TODO: make py3.12<-safe
+type AnyDelta = DateDelta | TimeDelta | DateTimeDelta | ItemizedDelta | ItemizedDateDelta

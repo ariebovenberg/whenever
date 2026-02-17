@@ -21,6 +21,7 @@ from whenever import (
     Date,
     Instant,
     InvalidOffsetError,
+    ItemizedDateDelta,
     ItemizedDelta,
     OffsetDateTime,
     PlainDateTime,
@@ -2905,10 +2906,16 @@ class TestAddSubtractTimeUnits:
             .add(hours=0)
             .exact_eq(d.replace(disambiguate="later"))
         )
+        assert (
+            d.replace(disambiguate="later")
+            .add(ItemizedDelta(hours=0))
+            .exact_eq(d.replace(disambiguate="later"))
+        )
 
         # equivalent with subtraction
         assert (d - hours(0)).exact_eq(d)
         assert d.subtract(hours=0).exact_eq(d)
+        assert d.subtract(ItemizedDelta(hours=0)).exact_eq(d)
 
     @pytest.mark.parametrize(
         "tz", ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE]
@@ -2941,9 +2948,15 @@ class TestAddSubtractTimeUnits:
 
         # equivalent with method (arg)
         assert d.add(hours(24)).exact_eq(d + hours(24))
+        assert d.add(ItemizedDelta(minutes=24 * 60)).exact_eq(d + hours(24))
         assert (
             d.replace(disambiguate="later")
             .add(hours(24))
+            .exact_eq(d.replace(disambiguate="later") + hours(24))
+        )
+        assert (
+            d.replace(disambiguate="later")
+            .add(ItemizedDelta(hours=24))
             .exact_eq(d.replace(disambiguate="later") + hours(24))
         )
 
@@ -3051,10 +3064,10 @@ class TestAddSubtractCalendarUnits:
             d.replace(year=2021, day=27)
         )
         # same with arg
-        assert d.add(years(1) + weeks(2) + days(-2)).exact_eq(
-            d.add(years=1, weeks=2, days=-2)
+        assert d.add(ItemizedDateDelta(years=8, months=2, days=9)).exact_eq(
+            d.add(years=8, months=2, days=9)
         )
-        assert d.add(years(1) + weeks(2) + hours(2)).exact_eq(
+        assert d.add(ItemizedDelta(years=1, weeks=2, hours=2)).exact_eq(
             d.add(years=1, weeks=2, hours=2)
         )
         # same with operators

@@ -332,7 +332,7 @@ def test_in_units(
     assert d.in_units(units, relative_to=relative_to, **kwargs).exact_eq(
         expect
     )
-    if kwargs.get("round_increment") == 1:
+    if kwargs.get("round_increment", 1) == 1 and units[-1] == "days":
         assert relative_to.add(expect) == relative_to.add(d)
 
 

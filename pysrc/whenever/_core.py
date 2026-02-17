@@ -58,6 +58,8 @@ except ModuleNotFoundError as e:
 
     _EXTENSION_LOADED = False
 
+from ._typing import *
+
 MONDAY = Weekday.MONDAY
 TUESDAY = Weekday.TUESDAY
 WEDNESDAY = Weekday.WEDNESDAY
