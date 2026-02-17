@@ -1,5 +1,6 @@
 import pickle
-from typing import Any, Literal, Sequence
+from collections import Counter
+from typing import Any, Literal, Sequence, cast
 
 import pytest
 
@@ -8,7 +9,10 @@ from whenever import Date, ItemizedDateDelta, ItemizedDelta
 from .common import AlwaysEqual, NeverEqual
 from .test_date_delta import INVALID_DDELTAS
 
-UNITS = "years months weeks days".split()
+UNITS = cast(
+    Sequence[Literal["years", "months", "weeks", "days"]],
+    "years months weeks days".split(),
+)
 pytestmark = pytest.mark.filterwarnings(
     "ignore::whenever.WheneverDeprecationWarning"
 )
@@ -36,7 +40,7 @@ class TestInit:
             ({"weeks": 50}, 1),
         ],
     )
-    def test_simple_valid(self, kwargs, expect_sign):
+    def test_simple_valid(self, kwargs, expect_sign: int):
         d = ItemizedDateDelta(**kwargs)
         assert d.sign == expect_sign
         for unit in UNITS:
@@ -95,26 +99,36 @@ class TestInit:
         ),
     ],
 )
-def test_dictlike_behavior(d, expected):
-    # explicit method
-    assert d.asdict() == expected
-    assert list(d.asdict()) == list(expected)  # keys in order
-
-    # The mapping-like interface
-    assert list(d.units()) == list(expected.keys())
+def test_mapping_like_interface(
+    d: ItemizedDateDelta,
+    expected: dict[Literal["years", "months", "weeks", "days"], int],
+):
+    # Components
+    assert list(d.keys()) == list(expected.keys())
     assert list(d.values()) == list(expected.values())
+    assert list(d.items()) == list(expected.items())
+
+    # passing as arguments
+    assert dict(d) == expected
+    assert Counter(d) == Counter(expected)
+    # mypy ignore awaiting release of https://github.com/python/mypy/pull/20416
+    assert ItemizedDateDelta(**d) == d  # type: ignore[misc]
 
     for key in expected:
         assert key in d
         assert d[key] == expected[key]
+        assert d.get(key) is not None
 
     # a random missing key
     assert "foo" not in d
     with pytest.raises(KeyError):
-        d["foo"]
+        d["foo"]  # type: ignore[index]
+
+    assert d.get("foo") is None  # type: ignore[call-overload]
 
     for missing_key in UNITS - expected.keys():
         assert missing_key not in d
+        assert d.get(missing_key) is None
         with pytest.raises(KeyError):
             d[missing_key]
 
@@ -157,7 +171,9 @@ class TestEq:
         # NOTE: the mypy ignore comments are actually also "tests" in the sense
         # they ensure that the types properly implement strict comparison!
         assert d != "P5D"  # type: ignore[comparison-overlap]
-        assert d != ItemizedDelta(days=5)  # type: ignore[comparison-overlap]
+        # TODO: these comparisons *should* be blocked?
+        assert d != {"days": 5}
+        assert d != ItemizedDelta(days=5)
 
 
 def test_exact_eq():
@@ -188,7 +204,7 @@ class TestFormatIso:
             (ItemizedDateDelta(weeks=-600), "-P600W"),
         ],
     )
-    def test_format_iso(self, d, expected):
+    def test_format_iso(self, d: ItemizedDateDelta, expected: str):
         assert d.format_iso() == expected
 
     def test_lowercase_units(self):
@@ -394,15 +410,15 @@ class TestAddSub:
         d2: ItemizedDateDelta,
         relative_to: Date,
         expected: ItemizedDateDelta,
-        kwargs,
+        kwargs: Any,
     ):
         result = d1.add(d2, relative_to=relative_to, **kwargs)
         assert result.exact_eq(expected)
 
         # same result with kwargs
-        assert d1.add(
-            **d2.asdict(), relative_to=relative_to, **kwargs
-        ).exact_eq(expected)
+        assert d1.add(**d2, relative_to=relative_to, **kwargs).exact_eq(  # type: ignore[call-overload, misc]
+            expected
+        )
 
         # same result with subtraction
         if (
@@ -413,8 +429,8 @@ class TestAddSub:
                 -d2, relative_to=relative_to, **kwargs
             ).exact_eq(expected)
 
-            assert d1.subtract(
-                **{k: -v for k, v in d2.asdict().items()},  # type: ignore[operator]
+            assert d1.subtract(  # type: ignore[call-overload]
+                **{k: -v for k, v in d2.items()},  # type: ignore[misc]
                 relative_to=relative_to,
                 **kwargs,
             ).exact_eq(expected)
@@ -580,7 +596,7 @@ def test_bool():
         ItemizedDateDelta(days=-5, weeks=0),
     ],
 )
-def test_pickle(d):
+def test_pickle(d: ItemizedDateDelta):
     dumped = pickle.dumps(d)
     assert len(dumped) < 100
     assert pickle.loads(dumped).exact_eq(d)

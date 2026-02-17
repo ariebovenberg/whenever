@@ -1,4 +1,7 @@
 import pickle
+from collections import Counter
+from collections.abc import Sequence
+from typing import Literal, cast
 
 import pytest
 
@@ -8,7 +11,21 @@ from .common import AlwaysEqual, NeverEqual
 from .test_date_delta import INVALID_DDELTAS
 from .test_time_delta import INVALID_TDELTAS
 
-UNITS = "years months weeks days hours minutes seconds nanoseconds".split()
+UNITS = cast(
+    Sequence[
+        Literal[
+            "years",
+            "months",
+            "weeks",
+            "days",
+            "hours",
+            "minutes",
+            "seconds",
+            "nanoseconds",
+        ]
+    ],
+    "years months weeks days hours minutes seconds nanoseconds".split(),
+)
 pytestmark = pytest.mark.filterwarnings(
     "ignore::whenever.WheneverDeprecationWarning"
 )
@@ -115,26 +132,46 @@ class TestInit:
         ),
     ],
 )
-def test_dictlike_behavior(d, expected):
-    # explicit method
-    assert d.asdict() == expected
-    assert list(d.asdict()) == list(expected)  # keys in order
-
-    # The mapping-like interface
-    assert list(d.units()) == list(expected.keys())
+def test_mapping_like_interface(
+    d: ItemizedDelta,
+    expected: dict[
+        Literal[
+            "years",
+            "months",
+            "weeks",
+            "days",
+            "hours",
+            "minutes",
+            "seconds",
+            "nanoseconds",
+        ],
+        int,
+    ],
+):
+    # Components
+    assert list(d.keys()) == list(expected.keys())
     assert list(d.values()) == list(expected.values())
+    assert list(d.items()) == list(expected.items())
+
+    # passing as arguments
+    assert dict(d) == expected
+    assert Counter(d) == Counter(expected)
+    # mypy ignore awaiting release of https://github.com/python/mypy/pull/20416
+    assert ItemizedDelta(**d) == d  # type: ignore[misc]
 
     for key in expected:
         assert key in d
         assert d[key] == expected[key]
+        assert d.get(key) is not None
 
     # a random missing key
     assert "foo" not in d
     with pytest.raises(KeyError):
-        d["foo"]
+        d["foo"]  # type: ignore[index]
 
     for missing_key in UNITS - expected.keys():
         assert missing_key not in d
+        assert d.get(missing_key) is None
         with pytest.raises(KeyError):
             d[missing_key]
 
@@ -172,6 +209,15 @@ class TestEq:
         assert d1 == d2
         assert not d1 != d2
 
+    def test_no_allow_mixing_delta_types(self):
+        d = ItemizedDelta(days=5)
+        # NOTE: the mypy ignore comments are actually also "tests" in the sense
+        # they ensure that the types properly implement strict comparison!
+        assert d != "P5D"  # type: ignore[comparison-overlap]
+        # TODO: these comparisons *should* be blocked?
+        assert d != {"days": 5}
+        assert d != ItemizedDateDelta(days=5)
+
 
 def test_exact_eq():
     d1 = ItemizedDelta(years=2, months=0, minutes=5, seconds=0)
@@ -208,7 +254,7 @@ class TestFormatIso:
             (ItemizedDelta(minutes=-600), "-PT600M"),
         ],
     )
-    def test_format_iso(self, d, expected):
+    def test_format_iso(self, d: ItemizedDelta, expected: str):
         assert d.format_iso() == expected
 
     def test_lowercase_units(self):
@@ -469,7 +515,7 @@ def test_parts(
         ItemizedDelta(days=-5, nanoseconds=0),
     ],
 )
-def test_pickle(d):
+def test_pickle(d: ItemizedDelta):
     dumped = pickle.dumps(d)
     assert len(dumped) < 100
     assert pickle.loads(dumped).exact_eq(d)

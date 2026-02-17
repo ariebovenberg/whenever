@@ -3782,7 +3782,9 @@ class TestSince:
         assert a.since(b, units=units, **kwargs).exact_eq(expect)
 
         if len(units) == 1:
-            assert a.since(b, unit=units[0], **kwargs) == expect.values()[0]
+            assert (
+                a.since(b, unit=units[0], **kwargs) == list(expect.values())[0]
+            )
 
     def test_cal_units_with_different_tz_not_supported(self):
         with pytest.raises(ValueError, match="same timezone"):
