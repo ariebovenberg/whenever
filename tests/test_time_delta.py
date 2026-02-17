@@ -437,6 +437,20 @@ class TestTotal:
             ),
         ) == approx(-6.549429223744292)
 
+    def test_zero(self):
+        d = TimeDelta()
+        ref = ZonedDateTime(2023, 3, 26, hour=4, tz="Europe/Paris")
+        assert d.total("nanoseconds") == 0
+        assert d.total("microseconds") == 0
+        assert d.total("milliseconds") == 0
+        assert d.total("seconds") == 0
+        assert d.total("minutes") == 0
+        assert d.total("hours") == 0
+        assert d.total("days", relative_to=ref) == 0
+        assert d.total("weeks", relative_to=ref) == 0
+        assert d.total("months", relative_to=ref) == 0
+        assert d.total("years", relative_to=ref) == 0
+
     def test_invalid_unit(self):
         d = TimeDelta(hours=1)
         with pytest.raises(ValueError, match="Invalid unit.*foobars"):
@@ -604,8 +618,8 @@ VALID_TDELTAS = [
 ]
 
 INVALID_TDELTAS = [
-    "P1D",  # calencar units
-    "P1YT4M",  # calencar units
+    "P1D",  # calendar units
+    "P1YT4M",  # calendar units
     "T1H",  # wrong prefix
     "PT4M3H",  # wrong order
     "PT1.5H",  # fractional hours

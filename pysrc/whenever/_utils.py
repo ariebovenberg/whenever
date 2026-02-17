@@ -23,7 +23,7 @@ from ._core import (
 
 # Maintainer's notes:
 # - Yes I dislike the name `utils` too, but it seems to fit OK in this case.
-# - These functions are implemented in Python regardless of whether the rust
+# - These functions are implemented in Python regardless of whether the Rust
 #   extension is active. This is fine because they are not performance-critical,
 #   and build upon the core API.
 
@@ -48,7 +48,7 @@ def ignore_days_not_always_24h_warning() -> Iterator[None]:
     >>> from whenever import TimeDelta
     >>> d = TimeDelta(hours=100)
     >>> with ignore_days_not_always_24h_warning():
-    ...     d.in_days()
+    ...     d.total("days")  # no warning
     """
     token = _ignore_days_not_always_24h_warning.set(True)
     try:
@@ -106,8 +106,7 @@ def patch_current_time(
       Use the ``time_machine`` package if you also want to patch other libraries.
     * It doesn't affect the system timezone.
       If you need to patch the system timezone, set the ``TZ`` environment
-      variable in combination with :func:`~whenever.reset_system_tz`. Be aware that this only
-      works on Unix-like systems.
+      variable in combination with :func:`~whenever.reset_system_tz`.
 
     Example
     -------

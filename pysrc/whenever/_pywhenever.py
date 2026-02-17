@@ -14,7 +14,6 @@ from __future__ import annotations
 import enum
 from abc import ABC, ABCMeta, abstractmethod
 from collections.abc import (
-    Callable,
     ItemsView,
     KeysView,
     Mapping,
@@ -49,13 +48,10 @@ from warnings import warn
 
 from ._common import check_utc_bounds, mk_fixed_tzinfo
 from ._math import (
-    CALENDAR_UNITS,
+    DATE_DELTA_UNITS,
     DELTA_UNITS,
     DIFF_FUNCS,
-    EXACT_UNITS_RELAXED,
-    DateDeltaUnit,
-    DeltaUnit,
-    ExactDeltaUnit,
+    EXACT_UNITS,
     Sign,
     custom_round,
     date_diff,
@@ -78,8 +74,14 @@ from ._parse import (
     yearmonth_from_iso,
     zdt_from_iso,
 )
+from ._typing import (
+    DateDeltaUnitStr,
+    DeltaUnitStr,
+    DisambiguateStr,
+    ExactDeltaUnitStr,
+    RoundModeStr,
+)
 from ._tz import (  # noqa: F401
-    Disambiguate,
     RepeatedTime,
     SkippedTime,
     TimeZone,
@@ -144,7 +146,8 @@ except ImportError:
 
 
 class Weekday(enum.Enum):
-    """Day of the week; ``.value`` corresponds with ISO numbering.
+    """Day of the week; ``.value`` corresponds with ISO numbering
+    (monday=1, sunday=7).
 
     All members are also available as constants in the module namespace:
 
@@ -175,53 +178,13 @@ _MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * 1_000_000_000
 _MAX_SUBSEC_NANOS = 999_999_999
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
-_RoundMode = Literal[
-    "ceil",
-    "expand",
-    "floor",
-    "trunc",
-    "half_ceil",
-    "half_expand",
-    "half_floor",
-    "half_trunc",
-    "half_even",
-]
+# TODO: naming
 # A sentinel value that looks nice in autodoc.
 # Used in cases where `None` would be a valid value, or where we want to
 # avoid allowing `None` to be passed in by users.
-_UNSET = type("UNSET", (), {"__repr__": lambda _: "..."})()
-
-
-# Key for sorting units from largest to smallest, with descriptive error message
-def _calendar_unit_index(u: str) -> int:
-    try:
-        return CALENDAR_UNITS.index(u)
-    except ValueError:
-        raise ValueError(
-            f"Invalid unit {u!r}. Unit must be one of "
-            + ", ".join(repr(u) for u in CALENDAR_UNITS)
-        )
-
-
-# Key for sorting units from largest to smallest, with descriptive error message
-def _itemized_unit_index(u: str) -> int:
-    try:
-        return DELTA_UNITS.index(u)
-    except ValueError:
-        raise ValueError(
-            f"Invalid unit {u!r}. Unit must be one of "
-            + ", ".join(repr(u) for u in DELTA_UNITS)
-        )
-
-
-def _exact_unit_relaxed_index(u: str) -> int:
-    try:
-        return EXACT_UNITS_RELAXED.index(u)
-    except ValueError:
-        raise ValueError(
-            f"Invalid unit {u!r}. Unit must be one of "
-            + ", ".join(repr(u) for u in EXACT_UNITS_RELAXED)
-        )
+_UNSET = type(
+    "UNSET", (), {"__repr__": lambda _: "...", "__bool__": lambda _: False}
+)()
 
 
 # Metaclass ugh...it proved the most lightweight way to allow the constructors
@@ -313,10 +276,12 @@ class Date(_Base):
     >>> d = Date(2021, 1, 2)
     Date("2021-01-02")
 
-    Can also be constructed directly from an ISO 8601 string.
+    Can also be constructed directly from an ISO 8601 string,
+    or from a standard library :class:`~datetime.date`:
 
     >>> Date("2021-01-02")
     Date("2021-01-02")
+    >>> Date(date(2021, 1, 2))
     """
 
     __slots__ = ("_py_date",)
@@ -326,13 +291,17 @@ class Date(_Base):
     MAX: ClassVar[Date]
     """The maximum possible date"""
 
+    # TODO: do this everywhere
     @overload
     def __init__(self, iso_string: str, /) -> None: ...
 
     @overload
+    def __init__(self, py_date: _date, /) -> None: ...
+
+    @overload
     def __init__(self, year: int, month: int, day: int) -> None: ...
 
-    # Mypy doesn't know we handle the ISO string in the metaclass
+    # Mypy doesn't know we handle other constructors in the metaclass
     def __init__(self, year: int, month: int, day: int) -> None:  # type: ignore[misc]
         self._py_date = _date(year, month, day)
 
@@ -471,6 +440,13 @@ class Date(_Base):
         """
         return cls._from_py_unchecked(date_from_iso(s))
 
+    if not TYPE_CHECKING:  # for a nice autodoc
+
+        @overload
+        def replace(
+            self, year: int = ..., month: int = ..., day: int = ...
+        ) -> Date: ...
+
     def replace(self, **kwargs: Any) -> Date:
         """Create a new instance with the given fields replaced
 
@@ -597,8 +573,8 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        unit: DateDeltaUnit,
-        round_mode: _RoundMode = "trunc",
+        unit: DateDeltaUnitStr,
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> int: ...
 
@@ -608,8 +584,8 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        units: Sequence[DateDeltaUnit],
-        round_mode: _RoundMode = "trunc",
+        units: Sequence[DateDeltaUnitStr],
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
 
@@ -618,9 +594,9 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        unit: Optional[DateDeltaUnit] = None,
-        units: Optional[Sequence[DateDeltaUnit]] = None,
-        round_mode: _RoundMode = "trunc",
+        unit: Optional[DateDeltaUnitStr] = None,
+        units: Optional[Sequence[DateDeltaUnitStr]] = None,
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> Union[ItemizedDateDelta, int]:
         """Calculate the difference between this date and another date.
@@ -655,7 +631,7 @@ class Date(_Base):
 
         """
         units, single_unit_mode = _normalize_unit_or_units(
-            unit, units, index_func=_calendar_unit_index
+            unit, units, valid_units=DATE_DELTA_UNITS
         )
         smallest_unit = units[-1]
         results, trunc, expand = date_diff(
@@ -690,8 +666,8 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        unit: DateDeltaUnit,
-        round_mode: _RoundMode = "trunc",
+        unit: DateDeltaUnitStr,
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> int: ...
 
@@ -701,8 +677,8 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        units: Sequence[DateDeltaUnit],
-        round_mode: _RoundMode = "trunc",
+        units: Sequence[DateDeltaUnitStr],
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
 
@@ -711,9 +687,9 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        unit: Optional[DateDeltaUnit] = None,
-        units: Optional[Sequence[DateDeltaUnit]] = None,
-        round_mode: _RoundMode = "trunc",
+        unit: Optional[DateDeltaUnitStr] = None,
+        units: Optional[Sequence[DateDeltaUnitStr]] = None,
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> Union[ItemizedDateDelta, int]:
         """Companion to :meth:`since` that calculates the difference until another date.
@@ -898,7 +874,7 @@ class Date(_Base):
         return _unpkl_date, (pack("<HBB", self.year, self.month, self.day),)
 
 
-_FLIP_FLOOR_CEIL: dict[_RoundMode, _RoundMode] = {
+_FLIP_FLOOR_CEIL: dict[RoundModeStr, RoundModeStr] = {
     "ceil": "floor",
     "floor": "ceil",
     "half_ceil": "half_floor",
@@ -978,6 +954,11 @@ class YearMonth(_Base):
         YearMonth("2021-01")
         """
         return cls._from_py_unchecked(yearmonth_from_iso(s))
+
+    if not TYPE_CHECKING:  # for a nice autodoc
+
+        @overload
+        def replace(self, year: int = ..., month: int = ...) -> YearMonth: ...
 
     def replace(self, **kwargs: Any) -> YearMonth:
         """Create a new instance with the given fields replaced
@@ -1134,6 +1115,11 @@ class MonthDay(_Base):
         MonthDay("--11-23")
         """
         return cls._from_py_unchecked(monthday_from_iso(s))
+
+    if not TYPE_CHECKING:  # for a nice autodoc
+
+        @overload
+        def replace(self, month: int = ..., day: int = ...) -> MonthDay: ...
 
     def replace(self, **kwargs: Any) -> MonthDay:
         """Create a new instance with the given fields replaced
@@ -1386,6 +1372,17 @@ class Time(_Base):
         """
         return cls._from_py_unchecked(*time_from_iso(s))
 
+    if not TYPE_CHECKING:  # for a nice autodoc
+
+        @overload
+        def replace(
+            self,
+            hour: int = ...,
+            minute: int = ...,
+            second: int = ...,
+            nanosecond: int = ...,
+        ) -> Time: ...
+
     def replace(self, **kwargs: Any) -> Time:
         """Create a new instance with the given fields replaced
 
@@ -1425,7 +1422,7 @@ class Time(_Base):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: _RoundMode = "half_even",
+        mode: RoundModeStr = "half_even",
     ) -> Time:
         """Round the time to the specified unit and increment.
         Various rounding modes are available.
@@ -1644,6 +1641,7 @@ class TimeDelta(_Base):
 
                 sign = 1 if self._total_ns >= 0 else -1
                 shifted_date = shifted.date()
+                # TODO: check safety with tz transitions
                 if shifted.time() > relative_to.time():
                     shifted_date = shifted_date.add(days=1)
                 elif sign == 1 and shifted.time() < relative_to.time():
@@ -1832,11 +1830,7 @@ class TimeDelta(_Base):
 
     def in_units(
         self,
-        units: Sequence[
-            Literal[
-                "weeks", "days", "hours", "minutes", "seconds", "nanoseconds"
-            ]
-        ],
+        units: Sequence[ExactDeltaUnitStr],
         /,
         *,
         round_unit: Literal[
@@ -1844,10 +1838,9 @@ class TimeDelta(_Base):
             "microsecond",
             "nanosecond",
         ] = _UNSET,
-        round_mode: _RoundMode = "trunc",
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDelta:
-        # TODO: drop direct iterability of ItemizedDelta in favor of .values()
         """Convert to a :class:`ItemizedDelta` with the specified units
 
         >>> d = TimeDelta(hours=2, minutes=30, seconds=23, milliseconds=500)
@@ -1879,7 +1872,9 @@ class TimeDelta(_Base):
             raise ValueError("All units must be plural")
         elif isinstance(units, str):  # Hard to debug if not caught here
             raise TypeError("Units must be a sequence, not a string")
-        elif sorted(units, key=_exact_unit_relaxed_index) != list(units):
+        elif sorted(units, key=lambda u: _unit_index(u, EXACT_UNITS)) != list(
+            units
+        ):
             raise ValueError(
                 "Units must be specified from largest to smallest"
             )
@@ -1910,11 +1905,11 @@ class TimeDelta(_Base):
     # Private version of in_units() without validation and afterprocessing
     def _in_units(
         self,
-        units: Sequence[ExactDeltaUnit],
+        units: Sequence[ExactDeltaUnitStr],
         round_unit: Literal["millisecond", "microsecond", "nanosecond"],
-        round_mode: _RoundMode,
+        round_mode: RoundModeStr,
         round_increment: int,
-    ) -> dict[ExactDeltaUnit, int]:
+    ) -> dict[ExactDeltaUnitStr, int]:
 
         self = self.round(
             unit=(
@@ -2066,7 +2061,7 @@ class TimeDelta(_Base):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: _RoundMode = "half_even",
+        mode: RoundModeStr = "half_even",
     ) -> TimeDelta:
         """Round the delta to the specified unit and increment.
         Various rounding modes are available.
@@ -2716,7 +2711,7 @@ TimeDelta._date_part = DateDelta.ZERO
 
 
 @final
-class ItemizedDelta(_Base, Mapping[DeltaUnit, int]):
+class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     """A duration that preserves the exact fields it was created with.
     It closely models the ISO 8601 duration format for durations.
 
@@ -2905,7 +2900,9 @@ class ItemizedDelta(_Base, Mapping[DeltaUnit, int]):
 
     @property
     def seconds(self) -> int:
-        """The number of seconds, 0 if not set
+        """The number of seconds, 0 if not set.
+
+        To get seconds including the nanoseconds, use :meth:`float_seconds`.
 
         Use ``d["seconds"]`` or ``d.get("seconds", ...)`` to handle missing values
         """
@@ -2926,7 +2923,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnit, int]):
             (self._seconds or 0) + (self._nanoseconds or 0) / 1_000_000_000
         )
 
-    def __iter__(self) -> Iterator[DeltaUnit]:
+    def __iter__(self) -> Iterator[DeltaUnitStr]:
         """Iterate over all non-missing fields, ordered from largest to smallest unit."""
         if self._years is not None:
             yield "years"
@@ -2950,7 +2947,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnit, int]):
     if not TYPE_CHECKING:
         if SPHINXBUILD:
 
-            def keys(self) -> KeysView[DeltaUnit]:
+            def keys(self) -> KeysView[DeltaUnitStr]:
                 """The names of all defined fields, in order of largest to smallest unit.
 
                 Part of the mapping protocol
@@ -2973,7 +2970,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnit, int]):
                 """
                 ...
 
-            def items(self) -> ItemsView[DeltaUnit, int]:
+            def items(self) -> ItemsView[DeltaUnitStr, int]:
                 """Return all defined fields as (unit, value) pairs
                 ordered from largest to smallest unit.
 
@@ -2986,12 +2983,14 @@ class ItemizedDelta(_Base, Mapping[DeltaUnit, int]):
                 ...
 
             @overload
-            def get(self, key: DeltaUnit, /) -> Optional[int]: ...
+            def get(self, key: DeltaUnitStr, /) -> Optional[int]: ...
 
             @overload
-            def get(self, key: DeltaUnit, default: int, /) -> int: ...
+            def get(self, key: DeltaUnitStr, default: int, /) -> int: ...
 
-            def get(self, key: DeltaUnit, default: object = None, /) -> object:
+            def get(
+                self, key: DeltaUnitStr, default: object = None, /
+            ) -> object:
                 """Get the value of a specific field by name, or return default if not set.
 
                 Part of the mapping protocol
@@ -3455,21 +3454,165 @@ class ItemizedDelta(_Base, Mapping[DeltaUnit, int]):
             self._nanoseconds,
         )
 
-    def add(self, *args, **kwargs: Any) -> ItemizedDelta:
+    @overload
+    def add(
+        self,
+        other: ItemizedDelta,
+        /,
+        *,
+        relative_to: ZonedDateTime,
+        units: Sequence[DeltaUnitStr] = ...,
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+
+    @overload
+    def add(
+        self,
+        /,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        hours: int = ...,
+        minutes: int = ...,
+        seconds: int = ...,
+        nanoseconds: int = ...,
+        relative_to: ZonedDateTime,
+        units: Sequence[DeltaUnitStr] = ...,
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+
+    def add(
+        self,
+        arg: ItemizedDelta = _UNSET,
+        /,
+        *,
+        relative_to: ZonedDateTime,
+        units: Sequence[DeltaUnitStr] = _UNSET,
+        round_mode: RoundModeStr = "trunc",
+        round_increment: int = 1,
+        **kwargs: Any,
+    ) -> ItemizedDelta:
         """Add time to this delta, returning a new delta"""
-        raise NotImplementedError()  # TODO
+        if kwargs:
+            if arg is not _UNSET:
+                raise TypeError("Cannot mix positional and keyword arguments")
+        elif arg is not _UNSET:
+            # In this case the mapping types are interchangeable
+            kwargs = arg  # type: ignore[assignment]
+        else:
+            return self
 
-    def subtract(self, *args, **kwargs: Any) -> ItemizedDelta:
-        """Subtract time from this delta, returning a new delta"""
-        raise NotImplementedError()  # TODO
+        units = cast(
+            Sequence[DeltaUnitStr],
+            (
+                sorted(
+                    kwargs.keys() | self.keys(),
+                    key=lambda u: _unit_index(u, DELTA_UNITS),
+                )
+                if units is _UNSET
+                else units
+            ),
+        )
 
-    def in_units(self, *args, **kwargs) -> ItemizedDelta:
-        """Return a new delta expressed in the specified units"""
-        raise NotImplementedError()  # TODO
+        return (
+            relative_to.add(self)
+            .add(**kwargs)
+            .since(
+                relative_to,
+                units=units,
+                round_mode=round_mode,
+                round_increment=round_increment,
+            )
+        )
 
-    def total(self, *args, **kwargs) -> float:
+    @overload
+    def subtract(
+        self,
+        other: ItemizedDelta,
+        /,
+        *,
+        relative_to: ZonedDateTime,
+        units: Sequence[DeltaUnitStr] = ...,
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+
+    @overload
+    def subtract(
+        self,
+        /,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        hours: int = ...,
+        minutes: int = ...,
+        seconds: int = ...,
+        nanoseconds: int = ...,
+        relative_to: ZonedDateTime,
+        units: Sequence[DeltaUnitStr] = ...,
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+
+    def subtract(
+        self,
+        arg: ItemizedDelta = _UNSET,
+        /,
+        *,
+        relative_to: ZonedDateTime,
+        units: Sequence[DeltaUnitStr] = _UNSET,
+        round_mode: RoundModeStr = "trunc",
+        round_increment: int = 1,
+        **kwargs: Any,
+    ) -> ItemizedDelta:
+        """Inverse of :meth:`add`."""
+        arg = -arg if arg is not _UNSET else _UNSET
+        return self.add(
+            arg,
+            **{k: -v for k, v in kwargs.items()},
+            relative_to=relative_to,
+            units=units,
+            round_mode=round_mode,
+            round_increment=round_increment,
+        )
+
+    def in_units(
+        self,
+        units: Sequence[DeltaUnitStr],
+        /,
+        *,
+        relative_to: ZonedDateTime,
+        round_mode: RoundModeStr = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDelta:
+        """Convert this delta into the specified units. A `relative_to` datetime
+        is required to resolve calendar units.
+
+        >>> d = ItemizedDelta(years=1, months=8, minutes=1000)
+        >>> d.in_units(["weeks", "hours"], relative_to=ZonedDateTime(2020, 6, 30, 12, tz="Asia/Tokyo"))
+        ItemizedDelta("P86w160h")
+        """
+        return relative_to.add(self).since(
+            relative_to,
+            units=units,
+            round_mode=round_mode,
+            round_increment=round_increment,
+        )
+
+    # TODO: formalize milliseconds allowed
+    def total(
+        self, unit: DeltaUnitStr, /, *, relative_to: ZonedDateTime
+    ) -> float:
         """Return the total duration expressed in the specified unit as a float"""
-        raise NotImplementedError()  # TODO
+        return (relative_to.add(self) - relative_to).total(
+            unit, relative_to=relative_to
+        )
 
     @no_type_check
     def __reduce__(self):
@@ -3519,7 +3662,7 @@ def _unpkl_idelta(
 
 
 @final
-class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
+class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     """A date duration that preserves the exact fields it was created with.
     It closely models the ISO 8601 duration format for date-only durations.
 
@@ -3674,11 +3817,11 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
 
     def in_units(
         self,
-        units: Sequence[DateDeltaUnit],
+        units: Sequence[DateDeltaUnitStr],
         /,
         *,
         relative_to: Date,
-        round_mode: _RoundMode = "trunc",
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta:
         """Convert this delta into the specified units. A `relative_to` date
@@ -3803,7 +3946,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
     if not TYPE_CHECKING:
         if SPHINXBUILD:
 
-            def keys(self) -> KeysView[DateDeltaUnit]:
+            def keys(self) -> KeysView[DateDeltaUnitStr]:
                 """The names of all defined fields, ordered from largest to smallest unit.
 
                 Part of the mapping protocol
@@ -3824,7 +3967,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
                 """
                 ...
 
-            def items(self) -> ItemsView[DateDeltaUnit, int]:
+            def items(self) -> ItemsView[DateDeltaUnitStr, int]:
                 """Return all defined fields as (unit, value) pairs
                 ordered from largest to smallest unit.
 
@@ -3835,13 +3978,13 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
                 ...
 
             @overload
-            def get(self, key: DateDeltaUnit, /) -> Optional[int]: ...
+            def get(self, key: DateDeltaUnitStr, /) -> Optional[int]: ...
 
             @overload
-            def get(self, key: DateDeltaUnit, default: int, /) -> int: ...
+            def get(self, key: DateDeltaUnitStr, default: int, /) -> int: ...
 
             def get(
-                self, key: DateDeltaUnit, default: object = None, /
+                self, key: DateDeltaUnitStr, default: object = None, /
             ) -> object:
                 """Get the value of a specific field by name, or return default if not set.
 
@@ -3849,7 +3992,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
                 """
                 ...
 
-    def __iter__(self) -> Iterator[DateDeltaUnit]:
+    def __iter__(self) -> Iterator[DateDeltaUnitStr]:
         """Iterate over all unit names for fields that are set, ordered from largest to smallest unit."""
         if self._years is not None:
             yield "years"
@@ -3860,7 +4003,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
         if self._days is not None:
             yield "days"
 
-    def __getitem__(self, key: DateDeltaUnit) -> int:
+    def __getitem__(self, key: DateDeltaUnitStr) -> int:
         """Get the value of a specific field by name.
 
         >>> d = ItemizedDateDelta(weeks=1, days=0)
@@ -4012,8 +4155,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
         /,
         *,
         relative_to: Date,
-        units: Sequence[DateDeltaUnit] = ...,
-        round_mode: _RoundMode = "trunc",
+        units: Sequence[DateDeltaUnitStr] = ...,
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
 
@@ -4027,8 +4170,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
         weeks: int = ...,
         days: int = ...,
         relative_to: Date,
-        units: Sequence[DateDeltaUnit] = ...,
-        round_mode: _RoundMode = "trunc",
+        units: Sequence[DateDeltaUnitStr] = ...,
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
 
@@ -4038,8 +4181,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
         /,
         *,
         relative_to: Date,
-        units: Sequence[DateDeltaUnit] = _UNSET,
-        round_mode: _RoundMode = "trunc",
+        units: Sequence[DateDeltaUnitStr] = _UNSET,
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
         **kwargs: int,
     ) -> ItemizedDateDelta:
@@ -4054,11 +4197,11 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
             return self
 
         units = cast(
-            Sequence[DateDeltaUnit],
+            Sequence[DateDeltaUnitStr],
             (
                 sorted(
                     kwargs.keys() | self.keys(),
-                    key=_calendar_unit_index,
+                    key=lambda u: _unit_index(u, DATE_DELTA_UNITS),
                 )
                 if units is _UNSET
                 else units
@@ -4083,8 +4226,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
         /,
         *,
         relative_to: Date,
-        units: Sequence[DateDeltaUnit] = ...,
-        round_mode: _RoundMode = "trunc",
+        units: Sequence[DateDeltaUnitStr] = ...,
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
 
@@ -4098,8 +4241,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
         weeks: int = ...,
         days: int = ...,
         relative_to: Date,
-        units: Sequence[DateDeltaUnit] = ...,
-        round_mode: _RoundMode = "trunc",
+        units: Sequence[DateDeltaUnitStr] = ...,
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
 
@@ -4109,8 +4252,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
         /,
         *,
         relative_to: Date,
-        units: Sequence[DateDeltaUnit] = _UNSET,
-        round_mode: _RoundMode = "trunc",
+        units: Sequence[DateDeltaUnitStr] = _UNSET,
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
         **kwargs: Any,
     ) -> ItemizedDateDelta:
@@ -4125,7 +4268,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
             round_increment=round_increment,
         )
 
-    def total(self, unit: DateDeltaUnit, /, *, relative_to: Date) -> float:
+    def total(self, unit: DateDeltaUnitStr, /, *, relative_to: Date) -> float:
         """Return the total duration expressed in the specified unit as a float
 
         >>> ItemizedDateDelta(years=1, months=6).total("months", relative_to=Date(2020, 1, 31))
@@ -4412,7 +4555,8 @@ class DateTimeDelta(_Base):
 
         return cls._from_parts(ddelta, tdelta)
 
-    def __add__(self, other: Delta) -> DateTimeDelta:
+    # TODO fix type annotation
+    def __add__(self, other: AnyDelta) -> DateTimeDelta:
         """Add two deltas together
 
         >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
@@ -4605,7 +4749,9 @@ def _unpkl_dtdelta(
 
 
 DateTimeDelta.ZERO = DateTimeDelta()
-Delta = Union[DateTimeDelta, TimeDelta, DateDelta]  # TODO
+AnyDelta = Union[
+    DateTimeDelta, TimeDelta, DateDelta, ItemizedDelta, ItemizedDateDelta
+]
 
 
 class _BasicConversions(_Base, ABC):
@@ -4667,7 +4813,6 @@ class _BasicConversions(_Base, ABC):
 
         See :ref:`here <iso8601>` for more information.
         """
-        raise NotImplementedError()
 
     @classmethod
     @abstractmethod
@@ -4882,7 +5027,7 @@ class _LocalTime(_BasicConversions, ABC):
                 "nanosecond",
             ] = "second",
             increment: int = 1,
-            mode: _RoundMode = "half_even",
+            mode: RoundModeStr = "half_even",
         ) -> _T:
             """Round the datetime to the specified unit and increment.
             Different rounding modes are available.
@@ -4953,7 +5098,7 @@ class _ExactTime(_BasicConversions):
     ) -> OffsetDateTime: ...
 
     def to_fixed_offset(
-        self, offset: int | TimeDelta | None = None, /
+        self, offset: int | TimeDelta = _UNSET, /
     ) -> OffsetDateTime:
         """Convert to an OffsetDateTime that represents the same moment in time.
 
@@ -4963,7 +5108,7 @@ class _ExactTime(_BasicConversions):
             self._py_dt.astimezone(
                 # mypy doesn't know that offset is never None
                 _timezone(self._py_dt.utcoffset())  # type: ignore[arg-type]
-                if offset is None
+                if offset is _UNSET
                 else _load_offset(offset)
             ),
             self._nanos,
@@ -5449,7 +5594,7 @@ class Instant(_ExactTime):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: _RoundMode = "half_even",
+        mode: RoundModeStr = "half_even",
     ) -> Instant:
         """Round the instant to the specified unit and increment.
         Various rounding modes are available.
@@ -5955,7 +6100,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     def _shift(
         self,
         sign: int,
-        arg: Delta | _UNSET = _UNSET,
+        arg: AnyDelta | _UNSET = _UNSET,
         /,
         *,
         ignore_dst: bool = False,
@@ -6030,7 +6175,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: _RoundMode = "half_even",
+        mode: RoundModeStr = "half_even",
         *,
         ignore_dst: bool = False,
     ) -> OffsetDateTime:
@@ -6093,13 +6238,17 @@ def _unpkl_offset(data: bytes) -> OffsetDateTime:
 @final
 class ZonedDateTime(_ExactAndLocalTime):
     """A datetime associated with a timezone in the IANA database.
-    Useful for representing the exact time at a specific location.
+    Useful for representing the exact time at a specific location,
+    and for performing DST-aware arithmetic.
 
-    >>> ZonedDateTime(2024, 12, 8, hour=11, tz="Europe/Paris")
+    >>> ZonedDateTime("2024-12-08T11[Europe/Paris]")
     ZonedDateTime("2024-12-08 11:00:00+01:00[Europe/Paris]")
     >>> # Explicitly resolve ambiguities during DST transitions
     >>> ZonedDateTime(2023, 10, 29, 1, 15, tz="Europe/London", disambiguate="earlier")
     ZonedDateTime("2023-10-29 01:15:00+01:00[Europe/London]")
+    >>> # From a standard library datetime (must have a ZoneInfo tzinfo)
+    >>> ZonedDateTime(datetime(2020, 8, 15, 23, 12, tzinfo=ZoneInfo("Europe/London")))
+    ZonedDateTime("2020-08-15 23:12:00+01:00[Europe/London]")
 
     Important
     ---------
@@ -6108,6 +6257,27 @@ class ZonedDateTime(_ExactAndLocalTime):
     """
 
     __slots__ = ("_tz",)
+
+    @overload
+    def __init__(self, iso_str: str, /) -> None: ...
+
+    @overload
+    def __init__(self, py_dt: _datetime, /) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        year: int,
+        month: int,
+        day: int,
+        hour: int = 0,
+        minute: int = 0,
+        second: int = 0,
+        *,
+        nanosecond: int = 0,
+        tz: str,
+        disambiguate: DisambiguateStr = "compatible",
+    ) -> None: ...
 
     def __init__(
         self,
@@ -6120,7 +6290,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         *,
         nanosecond: int = 0,
         tz: str,
-        disambiguate: Disambiguate = "compatible",
+        disambiguate: DisambiguateStr = "compatible",
     ) -> None:
         self._py_dt = resolve_ambiguity(
             _datetime(
@@ -6151,7 +6321,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         second: int = 0,
         *,
         nanosecond: int = 0,
-        disambiguate: Disambiguate = "compatible",
+        disambiguate: DisambiguateStr = "compatible",
     ) -> ZonedDateTime:
         """Create an instance in the system timezone.
 
@@ -6314,10 +6484,6 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         The inverse of the ``py_datetime()`` method.
 
-        Attention
-        ---------
-        If the datetime is ambiguous (e.g. during a DST transition),
-        the ``fold`` attribute is used to disambiguate the time.
         """
         from zoneinfo import ZoneInfo
 
@@ -6340,7 +6506,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         return cls._from_py_unchecked(dt, d.microsecond * 1_000, _tz)
 
     def replace_date(
-        self, date: Date, /, disambiguate: Disambiguate | None = None
+        self, date: Date, /, disambiguate: DisambiguateStr = _UNSET
     ) -> ZonedDateTime:
         """Construct a new instance with the date replaced.
 
@@ -6358,7 +6524,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
 
     def replace_time(
-        self, time: Time, /, disambiguate: Disambiguate | None = None
+        self, time: Time, /, disambiguate: DisambiguateStr = _UNSET
     ) -> ZonedDateTime:
         """Construct a new instance with the time replaced.
 
@@ -6376,7 +6542,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
 
     def replace(
-        self, /, disambiguate: Disambiguate | None = None, **kwargs: Any
+        self, /, disambiguate: DisambiguateStr = _UNSET, **kwargs: Any
     ) -> ZonedDateTime:
         """Construct a new instance with the given fields replaced.
 
@@ -6427,7 +6593,8 @@ class ZonedDateTime(_ExactAndLocalTime):
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
 
-    def __add__(self, delta: Delta) -> ZonedDateTime:
+    # TODO: only TimeDelta
+    def __add__(self, delta: AnyDelta) -> ZonedDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
 
         See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`__
@@ -6472,26 +6639,39 @@ class ZonedDateTime(_ExactAndLocalTime):
             return self + -other
         return NotImplemented
 
-    # TODO
     @overload
-    def add(self, d: TimeDelta, /) -> ZonedDateTime: ...
+    def add(
+        self,
+        d: AnyDelta,
+        /,
+        *,
+        disambiguate: DisambiguateStr = ...,
+    ) -> ZonedDateTime: ...
 
     @overload
     def add(
         self,
-        d: Union[ItemizedDelta, ItemizedDateDelta, DateDelta, DateTimeDelta],
-        /,
         *,
-        disambiguate: Disambiguate = ...,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        hours: float = ...,
+        minutes: float = ...,
+        seconds: float = ...,
+        milliseconds: float = ...,
+        microseconds: float = ...,
+        nanoseconds: int = ...,
+        disambiguate: DisambiguateStr = ...,
     ) -> ZonedDateTime: ...
 
     @no_type_check
     def add(self, *args, **kwargs) -> ZonedDateTime:
-        """Add a time amount to this datetime.
+        """Return a new ``ZonedDateTime`` shifted by the given time amounts
 
         Important
         ---------
-        Shifting a ``ZonedDateTime`` with **calendar units** (e.g. months, weeks)
+        Shifting by **calendar units** (e.g. months, weeks)
         may result in an ambiguous time (e.g. during a DST transition).
         Therefore, when adding calendar units, it's recommended to
         specify how to handle such a situation using the ``disambiguate`` argument.
@@ -6501,30 +6681,45 @@ class ZonedDateTime(_ExactAndLocalTime):
         """
         return self._shift(1, *args, **kwargs)
 
+    @overload
+    def subtract(
+        self,
+        d: AnyDelta,
+        /,
+        *,
+        disambiguate: DisambiguateStr = ...,
+    ) -> ZonedDateTime: ...
+
+    @overload
+    def subtract(
+        self,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        hours: float = ...,
+        minutes: float = ...,
+        seconds: float = ...,
+        milliseconds: float = ...,
+        microseconds: float = ...,
+        nanoseconds: int = ...,
+        disambiguate: DisambiguateStr = ...,
+    ) -> ZonedDateTime: ...
+
     @no_type_check
     def subtract(self, *args, **kwargs) -> ZonedDateTime:
-        """Subtract a time amount from this datetime.
-
-        Important
-        ---------
-        Shifting a ``ZonedDateTime`` with **calendar units** (e.g. months, weeks)
-        may result in an ambiguous time (e.g. during a DST transition).
-        Therefore, when adding calendar units, it's recommended to
-        specify how to handle such a situation using the ``disambiguate`` argument.
-
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`__
-        for more information.
-        """
+        """The inverse of the ``add()`` method. See :meth:`add` for more information."""
         return self._shift(-1, *args, **kwargs)
 
     @no_type_check
     def _shift(
         self,
         sign: int,
-        delta: Delta | _UNSET = _UNSET,
+        delta: AnyDelta | _UNSET = _UNSET,
         /,
         *,
-        disambiguate: Disambiguate | None = None,
+        disambiguate: DisambiguateStr = _UNSET,
         **kwargs,
     ) -> ZonedDateTime:
         if kwargs:
@@ -6533,8 +6728,11 @@ class ZonedDateTime(_ExactAndLocalTime):
                     sign, disambiguate=disambiguate, **kwargs
                 )
             raise TypeError("Cannot mix positional and keyword arguments")
-
-        elif delta is not _UNSET:
+        elif delta is _UNSET:
+            return self
+        elif isinstance(delta, (ItemizedDelta, ItemizedDateDelta)):
+            return self._shift_kwargs(sign, **delta, disambiguate=disambiguate)
+        elif isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
             return self._shift_kwargs(
                 sign,
                 months=delta._date_part._months,
@@ -6543,7 +6741,7 @@ class ZonedDateTime(_ExactAndLocalTime):
                 disambiguate=disambiguate,
             )
         else:
-            return self
+            raise TypeError("argument must be a delta, got {delta!r}")
 
     def _shift_kwargs(
         self,
@@ -6559,7 +6757,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: Disambiguate | None,
+        disambiguate: DisambiguateStr = _UNSET,
     ) -> ZonedDateTime:
         months_total = sign * (years * 12 + months)
         days_total = sign * (weeks * 7 + days)
@@ -6583,8 +6781,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         b: ZonedDateTime,
         /,
         *,
-        unit: DeltaUnit,
-        round_mode: _RoundMode = ...,
+        unit: DeltaUnitStr,
+        round_mode: RoundModeStr = ...,
         round_increment: int = ...,
     ) -> int: ...
 
@@ -6594,8 +6792,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         b: ZonedDateTime,
         /,
         *,
-        units: Sequence[DeltaUnit],
-        round_mode: _RoundMode = ...,
+        units: Sequence[DeltaUnitStr],
+        round_mode: RoundModeStr = ...,
         round_increment: int = ...,
     ) -> ItemizedDelta: ...
 
@@ -6605,9 +6803,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         b: ZonedDateTime,
         /,
         *,
-        unit: DeltaUnit | None = None,
-        units: Sequence[DeltaUnit] | None = None,
-        round_mode: _RoundMode = "trunc",
+        unit: DeltaUnitStr | None = None,
+        units: Sequence[DeltaUnitStr] | None = None,
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDelta | int:
         """Calculate the duration since another ZonedDateTime,
@@ -6617,7 +6815,7 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         """
         units, single_unit_mode = _normalize_unit_or_units(
-            unit, units, index_func=_itemized_unit_index
+            unit, units, valid_units=DELTA_UNITS
         )
         cal_units, exact_units = _split_calendar_and_exact_units(units)
         if cal_units and self.tz != b.tz:
@@ -6650,7 +6848,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         # Rounding is very different for exact units than calendar units
         smallest_unit = units[-1]
         sign: Sign = 1 if self >= b else -1
-        result = cast(dict[DeltaUnit, int], cal_results)
+        result = cast(dict[DeltaUnitStr, int], cal_results)
         if exact_units:
             result.update(
                 (self - trunc)._in_units(  # type: ignore[arg-type]
@@ -6680,14 +6878,22 @@ class ZonedDateTime(_ExactAndLocalTime):
         # mypy false positive: 'keywords must be strings' (but they're string literals!)
         return ItemizedDelta._from_signed(sign, **result)  # type: ignore[misc]
 
+    def _diff(
+        self,
+        other: ZonedDateTime,
+        units: Sequence[DeltaUnitStr],
+        round_increment: int,
+    ) -> tuple[dict[DeltaUnitStr, int], ZonedDateTime, ZonedDateTime]:
+        pass
+
     @overload
     def until(
         self,
         b: ZonedDateTime,
         /,
         *,
-        unit: DeltaUnit,
-        round_mode: _RoundMode = ...,
+        unit: DeltaUnitStr,
+        round_mode: RoundModeStr = ...,
         round_increment: int = ...,
     ) -> int: ...
 
@@ -6697,8 +6903,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         b: ZonedDateTime,
         /,
         *,
-        units: Sequence[DeltaUnit],
-        round_mode: _RoundMode = ...,
+        units: Sequence[DeltaUnitStr],
+        round_mode: RoundModeStr = ...,
         round_increment: int = ...,
     ) -> ItemizedDelta: ...
 
@@ -6707,9 +6913,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         b: ZonedDateTime,
         /,
         *,
-        unit: DeltaUnit | None = None,
-        units: Sequence[DeltaUnit] | None = None,
-        round_mode: _RoundMode = "trunc",
+        unit: DeltaUnitStr | None = None,
+        units: Sequence[DeltaUnitStr] | None = None,
+        round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDelta | int:
         """Inverse of the ``since()`` method."""
@@ -6788,7 +6994,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: _RoundMode = "half_even",
+        mode: RoundModeStr = "half_even",
     ) -> ZonedDateTime:
         """Round the datetime to the specified unit and increment.
         Different rounding modes are available.
@@ -7070,6 +7276,7 @@ class PlainDateTime(_LocalTime):
             return NotImplemented
         return (self._py_dt, self._nanos) >= (other._py_dt, other._nanos)
 
+    # TODO: deprecate for non-exact units
     def __add__(self, delta: DateDelta) -> PlainDateTime:
         """Add a delta to this datetime.
 
@@ -7161,7 +7368,7 @@ class PlainDateTime(_LocalTime):
     def _shift(
         self,
         sign: int,
-        arg: Delta | _UNSET = _UNSET,
+        arg: AnyDelta | _UNSET = _UNSET,
         /,
         *,
         ignore_dst: bool = False,
@@ -7276,7 +7483,7 @@ class PlainDateTime(_LocalTime):
         )
 
     def assume_tz(
-        self, tz: str, /, disambiguate: Disambiguate = "compatible"
+        self, tz: str, /, disambiguate: DisambiguateStr = "compatible"
     ) -> ZonedDateTime:
         """Assume the datetime is in the given timezone,
         creating a ``ZonedDateTime``.
@@ -7300,7 +7507,7 @@ class PlainDateTime(_LocalTime):
         )
 
     def assume_system_tz(
-        self, disambiguate: Disambiguate = "compatible"
+        self, disambiguate: DisambiguateStr = "compatible"
     ) -> ZonedDateTime:
         """Assume the datetime is in the system timezone,
         creating a ``ZonedDateTime``.
@@ -7338,7 +7545,7 @@ class PlainDateTime(_LocalTime):
             "nanosecond",
         ] = "second",
         increment: int = 1,
-        mode: _RoundMode = "half_even",
+        mode: RoundModeStr = "half_even",
     ) -> PlainDateTime:
         """Round the datetime to the specified unit and increment.
         Different rounding modes are available.
@@ -7629,36 +7836,48 @@ def _pop_nanos_kwarg(kwargs: Any, default: int) -> int:
     return nanos
 
 
+def _unit_index(u: str, units: Sequence[str]) -> int:
+    try:
+        return units.index(u)
+    except ValueError:
+        raise ValueError(
+            f"Invalid unit {u!r}. Unit must be one of "
+            + ", ".join(repr(u) for u in units)
+        )
+
+
 _Tstr = TypeVar("_Tstr", bound=str)
 
 
 def _normalize_unit_or_units(
-    unit: _Tstr | None,
-    units: Sequence[_Tstr] | None,
-    index_func: Callable[[_Tstr], int],
+    unit: str | None,
+    units: Sequence[str] | None,
+    valid_units: Sequence[_Tstr],
 ) -> tuple[Sequence[_Tstr], bool]:
     if unit is not None and units is not None:
         raise TypeError("Cannot specify both 'unit' and 'units'")
     elif unit:
-        index_func(unit)  # validate unit
-        return [unit], True
+        _unit_index(unit, valid_units)  # validate unit
+        return [unit], True  # type: ignore[list-item]
     elif units is None:
         raise TypeError("Must specify either 'unit' or 'units'")
     elif not units:
         raise ValueError("'units' cannot be an empty sequence")
     else:
-        if sorted(units, key=index_func) != list(units):
+        if sorted(units, key=lambda u: _unit_index(u, valid_units)) != list(
+            units
+        ):
             raise ValueError("units must be in decreasing order of size")
         elif len(set(units)) != len(units):
             raise ValueError("units cannot contain duplicates")
-        return units, False
+        return units, False  # type: ignore[return-value]
 
 
 def _split_calendar_and_exact_units(
-    units: Sequence[DeltaUnit],
-) -> tuple[Sequence[DateDeltaUnit], Sequence[ExactDeltaUnit]]:
+    units: Sequence[DeltaUnitStr],
+) -> tuple[Sequence[DateDeltaUnitStr], Sequence[ExactDeltaUnitStr]]:
     split_index = next(
-        (i for i, u in enumerate(units) if u not in CALENDAR_UNITS),
+        (i for i, u in enumerate(units) if u not in DATE_DELTA_UNITS),
         len(units),
     )
     return units[:split_index], units[split_index:]  # type: ignore[return-value]

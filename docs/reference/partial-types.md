@@ -16,4 +16,4 @@
 ```
 
 This section describes the "smaller" date & time types provided by
-*whenever*: {class}`Date`, {class}`Time`, and {class}`YearMonth`, and {class}`MonthDay`.
+`whenever`: {class}`Date`, {class}`Time`, and {class}`YearMonth`, and {class}`MonthDay`.

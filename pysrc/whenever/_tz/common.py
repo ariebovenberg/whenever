@@ -1,6 +1,4 @@
-from typing import Literal, Union
-
-Disambiguate = Literal["compatible", "earlier", "later", "raise"]
+from typing import Union
 
 
 class Unambiguous:

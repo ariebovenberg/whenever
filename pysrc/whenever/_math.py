@@ -4,27 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date as _date, timedelta as _timedelta
-from typing import Literal, Union
+from typing import Literal, Union, cast
+
+from ._typing import DateDeltaUnitStr, DeltaUnitStr
 
 # TODO: rationalize
-CALENDAR_UNITS = ["years", "months", "weeks", "days"]
-EXACT_UNITS = ["hours", "minutes", "seconds", "nanoseconds"]
-EXACT_UNITS_RELAXED = ["weeks", "days", *EXACT_UNITS]
-DeltaUnit = Literal[
-    "years",
-    "months",
-    "weeks",
-    "days",
-    "hours",
-    "minutes",
-    "seconds",
-    "nanoseconds",
-]
-DateDeltaUnit = Literal["years", "months", "weeks", "days"]
-ExactDeltaUnit = Literal[
-    "weeks", "days", "hours", "minutes", "seconds", "nanoseconds"
-]
-DELTA_UNITS = [*CALENDAR_UNITS, *EXACT_UNITS]
+DATE_DELTA_UNITS = cast(
+    Sequence[DateDeltaUnitStr], ["years", "months", "weeks", "days"]
+)
+_EXACT_UNITS_STRICT = ["hours", "minutes", "seconds", "nanoseconds"]
+EXACT_UNITS = ["weeks", "days", *_EXACT_UNITS_STRICT]
+DELTA_UNITS = cast(
+    Sequence[DeltaUnitStr], [*DATE_DELTA_UNITS, *_EXACT_UNITS_STRICT]
+)
 
 
 # A special class to represent February 29th on a year that is not a leap year.
@@ -144,8 +136,8 @@ def date_diff(
     a: _date,
     b: _date,
     round_increment: int,
-    units: Sequence[DateDeltaUnit],
-) -> tuple[dict[DateDeltaUnit, int], InterimDate, InterimDate]:
+    units: Sequence[DateDeltaUnitStr],
+) -> tuple[dict[DateDeltaUnitStr, int], InterimDate, InterimDate]:
     # Because years and months are variable length, the calculation is done
     # by progressively adding each unit to `b` until we reach the target date (`a`).
     # We keep track of two dates: one that is truncated (not exceeding `a`)

@@ -70,7 +70,7 @@ For example, a year can be 365 or 366 days, and a month can be 28, 29, 30, or 31
 More subtly, a day isn't always have 24 hours, as this can change
 depending on Daylight Saving Time, for example.
 
-To handle these different types of units, **whenever** provides three different delta types:
+Depending on the units you need to work with, you should choose the appropriate delta type:
 
 - {class}`TimeDelta` for exact time units
 - {class}`ItemizedDateDelta` for calendar units
@@ -84,24 +84,40 @@ These delta classes also differ in how their components are stored.
 (years, months, days, hours, minutes, seconds) separately, without normalizing them
 into each other.
 
-For example, an {class}`ItemizedDelta` of ""1 hour and 90 minutes" will keep its components
+For example, an {class}`ItemizedDelta` of "1 hour and 90 minutes" will keep its components
 as "1 hour" and "90 minutes", without converting the 90 minutes into 1 hour and 30 minutes.
 This is essential when working with calendar units,
 and sometimes useful when working with exact time units.
 
 ```python
->>> ItemizedDelta(hours=1, minutes=90)
+>>> d = ItemizedDelta(hours=1, minutes=90)
 ItemizedDelta("PT1h90m")
+```
+
+You can imagine this working like a `dict` of components, where each unit is a key and its value is the corresponding amount:
+
+```
+>>> dict(d)
+{'hours': 1, 'minutes': 90}
 ```
 
 {class}`TimeDelta`, on the other hand, normalizes all its components into each other.
 So "1 hour and 90 minutes" becomes "2 hours and 30 minutes".
 This enables easier arithmetic and comparisons,
-as their duration is always the same:
+as their duration is always the same.
 
 ```python
->>> TimeDelta(hours=1, minutes=90)
+>>> d = TimeDelta(hours=1, minutes=90)
 TimeDelta("PT2h30m")
+```
+
+You can imagine this working like a big `int` of nanoseconds internally, which is then converted back into the appropriate units when needed:
+
+```python
+>>> d.total("minutes")
+150.0
+>>> d.total("nanoseconds")
+9000000000000
 ```
 
 (delta-eq)=
