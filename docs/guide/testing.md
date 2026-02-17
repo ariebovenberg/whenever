@@ -46,7 +46,7 @@ greet('alice', now=lambda: Instant.from_utc(2023, 1, 1))
 
 For changing the system timezone in tests, set the `TZ` environment variable
 and use the {func}`~whenever.reset_system_tz` helper function to update the timezone cache.
-Do note that this function only affects *whenever*, and not the standard library's
+Do note that this function only affects `whenever`, and not the standard library's
 behavior.
 
 Below is an example of a testing helper that can be used with `pytest`:

@@ -4,7 +4,7 @@ from .ambiguity import (
     resolve_ambiguity,
     resolve_ambiguity_using_prev_offset,
 )
-from .common import Disambiguate, Fold, Gap, Unambiguous
+from .common import Fold, Gap, Unambiguous
 from .store import (
     SafeTzId,
     TimeZoneNotFoundError,
@@ -19,7 +19,6 @@ from .store import (
 from .tzif import TimeZone
 
 __all__ = [
-    "Disambiguate",
     "Fold",
     "Gap",
     "RepeatedTime",

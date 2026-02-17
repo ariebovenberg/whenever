@@ -6,7 +6,8 @@ from datetime import (
 )
 
 from .._common import UTC, mk_fixed_tzinfo
-from .common import Disambiguate, Fold, Unambiguous
+from .._typing import DisambiguateStr
+from .common import Fold, Unambiguous
 from .tzif import TimeZone
 
 
@@ -34,7 +35,7 @@ def _tzid_display(tzid: str | None) -> str:
 
 
 def resolve_ambiguity(
-    dt: _datetime, tz: TimeZone, disambiguate: Disambiguate | _timedelta
+    dt: _datetime, tz: TimeZone, disambiguate: DisambiguateStr | _timedelta
 ) -> _datetime:
     assert dt.tzinfo is None, "dt must be naive"
     if isinstance(disambiguate, _timedelta):

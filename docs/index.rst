@@ -29,6 +29,7 @@
    reference/datetime.rst
    reference/partial-types
    reference/deltas.rst
+   reference/choice-types.rst
    reference/misc.rst
 
 .. toctree::
