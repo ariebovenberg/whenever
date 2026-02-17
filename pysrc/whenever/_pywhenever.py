@@ -13,7 +13,13 @@ from __future__ import annotations
 
 import enum
 from abc import ABC, ABCMeta, abstractmethod
-from collections.abc import Callable
+from collections.abc import (
+    Callable,
+    ItemsView,
+    KeysView,
+    Mapping,
+    ValuesView,
+)
 from contextvars import ContextVar
 from datetime import (
     date as _date,
@@ -543,7 +549,7 @@ class Date(_Base):
                 )
         elif delta is not _UNSET:
             if isinstance(delta, ItemizedDateDelta):
-                kwargs = delta.asdict()
+                kwargs = delta
             else:
                 assert isinstance(delta, DateDelta)
                 kwargs = {"months": delta._months, "days": delta._days}
@@ -713,7 +719,7 @@ class Date(_Base):
         """Companion to :meth:`since` that calculates the difference until another date.
         See :meth:`since` for more information.
         """
-        return b.since(
+        return b.since(  # type: ignore[call-overload, no-any-return]
             self,
             unit=unit,
             units=units,
@@ -2710,37 +2716,74 @@ TimeDelta._date_part = DateDelta.ZERO
 
 
 @final
-class ItemizedDelta(_Base):
+class ItemizedDelta(_Base, Mapping[DeltaUnit, int]):
     """A duration that preserves the exact fields it was created with.
-    Very closely models the ISO 8601 duration format. See docs for notes.
+    It closely models the ISO 8601 duration format for durations.
 
-    Conceptually, you can imagine this behaving like a dictionary with unit keys:
-    ``ItemizedDelta(weeks=70, minutes=90)`` is like ``{"weeks": 70, "minutes": 90}``
+    >>> d = ItemizedDelta(weeks=2, days=3, hours=14)
+    ItemizedDelta("P2w3dT14h")
+    >>> d = ItemizedDelta("P2w3dT14h")
+    >>> d.weeks
+    2
+    >>> str(d)
+    'P2w3dT14h'
 
-    This allows round-tripping of non-normalized durations.
-    It's also a useful way to render durations in specific units.
+    It behaves like a mapping where the keys are
+    the unit names and the values are the amounts:
 
-    >>> d = ItemizedDelta(weeks=70, minutes=90)
-    ItemizedDelta("P70wT90m")
+    >>> dict(d)
+    {"weeks": 2, "days": 3, "hours": 14}
+    >>> list(d.keys())
+    ["weeks", "days", "hours"]
+    >>> weeks, days, hours = d.values()
+    (2, 3, 14)
 
-    Warning
-    -------
-    "0 seconds" is different from "no seconds":
+    Individual fields can also be accessed as properties...
 
-    >>> d1 = ItemizedDelta(weeks=1, seconds=0)
-    ItemizedDelta("P1wT0s")
-    >>> d2 = ItemizedDelta(weeks=1)
-    ItemizedDelta("P1w")
-    >>> d1 == d2
+    >>> d.weeks
+    2
+    >>> d.years  # defaults to 0 if not set
+    0
+
+    ...or via indexing like a dictionary:
+
+    >>> d["weeks"]
+    2
+    >>> d["years"]
+    KeyError: 'years'
+
+    ``ItemizedDelta`` also supports other dictionary-like operations:
+
+    >>> "months" in d  # check for presence of a field
     False
-    >>> d1.format_iso()
-    "P1WT0S"
-    >>> d2.format_iso()
-    "P1W"
-    >>> dict(d1)
-    {'weeks': 1, 'seconds': 0}
+    >>> len(d)  # number of fields set
+    3
+
+    Zero values are considered distinct from "missing" values:
+
+    >>> d2 = ItemizedDelta(years=2, weeks=3, hours=0)
     >>> dict(d2)
-    {'weeks': 1}
+    {"years": 2, "weeks": 3, "hours": 0}
+
+    Additionally, no normalization is performed.
+    Months are not rolled into years, minutes into hours, etc.
+
+    >>> d3 = ItemizedDelta(months=24, minutes=90)
+    ItemizedDelta("P24mT90m")
+
+    Empty durations are not allowed. At least one field must be set (but it can be zero):
+
+    >>> ItemizedDelta()
+    ValueError: At least one field must be set
+    >>> ItemizedDelta(seconds=0)
+    ItemizedDelta("PT0s")
+
+    Negative durations are supported, but all fields must have the same sign:
+
+    >>> d4 = ItemizedDelta(years=-1, weeks=-2, days=0)
+    ItemizedDelta("-P1y2w0d")
+    >>> ItemizedDelta(years=1, days=-3)
+    ValueError: All fields must have the same sign
     """
 
     __slots__ = (
@@ -2814,104 +2857,146 @@ class ItemizedDelta(_Base):
 
     @property
     def years(self) -> int:
-        """The number of years, 0 if not set"""
+        """The number of years, 0 if not set
+
+        Use ``d["years"]`` or ``d.get("years", ...)`` to handle missing values
+        """
         return self._sign * (self._years or 0)
 
     @property
     def months(self) -> int:
-        """The number of months, 0 if not set"""
+        """The number of months, 0 if not set
+
+        Use ``d["months"]`` or ``d.get("months", ...)`` to handle missing values
+        """
         return self._sign * (self._months or 0)
 
     @property
     def weeks(self) -> int:
-        """The number of weeks, 0 if not set"""
+        """The number of weeks, 0 if not set
+
+        Use ``d["weeks"]`` or ``d.get("weeks", ...)`` to handle missing values
+        """
         return self._sign * (self._weeks or 0)
 
     @property
     def days(self) -> int:
-        """The number of days, 0 if not set"""
+        """The number of days, 0 if not set
+
+        Use ``d["days"]`` or ``d.get("days", ...)`` to handle missing values
+        """
         return self._sign * (self._days or 0)
 
     @property
     def hours(self) -> int:
-        """The number of hours, 0 if not set"""
+        """The number of hours, 0 if not set
+
+        Use ``d["hours"]`` or ``d.get("hours", ...)`` to handle missing values
+        """
         return self._sign * (self._hours or 0)
 
     @property
     def minutes(self) -> int:
-        """The number of minutes, 0 if not set"""
+        """The number of minutes, 0 if not set
+
+        Use ``d["minutes"]`` or ``d.get("minutes", ...)`` to handle missing values
+        """
         return self._sign * (self._minutes or 0)
 
     @property
     def seconds(self) -> int:
-        """The number of seconds, 0 if not set"""
+        """The number of seconds, 0 if not set
+
+        Use ``d["seconds"]`` or ``d.get("seconds", ...)`` to handle missing values
+        """
         return self._sign * (self._seconds or 0)
 
     @property
     def nanoseconds(self) -> int:
-        """The number of nanoseconds, 0 if not set"""
+        """The number of nanoseconds, 0 if not set
+
+        Use ``d["nanoseconds"]`` or ``d.get("nanoseconds", ...)`` to handle missing values
+        """
         return self._sign * (self._nanoseconds or 0)
 
+    # TODO precision note
     def float_seconds(self) -> float:
         """The the seconds and nanoseconds combined as a float"""
         return self._sign * (
             (self._seconds or 0) + (self._nanoseconds or 0) / 1_000_000_000
         )
 
-    def values(self) -> tuple[int, ...]:
-        """Return all non-None fields as a tuple, in order."""
-        return tuple(self)
-
-    def __iter__(self) -> Iterator[int]:
-        """Iterate over all non-None fields, ordered from largest to smallest unit."""
+    def __iter__(self) -> Iterator[DeltaUnit]:
+        """Iterate over all non-missing fields, ordered from largest to smallest unit."""
         if self._years is not None:
-            yield self._sign * self._years
+            yield "years"
         if self._months is not None:
-            yield self._sign * self._months
+            yield "months"
         if self._weeks is not None:
-            yield self._sign * self._weeks
+            yield "weeks"
         if self._days is not None:
-            yield self._sign * self._days
+            yield "days"
         if self._hours is not None:
-            yield self._sign * self._hours
+            yield "hours"
         if self._minutes is not None:
-            yield self._sign * self._minutes
+            yield "minutes"
         if self._seconds is not None:
-            yield self._sign * self._seconds
+            yield "seconds"
         if self._nanoseconds is not None:
-            yield self._sign * self._nanoseconds
+            yield "nanoseconds"
 
-    def asdict(self) -> dict[DeltaUnit, int]:
-        """Return all non-None fields as a dictionary,
-        ordered from largest to smallest unit.
-        """
-        fields: Sequence[tuple[DeltaUnit, Optional[int]]] = (
-            ("years", self._years),
-            ("months", self._months),
-            ("weeks", self._weeks),
-            ("days", self._days),
-            ("hours", self._hours),
-            ("minutes", self._minutes),
-            ("seconds", self._seconds),
-            ("nanoseconds", self._nanoseconds),
-        )
-        return {k: self._sign * v for k, v in fields if v is not None}
+    # These methods defer to the base class implementations, but need to be
+    # documented here for the API docs.
+    if not TYPE_CHECKING:
+        if SPHINXBUILD:
 
-    def units(self) -> tuple[DeltaUnit, ...]:
-        """Return a tuple of the names of all non-None fields,
-        ordered from largest to smallest unit.
-        """
-        fields: Sequence[tuple[DeltaUnit, Optional[int]]] = (
-            ("years", self._years),
-            ("months", self._months),
-            ("weeks", self._weeks),
-            ("days", self._days),
-            ("hours", self._hours),
-            ("minutes", self._minutes),
-            ("seconds", self._seconds),
-            ("nanoseconds", self._nanoseconds),
-        )
-        return tuple(k for k, v in fields if v is not None)
+            def keys(self) -> KeysView[DeltaUnit]:
+                """The names of all defined fields, in order of largest to smallest unit.
+
+                Part of the mapping protocol
+                """
+                ...
+
+            # FUTURE: an optimized ValuesView class that defers to the internal
+            # fields directly instead of going through __getitem__
+            def values(self) -> ValuesView[int]:
+                """Return all defined field values, in order
+                of largest to smallest unit.
+
+                >>> d = ItemizedDelta(years=3, hours=12, days=0)
+                >>> years, days, hours = d.values()
+                (3, 0, 12)
+                >>> list(d.values())
+                [3, 0, 12]
+
+                Part of the mapping protocol
+                """
+                ...
+
+            def items(self) -> ItemsView[DeltaUnit, int]:
+                """Return all defined fields as (unit, value) pairs
+                ordered from largest to smallest unit.
+
+                >>> d = ItemizedDelta(years=3, hours=12, days=0)
+                >>> list(d.items())
+                [('years', 3), ('days', 0), ('hours', 12)]
+
+                Part of the mapping protocol
+                """
+                ...
+
+            @overload
+            def get(self, key: DeltaUnit, /) -> Optional[int]: ...
+
+            @overload
+            def get(self, key: DeltaUnit, default: int, /) -> int: ...
+
+            def get(self, key: DeltaUnit, default: object = None, /) -> object:
+                """Get the value of a specific field by name, or return default if not set.
+
+                Part of the mapping protocol
+                """
+                ...
 
     def __getitem__(self, key: str) -> int:
         """Get the value of a specific field by name.
@@ -2967,7 +3052,7 @@ class ItemizedDelta(_Base):
             + (self._nanoseconds is not None)
         )
 
-    def __contains__(self, key: str) -> bool:
+    def __contains__(self, key: object) -> bool:
         """Check if a specific field is set.
 
         >>> d = ItemizedDelta(weeks=1, days=3)
@@ -3283,8 +3368,8 @@ class ItemizedDelta(_Base):
 
     def __eq__(self, other: object) -> bool:
         """Compare for equality. Each field is individually compared.
-        No normalization is performed. Zero values are considered the same
-        as missing values.
+        No normalization is performed. Zero values are considered equivalent
+        to missing values.
 
         Thus, ``ItemizedDelta(weeks=1, seconds=0) == ItemizedDelta(weeks=1)``
 
@@ -3434,7 +3519,7 @@ def _unpkl_idelta(
 
 
 @final
-class ItemizedDateDelta(_Base):
+class ItemizedDateDelta(_Base, Mapping[DateDeltaUnit, int]):
     """A date duration that preserves the exact fields it was created with.
     It closely models the ISO 8601 duration format for date-only durations.
 
@@ -3446,14 +3531,14 @@ class ItemizedDateDelta(_Base):
     >>> str(d)
     'P22W'
 
-    Conceptually, you can imagine it behaving like a mapping where the keys are
+    It behaves like a mapping where the keys are
     the unit names and the values are the amounts:
 
-    >>> d.asdict()
+    >>> dict(d)
     {"years": 2, "weeks": 3}
-    >>> d.units()
-    ("years", "weeks")
-    >>> d.values()
+    >>> list(d.keys())
+    ["years", "weeks"]
+    >>> years, weeks = d.values()
     (2, 3)
 
     Individual fields can also be accessed as properties...
@@ -3470,9 +3555,8 @@ class ItemizedDateDelta(_Base):
     >>> d["days"]
     KeyError: 'days'
 
-    ``ItemizedDateDelta`` also supports a number of collection protocols:
+    ``ItemizedDateDelta`` also supports other dictionary-like operations:
 
-    >>> years, weeks = d  # iterating over values
     >>> "days" in d  # check for presence of a field
     False
     >>> len(d)  # number of fields set
@@ -3481,7 +3565,7 @@ class ItemizedDateDelta(_Base):
     Zero values are considered distinct from "missing" values:
 
     >>> d2 = ItemizedDateDelta(years=2, weeks=3, days=0)
-    >>> d2.asdict()
+    >>> dict(d2)
     {"years": 2, "weeks": 3, "days": 0}
 
     Additionally, no normalization is performed.
@@ -3503,7 +3587,6 @@ class ItemizedDateDelta(_Base):
     ItemizedDateDelta("-P1y2w0d")
     >>> ItemizedDateDelta(years=1, days=-3)
     ValueError: All fields must have the same sign
-
     """
 
     __slots__ = (
@@ -3548,7 +3631,7 @@ class ItemizedDateDelta(_Base):
     def years(self) -> int:
         """The number of years, or ``0`` if not set.
 
-        Use ``d["years"]`` to get the value only if it was set (``KeyError`` otherwise).
+        Use ``d["years"]`` or ``d.get("years", ...)`` to handle missing values
         """
         return self._sign * (self._years or 0)
 
@@ -3556,7 +3639,7 @@ class ItemizedDateDelta(_Base):
     def months(self) -> int:
         """The number of months, or ``0`` if not set.
 
-        Use ``d["months"]`` to get the value only if it was set (``KeyError`` otherwise).
+        Use ``d["months"]`` or ``d.get("months", ...)`` to handle missing values
         """
         return self._sign * (self._months or 0)
 
@@ -3564,7 +3647,7 @@ class ItemizedDateDelta(_Base):
     def weeks(self) -> int:
         """The number of weeks, or ``0`` if not set.
 
-        Use ``d["weeks"]`` to get the value only if it was set (``KeyError`` otherwise).
+        Use ``d["weeks"]`` or ``d.get("weeks", ...)`` to handle missing values
         """
         return self._sign * (self._weeks or 0)
 
@@ -3572,7 +3655,7 @@ class ItemizedDateDelta(_Base):
     def days(self) -> int:
         """The number of days, or ``0`` if not set.
 
-        Use ``d["days"]`` to get the value only if it was set (``KeyError`` otherwise).
+        Use ``d["days"]`` or ``d.get("days", ...)`` to handle missing values
         """
         return self._sign * (self._days or 0)
 
@@ -3586,56 +3669,8 @@ class ItemizedDateDelta(_Base):
         -1
         >>> ItemizedDateDelta(weeks=0).sign
         0
-
         """
         return self._sign
-
-    def asdict(self) -> dict[DateDeltaUnit, int]:
-        """Return all defined fields as a dictionary,
-        ordered from largest to smallest unit.
-
-        >>> d = ItemizedDateDelta(years=3, days=12, months=0)
-        >>> d.asdict()
-        {'years': 3, 'months': 0, 'days': 12}
-        """
-        fields = (
-            ("years", self._years),
-            ("months", self._months),
-            ("weeks", self._weeks),
-            ("days", self._days),
-        )
-        return {k: self._sign * v for k, v in fields if v is not None}  # type: ignore[misc]
-
-    def units(self) -> tuple[DateDeltaUnit, ...]:
-        """Return a the names of all defined field units as a tuple,
-        ordered from largest to smallest unit.
-
-        >>> d = ItemizedDateDelta(years=3, days=12, months=0)
-        >>> d.units()
-        ('years', 'months', 'days')
-        """
-        fields = (
-            ("years", self._years),
-            ("months", self._months),
-            ("weeks", self._weeks),
-            ("days", self._days),
-        )
-        return tuple(k for k, v in fields if v is not None)  # type: ignore[misc]
-
-    def values(self) -> tuple[int, ...]:
-        """Return all defined field values as a tuple, in order
-        of largest to smallest unit.
-
-        >>> d = ItemizedDateDelta(years=3, days=12, months=0)
-        >>> d.values()
-        (3, 0, 12)
-
-        The values can also be extracted by iteration instead:
-
-        >>> years, months, days = d
-        (3, 0, 12)
-        """
-        return tuple(self)
 
     def in_units(
         self,
@@ -3763,22 +3798,69 @@ class ItemizedDateDelta(_Base):
         # NOTE: we've implicitly validated that at least one field is set
         return cls._from_signed(sign, years, months, weeks, days)
 
-    def __iter__(self) -> Iterator[int]:
-        """Iterate over all defined field values, ordered from largest to smallest unit.
+    # These methods defer to the base class implementations, but need to be
+    # documented here for the API docs.
+    if not TYPE_CHECKING:
+        if SPHINXBUILD:
 
-        >>> d = ItemizedDateDelta(days=11, weeks=1)
-        >>> weeks, days = d
-        """
+            def keys(self) -> KeysView[DateDeltaUnit]:
+                """The names of all defined fields, ordered from largest to smallest unit.
+
+                Part of the mapping protocol
+                """
+                ...
+
+            # FUTURE: an optimized ValuesView class that defers to the internal
+            # fields directly instead of going through __getitem__
+            def values(self) -> ValuesView[int]:
+                """Return all defined field values, in order
+                of largest to smallest unit.
+
+                >>> d = ItemizedDateDelta(years=3, days=12, months=0)
+                >>> years, months, days = d.values()
+                (3, 0, 12)
+                >>> list(d.values())
+                [3, 0, 12]
+                """
+                ...
+
+            def items(self) -> ItemsView[DateDeltaUnit, int]:
+                """Return all defined fields as (unit, value) pairs
+                ordered from largest to smallest unit.
+
+                >>> d = ItemizedDateDelta(years=3, days=12, months=0)
+                >>> list(d.items())
+                [('years', 3), ('months', 0), ('days', 12)]
+                """
+                ...
+
+            @overload
+            def get(self, key: DateDeltaUnit, /) -> Optional[int]: ...
+
+            @overload
+            def get(self, key: DateDeltaUnit, default: int, /) -> int: ...
+
+            def get(
+                self, key: DateDeltaUnit, default: object = None, /
+            ) -> object:
+                """Get the value of a specific field by name, or return default if not set.
+
+                Part of the mapping protocol
+                """
+                ...
+
+    def __iter__(self) -> Iterator[DateDeltaUnit]:
+        """Iterate over all unit names for fields that are set, ordered from largest to smallest unit."""
         if self._years is not None:
-            yield self._sign * self._years
+            yield "years"
         if self._months is not None:
-            yield self._sign * self._months
+            yield "months"
         if self._weeks is not None:
-            yield self._sign * self._weeks
+            yield "weeks"
         if self._days is not None:
-            yield self._sign * self._days
+            yield "days"
 
-    def __getitem__(self, key: str) -> int:
+    def __getitem__(self, key: DateDeltaUnit) -> int:
         """Get the value of a specific field by name.
 
         >>> d = ItemizedDateDelta(weeks=1, days=0)
@@ -3820,7 +3902,7 @@ class ItemizedDateDelta(_Base):
             + (self._days is not None)
         )
 
-    def __contains__(self, key: str) -> bool:
+    def __contains__(self, key: object) -> bool:
         """Check if a specific field is set.
 
         >>> d = ItemizedDateDelta(weeks=1, days=0)
@@ -3959,14 +4041,15 @@ class ItemizedDateDelta(_Base):
         units: Sequence[DateDeltaUnit] = _UNSET,
         round_mode: _RoundMode = "trunc",
         round_increment: int = 1,
-        **kwargs: Any,
+        **kwargs: int,
     ) -> ItemizedDateDelta:
         """Add time to this delta, returning a new delta"""
         if kwargs:
             if arg is not _UNSET:
                 raise TypeError("Cannot mix positional and keyword arguments")
         elif arg is not _UNSET:
-            kwargs = arg.asdict()  # type: ignore[assignment]
+            # In this case the mapping types are interchangeable
+            kwargs = arg  # type: ignore[assignment]
         else:
             return self
 
@@ -3974,7 +4057,7 @@ class ItemizedDateDelta(_Base):
             Sequence[DateDeltaUnit],
             (
                 sorted(
-                    kwargs.keys() | set(self.units()),
+                    kwargs.keys() | self.keys(),
                     key=_calendar_unit_index,
                 )
                 if units is _UNSET
@@ -6630,7 +6713,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         round_increment: int = 1,
     ) -> ItemizedDelta | int:
         """Inverse of the ``since()`` method."""
-        return b.since(
+        return b.since(  # type: ignore[call-overload, no-any-return]
             self,
             unit=unit,
             units=units,

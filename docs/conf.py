@@ -46,8 +46,9 @@ myst_enable_extensions = [
 # -- Options for HTML output ----------------------------------------------
 
 autodoc_default_options = {
-    "exclude-members": "__weakref__, __init__, __init_subclass__, __reduce__, __hash__, __repr__",
+    "exclude-members": "__weakref__, __init__, __init_subclass__, __reduce__, __hash__, __repr__,__subclasshook__,__class_getitem__",
 }
+autodoc_member_order = "groupwise"
 html_theme = "furo"
 highlight_language = "python3"
 pygments_style = "default"

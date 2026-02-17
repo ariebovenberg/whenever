@@ -2,5 +2,6 @@
 =====================
 
 .. autoclass:: whenever.ItemizedDateDelta
+   :inherited-members:
    :members:
-   :special-members: __eq__, __neg__, __abs__
+   :special-members:
