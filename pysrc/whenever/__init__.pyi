@@ -70,6 +70,51 @@ __all__ = [
 _EXTENSION_LOADED: bool
 __version__: str
 
+# We expose these, but we don't use them in this file. This is because
+# in some popular IDEs, using aliases for literal types causes the signature to be displayed as the alias name,
+# which isn't very helpful. So we just repeat the literal types everywhere instead of using the aliases.
+DateDeltaUnitStr: TypeAlias = Literal[
+    "years",
+    "months",
+    "weeks",
+    "days",
+]
+DeltaUnitStr: TypeAlias = Literal[
+    "years",
+    "months",
+    "weeks",
+    "days",
+    "hours",
+    "minutes",
+    "seconds",
+    "nanoseconds",
+]
+DisambiguateStr: TypeAlias = Literal[
+    "compatible",
+    "later",
+    "earlier",
+    "raise",
+]
+ExactDeltaUnitStr: TypeAlias = Literal[
+    "weeks",
+    "days",
+    "hours",
+    "minutes",
+    "seconds",
+    "nanoseconds",
+]
+RoundModeStr: TypeAlias = Literal[
+    "ceil",
+    "expand",
+    "floor",
+    "trunc",
+    "half_ceil",
+    "half_expand",
+    "half_floor",
+    "half_trunc",
+    "half_even",
+]
+
 @type_check_only
 class _ISOMixin:
     @classmethod
@@ -374,7 +419,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         /,
         *,
         relative_to: ZonedDateTime = ...,
-    ) -> float: ...
+    ) -> float | int: ...
     @deprecated("Use total('days') instead")
     def in_days_of_24h(self) -> float: ...
     @deprecated("Use total('hours') instead")
@@ -963,14 +1008,30 @@ class DateTimeDelta(_DeltaMixin):
     def date_part(self) -> DateDelta: ...
     def time_part(self) -> TimeDelta: ...
     def in_months_days_secs_nanos(self) -> tuple[int, int, int, int]: ...
-    def __add__(self, other: Delta, /) -> Self: ...
+    def __add__(
+        self,
+        other: (
+            ItemizedDelta
+            | ItemizedDateDelta
+            | TimeDelta
+            | DateTimeDelta
+            | DateDelta
+        ),
+        /,
+    ) -> Self: ...
     def __radd__(self, other: TimeDelta | DateDelta, /) -> Self: ...
-    def __sub__(self, other: Delta, /) -> Self: ...
+    def __sub__(
+        self,
+        other: (
+            ItemizedDelta
+            | ItemizedDateDelta
+            | TimeDelta
+            | DateTimeDelta
+            | DateDelta
+        ),
+        /,
+    ) -> Self: ...
     def __rsub__(self, other: TimeDelta | DateDelta, /) -> Self: ...
-
-Delta: TypeAlias = (
-    DateTimeDelta | TimeDelta | DateDelta | ItemizedDelta | ItemizedDateDelta
-)
 
 class _LocalTime(ABC):
     @property
@@ -1192,7 +1253,18 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         ignore_dst: Literal[True],
     ) -> Self: ...
     @overload
-    def add(self, d: Delta, /, ignore_dst: Literal[True]) -> Self: ...
+    def add(
+        self,
+        d: (
+            ItemizedDelta
+            | ItemizedDateDelta
+            | TimeDelta
+            | DateTimeDelta
+            | DateDelta
+        ),
+        /,
+        ignore_dst: Literal[True],
+    ) -> Self: ...
     @overload
     def subtract(
         self,
@@ -1210,7 +1282,18 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         ignore_dst: Literal[True],
     ) -> Self: ...
     @overload
-    def subtract(self, d: Delta, /, ignore_dst: Literal[True]) -> Self: ...
+    def subtract(
+        self,
+        d: (
+            ItemizedDelta
+            | ItemizedDateDelta
+            | TimeDelta
+            | DateTimeDelta
+            | DateDelta
+        ),
+        /,
+        ignore_dst: Literal[True],
+    ) -> Self: ...
     def round(
         self,
         unit: Literal[
@@ -1553,11 +1636,31 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         tz: Literal["always", "never", "auto"] = "always",
     ) -> str: ...
     # FUTURE: disable date components in strict stubs version
-    def __add__(self, delta: Delta, /) -> Self: ...
+    def __add__(
+        self,
+        delta: (
+            ItemizedDelta
+            | ItemizedDateDelta
+            | TimeDelta
+            | DateTimeDelta
+            | DateDelta
+        ),
+        /,
+    ) -> Self: ...
     @overload
     def __sub__(self, other: _ExactTime) -> TimeDelta: ...
     @overload
-    def __sub__(self, other: Delta, /) -> Self: ...
+    def __sub__(
+        self,
+        other: (
+            ItemizedDelta
+            | ItemizedDateDelta
+            | TimeDelta
+            | DateTimeDelta
+            | DateDelta
+        ),
+        /,
+    ) -> Self: ...
 
 @final
 class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):

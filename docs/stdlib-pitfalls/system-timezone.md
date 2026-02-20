@@ -39,7 +39,7 @@ and never assumes this intention implicitly.
 This is the case when converting from a naive datetime:
 
 ```python
->>> from whenever import PlainDateTime, ZonedDateTime
+>>> from whenever import PlainDateTime
 >>> dt = PlainDateTime(2024, 3, 10, 15, 0, 0)
 >>> dt.assume_system_tz()
 ZonedDateTime("2024-03-10 15:00:00-05:00[America/New_York]")

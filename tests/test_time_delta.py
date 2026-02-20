@@ -295,13 +295,18 @@ class TestTotal:
             "days",
             relative_to=ZonedDateTime(2023, 7, 1, hour=14, tz="Europe/Paris"),
         ) == approx(d.total("hours") / 24)
+        # negative
+        assert (-d).total(
+            "days",
+            relative_to=ZonedDateTime(2023, 7, 1, hour=14, tz="Europe/Paris"),
+        ) == approx(-d.total("hours") / 24)
 
-        # relative to DST date, round down
+        # relative to skipped time, round down
         assert TimeDelta(hours=30).total(
             "days",
             relative_to=ZonedDateTime(2023, 3, 25, hour=10, tz="Europe/Paris"),
         ) == approx(1.2916666666666667)
-        # # relative to DST date, round up
+        # relative to skipped time, round up
         assert TimeDelta(hours=48 + 18).total(
             "days",
             relative_to=ZonedDateTime(2023, 3, 24, hour=10, tz="Europe/Paris"),
@@ -451,6 +456,65 @@ class TestTotal:
         assert d.total("months", relative_to=ref) == 0
         assert d.total("years", relative_to=ref) == 0
 
+    def test_skipped_day_in_samoa(self):
+        zdt = ZonedDateTime(
+            "2011-12-29T12-10:00[Pacific/Apia]"
+        )  # just before a day skip
+        assert TimeDelta(hours=48).total("days", relative_to=zdt) == approx(
+            3.0
+        )
+        assert TimeDelta(hours=24).total("days", relative_to=zdt) == approx(
+            2.0
+        )
+        assert TimeDelta(hours=47).total("days", relative_to=zdt) == approx(
+            (3 * 24 - 1) / 24
+        )
+        assert TimeDelta(hours=49).total("days", relative_to=zdt) == approx(
+            (3 * 24 + 1) / 24
+        )
+
+        zdt = ZonedDateTime(
+            "2011-12-31T12+14:00[Pacific/Apia]"
+        )  # just after day skip
+        assert TimeDelta(hours=-48).total("days", relative_to=zdt) == approx(
+            -3.0
+        )
+        assert TimeDelta(hours=-47).total("days", relative_to=zdt) == approx(
+            -(3 * 24 - 1) / 24
+        )
+        assert TimeDelta(hours=-49).total("days", relative_to=zdt) == approx(
+            -(3 * 24 + 1) / 24
+        )
+        assert TimeDelta(hours=-24).total("days", relative_to=zdt) == approx(
+            -2.0
+        )
+
+    def test_repeated_time(self):
+        before = ZonedDateTime("2016-02-20T23:33:00-02:00[America/Sao_Paulo]")
+        after = ZonedDateTime("2016-02-20T23:29:00-03:00[America/Sao_Paulo]")
+        assert after > before
+
+        assert TimeDelta(minutes=45).total(
+            "days", relative_to=before
+        ) == approx(0.75 / 25)
+        assert TimeDelta(minutes=60).total(
+            "days", relative_to=before
+        ) == approx(1 / 25)
+        assert TimeDelta(minutes=60).total("hours", relative_to=before) == 1.0
+
+        assert TimeDelta(minutes=-30).total(
+            "days", relative_to=after
+        ) == approx(-0.5 / 25)
+
+        before = ZonedDateTime("2023-10-29T02:15:00+02:00[Europe/Amsterdam]")
+        assert TimeDelta(minutes=45).total(
+            "days", relative_to=before
+        ) == approx(0.75 / 25)
+        assert TimeDelta(minutes=60).total(
+            "days", relative_to=before
+        ) == approx(1 / 25)
+        assert TimeDelta(minutes=60).total("hours", relative_to=before) == 1.0
+
     def test_invalid_unit(self):
         d = TimeDelta(hours=1)
         with pytest.raises(ValueError, match="Invalid unit.*foobars"):
@@ -473,6 +537,10 @@ class TestTotal:
                 "days",
                 relative_to=ZonedDateTime(3000, 1, 1, hour=0, tz="UTC"),
             )
+
+    def test_nanoseconds_are_int(self):
+        d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+        assert isinstance(d.total("nanoseconds"), int)
 
 
 def test_equality():
@@ -1086,7 +1154,7 @@ class TestRound:
             (
                 TimeDelta(hours=10, minutes=30),
                 23439118,
-                "millisecond",  # TODO: catch non-plural unit?
+                "millisecond",  # TODO LOW: catch non-plural units with special message?
                 TimeDelta(hours=6, minutes=30, seconds=39.118),
                 TimeDelta(hours=13, minutes=1, seconds=18.236),
                 TimeDelta(hours=13, minutes=1, seconds=18.236),
