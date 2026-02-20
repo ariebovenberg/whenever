@@ -3839,7 +3839,6 @@ class TestSince:
         )
 
 
-# TODO: allow any 24-hour divisible increment
 class TestRound:
 
     @pytest.mark.parametrize(
@@ -3919,6 +3918,26 @@ class TestRound:
                 12,
                 "hour",
                 ZonedDateTime(2023, 7, 14, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, 12, 0, 0, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, 12, 0, 0, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, 12, 0, 0, tz="Europe/Paris"),
+                ZonedDateTime(2023, 7, 14, 12, 0, 0, tz="Europe/Paris"),
+            ),
+            # Unusual increment, but still divides a day evenly
+            (
+                ZonedDateTime(
+                    2023,
+                    7,
+                    14,
+                    11,
+                    59,
+                    29,
+                    nanosecond=999_999_999,
+                    tz="Europe/Paris",
+                ),
+                90,
+                "minute",
+                ZonedDateTime(2023, 7, 14, 10, 30, tz="Europe/Paris"),
                 ZonedDateTime(2023, 7, 14, 12, 0, 0, tz="Europe/Paris"),
                 ZonedDateTime(2023, 7, 14, 12, 0, 0, tz="Europe/Paris"),
                 ZonedDateTime(2023, 7, 14, 12, 0, 0, tz="Europe/Paris"),
@@ -4085,17 +4104,33 @@ class TestRound:
     @pytest.mark.parametrize(
         "unit, increment",
         [
-            ("minute", 8),
+            ("minute", 21),
             ("second", 14),
-            ("millisecond", 15),
+            ("millisecond", 13),
             ("day", 2),
             ("hour", 48),
-            ("microsecond", 1500),
-            ("second", -1),
-            ("second", 0),
+            ("microsecond", 1542),
+            ("microsecond", 7),
         ],
     )
-    def test_invalid_increment(self, unit, increment):
+    def test_increment_doesnt_evenly_divide_day(self, unit, increment):
+        d = ZonedDateTime(
+            2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
+        )
+        with pytest.raises(
+            ValueError, match="[Ii]ncrement.*[mM]ust divide.*24.*hour.*day"
+        ):
+            d.round(unit, increment=increment)
+
+    @pytest.mark.parametrize(
+        "unit, increment",
+        [
+            ("minute", 0),
+            ("minute", -5),
+            ("second", 4.1),
+        ],
+    )
+    def test_increment_invalid(self, unit, increment):
         d = ZonedDateTime(
             2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
         )

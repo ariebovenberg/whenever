@@ -511,10 +511,10 @@ class TestRound:
     @pytest.mark.parametrize(
         "unit, increment",
         [
-            ("minute", 8),
+            ("minute", 7),
             ("second", 14),
-            ("millisecond", 15),
-            ("millisecond", 2000),
+            ("millisecond", 17),
+            ("millisecond", 2001),
             ("hour", 48),
             ("hour", 20),
         ],

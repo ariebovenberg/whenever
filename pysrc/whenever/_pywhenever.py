@@ -52,6 +52,7 @@ from ._math import (
     DELTA_UNITS,
     DIFF_FUNCS,
     EXACT_UNITS,
+    NS_PER_UNIT_PLURAL,
     Sign,
     custom_round,
     date_diff,
@@ -1530,18 +1531,6 @@ class Time(_Base):
         )
 
 
-_NS_PER_UNIT_PLURAL = {
-    "weeks": 604_800_000_000_000,
-    "days": 86_400_000_000_000,
-    "hours": 3_600_000_000_000,
-    "minutes": 60_000_000_000,
-    "seconds": 1_000_000_000,
-    "milliseconds": 1_000_000,
-    "microseconds": 1_000,
-    "nanoseconds": 1,
-}
-
-
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
 def _unpkl_time(data: bytes) -> Time:
@@ -1683,7 +1672,7 @@ class TimeDelta(_Base):
         elif unit == "nanoseconds":
             return self._total_ns
         try:
-            return self._total_ns / _NS_PER_UNIT_PLURAL[unit]
+            return self._total_ns / NS_PER_UNIT_PLURAL[unit]
         except KeyError:
             raise ValueError(f"Invalid unit: {unit!r}")
 

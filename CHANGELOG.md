@@ -1,10 +1,5 @@
 # Changelog
 
-<<<<<<< HEAD
-## 0.9.5 (2026-01-11)
-
-Fix issue where not all windows wheels were built and uploaded (#317)
-=======
 ## 0.10.0 (2026-??-??)
 
 **Breaking Changes**
@@ -41,7 +36,8 @@ Fix issue where not all windows wheels were built and uploaded (#317)
   - Explanation of the rounding API
 - `TimeDelta.round()` now supports larger and irregular values for `increment`.
   Also, days and weeks can now be used as rounding units (with a warning about 24-hour days).
->>>>>>> 38a613e (Implement basic ItemizedDelta)
+- `round()` methods now support larger and irregular values for `increment`.
+  Also, days and weeks can now be used to round a `TimeDelta` (with a warning about 24-hour days).
 
 **Added**
 
@@ -53,6 +49,10 @@ Fix issue where not all windows wheels were built and uploaded (#317)
 
 - (Pure-Python version) Fixed incorrect behavior of `<` operator between `Time`
   instances if nanoseconds are involved.
+
+## 0.9.5 (2026-01-11)
+
+Fix issue where not all windows wheels were built and uploaded (#317)
 
 ## 0.9.4 (2025-12-14)
 

@@ -1112,11 +1112,10 @@ class TestRound:
     @pytest.mark.parametrize(
         "unit, increment",
         [
-            ("minute", 8),
+            ("minute", 21),
             ("second", 14),
-            ("millisecond", 15),
+            ("millisecond", 643),
             ("hour", 48),
-            ("microsecond", 2000),
         ],
     )
     def test_invalid_increment(self, unit, increment):
