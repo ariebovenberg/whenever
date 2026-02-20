@@ -229,7 +229,7 @@ For more details, see the licenses included in the distribution.
   ambiguity and rounding.
 
 - The pure-Python version of *whenever* also makes extensive use of Python's ``datetime``
-  and ``zoneinfo`` libraries internally.
+  internally.
 
 - *Whenever* also borrows a few nifty ideas from [Jiff](https://github.com/BurntSushi/jiff):
   A modern datetime library in Rust which takes inspiration from Temporal.

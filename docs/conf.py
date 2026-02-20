@@ -18,6 +18,7 @@ release = metadata["Version"]
 nitpicky = True
 nitpick_ignore = [
     ("py:class", "whenever._pywhenever._T"),
+    ("py:class", "TypeAliasForwardRef"),  # https://github.com/sphinx-doc/sphinx/issues/11327
 ]
 extensions = [
     "sphinx.ext.autodoc",

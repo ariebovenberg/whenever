@@ -33,7 +33,6 @@ type DeltaUnitStr = Literal[
     "seconds",
     "nanoseconds",
 ]
-"""Foo"""
 type DateDeltaUnitStr = Literal["years", "months", "weeks", "days"]
 type ExactDeltaUnitStr = Literal[
     "weeks", "days", "hours", "minutes", "seconds", "nanoseconds"

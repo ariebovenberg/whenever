@@ -194,14 +194,19 @@ though they could be implemented. For example:
 >>> Date(2024, 1, 31) + ItemizedDateDelta(months=1) # Error
 ```
 
-Operators are only implemented where they work *mathematically
-intuitively*. For example, when `a + (b + c)` is the same as
-`(a + b) + c`. This isn't the case when working with months
+This is because operators are only implemented where they are *mathematically
+intuitive*. For example, when `a + (b + c) = (a + b) + c` and `(a + b) - b = a`.
+This isn't the case when working with months
 or years, since adding a month to January 31st gives a different result
 than adding a month to February 28th. To avoid confusion, these
 operators are simply not implemented. There are methods like
 `add()` and `subtract()` that can be used
-instead, which don't come with the same mathematical expectations.
+instead, which don't come with the same mathematical expectations:
+
+```python
+>>> Date(2024, 1, 31).add(months=1)
+>>> Date(2024, 1, 31).add(ItemizedDateDelta(months=1))
+```
 
 ## Why can't I subclass `whenever` classes?
 
