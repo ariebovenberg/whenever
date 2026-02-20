@@ -34,8 +34,8 @@
   - An explanation of the fundamental concepts of time
   - An overview of Python's datetime pitfalls
   - Explanation of the rounding API
-- `TimeDelta.round()` now supports larger and irregular values for `increment`.
-  Also, days and weeks can now be used as rounding units (with a warning about 24-hour days).
+- `round()` methods now support larger and irregular values for `increment`.
+  Also, days and weeks can now be used to round a `TimeDelta` (with a warning about 24-hour days).
 
 **Added**
 

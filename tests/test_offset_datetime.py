@@ -1818,12 +1818,12 @@ class TestRound:
     @pytest.mark.parametrize(
         "unit, increment",
         [
-            ("minute", 8),
+            ("minute", 21),
             ("second", 14),
-            ("millisecond", 15),
+            ("millisecond", 5432),
             ("day", 2),
             ("hour", 48),
-            ("microsecond", 2000),
+            ("microsecond", 2001),
         ],
     )
     def test_invalid_increment(self, unit, increment):
