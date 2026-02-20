@@ -173,47 +173,45 @@ def days_in_month(year: int, month: int) -> int:
     return _MONTHDAYS[month] + (month == 2 and is_leap(year))
 
 
-_UNIT_NANOS_AND_MAX_DIVISOR = {
-    "week": (604_800_000_000_000, 0),
-    "day": (86_400_000_000_000, 0),
-    "hour": (3_600_000_000_000, 24),
-    "minute": (60_000_000_000, 60),
-    "second": (1_000_000_000, 60),
-    "millisecond": (1_000_000, 1_000),
-    "microsecond": (1_000, 1_000),
-    "nanosecond": (1, 1_000),
+NS_PER_UNIT_SINGULAR = {
+    "week": 604_800_000_000_000,
+    "day": 86_400_000_000_000,
+    "hour": 3_600_000_000_000,
+    "minute": 60_000_000_000,
+    "second": 1_000_000_000,
+    "millisecond": 1_000_000,
+    "microsecond": 1_000,
+    "nanosecond": 1,
+}
+NS_PER_UNIT_PLURAL = {
+    "weeks": 604_800_000_000_000,
+    "days": 86_400_000_000_000,
+    "hours": 3_600_000_000_000,
+    "minutes": 60_000_000_000,
+    "seconds": 1_000_000_000,
+    "milliseconds": 1_000_000,
+    "microseconds": 1_000,
+    "nanoseconds": 1,
 }
 
 
 def increment_to_ns_for_delta(unit: str, increment: int) -> int:
     if increment < 1 or increment != int(increment):
-        raise ValueError("Invalid increment")
+        raise ValueError("Invalid increment. Must be a positive integer.")
     try:
-        ns_per_unit, _ = _UNIT_NANOS_AND_MAX_DIVISOR[unit]
+        ns_per_unit = NS_PER_UNIT_SINGULAR[unit]
     except KeyError:
         raise ValueError(f"Invalid unit: {unit}")
     return ns_per_unit * increment
 
 
 def increment_to_ns_for_datetime(unit: str, increment: int) -> int:
-    if increment < 1 or increment > 1_000 or increment != int(increment):
-        raise ValueError("Invalid increment")
-
-    if unit == "day" and increment != 1:
+    increment_ns = increment_to_ns_for_delta(unit, increment)
+    if 86_400_000_000_000 % increment_ns:
         raise ValueError(
-            "Rounding increment for day can only be 1"
-        )  # TODO reason
-
-    try:
-        ns_per_unit, max_divisor = _UNIT_NANOS_AND_MAX_DIVISOR[unit]
-    except KeyError:
-        raise ValueError(f"Invalid unit: {unit}")
-
-    if max_divisor % increment:
-        raise ValueError(
-            f"Invalid increment for {unit}. Must divide {max_divisor}."
+            f"Invalid increment. Must divide a 24-hour day evenly."
         )
-    return ns_per_unit * increment
+    return increment_ns
 
 
 Sign = Literal[1, 0, -1]
