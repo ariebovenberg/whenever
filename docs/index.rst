@@ -4,7 +4,7 @@
 
 .. toctree::
    :maxdepth: 2
-   :caption: The basics
+   :caption: Background
    :hidden:
 
    fundamentals/index
@@ -29,7 +29,6 @@
    reference/datetime.rst
    reference/partial-types
    reference/deltas.rst
-   reference/choice-types.rst
    reference/misc.rst
 
 .. toctree::
@@ -39,6 +38,7 @@
 
    changelog
    contributing
+   Github repository <https://github.com/ariebovenberg/whenever>
 
 Indices and tables
 ==================

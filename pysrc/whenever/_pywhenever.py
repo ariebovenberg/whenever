@@ -178,7 +178,6 @@ _MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * 1_000_000_000
 _MAX_SUBSEC_NANOS = 999_999_999
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
-# TODO: naming
 # A sentinel value that looks nice in autodoc.
 # Used in cases where `None` would be a valid value, or where we want to
 # avoid allowing `None` to be passed in by users.
@@ -634,14 +633,15 @@ class Date(_Base):
             unit, units, valid_units=DATE_DELTA_UNITS
         )
         smallest_unit = units[-1]
+        sign: Sign = 1 if self >= b else -1
         results, trunc, expand = date_diff(
             self._py_date,
             b._py_date,
             round_increment,
             units,
+            sign,
         )
 
-        sign: Sign = 1 if self > b else 0 if self == b else -1
         # Round is expensive, so only do it if needed
         if round_mode != "trunc":
             trunc_date = resolve_leap_day(trunc)
@@ -657,6 +657,8 @@ class Date(_Base):
         if single_unit_mode:
             return results.pop(smallest_unit) * sign
         else:
+            if not any(results.values()):
+                sign = 0
             # mypy false positive: 'keywords must be strings' (but they're string literals!)
             return ItemizedDateDelta._from_signed(sign, **results)  # type: ignore[misc]
 
@@ -1628,8 +1630,8 @@ class TimeDelta(_Base):
         ],
         # TODO: allow other local time types?
         relative_to: ZonedDateTime = _UNSET,
-    ) -> float:
-        """The total size in the given unit, as a floating point number
+    ) -> float | int:
+        """The total size in the given unit, as a float (or int for nanoseconds)
 
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d.total('minutes')
@@ -1638,23 +1640,25 @@ class TimeDelta(_Base):
         if unit in ("days", "weeks", "years", "months"):
             if relative_to is not _UNSET:
                 shifted = relative_to + self
-
                 sign = 1 if self._total_ns >= 0 else -1
-                shifted_date = shifted.date()
-                # TODO: check safety with tz transitions
-                if shifted.time() > relative_to.time():
-                    shifted_date = shifted_date.add(days=1)
-                elif sign == 1 and shifted.time() < relative_to.time():
-                    shifted_date = shifted_date.subtract(days=1)
+
+                target_date = shifted.date()
+                cal_shifted = relative_to.replace_date(target_date)
+                if sign == 1 and cal_shifted > shifted:
+                    target_date = target_date.subtract(days=1)
+                elif sign == -1 and cal_shifted < shifted:
+                    target_date = target_date.add(days=1)
 
                 trunc_amount, trunc_date, expanded_date = DIFF_FUNCS[unit](
-                    shifted_date._py_date,
+                    target_date._py_date,
                     relative_to._py_dt.date(),
                     1,
+                    sign,
                 )
                 trunc_zdt = relative_to.replace_date(
                     Date._from_py_unchecked(resolve_leap_day(trunc_date))
                 )
+
                 return (
                     trunc_amount
                     + (shifted - trunc_zdt)
@@ -1676,6 +1680,8 @@ class TimeDelta(_Base):
                 raise ValueError(
                     f"Cannot convert TimeDelta to {unit!r} without a `relative_to` parameter"
                 )
+        elif unit == "nanoseconds":
+            return self._total_ns
         try:
             return self._total_ns / _NS_PER_UNIT_PLURAL[unit]
         except KeyError:
@@ -3605,7 +3611,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             round_increment=round_increment,
         )
 
-    # TODO: formalize milliseconds allowed
     def total(
         self, unit: DeltaUnitStr, /, *, relative_to: ZonedDateTime
     ) -> float:
@@ -4280,7 +4285,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         try:
             trunc_amount, trunc_date_interim, expand_date_interim = DIFF_FUNCS[
                 unit
-            ](shifted._py_date, relative_to._py_date, 1)
+            ](shifted._py_date, relative_to._py_date, 1, self._sign or 1)
         except KeyError:
             raise ValueError(f"Unsupported unit: {unit!r}") from None
 
@@ -6279,7 +6284,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         disambiguate: DisambiguateStr = "compatible",
     ) -> None: ...
 
-    def __init__(
+    # Mypy doesn't know we handle other constructors in the metaclass
+    def __init__(  # type: ignore[misc]
         self,
         year: int,
         month: int,
@@ -6516,8 +6522,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             resolve_ambiguity(
                 _datetime.combine(date._py_date, self._py_dt.time()),
                 self._tz,
-                # mypy doesn't know that offset is never None here
-                disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
+                disambiguate or self._py_dt.utcoffset(),
             ),
             self._nanos,
             self._tz,
@@ -6534,8 +6539,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             resolve_ambiguity(
                 _datetime.combine(self._py_dt, time._py_time),
                 self._tz,
-                # mypy doesn't know that offset is never None here
-                disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
+                disambiguate or self._py_dt.utcoffset(),
             ),
             time._nanos,
             self._tz,
@@ -6575,8 +6579,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             resolve_ambiguity(
                 self._py_dt.replace(**kwargs, tzinfo=None),
                 tz,
-                # mypy doesn't know that offset is never None here
-                disambiguate or self._py_dt.utcoffset(),  # type: ignore[arg-type]
+                disambiguate or self._py_dt.utcoffset(),
             ),
             nanos,
             tz,
@@ -6830,6 +6833,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         while b.replace_date(target_date) > self:
             target_date = target_date.subtract(days=1)
 
+        sign: Sign = 1 if self >= b else -1
         cal_results, trunc_date, expand_date = date_diff(
             target_date._py_date,
             b._py_dt.date(),
@@ -6837,6 +6841,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             # Thus if there are any exact units, calendar units aren't rounded.
             1 if exact_units else round_increment,
             cal_units,
+            sign,
         )
         trunc = b.replace_date(
             Date._from_py_unchecked(resolve_leap_day(trunc_date)),
@@ -6847,7 +6852,6 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         # Rounding is very different for exact units than calendar units
         smallest_unit = units[-1]
-        sign: Sign = 1 if self >= b else -1
         result = cast(dict[DeltaUnitStr, int], cal_results)
         if exact_units:
             result.update(
@@ -6877,14 +6881,6 @@ class ZonedDateTime(_ExactAndLocalTime):
             sign = 0
         # mypy false positive: 'keywords must be strings' (but they're string literals!)
         return ItemizedDelta._from_signed(sign, **result)  # type: ignore[misc]
-
-    def _diff(
-        self,
-        other: ZonedDateTime,
-        units: Sequence[DeltaUnitStr],
-        round_increment: int,
-    ) -> tuple[dict[DeltaUnitStr, int], ZonedDateTime, ZonedDateTime]:
-        pass
 
     @overload
     def until(
@@ -6999,7 +6995,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         """Round the datetime to the specified unit and increment.
         Different rounding modes are available.
 
-        >>> d = ZonedDateTime(2020, 8, 15, 23, 24, 18, tz="Europe/Paris")
+        >>> d = ZonedDateTime("2020-08-15 23:24:18+02:00[Europe/Paris]")
         >>> d.round("day")
         ZonedDateTime("2020-08-16 00:00:00+02:00[Europe/Paris]")
         >>> d.round("minute", increment=15, mode="floor")
@@ -7007,9 +7003,9 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         Notes
         -----
-        * In the rare case that rounding results in an ambiguous time,
+        * In the rare case that rounding results in a repeated time,
           the offset is preserved if possible.
-          Otherwise, the time is resolved according to the "compatible" strategy.
+          Otherwise, ambiguity is resolved according to the "compatible" strategy.
         * Rounding in "day" mode may be affected by DST transitions.
           i.e. on 23-hour days, 11:31 AM is rounded up.
         * This method has similar behavior to the ``round()`` method of
@@ -7044,6 +7040,7 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         # We go through astimezone because, in theory, ZoneInfo could disagree
         # with our offset. This ensures we keep the same moment in time.
+        # FUTURE: add a test case for this.
         return self._py_dt.astimezone(ZoneInfo(key)).replace(
             microsecond=self._nanos // 1_000,
         )

@@ -54,14 +54,15 @@ def resolve_leap_day(d: InterimDate) -> _date:
 _AbsoluteDiff = tuple[int, InterimDate, InterimDate]
 
 
-def years_diff(_a: _date, b: InterimDate, increment: int, /) -> _AbsoluteDiff:
+def years_diff(
+    _a: _date, b: InterimDate, increment: int, sign: Literal[1, -1], /
+) -> _AbsoluteDiff:
     # This function has a permissive signature to match the others, but
     # only datetime.date is expected for b, since "years" is the largest
     # (and thus first) unit encountered when diffing.
     assert isinstance(b, _date)
     diff = (_a.year - b.year) // increment * increment
     shift = _replace_year(b, b.year + diff)
-    sign = 1 if _a >= b else -1
 
     # Check if we overshot
     if (diff > 0 and resolve_leap_day(shift) > _a) or (
@@ -84,12 +85,13 @@ def _replace_year(d: _date, year: int) -> InterimDate:
         return PendingLeapDay(year)
 
 
-def months_diff(a: _date, b: InterimDate, increment: int, /) -> _AbsoluteDiff:
+def months_diff(
+    a: _date, b: InterimDate, increment: int, sign: Literal[1, -1], /
+) -> _AbsoluteDiff:
     diff = (
         ((a.year - b.year) * 12 + (a.month - b.month)) // increment
     ) * increment
     shift = _add_months(b, diff)
-    sign = 1 if a >= resolve_leap_day(b) else -1
 
     # Check if we overshot
     if (diff > 0 and shift > a) or (diff < 0 and shift < a):
@@ -107,15 +109,18 @@ def _add_months(d: InterimDate, delta: int, /) -> _date:
     return _date(year_new, month_new, day_new)
 
 
-def weeks_diff(a: _date, b: InterimDate, increment: int, /) -> _AbsoluteDiff:
-    days, trunc, expand = days_diff(a, b, increment * 7)
+def weeks_diff(
+    a: _date, b: InterimDate, increment: int, sign: Literal[1, -1], /
+) -> _AbsoluteDiff:
+    days, trunc, expand = days_diff(a, b, increment * 7, sign)
     return days // 7, trunc, expand
 
 
-def days_diff(a: _date, _b: InterimDate, increment: int, /) -> _AbsoluteDiff:
+def days_diff(
+    a: _date, _b: InterimDate, increment: int, sign: Literal[1, -1], /
+) -> _AbsoluteDiff:
     b = resolve_leap_day(_b)
     diff = abs((a - b).days) // increment * increment
-    sign = 1 if a > b else -1
 
     return (
         diff,
@@ -137,6 +142,7 @@ def date_diff(
     b: _date,
     round_increment: int,
     units: Sequence[DateDeltaUnitStr],
+    sign: Literal[1, -1],
 ) -> tuple[dict[DateDeltaUnitStr, int], InterimDate, InterimDate]:
     # Because years and months are variable length, the calculation is done
     # by progressively adding each unit to `b` until we reach the target date (`a`).
@@ -150,7 +156,7 @@ def date_diff(
     increments = [*[1] * (len(units) - 1), round_increment]
     results = {}
     for u, increment in zip(units, increments):
-        results[u], trunc, expand = DIFF_FUNCS[u](a, trunc, increment)
+        results[u], trunc, expand = DIFF_FUNCS[u](a, trunc, increment, sign)
 
     return results, trunc, expand
 
@@ -225,7 +231,7 @@ def custom_round(
     expanded: int,
     mode: str,
     increment: int,
-    sign: Sign,
+    sign: Literal[1, -1],
 ) -> int:
     do_expand = False  # 'expand' means round away from 0
 

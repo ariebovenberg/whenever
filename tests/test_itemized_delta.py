@@ -630,6 +630,8 @@ class TestAddSub:
 
 class TestTotal:
 
+    # Relatively few test cases since it reuses ZonedDateTime.since()
+    # which is tested more thoroughly elsewhere.
     @pytest.mark.parametrize(
         "d, relative_to, unit, expected",
         [
@@ -637,27 +639,38 @@ class TestTotal:
                 ItemizedDelta(years=2, months=3, weeks=4, days=5),
                 ZonedDateTime("2021-12-31T03Z[America/New_York]"),
                 "months",
-                28.096774193548388,
+                28.06666666666666,
             ),
-            # TODO NEXT
-            # (
-            #     ItemizedDelta(weeks=2, days=16),
-            #     Date("2021-04-30"),
-            #     "months",
-            #     1.0,
-            # ),
-            # (
-            #     ItemizedDelta(weeks=-2, days=-18),
-            #     Date("2021-04-30"),
-            #     "years",
-            #     -0.08767123287671233,
-            # ),
-            # (
-            #     ItemizedDelta(weeks=-2, days=-18),
-            #     Date("2021-04-30"),
-            #     "days",
-            #     -32,
-            # ),
+            (
+                ItemizedDelta(weeks=-4),
+                ZonedDateTime("2021-02-23T03Z[America/New_York]"),
+                "months",
+                -0.9032258064516129,
+            ),
+            (
+                ItemizedDelta(weeks=-4, minutes=-9123),
+                ZonedDateTime("2021-02-23T03Z[America/New_York]"),
+                "days",
+                -34.33541666666667,
+            ),
+            (
+                ItemizedDelta(months=6, seconds=3),
+                ZonedDateTime("2021-02-23T03Z[America/New_York]"),
+                "hours",
+                4343.0008333333335,
+            ),
+            (
+                ItemizedDelta(months=6, seconds=3),
+                ZonedDateTime("2021-02-23T03Z[America/New_York]"),
+                "hours",
+                4343.0008333333335,
+            ),
+            (
+                ItemizedDelta(months=6, seconds=3),
+                ZonedDateTime("2021-02-23T03Z[America/New_York]"),
+                "nanoseconds",
+                15634803000000000,
+            ),
         ],
     )
     def test_valid(
@@ -689,6 +702,15 @@ class TestTotal:
     def test_no_relative_to(self):
         with pytest.raises(TypeError, match="relative_to"):
             ItemizedDelta(years=2, hours=9).total("months")  # type: ignore[call-arg]
+
+    def test_nanoseconds_is_int(self):
+        assert isinstance(
+            ItemizedDelta(years=200, nanoseconds=1).total(
+                "nanoseconds",
+                relative_to=ZonedDateTime("2021-12-31T22Z[Europe/Athens]"),
+            ),
+            int,
+        )
 
     def test_relative_to_overflows(self):
         with pytest.raises((ValueError, OverflowError)):

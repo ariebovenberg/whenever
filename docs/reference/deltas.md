@@ -35,6 +35,11 @@ each suited for different use cases:
 - Use {class}`ItemizedDelta` if you need to work with *both* with calendar units
   (years, months, days) and exact time units (hours, minutes, seconds).
 
+```{note}
+{class}`ItemizedDelta` and {class}`ItemizedDateDelta` were introduced in version 0.10,
+and replace the (now deprecated) {class}`DateTimeDelta` and {class}`DateDelta` classes.
+```
+
 
 Here is a summary of the three delta types provided,
 and their key differences. Click on the features to learn more about them.
@@ -51,8 +56,8 @@ and their key differences. Click on the features to learn more about them.
 | {ref}`Comparison <delta-cmp>`           | {meth}`> <TimeDelta.__gt__>` , {meth}`< <TimeDelta.__lt__>` , {meth}`>= <TimeDelta.__ge__>` , {meth}`<= <TimeDelta.__le__>` | n/a                   | n/a                    |
 | {ref}`Addition/subtraction <delta-add-sub>`  | {meth}`~TimeDelta.add` / {meth}`~TimeDelta.subtract` | {meth}`~ItemizedDateDelta.add` / {meth}`~ItemizedDateDelta.subtract` [^1] | {meth}`~ItemizedDelta.add` / {meth}`~ItemizedDelta.subtract` [^1] |
 | {ref}`Operators <delta-operators>` | {meth}`+ <TimeDelta.__add__>` , {meth}`- <TimeDelta.__sub__>` , {meth}`* <TimeDelta.__mul__>` , {meth}`/ <TimeDelta.__truediv__>` , {meth}`// <TimeDelta.__floordiv__>` , {meth}`% <TimeDelta.__mod__>` | n/a                   | n/a                    |
+| {ref}`Rounding <delta-rounding>` | {meth}`~TimeDelta.round`  | with {meth}`~ItemizedDateDelta.in_units`          | with {meth}`~ItemizedDelta.in_units`          |
 | Applies to...     | {class}`ZonedDateTime` <br> {class}`OffsetDateTime` <br> {class}`PlainDateTime` <br> {class}`Instant` | {class}`ZonedDateTime` <br> {class}`OffsetDateTime` <br> {class}`PlainDateTime` <br> {class}`Date` | {class}`ZonedDateTime` <br> {class}`OffsetDateTime` <br> {class}`PlainDateTime` |
-
 
 (delta-units)=
 ## Exact and calendar units
@@ -250,6 +255,28 @@ TimeDelta("PT1h15m")
 Operators are not supported for itemized deltas,
 as they may contain calendar units,
 which have variable durations depending on context.
+
+(delta-rounding)=
+## Rounding
+
+Only {class}`TimeDelta` has a {meth}`~TimeDelta.round` method for rounding to a specific unit:
+
+```python
+>>> delta = TimeDelta(hours=2, minutes=30, seconds=3)
+>>> delta.round("hour")
+TimeDelta("PT3h")
+```
+
+Rounding an itemized delta can only be done by also normalizing it,
+using the {meth}`~ItemizedDelta.in_units` method:
+
+```python
+>>> delta = ItemizedDelta(days=7, hours=2, minutes=84)
+>>> delta.in_units(["days", "hours"], rounding_mode="ceil", round_increment=4)
+ItemizedDelta("P7dT4h")
+```
+
+See {ref}`rounding` for more information on rounding modes and increments.
 
 (iso8601-durations)=
 ## ISO 8601 format

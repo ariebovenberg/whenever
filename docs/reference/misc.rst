@@ -6,8 +6,10 @@ This section contains API documentation for miscellaneous functions and data
 .. toctree::
     :maxdepth: 1
 
+    other-types
     exceptions
     deprecated
+
 
 .. autoclass:: whenever.patch_current_time
 

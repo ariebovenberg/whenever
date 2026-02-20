@@ -3839,6 +3839,7 @@ class TestSince:
         )
 
 
+# TODO: allow any 24-hour divisible increment
 class TestRound:
 
     @pytest.mark.parametrize(
