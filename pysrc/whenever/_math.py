@@ -8,7 +8,6 @@ from typing import Literal, Union, cast
 
 from ._typing import DateDeltaUnitStr, DeltaUnitStr
 
-# TODO: rationalize
 DATE_DELTA_UNITS = cast(
     Sequence[DateDeltaUnitStr], ["years", "months", "weeks", "days"]
 )
@@ -209,7 +208,7 @@ def increment_to_ns_for_datetime(unit: str, increment: int) -> int:
     increment_ns = increment_to_ns_for_delta(unit, increment)
     if 86_400_000_000_000 % increment_ns:
         raise ValueError(
-            f"Invalid increment. Must divide a 24-hour day evenly."
+            "Invalid increment. Must divide a 24-hour day evenly."
         )
     return increment_ns
 

@@ -728,6 +728,64 @@ class TestTotal:
             )
 
 
+def test_replace():
+    d = ItemizedDelta(years=2, months=3, seconds=4)
+
+    # changing an existing value
+    assert d.replace(months=10).exact_eq(
+        ItemizedDelta(years=2, months=10, seconds=4)
+    )
+
+    # adding a value
+    assert d.replace(hours=5).exact_eq(
+        ItemizedDelta(years=2, months=3, seconds=4, hours=5)
+    )
+
+    # setting to zero
+    assert d.replace(seconds=0).exact_eq(
+        ItemizedDelta(years=2, months=3, seconds=0)
+    )
+
+    # setting to missing (zero)
+    assert d.replace(years=None).exact_eq(ItemizedDelta(months=3, seconds=4))
+
+    # invalid sign
+    with pytest.raises(ValueError, match="sign"):
+        assert d.replace(days=-1)
+
+    with pytest.raises(ValueError, match="sign"):
+        assert (-d).replace(days=1)
+
+    # sign becomes zero
+    assert d.replace(years=0, months=0, seconds=0).exact_eq(
+        ItemizedDelta(years=0, months=0, seconds=0)
+    )
+
+    # sign becomes negative
+    assert d.replace(years=-3, months=-1, seconds=0, days=-4).exact_eq(
+        ItemizedDelta(years=-3, months=-1, seconds=0, days=-4)
+    )
+
+    # negative becomes positive
+    assert (
+        (-d)
+        .replace(years=3, months=1, seconds=0, days=4)
+        .exact_eq(ItemizedDelta(years=3, months=1, seconds=0, days=4))
+    )
+
+    # last field dropped
+    with pytest.raises(ValueError, match="At least one"):
+        d.replace(years=None, months=None, seconds=None)
+
+    # no arguments
+    assert d.replace().exact_eq(d)
+    assert (-d).replace().exact_eq(-d)
+
+    # invalid field
+    with pytest.raises(TypeError, match="foo"):
+        d.replace(foo=5)  # type: ignore[call-arg]
+
+
 def test_abs():
     d = ItemizedDelta(days=-5, hours=-3, nanoseconds=-200)
     assert abs(d).exact_eq(ItemizedDelta(days=5, hours=3, nanoseconds=200))
