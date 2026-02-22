@@ -634,7 +634,7 @@ class Date(_Base):
             unit, units, valid_units=DATE_DELTA_UNITS
         )
         smallest_unit = units[-1]
-        sign: Sign = 1 if self >= b else -1
+        sign: Literal[1, -1] = 1 if self >= b else -1
         results, trunc, expand = date_diff(
             self._py_date,
             b._py_date,
@@ -658,10 +658,10 @@ class Date(_Base):
         if single_unit_mode:
             return results.pop(smallest_unit) * sign
         else:
-            if not any(results.values()):
-                sign = 0
             # mypy false positive: 'keywords must be strings' (but they're string literals!)
-            return ItemizedDateDelta._from_signed(sign, **results)  # type: ignore[misc]
+            return ItemizedDateDelta._from_signed(
+                sign if any(results.values()) else 0, **results
+            )  # type: ignore[misc]
 
     @overload
     def until(
@@ -1629,7 +1629,7 @@ class TimeDelta(_Base):
         if unit in ("days", "weeks", "years", "months"):
             if relative_to is not _UNSET:
                 shifted = relative_to + self
-                sign = 1 if self._total_ns >= 0 else -1
+                sign: Literal[1, -1] = 1 if self._total_ns >= 0 else -1
 
                 target_date = shifted.date()
                 cal_shifted = relative_to.replace_date(target_date)
@@ -2079,7 +2079,7 @@ class TimeDelta(_Base):
             )
         increment_ns = increment_to_ns_for_delta(unit, increment)
         quotient, remainder_ns = divmod(abs(self._total_ns), increment_ns)
-        sign: Sign = 1 if self._total_ns >= 0 else -1
+        sign: Literal[1, -1] = 1 if self._total_ns >= 0 else -1
 
         abs_result = quotient * increment_ns
         if mode != "trunc":
@@ -2705,6 +2705,7 @@ DateDelta.ZERO = DateDelta()
 TimeDelta._date_part = DateDelta.ZERO
 
 
+# TODO LOW: clarify seconds/nanoseconds relationship
 @final
 class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     """A duration that preserves the exact fields it was created with.
@@ -3608,6 +3609,38 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             unit, relative_to=relative_to
         )
 
+    if not TYPE_CHECKING:
+        # This overload ensures it shows up nicely in the API docs, not just as "kwargs"
+        @overload
+        def replace(
+            self,
+            *,
+            years: int | None = ...,
+            months: int | None = ...,
+            weeks: int | None = ...,
+            days: int | None = ...,
+            hours: int | None = ...,
+            minutes: int | None = ...,
+            seconds: int | None = ...,
+            nanoseconds: int | None = ...,
+        ) -> ItemizedDelta: ...
+
+    def replace(self, **kwargs: int | None) -> ItemizedDelta:
+        """Return a new delta with specific fields replaced.
+        Fields set to ``None`` will be removed.
+
+        All normal validation rules apply.
+
+        >>> d = ItemizedDelta(years=1, months=2, hours=3)
+        >>> d.replace(months=None, hours=2)
+        ItemizedDelta("P1yT2h")
+        """
+        kwargs_w_sentinel = {
+            k: _UNSET if v is None else v for k, v in kwargs.items()
+        }
+        fields = {**self, **kwargs_w_sentinel}
+        return ItemizedDelta(**fields)
+
     @no_type_check
     def __reduce__(self):
         return (
@@ -3831,6 +3864,35 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             round_mode=round_mode,
             round_increment=round_increment,
         )
+
+    if not TYPE_CHECKING:
+        # This overload ensures it shows up nicely in the API docs, not just as "kwargs"
+        @overload
+        def replace(
+            self,
+            *,
+            years: int | None = ...,
+            months: int | None = ...,
+            weeks: int | None = ...,
+            days: int | None = ...,
+        ) -> ItemizedDateDelta: ...
+
+    def replace(self, **kwargs: int | None) -> ItemizedDateDelta:
+        """Return a new delta with specific fields replaced.
+        Fields set to ``None`` will be removed.
+
+        All normal validation rules apply.
+
+        >>> d = ItemizedDateDelta(years=1, months=2, weeks=3)
+        >>> d.replace(months=None, weeks=4)
+        ItemizedDateDelta("P1y4w")
+        """
+        kwargs_w_sentinel = {
+            k: _UNSET if v is None else v for k, v in kwargs.items()
+        }
+        # Keys may be invalid here, but the constructor will catch that.
+        fields = {**self, **kwargs_w_sentinel}  # type: ignore[misc]
+        return ItemizedDateDelta(**fields)
 
     def format_iso(self, *, lowercase_units: bool = False) -> str:
         """Convert to the canionical ISO 8601 string representation:
@@ -5910,6 +5972,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             d.microsecond * 1_000,
         )
 
+    # TODO overload
     def replace(
         self, /, ignore_dst: bool = False, **kwargs: Any
     ) -> OffsetDateTime:
@@ -6822,7 +6885,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         while b.replace_date(target_date) > self:
             target_date = target_date.subtract(days=1)
 
-        sign: Sign = 1 if self >= b else -1
+        sign: Literal[1, -1] = 1 if self >= b else -1
         cal_results, trunc_date, expand_date = date_diff(
             target_date._py_date,
             b._py_dt.date(),
@@ -6866,10 +6929,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         if single_unit_mode:
             return result.pop(smallest_unit) * sign
 
-        if not any(result.values()):
-            sign = 0
         # mypy false positive: 'keywords must be strings' (but they're string literals!)
-        return ItemizedDelta._from_signed(sign, **result)  # type: ignore[misc]
+        return ItemizedDelta._from_signed(
+            sign if any(result.values()) else 0, **result
+        )  # type: ignore[misc]
 
     @overload
     def until(

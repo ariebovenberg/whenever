@@ -135,6 +135,64 @@ def test_mapping_like_interface(
     assert len(d) == len(expected)
 
 
+def test_replace():
+    d = ItemizedDateDelta(years=2, months=3, weeks=4)
+
+    # changing an existing value
+    assert d.replace(months=10).exact_eq(
+        ItemizedDateDelta(years=2, months=10, weeks=4)
+    )
+
+    # adding a value
+    assert d.replace(days=5).exact_eq(
+        ItemizedDateDelta(years=2, months=3, weeks=4, days=5)
+    )
+
+    # setting to zero
+    assert d.replace(weeks=0).exact_eq(
+        ItemizedDateDelta(years=2, months=3, weeks=0)
+    )
+
+    # setting to missing (zero)
+    assert d.replace(years=None).exact_eq(ItemizedDateDelta(months=3, weeks=4))
+
+    # invalid sign
+    with pytest.raises(ValueError, match="sign"):
+        assert d.replace(days=-1)
+
+    with pytest.raises(ValueError, match="sign"):
+        assert (-d).replace(days=1)
+
+    # sign becomes zero
+    assert d.replace(years=0, months=0, weeks=0).exact_eq(
+        ItemizedDateDelta(years=0, months=0, weeks=0)
+    )
+
+    # sign becomes negative
+    assert d.replace(years=-3, months=-1, weeks=0, days=-4).exact_eq(
+        ItemizedDateDelta(years=-3, months=-1, weeks=0, days=-4)
+    )
+
+    # negative becomes positive
+    assert (
+        (-d)
+        .replace(years=3, months=1, weeks=0, days=4)
+        .exact_eq(ItemizedDateDelta(years=3, months=1, weeks=0, days=4))
+    )
+
+    # last field dropped
+    with pytest.raises(ValueError, match="At least one"):
+        d.replace(years=None, months=None, weeks=None)
+
+    # no arguments
+    assert d.replace().exact_eq(d)
+    assert (-d).replace().exact_eq(-d)
+
+    # invalid field
+    with pytest.raises(TypeError, match="foo"):
+        d.replace(foo=5)  # type: ignore[call-arg]
+
+
 class TestEq:
     def test_notimplemented(self):
         d = ItemizedDateDelta(days=5)
