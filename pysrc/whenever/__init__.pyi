@@ -595,6 +595,18 @@ class ItemizedDelta(
     def parse_iso(cls, s: str, /) -> Self: ...
     def float_seconds(self) -> float: ...
     def format_iso(self, *, lowercase_units: bool = False) -> str: ...
+    def replace(
+        self,
+        *,
+        years: int | None = ...,
+        months: int | None = ...,
+        weeks: int | None = ...,
+        days: int | None = ...,
+        hours: int | None = ...,
+        minutes: int | None = ...,
+        seconds: int | None = ...,
+        nanoseconds: int | None = ...,
+    ) -> Self: ...
     def in_units(
         self,
         units: Sequence[
@@ -859,6 +871,14 @@ class ItemizedDateDelta(
     def format_iso(self, *, lowercase_units: bool = False) -> str: ...
     @classmethod
     def parse_iso(cls, s: str, /) -> Self: ...
+    def replace(
+        self,
+        *,
+        years: int | None = ...,
+        months: int | None = ...,
+        weeks: int | None = ...,
+        days: int | None = ...,
+    ) -> Self: ...
     def in_units(
         self,
         units: Sequence[Literal["years", "months", "weeks", "days"]],
