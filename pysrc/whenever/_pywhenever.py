@@ -562,7 +562,11 @@ class Date(_Base):
             Use :meth:`since` with `unit="days"` instead.
 
         """
-        # TODO: test deprecate
+        warn(
+            "days_since() is deprecated; use since() with unit='days' instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         return (self._py_date - other._py_date).days
 
     def days_until(self, other: Date, /) -> int:
@@ -572,7 +576,11 @@ class Date(_Base):
 
             Use :meth:`until` with `unit="days"` instead.
         """
-        # TODO: test deprecate
+        warn(
+            "days_until() is deprecated; use until() with unit='days' instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         return (other._py_date - self._py_date).days
 
     @overload
@@ -635,7 +643,9 @@ class Date(_Base):
             as an :class:`ItemizedDateDelta`,
             otherwise as an integer number of the specified unit.
 
-        TODO example
+        >>> d1 = Date(2023, 4, 15)
+        >>> d2.since(Date("2020-01-01"), units=["years", "months"])
+        ItemizedDateDelta(years=3, months=3)
 
         """
         units, single_unit_mode = _normalize_unit_or_units(
@@ -2985,7 +2995,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         """The sign of the delta, 1, 0, or -1"""
         return self._sign
 
-    # TODO last: remove these properties in favor of just using the mapping interface (d["years"], etc.)
+    # TODO LAST: remove these properties in favor of just using the mapping interface (d["years"], etc.)
     @property
     def years(self) -> int:
         """The number of years, 0 if not set
@@ -5357,7 +5367,6 @@ class _ExactTime(_BasicConversions):
 
            Use the subtraction operator instead
         """
-        # TODO: suggest since()
         warn(
             "The difference() method is deprecated. Use the subtraction operator instead.",
             WheneverDeprecationWarning,
@@ -5462,36 +5471,20 @@ class _ExactTime(_BasicConversions):
             other._nanos,
         )
 
-    # TODO: clean up
-    # Mypy doesn't like overloaded overrides, but we'd like to document
-    # this 'abstract' behaviour anyway
-    if not TYPE_CHECKING:  # pragma: no branch
-
-        @abstractmethod
-        def __sub__(self, other: _ExactTimeAlias) -> TimeDelta:
-            """Calculate the duration between two datetimes
-
-            ``a - b`` is equivalent to ``a.to_instant() - b.to_instant()``
-
-            See :ref:`the docs on arithmetic <arithmetic>` for more information.
-
-            >>> d = Instant.from_utc(2020, 8, 15, hour=23)
-            >>> d - ZonedDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
-            TimeDelta(05:00:00)
-            """
-            if isinstance(other, _ExactTime):
-                py_delta = self._py_dt.astimezone(_UTC) - other._py_dt
-                return TimeDelta(
-                    seconds=py_delta.days * 86_400 + py_delta.seconds,
-                    nanoseconds=self._nanos - other._nanos,
-                )
-            return NotImplemented
+    def _subtract_delta(self, other: _ExactTimeAlias) -> TimeDelta:
+        if isinstance(other, _ExactTime):
+            py_delta = self._py_dt.astimezone(_UTC) - other._py_dt
+            return TimeDelta(
+                seconds=py_delta.days * 86_400 + py_delta.seconds,
+                nanoseconds=self._nanos - other._nanos,
+            )
+        return NotImplemented
 
 
 # Common behavior for all types that know an exact time and
 # corresponding local date and time-of-day.
-# - :class:`ZonedDateTime`
-# - :class:`OffsetDateTime`
+# - ZonedDateTime
+# - OffsetDateTime
 # (The class itself it not for public use.)
 class _ExactAndLocalTime(_LocalTime, _ExactTime):
 
@@ -5842,9 +5835,6 @@ class Instant(_ExactTime):
     ) -> Instant | TimeDelta:
         """Subtract another exact time or timedelta
 
-        Subtraction of deltas happens in the same way as the :meth:`subtract` method.
-        Subtraction of instants happens the same way as the :meth:`difference` method.
-
         See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`__ for more information.
 
         >>> d = Instant.from_utc(2020, 8, 15, hour=23, minute=12)
@@ -5854,7 +5844,7 @@ class Instant(_ExactTime):
         TimeDelta(47:12:00)
         """
         if isinstance(other, _ExactTime):
-            return super().__sub__(other)  # type: ignore[misc, no-any-return]
+            return self._subtract_delta(other)  # type: ignore[misc, no-any-return]
         elif isinstance(other, TimeDelta):
             return self + -other
         return NotImplemented
@@ -5906,6 +5896,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     This class knows when the offset changes.
     """
 
+    # TODO implement
     # Stub to make sphinx happy, until we implement this method.
     def __add__(self, other: TimeDelta) -> OffsetDateTime:
         """TODO"""
@@ -6224,10 +6215,10 @@ class OffsetDateTime(_ExactAndLocalTime):
         return hash((self._py_dt, self._nanos))
 
     def __sub__(self, other: _ExactTimeAlias) -> TimeDelta:
-        """Calculate the duration relative to another exact time."""
+        """Calculate the exact duration relative to another exact time."""
         if isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
             raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
-        return super().__sub__(other)  # type: ignore[misc, no-any-return]
+        return super()._subtract_delta(other)  # type: ignore[misc, no-any-return]
 
     @classmethod
     def parse_strptime(cls, s: str, /, *, format: str) -> OffsetDateTime:
@@ -6960,7 +6951,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         for more information.
         """
         if isinstance(other, _ExactTime):
-            return super().__sub__(other)  # type: ignore[misc, no-any-return]
+            return self._subtract_delta(other)  # type: ignore[misc, no-any-return]
         elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
             return self + -other
         return NotImplemented
@@ -7154,8 +7145,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         cal_units, exact_units = _split_calendar_and_exact_units(units)
         if cal_units and self.tz != b.tz:
             raise ValueError(
-                "Calendar units can only be used to compare ZonedDateTimes with the same timezone"
-            )  # TODO message
+                "Calendar units can only be used to compare ZonedDateTimes "
+                "with the same timezone"
+            )
 
         # To ensure we don't overshoot the date when adding calendar units.
         # Note that we may need to do this multiple times in the rare case
