@@ -168,17 +168,23 @@ def test_today_in_system_tz():
 
 def test_from_py_date():
     assert Date.from_py_date(py_date(2021, 1, 2)) == Date(2021, 1, 2)
+    assert Date(py_date(2021, 1, 2)) == Date(2021, 1, 2)
     assert Date.from_py_date(py_datetime(2021, 1, 2, 3, 4, 5)) == Date(
         2021, 1, 2
     )
+    assert Date(py_datetime(2021, 1, 2, 3, 4, 5)) == Date(2021, 1, 2)
 
     class CustomDate(py_date):
         pass
 
     assert Date.from_py_date(CustomDate(2021, 1, 2)) == Date(2021, 1, 2)
+    assert Date(CustomDate(2021, 1, 2)) == Date(2021, 1, 2)
 
     with pytest.raises(TypeError):
         Date.from_py_date(20210102)  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError):
+        Date(20210102)  # type: ignore[call-overload]
 
 
 def test_format_iso():

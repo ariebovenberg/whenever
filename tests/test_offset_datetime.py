@@ -783,52 +783,75 @@ def test_py_datetime(d: OffsetDateTime, expect: py_datetime):
     assert d.py_datetime() == expect
 
 
+class _MyDatetime(py_datetime):
+    pass
+
+
 class TestFromPyDatetime:
 
-    def test_offset(self):
-
-        d = py_datetime(
-            2020,
-            8,
-            15,
-            23,
-            12,
-            9,
-            987_654,
-            tzinfo=timezone(timedelta(hours=2)),
-        )
-        assert OffsetDateTime.from_py_datetime(d).exact_eq(
-            OffsetDateTime(
-                2020, 8, 15, 23, 12, 9, nanosecond=987_654_000, offset=2
-            )
-        )
-
-    def test_zoneinfo(self):
-
-        d = py_datetime(
-            2020,
-            8,
-            15,
-            23,
-            12,
-            9,
-            987_654,
-            tzinfo=ZoneInfo("Europe/Amsterdam"),
-        )
-        assert OffsetDateTime.from_py_datetime(d).exact_eq(
-            OffsetDateTime(
-                2020, 8, 15, 23, 12, 9, nanosecond=987_654_000, offset=2
-            )
-        )
+    @pytest.mark.parametrize(
+        "d, expect",
+        [
+            (
+                py_datetime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=timezone(timedelta(hours=2)),
+                ),
+                OffsetDateTime(
+                    2020, 8, 15, 23, 12, 9, nanosecond=987_654_000, offset=2
+                ),
+            ),
+            # zoneinfo
+            (
+                py_datetime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=ZoneInfo("Europe/Amsterdam"),
+                ),
+                OffsetDateTime(
+                    2020, 8, 15, 23, 12, 9, nanosecond=987_654_000, offset=2
+                ),
+            ),
+            # subclass of datetime should work
+            (
+                _MyDatetime(
+                    2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc
+                ),
+                OffsetDateTime(
+                    2020, 8, 15, 23, 12, 9, nanosecond=987_654_000, offset=0
+                ),
+            ),
+        ],
+    )
+    def test_valid(self, d: py_datetime, expect: OffsetDateTime):
+        assert OffsetDateTime.from_py_datetime(d).exact_eq(expect)
+        assert OffsetDateTime(d).exact_eq(expect)
 
     def test_naive(self):
         with pytest.raises(ValueError, match="naive"):
             OffsetDateTime.from_py_datetime(py_datetime(12, 3, 4, 12))
 
+        with pytest.raises(ValueError, match="naive"):
+            OffsetDateTime(py_datetime(12, 3, 4, 12))
+
     def test_out_of_range(self):
         d = py_datetime(1, 1, 1, tzinfo=timezone(timedelta(hours=5)))
         with pytest.raises(ValueError, match="range"):
             OffsetDateTime.from_py_datetime(d)
+
+        with pytest.raises(ValueError, match="range"):
+            OffsetDateTime(d)
 
     def test_utcoffset_none(self):
 
@@ -841,31 +864,27 @@ class TestFromPyDatetime:
                 py_datetime(2020, 8, 15, tzinfo=MyTz())  # type: ignore[abstract]
             )
 
-    def test_subsecond_offset(self):
-        with pytest.raises(ValueError, match="Sub-second"):
-            OffsetDateTime.from_py_datetime(
-                py_datetime(
-                    2020,
-                    8,
-                    15,
-                    23,
-                    12,
-                    9,
-                    987_654,
-                    tzinfo=timezone(timedelta(hours=2, microseconds=30)),
-                )
-            )
-
-    def test_subclass(self):
-        class MyDatetime(py_datetime):
-            pass
-
-        d = MyDatetime(2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc)
-        assert OffsetDateTime.from_py_datetime(d).exact_eq(
+        with pytest.raises(ValueError, match="naive"):
             OffsetDateTime(
-                2020, 8, 15, 23, 12, 9, nanosecond=987_654_000, offset=0
+                py_datetime(2020, 8, 15, tzinfo=MyTz())  # type: ignore[abstract]
             )
+
+    def test_subsecond_offset(self):
+        py_dt = py_datetime(
+            2020,
+            8,
+            15,
+            23,
+            12,
+            9,
+            987_654,
+            tzinfo=timezone(timedelta(hours=2, microseconds=30)),
         )
+        with pytest.raises(ValueError, match="Sub-second"):
+            OffsetDateTime.from_py_datetime(py_dt)
+
+        with pytest.raises(ValueError, match="Sub-second"):
+            OffsetDateTime(py_dt)
 
 
 def test_replace_date():

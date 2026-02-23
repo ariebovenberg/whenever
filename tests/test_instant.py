@@ -47,7 +47,7 @@ def test_init_is_parse_iso():
     )
 
     with pytest.raises(TypeError):
-        Instant(2020, 3, 4)  # type: ignore[call-arg,arg-type]
+        Instant(2020, 3, 4)  # type: ignore[call-overload]
 
 
 class TestFromUTC:
@@ -471,90 +471,108 @@ def test_py_datetime():
     )
 
 
+class _MyDateTime(py_datetime):
+    pass
+
+
 class TestFromPyDatetime:
 
-    def test_utc(self):
-        d = py_datetime(2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc)
-        assert Instant.from_py_datetime(d) == Instant.from_utc(
-            2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
-        )
-
-    def test_offset(self):
-
-        assert Instant.from_py_datetime(
-            py_datetime(
-                2020,
-                8,
-                15,
-                23,
-                12,
-                9,
-                987_654,
-                tzinfo=timezone(-timedelta(hours=4)),
-            )
-        ).exact_eq(
-            Instant.from_utc(2020, 8, 16, 3, 12, 9, nanosecond=987_654_000)
-        )
-
-    def test_subsecond_offset(self):
-        assert Instant.from_py_datetime(
-            py_datetime(
-                2020,
-                8,
-                15,
-                23,
-                12,
-                9,
-                987_654,
-                tzinfo=timezone(timedelta(hours=4, microseconds=30)),
-            )
-        ).exact_eq(
-            Instant.from_utc(2020, 8, 15, 19, 12, 9, nanosecond=987_624_000)
-        )
-
-    def test_zoneinfo(self):
-
-        assert Instant.from_py_datetime(
-            py_datetime(
-                2020,
-                8,
-                15,
-                23,
-                12,
-                9,
-                987_654,
-                tzinfo=ZoneInfo("America/New_York"),
-            )
-        ).exact_eq(
-            Instant.from_utc(2020, 8, 16, 3, 12, 9, nanosecond=987_654_000)
-        )
-
-    def test_subclass(self):
-
-        class MyDateTime(py_datetime):
-            pass
-
-        assert Instant.from_py_datetime(
-            MyDateTime(
-                2020,
-                8,
-                15,
-                23,
-                12,
-                9,
-                987_654,
-                tzinfo=timezone(-timedelta(hours=4)),
-            )
-        ) == Instant.from_utc(2020, 8, 16, 3, 12, 9, nanosecond=987_654_000)
+    @pytest.mark.parametrize(
+        "dt, expected",
+        [
+            # UTC timezone
+            (
+                py_datetime(
+                    2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc
+                ),
+                Instant.from_utc(
+                    2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
+                ),
+            ),
+            # fixed offset
+            (
+                py_datetime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=timezone(-timedelta(hours=4)),
+                ),
+                Instant.from_utc(
+                    2020, 8, 16, 3, 12, 9, nanosecond=987_654_000
+                ),
+            ),
+            # subsecond offset
+            (
+                py_datetime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=timezone(timedelta(hours=4, microseconds=30)),
+                ),
+                Instant.from_utc(
+                    2020, 8, 15, 19, 12, 9, nanosecond=987_624_000
+                ),
+            ),
+            # zoneinfo
+            (
+                py_datetime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=ZoneInfo("America/New_York"),
+                ),
+                Instant.from_utc(
+                    2020, 8, 16, 3, 12, 9, nanosecond=987_654_000
+                ),
+            ),
+            # subclass of datetime
+            (
+                _MyDateTime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=timezone(-timedelta(hours=4)),
+                ),
+                Instant.from_utc(
+                    2020, 8, 16, 3, 12, 9, nanosecond=987_654_000
+                ),
+            ),
+        ],
+    )
+    def test_valid(self, dt: py_datetime, expected: Instant):
+        assert Instant.from_py_datetime(dt).exact_eq(expected)
+        assert Instant(dt).exact_eq(expected)
 
     def test_out_of_range(self):
         d = py_datetime(1, 1, 1, tzinfo=timezone(timedelta(hours=5)))
         with pytest.raises((ValueError, OverflowError), match="range"):
             Instant.from_py_datetime(d)
 
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            Instant(d)
+
     def test_naive(self):
         with pytest.raises(ValueError, match="naive"):
             Instant.from_py_datetime(py_datetime(2020, 8, 15, 12))
+
+        with pytest.raises(ValueError, match="naive"):
+            Instant(py_datetime(2020, 8, 15, 12))
 
     def test_utcoffset_none(self):
 
@@ -564,6 +582,9 @@ class TestFromPyDatetime:
 
         with pytest.raises(ValueError, match="naive"):
             Instant.from_py_datetime(py_datetime(2020, 8, 15, tzinfo=MyTz()))  # type: ignore[abstract]
+
+        with pytest.raises(ValueError, match="naive"):
+            Instant(py_datetime(2020, 8, 15, tzinfo=MyTz()))  # type: ignore[abstract]
 
 
 def test_now():
@@ -1076,17 +1097,17 @@ class TestRound:
         half_ceil,
         half_even,
     ):
-        # assert d.round(unit, increment=increment) == half_even
-        # assert d.round(unit, increment=increment, mode="floor") == floor
-        # assert d.round(unit, increment=increment, mode="trunc") == floor
-        # assert d.round(unit, increment=increment, mode="ceil") == ceil
-        # assert d.round(unit, increment=increment, mode="expand") == ceil
-        # assert (
-        #     d.round(unit, increment=increment, mode="half_floor") == half_floor
-        # )
-        # assert (
-        #     d.round(unit, increment=increment, mode="half_trunc") == half_floor
-        # )
+        assert d.round(unit, increment=increment) == half_even
+        assert d.round(unit, increment=increment, mode="floor") == floor
+        assert d.round(unit, increment=increment, mode="trunc") == floor
+        assert d.round(unit, increment=increment, mode="ceil") == ceil
+        assert d.round(unit, increment=increment, mode="expand") == ceil
+        assert (
+            d.round(unit, increment=increment, mode="half_floor") == half_floor
+        )
+        assert (
+            d.round(unit, increment=increment, mode="half_trunc") == half_floor
+        )
         assert (
             d.round(unit, increment=increment, mode="half_ceil") == half_ceil
         )
