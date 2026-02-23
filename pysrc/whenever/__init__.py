@@ -66,5 +66,5 @@ def __getattr__(name: str) -> object:
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-# TODO: make py3.12<-safe
+# TODO LAST: make py3.12<-safe
 type AnyDelta = DateDelta | TimeDelta | DateTimeDelta | ItemizedDelta | ItemizedDateDelta

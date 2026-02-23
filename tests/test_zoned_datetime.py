@@ -2278,68 +2278,16 @@ class TestPyDatetime:
         assert py_dt.utcoffset() == py_timedelta(hours=2)
 
 
+class _MyDatetime(py_datetime):
+    pass
+
+
 class TestFromPyDatetime:
 
-    def test_simple(self):
-        d = py_datetime(
-            2020, 8, 15, 23, 12, 9, 987_654, tzinfo=ZoneInfo("Europe/Paris")
-        )
-        assert ZonedDateTime.from_py_datetime(d).exact_eq(
-            ZonedDateTime(
-                2020,
-                8,
-                15,
-                23,
-                12,
-                9,
-                nanosecond=987_654_000,
-                tz="Europe/Paris",
-            )
-        )
-
-    def test_subclass(self):
-        class MyDatetime(py_datetime):
-            pass
-
-        assert ZonedDateTime.from_py_datetime(
-            MyDatetime(
-                2020,
-                8,
-                15,
-                23,
-                12,
-                9,
-                987_654,
-                tzinfo=ZoneInfo("Europe/Paris"),
-            )
-        ).exact_eq(
-            ZonedDateTime(
-                2020,
-                8,
-                15,
-                23,
-                12,
-                9,
-                nanosecond=987_654_000,
-                tz="Europe/Paris",
-            )
-        )
-
-    def test_wrong_tzinfo(self):
-        d = py_datetime(
-            2020, 8, 15, 23, 12, 9, 987_654, tzinfo=py_timezone.utc
-        )
-        with pytest.raises(ValueError, match="datetime.timezone"):
-            ZonedDateTime.from_py_datetime(d)
-
-    def test_zoneinfo_subclass(self):
-
-        # ZoneInfo subclass also not allowed
-        class MyZoneInfo(ZoneInfo):
-            pass
-
-        with pytest.raises(ValueError, match="ZoneInfo.*MyZoneInfo"):
-            ZonedDateTime.from_py_datetime(
+    @pytest.mark.parametrize(
+        "pydt, expect",
+        [
+            (
                 py_datetime(
                     2020,
                     8,
@@ -2348,100 +2296,204 @@ class TestFromPyDatetime:
                     12,
                     9,
                     987_654,
-                    tzinfo=MyZoneInfo("Europe/Paris"),
-                )
-            )
+                    tzinfo=ZoneInfo("Europe/Paris"),
+                ),
+                ZonedDateTime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    nanosecond=987_654_000,
+                    tz="Europe/Paris",
+                ),
+            ),
+            # subclass of datetime
+            (
+                _MyDatetime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=ZoneInfo("Europe/Paris"),
+                ),
+                ZonedDateTime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    nanosecond=987_654_000,
+                    tz="Europe/Paris",
+                ),
+            ),
+            # skipped time
+            (
+                py_datetime(
+                    2023,
+                    3,
+                    26,
+                    2,
+                    15,
+                    30,
+                    tzinfo=ZoneInfo("Europe/Amsterdam"),
+                ),
+                ZonedDateTime(
+                    2023,
+                    3,
+                    26,
+                    3,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                ),
+            ),
+            (
+                py_datetime(
+                    2023,
+                    3,
+                    26,
+                    2,
+                    15,
+                    30,
+                    fold=1,
+                    tzinfo=ZoneInfo("Europe/Amsterdam"),
+                ),
+                ZonedDateTime(
+                    2023,
+                    3,
+                    26,
+                    1,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                ),
+            ),
+            # repeated time
+            (
+                py_datetime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    15,
+                    30,
+                    tzinfo=ZoneInfo("Europe/Amsterdam"),
+                ),
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                    disambiguate="earlier",
+                ),
+            ),
+            (
+                py_datetime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    15,
+                    30,
+                    fold=1,
+                    tzinfo=ZoneInfo("Europe/Amsterdam"),
+                ),
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                    disambiguate="later",
+                ),
+            ),
+        ],
+    )
+    def test_valid(self, pydt: py_datetime, expect: ZonedDateTime):
+        assert ZonedDateTime.from_py_datetime(pydt).exact_eq(expect)
+        assert ZonedDateTime(pydt).exact_eq(expect)
+
+    def test_wrong_tzinfo(self):
+        d = py_datetime(
+            2020, 8, 15, 23, 12, 9, 987_654, tzinfo=py_timezone.utc
+        )
+        with pytest.raises(ValueError, match="datetime.timezone"):
+            ZonedDateTime.from_py_datetime(d)
+
+        with pytest.raises(ValueError, match="datetime.timezone"):
+            ZonedDateTime(d)
+
+    def test_zoneinfo_subclass(self):
+
+        # ZoneInfo subclass also not allowed
+        class MyZoneInfo(ZoneInfo):
+            pass
+
+        dt = py_datetime(
+            2020,
+            8,
+            15,
+            23,
+            12,
+            9,
+            987_654,
+            tzinfo=MyZoneInfo("Europe/Paris"),
+        )
+
+        with pytest.raises(ValueError, match="ZoneInfo.*MyZoneInfo"):
+            ZonedDateTime.from_py_datetime(dt)
+
+        with pytest.raises(ValueError, match="ZoneInfo.*MyZoneInfo"):
+            ZonedDateTime(dt)
 
     def test_naive(self):
 
         with pytest.raises(ValueError, match="None"):
             ZonedDateTime.from_py_datetime(py_datetime(2020, 3, 4))
 
-    def test_skipped_time(self):
-        assert ZonedDateTime.from_py_datetime(
-            py_datetime(
-                2023, 3, 26, 2, 15, 30, tzinfo=ZoneInfo("Europe/Amsterdam")
-            )
-        ).exact_eq(
-            ZonedDateTime(2023, 3, 26, 3, 15, 30, tz="Europe/Amsterdam")
-        )
-        assert ZonedDateTime.from_py_datetime(
-            py_datetime(
-                2023,
-                3,
-                26,
-                2,
-                15,
-                30,
-                fold=1,
-                tzinfo=ZoneInfo("Europe/Amsterdam"),
-            )
-        ).exact_eq(
-            ZonedDateTime(2023, 3, 26, 1, 15, 30, tz="Europe/Amsterdam")
-        )
-
-    def test_repeated_time(self):
-        assert ZonedDateTime.from_py_datetime(
-            py_datetime(
-                2023, 10, 29, 2, 15, 30, tzinfo=ZoneInfo("Europe/Amsterdam")
-            )
-        ).exact_eq(
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                30,
-                tz="Europe/Amsterdam",
-                disambiguate="earlier",
-            )
-        )
-        assert ZonedDateTime.from_py_datetime(
-            py_datetime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                30,
-                fold=1,
-                tzinfo=ZoneInfo("Europe/Amsterdam"),
-            )
-        ).exact_eq(
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                30,
-                tz="Europe/Amsterdam",
-                disambiguate="later",
-            )
-        )
+        with pytest.raises(ValueError, match="None"):
+            ZonedDateTime(py_datetime(2020, 3, 4))
 
     def test_out_of_range(self):
+        min_pydt = py_datetime(1, 1, 1, tzinfo=ZoneInfo("Asia/Kolkata"))
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            ZonedDateTime.from_py_datetime(
-                py_datetime(1, 1, 1, tzinfo=ZoneInfo("Asia/Kolkata"))
-            )
+            ZonedDateTime.from_py_datetime(min_pydt)
 
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            ZonedDateTime.from_py_datetime(
-                py_datetime(
-                    9999, 12, 31, 22, tzinfo=ZoneInfo("America/New_York")
-                )
-            )
+            ZonedDateTime(min_pydt)
+
+        max_pydt = py_datetime(
+            9999, 12, 31, 22, tzinfo=ZoneInfo("America/New_York")
+        )
+
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
+            ZonedDateTime.from_py_datetime(max_pydt)
+
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
+            ZonedDateTime(max_pydt)
 
     def test_zoneinfo_key_is_none(self):
         with TEST_DIR.joinpath("tzif/Amsterdam.tzif").open("rb") as f:
             tz = ZoneInfo.from_file(f)
 
+        py_dt = py_datetime(2020, 8, 15, 12, 8, 30, tzinfo=tz)
+
         with pytest.raises(ValueError, match="key"):
-            ZonedDateTime.from_py_datetime(
-                py_datetime(2020, 8, 15, 12, 8, 30, tzinfo=tz)
-            )
+            ZonedDateTime.from_py_datetime(py_dt)
+
+        with pytest.raises(ValueError, match="key"):
+            ZonedDateTime(py_dt)
 
 
 def test_now():

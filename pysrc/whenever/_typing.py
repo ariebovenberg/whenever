@@ -11,7 +11,7 @@ __all__ = [
 ]
 
 
-# TODO make py3.12< compatible
+# TODO LAST: make py3.12< compatible
 type RoundModeStr = Literal[
     "ceil",
     "expand",

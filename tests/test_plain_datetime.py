@@ -514,9 +514,17 @@ def test_from_py_datetime():
     assert PlainDateTime.from_py_datetime(d) == PlainDateTime(
         2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
     )
+    assert PlainDateTime(d) == PlainDateTime(
+        2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
+    )
 
     with pytest.raises(ValueError, match="utc"):
         PlainDateTime.from_py_datetime(
+            py_datetime(2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc)
+        )
+
+    with pytest.raises(ValueError, match="utc"):
+        PlainDateTime(
             py_datetime(2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc)
         )
 
@@ -524,6 +532,9 @@ def test_from_py_datetime():
         pass
 
     assert PlainDateTime.from_py_datetime(
+        MyDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+    ) == PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
+    assert PlainDateTime(
         MyDateTime(2020, 8, 15, 23, 12, 9, 987_654)
     ) == PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
 
