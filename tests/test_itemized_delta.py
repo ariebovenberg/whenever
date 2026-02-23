@@ -30,9 +30,6 @@ pytestmark = pytest.mark.filterwarnings(
     "ignore::whenever.WheneverDeprecationWarning"
 )
 
-# TODO: delta.replace()
-# TODO: delta.clear() or similar
-
 
 class TestInit:
 
@@ -214,7 +211,7 @@ class TestEq:
         # NOTE: the mypy ignore comments are actually also "tests" in the sense
         # they ensure that the types properly implement strict comparison!
         assert d != "P5D"  # type: ignore[comparison-overlap]
-        # TODO: these comparisons *should* be blocked?
+        # TODO LAST: these comparisons *should* be blocked?
         assert d != {"days": 5}
         assert d != ItemizedDateDelta(days=5)
 
@@ -875,10 +872,6 @@ def test_parts(
     else:
         assert date_part.exact_eq(expected_date)
     assert time_part == expected_time
-
-
-# TODO: method to remove zero-value components
-# TODO: replace()
 
 
 @pytest.mark.parametrize(

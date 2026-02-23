@@ -12,8 +12,9 @@
 from __future__ import annotations
 
 import enum
-from abc import ABC, ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 from collections.abc import (
+    Callable,
     ItemsView,
     KeysView,
     Mapping,
@@ -182,40 +183,13 @@ _T = TypeVar("_T")
 # A sentinel value that looks nice in autodoc.
 # Used in cases where `None` would be a valid value, or where we want to
 # avoid allowing `None` to be passed in by users.
-_UNSET = type(
+_UNSET: Any = type(
     "UNSET", (), {"__repr__": lambda _: "...", "__bool__": lambda _: False}
 )()
 
 
-# Metaclass ugh...it proved the most lightweight way to allow the constructors
-# of many classes to take an ISO string as well as the regular arguments
-# (i.e. the __init__ signature).
-# Alternatives not chosen:
-# - A special __new__: but this still calls __init__ afterwards, so no good.
-# - adjusting __init__: this makes the signature awkward--plus a lot of custom
-#   code in every class
-#
-# NOTE: typing doesn't need to know about this feature, since the stub files
-# obscure anything happening in this file anyways...for the outside world, that is.
-# The autodocs also shouldn't be affected, since we want them to document
-# the regular __init__ signature.
-if TYPE_CHECKING or SPHINXBUILD:
-    _ConstructorSupportsIsoString = type
-else:
-
-    class _ConstructorSupportsIsoString(ABCMeta):
-
-        def __call__(cls, *args, **kwargs):
-            if len(args) == 1 and not kwargs and isinstance(args[0], str):
-                return cls.parse_iso(args[0])
-            else:
-                self = _object_new(cls)
-                self.__init__(*args, **kwargs)
-                return self
-
-
 # Basic behavior common to all classes
-class _Base(metaclass=_ConstructorSupportsIsoString):
+class _Base:
     __slots__ = ()
 
     # Immutable classes don't need to be copied
@@ -269,6 +243,30 @@ else:
         return cls
 
 
+_Tcall = TypeVar("_Tcall", bound=Callable[..., None])
+
+
+# I'd love for this to be a decorator, but every attempt I made resulted
+# in mypy getting too confused. I've tried a lot.
+def add_alternate_constructors(
+    init_default: _Tcall, py_type: type | None = None
+) -> _Tcall:
+    """Add alternate constructors to a class's __init__ method."""
+
+    def __init__(self: Any, *args: Any, **kwargs: Any) -> None:
+        match args:
+            case [str() as iso_string] if not kwargs:
+                self._init_from_iso(iso_string)
+            case [obj] if (
+                py_type is not None and not kwargs and isinstance(obj, py_type)
+            ):
+                self._init_from_py(obj)
+            case _:
+                init_default(self, *args, **kwargs)
+
+    return __init__  # type: ignore[return-value]
+
+
 @final
 class Date(_Base):
     """A date without a time component.
@@ -291,19 +289,23 @@ class Date(_Base):
     MAX: ClassVar[Date]
     """The maximum possible date"""
 
-    # TODO: do this everywhere
-    @overload
-    def __init__(self, iso_string: str, /) -> None: ...
+    # Overloads for a nice autodoc.
+    # Proper typing of the constructors is handled in the type stubs
+    if not TYPE_CHECKING:
 
-    @overload
-    def __init__(self, py_date: _date, /) -> None: ...
+        @overload
+        def __init__(self, iso_string: str, /) -> None: ...
 
-    @overload
-    def __init__(self, year: int, month: int, day: int) -> None: ...
+        @overload
+        def __init__(self, py_date: _date, /) -> None: ...
 
-    # Mypy doesn't know we handle other constructors in the metaclass
-    def __init__(self, year: int, month: int, day: int) -> None:  # type: ignore[misc]
+        @overload
+        def __init__(self, year: int, month: int, day: int) -> None: ...
+
+    def __init__(self, year: int, month: int, day: int) -> None:
         self._py_date = _date(year, month, day)
+
+    __init__ = add_alternate_constructors(__init__, py_type=_date)
 
     @classmethod
     def today_in_system_tz(cls) -> Date:
@@ -386,7 +388,7 @@ class Date(_Base):
         ZonedDateTime("2021-01-02 12:30:00-05:00[America/New_York]")
         """
         return PlainDateTime._from_py_unchecked(
-            _datetime.combine(self._py_date, t._py_time), t._nanos
+            _datetime.combine(self._py_date, t._py), t._nanos
         )
 
     def py_date(self) -> _date:
@@ -401,6 +403,10 @@ class Date(_Base):
         Date("2021-01-02")
         """
         self = _object_new(cls)
+        self._init_from_py(d)
+        return self
+
+    def _init_from_py(self, d: _date) -> None:
         if type(d) is _date:
             pass
         elif type(d) is _datetime:
@@ -411,7 +417,6 @@ class Date(_Base):
         else:
             raise TypeError(f"Expected date, got {type(d)!r}")
         self._py_date = d
-        return self
 
     def format_iso(self, *, basic: bool = False) -> str:
         """Format as the ISO 8601 date format.
@@ -439,6 +444,9 @@ class Date(_Base):
         Date("2021-01-02")
         """
         return cls._from_py_unchecked(date_from_iso(s))
+
+    def _init_from_iso(self, s: str) -> None:
+        self._py_date = date_from_iso(s)
 
     if not TYPE_CHECKING:  # for a nice autodoc
 
@@ -781,9 +789,10 @@ class Date(_Base):
             Using the ``-`` operator on :class:`Date` is deprecated;
             use the :meth:`subtract` method or the :meth:`since` method instead.
         """
+        # TODO LAST: a nice message about which API to use instead
         if isinstance(d, DateDelta):
             warn(
-                "Using the - operator on Date is deprecated; "
+                "Using the `-` operator on Date is deprecated; "
                 "use the .subtract() method instead.",
                 WheneverDeprecationWarning,
                 stacklevel=2,
@@ -791,7 +800,7 @@ class Date(_Base):
             return self.subtract(months=d._months, days=d._days)
         elif isinstance(d, Date):
             warn(
-                "Using the - operator on Date is deprecated; "
+                "Using the `-` operator on Date is deprecated; "
                 "use the .since() method with explicit units instead.",
                 WheneverDeprecationWarning,
                 stacklevel=2,
@@ -869,20 +878,15 @@ class Date(_Base):
     @classmethod
     def _from_py_unchecked(cls, d: _date, /) -> Date:
         self = _object_new(cls)
-        self._py_date = d
+        self._init_from_inner(d)
         return self
+
+    def _init_from_inner(self, d: _date, /) -> None:
+        self._py_date = d
 
     @no_type_check
     def __reduce__(self):
         return _unpkl_date, (pack("<HBB", self.year, self.month, self.day),)
-
-
-_FLIP_FLOOR_CEIL: dict[RoundModeStr, RoundModeStr] = {
-    "ceil": "floor",
-    "floor": "ceil",
-    "half_ceil": "half_floor",
-    "half_floor": "half_ceil",
-}
 
 
 # A separate unpickling function allows us to make backwards-compatible changes
@@ -909,15 +913,30 @@ class YearMonth(_Base):
     # We store the underlying data in a datetime.date object,
     # which allows us to benefit from its functionality and performance.
     # It isn't exposed to the user, so it's not a problem.
-    __slots__ = ("_py_date",)
+    __slots__ = ("_py",)
 
     MIN: ClassVar[YearMonth]
     """The minimum possible year-month"""
     MAX: ClassVar[YearMonth]
     """The maximum possible year-month"""
 
+    # Overloads for a nice autodoc.
+    # Proper typing of the constructors is handled in the type stubs
+    if not TYPE_CHECKING:
+
+        @overload
+        def __init__(self, iso_string: str, /) -> None: ...
+
+        @overload
+        def __init__(self, year: int, month: int) -> None: ...
+
     def __init__(self, year: int, month: int) -> None:
-        self._py_date = _date(year, month, 1)
+        self._py = _date(year, month, 1)
+
+    __init__ = add_alternate_constructors(__init__)
+
+    def _init_from_iso(self, s: str) -> None:
+        self._py = yearmonth_from_iso(s)
 
     @property
     def year(self) -> int:
@@ -926,7 +945,7 @@ class YearMonth(_Base):
         >>> YearMonth(2021, 1).year
         2021
         """
-        return self._py_date.year
+        return self._py.year
 
     @property
     def month(self) -> int:
@@ -935,7 +954,7 @@ class YearMonth(_Base):
         >>> YearMonth(2021, 1).month
         1
         """
-        return self._py_date.month
+        return self._py.month
 
     def format_iso(self) -> str:
         """Format as the ISO 8601 year-month format.
@@ -945,7 +964,7 @@ class YearMonth(_Base):
         >>> YearMonth(2021, 1).format_iso()
         '2021-01'
         """
-        return self._py_date.isoformat()[:7]
+        return self._py.isoformat()[:7]
 
     @classmethod
     def parse_iso(cls, s: str, /) -> YearMonth:
@@ -974,7 +993,7 @@ class YearMonth(_Base):
             raise TypeError(
                 "replace() got an unexpected keyword argument 'day'"
             )
-        return YearMonth._from_py_unchecked(self._py_date.replace(**kwargs))
+        return YearMonth._from_py_unchecked(self._py.replace(**kwargs))
 
     def on_day(self, day: int, /) -> Date:
         """Create a date from this year-month with a given day
@@ -982,7 +1001,7 @@ class YearMonth(_Base):
         >>> YearMonth(2021, 1).on_day(2)
         Date("2021-01-02")
         """
-        return Date._from_py_unchecked(self._py_date.replace(day=day))
+        return Date._from_py_unchecked(self._py.replace(day=day))
 
     __str__ = format_iso
 
@@ -1000,37 +1019,40 @@ class YearMonth(_Base):
         """
         if not isinstance(other, YearMonth):
             return NotImplemented
-        return self._py_date == other._py_date
+        return self._py == other._py
 
     def __lt__(self, other: YearMonth) -> bool:
         if not isinstance(other, YearMonth):
             return NotImplemented
-        return self._py_date < other._py_date
+        return self._py < other._py
 
     def __le__(self, other: YearMonth) -> bool:
         if not isinstance(other, YearMonth):
             return NotImplemented
-        return self._py_date <= other._py_date
+        return self._py <= other._py
 
     def __gt__(self, other: YearMonth) -> bool:
         if not isinstance(other, YearMonth):
             return NotImplemented
-        return self._py_date > other._py_date
+        return self._py > other._py
 
     def __ge__(self, other: YearMonth) -> bool:
         if not isinstance(other, YearMonth):
             return NotImplemented
-        return self._py_date >= other._py_date
+        return self._py >= other._py
 
     def __hash__(self) -> int:
-        return hash(self._py_date)
+        return hash(self._py)
 
     @classmethod
     def _from_py_unchecked(cls, d: _date, /) -> YearMonth:
-        assert d.day == 1
         self = _object_new(cls)
-        self._py_date = d
+        self._init_from_inner(d)
         return self
+
+    def _init_from_inner(self, d: _date, /) -> None:
+        assert d.day == 1
+        self._py = d
 
     @no_type_check
     def __reduce__(self):
@@ -1064,15 +1086,30 @@ class MonthDay(_Base):
     # We store the underlying data in a datetime.date object,
     # which allows us to benefit from its functionality and performance.
     # It isn't exposed to the user, so it's not a problem.
-    __slots__ = ("_py_date",)
+    __slots__ = ("_py",)
 
     MIN: ClassVar[MonthDay]
     """The minimum possible month-day"""
     MAX: ClassVar[MonthDay]
     """The maximum possible month-day"""
 
+    # Overloads for a nice autodoc.
+    # Proper typing of the constructors is handled in the type stubs
+    if not TYPE_CHECKING:
+
+        @overload
+        def __init__(self, iso_string: str, /) -> None: ...
+
+        @overload
+        def __init__(self, month: int, day: int) -> None: ...
+
     def __init__(self, month: int, day: int) -> None:
-        self._py_date = _date(_DUMMY_LEAP_YEAR, month, day)
+        self._py = _date(_DUMMY_LEAP_YEAR, month, day)
+
+    __init__ = add_alternate_constructors(__init__)
+
+    def _init_from_iso(self, s: str) -> None:
+        self._py = monthday_from_iso(s)
 
     @property
     def month(self) -> int:
@@ -1081,7 +1118,7 @@ class MonthDay(_Base):
         >>> MonthDay(11, 23).month
         11
         """
-        return self._py_date.month
+        return self._py.month
 
     @property
     def day(self) -> int:
@@ -1090,7 +1127,7 @@ class MonthDay(_Base):
         >>> MonthDay(11, 23).day
         23
         """
-        return self._py_date.day
+        return self._py.day
 
     def format_iso(self) -> str:
         """Format as the ISO 8601 month-day format.
@@ -1106,7 +1143,7 @@ class MonthDay(_Base):
         ISO 8601 standard. There is no alternative for month-day
         in the newer editions. However, it is still widely used in other libraries.
         """
-        return f"-{self._py_date.isoformat()[4:]}"
+        return f"-{self._py.isoformat()[4:]}"
 
     @classmethod
     def parse_iso(cls, s: str, /) -> MonthDay:
@@ -1135,7 +1172,7 @@ class MonthDay(_Base):
             raise TypeError(
                 "replace() got an unexpected keyword argument 'year'"
             )
-        return MonthDay._from_py_unchecked(self._py_date.replace(**kwargs))
+        return MonthDay._from_py_unchecked(self._py.replace(**kwargs))
 
     def in_year(self, year: int, /) -> Date:
         """Create a date from this month-day with a given day
@@ -1148,7 +1185,7 @@ class MonthDay(_Base):
         This method will raise a ``ValueError`` if the month-day is a leap day
         and the year is not a leap year.
         """
-        return Date._from_py_unchecked(self._py_date.replace(year=year))
+        return Date._from_py_unchecked(self._py.replace(year=year))
 
     def is_leap(self) -> bool:
         """Check if the month-day is February 29th
@@ -1158,7 +1195,7 @@ class MonthDay(_Base):
         >>> MonthDay(3, 1).is_leap()
         False
         """
-        return self._py_date.month == 2 and self._py_date.day == 29
+        return self._py.month == 2 and self._py.day == 29
 
     __str__ = format_iso
 
@@ -1176,37 +1213,40 @@ class MonthDay(_Base):
         """
         if not isinstance(other, MonthDay):
             return NotImplemented
-        return self._py_date == other._py_date
+        return self._py == other._py
 
     def __lt__(self, other: MonthDay) -> bool:
         if not isinstance(other, MonthDay):
             return NotImplemented
-        return self._py_date < other._py_date
+        return self._py < other._py
 
     def __le__(self, other: MonthDay) -> bool:
         if not isinstance(other, MonthDay):
             return NotImplemented
-        return self._py_date <= other._py_date
+        return self._py <= other._py
 
     def __gt__(self, other: MonthDay) -> bool:
         if not isinstance(other, MonthDay):
             return NotImplemented
-        return self._py_date > other._py_date
+        return self._py > other._py
 
     def __ge__(self, other: MonthDay) -> bool:
         if not isinstance(other, MonthDay):
             return NotImplemented
-        return self._py_date >= other._py_date
+        return self._py >= other._py
 
     def __hash__(self) -> int:
-        return hash(self._py_date)
+        return hash(self._py)
 
     @classmethod
     def _from_py_unchecked(cls, d: _date, /) -> MonthDay:
-        assert d.year == _DUMMY_LEAP_YEAR
         self = _object_new(cls)
-        self._py_date = d
+        self._init_from_inner(d)
         return self
+
+    def _init_from_inner(self, d: _date, /) -> None:
+        assert d.year == _DUMMY_LEAP_YEAR
+        self._py = d
 
     @no_type_check
     def __reduce__(self):
@@ -1237,7 +1277,7 @@ class Time(_Base):
 
     """
 
-    __slots__ = ("_py_time", "_nanos")
+    __slots__ = ("_py", "_nanos")
 
     MIN: ClassVar[Time]
     """The minimum time, at midnight"""
@@ -1248,6 +1288,23 @@ class Time(_Base):
     MAX: ClassVar[Time]
     """The maximum time, just before midnight"""
 
+    # Overloads for a nice autodoc.
+    # Proper typing of the constructors is handled in the type stubs
+    if not TYPE_CHECKING:
+
+        @overload
+        def __init__(self, iso_string: str, /) -> None: ...
+
+        @overload
+        def __init__(
+            self,
+            hour: int = 0,
+            minute: int = 0,
+            second: int = 0,
+            *,
+            nanosecond: int = 0,
+        ) -> None: ...
+
     def __init__(
         self,
         hour: int = 0,
@@ -1256,10 +1313,15 @@ class Time(_Base):
         *,
         nanosecond: int = 0,
     ) -> None:
-        self._py_time = _time(hour, minute, second)
+        self._py = _time(hour, minute, second)
         if nanosecond < 0 or nanosecond >= 1_000_000_000:
             raise ValueError("Nanosecond out of range")
         self._nanos = nanosecond
+
+    __init__ = add_alternate_constructors(__init__, py_type=_time)
+
+    def _init_from_iso(self, s: str) -> None:
+        self._py, self._nanos = time_from_iso(s)
 
     @property
     def hour(self) -> int:
@@ -1268,7 +1330,7 @@ class Time(_Base):
         >>> Time(12, 30, 0).hour
         12
         """
-        return self._py_time.hour
+        return self._py.hour
 
     @property
     def minute(self) -> int:
@@ -1277,7 +1339,7 @@ class Time(_Base):
         >>> Time(12, 30, 0).minute
         30
         """
-        return self._py_time.minute
+        return self._py.minute
 
     @property
     def second(self) -> int:
@@ -1285,7 +1347,7 @@ class Time(_Base):
         >>> Time(12, 30, 0).second
         0
         """
-        return self._py_time.second
+        return self._py.second
 
     @property
     def nanosecond(self) -> int:
@@ -1311,13 +1373,13 @@ class Time(_Base):
         ExactDateTime("2021-01-02 12:30:00-05:00[America/New_York]")
         """
         return PlainDateTime._from_py_unchecked(
-            _datetime.combine(d._py_date, self._py_time),
+            _datetime.combine(d._py_date, self._py),
             self._nanos,
         )
 
     def py_time(self) -> _time:
         """Convert to a standard library :class:`~datetime.time`"""
-        return self._py_time.replace(microsecond=self._nanos // 1_000)
+        return self._py.replace(microsecond=self._nanos // 1_000)
 
     @classmethod
     def from_py_time(cls, t: _time, /) -> Time:
@@ -1362,7 +1424,7 @@ class Time(_Base):
         >>> Time(4, 0, 59, nanosecond=40_000).format_iso(basic=True)
         '040059.00004'
         """
-        return _format_time(self._py_time, self._nanos, unit, basic)
+        return _format_time(self._py, self._nanos, unit, basic)
 
     @classmethod
     def parse_iso(cls, s: str, /) -> Time:
@@ -1396,13 +1458,13 @@ class Time(_Base):
         """
         _check_invalid_replace_kwargs(kwargs)
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
-        return Time._from_py_unchecked(self._py_time.replace(**kwargs), nanos)
+        return Time._from_py_unchecked(self._py.replace(**kwargs), nanos)
 
     def _to_ns_since_midnight(self) -> int:
         return (
-            self._py_time.hour * 3_600_000_000_000
-            + self._py_time.minute * 60_000_000_000
-            + self._py_time.second * 1_000_000_000
+            self._py.hour * 3_600_000_000_000
+            + self._py.minute * 60_000_000_000
+            + self._py.second * 1_000_000_000
             + self._nanos
         )
 
@@ -1466,13 +1528,29 @@ class Time(_Base):
         next_day, ns_since_midnight = divmod(floor, day_in_ns)
         return self._from_ns_since_midnight(ns_since_midnight), next_day
 
+    def _init_from_py(self, t: _time, /) -> None:
+        if type(t) is _time:
+            t = t.replace(tzinfo=None, fold=0)
+        elif isinstance(t, _time):
+            # subclass-safe way to ensure we have exactly a datetime.time
+            t = _time(t.hour, t.minute, t.second, t.microsecond)
+        else:
+            raise TypeError(f"Expected datetime.time, got {type(t)!r}")
+        return self._init_from_inner(
+            (t.replace(microsecond=0), t.microsecond * 1_000)
+        )
+
     @classmethod
     def _from_py_unchecked(cls, t: _time, nanos: int, /) -> Time:
-        assert not t.microsecond
         self = _object_new(cls)
-        self._py_time = t
-        self._nanos = nanos
+        self._init_from_inner((t, nanos))
         return self
+
+    def _init_from_inner(self, inner: tuple[_time, int]) -> None:
+        t, nanos = inner
+        assert not t.microsecond
+        self._py = t
+        self._nanos = nanos
 
     __str__ = format_iso
 
@@ -1490,30 +1568,30 @@ class Time(_Base):
         """
         if not isinstance(other, Time):
             return NotImplemented
-        return (self._py_time, self._nanos) == (other._py_time, other._nanos)
+        return (self._py, self._nanos) == (other._py, other._nanos)
 
     def __hash__(self) -> int:
-        return hash((self._py_time, self._nanos))
+        return hash((self._py, self._nanos))
 
     def __lt__(self, other: Time) -> bool:
         if not isinstance(other, Time):
             return NotImplemented
-        return (self._py_time, self._nanos) < (other._py_time, other._nanos)
+        return (self._py, self._nanos) < (other._py, other._nanos)
 
     def __le__(self, other: Time) -> bool:
         if not isinstance(other, Time):
             return NotImplemented
-        return (self._py_time, self._nanos) <= (other._py_time, other._nanos)
+        return (self._py, self._nanos) <= (other._py, other._nanos)
 
     def __gt__(self, other: Time) -> bool:
         if not isinstance(other, Time):
             return NotImplemented
-        return (self._py_time, self._nanos) > (other._py_time, other._nanos)
+        return (self._py, self._nanos) > (other._py, other._nanos)
 
     def __ge__(self, other: Time) -> bool:
         if not isinstance(other, Time):
             return NotImplemented
-        return (self._py_time, self._nanos) >= (other._py_time, other._nanos)
+        return (self._py, self._nanos) >= (other._py, other._nanos)
 
     @no_type_check
     def __reduce__(self):
@@ -1522,9 +1600,9 @@ class Time(_Base):
             (
                 pack(
                     "<BBBI",
-                    self._py_time.hour,
-                    self._py_time.minute,
-                    self._py_time.second,
+                    self._py.hour,
+                    self._py.minute,
+                    self._py.second,
                     self._nanos,
                 ),
             ),
@@ -1567,7 +1645,29 @@ class TimeDelta(_Base):
     __slots__ = ("_total_ns",)
 
     # FUTURE: allow weeks and days (with 24 hour warning)?
-    # TODO: allow passing py timedelta (also for other classes)
+
+    # Overloads for a nice autodoc.
+    # Proper typing of the constructors is handled in the type stubs
+    if not TYPE_CHECKING:
+
+        @overload
+        def __init__(self, iso_string: str, /) -> None: ...
+
+        @overload
+        def __init__(self, py_timedelta: _timedelta, /) -> None: ...
+
+        @overload
+        def __init__(
+            self,
+            *,
+            hours: float = 0,
+            minutes: float = 0,
+            seconds: float = 0,
+            milliseconds: float = 0,
+            microseconds: float = 0,
+            nanoseconds: int = 0,
+        ) -> None: ...
+
     def __init__(
         self,
         *,
@@ -1590,6 +1690,8 @@ class TimeDelta(_Base):
         )
         if abs(ns) > _MAX_DELTA_NANOS:
             raise ValueError("TimeDelta out of range")
+
+    __init__ = add_alternate_constructors(__init__, py_type=_timedelta)
 
     ZERO: ClassVar[TimeDelta]
     """A delta of zero"""
@@ -1939,6 +2041,17 @@ class TimeDelta(_Base):
         """
         return _timedelta(microseconds=self._total_ns // 1_000)
 
+    def _init_from_py(self, td: _timedelta, /) -> None:
+        if type(td) is not _timedelta:
+            raise TypeError("Expected datetime.timedelta exactly")
+        self._total_ns = ns = (
+            td.microseconds * 1_000
+            + td.seconds * 1_000_000_000
+            + td.days * 24 * 3_600_000_000_000
+        )
+        if abs(ns) > _MAX_DELTA_NANOS:
+            raise ValueError("TimeDelta out of range")
+
     @classmethod
     def from_py_timedelta(cls, td: _timedelta, /) -> TimeDelta:
         """Create from a :class:`~datetime.timedelta`
@@ -1954,13 +2067,9 @@ class TimeDelta(_Base):
         because they often add additional state that cannot be represented
         in a :class:`TimeDelta`.
         """
-        if type(td) is not _timedelta:
-            raise TypeError("Expected datetime.timedelta exactly")
-        return TimeDelta(
-            microseconds=td.microseconds,
-            seconds=td.seconds,
-            hours=td.days * 24,
-        )
+        self = _object_new(cls)
+        self._init_from_py(td)
+        return self
 
     def format_iso(self) -> str:
         """Format as the *popular interpretation* of the ISO 8601 duration format.
@@ -1985,22 +2094,7 @@ class TimeDelta(_Base):
             or "0S"
         )
 
-    @classmethod
-    def parse_iso(cls, s: str, /) -> TimeDelta:
-        """Parse the *popular interpretation* of the ISO 8601 duration format.
-        Does not parse all possible ISO 8601 durations.
-        See :ref:`here <iso8601-durations>` for more information.
-
-        Inverse of :meth:`format_iso`
-
-        >>> TimeDelta.parse_iso("PT1H80M")
-        TimeDelta("PT2h20m")
-
-        Note
-        ----
-        Any duration with a date part is considered invalid.
-        ``PT0S`` is valid, but ``P0D`` is not.
-        """
+    def _init_from_iso(self, s: str) -> None:
         exc = ValueError(f"Invalid format: {s!r}")
         prev_unit = ""
         nanos = 0
@@ -2041,7 +2135,27 @@ class TimeDelta(_Base):
         if nanos > _MAX_DELTA_NANOS:
             raise ValueError("TimeDelta out of range")
 
-        return TimeDelta._from_nanos_unchecked(sign * nanos)
+        self._total_ns = sign * nanos
+
+    @classmethod
+    def parse_iso(cls, s: str, /) -> TimeDelta:
+        """Parse the *popular interpretation* of the ISO 8601 duration format.
+        Does not parse all possible ISO 8601 durations.
+        See :ref:`here <iso8601-durations>` for more information.
+
+        Inverse of :meth:`format_iso`
+
+        >>> TimeDelta.parse_iso("PT1H80M")
+        TimeDelta("PT2h20m")
+
+        Note
+        ----
+        Any duration with a date part is considered invalid.
+        ``PT0S`` is valid, but ``P0D`` is not.
+        """
+        self = _object_new(cls)
+        self._init_from_iso(s)
+        return self
 
     def round(
         self,
@@ -2363,6 +2477,23 @@ class DateDelta(_Base):
 
     __slots__ = ("_months", "_days")
 
+    # Overloads for a nice autodoc.
+    # Proper typing of the constructors is handled in the type stubs
+    if not TYPE_CHECKING:
+
+        @overload
+        def __init__(self, iso_string: str, /) -> None: ...
+
+        @overload
+        def __init__(
+            self,
+            *,
+            years: int = ...,
+            months: int = ...,
+            weeks: int = ...,
+            days: int = ...,
+        ) -> None: ...
+
     def __init__(
         self, *, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0
     ) -> None:
@@ -2375,6 +2506,8 @@ class DateDelta(_Base):
             or abs(self._days) > _MAX_DELTA_DAYS
         ):
             raise ValueError("Date delta months out of range")
+
+    __init__ = add_alternate_constructors(__init__)
 
     ZERO: ClassVar[DateDelta]
     """A delta of zero"""
@@ -2453,28 +2586,7 @@ class DateDelta(_Base):
 
     __str__ = format_iso
 
-    @classmethod
-    def parse_iso(cls, s: str, /) -> DateDelta:
-        """Parse the *popular interpretation* of the ISO 8601 duration format.
-        Does not parse all possible ISO 8601 durations.
-        See :ref:`here <iso8601-durations>` for more information.
-
-        Inverse of :meth:`format_iso`
-
-        >>> DateDelta.parse_iso("P1W11D")
-        DateDelta("P1w11d")
-        >>> DateDelta.parse_iso("-P3m")
-        DateDelta(-P3m)
-
-        Note
-        ----
-        Only durations without time component are accepted.
-        ``P0D`` is valid, but ``PT0S`` is not.
-
-        Note
-        ----
-        The number of digits in each component is limited to 8.
-        """
+    def _init_from_iso(self, s: str) -> None:
         exc = ValueError(f"Invalid format: {s!r}")
         prev_unit = ""
         months = 0
@@ -2515,10 +2627,37 @@ class DateDelta(_Base):
 
             prev_unit = unit
 
-        try:
-            return DateDelta(months=sign * months, days=sign * days)
-        except ValueError:
-            raise exc
+        if months > _MAX_DELTA_MONTHS or days > _MAX_DELTA_DAYS:
+            raise ValueError("DateDelta out of range")
+
+        self._months = sign * months
+        self._days = sign * days
+
+    @classmethod
+    def parse_iso(cls, s: str, /) -> DateDelta:
+        """Parse the *popular interpretation* of the ISO 8601 duration format.
+        Does not parse all possible ISO 8601 durations.
+        See :ref:`here <iso8601-durations>` for more information.
+
+        Inverse of :meth:`format_iso`
+
+        >>> DateDelta.parse_iso("P1W11D")
+        DateDelta("P1w11d")
+        >>> DateDelta.parse_iso("-P3m")
+        DateDelta(-P3m)
+
+        Note
+        ----
+        Only durations without time component are accepted.
+        ``P0D`` is valid, but ``PT0S`` is not.
+
+        Note
+        ----
+        The number of digits in each component is limited to 8.
+        """
+        self = _object_new(cls)
+        self._init_from_iso(s)
+        return self
 
     @overload
     def __add__(self, other: DateDelta) -> DateDelta: ...
@@ -2705,7 +2844,7 @@ DateDelta.ZERO = DateDelta()
 TimeDelta._date_part = DateDelta.ZERO
 
 
-# TODO LOW: clarify seconds/nanoseconds relationship
+# TODO LAST: clarify seconds/nanoseconds relationship
 @final
 class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     """A duration that preserves the exact fields it was created with.
@@ -2846,6 +2985,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         """The sign of the delta, 1, 0, or -1"""
         return self._sign
 
+    # TODO last: remove these properties in favor of just using the mapping interface (d["years"], etc.)
     @property
     def years(self) -> int:
         """The number of years, 0 if not set
@@ -2912,9 +3052,16 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         """
         return self._sign * (self._nanoseconds or 0)
 
-    # TODO precision note
     def float_seconds(self) -> float:
-        """The the seconds and nanoseconds combined as a float"""
+        """The the ``seconds`` and ``nanoseconds`` combined as a float.
+
+        Due to limitations of floating point precision, this may not be exact
+        in case of very large ``seconds`` values (greater than >270 hours).
+
+        >>> d = ItemizedDelta(minutes=9, seconds=1, nanoseconds=500_000_000)
+        >>> d.float_seconds()
+        1.5
+        """
         return self._sign * (
             (self._seconds or 0) + (self._nanoseconds or 0) / 1_000_000_000
         )
@@ -4429,6 +4576,29 @@ class DateTimeDelta(_Base):
 
     __slots__ = ("_date_part", "_time_part")
 
+    # Overloads for a nice autodoc.
+    # Proper typing of the constructors is handled in the type stubs
+    if not TYPE_CHECKING:
+
+        @overload
+        def __init__(self, iso_string: str, /) -> None: ...
+
+        @overload
+        def __init__(
+            self,
+            *,
+            years: int = ...,
+            months: int = ...,
+            weeks: int = ...,
+            days: int = ...,
+            hours: float = ...,
+            minutes: float = ...,
+            seconds: float = ...,
+            milliseconds: float = ...,
+            microseconds: float = ...,
+            nanoseconds: int = ...,
+        ) -> None: ...
+
     def __init__(
         self,
         *,
@@ -4462,6 +4632,8 @@ class DateTimeDelta(_Base):
             and self._time_part._total_ns < 0
         ):
             raise ValueError("Mixed sign in date-time delta")
+
+    __init__ = add_alternate_constructors(__init__)
 
     ZERO: ClassVar[DateTimeDelta]
     """A delta of zero"""
@@ -4516,26 +4688,7 @@ class DateTimeDelta(_Base):
         time = abs(self._time_part).format_iso()[1:] * bool(self._time_part)
         return sign + "P" + ((date + time) or "0D")
 
-    @classmethod
-    def parse_iso(cls, s: str, /) -> DateTimeDelta:
-        """Parse the *popular interpretation* of the ISO 8601 duration format.
-        Does not parse all possible ISO 8601 durations.
-        See :ref:`here <iso8601-durations>` for more information.
-
-        .. code-block:: text
-
-           P4D        # 4 days
-           PT4H       # 4 hours
-           PT3M40.5S  # 3 minutes and 40.5 seconds
-           P1W11DT4H  # 1 week, 11 days, and 4 hours
-           -PT7H4M    # -7 hours and -4 minutes (-7:04:00)
-           +PT7H4M    # 7 hours and 4 minutes (7:04:00)
-
-        Inverse of :meth:`format_iso`
-
-        >>> DateTimeDelta.parse_iso("-P1W11DT4H")
-        DateTimeDelta(-P1w11dT4h)
-        """
+    def _init_from_iso(self, s: str) -> None:
         exc = ValueError(f"Invalid format: {s!r}")
         prev_unit = ""
         months = 0
@@ -4575,11 +4728,6 @@ class DateTimeDelta(_Base):
 
             prev_unit = unit
 
-        try:
-            ddelta = DateDelta(months=sign * months, days=sign * days)
-        except ValueError:
-            raise exc
-
         prev_unit = ""
         if rest and not rest.startswith("T"):
             raise exc
@@ -4607,12 +4755,41 @@ class DateTimeDelta(_Base):
         if nanos > _MAX_DELTA_NANOS:
             raise exc
 
+        try:
+            ddelta = DateDelta(months=sign * months, days=sign * days)
+        except ValueError:
+            raise exc
+
         tdelta = TimeDelta._from_nanos_unchecked(sign * nanos)
+        return self._init_from_parts(ddelta, tdelta)
 
-        return cls._from_parts(ddelta, tdelta)
+    @classmethod
+    def parse_iso(cls, s: str, /) -> DateTimeDelta:
+        """Parse the *popular interpretation* of the ISO 8601 duration format.
+        Does not parse all possible ISO 8601 durations.
+        See :ref:`here <iso8601-durations>` for more information.
 
-    # TODO fix type annotation
-    def __add__(self, other: AnyDelta) -> DateTimeDelta:
+        .. code-block:: text
+
+           P4D        # 4 days
+           PT4H       # 4 hours
+           PT3M40.5S  # 3 minutes and 40.5 seconds
+           P1W11DT4H  # 1 week, 11 days, and 4 hours
+           -PT7H4M    # -7 hours and -4 minutes (-7:04:00)
+           +PT7H4M    # 7 hours and 4 minutes (7:04:00)
+
+        Inverse of :meth:`format_iso`
+
+        >>> DateTimeDelta.parse_iso("-P1W11DT4H")
+        DateTimeDelta(-P1w11dT4h)
+        """
+        self = _object_new(cls)
+        self._init_from_iso(s)
+        return self
+
+    def __add__(
+        self, other: DateTimeDelta | DateDelta | TimeDelta
+    ) -> DateTimeDelta:
         """Add two deltas together
 
         >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
@@ -4772,15 +4949,18 @@ class DateTimeDelta(_Base):
         cased = "".join(c if c in "PT" else c.lower() for c in iso)
         return f'DateTimeDelta("{cased}")'
 
-    @classmethod
-    def _from_parts(cls, d: DateDelta, t: TimeDelta) -> DateTimeDelta:
-        new = _object_new(cls)
-        new._date_part = d
-        new._time_part = t
+    def _init_from_parts(self, d: DateDelta, t: TimeDelta) -> None:
+        self._date_part = d
+        self._time_part = t
         if ((d._months < 0 or d._days < 0) and t._total_ns > 0) or (
             (d._months > 0 or d._days > 0) and t._total_ns < 0
         ):
             raise ValueError("Mixed sign in date-time delta")
+
+    @classmethod
+    def _from_parts(cls, d: DateDelta, t: TimeDelta) -> DateTimeDelta:
+        new = _object_new(cls)
+        new._init_from_parts(d, t)
         return new
 
     @no_type_check
@@ -4810,17 +4990,15 @@ AnyDelta = Union[
 ]
 
 
+# Methods for types converting to/from the standard library and ISO8601:
+#
+# - Instant
+# - PlainDateTime
+# - ZonedDateTime
+# - OffsetDateTime
+#
+# (This base class class itself is not for public use.)
 class _BasicConversions(_Base, ABC):
-    """Methods for types converting to/from the standard library and ISO8601:
-
-    - :class:`Instant`
-    - :class:`PlainDateTime`
-    - :class:`ZonedDateTime`
-    - :class:`OffsetDateTime`
-
-    (This base class class itself is not for public use.)
-    """
-
     __slots__ = ("_py_dt", "_nanos")
     _py_dt: _datetime
     _nanos: int
@@ -4890,6 +5068,10 @@ class _BasicConversions(_Base, ABC):
         self._py_dt = d  # type: ignore[attr-defined]
         self._nanos = nanos  # type: ignore[attr-defined]
         return self
+
+    @abstractmethod
+    def _init_from_py(self, d: _datetime) -> None:
+        pass
 
 
 # Methods for types that know a local date and time-of-day:
@@ -4970,63 +5152,6 @@ class _LocalTime(_BasicConversions, ABC):
     # We document these methods as abstract,
     # but they are actually implemented slightly different per subclass
     if not TYPE_CHECKING:  # pragma: no cover
-
-        # TODO: move docs to the subclasses
-        @abstractmethod
-        def replace(self: _T, /, **kwargs: Any) -> _T:
-            """Construct a new instance with the given fields replaced.
-
-            Arguments are the same as the constructor,
-            but only keyword arguments are allowed.
-
-            Note
-            ----
-            If you need to shift the datetime by a duration,
-            use the addition and subtraction operators instead.
-            These account for daylight saving time and other complications.
-
-            Warning
-            -------
-            The same exceptions as the constructor may be raised.
-            For system and zoned datetimes,
-            The ``disambiguate`` keyword argument is recommended to
-            resolve ambiguities explicitly. For more information, see
-            whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones
-
-            >>> d = PlainDateTime(2020, 8, 15, 23, 12)
-            >>> d.replace(year=2021)
-            PlainDateTime("2021-08-15 23:12:00")
-            >>>
-            >>> z = ZonedDateTime(2020, 8, 15, 23, 12, tz="Europe/London")
-            >>> z.replace(year=2021)
-            ZonedDateTime("2021-08-15T23:12:00+01:00")
-            """
-
-        def replace_date(self: _T, date: Date, /, **kwargs) -> _T:
-            """Create a new instance with the date replaced
-
-            >>> d = PlainDateTime(2020, 8, 15, hour=4)
-            >>> d.replace_date(Date(2021, 1, 1))
-            PlainDateTime("2021-01-01T04:00:00")
-            >>> zdt = ZonedDateTime.now("Europe/London")
-            >>> zdt.replace_date(Date(2021, 1, 1))
-            ZonedDateTime("2021-01-01T13:00:00.23439+00:00[Europe/London]")
-
-            See :meth:`replace` for more information.
-            """
-
-        def replace_time(self: _T, time: Time, /, **kwargs) -> _T:
-            """Create a new instance with the time replaced
-
-            >>> d = PlainDateTime(2020, 8, 15, hour=4)
-            >>> d.replace_time(Time(12, 30))
-            PlainDateTime("2020-08-15T12:30:00")
-            >>> zdt = ZonedDateTime.now("Europe/London")
-            >>> zdt.replace_time(Time(12, 30))
-            ZonedDateTime("2024-06-15T12:30:00+01:00[Europe/London]")
-
-            See :meth:`replace` for more information.
-            """
 
         @abstractmethod
         def add(
@@ -5221,7 +5346,6 @@ class _ExactTime(_BasicConversions):
             other._nanos,  # type: ignore[attr-defined]
         )
 
-    # TODO: rounding docs page
     def difference(
         self,
         other: Instant | OffsetDateTime | ZonedDateTime,
@@ -5233,6 +5357,7 @@ class _ExactTime(_BasicConversions):
 
            Use the subtraction operator instead
         """
+        # TODO: suggest since()
         warn(
             "The difference() method is deprecated. Use the subtraction operator instead.",
             WheneverDeprecationWarning,
@@ -5348,8 +5473,6 @@ class _ExactTime(_BasicConversions):
 
             ``a - b`` is equivalent to ``a.to_instant() - b.to_instant()``
 
-            Equivalent to :meth:`difference`.
-
             See :ref:`the docs on arithmetic <arithmetic>` for more information.
 
             >>> d = Instant.from_utc(2020, 8, 15, hour=23)
@@ -5430,11 +5553,16 @@ class Instant(_ExactTime):
     MAX: ClassVar[Instant]
     """The maximum representable instant."""
 
-    def __init__(self) -> None:  # pragma: no cover
-        raise TypeError(
-            "Instant instances cannot be created through the constructor. "
-            "Use `Instant.from_utc` or `Instant.now` instead."
-        )
+    def __init__(self, arg: str | _datetime, /) -> None:
+        """Create an Instant from an ISO 8601 string or a standard library datetime."""
+        if isinstance(arg, str):
+            self._init_from_iso(arg)
+        elif isinstance(arg, _datetime):
+            self._init_from_py(arg)
+        else:
+            raise TypeError(
+                "Instant constructor requires an ISO string or stdlib datetime"
+            )
 
     @classmethod
     def from_utc(
@@ -5503,20 +5631,23 @@ class Instant(_ExactTime):
 
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> Instant:
-        """Create an ``Instant`` from an *aware* ``datetime`` object.
+        """Create an ``Instant`` from any *aware* ``datetime`` object.
 
         The inverse of the ``py_datetime()`` method.
         """
+        self = _object_new(cls)
+        self._init_from_py(d)
+        return self
+
+    def _init_from_py(self, d: _datetime) -> None:
         if d.tzinfo is None or d.utcoffset() is None:
             raise ValueError(
                 "Cannot create Instant from a naive datetime. "
-                "Use PlainDateTime.from_py_datetime() for this."
+                "Use PlainDateTime() instead."
             )
         as_utc = d.astimezone(_UTC)
-        return cls._from_py_unchecked(
-            _strip_subclasses(as_utc.replace(microsecond=0)),
-            as_utc.microsecond * 1_000,
-        )
+        self._py_dt = _strip_subclasses(as_utc.replace(microsecond=0))
+        self._nanos = as_utc.microsecond * 1_000
 
     @classmethod
     def parse_iso(cls, s: str, /) -> Instant:
@@ -5527,8 +5658,14 @@ class Instant(_ExactTime):
 
         The inverse of the ``format_iso()`` method.
         """
+        self = _object_new(cls)
+        self._init_from_iso(s)
+        return self
+
+    def _init_from_iso(self, s: str) -> None:
         dt, nanos = offset_dt_from_iso(s)
-        return cls._from_py_unchecked(dt.astimezone(_UTC), nanos)
+        self._py_dt = dt.astimezone(_UTC)
+        self._nanos = nanos
 
     def format_iso(
         self,
@@ -5672,7 +5809,7 @@ class Instant(_ExactTime):
         return self._from_py_unchecked(
             _datetime.combine(
                 self._py_dt.date() + _timedelta(days=next_day),
-                rounded_time._py_time,
+                rounded_time._py,
                 tzinfo=_UTC,
             ),
             rounded_time._nanos,
@@ -5776,6 +5913,30 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     __slots__ = ()
 
+    # Overloads are for a nicer autodoc
+    # Typing is arranged in the stubs
+    if not TYPE_CHECKING:
+
+        @overload
+        def __init__(self, iso_string: str, /) -> None: ...
+
+        @overload
+        def __init__(self, py_dt: _datetime, /) -> None: ...
+
+        @overload
+        def __init__(
+            self,
+            year: int,
+            month: int,
+            day: int,
+            hour: int = 0,
+            minute: int = 0,
+            second: int = 0,
+            *,
+            nanosecond: int = 0,
+            offset: int | TimeDelta,
+        ) -> None: ...
+
     def __init__(
         self,
         year: int,
@@ -5803,6 +5964,8 @@ class OffsetDateTime(_ExactAndLocalTime):
         if nanosecond < 0 or nanosecond >= 1_000_000_000:
             raise ValueError(f"nanosecond out of range: {nanosecond}")
         self._nanos = nanosecond
+
+    __init__ = add_alternate_constructors(__init__, py_type=_datetime)
 
     @classmethod
     def now(
@@ -5863,7 +6026,12 @@ class OffsetDateTime(_ExactAndLocalTime):
         >>> OffsetDateTime.parse_iso("2020-08-15T23:12:00+02:00")
         OffsetDateTime("2020-08-15 23:12:00+02:00")
         """
-        return cls._from_py_unchecked(*offset_dt_from_iso(s))
+        self = _object_new(cls)
+        self._init_from_iso(s)
+        return self
+
+    def _init_from_iso(self, s: str) -> None:
+        self._py_dt, self._nanos = offset_dt_from_iso(s)
 
     @classmethod
     def from_timestamp(
@@ -5950,12 +6118,17 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> OffsetDateTime:
-        """Create an instance from a standard library ``datetime`` object.
+        """Create an instance from any *aware* ``datetime`` object.
         The datetime must be aware.
 
         The inverse of the ``py_datetime()`` method.
 
         """
+        self = _object_new(cls)
+        self._init_from_py(d)
+        return self
+
+    def _init_from_py(self, d: _datetime) -> None:
         if d.tzinfo is None or (offset := d.utcoffset()) is None:
             raise ValueError(
                 "Cannot create from a naive datetime. "
@@ -5963,16 +6136,30 @@ class OffsetDateTime(_ExactAndLocalTime):
             )
         elif offset.microseconds:
             raise ValueError("Sub-second offsets are not supported")
-        return cls._from_py_unchecked(
-            check_utc_bounds(
-                _strip_subclasses(
-                    d.replace(microsecond=0, tzinfo=_timezone(offset))
-                )
-            ),
-            d.microsecond * 1_000,
+        self._py_dt = check_utc_bounds(
+            _strip_subclasses(
+                d.replace(microsecond=0, tzinfo=_timezone(offset))
+            )
         )
+        self._nanos = d.microsecond * 1_000
 
-    # TODO overload
+    if not TYPE_CHECKING:  # for a nicer autodoc
+
+        @overload
+        def replace(
+            self,
+            year: int = ...,
+            month: int = ...,
+            day: int = ...,
+            hour: int = ...,
+            minute: int = ...,
+            second: int = ...,
+            *,
+            nanosecond: int = ...,
+            offset: int | TimeDelta = ...,
+            ignore_dst: bool = ...,
+        ) -> OffsetDateTime: ...
+
     def replace(
         self, /, ignore_dst: bool = False, **kwargs: Any
     ) -> OffsetDateTime:
@@ -6027,7 +6214,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         return self._from_py_unchecked(
             check_utc_bounds(
                 _datetime.combine(
-                    self._py_dt.date(), time._py_time, self._py_dt.tzinfo
+                    self._py_dt.date(), time._py, self._py_dt.tzinfo
                 )
             ),
             time._nanos,
@@ -6117,6 +6304,30 @@ class OffsetDateTime(_ExactAndLocalTime):
         """
         return cls._from_py_unchecked(parse_rfc2822(s), 0)
 
+    if not TYPE_CHECKING:  # for a nicer autodoc
+
+        @overload
+        def add(
+            self, delta: AnyDelta, /, *, ignore_dst: bool = False
+        ) -> OffsetDateTime: ...
+
+        @overload
+        def add(
+            self,
+            *,
+            years: int = 0,
+            months: int = 0,
+            weeks: int = 0,
+            days: int = 0,
+            hours: float = 0,
+            minutes: float = 0,
+            seconds: float = 0,
+            milliseconds: float = 0,
+            microseconds: float = 0,
+            nanoseconds: int = 0,
+            ignore_dst: bool = False,
+        ) -> OffsetDateTime: ...
+
     @no_type_check
     def add(self, *args, **kwargs) -> OffsetDateTime:
         """Add a time amount to this datetime.
@@ -6134,6 +6345,30 @@ class OffsetDateTime(_ExactAndLocalTime):
         `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__.
         """
         return self._shift(1, *args, **kwargs)
+
+    if not TYPE_CHECKING:  # for a nicer autodoc
+
+        @overload
+        def subtract(
+            self, delta: AnyDelta, /, *, ignore_dst: bool = False
+        ) -> OffsetDateTime: ...
+
+        @overload
+        def subtract(
+            self,
+            *,
+            years: int = 0,
+            months: int = 0,
+            weeks: int = 0,
+            days: int = 0,
+            hours: float = 0,
+            minutes: float = 0,
+            seconds: float = 0,
+            milliseconds: float = 0,
+            microseconds: float = 0,
+            nanoseconds: int = 0,
+            ignore_dst: bool = False,
+        ) -> OffsetDateTime: ...
 
     @no_type_check
     def subtract(self, *args, **kwargs) -> OffsetDateTime:
@@ -6315,29 +6550,32 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     __slots__ = ("_tz",)
 
-    @overload
-    def __init__(self, iso_str: str, /) -> None: ...
+    # Overloads are for a nicer autodoc
+    # Typing is arranged in the stubs
+    if not TYPE_CHECKING:
 
-    @overload
-    def __init__(self, py_dt: _datetime, /) -> None: ...
+        @overload
+        def __init__(self, iso_string: str, /) -> None: ...
 
-    @overload
+        @overload
+        def __init__(self, py_dt: _datetime, /) -> None: ...
+
+        @overload
+        def __init__(
+            self,
+            year: int,
+            month: int,
+            day: int,
+            hour: int = 0,
+            minute: int = 0,
+            second: int = 0,
+            *,
+            nanosecond: int = 0,
+            tz: str,
+            disambiguate: DisambiguateStr = "compatible",
+        ) -> None: ...
+
     def __init__(
-        self,
-        year: int,
-        month: int,
-        day: int,
-        hour: int = 0,
-        minute: int = 0,
-        second: int = 0,
-        *,
-        nanosecond: int = 0,
-        tz: str,
-        disambiguate: DisambiguateStr = "compatible",
-    ) -> None: ...
-
-    # Mypy doesn't know we handle other constructors in the metaclass
-    def __init__(  # type: ignore[misc]
         self,
         year: int,
         month: int,
@@ -6367,6 +6605,8 @@ class ZonedDateTime(_ExactAndLocalTime):
             raise ValueError(f"nanosecond out of range: {nanosecond}")
         self._nanos = nanosecond
         self._tz = _tz
+
+    __init__ = add_alternate_constructors(__init__, py_type=_datetime)
 
     @classmethod
     def from_system_tz(
@@ -6493,7 +6733,12 @@ class ZonedDateTime(_ExactAndLocalTime):
         The timezone ID is a recent extension to the ISO 8601 format (RFC 9557).
         Although it is gaining popularity, it is not yet widely supported.
         """
-        return cls._from_py_unchecked(*zdt_from_iso(s))
+        self = _object_new(cls)
+        self._init_from_iso(s)
+        return self
+
+    def _init_from_iso(self, s: str) -> None:
+        self._py_dt, self._nanos, self._tz = zdt_from_iso(s)
 
     @classmethod
     def from_timestamp(
@@ -6543,6 +6788,11 @@ class ZonedDateTime(_ExactAndLocalTime):
         The inverse of the ``py_datetime()`` method.
 
         """
+        self = _object_new(cls)
+        self._init_from_py(d)
+        return self
+
+    def _init_from_py(self, d: _datetime) -> None:
         from zoneinfo import ZoneInfo
 
         if type(d.tzinfo) is not ZoneInfo:
@@ -6560,8 +6810,11 @@ class ZonedDateTime(_ExactAndLocalTime):
         _tz = get_tz(d.tzinfo.key)
         offset = _tz.offset_for_instant(int(epoch))
         # Recalculating from epoch ensures we shift times within a gap
-        dt = _from_epoch(int(epoch), _tz).astimezone(mk_fixed_tzinfo(offset))
-        return cls._from_py_unchecked(dt, d.microsecond * 1_000, _tz)
+        self._py_dt = _from_epoch(int(epoch), _tz).astimezone(
+            mk_fixed_tzinfo(offset)
+        )
+        self._nanos = d.microsecond * 1_000
+        self._tz = _tz
 
     def replace_date(
         self, date: Date, /, disambiguate: DisambiguateStr = _UNSET
@@ -6589,13 +6842,30 @@ class ZonedDateTime(_ExactAndLocalTime):
         """
         return self._from_py_unchecked(
             resolve_ambiguity(
-                _datetime.combine(self._py_dt, time._py_time),
+                _datetime.combine(self._py_dt, time._py),
                 self._tz,
                 disambiguate or self._py_dt.utcoffset(),
             ),
             time._nanos,
             self._tz,
         )
+
+    if not TYPE_CHECKING:  # for a nicer autodoc
+
+        @overload
+        def replace(
+            self,
+            year: int = ...,
+            month: int = ...,
+            day: int = ...,
+            hour: int = ...,
+            minute: int = ...,
+            second: int = ...,
+            *,
+            nanosecond: int = ...,
+            tz: str = ...,
+            disambiguate: DisambiguateStr = ...,
+        ) -> ZonedDateTime: ...
 
     def replace(
         self, /, disambiguate: DisambiguateStr = _UNSET, **kwargs: Any
@@ -6648,8 +6918,9 @@ class ZonedDateTime(_ExactAndLocalTime):
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
 
-    # TODO: only TimeDelta
-    def __add__(self, delta: AnyDelta) -> ZonedDateTime:
+    def __add__(
+        self, delta: TimeDelta | DateDelta | DateTimeDelta
+    ) -> ZonedDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
 
         See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`__
@@ -6852,7 +7123,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         round_increment: int = ...,
     ) -> ItemizedDelta: ...
 
-    # FUTURE: add round_unit to the signature, for millis, micros, and nanos
+    # FUTURE: add round_unit to the signature,
+    # in order to allow rounding to millis, micros, and nanos
     def since(
         self,
         b: ZonedDateTime,
@@ -6866,8 +7138,15 @@ class ZonedDateTime(_ExactAndLocalTime):
         """Calculate the duration since another ZonedDateTime,
         in terms of the specified units.
 
-        TODO
+        >>> d1 = ZonedDateTime("2020-08-15T23:12:00+01:00[Europe/London]")
+        >>> d2 = ZonedDateTime("2020-08-14T22:00:00+09:00[Asia/Tokyo]")
+        >>> d1.since(d2, units=["hours", "minutes"],
+        ...          round_increment=15,
+        ...          round_mode="ceil")
+        ItemizedDelta("PT33h15m")
 
+        When calculating calendar units (years, months, weeks, days),
+        both datetimes must have the same timezone.
         """
         units, single_unit_mode = _normalize_unit_or_units(
             unit, units, valid_units=DELTA_UNITS
@@ -6966,7 +7245,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDelta | int:
-        """Inverse of the ``since()`` method."""
+        """Inverse of the ``since()`` method. See :meth:`since` for more information."""
         return b.since(  # type: ignore[call-overload, no-any-return]
             self,
             unit=unit,
@@ -7193,6 +7472,29 @@ class PlainDateTime(_LocalTime):
       time in a simulation game.
     """
 
+    # Overloads are for a nice autodoc
+    # Proper typing is done in the stubs
+    if not TYPE_CHECKING:
+
+        @overload
+        def __init__(self, iso_string: str, /) -> None: ...
+
+        @overload
+        def __init__(self, py_dt: _datetime, /) -> None: ...
+
+        @overload
+        def __init__(
+            self,
+            year: int,
+            month: int,
+            day: int,
+            hour: int = 0,
+            minute: int = 0,
+            second: int = 0,
+            *,
+            nanosecond: int = 0,
+        ) -> None: ...
+
     def __init__(
         self,
         year: int,
@@ -7208,6 +7510,8 @@ class PlainDateTime(_LocalTime):
             raise ValueError(f"nanosecond out of range: {nanosecond}")
         self._py_dt = _datetime(year, month, day, hour, minute, second)
         self._nanos = nanosecond
+
+    __init__ = add_alternate_constructors(__init__, py_type=_datetime)
 
     def format_iso(
         self,
@@ -7239,19 +7543,43 @@ class PlainDateTime(_LocalTime):
         >>> PlainDateTime.parse_iso("2020-08-15T23:12:00")
         PlainDateTime("2020-08-15 23:12:00")
         """
-        return cls._from_py_unchecked(*datetime_from_iso(s))
+        self = _object_new(cls)
+        self._init_from_iso(s)
+        return self
+
+    def _init_from_iso(self, s: str) -> None:
+        self._py_dt, self._nanos = datetime_from_iso(s)
 
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> PlainDateTime:
         """Create an instance from a "naive" standard library ``datetime`` object"""
+        self = _object_new(cls)
+        self._init_from_py(d)
+        return self
+
+    def _init_from_py(self, d: _datetime) -> None:
         if d.tzinfo is not None:
             raise ValueError(
                 "Can only create PlainDateTime from a naive datetime, "
                 f"got datetime with tzinfo={d.tzinfo!r}"
             )
-        return cls._from_py_unchecked(
-            _strip_subclasses(d.replace(microsecond=0)), d.microsecond * 1_000
-        )
+        self._py_dt = _strip_subclasses(d.replace(microsecond=0))
+        self._nanos = d.microsecond * 1_000
+
+    if not TYPE_CHECKING:  # for a nicer autodoc
+
+        @overload
+        def replace(
+            self,
+            year: int = ...,
+            month: int = ...,
+            day: int = ...,
+            hour: int = ...,
+            minute: int = ...,
+            second: int = ...,
+            *,
+            nanosecond: int = ...,
+        ) -> PlainDateTime: ...
 
     def replace(self, /, **kwargs: Any) -> PlainDateTime:
         """Construct a new instance with the given fields replaced."""
@@ -7268,7 +7596,7 @@ class PlainDateTime(_LocalTime):
     def replace_time(self, t: Time, /) -> PlainDateTime:
         """Construct a new instance with the time replaced."""
         return self._from_py_unchecked(
-            _datetime.combine(self._py_dt.date(), t._py_time), t._nanos
+            _datetime.combine(self._py_dt.date(), t._py), t._nanos
         )
 
     def __hash__(self) -> int:

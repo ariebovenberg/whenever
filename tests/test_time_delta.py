@@ -1154,7 +1154,7 @@ class TestRound:
             (
                 TimeDelta(hours=10, minutes=30),
                 23439118,
-                "millisecond",  # TODO LOW: catch non-plural units with special message?
+                "millisecond",  # TODO LAST: catch non-plural units with special message?
                 TimeDelta(hours=6, minutes=30, seconds=39.118),
                 TimeDelta(hours=13, minutes=1, seconds=18.236),
                 TimeDelta(hours=13, minutes=1, seconds=18.236),
@@ -1294,7 +1294,11 @@ def test_py_timedelta(d, expected):
 
 def test_from_py_timedelta():
     assert TimeDelta.from_py_timedelta(py_timedelta(0)) == TimeDelta.ZERO
+    assert TimeDelta(py_timedelta(0)) == TimeDelta.ZERO
     assert TimeDelta.from_py_timedelta(
+        py_timedelta(weeks=8, hours=1, minutes=2, seconds=3, microseconds=4)
+    ) == TimeDelta(hours=1 + 7 * 24 * 8, minutes=2, seconds=3, microseconds=4)
+    assert TimeDelta(
         py_timedelta(weeks=8, hours=1, minutes=2, seconds=3, microseconds=4)
     ) == TimeDelta(hours=1 + 7 * 24 * 8, minutes=2, seconds=3, microseconds=4)
 
@@ -1305,11 +1309,20 @@ def test_from_py_timedelta():
     with pytest.raises(TypeError, match="timedelta.*exact"):
         TimeDelta.from_py_timedelta(SubclassTimedelta(1))
 
+    with pytest.raises(TypeError, match="timedelta.*exact"):
+        TimeDelta(SubclassTimedelta(1))
+
     with pytest.raises(ValueError, match="range"):
         TimeDelta.from_py_timedelta(py_timedelta.max)
 
     with pytest.raises(ValueError, match="range"):
+        TimeDelta(py_timedelta.max)
+
+    with pytest.raises(ValueError, match="range"):
         TimeDelta.from_py_timedelta(py_timedelta.min)
+
+    with pytest.raises(ValueError, match="range"):
+        TimeDelta(py_timedelta.min)
 
 
 def test_as_hrs_mins_secs_nanos():

@@ -248,6 +248,8 @@ class TestFromPyTime:
             1, 2, 3, nanosecond=4_000
         )
 
+        assert Time(py_time(1, 2, 3, 4)) == Time(1, 2, 3, nanosecond=4_000)
+
     def test_tzinfo(self):
         assert Time.from_py_time(
             py_time(
@@ -255,8 +257,17 @@ class TestFromPyTime:
             )
         ) == Time(1, 2, 3, nanosecond=4_000)
 
+        assert Time(
+            py_time(
+                1, 2, 3, 4, tzinfo=py_timezone(py_timedelta(hours=1)), fold=1
+            )
+        ) == Time(1, 2, 3, nanosecond=4_000)
+
     def test_fold_ignored(self):
         assert Time.from_py_time(py_time(1, 2, 3, 4, fold=1)) == Time(
+            1, 2, 3, nanosecond=4_000
+        )
+        assert Time(py_time(1, 2, 3, 4, fold=1)) == Time(
             1, 2, 3, nanosecond=4_000
         )
 
@@ -267,10 +278,13 @@ class TestFromPyTime:
         assert Time.from_py_time(SubclassTime(1, 2, 3, 4)) == Time(
             1, 2, 3, nanosecond=4_000
         )
+        assert Time(SubclassTime(1, 2, 3, 4)) == Time(
+            1, 2, 3, nanosecond=4_000
+        )
 
     def test_invalid(self):
         with pytest.raises(TypeError):
-            Time.from_py_time(234)  # type: ignore[arg-type]
+            Time.from_py_time(23)  # type: ignore[arg-type]
 
 
 def test_comparison():

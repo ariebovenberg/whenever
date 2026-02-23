@@ -145,6 +145,8 @@ class Date(_DateOrTimeMixin):
     def __init__(self, year: int, month: int, day: int) -> None: ...
     @overload
     def __init__(self, iso_string: str, /) -> None: ...
+    @overload
+    def __init__(self, py_date: _date, /) -> None: ...
     @staticmethod
     def today_in_system_tz() -> Date: ...
     @property
@@ -300,6 +302,10 @@ class MonthDay(_DateOrTimeMixin):
 @final
 class Time(_DateOrTimeMixin):
     @overload
+    def __init__(self, iso_string: str, /) -> None: ...
+    @overload
+    def __init__(self, py_time: _time, /) -> None: ...
+    @overload
     def __init__(
         self,
         hour: int = 0,
@@ -308,8 +314,6 @@ class Time(_DateOrTimeMixin):
         *,
         nanosecond: int = 0,
     ) -> None: ...
-    @overload
-    def __init__(self, iso_string: str, /) -> None: ...
     MIDNIGHT: ClassVar[Self]
     NOON: ClassVar[Self]
     @property
@@ -383,6 +387,10 @@ class _DeltaMixin(_ISOMixin):
 @final
 class TimeDelta(_DeltaMixin, _OrderMixin):
     @overload
+    def __init__(self, iso_string: str, /) -> None: ...
+    @overload
+    def __init__(self, py_timedelta: _timedelta, /) -> None: ...
+    @overload
     def __init__(
         self,
         *,
@@ -393,8 +401,6 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         microseconds: float = 0,
         nanoseconds: int = 0,
     ) -> None: ...
-    @overload
-    def __init__(self, iso_string: str, /) -> None: ...
     @overload
     def total(
         self,
@@ -718,7 +724,7 @@ class ItemizedDelta(
         /,
         *,
         relative_to: ZonedDateTime,
-        # TODO: naming
+        # TODO LAST: naming
         units: Sequence[
             Literal[
                 "years",
@@ -1119,7 +1125,10 @@ class _PyDateTimeMixin(_ISOMixin):
 
 @final
 class Instant(_PyDateTimeMixin, _ExactTime):
+    @overload
     def __init__(self, iso_string: str, /) -> None: ...
+    @overload
+    def __init__(self, py_datetime: _datetime, /) -> None: ...
     @classmethod
     def from_utc(
         cls,
@@ -1197,6 +1206,10 @@ class Instant(_PyDateTimeMixin, _ExactTime):
 @final
 class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @overload
+    def __init__(self, py_datetime: _datetime, /) -> None: ...
+    @overload
+    def __init__(self, iso_string: str, /) -> None: ...
+    @overload
     def __init__(
         self,
         year: int,
@@ -1209,8 +1222,6 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         nanosecond: int = 0,
         offset: int | TimeDelta,
     ) -> None: ...
-    @overload
-    def __init__(self, iso_string: str, /) -> None: ...
     @classmethod
     def now(
         cls, offset: int | TimeDelta, /, *, ignore_dst: Literal[True]
@@ -1345,6 +1356,10 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
 @final
 class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @overload
+    def __init__(self, iso_string: str, /) -> None: ...
+    @overload
+    def __init__(self, py_datetime: _datetime, /) -> None: ...
+    @overload
     def __init__(
         self,
         year: int,
@@ -1358,8 +1373,6 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         tz: str,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> None: ...
-    @overload
-    def __init__(self, s: str, /) -> None: ...
     @property
     def tz(self) -> str: ...
     @classmethod
@@ -1428,18 +1441,7 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         nanoseconds: int = 0,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
-    # FUTURE: include this in strict stubs version
-    # @overload
-    # def add(
-    #     self,
-    #     *,
-    #     hours: float = 0,
-    #     minutes: float = 0,
-    #     seconds: float = 0,
-    #     milliseconds: float = 0,
-    #     microseconds: float = 0,
-    #     nanoseconds: int = 0,
-    # ) -> Self: ...
+    # TODO: allow disambiguate here
     @overload
     def add(self, d: TimeDelta, /) -> Self: ...
     @overload
@@ -1466,18 +1468,6 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         nanoseconds: int = 0,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
-    # FUTURE: include this in strict stubs version
-    # @overload
-    # def subtract(
-    #     self,
-    #     *,
-    #     hours: float = 0,
-    #     minutes: float = 0,
-    #     seconds: float = 0,
-    #     milliseconds: float = 0,
-    #     microseconds: float = 0,
-    #     nanoseconds: int = 0,
-    # ) -> Self: ...
     @overload
     def subtract(
         self,
@@ -1658,13 +1648,7 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     # FUTURE: disable date components in strict stubs version
     def __add__(
         self,
-        delta: (
-            ItemizedDelta
-            | ItemizedDateDelta
-            | TimeDelta
-            | DateTimeDelta
-            | DateDelta
-        ),
+        delta: TimeDelta | DateTimeDelta | DateDelta,
         /,
     ) -> Self: ...
     @overload
@@ -1672,18 +1656,16 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @overload
     def __sub__(
         self,
-        other: (
-            ItemizedDelta
-            | ItemizedDateDelta
-            | TimeDelta
-            | DateTimeDelta
-            | DateDelta
-        ),
+        other: TimeDelta | DateTimeDelta | DateDelta,
         /,
     ) -> Self: ...
 
 @final
 class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
+    @overload
+    def __init__(self, iso_string: str, /) -> None: ...
+    @overload
+    def __init__(self, py_datetime: _datetime, /) -> None: ...
     @overload
     def __init__(
         self,
@@ -1696,8 +1678,6 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         *,
         nanosecond: int = 0,
     ) -> None: ...
-    @overload
-    def __init__(self, iso_string: str, /) -> None: ...
     def assume_utc(self) -> Instant: ...
     def assume_fixed_offset(
         self, offset: int | TimeDelta, /
