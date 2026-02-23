@@ -508,6 +508,17 @@ class TestDaysUntilAndSince:
         with pytest.raises((TypeError, AttributeError)):
             Date(2021, 1, 1).days_until(PlainDateTime(2021, 1, 1, 1, 2, 3))  # type: ignore[arg-type]
 
+    def test_deprecated(self):
+        with pytest.warns(
+            WheneverDeprecationWarning, match=r"days_until.*until()"
+        ):
+            assert Date(2021, 1, 1).days_until(Date(2021, 1, 31)) == 30
+
+        with pytest.warns(
+            WheneverDeprecationWarning, match=r"days_since.*since()"
+        ):
+            assert Date(2021, 1, 1).days_since(Date(2021, 1, 31)) == -30
+
 
 _EXAMPLE_DATES = [
     *chain.from_iterable(
