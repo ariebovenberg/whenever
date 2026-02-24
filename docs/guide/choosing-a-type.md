@@ -50,7 +50,8 @@ depending on whether you're in Australia or Mexico, for example.
 
 Another limitation is that you can't account for Daylight Saving Time
 if you only have a date and time-of-day without a timezone.
-Therefore, it's not possible to add exact time units to "plain" datetimes.
+Therefore, adding exact time units to "plain" datetimes will emit a
+`TimeZoneUnawareArithmeticWarning` to prevent you from accidentally introducing DST bugs.
 This is because—strictly speaking—you don't know what the
 local time will be in 3 hours:
 perhaps the clock will be moved forward or back due to Daylight Saving Time.
@@ -60,10 +61,12 @@ perhaps the clock will be moved forward or back due to Daylight Saving Time.
 PlainDateTime("2020-03-14 15:00:00")
 # NOT possible:
 >>> Instant.now() > bus_departs                 # comparison with exact time
+# possible, but emits a warning:
 >>> bus_departs.add(hours=3)                    # adding exact time units
 # IS possible:
+>>> with ignore_timezone_unaware_arithmetic_warning():  # explicitly ignore
+...     bus_departs.add(hours=3)
 >>> PlainDateTime(2020, 3, 15) > bus_departs    # comparison with other plain datetimes
->>> bus_departs.add(hours=3, ignore_dst=True)   # explicitly ignore DST
 >>> bus_departs.add(days=2)                     # calendar operations are OK
 ```
 
@@ -116,6 +119,8 @@ Like {class}`~whenever.ZonedDateTime`, this type represents an exact time
 *and* a local time. The difference is that {class}`~whenever.OffsetDateTime`
 has a *fixed* offset from UTC rather than a timezone.
 As a result, it doesn't know about Daylight Saving Time or other timezone changes.
+Many operations will emit a `PotentiallyStaleOffsetWarning` to prevent you from accidentally introducing DST bugs.
+TODO: detailed explanation
 
 Then why use it? Firstly, most datetime formats (e.g. ISO 8601 and RFC 2822) only have fixed offsets,
 making {class}`~whenever.OffsetDateTime` ideal for representing datetimes in these formats.
@@ -128,11 +133,12 @@ an efficient and compatible choice for representing times in the past.
 >>> flight_arrival = OffsetDateTime(2023, 4, 21, hour=10, offset=-6)
 >>> (flight_arrival - flight_departure).in_hours()
 3
->>> # but you CAN'T do this:
+>>> # This will emit a warning TODO explain
 >>> flight_arrival.add(hours=3)  # a DST-bug waiting to happen!
 >>> # instead:
+>>> with ignore_potentially_stale_offset_warning():  # explicitly ignore
+...     flight_arrival.add(hours=3)
 >>> flight_arrival.in_tz("America/New_York").add(hours=3)  # use the full timezone
->>> flight_arrival.add(hours=3, ignore_dst=True)  # explicitly ignore DST
 ```
 
 ## Comparison of types

@@ -9,13 +9,23 @@
   The helper functions for creating deltas from specific units
   (`years()`, `months()`, etc.) have also been deprecated.
 
-  The big change is that these deltas are now fully un-normalized,
+  The big change is that the new deltas are now fully un-normalized,
   meaning "90 minutes" and "1 hour and 30 minutes" are distinct values.
 
   **Rationale**: the "partially" normalized approach was confusing to users.
   A fully denormalized approach also better fits the new API for calcuating deltas
   between datetimes. This approach is also more consistent with other
   libraries, and allows for more control over formatting and parsing of deltas.
+
+  TODO: how to migrate
+
+- The `ignore_dst` parameter (which was used to enable DST-unsafe operations)
+  has been deprecated. Instead, a new warnings mechanism allows users to decide
+  "in bulk" (todo wording) whether they want to allow DST-unsafe operations,
+  be warned about them when they occur, or have them raise an error.
+
+  **Rationale**: The `ignore_dst` parameter was a source of confusion,
+  and made the `OffsetDateTime` APIs less compatible.
 
 - Behavior of an edge case is changed: disambiguation of non-existent times
   as a result of calendar arithmetic (or `replace()`) no longer tries to reuse
@@ -26,7 +36,7 @@
   offset for non-existent times doesn't have the advantage of preventing
   unexpected jumps in time. The new behavior is consistent with other libraries.
 
-**Improved**
+**Improved/added**
 
 - A huge revamp and expansion of the documentation.
   The structure and navigability of API reference and overview pages
@@ -34,14 +44,16 @@
   - An explanation of the fundamental concepts of time
   - An overview of Python's datetime pitfalls
   - Explanation of the rounding API
-- `round()` methods now support larger and irregular values for `increment`.
-  Also, days and weeks can now be used to round a `TimeDelta` (with a warning about 24-hour days).
-
-**Added**
-
-- `TimeDelta.add()` and `TimeDelta.subtract()` methods. The operators
+- All types that have a Python standard library equivalent now also accept these objects
+  in the constructor.
+- New `TimeDelta.add()` and `TimeDelta.subtract()` methods. The operators
   `+` and `-` were supported already, but these methods make it easier
   for simple operations, as well as making the API more consistent with other classes.
+- New `OffsetDateTime.assume_tz()` method for associating an offset datetime
+  with a timezone.
+- `round()` methods now support larger and irregular values for `increment`.
+  Also, days and weeks can now be used to round a `TimeDelta`
+  (with a warning about 24-hour days).
 
 **Fixed**
 

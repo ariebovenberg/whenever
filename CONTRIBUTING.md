@@ -56,3 +56,5 @@ Below are some points to keep in mind when making changes to the codebase:
   You can find comprehensive tests and documentation in the Python codebase.
 - To keep import time fast, some "obvious" Python modules (pathlib, re, dataclasses,
   importlib.resources) are not used, or imported lazily.
+- Docstrings are defined in the Python codebase, then copied to the Rust codebase using a helper script.
+  Synchronization is checked in CI.

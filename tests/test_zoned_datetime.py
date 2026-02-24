@@ -36,6 +36,7 @@ from whenever import (
     clear_tzcache,
     days,
     hours,
+    ignore_potentially_stale_offset_warning,
     milliseconds,
     minutes,
     reset_tzpath,
@@ -1028,7 +1029,8 @@ class TestEquality:
 
         assert d == d.to_fixed_offset()
         assert hash(d) == hash(d.to_fixed_offset())
-        assert d != d.to_fixed_offset().replace(hour=10, ignore_dst=True)
+        with ignore_potentially_stale_offset_warning():
+            assert d != d.to_fixed_offset().replace(hour=10)
 
         # important: check typing errors in case of strict-comparison mode
         d2 = create_zdt(2020, 8, 15, 12, tz=tz)
@@ -2124,8 +2126,9 @@ class TestComparison:
         d = create_zdt(2023, 10, 29, 2, 30, tz=tz, disambiguate="later")
 
         offset_eq = d.to_fixed_offset()
-        offset_lt = offset_eq.replace(minute=29, ignore_dst=True)
-        offset_gt = offset_eq.replace(minute=31, ignore_dst=True)
+        with ignore_potentially_stale_offset_warning():
+            offset_lt = offset_eq.replace(minute=29)
+            offset_gt = offset_eq.replace(minute=31)
 
         assert d >= offset_eq
         assert d <= offset_eq

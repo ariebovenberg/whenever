@@ -81,6 +81,7 @@ from ._typing import (
     DeltaUnitStr,
     DisambiguateStr,
     ExactDeltaUnitStr,
+    OffsetMismatchStr,
     RoundModeStr,
 )
 from ._tz import (  # noqa: F401
@@ -127,6 +128,8 @@ __all__ = [
     "nanoseconds",
     # Exceptions/warnings
     "DaysAreNotAlways24HoursWarning",
+    "PotentiallyStaleOffsetWarning",
+    "TimeZoneUnawareArithmeticWarning",
     "WheneverDeprecationWarning",
     "SkippedTime",
     "RepeatedTime",
@@ -141,10 +144,10 @@ __all__ = [
 # A self-set variable to detect if we're being run by sphinx autodoc
 try:
     from sphinx import (  # type: ignore[attr-defined, import-not-found, unused-ignore]
-        SPHINXBUILD,
+        SPHINX_RUNNING,
     )
 except ImportError:
-    SPHINXBUILD = False
+    SPHINX_RUNNING = False
 
 
 class Weekday(enum.Enum):
@@ -3098,7 +3101,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     # These methods defer to the base class implementations, but need to be
     # documented here for the API docs.
     if not TYPE_CHECKING:
-        if SPHINXBUILD:
+        if SPHINX_RUNNING:
 
             def keys(self) -> KeysView[DeltaUnitStr]:
                 """The names of all defined fields, in order of largest to smallest unit.
@@ -4157,7 +4160,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     # These methods defer to the base class implementations, but need to be
     # documented here for the API docs.
     if not TYPE_CHECKING:
-        if SPHINXBUILD:
+        if SPHINX_RUNNING:
 
             def keys(self) -> KeysView[DateDeltaUnitStr]:
                 """The names of all defined fields, ordered from largest to smallest unit.
@@ -5182,8 +5185,8 @@ class _LocalTime(_BasicConversions, ABC):
             """Add date and time units to this datetime.
 
             Arithmetic on datetimes is complicated.
-            Additional keyword arguments ``ignore_dst`` and ``disambiguate``
-            may be relevant for certain types and situations.
+            For ``OffsetDateTime`` and ``PlainDateTime``, adding exact time units
+            may emit a warning about DST safety.
             See :ref:`the docs on arithmetic <arithmetic>` for more information
             and the reasoning behind it.
             """
@@ -5236,9 +5239,9 @@ class _LocalTime(_BasicConversions, ABC):
               Otherwise, the time is resolved according to the "compatible" strategy.
             * Rounding in "day" mode may be affected by DST transitions.
               i.e. on 23-hour days, 11:31 AM is rounded up.
-            * For ``OffsetDateTime``, the ``ignore_dst`` parameter is required,
-              because it is possible (though unlikely) that the rounded datetime
-              will not have the same offset.
+            * For ``OffsetDateTime``, rounding may result in a datetime with a
+              stale UTC offset if the rounded time crosses a DST boundary.
+              See :class:`~whenever.PotentiallyStaleOffsetWarning`.
             * This method has similar behavior to the ``round()`` method of
               Temporal objects in JavaScript.
             """
@@ -5471,7 +5474,7 @@ class _ExactTime(_BasicConversions):
             other._nanos,
         )
 
-    def _subtract_delta(self, other: _ExactTimeAlias) -> TimeDelta:
+    def _subtract_operator(self, other: _ExactTimeAlias) -> TimeDelta:
         if isinstance(other, _ExactTime):
             py_delta = self._py_dt.astimezone(_UTC) - other._py_dt
             return TimeDelta(
@@ -5844,7 +5847,7 @@ class Instant(_ExactTime):
         TimeDelta(47:12:00)
         """
         if isinstance(other, _ExactTime):
-            return self._subtract_delta(other)  # type: ignore[misc, no-any-return]
+            return self._subtract_operator(other)
         elif isinstance(other, TimeDelta):
             return self + -other
         return NotImplemented
@@ -5892,15 +5895,9 @@ class OffsetDateTime(_ExactAndLocalTime):
     ----
     Adjusting instances of this class do *not* account for daylight saving time.
     If you need to add or subtract durations from an offset datetime
-    and account for DST, convert to a ``ZonedDateTime`` first,
-    This class knows when the offset changes.
+    and account for DST, convert to a ``ZonedDateTime`` first
+    using :meth:`assume_tz`. This class knows when the offset changes.
     """
-
-    # TODO implement
-    # Stub to make sphinx happy, until we implement this method.
-    def __add__(self, other: TimeDelta) -> OffsetDateTime:
-        """TODO"""
-        raise TypeError("unsupported operand type")
 
     __slots__ = ()
 
@@ -5960,21 +5957,30 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     @classmethod
     def now(
-        cls, offset: int | TimeDelta, /, *, ignore_dst: bool = False
+        cls, offset: int | TimeDelta, /, *, ignore_dst: bool = _UNSET
     ) -> OffsetDateTime:
         """Create an instance from the current time.
 
-        Important
-        ---------
-        Getting the current time with a fixed offset implicitly ignores DST
-        and other timezone changes. Instead, use ``Instant.now()`` or
-        ``ZonedDateTime.now(<tz_id>)`` if you know the timezone.
-        Or, if you want to ignore DST and accept potentially incorrect offsets,
-        pass ``ignore_dst=True`` to this method. For more information, see
-        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__.
+        Warning
+        -------
+        Getting the current time as an ``OffsetDateTime`` with a fixed UTC offset
+        may be incorrect: the offset doesn't update when DST or other timezone
+        rules change. Use ``ZonedDateTime.now('<tz>')`` if you know the timezone,
+        or ``Instant.now()`` for timezone-agnostic exact time.
+        Suppress with :func:`~whenever.ignore_potentially_stale_offset_warning`.
         """
-        if ignore_dst is not True:
-            raise ImplicitlyIgnoringDST(OFFSET_NOW_DST_MSG)
+        if ignore_dst is not _UNSET:
+            warn(
+                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
+        if not _ignore_potentially_stale_offset_warning.get():
+            warn(
+                OFFSET_NOW_STALE_MSG,
+                PotentiallyStaleOffsetWarning,
+                stacklevel=2,
+            )
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _load_offset(offset)), nanos
@@ -6026,25 +6032,38 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     @classmethod
     def from_timestamp(
-        cls, i: int, /, *, offset: int | TimeDelta, ignore_dst: bool = False
+        cls,
+        i: int | float,
+        /,
+        *,
+        offset: int | TimeDelta,
+        ignore_dst: bool = _UNSET,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in seconds).
 
         The inverse of the ``timestamp()`` method.
 
-        Important
-        ---------
-        Creating an instance from a UNIX timestamp implicitly ignores DST
-        and other timezone changes. This because you don't strictly
-        know if the given offset is correct for an arbitrary timestamp.
-        Instead, use ``Instant.from_timestamp()``
-        or ``ZonedDateTime.from_timestamp()`` if you know the timezone.
-        Or, if you want to ignore DST and accept potentially incorrect offsets,
-        pass ``ignore_dst=True`` to this method. For more information, see
-        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__.
+        Warning
+        -------
+        Converting a UNIX timestamp to ``OffsetDateTime`` with a fixed UTC offset
+        may produce an incorrect result: you can't know from the offset alone
+        whether DST applies to this timestamp. Use
+        ``ZonedDateTime.from_timestamp(ts, tz='<tz>')`` if you know the timezone,
+        or ``Instant.from_timestamp()`` for timezone-agnostic exact time.
+        Suppress with :func:`~whenever.ignore_potentially_stale_offset_warning`.
         """
-        if ignore_dst is not True:
-            raise ImplicitlyIgnoringDST(TIMESTAMP_DST_MSG)
+        if ignore_dst is not _UNSET:
+            warn(
+                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
+        if not _ignore_potentially_stale_offset_warning.get():
+            warn(
+                OFFSET_FROM_TIMESTAMP_STALE_MSG,
+                PotentiallyStaleOffsetWarning,
+                stacklevel=2,
+            )
         secs, fract = divmod(i, 1)
         return cls._from_py_unchecked(
             _fromtimestamp(secs, _load_offset(offset)),
@@ -6053,25 +6072,26 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     @classmethod
     def from_timestamp_millis(
-        cls, i: int, /, *, offset: int | TimeDelta, ignore_dst: bool = False
+        cls, i: int, /, *, offset: int | TimeDelta, ignore_dst: bool = _UNSET
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in milliseconds).
 
         The inverse of the ``timestamp_millis()`` method.
 
-        Important
-        ---------
-        Creating an instance from a UNIX timestamp implicitly ignores DST
-        and other timezone changes. This because you don't strictly
-        know if the given offset is correct for an arbitrary timestamp.
-        Instead, use ``Instant.from_timestamp_millis()``
-        or ``ZonedDateTime.from_timestamp_millis()`` if you know the timezone.
-        Or, if you want to ignore DST and accept potentially incorrect offsets,
-        pass ``ignore_dst=True`` to this method. For more information, see
-        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__.
+        See :meth:`from_timestamp` for more information.
         """
-        if ignore_dst is not True:
-            raise ImplicitlyIgnoringDST(TIMESTAMP_DST_MSG)
+        if ignore_dst is not _UNSET:
+            warn(
+                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
+        if not _ignore_potentially_stale_offset_warning.get():
+            warn(
+                OFFSET_FROM_TIMESTAMP_STALE_MSG,
+                PotentiallyStaleOffsetWarning,
+                stacklevel=2,
+            )
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, millis = divmod(i, 1_000)
@@ -6081,25 +6101,26 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     @classmethod
     def from_timestamp_nanos(
-        cls, i: int, /, *, offset: int | TimeDelta, ignore_dst: bool = False
+        cls, i: int, /, *, offset: int | TimeDelta, ignore_dst: bool = _UNSET
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in nanoseconds).
 
         The inverse of the ``timestamp_nanos()`` method.
 
-        Important
-        ---------
-        Creating an instance from a UNIX timestamp implicitly ignores DST
-        and other timezone changes. This because you don't strictly
-        know if the given offset is correct for an arbitrary timestamp.
-        Instead, use ``Instant.from_timestamp_nanos()``
-        or ``ZonedDateTime.from_timestamp_nanos()`` if you know the timezone.
-        Or, if you want to ignore DST and accept potentially incorrect offsets,
-        pass ``ignore_dst=True`` to this method. For more information, see
-        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__.
+        See :meth:`from_timestamp` for more information.
         """
-        if ignore_dst is not True:
-            raise ImplicitlyIgnoringDST(TIMESTAMP_DST_MSG)
+        if ignore_dst is not _UNSET:
+            warn(
+                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
+        if not _ignore_potentially_stale_offset_warning.get():
+            warn(
+                OFFSET_FROM_TIMESTAMP_STALE_MSG,
+                PotentiallyStaleOffsetWarning,
+                stacklevel=2,
+            )
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
@@ -6152,22 +6173,32 @@ class OffsetDateTime(_ExactAndLocalTime):
         ) -> OffsetDateTime: ...
 
     def replace(
-        self, /, ignore_dst: bool = False, **kwargs: Any
+        self, /, ignore_dst: bool = _UNSET, **kwargs: Any
     ) -> OffsetDateTime:
         """Construct a new instance with the given fields replaced.
 
-        Important
-        ---------
-        Replacing fields of an offset datetime implicitly ignores DST
-        and other timezone changes. This because it isn't guaranteed that
-        the same offset will be valid at the new time.
-        If you want to account for DST, convert to a ``ZonedDateTime`` first.
-        Or, if you want to ignore DST and accept potentially incorrect offsets,
-        pass ``ignore_dst=True`` to this method.
+        Warning
+        -------
+        Replacing fields of an ``OffsetDateTime`` keeps the fixed UTC offset,
+        which may no longer be correct after the change (e.g. replacing the month
+        on a European-timezone datetime may move it into a different DST period).
+        Convert to ``ZonedDateTime`` first for timezone-aware field replacement
+        using :meth:`assume_tz`.
+        Suppress with :func:`~whenever.ignore_potentially_stale_offset_warning`.
         """
+        if ignore_dst is not _UNSET:
+            warn(
+                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
+        if not _ignore_potentially_stale_offset_warning.get():
+            warn(
+                OFFSET_REPLACE_STALE_MSG,
+                PotentiallyStaleOffsetWarning,
+                stacklevel=2,
+            )
         _check_invalid_replace_kwargs(kwargs)
-        if ignore_dst is not True:
-            raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
         try:
             kwargs["tzinfo"] = _load_offset(kwargs.pop("offset"))
         except KeyError:
@@ -6178,14 +6209,24 @@ class OffsetDateTime(_ExactAndLocalTime):
         )
 
     def replace_date(
-        self, date: Date, /, *, ignore_dst: bool = False
+        self, date: Date, /, *, ignore_dst: bool = _UNSET
     ) -> OffsetDateTime:
         """Construct a new instance with the date replaced.
 
-        See the ``replace()`` method for more information.
+        See :meth:`replace` for more information.
         """
-        if ignore_dst is not True:
-            raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
+        if ignore_dst is not _UNSET:
+            warn(
+                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
+        if not _ignore_potentially_stale_offset_warning.get():
+            warn(
+                OFFSET_REPLACE_STALE_MSG,
+                PotentiallyStaleOffsetWarning,
+                stacklevel=2,
+            )
         return self._from_py_unchecked(
             check_utc_bounds(
                 _datetime.combine(date._py_date, self._py_dt.timetz())
@@ -6194,14 +6235,24 @@ class OffsetDateTime(_ExactAndLocalTime):
         )
 
     def replace_time(
-        self, time: Time, /, *, ignore_dst: bool = False
+        self, time: Time, /, *, ignore_dst: bool = _UNSET
     ) -> OffsetDateTime:
         """Construct a new instance with the time replaced.
 
-        See the ``replace()`` method for more information.
+        See :meth:`replace` for more information.
         """
-        if ignore_dst is not True:
-            raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
+        if ignore_dst is not _UNSET:
+            warn(
+                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
+        if not _ignore_potentially_stale_offset_warning.get():
+            warn(
+                OFFSET_REPLACE_STALE_MSG,
+                PotentiallyStaleOffsetWarning,
+                stacklevel=2,
+            )
         return self._from_py_unchecked(
             check_utc_bounds(
                 _datetime.combine(
@@ -6214,11 +6265,63 @@ class OffsetDateTime(_ExactAndLocalTime):
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
 
-    def __sub__(self, other: _ExactTimeAlias) -> TimeDelta:
-        """Calculate the exact duration relative to another exact time."""
-        if isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
-            raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
-        return super()._subtract_delta(other)  # type: ignore[misc, no-any-return]
+    def __add__(self, delta: TimeDelta) -> OffsetDateTime:
+        """Add a time delta to this datetime.
+
+        Warning
+        -------
+        Shifting an ``OffsetDateTime`` keeps the fixed UTC offset, which may not
+        match the actual offset after a DST or other timezone transition.
+        For example, adding 1 day to ``2024-03-09 12:00-07:00`` gives
+        ``2024-03-10 12:00-07:00``, but if this offset represents Denver,
+        Colorado (America/Denver), the actual offset changed to ``-06:00`` that day.
+        Convert to a ``ZonedDateTime`` first for timezone-aware arithmetic
+        using :meth:`assume_tz`.
+        Suppress with the
+        :func:`~whenever.ignore_potentially_stale_offset_warning` context manager;
+        Python's standard warning filters also apply.
+        """
+        if isinstance(delta, TimeDelta):
+            if not _ignore_potentially_stale_offset_warning.get():
+                warn(
+                    OFFSET_SHIFT_STALE_MSG,
+                    PotentiallyStaleOffsetWarning,
+                    stacklevel=2,
+                )
+            delta_secs, nanos = divmod(
+                delta._total_ns + self._nanos, 1_000_000_000
+            )
+            return self._from_py_unchecked(
+                check_utc_bounds(self._py_dt + _timedelta(seconds=delta_secs)),
+                nanos,
+            )
+        return NotImplemented
+
+    @overload
+    def __sub__(self, other: _ExactTimeAlias) -> TimeDelta: ...
+
+    @overload
+    def __sub__(self, other: TimeDelta) -> OffsetDateTime: ...
+
+    def __sub__(
+        self, other: _ExactTimeAlias | TimeDelta
+    ) -> TimeDelta | OffsetDateTime:
+        """Subtract a time delta or calculate the duration to another exact time."""
+        if isinstance(other, TimeDelta):
+            if not _ignore_potentially_stale_offset_warning.get():
+                warn(
+                    OFFSET_SHIFT_STALE_MSG,
+                    PotentiallyStaleOffsetWarning,
+                    stacklevel=2,
+                )
+            delta_secs, nanos = divmod(
+                -other._total_ns + self._nanos, 1_000_000_000
+            )
+            return self._from_py_unchecked(
+                check_utc_bounds(self._py_dt + _timedelta(seconds=delta_secs)),
+                nanos,
+            )
+        return super()._subtract_operator(other)
 
     @classmethod
     def parse_strptime(cls, s: str, /, *, format: str) -> OffsetDateTime:
@@ -6298,9 +6401,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     if not TYPE_CHECKING:  # for a nicer autodoc
 
         @overload
-        def add(
-            self, delta: AnyDelta, /, *, ignore_dst: bool = False
-        ) -> OffsetDateTime: ...
+        def add(self, delta: AnyDelta, /) -> OffsetDateTime: ...
 
         @overload
         def add(
@@ -6316,33 +6417,30 @@ class OffsetDateTime(_ExactAndLocalTime):
             milliseconds: float = 0,
             microseconds: float = 0,
             nanoseconds: int = 0,
-            ignore_dst: bool = False,
+            ignore_dst: bool = ...,
         ) -> OffsetDateTime: ...
 
+    # TODO: assume_tz() for OffsetDateTime, which converts to ZonedDateTime with the correct offset for this datetime
     @no_type_check
     def add(self, *args, **kwargs) -> OffsetDateTime:
         """Add a time amount to this datetime.
 
-        Important
-        ---------
-        Shifting a fixed-offset datetime implicitly ignore DST
-        and other timezone changes. This because it isn't guaranteed that
-        the same offset will be valid at the resulting time.
-        If you want to account for DST, convert to a ``ZonedDateTime`` first.
-        Or, if you want to ignore DST and accept potentially incorrect offsets,
-        pass ``ignore_dst=True`` to this method.
-
-        For more information, see
-        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__.
+        Warning
+        -------
+        Shifting an ``OffsetDateTime`` keeps the fixed UTC offset, which may not
+        match the actual offset after a DST or other timezone transition.
+        Convert to a ``ZonedDateTime`` first for timezone-aware arithmetic
+        using :meth:`assume_tz`.
+        Suppress with the
+        :func:`~whenever.ignore_potentially_stale_offset_warning` context manager;
+        Python's standard warning filters also apply.
         """
         return self._shift(1, *args, **kwargs)
 
     if not TYPE_CHECKING:  # for a nicer autodoc
 
         @overload
-        def subtract(
-            self, delta: AnyDelta, /, *, ignore_dst: bool = False
-        ) -> OffsetDateTime: ...
+        def subtract(self, delta: AnyDelta, /) -> OffsetDateTime: ...
 
         @overload
         def subtract(
@@ -6358,24 +6456,14 @@ class OffsetDateTime(_ExactAndLocalTime):
             milliseconds: float = 0,
             microseconds: float = 0,
             nanoseconds: int = 0,
-            ignore_dst: bool = False,
+            ignore_dst: bool = ...,
         ) -> OffsetDateTime: ...
 
     @no_type_check
     def subtract(self, *args, **kwargs) -> OffsetDateTime:
         """Subtract a time amount from this datetime.
 
-        Important
-        ---------
-        Shifting a fixed-offset datetime implicitly ignore DST
-        and other timezone changes. This because it isn't guaranteed that
-        the same offset will be valid at the resulting time.
-        If you want to account for DST, convert to a ``ZonedDateTime`` first.
-        Or, if you want to ignore DST and accept potentially incorrect offsets,
-        pass ``ignore_dst=True`` to this method.
-
-        For more information, see
-        `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__.
+        See :meth:`add` for more information.
         """
         return self._shift(-1, *args, **kwargs)
 
@@ -6386,12 +6474,22 @@ class OffsetDateTime(_ExactAndLocalTime):
         arg: AnyDelta | _UNSET = _UNSET,
         /,
         *,
-        ignore_dst: bool = False,
+        ignore_dst: bool = _UNSET,
         **kwargs,
     ) -> OffsetDateTime:
-        if ignore_dst is not True:
-            raise ImplicitlyIgnoringDST(ADJUST_OFFSET_DATETIME_MSG)
-        elif kwargs:
+        if ignore_dst is not _UNSET:
+            warn(
+                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                WheneverDeprecationWarning,
+                stacklevel=3,
+            )
+        if not _ignore_potentially_stale_offset_warning.get():
+            warn(
+                OFFSET_SHIFT_STALE_MSG,
+                PotentiallyStaleOffsetWarning,
+                stacklevel=3,
+            )
+        if kwargs:
             if arg is _UNSET:
                 return self._shift_kwargs(sign, **kwargs)
             raise TypeError("Cannot mix positional and keyword arguments")
@@ -6421,13 +6519,14 @@ class OffsetDateTime(_ExactAndLocalTime):
         microseconds: float = 0,
         nanoseconds: int = 0,
     ) -> OffsetDateTime:
-
-        py_dt_with_new_date = self.replace_date(
-            self.date()
-            ._add_months(sign * (years * 12 + months))
-            ._add_days(sign * (weeks * 7 + days)),
-            ignore_dst=True,
-        )._py_dt
+        py_dt_with_new_date = _datetime.combine(
+            (
+                self.date()
+                ._add_months(sign * (years * 12 + months))
+                ._add_days(sign * (weeks * 7 + days))
+            )._py_date,
+            self._py_dt.timetz(),
+        )
 
         tdelta = sign * TimeDelta(
             hours=hours,
@@ -6442,7 +6541,9 @@ class OffsetDateTime(_ExactAndLocalTime):
             tdelta._total_ns + self._nanos, 1_000_000_000
         )
         return self._from_py_unchecked(
-            (py_dt_with_new_date + _timedelta(seconds=delta_secs)),
+            check_utc_bounds(
+                py_dt_with_new_date + _timedelta(seconds=delta_secs)
+            ),
             nanos,
         )
 
@@ -6460,7 +6561,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         increment: int = 1,
         mode: RoundModeStr = "half_even",
         *,
-        ignore_dst: bool = False,
+        ignore_dst: bool = _UNSET,
     ) -> OffsetDateTime:
         """Round the datetime to the specified unit and increment.
         Different rounding modes are available.
@@ -6473,13 +6574,29 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         Note
         ----
-        * The ``ignore_dst`` parameter is required, because it is possible
-          (though unlikely) that the rounded datetime will not have the same offset.
         * This method has similar behavior to the ``round()`` method of
           Temporal objects in JavaScript.
+
+        Warning
+        -------
+        Rounding an ``OffsetDateTime`` keeps the fixed UTC offset, which may not
+        be accurate if the rounded datetime crosses into a different DST period.
+        Convert to a ``ZonedDateTime`` first for timezone-aware rounding
+        using :meth:`assume_tz`.
+        Suppress with :func:`~whenever.ignore_potentially_stale_offset_warning`.
         """
-        if ignore_dst is not True:
-            raise ImplicitlyIgnoringDST(OFFSET_ROUNDING_DST_MSG)
+        if ignore_dst is not _UNSET:
+            warn(
+                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
+        if not _ignore_potentially_stale_offset_warning.get():
+            warn(
+                OFFSET_ROUND_STALE_MSG,
+                PotentiallyStaleOffsetWarning,
+                stacklevel=2,
+            )
         return (
             self.to_plain()
             ._round_unchecked(
@@ -6489,6 +6606,42 @@ class OffsetDateTime(_ExactAndLocalTime):
             )
             .assume_fixed_offset(self.offset)
         )
+
+    def assume_tz(
+        self, tz: str, *, offset_mismatch: OffsetMismatchStr = "raise"
+    ) -> ZonedDateTime:
+        """Associate this offset datetime with a timezone, returning a ZonedDateTime.
+
+        This is the inverse of :meth:`ZonedDateTime.to_fixed_offset`.
+
+        By default, if the offset of this datetime doesn't match the actual
+        offset of the timezone at this datetime, an error is raised.
+        Using the ``offset_mismatch`` parameter, you can choose to ignore
+        the mismatch, keeping either the instant or the local time the same.
+        """
+        if offset_mismatch not in ("raise", "keep_instant", "keep_local"):
+            raise ValueError(
+                f"Invalid value for offset_mismatch: {offset_mismatch!r}"
+            )
+        result = self.to_tz(tz)
+        if (
+            offset_mismatch == "keep_instant"
+            or result._py_dt.utcoffset() == self._py_dt.utcoffset()
+        ):
+            return result
+        elif offset_mismatch == "raise":
+            offset_expected = _format_offset(
+                self._py_dt.utcoffset(), basic=False  # type: ignore[arg-type]
+            )
+            offset_actual = _format_offset(
+                result._py_dt.utcoffset(), basic=False  # type: ignore[arg-type]
+            )
+            raise InvalidOffsetError(
+                f"Offset mismatch: timezone {tz!r} has offset {offset_actual}, "
+                f"but offset {offset_expected} was expected"
+            )
+        elif offset_mismatch == "keep_local":
+            return self.to_plain().assume_tz(tz)
 
     def __repr__(self) -> str:
         return f"OffsetDateTime(\"{str(self).replace('T', ' ')}\")"
@@ -6951,7 +7104,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         for more information.
         """
         if isinstance(other, _ExactTime):
-            return self._subtract_delta(other)  # type: ignore[misc, no-any-return]
+            return self._subtract_operator(other)
         elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
             return self + -other
         return NotImplemented
@@ -7563,13 +7716,13 @@ class PlainDateTime(_LocalTime):
         @overload
         def replace(
             self,
+            *,
             year: int = ...,
             month: int = ...,
             day: int = ...,
             hour: int = ...,
             minute: int = ...,
             second: int = ...,
-            *,
             nanosecond: int = ...,
         ) -> PlainDateTime: ...
 
@@ -7645,11 +7798,17 @@ class PlainDateTime(_LocalTime):
             return NotImplemented
         return (self._py_dt, self._nanos) >= (other._py_dt, other._nanos)
 
-    # TODO: deprecate for non-exact units
-    def __add__(self, delta: DateDelta) -> PlainDateTime:
+    def __add__(self, delta: DateDelta | TimeDelta) -> PlainDateTime:
         """Add a delta to this datetime.
 
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
+        Warning
+        -------
+        Adding exact time units (a ``TimeDelta``) to a ``PlainDateTime`` does
+        not account for timezone transitions that may occur in the interval.
+        Use ``.assume_tz('<tz>') + delta`` if you know the timezone.
+        Suppress with the
+        :func:`~whenever.ignore_timezone_unaware_arithmetic_warning` context manager;
+        Python's standard warning filters also apply.
         """
         if isinstance(delta, DateDelta):
             return self._from_py_unchecked(
@@ -7659,77 +7818,157 @@ class PlainDateTime(_LocalTime):
                 ),
                 self._nanos,
             )
-        elif isinstance(delta, (TimeDelta, DateTimeDelta)):
-            raise ImplicitlyIgnoringDST(SHIFT_LOCAL_MSG)
+        elif isinstance(delta, TimeDelta):
+            if not _ignore_timezone_unaware_arithmetic_warning.get():
+                warn(
+                    PLAIN_SHIFT_UNAWARE_MSG,
+                    TimeZoneUnawareArithmeticWarning,
+                    stacklevel=2,
+                )
+            delta_secs, nanos = divmod(
+                delta._total_ns + self._nanos, 1_000_000_000
+            )
+            return self._from_py_unchecked(
+                self._py_dt + _timedelta(seconds=delta_secs), nanos
+            )
         return NotImplemented
 
-    def __sub__(self, other: DateDelta) -> PlainDateTime:
-        """Subtract another datetime or delta
+    @overload
+    def __sub__(self, other: PlainDateTime) -> TimeDelta: ...
 
-        See :ref:`the docs on arithmetic <arithmetic>` for more information.
+    @overload
+    def __sub__(self, other: TimeDelta | DateDelta) -> PlainDateTime: ...
+
+    def __sub__(
+        self, other: PlainDateTime | TimeDelta | DateDelta
+    ) -> TimeDelta | PlainDateTime:
+        """Subtract a delta or calculate the duration to another plain datetime.
+
+        Warning
+        -------
+        Subtracting a ``TimeDelta`` or measuring the difference between two
+        ``PlainDateTime`` values does not account for timezone transitions that
+        may occur in the interval. Use :meth:`~whenever.PlainDateTime.assume_tz`
+        to convert to a ``ZonedDateTime`` first for accurate results.
+        Suppress with the
+        :func:`~whenever.ignore_timezone_unaware_arithmetic_warning` context manager;
+        Python's standard warning filters also apply.
         """
-        # Handling these extra types allows for descriptive error messages
-        if isinstance(other, (DateDelta, TimeDelta, DateTimeDelta)):
-            return self + -other
+        if isinstance(other, TimeDelta):
+            if not _ignore_timezone_unaware_arithmetic_warning.get():
+                warn(
+                    PLAIN_SHIFT_UNAWARE_MSG,
+                    TimeZoneUnawareArithmeticWarning,
+                    stacklevel=2,
+                )
+            delta_secs, nanos = divmod(
+                -other._total_ns + self._nanos, 1_000_000_000
+            )
+            return self._from_py_unchecked(
+                self._py_dt + _timedelta(seconds=delta_secs), nanos
+            )
         elif isinstance(other, PlainDateTime):
-            raise ImplicitlyIgnoringDST(DIFF_OPERATOR_LOCAL_MSG)
-        return NotImplemented
+            if not _ignore_timezone_unaware_arithmetic_warning.get():
+                warn(
+                    PLAIN_DIFF_UNAWARE_MSG,
+                    TimeZoneUnawareArithmeticWarning,
+                    stacklevel=2,
+                )
+            py_delta = self._py_dt - other._py_dt
+            return TimeDelta(
+                seconds=py_delta.days * 86_400 + py_delta.seconds,
+                nanoseconds=self._nanos - other._nanos,
+            )
+        elif isinstance(other, (DateDelta, DateTimeDelta)):
+            return self + -other
+        else:
+            return NotImplemented
 
     def difference(
-        self, other: PlainDateTime, /, *, ignore_dst: bool = False
+        self, other: PlainDateTime, /, *, ignore_dst: bool = _UNSET
     ) -> TimeDelta:
         """Calculate the difference between two times without a timezone.
 
-        Important
-        ---------
-        The difference between two datetimes without a timezone implicitly ignores
-        DST transitions and other timezone changes.
-        To perform DST-safe operations, convert to a ``ZonedDateTime`` first.
-        Or, if you don't know the timezone and accept potentially incorrect results
-        during DST transitions, pass ``ignore_dst=True``.
-        For more information,
-        see `the docs <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__.
-        """
-        if ignore_dst is not True:
-            raise ImplicitlyIgnoringDST(DIFF_LOCAL_MSG)
+        .. deprecated:: 0.10.0
 
+            The ``difference()`` method is deprecated, use the subtraction operator or
+            :meth:`since` method instead.
+        """
+        warn(
+            "The difference() method is deprecated, use the subtraction operator or since() method instead. ",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         py_delta = self._py_dt - other._py_dt
         return TimeDelta(
             seconds=py_delta.days * 86_400 + py_delta.seconds,
             nanoseconds=self._nanos - other._nanos,
         )
 
+    @overload
+    def add(
+        self, d: AnyDelta, /, *, ignore_dst: bool = ...
+    ) -> PlainDateTime: ...
+
+    @overload
+    def add(
+        self,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        hours: float = ...,
+        minutes: float = ...,
+        seconds: float = ...,
+        milliseconds: float = ...,
+        microseconds: float = ...,
+        nanoseconds: int = ...,
+        ignore_dst: bool = ...,
+    ) -> PlainDateTime: ...
+
     @no_type_check
     def add(self, *args, **kwargs) -> PlainDateTime:
         """Add a time amount to this datetime.
 
-        Important
-        ---------
-        Shifting a ``PlainDateTime`` with **exact units** (e.g. hours, seconds)
-        implicitly ignores DST transitions and other timezone changes.
-        If you need to account for these, convert to a ``ZonedDateTime`` first.
-        Or, if you don't know the timezone and accept potentially incorrect results
-        during DST transitions, pass ``ignore_dst=True``.
-
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__
-        for more information.
+        Warning
+        -------
+        Adding **exact time units** (e.g. hours, seconds) to a ``PlainDateTime``
+        does not account for timezone transitions that may occur in the interval.
+        Use ``.assume_tz('<tz>') + delta`` if you know the timezone.
+        Suppress with the
+        :func:`~whenever.ignore_timezone_unaware_arithmetic_warning` context manager;
+        Python's standard warning filters also apply.
         """
         return self._shift(1, *args, **kwargs)
+
+    @overload
+    def subtract(
+        self, d: AnyDelta, /, *, ignore_dst: bool = ...
+    ) -> PlainDateTime: ...
+
+    @overload
+    def subtract(
+        self,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        hours: float = ...,
+        minutes: float = ...,
+        seconds: float = ...,
+        milliseconds: float = ...,
+        microseconds: float = ...,
+        nanoseconds: int = ...,
+        ignore_dst: bool = ...,
+    ) -> PlainDateTime: ...
 
     @no_type_check
     def subtract(self, *args, **kwargs) -> PlainDateTime:
         """Subtract a time amount from this datetime.
 
-        Important
-        ---------
-        Shifting a ``PlainDateTime`` with **exact units** (e.g. hours, seconds)
-        implicitly ignores DST transitions and other timezone changes.
-        If you need to account for these, convert to a ``ZonedDateTime`` first.
-        Or, if you don't know the timezone and accept potentially incorrect results
-        during DST transitions, pass ``ignore_dst=True``.
-
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic>`__
-        for more information.
+        See :meth:`add` for more information.
         """
         return self._shift(-1, *args, **kwargs)
 
@@ -7740,18 +7979,24 @@ class PlainDateTime(_LocalTime):
         arg: AnyDelta | _UNSET = _UNSET,
         /,
         *,
-        ignore_dst: bool = False,
+        ignore_dst: bool = _UNSET,
         **kwargs,
     ) -> PlainDateTime:
+        if ignore_dst is not _UNSET:
+            warn(
+                "The `ignore_dst` argument is deprecated and replaced with warnings.",
+                WheneverDeprecationWarning,
+                stacklevel=3,
+            )
+
         if kwargs:
             if arg is _UNSET:
-                return self._shift_kwargs(sign, ignore_dst, **kwargs)
+                return self._shift_kwargs(sign, **kwargs)
             raise TypeError("Cannot mix positional and keyword arguments")
 
         elif arg is not _UNSET:
             return self._shift_kwargs(
                 sign,
-                ignore_dst,
                 months=arg._date_part._months,
                 days=arg._date_part._days,
                 nanoseconds=arg._time_part._total_ns,
@@ -7762,7 +8007,6 @@ class PlainDateTime(_LocalTime):
     def _shift_kwargs(
         self,
         sign: int,
-        ignore_dst: bool,
         *,
         years: int = 0,
         months: int = 0,
@@ -7789,8 +8033,12 @@ class PlainDateTime(_LocalTime):
             microseconds=microseconds,
             nanoseconds=nanoseconds,
         )
-        if tdelta and ignore_dst is not True:
-            raise ImplicitlyIgnoringDST(ADJUST_LOCAL_DATETIME_MSG)
+        if tdelta and not _ignore_timezone_unaware_arithmetic_warning.get():
+            warn(
+                PLAIN_SHIFT_UNAWARE_MSG,
+                TimeZoneUnawareArithmeticWarning,
+                stacklevel=4,
+            )
 
         delta_secs, nanos = divmod(
             tdelta._total_ns + self._nanos, 1_000_000_000
@@ -7967,8 +8215,20 @@ _ignore_days_not_always_24h_warning: ContextVar[bool] = ContextVar(
     "_ignore_days_not_always_24h_warning", default=False
 )
 
+_ignore_potentially_stale_offset_warning: ContextVar[bool] = ContextVar(
+    "_ignore_potentially_stale_offset_warning", default=False
+)
 
-class DaysAreNotAlways24HoursWarning(UserWarning):
+_ignore_timezone_unaware_arithmetic_warning: ContextVar[bool] = ContextVar(
+    "_ignore_timezone_unaware_arithmetic_warning", default=False
+)
+
+
+class PotentialDstBugWarning(UserWarning):
+    """Base class for warnings about potential DST-related bugs in user code."""
+
+
+class DaysAreNotAlways24HoursWarning(PotentialDstBugWarning):
     """An operation assumed days are always 24 hours long"""
 
 
@@ -7978,72 +8238,123 @@ class WheneverDeprecationWarning(UserWarning):
     """A deprecated feature of the Whenever library was used."""
 
 
+class PotentiallyStaleOffsetWarning(PotentialDstBugWarning):
+    """Raised when an operation on an :class:`~whenever.OffsetDateTime` may
+    result in a datetime with an incorrect UTC offset.
+
+    A fixed UTC offset (e.g. ``+02:00``) carries no timezone rules--it doesn't
+    know about DST, historical offset changes, or future policy decisions that
+    could change which offset a region observes. After shifting, rounding, or
+    replacing fields of an ``OffsetDateTime``, the original offset is preserved
+    verbatim. If the region has since changed its rules, the preserved offset
+    may be wrong, silently producing a timestamp that is off by the difference.
+
+    The typical fix is to work with :class:`~whenever.ZonedDateTime` instead,
+    which always keeps the offset in sync with the timezone rules.
+    Alternatively, suppress this warning with the
+    :func:`~whenever.ignore_potentially_stale_offset_warning` context manager
+    (or Python's standard warning filters) when the fixed offset is intentional
+    and correct.
+    """
+
+
+class TimeZoneUnawareArithmeticWarning(PotentialDstBugWarning):
+    """Raised when exact-time arithmetic is performed on a
+    :class:`~whenever.PlainDateTime` without timezone context.
+
+    A :class:`~whenever.PlainDateTime` carries no timezone information.
+    When you add or subtract exact time units (hours, minutes, seconds) or
+    measure the difference between two :class:`~whenever.PlainDateTime` values,
+    the computation treats every hour as equal. This warning is always emitted
+    because there is no way to know whether a timezone transition falls in the
+    interval--if one does, the result may be off by an hour or more.
+
+    For example, adding 2 hours to ``2023-03-26 01:30`` (Amsterdam) gives
+    ``03:30``, but clocks jumped from 02:00 to 03:00 that morning, so only
+    1 real hour has passed.
+
+    The typical fix is to call :meth:`~whenever.PlainDateTime.assume_tz` first
+    so the timezone is known, then perform the arithmetic on the resulting
+    :class:`~whenever.ZonedDateTime`.
+    Suppress this warning with the
+    :func:`~whenever.ignore_timezone_unaware_arithmetic_warning` context manager
+    (or Python's standard warning filters) if you: (a) explicitly accept
+    potentially incorrect results, (b) know no transitions occur in the
+    interval, or (c) are working with clock times not representing a real-world
+    timezone (e.g. a simulation).
+    """
+
+
 class ImplicitlyIgnoringDST(TypeError):
     """A calculation was performed that implicitly ignored DST"""
 
 
-_IGNORE_DST_SUGGESTION = (
-    "To perform DST-safe operations, convert to a ZonedDateTime first. "
-    "Or, if you don't know the timezone and accept potentially incorrect results "
-    "during DST transitions, pass `ignore_dst=True`. For more information, see "
-    "whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
+OFFSET_NOW_STALE_MSG = (
+    "Getting the current time as an OffsetDateTime with a fixed UTC offset may be incorrect: "
+    "the offset doesn't update when DST or other timezone rules change. "
+    "Use ZonedDateTime.now('<tz>') if you know the timezone, or "
+    "Instant.now() for timezone-agnostic exact time. "
+    "Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, "
+    "or with Python's standard warning filters."
 )
 
-
-SHIFT_LOCAL_MSG = (
-    "Adding or subtracting a (date)time delta to a datetime without timezone "
-    "implicitly ignores DST transitions and other timezone "
-    "changes. Use the `add` or `subtract` method instead."
+OFFSET_FROM_TIMESTAMP_STALE_MSG = (
+    "Converting a UNIX timestamp to OffsetDateTime with a fixed UTC offset may produce "
+    "an incorrect result: you can't know from the offset alone whether DST "
+    "is in effect at this timestamp. "
+    "Use ZonedDateTime.from_timestamp(ts, tz='<tz>') if you know the timezone, or "
+    "Instant.from_timestamp() for timezone-agnostic exact time. "
+    "Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, "
+    "or with Python's standard warning filters."
 )
 
-DIFF_OPERATOR_LOCAL_MSG = (
-    "The difference between two datetimes without timezone implicitly ignores "
-    "DST transitions and other timezone changes. "
-    "Use the `difference` method instead."
+OFFSET_REPLACE_STALE_MSG = (
+    "Replacing fields of an OffsetDateTime keeps the fixed UTC offset, which may no longer "
+    "be correct after the change (e.g. replacing the month on a European-timezone datetime "
+    "may move it into a different DST period). "
+    "Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware field replacement. "
+    "Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, "
+    "or with Python's standard warning filters."
 )
 
-DIFF_LOCAL_MSG = (
-    "The difference between two datetimes without timezone implicitly ignores "
-    "DST transitions and other timezone changes. " + _IGNORE_DST_SUGGESTION
+OFFSET_SHIFT_STALE_MSG = (
+    "Shifting an OffsetDateTime keeps the fixed UTC offset, which may not match the "
+    "actual offset after a DST or other timezone transition "
+    "(e.g. adding 1 day to 2024-03-09 12:00-07:00 gives 2024-03-10 12:00-07:00, "
+    "but if this offset represents Denver, Colorado (America/Denver), "
+    "the actual offset changed to -06:00 on that date). "
+    "Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware arithmetic. "
+    "Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, "
+    "or with Python's standard warning filters."
 )
 
-
-TIMESTAMP_DST_MSG = (
-    "Converting from a timestamp with a fixed offset implicitly ignores DST "
-    "and other timezone changes. To perform a DST-safe conversion, use "
-    "ZonedDateTime.from_timestamp() instead. "
-    "Or, if you don't know the timezone and accept potentially incorrect results "
-    "during DST transitions, pass `ignore_dst=True`. For more information, see "
-    "whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
+OFFSET_ROUND_STALE_MSG = (
+    "Rounding an OffsetDateTime keeps the fixed UTC offset, which may not be accurate "
+    "in the rare case that the rounded time crosses a DST or other timezone boundary. "
+    "Convert to a ZonedDateTime first (using .assume_tz()) for timezone-aware rounding. "
+    "Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, "
+    "or with Python's standard warning filters."
 )
 
-
-OFFSET_NOW_DST_MSG = (
-    "Getting the current time with a fixed offset implicitly ignores DST "
-    "and other timezone changes. Instead, use `Instant.now()` or "
-    "`ZonedDateTime.now(<tz name>)` if you know the timezone. "
-    "Or, if you want to ignore DST and accept potentially incorrect offsets, "
-    "pass `ignore_dst=True` to this method. For more information, see "
-    "whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
+PLAIN_SHIFT_UNAWARE_MSG = (
+    "Shifting a PlainDateTime by exact time units does not account for timezone transitions "
+    "that may occur in the interval "
+    "(e.g. adding 2 hours to 2023-03-26 01:30 in Amsterdam crosses the spring-forward "
+    "transition, so only 1 real hour has passed). "
+    "Use .assume_tz('<tz>') + delta if you know the timezone. "
+    "Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, "
+    "or with Python's standard warning filters."
 )
 
-OFFSET_ROUNDING_DST_MSG = (
-    "Rounding a fixed offset datetime may (in rare cases) result in a datetime "
-    "for which the offset is incorrect. This is because the offset may change "
-    "during DST transitions. To perform DST-safe rounding, convert to a "
-    "ZonedDateTime first. Or, if you don't know the timezone and accept "
-    "potentially incorrect results during DST transitions, pass `ignore_dst=True`. "
-    "For more information, see whenever.rtfd.io/en/latest/overview.html#dst-safe-arithmetic"
-)
-
-ADJUST_OFFSET_DATETIME_MSG = (
-    "Adjusting a fixed offset datetime implicitly ignores DST and other timezone changes. "
-    + _IGNORE_DST_SUGGESTION
-)
-
-ADJUST_LOCAL_DATETIME_MSG = (
-    "Adjusting a datetime without timezone by time units (e.g. hours and minutess) ignores "
-    "DST and other timezone changes. " + _IGNORE_DST_SUGGESTION
+PLAIN_DIFF_UNAWARE_MSG = (
+    "Calculating the difference between two PlainDateTime values does not account for "
+    "timezone transitions that may have occurred between them: "
+    "for example, PlainDateTime(2023, 3, 26, 3, 0) - PlainDateTime(2023, 3, 26, 1, 0) "
+    "gives 2h, but in Amsterdam clocks jumped from 2:00 to 3:00 that morning, "
+    "so only 1 real hour elapsed. "
+    "Use .assume_tz('<tz>') for both values if you know the timezone. "
+    "Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, "
+    "or with Python's standard warning filters."
 )
 
 CANNOT_ROUND_DAY_MSG = (
@@ -8407,7 +8718,7 @@ _ExactTimeAlias = Union[Instant, OffsetDateTime, ZonedDateTime]
 # also because these internal modules aren't available in the Rust version!
 # This does mess up sphinx autodoc's introspection a bit, so we fix that below.
 # see https://github.com/sphinx-doc/sphinx/issues/3673
-if not SPHINXBUILD:
+if not SPHINX_RUNNING:
     for name in __all__ + "_LocalTime _ExactTime _ExactAndLocalTime".split():
         member = locals()[name]
         if (
