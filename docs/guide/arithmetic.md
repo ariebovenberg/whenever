@@ -13,11 +13,8 @@ Exact and local types cannot be mixed, although exact types can be mixed with ea
 >>> # difference in exact time
 >>> Instant.from_utc(2023, 12, 28, 11, 30) - ZonedDateTime(2023, 12, 28, tz="Europe/Amsterdam")
 TimeDelta("PT12h30m")
->>> # difference in local time
->>> PlainDateTime(2023, 12, 28, 11).difference(
-...     PlainDateTime(2023, 12, 27, 11),
-...     ignore_dst=True
-... )
+>>> # difference in local time (emits TimeZoneUnawareArithmeticWarning)
+>>> PlainDateTime(2023, 12, 28, 11) - PlainDateTime(2023, 12, 27, 11)
 TimeDelta("PT24h")
 ```
 
@@ -119,18 +116,15 @@ to the correct usage.
   For example, the result of adding 24 hours to `2024-03-09 13:00:00-07:00`
   is different whether the offset corresponds to Denver or Phoenix.
   To perform DST-safe arithmetic, you should convert to a {class}`~whenever.ZonedDateTime` first.
-  Or, if you don't know the timezone and accept potentially incorrect results
-  during DST transitions, pass `ignore_dst=True`.
 
   ```python
   >>> d = OffsetDateTime(2024, 3, 9, 13, offset=-7)
-  >>> d.add(hours=24)
-  Traceback (most recent call last):
-    ...
-  ImplicitlyIgnoringDST: Adjusting a fixed offset datetime implicitly ignores DST [...]
-  >>> d.to_tz("America/Denver").add(hours=24)
+  >>> d.add(hours=24)  # emits PotentiallyStaleOffsetWarning
+  OffsetDateTime("2024-03-10 13:00:00-07:00")  # offset is stale; Denver is -06:00 on this date
+  >>> d.to_tz("America/Denver").add(hours=24)   # DST-safe
   ZonedDateTime("2024-03-10 14:00:00-06:00[America/Denver]")
-  >>> d.add(hours=24, ignore_dst=True)  # NOT recommended
+  >>> with ignore_potentially_stale_offset_warning():  # suppress if you know what you're doing
+  ...     d.add(hours=24)
   OffsetDateTime("2024-03-10 13:00:00-07:00")
   ```
 
@@ -159,20 +153,18 @@ to the correct usage.
 - {class}`~whenever.PlainDateTime` doesn't have a timezone,
   so it can't account for DST or other clock changes.
   Calendar units can be added without any complications,
-  but, adding precise time units is only possible with explicit `ignore_dst=True`,
-  because it doesn't know about DST or other timezone changes:
+  but adding or subtracting exact time units, or calculating the difference
+  between two plain datetimes, will emit a {class}`~whenever.TimeZoneUnawareArithmeticWarning`:
 
   ```python
   >>> d = PlainDateTime(2023, 10, 29, 1, 30)
-  >>> d.add(hours=2)  # There could be a DST transition for all we know!
-  Traceback (most recent call last):
-    ...
-  whenever.ImplicitlyIgnoringDST: Adjusting a plain datetime by time units
-  ignores DST and other timezone changes. [...]
-  >>> d.assume_tz("Europe/Amsterdam").add(hours=2)
+  >>> d.add(hours=2)  # emits TimeZoneUnawareArithmeticWarning
+  PlainDateTime("2023-10-29 03:30:00")  # 03:30 doesn't exist in Amsterdam on this date
+  >>> d.assume_tz("Europe/Amsterdam").add(hours=2)   # timezone-aware
   ZonedDateTime("2023-10-29 02:30:00+01:00[Europe/Amsterdam]")
-  >>> d.add(hours=2, ignore_dst=True)  # NOT recommended
-  PlainDateTime("2024-10-03 03:30:00")
+  >>> with ignore_timezone_unaware_arithmetic_warning():  # suppress if you know what you're doing
+  ...     d.add(hours=2)
+  PlainDateTime("2023-10-29 03:30:00")
   ```
 
 ```{attention}
@@ -183,22 +175,29 @@ This is because political decisions in the future can also change the offset!
 
 Here is a summary of the arithmetic features for each type:
 
-|                       | Instant | OffsetDT|ZonedDT  |LocalDT  |
+|                       | Instant | OffsetDT|ZonedDT  |PlainDT  |
 |:----------------------|:-------:|:-------:|:-------:|:-------:|
 | Difference            | ✅      |  ✅     |   ✅    |⚠️  [^1] |
 | add/subtract years, months, days   | ❌      |⚠️  [^1] |✅  [^2] |    ✅   |
 | add/subtract hours, minutes, seconds  | ✅      |⚠️  [^1] |  ✅     |⚠️  [^1] |
 
-[^1]: Only possible by passing `ignore_dst=True` to the method.
-[^2]: The result by be ambiguous in rare cases. Accepts the `disambiguate` argument.
+[^1]: Emits a warning ({class}`~whenever.PotentiallyStaleOffsetWarning` for ``OffsetDateTime``,
+    {class}`~whenever.TimeZoneUnawareArithmeticWarning` for ``PlainDateTime``).
+    Suppress with the corresponding ``ignore_*_warning()`` context manager
+    once you have confirmed the result is correct for your use case.
+[^2]: The result may be ambiguous in rare cases. Accepts the ``disambiguate`` argument.
 
 
-:::{admonition} Why even have `ignore_dst`? Isn't it dangerous?
+:::{admonition} Why are these operations allowed at all if they can be wrong?
 :class: hint
 
-While DST-safe arithmetic is certainly the way to go, there are cases where
-it's simply not possible due to lack of information.
-Because there's no way to to stop users from working around
-restrictions to get the result they want, `whenever` provides the
-`ignore_dst` option to at least make it explicit when this is happening.
+DST-safe arithmetic requires a timezone. When you work with
+{class}`~whenever.OffsetDateTime` or {class}`~whenever.PlainDateTime`,
+that timezone context is simply not available.
+
+Rather than making these operations impossible (which would be frustrating
+when you genuinely don't have a timezone, or when you *know* there is no DST),
+`whenever` allows them but emits a warning. The warning points you to the
+safer alternative—using {class}`~whenever.ZonedDateTime`—while still giving
+you an escape hatch if you understand the trade-off.
 :::

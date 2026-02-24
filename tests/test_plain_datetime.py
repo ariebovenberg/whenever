@@ -8,16 +8,19 @@ from hypothesis.strategies import floats, integers, text
 
 from whenever import (
     Date,
-    ImplicitlyIgnoringDST,
     Instant,
     OffsetDateTime,
     PlainDateTime,
     RepeatedTime,
     SkippedTime,
     Time,
+    TimeDelta,
+    TimeZoneUnawareArithmeticWarning,
+    WheneverDeprecationWarning,
     ZonedDateTime,
     days,
     hours,
+    ignore_timezone_unaware_arithmetic_warning,
     months,
     nanoseconds,
     seconds,
@@ -218,6 +221,7 @@ class TestAssumeSystemTz:
             AMS_TZ_POSIX,
         ],
     )
+    @ignore_timezone_unaware_arithmetic_warning()
     def test_nonexistent(self, tz):
         with system_tz(tz):
             d = PlainDateTime(2023, 3, 26, 2, 15)
@@ -227,7 +231,7 @@ class TestAssumeSystemTz:
 
             zdt1 = d.assume_system_tz(disambiguate="earlier")
             assert isinstance(zdt1, ZonedDateTime)
-            assert zdt1.to_plain() == d.subtract(hours=1, ignore_dst=True)
+            assert zdt1.to_plain() == d.subtract(hours=1)
             assert zdt1.offset == hours(1)
             # posix TZ string cannot be checked
             if tz == "Europe/Amsterdam":
@@ -235,7 +239,7 @@ class TestAssumeSystemTz:
 
             zdt2 = d.assume_system_tz(disambiguate="later")
             assert isinstance(zdt2, ZonedDateTime)
-            assert zdt2.to_plain() == d.add(hours=1, ignore_dst=True)
+            assert zdt2.to_plain() == d.add(hours=1)
             assert zdt2.offset == hours(2)
             # posix TZ string cannot be checked
             if tz == "Europe/Amsterdam":
@@ -582,11 +586,34 @@ def test_replace():
 
 class TestShiftMethods:
 
+    def test_warnings(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+            d.add(months=2, hours=48, seconds=5, nanoseconds=3)
+        assert len(w) == 1
+
+        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+            d.subtract(months=2, hours=48, seconds=5, nanoseconds=3)
+        assert len(w) == 1
+
+        # calendar units don't trigger warning
+        d.subtract(days=10, months=3, years=1)
+        d.add(days=10, months=3, years=1)
+
+        # ignore_dst deprecated
+        with ignore_timezone_unaware_arithmetic_warning():
+            with pytest.warns(WheneverDeprecationWarning, match="ignore_dst"):
+                d.add(hours=48, seconds=5, nanoseconds=3, ignore_dst=True)
+
+            with pytest.warns(WheneverDeprecationWarning, match="ignore_dst"):
+                d.subtract(hours=48, seconds=5, nanoseconds=3, ignore_dst=True)
+
+    @ignore_timezone_unaware_arithmetic_warning()
     def test_valid(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         shifted = PlainDateTime(2020, 5, 27, 23, 12, 14, nanosecond=987_651)
 
-        assert d.add(ignore_dst=True) == d
+        assert d.add() == d
 
         assert (
             d.add(
@@ -595,14 +622,13 @@ class TestShiftMethods:
                 hours=48,
                 seconds=5,
                 nanoseconds=-3,
-                ignore_dst=True,
             )
             == shifted
         )
 
         # same result with deltas
         assert (
-            d.add(hours(48) + seconds(5) + nanoseconds(-3), ignore_dst=True)
+            d.add(hours(48) + seconds(5) + nanoseconds(-3))
             .add(months(-3))
             .add(days(10))
         ) == shifted
@@ -615,49 +641,38 @@ class TestShiftMethods:
                 hours=-48,
                 seconds=-5,
                 nanoseconds=3,
-                ignore_dst=True,
             )
             == shifted
         )
 
         # same result with deltas
         assert (
-            d.subtract(
-                hours(-48) + seconds(-5) + nanoseconds(3), ignore_dst=True
-            )
+            d.subtract(hours(-48) + seconds(-5) + nanoseconds(3))
             .subtract(months(3))
             .subtract(days(-10))
         ) == shifted
 
-        # calendar units don't require ignore_dst
         assert d.subtract(months=3) == d.add(months=-3)
 
+    @ignore_timezone_unaware_arithmetic_warning()
     def test_invalid(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d.add(hours=24 * 365 * 8000, ignore_dst=True)
+            d.add(hours=24 * 365 * 8000)
 
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d.add(hours=-24 * 365 * 3000, ignore_dst=True)
+            d.add(hours=-24 * 365 * 3000)
 
         with pytest.raises((TypeError, AttributeError)):
-            d.add(4, ignore_dst=True)  # type: ignore[call-overload]
-
-        # ignore_dst is required
-        with pytest.raises(ImplicitlyIgnoringDST):
-            d.add(hours=48, seconds=5)  # type: ignore[call-overload]
-
-        # ignore_dst is required
-        with pytest.raises(ImplicitlyIgnoringDST):
-            d.add(hours(48))  # type: ignore[call-overload]
+            d.add(4)  # type: ignore[call-overload]
 
         # mixing args/kwargs
         with pytest.raises(TypeError):
-            d.add(hours(48), seconds=5, ignore_dst=True)  # type: ignore[call-overload]
+            d.add(hours(48), seconds=5)  # type: ignore[call-overload]
 
         # tempt an i128 overflow
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d.add(nanoseconds=1 << 127 - 1, ignore_dst=True)
+            d.add(nanoseconds=1 << 127 - 1)
 
     @given(
         years=integers(),
@@ -670,17 +685,18 @@ class TestShiftMethods:
         microseconds=floats(),
         nanoseconds=integers(),
     )
+    @ignore_timezone_unaware_arithmetic_warning()
     def test_fuzzing(self, **kwargs):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         try:
-            d.add(**kwargs, ignore_dst=True)
+            d.add(**kwargs)
         except (ValueError, OverflowError):
             pass
 
 
 class TestShiftOperators:
 
-    def test_calendar_units(self):
+    def test_date_delta(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         shifted = d.replace(year=2021, day=19)
         assert d + (years(1) + weeks(1) + days(-3)) == shifted
@@ -700,6 +716,26 @@ class TestShiftOperators:
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             d + days(-366 * 8_000)
 
+    def test_timedelta(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with ignore_timezone_unaware_arithmetic_warning():
+            assert d.add(hours=48, seconds=5, nanoseconds=3) == d + TimeDelta(
+                hours=48, seconds=5, nanoseconds=3
+            )
+            assert d.subtract(
+                hours=48, seconds=5, nanoseconds=3
+            ) == d - TimeDelta(hours=48, seconds=5, nanoseconds=3)
+
+        # operators trigger warning (exactly one warning each)
+        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+            d + TimeDelta(hours=48, seconds=5, nanoseconds=3)
+        assert len(w) == 1
+
+        # operators trigger warning (exactly one warning each)
+        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+            d - TimeDelta(hours=48, seconds=5, nanoseconds=3)
+        assert len(w) == 1
+
     def test_invalid(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.raises(TypeError, match="unsupported operand type"):
@@ -709,29 +745,31 @@ class TestShiftOperators:
         with pytest.raises(TypeError, match="unsupported operand type"):
             seconds(4) + d  # type: ignore[operator]
 
-        with pytest.raises(ImplicitlyIgnoringDST, match="add"):
-            d + hours(24)  # type: ignore[operator]
-
-        with pytest.raises(ImplicitlyIgnoringDST, match="add"):
-            d - (hours(24) + months(3))  # type: ignore[operator]
-
 
 class TestDifference:
-    def test_same(self):
+    def test_method(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
         other = PlainDateTime(2020, 8, 14, 23, 12, 4, nanosecond=987_654_321)
-        assert d.difference(d, ignore_dst=True) == hours(0)
-        assert d.difference(other, ignore_dst=True) == hours(24) + seconds(
-            5
-        ) - nanoseconds(321)
+        assert d.difference(d) == hours(0)
+        assert d.difference(other) == hours(24) + seconds(5) - nanoseconds(321)
+
+        # the method is deprecated
+        with pytest.warns(WheneverDeprecationWarning, match="difference"):
+            d.difference(other)
+
+    def test_operator(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
+        other = PlainDateTime(2020, 8, 14, 23, 12, 4, nanosecond=987_654_321)
+        with ignore_timezone_unaware_arithmetic_warning():
+            assert d - d == hours(0)
+            assert d - other == hours(24) + seconds(5) - nanoseconds(321)
+
+        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+            d - other
+        assert len(w) == 1
 
     def test_invalid(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.raises(ImplicitlyIgnoringDST):
-            d.difference(d)  # type: ignore[call-arg]
-
-        with pytest.raises(ImplicitlyIgnoringDST):
-            d - d  # type: ignore[operator]
 
         with pytest.raises(TypeError):
             d - 43  # type: ignore[operator]

@@ -15,6 +15,7 @@ from whenever import (
     PlainDateTime,
     ZonedDateTime,
     hours,
+    ignore_potentially_stale_offset_warning,
     milliseconds,
     nanoseconds,
     seconds,
@@ -387,8 +388,9 @@ class TestComparison:
         d = Instant.from_utc(2020, 8, 15, 12, 30)
 
         offset_eq = d.to_fixed_offset(4)
-        offset_gt = offset_eq.replace(minute=31, ignore_dst=True)
-        offset_lt = offset_eq.replace(minute=29, ignore_dst=True)
+        with ignore_potentially_stale_offset_warning():
+            offset_gt = offset_eq.replace(minute=31)
+            offset_lt = offset_eq.replace(minute=29)
         assert d >= offset_eq
         assert d <= offset_eq
         assert not d > offset_eq

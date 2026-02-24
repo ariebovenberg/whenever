@@ -1,7 +1,7 @@
 from __future__ import annotations
 import sphinx
 
-sphinx.SPHINXBUILD = True
+sphinx.SPHINX_RUNNING = True
 
 # -- Project information -----------------------------------------------------
 import importlib.metadata

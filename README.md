@@ -150,8 +150,8 @@ ZonedDateTime("2024-07-04 12:36:56+02:00[Europe/Paris]")
 # You need to explicitly convert it and handle ambiguity.
 >>> party_invite = PlainDateTime("2023-10-28 22:00")
 >>> party_invite.add(hours=6)
-Traceback (most recent call last):
-  ImplicitlyIgnoringDST: Adjusting a local datetime implicitly ignores DST [...]
+  TimeZoneUnawareArithmeticWarning: Adjusting a local time ignores DST [...]
+PlainDateTime("2023-10-29 04:00")
 >>> party_starts = party_invite.assume_tz("Europe/Amsterdam")
 ZonedDateTime("2023-10-28 22:00:00+02:00[Europe/Amsterdam]")
 
