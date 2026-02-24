@@ -15,6 +15,8 @@ from ._core import (
     _clear_tz_cache,
     _clear_tz_cache_by_keys,
     _ignore_days_not_always_24h_warning,
+    _ignore_potentially_stale_offset_warning,
+    _ignore_timezone_unaware_arithmetic_warning,
     _patch_time_frozen,
     _patch_time_keep_ticking,
     _set_tzpath,
@@ -34,6 +36,8 @@ __all__ = [
     "clear_tzcache",
     "available_timezones",
     "ignore_days_not_always_24h_warning",
+    "ignore_potentially_stale_offset_warning",
+    "ignore_timezone_unaware_arithmetic_warning",
 ]
 
 
@@ -55,6 +59,57 @@ def ignore_days_not_always_24h_warning() -> Iterator[None]:
         yield
     finally:
         _ignore_days_not_always_24h_warning.reset(token)
+
+
+@contextmanager
+def ignore_potentially_stale_offset_warning() -> Iterator[None]:
+    """Context manager to suppress :class:`~whenever.PotentiallyStaleOffsetWarning`.
+
+    This warning is emitted when operations on an :class:`~whenever.OffsetDateTime`
+    may produce an incorrect UTC offset (e.g. shifting, rounding, replacing fields,
+    or constructing from the current time or a UNIX timestamp).
+    Use this context manager when the fixed offset is intentional and correct.
+
+    Example
+    -------
+
+    >>> from whenever import OffsetDateTime, TimeDelta
+    >>> dt = OffsetDateTime(2023, 3, 23, offset=+1)
+    >>> with ignore_potentially_stale_offset_warning():
+    ...     dt + TimeDelta(hours=1_000)  # no warning
+    """
+    token = _ignore_potentially_stale_offset_warning.set(True)
+    try:
+        yield
+    finally:
+        _ignore_potentially_stale_offset_warning.reset(token)
+
+
+@contextmanager
+def ignore_timezone_unaware_arithmetic_warning() -> Iterator[None]:
+    """Context manager to suppress :class:`~whenever.TimeZoneUnawareArithmeticWarning`.
+
+    This warning is always emitted when performing arithmetic with exact time units
+    on a :class:`~whenever.PlainDateTime`, or when measuring the difference between
+    two :class:`~whenever.PlainDateTime` values.
+    Use this context manager if you: (a) explicitly accept potentially incorrect
+    results, (b) know no timezone transitions occur in the interval, or (c) are
+    working with clock times not representing a real-world timezone.
+
+    Example
+    -------
+
+    >>> from whenever import PlainDateTime, TimeDelta
+    >>> dt = PlainDateTime(2023, 3, 23, hour=12)
+    >>> with ignore_timezone_unaware_arithmetic_warning():
+    ...     dt.add(hours=2)  # no warning
+    PlainDateTime("2023-03-23 14:00:00")
+    """
+    token = _ignore_timezone_unaware_arithmetic_warning.set(True)
+    try:
+        yield
+    finally:
+        _ignore_timezone_unaware_arithmetic_warning.reset(token)
 
 
 class _TimePatch:

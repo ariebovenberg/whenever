@@ -835,6 +835,7 @@ class ItemizedDelta(
     def __add__(self, other: Self, /) -> Self: ...
     @property
     def sign(self) -> Literal[1, 0, -1]: ...
+    # TODO: remove?
     @property
     def years(self) -> int: ...
     @property
@@ -1095,6 +1096,11 @@ class _ExactTime(ABC):
     def __gt__(self, other: _ExactTime, /) -> bool: ...
     def __ge__(self, other: _ExactTime, /) -> bool: ...
     def exact_eq(self, other: Self, /) -> bool: ...
+    def __add__(self, delta: TimeDelta, /) -> Self: ...
+    @overload
+    def __sub__(self, other: _ExactTime) -> TimeDelta: ...
+    @overload
+    def __sub__(self, other: TimeDelta, /) -> Self: ...
 
 class _ExactAndLocalTime(_ExactTime, _LocalTime, ABC):
     def to_instant(self) -> Instant: ...
@@ -1197,11 +1203,6 @@ class Instant(_PyDateTimeMixin, _ExactTime):
             "half_even",
         ] = "half_even",
     ) -> Self: ...
-    def __add__(self, delta: TimeDelta, /) -> Self: ...
-    @overload
-    def __sub__(self, other: _ExactTime) -> TimeDelta: ...
-    @overload
-    def __sub__(self, other: TimeDelta, /) -> Self: ...
 
 @final
 class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
@@ -1224,7 +1225,11 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     ) -> None: ...
     @classmethod
     def now(
-        cls, offset: int | TimeDelta, /, *, ignore_dst: Literal[True]
+        cls,
+        offset: int | TimeDelta,
+        /,
+        *,
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     @classmethod
     def from_timestamp(
@@ -1233,15 +1238,25 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         /,
         *,
         offset: int | TimeDelta,
-        ignore_dst: Literal[True],
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     @classmethod
     def from_timestamp_millis(
-        cls, i: int, /, *, offset: int | TimeDelta, ignore_dst: Literal[True]
+        cls,
+        i: int,
+        /,
+        *,
+        offset: int | TimeDelta,
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     @classmethod
     def from_timestamp_nanos(
-        cls, i: int, /, *, offset: int | TimeDelta, ignore_dst: Literal[True]
+        cls,
+        i: int,
+        /,
+        *,
+        offset: int | TimeDelta,
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     @classmethod
     def parse_strptime(cls, s: str, /, *, format: str) -> Self: ...
@@ -1259,13 +1274,21 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         second: int = ...,
         nanosecond: int = ...,
         offset: int | TimeDelta = ...,
-        ignore_dst: Literal[True],
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     def replace_date(
-        self, d: Date, /, *, ignore_dst: Literal[True]
+        self,
+        d: Date,
+        /,
+        *,
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     def replace_time(
-        self, t: Time, /, *, ignore_dst: Literal[True]
+        self,
+        t: Time,
+        /,
+        *,
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     @overload
     def add(
@@ -1281,7 +1304,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        ignore_dst: Literal[True],
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     @overload
     def add(
@@ -1294,7 +1317,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
             | DateDelta
         ),
         /,
-        ignore_dst: Literal[True],
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     @overload
     def subtract(
@@ -1310,7 +1333,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        ignore_dst: Literal[True],
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     @overload
     def subtract(
@@ -1323,7 +1346,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
             | DateDelta
         ),
         /,
-        ignore_dst: Literal[True],
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     def round(
         self,
@@ -1349,9 +1372,17 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
             "half_even",
         ] = "half_even",
         *,
-        ignore_dst: Literal[True],
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
-    def __sub__(self, other: _ExactTime, /) -> TimeDelta: ...
+    def assume_tz(
+        self,
+        tz: str,
+        /,
+        *,
+        offset_mismatch: Literal[
+            "raise", "keep_instant", "keep_local"
+        ] = "raise",
+    ) -> ZonedDateTime: ...
 
 @final
 class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
@@ -1651,13 +1682,13 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         delta: TimeDelta | DateTimeDelta | DateDelta,
         /,
     ) -> Self: ...
-    @overload
+    # we'll clean this up once the deprecated deltas are removed
+    @overload  # type: ignore[override]
     def __sub__(self, other: _ExactTime) -> TimeDelta: ...
     @overload
     def __sub__(
         self,
         other: TimeDelta | DateTimeDelta | DateDelta,
-        /,
     ) -> Self: ...
 
 @final
@@ -1723,17 +1754,15 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        ignore_dst: Literal[True],
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     @overload
     def add(
-        self, *, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0
-    ) -> Self: ...
-    @overload
-    def add(self, d: DateDelta, /) -> Self: ...
-    @overload
-    def add(
-        self, d: TimeDelta | DateTimeDelta, /, *, ignore_dst: Literal[True]
+        self,
+        d: DateDelta | TimeDelta | DateTimeDelta,
+        /,
+        *,
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     @overload
     def subtract(
@@ -1749,20 +1778,20 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        ignore_dst: Literal[True],
-    ) -> Self: ...
-    @overload
-    def subtract(
-        self, *, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     @overload
     def subtract(self, d: DateDelta, /) -> Self: ...
     @overload
     def subtract(
-        self, d: TimeDelta | DateTimeDelta, /, *, ignore_dst: Literal[True]
+        self,
+        d: TimeDelta | DateTimeDelta,
+        /,
+        *,
+        ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     def difference(
-        self, other: Self, /, *, ignore_dst: Literal[True]
+        self, other: Self, /, *, ignore_dst: Literal[True] = ...
     ) -> TimeDelta: ...
     def round(
         self,
@@ -1788,8 +1817,11 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
             "half_even",
         ] = "half_even",
     ) -> Self: ...
-    def __add__(self, delta: DateDelta, /) -> Self: ...
-    def __sub__(self, other: DateDelta, /) -> Self: ...
+    def __add__(self, delta: TimeDelta | DateDelta, /) -> Self: ...
+    @overload
+    def __sub__(self, other: TimeDelta | DateDelta, /) -> Self: ...
+    @overload
+    def __sub__(self, other: Self, /) -> TimeDelta: ...
 
 @final
 class RepeatedTime(ValueError): ...
@@ -1801,6 +1833,9 @@ class SkippedTime(ValueError): ...
 class InvalidOffsetError(ValueError): ...
 
 @final
+@deprecated(
+    "This exception is longer raised. Replaced by warnings and context managers to ignore them."
+)
 class ImplicitlyIgnoringDST(TypeError): ...
 
 # Why not a subclass of KeyError? Because:
@@ -1859,6 +1894,15 @@ def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None: ...
 def available_timezones() -> set[str]: ...
 def reset_system_tz() -> None: ...
 def ignore_days_not_always_24h_warning() -> _GeneratorContextManager[None]: ...
+def ignore_potentially_stale_offset_warning() -> (
+    _GeneratorContextManager[None]
+): ...
+def ignore_timezone_unaware_arithmetic_warning() -> (
+    _GeneratorContextManager[None]
+): ...
 
+# TODO base warnings class
 class DaysAreNotAlways24HoursWarning(UserWarning): ...
+class PotentiallyStaleOffsetWarning(UserWarning): ...
+class TimeZoneUnawareArithmeticWarning(UserWarning): ...
 class WheneverDeprecationWarning(UserWarning): ...
