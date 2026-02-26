@@ -247,6 +247,8 @@ class TestFormatIso:
             (ItemizedDelta(days=23, hours=23), "P23DT23H"),
             (ItemizedDelta(years=4), "P4Y"),
             (ItemizedDelta(seconds=0), "PT0S"),
+            (ItemizedDelta(weeks=0, seconds=0), "P0WT0S"),
+            (ItemizedDelta(weeks=0, seconds=0, nanoseconds=0), "P0WT0.0S"),
             (ItemizedDelta(months=-6), "-P6M"),
             (ItemizedDelta(minutes=-600), "-PT600M"),
         ],
@@ -334,6 +336,16 @@ class TestParseIso:
                 "P3Y6M4DT12H30M5S",
                 ItemizedDelta(
                     years=3, months=6, days=4, hours=12, minutes=30, seconds=5
+                ),
+            ),
+            (
+                "P3Y4M6WT0.03S",
+                ItemizedDelta(
+                    years=3,
+                    months=4,
+                    weeks=6,
+                    seconds=0,
+                    nanoseconds=30_000_000,
                 ),
             ),
             ("P23dt23h", ItemizedDelta(days=23, hours=23)),
@@ -858,6 +870,16 @@ def test_bool():
             ItemizedDelta(days=-5, hours=0),
             ItemizedDateDelta(days=-5),
             TimeDelta.ZERO,
+        ),
+        (
+            ItemizedDelta(hours=0),
+            None,
+            TimeDelta.ZERO,
+        ),
+        (
+            ItemizedDelta(nanoseconds=1),
+            None,
+            TimeDelta(nanoseconds=1),
         ),
     ],
 )

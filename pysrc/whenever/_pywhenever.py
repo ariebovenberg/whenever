@@ -1403,6 +1403,11 @@ class Time(_Base):
 
         `fold` value is ignored.
         """
+        self = _object_new(cls)
+        self._init_from_py(t)
+        return self
+
+    def _init_from_py(self, t: _time, /) -> None:
         if type(t) is _time:
             t = t.replace(tzinfo=None, fold=0)
         elif isinstance(t, _time):
@@ -1410,8 +1415,8 @@ class Time(_Base):
             t = _time(t.hour, t.minute, t.second, t.microsecond)
         else:
             raise TypeError(f"Expected datetime.time, got {type(t)!r}")
-        return cls._from_py_unchecked(
-            t.replace(microsecond=0), t.microsecond * 1_000
+        return self._init_from_inner(
+            (t.replace(microsecond=0), t.microsecond * 1_000)
         )
 
     def format_iso(
@@ -1540,18 +1545,6 @@ class Time(_Base):
             )
         next_day, ns_since_midnight = divmod(floor, day_in_ns)
         return self._from_ns_since_midnight(ns_since_midnight), next_day
-
-    def _init_from_py(self, t: _time, /) -> None:
-        if type(t) is _time:
-            t = t.replace(tzinfo=None, fold=0)
-        elif isinstance(t, _time):
-            # subclass-safe way to ensure we have exactly a datetime.time
-            t = _time(t.hour, t.minute, t.second, t.microsecond)
-        else:
-            raise TypeError(f"Expected datetime.time, got {type(t)!r}")
-        return self._init_from_inner(
-            (t.replace(microsecond=0), t.microsecond * 1_000)
-        )
 
     @classmethod
     def _from_py_unchecked(cls, t: _time, nanos: int, /) -> Time:
@@ -1978,10 +1971,10 @@ class TimeDelta(_Base):
         """
         if not units:
             raise ValueError("At least one unit must be specified")
-        elif any(u and not u.endswith("s") for u in units):
-            raise ValueError("All units must be plural")
         elif isinstance(units, str):  # Hard to debug if not caught here
             raise TypeError("Units must be a sequence, not a string")
+        elif any(u and not u.endswith("s") for u in units):
+            raise ValueError("All units must be plural")
         elif sorted(units, key=lambda u: _unit_index(u, EXACT_UNITS)) != list(
             units
         ):
@@ -3100,7 +3093,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
     # These methods defer to the base class implementations, but need to be
     # documented here for the API docs.
-    if not TYPE_CHECKING:
+    if not TYPE_CHECKING:  # pragma: no cover
         if SPHINX_RUNNING:
 
             def keys(self) -> KeysView[DeltaUnitStr]:
@@ -4159,7 +4152,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
     # These methods defer to the base class implementations, but need to be
     # documented here for the API docs.
-    if not TYPE_CHECKING:
+    if not TYPE_CHECKING:  # pragma: no cover
         if SPHINX_RUNNING:
 
             def keys(self) -> KeysView[DateDeltaUnitStr]:
@@ -4568,12 +4561,12 @@ def _check_component(
         return None, sign
     elif value == 0:
         return 0, sign
-    if value < 0:
+    elif value < 0:
         if sign == 1:
             raise ValueError("Mixed sign in delta")
         value = -value
         sign = -1
-    elif value > 0:
+    else:  # value > 0
         if sign == -1:
             raise ValueError("Mixed sign in delta")
         sign = 1
@@ -5084,7 +5077,7 @@ class _BasicConversions(_Base, ABC):
 
     @abstractmethod
     def _init_from_py(self, d: _datetime) -> None:
-        pass
+        raise NotImplementedError()
 
 
 # Methods for types that know a local date and time-of-day:
@@ -6640,7 +6633,7 @@ class OffsetDateTime(_ExactAndLocalTime):
                 f"Offset mismatch: timezone {tz!r} has offset {offset_actual}, "
                 f"but offset {offset_expected} was expected"
             )
-        elif offset_mismatch == "keep_local":
+        else:  # offset_mismatch == "keep_local":
             return self.to_plain().assume_tz(tz)
 
     def __repr__(self) -> str:
@@ -8718,7 +8711,7 @@ _ExactTimeAlias = Union[Instant, OffsetDateTime, ZonedDateTime]
 # also because these internal modules aren't available in the Rust version!
 # This does mess up sphinx autodoc's introspection a bit, so we fix that below.
 # see https://github.com/sphinx-doc/sphinx/issues/3673
-if not SPHINX_RUNNING:
+if not SPHINX_RUNNING:  # pragma: no branch
     for name in __all__ + "_LocalTime _ExactTime _ExactAndLocalTime".split():
         member = locals()[name]
         if (

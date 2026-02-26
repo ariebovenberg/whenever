@@ -756,7 +756,7 @@ class TestParseIso:
             TimeDelta.parse_iso(s)
 
 
-class TestAddition:
+class TestAddSubtract:
 
     @pytest.mark.parametrize(
         "kwargs, expected",
@@ -805,6 +805,9 @@ class TestAddition:
 
         with pytest.raises(TypeError, match="mix"):
             d.add(TimeDelta(hours=1), minutes=2)  # type: ignore[call-overload]
+
+        with pytest.raises(TypeError, match="mix"):
+            d.subtract(TimeDelta(hours=1), minutes=2)  # type: ignore[call-overload]
 
     def test_operator_not_supported(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
@@ -1348,7 +1351,7 @@ def test_abs():
     assert abs(TimeDelta(hours=1)) == TimeDelta(hours=1)
 
 
-class TestItemize:
+class TestInUnits:
 
     @pytest.mark.parametrize(
         "delta, units, kwargs, expected",
@@ -1617,6 +1620,11 @@ class TestItemize:
             d.in_units(
                 ["hours", "seconds", "nanoseconds"], round_unit="foo"  # type: ignore[arg-type]
             )
+
+    def test_non_sequence_units(self):
+        d = TimeDelta(hours=1)
+        with pytest.raises(TypeError, match="sequence"):
+            d.in_units("hours")  # type: ignore[arg-type]
 
 
 def test_copy():

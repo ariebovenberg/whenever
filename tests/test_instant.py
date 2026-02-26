@@ -42,13 +42,18 @@ pytestmark = pytest.mark.filterwarnings(
 )
 
 
-def test_init_is_parse_iso():
+def test_init_parses_iso():
     assert Instant("2020-08-15T12:30:45Z") == Instant.from_utc(
         2020, 8, 15, 12, 30, 45
     )
 
+    # __init__ takes no UTC time (use from_utc for that)
     with pytest.raises(TypeError):
         Instant(2020, 3, 4)  # type: ignore[call-overload]
+
+    # __init__ takes no invalid types
+    with pytest.raises(TypeError):
+        Instant(0)  # type: ignore[call-overload]
 
 
 class TestFromUTC:
