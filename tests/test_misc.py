@@ -58,6 +58,7 @@ def test_type_aliases():
     from whenever import DisambiguateStr  # noqa
     from whenever import ExactDeltaUnitStr  # noqa
     from whenever import RoundModeStr  # noqa
+    from whenever import OffsetMismatchStr  # noqa
 
 
 def test_exceptions():

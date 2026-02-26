@@ -8,6 +8,7 @@ __all__ = [
     "DateDeltaUnitStr",
     "ExactDeltaUnitStr",
     "DisambiguateStr",
+    "OffsetMismatchStr",
 ]
 
 
