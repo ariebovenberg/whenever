@@ -127,7 +127,7 @@ __all__ = [
     "microseconds",
     "nanoseconds",
     # Exceptions/warnings
-    "DaysAreNotAlways24HoursWarning",
+    "DaysNotAlways24HoursWarning",
     "PotentiallyStaleOffsetWarning",
     "TimeZoneUnawareArithmeticWarning",
     "PotentialDstBugWarning",
@@ -159,7 +159,14 @@ class Weekday(enum.Enum):
     All members are also available as constants in the module namespace:
 
     >>> from whenever import Weekday, MONDAY, SUNDAY
+    >>> MONDAY is Weekday.MONDAY
+    True
 
+    :class:`~whenever.Date` and other date-carrying types return
+    ``Weekday`` from their :meth:`~whenever.Date.day_of_week` method:
+
+    >>> Date(2024, 12, 25).day_of_week()
+    Weekday.WEDNESDAY
     """
 
     MONDAY = 1
@@ -279,12 +286,25 @@ class Date(_Base):
     >>> d = Date(2021, 1, 2)
     Date("2021-01-02")
 
-    Can also be constructed directly from an ISO 8601 string,
-    or from a standard library :class:`~datetime.date`:
+    Can also be constructed from an ISO 8601 string
+    or a standard library :class:`~datetime.date`:
 
     >>> Date("2021-01-02")
     Date("2021-01-02")
     >>> Date(date(2021, 1, 2))
+    Date("2021-01-02")
+
+    Dates support arithmetic with :class:`~whenever.ItemizedDateDelta`:
+
+    >>> delta = Date("2021-02-28").since(Date("1994-05-15"), units=["years", "days"])
+    ItemizedDateDelta("P26y289d")
+    >>> Date("1994-05-15").add(delta)
+    Date("2021-02-28")
+
+    Dates can be compared and sorted:
+
+    >>> Date(2021, 1, 2) > Date(2021, 1, 1)
+    True
     """
 
     __slots__ = ("_py_date",)
@@ -916,11 +936,17 @@ Date.MAX = Date._from_py_unchecked(_date.max)
 
 @final
 class YearMonth(_Base):
-    """A year and month without a day component
+    """A year and month without a day component.
 
-    Useful for representing recurring events or billing periods.
+    Useful for representing recurring events, billing periods,
+    or any concept that doesn't need a specific day.
 
     >>> ym = YearMonth(2021, 1)
+    YearMonth("2021-01")
+
+    Can also be constructed from an ISO 8601 string:
+
+    >>> YearMonth("2021-01")
     YearMonth("2021-01")
     """
 
@@ -1091,9 +1117,15 @@ _DUMMY_LEAP_YEAR = 4
 class MonthDay(_Base):
     """A month and day without a year component.
 
-    Useful for representing recurring events or birthdays.
+    Useful for representing recurring annual events such as
+    birthdays, holidays, or anniversaries.
 
-    >>> MonthDay(11, 23)
+    >>> md = MonthDay(11, 23)
+    MonthDay("--11-23")
+
+    Can also be constructed from an ISO 8601 string:
+
+    >>> MonthDay("--11-23")
     MonthDay("--11-23")
     """
 
@@ -1284,11 +1316,30 @@ MonthDay.MAX = MonthDay._from_py_unchecked(
 
 @final
 class Time(_Base):
-    """Time of day without a date component
+    """Time of day without a date component.
 
     >>> t = Time(12, 30, 0)
-    Time(12:30:00)
+    Time("12:30:00")
 
+    Can also be constructed from an ISO 8601 string:
+
+    >>> Time("12:30:00")
+    Time("12:30:00")
+
+    Or a standard library :class:`~datetime.time`:
+
+    >>> Time(time(12, 30, 0))
+    Time("12:30:00")
+
+    Sub-second precision up to nanoseconds is supported:
+
+    >>> Time(12, 30, 0, nanosecond=1)
+    Time("12:30:00.000000001")
+
+    Times can be compared and sorted:
+
+    >>> Time(12, 30) > Time(8, 0)
+    True
     """
 
     __slots__ = ("_py", "_nanos")
@@ -1643,6 +1694,18 @@ class TimeDelta(_Base):
     >>> d.total("minutes")
     150.0
 
+    Can also be constructed from an ISO 8601 duration string
+    or a standard library :class:`~datetime.timedelta`:
+
+    >>> TimeDelta("PT2h30m")
+    TimeDelta("PT2h30m")
+
+    ``TimeDelta`` can be added to or subtracted from datetime types
+    to shift them by an exact amount of time:
+
+    >>> Instant("2022-10-24 00:00Z") + TimeDelta(hours=3)
+    Instant("2022-10-24 03:00:00Z")
+
     Note
     ----
     A shorter way to instantiate a timedelta is to use the helper functions
@@ -1771,9 +1834,7 @@ class TimeDelta(_Base):
                 ) * sign
             elif unit in ("days", "weeks"):
                 if not _ignore_days_not_always_24h_warning.get():
-                    warn(
-                        DaysAreNotAlways24HoursWarning(DAYS_NOT_ALWAYS_24H_MSG)
-                    )
+                    warn(DaysNotAlways24HoursWarning(DAYS_NOT_ALWAYS_24H_MSG))
             else:
                 raise ValueError(
                     f"Cannot convert TimeDelta to {unit!r} without a `relative_to` parameter"
@@ -1995,7 +2056,7 @@ class TimeDelta(_Base):
         ) and not _ignore_days_not_always_24h_warning.get():
             warn(
                 DAYS_NOT_ALWAYS_24H_MSG,
-                DaysAreNotAlways24HoursWarning,
+                DaysNotAlways24HoursWarning,
                 stacklevel=2,
             )
 
@@ -2195,7 +2256,7 @@ class TimeDelta(_Base):
         ):
             warn(
                 DAYS_NOT_ALWAYS_24H_MSG,
-                DaysAreNotAlways24HoursWarning,
+                DaysNotAlways24HoursWarning,
                 stacklevel=2,
             )
         increment_ns = increment_to_ns_for_delta(unit, increment)
@@ -2475,11 +2536,14 @@ TimeDelta.MIN = TimeDelta(seconds=-9999 * 366 * 24 * 3_600)
 @final
 class DateDelta(_Base):
     """A duration of time consisting of calendar units
-    (years, months, weeks, and days)
+    (years, months, weeks, and days).
 
     .. deprecated:: 0.10.0
 
         Use :class:`ItemizedDateDelta` instead.
+        ``DateDelta`` normalizes its inputs (e.g. 14 months becomes
+        1 year and 2 months), losing the original fields.
+        ``ItemizedDateDelta`` preserves the exact fields it was created with.
     """
 
     __slots__ = ("_months", "_days")
@@ -2910,7 +2974,13 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     >>> ItemizedDelta(years=1, days=-3)
     ValueError: All fields must have the same sign
 
-    TODO describe limitations, link to docs on delta
+    Note
+    ----
+    Unlike :class:`TimeDelta`, ``ItemizedDelta`` does not normalize
+    its fields. This means that ``ItemizedDelta(hours=90)`` and
+    ``ItemizedDelta(days=3, hours=18)`` are considered different values.
+    To convert to a normalized form, use :meth:`in_units`.
+    See also the `delta documentation <https://whenever.rtfd.io/en/latest/guide/deltas.html>`_.
     """
 
     __slots__ = (
@@ -3822,7 +3892,13 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     >>> ItemizedDateDelta(years=1, days=-3)
     ValueError: All fields must have the same sign
 
-    TODO describe limitations, like to delta docs
+    Note
+    ----
+    Unlike :class:`DateDelta`, ``ItemizedDateDelta`` does not normalize
+    its fields. This means that ``ItemizedDateDelta(months=14)`` and
+    ``ItemizedDateDelta(years=1, months=2)`` are considered different values.
+    To convert to a normalized form, use :meth:`in_units`.
+    See also the `delta documentation <https://whenever.rtfd.io/en/latest/guide/deltas.html>`_.
     """
 
     __slots__ = (
@@ -4456,7 +4532,15 @@ def _check_component(
 
 @final
 class DateTimeDelta(_Base):
-    """A duration with both a date and time component."""
+    """A duration with both a date and time component.
+
+    .. deprecated:: 0.10.0
+
+        Use :class:`ItemizedDelta` instead.
+        ``DateTimeDelta`` normalizes its inputs separately for the date
+        and time parts, losing the original fields.
+        ``ItemizedDelta`` preserves the exact fields it was created with.
+    """
 
     __slots__ = ("_date_part", "_time_part")
 
@@ -5400,16 +5484,33 @@ class _ExactAndLocalTime(_LocalTime, _ExactTime):
 
 @final
 class Instant(_ExactTime):
-    """Represents a moment in time with nanosecond precision.
+    """A moment in time, independent of any timezone or calendar.
 
-    This class is great for representing a specific point in time independent
-    of location. It maps 1:1 to UTC or a UNIX timestamp.
+    This is the right type when you only care about *when* something happened,
+    not the local date or time. It maps 1:1 to a UNIX timestamp.
 
     >>> from whenever import Instant
     >>> py311_release = Instant.from_utc(2022, 10, 24, hour=17)
     Instant("2022-10-24 17:00:00Z")
     >>> py311_release.add(hours=3).timestamp()
     1666641600
+
+    Can also be constructed from an ISO 8601 string, a UNIX timestamp,
+    or a standard library :class:`~datetime.datetime`:
+
+    >>> Instant("2022-10-24T17:00:00Z")
+    Instant("2022-10-24 17:00:00Z")
+
+    Convert to other types for local date/time information:
+
+    >>> py311_release.to_tz("US/Pacific")
+    ZonedDateTime("2022-10-24 10:00:00-07:00[US/Pacific]")
+
+    Note
+    ----
+    Although the debug representation uses UTC, ``Instant`` does *not* have
+    ``.year``, ``.hour``, or other calendar attributes—it is not a UTC datetime.
+    See the `FAQ <https://whenever.rtfd.io/en/latest/faq.html#why-doesn-t-instant-have-year-hour-etc>`_.
     """
 
     __slots__ = ()
@@ -5521,7 +5622,7 @@ class Instant(_ExactTime):
         """Parse an ISO 8601 string. Supports basic and extended formats,
         but not week dates or ordinal dates.
 
-        See the `docs on ISO8601 support <https://whenever.readthedocs.io/en/latest/overview.html#iso-8601>`__ for more information.
+        See the `docs on ISO8601 support <https://whenever.rtfd.io/en/latest/reference/iso8601.html>`__ for more information.
 
         The inverse of the ``format_iso()`` method.
         """
@@ -5609,7 +5710,7 @@ class Instant(_ExactTime):
     ) -> Instant:
         """Add a time amount to this instant.
 
-        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`__ for more information.
+        See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
         """
         return self + TimeDelta(
             hours=hours,
@@ -5632,7 +5733,7 @@ class Instant(_ExactTime):
     ) -> Instant:
         """Subtract a time amount from this instant.
 
-        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`__ for more information.
+        See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
         """
         return self.add(
             hours=-hours,
@@ -5685,7 +5786,7 @@ class Instant(_ExactTime):
     def __add__(self, delta: TimeDelta) -> Instant:
         """Add a time amount to this datetime.
 
-        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`__ for more information.
+        See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
         """
         if isinstance(delta, TimeDelta):
             delta_secs, nanos = divmod(
@@ -5709,7 +5810,7 @@ class Instant(_ExactTime):
     ) -> Instant | TimeDelta:
         """Subtract another exact time or timedelta
 
-        See the `docs on arithmetic <https://whenever.readthedocs.io/en/latest/overview.html#arithmetic>`__ for more information.
+        See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
 
         >>> d = Instant.from_utc(2020, 8, 15, hour=23, minute=12)
         >>> d - hours(24) - seconds(5)
@@ -5755,19 +5856,33 @@ def _unpkl_inst(data: bytes) -> Instant:
 @final
 class OffsetDateTime(_ExactAndLocalTime):
     """A datetime with a fixed UTC offset.
-    Useful for representing a "static" local date and time-of-day
-    at a specific location.
+
+    Useful for representing a moment in time together with the local
+    date and time as observed at that offset. The offset is fixed and
+    does not account for DST transitions.
 
     >>> # Midnight in Salt Lake City
     >>> OffsetDateTime(2023, 4, 21, offset=-6)
     OffsetDateTime("2023-04-21 00:00:00-06:00")
 
-    Note
-    ----
-    Adjusting instances of this class do *not* account for daylight saving time.
-    If you need to add or subtract durations from an offset datetime
-    and account for DST, convert to a ``ZonedDateTime`` first
-    using :meth:`assume_tz`. This class knows when the offset changes.
+    Can also be constructed from an ISO 8601 string
+    or a standard library :class:`~datetime.datetime`:
+
+    >>> OffsetDateTime("2023-04-21T00:00:00-06:00")
+    OffsetDateTime("2023-04-21 00:00:00-06:00")
+
+    Convert to :class:`~whenever.ZonedDateTime` for DST-aware operations:
+
+    >>> dt = OffsetDateTime(2023, 4, 21, offset=-6)
+    >>> dt.assume_tz("US/Mountain")
+    ZonedDateTime("2023-04-21 00:00:00-06:00[US/Mountain]")
+
+    Important
+    ---------
+    Operations that shift, round, or replace fields of this type keep the
+    original offset, which may become stale if DST rules have changed.
+    Use :meth:`assume_tz` to convert to a ``ZonedDateTime`` first if you
+    need DST-aware arithmetic.
     """
 
     __slots__ = ()
@@ -6631,9 +6746,11 @@ def _unpkl_offset(data: bytes) -> OffsetDateTime:
 
 @final
 class ZonedDateTime(_ExactAndLocalTime):
-    """A datetime associated with a timezone in the IANA database.
-    Useful for representing the exact time at a specific location,
-    and for performing DST-aware arithmetic.
+    """A datetime associated with a timezone from the IANA database.
+
+    This is the right type when you need both the exact moment *and*
+    the local date/time at a specific location. Arithmetic is fully
+    DST-aware: the offset is always kept in sync with the timezone rules.
 
     >>> ZonedDateTime("2024-12-08T11[Europe/Paris]")
     ZonedDateTime("2024-12-08 11:00:00+01:00[Europe/Paris]")
@@ -6644,10 +6761,18 @@ class ZonedDateTime(_ExactAndLocalTime):
     >>> ZonedDateTime(datetime(2020, 8, 15, 23, 12, tzinfo=ZoneInfo("Europe/London")))
     ZonedDateTime("2020-08-15 23:12:00+01:00[Europe/London]")
 
+    Convert to other types to discard timezone information:
+
+    >>> d = ZonedDateTime(2024, 7, 1, 12, tz="Europe/Amsterdam")
+    >>> d.to_instant()
+    Instant("2024-07-01 10:00:00Z")
+    >>> d.to_plain()
+    PlainDateTime("2024-07-01 12:00:00")
+
     Important
     ---------
     To use this type properly, read more about
-    `ambiguity in timezones <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`_.
+    `ambiguity in timezones <https://whenever.rtfd.io/en/latest/guide/ambiguity.html>`_.
     """
 
     __slots__ = ("_tz",)
@@ -6984,7 +7109,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         By default, if the tz remains the same, the offset is used to disambiguate
         if possible, falling back to the "compatible" strategy if needed.
 
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`__
+        See `the documentation <https://whenever.rtfd.io/en/latest/guide/ambiguity.html>`__
         for more information.
         """
 
@@ -7026,7 +7151,7 @@ class ZonedDateTime(_ExactAndLocalTime):
     ) -> ZonedDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
 
-        See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`__
+        See `the docs <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__
         for more information.
         """
         if isinstance(delta, TimeDelta):
@@ -7059,7 +7184,7 @@ class ZonedDateTime(_ExactAndLocalTime):
     ) -> _ExactTimeAlias | TimeDelta:
         """Subtract another datetime or duration.
 
-        See `the docs <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`__
+        See `the docs <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__
         for more information.
         """
         if isinstance(other, _ExactTime):
@@ -7105,7 +7230,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         Therefore, when adding calendar units, it's recommended to
         specify how to handle such a situation using the ``disambiguate`` argument.
 
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#arithmetic>`__
+        See `the documentation <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__
         for more information.
         """
         return self._shift(1, *args, **kwargs)
@@ -7560,24 +7685,37 @@ def _unpkl_zoned(data: bytes, tzid: str) -> ZonedDateTime:
 
 @final
 class PlainDateTime(_LocalTime):
-    """A combination of date and time-of-day, without a timezone.
+    """A date and time-of-day without any timezone information.
 
-    Can be used to represent local time, i.e. how time appears to people
-    on a wall clock.
+    Represents "wall clock" time as people observe it locally.
+    It can't be mixed with exact-time types (e.g. ``Instant``,
+    ``ZonedDateTime``) without explicitly assuming a timezone or offset.
 
-    It can't be mixed with exact time types (e.g. ``Instant``, ``ZonedDateTime``)
-    Conversion to exact time types can only be done by
-    explicitly assuming a timezone or offset.
+    >>> PlainDateTime(2024, 3, 10, 15, 30)
+    PlainDateTime("2024-03-10 15:30:00")
 
-    Examples of when to use this type:
+    Can also be constructed from an ISO 8601 string
+    or a standard library :class:`~datetime.datetime`:
 
-    - You need to express a date and time as it would be observed locally
-      on the "wall clock" or calendar.
-    - You receive a date and time without any timezone information,
-      and you need a type to represent this lack of information.
-    - In the rare case you truly don't need to account for timezones,
-      or Daylight Saving Time transitions. For example, when modeling
-      time in a simulation game.
+    >>> PlainDateTime("2024-03-10T15:30:00")
+    PlainDateTime("2024-03-10 15:30:00")
+
+    Convert to an exact time type by supplying a timezone or offset:
+
+    >>> dt = PlainDateTime(2024, 3, 10, 15, 30)
+    >>> dt.assume_tz("Europe/Amsterdam")
+    ZonedDateTime("2024-03-10 15:30:00+01:00[Europe/Amsterdam]")
+    >>> dt.assume_fixed_offset(5)
+    OffsetDateTime("2024-03-10 15:30:00+05:00")
+
+    When to use this type:
+
+    - You need to express a date and time as it would appear on a
+      wall clock, independent of timezone.
+    - You receive a datetime without timezone information and need
+      to represent this lack of information in the type system.
+    - You're working in a context where timezones and DST
+      transitions truly don't apply (e.g. a simulation).
     """
 
     # Overloads are for a nice autodoc
@@ -8158,7 +8296,7 @@ class PlainDateTime(_LocalTime):
         The local time may be ambiguous in the given timezone
         (e.g. during a DST transition). You can explicitly
         specify how to handle such a situation using the ``disambiguate`` argument.
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`__
+        See `the documentation <https://whenever.rtfd.io/en/latest/guide/ambiguity.html>`__
         for more information.
 
         >>> d = PlainDateTime(2020, 8, 15, 23, 12)
@@ -8182,7 +8320,7 @@ class PlainDateTime(_LocalTime):
         The local time may be ambiguous in the system timezone
         (e.g. during a DST transition). You can explicitly
         specify how to handle such a situation using the ``disambiguate`` argument.
-        See `the documentation <https://whenever.rtfd.io/en/latest/overview.html#ambiguity-in-timezones>`__
+        See `the documentation <https://whenever.rtfd.io/en/latest/guide/ambiguity.html>`__
         for more information.
 
         >>> d = PlainDateTime(2020, 8, 15, 23, 12)
@@ -8273,18 +8411,47 @@ _ignore_timezone_unaware_arithmetic_warning: ContextVar[bool] = ContextVar(
 
 
 class PotentialDstBugWarning(UserWarning):
-    """Base class for warnings about potential DST-related bugs in user code."""
+    """Base class for warnings about potential DST-related bugs in user code.
+
+    This is not raised directly, but serves as the parent for
+    :class:`~whenever.DaysNotAlways24HoursWarning`,
+    :class:`~whenever.PotentiallyStaleOffsetWarning`, and
+    :class:`~whenever.TimeZoneUnawareArithmeticWarning`.
+    You can catch or filter all DST-related warnings at once
+    by targeting this class.
+    """
 
 
-# TODO: make this docstring as nice as the other warnings
-class DaysAreNotAlways24HoursWarning(PotentialDstBugWarning):
-    """An operation assumed days are always 24 hours long"""
+class DaysNotAlways24HoursWarning(PotentialDstBugWarning):
+    """Raised when a :class:`~whenever.TimeDelta` operation assumes
+    that calendar days are always exactly 24 hours long.
+
+    Due to DST transitions, a calendar day in a specific timezone
+    can be 23 or 25 hours (or even other lengths in rare cases).
+    When you add days using exact-time arithmetic (i.e. treating
+    each day as 86,400 seconds), the result may be off by the
+    length of the DST transition.
+
+    The typical fix is to use calendar-based arithmetic
+    (e.g. :class:`~whenever.ItemizedDelta`) instead of exact-time
+    shifts when the number of calendar days matters.
+    Suppress this warning with the
+    :func:`~whenever.ignore_days_are_not_always_24_hours_warning` context
+    manager (or Python's standard warning filters) if 24-hour days are
+    intentional.
+    """
 
 
 # A custom warnings class to prevent silent deprecation warnings in user code.
 # See https://sethmlarson.dev/deprecations-via-warnings-dont-work-for-python-libraries
 class WheneverDeprecationWarning(UserWarning):
-    """A deprecated feature of the Whenever library was used."""
+    """Raised when a deprecated feature of the ``whenever`` library is used.
+
+    This is a custom warning class (not a subclass of
+    :class:`DeprecationWarning`) so that deprecation warnings from this
+    library are visible by default—unlike standard ``DeprecationWarning``,
+    which Python silences in production code.
+    """
 
 
 # TODO: can the names be a bit shorter? Everything related (e.g. context managers) have also looooong names
@@ -8336,7 +8503,12 @@ class TimeZoneUnawareArithmeticWarning(PotentialDstBugWarning):
 
 
 class ImplicitlyIgnoringDST(TypeError):
-    """A calculation was performed that implicitly ignored DST"""
+    """Raised when an operation would silently ignore DST transitions.
+
+    .. deprecated:: 0.10.0
+
+       This exception is deprecated and will be removed in a future version.
+    """
 
 
 OFFSET_NOW_STALE_MSG = (

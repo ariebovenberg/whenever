@@ -1,13 +1,16 @@
 # FAQ
 
-TODO: improve the flow of each of these sections.
+```{eval-rst}
+.. currentmodule:: whenever
+```
+
 
 ## Does performance really matter for a datetime library?
 
 Most of the time, datetime handling isn't the main bottleneck in Python
-programs---but then again, very few things are. Still, datetime logic is
-arithmetic-heavy and often applied in bulk, making it a classic case
-where faster code pays off. That's why many core Python components are
+programs---but datetime logic is arithmetic-heavy and often applied in bulk,
+making it a classic case where faster code pays off.
+That's why many core Python components are
 backed by optimized implementations, and why this library offers a Rust
 version for speed alongside a pure-Python version for portability.
 
@@ -21,30 +24,70 @@ a free-threaded Python environment.
 ## Why does {class}`~whenever.Instant` exist?
 
 Since you can also express a moment in time using
-{class}`~whenever.ZonedDateTime` you might
+{class}`~whenever.ZonedDateTime`, you might
 wonder why {class}`~whenever.Instant` exists.
 The reason it exists is precisely *because* it doesn't include a
 timezone. By using {class}`~whenever.Instant`,
-you clearly express that you only care about when something happened,
-and don't care about the local time.
+you clearly express that you only care about *when* something happened,
+not about the local time.
 
-Consider the difference in intent between these two classes:
-
-```python
-class ChatMessage:
-    sent: Instant
-```
+Consider the difference in intent:
 
 ```python
 class ChatMessage:
-    sent: ZonedDateTime
+    sent: Instant       # only the moment matters
+
+class CalendarEvent:
+    start: ZonedDateTime  # the local time matters too
 ```
 
 In the first example, it's clear that you only care about the moment
-when chat messages were sent. In the second, you communicate that you
+a message was sent. In the second, you communicate that you
 also store the user's local time. This intent is crucial for reasoning
 about the code, and extending it correctly (e.g. with migrations, API
 endpoints, etc).
+
+(faq-instant-no-local)=
+## Why doesn't {class}`~whenever.Instant` have `.year`, `.hour`, etc.?
+
+An instant represents a specific moment in time,
+independent of any calendar system or timezone.
+Although its debug representation uses UTC,
+that's just a convenient way to display it—it doesn't
+mean the instant *is* a UTC datetime.
+
+```python
+>>> now = Instant.now()
+Instant("2026-01-23 05:30:15Z")
+>>> now.year
+AttributeError: 'Instant' object has no attribute 'year'
+```
+
+If you need to access calendar fields, convert to a datetime type first:
+
+```python
+>>> now.to_tz("Europe/Amsterdam").year
+2026
+>>> now.to_fixed_offset(0).hour  # only if you truly need UTC fields
+5
+```
+
+(faq-to-vs-assume)=
+## Why are conversions called `to_*` and `assume_*`?
+
+When converting between types, `whenever` uses two naming conventions:
+
+- **`to_*`** methods convert between types that already carry enough
+  information to determine the result unambiguously.
+  For example, {meth}`ZonedDateTime.to_instant`
+  can compute the exact moment because the timezone is known.
+- **`assume_*`** methods convert from types that *lack* information.
+  The developer must supply the missing piece (a timezone, an offset).
+  For example, {meth}`~whenever.PlainDateTime.assume_tz` requires you to
+  specify which timezone the plain datetime is in.
+
+The `assume_*` naming is intentional: it signals that you're making
+an assumption that the library can't verify for you.
 
 ## Why the name `PlainDateTime`?
 
@@ -156,32 +199,30 @@ should consult its documentation on opting out of binary wheels.
 
 ## What about `dateutil`?
 
-It isn't included it in the comparison since dateutil is more of an
-*extension* to datetime, while `whenever` (and Pendulum and Arrow) are
-more like replacements.
+`dateutil` is more of an *extension* to `datetime` than a replacement,
+so it isn't included in the comparison with Pendulum and Arrow.
 
-That said, here are my thoughts on dateutil: while it certainly provides
-useful helpers (especially for parsing and arithmetic), it doesn't
-solve the (IMHO) most glaring issues with the standard library:
-DST-safety and typing for naive/aware. These are issues that only a full
-replacement can solve.
+That said, while dateutil certainly provides useful helpers
+(especially for parsing and arithmetic), it doesn't address
+the most fundamental issues with the standard library:
+DST-safety and type-level distinction between naive and aware datetimes.
+These are issues that only a full replacement can solve.
 
 ## Why not simply wrap Rust's `jiff` library?
 
-Jiff is a modern datetime library in Rust with similar goals and
-inspiration as `whenever`. There are several reasons that `whenever`
-doesn't simply wrap jiff though:
+Jiff is a modern Rust datetime library with similar goals and
+inspiration as `whenever`. There are several reasons `whenever`
+doesn't wrap it:
 
-1.  Jiff didn't exist when *whenever* was created. Wrapping jiff was
-    only an option after most of the functionality was already
-    implemented.
-2.  In order to provide a pure-Python version of `whenever`, jiff's
-    logic would need to be re-implemented in Python--and kept in sync.
+1.  Jiff didn't exist when `whenever` was created. Wrapping it was
+    only an option after most functionality was already implemented.
+2.  Providing a pure-Python version of `whenever` would require
+    re-implementing jiff's logic in Python and keeping them in sync.
 3.  Jiff has a slightly different design philosophy, most notably
     de-emphasizing the difference between offset and zoned datetimes.
 4.  Jiff can't make use of Python's bundled timezone database
     (`tzdata`) if present.
-5.  Writing a rust library with Python bindings primarily in mind allows
+5.  Writing a Rust library with Python bindings primarily in mind allows
     for some optimizations.
 
 If you're interested in a straightforward wrapper around jiff, check
@@ -212,14 +253,12 @@ instead, which don't come with the same mathematical expectations:
 
 ## Why can't I subclass `whenever` classes?
 
-`whenever` classes aren't meant to be subclassed. There\'s no plan to
-change this due to the following reasons:
+`whenever` classes are marked `final` and aren't designed for subclassing.
+This is for several reasons:
 
-1.  The benefits of subclassing are limited. If you want to extend the
-    classes, composition is a better way to do it. Alternatively, you
-    can use Python's dynamic features to create something that behaves
-    like a subclass.
-2.  For a class to support subclassing properly, a lot of extra work is
-    needed. It also adds many subtle ways to misuse the API, that are
-    hard to control.
+1.  Composition is a better way to extend the classes. Python's dynamic
+    features also make it easy to create something that behaves like
+    a subclass.
+2.  Properly supporting subclassing requires a lot of extra work, and
+    adds subtle ways to misuse the API.
 3.  Enabling subclassing would undo some performance optimizations.

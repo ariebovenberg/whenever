@@ -1455,14 +1455,3 @@ def test_cannot_subclass():
 
         class Subclass(PlainDateTime):  # type: ignore[misc]
             pass
-
-
-def test_deprecated_old_names():
-    with pytest.deprecated_call(match="PlainDateTime"):
-        from whenever import (  # type: ignore[attr-defined]  # noqa
-            NaiveDateTime,
-        )
-    with pytest.deprecated_call(match="PlainDateTime"):
-        from whenever import (  # type: ignore[attr-defined]  # noqa
-            LocalDateTime,
-        )

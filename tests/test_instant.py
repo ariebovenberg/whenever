@@ -13,6 +13,7 @@ from whenever import (
     Instant,
     OffsetDateTime,
     PlainDateTime,
+    WheneverDeprecationWarning,
     ZonedDateTime,
     hours,
     ignore_potentially_stale_offset_warning,
@@ -712,6 +713,11 @@ class TestShiftOperators:
 
 
 class TestDifference:
+
+    def test_is_deprecated(self):
+        d = Instant.from_utc(2020, 8, 15)
+        with pytest.warns(WheneverDeprecationWarning, match="difference"):
+            d.difference(d)
 
     def test_other_instant(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
