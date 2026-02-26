@@ -119,8 +119,8 @@ Like {class}`~whenever.ZonedDateTime`, this type represents an exact time
 *and* a local time. The difference is that {class}`~whenever.OffsetDateTime`
 has a *fixed* offset from UTC rather than a timezone.
 As a result, it doesn't know about Daylight Saving Time or other timezone changes.
-Many operations will emit a `PotentiallyStaleOffsetWarning` to prevent you from accidentally introducing DST bugs.
-TODO: detailed explanation
+Many operations will emit a {class}`~whenever.PotentiallyStaleOffsetWarning`
+to prevent you from accidentally introducing DST bugs.
 
 Then why use it? Firstly, most datetime formats (e.g. ISO 8601 and RFC 2822) only have fixed offsets,
 making {class}`~whenever.OffsetDateTime` ideal for representing datetimes in these formats.
@@ -133,7 +133,7 @@ an efficient and compatible choice for representing times in the past.
 >>> flight_arrival = OffsetDateTime(2023, 4, 21, hour=10, offset=-6)
 >>> (flight_arrival - flight_departure).in_hours()
 3
->>> # This will emit a warning TODO explain
+>>> # This will emit a warning!
 >>> flight_arrival.add(hours=3)  # a DST-bug waiting to happen!
 >>> # instead:
 >>> with ignore_potentially_stale_offset_warning():  # explicitly ignore
