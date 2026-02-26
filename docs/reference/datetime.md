@@ -73,8 +73,11 @@ local date and time values:
 |    |   |   |
 | `replace()` [^4]                              | {meth}`🔗 <PlainDateTime.replace>`                              | {meth}`🔗 <ZonedDateTime.replace>`                              | {meth}`🔗 <OffsetDateTime.replace>`                               |
 | `add()`, `subtract()`      | {meth}`🔗 <PlainDateTime.add>`, {meth}`🔗 <PlainDateTime.subtract>`      | {meth}`🔗 <ZonedDateTime.add>`, {meth}`🔗 <ZonedDateTime.subtract>`      | {meth}`🔗 <OffsetDateTime.add>`, {meth}`🔗 <OffsetDateTime.subtract>`      |
+| `since()`, `until()`      | {meth}`🔗 <PlainDateTime.since>`, {meth}`🔗 <PlainDateTime.until>`      | {meth}`🔗 <ZonedDateTime.since>`, {meth}`🔗 <ZonedDateTime.until>`      | {meth}`🔗 <OffsetDateTime.since>`, {meth}`🔗 <OffsetDateTime.until>`      |
 | `round()`                                     | {meth}`🔗 <PlainDateTime.round>`                                     | {meth}`🔗 <ZonedDateTime.round>`                                     | {meth}`🔗 <OffsetDateTime.round>`                                      |
 
+
+TODO spin this off into its own paragraph in FAQ
 
 :::{note}
 Although {class}`Instant`'s debug representation is in
@@ -115,8 +118,9 @@ Several other methods are unique to one or more classes:
 |                                            | {attr}`~ZonedDateTime.offset`           | {attr}`~OffsetDateTime.offset`         |                                                        |
 |                                            |                                         |                                        | {meth}`x == other_plain <PlainDateTime.__eq__>`        |
 |                                            |                                         |                                        | {meth}`x > other_plain <PlainDateTime.__gt__>`         |
+|                                            |                                         |                                        | {meth}`x - other_plain <PlainDateTime.__sub__>`         |
 |                                            |                                         |                                        | {meth}`~PlainDateTime.assume_utc`                      |
-|                                            |                                         |                                        | {meth}`~PlainDateTime.assume_tz`                       |
+|                                            |                                         | {meth}`~OffsetDateTime.assume_tz`      | {meth}`~PlainDateTime.assume_tz`                       |
 |                                            |                                         |                                        | {meth}`~PlainDateTime.assume_system_tz`                |
 |                                            |                                         |                                        | {meth}`~PlainDateTime.assume_fixed_offset`             |
 |                                            |                                         | {meth}`~OffsetDateTime.parse_strptime` | {meth}`~PlainDateTime.parse_strptime`                  |

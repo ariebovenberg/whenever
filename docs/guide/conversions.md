@@ -48,6 +48,8 @@ Instant("2023-12-28 11:30:00Z")
 ZonedDateTime("2023-12-28 11:30:00+01:00[Europe/Amsterdam]")
 ```
 
+TODO: spin this off into its own section in the FAQ
+
 ```{note}
 The seemingly inconsistent naming of the `to_*` and `assume_*` methods is intentional. 
 The `assume_*` name emphasizes that the conversion is not self-evident, 

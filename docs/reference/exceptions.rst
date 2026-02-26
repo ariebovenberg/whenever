@@ -1,14 +1,35 @@
 Exceptions and warnings
 =======================
 
-.. autoexception:: whenever.RepeatedTime
+.. currentmodule:: whenever
+
+Warnings
+--------
+
+.. autoexception:: TimeZoneUnawareArithmeticWarning
    :show-inheritance:
 
-.. autoexception:: whenever.SkippedTime
+.. autoexception:: DaysAreNotAlways24HoursWarning
    :show-inheritance:
 
-.. autoexception:: whenever.InvalidOffsetError
+.. autoexception:: PotentiallyStaleOffsetWarning
    :show-inheritance:
 
-.. autoexception:: whenever.TimeZoneNotFoundError
+.. autoexception:: PotentialDstBugWarning
+   :show-inheritance:
+
+
+Exceptions
+----------
+
+.. autoexception:: RepeatedTime
+   :show-inheritance:
+
+.. autoexception:: SkippedTime
+   :show-inheritance:
+
+.. autoexception:: InvalidOffsetError
+   :show-inheritance:
+
+.. autoexception:: TimeZoneNotFoundError
    :show-inheritance:
