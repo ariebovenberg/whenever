@@ -1,6 +1,7 @@
 import pickle
 import re
 from datetime import datetime as py_datetime, timezone
+from typing import Any, Literal, Sequence
 
 import pytest
 from hypothesis import given
@@ -9,6 +10,7 @@ from hypothesis.strategies import floats, integers, text
 from whenever import (
     Date,
     Instant,
+    ItemizedDelta,
     OffsetDateTime,
     PlainDateTime,
     RepeatedTime,
@@ -994,6 +996,458 @@ class TestParseStrptime:
             OffsetDateTime.parse_strptime(
                 "2020-08-15 23:12:09", "%Y-%m-%d %H:%M:%S"  # type: ignore[misc]
             )
+
+
+class TestSince:
+
+    @pytest.mark.parametrize(
+        "a, b, units, kwargs, expect",
+        [
+            # simple cases involving only calendar units
+            (
+                PlainDateTime(2023, 10, 29, hour=11),
+                PlainDateTime(2023, 10, 28, hour=11),
+                ["days"],
+                {},
+                ItemizedDelta(days=1),
+            ),
+            (
+                PlainDateTime(2023, 10, 29, hour=11),
+                PlainDateTime(2023, 10, 28, hour=10),
+                ["days"],
+                {},
+                ItemizedDelta(days=1),
+            ),
+            (
+                PlainDateTime(2025, 5, 31, hour=23),
+                PlainDateTime(2023, 1, 28, hour=1),
+                ["years", "months", "days"],
+                {},
+                ItemizedDelta(years=2, months=4, days=3),
+            ),
+            # Negative delta date truncation handled correctly
+            (
+                PlainDateTime(2022, 2, 2),
+                PlainDateTime(2022, 2, 5),
+                ["days"],
+                {},
+                ItemizedDelta(days=-3),
+            ),
+            (
+                PlainDateTime(2022, 2, 2, hour=3),
+                PlainDateTime(2022, 2, 5, hour=2),
+                ["days", "hours"],
+                {},
+                ItemizedDelta(days=-2, hours=-23),
+            ),
+            (
+                PlainDateTime(2022, 2, 2, hour=3),
+                PlainDateTime(2022, 2, 5, hour=2),
+                ["days"],
+                {},
+                ItemizedDelta(days=-2),
+            ),
+            (
+                PlainDateTime(2022, 2, 2, hour=3),
+                PlainDateTime(2022, 2, 5, hour=2),
+                ["days"],
+                {"round_mode": "floor"},
+                ItemizedDelta(days=-3),
+            ),
+            # calendar units only--but with time-of-day differences
+            # that affect rounding
+            (
+                PlainDateTime(2025, 5, 31, hour=4),
+                PlainDateTime(2023, 1, 28, hour=4, nanosecond=1),
+                ["years", "months", "days"],
+                {},
+                ItemizedDelta(years=2, months=4, days=2),
+            ),
+            # same but with rounding
+            (
+                PlainDateTime(2025, 5, 31, hour=4),
+                PlainDateTime(2023, 1, 28, hour=4, nanosecond=1),
+                ["years", "months", "days"],
+                {"round_increment": 3, "round_mode": "half_ceil"},
+                ItemizedDelta(years=2, months=4, days=3),
+            ),
+            (
+                PlainDateTime(2025, 5, 31, hour=4),
+                PlainDateTime(2025, 5, 1, hour=4, nanosecond=1),
+                ["years", "months", "days"],
+                {"round_increment": 40, "round_mode": "floor"},
+                ItemizedDelta(years=0, months=0, days=0),
+            ),
+            # Rounding affected by time-of-day
+            (
+                PlainDateTime(2023, 2, 15, hour=13, minute=25),
+                PlainDateTime(2021, 7, 3, hour=1),
+                ["years", "days"],
+                {"round_mode": "floor"},
+                ItemizedDelta(years=1, days=227),
+            ),
+            (
+                PlainDateTime(2023, 2, 15, hour=13, minute=25),
+                PlainDateTime(2021, 7, 3, hour=1),
+                ["years", "days"],
+                {"round_mode": "half_even"},
+                ItemizedDelta(years=1, days=228),
+            ),
+            # Beyond calendar units
+            (
+                PlainDateTime(2023, 2, 15, hour=13, minute=25),
+                PlainDateTime(2021, 7, 3, hour=1),
+                ["years", "weeks", "hours"],
+                {"round_mode": "floor"},
+                ItemizedDelta(years=1, weeks=32, hours=84),
+            ),
+            (
+                PlainDateTime(2023, 2, 15, hour=13, minute=25),
+                PlainDateTime(2021, 7, 3, hour=1),
+                ["years", "weeks", "minutes"],
+                {"round_mode": "ceil", "round_increment": 12},
+                ItemizedDelta(years=1, weeks=32, minutes=5076),
+            ),
+            (
+                PlainDateTime(2020, 2, 15, hour=13, minute=25),
+                PlainDateTime(2021, 7, 3, hour=1),
+                ["hours", "minutes"],
+                {"round_mode": "ceil", "round_increment": 12},
+                ItemizedDelta(hours=-12083, minutes=-24),
+            ),
+            # Zero situations
+            (
+                PlainDateTime(2020, 2, 15, hour=13, minute=25),
+                PlainDateTime(2021, 7, 3, hour=1),
+                ["years"],
+                {"round_mode": "trunc", "round_increment": 4},
+                ItemizedDelta(years=0),
+            ),
+            (
+                PlainDateTime(2023, 2, 15, hour=13, minute=25),
+                PlainDateTime(2021, 7, 3, hour=1),
+                ["months"],
+                {"round_mode": "trunc", "round_increment": 50},
+                ItemizedDelta(months=0),
+            ),
+            (
+                PlainDateTime(2023, 2, 15, hour=13, minute=25),
+                PlainDateTime(2023, 2, 15, hour=13, minute=25),
+                ["weeks"],
+                {},
+                ItemizedDelta(weeks=0),
+            ),
+            (
+                PlainDateTime(2023, 2, 15, hour=13, minute=25),
+                PlainDateTime(2023, 2, 15, hour=13, minute=25),
+                ["seconds"],
+                {},
+                ItemizedDelta(seconds=0),
+            ),
+            # single unit cases
+            (
+                PlainDateTime(2023, 2, 15, hour=13, minute=25),
+                PlainDateTime(2023, 2, 15, hour=13, minute=25, nanosecond=1),
+                ["seconds"],
+                {},
+                ItemizedDelta(seconds=0),
+            ),
+            (
+                PlainDateTime(2023, 2, 15, hour=13, minute=25),
+                PlainDateTime(2023, 2, 15, hour=13, minute=25, second=1),
+                ["seconds"],
+                {},
+                ItemizedDelta(seconds=-1),
+            ),
+            # multi-unit with time precision
+            (
+                PlainDateTime(2025, 6, 15, hour=14, minute=30, second=45),
+                PlainDateTime(2025, 6, 15, hour=10, minute=15, second=20),
+                ["hours", "minutes", "seconds"],
+                {},
+                ItemizedDelta(hours=4, minutes=15, seconds=25),
+            ),
+            # negative result across date boundary
+            (
+                PlainDateTime(2020, 1, 1),
+                PlainDateTime(2020, 12, 31, hour=23, minute=59),
+                ["days", "hours", "minutes"],
+                {},
+                ItemizedDelta(days=-365, hours=-23, minutes=-59),
+            ),
+            # years, months, days, hours, minutes, seconds
+            (
+                PlainDateTime(2025, 3, 15, hour=14, minute=30, second=45),
+                PlainDateTime(2023, 1, 10, hour=8, minute=15, second=20),
+                ["years", "months", "days", "hours", "minutes", "seconds"],
+                {},
+                ItemizedDelta(
+                    years=2, months=2, days=5, hours=6, minutes=15, seconds=25
+                ),
+            ),
+            # months and hours
+            (
+                PlainDateTime(2025, 3, 15, hour=14),
+                PlainDateTime(2025, 1, 15, hour=10),
+                ["months", "hours"],
+                {},
+                ItemizedDelta(months=2, hours=4),
+            ),
+            # seconds and nanoseconds
+            (
+                PlainDateTime(2025, 3, 15, hour=12, second=5, nanosecond=500),
+                PlainDateTime(2025, 3, 15, hour=12, nanosecond=100),
+                ["seconds", "nanoseconds"],
+                {},
+                ItemizedDelta(seconds=5, nanoseconds=400),
+            ),
+            # rounding with exact units at the smallest position
+            (
+                PlainDateTime(2025, 3, 15, hour=14, minute=37),
+                PlainDateTime(2025, 3, 1, hour=10, minute=22),
+                ["days", "hours", "minutes"],
+                {"round_increment": 15, "round_mode": "ceil"},
+                ItemizedDelta(days=14, hours=4, minutes=15),
+            ),
+            # day boundary: time of day causes day adjustment
+            (
+                PlainDateTime(2025, 3, 15, hour=2),
+                PlainDateTime(2025, 3, 14, hour=22),
+                ["days", "hours"],
+                {},
+                ItemizedDelta(days=0, hours=4),
+            ),
+            # leap year boundary
+            (
+                PlainDateTime(2024, 2, 29, hour=12),
+                PlainDateTime(2023, 2, 28, hour=12),
+                ["years", "days"],
+                {},
+                ItemizedDelta(years=1, days=1),
+            ),
+            (
+                PlainDateTime(2024, 3, 1),
+                PlainDateTime(2023, 3, 1),
+                ["years", "months", "days"],
+                {},
+                ItemizedDelta(years=1, months=0, days=0),
+            ),
+            # end of month edge case
+            (
+                PlainDateTime(2025, 3, 31, hour=12),
+                PlainDateTime(2025, 2, 28, hour=12),
+                ["months", "days"],
+                {},
+                ItemizedDelta(months=1, days=3),
+            ),
+        ],
+    )
+    @ignore_timezone_unaware_arithmetic_warning()
+    def test_examples(
+        self,
+        a: PlainDateTime,
+        b: PlainDateTime,
+        units: Sequence[
+            Literal[
+                "years",
+                "months",
+                "weeks",
+                "days",
+                "hours",
+                "minutes",
+                "seconds",
+                "nanoseconds",
+            ]
+        ],
+        kwargs: dict[str, Any],
+        expect: ItemizedDelta,
+    ):
+        assert a.since(b, units=units, **kwargs).exact_eq(expect)
+
+        if len(units) == 1:
+            assert (
+                a.since(b, unit=units[0], **kwargs) == list(expect.values())[0]
+            )
+
+    def test_warnings(self):
+        a = PlainDateTime(2023, 2, 15, hour=13, minute=25)
+        b = PlainDateTime(2021, 7, 3, hour=1)
+
+        # exact units trigger the warning
+        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+            a.since(b, units=["hours", "minutes"])
+        assert len(w) == 1
+
+        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+            a.until(b, units=["hours", "minutes"])
+        assert len(w) == 1
+
+        # mixed calendar+exact units also trigger
+        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+            a.since(b, units=["days", "hours"])
+        assert len(w) == 1
+
+        # calendar-only units don't trigger
+        a.since(b, units=["years", "months", "days"])
+        a.until(b, units=["years", "months", "days"])
+        a.since(b, unit="days")
+
+        # suppression works
+        with ignore_timezone_unaware_arithmetic_warning():
+            a.since(b, units=["hours", "minutes"])
+            a.until(b, unit="hours")
+
+    def test_invalid_units(self):
+        with pytest.raises(ValueError, match="[Ii]nvalid unit.*foos"):
+            PlainDateTime(2023, 2, 15).since(
+                PlainDateTime(2023, 2, 15),
+                units=["foos"],  # type: ignore[list-item]
+            )
+
+        with pytest.raises(ValueError, match="[Ii]nvalid unit.*foos"):
+            PlainDateTime(2023, 2, 15).since(
+                PlainDateTime(2023, 2, 15),
+                unit="foos",  # type: ignore[call-overload]
+            )
+
+    def test_empty_units(self):
+        with pytest.raises(ValueError, match="units"):
+            PlainDateTime(2023, 2, 15).since(
+                PlainDateTime(2023, 2, 15),
+                units=(),
+            )
+
+    def test_no_other_class_supported(self):
+        with pytest.raises(TypeError):
+            PlainDateTime(2023, 2, 15).since(
+                ZonedDateTime(2023, 2, 15, tz="Europe/London"),  # type: ignore[call-overload]
+                units=["days"],
+            )
+
+    def test_neither_unit_nor_units(self):
+        with pytest.raises(TypeError, match="unit.*or.*units"):
+            PlainDateTime(2023, 2, 15).since(
+                PlainDateTime(2023, 2, 15),
+            )  # type: ignore[call-overload]
+
+    def test_both_unit_and_units(self):
+        with pytest.raises(TypeError, match="both"):
+            PlainDateTime(2023, 2, 15).since(
+                PlainDateTime(2023, 2, 15),
+                unit="years",
+                units=("days",),
+            )  # type: ignore[call-overload]
+
+    def test_duplicate_units(self):
+        with pytest.raises(ValueError, match="duplicate"):
+            PlainDateTime(2023, 2, 15).since(
+                PlainDateTime(2023, 2, 15),
+                units=["years", "days", "days"],
+            )
+
+    def test_invalid_unit_order(self):
+        with pytest.raises(ValueError, match="order"):
+            PlainDateTime(2021, 1, 1).since(
+                PlainDateTime(2020, 1, 1), units=["hours", "days"]
+            )
+
+    def test_invalid_round_mode(self):
+        with pytest.raises(ValueError, match="round.*mode.*foobar"):
+            PlainDateTime(2021, 1, 1).since(
+                PlainDateTime(2020, 1, 1),
+                unit="years",
+                round_mode="foobar",
+            )  # type: ignore[call-overload]
+
+    @ignore_timezone_unaware_arithmetic_warning()
+    def test_until_is_inverse(self):
+        a = PlainDateTime(2023, 2, 15, hour=3)
+        b = PlainDateTime(2021, 7, 3)
+        assert a.since(b, units=["years", "months", "days", "hours"]).exact_eq(
+            b.until(a, units=["years", "months", "days", "hours"])
+        )
+        # floor rounding works correctly
+        assert a.since(
+            b,
+            units=["years", "months", "days", "hours"],
+            round_increment=2,
+            round_mode="floor",
+        ).exact_eq(
+            b.until(
+                a,
+                units=["years", "months", "days", "hours"],
+                round_increment=2,
+                round_mode="floor",
+            )
+        )
+
+    def test_until_rounding_symmetry(self):
+        a = PlainDateTime(2019, 1, 30, hour=5)
+        b = PlainDateTime(2020, 2, 1, hour=12)
+        # until with trunc
+        result_trunc = a.until(
+            b, units=["years", "months"], round_mode="trunc"
+        )
+        assert result_trunc == ItemizedDelta(years=1, months=0)
+        # until with floor
+        result_floor = a.until(
+            b, units=["years", "months"], round_mode="floor"
+        )
+        assert result_floor == ItemizedDelta(years=1, months=0)
+        # until with ceil
+        result_ceil = a.until(b, units=["years", "months"], round_mode="ceil")
+        assert result_ceil == ItemizedDelta(years=1, months=1)
+
+    def test_single_unit_returns_int(self):
+        a = PlainDateTime(2025, 3, 15)
+        b = PlainDateTime(2023, 3, 15)
+        result = a.since(b, unit="years")
+        assert isinstance(result, int)
+        assert result == 2
+
+    @ignore_timezone_unaware_arithmetic_warning()
+    def test_roundtrip_add_back(self):
+        """Verify that adding the since() result back gives the original datetime."""
+        a = PlainDateTime(2025, 6, 15, hour=14, minute=30, second=45)
+        b = PlainDateTime(2023, 1, 10, hour=8, minute=15, second=20)
+        result = a.since(
+            b,
+            units=[
+                "years",
+                "months",
+                "days",
+                "hours",
+                "minutes",
+                "seconds",
+            ],
+        )
+        assert (
+            b.add(
+                years=result["years"],
+                months=result["months"],
+                days=result["days"],
+                hours=result["hours"],
+                minutes=result["minutes"],
+                seconds=result["seconds"],
+            )
+            == a
+        )
+
+    @ignore_timezone_unaware_arithmetic_warning()
+    def test_roundtrip_negative(self):
+        """Verify roundtrip for negative results."""
+        a = PlainDateTime(2020, 1, 1)
+        b = PlainDateTime(2025, 6, 15, hour=14)
+        result = a.since(b, units=["years", "months", "days", "hours"])
+        assert (
+            b.add(
+                years=result["years"],
+                months=result["months"],
+                days=result["days"],
+                hours=result["hours"],
+            )
+            == a
+        )
 
 
 def test_cannot_subclass():

@@ -1053,6 +1053,150 @@ class _LocalTime(ABC):
     def nanosecond(self) -> int: ...
     def date(self) -> Date: ...
     def time(self) -> Time: ...
+    @overload
+    def since(
+        self,
+        b: Self,
+        /,
+        *,
+        unit: Literal[
+            "years",
+            "months",
+            "weeks",
+            "days",
+            "hours",
+            "minutes",
+            "seconds",
+            "nanoseconds",
+        ],
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = ...,
+        round_increment: int = ...,
+    ) -> int: ...
+    @overload
+    def since(
+        self,
+        b: Self,
+        /,
+        *,
+        units: Sequence[
+            Literal[
+                "years",
+                "months",
+                "weeks",
+                "days",
+                "hours",
+                "minutes",
+                "seconds",
+                "nanoseconds",
+            ]
+        ],
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+    @overload
+    def until(
+        self,
+        b: Self,
+        /,
+        *,
+        unit: Literal[
+            "years",
+            "months",
+            "weeks",
+            "days",
+            "hours",
+            "minutes",
+            "seconds",
+            "nanoseconds",
+        ],
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = ...,
+        round_increment: int = ...,
+    ) -> int: ...
+    @overload
+    def until(
+        self,
+        b: Self,
+        /,
+        *,
+        units: Sequence[
+            Literal[
+                "years",
+                "months",
+                "weeks",
+                "days",
+                "hours",
+                "minutes",
+                "seconds",
+                "nanoseconds",
+            ]
+        ],
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+    def round(
+        self,
+        unit: Literal[
+            "day",
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+        ] = "second",
+        increment: int = 1,
+        mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "half_even",
+    ) -> Self: ...
 
 class _ExactTime(ABC):
     def timestamp(self) -> int: ...
@@ -1324,6 +1468,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         /,
         ignore_dst: Literal[True] = ...,
     ) -> Self: ...
+    # FUTURE: remove when ignore_dst deprecated
     def round(
         self,
         unit: Literal[
@@ -1489,153 +1634,9 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         *,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
-    @overload
-    def since(
-        self,
-        b: ZonedDateTime,
-        /,
-        *,
-        unit: Literal[
-            "years",
-            "months",
-            "weeks",
-            "days",
-            "hours",
-            "minutes",
-            "seconds",
-            "nanoseconds",
-        ],
-        round_mode: Literal[
-            "ceil",
-            "expand",
-            "floor",
-            "trunc",
-            "half_ceil",
-            "half_expand",
-            "half_floor",
-            "half_trunc",
-            "half_even",
-        ] = ...,
-        round_increment: int = ...,
-    ) -> int: ...
-    @overload
-    def since(
-        self,
-        b: ZonedDateTime,
-        /,
-        *,
-        units: Sequence[
-            Literal[
-                "years",
-                "months",
-                "weeks",
-                "days",
-                "hours",
-                "minutes",
-                "seconds",
-                "nanoseconds",
-            ]
-        ],
-        round_mode: Literal[
-            "ceil",
-            "expand",
-            "floor",
-            "trunc",
-            "half_ceil",
-            "half_expand",
-            "half_floor",
-            "half_trunc",
-            "half_even",
-        ] = ...,
-        round_increment: int = ...,
-    ) -> ItemizedDelta: ...
-    @overload
-    def until(
-        self,
-        b: ZonedDateTime,
-        /,
-        *,
-        unit: Literal[
-            "years",
-            "months",
-            "weeks",
-            "days",
-            "hours",
-            "minutes",
-            "seconds",
-            "nanoseconds",
-        ],
-        round_mode: Literal[
-            "ceil",
-            "expand",
-            "floor",
-            "trunc",
-            "half_ceil",
-            "half_expand",
-            "half_floor",
-            "half_trunc",
-            "half_even",
-        ] = ...,
-        round_increment: int = ...,
-    ) -> int: ...
-    @overload
-    def until(
-        self,
-        b: ZonedDateTime,
-        /,
-        *,
-        units: Sequence[
-            Literal[
-                "years",
-                "months",
-                "weeks",
-                "days",
-                "hours",
-                "minutes",
-                "seconds",
-                "nanoseconds",
-            ]
-        ],
-        round_mode: Literal[
-            "ceil",
-            "expand",
-            "floor",
-            "trunc",
-            "half_ceil",
-            "half_expand",
-            "half_floor",
-            "half_trunc",
-            "half_even",
-        ] = ...,
-        round_increment: int = ...,
-    ) -> ItemizedDelta: ...
     def is_ambiguous(self) -> bool: ...
     def day_length(self) -> TimeDelta: ...
     def start_of_day(self) -> Self: ...
-    def round(
-        self,
-        unit: Literal[
-            "day",
-            "hour",
-            "minute",
-            "second",
-            "millisecond",
-            "microsecond",
-            "nanosecond",
-        ] = "second",
-        increment: int = 1,
-        mode: Literal[
-            "ceil",
-            "expand",
-            "floor",
-            "trunc",
-            "half_ceil",
-            "half_expand",
-            "half_floor",
-            "half_trunc",
-            "half_even",
-        ] = "half_even",
-    ) -> Self: ...
     def format_iso(
         self,
         *,
@@ -1766,33 +1767,10 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         *,
         ignore_dst: Literal[True] = ...,
     ) -> Self: ...
+    @deprecated("Use since() or subtraction operator instead")
     def difference(
         self, other: Self, /, *, ignore_dst: Literal[True] = ...
     ) -> TimeDelta: ...
-    def round(
-        self,
-        unit: Literal[
-            "day",
-            "hour",
-            "minute",
-            "second",
-            "millisecond",
-            "microsecond",
-            "nanosecond",
-        ] = "second",
-        increment: int = 1,
-        mode: Literal[
-            "ceil",
-            "expand",
-            "floor",
-            "trunc",
-            "half_ceil",
-            "half_expand",
-            "half_floor",
-            "half_trunc",
-            "half_even",
-        ] = "half_even",
-    ) -> Self: ...
     def __add__(self, delta: TimeDelta | DateDelta, /) -> Self: ...
     @overload
     def __sub__(self, other: TimeDelta | DateDelta, /) -> Self: ...
