@@ -2915,7 +2915,6 @@ DateDelta.ZERO = DateDelta()
 TimeDelta._date_part = DateDelta.ZERO
 
 
-# TODO LAST: clarify seconds/nanoseconds relationship
 @final
 class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     """A duration that preserves the exact fields it was created with.
@@ -2994,6 +2993,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         "_hours",
         "_minutes",
         "_seconds",
+        # FUTURE: allow nanoseconds to exceed 999,999,999?
         "_nanoseconds",
     )
 
@@ -3050,21 +3050,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         """The sign of the delta, 1, 0, or -1"""
         return self._sign
 
-    # FUTURE: allow nanoseconds to exceed 999,999,999?
-    # TODO: less footgunny name
-    def float_seconds(self) -> float:
-        """The the ``seconds`` and ``nanoseconds`` combined as a float.
-
-        Due to limitations of floating point precision, this may not be exact
-        in case of very large ``seconds`` values (greater than >270 hours).
-
-        >>> d = ItemizedDelta(minutes=9, seconds=1, nanoseconds=500_000_000)
-        >>> d.float_seconds()
-        1.5
-        """
-        return self._sign * (
-            (self._seconds or 0) + (self._nanoseconds or 0) / 1_000_000_000
-        )
+    # FUTURE: a float_seconds method that combines seconds and nanoseconds into a single float value?
 
     def __iter__(self) -> Iterator[DeltaUnitStr]:
         """Iterate over all non-missing fields, ordered from largest to smallest unit."""
