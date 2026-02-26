@@ -802,7 +802,6 @@ class Date(_Base):
             Using the ``-`` operator on :class:`Date` is deprecated;
             use the :meth:`subtract` method or the :meth:`since` method instead.
         """
-        # TODO LAST: a nice message about which API to use instead
         if isinstance(d, DateDelta):
             warn(
                 "Using the `-` operator on Date is deprecated; "
@@ -1725,7 +1724,7 @@ class TimeDelta(_Base):
             "microseconds",
             "nanoseconds",
         ],
-        # TODO: allow other local time types?
+        # FUTURE: allow other local time types?
         relative_to: ZonedDateTime = _UNSET,
     ) -> float | int:
         """The total size in the given unit, as a float (or int for nanoseconds)
@@ -2859,34 +2858,22 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     >>> d = ItemizedDelta(weeks=2, days=3, hours=14)
     ItemizedDelta("P2w3dT14h")
     >>> d = ItemizedDelta("P2w3dT14h")
-    >>> d.weeks
-    2
     >>> str(d)
     'P2w3dT14h'
 
     It behaves like a mapping where the keys are
     the unit names and the values are the amounts:
 
+    >>> d['weeks']
+    2
+    >>> d.get('minutes')
+    None
     >>> dict(d)
     {"weeks": 2, "days": 3, "hours": 14}
     >>> list(d.keys())
     ["weeks", "days", "hours"]
     >>> weeks, days, hours = d.values()
     (2, 3, 14)
-
-    Individual fields can also be accessed as properties...
-
-    >>> d.weeks
-    2
-    >>> d.years  # defaults to 0 if not set
-    0
-
-    ...or via indexing like a dictionary:
-
-    >>> d["weeks"]
-    2
-    >>> d["years"]
-    KeyError: 'years'
 
     ``ItemizedDelta`` also supports other dictionary-like operations:
 
@@ -2920,6 +2907,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     ItemizedDelta("-P1y2w0d")
     >>> ItemizedDelta(years=1, days=-3)
     ValueError: All fields must have the same sign
+
+    TODO describe limitations, link to docs on delta
     """
 
     __slots__ = (
@@ -2952,20 +2941,18 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         if nanoseconds is not _UNSET and seconds is _UNSET:
             seconds = 0
 
-        (self._years, sign) = _check_component(years, sign, _MAX_DELTA_YEARS)
-        (self._months, sign) = _check_component(
-            months, sign, _MAX_DELTA_MONTHS
-        )
-        (self._weeks, sign) = _check_component(weeks, sign, _MAX_DELTA_WEEKS)
-        (self._days, sign) = _check_component(days, sign, _MAX_DELTA_DAYS)
-        (self._hours, sign) = _check_component(hours, sign, _MAX_DELTA_HOURS)
-        (self._minutes, sign) = _check_component(
+        self._years, sign = _check_component(years, sign, _MAX_DELTA_YEARS)
+        self._months, sign = _check_component(months, sign, _MAX_DELTA_MONTHS)
+        self._weeks, sign = _check_component(weeks, sign, _MAX_DELTA_WEEKS)
+        self._days, sign = _check_component(days, sign, _MAX_DELTA_DAYS)
+        self._hours, sign = _check_component(hours, sign, _MAX_DELTA_HOURS)
+        self._minutes, sign = _check_component(
             minutes, sign, _MAX_DELTA_MINUTES
         )
-        (self._seconds, sign) = _check_component(
+        self._seconds, sign = _check_component(
             seconds, sign, _MAX_DELTA_SECONDS
         )
-        (self._nanoseconds, sign) = _check_component(
+        self._nanoseconds, sign = _check_component(
             nanoseconds, sign, _MAX_SUBSEC_NANOS
         )
         self._sign: Sign = sign
@@ -2991,73 +2978,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         """The sign of the delta, 1, 0, or -1"""
         return self._sign
 
-    # TODO LAST: remove these properties in favor of just using the mapping interface (d["years"], etc.)
-    @property
-    def years(self) -> int:
-        """The number of years, 0 if not set
-
-        Use ``d["years"]`` or ``d.get("years", ...)`` to handle missing values
-        """
-        return self._sign * (self._years or 0)
-
-    @property
-    def months(self) -> int:
-        """The number of months, 0 if not set
-
-        Use ``d["months"]`` or ``d.get("months", ...)`` to handle missing values
-        """
-        return self._sign * (self._months or 0)
-
-    @property
-    def weeks(self) -> int:
-        """The number of weeks, 0 if not set
-
-        Use ``d["weeks"]`` or ``d.get("weeks", ...)`` to handle missing values
-        """
-        return self._sign * (self._weeks or 0)
-
-    @property
-    def days(self) -> int:
-        """The number of days, 0 if not set
-
-        Use ``d["days"]`` or ``d.get("days", ...)`` to handle missing values
-        """
-        return self._sign * (self._days or 0)
-
-    @property
-    def hours(self) -> int:
-        """The number of hours, 0 if not set
-
-        Use ``d["hours"]`` or ``d.get("hours", ...)`` to handle missing values
-        """
-        return self._sign * (self._hours or 0)
-
-    @property
-    def minutes(self) -> int:
-        """The number of minutes, 0 if not set
-
-        Use ``d["minutes"]`` or ``d.get("minutes", ...)`` to handle missing values
-        """
-        return self._sign * (self._minutes or 0)
-
-    @property
-    def seconds(self) -> int:
-        """The number of seconds, 0 if not set.
-
-        To get seconds including the nanoseconds, use :meth:`float_seconds`.
-
-        Use ``d["seconds"]`` or ``d.get("seconds", ...)`` to handle missing values
-        """
-        return self._sign * (self._seconds or 0)
-
-    @property
-    def nanoseconds(self) -> int:
-        """The number of nanoseconds, 0 if not set
-
-        Use ``d["nanoseconds"]`` or ``d.get("nanoseconds", ...)`` to handle missing values
-        """
-        return self._sign * (self._nanoseconds or 0)
-
+    # FUTURE: allow nanoseconds to exceed 999,999,999?
+    # TODO: less footgunny name
     def float_seconds(self) -> float:
         """The the ``seconds`` and ``nanoseconds`` combined as a float.
 
@@ -3474,7 +3396,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         return date_part, time_part
 
     # A private constructor. Checks bounds but *not* signs or presence of > 0 fields.
-    # TODO: one that sidesteps bounds checking entirely
     @classmethod
     def _from_signed(
         cls,
@@ -3849,34 +3770,22 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     >>> d = ItemizedDateDelta(years=2, weeks=3)
     ItemizedDateDelta("P2Y3W")
     >>> d = ItemizedDateDelta("P22W")
-    >>> d.weeks
-    22
     >>> str(d)
     'P22W'
 
     It behaves like a mapping where the keys are
     the unit names and the values are the amounts:
 
+    >>> d['weeks']
+    22
+    >>> d.get('days')
+    None
     >>> dict(d)
     {"years": 2, "weeks": 3}
     >>> list(d.keys())
     ["years", "weeks"]
     >>> years, weeks = d.values()
     (2, 3)
-
-    Individual fields can also be accessed as properties...
-
-    >>> d.years
-    2
-    >>> d.days  # defaults to 0 if not set
-    0
-
-    ...or via indexing like a dictionary:
-
-    >>> d["years"]
-    2
-    >>> d["days"]
-    KeyError: 'days'
 
     ``ItemizedDateDelta`` also supports other dictionary-like operations:
 
@@ -3910,6 +3819,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     ItemizedDateDelta("-P1y2w0d")
     >>> ItemizedDateDelta(years=1, days=-3)
     ValueError: All fields must have the same sign
+
+    TODO describe limitations, like to delta docs
     """
 
     __slots__ = (
@@ -3931,12 +3842,10 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         days: int = _UNSET,
     ) -> None:
         sign: Sign = 0
-        (self._years, sign) = _check_component(years, sign, _MAX_DELTA_YEARS)
-        (self._months, sign) = _check_component(
-            months, sign, _MAX_DELTA_MONTHS
-        )
-        (self._weeks, sign) = _check_component(weeks, sign, _MAX_DELTA_WEEKS)
-        (self._days, sign) = _check_component(days, sign, _MAX_DELTA_DAYS)
+        self._years, sign = _check_component(years, sign, _MAX_DELTA_YEARS)
+        self._months, sign = _check_component(months, sign, _MAX_DELTA_MONTHS)
+        self._weeks, sign = _check_component(weeks, sign, _MAX_DELTA_WEEKS)
+        self._days, sign = _check_component(days, sign, _MAX_DELTA_DAYS)
         self._sign: Sign = sign
         if (
             self._sign == 0
@@ -3948,39 +3857,6 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             # This is to ensure ISO8601 formatting/parsing is round-trip safe.
             # There is no "empty" duration in ISO8601; at least one field must be present.
             raise ValueError("At least one field must be set")
-
-    # CONSIDER: should these be methods instead of properties?
-    @property
-    def years(self) -> int:
-        """The number of years, or ``0`` if not set.
-
-        Use ``d["years"]`` or ``d.get("years", ...)`` to handle missing values
-        """
-        return self._sign * (self._years or 0)
-
-    @property
-    def months(self) -> int:
-        """The number of months, or ``0`` if not set.
-
-        Use ``d["months"]`` or ``d.get("months", ...)`` to handle missing values
-        """
-        return self._sign * (self._months or 0)
-
-    @property
-    def weeks(self) -> int:
-        """The number of weeks, or ``0`` if not set.
-
-        Use ``d["weeks"]`` or ``d.get("weeks", ...)`` to handle missing values
-        """
-        return self._sign * (self._weeks or 0)
-
-    @property
-    def days(self) -> int:
-        """The number of days, or ``0`` if not set.
-
-        Use ``d["days"]`` or ``d.get("days", ...)`` to handle missing values
-        """
-        return self._sign * (self._days or 0)
 
     @property
     def sign(self) -> Sign:
@@ -6413,7 +6289,6 @@ class OffsetDateTime(_ExactAndLocalTime):
             ignore_dst: bool = ...,
         ) -> OffsetDateTime: ...
 
-    # TODO: assume_tz() for OffsetDateTime, which converts to ZonedDateTime with the correct offset for this datetime
     @no_type_check
     def add(self, *args, **kwargs) -> OffsetDateTime:
         """Add a time amount to this datetime.
