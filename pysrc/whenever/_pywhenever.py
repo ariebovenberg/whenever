@@ -130,12 +130,14 @@ __all__ = [
     "DaysAreNotAlways24HoursWarning",
     "PotentiallyStaleOffsetWarning",
     "TimeZoneUnawareArithmeticWarning",
+    "PotentialDstBugWarning",
     "WheneverDeprecationWarning",
     "SkippedTime",
     "RepeatedTime",
     "InvalidOffsetError",
     "ImplicitlyIgnoringDST",
     "TimeZoneNotFoundError",
+    # Other stuff
     "Weekday",
     "reset_system_tz",
 ]
@@ -6731,6 +6733,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             + suffix
         )
 
+    # FUTURE: allow handling offset mismatches
     @classmethod
     def parse_iso(cls, s: str, /) -> ZonedDateTime:
         """Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
@@ -8096,6 +8099,7 @@ class PotentialDstBugWarning(UserWarning):
     """Base class for warnings about potential DST-related bugs in user code."""
 
 
+# TODO: make this docstring as nice as the other warnings
 class DaysAreNotAlways24HoursWarning(PotentialDstBugWarning):
     """An operation assumed days are always 24 hours long"""
 
@@ -8106,6 +8110,7 @@ class WheneverDeprecationWarning(UserWarning):
     """A deprecated feature of the Whenever library was used."""
 
 
+# TODO: can the names be a bit shorter? Everything related (e.g. context managers) have also looooong names
 class PotentiallyStaleOffsetWarning(PotentialDstBugWarning):
     """Raised when an operation on an :class:`~whenever.OffsetDateTime` may
     result in a datetime with an incorrect UTC offset.

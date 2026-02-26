@@ -114,6 +114,7 @@ RoundModeStr: TypeAlias = Literal[
     "half_trunc",
     "half_even",
 ]
+OffsetMismatchStr: TypeAlias = Literal["raise", "keep_instant", "keep_local"]
 
 @type_check_only
 class _ISOMixin:
