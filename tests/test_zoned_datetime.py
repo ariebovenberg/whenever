@@ -3675,6 +3675,35 @@ class TestSince:
                 {},
                 ItemizedDelta(days=1, minutes=44),
             ),
+            # Negative delta date truncation handled correctly
+            (
+                ZonedDateTime(2022, 2, 2, tz="Asia/Kolkata"),
+                ZonedDateTime(2022, 2, 5, tz="Asia/Kolkata"),
+                ["days"],
+                {},
+                ItemizedDelta(days=-3),
+            ),
+            (
+                ZonedDateTime(2022, 2, 2, hour=3, tz="Asia/Kolkata"),
+                ZonedDateTime(2022, 2, 5, hour=2, tz="Asia/Kolkata"),
+                ["days", "hours"],
+                {},
+                ItemizedDelta(days=-2, hours=-23),
+            ),
+            (
+                ZonedDateTime(2022, 2, 2, hour=3, tz="Asia/Kolkata"),
+                ZonedDateTime(2022, 2, 5, hour=2, tz="Asia/Kolkata"),
+                ["days"],
+                {},
+                ItemizedDelta(days=-2),
+            ),
+            (
+                ZonedDateTime(2022, 2, 2, hour=3, tz="Asia/Kolkata"),
+                ZonedDateTime(2022, 2, 5, hour=2, tz="Asia/Kolkata"),
+                ["days"],
+                {"round_mode": "floor"},
+                ItemizedDelta(days=-3),
+            ),
             # Zero situations
             (
                 ZonedDateTime(

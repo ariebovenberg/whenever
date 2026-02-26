@@ -1,5 +1,7 @@
 # Why not pendulum?
 
+TODO: my writing style is doesn't flow great
+
 [**Pendulum**](https://pypi.org/project/pendulum/)
 is a third-party datetime library that
 arrived on the scene in 2016, promising better DST-handling.
