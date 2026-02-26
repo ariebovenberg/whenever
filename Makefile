@@ -16,7 +16,7 @@ format:
 
 .PHONY: docs
 docs:
-	rm -f pysrc/whenever/*.so  # Presence of the rust extension breaks sphinx (TODO: a better workaround)
+	rm -f pysrc/whenever/*.so  # Presence of the rust extension breaks sphinx (FUTURE: a better workaround)
 	rm -rf docs/_build/
 	make -C docs/ html
 

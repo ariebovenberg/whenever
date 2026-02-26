@@ -44,7 +44,7 @@ class TestInit:
         d = ItemizedDateDelta(**kwargs)
         assert d.sign == expect_sign
         for unit in UNITS:
-            assert getattr(d, unit) == kwargs.get(unit, 0)
+            assert d.get(unit, 0) == kwargs.get(unit, 0)
 
     def test_no_components(self):
         with pytest.raises(ValueError, match="At least one"):
@@ -229,7 +229,7 @@ class TestEq:
         # NOTE: the mypy ignore comments are actually also "tests" in the sense
         # they ensure that the types properly implement strict comparison!
         assert d != "P5D"  # type: ignore[comparison-overlap]
-        # TODO LAST: these comparisons *should* be blocked?
+        # FUTURE: these comparisons *should* be blocked?
         assert d != {"days": 5}
         assert d != ItemizedDelta(days=5)
 

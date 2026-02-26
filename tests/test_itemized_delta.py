@@ -58,7 +58,7 @@ class TestInit:
         d = ItemizedDelta(**kwargs)
         assert d.sign == expect_sign
         for unit in UNITS:
-            assert getattr(d, unit) == kwargs.get(unit, 0)
+            assert d.get(unit, 0) == kwargs.get(unit, 0)
 
     def test_no_components(self):
         with pytest.raises(ValueError, match="At least one"):
@@ -101,6 +101,11 @@ class TestInit:
         kwargs = {unit: value}
         with pytest.raises(ValueError, match="range"):
             ItemizedDelta(**kwargs)
+
+    def test_nanoseconds_implies_seconds(self):
+        d = ItemizedDelta(nanoseconds=500_000_000)
+        assert d.get("seconds") == 0
+        assert d.get("nanoseconds") == 500_000_000
 
     def test_float_seconds(self):
         d = ItemizedDelta(seconds=9_000, nanoseconds=1)
@@ -211,7 +216,7 @@ class TestEq:
         # NOTE: the mypy ignore comments are actually also "tests" in the sense
         # they ensure that the types properly implement strict comparison!
         assert d != "P5D"  # type: ignore[comparison-overlap]
-        # TODO LAST: these comparisons *should* be blocked?
+        # FUTURE: these comparisons *should* be blocked?
         assert d != {"days": 5}
         assert d != ItemizedDateDelta(days=5)
 

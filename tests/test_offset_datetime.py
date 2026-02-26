@@ -1964,7 +1964,6 @@ class TestRound:
 
     def test_warnings(self):
         d = OffsetDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000, offset=2)
-        # TODO: docs about warnings
         with pytest.warns(PotentiallyStaleOffsetWarning):
             assert d.round("second") == OffsetDateTime(
                 2023, 7, 14, 1, 2, 3, offset=2

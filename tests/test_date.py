@@ -1155,10 +1155,10 @@ class TestSinceAndUntil:
         if "days" in units and kwargs.get("round_increment", 1) == 1:
             assert (
                 d2.add(
-                    years=result.years,
-                    months=result.months,
-                    weeks=result.weeks,
-                    days=result.days,
+                    years=result.get("years", 0),
+                    months=result.get("months", 0),
+                    weeks=result.get("weeks", 0),
+                    days=result.get("days", 0),
                 )
                 == d1
             )

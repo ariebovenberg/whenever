@@ -1157,7 +1157,7 @@ class TestRound:
             (
                 TimeDelta(hours=10, minutes=30),
                 23439118,
-                "millisecond",  # TODO LAST: catch non-plural units with special message?
+                "millisecond",  # FUTURE: catch non-plural units with special message?
                 TimeDelta(hours=6, minutes=30, seconds=39.118),
                 TimeDelta(hours=13, minutes=1, seconds=18.236),
                 TimeDelta(hours=13, minutes=1, seconds=18.236),
