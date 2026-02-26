@@ -77,31 +77,10 @@ local date and time values:
 | `round()`                                     | {meth}`🔗 <PlainDateTime.round>`                                     | {meth}`🔗 <ZonedDateTime.round>`                                     | {meth}`🔗 <OffsetDateTime.round>`                                      |
 
 
-TODO spin this off into its own paragraph in FAQ
-
 :::{note}
 Although {class}`Instant`'s debug representation is in
 UTC, it does not have local time methods.
-
-```python
->>> from whenever import Instant
->>> now = Instant.now()
-Instant("2026-01-23T05:30:15.149822Z")
->>> now.year
-AttributeError: 'Instant' object has no attribute 'year'
-````
-
-This is because an instant represents a specific moment in time,
-which is explicitly *not* tied to any calendar system or timezone.
-UTC is just a debug-friendly representation of that moment.
-If you really need to treat UTC as a meaningful date and time (warning: you probably don't),
-you can convert the instant to an {class}`OffsetDateTime` with a zero offset:
-
-```python
->>> now.to_fixed_offset(0).year
-2026
-```
-
+See the {ref}`FAQ <faq-instant-no-local>` for more details.
 :::
 
 ## Other methods

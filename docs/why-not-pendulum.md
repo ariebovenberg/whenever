@@ -1,12 +1,10 @@
 # Why not pendulum?
 
-TODO: my writing style is doesn't flow great
-
 [**Pendulum**](https://pypi.org/project/pendulum/)
-is a third-party datetime library that
+is a popular third-party datetime library that
 arrived on the scene in 2016, promising better DST-handling.
-While Pendulum is an improvement in some areas, it comes short in others.
-Below is an overview:
+While it improves on some aspects of the standard library,
+it falls short in others. Here's an overview:
 
 ```{note}
 This section is up-to-date as of Pendulum version 3.2.0
@@ -15,8 +13,10 @@ This section is up-to-date as of Pendulum version 3.2.0
 ## It doesn't address *most* `datetime` pitfalls
 
 Of the {ref}`pitfalls <datetime-pitfalls>` in the standard library's `datetime` module,
-Pendulum only really addresses two: the {ref}`DST arithemetic issue <datetime-ignores-dst>`,
+Pendulum only really addresses two: the {ref}`DST arithmetic issue <datetime-ignores-dst>`
 and the `timedelta.seconds` {ref}`footgun <timedelta-seconds>`.
+The remaining issues—ambiguous types, equality edge cases,
+inheritance issues—are left unresolved.
 
 ## It's behind on maintenance
 
@@ -64,17 +64,16 @@ and what can be relied upon.
 
 ## The `Duration` class is broken
 
-Pendulum's `Duration` class is intended to improve upon `timedelta`,
-supporting months and years.
-However, it does so using dubious design choices that lead to surprising behavior.
-For example it assumes months are always 30 days long:
+Pendulum's `Duration` class extends `timedelta` to support
+months and years. However, dubious design choices lead to surprising behavior.
+For example, it assumes months are always 30 days:
 
 ```python
 >>> Duration(months=1) + Duration()
 Duration(weeks=4, days=2)
 ```
 
-In addition, arithmetic with `Duration` instances can lead to unexpected results:
+Arithmetic with `Duration` also has issues:
 
 ```python
 >>> Duration(months=1) * 1.0
@@ -122,10 +121,9 @@ for repeated times, instead of the offset before.
 This makes its behavior different from most other libraries.
 There is no reason given for this choice.
 
-## It's a drop-in replacement--until it isn't
+## It's a drop-in replacement—until it isn't
 
-By inheriting from {class}`~datetime.datetime`, it functions *mostly* like a drop-in replacement
+By inheriting from {class}`~datetime.datetime`, Pendulum *mostly* works as a drop-in replacement
 for `datetime`.
-However, there are still a number of [cases in which this breaks down](https://github.com/python-pendulum/pendulum?tab=readme-ov-file#limitations).
-This makes 'dropping in' Pendulum into an existing codebase risky,
-as subtle bugs may be introduced.
+However, there are still [cases where this breaks down](https://github.com/python-pendulum/pendulum?tab=readme-ov-file#limitations),
+making it risky to 'drop in' to an existing codebase—subtle bugs may be introduced.

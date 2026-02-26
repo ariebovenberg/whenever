@@ -9,7 +9,7 @@ Warnings
 .. autoexception:: TimeZoneUnawareArithmeticWarning
    :show-inheritance:
 
-.. autoexception:: DaysAreNotAlways24HoursWarning
+.. autoexception:: DaysNotAlways24HoursWarning
    :show-inheritance:
 
 .. autoexception:: PotentiallyStaleOffsetWarning
