@@ -1,5 +1,7 @@
 # FAQ
 
+TODO: improve the flow of each of these sections.
+
 ## Does performance really matter for a datetime library?
 
 Most of the time, datetime handling isn't the main bottleneck in Python

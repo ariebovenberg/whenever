@@ -6513,6 +6513,94 @@ class OffsetDateTime(_ExactAndLocalTime):
         else:  # offset_mismatch == "keep_local":
             return self.to_plain().assume_tz(tz)
 
+    @overload
+    def since(
+        self,
+        b: OffsetDateTime,
+        /,
+        *,
+        unit: DeltaUnitStr,
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> int: ...
+
+    @overload
+    def since(
+        self,
+        b: OffsetDateTime,
+        /,
+        *,
+        units: Sequence[DeltaUnitStr],
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+
+    def since(
+        self,
+        b: OffsetDateTime,
+        /,
+        *,
+        unit: DeltaUnitStr | None = None,
+        units: Sequence[DeltaUnitStr] | None = None,
+        round_mode: RoundModeStr = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDelta | int:
+        """Calculate the duration since another OffsetDateTime,
+        in terms of the specified units.
+
+        >>> d1 = OffsetDateTime(2020, 8, 15, 23, 12, offset=2)
+        >>> d2 = OffsetDateTime(2020, 8, 14, 22, offset=2)
+        >>> d1.since(d2, units=["hours", "minutes"],
+        ...          round_increment=15,
+        ...          round_mode="ceil")
+        ItemizedDelta("PT25h15m")
+
+        When calculating calendar units (years, months, weeks, days),
+        both datetimes must have the same offset.
+        """
+        return _offset_since(self, b, unit, units, round_mode, round_increment)
+
+    @overload
+    def until(
+        self,
+        b: OffsetDateTime,
+        /,
+        *,
+        unit: DeltaUnitStr,
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> int: ...
+
+    @overload
+    def until(
+        self,
+        b: OffsetDateTime,
+        /,
+        *,
+        units: Sequence[DeltaUnitStr],
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+
+    def until(
+        self,
+        b: OffsetDateTime,
+        /,
+        *,
+        unit: DeltaUnitStr | None = None,
+        units: Sequence[DeltaUnitStr] | None = None,
+        round_mode: RoundModeStr = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDelta | int:
+        """Inverse of the ``since()`` method. See :meth:`since` for more information."""
+        return b.since(  # type: ignore[call-overload, no-any-return]
+            self,
+            unit=unit,
+            units=units,
+            round_mode=round_mode,
+            round_increment=round_increment,
+        )
+
     def __repr__(self) -> str:
         return f"OffsetDateTime(\"{str(self).replace('T', ' ')}\")"
 
@@ -7173,14 +7261,18 @@ class ZonedDateTime(_ExactAndLocalTime):
                 "with the same timezone"
             )
 
-        # To ensure we don't overshoot the date when adding calendar units.
-        # Note that we may need to do this multiple times in the rare case
+        sign: Literal[1, -1] = 1 if self >= b else -1
+
+        # Adjust target_date so the exact remainder has the same sign
+        # as the overall difference. The while loop handles the rare case
         # of a 24h+ gap, e.g. Samoa in 2011.
         target_date = self.date()
-        while b.replace_date(target_date) > self:
-            target_date = target_date.subtract(days=1)
-
-        sign: Literal[1, -1] = 1 if self >= b else -1
+        if sign == 1:
+            while b.replace_date(target_date) > self:
+                target_date = target_date.subtract(days=1)
+        else:
+            while b.replace_date(target_date) < self:
+                target_date = target_date.add(days=1)
         cal_results, trunc_date, expand_date = date_diff(
             target_date._py_date,
             b._py_dt.date(),
@@ -7774,6 +7866,91 @@ class PlainDateTime(_LocalTime):
         return TimeDelta(
             seconds=py_delta.days * 86_400 + py_delta.seconds,
             nanoseconds=self._nanos - other._nanos,
+        )
+
+    @overload
+    def since(
+        self,
+        b: PlainDateTime,
+        /,
+        *,
+        unit: DeltaUnitStr,
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> int: ...
+
+    @overload
+    def since(
+        self,
+        b: PlainDateTime,
+        /,
+        *,
+        units: Sequence[DeltaUnitStr],
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+
+    def since(
+        self,
+        b: PlainDateTime,
+        /,
+        *,
+        unit: DeltaUnitStr | None = None,
+        units: Sequence[DeltaUnitStr] | None = None,
+        round_mode: RoundModeStr = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDelta | int:
+        """Calculate the duration since another PlainDateTime,
+        in terms of the specified units.
+
+        >>> d1 = PlainDateTime(2020, 8, 15, 23, 12)
+        >>> d2 = PlainDateTime(2020, 8, 14, 22)
+        >>> d1.since(d2, units=["hours", "minutes"],
+        ...          round_increment=15,
+        ...          round_mode="ceil")
+        ItemizedDelta("PT25h15m")
+        """
+        return _plain_since(self, b, unit, units, round_mode, round_increment)
+
+    @overload
+    def until(
+        self,
+        b: PlainDateTime,
+        /,
+        *,
+        unit: DeltaUnitStr,
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> int: ...
+
+    @overload
+    def until(
+        self,
+        b: PlainDateTime,
+        /,
+        *,
+        units: Sequence[DeltaUnitStr],
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+
+    def until(
+        self,
+        b: PlainDateTime,
+        /,
+        *,
+        unit: DeltaUnitStr | None = None,
+        units: Sequence[DeltaUnitStr] | None = None,
+        round_mode: RoundModeStr = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDelta | int:
+        """Inverse of the ``since()`` method. See :meth:`since` for more information."""
+        return b.since(  # type: ignore[call-overload, no-any-return]
+            self,
+            unit=unit,
+            units=units,
+            round_mode=round_mode,
+            round_increment=round_increment,
         )
 
     @overload
@@ -8396,6 +8573,158 @@ def _unit_index(u: str, units: Sequence[str]) -> int:
         raise ValueError(
             f"Invalid unit {u!r}. Unit must be one of "
             + ", ".join(repr(u) for u in units)
+        )
+
+
+def _plain_since(
+    self: PlainDateTime,
+    b: PlainDateTime,
+    unit: DeltaUnitStr | None,
+    units: Sequence[DeltaUnitStr] | None,
+    round_mode: RoundModeStr,
+    round_increment: int,
+    warn_msg: str | None = PLAIN_DIFF_UNAWARE_MSG,
+    warn_cls: type[Warning] = TimeZoneUnawareArithmeticWarning,
+    warn_check: ContextVar[bool] = _ignore_timezone_unaware_arithmetic_warning,
+) -> ItemizedDelta | int:
+    """Shared since() implementation for PlainDateTime and OffsetDateTime.
+    Days are always 24 hours (no DST adjustments).
+    """
+    units, single_unit_mode = _normalize_unit_or_units(
+        unit, units, valid_units=DELTA_UNITS
+    )
+    cal_units, exact_units = _split_calendar_and_exact_units(units)
+
+    if warn_msg and exact_units and not warn_check.get():
+        warn(
+            warn_msg,
+            warn_cls,
+            stacklevel=3,
+        )
+
+    sign: Literal[1, -1] = 1 if self >= b else -1
+
+    target_date = self.date()._py_date
+    # Adjust target_date so the exact remainder has the same sign
+    # as the overall difference.
+    if sign == 1:
+        while b.replace_date(Date._from_py_unchecked(target_date)) > self:
+            target_date -= _timedelta(days=1)
+    else:
+        while b.replace_date(Date._from_py_unchecked(target_date)) < self:
+            target_date += _timedelta(days=1)
+
+    cal_results, trunc_date, expand_date = date_diff(
+        target_date,
+        b._py_dt.date(),
+        1 if exact_units else round_increment,
+        cal_units,
+        sign,
+    )
+    trunc = b.replace_date(
+        Date._from_py_unchecked(resolve_leap_day(trunc_date)),
+    )
+    expand = b.replace_date(
+        Date._from_py_unchecked(resolve_leap_day(expand_date)),
+    )
+
+    smallest_unit = units[-1]
+    result = cast(dict[DeltaUnitStr, int], cal_results)
+    if exact_units:
+        diff_td = TimeDelta(
+            seconds=(self._py_dt - trunc._py_dt).days * 86_400
+            + (self._py_dt - trunc._py_dt).seconds,
+            nanoseconds=self._nanos - trunc._nanos,
+        )
+        result.update(
+            diff_td._in_units(  # type: ignore[arg-type]
+                exact_units,
+                round_increment=round_increment,
+                round_mode=round_mode,
+                round_unit=_UNSET,
+            )
+        )
+    else:
+        if round_mode != "trunc":
+            self_ns = (
+                (self._py_dt - trunc._py_dt).days * 86_400_000_000_000
+                + (self._py_dt - trunc._py_dt).seconds * 1_000_000_000
+                + self._nanos
+                - trunc._nanos
+            )
+            expand_ns = (
+                (expand._py_dt - trunc._py_dt).days * 86_400_000_000_000
+                + (expand._py_dt - trunc._py_dt).seconds * 1_000_000_000
+                + expand._nanos
+                - trunc._nanos
+            )
+            result[smallest_unit] = custom_round(
+                result[smallest_unit],
+                abs(self_ns),
+                abs(expand_ns),
+                round_mode,
+                round_increment,
+                sign,
+            )
+
+    if single_unit_mode:
+        return result.pop(smallest_unit) * sign
+
+    # mypy false positive: 'keywords must be strings' (but they're string literals!)
+    return ItemizedDelta._from_signed(  # type: ignore[misc]
+        sign if any(result.values()) else 0, **result
+    )
+
+
+def _offset_since(
+    self: OffsetDateTime,
+    b: OffsetDateTime,
+    unit: DeltaUnitStr | None,
+    units: Sequence[DeltaUnitStr] | None,
+    round_mode: RoundModeStr,
+    round_increment: int,
+) -> ItemizedDelta | int:
+    """since() implementation for OffsetDateTime.
+    Calendar units require both datetimes to have the same offset.
+    """
+    resolved_units, single_unit_mode = _normalize_unit_or_units(
+        unit, units, valid_units=DELTA_UNITS
+    )
+    cal_units, exact_units = _split_calendar_and_exact_units(resolved_units)
+    same_offset = self._py_dt.utcoffset() == b._py_dt.utcoffset()
+
+    if cal_units and not same_offset:
+        raise ValueError(
+            "Calendar units can only be used to compare OffsetDateTimes "
+            "with the same offset"
+        )
+
+    if same_offset:
+        # Same offset: delegate to the plain implementation
+        return _plain_since(
+            self.to_plain(),
+            b.to_plain(),
+            unit,
+            units,
+            round_mode,
+            round_increment,
+            warn_msg=None,
+        )
+    else:
+        # Different offsets, exact units only: compute via TimeDelta
+        diff = self._subtract_operator(b)
+        sign: Sign = 1 if diff._total_ns >= 0 else -1
+        result = diff._in_units(
+            exact_units,
+            round_increment=round_increment,
+            round_mode=round_mode,
+            round_unit=_UNSET,
+        )
+        if single_unit_mode:
+            return result.pop(exact_units[-1]) * sign
+
+        return ItemizedDelta._from_signed(  # type: ignore[misc]
+            sign if any(result.values()) else 0, **result
         )
 
 

@@ -1,7 +1,7 @@
 import pickle
 import re
 from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
-from typing import Any
+from typing import Any, Literal, Sequence
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -12,6 +12,7 @@ from whenever import (
     Date,
     Instant,
     InvalidOffsetError,
+    ItemizedDelta,
     OffsetDateTime,
     PlainDateTime,
     PotentiallyStaleOffsetWarning,
@@ -2029,6 +2030,124 @@ class TestRound:
         d = PlainDateTime.MAX.replace(nanosecond=0).assume_fixed_offset(0)
         with pytest.raises((ValueError, OverflowError), match="range"):
             d.round("second", increment=5)
+
+
+class TestSince:
+    # The underlying calendar/exact diff logic is thoroughly tested
+    # in PlainDateTime. Here we only test OffsetDateTime-specific behavior:
+    # offset validation, no-warning guarantees, and cross-offset exact diffs.
+
+    @pytest.mark.parametrize(
+        "a, b, units, kwargs, expect",
+        [
+            # same offset, calendar units
+            (
+                OffsetDateTime(2023, 10, 29, hour=11, offset=2),
+                OffsetDateTime(2023, 10, 28, hour=11, offset=2),
+                ["days"],
+                {},
+                ItemizedDelta(days=1),
+            ),
+            # same offset, mixed calendar + exact
+            (
+                OffsetDateTime(2025, 3, 15, hour=14, minute=30, offset=-5),
+                OffsetDateTime(2023, 1, 10, hour=8, minute=15, offset=-5),
+                ["years", "months", "days", "hours", "minutes"],
+                {},
+                ItemizedDelta(years=2, months=2, days=5, hours=6, minutes=15),
+            ),
+            # same offset, exact units only
+            (
+                OffsetDateTime(2025, 3, 15, hour=14, offset=0),
+                OffsetDateTime(2025, 3, 15, hour=10, offset=0),
+                ["hours", "minutes"],
+                {},
+                ItemizedDelta(hours=4, minutes=0),
+            ),
+            # negative result
+            (
+                OffsetDateTime(2022, 2, 2, offset=1),
+                OffsetDateTime(2022, 2, 5, offset=1),
+                ["days"],
+                {},
+                ItemizedDelta(days=-3),
+            ),
+            # different offset, exact units only
+            (
+                OffsetDateTime(2020, 1, 1, hour=12, offset=2),
+                OffsetDateTime(2020, 1, 1, hour=12, offset=5),
+                ["hours", "minutes"],
+                {},
+                ItemizedDelta(hours=3, minutes=0),
+            ),
+            # different offset, exact units with rounding
+            (
+                OffsetDateTime(2020, 1, 1, hour=12, minute=37, offset=0),
+                OffsetDateTime(2020, 1, 1, hour=12, offset=3),
+                ["hours", "minutes"],
+                {"round_increment": 15, "round_mode": "ceil"},
+                ItemizedDelta(hours=3, minutes=45),
+            ),
+        ],
+    )
+    def test_examples(
+        self,
+        a: OffsetDateTime,
+        b: OffsetDateTime,
+        units: Sequence[
+            Literal[
+                "years",
+                "months",
+                "days",
+                "hours",
+                "minutes",
+                "seconds",
+                "nanoseconds",
+            ]
+        ],
+        kwargs: dict[str, Any],
+        expect: ItemizedDelta,
+    ):
+        assert a.since(b, units=units, **kwargs).exact_eq(expect)
+
+        if len(units) == 1:
+            assert (
+                a.since(b, unit=units[0], **kwargs) == list(expect.values())[0]
+            )
+
+    def test_calendar_units_different_offset_raises(self):
+        a = OffsetDateTime(2023, 10, 29, offset=2)
+        b = OffsetDateTime(2023, 10, 28, offset=5)
+        with pytest.raises(ValueError, match="same offset"):
+            a.since(b, units=["days"])
+        with pytest.raises(ValueError, match="same offset"):
+            a.until(b, unit="months")
+
+    def test_no_warning(self):
+        """No warning should be emitted for OffsetDateTime since/until."""
+        import warnings
+
+        a = OffsetDateTime(2023, 2, 15, hour=13, offset=2)
+        b = OffsetDateTime(2021, 7, 3, hour=1, offset=2)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            a.since(b, units=["hours", "minutes"])
+            a.until(b, unit="hours")
+
+    def test_until_is_inverse(self):
+        a = OffsetDateTime(2023, 2, 15, hour=3, offset=-5)
+        b = OffsetDateTime(2021, 7, 3, offset=-5)
+        assert a.since(b, units=["years", "months", "days", "hours"]).exact_eq(
+            b.until(a, units=["years", "months", "days", "hours"])
+        )
+
+    def test_single_unit_returns_int(self):
+        a = OffsetDateTime(2025, 3, 15, offset=1)
+        b = OffsetDateTime(2023, 3, 15, offset=1)
+        result = a.since(b, unit="years")
+        assert isinstance(result, int)
+        assert result == 2
 
 
 def test_cannot_subclass():

@@ -51,6 +51,7 @@ def __getattr__(name: str) -> object:
         from ._utils import TZPATH
 
         return TZPATH
+    # TODO: remove these aliases
     elif name in ("NaiveDateTime", "LocalDateTime"):
         warnings.warn(
             f"whenever.{name} has been renamed to PlainDateTime.",
