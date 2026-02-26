@@ -3137,25 +3137,25 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         >>> d["hours"]
         KeyError: 'hours'
         """
-        # DROP-PY39: replace with match statement
-        if key == "years":
-            value = self._years
-        elif key == "months":
-            value = self._months
-        elif key == "weeks":
-            value = self._weeks
-        elif key == "days":
-            value = self._days
-        elif key == "hours":
-            value = self._hours
-        elif key == "minutes":
-            value = self._minutes
-        elif key == "seconds":
-            value = self._seconds
-        elif key == "nanoseconds":
-            value = self._nanoseconds
-        else:
-            raise KeyError(key)
+        match key:
+            case "years":
+                value = self._years
+            case "months":
+                value = self._months
+            case "weeks":
+                value = self._weeks
+            case "days":
+                value = self._days
+            case "hours":
+                value = self._hours
+            case "minutes":
+                value = self._minutes
+            case "seconds":
+                value = self._seconds
+            case "nanoseconds":
+                value = self._nanoseconds
+            case _:
+                raise KeyError(key)
 
         if value is not None:
             return self._sign * value
@@ -4163,17 +4163,17 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         >>> d["years"]
         KeyError: 'years'
         """
-        # DROP-PY39: replace with match statement
-        if key == "years":
-            value = self._years
-        elif key == "months":
-            value = self._months
-        elif key == "weeks":
-            value = self._weeks
-        elif key == "days":
-            value = self._days
-        else:
-            raise KeyError(key)
+        match key:
+            case "years":
+                value = self._years
+            case "months":
+                value = self._months
+            case "weeks":
+                value = self._weeks
+            case "days":
+                value = self._days
+            case _:
+                raise KeyError(key)
 
         if value is not None:
             return self._sign * value
@@ -8422,7 +8422,7 @@ class DaysNotAlways24HoursWarning(PotentialDstBugWarning):
     (e.g. :class:`~whenever.ItemizedDelta`) instead of exact-time
     shifts when the number of calendar days matters.
     Suppress this warning with the
-    :func:`~whenever.ignore_days_are_not_always_24_hours_warning` context
+    :func:`~whenever.ignore_days_not_always_24h_warning` context
     manager (or Python's standard warning filters) if 24-hour days are
     intentional.
     """

@@ -66,5 +66,5 @@ autodoc_type_aliases = {
     "DateDeltaUnitStr": "DateDeltaUnitStr",
     "ExactDeltaUnitStr": "ExactDeltaUnitStr",
     "DisambiguateStr": "DisambiguateStr",
-    "AnyDelta": "AnyDelta",
+    "OffsetMismatchStr": "OffsetMismatchStr",
 }
