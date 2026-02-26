@@ -57,6 +57,11 @@
   offset for non-existent times doesn't have the advantage of preventing
   unexpected jumps in time. The new behavior is consistent with other libraries.
 
+- Dropped Python 3.9 support
+
+  **Rationale**: Python 3.9 is EOL since October 2025.
+  Python 3.9 only accounts for less than 0.1% of downloads.
+
 - `TimeDelta.in_hours()`, `.in_minutes()`, `.in_seconds()`,
   `.in_milliseconds()`, `.in_microseconds()`, `.in_nanoseconds()`,
   `.in_days_of_24h()`, and `.in_hrs_mins_secs_nanos()` are

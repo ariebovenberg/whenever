@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import TypeAlias
 
 from ._core import *
 from ._core import (  # The unpickle functions must be findable at module-level
@@ -44,8 +45,6 @@ reset_tzpath()  # populate the tzpath once at startup
 
 # Handle deprecated names
 def __getattr__(name: str) -> object:
-    import warnings
-
     # This ensures we get the most up-to-date TZPATH.
     if name == "TZPATH":
         from ._utils import TZPATH
@@ -54,5 +53,4 @@ def __getattr__(name: str) -> object:
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-# TODO LAST: make py3.12<-safe
-type AnyDelta = DateDelta | TimeDelta | DateTimeDelta | ItemizedDelta | ItemizedDateDelta
+AnyDelta: TypeAlias = DateDelta | TimeDelta | DateTimeDelta | ItemizedDelta | ItemizedDateDelta
