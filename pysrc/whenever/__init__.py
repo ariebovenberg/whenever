@@ -51,19 +51,6 @@ def __getattr__(name: str) -> object:
         from ._utils import TZPATH
 
         return TZPATH
-    # TODO: remove these aliases
-    elif name in ("NaiveDateTime", "LocalDateTime"):
-        warnings.warn(
-            f"whenever.{name} has been renamed to PlainDateTime.",
-            DeprecationWarning,
-        )
-        return PlainDateTime
-    elif name == "SystemDateTime":  # pragma: no cover
-        raise ImportError(
-            "whenever.SystemDateTime has been removed. See the changelog for "
-            "migration instructions.",
-        )
-
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 

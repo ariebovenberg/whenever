@@ -9,7 +9,7 @@ from pytest import approx
 
 from whenever import (
     DateDelta,
-    DaysAreNotAlways24HoursWarning,
+    DaysNotAlways24HoursWarning,
     ItemizedDelta,
     PlainDateTime,
     TimeDelta,
@@ -283,7 +283,7 @@ class TestTotal:
     def test_days_and_weeks(self):
         d = TimeDelta(hours=1, minutes=2, seconds=0.003, nanoseconds=4)
 
-        with pytest.warns(DaysAreNotAlways24HoursWarning):
+        with pytest.warns(DaysNotAlways24HoursWarning):
             assert d.total("days") == approx(d.total("hours") / 24)
 
         # Silencing the warnings
@@ -337,7 +337,7 @@ class TestTotal:
     def test_weeks(self):
         d = TimeDelta(hours=2000)
 
-        with pytest.warns(DaysAreNotAlways24HoursWarning):
+        with pytest.warns(DaysNotAlways24HoursWarning):
             assert d.total("weeks") == approx(d.total("hours") / (24 * 7))
 
         # Silencing the warnings
@@ -1190,7 +1190,7 @@ class TestRound:
         self, t, increment, unit, floor, ceil, half_floor, half_ceil, half_even
     ):
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DaysAreNotAlways24HoursWarning)
+            warnings.simplefilter("ignore", DaysNotAlways24HoursWarning)
             assert t.round(unit, increment=increment) == half_even
             assert t.round(unit, increment=increment, mode="ceil") == ceil
             assert t.round(unit, increment=increment, mode="expand") == (
@@ -1256,10 +1256,10 @@ class TestRound:
 
     def test_24h_day_warning(self):
         t = TimeDelta.ZERO
-        with pytest.warns(DaysAreNotAlways24HoursWarning):
+        with pytest.warns(DaysNotAlways24HoursWarning):
             t.round("day")
 
-        with pytest.warns(DaysAreNotAlways24HoursWarning):
+        with pytest.warns(DaysNotAlways24HoursWarning):
             t.round("week")
 
     def test_extremes(self):
@@ -1555,7 +1555,7 @@ class TestInUnits:
     def test_valid(self, delta, units, kwargs, expected):
         with warnings.catch_warnings():
             # we test this warning elsewhere
-            warnings.simplefilter("ignore", DaysAreNotAlways24HoursWarning)
+            warnings.simplefilter("ignore", DaysNotAlways24HoursWarning)
             assert delta.in_units(units, **kwargs) == expected
 
     def test_invalid_unit(self):
@@ -1601,10 +1601,10 @@ class TestInUnits:
 
     def test_24h_days_warning(self):
         d = TimeDelta(hours=49)
-        with pytest.warns(DaysAreNotAlways24HoursWarning):
+        with pytest.warns(DaysNotAlways24HoursWarning):
             d.in_units(["days", "hours"])
 
-        with pytest.warns(DaysAreNotAlways24HoursWarning):
+        with pytest.warns(DaysNotAlways24HoursWarning):
             d.in_units(["weeks", "hours"])
 
         # test warnings suppression
