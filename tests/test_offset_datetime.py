@@ -933,6 +933,9 @@ def test_replace_time():
         with pytest.warns(WheneverDeprecationWarning, match="ignore_dst"):
             d.replace_time(Time(1, 2, 3), ignore_dst=True)
 
+    with pytest.warns(PotentiallyStaleOffsetWarning):
+        d.replace_time(Time(1, 2, 3))
+
 
 def test_components():
     d = OffsetDateTime(2020, 8, 15, 3, 12, 9, offset=5)
