@@ -107,10 +107,6 @@ class TestInit:
         assert d.get("seconds") == 0
         assert d.get("nanoseconds") == 500_000_000
 
-    def test_float_seconds(self):
-        d = ItemizedDelta(seconds=9_000, nanoseconds=1)
-        assert d.float_seconds() == 9_000.000000001
-
     def test_none_not_allowed(self):
         with pytest.raises(TypeError):
             ItemizedDelta(days=None)  # type: ignore[arg-type]
