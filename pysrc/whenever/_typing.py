@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, TypeAlias
 
 __all__ = [
     "RoundModeStr",
@@ -11,9 +11,7 @@ __all__ = [
     "OffsetMismatchStr",
 ]
 
-
-# TODO LAST: make py3.12< compatible
-type RoundModeStr = Literal[
+RoundModeStr: TypeAlias = Literal[
     "ceil",
     "expand",
     "floor",
@@ -24,7 +22,7 @@ type RoundModeStr = Literal[
     "half_trunc",
     "half_even",
 ]
-type DeltaUnitStr = Literal[
+DeltaUnitStr: TypeAlias = Literal[
     "years",
     "months",
     "weeks",
@@ -34,9 +32,14 @@ type DeltaUnitStr = Literal[
     "seconds",
     "nanoseconds",
 ]
-type DateDeltaUnitStr = Literal["years", "months", "weeks", "days"]
-type ExactDeltaUnitStr = Literal[
+DateDeltaUnitStr: TypeAlias = Literal["years", "months", "weeks", "days"]
+ExactDeltaUnitStr: TypeAlias = Literal[
     "weeks", "days", "hours", "minutes", "seconds", "nanoseconds"
 ]
-type DisambiguateStr = Literal["compatible", "earlier", "later", "raise"]
-type OffsetMismatchStr = Literal["raise", "keep_instant", "keep_local"]
+DisambiguateStr: TypeAlias = Literal["compatible", "earlier", "later", "raise"]
+OffsetMismatchStr: TypeAlias = Literal["raise", "keep_instant", "keep_local"]
+
+try:
+    from ._typing_312 import *
+except ImportError:
+    pass

@@ -23,5 +23,3 @@ i.e. enums, unions, and literals.
 .. autotype:: DateDeltaUnitStr
 .. autotype:: ExactDeltaUnitStr
 .. autotype:: OffsetMismatchStr
-
-.. autotype:: AnyDelta

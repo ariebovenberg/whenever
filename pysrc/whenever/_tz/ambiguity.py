@@ -7,7 +7,7 @@ from datetime import (
 
 from .._common import UTC, mk_fixed_tzinfo
 from .._typing import DisambiguateStr
-from .common import Fold, Unambiguous
+from .common import Fold, Gap, Unambiguous
 from .tzif import TimeZone
 
 
@@ -46,27 +46,27 @@ def resolve_ambiguity(
         )
 
     ambiguity = tz.ambiguity_for_local(int(dt.replace(tzinfo=UTC).timestamp()))
-    # DROP-PY39: replace with match statement
-    if isinstance(ambiguity, Unambiguous):
-        offset = ambiguity.offset
-    elif isinstance(ambiguity, Fold):
-        if disambiguate in ("compatible", "earlier"):
-            offset = ambiguity.before
-        elif disambiguate == "later":
-            offset = ambiguity.after
-        else:  # disambiguate == "raise"
-            raise RepeatedTime._for_tz(dt, tz.key)
-    else:  # isinstance(ambiguity, Gap):
-        if disambiguate in ("compatible", "later"):
-            offset = ambiguity.before
-            shift = ambiguity.before - ambiguity.after
-        elif disambiguate == "earlier":
-            offset = ambiguity.after
-            shift = ambiguity.after - ambiguity.before
-        else:  # disambiguate == "raise"
-            raise SkippedTime._for_tz(dt, tz.key)
-        # shift the datetime out of the gap
-        dt += _timedelta(seconds=shift)
+    match ambiguity:
+        case Unambiguous(offset):
+            pass
+        case Fold(before, after):
+            if disambiguate in ("compatible", "earlier"):
+                offset = before
+            elif disambiguate == "later":
+                offset = after
+            else:  # disambiguate == "raise"
+                raise RepeatedTime._for_tz(dt, tz.key)
+        case Gap(before, after):
+            if disambiguate in ("compatible", "later"):
+                offset = before
+                shift = before - after
+            elif disambiguate == "earlier":
+                offset = after
+                shift = after - before
+            else:  # disambiguate == "raise"
+                raise SkippedTime._for_tz(dt, tz.key)
+            # shift the datetime out of the gap
+            dt += _timedelta(seconds=shift)
 
     resolved = dt.replace(tzinfo=mk_fixed_tzinfo(offset))
     # This ensures we raise an exception if the instant is out of range,

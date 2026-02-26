@@ -244,26 +244,26 @@ def custom_round(
     assert increment > 0
     assert expanded != remainder
 
-    # DROP-PY39: match-case
-    if mode == "half_even":  # check this mode first, since it's common.
-        do_expand = remainder * 2 > expanded or (
-            remainder * 2 == expanded and (trunc_value // increment) % 2 == 1
-        )
-    elif mode == "expand":
-        do_expand = remainder > 0
-    elif mode == "ceil":
-        do_expand = remainder * sign > 0
-    elif mode == "floor":
-        do_expand = remainder * sign < 0
-    elif mode == "half_ceil":
-        do_expand = remainder * 2 >= (expanded - sign or 1)
-    elif mode == "half_floor":
-        do_expand = remainder * 2 >= (expanded + sign or 1)
-    elif mode == "half_trunc":
-        do_expand = remainder * 2 > expanded
-    elif mode == "half_expand":
-        do_expand = remainder * 2 >= expanded
-    else:
-        raise ValueError(f"Invalid rounding mode: {mode!r}")
+    match mode:
+        case "half_even":
+            do_expand = remainder * 2 > expanded or (
+                remainder * 2 == expanded and (trunc_value // increment) % 2 == 1
+            )
+        case "expand":
+            do_expand = remainder > 0
+        case "ceil":
+            do_expand = remainder * sign > 0
+        case "floor":
+            do_expand = remainder * sign < 0
+        case "half_ceil":
+            do_expand = remainder * 2 >= (expanded - sign or 1)
+        case "half_floor":
+            do_expand = remainder * 2 >= (expanded + sign or 1)
+        case "half_trunc":
+            do_expand = remainder * 2 > expanded
+        case "half_expand":
+            do_expand = remainder * 2 >= expanded
+        case _:
+            raise ValueError(f"Invalid rounding mode: {mode!r}")
 
     return trunc_value + (increment * do_expand)
