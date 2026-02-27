@@ -259,6 +259,54 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         unsafe { PyExc_ValueError },
     )?;
 
+    // Warning classes (UserWarning hierarchy)
+    let warn_potential_dst_bug = new_exception(
+        module,
+        c"whenever.PotentialDstBugWarning",
+        doc::POTENTIALDSTBUGWARNING,
+        unsafe { PyExc_UserWarning },
+    )?;
+    let warn_days_not_always_24h = new_exception(
+        module,
+        c"whenever.DaysNotAlways24HoursWarning",
+        doc::DAYSNOTALWAYS24HOURSWARNING,
+        warn_potential_dst_bug.as_ptr(),
+    )?;
+    let warn_potentially_stale_offset = new_exception(
+        module,
+        c"whenever.PotentiallyStaleOffsetWarning",
+        doc::POTENTIALLYSTALEOFFSETWARNING,
+        warn_potential_dst_bug.as_ptr(),
+    )?;
+    let warn_tz_unaware_arithmetic = new_exception(
+        module,
+        c"whenever.TimeZoneUnawareArithmeticWarning",
+        doc::TIMEZONEUNAWAREARITHMETICWARNING,
+        warn_potential_dst_bug.as_ptr(),
+    )?;
+    let warn_deprecation = new_exception(
+        module,
+        c"whenever.WheneverDeprecationWarning",
+        doc::WHENEVERDEPRECATIONWARNING,
+        unsafe { PyExc_UserWarning },
+    )?;
+
+    // ContextVars for suppressing warnings
+    let cv_ignore_days_not_always_24h =
+        unsafe { PyContextVar_New(c"_ignore_days_not_always_24h_warning".as_ptr(), Py_False()) }
+            .rust_owned()?;
+    module.setattr(c"_ignore_days_not_always_24h_warning", cv_ignore_days_not_always_24h.borrow())?;
+
+    let cv_ignore_potentially_stale_offset =
+        unsafe { PyContextVar_New(c"_ignore_potentially_stale_offset_warning".as_ptr(), Py_False()) }
+            .rust_owned()?;
+    module.setattr(c"_ignore_potentially_stale_offset_warning", cv_ignore_potentially_stale_offset.borrow())?;
+
+    let cv_ignore_tz_unaware_arithmetic =
+        unsafe { PyContextVar_New(c"_ignore_timezone_unaware_arithmetic_warning".as_ptr(), Py_False()) }
+            .rust_owned()?;
+    module.setattr(c"_ignore_timezone_unaware_arithmetic_warning", cv_ignore_tz_unaware_arithmetic.borrow())?;
+
     let time_patch = Patch::new()?;
     let tz_store = TzStore::new(*exc_tz_notfound)?;
 
@@ -341,6 +389,16 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         exc_invalid_offset: exc_invalid_offset.py_owned(),
         exc_implicitly_ignoring_dst: exc_implicitly_ignoring_dst.py_owned(),
         exc_tz_notfound: exc_tz_notfound.py_owned(),
+
+        warn_potential_dst_bug: warn_potential_dst_bug.py_owned(),
+        warn_days_not_always_24h: warn_days_not_always_24h.py_owned(),
+        warn_potentially_stale_offset: warn_potentially_stale_offset.py_owned(),
+        warn_tz_unaware_arithmetic: warn_tz_unaware_arithmetic.py_owned(),
+        warn_deprecation: warn_deprecation.py_owned(),
+
+        cv_ignore_days_not_always_24h: cv_ignore_days_not_always_24h.py_owned(),
+        cv_ignore_potentially_stale_offset: cv_ignore_potentially_stale_offset.py_owned(),
+        cv_ignore_tz_unaware_arithmetic: cv_ignore_tz_unaware_arithmetic.py_owned(),
 
         unpickle_date: unpickle_date.py_owned(),
         unpickle_yearmonth: unpickle_yearmonth.py_owned(),
@@ -468,6 +526,26 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
         traverse(exc.as_ptr(), visit, arg)?;
     }
 
+    // warnings
+    for w in [
+        state.warn_potential_dst_bug,
+        state.warn_days_not_always_24h,
+        state.warn_potentially_stale_offset,
+        state.warn_tz_unaware_arithmetic,
+        state.warn_deprecation,
+    ] {
+        traverse(w.as_ptr(), visit, arg)?;
+    }
+
+    // context vars
+    for cv in [
+        state.cv_ignore_days_not_always_24h,
+        state.cv_ignore_potentially_stale_offset,
+        state.cv_ignore_tz_unaware_arithmetic,
+    ] {
+        traverse(cv.as_ptr(), visit, arg)?;
+    }
+
     // Imported stuff
     traverse(state.strptime.as_ptr(), visit, arg)?;
     traverse(state.time_ns.as_ptr(), visit, arg)?;
@@ -574,6 +652,18 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.exc_implicitly_ignoring_dst).cast());
         Py_CLEAR((&raw mut state.exc_tz_notfound).cast());
 
+        // warnings
+        Py_CLEAR((&raw mut state.warn_potential_dst_bug).cast());
+        Py_CLEAR((&raw mut state.warn_days_not_always_24h).cast());
+        Py_CLEAR((&raw mut state.warn_potentially_stale_offset).cast());
+        Py_CLEAR((&raw mut state.warn_tz_unaware_arithmetic).cast());
+        Py_CLEAR((&raw mut state.warn_deprecation).cast());
+
+        // context vars
+        Py_CLEAR((&raw mut state.cv_ignore_days_not_always_24h).cast());
+        Py_CLEAR((&raw mut state.cv_ignore_potentially_stale_offset).cast());
+        Py_CLEAR((&raw mut state.cv_ignore_tz_unaware_arithmetic).cast());
+
         // imported stuff
         Py_CLEAR((&raw mut state.strptime).cast());
         Py_CLEAR((&raw mut state.time_ns).cast());
@@ -616,6 +706,18 @@ pub(crate) struct State {
     pub(crate) exc_invalid_offset: PyObj,
     pub(crate) exc_implicitly_ignoring_dst: PyObj,
     pub(crate) exc_tz_notfound: PyObj,
+
+    // warnings
+    pub(crate) warn_potential_dst_bug: PyObj,
+    pub(crate) warn_days_not_always_24h: PyObj,
+    pub(crate) warn_potentially_stale_offset: PyObj,
+    pub(crate) warn_tz_unaware_arithmetic: PyObj,
+    pub(crate) warn_deprecation: PyObj,
+
+    // context vars (for suppressing warnings)
+    pub(crate) cv_ignore_days_not_always_24h: PyObj,
+    pub(crate) cv_ignore_potentially_stale_offset: PyObj,
+    pub(crate) cv_ignore_tz_unaware_arithmetic: PyObj,
 
     // unpickling functions
     pub(crate) unpickle_date: PyObj,

@@ -105,3 +105,42 @@ pub(crate) fn deprecation_warn(msg: &CStr) -> PyResult<()> {
         _ => Err(PyErrMarker()),
     }
 }
+
+/// Emit a warning using a custom warning class (e.g. a heap-type UserWarning subclass).
+/// `stacklevel` controls how many frames to skip (1 = caller).
+pub(crate) fn warn_with_class(
+    warning_cls: *mut PyObject,
+    msg: &CStr,
+    stacklevel: isize,
+) -> PyResult<()> {
+    match unsafe { PyErr_WarnEx(warning_cls, msg.as_ptr(), stacklevel as _) } {
+        0 => Ok(()),
+        _ => Err(PyErrMarker()),
+    }
+}
+
+/// Check a ContextVar[bool] and return its value.
+/// Returns `false` if the ContextVar is not set (default=False).
+pub(crate) fn get_contextvar_bool(contextvar: *mut PyObject) -> PyResult<bool> {
+    let mut value: *mut PyObject = std::ptr::null_mut();
+    // PyContextVar_Get returns 0 on success (value found or default used),
+    // -1 on error. When using default=NULL and no value is set, value will be NULL.
+    match unsafe { PyContextVar_Get(contextvar, std::ptr::null_mut(), &mut value) } {
+        -1 => Err(PyErrMarker()),
+        _ => {
+            if value.is_null() {
+                // No value set and no default → treat as False
+                Ok(false)
+            } else {
+                // SAFETY: value is a valid PyObject (borrowed from context)
+                let result = unsafe { PyObject_IsTrue(value) };
+                unsafe { Py_DECREF(value) };
+                match result {
+                    -1 => Err(PyErrMarker()),
+                    0 => Ok(false),
+                    _ => Ok(true),
+                }
+            }
+        }
+    }
+}

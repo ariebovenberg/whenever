@@ -27,6 +27,24 @@ try:  # pragma: no cover
         _unpkl_zoned,
     )
 
+    # Backfill symbols not yet in the Rust extension (temporary)
+    try:
+        from ._whenever import _unpkl_idelta as _unpkl_idelta
+    except ImportError:
+        from ._pywhenever import _unpkl_idelta as _unpkl_idelta
+    try:
+        from ._whenever import _unpkl_iddelta as _unpkl_iddelta
+    except ImportError:
+        from ._pywhenever import _unpkl_iddelta as _unpkl_iddelta
+    try:
+        from ._whenever import ItemizedDelta as ItemizedDelta
+    except ImportError:
+        from ._pywhenever import ItemizedDelta as ItemizedDelta
+    try:
+        from ._whenever import ItemizedDateDelta as ItemizedDateDelta
+    except ImportError:
+        from ._pywhenever import ItemizedDateDelta as ItemizedDateDelta
+
     _EXTENSION_LOADED = True
 
 except ModuleNotFoundError as e:
