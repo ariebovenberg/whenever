@@ -122,15 +122,8 @@ SKIP = {
     W._BasicConversions.format_iso,
     W._BasicConversions.from_py_datetime,
     W._BasicConversions.parse_iso,
-    W._ExactTime.from_timestamp,
-    W._ExactTime.from_timestamp_millis,
-    W._ExactTime.from_timestamp_nanos,
-    W._ExactTime.now,
     W._LocalTime.add,
     W._LocalTime.subtract,
-    W._LocalTime.replace,
-    W._LocalTime.replace_date,
-    W._LocalTime.replace_time,
     W._LocalTime.round,
 }
 
