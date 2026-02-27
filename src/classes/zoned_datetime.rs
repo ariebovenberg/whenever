@@ -1550,7 +1550,7 @@ fn _round_day(slf: ZonedDateTime, state: &State, mode: round::Mode) -> PyResult<
         )
     };
     match mode {
-        round::Mode::Ceil => {
+        round::Mode::Ceil | round::Mode::Expand => {
             // Round up anything *except* midnight (which is a no-op)
             if time == Time::MIDNIGHT {
                 Ok(slf.without_tz())
@@ -1558,17 +1558,18 @@ fn _round_day(slf: ZonedDateTime, state: &State, mode: round::Mode) -> PyResult<
                 get_ceil()
             }
         }
-        round::Mode::Floor => get_floor(),
+        round::Mode::Floor | round::Mode::Trunc => get_floor(),
         _ => {
             let time_ns = time.total_nanos();
             let floor = get_floor()?;
             let ceil = get_ceil()?;
             let day_ns = ceil.instant().diff(floor.instant()).total_nanos() as u64;
             debug_assert!(day_ns > 1);
+            // Time is always non-negative, so half_trunc=half_floor, half_expand=half_ceil
             let threshold = match mode {
                 round::Mode::HalfEven => day_ns / 2 + (time_ns % 2 == 0) as u64,
-                round::Mode::HalfFloor => day_ns / 2 + 1,
-                round::Mode::HalfCeil => day_ns / 2,
+                round::Mode::HalfFloor | round::Mode::HalfTrunc => day_ns / 2 + 1,
+                round::Mode::HalfCeil | round::Mode::HalfExpand => day_ns / 2,
                 _ => unreachable!(),
             };
             if time_ns >= threshold {

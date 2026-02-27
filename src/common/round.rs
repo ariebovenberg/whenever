@@ -5,9 +5,47 @@ use crate::{docstrings as doc, py::*, pymodule::State};
 pub(crate) enum Mode {
     Floor,
     Ceil,
+    Trunc,
+    Expand,
     HalfFloor,
     HalfCeil,
     HalfEven,
+    HalfTrunc,
+    HalfExpand,
+}
+
+/// Rounding mode resolved for the euclidean domain.
+/// After sign-based normalization, these modes can be used directly
+/// in euclidean quotient/remainder rounding without needing the sign.
+///
+/// In the euclidean domain:
+/// - `Trunc`: keep the quotient as-is (≡ floor, towards -∞)
+/// - `Expand`: increment the quotient (≡ ceil, towards +∞)
+#[derive(Debug, Copy, Clone)]
+pub(crate) enum AbsMode {
+    Trunc,
+    Expand,
+    HalfTrunc,
+    HalfExpand,
+    HalfEven,
+}
+
+impl Mode {
+    /// Resolve sign-dependent modes (Floor/Ceil, Trunc/Expand) into
+    /// sign-independent euclidean-domain modes.
+    pub(crate) fn to_abs(self, is_negative: bool) -> AbsMode {
+        match (self, is_negative) {
+            (Mode::Floor, _) | (Mode::Trunc, false) | (Mode::Expand, true) => AbsMode::Trunc,
+            (Mode::Ceil, _) | (Mode::Expand, false) | (Mode::Trunc, true) => AbsMode::Expand,
+            (Mode::HalfFloor, _) | (Mode::HalfTrunc, false) | (Mode::HalfExpand, true) => {
+                AbsMode::HalfTrunc
+            }
+            (Mode::HalfCeil, _) | (Mode::HalfExpand, false) | (Mode::HalfTrunc, true) => {
+                AbsMode::HalfExpand
+            }
+            (Mode::HalfEven, _) => AbsMode::HalfEven,
+        }
+    }
 }
 
 impl Mode {
@@ -15,21 +53,33 @@ impl Mode {
         s: PyObj,
         str_floor: PyObj,
         str_ceil: PyObj,
+        str_trunc: PyObj,
+        str_expand: PyObj,
         str_half_floor: PyObj,
         str_half_ceil: PyObj,
         str_half_even: PyObj,
+        str_half_trunc: PyObj,
+        str_half_expand: PyObj,
     ) -> PyResult<Mode> {
         match_interned_str("mode", s, |v, eq| {
             Some(if eq(v, str_floor) {
                 Mode::Floor
             } else if eq(v, str_ceil) {
                 Mode::Ceil
+            } else if eq(v, str_trunc) {
+                Mode::Trunc
+            } else if eq(v, str_expand) {
+                Mode::Expand
             } else if eq(v, str_half_floor) {
                 Mode::HalfFloor
             } else if eq(v, str_half_ceil) {
                 Mode::HalfCeil
             } else if eq(v, str_half_even) {
                 Mode::HalfEven
+            } else if eq(v, str_half_trunc) {
+                Mode::HalfTrunc
+            } else if eq(v, str_half_expand) {
+                Mode::HalfExpand
             } else {
                 None?
             })
@@ -82,37 +132,30 @@ impl Unit {
         })
     }
 
-    fn increment_from_py(self, v: PyObj, hours_increment_always_ok: bool) -> PyResult<i64> {
+    fn increment_from_py(self, v: PyObj, for_delta: bool) -> PyResult<i64> {
         let inc = v
             .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("increment must be an integer")?
             .to_i64()?;
-        if inc <= 0 || inc >= 1000 {
-            raise_value_err("increment must be between 0 and 1000")?;
+        if inc <= 0 {
+            raise_value_err("increment must be a positive integer")?;
         }
-        match self {
-            Unit::Nanosecond => (1_000 % inc == 0)
-                .then_some(inc)
-                .ok_or_value_err("Increment must be a divisor of 1000"),
-            Unit::Microsecond => (1_000 % inc == 0)
-                .then_some(inc * 1_000)
-                .ok_or_value_err("Increment must be a divisor of 1000"),
-            Unit::Millisecond => (1_000 % inc == 0)
-                .then_some(inc * 1_000_000)
-                .ok_or_value_err("Increment must be a divisor of 1000"),
-            Unit::Second => (60 % inc == 0)
-                .then_some(inc * 1_000_000_000)
-                .ok_or_value_err("Increment must be a divisor of 60"),
-            Unit::Minute => (60 % inc == 0)
-                .then_some(inc * 60 * 1_000_000_000)
-                .ok_or_value_err("Increment must be a divisor of 60"),
-            Unit::Hour => (hours_increment_always_ok || 24 % inc == 0)
-                .then_some(inc * 3_600 * 1_000_000_000)
-                .ok_or_value_err("Increment must be a divisor of 24"),
-            Unit::Day => (inc == 1)
-                .then_some(86_400 * 1_000_000_000)
-                .ok_or_value_err("Increment must be 1 for 'day' unit"),
+        let ns_per_unit: i64 = match self {
+            Unit::Nanosecond => 1,
+            Unit::Microsecond => 1_000,
+            Unit::Millisecond => 1_000_000,
+            Unit::Second => 1_000_000_000,
+            Unit::Minute => 60_000_000_000,
+            Unit::Hour => 3_600_000_000_000,
+            Unit::Day => 86_400_000_000_000,
+        };
+        let increment_ns = inc
+            .checked_mul(ns_per_unit)
+            .ok_or_value_err("increment too large")?;
+        if !for_delta && 86_400_000_000_000 % increment_ns != 0 {
+            raise_value_err("Invalid increment. Must divide a 24-hour day evenly.")?;
         }
+        Ok(increment_ns)
     }
 
     const fn default_increment(self) -> i64 {
@@ -132,7 +175,7 @@ pub(crate) fn parse_args(
     state: &State,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
-    hours_largest_unit: bool,
+    for_delta: bool,
     ignore_dst_kwarg: bool,
 ) -> PyResult<(Unit, i64, Mode)> {
     let &State {
@@ -148,9 +191,13 @@ pub(crate) fn parse_args(
         str_increment,
         str_floor,
         str_ceil,
+        str_trunc,
+        str_expand,
         str_half_floor,
         str_half_ceil,
         str_half_even,
+        str_half_trunc,
+        str_half_expand,
         str_ignore_dst,
         exc_implicitly_ignoring_dst,
         ..
@@ -220,7 +267,7 @@ pub(crate) fn parse_args(
         .transpose()?
         .unwrap_or(Unit::Second);
     let increment = arg_obj[1]
-        .map(|v| unit.increment_from_py(v, hours_largest_unit))
+        .map(|v| unit.increment_from_py(v, for_delta))
         .transpose()?
         .unwrap_or_else(|| unit.default_increment());
     let mode = arg_obj[2]
@@ -229,13 +276,22 @@ pub(crate) fn parse_args(
                 v,
                 str_floor,
                 str_ceil,
+                str_trunc,
+                str_expand,
                 str_half_floor,
                 str_half_ceil,
                 str_half_even,
+                str_half_trunc,
+                str_half_expand,
             )
         })
         .transpose()?
         .unwrap_or(Mode::HalfEven);
 
     Ok((unit, increment, mode))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 }
