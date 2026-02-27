@@ -6898,12 +6898,26 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         The inverse of the ``parse_iso()`` method.
 
-        Use the ``unit`` parameter to control the precision of the time part,
-        the ``sep`` parameter to control the separator,
-        and the ``basic`` parameter to use the basic ISO format instead of the extended one.
+        Parameters
+        ----------
+        unit
+            The smallest unit to include in the output.
+            ``"auto"`` is the same as ``"nanosecond"``,
+            except that trailing zeroes are omitted from the time part.
+        basic
+            Whether to use the basic ISO format (without separators) instead of the extended one.
+        sep
+            The separator between the date and time parts.
+        tz
+            Whether to include the timezone ID in the output.
+            ``"always"`` (default) raises an error if the timezone ID is not available
+            (in practice, this should only happen for some system timezones without a corresponding IANA timezone ID).
+            ``"auto"`` includes the ID if available, and omits it otherwise.
+            ``"never"`` always omits the ID.
 
-        >>> ZonedDateTime(2020, 8, 15, hour=23, minute=12, tz="Europe/London")
-        ZonedDateTime("2020-08-15 23:12:00+01:00[Europe/London]")
+        >>> zdt = ZonedDateTime(2020, 8, 15, hour=23, minute=12, tz="Europe/London")
+        >>> zdt.format_iso(unit="minute", basic=True)
+        "20200815T2312+0100[Europe/London]"
 
         Important
         ---------
@@ -8598,6 +8612,18 @@ DAYS_NOT_ALWAYS_24H_MSG = (
     "Suppress this warning with `with whenever.ignore_days_not_always_24h_warning():`."
 )
 
+# Deprecated ignore_dst-era messages, kept only so that
+# generate_docstrings.py emits them for the Rust extension
+# (which still references them). Remove once Rust is migrated.
+ADJUST_OFFSET_DATETIME_MSG = "deprecated: ignore_dst-era message"
+OFFSET_NOW_DST_MSG = "deprecated: ignore_dst-era message"
+OFFSET_ROUNDING_DST_MSG = "deprecated: ignore_dst-era message"
+TIMESTAMP_DST_MSG = "deprecated: ignore_dst-era message"
+ADJUST_LOCAL_DATETIME_MSG = "deprecated: ignore_dst-era message"
+DIFF_LOCAL_MSG = "deprecated: ignore_dst-era message"
+DIFF_OPERATOR_LOCAL_MSG = "deprecated: ignore_dst-era message"
+SHIFT_LOCAL_MSG = "deprecated: ignore_dst-era message"
+
 
 def _to_tz(dt: _datetime, tz: TimeZone) -> _datetime:
     return dt.astimezone(
@@ -9082,7 +9108,7 @@ if not SPHINX_RUNNING:  # pragma: no branch
     for name in __all__ + "_LocalTime _ExactTime _ExactAndLocalTime".split():
         member = locals()[name]
         if (
-            getattr(member, "__module__", None) == __name__
+            getattr(member, "__module__", "").startswith("whenever")
         ):  # pragma: no branch
             member.__module__ = "whenever"
 

@@ -6,6 +6,8 @@ Deprecated components
 .. autofunction:: whenever.weeks
 .. autofunction:: whenever.days
 
+.. autoexception:: whenever.ImplicitlyIgnoringDST
+
 .. autoclass:: whenever.DateDelta
    :members:
    :special-members: __eq__, __neg__, __abs__, __add__, __sub__, __mul__, __bool__
