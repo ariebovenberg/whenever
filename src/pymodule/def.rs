@@ -372,9 +372,13 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         str_mode: intern(c"mode")?.py_owned(),
         str_floor: intern(c"floor")?.py_owned(),
         str_ceil: intern(c"ceil")?.py_owned(),
+        str_trunc: intern(c"trunc")?.py_owned(),
+        str_expand: intern(c"expand")?.py_owned(),
         str_half_floor: intern(c"half_floor")?.py_owned(),
         str_half_ceil: intern(c"half_ceil")?.py_owned(),
         str_half_even: intern(c"half_even")?.py_owned(),
+        str_half_trunc: intern(c"half_trunc")?.py_owned(),
+        str_half_expand: intern(c"half_expand")?.py_owned(),
         str_format: intern(c"format")?.py_owned(),
         str_sep: intern(c"sep")?.py_owned(),
         str_space: intern(c" ")?.py_owned(),
@@ -620,9 +624,13 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.str_mode).cast());
         Py_CLEAR((&raw mut state.str_floor).cast());
         Py_CLEAR((&raw mut state.str_ceil).cast());
+        Py_CLEAR((&raw mut state.str_trunc).cast());
+        Py_CLEAR((&raw mut state.str_expand).cast());
         Py_CLEAR((&raw mut state.str_half_floor).cast());
         Py_CLEAR((&raw mut state.str_half_ceil).cast());
         Py_CLEAR((&raw mut state.str_half_even).cast());
+        Py_CLEAR((&raw mut state.str_half_trunc).cast());
+        Py_CLEAR((&raw mut state.str_half_expand).cast());
         Py_CLEAR((&raw mut state.str_format).cast());
         Py_CLEAR((&raw mut state.str_sep).cast());
         Py_CLEAR((&raw mut state.str_space).cast());
@@ -773,9 +781,13 @@ pub(crate) struct State {
     pub(crate) str_mode: PyObj,
     pub(crate) str_floor: PyObj,
     pub(crate) str_ceil: PyObj,
+    pub(crate) str_trunc: PyObj,
+    pub(crate) str_expand: PyObj,
     pub(crate) str_half_floor: PyObj,
     pub(crate) str_half_ceil: PyObj,
     pub(crate) str_half_even: PyObj,
+    pub(crate) str_half_trunc: PyObj,
+    pub(crate) str_half_expand: PyObj,
     pub(crate) str_format: PyObj,
     pub(crate) str_sep: PyObj,
     pub(crate) str_space: PyObj,

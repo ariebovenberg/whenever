@@ -710,7 +710,7 @@ impl DeltaNanos {
     }
 }
 
-/// Number of nanoseconds within a second (< 1_000_000_000)
+/// Number of nanoseconds within a second (>= 0 && < 1_000_000_000)
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 // Even though it's always positive, we use i32 over u32 to simplify arithmetic
 pub(crate) struct SubSecNanos(i32);
@@ -777,15 +777,37 @@ impl SubSecNanos {
         let remainder = self.0 % increment;
         let threshold = match mode {
             round::Mode::HalfEven => 1.max(increment / 2 + (quotient % 2 == 0) as i32),
-            round::Mode::Ceil => 1,
-            round::Mode::Floor => increment + 1,
-            round::Mode::HalfFloor => increment / 2 + 1,
-            round::Mode::HalfCeil => 1.max(increment / 2),
+            round::Mode::Ceil | round::Mode::Expand => 1,
+            round::Mode::Floor | round::Mode::Trunc => increment + 1,
+            round::Mode::HalfFloor | round::Mode::HalfTrunc => increment / 2 + 1,
+            round::Mode::HalfCeil | round::Mode::HalfExpand => 1.max(increment / 2),
         };
         let round_up = remainder >= threshold;
         let rounded = (quotient + i32::from(round_up)) * increment;
         (
             // Safety: No range check since we're dealing with at most 1 second here
+            DeltaSeconds::new_unchecked((rounded / 1_000_000_000) as _),
+            SubSecNanos::from_remainder(rounded),
+        )
+    }
+
+    /// Round using an absolute (sign-normalized) mode.
+    /// Used by TimeDelta where sign-dependent modes have already been resolved.
+    pub(crate) fn round_abs(self, increment: i32, mode: round::AbsMode) -> (DeltaSeconds, Self) {
+        debug_assert!(increment < 1_000_000_000);
+        debug_assert!(1_000_000_000 % increment == 0);
+        let quotient = self.0 / increment;
+        let remainder = self.0 % increment;
+        let threshold = match mode {
+            round::AbsMode::HalfEven => 1.max(increment / 2 + (quotient % 2 == 0) as i32),
+            round::AbsMode::Expand => 1,
+            round::AbsMode::Trunc => increment + 1,
+            round::AbsMode::HalfTrunc => increment / 2 + 1,
+            round::AbsMode::HalfExpand => 1.max(increment / 2),
+        };
+        let round_up = remainder >= threshold;
+        let rounded = (quotient + i32::from(round_up)) * increment;
+        (
             DeltaSeconds::new_unchecked((rounded / 1_000_000_000) as _),
             SubSecNanos::from_remainder(rounded),
         )

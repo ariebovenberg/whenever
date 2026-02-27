@@ -170,12 +170,13 @@ impl Time {
         let quotient = total_nanos / increment;
         let remainder = total_nanos % increment;
 
+        // Time is always non-negative, so trunc=floor and expand=ceil
         let threshold = match mode {
             round::Mode::HalfEven => 1.max(increment / 2 + (quotient % 2 == 0) as u64),
-            round::Mode::Ceil => 1,
-            round::Mode::Floor => increment + 1,
-            round::Mode::HalfFloor => increment / 2 + 1,
-            round::Mode::HalfCeil => 1.max(increment / 2),
+            round::Mode::Ceil | round::Mode::Expand => 1,
+            round::Mode::Floor | round::Mode::Trunc => increment + 1,
+            round::Mode::HalfFloor | round::Mode::HalfTrunc => increment / 2 + 1,
+            round::Mode::HalfCeil | round::Mode::HalfExpand => 1.max(increment / 2),
         };
         let round_up = remainder >= threshold;
         let ns_since_midnight = (quotient + round_up as u64) * increment;
@@ -598,8 +599,6 @@ fn round(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs
     let (unit, increment, mode) = round::parse_args(cls.state(), args, kwargs, false, false)?;
     if unit == round::Unit::Day {
         raise_value_err("Cannot round Time to day")?;
-    } else if unit == round::Unit::Hour && 86_400_000_000_000 % increment != 0 {
-        raise_value_err("increment must be a divisor of 24")?;
     }
     slf.round(increment as u64, mode).0.to_obj(cls)
 }
