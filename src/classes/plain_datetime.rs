@@ -1,7 +1,7 @@
 use crate::{
     classes::{
         date::Date, date_delta::DateDelta, datetime_delta::set_units_from_kwargs, instant::Instant,
-        offset_datetime::check_ignore_dst_kwarg, time::Time, zoned_datetime::ZonedDateTime,
+        time::Time, zoned_datetime::ZonedDateTime,
     },
     common::{ambiguity::*, fmt, parse::Scan, round, scalar::*},
     docstrings as doc,
@@ -213,21 +213,6 @@ fn parse_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn format_common_iso(
-    cls: HeapType<DateTime>,
-    slf: DateTime,
-    args: &[PyObj],
-    kwargs: &mut IterKwargs,
-) -> PyReturn {
-    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
-    format_iso(cls, slf, args, kwargs)
-}
-
-fn parse_common_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
-    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
-    parse_iso(cls, arg)
-}
-
 fn __richcmp__(cls: HeapType<DateTime>, slf: DateTime, other: PyObj, op: c_int) -> PyReturn {
     if let Some(dt) = other.extract(cls) {
         match op {
@@ -259,11 +244,19 @@ fn __sub__(a: PyObj, b: PyObj) -> PyReturn {
     // easy case: subtracting two PlainDateTime objects
     if a.type_() == b.type_() {
         // SAFETY: at least one of the args is a PlainDateTime so both are.
-        let (dt_type, _) = unsafe { a.assume_heaptype::<DateTime>() };
-        raise(
-            dt_type.state().exc_implicitly_ignoring_dst.as_ptr(),
-            doc::DIFF_OPERATOR_LOCAL_MSG,
-        )?
+        let (dt_type, slf) = unsafe { a.assume_heaptype::<DateTime>() };
+        let (_, other) = unsafe { b.assume_heaptype::<DateTime>() };
+        let state = dt_type.state();
+        if !state.cv_ignore_tz_unaware_arithmetic.get()? {
+            warn_with_class(
+                state.warn_tz_unaware_arithmetic,
+                doc::PLAIN_DIFF_UNAWARE_MSG,
+                2,
+            )?;
+        }
+        Instant::from_datetime(slf.date, slf.time)
+            .diff(Instant::from_datetime(other.date, other.time))
+            .to_obj(state.time_delta_type)
     } else {
         _shift_operator(a, b, true)
     }
@@ -292,17 +285,46 @@ fn _shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
             a.shift_date(months, days)
                 .ok_or_else_value_err(|| format!("Result of {opname} out of range"))?
                 .to_obj(dt_type)
-        } else if type_b == state.datetime_delta_type.into()
-            || type_b == state.time_delta_type.into()
-        {
-            raise(
-                state.exc_implicitly_ignoring_dst.as_ptr(),
-                doc::SHIFT_LOCAL_MSG,
-            )?
+        } else if let Some(tdelta) = obj_b.extract(state.time_delta_type) {
+            if !state.cv_ignore_tz_unaware_arithmetic.get()? {
+                warn_with_class(
+                    state.warn_tz_unaware_arithmetic,
+                    doc::PLAIN_SHIFT_UNAWARE_MSG,
+                    2,
+                )?;
+            }
+            let nanos = if negate {
+                -tdelta.total_nanos()
+            } else {
+                tdelta.total_nanos()
+            };
+            a.shift_nanos(nanos)
+                .ok_or_else_value_err(|| format!("Result of {opname} out of range"))?
+                .to_obj(dt_type)
+        } else if let Some(dt) = obj_b.extract(state.datetime_delta_type) {
+            let mut months = dt.ddelta.months;
+            let mut days = dt.ddelta.days;
+            let mut nanos = dt.tdelta.total_nanos();
+            if negate {
+                months = -months;
+                days = -days;
+                nanos = -nanos;
+            }
+            if nanos != 0 {
+                if !state.cv_ignore_tz_unaware_arithmetic.get()? {
+                    warn_with_class(
+                        state.warn_tz_unaware_arithmetic,
+                        doc::PLAIN_SHIFT_UNAWARE_MSG,
+                        2,
+                    )?;
+                }
+            }
+            a.shift_date(months, days)
+                .and_then(|dt| dt.shift_nanos(nanos))
+                .ok_or_else_value_err(|| format!("Result of {opname} out of range"))?
+                .to_obj(dt_type)
         } else {
-            raise_type_err(format!(
-                "unsupported operand type(s) for {opname}: 'PlainDateTime' and {type_b}"
-            ))?
+            not_implemented()
         }
     } else {
         not_implemented()
@@ -491,13 +513,13 @@ fn _shift_method(
     let mut months = DeltaMonths::ZERO;
     let mut days = DeltaDays::ZERO;
     let mut nanos = 0;
-    let mut ignore_dst = false;
+    let mut got_ignore_dst = false;
 
     match *args {
         [arg] => {
             match kwargs.next() {
-                Some((key, value)) if kwargs.len() == 1 && key.py_eq(state.str_ignore_dst)? => {
-                    ignore_dst = value.is_true();
+                Some((key, _value)) if kwargs.len() == 1 && key.py_eq(state.str_ignore_dst)? => {
+                    got_ignore_dst = true;
                 }
                 Some(_) => raise_type_err(format!(
                     "{fname}() can't mix positional and keyword arguments"
@@ -522,7 +544,7 @@ fn _shift_method(
             let mut raw_days = 0;
             handle_kwargs(fname, kwargs, |key, value, eq| {
                 if eq(key, state.str_ignore_dst) {
-                    ignore_dst = value.is_true();
+                    got_ignore_dst = true;
                     Ok(true)
                 } else {
                     set_units_from_kwargs(
@@ -546,16 +568,27 @@ fn _shift_method(
         ))?,
     }
 
+    if got_ignore_dst {
+        warn_with_class(
+            state.warn_deprecation,
+            doc::IGNORE_DST_DEPRECATED_MSG,
+            2,
+        )?;
+    }
+
     if negate {
         months = -months;
         days = -days;
         nanos = -nanos;
     }
-    if nanos != 0 && !ignore_dst {
-        raise(
-            state.exc_implicitly_ignoring_dst.as_ptr(),
-            doc::ADJUST_LOCAL_DATETIME_MSG,
-        )?
+    if nanos != 0 {
+        if !state.cv_ignore_tz_unaware_arithmetic.get()? {
+            warn_with_class(
+                state.warn_tz_unaware_arithmetic,
+                doc::PLAIN_SHIFT_UNAWARE_MSG,
+                2,
+            )?;
+        }
     }
     slf.shift_date(months, days)
         .and_then(|dt| dt.shift_nanos(nanos))
@@ -570,7 +603,14 @@ fn difference(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    check_ignore_dst_kwarg(kwargs, state, doc::DIFF_LOCAL_MSG)?;
+    // difference() is deprecated entirely
+    warn_with_class(state.warn_deprecation, c"The difference() method is deprecated, use the subtraction operator or since() method instead. ", 2)?;
+    // Accept but ignore the deprecated ignore_dst kwarg
+    if let Some((key, _value)) = kwargs.next() {
+        if !(kwargs.len() == 1 && key.py_eq(state.str_ignore_dst)?) {
+            raise_type_err(format!("Unknown keyword argument: {key}"))?;
+        }
+    }
     let [arg] = *args else {
         raise_type_err("difference() takes exactly 1 argument")?
     };
@@ -827,7 +867,7 @@ fn round(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let (_, increment, mode) = round::parse_args(cls.state(), args, kwargs, false, false)?;
+    let (_, increment, mode, _) = round::parse_args(cls.state(), args, kwargs, false, false)?;
     let DateTime { mut date, time } = slf;
     let (time_rounded, next_day) = time.round(increment as u64, mode);
     if next_day == 1 {
@@ -855,9 +895,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(DateTime, date, doc::LOCALTIME_DATE),
     method0!(DateTime, time, doc::LOCALTIME_TIME),
     method_kwargs!(DateTime, format_iso, doc::PLAINDATETIME_FORMAT_ISO),
-    method_kwargs!(DateTime, format_common_iso, c""), // deprecated alias
     classmethod1!(DateTime, parse_iso, doc::PLAINDATETIME_PARSE_ISO),
-    classmethod1!(DateTime, parse_common_iso, c""), // deprecated alias
     classmethod_kwargs!(DateTime, parse_strptime, doc::PLAINDATETIME_PARSE_STRPTIME),
     method_kwargs!(DateTime, replace, doc::PLAINDATETIME_REPLACE),
     method0!(DateTime, assume_utc, doc::PLAINDATETIME_ASSUME_UTC),

@@ -1,4 +1,4 @@
-use core::ffi::{c_int, c_long, c_void};
+use core::ffi::{CStr, c_int, c_long, c_void};
 use core::ptr::{NonNull, null_mut as NULL};
 use pyo3_ffi::*;
 use std::fmt::{Display, Formatter};
@@ -364,6 +364,29 @@ pub(crate) extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     )
 }
 
+fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
+    let type_a = obj_a.type_();
+    let type_b = obj_b.type_();
+
+    if let Some(state) = type_a.same_module(type_b) {
+        // SAFETY: binary op with same-module types, first operand is self
+        let (cls, slf) = unsafe { obj_a.assume_heaptype::<OffsetDateTime>() };
+        if let Some(tdelta) = obj_b.extract(state.time_delta_type) {
+            offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
+            let OffsetDateTime { date, time, offset } = slf;
+            DateTime { date, time }
+                .shift_nanos(tdelta.total_nanos())
+                .and_then(|dt| dt.with_offset(offset))
+                .ok_or_value_err("Result of addition is out of range")?
+                .to_obj(cls)
+        } else {
+            not_implemented()
+        }
+    } else {
+        not_implemented()
+    }
+}
+
 fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     let type_a = obj_a.type_();
     let type_b = obj_b.type_();
@@ -380,23 +403,23 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     } else if let Some(state) = type_a.same_module(type_b) {
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
-        let (_, slf) = unsafe { obj_a.assume_heaptype::<OffsetDateTime>() };
+        let (cls, slf) = unsafe { obj_a.assume_heaptype::<OffsetDateTime>() };
+        if let Some(tdelta) = obj_b.extract(state.time_delta_type) {
+            // OffsetDT - TimeDelta → shift
+            offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
+            let OffsetDateTime { date, time, offset } = slf;
+            return DateTime { date, time }
+                .shift_nanos(-tdelta.total_nanos())
+                .and_then(|dt| dt.with_offset(offset))
+                .ok_or_value_err("Result of subtraction is out of range")?
+                .to_obj(cls);
+        }
         let inst_b = if let Some(inst) = obj_b.extract(state.instant_type) {
             inst
         } else if let Some(zdt) = obj_b.extract(state.zoned_datetime_type) {
             zdt.instant()
-        } else if type_b == state.time_delta_type.into()
-            || type_b == state.date_delta_type.into()
-            || type_b == state.datetime_delta_type.into()
-        {
-            raise(
-                state.exc_implicitly_ignoring_dst.as_ptr(),
-                doc::ADJUST_OFFSET_DATETIME_MSG,
-            )?
         } else {
-            raise_type_err(format!(
-                "unsupported operand type(s) for +/-: {type_a} and {type_b}"
-            ))?
+            return not_implemented();
         };
         (state, slf.instant(), inst_b)
     } else {
@@ -411,6 +434,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(OffsetDateTime, Py_tp_str, __str__, 1),
     slotmethod!(OffsetDateTime, Py_tp_repr, __repr__, 1),
     slotmethod!(OffsetDateTime, Py_tp_richcompare, __richcmp__),
+    slotmethod!(Py_nb_add, __add__, 2),
     slotmethod!(Py_nb_subtract, __sub__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
@@ -524,24 +548,33 @@ fn time(cls: HeapType<OffsetDateTime>, OffsetDateTime { time, .. }: OffsetDateTi
 }
 
 #[inline]
-pub(crate) fn check_ignore_dst_kwarg(
-    kwargs: &mut IterKwargs,
-    &State {
-        str_ignore_dst,
-        exc_implicitly_ignoring_dst,
-        ..
-    }: &State,
-    msg: &str,
-) -> PyResult<()> {
-    match kwargs.next() {
-        Some((key, value))
-            if kwargs.len() == 1 && key.py_eq(str_ignore_dst)? && value.is_true() =>
-        {
-            Ok(())
-        }
-        Some((key, _)) => raise_type_err(format!("Unknown keyword argument: {key}")),
-        _ => raise(exc_implicitly_ignoring_dst.as_ptr(), msg),
+/// Emit `PotentiallyStaleOffsetWarning` unless suppressed by ContextVar.
+fn offset_stale_warning(state: &State, msg: &CStr) -> PyResult<()> {
+    if !state.cv_ignore_potentially_stale_offset.get()? {
+        warn_with_class(state.warn_potentially_stale_offset, msg, 2)?;
     }
+    Ok(())
+}
+
+/// Check for deprecated `ignore_dst` kwarg in a kwargs iterator that only
+/// has this one optional kwarg remaining, and emit stale offset warning.
+fn check_deprecated_ignore_dst_and_warn(
+    kwargs: &mut IterKwargs,
+    state: &State,
+    stale_msg: &CStr,
+) -> PyResult<()> {
+    if let Some((key, _value)) = kwargs.next() {
+        if kwargs.len() == 1 && key.py_eq(state.str_ignore_dst)? {
+            warn_with_class(
+                state.warn_deprecation,
+                doc::IGNORE_DST_DEPRECATED_MSG,
+                2,
+            )?;
+        } else {
+            raise_type_err(format!("Unknown keyword argument: {key}"))?;
+        }
+    }
+    offset_stale_warning(state, stale_msg)
 }
 
 fn replace_date(
@@ -551,7 +584,7 @@ fn replace_date(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    check_ignore_dst_kwarg(kwargs, state, doc::ADJUST_OFFSET_DATETIME_MSG)?;
+    check_deprecated_ignore_dst_and_warn(kwargs, state, doc::OFFSET_REPLACE_STALE_MSG)?;
     let &[arg] = args else {
         raise_type_err("replace() takes exactly 1 positional argument")?
     };
@@ -571,7 +604,7 @@ fn replace_time(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    check_ignore_dst_kwarg(kwargs, state, doc::ADJUST_OFFSET_DATETIME_MSG)?;
+    check_deprecated_ignore_dst_and_warn(kwargs, state, doc::OFFSET_REPLACE_STALE_MSG)?;
     let &[arg] = args else {
         raise_type_err("replace() takes exactly 1 positional argument")?
     };
@@ -612,21 +645,6 @@ fn parse_iso(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn format_common_iso(
-    cls: HeapType<OffsetDateTime>,
-    slf: OffsetDateTime,
-    args: &[PyObj],
-    kwargs: &mut IterKwargs,
-) -> PyReturn {
-    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
-    format_iso(cls, slf, args, kwargs)
-}
-
-fn parse_common_iso(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn {
-    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
-    parse_iso(cls, arg)
-}
-
 fn replace(
     cls: HeapType<OffsetDateTime>,
     slf: OffsetDateTime,
@@ -636,6 +654,7 @@ fn replace(
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")?
     }
+    let state = cls.state();
     let &State {
         str_ignore_dst,
         str_offset,
@@ -647,9 +666,8 @@ fn replace(
         str_second,
         str_nanosecond,
         time_delta_type,
-        exc_implicitly_ignoring_dst,
         ..
-    } = cls.state();
+    } = state;
     let OffsetDateTime {
         date,
         time,
@@ -662,11 +680,11 @@ fn replace(
     let mut minute = time.minute.into();
     let mut second = time.second.into();
     let mut nanos = time.subsec.get() as _;
-    let mut ignore_dst = false;
+    let mut got_ignore_dst = false;
 
     handle_kwargs("replace", kwargs, |key, value, eq| {
         if eq(key, str_ignore_dst) {
-            ignore_dst = value.is_true();
+            got_ignore_dst = true;
         } else if eq(key, str_offset) {
             offset = Offset::from_obj(value, time_delta_type)?;
         } else {
@@ -693,12 +711,14 @@ fn replace(
         Ok(true)
     })?;
 
-    if !ignore_dst {
-        raise(
-            exc_implicitly_ignoring_dst.as_ptr(),
-            doc::ADJUST_OFFSET_DATETIME_MSG,
-        )?
+    if got_ignore_dst {
+        warn_with_class(
+            state.warn_deprecation,
+            doc::IGNORE_DST_DEPRECATED_MSG,
+            2,
+        )?;
     }
+    offset_stale_warning(state, doc::OFFSET_REPLACE_STALE_MSG)?;
 
     let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
     let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?;
@@ -712,7 +732,7 @@ fn now(cls: HeapType<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     let &[offset_obj] = args else {
         raise_type_err("now() takes exactly 1 positional argument")?
     };
-    check_ignore_dst_kwarg(kwargs, state, doc::OFFSET_NOW_DST_MSG)?;
+    check_deprecated_ignore_dst_and_warn(kwargs, state, doc::OFFSET_NOW_STALE_MSG)?;
     let offset = Offset::from_obj(offset_obj, state.time_delta_type)?;
     state
         .time_ns()?
@@ -777,13 +797,13 @@ fn _shift_method(
     let mut months = DeltaMonths::ZERO;
     let mut days = DeltaDays::ZERO;
     let mut nanos = 0;
-    let mut ignore_dst = false;
+    let mut got_ignore_dst = false;
 
     match *args {
         [arg] => {
             match kwargs.next() {
-                Some((key, value)) if kwargs.len() == 1 && key.py_eq(state.str_ignore_dst)? => {
-                    ignore_dst = value.is_true();
+                Some((key, _value)) if kwargs.len() == 1 && key.py_eq(state.str_ignore_dst)? => {
+                    got_ignore_dst = true;
                 }
                 None => {}
                 _ => raise_type_err(format!(
@@ -808,7 +828,7 @@ fn _shift_method(
             let mut raw_days = 0;
             handle_kwargs(fname, kwargs, |key, value, eq| {
                 if eq(key, state.str_ignore_dst) {
-                    ignore_dst = value.is_true();
+                    got_ignore_dst = true;
                     Ok(true)
                 } else {
                     set_units_from_kwargs(
@@ -833,16 +853,19 @@ fn _shift_method(
         ))?,
     }
 
+    if got_ignore_dst {
+        warn_with_class(
+            state.warn_deprecation,
+            doc::IGNORE_DST_DEPRECATED_MSG,
+            2,
+        )?;
+    }
+    offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
+
     if negate {
         months = -months;
         days = -days;
         nanos = -nanos;
-    }
-    if !ignore_dst {
-        raise(
-            state.exc_implicitly_ignoring_dst.as_ptr(),
-            doc::ADJUST_OFFSET_DATETIME_MSG,
-        )?
     }
     let OffsetDateTime { date, time, offset } = slf;
     DateTime { date, time }
@@ -900,20 +923,14 @@ fn __reduce__(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyResult<Ow
         .into_pytuple()
 }
 
-/// checks the args comply with (ts: ?, /, *, offset: ?, ignore_dst: true)
+/// checks the args comply with (ts: ?, /, *, offset: ?, ignore_dst: ?)
 fn check_from_timestamp_args_return_offset(
     fname: &str,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
-    &State {
-        str_offset,
-        str_ignore_dst,
-        time_delta_type,
-        exc_implicitly_ignoring_dst,
-        ..
-    }: &State,
+    state: &State,
 ) -> PyResult<Offset> {
-    let mut ignore_dst = false;
+    let mut got_ignore_dst = false;
     let mut offset = None;
     if args.len() != 1 {
         raise_type_err(format!(
@@ -924,19 +941,24 @@ fn check_from_timestamp_args_return_offset(
     }
 
     handle_kwargs("from_timestamp", kwargs, |key, value, eq| {
-        if eq(key, str_ignore_dst) {
-            ignore_dst = value.is_true();
-        } else if eq(key, str_offset) {
-            offset = Some(Offset::from_obj(value, time_delta_type)?);
+        if eq(key, state.str_ignore_dst) {
+            got_ignore_dst = true;
+        } else if eq(key, state.str_offset) {
+            offset = Some(Offset::from_obj(value, state.time_delta_type)?);
         } else {
             return Ok(false);
         }
         Ok(true)
     })?;
 
-    if !ignore_dst {
-        raise(exc_implicitly_ignoring_dst.as_ptr(), doc::TIMESTAMP_DST_MSG)?
+    if got_ignore_dst {
+        warn_with_class(
+            state.warn_deprecation,
+            doc::IGNORE_DST_DEPRECATED_MSG,
+            2,
+        )?;
     }
+    offset_stale_warning(state, doc::OFFSET_FROM_TIMESTAMP_STALE_MSG)?;
 
     offset.ok_or_type_err("Missing required keyword argument: 'offset'")
 }
@@ -1052,7 +1074,17 @@ fn round(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let (_, increment, mode) = round::parse_args(cls.state(), args, kwargs, false, true)?;
+    let state = cls.state();
+    let (_, increment, mode, got_ignore_dst) =
+        round::parse_args(state, args, kwargs, false, true)?;
+    if got_ignore_dst {
+        warn_with_class(
+            state.warn_deprecation,
+            doc::IGNORE_DST_DEPRECATED_MSG,
+            2,
+        )?;
+    }
+    offset_stale_warning(state, doc::OFFSET_ROUND_STALE_MSG)?;
     let OffsetDateTime {
         mut date,
         time,
@@ -1114,9 +1146,7 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::OFFSETDATETIME_PARSE_RFC2822
     ),
     method_kwargs!(OffsetDateTime, format_iso, doc::OFFSETDATETIME_FORMAT_ISO),
-    method_kwargs!(OffsetDateTime, format_common_iso, c""), // deprecated alias
     classmethod1!(OffsetDateTime, parse_iso, doc::OFFSETDATETIME_PARSE_ISO),
-    classmethod1!(OffsetDateTime, parse_common_iso, c""), // deprecated alias
     method0!(OffsetDateTime, timestamp, doc::EXACTTIME_TIMESTAMP),
     method0!(
         OffsetDateTime,

@@ -293,19 +293,11 @@ fn module_exec(module: PyModule) -> PyResult<()> {
 
     // ContextVars for suppressing warnings
     let cv_ignore_days_not_always_24h =
-        unsafe { PyContextVar_New(c"_ignore_days_not_always_24h_warning".as_ptr(), Py_False()) }
-            .rust_owned()?;
-    module.setattr(c"_ignore_days_not_always_24h_warning", cv_ignore_days_not_always_24h.borrow())?;
-
+        ContextVarBool::create(c"_ignore_days_not_always_24h_warning", module)?;
     let cv_ignore_potentially_stale_offset =
-        unsafe { PyContextVar_New(c"_ignore_potentially_stale_offset_warning".as_ptr(), Py_False()) }
-            .rust_owned()?;
-    module.setattr(c"_ignore_potentially_stale_offset_warning", cv_ignore_potentially_stale_offset.borrow())?;
-
+        ContextVarBool::create(c"_ignore_potentially_stale_offset_warning", module)?;
     let cv_ignore_tz_unaware_arithmetic =
-        unsafe { PyContextVar_New(c"_ignore_timezone_unaware_arithmetic_warning".as_ptr(), Py_False()) }
-            .rust_owned()?;
-    module.setattr(c"_ignore_timezone_unaware_arithmetic_warning", cv_ignore_tz_unaware_arithmetic.borrow())?;
+        ContextVarBool::create(c"_ignore_timezone_unaware_arithmetic_warning", module)?;
 
     let time_patch = Patch::new()?;
     let tz_store = TzStore::new(*exc_tz_notfound)?;
@@ -353,6 +345,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         str_year: intern(c"year")?.py_owned(),
         str_month: intern(c"month")?.py_owned(),
         str_day: intern(c"day")?.py_owned(),
+        str_week: intern(c"week")?.py_owned(),
         str_hour: intern(c"hour")?.py_owned(),
         str_minute: intern(c"minute")?.py_owned(),
         str_second: intern(c"second")?.py_owned(),
@@ -400,9 +393,9 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         warn_tz_unaware_arithmetic: warn_tz_unaware_arithmetic.py_owned(),
         warn_deprecation: warn_deprecation.py_owned(),
 
-        cv_ignore_days_not_always_24h: cv_ignore_days_not_always_24h.py_owned(),
-        cv_ignore_potentially_stale_offset: cv_ignore_potentially_stale_offset.py_owned(),
-        cv_ignore_tz_unaware_arithmetic: cv_ignore_tz_unaware_arithmetic.py_owned(),
+        cv_ignore_days_not_always_24h,
+        cv_ignore_potentially_stale_offset,
+        cv_ignore_tz_unaware_arithmetic,
 
         unpickle_date: unpickle_date.py_owned(),
         unpickle_yearmonth: unpickle_yearmonth.py_owned(),
@@ -605,6 +598,7 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.str_year).cast());
         Py_CLEAR((&raw mut state.str_month).cast());
         Py_CLEAR((&raw mut state.str_day).cast());
+        Py_CLEAR((&raw mut state.str_week).cast());
         Py_CLEAR((&raw mut state.str_hour).cast());
         Py_CLEAR((&raw mut state.str_minute).cast());
         Py_CLEAR((&raw mut state.str_second).cast());
@@ -723,9 +717,9 @@ pub(crate) struct State {
     pub(crate) warn_deprecation: PyObj,
 
     // context vars (for suppressing warnings)
-    pub(crate) cv_ignore_days_not_always_24h: PyObj,
-    pub(crate) cv_ignore_potentially_stale_offset: PyObj,
-    pub(crate) cv_ignore_tz_unaware_arithmetic: PyObj,
+    pub(crate) cv_ignore_days_not_always_24h: ContextVarBool,
+    pub(crate) cv_ignore_potentially_stale_offset: ContextVarBool,
+    pub(crate) cv_ignore_tz_unaware_arithmetic: ContextVarBool,
 
     // unpickling functions
     pub(crate) unpickle_date: PyObj,
@@ -762,6 +756,7 @@ pub(crate) struct State {
     pub(crate) str_year: PyObj,
     pub(crate) str_month: PyObj,
     pub(crate) str_day: PyObj,
+    pub(crate) str_week: PyObj,
     pub(crate) str_hour: PyObj,
     pub(crate) str_minute: PyObj,
     pub(crate) str_second: PyObj,

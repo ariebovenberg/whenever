@@ -486,16 +486,6 @@ fn parse_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
     DateTimeDelta { ddelta, tdelta }.to_obj(cls)
 }
 
-fn format_common_iso(cls: PyType, slf: DateTimeDelta) -> PyReturn {
-    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
-    format_iso(cls, slf)
-}
-
-fn parse_common_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
-    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
-    parse_iso(cls, arg)
-}
-
 pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
     let mut months = 0;
     let mut days = 0;
@@ -618,11 +608,9 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(DateTimeDelta, __copy__, c""),
     method1!(DateTimeDelta, __deepcopy__, c""),
     method0!(DateTimeDelta, format_iso, doc::DATETIMEDELTA_FORMAT_ISO),
-    method0!(DateTimeDelta, format_common_iso, c""), // deprecated alias
     method0!(DateTimeDelta, date_part, doc::DATETIMEDELTA_DATE_PART),
     method0!(DateTimeDelta, time_part, doc::DATETIMEDELTA_TIME_PART),
     classmethod1!(DateTimeDelta, parse_iso, doc::DATETIMEDELTA_PARSE_ISO),
-    classmethod1!(DateTimeDelta, parse_common_iso, c""), // deprecated alias
     method0!(DateTimeDelta, __reduce__, c""),
     method0!(
         DateTimeDelta,

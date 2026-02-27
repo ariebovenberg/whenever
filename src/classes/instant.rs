@@ -535,21 +535,6 @@ fn parse_iso(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn format_common_iso(
-    cls: HeapType<Instant>,
-    slf: Instant,
-    args: &[PyObj],
-    kwargs: &mut IterKwargs,
-) -> PyReturn {
-    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
-    format_iso(cls, slf, args, kwargs)
-}
-
-fn parse_common_iso(cls: HeapType<Instant>, arg: PyObj) -> PyReturn {
-    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
-    parse_iso(cls, arg)
-}
-
 fn add(cls: HeapType<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     _shift_method(cls, slf, args, kwargs, false)
 }
@@ -697,7 +682,7 @@ fn round(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let (unit, increment, mode) = round::parse_args(cls.state(), args, kwargs, false, false)?;
+    let (unit, increment, mode, _) = round::parse_args(cls.state(), args, kwargs, false, false)?;
     if unit == round::Unit::Day {
         raise_value_err(doc::CANNOT_ROUND_DAY_MSG)?;
     }
@@ -764,9 +749,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(Instant, format_rfc2822, doc::INSTANT_FORMAT_RFC2822),
     classmethod1!(Instant, parse_rfc2822, doc::INSTANT_PARSE_RFC2822),
     method_kwargs!(Instant, format_iso, doc::INSTANT_FORMAT_ISO),
-    method_kwargs!(Instant, format_common_iso, c""), // deprecated alias
     classmethod1!(Instant, parse_iso, doc::INSTANT_PARSE_ISO),
-    classmethod1!(Instant, parse_common_iso, c""), // deprecated alias
     method_kwargs!(Instant, add, doc::INSTANT_ADD),
     method_kwargs!(Instant, subtract, doc::INSTANT_SUBTRACT),
     method1!(Instant, to_tz, doc::EXACTTIME_TO_TZ),
