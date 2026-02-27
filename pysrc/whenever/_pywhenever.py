@@ -224,23 +224,6 @@ class _Base:
     @abstractmethod
     def parse_iso(cls: type[_T], s: str, /) -> _T: ...  # pragma: no cover
 
-    @classmethod
-    def parse_common_iso(cls: type[_T], s: str, /) -> _T:
-        warn(
-            "parse_common_iso() has been renamed to parse_iso()",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return cls.parse_iso(s)  # type: ignore[no-any-return, attr-defined]
-
-    def format_common_iso(self) -> str:
-        warn(
-            "format_common_iso() has been renamed to format_iso()",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self.format_iso()  # type: ignore[no-any-return, attr-defined]
-
 
 if TYPE_CHECKING:
     from typing import final
@@ -8612,13 +8595,13 @@ DAYS_NOT_ALWAYS_24H_MSG = (
     "Suppress this warning with `with whenever.ignore_days_not_always_24h_warning():`."
 )
 
+IGNORE_DST_DEPRECATED_MSG = (
+    "The `ignore_dst` parameter is deprecated and replaced with a warning."
+)
+
 # Deprecated ignore_dst-era messages, kept only so that
 # generate_docstrings.py emits them for the Rust extension
 # (which still references them). Remove once Rust is migrated.
-ADJUST_OFFSET_DATETIME_MSG = "deprecated: ignore_dst-era message"
-OFFSET_NOW_DST_MSG = "deprecated: ignore_dst-era message"
-OFFSET_ROUNDING_DST_MSG = "deprecated: ignore_dst-era message"
-TIMESTAMP_DST_MSG = "deprecated: ignore_dst-era message"
 ADJUST_LOCAL_DATETIME_MSG = "deprecated: ignore_dst-era message"
 DIFF_LOCAL_MSG = "deprecated: ignore_dst-era message"
 DIFF_OPERATOR_LOCAL_MSG = "deprecated: ignore_dst-era message"

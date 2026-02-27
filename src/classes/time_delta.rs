@@ -812,16 +812,6 @@ fn parse_iso(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
         .to_obj(cls)
 }
 
-fn format_common_iso(cls: PyType, slf: TimeDelta) -> PyReturn {
-    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
-    format_iso(cls, slf)
-}
-
-fn parse_common_iso(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
-    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
-    parse_iso(cls, arg)
-}
-
 #[inline]
 pub(crate) fn fmt_components_abs(td: TimeDelta, s: &mut String) {
     let TimeDelta { secs, subsec } = td;
@@ -956,9 +946,16 @@ fn round(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let (unit, increment, mode) = round::parse_args(cls.state(), args, kwargs, true, false)?;
-    if unit == round::Unit::Day {
-        raise_value_err(doc::CANNOT_ROUND_DAY_MSG)?;
+    let state = cls.state();
+    let (unit, increment, mode, _) = round::parse_args(state, args, kwargs, true, false)?;
+    if matches!(unit, round::Unit::Day | round::Unit::Week) {
+        if !state.cv_ignore_days_not_always_24h.get()? {
+            warn_with_class(
+                state.warn_days_not_always_24h,
+                doc::DAYS_NOT_ALWAYS_24H_MSG,
+                2,
+            )?;
+        }
     }
     slf.round(increment, mode)
         .ok_or_value_err("Resulting TimeDelta out of range")?
@@ -970,9 +967,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method1!(TimeDelta, __deepcopy__, c""),
     method0!(TimeDelta, __reduce__, c""),
     method0!(TimeDelta, format_iso, doc::TIMEDELTA_FORMAT_ISO),
-    method0!(TimeDelta, format_common_iso, c""), // deprecated alias
     classmethod1!(TimeDelta, parse_iso, doc::TIMEDELTA_PARSE_ISO),
-    classmethod1!(TimeDelta, parse_common_iso, c""), // deprecated alias
     method0!(TimeDelta, in_nanoseconds, doc::TIMEDELTA_IN_NANOSECONDS),
     method0!(TimeDelta, in_microseconds, doc::TIMEDELTA_IN_MICROSECONDS),
     method0!(TimeDelta, in_milliseconds, doc::TIMEDELTA_IN_MILLISECONDS),

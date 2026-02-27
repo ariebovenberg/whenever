@@ -141,7 +141,7 @@ def test_text_signature():
         DateDelta,
         DateTimeDelta,
     ]
-    deprecated = ["format_common_iso", "parse_common_iso"]
+    deprecated: list[str] = []
     methods = (
         m
         for m in chain.from_iterable(cls.__dict__.values() for cls in classes)

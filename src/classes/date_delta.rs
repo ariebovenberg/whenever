@@ -545,16 +545,6 @@ fn parse_iso(cls: HeapType<DateDelta>, arg: PyObj) -> PyReturn {
         .to_obj(cls)
 }
 
-fn format_common_iso(cls: PyType, slf: DateDelta) -> PyReturn {
-    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
-    format_iso(cls, slf)
-}
-
-fn parse_common_iso(cls: HeapType<DateDelta>, arg: PyObj) -> PyReturn {
-    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
-    parse_iso(cls, arg)
-}
-
 // parse the prefix of an ISO8601 duration, e.g. `P`, `-P`, `+P`,
 pub(crate) fn parse_prefix(s: &mut &[u8]) -> Option<bool> {
     debug_assert!(s.len() >= 2);
@@ -676,9 +666,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(DateDelta, __copy__, c""),
     method1!(DateDelta, __deepcopy__, c""),
     method0!(DateDelta, format_iso, doc::DATEDELTA_FORMAT_ISO),
-    method0!(DateDelta, format_common_iso, c""), // deprecated alias
     classmethod1!(DateDelta, parse_iso, doc::DATEDELTA_PARSE_ISO),
-    classmethod1!(DateDelta, parse_common_iso, c""), // deprecated alias
     method0!(DateDelta, in_months_days, doc::DATEDELTA_IN_MONTHS_DAYS),
     method0!(
         DateDelta,

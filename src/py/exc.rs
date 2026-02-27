@@ -98,47 +98,56 @@ pub(crate) fn raise_value_err<T, U: ToPy>(msg: U) -> PyResult<T> {
     raise(unsafe { PyExc_ValueError }, msg)
 }
 
-pub(crate) fn deprecation_warn(msg: &CStr) -> PyResult<()> {
-    // SAFETY: calling C API with valid arguments
-    match unsafe { PyErr_WarnEx(PyExc_DeprecationWarning, msg.as_ptr(), 1) } {
-        0 => Ok(()),
-        _ => Err(PyErrMarker()),
-    }
-}
-
 /// Emit a warning using a custom warning class (e.g. a heap-type UserWarning subclass).
 /// `stacklevel` controls how many frames to skip (1 = caller).
 pub(crate) fn warn_with_class(
-    warning_cls: *mut PyObject,
+    warning_cls: PyObj,
     msg: &CStr,
     stacklevel: isize,
 ) -> PyResult<()> {
-    match unsafe { PyErr_WarnEx(warning_cls, msg.as_ptr(), stacklevel as _) } {
+    match unsafe { PyErr_WarnEx(warning_cls.as_ptr(), msg.as_ptr(), stacklevel as _) } {
         0 => Ok(()),
         _ => Err(PyErrMarker()),
     }
 }
 
-/// Check a ContextVar[bool] and return its value.
-/// Returns `false` if the ContextVar is not set (default=False).
-pub(crate) fn get_contextvar_bool(contextvar: *mut PyObject) -> PyResult<bool> {
-    let mut value: *mut PyObject = std::ptr::null_mut();
-    // PyContextVar_Get returns 0 on success (value found or default used),
-    // -1 on error. When using default=NULL and no value is set, value will be NULL.
-    match unsafe { PyContextVar_Get(contextvar, std::ptr::null_mut(), &mut value) } {
-        -1 => Err(PyErrMarker()),
-        _ => {
-            if value.is_null() {
-                // No value set and no default → treat as False
-                Ok(false)
-            } else {
-                // SAFETY: value is a valid PyObject (borrowed from context)
-                let result = unsafe { PyObject_IsTrue(value) };
-                unsafe { Py_DECREF(value) };
-                match result {
-                    -1 => Err(PyErrMarker()),
-                    0 => Ok(false),
-                    _ => Ok(true),
+/// A `Copy` wrapper around a Python `ContextVar[bool]`.
+/// Owned by module state and manually `Py_CLEAR`'ed on shutdown—no refcount
+/// management needed here.
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub(crate) struct ContextVarBool(PyObj);
+
+impl ContextVarBool {
+    /// Create a new `ContextVar[bool]` with default `False`,
+    /// and set it as an attribute on `module`.
+    pub(crate) fn create(name: &CStr, module: impl PyBase) -> PyResult<Self> {
+        let cv = unsafe { PyContextVar_New(name.as_ptr(), Py_False()) }.rust_owned()?;
+        module.setattr(name, cv.borrow())?;
+        Ok(Self(cv.py_owned()))
+    }
+
+    pub(crate) fn as_ptr(self) -> *mut PyObject {
+        self.0.as_ptr()
+    }
+
+    /// Read the current value of the context variable.
+    /// Returns `false` if the variable is not set (default=False).
+    pub(crate) fn get(self) -> PyResult<bool> {
+        let mut value: *mut PyObject = std::ptr::null_mut();
+        match unsafe { PyContextVar_Get(self.as_ptr(), std::ptr::null_mut(), &mut value) } {
+            -1 => Err(PyErrMarker()),
+            _ => {
+                if value.is_null() {
+                    Ok(false)
+                } else {
+                    let result = unsafe { PyObject_IsTrue(value) };
+                    unsafe { Py_DECREF(value) };
+                    match result {
+                        -1 => Err(PyErrMarker()),
+                        0 => Ok(false),
+                        _ => Ok(true),
+                    }
                 }
             }
         }

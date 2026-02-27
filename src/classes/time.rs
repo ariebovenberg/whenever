@@ -505,21 +505,6 @@ fn parse_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn format_common_iso(
-    cls: HeapType<Time>,
-    slf: Time,
-    args: &[PyObj],
-    kwargs: &mut IterKwargs,
-) -> PyReturn {
-    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
-    format_iso(cls, slf, args, kwargs)
-}
-
-fn parse_common_iso(cls: HeapType<Time>, arg: PyObj) -> PyReturn {
-    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
-    parse_iso(cls, arg)
-}
-
 fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyResult<Owned<PyTuple>> {
     let Time {
         hour,
@@ -596,7 +581,7 @@ fn replace(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwar
 }
 
 fn round(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    let (unit, increment, mode) = round::parse_args(cls.state(), args, kwargs, false, false)?;
+    let (unit, increment, mode, _) = round::parse_args(cls.state(), args, kwargs, false, false)?;
     if unit == round::Unit::Day {
         raise_value_err("Cannot round Time to day")?;
     }
@@ -610,9 +595,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(Time, py_time, doc::TIME_PY_TIME),
     method_kwargs!(Time, replace, doc::TIME_REPLACE),
     method_kwargs!(Time, format_iso, doc::TIME_FORMAT_ISO),
-    method_kwargs!(Time, format_common_iso, c""), // deprecated alias
     classmethod1!(Time, parse_iso, doc::TIME_PARSE_ISO),
-    classmethod1!(Time, parse_common_iso, c""), // deprecated alias
     classmethod1!(Time, from_py_time, doc::TIME_FROM_PY_TIME),
     method1!(Time, on, doc::TIME_ON),
     method_kwargs!(Time, round, doc::TIME_ROUND),
