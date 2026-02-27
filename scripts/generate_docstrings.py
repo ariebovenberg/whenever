@@ -200,7 +200,7 @@ def print_everything():
         )
 
     for name, value in sorted(MAGIC_STRINGS):
-        print(STR_TEMPLATE.format(varname=name, value=value))
+        print(f'pub(crate) const {name}: &CStr = c"{value}";')
 
 
 if __name__ == "__main__":

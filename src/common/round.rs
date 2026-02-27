@@ -1,5 +1,5 @@
 //! Functionality for rounding datetime values
-use crate::{docstrings as doc, py::*, pymodule::State};
+use crate::{py::*, pymodule::State};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) enum Mode {
@@ -96,6 +96,7 @@ pub(crate) enum Unit {
     Minute,
     Hour,
     Day,
+    Week,
 }
 
 impl Unit {
@@ -109,6 +110,8 @@ impl Unit {
         str_minute: PyObj,
         str_hour: PyObj,
         str_day: PyObj,
+        str_week: PyObj,
+        for_delta: bool,
     ) -> PyResult<Unit> {
         // OPTIMIZE: run the comparisons in order if likelihood
         match_interned_str("unit", s, |v, eq| {
@@ -126,6 +129,8 @@ impl Unit {
                 Unit::Hour
             } else if eq(v, str_day) {
                 Unit::Day
+            } else if for_delta && eq(v, str_week) {
+                Unit::Week
             } else {
                 None?
             })
@@ -148,6 +153,7 @@ impl Unit {
             Unit::Minute => 60_000_000_000,
             Unit::Hour => 3_600_000_000_000,
             Unit::Day => 86_400_000_000_000,
+            Unit::Week => 604_800_000_000_000,
         };
         let increment_ns = inc
             .checked_mul(ns_per_unit)
@@ -167,6 +173,7 @@ impl Unit {
             Unit::Minute => 60 * 1_000_000_000,
             Unit::Hour => 3_600 * 1_000_000_000,
             Unit::Day => 86_400 * 1_000_000_000,
+            Unit::Week => 604_800 * 1_000_000_000,
         }
     }
 }
@@ -177,7 +184,7 @@ pub(crate) fn parse_args(
     kwargs: &mut IterKwargs,
     for_delta: bool,
     ignore_dst_kwarg: bool,
-) -> PyResult<(Unit, i64, Mode)> {
+) -> PyResult<(Unit, i64, Mode, bool)> {
     let &State {
         str_nanosecond,
         str_microsecond,
@@ -186,6 +193,7 @@ pub(crate) fn parse_args(
         str_minute,
         str_hour,
         str_day,
+        str_week,
         str_unit,
         str_mode,
         str_increment,
@@ -199,7 +207,6 @@ pub(crate) fn parse_args(
         str_half_trunc,
         str_half_expand,
         str_ignore_dst,
-        exc_implicitly_ignoring_dst,
         ..
     } = state;
 
@@ -221,7 +228,7 @@ pub(crate) fn parse_args(
             "round() takes at most 3 arguments, got {num_argkwargs}"
         ))?;
     }
-    let mut ignore_dst = false;
+    let mut got_ignore_dst = false;
     let mut arg_obj: [Option<PyObj>; 3] = [None, None, None];
     for (i, &obj) in args.iter().enumerate() {
         arg_obj[i] = Some(obj)
@@ -236,20 +243,11 @@ pub(crate) fn parse_args(
             }
         }
         if ignore_dst_kwarg && eq(key, str_ignore_dst) {
-            if value.is_true() {
-                ignore_dst = true;
-            }
+            got_ignore_dst = true;
             return Ok(true);
         }
         Ok(false)
     })?;
-
-    if ignore_dst_kwarg && !ignore_dst {
-        raise(
-            exc_implicitly_ignoring_dst.as_ptr(),
-            doc::OFFSET_ROUNDING_DST_MSG,
-        )?
-    }
 
     let unit = arg_obj[0]
         .map(|v| {
@@ -262,6 +260,8 @@ pub(crate) fn parse_args(
                 str_minute,
                 str_hour,
                 str_day,
+                str_week,
+                for_delta,
             )
         })
         .transpose()?
@@ -288,7 +288,7 @@ pub(crate) fn parse_args(
         .transpose()?
         .unwrap_or(Mode::HalfEven);
 
-    Ok((unit, increment, mode))
+    Ok((unit, increment, mode, got_ignore_dst))
 }
 
 #[cfg(test)]

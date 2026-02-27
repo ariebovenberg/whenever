@@ -932,21 +932,6 @@ fn parse_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
     }
 }
 
-fn format_common_iso(
-    cls: HeapType<ZonedDateTime>,
-    slf: ZonedDateTime,
-    args: &[PyObj],
-    kwargs: &mut IterKwargs,
-) -> PyReturn {
-    deprecation_warn(c"format_common_iso() has been renamed to format_iso()")?;
-    format_iso(cls, slf, args, kwargs)
-}
-
-fn parse_common_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
-    deprecation_warn(c"parse_common_iso() has been renamed to parse_iso()")?;
-    parse_iso(cls, arg)
-}
-
 fn replace(
     cls: HeapType<ZonedDateTime>,
     slf: ZonedDateTime,
@@ -1498,7 +1483,7 @@ fn round(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let (unit, increment, mode) = round::parse_args(state, args, kwargs, false, false)?;
+    let (unit, increment, mode, _) = round::parse_args(state, args, kwargs, false, false)?;
 
     match unit {
         round::Unit::Day => _round_day(slf, state, mode),
@@ -1610,9 +1595,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(ZonedDateTime, date, doc::LOCALTIME_DATE),
     method0!(ZonedDateTime, time, doc::LOCALTIME_TIME),
     method_kwargs!(ZonedDateTime, format_iso, doc::ZONEDDATETIME_FORMAT_ISO),
-    method_kwargs!(ZonedDateTime, format_common_iso, c""), // deprecated alias
     classmethod1!(ZonedDateTime, parse_iso, doc::ZONEDDATETIME_PARSE_ISO),
-    classmethod1!(ZonedDateTime, parse_common_iso, c""), // deprecated alias
     classmethod1!(ZonedDateTime, now, doc::ZONEDDATETIME_NOW),
     classmethod0!(
         ZonedDateTime,

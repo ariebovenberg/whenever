@@ -1,5 +1,6 @@
 //! Functionality for working with Python's `str` and `bytes` objects.
 use crate::common::fmt;
+use core::ffi::CStr;
 
 use super::{base::*, exc::*, refs::*};
 use pyo3_ffi::*;
@@ -108,6 +109,12 @@ impl ToPy for String {
 impl ToPy for &str {
     fn to_py(self) -> PyReturn {
         unsafe { PyUnicode_FromStringAndSize(self.as_ptr().cast(), self.len() as _) }.rust_owned()
+    }
+}
+
+impl ToPy for &CStr {
+    fn to_py(self) -> PyReturn {
+        unsafe { PyUnicode_FromString(self.as_ptr()) }.rust_owned()
     }
 }
 
