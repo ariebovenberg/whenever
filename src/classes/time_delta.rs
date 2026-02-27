@@ -109,21 +109,42 @@ impl TimeDelta {
 
     pub(crate) fn round(self, increment: i64, mode: round::Mode) -> Option<Self> {
         debug_assert!(increment > 0);
+        let abs_mode = mode.to_abs(self.secs.get() < 0);
         let TimeDelta { secs, subsec } = self;
-        Some(if increment < 1_000_000_000 {
-            let (extra_secs, subsec) = subsec.round(increment as _, mode);
+        Some(if increment < 1_000_000_000 && 1_000_000_000 % increment == 0 {
+            let (extra_secs, subsec) = subsec.round_abs(increment as _, abs_mode);
             Self {
                 // Safe: rounding sub-second part can never lead to range errors,
                 // due to our choice of MIN/MAX timedelta
                 secs: secs.add(extra_secs).unwrap(),
                 subsec,
             }
-        } else {
-            // Safe: the sub-second part is zero, so we're safe
-            // as long as we check the whole seconds.
+        } else if increment % 1_000_000_000 == 0 {
             Self {
-                secs: secs.round(subsec, increment, mode)?,
+                secs: secs.round_abs(subsec, increment, abs_mode)?,
                 subsec: SubSecNanos::MIN,
+            }
+        } else {
+            // General case: arbitrary increment, use i128 for total nanoseconds
+            let total_ns = secs.get() as i128 * 1_000_000_000 + subsec.get() as i128;
+            let inc = increment as i128;
+            let quotient = total_ns.div_euclid(inc);
+            let remainder = total_ns.rem_euclid(inc);
+            let threshold = match abs_mode {
+                round::AbsMode::HalfEven => {
+                    1i128.max(inc / 2 + (quotient % 2 == 0) as i128)
+                }
+                round::AbsMode::Expand => 1,
+                round::AbsMode::Trunc => inc + 1,
+                round::AbsMode::HalfTrunc => inc / 2 + 1,
+                round::AbsMode::HalfExpand => 1i128.max(inc / 2),
+            };
+            let result_ns = (quotient + i128::from(remainder >= threshold)) * inc;
+            let result_secs = result_ns.div_euclid(1_000_000_000) as i64;
+            let result_subsec = result_ns.rem_euclid(1_000_000_000) as i32;
+            Self {
+                secs: DeltaSeconds::new(result_secs)?,
+                subsec: SubSecNanos::new_unchecked(result_subsec),
             }
         })
     }
@@ -206,17 +227,17 @@ impl std::fmt::Display for TimeDelta {
 }
 
 impl DeltaSeconds {
-    fn round(self, subsec: SubSecNanos, increment_ns: i64, mode: round::Mode) -> Option<Self> {
+    fn round_abs(self, subsec: SubSecNanos, increment_ns: i64, mode: round::AbsMode) -> Option<Self> {
         debug_assert!(increment_ns % 1_000_000_000 == 0);
         let increment_s = increment_ns / 1_000_000_000;
         let quotient = self.get().div_euclid(increment_s);
         let remainder_ns = self.get().rem_euclid(increment_s) * 1_000_000_000 + subsec.get() as i64;
         let threshold_ns = match mode {
-            round::Mode::HalfEven => 1.max(increment_ns / 2 + (quotient % 2 == 0) as i64),
-            round::Mode::HalfCeil => 1.max(increment_ns / 2),
-            round::Mode::Ceil => 1,
-            round::Mode::Floor => increment_ns + 1,
-            round::Mode::HalfFloor => increment_ns / 2 + 1,
+            round::AbsMode::HalfEven => 1.max(increment_ns / 2 + (quotient % 2 == 0) as i64),
+            round::AbsMode::HalfExpand => 1.max(increment_ns / 2),
+            round::AbsMode::Expand => 1,
+            round::AbsMode::Trunc => increment_ns + 1,
+            round::AbsMode::HalfTrunc => increment_ns / 2 + 1,
         };
         let round_up = remainder_ns >= threshold_ns;
         Self::new((quotient + i64::from(round_up)) * increment_s)
@@ -981,3 +1002,175 @@ static mut METHODS: &[PyMethodDef] = &[
 
 pub(crate) static mut SPEC: PyType_Spec =
     type_spec::<TimeDelta>(c"whenever.TimeDelta", unsafe { SLOTS });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn td(secs: i64, nanos: i32) -> TimeDelta {
+        TimeDelta {
+            secs: DeltaSeconds::new(secs).unwrap(),
+            subsec: SubSecNanos::new_unchecked(nanos),
+        }
+    }
+
+    fn td_secs(s: i64) -> TimeDelta {
+        td(s, 0)
+    }
+
+    // 1 second increment in nanoseconds
+    const SEC: i64 = 1_000_000_000;
+
+    // --- Sub-second rounding (increment < 1s) ---
+
+    #[test]
+    fn round_subsec_floor() {
+        // 1.7s → floor to 1s
+        assert_eq!(td(1, 700_000_000).round(SEC, round::Mode::Floor), Some(td_secs(1)));
+    }
+
+    #[test]
+    fn round_subsec_ceil() {
+        // 1.7s → ceil to 2s
+        assert_eq!(td(1, 700_000_000).round(SEC, round::Mode::Ceil), Some(td_secs(2)));
+    }
+
+    #[test]
+    fn round_subsec_trunc_positive() {
+        // 1.7s → trunc (towards 0) = 1s
+        assert_eq!(td(1, 700_000_000).round(SEC, round::Mode::Trunc), Some(td_secs(1)));
+    }
+
+    #[test]
+    fn round_subsec_trunc_negative() {
+        // -1.3s (secs=-2, subsec=700_000_000) → trunc (towards 0) = -1s
+        assert_eq!(td(-2, 700_000_000).round(SEC, round::Mode::Trunc), Some(td_secs(-1)));
+    }
+
+    #[test]
+    fn round_subsec_expand_positive() {
+        // 1.7s → expand (away from 0) = 2s
+        assert_eq!(td(1, 700_000_000).round(SEC, round::Mode::Expand), Some(td_secs(2)));
+    }
+
+    #[test]
+    fn round_subsec_expand_negative() {
+        // -1.3s → expand (away from 0) = -2s
+        assert_eq!(td(-2, 700_000_000).round(SEC, round::Mode::Expand), Some(td_secs(-2)));
+    }
+
+    // --- Half-way tie-breaking with sub-second ---
+
+    #[test]
+    fn round_subsec_half_even_tie() {
+        // 1.5s → half_even: quotient=1 (odd), round up to 2
+        assert_eq!(td(1, 500_000_000).round(SEC, round::Mode::HalfEven), Some(td_secs(2)));
+        // 2.5s → half_even: quotient=2 (even), round down to 2
+        assert_eq!(td(2, 500_000_000).round(SEC, round::Mode::HalfEven), Some(td_secs(2)));
+    }
+
+    #[test]
+    fn round_subsec_half_ceil_tie() {
+        // 1.5s → half_ceil: round up (towards +∞) = 2s
+        assert_eq!(td(1, 500_000_000).round(SEC, round::Mode::HalfCeil), Some(td_secs(2)));
+        // -1.5s (secs=-2, subsec=500_000_000) → half_ceil: round up (towards +∞) = -1s
+        assert_eq!(td(-2, 500_000_000).round(SEC, round::Mode::HalfCeil), Some(td_secs(-1)));
+    }
+
+    #[test]
+    fn round_subsec_half_floor_tie() {
+        // 1.5s → half_floor: round down = 1s
+        assert_eq!(td(1, 500_000_000).round(SEC, round::Mode::HalfFloor), Some(td_secs(1)));
+        // -1.5s → half_floor: round down (towards -∞) = -2s
+        assert_eq!(td(-2, 500_000_000).round(SEC, round::Mode::HalfFloor), Some(td_secs(-2)));
+    }
+
+    #[test]
+    fn round_subsec_half_trunc_tie() {
+        // 1.5s → half_trunc: ties towards 0 = 1s
+        assert_eq!(td(1, 500_000_000).round(SEC, round::Mode::HalfTrunc), Some(td_secs(1)));
+        // -1.5s → half_trunc: ties towards 0 = -1s
+        assert_eq!(td(-2, 500_000_000).round(SEC, round::Mode::HalfTrunc), Some(td_secs(-1)));
+    }
+
+    #[test]
+    fn round_subsec_half_expand_tie() {
+        // 1.5s → half_expand: ties away from 0 = 2s
+        assert_eq!(td(1, 500_000_000).round(SEC, round::Mode::HalfExpand), Some(td_secs(2)));
+        // -1.5s → half_expand: ties away from 0 = -2s
+        assert_eq!(td(-2, 500_000_000).round(SEC, round::Mode::HalfExpand), Some(td_secs(-2)));
+    }
+
+    // --- Whole-second rounding (increment >= 1s) ---
+
+    const TEN_SEC: i64 = 10 * SEC;
+
+    #[test]
+    fn round_wholesec_trunc_positive() {
+        // 45s → trunc to 10s = 40s
+        assert_eq!(td_secs(45).round(TEN_SEC, round::Mode::Trunc), Some(td_secs(40)));
+    }
+
+    #[test]
+    fn round_wholesec_trunc_negative() {
+        // -45s → trunc to 10s = -40s (towards zero)
+        assert_eq!(td_secs(-45).round(TEN_SEC, round::Mode::Trunc), Some(td_secs(-40)));
+    }
+
+    #[test]
+    fn round_wholesec_expand_positive() {
+        // 41s → expand to 10s = 50s
+        assert_eq!(td_secs(41).round(TEN_SEC, round::Mode::Expand), Some(td_secs(50)));
+    }
+
+    #[test]
+    fn round_wholesec_expand_negative() {
+        // -41s → expand to 10s = -50s (away from zero)
+        assert_eq!(td_secs(-41).round(TEN_SEC, round::Mode::Expand), Some(td_secs(-50)));
+    }
+
+    #[test]
+    fn round_wholesec_half_trunc_tie() {
+        // 45s → half_trunc to 10s = 40s (tie towards zero)
+        assert_eq!(td_secs(45).round(TEN_SEC, round::Mode::HalfTrunc), Some(td_secs(40)));
+        // -45s → half_trunc to 10s = -40s
+        assert_eq!(td_secs(-45).round(TEN_SEC, round::Mode::HalfTrunc), Some(td_secs(-40)));
+    }
+
+    #[test]
+    fn round_wholesec_half_expand_tie() {
+        // 45s → half_expand to 10s = 50s (tie away from zero)
+        assert_eq!(td_secs(45).round(TEN_SEC, round::Mode::HalfExpand), Some(td_secs(50)));
+        // -45s → half_expand to 10s = -50s
+        assert_eq!(td_secs(-45).round(TEN_SEC, round::Mode::HalfExpand), Some(td_secs(-50)));
+    }
+
+    #[test]
+    fn round_zero() {
+        // Zero should remain zero for all modes
+        for mode in [
+            round::Mode::Floor, round::Mode::Ceil,
+            round::Mode::Trunc, round::Mode::Expand,
+            round::Mode::HalfEven, round::Mode::HalfCeil,
+            round::Mode::HalfFloor, round::Mode::HalfTrunc,
+            round::Mode::HalfExpand,
+        ] {
+            assert_eq!(td_secs(0).round(SEC, mode), Some(td_secs(0)));
+        }
+    }
+
+    #[test]
+    fn round_exact_value() {
+        // Already at increment boundary → unchanged for all modes
+        for mode in [
+            round::Mode::Floor, round::Mode::Ceil,
+            round::Mode::Trunc, round::Mode::Expand,
+            round::Mode::HalfEven, round::Mode::HalfCeil,
+            round::Mode::HalfFloor, round::Mode::HalfTrunc,
+            round::Mode::HalfExpand,
+        ] {
+            assert_eq!(td_secs(30).round(TEN_SEC, mode), Some(td_secs(30)));
+            assert_eq!(td_secs(-30).round(TEN_SEC, mode), Some(td_secs(-30)));
+        }
+    }
+}
