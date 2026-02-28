@@ -1,6 +1,6 @@
 import pickle
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Sequence, KeysView, ValuesView, ItemsView, Mapping
 from typing import Any, Literal, cast
 
 import pytest
@@ -174,6 +174,36 @@ def test_mapping_like_interface(
             d[missing_key]
 
     assert len(d) == len(expected)
+
+
+def test_mapping_views():
+    d = ItemizedDelta(years=2, months=3, seconds=4)
+
+    assert isinstance(d, Mapping)
+
+    # KeysView
+    keys = d.keys()
+    assert isinstance(keys, KeysView)
+    assert set(keys) == {"years", "months", "seconds"}
+    assert keys | {"extra"} == {"years", "months", "seconds", "extra"}
+    assert keys & {"years", "days"} == {"years"}
+    assert keys - {"months"} == {"years", "seconds"}
+
+    # ValuesView
+    values = d.values()
+    assert isinstance(values, ValuesView)
+    assert set(values) == {2, 3, 4}
+
+    # ItemsView
+    items = d.items()
+    assert isinstance(items, ItemsView)
+    assert set(items) == {("years", 2), ("months", 3), ("seconds", 4)}
+    assert items | {("days", 5)} == {
+        ("years", 2),
+        ("months", 3),
+        ("seconds", 4),
+        ("days", 5),
+    }
 
 
 class TestEq:
@@ -922,11 +952,11 @@ def test_pickle(d: ItemizedDelta):
 
 
 def test_compatible_unpickle():
-    # This is a pickle of ItemizedDelta created with the initial implementation.
-    # We keep this test to ensure backwards compatibility.
+    # This is a pickle of ItemizedDelta created with the current format.
+    # Signed values, no separate sign field.
     dumped = (
-        b"\x80\x04\x955\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_i"
-        b"delta\x94\x93\x94(K\x01K\x01K\x02K\x03K\x04K\x05K\x06K\x07K\x08t\x94R\x94."
+        b"\x80\x04\x953\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_i"
+        b"delta\x94\x93\x94(K\x01K\x02K\x03K\x04K\x05K\x06K\x07K\x08t\x94R\x94."
     )
     result = pickle.loads(dumped)
     assert result.exact_eq(

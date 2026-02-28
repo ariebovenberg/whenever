@@ -126,4 +126,22 @@ where
         .ok_or_else_value_err(|| format!("Invalid value for {name}: {value}"))
 }
 
+/// Like `match_interned_str`, but returns `None` if no match is found
+/// instead of raising an error.
+pub(crate) fn find_interned<T, F>(value: PyObj, mut handler: F) -> Option<T>
+where
+    F: FnMut(PyObj, fn(PyObj, PyObj) -> bool) -> Option<T>,
+{
+    handler(value, ptr_eq).or_else(|| handler(value, value_eq))
+}
+
+/// Like find_interned, but for boolean checks.
+/// The closure returns true if a match was found. Tries ptr_eq first, then value_eq.
+pub(crate) fn check_interned<F>(value: PyObj, mut handler: F) -> bool
+where
+    F: FnMut(PyObj, fn(PyObj, PyObj) -> bool) -> bool,
+{
+    handler(value, ptr_eq) || handler(value, value_eq)
+}
+
 pub(crate) use parse_args_kwargs;
