@@ -43,6 +43,24 @@ impl PyTuple {
             size: self.len(),
         }
     }
+
+    /// Create a new tuple with the given length.
+    pub(crate) fn with_len(len: Py_ssize_t) -> PyResult<Owned<Self>> {
+        Ok(unsafe { PyTuple_New(len).rust_owned()?.cast_unchecked::<PyTuple>() })
+    }
+}
+
+impl Owned<PyTuple> {
+    /// Set an item in a tuple being constructed.
+    /// Takes ownership of the value (steals the reference).
+    pub(crate) fn init_item(&self, index: Py_ssize_t, value: Owned<impl PyBase>) {
+        unsafe { PyTuple_SET_ITEM(self.as_ptr(), index, value.py_owned().as_ptr()) };
+    }
+
+    /// Get a Python iterator over this tuple.
+    pub(crate) fn py_iter(self) -> PyReturn {
+        unsafe { PyObject_GetIter(self.as_ptr()) }.rust_owned()
+    }
 }
 
 pub(crate) struct PyTupleIter {

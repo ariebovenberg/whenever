@@ -3758,18 +3758,23 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
     @no_type_check
     def __reduce__(self):
+        # TODO LATER: refactor
+        def _to_signed(v):
+            if v is None or v == 0 or self._sign >= 0:
+                return v
+            return -v
+
         return (
             _unpkl_idelta,
             (
-                self._sign,
-                self._years,
-                self._months,
-                self._weeks,
-                self._days,
-                self._hours,
-                self._minutes,
-                self._seconds,
-                self._nanoseconds,
+                _to_signed(self._years),
+                _to_signed(self._months),
+                _to_signed(self._weeks),
+                _to_signed(self._days),
+                _to_signed(self._hours),
+                _to_signed(self._minutes),
+                _to_signed(self._seconds),
+                _to_signed(self._nanoseconds),
             ),
         )
 
@@ -3780,7 +3785,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
 def _unpkl_idelta(
-    sign: Sign,
     years: Optional[int],
     months: Optional[int],
     weeks: Optional[int],
@@ -3791,15 +3795,22 @@ def _unpkl_idelta(
     nanoseconds: Optional[int],
 ) -> ItemizedDelta:
     self = _object_new(ItemizedDelta)
+    sign = 0
+    # TODO LATER: reusable method for this pattern
+    for v in (years, months, weeks, days, hours, minutes, seconds, nanoseconds):
+        if v is not None and v != 0:
+            sign = 1 if v > 0 else -1
+            break
     self._sign = sign
-    self._years = years
-    self._months = months
-    self._weeks = weeks
-    self._days = days
-    self._hours = hours
-    self._minutes = minutes
-    self._seconds = seconds
-    self._nanoseconds = nanoseconds
+    _a = lambda v: abs(v) if v else v
+    self._years = _a(years)
+    self._months = _a(months)
+    self._weeks = _a(weeks)
+    self._days = _a(days)
+    self._hours = _a(hours)
+    self._minutes = _a(minutes)
+    self._seconds = _a(seconds)
+    self._nanoseconds = _a(nanoseconds)
     return self
 
 
@@ -4444,9 +4455,14 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
     @no_type_check
     def __reduce__(self):
+        def _to_signed(v):
+            if v is None or v == 0 or self._sign >= 0:
+                return v
+            return -v
+
         return (
             _unpkl_iddelta,
-            (self._sign, self._years, self._months, self._weeks, self._days),
+            (_to_signed(self._years), _to_signed(self._months), _to_signed(self._weeks), _to_signed(self._days)),
         )
 
     def __repr__(self) -> str:
@@ -4456,18 +4472,23 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
 def _unpkl_iddelta(
-    sign: Sign,
     years: Optional[int],
     months: Optional[int],
     weeks: Optional[int],
     days: Optional[int],
 ) -> ItemizedDateDelta:
     self = _object_new(ItemizedDateDelta)
+    sign = 0
+    for v in (years, months, weeks, days):
+        if v is not None and v != 0:
+            sign = 1 if v > 0 else -1
+            break
     self._sign = sign
-    self._years = years
-    self._months = months
-    self._weeks = weeks
-    self._days = days
+    _a = lambda v: abs(v) if v else v
+    self._years = _a(years)
+    self._months = _a(months)
+    self._weeks = _a(weeks)
+    self._days = _a(days)
     return self
 
 
@@ -8437,7 +8458,6 @@ class WheneverDeprecationWarning(UserWarning):
     """
 
 
-# TODO: can the names be a bit shorter? Everything related (e.g. context managers) have also looooong names
 class PotentiallyStaleOffsetWarning(PotentialDstBugWarning):
     """Raised when an operation on an :class:`~whenever.OffsetDateTime` may
     result in a datetime with an incorrect UTC offset.

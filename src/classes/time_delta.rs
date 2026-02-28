@@ -846,11 +846,12 @@ fn parse_prefix(s: &mut &[u8]) -> Option<i128> {
     })
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-enum Unit {
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum TimeUnit {
     Hours,
     Minutes,
-    Nanoseconds,
+    /// Value is in nanoseconds. `has_fraction` distinguishes `5S` from `5.0S`.
+    Nanos { has_fraction: bool },
 }
 
 // 001234 -> 1_234_000
@@ -877,7 +878,7 @@ fn parse_nano_fractions(s: &[u8]) -> Option<i128> {
 }
 
 /// parse a component of a ISO8601 duration, e.g. `6M`, `56.3S`, `0H`
-fn parse_component(s: &mut &[u8]) -> Option<(i128, Unit)> {
+pub(crate) fn parse_time_component(s: &mut &[u8]) -> Option<(i128, TimeUnit)> {
     if s.len() < 2 {
         return None;
     }
@@ -888,19 +889,19 @@ fn parse_component(s: &mut &[u8]) -> Option<(i128, Unit)> {
             c if c.is_ascii_digit() => tally = tally * 10 + i128::from(c - b'0'),
             b'H' | b'h' => {
                 *s = &s[i + 1..];
-                return Some((tally, Unit::Hours));
+                return Some((tally, TimeUnit::Hours));
             }
             b'M' | b'm' => {
                 *s = &s[i + 1..];
-                return Some((tally, Unit::Minutes));
+                return Some((tally, TimeUnit::Minutes));
             }
             b'S' | b's' => {
                 *s = &s[i + 1..];
-                return Some((tally * 1_000_000_000, Unit::Nanoseconds));
+                return Some((tally * 1_000_000_000, TimeUnit::Nanos { has_fraction: false }));
             }
             b'.' | b',' if i > 0 => {
                 let result = parse_nano_fractions(&s[i + 1..])
-                    .map(|ns| (tally * 1_000_000_000 + ns, Unit::Nanoseconds));
+                    .map(|ns| (tally * 1_000_000_000 + ns, TimeUnit::Nanos { has_fraction: true }));
                 *s = &[];
                 return result;
             }
@@ -913,18 +914,18 @@ fn parse_component(s: &mut &[u8]) -> Option<(i128, Unit)> {
 // Parse all time components of an ISO8601 duration into total nanoseconds
 // also whether it is empty (to distinguish no components from zero components)
 pub(crate) fn parse_all_components(s: &mut &[u8]) -> Option<(i128, bool)> {
-    let mut prev_unit: Option<Unit> = None;
+    let mut prev_unit: Option<TimeUnit> = None;
     let mut nanos = 0;
     while !s.is_empty() {
-        let (value, unit) = parse_component(s)?;
+        let (value, unit) = parse_time_component(s)?;
         match (unit, prev_unit.replace(unit)) {
-            (Unit::Hours, None) => {
+            (TimeUnit::Hours, None) => {
                 nanos += value * 3_600_000_000_000;
             }
-            (Unit::Minutes, None | Some(Unit::Hours)) => {
+            (TimeUnit::Minutes, None | Some(TimeUnit::Hours)) => {
                 nanos += value * 60_000_000_000;
             }
-            (Unit::Nanoseconds, _) => {
+            (TimeUnit::Nanos { .. }, _) => {
                 nanos += value;
                 if s.is_empty() {
                     break;

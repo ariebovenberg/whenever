@@ -5,6 +5,8 @@ use crate::{
         date_delta::{self, days, months, unpickle as _unpkl_ddelta, weeks, years},
         datetime_delta::{self, unpickle as _unpkl_dtdelta},
         instant::{self, unpickle as _unpkl_inst, unpickle_pre_0_8 as _unpkl_utc},
+        itemized_date_delta::{self, unpickle as _unpkl_iddelta},
+        itemized_delta::{self, unpickle as _unpkl_idelta},
         monthday::{self, unpickle as _unpkl_md},
         offset_datetime::{self, unpickle as _unpkl_offset},
         plain_datetime::{self, unpickle as _unpkl_local},
@@ -65,6 +67,8 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     modmethod_vararg!(_unpkl_ddelta, c""),
     modmethod1!(_unpkl_tdelta, c""),
     modmethod_vararg!(_unpkl_dtdelta, c""),
+    modmethod_vararg!(_unpkl_iddelta, c""),
+    modmethod_vararg!(_unpkl_idelta, c""),
     modmethod1!(_unpkl_local, c""),
     modmethod1!(_unpkl_inst, c""),
     modmethod1!(_unpkl_utc, c""), // for backwards compatibility
@@ -181,6 +185,20 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         c"_unpkl_dtdelta",
     )?;
     create_singletons(*datetime_delta_type, datetime_delta::SINGLETONS)?;
+    let (itemized_date_delta_type, unpickle_itemized_date_delta) = new_class(
+        module,
+        module_name.borrow(),
+        &mut unsafe { itemized_date_delta::SPEC },
+        c"_unpkl_iddelta",
+    )?;
+    itemized_date_delta::register_as_mapping(itemized_date_delta_type.borrow().as_py_obj())?;
+    let (itemized_delta_type, unpickle_itemized_delta) = new_class(
+        module,
+        module_name.borrow(),
+        &mut unsafe { itemized_delta::SPEC },
+        c"_unpkl_idelta",
+    )?;
+    itemized_date_delta::register_as_mapping(itemized_delta_type.borrow().as_py_obj())?;
     let (plain_datetime_type, unpickle_plain_datetime) = new_class(
         module,
         module_name.borrow(),
@@ -312,6 +330,8 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         date_delta_type: date_delta_type.py_owned(),
         time_delta_type: time_delta_type.py_owned(),
         datetime_delta_type: datetime_delta_type.py_owned(),
+        itemized_date_delta_type: itemized_date_delta_type.py_owned(),
+        itemized_delta_type: itemized_delta_type.py_owned(),
         plain_datetime_type: plain_datetime_type.py_owned(),
         instant_type: instant_type.py_owned(),
         offset_datetime_type: offset_datetime_type.py_owned(),
@@ -380,6 +400,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         str_basic: intern(c"basic")?.py_owned(),
         str_always: intern(c"always")?.py_owned(),
         str_never: intern(c"never")?.py_owned(),
+        str_lowercase_units: intern(c"lowercase_units")?.py_owned(),
 
         exc_repeated: exc_repeated.py_owned(),
         exc_skipped: exc_skipped.py_owned(),
@@ -404,6 +425,8 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         unpickle_date_delta: unpickle_date_delta.py_owned(),
         unpickle_time_delta: unpickle_time_delta.py_owned(),
         unpickle_datetime_delta: unpickle_datetime_delta.py_owned(),
+        unpickle_itemized_date_delta: unpickle_itemized_date_delta.py_owned(),
+        unpickle_itemized_delta: unpickle_itemized_delta.py_owned(),
         unpickle_plain_datetime: unpickle_plain_datetime.py_owned(),
         unpickle_instant: unpickle_instant.py_owned(),
         unpickle_offset_datetime: unpickle_offset_datetime.py_owned(),
@@ -481,6 +504,16 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
             state.datetime_delta_type.inner(),
             state.unpickle_datetime_delta,
             datetime_delta::SINGLETONS.len(),
+        ),
+        (
+            state.itemized_date_delta_type.inner(),
+            state.unpickle_itemized_date_delta,
+            0,
+        ),
+        (
+            state.itemized_delta_type.inner(),
+            state.unpickle_itemized_delta,
+            0,
         ),
         (
             state.plain_datetime_type.inner(),
@@ -570,6 +603,8 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.date_delta_type).cast());
         Py_CLEAR((&raw mut state.time_delta_type).cast());
         Py_CLEAR((&raw mut state.datetime_delta_type).cast());
+        Py_CLEAR((&raw mut state.itemized_date_delta_type).cast());
+        Py_CLEAR((&raw mut state.itemized_delta_type).cast());
         Py_CLEAR((&raw mut state.plain_datetime_type).cast());
         Py_CLEAR((&raw mut state.instant_type).cast());
         Py_CLEAR((&raw mut state.offset_datetime_type).cast());
@@ -633,6 +668,7 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.str_basic).cast());
         Py_CLEAR((&raw mut state.str_always).cast());
         Py_CLEAR((&raw mut state.str_never).cast());
+        Py_CLEAR((&raw mut state.str_lowercase_units).cast());
 
         // unpickling functions
         Py_CLEAR((&raw mut state.unpickle_date).cast());
@@ -642,6 +678,8 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.unpickle_date_delta).cast());
         Py_CLEAR((&raw mut state.unpickle_time_delta).cast());
         Py_CLEAR((&raw mut state.unpickle_datetime_delta).cast());
+        Py_CLEAR((&raw mut state.unpickle_itemized_date_delta).cast());
+        Py_CLEAR((&raw mut state.unpickle_itemized_delta).cast());
         Py_CLEAR((&raw mut state.unpickle_plain_datetime).cast());
         Py_CLEAR((&raw mut state.unpickle_instant).cast());
         Py_CLEAR((&raw mut state.unpickle_offset_datetime).cast());
@@ -695,6 +733,8 @@ pub(crate) struct State {
     pub(crate) date_delta_type: HeapType<date_delta::DateDelta>,
     pub(crate) time_delta_type: HeapType<time_delta::TimeDelta>,
     pub(crate) datetime_delta_type: HeapType<datetime_delta::DateTimeDelta>,
+    pub(crate) itemized_date_delta_type: HeapType<itemized_date_delta::ItemizedDateDelta>,
+    pub(crate) itemized_delta_type: HeapType<itemized_delta::ItemizedDelta>,
     pub(crate) plain_datetime_type: HeapType<plain_datetime::DateTime>,
     pub(crate) instant_type: HeapType<instant::Instant>,
     pub(crate) offset_datetime_type: HeapType<offset_datetime::OffsetDateTime>,
@@ -729,6 +769,8 @@ pub(crate) struct State {
     pub(crate) unpickle_date_delta: PyObj,
     pub(crate) unpickle_time_delta: PyObj,
     pub(crate) unpickle_datetime_delta: PyObj,
+    pub(crate) unpickle_itemized_date_delta: PyObj,
+    pub(crate) unpickle_itemized_delta: PyObj,
     pub(crate) unpickle_plain_datetime: PyObj,
     pub(crate) unpickle_instant: PyObj,
     pub(crate) unpickle_offset_datetime: PyObj,
@@ -791,6 +833,7 @@ pub(crate) struct State {
     pub(crate) str_basic: PyObj,
     pub(crate) str_always: PyObj,
     pub(crate) str_never: PyObj,
+    pub(crate) str_lowercase_units: PyObj,
 
     pub(crate) time_patch: Patch,
     pub(crate) tz_store: TzStore,
