@@ -578,7 +578,7 @@ pub(crate) enum Unit {
 
 fn finish_parsing_component(s: &mut &[u8], mut value: i32) -> Option<(i32, Unit)> {
     // We limit parsing to a number of digits to prevent overflow
-    for i in 1..s.len().min(7) {
+    for i in 1..s.len().min(9) {
         match s[i] {
             c if c.is_ascii_digit() => value = value * 10 + i32::from(c - b'0'),
             b'D' | b'd' => {

@@ -5,6 +5,7 @@ use crate::{
         fmt::{self, Sink, format_2_digits},
         round,
     },
+    py::{base::ToPy, exc::OptionExt, none, PyInt, PyObj, PyReturn, PyResult, raise_value_err},
 };
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
 
@@ -915,6 +916,188 @@ impl Weekday {
 }
 
 pub(crate) static NS_PER_DAY: i128 = S_PER_DAY as i128 * 1_000_000_000;
+
+/// Trait for types that can be used as delta field values with a sentinel
+pub(crate) trait DeltaFieldInner: Copy + Eq + PartialOrd + Neg<Output = Self> {
+    const SENTINEL: Self;
+    const ZERO: Self;
+    fn unsigned_abs(self) -> u64;
+    fn from_c_long(val: c_long) -> Self;
+    fn from_u64(val: u64) -> Self;
+    fn neg_from_u64(val: u64) -> Self;
+    fn to_i64(self) -> i64;
+}
+
+impl DeltaFieldInner for i32 {
+    const SENTINEL: Self = i32::MIN;
+    const ZERO: Self = 0;
+    fn unsigned_abs(self) -> u64 {
+        (self as i32).unsigned_abs() as u64
+    }
+    fn from_c_long(val: c_long) -> Self {
+        val as i32
+    }
+    fn from_u64(val: u64) -> Self {
+        val as i32
+    }
+    fn neg_from_u64(val: u64) -> Self {
+        -(val as i32)
+    }
+    fn to_i64(self) -> i64 {
+        self as i64
+    }
+}
+
+impl DeltaFieldInner for i64 {
+    const SENTINEL: Self = i64::MIN;
+    const ZERO: Self = 0;
+    fn unsigned_abs(self) -> u64 {
+        (self as i64).unsigned_abs()
+    }
+    fn from_c_long(val: c_long) -> Self {
+        val as i64
+    }
+    fn from_u64(val: u64) -> Self {
+        val as i64
+    }
+    fn neg_from_u64(val: u64) -> Self {
+        -(val as i64)
+    }
+    fn to_i64(self) -> i64 {
+        self as i64
+    }
+}
+
+/// An optional signed integer component of an itemized delta.
+/// Uses a sentinel value for "missing", avoiding the overhead of `Option<T>`.
+/// Construction through `parse()` ensures that the value is range-checked.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(transparent)]
+pub(crate) struct DeltaField<T: DeltaFieldInner>(T);
+
+impl<T: DeltaFieldInner> DeltaField<T> {
+    pub(crate) const UNSET: Self = Self(T::SENTINEL);
+
+    /// Create a new field with the given value.
+    /// Only valid for values that have already been range-checked.
+    pub(crate) fn new(val: T) -> Self {
+        debug_assert!(val != T::SENTINEL);
+        Self(val)
+    }
+
+    pub(crate) fn is_set(self) -> bool {
+        self.0 != T::SENTINEL
+    }
+
+    pub(crate) fn get(self) -> T {
+        debug_assert!(self.is_set());
+        self.0
+    }
+
+    pub(crate) fn get_or(self, default: T) -> T {
+        if self.is_set() { self.0 } else { default }
+    }
+
+    pub(crate) fn neg(self) -> Self {
+        if self.is_set() { Self(-self.0) } else { Self::UNSET }
+    }
+
+    pub(crate) fn sign(self) -> i8 {
+        if !self.is_set() || self.0 == T::ZERO {
+            0
+        } else if self.0 > T::ZERO {
+            1
+        } else {
+            -1
+        }
+    }
+
+    pub(crate) fn unsigned_abs(self) -> u64 {
+        debug_assert!(self.is_set());
+        self.0.unsigned_abs()
+    }
+
+    /// Parse a Python integer into a range-checked field value.
+    /// Updates `sign` for mixed-sign detection.
+    pub(crate) fn parse(
+        value: PyObj,
+        sign: &mut i8,
+        max: u64,
+    ) -> PyResult<Self> {
+        let val = value
+            .cast_allow_subclass::<PyInt>()
+            .ok_or_type_err("field must be an integer")?
+            .to_long()?;
+        if val == 0 {
+            return Ok(Self::new(T::ZERO));
+        }
+        let abs = (val as i64).unsigned_abs();
+        if abs > max {
+            raise_value_err("Delta out of range")?;
+        }
+        if val > 0 {
+            if *sign == -1 {
+                raise_value_err("Mixed sign in delta")?;
+            }
+            *sign = 1;
+        } else {
+            if *sign == 1 {
+                raise_value_err("Mixed sign in delta")?;
+            }
+            *sign = -1;
+        }
+        // Safe: range check guarantees val fits in T
+        Ok(Self::new(T::from_c_long(val)))
+    }
+
+    /// Parse a Python integer or None into a range-checked field.
+    /// For use in replace() and unpickle.
+    pub(crate) fn parse_opt(value: PyObj, max: u64) -> PyResult<Self> {
+        if value.is_none() {
+            Ok(Self::UNSET)
+        } else {
+            let val = value
+                .cast_allow_subclass::<PyInt>()
+                .ok_or_type_err("field must be an integer or None")?
+                .to_long()?;
+            let abs = (val as i64).unsigned_abs();
+            if abs > max {
+                raise_value_err("Delta out of range")?;
+            }
+            Ok(Self::new(T::from_c_long(val)))
+        }
+    }
+
+    /// Create a range-checked field. Returns None if `abs_val > max`.
+    pub(crate) fn new_checked(abs_val: u64, negated: bool, max: u64) -> Option<Self> {
+        if abs_val > max {
+            return None;
+        }
+        let val = if negated && abs_val != 0 {
+            T::neg_from_u64(abs_val)
+        } else {
+            T::from_u64(abs_val)
+        };
+        Some(Self::new(val))
+    }
+
+    /// If set, return Some(Python int). If unset, return None.
+    /// For use in __getitem__ (where unset means key not present).
+    pub(crate) fn to_py_if_set(self) -> Option<PyReturn> {
+        self.is_set().then(|| self.0.to_i64().to_py())
+    }
+}
+
+impl<T: DeltaFieldInner> ToPy for DeltaField<T> {
+    /// Convert to Python int (if set) or Python None (if unset).
+    fn to_py(self) -> PyReturn {
+        if self.is_set() {
+            self.0.to_i64().to_py()
+        } else {
+            Ok(none())
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

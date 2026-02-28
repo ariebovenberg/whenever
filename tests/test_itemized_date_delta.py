@@ -1,5 +1,6 @@
 import pickle
 from collections import Counter
+from collections.abc import KeysView, ValuesView, ItemsView, Mapping
 from typing import Any, Literal, Sequence, cast
 
 import pytest
@@ -133,6 +134,36 @@ def test_mapping_like_interface(
             d[missing_key]
 
     assert len(d) == len(expected)
+
+
+def test_mapping_views():
+    d = ItemizedDateDelta(years=2, months=3, weeks=4)
+
+    assert isinstance(d, Mapping)
+
+    # KeysView
+    keys = d.keys()
+    assert isinstance(keys, KeysView)
+    assert set(keys) == {"years", "months", "weeks"}
+    assert keys | {"extra"} == {"years", "months", "weeks", "extra"}
+    assert keys & {"years", "days"} == {"years"}
+    assert keys - {"months"} == {"years", "weeks"}
+
+    # ValuesView
+    values = d.values()
+    assert isinstance(values, ValuesView)
+    assert set(values) == {2, 3, 4}
+
+    # ItemsView
+    items = d.items()
+    assert isinstance(items, ItemsView)
+    assert set(items) == {("years", 2), ("months", 3), ("weeks", 4)}
+    assert items | {("days", 5)} == {
+        ("years", 2),
+        ("months", 3),
+        ("weeks", 4),
+        ("days", 5),
+    }
 
 
 def test_replace():
@@ -302,6 +333,7 @@ INVALID_DELTAS = [
     "P3",
     "P3D4",
     "P3D4T",
+    "P3M4DT",
     # too many digits
     "P9999999999999999999D",
     # out of range
@@ -661,11 +693,11 @@ def test_pickle(d: ItemizedDateDelta):
 
 
 def test_compatible_unpickle():
-    # This is a pickle of ItemizedDateDelta created with the initial implementation.
-    # We keep this test to ensure backwards compatibility.
+    # This is a pickle of ItemizedDateDelta created with the current format.
+    # Signed values, no separate sign field.
     dumped = (
-        b"\x80\x04\x95.\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0e_unp"
-        b"kl_iddelta\x94\x93\x94(K\x01K\x01K\x02K\x03K\x04t\x94R\x94."
+        b"\x80\x04\x95,\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0e_unp"
+        b"kl_iddelta\x94\x93\x94(K\x01K\x02K\x03K\x04t\x94R\x94."
     )
     result = pickle.loads(dumped)
     assert result.exact_eq(
