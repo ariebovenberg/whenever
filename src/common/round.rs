@@ -49,7 +49,7 @@ impl Mode {
 }
 
 impl Mode {
-    fn from_py(
+    pub(crate) fn from_py(
         s: PyObj,
         str_floor: PyObj,
         str_ceil: PyObj,
@@ -61,7 +61,24 @@ impl Mode {
         str_half_trunc: PyObj,
         str_half_expand: PyObj,
     ) -> PyResult<Mode> {
-        match_interned_str("mode", s, |v, eq| {
+        Self::from_py_named("mode", s, str_floor, str_ceil, str_trunc, str_expand,
+            str_half_floor, str_half_ceil, str_half_even, str_half_trunc, str_half_expand)
+    }
+
+    pub(crate) fn from_py_named(
+        name: &str,
+        s: PyObj,
+        str_floor: PyObj,
+        str_ceil: PyObj,
+        str_trunc: PyObj,
+        str_expand: PyObj,
+        str_half_floor: PyObj,
+        str_half_ceil: PyObj,
+        str_half_even: PyObj,
+        str_half_trunc: PyObj,
+        str_half_expand: PyObj,
+    ) -> PyResult<Mode> {
+        match_interned_str(name, s, |v, eq| {
             Some(if eq(v, str_floor) {
                 Mode::Floor
             } else if eq(v, str_ceil) {
