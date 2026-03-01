@@ -9,14 +9,17 @@ use std::fmt::{Display, Formatter};
 use crate::{
     classes::{
         date_delta::{DateDelta, handle_init_kwargs as handle_datedelta_kwargs},
+        itemized_date_delta::ItemizedDateDelta,
         monthday::MonthDay,
         plain_datetime::DateTime,
         time::Time,
         yearmonth::YearMonth,
     },
     common::{
+        cal_diff::{self, CalUnit},
         fmt::{self, Chunk},
         parse::{extract_2_digits, extract_digit},
+        round::Mode,
         scalar::*,
     },
     docstrings as doc,
@@ -559,6 +562,86 @@ fn _shift_method(
         .to_obj(cls)
 }
 
+fn since(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+    let b = args
+        .first()
+        .ok_or_type_err("since() missing required positional argument")?
+        .extract(cls)
+        .ok_or_type_err("argument must be a whenever.Date")?;
+    let parsed = cal_diff::parse_date_since_kwargs(cls.state(), args, kwargs)?;
+    _since(cls, slf, b, &parsed)
+}
+
+fn until(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+    let b = args
+        .first()
+        .ok_or_type_err("until() missing required positional argument")?
+        .extract(cls)
+        .ok_or_type_err("argument must be a whenever.Date")?;
+    let parsed = cal_diff::parse_date_since_kwargs(cls.state(), args, kwargs)?;
+    _since(cls, b, slf, &parsed)
+}
+
+fn _since(
+    cls: HeapType<Date>,
+    a: Date,
+    b: Date,
+    parsed: &cal_diff::SinceUntilArgs,
+) -> PyReturn {
+    let state = cls.state();
+    let sign: i8 = if a >= b { 1 } else { -1 };
+
+    let units = parsed.units;
+    let smallest_unit = units.smallest();
+
+    let (mut results, trunc, expand) = cal_diff::date_diff(a, b, parsed.round_increment, units, sign)
+        .ok_or_value_err("Resulting date out of range")?;
+
+    // Apply rounding if not trunc
+    if !matches!(parsed.round_mode, Mode::Trunc) {
+        let trunc_date = trunc.resolve();
+        let remainder = a.unix_days().diff(trunc_date.unix_days()).abs().get() as u128;
+        let expanded =
+            expand.resolve().unix_days().diff(trunc_date.unix_days()).abs().get() as u128;
+        if expanded > 0 {
+            results[smallest_unit as usize] = cal_diff::custom_round(
+                results[smallest_unit as usize],
+                remainder,
+                expanded,
+                parsed.round_mode,
+                parsed.round_increment,
+                sign,
+            );
+        }
+    }
+
+    if parsed.single_unit_mode {
+        (results[smallest_unit as usize] as i64 * sign as i64).to_py()
+    } else {
+        // Build ItemizedDateDelta from results, only setting requested units
+        let mut iddelta = ItemizedDateDelta {
+            years: DeltaField::UNSET,
+            months: DeltaField::UNSET,
+            weeks: DeltaField::UNSET,
+            days: DeltaField::UNSET,
+        };
+        let is_zero = results.iter().all(|&v| v == 0);
+        for u in units.iter() {
+            let cal = u.to_cal().unwrap();
+            let val = results[cal as usize];
+            let signed = if is_zero { 0 } else { val * sign as i32 };
+            match cal {
+                // Values are derived from date diffs, guaranteed within bounds
+                CalUnit::Years => iddelta.years = DeltaField::new_unchecked(signed),
+                CalUnit::Months => iddelta.months = DeltaField::new_unchecked(signed),
+                CalUnit::Weeks => iddelta.weeks = DeltaField::new_unchecked(signed),
+                CalUnit::Days => iddelta.days = DeltaField::new_unchecked(signed),
+            }
+        }
+        iddelta.to_obj(state.itemized_date_delta_type)
+    }
+}
+
 fn days_since(cls: HeapType<Date>, slf: Date, other: PyObj) -> PyReturn {
     slf.unix_days()
         .diff(
@@ -677,6 +760,8 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     method_kwargs!(Date, subtract, doc::DATE_SUBTRACT),
     method1!(Date, days_since, doc::DATE_DAYS_SINCE),
     method1!(Date, days_until, doc::DATE_DAYS_UNTIL),
+    method_kwargs!(Date, since, doc::DATE_SINCE),
+    method_kwargs!(Date, until, doc::DATE_UNTIL),
     method_kwargs!(Date, replace, doc::DATE_REPLACE),
     classmethod_kwargs!(Date, __get_pydantic_core_schema__, doc::PYDANTIC_SCHEMA),
     PyMethodDef::zeroed(),

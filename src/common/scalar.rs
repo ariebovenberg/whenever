@@ -979,8 +979,8 @@ impl<T: DeltaFieldInner> DeltaField<T> {
     pub(crate) const UNSET: Self = Self(T::SENTINEL);
 
     /// Create a new field with the given value.
-    /// Only valid for values that have already been range-checked.
-    pub(crate) fn new(val: T) -> Self {
+    /// Caller must ensure the value has been range-checked and is not the sentinel.
+    pub(crate) fn new_unchecked(val: T) -> Self {
         debug_assert!(val != T::SENTINEL);
         Self(val)
     }
@@ -1029,7 +1029,7 @@ impl<T: DeltaFieldInner> DeltaField<T> {
             .ok_or_type_err("field must be an integer")?
             .to_long()?;
         if val == 0 {
-            return Ok(Self::new(T::ZERO));
+            return Ok(Self::new_unchecked(T::ZERO));
         }
         let abs = (val as i64).unsigned_abs();
         if abs > max {
@@ -1047,7 +1047,7 @@ impl<T: DeltaFieldInner> DeltaField<T> {
             *sign = -1;
         }
         // Safe: range check guarantees val fits in T
-        Ok(Self::new(T::from_c_long(val)))
+        Ok(Self::new_unchecked(T::from_c_long(val)))
     }
 
     /// Parse a Python integer or None into a range-checked field.
@@ -1064,7 +1064,7 @@ impl<T: DeltaFieldInner> DeltaField<T> {
             if abs > max {
                 raise_value_err("Delta out of range")?;
             }
-            Ok(Self::new(T::from_c_long(val)))
+            Ok(Self::new_unchecked(T::from_c_long(val)))
         }
     }
 
@@ -1078,7 +1078,7 @@ impl<T: DeltaFieldInner> DeltaField<T> {
         } else {
             T::from_u64(abs_val)
         };
-        Some(Self::new(val))
+        Some(Self::new_unchecked(val))
     }
 
     /// If set, return Some(Python int). If unset, return None.

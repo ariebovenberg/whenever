@@ -1344,6 +1344,9 @@ class Time(_Base):
         def __init__(self, iso_string: str, /) -> None: ...
 
         @overload
+        def __init__(self, t: _time, /) -> None: ...
+
+        @overload
         def __init__(
             self,
             hour: int = 0,
@@ -2980,6 +2983,26 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         "_nanoseconds",
     )
 
+    # Overloads for a nice autodoc.
+    # Proper typing of the constructors is handled in the type stubs
+    if not TYPE_CHECKING:
+
+        @overload
+        def __init__(self, iso_string: str, /) -> None: ...
+
+        @overload
+        def __init__(
+            self,
+            years: int = ...,
+            months: int = ...,
+            weeks: int = ...,
+            days: int = ...,
+            hours: int = ...,
+            minutes: int = ...,
+            seconds: int = ...,
+            nanoseconds: int = ...,
+        ) -> None: ...
+
     def __init__(
         self,
         *,
@@ -3890,6 +3913,22 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         "_weeks",
         "_days",
     )
+
+    # Overloads for a nice autodoc.
+    # Proper typing of the constructors is handled in the type stubs
+    if not TYPE_CHECKING:
+
+        @overload
+        def __init__(self, iso_string: str, /) -> None: ...
+
+        @overload
+        def __init__(
+            self,
+            years: int = ...,
+            months: int = ...,
+            weeks: int = ...,
+            days: int = ...,
+        ) -> None: ...
 
     def __init__(
         self,
