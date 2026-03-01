@@ -1,9 +1,15 @@
 use crate::{
     classes::{
-        date::Date, date_delta::DateDelta, datetime_delta::set_units_from_kwargs, instant::Instant,
-        time::Time, zoned_datetime::ZonedDateTime,
+        date::Date, date_delta::DateDelta, datetime_delta::set_units_from_kwargs,
+        instant::Instant,
+        itemized_delta::ItemizedDelta, time::Time, time_delta::TimeDelta,
+        zoned_datetime::ZonedDateTime,
     },
-    common::{ambiguity::*, fmt, parse::Scan, round, scalar::*},
+    common::{
+        ambiguity::*,
+        cal_diff::{self},
+        fmt, parse::Scan, round, scalar::*,
+    },
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -56,6 +62,20 @@ pub(crate) const SINGLETONS: &[(&CStr, DateTime); 2] = &[
 ];
 
 impl DateTime {
+    /// Compute the difference between two DateTimes as a TimeDelta (self - other).
+    /// Avoids i128 by computing seconds and subsec nanos separately.
+    pub(crate) fn diff(self, other: Self) -> TimeDelta {
+        let day_secs = self.date.unix_days().diff(other.date.unix_days()).get() as i64
+            * S_PER_DAY as i64;
+        let time_secs = self.time.total_seconds() as i64 - other.time.total_seconds() as i64;
+        let (extra_sec, subsec) = self.time.subsec.diff(other.time.subsec);
+        TimeDelta {
+            // Safe: DateTime range guarantees this fits in DeltaSeconds
+            secs: DeltaSeconds::new_unchecked(day_secs + time_secs + extra_sec.get()),
+            subsec,
+        }
+    }
+
     pub(crate) fn shift_date(self, months: DeltaMonths, days: DeltaDays) -> Option<Self> {
         let DateTime { date, time } = self;
         date.shift(months, days).map(|date| DateTime { date, time })
@@ -861,6 +881,150 @@ fn replace_time(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn 
     DateTime { time, ..slf }.to_obj(cls)
 }
 
+fn since(
+    cls: HeapType<DateTime>,
+    slf: DateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    let state = cls.state();
+    let b = args
+        .first()
+        .ok_or_type_err("since() missing required positional argument")?
+        .extract(cls)
+        .ok_or_type_err("argument must be a whenever.PlainDateTime")?;
+    let parsed = cal_diff::parse_full_since_kwargs(state, args, kwargs)?;
+    let (_, exact_units) = parsed.split_cal_exact();
+    // Emit warning if exact units are used
+    if !exact_units.is_empty() && !state.cv_ignore_tz_unaware_arithmetic.get()? {
+        warn_with_class(
+            state.warn_tz_unaware_arithmetic,
+            doc::DIFF_LOCAL_MSG,
+            2,
+        )?;
+    }
+    plain_since(state, slf, b, &parsed)
+}
+
+fn until(
+    cls: HeapType<DateTime>,
+    slf: DateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    let state = cls.state();
+    let b = args
+        .first()
+        .ok_or_type_err("until() missing required positional argument")?
+        .extract(cls)
+        .ok_or_type_err("argument must be a whenever.PlainDateTime")?;
+    let parsed = cal_diff::parse_full_since_kwargs(state, args, kwargs)?;
+    let (_, exact_units) = parsed.split_cal_exact();
+    if !exact_units.is_empty() && !state.cv_ignore_tz_unaware_arithmetic.get()? {
+        warn_with_class(
+            state.warn_tz_unaware_arithmetic,
+            doc::DIFF_LOCAL_MSG,
+            2,
+        )?;
+    }
+    plain_since(state, b, slf, &parsed)
+}
+
+/// Shared since() implementation for PlainDateTime (and OffsetDateTime).
+/// Days are always 24 hours (no DST adjustments).
+pub(crate) fn plain_since(
+    state: &State,
+    a: DateTime,
+    b: DateTime,
+    parsed: &cal_diff::FullSinceUntilArgs,
+) -> PyReturn {
+    let sign: i8 = if a >= b { 1 } else { -1 };
+    let (cal_units, exact_units) = parsed.split_cal_exact();
+    let smallest_unit = parsed.smallest_unit();
+
+    // Adjust target_date so the exact remainder has the same sign.
+    // For PlainDateTime, at most one adjustment is needed (no day-skipping like ZonedDateTime).
+    let mut target_date = a.date;
+    if sign == 1 {
+        if (DateTime { date: target_date, time: b.time }) > a {
+            target_date = target_date.yesterday()
+                .ok_or_value_err("Resulting date out of range")?;
+        }
+    } else {
+        if (DateTime { date: target_date, time: b.time }) < a {
+            target_date = target_date.tomorrow()
+                .ok_or_value_err("Resulting date out of range")?;
+        }
+    }
+
+    let (cal_results, trunc_date, expand_date) = if !cal_units.is_empty() {
+        let inc = if exact_units.is_empty() {
+            parsed.round_increment
+        } else {
+            1
+        };
+        cal_diff::date_diff(target_date, b.date, inc, cal_units, sign)
+            .ok_or_value_err("Resulting date out of range")?
+    } else {
+        ([0i32; 4], b.date.into(), a.date.into())
+    };
+
+    let trunc_dt = DateTime {
+        date: trunc_date.resolve(),
+        time: b.time,
+    };
+    let expand_dt = DateTime {
+        date: expand_date.resolve(),
+        time: b.time,
+    };
+
+    let mut results = [0i64; 8];
+    // Copy calendar results
+    for u in cal_units.iter() {
+        results[u as usize] = cal_results[u as usize] as i64;
+    }
+
+    if !exact_units.is_empty() {
+        // Compute time difference between self and trunc
+        let diff = a.diff(trunc_dt);
+        let exact_results = cal_diff::time_delta_in_units(
+            diff,
+            exact_units,
+            parsed.round_increment,
+            parsed.round_mode,
+        )
+        .ok_or_value_err("Resulting TimeDelta out of range")?;
+        for u in exact_units.iter() {
+            results[u as usize] = exact_results[u as usize];
+        }
+    } else if !matches!(parsed.round_mode, round::Mode::Trunc) {
+        // Calendar-only with non-trunc rounding
+        let remainder = a.diff(trunc_dt).total_nanos().unsigned_abs();
+        let expanded = expand_dt.diff(trunc_dt).total_nanos().unsigned_abs();
+        if expanded > 0 {
+            let idx = smallest_unit as usize;
+            results[idx] = cal_diff::custom_round(
+                results[idx] as i32,
+                remainder,
+                expanded,
+                parsed.round_mode,
+                parsed.round_increment,
+                sign,
+            ) as i64;
+        }
+    }
+
+    if parsed.single_unit_mode {
+        (results[smallest_unit as usize] * sign as i64).to_py()
+    } else {
+        // PlainDateTime always returns ItemizedDelta (even for calendar-only units)
+        let is_zero = results.iter().all(|&v| v == 0);
+        let s = if is_zero { 0i8 } else { sign };
+        ItemizedDelta::from_results(&results, parsed.units, s)
+            .to_obj(state.itemized_delta_type)
+    }
+}
+
 fn round(
     cls: HeapType<DateTime>,
     slf: DateTime,
@@ -915,6 +1079,8 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(DateTime, add, doc::PLAINDATETIME_ADD),
     method_kwargs!(DateTime, subtract, doc::PLAINDATETIME_SUBTRACT),
     method_kwargs!(DateTime, difference, doc::PLAINDATETIME_DIFFERENCE),
+    method_kwargs!(DateTime, since, doc::PLAINDATETIME_SINCE),
+    method_kwargs!(DateTime, until, doc::PLAINDATETIME_UNTIL),
     method_kwargs!(DateTime, round, doc::PLAINDATETIME_ROUND),
     classmethod_kwargs!(DateTime, __get_pydantic_core_schema__, doc::PYDANTIC_SCHEMA),
     PyMethodDef::zeroed(),

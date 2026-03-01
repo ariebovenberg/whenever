@@ -10,7 +10,10 @@ use crate::{
         },
         time_delta::{parse_time_component, TimeUnit, TimeDelta},
     },
-    common::scalar::{DeltaField, DeltaSeconds, SubSecNanos},
+    common::{
+        cal_diff::{DeltaUnit, UnitSet},
+        scalar::{DeltaField, DeltaSeconds, SubSecNanos},
+    },
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -34,6 +37,36 @@ pub(crate) struct ItemizedDelta {
 }
 
 impl ItemizedDelta {
+    /// Build from absolute results array and sign.
+    /// Only fields whose unit is in `requested` are set; others are UNSET.
+    pub(crate) fn from_results(results: &[i64; 8], requested: UnitSet, sign: i8) -> Self {
+        let s = sign as i64;
+        let field_i32 = |u: DeltaUnit| -> DeltaField<i32> {
+            if requested.contains(u) {
+                DeltaField::new_unchecked(results[u as usize] as i32 * sign as i32)
+            } else {
+                DeltaField::UNSET
+            }
+        };
+        let field_i64 = |u: DeltaUnit| -> DeltaField<i64> {
+            if requested.contains(u) {
+                DeltaField::new_unchecked(results[u as usize] * s)
+            } else {
+                DeltaField::UNSET
+            }
+        };
+        Self {
+            years: field_i32(DeltaUnit::Years),
+            months: field_i32(DeltaUnit::Months),
+            weeks: field_i32(DeltaUnit::Weeks),
+            days: field_i32(DeltaUnit::Days),
+            hours: field_i32(DeltaUnit::Hours),
+            minutes: field_i64(DeltaUnit::Minutes),
+            seconds: field_i64(DeltaUnit::Seconds),
+            nanos: field_i32(DeltaUnit::Nanoseconds),
+        }
+    }
+
     pub(crate) fn is_zero(self) -> bool {
         self.derived_sign() == 0
     }
@@ -241,7 +274,7 @@ fn __new__(
 
     // nanoseconds implies seconds
     if nanos.is_set() && !seconds.is_set() {
-        seconds = DeltaField::new(0);
+        seconds = DeltaField::new_unchecked(0);
     }
 
     if !years.is_set()

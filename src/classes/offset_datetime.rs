@@ -8,11 +8,13 @@ use crate::{
         date::Date,
         datetime_delta::set_units_from_kwargs,
         instant::Instant,
-        plain_datetime::{DateTime, set_components_from_kwargs},
+        itemized_delta::ItemizedDelta,
+        plain_datetime::{self, DateTime, set_components_from_kwargs},
         time::Time,
         time_delta::TimeDelta,
     },
     common::{
+        cal_diff::{self},
         fmt::{self, Suffix},
         parse::Scan,
         rfc2822, round,
@@ -1104,6 +1106,88 @@ fn round(
     .to_obj(cls)
 }
 
+fn since(
+    cls: HeapType<OffsetDateTime>,
+    slf: OffsetDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    let state = cls.state();
+    let b = args
+        .first()
+        .ok_or_type_err("since() missing required positional argument")?
+        .extract(cls)
+        .ok_or_type_err("argument must be a whenever.OffsetDateTime")?;
+    let parsed = cal_diff::parse_full_since_kwargs(state, args, kwargs)?;
+    _offset_since(cls, slf, b, &parsed)
+}
+
+fn until(
+    cls: HeapType<OffsetDateTime>,
+    slf: OffsetDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    let state = cls.state();
+    let b = args
+        .first()
+        .ok_or_type_err("until() missing required positional argument")?
+        .extract(cls)
+        .ok_or_type_err("argument must be a whenever.OffsetDateTime")?;
+    let parsed = cal_diff::parse_full_since_kwargs(state, args, kwargs)?;
+    _offset_since(cls, b, slf, &parsed)
+}
+
+fn _offset_since(
+    cls: HeapType<OffsetDateTime>,
+    a: OffsetDateTime,
+    b: OffsetDateTime,
+    parsed: &cal_diff::FullSinceUntilArgs,
+) -> PyReturn {
+    let state = cls.state();
+    let (cal_units, exact_units) = parsed.split_cal_exact();
+    let same_offset = a.offset == b.offset;
+
+    if !cal_units.is_empty() && !same_offset {
+        raise_value_err(
+            "Calendar units can only be used to compare OffsetDateTimes \
+             with the same offset",
+        )?;
+    }
+
+    if same_offset {
+        // Delegate to plain implementation (no warning)
+        plain_datetime::plain_since(
+            state,
+            a.without_offset(),
+            b.without_offset(),
+            parsed,
+        )
+    } else {
+        // Different offsets, exact units only: compute via TimeDelta
+        let diff = a.instant().diff(b.instant());
+        let sign: i8 = if diff.secs.get() >= 0 { 1 } else { -1 };
+
+        let exact_results = cal_diff::time_delta_in_units(
+            diff,
+            exact_units,
+            parsed.round_increment,
+            parsed.round_mode,
+        )
+        .ok_or_value_err("Resulting TimeDelta out of range")?;
+
+        let smallest = parsed.smallest_unit();
+        if parsed.single_unit_mode {
+            (exact_results[smallest as usize] * sign as i64).to_py()
+        } else {
+            let is_zero = exact_results.iter().all(|&v| v == 0);
+            let s = if is_zero { 0i8 } else { sign };
+            ItemizedDelta::from_results(&exact_results, parsed.units, s)
+                .to_obj(state.itemized_delta_type)
+        }
+    }
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     method0!(OffsetDateTime, __copy__, c""),
     method1!(OffsetDateTime, __deepcopy__, c""),
@@ -1193,6 +1277,8 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(OffsetDateTime, subtract, doc::OFFSETDATETIME_SUBTRACT),
     method1!(OffsetDateTime, difference, doc::EXACTTIME_DIFFERENCE),
     method_kwargs!(OffsetDateTime, round, doc::OFFSETDATETIME_ROUND),
+    method_kwargs!(OffsetDateTime, since, doc::OFFSETDATETIME_SINCE),
+    method_kwargs!(OffsetDateTime, until, doc::OFFSETDATETIME_UNTIL),
     classmethod_kwargs!(
         OffsetDateTime,
         __get_pydantic_core_schema__,

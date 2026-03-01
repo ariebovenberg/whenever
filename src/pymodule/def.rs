@@ -381,8 +381,11 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         str_offset: intern(c"offset")?.py_owned(),
         str_ignore_dst: intern(c"ignore_dst")?.py_owned(),
         str_unit: intern(c"unit")?.py_owned(),
+        str_units: intern(c"units")?.py_owned(),
         str_increment: intern(c"increment")?.py_owned(),
         str_mode: intern(c"mode")?.py_owned(),
+        str_round_mode: intern(c"round_mode")?.py_owned(),
+        str_round_increment: intern(c"round_increment")?.py_owned(),
         str_floor: intern(c"floor")?.py_owned(),
         str_ceil: intern(c"ceil")?.py_owned(),
         str_trunc: intern(c"trunc")?.py_owned(),
@@ -649,8 +652,11 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.str_offset).cast());
         Py_CLEAR((&raw mut state.str_ignore_dst).cast());
         Py_CLEAR((&raw mut state.str_unit).cast());
+        Py_CLEAR((&raw mut state.str_units).cast());
         Py_CLEAR((&raw mut state.str_increment).cast());
         Py_CLEAR((&raw mut state.str_mode).cast());
+        Py_CLEAR((&raw mut state.str_round_mode).cast());
+        Py_CLEAR((&raw mut state.str_round_increment).cast());
         Py_CLEAR((&raw mut state.str_floor).cast());
         Py_CLEAR((&raw mut state.str_ceil).cast());
         Py_CLEAR((&raw mut state.str_trunc).cast());
@@ -814,8 +820,11 @@ pub(crate) struct State {
     pub(crate) str_offset: PyObj,
     pub(crate) str_ignore_dst: PyObj,
     pub(crate) str_unit: PyObj,
+    pub(crate) str_units: PyObj,
     pub(crate) str_increment: PyObj,
     pub(crate) str_mode: PyObj,
+    pub(crate) str_round_mode: PyObj,
+    pub(crate) str_round_increment: PyObj,
     pub(crate) str_floor: PyObj,
     pub(crate) str_ceil: PyObj,
     pub(crate) str_trunc: PyObj,
