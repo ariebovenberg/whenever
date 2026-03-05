@@ -6,8 +6,14 @@ use crate::{
     classes::{
         date_delta::{DateDelta, InitError},
         datetime_delta::{DateTimeDelta, handle_exact_unit},
+        zoned_datetime::zoned_target,
     },
-    common::{parse::extract_digit, round, scalar::*},
+    common::{
+        cal_diff::{self, DeltaUnit, ExactUnit, UnitSet},
+        parse::extract_digit,
+        round,
+        scalar::*,
+    },
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -18,7 +24,7 @@ use crate::{
 /// The struct design is inspired by datetime.timedelta and chrono::timedelta
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub(crate) struct TimeDelta {
-    // Invariant: a TD is always smaller than TimeDelta::MAX.
+    // Invariant: a TD is always between TimeDelta::MIN and TimeDelta::MAX, inclusive
     pub(crate) secs: DeltaSeconds,
     pub(crate) subsec: SubSecNanos,
 }
@@ -30,9 +36,9 @@ impl TimeDelta {
     };
     pub(crate) const MAX: Self = Self {
         secs: DeltaSeconds::MAX,
-        // Note: we don't max the subsecs out, because then we couldn't convert min/max
-        // into each other. This would be a no-go as you can't have a reliable negation
-        // operation! I've tried this and it doesn't work out. Do not attempt.
+        // NOTE: we don't max the subsecs out, because then we couldn't convert min/max
+        // into each other. This would make negation fallible, which has far-reaching
+        // consequences for many operations. Do not attempt.
         subsec: SubSecNanos::MIN,
     };
 
@@ -107,46 +113,48 @@ impl TimeDelta {
         subsec: SubSecNanos::MIN,
     };
 
+    // TODO MEDUIM: round by TimeDelta increment
+    // TODO MEDIUM: round by AbsMode
     pub(crate) fn round(self, increment: i64, mode: round::Mode) -> Option<Self> {
         debug_assert!(increment > 0);
         let abs_mode = mode.to_abs(self.secs.get() < 0);
         let TimeDelta { secs, subsec } = self;
-        Some(if increment < 1_000_000_000 && 1_000_000_000 % increment == 0 {
-            let (extra_secs, subsec) = subsec.round_abs(increment as _, abs_mode);
-            Self {
-                // Safe: rounding sub-second part can never lead to range errors,
-                // due to our choice of MIN/MAX timedelta
-                secs: secs.add(extra_secs).unwrap(),
-                subsec,
-            }
-        } else if increment % 1_000_000_000 == 0 {
-            Self {
-                secs: secs.round_abs(subsec, increment, abs_mode)?,
-                subsec: SubSecNanos::MIN,
-            }
-        } else {
-            // General case: arbitrary increment, use i128 for total nanoseconds
-            let total_ns = secs.get() as i128 * 1_000_000_000 + subsec.get() as i128;
-            let inc = increment as i128;
-            let quotient = total_ns.div_euclid(inc);
-            let remainder = total_ns.rem_euclid(inc);
-            let threshold = match abs_mode {
-                round::AbsMode::HalfEven => {
-                    1i128.max(inc / 2 + (quotient % 2 == 0) as i128)
+        Some(
+            if increment < 1_000_000_000 && 1_000_000_000 % increment == 0 {
+                let (extra_secs, subsec) = subsec.round_abs(increment as _, abs_mode);
+                Self {
+                    // SAFETY: rounding sub-second part can never lead to range errors,
+                    // due to our choice of MIN/MAX timedelta
+                    secs: secs.add(extra_secs).unwrap(),
+                    subsec,
                 }
-                round::AbsMode::Expand => 1,
-                round::AbsMode::Trunc => inc + 1,
-                round::AbsMode::HalfTrunc => inc / 2 + 1,
-                round::AbsMode::HalfExpand => 1i128.max(inc / 2),
-            };
-            let result_ns = (quotient + i128::from(remainder >= threshold)) * inc;
-            let result_secs = result_ns.div_euclid(1_000_000_000) as i64;
-            let result_subsec = result_ns.rem_euclid(1_000_000_000) as i32;
-            Self {
-                secs: DeltaSeconds::new(result_secs)?,
-                subsec: SubSecNanos::new_unchecked(result_subsec),
-            }
-        })
+            } else if increment % 1_000_000_000 == 0 {
+                Self {
+                    secs: secs.round_abs(subsec, increment, abs_mode)?,
+                    subsec: SubSecNanos::MIN,
+                }
+            } else {
+                // General case: arbitrary increment, use i128 for total nanoseconds
+                let total_ns = secs.get() as i128 * 1_000_000_000 + subsec.get() as i128;
+                let inc = increment as i128;
+                let quotient = total_ns.div_euclid(inc);
+                let remainder = total_ns.rem_euclid(inc);
+                let threshold = match abs_mode {
+                    round::AbsMode::HalfEven => 1i128.max(inc / 2 + (quotient % 2 == 0) as i128),
+                    round::AbsMode::Expand => 1,
+                    round::AbsMode::Trunc => inc + 1,
+                    round::AbsMode::HalfTrunc => inc / 2 + 1,
+                    round::AbsMode::HalfExpand => 1i128.max(inc / 2),
+                };
+                let result_ns = (quotient + i128::from(remainder >= threshold)) * inc;
+                let result_secs = result_ns.div_euclid(1_000_000_000) as i64;
+                let result_subsec = result_ns.rem_euclid(1_000_000_000) as i32;
+                Self {
+                    secs: DeltaSeconds::new(result_secs)?,
+                    subsec: SubSecNanos::new_unchecked(result_subsec),
+                }
+            },
+        )
     }
 
     pub(crate) fn from_py_unchecked(delta: PyTimeDelta) -> Self {
@@ -227,7 +235,12 @@ impl std::fmt::Display for TimeDelta {
 }
 
 impl DeltaSeconds {
-    fn round_abs(self, subsec: SubSecNanos, increment_ns: i64, mode: round::AbsMode) -> Option<Self> {
+    fn round_abs(
+        self,
+        subsec: SubSecNanos,
+        increment_ns: i64,
+        mode: round::AbsMode,
+    ) -> Option<Self> {
         debug_assert!(increment_ns % 1_000_000_000 == 0);
         let increment_s = increment_ns / 1_000_000_000;
         let quotient = self.get().div_euclid(increment_s);
@@ -278,7 +291,18 @@ fn __new__(cls: HeapType<TimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> P
     } = cls.state();
 
     match (args.len(), nkwargs) {
-        (1, 0) => parse_iso(cls, args.iter().next().unwrap()),
+        (1, 0) => {
+            let arg = args.iter().next().unwrap();
+            if arg.cast_allow_subclass::<PyTimeDelta>().is_some() {
+                let d = arg
+                    .cast_exact::<PyTimeDelta>()
+                    .ok_or_type_err("Argument must be datetime.timedelta exactly")?;
+                return TimeDelta::from_py(d)
+                    .ok_or_value_err("TimeDelta out of range")?
+                    .to_obj(cls);
+            }
+            parse_iso(cls, arg)
+        }
         (0, 0) => TimeDelta {
             secs: DeltaSeconds::ZERO,
             subsec: SubSecNanos::MIN,
@@ -700,36 +724,71 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     .to_obj(state.time_delta_type)
 }
 
-fn in_nanoseconds(_: PyType, slf: TimeDelta) -> PyReturn {
+fn in_nanoseconds(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+    warn_with_class(
+        cls.state().warn_deprecation,
+        c"in_nanoseconds is deprecated, use total('nanoseconds') instead",
+        2,
+    )?;
     slf.total_nanos().to_py()
 }
 
-fn in_microseconds(_: PyType, slf: TimeDelta) -> PyReturn {
+fn in_microseconds(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+    warn_with_class(
+        cls.state().warn_deprecation,
+        c"in_microseconds is deprecated, use total('microseconds') instead",
+        2,
+    )?;
     let TimeDelta { secs, subsec } = slf;
     (secs.get() as f64 * 1e6 + subsec.get() as f64 * 1e-3).to_py()
 }
 
-fn in_milliseconds(_: PyType, slf: TimeDelta) -> PyReturn {
+fn in_milliseconds(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+    warn_with_class(
+        cls.state().warn_deprecation,
+        c"in_milliseconds is deprecated, use total('milliseconds') instead",
+        2,
+    )?;
     let TimeDelta { secs, subsec } = slf;
     (secs.get() as f64 * 1e3 + subsec.get() as f64 * 1e-6).to_py()
 }
 
-fn in_seconds(_: PyType, slf: TimeDelta) -> PyReturn {
+fn in_seconds(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+    warn_with_class(
+        cls.state().warn_deprecation,
+        c"in_seconds is deprecated, use total('seconds') instead",
+        2,
+    )?;
     let TimeDelta { secs, subsec } = slf;
     (secs.get() as f64 + subsec.get() as f64 * 1e-9).to_py()
 }
 
-fn in_minutes(_: PyType, slf: TimeDelta) -> PyReturn {
+fn in_minutes(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+    warn_with_class(
+        cls.state().warn_deprecation,
+        c"in_minutes is deprecated, use total('minutes') instead",
+        2,
+    )?;
     let TimeDelta { secs, subsec } = slf;
     (secs.get() as f64 / 60.0 + subsec.get() as f64 * 1e-9 / 60.0).to_py()
 }
 
-fn in_hours(_: PyType, slf: TimeDelta) -> PyReturn {
+fn in_hours(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+    warn_with_class(
+        cls.state().warn_deprecation,
+        c"in_hours is deprecated, use total('hours') instead",
+        2,
+    )?;
     let TimeDelta { secs, subsec } = slf;
     (secs.get() as f64 / 3600.0 + subsec.get() as f64 * 1e-9 / 3600.0).to_py()
 }
 
-fn in_days_of_24h(_: PyType, slf: TimeDelta) -> PyReturn {
+fn in_days_of_24h(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+    warn_with_class(
+        cls.state().warn_deprecation,
+        c"in_days_of_24h is deprecated, use total('days') instead",
+        2,
+    )?;
     let TimeDelta { secs, subsec } = slf;
     (secs.get() as f64 / 86_400.0 + subsec.get() as f64 * 1e-9 / 86_400.0).to_py()
 }
@@ -851,7 +910,9 @@ pub(crate) enum TimeUnit {
     Hours,
     Minutes,
     /// Value is in nanoseconds. `has_fraction` distinguishes `5S` from `5.0S`.
-    Nanos { has_fraction: bool },
+    Nanos {
+        has_fraction: bool,
+    },
 }
 
 // 001234 -> 1_234_000
@@ -897,11 +958,20 @@ pub(crate) fn parse_time_component(s: &mut &[u8]) -> Option<(i128, TimeUnit)> {
             }
             b'S' | b's' => {
                 *s = &s[i + 1..];
-                return Some((tally * 1_000_000_000, TimeUnit::Nanos { has_fraction: false }));
+                return Some((
+                    tally * 1_000_000_000,
+                    TimeUnit::Nanos {
+                        has_fraction: false,
+                    },
+                ));
             }
             b'.' | b',' if i > 0 => {
-                let result = parse_nano_fractions(&s[i + 1..])
-                    .map(|ns| (tally * 1_000_000_000 + ns, TimeUnit::Nanos { has_fraction: true }));
+                let result = parse_nano_fractions(&s[i + 1..]).map(|ns| {
+                    (
+                        tally * 1_000_000_000 + ns,
+                        TimeUnit::Nanos { has_fraction: true },
+                    )
+                });
                 *s = &[];
                 return result;
             }
@@ -963,6 +1033,345 @@ fn round(
         .to_obj(cls)
 }
 
+/// Helper: build a TimeDelta from kwargs (hours, minutes, seconds, etc.)
+fn td_from_kwargs(state: &State, kwargs: &mut IterKwargs) -> PyResult<TimeDelta> {
+    let mut nanos: i128 = 0;
+    let &State {
+        str_hours,
+        str_minutes,
+        str_seconds,
+        str_milliseconds,
+        str_microseconds,
+        str_nanoseconds,
+        ..
+    } = state;
+    handle_kwargs("add/subtract", kwargs, |key, value, eq| {
+        if eq(key, str_hours) {
+            nanos += handle_exact_unit(value, MAX_HOURS, "hours", 3_600_000_000_000)?;
+        } else if eq(key, str_minutes) {
+            nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", 60_000_000_000)?;
+        } else if eq(key, str_seconds) {
+            nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000)?;
+        } else if eq(key, str_milliseconds) {
+            nanos += handle_exact_unit(value, MAX_MILLISECONDS, "milliseconds", 1_000_000)?;
+        } else if eq(key, str_microseconds) {
+            nanos += handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000)?;
+        } else if eq(key, str_nanoseconds) {
+            nanos += value
+                .cast_allow_subclass::<PyInt>()
+                .ok_or_value_err("nanoseconds must be an integer")?
+                .to_i128()?;
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    })?;
+    TimeDelta::from_nanos(nanos).ok_or_value_err("TimeDelta out of range")
+}
+
+fn add(
+    cls: HeapType<TimeDelta>,
+    slf: TimeDelta,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    _add_method(cls, slf, args, kwargs, false)
+}
+
+fn subtract(
+    cls: HeapType<TimeDelta>,
+    slf: TimeDelta,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    _add_method(cls, slf, args, kwargs, true)
+}
+
+fn _add_method(
+    cls: HeapType<TimeDelta>,
+    slf: TimeDelta,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+    negate: bool,
+) -> PyReturn {
+    let other = match (args.first(), kwargs.len()) {
+        (Some(_), n) if n > 0 => raise_type_err("Cannot mix positional and keyword arguments")?,
+        (Some(arg), _) => arg.extract(cls).ok_or_type_err(if negate {
+            "subtract() argument must be a whenever.TimeDelta"
+        } else {
+            "add() argument must be a whenever.TimeDelta"
+        })?,
+        (None, 0) => return Ok(slf.to_obj(cls)?),
+        (None, _) => td_from_kwargs(cls.state(), kwargs)?,
+    };
+    let other = if negate { -other } else { other };
+    slf.checked_add(other)
+        .ok_or_value_err("Result out of range")?
+        .to_obj(cls)
+}
+
+/// Parse an exact-unit sequence for in_units() (no years/months allowed)
+fn parse_exact_units_sequence(seq: PyObj, state: &State) -> PyResult<UnitSet> {
+    if PyStr::isinstance(seq) {
+        raise_type_err("Units must be a sequence, not a string")?;
+    }
+    let len = seq.seq_len().ok_or_type_err("Units must be a sequence")?;
+    if len == 0 {
+        raise_value_err("At least one unit must be specified")?;
+    }
+    if len > 6 {
+        raise_value_err("Too many units (max 6)")?;
+    }
+
+    let mut units = UnitSet::EMPTY;
+    let mut prev_unit: Option<DeltaUnit> = None;
+    for i in 0..len {
+        // FUTURE: use iterator protocol instead of indexing
+        let unit = DeltaUnit::from_exact_py(seq.seq_getitem(i)?.borrow(), state)?;
+
+        if let Some(prev) = prev_unit {
+            if unit == prev {
+                raise_value_err("Duplicate units are not allowed")?;
+            }
+            if unit < prev {
+                raise_value_err("Units must be specified from largest to smallest")?;
+            }
+        }
+        // nanoseconds can only be used together with seconds
+        if unit == DeltaUnit::Nanoseconds && prev_unit != Some(DeltaUnit::Seconds) {
+            raise_value_err("Nanoseconds can only be specified together with seconds")?;
+        }
+        units.insert(unit);
+        prev_unit = Some(unit);
+    }
+    Ok(units)
+}
+
+fn in_units(
+    cls: HeapType<TimeDelta>,
+    slf: TimeDelta,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    let state = cls.state();
+    let &[seq] = args else {
+        raise_type_err("in_units() takes exactly 1 positional argument")?
+    };
+
+    let units = parse_exact_units_sequence(seq, state)?;
+
+    // Parse optional round kwargs
+    let &State {
+        str_round_unit,
+        str_round_mode,
+        str_round_increment,
+        str_millisecond,
+        str_microsecond,
+        str_nanosecond,
+        str_floor,
+        str_ceil,
+        str_trunc,
+        str_expand,
+        str_half_floor,
+        str_half_ceil,
+        str_half_even,
+        str_half_trunc,
+        str_half_expand,
+        ..
+    } = state;
+
+    let mut round_mode = round::Mode::Trunc;
+    let mut round_increment: i32 = 1;
+    let mut round_unit: Option<round::Unit> = None;
+
+    handle_kwargs("in_units", kwargs, |key, value, eq| {
+        if eq(key, str_round_mode) {
+            round_mode = round::Mode::from_py_named(
+                "rounding mode",
+                value,
+                str_floor,
+                str_ceil,
+                str_trunc,
+                str_expand,
+                str_half_floor,
+                str_half_ceil,
+                str_half_even,
+                str_half_trunc,
+                str_half_expand,
+            )?;
+        } else if eq(key, str_round_increment) {
+            let v = value
+                .cast_allow_subclass::<PyInt>()
+                .ok_or_type_err("round_increment must be an integer")?
+                .to_i64()?;
+            if v <= 0 || v > i32::MAX as i64 {
+                raise_value_err("round_increment must be a positive integer")?;
+            }
+            round_increment = v as i32;
+        } else if eq(key, str_round_unit) {
+            round_unit = Some(match_interned_str("round_unit", value, |v, eq| {
+                Some(if eq(v, str_millisecond) {
+                    round::Unit::Millisecond
+                } else if eq(v, str_microsecond) {
+                    round::Unit::Microsecond
+                } else if eq(v, str_nanosecond) {
+                    round::Unit::Nanosecond
+                } else {
+                    None?
+                })
+            })?);
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    })?;
+    // TODO LAST: very large round increment
+
+    // Warn about days/weeks
+    if units.has_days_or_weeks() && !state.cv_ignore_days_not_always_24h.get()? {
+        warn_with_class(
+            state.warn_days_not_always_24h,
+            doc::DAYS_NOT_ALWAYS_24H_MSG,
+            2,
+        )?;
+    }
+
+    cal_diff::time_delta_in_units(slf, units, round_increment, round_mode)
+        .ok_or_value_err("Resulting TimeDelta out of range")?
+        .to_obj(state.itemized_delta_type)
+}
+
+fn total(
+    cls: HeapType<TimeDelta>,
+    slf: TimeDelta,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    let state = cls.state();
+    let &State {
+        str_relative_to,
+        str_nanoseconds,
+        str_microseconds,
+        str_milliseconds,
+        str_seconds,
+        str_minutes,
+        str_hours,
+        str_days,
+        str_weeks,
+        str_years,
+        str_months,
+        ..
+    } = state;
+
+    let &[unit_arg] = args else {
+        raise_type_err("total() takes exactly 1 positional argument")?
+    };
+    let unit = DeltaUnit::from_py(unit_arg, state)?;
+
+    let relative_to_arg = handle_one_kwarg("total", str_relative_to, kwargs)?.map(|obj| {
+        obj.extract(state.zoned_datetime_type)
+            .ok_or_type_err("relative_to must be a ZonedDateTime")
+    });
+
+    let cal_unit = match unit.to_exact(relative_to_arg.is_none()) {
+        Ok(ExactUnit::Nanoseconds) => {
+            // Special case for nanoseconds: always return an int
+            return slf.total_nanos().to_py();
+        }
+        Ok(u) => {
+            if u == ExactUnit::Weeks || u == ExactUnit::Days {
+                // TODO: do we suggest passing relative_to in this warning?
+                if !state.cv_ignore_days_not_always_24h.get()? {
+                    warn_with_class(
+                        state.warn_days_not_always_24h,
+                        doc::DAYS_NOT_ALWAYS_24H_MSG,
+                        2,
+                    )?;
+                }
+            }
+            return (slf.to_nanos_f64() / u.in_nanos() as f64).to_py();
+        }
+        Err(cal_unit) => cal_unit,
+    };
+
+    let Some(relative_to) = relative_to_arg else {
+        raise_type_err("relative_to must be passed as a keyword argument for years and months")?
+    };
+
+    if let Some(relative_to) = relative_to {
+        use crate::classes::zoned_datetime::ZonedDateTime;
+
+        let zdt: ZonedDateTime = relative_to
+            .extract(state.zoned_datetime_type)
+            .ok_or_type_err("relative_to must be a ZonedDateTime")?;
+
+        total_relative_inner(slf, cal_unit, zdt, state)
+    } else if matches!(cal_unit, cal_diff::CalUnit::Days | cal_diff::CalUnit::Weeks) {
+        // No relative_to: emit warning, assume 24h days
+        if !state.cv_ignore_days_not_always_24h.get()? {
+            warn_with_class(
+                state.warn_days_not_always_24h,
+                doc::DAYS_NOT_ALWAYS_24H_MSG,
+                2,
+            )?;
+        }
+        let ns = if matches!(cal_unit, cal_diff::CalUnit::Weeks) {
+            604_800_000_000_000.0
+        } else {
+            86_400_000_000_000.0
+        };
+        (slf.to_nanos_f64() / ns).to_py()
+    } else {
+        raise_value_err("total in years or months requires the `relative_to` argument")
+    }
+}
+
+/// Inner logic for total() with a relative_to ZonedDateTime.
+/// Extracted so ItemizedDelta.total() can reuse it.
+pub(crate) fn total_relative_inner(
+    slf: TimeDelta,
+    cal_unit: cal_diff::CalUnit,
+    zdt: crate::classes::zoned_datetime::ZonedDateTime,
+    _state: &State,
+) -> PyReturn {
+    if slf.is_zero() {
+        return (0.0f64).to_py();
+    }
+
+    let sign: i8 = if slf.secs.get() >= 0 { 1 } else { -1 };
+
+    // shifted = relative_to + self (instant-level shift)
+    let shifted_inst = zdt
+        .instant()
+        .shift(slf)
+        .ok_or_value_err("Resulting datetime out of range")?;
+
+    // Get the local date of the shifted instant in the same timezone
+    let shifted = shifted_inst
+        .to_tz2(zdt.tz)
+        .ok_or_value_err("Resulting datetime out of range")?;
+
+    // target_date: the date part of shifted, adjusted so remainder has same sign
+    let target_date = zoned_target(shifted.date, shifted_inst, zdt, sign)
+        .ok_or_value_err("Resulting datetime out of range")?;
+
+    let (trunc_amount, trunc_date, expand_date) =
+        cal_diff::date_diff_single_unit(target_date, zdt.date, 1, cal_unit, sign)
+            .ok_or_value_err("Resulting date out of range")?;
+
+    let trunc_odt = zdt
+        .with_date(trunc_date.into())
+        .ok_or_value_err("Resulting datetime out of range")?;
+    let expand_odt = zdt
+        .with_date(expand_date.into())
+        .ok_or_value_err("Resulting datetime out of range")?;
+
+    let r = shifted_inst.diff(trunc_odt.instant()).abs();
+    let e = expand_odt.instant().diff(trunc_odt.instant());
+
+    (trunc_amount as f64 + r.to_nanos_f64() / e.to_nanos_f64()).to_py()
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     method0!(TimeDelta, __copy__, c""),
     method1!(TimeDelta, __deepcopy__, c""),
@@ -988,6 +1397,10 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::TIMEDELTA_IN_HRS_MINS_SECS_NANOS
     ),
     method_kwargs!(TimeDelta, round, doc::TIMEDELTA_ROUND),
+    method_kwargs!(TimeDelta, add, doc::TIMEDELTA_ADD),
+    method_kwargs!(TimeDelta, subtract, doc::TIMEDELTA_SUBTRACT),
+    method_kwargs!(TimeDelta, in_units, doc::TIMEDELTA_IN_UNITS),
+    method_kwargs!(TimeDelta, total, doc::TIMEDELTA_TOTAL),
     classmethod_kwargs!(
         TimeDelta,
         __get_pydantic_core_schema__,
@@ -1022,37 +1435,55 @@ mod tests {
     #[test]
     fn round_subsec_floor() {
         // 1.7s → floor to 1s
-        assert_eq!(td(1, 700_000_000).round(SEC, round::Mode::Floor), Some(td_secs(1)));
+        assert_eq!(
+            td(1, 700_000_000).round(SEC, round::Mode::Floor),
+            Some(td_secs(1))
+        );
     }
 
     #[test]
     fn round_subsec_ceil() {
         // 1.7s → ceil to 2s
-        assert_eq!(td(1, 700_000_000).round(SEC, round::Mode::Ceil), Some(td_secs(2)));
+        assert_eq!(
+            td(1, 700_000_000).round(SEC, round::Mode::Ceil),
+            Some(td_secs(2))
+        );
     }
 
     #[test]
     fn round_subsec_trunc_positive() {
         // 1.7s → trunc (towards 0) = 1s
-        assert_eq!(td(1, 700_000_000).round(SEC, round::Mode::Trunc), Some(td_secs(1)));
+        assert_eq!(
+            td(1, 700_000_000).round(SEC, round::Mode::Trunc),
+            Some(td_secs(1))
+        );
     }
 
     #[test]
     fn round_subsec_trunc_negative() {
         // -1.3s (secs=-2, subsec=700_000_000) → trunc (towards 0) = -1s
-        assert_eq!(td(-2, 700_000_000).round(SEC, round::Mode::Trunc), Some(td_secs(-1)));
+        assert_eq!(
+            td(-2, 700_000_000).round(SEC, round::Mode::Trunc),
+            Some(td_secs(-1))
+        );
     }
 
     #[test]
     fn round_subsec_expand_positive() {
         // 1.7s → expand (away from 0) = 2s
-        assert_eq!(td(1, 700_000_000).round(SEC, round::Mode::Expand), Some(td_secs(2)));
+        assert_eq!(
+            td(1, 700_000_000).round(SEC, round::Mode::Expand),
+            Some(td_secs(2))
+        );
     }
 
     #[test]
     fn round_subsec_expand_negative() {
         // -1.3s → expand (away from 0) = -2s
-        assert_eq!(td(-2, 700_000_000).round(SEC, round::Mode::Expand), Some(td_secs(-2)));
+        assert_eq!(
+            td(-2, 700_000_000).round(SEC, round::Mode::Expand),
+            Some(td_secs(-2))
+        );
     }
 
     // --- Half-way tie-breaking with sub-second ---
@@ -1060,41 +1491,71 @@ mod tests {
     #[test]
     fn round_subsec_half_even_tie() {
         // 1.5s → half_even: quotient=1 (odd), round up to 2
-        assert_eq!(td(1, 500_000_000).round(SEC, round::Mode::HalfEven), Some(td_secs(2)));
+        assert_eq!(
+            td(1, 500_000_000).round(SEC, round::Mode::HalfEven),
+            Some(td_secs(2))
+        );
         // 2.5s → half_even: quotient=2 (even), round down to 2
-        assert_eq!(td(2, 500_000_000).round(SEC, round::Mode::HalfEven), Some(td_secs(2)));
+        assert_eq!(
+            td(2, 500_000_000).round(SEC, round::Mode::HalfEven),
+            Some(td_secs(2))
+        );
     }
 
     #[test]
     fn round_subsec_half_ceil_tie() {
         // 1.5s → half_ceil: round up (towards +∞) = 2s
-        assert_eq!(td(1, 500_000_000).round(SEC, round::Mode::HalfCeil), Some(td_secs(2)));
+        assert_eq!(
+            td(1, 500_000_000).round(SEC, round::Mode::HalfCeil),
+            Some(td_secs(2))
+        );
         // -1.5s (secs=-2, subsec=500_000_000) → half_ceil: round up (towards +∞) = -1s
-        assert_eq!(td(-2, 500_000_000).round(SEC, round::Mode::HalfCeil), Some(td_secs(-1)));
+        assert_eq!(
+            td(-2, 500_000_000).round(SEC, round::Mode::HalfCeil),
+            Some(td_secs(-1))
+        );
     }
 
     #[test]
     fn round_subsec_half_floor_tie() {
         // 1.5s → half_floor: round down = 1s
-        assert_eq!(td(1, 500_000_000).round(SEC, round::Mode::HalfFloor), Some(td_secs(1)));
+        assert_eq!(
+            td(1, 500_000_000).round(SEC, round::Mode::HalfFloor),
+            Some(td_secs(1))
+        );
         // -1.5s → half_floor: round down (towards -∞) = -2s
-        assert_eq!(td(-2, 500_000_000).round(SEC, round::Mode::HalfFloor), Some(td_secs(-2)));
+        assert_eq!(
+            td(-2, 500_000_000).round(SEC, round::Mode::HalfFloor),
+            Some(td_secs(-2))
+        );
     }
 
     #[test]
     fn round_subsec_half_trunc_tie() {
         // 1.5s → half_trunc: ties towards 0 = 1s
-        assert_eq!(td(1, 500_000_000).round(SEC, round::Mode::HalfTrunc), Some(td_secs(1)));
+        assert_eq!(
+            td(1, 500_000_000).round(SEC, round::Mode::HalfTrunc),
+            Some(td_secs(1))
+        );
         // -1.5s → half_trunc: ties towards 0 = -1s
-        assert_eq!(td(-2, 500_000_000).round(SEC, round::Mode::HalfTrunc), Some(td_secs(-1)));
+        assert_eq!(
+            td(-2, 500_000_000).round(SEC, round::Mode::HalfTrunc),
+            Some(td_secs(-1))
+        );
     }
 
     #[test]
     fn round_subsec_half_expand_tie() {
         // 1.5s → half_expand: ties away from 0 = 2s
-        assert_eq!(td(1, 500_000_000).round(SEC, round::Mode::HalfExpand), Some(td_secs(2)));
+        assert_eq!(
+            td(1, 500_000_000).round(SEC, round::Mode::HalfExpand),
+            Some(td_secs(2))
+        );
         // -1.5s → half_expand: ties away from 0 = -2s
-        assert_eq!(td(-2, 500_000_000).round(SEC, round::Mode::HalfExpand), Some(td_secs(-2)));
+        assert_eq!(
+            td(-2, 500_000_000).round(SEC, round::Mode::HalfExpand),
+            Some(td_secs(-2))
+        );
     }
 
     // --- Whole-second rounding (increment >= 1s) ---
@@ -1104,51 +1565,79 @@ mod tests {
     #[test]
     fn round_wholesec_trunc_positive() {
         // 45s → trunc to 10s = 40s
-        assert_eq!(td_secs(45).round(TEN_SEC, round::Mode::Trunc), Some(td_secs(40)));
+        assert_eq!(
+            td_secs(45).round(TEN_SEC, round::Mode::Trunc),
+            Some(td_secs(40))
+        );
     }
 
     #[test]
     fn round_wholesec_trunc_negative() {
         // -45s → trunc to 10s = -40s (towards zero)
-        assert_eq!(td_secs(-45).round(TEN_SEC, round::Mode::Trunc), Some(td_secs(-40)));
+        assert_eq!(
+            td_secs(-45).round(TEN_SEC, round::Mode::Trunc),
+            Some(td_secs(-40))
+        );
     }
 
     #[test]
     fn round_wholesec_expand_positive() {
         // 41s → expand to 10s = 50s
-        assert_eq!(td_secs(41).round(TEN_SEC, round::Mode::Expand), Some(td_secs(50)));
+        assert_eq!(
+            td_secs(41).round(TEN_SEC, round::Mode::Expand),
+            Some(td_secs(50))
+        );
     }
 
     #[test]
     fn round_wholesec_expand_negative() {
         // -41s → expand to 10s = -50s (away from zero)
-        assert_eq!(td_secs(-41).round(TEN_SEC, round::Mode::Expand), Some(td_secs(-50)));
+        assert_eq!(
+            td_secs(-41).round(TEN_SEC, round::Mode::Expand),
+            Some(td_secs(-50))
+        );
     }
 
     #[test]
     fn round_wholesec_half_trunc_tie() {
         // 45s → half_trunc to 10s = 40s (tie towards zero)
-        assert_eq!(td_secs(45).round(TEN_SEC, round::Mode::HalfTrunc), Some(td_secs(40)));
+        assert_eq!(
+            td_secs(45).round(TEN_SEC, round::Mode::HalfTrunc),
+            Some(td_secs(40))
+        );
         // -45s → half_trunc to 10s = -40s
-        assert_eq!(td_secs(-45).round(TEN_SEC, round::Mode::HalfTrunc), Some(td_secs(-40)));
+        assert_eq!(
+            td_secs(-45).round(TEN_SEC, round::Mode::HalfTrunc),
+            Some(td_secs(-40))
+        );
     }
 
     #[test]
     fn round_wholesec_half_expand_tie() {
         // 45s → half_expand to 10s = 50s (tie away from zero)
-        assert_eq!(td_secs(45).round(TEN_SEC, round::Mode::HalfExpand), Some(td_secs(50)));
+        assert_eq!(
+            td_secs(45).round(TEN_SEC, round::Mode::HalfExpand),
+            Some(td_secs(50))
+        );
         // -45s → half_expand to 10s = -50s
-        assert_eq!(td_secs(-45).round(TEN_SEC, round::Mode::HalfExpand), Some(td_secs(-50)));
+        assert_eq!(
+            td_secs(-45).round(TEN_SEC, round::Mode::HalfExpand),
+            Some(td_secs(-50))
+        );
     }
 
     #[test]
     fn round_zero() {
         // Zero should remain zero for all modes
         for mode in [
-            round::Mode::Floor, round::Mode::Ceil,
-            round::Mode::Trunc, round::Mode::Expand,
-            round::Mode::HalfEven, round::Mode::HalfCeil,
-            round::Mode::HalfFloor, round::Mode::HalfTrunc,
+            round::Mode::Floor,
+            round::Mode::Ceil,
+            round::Mode::Trunc,
+            round::Mode::Expand,
+            round::Mode::HalfEven,
+            round::Mode::HalfCeil,
+            round::Mode::HalfFloor,
+            round::Mode::HalfTrunc,
             round::Mode::HalfExpand,
         ] {
             assert_eq!(td_secs(0).round(SEC, mode), Some(td_secs(0)));
@@ -1159,10 +1648,14 @@ mod tests {
     fn round_exact_value() {
         // Already at increment boundary → unchanged for all modes
         for mode in [
-            round::Mode::Floor, round::Mode::Ceil,
-            round::Mode::Trunc, round::Mode::Expand,
-            round::Mode::HalfEven, round::Mode::HalfCeil,
-            round::Mode::HalfFloor, round::Mode::HalfTrunc,
+            round::Mode::Floor,
+            round::Mode::Ceil,
+            round::Mode::Trunc,
+            round::Mode::Expand,
+            round::Mode::HalfEven,
+            round::Mode::HalfCeil,
+            round::Mode::HalfFloor,
+            round::Mode::HalfTrunc,
             round::Mode::HalfExpand,
         ] {
             assert_eq!(td_secs(30).round(TEN_SEC, mode), Some(td_secs(30)));

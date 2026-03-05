@@ -1791,6 +1791,7 @@ class TimeDelta(_Base):
 
                 target_date = shifted.date()
                 cal_shifted = relative_to.replace_date(target_date)
+                # TODO LATER: need a while loop for Samoa?
                 if sign == 1 and cal_shifted > shifted:
                     target_date = target_date.subtract(days=1)
                 elif sign == -1 and cal_shifted < shifted:
@@ -1979,6 +1980,7 @@ class TimeDelta(_Base):
             else (-hours, -mins, -secs, -ns)
         )
 
+    # TODO: allow relative_to for years, months
     def in_units(
         self,
         units: Sequence[ExactDeltaUnitStr],
@@ -1987,7 +1989,7 @@ class TimeDelta(_Base):
         round_unit: Literal[
             "millisecond",
             "microsecond",
-            "nanosecond",
+            "nanosecond",  # TODO: allow?
         ] = _UNSET,
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
@@ -2021,8 +2023,6 @@ class TimeDelta(_Base):
             raise ValueError("At least one unit must be specified")
         elif isinstance(units, str):  # Hard to debug if not caught here
             raise TypeError("Units must be a sequence, not a string")
-        elif any(u and not u.endswith("s") for u in units):
-            raise ValueError("All units must be plural")
         elif sorted(units, key=lambda u: _unit_index(u, EXACT_UNITS)) != list(
             units
         ):
@@ -6941,6 +6941,10 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         The inverse of the ``parse_iso()`` method.
 
+        >>> zdt = ZonedDateTime(2020, 8, 15, hour=23, minute=12, tz="Europe/London")
+        >>> zdt.format_iso(unit="minute", basic=True)
+        "20200815T2312+0100[Europe/London]"
+
         Parameters
         ----------
         unit
@@ -6957,10 +6961,6 @@ class ZonedDateTime(_ExactAndLocalTime):
             (in practice, this should only happen for some system timezones without a corresponding IANA timezone ID).
             ``"auto"`` includes the ID if available, and omits it otherwise.
             ``"never"`` always omits the ID.
-
-        >>> zdt = ZonedDateTime(2020, 8, 15, hour=23, minute=12, tz="Europe/London")
-        >>> zdt.format_iso(unit="minute", basic=True)
-        "20200815T2312+0100[Europe/London]"
 
         Important
         ---------

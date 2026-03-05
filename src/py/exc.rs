@@ -54,6 +54,14 @@ pub(crate) trait OptionExt<T> {
         self.ok_or_raise(unsafe { PyExc_ValueError }, msg)
     }
 
+    fn ok_or_range_err(self) -> PyResult<T>
+    where
+        Self: Sized,
+    {
+        // TODO LOW: take advantage of static string
+        self.ok_or_raise(unsafe { PyExc_ValueError }, "Value or calculation out of range")
+    }
+
     fn ok_or_else_value_err<F, M: ToPy>(self, fmt: F) -> PyResult<T>
     where
         Self: Sized,
@@ -105,11 +113,7 @@ pub(crate) fn raise_key_err<T>(key: PyObj) -> PyResult<T> {
 
 /// Emit a warning using a custom warning class (e.g. a heap-type UserWarning subclass).
 /// `stacklevel` controls how many frames to skip (1 = caller).
-pub(crate) fn warn_with_class(
-    warning_cls: PyObj,
-    msg: &CStr,
-    stacklevel: isize,
-) -> PyResult<()> {
+pub(crate) fn warn_with_class(warning_cls: PyObj, msg: &CStr, stacklevel: isize) -> PyResult<()> {
     match unsafe { PyErr_WarnEx(warning_cls.as_ptr(), msg.as_ptr(), stacklevel as _) } {
         0 => Ok(()),
         _ => Err(PyErrMarker()),

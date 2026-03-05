@@ -325,8 +325,11 @@ pub(crate) const SINGLETONS: &[(&CStr, Time); 4] = &[
 fn __new__(cls: HeapType<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let obj = args.iter().next().unwrap();
+        if let Some(t) = obj.cast_allow_subclass::<PyTime>() {
+            return Time::from_py(t).to_obj(cls);
+        }
         if PyStr::isinstance(obj) {
-            return parse_iso(cls, args.iter().next().unwrap());
+            return parse_iso(cls, obj);
         }
     }
     let mut hour: c_long = 0;

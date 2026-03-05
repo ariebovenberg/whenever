@@ -127,6 +127,7 @@ pub(crate) fn handle_exact_unit(
     }
 }
 
+// Also return UnitSet
 #[inline]
 pub(crate) fn set_units_from_kwargs(
     key: PyObj,

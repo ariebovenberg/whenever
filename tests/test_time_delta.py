@@ -1560,7 +1560,7 @@ class TestInUnits:
 
     def test_invalid_unit(self):
         d = TimeDelta(hours=1)
-        with pytest.raises(ValueError, match="plural"):
+        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
             d.in_units(["foo"])  # type: ignore[list-item]
 
         with pytest.raises(ValueError, match="Invalid.*unit.*foo"):

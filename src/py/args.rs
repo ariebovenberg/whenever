@@ -109,6 +109,20 @@ where
     Ok(())
 }
 
+pub(crate) fn handle_one_kwarg<K>(fname: &str, key: PyObj, kwargs: K) -> PyResult<Option<PyObj>>
+where
+    K: IntoIterator<Item = (PyObj, PyObj)>,
+{
+    for (k, v) in kwargs {
+        if k.py_eq(key)? {
+            return Ok(Some(v));
+        } else {
+            raise_type_err(format!("{fname}() got an unexpected keyword argument: {k}"))?;
+        }
+    }
+    Ok(None)
+}
+
 /// Helper to efficiently match a value against a set of known interned strings.
 /// The handler closure is called twice, first with pointer equality (very fast),
 /// and only if that fails, with value equality (slower).
