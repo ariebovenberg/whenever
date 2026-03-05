@@ -5,7 +5,7 @@ use crate::{
         fmt::{self, Sink, format_2_digits},
         round,
     },
-    py::{base::ToPy, exc::OptionExt, none, PyInt, PyObj, PyReturn, PyResult, raise_value_err},
+    py::{PyInt, PyObj, PyResult, PyReturn, base::ToPy, exc::OptionExt, none, raise_value_err},
 };
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
 
@@ -461,6 +461,12 @@ impl Year {
         let y = (self.get() - 1) as i32;
         y * 365 + y / 4 - y / 100 + y / 400
     }
+
+    pub(crate) fn add_i32(self, years: i32) -> Option<Self> {
+        (self.get() as i32)
+            .checked_add(years)
+            .and_then(Self::from_i32)
+    }
 }
 
 impl From<Year> for u16 {
@@ -512,6 +518,22 @@ impl Month {
     pub(crate) const fn get(self) -> u8 {
         self as u8
     }
+
+    pub(crate) fn shift(self, year: Year, delta: DeltaMonths) -> Option<(Year, Month)> {
+        // SAFETY: both values well within i32::MIN/MAX, and the resulting month will be in range
+        // due to modulo
+        let new_month_unclamped = self.get() as i32 + delta.get() - 1;
+
+        Some((
+            Year::from_i32(
+                // SAFETY: both values are will within i32::MIN/MAX, and the resulting year will be
+                // in range due to division
+                year.get() as i32 + new_month_unclamped.div_euclid(12),
+            )?,
+            // SAFETY: remainder of division by 12 is always in range
+            Month::new_unchecked(new_month_unclamped.rem_euclid(12) as u8 + 1),
+        ))
+    }
 }
 
 impl TryFrom<u8> for Month {
@@ -548,6 +570,11 @@ impl DeltaMonths {
             .then(|| Self::new_unchecked(months as i32))
     }
 
+    pub(crate) fn from_i64(months: i64) -> Option<Self> {
+        (months >= Self::MIN.get() as i64 && months <= Self::MAX.get() as i64)
+            .then(|| Self::new_unchecked(months as i32))
+    }
+
     pub(crate) fn get(self) -> i32 {
         self.0
     }
@@ -564,6 +591,7 @@ impl DeltaMonths {
         // Safety: both values well within i32::MIN/MAX
         Self::new(self.0 + d.get())
     }
+
     pub(crate) fn is_zero(self) -> bool {
         self.0 == 0
     }
@@ -606,6 +634,11 @@ impl DeltaDays {
             .then(|| Self::new_unchecked(days as i32))
     }
 
+    pub(crate) fn from_i64(days: i64) -> Option<Self> {
+        (days >= Self::MIN.get() as i64 && days <= Self::MAX.get() as i64)
+            .then(|| Self::new_unchecked(days as i32))
+    }
+
     pub(crate) fn abs(self) -> Self {
         Self(self.0.abs())
     }
@@ -615,7 +648,7 @@ impl DeltaDays {
     }
 
     pub(crate) fn add(self, d: DeltaDays) -> Option<Self> {
-        // Safety: both values well within i32::MIN/MAX
+        // SAFETY: both values well within i32::MIN/MAX
         Self::new(self.0 + d.get())
     }
 
@@ -771,27 +804,6 @@ impl SubSecNanos {
         )
     }
 
-    pub(crate) fn round(self, increment: i32, mode: round::Mode) -> (DeltaSeconds, Self) {
-        debug_assert!(increment < 1_000_000_000);
-        debug_assert!(1_000_000_000 % increment == 0);
-        let quotient = self.0 / increment;
-        let remainder = self.0 % increment;
-        let threshold = match mode {
-            round::Mode::HalfEven => 1.max(increment / 2 + (quotient % 2 == 0) as i32),
-            round::Mode::Ceil | round::Mode::Expand => 1,
-            round::Mode::Floor | round::Mode::Trunc => increment + 1,
-            round::Mode::HalfFloor | round::Mode::HalfTrunc => increment / 2 + 1,
-            round::Mode::HalfCeil | round::Mode::HalfExpand => 1.max(increment / 2),
-        };
-        let round_up = remainder >= threshold;
-        let rounded = (quotient + i32::from(round_up)) * increment;
-        (
-            // Safety: No range check since we're dealing with at most 1 second here
-            DeltaSeconds::new_unchecked((rounded / 1_000_000_000) as _),
-            SubSecNanos::from_remainder(rounded),
-        )
-    }
-
     /// Round using an absolute (sign-normalized) mode.
     /// Used by TimeDelta where sign-dependent modes have already been resolved.
     pub(crate) fn round_abs(self, increment: i32, mode: round::AbsMode) -> (DeltaSeconds, Self) {
@@ -915,8 +927,6 @@ impl Weekday {
     }
 }
 
-pub(crate) static NS_PER_DAY: i128 = S_PER_DAY as i128 * 1_000_000_000;
-
 /// Trait for types that can be used as delta field values with a sentinel
 pub(crate) trait DeltaFieldInner: Copy + Eq + PartialOrd + Neg<Output = Self> {
     const SENTINEL: Self;
@@ -989,9 +999,14 @@ impl<T: DeltaFieldInner> DeltaField<T> {
         self.0 != T::SENTINEL
     }
 
-    pub(crate) fn get(self) -> T {
+    pub(crate) fn unwrap(self) -> T {
         debug_assert!(self.is_set());
         self.0
+    }
+
+    pub(crate) fn replace_unchecked(&mut self, val: T) {
+        debug_assert!(val != T::SENTINEL);
+        self.0 = val;
     }
 
     pub(crate) fn get_or(self, default: T) -> T {
@@ -999,7 +1014,11 @@ impl<T: DeltaFieldInner> DeltaField<T> {
     }
 
     pub(crate) fn neg(self) -> Self {
-        if self.is_set() { Self(-self.0) } else { Self::UNSET }
+        if self.is_set() {
+            Self(-self.0)
+        } else {
+            Self::UNSET
+        }
     }
 
     pub(crate) fn sign(self) -> i8 {
@@ -1019,11 +1038,7 @@ impl<T: DeltaFieldInner> DeltaField<T> {
 
     /// Parse a Python integer into a range-checked field value.
     /// Updates `sign` for mixed-sign detection.
-    pub(crate) fn parse(
-        value: PyObj,
-        sign: &mut i8,
-        max: u64,
-    ) -> PyResult<Self> {
+    pub(crate) fn parse(value: PyObj, sign: &mut i8, max: u64) -> PyResult<Self> {
         let val = value
             .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("field must be an integer")?

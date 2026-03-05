@@ -58,7 +58,7 @@ pub(crate) fn format_gmt(i: Instant) -> [u8; 29] {
                 second,
                 ..
             },
-    } = i.to_datetime();
+    } = i.utc_datetime();
     let Date { year, month, day } = date;
 
     let mut buf = TEMPLATE_GMT;

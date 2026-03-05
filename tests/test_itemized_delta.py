@@ -1,6 +1,6 @@
 import pickle
 from collections import Counter
-from collections.abc import Sequence, KeysView, ValuesView, ItemsView, Mapping
+from collections.abc import ItemsView, KeysView, Mapping, Sequence, ValuesView
 from typing import Any, Literal, cast
 
 import pytest

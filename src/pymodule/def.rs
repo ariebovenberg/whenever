@@ -386,6 +386,8 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         str_mode: intern(c"mode")?.py_owned(),
         str_round_mode: intern(c"round_mode")?.py_owned(),
         str_round_increment: intern(c"round_increment")?.py_owned(),
+        str_round_unit: intern(c"round_unit")?.py_owned(),
+        str_relative_to: intern(c"relative_to")?.py_owned(),
         str_floor: intern(c"floor")?.py_owned(),
         str_ceil: intern(c"ceil")?.py_owned(),
         str_trunc: intern(c"trunc")?.py_owned(),
@@ -404,6 +406,9 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         str_always: intern(c"always")?.py_owned(),
         str_never: intern(c"never")?.py_owned(),
         str_lowercase_units: intern(c"lowercase_units")?.py_owned(),
+        str_offset_mismatch: intern(c"offset_mismatch")?.py_owned(),
+        str_keep_instant: intern(c"keep_instant")?.py_owned(),
+        str_keep_local: intern(c"keep_local")?.py_owned(),
 
         exc_repeated: exc_repeated.py_owned(),
         exc_skipped: exc_skipped.py_owned(),
@@ -657,6 +662,8 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.str_mode).cast());
         Py_CLEAR((&raw mut state.str_round_mode).cast());
         Py_CLEAR((&raw mut state.str_round_increment).cast());
+        Py_CLEAR((&raw mut state.str_round_unit).cast());
+        Py_CLEAR((&raw mut state.str_relative_to).cast());
         Py_CLEAR((&raw mut state.str_floor).cast());
         Py_CLEAR((&raw mut state.str_ceil).cast());
         Py_CLEAR((&raw mut state.str_trunc).cast());
@@ -675,6 +682,9 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.str_always).cast());
         Py_CLEAR((&raw mut state.str_never).cast());
         Py_CLEAR((&raw mut state.str_lowercase_units).cast());
+        Py_CLEAR((&raw mut state.str_offset_mismatch).cast());
+        Py_CLEAR((&raw mut state.str_keep_instant).cast());
+        Py_CLEAR((&raw mut state.str_keep_local).cast());
 
         // unpickling functions
         Py_CLEAR((&raw mut state.unpickle_date).cast());
@@ -825,6 +835,8 @@ pub(crate) struct State {
     pub(crate) str_mode: PyObj,
     pub(crate) str_round_mode: PyObj,
     pub(crate) str_round_increment: PyObj,
+    pub(crate) str_round_unit: PyObj,
+    pub(crate) str_relative_to: PyObj,
     pub(crate) str_floor: PyObj,
     pub(crate) str_ceil: PyObj,
     pub(crate) str_trunc: PyObj,
@@ -843,6 +855,9 @@ pub(crate) struct State {
     pub(crate) str_always: PyObj,
     pub(crate) str_never: PyObj,
     pub(crate) str_lowercase_units: PyObj,
+    pub(crate) str_offset_mismatch: PyObj,
+    pub(crate) str_keep_instant: PyObj,
+    pub(crate) str_keep_local: PyObj,
 
     pub(crate) time_patch: Patch,
     pub(crate) tz_store: TzStore,

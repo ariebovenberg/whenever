@@ -472,13 +472,8 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         ] = "trunc",
         round_increment: int = ...,
         round_unit: Literal[
-            "day",
-            "hour",
-            "minute",
-            "second",
             "millisecond",
             "microsecond",
-            "nanosecond",
         ] = ...,
     ) -> ItemizedDelta: ...
     def py_timedelta(self) -> _timedelta: ...

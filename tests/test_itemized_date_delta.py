@@ -1,6 +1,6 @@
 import pickle
 from collections import Counter
-from collections.abc import KeysView, ValuesView, ItemsView, Mapping
+from collections.abc import ItemsView, KeysView, Mapping, ValuesView
 from typing import Any, Literal, Sequence, cast
 
 import pytest
@@ -544,6 +544,11 @@ class TestAddSub:
         ItemizedDateDelta(years=2).add(
             relative_to=Date("2021-12-31")
         ).exact_eq(ItemizedDateDelta(years=2))
+
+    def test_add_nothing_changes_units(self):
+        ItemizedDateDelta(years=2).add(
+            relative_to=Date("2021-12-31"), units=["months", "days"]
+        ).exact_eq(ItemizedDateDelta(months=24, days=0))
 
     def test_invalid_unit(self):
         with pytest.raises(ValueError, match="foo"):
