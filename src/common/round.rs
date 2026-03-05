@@ -1,7 +1,7 @@
 //! Functionality for rounding datetime values
 use crate::{py::*, pymodule::State};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub(crate) enum Mode {
     Floor,
     Ceil,
@@ -21,7 +21,7 @@ pub(crate) enum Mode {
 /// In the euclidean domain:
 /// - `Trunc`: keep the quotient as-is (≡ floor, towards -∞)
 /// - `Expand`: increment the quotient (≡ ceil, towards +∞)
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub(crate) enum AbsMode {
     Trunc,
     Expand,
@@ -31,8 +31,10 @@ pub(crate) enum AbsMode {
 }
 
 impl Mode {
-    /// Resolve sign-dependent modes (Floor/Ceil, Trunc/Expand) into
-    /// sign-independent euclidean-domain modes.
+    /// Resolve sign-dependent modes into sign-independent AbsMode
+    /// for the **euclidean quotient** domain (used by TimeDelta::round).
+    /// Here Floor/Ceil are "native" (already aligned with quotient direction),
+    /// while Trunc/Expand need sign-based swapping.
     pub(crate) fn to_abs(self, is_negative: bool) -> AbsMode {
         match (self, is_negative) {
             (Mode::Floor, _) | (Mode::Trunc, false) | (Mode::Expand, true) => AbsMode::Trunc,
@@ -41,6 +43,25 @@ impl Mode {
                 AbsMode::HalfTrunc
             }
             (Mode::HalfCeil, _) | (Mode::HalfExpand, false) | (Mode::HalfTrunc, true) => {
+                AbsMode::HalfExpand
+            }
+            (Mode::HalfEven, _) => AbsMode::HalfEven,
+        }
+    }
+
+    /// Resolve sign-dependent modes into sign-independent AbsMode
+    /// for the **sign-magnitude** domain (used by since/until rounding).
+    /// Here Trunc/Expand are "native" (already absolute),
+    /// while Floor/Ceil need sign-based swapping.
+    pub(crate) fn to_abs_with_sign(self, sign: i8) -> AbsMode {
+        let positive = sign > 0;
+        match (self, positive) {
+            (Mode::Trunc, _) | (Mode::Floor, true) | (Mode::Ceil, false) => AbsMode::Trunc,
+            (Mode::Expand, _) | (Mode::Ceil, true) | (Mode::Floor, false) => AbsMode::Expand,
+            (Mode::HalfTrunc, _) | (Mode::HalfFloor, true) | (Mode::HalfCeil, false) => {
+                AbsMode::HalfTrunc
+            }
+            (Mode::HalfExpand, _) | (Mode::HalfCeil, true) | (Mode::HalfFloor, false) => {
                 AbsMode::HalfExpand
             }
             (Mode::HalfEven, _) => AbsMode::HalfEven,
@@ -61,8 +82,19 @@ impl Mode {
         str_half_trunc: PyObj,
         str_half_expand: PyObj,
     ) -> PyResult<Mode> {
-        Self::from_py_named("mode", s, str_floor, str_ceil, str_trunc, str_expand,
-            str_half_floor, str_half_ceil, str_half_even, str_half_trunc, str_half_expand)
+        Self::from_py_named(
+            "mode",
+            s,
+            str_floor,
+            str_ceil,
+            str_trunc,
+            str_expand,
+            str_half_floor,
+            str_half_ceil,
+            str_half_even,
+            str_half_trunc,
+            str_half_expand,
+        )
     }
 
     pub(crate) fn from_py_named(
@@ -157,23 +189,13 @@ impl Unit {
     fn increment_from_py(self, v: PyObj, for_delta: bool) -> PyResult<i64> {
         let inc = v
             .cast_allow_subclass::<PyInt>()
-            .ok_or_type_err("increment must be an integer")?
+            .ok_or_value_err("increment must be an integer")?
             .to_i64()?;
         if inc <= 0 {
             raise_value_err("increment must be a positive integer")?;
         }
-        let ns_per_unit: i64 = match self {
-            Unit::Nanosecond => 1,
-            Unit::Microsecond => 1_000,
-            Unit::Millisecond => 1_000_000,
-            Unit::Second => 1_000_000_000,
-            Unit::Minute => 60_000_000_000,
-            Unit::Hour => 3_600_000_000_000,
-            Unit::Day => 86_400_000_000_000,
-            Unit::Week => 604_800_000_000_000,
-        };
         let increment_ns = inc
-            .checked_mul(ns_per_unit)
+            .checked_mul(self.default_increment())
             .ok_or_value_err("increment too large")?;
         if !for_delta && 86_400_000_000_000 % increment_ns != 0 {
             raise_value_err("Invalid increment. Must divide a 24-hour day evenly.")?;
@@ -181,7 +203,7 @@ impl Unit {
         Ok(increment_ns)
     }
 
-    const fn default_increment(self) -> i64 {
+    pub(crate) const fn default_increment(self) -> i64 {
         match self {
             Unit::Nanosecond => 1,
             Unit::Microsecond => 1_000,
@@ -201,6 +223,7 @@ pub(crate) fn parse_args(
     kwargs: &mut IterKwargs,
     for_delta: bool,
     ignore_dst_kwarg: bool,
+// TODO: a data structure
 ) -> PyResult<(Unit, i64, Mode, bool)> {
     let &State {
         str_nanosecond,

@@ -55,7 +55,7 @@ impl Instant {
         }
     }
 
-    pub(crate) fn to_datetime(self) -> DateTime {
+    pub(crate) fn utc_datetime(self) -> DateTime {
         self.epoch.datetime(self.subsec)
     }
 
@@ -148,7 +148,7 @@ impl Instant {
                     second,
                     subsec,
                 },
-        } = self.to_datetime();
+        } = self.utc_datetime();
         unsafe {
             // SAFETY: calling DateTime_FromDateAndTime with valid parameters
             DateTime_FromDateAndTime(
@@ -209,7 +209,13 @@ impl Instant {
 
 fn __new__(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
-        parse_iso(cls, args.iter().next().unwrap())
+        let arg = args.iter().next().unwrap();
+        if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
+            return Instant::from_py(dt)?
+                .ok_or_else_value_err(|| format!("datetime {dt} out of range"))?
+                .to_obj(cls);
+        }
+        parse_iso(cls, arg)
     } else {
         raise_type_err(
             "Instant() can only be called with an ISO 8601 string passed
@@ -251,7 +257,7 @@ fn from_utc(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> Py
 impl PySimpleAlloc for Instant {}
 
 fn __repr__(_: PyType, i: Instant) -> PyReturn {
-    let DateTime { date, time } = i.to_datetime();
+    let DateTime { date, time } = i.utc_datetime();
     PyAsciiStrBuilder::format((
         b"Instant(\"",
         date.format_iso(false),
@@ -262,7 +268,7 @@ fn __repr__(_: PyType, i: Instant) -> PyReturn {
 }
 
 fn __str__(_: PyType, i: Instant) -> PyReturn {
-    let DateTime { date, time } = i.to_datetime();
+    let DateTime { date, time } = i.utc_datetime();
     PyAsciiStrBuilder::format((
         date.format_iso(false),
         b"T",
@@ -517,7 +523,7 @@ fn format_iso(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let DateTime { date, time } = slf.to_datetime();
+    let DateTime { date, time } = slf.utc_datetime();
     fmt::format_iso(date, time, cls.state(), args, kwargs, Suffix::Zulu)
 }
 
@@ -606,6 +612,11 @@ fn _shift_method(
 
 fn difference(cls: HeapType<Instant>, inst_a: Instant, obj_b: PyObj) -> PyReturn {
     let state = cls.state();
+    warn_with_class(
+        state.warn_deprecation,
+        c"The difference() method is deprecated. Use the subtraction operator instead.",
+        2,
+    )?;
 
     let inst_b = if let Some(i) = obj_b.extract(cls) {
         i
@@ -639,7 +650,7 @@ fn to_fixed_offset(cls: HeapType<Instant>, slf: Instant, args: &[PyObj]) -> PyRe
         ..
     } = cls.state();
     match *args {
-        [] => slf.to_datetime().with_offset_unchecked(Offset::ZERO),
+        [] => slf.utc_datetime().with_offset_unchecked(Offset::ZERO),
         [arg] => slf
             .to_offset(Offset::from_obj(arg, time_delta_type)?)
             .ok_or_value_err("Resulting date is out of range")?,

@@ -1,10 +1,18 @@
 use core::ffi::{c_int, c_void};
 use pyo3_ffi::*;
-use std::ptr::null_mut as NULL;
+use std::{cmp::Ordering, ptr::null_mut as NULL};
 
 use crate::{
-    classes::date_delta::{Unit, parse_component, parse_prefix},
-    common::scalar::{DeltaField, Year},
+    classes::{
+        date::{Date, date_since_iddelta},
+        date_delta::{Unit, parse_component, parse_prefix},
+        instant::Instant,
+    },
+    common::{
+        cal_diff::{self, CalUnit, UnitSet, round_by_days, round_by_time},
+        round,
+        scalar::{DeltaDays, DeltaField, DeltaMonths, Year},
+    },
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -26,8 +34,48 @@ pub(crate) struct ItemizedDateDelta {
 }
 
 impl ItemizedDateDelta {
+    pub(crate) const UNSET: Self = Self {
+        years: DeltaField::UNSET,
+        months: DeltaField::UNSET,
+        weeks: DeltaField::UNSET,
+        days: DeltaField::UNSET,
+    };
+
     pub(crate) fn is_zero(self) -> bool {
         self.derived_sign() == 0
+    }
+
+    /// Convert to (DeltaMonths, DeltaDays) for use with Date.shift()
+    pub(crate) fn to_months_days(self) -> Option<(DeltaMonths, DeltaDays)> {
+        // FYI: I removed the need to go through i64
+        DeltaMonths::new(
+            (self.years.get_or(0))
+                .checked_mul(12)?
+                .checked_add(self.months.get_or(0))?,
+        )
+        .zip(DeltaDays::new(
+            (self.weeks.get_or(0))
+                .checked_mul(7)?
+                .checked_add(self.days.get_or(0))?,
+        ))
+    }
+
+    /// Collect the union of set units (as CalUnit indices)
+    pub(crate) fn unit_set(self) -> UnitSet {
+        let mut set = UnitSet::EMPTY;
+        if self.years.is_set() {
+            set.insert_cal(CalUnit::Years);
+        }
+        if self.months.is_set() {
+            set.insert_cal(CalUnit::Months);
+        }
+        if self.weeks.is_set() {
+            set.insert_cal(CalUnit::Weeks);
+        }
+        if self.days.is_set() {
+            set.insert_cal(CalUnit::Days);
+        }
+        set
     }
 
     pub(crate) fn derived_sign(self) -> i8 {
@@ -50,6 +98,15 @@ impl ItemizedDateDelta {
             && self.months.get_or(0) == other.months.get_or(0)
             && self.weeks.get_or(0) == other.weeks.get_or(0)
             && self.days.get_or(0) == other.days.get_or(0)
+    }
+
+    pub(crate) fn negated(self) -> Self {
+        Self {
+            years: self.years.neg(),
+            months: self.months.neg(),
+            weeks: self.weeks.neg(),
+            days: self.days.neg(),
+        }
     }
 
     fn fmt_iso(self, lowercase: bool) -> String {
@@ -102,8 +159,67 @@ impl ItemizedDateDelta {
                 || (eq(key, state.str_days) && self.days.is_set())
         })
     }
+
+    pub(crate) fn round_by_days(
+        &mut self,
+        unit: CalUnit,
+        target: Date,
+        trunc: Date,
+        expand: Date,
+        mode: round::Mode,
+        round_increment: i32,
+        sign: i8,
+    ) {
+        let field = match unit {
+            CalUnit::Years => &mut self.years,
+            CalUnit::Months => &mut self.months,
+            CalUnit::Weeks => &mut self.weeks,
+            CalUnit::Days => &mut self.days,
+        };
+        // SAFETY: the rounded value is between trunc and expand,
+        // which are both within range.
+        field.replace_unchecked(round_by_days(
+            field.unwrap(),
+            target,
+            trunc,
+            expand,
+            mode,
+            round_increment,
+            sign,
+        ));
+    }
+
+    pub(crate) fn round_by_time(
+        &mut self,
+        unit: CalUnit,
+        target: Instant,
+        trunc: Instant,
+        expand: Instant,
+        mode: round::Mode,
+        round_increment: i32,
+        sign: i8,
+    ) {
+        let field = match unit {
+            CalUnit::Years => &mut self.years,
+            CalUnit::Months => &mut self.months,
+            CalUnit::Weeks => &mut self.weeks,
+            CalUnit::Days => &mut self.days,
+        };
+        // SAFETY: the rounded value is between trunc and expand,
+        // which are both within range.
+        field.replace_unchecked(round_by_time(
+            field.unwrap(),
+            target,
+            trunc,
+            expand,
+            mode,
+            round_increment,
+            sign,
+        ));
+    }
 }
 
+// TODO: return ItemizedDateDelta?
 /// Parse date components (Y/M/W/D) from an ISO duration string.
 /// Stops at 'T' (time separator) or end of input.
 /// Used by both ItemizedDateDelta and ItemizedDelta.
@@ -111,11 +227,8 @@ pub(crate) fn parse_date_fields(
     s: &mut &[u8],
     negated: bool,
     err: impl Fn() -> String,
-) -> PyResult<(DeltaField<i32>, DeltaField<i32>, DeltaField<i32>, DeltaField<i32>)> {
-    let mut years = DeltaField::UNSET;
-    let mut months = DeltaField::UNSET;
-    let mut weeks = DeltaField::UNSET;
-    let mut days = DeltaField::UNSET;
+) -> PyResult<ItemizedDateDelta> {
+    let mut result = ItemizedDateDelta::UNSET;
     let mut prev: Option<Unit> = None;
 
     while !s.is_empty() && !s[0].eq_ignore_ascii_case(&b'T') {
@@ -123,6 +236,7 @@ pub(crate) fn parse_date_fields(
         if prev.is_some_and(|p| p >= unit) {
             raise_value_err(err())?;
         }
+        // TODO: prevent need for u64
         let signed = DeltaField::new_checked(
             value as u64,
             negated,
@@ -135,17 +249,17 @@ pub(crate) fn parse_date_fields(
         )
         .ok_or_value_err("Delta out of range")?;
         match unit {
-            Unit::Years => years = signed,
-            Unit::Months => months = signed,
-            Unit::Weeks => weeks = signed,
+            Unit::Years => result.years = signed,
+            Unit::Months => result.months = signed,
+            Unit::Weeks => result.weeks = signed,
             Unit::Days => {
-                days = signed;
+                result.days = signed;
                 break; // D is the last date unit
             }
         }
         prev = Some(unit);
     }
-    Ok((years, months, weeks, days))
+    Ok(result)
 }
 
 impl PySimpleAlloc for ItemizedDateDelta {}
@@ -245,19 +359,13 @@ fn parse_iso(cls: HeapType<ItemizedDateDelta>, arg: PyObj) -> PyReturn {
     }
 
     let negated = parse_prefix(s).ok_or_else_value_err(err)?;
-    let (years, months, weeks, days) = parse_date_fields(s, negated, err)?;
+    let result = parse_date_fields(s, negated, err)?;
 
     if !s.is_empty() {
         raise_value_err(format!("Invalid format: {arg}"))?;
     }
 
-    ItemizedDateDelta {
-        years,
-        months,
-        weeks,
-        days,
-    }
-    .to_obj(cls)
+    result.to_obj(cls)
 }
 
 fn __richcmp__(
@@ -471,6 +579,300 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     .to_obj(state.itemized_date_delta_type)
 }
 
+// TODO NOW: imports at the top of the file right?
+use crate::common::cal_diff::parse_rounding_kwargs;
+
+/// Extract `relative_to` as a Date from a kwarg value.
+fn extract_relative_to_date(state: &State, relative_to: Option<PyObj>) -> PyResult<Date> {
+    relative_to
+        .ok_or_type_err("missing required keyword argument: 'relative_to'")?
+        .extract(state.date_type)
+        .ok_or_type_err("relative_to must be a whenever.Date")
+}
+
+fn in_units(
+    cls: HeapType<ItemizedDateDelta>,
+    d: ItemizedDateDelta,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    let state = cls.state();
+    let &[units_arg] = args else {
+        raise_type_err("in_units() takes exactly 1 positional argument")?
+    };
+
+    let mut relative_to_obj: Option<PyObj> = None;
+    let mut round_mode_obj: Option<PyObj> = None;
+    let mut round_inc_obj: Option<PyObj> = None;
+
+    handle_kwargs("in_units", kwargs, |key, value, eq| {
+        if eq(key, state.str_relative_to) {
+            relative_to_obj = Some(value);
+        } else if eq(key, state.str_round_mode) {
+            round_mode_obj = Some(value);
+        } else if eq(key, state.str_round_increment) {
+            round_inc_obj = Some(value);
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    })?;
+
+    let relative_to = extract_relative_to_date(state, relative_to_obj)?;
+    let (round_mode, round_increment) =
+        parse_rounding_kwargs(state, round_mode_obj, round_inc_obj)?;
+    let units = cal_diff::parse_cal_units_sequence(units_arg, state)?;
+
+    // relative_to.add(self).since(relative_to, units=...)
+    let (months, days) = d.to_months_days().ok_or_value_err("Delta out of range")?;
+    let shifted = relative_to
+        .shift(months, days)
+        .ok_or_value_err("Resulting date out of range")?;
+
+    date_since_iddelta(shifted, relative_to, units, round_mode, round_increment)?
+        .to_obj(state.itemized_date_delta_type)
+}
+
+fn total(
+    cls: HeapType<ItemizedDateDelta>,
+    d: ItemizedDateDelta,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    let state = cls.state();
+    let &[unit_arg] = args else {
+        raise_type_err("total() takes exactly 1 positional argument")?
+    };
+
+    let mut relative_to_obj: Option<PyObj> = None;
+    // TODO NOW: I must insist that you define a helper function for
+    // matching single kwargs like this.
+    handle_kwargs("total", kwargs, |key, value, eq| {
+        if eq(key, state.str_relative_to) {
+            relative_to_obj = Some(value);
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    })?;
+
+    let relative_to = extract_relative_to_date(state, relative_to_obj)?;
+    let cal_unit = CalUnit::from_py(unit_arg, state)?;
+
+    let (months, days) = d.to_months_days().ok_or_value_err("Delta out of range")?;
+    let shifted = relative_to
+        .shift(months, days)
+        .ok_or_value_err("Resulting date out of range")?;
+
+    _total(shifted, relative_to, cal_unit)?.to_py()
+}
+
+fn _total(a: Date, b: Date, cal_unit: CalUnit) -> PyResult<f64> {
+    let sign: i8 = if a >= b { 1 } else { -1 };
+
+    let (trunc_amount, trunc, expand) = cal_diff::date_diff_single_unit(a, b, 1, cal_unit, sign)
+        .ok_or_value_err("Resulting date out of range")?;
+
+    let trunc_date = trunc.resolve().unix_days();
+    let r = a.unix_days().diff(trunc_date).get() as f64;
+    let e = expand.resolve().unix_days().diff(trunc_date).get() as f64;
+
+    // FYI: expand is never the same as trunc, so this can be an assert
+    Ok(trunc_amount as f64 + (r / e).copysign(e))
+}
+
+fn _add_sub(
+    cls: HeapType<ItemizedDateDelta>,
+    d: ItemizedDateDelta,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+    negate: bool,
+) -> PyReturn {
+    let fname = if negate { "subtract" } else { "add" };
+    let state = cls.state();
+
+    // Parse the optional positional arg
+    let pos_arg = match args {
+        [] => None,
+        [arg] => Some(*arg),
+        _ => raise_type_err(format!("{fname}() takes at most 1 positional argument"))?,
+    };
+
+    // Parse kwargs
+    let mut relative_to_obj: Option<PyObj> = None;
+    let mut units_obj: Option<PyObj> = None;
+    let mut round_mode_obj: Option<PyObj> = None;
+    let mut round_inc_obj: Option<PyObj> = None;
+    // Component kwargs (years, months, weeks, days)
+    let mut comp_years: Option<PyObj> = None;
+    let mut comp_months: Option<PyObj> = None;
+    let mut comp_weeks: Option<PyObj> = None;
+    let mut comp_days: Option<PyObj> = None;
+
+    handle_kwargs(fname, kwargs, |key, value, eq| {
+        if eq(key, state.str_relative_to) {
+            relative_to_obj = Some(value);
+        } else if eq(key, state.str_units) {
+            units_obj = Some(value);
+        } else if eq(key, state.str_round_mode) {
+            round_mode_obj = Some(value);
+        } else if eq(key, state.str_round_increment) {
+            round_inc_obj = Some(value);
+        } else if eq(key, state.str_years) {
+            comp_years = Some(value);
+        } else if eq(key, state.str_months) {
+            comp_months = Some(value);
+        } else if eq(key, state.str_weeks) {
+            comp_weeks = Some(value);
+        } else if eq(key, state.str_days) {
+            comp_days = Some(value);
+        } else {
+            raise_value_err(format!("Invalid field: {key}"))?;
+        }
+        Ok(true)
+    })?;
+
+    let has_comp_kwargs = comp_years.is_some()
+        || comp_months.is_some()
+        || comp_weeks.is_some()
+        || comp_days.is_some();
+
+    let relative_to = extract_relative_to_date(state, relative_to_obj)?;
+    let (round_mode, round_increment) =
+        parse_rounding_kwargs(state, round_mode_obj, round_inc_obj)?;
+
+    // Determine the "other" delta to add
+    let (other_months, other_days) = match (pos_arg, has_comp_kwargs) {
+        (Some(_), true) => raise_type_err("Cannot mix positional and keyword arguments")?,
+        (Some(arg), false) => {
+            // Must be an ItemizedDateDelta
+            let other = arg
+                .extract(state.itemized_date_delta_type)
+                .ok_or_type_err(format!("{fname}() argument must be an ItemizedDateDelta"))?;
+            let other = if negate { other.negated() } else { other };
+            other
+                .to_months_days()
+                .ok_or_value_err("Delta out of range")?
+        }
+        (None, true) => {
+            let sign: i64 = if negate { -1 } else { 1 };
+            let mut total_months: i64 = 0;
+            let mut total_days: i64 = 0;
+
+            // TODO NOW: this unchecked arithmetic can overflow.
+            // Add a test for this (e.g. years=1<<63 - 1) to prove me right or wrong
+            if let Some(v) = comp_years {
+                total_months = v
+                    .cast_allow_subclass::<PyInt>()
+                    .ok_or_type_err("years must be an integer")?
+                    .to_long()? as i64
+                    * 12
+                    * sign;
+            }
+            if let Some(v) = comp_months {
+                total_months += v
+                    .cast_allow_subclass::<PyInt>()
+                    .ok_or_type_err("months must be an integer")?
+                    .to_long()? as i64
+                    * sign;
+            }
+            if let Some(v) = comp_weeks {
+                total_days = v
+                    .cast_allow_subclass::<PyInt>()
+                    .ok_or_type_err("weeks must be an integer")?
+                    .to_long()? as i64
+                    * 7
+                    * sign;
+            }
+            if let Some(v) = comp_days {
+                total_days += v
+                    .cast_allow_subclass::<PyInt>()
+                    .ok_or_type_err("days must be an integer")?
+                    .to_long()? as i64
+                    * sign;
+            }
+
+            (
+                DeltaMonths::from_i64(total_months).ok_or_value_err("months out of range")?,
+                DeltaDays::from_i64(total_days).ok_or_value_err("days out of range")?,
+            )
+        }
+        (None, false) => {
+            // No other arg: return self (as in_units)
+            let units = match units_obj {
+                Some(seq) => cal_diff::parse_cal_units_sequence(seq, state)?,
+                None => d.unit_set(),
+            };
+            let (m, dy) = d.to_months_days().ok_or_value_err("Delta out of range")?;
+            let shifted = relative_to
+                .shift(m, dy)
+                .ok_or_value_err("Resulting date out of range")?;
+            return date_since_iddelta(shifted, relative_to, units, round_mode, round_increment)?
+                .to_obj(state.itemized_date_delta_type);
+        }
+    };
+
+    // Determine output units
+    let units = match units_obj {
+        Some(seq) => cal_diff::parse_cal_units_sequence(seq, state)?,
+        None => {
+            // Union of self's keys and the other's keys
+            // For kwargs: union of self's keys and the provided component keys
+            let mut set = d.unit_set();
+            if let Some(other_arg) = pos_arg {
+                set = set.union(
+                    other_arg
+                        .extract(state.itemized_date_delta_type)
+                        .unwrap()
+                        .unit_set(),
+                );
+            } else {
+                if comp_years.is_some() {
+                    set.insert_cal(CalUnit::Years);
+                }
+                if comp_months.is_some() {
+                    set.insert_cal(CalUnit::Months);
+                }
+                if comp_weeks.is_some() {
+                    set.insert_cal(CalUnit::Weeks);
+                }
+                if comp_days.is_some() {
+                    set.insert_cal(CalUnit::Days);
+                }
+            }
+            set
+        }
+    };
+
+    // relative_to.add(self).add(other).since(relative_to, units=...)
+    let (self_months, self_days) = d.to_months_days().ok_or_value_err("Delta out of range")?;
+    let shifted = relative_to
+        .shift(self_months, self_days)
+        .and_then(|d| d.shift(other_months, other_days))
+        .ok_or_value_err("Resulting date out of range")?;
+
+    date_since_iddelta(shifted, relative_to, units, round_mode, round_increment)?
+        .to_obj(state.itemized_date_delta_type)
+}
+
+fn add(
+    cls: HeapType<ItemizedDateDelta>,
+    d: ItemizedDateDelta,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    _add_sub(cls, d, args, kwargs, false)
+}
+
+fn subtract(
+    cls: HeapType<ItemizedDateDelta>,
+    d: ItemizedDateDelta,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    _add_sub(cls, d, args, kwargs, true)
+}
+
 /// Register with collections.abc.Mapping and copy mixin methods
 pub(crate) fn register_as_mapping(type_obj: PyObj) -> PyResult<()> {
     let abc = import(c"collections.abc")?;
@@ -565,6 +967,10 @@ static mut METHODS: &[PyMethodDef] = &[
     ),
     method1!(ItemizedDateDelta, exact_eq, doc::ITEMIZEDDATEDELTA_EXACT_EQ),
     method_kwargs!(ItemizedDateDelta, replace, doc::ITEMIZEDDATEDELTA_REPLACE),
+    method_kwargs!(ItemizedDateDelta, in_units, doc::ITEMIZEDDATEDELTA_IN_UNITS),
+    method_kwargs!(ItemizedDateDelta, total, doc::ITEMIZEDDATEDELTA_TOTAL),
+    method_kwargs!(ItemizedDateDelta, add, doc::ITEMIZEDDATEDELTA_ADD),
+    method_kwargs!(ItemizedDateDelta, subtract, doc::ITEMIZEDDATEDELTA_SUBTRACT),
     method0!(ItemizedDateDelta, __reduce__, c""),
     classmethod_kwargs!(
         ItemizedDateDelta,

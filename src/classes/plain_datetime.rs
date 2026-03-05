@@ -1,14 +1,16 @@
 use crate::{
     classes::{
-        date::Date, date_delta::DateDelta, datetime_delta::set_units_from_kwargs,
-        instant::Instant,
-        itemized_delta::ItemizedDelta, time::Time, time_delta::TimeDelta,
-        zoned_datetime::ZonedDateTime,
+        date::Date, date_delta::DateDelta, datetime_delta::set_units_from_kwargs, instant::Instant,
+        itemized_date_delta::ItemizedDateDelta, itemized_delta::ItemizedDelta, time::Time,
+        time_delta::TimeDelta, zoned_datetime::ZonedDateTime,
     },
     common::{
         ambiguity::*,
-        cal_diff::{self},
-        fmt, parse::Scan, round, scalar::*,
+        cal_diff::{self, DeltaUnit},
+        fmt,
+        parse::Scan,
+        round,
+        scalar::*,
     },
     docstrings as doc,
     py::*,
@@ -19,6 +21,7 @@ use core::{
     ptr::null_mut as NULL,
 };
 use pyo3_ffi::*;
+use std::cmp::Ordering;
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub struct DateTime {
@@ -62,17 +65,21 @@ pub(crate) const SINGLETONS: &[(&CStr, DateTime); 2] = &[
 ];
 
 impl DateTime {
-    /// Compute the difference between two DateTimes as a TimeDelta (self - other).
-    /// Avoids i128 by computing seconds and subsec nanos separately.
+    pub(crate) fn assume_utc(self) -> Instant {
+        Instant {
+            epoch: self.date.epoch_at(self.time),
+            subsec: self.time.subsec,
+        }
+    }
+
     pub(crate) fn diff(self, other: Self) -> TimeDelta {
-        let day_secs = self.date.unix_days().diff(other.date.unix_days()).get() as i64
-            * S_PER_DAY as i64;
-        let time_secs = self.time.total_seconds() as i64 - other.time.total_seconds() as i64;
-        let (extra_sec, subsec) = self.time.subsec.diff(other.time.subsec);
-        TimeDelta {
-            // Safe: DateTime range guarantees this fits in DeltaSeconds
-            secs: DeltaSeconds::new_unchecked(day_secs + time_secs + extra_sec.get()),
-            subsec,
+        self.assume_utc().diff(other.assume_utc())
+    }
+
+    pub(crate) fn with_date(self, date: Date) -> Self {
+        DateTime {
+            date,
+            time: self.time,
         }
     }
 
@@ -81,18 +88,8 @@ impl DateTime {
         date.shift(months, days).map(|date| DateTime { date, time })
     }
 
-    pub(crate) fn shift_nanos(self, nanos: i128) -> Option<Self> {
-        let DateTime { mut date, time } = self;
-        let new_time = i128::from(time.total_nanos()).checked_add(nanos)?;
-        let days_delta = i32::try_from(new_time.div_euclid(NS_PER_DAY)).ok()?;
-        let nano_delta = new_time.rem_euclid(NS_PER_DAY) as u64;
-        if days_delta != 0 {
-            date = DeltaDays::new(days_delta).and_then(|d| date.shift_days(d))?;
-        }
-        Some(DateTime {
-            date,
-            time: Time::from_total_nanos_unchecked(nano_delta),
-        })
+    pub(crate) fn shift(self, t: TimeDelta) -> Option<Self> {
+        self.assume_utc().shift(t).map(|i| i.utc_datetime())
     }
 
     // FUTURE: is this actually worth it?
@@ -160,7 +157,11 @@ impl std::fmt::Display for DateTime {
 
 fn __new__(cls: HeapType<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
-        return parse_iso(cls, args.iter().next().unwrap());
+        let arg = args.iter().next().unwrap();
+        if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
+            return DateTime::from_py(dt)?.to_obj(cls);
+        }
+        return parse_iso(cls, arg);
     }
     let mut year: c_long = 0;
     let mut month: c_long = 0;
@@ -274,8 +275,8 @@ fn __sub__(a: PyObj, b: PyObj) -> PyReturn {
                 2,
             )?;
         }
-        Instant::from_datetime(slf.date, slf.time)
-            .diff(Instant::from_datetime(other.date, other.time))
+        slf.assume_utc()
+            .diff(other.assume_utc())
             .to_obj(state.time_delta_type)
     } else {
         _shift_operator(a, b, true)
@@ -305,7 +306,7 @@ fn _shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
             a.shift_date(months, days)
                 .ok_or_else_value_err(|| format!("Result of {opname} out of range"))?
                 .to_obj(dt_type)
-        } else if let Some(tdelta) = obj_b.extract(state.time_delta_type) {
+        } else if let Some(mut tdelta) = obj_b.extract(state.time_delta_type) {
             if !state.cv_ignore_tz_unaware_arithmetic.get()? {
                 warn_with_class(
                     state.warn_tz_unaware_arithmetic,
@@ -313,24 +314,22 @@ fn _shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                     2,
                 )?;
             }
-            let nanos = if negate {
-                -tdelta.total_nanos()
-            } else {
-                tdelta.total_nanos()
-            };
-            a.shift_nanos(nanos)
+            if negate {
+                tdelta = -tdelta;
+            }
+            a.shift(tdelta)
                 .ok_or_else_value_err(|| format!("Result of {opname} out of range"))?
                 .to_obj(dt_type)
         } else if let Some(dt) = obj_b.extract(state.datetime_delta_type) {
             let mut months = dt.ddelta.months;
             let mut days = dt.ddelta.days;
-            let mut nanos = dt.tdelta.total_nanos();
+            let mut tdelta = dt.tdelta;
             if negate {
                 months = -months;
                 days = -days;
-                nanos = -nanos;
+                tdelta = -tdelta;
             }
-            if nanos != 0 {
+            if !tdelta.is_zero() {
                 if !state.cv_ignore_tz_unaware_arithmetic.get()? {
                     warn_with_class(
                         state.warn_tz_unaware_arithmetic,
@@ -340,7 +339,7 @@ fn _shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                 }
             }
             a.shift_date(months, days)
-                .and_then(|dt| dt.shift_nanos(nanos))
+                .and_then(|dt| dt.shift(tdelta))
                 .ok_or_else_value_err(|| format!("Result of {opname} out of range"))?
                 .to_obj(dt_type)
         } else {
@@ -528,11 +527,10 @@ fn _shift_method(
     negate: bool,
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
-    // FUTURE: get fields all at once from State (this is faster)
     let state = cls.state();
     let mut months = DeltaMonths::ZERO;
     let mut days = DeltaDays::ZERO;
-    let mut nanos = 0;
+    let mut tdelta = TimeDelta::ZERO;
     let mut got_ignore_dst = false;
 
     match *args {
@@ -546,15 +544,28 @@ fn _shift_method(
                 ))?,
                 None => {}
             };
-            if let Some(tdelta) = arg.extract(state.time_delta_type) {
-                nanos = tdelta.total_nanos();
+            if let Some(t) = arg.extract(state.time_delta_type) {
+                tdelta = t;
             } else if let Some(ddelta) = arg.extract(state.date_delta_type) {
                 months = ddelta.months;
                 days = ddelta.days;
             } else if let Some(dt) = arg.extract(state.datetime_delta_type) {
                 months = dt.ddelta.months;
                 days = dt.ddelta.days;
-                nanos = dt.tdelta.total_nanos();
+                tdelta = dt.tdelta;
+            } else if let Some(d) = arg.extract(state.itemized_date_delta_type) {
+                let (m, dy) = d
+                    .to_months_days()
+                    .ok_or_value_err("Total months/days out of range")?;
+                months = m;
+                days = dy;
+            } else if let Some(d) = arg.extract(state.itemized_delta_type) {
+                let (m, dy, td) = d
+                    .to_components()
+                    .ok_or_value_err("Total months/days/nanos out of range")?;
+                months = m;
+                days = dy;
+                tdelta = td;
             } else {
                 raise_type_err(format!("{fname}() argument must be a delta"))?
             }
@@ -562,6 +573,7 @@ fn _shift_method(
         [] => {
             let mut raw_months = 0;
             let mut raw_days = 0;
+            let mut raw_nanos = 0;
             handle_kwargs(fname, kwargs, |key, value, eq| {
                 if eq(key, state.str_ignore_dst) {
                     got_ignore_dst = true;
@@ -572,7 +584,7 @@ fn _shift_method(
                         value,
                         &mut raw_months,
                         &mut raw_days,
-                        &mut nanos,
+                        &mut raw_nanos,
                         state,
                         eq,
                     )
@@ -580,6 +592,7 @@ fn _shift_method(
             })?;
             months = DeltaMonths::new(raw_months).ok_or_value_err("Months out of range")?;
             days = DeltaDays::new(raw_days).ok_or_value_err("Days out of range")?;
+            tdelta = TimeDelta::from_nanos(raw_nanos).ok_or_value_err("Nanos out of range")?;
         }
         _ => raise_type_err(format!(
             "{}() takes at most 1 positional argument, got {}",
@@ -589,19 +602,15 @@ fn _shift_method(
     }
 
     if got_ignore_dst {
-        warn_with_class(
-            state.warn_deprecation,
-            doc::IGNORE_DST_DEPRECATED_MSG,
-            2,
-        )?;
+        warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 2)?;
     }
 
     if negate {
         months = -months;
         days = -days;
-        nanos = -nanos;
+        tdelta = -tdelta;
     }
-    if nanos != 0 {
+    if !tdelta.is_zero() {
         if !state.cv_ignore_tz_unaware_arithmetic.get()? {
             warn_with_class(
                 state.warn_tz_unaware_arithmetic,
@@ -611,8 +620,8 @@ fn _shift_method(
         }
     }
     slf.shift_date(months, days)
-        .and_then(|dt| dt.shift_nanos(nanos))
-        .ok_or_else_value_err(|| format!("Result of {fname}() out of range"))?
+        .and_then(|dt| dt.shift(tdelta))
+        .ok_or_value_err("Result out of range")?
         .to_obj(cls)
 }
 
@@ -635,8 +644,8 @@ fn difference(
         raise_type_err("difference() takes exactly 1 argument")?
     };
     if let Some(dt) = arg.extract(cls) {
-        Instant::from_datetime(slf.date, slf.time)
-            .diff(Instant::from_datetime(dt.date, dt.time))
+        slf.assume_utc()
+            .diff(dt.assume_utc())
             .to_obj(state.time_delta_type)
     } else {
         raise_type_err("difference() argument must be a PlainDateTime")?
@@ -772,8 +781,8 @@ fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwar
     DateTime::from_py(*parsed)?.to_obj(cls)
 }
 
-fn assume_utc(cls: HeapType<DateTime>, DateTime { date, time }: DateTime) -> PyReturn {
-    Instant::from_datetime(date, time).to_obj(cls.state().instant_type)
+fn assume_utc(cls: HeapType<DateTime>, d: DateTime) -> PyReturn {
+    d.assume_utc().to_obj(cls.state().instant_type)
 }
 
 fn assume_fixed_offset(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn {
@@ -897,11 +906,7 @@ fn since(
     let (_, exact_units) = parsed.split_cal_exact();
     // Emit warning if exact units are used
     if !exact_units.is_empty() && !state.cv_ignore_tz_unaware_arithmetic.get()? {
-        warn_with_class(
-            state.warn_tz_unaware_arithmetic,
-            doc::DIFF_LOCAL_MSG,
-            2,
-        )?;
+        warn_with_class(state.warn_tz_unaware_arithmetic, doc::DIFF_LOCAL_MSG, 2)?;
     }
     plain_since(state, slf, b, &parsed)
 }
@@ -921,13 +926,46 @@ fn until(
     let parsed = cal_diff::parse_full_since_kwargs(state, args, kwargs)?;
     let (_, exact_units) = parsed.split_cal_exact();
     if !exact_units.is_empty() && !state.cv_ignore_tz_unaware_arithmetic.get()? {
-        warn_with_class(
-            state.warn_tz_unaware_arithmetic,
-            doc::DIFF_LOCAL_MSG,
-            2,
-        )?;
+        warn_with_class(state.warn_tz_unaware_arithmetic, doc::DIFF_LOCAL_MSG, 2)?;
     }
     plain_since(state, b, slf, &parsed)
+}
+
+fn _plain_since_single_unit(
+    a: DateTime,
+    b: DateTime,
+    target_date: Date,
+    unit: DeltaUnit,
+    round_mode: round::Mode, // TODO MEDIUM: use AbsMode
+    round_increment: i32,
+    sign: i8,
+) -> PyReturn {
+    match unit.to_cal() {
+        None => cal_diff::time_delta_in_single_unit(a.diff(b), unit, round_increment, round_mode),
+        Some(cal_unit) => {
+            let (result, trunc_date, expand_date) = cal_diff::date_diff_single_unit(
+                target_date,
+                b.date,
+                round_increment,
+                cal_unit,
+                sign,
+            )
+            .ok_or_value_err("Rounded date out of range")?;
+            let trunc = b.with_date(trunc_date.into()).assume_utc();
+            let expand = b.with_date(expand_date.into()).assume_utc();
+
+            cal_diff::round_by_time(
+                result,
+                a.assume_utc(),
+                trunc,
+                expand,
+                round_mode,
+                round_increment,
+                sign,
+            )
+            .to_py()
+        }
+    }
 }
 
 /// Shared since() implementation for PlainDateTime (and OffsetDateTime).
@@ -939,90 +977,69 @@ pub(crate) fn plain_since(
     parsed: &cal_diff::FullSinceUntilArgs,
 ) -> PyReturn {
     let sign: i8 = if a >= b { 1 } else { -1 };
-    let (cal_units, exact_units) = parsed.split_cal_exact();
-    let smallest_unit = parsed.smallest_unit();
-
     // Adjust target_date so the exact remainder has the same sign.
-    // For PlainDateTime, at most one adjustment is needed (no day-skipping like ZonedDateTime).
-    let mut target_date = a.date;
-    if sign == 1 {
-        if (DateTime { date: target_date, time: b.time }) > a {
-            target_date = target_date.yesterday()
-                .ok_or_value_err("Resulting date out of range")?;
-        }
-    } else {
-        if (DateTime { date: target_date, time: b.time }) < a {
-            target_date = target_date.tomorrow()
-                .ok_or_value_err("Resulting date out of range")?;
-        }
+    let target_date = match (sign, b.with_date(a.date).cmp(&a)) {
+        (1, Ordering::Greater) => a.date.yesterday(),
+        (-1, Ordering::Less) => a.date.tomorrow(),
+        _ => Some(a.date),
+    }
+    .ok_or_value_err("Resulting date out of range")?;
+
+    if parsed.single_unit_mode {
+        return _plain_since_single_unit(
+            a,
+            b,
+            target_date,
+            parsed.units.smallest(),
+            parsed.round_mode,
+            parsed.round_increment,
+            sign,
+        );
     }
 
-    let (cal_results, trunc_date, expand_date) = if !cal_units.is_empty() {
-        let inc = if exact_units.is_empty() {
+    let smallest_unit = parsed.smallest_unit();
+    let (cal_units, exact_units) = parsed.split_cal_exact();
+
+    let (mut cal_results, trunc_date, expand_date) = if cal_units.is_empty() {
+        (ItemizedDateDelta::UNSET, b.date.into(), a.date.into())
+    } else {
+        let inc = if smallest_unit.to_cal().is_some() {
             parsed.round_increment
         } else {
             1
         };
         cal_diff::date_diff(target_date, b.date, inc, cal_units, sign)
             .ok_or_value_err("Resulting date out of range")?
+    };
+
+    let trunc_dt = b.with_date(trunc_date.into());
+    let expand_dt = b.with_date(expand_date.into());
+
+    // If there are no time units, round the calendar units.
+    // Otherwise, calculate the time delta remainder
+    let mut result = if let Some(cal) = smallest_unit.to_cal() {
+        cal_results.round_by_time(
+            cal,
+            a.assume_utc(),
+            trunc_dt.assume_utc(),
+            expand_dt.assume_utc(),
+            parsed.round_mode,
+            parsed.round_increment,
+            sign,
+        );
+        ItemizedDelta::UNSET
     } else {
-        ([0i32; 4], b.date.into(), a.date.into())
-    };
-
-    let trunc_dt = DateTime {
-        date: trunc_date.resolve(),
-        time: b.time,
-    };
-    let expand_dt = DateTime {
-        date: expand_date.resolve(),
-        time: b.time,
-    };
-
-    let mut results = [0i64; 8];
-    // Copy calendar results
-    for u in cal_units.iter() {
-        results[u as usize] = cal_results[u as usize] as i64;
-    }
-
-    if !exact_units.is_empty() {
-        // Compute time difference between self and trunc
-        let diff = a.diff(trunc_dt);
-        let exact_results = cal_diff::time_delta_in_units(
-            diff,
+        cal_diff::time_delta_in_units(
+            a.diff(trunc_dt),
             exact_units,
             parsed.round_increment,
             parsed.round_mode,
         )
-        .ok_or_value_err("Resulting TimeDelta out of range")?;
-        for u in exact_units.iter() {
-            results[u as usize] = exact_results[u as usize];
-        }
-    } else if !matches!(parsed.round_mode, round::Mode::Trunc) {
-        // Calendar-only with non-trunc rounding
-        let remainder = a.diff(trunc_dt).total_nanos().unsigned_abs();
-        let expanded = expand_dt.diff(trunc_dt).total_nanos().unsigned_abs();
-        if expanded > 0 {
-            let idx = smallest_unit as usize;
-            results[idx] = cal_diff::custom_round(
-                results[idx] as i32,
-                remainder,
-                expanded,
-                parsed.round_mode,
-                parsed.round_increment,
-                sign,
-            ) as i64;
-        }
-    }
+        .ok_or_value_err("Resulting TimeDelta out of range")?
+    };
 
-    if parsed.single_unit_mode {
-        (results[smallest_unit as usize] * sign as i64).to_py()
-    } else {
-        // PlainDateTime always returns ItemizedDelta (even for calendar-only units)
-        let is_zero = results.iter().all(|&v| v == 0);
-        let s = if is_zero { 0i8 } else { sign };
-        ItemizedDelta::from_results(&results, parsed.units, s)
-            .to_obj(state.itemized_delta_type)
-    }
+    result.fill_cal_units(cal_results);
+    result.to_obj(state.itemized_delta_type)
 }
 
 fn round(

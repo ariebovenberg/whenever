@@ -5,14 +5,16 @@ use std::ptr::null_mut as NULL;
 use crate::{
     classes::{
         date_delta::parse_prefix,
+        datetime_delta,
         itemized_date_delta::{
-            parse_date_fields, ItemizedDateDelta, MAX_DAYS, MAX_MONTHS, MAX_WEEKS, MAX_YEARS,
+            ItemizedDateDelta, MAX_DAYS, MAX_MONTHS, MAX_WEEKS, MAX_YEARS, parse_date_fields,
         },
-        time_delta::{parse_time_component, TimeUnit, TimeDelta},
+        time_delta::{TimeDelta, TimeUnit, parse_time_component, total_relative_inner},
+        zoned_datetime::{ZonedDateTime, zoned_since, zoned_target},
     },
     common::{
-        cal_diff::{DeltaUnit, UnitSet},
-        scalar::{DeltaField, DeltaSeconds, SubSecNanos},
+        cal_diff::{self, DeltaUnit, ExactUnit, FullSinceUntilArgs, UnitSet},
+        scalar::{DeltaDays, DeltaField, DeltaMonths, DeltaSeconds, SubSecNanos},
     },
     docstrings as doc,
     py::*,
@@ -37,38 +39,24 @@ pub(crate) struct ItemizedDelta {
 }
 
 impl ItemizedDelta {
-    /// Build from absolute results array and sign.
-    /// Only fields whose unit is in `requested` are set; others are UNSET.
-    pub(crate) fn from_results(results: &[i64; 8], requested: UnitSet, sign: i8) -> Self {
-        let s = sign as i64;
-        let field_i32 = |u: DeltaUnit| -> DeltaField<i32> {
-            if requested.contains(u) {
-                DeltaField::new_unchecked(results[u as usize] as i32 * sign as i32)
-            } else {
-                DeltaField::UNSET
-            }
-        };
-        let field_i64 = |u: DeltaUnit| -> DeltaField<i64> {
-            if requested.contains(u) {
-                DeltaField::new_unchecked(results[u as usize] * s)
-            } else {
-                DeltaField::UNSET
-            }
-        };
-        Self {
-            years: field_i32(DeltaUnit::Years),
-            months: field_i32(DeltaUnit::Months),
-            weeks: field_i32(DeltaUnit::Weeks),
-            days: field_i32(DeltaUnit::Days),
-            hours: field_i32(DeltaUnit::Hours),
-            minutes: field_i64(DeltaUnit::Minutes),
-            seconds: field_i64(DeltaUnit::Seconds),
-            nanos: field_i32(DeltaUnit::Nanoseconds),
-        }
-    }
+    // TODO LOW: NOTE this is invalid
+    pub(crate) const UNSET: Self = Self {
+        years: DeltaField::UNSET,
+        months: DeltaField::UNSET,
+        weeks: DeltaField::UNSET,
+        days: DeltaField::UNSET,
+        hours: DeltaField::UNSET,
+        minutes: DeltaField::UNSET,
+        seconds: DeltaField::UNSET,
+        nanos: DeltaField::UNSET,
+    };
 
-    pub(crate) fn is_zero(self) -> bool {
-        self.derived_sign() == 0
+    // Low-level helper to fill in just the calendar fields from an ItemizedDateDelta
+    pub(crate) fn fill_cal_units(&mut self, data: ItemizedDateDelta) {
+        self.years = data.years;
+        self.months = data.months;
+        self.weeks = data.weeks;
+        self.days = data.days;
     }
 
     pub(crate) fn derived_sign(self) -> i8 {
@@ -111,9 +99,65 @@ impl ItemizedDelta {
             && self.nanos.get_or(0) == other.nanos.get_or(0)
     }
 
+    pub(crate) fn unit_set(self) -> UnitSet {
+        let mut set = UnitSet::EMPTY;
+        if self.years.is_set() {
+            set.insert(DeltaUnit::Years);
+        }
+        if self.months.is_set() {
+            set.insert(DeltaUnit::Months);
+        }
+        if self.weeks.is_set() {
+            set.insert(DeltaUnit::Weeks);
+        }
+        if self.days.is_set() {
+            set.insert(DeltaUnit::Days);
+        }
+        if self.hours.is_set() {
+            set.insert(DeltaUnit::Hours);
+        }
+        if self.minutes.is_set() {
+            set.insert(DeltaUnit::Minutes);
+        }
+        if self.seconds.is_set() {
+            set.insert(DeltaUnit::Seconds);
+        }
+        if self.nanos.is_set() {
+            set.insert(DeltaUnit::Nanoseconds);
+        }
+        set
+    }
+
+    pub(crate) fn negated(self) -> Self {
+        Self {
+            years: self.years.neg(),
+            months: self.months.neg(),
+            weeks: self.weeks.neg(),
+            days: self.days.neg(),
+            hours: self.hours.neg(),
+            minutes: self.minutes.neg(),
+            seconds: self.seconds.neg(),
+            nanos: self.nanos.neg(),
+        }
+    }
+
+    pub(crate) fn to_components(self) -> Option<(DeltaMonths, DeltaDays, TimeDelta)> {
+        let months = DeltaMonths::new(
+            // TODO LOW: unsafe cast
+            (self.years.get_or(0) as i64 * 12 + self.months.get_or(0) as i64) as i32,
+        )?;
+        let days =
+            DeltaDays::new((self.weeks.get_or(0) as i64 * 7 + self.days.get_or(0) as i64) as i32)?;
+        let nanos = self.hours.get_or(0) as i128 * 3_600_000_000_000
+            + self.minutes.get_or(0) as i128 * 60_000_000_000
+            + self.seconds.get_or(0) as i128 * 1_000_000_000
+            + self.nanos.get_or(0) as i128;
+        // TODO LOW: more optimal calculation
+        Some((months, days, TimeDelta::from_nanos(nanos)?))
+    }
+
     fn has_time(self) -> bool {
-        self.hours.is_set() || self.minutes.is_set()
-            || self.seconds.is_set() || self.nanos.is_set()
+        self.hours.is_set() || self.minutes.is_set() || self.seconds.is_set() || self.nanos.is_set()
     }
 
     fn fmt_iso(self, lowercase: bool) -> String {
@@ -157,7 +201,7 @@ impl ItemizedDelta {
         if self.seconds.is_set() {
             let sec_abs = self.seconds.unsigned_abs();
             if self.nanos.is_set() {
-                let nanos_abs = self.nanos.get().unsigned_abs() as i32;
+                let nanos_abs = self.nanos.unwrap().unsigned_abs() as i32;
                 if nanos_abs != 0 {
                     let (buf, len) = SubSecNanos::new_unchecked(nanos_abs).format_iso();
                     out.push_str(&format!("{sec_abs}"));
@@ -217,11 +261,7 @@ impl ItemizedDelta {
 
 impl PySimpleAlloc for ItemizedDelta {}
 
-fn __new__(
-    cls: HeapType<ItemizedDelta>,
-    args: PyTuple,
-    kwargs: Option<PyDict>,
-) -> PyReturn {
+fn __new__(cls: HeapType<ItemizedDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     match args.len() {
         0 => {}
         1 if kwargs.map_or(0, |s| s.len()) == 0 => {
@@ -315,15 +355,8 @@ fn format_iso(
     if !args.is_empty() {
         raise_type_err("format_iso() takes no positional arguments")?;
     }
-    let mut lowercase = false;
-    handle_kwargs("format_iso", kwargs, |key, value, eq| {
-        if eq(key, cls.state().str_lowercase_units) {
-            lowercase = value.is_true();
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    })?;
+    let lowercase = handle_one_kwarg("format_iso", cls.state().str_lowercase_units, kwargs)?
+        .map_or(false, |v| v.is_true());
     d.fmt_iso(lowercase).to_py()
 }
 
@@ -346,7 +379,7 @@ fn parse_iso(cls: HeapType<ItemizedDelta>, arg: PyObj) -> PyReturn {
     }
 
     let negated = parse_prefix(s).ok_or_else_value_err(err)?;
-    let (years, months, weeks, days) = parse_date_fields(s, negated, &err)?;
+    let cal_result = parse_date_fields(s, negated, &err)?;
 
     let mut hours = DeltaField::UNSET;
     let mut minutes = DeltaField::UNSET;
@@ -368,30 +401,22 @@ fn parse_iso(cls: HeapType<ItemizedDelta>, arg: PyObj) -> PyReturn {
             }
             match unit {
                 TimeUnit::Hours => {
-                    hours = DeltaField::<i32>::new_checked(
-                        value as u64, negated, MAX_HOURS,
-                    )
-                    .ok_or_else_value_err(|| "Delta out of range")?;
+                    hours = DeltaField::<i32>::new_checked(value as u64, negated, MAX_HOURS)
+                        .ok_or_else_value_err(|| "Delta out of range")?;
                 }
                 TimeUnit::Minutes => {
-                    minutes = DeltaField::<i64>::new_checked(
-                        value as u64, negated, MAX_MINUTES,
-                    )
-                    .ok_or_else_value_err(|| "Delta out of range")?;
+                    minutes = DeltaField::<i64>::new_checked(value as u64, negated, MAX_MINUTES)
+                        .ok_or_else_value_err(|| "Delta out of range")?;
                 }
                 TimeUnit::Nanos { has_fraction } => {
                     let sec_val = (value / 1_000_000_000) as u64;
-                    seconds = DeltaField::<i64>::new_checked(
-                        sec_val, negated, MAX_SECONDS,
-                    )
-                    .ok_or_else_value_err(|| "Delta out of range")?;
+                    seconds = DeltaField::<i64>::new_checked(sec_val, negated, MAX_SECONDS)
+                        .ok_or_else_value_err(|| "Delta out of range")?;
 
                     if has_fraction {
                         let nano_val = (value % 1_000_000_000) as u64;
-                        nanos = DeltaField::<i32>::new_checked(
-                            nano_val, negated, MAX_NANOS,
-                        )
-                        .ok_or_else_value_err(|| "Delta out of range")?;
+                        nanos = DeltaField::<i32>::new_checked(nano_val, negated, MAX_NANOS)
+                            .ok_or_else_value_err(|| "Delta out of range")?;
                     }
 
                     if !s.is_empty() {
@@ -405,10 +430,10 @@ fn parse_iso(cls: HeapType<ItemizedDelta>, arg: PyObj) -> PyReturn {
     }
 
     ItemizedDelta {
-        years,
-        months,
-        weeks,
-        days,
+        years: cal_result.years,
+        months: cal_result.months,
+        weeks: cal_result.weeks,
+        days: cal_result.days,
         hours,
         minutes,
         seconds,
@@ -435,6 +460,7 @@ fn __richcmp__(
 }
 
 fn __neg__(cls: HeapType<ItemizedDelta>, slf: PyObj) -> PyReturn {
+    // Safety: CPython guarantees `slf` is a valid instance of our heap type
     let (_, d) = unsafe { slf.assume_heaptype::<ItemizedDelta>() };
     if d.derived_sign() == 0 {
         return Ok(slf.newref());
@@ -480,7 +506,11 @@ fn __str__(_: PyType, d: ItemizedDelta) -> PyReturn {
 }
 
 extern "C" fn __bool__(slf: PyObj) -> c_int {
-    (!unsafe { slf.assume_heaptype::<ItemizedDelta>() }.1.is_zero()).into()
+    (unsafe { slf.assume_heaptype::<ItemizedDelta>() }
+        .1
+        .derived_sign()
+        != 0)
+        .into()
 }
 
 extern "C" fn __mp_length__(slf: PyObj) -> Py_ssize_t {
@@ -492,11 +522,7 @@ extern "C" fn __mp_subscript__(slf: PyObj, key: PyObj) -> *mut PyObject {
     _mp_subscript_inner(cls, d, key).to_py_owned_ptr()
 }
 
-fn _mp_subscript_inner(
-    cls: HeapType<ItemizedDelta>,
-    d: ItemizedDelta,
-    key: PyObj,
-) -> PyReturn {
+fn _mp_subscript_inner(cls: HeapType<ItemizedDelta>, d: ItemizedDelta, key: PyObj) -> PyReturn {
     match d.find_field(key, cls.state()) {
         Some(result) => result,
         None => raise_key_err(key),
@@ -566,7 +592,10 @@ extern "C" fn __sq_contains__(slf: PyObj, key: PyObj) -> c_int {
 
 fn exact_eq(cls: HeapType<ItemizedDelta>, d: ItemizedDelta, arg: PyObj) -> PyReturn {
     match arg.extract(cls) {
-        Some(other) => (d == other).to_py(),
+        Some(other) => {
+            println!("Comparing for exact equality: {d:?} vs {other:?}");
+            (d == other).to_py()
+        }
         None => false.to_py(),
     }
 }
@@ -663,8 +692,7 @@ fn parts(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyResult<Owned<PyTup
     let state = cls.state();
 
     // Date part
-    let has_date =
-        d.years.is_set() || d.months.is_set() || d.weeks.is_set() || d.days.is_set();
+    let has_date = d.years.is_set() || d.months.is_set() || d.weeks.is_set() || d.days.is_set();
     let date_part = if has_date {
         ItemizedDateDelta {
             years: d.years,
@@ -679,9 +707,8 @@ fn parts(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyResult<Owned<PyTup
 
     // Time part: construct TimeDelta from hours/minutes/seconds/nanos
     let time_part: PyReturn = if d.has_time() {
-        let total_secs: i64 = (d.hours.get_or(0) as i64) * 3600
-            + d.minutes.get_or(0) * 60
-            + d.seconds.get_or(0);
+        let total_secs: i64 =
+            (d.hours.get_or(0) as i64) * 3600 + d.minutes.get_or(0) * 60 + d.seconds.get_or(0);
         // Nanos are capped at 999_999_999, but can be negative.
         // Negative nanos need adjustment since SubSecNanos is always non-negative.
         let nanos_val = d.nanos.get_or(0);
@@ -702,10 +729,7 @@ fn parts(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyResult<Owned<PyTup
     (date_part?, time_part?).into_pytuple()
 }
 
-fn __reduce__(
-    cls: HeapType<ItemizedDelta>,
-    d: ItemizedDelta,
-) -> PyResult<Owned<PyTuple>> {
+fn __reduce__(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyResult<Owned<PyTuple>> {
     let state = cls.state();
     let tup = PyTuple::with_len(8)?;
     tup.init_item(0, d.years.to_py()?);
@@ -721,8 +745,16 @@ fn __reduce__(
 }
 
 pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
-    let &[years_obj, months_obj, weeks_obj, days_obj, hours_obj, minutes_obj, seconds_obj, nanos_obj] =
-        args
+    let &[
+        years_obj,
+        months_obj,
+        weeks_obj,
+        days_obj,
+        hours_obj,
+        minutes_obj,
+        seconds_obj,
+        nanos_obj,
+    ] = args
     else {
         return raise_type_err("Invalid pickle data");
     };
@@ -737,6 +769,276 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
         nanos: DeltaField::parse_opt(nanos_obj, MAX_NANOS)?,
     }
     .to_obj(state.itemized_delta_type)
+}
+
+/// Parse round_mode and round_increment from kwargs.
+use crate::common::cal_diff::parse_rounding_kwargs;
+
+fn in_units(
+    cls: HeapType<ItemizedDelta>,
+    d: ItemizedDelta,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    let state = cls.state();
+    let &[units_arg] = args else {
+        raise_type_err("in_units() takes exactly 1 positional argument")?
+    };
+
+    let mut relative_to_obj: Option<PyObj> = None;
+    let mut round_mode_obj: Option<PyObj> = None;
+    let mut round_inc_obj: Option<PyObj> = None;
+
+    handle_kwargs("in_units", kwargs, |key, value, eq| {
+        if eq(key, state.str_relative_to) {
+            relative_to_obj = Some(value);
+        } else if eq(key, state.str_round_mode) {
+            round_mode_obj = Some(value);
+        } else if eq(key, state.str_round_increment) {
+            round_inc_obj = Some(value);
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    })?;
+
+    // FUTURE: allow PlainDateTime/OffsetDateTime as relative_to (with appropriate warnings)
+    let zdt: ZonedDateTime = relative_to_obj
+        .ok_or_type_err("missing required keyword argument: 'relative_to'")?
+        .extract(state.zoned_datetime_type)
+        .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?;
+    let (round_mode, round_increment) =
+        parse_rounding_kwargs(state, round_mode_obj, round_inc_obj)?;
+    let units = cal_diff::parse_delta_units_sequence(units_arg, state)?;
+
+    let shifted = zdt
+        .shift_default(d)
+        .ok_or_value_err("Resulting datetime is out of range")?;
+
+    let parsed = FullSinceUntilArgs {
+        units,
+        single_unit_mode: false,
+        round_mode,
+        round_increment,
+    };
+    // TODO LOW: name qualification
+    zoned_since(state, shifted, zdt, true, &parsed)
+}
+
+fn total(
+    cls: HeapType<ItemizedDelta>,
+    d: ItemizedDelta,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    let state = cls.state();
+
+    // Parse the arguments
+    let &[unit_arg] = args else {
+        raise_type_err("total() takes exactly 1 positional argument")?
+    };
+    let unit = DeltaUnit::from_py(unit_arg, state)?;
+    let relative_to = handle_one_kwarg("total", state.str_relative_to, kwargs)?
+        .ok_or_type_err("missing required keyword argument: 'relative_to'")?
+        .extract(state.zoned_datetime_type)
+        .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?;
+
+    // Do the shift and get the exact duration
+    let shifted = relative_to
+        .shift_default(d)
+        .ok_or_value_err("Resulting datetime is out of range")?;
+    let tdelta = shifted.instant().diff(relative_to.instant());
+
+    // ------
+
+    let cal_unit = match unit.to_exact(false) {
+        Ok(ExactUnit::Nanoseconds) => {
+            // Special case: nanoseconds returned as int for precision reasons
+            return tdelta.total_nanos().to_py();
+        }
+        Ok(exact_unit) => {
+            return (tdelta.to_nanos_f64() / exact_unit.in_nanos() as f64).to_py();
+        }
+        Err(cal_unit) => cal_unit,
+    };
+
+    let sign = if tdelta.secs.get() >= 0 { 1 } else { -1 };
+    let shifted_inst = shifted.instant();
+
+    let target_date =
+        zoned_target(shifted.date, shifted_inst, relative_to, sign).ok_or_range_err()?;
+
+    let (trunc_amount, trunc_date, expand_date) =
+        cal_diff::date_diff_single_unit(target_date, relative_to.date, 1, cal_unit, sign)
+            .ok_or_range_err()?;
+
+    let trunc_odt = relative_to.with_date(trunc_date.into()).ok_or_range_err()?;
+    let expand_odt = relative_to
+        .with_date(expand_date.into())
+        .ok_or_range_err()?;
+
+    let r = shifted_inst.diff(trunc_odt.instant()).abs();
+    let e = expand_odt.instant().diff(trunc_odt.instant());
+
+    (trunc_amount as f64 + r.to_nanos_f64() / e.to_nanos_f64()).to_py()
+}
+
+fn _add_sub(
+    cls: HeapType<ItemizedDelta>,
+    d: ItemizedDelta,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+    negate: bool,
+) -> PyReturn {
+    let fname = if negate { "subtract" } else { "add" };
+    let state = cls.state();
+
+    let pos_arg = match args {
+        &[] => None,
+        &[arg] => Some(arg),
+        _ => raise_type_err(format!("{fname}() takes at most 1 positional argument"))?,
+    };
+
+    let mut relative_to_obj: Option<PyObj> = None;
+    let mut units_obj: Option<PyObj> = None;
+    let mut round_mode_obj: Option<PyObj> = None;
+    let mut round_inc_obj: Option<PyObj> = None;
+    // Component kwargs
+    let mut comp_months: i32 = 0;
+    let mut comp_days: i32 = 0;
+    let mut comp_nanos: i128 = 0;
+    // Track which component units are specified for default unit set
+    let mut comp_unit_set = UnitSet::EMPTY;
+
+    handle_kwargs(fname, kwargs, |key, value, eq| {
+        if eq(key, state.str_relative_to) {
+            relative_to_obj = Some(value);
+        } else if eq(key, state.str_units) {
+            units_obj = Some(value);
+        } else if eq(key, state.str_round_mode) {
+            round_mode_obj = Some(value);
+        } else if eq(key, state.str_round_increment) {
+            round_inc_obj = Some(value);
+        } else if datetime_delta::set_units_from_kwargs(
+            key,
+            value,
+            &mut comp_months,
+            &mut comp_days,
+            &mut comp_nanos,
+            state,
+            eq,
+        )? {
+            // Track the unit
+            if eq(key, state.str_years) {
+                comp_unit_set.insert(DeltaUnit::Years);
+            } else if eq(key, state.str_months) {
+                comp_unit_set.insert(DeltaUnit::Months);
+            } else if eq(key, state.str_weeks) {
+                comp_unit_set.insert(DeltaUnit::Weeks);
+            } else if eq(key, state.str_days) {
+                comp_unit_set.insert(DeltaUnit::Days);
+            } else if eq(key, state.str_hours) {
+                comp_unit_set.insert(DeltaUnit::Hours);
+            } else if eq(key, state.str_minutes) {
+                comp_unit_set.insert(DeltaUnit::Minutes);
+            } else if eq(key, state.str_seconds) {
+                comp_unit_set.insert(DeltaUnit::Seconds);
+            } else if eq(key, state.str_nanoseconds) {
+                comp_unit_set.insert(DeltaUnit::Nanoseconds);
+            }
+        } else {
+            raise_value_err(format!("Invalid field: {key}"))?;
+        }
+        Ok(true)
+    })?;
+
+    let zdt = relative_to_obj
+        .ok_or_type_err("missing required keyword argument: 'relative_to'")?
+        .extract(state.zoned_datetime_type)
+        .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?;
+
+    let (round_mode, round_increment) =
+        parse_rounding_kwargs(state, round_mode_obj, round_inc_obj)?;
+
+    // Determine other delta to add
+    let (other_months, other_days, other_tdelta, other_unit_set) =
+        match (pos_arg, !comp_unit_set.is_empty()) {
+            (Some(_), true) => raise_type_err("Cannot mix positional and keyword arguments")?,
+            (Some(arg), false) => {
+                let other: ItemizedDelta = arg
+                    .extract(state.itemized_delta_type)
+                    .ok_or_type_err(format!("{fname}() argument must be an ItemizedDelta"))?;
+                let other = if negate { other.negated() } else { other };
+                let (m, dy, td) = other
+                    .to_components()
+                    .ok_or_value_err("Delta components out of range")?;
+                (m, dy, td, other.unit_set())
+            }
+            (None, true) => {
+                let sign: i64 = if negate { -1 } else { 1 };
+                let m = DeltaMonths::new(comp_months * sign as i32)
+                    .ok_or_value_err("Total months out of range")?;
+                let dy = DeltaDays::new(comp_days * sign as i32)
+                    .ok_or_value_err("Total days out of range")?;
+                let td = TimeDelta::from_nanos(comp_nanos * sign as i128)
+                    .ok_or_value_err("Total duration out of range")?;
+                (m, dy, td, comp_unit_set)
+            }
+            (None, false) => {
+                // No other arg: just convert self to the specified or default units
+                let units = match units_obj {
+                    Some(seq) => cal_diff::parse_delta_units_sequence(seq, state)?,
+                    None => d.unit_set(),
+                };
+                let shifted = zdt
+                    .shift_default(d)
+                    .ok_or_value_err("Resulting datetime out of range")?;
+                let parsed = FullSinceUntilArgs {
+                    units,
+                    single_unit_mode: false,
+                    round_mode,
+                    round_increment,
+                };
+                return zoned_since(state, shifted, zdt, true, &parsed);
+            }
+        };
+
+    // Determine output units
+    let units = match units_obj {
+        Some(seq) => cal_diff::parse_delta_units_sequence(seq, state)?,
+        None => d.unit_set().union(other_unit_set),
+    };
+
+    let shifted = zdt
+        .shift_default(d)
+        .and_then(|odt| odt.shift_in_tz(other_months, other_days, other_tdelta, zdt.tz))
+        .ok_or_value_err("Resulting datetime out of range")?;
+
+    let parsed = FullSinceUntilArgs {
+        units,
+        single_unit_mode: false,
+        round_mode,
+        round_increment,
+    };
+    zoned_since(state, shifted, zdt, true, &parsed)
+}
+
+fn add(
+    cls: HeapType<ItemizedDelta>,
+    d: ItemizedDelta,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    _add_sub(cls, d, args, kwargs, false)
+}
+
+fn subtract(
+    cls: HeapType<ItemizedDelta>,
+    d: ItemizedDelta,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    _add_sub(cls, d, args, kwargs, true)
 }
 
 #[allow(static_mut_refs)]
@@ -790,11 +1092,7 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter!(
-        ItemizedDelta,
-        sign,
-        "The sign of the delta: 1, 0, or -1"
-    ),
+    getter!(ItemizedDelta, sign, "The sign of the delta: 1, 0, or -1"),
     PyGetSetDef {
         name: NULL(),
         get: None,
@@ -807,27 +1105,15 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
 static mut METHODS: &[PyMethodDef] = &[
     method0!(ItemizedDelta, __copy__, c""),
     method1!(ItemizedDelta, __deepcopy__, c""),
-    method_kwargs!(
-        ItemizedDelta,
-        format_iso,
-        doc::ITEMIZEDDELTA_FORMAT_ISO
-    ),
-    classmethod1!(
-        ItemizedDelta,
-        parse_iso,
-        doc::ITEMIZEDDELTA_PARSE_ISO
-    ),
-    method1!(
-        ItemizedDelta,
-        exact_eq,
-        doc::ITEMIZEDDELTA_EXACT_EQ
-    ),
-    method_kwargs!(
-        ItemizedDelta,
-        replace,
-        doc::ITEMIZEDDELTA_REPLACE
-    ),
+    method_kwargs!(ItemizedDelta, format_iso, doc::ITEMIZEDDELTA_FORMAT_ISO),
+    classmethod1!(ItemizedDelta, parse_iso, doc::ITEMIZEDDELTA_PARSE_ISO),
+    method1!(ItemizedDelta, exact_eq, doc::ITEMIZEDDELTA_EXACT_EQ),
+    method_kwargs!(ItemizedDelta, replace, doc::ITEMIZEDDELTA_REPLACE),
     method0!(ItemizedDelta, parts, doc::ITEMIZEDDELTA_PARTS),
+    method_kwargs!(ItemizedDelta, in_units, doc::ITEMIZEDDELTA_IN_UNITS),
+    method_kwargs!(ItemizedDelta, total, doc::ITEMIZEDDELTA_TOTAL),
+    method_kwargs!(ItemizedDelta, add, doc::ITEMIZEDDELTA_ADD),
+    method_kwargs!(ItemizedDelta, subtract, doc::ITEMIZEDDELTA_SUBTRACT),
     method0!(ItemizedDelta, __reduce__, c""),
     classmethod_kwargs!(
         ItemizedDelta,
