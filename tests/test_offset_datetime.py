@@ -125,6 +125,7 @@ class TestInit:
             OffsetDateTime(2020, 8, 15, 12, 30, offset=5)
         )
 
+
 def test_immutable():
     d = OffsetDateTime(2020, 8, 15, offset=minutes(5))
     with pytest.raises(AttributeError):
@@ -1840,7 +1841,7 @@ INVALID_RFC2822 = [
     "Sat, 1 Jan 1989 23:23:01 +0300 ,",
     "Sat, 1 Jan 1989 23:23:01 +0300 MST",
     # leap second out of range
-    "Sat, 31 Dec 2016 23:59:61 +0000"
+    "Sat, 31 Dec 2016 23:59:61 +0000",
 ]
 
 

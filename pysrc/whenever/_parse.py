@@ -280,10 +280,10 @@ else:  # pragma: no cover
             if s.endswith("60"):
                 s = s[:4] + "59"
             s = s[:2] + ":" + s[2:4] + ":" + s[4:]
-        if all(map("0123456789:".__contains__, s)):
+        elif s.count(":") == 2 and s.endswith(":60"):
             # Normalize leap seconds (60) to 59 in extended format
-            if s.endswith(":60"):
-                s = s[:-2] + "59"
+            s = s[:-2] + "59"
+        if all(map("0123456789:".__contains__, s)):
             return _time.fromisoformat(s)
         raise ValueError()
 
