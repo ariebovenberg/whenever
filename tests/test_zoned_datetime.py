@@ -355,7 +355,9 @@ class TestInit:
         # Leap second (60) should be parsed and normalized to 59
         assert ZonedDateTime.parse_iso(
             "2020-08-15T05:12:60-04:00[America/New_York]"
-        ).exact_eq(ZonedDateTime(2020, 8, 15, 5, 12, 59, tz="America/New_York"))
+        ).exact_eq(
+            ZonedDateTime(2020, 8, 15, 5, 12, 59, tz="America/New_York")
+        )
 
         # Direct construction should still reject 60
         with pytest.raises(ValueError):
@@ -2695,8 +2697,14 @@ class TestParseIso:
             (
                 "2020-08-15T05:12:60.123456-04:00[America/New_York]",
                 ZonedDateTime(
-                    2020, 8, 15, 5, 12, 59,
-                    nanosecond=123_456_000, tz="America/New_York",
+                    2020,
+                    8,
+                    15,
+                    5,
+                    12,
+                    59,
+                    nanosecond=123_456_000,
+                    tz="America/New_York",
                 ),
             ),
             (

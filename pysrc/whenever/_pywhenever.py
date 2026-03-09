@@ -1476,9 +1476,9 @@ class Time(_Base):
     @classmethod
     def _from_ns_since_midnight(cls, ns: int) -> Time:
         assert 0 <= ns < 86_400_000_000_000
-        (hours, ns) = divmod(ns, 3_600_000_000_000)
-        (minutes, ns) = divmod(ns, 60_000_000_000)
-        (seconds, ns) = divmod(ns, 1_000_000_000)
+        hours, ns = divmod(ns, 3_600_000_000_000)
+        minutes, ns = divmod(ns, 60_000_000_000)
+        seconds, ns = divmod(ns, 1_000_000_000)
         return cls._from_py_unchecked(_time(hours, minutes, seconds), ns)
 
     def round(
@@ -9585,6 +9585,7 @@ def _load_offset(offset: int | TimeDelta, /) -> _timezone:
 # Helpers that pre-compute/lookup as much as possible
 _no_tzinfo_fold_or_ms = {"tzinfo", "fold", "microsecond"}.isdisjoint
 _fromtimestamp = _datetime.fromtimestamp
+
 
 
 def _format_date(d: _date, basic: bool) -> str:
