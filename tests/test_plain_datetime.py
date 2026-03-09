@@ -90,43 +90,6 @@ class TestInit:
         with pytest.raises(ValueError):
             PlainDateTime(2020, 8, 15, 5, 12, 60)
 
-    def test_leap_seconds_comprehensive(self):
-        # Extended format with various fractional seconds
-        assert PlainDateTime.parse_iso(
-            "2020-08-15T23:59:60.999999999"
-        ) == PlainDateTime(2020, 8, 15, 23, 59, 59, nanosecond=999_999_999)
-        assert PlainDateTime.parse_iso(
-            "2020-08-15T12:34:60.5"
-        ) == PlainDateTime(2020, 8, 15, 12, 34, 59, nanosecond=500_000_000)
-
-        # Basic format with fractional seconds
-        assert PlainDateTime.parse_iso(
-            "20200815T123460.123456"
-        ) == PlainDateTime(2020, 8, 15, 12, 34, 59, nanosecond=123_456_000)
-
-        # Comma as decimal separator
-        assert PlainDateTime.parse_iso(
-            "2020-08-15T12:34:60,5"
-        ) == PlainDateTime(2020, 8, 15, 12, 34, 59, nanosecond=500_000_000)
-
-        # Various dates with leap seconds
-        assert PlainDateTime.parse_iso("1999-12-31T23:59:60") == PlainDateTime(
-            1999, 12, 31, 23, 59, 59
-        )
-        assert PlainDateTime.parse_iso("2012-06-30T23:59:60") == PlainDateTime(
-            2012, 6, 30, 23, 59, 59
-        )
-        assert PlainDateTime.parse_iso("2015-06-30T23:59:60") == PlainDateTime(
-            2015, 6, 30, 23, 59, 59
-        )
-
-    def test_leap_seconds_invalid_datetimes(self):
-        # 61 and above should still be rejected
-        with pytest.raises(ValueError, match="Invalid format"):
-            PlainDateTime.parse_iso("2020-08-15T12:34:61")
-        with pytest.raises(ValueError, match="Invalid format"):
-            PlainDateTime.parse_iso("2020-08-15T12:34:99")
-
 
 def test_components():
     d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_123)
@@ -341,6 +304,18 @@ class TestParseIso:
             ("20200815T02", (2020, 8, 15, 2, 0, 0, 0)),
             ("20200815T0215", (2020, 8, 15, 2, 15, 0, 0)),
             ("1234-01-03T23", (1234, 1, 3, 23, 0, 0, 0)),
+            # leap second cases: 60 is normalized to 59
+            ("2020-08-15T23:59:60", (2020, 8, 15, 23, 59, 59, 0)),
+            (
+                "2020-08-15T23:59:60.999999999",
+                (2020, 8, 15, 23, 59, 59, 999_999_999),
+            ),
+            ("2020-08-15T12:34:60.5", (2020, 8, 15, 12, 34, 59, 500_000_000)),
+            (
+                "20200815T123460.123456",
+                (2020, 8, 15, 12, 34, 59, 123_456_000),
+            ),
+            ("2020-08-15T12:34:60,5", (2020, 8, 15, 12, 34, 59, 500_000_000)),
         ],
     )
     def test_valid(self, s, expected):
@@ -402,6 +377,9 @@ class TestParseIso:
             "2020W081T12:08:30",
             "2020081T12:08:30",
             "2020-081T12:08:30",
+            # invalid leap second cases
+            "2020-08-15T12:34:61",
+            "2020-08-15T12:34:99",
         ],
     )
     def test_invalid(self, s):
