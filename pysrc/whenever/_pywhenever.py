@@ -1128,9 +1128,9 @@ class Time(_Base):
     @classmethod
     def _from_ns_since_midnight(cls, ns: int) -> Time:
         assert 0 <= ns < 86_400_000_000_000
-        (hours, ns) = divmod(ns, 3_600_000_000_000)
-        (minutes, ns) = divmod(ns, 60_000_000_000)
-        (seconds, ns) = divmod(ns, 1_000_000_000)
+        hours, ns = divmod(ns, 3_600_000_000_000)
+        minutes, ns = divmod(ns, 60_000_000_000)
+        seconds, ns = divmod(ns, 1_000_000_000)
         return cls._from_py_unchecked(_time(hours, minutes, seconds), ns)
 
     def round(
@@ -5918,10 +5918,10 @@ else:  # pragma: no cover
             if s.endswith("60"):
                 s = s[:4] + "59"
             s = s[:2] + ":" + s[2:4] + ":" + s[4:]
-        if all(map("0123456789:".__contains__, s)):
+        elif s.count(":") == 2 and s.endswith(":60"):
             # Normalize leap seconds (60) to 59 in extended format
-            if s.endswith(":60"):
-                s = s[:-2] + "59"
+            s = s[:-2] + "59"
+        if all(map("0123456789:".__contains__, s)):
             return _time.fromisoformat(s)
         raise ValueError()
 

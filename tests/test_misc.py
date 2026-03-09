@@ -344,7 +344,7 @@ def test_pydantic():
 
 def test_get_system_tz():
 
-    (tz_type, tz_value) = get_tz()
+    tz_type, tz_value = get_tz()
     assert tz_type in (0, 1, 2)
     assert isinstance(tz_value, str)
 
