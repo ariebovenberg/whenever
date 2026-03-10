@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from typing import TypeAlias
 
 from ._core import *
@@ -53,4 +54,6 @@ def __getattr__(name: str) -> object:
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-AnyDelta: TypeAlias = DateDelta | TimeDelta | DateTimeDelta | ItemizedDelta | ItemizedDateDelta
+AnyDelta: TypeAlias = (
+    DateDelta | TimeDelta | DateTimeDelta | ItemizedDelta | ItemizedDateDelta
+)

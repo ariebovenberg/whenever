@@ -211,9 +211,7 @@ fn __new__(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyR
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let arg = args.iter().next().unwrap();
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
-            return Instant::from_py(dt)?
-                .ok_or_else_value_err(|| format!("datetime {dt} out of range"))?
-                .to_obj(cls);
+            return Instant::from_py(dt)?.ok_or_range_err()?.to_obj(cls);
         }
         parse_iso(cls, arg)
     } else {
@@ -248,8 +246,8 @@ fn from_utc(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> Py
     );
 
     Instant::from_datetime(
-        Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?,
-        Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?,
+        Date::from_longs(year, month, day).ok_or_value_err("invalid date")?,
+        Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?,
     )
     .to_obj(cls)
 }
@@ -332,7 +330,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         } else if let Some(odt) = obj_b.extract(state.offset_datetime_type) {
             odt.instant()
         } else {
-            return _shift(inst_type, inst_a, state.time_delta_type, obj_b, true);
+            return shift_inner(inst_type, inst_a, state.time_delta_type, obj_b, true);
         };
         (state, inst_a, inst_b)
     } else {
@@ -346,14 +344,14 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
         let (inst_type, a) = unsafe { obj_a.assume_heaptype::<Instant>() };
-        _shift(inst_type, a, state.time_delta_type, obj_b, false)
+        shift_inner(inst_type, a, state.time_delta_type, obj_b, false)
     } else {
         not_implemented()
     }
 }
 
 #[inline]
-fn _shift(
+fn shift_inner(
     cls: HeapType<Instant>,
     inst: Instant,
     tdelta_cls: HeapType<TimeDelta>,
@@ -369,9 +367,7 @@ fn _shift(
     if negate {
         delta = -delta;
     }
-    inst.shift(delta)
-        .ok_or_value_err("Resulting datetime is out of range")?
-        .to_obj(cls)
+    inst.shift(delta).ok_or_range_err()?.to_obj(cls)
 }
 
 #[allow(static_mut_refs)]
@@ -408,7 +404,7 @@ fn exact_eq(cls: HeapType<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     if let Some(i) = obj_b.extract(cls) {
         (slf == i).to_py()
     } else {
-        raise_type_err("Can't compare different types")?
+        raise_type_err("can't compare different types")?
     }
 }
 
@@ -427,10 +423,10 @@ fn __reduce__(
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let binding = arg
         .cast_exact::<PyBytes>()
-        .ok_or_type_err("Invalid pickle data")?;
+        .ok_or_type_err("invalid pickle data")?;
     let mut packed = binding.as_bytes()?;
     if packed.len() != 12 {
-        raise_value_err("Invalid pickle data")?;
+        raise_value_err("invalid pickle data")?;
     }
     Instant {
         epoch: EpochSecs::new_unchecked(unpack_one!(packed, i64)),
@@ -443,10 +439,10 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
 pub(crate) fn unpickle_pre_0_8(state: &State, arg: PyObj) -> PyReturn {
     let binding = arg
         .cast_exact::<PyBytes>()
-        .ok_or_type_err("Invalid pickle data")?;
+        .ok_or_type_err("invalid pickle data")?;
     let mut packed = binding.as_bytes()?;
     if packed.len() != 12 {
-        raise_value_err("Invalid pickle data")?;
+        raise_value_err("invalid pickle data")?;
     }
     Instant {
         epoch: EpochSecs::new_unchecked(unpack_one!(packed, i64) + EpochSecs::MIN.get() - 86_400),
@@ -473,9 +469,9 @@ fn from_timestamp(cls: HeapType<Instant>, ts: PyObj) -> PyReturn {
     } else if let Some(py_float) = ts.cast_allow_subclass::<PyFloat>() {
         Instant::from_timestamp_f64(py_float.to_f64()?)
     } else {
-        return raise_type_err("Timestamp must be an integer or float");
+        return raise_type_err("timestamp must be an integer or float");
     }
-    .ok_or_value_err("Timestamp out of range")?
+    .ok_or_range_err()?
     .to_obj(cls)
 }
 
@@ -483,9 +479,9 @@ fn from_timestamp_millis(cls: HeapType<Instant>, ts: PyObj) -> PyReturn {
     if let Some(py_int) = ts.cast_allow_subclass::<PyInt>() {
         Instant::from_timestamp_millis(py_int.to_i64()?)
     } else {
-        return raise_type_err("Timestamp must be an integer");
+        return raise_type_err("timestamp must be an integer");
     }
-    .ok_or_value_err("Timestamp out of range")?
+    .ok_or_range_err()?
     .to_obj(cls)
 }
 
@@ -493,9 +489,9 @@ fn from_timestamp_nanos(cls: HeapType<Instant>, ts: PyObj) -> PyReturn {
     if let Some(py_int) = ts.cast_allow_subclass::<PyInt>() {
         Instant::from_timestamp_nanos(py_int.to_i128()?)
     } else {
-        return raise_type_err("Timestamp must be an integer");
+        return raise_type_err("timestamp must be an integer");
     }
-    .ok_or_value_err("Timestamp out of range")?
+    .ok_or_range_err()?
     .to_obj(cls)
 }
 
@@ -505,11 +501,9 @@ fn py_datetime(cls: HeapType<Instant>, slf: Instant) -> PyReturn {
 
 fn from_py_datetime(cls: HeapType<Instant>, obj: PyObj) -> PyReturn {
     if let Some(dt) = obj.cast_allow_subclass::<PyDateTime>() {
-        Instant::from_py(dt)?
-            .ok_or_else_value_err(|| format!("datetime {dt} out of range"))?
-            .to_obj(cls)
+        Instant::from_py(dt)?.ok_or_range_err()?.to_obj(cls)
     } else {
-        raise_type_err("Expected a datetime object")
+        raise_type_err("expected a datetime object")
     }
 }
 
@@ -533,7 +527,7 @@ fn parse_iso(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
             .cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
             // called through the constructor
-            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
+            .ok_or_type_err("when parsing from ISO format, the argument must be str")?
             .as_utf8()?,
     )
     .ok_or_else_value_err(|| format!("Invalid format: {s_obj}"))?
@@ -542,7 +536,7 @@ fn parse_iso(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
 }
 
 fn add(cls: HeapType<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    _shift_method(cls, slf, args, kwargs, false)
+    shift_method(cls, slf, args, kwargs, false)
 }
 
 fn subtract(
@@ -551,11 +545,11 @@ fn subtract(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    _shift_method(cls, slf, args, kwargs, true)
+    shift_method(cls, slf, args, kwargs, true)
 }
 
 #[inline]
-fn _shift_method(
+fn shift_method(
     cls: HeapType<Instant>,
     instant: Instant,
     args: &[PyObj],
@@ -594,7 +588,7 @@ fn _shift_method(
                 .ok_or_value_err("nanoseconds must be an integer")?
                 .to_i128()?
                 .checked_add(nanos)
-                .ok_or_value_err("total nanoseconds out of range")?;
+                .ok_or_range_err()?;
         } else {
             return Ok(false);
         }
@@ -605,8 +599,8 @@ fn _shift_method(
     }
 
     instant
-        .shift(TimeDelta::from_nanos(nanos).ok_or_value_err("Total duration out of range")?)
-        .ok_or_value_err("Resulting datetime is out of range")?
+        .shift(TimeDelta::from_nanos(nanos).ok_or_range_err()?)
+        .ok_or_range_err()?
         .to_obj(cls)
 }
 
@@ -653,7 +647,7 @@ fn to_fixed_offset(cls: HeapType<Instant>, slf: Instant, args: &[PyObj]) -> PyRe
         [] => slf.utc_datetime().with_offset_unchecked(Offset::ZERO),
         [arg] => slf
             .to_offset(Offset::from_obj(arg, time_delta_type)?)
-            .ok_or_value_err("Resulting date is out of range")?,
+            .ok_or_range_err()?,
         _ => raise_type_err("to_fixed_offset() takes at most 1 argument")?,
     }
     .to_obj(offset_datetime_type)
@@ -678,11 +672,11 @@ fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn {
 fn parse_rfc2822(cls: HeapType<Instant>, s_obj: PyObj) -> PyReturn {
     let s = s_obj
         .cast_allow_subclass::<PyStr>()
-        .ok_or_type_err("Expected a string")?;
+        .ok_or_type_err("expected a string")?;
     let (date, time, offset) =
         rfc2822::parse(s.as_utf8()?).ok_or_else_value_err(|| format!("Invalid format: {s_obj}"))?;
     OffsetDateTime::new(date, time, offset)
-        .ok_or_value_err("Instant out of range")?
+        .ok_or_range_err()?
         .instant()
         .to_obj(cls)
 }
@@ -693,18 +687,21 @@ fn round(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let (unit, increment, mode, _) = round::parse_args(cls.state(), args, kwargs, false, false)?;
-    if unit == round::Unit::Day {
-        raise_value_err(doc::CANNOT_ROUND_DAY_MSG)?;
-    }
+    let round::Args {
+        increment, mode, ..
+    } = round::Args::parse(cls.state(), args, kwargs, false)?;
+    let round_nanos = match increment {
+        round::RoundIncrement::Day => raise_value_err(doc::CANNOT_ROUND_DAY_MSG)?,
+        round::RoundIncrement::Exact(ns) => ns,
+    };
     let TimeDelta { secs, subsec } = slf
         .to_delta()
-        .round(increment, mode)
+        .round(round_nanos, mode)
         // SAFETY: TimeDelta has higher range than Instant,
         // so rounding cannot result in out-of-range
         .unwrap();
     Instant {
-        epoch: EpochSecs::new(secs.get()).ok_or_value_err("Resulting instant out of range")?,
+        epoch: EpochSecs::new(secs.get()).ok_or_range_err()?,
         subsec,
     }
     .to_obj(cls)

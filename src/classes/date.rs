@@ -16,8 +16,8 @@ use crate::{
         yearmonth::YearMonth,
     },
     common::{
-        cal_diff::{self, CalUnit},
         fmt::{self, Chunk},
+        math::{self, CalUnit, CalUnitSet, DateRoundIncrement, DateSinceUnits},
         parse::{extract_2_digits, extract_digit},
         round,
         scalar::*,
@@ -55,6 +55,7 @@ impl Date {
     /// Like new(), but clamps the day (up to 31) to to shorter months
     pub fn new_clamp_days(year: Year, month: Month, day: u8) -> Self {
         debug_assert!(day <= 31);
+        debug_assert!(day > 0);
         Date {
             year,
             month,
@@ -89,7 +90,7 @@ impl Date {
     }
 
     pub(crate) fn unix_days(self) -> UnixDays {
-        // Safety: unix days and dates have the same range, conversions are always valid
+        // SAFETY: unix days and dates have the same range, conversions are always valid
         UnixDays::new_unchecked(
             self.year.days_before()
                 + self.year.days_before_month(self.month) as i32
@@ -296,7 +297,7 @@ fn __new__(cls: HeapType<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetu
     let mut day: c_long = 0;
     parse_args_kwargs!(args, kwargs, c"lll:Date", year, month, day);
     Date::from_longs(year, month, day)
-        .ok_or_value_err("Invalid date value")?
+        .ok_or_value_err("invalid date value")?
         .to_obj(cls)
 }
 
@@ -414,7 +415,7 @@ fn parse_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn {
         s.cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
             // called through the constructor
-            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
+            .ok_or_type_err("when parsing from ISO format, the argument must be str")?
             .as_utf8()?,
     )
     .ok_or_else_value_err(|| format!("Invalid format: {s}"))?
@@ -497,7 +498,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
                 })?;
         date.shift_months(-months)
             .and_then(|date| date.shift_days(-days))
-            .ok_or_value_err("Resulting date out of range")?
+            .ok_or_range_err()?
             .to_obj(date_type)
     // Case: other types
     } else {
@@ -527,7 +528,7 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         // SAFETY: at least one of the operands must be a Date
         date.shift_months(months)
             .and_then(|date| date.shift_days(days))
-            .ok_or_value_err("Resulting date out of range")?
+            .ok_or_range_err()?
             .to_obj(date_type)
     } else {
         not_implemented()
@@ -535,15 +536,15 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
 }
 
 fn add(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    _shift_method(cls, slf, args, kwargs, false)
+    shift_method(cls, slf, args, kwargs, false)
 }
 
 fn subtract(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    _shift_method(cls, slf, args, kwargs, true)
+    shift_method(cls, slf, args, kwargs, true)
 }
 
 #[inline]
-fn _shift_method(
+fn shift_method(
     cls: HeapType<Date>,
     slf: Date,
     args: &[PyObj],
@@ -557,8 +558,7 @@ fn _shift_method(
             if let Some(d) = arg.extract(state.date_delta_type) {
                 (d.months, d.days)
             } else if let Some(d) = arg.extract(state.itemized_date_delta_type) {
-                d.to_months_days()
-                    .ok_or_value_err("Total months/days out of range")?
+                d.to_months_days().ok_or_range_err()?
             } else {
                 raise_type_err(format!(
                     "{fname}() argument must be a DateDelta or ItemizedDateDelta"
@@ -584,48 +584,90 @@ fn _shift_method(
         months = -months;
     }
 
-    slf.shift(months, days)
-        .ok_or_value_err("Resulting date out of range")?
-        .to_obj(cls)
+    slf.shift(months, days).ok_or_range_err()?.to_obj(cls)
 }
 
 fn since(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    let b = args
-        .first()
-        .ok_or_type_err("since() missing required positional argument")?
-        .extract(cls)
-        .ok_or_type_err("argument must be a whenever.Date")?;
-    let parsed = cal_diff::parse_date_since_kwargs(cls.state(), args, kwargs)?;
-    _since(cls, slf, b, &parsed)
+    since_inner(cls, slf, args, kwargs, "since", false)
 }
 
 fn until(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    let b = args
-        .first()
-        .ok_or_type_err("until() missing required positional argument")?
-        .extract(cls)
-        .ok_or_type_err("argument must be a whenever.Date")?;
-    let parsed = cal_diff::parse_date_since_kwargs(cls.state(), args, kwargs)?;
-    _since(cls, b, slf, &parsed)
+    since_inner(cls, slf, args, kwargs, "until", true)
 }
 
-/// Core date-since computation returning an ItemizedDateDelta.
-/// Used by Date.since()/until() and by ItemizedDateDelta.in_units()/add().
+fn since_inner(
+    cls: HeapType<Date>,
+    slf: Date,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+    fname: &str,
+    negate: bool,
+) -> PyReturn {
+    let state = cls.state();
+    let &State {
+        str_unit,
+        str_units,
+        str_round_mode,
+        str_round_increment,
+        round_mode_strs,
+        ..
+    } = state;
+
+    let other = handle_one_arg(fname, args)?
+        .extract(cls)
+        .ok_or_type_err("argument must be a Date")?;
+
+    let mut units: Option<math::DateSinceUnits> = None;
+    let mut round_mode = round::Mode::Trunc;
+    let mut round_increment = math::DateRoundIncrement::MIN;
+    handle_kwargs(fname, kwargs, |key, value, eq| {
+        if eq(key, str_unit) {
+            if units.is_some() {
+                return raise_type_err("cannot specify both 'unit' and 'units'");
+            }
+            units = Some(DateSinceUnits::One(CalUnit::from_py(value, state)?));
+        } else if eq(key, str_units) {
+            if units.is_some() {
+                return raise_type_err("cannot specify both 'unit' and 'units'");
+            }
+            units = Some(DateSinceUnits::Set(CalUnitSet::from_py(value, state)?));
+        } else if eq(key, str_round_mode) {
+            round_mode = round::Mode::from_py_named("round_mode", value, round_mode_strs)?;
+        } else if eq(key, str_round_increment) {
+            round_increment = DateRoundIncrement::from_py(value)?;
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    })?;
+
+    let (a, b) = if negate { (other, slf) } else { (slf, other) };
+    match units {
+        Some(DateSinceUnits::One(unit)) => {
+            since_with_single_unit(a, b, unit, round_mode, round_increment)
+        }
+        Some(DateSinceUnits::Set(units)) => {
+            date_since_iddelta(a, b, units, round_mode, round_increment)
+                .unwrap()
+                .to_obj(cls.state().itemized_date_delta_type)
+        }
+        None => raise_type_err("must specify either 'unit' or 'units'"),
+    }
+}
+
 pub(crate) fn date_since_iddelta(
     a: Date,
     b: Date,
-    units: cal_diff::UnitSet,
+    units: CalUnitSet,
     round_mode: round::Mode,
-    round_increment: i32,
+    round_increment: DateRoundIncrement,
 ) -> PyResult<ItemizedDateDelta> {
     let sign = if a >= b { 1 } else { -1 };
-    let smallest_unit = units.smallest();
-
     let (mut result, trunc, expand) =
-        cal_diff::date_diff(a, b, round_increment, units, sign).ok_or_range_err()?;
+        math::date_diff(a, b, round_increment, units, sign).ok_or_range_err()?;
 
     result.round_by_days(
-        smallest_unit.to_cal().unwrap(),
+        units.smallest(),
         a,
         trunc.into(),
         expand.into(),
@@ -636,19 +678,19 @@ pub(crate) fn date_since_iddelta(
     Ok(result)
 }
 
-fn _since_with_single_unit(
+fn since_with_single_unit(
     a: Date,
     b: Date,
     unit: CalUnit,
     round_mode: round::Mode,
-    round_increment: i32,
+    round_increment: DateRoundIncrement,
 ) -> PyReturn {
     let sign: i8 = if a >= b { 1 } else { -1 };
 
     let (result, trunc, expand) =
-        cal_diff::date_diff_single_unit(a, b, round_increment, unit, sign).ok_or_range_err()?;
+        math::date_diff_single_unit(a, b, round_increment, unit, sign).ok_or_range_err()?;
 
-    cal_diff::round_by_days(
+    math::round_by_days(
         result,
         a,
         trunc.into(),
@@ -658,27 +700,6 @@ fn _since_with_single_unit(
         sign,
     )
     .to_py()
-}
-
-fn _since(cls: HeapType<Date>, a: Date, b: Date, parsed: &cal_diff::SinceUntilArgs) -> PyReturn {
-    if parsed.single_unit_mode {
-        _since_with_single_unit(
-            a,
-            b,
-            parsed.units.smallest().to_cal().unwrap(),
-            parsed.round_mode,
-            parsed.round_increment,
-        )
-    } else {
-        date_since_iddelta(
-            a,
-            b,
-            parsed.units,
-            parsed.round_mode,
-            parsed.round_increment,
-        )?
-        .to_obj(cls.state().itemized_date_delta_type)
-    }
 }
 
 fn days_since(cls: HeapType<Date>, slf: Date, other: PyObj) -> PyReturn {
@@ -749,7 +770,7 @@ fn replace(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwar
         Ok(true)
     })?;
     Date::from_longs(year, month, day)
-        .ok_or_value_err("Invalid date components")?
+        .ok_or_value_err("invalid date components")?
         .to_obj(cls)
 }
 
@@ -819,10 +840,10 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let binding = arg
         .cast_exact::<PyBytes>()
-        .ok_or_type_err("Invalid pickle data")?;
+        .ok_or_type_err("invalid pickle data")?;
     let mut packed = binding.as_bytes()?;
     if packed.len() != 4 {
-        raise_value_err("Invalid pickle data")?
+        raise_value_err("invalid pickle data")?
     }
     Date {
         year: Year::new_unchecked(unpack_one!(packed, u16)),

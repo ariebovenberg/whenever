@@ -61,7 +61,7 @@ class TestInit:
             assert d.get(unit, 0) == kwargs.get(unit, 0)
 
     def test_no_components(self):
-        with pytest.raises(ValueError, match="At least one"):
+        with pytest.raises(ValueError, match="[Aa]t least one"):
             ItemizedDelta()
 
     @pytest.mark.parametrize(
@@ -489,7 +489,7 @@ def test_in_units(
     ],
     kwargs: Any,
     is_exact: bool,
-    expect: ItemizedDateDelta,
+    expect: ItemizedDelta,
 ):
     assert d.in_units(units, relative_to=relative_to, **kwargs).exact_eq(
         expect
@@ -510,7 +510,7 @@ class TestAddSub:
                 ItemizedDelta(years=1, months=2, seconds=500),
                 ZonedDateTime("2021-12-31T15:16Z[America/Sao_Paulo]"),
                 ItemizedDelta(years=3, months=5, minutes=13, seconds=20),
-                {},
+                {"units": ["years", "months", "minutes", "seconds"]},
             ),
             # with carry
             (
@@ -526,7 +526,16 @@ class TestAddSub:
                 ItemizedDelta(
                     years=4, months=1, weeks=3, days=2, hours=1, seconds=2442
                 ),
-                {},
+                {
+                    "units": [
+                        "years",
+                        "months",
+                        "weeks",
+                        "days",
+                        "hours",
+                        "seconds",
+                    ]
+                },
             ),
             # different units
             (
@@ -536,7 +545,7 @@ class TestAddSub:
                 ItemizedDelta(
                     years=3, months=9, days=7, minutes=180, seconds=3
                 ),
-                {},
+                {"units": ["years", "months", "days", "minutes", "seconds"]},
             ),
             # customized output kwargs
             (
@@ -558,7 +567,7 @@ class TestAddSub:
                     "2024-02-29T05:16:00.00004Z[America/Los_Angeles]"
                 ),
                 ItemizedDelta(years=0, months=0, hours=0, minutes=0),
-                {},
+                {"units": ["years", "months", "hours", "minutes"]},
             ),
             # negative arg, positive result
             (
@@ -566,7 +575,7 @@ class TestAddSub:
                 ItemizedDelta(years=-1, months=-4, hours=-4_000),
                 ZonedDateTime("1995-03-30T23:16Z[Australia/Sydney]"),
                 ItemizedDelta(years=0, months=5, hours=369),
-                {},
+                {"units": ["years", "months", "hours"]},
             ),
             # negative arg, negative result
             (
@@ -574,7 +583,7 @@ class TestAddSub:
                 ItemizedDelta(years=-1, months=-20, hours=-4_000),
                 ZonedDateTime("1995-03-01T23:16Z[Australia/Sydney]"),
                 ItemizedDelta(years=-0, months=-10, hours=-326),
-                {},
+                {"units": ["years", "months", "hours"]},
             ),
         ],
     )
@@ -616,6 +625,7 @@ class TestAddSub:
                 days=-1,
                 minutes=3,
                 relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+                units=["days", "minutes"],
             )
             .exact_eq(ItemizedDelta(days=1, minutes=3))
         )
@@ -626,20 +636,23 @@ class TestAddSub:
                 ItemizedDelta(years=1),
                 years=3,
                 relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+                units=["years"],
             )
 
     def test_add_nothing(self):
         ItemizedDelta(years=2).add(
             relative_to=ZonedDateTime(
-                "2021-11-10T23:00:01.000200Z[Africa/Cairo]"
-            )
+                "2021-11-10T23:00:01.000200Z[Africa/Cairo]",
+            ),
+            units=["years"],
         ).exact_eq(ItemizedDelta(years=2))
 
-    def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="foo"):
+    def test_invalid_unit_kwarg(self):
+        with pytest.raises(TypeError, match="foo"):
             ItemizedDelta(years=2).add(  # type: ignore[call-overload]
                 foo=5,
                 relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+                units=["years", "months"],
             )
 
     def test_overflows(self):
@@ -647,6 +660,7 @@ class TestAddSub:
             ItemizedDelta(years=5_000).add(
                 years=5_000,
                 relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+                units=["years"],
             )
 
         # Overflow due to relative_to
@@ -654,6 +668,7 @@ class TestAddSub:
             ItemizedDelta(years=5).add(
                 months=29,
                 relative_to=ZonedDateTime("9994-12-31T00:00Z[Asia/Tokyo]"),
+                units=["years"],
             )
 
     def test_floor_round_mode_behaves_correctly_on_negative(self):
@@ -665,6 +680,7 @@ class TestAddSub:
             relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
             round_mode="floor",
             round_increment=2,
+            units=["years", "seconds"],
         ).exact_eq(ItemizedDelta(years=-3, seconds=-31036006))
 
 
@@ -814,7 +830,7 @@ def test_replace():
     )
 
     # last field dropped
-    with pytest.raises(ValueError, match="At least one"):
+    with pytest.raises(ValueError, match="[Aa]t least one"):
         d.replace(years=None, months=None, seconds=None)
 
     # no arguments

@@ -165,7 +165,7 @@ impl Time {
     /// Returns the rounded time and whether it has wrapped around to the next day (0 or 1)
     /// The increment is given in ns must be a divisor of 24 hours
     pub(crate) fn round(self, increment: u64, mode: round::Mode) -> (Self, u64) {
-        debug_assert!(86_400_000_000_000 % increment == 0);
+        debug_assert!(86_400_000_000_000u64.is_multiple_of(increment));
         let total_nanos = self.total_nanos();
         let quotient = total_nanos / increment;
         let remainder = total_nanos % increment;
@@ -348,7 +348,7 @@ fn __new__(cls: HeapType<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetu
     );
 
     Time::from_longs(hour, minute, second, nanosecond)
-        .ok_or_value_err("Invalid time component value")?
+        .ok_or_value_err("invalid time component value")?
         .to_obj(cls)
 }
 
@@ -501,7 +501,7 @@ fn parse_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn {
         s.cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
             // called through the constructor
-            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
+            .ok_or_type_err("when parsing from ISO format, the argument must be str")?
             .as_utf8()?,
     )
     .ok_or_else_value_err(|| format!("Invalid format: {s}"))?
@@ -578,17 +578,20 @@ fn replace(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwar
             Ok(true)
         })?;
         Time::from_longs(hour, minute, second, nanos)
-            .ok_or_value_err("Invalid time component value")?
+            .ok_or_value_err("invalid time component value")?
             .to_obj(cls)
     }
 }
 
 fn round(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    let (unit, increment, mode, _) = round::parse_args(cls.state(), args, kwargs, false, false)?;
-    if unit == round::Unit::Day {
-        raise_value_err("Cannot round Time to day")?;
-    }
-    slf.round(increment as u64, mode).0.to_obj(cls)
+    let round::Args {
+        increment, mode, ..
+    } = round::Args::parse(cls.state(), args, kwargs, false)?;
+    let increment_ns = match increment {
+        round::RoundIncrement::Day => raise_value_err("cannot round Time to day")?,
+        round::RoundIncrement::Exact(incr) => incr.get(),
+    };
+    slf.round(increment_ns, mode).0.to_obj(cls)
 }
 
 static mut METHODS: &[PyMethodDef] = &[
@@ -609,11 +612,11 @@ static mut METHODS: &[PyMethodDef] = &[
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let py_bytes = arg
         .cast_exact::<PyBytes>()
-        .ok_or_type_err("Invalid pickle data")?;
+        .ok_or_type_err("invalid pickle data")?;
 
     let mut data = py_bytes.as_bytes()?;
     if data.len() != 7 {
-        raise_type_err("Invalid pickle data")?
+        raise_type_err("invalid pickle data")?
     }
     Time {
         hour: unpack_one!(data, u8),

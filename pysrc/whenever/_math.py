@@ -247,7 +247,8 @@ def custom_round(
     match mode:
         case "half_even":
             do_expand = remainder * 2 > expanded or (
-                remainder * 2 == expanded and (trunc_value // increment) % 2 == 1
+                remainder * 2 == expanded
+                and (trunc_value // increment) % 2 == 1
             )
         case "expand":
             do_expand = remainder > 0

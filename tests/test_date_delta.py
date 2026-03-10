@@ -1,6 +1,8 @@
 import pickle
 import re
+import warnings
 from copy import copy, deepcopy
+from typing import Any
 
 import pytest
 
@@ -10,6 +12,7 @@ from whenever import (
     OffsetDateTime,
     Time,
     TimeDelta,
+    WheneverDeprecationWarning,
     days,
     months,
     weeks,
@@ -22,6 +25,12 @@ MAX_I64 = 1 << 64
 pytestmark = pytest.mark.filterwarnings(
     "ignore::whenever.WheneverDeprecationWarning"
 )
+
+
+def make_ddelta(**kwargs: Any) -> DateDelta:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return DateDelta(**kwargs)
 
 
 class TestInit:
@@ -63,10 +72,10 @@ class TestInit:
         )
 
     def test_mixing_signs_invalid(self):
-        with pytest.raises(ValueError, match="Mixed sign"):
+        with pytest.raises(ValueError, match="[Mm]ixed sign"):
             DateDelta(years=1, months=-13, weeks=3, days=4)
 
-        with pytest.raises(ValueError, match="Mixed sign"):
+        with pytest.raises(ValueError, match="[Mm]ixed sign"):
             DateDelta(months=-9, days=-1, weeks=1)
 
     def test_defaults(self):
@@ -156,22 +165,22 @@ def test_bool():
 
 
 @pytest.mark.parametrize(
-    "p, expect",
+    "delta, expect",
     [
-        (DateDelta(), "P0D"),
-        (DateDelta(years=-2), "-P2Y"),
-        (DateDelta(days=1), "P1D"),
-        (DateDelta(weeks=1), "P7D"),
-        (DateDelta(months=1), "P1M"),
-        (DateDelta(years=1), "P1Y"),
-        (DateDelta(years=1, months=2, weeks=3, days=4), "P1Y2M25D"),
-        (DateDelta(months=2, weeks=3), "P2M21D"),
-        (DateDelta(months=-2, weeks=-3), "-P2M21D"),
+        (make_ddelta(), "P0D"),
+        (make_ddelta(years=-2), "-P2Y"),
+        (make_ddelta(days=1), "P1D"),
+        (make_ddelta(weeks=1), "P7D"),
+        (make_ddelta(months=1), "P1M"),
+        (make_ddelta(years=1), "P1Y"),
+        (make_ddelta(years=1, months=2, weeks=3, days=4), "P1Y2M25D"),
+        (make_ddelta(months=2, weeks=3), "P2M21D"),
+        (make_ddelta(months=-2, weeks=-3), "-P2M21D"),
     ],
 )
-def test_format_iso(p, expect):
-    assert p.format_iso() == expect
-    assert str(p) == expect
+def test_format_iso(delta: DateDelta, expect: str):
+    assert delta.format_iso() == expect
+    assert str(delta) == expect
 
 
 INVALID_DDELTAS = [
@@ -210,22 +219,22 @@ INVALID_DDELTAS = [
 ]
 
 VALID_DDELTAS = [
-    ("P0D", DateDelta()),
-    ("P2Y", DateDelta(years=2)),
-    ("P1M", DateDelta(months=1)),
-    ("P1W", DateDelta(weeks=1)),
-    ("P1D", DateDelta(days=1)),
-    ("P1Y2M3W4D", DateDelta(years=1, months=2, weeks=3, days=4)),
-    ("P2M3W", DateDelta(months=2, weeks=3)),
-    ("-P2M", DateDelta(months=-2)),
-    ("-P2Y3W", DateDelta(years=-2, weeks=-3)),
-    ("P1Y2M3W4D", DateDelta(years=1, months=2, weeks=3, days=4)),
-    ("+P2M3W", DateDelta(months=2, weeks=3)),
-    ("-P2M", DateDelta(months=-2)),
-    ("+P2Y3W", DateDelta(years=2, weeks=3)),
+    ("P0D", make_ddelta()),
+    ("P2Y", make_ddelta(years=2)),
+    ("P1M", make_ddelta(months=1)),
+    ("P1W", make_ddelta(weeks=1)),
+    ("P1D", make_ddelta(days=1)),
+    ("P1Y2M3W4D", make_ddelta(years=1, months=2, weeks=3, days=4)),
+    ("P2M3W", make_ddelta(months=2, weeks=3)),
+    ("-P2M", make_ddelta(months=-2)),
+    ("-P2Y3W", make_ddelta(years=-2, weeks=-3)),
+    ("P1Y2M3W4D", make_ddelta(years=1, months=2, weeks=3, days=4)),
+    ("+P2M3W", make_ddelta(months=2, weeks=3)),
+    ("-P2M", make_ddelta(months=-2)),
+    ("+P2Y3W", make_ddelta(years=2, weeks=3)),
     # non-uppercase
-    ("+P2y3w", DateDelta(years=2, weeks=3)),
-    ("-p2y3w0d", DateDelta(years=-2, weeks=-3)),
+    ("+P2y3w", make_ddelta(years=2, weeks=3)),
+    ("-p2y3w0d", make_ddelta(years=-2, weeks=-3)),
 ]
 
 
@@ -251,11 +260,11 @@ class TestParseIso:
     "p, expect",
     [
         (
-            DateDelta(years=1, months=2, weeks=3, days=4),
+            make_ddelta(years=1, months=2, weeks=3, days=4),
             'DateDelta("P1y2m25d")',
         ),
         (DateDelta.ZERO, 'DateDelta("P0d")'),
-        (DateDelta(months=14), 'DateDelta("P1y2m")'),
+        (make_ddelta(months=14), 'DateDelta("P1y2m")'),
     ],
 )
 def test_repr(p, expect):
@@ -271,9 +280,9 @@ def test_negate():
 @pytest.mark.parametrize(
     "p",
     [
-        DateDelta(years=1, months=2, weeks=3, days=4),
-        DateDelta(),
-        DateDelta(years=-1, months=2),
+        make_ddelta(years=1, months=2, weeks=3, days=4),
+        make_ddelta(),
+        make_ddelta(years=-1, months=2),
     ],
 )
 def test_pos(p):
@@ -492,3 +501,64 @@ def test_cannot_subclass():
 
         class SubclassDateDelta(DateDelta):  # type: ignore[misc]
             pass
+
+
+class TestDeprecationWarnings:
+
+    @staticmethod
+    def _make_ddelta(**kwargs):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", WheneverDeprecationWarning)
+            return DateDelta(**kwargs)
+
+    def test_init(self):
+        with pytest.warns(WheneverDeprecationWarning, match="DateDelta"):
+            DateDelta(months=1)
+
+    def test_init_zero(self):
+        with pytest.warns(WheneverDeprecationWarning, match="DateDelta"):
+            DateDelta()
+
+    def test_parse_iso(self):
+        with pytest.warns(WheneverDeprecationWarning, match="DateDelta"):
+            DateDelta.parse_iso("P1M")
+
+    def test_init_from_string(self):
+        with pytest.warns(WheneverDeprecationWarning, match="DateDelta"):
+            DateDelta("P1M")
+
+    def test_add_time_delta(self):
+        d = self._make_ddelta(months=1)
+        with pytest.warns(WheneverDeprecationWarning, match="DateTimeDelta"):
+            d + TimeDelta(hours=1)
+
+    def test_radd_time_delta(self):
+        d = self._make_ddelta(months=1)
+        with pytest.warns(WheneverDeprecationWarning, match="DateTimeDelta"):
+            TimeDelta(hours=1) + d
+
+    def test_sub_time_delta(self):
+        d = self._make_ddelta(months=-1)
+        with pytest.warns(WheneverDeprecationWarning, match="DateTimeDelta"):
+            d - TimeDelta(hours=1)
+
+    def test_rsub_time_delta(self):
+        d = self._make_ddelta(months=-1)
+        with pytest.warns(WheneverDeprecationWarning, match="DateTimeDelta"):
+            TimeDelta(hours=1) - d
+
+    def test_years(self):
+        with pytest.warns(WheneverDeprecationWarning, match="years"):
+            years(1)
+
+    def test_months(self):
+        with pytest.warns(WheneverDeprecationWarning, match="months"):
+            months(1)
+
+    def test_weeks(self):
+        with pytest.warns(WheneverDeprecationWarning, match="weeks"):
+            weeks(1)
+
+    def test_days(self):
+        with pytest.warns(WheneverDeprecationWarning, match="days"):
+            days(1)

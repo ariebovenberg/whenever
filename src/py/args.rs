@@ -109,6 +109,7 @@ where
     Ok(())
 }
 
+/// Parse one (optional) kwarg from the kwargs, and raise an error if any other kwargs are present.
 pub(crate) fn handle_one_kwarg<K>(fname: &str, key: PyObj, kwargs: K) -> PyResult<Option<PyObj>>
 where
     K: IntoIterator<Item = (PyObj, PyObj)>,
@@ -121,6 +122,32 @@ where
         }
     }
     Ok(None)
+}
+
+/// Parse one (optional) positional argument, and raise an error if the number of arguments is more
+/// than one.
+pub(crate) fn handle_opt_arg(fname: &str, args: &[PyObj]) -> PyResult<Option<PyObj>> {
+    match args {
+        &[] => Ok(None),
+        &[arg_obj] => Ok(Some(arg_obj)),
+        _ => raise_type_err(format!(
+            "{fname}() takes at most one positional argument ({} given)",
+            args.len()
+        )),
+    }
+}
+
+/// Parse one positional argument, and raise an error if the number of arguments is not exactly
+/// one.
+pub(crate) fn handle_one_arg(fname: &str, args: &[PyObj]) -> PyResult<PyObj> {
+    if let &[arg_obj] = args {
+        Ok(arg_obj)
+    } else {
+        raise_type_err(format!(
+            "{fname}() takes exactly one positional argument ({} given)",
+            args.len()
+        ))
+    }
 }
 
 /// Helper to efficiently match a value against a set of known interned strings.
