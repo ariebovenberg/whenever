@@ -1,10 +1,17 @@
 import pickle
 import re
+import warnings
 from copy import copy, deepcopy
+from typing import Any
 
 import pytest
 
-from whenever import DateDelta, DateTimeDelta, TimeDelta
+from whenever import (
+    DateDelta,
+    DateTimeDelta,
+    TimeDelta,
+    WheneverDeprecationWarning,
+)
 
 from .common import AlwaysEqual, NeverEqual
 from .test_date_delta import INVALID_DDELTAS, VALID_DDELTAS
@@ -13,6 +20,12 @@ from .test_time_delta import INVALID_TDELTAS, VALID_TDELTAS
 pytestmark = pytest.mark.filterwarnings(
     "ignore::whenever.WheneverDeprecationWarning"
 )
+
+
+def make_dtdelta(**kwargs: Any) -> DateTimeDelta:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return DateTimeDelta(**kwargs)
 
 
 class TestInit:
@@ -139,19 +152,19 @@ def test_bool():
 @pytest.mark.parametrize(
     "p, expect",
     [
-        (DateTimeDelta(), "P0D"),
-        (DateTimeDelta(years=-2), "-P2Y"),
-        (DateTimeDelta(days=1), "P1D"),
-        (DateTimeDelta(hours=1), "PT1H"),
-        (DateTimeDelta(minutes=1), "PT1M"),
-        (DateTimeDelta(seconds=1), "PT1S"),
-        (DateTimeDelta(microseconds=1), "PT0.000001S"),
-        (DateTimeDelta(microseconds=4300), "PT0.0043S"),
-        (DateTimeDelta(weeks=1), "P7D"),
-        (DateTimeDelta(months=1), "P1M"),
-        (DateTimeDelta(years=1), "P1Y"),
+        (make_dtdelta(), "P0D"),
+        (make_dtdelta(years=-2), "-P2Y"),
+        (make_dtdelta(days=1), "P1D"),
+        (make_dtdelta(hours=1), "PT1H"),
+        (make_dtdelta(minutes=1), "PT1M"),
+        (make_dtdelta(seconds=1), "PT1S"),
+        (make_dtdelta(microseconds=1), "PT0.000001S"),
+        (make_dtdelta(microseconds=4300), "PT0.0043S"),
+        (make_dtdelta(weeks=1), "P7D"),
+        (make_dtdelta(months=1), "P1M"),
+        (make_dtdelta(years=1), "P1Y"),
         (
-            DateTimeDelta(
+            make_dtdelta(
                 years=1,
                 months=2,
                 weeks=3,
@@ -164,7 +177,7 @@ def test_bool():
             "P1Y2M25DT5H6M7.8S",
         ),
         (
-            DateTimeDelta(
+            make_dtdelta(
                 years=1,
                 months=2,
                 weeks=3,
@@ -178,12 +191,12 @@ def test_bool():
             "P1Y2M25DT5H6M7.000008009S",
         ),
         (
-            DateTimeDelta(months=2, weeks=3, minutes=6, seconds=7),
+            make_dtdelta(months=2, weeks=3, minutes=6, seconds=7),
             "P2M21DT6M7S",
         ),
-        (DateTimeDelta(microseconds=-45), "-PT0.000045S"),
+        (make_dtdelta(microseconds=-45), "-PT0.000045S"),
         (
-            DateTimeDelta(
+            make_dtdelta(
                 years=-3,
                 months=2,
                 weeks=-3,
@@ -247,19 +260,19 @@ class TestParseIso:
     @pytest.mark.parametrize(
         "input, expect",
         [
-            ("P0D", DateTimeDelta()),
-            ("PT0S", DateTimeDelta()),
-            ("P2Y", DateTimeDelta(years=2)),
-            ("P1M", DateTimeDelta(months=1)),
-            ("P1W", DateTimeDelta(weeks=1)),
-            ("P1D", DateTimeDelta(days=1)),
-            ("PT1H", DateTimeDelta(hours=1)),
-            ("PT0H", DateTimeDelta()),
-            ("PT1M", DateTimeDelta(minutes=1)),
-            ("PT1m", DateTimeDelta(minutes=1)),
-            ("PT1S", DateTimeDelta(seconds=1)),
-            ("PT0.000001S", DateTimeDelta(microseconds=1)),
-            ("PT0.0043S", DateTimeDelta(microseconds=4300)),
+            ("P0D", make_dtdelta()),
+            ("PT0S", make_dtdelta()),
+            ("P2Y", make_dtdelta(years=2)),
+            ("P1M", make_dtdelta(months=1)),
+            ("P1W", make_dtdelta(weeks=1)),
+            ("P1D", make_dtdelta(days=1)),
+            ("PT1H", make_dtdelta(hours=1)),
+            ("PT0H", make_dtdelta()),
+            ("PT1M", make_dtdelta(minutes=1)),
+            ("PT1m", make_dtdelta(minutes=1)),
+            ("PT1S", make_dtdelta(seconds=1)),
+            ("PT0.000001S", make_dtdelta(microseconds=1)),
+            ("PT0.0043S", make_dtdelta(microseconds=4300)),
         ],
     )
     def test_single_unit(self, input, expect):
@@ -270,7 +283,7 @@ class TestParseIso:
         [
             (
                 "P1Y2M3W4DT5H6M7S",
-                DateTimeDelta(
+                make_dtdelta(
                     years=1,
                     months=2,
                     weeks=3,
@@ -282,7 +295,7 @@ class TestParseIso:
             ),
             (
                 "P1Y2M3W4DT5H6M7.000008S",
-                DateTimeDelta(
+                make_dtdelta(
                     years=1,
                     months=2,
                     weeks=3,
@@ -295,12 +308,12 @@ class TestParseIso:
             ),
             (
                 "P2M3WT6M7S",
-                DateTimeDelta(months=2, weeks=3, minutes=6, seconds=7),
+                make_dtdelta(months=2, weeks=3, minutes=6, seconds=7),
             ),
-            ("-PT0.00004501S", DateTimeDelta(nanoseconds=-45_010)),
+            ("-PT0.00004501S", make_dtdelta(nanoseconds=-45_010)),
             (
                 "-P3Y2M3WT6M6.999955S",
-                DateTimeDelta(
+                make_dtdelta(
                     years=-3,
                     months=-2,
                     weeks=-3,
@@ -309,25 +322,23 @@ class TestParseIso:
                     microseconds=45,
                 ),
             ),
-            ("-P2MT1M", DateTimeDelta(months=-2, minutes=-1)),
+            ("-P2MT1M", make_dtdelta(months=-2, minutes=-1)),
             (
                 "+P2Y3W0DT0.999S",
-                DateTimeDelta(
-                    years=2, weeks=3, seconds=1, microseconds=-1_000
-                ),
+                make_dtdelta(years=2, weeks=3, seconds=1, microseconds=-1_000),
             ),
             (
                 "-P1Y3MT4.999S",
-                DateTimeDelta(
+                make_dtdelta(
                     years=-1, months=-3, seconds=-4, microseconds=-999_000
                 ),
             ),
             # lowercase
-            ("pT0.0043s", DateTimeDelta(microseconds=4300)),
-            ("P3w", DateTimeDelta(weeks=3)),
-            ("P3wt8m", DateTimeDelta(weeks=3, minutes=8)),
+            ("pT0.0043s", make_dtdelta(microseconds=4300)),
+            ("P3w", make_dtdelta(weeks=3)),
+            ("P3wt8m", make_dtdelta(weeks=3, minutes=8)),
             # comma instead of dot
-            ("P8wT0,0043s", DateTimeDelta(weeks=8, microseconds=4300)),
+            ("P8wT0,0043s", make_dtdelta(weeks=8, microseconds=4300)),
         ],
     )
     def test_multiple_units(self, input, expect):
@@ -352,13 +363,13 @@ class TestParseIso:
 @pytest.mark.parametrize(
     "d, expect",
     [
-        (DateTimeDelta(), 'DateTimeDelta("P0d")'),
-        (DateTimeDelta(years=1), 'DateTimeDelta("P1y")'),
+        (make_dtdelta(), 'DateTimeDelta("P0d")'),
+        (make_dtdelta(years=1), 'DateTimeDelta("P1y")'),
         (
-            DateTimeDelta(months=1, days=55, minutes=80),
+            make_dtdelta(months=1, days=55, minutes=80),
             'DateTimeDelta("P1m55dT1h20m")',
         ),
-        (DateTimeDelta(seconds=-0.83), 'DateTimeDelta("-PT0.83s")'),
+        (make_dtdelta(seconds=-0.83), 'DateTimeDelta("-PT0.83s")'),
     ],
 )
 def test_repr(d, expect):
@@ -666,7 +677,7 @@ def test_negate():
 
 @pytest.mark.parametrize(
     "d",
-    [DateTimeDelta.ZERO, DateTimeDelta(years=1, seconds=7)],
+    [DateTimeDelta.ZERO, make_dtdelta(years=1, seconds=7)],
 )
 def test_positive(d):
     assert +d is d
@@ -764,3 +775,29 @@ def test_compatible_unpickle():
         seconds=7,
         microseconds=800_000,
     )
+
+
+class TestDeprecationWarnings:
+
+    def test_init(self):
+        with pytest.warns(WheneverDeprecationWarning, match="DateTimeDelta"):
+            DateTimeDelta(months=1, hours=2)
+
+    def test_init_zero(self):
+        with pytest.warns(WheneverDeprecationWarning, match="DateTimeDelta"):
+            DateTimeDelta()
+
+    def test_parse_iso(self):
+        with pytest.warns(WheneverDeprecationWarning, match="DateTimeDelta"):
+            DateTimeDelta.parse_iso("P1MT2H")
+
+    def test_init_from_string(self):
+        with pytest.warns(WheneverDeprecationWarning, match="DateTimeDelta"):
+            DateTimeDelta("P1MT2H")
+
+    def test_date_part(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", WheneverDeprecationWarning)
+            d = DateTimeDelta(months=1, hours=2)
+        with pytest.warns(WheneverDeprecationWarning, match="date_part"):
+            d.date_part()

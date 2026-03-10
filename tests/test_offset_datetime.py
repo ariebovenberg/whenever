@@ -886,10 +886,10 @@ class TestFromPyDatetime:
             987_654,
             tzinfo=timezone(timedelta(hours=2, microseconds=30)),
         )
-        with pytest.raises(ValueError, match="Sub-second"):
+        with pytest.raises(ValueError, match="[Ss]ub-second"):
             OffsetDateTime.from_py_datetime(py_dt)
 
-        with pytest.raises(ValueError, match="Sub-second"):
+        with pytest.raises(ValueError, match="[Ss]ub-second"):
             OffsetDateTime(py_dt)
 
 
@@ -2030,6 +2030,34 @@ class TestRound:
         d = PlainDateTime.MAX.replace(nanosecond=0).assume_fixed_offset(0)
         with pytest.raises((ValueError, OverflowError), match="range"):
             d.round("second", increment=5)
+
+    @ignore_potentially_stale_offset_warning()
+    def test_round_by_timedelta(self):
+        d = OffsetDateTime(2020, 8, 15, 23, 24, 18, offset=+4)
+        assert d.round(TimeDelta(minutes=15)) == OffsetDateTime(
+            2020, 8, 15, 23, 30, offset=+4
+        )
+        assert d.round(TimeDelta(hours=1)) == OffsetDateTime(
+            2020, 8, 15, 23, offset=+4
+        )
+
+    @ignore_potentially_stale_offset_warning()
+    def test_round_by_timedelta_invalid_not_divides_day(self):
+        d = OffsetDateTime(2020, 8, 15, 12, offset=+4)
+        with pytest.raises(ValueError, match="24 hour"):
+            d.round(TimeDelta(hours=7))
+
+    @ignore_potentially_stale_offset_warning()
+    def test_round_by_timedelta_negative(self):
+        d = OffsetDateTime(2020, 8, 15, 12, offset=+4)
+        with pytest.raises(ValueError, match="positive"):
+            d.round(TimeDelta(hours=-1))
+
+    @ignore_potentially_stale_offset_warning()
+    def test_round_by_timedelta_with_increment(self):
+        d = OffsetDateTime(2020, 8, 15, 12, offset=+4)
+        with pytest.raises(TypeError):
+            d.round(TimeDelta(hours=1), increment=2)  # type: ignore[call-overload]
 
 
 class TestSince:

@@ -3918,6 +3918,11 @@ class TestSince:
             round_mode="floor",
         )
 
+    def test_nanoseconds_dont_overflow(self):
+        a = ZonedDateTime(9000, 1, 1, tz="UTC")
+        b = ZonedDateTime(23, 3, 15, tz="UTC")
+        assert a.since(b, unit="nanoseconds") == 283280457600000000000
+
 
 class TestRound:
 
@@ -4197,9 +4202,7 @@ class TestRound:
         d = ZonedDateTime(
             2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
         )
-        with pytest.raises(
-            ValueError, match="[Ii]ncrement.*[mM]ust divide.*24.*hour.*day"
-        ):
+        with pytest.raises(ValueError, match="evenly.*24 hour"):
             d.round(unit, increment=increment)
 
     @pytest.mark.parametrize(
@@ -4232,6 +4235,33 @@ class TestRound:
 
         with pytest.raises((ValueError, OverflowError), match="range"):
             d.round("day")
+
+    def test_round_by_timedelta(self):
+        d = ZonedDateTime(2020, 8, 15, 23, 24, 18, tz="Europe/Amsterdam")
+        assert d.round(TimeDelta(minutes=15)) == ZonedDateTime(
+            2020, 8, 15, 23, 30, tz="Europe/Amsterdam"
+        )
+        assert d.round(TimeDelta(hours=1)) == ZonedDateTime(
+            2020, 8, 15, 23, tz="Europe/Amsterdam"
+        )
+        assert d.round(TimeDelta(minutes=15), mode="floor") == ZonedDateTime(
+            2020, 8, 15, 23, 15, tz="Europe/Amsterdam"
+        )
+
+    def test_round_by_timedelta_invalid_not_divides_day(self):
+        d = ZonedDateTime(2020, 8, 15, 12, tz="Europe/Amsterdam")
+        with pytest.raises(ValueError, match="24 hour"):
+            d.round(TimeDelta(hours=7))
+
+    def test_round_by_timedelta_negative(self):
+        d = ZonedDateTime(2020, 8, 15, 12, tz="Europe/Amsterdam")
+        with pytest.raises(ValueError, match="positive"):
+            d.round(TimeDelta(hours=-1))
+
+    def test_round_by_timedelta_with_increment(self):
+        d = ZonedDateTime(2020, 8, 15, 12, tz="Europe/Amsterdam")
+        with pytest.raises(TypeError):
+            d.round(TimeDelta(hours=1), increment=2)
 
 
 class TestPickle:

@@ -48,7 +48,7 @@ class TestInit:
             assert d.get(unit, 0) == kwargs.get(unit, 0)
 
     def test_no_components(self):
-        with pytest.raises(ValueError, match="At least one"):
+        with pytest.raises(ValueError, match="[Aa]t least one"):
             ItemizedDateDelta()
 
     @pytest.mark.parametrize(
@@ -212,7 +212,7 @@ def test_replace():
     )
 
     # last field dropped
-    with pytest.raises(ValueError, match="At least one"):
+    with pytest.raises(ValueError, match="[Aa]t least one"):
         d.replace(years=None, months=None, weeks=None)
 
     # no arguments
@@ -438,7 +438,7 @@ class TestAddSub:
                 ItemizedDateDelta(years=1, months=2),
                 Date("2021-12-31"),
                 ItemizedDateDelta(years=3, months=5),
-                {},
+                {"units": ["years", "months"]},
             ),
             # with carry
             (
@@ -446,7 +446,7 @@ class TestAddSub:
                 ItemizedDateDelta(years=1, months=8, weeks=3, days=30),
                 Date("2021-12-31"),
                 ItemizedDateDelta(years=4, months=1, weeks=3, days=2),
-                {},
+                {"units": ["years", "months", "weeks", "days"]},
             ),
             # different units
             (
@@ -454,7 +454,7 @@ class TestAddSub:
                 ItemizedDateDelta(years=1, months=8, days=30),
                 Date("0021-08-03"),
                 ItemizedDateDelta(years=3, months=9, days=5),
-                {},
+                {"units": ["years", "months", "days"]},
             ),
             # customized output kwargs
             (
@@ -474,7 +474,7 @@ class TestAddSub:
                 ItemizedDateDelta(years=-2, months=-3),
                 Date("2021-12-31"),
                 ItemizedDateDelta(years=0, months=0),
-                {},
+                {"units": ["years", "months"]},
             ),
             # negative arg, positive result
             (
@@ -482,7 +482,7 @@ class TestAddSub:
                 ItemizedDateDelta(years=-1, months=-4),
                 Date("2021-12-31"),
                 ItemizedDateDelta(years=0, months=11),
-                {},
+                {"units": ["years", "months"]},
             ),
             # negative arg, negative result
             (
@@ -490,7 +490,7 @@ class TestAddSub:
                 ItemizedDateDelta(years=-1, months=-20),
                 Date("2021-12-31"),
                 ItemizedDateDelta(years=-0, months=-5),
-                {},
+                {"units": ["years", "months"]},
             ),
         ],
     )
@@ -528,7 +528,12 @@ class TestAddSub:
     def test_mixed_sign_in_kwargs_allowed(self):
         assert (
             ItemizedDateDelta(years=2)
-            .add(years=-1, months=3, relative_to=Date("2021-12-31"))
+            .add(
+                years=-1,
+                months=3,
+                relative_to=Date("2021-12-31"),
+                units=["years", "months"],
+            )
             .exact_eq(ItemizedDateDelta(years=1, months=3))
         )
 
@@ -538,11 +543,13 @@ class TestAddSub:
                 ItemizedDateDelta(years=1),
                 years=3,
                 relative_to=Date("2021-12-31"),
+                units=["years"],
             )
 
     def test_add_nothing(self):
         ItemizedDateDelta(years=2).add(
-            relative_to=Date("2021-12-31")
+            relative_to=Date("2021-12-31"),
+            units=["years", "months"],
         ).exact_eq(ItemizedDateDelta(years=2))
 
     def test_add_nothing_changes_units(self):
@@ -550,22 +557,28 @@ class TestAddSub:
             relative_to=Date("2021-12-31"), units=["months", "days"]
         ).exact_eq(ItemizedDateDelta(months=24, days=0))
 
-    def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="foo"):
+    def test_invalid_unit_kwarg(self):
+        with pytest.raises(TypeError, match="foo"):
             ItemizedDateDelta(years=2).add(  # type: ignore[call-overload]
-                foo=5, relative_to=Date("2021-12-31")
+                foo=5,
+                relative_to=Date("2021-12-31"),
+                units=["years", "months"],
             )
 
     def test_overflows(self):
         with pytest.raises((ValueError, OverflowError)):
             ItemizedDateDelta(years=5_000).add(
-                years=5_000, relative_to=Date("2021-12-31")
+                years=5_000,
+                relative_to=Date("2021-12-31"),
+                units=["years"],
             )
 
         # Overflow due to relative_to
         with pytest.raises((ValueError, OverflowError)):
             ItemizedDateDelta(years=5).add(
-                months=29, relative_to=Date("9994-12-31")
+                months=29,
+                relative_to=Date("9994-12-31"),
+                units=["years", "months"],
             )
 
     def test_floor_round_mode_behaves_correctly_on_negative(self):
@@ -577,6 +590,7 @@ class TestAddSub:
             relative_to=Date("2021-11-20"),
             round_mode="floor",
             round_increment=2,
+            units=["years", "months"],
         ).exact_eq(ItemizedDateDelta(years=-3, months=-10))
 
 

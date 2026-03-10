@@ -59,7 +59,10 @@ pub(crate) trait OptionExt<T> {
         Self: Sized,
     {
         // TODO LOW: take advantage of static string
-        self.ok_or_raise(unsafe { PyExc_ValueError }, "Value or calculation out of range")
+        self.ok_or_raise(
+            unsafe { PyExc_ValueError },
+            "Value or calculation out of range",
+        )
     }
 
     fn ok_or_else_value_err<F, M: ToPy>(self, fmt: F) -> PyResult<T>

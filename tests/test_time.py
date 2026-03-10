@@ -8,7 +8,7 @@ from datetime import (
 
 import pytest
 
-from whenever import Date, PlainDateTime, Time
+from whenever import Date, PlainDateTime, Time, TimeDelta
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
@@ -547,6 +547,32 @@ class TestRound:
         t = Time(1, 2, 3, nanosecond=4_000)
         with pytest.raises(ValueError, match="day"):
             t.round("day")  # type: ignore[arg-type]
+
+    def test_round_by_timedelta(self):
+        t = Time(12, 39, 59)
+        assert t.round(TimeDelta(minutes=15)) == Time(12, 45)
+        assert t.round(TimeDelta(hours=1)) == Time(13)
+        assert t.round(TimeDelta(minutes=15), mode="floor") == Time(12, 30)
+
+    def test_round_by_timedelta_half_even(self):
+        assert Time(12, 30).round(TimeDelta(hours=1)) == Time(12)
+        assert Time(13, 30).round(TimeDelta(hours=1)) == Time(14)
+
+    def test_round_by_timedelta_invalid_not_divides_day(self):
+        with pytest.raises(ValueError, match="24 hour"):
+            Time(12, 0).round(TimeDelta(hours=7))
+
+    def test_round_by_timedelta_negative(self):
+        with pytest.raises(ValueError, match="positive"):
+            Time(12, 0).round(TimeDelta(hours=-1))
+
+    def test_round_by_timedelta_zero(self):
+        with pytest.raises(ValueError, match="positive"):
+            Time(12, 0).round(TimeDelta())
+
+    def test_round_by_timedelta_with_increment(self):
+        with pytest.raises(TypeError):
+            Time(12, 0).round(TimeDelta(hours=1), increment=2)  # type: ignore[call-overload]
 
 
 def test_pickling():

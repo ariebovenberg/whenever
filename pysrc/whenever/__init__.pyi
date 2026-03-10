@@ -337,6 +337,25 @@ class Time(_DateOrTimeMixin):
         second: int = ...,
         nanosecond: int = ...,
     ) -> Self: ...
+    @overload
+    def round(
+        self,
+        delta: TimeDelta,
+        /,
+        *,
+        mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "half_even",
+    ) -> Self: ...
+    @overload
     def round(
         self,
         unit: Literal[
@@ -347,6 +366,8 @@ class Time(_DateOrTimeMixin):
             "microsecond",
             "nanosecond",
         ] = "second",
+        /,
+        *,
         increment: int = 1,
         mode: Literal[
             "ceil",
@@ -395,6 +416,8 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
     def __init__(
         self,
         *,
+        weeks: float = 0,
+        days: float = 0,
         hours: float = 0,
         minutes: float = 0,
         seconds: float = 0,
@@ -421,12 +444,19 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
             "seconds",
             "milliseconds",
             "microseconds",
-            "nanoseconds",
         ],
         /,
         *,
         relative_to: ZonedDateTime = ...,
-    ) -> float | int: ...
+    ) -> float: ...
+    @overload
+    def total(
+        self,
+        unit: Literal["nanoseconds"],
+        /,
+        *,
+        relative_to: ZonedDateTime = ...,
+    ) -> int: ...
     @deprecated("Use total('days') instead")
     def in_days_of_24h(self) -> float: ...
     @deprecated("Use total('hours') instead")
@@ -471,14 +501,11 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
             "half_even",
         ] = "trunc",
         round_increment: int = ...,
-        round_unit: Literal[
-            "millisecond",
-            "microsecond",
-        ] = ...,
     ) -> ItemizedDelta: ...
     def py_timedelta(self) -> _timedelta: ...
     @classmethod
     def from_py_timedelta(cls, td: _timedelta, /) -> Self: ...
+    @overload
     def round(
         self,
         unit: Literal[
@@ -491,7 +518,27 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
             "microsecond",
             "nanosecond",
         ] = "second",
+        /,
+        *,
         increment: int = 1,
+        mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "half_even",
+    ) -> Self: ...
+    @overload
+    def round(
+        self,
+        other: Self,
+        /,
+        *,
         mode: Literal[
             "ceil",
             "expand",
@@ -637,7 +684,7 @@ class ItemizedDelta(
             "half_even",
         ] = ...,
         round_increment: int = ...,
-    ) -> ItemizedDateDelta: ...
+    ) -> ItemizedDelta: ...
     def parts(
         self,
     ) -> tuple[Optional[ItemizedDateDelta], Optional[TimeDelta]]: ...
@@ -660,7 +707,7 @@ class ItemizedDelta(
                 "seconds",
                 "nanoseconds",
             ]
-        ] = ...,
+        ],
         round_mode: Literal[
             "ceil",
             "expand",
@@ -698,7 +745,7 @@ class ItemizedDelta(
                 "seconds",
                 "nanoseconds",
             ]
-        ] = ...,
+        ],
         round_mode: Literal[
             "ceil",
             "expand",
@@ -883,7 +930,7 @@ class ItemizedDateDelta(
         /,
         *,
         relative_to: Date,
-        units: Sequence[Literal["years", "months", "weeks", "days"]] = ...,
+        units: Sequence[Literal["years", "months", "weeks", "days"]],
         round_mode: Literal[
             "ceil",
             "expand",
@@ -906,7 +953,7 @@ class ItemizedDateDelta(
         weeks: int = ...,
         days: int = ...,
         relative_to: Date,
-        units: Sequence[Literal["years", "months", "weeks", "days"]] = ...,
+        units: Sequence[Literal["years", "months", "weeks", "days"]],
         round_mode: Literal[
             "ceil",
             "expand",
@@ -927,7 +974,7 @@ class ItemizedDateDelta(
         /,
         *,
         relative_to: Date,
-        units: Sequence[Literal["years", "months", "weeks", "days"]] = ...,
+        units: Sequence[Literal["years", "months", "weeks", "days"]],
         round_mode: Literal[
             "ceil",
             "expand",
@@ -1167,6 +1214,25 @@ class _LocalTime(ABC):
         ] = ...,
         round_increment: int = ...,
     ) -> ItemizedDelta: ...
+    @overload
+    def round(
+        self,
+        delta: TimeDelta,
+        /,
+        *,
+        mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "half_even",
+    ) -> Self: ...
+    @overload
     def round(
         self,
         unit: Literal[
@@ -1178,6 +1244,8 @@ class _LocalTime(ABC):
             "microsecond",
             "nanosecond",
         ] = "second",
+        /,
+        *,
         increment: int = 1,
         mode: Literal[
             "ceil",
@@ -1294,6 +1362,25 @@ class Instant(_PyDateTimeMixin, _ExactTime):
         microseconds: float = 0,
         nanoseconds: int = 0,
     ) -> Self: ...
+    @overload
+    def round(
+        self,
+        delta: TimeDelta,
+        /,
+        *,
+        mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "half_even",
+    ) -> Self: ...
+    @overload
     def round(
         self,
         unit: Literal[
@@ -1304,6 +1391,8 @@ class Instant(_PyDateTimeMixin, _ExactTime):
             "microsecond",
             "nanosecond",
         ] = "second",
+        /,
+        *,
         increment: int = 1,
         mode: Literal[
             "ceil",
@@ -1463,6 +1552,26 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     # FUTURE: remove when ignore_dst deprecated
+    @overload
+    def round(
+        self,
+        delta: TimeDelta,
+        /,
+        *,
+        mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "half_even",
+        ignore_dst: Literal[True] = ...,
+    ) -> Self: ...
+    @overload
     def round(
         self,
         unit: Literal[
@@ -1474,6 +1583,8 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
             "microsecond",
             "nanosecond",
         ] = "second",
+        /,
+        *,
         increment: int = 1,
         mode: Literal[
             "ceil",
@@ -1486,7 +1597,6 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
             "half_trunc",
             "half_even",
         ] = "half_even",
-        *,
         ignore_dst: Literal[True] = ...,
     ) -> Self: ...
     def assume_tz(

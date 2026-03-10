@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 pub(crate) fn _set_tzpath(state: &mut State, to: PyObj) -> PyReturn {
     let Some(py_tuple) = to.cast_exact::<PyTuple>() else {
-        raise_type_err("Argument must be a tuple")?
+        raise_type_err("argument must be a tuple")?
     };
 
     let mut result = Vec::with_capacity(py_tuple.len() as _);
@@ -12,7 +12,7 @@ pub(crate) fn _set_tzpath(state: &mut State, to: PyObj) -> PyReturn {
     for path in py_tuple.iter() {
         result.push(PathBuf::from(
             path.cast_allow_subclass::<PyStr>()
-                .ok_or_type_err("Path must be a string")?
+                .ok_or_type_err("path must be a string")?
                 .as_str()?,
         ))
     }
@@ -27,13 +27,13 @@ pub(crate) fn _clear_tz_cache(state: &mut State) -> PyReturn {
 
 pub(crate) fn _clear_tz_cache_by_keys(state: &mut State, keys_obj: PyObj) -> PyReturn {
     let Some(py_tuple) = keys_obj.cast_exact::<PyTuple>() else {
-        raise_type_err("Argument must be a tuple")?
+        raise_type_err("argument must be a tuple")?
     };
     let mut keys = Vec::with_capacity(py_tuple.len() as _);
     for k in py_tuple.iter() {
         keys.push(
             k.cast_allow_subclass::<PyStr>()
-                .ok_or_type_err("Key must be a string")?
+                .ok_or_type_err("key must be a string")?
                 .as_str()?
                 // FUTURE: We should be able to use string slices here, but
                 // making this work with lifetimes requires a bit of work.

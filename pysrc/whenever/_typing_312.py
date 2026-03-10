@@ -1,5 +1,6 @@
 """This module contains Python 3.12+ type aliases,
 which raise SyntaxError if imported in earlier versions."""
+
 from typing import Literal
 
 type RoundModeStr = Literal[

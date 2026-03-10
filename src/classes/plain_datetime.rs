@@ -1,13 +1,18 @@
 use crate::{
     classes::{
-        date::Date, date_delta::DateDelta, datetime_delta::set_units_from_kwargs, instant::Instant,
-        itemized_date_delta::ItemizedDateDelta, itemized_delta::ItemizedDelta, time::Time,
-        time_delta::TimeDelta, zoned_datetime::ZonedDateTime,
+        date::Date,
+        date_delta::DateDelta,
+        instant::Instant,
+        itemized_date_delta::ItemizedDateDelta,
+        itemized_delta::{ItemizedDelta, handle_delta_unit_kwargs},
+        time::Time,
+        time_delta::TimeDelta,
+        zoned_datetime::ZonedDateTime,
     },
     common::{
         ambiguity::*,
-        cal_diff::{self, DeltaUnit},
         fmt,
+        math::{self, DateRoundIncrement, DeltaUnit, DeltaUnitSet, SinceUntilKwargs, UnitsOrUnit},
         parse::Scan,
         round,
         scalar::*,
@@ -185,8 +190,8 @@ fn __new__(cls: HeapType<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> Py
     );
 
     DateTime {
-        date: Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?,
-        time: Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?,
+        date: Date::from_longs(year, month, day).ok_or_value_err("invalid date")?,
+        time: Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?,
     }
     .to_obj(cls)
 }
@@ -227,7 +232,7 @@ fn parse_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
         arg.cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
             // called through the constructor
-            .ok_or_type_err("When parsing from ISO format, the argument must be str")?
+            .ok_or_type_err("when parsing from ISO format, the argument must be str")?
             .as_utf8()?,
     )
     .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?
@@ -258,7 +263,7 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
 }
 
 fn __add__(a: PyObj, b: PyObj) -> PyReturn {
-    _shift_operator(a, b, false)
+    shift_operator(a, b, false)
 }
 
 fn __sub__(a: PyObj, b: PyObj) -> PyReturn {
@@ -279,13 +284,12 @@ fn __sub__(a: PyObj, b: PyObj) -> PyReturn {
             .diff(other.assume_utc())
             .to_obj(state.time_delta_type)
     } else {
-        _shift_operator(a, b, true)
+        shift_operator(a, b, true)
     }
 }
 
 #[inline]
-fn _shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
-    let opname = if negate { "-" } else { "+" };
+fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     let type_a = obj_a.type_();
     let type_b = obj_b.type_();
 
@@ -299,12 +303,10 @@ fn _shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
             mut days,
         }) = obj_b.extract(state.date_delta_type)
         {
-            if negate {
-                months = -months;
-                days = -days;
-            }
+            months = months.negate_if(negate);
+            days = days.negate_if(negate);
             a.shift_date(months, days)
-                .ok_or_else_value_err(|| format!("Result of {opname} out of range"))?
+                .ok_or_range_err()?
                 .to_obj(dt_type)
         } else if let Some(mut tdelta) = obj_b.extract(state.time_delta_type) {
             if !state.cv_ignore_tz_unaware_arithmetic.get()? {
@@ -314,12 +316,8 @@ fn _shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                     2,
                 )?;
             }
-            if negate {
-                tdelta = -tdelta;
-            }
-            a.shift(tdelta)
-                .ok_or_else_value_err(|| format!("Result of {opname} out of range"))?
-                .to_obj(dt_type)
+            tdelta = tdelta.negate_if(negate);
+            a.shift(tdelta).ok_or_range_err()?.to_obj(dt_type)
         } else if let Some(dt) = obj_b.extract(state.datetime_delta_type) {
             let mut months = dt.ddelta.months;
             let mut days = dt.ddelta.days;
@@ -329,6 +327,7 @@ fn _shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                 days = -days;
                 tdelta = -tdelta;
             }
+            // DateTimeDelta is being deprecated — don't bother refactoring this branch
             if !tdelta.is_zero() {
                 if !state.cv_ignore_tz_unaware_arithmetic.get()? {
                     warn_with_class(
@@ -340,7 +339,7 @@ fn _shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
             }
             a.shift_date(months, days)
                 .and_then(|dt| dt.shift(tdelta))
-                .ok_or_else_value_err(|| format!("Result of {opname} out of range"))?
+                .ok_or_range_err()?
                 .to_obj(dt_type)
         } else {
             not_implemented()
@@ -494,8 +493,8 @@ fn replace(
         )
     })?;
     DateTime {
-        date: Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?,
-        time: Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?,
+        date: Date::from_longs(year, month, day).ok_or_value_err("invalid date")?,
+        time: Time::from_longs(hour, minute, second, nanos).ok_or_value_err("invalid time")?,
     }
     .to_obj(cls)
 }
@@ -506,7 +505,7 @@ fn add(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    _shift_method(cls, slf, args, kwargs, false)
+    shift_method(cls, slf, args, kwargs, false)
 }
 
 fn subtract(
@@ -515,11 +514,11 @@ fn subtract(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    _shift_method(cls, slf, args, kwargs, true)
+    shift_method(cls, slf, args, kwargs, true)
 }
 
 #[inline]
-fn _shift_method(
+fn shift_method(
     cls: HeapType<DateTime>,
     slf: DateTime,
     args: &[PyObj],
@@ -527,16 +526,37 @@ fn _shift_method(
     negate: bool,
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
-    let state = cls.state();
+    let &State {
+        str_years,
+        str_months,
+        str_weeks,
+        str_days,
+        str_hours,
+        str_minutes,
+        str_seconds,
+        str_milliseconds,
+        str_microseconds,
+        str_nanoseconds,
+        str_ignore_dst,
+        time_delta_type,
+        date_delta_type,
+        datetime_delta_type,
+        itemized_date_delta_type,
+        itemized_delta_type,
+        warn_deprecation,
+        warn_tz_unaware_arithmetic,
+        cv_ignore_tz_unaware_arithmetic,
+        ..
+    } = cls.state();
     let mut months = DeltaMonths::ZERO;
     let mut days = DeltaDays::ZERO;
     let mut tdelta = TimeDelta::ZERO;
     let mut got_ignore_dst = false;
 
-    match *args {
-        [arg] => {
+    match args {
+        &[arg] => {
             match kwargs.next() {
-                Some((key, _value)) if kwargs.len() == 1 && key.py_eq(state.str_ignore_dst)? => {
+                Some((key, _value)) if kwargs.len() == 1 && key.py_eq(str_ignore_dst)? => {
                     got_ignore_dst = true;
                 }
                 Some(_) => raise_type_err(format!(
@@ -544,25 +564,21 @@ fn _shift_method(
                 ))?,
                 None => {}
             };
-            if let Some(t) = arg.extract(state.time_delta_type) {
+            if let Some(t) = arg.extract(time_delta_type) {
                 tdelta = t;
-            } else if let Some(ddelta) = arg.extract(state.date_delta_type) {
+            } else if let Some(ddelta) = arg.extract(date_delta_type) {
                 months = ddelta.months;
                 days = ddelta.days;
-            } else if let Some(dt) = arg.extract(state.datetime_delta_type) {
+            } else if let Some(dt) = arg.extract(datetime_delta_type) {
                 months = dt.ddelta.months;
                 days = dt.ddelta.days;
                 tdelta = dt.tdelta;
-            } else if let Some(d) = arg.extract(state.itemized_date_delta_type) {
-                let (m, dy) = d
-                    .to_months_days()
-                    .ok_or_value_err("Total months/days out of range")?;
+            } else if let Some(d) = arg.extract(itemized_date_delta_type) {
+                let (m, dy) = d.to_months_days().ok_or_range_err()?;
                 months = m;
                 days = dy;
-            } else if let Some(d) = arg.extract(state.itemized_delta_type) {
-                let (m, dy, td) = d
-                    .to_components()
-                    .ok_or_value_err("Total months/days/nanos out of range")?;
+            } else if let Some(d) = arg.extract(itemized_delta_type) {
+                let (m, dy, td) = d.to_components().ok_or_range_err()?;
                 months = m;
                 days = dy;
                 tdelta = td;
@@ -570,29 +586,34 @@ fn _shift_method(
                 raise_type_err(format!("{fname}() argument must be a delta"))?
             }
         }
-        [] => {
-            let mut raw_months = 0;
-            let mut raw_days = 0;
-            let mut raw_nanos = 0;
+        &[] => {
+            let mut units = DeltaUnitSet::EMPTY; // not used, but need to pass
             handle_kwargs(fname, kwargs, |key, value, eq| {
-                if eq(key, state.str_ignore_dst) {
+                if eq(key, str_ignore_dst) {
                     got_ignore_dst = true;
                     Ok(true)
                 } else {
-                    set_units_from_kwargs(
+                    handle_delta_unit_kwargs(
                         key,
                         value,
-                        &mut raw_months,
-                        &mut raw_days,
-                        &mut raw_nanos,
-                        state,
+                        &mut months,
+                        &mut days,
+                        &mut tdelta,
+                        &mut units,
                         eq,
+                        str_years,
+                        str_months,
+                        str_weeks,
+                        str_days,
+                        str_hours,
+                        str_minutes,
+                        str_seconds,
+                        Some(str_milliseconds),
+                        Some(str_microseconds),
+                        str_nanoseconds,
                     )
                 }
             })?;
-            months = DeltaMonths::new(raw_months).ok_or_value_err("Months out of range")?;
-            days = DeltaDays::new(raw_days).ok_or_value_err("Days out of range")?;
-            tdelta = TimeDelta::from_nanos(raw_nanos).ok_or_value_err("Nanos out of range")?;
         }
         _ => raise_type_err(format!(
             "{}() takes at most 1 positional argument, got {}",
@@ -602,26 +623,21 @@ fn _shift_method(
     }
 
     if got_ignore_dst {
-        warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 2)?;
+        warn_with_class(warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 2)?;
     }
 
-    if negate {
-        months = -months;
-        days = -days;
-        tdelta = -tdelta;
-    }
+    months = months.negate_if(negate);
+    days = days.negate_if(negate);
+    tdelta = tdelta.negate_if(negate);
+
     if !tdelta.is_zero() {
-        if !state.cv_ignore_tz_unaware_arithmetic.get()? {
-            warn_with_class(
-                state.warn_tz_unaware_arithmetic,
-                doc::PLAIN_SHIFT_UNAWARE_MSG,
-                2,
-            )?;
+        if !cv_ignore_tz_unaware_arithmetic.get()? {
+            warn_with_class(warn_tz_unaware_arithmetic, doc::PLAIN_SHIFT_UNAWARE_MSG, 2)?;
         }
     }
     slf.shift_date(months, days)
         .and_then(|dt| dt.shift(tdelta))
-        .ok_or_value_err("Result out of range")?
+        .ok_or_range_err()?
         .to_obj(cls)
 }
 
@@ -682,11 +698,11 @@ fn __reduce__(cls: HeapType<DateTime>, slf: DateTime) -> PyResult<Owned<PyTuple>
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let py_bytes = arg
         .cast_exact::<PyBytes>()
-        .ok_or_type_err("Invalid pickle data")?;
+        .ok_or_type_err("invalid pickle data")?;
 
     let mut packed = py_bytes.as_bytes()?;
     if packed.len() != 11 {
-        raise_type_err("Invalid pickle data")?
+        raise_type_err("invalid pickle data")?
     }
     DateTime {
         date: Date {
@@ -792,7 +808,7 @@ fn assume_fixed_offset(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> Py
         ..
     } = cls.state();
     slf.with_offset(Offset::from_obj(arg, time_delta_type)?)
-        .ok_or_value_err("Datetime out of range")?
+        .ok_or_range_err()?
         .to_obj(offset_datetime_type)
 }
 
@@ -896,19 +912,7 @@ fn since(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let state = cls.state();
-    let b = args
-        .first()
-        .ok_or_type_err("since() missing required positional argument")?
-        .extract(cls)
-        .ok_or_type_err("argument must be a whenever.PlainDateTime")?;
-    let parsed = cal_diff::parse_full_since_kwargs(state, args, kwargs)?;
-    let (_, exact_units) = parsed.split_cal_exact();
-    // Emit warning if exact units are used
-    if !exact_units.is_empty() && !state.cv_ignore_tz_unaware_arithmetic.get()? {
-        warn_with_class(state.warn_tz_unaware_arithmetic, doc::DIFF_LOCAL_MSG, 2)?;
-    }
-    plain_since(state, slf, b, &parsed)
+    plain_since(cls, slf, args, kwargs, false)
 }
 
 fn until(
@@ -917,99 +921,116 @@ fn until(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let state = cls.state();
-    let b = args
-        .first()
-        .ok_or_type_err("until() missing required positional argument")?
-        .extract(cls)
-        .ok_or_type_err("argument must be a whenever.PlainDateTime")?;
-    let parsed = cal_diff::parse_full_since_kwargs(state, args, kwargs)?;
-    let (_, exact_units) = parsed.split_cal_exact();
-    if !exact_units.is_empty() && !state.cv_ignore_tz_unaware_arithmetic.get()? {
-        warn_with_class(state.warn_tz_unaware_arithmetic, doc::DIFF_LOCAL_MSG, 2)?;
-    }
-    plain_since(state, b, slf, &parsed)
+    plain_since(cls, slf, args, kwargs, true)
 }
 
-fn _plain_since_single_unit(
+fn plain_since(
+    cls: HeapType<DateTime>,
+    slf: DateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+    flip: bool,
+) -> PyReturn {
+    let fname = if flip { "until" } else { "since" };
+    let state = cls.state();
+
+    let other = handle_one_arg(fname, args)?
+        .extract(cls)
+        .ok_or_type_err("argument must be a whenever.PlainDateTime")?;
+    let SinceUntilKwargs {
+        units,
+        round_mode,
+        round_increment,
+    } = SinceUntilKwargs::parse(fname, state, kwargs)?;
+
+    plain_since_inner(state, slf, other, units, round_mode, round_increment, flip)
+}
+
+fn plain_since_single_unit(
     a: DateTime,
     b: DateTime,
     target_date: Date,
     unit: DeltaUnit,
     round_mode: round::Mode, // TODO MEDIUM: use AbsMode
-    round_increment: i32,
+    round_increment: math::RoundIncrement,
     sign: i8,
 ) -> PyReturn {
-    match unit.to_cal() {
-        None => cal_diff::time_delta_in_single_unit(a.diff(b), unit, round_increment, round_mode),
-        Some(cal_unit) => {
-            let (result, trunc_date, expand_date) = cal_diff::date_diff_single_unit(
-                target_date,
-                b.date,
-                round_increment,
-                cal_unit,
-                sign,
-            )
-            .ok_or_value_err("Rounded date out of range")?;
+    match unit.to_exact(false) {
+        Ok(exact) => a.diff(b).in_single_unit(exact, round_increment, round_mode),
+        Err(cal_unit) => {
+            let inc = round_increment.to_date().ok_or_range_err()?;
+            let (result, trunc_date, expand_date) =
+                math::date_diff_single_unit(target_date, b.date, inc, cal_unit, sign)
+                    .ok_or_range_err()?;
             let trunc = b.with_date(trunc_date.into()).assume_utc();
             let expand = b.with_date(expand_date.into()).assume_utc();
 
-            cal_diff::round_by_time(
-                result,
-                a.assume_utc(),
-                trunc,
-                expand,
-                round_mode,
-                round_increment,
-                sign,
-            )
-            .to_py()
+            math::round_by_time(result, a.assume_utc(), trunc, expand, round_mode, inc, sign)
+                .to_py()
         }
     }
 }
 
 /// Shared since() implementation for PlainDateTime (and OffsetDateTime).
 /// Days are always 24 hours (no DST adjustments).
-pub(crate) fn plain_since(
+pub(crate) fn plain_since_inner(
     state: &State,
-    a: DateTime,
-    b: DateTime,
-    parsed: &cal_diff::FullSinceUntilArgs,
+    slf: DateTime,
+    other: DateTime,
+    units: UnitsOrUnit,
+    round_mode: round::Mode,
+    round_increment: math::RoundIncrement,
+    flip: bool,
 ) -> PyReturn {
+    let (a, b) = if flip { (other, slf) } else { (slf, other) };
+
     let sign: i8 = if a >= b { 1 } else { -1 };
-    // Adjust target_date so the exact remainder has the same sign.
+
     let target_date = match (sign, b.with_date(a.date).cmp(&a)) {
         (1, Ordering::Greater) => a.date.yesterday(),
         (-1, Ordering::Less) => a.date.tomorrow(),
         _ => Some(a.date),
     }
-    .ok_or_value_err("Resulting date out of range")?;
-
-    if parsed.single_unit_mode {
-        return _plain_since_single_unit(
+    .ok_or_range_err()?;
+    match units {
+        UnitsOrUnit::One(u) => {
+            plain_since_single_unit(a, b, target_date, u, round_mode, round_increment, sign)
+        }
+        UnitsOrUnit::Seq(units) => plain_since_in_units(
+            state,
             a,
             b,
             target_date,
-            parsed.units.smallest(),
-            parsed.round_mode,
-            parsed.round_increment,
+            units,
+            round_mode,
+            round_increment,
             sign,
-        );
+        ),
     }
+}
 
-    let smallest_unit = parsed.smallest_unit();
-    let (cal_units, exact_units) = parsed.split_cal_exact();
+fn plain_since_in_units(
+    state: &State,
+    a: DateTime,
+    b: DateTime,
+    target_date: Date,
+    units: DeltaUnitSet,
+    round_mode: round::Mode,
+    round_increment: math::RoundIncrement,
+    sign: i8,
+) -> PyReturn {
+    let smallest_unit = units.smallest();
+    let (cal_units, exact_units) = units.split_cal_exact();
 
     let (mut cal_results, trunc_date, expand_date) = if cal_units.is_empty() {
         (ItemizedDateDelta::UNSET, b.date.into(), a.date.into())
     } else {
-        let inc = if smallest_unit.to_cal().is_some() {
-            parsed.round_increment
+        let inc = if smallest_unit.to_exact(false).is_err() {
+            round_increment.to_date().ok_or_range_err()?
         } else {
-            1
+            DateRoundIncrement::MIN
         };
-        cal_diff::date_diff(target_date, b.date, inc, cal_units, sign)
-            .ok_or_value_err("Resulting date out of range")?
+        math::date_diff(target_date, b.date, inc, cal_units, sign).ok_or_range_err()?
     };
 
     let trunc_dt = b.with_date(trunc_date.into());
@@ -1017,25 +1038,24 @@ pub(crate) fn plain_since(
 
     // If there are no time units, round the calendar units.
     // Otherwise, calculate the time delta remainder
-    let mut result = if let Some(cal) = smallest_unit.to_cal() {
+    let mut result = if exact_units.is_empty() {
         cal_results.round_by_time(
-            cal,
+            cal_units.smallest(),
+            // This UTC conversion is a bit weird, but it allows us to reuse
+            // the logic since plain and UTC datetimes both have no timezone
+            // adjustments.
             a.assume_utc(),
             trunc_dt.assume_utc(),
             expand_dt.assume_utc(),
-            parsed.round_mode,
-            parsed.round_increment,
+            round_mode,
+            round_increment.to_date().ok_or_range_err()?,
             sign,
         );
         ItemizedDelta::UNSET
     } else {
-        cal_diff::time_delta_in_units(
-            a.diff(trunc_dt),
-            exact_units,
-            parsed.round_increment,
-            parsed.round_mode,
-        )
-        .ok_or_value_err("Resulting TimeDelta out of range")?
+        a.diff(trunc_dt)
+            .in_exact_units(exact_units, round_increment, round_mode)
+            .ok_or_range_err()?
     };
 
     result.fill_cal_units(cal_results);
@@ -1048,13 +1068,17 @@ fn round(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let (_, increment, mode, _) = round::parse_args(cls.state(), args, kwargs, false, false)?;
+    let round::Args {
+        increment, mode, ..
+    } = round::Args::parse(cls.state(), args, kwargs, false)?;
+    let round_nanos = match increment {
+        round::RoundIncrement::Day => 86_400_000_000_000,
+        round::RoundIncrement::Exact(ns) => ns.get(),
+    };
     let DateTime { mut date, time } = slf;
-    let (time_rounded, next_day) = time.round(increment as u64, mode);
+    let (time_rounded, next_day) = time.round(round_nanos, mode);
     if next_day == 1 {
-        date = date
-            .tomorrow()
-            .ok_or_value_err("Resulting date out of range")?;
+        date = date.tomorrow().ok_or_range_err()?;
     }
     DateTime {
         date,
