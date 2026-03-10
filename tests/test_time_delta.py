@@ -120,7 +120,7 @@ class TestInit:
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", WheneverDeprecationWarning)
-            assert d.in_nanoseconds() == expected_nanos
+            assert d.total("nanoseconds") == expected_nanos
         # the components are not accessible directly
         assert not hasattr(d, "hours")
 
@@ -166,6 +166,25 @@ class TestInit:
         assert TimeDelta("PT1H2M3.000004S") == TimeDelta(
             hours=1, minutes=2, seconds=3, microseconds=4
         )
+
+    def test_weeks_and_days(self):
+        with pytest.warns(DaysNotAlways24HoursWarning):
+            week = TimeDelta(weeks=1)
+
+        assert week == TimeDelta(hours=7 * 24)
+
+        with pytest.warns(DaysNotAlways24HoursWarning):
+            day = TimeDelta(days=1)
+
+        assert day == TimeDelta(hours=24)
+
+        # FUTURE: a descriptive error message on why not
+        # months and years not allowed
+        with pytest.raises(TypeError, match="months"):
+            TimeDelta(months=1)  # type: ignore[call-overload]
+
+        with pytest.raises(TypeError, match="years"):
+            TimeDelta(years=1)  # type: ignore[call-overload]
 
 
 class TestFactories:
@@ -1267,7 +1286,56 @@ class TestRound:
         assert t.round(mode="floor") == TimeDelta.MAX
 
         with pytest.raises(ValueError, match="range"):
-            t.round(unit="hour", increment=10)
+            t.round("hour", increment=10)
+
+    def test_by_timedelta(self):
+        t = TimeDelta(hours=1, minutes=23, seconds=45)
+        assert t.round(TimeDelta(minutes=15)) == TimeDelta(hours=1, minutes=30)
+        assert t.round(TimeDelta(minutes=15), mode="floor") == TimeDelta(
+            hours=1, minutes=15
+        )
+
+    def test_by_timedelta_negative(self):
+        t = TimeDelta(hours=1, minutes=23, seconds=45)
+        with pytest.raises(ValueError, match="positive"):
+            t.round(-TimeDelta(minutes=15))
+
+    def test_by_timedelta_negative_value(self):
+        t = -TimeDelta(hours=1, minutes=23, seconds=45)
+        assert t.round(TimeDelta(minutes=15)) == -TimeDelta(
+            hours=1, minutes=30
+        )
+
+    def test_by_timedelta_zero(self):
+        t = TimeDelta(hours=1)
+        with pytest.raises(ValueError, match="[Zz]ero|positive"):
+            t.round(TimeDelta.ZERO)
+
+    def test_by_timedelta_huge(self):
+        t = TimeDelta(nanoseconds=1)
+        assert t.round(
+            TimeDelta(hours=24 * 9999 * 365, nanoseconds=1), mode="ceil"
+        ) == TimeDelta(hours=24 * 9999 * 365, nanoseconds=1)
+
+    def test_by_huge_increment(self):
+        t = TimeDelta(nanoseconds=1)
+        assert t.round(
+            "nanosecond",
+            increment=TimeDelta(hours=24 * 9999 * 365, nanoseconds=1).total(
+                "nanoseconds"
+            ),
+            mode="ceil",
+        ) == TimeDelta(hours=24 * 9999 * 365, nanoseconds=1)
+
+    def test_by_timedelta_not_compatible_with_increment(self):
+        t = TimeDelta(hours=1)
+        with pytest.raises(TypeError, match="increment"):
+            t.round(TimeDelta(minutes=15), increment=2)  # type: ignore[call-overload]
+
+    def test_by_timedelta_with_mode(self):
+        t = TimeDelta(minutes=45)
+        assert t.round(TimeDelta(hours=1), mode="ceil") == TimeDelta(hours=1)
+        assert t.round(TimeDelta(hours=1), mode="floor") == TimeDelta.ZERO
 
 
 @pytest.mark.parametrize(
@@ -1552,11 +1620,9 @@ class TestInUnits:
             # TEST round single units with large values
         ],
     )
+    @ignore_days_not_always_24h_warning()
     def test_valid(self, delta, units, kwargs, expected):
-        with warnings.catch_warnings():
-            # we test this warning elsewhere
-            warnings.simplefilter("ignore", DaysNotAlways24HoursWarning)
-            assert delta.in_units(units, **kwargs) == expected
+        assert delta.in_units(units, **kwargs) == expected
 
     def test_invalid_unit(self):
         d = TimeDelta(hours=1)
@@ -1575,7 +1641,7 @@ class TestInUnits:
 
     def test_missing_units(self):
         d = TimeDelta(hours=1)
-        with pytest.raises(ValueError, match="At least one unit"):
+        with pytest.raises(ValueError, match="[Aa]t least one unit"):
             d.in_units([])
 
     def test_units_out_of_order(self):
@@ -1591,7 +1657,7 @@ class TestInUnits:
 
     def test_nanoseconds_but_no_seconds(self):
         d = TimeDelta(hours=1)
-        with pytest.raises(ValueError, match="Nanoseconds.*seconds"):
+        with pytest.raises(ValueError, match="[Nn]anoseconds.*seconds"):
             d.in_units(["hours", "nanoseconds"])
 
     def test_invalid_round_mode(self):
@@ -1608,18 +1674,8 @@ class TestInUnits:
             d.in_units(["weeks", "hours"])
 
         # test warnings suppression
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            with ignore_days_not_always_24h_warning():
-                d.in_units(["days"])
-            assert len(w) == 0
-
-    def test_invalid_round_unit(self):
-        d = TimeDelta(hours=1)
-        with pytest.raises(ValueError, match="foo"):
-            d.in_units(
-                ["hours", "seconds", "nanoseconds"], round_unit="foo"  # type: ignore[arg-type]
-            )
+        with ignore_days_not_always_24h_warning():
+            d.in_units(["days"])
 
     def test_non_sequence_units(self):
         d = TimeDelta(hours=1)

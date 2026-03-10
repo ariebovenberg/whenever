@@ -1,10 +1,9 @@
 use crate::{
     classes::{
         date::Date,
-        datetime_delta::set_units_from_kwargs,
         instant::Instant,
         itemized_date_delta::ItemizedDateDelta,
-        itemized_delta::ItemizedDelta,
+        itemized_delta::{ItemizedDelta, handle_delta_unit_kwargs},
         offset_datetime::OffsetDateTime,
         plain_datetime::{DateTime, set_components_from_kwargs},
         time::Time,
@@ -12,8 +11,8 @@ use crate::{
     },
     common::{
         ambiguity::*,
-        cal_diff::{self},
         fmt::{self, Sink, Suffix},
+        math::{self, DateRoundIncrement, DeltaUnitSet, SinceUntilKwargs},
         parse::Scan,
         round,
         scalar::*,
@@ -60,9 +59,7 @@ impl ZonedDateTime {
         cls: HeapType<Self>,
     ) -> PyReturn {
         // Check: the instant represented by the date and time is within range
-        date.epoch_at(time)
-            .offset(-offset)
-            .ok_or_value_err("Resulting datetime is out of range")?;
+        date.epoch_at(time).offset(-offset).ok_or_range_err()?;
         Self::new_unchecked(date, time, offset, tz, cls)
     }
 
@@ -99,7 +96,7 @@ impl ZonedDateTime {
                 (
                     DateTime { date, time }
                         .change_offset(shift)
-                        .ok_or_value_err("Resulting date is out of range")?,
+                        .ok_or_range_err()?,
                     offset,
                 )
             }
@@ -172,12 +169,12 @@ impl ZonedDateTime {
                 };
                 dt.change_offset(shift)
                     // shifting out of the gap can result in an out-of-range date
-                    .ok_or_value_err("Resulting date is out of range")?
+                    .ok_or_range_err()?
                     .with_offset(offset)
             }
         }
         // or the shifted datetime represents an invalid instant
-        .ok_or_value_err("Resulting time is out of range")
+        .ok_or_range_err()
     }
 
     /// Resolve a local time in a timezone, trying to reuse the given offset
@@ -202,11 +199,11 @@ impl ZonedDateTime {
                 let shift = later.sub(earlier);
                 DateTime { date, time }
                     .change_offset(shift)
-                    .ok_or_value_err("Resulting date is out of range")?
+                    .ok_or_range_err()?
                     .with_offset(later)
             }
         }
-        .ok_or_value_err("Resulting time is out of range")
+        .ok_or_range_err()
     }
 
     pub(crate) fn instant(self) -> Instant {
@@ -259,8 +256,7 @@ impl ZonedDateTime {
                 offset,
             } = self;
             Self::resolve(
-                date.shift(months, days)
-                    .ok_or_value_err("Resulting date is out of range")?,
+                date.shift(months, days).ok_or_range_err()?,
                 time,
                 &tz,
                 dis,
@@ -275,7 +271,7 @@ impl ZonedDateTime {
         shifted_by_date
             .instant()
             .shift(delta)
-            .ok_or_value_err("instant is out of range")?
+            .ok_or_range_err()?
             .to_tz(self.tz.newref(), cls)
     }
 }
@@ -360,7 +356,7 @@ impl Instant {
         let offset = tz.offset_for_instant(epoch);
         let local = epoch
             .offset(offset)
-            .ok_or_value_err("Resulting date is out of range")?
+            .ok_or_range_err()?
             .datetime(self.subsec);
         // SAFETY: We've already checked for both out-of-range date and time.
         ZonedDateTime::new_unchecked(local.date, local.time, offset, tz, cls)
@@ -395,7 +391,7 @@ fn __new__(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let arg = args.iter().next().unwrap();
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
-            return _from_py_datetime(cls, dt);
+            return from_py_datetime_inner(cls, dt);
         }
         return parse_iso(cls, arg);
     };
@@ -440,9 +436,9 @@ fn __new__(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
     };
 
     let tz = tz_store.obj_get(PyObj::wrap(tz))?;
-    let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
+    let date = Date::from_longs(year, month, day).ok_or_value_err("invalid date")?;
     let time =
-        Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?;
+        Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?;
     let dis = match NonNull::new(disambiguate) {
         None => Disambiguate::Compatible,
         Some(dis) => Disambiguate::from_py(
@@ -579,7 +575,7 @@ fn __add__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
         let (cls, slf) = unsafe { a_obj.assume_heaptype::<ZonedDateTime>() };
-        _shift_operator(state, cls, slf, b_obj, false)
+        shift_operator(state, cls, slf, b_obj, false)
     } else {
         not_implemented()
     }
@@ -607,7 +603,7 @@ fn __sub__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
         } else if let Some(odt) = b_obj.extract(state.offset_datetime_type) {
             odt.instant()
         } else {
-            return _shift_operator(state, cls, slf, b_obj, true);
+            return shift_operator(state, cls, slf, b_obj, true);
         };
         (state, slf.instant(), inst_b)
     } else {
@@ -617,7 +613,7 @@ fn __sub__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
 }
 
 #[inline]
-fn _shift_operator(
+fn shift_operator(
     state: &State,
     cls: HeapType<ZonedDateTime>,
     slf: ZonedDateTime,
@@ -647,15 +643,11 @@ fn _shift_operator(
         days = d.ddelta.days;
         tdelta = d.tdelta;
     } else if let Some(d) = arg.extract(state.itemized_date_delta_type) {
-        let (m, dy) = d
-            .to_months_days()
-            .ok_or_value_err("Total months/days out of range")?;
+        let (m, dy) = d.to_months_days().ok_or_range_err()?;
         months = m;
         days = dy;
     } else if let Some(d) = arg.extract(state.itemized_delta_type) {
-        let (m, dy, td) = d
-            .to_components()
-            .ok_or_value_err("Total duration out of range")?;
+        let (m, dy, td) = d.to_components().ok_or_range_err()?;
         months = m;
         days = dy;
         tdelta = td;
@@ -665,11 +657,9 @@ fn _shift_operator(
             arg.type_()
         ))?;
     }
-    if negate {
-        months = -months;
-        days = -days;
-        tdelta = -tdelta;
-    };
+    months = months.negate_if(negate);
+    days = days.negate_if(negate);
+    tdelta = tdelta.negate_if(negate);
 
     slf.shift(months, days, tdelta, None, exc_repeated, exc_skipped, cls)
 }
@@ -712,7 +702,7 @@ fn exact_eq(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, obj_b: PyObj) -> P
     if let Some(zdt) = obj_b.extract(cls) {
         (slf == zdt).to_py()
     } else {
-        raise_type_err("Can't compare different types")?
+        raise_type_err("can't compare different types")?
     }
 }
 
@@ -723,7 +713,7 @@ fn to_tz(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, tz_obj: PyObj) -> PyR
 
 pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     let &[data, tz_obj] = args else {
-        raise_type_err("Invalid pickle data")?
+        raise_type_err("invalid pickle data")?
     };
     let &State {
         zoned_datetime_type,
@@ -733,10 +723,10 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
 
     let py_bytes = data
         .cast_exact::<PyBytes>()
-        .ok_or_type_err("Invalid pickle data")?;
+        .ok_or_type_err("invalid pickle data")?;
     let mut packed = py_bytes.as_bytes()?;
     if packed.len() != 15 {
-        raise_type_err("Invalid pickle data")?;
+        raise_type_err("invalid pickle data")?;
     }
     ZonedDateTime::new_unchecked(
         Date {
@@ -844,7 +834,7 @@ fn to_fixed_offset(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, args: &[PyO
         [arg] => slf
             .instant()
             .to_offset(Offset::from_obj(arg, time_delta_type)?)
-            .ok_or_value_err("Resulting local date is out of range")?,
+            .ok_or_range_err()?,
         _ => raise_type_err("to_fixed_offset() takes at most 1 argument")?,
     }
     .to_obj(offset_datetime_type)
@@ -979,7 +969,7 @@ fn parse_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
         .cast_allow_subclass::<PyStr>()
         // NOTE: this exception message also needs to make sense when
         // called through the constructor
-        .ok_or_type_err("When parsing from ISO format, the argument must be str")?;
+        .ok_or_type_err("when parsing from ISO format, the argument must be str")?;
     let mut s = Scan::new(py_str.as_utf8()?);
     let (DateTime { date, time }, (offset, tzstr)) = DateTime::read_iso(&mut s)
         .zip(read_offset_and_tzname(&mut s))
@@ -998,7 +988,7 @@ fn parse_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
                 Ambiguity::Fold(f1, f2) if f1 == offset || f2 == offset => (),
                 _ => raise(
                     exc_invalid_offset.as_ptr(),
-                    format!("Invalid offset for {tzstr}"),
+                    format!("invalid offset for {tzstr}"),
                 )?,
             }
             ZonedDateTime::create(date, time, offset, tz, cls)
@@ -1093,8 +1083,8 @@ fn replace(
         Ok(true)
     })?;
 
-    let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
-    let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("Invalid time")?;
+    let date = Date::from_longs(year, month, day).ok_or_value_err("invalid date")?;
+    let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("invalid time")?;
     ZonedDateTime::resolve(date, time, &tz, dis, offset, exc_repeated, exc_skipped)?
         .assume_tz_unchecked(tz, cls)
 }
@@ -1146,9 +1136,9 @@ fn from_system_tz(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<Py
     );
 
     let tz = tz_store.get_system_tz()?;
-    let date = Date::from_longs(year, month, day).ok_or_value_err("Invalid date")?;
+    let date = Date::from_longs(year, month, day).ok_or_value_err("invalid date")?;
     let time =
-        Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("Invalid time")?;
+        Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?;
     let dis = match NonNull::new(disambiguate) {
         None => Disambiguate::Compatible,
         Some(dis) => Disambiguate::from_py(
@@ -1165,12 +1155,12 @@ fn from_system_tz(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<Py
 
 fn from_py_datetime(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
     let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() else {
-        raise_type_err("Argument must be a datetime.datetime instance")?
+        raise_type_err("argument must be a datetime.datetime instance")?
     };
-    _from_py_datetime(cls, dt)
+    from_py_datetime_inner(cls, dt)
 }
 
-fn _from_py_datetime(cls: HeapType<ZonedDateTime>, dt: PyDateTime) -> PyReturn {
+fn from_py_datetime_inner(cls: HeapType<ZonedDateTime>, dt: PyDateTime) -> PyReturn {
     let State {
         zoneinfo_type,
         tz_store,
@@ -1208,7 +1198,7 @@ fn _from_py_datetime(cls: HeapType<ZonedDateTime>, dt: PyDateTime) -> PyReturn {
         )?
         .to_f64()?;
     Instant {
-        epoch: EpochSecs::new(epoch_float.floor() as _).ok_or_value_err("instant out of range")?,
+        epoch: EpochSecs::new(epoch_float.floor() as _).ok_or_range_err()?,
         // NOTE: we don't get the subsecond part from the timestamp,
         // since floating point precision might lead to inaccuracies.
         // Instead, we take it from the original datetime.
@@ -1249,7 +1239,7 @@ fn __reduce__(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyResult<Owne
         tz,
     } = slf;
     if tz.key.is_none() {
-        return raise_value_err("Cannot pickle ZonedDateTime with unknown timezone ID");
+        return raise_value_err("cannot pickle ZonedDateTime with unknown timezone ID");
     }
     let data = pack![
         year.get(),
@@ -1264,7 +1254,7 @@ fn __reduce__(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyResult<Owne
     let tz_key = tz
         .key
         .as_ref()
-        .ok_or_value_err("Cannot pickle ZonedDateTime without timezone ID")?;
+        .ok_or_value_err("cannot pickle ZonedDateTime without timezone ID")?;
     (
         cls.state().unpickle_zoned_datetime.newref(),
         (data.to_py()?, tz_key.as_str().to_py()?).into_pytuple()?,
@@ -1319,9 +1309,9 @@ fn from_timestamp(
     } else if let Some(py_float) = args[0].cast_allow_subclass::<PyFloat>() {
         Instant::from_timestamp_f64(py_float.to_f64()?)
     } else {
-        raise_type_err("Timestamp must be an integer or float")?
+        raise_type_err("timestamp must be an integer or float")?
     }
-    .ok_or_value_err("timestamp is out of range")?
+    .ok_or_range_err()?
     .to_tz(tz, cls)
 }
 
@@ -1339,7 +1329,7 @@ fn from_timestamp_millis(
             .to_i64()?,
     )
     // FUTURE: a faster way to check both bounds
-    .ok_or_value_err("timestamp is out of range")?
+    .ok_or_range_err()?
     .to_tz(tz, cls)
 }
 
@@ -1356,7 +1346,7 @@ fn from_timestamp_nanos(
             .ok_or_type_err("timestamp must be an integer")?
             .to_i128()?,
     )
-    .ok_or_value_err("timestamp is out of range")?
+    .ok_or_range_err()?
     .to_tz(tz, cls)
 }
 
@@ -1375,7 +1365,7 @@ fn add(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    _shift_method(cls, slf, args, kwargs, false)
+    shift_method(cls, slf, args, kwargs, false)
 }
 
 fn subtract(
@@ -1384,11 +1374,11 @@ fn subtract(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    _shift_method(cls, slf, args, kwargs, true)
+    shift_method(cls, slf, args, kwargs, true)
 }
 
 #[inline]
-fn _shift_method(
+fn shift_method(
     cls: HeapType<ZonedDateTime>,
     slf: ZonedDateTime,
     args: &[PyObj],
@@ -1408,11 +1398,23 @@ fn _shift_method(
         str_raise,
         str_earlier,
         str_later,
+        str_years,
+        str_months,
+        str_weeks,
+        str_days,
+        str_hours,
+        str_minutes,
+        str_seconds,
+        str_milliseconds,
+        str_microseconds,
+        str_nanoseconds,
+        itemized_date_delta_type,
+        itemized_delta_type,
         ..
     } = state;
     let mut dis = None;
-    let mut monthdelta = DeltaMonths::ZERO;
-    let mut daydelta = DeltaDays::ZERO;
+    let mut months = DeltaMonths::ZERO;
+    let mut days = DeltaDays::ZERO;
     let mut tdelta = TimeDelta::ZERO;
 
     match *args {
@@ -1435,50 +1437,60 @@ fn _shift_method(
             if let Some(d) = arg.extract(time_delta_type) {
                 tdelta = d;
             } else if let Some(d) = arg.extract(date_delta_type) {
-                monthdelta = d.months;
-                daydelta = d.days;
+                months = d.months;
+                days = d.days;
             } else if let Some(d) = arg.extract(datetime_delta_type) {
-                monthdelta = d.ddelta.months;
-                daydelta = d.ddelta.days;
+                months = d.ddelta.months;
+                days = d.ddelta.days;
                 tdelta = d.tdelta;
-            } else if let Some(d) = arg.extract(state.itemized_date_delta_type) {
-                let (m, dy) = d
-                    .to_months_days()
-                    .ok_or_value_err("Total months/days out of range")?;
-                monthdelta = m;
-                daydelta = dy;
-            } else if let Some(d) = arg.extract(state.itemized_delta_type) {
-                let (m, dy, td) = d
-                    .to_components()
-                    .ok_or_value_err("Total months/days out of range")?;
-                monthdelta = m;
-                daydelta = dy;
+            } else if let Some(d) = arg.extract(itemized_date_delta_type) {
+                let (m, dy) = d.to_months_days().ok_or_range_err()?;
+                months = m;
+                days = dy;
+            } else if let Some(d) = arg.extract(itemized_delta_type) {
+                let (m, dy, td) = d.to_components().ok_or_range_err()?;
+                months = m;
+                days = dy;
                 tdelta = td;
             } else {
                 raise_type_err(format!("{fname}() argument must be a delta"))?
             }
         }
         [] => {
-            let mut nanos: i128 = 0;
-            let mut months: i32 = 0;
-            let mut days: i32 = 0;
+            let mut units = DeltaUnitSet::EMPTY;
             handle_kwargs(fname, kwargs, |key, value, eq| {
                 if eq(key, str_disambiguate) {
-                    dis = Some(Disambiguate::from_py(
+                    dis = Disambiguate::from_py(
                         value,
                         str_compatible,
                         str_raise,
                         str_earlier,
                         str_later,
-                    )?);
+                    )?
+                    .into();
                     Ok(true)
                 } else {
-                    set_units_from_kwargs(key, value, &mut months, &mut days, &mut nanos, state, eq)
+                    handle_delta_unit_kwargs(
+                        key,
+                        value,
+                        &mut months,
+                        &mut days,
+                        &mut tdelta,
+                        &mut units,
+                        eq,
+                        str_years,
+                        str_months,
+                        str_weeks,
+                        str_days,
+                        str_hours,
+                        str_minutes,
+                        str_seconds,
+                        Some(str_milliseconds),
+                        Some(str_microseconds),
+                        str_nanoseconds,
+                    )
                 }
             })?;
-            tdelta = TimeDelta::from_nanos(nanos).ok_or_value_err("Total duration too large")?;
-            monthdelta = DeltaMonths::new(months).ok_or_value_err("Total months out of range")?;
-            daydelta = DeltaDays::new(days).ok_or_value_err("Total days out of range")?;
         }
         _ => raise_type_err(format!(
             "{}() takes at most 1 positional argument, got {}",
@@ -1486,27 +1498,23 @@ fn _shift_method(
             args.len()
         ))?,
     }
-    if negate {
-        monthdelta = -monthdelta;
-        daydelta = -daydelta;
-        tdelta = -tdelta;
-    }
+    months = months.negate_if(negate);
+    days = days.negate_if(negate);
+    tdelta = tdelta.negate_if(negate);
 
-    slf.shift(
-        monthdelta,
-        daydelta,
-        tdelta,
-        dis,
-        exc_repeated,
-        exc_skipped,
-        cls,
-    )
+    slf.shift(months, days, tdelta, dis, exc_repeated, exc_skipped, cls)
 }
 
 fn difference(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, arg: PyObj) -> PyReturn {
-    let state = cls.state();
+    let &State {
+        warn_deprecation,
+        instant_type,
+        offset_datetime_type,
+        time_delta_type,
+        ..
+    } = cls.state();
     warn_with_class(
-        state.warn_deprecation,
+        warn_deprecation,
         c"The difference() method is deprecated. Use the subtraction operator or since() method instead.",
         2,
     )?;
@@ -1514,16 +1522,16 @@ fn difference(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, arg: PyObj) -> P
 
     let inst_b = if let Some(zdt) = arg.extract(cls) {
         zdt.instant()
-    } else if let Some(i) = arg.extract(state.instant_type) {
+    } else if let Some(i) = arg.extract(instant_type) {
         i
-    } else if let Some(odt) = arg.extract(state.offset_datetime_type) {
+    } else if let Some(odt) = arg.extract(offset_datetime_type) {
         odt.instant()
     } else {
         raise_type_err(
             "difference() argument must be an OffsetDateTime, Instant, or ZonedDateTime",
         )?
     };
-    inst_a.diff(inst_b).to_obj(state.time_delta_type)
+    inst_a.diff(inst_b).to_obj(time_delta_type)
 }
 
 fn start_of_day(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
@@ -1562,7 +1570,7 @@ fn day_length(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
     )?
     .instant();
     let start_of_next_day = ZonedDateTime::resolve_using_disambiguate(
-        date.tomorrow().ok_or_value_err("Day out of range")?,
+        date.tomorrow().ok_or_range_err()?,
         Time::MIDNIGHT,
         &tz,
         Disambiguate::Compatible,
@@ -1580,22 +1588,22 @@ fn round(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let (unit, increment, mode, _) = round::parse_args(state, args, kwargs, false, false)?;
+    let round::Args {
+        increment, mode, ..
+    } = round::Args::parse(state, args, kwargs, false)?;
 
-    match unit {
-        round::Unit::Day => _round_day(slf, state, mode),
-        _ => {
+    match increment {
+        round::RoundIncrement::Day => round_day(slf, state, mode),
+        round::RoundIncrement::Exact(ns) => {
             let ZonedDateTime {
                 mut date,
                 time,
                 offset,
                 tz,
             } = slf;
-            let (time_rounded, next_day) = time.round(increment as u64, mode);
+            let (time_rounded, next_day) = time.round(ns.get(), mode);
             if next_day == 1 {
-                date = date
-                    .tomorrow()
-                    .ok_or_value_err("Resulting date out of range")?;
+                date = date.tomorrow().ok_or_range_err()?;
             };
             ZonedDateTime::resolve_using_offset(date, time_rounded, &tz, offset)
         }
@@ -1603,7 +1611,7 @@ fn round(
     .assume_tz_unchecked(slf.tz.newref(), cls)
 }
 
-fn _round_day(slf: ZonedDateTime, state: &State, mode: round::Mode) -> PyResult<OffsetDateTime> {
+fn round_day(slf: ZonedDateTime, state: &State, mode: round::Mode) -> PyResult<OffsetDateTime> {
     let ZonedDateTime { date, time, tz, .. } = slf;
     let &State {
         exc_repeated,
@@ -1622,8 +1630,7 @@ fn _round_day(slf: ZonedDateTime, state: &State, mode: round::Mode) -> PyResult<
     };
     let get_ceil = || {
         ZonedDateTime::resolve_using_disambiguate(
-            date.tomorrow()
-                .ok_or_value_err("Resulting date out of range")?,
+            date.tomorrow().ok_or_range_err()?,
             Time::MIDNIGHT,
             &tz,
             Disambiguate::Compatible,
@@ -1676,19 +1683,7 @@ fn since(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let b = args
-        .first()
-        .ok_or_type_err("since() missing required positional argument")?
-        .extract(cls)
-        .ok_or_type_err("argument must be a whenever.ZonedDateTime")?;
-    let parsed = cal_diff::parse_full_since_kwargs(cls.state(), args, kwargs)?;
-    zoned_since(
-        cls.state(),
-        slf.without_tz(),
-        b,
-        slf.tz.is_same_tz(b.tz),
-        &parsed,
-    )
+    zoned_since(cls, slf, args, kwargs, false)
 }
 
 fn until(
@@ -1697,83 +1692,30 @@ fn until(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let b = args
-        .first()
-        .ok_or_type_err("until() missing required positional argument")?
-        .extract(cls)
-        .ok_or_type_err("argument must be a whenever.ZonedDateTime")?;
-    let parsed = cal_diff::parse_full_since_kwargs(cls.state(), args, kwargs)?;
-    zoned_since(
-        cls.state(),
-        b.without_tz(),
-        slf,
-        slf.tz.is_same_tz(b.tz),
-        &parsed,
-    )
+    zoned_since(cls, slf, args, kwargs, true)
 }
 
-fn _zoned_since_single_unit(
+fn zoned_since_single_unit(
     a: OffsetDateTime,
     b: ZonedDateTime,
     target_date: Date,
-    unit: cal_diff::DeltaUnit,
+    unit: math::DeltaUnit,
     round_mode: round::Mode,
-    round_increment: i32,
+    round_increment: math::RoundIncrement,
     sign: i8,
 ) -> PyReturn {
-    match unit.to_cal() {
-        None => cal_diff::time_delta_in_single_unit(
-            a.instant().diff(b.instant()),
-            unit,
-            round_increment,
-            round_mode,
-        ),
-        Some(cal_unit) => {
-            let (result, trunc_date, expand_date) = cal_diff::date_diff_single_unit(
-                target_date,
-                b.date,
-                round_increment,
-                cal_unit,
-                sign,
-            )
-            .ok_or_value_err("Rounded date out of range")?;
-            let trunc = b
-                .with_date(trunc_date.into())
-                .ok_or_value_err("Rounded date out of range")?
-                .instant();
-            let expand = b
-                .with_date(expand_date.into())
-                .ok_or_value_err("Rounded date out of range")?
-                .instant();
-
-            // if round_mode == round::Mode::Trunc {
-            //     result
-            // } else {
-            //     // Calendar-only with non-trunc rounding
-            //     let r = a.instant().diff(trunc).abs();
-            //     let e = expand.diff(trunc).abs();
-            //     debug_assert!(!e.is_zero());
-            //     // r.cmp(e - r) is equivalent to (r * 2).cmp(e), avoiding overflow
-            //     let half_cmp = r.cmp(&(e.checked_add(-r).unwrap()));
-            //     cal_diff::cal_unit_round(
-            //         result,
-            //         !r.is_zero(),
-            //         half_cmp,
-            //         round_mode.to_abs_with_sign(sign),
-            //         round_increment,
-            //         sign,
-            //     )
-            // }
-            cal_diff::round_by_time(
-                result,
-                a.instant(),
-                trunc,
-                expand,
-                round_mode,
-                round_increment,
-                sign,
-            )
-            .to_py()
+    match unit.to_exact(false) {
+        Ok(u) => a
+            .instant()
+            .diff(b.instant())
+            .in_single_unit(u, round_increment, round_mode),
+        Err(u) => {
+            let inc = round_increment.to_date().ok_or_range_err()?;
+            let (result, trunc_date, expand_date) =
+                math::date_diff_single_unit(target_date, b.date, inc, u, sign).ok_or_range_err()?;
+            let trunc = b.with_date(trunc_date.into()).ok_or_range_err()?.instant();
+            let expand = b.with_date(expand_date.into()).ok_or_range_err()?.instant();
+            math::round_by_time(result, a.instant(), trunc, expand, round_mode, inc, sign).to_py()
         }
     }
 }
@@ -1798,91 +1740,109 @@ pub(crate) fn zoned_target(
     Some(target_date)
 }
 
-// TODO MEDIUM: pass args by Copy
-pub(crate) fn zoned_since(
-    state: &State,
-    a: OffsetDateTime,
-    b: ZonedDateTime,
-    is_same_tz: bool,
-    parsed: &cal_diff::FullSinceUntilArgs,
+fn zoned_since(
+    cls: HeapType<ZonedDateTime>,
+    slf: ZonedDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+    flip: bool,
 ) -> PyReturn {
-    let (cal_units, exact_units) = parsed.split_cal_exact();
+    let fname = if flip { "until" } else { "since" };
+    let state = cls.state();
 
-    // TODO HIGH: do this check in the caller
-    if !cal_units.is_empty() && !is_same_tz {
+    let other = handle_one_arg(fname, args)?
+        .extract(cls)
+        .ok_or_type_err("argument must be a whenever.ZonedDateTime")?;
+    let SinceUntilKwargs {
+        units,
+        round_mode,
+        round_increment,
+    } = SinceUntilKwargs::parse(fname, state, kwargs)?;
+
+    if units.has_calendar() && !slf.tz.is_same_tz(other.tz) {
         raise_value_err(
             "Calendar units can only be used to compare ZonedDateTimes \
              with the same timezone",
         )?;
     }
+    let (a, b) = if flip { (other, slf) } else { (slf, other) };
     let a_inst = a.instant();
     let b_inst = b.instant();
     let sign: i8 = if a_inst >= b_inst { 1 } else { -1 };
 
-    let target_date =
-        zoned_target(a.date, a_inst, b, sign).ok_or_value_err("Resulting date out of range")?;
+    let target_date = zoned_target(a.date, a_inst, b, sign).ok_or_range_err()?;
 
-    if parsed.single_unit_mode {
-        return _zoned_since_single_unit(
-            a,
+    match units {
+        math::UnitsOrUnit::One(unit) => zoned_since_single_unit(
+            a.without_tz(),
             b,
             target_date,
-            parsed.units.smallest(),
-            parsed.round_mode,
-            parsed.round_increment,
+            unit,
+            round_mode,
+            round_increment,
             sign,
-        );
+        ),
+        math::UnitsOrUnit::Seq(units) => zoned_since_in_units(
+            a.without_tz(),
+            a_inst,
+            b,
+            target_date,
+            units,
+            round_mode,
+            round_increment,
+            sign,
+        )
+        .ok_or_range_err()?
+        .to_obj(state.itemized_delta_type),
     }
+}
 
+pub(crate) fn zoned_since_in_units(
+    a: OffsetDateTime,
+    a_inst: Instant,
+    b: ZonedDateTime,
+    target_date: Date,
+    units: DeltaUnitSet,
+    round_mode: round::Mode,
+    round_increment: math::RoundIncrement,
+    sign: i8,
+) -> Option<ItemizedDelta> {
+    let (cal_units, exact_units) = units.split_cal_exact();
     let (mut ddelta, trunc_date, expand_date) = if cal_units.is_empty() {
         (ItemizedDateDelta::UNSET, b.date.into(), a.date.into())
     } else {
         let inc = if exact_units.is_empty() {
-            parsed.round_increment
+            round_increment.to_date()?
         } else {
-            1
+            DateRoundIncrement::MIN
         };
-        cal_diff::date_diff(target_date, b.date, inc, cal_units, sign)
-            .ok_or_value_err("Resulting date out of range")?
+        math::date_diff(target_date, b.date, inc, cal_units, sign)?
     };
 
-    let trunc = b
-        .with_date(trunc_date.into())
-        .ok_or_value_err("Resulting date out of range")?
-        .instant();
-    let expand = b
-        .with_date(expand_date.into())
-        .ok_or_value_err("Resulting date out of range")?
-        .instant();
-
-    let smallest_unit = parsed.smallest_unit();
+    let trunc = b.with_date(trunc_date.into())?.instant();
+    let expand = b.with_date(expand_date.into())?.instant();
 
     // If there are no time units, round the calendar units.
     // Otherwise, calculate the time delta remainder
-    let mut result = if let Some(cal) = smallest_unit.to_cal() {
+    let mut result = if exact_units.is_empty() {
         ddelta.round_by_time(
-            cal,
+            cal_units.smallest(),
             a_inst,
             trunc,
             expand,
-            parsed.round_mode,
-            parsed.round_increment,
+            round_mode,
+            round_increment.to_date()?,
             sign,
         );
         ItemizedDelta::UNSET
     } else {
-        // Exact units
-        cal_diff::time_delta_in_units(
-            a_inst.diff(trunc),
-            exact_units,
-            parsed.round_increment,
-            parsed.round_mode,
-        )
-        .ok_or_value_err("Resulting TimeDelta out of range")?
+        a_inst
+            .diff(trunc)
+            .in_exact_units(exact_units, round_increment, round_mode)?
     };
 
     result.fill_cal_units(ddelta);
-    result.to_obj(state.itemized_delta_type)
+    result.into()
 }
 
 static mut METHODS: &[PyMethodDef] = &[

@@ -125,6 +125,7 @@ SKIP = {
     W._LocalTime.add,
     W._LocalTime.subtract,
     W._LocalTime.round,
+    W._Base.__get_pydantic_core_schema__,
 }
 
 

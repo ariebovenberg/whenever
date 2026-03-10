@@ -82,7 +82,7 @@ fn __new__(cls: HeapType<YearMonth>, args: PyTuple, kwargs: Option<PyDict>) -> P
     let mut month: c_long = 0;
     parse_args_kwargs!(args, kwargs, c"ll:YearMonth", year, month);
     YearMonth::from_longs(year, month)
-        .ok_or_value_err("Invalid year/month component value")?
+        .ok_or_value_err("invalid year/month component value")?
         .to_obj(cls)
 }
 
@@ -156,7 +156,7 @@ fn parse_iso(cls: HeapType<YearMonth>, arg: PyObj) -> PyReturn {
         .cast_allow_subclass::<PyStr>()
         // NOTE: this exception message also needs to make sense when
         // called through the constructor
-        .ok_or_type_err("When parsing from ISO format, the argument must be str")?;
+        .ok_or_type_err("when parsing from ISO format, the argument must be str")?;
     YearMonth::parse(py_str.as_utf8()?)
         .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?
         .to_obj(cls)
@@ -204,7 +204,7 @@ fn replace(
             Ok(true)
         })?;
         YearMonth::from_longs(year, month)
-            .ok_or_value_err("Invalid year/month components")?
+            .ok_or_value_err("invalid year/month components")?
             .to_obj(cls)
     }
 }
@@ -220,7 +220,7 @@ fn on_day(cls: HeapType<YearMonth>, slf: YearMonth, arg: PyObj) -> PyReturn {
         .ok_or_value_err("day out of range")?;
     // OPTIMIZE: we don't need to check the validity of the year and month again
     Date::new(year, month, day)
-        .ok_or_value_err("Invalid date components")?
+        .ok_or_value_err("invalid date components")?
         .to_obj(cls.state().date_type)
 }
 
@@ -243,10 +243,10 @@ static mut METHODS: &[PyMethodDef] = &[
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let py_bytes = arg
         .cast_exact::<PyBytes>()
-        .ok_or_type_err("Invalid pickle data")?;
+        .ok_or_type_err("invalid pickle data")?;
     let mut packed = py_bytes.as_bytes()?;
     if packed.len() != 3 {
-        raise_value_err("Invalid pickle data")?
+        raise_value_err("invalid pickle data")?
     }
     YearMonth {
         year: Year::new_unchecked(unpack_one!(packed, u16)),

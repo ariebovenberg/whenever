@@ -13,12 +13,12 @@ pub(crate) fn _patch_time_keep_ticking(state: &mut State, arg: PyObj) -> PyRetur
 
 pub(crate) fn _patch_time(state: &mut State, arg: PyObj, freeze: bool) -> PyReturn {
     let Some(inst) = arg.extract(state.instant_type) else {
-        return raise_type_err("Expected an Instant")?;
+        return raise_type_err("expected an Instant")?;
     };
 
     let pos_epoch = u64::try_from(inst.epoch.get())
         .ok()
-        .ok_or_type_err("Can only set time after 1970")?;
+        .ok_or_type_err("can only set time after 1970")?;
 
     let patch = &mut state.time_patch;
 
@@ -30,7 +30,7 @@ pub(crate) fn _patch_time(state: &mut State, arg: PyObj, freeze: bool) -> PyRetu
             at: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .ok()
-                .ok_or_type_err("System time before 1970")?,
+                .ok_or_type_err("system time before 1970")?,
         }
     });
     Ok(none())

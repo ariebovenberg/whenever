@@ -74,6 +74,7 @@
   Instead, use the `-` subtraction operator, or the new `since()` method.
 - `Date.days_since()` and `Date.days_until()` are deprecated.
   Use `since()` and `until()` with `unit='days'` instead.
+- The `round()` methods are stricter about keyword-only and positional-only arguments.
 
 **Added**
 

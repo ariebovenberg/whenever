@@ -5,15 +5,15 @@ use std::ptr::null_mut as NULL;
 use crate::{
     classes::{
         date_delta::parse_prefix,
-        datetime_delta,
         itemized_date_delta::{
             ItemizedDateDelta, MAX_DAYS, MAX_MONTHS, MAX_WEEKS, MAX_YEARS, parse_date_fields,
         },
-        time_delta::{TimeDelta, TimeUnit, parse_time_component, total_relative_inner},
-        zoned_datetime::{ZonedDateTime, zoned_since, zoned_target},
+        time_delta::{TimeDelta, TimeUnit, parse_time_component, total_cal},
+        zoned_datetime::{zoned_since_in_units, zoned_target},
     },
     common::{
-        cal_diff::{self, DeltaUnit, ExactUnit, FullSinceUntilArgs, UnitSet},
+        math::{DeltaUnit, DeltaUnitSet, ExactUnit, RoundIncrement},
+        round,
         scalar::{DeltaDays, DeltaField, DeltaMonths, DeltaSeconds, SubSecNanos},
     },
     docstrings as doc,
@@ -28,7 +28,7 @@ const MAX_NANOS: u64 = 999_999_999;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct ItemizedDelta {
-    pub(crate) years: DeltaField<i32>,
+    pub(crate) years: DeltaField<i32>, // DeltaUnit phantom data?
     pub(crate) months: DeltaField<i32>,
     pub(crate) weeks: DeltaField<i32>,
     pub(crate) days: DeltaField<i32>,
@@ -50,6 +50,39 @@ impl ItemizedDelta {
         seconds: DeltaField::UNSET,
         nanos: DeltaField::UNSET,
     };
+
+    pub(crate) fn is_unset(self) -> bool {
+        !self.years.is_set()
+            && !self.months.is_set()
+            && !self.weeks.is_set()
+            && !self.days.is_set()
+            && !self.hours.is_set()
+            && !self.minutes.is_set()
+            && !self.seconds.is_set()
+            && !self.nanos.is_set()
+    }
+
+    pub(crate) fn has_sign_conflicts(self) -> bool {
+        let mut sign: i8 = 0;
+        for s in [
+            self.years.sign(),
+            self.months.sign(),
+            self.weeks.sign(),
+            self.days.sign(),
+            self.hours.sign(),
+            self.minutes.sign(),
+            self.seconds.sign(),
+            self.nanos.sign(),
+        ] {
+            if s != 0 {
+                if sign != 0 && sign != s {
+                    return true;
+                }
+                sign = s;
+            }
+        }
+        false
+    }
 
     // Low-level helper to fill in just the calendar fields from an ItemizedDateDelta
     pub(crate) fn fill_cal_units(&mut self, data: ItemizedDateDelta) {
@@ -97,48 +130,6 @@ impl ItemizedDelta {
             && self.minutes.get_or(0) == other.minutes.get_or(0)
             && self.seconds.get_or(0) == other.seconds.get_or(0)
             && self.nanos.get_or(0) == other.nanos.get_or(0)
-    }
-
-    pub(crate) fn unit_set(self) -> UnitSet {
-        let mut set = UnitSet::EMPTY;
-        if self.years.is_set() {
-            set.insert(DeltaUnit::Years);
-        }
-        if self.months.is_set() {
-            set.insert(DeltaUnit::Months);
-        }
-        if self.weeks.is_set() {
-            set.insert(DeltaUnit::Weeks);
-        }
-        if self.days.is_set() {
-            set.insert(DeltaUnit::Days);
-        }
-        if self.hours.is_set() {
-            set.insert(DeltaUnit::Hours);
-        }
-        if self.minutes.is_set() {
-            set.insert(DeltaUnit::Minutes);
-        }
-        if self.seconds.is_set() {
-            set.insert(DeltaUnit::Seconds);
-        }
-        if self.nanos.is_set() {
-            set.insert(DeltaUnit::Nanoseconds);
-        }
-        set
-    }
-
-    pub(crate) fn negated(self) -> Self {
-        Self {
-            years: self.years.neg(),
-            months: self.months.neg(),
-            weeks: self.weeks.neg(),
-            days: self.days.neg(),
-            hours: self.hours.neg(),
-            minutes: self.minutes.neg(),
-            seconds: self.seconds.neg(),
-            nanos: self.nanos.neg(),
-        }
     }
 
     pub(crate) fn to_components(self) -> Option<(DeltaMonths, DeltaDays, TimeDelta)> {
@@ -274,38 +265,42 @@ fn __new__(cls: HeapType<ItemizedDelta>, args: PyTuple, kwargs: Option<PyDict>) 
         }
     }
 
-    let state = cls.state();
-    let Some(kwarg_dict) = kwargs else {
-        return raise_value_err("At least one field must be set");
+    let &State {
+        str_years,
+        str_months,
+        str_weeks,
+        str_days,
+        str_hours,
+        str_minutes,
+        str_seconds,
+        str_nanoseconds,
+        ..
+    } = cls.state();
+    let kwarg_dict = match kwargs {
+        Some(d) if d.len() > 0 => d,
+        _ => raise_value_err("at least one field must be set")?,
     };
 
-    let mut sign: i8 = 0;
-    let mut years = DeltaField::UNSET;
-    let mut months = DeltaField::UNSET;
-    let mut weeks = DeltaField::UNSET;
-    let mut days = DeltaField::UNSET;
-    let mut hours = DeltaField::UNSET;
-    let mut minutes = DeltaField::UNSET;
-    let mut seconds = DeltaField::UNSET;
-    let mut nanos = DeltaField::UNSET;
+    let mut signum: i8 = 0;
+    let mut slf = ItemizedDelta::UNSET;
 
     handle_kwargs("ItemizedDelta", kwarg_dict.iteritems(), |key, value, eq| {
-        if eq(key, state.str_years) {
-            years = DeltaField::parse(value, &mut sign, MAX_YEARS)?;
-        } else if eq(key, state.str_months) {
-            months = DeltaField::parse(value, &mut sign, MAX_MONTHS)?;
-        } else if eq(key, state.str_weeks) {
-            weeks = DeltaField::parse(value, &mut sign, MAX_WEEKS)?;
-        } else if eq(key, state.str_days) {
-            days = DeltaField::parse(value, &mut sign, MAX_DAYS)?;
-        } else if eq(key, state.str_hours) {
-            hours = DeltaField::parse(value, &mut sign, MAX_HOURS)?;
-        } else if eq(key, state.str_minutes) {
-            minutes = DeltaField::parse(value, &mut sign, MAX_MINUTES)?;
-        } else if eq(key, state.str_seconds) {
-            seconds = DeltaField::parse(value, &mut sign, MAX_SECONDS)?;
-        } else if eq(key, state.str_nanoseconds) {
-            nanos = DeltaField::parse(value, &mut sign, MAX_NANOS)?;
+        if eq(key, str_years) {
+            slf.years = DeltaField::parse(value, &mut signum, MAX_YEARS)?;
+        } else if eq(key, str_months) {
+            slf.months = DeltaField::parse(value, &mut signum, MAX_MONTHS)?;
+        } else if eq(key, str_weeks) {
+            slf.weeks = DeltaField::parse(value, &mut signum, MAX_WEEKS)?;
+        } else if eq(key, str_days) {
+            slf.days = DeltaField::parse(value, &mut signum, MAX_DAYS)?;
+        } else if eq(key, str_hours) {
+            slf.hours = DeltaField::parse(value, &mut signum, MAX_HOURS)?;
+        } else if eq(key, str_minutes) {
+            slf.minutes = DeltaField::parse(value, &mut signum, MAX_MINUTES)?;
+        } else if eq(key, str_seconds) {
+            slf.seconds = DeltaField::parse(value, &mut signum, MAX_SECONDS)?;
+        } else if eq(key, str_nanoseconds) {
+            slf.nanos = DeltaField::parse(value, &mut signum, MAX_NANOS)?;
         } else {
             return Ok(false);
         }
@@ -313,33 +308,11 @@ fn __new__(cls: HeapType<ItemizedDelta>, args: PyTuple, kwargs: Option<PyDict>) 
     })?;
 
     // nanoseconds implies seconds
-    if nanos.is_set() && !seconds.is_set() {
-        seconds = DeltaField::new_unchecked(0);
+    if slf.nanos.is_set() && !slf.seconds.is_set() {
+        slf.seconds = DeltaField::new_unchecked(0);
     }
 
-    if !years.is_set()
-        && !months.is_set()
-        && !weeks.is_set()
-        && !days.is_set()
-        && !hours.is_set()
-        && !minutes.is_set()
-        && !seconds.is_set()
-        && !nanos.is_set()
-    {
-        return raise_value_err("At least one field must be set");
-    }
-
-    ItemizedDelta {
-        years,
-        months,
-        weeks,
-        days,
-        hours,
-        minutes,
-        seconds,
-        nanos,
-    }
-    .to_obj(cls)
+    slf.to_obj(cls)
 }
 
 fn sign(_: PyType, d: ItemizedDelta) -> PyReturn {
@@ -363,9 +336,9 @@ fn format_iso(
 fn parse_iso(cls: HeapType<ItemizedDelta>, arg: PyObj) -> PyReturn {
     let py_str = arg
         .cast_allow_subclass::<PyStr>()
-        .ok_or_type_err("When parsing from ISO format, the argument must be str")?;
+        .ok_or_type_err("when parsing from ISO format, the argument must be str")?;
     let s = &mut py_str.as_utf8()?;
-    let err = || format!("Invalid format: {arg}");
+    let err = || format!("Invalid format or out of range: {arg}");
 
     // Minimum: "P" + at least one component (e.g. "P0D") = 3 chars.
     // Since len >= 3, the loop below will always parse at least one component.
@@ -379,7 +352,7 @@ fn parse_iso(cls: HeapType<ItemizedDelta>, arg: PyObj) -> PyReturn {
     }
 
     let negated = parse_prefix(s).ok_or_else_value_err(err)?;
-    let cal_result = parse_date_fields(s, negated, &err)?;
+    let cal_result = parse_date_fields(s, negated).ok_or_else_value_err(err)?;
 
     let mut hours = DeltaField::UNSET;
     let mut minutes = DeltaField::UNSET;
@@ -401,24 +374,31 @@ fn parse_iso(cls: HeapType<ItemizedDelta>, arg: PyObj) -> PyReturn {
             }
             match unit {
                 TimeUnit::Hours => {
-                    hours = DeltaField::<i32>::new_checked(value as u64, negated, MAX_HOURS)
-                        .ok_or_else_value_err(|| "Delta out of range")?;
+                    hours = DeltaField::new_checked(value as u64, negated, MAX_HOURS)
+                        .ok_or_range_err()?;
                 }
                 TimeUnit::Minutes => {
-                    minutes = DeltaField::<i64>::new_checked(value as u64, negated, MAX_MINUTES)
-                        .ok_or_else_value_err(|| "Delta out of range")?;
+                    minutes = DeltaField::new_checked(value as u64, negated, MAX_MINUTES)
+                        .ok_or_range_err()?;
                 }
                 TimeUnit::Nanos { has_fraction } => {
-                    let sec_val = (value / 1_000_000_000) as u64;
-                    seconds = DeltaField::<i64>::new_checked(sec_val, negated, MAX_SECONDS)
-                        .ok_or_else_value_err(|| "Delta out of range")?;
+                    seconds = DeltaField::new_checked(
+                        (value / 1_000_000_000) as u64,
+                        negated,
+                        MAX_SECONDS,
+                    )
+                    .ok_or_range_err()?;
 
                     if has_fraction {
-                        let nano_val = (value % 1_000_000_000) as u64;
-                        nanos = DeltaField::<i32>::new_checked(nano_val, negated, MAX_NANOS)
-                            .ok_or_else_value_err(|| "Delta out of range")?;
+                        nanos = DeltaField::new_checked(
+                            (value % 1_000_000_000) as u64,
+                            negated,
+                            MAX_NANOS,
+                        )
+                        .ok_or_range_err()?;
                     }
 
+                    // There should be nothing left after parsing seconds
                     if !s.is_empty() {
                         raise_value_err(err())?;
                     }
@@ -519,10 +499,10 @@ extern "C" fn __mp_length__(slf: PyObj) -> Py_ssize_t {
 
 extern "C" fn __mp_subscript__(slf: PyObj, key: PyObj) -> *mut PyObject {
     let (cls, d) = unsafe { slf.assume_heaptype::<ItemizedDelta>() };
-    _mp_subscript_inner(cls, d, key).to_py_owned_ptr()
+    mp_subscript_inner(cls, d, key).to_py_owned_ptr()
 }
 
-fn _mp_subscript_inner(cls: HeapType<ItemizedDelta>, d: ItemizedDelta, key: PyObj) -> PyReturn {
+fn mp_subscript_inner(cls: HeapType<ItemizedDelta>, d: ItemizedDelta, key: PyObj) -> PyReturn {
     match d.find_field(key, cls.state()) {
         Some(result) => result,
         None => raise_key_err(key),
@@ -532,10 +512,10 @@ fn _mp_subscript_inner(cls: HeapType<ItemizedDelta>, d: ItemizedDelta, key: PyOb
 extern "C" fn __tp_iter__(slf_ptr: *mut PyObject) -> *mut PyObject {
     let slf = unsafe { PyObj::from_ptr_unchecked(slf_ptr) };
     let (cls, d) = unsafe { slf.assume_heaptype::<ItemizedDelta>() };
-    catch_panic!(_iter_inner(cls, d).to_py_owned_ptr())
+    catch_panic!(iter_inner(cls, d).to_py_owned_ptr())
 }
 
-fn _iter_inner(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyReturn {
+fn iter_inner(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyReturn {
     let &State {
         str_years,
         str_months,
@@ -548,7 +528,7 @@ fn _iter_inner(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyReturn {
         ..
     } = cls.state();
     let tup = PyTuple::with_len(d.len() as _)?;
-    let mut i: Py_ssize_t = 0;
+    let mut i = 0;
 
     if d.years.is_set() {
         tup.init_item(i, str_years.newref());
@@ -592,104 +572,71 @@ extern "C" fn __sq_contains__(slf: PyObj, key: PyObj) -> c_int {
 
 fn exact_eq(cls: HeapType<ItemizedDelta>, d: ItemizedDelta, arg: PyObj) -> PyReturn {
     match arg.extract(cls) {
-        Some(other) => {
-            println!("Comparing for exact equality: {d:?} vs {other:?}");
-            (d == other).to_py()
-        }
+        Some(other) => (d == other).to_py(),
         None => false.to_py(),
     }
 }
 
 fn replace(
     cls: HeapType<ItemizedDelta>,
-    d: ItemizedDelta,
+    mut d: ItemizedDelta,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")?;
     }
-    let state = cls.state();
-
-    let mut years = d.years;
-    let mut months = d.months;
-    let mut weeks = d.weeks;
-    let mut days = d.days;
-    let mut hours = d.hours;
-    let mut minutes = d.minutes;
-    let mut seconds = d.seconds;
-    let mut nanos = d.nanos;
+    let &State {
+        str_years,
+        str_months,
+        str_weeks,
+        str_days,
+        str_hours,
+        str_minutes,
+        str_seconds,
+        str_nanoseconds,
+        ..
+    } = cls.state();
 
     handle_kwargs("replace", kwargs, |key, value, eq| {
-        if eq(key, state.str_years) {
-            years = DeltaField::parse_opt(value, MAX_YEARS)?;
-        } else if eq(key, state.str_months) {
-            months = DeltaField::parse_opt(value, MAX_MONTHS)?;
-        } else if eq(key, state.str_weeks) {
-            weeks = DeltaField::parse_opt(value, MAX_WEEKS)?;
-        } else if eq(key, state.str_days) {
-            days = DeltaField::parse_opt(value, MAX_DAYS)?;
-        } else if eq(key, state.str_hours) {
-            hours = DeltaField::parse_opt(value, MAX_HOURS)?;
-        } else if eq(key, state.str_minutes) {
-            minutes = DeltaField::parse_opt(value, MAX_MINUTES)?;
-        } else if eq(key, state.str_seconds) {
-            seconds = DeltaField::parse_opt(value, MAX_SECONDS)?;
-        } else if eq(key, state.str_nanoseconds) {
-            nanos = DeltaField::parse_opt(value, MAX_NANOS)?;
+        if eq(key, str_years) {
+            d.years = DeltaField::parse_opt(value, MAX_YEARS)?;
+        } else if eq(key, str_months) {
+            d.months = DeltaField::parse_opt(value, MAX_MONTHS)?;
+        } else if eq(key, str_weeks) {
+            d.weeks = DeltaField::parse_opt(value, MAX_WEEKS)?;
+        } else if eq(key, str_days) {
+            d.days = DeltaField::parse_opt(value, MAX_DAYS)?;
+        } else if eq(key, str_hours) {
+            d.hours = DeltaField::parse_opt(value, MAX_HOURS)?;
+        } else if eq(key, str_minutes) {
+            d.minutes = DeltaField::parse_opt(value, MAX_MINUTES)?;
+        } else if eq(key, str_seconds) {
+            d.seconds = DeltaField::parse_opt(value, MAX_SECONDS)?;
+        } else if eq(key, str_nanoseconds) {
+            d.nanos = DeltaField::parse_opt(value, MAX_NANOS)?;
         } else {
             return Ok(false);
         }
         Ok(true)
     })?;
 
-    if !years.is_set()
-        && !months.is_set()
-        && !weeks.is_set()
-        && !days.is_set()
-        && !hours.is_set()
-        && !minutes.is_set()
-        && !seconds.is_set()
-        && !nanos.is_set()
-    {
-        return raise_value_err("At least one field must be set");
+    if d.is_unset() {
+        return raise_value_err("at least one field must remain set");
+    }
+    if d.has_sign_conflicts() {
+        return raise_value_err("mixed sign in delta");
     }
 
-    // Check sign consistency
-    let mut sign: i8 = 0;
-    for s in [
-        years.sign(),
-        months.sign(),
-        weeks.sign(),
-        days.sign(),
-        hours.sign(),
-        minutes.sign(),
-        seconds.sign(),
-        nanos.sign(),
-    ] {
-        if s != 0 {
-            if sign != 0 && sign != s {
-                return raise_value_err("Mixed sign in delta");
-            }
-            sign = s;
-        }
-    }
-
-    ItemizedDelta {
-        years,
-        months,
-        weeks,
-        days,
-        hours,
-        minutes,
-        seconds,
-        nanos,
-    }
-    .to_obj(cls)
+    d.to_obj(cls)
 }
 
 fn parts(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyResult<Owned<PyTuple>> {
-    let state = cls.state();
+    let &State {
+        itemized_date_delta_type,
+        time_delta_type,
+        ..
+    } = cls.state();
 
     // Date part
     let has_date = d.years.is_set() || d.months.is_set() || d.weeks.is_set() || d.days.is_set();
@@ -700,7 +647,7 @@ fn parts(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyResult<Owned<PyTup
             weeks: d.weeks,
             days: d.days,
         }
-        .to_obj(state.itemized_date_delta_type)
+        .to_obj(itemized_date_delta_type)
     } else {
         Ok(none())
     };
@@ -721,7 +668,7 @@ fn parts(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyResult<Owned<PyTup
             secs: DeltaSeconds::new_unchecked(adj_secs),
             subsec: SubSecNanos::new_unchecked(adj_nanos),
         }
-        .to_obj(state.time_delta_type)
+        .to_obj(time_delta_type)
     } else {
         Ok(none())
     };
@@ -756,7 +703,7 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
         nanos_obj,
     ] = args
     else {
-        return raise_type_err("Invalid pickle data");
+        return raise_type_err("invalid pickle data");
     };
     ItemizedDelta {
         years: DeltaField::parse_opt(years_obj, MAX_YEARS)?,
@@ -771,9 +718,6 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     .to_obj(state.itemized_delta_type)
 }
 
-/// Parse round_mode and round_increment from kwargs.
-use crate::common::cal_diff::parse_rounding_kwargs;
-
 fn in_units(
     cls: HeapType<ItemizedDelta>,
     d: ItemizedDelta,
@@ -781,48 +725,55 @@ fn in_units(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let &[units_arg] = args else {
-        raise_type_err("in_units() takes exactly 1 positional argument")?
-    };
+    let &State {
+        round_mode_strs,
+        zoned_datetime_type,
+        str_round_mode,
+        str_round_increment,
+        str_relative_to,
+        ..
+    } = state;
+    let units = DeltaUnitSet::from_py(handle_one_arg("in_units", args)?, state)?;
 
-    let mut relative_to_obj: Option<PyObj> = None;
-    let mut round_mode_obj: Option<PyObj> = None;
-    let mut round_inc_obj: Option<PyObj> = None;
+    let mut relative_to_arg = None;
+    let mut round_mode = round::Mode::Trunc;
+    let mut round_increment = RoundIncrement::MIN;
 
     handle_kwargs("in_units", kwargs, |key, value, eq| {
-        if eq(key, state.str_relative_to) {
-            relative_to_obj = Some(value);
-        } else if eq(key, state.str_round_mode) {
-            round_mode_obj = Some(value);
-        } else if eq(key, state.str_round_increment) {
-            round_inc_obj = Some(value);
+        if eq(key, str_relative_to) {
+            relative_to_arg = value
+                .extract(zoned_datetime_type)
+                .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?
+                .into()
+        } else if eq(key, str_round_mode) {
+            round_mode = round::Mode::from_py_named("round_mode", value, round_mode_strs)?;
+        } else if eq(key, str_round_increment) {
+            round_increment = RoundIncrement::from_py(value)?;
         } else {
             return Ok(false);
         }
         Ok(true)
     })?;
 
-    // FUTURE: allow PlainDateTime/OffsetDateTime as relative_to (with appropriate warnings)
-    let zdt: ZonedDateTime = relative_to_obj
-        .ok_or_type_err("missing required keyword argument: 'relative_to'")?
-        .extract(state.zoned_datetime_type)
-        .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?;
-    let (round_mode, round_increment) =
-        parse_rounding_kwargs(state, round_mode_obj, round_inc_obj)?;
-    let units = cal_diff::parse_delta_units_sequence(units_arg, state)?;
+    let Some(zdt) = relative_to_arg else {
+        raise_type_err("missing required keyword argument: 'relative_to'")?
+    };
 
-    let shifted = zdt
-        .shift_default(d)
-        .ok_or_value_err("Resulting datetime is out of range")?;
-
-    let parsed = FullSinceUntilArgs {
+    let shifted = zdt.shift_default(d).ok_or_range_err()?;
+    let shifted_inst = shifted.instant();
+    let sign = if d.derived_sign() == -1 { -1 } else { 1 }; // TODO nicer
+    zoned_since_in_units(
+        shifted,
+        shifted_inst,
+        zdt,
+        zoned_target(shifted.date, shifted_inst, zdt, sign).ok_or_range_err()?,
         units,
-        single_unit_mode: false,
         round_mode,
         round_increment,
-    };
-    // TODO LOW: name qualification
-    zoned_since(state, shifted, zdt, true, &parsed)
+        sign,
+    )
+    .ok_or_range_err()?
+    .to_obj(cls)
 }
 
 fn total(
@@ -833,23 +784,15 @@ fn total(
 ) -> PyReturn {
     let state = cls.state();
 
-    // Parse the arguments
-    let &[unit_arg] = args else {
-        raise_type_err("total() takes exactly 1 positional argument")?
-    };
-    let unit = DeltaUnit::from_py(unit_arg, state)?;
+    let unit = DeltaUnit::from_py(handle_one_arg("total", args)?, state)?;
+
     let relative_to = handle_one_kwarg("total", state.str_relative_to, kwargs)?
         .ok_or_type_err("missing required keyword argument: 'relative_to'")?
         .extract(state.zoned_datetime_type)
         .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?;
 
-    // Do the shift and get the exact duration
-    let shifted = relative_to
-        .shift_default(d)
-        .ok_or_value_err("Resulting datetime is out of range")?;
+    let shifted = relative_to.shift_default(d).ok_or_range_err()?;
     let tdelta = shifted.instant().diff(relative_to.instant());
-
-    // ------
 
     let cal_unit = match unit.to_exact(false) {
         Ok(ExactUnit::Nanoseconds) => {
@@ -862,28 +805,122 @@ fn total(
         Err(cal_unit) => cal_unit,
     };
 
-    let sign = if tdelta.secs.get() >= 0 { 1 } else { -1 };
-    let shifted_inst = shifted.instant();
-
-    let target_date =
-        zoned_target(shifted.date, shifted_inst, relative_to, sign).ok_or_range_err()?;
-
-    let (trunc_amount, trunc_date, expand_date) =
-        cal_diff::date_diff_single_unit(target_date, relative_to.date, 1, cal_unit, sign)
-            .ok_or_range_err()?;
-
-    let trunc_odt = relative_to.with_date(trunc_date.into()).ok_or_range_err()?;
-    let expand_odt = relative_to
-        .with_date(expand_date.into())
-        .ok_or_range_err()?;
-
-    let r = shifted_inst.diff(trunc_odt.instant()).abs();
-    let e = expand_odt.instant().diff(trunc_odt.instant());
-
-    (trunc_amount as f64 + r.to_nanos_f64() / e.to_nanos_f64()).to_py()
+    total_cal(
+        // TODO: replace sign: i8 with negate: bool where sign is always ±1
+        if tdelta.secs.get() >= 0 { 1 } else { -1 },
+        cal_unit,
+        relative_to,
+        shifted,
+        shifted.instant(),
+    )
 }
 
-fn _add_sub(
+pub(crate) fn handle_delta_unit_kwargs(
+    key: PyObj,
+    value: PyObj,
+    months: &mut DeltaMonths,
+    days: &mut DeltaDays,
+    time: &mut TimeDelta,
+    units: &mut DeltaUnitSet, // To track which units were set from kwargs
+    eq: impl Fn(PyObj, PyObj) -> bool,
+    str_years: PyObj,
+    str_months: PyObj,
+    str_weeks: PyObj,
+    str_days: PyObj,
+    str_hours: PyObj,
+    str_minutes: PyObj,
+    str_seconds: PyObj,
+    // These units are only allowed in some contexts
+    str_milliseconds: Option<PyObj>,
+    str_microseconds: Option<PyObj>,
+    str_nanoseconds: PyObj,
+) -> PyResult<bool> {
+    if eq(key, str_years) {
+        *months = DeltaMonths::from_i64_years(
+            value
+                .cast_allow_subclass::<PyInt>()
+                .ok_or_type_err("years must be an integer")?
+                .to_i64()?,
+        )
+        .ok_or_range_err()?
+        .add(*months)
+        .ok_or_range_err()?;
+        units.insert(DeltaUnit::Years);
+    } else if eq(key, str_months) {
+        *months = DeltaMonths::from_i64(
+            value
+                .cast_allow_subclass::<PyInt>()
+                .ok_or_type_err("months must be an integer")?
+                .to_i64()?,
+        )
+        .ok_or_range_err()?
+        .add(*months)
+        .ok_or_range_err()?;
+        units.insert(DeltaUnit::Months);
+    } else if eq(key, str_weeks) {
+        *days = DeltaDays::from_i64_weeks(
+            value
+                .cast_allow_subclass::<PyInt>()
+                .ok_or_type_err("weeks must be an integer")?
+                .to_i64()?,
+        )
+        .ok_or_range_err()?
+        .add(*days)
+        .ok_or_range_err()?;
+        units.insert(DeltaUnit::Weeks);
+    } else if eq(key, str_days) {
+        *days = DeltaDays::from_i64(
+            value
+                .cast_allow_subclass::<PyInt>()
+                .ok_or_type_err("days must be an integer")?
+                .to_i64()?,
+        )
+        .ok_or_range_err()?
+        .add(*days)
+        .ok_or_range_err()?;
+        units.insert(DeltaUnit::Days);
+    } else if eq(key, str_hours) {
+        // TODO: consistent add/checked-add() naming
+        *time = time
+            .checked_add(ExactUnit::Hours.parse_py_number(value)?)
+            .ok_or_range_err()?;
+        units.insert(DeltaUnit::Hours);
+    } else if eq(key, str_minutes) {
+        *time = time
+            .checked_add(ExactUnit::Minutes.parse_py_number(value)?)
+            .ok_or_range_err()?;
+        units.insert(DeltaUnit::Minutes);
+    } else if eq(key, str_seconds) {
+        *time = time
+            .checked_add(ExactUnit::Seconds.parse_py_number(value)?)
+            .ok_or_range_err()?;
+        units.insert(DeltaUnit::Seconds);
+    } else if let Some(str_millis) = str_milliseconds
+        && eq(key, str_millis)
+    {
+        *time = time
+            .checked_add(ExactUnit::Milliseconds.parse_py_number(value)?)
+            .ok_or_range_err()?;
+        units.insert(DeltaUnit::Nanoseconds); // Converted to nanoseconds
+    } else if let Some(str_micros) = str_microseconds
+        && eq(key, str_micros)
+    {
+        *time = time
+            .checked_add(ExactUnit::Microseconds.parse_py_number(value)?)
+            .ok_or_range_err()?;
+        units.insert(DeltaUnit::Nanoseconds); // Converted to nanoseconds
+    } else if eq(key, str_nanoseconds) {
+        *time = time
+            .checked_add(ExactUnit::Nanoseconds.parse_py_number(value)?)
+            .ok_or_range_err()?;
+        units.insert(DeltaUnit::Nanoseconds);
+    } else {
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+fn add_sub(
     cls: HeapType<ItemizedDelta>,
     d: ItemizedDelta,
     args: &[PyObj],
@@ -892,135 +929,124 @@ fn _add_sub(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
+    let &State {
+        str_years,
+        str_months,
+        str_weeks,
+        str_days,
+        str_hours,
+        str_minutes,
+        str_seconds,
+        str_nanoseconds,
+        str_relative_to,
+        str_units,
+        str_round_mode,
+        round_mode_strs,
+        str_round_increment,
+        itemized_delta_type,
+        zoned_datetime_type,
+        ..
+    } = state;
 
-    let pos_arg = match args {
-        &[] => None,
-        &[arg] => Some(arg),
-        _ => raise_type_err(format!("{fname}() takes at most 1 positional argument"))?,
-    };
+    let other = handle_opt_arg(fname, args)?
+        .map(|arg| {
+            arg.extract(itemized_delta_type)
+                .ok_or_type_err(format!("{fname}() argument must be an ItemizedDelta"))
+        })
+        .transpose()?;
 
-    let mut relative_to_obj: Option<PyObj> = None;
-    let mut units_obj: Option<PyObj> = None;
-    let mut round_mode_obj: Option<PyObj> = None;
-    let mut round_inc_obj: Option<PyObj> = None;
-    // Component kwargs
-    let mut comp_months: i32 = 0;
-    let mut comp_days: i32 = 0;
-    let mut comp_nanos: i128 = 0;
-    // Track which component units are specified for default unit set
-    let mut comp_unit_set = UnitSet::EMPTY;
+    let mut relative_to_arg = None;
+    let mut units = DeltaUnitSet::EMPTY;
+    let mut round_mode = round::Mode::Trunc;
+    let mut round_increment = RoundIncrement::MIN;
+    let mut months_from_kwargs = DeltaMonths::ZERO;
+    let mut days_from_kwargs = DeltaDays::ZERO;
+    let mut tdelta_from_kwargs = TimeDelta::ZERO;
+    // TODO RANDOM: maybe in_units->to_units for consistency
+    let mut units_from_kwargs = DeltaUnitSet::EMPTY;
 
     handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, state.str_relative_to) {
-            relative_to_obj = Some(value);
-        } else if eq(key, state.str_units) {
-            units_obj = Some(value);
-        } else if eq(key, state.str_round_mode) {
-            round_mode_obj = Some(value);
-        } else if eq(key, state.str_round_increment) {
-            round_inc_obj = Some(value);
-        } else if datetime_delta::set_units_from_kwargs(
-            key,
-            value,
-            &mut comp_months,
-            &mut comp_days,
-            &mut comp_nanos,
-            state,
-            eq,
-        )? {
-            // Track the unit
-            if eq(key, state.str_years) {
-                comp_unit_set.insert(DeltaUnit::Years);
-            } else if eq(key, state.str_months) {
-                comp_unit_set.insert(DeltaUnit::Months);
-            } else if eq(key, state.str_weeks) {
-                comp_unit_set.insert(DeltaUnit::Weeks);
-            } else if eq(key, state.str_days) {
-                comp_unit_set.insert(DeltaUnit::Days);
-            } else if eq(key, state.str_hours) {
-                comp_unit_set.insert(DeltaUnit::Hours);
-            } else if eq(key, state.str_minutes) {
-                comp_unit_set.insert(DeltaUnit::Minutes);
-            } else if eq(key, state.str_seconds) {
-                comp_unit_set.insert(DeltaUnit::Seconds);
-            } else if eq(key, state.str_nanoseconds) {
-                comp_unit_set.insert(DeltaUnit::Nanoseconds);
-            }
+        if eq(key, str_relative_to) {
+            relative_to_arg = value
+                .extract(zoned_datetime_type)
+                .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?
+                .into();
+        } else if eq(key, str_units) {
+            units = DeltaUnitSet::from_py(value, state)?;
+        } else if eq(key, str_round_mode) {
+            round_mode = round::Mode::from_py_named("round_mode", value, round_mode_strs)?;
+        } else if eq(key, str_round_increment) {
+            round_increment = RoundIncrement::from_py(value)?;
         } else {
-            raise_value_err(format!("Invalid field: {key}"))?;
+            return handle_delta_unit_kwargs(
+                key,
+                value,
+                &mut months_from_kwargs,
+                &mut days_from_kwargs,
+                &mut tdelta_from_kwargs,
+                &mut units_from_kwargs,
+                eq,
+                str_years,
+                str_months,
+                str_weeks,
+                str_days,
+                str_hours,
+                str_minutes,
+                str_seconds,
+                None,
+                None,
+                str_nanoseconds,
+            );
         }
         Ok(true)
     })?;
 
-    let zdt = relative_to_obj
-        .ok_or_type_err("missing required keyword argument: 'relative_to'")?
-        .extract(state.zoned_datetime_type)
-        .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?;
+    let relative_to = relative_to_arg.ok_or_type_err(format!(
+        "{fname}() missing required keyword argument: 'relative_to'"
+    ))?;
 
-    let (round_mode, round_increment) =
-        parse_rounding_kwargs(state, round_mode_obj, round_inc_obj)?;
+    if units.is_empty() {
+        raise_type_err(format!(
+            "{fname}() missing required keyword argument: 'units'"
+        ))?
+    }
 
-    // Determine other delta to add
-    let (other_months, other_days, other_tdelta, other_unit_set) =
-        match (pos_arg, !comp_unit_set.is_empty()) {
-            (Some(_), true) => raise_type_err("Cannot mix positional and keyword arguments")?,
-            (Some(arg), false) => {
-                let other: ItemizedDelta = arg
-                    .extract(state.itemized_delta_type)
-                    .ok_or_type_err(format!("{fname}() argument must be an ItemizedDelta"))?;
-                let other = if negate { other.negated() } else { other };
-                let (m, dy, td) = other
-                    .to_components()
-                    .ok_or_value_err("Delta components out of range")?;
-                (m, dy, td, other.unit_set())
-            }
-            (None, true) => {
-                let sign: i64 = if negate { -1 } else { 1 };
-                let m = DeltaMonths::new(comp_months * sign as i32)
-                    .ok_or_value_err("Total months out of range")?;
-                let dy = DeltaDays::new(comp_days * sign as i32)
-                    .ok_or_value_err("Total days out of range")?;
-                let td = TimeDelta::from_nanos(comp_nanos * sign as i128)
-                    .ok_or_value_err("Total duration out of range")?;
-                (m, dy, td, comp_unit_set)
-            }
-            (None, false) => {
-                // No other arg: just convert self to the specified or default units
-                let units = match units_obj {
-                    Some(seq) => cal_diff::parse_delta_units_sequence(seq, state)?,
-                    None => d.unit_set(),
-                };
-                let shifted = zdt
-                    .shift_default(d)
-                    .ok_or_value_err("Resulting datetime out of range")?;
-                let parsed = FullSinceUntilArgs {
-                    units,
-                    single_unit_mode: false,
-                    round_mode,
-                    round_increment,
-                };
-                return zoned_since(state, shifted, zdt, true, &parsed);
-            }
-        };
-
-    // Determine output units
-    let units = match units_obj {
-        Some(seq) => cal_diff::parse_delta_units_sequence(seq, state)?,
-        None => d.unit_set().union(other_unit_set),
+    let (mut months, mut days, mut tdelta) = match (other, units_from_kwargs.is_empty()) {
+        (Some(_), false) => {
+            raise_type_err("cannot mix durations from positional and keyword arguments")?
+        }
+        (Some(d), true) => d.to_components().ok_or_range_err()?,
+        _ => (months_from_kwargs, days_from_kwargs, tdelta_from_kwargs),
     };
 
-    let shifted = zdt
-        .shift_default(d)
-        .and_then(|odt| odt.shift_in_tz(other_months, other_days, other_tdelta, zdt.tz))
-        .ok_or_value_err("Resulting datetime out of range")?;
+    months = months.negate_if(negate);
+    days = days.negate_if(negate);
+    tdelta = tdelta.negate_if(negate);
 
-    let parsed = FullSinceUntilArgs {
+    let shifted = relative_to
+        .shift_default(d)
+        .and_then(|odt| odt.shift_in_tz(months, days, tdelta, relative_to.tz))
+        .ok_or_range_err()?;
+    let shifted_inst = shifted.instant();
+
+    let sign = if shifted_inst >= relative_to.instant() {
+        1
+    } else {
+        -1
+    };
+
+    zoned_since_in_units(
+        shifted,
+        shifted.instant(),
+        relative_to,
+        zoned_target(shifted.date, shifted_inst, relative_to, sign).ok_or_range_err()?,
         units,
-        single_unit_mode: false,
         round_mode,
         round_increment,
-    };
-    zoned_since(state, shifted, zdt, true, &parsed)
+        sign,
+    )
+    .ok_or_range_err()?
+    .to_obj(cls)
 }
 
 fn add(
@@ -1029,7 +1055,7 @@ fn add(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    _add_sub(cls, d, args, kwargs, false)
+    add_sub(cls, d, args, kwargs, false)
 }
 
 fn subtract(
@@ -1038,7 +1064,7 @@ fn subtract(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    _add_sub(cls, d, args, kwargs, true)
+    add_sub(cls, d, args, kwargs, true)
 }
 
 #[allow(static_mut_refs)]
@@ -1118,6 +1144,7 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod_kwargs!(
         ItemizedDelta,
         __get_pydantic_core_schema__,
+        // TODO: don't include docstring for this
         doc::PYDANTIC_SCHEMA
     ),
     PyMethodDef::zeroed(),

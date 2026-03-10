@@ -1,7 +1,7 @@
 //! Module with reusable components used elsewhere in the crate
 pub mod ambiguity;
-pub mod cal_diff;
 pub mod fmt;
+pub mod math;
 pub mod parse;
 pub mod rfc2822;
 pub mod round;

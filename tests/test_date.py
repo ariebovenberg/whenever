@@ -6,6 +6,7 @@ from itertools import chain, product
 
 import pytest
 
+from tests.test_date_delta import make_ddelta
 from whenever import (
     Date,
     DateDelta,
@@ -1202,7 +1203,9 @@ class TestSinceAndUntil:
             d.since(Date(2020, 1, 1), unit="foos")  # type: ignore[call-overload]
 
         # empty units list
-        with pytest.raises(ValueError, match="units"):
+        with pytest.raises(
+            ValueError, match="units cannot be empty|[Aa]t least one"
+        ):
             d.since(Date(2020, 1, 1), units=())
 
         # neither unit nor units specified
@@ -1378,12 +1381,12 @@ class TestSubtract:
     @pytest.mark.parametrize(
         "d1, d2, expected",
         [
-            (Date(2021, 1, 31), Date(2021, 1, 1), days(30)),
-            (Date(2021, 1, 1), Date(2021, 1, 31), -days(30)),
-            (Date(2021, 1, 20), Date(2021, 1, 11), days(9)),
-            (Date(2021, 2, 28), Date(2021, 2, 28), days(0)),
-            (Date(2021, 2, 28), Date(2021, 2, 27), days(1)),
-            (Date(2021, 2, 28), Date(2021, 2, 1), days(27)),
+            (Date(2021, 1, 31), Date(2021, 1, 1), make_ddelta(days=30)),
+            (Date(2021, 1, 1), Date(2021, 1, 31), -make_ddelta(days=30)),
+            (Date(2021, 1, 20), Date(2021, 1, 11), make_ddelta(days=9)),
+            (Date(2021, 2, 28), Date(2021, 2, 28), make_ddelta(days=0)),
+            (Date(2021, 2, 28), Date(2021, 2, 27), make_ddelta(days=1)),
+            (Date(2021, 2, 28), Date(2021, 2, 1), make_ddelta(days=27)),
         ],
     )
     def test_days(self, d1, d2, expected):
@@ -1392,65 +1395,73 @@ class TestSubtract:
     @pytest.mark.parametrize(
         "d1, d2, delta",
         [
-            (Date(2021, 2, 1), Date(2020, 1, 29), DateDelta(years=1, days=3)),
-            (Date(2021, 1, 31), Date(2020, 12, 31), DateDelta(months=1)),
-            (Date(2020, 12, 31), Date(2021, 1, 31), DateDelta(months=-1)),
+            (
+                Date(2021, 2, 1),
+                Date(2020, 1, 29),
+                make_ddelta(years=1, days=3),
+            ),
+            (Date(2021, 1, 31), Date(2020, 12, 31), make_ddelta(months=1)),
+            (Date(2020, 12, 31), Date(2021, 1, 31), make_ddelta(months=-1)),
             (
                 Date(2021, 1, 20),
                 Date(2020, 12, 19),
-                DateDelta(months=1, days=1),
+                make_ddelta(months=1, days=1),
             ),
-            (Date(2024, 2, 28), Date(2024, 2, 29), -DateDelta(days=1)),
-            (Date(2024, 2, 29), Date(2024, 2, 28), DateDelta(days=1)),
+            (Date(2024, 2, 28), Date(2024, 2, 29), -make_ddelta(days=1)),
+            (Date(2024, 2, 29), Date(2024, 2, 28), make_ddelta(days=1)),
             (
                 Date(2024, 2, 29),
                 Date(2023, 3, 1),
-                DateDelta(months=11, days=28),
+                make_ddelta(months=11, days=28),
             ),
             (
                 Date(2024, 2, 29),
                 Date(2023, 3, 2),
-                DateDelta(months=11, days=27),
+                make_ddelta(months=11, days=27),
             ),
             (
                 Date(2023, 3, 2),
                 Date(2024, 2, 29),
-                -DateDelta(months=11, days=27),
+                -make_ddelta(months=11, days=27),
             ),
-            (Date(2024, 1, 31), Date(2023, 1, 31), DateDelta(years=1)),
+            (Date(2024, 1, 31), Date(2023, 1, 31), make_ddelta(years=1)),
             (
                 Date(2023, 1, 31),
                 Date(2024, 2, 29),
-                -DateDelta(years=1, days=28),
+                -make_ddelta(years=1, days=28),
             ),
             (
                 Date(2023, 1, 30),
                 Date(2024, 2, 29),
-                -DateDelta(years=1, days=29),
+                -make_ddelta(years=1, days=29),
             ),
             (
                 Date(2022, 12, 30),
                 Date(2024, 2, 29),
-                -DateDelta(years=1, months=1, days=30),
+                -make_ddelta(years=1, months=1, days=30),
             ),
             (
                 Date(2024, 2, 29),
                 Date(2023, 1, 31),
-                DateDelta(years=1, months=1),
+                make_ddelta(years=1, months=1),
             ),
-            (Date(2024, 2, 29), Date(2023, 2, 28), DateDelta(years=1, days=1)),
-            (Date(2023, 2, 28), Date(2024, 2, 29), -DateDelta(years=1)),
-            (Date(2023, 2, 28), Date(2024, 2, 28), -DateDelta(years=1)),
-            (Date(2025, 2, 28), Date(2024, 2, 29), DateDelta(years=1)),
+            (
+                Date(2024, 2, 29),
+                Date(2023, 2, 28),
+                make_ddelta(years=1, days=1),
+            ),
+            (Date(2023, 2, 28), Date(2024, 2, 29), -make_ddelta(years=1)),
+            (Date(2023, 2, 28), Date(2024, 2, 28), -make_ddelta(years=1)),
+            (Date(2025, 2, 28), Date(2024, 2, 29), make_ddelta(years=1)),
             (
                 Date(2024, 2, 29),
                 Date(2025, 2, 28),
-                -DateDelta(months=11, days=28),
+                -make_ddelta(months=11, days=28),
             ),
             (
                 Date(2023, 2, 28),
                 Date(2024, 2, 29),
-                DateDelta(years=-1),
+                make_ddelta(years=-1),
             ),
         ],
     )

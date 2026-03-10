@@ -575,6 +575,11 @@ impl DeltaMonths {
             .then(|| Self::new_unchecked(months as i32))
     }
 
+    pub(crate) fn from_i64_years(years: i64) -> Option<Self> {
+        (years <= Year::MAX.get() as i64 && years >= -(Year::MAX.get() as i64))
+            .then(|| Self::new_unchecked((years * 12) as i32))
+    }
+
     pub(crate) fn get(self) -> i32 {
         self.0
     }
@@ -594,6 +599,10 @@ impl DeltaMonths {
 
     pub(crate) fn is_zero(self) -> bool {
         self.0 == 0
+    }
+
+    pub(crate) fn negate_if(self, condition: bool) -> Self {
+        if condition { Self(-self.0) } else { self }
     }
 }
 
@@ -639,6 +648,11 @@ impl DeltaDays {
             .then(|| Self::new_unchecked(days as i32))
     }
 
+    pub(crate) fn from_i64_weeks(weeks: i64) -> Option<Self> {
+        (weeks >= DeltaDays::MIN.get() as i64 / 7 && weeks <= DeltaDays::MAX.get() as i64 / 7)
+            .then(|| Self::new_unchecked((weeks * 7) as i32))
+    }
+
     pub(crate) fn abs(self) -> Self {
         Self(self.0.abs())
     }
@@ -654,6 +668,10 @@ impl DeltaDays {
 
     pub(crate) fn is_zero(self) -> bool {
         self.0 == 0
+    }
+
+    pub(crate) fn negate_if(self, condition: bool) -> Self {
+        if condition { Self(-self.0) } else { self }
     }
 }
 
@@ -928,7 +946,9 @@ impl Weekday {
 }
 
 /// Trait for types that can be used as delta field values with a sentinel
-pub(crate) trait DeltaFieldInner: Copy + Eq + PartialOrd + Neg<Output = Self> {
+pub(crate) trait DeltaFieldInner:
+    Copy + Eq + std::fmt::Debug + PartialOrd + Neg<Output = Self>
+{
     const SENTINEL: Self;
     const ZERO: Self;
     fn unsigned_abs(self) -> u64;
@@ -981,9 +1001,19 @@ impl DeltaFieldInner for i64 {
 /// An optional signed integer component of an itemized delta.
 /// Uses a sentinel value for "missing", avoiding the overhead of `Option<T>`.
 /// Construction through `parse()` ensures that the value is range-checked.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub(crate) struct DeltaField<T: DeltaFieldInner>(T);
+
+impl<T: DeltaFieldInner> std::fmt::Debug for DeltaField<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_set() {
+            self.0.fmt(f)
+        } else {
+            f.write_str("<unset>")
+        }
+    }
+}
 
 impl<T: DeltaFieldInner> DeltaField<T> {
     pub(crate) const UNSET: Self = Self(T::SENTINEL);
@@ -1048,16 +1078,16 @@ impl<T: DeltaFieldInner> DeltaField<T> {
         }
         let abs = (val as i64).unsigned_abs();
         if abs > max {
-            raise_value_err("Delta out of range")?;
+            raise_value_err("delta out of range")?;
         }
         if val > 0 {
             if *sign == -1 {
-                raise_value_err("Mixed sign in delta")?;
+                raise_value_err("mixed sign in delta")?;
             }
             *sign = 1;
         } else {
             if *sign == 1 {
-                raise_value_err("Mixed sign in delta")?;
+                raise_value_err("mixed sign in delta")?;
             }
             *sign = -1;
         }
@@ -1077,7 +1107,7 @@ impl<T: DeltaFieldInner> DeltaField<T> {
                 .to_long()?;
             let abs = (val as i64).unsigned_abs();
             if abs > max {
-                raise_value_err("Delta out of range")?;
+                raise_value_err("delta out of range")?;
             }
             Ok(Self::new_unchecked(T::from_c_long(val)))
         }

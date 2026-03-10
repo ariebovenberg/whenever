@@ -13,6 +13,7 @@ from whenever import (
     Instant,
     OffsetDateTime,
     PlainDateTime,
+    TimeDelta,
     WheneverDeprecationWarning,
     ZonedDateTime,
     hours,
@@ -1171,6 +1172,36 @@ class TestRound:
         d = Instant.MAX.subtract(hours=1)
         with pytest.raises((ValueError, OverflowError), match="range"):
             d.round("hour", increment=4)
+
+    def test_round_by_timedelta(self):
+        d = Instant.from_utc(2020, 1, 1, 12, 39, 59)
+        assert d.round(TimeDelta(minutes=15)) == Instant.from_utc(
+            2020, 1, 1, 12, 45
+        )
+        assert d.round(TimeDelta(hours=1)) == Instant.from_utc(2020, 1, 1, 13)
+        assert d.round(
+            TimeDelta(minutes=15), mode="floor"
+        ) == Instant.from_utc(2020, 1, 1, 12, 30)
+
+    def test_round_by_timedelta_invalid_not_divides_day(self):
+        d = Instant.from_utc(2020, 1, 1, 12)
+        with pytest.raises(ValueError, match="24 hour"):
+            d.round(TimeDelta(hours=7))
+
+    def test_round_by_timedelta_negative(self):
+        d = Instant.from_utc(2020, 1, 1, 12)
+        with pytest.raises(ValueError, match="positive"):
+            d.round(TimeDelta(hours=-1))
+
+    def test_round_by_timedelta_zero(self):
+        d = Instant.from_utc(2020, 1, 1, 12)
+        with pytest.raises(ValueError, match="positive"):
+            d.round(TimeDelta())
+
+    def test_round_by_timedelta_with_increment(self):
+        d = Instant.from_utc(2020, 1, 1, 12)
+        with pytest.raises(TypeError):
+            d.round(TimeDelta(hours=1), increment=2)
 
 
 def test_cannot_subclass():

@@ -83,15 +83,12 @@ impl PyObj {
         self.as_ptr() == unsafe { Py_None() }
     }
 
-    /// Get the length of a sequence. Returns `None` if not a sequence.
-    pub(crate) fn seq_len(self) -> Option<usize> {
-        let len = unsafe { pyo3_ffi::PySequence_Length(self.as_ptr()) };
-        (len >= 0).then_some(len as usize)
-    }
-
-    /// Get an item from a sequence by index. Returns owned reference.
-    pub(crate) fn seq_getitem(self, i: usize) -> PyResult<Owned<PyObj>> {
-        unsafe { pyo3_ffi::PySequence_GetItem(self.as_ptr(), i as isize) }.rust_owned()
+    pub(crate) fn to_tuple(self) -> PyResult<Owned<PyTuple>> {
+        Ok(unsafe {
+            pyo3_ffi::PySequence_Tuple(self.as_ptr())
+                .rust_owned()?
+                .cast_unchecked::<PyTuple>()
+        })
     }
 }
 

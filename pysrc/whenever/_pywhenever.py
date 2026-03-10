@@ -52,7 +52,6 @@ from ._math import (
     DATE_DELTA_UNITS,
     DELTA_UNITS,
     DIFF_FUNCS,
-    EXACT_UNITS,
     NS_PER_UNIT_PLURAL,
     Sign,
     custom_round,
@@ -152,6 +151,18 @@ except ImportError:
     SPHINX_RUNNING = False
 
 
+# A custom warnings class to prevent silent deprecation warnings in user code.
+# See https://sethmlarson.dev/deprecations-via-warnings-dont-work-for-python-libraries
+class WheneverDeprecationWarning(UserWarning):
+    """Raised when a deprecated feature of the ``whenever`` library is used.
+
+    This is a custom warning class (not a subclass of
+    :class:`DeprecationWarning`) so that deprecation warnings from this
+    library are visible by default—unlike standard ``DeprecationWarning``,
+    which Python silences in production code.
+    """
+
+
 class Weekday(enum.Enum):
     """Day of the week; ``.value`` corresponds with ISO numbering
     (monday=1, sunday=7).
@@ -244,13 +255,21 @@ _Tcall = TypeVar("_Tcall", bound=Callable[..., None])
 # I'd love for this to be a decorator, but every attempt I made resulted
 # in mypy getting too confused. I've tried a lot.
 def add_alternate_constructors(
-    init_default: _Tcall, py_type: type | None = None
+    init_default: _Tcall,
+    py_type: type | None = None,
+    deprecation_msg: str | None = None,
 ) -> _Tcall:
     """Add alternate constructors to a class's __init__ method."""
 
     def __init__(self: Any, *args: Any, **kwargs: Any) -> None:
         match args:
             case [str() as iso_string] if not kwargs:
+                if deprecation_msg:
+                    warn(
+                        deprecation_msg,
+                        WheneverDeprecationWarning,
+                        stacklevel=2,
+                    )
                 self._init_from_iso(iso_string)
             case [obj] if (
                 py_type is not None and not kwargs and isinstance(obj, py_type)
@@ -848,7 +867,7 @@ class Date(_Base):
                     )
                 else:
                     dys = self.day - shifted.day
-            return DateDelta(months=mos, days=dys)
+            return DateDelta._from_months_days(mos, dys)
         return NotImplemented
 
     __str__ = format_iso
@@ -1534,29 +1553,45 @@ class Time(_Base):
 
     def round(
         self,
-        unit: Literal[
-            "hour",
-            "minute",
-            "second",
-            "millisecond",
-            "microsecond",
-            "nanosecond",
-        ] = "second",
+        unit: (
+            Literal[
+                "hour",
+                "minute",
+                "second",
+                "millisecond",
+                "microsecond",
+                "nanosecond",
+            ]
+            | TimeDelta
+        ) = "second",
+        /,
+        *,
         increment: int = 1,
         mode: RoundModeStr = "half_even",
     ) -> Time:
-        """Round the time to the specified unit and increment.
+        """Round the time to the specified unit and increment,
+        or to a multiple of a :class:`TimeDelta`.
         Various rounding modes are available.
 
         >>> Time(12, 39, 59).round("minute", 15)
         Time(12:45:00)
         >>> Time(8, 9, 13).round("second", 5, mode="floor")
         Time(08:09:10)
+        >>> Time(12, 39, 59).round(TimeDelta(minutes=15))
+        Time(12:45:00)
         """
-        if unit == "day":  # type: ignore[comparison-overlap]
-            raise ValueError("Cannot round Time to day")
+        if isinstance(unit, TimeDelta):
+            if increment != 1:
+                raise TypeError(
+                    "Cannot specify both a TimeDelta and an increment"
+                )
+            increment_ns = unit._to_round_increment_ns(False)
+        else:
+            if unit == "day":  # type: ignore[comparison-overlap]
+                raise ValueError("Cannot round Time to day")
+            increment_ns = increment_to_ns_for_datetime(unit, increment)
         return self._round_unchecked(
-            increment_to_ns_for_datetime(unit, increment),
+            increment_ns,
             mode,
             86_400_000_000_000,
         )[0]
@@ -1700,8 +1735,6 @@ class TimeDelta(_Base):
 
     __slots__ = ("_total_ns",)
 
-    # FUTURE: allow weeks and days (with 24 hour warning)?
-
     # Overloads for a nice autodoc.
     # Proper typing of the constructors is handled in the type stubs
     if not TYPE_CHECKING:
@@ -1716,6 +1749,8 @@ class TimeDelta(_Base):
         def __init__(
             self,
             *,
+            weeks: float = 0,
+            days: float = 0,
             hours: float = 0,
             minutes: float = 0,
             seconds: float = 0,
@@ -1727,6 +1762,8 @@ class TimeDelta(_Base):
     def __init__(
         self,
         *,
+        weeks: float = 0,
+        days: float = 0,
         hours: float = 0,
         minutes: float = 0,
         seconds: float = 0,
@@ -1735,9 +1772,13 @@ class TimeDelta(_Base):
         nanoseconds: int = 0,
     ) -> None:
         assert type(nanoseconds) is int  # catch this common mistake
+        if (weeks or days) and not _ignore_days_not_always_24h_warning.get():
+            warn(DaysNotAlways24HoursWarning(DAYS_NOT_ALWAYS_24H_MSG))
         ns = self._total_ns = (
             # Cast individual components to int to avoid floating point errors
-            int(hours * 3_600_000_000_000)
+            int(weeks * 7 * 86_400_000_000_000)
+            + int(days * 86_400_000_000_000)
+            + int(hours * 3_600_000_000_000)
             + int(minutes * 60_000_000_000)
             + int(seconds * 1_000_000_000)
             + int(milliseconds * 1_000_000)
@@ -1980,19 +2021,14 @@ class TimeDelta(_Base):
             else (-hours, -mins, -secs, -ns)
         )
 
-    # TODO: allow relative_to for years, months
     def in_units(
         self,
-        units: Sequence[ExactDeltaUnitStr],
+        units: Sequence[DeltaUnitStr],
         /,
         *,
-        round_unit: Literal[
-            "millisecond",
-            "microsecond",
-            "nanosecond",  # TODO: allow?
-        ] = _UNSET,
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
+        relative_to: ZonedDateTime = _UNSET,
     ) -> ItemizedDelta:
         """Convert to a :class:`ItemizedDelta` with the specified units
 
@@ -2008,22 +2044,28 @@ class TimeDelta(_Base):
             A sequence of plural unit names, in descending order.
             Valid unit names are: ``weeks``, ``days``, ``hours``,
             ``minutes``, ``seconds``, ``nanoseconds``.
-        round_unit
-            The unit to round to before conversion.
-            If omitted, the smallest unit in ``units`` is used.
-            See :meth:`round` for details.
+            ``years`` and ``months`` are also allowed if ``relative_to``
+            is provided.
         round_mode
             The rounding mode to use when rounding before conversion.
             See :meth:`round` for details.
         round_increment
             The rounding increment to use when rounding before conversion.
             See :meth:`round` for details.
+        relative_to
+            A reference datetime required when using calendar units
+            (``years``, ``months``, ``days``, or ``weeks``) to account for variable unit lengths.
         """
+        has_cal = "years" in units or "months" in units
+        if has_cal and relative_to is _UNSET:
+            raise TypeError(
+                "Years and months units require a `relative_to` argument"
+            )
         if not units:
             raise ValueError("At least one unit must be specified")
         elif isinstance(units, str):  # Hard to debug if not caught here
             raise TypeError("Units must be a sequence, not a string")
-        elif sorted(units, key=lambda u: _unit_index(u, EXACT_UNITS)) != list(
+        elif sorted(units, key=lambda u: _unit_index(u, DELTA_UNITS)) != list(
             units
         ):
             raise ValueError(
@@ -2037,7 +2079,17 @@ class TimeDelta(_Base):
             raise ValueError(
                 "Nanoseconds can only be specified together with seconds"
             )
-        elif (
+
+        if relative_to is not _UNSET:
+            shifted = relative_to + self
+            return shifted.since(
+                relative_to,
+                units=units,
+                round_mode=round_mode,
+                round_increment=round_increment,
+            )
+
+        if (
             "days" in units or "weeks" in units
         ) and not _ignore_days_not_always_24h_warning.get():
             warn(
@@ -2046,18 +2098,22 @@ class TimeDelta(_Base):
                 stacklevel=2,
             )
 
-        result = self._in_units(units, round_unit, round_mode, round_increment)
+        result = self._in_exact_units(
+            # NOTE: this case is safe because we cannot reach here if there
+            # are years or months, and the other units are all valid
+            cast(Sequence[ExactDeltaUnitStr], units),
+            round_mode,
+            round_increment,
+        )
         sign: Sign = 1 if self._total_ns >= 0 else -1
         if not any(result.values()):
             sign = 0  # due to rounding, the result may be zero even if self is not zero
         # mypy false positive: 'keywords must be strings' (but they're string literals!)
         return ItemizedDelta._from_signed(sign, **result)  # type: ignore[misc]
 
-    # Private version of in_units() without validation and afterprocessing
-    def _in_units(
+    def _in_exact_units(
         self,
         units: Sequence[ExactDeltaUnitStr],
-        round_unit: Literal["millisecond", "microsecond", "nanosecond"],
         round_mode: RoundModeStr,
         round_increment: int,
     ) -> dict[ExactDeltaUnitStr, int]:
@@ -2066,8 +2122,6 @@ class TimeDelta(_Base):
             unit=(
                 # trim the last 's' from the smallest unit to get the singular form
                 units[-1][:-1]  # type: ignore[arg-type]
-                if round_unit is _UNSET
-                else round_unit
             ),
             increment=round_increment,
             mode=round_mode,
@@ -2213,20 +2267,26 @@ class TimeDelta(_Base):
 
     def round(
         self,
-        unit: Literal[
-            "week",
-            "day",
-            "hour",
-            "minute",
-            "second",
-            "millisecond",
-            "microsecond",
-            "nanosecond",
-        ] = "second",
+        unit: (
+            Literal[
+                "week",
+                "day",
+                "hour",
+                "minute",
+                "second",
+                "millisecond",
+                "microsecond",
+                "nanosecond",
+            ]
+            | TimeDelta
+        ) = "second",
+        /,
+        *,
         increment: int = 1,
         mode: RoundModeStr = "half_even",
     ) -> TimeDelta:
-        """Round the delta to the specified unit and increment.
+        """Round the delta to the specified unit and increment,
+        or to a multiple of another :class:`TimeDelta`.
         Various rounding modes are available.
 
         >>> t = TimeDelta(seconds=12345)
@@ -2235,17 +2295,26 @@ class TimeDelta(_Base):
         TimeDelta("PT3h26m")
         >>> t.round("second", increment=10, mode="floor")
         TimeDelta("PT3h25m40s")
+        >>> t.round(TimeDelta(minutes=15))
+        TimeDelta("PT3h30m")
         """
-        if (
-            unit in ("day", "week")
-            and not _ignore_days_not_always_24h_warning.get()
-        ):
-            warn(
-                DAYS_NOT_ALWAYS_24H_MSG,
-                DaysNotAlways24HoursWarning,
-                stacklevel=2,
-            )
-        increment_ns = increment_to_ns_for_delta(unit, increment)
+        if isinstance(unit, TimeDelta):
+            if increment != 1:
+                raise TypeError(
+                    "Cannot specify both a TimeDelta and an increment"
+                )
+            increment_ns = unit._to_round_increment_ns(True)
+        else:
+            if (
+                unit in ("day", "week")
+                and not _ignore_days_not_always_24h_warning.get()
+            ):
+                warn(
+                    DAYS_NOT_ALWAYS_24H_MSG,
+                    DaysNotAlways24HoursWarning,
+                    stacklevel=2,
+                )
+            increment_ns = increment_to_ns_for_delta(unit, increment)
         quotient, remainder_ns = divmod(abs(self._total_ns), increment_ns)
         sign: Literal[1, -1] = 1 if self._total_ns >= 0 else -1
 
@@ -2495,6 +2564,15 @@ class TimeDelta(_Base):
         new._total_ns = ns
         return new
 
+    def _to_round_increment_ns(self, for_delta: bool) -> int:
+        if (increment_ns := self._total_ns) <= 0:
+            raise ValueError("Round increment must be positive, and nonzero")
+        if not for_delta and 86_400_000_000_000 % increment_ns:
+            raise ValueError(
+                "Invalid increment. Must divide a 24-hour day evenly."
+            )
+        return increment_ns
+
 
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
@@ -2554,6 +2632,11 @@ class DateDelta(_Base):
     def __init__(
         self, *, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0
     ) -> None:
+        warn(
+            "DateDelta is deprecated; use ItemizedDateDelta instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         months = self._months = months + 12 * years
         days = self._days = days + 7 * weeks
         if (months > 0 and days < 0) or (months < 0 and days > 0):
@@ -2564,7 +2647,22 @@ class DateDelta(_Base):
         ):
             raise ValueError("Date delta months out of range")
 
-    __init__ = add_alternate_constructors(__init__)
+    __init__ = add_alternate_constructors(
+        __init__,
+        deprecation_msg="DateDelta is deprecated; use ItemizedDateDelta instead.",
+    )
+
+    @classmethod
+    def _from_months_days(cls, months: int, days: int) -> DateDelta:
+        """Internal: create without deprecation warning"""
+        self = _object_new(cls)
+        if (months > 0 and days < 0) or (months < 0 and days > 0):
+            raise ValueError("Mixed sign in date delta")
+        elif abs(months) > _MAX_DELTA_MONTHS or abs(days) > _MAX_DELTA_DAYS:
+            raise ValueError("Date delta months out of range")
+        self._months = months
+        self._days = days
+        return self
 
     ZERO: ClassVar[DateDelta]
     """A delta of zero"""
@@ -2712,6 +2810,11 @@ class DateDelta(_Base):
         ----
         The number of digits in each component is limited to 8.
         """
+        warn(
+            "DateDelta is deprecated; use ItemizedDateDelta instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         self = _object_new(cls)
         self._init_from_iso(s)
         return self
@@ -2732,11 +2835,16 @@ class DateDelta(_Base):
         DateDelta("P1m25d")
         """
         if isinstance(other, DateDelta):
-            return DateDelta(
-                months=self._months + other._months,
-                days=self._days + other._days,
+            return DateDelta._from_months_days(
+                self._months + other._months,
+                self._days + other._days,
             )
         elif isinstance(other, TimeDelta):
+            warn(
+                "DateTimeDelta is deprecated; use ItemizedDelta instead.",
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
             new = _object_new(DateTimeDelta)
             new._date_part = self
             new._time_part = other
@@ -2746,6 +2854,11 @@ class DateDelta(_Base):
 
     def __radd__(self, other: TimeDelta) -> DateTimeDelta:
         if isinstance(other, TimeDelta):
+            warn(
+                "DateTimeDelta is deprecated; use ItemizedDelta instead.",
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
             new = _object_new(DateTimeDelta)
             new._date_part = self
             new._time_part = other
@@ -2768,17 +2881,27 @@ class DateDelta(_Base):
         DateDelta("P15d")
         """
         if isinstance(other, DateDelta):
-            return DateDelta(
-                months=self._months - other._months,
-                days=self._days - other._days,
+            return DateDelta._from_months_days(
+                self._months - other._months,
+                self._days - other._days,
             )
         elif isinstance(other, TimeDelta):
+            warn(
+                "DateTimeDelta is deprecated; use ItemizedDelta instead.",
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
             return self + (-other)
         else:
             return NotImplemented
 
     def __rsub__(self, other: TimeDelta) -> DateTimeDelta:
         if isinstance(other, TimeDelta):
+            warn(
+                "DateTimeDelta is deprecated; use ItemizedDelta instead.",
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
             return -self + other
         return NotImplemented
 
@@ -2826,7 +2949,7 @@ class DateDelta(_Base):
         >>> -p
         DateDelta(-P17d)
         """
-        return DateDelta(months=-self._months, days=-self._days)
+        return DateDelta._from_months_days(-self._months, -self._days)
 
     def __pos__(self) -> DateDelta:
         """Return the value unchanged
@@ -2847,9 +2970,9 @@ class DateDelta(_Base):
         """
         if not isinstance(other, int):
             return NotImplemented
-        return DateDelta(
-            months=self._months * other,
-            days=self._days * other,
+        return DateDelta._from_months_days(
+            self._months * other,
+            self._days * other,
         )
 
     def __rmul__(self, other: int) -> DateDelta:
@@ -2864,7 +2987,7 @@ class DateDelta(_Base):
         >>> abs(p)
         DateDelta("P2m3d")
         """
-        return DateDelta(months=abs(self._months), days=abs(self._days))
+        return DateDelta._from_months_days(abs(self._months), abs(self._days))
 
     @no_type_check
     def __reduce__(self):
@@ -2874,7 +2997,7 @@ class DateDelta(_Base):
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
 def _unpkl_ddelta(months: int, days: int) -> DateDelta:
-    return DateDelta(months=months, days=days)
+    return DateDelta._from_months_days(months, days)
 
 
 _MAX_DDELTA_DIGITS = 8  # consistent with Rust extension
@@ -2897,7 +3020,7 @@ def _parse_datedelta_component(s: str, exc: Exception) -> tuple[str, int, str]:
     return rest, int(raw), unit
 
 
-DateDelta.ZERO = DateDelta()
+DateDelta.ZERO = DateDelta._from_months_days(0, 0)
 TimeDelta._date_part = DateDelta.ZERO
 
 
@@ -3595,7 +3718,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         /,
         *,
         relative_to: ZonedDateTime,
-        units: Sequence[DeltaUnitStr] = ...,
+        units: Sequence[DeltaUnitStr],
         round_mode: RoundModeStr = ...,
         round_increment: int = ...,
     ) -> ItemizedDelta: ...
@@ -3614,7 +3737,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         seconds: int = ...,
         nanoseconds: int = ...,
         relative_to: ZonedDateTime,
-        units: Sequence[DeltaUnitStr] = ...,
+        units: Sequence[DeltaUnitStr],
         round_mode: RoundModeStr = ...,
         round_increment: int = ...,
     ) -> ItemizedDelta: ...
@@ -3625,7 +3748,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         /,
         *,
         relative_to: ZonedDateTime,
-        units: Sequence[DeltaUnitStr] = _UNSET,
+        units: Sequence[DeltaUnitStr],
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
         **kwargs: Any,
@@ -3639,18 +3762,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             kwargs = arg  # type: ignore[assignment]
         else:
             return self
-
-        units = cast(
-            Sequence[DeltaUnitStr],
-            (
-                sorted(
-                    kwargs.keys() | self.keys(),
-                    key=lambda u: _unit_index(u, DELTA_UNITS),
-                )
-                if units is _UNSET
-                else units
-            ),
-        )
 
         return (
             relative_to.add(self)
@@ -3670,7 +3781,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         /,
         *,
         relative_to: ZonedDateTime,
-        units: Sequence[DeltaUnitStr] = ...,
+        units: Sequence[DeltaUnitStr],
         round_mode: RoundModeStr = ...,
         round_increment: int = ...,
     ) -> ItemizedDelta: ...
@@ -3689,7 +3800,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         seconds: int = ...,
         nanoseconds: int = ...,
         relative_to: ZonedDateTime,
-        units: Sequence[DeltaUnitStr] = ...,
+        units: Sequence[DeltaUnitStr],
         round_mode: RoundModeStr = ...,
         round_increment: int = ...,
     ) -> ItemizedDelta: ...
@@ -3700,7 +3811,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         /,
         *,
         relative_to: ZonedDateTime,
-        units: Sequence[DeltaUnitStr] = _UNSET,
+        units: Sequence[DeltaUnitStr],
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
         **kwargs: Any,
@@ -3820,7 +3931,16 @@ def _unpkl_idelta(
     self = _object_new(ItemizedDelta)
     sign = 0
     # TODO LATER: reusable method for this pattern
-    for v in (years, months, weeks, days, hours, minutes, seconds, nanoseconds):
+    for v in (
+        years,
+        months,
+        weeks,
+        days,
+        hours,
+        minutes,
+        seconds,
+        nanoseconds,
+    ):
         if v is not None and v != 0:
             sign = 1 if v > 0 else -1
             break
@@ -4337,7 +4457,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         /,
         *,
         relative_to: Date,
-        units: Sequence[DateDeltaUnitStr] = ...,
+        units: Sequence[DateDeltaUnitStr],
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
@@ -4352,7 +4472,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         weeks: int = ...,
         days: int = ...,
         relative_to: Date,
-        units: Sequence[DateDeltaUnitStr] = ...,
+        units: Sequence[DateDeltaUnitStr],
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
@@ -4363,7 +4483,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         /,
         *,
         relative_to: Date,
-        units: Sequence[DateDeltaUnitStr] = _UNSET,
+        units: Sequence[DateDeltaUnitStr],
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
         **kwargs: int,
@@ -4377,18 +4497,6 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             kwargs = arg  # type: ignore[assignment]
         else:
             return self
-
-        units = cast(
-            Sequence[DateDeltaUnitStr],
-            (
-                sorted(
-                    kwargs.keys() | self.keys(),
-                    key=lambda u: _unit_index(u, DATE_DELTA_UNITS),
-                )
-                if units is _UNSET
-                else units
-            ),
-        )
 
         return (
             relative_to.add(self)
@@ -4408,7 +4516,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         /,
         *,
         relative_to: Date,
-        units: Sequence[DateDeltaUnitStr] = ...,
+        units: Sequence[DateDeltaUnitStr],
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
@@ -4423,7 +4531,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         weeks: int = ...,
         days: int = ...,
         relative_to: Date,
-        units: Sequence[DateDeltaUnitStr] = ...,
+        units: Sequence[DateDeltaUnitStr],
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta: ...
@@ -4434,7 +4542,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         /,
         *,
         relative_to: Date,
-        units: Sequence[DateDeltaUnitStr] = _UNSET,
+        units: Sequence[DateDeltaUnitStr],
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
         **kwargs: Any,
@@ -4501,7 +4609,12 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
         return (
             _unpkl_iddelta,
-            (_to_signed(self._years), _to_signed(self._months), _to_signed(self._weeks), _to_signed(self._days)),
+            (
+                _to_signed(self._years),
+                _to_signed(self._months),
+                _to_signed(self._weeks),
+                _to_signed(self._days),
+            ),
         )
 
     def __repr__(self) -> str:
@@ -4610,8 +4723,13 @@ class DateTimeDelta(_Base):
         microseconds: float = 0,
         nanoseconds: int = 0,
     ) -> None:
-        self._date_part = DateDelta(
-            years=years, months=months, weeks=weeks, days=days
+        warn(
+            "DateTimeDelta is deprecated; use ItemizedDelta instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
+        self._date_part = DateDelta._from_months_days(
+            months + 12 * years, days + 7 * weeks
         )
         self._time_part = TimeDelta(
             hours=hours,
@@ -4630,13 +4748,24 @@ class DateTimeDelta(_Base):
         ):
             raise ValueError("Mixed sign in date-time delta")
 
-    __init__ = add_alternate_constructors(__init__)
+    __init__ = add_alternate_constructors(
+        __init__,
+        deprecation_msg="DateTimeDelta is deprecated; use ItemizedDelta instead.",
+    )
 
     ZERO: ClassVar[DateTimeDelta]
     """A delta of zero"""
 
     def date_part(self) -> DateDelta:
-        """The date part of the delta"""
+        """The date part of the delta
+
+        .. deprecated:: 0.10.0
+        """
+        warn(
+            "DateTimeDelta.date_part() is deprecated.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         return self._date_part
 
     def time_part(self) -> TimeDelta:
@@ -4753,7 +4882,7 @@ class DateTimeDelta(_Base):
             raise exc
 
         try:
-            ddelta = DateDelta(months=sign * months, days=sign * days)
+            ddelta = DateDelta._from_months_days(sign * months, sign * days)
         except ValueError:
             raise exc
 
@@ -4780,6 +4909,11 @@ class DateTimeDelta(_Base):
         >>> DateTimeDelta.parse_iso("-P1W11DT4H")
         DateTimeDelta(-P1w11dT4h)
         """
+        warn(
+            "DateTimeDelta is deprecated; use ItemizedDelta instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         self = _object_new(cls)
         self._init_from_iso(s)
         return self
@@ -4976,12 +5110,14 @@ def _unpkl_dtdelta(
     months: int, days: int, secs: int, nanos: int
 ) -> DateTimeDelta:
     new = _object_new(DateTimeDelta)
-    new._date_part = DateDelta(months=months, days=days)
+    new._date_part = DateDelta._from_months_days(months, days)
     new._time_part = TimeDelta(seconds=secs, nanoseconds=nanos)
     return new
 
 
-DateTimeDelta.ZERO = DateTimeDelta()
+DateTimeDelta.ZERO = DateTimeDelta._from_parts(
+    DateDelta._from_months_days(0, 0), TimeDelta.ZERO
+)
 AnyDelta = Union[
     DateTimeDelta, TimeDelta, DateDelta, ItemizedDelta, ItemizedDateDelta
 ]
@@ -5035,24 +5171,11 @@ class _BasicConversions(_Base, ABC):
         return self._py_dt.replace(microsecond=self._nanos // 1_000)
 
     @abstractmethod
-    def format_iso(self) -> str:
-        """Format an ISO8601 string representation. Each
-        subclass has a different format.
-
-        Where applicable, keyword arguments ``unit``, ``basic``, ``sep``,
-        and ``tz`` are supported to customize the output.
-
-        See :ref:`here <iso8601>` for more information.
-        """
+    def format_iso(self) -> str: ...
 
     @classmethod
     @abstractmethod
-    def parse_iso(cls: type[_T], s: str, /) -> _T:
-        """Create an instance from an ISO 8601 representation,
-        which is different for each subclass.
-
-        See :ref:`here <iso8601>` for more information.
-        """
+    def parse_iso(cls: type[_T], s: str, /) -> _T: ...
 
     def __str__(self) -> str:
         return self.format_iso()
@@ -5145,90 +5268,6 @@ class _LocalTime(_BasicConversions, ABC):
         ZonedDateTime("2021-01-02T03:04:05+01:00[Europe/Paris]")
         """
         return Time._from_py_unchecked(self._py_dt.time(), self._nanos)
-
-    # We document these methods as abstract,
-    # but they are actually implemented slightly different per subclass
-    if not TYPE_CHECKING:  # pragma: no cover
-
-        @abstractmethod
-        def add(
-            self: _T,
-            *,
-            years: int = 0,
-            months: int = 0,
-            weeks: int = 0,
-            days: int = 0,
-            hours: float = 0,
-            minutes: float = 0,
-            seconds: float = 0,
-            milliseconds: float = 0,
-            microseconds: float = 0,
-            nanoseconds: int = 0,
-            **kwargs,
-        ) -> _T:
-            """Add date and time units to this datetime.
-
-            Arithmetic on datetimes is complicated.
-            For ``OffsetDateTime`` and ``PlainDateTime``, adding exact time units
-            may emit a warning about DST safety.
-            See :ref:`the docs on arithmetic <arithmetic>` for more information
-            and the reasoning behind it.
-            """
-
-        @abstractmethod
-        def subtract(
-            self: _T,
-            *,
-            years: int = 0,
-            months: int = 0,
-            weeks: int = 0,
-            days: int = 0,
-            hours: float = 0,
-            minutes: float = 0,
-            seconds: float = 0,
-            milliseconds: float = 0,
-            microseconds: float = 0,
-            nanoseconds: int = 0,
-            **kwargs,
-        ) -> _T:
-            """Inverse of :meth:`add`."""
-
-        def round(
-            self: _T,
-            unit: Literal[
-                "day",
-                "hour",
-                "minute",
-                "second",
-                "millisecond",
-                "microsecond",
-                "nanosecond",
-            ] = "second",
-            increment: int = 1,
-            mode: RoundModeStr = "half_even",
-        ) -> _T:
-            """Round the datetime to the specified unit and increment.
-            Different rounding modes are available.
-
-            >>> d = ZonedDateTime(2020, 8, 15, 23, 24, 18, tz="Europe/Paris")
-            >>> d.round("day")
-            ZonedDateTime("2020-08-16 00:00:00+02:00[Europe/Paris]")
-            >>> d.round("minute", increment=15, mode="floor")
-            ZonedDateTime("2020-08-15 23:15:00+02:00[Europe/Paris]")
-
-            Notes
-            -----
-            * In the rare case that rounding results in an ambiguous time,
-              the offset is preserved if possible.
-              Otherwise, the time is resolved according to the "compatible" strategy.
-            * Rounding in "day" mode may be affected by DST transitions.
-              i.e. on 23-hour days, 11:31 AM is rounded up.
-            * For ``OffsetDateTime``, rounding may result in a datetime with a
-              stale UTC offset if the rounded time crosses a DST boundary.
-              See :class:`~whenever.PotentiallyStaleOffsetWarning`.
-            * This method has similar behavior to the ``round()`` method of
-              Temporal objects in JavaScript.
-            """
 
 
 # Methods for types that represent a specific moment in time.
@@ -5775,31 +5814,47 @@ class Instant(_ExactTime):
 
     def round(
         self,
-        unit: Literal[
-            "hour",
-            "minute",
-            "second",
-            "millisecond",
-            "microsecond",
-            "nanosecond",
-        ] = "second",
+        unit: (
+            Literal[
+                "hour",
+                "minute",
+                "second",
+                "millisecond",
+                "microsecond",
+                "nanosecond",
+            ]
+            | TimeDelta
+        ) = "second",
+        /,
+        *,
         increment: int = 1,
         mode: RoundModeStr = "half_even",
     ) -> Instant:
-        """Round the instant to the specified unit and increment.
+        """Round the instant to the specified unit and increment,
+        or to a multiple of a :class:`TimeDelta`.
         Various rounding modes are available.
 
         >>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round("minute", 15)
         Instant("2020-01-01 12:45:00Z")
         >>> Instant.from_utc(2020, 1, 1, 8, 9, 13).round("second", 5, mode="floor")
         Instant("2020-01-01 08:09:10Z")
+        >>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round(TimeDelta(minutes=15))
+        Instant("2020-01-01 12:45:00Z")
         """
-        if unit == "day":  # type: ignore[comparison-overlap]
-            raise ValueError(CANNOT_ROUND_DAY_MSG)
+        if isinstance(unit, TimeDelta):
+            if increment != 1:
+                raise TypeError(
+                    "Cannot specify both a TimeDelta and an increment"
+                )
+            increment_ns = unit._to_round_increment_ns(False)
+        else:
+            if unit == "day":  # type: ignore[comparison-overlap]
+                raise ValueError(CANNOT_ROUND_DAY_MSG)
+            increment_ns = increment_to_ns_for_datetime(unit, increment)
         rounded_time, next_day = Time._from_py_unchecked(
             self._py_dt.time(), self._nanos
         )._round_unchecked(
-            increment_to_ns_for_datetime(unit, increment),
+            increment_ns,
             mode,
             86_400_000_000_000,
         )
@@ -5986,7 +6041,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         """
         if ignore_dst is not _UNSET:
             warn(
-                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
@@ -6069,7 +6124,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         """
         if ignore_dst is not _UNSET:
             warn(
-                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
@@ -6097,7 +6152,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         """
         if ignore_dst is not _UNSET:
             warn(
-                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
@@ -6126,7 +6181,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         """
         if ignore_dst is not _UNSET:
             warn(
-                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
@@ -6203,7 +6258,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         """
         if ignore_dst is not _UNSET:
             warn(
-                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
@@ -6232,7 +6287,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         """
         if ignore_dst is not _UNSET:
             warn(
-                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
@@ -6258,7 +6313,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         """
         if ignore_dst is not _UNSET:
             warn(
-                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
@@ -6493,7 +6548,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     ) -> OffsetDateTime:
         if ignore_dst is not _UNSET:
             warn(
-                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
                 stacklevel=3,
             )
@@ -6563,21 +6618,26 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     def round(
         self,
-        unit: Literal[
-            "day",
-            "hour",
-            "minute",
-            "second",
-            "millisecond",
-            "microsecond",
-            "nanosecond",
-        ] = "second",
+        unit: (
+            Literal[
+                "day",
+                "hour",
+                "minute",
+                "second",
+                "millisecond",
+                "microsecond",
+                "nanosecond",
+            ]
+            | TimeDelta
+        ) = "second",
+        /,
+        *,
         increment: int = 1,
         mode: RoundModeStr = "half_even",
-        *,
         ignore_dst: bool = _UNSET,
     ) -> OffsetDateTime:
-        """Round the datetime to the specified unit and increment.
+        """Round the datetime to the specified unit and increment,
+        or to a multiple of a :class:`TimeDelta`.
         Different rounding modes are available.
 
         >>> d = OffsetDateTime(2020, 8, 15, 23, 24, 18, offset=+4)
@@ -6601,7 +6661,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         """
         if ignore_dst is not _UNSET:
             warn(
-                "The `ignore_dst` parameter is deprecated and replaced with a warning.",
+                IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
@@ -6611,10 +6671,18 @@ class OffsetDateTime(_ExactAndLocalTime):
                 PotentiallyStaleOffsetWarning,
                 stacklevel=2,
             )
+        if isinstance(unit, TimeDelta):
+            if increment != 1:
+                raise TypeError(
+                    "Cannot specify both a TimeDelta and an increment"
+                )
+            increment_ns = unit._to_round_increment_ns(False)
+        else:
+            increment_ns = increment_to_ns_for_datetime(unit, increment)
         return (
             self.to_plain()
             ._round_unchecked(
-                increment_to_ns_for_datetime(unit, increment),
+                increment_ns,
                 mode,
                 86_400_000_000_000,
             )
@@ -7462,11 +7530,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         result = cast(dict[DeltaUnitStr, int], cal_results)
         if exact_units:
             result.update(
-                (self - trunc)._in_units(  # type: ignore[arg-type]
+                (self - trunc)._in_exact_units(  # type: ignore[arg-type]
                     exact_units,
                     round_increment=round_increment,
                     round_mode=round_mode,
-                    round_unit=_UNSET,
                 )
             )
         else:
@@ -7587,19 +7654,25 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     def round(
         self,
-        unit: Literal[
-            "day",
-            "hour",
-            "minute",
-            "second",
-            "millisecond",
-            "microsecond",
-            "nanosecond",
-        ] = "second",
+        unit: (
+            Literal[
+                "day",
+                "hour",
+                "minute",
+                "second",
+                "millisecond",
+                "microsecond",
+                "nanosecond",
+            ]
+            | TimeDelta
+        ) = "second",
+        /,
+        *,
         increment: int = 1,
         mode: RoundModeStr = "half_even",
     ) -> ZonedDateTime:
-        """Round the datetime to the specified unit and increment.
+        """Round the datetime to the specified unit and increment,
+        or to a multiple of a :class:`TimeDelta`.
         Different rounding modes are available.
 
         >>> d = ZonedDateTime("2020-08-15 23:24:18+02:00[Europe/Paris]")
@@ -7618,10 +7691,18 @@ class ZonedDateTime(_ExactAndLocalTime):
         * This method has similar behavior to the ``round()`` method of
           Temporal objects in JavaScript.
         """
-        increment_ns = increment_to_ns_for_datetime(unit, increment)
-        if unit == "day":
+        if isinstance(unit, TimeDelta):
+            if increment != 1:
+                raise TypeError(
+                    "Cannot specify both a TimeDelta and an increment"
+                )
+            increment_ns = unit._to_round_increment_ns(False)
+            day_ns = 86_400_000_000_000
+        elif unit == "day":
+            increment_ns = increment_to_ns_for_datetime(unit, increment)
             increment_ns = day_ns = self.day_length()._total_ns
         else:
+            increment_ns = increment_to_ns_for_datetime(unit, increment)
             day_ns = 86_400_000_000_000
 
         rounded_local = self.to_plain()._round_unchecked(
@@ -8381,19 +8462,25 @@ class PlainDateTime(_LocalTime):
 
     def round(
         self,
-        unit: Literal[
-            "day",
-            "hour",
-            "minute",
-            "second",
-            "millisecond",
-            "microsecond",
-            "nanosecond",
-        ] = "second",
+        unit: (
+            Literal[
+                "day",
+                "hour",
+                "minute",
+                "second",
+                "millisecond",
+                "microsecond",
+                "nanosecond",
+            ]
+            | TimeDelta
+        ) = "second",
+        /,
+        *,
         increment: int = 1,
         mode: RoundModeStr = "half_even",
     ) -> PlainDateTime:
-        """Round the datetime to the specified unit and increment.
+        """Round the datetime to the specified unit and increment,
+        or to a multiple of a :class:`TimeDelta`.
         Different rounding modes are available.
 
         >>> d = PlainDateTime(2020, 8, 15, 23, 24, 18)
@@ -8407,11 +8494,15 @@ class PlainDateTime(_LocalTime):
         This method has similar behavior to the ``round()`` method of
         Temporal objects in JavaScript.
         """
-        return self._round_unchecked(
-            increment_to_ns_for_datetime(unit, increment),
-            mode,
-            86_400_000_000_000,
-        )
+        if isinstance(unit, TimeDelta):
+            if increment != 1:
+                raise TypeError(
+                    "Cannot specify both a TimeDelta and an increment"
+                )
+            increment_ns = unit._to_round_increment_ns(False)
+        else:
+            increment_ns = increment_to_ns_for_datetime(unit, increment)
+        return self._round_unchecked(increment_ns, mode, 86_400_000_000_000)
 
     def _round_unchecked(
         self, increment_ns: int, mode: str, day_ns: int
@@ -8482,18 +8573,6 @@ class DaysNotAlways24HoursWarning(PotentialDstBugWarning):
     :func:`~whenever.ignore_days_not_always_24h_warning` context
     manager (or Python's standard warning filters) if 24-hour days are
     intentional.
-    """
-
-
-# A custom warnings class to prevent silent deprecation warnings in user code.
-# See https://sethmlarson.dev/deprecations-via-warnings-dont-work-for-python-libraries
-class WheneverDeprecationWarning(UserWarning):
-    """Raised when a deprecated feature of the ``whenever`` library is used.
-
-    This is a custom warning class (not a subclass of
-    :class:`DeprecationWarning`) so that deprecation warnings from this
-    library are visible by default—unlike standard ``DeprecationWarning``,
-    which Python silences in production code.
     """
 
 
@@ -8650,21 +8729,14 @@ DAYS_NOT_ALWAYS_24H_MSG = (
     "This operation assumes days are exactly 24 hours. "
     "Calendar days may be 23 or 25 hours long during DST transitions. "
     "If you're working with UTC, or deliberately want fixed-length days, this is correct. "
-    "For DST-aware operations, consider using ZonedDateTime arithmetic instead. "
+    "For DST-aware operations, consider using ZonedDateTime arithmetic instead, "
+    "or passing the `relative_to` argument where available. "
     "Suppress this warning with `with whenever.ignore_days_not_always_24h_warning():`."
 )
 
 IGNORE_DST_DEPRECATED_MSG = (
     "The `ignore_dst` parameter is deprecated and replaced with a warning."
 )
-
-# Deprecated ignore_dst-era messages, kept only so that
-# generate_docstrings.py emits them for the Rust extension
-# (which still references them). Remove once Rust is migrated.
-ADJUST_LOCAL_DATETIME_MSG = "deprecated: ignore_dst-era message"
-DIFF_LOCAL_MSG = "deprecated: ignore_dst-era message"
-DIFF_OPERATOR_LOCAL_MSG = "deprecated: ignore_dst-era message"
-SHIFT_LOCAL_MSG = "deprecated: ignore_dst-era message"
 
 
 def _to_tz(dt: _datetime, tz: TimeZone) -> _datetime:
@@ -8863,11 +8935,10 @@ def _plain_since(
             nanoseconds=self._nanos - trunc._nanos,
         )
         result.update(
-            diff_td._in_units(  # type: ignore[arg-type]
+            diff_td._in_exact_units(  # type: ignore[arg-type]
                 exact_units,
                 round_increment=round_increment,
                 round_mode=round_mode,
-                round_unit=_UNSET,
             )
         )
     else:
@@ -8940,11 +9011,10 @@ def _offset_since(
         # Different offsets, exact units only: compute via TimeDelta
         diff = self._subtract_operator(b)
         sign: Sign = 1 if diff._total_ns >= 0 else -1
-        result = diff._in_units(
+        result = diff._in_exact_units(
             exact_units,
             round_increment=round_increment,
             round_mode=round_mode,
-            round_unit=_UNSET,
         )
         if single_unit_mode:
             return result.pop(exact_units[-1]) * sign
@@ -8970,7 +9040,7 @@ def _normalize_unit_or_units(
     elif units is None:
         raise TypeError("Must specify either 'unit' or 'units'")
     elif not units:
-        raise ValueError("'units' cannot be an empty sequence")
+        raise ValueError("At least one unit must be specified")
     else:
         if sorted(units, key=lambda u: _unit_index(u, valid_units)) != list(
             units
@@ -9032,7 +9102,12 @@ def years(i: int, /) -> DateDelta:
 
         Use :class:`~whenever.ItemizedDateDelta` instead
     """
-    return DateDelta(years=i)
+    warn(
+        "years() is deprecated; use ItemizedDateDelta instead.",
+        WheneverDeprecationWarning,
+        stacklevel=2,
+    )
+    return DateDelta._from_months_days(12 * i, 0)
 
 
 def months(i: int, /) -> DateDelta:
@@ -9043,7 +9118,12 @@ def months(i: int, /) -> DateDelta:
 
         Use :class:`~whenever.ItemizedDateDelta` instead
     """
-    return DateDelta(months=i)
+    warn(
+        "months() is deprecated; use ItemizedDateDelta instead.",
+        WheneverDeprecationWarning,
+        stacklevel=2,
+    )
+    return DateDelta._from_months_days(i, 0)
 
 
 def weeks(i: int, /) -> DateDelta:
@@ -9054,7 +9134,12 @@ def weeks(i: int, /) -> DateDelta:
 
         Use :class:`~whenever.ItemizedDateDelta` instead
     """
-    return DateDelta(weeks=i)
+    warn(
+        "weeks() is deprecated; use ItemizedDateDelta instead.",
+        WheneverDeprecationWarning,
+        stacklevel=2,
+    )
+    return DateDelta._from_months_days(0, 7 * i)
 
 
 def days(i: int, /) -> DateDelta:
@@ -9065,7 +9150,12 @@ def days(i: int, /) -> DateDelta:
 
         Use :class:`~whenever.ItemizedDateDelta` instead
     """
-    return DateDelta(days=i)
+    warn(
+        "days() is deprecated; use ItemizedDateDelta instead.",
+        WheneverDeprecationWarning,
+        stacklevel=2,
+    )
+    return DateDelta._from_months_days(0, i)
 
 
 def hours(i: float, /) -> TimeDelta:
@@ -9149,8 +9239,8 @@ _ExactTimeAlias = Union[Instant, OffsetDateTime, ZonedDateTime]
 if not SPHINX_RUNNING:  # pragma: no branch
     for name in __all__ + "_LocalTime _ExactTime _ExactAndLocalTime".split():
         member = locals()[name]
-        if (
-            getattr(member, "__module__", "").startswith("whenever")
+        if getattr(member, "__module__", "").startswith(
+            "whenever"
         ):  # pragma: no branch
             member.__module__ = "whenever"
 
