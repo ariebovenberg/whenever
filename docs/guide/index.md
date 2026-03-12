@@ -22,6 +22,7 @@ For more details, see the {ref}`API reference <api>`.
    conversions
    ambiguity
    arithmetic
+   deltas
    rounding
    parsing
    stdlib-convert

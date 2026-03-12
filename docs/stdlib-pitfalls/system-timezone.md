@@ -11,17 +11,13 @@ it's hardly something you want to depend on in most applications.
 In most cases, it's a surprise to developers when their code
 suddenly depends on the system configuration.
 
-For example, you may be surprised to learn that the output of this code
-depends on the system time zone:
+For example, you may be surprised to learn that the output of these lines
+depend on the system time zone:
 
 ```python
->>> dt = datetime.fromtimestamp(t)  # returns a naive datetime in system tz
-```
-
-Or this one:
-
-```python
+>>> datetime.fromtimestamp(t)  # returns a naive datetime in system tz
 >>> my_datetime.astimezone(None)  # converts to system tz if no tz is given
+>>> date.today()  # returns a date in the system tz
 ```
 
 This implicit behavior makes it hard to see when code is depending on the system configuration.

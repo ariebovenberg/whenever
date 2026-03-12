@@ -29,6 +29,11 @@ The pages that follow introduce those ideas,
 starting with the most important distinction of all:
 the difference between exact time and local time.
 
+```{tip}
+Once you're comfortable with the fundamentals,
+head to the {ref}`guide <guide>` to see how `whenever` puts them into practice.
+```
+
 ```{eval-rst}
 .. toctree::
    :maxdepth: 1
