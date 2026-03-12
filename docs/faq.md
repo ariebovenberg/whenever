@@ -1,9 +1,9 @@
+(faq)=
 # FAQ
 
 ```{eval-rst}
 .. currentmodule:: whenever
 ```
-
 
 ## Does performance really matter for a datetime library?
 
@@ -71,6 +71,92 @@ If you need to access calendar fields, convert to a datetime type first:
 >>> now.to_fixed_offset(0).hour  # only if you truly need UTC fields
 5
 ```
+
+(faq-why-offset-dt)=
+## Why does {class}`~whenever.OffsetDateTime` exist?
+
+Most datetime formats—ISO 8601, RFC 2822, RFC 3339—only carry a fixed
+UTC offset (e.g. `+02:00`), not a full timezone name.
+{class}`~whenever.OffsetDateTime` represents *exactly* what these formats
+contain: a local time pinned to a fixed offset.
+
+This makes it the natural choice for:
+
+- **Parsing and serializing** timestamps from APIs, logs, and databases.
+- **Representing moments in the past**, where the offset was correct
+  at the time of recording and the timezone rules no longer matter.
+- **Simple contexts** where no DST transitions are involved.
+
+The trade-off is that a fixed offset can't track DST.
+If you shift or round an {class}`~whenever.OffsetDateTime`, the
+library preserves the original offset verbatim—which may be wrong
+for future dates if the region's rules have changed.
+That's why these operations emit a
+{class}`~whenever.PotentiallyStaleOffsetWarning`.
+When you need DST-safe arithmetic, convert to
+{class}`~whenever.ZonedDateTime` first.
+
+See {ref}`choosing-a-type` for guidance on which type to use.
+
+(faq-why-3-deltas)=
+## Why are there three delta types?
+
+Date and time durations have fundamentally different arithmetic rules
+depending on the units involved.
+Rather than papering over this with a single type,
+`whenever` gives each category its own type
+(see {ref}`design`):
+
+1. **{class}`~whenever.TimeDelta`** — for exact durations
+   (hours, minutes, seconds, nanoseconds).
+   These normalize automatically: `90 minutes` becomes `1 hour 30 minutes`.
+   They support comparison, mathematical operators, and don't need
+   any context to resolve.
+
+2. **{class}`~whenever.ItemizedDateDelta`** — for pure calendar durations
+   (years, months, weeks, days).
+   These keep their components *itemized*: `1 month` stays `1 month`,
+   and isn't normalized to a number of days.
+   Converting between calendar units requires a reference date
+   (because `1 month` is 28–31 days depending on when you start).
+
+3. **{class}`~whenever.ItemizedDelta`** — for mixed bags of calendar *and*
+   exact units, such as `1 month, 3 hours, 20 minutes`.
+   Useful for display and ISO 8601 round-tripping.
+   Like {class}`~whenever.ItemizedDateDelta`, it keeps components itemized and
+   needs a reference date for conversion.
+
+Having three explicit types prevents subtle bugs like comparing
+`1 month` to `30 days` without context,
+or accidentally normalizing away important calendar semantics.
+
+See {ref}`durations` for the full reference.
+
+(faq-why-warnings)=
+## Why warnings instead of errors?
+
+Operations that *could* introduce DST bugs—such as arithmetic on
+{class}`~whenever.OffsetDateTime` or {class}`~whenever.PlainDateTime`—emit
+a warning rather than raising an exception.
+This is a deliberate choice, because these operations aren't always wrong
+(see {ref}`design`).
+
+The warning approach gives you four levels of control:
+
+1. **Learn by default** — if you're scripting quickly, the warning appears
+   in the console and teaches you about the pitfall. If you're in a hurry,
+   the library doesn't get in your way and you can fix the issue later.
+2. **Ban project-wide** — in production code, convert warnings to errors
+   with Python's standard {mod}`warnings` filter:
+   ```python
+   import warnings
+   warnings.filterwarnings("error", category=whenever.PotentialDstBugWarning)
+   ```
+3. **Escape hatch** — when the operation is intentional, silence it with
+   a context manager (e.g. {func}`~whenever.ignore_potentially_stale_offset_warning`),
+   documenting the decision in code.
+4. **Fine-grained** — configure at the module or function level, using
+   Python's existing warning infrastructure.
 
 (faq-to-vs-assume)=
 ## Why are conversions called `to_*` and `assume_*`?
@@ -250,6 +336,24 @@ instead, which don't come with the same mathematical expectations:
 >>> Date(2024, 1, 31).add(months=1)
 >>> Date(2024, 1, 31).add(ItemizedDateDelta(months=1))
 ```
+
+For the same reason, the `-` operator between two datetimes always
+returns a {class}`~whenever.TimeDelta`—an exact elapsed duration where
+subtraction is unambiguous.
+If you need a difference in calendar units like years, months, or days,
+use the {meth}`~whenever.ZonedDateTime.since` /
+{meth}`~whenever.ZonedDateTime.until` methods instead:
+
+```python
+>>> d1 = ZonedDateTime(2020, 1, 1, tz="Europe/Amsterdam")
+>>> d2 = ZonedDateTime(2023, 6, 15, tz="Europe/Amsterdam")
+>>> d2 - d1  # exact elapsed time
+TimeDelta("PT30263h")
+>>> d2.since(d1, units=["years", "months", "days"])  # calendar units
+ItemizedDateDelta("P3y5m14d")
+```
+
+See {ref}`design` for the full rationale.
 
 ## Why can't I subclass `whenever` classes?
 

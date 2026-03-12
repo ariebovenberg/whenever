@@ -18,6 +18,7 @@
 
    guide/index
    examples
+   design
    faq
 
 .. toctree::

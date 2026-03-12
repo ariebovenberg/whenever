@@ -5,9 +5,10 @@ The classes in `whenever` support various arithmetic operations.
 
 ## Difference
 
-You can get the duration between two datetimes or instants with the ``-`` operator or
-the {meth}`~whenever.ZonedDateTime.difference` method.
-Exact and local types cannot be mixed, although exact types can be mixed with each other:
+You can get the exact duration between two datetimes or instants
+with the `-` operator.
+Exact and local types cannot be mixed, although exact types can be mixed
+with each other:
 
 ```python
 >>> # difference in exact time
@@ -18,8 +19,62 @@ TimeDelta("PT12h30m")
 TimeDelta("PT24h")
 ```
 
+```{note}
+Subtracting two {class}`~whenever.PlainDateTime` values emits a
+{class}`~whenever.TimeZoneUnawareArithmeticWarning`, because without
+timezone context the result can't account for DST transitions.
+See the warning's documentation for details.
+```
+
+The result is always a {class}`~whenever.TimeDelta`, representing the exact elapsed time.
+This is intentional: the `-` operator is reserved for cases
+where the result is unambiguous (see {ref}`design`).
+For differences in calendar units, use `since()` / `until()` below.
+
+### Difference in calendar units
+
+Beyond calendar units, `since()` and `until()` also support exact time units.
+This lets you express differences in whatever granularity you need—for
+example, a total number of minutes without rolling over to hours.
+
+```python
+>>> d1 = Date(2020, 1, 1)
+>>> d2 = Date(2023, 6, 15)
+>>> d2.since(d1, units=["years", "months", "days"])
+ItemizedDateDelta("P3y5m14d")
+>>> d1.until(d2, units=["years", "months", "days"])
+ItemizedDateDelta("P3y5m14d")
+```
+
+```{tip}
+The result is a dict-like structure ordered from largest to smallest unit,
+so you can unpack the values directly:
+
+    >>> years, months, days = d2.since(d1, units=["years", "months", "days"]).values()
+    >>> years, months, days
+    (3, 5, 14)
+```
+
+These methods are available on {class}`~whenever.Date`,
+{class}`~whenever.ZonedDateTime`, {class}`~whenever.OffsetDateTime`, and
+{class}`~whenever.PlainDateTime`.
+If you only need a single unit, pass the `unit` parameter to get an `int` directly:
+
+```python
+>>> d2.since(d1, unit="months")
+41
+```
+
+Various rounding modes are available for the smallest unit.
+See {ref}`rounding` for details.
+
+```python
+>>> d2.since(d1, unit="years", round_mode="ceil")
+4
+```
+
 (add-subtract-time)=
-## Units of time
+## Adding and subtracting
 
 You can add or subtract various units of time from a datetime instance.
 
@@ -29,7 +84,7 @@ You can add or subtract various units of time from a datetime instance.
 ZonedDateTime("2023-12-28 17:00:00+01:00[Europe/Amsterdam]")
 ```
 
-The behavior arithmetic behavior is different for three categories of units:
+The arithmetic behavior is different for three categories of units:
 
 1. Adding **years and months** may result in truncation of the date.
    For example, adding a month to August 31st results in September 31st,
@@ -45,7 +100,7 @@ The behavior arithmetic behavior is different for three categories of units:
    ```{note}
 
    In case of dealing with {class}`~whenever.ZonedDateTime`
-   there is a rare case where the resulting date might put the datetime 
+   there is a rare case where the resulting date might put the datetime
    in the middle of a DST transition.
    For this reason, adding years or months to these types accepts the
    `disambiguate` argument. By default, it tries to keep the same UTC offset,
@@ -96,8 +151,8 @@ The behavior arithmetic behavior is different for three categories of units:
    ```
 
 ```{seealso}
-Have a look at the documentation on {ref}`deltas <durations>` for more details
-on arithmetic operations, as well as more advanced features.
+For more details on working with durations as standalone objects
+(reusing, converting, or comparing them), see {ref}`delta types <durations>`.
 ```
 
 (arithmetic-dst)=
@@ -108,6 +163,29 @@ and other timezone changes.
 The API of the different classes is designed to avoid implicitly ignoring these.
 The type annotations and descriptive error messages should guide you
 to the correct usage.
+
+### A day is not always 24 hours
+
+When clocks "spring forward," a calendar day is only 23 hours;
+when they "fall back," it's 25. This matters when you choose between
+`add(days=1)` and `add(hours=24)`:
+
+```python
+>>> # The night before Spring Forward in Amsterdam (March 30 → 31, 2025)
+>>> eve = ZonedDateTime(2025, 3, 30, hour=1, tz="Europe/Amsterdam")
+>>> eve.add(days=1)       # "same time tomorrow"
+ZonedDateTime("2025-03-31 01:00:00+02:00[Europe/Amsterdam]")
+>>> eve.add(hours=24)     # exactly 24 hours later (but 2 AM local!)
+ZonedDateTime("2025-03-31 02:00:00+02:00[Europe/Amsterdam]")
+```
+
+The two results differ by one hour because the clocks jumped forward
+at 2:00 AM, making that day only 23 hours long.
+Use `days` when you want "same wall-clock time tomorrow,"
+and `hours` when you want an exact elapsed duration.
+
+For background on the distinction between exact and calendar units,
+see {ref}`the fundamentals <arithmetic2>`.
 
 - {class}`~whenever.Instant` has no calendar, so it doesn't support
   adding calendar units. Precise time units can be added without any complications.
@@ -177,7 +255,8 @@ Here is a summary of the arithmetic features for each type:
 
 |                       | Instant | OffsetDT|ZonedDT  |PlainDT  |
 |:----------------------|:-------:|:-------:|:-------:|:-------:|
-| Difference            | ✅      |  ✅     |   ✅    |⚠️  [^1] |
+| Difference (`-`)      | ✅      |  ✅     |   ✅    |⚠️  [^1] |
+| `since()` / `until()` | ❌      |  ✅ [^1]|   ✅    |⚠️  [^1] |
 | add/subtract years, months, days   | ❌      |⚠️  [^1] |✅  [^2] |    ✅   |
 | add/subtract hours, minutes, seconds  | ✅      |⚠️  [^1] |  ✅     |⚠️  [^1] |
 
