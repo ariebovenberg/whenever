@@ -68,23 +68,48 @@ using the `disambiguate` argument:
 >>> ZonedDateTime(2023, 1, 1, tz=paris)
 ZonedDateTime("2023-01-01 00:00:00+01:00[Europe/Paris]")
 
->>> # 1:30am occurs twice. Use 'raise' to reject ambiguous times.
+>>> # --- Fold: 2:30am occurs TWICE (clocks fall back) ---
+
+>>> # Reject ambiguous times outright
 >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="raise")
 Traceback (most recent call last):
     ...
 whenever.RepeatedTime: 2023-10-29 02:30:00 is repeated in timezone Europe/Paris
 
->>> # Explicitly choose the earlier option
+>>> # Explicitly choose the earlier occurrence (summer time, +02:00)
 >>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="earlier")
-ZoneDateTime(2023-10-29 02:30:00+01:00[Europe/Paris])
+ZonedDateTime("2023-10-29 02:30:00+02:00[Europe/Paris]")
 
->>> # 2:30am doesn't exist on this date (clocks moved forward)
+>>> # Explicitly choose the later occurrence (winter time, +01:00)
+>>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="later")
+ZonedDateTime("2023-10-29 02:30:00+01:00[Europe/Paris]")
+
+>>> # Default ("compatible") picks "earlier" for folds — matching RFC 5545
+>>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris)
+ZonedDateTime("2023-10-29 02:30:00+02:00[Europe/Paris]")
+
+>>> # The two occurrences are exactly 1 hour apart in real time:
+>>> earlier = ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="earlier")
+>>> later   = ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="later")
+>>> later - earlier
+TimeDelta("PT1h")
+
+>>> # --- Gap: 2:30am DOESN'T EXIST (clocks spring forward) ---
+
 >>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguate="raise")
 Traceback (most recent call last):
     ...
 whenever.SkippedTime: 2023-03-26 02:30:00 is skipped in timezone Europe/Paris
 
->>> # Default behavior is compatible with other libraries and standards
+>>> # "earlier" extrapolates backward → 1:30 AM (before the gap)
+>>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguate="earlier")
+ZonedDateTime("2023-03-26 01:30:00+01:00[Europe/Paris]")
+
+>>> # "later" extrapolates forward → 3:30 AM (after the gap)
+>>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguate="later")
+ZonedDateTime("2023-03-26 03:30:00+02:00[Europe/Paris]")
+
+>>> # Default ("compatible") picks "later" for gaps — matching RFC 5545
 >>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris)
 ZonedDateTime("2023-03-26 03:30:00+02:00[Europe/Paris]")
 ```

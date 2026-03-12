@@ -46,7 +46,7 @@ PlainDateTime("2023-10-01 12:30:00")
 >>> today = Date.today_in_system_tz()
 >>> today.since(birth_date, unit="years")
 2
->>> years, months = today.since(birth_date, units=("years", "months"))
+>>> years, months = today.since(birth_date, units=("years", "months")).values()
 (2, 4)
 ```
 
@@ -194,4 +194,91 @@ Or, you can even reject ambiguous datetimes altogether:
 
 ```python
 >>> zoned = dt.assume_tz("Europe/Berlin", disambiguate="raise")
+```
+
+## "Same time tomorrow" across DST
+
+Adding a day keeps the wall-clock time, even when a DST transition
+makes the day shorter or longer than 24 hours:
+
+```python
+>>> from whenever import ZonedDateTime
+>>> # The night before Spring Forward in Amsterdam
+>>> eve = ZonedDateTime(2025, 3, 30, hour=1, tz="Europe/Amsterdam")
+>>> eve.add(days=1)     # same wall-clock time
+ZonedDateTime("2025-03-31 01:00:00+02:00[Europe/Amsterdam]")
+>>> eve.add(hours=24)   # exactly 24 hours — one hour later on the clock
+ZonedDateTime("2025-03-31 02:00:00+02:00[Europe/Amsterdam]")
+```
+
+## Countdown to New Year's
+
+```python
+>>> from whenever import ZonedDateTime
+>>> now = ZonedDateTime(2025, 12, 28, hour=14, tz="America/New_York")
+>>> new_year = ZonedDateTime(2026, 1, 1, tz="America/New_York")
+>>> days, hours = new_year.since(now, units=("days", "hours")).values()
+(3, 10)
+```
+
+## Flight itinerary across time zones
+
+```python
+>>> from whenever import OffsetDateTime
+>>> departure = OffsetDateTime(2025, 7, 1, hour=9, offset=-4)   # New York
+>>> arrival = OffsetDateTime(2025, 7, 1, hour=22, offset=2)     # Amsterdam
+>>> flight_time = arrival - departure
+>>> flight_time.total("hours")
+7.0
+```
+
+## Recurring monthly event
+
+When a monthly recurrence lands on a day that doesn't exist in the
+target month, the date is truncated to the last valid day:
+
+```python
+>>> from whenever import Date
+>>> meeting = Date(2025, 1, 31)
+>>> meeting.add(months=1)  # February doesn't have 31 days
+Date("2025-02-28")
+>>> meeting.add(months=2)
+Date("2025-03-31")
+```
+
+## Sort a list of datetimes
+
+All exact types can be compared and sorted, even when mixing types:
+
+```python
+>>> from whenever import Instant, ZonedDateTime, OffsetDateTime
+>>> times = [
+...     ZonedDateTime(2025, 6, 1, hour=12, tz="Asia/Tokyo"),
+...     Instant.from_utc(2025, 6, 1, hour=2),
+...     OffsetDateTime(2025, 6, 1, hour=6, offset=4),
+... ]
+>>> sorted(times)  # all represent the same moment—sorted by the underlying instant
+[...]
+```
+
+## Roundtrip: datetime → string → datetime
+
+Every `whenever` type has a reversible string representation:
+
+```python
+>>> from whenever import ZonedDateTime
+>>> d = ZonedDateTime(2025, 6, 15, hour=14, minute=30, tz="Europe/Amsterdam")
+>>> s = str(d)
+>>> s
+'2025-06-15 14:30:00+02:00[Europe/Amsterdam]'
+>>> ZonedDateTime(s) == d
+True
+```
+
+For ISO 8601 exchange:
+
+```python
+>>> iso = d.format_iso()
+>>> ZonedDateTime.parse_iso(iso) == d
+True
 ```

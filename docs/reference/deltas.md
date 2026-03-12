@@ -13,6 +13,12 @@
     itemized_date_delta
 ```
 
+```{tip}
+For a quick introduction to adding and subtracting time,
+see {ref}`arithmetic`. This page goes into more detail on
+working with durations as standalone objects.
+```
+
 As we've seen {ref}`earlier <add-subtract-time>`, you can add and subtract
 time units from datetimes:
 
@@ -63,17 +69,14 @@ and their key differences. Click on the features to learn more about them.
 ## Exact and calendar units
 
 A key distinction when working with durations
-is between {ref}`exact time units and calendar units <arithmetic2>`.
+is between exact time units and calendar units.
+See {ref}`the fundamentals <arithmetic2>` for an in-depth explanation.
 
-Exact time units are hours, minutes, and seconds.
-These units have a fixed duration that doesn't change depending on context.
-For example, an hour is always 60 minutes, and a minute is always 60 seconds.
+In short:
 
-Calendar units are years, months, weeks, and days.
-These units can have a variable duration depending on context.
-For example, a year can be 365 or 366 days, and a month can be 28, 29, 30, or 31 days.
-More subtly, a day isn't always have 24 hours, as this can change
-depending on Daylight Saving Time, for example.
+- **Exact units** (hours, minutes, seconds) have a fixed duration.
+- **Calendar units** (years, months, weeks, days) have a variable duration
+  depending on context (e.g. leap years, DST).
 
 Depending on the units you need to work with, you should choose the appropriate delta type:
 
@@ -145,22 +148,65 @@ if their total duration is the same, regardless of how their components are repr
 True  # normalized durations are the same
 ```
 
+(delta-sign)=
+## Sign
+
+All delta types carry a single sign that applies to every component
+uniformly—there are no mixed-sign deltas.
+
+```python
+>>> ItemizedDelta(months=-3, days=-10, hours=-5)
+ItemizedDelta("-P3m10dT5h")
+>>> -ItemizedDateDelta(years=1, months=6)
+ItemizedDateDelta("-P1y6m")
+```
+
+Negating a delta flips the sign of all components at once:
+
+```python
+>>> d = ItemizedDelta(hours=2, minutes=30)
+>>> -d
+ItemizedDelta("-PT2h30m")
+```
+
+{class}`TimeDelta` also has a single sign, but may be constructed
+with mixed-sign components, as they will be normalized into a single sign automatically:
+
+```python
+>>> d = TimeDelta(hours=1, minutes=-15)
+>>> d
+TimeDelta("PT45m")
+```
 
 (delta-in-units)=
 ## Convert into specific units
 
 All delta types can be converted into specific units using
-their `in_units()` method. The output type is always {class}`ItemizedDelta`.
-Its fields are guaranteed to be normalized, i.e. values will always "roll over"
-into larger units where possible.
+their `in_units()` method.
+This is sometimes called "balancing"—redistributing the value
+across the requested units:
 
 ```python
 >>> delta = TimeDelta(hours=3, minutes=2, seconds=5)
 >>> delta.in_units(["minutes", "seconds"])
 ItemizedDelta("PT182m5s")
 >>> # deltas can also be unpacked directly:
->>> hours, minutes = delta.in_units(["hours", "minutes"])
+>>> hours, minutes = delta.in_units(["hours", "minutes"]).values()
 (3, 2)
+```
+
+For example, 150 minutes balanced into hours and minutes:
+
+```python
+>>> TimeDelta(minutes=150).in_units(["hours", "minutes"]).values()
+(2, 30)
+```
+
+```{tip}
+If you need the difference between two datetimes in specific units,
+use {meth}`~ZonedDateTime.since` / {meth}`~ZonedDateTime.until`
+instead of computing a delta and converting it.
+See {ref}`arithmetic`.
 ```
 
 If you'd like to convert into a single unit instead, see the next section.
@@ -179,6 +225,16 @@ their `total()` method, which returns a `float`.
 
 When the total duration is requested in `"nanoseconds"` (the smallest supported unit),
 `total()` returns an `int` instead of a `float` to avoid precision issues.
+
+```{note}
+For {class}`ItemizedDelta` and {class}`ItemizedDateDelta`,
+both `in_units()` and `total()` require a `relative_to` parameter to
+resolve calendar units.
+This is because calendar units have variable lengths—``1 month`` is
+28, 29, 30, or 31 days depending on the starting date—so the conversion
+can only be performed with a concrete reference point.
+See the individual class reference pages for details.
+```
 
 (delta-cmp)=
 ## Comparison
@@ -272,7 +328,7 @@ using the {meth}`~ItemizedDelta.in_units` method:
 
 ```python
 >>> delta = ItemizedDelta(days=7, hours=2, minutes=84)
->>> delta.in_units(["days", "hours"], rounding_mode="ceil", round_increment=4)
+>>> delta.in_units(["days", "hours"], relative_to=ZonedDateTime(2020, 1, 1, tz="UTC"), round_mode="ceil", round_increment=4)
 ItemizedDelta("P7dT4h")
 ```
 
@@ -312,11 +368,11 @@ All deltas can be converted to and from this format using the methods:
 
 
 ```python
->>> hours(3).format_iso()
+>>> TimeDelta(hours=3).format_iso()
 'PT3H'
->>> ItemizedDelta(years=-1, months=-3, minutes=-30.25).format_iso()
-'-P1Y3MT30M15S'
->>> ItemizedDateDelta('-P2M')
+>>> ItemizedDelta(years=-1, months=-3, seconds=-15).format_iso()
+'-P1Y3MT15S'
+>>> ItemizedDateDelta.parse_iso('-P2M')
 ItemizedDateDelta("-P2m")
 >>> ItemizedDelta.parse_iso('P3YT90M')
 ItemizedDelta("P3yT90m")
@@ -350,5 +406,5 @@ The three delta types in `whenever` are similar to those in other languages:
 
 [^1]: These operations require a relative date or datetime context to resolve
       calendar units.
-[^2]: The autor of NodaTime has been tempted to [include it](https://github.com/nodatime/nodatime/issues/1435#issuecomment-547855819) though
+[^2]: The author of NodaTime has been tempted to [include it](https://github.com/nodatime/nodatime/issues/1435#issuecomment-547855819) though
 [^3]: Part of the [ThreeTen-Extra](https://www.threeten.org/threeten-extra/) library by the same author.

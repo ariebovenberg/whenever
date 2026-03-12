@@ -36,7 +36,7 @@ PlainDateTime("2023-12-28 11:30:00")
 ```
 
 You can convert from plain datetimes with the {meth}`~whenever.PlainDateTime.assume_utc`,
-{meth}`~whenever.PlainDateTime.assume_fixed_offset`, and
+{meth}`~whenever.PlainDateTime.assume_fixed_offset`,
 {meth}`~whenever.PlainDateTime.assume_tz`, and
 {meth}`~whenever.PlainDateTime.assume_system_tz` methods.
 
@@ -48,7 +48,40 @@ Instant("2023-12-28 11:30:00Z")
 ZonedDateTime("2023-12-28 11:30:00+01:00[Europe/Amsterdam]")
 ```
 
+Similarly, you can associate an {class}`~whenever.OffsetDateTime`
+with a timezone using {meth}`~whenever.OffsetDateTime.assume_tz`:
+
+```python
+>>> o = OffsetDateTime(2023, 12, 28, 11, 30, offset=1)
+>>> o.assume_tz("Europe/Amsterdam")
+ZonedDateTime("2023-12-28 11:30:00+01:00[Europe/Amsterdam]")
+```
+
+By default, this raises an error if the offset doesn't match the timezone.
+You can control what happens in case of a mismatch with the `offset_mismatch` argument:
+
+```python
+>>> o = OffsetDateTime(2023, 12, 28, 11, 30, offset=5)
+>>> o.assume_tz("Europe/Amsterdam", offset_mismatch="keep_instant")
+ZonedDateTime("2023-12-28 07:30:00+01:00[Europe/Amsterdam]")
+>>> o.assume_tz("Europe/Amsterdam", offset_mismatch="keep_local")
+ZonedDateTime("2023-12-28 11:30:00+01:00[Europe/Amsterdam]")
+```
+
 ```{tip}
 The naming difference between `to_*` and `assume_*` methods is intentional.
 See the {ref}`FAQ <faq-to-vs-assume>` for the rationale.
+```
+
+```{admonition} When is `assume_tz` useful?
+:class: hint
+
+A common scenario is receiving timestamps from an external source
+(API, database, log file) that only carries a fixed offset.
+If the timezone rules for that region change later—for example,
+a country abolishes DST—the stored offset may no longer be valid
+for arithmetic on future dates.
+{meth}`~whenever.OffsetDateTime.assume_tz` lets you associate the
+correct timezone so that subsequent operations account for the
+current rules.
 ```

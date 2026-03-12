@@ -1,3 +1,4 @@
+(choosing-a-type)=
 # Choosing the right type
 
 While the standard library has a single {class}`~datetime.datetime` type

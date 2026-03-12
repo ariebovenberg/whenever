@@ -21,15 +21,15 @@ PlainDateTime("2023-01-01 12:30:00")
 Date("2023-07-13")
 ```
 
-Dates support arithmetic with months and years,
+Dates support arithmetic and calculating differences,
 with similar semantics to modern datetime libraries:
 
 ```python
 >>> d = Date(2023, 1, 31)
 >>> d.add(months=1)
 Date("2023-02-28")
->>> d - Date(2022, 10, 15)
-DateDelta("P3M16D")
+>>> d.since(Date(2022, 10, 15), units=["months", "days"])
+ItemizedDateDelta("P3m16d")
 ```
 
 There's also {class}`~whenever.YearMonth` and {class}`~whenever.MonthDay` for representing

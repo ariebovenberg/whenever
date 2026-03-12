@@ -1,6 +1,11 @@
 (arithmetic2)=
 # Arithmetic
 
+```{tip}
+This page explains the *concepts* behind date-time arithmetic.
+For how `whenever` implements these, see the {ref}`arithmetic guide <arithmetic>`.
+```
+
 Arithmetic answers questions like "how many hours passed between these two events?",
 "how long ago did this happen?", or "reschedule this event three days later."
 These operations seem simple, but their behavior depends on what the units involved actually mean.
