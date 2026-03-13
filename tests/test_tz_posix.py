@@ -123,28 +123,30 @@ class TestParse:
             TzStr.parse(s)
 
     @pytest.mark.parametrize(
-        "s, expected",
+        "s, expected, std_abbrev",
         [
-            ("FOO1", -3600),
-            ("FOOS0", 0),
-            ("FOO+01", -3600),
-            ("FOO+01:30", -3600 - 30 * 60),
-            ("FOO+01:30:59", -3600 - 30 * 60 - 59),
-            ("FOOM+23:59:59", -86399),
-            ("FOOS-23:59:59", 86399),
-            ("FOOBLA-23:59", 23 * 3600 + 59 * 60),
-            ("FOO-23", 23 * 3600),
-            ("FOO-01", 3600),
-            ("FOO-01:30", 3600 + 30 * 60),
-            ("FOO-01:30:59", 3600 + 30 * 60 + 59),
-            ("FOO+23:59:59", -86399),
-            ("FOO+23:59", -23 * 3600 - 59 * 60),
-            ("FOO+23", -23 * 3600),
-            ("<FOO>-3", 3 * 3600),
+            ("FOO1", -3600, "FOO"),
+            ("FOOS0", 0, "FOOS"),
+            ("FOO+01", -3600, "FOO"),
+            ("FOO+01:30", -3600 - 30 * 60, "FOO"),
+            ("FOO+01:30:59", -3600 - 30 * 60 - 59, "FOO"),
+            ("FOOM+23:59:59", -86399, "FOOM"),
+            ("FOOS-23:59:59", 86399, "FOOS"),
+            ("FOOBLA-23:59", 23 * 3600 + 59 * 60, "FOOBLA"),
+            ("FOO-23", 23 * 3600, "FOO"),
+            ("FOO-01", 3600, "FOO"),
+            ("FOO-01:30", 3600 + 30 * 60, "FOO"),
+            ("FOO-01:30:59", 3600 + 30 * 60 + 59, "FOO"),
+            ("FOO+23:59:59", -86399, "FOO"),
+            ("FOO+23:59", -23 * 3600 - 59 * 60, "FOO"),
+            ("FOO+23", -23 * 3600, "FOO"),
+            ("<FOO>-3", 3 * 3600, "FOO"),
         ],
     )
-    def test_fixed_offset(self, s, expected):
-        assert TzStr.parse(s) == TzStr(expected, dst=None)
+    def test_fixed_offset(self, s, expected, std_abbrev):
+        assert TzStr.parse(s) == TzStr(
+            expected, dst=None, std_abbrev=std_abbrev
+        )
 
     def test_with_dst(self):
         # Implicit DST offset
@@ -155,7 +157,9 @@ class TestParse:
                 offset=7200,
                 start=(LastWeekday(3, 0), DEFAULT_RULE_TIME),
                 end=(NthWeekday(10, 4, 0), DEFAULT_RULE_TIME),
+                abbrev="FOOS",
             ),
+            std_abbrev="FOO",
         )
         assert tz == expected
 
@@ -167,7 +171,9 @@ class TestParse:
                 offset=-2 * 3600 - 30 * 60,
                 start=(LastWeekday(3, 0), DEFAULT_RULE_TIME),
                 end=(NthWeekday(10, 2, 0), DEFAULT_RULE_TIME),
+                abbrev="FOOS",
             ),
+            std_abbrev="FOO",
         )
         assert tz == expected
 
@@ -179,7 +185,9 @@ class TestParse:
                 offset=-2 * 3600 - 30 * 60,
                 start=(LastWeekday(3, 0), 8 * 3600),
                 end=(NthWeekday(10, 2, 0), DEFAULT_RULE_TIME),
+                abbrev="FOOS",
             ),
+            std_abbrev="FOO",
         )
         assert tz == expected
 
@@ -191,7 +199,9 @@ class TestParse:
                 offset=-2 * 3600 - 30 * 60,
                 start=(JulianDayOfYear(23), 8 * 3600 + 34 * 60 + 1),
                 end=(NthWeekday(10, 2, 0), 3 * 3600),
+                abbrev="FOOS",
             ),
+            std_abbrev="FOO",
         )
         assert tz == expected
 
@@ -203,7 +213,9 @@ class TestParse:
                 offset=-2 * 3600 - 30 * 60,
                 start=(DayOfYear(24), 8 * 3600 + 34 * 60 + 1),
                 end=(JulianDayOfYear(1), 0),
+                abbrev="FOOS",
             ),
+            std_abbrev="FOO",
         )
         assert tz == expected
 
@@ -215,7 +227,9 @@ class TestParse:
                 offset=-2 * 3600 - 30 * 60,
                 start=(DayOfYear(1), 8 * 3600 + 34 * 60 + 1),
                 end=(JulianDayOfYear(1), 0),
+                abbrev="FOOS",
             ),
+            std_abbrev="FOO",
         )
         assert tz == expected
 
@@ -227,7 +241,9 @@ class TestParse:
                 offset=-3600,
                 start=(LastWeekday(3, 0), 24 * 3600),
                 end=(NthWeekday(10, 2, 0), DEFAULT_RULE_TIME),
+                abbrev="FOOS",
             ),
+            std_abbrev="FOO",
         )
         assert tz == expected
 
@@ -239,7 +255,9 @@ class TestParse:
                 offset=-3600,
                 start=(LastWeekday(3, 0), -89 * 3600 - 2 * 60),
                 end=(NthWeekday(10, 2, 0), 100 * 3600),
+                abbrev="FOOS",
             ),
+            std_abbrev="FOO",
         )
         assert tz == expected
 
@@ -331,7 +349,7 @@ class TestApplyRule:
 
 class TestCalculateOffsets:
 
-    TZ_FIXED = TzStr(std=1234, dst=None)
+    TZ_FIXED = TzStr(std=1234, dst=None, std_abbrev="STD")
 
     # A TZ with random-ish DST rules
     TZ = TzStr(
@@ -340,7 +358,9 @@ class TestCalculateOffsets:
             offset=9300,
             start=(LastWeekday(3, 0), 4 * 3600),
             end=(JulianDayOfYear(281), DEFAULT_RULE_TIME),
+            abbrev="DST",
         ),
+        std_abbrev="STD",
     )
 
     # A TZ with DST time rules that are very large, or negative!
@@ -350,7 +370,9 @@ class TestCalculateOffsets:
             offset=9300,
             start=(LastWeekday(3, 0), 50 * 3600),
             end=(JulianDayOfYear(281), -2 * 3600),
+            abbrev="DST",
         ),
+        std_abbrev="STD",
     )
 
     # A TZ with DST rules that are 00:00:00
@@ -360,7 +382,9 @@ class TestCalculateOffsets:
             offset=9300,
             start=(LastWeekday(3, 0), 0),
             end=(JulianDayOfYear(281), 0),
+            abbrev="DST",
         ),
+        std_abbrev="STD",
     )
 
     # A TZ with a DST offset smaller than the standard offset (theoretically possible)
@@ -370,7 +394,9 @@ class TestCalculateOffsets:
             offset=1200,
             start=(LastWeekday(3, 0), DEFAULT_RULE_TIME),
             end=(JulianDayOfYear(281), 4 * 3600),
+            abbrev="DST",
         ),
+        std_abbrev="STD",
     )
 
     # Some timezones have DST end before start
@@ -380,7 +406,9 @@ class TestCalculateOffsets:
             offset=7200,
             end=(LastWeekday(3, 0), DEFAULT_RULE_TIME),
             start=(JulianDayOfYear(281), 4 * 3600),  # oct 8th
+            abbrev="DST",
         ),
+        std_abbrev="STD",
     )
 
     # Some timezones appear to be "always DST", like Africa/Casablanca
@@ -390,7 +418,9 @@ class TestCalculateOffsets:
             offset=3600,
             start=(DayOfYear(1), 0),
             end=(JulianDayOfYear(365), 23 * 3600),
+            abbrev="DST",
         ),
+        std_abbrev="STD",
     )
 
     @pytest.mark.parametrize(

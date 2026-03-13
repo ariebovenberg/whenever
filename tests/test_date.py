@@ -17,7 +17,6 @@ from whenever import (
     Weekday,
     WheneverDeprecationWarning,
     YearMonth,
-    days,
 )
 
 from .common import (

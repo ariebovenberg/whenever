@@ -3255,6 +3255,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                 """
                 ...
 
+    # TODO: bring in line with the Rust implementation: store the fields signed.
     def __getitem__(self, key: str) -> int:
         """Get the value of a specific field by name.
 
@@ -7613,6 +7614,45 @@ class ZonedDateTime(_ExactAndLocalTime):
             )
             is not Unambiguous
         )
+
+    def dst_offset(self) -> TimeDelta:
+        """The DST offset (adjustment) as a :class:`TimeDelta`.
+
+        >>> ZonedDateTime(2020, 8, 15, tz="Europe/London").dst_offset()
+        TimeDelta("PT1h")
+        >>> ZonedDateTime(2020, 1, 15, tz="Europe/London").dst_offset()
+        TimeDelta("PT0s")
+
+        This value is ``TimeDelta.ZERO`` when DST is not active:
+
+        >>> if zoned_dt.dst_offset():
+        ...     print("DST is active")
+
+        Note
+        ----
+        Some timezones have unusual DST rules. For example,
+        Europe/Dublin defines its standard time as IST (UTC+1) and uses
+        "negative DST" in winter. In such cases, this method
+        returns a negative value during winter.
+        """
+        dst_saving = self._tz.meta_for_instant(int(self._py_dt.timestamp()))[0]
+        return TimeDelta._from_nanos_unchecked(dst_saving * 1_000_000_000)
+
+    def tz_abbrev(self) -> str:
+        """The timezone abbreviation (e.g. ``"EST"``, ``"CEST"``).
+
+        >>> ZonedDateTime(2020, 8, 15, tz="Europe/London").tz_abbrev()
+        'BST'
+        >>> ZonedDateTime(2020, 1, 15, tz="Europe/London").tz_abbrev()
+        'GMT'
+
+        Warning
+        -------
+        The abbreviation is often ambiguous and may not be unique,
+        but it is commonly used in human-readable formats.
+        Use the timezone ID (e.g. ``"Europe/London"``) for unambiguous identification of timezones.
+        """
+        return self._tz.meta_for_instant(int(self._py_dt.timestamp()))[1]
 
     def day_length(self) -> TimeDelta:
         """The duration between the start of the current day and the next.

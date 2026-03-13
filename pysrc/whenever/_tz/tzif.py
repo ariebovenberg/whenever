@@ -36,6 +36,7 @@ class TimeZone:
         "_offsets_by_utc",
         "_offsets_by_local",
         "_end",
+        "_meta_by_utc",
     )
 
     # The IANA tz ID (e.g. "Europe/Amsterdam"). Not actually parsed from the file,
@@ -64,11 +65,13 @@ class TimeZone:
             tuple[EpochSecs, tuple[Offset, OffsetDelta]], ...
         ],
         _end: Optional[TzStr] = None,
+        _meta_by_utc: tuple[tuple[int, str], ...] = (),
     ):
         self.key = key
         self._offsets_by_utc = _offsets_by_utc
         self._offsets_by_local = _offsets_by_local
         self._end = _end
+        self._meta_by_utc = _meta_by_utc
 
     def offset_for_instant(self, t: EpochSecs) -> Offset:
         """Get the UTC offset at the given exact time"""
@@ -110,6 +113,20 @@ class TimeZone:
             assert self._offsets_by_local  # ensured during parsing
             _, (prev_offset, last_shift) = self._offsets_by_local[-1]
             return Unambiguous(prev_offset + last_shift)
+
+    def meta_for_instant(self, t: EpochSecs) -> tuple[int, str]:
+        """Get timezone metadata (dst_saving_secs, abbreviation)
+        at the given exact time."""
+        idx = bisect(self._offsets_by_utc, t)
+        if idx is not None:
+            return self._meta_by_utc[max(0, idx - 1)]
+
+        # After last transition: try POSIX TZ string, then fall back
+        if self._end is not None:
+            return self._end.meta_for_instant(t)
+        else:
+            assert self._meta_by_utc  # ensured during parsing
+            return self._meta_by_utc[-1]
 
     # NOTE: this equality check needs to be fast, since it's used in
     # some routines to check if the timezone is indeed changing.
@@ -263,11 +280,11 @@ def _parse_content(
         transition_times = _parse_v1_transitions(header, data)
 
     offset_indices = list(data.read(header.timecnt))
-    offsets = _parse_offsets(header.typecnt, data)
-    data.read(header.charcnt)  # skip charcnt
+    types = _parse_type_info(header.typecnt, data)
+    abbrev_data = data.read(header.charcnt)
 
-    offsets_by_utc = _load_transitions(
-        transition_times, offsets, offset_indices
+    offsets_by_utc, meta_by_utc = _load_transitions(
+        transition_times, types, offset_indices, abbrev_data
     )
 
     # Parse POSIX TZ string for v2+ files
@@ -289,6 +306,7 @@ def _parse_content(
         _offsets_by_utc=tuple(offsets_by_utc),
         _offsets_by_local=tuple(_local_transitions(offsets_by_utc)),
         _end=end,
+        _meta_by_utc=tuple(meta_by_utc),
     )
 
 
@@ -311,23 +329,57 @@ def _parse_v1_transitions(
     return struct.unpack(f">{header.timecnt}i", data.read(4 * header.timecnt))
 
 
-def _parse_offsets(typecnt: int, data: IO[bytes]) -> Sequence[Offset]:
-    return [f for f, *_ in struct.iter_unpack(">ixx", data.read(6 * typecnt))]
+def _parse_type_info(
+    typecnt: int, data: IO[bytes]
+) -> Sequence[tuple[Offset, bool, int]]:
+    """Parse type info records: (utoff, isdst, abbrind)"""
+    return [
+        (utoff, isdst != 0, abbrind)
+        for utoff, isdst, abbrind in struct.iter_unpack(
+            ">iBB", data.read(6 * typecnt)
+        )
+    ]
+
+
+def _abbrev_at(abbrev_data: bytes, idx: int) -> str:
+    """Extract a NUL-terminated abbreviation string at the given index."""
+    end = abbrev_data.find(b"\x00", idx)
+    if end == -1:
+        end = len(abbrev_data)
+    return abbrev_data[idx:end].decode("ascii", errors="replace")
 
 
 def _load_transitions(
     transition_times: Sequence[EpochSecs],
-    offsets: Sequence[Offset],
+    types: Sequence[tuple[Offset, bool, int]],
     indices: Sequence[int],
-) -> Sequence[tuple[EpochSecs, Offset]]:
-    """Load transitions from parsed data"""
-    return [
-        (EPOCH_SECS_MIN, offsets[0]),  # Ensure correct initial offset
-        *(
-            (epoch, offsets[idx])
-            for idx, epoch in zip(indices, transition_times)
-        ),
+    abbrev_data: bytes,
+) -> tuple[
+    Sequence[tuple[EpochSecs, Offset]],
+    Sequence[tuple[int, str]],
+]:
+    """Load transitions and metadata from parsed data"""
+    first_utoff, first_isdst, first_abbrind = types[0]
+    last_std_offset = first_utoff
+
+    offsets: list[tuple[EpochSecs, Offset]] = [
+        (EPOCH_SECS_MIN, first_utoff),
     ]
+    meta: list[tuple[int, str]] = [
+        (0, _abbrev_at(abbrev_data, first_abbrind)),
+    ]
+
+    for idx, epoch in zip(indices, transition_times):
+        utoff, isdst, abbrind = types[idx]
+        offsets.append((epoch, utoff))
+
+        dst_saving = utoff - last_std_offset if isdst else 0
+        if not isdst:
+            last_std_offset = utoff
+
+        meta.append((dst_saving, _abbrev_at(abbrev_data, abbrind)))
+
+    return offsets, meta
 
 
 # See the TimeZone class definition for explanation of these data structures

@@ -1359,6 +1359,20 @@ fn is_ambiguous(_: PyType, slf: ZonedDateTime) -> PyReturn {
     .to_py()
 }
 
+fn dst_offset(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
+    let &State {
+        time_delta_type, ..
+    } = cls.state();
+    let meta = slf.tz.meta_for_instant(slf.instant().epoch);
+    TimeDelta::from_nanos_unchecked(meta.dst_saving as i128 * 1_000_000_000).to_obj(time_delta_type)
+}
+
+fn tz_abbrev(_: PyType, slf: ZonedDateTime) -> PyReturn {
+    let meta = slf.tz.meta_for_instant(slf.instant().epoch);
+    // SAFETY: TzAbbrev always contains valid ASCII bytes
+    unsafe { std::str::from_utf8_unchecked(meta.abbrev.as_bytes()) }.to_py()
+}
+
 fn add(
     cls: HeapType<ZonedDateTime>,
     slf: ZonedDateTime,
@@ -1887,7 +1901,7 @@ static mut METHODS: &[PyMethodDef] = &[
                     kwargs: *mut PyObject,
                 ) -> *mut PyObject {
                     from_system_tz(
-                        unsafe { HeapType::<ZonedDateTime>::from_ptr_unchecked(cls.cast()) },
+                        unsafe { HeapType::from_ptr_unchecked(cls.cast()) },
                         unsafe { PyTuple::from_ptr_unchecked(args) },
                         (!kwargs.is_null()).then(|| unsafe { PyDict::from_ptr_unchecked(kwargs) }),
                     )
@@ -1916,6 +1930,8 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::EXACTTIME_TIMESTAMP_NANOS
     ),
     method0!(ZonedDateTime, is_ambiguous, doc::ZONEDDATETIME_IS_AMBIGUOUS),
+    method0!(ZonedDateTime, dst_offset, doc::ZONEDDATETIME_DST_OFFSET),
+    method0!(ZonedDateTime, tz_abbrev, doc::ZONEDDATETIME_TZ_ABBREV),
     classmethod_kwargs!(
         ZonedDateTime,
         from_timestamp,

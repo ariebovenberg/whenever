@@ -46,10 +46,14 @@ ci-lint: check-readme
 	env PYTHONPATH=pysrc/ slotscheck pysrc
 	cargo clippy --all-targets --all-features -- -D warnings
 
+.PHONY: clean-ext
+clean-ext:
+	rm -f pysrc/whenever/*.so pysrc/whenever/*.dylib
+
 .PHONY: clean
-clean:
+clean: clean-ext
 	python setup.py clean --all
-	rm -rf build/ dist/ pysrc/**/*.so pysrc/**/__pycache__ *.egg-info **/*.egg-info \
+	rm -rf build/ dist/ pysrc/**/__pycache__ *.egg-info **/*.egg-info \
 		docs/_build/ htmlcov/ .mypy_cache/ .pytest_cache/ target/
 
 
