@@ -22,7 +22,6 @@ from typing import (
     ClassVar,
     Iterable,
     Literal,
-    Optional,
     Sequence,
     TypeAlias,
     final,
@@ -687,7 +686,7 @@ class ItemizedDelta(
     ) -> ItemizedDelta: ...
     def parts(
         self,
-    ) -> tuple[Optional[ItemizedDateDelta], Optional[TimeDelta]]: ...
+    ) -> tuple[ItemizedDateDelta | None, TimeDelta | None]: ...
     def exact_eq(self, other: Self, /) -> bool: ...
     @overload
     def add(

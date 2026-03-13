@@ -6,7 +6,7 @@ import os.path  # NOTE: we don't use pathlib here to keep our imports light
 import sysconfig
 from contextlib import contextmanager
 from functools import partial
-from typing import Any, Iterable, Iterator, Union, no_type_check
+from typing import Any, Iterable, Iterator, no_type_check
 
 from ._core import (
     Instant,
@@ -113,12 +113,12 @@ def ignore_timezone_unaware_arithmetic_warning() -> Iterator[None]:
 
 
 class _TimePatch:
-    _pin: Union[Instant, ZonedDateTime, OffsetDateTime]
+    _pin: Instant | ZonedDateTime | OffsetDateTime
     _keep_ticking: bool
 
     def __init__(
         self,
-        pin: Union[Instant, ZonedDateTime, OffsetDateTime],
+        pin: Instant | ZonedDateTime | OffsetDateTime,
         keep_ticking: bool,
     ):
         self._pin = pin
@@ -142,7 +142,7 @@ class _TimePatch:
 
 @contextmanager
 def patch_current_time(
-    dt: Union[Instant, ZonedDateTime, OffsetDateTime],
+    dt: Instant | ZonedDateTime | OffsetDateTime,
     /,
     *,
     keep_ticking: bool,

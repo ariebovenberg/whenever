@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import struct
 from io import BytesIO
-from typing import IO, Optional, Sequence, final
+from typing import IO, Sequence, final
 
 from .common import Ambiguity, Fold, Gap, Unambiguous
 from .posix import TzStr
@@ -41,7 +41,7 @@ class TimeZone:
 
     # The IANA tz ID (e.g. "Europe/Amsterdam"). Not actually parsed from the file,
     # but essential because in our case we always associate a tzif file with a tz ID.
-    key: Optional[str]
+    key: str | None
 
     # The following two fields are used to map UTC time to local time and vice versa.
     # For UTC -> local, the transition is unambiguous and simple.
@@ -55,16 +55,16 @@ class TimeZone:
 
     # Invariant: if posix TZ isn't given, there must be at least one entry in each of the above
     # vectors.
-    _end: Optional[TzStr]
+    _end: TzStr | None
 
     def __init__(
         self,
-        key: Optional[str],
+        key: str | None,
         _offsets_by_utc: tuple[tuple[EpochSecs, Offset], ...],
         _offsets_by_local: tuple[
             tuple[EpochSecs, tuple[Offset, OffsetDelta]], ...
         ],
-        _end: Optional[TzStr] = None,
+        _end: TzStr | None = None,
         _meta_by_utc: tuple[tuple[int, str], ...] = (),
     ):
         self.key = key
@@ -162,7 +162,7 @@ class TimeZone:
         )
 
     @classmethod
-    def parse_tzif(cls, data: bytes, key: Optional[str] = None) -> TimeZone:
+    def parse_tzif(cls, data: bytes, key: str | None = None) -> TimeZone:
         """Create a TimeZone from TZif file data"""
         read = BytesIO(data)
         header = _parse_header(read)
@@ -171,7 +171,7 @@ class TimeZone:
 
 def bisect(
     arr: Sequence[tuple[EpochSecs, object]], x: EpochSecs
-) -> Optional[int]:
+) -> int | None:
     """Bisect the array of (time, value) pairs to find the INDEX at the given time.
     Return None if after the last entry.
     """
@@ -257,7 +257,7 @@ def _parse_header(data: IO[bytes]) -> Header:
 
 
 def _parse_content(
-    header: Header, data: IO[bytes], key: Optional[str]
+    header: Header, data: IO[bytes], key: str | None
 ) -> TimeZone:
     """Parse the content section of a TZif file"""
     # Handle version 2+ files
