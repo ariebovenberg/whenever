@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date as _date, timedelta as _timedelta
-from typing import Literal, Union, cast
+from typing import Literal, cast
 
 from ._typing import DateDeltaUnitStr, DeltaUnitStr
 
@@ -36,7 +36,7 @@ class PendingLeapDay:
         self.resolved = _date(year, 2, 28)
 
 
-InterimDate = Union[_date, PendingLeapDay]
+InterimDate = _date | PendingLeapDay
 
 
 def resolve_leap_day(d: InterimDate) -> _date:

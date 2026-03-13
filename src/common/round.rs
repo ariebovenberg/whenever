@@ -215,7 +215,8 @@ pub(crate) struct Args {
     pub(crate) got_ignore_dst: bool,
 }
 
-static INCREMENT_DIV_MSG: &str = "rounding increment must be positive and evenly divide 24 hours";
+static INCREMENT_DIV_MSG: &str =
+    "Invalid increment. Must be positive and divide a 24-hour day evenly.";
 
 impl Args {
     pub(crate) fn parse(

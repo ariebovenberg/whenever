@@ -37,10 +37,8 @@ from typing import (
     ClassVar,
     Iterator,
     Literal,
-    Optional,
     Sequence,
     TypeVar,
-    Union,
     cast,
     no_type_check,
     overload,
@@ -637,11 +635,11 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        unit: Optional[DateDeltaUnitStr] = None,
-        units: Optional[Sequence[DateDeltaUnitStr]] = None,
+        unit: DateDeltaUnitStr | None = None,
+        units: Sequence[DateDeltaUnitStr] | None = None,
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
-    ) -> Union[ItemizedDateDelta, int]:
+    ) -> ItemizedDateDelta | int:
         """Calculate the difference between this date and another date.
         The difference is calculated in terms of the chosen calendar unit
         or units.
@@ -735,11 +733,11 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        unit: Optional[DateDeltaUnitStr] = None,
-        units: Optional[Sequence[DateDeltaUnitStr]] = None,
+        unit: DateDeltaUnitStr | None = None,
+        units: Sequence[DateDeltaUnitStr] | None = None,
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
-    ) -> Union[ItemizedDateDelta, int]:
+    ) -> ItemizedDateDelta | int:
         """Companion to :meth:`since` that calculates the difference until another date.
         See :meth:`since` for more information.
         """
@@ -2119,10 +2117,8 @@ class TimeDelta(_Base):
     ) -> dict[ExactDeltaUnitStr, int]:
 
         self = self.round(
-            unit=(
-                # trim the last 's' from the smallest unit to get the singular form
-                units[-1][:-1]  # type: ignore[arg-type]
-            ),
+            # trim the last 's' from the smallest unit to get the singular form
+            units[-1][:-1],  # type: ignore[arg-type]
             increment=round_increment,
             mode=round_mode,
         )
@@ -3241,7 +3237,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                 ...
 
             @overload
-            def get(self, key: DeltaUnitStr, /) -> Optional[int]: ...
+            def get(self, key: DeltaUnitStr, /) -> int | None: ...
 
             @overload
             def get(self, key: DeltaUnitStr, default: int, /) -> int: ...
@@ -3522,7 +3518,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             nanos,
         )
 
-    def parts(self) -> tuple[Optional[ItemizedDateDelta], Optional[TimeDelta]]:
+    def parts(self) -> tuple[ItemizedDateDelta | None, TimeDelta | None]:
         """Split into date and time parts.
 
         Either part may be None if no fields were set of that type.
@@ -3920,17 +3916,17 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
 def _unpkl_idelta(
-    years: Optional[int],
-    months: Optional[int],
-    weeks: Optional[int],
-    days: Optional[int],
-    hours: Optional[int],
-    minutes: Optional[int],
-    seconds: Optional[int],
-    nanoseconds: Optional[int],
+    years: int | None,
+    months: int | None,
+    weeks: int | None,
+    days: int | None,
+    hours: int | None,
+    minutes: int | None,
+    seconds: int | None,
+    nanoseconds: int | None,
 ) -> ItemizedDelta:
     self = _object_new(ItemizedDelta)
-    sign = 0
+    sign: Sign = 0
     # TODO LATER: reusable method for this pattern
     for v in (
         years,
@@ -3946,15 +3942,18 @@ def _unpkl_idelta(
             sign = 1 if v > 0 else -1
             break
     self._sign = sign
-    _a = lambda v: abs(v) if v else v
-    self._years = _a(years)
-    self._months = _a(months)
-    self._weeks = _a(weeks)
-    self._days = _a(days)
-    self._hours = _a(hours)
-    self._minutes = _a(minutes)
-    self._seconds = _a(seconds)
-    self._nanoseconds = _a(nanoseconds)
+
+    def _abs(v: int | None) -> int | None:
+        return abs(v) if v else v
+
+    self._years = _abs(years)
+    self._months = _abs(months)
+    self._weeks = _abs(weeks)
+    self._days = _abs(days)
+    self._hours = _abs(hours)
+    self._minutes = _abs(minutes)
+    self._seconds = _abs(seconds)
+    self._nanoseconds = _abs(nanoseconds)
     return self
 
 
@@ -4281,7 +4280,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                 ...
 
             @overload
-            def get(self, key: DateDeltaUnitStr, /) -> Optional[int]: ...
+            def get(self, key: DateDeltaUnitStr, /) -> int | None: ...
 
             @overload
             def get(self, key: DateDeltaUnitStr, default: int, /) -> int: ...
@@ -4625,23 +4624,26 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
 def _unpkl_iddelta(
-    years: Optional[int],
-    months: Optional[int],
-    weeks: Optional[int],
-    days: Optional[int],
+    years: int | None,
+    months: int | None,
+    weeks: int | None,
+    days: int | None,
 ) -> ItemizedDateDelta:
     self = _object_new(ItemizedDateDelta)
-    sign = 0
+    sign: Sign = 0
     for v in (years, months, weeks, days):
         if v is not None and v != 0:
             sign = 1 if v > 0 else -1
             break
     self._sign = sign
-    _a = lambda v: abs(v) if v else v
-    self._years = _a(years)
-    self._months = _a(months)
-    self._weeks = _a(weeks)
-    self._days = _a(days)
+
+    def _abs(v: int | None) -> int | None:
+        return abs(v) if v else v
+
+    self._years = _abs(years)
+    self._months = _abs(months)
+    self._weeks = _abs(weeks)
+    self._days = _abs(days)
     return self
 
 
@@ -4653,7 +4655,7 @@ def _check_bound(i: int | None, max_value: int) -> int | None:
 
 def _check_component(
     value: int, sign: Sign, max_value: int  # may also be _UNSET
-) -> tuple[Optional[int], Sign]:
+) -> tuple[int | None, Sign]:
     if value is _UNSET:
         return None, sign
     elif value == 0:
@@ -5119,9 +5121,9 @@ def _unpkl_dtdelta(
 DateTimeDelta.ZERO = DateTimeDelta._from_parts(
     DateDelta._from_months_days(0, 0), TimeDelta.ZERO
 )
-AnyDelta = Union[
-    DateTimeDelta, TimeDelta, DateDelta, ItemizedDelta, ItemizedDateDelta
-]
+AnyDelta = (
+    DateTimeDelta | TimeDelta | DateDelta | ItemizedDelta | ItemizedDateDelta
+)
 
 
 # Methods for types converting to/from the standard library and ISO8601:
@@ -7081,9 +7083,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         self._py_dt, self._nanos, self._tz = zdt_from_iso(s)
 
     @classmethod
-    def from_timestamp(
-        cls, i: Union[int, float], /, *, tz: str
-    ) -> ZonedDateTime:
+    def from_timestamp(cls, i: int | float, /, *, tz: str) -> ZonedDateTime:
         """Create an instance from a UNIX timestamp (in seconds).
 
         The inverse of the ``timestamp()`` method.
@@ -7248,7 +7248,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
 
     @property
-    def tz(self) -> Optional[str]:
+    def tz(self) -> str | None:
         """The timezone ID. In rare cases, this may be ``None``,
         if the ``ZonedDateTime`` was created from a system timezone
         without a known IANA key.
@@ -8825,7 +8825,7 @@ def _format_date(d: _date, basic: bool) -> str:
 
 
 def _format_time(
-    t: Union[_time, _datetime], ns: _Nanos, precision: str, basic: bool
+    t: _time | _datetime, ns: _Nanos, precision: str, basic: bool
 ) -> str:
     sep = "" if basic else ":"
     if precision == "hour":
@@ -9265,7 +9265,7 @@ def _unpatch_time() -> None:
 
 # This alias exists because we don't want to expose the _ExactTime abstract class
 # in the public API, but we do want to use it in type annotations.
-_ExactTimeAlias = Union[Instant, OffsetDateTime, ZonedDateTime]
+_ExactTimeAlias = Instant | OffsetDateTime | ZonedDateTime
 
 
 # We expose the public members in the root of the module.

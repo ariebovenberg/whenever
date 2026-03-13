@@ -1266,12 +1266,12 @@ class TestRound:
     def test_invalid_unit(self):
         t = TimeDelta.ZERO
         with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
-            t.round("foo")  # type: ignore[arg-type]
+            t.round("foo")  # type: ignore[call-overload]
 
     def test_invalid_mode(self):
         t = TimeDelta.ZERO
         with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
-            t.round(mode="foo")  # type: ignore[arg-type]
+            t.round(mode="foo")  # type: ignore[call-overload]
 
     def test_24h_day_warning(self):
         t = TimeDelta.ZERO
