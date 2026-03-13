@@ -906,7 +906,7 @@ class TestRound:
     def test_invalid_mode(self):
         d = PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
         with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
-            d.round("second", mode="foo")  # type: ignore[arg-type]
+            d.round("second", mode="foo")  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
         "unit, increment",
@@ -933,7 +933,7 @@ class TestRound:
     def test_invalid_unit(self):
         d = PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
         with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
-            d.round("foo")  # type: ignore[arg-type]
+            d.round("foo")  # type: ignore[call-overload]
 
     def test_out_of_range(self):
         d = PlainDateTime.MAX.replace(nanosecond=0)
@@ -956,7 +956,7 @@ class TestRound:
 
     def test_round_by_timedelta_invalid_not_divides_day(self):
         d = PlainDateTime(2020, 8, 15, 12)
-        with pytest.raises(ValueError, match="24 hour"):
+        with pytest.raises(ValueError, match="24.hour"):
             d.round(TimeDelta(hours=7))
 
     def test_round_by_timedelta_negative(self):

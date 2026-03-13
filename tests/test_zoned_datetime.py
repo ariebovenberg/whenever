@@ -1154,7 +1154,7 @@ class TestDstOffset:
         zi = ZoneInfo("Europe/Dublin")
         py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())
+            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1163,7 +1163,7 @@ class TestDstOffset:
         zi = ZoneInfo("Europe/Dublin")
         py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())
+            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1174,13 +1174,13 @@ class TestDstOffset:
         d_before = create_zdt(2020, 3, 29, 0, 30, tz="Europe/Dublin")
         py_before = py_datetime(2020, 3, 29, 0, 30, tzinfo=zi)
         assert d_before.dst_offset() == TimeDelta(
-            seconds=int(py_before.dst().total_seconds())
+            seconds=int(py_before.dst().total_seconds())  # type: ignore[union-attr]
         )
         # After transition: 2020-03-29 2:30 (summer, IST)
         d_after = create_zdt(2020, 3, 29, 2, 30, tz="Europe/Dublin")
         py_after = py_datetime(2020, 3, 29, 2, 30, tzinfo=zi)
         assert d_after.dst_offset() == TimeDelta(
-            seconds=int(py_after.dst().total_seconds())
+            seconds=int(py_after.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1193,7 +1193,7 @@ class TestDstOffset:
         )
         py_earlier = py_datetime(2020, 10, 25, 1, 30, tzinfo=zi, fold=0)
         assert d_earlier.dst_offset() == TimeDelta(
-            seconds=int(py_earlier.dst().total_seconds())
+            seconds=int(py_earlier.dst().total_seconds())  # type: ignore[union-attr]
         )
         # After transition (later fold): 2020-10-25 1:30 GMT
         d_later = create_zdt(
@@ -1201,7 +1201,7 @@ class TestDstOffset:
         )
         py_later = py_datetime(2020, 10, 25, 1, 30, tzinfo=zi, fold=1)
         assert d_later.dst_offset() == TimeDelta(
-            seconds=int(py_later.dst().total_seconds())
+            seconds=int(py_later.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1210,13 +1210,13 @@ class TestDstOffset:
         zi = ZoneInfo("Europe/Dublin")
         py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())
+            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
         )
 
         d2 = create_zdt(2100, 1, 15, 12, tz="Europe/Dublin")
         py_dt2 = py_datetime(2100, 1, 15, 12, tzinfo=zi)
         assert d2.dst_offset() == TimeDelta(
-            seconds=int(py_dt2.dst().total_seconds())
+            seconds=int(py_dt2.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     # -- Australia/Sydney: southern hemisphere DST (summer in Jan) --
@@ -1228,7 +1228,7 @@ class TestDstOffset:
         zi = ZoneInfo("Australia/Sydney")
         py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())
+            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1238,7 +1238,7 @@ class TestDstOffset:
         zi = ZoneInfo("Australia/Sydney")
         py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())
+            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1249,13 +1249,13 @@ class TestDstOffset:
         d_before = create_zdt(2020, 10, 4, 1, 30, tz="Australia/Sydney")
         py_before = py_datetime(2020, 10, 4, 1, 30, tzinfo=zi)
         assert d_before.dst_offset() == TimeDelta(
-            seconds=int(py_before.dst().total_seconds())
+            seconds=int(py_before.dst().total_seconds())  # type: ignore[union-attr]
         )
         # After: 2020-10-04 3:30 AEDT (DST active)
         d_after = create_zdt(2020, 10, 4, 3, 30, tz="Australia/Sydney")
         py_after = py_datetime(2020, 10, 4, 3, 30, tzinfo=zi)
         assert d_after.dst_offset() == TimeDelta(
-            seconds=int(py_after.dst().total_seconds())
+            seconds=int(py_after.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1268,7 +1268,7 @@ class TestDstOffset:
         )
         py_earlier = py_datetime(2020, 4, 5, 2, 30, tzinfo=zi, fold=0)
         assert d_earlier.dst_offset() == TimeDelta(
-            seconds=int(py_earlier.dst().total_seconds())
+            seconds=int(py_earlier.dst().total_seconds())  # type: ignore[union-attr]
         )
         # Later fold: 2020-04-05 2:30 AEST
         d_later = create_zdt(
@@ -1276,7 +1276,7 @@ class TestDstOffset:
         )
         py_later = py_datetime(2020, 4, 5, 2, 30, tzinfo=zi, fold=1)
         assert d_later.dst_offset() == TimeDelta(
-            seconds=int(py_later.dst().total_seconds())
+            seconds=int(py_later.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1285,7 +1285,7 @@ class TestDstOffset:
         zi = ZoneInfo("Australia/Sydney")
         py_dt = py_datetime(2100, 1, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())
+            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     # -- Pacific/Honolulu: no DST ever --
@@ -1317,7 +1317,7 @@ class TestDstOffset:
         zi = ZoneInfo("Africa/Casablanca")
         py_dt = py_datetime(2019, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())
+            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(
@@ -1330,7 +1330,7 @@ class TestDstOffset:
         zi = ZoneInfo("Africa/Casablanca")
         py_dt = py_datetime(2019, 1, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())
+            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(
@@ -1343,7 +1343,7 @@ class TestDstOffset:
         zi = ZoneInfo("Africa/Casablanca")
         py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())
+            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     # -- America/New_York: standard US DST --
@@ -1353,7 +1353,7 @@ class TestDstOffset:
         zi = ZoneInfo("America/New_York")
         py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())
+            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     def test_new_york_winter(self):
@@ -1361,7 +1361,7 @@ class TestDstOffset:
         zi = ZoneInfo("America/New_York")
         py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())
+            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     def test_new_york_spring_forward(self):
@@ -1371,13 +1371,13 @@ class TestDstOffset:
         d_before = create_zdt(2020, 3, 8, 1, 30, tz="America/New_York")
         py_before = py_datetime(2020, 3, 8, 1, 30, tzinfo=zi)
         assert d_before.dst_offset() == TimeDelta(
-            seconds=int(py_before.dst().total_seconds())
+            seconds=int(py_before.dst().total_seconds())  # type: ignore[union-attr]
         )
         # After: 2020-03-08 3:30 EDT
         d_after = create_zdt(2020, 3, 8, 3, 30, tz="America/New_York")
         py_after = py_datetime(2020, 3, 8, 3, 30, tzinfo=zi)
         assert d_after.dst_offset() == TimeDelta(
-            seconds=int(py_after.dst().total_seconds())
+            seconds=int(py_after.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     def test_new_york_fall_back(self):
@@ -1389,7 +1389,7 @@ class TestDstOffset:
         )
         py_earlier = py_datetime(2020, 11, 1, 1, 30, tzinfo=zi, fold=0)
         assert d_earlier.dst_offset() == TimeDelta(
-            seconds=int(py_earlier.dst().total_seconds())
+            seconds=int(py_earlier.dst().total_seconds())  # type: ignore[union-attr]
         )
         # Later fold: 2020-11-01 1:30 EST
         d_later = create_zdt(
@@ -1397,7 +1397,7 @@ class TestDstOffset:
         )
         py_later = py_datetime(2020, 11, 1, 1, 30, tzinfo=zi, fold=1)
         assert d_later.dst_offset() == TimeDelta(
-            seconds=int(py_later.dst().total_seconds())
+            seconds=int(py_later.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     def test_new_york_far_future(self):
@@ -1405,13 +1405,13 @@ class TestDstOffset:
         zi = ZoneInfo("America/New_York")
         py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())
+            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
         )
 
         d2 = create_zdt(2100, 1, 15, 12, tz="America/New_York")
         py_dt2 = py_datetime(2100, 1, 15, 12, tzinfo=zi)
         assert d2.dst_offset() == TimeDelta(
-            seconds=int(py_dt2.dst().total_seconds())
+            seconds=int(py_dt2.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     # -- UTC: no DST --
@@ -1421,7 +1421,7 @@ class TestDstOffset:
         zi = ZoneInfo("UTC")
         py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())
+            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     def test_utc_far_future(self):
@@ -1435,7 +1435,7 @@ class TestDstOffset:
         zi = ZoneInfo("Asia/Tokyo")
         py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())
+            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
         )
 
     def test_tokyo_winter(self):
@@ -4830,7 +4830,7 @@ class TestRound:
             2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
         )
         with pytest.raises(ValueError, match="mode.*foo"):
-            d.round("second", mode="foo")  # type: ignore[arg-type]
+            d.round("second", mode="foo")  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
         "unit, increment",
@@ -4848,7 +4848,7 @@ class TestRound:
         d = ZonedDateTime(
             2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
         )
-        with pytest.raises(ValueError, match="evenly.*24 hour"):
+        with pytest.raises(ValueError, match="24.hour"):
             d.round(unit, increment=increment)
 
     @pytest.mark.parametrize(
@@ -4871,7 +4871,7 @@ class TestRound:
             2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
         )
         with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
-            d.round("foo")  # type: ignore[arg-type]
+            d.round("foo")  # type: ignore[call-overload]
 
     def test_out_of_range(self):
         d = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
@@ -4896,7 +4896,7 @@ class TestRound:
 
     def test_round_by_timedelta_invalid_not_divides_day(self):
         d = ZonedDateTime(2020, 8, 15, 12, tz="Europe/Amsterdam")
-        with pytest.raises(ValueError, match="24 hour"):
+        with pytest.raises(ValueError, match="24.hour"):
             d.round(TimeDelta(hours=7))
 
     def test_round_by_timedelta_negative(self):
@@ -4907,7 +4907,7 @@ class TestRound:
     def test_round_by_timedelta_with_increment(self):
         d = ZonedDateTime(2020, 8, 15, 12, tz="Europe/Amsterdam")
         with pytest.raises(TypeError):
-            d.round(TimeDelta(hours=1), increment=2)
+            d.round(TimeDelta(hours=1), increment=2)  # type: ignore[call-overload]
 
 
 class TestPickle:

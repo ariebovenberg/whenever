@@ -505,12 +505,6 @@ def test_cannot_subclass():
 
 class TestDeprecationWarnings:
 
-    @staticmethod
-    def _make_ddelta(**kwargs):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", WheneverDeprecationWarning)
-            return DateDelta(**kwargs)
-
     def test_init(self):
         with pytest.warns(WheneverDeprecationWarning, match="DateDelta"):
             DateDelta(months=1)
@@ -528,22 +522,22 @@ class TestDeprecationWarnings:
             DateDelta("P1M")
 
     def test_add_time_delta(self):
-        d = self._make_ddelta(months=1)
+        d = make_ddelta(months=1)
         with pytest.warns(WheneverDeprecationWarning, match="DateTimeDelta"):
             d + TimeDelta(hours=1)
 
     def test_radd_time_delta(self):
-        d = self._make_ddelta(months=1)
+        d = make_ddelta(months=1)
         with pytest.warns(WheneverDeprecationWarning, match="DateTimeDelta"):
             TimeDelta(hours=1) + d
 
     def test_sub_time_delta(self):
-        d = self._make_ddelta(months=-1)
+        d = make_ddelta(months=-1)
         with pytest.warns(WheneverDeprecationWarning, match="DateTimeDelta"):
             d - TimeDelta(hours=1)
 
     def test_rsub_time_delta(self):
-        d = self._make_ddelta(months=-1)
+        d = make_ddelta(months=-1)
         with pytest.warns(WheneverDeprecationWarning, match="DateTimeDelta"):
             TimeDelta(hours=1) - d
 

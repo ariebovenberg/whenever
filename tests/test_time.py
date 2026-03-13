@@ -520,7 +520,7 @@ class TestRound:
     def test_invalid_mode(self):
         t = Time(1, 2, 3, nanosecond=4_000)
         with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
-            t.round("second", mode="foo")  # type: ignore[arg-type]
+            t.round("second", mode="foo")  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
         "unit, increment",
@@ -541,12 +541,12 @@ class TestRound:
     def test_invalid_unit(self):
         t = Time(1, 2, 3, nanosecond=4_000)
         with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
-            t.round("foo")  # type: ignore[arg-type]
+            t.round("foo")  # type: ignore[call-overload]
 
     def test_no_day_unit(self):
         t = Time(1, 2, 3, nanosecond=4_000)
         with pytest.raises(ValueError, match="day"):
-            t.round("day")  # type: ignore[arg-type]
+            t.round("day")  # type: ignore[call-overload]
 
     def test_round_by_timedelta(self):
         t = Time(12, 39, 59)
@@ -559,7 +559,7 @@ class TestRound:
         assert Time(13, 30).round(TimeDelta(hours=1)) == Time(14)
 
     def test_round_by_timedelta_invalid_not_divides_day(self):
-        with pytest.raises(ValueError, match="24 hour"):
+        with pytest.raises(ValueError, match="24.hour"):
             Time(12, 0).round(TimeDelta(hours=7))
 
     def test_round_by_timedelta_negative(self):

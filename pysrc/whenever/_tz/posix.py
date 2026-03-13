@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import calendar
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Optional, Union
 
 from .common import Ambiguity, Fold, Gap, Unambiguous
 
@@ -137,7 +136,7 @@ class JulianDayOfYear:
         return f"JulianDayOfYear({self.nth})"
 
 
-Rule = Union[LastWeekday, NthWeekday, DayOfYear, JulianDayOfYear]
+Rule = LastWeekday | NthWeekday | DayOfYear | JulianDayOfYear
 
 
 class Dst:
@@ -176,7 +175,7 @@ class Dst:
 
 class TzStr:
     std: int
-    dst: Optional[Dst]
+    dst: Dst | None
     std_abbrev: str
 
     __slots__ = ("std", "dst", "std_abbrev")
@@ -184,7 +183,7 @@ class TzStr:
     def __init__(
         self,
         std: int,
-        dst: Optional[Dst],
+        dst: Dst | None,
         std_abbrev: str,
     ):
         self.std = std

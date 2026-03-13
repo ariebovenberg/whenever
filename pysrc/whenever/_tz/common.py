@@ -1,6 +1,3 @@
-from typing import Union
-
-
 class Unambiguous:
     __match_args__ = ("offset",)
     offset: int
@@ -53,4 +50,4 @@ class Fold:
         return f"Fold({self.before}, {self.after})"
 
 
-Ambiguity = Union[Unambiguous, Gap, Fold]
+Ambiguity = Unambiguous | Gap | Fold
