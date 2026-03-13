@@ -93,6 +93,9 @@
   (with a warning about 24-hour days).
 - All types that have a Python standard library equivalent now also accept these
   objects in the constructor.
+- New `ZonedDateTime.dst_offset()`
+  and `ZonedDateTime.tz_abbrev()` methods for querying timezone metadata
+  (DST offset adjustment and timezone abbreviation).
 - Warning classes (`PotentiallyStaleOffsetWarning`,
   `TimeZoneUnawareArithmeticWarning`, `DaysNotAlways24HoursWarning`)
   and corresponding context managers

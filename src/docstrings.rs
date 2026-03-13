@@ -784,7 +784,10 @@ Note
 The number of digits in each component is limited to 8.
 ";
 pub(crate) const DATETIMEDELTA_DATE_PART: &CStr = c"\
-The date part of the delta";
+The date part of the delta
+
+.. deprecated:: 0.10.0
+";
 pub(crate) const DATETIMEDELTA_FORMAT_ISO: &CStr = c"\
 Format as the *popular interpretation* of the ISO 8601 duration format.
 May not strictly adhere to (all versions of) the standard.
@@ -923,16 +926,19 @@ Note
   comments within folding whitespace are not supported.
 ";
 pub(crate) const INSTANT_ROUND: &CStr = c"\
-round($self, unit='second', increment=1, mode='half_even')
+round($self, unit='second', /, *, increment=1, mode='half_even')
 --
 
-Round the instant to the specified unit and increment.
+Round the instant to the specified unit and increment,
+or to a multiple of a :class:`TimeDelta`.
 Various rounding modes are available.
 
 >>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round(\"minute\", 15)
 Instant(\"2020-01-01 12:45:00Z\")
 >>> Instant.from_utc(2020, 1, 1, 8, 9, 13).round(\"second\", 5, mode=\"floor\")
 Instant(\"2020-01-01 08:09:10Z\")
+>>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round(TimeDelta(minutes=15))
+Instant(\"2020-01-01 12:45:00Z\")
 ";
 pub(crate) const INSTANT_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0)
@@ -943,7 +949,7 @@ Subtract a time amount from this instant.
 See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
 ";
 pub(crate) const ITEMIZEDDATEDELTA_ADD: &CStr = c"\
-add($self, arg=..., /, *, relative_to, units=..., round_mode='trunc', round_increment=1, **kwargs)
+add($self, arg=..., /, *, relative_to, units, round_mode='trunc', round_increment=1, **kwargs)
 --
 
 Add time to this delta, returning a new delta";
@@ -1021,7 +1027,7 @@ All normal validation rules apply.
 ItemizedDateDelta(\"P1y4w\")
 ";
 pub(crate) const ITEMIZEDDATEDELTA_SUBTRACT: &CStr = c"\
-subtract($self, arg=..., /, *, relative_to, units=..., round_mode='trunc', round_increment=1, **kwargs)
+subtract($self, arg=..., /, *, relative_to, units, round_mode='trunc', round_increment=1, **kwargs)
 --
 
 Subtract time from this delta, returning a new delta";
@@ -1037,7 +1043,7 @@ Return the total duration expressed in the specified unit as a float
 2.73972602739726
 ";
 pub(crate) const ITEMIZEDDELTA_ADD: &CStr = c"\
-add($self, arg=..., /, *, relative_to, units=..., round_mode='trunc', round_increment=1, **kwargs)
+add($self, arg=..., /, *, relative_to, units, round_mode='trunc', round_increment=1, **kwargs)
 --
 
 Add time to this delta, returning a new delta";
@@ -1139,7 +1145,7 @@ All normal validation rules apply.
 ItemizedDelta(\"P1yT2h\")
 ";
 pub(crate) const ITEMIZEDDELTA_SUBTRACT: &CStr = c"\
-subtract($self, arg=..., /, *, relative_to, units=..., round_mode='trunc', round_increment=1, **kwargs)
+subtract($self, arg=..., /, *, relative_to, units, round_mode='trunc', round_increment=1, **kwargs)
 --
 
 Inverse of :meth:`add`.";
@@ -1382,10 +1388,11 @@ Construct a new instance with the time replaced.
 See :meth:`replace` for more information.
 ";
 pub(crate) const OFFSETDATETIME_ROUND: &CStr = c"\
-round($self, unit='second', increment=1, mode='half_even', *, ignore_dst=...)
+round($self, unit='second', /, *, increment=1, mode='half_even', ignore_dst=...)
 --
 
-Round the datetime to the specified unit and increment.
+Round the datetime to the specified unit and increment,
+or to a multiple of a :class:`TimeDelta`.
 Different rounding modes are available.
 
 >>> d = OffsetDateTime(2020, 8, 15, 23, 24, 18, offset=+4)
@@ -1563,10 +1570,11 @@ Construct a new instance with the date replaced.";
 pub(crate) const PLAINDATETIME_REPLACE_TIME: &CStr = c"\
 Construct a new instance with the time replaced.";
 pub(crate) const PLAINDATETIME_ROUND: &CStr = c"\
-round($self, unit='second', increment=1, mode='half_even')
+round($self, unit='second', /, *, increment=1, mode='half_even')
 --
 
-Round the datetime to the specified unit and increment.
+Round the datetime to the specified unit and increment,
+or to a multiple of a :class:`TimeDelta`.
 Different rounding modes are available.
 
 >>> d = PlainDateTime(2020, 8, 15, 23, 24, 18)
@@ -1664,16 +1672,19 @@ Time(12:03:00.000004)
 
 ";
 pub(crate) const TIME_ROUND: &CStr = c"\
-round($self, unit='second', increment=1, mode='half_even')
+round($self, unit='second', /, *, increment=1, mode='half_even')
 --
 
-Round the time to the specified unit and increment.
+Round the time to the specified unit and increment,
+or to a multiple of a :class:`TimeDelta`.
 Various rounding modes are available.
 
 >>> Time(12, 39, 59).round(\"minute\", 15)
 Time(12:45:00)
 >>> Time(8, 9, 13).round(\"second\", 5, mode=\"floor\")
 Time(08:09:10)
+>>> Time(12, 39, 59).round(TimeDelta(minutes=15))
+Time(12:45:00)
 ";
 pub(crate) const TIMEDELTA_ADD: &CStr = c"\
 add($self, arg=..., /, **kwargs)
@@ -1794,7 +1805,7 @@ The total size in seconds
     Use :meth:`total` with ``'seconds'`` instead.
 ";
 pub(crate) const TIMEDELTA_IN_UNITS: &CStr = c"\
-in_units($self, units, /, *, round_unit=..., round_mode='trunc', round_increment=1)
+in_units($self, units, /, *, round_mode='trunc', round_increment=1, relative_to=...)
 --
 
 Convert to a :class:`ItemizedDelta` with the specified units
@@ -1811,16 +1822,17 @@ units
     A sequence of plural unit names, in descending order.
     Valid unit names are: ``weeks``, ``days``, ``hours``,
     ``minutes``, ``seconds``, ``nanoseconds``.
-round_unit
-    The unit to round to before conversion.
-    If omitted, the smallest unit in ``units`` is used.
-    See :meth:`round` for details.
+    ``years`` and ``months`` are also allowed if ``relative_to``
+    is provided.
 round_mode
     The rounding mode to use when rounding before conversion.
     See :meth:`round` for details.
 round_increment
     The rounding increment to use when rounding before conversion.
     See :meth:`round` for details.
+relative_to
+    A reference datetime required when using calendar units
+    (``years``, ``months``, ``days``, or ``weeks``) to account for variable unit lengths.
 ";
 pub(crate) const TIMEDELTA_PARSE_ISO: &CStr = c"\
 Parse the *popular interpretation* of the ISO 8601 duration format.
@@ -1852,10 +1864,11 @@ Nanoseconds are truncated to microseconds.
 If you need more control over rounding, use :meth:`round` first.
 ";
 pub(crate) const TIMEDELTA_ROUND: &CStr = c"\
-round($self, unit='second', increment=1, mode='half_even')
+round($self, unit='second', /, *, increment=1, mode='half_even')
 --
 
-Round the delta to the specified unit and increment.
+Round the delta to the specified unit and increment,
+or to a multiple of another :class:`TimeDelta`.
 Various rounding modes are available.
 
 >>> t = TimeDelta(seconds=12345)
@@ -1864,6 +1877,8 @@ TimeDelta(\"PT3h25m45s\")
 TimeDelta(\"PT3h26m\")
 >>> t.round(\"second\", increment=10, mode=\"floor\")
 TimeDelta(\"PT3h25m40s\")
+>>> t.round(TimeDelta(minutes=15))
+TimeDelta(\"PT3h30m\")
 ";
 pub(crate) const TIMEDELTA_SUBTRACT: &CStr = c"\
 subtract($self, arg=..., /, **kwargs)
@@ -1936,6 +1951,26 @@ This is usually 24 hours, but may be different due to timezone transitions.
 TimeDelta(24:00:00)
 >>> ZonedDateTime(2023, 10, 29, tz=\"Europe/Amsterdam\").day_length()
 TimeDelta(25:00:00)
+";
+pub(crate) const ZONEDDATETIME_DST_OFFSET: &CStr = c"\
+The DST offset (adjustment) as a :class:`TimeDelta`.
+
+>>> ZonedDateTime(2020, 8, 15, tz=\"Europe/London\").dst_offset()
+TimeDelta(\"PT1h\")
+>>> ZonedDateTime(2020, 1, 15, tz=\"Europe/London\").dst_offset()
+TimeDelta(\"PT0s\")
+
+This value is ``TimeDelta.ZERO`` when DST is not active:
+
+>>> if zoned_dt.dst_offset():
+...     print(\"DST is active\")
+
+Note
+----
+Some timezones have unusual DST rules. For example,
+Europe/Dublin defines its standard time as IST (UTC+1) and uses
+\"negative DST\" in winter. In such cases, this method
+returns a negative value during winter.
 ";
 pub(crate) const ZONEDDATETIME_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, unit='auto', basic=False, sep='T', tz='always')
@@ -2079,10 +2114,11 @@ Construct a new instance with the time replaced.
 See the ``replace()`` method for more information.
 ";
 pub(crate) const ZONEDDATETIME_ROUND: &CStr = c"\
-round($self, unit='second', increment=1, mode='half_even')
+round($self, unit='second', /, *, increment=1, mode='half_even')
 --
 
-Round the datetime to the specified unit and increment.
+Round the datetime to the specified unit and increment,
+or to a multiple of a :class:`TimeDelta`.
 Different rounding modes are available.
 
 >>> d = ZonedDateTime(\"2020-08-15 23:24:18+02:00[Europe/Paris]\")
@@ -2129,6 +2165,20 @@ subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, m
 --
 
 The inverse of the ``add()`` method. See :meth:`add` for more information.";
+pub(crate) const ZONEDDATETIME_TZ_ABBREV: &CStr = c"\
+The timezone abbreviation (e.g. ``\"EST\"``, ``\"CEST\"``).
+
+>>> ZonedDateTime(2020, 8, 15, tz=\"Europe/London\").tz_abbrev()
+'BST'
+>>> ZonedDateTime(2020, 1, 15, tz=\"Europe/London\").tz_abbrev()
+'GMT'
+
+Warning
+-------
+The abbreviation is often ambiguous and may not be unique,
+but it is commonly used in human-readable formats.
+Use the timezone ID (e.g. ``\"Europe/London\"``) for unambiguous identification of timezones.
+";
 pub(crate) const ZONEDDATETIME_UNTIL: &CStr = c"\
 until($self, b, /, *, unit=None, units=None, round_mode='trunc', round_increment=1)
 --
@@ -2253,7 +2303,7 @@ like :meth:`~PlainDateTime.assume_utc` or
 ZonedDateTime(\"2021-01-02T03:04:05+01:00[Europe/Paris]\")
 ";
 pub(crate) const CANNOT_ROUND_DAY_MSG: &CStr = c"Cannot round to day, because days do not have a fixed length. Due to daylight saving time, some days have 23 or 25 hours.If you wish to round to exaxtly 24 hours, use `round('hour', increment=24)`.";
-pub(crate) const DAYS_NOT_ALWAYS_24H_MSG: &CStr = c"This operation assumes days are exactly 24 hours. Calendar days may be 23 or 25 hours long during DST transitions. If you're working with UTC, or deliberately want fixed-length days, this is correct. For DST-aware operations, consider using ZonedDateTime arithmetic instead. Suppress this warning with `with whenever.ignore_days_not_always_24h_warning():`.";
+pub(crate) const DAYS_NOT_ALWAYS_24H_MSG: &CStr = c"This operation assumes days are exactly 24 hours. Calendar days may be 23 or 25 hours long during DST transitions. If you're working with UTC, or deliberately want fixed-length days, this is correct. For DST-aware operations, consider using ZonedDateTime arithmetic instead, or passing the `relative_to` argument where available. Suppress this warning with `with whenever.ignore_days_not_always_24h_warning():`.";
 pub(crate) const FORMAT_ISO_NO_TZ_MSG: &CStr = c"This ZonedDateTime has no timezone ID and cannot be formatted in the standard ISO format, which requires it. This typically means the ZonedDateTime was created from a system timezone with an unknown ID. To format without the timezone designator, set the `tz=` argument to 'never' or 'auto'.";
 pub(crate) const IGNORE_DST_DEPRECATED_MSG: &CStr = c"The `ignore_dst` parameter is deprecated and replaced with a warning.";
 pub(crate) const OFFSET_FROM_TIMESTAMP_STALE_MSG: &CStr = c"Converting a UNIX timestamp to OffsetDateTime with a fixed UTC offset may produce an incorrect result: you can't know from the offset alone whether DST is in effect at this timestamp. Use ZonedDateTime.from_timestamp(ts, tz='<tz>') if you know the timezone, or Instant.from_timestamp() for timezone-agnostic exact time. Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, or with Python's standard warning filters.";

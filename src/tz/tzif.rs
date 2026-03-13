@@ -1,12 +1,21 @@
 //! Parsing of TZif files
 use crate::{
     common::{ambiguity::Ambiguity, parse::Scan, scalar::*},
-    tz::posix::TzStr,
+    tz::posix::{TzAbbrev, TzMetaResult, TzStr},
 };
 use std::{cmp::Ordering, fmt};
 
+/// Metadata for a single transition in a TZif file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TransitionMeta {
+    pub(crate) dst_saving: i32,
+    pub(crate) abbrev_idx: u8,
+}
+
+type TransitionData = (Vec<(EpochSecs, Offset)>, Vec<TransitionMeta>);
+
 /// A complete timezone representation, enough to represent a TZif file.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct TimeZone {
     // The IANA tz ID (e.g. "Europe/Amsterdam"). Not actually parsed from the file,
     // but essential because in our case we almost always associate a tzif file with a tz ID.
@@ -23,7 +32,23 @@ pub struct TimeZone {
     // Invariant: if posix TZ isn't given, there must be at least one entry in each of the above
     // vectors.
     end: Option<TzStr>,
+    // Timezone metadata (parallel to offsets_by_utc: same length, same indexing)
+    meta_by_utc: Vec<TransitionMeta>,
+    // NUL-terminated abbreviation strings from TZif
+    abbrev_data: Vec<u8>,
 }
+
+impl PartialEq for TimeZone {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+            && self.offsets_by_utc == other.offsets_by_utc
+            && self.offsets_by_local == other.offsets_by_local
+            && self.end == other.end
+            && self.meta_by_utc == other.meta_by_utc
+            && self.abbrev_data == other.abbrev_data
+    }
+}
+impl Eq for TimeZone {}
 
 impl TimeZone {
     /// Get the UTC offset at the given exact time
@@ -92,7 +117,29 @@ impl TimeZone {
             offsets_by_utc: vec![],
             offsets_by_local: vec![],
             end: Some(TzStr::parse(s.as_bytes())?),
+            meta_by_utc: vec![],
+            abbrev_data: vec![],
         })
+    }
+
+    /// Get timezone metadata (dst_saving, abbreviation) at the given instant.
+    pub(crate) fn meta_for_instant(&self, t: EpochSecs) -> TzMetaResult {
+        bisect(&self.offsets_by_utc, t)
+            .map(|i| {
+                let meta = &self.meta_by_utc[i.saturating_sub(1)];
+                TzMetaResult {
+                    dst_saving: meta.dst_saving,
+                    abbrev: abbrev_from_data(&self.abbrev_data, meta.abbrev_idx),
+                }
+            })
+            .or_else(|| self.end.map(|tz| tz.meta_for_instant(t)))
+            .unwrap_or_else(|| {
+                let meta = self.meta_by_utc.last().unwrap();
+                TzMetaResult {
+                    dst_saving: meta.dst_saving,
+                    abbrev: abbrev_from_data(&self.abbrev_data, meta.abbrev_idx),
+                }
+            })
     }
 
     pub fn parse_tzif(s: &[u8], key: Option<&str>) -> ParseResult<Self> {
@@ -234,10 +281,10 @@ fn parse_content(header: Header, s: &mut Scan, key: Option<&str>) -> ParseResult
     };
     let offset_indices = parse_offset_indices(header, s).ok_or(ErrorCause::Body)?;
     debug_assert!(header.typecnt > 0 && header.typecnt < 1_000);
-    let offsets =
-        parse_offsets(header.typecnt as usize, header.charcnt, s).ok_or(ErrorCause::Body)?;
-    let offsets_by_utc =
-        load_transitions(&transition_times, &offsets, &offset_indices).ok_or(ErrorCause::Body)?;
+    let (types, abbrev_data) =
+        parse_type_info(header.typecnt as usize, header.charcnt, s).ok_or(ErrorCause::Body)?;
+    let (offsets_by_utc, meta_by_utc) =
+        load_transitions(&transition_times, &types, &offset_indices).ok_or(ErrorCause::Body)?;
 
     let end = if header.version >= 2 {
         // Skip unused metadata and newline before tz string
@@ -256,6 +303,8 @@ fn parse_content(header: Header, s: &mut Scan, key: Option<&str>) -> ParseResult
         offsets_by_local: local_transitions(&offsets_by_utc),
         offsets_by_utc,
         end,
+        meta_by_utc,
+        abbrev_data,
     })
 }
 
@@ -281,16 +330,59 @@ fn local_transitions(
 
 fn load_transitions(
     transition_times: &[EpochSecs],
-    offsets: &[Offset],
+    types: &[TypeInfo],
     indices: &[u8],
-) -> Option<Vec<(EpochSecs, Offset)>> {
-    let mut result = Vec::with_capacity(indices.len() + 1);
-    result.push((EpochSecs::MIN, *offsets.first()?)); // Ensure correct initial offset
-    for (&idx, &epoch) in indices.iter().zip(transition_times) {
-        let &offset = offsets.get(usize::from(idx))?;
-        result.push((epoch, offset));
+) -> Option<TransitionData> {
+    let first_type = types.first()?;
+    let mut offsets = Vec::with_capacity(indices.len() + 1);
+    let mut meta = Vec::with_capacity(indices.len() + 1);
+
+    offsets.push((EpochSecs::MIN, first_type.offset));
+
+    let mut last_std_offset = first_type.offset;
+    meta.push(TransitionMeta {
+        // For the first entry, dst_saving is 0 since we don't have a prior standard
+        dst_saving: 0,
+        abbrev_idx: first_type.abbrev_idx,
+    });
+    if !first_type.isdst {
+        last_std_offset = first_type.offset;
     }
-    Some(result)
+
+    for (&idx, &epoch) in indices.iter().zip(transition_times) {
+        let typ = types.get(usize::from(idx))?;
+        offsets.push((epoch, typ.offset));
+
+        let dst_saving = if typ.isdst {
+            typ.offset.get() - last_std_offset.get()
+        } else {
+            0
+        };
+
+        if !typ.isdst {
+            last_std_offset = typ.offset;
+        }
+
+        meta.push(TransitionMeta {
+            dst_saving,
+            abbrev_idx: typ.abbrev_idx,
+        });
+    }
+
+    Some((offsets, meta))
+}
+
+fn abbrev_from_data(data: &[u8], idx: u8) -> TzAbbrev {
+    let start = idx as usize;
+    if start >= data.len() {
+        return TzAbbrev::EMPTY;
+    }
+    let end = data[start..]
+        .iter()
+        .position(|&b| b == 0)
+        .map(|p| start + p)
+        .unwrap_or(data.len());
+    TzAbbrev::from_bytes(&data[start..end]).unwrap_or(TzAbbrev::EMPTY)
 }
 
 fn parse_posix_tz(s: &mut Scan) -> Option<TzStr> {
@@ -300,18 +392,30 @@ fn parse_posix_tz(s: &mut Scan) -> Option<TzStr> {
     })
 }
 
-fn parse_offsets(typecnt: usize, charcnt: i32, s: &mut Scan) -> Option<Vec<Offset>> {
-    let mut result = Vec::with_capacity(typecnt);
+struct TypeInfo {
+    offset: Offset,
+    isdst: bool,
+    abbrev_idx: u8,
+}
+
+fn parse_type_info(typecnt: usize, charcnt: i32, s: &mut Scan) -> Option<(Vec<TypeInfo>, Vec<u8>)> {
+    let mut types = Vec::with_capacity(typecnt);
     let values = s.take(typecnt * 6)?;
     for i in 0..typecnt {
-        // Note: there are other fields that we don't use (yet)
-        result.push(Offset::new(i32::from_be_bytes(
-            values[i * 6..(i + 1) * 6 - 2].try_into().unwrap(),
-        ))?);
+        let base = i * 6;
+        let offset = Offset::new(i32::from_be_bytes(
+            values[base..base + 4].try_into().unwrap(),
+        ))?;
+        let isdst = values[base + 4] != 0;
+        let abbrev_idx = values[base + 5];
+        types.push(TypeInfo {
+            offset,
+            isdst,
+            abbrev_idx,
+        });
     }
-    // Skip character section
-    s.take(charcnt as _)?;
-    Some(result)
+    let abbrev_data = s.take(charcnt as usize)?.to_vec();
+    Some((types, abbrev_data))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
