@@ -122,9 +122,6 @@ SKIP = {
     W._BasicConversions.format_iso,
     W._BasicConversions.from_py_datetime,
     W._BasicConversions.parse_iso,
-    W._LocalTime.add,
-    W._LocalTime.subtract,
-    W._LocalTime.round,
     W._Base.__get_pydantic_core_schema__,
 }
 

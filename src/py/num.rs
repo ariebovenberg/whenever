@@ -50,14 +50,6 @@ impl PyInt {
         }
     }
 
-    pub(crate) fn to_u64(self) -> PyResult<u64> {
-        match unsafe { PyLong_AsUnsignedLongLong(self.as_ptr()) } {
-            x if x != u64::MAX || unsafe { PyErr_Occurred() }.is_null() => Ok(x),
-            // The error message is set for us
-            _ => Err(PyErrMarker()),
-        }
-    }
-
     pub(crate) fn to_i128(self) -> PyResult<i128> {
         let mut bytes: [u8; 16] = [0; 16];
         // Yes, this is a private API, but it's the only way to get a 128-bit integer

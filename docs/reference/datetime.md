@@ -106,6 +106,8 @@ Several other methods are unique to one or more classes:
 |                                            | {attr}`~ZonedDateTime.tz`               |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.now_in_system_tz` |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.is_ambiguous`     |                                        |                                                        |
+|                                            | {meth}`~ZonedDateTime.dst_offset`       |                                        |                                                        |
+|                                            | {meth}`~ZonedDateTime.tz_abbrev`        |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.day_length`       |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.start_of_day`     |                                        |                                                        |
 

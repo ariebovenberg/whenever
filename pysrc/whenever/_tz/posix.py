@@ -144,15 +144,21 @@ class Dst:
     offset: int
     start: tuple[Rule, int]
     end: tuple[Rule, int]
+    abbrev: str
 
-    __slots__ = ("offset", "start", "end")
+    __slots__ = ("offset", "start", "end", "abbrev")
 
     def __init__(
-        self, offset: int, start: tuple[Rule, int], end: tuple[Rule, int]
+        self,
+        offset: int,
+        start: tuple[Rule, int],
+        end: tuple[Rule, int],
+        abbrev: str,
     ):
         self.offset = offset
         self.start = start
         self.end = end
+        self.abbrev = abbrev
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Dst):
@@ -161,6 +167,7 @@ class Dst:
             self.offset == other.offset
             and self.start == other.start
             and self.end == other.end
+            and self.abbrev == other.abbrev
         )
 
     def __repr__(self) -> str:
@@ -170,12 +177,19 @@ class Dst:
 class TzStr:
     std: int
     dst: Optional[Dst]
+    std_abbrev: str
 
-    __slots__ = ("std", "dst")
+    __slots__ = ("std", "dst", "std_abbrev")
 
-    def __init__(self, std: int, dst: Optional[Dst] = None):
+    def __init__(
+        self,
+        std: int,
+        dst: Optional[Dst],
+        std_abbrev: str,
+    ):
         self.std = std
         self.dst = dst
+        self.std_abbrev = std_abbrev
 
     def offset_for_instant(self, epoch: int) -> int:
         if not self.dst:
@@ -250,10 +264,37 @@ class TzStr:
             else:
                 return Unambiguous(off1)
 
+    def meta_for_instant(self, epoch: int) -> tuple[int, str]:
+        """Return (dst_saving_secs, abbreviation) for the given UTC epoch."""
+        if not self.dst:
+            return (0, self.std_abbrev)
+
+        year = year_for_epoch(epoch + self.std)
+        start_rule, start_time = self.dst.start
+        end_rule, end_time = self.dst.end
+        dst_offset = self.dst.offset
+
+        start = epoch_for_date(start_rule.apply(year)) + start_time - self.std
+        end = epoch_for_date(end_rule.apply(year)) + end_time - dst_offset
+
+        if start < end:
+            is_dst = start <= epoch < end
+        else:
+            is_dst = not (end <= epoch < start)
+
+        if is_dst:
+            return (dst_offset - self.std, self.dst.abbrev)
+        else:
+            return (0, self.std_abbrev)
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TzStr):
             return NotImplemented  # pragma: no cover
-        return self.std == other.std and self.dst == other.dst
+        return (
+            self.std == other.std
+            and self.dst == other.dst
+            and self.std_abbrev == other.std_abbrev
+        )
 
     def __repr__(self) -> str:
         if not self.dst:
@@ -268,14 +309,14 @@ class TzStr:
                 "Invalid POSIX TZ string: non-ASCII characters found"
             )
 
-        s = skip_tzname(s)
+        std_abbrev, s = parse_tzname(s)
         std, s = parse_offset(s)
 
         # If there's nothing else, it's a fixed offset without DST
         if not s:
-            return cls(std, dst=None)
+            return cls(std, dst=None, std_abbrev=std_abbrev)
 
-        s = skip_tzname(s)
+        dst_abbrev, s = parse_tzname(s)
 
         if s[:1] == ",":
             # No offset given, the default is std + 1hr
@@ -298,15 +339,20 @@ class TzStr:
                 f"Invalid POSIX TZ string: unexpected trailing '{s}'"
             )
         else:
-            return cls(std, Dst(dst, start, end))
+            return cls(
+                std,
+                Dst(dst, start, end, dst_abbrev),
+                std_abbrev=std_abbrev,
+            )
 
 
-def skip_tzname(s: str) -> str:
-    """Skip the timezone name, returning the rest of the string."""
+def parse_tzname(s: str) -> tuple[str, str]:
+    """Parse the timezone name, returning (name, rest_of_string)."""
     if s[:1] == "<":  # bracketed format
         stop = s.find(">") + 1
         if stop < 3:  # not found or empty name
             raise ValueError("Invalid TZ string: missing or empty name")
+        name = s[1 : stop - 1]
     else:  # unbracketed format only allows letters
         for stop, char in enumerate(s):
             if not char.isalpha():
@@ -316,8 +362,9 @@ def skip_tzname(s: str) -> str:
 
         if stop == 0:
             raise ValueError("Invalid TZ string: invalid name")
+        name = s[:stop]
 
-    return s[stop:]
+    return name, s[stop:]
 
 
 def expect_char(s: str, char: str) -> str:

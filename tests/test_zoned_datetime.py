@@ -1096,6 +1096,652 @@ class TestIsAmbiguous:
         assert not d2.is_ambiguous()
 
 
+class TestDstOffset:
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_summer(self, tz: str):
+        d = create_zdt(2020, 8, 15, 12, tz=tz)
+        assert d.dst_offset() == TimeDelta(hours=1)
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_winter(self, tz: str):
+        d = create_zdt(2020, 1, 15, 12, tz=tz)
+        assert d.dst_offset() == TimeDelta()
+
+    def test_utc(self):
+        d = create_zdt(2020, 8, 15, 12, tz="UTC")
+        assert d.dst_offset() == TimeDelta()
+
+    def test_no_dst_zone(self):
+        d = create_zdt(2020, 8, 15, 12, tz="Asia/Tokyo")
+        assert d.dst_offset() == TimeDelta()
+
+    def test_fold_earlier(self):
+        d = create_zdt(
+            2023, 10, 29, 2, 30, tz="Europe/Amsterdam", disambiguate="earlier"
+        )
+        assert d.dst_offset() == TimeDelta(hours=1)
+
+    def test_fold_later(self):
+        d = create_zdt(
+            2023, 10, 29, 2, 30, tz="Europe/Amsterdam", disambiguate="later"
+        )
+        assert d.dst_offset() == TimeDelta()
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_far_future(self, tz: str):
+        """POSIX TZ string fallback for dates beyond transition data"""
+        d = create_zdt(2100, 7, 15, 12, tz=tz)
+        assert d.dst_offset() == TimeDelta(hours=1)
+
+        d2 = create_zdt(2100, 1, 15, 12, tz=tz)
+        assert d2.dst_offset() == TimeDelta()
+
+    # -- Dublin: "negative DST" (standard=IST UTC+1, winter=GMT UTC+0 isdst=1) --
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_dublin_summer(self):
+        d = create_zdt(2020, 7, 15, 12, tz="Europe/Dublin")
+        zi = ZoneInfo("Europe/Dublin")
+        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            seconds=int(py_dt.dst().total_seconds())
+        )
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_dublin_winter(self):
+        d = create_zdt(2020, 1, 15, 12, tz="Europe/Dublin")
+        zi = ZoneInfo("Europe/Dublin")
+        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            seconds=int(py_dt.dst().total_seconds())
+        )
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_dublin_transition_spring(self):
+        """Just before and after spring-forward in Dublin (last Sun of March)"""
+        zi = ZoneInfo("Europe/Dublin")
+        # Before transition: 2020-03-29 00:30 UTC+0 (winter)
+        d_before = create_zdt(2020, 3, 29, 0, 30, tz="Europe/Dublin")
+        py_before = py_datetime(2020, 3, 29, 0, 30, tzinfo=zi)
+        assert d_before.dst_offset() == TimeDelta(
+            seconds=int(py_before.dst().total_seconds())
+        )
+        # After transition: 2020-03-29 2:30 (summer, IST)
+        d_after = create_zdt(2020, 3, 29, 2, 30, tz="Europe/Dublin")
+        py_after = py_datetime(2020, 3, 29, 2, 30, tzinfo=zi)
+        assert d_after.dst_offset() == TimeDelta(
+            seconds=int(py_after.dst().total_seconds())
+        )
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_dublin_transition_autumn(self):
+        """Around fall-back in Dublin (last Sun of October)"""
+        zi = ZoneInfo("Europe/Dublin")
+        # Before transition (earlier fold): 2020-10-25 1:30 IST
+        d_earlier = create_zdt(
+            2020, 10, 25, 1, 30, tz="Europe/Dublin", disambiguate="earlier"
+        )
+        py_earlier = py_datetime(2020, 10, 25, 1, 30, tzinfo=zi, fold=0)
+        assert d_earlier.dst_offset() == TimeDelta(
+            seconds=int(py_earlier.dst().total_seconds())
+        )
+        # After transition (later fold): 2020-10-25 1:30 GMT
+        d_later = create_zdt(
+            2020, 10, 25, 1, 30, tz="Europe/Dublin", disambiguate="later"
+        )
+        py_later = py_datetime(2020, 10, 25, 1, 30, tzinfo=zi, fold=1)
+        assert d_later.dst_offset() == TimeDelta(
+            seconds=int(py_later.dst().total_seconds())
+        )
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_dublin_far_future(self):
+        d = create_zdt(2100, 7, 15, 12, tz="Europe/Dublin")
+        zi = ZoneInfo("Europe/Dublin")
+        py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            seconds=int(py_dt.dst().total_seconds())
+        )
+
+        d2 = create_zdt(2100, 1, 15, 12, tz="Europe/Dublin")
+        py_dt2 = py_datetime(2100, 1, 15, 12, tzinfo=zi)
+        assert d2.dst_offset() == TimeDelta(
+            seconds=int(py_dt2.dst().total_seconds())
+        )
+
+    # -- Australia/Sydney: southern hemisphere DST (summer in Jan) --
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_sydney_summer(self):
+        """January is summer (DST active) in Sydney"""
+        d = create_zdt(2020, 1, 15, 12, tz="Australia/Sydney")
+        zi = ZoneInfo("Australia/Sydney")
+        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            seconds=int(py_dt.dst().total_seconds())
+        )
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_sydney_winter(self):
+        """July is winter (no DST) in Sydney"""
+        d = create_zdt(2020, 7, 15, 12, tz="Australia/Sydney")
+        zi = ZoneInfo("Australia/Sydney")
+        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            seconds=int(py_dt.dst().total_seconds())
+        )
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_sydney_transition_start(self):
+        """DST starts first Sun of October in Sydney"""
+        zi = ZoneInfo("Australia/Sydney")
+        # Before: 2020-10-04 1:30 AEST (no DST)
+        d_before = create_zdt(2020, 10, 4, 1, 30, tz="Australia/Sydney")
+        py_before = py_datetime(2020, 10, 4, 1, 30, tzinfo=zi)
+        assert d_before.dst_offset() == TimeDelta(
+            seconds=int(py_before.dst().total_seconds())
+        )
+        # After: 2020-10-04 3:30 AEDT (DST active)
+        d_after = create_zdt(2020, 10, 4, 3, 30, tz="Australia/Sydney")
+        py_after = py_datetime(2020, 10, 4, 3, 30, tzinfo=zi)
+        assert d_after.dst_offset() == TimeDelta(
+            seconds=int(py_after.dst().total_seconds())
+        )
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_sydney_transition_end(self):
+        """DST ends first Sun of April in Sydney"""
+        zi = ZoneInfo("Australia/Sydney")
+        # Earlier fold: 2020-04-05 2:30 AEDT
+        d_earlier = create_zdt(
+            2020, 4, 5, 2, 30, tz="Australia/Sydney", disambiguate="earlier"
+        )
+        py_earlier = py_datetime(2020, 4, 5, 2, 30, tzinfo=zi, fold=0)
+        assert d_earlier.dst_offset() == TimeDelta(
+            seconds=int(py_earlier.dst().total_seconds())
+        )
+        # Later fold: 2020-04-05 2:30 AEST
+        d_later = create_zdt(
+            2020, 4, 5, 2, 30, tz="Australia/Sydney", disambiguate="later"
+        )
+        py_later = py_datetime(2020, 4, 5, 2, 30, tzinfo=zi, fold=1)
+        assert d_later.dst_offset() == TimeDelta(
+            seconds=int(py_later.dst().total_seconds())
+        )
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_sydney_far_future(self):
+        d = create_zdt(2100, 1, 15, 12, tz="Australia/Sydney")
+        zi = ZoneInfo("Australia/Sydney")
+        py_dt = py_datetime(2100, 1, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            seconds=int(py_dt.dst().total_seconds())
+        )
+
+    # -- Pacific/Honolulu: no DST ever --
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_honolulu_summer(self):
+        d = create_zdt(2020, 7, 15, 12, tz="Pacific/Honolulu")
+        assert d.dst_offset() == TimeDelta()
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_honolulu_winter(self):
+        d = create_zdt(2020, 1, 15, 12, tz="Pacific/Honolulu")
+        assert d.dst_offset() == TimeDelta()
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_honolulu_far_future(self):
+        d = create_zdt(2100, 6, 15, 12, tz="Pacific/Honolulu")
+        assert d.dst_offset() == TimeDelta()
+
+    # -- Africa/Casablanca: complex DST schedule --
+
+    @pytest.mark.skipif(
+        not HAS_TZDATA
+        or "Africa/Casablanca" not in zoneinfo_available_timezones(),
+        reason="tzdata or Africa/Casablanca not available",
+    )
+    def test_casablanca_summer(self):
+        d = create_zdt(2019, 7, 15, 12, tz="Africa/Casablanca")
+        zi = ZoneInfo("Africa/Casablanca")
+        py_dt = py_datetime(2019, 7, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            seconds=int(py_dt.dst().total_seconds())
+        )
+
+    @pytest.mark.skipif(
+        not HAS_TZDATA
+        or "Africa/Casablanca" not in zoneinfo_available_timezones(),
+        reason="tzdata or Africa/Casablanca not available",
+    )
+    def test_casablanca_winter(self):
+        d = create_zdt(2019, 1, 15, 12, tz="Africa/Casablanca")
+        zi = ZoneInfo("Africa/Casablanca")
+        py_dt = py_datetime(2019, 1, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            seconds=int(py_dt.dst().total_seconds())
+        )
+
+    @pytest.mark.skipif(
+        not HAS_TZDATA
+        or "Africa/Casablanca" not in zoneinfo_available_timezones(),
+        reason="tzdata or Africa/Casablanca not available",
+    )
+    def test_casablanca_far_future(self):
+        d = create_zdt(2100, 7, 15, 12, tz="Africa/Casablanca")
+        zi = ZoneInfo("Africa/Casablanca")
+        py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            seconds=int(py_dt.dst().total_seconds())
+        )
+
+    # -- America/New_York: standard US DST --
+
+    def test_new_york_summer(self):
+        d = create_zdt(2020, 7, 15, 12, tz="America/New_York")
+        zi = ZoneInfo("America/New_York")
+        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            seconds=int(py_dt.dst().total_seconds())
+        )
+
+    def test_new_york_winter(self):
+        d = create_zdt(2020, 1, 15, 12, tz="America/New_York")
+        zi = ZoneInfo("America/New_York")
+        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            seconds=int(py_dt.dst().total_seconds())
+        )
+
+    def test_new_york_spring_forward(self):
+        """Second Sunday of March: 2:00 AM springs to 3:00 AM"""
+        zi = ZoneInfo("America/New_York")
+        # Before: 2020-03-08 1:30 EST
+        d_before = create_zdt(2020, 3, 8, 1, 30, tz="America/New_York")
+        py_before = py_datetime(2020, 3, 8, 1, 30, tzinfo=zi)
+        assert d_before.dst_offset() == TimeDelta(
+            seconds=int(py_before.dst().total_seconds())
+        )
+        # After: 2020-03-08 3:30 EDT
+        d_after = create_zdt(2020, 3, 8, 3, 30, tz="America/New_York")
+        py_after = py_datetime(2020, 3, 8, 3, 30, tzinfo=zi)
+        assert d_after.dst_offset() == TimeDelta(
+            seconds=int(py_after.dst().total_seconds())
+        )
+
+    def test_new_york_fall_back(self):
+        """First Sunday of November: 2:00 AM falls back to 1:00 AM"""
+        zi = ZoneInfo("America/New_York")
+        # Earlier fold: 2020-11-01 1:30 EDT
+        d_earlier = create_zdt(
+            2020, 11, 1, 1, 30, tz="America/New_York", disambiguate="earlier"
+        )
+        py_earlier = py_datetime(2020, 11, 1, 1, 30, tzinfo=zi, fold=0)
+        assert d_earlier.dst_offset() == TimeDelta(
+            seconds=int(py_earlier.dst().total_seconds())
+        )
+        # Later fold: 2020-11-01 1:30 EST
+        d_later = create_zdt(
+            2020, 11, 1, 1, 30, tz="America/New_York", disambiguate="later"
+        )
+        py_later = py_datetime(2020, 11, 1, 1, 30, tzinfo=zi, fold=1)
+        assert d_later.dst_offset() == TimeDelta(
+            seconds=int(py_later.dst().total_seconds())
+        )
+
+    def test_new_york_far_future(self):
+        d = create_zdt(2100, 7, 15, 12, tz="America/New_York")
+        zi = ZoneInfo("America/New_York")
+        py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            seconds=int(py_dt.dst().total_seconds())
+        )
+
+        d2 = create_zdt(2100, 1, 15, 12, tz="America/New_York")
+        py_dt2 = py_datetime(2100, 1, 15, 12, tzinfo=zi)
+        assert d2.dst_offset() == TimeDelta(
+            seconds=int(py_dt2.dst().total_seconds())
+        )
+
+    # -- UTC: no DST --
+
+    def test_utc_summer_cross_validate(self):
+        d = create_zdt(2020, 7, 15, 12, tz="UTC")
+        zi = ZoneInfo("UTC")
+        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            seconds=int(py_dt.dst().total_seconds())
+        )
+
+    def test_utc_far_future(self):
+        d = create_zdt(2100, 7, 15, 12, tz="UTC")
+        assert d.dst_offset() == TimeDelta()
+
+    # -- Asia/Tokyo: no DST --
+
+    def test_tokyo_summer(self):
+        d = create_zdt(2020, 7, 15, 12, tz="Asia/Tokyo")
+        zi = ZoneInfo("Asia/Tokyo")
+        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            seconds=int(py_dt.dst().total_seconds())
+        )
+
+    def test_tokyo_winter(self):
+        d = create_zdt(2020, 1, 15, 12, tz="Asia/Tokyo")
+        assert d.dst_offset() == TimeDelta()
+
+    def test_tokyo_far_future(self):
+        d = create_zdt(2100, 7, 15, 12, tz="Asia/Tokyo")
+        assert d.dst_offset() == TimeDelta()
+
+
+class TestTzAbbrev:
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_summer(self, tz: str):
+        d = create_zdt(2020, 8, 15, 12, tz=tz)
+        assert d.tz_abbrev() == "CEST"
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_winter(self, tz: str):
+        d = create_zdt(2020, 1, 15, 12, tz=tz)
+        assert d.tz_abbrev() == "CET"
+
+    def test_utc(self):
+        d = create_zdt(2020, 8, 15, 12, tz="UTC")
+        assert d.tz_abbrev() == "UTC"
+
+    def test_us_eastern(self):
+        d = create_zdt(2020, 8, 15, 12, tz="America/New_York")
+        assert d.tz_abbrev() == "EDT"
+
+        d2 = create_zdt(2020, 1, 15, 12, tz="America/New_York")
+        assert d2.tz_abbrev() == "EST"
+
+    def test_japan(self):
+        d = create_zdt(2020, 8, 15, 12, tz="Asia/Tokyo")
+        assert d.tz_abbrev() == "JST"
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_far_future(self, tz: str):
+        d = create_zdt(2100, 7, 15, 12, tz=tz)
+        assert d.tz_abbrev() == "CEST"
+
+        d2 = create_zdt(2100, 1, 15, 12, tz=tz)
+        assert d2.tz_abbrev() == "CET"
+
+    def test_returns_str(self):
+        d = create_zdt(2020, 8, 15, 12, tz="Europe/Amsterdam")
+        assert type(d.tz_abbrev()) is str
+
+    # -- Dublin: "negative DST" (IST in summer, GMT in winter) --
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_dublin_summer(self):
+        d = create_zdt(2020, 7, 15, 12, tz="Europe/Dublin")
+        zi = ZoneInfo("Europe/Dublin")
+        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_dublin_winter(self):
+        d = create_zdt(2020, 1, 15, 12, tz="Europe/Dublin")
+        zi = ZoneInfo("Europe/Dublin")
+        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_dublin_transition_spring(self):
+        zi = ZoneInfo("Europe/Dublin")
+        # Before spring-forward: 2020-03-29 0:30 (winter, GMT)
+        d_before = create_zdt(2020, 3, 29, 0, 30, tz="Europe/Dublin")
+        py_before = py_datetime(2020, 3, 29, 0, 30, tzinfo=zi)
+        assert d_before.tz_abbrev() == py_before.tzname()
+        # After spring-forward: 2020-03-29 2:30 (summer, IST)
+        d_after = create_zdt(2020, 3, 29, 2, 30, tz="Europe/Dublin")
+        py_after = py_datetime(2020, 3, 29, 2, 30, tzinfo=zi)
+        assert d_after.tz_abbrev() == py_after.tzname()
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_dublin_transition_autumn(self):
+        zi = ZoneInfo("Europe/Dublin")
+        # Earlier fold: 2020-10-25 1:30 IST
+        d_earlier = create_zdt(
+            2020, 10, 25, 1, 30, tz="Europe/Dublin", disambiguate="earlier"
+        )
+        py_earlier = py_datetime(2020, 10, 25, 1, 30, tzinfo=zi, fold=0)
+        assert d_earlier.tz_abbrev() == py_earlier.tzname()
+        # Later fold: 2020-10-25 1:30 GMT
+        d_later = create_zdt(
+            2020, 10, 25, 1, 30, tz="Europe/Dublin", disambiguate="later"
+        )
+        py_later = py_datetime(2020, 10, 25, 1, 30, tzinfo=zi, fold=1)
+        assert d_later.tz_abbrev() == py_later.tzname()
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_dublin_far_future(self):
+        d = create_zdt(2100, 7, 15, 12, tz="Europe/Dublin")
+        zi = ZoneInfo("Europe/Dublin")
+        py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+        d2 = create_zdt(2100, 1, 15, 12, tz="Europe/Dublin")
+        py_dt2 = py_datetime(2100, 1, 15, 12, tzinfo=zi)
+        assert d2.tz_abbrev() == py_dt2.tzname()
+
+    # -- Australia/Sydney: southern hemisphere DST --
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_sydney_summer(self):
+        d = create_zdt(2020, 1, 15, 12, tz="Australia/Sydney")
+        zi = ZoneInfo("Australia/Sydney")
+        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_sydney_winter(self):
+        d = create_zdt(2020, 7, 15, 12, tz="Australia/Sydney")
+        zi = ZoneInfo("Australia/Sydney")
+        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_sydney_transition_start(self):
+        zi = ZoneInfo("Australia/Sydney")
+        # Before DST starts: 2020-10-04 1:30 AEST
+        d_before = create_zdt(2020, 10, 4, 1, 30, tz="Australia/Sydney")
+        py_before = py_datetime(2020, 10, 4, 1, 30, tzinfo=zi)
+        assert d_before.tz_abbrev() == py_before.tzname()
+        # After DST starts: 2020-10-04 3:30 AEDT
+        d_after = create_zdt(2020, 10, 4, 3, 30, tz="Australia/Sydney")
+        py_after = py_datetime(2020, 10, 4, 3, 30, tzinfo=zi)
+        assert d_after.tz_abbrev() == py_after.tzname()
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_sydney_transition_end(self):
+        zi = ZoneInfo("Australia/Sydney")
+        # Earlier fold: 2020-04-05 2:30 AEDT
+        d_earlier = create_zdt(
+            2020, 4, 5, 2, 30, tz="Australia/Sydney", disambiguate="earlier"
+        )
+        py_earlier = py_datetime(2020, 4, 5, 2, 30, tzinfo=zi, fold=0)
+        assert d_earlier.tz_abbrev() == py_earlier.tzname()
+        # Later fold: 2020-04-05 2:30 AEST
+        d_later = create_zdt(
+            2020, 4, 5, 2, 30, tz="Australia/Sydney", disambiguate="later"
+        )
+        py_later = py_datetime(2020, 4, 5, 2, 30, tzinfo=zi, fold=1)
+        assert d_later.tz_abbrev() == py_later.tzname()
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_sydney_far_future(self):
+        d = create_zdt(2100, 1, 15, 12, tz="Australia/Sydney")
+        zi = ZoneInfo("Australia/Sydney")
+        py_dt = py_datetime(2100, 1, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    # -- Pacific/Honolulu: no DST --
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_honolulu_summer(self):
+        d = create_zdt(2020, 7, 15, 12, tz="Pacific/Honolulu")
+        zi = ZoneInfo("Pacific/Honolulu")
+        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_honolulu_winter(self):
+        d = create_zdt(2020, 1, 15, 12, tz="Pacific/Honolulu")
+        zi = ZoneInfo("Pacific/Honolulu")
+        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_honolulu_far_future(self):
+        d = create_zdt(2100, 6, 15, 12, tz="Pacific/Honolulu")
+        zi = ZoneInfo("Pacific/Honolulu")
+        py_dt = py_datetime(2100, 6, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    # -- Africa/Casablanca: complex DST --
+
+    @pytest.mark.skipif(
+        not HAS_TZDATA
+        or "Africa/Casablanca" not in zoneinfo_available_timezones(),
+        reason="tzdata or Africa/Casablanca not available",
+    )
+    def test_casablanca_summer(self):
+        d = create_zdt(2019, 7, 15, 12, tz="Africa/Casablanca")
+        zi = ZoneInfo("Africa/Casablanca")
+        py_dt = py_datetime(2019, 7, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    @pytest.mark.skipif(
+        not HAS_TZDATA
+        or "Africa/Casablanca" not in zoneinfo_available_timezones(),
+        reason="tzdata or Africa/Casablanca not available",
+    )
+    def test_casablanca_winter(self):
+        d = create_zdt(2019, 1, 15, 12, tz="Africa/Casablanca")
+        zi = ZoneInfo("Africa/Casablanca")
+        py_dt = py_datetime(2019, 1, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    @pytest.mark.skipif(
+        not HAS_TZDATA
+        or "Africa/Casablanca" not in zoneinfo_available_timezones(),
+        reason="tzdata or Africa/Casablanca not available",
+    )
+    def test_casablanca_far_future(self):
+        d = create_zdt(2100, 7, 15, 12, tz="Africa/Casablanca")
+        zi = ZoneInfo("Africa/Casablanca")
+        py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    # -- America/New_York: standard US DST --
+
+    def test_new_york_summer(self):
+        d = create_zdt(2020, 7, 15, 12, tz="America/New_York")
+        zi = ZoneInfo("America/New_York")
+        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    def test_new_york_winter(self):
+        d = create_zdt(2020, 1, 15, 12, tz="America/New_York")
+        zi = ZoneInfo("America/New_York")
+        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    def test_new_york_spring_forward(self):
+        zi = ZoneInfo("America/New_York")
+        # Before: 2020-03-08 1:30 EST
+        d_before = create_zdt(2020, 3, 8, 1, 30, tz="America/New_York")
+        py_before = py_datetime(2020, 3, 8, 1, 30, tzinfo=zi)
+        assert d_before.tz_abbrev() == py_before.tzname()
+        # After: 2020-03-08 3:30 EDT
+        d_after = create_zdt(2020, 3, 8, 3, 30, tz="America/New_York")
+        py_after = py_datetime(2020, 3, 8, 3, 30, tzinfo=zi)
+        assert d_after.tz_abbrev() == py_after.tzname()
+
+    def test_new_york_fall_back(self):
+        zi = ZoneInfo("America/New_York")
+        # Earlier fold: 2020-11-01 1:30 EDT
+        d_earlier = create_zdt(
+            2020, 11, 1, 1, 30, tz="America/New_York", disambiguate="earlier"
+        )
+        py_earlier = py_datetime(2020, 11, 1, 1, 30, tzinfo=zi, fold=0)
+        assert d_earlier.tz_abbrev() == py_earlier.tzname()
+        # Later fold: 2020-11-01 1:30 EST
+        d_later = create_zdt(
+            2020, 11, 1, 1, 30, tz="America/New_York", disambiguate="later"
+        )
+        py_later = py_datetime(2020, 11, 1, 1, 30, tzinfo=zi, fold=1)
+        assert d_later.tz_abbrev() == py_later.tzname()
+
+    def test_new_york_far_future(self):
+        d = create_zdt(2100, 7, 15, 12, tz="America/New_York")
+        zi = ZoneInfo("America/New_York")
+        py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+        d2 = create_zdt(2100, 1, 15, 12, tz="America/New_York")
+        py_dt2 = py_datetime(2100, 1, 15, 12, tzinfo=zi)
+        assert d2.tz_abbrev() == py_dt2.tzname()
+
+    # -- UTC: always UTC --
+
+    def test_utc_cross_validate(self):
+        d = create_zdt(2020, 7, 15, 12, tz="UTC")
+        zi = ZoneInfo("UTC")
+        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    def test_utc_far_future(self):
+        d = create_zdt(2100, 7, 15, 12, tz="UTC")
+        assert d.tz_abbrev() == "UTC"
+
+    # -- Asia/Tokyo: no DST, always JST --
+
+    def test_tokyo_summer(self):
+        d = create_zdt(2020, 7, 15, 12, tz="Asia/Tokyo")
+        zi = ZoneInfo("Asia/Tokyo")
+        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    def test_tokyo_winter(self):
+        d = create_zdt(2020, 1, 15, 12, tz="Asia/Tokyo")
+        zi = ZoneInfo("Asia/Tokyo")
+        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    def test_tokyo_far_future(self):
+        d = create_zdt(2100, 7, 15, 12, tz="Asia/Tokyo")
+        zi = ZoneInfo("Asia/Tokyo")
+        py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
+        assert d.tz_abbrev() == py_dt.tzname()
+
+
 class TestDayLength:
     @pytest.mark.parametrize(
         "d, expect",
