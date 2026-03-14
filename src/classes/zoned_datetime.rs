@@ -14,7 +14,7 @@ use crate::{
         fmt::{self, Sink, Suffix},
         math::{self, DateRoundIncrement, DeltaUnitSet, SinceUntilKwargs},
         parse::Scan,
-        round,
+        pattern, round,
         scalar::*,
     },
     docstrings as doc,
@@ -32,7 +32,10 @@ use core::{
 use pyo3_ffi::*;
 use std::ptr::NonNull;
 
-// TODO LOW: can we make this non-Copy?
+// FUTURE: can we make this non-Copy? Copy makes it possible to accidentally
+// allocate multiple instances with the same timezone pointer, which can lead to double-frees if
+// both are deallocated. Currently we rely on careful code review to avoid this, but it would be
+// nice to have a safety net.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ZonedDateTime {
     pub(crate) date: Date,
@@ -1859,6 +1862,180 @@ pub(crate) fn zoned_since_in_units(
     result.into()
 }
 
+fn format(_cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, pattern_obj: PyObj) -> PyReturn {
+    let pattern_pystr = pattern_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("format() argument must be str")?;
+    let pattern_str = pattern_pystr.as_utf8()?;
+    let elements = pattern::compile(pattern_str).into_value_err()?;
+    pattern::validate_fields(
+        &elements,
+        pattern::CategorySet::DATE_TIME_OFFSET_TZ,
+        "ZonedDateTime",
+    )?;
+    if pattern::has_12h_without_ampm(&elements) {
+        warn_with_class(
+            // SAFETY: PyExc_UserWarning is always valid
+            unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
+            c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
+            2,
+        )?;
+    }
+    let meta = slf.tz.meta_for_instant(slf.instant().epoch);
+    // SAFETY: TzAbbrev always contains valid ASCII bytes
+    let abbrev_str = unsafe { std::str::from_utf8_unchecked(meta.abbrev.as_bytes()) };
+    let tz_key = slf.tz.key.as_deref().unwrap_or("");
+    let vals = pattern::FormatValues {
+        year: slf.date.year,
+        month: slf.date.month,
+        day: slf.date.day,
+        weekday: slf.date.day_of_week(),
+        hour: slf.time.hour,
+        minute: slf.time.minute,
+        second: slf.time.second,
+        nanos: slf.time.subsec,
+        offset_secs: Some(slf.offset),
+        tz_id: Some(tz_key),
+        tz_abbrev: Some(abbrev_str),
+    };
+    pattern::format_to_py(&elements, &vals)
+}
+
+fn __format__(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, spec_obj: PyObj) -> PyReturn {
+    if spec_obj.is_truthy() {
+        format(cls, slf, spec_obj)
+    } else {
+        __str__(cls.into(), slf)
+    }
+}
+
+fn parse(cls: HeapType<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+    let &[s_obj] = args else {
+        raise_type_err(format!(
+            "parse() takes exactly 1 positional argument ({} given)",
+            args.len()
+        ))?
+    };
+    let s_pystr = s_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("parse() argument must be str")?;
+    let s = s_pystr.as_utf8()?;
+
+    let &State {
+        str_format,
+        str_disambiguate,
+        str_compatible,
+        str_raise,
+        str_earlier,
+        str_later,
+        exc_repeated,
+        exc_skipped,
+        ref tz_store,
+        ..
+    } = cls.state();
+
+    let mut fmt_obj = None;
+    let mut dis = Disambiguate::Compatible;
+    handle_kwargs("parse", kwargs, |key, value, eq| {
+        if eq(key, str_format) {
+            fmt_obj = Some(value);
+        } else if eq(key, str_disambiguate) {
+            dis = Disambiguate::from_py(value, str_compatible, str_raise, str_earlier, str_later)?;
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    })?;
+
+    let fmt_obj = fmt_obj.ok_or_else(|| {
+        raise_type_err::<(), _>("parse() requires 'format' keyword argument").unwrap_err()
+    })?;
+    let fmt_pystr = fmt_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("format must be str")?;
+    let fmt_bytes = fmt_pystr.as_utf8()?;
+
+    let elements = pattern::compile(fmt_bytes).into_value_err()?;
+    pattern::validate_fields(
+        &elements,
+        pattern::CategorySet::DATE_TIME_OFFSET_TZ,
+        "ZonedDateTime",
+    )?;
+
+    let state = pattern::parse_to_state(&elements, s).into_value_err()?;
+
+    let tz_id = state
+        .tz_id
+        .as_deref()
+        .ok_or_value_err("ZonedDateTime.parse() pattern must include a timezone ID field (VV)")?;
+
+    let year = state
+        .year
+        .ok_or_value_err("Pattern must include year, month, and day fields")?;
+    let month = state
+        .month
+        .ok_or_value_err("Pattern must include year, month, and day fields")?;
+    let day = state
+        .day
+        .ok_or_value_err("Pattern must include year, month, and day fields")?;
+
+    let date = Date::new(year, month, day).ok_or_value_err("Invalid date")?;
+
+    if let Some(wd) = state.weekday {
+        if date.day_of_week() != wd {
+            raise_value_err("Parsed weekday does not match the date")?;
+        }
+    }
+
+    let hour = state.hour.unwrap_or(0);
+    let minute = state.minute.unwrap_or(0);
+    let second = state.second.unwrap_or(0);
+
+    if hour >= 24 || minute >= 60 || second >= 60 {
+        raise_value_err("Invalid time")?;
+    }
+
+    let time = Time {
+        hour,
+        minute,
+        second,
+        subsec: state.nanos,
+    };
+
+    let tz = tz_store.get(tz_id)?;
+
+    if let Some(offset) = state.offset_secs {
+        // Use offset to disambiguate during DST transitions.
+        // offset is already a validated scalar::Offset — no range check needed.
+        match tz.ambiguity_for_local(date.epoch_at(time)) {
+            Ambiguity::Unambiguous(f) if f == offset => {
+                ZonedDateTime::create(date, time, offset, tz, cls)
+            }
+            Ambiguity::Fold(f1, f2) if f1 == offset || f2 == offset => {
+                ZonedDateTime::create(date, time, offset, tz, cls)
+            }
+            Ambiguity::Gap(_, _) => raise_value_err(format!(
+                "The local time does not exist in timezone {tz_id:?}"
+            )),
+            _ => raise_value_err(format!(
+                "Offset {}s does not match timezone {tz_id:?}",
+                offset.get()
+            )),
+        }
+    } else {
+        // No offset provided — use disambiguate kwarg
+        let odt = ZonedDateTime::resolve_using_disambiguate(
+            date,
+            time,
+            &tz,
+            dis,
+            exc_repeated,
+            exc_skipped,
+        )?;
+        odt.assume_tz_unchecked(tz, cls)
+    }
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     method0!(ZonedDateTime, __copy__, c""),
     method1!(ZonedDateTime, __deepcopy__, c""),
@@ -1958,6 +2135,9 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(ZonedDateTime, round, doc::ZONEDDATETIME_ROUND),
     method_kwargs!(ZonedDateTime, since, doc::ZONEDDATETIME_SINCE),
     method_kwargs!(ZonedDateTime, until, doc::ZONEDDATETIME_UNTIL),
+    method1!(ZonedDateTime, format, doc::ZONEDDATETIME_FORMAT),
+    method1!(ZonedDateTime, __format__, c""),
+    classmethod_kwargs!(ZonedDateTime, parse, doc::ZONEDDATETIME_PARSE),
     classmethod_kwargs!(
         ZonedDateTime,
         __get_pydantic_core_schema__,

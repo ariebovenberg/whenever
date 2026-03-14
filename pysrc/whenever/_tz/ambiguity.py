@@ -56,7 +56,7 @@ def resolve_ambiguity(
                 offset = after
             else:  # disambiguate == "raise"
                 raise RepeatedTime._for_tz(dt, tz.key)
-        case Gap(before, after):
+        case Gap(before, after):  # pragma: no branch
             if disambiguate in ("compatible", "later"):
                 offset = before
                 shift = before - after

@@ -29,13 +29,14 @@ Some operations are potential footguns—but not *always* wrong.
 For example, doing arithmetic on a {class}`~whenever.PlainDateTime` can't
 account for DST, but may be acceptable if the user knows
 DST isn't relevant for their use case, or accepts the possibility
-of an incorrect offset.
+of an incorrect result some of the time.
 
 Outright forbidding these operations would push users toward workarounds
 that would obscure their intention. Whenever allows them but emits a
-{class}`warning <whenever.PotentialDstBugWarning>`.
+{class}`warning <whenever.PotentialDstBugWarning>`,
+which can then explicitly and selectively be silenced.
 
-## Operators only where they're mathematically intuitive
+## Operators only where mathematically intuitive
 
 Operators like ``+``, ``-``, ``*``, and ``/`` are only defined
 when they obey the mathematical properties you'd expect—associativity,
@@ -68,15 +69,8 @@ True
 This makes debugging and logging straightforward—you always know
 exactly what value you're looking at, and can copy-paste it into a REPL.
 
-## Explicit over implicit
+## No system timezone by default
 
-`whenever` favors naming that makes the developer's *assumption* visible.
-Methods that require you to supply information the library can't verify
-are named ``assume_*`` (e.g. {meth}`~whenever.PlainDateTime.assume_tz`)
-rather than ``with_*`` or ``at_*``.
-This signals that you are making a claim the library trusts but cannot check.
-
-The system timezone is another area where explicitness matters.
 Many datetime libraries silently use the system timezone as a default,
 but this couples your code to the machine's configuration—a
 common source of surprises, especially in servers and containers
@@ -86,3 +80,13 @@ you must opt in with a dedicated method
 (e.g. {meth}`~whenever.Instant.to_system_tz`,
 {meth}`~whenever.PlainDateTime.assume_system_tz`)
 so the dependency is visible in the code.
+
+## Explicit over implicit
+
+<!-- TODO: improve -->
+
+`whenever` favors naming that makes the developer's *assumption* visible.
+Methods that require you to supply information the library can't verify
+are named ``assume_*`` (e.g. {meth}`~whenever.PlainDateTime.assume_tz`)
+rather than ``with_*`` or ``at_*``.
+This signals that you are making a claim the library trusts but cannot check.

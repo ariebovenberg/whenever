@@ -16,7 +16,7 @@ use crate::{
     common::{
         fmt::{self, Suffix},
         parse::Scan,
-        rfc2822, round,
+        pattern, rfc2822, round,
         scalar::*,
     },
     docstrings as doc,
@@ -1138,6 +1138,11 @@ fn parse_strptime(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
+    warn_with_class(
+        state.warn_deprecation,
+        c"parse_strptime() is deprecated; use parse() with a format pattern instead.",
+        2,
+    )?;
     let format_obj = match kwargs.next() {
         Some((key, value)) if kwargs.len() == 1 && key.py_eq(state.str_format)? => value,
         _ => raise_type_err("parse_strptime() requires exactly one keyword argument `format`")?,
@@ -1290,6 +1295,121 @@ fn offset_since(
     }
 }
 
+fn format(_: HeapType<OffsetDateTime>, slf: OffsetDateTime, pattern_obj: PyObj) -> PyReturn {
+    let pattern_pystr = pattern_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("format() argument must be str")?;
+    let pattern_str = pattern_pystr.as_utf8()?;
+    let elements = pattern::compile(pattern_str).into_value_err()?;
+    pattern::validate_fields(
+        &elements,
+        pattern::CategorySet::DATE_TIME_OFFSET,
+        "OffsetDateTime",
+    )?;
+    if pattern::has_12h_without_ampm(&elements) {
+        warn_with_class(
+            // SAFETY: PyExc_UserWarning is always valid
+            unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
+            c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
+            2,
+        )?;
+    }
+    let vals = pattern::FormatValues {
+        year: slf.date.year,
+        month: slf.date.month,
+        day: slf.date.day,
+        weekday: slf.date.day_of_week(),
+        hour: slf.time.hour,
+        minute: slf.time.minute,
+        second: slf.time.second,
+        nanos: slf.time.subsec,
+        offset_secs: Some(slf.offset),
+        tz_id: None,
+        tz_abbrev: None,
+    };
+    pattern::format_to_py(&elements, &vals)
+}
+
+fn __format__(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime, spec_obj: PyObj) -> PyReturn {
+    if spec_obj.is_truthy() {
+        format(cls, slf, spec_obj)
+    } else {
+        __str__(cls.into(), slf)
+    }
+}
+
+fn parse(cls: HeapType<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+    let &[s_obj] = args else {
+        raise_type_err(format!(
+            "parse() takes exactly 1 positional argument ({} given)",
+            args.len()
+        ))?
+    };
+    let s_pystr = s_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("parse() argument must be str")?;
+    let s = s_pystr.as_utf8()?;
+
+    let fmt_obj = handle_one_kwarg("parse", cls.state().str_format, kwargs)?.ok_or_else(|| {
+        raise_type_err::<(), _>("parse() requires 'format' keyword argument").unwrap_err()
+    })?;
+    let fmt_pystr = fmt_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("format must be str")?;
+    let fmt_bytes = fmt_pystr.as_utf8()?;
+
+    let elements = pattern::compile(fmt_bytes).into_value_err()?;
+    pattern::validate_fields(
+        &elements,
+        pattern::CategorySet::DATE_TIME_OFFSET,
+        "OffsetDateTime",
+    )?;
+
+    let state = pattern::parse_to_state(&elements, s).into_value_err()?;
+
+    let offset = state
+        .offset_secs
+        .ok_or_value_err("OffsetDateTime.parse() pattern must include an offset field (x/X)")?;
+
+    let year = state.year.ok_or_value_err(
+        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
+    )?;
+    let month = state.month.ok_or_value_err(
+        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
+    )?;
+    let day = state.day.ok_or_value_err(
+        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
+    )?;
+
+    let date = Date::new(year, month, day).ok_or_value_err("Invalid date")?;
+
+    if let Some(wd) = state.weekday {
+        if date.day_of_week() != wd {
+            raise_value_err("Parsed weekday does not match the date")?;
+        }
+    }
+
+    let hour = state.hour.unwrap_or(0);
+    let minute = state.minute.unwrap_or(0);
+    let second = state.second.unwrap_or(0);
+
+    if hour >= 24 || minute >= 60 || second >= 60 {
+        raise_value_err("Invalid time")?;
+    }
+
+    let time = Time {
+        hour,
+        minute,
+        second,
+        subsec: state.nanos,
+    };
+
+    // offset is already validated (scalar::Offset) — no range check needed here.
+    OffsetDateTime::new(date, time, offset)
+        .ok_or_range_err()?
+        .to_obj(cls)
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     method0!(OffsetDateTime, __copy__, c""),
     method1!(OffsetDateTime, __deepcopy__, c""),
@@ -1382,6 +1502,9 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(OffsetDateTime, round, doc::OFFSETDATETIME_ROUND),
     method_kwargs!(OffsetDateTime, since, doc::OFFSETDATETIME_SINCE),
     method_kwargs!(OffsetDateTime, until, doc::OFFSETDATETIME_UNTIL),
+    method1!(OffsetDateTime, format, doc::OFFSETDATETIME_FORMAT),
+    method1!(OffsetDateTime, __format__, c""),
+    classmethod_kwargs!(OffsetDateTime, parse, doc::OFFSETDATETIME_PARSE),
     classmethod_kwargs!(
         OffsetDateTime,
         __get_pydantic_core_schema__,

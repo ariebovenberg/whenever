@@ -57,41 +57,32 @@ OffsetDateTime("2021-07-13 09:45:00-09:00")
 
 ## Custom formats
 
-```{admonition} Future plans
-:class: hint
-
-Python's builtin `strptime` has its limitations, so a more full-featured
-parsing API may be added in the future.
-```
-
-For now, basic customized parsing functionality is implemented in the ``parse_strptime()`` methods
-of {class}`~whenever.OffsetDateTime` and {class}`~whenever.PlainDateTime`.
-As the name suggests, these methods are thin wrappers around the standard library
-{meth}`~datetime.datetime.strptime` function.
-The same `formatting rules <https://docs.python.org/3/library/datetime.html#format-codes>`_ apply.
+All datetime types support custom format and parse patterns via
+the `format()` and `parse()` methods.
+Patterns use specifiers like `YYYY`, `MM`, `DD`, `hh`, `mm`, `ss`.
 
 ```python
->>> OffsetDateTime.parse_strptime("2023-01-01+05:00", "%Y-%m-%d%z")
-OffsetDateTime("2023-01-01 00:00:00+05:00")
->>> PlainDateTime.parse_strptime("2023-01-01 15:00", "%Y-%m-%d %H:%M")
-PlainDateTime("2023-01-01 15:00:00")
+>>> OffsetDateTime(2024, 3, 15, 14, 30, offset=+2).format(
+...     "ddd, DD MMM YYYY hh:mm:ssxxx"
+... )
+'Fri, 15 Mar 2024 14:30:00+02:00'
+>>> Date.parse("15 Mar 2024", format="DD MMM YYYY")
+Date("2024-03-15")
+>>> ZonedDateTime.parse(
+...     "2024-03-15 14:30+01:00[Europe/Paris]",
+...     format="YYYY-MM-DD hh:mmxxx'['VV']'",
+... )
+ZonedDateTime("2024-03-15 14:30:00+01:00[Europe/Paris]")
 ```
 
-{class}`~whenever.ZonedDateTime` does not (yet)
-implement ``parse_strptime()`` methods, because they require disambiguation.
-If you'd like to parse into these types,
-use {meth}`PlainDateTime.parse_strptime() <whenever.PlainDateTime.parse_strptime>`
-to parse them, and then use the {meth}`~whenever.PlainDateTime.assume_utc`,
-{meth}`~whenever.PlainDateTime.assume_fixed_offset`,
-{meth}`~whenever.PlainDateTime.assume_tz`,
-or {meth}`~whenever.PlainDateTime.assume_system_tz`
-methods to convert them.
-This makes it explicit what information is being assumed.
+See the {ref}`pattern format reference <pattern-format>` for the
+full list of specifiers and details.
 
-```python
->>> d = PlainDateTime.parse_strptime("2023-10-29 02:30:00", "%Y-%m-%d %H:%M:%S")
->>> d.assume_tz("Europe/Amsterdam")
-ZonedDateTime("2023-10-29 02:30:00+02:00[Europe/Amsterdam]")
+```{deprecated} 0.10.0
+The ``parse_strptime()`` methods on ``OffsetDateTime`` and ``PlainDateTime``
+are deprecated. Use ``parse()`` with a pattern string instead, or convert
+from a stdlib datetime:
+``OffsetDateTime(datetime.strptime(...))``.
 ```
 
 ## Pydantic integration

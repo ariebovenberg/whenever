@@ -46,6 +46,12 @@ from typing import (
 from warnings import warn
 
 from ._common import check_utc_bounds, mk_fixed_tzinfo
+from ._format import (
+    compile_pattern,
+    format_fields,
+    parse_fields,
+    validate_fields,
+)
 from ._math import (
     DATE_DELTA_UNITS,
     DELTA_UNITS,
@@ -472,6 +478,59 @@ class Date(_Base):
 
     def _init_from_iso(self, s: str) -> None:
         self._py_date = date_from_iso(s)
+
+    _PATTERN_CATS = frozenset({"date"})
+
+    def format(self, pattern: str, /) -> str:
+        """Format as a custom pattern string.
+
+        See :ref:`pattern-format` for details.
+
+        >>> Date(2024, 3, 15).format("YYYY/MM/DD")
+        '2024/03/15'
+        >>> Date(2024, 3, 15).format("DD MMM YYYY")
+        '15 Mar 2024'
+        """
+        elements = compile_pattern(pattern)
+        validate_fields(elements, self._PATTERN_CATS, "Date")
+        d = self._py_date
+        return format_fields(
+            elements,
+            year=d.year,
+            month=d.month,
+            day=d.day,
+            weekday=d.weekday(),
+        )
+
+    def __format__(self, spec: str, /) -> str:
+        return str(self) if not spec else self.format(spec)
+
+    @classmethod
+    def parse(cls, s: str, /, *, format: str) -> Date:
+        """Parse a date from a custom pattern string.
+
+        See :ref:`pattern-format` for details.
+
+        >>> Date.parse("2024/03/15", format="YYYY/MM/DD")
+        Date("2024-03-15")
+        >>> Date.parse("15 Mar 2024", format="DD MMM YYYY")
+        Date("2024-03-15")
+        """
+        elements = compile_pattern(format)
+        validate_fields(elements, cls._PATTERN_CATS, "Date")
+        state = parse_fields(elements, s)
+        if state.year is None or state.month is None or state.day is None:
+            raise ValueError(
+                "Pattern must include year (YYYY/YY), "
+                "month (MM/MMM/MMMM), and day (DD) fields"
+            )
+        result = cls(state.year, state.month, state.day)
+        if (
+            state.weekday is not None
+            and result._py_date.weekday() != state.weekday
+        ):
+            raise ValueError("Parsed weekday does not match the date")
+        return result
 
     if not TYPE_CHECKING:  # for a nice autodoc
 
@@ -1509,6 +1568,53 @@ class Time(_Base):
         Time(12:30:00)
         """
         return cls._from_py_unchecked(*time_from_iso(s))
+
+    _PATTERN_CATS = frozenset({"time"})
+
+    def format(self, pattern: str, /) -> str:
+        """Format as a custom pattern string.
+
+        See :ref:`pattern-format` for details.
+
+        >>> Time(14, 30, 5).format("hh:mm:ss")
+        '14:30:05'
+        >>> Time(14, 30).format("ii:mm aa")
+        '02:30 PM'
+        """
+        elements = compile_pattern(pattern)
+        validate_fields(elements, self._PATTERN_CATS, "Time")
+        t = self._py
+        return format_fields(
+            elements,
+            hour=t.hour,
+            minute=t.minute,
+            second=t.second,
+            nanos=self._nanos,
+        )
+
+    def __format__(self, spec: str, /) -> str:
+        return str(self) if not spec else self.format(spec)
+
+    @classmethod
+    def parse(cls, s: str, /, *, format: str) -> Time:
+        """Parse a time from a custom pattern string.
+
+        See :ref:`pattern-format` for details.
+
+        >>> Time.parse("14:30:05", format="hh:mm:ss")
+        Time(14:30:05)
+        >>> Time.parse("02:30 PM", format="ii:mm aa")
+        Time(14:30:00)
+        """
+        elements = compile_pattern(format)
+        validate_fields(elements, cls._PATTERN_CATS, "Time")
+        state = parse_fields(elements, s)
+        return cls(
+            hour=state.hour or 0,
+            minute=state.minute or 0,
+            second=state.second or 0,
+            nanosecond=state.nanos,
+        )
 
     if not TYPE_CHECKING:  # for a nice autodoc
 
@@ -5769,6 +5875,79 @@ class Instant(_ExactTime):
         """
         return cls._from_py_unchecked(parse_rfc2822(s).astimezone(_UTC), 0)
 
+    _PATTERN_CATS = frozenset({"date", "time", "offset"})
+
+    def format(self, pattern: str, /) -> str:
+        """Format as a custom pattern string.
+
+        Instant formats as UTC; See :ref:`pattern-format` for details.
+
+        >>> Instant.from_utc(2024, 3, 15, 14, 30).format("YYYY-MM-DD hh:mm:ssXXX")
+        '2024-03-15 14:30:00Z'
+        """
+        elements = compile_pattern(pattern)
+        validate_fields(elements, self._PATTERN_CATS, "Instant")
+        d = self._py_dt
+        return format_fields(
+            elements,
+            year=d.year,
+            month=d.month,
+            day=d.day,
+            weekday=d.weekday(),
+            hour=d.hour,
+            minute=d.minute,
+            second=d.second,
+            nanos=self._nanos,
+            offset_secs=0,
+        )
+
+    def __format__(self, spec: str, /) -> str:
+        return str(self) if not spec else self.format(spec)
+
+    @classmethod
+    def parse(cls, s: str, /, *, format: str) -> Instant:
+        """Parse an instant from a custom pattern string.
+
+        The pattern **must** include an offset field (``x``/``X``)
+        to unambiguously identify the instant.
+        See :ref:`pattern-format` for details.
+
+        .. tip::
+
+            If your input string doesn't include an offset, parse it with
+            :meth:`PlainDateTime.parse` first, then convert using
+            :meth:`~PlainDateTime.assume_utc` or
+            :meth:`~PlainDateTime.assume_tz`.
+
+        >>> Instant.parse("2024-03-15 14:30Z", format="YYYY-MM-DD hh:mmXXX")
+        Instant("2024-03-15 14:30:00Z")
+        >>> Instant.parse("2024-03-15 14:30+05:30", format="YYYY-MM-DD hh:mmxxx")
+        Instant("2024-03-15 09:00:00Z")
+        """
+        elements = compile_pattern(format)
+        validate_fields(elements, cls._PATTERN_CATS, "Instant")
+        state = parse_fields(elements, s)
+        if state.offset_secs is None:
+            raise ValueError(
+                "Instant.parse() pattern must include an offset " "field (x/X)"
+            )
+        if state.year is None or state.month is None or state.day is None:
+            raise ValueError(
+                "Pattern must include year, month, and day fields"
+            )
+        dt = check_utc_bounds(
+            _datetime(
+                state.year,
+                state.month,
+                state.day,
+                state.hour or 0,
+                state.minute or 0,
+                state.second or 0,
+                tzinfo=_timezone(_timedelta(seconds=state.offset_secs)),
+            )
+        ).astimezone(_UTC)
+        return cls._from_py_unchecked(dt, state.nanos)
+
     def add(
         self,
         *,
@@ -6400,21 +6579,18 @@ class OffsetDateTime(_ExactAndLocalTime):
     def parse_strptime(cls, s: str, /, *, format: str) -> OffsetDateTime:
         """Parse a datetime with offset using the standard library ``strptime()`` method.
 
-        >>> OffsetDateTime.parse_strptime("2020-08-15+0200", format="%Y-%m-%d%z")
-        OffsetDateTime("2020-08-15 00:00:00+02:00")
+        .. deprecated:: 0.10.0
 
-        Note
-        ----
-        This method defers to the standard library ``strptime()`` method,
-        which may behave differently in different Python versions.
-        It also only supports up to microsecond precision.
+            Use :meth:`parse` with a pattern string instead, or use
+            ``OffsetDateTime(datetime.strptime(...))``.
 
-        Important
-        ---------
-        An offset *must* be present in the format string.
-        This means you MUST include the directive ``%z``, ``%Z``, or ``%:z``.
-        To parse a datetime without an offset, use ``PlainDateTime`` instead.
         """
+        warn(
+            "parse_strptime() is deprecated; "
+            "use parse() with a pattern string instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         parsed = _datetime.strptime(s, format)
         if (offset := parsed.utcoffset()) is None:
             raise ValueError(
@@ -6470,6 +6646,79 @@ class OffsetDateTime(_ExactAndLocalTime):
           comments within folding whitespace are not supported.
         """
         return cls._from_py_unchecked(parse_rfc2822(s), 0)
+
+    _PATTERN_CATS = frozenset({"date", "time", "offset"})
+
+    def format(self, pattern: str, /) -> str:
+        """Format as a custom pattern string.
+
+        See :ref:`pattern-format` for details.
+
+        >>> OffsetDateTime(2024, 3, 15, 14, 30, offset=hours(2)).format(
+        ...     "YYYY-MM-DD hh:mmxxx"
+        ... )
+        '2024-03-15 14:30+02:00'
+        """
+        elements = compile_pattern(pattern)
+        validate_fields(elements, self._PATTERN_CATS, "OffsetDateTime")
+        d = self._py_dt
+        return format_fields(
+            elements,
+            year=d.year,
+            month=d.month,
+            day=d.day,
+            weekday=d.weekday(),
+            hour=d.hour,
+            minute=d.minute,
+            second=d.second,
+            nanos=self._nanos,
+            offset_secs=int(
+                d.utcoffset().total_seconds()  # type: ignore[union-attr]
+            ),
+        )
+
+    def __format__(self, spec: str, /) -> str:
+        return str(self) if not spec else self.format(spec)
+
+    @classmethod
+    def parse(cls, s: str, /, *, format: str) -> OffsetDateTime:
+        """Parse an offset datetime from a custom pattern string.
+
+        The pattern **must** include an offset field (``x``/``X``).
+        See :ref:`pattern-format` for details.
+
+        .. tip::
+
+            If your input string doesn't include an offset, parse it with
+            :meth:`PlainDateTime.parse` first, then convert using
+            :meth:`~PlainDateTime.assume_fixed_offset` or
+            :meth:`~PlainDateTime.assume_tz`.
+
+        >>> OffsetDateTime.parse("2024-03-15 14:30+02:00", format="YYYY-MM-DD hh:mmxxx")
+        OffsetDateTime("2024-03-15 14:30:00+02:00")
+        """
+        elements = compile_pattern(format)
+        validate_fields(elements, cls._PATTERN_CATS, "OffsetDateTime")
+        state = parse_fields(elements, s)
+        if state.offset_secs is None:
+            raise ValueError(
+                "OffsetDateTime.parse() pattern must include an offset "
+                "field (x/X)"
+            )
+        if state.year is None or state.month is None or state.day is None:
+            raise ValueError(
+                "Pattern must include year, month, and day fields"
+            )
+        return cls(
+            state.year,
+            state.month,
+            state.day,
+            state.hour or 0,
+            state.minute or 0,
+            state.second or 0,
+            nanosecond=state.nanos,
+            offset=TimeDelta(seconds=state.offset_secs),
+        )
 
     if not TYPE_CHECKING:  # for a nicer autodoc
 
@@ -7081,6 +7330,130 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     def _init_from_iso(self, s: str) -> None:
         self._py_dt, self._nanos, self._tz = zdt_from_iso(s)
+
+    _PATTERN_CATS = frozenset({"date", "time", "offset", "tz"})
+
+    def format(self, pattern: str, /) -> str:
+        """Format as a custom pattern string.
+
+        See :ref:`pattern-format` for details.
+
+        >>> ZonedDateTime(2024, 3, 15, 14, 30, tz="Europe/Paris").format(
+        ...     "YYYY-MM-DD hh:mmxxx'['VV']'"
+        ... )
+        '2024-03-15 14:30+01:00[Europe/Paris]'
+        """
+        elements = compile_pattern(pattern)
+        validate_fields(elements, self._PATTERN_CATS, "ZonedDateTime")
+        d = self._py_dt
+        return format_fields(
+            elements,
+            year=d.year,
+            month=d.month,
+            day=d.day,
+            weekday=d.weekday(),
+            hour=d.hour,
+            minute=d.minute,
+            second=d.second,
+            nanos=self._nanos,
+            offset_secs=int(
+                d.utcoffset().total_seconds()  # type: ignore[union-attr]
+            ),
+            tz_id=self._tz.key,
+            tz_abbrev=self.tz_abbrev(),
+        )
+
+    def __format__(self, spec: str, /) -> str:
+        return str(self) if not spec else self.format(spec)
+
+    @classmethod
+    def parse(
+        cls,
+        s: str,
+        /,
+        *,
+        format: str,
+        disambiguate: DisambiguateStr = "compatible",
+    ) -> ZonedDateTime:
+        """Parse a zoned datetime from a custom pattern string.
+
+        The pattern **must** include a timezone ID field (``VV``).
+        An offset field (``x``/``X``) is optional but recommended for
+        disambiguation during DST transitions.
+        See :ref:`pattern-format` for details.
+
+        .. tip::
+
+            If your input string doesn't include a timezone ID, parse it with
+            :meth:`PlainDateTime.parse` first, then convert using
+            :meth:`~PlainDateTime.assume_tz`.
+
+        >>> ZonedDateTime.parse(
+        ...     "2024-03-15 14:30+01:00[Europe/Paris]",
+        ...     format="YYYY-MM-DD hh:mmxxx'['VV']'",
+        ... )
+        ZonedDateTime("2024-03-15 14:30:00+01:00[Europe/Paris]")
+        """
+        elements = compile_pattern(format)
+        validate_fields(elements, cls._PATTERN_CATS, "ZonedDateTime")
+        state = parse_fields(elements, s)
+        if state.tz_id is None:
+            raise ValueError(
+                "ZonedDateTime.parse() pattern must include a "
+                "timezone ID field (VV)"
+            )
+        if state.year is None or state.month is None or state.day is None:
+            raise ValueError(
+                "Pattern must include year, month, and day fields"
+            )
+        tz = get_tz(state.tz_id)
+        dt = _datetime(
+            state.year,
+            state.month,
+            state.day,
+            state.hour or 0,
+            state.minute or 0,
+            state.second or 0,
+        )
+        if state.offset_secs is not None:
+            # Use offset to disambiguate during DST transitions.
+            # Try both "earlier" and "later" to find the matching offset.
+            earlier = resolve_ambiguity(dt, tz, "earlier")
+            earlier_offset = int(
+                earlier.utcoffset().total_seconds()  # type: ignore[union-attr]
+            )
+            if earlier_offset == state.offset_secs:
+                resolved = earlier
+            else:
+                later = resolve_ambiguity(dt, tz, "later")
+                later_offset = int(
+                    later.utcoffset().total_seconds()  # type: ignore[union-attr]
+                )
+                if later_offset == state.offset_secs:
+                    resolved = later
+                else:
+                    raise ValueError(
+                        f"Offset {state.offset_secs}s does not match "
+                        f"timezone {state.tz_id!r}"
+                    )
+            # Reject skipped times: if the resolved local time doesn't
+            # match the input, the time was shifted out of a DST gap.
+            if (
+                resolved.hour != (state.hour or 0)
+                or resolved.minute != (state.minute or 0)
+                or resolved.second != (state.second or 0)
+            ):
+                raise ValueError(
+                    f"The local time does not exist in "
+                    f"timezone {state.tz_id!r}"
+                )
+        else:
+            resolved = resolve_ambiguity(dt, tz, disambiguate)
+        self = _object_new(cls)
+        self._py_dt = resolved
+        self._nanos = state.nanos
+        self._tz = tz
+        return self
 
     @classmethod
     def from_timestamp(cls, i: int | float, /, *, tz: str) -> ZonedDateTime:
@@ -7960,6 +8333,63 @@ class PlainDateTime(_LocalTime):
     def _init_from_iso(self, s: str) -> None:
         self._py_dt, self._nanos = datetime_from_iso(s)
 
+    _PATTERN_CATS = frozenset({"date", "time"})
+
+    def format(self, pattern: str, /) -> str:
+        """Format as a custom pattern string.
+
+        Also available via ``f"{dt:YYYY-MM-DD hh:mm}"`` (Python's ``__format__``
+        protocol), where an empty spec falls back to :meth:`__str__`.
+
+        See :ref:`pattern-format` for details.
+
+        >>> PlainDateTime(2024, 3, 15, 14, 30).format("YYYY-MM-DD hh:mm")
+        '2024-03-15 14:30'
+        """
+        elements = compile_pattern(pattern)
+        validate_fields(elements, self._PATTERN_CATS, "PlainDateTime")
+        d = self._py_dt
+        return format_fields(
+            elements,
+            year=d.year,
+            month=d.month,
+            day=d.day,
+            weekday=d.weekday(),
+            hour=d.hour,
+            minute=d.minute,
+            second=d.second,
+            nanos=self._nanos,
+        )
+
+    def __format__(self, spec: str, /) -> str:
+        return str(self) if not spec else self.format(spec)
+
+    @classmethod
+    def parse(cls, s: str, /, *, format: str) -> PlainDateTime:
+        """Parse a plain datetime from a custom pattern string.
+
+        See :ref:`pattern-format` for details.
+
+        >>> PlainDateTime.parse("2024-03-15 14:30", format="YYYY-MM-DD hh:mm")
+        PlainDateTime("2024-03-15 14:30:00")
+        """
+        elements = compile_pattern(format)
+        validate_fields(elements, cls._PATTERN_CATS, "PlainDateTime")
+        state = parse_fields(elements, s)
+        if state.year is None or state.month is None or state.day is None:
+            raise ValueError(
+                "Pattern must include year, month, and day fields"
+            )
+        return cls(
+            state.year,
+            state.month,
+            state.day,
+            state.hour or 0,
+            state.minute or 0,
+            state.second or 0,
+            nanosecond=state.nanos,
+        )
+
     @classmethod
     def from_py_datetime(cls, d: _datetime, /) -> PlainDateTime:
         """Create an instance from a "naive" standard library ``datetime`` object"""
@@ -8402,21 +8832,18 @@ class PlainDateTime(_LocalTime):
     def parse_strptime(cls, s: str, /, *, format: str) -> PlainDateTime:
         """Parse a plain datetime using the standard library ``strptime()`` method.
 
-        >>> PlainDateTime.parse_strptime("2020-08-15", format="%d/%m/%Y_%H:%M")
-        PlainDateTime("2020-08-15 00:00:00")
+        .. deprecated:: 0.10.0
 
-        Note
-        ----
-        This method defers to the standard library ``strptime()`` method,
-        which may behave differently in different Python versions.
-        It also only supports up to microsecond precision.
+            Use :meth:`parse` with a pattern string instead, or use
+            ``PlainDateTime(datetime.strptime(...))``.
 
-        Important
-        ---------
-        There may not be an offset in the format string.
-        This means you CANNOT use the directives ``%z``, ``%Z``, or ``%:z``.
-        Use ``OffsetDateTime`` to parse datetimes with an offset.
         """
+        warn(
+            "parse_strptime() is deprecated; "
+            "use parse() with a pattern string instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
         parsed = _datetime.strptime(s, format)
         if parsed.tzinfo is not None:
             raise ValueError(

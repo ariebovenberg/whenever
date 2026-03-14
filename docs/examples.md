@@ -1,5 +1,9 @@
 # Examples
 
+```{eval-rst}
+.. currentmodule:: whenever
+```
+
 This page contains small, practical examples of using `whenever`.
 For more in-depth information, refer to the {ref}`guide`.
 
@@ -66,7 +70,7 @@ ZonedDateTime("2023-10-01 12:30:00-04:00[America/New_York]")
 >>> py_dt = datetime.datetime.now(datetime.UTC)
 >>> from whenever import Instant
 >>> # create an Instant from any aware datetime
->>> i = Instant.from_py_datetime(py_dt)
+>>> i = Instant(py_dt)
 Instant("2025-04-19 19:02:56.39569Z")
 >>> zdt = i.to_tz("America/New_York")
 ZonedDateTime("2025-04-19 15:02:56.39569-04:00[America/New_York]")
@@ -248,6 +252,7 @@ Date("2025-03-31")
 
 ## Sort a list of datetimes
 
+<!-- TODO: nuance mixing types -->
 All exact types can be compared and sorted, even when mixing types:
 
 ```python
@@ -259,6 +264,42 @@ All exact types can be compared and sorted, even when mixing types:
 ... ]
 >>> sorted(times)  # all represent the same moment—sorted by the underlying instant
 [...]
+```
+
+## Custom format patterns
+
+For formats beyond ISO 8601, use pattern strings:
+
+```python
+>>> from whenever import Date, PlainDateTime, OffsetDateTime
+>>> Date.parse("15 Mar 2024", format="DD MMM YYYY")
+Date("2024-03-15")
+>>> PlainDateTime.parse("03/15/2024 02:30 PM", format="MM/DD/YYYY ii:mm aa")
+PlainDateTime("2024-03-15 14:30:00")
+>>> OffsetDateTime.parse("2024-03-15 14:30+02:00", format="YYYY-MM-DD hh:mmxxx")
+OffsetDateTime("2024-03-15 14:30:00+02:00")
+```
+
+If your input doesn't include an offset or timezone, parse with
+{meth}`PlainDateTime.parse` and convert:
+
+```python
+>>> from whenever import PlainDateTime
+>>> pdt = PlainDateTime.parse("2024-03-15 14:30", format="YYYY-MM-DD hh:mm")
+>>> pdt.assume_utc()
+Instant("2024-03-15 14:30:00Z")
+```
+
+It also integrates nicely with the standard library's formatting protocol
+(`__format__`), so you can use pattern strings in f-strings:
+
+```python
+>>> from whenever import Date
+>>> d = Date(2024, 3, 15)
+>>> f"{d:DD/MM/YYYY}"
+'15/03/2024'
+>>> f"{d}"  # empty spec falls back to str()
+'2024-03-15'
 ```
 
 ## Roundtrip: datetime → string → datetime

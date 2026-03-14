@@ -875,6 +875,12 @@ impl SubSecNanos {
     }
 }
 
+impl Default for SubSecNanos {
+    fn default() -> Self {
+        Self::MIN
+    }
+}
+
 // Display sub-second nanos in a way that:
 // - only shows the decimal point when necessary (i.e. nanos > 0)
 // - doesn't show trailing zeros
