@@ -14,7 +14,7 @@ use crate::{
         fmt,
         math::{self, DateRoundIncrement, DeltaUnit, DeltaUnitSet, SinceUntilKwargs, UnitsOrUnit},
         parse::Scan,
-        round,
+        pattern, round,
         scalar::*,
     },
     docstrings as doc,
@@ -775,8 +775,14 @@ fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwar
     let &State {
         str_format,
         strptime,
+        warn_deprecation,
         ..
     } = cls.state();
+    warn_with_class(
+        warn_deprecation,
+        c"parse_strptime() is deprecated; use parse() with a format pattern instead.",
+        2,
+    )?;
     let format_obj = match kwargs.next() {
         Some((key, value)) if kwargs.len() == 1 && key.py_eq(str_format)? => value,
         _ => raise_type_err("parse_strptime() requires exactly one keyword argument `format`")?,
@@ -1087,6 +1093,106 @@ fn round(
     .to_obj(cls)
 }
 
+fn format(_cls: HeapType<DateTime>, slf: DateTime, pattern_obj: PyObj) -> PyReturn {
+    let pattern_pystr = pattern_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("format() argument must be str")?;
+    let pattern_str = pattern_pystr.as_utf8()?;
+    let elements = pattern::compile(pattern_str).into_value_err()?;
+    pattern::validate_fields(&elements, pattern::CategorySet::DATE_TIME, "PlainDateTime")?;
+    if pattern::has_12h_without_ampm(&elements) {
+        warn_with_class(
+            // SAFETY: PyExc_UserWarning is always valid
+            unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
+            c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
+            2,
+        )?;
+    }
+    let vals = pattern::FormatValues {
+        year: slf.date.year,
+        month: slf.date.month,
+        day: slf.date.day,
+        weekday: slf.date.day_of_week(),
+        hour: slf.time.hour,
+        minute: slf.time.minute,
+        second: slf.time.second,
+        nanos: slf.time.subsec,
+        offset_secs: None,
+        tz_id: None,
+        tz_abbrev: None,
+    };
+    pattern::format_to_py(&elements, &vals)
+}
+
+fn __format__(cls: HeapType<DateTime>, slf: DateTime, spec_obj: PyObj) -> PyReturn {
+    if spec_obj.is_truthy() {
+        format(cls, slf, spec_obj)
+    } else {
+        __str__(cls.into(), slf)
+    }
+}
+
+fn parse(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+    let &[s_obj] = args else {
+        raise_type_err(format!(
+            "parse() takes exactly 1 positional argument ({} given)",
+            args.len()
+        ))?
+    };
+    let s_pystr = s_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("parse() argument must be str")?;
+    let s = s_pystr.as_utf8()?;
+
+    let fmt_obj = handle_one_kwarg("parse", cls.state().str_format, kwargs)?.ok_or_else(|| {
+        raise_type_err::<(), _>("parse() requires 'format' keyword argument").unwrap_err()
+    })?;
+    let fmt_pystr = fmt_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("format must be str")?;
+    let fmt_bytes = fmt_pystr.as_utf8()?;
+
+    let elements = pattern::compile(fmt_bytes).into_value_err()?;
+    pattern::validate_fields(&elements, pattern::CategorySet::DATE_TIME, "PlainDateTime")?;
+
+    let state = pattern::parse_to_state(&elements, s).into_value_err()?;
+
+    let year = state.year.ok_or_value_err(
+        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
+    )?;
+    let month = state.month.ok_or_value_err(
+        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
+    )?;
+    let day = state.day.ok_or_value_err(
+        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
+    )?;
+
+    let date = Date::new(year, month, day).ok_or_value_err("Invalid date")?;
+
+    if let Some(wd) = state.weekday {
+        if date.day_of_week() != wd {
+            raise_value_err("Parsed weekday does not match the date")?;
+        }
+    }
+
+    let hour = state.hour.unwrap_or(0);
+    let minute = state.minute.unwrap_or(0);
+    let second = state.second.unwrap_or(0);
+
+    if hour >= 24 || minute >= 60 || second >= 60 {
+        raise_value_err("Invalid time")?;
+    }
+
+    let time = Time {
+        hour,
+        minute,
+        second,
+        subsec: state.nanos,
+    };
+
+    DateTime { date, time }.to_obj(cls)
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     method0!(DateTime, __copy__, c""),
     method1!(DateTime, __deepcopy__, c""),
@@ -1123,6 +1229,9 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(DateTime, since, doc::PLAINDATETIME_SINCE),
     method_kwargs!(DateTime, until, doc::PLAINDATETIME_UNTIL),
     method_kwargs!(DateTime, round, doc::PLAINDATETIME_ROUND),
+    method1!(DateTime, format, doc::PLAINDATETIME_FORMAT),
+    method1!(DateTime, __format__, c""),
+    classmethod_kwargs!(DateTime, parse, doc::PLAINDATETIME_PARSE),
     classmethod_kwargs!(DateTime, __get_pydantic_core_schema__, doc::PYDANTIC_SCHEMA),
     PyMethodDef::zeroed(),
 ];

@@ -3,7 +3,7 @@ use crate::{
     common::{
         fmt::{self, Sink, format_2_digits},
         parse::Scan,
-        round,
+        pattern, round,
         scalar::*,
     },
     docstrings as doc,
@@ -594,6 +594,87 @@ fn round(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs
     slf.round(increment_ns, mode).0.to_obj(cls)
 }
 
+fn format(_cls: HeapType<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
+    let pattern_pystr = pattern_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("format() argument must be str")?;
+    let pattern_str = pattern_pystr.as_utf8()?;
+    let elements = pattern::compile(pattern_str).into_value_err()?;
+    pattern::validate_fields(&elements, pattern::CategorySet::TIME, "Time")?;
+    if pattern::has_12h_without_ampm(&elements) {
+        warn_with_class(
+            // SAFETY: PyExc_UserWarning is always valid
+            unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
+            c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
+            2,
+        )?;
+    }
+    let vals = pattern::FormatValues {
+        year: Year::MIN,
+        month: Month::MIN,
+        day: 1,
+        weekday: Weekday::Monday,
+        hour: slf.hour,
+        minute: slf.minute,
+        second: slf.second,
+        nanos: slf.subsec,
+        offset_secs: None,
+        tz_id: None,
+        tz_abbrev: None,
+    };
+    pattern::format_to_py(&elements, &vals)
+}
+
+fn __format__(cls: HeapType<Time>, slf: Time, spec_obj: PyObj) -> PyReturn {
+    if spec_obj.is_truthy() {
+        format(cls, slf, spec_obj)
+    } else {
+        __str__(cls.into(), slf)
+    }
+}
+
+fn parse(cls: HeapType<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+    let &[s_obj] = args else {
+        raise_type_err(format!(
+            "parse() takes exactly 1 positional argument ({} given)",
+            args.len()
+        ))?
+    };
+    let s_pystr = s_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("parse() argument must be str")?;
+    let s = s_pystr.as_utf8()?;
+
+    let fmt_obj = handle_one_kwarg("parse", cls.state().str_format, kwargs)?.ok_or_else(|| {
+        raise_type_err::<(), _>("parse() requires 'format' keyword argument").unwrap_err()
+    })?;
+    let fmt_pystr = fmt_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("format must be str")?;
+    let fmt_bytes = fmt_pystr.as_utf8()?;
+
+    let elements = pattern::compile(fmt_bytes).into_value_err()?;
+    pattern::validate_fields(&elements, pattern::CategorySet::TIME, "Time")?;
+
+    let state = pattern::parse_to_state(&elements, s).into_value_err()?;
+
+    let hour = state.hour.unwrap_or(0);
+    let minute = state.minute.unwrap_or(0);
+    let second = state.second.unwrap_or(0);
+
+    if hour >= 24 || minute >= 60 || second >= 60 {
+        raise_value_err("Invalid time")?;
+    }
+
+    Time {
+        hour,
+        minute,
+        second,
+        subsec: state.nanos,
+    }
+    .to_obj(cls)
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     method0!(Time, __copy__, c""),
     method1!(Time, __deepcopy__, c""),
@@ -605,6 +686,9 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod1!(Time, from_py_time, doc::TIME_FROM_PY_TIME),
     method1!(Time, on, doc::TIME_ON),
     method_kwargs!(Time, round, doc::TIME_ROUND),
+    method1!(Time, format, doc::TIME_FORMAT),
+    method1!(Time, __format__, c""),
+    classmethod_kwargs!(Time, parse, doc::TIME_PARSE),
     classmethod_kwargs!(Time, __get_pydantic_core_schema__, doc::PYDANTIC_SCHEMA),
     PyMethodDef::zeroed(),
 ];

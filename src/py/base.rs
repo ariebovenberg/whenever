@@ -197,13 +197,17 @@ pub(crate) trait PyBase: FromPy {
         }
     }
 
+    fn is_truthy(&self) -> bool {
+        unsafe { PyObject_IsTrue(self.as_ptr()) != 0 }
+    }
+
     /// Determine if the object is *exactly equal* to `True`.
     fn is_true(&self) -> bool {
-        unsafe { self.as_ptr() == Py_True() }
+        unsafe { Py_IsTrue(self.as_ptr()) != 0 }
     }
 
     fn is_false(&self) -> bool {
-        unsafe { self.as_ptr() == Py_False() }
+        unsafe { Py_IsFalse(self.as_ptr()) != 0 }
     }
 }
 

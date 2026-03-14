@@ -19,7 +19,7 @@ use crate::{
         fmt::{self, Chunk},
         math::{self, CalUnit, CalUnitSet, DateRoundIncrement, DateSinceUnits},
         parse::{extract_2_digits, extract_digit},
-        round,
+        pattern, round,
         scalar::*,
     },
     docstrings as doc,
@@ -813,6 +813,91 @@ fn system_tz_today_from_timestamp(
     })
 }
 
+fn format(_: HeapType<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {
+    let pattern_pystr = pattern_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("format() argument must be str")?;
+    let pattern_str = pattern_pystr.as_utf8()?;
+    let elements = pattern::compile(pattern_str).into_value_err()?;
+    pattern::validate_fields(&elements, pattern::CategorySet::DATE, "Date")?;
+    if pattern::has_12h_without_ampm(&elements) {
+        warn_with_class(
+            // SAFETY: PyExc_UserWarning is always valid
+            unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
+            c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
+            2,
+        )?;
+    }
+    let vals = pattern::FormatValues {
+        year: slf.year,
+        month: slf.month,
+        day: slf.day,
+        weekday: slf.day_of_week(),
+        hour: 0,
+        minute: 0,
+        second: 0,
+        nanos: SubSecNanos::MIN,
+        offset_secs: None,
+        tz_id: None,
+        tz_abbrev: None,
+    };
+    pattern::format_to_py(&elements, &vals)
+}
+
+fn __format__(cls: HeapType<Date>, slf: Date, spec_obj: PyObj) -> PyReturn {
+    if spec_obj.is_truthy() {
+        format(cls, slf, spec_obj)
+    } else {
+        __str__(cls.into(), slf)
+    }
+}
+
+fn parse(cls: HeapType<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+    let &[s_obj] = args else {
+        raise_type_err(format!(
+            "parse() takes exactly 1 positional argument ({} given)",
+            args.len()
+        ))?
+    };
+    let s_pystr = s_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("parse() argument must be str")?;
+    let s = s_pystr.as_utf8()?;
+
+    let fmt_obj = handle_one_kwarg("parse", cls.state().str_format, kwargs)?.ok_or_else(|| {
+        raise_type_err::<(), _>("parse() requires 'format' keyword argument").unwrap_err()
+    })?;
+    let fmt_pystr = fmt_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("format must be str")?;
+    let fmt_bytes = fmt_pystr.as_utf8()?;
+
+    let elements = pattern::compile(fmt_bytes).into_value_err()?;
+    pattern::validate_fields(&elements, pattern::CategorySet::DATE, "Date")?;
+
+    let state = pattern::parse_to_state(&elements, s).into_value_err()?;
+
+    let year = state.year.ok_or_value_err(
+        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
+    )?;
+    let month = state.month.ok_or_value_err(
+        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
+    )?;
+    let day = state.day.ok_or_value_err(
+        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
+    )?;
+
+    let date = Date::new(year, month, day).ok_or_value_err("Invalid date")?;
+
+    if let Some(wd) = state.weekday {
+        if date.day_of_week() != wd {
+            raise_value_err("Parsed weekday does not match the date")?;
+        }
+    }
+
+    date.to_obj(cls)
+}
+
 static mut METHODS: &mut [PyMethodDef] = &mut [
     method0!(Date, py_date, doc::DATE_PY_DATE),
     method_kwargs!(Date, format_iso, doc::DATE_FORMAT_ISO),
@@ -833,6 +918,9 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     method_kwargs!(Date, since, doc::DATE_SINCE),
     method_kwargs!(Date, until, doc::DATE_UNTIL),
     method_kwargs!(Date, replace, doc::DATE_REPLACE),
+    method1!(Date, format, doc::DATE_FORMAT),
+    method1!(Date, __format__, c""),
+    classmethod_kwargs!(Date, parse, doc::DATE_PARSE),
     classmethod_kwargs!(Date, __get_pydantic_core_schema__, doc::PYDANTIC_SCHEMA),
     PyMethodDef::zeroed(),
 ];

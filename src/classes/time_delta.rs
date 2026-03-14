@@ -1468,7 +1468,8 @@ mod tests {
     }
 
     // 1 second increment in nanoseconds
-    const SEC: i64 = 1_000_000_000;
+    // SAFETY: 1_000_000_000 is non-zero
+    const SEC: NonZeroU64 = unsafe { NonZeroU64::new_unchecked(1_000_000_000) };
 
     // --- Sub-second rounding (increment < 1s) ---
 
@@ -1600,7 +1601,8 @@ mod tests {
 
     // --- Whole-second rounding (increment >= 1s) ---
 
-    const TEN_SEC: i64 = 10 * SEC;
+    // SAFETY: 10_000_000_000 is non-zero
+    const TEN_SEC: NonZeroU64 = unsafe { NonZeroU64::new_unchecked(10_000_000_000) };
 
     #[test]
     fn round_wholesec_trunc_positive() {

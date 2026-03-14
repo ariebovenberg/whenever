@@ -343,8 +343,9 @@ def _parse_type_info(
 
 def _abbrev_at(abbrev_data: bytes, idx: int) -> str:
     """Extract a NUL-terminated abbreviation string at the given index."""
-    end = abbrev_data.find(b"\x00", idx)
-    if end == -1:
+    try:
+        end = abbrev_data.index(b"\x00", idx)
+    except ValueError:  # pragma: no cover
         end = len(abbrev_data)
     return abbrev_data[idx:end].decode("ascii", errors="replace")
 

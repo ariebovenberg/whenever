@@ -15,7 +15,7 @@ use crate::{
     },
     common::{
         fmt::{self, Suffix},
-        rfc2822, round,
+        pattern, rfc2822, round,
         scalar::*,
     },
     docstrings as doc,
@@ -707,6 +707,109 @@ fn round(
     .to_obj(cls)
 }
 
+fn format(_cls: HeapType<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn {
+    let pattern_pystr = pattern_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("format() argument must be str")?;
+    let pattern_str = pattern_pystr.as_utf8()?;
+    let elements = pattern::compile(pattern_str).into_value_err()?;
+    pattern::validate_fields(&elements, pattern::CategorySet::DATE_TIME_OFFSET, "Instant")?;
+    if pattern::has_12h_without_ampm(&elements) {
+        warn_with_class(
+            // SAFETY: PyExc_UserWarning is always valid
+            unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
+            c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
+            2,
+        )?;
+    }
+    let DateTime { date, time } = slf.utc_datetime();
+    let vals = pattern::FormatValues {
+        year: date.year,
+        month: date.month,
+        day: date.day,
+        weekday: date.day_of_week(),
+        hour: time.hour,
+        minute: time.minute,
+        second: time.second,
+        nanos: slf.subsec,
+        offset_secs: Some(Offset::ZERO),
+        tz_id: None,
+        tz_abbrev: None,
+    };
+    pattern::format_to_py(&elements, &vals)
+}
+
+fn __format__(cls: HeapType<Instant>, slf: Instant, spec_obj: PyObj) -> PyReturn {
+    if spec_obj.is_truthy() {
+        format(cls, slf, spec_obj)
+    } else {
+        __str__(cls.into(), slf)
+    }
+}
+
+fn parse(cls: HeapType<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+    let &[s_obj] = args else {
+        raise_type_err(format!(
+            "parse() takes exactly 1 positional argument ({} given)",
+            args.len()
+        ))?
+    };
+    let s_pystr = s_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("parse() argument must be str")?;
+    let s = s_pystr.as_utf8()?;
+
+    let fmt_obj = handle_one_kwarg("parse", cls.state().str_format, kwargs)?.ok_or_else(|| {
+        raise_type_err::<(), _>("parse() requires 'format' keyword argument").unwrap_err()
+    })?;
+    let fmt_pystr = fmt_obj
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("format must be str")?;
+    let fmt_bytes = fmt_pystr.as_utf8()?;
+
+    let elements = pattern::compile(fmt_bytes).into_value_err()?;
+    pattern::validate_fields(&elements, pattern::CategorySet::DATE_TIME_OFFSET, "Instant")?;
+
+    let state = pattern::parse_to_state(&elements, s).into_value_err()?;
+
+    let offset = state
+        .offset_secs
+        .ok_or_value_err("Instant.parse() pattern must include an offset field (x/X)")?;
+
+    let year = state.year.ok_or_value_err(
+        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
+    )?;
+    let month = state.month.ok_or_value_err(
+        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
+    )?;
+    let day = state.day.ok_or_value_err(
+        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
+    )?;
+
+    let date = Date::new(year, month, day).ok_or_value_err("Invalid date")?;
+
+    let hour = state.hour.unwrap_or(0);
+    let minute = state.minute.unwrap_or(0);
+    let second = state.second.unwrap_or(0);
+
+    if hour >= 24 || minute >= 60 || second >= 60 {
+        raise_value_err("Invalid time")?;
+    }
+
+    let time = Time {
+        hour,
+        minute,
+        second,
+        subsec: state.nanos,
+    };
+
+    // offset is already validated (scalar::Offset) — no range check needed here.
+    Instant::from_datetime(date, time)
+        .offset(-offset)
+        .ok_or_range_err()?
+        .to_obj(cls)
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     method0!(Instant, __copy__, c""),
     method1!(Instant, __deepcopy__, c""),
@@ -765,6 +868,9 @@ static mut METHODS: &[PyMethodDef] = &[
     method_vararg!(Instant, to_fixed_offset, doc::EXACTTIME_TO_FIXED_OFFSET),
     method1!(Instant, difference, doc::EXACTTIME_DIFFERENCE),
     method_kwargs!(Instant, round, doc::INSTANT_ROUND),
+    method1!(Instant, format, doc::INSTANT_FORMAT),
+    method1!(Instant, __format__, c""),
+    classmethod_kwargs!(Instant, parse, doc::INSTANT_PARSE),
     classmethod_kwargs!(Instant, __get_pydantic_core_schema__, doc::PYDANTIC_SCHEMA),
     PyMethodDef::zeroed(),
 ];
