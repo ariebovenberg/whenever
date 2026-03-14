@@ -96,6 +96,8 @@ class TestTZifFiles:
         # a timestamp out of the range of the file should return the last offset (best guess)
         assert tzif.offset_for_instant(3_155_760_000) == 3600
         assert tzif.ambiguity_for_local(4_000_000_000) == Unambiguous(3600)
+        # meta_for_instant after last transition with no POSIX string: falls back to last entry
+        assert tzif.meta_for_instant(4_000_000_000) == (0, "CET")
 
     def test_clamp_transitions_to_range(self):
         """Test clamping of out-of-range transitions"""

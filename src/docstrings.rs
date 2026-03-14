@@ -610,6 +610,16 @@ Inverse of :meth:`parse_iso`.
 >>> Date(1992, 9, 4).format_iso(basic=True)
 '19920904'
 ";
+pub(crate) const DATE_FORMAT: &CStr = c"\
+format($self, pattern, /)
+--
+
+Format as a custom pattern string.";
+pub(crate) const DATE_PARSE: &CStr = c"\
+parse($type, s, /, *, format)
+--
+
+Parse a date from a custom pattern string.";
 pub(crate) const DATE_FROM_PY_DATE: &CStr = c"\
 Create from a :class:`~datetime.date`
 
@@ -2315,3 +2325,55 @@ pub(crate) const PLAIN_DIFF_UNAWARE_MSG: &CStr = c"Calculating the difference be
 pub(crate) const PLAIN_SHIFT_UNAWARE_MSG: &CStr = c"Shifting a PlainDateTime by exact time units does not account for timezone transitions that may occur in the interval (e.g. adding 2 hours to 2023-03-26 01:30 in Amsterdam crosses the spring-forward transition, so only 1 real hour has passed). Use .assume_tz('<tz>') + delta if you know the timezone. Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, or with Python's standard warning filters.";
 pub(crate) const ZONEINFO_NO_KEY_MSG: &CStr = c"Can't determine the IANA timezone ID of the given datetime: The 'key' attribute of the datetime's ZoneInfo object is None. 
 This typically means the ZoneInfo object represents the system timezone with an unknown ID. As an alternative, you can use OffsetDateTime.from_py_datetime(), but be aware this is a lossy conversion that only preserves the current UTC offset and discards future daylight saving rules. Please note that a timezone abbreviation like 'CEST' from datetime.tzname() is not a valid IANA timezone ID and cannot be used here.";
+
+// Custom format/parse docstrings (temporary, will be regenerated)
+pub(crate) const TIME_FORMAT: &CStr = c"\
+format($self, pattern, /)
+--
+
+Format as a custom pattern string.";
+pub(crate) const TIME_PARSE: &CStr = c"\
+parse($type, s, /, *, format)
+--
+
+Parse a time from a custom pattern string.";
+pub(crate) const INSTANT_FORMAT: &CStr = c"\
+format($self, pattern, /)
+--
+
+Format as a custom pattern string.";
+pub(crate) const INSTANT_PARSE: &CStr = c"\
+parse($type, s, /, *, format)
+--
+
+Parse an instant from a custom pattern string.";
+pub(crate) const OFFSETDATETIME_FORMAT: &CStr = c"\
+format($self, pattern, /)
+--
+
+Format as a custom pattern string.";
+pub(crate) const OFFSETDATETIME_PARSE: &CStr = c"\
+parse($type, s, /, *, format)
+--
+
+Parse an offset datetime from a custom pattern string.";
+pub(crate) const PLAINDATETIME_FORMAT: &CStr = c"\
+format($self, pattern, /)
+--
+
+Format as a custom pattern string.";
+pub(crate) const PLAINDATETIME_PARSE: &CStr = c"\
+parse($type, s, /, *, format)
+--
+
+Parse a plain datetime from a custom pattern string.";
+pub(crate) const ZONEDDATETIME_FORMAT: &CStr = c"\
+format($self, pattern, /)
+--
+
+Format as a custom pattern string.";
+pub(crate) const ZONEDDATETIME_PARSE: &CStr = c"\
+parse($type, s, /, *, format, disambiguate='compatible')
+--
+
+Parse a zoned datetime from a custom pattern string.";

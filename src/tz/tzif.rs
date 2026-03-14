@@ -438,6 +438,11 @@ impl fmt::Display for ErrorCause {
 type ParseResult<T> = Result<T, ErrorCause>;
 
 /// Check whether a TZ ID has a valid format (not whether it actually exists though).
+/// Returns `true` for characters that can appear in an IANA timezone ID.
+pub(crate) fn is_tz_id_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'-' | b'+' | b'.')
+}
+
 pub(crate) fn is_valid_key(key: &str) -> bool {
     let Some(&first) = key.as_bytes().first() else {
         return false; // empty is invalid
@@ -451,12 +456,7 @@ pub(crate) fn is_valid_key(key: &str) -> bool {
         // Here we eliminate most "nasty" characters like null bytes,
         // or invalid path characters.
         // Note this is a more relaxed check than the TZDB uses.
-        && key.as_bytes().iter().all(|&b| b.is_ascii_alphanumeric()
-            || b == b'_'
-            || b == b'-'
-            || b == b'+'
-            || b == b'/'
-            || b == b'.')
+        && key.as_bytes().iter().all(|&b| is_tz_id_char(b))
         // Some specific sequences are not allowed, that'd mess up path traversal.
         // These checks re-scan the string. Somewhat inefficient,
         // but fine for small strings

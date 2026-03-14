@@ -150,7 +150,7 @@ const ASCII_STR_KIND: c_uint = 1;
 
 impl PyAsciiStrBuilder {
     /// Create a new builder for a string of the given length.
-    fn new(len: usize) -> PyResult<Self> {
+    pub(crate) fn new(len: usize) -> PyResult<Self> {
         let obj = unsafe { PyUnicode_New(len as _, 127) }.rust_owned()?;
         debug_assert!(unsafe { PyUnicode_KIND(obj.as_ptr()) == ASCII_STR_KIND });
         Ok(Self {
@@ -163,7 +163,7 @@ impl PyAsciiStrBuilder {
     }
 
     /// Finalize the builder and return the built `str` object.
-    fn finish(self) -> Owned<PyObj> {
+    pub(crate) fn finish(self) -> Owned<PyObj> {
         #[cfg(debug_assertions)]
         assert_eq!(self.index, self._len); // DEBUG: full length written
         self.obj

@@ -525,14 +525,13 @@ mod tests {
 
     #[test]
     fn fixed_offset() {
-        fn test(s: &[u8], expected: i32) {
+        fn test(s: &[u8], expected: i32, abbrev: &[u8]) {
             assert_eq!(
                 TzStr::parse(s).unwrap(),
                 TzStr {
                     std: expected.try_into().unwrap(),
                     dst: None,
-                    std_abbrev: TzAbbrev::EMPTY,
-                    dst_abbrev: TzAbbrev::EMPTY,
+                    std_abbrev: TzAbbrev::from_bytes(abbrev).unwrap(),
                 },
                 "{:?} -> {}",
                 unsafe { std::str::from_utf8_unchecked(s) },
@@ -540,27 +539,27 @@ mod tests {
             );
         }
 
-        let cases: &[(&[u8], i32)] = &[
-            (b"FOO1", -3600),
-            (b"FOOS0", 0),
-            (b"FOO+01", -3600),
-            (b"FOO+01:30", -3600 - 30 * 60),
-            (b"FOO+01:30:59", -3600 - 30 * 60 - 59),
-            (b"FOOM+23:59:59", -86_399),
-            (b"FOOS-23:59:59", 86_399),
-            (b"FOOBLA-23:59", 23 * 3600 + 59 * 60),
-            (b"FOO-23", 23 * 3600),
-            (b"FOO-01", 3600),
-            (b"FOO-01:30", 3600 + 30 * 60),
-            (b"FOO-01:30:59", 3600 + 30 * 60 + 59),
-            (b"FOO+23:59:59", -86_399),
-            (b"FOO+23:59", -23 * 3600 - 59 * 60),
-            (b"FOO+23", -23 * 3600),
-            (b"<FOO>-3", 3 * 3600),
+        let cases: &[(&[u8], i32, &[u8])] = &[
+            (b"FOO1", -3600, b"FOO"),
+            (b"FOOS0", 0, b"FOOS"),
+            (b"FOO+01", -3600, b"FOO"),
+            (b"FOO+01:30", -3600 - 30 * 60, b"FOO"),
+            (b"FOO+01:30:59", -3600 - 30 * 60 - 59, b"FOO"),
+            (b"FOOM+23:59:59", -86_399, b"FOOM"),
+            (b"FOOS-23:59:59", 86_399, b"FOOS"),
+            (b"FOOBLA-23:59", 23 * 3600 + 59 * 60, b"FOOBLA"),
+            (b"FOO-23", 23 * 3600, b"FOO"),
+            (b"FOO-01", 3600, b"FOO"),
+            (b"FOO-01:30", 3600 + 30 * 60, b"FOO"),
+            (b"FOO-01:30:59", 3600 + 30 * 60 + 59, b"FOO"),
+            (b"FOO+23:59:59", -86_399, b"FOO"),
+            (b"FOO+23:59", -23 * 3600 - 59 * 60, b"FOO"),
+            (b"FOO+23", -23 * 3600, b"FOO"),
+            (b"<FOO>-3", 3 * 3600, b"FOO"),
         ];
 
-        for &(s, expected) in cases {
-            test(s, expected);
+        for &(s, expected, abbrev) in cases {
+            test(s, expected, abbrev);
         }
     }
 
@@ -584,10 +583,10 @@ mod tests {
                             10.try_into().unwrap()
                         ),
                         DEFAULT_RULE_TIME
-                    )
+                    ),
+                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
                 }),
-                std_abbrev: TzAbbrev::EMPTY,
-                dst_abbrev: TzAbbrev::EMPTY,
+                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
             }
         );
         // Explicit DST offset
@@ -608,10 +607,10 @@ mod tests {
                             10.try_into().unwrap()
                         ),
                         DEFAULT_RULE_TIME
-                    )
+                    ),
+                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
                 }),
-                std_abbrev: TzAbbrev::EMPTY,
-                dst_abbrev: TzAbbrev::EMPTY,
+                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
             }
         );
         // Explicit time, weekday rule
@@ -632,10 +631,10 @@ mod tests {
                             10.try_into().unwrap()
                         ),
                         DEFAULT_RULE_TIME
-                    )
+                    ),
+                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
                 }),
-                std_abbrev: TzAbbrev::EMPTY,
-                dst_abbrev: TzAbbrev::EMPTY,
+                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
             }
         );
         // Explicit time, Julian day rule
@@ -656,10 +655,10 @@ mod tests {
                             10.try_into().unwrap()
                         ),
                         3 * 3_600
-                    )
+                    ),
+                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
                 }),
-                std_abbrev: TzAbbrev::EMPTY,
-                dst_abbrev: TzAbbrev::EMPTY,
+                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
             }
         );
         // Explicit time, day-of-year rule
@@ -673,10 +672,10 @@ mod tests {
                         Rule::DayOfYear(24.try_into().unwrap()),
                         8 * 3_600 + 34 * 60 + 1
                     ),
-                    end: (Rule::JulianDayOfYear(1.try_into().unwrap()), 0)
+                    end: (Rule::JulianDayOfYear(1.try_into().unwrap()), 0),
+                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
                 }),
-                std_abbrev: TzAbbrev::EMPTY,
-                dst_abbrev: TzAbbrev::EMPTY,
+                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
             }
         );
         // Explicit time, zeroth day of year
@@ -690,10 +689,10 @@ mod tests {
                         Rule::DayOfYear(1.try_into().unwrap()),
                         8 * 3_600 + 34 * 60 + 1
                     ),
-                    end: (Rule::JulianDayOfYear(1.try_into().unwrap()), 0)
+                    end: (Rule::JulianDayOfYear(1.try_into().unwrap()), 0),
+                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
                 }),
-                std_abbrev: TzAbbrev::EMPTY,
-                dst_abbrev: TzAbbrev::EMPTY,
+                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
             }
         );
         // 24:00:00 is a valid time for a rule
@@ -714,10 +713,10 @@ mod tests {
                             10.try_into().unwrap()
                         ),
                         DEFAULT_RULE_TIME
-                    )
+                    ),
+                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
                 }),
-                std_abbrev: TzAbbrev::EMPTY,
-                dst_abbrev: TzAbbrev::EMPTY,
+                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
             }
         );
         // Anything between -167 and 167 hours is also valid!
@@ -738,10 +737,10 @@ mod tests {
                             10.try_into().unwrap()
                         ),
                         100 * 3_600
-                    )
+                    ),
+                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
                 }),
-                std_abbrev: TzAbbrev::EMPTY,
-                dst_abbrev: TzAbbrev::EMPTY,
+                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
             }
         );
     }
@@ -878,7 +877,6 @@ mod tests {
             std: 1234.try_into().unwrap(),
             dst: None,
             std_abbrev: TzAbbrev::EMPTY,
-            dst_abbrev: TzAbbrev::EMPTY,
         };
         // A TZ with random-ish DST rules
         let tz = TzStr {
@@ -893,9 +891,9 @@ mod tests {
                     Rule::JulianDayOfYear(281.try_into().unwrap()),
                     DEFAULT_RULE_TIME,
                 ),
+                abbrev: TzAbbrev::from_bytes(b"DST").unwrap(),
             }),
             std_abbrev: TzAbbrev::EMPTY,
-            dst_abbrev: TzAbbrev::EMPTY,
         };
         // A TZ with DST time rules that are very large, or negative!
         let tz_weirdtime = TzStr {
@@ -907,9 +905,9 @@ mod tests {
                     50 * 3_600,
                 ),
                 end: (Rule::JulianDayOfYear(281.try_into().unwrap()), -2 * 3_600),
+                abbrev: TzAbbrev::from_bytes(b"DST").unwrap(),
             }),
             std_abbrev: TzAbbrev::EMPTY,
-            dst_abbrev: TzAbbrev::EMPTY,
         };
         // A TZ with DST rules that are 00:00:00
         let tz00 = TzStr {
@@ -918,9 +916,9 @@ mod tests {
                 offset: 9300.try_into().unwrap(),
                 start: (Rule::LastWeekday(Weekday::Sunday, 3.try_into().unwrap()), 0),
                 end: (Rule::JulianDayOfYear(281.try_into().unwrap()), 0),
+                abbrev: TzAbbrev::from_bytes(b"DST").unwrap(),
             }),
             std_abbrev: TzAbbrev::EMPTY,
-            dst_abbrev: TzAbbrev::EMPTY,
         };
         // A TZ with a DST offset smaller than the standard offset (theoretically possible)
         let tz_neg = TzStr {
@@ -932,9 +930,9 @@ mod tests {
                     DEFAULT_RULE_TIME,
                 ),
                 end: (Rule::JulianDayOfYear(281.try_into().unwrap()), 4 * 3_600),
+                abbrev: TzAbbrev::from_bytes(b"DST").unwrap(),
             }),
             std_abbrev: TzAbbrev::EMPTY,
-            dst_abbrev: TzAbbrev::EMPTY,
         };
         // Some timezones have DST end before start
         let tz_inverted = TzStr {
@@ -945,10 +943,10 @@ mod tests {
                     Rule::LastWeekday(Weekday::Sunday, 3.try_into().unwrap()),
                     DEFAULT_RULE_TIME,
                 ),
-                start: (Rule::JulianDayOfYear(281.try_into().unwrap()), 4 * 3_600), // oct 8th
+                start: (Rule::JulianDayOfYear(281.try_into().unwrap()), 4 * 3_600), // oct 8th,
+                abbrev: TzAbbrev::from_bytes(b"DST").unwrap(),
             }),
             std_abbrev: TzAbbrev::EMPTY,
-            dst_abbrev: TzAbbrev::EMPTY,
         };
         // Some timezones appear to be "always DST", like Africa/Casablanca
         let tz_always_dst = TzStr {
@@ -957,9 +955,9 @@ mod tests {
                 offset: 3600.try_into().unwrap(),
                 start: (Rule::DayOfYear(1.try_into().unwrap()), 0),
                 end: (Rule::JulianDayOfYear(365.try_into().unwrap()), 23 * 3600),
+                abbrev: TzAbbrev::from_bytes(b"DST").unwrap(),
             }),
             std_abbrev: TzAbbrev::EMPTY,
-            dst_abbrev: TzAbbrev::EMPTY,
         };
 
         fn to_epoch_s(d: Date, t: Time, offset: Offset) -> EpochSecs {

@@ -1,6 +1,9 @@
 # Changelog
 
-## 0.10.0 (2026-??-??)
+## 0.10.0a1 (2026-03-16)
+
+A big release with several breaking changes and improvements. Highlights
+are the new delta API and customizable string formatting and parsing. See the full list below.
 
 **Breaking changes**
 
@@ -97,6 +100,11 @@
 - New `TimeDelta.add()` and `TimeDelta.subtract()` methods. The operators
   `+` and `-` were supported already, but these methods make it easier
   for simple operations, as well as making the API more consistent with other classes.
+- New `format()` and `parse()` methods on `Date`, `Time`, `PlainDateTime`,
+  `OffsetDateTime`, `ZonedDateTime`, and `Instant` for custom format/parse
+  patterns. Example:
+  `Date(2024, 3, 15).format("YYYY/MM/DD")` → `"2024/03/15"`.
+  See the `pattern format documentation <pattern-format>` for details.
 - New `OffsetDateTime.assume_tz()` method for associating an offset datetime
   with a timezone.
 - `round()` methods now support larger and irregular values for `increment`.
@@ -114,9 +122,6 @@
   `ignore_timezone_unaware_arithmetic_warning()`,
   `ignore_days_not_always_24h_warning()`) for fine-grained control
   over DST-related warnings.
-
-**Improved**
-
 - A huge revamp and expansion of the documentation.
   The structure and navigability of API reference and overview pages
   has been improved. Several new pages have been added, including:

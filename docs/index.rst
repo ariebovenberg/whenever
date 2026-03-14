@@ -27,6 +27,7 @@
    :hidden:
 
    reference/iso8601.rst
+   reference/pattern-format
    reference/datetime.rst
    reference/partial-types
    reference/deltas.rst

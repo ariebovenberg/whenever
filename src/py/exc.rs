@@ -101,6 +101,18 @@ impl<T> OptionExt<T> for Option<T> {
     }
 }
 
+/// Extension trait for converting `Result<T, String>` into `PyResult<T>`,
+/// treating the `String` error as a Python `ValueError` message.
+pub(crate) trait ResultExt<T> {
+    fn into_value_err(self) -> PyResult<T>;
+}
+
+impl<T> ResultExt<T> for Result<T, String> {
+    fn into_value_err(self) -> PyResult<T> {
+        self.map_err(|e| value_err(e))
+    }
+}
+
 pub(crate) fn raise_type_err<T, U: ToPy>(msg: U) -> PyResult<T> {
     raise(unsafe { PyExc_TypeError }, msg)
 }
