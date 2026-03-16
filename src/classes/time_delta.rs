@@ -948,6 +948,14 @@ fn in_days_of_24h(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
 }
 
 fn from_py_timedelta(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
+    let &State {
+        warn_deprecation, ..
+    } = cls.state();
+    warn_with_class(
+        warn_deprecation,
+        c"from_py_timedelta() is deprecated. Use TimeDelta() constructor instead.",
+        1,
+    )?;
     if let Some(d) = arg.cast_exact::<PyTimeDelta>() {
         TimeDelta::from_py(d).ok_or_range_err()?.to_obj(cls)
     } else {
@@ -956,7 +964,7 @@ fn from_py_timedelta(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
     }
 }
 
-fn py_timedelta(cls: HeapType<TimeDelta>, slf: TimeDelta) -> *mut PyObject {
+fn to_stdlib(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     let TimeDelta { subsec, secs } = slf;
     let &PyDateTime_CAPI {
         Delta_FromDelta,
@@ -973,6 +981,19 @@ fn py_timedelta(cls: HeapType<TimeDelta>, slf: TimeDelta) -> *mut PyObject {
             DeltaType,
         )
     }
+    .rust_owned()
+}
+
+fn py_timedelta(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+    let &State {
+        warn_deprecation, ..
+    } = cls.state();
+    warn_with_class(
+        warn_deprecation,
+        c"py_timedelta() is deprecated. Use to_stdlib() instead.",
+        1,
+    )?;
+    to_stdlib(cls, slf)
 }
 
 fn in_hrs_mins_secs_nanos(_: PyType, slf: TimeDelta) -> PyResult<Owned<PyTuple>> {
@@ -1430,6 +1451,7 @@ static mut METHODS: &[PyMethodDef] = &[
         from_py_timedelta,
         doc::TIMEDELTA_FROM_PY_TIMEDELTA
     ),
+    method0!(TimeDelta, to_stdlib, doc::TIMEDELTA_TO_STDLIB),
     method0!(TimeDelta, py_timedelta, doc::TIMEDELTA_PY_TIMEDELTA),
     method0!(
         TimeDelta,

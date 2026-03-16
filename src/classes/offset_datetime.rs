@@ -627,8 +627,21 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     .to_obj(state.offset_datetime_type)
 }
 
-fn py_datetime(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyResult<Owned<PyDateTime>> {
+fn to_stdlib(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     slf.to_py(cls.state().py_api)
+        .map(|owned| owned.map(|dt| dt.as_py_obj()))
+}
+
+fn py_datetime(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+    let &State {
+        warn_deprecation, ..
+    } = cls.state();
+    warn_with_class(
+        warn_deprecation,
+        c"py_datetime() is deprecated. Use to_stdlib() instead.",
+        1,
+    )?;
+    to_stdlib(cls, slf)
 }
 
 fn date(cls: HeapType<OffsetDateTime>, OffsetDateTime { date, .. }: OffsetDateTime) -> PyReturn {
@@ -827,6 +840,14 @@ fn now(cls: HeapType<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
 }
 
 fn from_py_datetime(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn {
+    let &State {
+        warn_deprecation, ..
+    } = cls.state();
+    warn_with_class(
+        warn_deprecation,
+        c"from_py_datetime() is deprecated. Use OffsetDateTime() constructor instead.",
+        1,
+    )?;
     if let Some(py_dt) = arg.cast_allow_subclass::<PyDateTime>() {
         OffsetDateTime::from_py(py_dt)?.to_obj(cls)
     } else {
@@ -1416,6 +1437,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(OffsetDateTime, __reduce__, c""),
     classmethod_kwargs!(OffsetDateTime, now, doc::OFFSETDATETIME_NOW),
     method1!(OffsetDateTime, exact_eq, doc::EXACTTIME_EXACT_EQ),
+    method0!(OffsetDateTime, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
     method0!(
         OffsetDateTime,
         py_datetime,

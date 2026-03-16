@@ -465,7 +465,7 @@ impl ExactUnit {
     }
 
     pub(crate) fn parse_py_number(self, v: PyObj) -> PyResult<TimeDelta> {
-        // TODO OPTIMIZE: special case for nanoseconds. The rest only needs i64.
+        // OPTIMIZE: special case for nanoseconds. The rest only needs i64.
 
         if let Some(i) = v.cast_allow_subclass::<PyInt>() {
             self.parse_py_int(i)

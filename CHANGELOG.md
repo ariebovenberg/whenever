@@ -77,6 +77,12 @@ are the new delta API and customizable string formatting and parsing. See the fu
   Instead, use the `-` subtraction operator, or the new `since()` method.
 - `Date.days_since()` and `Date.days_until()` are deprecated.
   Use `since()` and `until()` with `unit='days'` instead.
+- `py_date()`, `py_time()`, `py_datetime()`, and `py_timedelta()` are
+  deprecated. Use the new `to_stdlib()` method instead, which provides a
+  consistent name across all types.
+- `from_py_date()`, `from_py_time()`, `from_py_datetime()`, and
+  `from_py_timedelta()` are deprecated.
+  Use the constructor directly instead (e.g. `Date(datetime.date(...))`).
 - The `round()` methods are stricter about keyword-only and positional-only arguments.
 
 - A huge revamp and expansion of the documentation.

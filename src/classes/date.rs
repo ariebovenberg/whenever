@@ -364,11 +364,31 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn py_date(cls: HeapType<Date>, slf: Date) -> PyReturn {
+fn to_stdlib(cls: HeapType<Date>, slf: Date) -> PyReturn {
     slf.to_py(cls.state().py_api)
 }
 
+fn py_date(cls: HeapType<Date>, slf: Date) -> PyReturn {
+    let &State {
+        warn_deprecation, ..
+    } = cls.state();
+    warn_with_class(
+        warn_deprecation,
+        c"py_date() is deprecated. Use to_stdlib() instead.",
+        1,
+    )?;
+    to_stdlib(cls, slf)
+}
+
 fn from_py_date(cls: HeapType<Date>, arg: PyObj) -> PyReturn {
+    let &State {
+        warn_deprecation, ..
+    } = cls.state();
+    warn_with_class(
+        warn_deprecation,
+        c"from_py_date() is deprecated. Use Date() constructor instead.",
+        1,
+    )?;
     Date::from_py(
         arg.cast_allow_subclass::<PyDate>()
             .ok_or_type_err("argument must be a datetime.date")?,
@@ -899,6 +919,7 @@ fn parse(cls: HeapType<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetu
 }
 
 static mut METHODS: &mut [PyMethodDef] = &mut [
+    method0!(Date, to_stdlib, doc::DATE_TO_STDLIB),
     method0!(Date, py_date, doc::DATE_PY_DATE),
     method_kwargs!(Date, format_iso, doc::DATE_FORMAT_ISO),
     classmethod0!(Date, today_in_system_tz, doc::DATE_TODAY_IN_SYSTEM_TZ),

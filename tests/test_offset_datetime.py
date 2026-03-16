@@ -785,15 +785,15 @@ class TestComparison:
         ),
     ],
 )
-def test_py_datetime(d: OffsetDateTime, expect: py_datetime):
-    assert d.py_datetime() == expect
+def test_to_stdlib(d: OffsetDateTime, expect: py_datetime):
+    assert d.to_stdlib() == expect
 
 
 class _MyDatetime(py_datetime):
     pass
 
 
-class TestFromPyDatetime:
+class TestInitFromPy:
 
     @pytest.mark.parametrize(
         "d, expect",
@@ -841,21 +841,14 @@ class TestFromPyDatetime:
         ],
     )
     def test_valid(self, d: py_datetime, expect: OffsetDateTime):
-        assert OffsetDateTime.from_py_datetime(d).exact_eq(expect)
         assert OffsetDateTime(d).exact_eq(expect)
 
     def test_naive(self):
-        with pytest.raises(ValueError, match="naive"):
-            OffsetDateTime.from_py_datetime(py_datetime(12, 3, 4, 12))
-
         with pytest.raises(ValueError, match="naive"):
             OffsetDateTime(py_datetime(12, 3, 4, 12))
 
     def test_out_of_range(self):
         d = py_datetime(1, 1, 1, tzinfo=timezone(timedelta(hours=5)))
-        with pytest.raises(ValueError, match="range"):
-            OffsetDateTime.from_py_datetime(d)
-
         with pytest.raises(ValueError, match="range"):
             OffsetDateTime(d)
 
@@ -864,11 +857,6 @@ class TestFromPyDatetime:
         class MyTz(tzinfo):
             def utcoffset(self, _):
                 return None
-
-        with pytest.raises(ValueError, match="naive"):
-            OffsetDateTime.from_py_datetime(
-                py_datetime(2020, 8, 15, tzinfo=MyTz())  # type: ignore[abstract]
-            )
 
         with pytest.raises(ValueError, match="naive"):
             OffsetDateTime(
@@ -886,9 +874,6 @@ class TestFromPyDatetime:
             987_654,
             tzinfo=timezone(timedelta(hours=2, microseconds=30)),
         )
-        with pytest.raises(ValueError, match="[Ss]ub-second"):
-            OffsetDateTime.from_py_datetime(py_dt)
-
         with pytest.raises(ValueError, match="[Ss]ub-second"):
             OffsetDateTime(py_dt)
 
@@ -952,7 +937,7 @@ class TestNow:
             now = OffsetDateTime.now(hours(5))
             assert now.offset == hours(5)
             py_now = py_datetime.now(timezone.utc)
-            assert py_now - now.py_datetime() < timedelta(seconds=1)
+            assert py_now - now.to_stdlib() < timedelta(seconds=1)
 
             # ignore_dst deprecated
             with pytest.warns(WheneverDeprecationWarning, match="ignore_dst"):
@@ -966,7 +951,7 @@ class TestNow:
         now = OffsetDateTime.now(-5)
         assert now.offset == hours(-5)
         py_now = py_datetime.now(timezone.utc)
-        assert py_now - now.py_datetime() < timedelta(seconds=1)
+        assert py_now - now.to_stdlib() < timedelta(seconds=1)
 
 
 def test_replace():
@@ -1334,7 +1319,7 @@ def test_pickle():
         2020, 8, 15, 23, 12, 9, nanosecond=987_654_321, offset=3
     )
     dumped = pickle.dumps(d)
-    assert len(dumped) <= len(pickle.dumps(d.py_datetime()))
+    assert len(dumped) <= len(pickle.dumps(d.to_stdlib()))
     assert pickle.loads(pickle.dumps(d)).exact_eq(d)
 
 
@@ -2176,6 +2161,45 @@ class TestSince:
         result = a.since(b, unit="years")
         assert isinstance(result, int)
         assert result == 2
+
+
+class TestDeprecations:
+    def test_py_datetime(self):
+        d = OffsetDateTime(
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654_000, offset=2
+        )
+        with pytest.warns(WheneverDeprecationWarning):
+            result = d.py_datetime()
+        assert result == py_datetime(
+            2020,
+            8,
+            15,
+            23,
+            12,
+            9,
+            987_654,
+            tzinfo=timezone(timedelta(hours=2)),
+        )
+
+    def test_from_py_datetime(self):
+        with pytest.warns(WheneverDeprecationWarning):
+            result = OffsetDateTime.from_py_datetime(
+                py_datetime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=timezone(timedelta(hours=2)),
+                )
+            )
+        assert result.exact_eq(
+            OffsetDateTime(
+                2020, 8, 15, 23, 12, 9, nanosecond=987_654_000, offset=2
+            )
+        )
 
 
 def test_cannot_subclass():
