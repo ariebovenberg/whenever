@@ -18,7 +18,7 @@ use crate::{
     pymodule::State,
 };
 
-// TODO: later: why do these have to be unsigned?
+// TODO DRY: unify these, and use the right int types
 // u64 because ItemizedDelta's MAX_MINUTES/MAX_SECONDS exceed u32::MAX
 pub(crate) const MAX_YEARS: u64 = Year::MAX.get() as u64;
 pub(crate) const MAX_MONTHS: u64 = MAX_YEARS * 12;

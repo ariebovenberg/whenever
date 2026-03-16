@@ -422,9 +422,23 @@ class Date(_Base):
             _datetime.combine(self._py_date, t._py), t._nanos
         )
 
-    def py_date(self) -> _date:
+    def to_stdlib(self) -> _date:
         """Convert to a standard library :class:`~datetime.date`"""
         return self._py_date
+
+    def py_date(self) -> _date:
+        """Convert to a standard library :class:`~datetime.date`
+
+        .. deprecated:: 0.10.0
+
+            Use :meth:`to_stdlib` instead.
+        """
+        warn(
+            "py_date() is deprecated; use to_stdlib() instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
+        return self.to_stdlib()
 
     @classmethod
     def from_py_date(cls, d: _date, /) -> Date:
@@ -432,10 +446,17 @@ class Date(_Base):
 
         >>> Date.from_py_date(date(2021, 1, 2))
         Date("2021-01-02")
+
+        .. deprecated:: 0.10.0
+
+            Use the constructor ``Date(d)`` instead.
         """
-        self = _object_new(cls)
-        self._init_from_py(d)
-        return self
+        warn(
+            "from_py_date() is deprecated; use Date() instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
+        return cls(d)
 
     def _init_from_py(self, d: _date) -> None:
         if type(d) is _date:
@@ -1390,6 +1411,11 @@ class Time(_Base):
     >>> Time(time(12, 30, 0))
     Time("12:30:00")
 
+    Note
+    ----
+    When constructing from a :class:`~datetime.time`, the ``fold``
+    attribute and ``tzinfo`` are ignored.
+
     Sub-second precision up to nanoseconds is supported:
 
     >>> Time(12, 30, 0, nanosecond=1)
@@ -1504,9 +1530,29 @@ class Time(_Base):
             self._nanos,
         )
 
-    def py_time(self) -> _time:
-        """Convert to a standard library :class:`~datetime.time`"""
+    def to_stdlib(self) -> _time:
+        """Convert to a standard library :class:`~datetime.time`
+
+        Note
+        ----
+        Nanoseconds are truncated to microseconds.
+        If you need more control over rounding, use :meth:`round` first.
+        """
         return self._py.replace(microsecond=self._nanos // 1_000)
+
+    def py_time(self) -> _time:
+        """Convert to a standard library :class:`~datetime.time`
+
+        .. deprecated:: 0.10.0
+
+            Use :meth:`to_stdlib` instead.
+        """
+        warn(
+            "py_time() is deprecated; use to_stdlib() instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
+        return self.to_stdlib()
 
     @classmethod
     def from_py_time(cls, t: _time, /) -> Time:
@@ -1515,11 +1561,16 @@ class Time(_Base):
         >>> Time.from_py_time(time(12, 30, 0))
         Time(12:30:00)
 
-        `fold` value is ignored.
+        .. deprecated:: 0.10.0
+
+            Use the constructor ``Time(t)`` instead.
         """
-        self = _object_new(cls)
-        self._init_from_py(t)
-        return self
+        warn(
+            "from_py_time() is deprecated; use Time() instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
+        return cls(t)
 
     def _init_from_py(self, t: _time, /) -> None:
         if type(t) is _time:
@@ -1824,6 +1875,11 @@ class TimeDelta(_Base):
 
     >>> TimeDelta("PT2h30m")
     TimeDelta("PT2h30m")
+
+    Note
+    ----
+    Subclasses of :class:`~datetime.timedelta` are not accepted,
+    because they often add additional state that cannot be represented.
 
     ``TimeDelta`` can be added to or subtracted from datetime types
     to shift them by an exact amount of time:
@@ -2235,13 +2291,11 @@ class TimeDelta(_Base):
 
         return values
 
-    def py_timedelta(self) -> _timedelta:
+    def to_stdlib(self) -> _timedelta:
         """Convert to a :class:`~datetime.timedelta`
 
-        Inverse of :meth:`from_py_timedelta`
-
         >>> d = TimeDelta(hours=1, minutes=30)
-        >>> d.py_timedelta()
+        >>> d.to_stdlib()
         timedelta(seconds=5400)
 
         Note
@@ -2250,6 +2304,20 @@ class TimeDelta(_Base):
         If you need more control over rounding, use :meth:`round` first.
         """
         return _timedelta(microseconds=self._total_ns // 1_000)
+
+    def py_timedelta(self) -> _timedelta:
+        """Convert to a :class:`~datetime.timedelta`
+
+        .. deprecated:: 0.10.0
+
+            Use :meth:`to_stdlib` instead.
+        """
+        warn(
+            "py_timedelta() is deprecated; use to_stdlib() instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
+        return self.to_stdlib()
 
     def _init_from_py(self, td: _timedelta, /) -> None:
         if type(td) is not _timedelta:
@@ -2266,20 +2334,19 @@ class TimeDelta(_Base):
     def from_py_timedelta(cls, td: _timedelta, /) -> TimeDelta:
         """Create from a :class:`~datetime.timedelta`
 
-        Inverse of :meth:`py_timedelta`
-
         >>> TimeDelta.from_py_timedelta(timedelta(seconds=5400))
         TimeDelta("PT1h30m")
 
-        Note
-        ----
-        Subclasses of :class:`~datetime.timedelta` are not accepted
-        because they often add additional state that cannot be represented
-        in a :class:`TimeDelta`.
+        .. deprecated:: 0.10.0
+
+            Use the constructor ``TimeDelta(td)`` instead.
         """
-        self = _object_new(cls)
-        self._init_from_py(td)
-        return self
+        warn(
+            "from_py_timedelta() is deprecated; use TimeDelta() instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
+        return cls(td)
 
     def format_iso(self) -> str:
         """Format as the *popular interpretation* of the ISO 8601 duration format.
@@ -5246,10 +5313,13 @@ class _BasicConversions(_Base, ABC):
     _nanos: int
 
     @classmethod
-    @abstractmethod
     def from_py_datetime(cls: type[_T], d: _datetime, /) -> _T:
         """Create an instance from a :class:`~datetime.datetime` object.
-        Inverse of :meth:`py_datetime`.
+
+        .. deprecated:: 0.10.0
+
+            Use the constructor instead (e.g. ``Instant(d)``,
+            ``ZonedDateTime(d)``, etc.)
 
         Note
         ----
@@ -5264,8 +5334,14 @@ class _BasicConversions(_Base, ABC):
         No exceptions are raised if the datetime is ambiguous.
         Its ``fold`` attribute is used to disambiguate.
         """
+        warn(
+            "from_py_datetime() is deprecated; use the constructor instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
+        return cls(d)
 
-    def py_datetime(self) -> _datetime:
+    def to_stdlib(self) -> _datetime:
         """Convert to a standard library :class:`~datetime.datetime`
 
         Note
@@ -5273,11 +5349,25 @@ class _BasicConversions(_Base, ABC):
         - Nanoseconds are truncated to microseconds.
           If you wish to customize the rounding behavior, use
           the ``round()`` method first.
-        - In case of a ZonedDateTime linked to a system timezone without a
+        - For :class:`ZonedDateTime` linked to a system timezone without a
           IANA timezone ID, the returned Python datetime will have
           a fixed offset (:class:`~datetime.timezone` tzinfo)
         """
         return self._py_dt.replace(microsecond=self._nanos // 1_000)
+
+    def py_datetime(self) -> _datetime:
+        """Convert to a standard library :class:`~datetime.datetime`
+
+        .. deprecated:: 0.10.0
+
+            Use :meth:`to_stdlib` instead.
+        """
+        warn(
+            "py_datetime() is deprecated; use to_stdlib() instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
+        return self.to_stdlib()
 
     @abstractmethod
     def format_iso(self) -> str: ...
@@ -5773,16 +5863,6 @@ class Instant(_ExactTime):
             raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
         return cls._from_py_unchecked(_fromtimestamp(secs, _UTC), nanos)
-
-    @classmethod
-    def from_py_datetime(cls, d: _datetime, /) -> Instant:
-        """Create an ``Instant`` from any *aware* ``datetime`` object.
-
-        The inverse of the ``py_datetime()`` method.
-        """
-        self = _object_new(cls)
-        self._init_from_py(d)
-        return self
 
     def _init_from_py(self, d: _datetime) -> None:
         if d.tzinfo is None or d.utcoffset() is None:
@@ -6380,23 +6460,11 @@ class OffsetDateTime(_ExactAndLocalTime):
             _fromtimestamp(secs, _load_offset(offset)), nanos
         )
 
-    @classmethod
-    def from_py_datetime(cls, d: _datetime, /) -> OffsetDateTime:
-        """Create an instance from any *aware* ``datetime`` object.
-        The datetime must be aware.
-
-        The inverse of the ``py_datetime()`` method.
-
-        """
-        self = _object_new(cls)
-        self._init_from_py(d)
-        return self
-
     def _init_from_py(self, d: _datetime) -> None:
         if d.tzinfo is None or (offset := d.utcoffset()) is None:
             raise ValueError(
                 "Cannot create from a naive datetime. "
-                "Use PlainDateTime.from_py_datetime() for this."
+                "Use PlainDateTime() instead."
             )
         elif offset.microseconds:
             raise ValueError("Sub-second offsets are not supported")
@@ -7493,18 +7561,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         _tz = get_tz(tz)
         return cls._from_py_unchecked(_from_epoch(secs, _tz), nanos, _tz)
 
-    @classmethod
-    def from_py_datetime(cls, d: _datetime, /) -> ZonedDateTime:
-        """Create an instance from a standard library ``datetime`` object
-        with a ``ZoneInfo`` tzinfo.
-
-        The inverse of the ``py_datetime()`` method.
-
-        """
-        self = _object_new(cls)
-        self._init_from_py(d)
-        return self
-
     def _init_from_py(self, d: _datetime) -> None:
         from zoneinfo import ZoneInfo
 
@@ -8131,7 +8187,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             self._tz,
         )
 
-    def py_datetime(self) -> _datetime:
+    def to_stdlib(self) -> _datetime:
         if (key := self._tz.key) is None:
             # For system timezoned datetimes without a key,
             # there's nothing else we can do. This is documented behavior.
@@ -8145,6 +8201,20 @@ class ZonedDateTime(_ExactAndLocalTime):
         return self._py_dt.astimezone(ZoneInfo(key)).replace(
             microsecond=self._nanos // 1_000,
         )
+
+    def py_datetime(self) -> _datetime:
+        """Convert to a standard library :class:`~datetime.datetime`
+
+        .. deprecated:: 0.10.0
+
+            Use :meth:`to_stdlib` instead.
+        """
+        warn(
+            "py_datetime() is deprecated; use to_stdlib() instead.",
+            WheneverDeprecationWarning,
+            stacklevel=2,
+        )
+        return self.to_stdlib()
 
     # This override is technically incompatible, but it's very convenient
     # and it's not part of the public API
@@ -8389,13 +8459,6 @@ class PlainDateTime(_LocalTime):
             state.second or 0,
             nanosecond=state.nanos,
         )
-
-    @classmethod
-    def from_py_datetime(cls, d: _datetime, /) -> PlainDateTime:
-        """Create an instance from a "naive" standard library ``datetime`` object"""
-        self = _object_new(cls)
-        self._init_from_py(d)
-        return self
 
     def _init_from_py(self, d: _datetime) -> None:
         if d.tzinfo is not None:
@@ -9234,7 +9297,7 @@ def _load_offset(offset: int | TimeDelta, /) -> _timezone:
     elif isinstance(offset, TimeDelta):
         if offset._total_ns % 1_000_000_000:
             raise ValueError("Offset must be a whole number of seconds")
-        return _timezone(offset.py_timedelta())
+        return _timezone(offset.to_stdlib())
     else:
         raise TypeError(
             "offset must be an int or TimeDelta, e.g. `hours(2.5)`"

@@ -154,34 +154,26 @@ def test_month_day():
     assert d.month_day() == MonthDay(1, 2)
 
 
-def test_py_date():
+def test_to_stdlib():
     d = Date(2021, 1, 2)
-    assert d.py_date() == py_date(2021, 1, 2)
+    assert d.to_stdlib() == py_date(2021, 1, 2)
 
 
 def test_today_in_system_tz():
     d = Date.today_in_system_tz()
     # NOTE: this may fail if the test is run *exactly* at midnight.
     # Mocking this out would make things more complicated than it's worth.
-    assert d == Date.from_py_date(py_date.today())
+    assert d == Date(py_date.today())
 
 
-def test_from_py_date():
-    assert Date.from_py_date(py_date(2021, 1, 2)) == Date(2021, 1, 2)
+def test_init_from_py_date():
     assert Date(py_date(2021, 1, 2)) == Date(2021, 1, 2)
-    assert Date.from_py_date(py_datetime(2021, 1, 2, 3, 4, 5)) == Date(
-        2021, 1, 2
-    )
     assert Date(py_datetime(2021, 1, 2, 3, 4, 5)) == Date(2021, 1, 2)
 
     class CustomDate(py_date):
         pass
 
-    assert Date.from_py_date(CustomDate(2021, 1, 2)) == Date(2021, 1, 2)
     assert Date(CustomDate(2021, 1, 2)) == Date(2021, 1, 2)
-
-    with pytest.raises(TypeError):
-        Date.from_py_date(20210102)  # type: ignore[arg-type]
 
     with pytest.raises(TypeError):
         Date(20210102)  # type: ignore[call-overload]
@@ -1530,7 +1522,7 @@ def test_day_of_week():
 def test_pickling():
     d = Date(2021, 1, 2)
     dumped = pickle.dumps(d)
-    assert len(dumped) < len(pickle.dumps(d.py_date())) + 10
+    assert len(dumped) < len(pickle.dumps(d.to_stdlib())) + 10
     assert pickle.loads(dumped) == d
 
 
@@ -1551,6 +1543,19 @@ def test_copy():
 def test_singletons():
     assert Date.MIN == Date(1, 1, 1)
     assert Date.MAX == Date(9999, 12, 31)
+
+
+class TestDeprecations:
+    def test_py_date(self):
+        d = Date(2021, 1, 2)
+        with pytest.warns(WheneverDeprecationWarning):
+            result = d.py_date()
+        assert result == py_date(2021, 1, 2)
+
+    def test_from_py_date(self):
+        with pytest.warns(WheneverDeprecationWarning):
+            result = Date.from_py_date(py_date(2021, 1, 2))
+        assert result == Date(2021, 1, 2)
 
 
 def test_cannot_subclass():

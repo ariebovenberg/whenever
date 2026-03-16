@@ -1359,16 +1359,12 @@ class TestRound:
         ),
     ],
 )
-def test_py_timedelta(d, expected):
-    assert d.py_timedelta() == expected
+def test_to_stdlib(d, expected):
+    assert d.to_stdlib() == expected
 
 
-def test_from_py_timedelta():
-    assert TimeDelta.from_py_timedelta(py_timedelta(0)) == TimeDelta.ZERO
+def test_init_from_py_timedelta():
     assert TimeDelta(py_timedelta(0)) == TimeDelta.ZERO
-    assert TimeDelta.from_py_timedelta(
-        py_timedelta(weeks=8, hours=1, minutes=2, seconds=3, microseconds=4)
-    ) == TimeDelta(hours=1 + 7 * 24 * 8, minutes=2, seconds=3, microseconds=4)
     assert TimeDelta(
         py_timedelta(weeks=8, hours=1, minutes=2, seconds=3, microseconds=4)
     ) == TimeDelta(hours=1 + 7 * 24 * 8, minutes=2, seconds=3, microseconds=4)
@@ -1378,19 +1374,10 @@ def test_from_py_timedelta():
         pass
 
     with pytest.raises(TypeError, match="timedelta.*exact"):
-        TimeDelta.from_py_timedelta(SubclassTimedelta(1))
-
-    with pytest.raises(TypeError, match="timedelta.*exact"):
         TimeDelta(SubclassTimedelta(1))
 
     with pytest.raises(ValueError, match="range"):
-        TimeDelta.from_py_timedelta(py_timedelta.max)
-
-    with pytest.raises(ValueError, match="range"):
         TimeDelta(py_timedelta.max)
-
-    with pytest.raises(ValueError, match="range"):
-        TimeDelta.from_py_timedelta(py_timedelta.min)
 
     with pytest.raises(ValueError, match="range"):
         TimeDelta(py_timedelta.min)
@@ -1692,7 +1679,7 @@ def test_copy():
 def test_pickling():
     d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
     dumped = pickle.dumps(d)
-    assert len(dumped) < len(pickle.dumps(d.py_timedelta())) + 15
+    assert len(dumped) < len(pickle.dumps(d.to_stdlib())) + 15
     assert pickle.loads(dumped) == d
 
     assert pickle.loads(pickle.dumps(TimeDelta.MAX)) == TimeDelta.MAX
@@ -1708,3 +1695,16 @@ def test_compatible_unpickle():
     assert pickle.loads(dumped) == TimeDelta(
         hours=1, minutes=2, seconds=3, microseconds=4
     )
+
+
+class TestDeprecations:
+    def test_py_timedelta(self):
+        d = TimeDelta(hours=1)
+        with pytest.warns(WheneverDeprecationWarning):
+            result = d.py_timedelta()
+        assert result == py_timedelta(hours=1)
+
+    def test_from_py_timedelta(self):
+        with pytest.warns(WheneverDeprecationWarning):
+            result = TimeDelta.from_py_timedelta(py_timedelta(hours=1))
+        assert result == TimeDelta(hours=1)

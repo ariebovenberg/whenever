@@ -103,7 +103,6 @@ class TestCompilePattern:
         with pytest.raises(ValueError, match="Valid counts"):
             Date(2024, 1, 1).format("Y-MM-DD")
 
-
     def test_duplicate_field_error(self):
         """Two fields writing to the same state should be rejected."""
         with pytest.raises(ValueError, match="Duplicate.*month"):
@@ -218,10 +217,6 @@ class TestDateParse:
         pattern = "YYYY-MM-DD"
         assert Date.parse(d.format(pattern), format=pattern) == d
 
-    # TODO: test for invalid year, moths, and day values.
-    # Same for time (e.g. 27:60). Also for offsets! 13:99 is commonly parsed I've noticed but NOT valid!
-    # see parse_iso() tests for the amount of rigor we should aim for here in tests too.
-
     def test_roundtrip_complex(self):
         d = Date(2024, 12, 25)
         pattern = "dddd, DD MMMM YYYY"
@@ -249,9 +244,12 @@ class TestMonthWeekdayCoverage:
         ],
     )
     def test_all_months(self, month, abbr, full):
-        d = Date(2024, month, 1)
-        assert Date.parse(d.format("DD MMM YYYY"), format="DD MMM YYYY") == d
-        assert Date.parse(d.format("DD MMMM YYYY"), format="DD MMMM YYYY") == d
+        assert Date.parse(f"01 {abbr} 2024", format="DD MMM YYYY") == Date(
+            2024, month, 1
+        )
+        assert Date.parse(f"01 {full} 2024", format="DD MMMM YYYY") == Date(
+            2024, month, 1
+        )
 
     @pytest.mark.parametrize(
         "day, abbr, full",

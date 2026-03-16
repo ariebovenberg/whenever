@@ -413,7 +413,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn {
+fn to_stdlib(cls: HeapType<Time>, slf: Time) -> PyReturn {
     let Time {
         hour,
         minute,
@@ -439,7 +439,27 @@ fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn {
     .rust_owned()
 }
 
+fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn {
+    let &State {
+        warn_deprecation, ..
+    } = cls.state();
+    warn_with_class(
+        warn_deprecation,
+        c"py_time() is deprecated. Use to_stdlib() instead.",
+        1,
+    )?;
+    to_stdlib(cls, slf)
+}
+
 fn from_py_time(cls: HeapType<Time>, arg: PyObj) -> PyReturn {
+    let &State {
+        warn_deprecation, ..
+    } = cls.state();
+    warn_with_class(
+        warn_deprecation,
+        c"from_py_time() is deprecated. Use Time() constructor instead.",
+        1,
+    )?;
     Time::from_py(
         arg.cast_allow_subclass::<PyTime>()
             .ok_or_type_err("argument must be a datetime.time")?,
@@ -679,6 +699,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(Time, __copy__, c""),
     method1!(Time, __deepcopy__, c""),
     method0!(Time, __reduce__, c""),
+    method0!(Time, to_stdlib, doc::TIME_TO_STDLIB),
     method0!(Time, py_time, doc::TIME_PY_TIME),
     method_kwargs!(Time, replace, doc::TIME_REPLACE),
     method_kwargs!(Time, format_iso, doc::TIME_FORMAT_ISO),

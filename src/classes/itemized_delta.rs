@@ -139,11 +139,11 @@ impl ItemizedDelta {
         )?;
         let days =
             DeltaDays::new((self.weeks.get_or(0) as i64 * 7 + self.days.get_or(0) as i64) as i32)?;
+        // OPTIMIZE: this can be done without going through i128
         let nanos = self.hours.get_or(0) as i128 * 3_600_000_000_000
             + self.minutes.get_or(0) as i128 * 60_000_000_000
             + self.seconds.get_or(0) as i128 * 1_000_000_000
             + self.nanos.get_or(0) as i128;
-        // TODO LOW: more optimal calculation
         Some((months, days, TimeDelta::from_nanos(nanos)?))
     }
 
@@ -1144,7 +1144,6 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod_kwargs!(
         ItemizedDelta,
         __get_pydantic_core_schema__,
-        // TODO: don't include docstring for this
         doc::PYDANTIC_SCHEMA
     ),
     PyMethodDef::zeroed(),

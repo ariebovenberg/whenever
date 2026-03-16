@@ -495,11 +495,31 @@ fn from_timestamp_nanos(cls: HeapType<Instant>, ts: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn py_datetime(cls: HeapType<Instant>, slf: Instant) -> PyReturn {
+fn to_stdlib(cls: HeapType<Instant>, slf: Instant) -> PyReturn {
     slf.to_py(cls.state().py_api)
 }
 
+fn py_datetime(cls: HeapType<Instant>, slf: Instant) -> PyReturn {
+    let &State {
+        warn_deprecation, ..
+    } = cls.state();
+    warn_with_class(
+        warn_deprecation,
+        c"py_datetime() is deprecated. Use to_stdlib() instead.",
+        1,
+    )?;
+    to_stdlib(cls, slf)
+}
+
 fn from_py_datetime(cls: HeapType<Instant>, obj: PyObj) -> PyReturn {
+    let &State {
+        warn_deprecation, ..
+    } = cls.state();
+    warn_with_class(
+        warn_deprecation,
+        c"from_py_datetime() is deprecated. Use Instant() constructor instead.",
+        1,
+    )?;
     if let Some(dt) = obj.cast_allow_subclass::<PyDateTime>() {
         Instant::from_py(dt)?.ok_or_range_err()?.to_obj(cls)
     } else {
@@ -854,6 +874,7 @@ static mut METHODS: &[PyMethodDef] = &[
         ml_flags: METH_CLASS | METH_VARARGS | METH_KEYWORDS,
         ml_doc: doc::INSTANT_FROM_UTC.as_ptr(),
     },
+    method0!(Instant, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
     method0!(Instant, py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
     classmethod1!(Instant, from_py_datetime, doc::INSTANT_FROM_PY_DATETIME),
     classmethod0!(Instant, now, doc::INSTANT_NOW),
