@@ -75,7 +75,7 @@ Instant("2025-04-19 19:02:56.39569Z")
 >>> zdt = i.to_tz("America/New_York")
 ZonedDateTime("2025-04-19 15:02:56.39569-04:00[America/New_York]")
 >>> # convert back to the standard library
->>> zdt.py_datetime()
+>>> zdt.to_stdlib()
 datetime.datetime(2025, 4, 19, 15, 2, 56, 395690, tzinfo=ZoneInfo('America/New_York'))
 ```
 

@@ -38,10 +38,8 @@ Don't buy the Rust hype?—don't worry: a **pure Python** version is available a
 
 [📖 Docs](https://whenever.readthedocs.io) |
 [🐍 PyPI](https://pypi.org/project/whenever/) |
-[🐙 GitHub](https://github.com/ariebovenberg/whenever) |
 [🚀 Changelog](https://whenever.readthedocs.io/en/latest/changelog.html) |
 [❓ FAQ](https://whenever.readthedocs.io/en/latest/faq.html) |
-[🗺️ Roadmap](#roadmap) |
 [🐛 Issues](https://github.com/ariebovenberg/whenever/issues) |
 [💬 Q&A](https://github.com/ariebovenberg/whenever/discussions)
 
@@ -170,29 +168,18 @@ Instant("2024-07-04 10:30:00Z")
 # Formatting & parsing common formats (ISO8601, RFC3339, RFC2822)
 >>> now.format_rfc2822()
 "Thu, 04 Jul 2024 10:36:56 GMT"
+# Custom pattern formatting and parsing
+>>> party_starts.format("MMM DD, hh:mm zz")
+"Oct 28, 22:00 CEST"
 
 # If you must: you can convert to/from the standard lib
->>> now.py_datetime()
+>>> now.to_stdlib()
 datetime.datetime(2024, 7, 4, 10, 36, 56, tzinfo=datetime.timezone.utc)
 ```
 
 Read more in the [feature overview](https://whenever.readthedocs.io/en/latest/overview.html)
 or [API reference](https://whenever.readthedocs.io/en/latest/api.html).
 
-## Roadmap
-
-- 🧪 **0.x**: get to feature-parity, process feedback, and tweak the API:
-
-  - ✅ Datetime classes
-  - ✅ Deltas
-  - ✅ Date and time of day (separate from datetime)
-  - ✅ Implement Rust extension for performance
-  - 🚧 Tweaks to the delta API
-- 🔒 **1.0**: API stability and backwards compatibility
-  - 🚧 Customizable parsing and formatting
-  - 🚧 Intervals
-  - 🚧 Ranges and recurring times
-  - 🚧 Parsing leap seconds
 
 ## Limitations
 

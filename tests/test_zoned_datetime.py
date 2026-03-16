@@ -2846,7 +2846,7 @@ class TestComparison:
             42 >= d  # type: ignore[operator]
 
 
-class TestPyDatetime:
+class TestToStdlib:
     def test_iana_tz_id(self):
         d = ZonedDateTime(
             2020,
@@ -2858,7 +2858,7 @@ class TestPyDatetime:
             nanosecond=987_654_999,
             tz="Europe/Amsterdam",
         )
-        py_dt = d.py_datetime()
+        py_dt = d.to_stdlib()
         assert py_dt == py_datetime(
             2020,
             8,
@@ -2882,8 +2882,8 @@ class TestPyDatetime:
             tz="Europe/Amsterdam",
             disambiguate="earlier",
         )
-        assert d2.py_datetime().fold == 0
-        assert d2.replace(disambiguate="later").py_datetime().fold == 1
+        assert d2.to_stdlib().fold == 0
+        assert d2.replace(disambiguate="later").to_stdlib().fold == 1
 
         # ensure the ZoneInfo isn't file-based, and can thus be pickled
         pickle.dumps(d2)
@@ -2898,7 +2898,7 @@ class TestPyDatetime:
             30,
             tz="America/New_York",
         )
-        assert d3.py_datetime().timestamp() == d3.timestamp()
+        assert d3.to_stdlib().timestamp() == d3.timestamp()
 
     @pytest.mark.parametrize(
         "tz",
@@ -2915,7 +2915,7 @@ class TestPyDatetime:
             nanosecond=123_456_789,
             tz=tz,
         )
-        py_dt = d.py_datetime()
+        py_dt = d.to_stdlib()
         assert py_dt == py_datetime(
             2020, 8, 15, 10, 8, 30, 123_456, tzinfo=py_timezone.utc
         )
@@ -2927,7 +2927,7 @@ class _MyDatetime(py_datetime):
     pass
 
 
-class TestFromPyDatetime:
+class TestInitFromPy:
 
     @pytest.mark.parametrize(
         "pydt, expect",
@@ -3066,16 +3066,12 @@ class TestFromPyDatetime:
         ],
     )
     def test_valid(self, pydt: py_datetime, expect: ZonedDateTime):
-        assert ZonedDateTime.from_py_datetime(pydt).exact_eq(expect)
         assert ZonedDateTime(pydt).exact_eq(expect)
 
     def test_wrong_tzinfo(self):
         d = py_datetime(
             2020, 8, 15, 23, 12, 9, 987_654, tzinfo=py_timezone.utc
         )
-        with pytest.raises(ValueError, match="datetime.timezone"):
-            ZonedDateTime.from_py_datetime(d)
-
         with pytest.raises(ValueError, match="datetime.timezone"):
             ZonedDateTime(d)
 
@@ -3097,15 +3093,9 @@ class TestFromPyDatetime:
         )
 
         with pytest.raises(ValueError, match="ZoneInfo.*MyZoneInfo"):
-            ZonedDateTime.from_py_datetime(dt)
-
-        with pytest.raises(ValueError, match="ZoneInfo.*MyZoneInfo"):
             ZonedDateTime(dt)
 
     def test_naive(self):
-
-        with pytest.raises(ValueError, match="None"):
-            ZonedDateTime.from_py_datetime(py_datetime(2020, 3, 4))
 
         with pytest.raises(ValueError, match="None"):
             ZonedDateTime(py_datetime(2020, 3, 4))
@@ -3113,17 +3103,11 @@ class TestFromPyDatetime:
     def test_out_of_range(self):
         min_pydt = py_datetime(1, 1, 1, tzinfo=ZoneInfo("Asia/Kolkata"))
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            ZonedDateTime.from_py_datetime(min_pydt)
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
             ZonedDateTime(min_pydt)
 
         max_pydt = py_datetime(
             9999, 12, 31, 22, tzinfo=ZoneInfo("America/New_York")
         )
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            ZonedDateTime.from_py_datetime(max_pydt)
 
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             ZonedDateTime(max_pydt)
@@ -3135,9 +3119,6 @@ class TestFromPyDatetime:
         py_dt = py_datetime(2020, 8, 15, 12, 8, 30, tzinfo=tz)
 
         with pytest.raises(ValueError, match="key"):
-            ZonedDateTime.from_py_datetime(py_dt)
-
-        with pytest.raises(ValueError, match="key"):
             ZonedDateTime(py_dt)
 
 
@@ -3145,7 +3126,7 @@ def test_now():
     now = ZonedDateTime.now("Iceland")
     assert now.tz == "Iceland"
     py_now = py_datetime.now(ZoneInfo("Iceland"))
-    assert py_now - now.py_datetime() < py_timedelta(seconds=1)
+    assert py_now - now.to_stdlib() < py_timedelta(seconds=1)
 
 
 @system_tz_ams()
@@ -3153,7 +3134,7 @@ def test_now_in_system_tz():
     now = ZonedDateTime.now_in_system_tz()
     py_now = py_datetime.now().astimezone()
     assert now.tz == "Europe/Amsterdam"
-    assert py_now - now.py_datetime() < py_timedelta(seconds=1)
+    assert py_now - now.to_stdlib() < py_timedelta(seconds=1)
 
 
 class TestExactEquality:
@@ -4916,7 +4897,7 @@ class TestPickle:
             2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
         )
         dumped = pickle.dumps(d)
-        assert len(dumped) <= len(pickle.dumps(d.py_datetime()))
+        assert len(dumped) <= len(pickle.dumps(d.to_stdlib()))
         assert pickle.loads(pickle.dumps(d)).exact_eq(d)
 
     def test_ambiguous(self):
@@ -4964,6 +4945,59 @@ def test_copy(tz: str):
     d = create_zdt(2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz=tz)
     assert copy(d) is d
     assert deepcopy(d) is d
+
+
+class TestDeprecations:
+    def test_py_datetime(self):
+        d = ZonedDateTime(
+            2020,
+            8,
+            15,
+            23,
+            12,
+            9,
+            nanosecond=987_654_999,
+            tz="Europe/Amsterdam",
+        )
+        with pytest.warns(WheneverDeprecationWarning):
+            result = d.py_datetime()
+        assert result == py_datetime(
+            2020,
+            8,
+            15,
+            23,
+            12,
+            9,
+            987_654,
+            tzinfo=ZoneInfo("Europe/Amsterdam"),
+        )
+
+    def test_from_py_datetime(self):
+        with pytest.warns(WheneverDeprecationWarning):
+            result = ZonedDateTime.from_py_datetime(
+                py_datetime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=ZoneInfo("Europe/Paris"),
+                )
+            )
+        assert result.exact_eq(
+            ZonedDateTime(
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                nanosecond=987_654_000,
+                tz="Europe/Paris",
+            )
+        )
 
 
 def test_cannot_subclass():

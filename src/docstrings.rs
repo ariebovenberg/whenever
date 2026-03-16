@@ -625,6 +625,10 @@ Create from a :class:`~datetime.date`
 
 >>> Date.from_py_date(date(2021, 1, 2))
 Date(\"2021-01-02\")
+
+.. deprecated:: 0.10.0
+
+    Use the ``Date()`` constructor instead.
 ";
 pub(crate) const DATE_MONTH_DAY: &CStr = c"\
 The month and day (without a year component)
@@ -644,8 +648,15 @@ Inverse of :meth:`format_iso`
 >>> Date.parse_iso(\"2021-01-02\")
 Date(\"2021-01-02\")
 ";
-pub(crate) const DATE_PY_DATE: &CStr = c"\
+pub(crate) const DATE_TO_STDLIB: &CStr = c"\
 Convert to a standard library :class:`~datetime.date`";
+pub(crate) const DATE_PY_DATE: &CStr = c"\
+Convert to a standard library :class:`~datetime.date`
+
+.. deprecated:: 0.10.0
+
+    Use :meth:`to_stdlib` instead.
+";
 pub(crate) const DATE_REPLACE: &CStr = c"\
 replace($self, /, *, year=None, month=None, day=None)
 --
@@ -879,7 +890,9 @@ The output is also compatible with the (stricter) RFC 9110 standard.
 pub(crate) const INSTANT_FROM_PY_DATETIME: &CStr = c"\
 Create an ``Instant`` from any *aware* ``datetime`` object.
 
-The inverse of the ``py_datetime()`` method.
+.. deprecated:: 0.10.0
+
+    Use the ``Instant()`` constructor instead.
 ";
 pub(crate) const INSTANT_FROM_TIMESTAMP: &CStr = c"\
 Create an Instant from a UNIX timestamp (in seconds).
@@ -1264,7 +1277,9 @@ pub(crate) const OFFSETDATETIME_FROM_PY_DATETIME: &CStr = c"\
 Create an instance from any *aware* ``datetime`` object.
 The datetime must be aware.
 
-The inverse of the ``py_datetime()`` method.
+.. deprecated:: 0.10.0
+
+    Use the ``OffsetDateTime()`` constructor instead.
 
 ";
 pub(crate) const OFFSETDATETIME_FROM_TIMESTAMP: &CStr = c"\
@@ -1540,7 +1555,12 @@ Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
 The inverse of the ``parse_iso()`` method.
 ";
 pub(crate) const PLAINDATETIME_FROM_PY_DATETIME: &CStr = c"\
-Create an instance from a \"naive\" standard library ``datetime`` object";
+Create an instance from a \"naive\" standard library ``datetime`` object
+
+.. deprecated:: 0.10.0
+
+    Use the ``PlainDateTime()`` constructor instead.
+";
 pub(crate) const PLAINDATETIME_PARSE_ISO: &CStr = c"\
 Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
 
@@ -1645,6 +1665,10 @@ Create from a :class:`~datetime.time`
 Time(12:30:00)
 
 `fold` value is ignored.
+
+.. deprecated:: 0.10.0
+
+    Use the ``Time()`` constructor instead.
 ";
 pub(crate) const TIME_ON: &CStr = c"\
 Combine a time with a date to create a datetime
@@ -1668,8 +1692,15 @@ Inverse of :meth:`format_iso`
 >>> Time.parse_iso(\"12:30:00\")
 Time(12:30:00)
 ";
-pub(crate) const TIME_PY_TIME: &CStr = c"\
+pub(crate) const TIME_TO_STDLIB: &CStr = c"\
 Convert to a standard library :class:`~datetime.time`";
+pub(crate) const TIME_PY_TIME: &CStr = c"\
+Convert to a standard library :class:`~datetime.time`
+
+.. deprecated:: 0.10.0
+
+    Use :meth:`to_stdlib` instead.
+";
 pub(crate) const TIME_REPLACE: &CStr = c"\
 replace($self, /, *, hour=None, minute=None, second=None, nanosecond=None)
 --
@@ -1714,8 +1745,6 @@ Inverse of :meth:`parse_iso`.
 pub(crate) const TIMEDELTA_FROM_PY_TIMEDELTA: &CStr = c"\
 Create from a :class:`~datetime.timedelta`
 
-Inverse of :meth:`py_timedelta`
-
 >>> TimeDelta.from_py_timedelta(timedelta(seconds=5400))
 TimeDelta(\"PT1h30m\")
 
@@ -1724,6 +1753,10 @@ Note
 Subclasses of :class:`~datetime.timedelta` are not accepted
 because they often add additional state that cannot be represented
 in a :class:`TimeDelta`.
+
+.. deprecated:: 0.10.0
+
+    Use the ``TimeDelta()`` constructor instead.
 ";
 pub(crate) const TIMEDELTA_IN_DAYS_OF_24H: &CStr = c"\
 The total size in days (of exactly 24 hours each)
@@ -1859,10 +1892,20 @@ Note
 Any duration with a date part is considered invalid.
 ``PT0S`` is valid, but ``P0D`` is not.
 ";
-pub(crate) const TIMEDELTA_PY_TIMEDELTA: &CStr = c"\
+pub(crate) const TIMEDELTA_TO_STDLIB: &CStr = c"\
 Convert to a :class:`~datetime.timedelta`
 
-Inverse of :meth:`from_py_timedelta`
+>>> d = TimeDelta(hours=1, minutes=30)
+>>> d.to_stdlib()
+timedelta(seconds=5400)
+
+Note
+----
+Nanoseconds are truncated to microseconds.
+If you need more control over rounding, use :meth:`round` first.
+";
+pub(crate) const TIMEDELTA_PY_TIMEDELTA: &CStr = c"\
+Convert to a :class:`~datetime.timedelta`
 
 >>> d = TimeDelta(hours=1, minutes=30)
 >>> d.py_timedelta()
@@ -1872,6 +1915,10 @@ Note
 ----
 Nanoseconds are truncated to microseconds.
 If you need more control over rounding, use :meth:`round` first.
+
+.. deprecated:: 0.10.0
+
+    Use :meth:`to_stdlib` instead.
 ";
 pub(crate) const TIMEDELTA_ROUND: &CStr = c"\
 round($self, unit='second', /, *, increment=1, mode='half_even')
@@ -2021,7 +2068,9 @@ pub(crate) const ZONEDDATETIME_FROM_PY_DATETIME: &CStr = c"\
 Create an instance from a standard library ``datetime`` object
 with a ``ZoneInfo`` tzinfo.
 
-The inverse of the ``py_datetime()`` method.
+.. deprecated:: 0.10.0
+
+    Use the ``ZonedDateTime()`` constructor instead.
 
 ";
 pub(crate) const ZONEDDATETIME_FROM_SYSTEM_TZ: &CStr = c"\
@@ -2194,6 +2243,18 @@ until($self, b, /, *, unit=None, units=None, round_mode='trunc', round_increment
 --
 
 Inverse of the ``since()`` method. See :meth:`since` for more information.";
+pub(crate) const BASICCONVERSIONS_TO_STDLIB: &CStr = c"\
+Convert to a standard library :class:`~datetime.datetime`
+
+Note
+----
+- Nanoseconds are truncated to microseconds.
+  If you wish to customize the rounding behavior, use
+  the ``round()`` method first.
+- In case of a ZonedDateTime linked to a system timezone without a
+  IANA timezone ID, the returned Python datetime will have
+  a fixed offset (:class:`~datetime.timezone` tzinfo)
+";
 pub(crate) const BASICCONVERSIONS_PY_DATETIME: &CStr = c"\
 Convert to a standard library :class:`~datetime.datetime`
 
@@ -2205,6 +2266,10 @@ Note
 - In case of a ZonedDateTime linked to a system timezone without a
   IANA timezone ID, the returned Python datetime will have
   a fixed offset (:class:`~datetime.timezone` tzinfo)
+
+.. deprecated:: 0.10.0
+
+    Use :meth:`to_stdlib` instead.
 ";
 pub(crate) const EXACTANDLOCALTIME_TO_INSTANT: &CStr = c"\
 Get the underlying instant in time

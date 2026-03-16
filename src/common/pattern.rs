@@ -3,13 +3,21 @@
 //! A pattern string like `"YYYY-MM-DD hh:mm:ss"` is compiled into a `Vec<Element>`,
 //! then used for formatting values into strings or parsing strings into values.
 
-use crate::common::fmt::{Sink, format_2_digits, format_4_digits};
-use crate::common::scalar::{Month, Offset, SubSecNanos, Weekday, Year};
-use crate::py::{
-    PyAsciiStrBuilder, PyResult,
-    exc::{ResultExt, raise_value_err},
+// Maintainer's note: this module isn't quite optimized to the standards of the
+// rest of the codebase. But it's fast enough for now.
+// Optimizations can always be done in a future release.
+
+use crate::common::{
+    fmt::{Sink, format_2_digits, format_4_digits},
+    scalar::{Month, Offset, SubSecNanos, Weekday, Year},
 };
-use crate::tz::tzif::is_tz_id_char;
+use crate::{
+    py::{
+        PyAsciiStrBuilder, PyResult,
+        exc::{ResultExt, raise_value_err},
+    },
+    tz::tzif::is_tz_id_char,
+};
 
 // ---- Name tables ----
 

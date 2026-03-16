@@ -473,9 +473,9 @@ class TestComparison:
             None >= d  # type: ignore[operator]
 
 
-def test_py_datetime():
+def test_to_stdlib():
     d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-    assert d.py_datetime() == py_datetime(
+    assert d.to_stdlib() == py_datetime(
         2020, 8, 15, 23, 12, 9, 987, tzinfo=timezone.utc
     )
 
@@ -484,7 +484,7 @@ class _MyDateTime(py_datetime):
     pass
 
 
-class TestFromPyDatetime:
+class TestInitFromPy:
 
     @pytest.mark.parametrize(
         "dt, expected",
@@ -565,21 +565,14 @@ class TestFromPyDatetime:
         ],
     )
     def test_valid(self, dt: py_datetime, expected: Instant):
-        assert Instant.from_py_datetime(dt).exact_eq(expected)
         assert Instant(dt).exact_eq(expected)
 
     def test_out_of_range(self):
         d = py_datetime(1, 1, 1, tzinfo=timezone(timedelta(hours=5)))
         with pytest.raises((ValueError, OverflowError), match="range"):
-            Instant.from_py_datetime(d)
-
-        with pytest.raises((ValueError, OverflowError), match="range"):
             Instant(d)
 
     def test_naive(self):
-        with pytest.raises(ValueError, match="naive"):
-            Instant.from_py_datetime(py_datetime(2020, 8, 15, 12))
-
         with pytest.raises(ValueError, match="naive"):
             Instant(py_datetime(2020, 8, 15, 12))
 
@@ -590,16 +583,13 @@ class TestFromPyDatetime:
                 return None
 
         with pytest.raises(ValueError, match="naive"):
-            Instant.from_py_datetime(py_datetime(2020, 8, 15, tzinfo=MyTz()))  # type: ignore[abstract]
-
-        with pytest.raises(ValueError, match="naive"):
             Instant(py_datetime(2020, 8, 15, tzinfo=MyTz()))  # type: ignore[abstract]
 
 
 def test_now():
     now = Instant.now()
     py_now = py_datetime.now(timezone.utc)
-    assert py_now - now.py_datetime() < timedelta(seconds=1)
+    assert py_now - now.to_stdlib() < timedelta(seconds=1)
 
 
 def test_min_max():
@@ -772,7 +762,7 @@ class TestDifference:
 def test_pickle():
     d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_200)
     dumped = pickle.dumps(d)
-    assert len(dumped) <= len(pickle.dumps(d.py_datetime()))
+    assert len(dumped) <= len(pickle.dumps(d.to_stdlib()))
     assert pickle.loads(pickle.dumps(d)) == d
 
 
@@ -1202,6 +1192,27 @@ class TestRound:
         d = Instant.from_utc(2020, 1, 1, 12)
         with pytest.raises(TypeError):
             d.round(TimeDelta(hours=1), increment=2)  # type: ignore[call-overload]
+
+
+class TestDeprecations:
+    def test_py_datetime(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with pytest.warns(WheneverDeprecationWarning):
+            result = d.py_datetime()
+        assert result == py_datetime(
+            2020, 8, 15, 23, 12, 9, 987, tzinfo=timezone.utc
+        )
+
+    def test_from_py_datetime(self):
+        with pytest.warns(WheneverDeprecationWarning):
+            result = Instant.from_py_datetime(
+                py_datetime(
+                    2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc
+                )
+            )
+        assert result.exact_eq(
+            Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
+        )
 
 
 def test_cannot_subclass():

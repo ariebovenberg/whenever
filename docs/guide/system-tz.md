@@ -78,4 +78,4 @@ However there are some limitations of such instances of {class}`~whenever.ZonedD
 1. Their `tz` attribute is `None`
 2. They cannot be pickled
 3. Their ISO 8601 string representation does not include a IANA timezone ID
-4. The result of `py_datetime()` will have a fixed offset, not a `ZoneInfo` object.
+4. The result of `to_stdlib()` will have a fixed offset, not a `ZoneInfo` object.

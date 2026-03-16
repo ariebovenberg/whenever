@@ -8,7 +8,13 @@ from datetime import (
 
 import pytest
 
-from whenever import Date, PlainDateTime, Time, TimeDelta
+from whenever import (
+    Date,
+    PlainDateTime,
+    Time,
+    TimeDelta,
+    WheneverDeprecationWarning,
+)
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
@@ -113,11 +119,11 @@ class TestFormatIso:
             t.format_iso(sep="T")  # type: ignore[call-arg]
 
 
-def test_py_time():
+def test_to_stdlib():
     t = Time(1, 2, 3, nanosecond=4_000_000)
-    assert t.py_time() == py_time(1, 2, 3, 4_000)
+    assert t.to_stdlib() == py_time(1, 2, 3, 4_000)
     # truncation
-    assert Time(nanosecond=999).py_time() == py_time(0)
+    assert Time(nanosecond=999).to_stdlib() == py_time(0)
 
 
 def test_repr():
@@ -242,21 +248,11 @@ def test_eq():
     assert hash(t) != hash(different)
 
 
-class TestFromPyTime:
+class TestInitFromPy:
     def test_valid(self):
-        assert Time.from_py_time(py_time(1, 2, 3, 4)) == Time(
-            1, 2, 3, nanosecond=4_000
-        )
-
         assert Time(py_time(1, 2, 3, 4)) == Time(1, 2, 3, nanosecond=4_000)
 
     def test_tzinfo(self):
-        assert Time.from_py_time(
-            py_time(
-                1, 2, 3, 4, tzinfo=py_timezone(py_timedelta(hours=1)), fold=1
-            )
-        ) == Time(1, 2, 3, nanosecond=4_000)
-
         assert Time(
             py_time(
                 1, 2, 3, 4, tzinfo=py_timezone(py_timedelta(hours=1)), fold=1
@@ -264,9 +260,6 @@ class TestFromPyTime:
         ) == Time(1, 2, 3, nanosecond=4_000)
 
     def test_fold_ignored(self):
-        assert Time.from_py_time(py_time(1, 2, 3, 4, fold=1)) == Time(
-            1, 2, 3, nanosecond=4_000
-        )
         assert Time(py_time(1, 2, 3, 4, fold=1)) == Time(
             1, 2, 3, nanosecond=4_000
         )
@@ -275,16 +268,22 @@ class TestFromPyTime:
         class SubclassTime(py_time):
             pass
 
-        assert Time.from_py_time(SubclassTime(1, 2, 3, 4)) == Time(
-            1, 2, 3, nanosecond=4_000
-        )
         assert Time(SubclassTime(1, 2, 3, 4)) == Time(
             1, 2, 3, nanosecond=4_000
         )
 
-    def test_invalid(self):
-        with pytest.raises(TypeError):
-            Time.from_py_time(23)  # type: ignore[arg-type]
+
+class TestDeprecations:
+    def test_py_time(self):
+        t = Time(1, 2, 3, nanosecond=4_000_000)
+        with pytest.warns(WheneverDeprecationWarning):
+            result = t.py_time()
+        assert result == py_time(1, 2, 3, 4_000)
+
+    def test_from_py_time(self):
+        with pytest.warns(WheneverDeprecationWarning):
+            result = Time.from_py_time(py_time(1, 2, 3, 4))
+        assert result == Time(1, 2, 3, nanosecond=4_000)
 
 
 def test_comparison():
@@ -578,7 +577,7 @@ class TestRound:
 def test_pickling():
     t = Time(1, 2, 3, nanosecond=4_000)
     dumped = pickle.dumps(t)
-    assert len(dumped) < len(pickle.dumps(t.py_time())) + 10
+    assert len(dumped) < len(pickle.dumps(t.to_stdlib())) + 10
     assert pickle.loads(dumped) == t
 
 

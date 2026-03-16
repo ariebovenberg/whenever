@@ -721,13 +721,21 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
 }
 
 fn from_py_datetime(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
+    let &State {
+        warn_deprecation, ..
+    } = cls.state();
+    warn_with_class(
+        warn_deprecation,
+        c"from_py_datetime() is deprecated. Use PlainDateTime() constructor instead.",
+        1,
+    )?;
     let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() else {
         raise_type_err("argument must be datetime.datetime")?
     };
     DateTime::from_py(dt)?.to_obj(cls)
 }
 
-fn py_datetime(cls: HeapType<DateTime>, slf: DateTime) -> *mut PyObject {
+fn to_stdlib(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
     let DateTime {
         date: Date { year, month, day },
         time:
@@ -757,6 +765,19 @@ fn py_datetime(cls: HeapType<DateTime>, slf: DateTime) -> *mut PyObject {
             DateTimeType,
         )
     }
+    .rust_owned()
+}
+
+fn py_datetime(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
+    let &State {
+        warn_deprecation, ..
+    } = cls.state();
+    warn_with_class(
+        warn_deprecation,
+        c"py_datetime() is deprecated. Use to_stdlib() instead.",
+        1,
+    )?;
+    to_stdlib(cls, slf)
 }
 
 fn date(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
@@ -1202,6 +1223,7 @@ static mut METHODS: &[PyMethodDef] = &[
         from_py_datetime,
         doc::PLAINDATETIME_FROM_PY_DATETIME
     ),
+    method0!(DateTime, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
     method0!(DateTime, py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
     method0!(DateTime, date, doc::LOCALTIME_DATE),
     method0!(DateTime, time, doc::LOCALTIME_TIME),

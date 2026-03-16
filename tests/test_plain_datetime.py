@@ -390,9 +390,7 @@ def test_equality():
 
     # Ambiguity in system timezone doesn't affect equality
     with system_tz_ams():
-        assert PlainDateTime(
-            2023, 10, 29, 2, 15
-        ) == PlainDateTime.from_py_datetime(
+        assert PlainDateTime(2023, 10, 29, 2, 15) == PlainDateTime(
             py_datetime(2023, 10, 29, 2, 15, fold=1)
         )
 
@@ -510,24 +508,16 @@ def test_comparison():
         d < 42  # type: ignore[operator]
 
 
-def test_py_datetime():
+def test_to_stdlib():
     d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_823)
-    assert d.py_datetime() == py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
+    assert d.to_stdlib() == py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
 
 
-def test_from_py_datetime():
+def test_init_from_py_datetime():
     d = py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert PlainDateTime.from_py_datetime(d) == PlainDateTime(
-        2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
-    )
     assert PlainDateTime(d) == PlainDateTime(
         2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
     )
-
-    with pytest.raises(ValueError, match="utc"):
-        PlainDateTime.from_py_datetime(
-            py_datetime(2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc)
-        )
 
     with pytest.raises(ValueError, match="utc"):
         PlainDateTime(
@@ -537,9 +527,6 @@ def test_from_py_datetime():
     class MyDateTime(py_datetime):
         pass
 
-    assert PlainDateTime.from_py_datetime(
-        MyDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    ) == PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
     assert PlainDateTime(
         MyDateTime(2020, 8, 15, 23, 12, 9, 987_654)
     ) == PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
@@ -989,7 +976,7 @@ def test_replace_time():
 def test_pickle():
     d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
     dumped = pickle.dumps(d)
-    assert len(dumped) <= len(pickle.dumps(d.py_datetime())) + 10
+    assert len(dumped) <= len(pickle.dumps(d.to_stdlib())) + 10
     assert pickle.loads(pickle.dumps(d)) == d
 
 
@@ -1486,6 +1473,23 @@ class TestSince:
         a = PlainDateTime(9000, 1, 1)
         b = PlainDateTime(23, 3, 15)
         assert a.since(b, unit="nanoseconds") == 283280457600000000000
+
+
+class TestDeprecations:
+    def test_py_datetime(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_823)
+        with pytest.warns(WheneverDeprecationWarning):
+            result = d.py_datetime()
+        assert result == py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
+
+    def test_from_py_datetime(self):
+        with pytest.warns(WheneverDeprecationWarning):
+            result = PlainDateTime.from_py_datetime(
+                py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
+            )
+        assert result == PlainDateTime(
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
+        )
 
 
 def test_cannot_subclass():
