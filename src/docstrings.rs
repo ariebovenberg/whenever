@@ -361,6 +361,11 @@ Or a standard library :class:`~datetime.time`:
 >>> Time(time(12, 30, 0))
 Time(\"12:30:00\")
 
+Note
+----
+When constructing from a :class:`~datetime.time`, the ``fold``
+attribute and ``tzinfo`` are ignored.
+
 Sub-second precision up to nanoseconds is supported:
 
 >>> Time(12, 30, 0, nanosecond=1)
@@ -389,6 +394,11 @@ or a standard library :class:`~datetime.timedelta`:
 
 >>> TimeDelta(\"PT2h30m\")
 TimeDelta(\"PT2h30m\")
+
+Note
+----
+Subclasses of :class:`~datetime.timedelta` are not accepted,
+because they often add additional state that cannot be represented.
 
 ``TimeDelta`` can be added to or subtracted from datetime types
 to shift them by an exact amount of time:
@@ -574,6 +584,12 @@ or :meth:`~PlainDateTime.assume_tz` to find the corresponding exact time.
 >>> d.at(Time(12, 30)).assume_tz(\"America/New_York\")
 ZonedDateTime(\"2021-01-02 12:30:00-05:00[America/New_York]\")
 ";
+pub(crate) const DATE_DAY: &CStr = c"\
+The day component of the date
+
+>>> Date(2021, 1, 2).day
+2
+";
 pub(crate) const DATE_DAY_OF_WEEK: &CStr = c"\
 The day of the week
 
@@ -597,6 +613,16 @@ Calculate the number of days from this date to another date.
 
     Use :meth:`until` with `unit=\"days\"` instead.
 ";
+pub(crate) const DATE_FORMAT: &CStr = c"\
+Format as a custom pattern string.
+
+See :ref:`pattern-format` for details.
+
+>>> Date(2024, 3, 15).format(\"YYYY/MM/DD\")
+'2024/03/15'
+>>> Date(2024, 3, 15).format(\"DD MMM YYYY\")
+'15 Mar 2024'
+";
 pub(crate) const DATE_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, basic=False)
 --
@@ -610,16 +636,6 @@ Inverse of :meth:`parse_iso`.
 >>> Date(1992, 9, 4).format_iso(basic=True)
 '19920904'
 ";
-pub(crate) const DATE_FORMAT: &CStr = c"\
-format($self, pattern, /)
---
-
-Format as a custom pattern string.";
-pub(crate) const DATE_PARSE: &CStr = c"\
-parse($type, s, /, *, format)
---
-
-Parse a date from a custom pattern string.";
 pub(crate) const DATE_FROM_PY_DATE: &CStr = c"\
 Create from a :class:`~datetime.date`
 
@@ -628,13 +644,32 @@ Date(\"2021-01-02\")
 
 .. deprecated:: 0.10.0
 
-    Use the ``Date()`` constructor instead.
+    Use the constructor ``Date(d)`` instead.
+";
+pub(crate) const DATE_MONTH: &CStr = c"\
+The month component of the date
+
+>>> Date(2021, 1, 2).month
+1
 ";
 pub(crate) const DATE_MONTH_DAY: &CStr = c"\
 The month and day (without a year component)
 
 >>> Date(2021, 1, 2).month_day()
 MonthDay(\"--01-02\")
+";
+pub(crate) const DATE_PARSE: &CStr = c"\
+parse(s, /, *, format)
+--
+
+Parse a date from a custom pattern string.
+
+See :ref:`pattern-format` for details.
+
+>>> Date.parse(\"2024/03/15\", format=\"YYYY/MM/DD\")
+Date(\"2024-03-15\")
+>>> Date.parse(\"15 Mar 2024\", format=\"DD MMM YYYY\")
+Date(\"2024-03-15\")
 ";
 pub(crate) const DATE_PARSE_ISO: &CStr = c"\
 Parse a date from an ISO8601 string
@@ -648,8 +683,6 @@ Inverse of :meth:`format_iso`
 >>> Date.parse_iso(\"2021-01-02\")
 Date(\"2021-01-02\")
 ";
-pub(crate) const DATE_TO_STDLIB: &CStr = c"\
-Convert to a standard library :class:`~datetime.date`";
 pub(crate) const DATE_PY_DATE: &CStr = c"\
 Convert to a standard library :class:`~datetime.date`
 
@@ -718,6 +751,8 @@ Date(\"2019-10-30\")
 >>> Date(2021, 3, 1).subtract(years=1)
 Date(\"2020-03-01\")
 ";
+pub(crate) const DATE_TO_STDLIB: &CStr = c"\
+Convert to a standard library :class:`~datetime.date`";
 pub(crate) const DATE_TODAY_IN_SYSTEM_TZ: &CStr = c"\
 Get the current date in the system's local timezone.
 
@@ -732,6 +767,12 @@ until($self, b, /, *, unit=None, units=None, round_mode='trunc', round_increment
 
 Companion to :meth:`since` that calculates the difference until another date.
 See :meth:`since` for more information.
+";
+pub(crate) const DATE_YEAR: &CStr = c"\
+The year component of the date
+
+>>> Date(2021, 1, 2).year
+2021
 ";
 pub(crate) const DATE_YEAR_MONTH: &CStr = c"\
 The year and month (without a day component)
@@ -867,6 +908,14 @@ Add a time amount to this instant.
 
 See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
 ";
+pub(crate) const INSTANT_FORMAT: &CStr = c"\
+Format as a custom pattern string.
+
+Instant formats as UTC; See :ref:`pattern-format` for details.
+
+>>> Instant.from_utc(2024, 3, 15, 14, 30).format(\"YYYY-MM-DD hh:mm:ssXXX\")
+'2024-03-15 14:30:00Z'
+";
 pub(crate) const INSTANT_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, unit='auto', basic=False, sep='T')
 --
@@ -886,13 +935,6 @@ Note
 ----
 The output is also compatible with the (stricter) RFC 9110 standard.
 
-";
-pub(crate) const INSTANT_FROM_PY_DATETIME: &CStr = c"\
-Create an ``Instant`` from any *aware* ``datetime`` object.
-
-.. deprecated:: 0.10.0
-
-    Use the ``Instant()`` constructor instead.
 ";
 pub(crate) const INSTANT_FROM_TIMESTAMP: &CStr = c"\
 Create an Instant from a UNIX timestamp (in seconds).
@@ -919,6 +961,28 @@ Create an Instant from the current time.
 
 >>> Instant.now()
 Instant(\"2024-06-15 12:34:56.789123456Z\")
+";
+pub(crate) const INSTANT_PARSE: &CStr = c"\
+parse(s, /, *, format)
+--
+
+Parse an instant from a custom pattern string.
+
+The pattern **must** include an offset field (``x``/``X``)
+to unambiguously identify the instant.
+See :ref:`pattern-format` for details.
+
+.. tip::
+
+    If your input string doesn't include an offset, parse it with
+    :meth:`PlainDateTime.parse` first, then convert using
+    :meth:`~PlainDateTime.assume_utc` or
+    :meth:`~PlainDateTime.assume_tz`.
+
+>>> Instant.parse(\"2024-03-15 14:30Z\", format=\"YYYY-MM-DD hh:mmXXX\")
+Instant(\"2024-03-15 14:30:00Z\")
+>>> Instant.parse(\"2024-03-15 14:30+05:30\", format=\"YYYY-MM-DD hh:mmxxx\")
+Instant(\"2024-03-15 09:00:00Z\")
 ";
 pub(crate) const INSTANT_PARSE_ISO: &CStr = c"\
 Parse an ISO 8601 string. Supports basic and extended formats,
@@ -1049,6 +1113,16 @@ All normal validation rules apply.
 >>> d.replace(months=None, weeks=4)
 ItemizedDateDelta(\"P1y4w\")
 ";
+pub(crate) const ITEMIZEDDATEDELTA_SIGN: &CStr = c"\
+The sign of the delta, whether it's positive, negative, or zero.
+
+>>> ItemizedDateDelta(weeks=2).sign
+1
+>>> ItemizedDateDelta(days=-3).sign
+-1
+>>> ItemizedDateDelta(weeks=0).sign
+0
+";
 pub(crate) const ITEMIZEDDATEDELTA_SUBTRACT: &CStr = c"\
 subtract($self, arg=..., /, *, relative_to, units, round_mode='trunc', round_increment=1, **kwargs)
 --
@@ -1070,6 +1144,31 @@ add($self, arg=..., /, *, relative_to, units, round_mode='trunc', round_incremen
 --
 
 Add time to this delta, returning a new delta";
+pub(crate) const ITEMIZEDDELTA_DATE_AND_TIME_PARTS: &CStr = c"\
+Split into date and time parts.
+
+Either part may be None if no fields were set of that type.
+At least one part will be non-None, since at least one field must be set.
+
+>>> d = ItemizedDelta(
+...     years=1,
+...     months=2,
+...     weeks=3,
+...     days=4,
+...     hours=5,
+...     minutes=6,
+...     seconds=7,
+...     nanoseconds=8,
+... )
+>>> date_part, time_part = d.date_and_time_parts()
+>>> date_part
+ItemizedDateDelta(\"P1y2m3w4d\")
+>>> time_part
+TimeDelta(\"P5h6m7.000000008s\")
+>>> ItemizedDelta(weeks=2).date_and_time_parts()
+(ItemizedDateDelta(\"P2w\"), None)
+
+";
 pub(crate) const ITEMIZEDDELTA_EXACT_EQ: &CStr = c"\
 Check for strict equality. All fields *and their presence* must match.";
 pub(crate) const ITEMIZEDDELTA_FORMAT_ISO: &CStr = c"\
@@ -1129,31 +1228,6 @@ Inverse of :meth:`format_iso`
 >>> ItemizeDelta.parse_iso(\"-P1W11DT4H\")
 ItemizeDelta(\"-P1w11dT4h\")
 ";
-pub(crate) const ITEMIZEDDELTA_PARTS: &CStr = c"\
-Split into date and time parts.
-
-Either part may be None if no fields were set of that type.
-At least one part will be non-None, since at least one field must be set.
-
->>> d = ItemizedDelta(
-...     years=1,
-...     months=2,
-...     weeks=3,
-...     days=4,
-...     hours=5,
-...     minutes=6,
-...     seconds=7,
-...     nanoseconds=8,
-... )
->>> date_part, time_part = d.parts()
->>> date_part
-ItemizedDateDelta(\"P1y2m3w4d\")
->>> time_part
-TimeDelta(\"P5h6m7.000000008s\")
->>> ItemizedDelta(weeks=2).parts()
-(ItemizedDateDelta(\"P2w\"), None)
-
-";
 pub(crate) const ITEMIZEDDELTA_REPLACE: &CStr = c"\
 replace($self, **kwargs)
 --
@@ -1167,6 +1241,8 @@ All normal validation rules apply.
 >>> d.replace(months=None, hours=2)
 ItemizedDelta(\"P1yT2h\")
 ";
+pub(crate) const ITEMIZEDDELTA_SIGN: &CStr = c"\
+The sign of the delta, 1, 0, or -1";
 pub(crate) const ITEMIZEDDELTA_SUBTRACT: &CStr = c"\
 subtract($self, arg=..., /, *, relative_to, units, round_mode='trunc', round_increment=1, **kwargs)
 --
@@ -1177,6 +1253,12 @@ total($self, unit, /, *, relative_to)
 --
 
 Return the total duration expressed in the specified unit as a float";
+pub(crate) const MONTHDAY_DAY: &CStr = c"\
+The day component of the month-day
+
+>>> MonthDay(11, 23).day
+23
+";
 pub(crate) const MONTHDAY_FORMAT_ISO: &CStr = c"\
 Format as the ISO 8601 month-day format.
 
@@ -1209,6 +1291,12 @@ Check if the month-day is February 29th
 True
 >>> MonthDay(3, 1).is_leap()
 False
+";
+pub(crate) const MONTHDAY_MONTH: &CStr = c"\
+The month component of the month-day
+
+>>> MonthDay(11, 23).month
+11
 ";
 pub(crate) const MONTHDAY_PARSE_ISO: &CStr = c"\
 Create from the ISO 8601 format ``--MM-DD`` or ``--MMDD``.
@@ -1257,6 +1345,16 @@ offset of the timezone at this datetime, an error is raised.
 Using the ``offset_mismatch`` parameter, you can choose to ignore
 the mismatch, keeping either the instant or the local time the same.
 ";
+pub(crate) const OFFSETDATETIME_FORMAT: &CStr = c"\
+Format as a custom pattern string.
+
+See :ref:`pattern-format` for details.
+
+>>> OffsetDateTime(2024, 3, 15, 14, 30, offset=hours(2)).format(
+...     \"YYYY-MM-DD hh:mmxxx\"
+... )
+'2024-03-15 14:30+02:00'
+";
 pub(crate) const OFFSETDATETIME_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, unit='auto', basic=False, sep='T')
 --
@@ -1272,15 +1370,6 @@ The inverse of the ``parse_rfc2822()`` method.
 
 >>> OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(2)).format_rfc2822()
 \"Sat, 15 Aug 2020 23:12:00 +0200\"
-";
-pub(crate) const OFFSETDATETIME_FROM_PY_DATETIME: &CStr = c"\
-Create an instance from any *aware* ``datetime`` object.
-The datetime must be aware.
-
-.. deprecated:: 0.10.0
-
-    Use the ``OffsetDateTime()`` constructor instead.
-
 ";
 pub(crate) const OFFSETDATETIME_FROM_TIMESTAMP: &CStr = c"\
 from_timestamp(i, /, *, offset, ignore_dst=...)
@@ -1333,6 +1422,25 @@ rules change. Use ``ZonedDateTime.now('<tz>')`` if you know the timezone,
 or ``Instant.now()`` for timezone-agnostic exact time.
 Suppress with :func:`~whenever.ignore_potentially_stale_offset_warning`.
 ";
+pub(crate) const OFFSETDATETIME_PARSE: &CStr = c"\
+parse(s, /, *, format)
+--
+
+Parse an offset datetime from a custom pattern string.
+
+The pattern **must** include an offset field (``x``/``X``).
+See :ref:`pattern-format` for details.
+
+.. tip::
+
+    If your input string doesn't include an offset, parse it with
+    :meth:`PlainDateTime.parse` first, then convert using
+    :meth:`~PlainDateTime.assume_fixed_offset` or
+    :meth:`~PlainDateTime.assume_tz`.
+
+>>> OffsetDateTime.parse(\"2024-03-15 14:30+02:00\", format=\"YYYY-MM-DD hh:mmxxx\")
+OffsetDateTime(\"2024-03-15 14:30:00+02:00\")
+";
 pub(crate) const OFFSETDATETIME_PARSE_ISO: &CStr = c"\
 Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
 
@@ -1366,20 +1474,11 @@ parse_strptime(s, /, *, format)
 
 Parse a datetime with offset using the standard library ``strptime()`` method.
 
->>> OffsetDateTime.parse_strptime(\"2020-08-15+0200\", format=\"%Y-%m-%d%z\")
-OffsetDateTime(\"2020-08-15 00:00:00+02:00\")
+.. deprecated:: 0.10.0
 
-Note
-----
-This method defers to the standard library ``strptime()`` method,
-which may behave differently in different Python versions.
-It also only supports up to microsecond precision.
+    Use :meth:`parse` with a pattern string instead, or use
+    ``OffsetDateTime(datetime.strptime(...))``.
 
-Important
----------
-An offset *must* be present in the format string.
-This means you MUST include the directive ``%z``, ``%Z``, or ``%:z``.
-To parse a datetime without an offset, use ``PlainDateTime`` instead.
 ";
 pub(crate) const OFFSETDATETIME_REPLACE: &CStr = c"\
 replace($self, /, *, year=None, month=None, weeks=0, day=None, hour=None, minute=None, second=None, nanosecond=None, offset=None, ignore_dst=False)
@@ -1546,6 +1645,17 @@ Calculate the difference between two times without a timezone.
     The ``difference()`` method is deprecated, use the subtraction operator or
     :meth:`since` method instead.
 ";
+pub(crate) const PLAINDATETIME_FORMAT: &CStr = c"\
+Format as a custom pattern string.
+
+Also available via ``f\"{dt:YYYY-MM-DD hh:mm}\"`` (Python's ``__format__``
+protocol), where an empty spec falls back to :meth:`__str__`.
+
+See :ref:`pattern-format` for details.
+
+>>> PlainDateTime(2024, 3, 15, 14, 30).format(\"YYYY-MM-DD hh:mm\")
+'2024-03-15 14:30'
+";
 pub(crate) const PLAINDATETIME_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, unit='auto', basic=False, sep='T')
 --
@@ -1554,12 +1664,16 @@ Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
 
 The inverse of the ``parse_iso()`` method.
 ";
-pub(crate) const PLAINDATETIME_FROM_PY_DATETIME: &CStr = c"\
-Create an instance from a \"naive\" standard library ``datetime`` object
+pub(crate) const PLAINDATETIME_PARSE: &CStr = c"\
+parse(s, /, *, format)
+--
 
-.. deprecated:: 0.10.0
+Parse a plain datetime from a custom pattern string.
 
-    Use the ``PlainDateTime()`` constructor instead.
+See :ref:`pattern-format` for details.
+
+>>> PlainDateTime.parse(\"2024-03-15 14:30\", format=\"YYYY-MM-DD hh:mm\")
+PlainDateTime(\"2024-03-15 14:30:00\")
 ";
 pub(crate) const PLAINDATETIME_PARSE_ISO: &CStr = c"\
 Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
@@ -1575,20 +1689,11 @@ parse_strptime(s, /, *, format)
 
 Parse a plain datetime using the standard library ``strptime()`` method.
 
->>> PlainDateTime.parse_strptime(\"2020-08-15\", format=\"%d/%m/%Y_%H:%M\")
-PlainDateTime(\"2020-08-15 00:00:00\")
+.. deprecated:: 0.10.0
 
-Note
-----
-This method defers to the standard library ``strptime()`` method,
-which may behave differently in different Python versions.
-It also only supports up to microsecond precision.
+    Use :meth:`parse` with a pattern string instead, or use
+    ``PlainDateTime(datetime.strptime(...))``.
 
-Important
----------
-There may not be an offset in the format string.
-This means you CANNOT use the directives ``%z``, ``%Z``, or ``%:z``.
-Use ``OffsetDateTime`` to parse datetimes with an offset.
 ";
 pub(crate) const PLAINDATETIME_REPLACE: &CStr = c"\
 replace($self, /, *, year=None, month=None, day=None, hour=None, minute=None, second=None, nanosecond=None)
@@ -1645,6 +1750,16 @@ until($self, b, /, *, unit=None, units=None, round_mode='trunc', round_increment
 --
 
 Inverse of the ``since()`` method. See :meth:`since` for more information.";
+pub(crate) const TIME_FORMAT: &CStr = c"\
+Format as a custom pattern string.
+
+See :ref:`pattern-format` for details.
+
+>>> Time(14, 30, 5).format(\"hh:mm:ss\")
+'14:30:05'
+>>> Time(14, 30).format(\"ii:mm aa\")
+'02:30 PM'
+";
 pub(crate) const TIME_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, unit='auto', basic=False)
 --
@@ -1664,11 +1779,27 @@ Create from a :class:`~datetime.time`
 >>> Time.from_py_time(time(12, 30, 0))
 Time(12:30:00)
 
-`fold` value is ignored.
-
 .. deprecated:: 0.10.0
 
-    Use the ``Time()`` constructor instead.
+    Use the constructor ``Time(t)`` instead.
+";
+pub(crate) const TIME_HOUR: &CStr = c"\
+The hour component of the time
+
+>>> Time(12, 30, 0).hour
+12
+";
+pub(crate) const TIME_MINUTE: &CStr = c"\
+The minute component of the time
+
+>>> Time(12, 30, 0).minute
+30
+";
+pub(crate) const TIME_NANOSECOND: &CStr = c"\
+The nanosecond component of the time
+
+>>> Time(\"12:30:00.003).nanosecond
+3000000
 ";
 pub(crate) const TIME_ON: &CStr = c"\
 Combine a time with a date to create a datetime
@@ -1684,6 +1815,19 @@ to find the corresponding exact time:
 >>> t.on(Date(2021, 1, 2)).assume_tz(\"America/New_York\")
 ExactDateTime(\"2021-01-02 12:30:00-05:00[America/New_York]\")
 ";
+pub(crate) const TIME_PARSE: &CStr = c"\
+parse(s, /, *, format)
+--
+
+Parse a time from a custom pattern string.
+
+See :ref:`pattern-format` for details.
+
+>>> Time.parse(\"14:30:05\", format=\"hh:mm:ss\")
+Time(14:30:05)
+>>> Time.parse(\"02:30 PM\", format=\"ii:mm aa\")
+Time(14:30:00)
+";
 pub(crate) const TIME_PARSE_ISO: &CStr = c"\
 Create from the ISO 8601 time format
 
@@ -1692,8 +1836,6 @@ Inverse of :meth:`format_iso`
 >>> Time.parse_iso(\"12:30:00\")
 Time(12:30:00)
 ";
-pub(crate) const TIME_TO_STDLIB: &CStr = c"\
-Convert to a standard library :class:`~datetime.time`";
 pub(crate) const TIME_PY_TIME: &CStr = c"\
 Convert to a standard library :class:`~datetime.time`
 
@@ -1727,11 +1869,27 @@ Time(08:09:10)
 >>> Time(12, 39, 59).round(TimeDelta(minutes=15))
 Time(12:45:00)
 ";
+pub(crate) const TIME_SECOND: &CStr = c"\
+The second component of the time
+>>> Time(12, 30, 0).second
+0
+";
+pub(crate) const TIME_TO_STDLIB: &CStr = c"\
+Convert to a standard library :class:`~datetime.time`
+
+Note
+----
+Nanoseconds are truncated to microseconds.
+If you need more control over rounding, use :meth:`round` first.
+";
 pub(crate) const TIMEDELTA_ADD: &CStr = c"\
 add($self, arg=..., /, **kwargs)
 --
 
-Add time to this delta, returning a new delta";
+Add time to this delta, returning a new delta.
+
+Days and weeks are treated as exact 24-hour and 168-hour units,
+which emits a :class:`~whenever.DaysNotAlways24HoursWarning`.";
 pub(crate) const TIMEDELTA_FORMAT_ISO: &CStr = c"\
 Format as the *popular interpretation* of the ISO 8601 duration format.
 May not strictly adhere to (all versions of) the standard.
@@ -1748,15 +1906,9 @@ Create from a :class:`~datetime.timedelta`
 >>> TimeDelta.from_py_timedelta(timedelta(seconds=5400))
 TimeDelta(\"PT1h30m\")
 
-Note
-----
-Subclasses of :class:`~datetime.timedelta` are not accepted
-because they often add additional state that cannot be represented
-in a :class:`TimeDelta`.
-
 .. deprecated:: 0.10.0
 
-    Use the ``TimeDelta()`` constructor instead.
+    Use the constructor ``TimeDelta(td)`` instead.
 ";
 pub(crate) const TIMEDELTA_IN_DAYS_OF_24H: &CStr = c"\
 The total size in days (of exactly 24 hours each)
@@ -1892,29 +2044,8 @@ Note
 Any duration with a date part is considered invalid.
 ``PT0S`` is valid, but ``P0D`` is not.
 ";
-pub(crate) const TIMEDELTA_TO_STDLIB: &CStr = c"\
-Convert to a :class:`~datetime.timedelta`
-
->>> d = TimeDelta(hours=1, minutes=30)
->>> d.to_stdlib()
-timedelta(seconds=5400)
-
-Note
-----
-Nanoseconds are truncated to microseconds.
-If you need more control over rounding, use :meth:`round` first.
-";
 pub(crate) const TIMEDELTA_PY_TIMEDELTA: &CStr = c"\
 Convert to a :class:`~datetime.timedelta`
-
->>> d = TimeDelta(hours=1, minutes=30)
->>> d.py_timedelta()
-timedelta(seconds=5400)
-
-Note
-----
-Nanoseconds are truncated to microseconds.
-If you need more control over rounding, use :meth:`round` first.
 
 .. deprecated:: 0.10.0
 
@@ -1941,7 +2072,22 @@ pub(crate) const TIMEDELTA_SUBTRACT: &CStr = c"\
 subtract($self, arg=..., /, **kwargs)
 --
 
-Subtract time from this delta, returning a new delta";
+Subtract time from this delta, returning a new delta.
+
+Days and weeks are treated as exact 24-hour and 168-hour units,
+which emits a :class:`~whenever.DaysNotAlways24HoursWarning`.";
+pub(crate) const TIMEDELTA_TO_STDLIB: &CStr = c"\
+Convert to a :class:`~datetime.timedelta`
+
+>>> d = TimeDelta(hours=1, minutes=30)
+>>> d.to_stdlib()
+timedelta(seconds=5400)
+
+Note
+----
+Nanoseconds are truncated to microseconds.
+If you need more control over rounding, use :meth:`round` first.
+";
 pub(crate) const TIMEDELTA_TOTAL: &CStr = c"\
 total($self, unit, relative_to=...)
 --
@@ -1959,6 +2105,12 @@ Inverse of :meth:`parse_iso`.
 
 >>> YearMonth(2021, 1).format_iso()
 '2021-01'
+";
+pub(crate) const YEARMONTH_MONTH: &CStr = c"\
+The month component of the year-month
+
+>>> YearMonth(2021, 1).month
+1
 ";
 pub(crate) const YEARMONTH_ON_DAY: &CStr = c"\
 Create a date from this year-month with a given day
@@ -1983,6 +2135,12 @@ Create a new instance with the given fields replaced
 >>> d = YearMonth(2021, 12)
 >>> d.replace(month=3)
 YearMonth(\"2021-03\")
+";
+pub(crate) const YEARMONTH_YEAR: &CStr = c"\
+The year component of the year-month
+
+>>> YearMonth(2021, 1).year
+2021
 ";
 pub(crate) const ZONEDDATETIME_ADD: &CStr = c"\
 add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
@@ -2029,6 +2187,16 @@ Europe/Dublin defines its standard time as IST (UTC+1) and uses
 \"negative DST\" in winter. In such cases, this method
 returns a negative value during winter.
 ";
+pub(crate) const ZONEDDATETIME_FORMAT: &CStr = c"\
+Format as a custom pattern string.
+
+See :ref:`pattern-format` for details.
+
+>>> ZonedDateTime(2024, 3, 15, 14, 30, tz=\"Europe/Paris\").format(
+...     \"YYYY-MM-DD hh:mmxxx'['VV']'\"
+... )
+'2024-03-15 14:30+01:00[Europe/Paris]'
+";
 pub(crate) const ZONEDDATETIME_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, unit='auto', basic=False, sep='T', tz='always')
 --
@@ -2063,15 +2231,6 @@ Important
 The timezone ID is a recent extension to the ISO 8601 format (RFC 9557).
 Although it is gaining popularity, it is not yet widely supported
 by ISO 8601 parsers.
-";
-pub(crate) const ZONEDDATETIME_FROM_PY_DATETIME: &CStr = c"\
-Create an instance from a standard library ``datetime`` object
-with a ``ZoneInfo`` tzinfo.
-
-.. deprecated:: 0.10.0
-
-    Use the ``ZonedDateTime()`` constructor instead.
-
 ";
 pub(crate) const ZONEDDATETIME_FROM_SYSTEM_TZ: &CStr = c"\
 from_system_tz(year, month, day, hour=0, minute=0, second=0, *, nanosecond=0, disambiguate='compatible')
@@ -2124,6 +2283,29 @@ pub(crate) const ZONEDDATETIME_NOW_IN_SYSTEM_TZ: &CStr = c"\
 Create an instance from the current time in the system timezone.
 
 Equivalent to ``Instant.now().to_system_tz()``.
+";
+pub(crate) const ZONEDDATETIME_PARSE: &CStr = c"\
+parse(s, /, *, format, disambiguate='compatible')
+--
+
+Parse a zoned datetime from a custom pattern string.
+
+The pattern **must** include a timezone ID field (``VV``).
+An offset field (``x``/``X``) is optional but recommended for
+disambiguation during DST transitions.
+See :ref:`pattern-format` for details.
+
+.. tip::
+
+    If your input string doesn't include a timezone ID, parse it with
+    :meth:`PlainDateTime.parse` first, then convert using
+    :meth:`~PlainDateTime.assume_tz`.
+
+>>> ZonedDateTime.parse(
+...     \"2024-03-15 14:30+01:00[Europe/Paris]\",
+...     format=\"YYYY-MM-DD hh:mmxxx'['VV']'\",
+... )
+ZonedDateTime(\"2024-03-15 14:30:00+01:00[Europe/Paris]\")
 ";
 pub(crate) const ZONEDDATETIME_PARSE_ISO: &CStr = c"\
 Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
@@ -2224,6 +2406,11 @@ subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, m
 --
 
 The inverse of the ``add()`` method. See :meth:`add` for more information.";
+pub(crate) const ZONEDDATETIME_TZ: &CStr = c"\
+The timezone ID. In rare cases, this may be ``None``,
+if the ``ZonedDateTime`` was created from a system timezone
+without a known IANA key.
+";
 pub(crate) const ZONEDDATETIME_TZ_ABBREV: &CStr = c"\
 The timezone abbreviation (e.g. ``\"EST\"``, ``\"CEST\"``).
 
@@ -2243,6 +2430,34 @@ until($self, b, /, *, unit=None, units=None, round_mode='trunc', round_increment
 --
 
 Inverse of the ``since()`` method. See :meth:`since` for more information.";
+pub(crate) const BASICCONVERSIONS_FROM_PY_DATETIME: &CStr = c"\
+Create an instance from a :class:`~datetime.datetime` object.
+
+.. deprecated:: 0.10.0
+
+    Use the constructor instead (e.g. ``Instant(d)``,
+    ``ZonedDateTime(d)``, etc.)
+
+Note
+----
+The datetime is checked for validity, raising similar exceptions
+to the constructor.
+``ValueError`` is raised if the datetime doesn't have the correct
+tzinfo matching the class. For example, :class:`ZonedDateTime`
+requires a :class:`~zoneinfo.ZoneInfo` tzinfo.
+
+Warning
+-------
+No exceptions are raised if the datetime is ambiguous.
+Its ``fold`` attribute is used to disambiguate.
+";
+pub(crate) const BASICCONVERSIONS_PY_DATETIME: &CStr = c"\
+Convert to a standard library :class:`~datetime.datetime`
+
+.. deprecated:: 0.10.0
+
+    Use :meth:`to_stdlib` instead.
+";
 pub(crate) const BASICCONVERSIONS_TO_STDLIB: &CStr = c"\
 Convert to a standard library :class:`~datetime.datetime`
 
@@ -2251,26 +2466,12 @@ Note
 - Nanoseconds are truncated to microseconds.
   If you wish to customize the rounding behavior, use
   the ``round()`` method first.
-- In case of a ZonedDateTime linked to a system timezone without a
+- For :class:`ZonedDateTime` linked to a system timezone without a
   IANA timezone ID, the returned Python datetime will have
   a fixed offset (:class:`~datetime.timezone` tzinfo)
 ";
-pub(crate) const BASICCONVERSIONS_PY_DATETIME: &CStr = c"\
-Convert to a standard library :class:`~datetime.datetime`
-
-Note
-----
-- Nanoseconds are truncated to microseconds.
-  If you wish to customize the rounding behavior, use
-  the ``round()`` method first.
-- In case of a ZonedDateTime linked to a system timezone without a
-  IANA timezone ID, the returned Python datetime will have
-  a fixed offset (:class:`~datetime.timezone` tzinfo)
-
-.. deprecated:: 0.10.0
-
-    Use :meth:`to_stdlib` instead.
-";
+pub(crate) const EXACTANDLOCALTIME_OFFSET: &CStr = c"\
+The UTC offset of the datetime";
 pub(crate) const EXACTANDLOCALTIME_TO_INSTANT: &CStr = c"\
 Get the underlying instant in time
 
@@ -2363,6 +2564,18 @@ like :meth:`~PlainDateTime.assume_utc` or
 >>> date.at(time).assume_tz(\"Europe/London\")
 ZonedDateTime(\"2021-01-02T03:04:05+00:00[Europe/London]\")
 ";
+pub(crate) const LOCALTIME_DAY: &CStr = c"\
+The day component of the datetime";
+pub(crate) const LOCALTIME_HOUR: &CStr = c"\
+The hour component of the datetime";
+pub(crate) const LOCALTIME_MINUTE: &CStr = c"\
+The minute component of the datetime";
+pub(crate) const LOCALTIME_MONTH: &CStr = c"\
+The month component of the datetime";
+pub(crate) const LOCALTIME_NANOSECOND: &CStr = c"\
+The nanosecond component of the datetime";
+pub(crate) const LOCALTIME_SECOND: &CStr = c"\
+The second component of the datetime";
 pub(crate) const LOCALTIME_TIME: &CStr = c"\
 The time-of-day part of the datetime
 
@@ -2377,6 +2590,8 @@ like :meth:`~PlainDateTime.assume_utc` or
 >>> time.on(date).assume_tz(\"Europe/Paris\")
 ZonedDateTime(\"2021-01-02T03:04:05+01:00[Europe/Paris]\")
 ";
+pub(crate) const LOCALTIME_YEAR: &CStr = c"\
+The year component of the datetime";
 pub(crate) const CANNOT_ROUND_DAY_MSG: &CStr = c"Cannot round to day, because days do not have a fixed length. Due to daylight saving time, some days have 23 or 25 hours.If you wish to round to exaxtly 24 hours, use `round('hour', increment=24)`.";
 pub(crate) const DAYS_NOT_ALWAYS_24H_MSG: &CStr = c"This operation assumes days are exactly 24 hours. Calendar days may be 23 or 25 hours long during DST transitions. If you're working with UTC, or deliberately want fixed-length days, this is correct. For DST-aware operations, consider using ZonedDateTime arithmetic instead, or passing the `relative_to` argument where available. Suppress this warning with `with whenever.ignore_days_not_always_24h_warning():`.";
 pub(crate) const FORMAT_ISO_NO_TZ_MSG: &CStr = c"This ZonedDateTime has no timezone ID and cannot be formatted in the standard ISO format, which requires it. This typically means the ZonedDateTime was created from a system timezone with an unknown ID. To format without the timezone designator, set the `tz=` argument to 'never' or 'auto'.";
@@ -2390,55 +2605,3 @@ pub(crate) const PLAIN_DIFF_UNAWARE_MSG: &CStr = c"Calculating the difference be
 pub(crate) const PLAIN_SHIFT_UNAWARE_MSG: &CStr = c"Shifting a PlainDateTime by exact time units does not account for timezone transitions that may occur in the interval (e.g. adding 2 hours to 2023-03-26 01:30 in Amsterdam crosses the spring-forward transition, so only 1 real hour has passed). Use .assume_tz('<tz>') + delta if you know the timezone. Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, or with Python's standard warning filters.";
 pub(crate) const ZONEINFO_NO_KEY_MSG: &CStr = c"Can't determine the IANA timezone ID of the given datetime: The 'key' attribute of the datetime's ZoneInfo object is None. 
 This typically means the ZoneInfo object represents the system timezone with an unknown ID. As an alternative, you can use OffsetDateTime.from_py_datetime(), but be aware this is a lossy conversion that only preserves the current UTC offset and discards future daylight saving rules. Please note that a timezone abbreviation like 'CEST' from datetime.tzname() is not a valid IANA timezone ID and cannot be used here.";
-
-// Custom format/parse docstrings (temporary, will be regenerated)
-pub(crate) const TIME_FORMAT: &CStr = c"\
-format($self, pattern, /)
---
-
-Format as a custom pattern string.";
-pub(crate) const TIME_PARSE: &CStr = c"\
-parse($type, s, /, *, format)
---
-
-Parse a time from a custom pattern string.";
-pub(crate) const INSTANT_FORMAT: &CStr = c"\
-format($self, pattern, /)
---
-
-Format as a custom pattern string.";
-pub(crate) const INSTANT_PARSE: &CStr = c"\
-parse($type, s, /, *, format)
---
-
-Parse an instant from a custom pattern string.";
-pub(crate) const OFFSETDATETIME_FORMAT: &CStr = c"\
-format($self, pattern, /)
---
-
-Format as a custom pattern string.";
-pub(crate) const OFFSETDATETIME_PARSE: &CStr = c"\
-parse($type, s, /, *, format)
---
-
-Parse an offset datetime from a custom pattern string.";
-pub(crate) const PLAINDATETIME_FORMAT: &CStr = c"\
-format($self, pattern, /)
---
-
-Format as a custom pattern string.";
-pub(crate) const PLAINDATETIME_PARSE: &CStr = c"\
-parse($type, s, /, *, format)
---
-
-Parse a plain datetime from a custom pattern string.";
-pub(crate) const ZONEDDATETIME_FORMAT: &CStr = c"\
-format($self, pattern, /)
---
-
-Format as a custom pattern string.";
-pub(crate) const ZONEDDATETIME_PARSE: &CStr = c"\
-parse($type, s, /, *, format, disambiguate='compatible')
---
-
-Parse a zoned datetime from a custom pattern string.";

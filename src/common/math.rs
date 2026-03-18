@@ -1,6 +1,7 @@
 //! Calendar difference logic for since()/until() methods.
 //! Rust equivalent of _math.py's date_diff and custom_round.
 use std::cmp::Ordering;
+use std::num::NonZeroU128;
 
 use crate::{
     classes::{
@@ -11,7 +12,7 @@ use crate::{
     },
     common::{
         round,
-        scalar::{DeltaDays, DeltaField, DeltaMonths, Month, Year},
+        scalar::{DeltaDays, DeltaField, DeltaMonths, Month, Year, *},
     },
     py::*,
     pymodule::State,
@@ -69,7 +70,12 @@ impl From<InterimDate> for Date {
 /// Result of a single-unit diff: (value, trunc_date, expand_date)
 type CalDiff = (i32, InterimDate, InterimDate);
 
-fn years_diff(a: Date, b: InterimDate, increment: DateRoundIncrement, sign: i8) -> Option<CalDiff> {
+fn years_diff(
+    a: Date,
+    b: InterimDate,
+    increment: DateRoundIncrement,
+    neg: bool,
+) -> Option<CalDiff> {
     let diff = increment.truncate(a.year.get() as i32 - b.year.get() as i32);
     let shift = b.replace_year(b.year.add_i32(diff)?);
 
@@ -82,11 +88,11 @@ fn years_diff(a: Date, b: InterimDate, increment: DateRoundIncrement, sign: i8) 
     };
 
     if overshot {
-        let adj = diff - increment.get() * sign as i32;
+        let adj = diff - increment.get().negate_if(neg);
         let adj_year = b.year.add_i32(adj)?;
         Some((adj, b.replace_year(adj_year), shift))
     } else {
-        let exp_year = b.year.add_i32(diff + increment.get() * sign as i32)?;
+        let exp_year = b.year.add_i32(diff + increment.get().negate_if(neg))?;
         Some((diff, shift, b.replace_year(exp_year)))
     }
 }
@@ -95,7 +101,7 @@ fn months_diff(
     a: Date,
     b: InterimDate,
     increment: DateRoundIncrement,
-    sign: i8,
+    neg: bool,
 ) -> Option<CalDiff> {
     let diff = increment.truncate(
         (a.year.get() as i32 - b.year.get() as i32) * 12 + (a.month as i32 - b.month as i32),
@@ -111,31 +117,37 @@ fn months_diff(
     };
 
     if overshot {
-        let adj = diff - increment.get() * sign as i32;
+        let adj = diff - increment.get().negate_if(neg);
         Some((adj, b.shift_months(adj)?.into(), shift.into()))
     } else {
         Some((
             diff,
             shift.into(),
-            b.shift_months(diff + increment.get() * sign as i32)?.into(),
+            b.shift_months(diff + increment.get().negate_if(neg))?
+                .into(),
         ))
     }
 }
 
-fn weeks_diff(a: Date, b: InterimDate, increment: DateRoundIncrement, sign: i8) -> Option<CalDiff> {
+fn weeks_diff(
+    a: Date,
+    b: InterimDate,
+    increment: DateRoundIncrement,
+    neg: bool,
+) -> Option<CalDiff> {
     let (days, trunc, expand) =
-        days_diff(a, b, DateRoundIncrement::new(increment.get() * 7)?, sign)?;
+        days_diff(a, b, DateRoundIncrement::new(increment.get() * 7)?, neg)?;
     Some((days / 7, trunc, expand))
 }
 
-fn days_diff(a: Date, b: InterimDate, increment: DateRoundIncrement, sign: i8) -> Option<CalDiff> {
+fn days_diff(a: Date, b: InterimDate, increment: DateRoundIncrement, neg: bool) -> Option<CalDiff> {
     let b_resolved = b.resolve();
     let delta = a.unix_days().diff(b_resolved.unix_days());
     // SAFETY: truncated value (towards zero) never overflows
     let trunc_value = DeltaDays::new_unchecked(increment.truncate(delta.get()));
 
     let trunc_date = b_resolved.shift_days(trunc_value)?;
-    let expand_date = trunc_date.shift_days(DeltaDays::new(increment.get() * sign as i32)?)?;
+    let expand_date = trunc_date.shift_days(DeltaDays::new(increment.get().negate_if(neg))?)?;
     Some((trunc_value.get(), trunc_date.into(), expand_date.into()))
 }
 
@@ -173,34 +185,34 @@ impl CalUnit {
         a: Date,
         trunc: InterimDate,
         inc: DateRoundIncrement,
-        sign: i8,
+        neg: bool,
         result: &mut ItemizedDateDelta,
     ) -> Option<(InterimDate, InterimDate)> {
         match self {
             CalUnit::Years => {
-                let (v, t, e) = years_diff(a, trunc, inc, sign)?;
+                let (v, t, e) = years_diff(a, trunc, inc, neg)?;
                 result.years = DeltaField::new_unchecked(v);
                 Some((t, e))
             }
             CalUnit::Months => {
-                let (v, t, e) = months_diff(a, trunc, inc, sign)?;
+                let (v, t, e) = months_diff(a, trunc, inc, neg)?;
                 result.months = DeltaField::new_unchecked(v);
                 Some((t, e))
             }
             CalUnit::Weeks => {
-                let (v, t, e) = weeks_diff(a, trunc, inc, sign)?;
+                let (v, t, e) = weeks_diff(a, trunc, inc, neg)?;
                 result.weeks = DeltaField::new_unchecked(v);
                 Some((t, e))
             }
             CalUnit::Days => {
-                let (v, t, e) = days_diff(a, trunc, inc, sign)?;
+                let (v, t, e) = days_diff(a, trunc, inc, neg)?;
                 result.days = DeltaField::new_unchecked(v);
                 Some((t, e))
             }
         }
     }
 
-    pub(crate) fn field<'a>(self, d: &'a mut ItemizedDateDelta) -> &'a mut DeltaField<i32> {
+    pub(crate) fn field(self, d: &mut ItemizedDateDelta) -> &mut DeltaField<i32> {
         match self {
             CalUnit::Years => &mut d.years,
             CalUnit::Months => &mut d.months,
@@ -425,15 +437,15 @@ pub(crate) enum ExactUnit {
 impl ExactUnit {
     pub(crate) const fn in_nanos(self) -> i64 {
         match self {
-            ExactUnit::Hours => 3_600_000_000_000,
-            ExactUnit::Minutes => 60_000_000_000,
-            ExactUnit::Seconds => 1_000_000_000,
+            ExactUnit::Hours => NS_PER_HOUR as i64,
+            ExactUnit::Minutes => NS_PER_MINUTE as i64,
+            ExactUnit::Seconds => NS_PER_SEC as i64,
             ExactUnit::Nanoseconds => 1,
             ExactUnit::Milliseconds => 1_000_000,
             ExactUnit::Microseconds => 1_000,
             // weeks/days also have ns equivalents when treating days as always 24h
-            ExactUnit::Weeks => 604_800_000_000_000,
-            ExactUnit::Days => 86_400_000_000_000,
+            ExactUnit::Weeks => NS_PER_WEEK as i64,
+            ExactUnit::Days => NS_PER_DAY as i64,
         }
     }
 
@@ -677,6 +689,7 @@ impl DeltaUnitSet {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum AnyUnit {
     Years,
     Months,
@@ -869,36 +882,35 @@ impl DateRoundIncrement {
     }
 }
 
-// Validated rounding increment for the time/exact domain.
-// 0 < round_increment <= i32::MAX
+/// Validated rounding increment for the time/exact domain.
+/// Always positive (encoded by `NonZeroU128`) and within `i128::MAX` (ensured by `from_py`).
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct RoundIncrement(i32);
+pub(crate) struct RoundIncrement(NonZeroU128);
 
 impl RoundIncrement {
-    pub(crate) const MIN: Self = Self(1);
-
-    pub(crate) fn from_i64(inc: i64) -> Option<Self> {
-        if inc <= 0 || inc > i32::MAX as i64 {
-            None
-        } else {
-            Some(Self(inc as i32))
-        }
-    }
+    // SAFETY: 1 is non-zero — but NonZeroU128::new(1).unwrap() also works in const
+    pub(crate) const MIN: Self = Self(NonZeroU128::new(1).unwrap());
 
     pub(crate) fn from_py(v: PyObj) -> PyResult<Self> {
         let inc = v
             .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("round_increment must be an integer")?
-            .to_i64()?;
-        Self::from_i64(inc).ok_or_value_err("round_increment must be a positive integer in range")
+            .to_i128()?;
+        if inc <= 0 {
+            raise_value_err("round_increment must be a positive integer in range")?
+        }
+        // SAFETY: we just checked that inc > 0, so inc as u128 is valid and non-zero
+        Ok(Self(unsafe { NonZeroU128::new_unchecked(inc as u128) }))
     }
 
-    pub(crate) fn get(self) -> i32 {
-        self.0
+    /// Returns the increment as `i128`. Safe because `from_py` ensures the value
+    /// fits within `i128::MAX`.
+    pub(crate) fn as_i128(self) -> i128 {
+        self.0.get() as i128
     }
 
     pub(crate) fn to_date(self) -> Option<DateRoundIncrement> {
-        DateRoundIncrement::new(self.0)
+        DateRoundIncrement::new(i32::try_from(self.0.get()).ok()?)
     }
 }
 
@@ -910,16 +922,15 @@ pub(crate) enum DateSinceUnits {
 
 /// Compute multi-unit date difference, progressively applying each unit.
 /// Returns (results_per_unit, trunc_date, expand_date).
-/// NOTE: the reason that `sign` is passed in separately instead of just
-/// being deduced from the order of `a` and `b` is that the function needs
-/// to be used with identical dates but with different times of day.
-/// The sign determines the direction of rounding.
+/// The `neg` parameter determines the direction of rounding.
+/// It's passed explicitly since it cannot (fully) be determined from `a` and `b`
+/// since other context may affect the rounding direction (e.g. time of day)
 pub(crate) fn date_diff(
     a: Date,
     b: Date,
     round_increment: DateRoundIncrement,
     units: CalUnitSet, // time units ignored
-    sign: i8,
+    neg: bool,
 ) -> Option<(ItemizedDateDelta, InterimDate, InterimDate)> {
     let smallest = units.smallest();
     let mut result = ItemizedDateDelta::UNSET;
@@ -932,7 +943,7 @@ pub(crate) fn date_diff(
         } else {
             DateRoundIncrement::MIN
         };
-        let (new_trunc, new_expand) = unit.diff_into(a, trunc, inc, sign, &mut result)?;
+        let (new_trunc, new_expand) = unit.diff_into(a, trunc, inc, neg, &mut result)?;
         trunc = new_trunc;
         expand = new_expand;
     }
@@ -945,51 +956,52 @@ pub(crate) fn date_diff_single_unit(
     b: Date,
     round_increment: DateRoundIncrement,
     unit: CalUnit,
-    sign: i8,
+    neg: bool,
 ) -> Option<CalDiff> {
     Some(match unit {
-        CalUnit::Years => years_diff(a, b.into(), round_increment, sign)?,
-        CalUnit::Months => months_diff(a, b.into(), round_increment, sign)?,
-        CalUnit::Weeks => weeks_diff(a, b.into(), round_increment, sign)?,
-        CalUnit::Days => days_diff(a, b.into(), round_increment, sign)?,
+        CalUnit::Years => years_diff(a, b.into(), round_increment, neg)?,
+        CalUnit::Months => months_diff(a, b.into(), round_increment, neg)?,
+        CalUnit::Weeks => weeks_diff(a, b.into(), round_increment, neg)?,
+        CalUnit::Days => days_diff(a, b.into(), round_increment, neg)?,
     })
 }
 
+/// Round a calendar unit value by the number of days between the truncated
+/// and expanded dates.
 pub(crate) fn round_by_days(
     value: i32,
     target: Date,
     trunc: Date,
     expand: Date,
-    mode: round::Mode,
+    mode: round::AbsMode,
     increment: DateRoundIncrement,
-    sign: i8,
+    neg: bool,
 ) -> i32 {
-    let abs_mode = mode.to_abs_with_sign(sign);
-    if abs_mode == round::AbsMode::Trunc {
+    if mode == round::AbsMode::Trunc {
         value
     } else {
         let trunc_date = trunc.unix_days();
         let r = target.unix_days().diff(trunc_date).abs().get();
         let e = expand.unix_days().diff(trunc_date).abs().get();
         debug_assert!(e > 0, "expand and trunc dates cannot be the same");
-        round(value, r > 0, r.cmp(&(e - r)), abs_mode, increment, sign)
+        round(value, r > 0, r.cmp(&(e - r)), mode, increment, neg)
     }
 }
 
-// dedup with ItemizedDateDelta method
+// Round a calendar unit value by the amount of time between the truncated
+// and expanded datetimes.
 pub(crate) fn round_by_time(
     value: i32,
     target: Instant,
     trunc: Instant,
     expand: Instant,
-    mode: round::Mode,
+    mode: round::AbsMode,
     increment: DateRoundIncrement,
-    sign: i8,
+    neg: bool,
 ) -> i32 {
-    let abs_mode = mode.to_abs_with_sign(sign);
     // Only run the rounding logic if the rounding mode isn't already trunc
     // since that mode doesn't require any work.
-    if abs_mode == round::AbsMode::Trunc {
+    if mode == round::AbsMode::Trunc {
         // Truncated value (the common case)
         value
     } else {
@@ -997,8 +1009,8 @@ pub(crate) fn round_by_time(
         let e = expand.diff(trunc).abs();
         debug_assert!(!e.is_zero());
         // r.cmp(e - r) is equivalent to (r * 2).cmp(e), avoiding overflow
-        let half_cmp = r.cmp(&(e.checked_add(-r).unwrap()));
-        round(value, !r.is_zero(), half_cmp, abs_mode, increment, sign)
+        let half_cmp = r.cmp(&(e.add(-r).unwrap()));
+        round(value, !r.is_zero(), half_cmp, mode, increment, neg)
     }
 }
 
@@ -1008,7 +1020,7 @@ fn round(
     half_cmp: Ordering,
     mode: round::AbsMode,
     increment: DateRoundIncrement,
-    sign: i8,
+    negate: bool,
 ) -> i32 {
     let do_expand = match mode {
         round::AbsMode::Trunc => unreachable!("trunc should be handled by caller"),
@@ -1026,7 +1038,7 @@ fn round(
 
     trunc_value
         + if do_expand {
-            increment.get() * sign as i32
+            increment.get().negate_if(negate)
         } else {
             0
         }
@@ -1046,7 +1058,7 @@ mod tests {
             d(2023, 4, 15),
             d(2020, 1, 1).into(),
             DateRoundIncrement::MIN,
-            1,
+            false,
         )
         .unwrap();
         assert_eq!(diff, 3);
@@ -1059,7 +1071,7 @@ mod tests {
             d(2021, 2, 28),
             d(2020, 2, 29).into(),
             DateRoundIncrement::MIN,
-            1,
+            false,
         )
         .unwrap();
         assert_eq!(diff, 1);
@@ -1072,7 +1084,7 @@ mod tests {
             d(2023, 4, 15),
             d(2023, 1, 1).into(),
             DateRoundIncrement::MIN,
-            1,
+            false,
         )
         .unwrap();
         assert_eq!(diff, 3);
@@ -1084,7 +1096,7 @@ mod tests {
             d(2023, 1, 10),
             d(2023, 1, 1).into(),
             DateRoundIncrement::MIN,
-            1,
+            false,
         )
         .unwrap();
         assert_eq!(diff, 9);
@@ -1100,7 +1112,7 @@ mod tests {
             d(2020, 1, 1),
             DateRoundIncrement::MIN,
             units,
-            1,
+            false,
         )
         .unwrap();
         assert_eq!(results.years.get_or(0), 3);
@@ -1117,7 +1129,7 @@ mod tests {
                 Ordering::Less,
                 round::AbsMode::Expand,
                 DateRoundIncrement::MIN,
-                1
+                false
             ),
             4
         );
@@ -1129,7 +1141,7 @@ mod tests {
                 Ordering::Less,
                 round::AbsMode::Expand,
                 DateRoundIncrement::MIN,
-                1
+                false
             ),
             3
         );
@@ -1145,7 +1157,7 @@ mod tests {
                 Ordering::Equal,
                 round::AbsMode::HalfEven,
                 DateRoundIncrement::MIN,
-                1
+                false
             ),
             4
         );
@@ -1157,7 +1169,7 @@ mod tests {
                 Ordering::Equal,
                 round::AbsMode::HalfEven,
                 DateRoundIncrement::MIN,
-                1
+                false
             ),
             4
         );
@@ -1169,7 +1181,7 @@ mod tests {
                 Ordering::Greater,
                 round::AbsMode::HalfEven,
                 DateRoundIncrement::MIN,
-                1
+                false
             ),
             5
         );
@@ -1181,7 +1193,7 @@ mod tests {
                 Ordering::Less,
                 round::AbsMode::HalfEven,
                 DateRoundIncrement::MIN,
-                1
+                false
             ),
             4
         );

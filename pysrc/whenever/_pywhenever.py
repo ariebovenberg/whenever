@@ -1991,12 +1991,14 @@ class TimeDelta(_Base):
                 sign: Literal[1, -1] = 1 if self._total_ns >= 0 else -1
 
                 target_date = shifted.date()
-                cal_shifted = relative_to.replace_date(target_date)
-                # TODO LATER: need a while loop for Samoa?
-                if sign == 1 and cal_shifted > shifted:
-                    target_date = target_date.subtract(days=1)
-                elif sign == -1 and cal_shifted < shifted:
-                    target_date = target_date.add(days=1)
+                # The while loop handles the rare case of a 24h+ gap (e.g. Samoa 2011),
+                # where two consecutive dates map to the same instant.
+                if sign == 1:
+                    while relative_to.replace_date(target_date) > shifted:
+                        target_date = target_date.subtract(days=1)
+                else:
+                    while relative_to.replace_date(target_date) < shifted:
+                        target_date = target_date.add(days=1)
 
                 trunc_amount, trunc_date, expanded_date = DIFF_FUNCS[unit](
                     target_date._py_date,
@@ -2024,7 +2026,7 @@ class TimeDelta(_Base):
                 if not _ignore_days_not_always_24h_warning.get():
                     warn(DaysNotAlways24HoursWarning(DAYS_NOT_ALWAYS_24H_MSG))
             else:
-                raise ValueError(
+                raise TypeError(
                     f"Cannot convert TimeDelta to {unit!r} without a `relative_to` parameter"
                 )
         elif unit == "nanoseconds":
@@ -2510,6 +2512,8 @@ class TimeDelta(_Base):
         self,
         /,
         *,
+        weeks: float = ...,
+        days: float = ...,
         hours: float = ...,
         minutes: float = ...,
         seconds: float = ...,
@@ -2519,7 +2523,10 @@ class TimeDelta(_Base):
     ) -> TimeDelta: ...
 
     def add(self, arg: TimeDelta = _UNSET, /, **kwargs: Any) -> TimeDelta:
-        """Add time to this delta, returning a new delta"""
+        """Add time to this delta, returning a new delta.
+
+        Days and weeks are treated as exact 24-hour and 168-hour units,
+        which emits a :class:`~whenever.DaysNotAlways24HoursWarning`."""
         if kwargs:
             if arg is not _UNSET:
                 raise TypeError("Cannot mix positional and keyword arguments")
@@ -2537,6 +2544,8 @@ class TimeDelta(_Base):
         self,
         /,
         *,
+        weeks: float = ...,
+        days: float = ...,
         hours: float = ...,
         minutes: float = ...,
         seconds: float = ...,
@@ -2546,7 +2555,10 @@ class TimeDelta(_Base):
     ) -> TimeDelta: ...
 
     def subtract(self, arg: TimeDelta = _UNSET, /, **kwargs: Any) -> TimeDelta:
-        """Subtract time from this delta, returning a new delta"""
+        """Subtract time from this delta, returning a new delta.
+
+        Days and weeks are treated as exact 24-hour and 168-hour units,
+        which emits a :class:`~whenever.DaysNotAlways24HoursWarning`."""
         if kwargs:
             if arg is not _UNSET:
                 raise TypeError("Cannot mix positional and keyword arguments")
@@ -3261,9 +3273,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     """
 
     __slots__ = (
-        "_sign",
-        # Values are stored as positive integers or None. The sign
-        # is stored separately (all fields must have the same sign).
+        # Values are stored as signed integers (or None if not set).
+        # All non-zero fields must have the same sign.
         "_years",
         "_months",
         "_weeks",
@@ -3325,10 +3336,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         self._nanoseconds, sign = _check_component(
             nanoseconds, sign, _MAX_SUBSEC_NANOS
         )
-        self._sign: Sign = sign
         if (
-            self._sign == 0
-            and years is _UNSET
+            years is _UNSET
             and months is _UNSET
             and weeks is _UNSET
             and days is _UNSET
@@ -3346,7 +3355,19 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     @property
     def sign(self) -> Sign:
         """The sign of the delta, 1, 0, or -1"""
-        return self._sign
+        for v in (
+            self._years,
+            self._months,
+            self._weeks,
+            self._days,
+            self._hours,
+            self._minutes,
+            self._seconds,
+            self._nanoseconds,
+        ):
+            if v:
+                return 1 if v > 0 else -1
+        return 0
 
     # FUTURE: a float_seconds method that combines seconds and nanoseconds into a single float value?
 
@@ -3424,7 +3445,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                 """
                 ...
 
-    # TODO: bring in line with the Rust implementation: store the fields signed.
     def __getitem__(self, key: str) -> int:
         """Get the value of a specific field by name.
 
@@ -3457,7 +3477,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                 raise KeyError(key)
 
         if value is not None:
-            return self._sign * value
+            return value
 
         raise KeyError(key)
 
@@ -3514,7 +3534,16 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         >>> bool(ItemizedDelta(weeks=1))
         True
         """
-        return bool(self._sign)
+        return bool(
+            self._years
+            or self._months
+            or self._weeks
+            or self._days
+            or self._hours
+            or self._minutes
+            or self._seconds
+            or self._nanoseconds
+        )
 
     def format_iso(self, *, lowercase_units: bool = False) -> str:
         """Format as the *popular interpretation* of the ISO 8601 duration format.
@@ -3542,31 +3571,35 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         # Mypy complains about string unpacking. But it's valid here. See mypy/issues/13823
         y, m, w, d, h, s = "ymwdhs" if lowercase_units else "YMWDHS"  # type: ignore[misc]
 
-        parts = ["-" * (self._sign == -1), "P"]
+        sgn = self.sign
+        parts = ["-" * (sgn < 0), "P"]
         if self._years is not None:
-            parts.append(f"{self._years}{y}")
+            parts.append(f"{abs(self._years)}{y}")
         if self._months is not None:
-            parts.append(f"{self._months}{m}")
+            parts.append(f"{abs(self._months)}{m}")
         if self._weeks is not None:
-            parts.append(f"{self._weeks}{w}")
+            parts.append(f"{abs(self._weeks)}{w}")
         if self._days is not None:
-            parts.append(f"{self._days}{d}")
+            parts.append(f"{abs(self._days)}{d}")
 
         parts.append("T")
 
         if self._hours is not None:
-            parts.append(f"{self._hours}{h}")
+            parts.append(f"{abs(self._hours)}{h}")
         if self._minutes is not None:
-            parts.append(f"{self._minutes}{m}")
+            parts.append(f"{abs(self._minutes)}{m}")
         if self._seconds is not None:
             if self._nanoseconds is None:
-                parts.append(f"{self._seconds}{s}")
+                parts.append(f"{abs(self._seconds)}{s}")
             elif self._nanoseconds:
                 parts.append(
-                    f"{self._seconds}.{self._nanoseconds:09d}".rstrip("0") + s
+                    f"{abs(self._seconds)}.{abs(self._nanoseconds):09d}".rstrip(
+                        "0"
+                    )
+                    + s
                 )
             else:
-                parts.append(f"{self._seconds}.0{s}")
+                parts.append(f"{abs(self._seconds)}.0{s}")
 
         joined = "".join(parts)
         if joined.endswith("T"):  # skip the T if no time fields
@@ -3691,7 +3724,9 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             nanos,
         )
 
-    def parts(self) -> tuple[ItemizedDateDelta | None, TimeDelta | None]:
+    def date_and_time_parts(
+        self,
+    ) -> tuple[ItemizedDateDelta | None, TimeDelta | None]:
         """Split into date and time parts.
 
         Either part may be None if no fields were set of that type.
@@ -3707,12 +3742,12 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         ...     seconds=7,
         ...     nanoseconds=8,
         ... )
-        >>> date_part, time_part = d.parts()
+        >>> date_part, time_part = d.date_and_time_parts()
         >>> date_part
         ItemizedDateDelta("P1y2m3w4d")
         >>> time_part
         TimeDelta("P5h6m7.000000008s")
-        >>> ItemizedDelta(weeks=2).parts()
+        >>> ItemizedDelta(weeks=2).date_and_time_parts()
         (ItemizedDateDelta("P2w"), None)
 
         """
@@ -3725,12 +3760,13 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         if all(v is None for v in date_values):
             date_part = None
         else:
+            sgn = self.sign
             date_part = ItemizedDateDelta._from_signed(
-                self._sign if any(date_values) else 0,
-                years=years,
-                months=months,
-                weeks=weeks,
-                days=days,
+                sgn if any(date_values) else 0,
+                years=abs(years) if years is not None else None,
+                months=abs(months) if months is not None else None,
+                weeks=abs(weeks) if weeks is not None else None,
+                days=abs(days) if days is not None else None,
             )
 
         hours, minutes, seconds, nanoseconds = time_values = (
@@ -3748,11 +3784,10 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                 seconds=seconds or 0,
                 nanoseconds=nanoseconds or 0,
             )
-            if self._sign == -1:
-                time_part = -time_part
         return date_part, time_part
 
-    # A private constructor. Checks bounds but *not* signs or presence of > 0 fields.
+    # A private constructor that bypasses sign/presence validation.
+    # All field values must be non-negative; `sign` is applied when storing.
     @classmethod
     def _from_signed(
         cls,
@@ -3767,29 +3802,19 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         nanoseconds: int | None = None,
     ) -> ItemizedDelta:
         self = _object_new(cls)
-        self._sign = sign
-        self._years = _check_bound(years, _MAX_DELTA_YEARS)
-        self._months = _check_bound(months, _MAX_DELTA_MONTHS)
-        self._weeks = _check_bound(weeks, _MAX_DELTA_WEEKS)
-        self._days = _check_bound(days, _MAX_DELTA_DAYS)
-        self._hours = _check_bound(hours, _MAX_DELTA_HOURS)
-        self._minutes = _check_bound(minutes, _MAX_DELTA_MINUTES)
-        self._seconds = _check_bound(seconds, _MAX_DELTA_SECONDS)
-        self._nanoseconds = _check_bound(nanoseconds, _MAX_SUBSEC_NANOS)
-        # Sanity check: if the sign is 0, all fields must be 0 or None
-        if (
-            years
-            or months
-            or weeks
-            or days
-            or hours
-            or minutes
-            or seconds
-            or nanoseconds
-        ):
-            assert sign != 0
-        else:
-            assert sign == 0
+
+        def _apply(v: int | None, max_val: int) -> int | None:
+            v = _check_bound(v, max_val)
+            return -v if v and sign < 0 else v
+
+        self._years = _apply(years, _MAX_DELTA_YEARS)
+        self._months = _apply(months, _MAX_DELTA_MONTHS)
+        self._weeks = _apply(weeks, _MAX_DELTA_WEEKS)
+        self._days = _apply(days, _MAX_DELTA_DAYS)
+        self._hours = _apply(hours, _MAX_DELTA_HOURS)
+        self._minutes = _apply(minutes, _MAX_DELTA_MINUTES)
+        self._seconds = _apply(seconds, _MAX_DELTA_SECONDS)
+        self._nanoseconds = _apply(nanoseconds, _MAX_SUBSEC_NANOS)
         return self
 
     def __eq__(self, other: object) -> bool:
@@ -3812,8 +3837,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         if not isinstance(other, ItemizedDelta):
             return NotImplemented
         return (
-            self._sign == other._sign
-            and (self._years or 0) == (other._years or 0)
+            (self._years or 0) == (other._years or 0)
             and (self._months or 0) == (other._months or 0)
             and (self._weeks or 0) == (other._weeks or 0)
             and (self._days or 0) == (other._days or 0)
@@ -3826,8 +3850,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     def exact_eq(self, other: ItemizedDelta, /) -> bool:
         """Check for strict equality. All fields *and their presence* must match."""
         return (
-            self._sign == other._sign
-            and self._years == other._years
+            self._years == other._years
             and self._months == other._months
             and self._weeks == other._weeks
             and self._days == other._days
@@ -3844,18 +3867,18 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         >>> abs(d)
         ItemizedDelta("P2w3d")
         """
-        if self._sign >= 0:
+        if self.sign >= 0:
             return self
         return ItemizedDelta._from_signed(
             1,
-            self._years,
-            self._months,
-            self._weeks,
-            self._days,
-            self._hours,
-            self._minutes,
-            self._seconds,
-            self._nanoseconds,
+            abs(self._years) if self._years is not None else None,
+            abs(self._months) if self._months is not None else None,
+            abs(self._weeks) if self._weeks is not None else None,
+            abs(self._days) if self._days is not None else None,
+            abs(self._hours) if self._hours is not None else None,
+            abs(self._minutes) if self._minutes is not None else None,
+            abs(self._seconds) if self._seconds is not None else None,
+            abs(self._nanoseconds) if self._nanoseconds is not None else None,
         )
 
     def __neg__(self) -> ItemizedDelta:
@@ -3867,18 +3890,18 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         >>> --d
         ItemizedDelta("P2w3d")
         """
-        if self._sign == 0:
+        if self.sign == 0:
             return self
         return ItemizedDelta._from_signed(
-            -self._sign,
-            self._years,
-            self._months,
-            self._weeks,
-            self._days,
-            self._hours,
-            self._minutes,
-            self._seconds,
-            self._nanoseconds,
+            -self.sign,
+            abs(self._years) if self._years is not None else None,
+            abs(self._months) if self._months is not None else None,
+            abs(self._weeks) if self._weeks is not None else None,
+            abs(self._days) if self._days is not None else None,
+            abs(self._hours) if self._hours is not None else None,
+            abs(self._minutes) if self._minutes is not None else None,
+            abs(self._seconds) if self._seconds is not None else None,
+            abs(self._nanoseconds) if self._nanoseconds is not None else None,
         )
 
     @overload
@@ -3933,15 +3956,21 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         else:
             return self
 
-        return (
-            relative_to.add(self)
-            .add(**kwargs)
-            .since(
-                relative_to,
-                units=units,
-                round_mode=round_mode,
-                round_increment=round_increment,
-            )
+        return relative_to.add(
+            years=self.get("years", 0) + kwargs.get("years", 0),
+            months=self.get("months", 0) + kwargs.get("months", 0),
+            weeks=self.get("weeks", 0) + kwargs.get("weeks", 0),
+            days=self.get("days", 0) + kwargs.get("days", 0),
+            hours=self.get("hours", 0) + kwargs.get("hours", 0),
+            minutes=self.get("minutes", 0) + kwargs.get("minutes", 0),
+            seconds=self.get("seconds", 0) + kwargs.get("seconds", 0),
+            nanoseconds=self.get("nanoseconds", 0)
+            + kwargs.get("nanoseconds", 0),
+        ).since(
+            relative_to,
+            units=units,
+            round_mode=round_mode,
+            round_increment=round_increment,
         )
 
     @overload
@@ -4062,23 +4091,17 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
     @no_type_check
     def __reduce__(self):
-        # TODO LATER: refactor
-        def _to_signed(v):
-            if v is None or v == 0 or self._sign >= 0:
-                return v
-            return -v
-
         return (
             _unpkl_idelta,
             (
-                _to_signed(self._years),
-                _to_signed(self._months),
-                _to_signed(self._weeks),
-                _to_signed(self._days),
-                _to_signed(self._hours),
-                _to_signed(self._minutes),
-                _to_signed(self._seconds),
-                _to_signed(self._nanoseconds),
+                self._years,
+                self._months,
+                self._weeks,
+                self._days,
+                self._hours,
+                self._minutes,
+                self._seconds,
+                self._nanoseconds,
             ),
         )
 
@@ -4099,34 +4122,14 @@ def _unpkl_idelta(
     nanoseconds: int | None,
 ) -> ItemizedDelta:
     self = _object_new(ItemizedDelta)
-    sign: Sign = 0
-    # TODO LATER: reusable method for this pattern
-    for v in (
-        years,
-        months,
-        weeks,
-        days,
-        hours,
-        minutes,
-        seconds,
-        nanoseconds,
-    ):
-        if v is not None and v != 0:
-            sign = 1 if v > 0 else -1
-            break
-    self._sign = sign
-
-    def _abs(v: int | None) -> int | None:
-        return abs(v) if v else v
-
-    self._years = _abs(years)
-    self._months = _abs(months)
-    self._weeks = _abs(weeks)
-    self._days = _abs(days)
-    self._hours = _abs(hours)
-    self._minutes = _abs(minutes)
-    self._seconds = _abs(seconds)
-    self._nanoseconds = _abs(nanoseconds)
+    self._years = years
+    self._months = months
+    self._weeks = weeks
+    self._days = days
+    self._hours = hours
+    self._minutes = minutes
+    self._seconds = seconds
+    self._nanoseconds = nanoseconds
     return self
 
 
@@ -4198,9 +4201,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     """
 
     __slots__ = (
-        "_sign",
-        # Values are stored as positive integers or None. The sign
-        # is stored separately (all fields must have the same sign).
+        # Values are stored as signed integers (or None if not set).
+        # All non-zero fields must have the same sign.
         "_years",
         "_months",
         "_weeks",
@@ -4236,10 +4238,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         self._months, sign = _check_component(months, sign, _MAX_DELTA_MONTHS)
         self._weeks, sign = _check_component(weeks, sign, _MAX_DELTA_WEEKS)
         self._days, sign = _check_component(days, sign, _MAX_DELTA_DAYS)
-        self._sign: Sign = sign
         if (
-            self._sign == 0
-            and years is _UNSET
+            years is _UNSET
             and months is _UNSET
             and weeks is _UNSET
             and days is _UNSET
@@ -4259,7 +4259,10 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         >>> ItemizedDateDelta(weeks=0).sign
         0
         """
-        return self._sign
+        for v in (self._years, self._months, self._weeks, self._days):
+            if v:
+                return 1 if v > 0 else -1
+        return 0
 
     def in_units(
         self,
@@ -4337,15 +4340,15 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         # Mypy complains about string unpacking. But it's valid here. See mypy/issues/13823
         y, m, w, d = "ymwd" if lowercase_units else "YMWD"  # type: ignore[misc]
 
-        parts = ["-" * (self._sign == -1), "P"]
+        parts = ["-" * (self.sign < 0), "P"]
         if self._years is not None:
-            parts.append(f"{self._years}{y}")
+            parts.append(f"{abs(self._years)}{y}")
         if self._months is not None:
-            parts.append(f"{self._months}{m}")
+            parts.append(f"{abs(self._months)}{m}")
         if self._weeks is not None:
-            parts.append(f"{self._weeks}{w}")
+            parts.append(f"{abs(self._weeks)}{w}")
         if self._days is not None:
-            parts.append(f"{self._days}{d}")
+            parts.append(f"{abs(self._days)}{d}")
 
         # NOTE: we always have at least one field,
         # so we don't need to check for "empty" durations.
@@ -4502,7 +4505,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                 raise KeyError(key)
 
         if value is not None:
-            return self._sign * value
+            return value
 
         raise KeyError(key)
 
@@ -4551,7 +4554,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         >>> bool(d)
         True
         """
-        return bool(self._sign)
+        return bool(self._years or self._months or self._weeks or self._days)
 
     def __eq__(self, other: object) -> bool:
         """Compare each field for equality, under the following rules:
@@ -4571,8 +4574,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         if not isinstance(other, ItemizedDateDelta):
             return NotImplemented
         return (
-            self._sign == other._sign
-            and (self._years or 0) == (other._years or 0)
+            (self._years or 0) == (other._years or 0)
             and (self._months or 0) == (other._months or 0)
             and (self._weeks or 0) == (other._weeks or 0)
             and (self._days or 0) == (other._days or 0)
@@ -4588,8 +4590,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         False
         """
         return (
-            self._sign == other._sign
-            and self._years == other._years
+            self._years == other._years
             and self._months == other._months
             and self._weeks == other._weeks
             and self._days == other._days
@@ -4602,10 +4603,14 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         >>> abs(d)
         ItemizedDateDelta("P2w3d")
         """
-        if self._sign >= 0:
+        if self.sign >= 0:
             return self
         return ItemizedDateDelta._from_signed(
-            1, self._years, self._months, self._weeks, self._days
+            1,
+            abs(self._years) if self._years is not None else None,
+            abs(self._months) if self._months is not None else None,
+            abs(self._weeks) if self._weeks is not None else None,
+            abs(self._days) if self._days is not None else None,
         )
 
     def __neg__(self) -> ItemizedDateDelta:
@@ -4617,10 +4622,14 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         >>> --d
         ItemizedDateDelta("P2w3d")
         """
-        if self._sign == 0:
+        if self.sign == 0:
             return self
         return ItemizedDateDelta._from_signed(
-            -self._sign, self._years, self._months, self._weeks, self._days
+            -self.sign,
+            abs(self._years) if self._years is not None else None,
+            abs(self._months) if self._months is not None else None,
+            abs(self._weeks) if self._weeks is not None else None,
+            abs(self._days) if self._days is not None else None,
         )
 
     @overload
@@ -4671,15 +4680,16 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         else:
             return self
 
-        return (
-            relative_to.add(self)
-            .add(**kwargs)
-            .since(
-                relative_to,
-                units=units,
-                round_mode=round_mode,
-                round_increment=round_increment,
-            )
+        return relative_to.add(
+            years=self.get("years", 0) + kwargs.get("years", 0),
+            months=self.get("months", 0) + kwargs.get("months", 0),
+            weeks=self.get("weeks", 0) + kwargs.get("weeks", 0),
+            days=self.get("days", 0) + kwargs.get("days", 0),
+        ).since(
+            relative_to,
+            units=units,
+            round_mode=round_mode,
+            round_increment=round_increment,
         )
 
     @overload
@@ -4740,10 +4750,11 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         2.73972602739726
         """
         shifted = relative_to.add(self)
+        sgn = self.sign
         try:
             trunc_amount, trunc_date_interim, expand_date_interim = DIFF_FUNCS[
                 unit
-            ](shifted._py_date, relative_to._py_date, 1, self._sign or 1)
+            ](shifted._py_date, relative_to._py_date, 1, sgn or 1)
         except KeyError:
             raise ValueError(f"Unsupported unit: {unit!r}") from None
 
@@ -4753,9 +4764,10 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         return (
             trunc_amount
             + ((shifted._py_date - trunc_date) / (expand_date - trunc_date))
-        ) * self._sign
+        ) * sgn
 
-    # A private constructor. Checks bounds but *not* signs or presence of > 0 fields.
+    # A private constructor that bypasses sign/presence validation.
+    # All field values must be non-negative; `sign` is applied when storing.
     @classmethod
     def _from_signed(
         cls,
@@ -4766,27 +4778,26 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         days: int | None = None,
     ) -> ItemizedDateDelta:
         self = _object_new(cls)
-        self._sign = sign
-        self._years = _check_bound(years, _MAX_DELTA_YEARS)
-        self._months = _check_bound(months, _MAX_DELTA_MONTHS)
-        self._weeks = _check_bound(weeks, _MAX_DELTA_WEEKS)
-        self._days = _check_bound(days, _MAX_DELTA_DAYS)
+
+        def _apply(v: int | None, max_val: int) -> int | None:
+            v = _check_bound(v, max_val)
+            return -v if v and sign < 0 else v
+
+        self._years = _apply(years, _MAX_DELTA_YEARS)
+        self._months = _apply(months, _MAX_DELTA_MONTHS)
+        self._weeks = _apply(weeks, _MAX_DELTA_WEEKS)
+        self._days = _apply(days, _MAX_DELTA_DAYS)
         return self
 
     @no_type_check
     def __reduce__(self):
-        def _to_signed(v):
-            if v is None or v == 0 or self._sign >= 0:
-                return v
-            return -v
-
         return (
             _unpkl_iddelta,
             (
-                _to_signed(self._years),
-                _to_signed(self._months),
-                _to_signed(self._weeks),
-                _to_signed(self._days),
+                self._years,
+                self._months,
+                self._weeks,
+                self._days,
             ),
         )
 
@@ -4803,20 +4814,10 @@ def _unpkl_iddelta(
     days: int | None,
 ) -> ItemizedDateDelta:
     self = _object_new(ItemizedDateDelta)
-    sign: Sign = 0
-    for v in (years, months, weeks, days):
-        if v is not None and v != 0:
-            sign = 1 if v > 0 else -1
-            break
-    self._sign = sign
-
-    def _abs(v: int | None) -> int | None:
-        return abs(v) if v else v
-
-    self._years = _abs(years)
-    self._months = _abs(months)
-    self._weeks = _abs(weeks)
-    self._days = _abs(days)
+    self._years = years
+    self._months = months
+    self._weeks = weeks
+    self._days = days
     return self
 
 
@@ -4836,15 +4837,15 @@ def _check_component(
     elif value < 0:
         if sign == 1:
             raise ValueError("Mixed sign in delta")
-        value = -value
         sign = -1
+        if -value > max_value:
+            raise ValueError("Delta out of range")
     else:  # value > 0
         if sign == -1:
             raise ValueError("Mixed sign in delta")
         sign = 1
-
-    if value > max_value:
-        raise ValueError("Delta out of range")
+        if value > max_value:
+            raise ValueError("Delta out of range")
     return value, sign
 
 
@@ -8202,20 +8203,6 @@ class ZonedDateTime(_ExactAndLocalTime):
             microsecond=self._nanos // 1_000,
         )
 
-    def py_datetime(self) -> _datetime:
-        """Convert to a standard library :class:`~datetime.datetime`
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`to_stdlib` instead.
-        """
-        warn(
-            "py_datetime() is deprecated; use to_stdlib() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self.to_stdlib()
-
     # This override is technically incompatible, but it's very convenient
     # and it's not part of the public API
     @classmethod
@@ -9423,7 +9410,7 @@ def _plain_since(
     )
     cal_units, exact_units = _split_calendar_and_exact_units(units)
 
-    if warn_msg and exact_units and not warn_check.get():
+    if warn_msg and not warn_check.get():
         warn(
             warn_msg,
             warn_cls,

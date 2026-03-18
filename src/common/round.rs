@@ -1,9 +1,12 @@
-//! Functionality for rounding datetime values
-use std::num::{NonZero, NonZeroI128, NonZeroU64};
+//! Functionality for rounding values
+use std::num::{NonZero, NonZeroU64, NonZeroU128};
 
 use crate::{
-    classes::time_delta::TimeDelta,
-    common::scalar::{DeltaSeconds, SubSecNanos},
+    classes::time_delta::DeltaIncrement,
+    common::scalar::{
+        NS_PER_DAY, NS_PER_HOUR, NS_PER_MICROSEC, NS_PER_MILLISEC, NS_PER_MINUTE, NS_PER_SEC,
+        NS_PER_WEEK, SubSecNanos,
+    },
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -51,12 +54,15 @@ pub(crate) enum AbsMode {
     HalfEven,
 }
 
+// FUTURE: can we simplify the different ways of transforming to "abs" round mode?
 impl Mode {
     /// Resolve sign-dependent modes into sign-independent AbsMode
-    /// for the **euclidean quotient** domain (used by TimeDelta::round).
+    /// for the **euclidean quotient** domain (used by TimeDelta::round, Instant::round).
     /// Here Floor/Ceil are "native" (already aligned with quotient direction),
     /// while Trunc/Expand need sign-based swapping.
-    pub(crate) fn to_abs(self, is_negative: bool) -> AbsMode {
+    ///
+    /// Use this when rounding a plain signed integer (e.g. nanoseconds, epoch seconds).
+    pub(crate) fn to_abs_euclid(self, is_negative: bool) -> AbsMode {
         match (self, is_negative) {
             (Mode::Floor, _) | (Mode::Trunc, false) | (Mode::Expand, true) => AbsMode::Trunc,
             (Mode::Ceil, _) | (Mode::Expand, false) | (Mode::Trunc, true) => AbsMode::Expand,
@@ -74,8 +80,11 @@ impl Mode {
     /// for the **sign-magnitude** domain (used by since/until rounding).
     /// Here Trunc/Expand are "native" (already absolute),
     /// while Floor/Ceil need sign-based swapping.
-    pub(crate) fn to_abs_with_sign(self, sign: i8) -> AbsMode {
-        let positive = sign > 0;
+    ///
+    /// Use this when rounding a delta whose sign is tracked separately
+    /// (e.g. "3 months backward", where `neg = true`).
+    pub(crate) fn to_abs_trunc(self, neg: bool) -> AbsMode {
+        let positive = !neg;
         match (self, positive) {
             (Mode::Trunc, _) | (Mode::Floor, true) | (Mode::Ceil, false) => AbsMode::Trunc,
             (Mode::Expand, _) | (Mode::Ceil, true) | (Mode::Floor, false) => AbsMode::Expand,
@@ -108,7 +117,7 @@ impl Mode {
             str_half_expand,
         } = strs;
         match_interned_str(name, s, |v, eq| {
-            Some(if eq(v, str_floor) {
+            if eq(v, str_floor) {
                 Mode::Floor
             } else if eq(v, str_ceil) {
                 Mode::Ceil
@@ -128,7 +137,8 @@ impl Mode {
                 Mode::HalfExpand
             } else {
                 None?
-            })
+            }
+            .into()
         })
     }
 }
@@ -183,17 +193,16 @@ impl Unit {
         })
     }
 
-    // TODO: u64?
-    pub(crate) const fn default_increment(self) -> i64 {
+    pub(crate) const fn default_increment(self) -> u64 {
         match self {
             Unit::Nanosecond => 1,
-            Unit::Microsecond => 1_000,
-            Unit::Millisecond => 1_000_000,
-            Unit::Second => 1_000_000_000,
-            Unit::Minute => 60 * 1_000_000_000,
-            Unit::Hour => 3_600 * 1_000_000_000,
-            Unit::Day => 86_400 * 1_000_000_000,
-            Unit::Week => 604_800 * 1_000_000_000,
+            Unit::Microsecond => NS_PER_MICROSEC as _,
+            Unit::Millisecond => NS_PER_MILLISEC as _,
+            Unit::Second => NS_PER_SEC as _,
+            Unit::Minute => NS_PER_MINUTE,
+            Unit::Hour => NS_PER_HOUR,
+            Unit::Day => NS_PER_DAY,
+            Unit::Week => NS_PER_WEEK,
         }
     }
 }
@@ -203,7 +212,7 @@ impl Unit {
 pub(crate) enum RoundIncrement {
     /// Round by an exact time increment
     Exact(NonZeroU64),
-    /// Round to day boundaries (ZonedDateTime only — DST-aware).
+    /// Round to day boundaries (local time types only).
     Day,
 }
 
@@ -276,14 +285,13 @@ impl Args {
                         .total_nanos()
                         .try_into()
                         .ok()
-                        .filter(|&n| 86_400_000_000_000u64.is_multiple_of(n))
+                        .and_then(NonZero::<u64>::new)
+                        .filter(|&n| NS_PER_DAY.is_multiple_of(n.get()))
                         .ok_or_value_err(INCREMENT_DIV_MSG)?;
                     if increment_kwarg.is_some() {
                         raise_type_err("cannot specify an increment with a TimeDelta argument")?;
                     }
-                    RoundIncrement::Exact(
-                        NonZero::<u64>::new(nanos).ok_or_value_err(INCREMENT_DIV_MSG)?,
-                    )
+                    RoundIncrement::Exact(nanos)
                 } else {
                     let unit = Unit::from_py(
                         arg,
@@ -306,8 +314,8 @@ impl Args {
                         RoundIncrement::Day
                     } else {
                         RoundIncrement::Exact(unsafe {
-                            let n = unit.default_increment() as u64 * increment_int.get();
-                            if !86_400_000_000_000u64.is_multiple_of(n) {
+                            let n = unit.default_increment() * increment_int.get();
+                            if !NS_PER_DAY.is_multiple_of(n) {
                                 raise_value_err(INCREMENT_DIV_MSG)?;
                             }
                             NonZero::<u64>::new_unchecked(n)
@@ -325,10 +333,11 @@ impl Args {
     }
 }
 
-/// Parsed args for TimeDelta.round()
+/// Parsed arguments for `TimeDelta.round()`. `increment` is always positive and nonzero
+/// (invariant upheld by `parse()`).
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct DeltaArgs {
-    pub(crate) increment: TimeDelta,
+    pub(crate) increment: DeltaIncrement,
     pub(crate) mode: Mode,
 }
 
@@ -366,15 +375,15 @@ impl DeltaArgs {
                     raise_value_err("increment must be a positive integer")?;
                 }
                 // SAFETY: we just checked that it's >0
-                increment_kwarg = Some(unsafe { NonZeroI128::new_unchecked(raw_increment as _) });
+                increment_kwarg = Some(unsafe { NonZeroU128::new_unchecked(raw_increment as _) });
             } else {
                 return Ok(false);
             }
             Ok(true)
         })?;
         let increment = match opt_arg {
-            None => TimeDelta {
-                secs: DeltaSeconds::new_unchecked(1),
+            None => DeltaIncrement {
+                secs: 1,
                 subsec: SubSecNanos::MIN,
             },
             Some(arg) => {
@@ -382,10 +391,13 @@ impl DeltaArgs {
                     if increment_kwarg.is_some() {
                         raise_type_err("cannot specify an increment with a TimeDelta argument")?;
                     }
-                    if delta.secs.get() < 0 || delta.is_zero() {
+                    if delta.is_negative() || delta.is_zero() {
                         raise_value_err("rounding TimeDelta must be positive")?;
                     }
-                    delta
+                    DeltaIncrement {
+                        secs: delta.secs.get() as u64,
+                        subsec: delta.subsec,
+                    }
                 } else {
                     let unit = Unit::from_py(
                         arg,
@@ -399,20 +411,22 @@ impl DeltaArgs {
                         str_week,
                         true,
                     )?;
-                    if matches!(unit, Unit::Day | Unit::Week) {
-                        if !state.cv_ignore_days_not_always_24h.get()? {
-                            warn_with_class(
-                                state.warn_days_not_always_24h,
-                                doc::DAYS_NOT_ALWAYS_24H_MSG,
-                                2,
-                            )?;
-                        }
+                    if matches!(unit, Unit::Day | Unit::Week)
+                        && !state.cv_ignore_days_not_always_24h.get()?
+                    {
+                        warn_with_class(
+                            state.warn_days_not_always_24h,
+                            doc::DAYS_NOT_ALWAYS_24H_MSG,
+                            2,
+                        )?;
                     }
-                    increment_kwarg
-                        .map_or(1, |v| v.get() as i128)
-                        .checked_mul(unit.default_increment() as i128)
-                        .and_then(TimeDelta::from_nanos)
-                        .ok_or_value_err("increment too large")?
+                    DeltaIncrement::from_nanos(
+                        increment_kwarg
+                            .map_or(1, |v| v.get())
+                            .checked_mul(unit.default_increment().into())
+                            .ok_or_range_err()?,
+                    )
+                    .ok_or_range_err()?
                 }
             }
         };

@@ -682,18 +682,18 @@ pub(crate) fn date_since_iddelta(
     round_mode: round::Mode,
     round_increment: DateRoundIncrement,
 ) -> PyResult<ItemizedDateDelta> {
-    let sign = if a >= b { 1 } else { -1 };
+    let neg = a < b;
     let (mut result, trunc, expand) =
-        math::date_diff(a, b, round_increment, units, sign).ok_or_range_err()?;
+        math::date_diff(a, b, round_increment, units, neg).ok_or_range_err()?;
 
     result.round_by_days(
         units.smallest(),
         a,
         trunc.into(),
         expand.into(),
-        round_mode,
+        round_mode.to_abs_trunc(neg),
         round_increment,
-        sign,
+        neg,
     );
     Ok(result)
 }
@@ -705,19 +705,19 @@ fn since_with_single_unit(
     round_mode: round::Mode,
     round_increment: DateRoundIncrement,
 ) -> PyReturn {
-    let sign: i8 = if a >= b { 1 } else { -1 };
+    let neg = a < b;
 
     let (result, trunc, expand) =
-        math::date_diff_single_unit(a, b, round_increment, unit, sign).ok_or_range_err()?;
+        math::date_diff_single_unit(a, b, round_increment, unit, neg).ok_or_range_err()?;
 
     math::round_by_days(
         result,
         a,
         trunc.into(),
         expand.into(),
-        round_mode,
+        round_mode.to_abs_trunc(neg),
         round_increment,
-        sign,
+        neg,
     )
     .to_py()
 }
@@ -975,9 +975,9 @@ fn day(_: PyType, slf: Date) -> PyReturn {
 }
 
 static mut GETSETTERS: &mut [PyGetSetDef] = &mut [
-    getter!(Date, year, "The year component"),
-    getter!(Date, month, "The month component"),
-    getter!(Date, day, "The day component"),
+    getter!(Date, year, doc::DATE_YEAR),
+    getter!(Date, month, doc::DATE_MONTH),
+    getter!(Date, day, doc::DATE_DAY),
     PyGetSetDef {
         name: NULL(),
         get: None,

@@ -1285,36 +1285,39 @@ class TestSince:
                 a.since(b, unit=units[0], **kwargs) == list(expect.values())[0]
             )
 
-    # TODO: decide whether since/until on PlainDateTime should warn about
-    # timezone-unaware arithmetic. Currently neither Python nor Rust implementation
-    # emits this warning for since/until (only __sub__ does).
-    # def test_warnings(self):
-    #     a = PlainDateTime(2023, 2, 15, hour=13, minute=25)
-    #     b = PlainDateTime(2021, 7, 3, hour=1)
+    def test_warnings(self):
+        a = PlainDateTime(2023, 2, 15, hour=13, minute=25)
+        b = PlainDateTime(2021, 7, 3, hour=1)
 
-    #     # exact units trigger the warning
-    #     with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
-    #         a.since(b, units=["hours", "minutes"])
-    #     assert len(w) == 1
+        # exact units trigger the warning
+        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+            a.since(b, units=["hours", "minutes"])
+        assert len(w) == 1
 
-    #     with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
-    #         a.until(b, units=["hours", "minutes"])
-    #     assert len(w) == 1
+        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+            a.until(b, units=["hours", "minutes"])
+        assert len(w) == 1
 
-    #     # mixed calendar+exact units also trigger
-    #     with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
-    #         a.since(b, units=["days", "hours"])
-    #     assert len(w) == 1
+        # mixed calendar+exact units also trigger
+        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+            a.since(b, units=["days", "hours"])
+        assert len(w) == 1
 
-    #     # calendar-only units don't trigger
-    #     a.since(b, units=["years", "months", "days"])
-    #     a.until(b, units=["years", "months", "days"])
-    #     a.since(b, unit="days")
+        # calendar-only units also trigger--since rounding can be influenced
+        # by DST gaps/folds
+        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+            a.since(b, units=["months", "weeks"])
+        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+            a.until(b, units=["months", "weeks"])
+        assert len(w) == 1
+        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+            a.since(b, unit="days")
 
-    #     # suppression works
-    #     with ignore_timezone_unaware_arithmetic_warning():
-    #         a.since(b, units=["hours", "minutes"])
-    #         a.until(b, unit="hours")
+        # suppression works
+        with ignore_timezone_unaware_arithmetic_warning():
+            a.since(b, units=["hours", "minutes"])
+            a.until(b, unit="hours")
+            a.until(b, unit="years")
 
     def test_invalid_units(self):
         with pytest.raises(ValueError, match="[Ii]nvalid unit.*foos"):
@@ -1400,6 +1403,7 @@ class TestSince:
             )
         )
 
+    @ignore_timezone_unaware_arithmetic_warning()
     def test_until_rounding_symmetry(self):
         a = PlainDateTime(2019, 1, 30, hour=5)
         b = PlainDateTime(2020, 2, 1, hour=12)
@@ -1417,6 +1421,7 @@ class TestSince:
         result_ceil = a.until(b, units=["years", "months"], round_mode="ceil")
         assert result_ceil == ItemizedDelta(years=1, months=1)
 
+    @ignore_timezone_unaware_arithmetic_warning()
     def test_single_unit_returns_int(self):
         a = PlainDateTime(2025, 3, 15)
         b = PlainDateTime(2023, 3, 15)
@@ -1473,6 +1478,18 @@ class TestSince:
         a = PlainDateTime(9000, 1, 1)
         b = PlainDateTime(23, 3, 15)
         assert a.since(b, unit="nanoseconds") == 283280457600000000000
+
+    @ignore_timezone_unaware_arithmetic_warning()
+    def test_very_large_increment(self):
+        a = PlainDateTime(2023, 2, 15)
+        b = PlainDateTime(2021, 7, 3)
+        # round_increment=1<<65 ns exceeds i64::MAX; ceil mode rounds up to 1*(1<<65)
+        assert a.since(
+            b,
+            units=["seconds", "nanoseconds"],
+            round_increment=1 << 65,
+            round_mode="ceil",
+        ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)
 
 
 class TestDeprecations:

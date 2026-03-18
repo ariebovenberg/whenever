@@ -264,8 +264,8 @@ fn month(_: PyType, slf: YearMonth) -> PyReturn {
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter!(YearMonth, year, "The year component"),
-    getter!(YearMonth, month, "The month component"),
+    getter!(YearMonth, year, doc::YEARMONTH_YEAR),
+    getter!(YearMonth, month, doc::YEARMONTH_MONTH),
     PyGetSetDef {
         name: NULL(),
         get: None,

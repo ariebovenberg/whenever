@@ -11,15 +11,13 @@ use crate::{
     common::{
         math::{self, CalUnit, CalUnitSet, DateRoundIncrement, round_by_days, round_by_time},
         round,
-        scalar::{DeltaDays, DeltaField, DeltaMonths, Year},
+        scalar::{DeltaDays, DeltaField, DeltaMonths, NegateIf, Year},
     },
     docstrings as doc,
     py::*,
     pymodule::State,
 };
 
-// TODO DRY: unify these, and use the right int types
-// u64 because ItemizedDelta's MAX_MINUTES/MAX_SECONDS exceed u32::MAX
 pub(crate) const MAX_YEARS: u64 = Year::MAX.get() as u64;
 pub(crate) const MAX_MONTHS: u64 = MAX_YEARS * 12;
 pub(crate) const MAX_WEEKS: u64 = MAX_YEARS * 53;
@@ -128,15 +126,16 @@ impl ItemizedDateDelta {
         s
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn round_by_days(
         &mut self,
         unit: CalUnit,
         target: Date,
         trunc: Date,
         expand: Date,
-        mode: round::Mode,
+        mode: round::AbsMode,
         round_increment: DateRoundIncrement,
-        sign: i8,
+        neg: bool,
     ) {
         let field = unit.field(self);
         // SAFETY: the rounded value is between trunc and expand,
@@ -148,19 +147,20 @@ impl ItemizedDateDelta {
             expand,
             mode,
             round_increment,
-            sign,
+            neg,
         ));
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn round_by_time(
         &mut self,
         unit: CalUnit,
         target: Instant,
         trunc: Instant,
         expand: Instant,
-        mode: round::Mode,
+        mode: round::AbsMode,
         round_increment: DateRoundIncrement,
-        sign: i8,
+        neg: bool,
     ) {
         let field = unit.field(self);
         // SAFETY: the rounded value is between trunc and expand,
@@ -172,7 +172,7 @@ impl ItemizedDateDelta {
             expand,
             mode,
             round_increment,
-            sign,
+            neg,
         ));
     }
 }
@@ -604,17 +604,17 @@ fn total(
 }
 
 fn total_inner(a: Date, b: Date, cal_unit: CalUnit) -> PyReturn {
-    let sign: i8 = if a >= b { 1 } else { -1 };
+    let neg = a < b;
 
     let (trunc_amount, trunc, expand) =
-        math::date_diff_single_unit(a, b, DateRoundIncrement::MIN, cal_unit, sign)
+        math::date_diff_single_unit(a, b, DateRoundIncrement::MIN, cal_unit, neg)
             .ok_or_range_err()?;
 
     let trunc_date = trunc.resolve().unix_days();
     let r = a.unix_days().diff(trunc_date).get() as f64;
     let e = expand.resolve().unix_days().diff(trunc_date).get() as f64;
 
-    (trunc_amount as f64 + (r / e).copysign(e)).to_py()
+    (trunc_amount as f64 + (r / e).negate_if(neg)).to_py()
 }
 
 pub(crate) fn handle_date_delta_unit_kwargs(
@@ -765,11 +765,10 @@ fn add_sub(
     months = months.negate_if(negate);
     days = days.negate_if(negate);
 
-    // TODO LATER: is this right...1 month creating feb 28 will add the next month to march 28?
-    // Then shifted becomes 1 months 28 days?
+    let total_months = self_months.add(months).ok_or_range_err()?;
+    let total_days = self_days.add(days).ok_or_range_err()?;
     let shifted = relative_to
-        .shift(self_months, self_days)
-        .and_then(|d| d.shift(months, days))
+        .shift(total_months, total_days)
         .ok_or_range_err()?;
 
     date_since_iddelta(shifted, relative_to, units, round_mode, round_increment)?
@@ -862,7 +861,7 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
     getter!(
         ItemizedDateDelta,
         sign,
-        "The sign of the delta: 1, 0, or -1"
+        c"The sign of the delta: 1, 0, or -1"
     ),
     PyGetSetDef {
         name: NULL(),

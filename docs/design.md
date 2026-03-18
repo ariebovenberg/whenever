@@ -55,13 +55,16 @@ because that's the only type where subtraction is always reversible.
 For calendar-unit differences, use {meth}`~whenever.ZonedDateTime.since`
 / {meth}`~whenever.ZonedDateTime.until`.
 
-## Reversible `repr()`
+## Lossless round-tripping
 
-Every `whenever` object has a {func}`repr` that can be used
+Every `whenever` object's {func}`str` and {func}`repr` can be used
 to reconstruct the value:
 
 ```python
 >>> d = ZonedDateTime(2024, 3, 15, 12, tz="Europe/Amsterdam")
+ZonedDateTime("2024-03-15 12:00:00+01:00[Europe/Amsterdam]")
+>>> ZonedDateTime(str(d)) == d
+True
 >>> eval(repr(d)) == d
 True
 ```
@@ -81,12 +84,4 @@ you must opt in with a dedicated method
 {meth}`~whenever.PlainDateTime.assume_system_tz`)
 so the dependency is visible in the code.
 
-## Explicit over implicit
-
-<!-- TODO: improve -->
-
-`whenever` favors naming that makes the developer's *assumption* visible.
-Methods that require you to supply information the library can't verify
-are named ``assume_*`` (e.g. {meth}`~whenever.PlainDateTime.assume_tz`)
-rather than ``with_*`` or ``at_*``.
-This signals that you are making a claim the library trusts but cannot check.
+<!-- FUTURE: something about .to_* and .assume_* APIs -->

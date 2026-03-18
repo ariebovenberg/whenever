@@ -2162,6 +2162,17 @@ class TestSince:
         assert isinstance(result, int)
         assert result == 2
 
+    def test_very_large_increment(self):
+        a = OffsetDateTime(2023, 2, 15, offset=9)
+        b = OffsetDateTime(2021, 7, 3, offset=9)
+        # round_increment=1<<65 ns exceeds i64::MAX; ceil mode rounds up to 1*(1<<65)
+        assert a.since(
+            b,
+            units=["seconds", "nanoseconds"],
+            round_increment=1 << 65,
+            round_mode="ceil",
+        ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)
+
 
 class TestDeprecations:
     def test_py_datetime(self):

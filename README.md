@@ -45,8 +45,8 @@ Don't buy the Rust hype?—don't worry: a **pure Python** version is available a
 
 </div>
 
-> ⚠️ **Note**: A 1.0 release is expected soon. Until then, the API may change
-> as we gather feedback and improve the library.
+> ⚠️ Note: Holding off on 1.0 a little longer so we can get the API just
+> right for the long term—feedback (especially on durations) is still very welcome.
 > Leave a ⭐️ on GitHub if you'd like to see how this project develops!
 
 ## Why not the standard library?

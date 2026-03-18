@@ -1,6 +1,6 @@
 use core::ffi::{CStr, c_int, c_void};
 use pyo3_ffi::*;
-use std::{fmt, num::NonZeroU64, ops::Neg, ptr::null_mut as NULL};
+use std::{fmt, ops::Neg, ptr::null_mut as NULL};
 
 use crate::{
     classes::{
@@ -54,8 +54,8 @@ impl TimeDelta {
         // Safe since we've already checked the bounds
         let nanos_i = nanos_f as i128;
         Some(TimeDelta {
-            secs: DeltaSeconds::new_unchecked(nanos_i.div_euclid(1_000_000_000) as _),
-            subsec: SubSecNanos::new_unchecked(nanos_i.rem_euclid(1_000_000_000) as _),
+            secs: DeltaSeconds::new_unchecked(nanos_i.div_euclid(NS_PER_SEC as i128) as _),
+            subsec: SubSecNanos::new_unchecked(nanos_i.rem_euclid(NS_PER_SEC as i128) as _),
         })
     }
 
@@ -66,8 +66,8 @@ impl TimeDelta {
 
     pub(crate) const fn from_nanos_unchecked(nanos: i128) -> Self {
         TimeDelta {
-            secs: DeltaSeconds::new_unchecked(nanos.div_euclid(1_000_000_000) as _),
-            subsec: SubSecNanos::new_unchecked(nanos.rem_euclid(1_000_000_000) as _),
+            secs: DeltaSeconds::new_unchecked(nanos.div_euclid(NS_PER_SEC as i128) as _),
+            subsec: SubSecNanos::new_unchecked(nanos.rem_euclid(NS_PER_SEC as i128) as _),
         }
     }
 
@@ -86,7 +86,7 @@ impl TimeDelta {
 
     // FUTURE: see if we can avoid the i128
     pub(crate) const fn total_nanos(self) -> i128 {
-        self.secs.get() as i128 * 1_000_000_000 + self.subsec.get() as i128
+        self.secs.get() as i128 * NS_PER_SEC as i128 + self.subsec.get() as i128
     }
 
     pub(crate) const fn is_zero(&self) -> bool {
@@ -97,13 +97,13 @@ impl TimeDelta {
         if self.secs.get() >= 0 { self } else { -self }
     }
 
-    pub(crate) fn checked_mul(self, factor: i128) -> Option<Self> {
+    pub(crate) fn mul(self, factor: i128) -> Option<Self> {
         self.total_nanos()
             .checked_mul(factor)
             .and_then(Self::from_nanos)
     }
 
-    pub(crate) fn checked_add(self, other: Self) -> Option<Self> {
+    pub(crate) fn add(self, other: Self) -> Option<Self> {
         let (extra_sec, subsec) = self.subsec.add(other.subsec);
         Some(Self {
             secs: self.secs.add(other.secs)?.add(extra_sec)?,
@@ -116,56 +116,48 @@ impl TimeDelta {
         subsec: SubSecNanos::MIN,
     };
 
-    // TODO MEDUIM: round by TimeDelta increment
-    // TODO MEDIUM: round by AbsMode
-    pub(crate) fn round(self, increment: NonZeroU64, mode: round::Mode) -> Option<Self> {
-        let abs_mode = mode.to_abs(self.secs.get() < 0);
-        let TimeDelta { secs, subsec } = self;
-        Some(
-            if increment.get() < 1_000_000_000 && 1_000_000_000u64.is_multiple_of(increment.get()) {
-                let (extra_secs, subsec) = subsec.round_abs(
-                    // SAFETY: we've just checked that increment < 1_000_000_000
-                    increment.get() as _,
-                    abs_mode,
-                );
-                Self {
-                    // SAFETY: rounding sub-second part can never lead to range errors,
-                    // due to our choice of MIN/MAX timedelta
-                    secs: secs.add(extra_secs).unwrap(),
-                    subsec,
-                }
-            } else if increment.get().is_multiple_of(1_000_000_000) {
-                Self {
-                    secs: secs.round_abs(subsec, increment.get() as i64, abs_mode)?,
-                    subsec: SubSecNanos::MIN,
-                }
-            } else {
-                self.round_general(increment.get() as i128, abs_mode)?
-            },
-        )
+    /// Round to the nearest multiple of `increment`.
+    pub(crate) fn round(self, increment: DeltaIncrement, abs_mode: round::AbsMode) -> Option<Self> {
+        debug_assert!(
+            increment.secs > 0 || increment.subsec.get() > 0,
+            "increment must be nonzero"
+        );
+        if increment.secs == 0 && NS_PER_SEC.is_multiple_of(increment.subsec.as_u32()) {
+            // Sub-second increment: use efficient integer arithmetic if it divides 1s
+            let (extra_secs, subsec) = self.subsec.round(increment.subsec.as_u32(), abs_mode);
+            Self {
+                // SAFETY: rounding sub-second part can never lead to range errors,
+                // due to our choice of MIN/MAX timedelta
+                secs: self.secs.add(extra_secs).unwrap(),
+                subsec,
+            }
+        } else {
+            // Mixed increment: fall back to generic rounding
+            self.round_u128(increment.total_nanos(), abs_mode)?
+        }
+        .into()
     }
 
-    /// Round by an arbitrary i128 increment (full TimeDelta range).
-    pub(crate) fn round_i128(self, increment: i128, mode: round::Mode) -> Option<Self> {
-        debug_assert!(increment > 0);
-        let abs_mode = mode.to_abs(self.secs.get() < 0);
-        self.round_general(increment, abs_mode)
-    }
-
-    fn round_general(self, inc: i128, abs_mode: round::AbsMode) -> Option<Self> {
-        let total_ns = self.secs.get() as i128 * 1_000_000_000 + self.subsec.get() as i128;
+    fn round_u128(self, inc: u128, abs_mode: round::AbsMode) -> Option<Self> {
+        debug_assert!(inc > 0);
+        // inc always fits in i128: DeltaIncrement is bounded by TimeDelta::MAX nanos < i128::MAX
+        debug_assert!(inc <= i128::MAX as u128);
+        let inc = inc as i128;
+        let total_ns = self.secs.get() as i128 * NS_PER_SEC as i128 + self.subsec.get() as i128;
         let quotient = total_ns.div_euclid(inc);
         let remainder = total_ns.rem_euclid(inc);
         let threshold = match abs_mode {
-            round::AbsMode::HalfEven => 1i128.max(inc / 2 + (quotient % 2 == 0) as i128),
+            round::AbsMode::HalfEven => {
+                1i128.max(inc / 2 + quotient.unsigned_abs().is_multiple_of(2) as i128)
+            }
             round::AbsMode::Expand => 1,
             round::AbsMode::Trunc => inc + 1,
             round::AbsMode::HalfTrunc => inc / 2 + 1,
             round::AbsMode::HalfExpand => 1i128.max(inc / 2),
         };
         let result_ns = (quotient + i128::from(remainder >= threshold)) * inc;
-        let result_secs = result_ns.div_euclid(1_000_000_000) as i64;
-        let result_subsec = result_ns.rem_euclid(1_000_000_000) as i32;
+        let result_secs = result_ns.div_euclid(NS_PER_SEC as i128) as i64;
+        let result_subsec = result_ns.rem_euclid(NS_PER_SEC as i128) as i32;
         Some(Self {
             secs: DeltaSeconds::new(result_secs)?,
             subsec: SubSecNanos::new_unchecked(result_subsec),
@@ -201,7 +193,7 @@ impl TimeDelta {
             return "PT0S".to_string();
         }
         let mut s = String::with_capacity(8);
-        let self_abs = if self.secs.get() < 0 {
+        let self_abs = if self.is_negative() {
             s.push('-');
             -self
         } else {
@@ -223,36 +215,29 @@ impl TimeDelta {
         self,
         unit: ExactUnit,
         round_increment: math::RoundIncrement,
-        round_mode: round::Mode,
+        round_mode: round::AbsMode,
     ) -> PyReturn {
-        let increment_ns = unit.in_nanos() as u64 * round_increment.get() as u64;
-        let rounded = self
-            .round(
-                // SAFETY: round_increment is guaranteed to be > 0
-                unsafe { NonZeroU64::new_unchecked(increment_ns) },
-                round_mode,
-            )
+        let increment = (unit.in_nanos() as u64 as u128)
+            .checked_mul(round_increment.as_i128() as u128)
+            .and_then(DeltaIncrement::from_nanos)
             .ok_or_range_err()?;
+        let rounded = self.round(increment, round_mode).ok_or_range_err()?;
         (rounded.total_nanos() / unit.in_nanos() as i128).to_py()
     }
 
     pub(crate) fn in_exact_units(
         self,
         units: ExactUnitSet,
-        // TODO: this could be i128
         round_increment: math::RoundIncrement,
-        round_mode: round::Mode,
+        round_mode: round::AbsMode,
     ) -> Option<ItemizedDelta> {
         debug_assert!(
             !units.contains(ExactUnit::Milliseconds) && !units.contains(ExactUnit::Microseconds)
         );
-        // TODO: increment overflow!
-        let increment_ns = units.smallest().in_nanos() as u64 * round_increment.get() as u64;
-        let rounded = self.round(
-            // SAFETY: round_increment is guaranteed to be > 0
-            unsafe { NonZeroU64::new_unchecked(increment_ns) },
-            round_mode,
-        )?;
+        let increment = (units.smallest().in_nanos() as u64 as u128)
+            .checked_mul(round_increment.as_i128() as u128)
+            .and_then(DeltaIncrement::from_nanos)?;
+        let rounded = self.round(increment, round_mode)?;
 
         let mut remaining = rounded.total_nanos();
         let mut target = ItemizedDelta::UNSET;
@@ -296,6 +281,10 @@ impl TimeDelta {
     pub(crate) fn negate_if(self, condition: bool) -> Self {
         if condition { -self } else { self }
     }
+
+    pub(crate) fn is_negative(self) -> bool {
+        self.secs.get() < 0
+    }
 }
 
 impl PySimpleAlloc for TimeDelta {}
@@ -327,36 +316,36 @@ impl std::fmt::Display for TimeDelta {
     }
 }
 
-impl DeltaSeconds {
-    fn round_abs(
-        self,
-        subsec: SubSecNanos,
-        increment_ns: i64,
-        mode: round::AbsMode,
-    ) -> Option<Self> {
-        debug_assert!(increment_ns % 1_000_000_000 == 0);
-        let increment_s = increment_ns / 1_000_000_000;
-        let quotient = self.get().div_euclid(increment_s);
-        let remainder_ns = self.get().rem_euclid(increment_s) * 1_000_000_000 + subsec.get() as i64;
-        let threshold_ns = match mode {
-            round::AbsMode::HalfEven => 1.max(increment_ns / 2 + (quotient % 2 == 0) as i64),
-            round::AbsMode::HalfExpand => 1.max(increment_ns / 2),
-            round::AbsMode::Expand => 1,
-            round::AbsMode::Trunc => increment_ns + 1,
-            round::AbsMode::HalfTrunc => increment_ns / 2 + 1,
-        };
-        let round_up = remainder_ns >= threshold_ns;
-        Self::new((quotient + i64::from(round_up)) * increment_s)
+/// A rounding increment wit similar structure to TimeDelta.
+/// Always positive and nonzero: at least one of `secs` or `subsec` is nonzero.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct DeltaIncrement {
+    pub(crate) secs: u64,
+    pub(crate) subsec: SubSecNanos,
+}
+
+impl DeltaIncrement {
+    /// Create from total nanoseconds. Returns `None` if zero or out of TimeDelta range.
+    pub(crate) fn from_nanos(nanos: u128) -> Option<Self> {
+        if nanos == 0 {
+            return None;
+        }
+        Some(Self {
+            secs: u64::try_from(nanos / NS_PER_SEC as u128).ok()?,
+            subsec: SubSecNanos::from_remainder(nanos),
+        })
+    }
+
+    pub(crate) fn total_nanos(self) -> u128 {
+        self.secs as u128 * NS_PER_SEC as u128 + self.subsec.as_u32() as u128
     }
 }
 
-// NOTE: cast is only needed on 32-bit systems
-#[allow(clippy::unnecessary_cast)]
-pub(crate) const MAX_SECS: i64 = (Year::MAX.get() as i64) * 366 * 24 * 3600;
-pub(crate) const MAX_HOURS: i64 = MAX_SECS / 3600;
-pub(crate) const MAX_MINUTES: i64 = MAX_SECS / 60;
-pub(crate) const MAX_MILLISECONDS: i64 = MAX_SECS * 1_000;
-pub(crate) const MAX_MICROSECONDS: i64 = MAX_SECS * 1_000_000;
+pub(crate) const MAX_SECS: u64 = (Year::MAX.get() as u64) * 366 * 24 * S_PER_HOUR as u64;
+pub(crate) const MAX_HOURS: u64 = MAX_SECS / S_PER_HOUR as u64;
+pub(crate) const MAX_MINUTES: u64 = MAX_SECS / 60;
+pub(crate) const MAX_MILLISECONDS: u64 = MAX_SECS * 1_000;
+pub(crate) const MAX_MICROSECONDS: u64 = MAX_SECS * 1_000_000;
 
 pub(crate) const SINGLETONS: &[(&CStr, TimeDelta); 3] = &[
     (
@@ -371,6 +360,7 @@ pub(crate) const SINGLETONS: &[(&CStr, TimeDelta); 3] = &[
 ];
 
 #[inline]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn set_timedelta_from_kwargs(
     key: PyObj,
     value: PyObj,
@@ -388,7 +378,7 @@ pub(crate) fn set_timedelta_from_kwargs(
 ) -> PyResult<bool> {
     if eq(key, str_weeks) {
         *delta = delta
-            .checked_add(ExactUnit::Weeks.parse_py_number(value)?)
+            .add(ExactUnit::Weeks.parse_py_number(value)?)
             .ok_or_range_err()?;
         if !state.cv_ignore_days_not_always_24h.get()? {
             warn_with_class(
@@ -399,7 +389,7 @@ pub(crate) fn set_timedelta_from_kwargs(
         }
     } else if eq(key, str_days) {
         *delta = delta
-            .checked_add(ExactUnit::Days.parse_py_number(value)?)
+            .add(ExactUnit::Days.parse_py_number(value)?)
             .ok_or_range_err()?;
         if !state.cv_ignore_days_not_always_24h.get()? {
             warn_with_class(
@@ -410,27 +400,27 @@ pub(crate) fn set_timedelta_from_kwargs(
         }
     } else if eq(key, str_hours) {
         *delta = delta
-            .checked_add(ExactUnit::Hours.parse_py_number(value)?)
+            .add(ExactUnit::Hours.parse_py_number(value)?)
             .ok_or_range_err()?;
     } else if eq(key, str_minutes) {
         *delta = delta
-            .checked_add(ExactUnit::Minutes.parse_py_number(value)?)
+            .add(ExactUnit::Minutes.parse_py_number(value)?)
             .ok_or_range_err()?;
     } else if eq(key, str_seconds) {
         *delta = delta
-            .checked_add(ExactUnit::Seconds.parse_py_number(value)?)
+            .add(ExactUnit::Seconds.parse_py_number(value)?)
             .ok_or_range_err()?;
     } else if eq(key, str_milliseconds) {
         *delta = delta
-            .checked_add(ExactUnit::Milliseconds.parse_py_number(value)?)
+            .add(ExactUnit::Milliseconds.parse_py_number(value)?)
             .ok_or_range_err()?;
     } else if eq(key, str_microseconds) {
         *delta = delta
-            .checked_add(ExactUnit::Microseconds.parse_py_number(value)?)
+            .add(ExactUnit::Microseconds.parse_py_number(value)?)
             .ok_or_range_err()?;
     } else if eq(key, str_nanoseconds) {
         *delta = delta
-            .checked_add(ExactUnit::Nanoseconds.parse_py_number(value)?)
+            .add(ExactUnit::Nanoseconds.parse_py_number(value)?)
             .ok_or_range_err()?;
     } else {
         return Ok(false);
@@ -438,7 +428,7 @@ pub(crate) fn set_timedelta_from_kwargs(
     Ok(true)
 }
 
-fn timedelta_from_kwargs<K>(kwargs: K, state: &State) -> PyResult<TimeDelta>
+fn timedelta_from_kwargs<K>(fname: &'static str, kwargs: K, state: &State) -> PyResult<TimeDelta>
 where
     K: IntoIterator<Item = (PyObj, PyObj)>,
 {
@@ -456,7 +446,7 @@ where
         ..
     } = state;
 
-    handle_kwargs("TimeDelta", kwargs, |key, value, eq| {
+    handle_kwargs(fname, kwargs, |key, value, eq| {
         set_timedelta_from_kwargs(
             key,
             value,
@@ -496,7 +486,9 @@ fn __new__(cls: HeapType<TimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> P
             }
         }
         (0, 0) => TimeDelta::ZERO.to_obj(cls),
-        (0, _) => timedelta_from_kwargs(kwargs.unwrap().iteritems(), state)?.to_obj(cls),
+        (0, _) => {
+            timedelta_from_kwargs("TimeDelta", kwargs.unwrap().iteritems(), state)?.to_obj(cls)
+        }
         _ => raise_type_err("TimeDelta() takes no positional arguments"),
     }
 }
@@ -506,7 +498,7 @@ pub(crate) fn hours(state: &State, arg: PyObj) -> PyReturn {
         arg,
         MAX_HOURS,
         "hours",
-        3_600_000_000_000_i128,
+        NS_PER_HOUR as i128,
     )?)
     .to_obj(state.time_delta_type)
 }
@@ -516,7 +508,7 @@ pub(crate) fn minutes(state: &State, arg: PyObj) -> PyReturn {
         arg,
         MAX_MINUTES,
         "minutes",
-        60_000_000_000_i128,
+        NS_PER_MINUTE as i128,
     )?)
     .to_obj(state.time_delta_type)
 }
@@ -753,12 +745,9 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
     if a_cls == b_cls {
         // SAFETY: one of the arguments is always the self type, so both are
         let (cls, a) = unsafe { a_obj.assume_heaptype::<TimeDelta>() };
-        let (_, mut b) = unsafe { b_obj.assume_heaptype::<TimeDelta>() };
+        let (_, b) = unsafe { b_obj.assume_heaptype::<TimeDelta>() };
 
-        if negate {
-            b = -b;
-        }
-        a.checked_add(b).ok_or_range_err()?.to_obj(cls)
+        a.add(b.negate_if(negate)).ok_or_range_err()?.to_obj(cls)
     } else if let Some(state) = a_cls.same_module(b_cls) {
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
@@ -781,7 +770,7 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                 dtdelta = -dtdelta;
             }
             dtdelta
-                .checked_add(DateTimeDelta {
+                .add(DateTimeDelta {
                     ddelta: DateDelta::ZERO,
                     tdelta,
                 })
@@ -805,10 +794,10 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
 fn __abs__(cls: HeapType<TimeDelta>, slf: PyObj) -> PyReturn {
     // SAFETY: we know slf is passed to this method
     let (_, a) = unsafe { slf.assume_heaptype::<TimeDelta>() };
-    if a.secs.get() >= 0 {
-        Ok(slf.newref())
-    } else {
+    if a.is_negative() {
         (-a).to_obj(cls)
+    } else {
+        Ok(slf.newref())
     }
 }
 
@@ -944,7 +933,7 @@ fn in_days_of_24h(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
         2,
     )?;
     let TimeDelta { secs, subsec } = slf;
-    (secs.get() as f64 / 86_400.0 + subsec.get() as f64 * 1e-9 / 86_400.0).to_py()
+    (secs.get() as f64 / S_PER_DAY as f64 + subsec.get() as f64 * 1e-9 / S_PER_DAY as f64).to_py()
 }
 
 fn from_py_timedelta(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
@@ -959,7 +948,6 @@ fn from_py_timedelta(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
     if let Some(d) = arg.cast_exact::<PyTimeDelta>() {
         TimeDelta::from_py(d).ok_or_range_err()?.to_obj(cls)
     } else {
-        // See docstring for why
         raise_type_err("argument must be datetime.timedelta exactly")
     }
 }
@@ -976,7 +964,7 @@ fn to_stdlib(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
         Delta_FromDelta(
             secs.get().div_euclid(S_PER_DAY.into()) as _,
             secs.get().rem_euclid(S_PER_DAY.into()) as _,
-            (subsec.get() / 1_000) as _,
+            (subsec.get() / NS_PER_MICROSEC as i32) as _,
             0,
             DeltaType,
         )
@@ -1004,11 +992,11 @@ fn in_hrs_mins_secs_nanos(_: PyType, slf: TimeDelta) -> PyResult<Owned<PyTuple>>
     } else if subsec.get() == 0 {
         (secs, 0)
     } else {
-        (secs + 1, subsec.get() - 1_000_000_000)
+        (secs + 1, subsec.get() - NS_PER_SEC as i32)
     };
     (
-        (secs / 3_600).to_py()?,
-        (secs % 3_600 / 60).to_py()?,
+        (secs / S_PER_HOUR as i64).to_py()?,
+        (secs % S_PER_HOUR as i64 / 60).to_py()?,
         (secs % 60).to_py()?,
         nanos.to_py()?,
     )
@@ -1028,7 +1016,7 @@ fn parse_iso(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
     let s = &mut py_str.as_utf8()?;
     let err = || format!("Invalid format: {arg}");
 
-    let sign = (s.len() >= 4)
+    let negate = (s.len() >= 4)
         .then(|| parse_prefix(s))
         .flatten()
         .ok_or_else_value_err(err)?;
@@ -1039,8 +1027,9 @@ fn parse_iso(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
     if is_empty {
         raise_value_err(err())?;
     }
-    TimeDelta::from_nanos(nanos * sign)
+    TimeDelta::from_nanos(nanos as i128)
         .ok_or_range_err()?
+        .negate_if(negate)
         .to_obj(cls)
 }
 
@@ -1060,21 +1049,21 @@ pub(crate) fn fmt_components_abs(td: TimeDelta, s: &mut String) {
     }
 }
 
-fn parse_prefix(s: &mut &[u8]) -> Option<i128> {
-    let sign = match s[0] {
+fn parse_prefix(s: &mut &[u8]) -> Option<bool> {
+    let neg = match s[0] {
         b'+' => {
             *s = &s[1..];
-            1
+            false
         }
         b'-' => {
             *s = &s[1..];
-            -1
+            true
         }
-        _ => 1,
+        _ => false,
     };
     s[..2].eq_ignore_ascii_case(b"PT").then(|| {
         *s = &s[2..];
-        sign
+        neg
     })
 }
 
@@ -1089,16 +1078,14 @@ pub(crate) enum TimeUnit {
 }
 
 // 001234 -> 1_234_000
-fn parse_nano_fractions(s: &[u8]) -> Option<i128> {
+fn parse_nano_fractions(s: &[u8]) -> Option<u32> {
     if s.is_empty() {
         return None;
     }
-    let mut tally = extract_digit(s, 0)? as i128 * 100_000_000;
+    let mut tally = extract_digit(s, 0)? as u32 * 100_000_000;
     for i in 1..s.len().min(9) {
         match s[i] {
-            c if c.is_ascii_digit() => {
-                tally += i128::from(c - b'0') * i128::from(10_u32.pow(8 - i as u32))
-            }
+            c if c.is_ascii_digit() => tally += u32::from(c - b'0') * 10_u32.pow(8 - i as u32),
             // S is only valid at the very end
             b'S' | b's' if i + 1 == s.len() => {
                 return Some(tally);
@@ -1112,15 +1099,15 @@ fn parse_nano_fractions(s: &[u8]) -> Option<i128> {
 }
 
 /// parse a component of a ISO8601 duration, e.g. `6M`, `56.3S`, `0H`
-pub(crate) fn parse_time_component(s: &mut &[u8]) -> Option<(i128, TimeUnit)> {
+pub(crate) fn parse_time_component(s: &mut &[u8]) -> Option<(u128, TimeUnit)> {
     if s.len() < 2 {
         return None;
     }
-    let mut tally: i128 = 0;
-    // We limit parsing to 35 characters to prevent overflow of i128
+    let mut tally: u128 = 0;
+    // We limit parsing to 35 characters to prevent overflow of 128 bits
     for i in 0..s.len().min(35) {
         match s[i] {
-            c if c.is_ascii_digit() => tally = tally * 10 + i128::from(c - b'0'),
+            c if c.is_ascii_digit() => tally = tally * 10 + u128::from(c - b'0'),
             b'H' | b'h' => {
                 *s = &s[i + 1..];
                 return Some((tally, TimeUnit::Hours));
@@ -1132,7 +1119,7 @@ pub(crate) fn parse_time_component(s: &mut &[u8]) -> Option<(i128, TimeUnit)> {
             b'S' | b's' => {
                 *s = &s[i + 1..];
                 return Some((
-                    tally * 1_000_000_000,
+                    tally * NS_PER_SEC as u128,
                     TimeUnit::Nanos {
                         has_fraction: false,
                     },
@@ -1141,7 +1128,7 @@ pub(crate) fn parse_time_component(s: &mut &[u8]) -> Option<(i128, TimeUnit)> {
             b'.' | b',' if i > 0 => {
                 let result = parse_nano_fractions(&s[i + 1..]).map(|ns| {
                     (
-                        tally * 1_000_000_000 + ns,
+                        tally * NS_PER_SEC as u128 + ns as u128,
                         TimeUnit::Nanos { has_fraction: true },
                     )
                 });
@@ -1156,17 +1143,17 @@ pub(crate) fn parse_time_component(s: &mut &[u8]) -> Option<(i128, TimeUnit)> {
 
 // Parse all time components of an ISO8601 duration into total nanoseconds
 // also whether it is empty (to distinguish no components from zero components)
-pub(crate) fn parse_all_components(s: &mut &[u8]) -> Option<(i128, bool)> {
+pub(crate) fn parse_all_components(s: &mut &[u8]) -> Option<(u128, bool)> {
     let mut prev_unit: Option<TimeUnit> = None;
     let mut nanos = 0;
     while !s.is_empty() {
         let (value, unit) = parse_time_component(s)?;
         match (unit, prev_unit.replace(unit)) {
             (TimeUnit::Hours, None) => {
-                nanos += value * 3_600_000_000_000;
+                nanos += value * NS_PER_HOUR as u128;
             }
             (TimeUnit::Minutes, None | Some(TimeUnit::Hours)) => {
-                nanos += value * 60_000_000_000;
+                nanos += value * NS_PER_MINUTE as u128;
             }
             (TimeUnit::Nanos { .. }, _) => {
                 nanos += value;
@@ -1190,49 +1177,10 @@ fn round(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let state = cls.state();
-    let round::DeltaArgs { increment, mode } = round::DeltaArgs::parse(state, args, kwargs)?;
-
-    slf.round_i128(increment.total_nanos(), mode)
+    let round::DeltaArgs { increment, mode } = round::DeltaArgs::parse(cls.state(), args, kwargs)?;
+    slf.round(increment, mode.to_abs_euclid(slf.is_negative()))
         .ok_or_range_err()?
         .to_obj(cls)
-}
-
-// TODO HIGH: unify with timedelta_from_kwargs
-/// Helper: build a TimeDelta from kwargs (hours, minutes, seconds, etc.)
-fn td_from_kwargs(state: &State, kwargs: &mut IterKwargs) -> PyResult<TimeDelta> {
-    let mut nanos: i128 = 0;
-    let &State {
-        str_hours,
-        str_minutes,
-        str_seconds,
-        str_milliseconds,
-        str_microseconds,
-        str_nanoseconds,
-        ..
-    } = state;
-    handle_kwargs("add/subtract", kwargs, |key, value, eq| {
-        if eq(key, str_hours) {
-            nanos += handle_exact_unit(value, MAX_HOURS, "hours", 3_600_000_000_000)?;
-        } else if eq(key, str_minutes) {
-            nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", 60_000_000_000)?;
-        } else if eq(key, str_seconds) {
-            nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000)?;
-        } else if eq(key, str_milliseconds) {
-            nanos += handle_exact_unit(value, MAX_MILLISECONDS, "milliseconds", 1_000_000)?;
-        } else if eq(key, str_microseconds) {
-            nanos += handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000)?;
-        } else if eq(key, str_nanoseconds) {
-            nanos += value
-                .cast_allow_subclass::<PyInt>()
-                .ok_or_value_err("nanoseconds must be an integer")?
-                .to_i128()?;
-        } else {
-            return Ok(false);
-        }
-        Ok(true)
-    })?;
-    TimeDelta::from_nanos(nanos).ok_or_range_err()
 }
 
 fn add(
@@ -1267,11 +1215,13 @@ fn add_method(
         } else {
             "add() argument must be a whenever.TimeDelta"
         })?,
-        (None, 0) => return Ok(slf.to_obj(cls)?),
-        (None, _) => td_from_kwargs(cls.state(), kwargs)?,
-    };
-    let other = if negate { -other } else { other };
-    slf.checked_add(other).ok_or_range_err()?.to_obj(cls)
+        (None, 0) => return slf.to_obj(cls),
+        (None, _) => {
+            timedelta_from_kwargs(if negate { "subtract" } else { "add" }, kwargs, cls.state())?
+        }
+    }
+    .negate_if(negate);
+    slf.add(other).ok_or_range_err()?.to_obj(cls)
 }
 
 fn in_units(
@@ -1312,26 +1262,24 @@ fn in_units(
         }
         Ok(true)
     })?;
-    // TODO LAST: very large round increment
-    let sign = if slf.secs.get() >= 0 { 1 } else { -1 };
+    let neg = slf.is_negative();
 
     if let Some(zdt) = relative_to {
         let shifted_inst = zdt.instant().shift(slf).ok_or_range_err()?;
-        let shifted = shifted_inst.to_tz2(zdt.tz).ok_or_range_err()?;
+        let shifted = shifted_inst.to_tz(zdt.tz).ok_or_range_err()?;
         zoned_since_in_units(
             shifted,
             shifted_inst,
             zdt,
-            zoned_target(shifted.date, shifted_inst, zdt, sign).ok_or_range_err()?,
+            zoned_target(shifted.date, shifted_inst, zdt, neg).ok_or_range_err()?,
             units,
             round_mode,
             round_increment,
-            sign,
+            neg,
         )
         .ok_or_range_err()?
         .to_obj(state.itemized_delta_type)
     } else {
-        // TODO: do we suggest a relative_to in this warning?
         if units.has_days_or_weeks() && !state.cv_ignore_days_not_always_24h.get()? {
             warn_with_class(
                 state.warn_days_not_always_24h,
@@ -1340,7 +1288,7 @@ fn in_units(
             )?;
         }
         if let Some(exact) = units.to_exact_assuming_24h_days() {
-            slf.in_exact_units(exact, round_increment, round_mode)
+            slf.in_exact_units(exact, round_increment, round_mode.to_abs_euclid(neg))
                 .ok_or_range_err()?
                 .to_obj(state.itemized_delta_type)
         } else {
@@ -1365,19 +1313,18 @@ fn total(
             return slf.total_nanos().to_py();
         }
         Ok(u) => {
-            if u == ExactUnit::Weeks || u == ExactUnit::Days {
-                // TODO: do we suggest passing relative_to in this warning?
-                if !state.cv_ignore_days_not_always_24h.get()? {
-                    warn_with_class(
-                        state.warn_days_not_always_24h,
-                        doc::DAYS_NOT_ALWAYS_24H_MSG,
-                        2,
-                    )?;
-                }
+            if (u == ExactUnit::Weeks || u == ExactUnit::Days)
+                && !state.cv_ignore_days_not_always_24h.get()?
+            {
+                warn_with_class(
+                    state.warn_days_not_always_24h,
+                    doc::DAYS_NOT_ALWAYS_24H_MSG,
+                    2,
+                )?;
             }
             return (slf.to_nanos_f64() / u.in_nanos() as f64).to_py();
         }
-        // TODO: zero early exit?
+        // FUTURE: fast early exit for zero
         Err(cal_unit) => cal_unit,
     };
 
@@ -1386,16 +1333,15 @@ fn total(
             .extract(state.zoned_datetime_type)
             .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?,
         None => {
-            // TODO: this should be a type error
-            raise_value_err("for months and years total, a `relative_to` argument must be passed")?
+            raise_type_err("for months and years total, a `relative_to` argument must be passed")?
         }
     };
 
     let shifted_inst = relative_to.instant().shift(slf).ok_or_range_err()?;
-    let shifted = shifted_inst.to_tz2(relative_to.tz).ok_or_range_err()?;
+    let shifted = shifted_inst.to_tz(relative_to.tz).ok_or_range_err()?;
 
     total_cal(
-        if slf.secs.get() >= 0 { 1 } else { -1 },
+        slf.is_negative(),
         cal_unit,
         relative_to,
         shifted,
@@ -1404,21 +1350,21 @@ fn total(
 }
 
 pub(crate) fn total_cal(
-    sign: i8,
+    neg: bool,
     unit: math::CalUnit,
     relative_to: ZonedDateTime,
     shifted: OffsetDateTime,
     shifted_inst: Instant,
 ) -> PyReturn {
     let target_date =
-        zoned_target(shifted.date, shifted_inst, relative_to, sign).ok_or_range_err()?;
+        zoned_target(shifted.date, shifted_inst, relative_to, neg).ok_or_range_err()?;
 
     let (trunc_amount, trunc_date, expand_date) = math::date_diff_single_unit(
         target_date,
         relative_to.date,
         DateRoundIncrement::MIN,
         unit,
-        sign,
+        neg,
     )
     .ok_or_range_err()?;
 
@@ -1489,9 +1435,24 @@ mod tests {
         td(s, 0)
     }
 
-    // 1 second increment in nanoseconds
-    // SAFETY: 1_000_000_000 is non-zero
-    const SEC: NonZeroU64 = unsafe { NonZeroU64::new_unchecked(1_000_000_000) };
+    fn inc(secs: u64, nanos: i32) -> DeltaIncrement {
+        DeltaIncrement {
+            secs,
+            subsec: SubSecNanos::new_unchecked(nanos),
+        }
+    }
+
+    fn sec() -> DeltaIncrement {
+        inc(1, 0)
+    }
+
+    fn ten_sec() -> DeltaIncrement {
+        inc(10, 0)
+    }
+
+    fn abs(mode: round::Mode, negative: bool) -> round::AbsMode {
+        mode.to_abs_euclid(negative)
+    }
 
     // --- Sub-second rounding (increment < 1s) ---
 
@@ -1499,7 +1460,7 @@ mod tests {
     fn round_subsec_floor() {
         // 1.7s → floor to 1s
         assert_eq!(
-            td(1, 700_000_000).round(SEC, round::Mode::Floor),
+            td(1, 700_000_000).round(sec(), abs(round::Mode::Floor, false)),
             Some(td_secs(1))
         );
     }
@@ -1508,7 +1469,7 @@ mod tests {
     fn round_subsec_ceil() {
         // 1.7s → ceil to 2s
         assert_eq!(
-            td(1, 700_000_000).round(SEC, round::Mode::Ceil),
+            td(1, 700_000_000).round(sec(), abs(round::Mode::Ceil, false)),
             Some(td_secs(2))
         );
     }
@@ -1517,7 +1478,7 @@ mod tests {
     fn round_subsec_trunc_positive() {
         // 1.7s → trunc (towards 0) = 1s
         assert_eq!(
-            td(1, 700_000_000).round(SEC, round::Mode::Trunc),
+            td(1, 700_000_000).round(sec(), abs(round::Mode::Trunc, false)),
             Some(td_secs(1))
         );
     }
@@ -1526,7 +1487,7 @@ mod tests {
     fn round_subsec_trunc_negative() {
         // -1.3s (secs=-2, subsec=700_000_000) → trunc (towards 0) = -1s
         assert_eq!(
-            td(-2, 700_000_000).round(SEC, round::Mode::Trunc),
+            td(-2, 700_000_000).round(sec(), abs(round::Mode::Trunc, true)),
             Some(td_secs(-1))
         );
     }
@@ -1535,7 +1496,7 @@ mod tests {
     fn round_subsec_expand_positive() {
         // 1.7s → expand (away from 0) = 2s
         assert_eq!(
-            td(1, 700_000_000).round(SEC, round::Mode::Expand),
+            td(1, 700_000_000).round(sec(), abs(round::Mode::Expand, false)),
             Some(td_secs(2))
         );
     }
@@ -1544,7 +1505,7 @@ mod tests {
     fn round_subsec_expand_negative() {
         // -1.3s → expand (away from 0) = -2s
         assert_eq!(
-            td(-2, 700_000_000).round(SEC, round::Mode::Expand),
+            td(-2, 700_000_000).round(sec(), abs(round::Mode::Expand, true)),
             Some(td_secs(-2))
         );
     }
@@ -1555,12 +1516,12 @@ mod tests {
     fn round_subsec_half_even_tie() {
         // 1.5s → half_even: quotient=1 (odd), round up to 2
         assert_eq!(
-            td(1, 500_000_000).round(SEC, round::Mode::HalfEven),
+            td(1, 500_000_000).round(sec(), abs(round::Mode::HalfEven, false)),
             Some(td_secs(2))
         );
         // 2.5s → half_even: quotient=2 (even), round down to 2
         assert_eq!(
-            td(2, 500_000_000).round(SEC, round::Mode::HalfEven),
+            td(2, 500_000_000).round(sec(), abs(round::Mode::HalfEven, false)),
             Some(td_secs(2))
         );
     }
@@ -1569,12 +1530,12 @@ mod tests {
     fn round_subsec_half_ceil_tie() {
         // 1.5s → half_ceil: round up (towards +∞) = 2s
         assert_eq!(
-            td(1, 500_000_000).round(SEC, round::Mode::HalfCeil),
+            td(1, 500_000_000).round(sec(), abs(round::Mode::HalfCeil, false)),
             Some(td_secs(2))
         );
         // -1.5s (secs=-2, subsec=500_000_000) → half_ceil: round up (towards +∞) = -1s
         assert_eq!(
-            td(-2, 500_000_000).round(SEC, round::Mode::HalfCeil),
+            td(-2, 500_000_000).round(sec(), abs(round::Mode::HalfCeil, true)),
             Some(td_secs(-1))
         );
     }
@@ -1583,12 +1544,12 @@ mod tests {
     fn round_subsec_half_floor_tie() {
         // 1.5s → half_floor: round down = 1s
         assert_eq!(
-            td(1, 500_000_000).round(SEC, round::Mode::HalfFloor),
+            td(1, 500_000_000).round(sec(), abs(round::Mode::HalfFloor, false)),
             Some(td_secs(1))
         );
         // -1.5s → half_floor: round down (towards -∞) = -2s
         assert_eq!(
-            td(-2, 500_000_000).round(SEC, round::Mode::HalfFloor),
+            td(-2, 500_000_000).round(sec(), abs(round::Mode::HalfFloor, true)),
             Some(td_secs(-2))
         );
     }
@@ -1597,12 +1558,12 @@ mod tests {
     fn round_subsec_half_trunc_tie() {
         // 1.5s → half_trunc: ties towards 0 = 1s
         assert_eq!(
-            td(1, 500_000_000).round(SEC, round::Mode::HalfTrunc),
+            td(1, 500_000_000).round(sec(), abs(round::Mode::HalfTrunc, false)),
             Some(td_secs(1))
         );
         // -1.5s → half_trunc: ties towards 0 = -1s
         assert_eq!(
-            td(-2, 500_000_000).round(SEC, round::Mode::HalfTrunc),
+            td(-2, 500_000_000).round(sec(), abs(round::Mode::HalfTrunc, true)),
             Some(td_secs(-1))
         );
     }
@@ -1611,26 +1572,23 @@ mod tests {
     fn round_subsec_half_expand_tie() {
         // 1.5s → half_expand: ties away from 0 = 2s
         assert_eq!(
-            td(1, 500_000_000).round(SEC, round::Mode::HalfExpand),
+            td(1, 500_000_000).round(sec(), abs(round::Mode::HalfExpand, false)),
             Some(td_secs(2))
         );
         // -1.5s → half_expand: ties away from 0 = -2s
         assert_eq!(
-            td(-2, 500_000_000).round(SEC, round::Mode::HalfExpand),
+            td(-2, 500_000_000).round(sec(), abs(round::Mode::HalfExpand, true)),
             Some(td_secs(-2))
         );
     }
 
     // --- Whole-second rounding (increment >= 1s) ---
 
-    // SAFETY: 10_000_000_000 is non-zero
-    const TEN_SEC: NonZeroU64 = unsafe { NonZeroU64::new_unchecked(10_000_000_000) };
-
     #[test]
     fn round_wholesec_trunc_positive() {
         // 45s → trunc to 10s = 40s
         assert_eq!(
-            td_secs(45).round(TEN_SEC, round::Mode::Trunc),
+            td_secs(45).round(ten_sec(), abs(round::Mode::Trunc, false)),
             Some(td_secs(40))
         );
     }
@@ -1639,7 +1597,7 @@ mod tests {
     fn round_wholesec_trunc_negative() {
         // -45s → trunc to 10s = -40s (towards zero)
         assert_eq!(
-            td_secs(-45).round(TEN_SEC, round::Mode::Trunc),
+            td_secs(-45).round(ten_sec(), abs(round::Mode::Trunc, true)),
             Some(td_secs(-40))
         );
     }
@@ -1648,7 +1606,7 @@ mod tests {
     fn round_wholesec_expand_positive() {
         // 41s → expand to 10s = 50s
         assert_eq!(
-            td_secs(41).round(TEN_SEC, round::Mode::Expand),
+            td_secs(41).round(ten_sec(), abs(round::Mode::Expand, false)),
             Some(td_secs(50))
         );
     }
@@ -1657,7 +1615,7 @@ mod tests {
     fn round_wholesec_expand_negative() {
         // -41s → expand to 10s = -50s (away from zero)
         assert_eq!(
-            td_secs(-41).round(TEN_SEC, round::Mode::Expand),
+            td_secs(-41).round(ten_sec(), abs(round::Mode::Expand, true)),
             Some(td_secs(-50))
         );
     }
@@ -1666,12 +1624,12 @@ mod tests {
     fn round_wholesec_half_trunc_tie() {
         // 45s → half_trunc to 10s = 40s (tie towards zero)
         assert_eq!(
-            td_secs(45).round(TEN_SEC, round::Mode::HalfTrunc),
+            td_secs(45).round(ten_sec(), abs(round::Mode::HalfTrunc, false)),
             Some(td_secs(40))
         );
         // -45s → half_trunc to 10s = -40s
         assert_eq!(
-            td_secs(-45).round(TEN_SEC, round::Mode::HalfTrunc),
+            td_secs(-45).round(ten_sec(), abs(round::Mode::HalfTrunc, true)),
             Some(td_secs(-40))
         );
     }
@@ -1680,12 +1638,12 @@ mod tests {
     fn round_wholesec_half_expand_tie() {
         // 45s → half_expand to 10s = 50s (tie away from zero)
         assert_eq!(
-            td_secs(45).round(TEN_SEC, round::Mode::HalfExpand),
+            td_secs(45).round(ten_sec(), abs(round::Mode::HalfExpand, false)),
             Some(td_secs(50))
         );
         // -45s → half_expand to 10s = -50s
         assert_eq!(
-            td_secs(-45).round(TEN_SEC, round::Mode::HalfExpand),
+            td_secs(-45).round(ten_sec(), abs(round::Mode::HalfExpand, true)),
             Some(td_secs(-50))
         );
     }
@@ -1704,7 +1662,10 @@ mod tests {
             round::Mode::HalfTrunc,
             round::Mode::HalfExpand,
         ] {
-            assert_eq!(td_secs(0).round(SEC, mode), Some(td_secs(0)));
+            assert_eq!(
+                td_secs(0).round(sec(), mode.to_abs_euclid(false)),
+                Some(td_secs(0))
+            );
         }
     }
 
@@ -1722,8 +1683,30 @@ mod tests {
             round::Mode::HalfTrunc,
             round::Mode::HalfExpand,
         ] {
-            assert_eq!(td_secs(30).round(TEN_SEC, mode), Some(td_secs(30)));
-            assert_eq!(td_secs(-30).round(TEN_SEC, mode), Some(td_secs(-30)));
+            assert_eq!(
+                td_secs(30).round(ten_sec(), mode.to_abs_euclid(false)),
+                Some(td_secs(30))
+            );
+            assert_eq!(
+                td_secs(-30).round(ten_sec(), mode.to_abs_euclid(true)),
+                Some(td_secs(-30))
+            );
         }
+    }
+
+    #[test]
+    fn round_large_increment() {
+        // increment = 1<<65 ns (> i64::MAX), trunc mode
+        let large_inc = inc(36_893_488_147, 419_103_232);
+        // A value smaller than the increment should round to zero
+        assert_eq!(
+            td_secs(3600).round(large_inc, abs(round::Mode::Trunc, false)),
+            Some(td_secs(0))
+        );
+        // A value exactly equal to the increment should be unchanged
+        assert_eq!(
+            td(36_893_488_147, 419_103_232).round(large_inc, abs(round::Mode::Trunc, false)),
+            Some(td(36_893_488_147, 419_103_232))
+        );
     }
 }

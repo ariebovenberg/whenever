@@ -573,6 +573,8 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
     def add(
         self,
         *,
+        weeks: float = ...,
+        days: float = ...,
         hours: float = ...,
         minutes: float = ...,
         seconds: float = ...,
@@ -586,6 +588,8 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
     def subtract(
         self,
         *,
+        weeks: float = ...,
+        days: float = ...,
         hours: float = ...,
         minutes: float = ...,
         seconds: float = ...,
@@ -701,7 +705,7 @@ class ItemizedDelta(
         ] = ...,
         round_increment: int = ...,
     ) -> ItemizedDelta: ...
-    def parts(
+    def date_and_time_parts(
         self,
     ) -> tuple[ItemizedDateDelta | None, TimeDelta | None]: ...
     def exact_eq(self, other: Self, /) -> bool: ...

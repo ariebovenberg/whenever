@@ -14,7 +14,10 @@ use crate::{
     common::{
         math::{DeltaUnit, DeltaUnitSet, ExactUnit, RoundIncrement},
         round,
-        scalar::{DeltaDays, DeltaField, DeltaMonths, DeltaSeconds, SubSecNanos},
+        scalar::{
+            DeltaDays, DeltaField, DeltaMonths, DeltaSeconds, NS_PER_HOUR, NS_PER_MINUTE,
+            NS_PER_SEC, NegateIf, SubSecNanos,
+        },
     },
     docstrings as doc,
     py::*,
@@ -39,7 +42,6 @@ pub(crate) struct ItemizedDelta {
 }
 
 impl ItemizedDelta {
-    // TODO LOW: NOTE this is invalid
     pub(crate) const UNSET: Self = Self {
         years: DeltaField::UNSET,
         months: DeltaField::UNSET,
@@ -133,18 +135,17 @@ impl ItemizedDelta {
     }
 
     pub(crate) fn to_components(self) -> Option<(DeltaMonths, DeltaDays, TimeDelta)> {
+        // SAFETY: delta values have already been checked to be well within i64/i128 bounds
         let months = DeltaMonths::new(
-            // TODO LOW: unsafe cast
             (self.years.get_or(0) as i64 * 12 + self.months.get_or(0) as i64) as i32,
         )?;
         let days =
             DeltaDays::new((self.weeks.get_or(0) as i64 * 7 + self.days.get_or(0) as i64) as i32)?;
-        // OPTIMIZE: this can be done without going through i128
-        let nanos = self.hours.get_or(0) as i128 * 3_600_000_000_000
-            + self.minutes.get_or(0) as i128 * 60_000_000_000
-            + self.seconds.get_or(0) as i128 * 1_000_000_000
+        let nanos = self.hours.get_or(0) as i128 * NS_PER_HOUR as i128
+            + self.minutes.get_or(0) as i128 * NS_PER_MINUTE as i128
+            + self.seconds.get_or(0) as i128 * NS_PER_SEC as i128
             + self.nanos.get_or(0) as i128;
-        Some((months, days, TimeDelta::from_nanos(nanos)?))
+        (months, days, TimeDelta::from_nanos(nanos)?).into()
     }
 
     fn has_time(self) -> bool {
@@ -329,7 +330,7 @@ fn format_iso(
         raise_type_err("format_iso() takes no positional arguments")?;
     }
     let lowercase = handle_one_kwarg("format_iso", cls.state().str_lowercase_units, kwargs)?
-        .map_or(false, |v| v.is_true());
+        .is_some_and(|v| v.is_true());
     d.fmt_iso(lowercase).to_py()
 }
 
@@ -383,7 +384,7 @@ fn parse_iso(cls: HeapType<ItemizedDelta>, arg: PyObj) -> PyReturn {
                 }
                 TimeUnit::Nanos { has_fraction } => {
                     seconds = DeltaField::new_checked(
-                        (value / 1_000_000_000) as u64,
+                        (value / NS_PER_SEC as u128) as u64,
                         negated,
                         MAX_SECONDS,
                     )
@@ -391,7 +392,7 @@ fn parse_iso(cls: HeapType<ItemizedDelta>, arg: PyObj) -> PyReturn {
 
                     if has_fraction {
                         nanos = DeltaField::new_checked(
-                            (value % 1_000_000_000) as u64,
+                            (value % NS_PER_SEC as u128) as u64,
                             negated,
                             MAX_NANOS,
                         )
@@ -631,7 +632,7 @@ fn replace(
     d.to_obj(cls)
 }
 
-fn parts(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyResult<Owned<PyTuple>> {
+fn date_and_time_parts(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyResult<Owned<PyTuple>> {
     let &State {
         itemized_date_delta_type,
         time_delta_type,
@@ -662,7 +663,7 @@ fn parts(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyResult<Owned<PyTup
         let (adj_secs, adj_nanos) = if nanos_val >= 0 {
             (total_secs, nanos_val)
         } else {
-            (total_secs - 1, 1_000_000_000 + nanos_val)
+            (total_secs - 1, NS_PER_SEC as i32 + nanos_val)
         };
         TimeDelta {
             secs: DeltaSeconds::new_unchecked(adj_secs),
@@ -761,16 +762,16 @@ fn in_units(
 
     let shifted = zdt.shift_default(d).ok_or_range_err()?;
     let shifted_inst = shifted.instant();
-    let sign = if d.derived_sign() == -1 { -1 } else { 1 }; // TODO nicer
+    let neg = d.derived_sign().is_negative();
     zoned_since_in_units(
         shifted,
         shifted_inst,
         zdt,
-        zoned_target(shifted.date, shifted_inst, zdt, sign).ok_or_range_err()?,
+        zoned_target(shifted.date, shifted_inst, zdt, neg).ok_or_range_err()?,
         units,
         round_mode,
         round_increment,
-        sign,
+        neg,
     )
     .ok_or_range_err()?
     .to_obj(cls)
@@ -806,8 +807,7 @@ fn total(
     };
 
     total_cal(
-        // TODO: replace sign: i8 with negate: bool where sign is always ±1
-        if tdelta.secs.get() >= 0 { 1 } else { -1 },
+        tdelta.is_negative(),
         cal_unit,
         relative_to,
         shifted,
@@ -815,6 +815,7 @@ fn total(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn handle_delta_unit_kwargs(
     key: PyObj,
     value: PyObj,
@@ -880,38 +881,37 @@ pub(crate) fn handle_delta_unit_kwargs(
         .ok_or_range_err()?;
         units.insert(DeltaUnit::Days);
     } else if eq(key, str_hours) {
-        // TODO: consistent add/checked-add() naming
         *time = time
-            .checked_add(ExactUnit::Hours.parse_py_number(value)?)
+            .add(ExactUnit::Hours.parse_py_number(value)?)
             .ok_or_range_err()?;
         units.insert(DeltaUnit::Hours);
     } else if eq(key, str_minutes) {
         *time = time
-            .checked_add(ExactUnit::Minutes.parse_py_number(value)?)
+            .add(ExactUnit::Minutes.parse_py_number(value)?)
             .ok_or_range_err()?;
         units.insert(DeltaUnit::Minutes);
     } else if eq(key, str_seconds) {
         *time = time
-            .checked_add(ExactUnit::Seconds.parse_py_number(value)?)
+            .add(ExactUnit::Seconds.parse_py_number(value)?)
             .ok_or_range_err()?;
         units.insert(DeltaUnit::Seconds);
     } else if let Some(str_millis) = str_milliseconds
         && eq(key, str_millis)
     {
         *time = time
-            .checked_add(ExactUnit::Milliseconds.parse_py_number(value)?)
+            .add(ExactUnit::Milliseconds.parse_py_number(value)?)
             .ok_or_range_err()?;
         units.insert(DeltaUnit::Nanoseconds); // Converted to nanoseconds
     } else if let Some(str_micros) = str_microseconds
         && eq(key, str_micros)
     {
         *time = time
-            .checked_add(ExactUnit::Microseconds.parse_py_number(value)?)
+            .add(ExactUnit::Microseconds.parse_py_number(value)?)
             .ok_or_range_err()?;
         units.insert(DeltaUnit::Nanoseconds); // Converted to nanoseconds
     } else if eq(key, str_nanoseconds) {
         *time = time
-            .checked_add(ExactUnit::Nanoseconds.parse_py_number(value)?)
+            .add(ExactUnit::Nanoseconds.parse_py_number(value)?)
             .ok_or_range_err()?;
         units.insert(DeltaUnit::Nanoseconds);
     } else {
@@ -962,7 +962,6 @@ fn add_sub(
     let mut months_from_kwargs = DeltaMonths::ZERO;
     let mut days_from_kwargs = DeltaDays::ZERO;
     let mut tdelta_from_kwargs = TimeDelta::ZERO;
-    // TODO RANDOM: maybe in_units->to_units for consistency
     let mut units_from_kwargs = DeltaUnitSet::EMPTY;
 
     handle_kwargs(fname, kwargs, |key, value, eq| {
@@ -1023,27 +1022,27 @@ fn add_sub(
     days = days.negate_if(negate);
     tdelta = tdelta.negate_if(negate);
 
+    let (self_months, self_days, self_tdelta) = d.to_components().ok_or_range_err()?;
+    let total_months = self_months.add(months).ok_or_range_err()?;
+    let total_days = self_days.add(days).ok_or_range_err()?;
+    let total_tdelta = self_tdelta.add(tdelta).ok_or_range_err()?;
     let shifted = relative_to
-        .shift_default(d)
-        .and_then(|odt| odt.shift_in_tz(months, days, tdelta, relative_to.tz))
+        .without_tz()
+        .shift_in_tz(total_months, total_days, total_tdelta, relative_to.tz)
         .ok_or_range_err()?;
     let shifted_inst = shifted.instant();
 
-    let sign = if shifted_inst >= relative_to.instant() {
-        1
-    } else {
-        -1
-    };
+    let neg = shifted_inst < relative_to.instant();
 
     zoned_since_in_units(
         shifted,
         shifted.instant(),
         relative_to,
-        zoned_target(shifted.date, shifted_inst, relative_to, sign).ok_or_range_err()?,
+        zoned_target(shifted.date, shifted_inst, relative_to, neg).ok_or_range_err()?,
         units,
         round_mode,
         round_increment,
-        sign,
+        neg,
     )
     .ok_or_range_err()?
     .to_obj(cls)
@@ -1118,7 +1117,7 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter!(ItemizedDelta, sign, "The sign of the delta: 1, 0, or -1"),
+    getter!(ItemizedDelta, sign, c"The sign of the delta: 1, 0, or -1"),
     PyGetSetDef {
         name: NULL(),
         get: None,
@@ -1135,7 +1134,11 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod1!(ItemizedDelta, parse_iso, doc::ITEMIZEDDELTA_PARSE_ISO),
     method1!(ItemizedDelta, exact_eq, doc::ITEMIZEDDELTA_EXACT_EQ),
     method_kwargs!(ItemizedDelta, replace, doc::ITEMIZEDDELTA_REPLACE),
-    method0!(ItemizedDelta, parts, doc::ITEMIZEDDELTA_PARTS),
+    method0!(
+        ItemizedDelta,
+        date_and_time_parts,
+        doc::ITEMIZEDDELTA_DATE_AND_TIME_PARTS
+    ),
     method_kwargs!(ItemizedDelta, in_units, doc::ITEMIZEDDELTA_IN_UNITS),
     method_kwargs!(ItemizedDelta, total, doc::ITEMIZEDDELTA_TOTAL),
     method_kwargs!(ItemizedDelta, add, doc::ITEMIZEDDELTA_ADD),
