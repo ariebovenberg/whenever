@@ -252,8 +252,7 @@ Date("2025-03-31")
 
 ## Sort a list of datetimes
 
-<!-- TODO: nuance mixing types -->
-All exact types can be compared and sorted, even when mixing types:
+All *exact types* can be compared and sorted amongst each other:
 
 ```python
 >>> from whenever import Instant, ZonedDateTime, OffsetDateTime
@@ -265,6 +264,9 @@ All exact types can be compared and sorted, even when mixing types:
 >>> sorted(times)  # all represent the same moment—sorted by the underlying instant
 [...]
 ```
+
+"Plain" datetimes cannot be mixed with exact types. 
+This will be flagged by type checking.
 
 ## Custom format patterns
 

@@ -501,7 +501,7 @@ fn to_tz(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime, tz_obj: PyObj) -> P
         ..
     } = cls.state();
     let tz = tz_store.obj_get(tz_obj)?;
-    slf.instant().to_tz(tz, zoned_datetime_type)
+    slf.instant().to_tz_py(tz, zoned_datetime_type)
 }
 
 fn to_system_tz(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
@@ -511,7 +511,7 @@ fn to_system_tz(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn 
         ..
     } = cls.state();
     let tz = tz_store.get_system_tz()?;
-    slf.instant().to_tz(tz, zoned_datetime_type)
+    slf.instant().to_tz_py(tz, zoned_datetime_type)
 }
 
 fn assume_tz(
@@ -552,7 +552,7 @@ fn assume_tz(
 
     if matches!(mismatch, OffsetMismatch::KeepInstant) || actual_offset == slf.offset {
         // Offsets match (or we're keeping the instant): create ZDT from instant
-        return instant.to_tz(tz, state.zoned_datetime_type);
+        return instant.to_tz_py(tz, state.zoned_datetime_type);
     }
 
     match mismatch {
@@ -1219,7 +1219,7 @@ fn round(
     }
     offset_stale_warning(state, doc::OFFSET_ROUND_STALE_MSG)?;
     let round_nanos = match increment {
-        round::RoundIncrement::Day => 86_400_000_000_000,
+        round::RoundIncrement::Day => NS_PER_DAY,
         round::RoundIncrement::Exact(ns) => ns.get(),
     };
     let OffsetDateTime {
@@ -1276,9 +1276,8 @@ fn offset_since(
         round_increment,
     } = SinceUntilKwargs::parse(fname, state, kwargs)?;
 
-    let same_offset = slf.offset == other.offset;
-
-    match (units.has_calendar(), same_offset) {
+    match (units.has_calendar(), slf.offset == other.offset) {
+        // same offset: use the plain datetime rounding logic (days are always 24h)
         (true, true) => plain_datetime::plain_since_inner(
             state,
             slf.without_offset(),
@@ -1294,20 +1293,22 @@ fn offset_since(
         ),
         _ => {
             // Different offsets, exact units only: compute via TimeDelta
-            let diff = slf.instant().diff(other.instant());
+            let (a, b) = if flip { (other, slf) } else { (slf, other) };
+            let diff = a.instant().diff(b.instant());
+            let abs_mode = round_mode.to_abs_euclid(diff.is_negative());
             match units {
                 UnitsOrUnit::One(u) => diff.in_single_unit(
                     // SAFETY: we've already checked there are only exact units
                     u.to_exact(false).unwrap(),
                     round_increment,
-                    round_mode,
+                    abs_mode,
                 ),
                 UnitsOrUnit::Seq(units) => diff
                     .in_exact_units(
                         // SAFETY: we've already checked there are only exact units
                         units.to_exact_assuming_24h_days().unwrap(),
                         round_increment,
-                        round_mode,
+                        abs_mode,
                     )
                     .ok_or_range_err()?
                     .to_obj(state.itemized_delta_type),
@@ -1446,7 +1447,7 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod1!(
         OffsetDateTime,
         from_py_datetime,
-        doc::OFFSETDATETIME_FROM_PY_DATETIME
+        doc::BASICCONVERSIONS_FROM_PY_DATETIME
     ),
     method0!(
         OffsetDateTime,
@@ -1568,14 +1569,14 @@ fn offset(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter!(OffsetDateTime, year, "The year component"),
-    getter!(OffsetDateTime, month, "The month component"),
-    getter!(OffsetDateTime, day, "The day component"),
-    getter!(OffsetDateTime, hour, "The hour component"),
-    getter!(OffsetDateTime, minute, "The minute component"),
-    getter!(OffsetDateTime, second, "The second component"),
-    getter!(OffsetDateTime, nanosecond, "The nanosecond component"),
-    getter!(OffsetDateTime, offset, "The offset from UTC"),
+    getter!(OffsetDateTime, year, doc::LOCALTIME_YEAR),
+    getter!(OffsetDateTime, month, doc::LOCALTIME_MONTH),
+    getter!(OffsetDateTime, day, doc::LOCALTIME_DAY),
+    getter!(OffsetDateTime, hour, doc::LOCALTIME_HOUR),
+    getter!(OffsetDateTime, minute, doc::LOCALTIME_MINUTE),
+    getter!(OffsetDateTime, second, doc::LOCALTIME_SECOND),
+    getter!(OffsetDateTime, nanosecond, doc::LOCALTIME_NANOSECOND),
+    getter!(OffsetDateTime, offset, doc::EXACTANDLOCALTIME_OFFSET),
     PyGetSetDef {
         name: NULL(),
         get: None,

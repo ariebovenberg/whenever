@@ -10,7 +10,8 @@ use crate::{
         plain_datetime::DateTime,
         time::Time,
         time_delta::{
-            MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS, TimeDelta,
+            DeltaIncrement, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS,
+            TimeDelta,
         },
     },
     common::{
@@ -593,9 +594,9 @@ fn shift_method(
     }
     handle_kwargs(fname, kwargs, |key, value, eq| {
         if eq(key, str_hours) {
-            nanos += handle_exact_unit(value, MAX_HOURS, "hours", 3_600_000_000_000_i128)?;
+            nanos += handle_exact_unit(value, MAX_HOURS, "hours", NS_PER_HOUR as i128)?;
         } else if eq(key, str_minutes) {
-            nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", 60_000_000_000_i128)?;
+            nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", NS_PER_MINUTE as i128)?;
         } else if eq(key, str_seconds) {
             nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000_i128)?;
         } else if eq(key, str_milliseconds) {
@@ -654,7 +655,7 @@ fn to_tz(cls: HeapType<Instant>, slf: Instant, tz_obj: PyObj) -> PyReturn {
         ..
     } = cls.state();
     let tz = tz_store.obj_get(tz_obj)?;
-    slf.to_tz(tz, zoned_datetime_type)
+    slf.to_tz_py(tz, zoned_datetime_type)
 }
 
 fn to_fixed_offset(cls: HeapType<Instant>, slf: Instant, args: &[PyObj]) -> PyReturn {
@@ -680,7 +681,7 @@ fn to_system_tz(cls: HeapType<Instant>, slf: Instant) -> PyReturn {
         ..
     } = cls.state();
     let tz = tz_store.get_system_tz()?;
-    slf.to_tz(tz, zoned_datetime_type)
+    slf.to_tz_py(tz, zoned_datetime_type)
 }
 
 fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn {
@@ -710,13 +711,14 @@ fn round(
     let round::Args {
         increment, mode, ..
     } = round::Args::parse(cls.state(), args, kwargs, false)?;
-    let round_nanos = match increment {
+    let round_increment = match increment {
         round::RoundIncrement::Day => raise_value_err(doc::CANNOT_ROUND_DAY_MSG)?,
-        round::RoundIncrement::Exact(ns) => ns,
+        // SAFETY: parse() validates the increment is ≥ 1 ns and fits within a day
+        round::RoundIncrement::Exact(ns) => DeltaIncrement::from_nanos(ns.get() as u128).unwrap(),
     };
     let TimeDelta { secs, subsec } = slf
         .to_delta()
-        .round(round_nanos, mode)
+        .round(round_increment, mode.to_abs_euclid(slf.epoch.get() < 0))
         // SAFETY: TimeDelta has higher range than Instant,
         // so rounding cannot result in out-of-range
         .unwrap();
@@ -876,7 +878,7 @@ static mut METHODS: &[PyMethodDef] = &[
     },
     method0!(Instant, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
     method0!(Instant, py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
-    classmethod1!(Instant, from_py_datetime, doc::INSTANT_FROM_PY_DATETIME),
+    classmethod1!(Instant, from_py_datetime, doc::BASICCONVERSIONS_FROM_PY_DATETIME),
     classmethod0!(Instant, now, doc::INSTANT_NOW),
     method0!(Instant, format_rfc2822, doc::INSTANT_FORMAT_RFC2822),
     classmethod1!(Instant, parse_rfc2822, doc::INSTANT_PARSE_RFC2822),

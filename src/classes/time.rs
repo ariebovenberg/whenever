@@ -64,9 +64,9 @@ impl Time {
 
     pub(crate) fn from_total_nanos_unchecked(nanos: u64) -> Self {
         Time {
-            hour: (nanos / 3_600_000_000_000) as u8,
-            minute: ((nanos % 3_600_000_000_000) / 60_000_000_000) as u8,
-            second: ((nanos % 60_000_000_000) / 1_000_000_000) as u8,
+            hour: (nanos / NS_PER_HOUR) as u8,
+            minute: ((nanos % NS_PER_HOUR) / NS_PER_MINUTE) as u8,
+            second: ((nanos % NS_PER_MINUTE) / 1_000_000_000) as u8,
             subsec: SubSecNanos::from_remainder(nanos),
         }
     }
@@ -165,14 +165,14 @@ impl Time {
     /// Returns the rounded time and whether it has wrapped around to the next day (0 or 1)
     /// The increment is given in ns must be a divisor of 24 hours
     pub(crate) fn round(self, increment: u64, mode: round::Mode) -> (Self, u64) {
-        debug_assert!(86_400_000_000_000u64.is_multiple_of(increment));
+        debug_assert!(NS_PER_DAY.is_multiple_of(increment));
         let total_nanos = self.total_nanos();
         let quotient = total_nanos / increment;
         let remainder = total_nanos % increment;
 
         // Time is always non-negative, so trunc=floor and expand=ceil
         let threshold = match mode {
-            round::Mode::HalfEven => 1.max(increment / 2 + (quotient % 2 == 0) as u64),
+            round::Mode::HalfEven => 1.max(increment / 2 + quotient.is_multiple_of(2) as u64),
             round::Mode::Ceil | round::Mode::Expand => 1,
             round::Mode::Floor | round::Mode::Trunc => increment + 1,
             round::Mode::HalfFloor | round::Mode::HalfTrunc => increment / 2 + 1,
@@ -181,8 +181,8 @@ impl Time {
         let round_up = remainder >= threshold;
         let ns_since_midnight = (quotient + round_up as u64) * increment;
         (
-            Self::from_total_nanos_unchecked(ns_since_midnight % 86_400_000_000_000),
-            ns_since_midnight / 86_400_000_000_000,
+            Self::from_total_nanos_unchecked(ns_since_midnight % NS_PER_DAY),
+            ns_since_midnight / NS_PER_DAY,
         )
     }
 
@@ -749,10 +749,10 @@ fn nanosecond(_: PyType, slf: Time) -> PyReturn {
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter!(Time, hour, "The hour component"),
-    getter!(Time, minute, "The minute component"),
-    getter!(Time, second, "The second component"),
-    getter!(Time, nanosecond, "The nanosecond component"),
+    getter!(Time, hour, doc::TIME_HOUR),
+    getter!(Time, minute, doc::TIME_MINUTE),
+    getter!(Time, second, doc::TIME_SECOND),
+    getter!(Time, nanosecond, doc::TIME_NANOSECOND),
     PyGetSetDef {
         name: NULL(),
         get: None,

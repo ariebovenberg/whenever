@@ -403,7 +403,7 @@ class TestTotal:
     def test_months_and_years(self):
         d = TimeDelta(hours=2000)
 
-        with pytest.raises(ValueError, match="months.*relative_to"):
+        with pytest.raises(TypeError, match="months.*relative_to"):
             d.total("months")  # type: ignore[call-overload]
 
         # positive cases
@@ -430,7 +430,7 @@ class TestTotal:
             relative_to=ZonedDateTime(2023, 1, 31, hour=1, tz="Europe/Athens"),
         ) == approx(-8.038978494623656)
 
-        with pytest.raises(ValueError, match="years.*relative_to"):
+        with pytest.raises(TypeError, match="years.*relative_to"):
             d.total("years")  # type: ignore[call-overload]
 
         # positive cases
@@ -506,6 +506,15 @@ class TestTotal:
         )
         assert TimeDelta(hours=-24).total("days", relative_to=zdt) == approx(
             -2.0
+        )
+
+    def test_skipped_day_in_samoa_two_iterations(self):
+        # With time component 23:00, replace_date(Dec 30) == replace_date(Dec 31)
+        # because Dec 30 is entirely skipped. A single if-check is insufficient—
+        # two while-loop iterations are needed to arrive at Dec 29.
+        zdt = ZonedDateTime(2011, 12, 28, 23, tz="Pacific/Apia")
+        assert TimeDelta(hours=25).total("days", relative_to=zdt) == approx(
+            25 / 24
         )
 
     def test_repeated_time(self):
@@ -804,6 +813,14 @@ class TestAddSubtract:
         assert d - TimeDelta(**negated_kwargs) == expected
         assert d.subtract(**negated_kwargs) == expected
         assert d.subtract(TimeDelta(**negated_kwargs)) == expected
+
+    def test_days_and_weeks(self):
+        d = TimeDelta(seconds=1.5)
+        with pytest.warns(DaysNotAlways24HoursWarning):
+            assert d.add(weeks=4) == d.add(hours=4 * 7 * 24)
+
+        with pytest.warns(DaysNotAlways24HoursWarning):
+            assert d.add(days=-9) == d.add(hours=-9 * 24)
 
     def test_out_of_range(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
@@ -1668,6 +1685,23 @@ class TestInUnits:
         d = TimeDelta(hours=1)
         with pytest.raises(TypeError, match="sequence"):
             d.in_units("hours")  # type: ignore[arg-type]
+
+    def test_very_large_increment(self):
+        # round_increment=1<<65 ns exceeds i64::MAX; should not OverflowError
+        with ignore_days_not_always_24h_warning():
+            d = TimeDelta(days=592)
+        # trunc mode: value < 1*(1<<65), rounds down to zero
+        assert d.in_units(
+            ["seconds", "nanoseconds"],
+            round_increment=1 << 65,
+            round_mode="trunc",
+        ) == ItemizedDelta(seconds=0)
+        # ceil mode: rounds up to 1*(1<<65) = 36_893_488_147s + 419_103_232ns
+        assert d.in_units(
+            ["seconds", "nanoseconds"],
+            round_increment=1 << 65,
+            round_mode="ceil",
+        ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)
 
 
 def test_copy():

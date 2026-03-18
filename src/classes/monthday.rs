@@ -274,8 +274,8 @@ fn day(_: PyType, slf: MonthDay) -> PyReturn {
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter!(MonthDay, month, "The month component"),
-    getter!(MonthDay, day, "The day component"),
+    getter!(MonthDay, month, doc::MONTHDAY_MONTH),
+    getter!(MonthDay, day, doc::MONTHDAY_DAY),
     PyGetSetDef {
         name: NULL(),
         get: None,

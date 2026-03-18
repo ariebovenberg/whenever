@@ -476,25 +476,25 @@ fn compile_specifier(
         // Variable-width fields
         b'f' => {
             if count > 9 {
-                return Err(format!("Too many 'f' characters in pattern (max 9)"));
+                return Err("Too many 'f' characters in pattern (max 9)".to_string());
             }
             Field::FracExact(count as u8)
         }
         b'F' => {
             if count > 9 {
-                return Err(format!("Too many 'F' characters in pattern (max 9)"));
+                return Err("Too many 'F' characters in pattern (max 9)".to_string());
             }
             Field::FracTrim(count as u8)
         }
         b'x' => {
             if count > 5 {
-                return Err(format!("Too many 'x' characters in pattern (max 5)"));
+                return Err("Too many 'x' characters in pattern (max 5)".to_string());
             }
             Field::OffsetLower(count as u8)
         }
         b'X' => {
             if count > 5 {
-                return Err(format!("Too many 'X' characters in pattern (max 5)"));
+                return Err("Too many 'X' characters in pattern (max 5)".to_string());
             }
             Field::OffsetUpper(count as u8)
         }
@@ -556,7 +556,7 @@ fn compile_specifier(
 }
 
 fn bad_count_err(ch: u8, count: usize, start: usize, valid: &str) -> String {
-    let repeated: String = std::iter::repeat(ch as char).take(count).collect();
+    let repeated: String = std::iter::repeat_n(ch as char, count).collect();
     format!(
         "Unrecognized specifier '{}' at position {}. Valid counts for '{}': [{}]",
         repeated, start, ch as char, valid
@@ -748,7 +748,7 @@ fn write_field<S: Sink>(field: Field, vals: &FormatValues, sink: &mut S) -> Resu
         }
         Field::Hour24 => sink.write(&format_2_digits(vals.hour)),
         Field::Hour12 => {
-            let h12 = if vals.hour % 12 == 0 {
+            let h12 = if vals.hour.is_multiple_of(12) {
                 12
             } else {
                 vals.hour % 12

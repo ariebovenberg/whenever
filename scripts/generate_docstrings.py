@@ -38,8 +38,15 @@ functions = {
 }
 
 
+def _unwrap_property(m):
+    """if `m` is a property, return its fget. Otherwise just return unchanged"""
+    if isinstance(m, property):
+        return m.fget
+    return m
+
+
 methods = {
-    getattr(cls, name)
+    _unwrap_property(getattr(cls, name))
     for cls in chain(
         classes,
         (
@@ -55,12 +62,13 @@ methods = {
         not name.startswith("_")
         and (
             inspect.isfunction(m)
-            or
+            or isinstance(m, property)
             # this catches classmethods
-            inspect.ismethod(getattr(cls, name))
+            or inspect.ismethod(getattr(cls, name))
         )
     )
 }
+
 
 MAGIC_STRINGS = {
     (name, value)
@@ -120,7 +128,6 @@ MANUALLY_DEFINED_SIGS.update(
 )
 SKIP = {
     W._BasicConversions.format_iso,
-    W._BasicConversions.from_py_datetime,
     W._BasicConversions.parse_iso,
     W._Base.__get_pydantic_core_schema__,
 }

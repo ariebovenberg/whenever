@@ -42,18 +42,15 @@ impl DateTimeDelta {
     pub(crate) fn checked_mul(self, factor: i32) -> Option<Self> {
         let Self { ddelta, tdelta } = self;
         ddelta
-            .checked_mul(factor)
-            .zip(tdelta.checked_mul(factor.into()))
+            .mul(factor)
+            .zip(tdelta.mul(factor.into()))
             // Safe: multiplication can't result in different signs
             .map(|(ddelta, tdelta)| Self { ddelta, tdelta })
     }
 
-    pub(crate) fn checked_add(self, other: Self) -> Result<Self, InitError> {
-        let ddelta = self.ddelta.checked_add(other.ddelta)?;
-        let tdelta = self
-            .tdelta
-            .checked_add(other.tdelta)
-            .ok_or(InitError::TooBig)?;
+    pub(crate) fn add(self, other: Self) -> Result<Self, InitError> {
+        let ddelta = self.ddelta.add(other.ddelta)?;
+        let tdelta = self.tdelta.add(other.tdelta).ok_or(InitError::TooBig)?;
         // Confirm the signs of date- and timedelta didn't get out of sync
         if ddelta.months.get() >= 0 && ddelta.days.get() >= 0 && tdelta.secs.get() >= 0
             || ddelta.months.get() <= 0 && ddelta.days.get() <= 0 && tdelta.secs.get() <= 0
@@ -106,20 +103,18 @@ impl Neg for DateTimeDelta {
 #[inline]
 pub(crate) fn handle_exact_unit(
     value: PyObj,
-    max: i64,
+    max: u64,
     name: &str,
     factor: i128,
 ) -> PyResult<i128> {
     if let Some(int) = value.cast_allow_subclass::<PyInt>() {
         let i = int.to_i64()?;
-        (-max..=max)
-            .contains(&i)
+        (i.unsigned_abs() <= max)
             .then(|| i as i128 * factor)
             .ok_or_range_err()
     } else if let Some(py_float) = value.cast_allow_subclass::<PyFloat>() {
         let f = py_float.to_f64()?;
-        (-max as f64..=max as f64)
-            .contains(&f)
+        (f.abs() <= max as f64)
             .then_some((f * factor as f64) as i128)
             .ok_or_range_err()
     } else {
@@ -175,9 +170,9 @@ pub(crate) fn set_units_from_kwargs(
             .and_then(|d| days.checked_add(d))
             .ok_or_range_err()?;
     } else if eq(key, state.str_hours) {
-        *nanos += handle_exact_unit(value, MAX_HOURS, "hours", 3_600_000_000_000)?;
+        *nanos += handle_exact_unit(value, MAX_HOURS, "hours", NS_PER_HOUR as i128)?;
     } else if eq(key, state.str_minutes) {
-        *nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", 60_000_000_000)?;
+        *nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", NS_PER_MINUTE as i128)?;
     } else if eq(key, state.str_seconds) {
         *nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000)?;
     } else if eq(key, state.str_milliseconds) {
@@ -390,7 +385,7 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     if negate {
         b = -b;
     };
-    a.checked_add(b)
+    a.add(b)
         .map_err(|e| {
             value_err(match e {
                 InitError::TooBig => "Addition result out of bounds",
@@ -489,7 +484,7 @@ fn parse_iso_inner(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
     } else if s[0].eq_ignore_ascii_case(&b'T') {
         *s = &s[1..];
         let (nanos, _) = time_delta::parse_all_components(s).ok_or_else_value_err(err)?;
-        TimeDelta::from_nanos(nanos).ok_or_else_value_err(err)?
+        TimeDelta::from_nanos(nanos as _).ok_or_else_value_err(err)?
     } else {
         raise_value_err(err())?
     };

@@ -445,7 +445,7 @@ class TestAddSub:
                 ItemizedDateDelta(years=2, months=3, weeks=4, days=5),
                 ItemizedDateDelta(years=1, months=8, weeks=3, days=30),
                 Date("2021-12-31"),
-                ItemizedDateDelta(years=4, months=1, weeks=3, days=2),
+                ItemizedDateDelta(years=4, months=1, weeks=3, days=1),
                 {"units": ["years", "months", "weeks", "days"]},
             ),
             # different units
@@ -592,6 +592,17 @@ class TestAddSub:
             round_increment=2,
             units=["years", "months"],
         ).exact_eq(ItemizedDateDelta(years=-3, months=-10))
+
+    def test_month_clamping_avoided_by_summing_first(self):
+        # Sequential application would apply the month-end clamping twice:
+        # Jan 31 + 1 month → Feb 28 (clamped), Feb 28 + 1 month → Mar 28.
+        # Summing first avoids the intermediate clamp:
+        # Jan 31 + 2 months = Mar 31.
+        assert (
+            ItemizedDateDelta(months=1)
+            .add(months=1, relative_to=Date(2021, 1, 31), units=["months"])
+            .exact_eq(ItemizedDateDelta(months=2))
+        )
 
 
 class TestTotal:
