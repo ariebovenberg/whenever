@@ -58,7 +58,7 @@ pub(crate) trait OptionExt<T> {
     where
         Self: Sized,
     {
-        // TODO LOW: take advantage of static string
+        // FUTURE: can we intern this somehow, since it's static?
         self.ok_or_raise(
             unsafe { PyExc_ValueError },
             "Value or calculation out of range",
@@ -109,7 +109,7 @@ pub(crate) trait ResultExt<T> {
 
 impl<T> ResultExt<T> for Result<T, String> {
     fn into_value_err(self) -> PyResult<T> {
-        self.map_err(|e| value_err(e))
+        self.map_err(value_err)
     }
 }
 

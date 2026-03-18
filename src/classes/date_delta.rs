@@ -56,7 +56,7 @@ impl DateDelta {
         }
     }
 
-    pub(crate) fn checked_mul(self, factor: i32) -> Option<Self> {
+    pub(crate) fn mul(self, factor: i32) -> Option<Self> {
         let Self { months, days } = self;
         months
             .mul(factor)
@@ -65,7 +65,7 @@ impl DateDelta {
             .map(|(months, days)| Self { months, days })
     }
 
-    pub(crate) fn checked_add(self, other: Self) -> Result<Self, InitError> {
+    pub(crate) fn add(self, other: Self) -> Result<Self, InitError> {
         let Self { months, days } = self;
         let (month_sum, day_sum) = months
             .add(other.months)
@@ -368,7 +368,7 @@ fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
     let (delta_type, delta) = unsafe { delta_obj.assume_heaptype::<DateDelta>() };
     i32::try_from(factor)
         .ok()
-        .and_then(|f| delta.checked_mul(f))
+        .and_then(|f| delta.mul(f))
         .ok_or_range_err()?
         .to_obj(delta_type)
 }
@@ -394,7 +394,7 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
         if negate {
             b = -b;
         }
-        a.checked_add(b)
+        a.add(b)
             .map_err(|e| {
                 value_err(match e {
                     InitError::TooBig => "Addition result out of bounds",
@@ -422,7 +422,7 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                 dtdelta = -dtdelta;
             }
             dtdelta
-                .checked_add(DateTimeDelta {
+                .add(DateTimeDelta {
                     // SAFETY: At least one of the two is a DateDelta
                     ddelta,
                     tdelta: TimeDelta::ZERO,
@@ -637,7 +637,7 @@ fn finish_parsing_component(s: &mut &[u8], mut value: i32) -> Option<(i32, CalUn
     None
 }
 
-// TODO: u32...
+// REFACTOR: make this u32
 // parse a component of a ISO8601 duration, e.g. `6Y`, `56M`, `2W`, `0D`
 pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, CalUnit)> {
     if s.len() >= 2 && s[0].is_ascii_digit() {

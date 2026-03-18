@@ -372,7 +372,7 @@ macro_rules! getter(
                 _wrap
             }),
             set: None,
-            doc: concat!($doc, "\0").as_ptr().cast(),
+            doc: $doc.as_ptr().cast(),
             closure: core::ptr::null_mut(),
         }
     };

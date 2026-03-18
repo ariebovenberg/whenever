@@ -275,7 +275,7 @@ impl ZonedDateTime {
             .instant()
             .shift(delta)
             .ok_or_range_err()?
-            .to_tz(self.tz.newref(), cls)
+            .to_tz_py(self.tz.newref(), cls)
     }
 }
 
@@ -352,21 +352,16 @@ fn read_offset_and_tzname<'a>(s: &'a mut Scan) -> Option<(OffsetInIsoString, &'a
 impl PyWrapped for ZonedDateTime {}
 
 impl Instant {
-    /// Convert an instant to a zoned datetime in the given timezone.
-    /// Returns None if the resulting date would be out of range.
-    pub(crate) fn to_tz(self, tz: TzHandle<'_>, cls: HeapType<ZonedDateTime>) -> PyReturn {
-        let epoch = self.epoch;
-        let offset = tz.offset_for_instant(epoch);
-        let local = epoch
-            .offset(offset)
-            .ok_or_range_err()?
-            .datetime(self.subsec);
+    /// Convert an instant to a zoned datetime, ready to be returned to Python.
+    pub(crate) fn to_tz_py(self, tz: TzHandle<'_>, cls: HeapType<ZonedDateTime>) -> PyReturn {
+        let OffsetDateTime { date, time, offset } = self.to_tz(*tz).ok_or_range_err()?;
         // SAFETY: We've already checked for both out-of-range date and time.
-        ZonedDateTime::new_unchecked(local.date, local.time, offset, tz, cls)
+        ZonedDateTime::new_unchecked(date, time, offset, tz, cls)
     }
 
-    // TODO docs
-    pub(crate) fn to_tz2(self, tz: TzPtr) -> Option<OffsetDateTime> {
+    // Covert an instant to an OffsetDateTime in the given timezone.
+    // Returns None if out of range
+    pub(crate) fn to_tz(self, tz: TzPtr) -> Option<OffsetDateTime> {
         let epoch = self.epoch;
         let offset = tz.offset_for_instant(epoch);
         Some(
@@ -711,7 +706,7 @@ fn exact_eq(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, obj_b: PyObj) -> P
 
 fn to_tz(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, tz_obj: PyObj) -> PyReturn {
     let tz_new = cls.state().tz_store.obj_get(tz_obj)?;
-    slf.instant().to_tz(tz_new, cls)
+    slf.instant().to_tz_py(tz_new, cls)
 }
 
 pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
@@ -857,7 +852,7 @@ fn to_fixed_offset(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, args: &[PyO
 
 fn to_system_tz(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
     let tz_new = cls.state().tz_store.get_system_tz()?;
-    slf.instant().to_tz(tz_new, cls)
+    slf.instant().to_tz_py(tz_new, cls)
 }
 
 fn date(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
@@ -1008,7 +1003,7 @@ fn parse_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
             }
             ZonedDateTime::create(date, time, offset, tz, cls)
         }
-        OffsetInIsoString::Z => Instant::from_datetime(date, time).to_tz(tz, cls),
+        OffsetInIsoString::Z => Instant::from_datetime(date, time).to_tz_py(tz, cls),
         OffsetInIsoString::Missing => ZonedDateTime::resolve_default(date, time, tz, cls),
     }
 }
@@ -1107,13 +1102,13 @@ fn replace(
 fn now(cls: HeapType<ZonedDateTime>, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
     let tz = state.tz_store.obj_get(tz_obj)?;
-    state.time_ns()?.to_tz(tz, cls)
+    state.time_ns()?.to_tz_py(tz, cls)
 }
 
 fn now_in_system_tz(cls: HeapType<ZonedDateTime>) -> PyReturn {
     let state = cls.state();
     let tz = state.tz_store.get_system_tz()?;
-    state.time_ns()?.to_tz(tz, cls)
+    state.time_ns()?.to_tz_py(tz, cls)
 }
 
 fn from_system_tz(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
@@ -1229,7 +1224,7 @@ fn from_py_datetime_inner(cls: HeapType<ZonedDateTime>, dt: PyDateTime) -> PyRet
         // meaning the subsecond part is timezone-independent.
         subsec: SubSecNanos::new_unchecked(dt.microsecond() * 1_000),
     }
-    .to_tz(tz, cls)
+    .to_tz_py(tz, cls)
 }
 
 fn to_plain(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
@@ -1335,7 +1330,7 @@ fn from_timestamp(
         raise_type_err("timestamp must be an integer or float")?
     }
     .ok_or_range_err()?
-    .to_tz(tz, cls)
+    .to_tz_py(tz, cls)
 }
 
 fn from_timestamp_millis(
@@ -1353,7 +1348,7 @@ fn from_timestamp_millis(
     )
     // FUTURE: a faster way to check both bounds
     .ok_or_range_err()?
-    .to_tz(tz, cls)
+    .to_tz_py(tz, cls)
 }
 
 fn from_timestamp_nanos(
@@ -1370,7 +1365,7 @@ fn from_timestamp_nanos(
             .to_i128()?,
     )
     .ok_or_range_err()?
-    .to_tz(tz, cls)
+    .to_tz_py(tz, cls)
 }
 
 fn is_ambiguous(_: PyType, slf: ZonedDateTime) -> PyReturn {
@@ -1739,20 +1734,30 @@ fn zoned_since_single_unit(
     unit: math::DeltaUnit,
     round_mode: round::Mode,
     round_increment: math::RoundIncrement,
-    sign: i8,
+    neg: bool,
 ) -> PyReturn {
     match unit.to_exact(false) {
-        Ok(u) => a
-            .instant()
-            .diff(b.instant())
-            .in_single_unit(u, round_increment, round_mode),
+        Ok(u) => a.instant().diff(b.instant()).in_single_unit(
+            u,
+            round_increment,
+            round_mode.to_abs_euclid(neg),
+        ),
         Err(u) => {
             let inc = round_increment.to_date().ok_or_range_err()?;
             let (result, trunc_date, expand_date) =
-                math::date_diff_single_unit(target_date, b.date, inc, u, sign).ok_or_range_err()?;
+                math::date_diff_single_unit(target_date, b.date, inc, u, neg).ok_or_range_err()?;
             let trunc = b.with_date(trunc_date.into()).ok_or_range_err()?.instant();
             let expand = b.with_date(expand_date.into()).ok_or_range_err()?.instant();
-            math::round_by_time(result, a.instant(), trunc, expand, round_mode, inc, sign).to_py()
+            math::round_by_time(
+                result,
+                a.instant(),
+                trunc,
+                expand,
+                round_mode.to_abs_trunc(neg),
+                inc,
+                neg,
+            )
+            .to_py()
         }
     }
 }
@@ -1761,11 +1766,11 @@ pub(crate) fn zoned_target(
     mut target_date: Date,
     a_inst: Instant,
     b: ZonedDateTime,
-    sign: i8,
+    neg: bool,
 ) -> Option<Date> {
     // Adjust target_date so the exact remainder has the same sign.
     // The while loop handles the rare case of a 24h+ gap (e.g. Samoa 2011).
-    if sign == 1 {
+    if !neg {
         while b.with_date(target_date)?.instant() > a_inst {
             target_date = target_date.yesterday()?;
         }
@@ -1804,10 +1809,9 @@ fn zoned_since(
     }
     let (a, b) = if flip { (other, slf) } else { (slf, other) };
     let a_inst = a.instant();
-    let b_inst = b.instant();
-    let sign: i8 = if a_inst >= b_inst { 1 } else { -1 };
+    let neg = a_inst < b.instant();
 
-    let target_date = zoned_target(a.date, a_inst, b, sign).ok_or_range_err()?;
+    let target_date = zoned_target(a.date, a_inst, b, neg).ok_or_range_err()?;
 
     match units {
         math::UnitsOrUnit::One(unit) => zoned_since_single_unit(
@@ -1817,7 +1821,7 @@ fn zoned_since(
             unit,
             round_mode,
             round_increment,
-            sign,
+            neg,
         ),
         math::UnitsOrUnit::Seq(units) => zoned_since_in_units(
             a.without_tz(),
@@ -1827,13 +1831,14 @@ fn zoned_since(
             units,
             round_mode,
             round_increment,
-            sign,
+            neg,
         )
         .ok_or_range_err()?
         .to_obj(state.itemized_delta_type),
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn zoned_since_in_units(
     a: OffsetDateTime,
     a_inst: Instant,
@@ -1842,7 +1847,7 @@ pub(crate) fn zoned_since_in_units(
     units: DeltaUnitSet,
     round_mode: round::Mode,
     round_increment: math::RoundIncrement,
-    sign: i8,
+    neg: bool,
 ) -> Option<ItemizedDelta> {
     let (cal_units, exact_units) = units.split_cal_exact();
     let (mut ddelta, trunc_date, expand_date) = if cal_units.is_empty() {
@@ -1853,7 +1858,7 @@ pub(crate) fn zoned_since_in_units(
         } else {
             DateRoundIncrement::MIN
         };
-        math::date_diff(target_date, b.date, inc, cal_units, sign)?
+        math::date_diff(target_date, b.date, inc, cal_units, neg)?
     };
 
     let trunc = b.with_date(trunc_date.into())?.instant();
@@ -1867,15 +1872,17 @@ pub(crate) fn zoned_since_in_units(
             a_inst,
             trunc,
             expand,
-            round_mode,
+            round_mode.to_abs_trunc(neg),
             round_increment.to_date()?,
-            sign,
+            neg,
         );
         ItemizedDelta::UNSET
     } else {
-        a_inst
-            .diff(trunc)
-            .in_exact_units(exact_units, round_increment, round_mode)?
+        a_inst.diff(trunc).in_exact_units(
+            exact_units,
+            round_increment,
+            round_mode.to_abs_euclid(neg),
+        )?
     };
 
     result.fill_cal_units(ddelta);
@@ -2114,7 +2121,7 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod1!(
         ZonedDateTime,
         from_py_datetime,
-        doc::ZONEDDATETIME_FROM_PY_DATETIME
+        doc::BASICCONVERSIONS_FROM_PY_DATETIME
     ),
     method0!(ZonedDateTime, timestamp, doc::EXACTTIME_TIMESTAMP),
     method0!(
@@ -2207,16 +2214,15 @@ fn offset(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    // TODO LOW: have these docstrings synced with Python too
-    getter!(ZonedDateTime, year, "The year component"),
-    getter!(ZonedDateTime, month, "The month component"),
-    getter!(ZonedDateTime, day, "The day component"),
-    getter!(ZonedDateTime, hour, "The hour component"),
-    getter!(ZonedDateTime, minute, "The minute component"),
-    getter!(ZonedDateTime, second, "The second component"),
-    getter!(ZonedDateTime, nanosecond, "The nanosecond component"),
-    getter!(ZonedDateTime, tz, "The tz ID"),
-    getter!(ZonedDateTime, offset, "The offset from UTC"),
+    getter!(ZonedDateTime, year, doc::LOCALTIME_YEAR),
+    getter!(ZonedDateTime, month, doc::LOCALTIME_MONTH),
+    getter!(ZonedDateTime, day, doc::LOCALTIME_DAY),
+    getter!(ZonedDateTime, hour, doc::LOCALTIME_HOUR),
+    getter!(ZonedDateTime, minute, doc::LOCALTIME_MINUTE),
+    getter!(ZonedDateTime, second, doc::LOCALTIME_SECOND),
+    getter!(ZonedDateTime, nanosecond, doc::LOCALTIME_NANOSECOND),
+    getter!(ZonedDateTime, tz, doc::ZONEDDATETIME_TZ),
+    getter!(ZonedDateTime, offset, doc::EXACTANDLOCALTIME_OFFSET),
     PyGetSetDef {
         name: NULL(),
         get: None,

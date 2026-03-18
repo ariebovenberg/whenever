@@ -4526,6 +4526,17 @@ class TestSince:
                 unit="foos",  # type: ignore[call-overload]
             )
 
+    def test_very_large_increment(self):
+        a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
+        b = ZonedDateTime(2021, 7, 3, tz="Asia/Tokyo")
+        # round_increment=1<<65 ns exceeds i64::MAX; ceil mode rounds up to 1*(1<<65)
+        assert a.since(
+            b,
+            units=["seconds", "nanoseconds"],
+            round_increment=1 << 65,
+            round_mode="ceil",
+        ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)
+
     def test_until_is_inverse(self):
         a = ZonedDateTime(2023, 2, 15, hour=3, tz="Asia/Tokyo")
         b = ZonedDateTime(2021, 7, 3, tz="Asia/Tokyo")

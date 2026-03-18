@@ -524,7 +524,7 @@ class TestAddSub:
                     "2024-02-29T05:16:00.00004Z[America/Los_Angeles]"
                 ),
                 ItemizedDelta(
-                    years=4, months=1, weeks=3, days=2, hours=1, seconds=2442
+                    years=4, months=1, weeks=3, days=3, hours=1, seconds=2442
                 ),
                 {
                     "units": [
@@ -682,6 +682,21 @@ class TestAddSub:
             round_increment=2,
             units=["years", "seconds"],
         ).exact_eq(ItemizedDelta(years=-3, seconds=-31036006))
+
+    def test_month_clamping_avoided_by_summing_first(self):
+        # Sequential application would apply the month-end clamping twice:
+        # Jan 31 + 1 month → Feb 28 (clamped), Feb 28 + 1 month → Mar 28.
+        # Summing first avoids the intermediate clamp:
+        # Jan 31 + 2 months = Mar 31.
+        assert (
+            ItemizedDelta(months=1)
+            .add(
+                months=1,
+                relative_to=ZonedDateTime(2021, 1, 31, tz="UTC"),
+                units=["months"],
+            )
+            .exact_eq(ItemizedDelta(months=2))
+        )
 
 
 class TestTotal:
@@ -935,7 +950,7 @@ def test_parts(
     expected_date: ItemizedDateDelta,
     expected_time: TimeDelta,
 ):
-    (date_part, time_part) = d.parts()
+    (date_part, time_part) = d.date_and_time_parts()
     if date_part is None:
         assert expected_date is None
     else:

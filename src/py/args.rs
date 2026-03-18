@@ -114,22 +114,23 @@ pub(crate) fn handle_one_kwarg<K>(fname: &str, key: PyObj, kwargs: K) -> PyResul
 where
     K: IntoIterator<Item = (PyObj, PyObj)>,
 {
+    let mut result = None;
     for (k, v) in kwargs {
         if k.py_eq(key)? {
-            return Ok(Some(v));
+            result = Some(v);
         } else {
             raise_type_err(format!("{fname}() got an unexpected keyword argument: {k}"))?;
         }
     }
-    Ok(None)
+    Ok(result)
 }
 
 /// Parse one (optional) positional argument, and raise an error if the number of arguments is more
 /// than one.
 pub(crate) fn handle_opt_arg(fname: &str, args: &[PyObj]) -> PyResult<Option<PyObj>> {
-    match args {
-        &[] => Ok(None),
-        &[arg_obj] => Ok(Some(arg_obj)),
+    match *args {
+        [] => Ok(None),
+        [arg_obj] => Ok(Some(arg_obj)),
         _ => raise_type_err(format!(
             "{fname}() takes at most one positional argument ({} given)",
             args.len()
@@ -140,8 +141,8 @@ pub(crate) fn handle_opt_arg(fname: &str, args: &[PyObj]) -> PyResult<Option<PyO
 /// Parse one positional argument, and raise an error if the number of arguments is not exactly
 /// one.
 pub(crate) fn handle_one_arg(fname: &str, args: &[PyObj]) -> PyResult<PyObj> {
-    if let &[arg_obj] = args {
-        Ok(arg_obj)
+    if let [arg_obj] = args {
+        Ok(*arg_obj)
     } else {
         raise_type_err(format!(
             "{fname}() takes exactly one positional argument ({} given)",

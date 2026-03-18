@@ -327,15 +327,12 @@ fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                 days = -days;
                 tdelta = -tdelta;
             }
-            // DateTimeDelta is being deprecated — don't bother refactoring this branch
-            if !tdelta.is_zero() {
-                if !state.cv_ignore_tz_unaware_arithmetic.get()? {
-                    warn_with_class(
-                        state.warn_tz_unaware_arithmetic,
-                        doc::PLAIN_SHIFT_UNAWARE_MSG,
-                        2,
-                    )?;
-                }
+            if !tdelta.is_zero() && !state.cv_ignore_tz_unaware_arithmetic.get()? {
+                warn_with_class(
+                    state.warn_tz_unaware_arithmetic,
+                    doc::PLAIN_SHIFT_UNAWARE_MSG,
+                    2,
+                )?;
             }
             a.shift_date(months, days)
                 .and_then(|dt| dt.shift(tdelta))
@@ -553,8 +550,8 @@ fn shift_method(
     let mut tdelta = TimeDelta::ZERO;
     let mut got_ignore_dst = false;
 
-    match args {
-        &[arg] => {
+    match *args {
+        [arg] => {
             match kwargs.next() {
                 Some((key, _value)) if kwargs.len() == 1 && key.py_eq(str_ignore_dst)? => {
                     got_ignore_dst = true;
@@ -586,7 +583,7 @@ fn shift_method(
                 raise_type_err(format!("{fname}() argument must be a delta"))?
             }
         }
-        &[] => {
+        [] => {
             let mut units = DeltaUnitSet::EMPTY; // not used, but need to pass
             handle_kwargs(fname, kwargs, |key, value, eq| {
                 if eq(key, str_ignore_dst) {
@@ -630,10 +627,8 @@ fn shift_method(
     days = days.negate_if(negate);
     tdelta = tdelta.negate_if(negate);
 
-    if !tdelta.is_zero() {
-        if !cv_ignore_tz_unaware_arithmetic.get()? {
-            warn_with_class(warn_tz_unaware_arithmetic, doc::PLAIN_SHIFT_UNAWARE_MSG, 2)?;
-        }
+    if !tdelta.is_zero() && !cv_ignore_tz_unaware_arithmetic.get()? {
+        warn_with_class(warn_tz_unaware_arithmetic, doc::PLAIN_SHIFT_UNAWARE_MSG, 2)?;
     }
     slf.shift_date(months, days)
         .and_then(|dt| dt.shift(tdelta))
@@ -970,6 +965,14 @@ fn plain_since(
         round_increment,
     } = SinceUntilKwargs::parse(fname, state, kwargs)?;
 
+    if !state.cv_ignore_tz_unaware_arithmetic.get()? {
+        warn_with_class(
+            state.warn_tz_unaware_arithmetic,
+            doc::PLAIN_DIFF_UNAWARE_MSG,
+            2,
+        )?;
+    }
+
     plain_since_inner(state, slf, other, units, round_mode, round_increment, flip)
 }
 
@@ -978,22 +981,33 @@ fn plain_since_single_unit(
     b: DateTime,
     target_date: Date,
     unit: DeltaUnit,
-    round_mode: round::Mode, // TODO MEDIUM: use AbsMode
+    round_mode: round::Mode,
     round_increment: math::RoundIncrement,
-    sign: i8,
+    neg: bool,
 ) -> PyReturn {
     match unit.to_exact(false) {
-        Ok(exact) => a.diff(b).in_single_unit(exact, round_increment, round_mode),
+        Ok(exact) => {
+            a.diff(b)
+                .in_single_unit(exact, round_increment, round_mode.to_abs_euclid(neg))
+        }
         Err(cal_unit) => {
             let inc = round_increment.to_date().ok_or_range_err()?;
             let (result, trunc_date, expand_date) =
-                math::date_diff_single_unit(target_date, b.date, inc, cal_unit, sign)
+                math::date_diff_single_unit(target_date, b.date, inc, cal_unit, neg)
                     .ok_or_range_err()?;
             let trunc = b.with_date(trunc_date.into()).assume_utc();
             let expand = b.with_date(expand_date.into()).assume_utc();
 
-            math::round_by_time(result, a.assume_utc(), trunc, expand, round_mode, inc, sign)
-                .to_py()
+            math::round_by_time(
+                result,
+                a.assume_utc(),
+                trunc,
+                expand,
+                round_mode.to_abs_trunc(neg),
+                inc,
+                neg,
+            )
+            .to_py()
         }
     }
 }
@@ -1011,17 +1025,17 @@ pub(crate) fn plain_since_inner(
 ) -> PyReturn {
     let (a, b) = if flip { (other, slf) } else { (slf, other) };
 
-    let sign: i8 = if a >= b { 1 } else { -1 };
+    let neg = a < b;
 
-    let target_date = match (sign, b.with_date(a.date).cmp(&a)) {
-        (1, Ordering::Greater) => a.date.yesterday(),
-        (-1, Ordering::Less) => a.date.tomorrow(),
+    let target_date = match (neg, b.with_date(a.date).cmp(&a)) {
+        (false, Ordering::Greater) => a.date.yesterday(),
+        (true, Ordering::Less) => a.date.tomorrow(),
         _ => Some(a.date),
     }
     .ok_or_range_err()?;
     match units {
         UnitsOrUnit::One(u) => {
-            plain_since_single_unit(a, b, target_date, u, round_mode, round_increment, sign)
+            plain_since_single_unit(a, b, target_date, u, round_mode, round_increment, neg)
         }
         UnitsOrUnit::Seq(units) => plain_since_in_units(
             state,
@@ -1031,11 +1045,12 @@ pub(crate) fn plain_since_inner(
             units,
             round_mode,
             round_increment,
-            sign,
+            neg,
         ),
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn plain_since_in_units(
     state: &State,
     a: DateTime,
@@ -1044,7 +1059,7 @@ fn plain_since_in_units(
     units: DeltaUnitSet,
     round_mode: round::Mode,
     round_increment: math::RoundIncrement,
-    sign: i8,
+    neg: bool,
 ) -> PyReturn {
     let smallest_unit = units.smallest();
     let (cal_units, exact_units) = units.split_cal_exact();
@@ -1057,7 +1072,7 @@ fn plain_since_in_units(
         } else {
             DateRoundIncrement::MIN
         };
-        math::date_diff(target_date, b.date, inc, cal_units, sign).ok_or_range_err()?
+        math::date_diff(target_date, b.date, inc, cal_units, neg).ok_or_range_err()?
     };
 
     let trunc_dt = b.with_date(trunc_date.into());
@@ -1074,14 +1089,14 @@ fn plain_since_in_units(
             a.assume_utc(),
             trunc_dt.assume_utc(),
             expand_dt.assume_utc(),
-            round_mode,
+            round_mode.to_abs_trunc(neg),
             round_increment.to_date().ok_or_range_err()?,
-            sign,
+            neg,
         );
         ItemizedDelta::UNSET
     } else {
         a.diff(trunc_dt)
-            .in_exact_units(exact_units, round_increment, round_mode)
+            .in_exact_units(exact_units, round_increment, round_mode.to_abs_euclid(neg))
             .ok_or_range_err()?
     };
 
@@ -1099,7 +1114,7 @@ fn round(
         increment, mode, ..
     } = round::Args::parse(cls.state(), args, kwargs, false)?;
     let round_nanos = match increment {
-        round::RoundIncrement::Day => 86_400_000_000_000,
+        round::RoundIncrement::Day => NS_PER_DAY,
         round::RoundIncrement::Exact(ns) => ns.get(),
     };
     let DateTime { mut date, time } = slf;
@@ -1221,7 +1236,7 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod1!(
         DateTime,
         from_py_datetime,
-        doc::PLAINDATETIME_FROM_PY_DATETIME
+        doc::BASICCONVERSIONS_FROM_PY_DATETIME
     ),
     method0!(DateTime, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
     method0!(DateTime, py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
@@ -1287,13 +1302,13 @@ fn nanosecond(_: PyType, slf: DateTime) -> PyReturn {
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter!(DateTime, year, "The year component"),
-    getter!(DateTime, month, "The month component"),
-    getter!(DateTime, day, "The day component"),
-    getter!(DateTime, hour, "The hour component"),
-    getter!(DateTime, minute, "The minute component"),
-    getter!(DateTime, second, "The second component"),
-    getter!(DateTime, nanosecond, "The nanosecond component"),
+    getter!(DateTime, year, doc::LOCALTIME_YEAR),
+    getter!(DateTime, month, doc::LOCALTIME_MONTH),
+    getter!(DateTime, day, doc::LOCALTIME_DAY),
+    getter!(DateTime, hour, doc::LOCALTIME_HOUR),
+    getter!(DateTime, minute, doc::LOCALTIME_MINUTE),
+    getter!(DateTime, second, doc::LOCALTIME_SECOND),
+    getter!(DateTime, nanosecond, doc::LOCALTIME_NANOSECOND),
     PyGetSetDef {
         name: NULL(),
         get: None,

@@ -142,7 +142,7 @@ impl std::fmt::Display for Offset {
         } else {
             ('+', self.0)
         };
-        if secs % 60 == 0 {
+        if (secs as u32).is_multiple_of(60) {
             write!(f, "{}{:02}:{:02}", sign, secs / 3600, (secs % 3600) / 60)
         } else {
             write!(
@@ -441,7 +441,8 @@ impl Year {
     }
 
     pub(crate) const fn is_leap(self) -> bool {
-        (self.get() % 4 == 0 && self.get() % 100 != 0) || self.get() % 400 == 0
+        (self.get().is_multiple_of(4) && !self.get().is_multiple_of(100))
+            || self.get().is_multiple_of(400)
     }
 
     pub(crate) fn unix_days_at_jan1(self) -> UnixDays {
@@ -545,6 +546,14 @@ impl TryFrom<u8> for Month {
 }
 
 pub(crate) const S_PER_DAY: i32 = 86_400;
+pub(crate) const S_PER_HOUR: u32 = 3_600;
+pub(crate) const NS_PER_MICROSEC: u32 = 1_000;
+pub(crate) const NS_PER_MILLISEC: u32 = 1_000_000;
+pub(crate) const NS_PER_SEC: u32 = 1_000_000_000;
+pub(crate) const NS_PER_MINUTE: u64 = 60_000_000_000;
+pub(crate) const NS_PER_HOUR: u64 = 3_600_000_000_000;
+pub(crate) const NS_PER_DAY: u64 = 86_400_000_000_000;
+pub(crate) const NS_PER_WEEK: u64 = 604_800_000_000_000;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct DeltaMonths(i32);
@@ -600,9 +609,11 @@ impl DeltaMonths {
     pub(crate) fn is_zero(self) -> bool {
         self.0 == 0
     }
+}
 
-    pub(crate) fn negate_if(self, condition: bool) -> Self {
-        if condition { Self(-self.0) } else { self }
+impl Default for DeltaMonths {
+    fn default() -> Self {
+        Self::ZERO
     }
 }
 
@@ -669,9 +680,11 @@ impl DeltaDays {
     pub(crate) fn is_zero(self) -> bool {
         self.0 == 0
     }
+}
 
-    pub(crate) fn negate_if(self, condition: bool) -> Self {
-        if condition { Self(-self.0) } else { self }
+impl Default for DeltaDays {
+    fn default() -> Self {
+        Self::ZERO
     }
 }
 
@@ -785,6 +798,11 @@ impl SubSecNanos {
         self.0
     }
 
+    /// Cast to `u32`. Safe because `SubSecNanos` is always in `0..1_000_000_000`.
+    pub(crate) const fn as_u32(self) -> u32 {
+        self.0 as u32
+    }
+
     pub(crate) fn negate(self) -> (DeltaSeconds, Self) {
         Self::MIN.diff(self)
     }
@@ -822,24 +840,24 @@ impl SubSecNanos {
         )
     }
 
-    /// Round using an absolute (sign-normalized) mode.
-    /// Used by TimeDelta where sign-dependent modes have already been resolved.
-    pub(crate) fn round_abs(self, increment: i32, mode: round::AbsMode) -> (DeltaSeconds, Self) {
+    pub(crate) fn round(self, increment: u32, mode: round::AbsMode) -> (DeltaSeconds, Self) {
+        debug_assert!(increment > 0);
         debug_assert!(increment < 1_000_000_000);
-        debug_assert!(1_000_000_000 % increment == 0);
-        let quotient = self.0 / increment;
-        let remainder = self.0 % increment;
+        debug_assert!(1_000_000_000_u32.is_multiple_of(increment));
+        let tot = self.as_u32();
+        let quotient = tot / increment;
+        let remainder = tot % increment;
         let threshold = match mode {
-            round::AbsMode::HalfEven => 1.max(increment / 2 + (quotient % 2 == 0) as i32),
+            round::AbsMode::HalfEven => 1.max(increment / 2 + quotient.is_multiple_of(2) as u32),
             round::AbsMode::Expand => 1,
             round::AbsMode::Trunc => increment + 1,
             round::AbsMode::HalfTrunc => increment / 2 + 1,
             round::AbsMode::HalfExpand => 1.max(increment / 2),
         };
         let round_up = remainder >= threshold;
-        let rounded = (quotient + i32::from(round_up)) * increment;
+        let rounded = (quotient + round_up as u32) * increment;
         (
-            DeltaSeconds::new_unchecked((rounded / 1_000_000_000) as _),
+            DeltaSeconds::new_unchecked((rounded / 1_000_000_000).into()),
             SubSecNanos::from_remainder(rounded),
         )
     }
@@ -910,6 +928,12 @@ impl NanosRemainder for i32 {
     }
 }
 
+impl NanosRemainder for u32 {
+    fn subsec_nanos(self) -> i32 {
+        self.rem_euclid(1_000_000_000) as _
+    }
+}
+
 impl NanosRemainder for u64 {
     fn subsec_nanos(self) -> i32 {
         self.rem_euclid(1_000_000_000) as _
@@ -917,6 +941,12 @@ impl NanosRemainder for u64 {
 }
 
 impl NanosRemainder for i128 {
+    fn subsec_nanos(self) -> i32 {
+        self.rem_euclid(1_000_000_000) as _
+    }
+}
+
+impl NanosRemainder for u128 {
     fn subsec_nanos(self) -> i32 {
         self.rem_euclid(1_000_000_000) as _
     }
@@ -968,7 +998,7 @@ impl DeltaFieldInner for i32 {
     const SENTINEL: Self = i32::MIN;
     const ZERO: Self = 0;
     fn unsigned_abs(self) -> u64 {
-        (self as i32).unsigned_abs() as u64
+        self.unsigned_abs() as u64
     }
     fn from_c_long(val: c_long) -> Self {
         val as i32
@@ -988,10 +1018,10 @@ impl DeltaFieldInner for i64 {
     const SENTINEL: Self = i64::MIN;
     const ZERO: Self = 0;
     fn unsigned_abs(self) -> u64 {
-        (self as i64).unsigned_abs()
+        self.unsigned_abs()
     }
     fn from_c_long(val: c_long) -> Self {
-        val as i64
+        val
     }
     fn from_u64(val: u64) -> Self {
         val as i64
@@ -1000,7 +1030,7 @@ impl DeltaFieldInner for i64 {
         -(val as i64)
     }
     fn to_i64(self) -> i64 {
-        self as i64
+        self
     }
 }
 
@@ -1082,7 +1112,7 @@ impl<T: DeltaFieldInner> DeltaField<T> {
         if val == 0 {
             return Ok(Self::new_unchecked(T::ZERO));
         }
-        let abs = (val as i64).unsigned_abs();
+        let abs = val.unsigned_abs();
         if abs > max {
             raise_value_err("delta out of range")?;
         }
@@ -1111,7 +1141,7 @@ impl<T: DeltaFieldInner> DeltaField<T> {
                 .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("field must be an integer or None")?
                 .to_long()?;
-            let abs = (val as i64).unsigned_abs();
+            let abs = val.unsigned_abs();
             if abs > max {
                 raise_value_err("delta out of range")?;
             }
@@ -1147,6 +1177,19 @@ impl<T: DeltaFieldInner> ToPy for DeltaField<T> {
         } else {
             Ok(none())
         }
+    }
+}
+
+pub(crate) trait NegateIf {
+    fn negate_if(self, condition: bool) -> Self;
+}
+
+impl<T> NegateIf for T
+where
+    T: Neg<Output = T>,
+{
+    fn negate_if(self, condition: bool) -> Self {
+        if condition { -self } else { self }
     }
 }
 
