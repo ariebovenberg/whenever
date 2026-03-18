@@ -250,7 +250,7 @@ fn __new__(cls: HeapType<ItemizedDateDelta>, args: PyTuple, kwargs: Option<PyDic
     slf.to_obj(cls)
 }
 
-fn sign(_: PyType, d: ItemizedDateDelta) -> PyReturn {
+fn sign(_: HeapType<ItemizedDateDelta>, d: ItemizedDateDelta) -> PyReturn {
     (d.derived_sign() as i32).to_py()
 }
 
@@ -695,7 +695,7 @@ fn add_sub(
     let state = cls.state();
     let &State {
         str_relative_to,
-        str_units,
+        str_in_units,
         str_round_mode,
         round_mode_strs,
         str_round_increment,
@@ -725,7 +725,7 @@ fn add_sub(
                     .extract(state.date_type)
                     .ok_or_type_err("relative_to must be a whenever.Date")?,
             );
-        } else if eq(key, str_units) {
+        } else if eq(key, str_in_units) {
             units = CalUnitSet::from_py(value, state)?;
         } else if eq(key, str_round_mode) {
             round_mode = round::Mode::from_py(value, round_mode_strs)?;
@@ -746,7 +746,7 @@ fn add_sub(
     })?;
 
     if units.is_empty() {
-        raise_type_err("missing required keyword argument: 'units'")?;
+        raise_type_err("missing required keyword argument: 'in_units'")?;
     }
 
     let relative_to =
@@ -857,24 +857,18 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter!(
-        ItemizedDateDelta,
-        sign,
-        c"The sign of the delta: 1, 0, or -1"
-    ),
-    PyGetSetDef {
-        name: NULL(),
-        get: None,
-        set: None,
-        doc: NULL(),
-        closure: NULL(),
-    },
-];
+static mut GETSETTERS: &[PyGetSetDef] = &[PyGetSetDef {
+    name: NULL(),
+    get: None,
+    set: None,
+    doc: NULL(),
+    closure: NULL(),
+}];
 
 static mut METHODS: &[PyMethodDef] = &[
     method0!(ItemizedDateDelta, __copy__, c""),
     method1!(ItemizedDateDelta, __deepcopy__, c""),
+    method0!(ItemizedDateDelta, sign, doc::ITEMIZEDDATEDELTA_SIGN),
     method_kwargs!(
         ItemizedDateDelta,
         format_iso,

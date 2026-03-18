@@ -12,7 +12,7 @@ use crate::{
     common::{
         ambiguity::*,
         fmt,
-        math::{self, DateRoundIncrement, DeltaUnit, DeltaUnitSet, SinceUntilKwargs, UnitsOrUnit},
+        math::{self, DateRoundIncrement, DeltaUnit, DeltaUnitSet, SinceUntilKwargs},
         parse::Scan,
         pattern, round,
         scalar::*,
@@ -646,10 +646,10 @@ fn difference(
     // difference() is deprecated entirely
     warn_with_class(state.warn_deprecation, c"The difference() method is deprecated, use the subtraction operator or since() method instead. ", 2)?;
     // Accept but ignore the deprecated ignore_dst kwarg
-    if let Some((key, _value)) = kwargs.next() {
-        if !(kwargs.len() == 1 && key.py_eq(state.str_ignore_dst)?) {
-            raise_type_err(format!("Unknown keyword argument: {key}"))?;
-        }
+    if let Some((key, _value)) = kwargs.next()
+        && !(kwargs.len() == 1 && key.py_eq(state.str_ignore_dst)?)
+    {
+        raise_type_err(format!("Unknown keyword argument: {key}"))?;
     }
     let [arg] = *args else {
         raise_type_err("difference() takes exactly 1 argument")?
@@ -959,11 +959,7 @@ fn plain_since(
     let other = handle_one_arg(fname, args)?
         .extract(cls)
         .ok_or_type_err("argument must be a whenever.PlainDateTime")?;
-    let SinceUntilKwargs {
-        units,
-        round_mode,
-        round_increment,
-    } = SinceUntilKwargs::parse(fname, state, kwargs)?;
+    let kwargs = SinceUntilKwargs::parse(fname, state, kwargs)?;
 
     if !state.cv_ignore_tz_unaware_arithmetic.get()? {
         warn_with_class(
@@ -973,43 +969,54 @@ fn plain_since(
         )?;
     }
 
-    plain_since_inner(state, slf, other, units, round_mode, round_increment, flip)
+    plain_since_inner(state, slf, other, kwargs, flip)
 }
 
-fn plain_since_single_unit(
+pub(crate) fn plain_since_float(
     a: DateTime,
     b: DateTime,
     target_date: Date,
     unit: DeltaUnit,
-    round_mode: round::Mode,
-    round_increment: math::RoundIncrement,
     neg: bool,
 ) -> PyReturn {
-    match unit.to_exact(false) {
-        Ok(exact) => {
-            a.diff(b)
-                .in_single_unit(exact, round_increment, round_mode.to_abs_euclid(neg))
+    match unit.to_exact(true) {
+        Ok(u) => {
+            // Exact unit (including weeks/days as 24h): divide by unit nanoseconds.
+            // For nanoseconds (in_nanos == 1), return int to preserve full precision.
+            let nanos = a.diff(b).total_nanos();
+            let unit_nanos = u.in_nanos();
+            if unit_nanos == 1 {
+                nanos.to_py()
+            } else {
+                (nanos as f64 / unit_nanos as f64).to_py()
+            }
         }
-        Err(cal_unit) => {
-            let inc = round_increment.to_date().ok_or_range_err()?;
-            let (result, trunc_date, expand_date) =
-                math::date_diff_single_unit(target_date, b.date, inc, cal_unit, neg)
-                    .ok_or_range_err()?;
-            let trunc = b.with_date(trunc_date.into()).assume_utc();
-            let expand = b.with_date(expand_date.into()).assume_utc();
-
-            math::round_by_time(
-                result,
-                a.assume_utc(),
-                trunc,
-                expand,
-                round_mode.to_abs_trunc(neg),
-                inc,
-                neg,
-            )
-            .to_py()
-        }
+        Err(cal_unit) => total_cal_plain(neg, cal_unit, a.assume_utc(), b, target_date),
     }
+}
+
+/// Calendar-unit fractional total for PlainDateTime/OffsetDateTime, treating
+/// the reference datetime as UTC (no DST transitions).
+///
+/// This mirrors `zoned_datetime::total_cal` but works with raw `Instant` and
+/// `DateTime` values instead of `ZonedDateTime`, avoiding the need for a UTC
+/// `TzPtr`.
+pub(crate) fn total_cal_plain(
+    neg: bool,
+    unit: math::CalUnit,
+    a_inst: Instant,
+    b_dt: DateTime,
+    target_date: Date,
+) -> PyReturn {
+    let (result, trunc_raw, expand_raw) =
+        math::date_diff_single_unit(target_date, b_dt.date, DateRoundIncrement::MIN, unit, neg)
+            .ok_or_range_err()?;
+    let trunc = b_dt.with_date(trunc_raw.into()).assume_utc();
+    let expand = b_dt.with_date(expand_raw.into()).assume_utc();
+    let num = a_inst.diff(trunc).total_nanos() as f64;
+    let denom = expand.diff(trunc).total_nanos() as f64;
+    let sign: f64 = if neg { -1.0 } else { 1.0 };
+    ((result.abs() as f64 + num / denom) * sign).to_py()
 }
 
 /// Shared since() implementation for PlainDateTime (and OffsetDateTime).
@@ -1018,9 +1025,7 @@ pub(crate) fn plain_since_inner(
     state: &State,
     slf: DateTime,
     other: DateTime,
-    units: UnitsOrUnit,
-    round_mode: round::Mode,
-    round_increment: math::RoundIncrement,
+    kwargs: SinceUntilKwargs,
     flip: bool,
 ) -> PyReturn {
     let (a, b) = if flip { (other, slf) } else { (slf, other) };
@@ -1033,11 +1038,9 @@ pub(crate) fn plain_since_inner(
         _ => Some(a.date),
     }
     .ok_or_range_err()?;
-    match units {
-        UnitsOrUnit::One(u) => {
-            plain_since_single_unit(a, b, target_date, u, round_mode, round_increment, neg)
-        }
-        UnitsOrUnit::Seq(units) => plain_since_in_units(
+    match kwargs {
+        SinceUntilKwargs::Total(unit) => plain_since_float(a, b, target_date, unit, neg),
+        SinceUntilKwargs::InUnits(units, round_mode, round_increment) => plain_since_in_units(
             state,
             a,
             b,
@@ -1205,10 +1208,10 @@ fn parse(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> Py
 
     let date = Date::new(year, month, day).ok_or_value_err("Invalid date")?;
 
-    if let Some(wd) = state.weekday {
-        if date.day_of_week() != wd {
-            raise_value_err("Parsed weekday does not match the date")?;
-        }
+    if let Some(wd) = state.weekday
+        && date.day_of_week() != wd
+    {
+        raise_value_err("Parsed weekday does not match the date")?;
     }
 
     let hour = state.hour.unwrap_or(0);

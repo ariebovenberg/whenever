@@ -1727,37 +1727,41 @@ fn until(
     zoned_since(cls, slf, args, kwargs, true)
 }
 
-fn zoned_since_single_unit(
+fn zoned_since_float(
     a: OffsetDateTime,
     b: ZonedDateTime,
     target_date: Date,
     unit: math::DeltaUnit,
-    round_mode: round::Mode,
-    round_increment: math::RoundIncrement,
     neg: bool,
 ) -> PyReturn {
     match unit.to_exact(false) {
-        Ok(u) => a.instant().diff(b.instant()).in_single_unit(
-            u,
-            round_increment,
-            round_mode.to_abs_euclid(neg),
-        ),
-        Err(u) => {
-            let inc = round_increment.to_date().ok_or_range_err()?;
-            let (result, trunc_date, expand_date) =
-                math::date_diff_single_unit(target_date, b.date, inc, u, neg).ok_or_range_err()?;
-            let trunc = b.with_date(trunc_date.into()).ok_or_range_err()?.instant();
-            let expand = b.with_date(expand_date.into()).ok_or_range_err()?.instant();
-            math::round_by_time(
-                result,
-                a.instant(),
-                trunc,
-                expand,
-                round_mode.to_abs_trunc(neg),
-                inc,
+        Ok(u) => {
+            // For nanoseconds (in_nanos == 1), return int to preserve full precision.
+            let nanos = a.instant().diff(b.instant()).total_nanos();
+            let unit_nanos = u.in_nanos();
+            if unit_nanos == 1 {
+                nanos.to_py()
+            } else {
+                (nanos as f64 / unit_nanos as f64).to_py()
+            }
+        }
+        Err(cal_unit) => {
+            let (result, trunc_raw, expand_raw) = math::date_diff_single_unit(
+                target_date,
+                b.date,
+                DateRoundIncrement::MIN,
+                cal_unit,
                 neg,
             )
-            .to_py()
+            .ok_or_range_err()?;
+            let trunc = b.with_date(trunc_raw.into()).ok_or_range_err()?.instant();
+            let expand = b.with_date(expand_raw.into()).ok_or_range_err()?.instant();
+            // result is signed; take absolute value and restore sign at the end.
+            // num/denom ratio is always positive (same sign).
+            let num = a.instant().diff(trunc).total_nanos() as f64;
+            let denom = expand.diff(trunc).total_nanos() as f64;
+            let sign: f64 = if neg { -1.0 } else { 1.0 };
+            ((result.abs() as f64 + num / denom) * sign).to_py()
         }
     }
 }
@@ -1795,13 +1799,9 @@ fn zoned_since(
     let other = handle_one_arg(fname, args)?
         .extract(cls)
         .ok_or_type_err("argument must be a whenever.ZonedDateTime")?;
-    let SinceUntilKwargs {
-        units,
-        round_mode,
-        round_increment,
-    } = SinceUntilKwargs::parse(fname, state, kwargs)?;
+    let kwargs = SinceUntilKwargs::parse(fname, state, kwargs)?;
 
-    if units.has_calendar() && !slf.tz.is_same_tz(other.tz) {
+    if kwargs.has_calendar() && !slf.tz.is_same_tz(other.tz) {
         raise_value_err(
             "Calendar units can only be used to compare ZonedDateTimes \
              with the same timezone",
@@ -1813,17 +1813,11 @@ fn zoned_since(
 
     let target_date = zoned_target(a.date, a_inst, b, neg).ok_or_range_err()?;
 
-    match units {
-        math::UnitsOrUnit::One(unit) => zoned_since_single_unit(
-            a.without_tz(),
-            b,
-            target_date,
-            unit,
-            round_mode,
-            round_increment,
-            neg,
-        ),
-        math::UnitsOrUnit::Seq(units) => zoned_since_in_units(
+    match kwargs {
+        SinceUntilKwargs::Total(unit) => {
+            zoned_since_float(a.without_tz(), b, target_date, unit, neg)
+        }
+        SinceUntilKwargs::InUnits(units, round_mode, round_increment) => zoned_since_in_units(
             a.without_tz(),
             a_inst,
             b,
@@ -2008,10 +2002,10 @@ fn parse(cls: HeapType<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
 
     let date = Date::new(year, month, day).ok_or_value_err("Invalid date")?;
 
-    if let Some(wd) = state.weekday {
-        if date.day_of_week() != wd {
-            raise_value_err("Parsed weekday does not match the date")?;
-        }
+    if let Some(wd) = state.weekday
+        && date.day_of_week() != wd
+    {
+        raise_value_err("Parsed weekday does not match the date")?;
     }
 
     let hour = state.hour.unwrap_or(0);

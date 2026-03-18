@@ -316,7 +316,7 @@ fn __new__(cls: HeapType<ItemizedDelta>, args: PyTuple, kwargs: Option<PyDict>) 
     slf.to_obj(cls)
 }
 
-fn sign(_: PyType, d: ItemizedDelta) -> PyReturn {
+fn sign(_: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyReturn {
     (d.derived_sign() as i32).to_py()
 }
 
@@ -939,7 +939,7 @@ fn add_sub(
         str_seconds,
         str_nanoseconds,
         str_relative_to,
-        str_units,
+        str_in_units,
         str_round_mode,
         round_mode_strs,
         str_round_increment,
@@ -970,7 +970,7 @@ fn add_sub(
                 .extract(zoned_datetime_type)
                 .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?
                 .into();
-        } else if eq(key, str_units) {
+        } else if eq(key, str_in_units) {
             units = DeltaUnitSet::from_py(value, state)?;
         } else if eq(key, str_round_mode) {
             round_mode = round::Mode::from_py_named("round_mode", value, round_mode_strs)?;
@@ -1006,7 +1006,7 @@ fn add_sub(
 
     if units.is_empty() {
         raise_type_err(format!(
-            "{fname}() missing required keyword argument: 'units'"
+            "{fname}() missing required keyword argument: 'in_units'"
         ))?
     }
 
@@ -1116,20 +1116,18 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-static mut GETSETTERS: &[PyGetSetDef] = &[
-    getter!(ItemizedDelta, sign, c"The sign of the delta: 1, 0, or -1"),
-    PyGetSetDef {
-        name: NULL(),
-        get: None,
-        set: None,
-        doc: NULL(),
-        closure: NULL(),
-    },
-];
+static mut GETSETTERS: &[PyGetSetDef] = &[PyGetSetDef {
+    name: NULL(),
+    get: None,
+    set: None,
+    doc: NULL(),
+    closure: NULL(),
+}];
 
 static mut METHODS: &[PyMethodDef] = &[
     method0!(ItemizedDelta, __copy__, c""),
     method1!(ItemizedDelta, __deepcopy__, c""),
+    method0!(ItemizedDelta, sign, doc::ITEMIZEDDELTA_SIGN),
     method_kwargs!(ItemizedDelta, format_iso, doc::ITEMIZEDDELTA_FORMAT_ISO),
     classmethod1!(ItemizedDelta, parse_iso, doc::ITEMIZEDDELTA_PARSE_ISO),
     method1!(ItemizedDelta, exact_eq, doc::ITEMIZEDDELTA_EXACT_EQ),

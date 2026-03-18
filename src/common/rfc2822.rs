@@ -139,10 +139,10 @@ fn parse_date(s: &mut Scan, expect_weekday: Option<Weekday>) -> Option<Date> {
         })?;
     s.ascii_whitespace();
     let date = Date::new(year, month, day)?;
-    if let Some(weekday) = expect_weekday {
-        if date.day_of_week() != weekday {
-            return None;
-        }
+    if let Some(weekday) = expect_weekday
+        && date.day_of_week() != weekday
+    {
+        return None;
     }
     Some(date)
 }

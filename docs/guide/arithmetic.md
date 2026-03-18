@@ -5,6 +5,8 @@ The classes in `whenever` support various arithmetic operations.
 
 ## Difference
 
+### Exact time
+
 You can get the exact duration between two datetimes or instants
 with the `-` operator.
 Exact and local types cannot be mixed, although exact types can be mixed
@@ -31,7 +33,7 @@ This is intentional: the `-` operator is reserved for cases
 where the result is unambiguous (see {ref}`design`).
 For differences in calendar units, use `since()` / `until()` below.
 
-### Difference in calendar units
+### Calendar units
 
 Beyond calendar units, `since()` and `until()` also support exact time units.
 This lets you express differences in whatever granularity you need—for
@@ -40,38 +42,42 @@ example, a total number of minutes without rolling over to hours.
 ```python
 >>> d1 = Date(2020, 1, 1)
 >>> d2 = Date(2023, 6, 15)
->>> d2.since(d1, units=["years", "months", "days"])
+>>> d2.since(d1, in_units=["years", "months", "days"])
 ItemizedDateDelta("P3y5m14d")
->>> d1.until(d2, units=["years", "months", "days"])
+>>> d1.until(d2, in_units=["years", "months", "days"])
 ItemizedDateDelta("P3y5m14d")
 ```
 
-```{tip}
+:::{tip}
 The result is a dict-like structure ordered from largest to smallest unit,
 so you can unpack the values directly:
 
-    >>> years, months, days = d2.since(d1, units=["years", "months", "days"]).values()
-    >>> years, months, days
-    (3, 5, 14)
+```python
+>>> years, months, days = d2.since(d1, in_units=["years", "months", "days"]).values()
+>>> years, months, days
+(3, 5, 14)
 ```
+:::
 
 These methods are available on {class}`~whenever.Date`,
 {class}`~whenever.ZonedDateTime`, {class}`~whenever.OffsetDateTime`, and
 {class}`~whenever.PlainDateTime`.
-If you only need a single unit, pass the `unit` parameter to get an `int` directly:
+If you only need a single unit, pass the `total` parameter to get a `float` directly:
 
 ```python
->>> d2.since(d1, unit="months")
-41
+>>> d2.since(d1, total="months")
+41.46666666667
 ```
 
-Various rounding modes are available for the smallest unit.
+```{note}
+For calendar units (years, months), the fractional part is based on
+the number of days in the surrounding period, not a fixed conversion factor.
+For example, 6 months starting from January 1 covers 181 days out of a
+365-day year, giving approximately 0.496 years — not exactly 0.5.
+```
+
+Various rounding modes are available for the smallest unit when using `in_units`.
 See {ref}`rounding` for details.
-
-```python
->>> d2.since(d1, unit="years", round_mode="ceil")
-4
-```
 
 (add-subtract-time)=
 ## Adding and subtracting
@@ -107,7 +113,6 @@ The arithmetic behavior is different for three categories of units:
    and if that's not possible, it chooses the `"compatible"` option.
 
    ```python
-
    >>> d = ZonedDateTime(2023, 9, 29, 2, 15, tz="Europe/Amsterdam")
    >>> d.add(months=1, disambiguate="raise")
    Traceback (most recent call last):
@@ -140,9 +145,9 @@ The arithmetic behavior is different for three categories of units:
    since the resulting date might put the datetime in a DST transition.
    ```
 
-3. Adding **precise time units** (hours, minutes, seconds) never results
+3. Adding **exact time units** (hours, minutes, seconds) never results
    in ambiguity. If an hour is skipped or repeated due to a DST transition,
-   precise time units will account for this.
+   exact time units will account for this.
 
    ```python
    >>> d = ZonedDateTime(2023, 3, 25, hour=12, tz="Europe/Amsterdam")
@@ -156,15 +161,13 @@ For more details on working with durations as standalone objects
 ```
 
 (arithmetic-dst)=
-## DST-safety
+## DST-safety: a day is not always 24 hours
 
 Date and time arithmetic can be tricky due to daylight saving time (DST)
 and other timezone changes.
 The API of the different classes is designed to avoid implicitly ignoring these.
 The type annotations and descriptive error messages should guide you
 to the correct usage.
-
-### A day is not always 24 hours
 
 When clocks "spring forward," a calendar day is only 23 hours;
 when they "fall back," it's 25. This matters when you choose between
@@ -188,7 +191,7 @@ For background on the distinction between exact and calendar units,
 see {ref}`the fundamentals <arithmetic2>`.
 
 - {class}`~whenever.Instant` has no calendar, so it doesn't support
-  adding calendar units. Precise time units can be added without any complications.
+  adding calendar units. exact time units can be added without any complications.
 - {class}`~whenever.OffsetDateTime` has a fixed offset, so it *cannot*
   account for DST and other timezone changes.
   For example, the result of adding 24 hours to `2024-03-09 13:00:00-07:00`
@@ -213,7 +216,7 @@ see {ref}`the fundamentals <arithmetic2>`.
   ```
 
 - {class}`~whenever.ZonedDateTime` accounts for DST and other timezone changes,
-  thus adding precise time units is always correct.
+  thus adding exact time units is always correct.
   Adding calendar units is also possible, but may result in ambiguity in rare cases,
   if the resulting datetime is in the middle of a DST transition:
 
@@ -247,7 +250,7 @@ see {ref}`the fundamentals <arithmetic2>`.
 
 ```{attention}
 Even when dealing with a timezone without DST, you should still use
-{class}`~whenever.ZonedDateTime` for precise time arithmetic.
+{class}`~whenever.ZonedDateTime` for exact time arithmetic.
 This is because political decisions in the future can also change the offset!
 ```
 
@@ -255,16 +258,14 @@ Here is a summary of the arithmetic features for each type:
 
 |                       | Instant | OffsetDT|ZonedDT  |PlainDT  |
 |:----------------------|:-------:|:-------:|:-------:|:-------:|
-| Difference (`-`)      | ✅      |  ✅     |   ✅    |⚠️  [^1] |
-| `since()` / `until()` | ❌      |  ✅ [^1]|   ✅    |⚠️  [^1] |
-| add/subtract years, months, days   | ❌      |⚠️  [^1] |✅  [^2] |    ✅   |
-| add/subtract hours, minutes, seconds  | ✅      |⚠️  [^1] |  ✅     |⚠️  [^1] |
+| Difference (`-`)      | ✅      |  ✅     |   ✅    |⚠️  [^3] |
+| `since()` / `until()` | ❌      |  ✅  |   ✅    |⚠️  [^3] |
+| add/subtract years, months, days   | ❌      |⚠️  [^1] |✅  [^2] |    ⚠️ [^3]   |
+| add/subtract hours, minutes, seconds  | ✅      |⚠️  [^1] |  ✅     |⚠️  [^3] |
 
-[^1]: Emits a warning ({class}`~whenever.PotentiallyStaleOffsetWarning` for ``OffsetDateTime``,
-    {class}`~whenever.TimeZoneUnawareArithmeticWarning` for ``PlainDateTime``).
-    Suppress with the corresponding ``ignore_*_warning()`` context manager
-    once you have confirmed the result is correct for your use case.
+[^1]: Emits a {class}`~whenever.PotentiallyStaleOffsetWarning`
 [^2]: The result may be ambiguous in rare cases. Accepts the ``disambiguate`` argument.
+[^3]: Emits a {class}`~whenever.TimeZoneUnawareArithmeticWarning`
 
 
 :::{admonition} Why are these operations allowed at all if they can be wrong?

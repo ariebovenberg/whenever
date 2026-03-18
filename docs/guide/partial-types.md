@@ -28,7 +28,7 @@ with similar semantics to modern datetime libraries:
 >>> d = Date(2023, 1, 31)
 >>> d.add(months=1)
 Date("2023-02-28")
->>> d.since(Date(2022, 10, 15), units=["months", "days"])
+>>> d.since(Date(2022, 10, 15), in_units=["months", "days"])
 ItemizedDateDelta("P3m16d")
 ```
 

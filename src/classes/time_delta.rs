@@ -9,6 +9,7 @@ use crate::{
         instant::Instant,
         itemized_delta::ItemizedDelta,
         offset_datetime::OffsetDateTime,
+        plain_datetime::{DateTime, total_cal_plain},
         zoned_datetime::{ZonedDateTime, zoned_since_in_units, zoned_target},
     },
     common::{
@@ -209,20 +210,6 @@ impl TimeDelta {
             secs: d.whole_seconds()?,
             subsec: d.subsec(),
         })
-    }
-
-    pub(crate) fn in_single_unit(
-        self,
-        unit: ExactUnit,
-        round_increment: math::RoundIncrement,
-        round_mode: round::AbsMode,
-    ) -> PyReturn {
-        let increment = (unit.in_nanos() as u64 as u128)
-            .checked_mul(round_increment.as_i128() as u128)
-            .and_then(DeltaIncrement::from_nanos)
-            .ok_or_range_err()?;
-        let rounded = self.round(increment, round_mode).ok_or_range_err()?;
-        (rounded.total_nanos() / unit.in_nanos() as i128).to_py()
     }
 
     pub(crate) fn in_exact_units(
@@ -1328,25 +1315,55 @@ fn total(
         Err(cal_unit) => cal_unit,
     };
 
-    let relative_to = match relative_to_arg {
-        Some(arg) => arg
-            .extract(state.zoned_datetime_type)
-            .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?,
-        None => {
-            raise_type_err("for months and years total, a `relative_to` argument must be passed")?
+    let arg = relative_to_arg
+        .ok_or_type_err("for calendar units, a `relative_to` argument must be passed")?;
+
+    // ZonedDateTime: full DST-aware path via zoned_target.
+    if let Some(zdt) = arg.extract(state.zoned_datetime_type) {
+        let shifted_inst = zdt.instant().shift(slf).ok_or_range_err()?;
+        let shifted = shifted_inst.to_tz(zdt.tz).ok_or_range_err()?;
+        return total_cal(slf.is_negative(), cal_unit, zdt, shifted, shifted_inst);
+    }
+
+    // PlainDateTime/OffsetDateTime: treat local time as UTC for the calendar
+    // diff, emitting appropriate warnings. Same approach as Python's
+    // `assume_tz("UTC")` trick (to_tz("UTC") would be wrong: it re-interprets
+    // the instant in UTC rather than keeping the local date as the anchor).
+    let b_dt: DateTime = if let Some(pdt) = arg.extract(state.plain_datetime_type) {
+        if !state.cv_ignore_tz_unaware_arithmetic.get()? {
+            warn_with_class(
+                state.warn_tz_unaware_arithmetic,
+                doc::PLAIN_DIFF_UNAWARE_MSG,
+                2,
+            )?;
         }
+        pdt
+    } else if let Some(odt) = arg.extract(state.offset_datetime_type) {
+        if !state.cv_ignore_potentially_stale_offset.get()? {
+            warn_with_class(
+                state.warn_potentially_stale_offset,
+                doc::OFFSET_CALENDAR_STALE_MSG,
+                2,
+            )?;
+        }
+        odt.without_offset()
+    } else {
+        raise_type_err("relative_to must be a ZonedDateTime, PlainDateTime, or OffsetDateTime")?
     };
 
-    let shifted_inst = relative_to.instant().shift(slf).ok_or_range_err()?;
-    let shifted = shifted_inst.to_tz(relative_to.tz).ok_or_range_err()?;
-
-    total_cal(
-        slf.is_negative(),
-        cal_unit,
-        relative_to,
-        shifted,
-        shifted_inst,
-    )
+    let neg = slf.is_negative();
+    let a_inst = b_dt.assume_utc().shift(slf).ok_or_range_err()?;
+    let a_dt = a_inst
+        .to_offset(Offset::ZERO)
+        .ok_or_range_err()?
+        .without_offset();
+    let target_date = match (neg, b_dt.with_date(a_dt.date).cmp(&a_dt)) {
+        (false, std::cmp::Ordering::Greater) => a_dt.date.yesterday(),
+        (true, std::cmp::Ordering::Less) => a_dt.date.tomorrow(),
+        _ => Some(a_dt.date),
+    }
+    .ok_or_range_err()?;
+    total_cal_plain(neg, cal_unit, a_inst, b_dt, target_date)
 }
 
 pub(crate) fn total_cal(

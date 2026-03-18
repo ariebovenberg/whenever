@@ -1278,12 +1278,7 @@ class TestSince:
         kwargs: dict[str, Any],
         expect: ItemizedDelta,
     ):
-        assert a.since(b, units=units, **kwargs).exact_eq(expect)
-
-        if len(units) == 1:
-            assert (
-                a.since(b, unit=units[0], **kwargs) == list(expect.values())[0]
-            )
+        assert a.since(b, in_units=units, **kwargs).exact_eq(expect)
 
     def test_warnings(self):
         a = PlainDateTime(2023, 2, 15, hour=13, minute=25)
@@ -1291,63 +1286,66 @@ class TestSince:
 
         # exact units trigger the warning
         with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
-            a.since(b, units=["hours", "minutes"])
+            a.since(b, in_units=["hours", "minutes"])
         assert len(w) == 1
 
         with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
-            a.until(b, units=["hours", "minutes"])
+            a.until(b, in_units=["hours", "minutes"])
         assert len(w) == 1
 
         # mixed calendar+exact units also trigger
         with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
-            a.since(b, units=["days", "hours"])
+            a.since(b, in_units=["days", "hours"])
         assert len(w) == 1
 
         # calendar-only units also trigger--since rounding can be influenced
         # by DST gaps/folds
         with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
-            a.since(b, units=["months", "weeks"])
+            a.since(b, in_units=["months", "weeks"])
         with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
-            a.until(b, units=["months", "weeks"])
+            a.until(b, in_units=["months", "weeks"])
         assert len(w) == 1
         with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
-            a.since(b, unit="days")
+            a.since(b, total="days")
 
         # suppression works
         with ignore_timezone_unaware_arithmetic_warning():
-            a.since(b, units=["hours", "minutes"])
-            a.until(b, unit="hours")
-            a.until(b, unit="years")
+            a.since(b, in_units=["hours", "minutes"])
+            a.until(b, total="hours")
+            a.until(b, total="years")
 
     def test_invalid_units(self):
         with pytest.raises(ValueError, match="[Ii]nvalid unit.*foos"):
             PlainDateTime(2023, 2, 15).since(
                 PlainDateTime(2023, 2, 15),
-                units=["foos"],  # type: ignore[list-item]
+                in_units=["foos"],  # type: ignore[list-item]
             )
 
         with pytest.raises(ValueError, match="[Ii]nvalid unit.*foos"):
             PlainDateTime(2023, 2, 15).since(
                 PlainDateTime(2023, 2, 15),
-                unit="foos",  # type: ignore[call-overload]
+                total="foos",  # type: ignore[call-overload]
             )
 
     def test_empty_units(self):
         with pytest.raises(ValueError, match="[Aa]t least one unit"):
             PlainDateTime(2023, 2, 15).since(
                 PlainDateTime(2023, 2, 15),
-                units=(),
+                in_units=(),
             )
 
+    @ignore_timezone_unaware_arithmetic_warning()
     def test_no_other_class_supported(self):
         with pytest.raises(TypeError):
             PlainDateTime(2023, 2, 15).since(
                 ZonedDateTime(2023, 2, 15, tz="Europe/London"),  # type: ignore[call-overload]
-                units=["days"],
+                in_units=["days"],
             )
 
     def test_neither_unit_nor_units(self):
-        with pytest.raises(TypeError, match="unit.*or.*units"):
+        with pytest.raises(
+            TypeError, match="Must specify|total.*or.*in_units"
+        ):
             PlainDateTime(2023, 2, 15).since(
                 PlainDateTime(2023, 2, 15),
             )  # type: ignore[call-overload]
@@ -1356,28 +1354,46 @@ class TestSince:
         with pytest.raises(TypeError, match="both"):
             PlainDateTime(2023, 2, 15).since(
                 PlainDateTime(2023, 2, 15),
-                unit="years",
-                units=("days",),
+                total="years",
+                in_units=("days",),
             )  # type: ignore[call-overload]
 
     def test_duplicate_units(self):
         with pytest.raises(ValueError, match="duplicate"):
             PlainDateTime(2023, 2, 15).since(
                 PlainDateTime(2023, 2, 15),
-                units=["years", "days", "days"],
+                in_units=["years", "days", "days"],
             )
 
     def test_invalid_unit_order(self):
         with pytest.raises(ValueError, match="order"):
             PlainDateTime(2021, 1, 1).since(
-                PlainDateTime(2020, 1, 1), units=["hours", "days"]
+                PlainDateTime(2020, 1, 1), in_units=["hours", "days"]
             )
 
+    @ignore_timezone_unaware_arithmetic_warning()
     def test_invalid_round_mode(self):
+        # round_mode and round_increment are not supported with total=
+        with pytest.raises(TypeError, match="round_mode.*total|total.*round"):
+            PlainDateTime(2021, 1, 1).since(
+                PlainDateTime(2020, 1, 1),
+                total="years",
+                round_mode="floor",
+            )  # type: ignore[call-overload]
+
+        # even round_increment=1 is rejected (no default magic)
+        with pytest.raises(TypeError, match="round_mode.*total|total.*round"):
+            PlainDateTime(2021, 1, 1).since(
+                PlainDateTime(2020, 1, 1),
+                total="years",
+                round_increment=1,
+            )  # type: ignore[call-overload]
+
+        # round_mode is still valid with in_units
         with pytest.raises(ValueError, match="round.*mode.*foobar"):
             PlainDateTime(2021, 1, 1).since(
                 PlainDateTime(2020, 1, 1),
-                unit="years",
+                in_units=["years"],
                 round_mode="foobar",
             )  # type: ignore[call-overload]
 
@@ -1385,19 +1401,19 @@ class TestSince:
     def test_until_is_inverse(self):
         a = PlainDateTime(2023, 2, 15, hour=3)
         b = PlainDateTime(2021, 7, 3)
-        assert a.since(b, units=["years", "months", "days", "hours"]).exact_eq(
-            b.until(a, units=["years", "months", "days", "hours"])
-        )
+        assert a.since(
+            b, in_units=["years", "months", "days", "hours"]
+        ).exact_eq(b.until(a, in_units=["years", "months", "days", "hours"]))
         # floor rounding works correctly
         assert a.since(
             b,
-            units=["years", "months", "days", "hours"],
+            in_units=["years", "months", "days", "hours"],
             round_increment=2,
             round_mode="floor",
         ).exact_eq(
             b.until(
                 a,
-                units=["years", "months", "days", "hours"],
+                in_units=["years", "months", "days", "hours"],
                 round_increment=2,
                 round_mode="floor",
             )
@@ -1409,25 +1425,27 @@ class TestSince:
         b = PlainDateTime(2020, 2, 1, hour=12)
         # until with trunc
         result_trunc = a.until(
-            b, units=["years", "months"], round_mode="trunc"
+            b, in_units=["years", "months"], round_mode="trunc"
         )
         assert result_trunc == ItemizedDelta(years=1, months=0)
         # until with floor
         result_floor = a.until(
-            b, units=["years", "months"], round_mode="floor"
+            b, in_units=["years", "months"], round_mode="floor"
         )
         assert result_floor == ItemizedDelta(years=1, months=0)
         # until with ceil
-        result_ceil = a.until(b, units=["years", "months"], round_mode="ceil")
+        result_ceil = a.until(
+            b, in_units=["years", "months"], round_mode="ceil"
+        )
         assert result_ceil == ItemizedDelta(years=1, months=1)
 
     @ignore_timezone_unaware_arithmetic_warning()
-    def test_single_unit_returns_int(self):
+    def test_single_unit_returns_float(self):
         a = PlainDateTime(2025, 3, 15)
         b = PlainDateTime(2023, 3, 15)
-        result = a.since(b, unit="years")
-        assert isinstance(result, int)
-        assert result == 2
+        result = a.since(b, total="years")
+        assert isinstance(result, float)
+        assert result == 2.0
 
     @ignore_timezone_unaware_arithmetic_warning()
     def test_roundtrip_add_back(self):
@@ -1436,7 +1454,7 @@ class TestSince:
         b = PlainDateTime(2023, 1, 10, hour=8, minute=15, second=20)
         result = a.since(
             b,
-            units=[
+            in_units=[
                 "years",
                 "months",
                 "days",
@@ -1462,7 +1480,7 @@ class TestSince:
         """Verify roundtrip for negative results."""
         a = PlainDateTime(2020, 1, 1)
         b = PlainDateTime(2025, 6, 15, hour=14)
-        result = a.since(b, units=["years", "months", "days", "hours"])
+        result = a.since(b, in_units=["years", "months", "days", "hours"])
         assert (
             b.add(
                 years=result["years"],
@@ -1477,7 +1495,7 @@ class TestSince:
     def test_nanoseconds_dont_overflow(self):
         a = PlainDateTime(9000, 1, 1)
         b = PlainDateTime(23, 3, 15)
-        assert a.since(b, unit="nanoseconds") == 283280457600000000000
+        assert a.since(b, total="nanoseconds") == 283280457600000000000
 
     @ignore_timezone_unaware_arithmetic_warning()
     def test_very_large_increment(self):
@@ -1486,7 +1504,7 @@ class TestSince:
         # round_increment=1<<65 ns exceeds i64::MAX; ceil mode rounds up to 1*(1<<65)
         assert a.since(
             b,
-            units=["seconds", "nanoseconds"],
+            in_units=["seconds", "nanoseconds"],
             round_increment=1 << 65,
             round_mode="ceil",
         ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)

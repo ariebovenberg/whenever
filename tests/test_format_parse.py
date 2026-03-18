@@ -74,6 +74,11 @@ class TestCompilePattern:
         with pytest.raises(ValueError, match="Too many"):
             t.format("hh:mm:ss.ffffffffff")
 
+    def test_too_many_frac_trim(self):
+        """More than 9 'F' characters raises ValueError."""
+        with pytest.raises(ValueError, match="Too many.*F"):
+            compile_pattern("hh:mm:ss.FFFFFFFFFF")
+
     def test_empty_pattern(self):
         d = Date(2024, 3, 15)
         assert d.format("") == ""
@@ -475,6 +480,10 @@ class TestOffsetDateTimeParse:
         with pytest.raises(ValueError, match="offset.*x/X"):
             OffsetDateTime.parse("2024-03-15 14:30", format="YYYY-MM-DD hh:mm")
 
+    def test_missing_date_fields(self):
+        with pytest.raises(ValueError, match="year.*month.*day|date.*fields"):
+            OffsetDateTime.parse("14:30+02:00", format="hh:mmxxx")
+
     def test_roundtrip(self):
         odt = OffsetDateTime(
             2024, 3, 15, 14, 30, 5, nanosecond=123_000_000, offset=hours(-5)
@@ -518,6 +527,13 @@ class TestZonedDateTimeParse:
             ZonedDateTime.parse(
                 "2024-03-15 14:30+01:00",
                 format="YYYY-MM-DD hh:mmxxx",
+            )
+
+    def test_missing_date_fields(self):
+        with pytest.raises(ValueError, match="year.*month.*day|date.*fields"):
+            ZonedDateTime.parse(
+                "14:30+01:00[Europe/Paris]",
+                format="hh:mmxxx'['VV']'",
             )
 
     def test_tz_only_no_offset(self):
@@ -604,6 +620,10 @@ class TestInstantParse:
         """Instant.parse requires an offset field in the pattern."""
         with pytest.raises(ValueError, match="offset.*x/X"):
             Instant.parse("2024-03-15 14:30", format="YYYY-MM-DD hh:mm")
+
+    def test_missing_date_fields(self):
+        with pytest.raises(ValueError, match="year.*month.*day|date.*fields"):
+            Instant.parse("14:30Z", format="hh:mmXXX")
 
     def test_roundtrip(self):
         i = Instant.from_utc(2024, 3, 15, 14, 30, 5, nanosecond=123_456_789)
@@ -923,6 +943,11 @@ class TestFormatFieldsInternal:
             els, hour=14, minute=30, second=5, nanos=100_000_000
         )
         assert result == "14:30:051"
+
+    def test_frac_trim_no_preceding_dot_parse(self):
+        """FFF standalone (no dot) correctly parses non-zero fractional digits."""
+        t = Time.parse("14:30:051", format="hh:mm:ssFFF")
+        assert t == Time(14, 30, 5, nanosecond=100_000_000)
 
     def test_frac_trim_at_start_of_pattern(self):
         """FFF at the start of a pattern (no preceding literal) works correctly."""

@@ -766,29 +766,33 @@ impl AnyUnit {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub(crate) enum UnitsOrUnit {
+#[derive(Copy, Clone)]
+enum UnitsOrUnit {
     One(DeltaUnit),
     Seq(DeltaUnitSet),
 }
 
-impl UnitsOrUnit {
-    pub(crate) fn has_calendar(&self) -> bool {
+/// Parsed kwargs from `since()`/`until()` calls.
+///
+/// Two mutually exclusive forms:
+/// - `Total(unit)` — single unit returning a float; `round_mode`/`round_increment` forbidden
+/// - `InUnits(units, mode, increment)` — multi-unit ItemizedDelta with optional rounding
+#[derive(Debug, Copy, Clone)]
+pub(crate) enum SinceUntilKwargs {
+    Total(DeltaUnit),
+    InUnits(DeltaUnitSet, round::Mode, RoundIncrement),
+}
+
+impl SinceUntilKwargs {
+    pub(crate) fn has_calendar(self) -> bool {
         match self {
-            UnitsOrUnit::One(u) => matches!(
+            SinceUntilKwargs::Total(u) => matches!(
                 u,
                 DeltaUnit::Years | DeltaUnit::Months | DeltaUnit::Weeks | DeltaUnit::Days
             ),
-            UnitsOrUnit::Seq(s) => s.has_calendar(),
+            SinceUntilKwargs::InUnits(s, ..) => s.has_calendar(),
         }
     }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub(crate) struct SinceUntilKwargs {
-    pub(crate) units: UnitsOrUnit,
-    pub(crate) round_mode: round::Mode,
-    pub(crate) round_increment: RoundIncrement,
 }
 
 impl SinceUntilKwargs {
@@ -796,10 +800,11 @@ impl SinceUntilKwargs {
         let mut round_mode = round::Mode::Trunc;
         let mut round_increment = RoundIncrement::MIN;
         let mut units: Option<UnitsOrUnit> = None;
+        let mut round_was_set = false;
 
         let &State {
-            str_unit,
-            str_units,
+            str_total,
+            str_in_units,
             str_round_mode,
             str_round_increment,
             round_mode_strs,
@@ -807,35 +812,45 @@ impl SinceUntilKwargs {
         } = state;
 
         handle_kwargs(fname, kwargs, |key, value, eq| {
-            if eq(key, str_unit) {
+            if eq(key, str_total) {
                 if units.is_some() {
-                    raise_type_err("cannot specify both 'unit' and 'units'")?;
+                    raise_type_err("cannot specify both 'total' and 'in_units'")?;
                 }
                 let unit = DeltaUnit::from_py(value, state)?;
                 units = Some(UnitsOrUnit::One(unit));
-            } else if eq(key, str_units) {
+            } else if eq(key, str_in_units) {
                 if units.is_some() {
-                    raise_type_err("cannot specify both 'unit' and 'units'")?;
+                    raise_type_err("cannot specify both 'total' and 'in_units'")?;
                 }
                 let unit_set = DeltaUnitSet::from_py(value, state)?;
                 units = Some(UnitsOrUnit::Seq(unit_set));
             } else if eq(key, str_round_mode) {
                 round_mode = round::Mode::from_py_named("round_mode", value, round_mode_strs)?;
+                round_was_set = true;
             } else if eq(key, str_round_increment) {
                 round_increment = RoundIncrement::from_py(value)?;
+                round_was_set = true;
             } else {
                 return Ok(false);
             }
             Ok(true)
         })?;
 
-        let units = units.ok_or_type_err("must specify either 'unit' or 'units'")?;
-
-        Ok(SinceUntilKwargs {
-            units,
-            round_mode,
-            round_increment,
-        })
+        match units.ok_or_type_err("must specify either 'total' or 'in_units'")? {
+            UnitsOrUnit::One(unit) => {
+                if round_was_set {
+                    raise_type_err(
+                        "'round_mode' and 'round_increment' cannot be used with 'total'",
+                    )?;
+                }
+                Ok(SinceUntilKwargs::Total(unit))
+            }
+            UnitsOrUnit::Seq(unit_set) => Ok(SinceUntilKwargs::InUnits(
+                unit_set,
+                round_mode,
+                round_increment,
+            )),
+        }
     }
 }
 
@@ -916,8 +931,8 @@ impl RoundIncrement {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum DateSinceUnits {
-    One(CalUnit),
-    Set(CalUnitSet),
+    Total(CalUnit),
+    InUnits(CalUnitSet),
 }
 
 /// Compute multi-unit date difference, progressively applying each unit.

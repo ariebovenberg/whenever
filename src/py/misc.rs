@@ -38,13 +38,7 @@ pub(crate) fn __get_pydantic_core_schema__<T: PyWrapped>(
 pub(crate) fn not_implemented() -> PyReturn {
     Ok(Owned::new(
         // SAFETY: Py_NotImplemented is always non-null
-        unsafe {
-            PyObj::from_ptr_unchecked({
-                let ptr = Py_NotImplemented();
-                Py_INCREF(ptr);
-                ptr
-            })
-        },
+        unsafe { PyObj::from_ptr_unchecked(Py_NewRef(Py_NotImplemented())) },
     ))
 }
 

@@ -878,7 +878,11 @@ static mut METHODS: &[PyMethodDef] = &[
     },
     method0!(Instant, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
     method0!(Instant, py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
-    classmethod1!(Instant, from_py_datetime, doc::BASICCONVERSIONS_FROM_PY_DATETIME),
+    classmethod1!(
+        Instant,
+        from_py_datetime,
+        doc::BASICCONVERSIONS_FROM_PY_DATETIME
+    ),
     classmethod0!(Instant, now, doc::INSTANT_NOW),
     method0!(Instant, format_rfc2822, doc::INSTANT_FORMAT_RFC2822),
     classmethod1!(Instant, parse_rfc2822, doc::INSTANT_PARSE_RFC2822),
