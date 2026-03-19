@@ -988,7 +988,7 @@ pub(crate) trait DeltaFieldInner:
     const SENTINEL: Self;
     const ZERO: Self;
     fn unsigned_abs(self) -> u64;
-    fn from_c_long(val: c_long) -> Self;
+    fn from_i64(val: i64) -> Self;
     fn from_u64(val: u64) -> Self;
     fn neg_from_u64(val: u64) -> Self;
     fn to_i64(self) -> i64;
@@ -1000,7 +1000,8 @@ impl DeltaFieldInner for i32 {
     fn unsigned_abs(self) -> u64 {
         self.unsigned_abs() as u64
     }
-    fn from_c_long(val: c_long) -> Self {
+    // FUTURE: make these casts more obviously safe
+    fn from_i64(val: i64) -> Self {
         val as i32
     }
     fn from_u64(val: u64) -> Self {
@@ -1020,7 +1021,7 @@ impl DeltaFieldInner for i64 {
     fn unsigned_abs(self) -> u64 {
         self.unsigned_abs()
     }
-    fn from_c_long(val: c_long) -> Self {
+    fn from_i64(val: i64) -> Self {
         val
     }
     fn from_u64(val: u64) -> Self {
@@ -1108,7 +1109,7 @@ impl<T: DeltaFieldInner> DeltaField<T> {
         let val = value
             .cast_allow_subclass::<PyInt>()
             .ok_or_type_err("field must be an integer")?
-            .to_long()?;
+            .to_i64()?;
         if val == 0 {
             return Ok(Self::new_unchecked(T::ZERO));
         }
@@ -1128,7 +1129,7 @@ impl<T: DeltaFieldInner> DeltaField<T> {
             *sign = -1;
         }
         // Safe: range check guarantees val fits in T
-        Ok(Self::new_unchecked(T::from_c_long(val)))
+        Ok(Self::new_unchecked(T::from_i64(val)))
     }
 
     /// Parse a Python integer or None into a range-checked field.
@@ -1140,12 +1141,12 @@ impl<T: DeltaFieldInner> DeltaField<T> {
             let val = value
                 .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("field must be an integer or None")?
-                .to_long()?;
+                .to_i64()?;
             let abs = val.unsigned_abs();
             if abs > max {
                 raise_value_err("delta out of range")?;
             }
-            Ok(Self::new_unchecked(T::from_c_long(val)))
+            Ok(Self::new_unchecked(T::from_i64(val)))
         }
     }
 

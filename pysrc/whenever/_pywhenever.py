@@ -456,7 +456,9 @@ class Date(_Base):
             WheneverDeprecationWarning,
             stacklevel=2,
         )
-        return cls(d)
+        self = _object_new(cls)
+        self._init_from_py(d)
+        return self
 
     def _init_from_py(self, d: _date) -> None:
         if type(d) is _date:
@@ -1593,7 +1595,9 @@ class Time(_Base):
             WheneverDeprecationWarning,
             stacklevel=2,
         )
-        return cls(t)
+        self = _object_new(cls)
+        self._init_from_py(t)
+        return self
 
     def _init_from_py(self, t: _time, /) -> None:
         if type(t) is _time:
@@ -2400,7 +2404,9 @@ class TimeDelta(_Base):
             WheneverDeprecationWarning,
             stacklevel=2,
         )
-        return cls(td)
+        self = _object_new(cls)
+        self._init_from_py(td)
+        return self
 
     def format_iso(self) -> str:
         """Format as the *popular interpretation* of the ISO 8601 duration format.
@@ -5417,7 +5423,9 @@ class _BasicConversions(_Base, ABC):
             WheneverDeprecationWarning,
             stacklevel=2,
         )
-        return cls(d)
+        self = _object_new(cls)
+        self._init_from_py(d)  # type: ignore[attr-defined]
+        return self
 
     def to_stdlib(self) -> _datetime:
         """Convert to a standard library :class:`~datetime.datetime`
@@ -7206,12 +7214,13 @@ class OffsetDateTime(_ExactAndLocalTime):
         round_increment: int = _UNSET,
     ) -> ItemizedDelta | float:
         """Inverse of the ``since()`` method. See :meth:`since` for more information."""
-        return b.since(  # type: ignore[call-overload, no-any-return]
+        return _offset_since(
+            b,
             self,
-            total=total,
-            in_units=in_units,
-            round_mode=round_mode,
-            round_increment=round_increment,
+            total or None,
+            None if in_units is _UNSET else in_units,
+            round_mode,
+            round_increment,
         )
 
     def __repr__(self) -> str:
@@ -8003,15 +8012,12 @@ class ZonedDateTime(_ExactAndLocalTime):
                 raise TypeError(
                     "'round_mode' and 'round_increment' cannot be used with 'total'"
                 )
-            _unit_index(total, DELTA_UNITS)
-            if total in DATE_DELTA_UNITS:
-                if self.tz != b.tz:
-                    raise ValueError(
-                        "Calendar units can only be used to compare ZonedDateTimes "
-                        "with the same timezone"
-                    )
-                return (self - b).total(total, relative_to=b)
-            return (self - b).total(total)
+            if total in DATE_DELTA_UNITS and self.tz != b.tz:
+                raise ValueError(
+                    "Calendar units can only be used to compare ZonedDateTimes "
+                    "with the same timezone"
+                )
+            return (self - b).total(total, relative_to=b)
         elif in_units is _UNSET:
             raise TypeError("Must specify either `total` or `in_units`")
         effective_increment = (
@@ -8712,15 +8718,18 @@ class PlainDateTime(_LocalTime):
                     TimeZoneUnawareArithmeticWarning,
                     stacklevel=2,
                 )
-            py_delta = self._py_dt - other._py_dt
-            return TimeDelta(
-                seconds=py_delta.days * 86_400 + py_delta.seconds,
-                nanoseconds=self._nanos - other._nanos,
-            )
+            return self._sub(other)
         elif isinstance(other, (DateDelta, DateTimeDelta)):
             return self + -other
         else:
             return NotImplemented
+
+    def _sub(self, other: PlainDateTime) -> TimeDelta:
+        py_delta = self._py_dt - other._py_dt
+        return TimeDelta(
+            seconds=py_delta.days * 86_400 + py_delta.seconds,
+            nanoseconds=self._nanos - other._nanos,
+        )
 
     def difference(
         self, other: PlainDateTime, /, *, ignore_dst: bool = _UNSET
@@ -8823,12 +8832,13 @@ class PlainDateTime(_LocalTime):
         round_increment: int = _UNSET,
     ) -> ItemizedDelta | float:
         """Inverse of the ``since()`` method. See :meth:`since` for more information."""
-        return b.since(  # type: ignore[call-overload, no-any-return]
+        return _plain_since(
+            b,
             self,
-            total=total,
-            in_units=in_units,
-            round_mode=round_mode,
-            round_increment=round_increment,
+            total or None,
+            None if in_units is _UNSET else in_units,
+            round_mode,
+            round_increment,
         )
 
     @overload
@@ -9503,9 +9513,7 @@ def _plain_since(
     in_units: Sequence[DeltaUnitStr] | None,
     round_mode: RoundModeStr = _UNSET,
     round_increment: int = _UNSET,
-    warn_msg: str | None = PLAIN_DIFF_UNAWARE_MSG,
-    warn_cls: type[Warning] = TimeZoneUnawareArithmeticWarning,
-    warn_check: ContextVar[bool] = _ignore_timezone_unaware_arithmetic_warning,
+    emit_warn: bool = True,
 ) -> ItemizedDelta | float:
     """Shared since() implementation for PlainDateTime and OffsetDateTime.
     Days are always 24 hours (no DST adjustments).
@@ -9517,15 +9525,7 @@ def _plain_since(
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
             )
-        _unit_index(total, DELTA_UNITS)  # validate before emitting warning
-        # Compute TimeDelta without going through PlainDateTime.__sub__,
-        # which would trigger the warning. total() handles the warning itself.
-        d = self._py_dt - b._py_dt
-        diff_td = TimeDelta(
-            seconds=d.days * 86_400 + d.seconds,
-            nanoseconds=self._nanos - b._nanos,
-        )
-        return diff_td.total(total, relative_to=b, _warn_stacklevel=4)
+        return self._sub(b).total(total, relative_to=b, _warn_stacklevel=4)
     elif in_units is None:
         raise TypeError("Must specify either `total` or `in_units`")
 
@@ -9534,10 +9534,10 @@ def _plain_since(
     units = _normalize_units(in_units, valid_units=DELTA_UNITS)
     cal_units, exact_units = _split_calendar_and_exact_units(units)
 
-    if warn_msg and not warn_check.get():
+    if emit_warn and not _ignore_timezone_unaware_arithmetic_warning.get():
         warn(
-            warn_msg,
-            warn_cls,
+            PLAIN_DIFF_UNAWARE_MSG,
+            TimeZoneUnawareArithmeticWarning,
             stacklevel=3,
         )
 
@@ -9631,26 +9631,16 @@ def _offset_since(
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
             )
-        _unit_index(total, DELTA_UNITS)  # validate before emitting warning
         if total in ("years", "months") and not same_offset:
             raise ValueError(
                 "Calendar units can only be used to compare OffsetDateTimes "
                 "with the same offset"
             )
-        if same_offset and total in ("years", "months"):
-            # Compute TimeDelta from raw fields; total() handles the warning.
-            d = self._py_dt - b._py_dt
-            diff_td = TimeDelta(
-                seconds=d.days * 86_400 + d.seconds,
-                nanoseconds=self._nanos - b._nanos,
-            )
-            return diff_td.total(total, relative_to=b, _warn_stacklevel=4)
-        else:
-            # Exact units: instant-based (offset-independent)
-            diff_ns = self._subtract_operator(b)._total_ns
-            if total == "nanoseconds":
-                return diff_ns
-            return float(diff_ns) / NS_PER_UNIT_PLURAL[total]
+        return self._subtract_operator(b).total(
+            total, relative_to=b, _warn_stacklevel=4
+        )
+    elif in_units is None:
+        raise TypeError("Must specify either `total` or `in_units`")
 
     effective_increment = 1 if round_increment is _UNSET else round_increment
     effective_round_mode = "trunc" if round_mode is _UNSET else round_mode
@@ -9672,7 +9662,7 @@ def _offset_since(
             in_units,
             effective_round_mode,
             effective_increment,
-            warn_msg=None,
+            emit_warn=False,
         )
     else:
         # Different offsets, exact units only: compute via TimeDelta
@@ -9692,12 +9682,10 @@ _Tstr = TypeVar("_Tstr", bound=str)
 
 
 def _normalize_units(
-    units: Sequence[str] | None,
+    units: Sequence[str],
     valid_units: Sequence[_Tstr],
 ) -> Sequence[_Tstr]:
-    if units is None:
-        raise TypeError("Must specify 'in_units'")
-    elif not units:
+    if not units:
         raise ValueError("At least one unit must be specified")
     else:
         if sorted(units, key=lambda u: _unit_index(u, valid_units)) != list(

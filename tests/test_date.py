@@ -3,6 +3,7 @@ import re
 from copy import copy, deepcopy
 from datetime import date as py_date, datetime as py_datetime
 from itertools import chain, product
+from typing import Literal
 
 import pytest
 
@@ -615,7 +616,13 @@ class TestSinceAndUntil:
             (Date(2021, 4, 30), Date(2021, 5, 4), "days", -4.0),
         ],
     )
-    def test_single_unit(self, d1: Date, d2: Date, unit: str, expected: float):
+    def test_single_unit(
+        self,
+        d1: Date,
+        d2: Date,
+        unit: Literal["years", "months", "weeks", "days"],
+        expected: float,
+    ):
         result = d1.since(d2, total=unit)
         assert isinstance(result, float)
         assert result == expected

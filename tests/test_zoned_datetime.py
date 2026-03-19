@@ -4563,7 +4563,7 @@ class TestSince:
             a.since(
                 b,
                 total="hours",  # type: ignore[call-overload]
-                in_units=["hours"],  # type: ignore[call-overload]
+                in_units=["hours"],
             )
 
     def test_total_with_round_mode_raises(self):

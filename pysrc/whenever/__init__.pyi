@@ -466,6 +466,38 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         "Use in_units(['hours', 'minutes', 'seconds', 'nanoseconds']) instead"
     )
     def in_hrs_mins_secs_nanos(self) -> tuple[int, int, int, int]: ...
+    @overload
+    def in_units(
+        self,
+        units: Sequence[
+            Literal[
+                "years",
+                "months",
+                "weeks",
+                "days",
+                "hours",
+                "minutes",
+                "seconds",
+                "nanoseconds",
+            ]
+        ],
+        /,
+        *,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = ...,
+        relative_to: ZonedDateTime,
+    ) -> ItemizedDelta: ...
+    @overload
     def in_units(
         self,
         units: Sequence[
@@ -492,6 +524,8 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
             "half_even",
         ] = "trunc",
         round_increment: int = ...,
+        # TODO: support other local datetimes?
+        relative_to: ZonedDateTime = ...,
     ) -> ItemizedDelta: ...
     def to_stdlib(self) -> _timedelta: ...
     @deprecated("Use to_stdlib() instead")

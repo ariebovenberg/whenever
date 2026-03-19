@@ -42,5 +42,5 @@ OffsetMismatchStr: TypeAlias = Literal["raise", "keep_instant", "keep_local"]
 # we override the above type aliases with proper type aliases in Python 3.12
 try:
     from ._typing_312 import *  # noqa
-except ImportError:  # pragma: no cover
+except SyntaxError:  # pragma: no cover
     pass
