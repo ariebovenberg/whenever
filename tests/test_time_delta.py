@@ -1730,7 +1730,7 @@ class TestInUnits:
     def test_invalid_round_mode(self):
         d = TimeDelta(hours=1)
         with pytest.raises(ValueError, match="Invalid.*rounding mode.*foo"):
-            d.in_units(["hours"], round_mode="foo")  # type: ignore[arg-type]
+            d.in_units(["hours"], round_mode="foo")  # type: ignore[call-overload]
 
     def test_24h_days_warning(self):
         d = TimeDelta(hours=49)
@@ -1754,7 +1754,7 @@ class TestInUnits:
         with pytest.raises(
             TypeError, match="months.*relative_to|years.*relative_to"
         ):
-            d.in_units(["years", "months"])  # type: ignore[call-overload]
+            d.in_units(["years", "months"])  # type: ignore[list-item]
 
     def test_calendar_units_with_relative_to(self):
         d = TimeDelta(hours=3360)

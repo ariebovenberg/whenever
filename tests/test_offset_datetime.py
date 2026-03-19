@@ -2163,7 +2163,7 @@ class TestSince:
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            result_exact = a.since(b, total="hours")
+            a.since(b, total="hours")
 
     def test_very_large_increment(self):
         a = OffsetDateTime(2023, 2, 15, offset=9)
@@ -2183,7 +2183,7 @@ class TestSince:
             a.since(
                 b,
                 total="hours",  # type: ignore[call-overload]
-                in_units=["hours"],  # type: ignore[call-overload]
+                in_units=["hours"],
             )
 
     def test_total_with_round_mode_raises(self):

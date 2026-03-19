@@ -1300,7 +1300,7 @@ fn offset_since(
                     if !state.cv_ignore_potentially_stale_offset.get()? {
                         warn_with_class(
                             state.warn_potentially_stale_offset,
-                            doc::OFFSET_CALENDAR_STALE_MSG,
+                            doc::STALE_OFFSET_CALENDAR_MSG,
                             3,
                         )?;
                     }

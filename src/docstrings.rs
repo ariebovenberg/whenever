@@ -19,7 +19,7 @@ Date(\"2021-01-02\")
 
 Dates support arithmetic with :class:`~whenever.ItemizedDateDelta`:
 
->>> delta = Date(\"2021-02-28\").since(Date(\"1994-05-15\"), units=[\"years\", \"days\"])
+>>> delta = Date(\"2021-02-28\").since(Date(\"1994-05-15\"), in_units=[\"years\", \"days\"])
 ItemizedDateDelta(\"P26y289d\")
 >>> Date(\"1994-05-15\").add(delta)
 Date(\"2021-02-28\")
@@ -117,7 +117,8 @@ ItemizedDateDelta(\"P2Y3W\")
 'P22W'
 
 It behaves like a mapping where the keys are
-the unit names and the values are the amounts:
+the unit names and the values are the amounts.
+Items are ordered from largest to smallest unit.
 
 >>> d['weeks']
 22
@@ -182,7 +183,8 @@ ItemizedDelta(\"P2w3dT14h\")
 'P2w3dT14h'
 
 It behaves like a mapping where the keys are
-the unit names and the values are the amounts:
+the unit names and the values are the amounts.
+Items are ordered from largest to smallest unit.
 
 >>> d['weeks']
 2
@@ -701,40 +703,48 @@ Create a new instance with the given fields replaced
 Date(\"2021-01-04\")
 ";
 pub(crate) const DATE_SINCE: &CStr = c"\
-since($self, b, /, *, unit=None, units=None, round_mode='trunc', round_increment=1)
+since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
 --
 
 Calculate the difference between this date and another date.
 The difference is calculated in terms of the chosen calendar unit
 or units.
 
+>>> d = Date(2023, 4, 15)
+>>> d.since(Date(\"2020-01-01\"), in_units=[\"years\", \"months\"])
+ItemizedDateDelta(\"P3y3m\")
+
+>>> d.since(Date(\"2020-01-01\"), total=\"weeks\")
+170.0
+
 Parameters
 ----------
 other
     The date to calculate the difference since.
-unit
-    If specified, the difference is calculated in terms of this single
-    unit. Cannot be combined with `units`.
-units
+total
+    If specified, the difference is returned as a float in terms
+    of this single unit. Cannot be combined with ``in_units``.
+
+    The fractional part is based on the number of days in the
+    surrounding calendar period — not a fixed conversion factor.
+    For example, 6 months from January 1 spans 181 days of a
+    365-day year, giving approximately 0.496 years, not 0.5.
+in_units
     If specified, the difference is calculated in terms of these units,
-    in decreasing order of size. Cannot be combined with `unit`.
+    in decreasing order of size. Cannot be combined with ``total``.
 round_mode
     The rounding mode to apply to the smallest specified unit.
-    Default is \"floor\".
+    Only valid with ``in_units``.
 round_increment
     The increment to round to for the smallest specified unit.
-    Default is 1.
+    Only valid with ``in_units``.
 
 Returns
 -------
-ItemizedDateDelta | int
-    If multiple units are specified, the difference is returned
+ItemizedDateDelta | float
+    If ``in_units`` is specified, the difference is returned
     as an :class:`ItemizedDateDelta`,
-    otherwise as an integer number of the specified unit.
-
->>> d1 = Date(2023, 4, 15)
->>> d2.since(Date(\"2020-01-01\"), units=[\"years\", \"months\"])
-ItemizedDateDelta(years=3, months=3)
+    If ``total`` is specified, as a float number of the specified unit.
 
 ";
 pub(crate) const DATE_SUBTRACT: &CStr = c"\
@@ -762,7 +772,7 @@ Alias for ``Instant.now().to_system_tz().date()``.
 Date(\"2021-01-02\")
 ";
 pub(crate) const DATE_UNTIL: &CStr = c"\
-until($self, b, /, *, unit=None, units=None, round_mode='trunc', round_increment=1)
+until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
 --
 
 Companion to :meth:`since` that calculates the difference until another date.
@@ -1036,7 +1046,7 @@ Subtract a time amount from this instant.
 See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
 ";
 pub(crate) const ITEMIZEDDATEDELTA_ADD: &CStr = c"\
-add($self, arg=..., /, *, relative_to, units, round_mode='trunc', round_increment=1, **kwargs)
+add($self, arg=..., /, *, relative_to, in_units, round_mode='trunc', round_increment=1, **kwargs)
 --
 
 Add time to this delta, returning a new delta";
@@ -1116,15 +1126,15 @@ ItemizedDateDelta(\"P1y4w\")
 pub(crate) const ITEMIZEDDATEDELTA_SIGN: &CStr = c"\
 The sign of the delta, whether it's positive, negative, or zero.
 
->>> ItemizedDateDelta(weeks=2).sign
+>>> ItemizedDateDelta(weeks=2).sign()
 1
->>> ItemizedDateDelta(days=-3).sign
+>>> ItemizedDateDelta(days=-3).sign()
 -1
->>> ItemizedDateDelta(weeks=0).sign
+>>> ItemizedDateDelta(weeks=0).sign()
 0
 ";
 pub(crate) const ITEMIZEDDATEDELTA_SUBTRACT: &CStr = c"\
-subtract($self, arg=..., /, *, relative_to, units, round_mode='trunc', round_increment=1, **kwargs)
+subtract($self, arg=..., /, *, relative_to, in_units, round_mode='trunc', round_increment=1, **kwargs)
 --
 
 Subtract time from this delta, returning a new delta";
@@ -1140,7 +1150,7 @@ Return the total duration expressed in the specified unit as a float
 2.73972602739726
 ";
 pub(crate) const ITEMIZEDDELTA_ADD: &CStr = c"\
-add($self, arg=..., /, *, relative_to, units, round_mode='trunc', round_increment=1, **kwargs)
+add($self, arg=..., /, *, relative_to, in_units, round_mode='trunc', round_increment=1, **kwargs)
 --
 
 Add time to this delta, returning a new delta";
@@ -1244,7 +1254,7 @@ ItemizedDelta(\"P1yT2h\")
 pub(crate) const ITEMIZEDDELTA_SIGN: &CStr = c"\
 The sign of the delta, 1, 0, or -1";
 pub(crate) const ITEMIZEDDELTA_SUBTRACT: &CStr = c"\
-subtract($self, arg=..., /, *, relative_to, units, round_mode='trunc', round_increment=1, **kwargs)
+subtract($self, arg=..., /, *, relative_to, in_units, round_mode='trunc', round_increment=1, **kwargs)
 --
 
 Inverse of :meth:`add`.";
@@ -1539,7 +1549,7 @@ using :meth:`assume_tz`.
 Suppress with :func:`~whenever.ignore_potentially_stale_offset_warning`.
 ";
 pub(crate) const OFFSETDATETIME_SINCE: &CStr = c"\
-since($self, b, /, *, unit=None, units=None, round_mode='trunc', round_increment=1)
+since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
 --
 
 Calculate the duration since another OffsetDateTime,
@@ -1547,7 +1557,7 @@ in terms of the specified units.
 
 >>> d1 = OffsetDateTime(2020, 8, 15, 23, 12, offset=2)
 >>> d2 = OffsetDateTime(2020, 8, 14, 22, offset=2)
->>> d1.since(d2, units=[\"hours\", \"minutes\"],
+>>> d1.since(d2, in_units=[\"hours\", \"minutes\"],
 ...          round_increment=15,
 ...          round_mode=\"ceil\")
 ItemizedDelta(\"PT25h15m\")
@@ -1564,7 +1574,7 @@ Subtract a time amount from this datetime.
 See :meth:`add` for more information.
 ";
 pub(crate) const OFFSETDATETIME_UNTIL: &CStr = c"\
-until($self, b, /, *, unit=None, units=None, round_mode='trunc', round_increment=1)
+until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
 --
 
 Inverse of the ``since()`` method. See :meth:`since` for more information.";
@@ -1724,7 +1734,7 @@ This method has similar behavior to the ``round()`` method of
 Temporal objects in JavaScript.
 ";
 pub(crate) const PLAINDATETIME_SINCE: &CStr = c"\
-since($self, b, /, *, unit=None, units=None, round_mode='trunc', round_increment=1)
+since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
 --
 
 Calculate the duration since another PlainDateTime,
@@ -1732,7 +1742,7 @@ in terms of the specified units.
 
 >>> d1 = PlainDateTime(2020, 8, 15, 23, 12)
 >>> d2 = PlainDateTime(2020, 8, 14, 22)
->>> d1.since(d2, units=[\"hours\", \"minutes\"],
+>>> d1.since(d2, in_units=[\"hours\", \"minutes\"],
 ...          round_increment=15,
 ...          round_mode=\"ceil\")
 ItemizedDelta(\"PT25h15m\")
@@ -1746,7 +1756,7 @@ Subtract a time amount from this datetime.
 See :meth:`add` for more information.
 ";
 pub(crate) const PLAINDATETIME_UNTIL: &CStr = c"\
-until($self, b, /, *, unit=None, units=None, round_mode='trunc', round_increment=1)
+until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
 --
 
 Inverse of the ``since()`` method. See :meth:`since` for more information.";
@@ -2089,10 +2099,19 @@ Nanoseconds are truncated to microseconds.
 If you need more control over rounding, use :meth:`round` first.
 ";
 pub(crate) const TIMEDELTA_TOTAL: &CStr = c"\
-total($self, unit, relative_to=...)
+total($self, unit, relative_to=..., _warn_stacklevel=2)
 --
 
 The total size in the given unit, as a float (or int for nanoseconds)
+
+For calendar units (years, months, weeks, days), a ``relative_to``
+argument is required to determine the actual duration of each unit:
+
+- :class:`ZonedDateTime`: DST-aware; emits no warning
+- :class:`PlainDateTime`: no timezone context; emits
+  :class:`TimeZoneUnawareArithmeticWarning`
+- :class:`OffsetDateTime`: fixed offset; emits
+  :class:`PotentiallyStaleOffsetWarning`
 
 >>> d = TimeDelta(hours=1, minutes=30)
 >>> d.total('minutes')
@@ -2379,7 +2398,7 @@ Notes
   Temporal objects in JavaScript.
 ";
 pub(crate) const ZONEDDATETIME_SINCE: &CStr = c"\
-since($self, b, /, *, unit=None, units=None, round_mode='trunc', round_increment=1)
+since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
 --
 
 Calculate the duration since another ZonedDateTime,
@@ -2387,7 +2406,7 @@ in terms of the specified units.
 
 >>> d1 = ZonedDateTime(\"2020-08-15T23:12:00+01:00[Europe/London]\")
 >>> d2 = ZonedDateTime(\"2020-08-14T22:00:00+09:00[Asia/Tokyo]\")
->>> d1.since(d2, units=[\"hours\", \"minutes\"],
+>>> d1.since(d2, in_units=[\"hours\", \"minutes\"],
 ...          round_increment=15,
 ...          round_mode=\"ceil\")
 ItemizedDelta(\"PT33h15m\")
@@ -2426,7 +2445,7 @@ but it is commonly used in human-readable formats.
 Use the timezone ID (e.g. ``\"Europe/London\"``) for unambiguous identification of timezones.
 ";
 pub(crate) const ZONEDDATETIME_UNTIL: &CStr = c"\
-until($self, b, /, *, unit=None, units=None, round_mode='trunc', round_increment=1)
+until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
 --
 
 Inverse of the ``since()`` method. See :meth:`since` for more information.";
@@ -2601,8 +2620,8 @@ pub(crate) const OFFSET_NOW_STALE_MSG: &CStr = c"Getting the current time as an 
 pub(crate) const OFFSET_REPLACE_STALE_MSG: &CStr = c"Replacing fields of an OffsetDateTime keeps the fixed UTC offset, which may no longer be correct after the change (e.g. replacing the month on a European-timezone datetime may move it into a different DST period). Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware field replacement. Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, or with Python's standard warning filters.";
 pub(crate) const OFFSET_ROUND_STALE_MSG: &CStr = c"Rounding an OffsetDateTime keeps the fixed UTC offset, which may not be accurate in the rare case that the rounded time crosses a DST or other timezone boundary. Convert to a ZonedDateTime first (using .assume_tz()) for timezone-aware rounding. Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, or with Python's standard warning filters.";
 pub(crate) const OFFSET_SHIFT_STALE_MSG: &CStr = c"Shifting an OffsetDateTime keeps the fixed UTC offset, which may not match the actual offset after a DST or other timezone transition (e.g. adding 1 day to 2024-03-09 12:00-07:00 gives 2024-03-10 12:00-07:00, but if this offset represents Denver, Colorado (America/Denver), the actual offset changed to -06:00 on that date). Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware arithmetic. Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, or with Python's standard warning filters.";
-pub(crate) const OFFSET_CALENDAR_STALE_MSG: &CStr = c"Computing calendar units (years, months, weeks, days) relative to an OffsetDateTime assumes the UTC offset remains constant throughout the period. If the region has since changed its rules (e.g. DST), the result may be off by an hour. Use ZonedDateTime for DST-aware calendar arithmetic. Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, or with Python's standard warning filters.";
 pub(crate) const PLAIN_DIFF_UNAWARE_MSG: &CStr = c"Calculating the difference between two PlainDateTime values does not account for timezone transitions that may have occurred between them: for example, PlainDateTime(2023, 3, 26, 3, 0) - PlainDateTime(2023, 3, 26, 1, 0) gives 2h, but in Amsterdam clocks jumped from 2:00 to 3:00 that morning, so only 1 real hour elapsed. Use .assume_tz('<tz>') for both values if you know the timezone. Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, or with Python's standard warning filters.";
 pub(crate) const PLAIN_SHIFT_UNAWARE_MSG: &CStr = c"Shifting a PlainDateTime by exact time units does not account for timezone transitions that may occur in the interval (e.g. adding 2 hours to 2023-03-26 01:30 in Amsterdam crosses the spring-forward transition, so only 1 real hour has passed). Use .assume_tz('<tz>') + delta if you know the timezone. Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, or with Python's standard warning filters.";
+pub(crate) const STALE_OFFSET_CALENDAR_MSG: &CStr = c"Computing calendar units (years, months, weeks, days) relative to an OffsetDateTime assumes the UTC offset remains constant throughout the period. If the region has since changed its rules (e.g. DST), the result may be off by an hour. Use ZonedDateTime for DST-aware calendar arithmetic. Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, or with Python's standard warning filters.";
 pub(crate) const ZONEINFO_NO_KEY_MSG: &CStr = c"Can't determine the IANA timezone ID of the given datetime: The 'key' attribute of the datetime's ZoneInfo object is None. 
 This typically means the ZoneInfo object represents the system timezone with an unknown ID. As an alternative, you can use OffsetDateTime.from_py_datetime(), but be aware this is a lossy conversion that only preserves the current UTC offset and discards future daylight saving rules. Please note that a timezone abbreviation like 'CEST' from datetime.tzname() is not a valid IANA timezone ID and cannot be used here.";

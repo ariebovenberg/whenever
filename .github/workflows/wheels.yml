@@ -90,9 +90,9 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --strip --out dist --interpreter '3.9 3.10 3.11 3.12 3.13 3.13t 3.14 3.14t'
+          args: --release --strip --out dist --interpreter '3.10 3.11 3.12 3.13 3.14 3.13t 3.14t'
           manylinux: ${{ matrix.manylinux || 'auto' }}
-          rust-toolchain: "1.92"
+          rust-toolchain: "1.93"
       - run: pip install -U twine packaging
       - run: twine check --strict dist/*
       - name: Upload wheels
@@ -127,21 +127,23 @@ jobs:
     runs-on: ubuntu-latest
     if: "startsWith(github.ref, 'refs/tags/')"
     needs: [binary, pure-python]
+    environment: Release
+    permissions:
+      id-token: write
     steps:
       - uses: actions/download-artifact@v4
-      - run: pip install -U twine packaging
       - name: Sanity check wheel count
         run: |
           COUNT=$(find wheels-* -maxdepth 1 -type f | wc -l)
-          EXPECTED=114
+          EXPECTED=100
 
           if [ "$COUNT" -ne "$EXPECTED" ]; then
             echo "Expected exactly $EXPECTED wheels, found $COUNT"
             exit 1
           fi
-      - name: Publish to PyPI
+      - name: Gather wheels
         run: |
-          twine upload --non-interactive --disable-progress-bar --skip-existing wheels-*/*
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+          mkdir -p dist
+          mv wheels-*/* dist
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
