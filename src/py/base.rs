@@ -80,7 +80,7 @@ impl PyObj {
     }
 
     pub(crate) fn is_none(&self) -> bool {
-        self.as_ptr() == unsafe { Py_None() }
+        unsafe { Py_IsNone(self.as_ptr()) != 0 }
     }
 
     pub(crate) fn to_tuple(self) -> PyResult<Owned<PyTuple>> {

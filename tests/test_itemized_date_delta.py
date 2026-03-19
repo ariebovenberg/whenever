@@ -43,7 +43,7 @@ class TestInit:
     )
     def test_simple_valid(self, kwargs, expect_sign: int):
         d = ItemizedDateDelta(**kwargs)
-        assert d.sign == expect_sign
+        assert d.sign() == expect_sign
         for unit in UNITS:
             assert d.get(unit, 0) == kwargs.get(unit, 0)
 
@@ -438,7 +438,7 @@ class TestAddSub:
                 ItemizedDateDelta(years=1, months=2),
                 Date("2021-12-31"),
                 ItemizedDateDelta(years=3, months=5),
-                {"units": ["years", "months"]},
+                {"in_units": ["years", "months"]},
             ),
             # with carry
             (
@@ -446,7 +446,7 @@ class TestAddSub:
                 ItemizedDateDelta(years=1, months=8, weeks=3, days=30),
                 Date("2021-12-31"),
                 ItemizedDateDelta(years=4, months=1, weeks=3, days=1),
-                {"units": ["years", "months", "weeks", "days"]},
+                {"in_units": ["years", "months", "weeks", "days"]},
             ),
             # different units
             (
@@ -454,7 +454,7 @@ class TestAddSub:
                 ItemizedDateDelta(years=1, months=8, days=30),
                 Date("0021-08-03"),
                 ItemizedDateDelta(years=3, months=9, days=5),
-                {"units": ["years", "months", "days"]},
+                {"in_units": ["years", "months", "days"]},
             ),
             # customized output kwargs
             (
@@ -463,7 +463,7 @@ class TestAddSub:
                 Date("0021-08-03"),
                 ItemizedDateDelta(months=45, weeks=2),
                 {
-                    "units": ["months", "weeks"],
+                    "in_units": ["months", "weeks"],
                     "round_mode": "expand",
                     "round_increment": 2,
                 },
@@ -474,7 +474,7 @@ class TestAddSub:
                 ItemizedDateDelta(years=-2, months=-3),
                 Date("2021-12-31"),
                 ItemizedDateDelta(years=0, months=0),
-                {"units": ["years", "months"]},
+                {"in_units": ["years", "months"]},
             ),
             # negative arg, positive result
             (
@@ -482,7 +482,7 @@ class TestAddSub:
                 ItemizedDateDelta(years=-1, months=-4),
                 Date("2021-12-31"),
                 ItemizedDateDelta(years=0, months=11),
-                {"units": ["years", "months"]},
+                {"in_units": ["years", "months"]},
             ),
             # negative arg, negative result
             (
@@ -490,7 +490,7 @@ class TestAddSub:
                 ItemizedDateDelta(years=-1, months=-20),
                 Date("2021-12-31"),
                 ItemizedDateDelta(years=-0, months=-5),
-                {"units": ["years", "months"]},
+                {"in_units": ["years", "months"]},
             ),
         ],
     )
@@ -532,7 +532,7 @@ class TestAddSub:
                 years=-1,
                 months=3,
                 relative_to=Date("2021-12-31"),
-                units=["years", "months"],
+                in_units=["years", "months"],
             )
             .exact_eq(ItemizedDateDelta(years=1, months=3))
         )
@@ -543,18 +543,18 @@ class TestAddSub:
                 ItemizedDateDelta(years=1),
                 years=3,
                 relative_to=Date("2021-12-31"),
-                units=["years"],
+                in_units=["years"],
             )
 
     def test_add_nothing(self):
         ItemizedDateDelta(years=2).add(
             relative_to=Date("2021-12-31"),
-            units=["years", "months"],
+            in_units=["years", "months"],
         ).exact_eq(ItemizedDateDelta(years=2))
 
     def test_add_nothing_changes_units(self):
         ItemizedDateDelta(years=2).add(
-            relative_to=Date("2021-12-31"), units=["months", "days"]
+            relative_to=Date("2021-12-31"), in_units=["months", "days"]
         ).exact_eq(ItemizedDateDelta(months=24, days=0))
 
     def test_invalid_unit_kwarg(self):
@@ -562,7 +562,7 @@ class TestAddSub:
             ItemizedDateDelta(years=2).add(  # type: ignore[call-overload]
                 foo=5,
                 relative_to=Date("2021-12-31"),
-                units=["years", "months"],
+                in_units=["years", "months"],
             )
 
     def test_overflows(self):
@@ -570,7 +570,7 @@ class TestAddSub:
             ItemizedDateDelta(years=5_000).add(
                 years=5_000,
                 relative_to=Date("2021-12-31"),
-                units=["years"],
+                in_units=["years"],
             )
 
         # Overflow due to relative_to
@@ -578,7 +578,7 @@ class TestAddSub:
             ItemizedDateDelta(years=5).add(
                 months=29,
                 relative_to=Date("9994-12-31"),
-                units=["years", "months"],
+                in_units=["years", "months"],
             )
 
     def test_floor_round_mode_behaves_correctly_on_negative(self):
@@ -590,7 +590,7 @@ class TestAddSub:
             relative_to=Date("2021-11-20"),
             round_mode="floor",
             round_increment=2,
-            units=["years", "months"],
+            in_units=["years", "months"],
         ).exact_eq(ItemizedDateDelta(years=-3, months=-10))
 
     def test_month_clamping_avoided_by_summing_first(self):
@@ -600,7 +600,7 @@ class TestAddSub:
         # Jan 31 + 2 months = Mar 31.
         assert (
             ItemizedDateDelta(months=1)
-            .add(months=1, relative_to=Date(2021, 1, 31), units=["months"])
+            .add(months=1, relative_to=Date(2021, 1, 31), in_units=["months"])
             .exact_eq(ItemizedDateDelta(months=2))
         )
 
@@ -692,14 +692,14 @@ def test_neg():
 def test_bool():
     d_zero = ItemizedDateDelta(days=0)
     assert not d_zero
-    assert d_zero.sign == 0
+    assert d_zero.sign() == 0
 
     assert not ItemizedDateDelta(years=0)
-    assert ItemizedDateDelta(weeks=0).sign == 0
+    assert ItemizedDateDelta(weeks=0).sign() == 0
 
     d_nonzero = ItemizedDateDelta(weeks=1, days=0)
     assert d_nonzero
-    assert d_nonzero.sign == 1
+    assert d_nonzero.sign() == 1
 
 
 @pytest.mark.parametrize(

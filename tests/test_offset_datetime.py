@@ -2121,20 +2121,15 @@ class TestSince:
         kwargs: dict[str, Any],
         expect: ItemizedDelta,
     ):
-        assert a.since(b, units=units, **kwargs).exact_eq(expect)
-
-        if len(units) == 1:
-            assert (
-                a.since(b, unit=units[0], **kwargs) == list(expect.values())[0]
-            )
+        assert a.since(b, in_units=units, **kwargs).exact_eq(expect)
 
     def test_calendar_units_different_offset_raises(self):
         a = OffsetDateTime(2023, 10, 29, offset=2)
         b = OffsetDateTime(2023, 10, 28, offset=5)
         with pytest.raises(ValueError, match="same offset"):
-            a.since(b, units=["days"])
+            a.since(b, in_units=["days"])
         with pytest.raises(ValueError, match="same offset"):
-            a.until(b, unit="months")
+            a.until(b, total="months")
 
     def test_no_warning(self):
         """No warning should be emitted for OffsetDateTime since/until."""
@@ -2145,22 +2140,30 @@ class TestSince:
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            a.since(b, units=["hours", "minutes"])
-            a.until(b, unit="hours")
+            a.since(b, in_units=["hours", "minutes"])
+            a.until(b, total="hours")
 
     def test_until_is_inverse(self):
         a = OffsetDateTime(2023, 2, 15, hour=3, offset=-5)
         b = OffsetDateTime(2021, 7, 3, offset=-5)
-        assert a.since(b, units=["years", "months", "days", "hours"]).exact_eq(
-            b.until(a, units=["years", "months", "days", "hours"])
-        )
+        assert a.since(
+            b, in_units=["years", "months", "days", "hours"]
+        ).exact_eq(b.until(a, in_units=["years", "months", "days", "hours"]))
 
-    def test_single_unit_returns_int(self):
+    def test_single_unit_returns_float(self):
         a = OffsetDateTime(2025, 3, 15, offset=1)
         b = OffsetDateTime(2023, 3, 15, offset=1)
-        result = a.since(b, unit="years")
-        assert isinstance(result, int)
-        assert result == 2
+        # Calendar unit: warns because offset may not reflect DST history
+        with pytest.warns(PotentiallyStaleOffsetWarning):
+            result = a.since(b, total="years")
+        assert isinstance(result, float)
+        assert result == 2.0
+        # Exact unit: no warning
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result_exact = a.since(b, total="hours")
 
     def test_very_large_increment(self):
         a = OffsetDateTime(2023, 2, 15, offset=9)
@@ -2168,10 +2171,43 @@ class TestSince:
         # round_increment=1<<65 ns exceeds i64::MAX; ceil mode rounds up to 1*(1<<65)
         assert a.since(
             b,
-            units=["seconds", "nanoseconds"],
+            in_units=["seconds", "nanoseconds"],
             round_increment=1 << 65,
             round_mode="ceil",
         ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)
+
+    def test_total_and_in_units_both_raises(self):
+        a = OffsetDateTime(2023, 2, 15, offset=2)
+        b = OffsetDateTime(2021, 7, 3, offset=2)
+        with pytest.raises(TypeError, match="total.*in_units|in_units.*total"):
+            a.since(
+                b,
+                total="hours",  # type: ignore[call-overload]
+                in_units=["hours"],  # type: ignore[call-overload]
+            )
+
+    def test_total_with_round_mode_raises(self):
+        a = OffsetDateTime(2023, 2, 15, offset=2)
+        b = OffsetDateTime(2021, 7, 3, offset=2)
+        with pytest.raises(TypeError, match="round_mode.*total|total.*round"):
+            a.since(
+                b,
+                total="hours",
+                round_mode="floor",  # type: ignore[call-overload]
+            )
+
+    def test_total_nanoseconds_returns_int(self):
+        a = OffsetDateTime(2023, 2, 15, offset=9)
+        b = OffsetDateTime(2023, 2, 14, offset=9)
+        result = a.since(b, total="nanoseconds")
+        assert isinstance(result, int)
+        assert result == 86_400_000_000_000
+
+    def test_no_units_raises(self):
+        a = OffsetDateTime(2023, 2, 15, offset=2)
+        b = OffsetDateTime(2021, 7, 3, offset=2)
+        with pytest.raises(TypeError, match="in_units"):
+            a.since(b)  # type: ignore[call-overload]
 
 
 class TestDeprecations:

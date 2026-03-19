@@ -93,21 +93,7 @@ impl PyDateTime {
     /// long as the PyDateTime object itself is alive.
     pub(crate) fn tzinfo(&self) -> PyObj {
         // SAFETY: calling CPython API with valid arguments
-        unsafe {
-            PyObj::from_ptr_unchecked({
-                #[cfg(Py_3_10)]
-                {
-                    PyDateTime_DATE_GET_TZINFO(self.as_ptr())
-                }
-                #[cfg(not(Py_3_10))]
-                {
-                    // NOTE: We intentionally let the reference be decreffed
-                    // here. This is safe because the PyDateTime object
-                    // will keep at least one reference alive
-                    self.getattr(c"tzinfo").unwrap().as_ptr()
-                }
-            })
-        }
+        unsafe { PyObj::from_ptr_unchecked(PyDateTime_DATE_GET_TZINFO(self.as_ptr())) }
     }
 
     pub(crate) fn date(&self) -> PyDate {

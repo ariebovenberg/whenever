@@ -556,452 +556,71 @@ _EXAMPLE_DATES = [
 class TestSinceAndUntil:
 
     @pytest.mark.parametrize(
-        "d1, d2, unit, delta, kwargs",
+        "d1, d2, unit, expected",
         [
             # ---
-            # years only
+            # years
             # ---
-            # later in the year
-            (Date(2021, 2, 1), Date(2020, 1, 29), "years", 1, {}),
-            # earlier in the year
-            (Date(2021, 2, 1), Date(2019, 8, 31), "years", 1, {}),
-            # same time in the year
-            (Date(2021, 7, 30), Date(2012, 7, 30), "years", 9, {}),
-            # ceil rounding
+            # exact integer: same calendar position
+            (Date(2021, 7, 30), Date(2020, 7, 30), "years", 1.0),
+            (Date(2021, 7, 30), Date(2012, 7, 30), "years", 9.0),
+            (Date(2024, 2, 29), Date(2020, 2, 29), "years", 4.0),
+            # fractional: partway through the year
             (
-                Date(2021, 9, 8),
-                Date(2020, 2, 29),
+                Date(2021, 7, 2),
+                Date(2021, 1, 1),
                 "years",
-                2,
-                {"round_mode": "ceil"},
+                pytest.approx(182 / 365),
             ),
-            # floor rounding results in 0 years
-            (Date(2020, 12, 31), Date(2020, 1, 1), "years", 0, {}),
-            # negative years with various rounding
-            (Date(2019, 2, 1), Date(2020, 1, 29), "years", 0, {}),
-            (
-                Date(2019, 2, 1),
-                Date(2021, 1, 29),
-                "years",
-                -1,
-                {"round_mode": "ceil"},
-            ),
-            (
-                Date(2019, 2, 1),
-                Date(2021, 2, 2),
-                "years",
-                -2,
-                {"round_mode": "ceil"},
-            ),
-            (
-                Date(2019, 2, 1),
-                Date(2022, 1, 29),
-                "years",
-                -3,
-                {"round_mode": "floor"},
-            ),
-            # rounding variations
-            (
-                Date(2025, 9, 1),
-                Date(1994, 10, 3),
-                "years",
-                35,
-                {"round_mode": "ceil", "round_increment": 5},
-            ),
-            (
-                Date(2025, 9, 1),
-                Date(1994, 10, 3),
-                "years",
-                30,
-                {"round_mode": "floor", "round_increment": 5},
-            ),
-            (
-                Date(2025, 9, 1),
-                Date(1994, 10, 3),
-                "years",
-                30,
-                {"round_mode": "half_floor", "round_increment": 5},
-            ),
-            (
-                Date(2025, 9, 1),
-                Date(1994, 10, 3),
-                "years",
-                30,
-                {"round_mode": "half_ceil", "round_increment": 5},
-            ),
-            (
-                Date(2025, 9, 1),
-                Date(1994, 10, 3),
-                "years",
-                30,
-                {"round_mode": "half_trunc", "round_increment": 5},
-            ),
-            (
-                Date(2025, 9, 1),
-                Date(1994, 10, 3),
-                "years",
-                30,
-                {"round_mode": "half_even", "round_increment": 5},
-            ),
-            (
-                Date(2025, 9, 1),
-                Date(1994, 10, 3),
-                "years",
-                30,
-                {"round_mode": "half_expand", "round_increment": 5},
-            ),
-            (
-                Date(2025, 12, 2),
-                Date(1994, 12, 2),
-                "years",
-                30,
-                {"round_mode": "floor", "round_increment": 5},
-            ),
-            (
-                Date(2029, 12, 2),
-                Date(1994, 12, 2),
-                "years",
-                36,
-                {"round_mode": "half_ceil", "round_increment": 3},
-            ),
-            (
-                Date(2029, 12, 2),
-                Date(1994, 12, 2),
-                "years",
-                36,
-                {"round_mode": "half_floor", "round_increment": 3},
-            ),
-            (
-                Date(2029, 12, 2),
-                Date(1994, 12, 2),
-                "years",
-                36,
-                {"round_mode": "half_trunc", "round_increment": 3},
-            ),
-            (
-                Date(2029, 12, 2),
-                Date(1994, 12, 2),
-                "years",
-                36,
-                {"round_mode": "half_expand", "round_increment": 3},
-            ),
-            (
-                Date(2029, 12, 2),
-                Date(1994, 12, 2),
-                "years",
-                36,
-                {"round_mode": "half_even", "round_increment": 3},
-            ),
-            # leap year edge cases
-            (
-                Date(2024, 2, 29),
-                Date(2020, 2, 29),
-                "years",
-                4,
-                {"round_mode": "ceil"},
-            ),
-            (
-                Date(2024, 2, 29),
-                Date(2020, 2, 28),
-                "years",
-                5,
-                {"round_mode": "ceil"},
-            ),
-            (
-                Date(2024, 2, 28),
-                Date(2020, 2, 29),
-                "years",
-                4,
-                {"round_mode": "ceil"},
-            ),
-            (Date(2027, 2, 28), Date(2020, 2, 29), "years", 7, {}),
-            (
-                Date(2021, 2, 28),
-                Date(2020, 2, 29),
-                "years",
-                1,
-                {"round_mode": "ceil"},
-            ),
-            (
-                Date(2029, 3, 1),
-                Date(2020, 2, 29),
-                "years",
-                10,
-                {"round_mode": "ceil"},
-            ),
-            # rounding ties
-            (Date(1996, 8, 14), Date(1992, 2, 13), "years", 4, {}),
-            (
-                Date(1996, 8, 14),
-                Date(1992, 2, 13),
-                "years",
-                5,
-                {"round_mode": "half_ceil"},
-            ),
-            (
-                Date(1996, 8, 14),
-                Date(1992, 2, 13),
-                "years",
-                4,
-                {"round_mode": "half_floor"},
-            ),
-            (
-                Date(1996, 8, 14),
-                Date(1992, 2, 13),
-                "years",
-                4,
-                {"round_mode": "half_even"},
-            ),
-            (
-                Date(1992, 8, 14),
-                Date(1996, 2, 13),
-                "years",
-                -4,
-                {"round_mode": "half_even"},
-            ),
-            (
-                Date(1992, 8, 14),
-                Date(1996, 2, 13),
-                "years",
-                -3,
-                {"round_mode": "half_ceil"},
-            ),
-            (
-                Date(1992, 8, 14),
-                Date(1996, 2, 13),
-                "years",
-                -3,
-                {"round_mode": "half_trunc"},
-            ),
-            (
-                Date(1992, 8, 14),
-                Date(1996, 2, 13),
-                "years",
-                -4,
-                {"round_mode": "half_floor"},
-            ),
-            (
-                Date(1992, 8, 14),
-                Date(1996, 2, 13),
-                "years",
-                -4,
-                {"round_mode": "half_expand"},
-            ),
-            (
-                Date(1997, 8, 14),
-                Date(1992, 2, 13),
-                "years",
-                6,
-                {"round_mode": "half_even", "round_increment": 2},
-            ),
+            # negative
+            (Date(2020, 7, 30), Date(2021, 7, 30), "years", -1.0),
+            # zero
+            (Date(2021, 5, 4), Date(2021, 5, 4), "years", 0.0),
             # ---
             # months
             # ---
-            # earlier in the month
-            (Date(2021, 5, 1), Date(2020, 1, 29), "months", 12 + 3, {}),
-            # later in the month
-            (Date(2021, 5, 31), Date(2020, 1, 30), "months", 12 + 4, {}),
-            # same time in the month
-            (Date(2029, 2, 15), Date(2020, 8, 15), "months", 8 * 12 + 6, {}),
-            # short and long months
-            (Date(2029, 2, 28), Date(2020, 2, 29), "months", 9 * 12, {}),
-            (Date(2029, 3, 29), Date(2020, 2, 29), "months", 9 * 12 + 1, {}),
-            (Date(2029, 9, 30), Date(2020, 5, 31), "months", 9 * 12 + 4, {}),
-            # ceil rounding
+            # exact integer: same calendar day
+            (Date(2021, 3, 15), Date(2021, 2, 15), "months", 1.0),
+            (Date(2021, 7, 30), Date(2020, 7, 30), "months", 12.0),
+            # fractional: 15 days into a 31-day month
             (
-                Date(2021, 9, 8),
-                Date(2020, 2, 29),
+                Date(2021, 3, 16),
+                Date(2021, 3, 1),
                 "months",
-                1 * 12 + 7,
-                {"round_mode": "ceil"},
+                pytest.approx(15 / 31),
             ),
-            # floor rounding results in 0 months
-            (Date(2022, 1, 14), Date(2021, 12, 15), "months", 0, {}),
-            # negative months
-            (Date(2019, 4, 1), Date(2020, 2, 29), "months", -10, {}),
-            (
-                Date(2019, 4, 1),
-                Date(2020, 2, 29),
-                "months",
-                -10,
-                {"round_mode": "ceil"},
-            ),
-            (
-                Date(2019, 4, 1),
-                Date(2020, 2, 29),
-                "months",
-                -10,
-                {"round_mode": "trunc"},
-            ),
-            (
-                Date(2019, 4, 1),
-                Date(2020, 2, 29),
-                "months",
-                -11,
-                {"round_mode": "floor"},
-            ),
-            (
-                Date(2022, 6, 1),
-                Date(2023, 1, 31),
-                "months",
-                -7,
-                {"round_mode": "ceil"},
-            ),
-            (
-                Date(2022, 6, 1),
-                Date(2023, 1, 31),
-                "months",
-                -8,
-                {"round_mode": "half_expand"},
-            ),
-            (
-                Date(2022, 6, 1),
-                Date(2023, 1, 31),
-                "months",
-                -8,
-                {"round_mode": "half_trunc"},
-            ),
-            (
-                Date(2022, 6, 1),
-                Date(2023, 1, 31),
-                "months",
-                -8,
-                {"round_mode": "half_ceil"},
-            ),
-            (
-                Date(2022, 6, 1),
-                Date(2023, 1, 31),
-                "months",
-                -8,
-                {"round_mode": "half_floor"},
-            ),
-            (
-                Date(2022, 7, 1),
-                Date(2023, 2, 16),
-                "months",
-                -7,
-                {"round_mode": "half_trunc"},
-            ),
-            (
-                Date(2022, 7, 1),
-                Date(2023, 2, 16),
-                "months",
-                -7,
-                {"round_mode": "half_ceil"},
-            ),
-            (
-                Date(2022, 7, 1),
-                Date(2023, 2, 16),
-                "months",
-                -8,
-                {"round_mode": "half_floor"},
-            ),
-            # rounding variations
-            (
-                Date(2029, 8, 31),
-                Date(1992, 2, 28),
-                "months",
-                462,
-                {"round_mode": "ceil", "round_increment": 14},
-            ),
-            # leap year edge cases
-            (
-                Date(2024, 2, 29),
-                Date(2020, 2, 29),
-                "months",
-                4 * 12,
-                {"round_mode": "ceil"},
-            ),
-            (
-                Date(2024, 2, 29),
-                Date(2020, 2, 28),
-                "months",
-                4 * 12 + 1,
-                {"round_mode": "ceil"},
-            ),
-            (
-                Date(2023, 2, 28),
-                Date(2020, 2, 29),
-                "months",
-                3 * 12,
-                {"round_mode": "ceil"},
-            ),
-            # rounding ties
-            (
-                Date(1996, 10, 2),
-                Date(1996, 3, 17),
-                "months",
-                7,
-                {"round_mode": "half_ceil"},
-            ),
-            (
-                Date(1996, 10, 2),
-                Date(1996, 3, 17),
-                "months",
-                6,
-                {"round_mode": "half_floor"},
-            ),
+            # negative
+            (Date(2021, 2, 15), Date(2021, 3, 15), "months", -1.0),
             # ---
-            # weeks and days are relatively straightforward
+            # weeks (days / 7)
             # ---
-            (Date(2021, 5, 1), Date(2021, 4, 30), "weeks", 0, {}),
-            (Date(2021, 3, 31), Date(2025, 2, 28), "weeks", -204, {}),
+            (Date(2021, 5, 11), Date(2021, 4, 27), "weeks", 2.0),
             (
-                Date("2029-08-31"),
-                Date("1992-02-29"),
+                Date(2021, 3, 31),
+                Date(2025, 2, 28),
                 "weeks",
-                1960,
-                {"round_increment": 14, "round_mode": "ceil"},
-            ),
-            (Date(2021, 5, 4), Date(2021, 4, 30), "days", 4, {}),
-            (
-                Date(2021, 5, 4),
-                Date(2021, 4, 30),
-                "days",
-                0,
-                {"round_mode": "trunc", "round_increment": 5},
+                pytest.approx(-1430 / 7),
             ),
             (
-                Date(2021, 5, 4),
-                Date(2021, 4, 30),
-                "days",
-                8,
-                {"round_mode": "half_ceil", "round_increment": 8},
+                Date(2021, 5, 12),
+                Date(2021, 4, 27),
+                "weeks",
+                pytest.approx(15 / 7),
             ),
-            # regression tests for negative deltas close to 0
-            (
-                Date(2020, 1, 1),
-                Date(2020, 12, 31),
-                "years",
-                -1,
-                {"round_mode": "expand"},
-            ),
-            (
-                Date(2020, 12, 1),
-                Date(2020, 12, 31),
-                "months",
-                -1,
-                {"round_mode": "expand"},
-            ),
+            # ---
+            # days
+            # ---
+            (Date(2021, 5, 4), Date(2021, 4, 30), "days", 4.0),
+            (Date(2020, 3, 1), Date(2020, 2, 29), "days", 1.0),
+            (Date(2021, 4, 30), Date(2021, 5, 4), "days", -4.0),
         ],
     )
-    def test_single_unit(self, d1: Date, d2: Date, unit, delta: int, kwargs):
-        assert d1.since(d2, unit=unit, **kwargs) == delta
-
-        # same result when specifying as a list
-        if len(unit) == 1:
-            expected_value = ItemizedDateDelta(**{unit: delta})
-            assert d1.since(d2, units=[unit], **kwargs) == expected_value
-
-        # If we compute up to days, we can verify by adding the delta back
-        if unit == "days" and kwargs.get("round_increment", 1) == 1:
-            assert d2.add(**{unit: delta}) == d1
-        # For any floor rounding, we can at least verify the result is <= d1
-        elif kwargs.get("round_mode") == "floor":
-            assert d2.add(**{unit: delta}) <= d1
-        # For ceiling rounding, we can at least verify the result is >= d1
-        elif kwargs.get("round_mode") == "ceil":
-            assert d2.add(**{unit: delta}) >= d1
+    def test_single_unit(self, d1: Date, d2: Date, unit: str, expected: float):
+        result = d1.since(d2, total=unit)
+        assert isinstance(result, float)
+        assert result == expected
+        # until() is the inverse of since()
+        assert d2.until(d1, total=unit) == expected
 
     @pytest.mark.parametrize(
         "d1, d2, units, expected, kwargs",
@@ -1140,7 +759,7 @@ class TestSinceAndUntil:
         ],
     )
     def test_multiple_units(self, d1, d2, units, expected, kwargs):
-        result = d1.since(d2, units=units, **kwargs)
+        result = d1.since(d2, in_units=units, **kwargs)
         assert result == expected
 
         # verify by adding back the delta
@@ -1166,58 +785,54 @@ class TestSinceAndUntil:
     )
     def test_invalid_unit_order(self, units):
         with pytest.raises(ValueError, match="order"):
-            Date(2021, 1, 1).since(Date(2020, 1, 1), units=units)
-
-    def test_range_errors(self):
-        # Near the MIN and MAX boundaries, round() can cause overflows
-        # in intermediate calculations. This is fine for now,
-        # so long as there aren't any truly unexpected exceptions or crashes.
-        d = Date(1992, 1, 1)
-        try:
-            Date.MAX.since(d, unit="years")
-        except (ValueError, OverflowError):
-            pass
-
-        try:
-            Date.MIN.since(d, unit="years")
-        except (ValueError, OverflowError):
-            pass
+            Date(2021, 1, 1).since(Date(2020, 1, 1), in_units=units)
 
     def test_invalid_units(self):
         d = Date(2021, 1, 1)
         # invalid unit in list
         with pytest.raises(ValueError, match="unit.*|foos"):
-            d.since(Date(2020, 1, 1), units=["days", "foos"])  # type: ignore[list-item]
+            d.since(Date(2020, 1, 1), in_units=["days", "foos"])  # type: ignore[list-item]
 
         # invalid single unit
         with pytest.raises(ValueError, match="unit.*|foos"):
-            d.since(Date(2020, 1, 1), unit="foos")  # type: ignore[call-overload]
+            d.since(Date(2020, 1, 1), total="foos")  # type: ignore[call-overload]
 
         # empty units list
         with pytest.raises(
             ValueError, match="units cannot be empty|[Aa]t least one"
         ):
-            d.since(Date(2020, 1, 1), units=())
+            d.since(Date(2020, 1, 1), in_units=())
 
-        # neither unit nor units specified
-        with pytest.raises(TypeError, match="unit.*or.*units"):
+        # neither total nor in_units specified
+        with pytest.raises(
+            TypeError, match="Must specify|total.*or.*in_units"
+        ):
             d.since(Date(2020, 1, 1))  # type: ignore[call-overload]
 
-        # both unit and units specified
+        # both in_unit and in_units specified
         with pytest.raises(TypeError, match="both"):
-            d.since(Date(2020, 1, 1), unit="years", units=("days", "months"))  # type: ignore[call-overload]
+            d.since(Date(2020, 1, 1), total="years", in_units=("days", "months"))  # type: ignore[call-overload]
 
         # duplicate units
         with pytest.raises(ValueError, match="duplicate"):
-            d.since(Date(2020, 1, 1), units=["years", "days", "days"])
+            d.since(Date(2020, 1, 1), in_units=["years", "days", "days"])
 
     def test_invalid_round_mode(self):
         d = Date(2021, 1, 1)
-        with pytest.raises(ValueError, match="round.*mode.*foobar"):
-            d.since(Date(2020, 1, 1), unit="years", round_mode="foobar")  # type: ignore[call-overload]
+        # round_mode and round_increment are not supported with total=
+        with pytest.raises(TypeError, match="round_mode.*total|total.*round"):
+            d.since(Date(2020, 1, 1), total="years", round_mode="floor")  # type: ignore[call-overload]
 
+        with pytest.raises(TypeError, match="round_mode.*total|total.*round"):
+            d.since(Date(2020, 1, 1), total="years", round_increment=2)  # type: ignore[call-overload]
+
+        # even round_increment=1 is rejected (no default magic)
+        with pytest.raises(TypeError, match="round_mode.*total|total.*round"):
+            d.since(Date(2020, 1, 1), total="years", round_increment=1)  # type: ignore[call-overload]
+
+        # round_mode is still valid with in_units
         with pytest.raises(ValueError, match="round.*mode.*foobar"):
-            d.until(Date(2020, 1, 1), unit="years", round_mode="foobar")  # type: ignore[call-overload]
+            d.since(Date(2020, 1, 1), in_units=["years"], round_mode="foobar")  # type: ignore[call-overload]
 
     # `until` behaves very similarly to `since`,
     # so we can just do a few spot checks here.
@@ -1285,7 +900,7 @@ class TestSinceAndUntil:
         ],
     )
     def test_until(self, d1, d2, units, delta, kwargs):
-        result = d1.until(d2, units=units, **kwargs)
+        result = d1.until(d2, in_units=units, **kwargs)
         assert result == delta
         # verify by adding back the delta
         if "days" in units and kwargs.get("round_increment", 1) == 1:
@@ -1556,6 +1171,11 @@ class TestDeprecations:
         with pytest.warns(WheneverDeprecationWarning):
             result = Date.from_py_date(py_date(2021, 1, 2))
         assert result == Date(2021, 1, 2)
+
+    def test_from_py_date_wrong_type(self):
+        with pytest.warns(WheneverDeprecationWarning):
+            with pytest.raises(TypeError):
+                Date.from_py_date(42)  # type: ignore[arg-type]
 
 
 def test_cannot_subclass():

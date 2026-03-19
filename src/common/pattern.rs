@@ -1238,14 +1238,14 @@ pub(crate) fn validate_fields(
     type_name: &str,
 ) -> PyResult<()> {
     for el in elements {
-        if let Element::Field(field) = el {
-            if !allowed.contains(field.category()) {
-                return raise_value_err(format!(
-                    "{} does not support pattern field {}",
-                    type_name,
-                    field.display_name()
-                ));
-            }
+        if let Element::Field(field) = el
+            && !allowed.contains(field.category())
+        {
+            return raise_value_err(format!(
+                "{} does not support pattern field {}",
+                type_name,
+                field.display_name()
+            ));
         }
     }
     Ok(())

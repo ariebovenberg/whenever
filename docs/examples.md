@@ -48,9 +48,9 @@ PlainDateTime("2023-10-01 12:30:00")
 >>> from whenever import Date
 >>> birth_date = Date(2023, 11, 2)
 >>> today = Date.today_in_system_tz()
->>> today.since(birth_date, unit="years")
-2
->>> years, months = today.since(birth_date, units=("years", "months")).values()
+>>> today.since(birth_date, total="years")
+2.3753424657534246
+>>> years, months = today.since(birth_date, in_units=("years", "months")).values()
 (2, 4)
 ```
 
@@ -221,7 +221,7 @@ ZonedDateTime("2025-03-31 02:00:00+02:00[Europe/Amsterdam]")
 >>> from whenever import ZonedDateTime
 >>> now = ZonedDateTime(2025, 12, 28, hour=14, tz="America/New_York")
 >>> new_year = ZonedDateTime(2026, 1, 1, tz="America/New_York")
->>> days, hours = new_year.since(now, units=("days", "hours")).values()
+>>> days, hours = new_year.since(now, in_units=("days", "hours")).values()
 (3, 10)
 ```
 

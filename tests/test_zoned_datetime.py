@@ -4499,31 +4499,26 @@ class TestSince:
         kwargs: dict[str, Any],
         expect: ItemizedDelta,
     ):
-        assert a.since(b, units=units, **kwargs).exact_eq(expect)
-
-        if len(units) == 1:
-            assert (
-                a.since(b, unit=units[0], **kwargs) == list(expect.values())[0]
-            )
+        assert a.since(b, in_units=units, **kwargs).exact_eq(expect)
 
     def test_cal_units_with_different_tz_not_supported(self):
         with pytest.raises(ValueError, match="same timezone"):
             ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo").since(
                 ZonedDateTime(2023, 2, 15, tz="America/Los_Angeles"),
-                units=["days"],
+                in_units=["days"],
             )
 
     def test_invalid_units(self):
         with pytest.raises(ValueError, match="[Ii]nvalid unit.*foos"):
             ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo").since(
                 ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo"),
-                units=["foos"],  # type: ignore[list-item]
+                in_units=["foos"],  # type: ignore[list-item]
             )
 
         with pytest.raises(ValueError, match="[Ii]nvalid unit.*foos"):
             ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo").since(
                 ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo"),
-                unit="foos",  # type: ignore[call-overload]
+                total="foos",  # type: ignore[call-overload]
             )
 
     def test_very_large_increment(self):
@@ -4532,7 +4527,7 @@ class TestSince:
         # round_increment=1<<65 ns exceeds i64::MAX; ceil mode rounds up to 1*(1<<65)
         assert a.since(
             b,
-            units=["seconds", "nanoseconds"],
+            in_units=["seconds", "nanoseconds"],
             round_increment=1 << 65,
             round_mode="ceil",
         ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)
@@ -4541,17 +4536,17 @@ class TestSince:
         a = ZonedDateTime(2023, 2, 15, hour=3, tz="Asia/Tokyo")
         b = ZonedDateTime(2021, 7, 3, tz="Asia/Tokyo")
         assert a.since(
-            b, units=["years", "months", "days", "hours"]
-        ) == b.until(a, units=["years", "months", "days", "hours"])
+            b, in_units=["years", "months", "days", "hours"]
+        ) == b.until(a, in_units=["years", "months", "days", "hours"])
         # floor rounding works correctly
         assert a.since(
             b,
-            units=["years", "months", "days", "hours"],
+            in_units=["years", "months", "days", "hours"],
             round_increment=2,
             round_mode="floor",
         ) == b.until(
             a,
-            units=["years", "months", "days", "hours"],
+            in_units=["years", "months", "days", "hours"],
             round_increment=2,
             round_mode="floor",
         )
@@ -4559,7 +4554,46 @@ class TestSince:
     def test_nanoseconds_dont_overflow(self):
         a = ZonedDateTime(9000, 1, 1, tz="UTC")
         b = ZonedDateTime(23, 3, 15, tz="UTC")
-        assert a.since(b, unit="nanoseconds") == 283280457600000000000
+        assert a.since(b, total="nanoseconds") == 283280457600000000000
+
+    def test_total_and_in_units_both_raises(self):
+        a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
+        b = ZonedDateTime(2021, 7, 3, tz="Asia/Tokyo")
+        with pytest.raises(TypeError, match="total.*in_units|in_units.*total"):
+            a.since(
+                b,
+                total="hours",  # type: ignore[call-overload]
+                in_units=["hours"],  # type: ignore[call-overload]
+            )
+
+    def test_total_with_round_mode_raises(self):
+        a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
+        b = ZonedDateTime(2021, 7, 3, tz="Asia/Tokyo")
+        with pytest.raises(TypeError, match="round_mode.*total|total.*round"):
+            a.since(
+                b,
+                total="hours",
+                round_mode="floor",  # type: ignore[call-overload]
+            )
+
+    def test_total_calendar_unit_same_tz(self):
+        a = ZonedDateTime(2025, 3, 15, tz="Asia/Tokyo")
+        b = ZonedDateTime(2023, 3, 15, tz="Asia/Tokyo")
+        result = a.since(b, total="years")
+        assert isinstance(result, float)
+        assert result == 2.0
+
+    def test_total_calendar_unit_different_tz_raises(self):
+        a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
+        b = ZonedDateTime(2021, 7, 3, tz="Europe/Paris")
+        with pytest.raises(ValueError, match="[Cc]alendar.*same.*timezone"):
+            a.since(b, total="days")
+
+    def test_no_units_raises(self):
+        a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
+        b = ZonedDateTime(2021, 7, 3, tz="Asia/Tokyo")
+        with pytest.raises(TypeError, match="total.*in_units|in_units.*total"):
+            a.since(b)  # type: ignore[call-overload]
 
 
 class TestRound:
