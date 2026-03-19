@@ -55,23 +55,6 @@ because that's the only type where subtraction is always reversible.
 For calendar-unit differences, use {meth}`~whenever.ZonedDateTime.since`
 / {meth}`~whenever.ZonedDateTime.until`.
 
-## Lossless round-tripping
-
-Every `whenever` object's {func}`str` and {func}`repr` can be used
-to reconstruct the value:
-
-```python
->>> d = ZonedDateTime(2024, 3, 15, 12, tz="Europe/Amsterdam")
-ZonedDateTime("2024-03-15 12:00:00+01:00[Europe/Amsterdam]")
->>> ZonedDateTime(str(d)) == d
-True
->>> eval(repr(d)) == d
-True
-```
-
-This makes debugging and logging straightforward—you always know
-exactly what value you're looking at, and can copy-paste it into a REPL.
-
 ## No system timezone by default
 
 Many datetime libraries silently use the system timezone as a default,

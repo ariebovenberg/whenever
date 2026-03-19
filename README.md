@@ -177,8 +177,8 @@ Instant("2024-07-04 10:30:00Z")
 datetime.datetime(2024, 7, 4, 10, 36, 56, tzinfo=datetime.timezone.utc)
 ```
 
-Read more in the [feature overview](https://whenever.readthedocs.io/en/latest/overview.html)
-or [API reference](https://whenever.readthedocs.io/en/latest/api.html).
+Read more in the [feature overview](https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html)
+or [API reference](https://whenever.readthedocs.io/en/latest/reference/datetime.html).
 
 
 ## Limitations
@@ -204,19 +204,19 @@ For more details, see the licenses included in the distribution.
 
 ## Acknowledgements
 
-*Whenever* stands on the shoulders of giants:
+*Whenever* draws from decades of datetime library design across multiple languages:
 
-- Its core datamodel takes big inspiration from [Noda Time](https://nodatime.org/),
-  which in turn is inspired by the influential [Joda Time](https://www.joda.org/joda-time/).
+- **[Noda Time](https://nodatime.org/)** and **[Joda Time](https://www.joda.org/joda-time/)**
+  pioneered the concept-per-type approach that makes *whenever* possible.
+  Noda Time's type hierarchy directly inspired *whenever*'s design.
 
-- *Whenever* also takes a lot of inspiration from the [Temporal proposal for JavaScript](https://tc39.es/proposal-temporal/docs/).
-  After years of design work and gathering feedback,
-  TC39 has come up with an extraordinarily well-specified API fit for a dynamic language.
-  Whenever takes a lot of cues from Temporal for complex APIs such as handling
-  ambiguity and rounding.
+- **[Temporal](https://tc39.es/proposal-temporal/docs/)** (JavaScript proposal)
+  provided inspiration for handling complex cases around DST ambiguity and rounding.
+  After years of TC39 design work, Temporal's API
+  is extraordinarily thorough. *Whenever* benefits from those hard-won insights.
 
-- The pure-Python version of *whenever* also makes extensive use of Python's ``datetime``
-  internally.
+- **Python's `datetime` module** is used extensively in *whenever*'s pure-Python implementation
+  for low-level date/time handling.
 
 - *Whenever* also borrows a few nifty ideas from [Jiff](https://github.com/BurntSushi/jiff):
   A modern datetime library in Rust which takes inspiration from Temporal.

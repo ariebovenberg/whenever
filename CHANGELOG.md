@@ -76,7 +76,7 @@ are the new delta API and customizable string formatting and parsing. See the fu
 - The `difference()` method on datetimes are deprecated.
   Instead, use the `-` subtraction operator, or the new `since()` method.
 - `Date.days_since()` and `Date.days_until()` are deprecated.
-  Use `since()` and `until()` with `unit='days'` instead.
+  Use `since()` and `until()` with `total='days'` instead.
 - `py_date()`, `py_time()`, `py_datetime()`, and `py_timedelta()` are
   deprecated. Use the new `to_stdlib()` method instead, which provides a
   consistent name across all types.
@@ -110,7 +110,7 @@ are the new delta API and customizable string formatting and parsing. See the fu
   `OffsetDateTime`, `ZonedDateTime`, and `Instant` for custom format/parse
   patterns. Example:
   `Date(2024, 3, 15).format("YYYY/MM/DD")` → `"2024/03/15"`.
-  See the `pattern format documentation <pattern-format>` for details.
+  See the pattern format documentation for details.
 - New `OffsetDateTime.assume_tz()` method for associating an offset datetime
   with a timezone.
 - `round()` methods now support larger and irregular values for `increment`.

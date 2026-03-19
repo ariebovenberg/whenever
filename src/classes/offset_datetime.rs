@@ -4,7 +4,7 @@ use pyo3_ffi::*;
 use std::fmt::{Display, Formatter};
 
 use crate::classes::itemized_delta::handle_delta_unit_kwargs;
-use crate::common::math::{DeltaUnitSet, SinceUntilKwargs, UnitsOrUnit};
+use crate::common::math::{DeltaUnitSet, SinceUntilKwargs};
 use crate::{
     classes::{
         date::Date,
@@ -1270,48 +1270,78 @@ fn offset_since(
     let other = handle_one_arg(fname, args)?
         .extract(cls)
         .ok_or_type_err("argument must be a whenever.OffsetDateTime")?;
-    let SinceUntilKwargs {
-        units,
-        round_mode,
-        round_increment,
-    } = SinceUntilKwargs::parse(fname, state, kwargs)?;
 
-    match (units.has_calendar(), slf.offset == other.offset) {
-        // same offset: use the plain datetime rounding logic (days are always 24h)
-        (true, true) => plain_datetime::plain_since_inner(
-            state,
-            slf.without_offset(),
-            other.without_offset(),
-            units,
-            round_mode,
-            round_increment,
-            flip,
-        ),
-        (true, false) => raise_value_err(
-            "Calendar units can only be used to compare OffsetDateTimes \
-             with the same offset",
-        ),
-        _ => {
-            // Different offsets, exact units only: compute via TimeDelta
+    let same_offset = slf.offset == other.offset;
+
+    match SinceUntilKwargs::parse(fname, state, kwargs)? {
+        SinceUntilKwargs::Total(unit) => {
             let (a, b) = if flip { (other, slf) } else { (slf, other) };
-            let diff = a.instant().diff(b.instant());
-            let abs_mode = round_mode.to_abs_euclid(diff.is_negative());
-            match units {
-                UnitsOrUnit::One(u) => diff.in_single_unit(
-                    // SAFETY: we've already checked there are only exact units
-                    u.to_exact(false).unwrap(),
-                    round_increment,
-                    abs_mode,
+            // Single unit: return float
+            match unit.to_exact(false) {
+                Ok(u) => {
+                    // Exact unit: absolute time difference.
+                    // For nanoseconds (in_nanos == 1), return int to preserve full precision.
+                    let nanos = a.instant().diff(b.instant()).total_nanos();
+                    let unit_nanos = u.in_nanos();
+                    if unit_nanos == 1 {
+                        nanos.to_py()
+                    } else {
+                        (nanos as f64 / unit_nanos as f64).to_py()
+                    }
+                }
+                Err(_) => {
+                    // Calendar unit: requires same offset, delegate to plain float
+                    if !same_offset {
+                        return raise_value_err(
+                            "Calendar units can only be used to compare OffsetDateTimes \
+                             with the same offset",
+                        );
+                    }
+                    if !state.cv_ignore_potentially_stale_offset.get()? {
+                        warn_with_class(
+                            state.warn_potentially_stale_offset,
+                            doc::OFFSET_CALENDAR_STALE_MSG,
+                            3,
+                        )?;
+                    }
+                    plain_datetime::plain_since_inner(
+                        state,
+                        a.without_offset(),
+                        b.without_offset(),
+                        SinceUntilKwargs::Total(unit),
+                        false, // flip already applied above
+                    )
+                }
+            }
+        }
+        SinceUntilKwargs::InUnits(unit_set, round_mode, round_increment) => {
+            match (unit_set.has_calendar(), same_offset) {
+                // same offset: use the plain datetime rounding logic (days are always 24h)
+                (true, true) => plain_datetime::plain_since_inner(
+                    state,
+                    slf.without_offset(),
+                    other.without_offset(),
+                    SinceUntilKwargs::InUnits(unit_set, round_mode, round_increment),
+                    flip,
                 ),
-                UnitsOrUnit::Seq(units) => diff
-                    .in_exact_units(
+                (true, false) => raise_value_err(
+                    "Calendar units can only be used to compare OffsetDateTimes \
+                     with the same offset",
+                ),
+                _ => {
+                    // Different offsets, exact units only: compute via TimeDelta
+                    let (a, b) = if flip { (other, slf) } else { (slf, other) };
+                    let diff = a.instant().diff(b.instant());
+                    let abs_mode = round_mode.to_abs_euclid(diff.is_negative());
+                    diff.in_exact_units(
                         // SAFETY: we've already checked there are only exact units
-                        units.to_exact_assuming_24h_days().unwrap(),
+                        unit_set.to_exact_assuming_24h_days().unwrap(),
                         round_increment,
                         abs_mode,
                     )
                     .ok_or_range_err()?
-                    .to_obj(state.itemized_delta_type),
+                    .to_obj(state.itemized_delta_type)
+                }
             }
         }
     }
@@ -1405,10 +1435,10 @@ fn parse(cls: HeapType<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs)
 
     let date = Date::new(year, month, day).ok_or_value_err("Invalid date")?;
 
-    if let Some(wd) = state.weekday {
-        if date.day_of_week() != wd {
-            raise_value_err("Parsed weekday does not match the date")?;
-        }
+    if let Some(wd) = state.weekday
+        && date.day_of_week() != wd
+    {
+        raise_value_err("Parsed weekday does not match the date")?;
     }
 
     let hour = state.hour.unwrap_or(0);

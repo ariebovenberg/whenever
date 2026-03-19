@@ -167,18 +167,7 @@ pub(crate) const fn type_spec<T: PyWrapped>(
         // NOTE: IMMUTABLETYPE flag is required to prevent additional refcycles
         // between the class and the instance.
         // This allows us to keep our types GC-free.
-        #[cfg(Py_3_10)]
         flags: (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_IMMUTABLETYPE) as _,
-        // XXX: implement a way to prevent refcycles on Python 3.9
-        // without Py_TPFLAGS_IMMUTABLETYPE.
-        // Not a pressing concern, because this only will be triggered
-        // if users themselves decide to add instances to the class
-        // namespace.
-        // Even so, this will just result in a minor memory leak
-        // preventing the module from being GC'ed,
-        // since subinterpreters aren't a concern.
-        #[cfg(not(Py_3_10))]
-        flags: Py_TPFLAGS_DEFAULT as _,
         slots: slots.as_ptr().cast_mut(),
     }
 }

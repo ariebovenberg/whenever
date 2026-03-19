@@ -625,8 +625,8 @@ fn since_inner(
 ) -> PyReturn {
     let state = cls.state();
     let &State {
-        str_unit,
-        str_units,
+        str_total,
+        str_in_units,
         str_round_mode,
         str_round_increment,
         round_mode_strs,
@@ -638,23 +638,26 @@ fn since_inner(
         .ok_or_type_err("argument must be a Date")?;
 
     let mut units: Option<math::DateSinceUnits> = None;
-    let mut round_mode = round::Mode::Trunc;
+    let mut round_mode = None;
     let mut round_increment = math::DateRoundIncrement::MIN;
+    let mut round_was_set = false;
     handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, str_unit) {
+        if eq(key, str_total) {
             if units.is_some() {
-                return raise_type_err("cannot specify both 'unit' and 'units'");
+                return raise_type_err("cannot specify both 'total' and 'in_units'");
             }
-            units = Some(DateSinceUnits::One(CalUnit::from_py(value, state)?));
-        } else if eq(key, str_units) {
+            units = Some(DateSinceUnits::Total(CalUnit::from_py(value, state)?));
+        } else if eq(key, str_in_units) {
             if units.is_some() {
-                return raise_type_err("cannot specify both 'unit' and 'units'");
+                return raise_type_err("cannot specify both 'total' and 'in_units'");
             }
-            units = Some(DateSinceUnits::Set(CalUnitSet::from_py(value, state)?));
+            units = Some(DateSinceUnits::InUnits(CalUnitSet::from_py(value, state)?));
         } else if eq(key, str_round_mode) {
-            round_mode = round::Mode::from_py_named("round_mode", value, round_mode_strs)?;
+            round_mode = round::Mode::from_py_named("round_mode", value, round_mode_strs)?.into();
+            round_was_set = true;
         } else if eq(key, str_round_increment) {
             round_increment = DateRoundIncrement::from_py(value)?;
+            round_was_set = true;
         } else {
             return Ok(false);
         }
@@ -663,15 +666,23 @@ fn since_inner(
 
     let (a, b) = if negate { (other, slf) } else { (slf, other) };
     match units {
-        Some(DateSinceUnits::One(unit)) => {
-            since_with_single_unit(a, b, unit, round_mode, round_increment)
+        Some(DateSinceUnits::Total(unit)) => {
+            if round_was_set {
+                raise_type_err("'round_mode' and 'round_increment' cannot be used with 'total'")
+            } else {
+                date_since_float(a, b, unit)
+            }
         }
-        Some(DateSinceUnits::Set(units)) => {
-            date_since_iddelta(a, b, units, round_mode, round_increment)
-                .unwrap()
-                .to_obj(cls.state().itemized_date_delta_type)
-        }
-        None => raise_type_err("must specify either 'unit' or 'units'"),
+        Some(DateSinceUnits::InUnits(units)) => date_since_iddelta(
+            a,
+            b,
+            units,
+            round_mode.unwrap_or(round::Mode::Trunc),
+            round_increment,
+        )
+        .unwrap()
+        .to_obj(cls.state().itemized_date_delta_type),
+        None => raise_type_err("must specify either 'total' or 'in_units'"),
     }
 }
 
@@ -698,34 +709,24 @@ pub(crate) fn date_since_iddelta(
     Ok(result)
 }
 
-fn since_with_single_unit(
-    a: Date,
-    b: Date,
-    unit: CalUnit,
-    round_mode: round::Mode,
-    round_increment: DateRoundIncrement,
-) -> PyReturn {
+fn date_since_float(a: Date, b: Date, unit: CalUnit) -> PyReturn {
     let neg = a < b;
-
-    let (result, trunc, expand) =
-        math::date_diff_single_unit(a, b, round_increment, unit, neg).ok_or_range_err()?;
-
-    math::round_by_days(
-        result,
-        a,
-        trunc.into(),
-        expand.into(),
-        round_mode.to_abs_trunc(neg),
-        round_increment,
-        neg,
-    )
-    .to_py()
+    let (result, trunc_raw, expand_raw) =
+        math::date_diff_single_unit(a, b, DateRoundIncrement::MIN, unit, neg).ok_or_range_err()?;
+    let trunc: Date = trunc_raw.into();
+    let expand: Date = expand_raw.into();
+    // result is signed; use its absolute value and restore sign at the end.
+    // num/denom ratio is always positive (same sign, since expand and a are both
+    // on the same side of trunc relative to b).
+    let num = a.unix_days().diff(trunc.unix_days()).get() as f64;
+    let denom = expand.unix_days().diff(trunc.unix_days()).get() as f64;
+    ((result.abs() as f64 + num / denom).negate_if(neg)).to_py()
 }
 
 fn days_since(cls: HeapType<Date>, slf: Date, other: PyObj) -> PyReturn {
     warn_with_class(
         cls.state().warn_deprecation,
-        c"days_since() is deprecated; use since() with unit='days' instead.",
+        c"days_since() is deprecated; use since() with total='days' instead.",
         2,
     )?;
     slf.unix_days()
@@ -742,7 +743,7 @@ fn days_since(cls: HeapType<Date>, slf: Date, other: PyObj) -> PyReturn {
 fn days_until(cls: HeapType<Date>, slf: Date, other: PyObj) -> PyReturn {
     warn_with_class(
         cls.state().warn_deprecation,
-        c"days_until() is deprecated; use until() with unit='days' instead.",
+        c"days_until() is deprecated; use until() with total='days' instead.",
         2,
     )?;
     other
@@ -909,10 +910,10 @@ fn parse(cls: HeapType<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetu
 
     let date = Date::new(year, month, day).ok_or_value_err("Invalid date")?;
 
-    if let Some(wd) = state.weekday {
-        if date.day_of_week() != wd {
-            raise_value_err("Parsed weekday does not match the date")?;
-        }
+    if let Some(wd) = state.weekday
+        && date.day_of_week() != wd
+    {
+        raise_value_err("Parsed weekday does not match the date")?;
     }
 
     date.to_obj(cls)

@@ -64,6 +64,7 @@ and their key differences. Click on the features to learn more about them.
 | {ref}`Operators <delta-operators>` | {meth}`+ <TimeDelta.__add__>` , {meth}`- <TimeDelta.__sub__>` , {meth}`* <TimeDelta.__mul__>` , {meth}`/ <TimeDelta.__truediv__>` , {meth}`// <TimeDelta.__floordiv__>` , {meth}`% <TimeDelta.__mod__>` | n/a                   | n/a                    |
 | {ref}`Rounding <delta-rounding>` | {meth}`~TimeDelta.round`  | with {meth}`~ItemizedDateDelta.in_units`          | with {meth}`~ItemizedDelta.in_units`          |
 | Applies to...     | {class}`ZonedDateTime` <br> {class}`OffsetDateTime` <br> {class}`PlainDateTime` <br> {class}`Instant` | {class}`ZonedDateTime` <br> {class}`OffsetDateTime` <br> {class}`PlainDateTime` <br> {class}`Date` | {class}`ZonedDateTime` <br> {class}`OffsetDateTime` <br> {class}`PlainDateTime` |
+| Similar to... | {class}`~datetime.timedelta` | {class}`~collections.Counter` | {class}`~collections.Counter` |
 
 (delta-units)=
 ## Exact and calendar units
@@ -102,7 +103,8 @@ and sometimes useful when working with exact time units.
 ItemizedDelta("PT1h90m")
 ```
 
-You can imagine this working like a `dict` of components, where each unit is a key and its value is the corresponding amount:
+You can imagine this working like a `dict` or {class}`~collections.Counter` of components,
+where each unit is a key and its value is the corresponding amount:
 
 ```
 >>> dict(d)
@@ -328,7 +330,12 @@ using the {meth}`~ItemizedDelta.in_units` method:
 
 ```python
 >>> delta = ItemizedDelta(days=7, hours=2, minutes=84)
->>> delta.in_units(["days", "hours"], relative_to=ZonedDateTime(2020, 1, 1, tz="UTC"), round_mode="ceil", round_increment=4)
+>>> delta.in_units(
+...     ["days", "hours"],
+...     relative_to=ZonedDateTime(2020, 1, 1, tz="UTC"),
+...     round_mode="ceil",
+...     round_increment=4
+... )
 ItemizedDelta("P7dT4h")
 ```
 

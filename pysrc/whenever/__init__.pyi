@@ -191,28 +191,16 @@ class Date(_DateOrTimeMixin):
         other: Date,
         /,
         *,
-        unit: Literal["years", "months", "weeks", "days"],
-        round_increment: int = 1,
-        round_mode: Literal[
-            "ceil",
-            "expand",
-            "floor",
-            "trunc",
-            "half_ceil",
-            "half_expand",
-            "half_floor",
-            "half_trunc",
-            "half_even",
-        ] = "trunc",
-    ) -> int: ...
+        total: Literal["years", "months", "weeks", "days"],
+    ) -> float: ...
     @overload
     def since(
         self,
         other: Date,
         /,
         *,
-        units: Sequence[Literal["years", "months", "weeks", "days"]],
-        round_increment: int = 1,
+        in_units: Sequence[Literal["years", "months", "weeks", "days"]],
+        round_increment: int = ...,
         round_mode: Literal[
             "ceil",
             "expand",
@@ -223,7 +211,7 @@ class Date(_DateOrTimeMixin):
             "half_floor",
             "half_trunc",
             "half_even",
-        ] = "trunc",
+        ] = ...,
     ) -> ItemizedDateDelta: ...
     @overload
     def until(
@@ -231,28 +219,16 @@ class Date(_DateOrTimeMixin):
         other: Date,
         /,
         *,
-        unit: Literal["years", "months", "weeks", "days"],
-        round_increment: int = 1,
-        round_mode: Literal[
-            "ceil",
-            "expand",
-            "floor",
-            "trunc",
-            "half_ceil",
-            "half_expand",
-            "half_floor",
-            "half_trunc",
-            "half_even",
-        ] = "trunc",
-    ) -> int: ...
+        total: Literal["years", "months", "weeks", "days"],
+    ) -> float: ...
     @overload
     def until(
         self,
         other: Date,
         /,
         *,
-        units: Sequence[Literal["years", "months", "weeks", "days"]],
-        round_increment: int = 1,
+        in_units: Sequence[Literal["years", "months", "weeks", "days"]],
+        round_increment: int = ...,
         round_mode: Literal[
             "ceil",
             "expand",
@@ -263,11 +239,11 @@ class Date(_DateOrTimeMixin):
             "half_floor",
             "half_trunc",
             "half_even",
-        ] = "trunc",
+        ] = ...,
     ) -> ItemizedDateDelta: ...
-    @deprecated('Use since(..., unit="days") instead')
+    @deprecated('Use since(..., total="days") instead')
     def days_since(self, other: Self, /) -> int: ...
-    @deprecated('Use until(..., unit="days") instead')
+    @deprecated('Use until(..., total="days") instead')
     def days_until(self, other: Self, /) -> int: ...
     @deprecated("Use the add() method instead")
     def __add__(self, p: DateDelta, /) -> Self: ...
@@ -444,7 +420,9 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         unit: Literal["years", "months"],
         /,
         *,
-        relative_to: ZonedDateTime,  # required for years/months
+        relative_to: (
+            ZonedDateTime | PlainDateTime | OffsetDateTime
+        ),  # required for years/months
     ) -> float: ...
     @overload
     def total(
@@ -460,7 +438,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         ],
         /,
         *,
-        relative_to: ZonedDateTime = ...,
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = ...,
     ) -> float: ...
     @overload
     def total(
@@ -468,7 +446,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         unit: Literal["nanoseconds"],
         /,
         *,
-        relative_to: ZonedDateTime = ...,
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = ...,
     ) -> int: ...
     @deprecated("Use total('days') instead")
     def in_days_of_24h(self) -> float: ...
@@ -716,7 +694,7 @@ class ItemizedDelta(
         /,
         *,
         relative_to: ZonedDateTime,
-        units: Sequence[
+        in_units: Sequence[
             Literal[
                 "years",
                 "months",
@@ -739,7 +717,7 @@ class ItemizedDelta(
             "half_trunc",
             "half_even",
         ] = "trunc",
-        round_increment: int = 1,
+        round_increment: int = ...,
     ) -> ItemizedDelta: ...
     @overload
     def add(
@@ -754,7 +732,7 @@ class ItemizedDelta(
         seconds: int = ...,
         nanoseconds: int = ...,
         relative_to: ZonedDateTime,
-        units: Sequence[
+        in_units: Sequence[
             Literal[
                 "years",
                 "months",
@@ -786,8 +764,7 @@ class ItemizedDelta(
         /,
         *,
         relative_to: ZonedDateTime,
-        # TODO LAST: naming? maybe in_units is better?
-        units: Sequence[
+        in_units: Sequence[
             Literal[
                 "years",
                 "months",
@@ -825,7 +802,7 @@ class ItemizedDelta(
         seconds: int = ...,
         nanoseconds: int = ...,
         relative_to: ZonedDateTime,
-        units: Sequence[
+        in_units: Sequence[
             Literal[
                 "years",
                 "months",
@@ -895,7 +872,6 @@ class ItemizedDelta(
     def __abs__(self) -> Self: ...
     def __neg__(self) -> Self: ...
     def __add__(self, other: Self, /) -> Self: ...
-    @property
     def sign(self) -> Literal[1, 0, -1]: ...
 
 @final
@@ -910,7 +886,6 @@ class ItemizedDateDelta(
         weeks: int = ...,
         days: int = ...,
     ) -> None: ...
-    @property
     def sign(self) -> Literal[1, 0, -1]: ...
     def format_iso(self, *, lowercase_units: bool = False) -> str: ...
     @classmethod
@@ -950,7 +925,7 @@ class ItemizedDateDelta(
         /,
         *,
         relative_to: Date,
-        units: Sequence[Literal["years", "months", "weeks", "days"]],
+        in_units: Sequence[Literal["years", "months", "weeks", "days"]],
         round_mode: Literal[
             "ceil",
             "expand",
@@ -962,7 +937,7 @@ class ItemizedDateDelta(
             "half_trunc",
             "half_even",
         ] = "trunc",
-        round_increment: int = 1,
+        round_increment: int = ...,
     ) -> ItemizedDateDelta: ...
     @overload
     def add(
@@ -973,7 +948,7 @@ class ItemizedDateDelta(
         weeks: int = ...,
         days: int = ...,
         relative_to: Date,
-        units: Sequence[Literal["years", "months", "weeks", "days"]],
+        in_units: Sequence[Literal["years", "months", "weeks", "days"]],
         round_mode: Literal[
             "ceil",
             "expand",
@@ -985,7 +960,7 @@ class ItemizedDateDelta(
             "half_trunc",
             "half_even",
         ] = "trunc",
-        round_increment: int = 1,
+        round_increment: int = ...,
     ) -> ItemizedDateDelta: ...
     @overload
     def subtract(
@@ -994,7 +969,7 @@ class ItemizedDateDelta(
         /,
         *,
         relative_to: Date,
-        units: Sequence[Literal["years", "months", "weeks", "days"]],
+        in_units: Sequence[Literal["years", "months", "weeks", "days"]],
         round_mode: Literal[
             "ceil",
             "expand",
@@ -1006,7 +981,7 @@ class ItemizedDateDelta(
             "half_trunc",
             "half_even",
         ] = "trunc",
-        round_increment: int = 1,
+        round_increment: int = ...,
     ) -> ItemizedDateDelta: ...
     @overload
     def subtract(
@@ -1017,7 +992,7 @@ class ItemizedDateDelta(
         weeks: int = ...,
         days: int = ...,
         relative_to: Date,
-        units: Sequence[Literal["years", "months", "weeks", "days"]] = ...,
+        in_units: Sequence[Literal["years", "months", "weeks", "days"]] = ...,
         round_mode: Literal[
             "ceil",
             "expand",
@@ -1029,7 +1004,7 @@ class ItemizedDateDelta(
             "half_trunc",
             "half_even",
         ] = "trunc",
-        round_increment: int = 1,
+        round_increment: int = ...,
     ) -> ItemizedDateDelta: ...
     def total(
         self,
@@ -1120,7 +1095,7 @@ class _LocalTime(ABC):
         b: Self,
         /,
         *,
-        unit: Literal[
+        total: Literal[
             "years",
             "months",
             "weeks",
@@ -1128,20 +1103,15 @@ class _LocalTime(ABC):
             "hours",
             "minutes",
             "seconds",
-            "nanoseconds",
         ],
-        round_mode: Literal[
-            "ceil",
-            "expand",
-            "floor",
-            "trunc",
-            "half_ceil",
-            "half_expand",
-            "half_floor",
-            "half_trunc",
-            "half_even",
-        ] = ...,
-        round_increment: int = ...,
+    ) -> float: ...
+    @overload
+    def since(
+        self,
+        b: Self,
+        /,
+        *,
+        total: Literal["nanoseconds"],
     ) -> int: ...
     @overload
     def since(
@@ -1149,7 +1119,7 @@ class _LocalTime(ABC):
         b: Self,
         /,
         *,
-        units: Sequence[
+        in_units: Sequence[
             Literal[
                 "years",
                 "months",
@@ -1180,7 +1150,7 @@ class _LocalTime(ABC):
         b: Self,
         /,
         *,
-        unit: Literal[
+        total: Literal[
             "years",
             "months",
             "weeks",
@@ -1188,20 +1158,15 @@ class _LocalTime(ABC):
             "hours",
             "minutes",
             "seconds",
-            "nanoseconds",
         ],
-        round_mode: Literal[
-            "ceil",
-            "expand",
-            "floor",
-            "trunc",
-            "half_ceil",
-            "half_expand",
-            "half_floor",
-            "half_trunc",
-            "half_even",
-        ] = ...,
-        round_increment: int = ...,
+    ) -> float: ...
+    @overload
+    def until(
+        self,
+        b: Self,
+        /,
+        *,
+        total: Literal["nanoseconds"],
     ) -> int: ...
     @overload
     def until(
@@ -1209,7 +1174,7 @@ class _LocalTime(ABC):
         b: Self,
         /,
         *,
-        units: Sequence[
+        in_units: Sequence[
             Literal[
                 "years",
                 "months",

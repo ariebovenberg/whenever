@@ -11,12 +11,17 @@ from whenever import (
     DateDelta,
     DaysNotAlways24HoursWarning,
     ItemizedDelta,
+    OffsetDateTime,
     PlainDateTime,
+    PotentiallyStaleOffsetWarning,
     TimeDelta,
+    TimeZoneUnawareArithmeticWarning,
     WheneverDeprecationWarning,
     ZonedDateTime,
     hours,
     ignore_days_not_always_24h_warning,
+    ignore_potentially_stale_offset_warning,
+    ignore_timezone_unaware_arithmetic_warning,
     microseconds,
     milliseconds,
     minutes,
@@ -403,7 +408,9 @@ class TestTotal:
     def test_months_and_years(self):
         d = TimeDelta(hours=2000)
 
-        with pytest.raises(TypeError, match="months.*relative_to"):
+        with pytest.raises(
+            TypeError, match="months.*relative_to|calendar.*relative_to"
+        ):
             d.total("months")  # type: ignore[call-overload]
 
         # positive cases
@@ -430,7 +437,9 @@ class TestTotal:
             relative_to=ZonedDateTime(2023, 1, 31, hour=1, tz="Europe/Athens"),
         ) == approx(-8.038978494623656)
 
-        with pytest.raises(TypeError, match="years.*relative_to"):
+        with pytest.raises(
+            TypeError, match="years.*relative_to|calendar.*relative_to"
+        ):
             d.total("years")  # type: ignore[call-overload]
 
         # positive cases
@@ -569,6 +578,60 @@ class TestTotal:
     def test_nanoseconds_are_int(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
         assert isinstance(d.total("nanoseconds"), int)
+
+    def test_relative_to_plain_datetime(self):
+        td = TimeDelta(hours=360)  # 15 days
+        pdt = PlainDateTime(2023, 3, 1, 2)
+        with pytest.warns(TimeZoneUnawareArithmeticWarning):
+            result = td.total("months", relative_to=pdt)
+        assert result == approx(15 / 31)
+
+        # suppression works
+        with ignore_timezone_unaware_arithmetic_warning():
+            result_sup = td.total("months", relative_to=pdt)
+        assert result_sup == approx(15 / 31)
+
+        # years
+        td_yr = TimeDelta(hours=24 * 365)  # 365 days
+        pdt_yr = PlainDateTime(2023, 1, 1)
+        with ignore_timezone_unaware_arithmetic_warning():
+            result_yr = td_yr.total("years", relative_to=pdt_yr)
+        assert result_yr == approx(1.0)
+
+        # negative delta: reference March 16 → shifted March 1
+        # backward span: March 16 → Feb 16 = 28 days (Feb 2023)
+        td_neg = TimeDelta(hours=-360)
+        pdt_neg = PlainDateTime(2023, 3, 16, 2)
+        with ignore_timezone_unaware_arithmetic_warning():
+            result_neg = td_neg.total("months", relative_to=pdt_neg)
+        assert result_neg == approx(-15 / 28)
+
+    def test_relative_to_offset_datetime(self):
+        # TimeDelta.total() with relative_to=OffsetDateTime:
+        # the *local* datetime (offset stripped) is used as the calendar anchor.
+        td = TimeDelta(hours=360)  # 15 days
+        odt = OffsetDateTime(2023, 3, 1, 2, offset=5)
+        with pytest.warns(PotentiallyStaleOffsetWarning):
+            result = td.total("months", relative_to=odt)
+        # same reference date as PlainDateTime(2023, 3, 1, 2)
+        assert result == approx(15 / 31)
+
+        # suppression works
+        with ignore_potentially_stale_offset_warning():
+            result_sup = td.total("months", relative_to=odt)
+        assert result_sup == approx(15 / 31)
+
+    def test_relative_to_odt_uses_local_not_utc(self):
+        td = TimeDelta(hours=360)  # 15 days
+        odt = OffsetDateTime(2023, 3, 1, 2, offset=5)
+        with ignore_potentially_stale_offset_warning():
+            result_correct = td.total("months", relative_to=odt)
+        assert result_correct == approx(15 / 31)  # March anchor
+
+    def test_relative_to_invalid_type(self):
+        d = TimeDelta(hours=1)
+        with pytest.raises(TypeError):
+            d.total("months", relative_to=42)  # type: ignore[call-overload]
 
 
 def test_equality():
@@ -1685,6 +1748,21 @@ class TestInUnits:
         d = TimeDelta(hours=1)
         with pytest.raises(TypeError, match="sequence"):
             d.in_units("hours")  # type: ignore[arg-type]
+
+    def test_calendar_units_require_relative_to(self):
+        d = TimeDelta(hours=2000)
+        with pytest.raises(
+            TypeError, match="months.*relative_to|years.*relative_to"
+        ):
+            d.in_units(["years", "months"])  # type: ignore[call-overload]
+
+    def test_calendar_units_with_relative_to(self):
+        d = TimeDelta(hours=3360)
+        ref = ZonedDateTime(2024, 2, 29, hour=12, minute=1, tz="Europe/Athens")
+        result = d.in_units(["months", "days"], relative_to=ref)
+        # 3360 h = 140 days. From 2024-02-29, ~4 months 20 days.
+        assert isinstance(result, ItemizedDelta)
+        assert result["months"] == 4
 
     def test_very_large_increment(self):
         # round_increment=1<<65 ns exceeds i64::MAX; should not OverflowError
