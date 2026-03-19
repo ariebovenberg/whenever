@@ -1,0 +1,121 @@
+name: Build PGO-optimized wheel
+description: >
+  Builds a Profile-Guided Optimization (PGO) wheel for whenever.
+  Steps:
+    1. Compile an instrumented (profile-generate) build.
+    2. Run scripts/pgo_profile.py to collect branch-frequency data.
+    3. Merge the raw profiles into a single .profdata file.
+    4. Compile the final optimized (profile-use) build for all interpreters.
+
+inputs:
+  interpreter:
+    description: >
+      Space-separated list of Python interpreters to build the final wheel for
+      (e.g. "3.10 3.11 3.12 3.13 3.14 3.13t 3.14t").
+    required: true
+  profile-interpreter:
+    description: >
+      A single CPython interpreter used to run the profiling workload.
+      Must be one of the interpreters in the `interpreter` list.
+    required: false
+    default: "3.12"
+  rust-toolchain:
+    description: "Rust toolchain name as reported by dtolnay/rust-toolchain."
+    required: true
+  manylinux:
+    description: "manylinux image to pass to maturin-action (leave empty for macOS/Windows)."
+    required: false
+    default: ""
+  pgo-iterations:
+    description: "Number of iterations to run the profiling workload."
+    required: false
+    default: "200"
+
+outputs:
+  wheel-dir:
+    description: "Directory containing the built wheels."
+    value: dist
+
+runs:
+  using: composite
+  steps:
+    # ------------------------------------------------------------------
+    # 1. Prepare the directory that will receive raw profiling data.
+    #    Creating it here (before the maturin Docker build on Linux)
+    #    ensures the local user owns it; the Docker container would
+    #    otherwise create it as root.
+    # ------------------------------------------------------------------
+    - name: Prepare profiling directory
+      shell: bash
+      run: mkdir -p "${{ github.workspace }}/profdata"
+
+    # ------------------------------------------------------------------
+    # 2. Build the instrumented wheel (profile-generate).
+    #    We only need a single interpreter here to run the workload.
+    # ------------------------------------------------------------------
+    - name: Build instrumented wheel
+      uses: PyO3/maturin-action@v1
+      with:
+        manylinux: ${{ inputs.manylinux }}
+        args: >
+          --release
+          --out pgo-wheel
+          --interpreter ${{ inputs.profile-interpreter }}
+        rust-toolchain: ${{ inputs.rust-toolchain }}
+        docker-options: -e CI
+      env:
+        RUSTFLAGS: "-Cprofile-generate=${{ github.workspace }}/profdata"
+
+    # ------------------------------------------------------------------
+    # 3. Install the instrumented wheel and run the profiling workload.
+    # ------------------------------------------------------------------
+    - name: Install instrumented wheel and run profiling workload
+      shell: bash
+      run: |
+        uv pip install whenever --no-index --no-deps \
+          --find-links pgo-wheel --force-reinstall
+        uv pip install tzdata  # ensure timezone data is available
+        uv run python scripts/pgo_profile.py \
+          --iterations ${{ inputs.pgo-iterations }}
+
+    # ------------------------------------------------------------------
+    # 4. Locate llvm-profdata that ships with the Rust toolchain.
+    # ------------------------------------------------------------------
+    - name: Locate llvm-profdata
+      shell: bash
+      run: |
+        RUST_HOST=$(rustc -Vv | grep '^host:' | cut -d ' ' -f 2)
+        echo "RUST_HOST=$RUST_HOST" >> "$GITHUB_ENV"
+        LLVM_PROFDATA=$(rustup run "${{ inputs.rust-toolchain }}" bash -c \
+          'echo "$RUSTUP_HOME/toolchains/$RUSTUP_TOOLCHAIN/lib/rustlib/$RUST_HOST/bin/llvm-profdata"' \
+          RUST_HOST="$RUST_HOST")
+        echo "LLVM_PROFDATA=$LLVM_PROFDATA" >> "$GITHUB_ENV"
+
+    # ------------------------------------------------------------------
+    # 5. Merge the raw .profraw files into a single .profdata file.
+    #    Using pwsh (PowerShell) here handles paths correctly on all
+    #    three platforms, matching the approach used by pydantic-core.
+    # ------------------------------------------------------------------
+    - name: Merge profiling data
+      shell: pwsh
+      run: >
+        & "${{ env.LLVM_PROFDATA }}" merge
+        -o "${{ github.workspace }}/merged.profdata"
+        "${{ github.workspace }}/profdata"
+
+    # ------------------------------------------------------------------
+    # 6. Build the final PGO-optimized wheel for all target interpreters.
+    # ------------------------------------------------------------------
+    - name: Build PGO-optimized wheel
+      uses: PyO3/maturin-action@v1
+      with:
+        manylinux: ${{ inputs.manylinux }}
+        args: >
+          --release
+          --strip
+          --out dist
+          --interpreter ${{ inputs.interpreter }}
+        rust-toolchain: ${{ inputs.rust-toolchain }}
+        docker-options: -e CI
+      env:
+        RUSTFLAGS: "-Cprofile-use=${{ github.workspace }}/merged.profdata"
