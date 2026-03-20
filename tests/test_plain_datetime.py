@@ -1284,7 +1284,7 @@ class TestSince:
         a = PlainDateTime(2023, 2, 15, hour=13, minute=25)
         b = PlainDateTime(2021, 7, 3, hour=1)
 
-        # exact units trigger the warning
+        # exact output units trigger the warning
         with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
             a.since(b, in_units=["hours", "minutes"])
         assert len(w) == 1
@@ -1293,26 +1293,30 @@ class TestSince:
             a.until(b, in_units=["hours", "minutes"])
         assert len(w) == 1
 
-        # mixed calendar+exact units also trigger
+        # mixed calendar+exact output also triggers (has exact)
         with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
             a.since(b, in_units=["days", "hours"])
         assert len(w) == 1
 
-        # calendar-only units also trigger--since rounding can be influenced
-        # by DST gaps/folds
+        # total with exact unit triggers the warning
         with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
-            a.since(b, in_units=["months", "weeks"])
-        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
-            a.until(b, in_units=["months", "weeks"])
+            a.since(b, total="hours")
         assert len(w) == 1
-        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+
+        # calendar-only output: no warning (counting calendar units needs no clock awareness)
+        import warnings as _warnings
+
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("error")
+            a.since(b, in_units=["months", "weeks"])
+            a.until(b, in_units=["months", "weeks"])
             a.since(b, total="days")
+            a.since(b, total="years")
 
         # suppression works
         with ignore_timezone_unaware_arithmetic_warning():
             a.since(b, in_units=["hours", "minutes"])
             a.until(b, total="hours")
-            a.until(b, total="years")
 
     def test_invalid_units(self):
         with pytest.raises(ValueError, match="[Ii]nvalid unit.*foos"):

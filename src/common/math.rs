@@ -597,6 +597,10 @@ impl DeltaUnitSet {
         self.0 & CAL_MASK != 0
     }
 
+    pub(crate) fn has_exact(self) -> bool {
+        self.0 & 0xF0 != 0 // bits 4-7: Hours, Minutes, Seconds, Nanoseconds
+    }
+
     /// The calendar-only subset (years, months, weeks, days)
     pub(crate) fn cal_only(self) -> CalUnitSet {
         CalUnitSet(self.0 & CAL_MASK)
@@ -666,7 +670,7 @@ impl DeltaUnitSet {
                     raise_value_err("units cannot contain duplicates")?;
                 }
                 if p > unit {
-                    raise_value_err("units must be in order from largest to smallest")?;
+                    raise_value_err("units must be in decreasing order of size")?;
                 }
             }
             units.insert(unit);
@@ -791,6 +795,13 @@ impl SinceUntilKwargs {
                 DeltaUnit::Years | DeltaUnit::Months | DeltaUnit::Weeks | DeltaUnit::Days
             ),
             SinceUntilKwargs::InUnits(s, ..) => s.has_calendar(),
+        }
+    }
+
+    pub(crate) fn has_exact_output(self) -> bool {
+        match self {
+            SinceUntilKwargs::Total(u) => u.to_exact(false).is_ok(),
+            SinceUntilKwargs::InUnits(s, ..) => s.has_exact(),
         }
     }
 }

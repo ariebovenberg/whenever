@@ -502,7 +502,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
             "half_even",
         ] = "trunc",
         round_increment: int = ...,
-        relative_to: ZonedDateTime,
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
     ) -> ItemizedDelta: ...
     @overload
     def in_units(
@@ -531,8 +531,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
             "half_even",
         ] = "trunc",
         round_increment: int = ...,
-        # FUTURE: support other local datetimes?
-        relative_to: ZonedDateTime = ...,
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = ...,
     ) -> ItemizedDelta: ...
     def to_stdlib(self) -> _timedelta: ...
     @deprecated("Use to_stdlib() instead")
@@ -713,7 +712,7 @@ class ItemizedDelta(
         ],
         /,
         *,
-        relative_to: ZonedDateTime,
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
         round_mode: Literal[
             "ceil",
             "expand",
@@ -885,7 +884,7 @@ class ItemizedDelta(
         ],
         /,
         *,
-        relative_to: ZonedDateTime,
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
     ) -> float: ...
     def __iter__(self) -> Iterator[
         Literal[

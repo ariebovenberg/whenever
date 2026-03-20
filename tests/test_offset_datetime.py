@@ -2151,18 +2151,18 @@ class TestSince:
         ).exact_eq(b.until(a, in_units=["years", "months", "days", "hours"]))
 
     def test_single_unit_returns_float(self):
+        import warnings as _warnings
+
         a = OffsetDateTime(2025, 3, 15, offset=1)
         b = OffsetDateTime(2023, 3, 15, offset=1)
-        # Calendar unit: warns because offset may not reflect DST history
-        with pytest.warns(PotentiallyStaleOffsetWarning):
+        # OffsetDateTime.since() never warns — calendar and exact units alike
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("error")
             result = a.since(b, total="years")
         assert isinstance(result, float)
         assert result == 2.0
-        # Exact unit: no warning
-        import warnings
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("error")
             a.since(b, total="hours")
 
     def test_very_large_increment(self):

@@ -5,7 +5,18 @@ from typing import Any, Literal, cast
 
 import pytest
 
-from whenever import ItemizedDateDelta, ItemizedDelta, TimeDelta, ZonedDateTime
+from whenever import (
+    ItemizedDateDelta,
+    ItemizedDelta,
+    OffsetDateTime,
+    PlainDateTime,
+    PotentiallyStaleOffsetWarning,
+    TimeDelta,
+    TimeZoneUnawareArithmeticWarning,
+    ZonedDateTime,
+    ignore_potentially_stale_offset_warning,
+    ignore_timezone_unaware_arithmetic_warning,
+)
 
 from .common import AlwaysEqual, NeverEqual
 from .test_date_delta import INVALID_DDELTAS
@@ -109,7 +120,7 @@ class TestInit:
 
     def test_none_not_allowed(self):
         with pytest.raises(TypeError):
-            ItemizedDelta(days=None)  # type: ignore[arg-type]
+            ItemizedDelta(days=None)  # type: ignore[call-overload]
 
 
 @pytest.mark.parametrize(
@@ -522,6 +533,119 @@ def test_in_units(
         assert relative_to.add(d) == relative_to.add(expect)
 
 
+class TestInUnitsRelativeToNonZoned:
+    """Tests for ItemizedDelta.in_units() with PlainDateTime/OffsetDateTime.
+
+    Warning rules:
+    - PlainDateTime: warns when delta has exact units OR output has exact units
+    - OffsetDateTime: warns when delta has calendar units OR output has calendar units
+    """
+
+    def test_plain_datetime_exact_delta_exact_output_no_warning(self):
+        # pure exact delta + pure exact output → no warning (no calendar conversion)
+        import warnings as _warnings
+
+        d = ItemizedDelta(hours=5, minutes=30)
+        ref = PlainDateTime(2020, 1, 1, 12)
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("error")
+            result = d.in_units(["hours", "minutes"], relative_to=ref)
+        assert result == ItemizedDelta(hours=5, minutes=30)
+
+    def test_plain_datetime_cal_delta_exact_output(self):
+        # calendar delta + exact output → warns (output has exact)
+        d = ItemizedDelta(months=1)
+        ref = PlainDateTime(2020, 1, 1)
+        with pytest.warns(TimeZoneUnawareArithmeticWarning):
+            result = d.in_units(["days", "hours"], relative_to=ref)
+        assert result == ItemizedDelta(days=31)
+
+    def test_plain_datetime_mixed_delta_mixed_output(self):
+        # mixed delta + mixed output → warns
+        d = ItemizedDelta(months=1, hours=5)
+        ref = PlainDateTime(2020, 1, 1)
+        with pytest.warns(TimeZoneUnawareArithmeticWarning):
+            result = d.in_units(["days", "hours"], relative_to=ref)
+        assert result == ItemizedDelta(days=31, hours=5)
+
+    def test_plain_datetime_cal_delta_cal_output_no_warning(self):
+        # pure calendar delta + pure calendar output → no warning (no clock arithmetic)
+        import warnings as _warnings
+
+        d = ItemizedDelta(months=1, days=5)
+        ref = PlainDateTime(2020, 1, 1)
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("error")
+            result = d.in_units(["weeks", "days"], relative_to=ref)
+        assert result == ItemizedDelta(weeks=5, days=1)
+
+    def test_offset_datetime_cal_delta_cal_output(self):
+        # calendar delta + calendar output → warns (offset, calendar both sides)
+        d = ItemizedDelta(months=1, days=5)
+        ref = OffsetDateTime(2020, 1, 1, offset=3)
+        with pytest.warns(PotentiallyStaleOffsetWarning):
+            result = d.in_units(["weeks", "days"], relative_to=ref)
+        assert result == ItemizedDelta(weeks=5, days=1)
+
+    def test_offset_datetime_exact_delta_cal_output(self):
+        # exact delta + calendar output → warns (output has calendar)
+        d = ItemizedDelta(hours=50)
+        ref = OffsetDateTime(2020, 1, 1, offset=3)
+        with pytest.warns(PotentiallyStaleOffsetWarning):
+            result = d.in_units(["days", "hours"], relative_to=ref)
+        assert result == ItemizedDelta(days=2, hours=2)
+
+    def test_offset_datetime_mixed_delta_mixed_output(self):
+        # mixed delta + mixed output → warns
+        d = ItemizedDelta(months=1, hours=5)
+        ref = OffsetDateTime(2020, 1, 1, offset=3)
+        with pytest.warns(PotentiallyStaleOffsetWarning):
+            result = d.in_units(["days", "hours"], relative_to=ref)
+        assert result == ItemizedDelta(days=31, hours=5)
+
+    def test_offset_datetime_exact_delta_exact_output_no_warning(self):
+        # pure exact delta + pure exact output → no warning (offset, exact both sides)
+        import warnings as _warnings
+
+        d = ItemizedDelta(hours=5, minutes=30)
+        ref = OffsetDateTime(2020, 1, 1, 12, offset=3)
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("error")
+            result = d.in_units(["hours", "minutes"], relative_to=ref)
+        assert result == ItemizedDelta(hours=5, minutes=30)
+
+    def test_warning_suppressed_plain(self):
+        d = ItemizedDelta(months=1)
+        with ignore_timezone_unaware_arithmetic_warning():
+            result = d.in_units(
+                ["days", "hours"], relative_to=PlainDateTime(2020, 1, 1)
+            )
+        assert result == ItemizedDelta(days=31)
+
+    def test_warning_suppressed_offset(self):
+        d = ItemizedDelta(months=1)
+        with ignore_potentially_stale_offset_warning():
+            result = d.in_units(
+                ["weeks", "days"],
+                relative_to=OffsetDateTime(2020, 1, 1, offset=3),
+            )
+        assert result == ItemizedDelta(weeks=4, days=3)
+
+    def test_results_match_zoned_utc(self):
+        # Plain/Offset should give same result as ZonedDateTime in UTC
+        d = ItemizedDelta(months=2, hours=48)
+        with ignore_timezone_unaware_arithmetic_warning():
+            plain_result = d.in_units(
+                ["months", "days", "hours"],
+                relative_to=PlainDateTime(2020, 3, 15, 10),
+            )
+        zoned_result = d.in_units(
+            ["months", "days", "hours"],
+            relative_to=ZonedDateTime(2020, 3, 15, 10, tz="UTC"),
+        )
+        assert plain_result.exact_eq(zoned_result)
+
+
 class TestAddSub:
     # We have a limited number of test cases here since this operation is
     # mostly a combination of logic tested elsewhere: ZonedDateTime.add() and ZonedDateTime.since()
@@ -829,6 +953,92 @@ class TestTotal:
                     "0001-12-31T00:00Z[America/New_York]"
                 ),
             )
+
+    def test_relative_to_plain_datetime(self):
+        # Warning rules for PlainDateTime:
+        # - warns when conversion crosses the calendar/exact boundary
+        # - pure calendar-to-calendar or exact-to-exact: no warning
+
+        # calendar delta + calendar unit → no warning
+        import warnings as _warnings
+
+        d_cal = ItemizedDelta(months=1)
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("error")
+            result = d_cal.total("days", relative_to=PlainDateTime(2020, 1, 1))
+        assert result == pytest.approx(31.0)
+
+        # exact delta + exact unit → no warning (exact→exact, no calendar boundary)
+        d_exact = ItemizedDelta(hours=10, minutes=30)
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("error")
+            result = d_exact.total(
+                "hours", relative_to=PlainDateTime(2020, 1, 1, 12)
+            )
+        assert result == pytest.approx(10.5)
+
+        # exact delta + calendar unit → warns (crosses boundary)
+        with pytest.warns(TimeZoneUnawareArithmeticWarning):
+            d_exact.total("days", relative_to=PlainDateTime(2020, 1, 1))
+
+        # calendar delta + exact unit → warns (crosses boundary)
+        with pytest.warns(TimeZoneUnawareArithmeticWarning):
+            d_cal.total("hours", relative_to=PlainDateTime(2020, 1, 1))
+
+        # nanoseconds result is int; uses mixed delta to trigger warning
+        d_ns_mixed = ItemizedDelta(months=1, nanoseconds=500_000_000)
+        with pytest.warns(TimeZoneUnawareArithmeticWarning):
+            result = d_ns_mixed.total(
+                "nanoseconds", relative_to=PlainDateTime(2020, 1, 1)
+            )
+        assert isinstance(result, int)
+
+    def test_relative_to_offset_datetime(self):
+        # Warning rules for OffsetDateTime:
+        # - warns if delta has calendar units OR target unit is calendar
+        # - no warning for pure exact-to-exact
+
+        # calendar delta + calendar unit → warns
+        d_cal = ItemizedDelta(months=1)
+        with pytest.warns(PotentiallyStaleOffsetWarning):
+            result = d_cal.total(
+                "days", relative_to=OffsetDateTime(2020, 1, 1, offset=2)
+            )
+        assert result == pytest.approx(31.0)
+
+        # exact delta + exact unit → no warning
+        import warnings as _warnings
+
+        d_exact = ItemizedDelta(hours=10, minutes=30)
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("error")
+            result = d_exact.total(
+                "hours", relative_to=OffsetDateTime(2020, 1, 1, 12, offset=3)
+            )
+        assert result == pytest.approx(10.5)
+
+        # calendar delta + exact unit → warns (delta has calendar)
+        with pytest.warns(PotentiallyStaleOffsetWarning):
+            d_cal.total(
+                "hours", relative_to=OffsetDateTime(2020, 1, 1, offset=2)
+            )
+
+        # exact delta + calendar unit → warns (unit is calendar)
+        with pytest.warns(PotentiallyStaleOffsetWarning):
+            d_exact.total(
+                "days", relative_to=OffsetDateTime(2020, 1, 1, offset=3)
+            )
+
+    def test_relative_to_warning_suppressed(self):
+        d = ItemizedDelta(months=1)
+        with ignore_timezone_unaware_arithmetic_warning():
+            result = d.total("hours", relative_to=PlainDateTime(2020, 1, 1))
+        assert result == pytest.approx(744.0)
+        with ignore_potentially_stale_offset_warning():
+            result = d.total(
+                "days", relative_to=OffsetDateTime(2020, 1, 1, offset=2)
+            )
+        assert result == pytest.approx(31.0)
 
 
 def test_replace():

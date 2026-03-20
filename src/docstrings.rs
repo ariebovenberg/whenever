@@ -1053,10 +1053,12 @@ Add time to this delta, returning a new delta";
 pub(crate) const ITEMIZEDDATEDELTA_EXACT_EQ: &CStr = c"\
 Check for strict equality. All fields *and their presence* must match.
 
->>> d = ItemizedDateDelta(weeks=2, minutes=90)
->>> d == ItemizedDateDelta(weeks=2, minutes=90)
+>>> d = ItemizedDateDelta(weeks=2, days=3)
+>>> d == ItemizedDateDelta(weeks=2, days=3)
 True
->>> d == ItemizedDateDelta(weeks=2, minutes=90, seconds=0)
+>>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
+True
+>>> d.exact_eq(ItemizedDateDelta(weeks=2, days=3, months=0))
 False
 ";
 pub(crate) const ITEMIZEDDATEDELTA_FORMAT_ISO: &CStr = c"\
@@ -1217,6 +1219,21 @@ is required to resolve calendar units.
 >>> d = ItemizedDelta(years=1, months=8, minutes=1000)
 >>> d.in_units([\"weeks\", \"hours\"], relative_to=ZonedDateTime(2020, 6, 30, 12, tz=\"Asia/Tokyo\"))
 ItemizedDelta(\"P86w160h\")
+
+Parameters
+----------
+relative_to
+    A :class:`ZonedDateTime`, :class:`PlainDateTime`, or
+    :class:`OffsetDateTime` reference point.
+
+    - :class:`ZonedDateTime`: DST-aware; emits no warning
+    - :class:`PlainDateTime`: emits :class:`TimeZoneUnawareArithmeticWarning`
+      when the conversion crosses the calendar/exact-time boundary
+      (i.e. the delta or output mixes calendar and exact-time units).
+      Pure calendar-to-calendar or exact-to-exact conversions do not warn.
+    - :class:`OffsetDateTime`: emits :class:`PotentiallyStaleOffsetWarning`
+      when the delta contains calendar units (years, months, weeks, days)
+      **or** the output units include calendar units
 ";
 pub(crate) const ITEMIZEDDELTA_PARSE_ISO: &CStr = c"\
 Parse the *popular interpretation* of the ISO 8601 duration format.
@@ -1262,7 +1279,23 @@ pub(crate) const ITEMIZEDDELTA_TOTAL: &CStr = c"\
 total($self, unit, /, *, relative_to)
 --
 
-Return the total duration expressed in the specified unit as a float";
+Return the total duration expressed in the specified unit as a float
+
+Parameters
+----------
+relative_to
+    A :class:`ZonedDateTime`, :class:`PlainDateTime`, or
+    :class:`OffsetDateTime` reference point.
+
+    - :class:`ZonedDateTime`: DST-aware; emits no warning
+    - :class:`PlainDateTime`: emits :class:`TimeZoneUnawareArithmeticWarning`
+      when the conversion crosses the calendar/exact-time boundary
+      (i.e. the delta or target unit mixes calendar and exact-time units).
+      Pure calendar-to-calendar or exact-to-exact conversions do not warn.
+    - :class:`OffsetDateTime`: emits :class:`PotentiallyStaleOffsetWarning`
+      when the delta contains calendar units (years, months, weeks, days)
+      **or** the target unit is a calendar unit
+";
 pub(crate) const MONTHDAY_DAY: &CStr = c"\
 The day component of the month-day
 
@@ -1950,7 +1983,7 @@ Convert to a tuple of (hours, minutes, seconds, nanoseconds)
 >>> d.in_hrs_mins_secs_nanos()
 (1, 30, 5, 90_000)
 
-... deprecated:: 0.10.0
+.. deprecated:: 0.10.0
 
     Use :meth:`in_units` with ``['hours', 'minutes', 'seconds', 'nanoseconds']`` instead.
 ";
@@ -2038,6 +2071,12 @@ round_increment
 relative_to
     A reference datetime required when using calendar units
     (``years``, ``months``, ``days``, or ``weeks``) to account for variable unit lengths.
+
+    - :class:`ZonedDateTime`: DST-aware; emits no warning
+    - :class:`PlainDateTime`: does not account for time zones; emits
+      :class:`TimeZoneUnawareArithmeticWarning`
+    - :class:`OffsetDateTime`: does not account for DST changes; emits
+      :class:`PotentiallyStaleOffsetWarning`
 ";
 pub(crate) const TIMEDELTA_PARSE_ISO: &CStr = c"\
 Parse the *popular interpretation* of the ISO 8601 duration format.
@@ -2621,6 +2660,7 @@ pub(crate) const OFFSET_REPLACE_STALE_MSG: &CStr = c"Replacing fields of an Offs
 pub(crate) const OFFSET_ROUND_STALE_MSG: &CStr = c"Rounding an OffsetDateTime keeps the fixed UTC offset, which may not be accurate in the rare case that the rounded time crosses a DST or other timezone boundary. Convert to a ZonedDateTime first (using .assume_tz()) for timezone-aware rounding. Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, or with Python's standard warning filters.";
 pub(crate) const OFFSET_SHIFT_STALE_MSG: &CStr = c"Shifting an OffsetDateTime keeps the fixed UTC offset, which may not match the actual offset after a DST or other timezone transition (e.g. adding 1 day to 2024-03-09 12:00-07:00 gives 2024-03-10 12:00-07:00, but if this offset represents Denver, Colorado (America/Denver), the actual offset changed to -06:00 on that date). Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware arithmetic. Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, or with Python's standard warning filters.";
 pub(crate) const PLAIN_DIFF_UNAWARE_MSG: &CStr = c"Calculating the difference between two PlainDateTime values does not account for timezone transitions that may have occurred between them: for example, PlainDateTime(2023, 3, 26, 3, 0) - PlainDateTime(2023, 3, 26, 1, 0) gives 2h, but in Amsterdam clocks jumped from 2:00 to 3:00 that morning, so only 1 real hour elapsed. Use .assume_tz('<tz>') for both values if you know the timezone. Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, or with Python's standard warning filters.";
+pub(crate) const PLAIN_RELATIVE_TO_UNAWARE_MSG: &CStr = c"Using a PlainDateTime as reference does not account for timezone transitions: without a timezone, converting between calendar units (months, days) and exact time units (hours, seconds) is ambiguous across DST boundaries. Use .assume_tz('<tz>') for timezone-aware results. Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, or with Python's standard warning filters.";
 pub(crate) const PLAIN_SHIFT_UNAWARE_MSG: &CStr = c"Shifting a PlainDateTime by exact time units does not account for timezone transitions that may occur in the interval (e.g. adding 2 hours to 2023-03-26 01:30 in Amsterdam crosses the spring-forward transition, so only 1 real hour has passed). Use .assume_tz('<tz>') + delta if you know the timezone. Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, or with Python's standard warning filters.";
 pub(crate) const STALE_OFFSET_CALENDAR_MSG: &CStr = c"Computing calendar units (years, months, weeks, days) relative to an OffsetDateTime assumes the UTC offset remains constant throughout the period. If the region has since changed its rules (e.g. DST), the result may be off by an hour. Use ZonedDateTime for DST-aware calendar arithmetic. Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, or with Python's standard warning filters.";
 pub(crate) const ZONEINFO_NO_KEY_MSG: &CStr = c"Can't determine the IANA timezone ID of the given datetime: The 'key' attribute of the datetime's ZoneInfo object is None. 

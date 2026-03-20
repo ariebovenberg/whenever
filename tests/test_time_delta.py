@@ -1733,7 +1733,7 @@ class TestInUnits:
 
     def test_units_out_of_order(self):
         d = TimeDelta(hours=1)
-        with pytest.raises(ValueError, match="largest to smallest"):
+        with pytest.raises(ValueError, match="decreasing order of size"):
             d.in_units(["seconds", "hours"])
 
     def test_units_repeated(self):
@@ -1800,6 +1800,36 @@ class TestInUnits:
             round_increment=1 << 65,
             round_mode="ceil",
         ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)
+
+    def test_relative_to_plain_datetime(self):
+        # 140 days from 2024-02-29 = 4 months + 20 days
+        d = TimeDelta(hours=3360)
+        ref = PlainDateTime(2024, 2, 29, 12, 1)
+        with pytest.warns(TimeZoneUnawareArithmeticWarning):
+            result = d.in_units(["months", "days"], relative_to=ref)
+        assert result["months"] == 4
+
+    def test_relative_to_offset_datetime(self):
+        # Same arithmetic as plain, but uses OffsetDateTime
+        d = TimeDelta(hours=3360)
+        ref = OffsetDateTime(2024, 2, 29, 12, 1, offset=2)
+        with pytest.warns(PotentiallyStaleOffsetWarning):
+            result = d.in_units(["months", "days"], relative_to=ref)
+        assert result["months"] == 4
+
+    def test_relative_to_plain_no_warning_for_exact_units(self):
+        # Exact-only units: no warning since relative_to doesn't affect result
+        d = TimeDelta(hours=5, minutes=30)
+        ref = PlainDateTime(2024, 1, 1)
+        result = d.in_units(["hours", "minutes"], relative_to=ref)
+        assert result == ItemizedDelta(hours=5, minutes=30)
+
+    def test_relative_to_offset_no_warning_for_exact_units(self):
+        # Exact-only units: no warning since relative_to doesn't affect result
+        d = TimeDelta(hours=5, minutes=30)
+        ref = OffsetDateTime(2024, 1, 1, offset=3)
+        result = d.in_units(["hours", "minutes"], relative_to=ref)
+        assert result == ItemizedDelta(hours=5, minutes=30)
 
 
 def test_copy():

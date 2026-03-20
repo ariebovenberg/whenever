@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.0a1 (2026-03-16)
+## 0.10.0b1 (2026-03-20)
 
 A big release with several breaking changes and improvements. Highlights
 are the new delta API, customizable string formatting and parsing,
@@ -97,7 +97,7 @@ See the full list below.
 - `parse_strptime()` methods on `OffsetDateTime` and `PlainDateTime`.
   Use the new `parse()` method instead.
 
-**Added**
+**Improved**
 
 - New `since()` and `until()` methods on `Date`, `ZonedDateTime`,
   `OffsetDateTime`, and `PlainDateTime` for calculating the difference
@@ -132,9 +132,6 @@ See the full list below.
   `ignore_timezone_unaware_arithmetic_warning()`,
   `ignore_days_not_always_24h_warning()`) for fine-grained control
   over DST-related warnings.
-
-**Improved**
-
 - A huge revamp and expansion of the documentation.
   The structure and navigability of API reference and overview pages
   has been improved. Several new pages have been added, including:
