@@ -33,6 +33,7 @@ it's easy to accidentally mix interpretations.
 
 Thankfully, methods like {meth}`~datetime.datetime.utcnow()` are being deprecated, slowly making "system timezone"
 the only implicit meaning of naive datetimes in the standard library.
+But this behavior {ref}`also has drawbacks <stdlib-system-tz>`.
 
 ## How `whenever` solves this
 

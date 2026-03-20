@@ -50,3 +50,5 @@ ZonedDateTime("2024-10-27 02:30:00+01:00[Europe/Amsterdam]")
 >>> local.assume_tz("Europe/Amsterdam", disambiguate="compatible")  # the default
 ZonedDateTime("2024-10-27 02:30:00+02:00[Europe/Amsterdam]")
 ```
+
+See {ref}`ambiguity` for more details on handling ambiguity in `whenever`.

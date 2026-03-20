@@ -8,11 +8,11 @@ When time zone offsets change—most commonly due to daylight saving time—a lo
 clock time may occur **twice** or **not at all**.
 
 Python resolves these ambiguities with the `fold` parameter, which defaults to `0`.
-That's not inherently wrong: having a deterministic default is often useful.
+That's not inherently wrong: having a deterministic default {ref}`is often useful <ambiguity-default>`.
 
 The problem is that it’s difficult to handle ambiguity *explicitly*:
 
-* There is no option to raise an error instead of picking a default
+* There is no option to raise an error (instead of picking a default)
 * The `fold` parameter is subtle and poorly discoverable
 * Many users are unaware ambiguity exists at all
 
