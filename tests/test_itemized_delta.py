@@ -315,6 +315,30 @@ def test_repr():
     )
 
 
+def test_str():
+    d = ItemizedDelta(
+        years=3,
+        months=6,
+        days=4,
+        hours=12,
+        minutes=30,
+        seconds=5,
+        nanoseconds=400_000_000,
+    )
+    assert str(d) == "P3Y6M4DT12H30M5.4S"
+    assert str(ItemizedDelta(seconds=0)) == "PT0S"
+    assert str(ItemizedDelta(days=0)) == "P0D"
+
+
+def test_init_from_str():
+    assert ItemizedDelta("P2W3D").exact_eq(ItemizedDelta(weeks=2, days=3))
+    assert ItemizedDelta("PT1H30M").exact_eq(
+        ItemizedDelta(hours=1, minutes=30)
+    )
+    with pytest.raises(ValueError):
+        ItemizedDelta("not valid")
+
+
 INVALID_DELTAS = [
     "P",
     "PT0.0000000001S",  # too many decimal places

@@ -410,6 +410,13 @@ class TestPlainDateTimeParse:
         pattern = "YYYY-MM-DD hh:mm:ss.fff"
         assert PlainDateTime.parse(pdt.format(pattern), format=pattern) == pdt
 
+    def test_weekday_mismatch(self):
+        # March 15, 2024 is a Friday, not Monday
+        with pytest.raises(ValueError, match="weekday"):
+            PlainDateTime.parse(
+                "Mon 2024-03-15 14:30", format="ddd YYYY-MM-DD hh:mm"
+            )
+
 
 class TestOffsetDateTimeFormat:
     def test_basic(self):
@@ -490,6 +497,14 @@ class TestOffsetDateTimeParse:
         )
         pattern = "YYYY-MM-DD hh:mm:ss.fffxxx"
         assert OffsetDateTime.parse(odt.format(pattern), format=pattern) == odt
+
+    def test_weekday_mismatch(self):
+        # March 15, 2024 is a Friday, not Monday
+        with pytest.raises(ValueError, match="weekday"):
+            OffsetDateTime.parse(
+                "Mon 2024-03-15 14:30+02:00",
+                format="ddd YYYY-MM-DD hh:mmxxx",
+            )
 
 
 class TestZonedDateTimeFormat:
@@ -581,6 +596,14 @@ class TestZonedDateTimeParse:
         zdt = ZonedDateTime(2024, 7, 15, 14, 30, tz="Europe/Paris")
         pattern = "YYYY-MM-DD hh:mm:ssxxx'['VV']'"
         assert ZonedDateTime.parse(zdt.format(pattern), format=pattern) == zdt
+
+    def test_weekday_mismatch(self):
+        # March 15, 2024 is a Friday, not Monday
+        with pytest.raises(ValueError, match="weekday"):
+            ZonedDateTime.parse(
+                "Mon 2024-03-15 14:30+01:00[Europe/Paris]",
+                format="ddd YYYY-MM-DD hh:mmxxx'['VV']'",
+            )
 
 
 class TestInstantFormat:

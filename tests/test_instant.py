@@ -1155,7 +1155,7 @@ class TestRound:
 
     def test_day_not_supported(self):
         d = Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="day.*24.*hour"):
+        with pytest.raises(ValueError, match="exactly 24 hours"):
             d.round("day")  # type: ignore[call-overload]
 
     def test_out_of_range(self):

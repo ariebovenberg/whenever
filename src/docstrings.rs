@@ -2611,7 +2611,7 @@ ZonedDateTime(\"2021-01-02T03:04:05+01:00[Europe/Paris]\")
 ";
 pub(crate) const LOCALTIME_YEAR: &CStr = c"\
 The year component of the datetime";
-pub(crate) const CANNOT_ROUND_DAY_MSG: &CStr = c"Cannot round to day, because days do not have a fixed length. Due to daylight saving time, some days have 23 or 25 hours.If you wish to round to exaxtly 24 hours, use `round('hour', increment=24)`.";
+pub(crate) const CANNOT_ROUND_DAY_MSG: &CStr = c"Cannot round to day, because days do not have a fixed length. Due to daylight saving time, some days have 23 or 25 hours. If you wish to round to exactly 24 hours, use `round('hour', increment=24)`.";
 pub(crate) const DAYS_NOT_ALWAYS_24H_MSG: &CStr = c"This operation assumes days are exactly 24 hours. Calendar days may be 23 or 25 hours long during DST transitions. If you're working with UTC, or deliberately want fixed-length days, this is correct. For DST-aware operations, consider using ZonedDateTime arithmetic instead, or passing the `relative_to` argument where available. Suppress this warning with `with whenever.ignore_days_not_always_24h_warning():`.";
 pub(crate) const FORMAT_ISO_NO_TZ_MSG: &CStr = c"This ZonedDateTime has no timezone ID and cannot be formatted in the standard ISO format, which requires it. This typically means the ZonedDateTime was created from a system timezone with an unknown ID. To format without the timezone designator, set the `tz=` argument to 'never' or 'auto'.";
 pub(crate) const IGNORE_DST_DEPRECATED_MSG: &CStr = c"The `ignore_dst` parameter is deprecated and replaced with a warning.";

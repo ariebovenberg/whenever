@@ -656,7 +656,7 @@ fn time(cls: HeapType<OffsetDateTime>, OffsetDateTime { time, .. }: OffsetDateTi
 /// Emit `PotentiallyStaleOffsetWarning` unless suppressed by ContextVar.
 fn offset_stale_warning(state: &State, msg: &CStr) -> PyResult<()> {
     if !state.cv_ignore_potentially_stale_offset.get()? {
-        warn_with_class(state.warn_potentially_stale_offset, msg, 2)?;
+        warn_with_class(state.warn_potentially_stale_offset, msg, 1)?;
     }
     Ok(())
 }
@@ -670,7 +670,7 @@ fn check_deprecated_ignore_dst_and_warn(
 ) -> PyResult<()> {
     if let Some((key, _value)) = kwargs.next() {
         if kwargs.len() == 1 && key.py_eq(state.str_ignore_dst)? {
-            warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 2)?;
+            warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
         } else {
             raise_type_err(format!("Unknown keyword argument: {key}"))?;
         }
@@ -813,7 +813,7 @@ fn replace(
     })?;
 
     if got_ignore_dst {
-        warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 2)?;
+        warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
     }
     offset_stale_warning(state, doc::OFFSET_REPLACE_STALE_MSG)?;
 
@@ -994,7 +994,7 @@ fn shift_method(
     }
 
     if got_ignore_dst {
-        warn_with_class(warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 2)?;
+        warn_with_class(warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
     }
     offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
 
@@ -1085,7 +1085,7 @@ fn check_from_timestamp_args_return_offset(
     })?;
 
     if got_ignore_dst {
-        warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 2)?;
+        warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
     }
     offset_stale_warning(state, doc::OFFSET_FROM_TIMESTAMP_STALE_MSG)?;
 
@@ -1162,7 +1162,7 @@ fn parse_strptime(
     warn_with_class(
         state.warn_deprecation,
         c"parse_strptime() is deprecated; use parse() with a format pattern instead.",
-        2,
+        1,
     )?;
     let format_obj = match kwargs.next() {
         Some((key, value)) if kwargs.len() == 1 && key.py_eq(state.str_format)? => value,
@@ -1215,7 +1215,7 @@ fn round(
         got_ignore_dst,
     } = round::Args::parse(state, args, kwargs, true)?;
     if got_ignore_dst {
-        warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 2)?;
+        warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
     }
     offset_stale_warning(state, doc::OFFSET_ROUND_STALE_MSG)?;
     let round_nanos = match increment {
@@ -1363,7 +1363,7 @@ fn format(_: HeapType<OffsetDateTime>, slf: OffsetDateTime, pattern_obj: PyObj) 
             // SAFETY: PyExc_UserWarning is always valid
             unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
             c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
-            2,
+            1,
         )?;
     }
     let vals = pattern::FormatValues {

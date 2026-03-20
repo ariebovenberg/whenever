@@ -467,7 +467,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         warn_with_class(
             date_type.state().warn_deprecation,
             c"Using the `-` operator on Date is deprecated; use the .since() method with explicit units instead.",
-            2,
+            1,
         )?;
 
         let year_a = a.year.get() as i32;
@@ -505,7 +505,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         warn_with_class(
             state.warn_deprecation,
             c"Using the `-` operator on Date is deprecated; use the .subtract() method instead.",
-            2,
+            1,
         )?;
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
@@ -534,7 +534,7 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         warn_with_class(
             state.warn_deprecation,
             c"Using the + operator on Date is deprecated; use the .add() method instead.",
-            2,
+            1,
         )?;
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
@@ -727,7 +727,7 @@ fn days_since(cls: HeapType<Date>, slf: Date, other: PyObj) -> PyReturn {
     warn_with_class(
         cls.state().warn_deprecation,
         c"days_since() is deprecated; use since() with total='days' instead.",
-        2,
+        1,
     )?;
     slf.unix_days()
         .diff(
@@ -744,7 +744,7 @@ fn days_until(cls: HeapType<Date>, slf: Date, other: PyObj) -> PyReturn {
     warn_with_class(
         cls.state().warn_deprecation,
         c"days_until() is deprecated; use until() with total='days' instead.",
-        2,
+        1,
     )?;
     other
         .extract(cls)
@@ -846,7 +846,7 @@ fn format(_: HeapType<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {
             // SAFETY: PyExc_UserWarning is always valid
             unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
             c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
-            2,
+            1,
         )?;
     }
     let vals = pattern::FormatValues {

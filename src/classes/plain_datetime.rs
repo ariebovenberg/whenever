@@ -277,7 +277,7 @@ fn __sub__(a: PyObj, b: PyObj) -> PyReturn {
             warn_with_class(
                 state.warn_tz_unaware_arithmetic,
                 doc::PLAIN_DIFF_UNAWARE_MSG,
-                2,
+                1,
             )?;
         }
         slf.assume_utc()
@@ -313,7 +313,7 @@ fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                 warn_with_class(
                     state.warn_tz_unaware_arithmetic,
                     doc::PLAIN_SHIFT_UNAWARE_MSG,
-                    2,
+                    1,
                 )?;
             }
             tdelta = tdelta.negate_if(negate);
@@ -331,7 +331,7 @@ fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                 warn_with_class(
                     state.warn_tz_unaware_arithmetic,
                     doc::PLAIN_SHIFT_UNAWARE_MSG,
-                    2,
+                    1,
                 )?;
             }
             a.shift_date(months, days)
@@ -620,7 +620,7 @@ fn shift_method(
     }
 
     if got_ignore_dst {
-        warn_with_class(warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 2)?;
+        warn_with_class(warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
     }
 
     months = months.negate_if(negate);
@@ -628,7 +628,7 @@ fn shift_method(
     tdelta = tdelta.negate_if(negate);
 
     if !tdelta.is_zero() && !cv_ignore_tz_unaware_arithmetic.get()? {
-        warn_with_class(warn_tz_unaware_arithmetic, doc::PLAIN_SHIFT_UNAWARE_MSG, 2)?;
+        warn_with_class(warn_tz_unaware_arithmetic, doc::PLAIN_SHIFT_UNAWARE_MSG, 1)?;
     }
     slf.shift_date(months, days)
         .and_then(|dt| dt.shift(tdelta))
@@ -644,7 +644,7 @@ fn difference(
 ) -> PyReturn {
     let state = cls.state();
     // difference() is deprecated entirely
-    warn_with_class(state.warn_deprecation, c"The difference() method is deprecated, use the subtraction operator or since() method instead. ", 2)?;
+    warn_with_class(state.warn_deprecation, c"The difference() method is deprecated, use the subtraction operator or since() method instead. ", 1)?;
     // Accept but ignore the deprecated ignore_dst kwarg
     if let Some((key, _value)) = kwargs.next()
         && !(kwargs.len() == 1 && key.py_eq(state.str_ignore_dst)?)
@@ -797,7 +797,7 @@ fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwar
     warn_with_class(
         warn_deprecation,
         c"parse_strptime() is deprecated; use parse() with a format pattern instead.",
-        2,
+        1,
     )?;
     let format_obj = match kwargs.next() {
         Some((key, value)) if kwargs.len() == 1 && key.py_eq(str_format)? => value,
@@ -965,7 +965,7 @@ fn plain_since(
         warn_with_class(
             state.warn_tz_unaware_arithmetic,
             doc::PLAIN_DIFF_UNAWARE_MSG,
-            2,
+            1,
         )?;
     }
 
@@ -1144,7 +1144,7 @@ fn format(_cls: HeapType<DateTime>, slf: DateTime, pattern_obj: PyObj) -> PyRetu
             // SAFETY: PyExc_UserWarning is always valid
             unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
             c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
-            2,
+            1,
         )?;
     }
     let vals = pattern::FormatValues {
@@ -1344,8 +1344,8 @@ mod tests {
                 b"2023-03-02 02:09:09.123456789",
                 2023,
                 3,
-                2,
-                2,
+                1,
+                1,
                 9,
                 9,
                 123_456_789,

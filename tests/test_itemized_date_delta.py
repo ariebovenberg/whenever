@@ -319,6 +319,28 @@ def test_repr():
     )
 
 
+def test_str():
+    d = ItemizedDateDelta(
+        years=3,
+        months=6,
+        weeks=9,
+        days=4,
+    )
+    assert str(d) == "P3Y6M9W4D"
+    assert str(ItemizedDateDelta(days=0)) == "P0D"
+
+
+def test_init_from_str():
+    assert ItemizedDateDelta("P2W3D").exact_eq(
+        ItemizedDateDelta(weeks=2, days=3)
+    )
+    assert ItemizedDateDelta("P1Y6M").exact_eq(
+        ItemizedDateDelta(years=1, months=6)
+    )
+    with pytest.raises(ValueError):
+        ItemizedDateDelta("not valid")
+
+
 INVALID_DELTAS = [
     "P",
     "",

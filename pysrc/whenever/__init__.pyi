@@ -37,15 +37,21 @@ else:
 from typing_extensions import Self, override
 
 __all__ = [
+    # Date and time
     "Date",
+    "YearMonth",
+    "MonthDay",
     "Time",
     "Instant",
     "OffsetDateTime",
     "ZonedDateTime",
     "PlainDateTime",
+    # Deltas and time units
     "DateDelta",
     "TimeDelta",
     "DateTimeDelta",
+    "ItemizedDelta",
+    "ItemizedDateDelta",
     "years",
     "months",
     "weeks",
@@ -53,17 +59,23 @@ __all__ = [
     "hours",
     "minutes",
     "seconds",
+    "milliseconds",
     "microseconds",
+    "nanoseconds",
+    # Exceptions/warnings
+    "DaysNotAlways24HoursWarning",
+    "PotentiallyStaleOffsetWarning",
+    "TimeZoneUnawareArithmeticWarning",
+    "PotentialDstBugWarning",
+    "WheneverDeprecationWarning",
     "SkippedTime",
     "RepeatedTime",
     "InvalidOffsetError",
-    "MONDAY",
-    "TUESDAY",
-    "WEDNESDAY",
-    "THURSDAY",
-    "FRIDAY",
-    "SATURDAY",
-    "SUNDAY",
+    "ImplicitlyIgnoringDST",
+    "TimeZoneNotFoundError",
+    # Other stuff
+    "Weekday",
+    "reset_system_tz",
 ]
 
 _EXTENSION_LOADED: bool
@@ -119,12 +131,7 @@ OffsetMismatchStr: TypeAlias = Literal["raise", "keep_instant", "keep_local"]
 class _ISOMixin:
     @classmethod
     def parse_iso(cls, s: str, /) -> Self: ...
-    @classmethod
-    @deprecated("Use parse_iso() instead")
-    def parse_common_iso(cls, s: str, /) -> Self: ...
     def format_iso(self) -> str: ...
-    @deprecated("Use format_iso() instead")
-    def format_common_iso(self) -> str: ...
 
 @type_check_only
 class _OrderMixin:
@@ -524,7 +531,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
             "half_even",
         ] = "trunc",
         round_increment: int = ...,
-        # TODO: support other local datetimes?
+        # FUTURE: support other local datetimes?
         relative_to: ZonedDateTime = ...,
     ) -> ItemizedDelta: ...
     def to_stdlib(self) -> _timedelta: ...
@@ -660,6 +667,9 @@ class ItemizedDelta(
         int,
     ]
 ):
+    @overload
+    def __init__(self, iso_string: str, /) -> None: ...
+    @overload
     def __init__(
         self,
         *,
@@ -905,13 +915,16 @@ class ItemizedDelta(
     ) -> int: ...
     def __abs__(self) -> Self: ...
     def __neg__(self) -> Self: ...
-    def __add__(self, other: Self, /) -> Self: ...
+    def __bool__(self) -> bool: ...
     def sign(self) -> Literal[1, 0, -1]: ...
 
 @final
 class ItemizedDateDelta(
     Mapping[Literal["years", "months", "weeks", "days"], int]
 ):
+    @overload
+    def __init__(self, iso_string: str, /) -> None: ...
+    @overload
     def __init__(
         self,
         *,
@@ -1056,7 +1069,7 @@ class ItemizedDateDelta(
     ) -> int: ...
     def __abs__(self) -> Self: ...
     def __neg__(self) -> Self: ...
-    def __add__(self, other: Self, /) -> Self: ...
+    def __bool__(self) -> bool: ...
 
 @final
 @deprecated("Use ItemizedDelta instead")
@@ -1996,7 +2009,7 @@ def patch_current_time(
 TZPATH: tuple[str, ...]
 
 def reset_tzpath(
-    to: Iterable[str | PathLike[str]] | None = None, /
+    target: Iterable[str | PathLike[str]] | None = None, /
 ) -> None: ...
 def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None: ...
 def available_timezones() -> set[str]: ...
