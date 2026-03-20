@@ -233,9 +233,11 @@ see {ref}`the fundamentals <arithmetic2>`.
 
 - {class}`~whenever.PlainDateTime` doesn't have a timezone,
   so it can't account for DST or other clock changes.
-  Calendar units can be added without any complications,
-  but adding or subtracting exact time units, or calculating the difference
-  between two plain datetimes, will emit a {class}`~whenever.TimeZoneUnawareArithmeticWarning`:
+  Calendar units (years, months, weeks, days) can be added or compared
+  without any complications.
+  Exact time units (hours, minutes, seconds, nanoseconds), however, are
+  unreliable without a timezone, so these operations emit a
+  {class}`~whenever.TimeZoneUnawareArithmeticWarning`:
 
   ```python
   >>> d = PlainDateTime(2023, 10, 29, 1, 30)
@@ -248,6 +250,10 @@ see {ref}`the fundamentals <arithmetic2>`.
   PlainDateTime("2023-10-29 03:30:00")
   ```
 
+  When using `since()` / `until()` on a `PlainDateTime`, the warning is
+  emitted only if the output uses exact time units (e.g. ``total="hours"``).
+  Comparing in calendar units (e.g. ``total="days"``) is always safe.
+
 ```{attention}
 Even when dealing with a timezone without DST, you should still use
 {class}`~whenever.ZonedDateTime` for exact time arithmetic.
@@ -259,9 +265,10 @@ Here is a summary of the arithmetic features for each type:
 |                       | Instant | OffsetDT|ZonedDT  |PlainDT  |
 |:----------------------|:-------:|:-------:|:-------:|:-------:|
 | Difference (`-`)      | ✅      |  ✅     |   ✅    |⚠️  [^3] |
-| `since()` / `until()` | ❌      |  ✅  |   ✅    |⚠️  [^3] |
-| add/subtract years, months, days   | ❌      |⚠️  [^1] |✅  [^2] |    ⚠️ [^3]   |
-| add/subtract hours, minutes, seconds  | ✅      |⚠️  [^1] |  ✅     |⚠️  [^3] |
+| `since()` / `until()` (calendar units) | ❌      |  ✅  |   ✅    |    ✅   |
+| `since()` / `until()` (exact units)    | ❌      |  ✅  |   ✅    |⚠️  [^3] |
+| add/subtract years, months, days       | ❌      |⚠️  [^1] |✅  [^2] |    ✅   |
+| add/subtract hours, minutes, seconds   | ✅      |⚠️  [^1] |  ✅     |⚠️  [^3] |
 
 [^1]: Emits a {class}`~whenever.PotentiallyStaleOffsetWarning`
 [^2]: The result may be ambiguous in rare cases. Accepts the ``disambiguate`` argument.

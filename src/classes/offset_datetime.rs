@@ -1297,13 +1297,8 @@ fn offset_since(
                              with the same offset",
                         );
                     }
-                    if !state.cv_ignore_potentially_stale_offset.get()? {
-                        warn_with_class(
-                            state.warn_potentially_stale_offset,
-                            doc::STALE_OFFSET_CALENDAR_MSG,
-                            3,
-                        )?;
-                    }
+                    // OffsetDateTime.since() never warns; same-offset calendar
+                    // units are well-defined and exact units are always correct.
                     plain_datetime::plain_since_inner(
                         state,
                         a.without_offset(),

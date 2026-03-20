@@ -56,6 +56,7 @@ from ._math import (
     DATE_DELTA_UNITS,
     DELTA_UNITS,
     DIFF_FUNCS,
+    EXACT_UNITS_STRICT,
     NS_PER_UNIT_PLURAL,
     Sign,
     custom_round,
@@ -213,6 +214,9 @@ _T = TypeVar("_T")
 _UNSET: Any = type(
     "UNSET", (), {"__repr__": lambda _: "...", "__bool__": lambda _: False}
 )()
+
+_CAL_DELTA_UNITS = DATE_DELTA_UNITS
+_EXACT_TIME_UNITS = EXACT_UNITS_STRICT
 
 
 # Basic behavior common to all classes
@@ -2032,7 +2036,7 @@ class TimeDelta(_Base):
                 if isinstance(relative_to, PlainDateTime):
                     if not _ignore_timezone_unaware_arithmetic_warning.get():
                         warn(
-                            PLAIN_DIFF_UNAWARE_MSG,
+                            PLAIN_RELATIVE_TO_UNAWARE_MSG,
                             TimeZoneUnawareArithmeticWarning,
                             stacklevel=_warn_stacklevel,
                         )
@@ -2254,7 +2258,7 @@ class TimeDelta(_Base):
         *,
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
-        relative_to: ZonedDateTime = _UNSET,
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = _UNSET,
     ) -> ItemizedDelta:
         """Convert to a :class:`ItemizedDelta` with the specified units
 
@@ -2281,25 +2285,21 @@ class TimeDelta(_Base):
         relative_to
             A reference datetime required when using calendar units
             (``years``, ``months``, ``days``, or ``weeks``) to account for variable unit lengths.
+
+            - :class:`ZonedDateTime`: DST-aware; emits no warning
+            - :class:`PlainDateTime`: does not account for time zones; emits
+              :class:`TimeZoneUnawareArithmeticWarning`
+            - :class:`OffsetDateTime`: does not account for DST changes; emits
+              :class:`PotentiallyStaleOffsetWarning`
         """
-        has_cal = "years" in units or "months" in units
-        if has_cal and relative_to is _UNSET:
+        has_years_months = "years" in units or "months" in units
+        if has_years_months and relative_to is _UNSET:
             raise TypeError(
                 "Years and months units require a `relative_to` argument"
             )
-        if not units:
-            raise ValueError("At least one unit must be specified")
-        elif isinstance(units, str):  # Hard to debug if not caught here
-            raise TypeError("Units must be a sequence, not a string")
-        elif sorted(units, key=lambda u: _unit_index(u, DELTA_UNITS)) != list(
-            units
-        ):
-            raise ValueError(
-                "Units must be specified from largest to smallest"
-            )
-        elif len(set(units)) != len(units):
-            raise ValueError("Duplicate units are not allowed")
-        elif units[-1] == "nanoseconds" and (
+
+        units = _normalize_units(units, DELTA_UNITS)
+        if units[-1] == "nanoseconds" and (
             len(units) == 1 or units[-2] != "seconds"
         ):
             raise ValueError(
@@ -2307,8 +2307,31 @@ class TimeDelta(_Base):
             )
 
         if relative_to is not _UNSET:
-            shifted = relative_to + self
-            return shifted.since(
+            has_cal = has_years_months or "days" in units or "weeks" in units
+            if isinstance(relative_to, PlainDateTime):
+                if (
+                    has_cal
+                    and not _ignore_timezone_unaware_arithmetic_warning.get()
+                ):
+                    warn(
+                        PLAIN_RELATIVE_TO_UNAWARE_MSG,
+                        TimeZoneUnawareArithmeticWarning,
+                        stacklevel=2,
+                    )
+                relative_to = relative_to.assume_tz("UTC")
+            elif isinstance(relative_to, OffsetDateTime):
+                if (
+                    has_cal
+                    and not _ignore_potentially_stale_offset_warning.get()
+                ):
+                    warn(
+                        PotentiallyStaleOffsetWarning(
+                            STALE_OFFSET_CALENDAR_MSG
+                        ),
+                        stacklevel=2,
+                    )
+                relative_to = relative_to.to_plain().assume_tz("UTC")
+            return (relative_to + self).since(
                 relative_to,
                 in_units=units,
                 round_mode=round_mode,
@@ -3353,6 +3376,24 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         "_nanoseconds",
     )
 
+    def _has_cal(self) -> bool:
+        """True if this delta has any calendar units (years, months, weeks, days) set."""
+        return (
+            self._years is not None
+            or self._months is not None
+            or self._weeks is not None
+            or self._days is not None
+        )
+
+    def _has_exact_time(self) -> bool:
+        """True if this delta has any exact time units (hours, minutes, seconds, nanoseconds) set."""
+        return (
+            self._hours is not None
+            or self._minutes is not None
+            or self._seconds is not None
+            or self._nanoseconds is not None
+        )
+
     # Overloads for a nice autodoc.
     # Proper typing of the constructors is handled in the type stubs
     if not TYPE_CHECKING:
@@ -4115,7 +4156,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         units: Sequence[DeltaUnitStr],
         /,
         *,
-        relative_to: ZonedDateTime,
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDelta:
@@ -4125,7 +4166,45 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         >>> d = ItemizedDelta(years=1, months=8, minutes=1000)
         >>> d.in_units(["weeks", "hours"], relative_to=ZonedDateTime(2020, 6, 30, 12, tz="Asia/Tokyo"))
         ItemizedDelta("P86w160h")
+
+        Parameters
+        ----------
+        relative_to
+            A :class:`ZonedDateTime`, :class:`PlainDateTime`, or
+            :class:`OffsetDateTime` reference point.
+
+            - :class:`ZonedDateTime`: DST-aware; emits no warning
+            - :class:`PlainDateTime`: emits :class:`TimeZoneUnawareArithmeticWarning`
+              when the conversion crosses the calendar/exact-time boundary
+              (i.e. the delta or output mixes calendar and exact-time units).
+              Pure calendar-to-calendar or exact-to-exact conversions do not warn.
+            - :class:`OffsetDateTime`: emits :class:`PotentiallyStaleOffsetWarning`
+              when the delta contains calendar units (years, months, weeks, days)
+              **or** the output units include calendar units
         """
+        has_exact_in_units = any(map(_EXACT_TIME_UNITS.__contains__, units))
+        has_cal_in_units = any(map(_CAL_DELTA_UNITS.__contains__, units))
+        if isinstance(relative_to, PlainDateTime):
+            if (
+                (self._has_exact_time() or has_exact_in_units)
+                and (self._has_cal() or has_cal_in_units)
+                and not _ignore_timezone_unaware_arithmetic_warning.get()
+            ):
+                warn(
+                    PLAIN_RELATIVE_TO_UNAWARE_MSG,
+                    TimeZoneUnawareArithmeticWarning,
+                    stacklevel=2,
+                )
+            relative_to = relative_to.assume_tz("UTC")
+        elif isinstance(relative_to, OffsetDateTime):
+            if (
+                self._has_cal() or has_cal_in_units
+            ) and not _ignore_potentially_stale_offset_warning.get():
+                warn(
+                    PotentiallyStaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG),
+                    stacklevel=2,
+                )
+            relative_to = relative_to.to_plain().assume_tz("UTC")
         return relative_to.add(self).since(
             relative_to,
             in_units=units,
@@ -4134,9 +4213,51 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         )
 
     def total(
-        self, unit: DeltaUnitStr, /, *, relative_to: ZonedDateTime
+        self,
+        unit: DeltaUnitStr,
+        /,
+        *,
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
     ) -> float:
-        """Return the total duration expressed in the specified unit as a float"""
+        """Return the total duration expressed in the specified unit as a float
+
+        Parameters
+        ----------
+        relative_to
+            A :class:`ZonedDateTime`, :class:`PlainDateTime`, or
+            :class:`OffsetDateTime` reference point.
+
+            - :class:`ZonedDateTime`: DST-aware; emits no warning
+            - :class:`PlainDateTime`: emits :class:`TimeZoneUnawareArithmeticWarning`
+              when the conversion crosses the calendar/exact-time boundary
+              (i.e. the delta or target unit mixes calendar and exact-time units).
+              Pure calendar-to-calendar or exact-to-exact conversions do not warn.
+            - :class:`OffsetDateTime`: emits :class:`PotentiallyStaleOffsetWarning`
+              when the delta contains calendar units (years, months, weeks, days)
+              **or** the target unit is a calendar unit
+        """
+        is_exact_unit = unit in _EXACT_TIME_UNITS
+        if isinstance(relative_to, PlainDateTime):
+            if (
+                (self._has_exact_time() or is_exact_unit)
+                and (self._has_cal() or not is_exact_unit)
+                and not _ignore_timezone_unaware_arithmetic_warning.get()
+            ):
+                warn(
+                    PLAIN_RELATIVE_TO_UNAWARE_MSG,
+                    TimeZoneUnawareArithmeticWarning,
+                    stacklevel=2,
+                )
+            relative_to = relative_to.assume_tz("UTC")
+        elif isinstance(relative_to, OffsetDateTime):
+            if (
+                self._has_cal() or not is_exact_unit
+            ) and not _ignore_potentially_stale_offset_warning.get():
+                warn(
+                    PotentiallyStaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG),
+                    stacklevel=2,
+                )
+            relative_to = relative_to.to_plain().assume_tz("UTC")
         return (relative_to.add(self) - relative_to).total(
             unit, relative_to=relative_to
         )
@@ -8051,88 +8172,14 @@ class ZonedDateTime(_ExactAndLocalTime):
         When calculating calendar units (years, months, weeks, days),
         both datetimes must have the same timezone.
         """
-        if total is not _UNSET:
-            if in_units is not _UNSET:
-                raise TypeError("Cannot specify both 'total' and 'in_units'")
-            if round_mode is not _UNSET or round_increment is not _UNSET:
-                raise TypeError(
-                    "'round_mode' and 'round_increment' cannot be used with 'total'"
-                )
-            if total in DATE_DELTA_UNITS and self.tz != b.tz:
-                raise ValueError(
-                    "Calendar units can only be used to compare ZonedDateTimes "
-                    "with the same timezone"
-                )
-            return (self - b).total(total, relative_to=b)
-        elif in_units is _UNSET:
-            raise TypeError("Must specify either `total` or `in_units`")
-        effective_increment = (
-            1 if round_increment is _UNSET else round_increment
+        return _zoned_since(
+            self,
+            b,
+            total or None,
+            None if in_units is _UNSET else in_units,
+            round_mode,
+            round_increment,
         )
-        effective_round_mode = "trunc" if round_mode is _UNSET else round_mode
-        units = _normalize_units(in_units, valid_units=DELTA_UNITS)
-        cal_units, exact_units = _split_calendar_and_exact_units(units)
-        if cal_units and self.tz != b.tz:
-            raise ValueError(
-                "Calendar units can only be used to compare ZonedDateTimes "
-                "with the same timezone"
-            )
-
-        sign: Literal[1, -1] = 1 if self >= b else -1
-
-        # Adjust target_date so the exact remainder has the same sign
-        # as the overall difference. The while loop handles the rare case
-        # of a 24h+ gap, e.g. Samoa in 2011.
-        target_date = self.date()
-        if sign == 1:
-            while b.replace_date(target_date) > self:
-                target_date = target_date.subtract(days=1)
-        else:
-            while b.replace_date(target_date) < self:
-                target_date = target_date.add(days=1)
-        cal_results, trunc_date, expand_date = date_diff(
-            target_date._py_date,
-            b._py_dt.date(),
-            # Rounding only applies to the smallest unit.
-            # Thus if there are any exact units, calendar units aren't rounded.
-            1 if exact_units else effective_increment,
-            cal_units,
-            sign,
-        )
-        trunc = b.replace_date(
-            Date._from_py_unchecked(resolve_leap_day(trunc_date)),
-        )
-        expand = b.replace_date(
-            Date._from_py_unchecked(resolve_leap_day(expand_date)),
-        )
-
-        # Rounding is very different for exact units than calendar units
-        smallest_unit = units[-1]
-        result = cast(dict[DeltaUnitStr, int], cal_results)
-        if exact_units:
-            result.update(
-                (self - trunc)._in_exact_units(  # type: ignore[arg-type]
-                    exact_units,
-                    round_increment=effective_increment,
-                    round_mode=effective_round_mode,
-                )
-            )
-        else:
-            # Round is expensive, so only do it if needed
-            if effective_round_mode != "trunc":
-                result[smallest_unit] = custom_round(
-                    result[smallest_unit],
-                    abs((self - trunc)._total_ns),
-                    abs((expand - trunc)._total_ns),
-                    effective_round_mode,
-                    effective_increment,
-                    sign,
-                )
-
-        # mypy false positive: 'keywords must be strings' (but they're string literals!)
-        return ItemizedDelta._from_signed(
-            sign if any(result.values()) else 0, **result
-        )  # type: ignore[misc]
 
     @overload
     def until(
@@ -8165,12 +8212,13 @@ class ZonedDateTime(_ExactAndLocalTime):
         round_increment: int = _UNSET,
     ) -> ItemizedDelta | float:
         """Inverse of the ``since()`` method. See :meth:`since` for more information."""
-        return b.since(  # type: ignore[call-overload, no-any-return]
+        return _zoned_since(
+            b,
             self,
-            total=total,
-            in_units=in_units,
-            round_mode=round_mode,
-            round_increment=round_increment,
+            total or None,
+            None if in_units is _UNSET else in_units,
+            round_mode,
+            round_increment,
         )
 
     def is_ambiguous(self) -> bool:
@@ -9375,6 +9423,15 @@ PLAIN_DIFF_UNAWARE_MSG = (
     "or with Python's standard warning filters."
 )
 
+PLAIN_RELATIVE_TO_UNAWARE_MSG = (
+    "Using a PlainDateTime as reference does not account for timezone transitions: "
+    "without a timezone, converting between calendar units (months, days) and "
+    "exact time units (hours, seconds) is ambiguous across DST boundaries. "
+    "Use .assume_tz('<tz>') for timezone-aware results. "
+    "Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, "
+    "or with Python's standard warning filters."
+)
+
 STALE_OFFSET_CALENDAR_MSG = (
     "Computing calendar units (years, months, weeks, days) relative to an OffsetDateTime "
     "assumes the UTC offset remains constant throughout the period. "
@@ -9577,7 +9634,18 @@ def _plain_since(
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
             )
-        return self._sub(b).total(total, relative_to=b, _warn_stacklevel=4)
+        # Warn if the requested unit is an exact time unit.
+        # Calendar units (years/months/weeks/days) don't involve clock time,
+        # so there's no DST ambiguity.
+        if emit_warn and total in _EXACT_TIME_UNITS:
+            if not _ignore_timezone_unaware_arithmetic_warning.get():
+                warn(
+                    PLAIN_DIFF_UNAWARE_MSG,
+                    TimeZoneUnawareArithmeticWarning,
+                    stacklevel=3,
+                )
+        # Use UTC ZonedDateTime to avoid double-warning inside TimeDelta.total.
+        return self._sub(b).total(total, relative_to=b.assume_tz("UTC"))
     elif in_units is None:
         raise TypeError("Must specify either `total` or `in_units`")
 
@@ -9586,7 +9654,14 @@ def _plain_since(
     units = _normalize_units(in_units, valid_units=DELTA_UNITS)
     cal_units, exact_units = _split_calendar_and_exact_units(units)
 
-    if emit_warn and not _ignore_timezone_unaware_arithmetic_warning.get():
+    # Warn only when the output contains exact time units (hours/min/sec/ns).
+    # Calendar-only output (months, days, etc.) doesn't involve clock time,
+    # so there's no DST ambiguity in that case.
+    if (
+        emit_warn
+        and exact_units
+        and not _ignore_timezone_unaware_arithmetic_warning.get()
+    ):
         warn(
             PLAIN_DIFF_UNAWARE_MSG,
             TimeZoneUnawareArithmeticWarning,
@@ -9688,8 +9763,10 @@ def _offset_since(
                 "Calendar units can only be used to compare OffsetDateTimes "
                 "with the same offset"
             )
+        # Pass UTC ZonedDateTime to avoid warning in TimeDelta.total;
+        # OffsetDateTime.since() never emits warnings.
         return self._subtract_operator(b).total(
-            total, relative_to=b, _warn_stacklevel=4
+            total, relative_to=b.to_plain().assume_tz("UTC")
         )
     elif in_units is None:
         raise TypeError("Must specify either `total` or `in_units`")
@@ -9730,6 +9807,100 @@ def _offset_since(
         )
 
 
+def _zoned_since(
+    a: ZonedDateTime,
+    b: ZonedDateTime,
+    total: DeltaUnitStr | None,
+    in_units: Sequence[DeltaUnitStr] | None,
+    round_mode: RoundModeStr = _UNSET,
+    round_increment: int = _UNSET,
+) -> ItemizedDelta | float:
+    """Shared since() implementation for ZonedDateTime.
+    Calendar units require both datetimes to have the same timezone.
+    """
+    if total is not None:
+        if in_units is not None:
+            raise TypeError("Cannot specify both 'total' and 'in_units'")
+        if round_mode is not _UNSET or round_increment is not _UNSET:
+            raise TypeError(
+                "'round_mode' and 'round_increment' cannot be used with 'total'"
+            )
+        if total in DATE_DELTA_UNITS and a.tz != b.tz:
+            raise ValueError(
+                "Calendar units can only be used to compare ZonedDateTimes "
+                "with the same timezone"
+            )
+        return (a - b).total(total, relative_to=b)
+    elif in_units is None:
+        raise TypeError("Must specify either `total` or `in_units`")
+
+    effective_increment = 1 if round_increment is _UNSET else round_increment
+    effective_round_mode = "trunc" if round_mode is _UNSET else round_mode
+    units = _normalize_units(in_units, valid_units=DELTA_UNITS)
+    cal_units, exact_units = _split_calendar_and_exact_units(units)
+    if cal_units and a.tz != b.tz:
+        raise ValueError(
+            "Calendar units can only be used to compare ZonedDateTimes "
+            "with the same timezone"
+        )
+
+    sign: Literal[1, -1] = 1 if a >= b else -1
+
+    # Adjust target_date so the exact remainder has the same sign
+    # as the overall difference. The while loop handles the rare case
+    # of a 24h+ gap, e.g. Samoa in 2011.
+    target_date = a.date()
+    if sign == 1:
+        while b.replace_date(target_date) > a:
+            target_date = target_date.subtract(days=1)
+    else:
+        while b.replace_date(target_date) < a:
+            target_date = target_date.add(days=1)
+    cal_results, trunc_date, expand_date = date_diff(
+        target_date._py_date,
+        b._py_dt.date(),
+        # Rounding only applies to the smallest unit.
+        # Thus if there are any exact units, calendar units aren't rounded.
+        1 if exact_units else effective_increment,
+        cal_units,
+        sign,
+    )
+    trunc = b.replace_date(
+        Date._from_py_unchecked(resolve_leap_day(trunc_date)),
+    )
+    expand = b.replace_date(
+        Date._from_py_unchecked(resolve_leap_day(expand_date)),
+    )
+
+    # Rounding is very different for exact units than calendar units
+    smallest_unit = units[-1]
+    result = cast(dict[DeltaUnitStr, int], cal_results)
+    if exact_units:
+        result.update(
+            (a - trunc)._in_exact_units(  # type: ignore[arg-type]
+                exact_units,
+                round_increment=effective_increment,
+                round_mode=effective_round_mode,
+            )
+        )
+    else:
+        # Round is expensive, so only do it if needed
+        if effective_round_mode != "trunc":
+            result[smallest_unit] = custom_round(
+                result[smallest_unit],
+                abs((a - trunc)._total_ns),
+                abs((expand - trunc)._total_ns),
+                effective_round_mode,
+                effective_increment,
+                sign,
+            )
+
+    # mypy false positive: 'keywords must be strings' (but they're string literals!)
+    return ItemizedDelta._from_signed(  # type: ignore[misc]
+        sign if any(result.values()) else 0, **result
+    )
+
+
 _Tstr = TypeVar("_Tstr", bound=str)
 
 
@@ -9737,6 +9908,10 @@ def _normalize_units(
     units: Sequence[str],
     valid_units: Sequence[_Tstr],
 ) -> Sequence[_Tstr]:
+    if isinstance(units, str):
+        raise TypeError(
+            "units must be a sequence of strings, not a single string"
+        )
     if not units:
         raise ValueError("At least one unit must be specified")
     else:

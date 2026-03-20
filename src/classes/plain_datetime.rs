@@ -961,7 +961,10 @@ fn plain_since(
         .ok_or_type_err("argument must be a whenever.PlainDateTime")?;
     let kwargs = SinceUntilKwargs::parse(fname, state, kwargs)?;
 
-    if !state.cv_ignore_tz_unaware_arithmetic.get()? {
+    // Warn only when the output contains exact time units (hours/min/sec/ns).
+    // Calendar-only output (years/months/weeks/days) doesn't involve clock time,
+    // so there's no DST ambiguity in that case.
+    if kwargs.has_exact_output() && !state.cv_ignore_tz_unaware_arithmetic.get()? {
         warn_with_class(
             state.warn_tz_unaware_arithmetic,
             doc::PLAIN_DIFF_UNAWARE_MSG,
@@ -970,6 +973,43 @@ fn plain_since(
     }
 
     plain_since_inner(state, slf, other, kwargs, flip)
+}
+
+/// Resolve a non-ZonedDateTime `relative_to` argument to a `DateTime`,
+/// emitting the appropriate warning if the condition is met.
+///
+/// - `warn_plain`: emit `TZUnawareArithmetic` warning for PlainDateTime
+/// - `warn_offset`: emit `PotentiallyStaleOffset` warning for OffsetDateTime
+///
+/// The caller is responsible for handling the ZonedDateTime case before calling
+/// this function (which always returns `Err` for ZonedDateTime args).
+pub(crate) fn resolve_local_relative_to(
+    arg: PyObj,
+    state: &State,
+    warn_plain: bool,
+    warn_offset: bool,
+) -> PyResult<DateTime> {
+    if let Some(pdt) = arg.extract(state.plain_datetime_type) {
+        if warn_plain && !state.cv_ignore_tz_unaware_arithmetic.get()? {
+            warn_with_class(
+                state.warn_tz_unaware_arithmetic,
+                doc::PLAIN_RELATIVE_TO_UNAWARE_MSG,
+                1,
+            )?;
+        }
+        Ok(pdt)
+    } else if let Some(odt) = arg.extract(state.offset_datetime_type) {
+        if warn_offset && !state.cv_ignore_potentially_stale_offset.get()? {
+            warn_with_class(
+                state.warn_potentially_stale_offset,
+                doc::STALE_OFFSET_CALENDAR_MSG,
+                1,
+            )?;
+        }
+        Ok(odt.without_offset())
+    } else {
+        raise_type_err("relative_to must be a ZonedDateTime, PlainDateTime, or OffsetDateTime")
+    }
 }
 
 pub(crate) fn plain_since_float(

@@ -8,11 +8,12 @@ use crate::{
         itemized_date_delta::{
             ItemizedDateDelta, MAX_DAYS, MAX_MONTHS, MAX_WEEKS, MAX_YEARS, parse_date_fields,
         },
+        plain_datetime::{plain_since_inner, resolve_local_relative_to, total_cal_plain},
         time_delta::{TimeDelta, TimeUnit, parse_time_component, total_cal},
         zoned_datetime::{zoned_since_in_units, zoned_target},
     },
     common::{
-        math::{DeltaUnit, DeltaUnitSet, ExactUnit, RoundIncrement},
+        math::{DeltaUnit, DeltaUnitSet, ExactUnit, RoundIncrement, SinceUntilKwargs},
         round,
         scalar::{
             DeltaDays, DeltaField, DeltaMonths, DeltaSeconds, NS_PER_HOUR, NS_PER_MINUTE,
@@ -150,6 +151,10 @@ impl ItemizedDelta {
 
     fn has_time(self) -> bool {
         self.hours.is_set() || self.minutes.is_set() || self.seconds.is_set() || self.nanos.is_set()
+    }
+
+    fn has_cal(self) -> bool {
+        self.years.is_set() || self.months.is_set() || self.weeks.is_set() || self.days.is_set()
     }
 
     fn fmt_iso(self, lowercase: bool) -> String {
@@ -728,7 +733,6 @@ fn in_units(
     let state = cls.state();
     let &State {
         round_mode_strs,
-        zoned_datetime_type,
         str_round_mode,
         str_round_increment,
         str_relative_to,
@@ -742,10 +746,7 @@ fn in_units(
 
     handle_kwargs("in_units", kwargs, |key, value, eq| {
         if eq(key, str_relative_to) {
-            relative_to_arg = value
-                .extract(zoned_datetime_type)
-                .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?
-                .into()
+            relative_to_arg = Some(value);
         } else if eq(key, str_round_mode) {
             round_mode = round::Mode::from_py_named("round_mode", value, round_mode_strs)?;
         } else if eq(key, str_round_increment) {
@@ -756,25 +757,59 @@ fn in_units(
         Ok(true)
     })?;
 
-    let Some(zdt) = relative_to_arg else {
-        raise_type_err("missing required keyword argument: 'relative_to'")?
+    let Some(arg) = relative_to_arg else {
+        return raise_type_err("missing required keyword argument: 'relative_to'");
     };
 
-    let shifted = zdt.shift_default(d).ok_or_range_err()?;
-    let shifted_inst = shifted.instant();
-    let neg = d.derived_sign().is_negative();
-    zoned_since_in_units(
-        shifted,
-        shifted_inst,
-        zdt,
-        zoned_target(shifted.date, shifted_inst, zdt, neg).ok_or_range_err()?,
-        units,
-        round_mode,
-        round_increment,
-        neg,
+    // ZonedDateTime: full DST-aware path.
+    if let Some(zdt) = arg.extract(state.zoned_datetime_type) {
+        let shifted = zdt.shift_default(d).ok_or_range_err()?;
+        let shifted_inst = shifted.instant();
+        let neg = d.derived_sign().is_negative();
+        return zoned_since_in_units(
+            shifted,
+            shifted_inst,
+            zdt,
+            zoned_target(shifted.date, shifted_inst, zdt, neg).ok_or_range_err()?,
+            units,
+            round_mode,
+            round_increment,
+            neg,
+        )
+        .ok_or_range_err()?
+        .to_obj(cls);
+    }
+
+    // PlainDateTime: warn when the conversion crosses the calendar/exact boundary
+    // (i.e. the delta or output mixes calendar and exact-time units).
+    // Pure cal→cal or exact→exact conversions do not warn.
+    // OffsetDateTime: warn when delta has calendar units OR output has calendar units.
+    let has_exact_in_delta = d.has_time();
+    let has_cal_in_delta = d.has_cal();
+    let has_exact_in_units = units.has_exact();
+    let has_cal_in_units = units.has_calendar();
+
+    let b_dt = resolve_local_relative_to(
+        arg,
+        state,
+        (has_exact_in_delta || has_exact_in_units) && (has_cal_in_delta || has_cal_in_units),
+        has_cal_in_delta || has_cal_in_units,
+    )?;
+
+    // Add the ItemizedDelta to b_dt using naive arithmetic.
+    let (months, days, tdelta) = d.to_components().ok_or_range_err()?;
+    let shifted_dt = b_dt
+        .shift_date(months, days)
+        .ok_or_range_err()?
+        .shift(tdelta)
+        .ok_or_range_err()?;
+    plain_since_inner(
+        state,
+        shifted_dt,
+        b_dt,
+        SinceUntilKwargs::InUnits(units, round_mode, round_increment),
+        false,
     )
-    .ok_or_range_err()?
-    .to_obj(cls)
 }
 
 fn total(
@@ -787,32 +822,89 @@ fn total(
 
     let unit = DeltaUnit::from_py(handle_one_arg("total", args)?, state)?;
 
-    let relative_to = handle_one_kwarg("total", state.str_relative_to, kwargs)?
-        .ok_or_type_err("missing required keyword argument: 'relative_to'")?
-        .extract(state.zoned_datetime_type)
-        .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?;
+    let arg = handle_one_kwarg("total", state.str_relative_to, kwargs)?
+        .ok_or_type_err("missing required keyword argument: 'relative_to'")?;
 
-    let shifted = relative_to.shift_default(d).ok_or_range_err()?;
-    let tdelta = shifted.instant().diff(relative_to.instant());
+    // ZonedDateTime: full DST-aware path.
+    if let Some(zdt) = arg.extract(state.zoned_datetime_type) {
+        let shifted = zdt.shift_default(d).ok_or_range_err()?;
+        let tdelta = shifted.instant().diff(zdt.instant());
+        let cal_unit = match unit.to_exact(false) {
+            Ok(ExactUnit::Nanoseconds) => return tdelta.total_nanos().to_py(),
+            Ok(exact_unit) => {
+                return (tdelta.to_nanos_f64() / exact_unit.in_nanos() as f64).to_py();
+            }
+            Err(cal_unit) => cal_unit,
+        };
+        return total_cal(
+            tdelta.is_negative(),
+            cal_unit,
+            zdt,
+            shifted,
+            shifted.instant(),
+        );
+    }
+
+    // PlainDateTime: warn when the conversion crosses the calendar/exact boundary
+    // (i.e. the delta or target unit mixes calendar and exact-time units).
+    // Pure cal→cal or exact→exact conversions do not warn.
+    // OffsetDateTime: warn when delta has calendar units OR target unit is calendar.
+    let has_exact_in_delta = d.has_time();
+    let has_cal_in_delta = d.has_cal();
+    let is_exact_unit = unit.to_exact(false).is_ok();
+    let is_cal_unit = !is_exact_unit;
+
+    let b_dt = resolve_local_relative_to(
+        arg,
+        state,
+        (has_exact_in_delta || is_exact_unit) && (has_cal_in_delta || is_cal_unit),
+        has_cal_in_delta || is_cal_unit,
+    )?;
 
     let cal_unit = match unit.to_exact(false) {
         Ok(ExactUnit::Nanoseconds) => {
-            // Special case: nanoseconds returned as int for precision reasons
-            return tdelta.total_nanos().to_py();
+            // Add the delta and compute nanosecond difference.
+            let (months, days, tdelta) = d.to_components().ok_or_range_err()?;
+            let shifted_dt = b_dt
+                .shift_date(months, days)
+                .ok_or_range_err()?
+                .shift(tdelta)
+                .ok_or_range_err()?;
+            return shifted_dt
+                .assume_utc()
+                .diff(b_dt.assume_utc())
+                .total_nanos()
+                .to_py();
         }
         Ok(exact_unit) => {
-            return (tdelta.to_nanos_f64() / exact_unit.in_nanos() as f64).to_py();
+            let (months, days, tdelta) = d.to_components().ok_or_range_err()?;
+            let shifted_dt = b_dt
+                .shift_date(months, days)
+                .ok_or_range_err()?
+                .shift(tdelta)
+                .ok_or_range_err()?;
+            let diff = shifted_dt.assume_utc().diff(b_dt.assume_utc());
+            return (diff.to_nanos_f64() / exact_unit.in_nanos() as f64).to_py();
         }
         Err(cal_unit) => cal_unit,
     };
 
-    total_cal(
-        tdelta.is_negative(),
-        cal_unit,
-        relative_to,
-        shifted,
-        shifted.instant(),
-    )
+    // Calendar unit: use plain_since_float, which treats b_dt as UTC.
+    let (months, days, tdelta) = d.to_components().ok_or_range_err()?;
+    let shifted_dt = b_dt
+        .shift_date(months, days)
+        .ok_or_range_err()?
+        .shift(tdelta)
+        .ok_or_range_err()?;
+    let a_inst = shifted_dt.assume_utc();
+    let neg = a_inst < b_dt.assume_utc();
+    let target_date = match (neg, b_dt.with_date(shifted_dt.date).cmp(&shifted_dt)) {
+        (false, std::cmp::Ordering::Greater) => shifted_dt.date.yesterday(),
+        (true, std::cmp::Ordering::Less) => shifted_dt.date.tomorrow(),
+        _ => Some(shifted_dt.date),
+    }
+    .ok_or_range_err()?;
+    total_cal_plain(neg, cal_unit, a_inst, b_dt, target_date)
 }
 
 #[allow(clippy::too_many_arguments)]

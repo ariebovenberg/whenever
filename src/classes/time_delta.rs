@@ -9,11 +9,14 @@ use crate::{
         instant::Instant,
         itemized_delta::ItemizedDelta,
         offset_datetime::OffsetDateTime,
-        plain_datetime::{DateTime, total_cal_plain},
+        plain_datetime::{plain_since_inner, resolve_local_relative_to, total_cal_plain},
         zoned_datetime::{ZonedDateTime, zoned_since_in_units, zoned_target},
     },
     common::{
-        math::{self, AnyUnit, DateRoundIncrement, DeltaUnitSet, ExactUnit, ExactUnitSet},
+        math::{
+            self, AnyUnit, DateRoundIncrement, DeltaUnitSet, ExactUnit, ExactUnitSet,
+            SinceUntilKwargs,
+        },
         parse::extract_digit,
         round,
         scalar::*,
@@ -1232,7 +1235,7 @@ fn in_units(
 
     let mut round_mode = round::Mode::Trunc;
     let mut round_increment = math::RoundIncrement::MIN;
-    let mut relative_to = None;
+    let mut relative_to_arg = None;
 
     handle_kwargs("in_units", kwargs, |key, value, eq| {
         if eq(key, str_round_mode) {
@@ -1240,32 +1243,51 @@ fn in_units(
         } else if eq(key, str_round_increment) {
             round_increment = math::RoundIncrement::from_py(value)?;
         } else if eq(key, str_relative_to) {
-            relative_to = value
-                .extract(state.zoned_datetime_type)
-                .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?
-                .into();
+            relative_to_arg = Some(value);
         } else {
             return Ok(false);
         }
         Ok(true)
     })?;
     let neg = slf.is_negative();
+    let has_cal_or_date = units.has_calendar() || units.has_days_or_weeks();
 
-    if let Some(zdt) = relative_to {
-        let shifted_inst = zdt.instant().shift(slf).ok_or_range_err()?;
-        let shifted = shifted_inst.to_tz(zdt.tz).ok_or_range_err()?;
-        zoned_since_in_units(
-            shifted,
-            shifted_inst,
-            zdt,
-            zoned_target(shifted.date, shifted_inst, zdt, neg).ok_or_range_err()?,
-            units,
-            round_mode,
-            round_increment,
-            neg,
+    if let Some(arg) = relative_to_arg {
+        // ZonedDateTime: full DST-aware path.
+        if let Some(zdt) = arg.extract(state.zoned_datetime_type) {
+            let shifted_inst = zdt.instant().shift(slf).ok_or_range_err()?;
+            let shifted = shifted_inst.to_tz(zdt.tz).ok_or_range_err()?;
+            return zoned_since_in_units(
+                shifted,
+                shifted_inst,
+                zdt,
+                zoned_target(shifted.date, shifted_inst, zdt, neg).ok_or_range_err()?,
+                units,
+                round_mode,
+                round_increment,
+                neg,
+            )
+            .ok_or_range_err()?
+            .to_obj(state.itemized_delta_type);
+        }
+
+        // PlainDateTime/OffsetDateTime: treat local time as UTC (no DST).
+        // Emit appropriate warnings only when calendar or day/week units are involved.
+        let b_dt = resolve_local_relative_to(arg, state, has_cal_or_date, has_cal_or_date)?;
+
+        // Compute the shifted datetime by treating b_dt as UTC anchor.
+        let a_inst = b_dt.assume_utc().shift(slf).ok_or_range_err()?;
+        let a_dt = a_inst
+            .to_offset(Offset::ZERO)
+            .ok_or_range_err()?
+            .without_offset();
+        plain_since_inner(
+            state,
+            a_dt,
+            b_dt,
+            SinceUntilKwargs::InUnits(units, round_mode, round_increment),
+            false,
         )
-        .ok_or_range_err()?
-        .to_obj(state.itemized_delta_type)
     } else {
         if units.has_days_or_weeks() && !state.cv_ignore_days_not_always_24h.get()? {
             warn_with_class(
@@ -1329,27 +1351,7 @@ fn total(
     // diff, emitting appropriate warnings. Same approach as Python's
     // `assume_tz("UTC")` trick (to_tz("UTC") would be wrong: it re-interprets
     // the instant in UTC rather than keeping the local date as the anchor).
-    let b_dt: DateTime = if let Some(pdt) = arg.extract(state.plain_datetime_type) {
-        if !state.cv_ignore_tz_unaware_arithmetic.get()? {
-            warn_with_class(
-                state.warn_tz_unaware_arithmetic,
-                doc::PLAIN_DIFF_UNAWARE_MSG,
-                1,
-            )?;
-        }
-        pdt
-    } else if let Some(odt) = arg.extract(state.offset_datetime_type) {
-        if !state.cv_ignore_potentially_stale_offset.get()? {
-            warn_with_class(
-                state.warn_potentially_stale_offset,
-                doc::STALE_OFFSET_CALENDAR_MSG,
-                1,
-            )?;
-        }
-        odt.without_offset()
-    } else {
-        raise_type_err("relative_to must be a ZonedDateTime, PlainDateTime, or OffsetDateTime")?
-    };
+    let b_dt = resolve_local_relative_to(arg, state, true, true)?;
 
     let neg = slf.is_negative();
     let a_inst = b_dt.assume_utc().shift(slf).ok_or_range_err()?;
