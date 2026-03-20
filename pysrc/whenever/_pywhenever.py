@@ -1960,7 +1960,11 @@ class TimeDelta(_Base):
     ) -> None:
         assert type(nanoseconds) is int  # catch this common mistake
         if (weeks or days) and not _ignore_days_not_always_24h_warning.get():
-            warn(DaysNotAlways24HoursWarning(DAYS_NOT_ALWAYS_24H_MSG))
+            warn(
+                DAYS_NOT_ALWAYS_24H_MSG,
+                DaysNotAlways24HoursWarning,
+                stacklevel=3,  # extra frame from add_alternate_constructors
+            )
         ns = self._total_ns = (
             # Cast individual components to int to avoid floating point errors
             int(weeks * 7 * 86_400_000_000_000)
@@ -2080,7 +2084,11 @@ class TimeDelta(_Base):
                 ) * sign
             elif unit in ("days", "weeks"):
                 if not _ignore_days_not_always_24h_warning.get():
-                    warn(DaysNotAlways24HoursWarning(DAYS_NOT_ALWAYS_24H_MSG))
+                    warn(
+                        DAYS_NOT_ALWAYS_24H_MSG,
+                        DaysNotAlways24HoursWarning,
+                        stacklevel=_warn_stacklevel,
+                    )
             else:
                 raise TypeError(
                     f"Cannot convert TimeDelta to {unit!r} without a `relative_to` parameter"
@@ -2226,7 +2234,7 @@ class TimeDelta(_Base):
         >>> d.in_hrs_mins_secs_nanos()
         (1, 30, 5, 90_000)
 
-        ... deprecated:: 0.10.0
+        .. deprecated:: 0.10.0
 
             Use :meth:`in_units` with ``['hours', 'minutes', 'seconds', 'nanoseconds']`` instead.
         """
@@ -2879,7 +2887,7 @@ class DateDelta(_Base):
         months = self._months = months + 12 * years
         days = self._days = days + 7 * weeks
         if (months > 0 and days < 0) or (months < 0 and days > 0):
-            raise ValueError("Mixed sign in date delta")
+            raise ValueError("mixed sign in DateDelta")
         elif (
             abs(self._months) > _MAX_DELTA_MONTHS
             or abs(self._days) > _MAX_DELTA_DAYS
@@ -2896,7 +2904,7 @@ class DateDelta(_Base):
         """Internal: create without deprecation warning"""
         self = _object_new(cls)
         if (months > 0 and days < 0) or (months < 0 and days > 0):
-            raise ValueError("Mixed sign in date delta")
+            raise ValueError("mixed sign in DateDelta")
         elif abs(months) > _MAX_DELTA_MONTHS or abs(days) > _MAX_DELTA_DAYS:
             raise ValueError("Date delta months out of range")
         self._months = months
@@ -3408,9 +3416,9 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         ):
             # This is to ensure ISO8601 formatting/parsing is round-trip safe.
             # There is no "empty" duration in ISO8601; at least one field must be present.
-            raise ValueError(
-                "At least one field of a ItemizedDelta must be set"
-            )
+            raise ValueError("at least one field must be set")
+
+    __init__ = add_alternate_constructors(__init__)
 
     def sign(self) -> Sign:
         """The sign of the delta, 1, 0, or -1"""
@@ -4163,6 +4171,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             k: _UNSET if v is None else v for k, v in kwargs.items()
         }
         fields = {**self, **kwargs_w_sentinel}
+        if all(v is _UNSET for v in fields.values()):
+            raise ValueError("at least one field must remain set")
         return ItemizedDelta(**fields)
 
     @no_type_check
@@ -4183,6 +4193,19 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
     def __repr__(self) -> str:
         return f'ItemizedDelta("{self.format_iso(lowercase_units=True)}")'
+
+    __str__ = format_iso
+
+    def _init_from_iso(self, s: str) -> None:
+        parsed = type(self).parse_iso(s)
+        self._years = parsed._years
+        self._months = parsed._months
+        self._weeks = parsed._weeks
+        self._days = parsed._days
+        self._hours = parsed._hours
+        self._minutes = parsed._minutes
+        self._seconds = parsed._seconds
+        self._nanoseconds = parsed._nanoseconds
 
 
 # A separate unpickling function allows us to make backwards-compatible changes
@@ -4324,7 +4347,9 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         ):
             # This is to ensure ISO8601 formatting/parsing is round-trip safe.
             # There is no "empty" duration in ISO8601; at least one field must be present.
-            raise ValueError("At least one field must be set")
+            raise ValueError("at least one field must be set")
+
+    __init__ = add_alternate_constructors(__init__)
 
     def sign(self) -> Sign:
         """The sign of the delta, whether it's positive, negative, or zero.
@@ -4391,6 +4416,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         }
         # Keys may be invalid here, but the constructor will catch that.
         fields = {**self, **kwargs_w_sentinel}  # type: ignore[misc]
+        if all(v is _UNSET for v in fields.values()):
+            raise ValueError("at least one field must remain set")
         return ItemizedDateDelta(**fields)
 
     def format_iso(self, *, lowercase_units: bool = False) -> str:
@@ -4636,16 +4663,16 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     def __eq__(self, other: object) -> bool:
         """Compare each field for equality, under the following rules:
 
-        - No normalization is performed. 1 hour is not equal to 60 minutes, etc.
+        - No normalization is performed. 12 months is not equal to 1 year, etc.
         - Zero values are considered equivalent to missing values.
 
         If you want strict equality (including presence of fields),
         use :meth:`exact_eq`.
 
-        >>> d = ItemizedDateDelta(weeks=2, minutes=90)
-        >>> d == ItemizedDateDelta(weeks=2, minutes=90, seconds=0)
+        >>> d = ItemizedDateDelta(weeks=2, days=3)
+        >>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
         True
-        >>> d == ItemizedDateDelta(weeks=2, hour=1, minutes=30)
+        >>> d == ItemizedDateDelta(weeks=2, days=4)
         False
         """
         if not isinstance(other, ItemizedDateDelta):
@@ -4660,10 +4687,12 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     def exact_eq(self, other: ItemizedDateDelta, /) -> bool:
         """Check for strict equality. All fields *and their presence* must match.
 
-        >>> d = ItemizedDateDelta(weeks=2, minutes=90)
-        >>> d == ItemizedDateDelta(weeks=2, minutes=90)
+        >>> d = ItemizedDateDelta(weeks=2, days=3)
+        >>> d == ItemizedDateDelta(weeks=2, days=3)
         True
-        >>> d == ItemizedDateDelta(weeks=2, minutes=90, seconds=0)
+        >>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
+        True
+        >>> d.exact_eq(ItemizedDateDelta(weeks=2, days=3, months=0))
         False
         """
         return (
@@ -4887,6 +4916,15 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     def __repr__(self) -> str:
         return f'ItemizedDateDelta("{self.format_iso(lowercase_units=True)}")'
 
+    __str__ = format_iso
+
+    def _init_from_iso(self, s: str) -> None:
+        parsed = type(self).parse_iso(s)
+        self._years = parsed._years
+        self._months = parsed._months
+        self._weeks = parsed._weeks
+        self._days = parsed._days
+
 
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
@@ -4906,7 +4944,7 @@ def _unpkl_iddelta(
 
 def _check_bound(i: int | None, max_value: int) -> int | None:
     if i and i > max_value:
-        raise ValueError("Delta out of range")
+        raise ValueError("delta out of range")
     return i
 
 
@@ -4919,16 +4957,16 @@ def _check_component(
         return 0, sign
     elif value < 0:
         if sign == 1:
-            raise ValueError("Mixed sign in delta")
+            raise ValueError("mixed sign in delta")
         sign = -1
         if -value > max_value:
-            raise ValueError("Delta out of range")
+            raise ValueError("delta out of range")
     else:  # value > 0
         if sign == -1:
-            raise ValueError("Mixed sign in delta")
+            raise ValueError("mixed sign in delta")
         sign = 1
         if value > max_value:
-            raise ValueError("Delta out of range")
+            raise ValueError("delta out of range")
     return value, sign
 
 
@@ -5006,7 +5044,7 @@ class DateTimeDelta(_Base):
             (self._date_part._months > 0 or self._date_part._days > 0)
             and self._time_part._total_ns < 0
         ):
-            raise ValueError("Mixed sign in date-time delta")
+            raise ValueError("mixed sign in DateTimeDelta")
 
     __init__ = add_alternate_constructors(
         __init__,
@@ -5346,7 +5384,7 @@ class DateTimeDelta(_Base):
         if ((d._months < 0 or d._days < 0) and t._total_ns > 0) or (
             (d._months > 0 or d._days > 0) and t._total_ns < 0
         ):
-            raise ValueError("Mixed sign in date-time delta")
+            raise ValueError("mixed sign in DateTimeDelta")
 
     @classmethod
     def _from_parts(cls, d: DateDelta, t: TimeDelta) -> DateTimeDelta:
@@ -6553,7 +6591,7 @@ class OffsetDateTime(_ExactAndLocalTime):
                 "Use PlainDateTime() instead."
             )
         elif offset.microseconds:
-            raise ValueError("Sub-second offsets are not supported")
+            raise ValueError("sub-second offset precision not supported")
         self._py_dt = check_utc_bounds(
             _strip_subclasses(
                 d.replace(microsecond=0, tzinfo=_timezone(offset))
@@ -6752,7 +6790,7 @@ class OffsetDateTime(_ExactAndLocalTime):
                 "Use %z, %Z, or %:z in the format string"
             )
         if offset.microseconds:
-            raise ValueError("Sub-second offsets are not supported")
+            raise ValueError("sub-second offset precision not supported")
         return cls._from_py_unchecked(
             check_utc_bounds(parsed.replace(microsecond=0)),
             parsed.microsecond * 1_000,
@@ -6863,7 +6901,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             raise ValueError(
                 "Pattern must include year, month, and day fields"
             )
-        return cls(
+        result = cls(
             state.year,
             state.month,
             state.day,
@@ -6873,6 +6911,12 @@ class OffsetDateTime(_ExactAndLocalTime):
             nanosecond=state.nanos,
             offset=TimeDelta(seconds=state.offset_secs),
         )
+        if (
+            state.weekday is not None
+            and result._py_dt.weekday() != state.weekday
+        ):
+            raise ValueError("Parsed weekday does not match the date")
+        return result
 
     if not TYPE_CHECKING:  # for a nicer autodoc
 
@@ -7611,6 +7655,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         self._py_dt = resolved
         self._nanos = state.nanos
         self._tz = tz
+        if state.weekday is not None and resolved.weekday() != state.weekday:
+            raise ValueError("Parsed weekday does not match the date")
         return self
 
     @classmethod
@@ -8536,7 +8582,7 @@ class PlainDateTime(_LocalTime):
             raise ValueError(
                 "Pattern must include year, month, and day fields"
             )
-        return cls(
+        result = cls(
             state.year,
             state.month,
             state.day,
@@ -8545,6 +8591,12 @@ class PlainDateTime(_LocalTime):
             state.second or 0,
             nanosecond=state.nanos,
         )
+        if (
+            state.weekday is not None
+            and result._py_dt.weekday() != state.weekday
+        ):
+            raise ValueError("Parsed weekday does not match the date")
+        return result
 
     def _init_from_py(self, d: _datetime) -> None:
         if d.tzinfo is not None:
@@ -9334,8 +9386,8 @@ STALE_OFFSET_CALENDAR_MSG = (
 
 CANNOT_ROUND_DAY_MSG = (
     "Cannot round to day, because days do not have a fixed length. "
-    "Due to daylight saving time, some days have 23 or 25 hours."
-    "If you wish to round to exaxtly 24 hours, use `round('hour', increment=24)`."
+    "Due to daylight saving time, some days have 23 or 25 hours. "
+    "If you wish to round to exactly 24 hours, use `round('hour', increment=24)`."
 )
 
 ZONEINFO_NO_KEY_MSG = (
@@ -9398,7 +9450,7 @@ def _load_offset(offset: int | TimeDelta, /) -> _timezone:
         return _timezone(_timedelta(hours=offset))
     elif isinstance(offset, TimeDelta):
         if offset._total_ns % 1_000_000_000:
-            raise ValueError("Offset must be a whole number of seconds")
+            raise ValueError("offset must be a whole number of seconds")
         return _timezone(offset.to_stdlib())
     else:
         raise TypeError(

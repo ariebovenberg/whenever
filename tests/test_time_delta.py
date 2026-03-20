@@ -191,6 +191,16 @@ class TestInit:
         with pytest.raises(TypeError, match="years"):
             TimeDelta(years=1)  # type: ignore[call-overload]
 
+    def test_days_warning_stacklevel(self):
+        """Warning should point to calling code, not library internals."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            TimeDelta(days=1)
+        assert len(w) == 1
+        assert w[0].category is DaysNotAlways24HoursWarning
+        # The warning filename must not point to library internals
+        assert "_pywhenever" not in w[0].filename
+
 
 class TestFactories:
 
@@ -357,6 +367,16 @@ class TestTotal:
             "days",
             relative_to=ZonedDateTime(2023, 3, 28, hour=10, tz="Europe/Paris"),
         ) == approx(-5.0)
+
+    def test_days_warning_stacklevel(self):
+        """Warning should point to calling code, not library internals."""
+        d = TimeDelta(hours=49)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            d.total("days")
+        assert len(w) == 1
+        assert w[0].category is DaysNotAlways24HoursWarning
+        assert "_pywhenever" not in w[0].filename
 
     def test_weeks(self):
         d = TimeDelta(hours=2000)

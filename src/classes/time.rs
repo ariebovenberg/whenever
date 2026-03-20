@@ -626,7 +626,7 @@ fn format(_cls: HeapType<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
             // SAFETY: PyExc_UserWarning is always valid
             unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
             c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
-            2,
+            1,
         )?;
     }
     let vals = pattern::FormatValues {

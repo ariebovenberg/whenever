@@ -660,7 +660,7 @@ class _TzId(_Field):
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
         start = pos
-        while pos < len(s) and (s[pos].isalnum() or s[pos] in "/_-+"):
+        while pos < len(s) and (s[pos].isalnum() or s[pos] in "/_-+."):
             pos += 1
         if pos == start:
             raise ValueError(f"Expected timezone ID at position {pos}")

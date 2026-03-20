@@ -228,7 +228,7 @@ fn __new__(cls: HeapType<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> P
     warn_with_class(
         warn_deprecation,
         c"DateDelta is deprecated; use ItemizedDateDelta instead.",
-        2,
+        1,
     )?;
     match args.len() {
         0 => {}
@@ -262,7 +262,7 @@ pub(crate) fn years(state: &State, amount: PyObj) -> PyReturn {
     warn_with_class(
         state.warn_deprecation,
         c"years() is deprecated; use ItemizedDateDelta instead.",
-        2,
+        1,
     )?;
     amount
         .cast_allow_subclass::<PyInt>()
@@ -279,7 +279,7 @@ pub(crate) fn months(state: &State, amount: PyObj) -> PyReturn {
     warn_with_class(
         state.warn_deprecation,
         c"months() is deprecated; use ItemizedDateDelta instead.",
-        2,
+        1,
     )?;
     DeltaMonths::from_long(
         amount
@@ -296,7 +296,7 @@ pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn {
     warn_with_class(
         state.warn_deprecation,
         c"weeks() is deprecated; use ItemizedDateDelta instead.",
-        2,
+        1,
     )?;
     amount
         .cast_allow_subclass::<PyInt>()
@@ -313,7 +313,7 @@ pub(crate) fn days(state: &State, amount: PyObj) -> PyReturn {
     warn_with_class(
         state.warn_deprecation,
         c"days() is deprecated; use ItemizedDateDelta instead.",
-        2,
+        1,
     )?;
     DeltaDays::from_long(
         amount
@@ -414,7 +414,7 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
             warn_with_class(
                 state.warn_deprecation,
                 c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
-                2,
+                1,
             )?;
             DateTimeDelta::new(ddelta, tdelta).ok_or_value_err("mixed sign in delta")?
         } else if let Some(mut dtdelta) = obj_b.extract(state.datetime_delta_type) {
@@ -517,7 +517,7 @@ fn parse_iso(cls: HeapType<DateDelta>, arg: PyObj) -> PyReturn {
     warn_with_class(
         cls.state().warn_deprecation,
         c"DateDelta is deprecated; use ItemizedDateDelta instead.",
-        2,
+        1,
     )?;
     parse_iso_inner(cls, arg)
 }

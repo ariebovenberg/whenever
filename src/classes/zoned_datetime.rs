@@ -1548,7 +1548,7 @@ fn difference(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, arg: PyObj) -> P
     warn_with_class(
         warn_deprecation,
         c"The difference() method is deprecated. Use the subtraction operator or since() method instead.",
-        2,
+        1,
     )?;
     let inst_a = slf.instant();
 
@@ -1899,7 +1899,7 @@ fn format(_cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, pattern_obj: PyObj)
             // SAFETY: PyExc_UserWarning is always valid
             unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
             c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
-            2,
+            1,
         )?;
     }
     let meta = slf.tz.meta_for_instant(slf.instant().epoch);

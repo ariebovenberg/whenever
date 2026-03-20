@@ -630,7 +630,7 @@ fn difference(cls: HeapType<Instant>, inst_a: Instant, obj_b: PyObj) -> PyReturn
     warn_with_class(
         state.warn_deprecation,
         c"The difference() method is deprecated. Use the subtraction operator instead.",
-        2,
+        1,
     )?;
 
     let inst_b = if let Some(i) = obj_b.extract(cls) {
@@ -741,7 +741,7 @@ fn format(_cls: HeapType<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn
             // SAFETY: PyExc_UserWarning is always valid
             unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
             c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
-            2,
+            1,
         )?;
     }
     let DateTime { date, time } = slf.utc_datetime();

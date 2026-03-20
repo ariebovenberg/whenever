@@ -228,7 +228,7 @@ fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) 
     warn_with_class(
         state.warn_deprecation,
         c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
-        2,
+        1,
     )?;
     match (nargs, nkwargs) {
         (1, 0) => parse_iso_inner(cls, args.iter().next().unwrap()),
@@ -453,7 +453,7 @@ fn parse_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
     warn_with_class(
         cls.state().warn_deprecation,
         c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
-        2,
+        1,
     )?;
     parse_iso_inner(cls, arg)
 }
@@ -552,7 +552,7 @@ fn date_part(cls: HeapType<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
     warn_with_class(
         cls.state().warn_deprecation,
         c"DateTimeDelta.date_part() is deprecated.",
-        2,
+        1,
     )?;
     slf.ddelta.to_obj(cls.state().date_delta_type)
 }

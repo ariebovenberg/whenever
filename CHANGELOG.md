@@ -3,17 +3,22 @@
 ## 0.10.0a1 (2026-03-16)
 
 A big release with several breaking changes and improvements. Highlights
-are the new delta API and customizable string formatting and parsing. See the full list below.
+are the new delta API, customizable string formatting and parsing,
+and `since()`/`until()` methods for calculating differences between datetimes.
+See the full list below.
 
 **Breaking changes**
 
 - `DateTimeDelta` and `DateDelta` have been replaced by
   `ItemizedDelta` and `ItemizedDateDelta`, respectively.
-  The helper functions for creating deltas from specific units
-  (`years()`, `months()`, etc.) have also been deprecated.
+  The helper functions for creating calendar deltas
+  (`years()`, `months()`, `weeks()`, `days()`) have also been deprecated.
 
   The new deltas are fully un-normalized,
   meaning "90 minutes" and "1 hour and 30 minutes" are distinct values.
+  They implement the `Mapping` interface and support a rich set of operations
+  including `add()`, `subtract()`, `total()`, `in_units()`, `replace()`,
+  and `sign()`.
 
   **Rationale**: the "partially" normalized approach was confusing to users.
   A fully un-normalized approach also better fits the new API for calculating deltas
@@ -30,9 +35,11 @@ are the new delta API and customizable string formatting and parsing. See the fu
     or `.in_units()`.
   - The `Date` `+`/`-` operators with `DateDelta` are deprecated;
     use `add()`/`subtract()` instead.
+  - The `Date` `-` operator between two dates is deprecated;
+    use `since()` or `subtract()` instead.
 
 - The `ignore_dst` parameter (which was used to enable DST-unsafe operations)
-  has been deprecated. Instead, a warnings mechanism allows users to
+  has been replaced by a warnings mechanism that allows users to
   suppress or escalate DST-related warnings
   using context managers or Python's standard warning filters.
 
@@ -69,55 +76,52 @@ are the new delta API and customizable string formatting and parsing. See the fu
   Use `format_iso()` and `parse_iso()` instead.
   These have been deprecated since 0.9.0.
 
-- `TimeDelta.in_hours()`, `.in_minutes()`, `.in_seconds()`,
-  `.in_milliseconds()`, `.in_microseconds()`, `.in_nanoseconds()`,
-  `.in_days_of_24h()`, and `.in_hrs_mins_secs_nanos()` are
-  deprecated. Use `total()` or `in_units()` instead.
-- The `difference()` method on datetimes are deprecated.
-  Instead, use the `-` subtraction operator, or the new `since()` method.
-- `Date.days_since()` and `Date.days_until()` are deprecated.
-  Use `since()` and `until()` with `total='days'` instead.
-- `py_date()`, `py_time()`, `py_datetime()`, and `py_timedelta()` are
-  deprecated. Use the new `to_stdlib()` method instead, which provides a
-  consistent name across all types.
-- `from_py_date()`, `from_py_time()`, `from_py_datetime()`, and
-  `from_py_timedelta()` are deprecated.
-  Use the constructor directly instead (e.g. `Date(datetime.date(...))`).
 - The `round()` methods are stricter about keyword-only and positional-only arguments.
 
-- A huge revamp and expansion of the documentation.
-  The structure and navigability of API reference and overview pages
-  has been improved. Several new pages have been added, including:
-  - An explanation of the fundamental concepts of time
-  - An overview of Python's datetime pitfalls
-  - Explanation of the rounding API
-- `TimeDelta.round()` now supports larger and irregular values for `increment`.
-  Also, days and weeks can now be used as rounding units (with a warning about 24-hour days).
-- `round()` methods now support larger and irregular values for `increment`.
-  Also, days and weeks can now be used to round a `TimeDelta` (with a warning about 24-hour days).
+**Deprecated**
+
+- `TimeDelta.in_hours()`, `.in_minutes()`, `.in_seconds()`,
+  `.in_milliseconds()`, `.in_microseconds()`, `.in_nanoseconds()`,
+  `.in_days_of_24h()`, and `.in_hrs_mins_secs_nanos()`.
+  Use `total()` or `in_units()` instead.
+- The `difference()` method on datetimes is deprecated.
+  Instead, use the `-` subtraction operator, or the new `since()` method.
+- `Date.days_since()` and `Date.days_until()`.
+  Use `since()` and `until()` with `total='days'` instead.
+- `py_date()`, `py_time()`, `py_datetime()`, and `py_timedelta()`.
+  Use the new `to_stdlib()` method instead, which provides a
+  consistent name across all types.
+- `from_py_date()`, `from_py_time()`, `from_py_datetime()`, and
+  `from_py_timedelta()`.
+  Use the constructor directly instead (e.g. `Date(datetime.date(...))`).
+- `parse_strptime()` methods on `OffsetDateTime` and `PlainDateTime`.
+  Use the new `parse()` method instead.
 
 **Added**
 
 - New `since()` and `until()` methods on `Date`, `ZonedDateTime`,
   `OffsetDateTime`, and `PlainDateTime` for calculating the difference
   between two values in terms of specific calendar/time units.
+- New `format()` and `parse()` methods on `Date`, `Time`, `PlainDateTime`,
+  `OffsetDateTime`, `ZonedDateTime`, and `Instant` for custom format/parse
+  patterns. Example:
+  `Date(2024, 3, 15).format("YYYY/MM/DD")` → `"2024/03/15"`.
+  These types also support `__format__`, enabling f-string usage:
+  `f"{date:YYYY/MM/DD}"`. See the pattern format documentation for details.
 - New `TimeDelta.total()` and `TimeDelta.in_units()` methods for
   converting a time delta into specific units.
 - New `TimeDelta.add()` and `TimeDelta.subtract()` methods. The operators
   `+` and `-` were supported already, but these methods make it easier
   for simple operations, as well as making the API more consistent with other classes.
-- New `format()` and `parse()` methods on `Date`, `Time`, `PlainDateTime`,
-  `OffsetDateTime`, `ZonedDateTime`, and `Instant` for custom format/parse
-  patterns. Example:
-  `Date(2024, 3, 15).format("YYYY/MM/DD")` → `"2024/03/15"`.
-  See the pattern format documentation for details.
 - New `OffsetDateTime.assume_tz()` method for associating an offset datetime
   with a timezone.
-- `round()` methods now support larger and irregular values for `increment`.
-  Also, days and weeks can now be used to round a `TimeDelta`
+- `round()` methods now support four new rounding modes:
+  `trunc`, `expand`, `half_trunc`, and `half_expand`.
+  They also now support larger and irregular values for `increment`.
+  `TimeDelta.round()` now supports days and weeks as rounding units
   (with a warning about 24-hour days).
 - All types that have a Python standard library equivalent now also accept these
-  objects in the constructor.
+  objects in the constructor. For example: `Date(datetime.date(2024, 1, 1))`.
 - New `ZonedDateTime.dst_offset()`
   and `ZonedDateTime.tz_abbrev()` methods for querying timezone metadata
   (DST offset adjustment and timezone abbreviation).
@@ -128,6 +132,9 @@ are the new delta API and customizable string formatting and parsing. See the fu
   `ignore_timezone_unaware_arithmetic_warning()`,
   `ignore_days_not_always_24h_warning()`) for fine-grained control
   over DST-related warnings.
+
+**Improved**
+
 - A huge revamp and expansion of the documentation.
   The structure and navigability of API reference and overview pages
   has been improved. Several new pages have been added, including:

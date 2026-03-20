@@ -417,7 +417,7 @@ impl DeltaArgs {
                         warn_with_class(
                             state.warn_days_not_always_24h,
                             doc::DAYS_NOT_ALWAYS_24H_MSG,
-                            2,
+                            1,
                         )?;
                     }
                     DeltaIncrement::from_nanos(

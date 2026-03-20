@@ -371,7 +371,7 @@ pub(crate) fn set_timedelta_from_kwargs(
             warn_with_class(
                 state.warn_days_not_always_24h,
                 doc::DAYS_NOT_ALWAYS_24H_MSG,
-                2,
+                1,
             )?;
         }
     } else if eq(key, str_days) {
@@ -382,7 +382,7 @@ pub(crate) fn set_timedelta_from_kwargs(
             warn_with_class(
                 state.warn_days_not_always_24h,
                 doc::DAYS_NOT_ALWAYS_24H_MSG,
-                2,
+                1,
             )?;
         }
     } else if eq(key, str_hours) {
@@ -747,7 +747,7 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
             warn_with_class(
                 state.warn_deprecation,
                 c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
-                2,
+                1,
             )?;
             DateTimeDelta::new(ddelta, tdelta)
                 .ok_or_value_err("mixed sign of delta components")?
@@ -858,7 +858,7 @@ fn in_nanoseconds(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         cls.state().warn_deprecation,
         c"in_nanoseconds is deprecated, use total('nanoseconds') instead",
-        2,
+        1,
     )?;
     slf.total_nanos().to_py()
 }
@@ -867,7 +867,7 @@ fn in_microseconds(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         cls.state().warn_deprecation,
         c"in_microseconds is deprecated, use total('microseconds') instead",
-        2,
+        1,
     )?;
     let TimeDelta { secs, subsec } = slf;
     (secs.get() as f64 * 1e6 + subsec.get() as f64 * 1e-3).to_py()
@@ -877,7 +877,7 @@ fn in_milliseconds(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         cls.state().warn_deprecation,
         c"in_milliseconds is deprecated, use total('milliseconds') instead",
-        2,
+        1,
     )?;
     let TimeDelta { secs, subsec } = slf;
     (secs.get() as f64 * 1e3 + subsec.get() as f64 * 1e-6).to_py()
@@ -887,7 +887,7 @@ fn in_seconds(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         cls.state().warn_deprecation,
         c"in_seconds is deprecated, use total('seconds') instead",
-        2,
+        1,
     )?;
     let TimeDelta { secs, subsec } = slf;
     (secs.get() as f64 + subsec.get() as f64 * 1e-9).to_py()
@@ -897,7 +897,7 @@ fn in_minutes(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         cls.state().warn_deprecation,
         c"in_minutes is deprecated, use total('minutes') instead",
-        2,
+        1,
     )?;
     let TimeDelta { secs, subsec } = slf;
     (secs.get() as f64 / 60.0 + subsec.get() as f64 * 1e-9 / 60.0).to_py()
@@ -907,7 +907,7 @@ fn in_hours(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         cls.state().warn_deprecation,
         c"in_hours is deprecated, use total('hours') instead",
-        2,
+        1,
     )?;
     let TimeDelta { secs, subsec } = slf;
     (secs.get() as f64 / 3600.0 + subsec.get() as f64 * 1e-9 / 3600.0).to_py()
@@ -917,7 +917,7 @@ fn in_days_of_24h(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         cls.state().warn_deprecation,
         c"in_days_of_24h is deprecated, use total('days') instead",
-        2,
+        1,
     )?;
     let TimeDelta { secs, subsec } = slf;
     (secs.get() as f64 / S_PER_DAY as f64 + subsec.get() as f64 * 1e-9 / S_PER_DAY as f64).to_py()
@@ -1271,7 +1271,7 @@ fn in_units(
             warn_with_class(
                 state.warn_days_not_always_24h,
                 doc::DAYS_NOT_ALWAYS_24H_MSG,
-                2,
+                1,
             )?;
         }
         if let Some(exact) = units.to_exact_assuming_24h_days() {
@@ -1306,7 +1306,7 @@ fn total(
                 warn_with_class(
                     state.warn_days_not_always_24h,
                     doc::DAYS_NOT_ALWAYS_24H_MSG,
-                    2,
+                    1,
                 )?;
             }
             return (slf.to_nanos_f64() / u.in_nanos() as f64).to_py();
@@ -1334,7 +1334,7 @@ fn total(
             warn_with_class(
                 state.warn_tz_unaware_arithmetic,
                 doc::PLAIN_DIFF_UNAWARE_MSG,
-                2,
+                1,
             )?;
         }
         pdt
@@ -1343,7 +1343,7 @@ fn total(
             warn_with_class(
                 state.warn_potentially_stale_offset,
                 doc::STALE_OFFSET_CALENDAR_MSG,
-                2,
+                1,
             )?;
         }
         odt.without_offset()
