@@ -48,9 +48,13 @@ Examples of local time include:
 
 Local time is how humans plan their days.
 It aligns with calendars, business hours, and social expectations.
-But local time is not inherently a single moment on the global timeline.
-The same local time can refer to different exact moments—or, in some cases, to no moment at all.
 
+But local time is not inherently a single moment on the global timeline
+because clocks can shift due to daylight saving time, or political decisions.
+This means that "2 hours later" on the clock does not always correspond to "2 hours later" of elapsed "exact" time,
+since the clock might have jumped forward or backward in the meantime.
+
+Also, during such a jump, a local time might occur twice or not at all, creating ambiguity.
 Local time only becomes meaningful when interpreted *in the context of a time zone*.
 
 ## Why this distinction matters
