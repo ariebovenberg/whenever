@@ -68,10 +68,6 @@ else:
 
 TEST_DIR = Path(__file__).parent
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
-
 
 class TestInit:
     def test_unambiguous(self):

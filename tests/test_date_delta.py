@@ -22,9 +22,6 @@ from whenever import (
 from .common import AlwaysEqual, NeverEqual
 
 MAX_I64 = 1 << 64
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
 
 
 def make_ddelta(**kwargs: Any) -> DateDelta:

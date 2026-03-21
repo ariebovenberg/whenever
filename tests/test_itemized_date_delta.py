@@ -14,9 +14,6 @@ UNITS = cast(
     Sequence[Literal["years", "months", "weeks", "days"]],
     "years months weeks days".split(),
 )
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
 
 
 class TestInit:

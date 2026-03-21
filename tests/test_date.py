@@ -30,9 +30,6 @@ from .common import (
 
 MAX_I64 = 1 << 63
 MAX_I32 = 1 << 31
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
 
 
 class TestInit:

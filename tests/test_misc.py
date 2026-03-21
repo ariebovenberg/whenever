@@ -31,10 +31,6 @@ from whenever._tz.system import _tzid_from_path, get_tz
 
 from .common import system_tz_ams
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
-
 
 @pytest.mark.skipif(
     sys.version_info < (3, 13),

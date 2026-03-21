@@ -17,10 +17,6 @@ from .common import AlwaysEqual, NeverEqual
 from .test_date_delta import INVALID_DDELTAS, VALID_DDELTAS
 from .test_time_delta import INVALID_TDELTAS, VALID_TDELTAS
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
-
 
 def make_dtdelta(**kwargs: Any) -> DateTimeDelta:
     with warnings.catch_warnings():

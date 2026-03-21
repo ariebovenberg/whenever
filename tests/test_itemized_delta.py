@@ -36,9 +36,6 @@ UNITS = cast(
     ],
     "years months weeks days hours minutes seconds nanoseconds".split(),
 )
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
 
 
 class TestInit:

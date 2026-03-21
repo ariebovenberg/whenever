@@ -18,10 +18,6 @@ from whenever import (
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
-
 
 class TestInit:
 

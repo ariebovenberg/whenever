@@ -41,10 +41,6 @@ from .common import (
     system_tz_ams,
 )
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
-
 
 class TestInit:
 
