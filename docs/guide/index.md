@@ -29,4 +29,5 @@ For more details, see the {ref}`API reference <api>`.
    partial-types
    system-tz
    testing
+   warnings
 ```

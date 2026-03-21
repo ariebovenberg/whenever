@@ -29,10 +29,10 @@ See the full list below.
   - Replace `DateDelta(...)` with `ItemizedDateDelta(...)`.
   - Replace `DateTimeDelta(...)` with `ItemizedDelta(...)`.
   - Replace `years()`, `months()`, `weeks()`, `days()` helper functions
-    with `ItemizedDateDelta(years=...)`, etc.
+    with `ItemizedDateDelta(years=...)`, etc. Or, if passing to a
+    datetime method, use keyword arguments directly (e.g. `dt.add(years=1, months=2)`).
   - Replace `.in_months_days()` and `.in_months_days_secs_nanos()`
-    with the `Mapping` interface (e.g. `delta['months']`)
-    or `.in_units()`.
+    with `.in_units(['months', 'days'])` and `.in_units(['months', 'days', 'seconds', 'nanoseconds'])`, respectively.
   - The `Date` `+`/`-` operators with `DateDelta` are deprecated;
     use `add()`/`subtract()` instead.
   - The `Date` `-` operator between two dates is deprecated;
