@@ -7,7 +7,7 @@ be used to format values to strings or parse strings into values.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Iterable, MutableSequence
+from collections.abc import Iterable
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -79,6 +79,19 @@ def _parse_digits(s: str, pos: int, count: int) -> tuple[int, int]:
             f"Expected {count} digits at position {pos}, " f"got {chunk!r}"
         )
     return int(chunk), end
+
+
+def _parse_1or2_digits(s: str, pos: int) -> tuple[int, int]:
+    """Parse 1 or 2 digits from s at pos (greedy).
+    Returns (value, new_pos).
+    """
+    n = len(s)
+    if pos >= n or not s[pos].isdigit():
+        raise ValueError(f"Expected 1-2 digits at position {pos}")
+    count = 1
+    if pos + 1 < n and s[pos + 1].isdigit():
+        count = 2
+    return int(s[pos : pos + count]), pos + count
 
 
 def _parse_text_match(
@@ -163,6 +176,7 @@ class _ParseState:
         "offset_secs",
         "tz_id",
         "weekday",
+        "second_absent",
     )
 
     def __init__(self) -> None:
@@ -177,6 +191,7 @@ class _ParseState:
         self.offset_secs: int | None = None
         self.tz_id: str | None = None
         self.weekday: int | None = None
+        self.second_absent: bool = False
 
     def resolve(self) -> None:
         """Apply AM/PM adjustment after all fields are parsed."""
@@ -221,6 +236,15 @@ class _Field:
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
         raise NotImplementedError
+
+    def apply_pending(self, ch: str) -> list[_Element]:
+        """Called when a pending prefix char (``'.'`` or ``':'``) precedes this field.
+
+        Returns the elements to emit: by default the pending char is flushed as a
+        literal followed by self. Override to consume the pending char and transform
+        into a compound field (e.g. ``.FFF`` → :class:`_DotFrac`).
+        """
+        return [_Literal(ch), self]
 
     def __repr__(self) -> str:
         letter, count = self.pattern
@@ -269,6 +293,19 @@ class _MonthNum(_Field):
         return pos
 
 
+class _MonthNumUnpadded(_Field):
+    pattern = ("M", 1)
+    category = "date"
+    state_field = "month"
+
+    def format_value(self, v: _FormatValues) -> str:
+        return str(v.month)
+
+    def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
+        state.month, pos = _parse_1or2_digits(s, pos)
+        return pos
+
+
 class _MonthAbbr(_Field):
     pattern = ("M", 3)
     category = "date"
@@ -309,6 +346,19 @@ class _Day(_Field):
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
         state.day, pos = _parse_digits(s, pos, 2)
+        return pos
+
+
+class _DayUnpadded(_Field):
+    pattern = ("D", 1)
+    category = "date"
+    state_field = "day"
+
+    def format_value(self, v: _FormatValues) -> str:
+        return str(v.day)
+
+    def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
+        state.day, pos = _parse_1or2_digits(s, pos)
         return pos
 
 
@@ -355,6 +405,19 @@ class _Hour24(_Field):
         return pos
 
 
+class _Hour24Unpadded(_Field):
+    pattern = ("h", 1)
+    category = "time"
+    state_field = "hour"
+
+    def format_value(self, v: _FormatValues) -> str:
+        return str(v.hour)
+
+    def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
+        state.hour, pos = _parse_1or2_digits(s, pos)
+        return pos
+
+
 class _Hour12(_Field):
     pattern = ("i", 2)
     category = "time"
@@ -375,6 +438,24 @@ class _Hour12(_Field):
         return pos
 
 
+class _Hour12Unpadded(_Field):
+    pattern = ("i", 1)
+    category = "time"
+    state_field = "hour"
+
+    def format_value(self, v: _FormatValues) -> str:
+        h12 = v.hour % 12 or 12
+        return str(h12)
+
+    def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
+        state.hour, pos = _parse_1or2_digits(s, pos)
+        if not (1 <= state.hour <= 12):
+            raise ValueError(
+                f"12-hour format requires hour in 1..12, got {state.hour}"
+            )
+        return pos
+
+
 class _Minute(_Field):
     pattern = ("m", 2)
     category = "time"
@@ -385,6 +466,19 @@ class _Minute(_Field):
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
         state.minute, pos = _parse_digits(s, pos, 2)
+        return pos
+
+
+class _MinuteUnpadded(_Field):
+    pattern = ("m", 1)
+    category = "time"
+    state_field = "minute"
+
+    def format_value(self, v: _FormatValues) -> str:
+        return str(v.minute)
+
+    def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
+        state.minute, pos = _parse_1or2_digits(s, pos)
         return pos
 
 
@@ -399,6 +493,66 @@ class _Second(_Field):
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
         state.second, pos = _parse_digits(s, pos, 2)
         return pos
+
+
+class _SecondUnpadded(_Field):
+    pattern = ("s", 1)
+    category = "time"
+    state_field = "second"
+
+    def format_value(self, v: _FormatValues) -> str:
+        return str(v.second)
+
+    def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
+        state.second, pos = _parse_1or2_digits(s, pos)
+        return pos
+
+
+class _SecondOpt(_Field):
+    pattern = ("S", 2)
+    category = "time"
+    state_field = "second"
+
+    def format_value(self, v: _FormatValues) -> str:
+        return f"{v.second:02d}" if (v.second or v.nanos) else ""
+
+    def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
+        if pos < len(s) and s[pos].isdigit():
+            state.second, pos = _parse_digits(s, pos, 2)
+        else:
+            state.second = 0
+            state.second_absent = True
+        return pos
+
+    def apply_pending(self, ch: str) -> list[_Element]:
+        if ch == ":":
+            return [_ColonSec()]
+        return [_Literal(ch), self]
+
+
+class _ColonSec(_Field):
+    """Colon + optional seconds: written as ``:ss`` only when second > 0 or nanos > 0.
+
+    Produced by the compiler when a ``:`` literal immediately precedes ``SS``.
+    """
+
+    category = "time"
+    state_field = "second"
+
+    def format_value(self, v: _FormatValues) -> str:
+        return f":{v.second:02d}" if (v.second or v.nanos) else ""
+
+    def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
+        if pos < len(s) and s[pos] == ":":
+            pos += 1  # consume the colon
+            state.second, pos = _parse_digits(s, pos, 2)
+        else:
+            state.second = 0
+            state.second_absent = True
+        return pos
+
+    def __repr__(self) -> str:
+        return ":SS"
 
 
 class _FracExact(_Field):
@@ -435,6 +589,9 @@ class _FracTrim(_Field):
         return f"{v.nanos:09d}"[: self.width].rstrip("0")
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
+        if state.second_absent:
+            state.nanos = 0
+            return pos
         count = 0
         while (
             count < self.width
@@ -450,18 +607,17 @@ class _FracTrim(_Field):
             pos += count
         return pos
 
-    def __repr__(self) -> str:
-        return "F" * self.width
+    def apply_pending(self, ch: str) -> list[_Element]:
+        if ch == ".":
+            return [_DotFrac(self.width)]
+        return [_Literal(ch), self]
 
 
 class _DotFrac(_Field):
-    """A decimal point followed by trimmed fractional seconds (e.g. ``.FFF``).
+    """Decimal point + trimmed fractional seconds (``.FFF``).
 
     Produced by the compiler when a ``'.'`` literal immediately precedes a
-    ``FFF``-style specifier.  During formatting the dot and digits are written
-    together, or nothing if nanos round to zero.  During parsing the dot and
-    fractional digits are consumed together (the dot may be absent if nanos
-    are zero).
+    ``FFF``-style specifier. Both the dot and digits are omitted when nanos are zero.
     """
 
     category = "time"
@@ -475,7 +631,7 @@ class _DotFrac(_Field):
         return f".{trimmed}" if trimmed else ""
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        if pos >= len(s) or s[pos] != ".":
+        if state.second_absent or pos >= len(s) or s[pos] != ".":
             state.nanos = 0
             return pos
         pos += 1  # consume the dot
@@ -689,15 +845,22 @@ _FIXED_FIELDS: list[type[_Field]] = [
     _Year4,
     _Year2,
     _MonthNum,
+    _MonthNumUnpadded,
     _MonthAbbr,
     _MonthFull,
     _Day,
+    _DayUnpadded,
     _WeekdayAbbr,
     _WeekdayFull,
     _Hour24,
+    _Hour24Unpadded,
     _Hour12,
+    _Hour12Unpadded,
     _Minute,
+    _MinuteUnpadded,
     _Second,
+    _SecondUnpadded,
+    _SecondOpt,
     _AmPmShort,
     _AmPmFull,
     _TzId,
@@ -735,9 +898,9 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
     for el in elements:
         if not isinstance(el, _Field):
             continue
-        if isinstance(el, _Hour24):
+        if isinstance(el, (_Hour24, _Hour24Unpadded)):
             has_24h = True
-        elif isinstance(el, _Hour12):
+        elif isinstance(el, (_Hour12, _Hour12Unpadded)):
             has_12h = True
         elif isinstance(el, (_AmPmShort, _AmPmFull)):
             has_ampm = True
@@ -752,12 +915,12 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
 
     if has_24h and has_ampm:
         raise ValueError(
-            "24-hour format (hh) cannot be combined with "
-            "AM/PM (a/aa). Use 12-hour format (ii) instead."
+            "24-hour format (h/hh) cannot be combined with "
+            "AM/PM (a/aa). Use 12-hour format (i/ii) instead."
         )
     if has_12h and not has_ampm:
         warnings.warn(
-            "12-hour format (ii) without AM/PM designator (a/aa) "
+            "12-hour format (i/ii) without AM/PM designator (a/aa) "
             "may be ambiguous",
             stacklevel=4,
         )
@@ -765,37 +928,37 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
 
 # Characters allowed as unquoted literals in patterns.
 # Letters must be quoted. Reserved chars (< > [ ] { } #) raise errors.
+# '.' and ':' are handled separately as potential compound-token prefixes.
 _LITERAL_CHARS = frozenset(
-    " \t\n" "0123456789" ":-/.,;_" "()+@!~*&%$^|\\=?`" '"'
+    " \t\n" "0123456789" "-/,;_" "()+@!~*&%$^|\\=?`" '"'
 )
+_PENDING_CHARS = frozenset(".:")
 
 _RESERVED_CHARS = frozenset("<>[]{}#")
 
 
 def _compile_quoted_literal(
-    pattern: str, i: int, n: int, elements: MutableSequence[_Element]
-) -> int:
+    pattern: str, i: int, n: int
+) -> tuple[int, _Element]:
     """Compile a quoted literal ('...' or escaped quote '').
-    Returns the new position after the closing quote.
+    Returns (new_pos, element).
     """
     i += 1  # skip opening quote
     if i < n and pattern[i] == "'":
-        elements.append(_Literal("'"))
-        return i + 1
+        return i + 1, _Literal("'")
     start = i
     while i < n and pattern[i] != "'":
         i += 1
     if i >= n:
         raise ValueError("Unterminated quoted literal in pattern")
-    elements.append(_Literal(pattern[start:i]))
-    return i + 1  # skip closing quote
+    return i + 1, _Literal(pattern[start:i])  # skip closing quote
 
 
 def _compile_specifier(
-    pattern: str, i: int, n: int, ch: str, elements: MutableSequence[_Element]
-) -> int:
+    pattern: str, i: int, n: int, ch: str
+) -> tuple[int, _Field]:
     """Compile a specifier (e.g. YYYY, MM, fff).
-    Returns the new position after the specifier.
+    Returns (new_pos, field).
     """
     count = 1
     while i + count < n and pattern[i + count] == ch:
@@ -806,23 +969,20 @@ def _compile_specifier(
         cls, _, max_w = _VARIABLE_SPEC[ch]
         if count > max_w:
             raise ValueError(
-                f"Too many '{ch}' characters in pattern " f"(max {max_w})"
+                f"Too many '{ch}' characters in pattern (max {max_w})"
             )
-        elements.append(cls(count))
-        return i + count
+        return i + count, cls(count)
 
     # Fixed-width field
     by_count = _FIXED_SPEC[ch]
-    field_cls = by_count.get(count)
-    if field_cls is not None:
-        elements.append(field_cls())
-        return i + count
-
-    valid = sorted(by_count, reverse=True)
-    raise ValueError(
-        f"Unrecognized specifier '{ch * count}' at "
-        f"position {i}. Valid counts for '{ch}': {valid}"
-    )
+    try:
+        return i + count, by_count[count]()
+    except KeyError:
+        valid = sorted(by_count, reverse=True)
+        raise ValueError(
+            f"Unrecognized specifier '{ch * count}' at "
+            f"position {i}. Valid counts for '{ch}': {valid}"
+        )
 
 
 @lru_cache(maxsize=64)
@@ -831,6 +991,10 @@ def compile_pattern(pattern: str) -> tuple[_Element, ...]:
     if len(pattern) > 1000:
         raise ValueError("Pattern string too long (max 1000 characters)")
     elements: list[_Element] = []
+    # A trailing '.' or ':' from the last literal run that may be consumed
+    # by the next specifier as part of a compound token (.FFF → _DotFrac,
+    # :SS → _ColonSec). Flushed as a plain literal if not consumed.
+    pending: str | None = None
     i = 0
     n = len(pattern)
 
@@ -843,15 +1007,31 @@ def compile_pattern(pattern: str) -> tuple[_Element, ...]:
                 f"Patterns must be ASCII-only."
             )
 
-        # Quoted literal
+        # Quoted literal — pending is never consumed by a quoted literal
         if ch == "'":
-            i = _compile_quoted_literal(pattern, i, n, elements)
+            if pending is not None:
+                elements.append(_Literal(pending))
+                pending = None
+            new_i, el = _compile_quoted_literal(pattern, i, n)
+            elements.append(el)
+            i = new_i
             continue
 
-        # Recognized specifier letter
+        # Recognized specifier: delegate pending handling to the field itself
         if ch in _SPEC_CHARS:
-            i = _compile_specifier(pattern, i, n, ch, elements)
+            new_i, el = _compile_specifier(pattern, i, n, ch)
+            if pending is not None:
+                elements.extend(el.apply_pending(pending))
+            else:
+                elements.append(el)
+            pending = None
+            i = new_i
             continue
+
+        # From here on, pending (if any) is not consumable — flush it
+        if pending is not None:
+            elements.append(_Literal(pending))
+            pending = None
 
         # Other ASCII letters are errors (reserved for future specifiers)
         if ch.isalpha():
@@ -868,46 +1048,29 @@ def compile_pattern(pattern: str) -> tuple[_Element, ...]:
                 f"for future use. Use quotes for literal: '...'"
             )
 
-        # Allowed literal characters
+        # '.' and ':' are held as pending — they may be consumed by the next
+        # specifier to form a compound token (e.g. '.FFF' → _DotFrac).
+        if ch in _PENDING_CHARS:
+            pending = ch
+            i += 1
+            continue
+
+        # Plain literal characters: collect a run
         if ch in _LITERAL_CHARS:
             start = i
             while i < n and pattern[i] in _LITERAL_CHARS:
                 i += 1
-            # Inline DotFrac detection: if the literal ends in '.' and the
-            # very next character starts a FracTrim specifier, emit the
-            # literal without the dot and handle the '.' + 'F*' as a
-            # _DotFrac in the next iteration.
-            if (
-                i > start
-                and pattern[i - 1] == "."
-                and i < n
-                and pattern[i] == "F"
-            ):
-                if i - 1 > start:
-                    elements.append(_Literal(pattern[start : i - 1]))
-                # Don't advance i — the main loop will compile the 'F*' run.
-                # We mark the dot as consumed by adjusting the literal end.
-                # The next spec char 'F' will be compiled as _FracTrim,
-                # then _DotFrac wrapping happens inline:
-                cls, _, max_w = _VARIABLE_SPEC["F"]
-                j = i
-                while j < n and pattern[j] == "F":
-                    j += 1
-                width = j - i
-                if width > max_w:
-                    raise ValueError(
-                        f"Too many 'F' characters in pattern (max {max_w})"
-                    )
-                elements.append(_DotFrac(width))
-                i = j
-            else:
-                elements.append(_Literal(pattern[start:i]))
+            elements.append(_Literal(pattern[start:i]))
             continue
 
         raise ValueError(
             f"Unexpected character {ch!r} at position {i}. "
             f"Use quotes for literal text: '...'"
         )
+
+    # Flush any pending prefix left at end of pattern (e.g. pattern = "hh:mm.")
+    if pending is not None:
+        elements.append(_Literal(pending))
 
     _validate_cross_fields(elements)
     return tuple(elements)

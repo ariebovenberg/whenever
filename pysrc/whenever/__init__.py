@@ -30,7 +30,7 @@ if not _EXTENSION_LOADED:  # pragma: no cover
 
 # Yes, we could get the version with importlib.metadata,
 # but we try to keep our import time as low as possible.
-__version__ = "0.10.0b1"
+__version__ = "0.10.0b2"
 
 # We expose these at module-level for convenience
 MONDAY = Weekday.MONDAY

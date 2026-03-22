@@ -64,6 +64,36 @@ class TestCompilePattern:
         with pytest.raises(ValueError, match="Unrecognized"):
             d.format("YYYY-Q-DD")
 
+    def test_pending_not_consumed_by_specifier(self):
+        """A pending '.' or ':' flushed as a literal when not consumed."""
+        # '.' before a non-F specifier — flushed, not a DotFrac
+        assert Date(2024, 3, 5).format("YYYY.M") == "2024.3"
+        # ':' before a non-S specifier — flushed, not a ColonSec
+        assert Time(14, 3, 5).format("hh:m") == "14:3"
+        # '.' before 'SS' — flushed (not DotFrac; SS needs ':')
+        assert Time(14, 30, 5).format("hh:mm.SS") == "14:30.05"
+        assert Time(14, 30, 0).format("hh:mm.SS") == "14:30."
+        # ':' before 'FFF' — flushed (not ColonSec; FFF needs '.')
+        assert (
+            Time(14, 30, 5, nanosecond=120_000_000).format("hh:mm:FFF")
+            == "14:30:12"
+        )
+
+    def test_pending_flushed_before_quote(self):
+        """A pending char must be flushed as a literal before a quoted literal."""
+        assert Date(2024, 3, 15).format("YYYY.'year'") == "2024.year"
+        assert Date(2024, 3, 15).format("YYYY:'year'") == "2024:year"
+
+    def test_pending_flushed_before_literal(self):
+        """A pending char flushed when followed by a plain literal character."""
+        assert Date(2024, 3, 15).format("YYYY.-MM") == "2024.-03"
+        assert Date(2024, 3, 15).format("YYYY:-MM") == "2024:-03"
+
+    def test_trailing_pending_flushed(self):
+        """A pattern ending with '.' or ':' emits them as literals."""
+        assert Date(2024, 3, 15).format("YYYY.") == "2024."
+        assert Date(2024, 3, 15).format("YYYY:") == "2024:"
+
     def test_unterminated_quote(self):
         d = Date(2024, 3, 15)
         with pytest.raises(ValueError, match="Unterminated"):
@@ -143,6 +173,12 @@ class TestDateFormat:
         d = Date(2024, 3, 15)
         assert d.format("YYYY-MM-DD") == "2024-03-15"
 
+    def test_unpadded_month_day(self):
+        assert Date(2024, 3, 5).format("YYYY-M-D") == "2024-3-5"
+        assert Date(2024, 12, 25).format("YYYY-M-D") == "2024-12-25"
+        # MM/DD still zero-pad
+        assert Date(2024, 3, 5).format("YYYY-MM-DD") == "2024-03-05"
+
     def test_two_digit_year_format(self):
         assert Date(2024, 1, 1).format("YY-MM-DD") == "24-01-01"
         assert Date(2000, 1, 1).format("YY-MM-DD") == "00-01-01"
@@ -176,6 +212,24 @@ class TestDateParse:
     def test_basic(self):
         d = Date.parse("2024-03-15", format="YYYY-MM-DD")
         assert d == Date(2024, 3, 15)
+
+    def test_unpadded_month_day(self):
+        assert Date.parse("2024-3-5", format="YYYY-M-D") == Date(2024, 3, 5)
+        assert Date.parse("2024-12-25", format="YYYY-M-D") == Date(
+            2024, 12, 25
+        )
+        # MM requires exactly 2 digits — single digit fails
+        with pytest.raises(ValueError):
+            Date.parse("2024-3-05", format="YYYY-MM-DD")
+        # DD requires exactly 2 digits
+        with pytest.raises(ValueError):
+            Date.parse("2024-03-5", format="YYYY-MM-DD")
+
+    def test_roundtrip_unpadded_month_day(self):
+        for month, day in [(1, 1), (12, 31), (3, 5)]:
+            d = Date(2024, month, day)
+            pattern = "YYYY-M-D"
+            assert Date.parse(d.format(pattern), format=pattern) == d
 
     def test_slash_separator(self):
         d = Date.parse("2024/03/15", format="YYYY/MM/DD")
@@ -277,12 +331,63 @@ class TestTimeFormat:
     def test_basic(self):
         assert Time(14, 30, 5).format("hh:mm:ss") == "14:30:05"
 
+    def test_unpadded_hour(self):
+        assert Time(4, 30).format("h:mm") == "4:30"
+        assert Time(14, 30).format("h:mm") == "14:30"
+        # hh still zero-pads
+        assert Time(4, 30).format("hh:mm") == "04:30"
+
+    def test_unpadded_minute(self):
+        assert Time(14, 5).format("hh:m") == "14:5"
+        assert Time(14, 30).format("hh:m") == "14:30"
+
+    def test_unpadded_second(self):
+        assert Time(14, 30, 5).format("hh:mm:s") == "14:30:5"
+        assert Time(14, 30, 45).format("hh:mm:s") == "14:30:45"
+
+    def test_optional_seconds(self):
+        # :SS omits colon+seconds when both second and nanos are zero
+        assert Time(14, 30, 0).format("hh:mm:SS") == "14:30"
+        # :SS includes when seconds are non-zero
+        assert Time(14, 30, 5).format("hh:mm:SS") == "14:30:05"
+        assert Time(14, 30, 45).format("hh:mm:SS") == "14:30:45"
+        # :SS includes ':00' when second=0 but nanos > 0 (use round() to avoid)
+        assert (
+            Time(14, 30, 0, nanosecond=500_000_000).format("hh:mm:SS")
+            == "14:30:00"
+        )
+        # standalone SS (no colon) behaves the same but without the colon
+        assert Time(14, 30, 0).format("hh:mmSS") == "14:30"
+        assert Time(14, 30, 5).format("hh:mmSS") == "14:3005"
+        # :SS combined with .FFF — colon and seconds present when nanos>0 even if second=0
+        assert (
+            Time(14, 30, 0, nanosecond=500_000_000).format("hh:mm:SS.FFF")
+            == "14:30:00.5"
+        )
+        assert Time(14, 30, 0).format("hh:mm:SS.FFF") == "14:30"
+        assert Time(14, 30, 5).format("hh:mm:SS.FFF") == "14:30:05"
+        assert (
+            Time(14, 30, 5, nanosecond=120_000_000).format("hh:mm:SS.FFF")
+            == "14:30:05.12"
+        )
+        # error: wrong count of S characters in :SS context
+        with pytest.raises(ValueError, match="SS"):
+            Time(14, 30).format("hh:mm:SSS")
+
     def test_12h(self):
         assert Time(14, 30).format("ii:mm aa") == "02:30 PM"
         assert Time(0, 0).format("ii:mm aa") == "12:00 AM"
         assert Time(12, 0).format("ii:mm aa") == "12:00 PM"
         assert Time(23, 59).format("ii:mm aa") == "11:59 PM"
         assert Time(11, 30).format("ii:mm aa") == "11:30 AM"
+
+    def test_12h_unpadded(self):
+        assert Time(14, 30).format("i:mm aa") == "2:30 PM"
+        assert Time(0, 0).format("i:mm aa") == "12:00 AM"
+        assert Time(1, 0).format("i:mm aa") == "1:00 AM"
+        assert Time(12, 0).format("i:mm aa") == "12:00 PM"
+        # ii still zero-pads
+        assert Time(1, 0).format("ii:mm aa") == "01:00 AM"
 
     def test_ampm_short(self):
         assert Time(14, 30).format("ii:mm a") == "02:30 P"
@@ -316,6 +421,74 @@ class TestTimeParse:
     def test_basic(self):
         assert Time.parse("14:30:05", format="hh:mm:ss") == Time(14, 30, 5)
 
+    def test_unpadded_hour(self):
+        # Single-digit
+        assert Time.parse("4:30", format="h:mm") == Time(4, 30)
+        # Two-digit (also accepted by h)
+        assert Time.parse("14:30", format="h:mm") == Time(14, 30)
+        # hh requires exactly 2 digits
+        with pytest.raises(ValueError):
+            Time.parse("4:30", format="hh:mm")
+        # Non-digit input
+        with pytest.raises(ValueError, match="1-2 digits"):
+            Time.parse("x:30", format="h:mm")
+
+    def test_unpadded_minute(self):
+        assert Time.parse("14:5", format="hh:m") == Time(14, 5)
+        assert Time.parse("14:30", format="hh:m") == Time(14, 30)
+        with pytest.raises(ValueError):
+            Time.parse("14:5", format="hh:mm")
+
+    def test_unpadded_second(self):
+        assert Time.parse("14:30:5", format="hh:mm:s") == Time(14, 30, 5)
+        assert Time.parse("14:30:45", format="hh:mm:s") == Time(14, 30, 45)
+        with pytest.raises(ValueError):
+            Time.parse("14:30:5", format="hh:mm:ss")
+
+    def test_optional_seconds(self):
+        # :SS - seconds absent
+        assert Time.parse("14:30", format="hh:mm:SS") == Time(14, 30, 0)
+        # :SS - seconds present
+        assert Time.parse("14:30:05", format="hh:mm:SS") == Time(14, 30, 5)
+        assert Time.parse("14:30:45", format="hh:mm:SS") == Time(14, 30, 45)
+        # standalone SS - seconds absent (no digit follows mm)
+        assert Time.parse("14:30", format="hh:mmSS") == Time(14, 30, 0)
+        # standalone SS - seconds present
+        assert Time.parse("14:3005", format="hh:mmSS") == Time(14, 30, 5)
+        # :SS.FFF roundtrip
+        assert Time.parse("14:30", format="hh:mm:SS.FFF") == Time(14, 30, 0)
+        assert Time.parse("14:30:05", format="hh:mm:SS.FFF") == Time(14, 30, 5)
+        assert Time.parse("14:30:00.5", format="hh:mm:SS.FFF") == Time(
+            14, 30, 0, nanosecond=500_000_000
+        )
+        assert Time.parse("14:30:05.12", format="hh:mm:SS.FFF") == Time(
+            14, 30, 5, nanosecond=120_000_000
+        )
+        # fractional part must be absent when seconds are absent
+        with pytest.raises(ValueError, match="trailing"):
+            Time.parse("14:30.5", format="hh:mm:SS.FFF")
+        with pytest.raises(ValueError, match="trailing"):
+            Time.parse("14:30.5", format="hh:mmSS.FFF")
+        # standalone FFF (no dot separator) also skipped when SS is absent
+        assert Time.parse("14:30", format="hh:mmSSFFF") == Time(14, 30, 0)
+        # SS absent + space literal + FFF digits → FracTrim skipped, trailing error
+        with pytest.raises(ValueError, match="trailing"):
+            Time.parse("14:30 123", format="hh:mmSS FFF")
+
+    def test_roundtrip_optional_seconds(self):
+        cases = [
+            Time(14, 30, 0),
+            Time(14, 30, 5),
+            Time(0, 0, 0),
+            Time(14, 30, 0, nanosecond=500_000_000),
+            Time(14, 30, 5, nanosecond=120_000_000),
+        ]
+        for t in cases:
+            assert (
+                Time.parse(t.format("hh:mm:SS.FFF"), format="hh:mm:SS.FFF")
+                == t
+            )
+
     def test_12h_pm(self):
         assert Time.parse("02:30 PM", format="ii:mm aa") == Time(14, 30)
 
@@ -327,6 +500,17 @@ class TestTimeParse:
 
     def test_12h_midnight(self):
         assert Time.parse("12:00 AM", format="ii:mm aa") == Time(0, 0)
+
+    def test_12h_unpadded(self):
+        assert Time.parse("2:30 PM", format="i:mm aa") == Time(14, 30)
+        assert Time.parse("12:00 AM", format="i:mm aa") == Time(0, 0)
+        assert Time.parse("1:00 AM", format="i:mm aa") == Time(1, 0)
+        # ii requires exactly 2 digits
+        with pytest.raises(ValueError):
+            Time.parse("2:30 PM", format="ii:mm aa")
+        # Out-of-range hour with single i
+        with pytest.raises(ValueError, match="1..12"):
+            Time.parse("0:30 AM", format="i:mm aa")
 
     def test_invalid_ampm_text(self):
         with pytest.raises(ValueError, match="AM/PM"):
@@ -370,6 +554,12 @@ class TestTimeParse:
         t = Time(14, 30, 5, nanosecond=123_456_789)
         pattern = "hh:mm:ss.fffffffff"
         assert Time.parse(t.format(pattern), format=pattern) == t
+
+    def test_roundtrip_unpadded(self):
+        for h, m, s in [(4, 5, 9), (14, 30, 45), (0, 0, 0)]:
+            t = Time(h, m, s)
+            pattern = "h:m:s"
+            assert Time.parse(t.format(pattern), format=pattern) == t
 
     def test_roundtrip_ampm(self):
         for h in (0, 1, 11, 12, 13, 23):
