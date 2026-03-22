@@ -35,10 +35,12 @@ the corresponding value.
 |:---------|:---------------------------|:---------------|:--------------|
 | `YYYY` | 4-digit year, zero-padded  | `2024`       | ✅            |
 | `YY`   | 2-digit year               | `24`         | ❌ format only |
-| `MM`   | Month number (01–12)       | `03`         | ✅            |
+| `MM`   | Month number (01–12), zero-padded | `03`  | ✅ (exactly 2 digits) |
+| `M`    | Month number (1–12), no padding   | `3`   | ✅ (1–2 digits) |
 | `MMM`  | Abbreviated month name     | `Mar`        | ✅ (case-insensitive) |
 | `MMMM` | Full month name            | `March`      | ✅ (case-insensitive) |
-| `DD`   | Day of month (01–31)       | `15`         | ✅            |
+| `DD`   | Day of month (01–31), zero-padded | `05`  | ✅ (exactly 2 digits) |
+| `D`    | Day of month (1–31), no padding   | `5`   | ✅ (1–2 digits) |
 | `ddd`  | Abbreviated weekday name   | `Fri`        | ✅ (validated) |
 | `dddd` | Full weekday name          | `Friday`     | ✅ (validated) |
 
@@ -56,19 +58,61 @@ avoid ambiguity.
 
 | Pattern     | Meaning                         | Example output  | Parse support |
 |:------------|:--------------------------------|:----------------|:--------------|
-| `hh`      | 24-hour hour (00–23)            | `14`          | ✅            |
-| `ii`      | 12-hour hour (01–12)            | `02`          | ⚠️ (should pair with `aa`)
-| `mm`      | Minute (00–59)                  | `30`          | ✅            |
-| `ss`      | Second (00–59)                  | `05`          | ✅            |
+| `hh`      | 24-hour (00–23), zero-padded    | `04`, `14`    | ✅ (exactly 2 digits) |
+| `h`       | 24-hour (0–23), no padding      | `4`, `14`     | ✅ (1–2 digits)  |
+| `ii`      | 12-hour (01–12), zero-padded    | `04`, `12`    | ⚠️ (should pair with `aa`) |
+| `i`       | 12-hour (1–12), no padding      | `4`, `12`     | ⚠️ (should pair with `aa`) |
+| `mm`      | Minute (00–59), zero-padded     | `05`, `30`    | ✅ (exactly 2 digits) |
+| `m`       | Minute (0–59), no padding       | `5`, `30`     | ✅ (1–2 digits)  |
+| `ss`      | Second (00–59), zero-padded     | `05`, `45`    | ✅ (exactly 2 digits) |
+| `s`       | Second (0–59), no padding       | `5`, `45`     | ✅ (1–2 digits)  |
+| `SS`      | Second, optional (see below)    | `05`, `` (omitted) | ✅ |
 | `f`–`fffffffff` | Fractional seconds, exact digits | `123` (`fff`) | ✅ |
 | `F`–`FFFFFFFFF` | Fractional seconds, trimmed     | `12` (`FFF`) | ✅ |
 | `a`       | AM/PM first character           | `P`           | ✅            |
 | `aa`      | AM/PM full                      | `PM`          | ✅            |
 
 ```{important}
-- `hh` is the **24-hour** format. `ii` is the **12-hour** format.
-- Using `hh` with `a`/`aa` (AM/PM) raises an error—use `ii` instead.
-- Using `ii` without `a`/`aa` emits a warning about ambiguity.
+- `hh`/`h` are the **24-hour** formats. `ii`/`i` are the **12-hour** formats.
+- Using `h`/`hh` with `a`/`aa` (AM/PM) raises an error—use `i`/`ii` instead.
+- Using `i`/`ii` without `a`/`aa` emits a warning about ambiguity.
+- The double-letter forms (`hh`, `ii`, `mm`, `ss`) always zero-pad and require
+  exactly 2 digits when parsing. The single-letter forms (`h`, `i`, `m`, `s`)
+  skip zero-padding and accept 1–2 digits when parsing.
+```
+
+**Optional seconds (`SS`):**
+
+`SS` omits the seconds component entirely when **both** seconds *and*
+nanoseconds are zero, allowing compact times like `14:30` alongside full
+times like `14:30:05` in the same format string.
+
+- When seconds *or* nanoseconds are non-zero, `SS` writes two zero-padded
+  digits; `:SS` additionally writes the preceding colon.
+- When **both are zero**, nothing is written. The colon disappears with `:SS`
+  (unlike a bare `:` literal, which would always be written).
+- During parsing, `SS` reads two digits if the next character is a digit;
+  `:SS` reads `:` followed by two digits if the next character is `:`.
+  In both cases, if the expected character is absent, seconds is set to zero.
+
+```{important}
+Omission requires *both* seconds **and** nanoseconds to be zero. If you have
+fractional seconds (e.g. `14:30:00.5`), `SS` will write `00` (not omit).
+If you want compact times and don't need fractional seconds, call
+{meth}`~whenever.Time.round` first.
+```
+
+```python
+>>> Time(14, 30, 0).format("hh:mm:SS")
+'14:30'
+>>> Time(14, 30, 5).format("hh:mm:SS")
+'14:30:05'
+>>> Time(14, 30, 0, nanosecond=500_000_000).format("hh:mm:SS")
+'14:30:00'
+>>> Time(14, 30, 0).format("hh:mm:SS.FFF")
+'14:30'
+>>> Time(14, 30, 0, nanosecond=500_000_000).format("hh:mm:SS.FFF")
+'14:30:00.5'
 ```
 
 **Fractional seconds:**
@@ -222,5 +266,6 @@ The {meth}`~OffsetDateTime.parse_strptime` methods on {class}`OffsetDateTime` an
 | `%S`   | `ss`  |       |
 | `%f`   | `ffffff`| microseconds (6 digits) |
 | `%p`   | `aa`  |       |
-| `%z`   | `xxx` | `XXX` for Z-style |
+| `%z`   | `xxxx` | `XXXX` for Z-style |
+| `%:z`   | `xxxxx` | `XXXXX` for Z-style |
 | `%Z`   | —     | Abbreviations are not supported for parsing. See {ref}`timezones-explained`. |

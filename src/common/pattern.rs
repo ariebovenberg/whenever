@@ -116,6 +116,7 @@ pub(crate) struct ParseState {
     pub(crate) offset_secs: Option<Offset>,
     pub(crate) tz_id: Option<String>,
     pub(crate) weekday: Option<Weekday>,
+    pub(crate) second_absent: bool,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -153,15 +154,23 @@ pub(crate) enum Field {
     Year4,
     Year2,
     MonthNum,
+    MonthNumUnpadded,
     MonthAbbr,
     MonthFull,
     Day,
+    DayUnpadded,
     WeekdayAbbr,
     WeekdayFull,
     Hour24,
+    Hour24Unpadded,
     Hour12,
+    Hour12Unpadded,
     Minute,
+    MinuteUnpadded,
     Second,
+    SecondUnpadded,
+    SecondOpt,
+    ColonSec,
     FracExact(u8), // width 1-9
     FracTrim(u8),  // width 1-9
     DotFrac(u8),   // decimal point followed by trimmed fractional seconds (width 1-9)
@@ -181,15 +190,23 @@ impl Field {
             Self::Year4
             | Self::Year2
             | Self::MonthNum
+            | Self::MonthNumUnpadded
             | Self::MonthAbbr
             | Self::MonthFull
             | Self::Day
+            | Self::DayUnpadded
             | Self::WeekdayAbbr
             | Self::WeekdayFull => Category::Date,
             Self::Hour24
+            | Self::Hour24Unpadded
             | Self::Hour12
+            | Self::Hour12Unpadded
             | Self::Minute
+            | Self::MinuteUnpadded
             | Self::Second
+            | Self::SecondUnpadded
+            | Self::SecondOpt
+            | Self::ColonSec
             | Self::FracExact(_)
             | Self::FracTrim(_)
             | Self::DotFrac(_)
@@ -205,12 +222,12 @@ impl Field {
     fn state_key(self) -> Option<u8> {
         Some(match self {
             Self::Year4 | Self::Year2 => 0,
-            Self::MonthNum | Self::MonthAbbr | Self::MonthFull => 1,
-            Self::Day => 2,
+            Self::MonthNum | Self::MonthNumUnpadded | Self::MonthAbbr | Self::MonthFull => 1,
+            Self::Day | Self::DayUnpadded => 2,
             Self::WeekdayAbbr | Self::WeekdayFull => 3,
-            Self::Hour24 | Self::Hour12 => 4,
-            Self::Minute => 5,
-            Self::Second => 6,
+            Self::Hour24 | Self::Hour24Unpadded | Self::Hour12 | Self::Hour12Unpadded => 4,
+            Self::Minute | Self::MinuteUnpadded => 5,
+            Self::Second | Self::SecondUnpadded | Self::SecondOpt | Self::ColonSec => 6,
             Self::FracExact(_) | Self::FracTrim(_) | Self::DotFrac(_) => 7,
             Self::AmPmShort | Self::AmPmFull => 8,
             Self::OffsetLower(_) | Self::OffsetUpper(_) => 9,
@@ -229,15 +246,23 @@ impl Field {
             Self::Year4 => "YYYY",
             Self::Year2 => "YY",
             Self::MonthNum => "MM",
+            Self::MonthNumUnpadded => "M",
             Self::MonthAbbr => "MMM",
             Self::MonthFull => "MMMM",
             Self::Day => "DD",
+            Self::DayUnpadded => "D",
             Self::WeekdayAbbr => "ddd",
             Self::WeekdayFull => "dddd",
             Self::Hour24 => "hh",
+            Self::Hour24Unpadded => "h",
             Self::Hour12 => "ii",
+            Self::Hour12Unpadded => "i",
             Self::Minute => "mm",
+            Self::MinuteUnpadded => "m",
             Self::Second => "ss",
+            Self::SecondUnpadded => "s",
+            Self::SecondOpt => "SS",
+            Self::ColonSec => ":SS",
             Self::FracExact(w) => match w {
                 1 => "f",
                 2 => "ff",
@@ -300,10 +325,8 @@ fn is_literal_char(ch: u8) -> bool {
         ch,
         b' ' | b'\t' | b'\n' | b'0'
             ..=b'9'
-                | b':'
                 | b'-'
                 | b'/'
-                | b'.'
                 | b','
                 | b';'
                 | b'_'
@@ -327,6 +350,10 @@ fn is_literal_char(ch: u8) -> bool {
     )
 }
 
+fn is_pending_char(ch: u8) -> bool {
+    ch == b'.' || ch == b':'
+}
+
 fn is_reserved_char(ch: u8) -> bool {
     matches!(ch, b'<' | b'>' | b'[' | b']' | b'{' | b'}' | b'#')
 }
@@ -341,6 +368,10 @@ pub(crate) fn compile(pattern: &[u8]) -> Result<Vec<Element<'_>>, String> {
     let mut elements = Vec::new();
     let n = pattern.len();
     let mut i = 0;
+    // Index into `pattern` of a pending '.' or ':' that may be consumed by
+    // the next specifier to form a compound token (.FFF → DotFrac, :SS → ColonSec).
+    // Flushed as a plain literal if not consumed.
+    let mut pending: Option<usize> = None;
 
     while i < n {
         let ch = pattern[i];
@@ -352,16 +383,36 @@ pub(crate) fn compile(pattern: &[u8]) -> Result<Vec<Element<'_>>, String> {
             ));
         }
 
-        // Quoted literal
+        // Quoted literal — flush pending first (never consumed by a quoted literal)
         if ch == b'\'' {
+            if let Some(pos) = pending.take() {
+                elements.push(Element::Literal(&pattern[pos..pos + 1]));
+            }
             i = compile_quoted_literal(pattern, i, n, &mut elements)?;
             continue;
         }
 
-        // Recognized specifier letter
+        // Recognized specifier: apply pending to potentially form a compound token
         if is_spec_char(ch) {
-            i = compile_specifier(pattern, i, n, ch, &mut elements)?;
+            let (new_i, field) = compile_specifier(pattern, i, n, ch)?;
+            let actual = match (pending.take(), field) {
+                (Some(pos), Field::FracTrim(w)) if pattern[pos] == b'.' => Field::DotFrac(w),
+                (Some(pos), Field::SecondOpt) if pattern[pos] == b':' => Field::ColonSec,
+                (Some(pos), f) => {
+                    // pending not consumed — flush as a literal first
+                    elements.push(Element::Literal(&pattern[pos..pos + 1]));
+                    f
+                }
+                (None, f) => f,
+            };
+            elements.push(Element::Field(actual));
+            i = new_i;
             continue;
+        }
+
+        // From here on, pending (if any) is not consumable — flush it
+        if let Some(pos) = pending.take() {
+            elements.push(Element::Literal(&pattern[pos..pos + 1]));
         }
 
         // Other ASCII letters are errors
@@ -380,28 +431,20 @@ pub(crate) fn compile(pattern: &[u8]) -> Result<Vec<Element<'_>>, String> {
             ));
         }
 
-        // Allowed literal characters: collect a run, then check if it ends in '.'
-        // followed immediately by a 'F' specifier (DotFrac inline detection).
+        // '.' and ':' are held as pending — may be consumed by next specifier
+        if is_pending_char(ch) {
+            pending = Some(i);
+            i += 1;
+            continue;
+        }
+
+        // Plain literal characters: collect a run
         if is_literal_char(ch) {
             let start = i;
             while i < n && is_literal_char(pattern[i]) {
                 i += 1;
             }
-            // If the literal run ends in '.' and the next char is 'F', emit the
-            // prefix without the dot and compile the F-run as a DotFrac field.
-            if pattern[i - 1] == b'.' && i < n && pattern[i] == b'F' {
-                if i - 1 > start {
-                    elements.push(Element::Literal(&pattern[start..i - 1]));
-                }
-                i = compile_specifier(pattern, i, n, b'F', &mut elements)?;
-                // FracTrim emitted by compile_specifier; convert last element to DotFrac.
-                if let Some(Element::Field(Field::FracTrim(w))) = elements.last() {
-                    let w = *w;
-                    *elements.last_mut().unwrap() = Element::Field(Field::DotFrac(w));
-                }
-            } else {
-                elements.push(Element::Literal(&pattern[start..i]));
-            }
+            elements.push(Element::Literal(&pattern[start..i]));
             continue;
         }
 
@@ -409,6 +452,11 @@ pub(crate) fn compile(pattern: &[u8]) -> Result<Vec<Element<'_>>, String> {
             "Unexpected character {:?} at position {}. Use quotes for literal text: '...'",
             ch as char, i
         ));
+    }
+
+    // Flush any pending prefix left at end of pattern
+    if let Some(pos) = pending {
+        elements.push(Element::Literal(&pattern[pos..pos + 1]));
     }
 
     validate_cross_fields(&elements)?;
@@ -425,6 +473,7 @@ fn is_spec_char(ch: u8) -> bool {
             | b'i'
             | b'm'
             | b's'
+            | b'S'
             | b'f'
             | b'F'
             | b'a'
@@ -465,8 +514,7 @@ fn compile_specifier(
     start: usize,
     n: usize,
     ch: u8,
-    elements: &mut Vec<Element<'_>>,
-) -> Result<usize, String> {
+) -> Result<(usize, Field), String> {
     let mut count: usize = 1;
     while start + count < n && pattern[start + count] == ch {
         count += 1;
@@ -505,14 +553,16 @@ fn compile_specifier(
             _ => return Err(bad_count_err(ch, count, start, "4, 2")),
         },
         b'M' => match count {
+            1 => Field::MonthNumUnpadded,
             2 => Field::MonthNum,
             3 => Field::MonthAbbr,
             4 => Field::MonthFull,
-            _ => return Err(bad_count_err(ch, count, start, "4, 3, 2")),
+            _ => return Err(bad_count_err(ch, count, start, "4, 3, 2, 1")),
         },
         b'D' => match count {
+            1 => Field::DayUnpadded,
             2 => Field::Day,
-            _ => return Err(bad_count_err(ch, count, start, "2")),
+            _ => return Err(bad_count_err(ch, count, start, "2, 1")),
         },
         b'd' => match count {
             3 => Field::WeekdayAbbr,
@@ -520,19 +570,27 @@ fn compile_specifier(
             _ => return Err(bad_count_err(ch, count, start, "4, 3")),
         },
         b'h' => match count {
+            1 => Field::Hour24Unpadded,
             2 => Field::Hour24,
-            _ => return Err(bad_count_err(ch, count, start, "2")),
+            _ => return Err(bad_count_err(ch, count, start, "2, 1")),
         },
         b'i' => match count {
+            1 => Field::Hour12Unpadded,
             2 => Field::Hour12,
-            _ => return Err(bad_count_err(ch, count, start, "2")),
+            _ => return Err(bad_count_err(ch, count, start, "2, 1")),
         },
         b'm' => match count {
+            1 => Field::MinuteUnpadded,
             2 => Field::Minute,
-            _ => return Err(bad_count_err(ch, count, start, "2")),
+            _ => return Err(bad_count_err(ch, count, start, "2, 1")),
         },
         b's' => match count {
+            1 => Field::SecondUnpadded,
             2 => Field::Second,
+            _ => return Err(bad_count_err(ch, count, start, "2, 1")),
+        },
+        b'S' => match count {
+            2 => Field::SecondOpt,
             _ => return Err(bad_count_err(ch, count, start, "2")),
         },
         b'a' => match count {
@@ -551,8 +609,7 @@ fn compile_specifier(
         _ => unreachable!(),
     };
 
-    elements.push(Element::Field(field));
-    Ok(start + count)
+    Ok((start + count, field))
 }
 
 fn bad_count_err(ch: u8, count: usize, start: usize, valid: &str) -> String {
@@ -575,7 +632,7 @@ fn validate_cross_fields(elements: &[Element<'_>]) -> Result<(), String> {
         };
 
         match field {
-            Field::Hour24 => has_24h = true,
+            Field::Hour24 | Field::Hour24Unpadded => has_24h = true,
             Field::AmPmShort | Field::AmPmFull => has_ampm = true,
             _ => {}
         }
@@ -596,7 +653,7 @@ fn validate_cross_fields(elements: &[Element<'_>]) -> Result<(), String> {
 
     if has_24h && has_ampm {
         return Err(
-            "24-hour format (hh) cannot be combined with AM/PM (a/aa). Use 12-hour format (ii) instead.".into(),
+            "24-hour format (h/hh) cannot be combined with AM/PM (a/aa). Use 12-hour format (i/ii) instead.".into(),
         );
     }
     // 12h without AM/PM: we return Ok but the Python side emits a warning.
@@ -628,7 +685,7 @@ pub(crate) fn has_12h_without_ampm(elements: &[Element<'_>]) -> bool {
     let mut has_ampm = false;
     for el in elements {
         match el {
-            Element::Field(Field::Hour12) => has_12h = true,
+            Element::Field(Field::Hour12 | Field::Hour12Unpadded) => has_12h = true,
             Element::Field(Field::AmPmShort | Field::AmPmFull) => has_ampm = true,
             _ => {}
         }
@@ -736,9 +793,17 @@ fn write_field<S: Sink>(field: Field, vals: &FormatValues, sink: &mut S) -> Resu
         Field::Year4 => sink.write(&format_4_digits(vals.year.get())),
         Field::Year2 => sink.write(&format_2_digits((vals.year.get() % 100) as u8)),
         Field::MonthNum => sink.write(&format_2_digits(vals.month.get())),
+        Field::MonthNumUnpadded => {
+            let mut buf = [0u8; 2];
+            sink.write(fmt_unpadded(vals.month.get(), &mut buf));
+        }
         Field::MonthAbbr => sink.write(MONTH_ABBR[vals.month.get() as usize].as_bytes()),
         Field::MonthFull => sink.write(MONTH_FULL[vals.month.get() as usize].as_bytes()),
         Field::Day => sink.write(&format_2_digits(vals.day)),
+        Field::DayUnpadded => {
+            let mut buf = [0u8; 2];
+            sink.write(fmt_unpadded(vals.day, &mut buf));
+        }
         Field::WeekdayAbbr => {
             // Weekday::iso() is 1-based (Mon=1); array is 0-based.
             sink.write(WEEKDAY_ABBR[vals.weekday.iso() as usize - 1].as_bytes());
@@ -747,6 +812,10 @@ fn write_field<S: Sink>(field: Field, vals: &FormatValues, sink: &mut S) -> Resu
             sink.write(WEEKDAY_FULL[vals.weekday.iso() as usize - 1].as_bytes());
         }
         Field::Hour24 => sink.write(&format_2_digits(vals.hour)),
+        Field::Hour24Unpadded => {
+            let mut buf = [0u8; 2];
+            sink.write(fmt_unpadded(vals.hour, &mut buf));
+        }
         Field::Hour12 => {
             let h12 = if vals.hour.is_multiple_of(12) {
                 12
@@ -755,8 +824,36 @@ fn write_field<S: Sink>(field: Field, vals: &FormatValues, sink: &mut S) -> Resu
             };
             sink.write(&format_2_digits(h12));
         }
+        Field::Hour12Unpadded => {
+            let h12 = if vals.hour.is_multiple_of(12) {
+                12u8
+            } else {
+                vals.hour % 12
+            };
+            let mut buf = [0u8; 2];
+            sink.write(fmt_unpadded(h12, &mut buf));
+        }
         Field::Minute => sink.write(&format_2_digits(vals.minute)),
+        Field::MinuteUnpadded => {
+            let mut buf = [0u8; 2];
+            sink.write(fmt_unpadded(vals.minute, &mut buf));
+        }
         Field::Second => sink.write(&format_2_digits(vals.second)),
+        Field::SecondUnpadded => {
+            let mut buf = [0u8; 2];
+            sink.write(fmt_unpadded(vals.second, &mut buf));
+        }
+        Field::SecondOpt => {
+            if vals.second > 0 || vals.nanos.get() > 0 {
+                sink.write(&format_2_digits(vals.second));
+            }
+        }
+        Field::ColonSec => {
+            if vals.second > 0 || vals.nanos.get() > 0 {
+                sink.write_byte(b':');
+                sink.write(&format_2_digits(vals.second));
+            }
+        }
         Field::FracExact(w) => write_nanos_digits(vals.nanos, w as usize, sink),
         Field::FracTrim(w) => write_nanos_trimmed(vals.nanos, w as usize, sink),
         Field::DotFrac(w) => {
@@ -898,6 +995,30 @@ fn parse_digits(s: &[u8], pos: usize, count: usize) -> Result<(u32, usize), Stri
             ));
         }
         val = val * 10 + (b - b'0') as u32;
+    }
+    Ok((val, end))
+}
+
+fn fmt_unpadded(val: u8, buf: &mut [u8; 2]) -> &[u8] {
+    if val < 10 {
+        buf[0] = b'0' + val;
+        &buf[..1]
+    } else {
+        buf[0] = b'0' + val / 10;
+        buf[1] = b'0' + val % 10;
+        &buf[..2]
+    }
+}
+
+fn parse_1or2_digits(s: &[u8], pos: usize) -> Result<(u32, usize), String> {
+    if pos >= s.len() || !s[pos].is_ascii_digit() {
+        return Err(format!("Expected 1-2 digits at position {}", pos));
+    }
+    let mut val = (s[pos] - b'0') as u32;
+    let mut end = pos + 1;
+    if end < s.len() && s[end].is_ascii_digit() {
+        val = val * 10 + (s[end] - b'0') as u32;
+        end += 1;
     }
     Ok((val, end))
 }
@@ -1085,6 +1206,12 @@ fn parse_field(
                 Some(Month::new(v as u8).ok_or_else(|| format!("month out of range: {}", v))?);
             Ok(p)
         }
+        Field::MonthNumUnpadded => {
+            let (v, p) = parse_1or2_digits(s, pos)?;
+            state.month =
+                Some(Month::new(v as u8).ok_or_else(|| format!("month out of range: {}", v))?);
+            Ok(p)
+        }
         Field::MonthAbbr => {
             // value from MONTH_ABBR_SORTED is already 1-12
             let (v, p) = parse_name_match(s, pos, &MONTH_ABBR_SORTED, "month")?;
@@ -1101,6 +1228,11 @@ fn parse_field(
         }
         Field::Day => {
             let (v, p) = parse_digits(s, pos, 2)?;
+            state.day = Some(v as u8);
+            Ok(p)
+        }
+        Field::DayUnpadded => {
+            let (v, p) = parse_1or2_digits(s, pos)?;
             state.day = Some(v as u8);
             Ok(p)
         }
@@ -1123,8 +1255,21 @@ fn parse_field(
             state.hour = Some(v as u8);
             Ok(p)
         }
+        Field::Hour24Unpadded => {
+            let (v, p) = parse_1or2_digits(s, pos)?;
+            state.hour = Some(v as u8);
+            Ok(p)
+        }
         Field::Hour12 => {
             let (v, p) = parse_digits(s, pos, 2)?;
+            if !(1..=12).contains(&v) {
+                return Err(format!("12-hour format requires hour in 1..12, got {}", v));
+            }
+            state.hour = Some(v as u8);
+            Ok(p)
+        }
+        Field::Hour12Unpadded => {
+            let (v, p) = parse_1or2_digits(s, pos)?;
             if !(1..=12).contains(&v) {
                 return Err(format!("12-hour format requires hour in 1..12, got {}", v));
             }
@@ -1136,10 +1281,42 @@ fn parse_field(
             state.minute = Some(v as u8);
             Ok(p)
         }
+        Field::MinuteUnpadded => {
+            let (v, p) = parse_1or2_digits(s, pos)?;
+            state.minute = Some(v as u8);
+            Ok(p)
+        }
         Field::Second => {
             let (v, p) = parse_digits(s, pos, 2)?;
             state.second = Some(v as u8);
             Ok(p)
+        }
+        Field::SecondUnpadded => {
+            let (v, p) = parse_1or2_digits(s, pos)?;
+            state.second = Some(v as u8);
+            Ok(p)
+        }
+        Field::SecondOpt => {
+            if pos < s.len() && s[pos].is_ascii_digit() {
+                let (v, p) = parse_digits(s, pos, 2)?;
+                state.second = Some(v as u8);
+                Ok(p)
+            } else {
+                state.second = Some(0);
+                state.second_absent = true;
+                Ok(pos)
+            }
+        }
+        Field::ColonSec => {
+            if pos < s.len() && s[pos] == b':' {
+                let (v, p) = parse_digits(s, pos + 1, 2)?;
+                state.second = Some(v as u8);
+                Ok(p)
+            } else {
+                state.second = Some(0);
+                state.second_absent = true;
+                Ok(pos)
+            }
         }
         Field::FracExact(width) => {
             let (v, p) = parse_digits(s, pos, width as usize)?;
@@ -1148,6 +1325,10 @@ fn parse_field(
             Ok(p)
         }
         Field::FracTrim(width) => {
+            if state.second_absent {
+                state.nanos = SubSecNanos::MIN;
+                return Ok(pos);
+            }
             let mut count = 0usize;
             while count < width as usize && pos + count < s.len() && s[pos + count].is_ascii_digit()
             {
@@ -1162,7 +1343,13 @@ fn parse_field(
             }
             Ok(pos + count)
         }
-        Field::DotFrac(width) => parse_dot_frac(s, pos, width as usize, state),
+        Field::DotFrac(width) => {
+            if state.second_absent {
+                state.nanos = SubSecNanos::MIN;
+                return Ok(pos);
+            }
+            parse_dot_frac(s, pos, width as usize, state)
+        }
         Field::AmPmShort => {
             if pos >= s.len() {
                 return Err(format!("Expected AM/PM at position {}", pos));
