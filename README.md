@@ -187,7 +187,7 @@ or [API reference](https://whenever.readthedocs.io/en/latest/reference/datetime.
 - Timezone offsets are limited to whole seconds (consistent with IANA TZ DB)
 - No support for leap seconds (consistent with industry standards and other modern libraries)
 
-## Versioning and compatibility policy
+## Stability policy
 
 *Whenever* follows semantic versioning.
 Until the 1.0 version, the API may change with minor releases.

@@ -18,7 +18,7 @@ that describes the expected format.
 >>> Date.parse("2024/03/15", format="YYYY/MM/DD")
 Date("2024-03-15")
 >>> OffsetDateTime(2024, 3, 15, 14, 30, offset=+2).format(
-...     "ddd, DD MMM YYYY hh:mm:ssxxx"
+...     "EEE, DD MMM YYYY hh:mm:ssxxx"
 ... )
 'Fri, 15 Mar 2024 14:30:00+02:00'
 ```
@@ -31,76 +31,38 @@ the corresponding value.
 
 ### Date specifiers
 
-| Pattern  | Meaning                    | Example output | Parse support |
+| Symbol  | Meaning                    | Pattern | Example output |
 |:---------|:---------------------------|:---------------|:--------------|
-| `YYYY` | 4-digit year, zero-padded  | `2024`       | ✅            |
-| `YY`   | 2-digit year               | `24`         | ❌ format only |
-| `MM`   | Month number (01–12), zero-padded | `03`  | ✅ (exactly 2 digits) |
-| `M`    | Month number (1–12), no padding   | `3`   | ✅ (1–2 digits) |
-| `MMM`  | Abbreviated month name     | `Mar`        | ✅ (case-insensitive) |
-| `MMMM` | Full month name            | `March`      | ✅ (case-insensitive) |
-| `DD`   | Day of month (01–31), zero-padded | `05`  | ✅ (exactly 2 digits) |
-| `D`    | Day of month (1–31), no padding   | `5`   | ✅ (1–2 digits) |
-| `ddd`  | Abbreviated weekday name   | `Fri`        | ✅ (validated) |
-| `dddd` | Full weekday name          | `Friday`     | ✅ (validated) |
-
-```{note}
-When parsing, weekday names (`ddd`/`dddd`) are validated against the
-parsed date. A mismatch raises ``ValueError``.
-```
-
-```{note}
-`YY` is only supported for formatting. When parsing, use `YYYY` to
-avoid ambiguity.
-```
+| `Y` | year  | `YY` [^1] <br/> `YYYY` | `24` <br/> `2024`       |
+| `M`   | month | `M` <br/> `MM` <br/> `MMM` <br/> `MMMM` | `3` <br/> `03` <br/> `Mar` <br/> `March` |
+| `D`   | day of month | `D` <br/> `DD` | `5` <br/> `05` |
+| `E`   | day of week [^2] | `EEE` <br/> `EEEE` | `Fri` <br/> `Friday` |
 
 ### Time specifiers
 
-| Pattern     | Meaning                         | Example output  | Parse support |
-|:------------|:--------------------------------|:----------------|:--------------|
-| `hh`      | 24-hour (00–23), zero-padded    | `04`, `14`    | ✅ (exactly 2 digits) |
-| `h`       | 24-hour (0–23), no padding      | `4`, `14`     | ✅ (1–2 digits)  |
-| `ii`      | 12-hour (01–12), zero-padded    | `04`, `12`    | ⚠️ (should pair with `aa`) |
-| `i`       | 12-hour (1–12), no padding      | `4`, `12`     | ⚠️ (should pair with `aa`) |
-| `mm`      | Minute (00–59), zero-padded     | `05`, `30`    | ✅ (exactly 2 digits) |
-| `m`       | Minute (0–59), no padding       | `5`, `30`     | ✅ (1–2 digits)  |
-| `ss`      | Second (00–59), zero-padded     | `05`, `45`    | ✅ (exactly 2 digits) |
-| `s`       | Second (0–59), no padding       | `5`, `45`     | ✅ (1–2 digits)  |
-| `SS`      | Second, optional (see below)    | `05`, `` (omitted) | ✅ |
-| `f`–`fffffffff` | Fractional seconds, exact digits | `123` (`fff`) | ✅ |
-| `F`–`FFFFFFFFF` | Fractional seconds, trimmed     | `12` (`FFF`) | ✅ |
-| `a`       | AM/PM first character           | `P`           | ✅            |
-| `aa`      | AM/PM full                      | `PM`          | ✅            |
 
-```{important}
-- `hh`/`h` are the **24-hour** formats. `ii`/`i` are the **12-hour** formats.
-- Using `h`/`hh` with `a`/`aa` (AM/PM) raises an error—use `i`/`ii` instead.
-- Using `i`/`ii` without `a`/`aa` emits a warning about ambiguity.
-- The double-letter forms (`hh`, `ii`, `mm`, `ss`) always zero-pad and require
-  exactly 2 digits when parsing. The single-letter forms (`h`, `i`, `m`, `s`)
-  skip zero-padding and accept 1–2 digits when parsing.
-```
+| Symbol  | Meaning                    | Pattern | Example output |
+|:---------|:---------------------------|:---------------|:--------------|
+| `h` | hour | `h` <br/> `hh` | `4` <br/> `04` |
+| `i`   | hour (12-hour) | `i` <br/> `ii` | `4` <br/> `04` |
+| `m`   | minute | `m` <br/> `mm` | `5` <br/> `05` |
+| `s`   | second | `s` <br/> `ss` | `5` <br/> `05` |
+| `S`   | second, optional [^3] | `SS` | `05`, (omitted) |
+| `f` | fractional seconds, exact digits | `f`<br/>`ff`<br/>`fff`<br/>...<br/>`fffffffff` | `1` <br/> `12`, `00` <br/> `123`, `400` <br/> ... <br/> `123456789`, `374930000` |
+| `F` | fractional seconds, trimmed [^4] | `F`<br/>`FF`<br/>`FFF`<br/>...<br/>`FFFFFFFFF` | `1` <br/> `12`, (omitted) <br/> `123`, `4` <br/>...<br/> `123456789`, `37493` |
+| `a`   | AM/PM [^5] | `a`<br/>`aa` | `P` <br/> `PM` |
 
-**Optional seconds (`SS`):**
+:::{admonition} Optional seconds
+:class: hint
 
 `SS` omits the seconds component entirely when **both** seconds *and*
 nanoseconds are zero, allowing compact times like `14:30` alongside full
 times like `14:30:05` in the same format string.
 
 - When seconds *or* nanoseconds are non-zero, `SS` writes two zero-padded
-  digits; `:SS` additionally writes the preceding colon.
-- When **both are zero**, nothing is written. The colon disappears with `:SS`
-  (unlike a bare `:` literal, which would always be written).
-- During parsing, `SS` reads two digits if the next character is a digit;
-  `:SS` reads `:` followed by two digits if the next character is `:`.
-  In both cases, if the expected character is absent, seconds is set to zero.
+  digits
+- When **both are zero**, nothing is written. Any preceeding colon disappears as well.
 
-```{important}
-Omission requires *both* seconds **and** nanoseconds to be zero. If you have
-fractional seconds (e.g. `14:30:00.5`), `SS` will write `00` (not omit).
-If you want compact times and don't need fractional seconds, call
-{meth}`~whenever.Time.round` first.
-```
 
 ```python
 >>> Time(14, 30, 0).format("hh:mm:SS")
@@ -115,47 +77,18 @@ If you want compact times and don't need fractional seconds, call
 '14:30:00.5'
 ```
 
-**Fractional seconds:**
-
-- `f` specifies the *exact* number of digits. `fff` always writes 3 digits.
-- `F` specifies the *maximum* digits, with trailing zeros trimmed.
-  `FFF` writes 1–3 digits, or nothing if the value is zero
-  (and also trims a preceding `.`).
-
-```python
->>> Time(14, 30, 5, nanosecond=120_000_000).format("hh:mm:ss.fff")
-'14:30:05.120'
->>> Time(14, 30, 5, nanosecond=120_000_000).format("hh:mm:ss.FFF")
-'14:30:05.12'
->>> Time(14, 30, 5).format("hh:mm:ss.FFF")
-'14:30:05'
-```
+:::
 
 ### Offset and timezone specifiers
 
 See {ref}`timezones-explained` for background on timezones, offsets, and abbreviations.
 
-**Offset specifiers (`x`/`X`):**
-
-| Pattern     | Meaning                                    | Example output | Parse support |
-|:------------|:-------------------------------------------|:---------------|:--------------|
-| `x`       | Offset hours only                          | `+02`        | ✅            |
-| `xx`      | Offset hours+minutes, compact              | `+0230`      | ✅            |
-| `xxx`     | Offset hours:minutes                       | `+02:30`     | ✅            |
-| `xxxx`    | Compact, optional seconds                  | `+023045`    | ✅            |
-| `xxxxx`   | With colons, optional seconds              | `+02:30:45`  | ✅            |
-| `X`–`XXXXX` | Same as `x`–`xxxxx`, but `Z` for zero offset | `+02:30`, `Z`     | ✅            |
-
-Lowercase `x` always produces a numeric offset.
-Uppercase `X` substitutes `Z` when the offset is exactly zero.
-For widths 4 and 5, seconds are only displayed when non-zero.
-
-**Timezone specifiers:**
-
-| Pattern | Meaning              | Example output   | Parse support |
-|:--------|:---------------------|:-----------------|:--------------|
-| `VV`  | IANA timezone ID       | `Europe/Paris` | ✅            |
-| `zz`  | Timezone abbreviation  | `CET`, `CEST`  | ❌ format only |
+| Symbol  | Meaning                    | Pattern | Example output |
+|:---------|:---------------------------|:---------------|:--------------|
+| `x` | Offset hours and minutes | `x` <br/> `xx` <br/> `xxx` <br/> `xxxx` <br/> `xxxxx` | `+02` <br/> `+0230` <br/> `+02:30` <br/> `+023045` <br/> `+02:30:45` |
+| `X` | Offset hours and minutes, with `Z` for zero offset | `X` <br/> `XX` <br/> `XXX` <br/> `XXXX` <br/> `XXXXX` | `+02` <br/> `+0230` <br/> `+02:30` <br/> `+023045` <br/> `+02:30:45` or `Z` when zero |
+| `V` | IANA timezone ID | `VV` | `Europe/Paris` |
+| `z` | Timezone abbreviation [^6] | `zz` | `CET`, `CEST` |
 
 ```{admonition} Choosing between x and X
 :class: hint
@@ -164,13 +97,6 @@ Use uppercase `X` when you want `Z` for zero offset
 (e.g. {class}`Instant` formatting).
 Use lowercase `x` when you always want a numeric offset
 (e.g. {class}`OffsetDateTime` formatting).
-Both accept `Z` when parsing with uppercase `X`.
-```
-
-```{note}
-`zz` (timezone abbreviation) is only supported for formatting—abbreviations
-are ambiguous and cannot be reliably used for parsing. Use `VV` (IANA timezone
-ID) instead. See {ref}`timezones-explained` for why abbreviations are unreliable.
 ```
 
 ```python
@@ -258,8 +184,8 @@ The {meth}`~OffsetDateTime.parse_strptime` methods on {class}`OffsetDateTime` an
 | `%b`   | `MMM` |       |
 | `%B`   | `MMMM`|       |
 | `%d`   | `DD`  |       |
-| `%a`   | `ddd` |       |
-| `%A`   | `dddd`|       |
+| `%a`   | `EEE` |       |
+| `%A`   | `EEEE`|       |
 | `%H`   | `hh`  | Note: `hh` = 24-hour |
 | `%I`   | `ii`  | Note: `ii` = 12-hour |
 | `%M`   | `mm`  |       |
@@ -269,3 +195,10 @@ The {meth}`~OffsetDateTime.parse_strptime` methods on {class}`OffsetDateTime` an
 | `%z`   | `xxxx` | `XXXX` for Z-style |
 | `%:z`   | `xxxxx` | `XXXXX` for Z-style |
 | `%Z`   | —     | Abbreviations are not supported for parsing. See {ref}`timezones-explained`. |
+
+[^1]: `YY` is only supported for formatting. When parsing, use `YYYY` to avoid ambiguity.
+[^2]: During parsing, weekday names are validated against the parsed date. A mismatch raises ``ValueError``.
+[^3]: Omitted when both seconds and nanoseconds are zero.
+[^4]: Omitted when the value is zero, with preceding `.` also omitted.
+[^5]: AM/PM is determined by the hour value. Using `i`/`ii` without `a`/`aa` emits a warning about ambiguity.
+[^6]: Timezone abbreviations are ambiguous and not supported for parsing. Use `VV` (IANA timezone ID) instead. See {ref}`timezones-explained` for details.

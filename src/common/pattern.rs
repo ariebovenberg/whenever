@@ -251,8 +251,8 @@ impl Field {
             Self::MonthFull => "MMMM",
             Self::Day => "DD",
             Self::DayUnpadded => "D",
-            Self::WeekdayAbbr => "ddd",
-            Self::WeekdayFull => "dddd",
+            Self::WeekdayAbbr => "EEE",
+            Self::WeekdayFull => "EEEE",
             Self::Hour24 => "hh",
             Self::Hour24Unpadded => "h",
             Self::Hour12 => "ii",
@@ -468,7 +468,7 @@ fn is_spec_char(ch: u8) -> bool {
         ch,
         b'Y' | b'M'
             | b'D'
-            | b'd'
+            | b'E'
             | b'h'
             | b'i'
             | b'm'
@@ -564,7 +564,7 @@ fn compile_specifier(
             2 => Field::Day,
             _ => return Err(bad_count_err(ch, count, start, "2, 1")),
         },
-        b'd' => match count {
+        b'E' => match count {
             3 => Field::WeekdayAbbr,
             4 => Field::WeekdayFull,
             _ => return Err(bad_count_err(ch, count, start, "4, 3")),
