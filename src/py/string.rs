@@ -16,7 +16,7 @@ impl PyStr {
         let mut size = 0;
         let p = unsafe { PyUnicode_AsUTF8AndSize(self.as_ptr(), &mut size) };
         if p.is_null() {
-            return Err(PyErrMarker());
+            return Err(PyErrMarker);
         };
         Ok(unsafe { std::slice::from_raw_parts(p.cast::<u8>(), size as usize) })
     }
@@ -25,7 +25,7 @@ impl PyStr {
         let mut size = 0;
         let p = unsafe { PyUnicode_AsUTF8AndSize(self.as_ptr(), &mut size) };
         if p.is_null() {
-            return Err(PyErrMarker());
+            return Err(PyErrMarker);
         };
         Ok(unsafe {
             std::str::from_utf8_unchecked(std::slice::from_raw_parts(p.cast::<u8>(), size as usize))
@@ -92,7 +92,7 @@ impl PyBytes {
         // the C API: PyBytes_AS_STRING, PyBytes_GET_SIZE?
         let p = unsafe { PyBytes_AsString(self.as_ptr()) };
         if p.is_null() {
-            return Err(PyErrMarker());
+            return Err(PyErrMarker);
         };
         Ok(unsafe {
             std::slice::from_raw_parts(p.cast::<u8>(), PyBytes_Size(self.as_ptr()) as usize)

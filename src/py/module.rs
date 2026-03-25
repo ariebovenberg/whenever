@@ -51,7 +51,7 @@ impl PyModule {
         if unsafe { PyModule_AddType(self.as_ptr(), cls.as_ptr().cast()) } == 0 {
             Ok(())
         } else {
-            Err(PyErrMarker())
+            Err(PyErrMarker)
         }
     }
 }

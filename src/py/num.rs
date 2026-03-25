@@ -38,7 +38,7 @@ impl PyInt {
         match unsafe { PyLong_AsLong(self.as_ptr()) } {
             x if x != -1 || unsafe { PyErr_Occurred() }.is_null() => Ok(x),
             // The error message is set for us
-            _ => Err(PyErrMarker()),
+            _ => Err(PyErrMarker),
         }
     }
 
@@ -46,7 +46,7 @@ impl PyInt {
         match unsafe { PyLong_AsLongLong(self.as_ptr()) } {
             x if x != -1 || unsafe { PyErr_Occurred() }.is_null() => Ok(x),
             // The error message is set for us
-            _ => Err(PyErrMarker()),
+            _ => Err(PyErrMarker),
         }
     }
 
@@ -100,7 +100,7 @@ impl PyFloat {
         match unsafe { PyFloat_AsDouble(self.as_ptr()) } {
             x if x != -1.0 || unsafe { PyErr_Occurred() }.is_null() => Ok(x),
             // The error message is set for us
-            _ => Err(PyErrMarker()),
+            _ => Err(PyErrMarker),
         }
     }
 }

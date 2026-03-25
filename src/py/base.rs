@@ -28,7 +28,7 @@ impl PyObj {
     pub(crate) fn new(ptr: *mut PyObject) -> PyResult<Self> {
         match NonNull::new(ptr) {
             Some(x) => Ok(Self { inner: x }),
-            None => Err(PyErrMarker()),
+            None => Err(PyErrMarker),
         }
     }
 
@@ -166,7 +166,7 @@ pub(crate) trait PyBase: FromPy {
         if unsafe { PyObject_SetAttrString(self.as_ptr(), name.as_ptr(), v.as_ptr()) } == 0 {
             Ok(())
         } else {
-            Err(PyErrMarker())
+            Err(PyErrMarker)
         }
     }
 
@@ -193,7 +193,7 @@ pub(crate) trait PyBase: FromPy {
         match unsafe { PyObject_RichCompareBool(self.as_ptr(), other.as_ptr(), Py_EQ) } {
             1 => Ok(true),
             0 => Ok(false),
-            _ => Err(PyErrMarker()),
+            _ => Err(PyErrMarker),
         }
     }
 

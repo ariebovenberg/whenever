@@ -138,6 +138,7 @@ See the full list below.
   - An explanation of the fundamental concepts of time
   - An overview of Python's datetime pitfalls
   - Explanation of the rounding API
+- Reduced the binary size of the Rust extension by ±20%.
 
 **Fixed**
 

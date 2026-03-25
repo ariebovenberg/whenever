@@ -33,7 +33,7 @@ The `src/py/` module provides safe wrappers. Key types:
 | `HeapType<T>` | A Python heap type that carries module state via `.state()` → `&State` |
 | `PyType` | A Python type object. `.same_module()` checks if two types belong to the same module |
 | `PyReturn` | Alias for `PyResult<Owned<PyObj>>` — the return type of Python-visible functions |
-| `PyErrMarker()` | Sentinel (with parens!) indicating the Python error indicator is set |
+| `PyErrMarker` | Sentinel indicating the Python error indicator is set |
 | `ContextVarBool` | `Copy` wrapper for a context variable. Has `.get() -> PyResult<bool>` |
 
 Key helpers in `src/py/`:
