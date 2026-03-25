@@ -63,7 +63,7 @@ Patterns use specifiers like `YYYY`, `MM`, `DD`, `hh`, `mm`, `ss`.
 
 ```python
 >>> OffsetDateTime(2024, 3, 15, 14, 30, offset=+2).format(
-...     "ddd, DD MMM YYYY hh:mm:ssxxx"
+...     "EEE, DD MMM YYYY hh:mm:ssxxx"
 ... )
 'Fri, 15 Mar 2024 14:30:00+02:00'
 >>> Date.parse("15 Mar 2024", format="DD MMM YYYY")

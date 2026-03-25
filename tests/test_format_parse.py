@@ -190,8 +190,8 @@ class TestDateFormat:
 
     def test_weekday(self):
         d = Date(2024, 3, 15)  # Friday
-        assert d.format("ddd DD") == "Fri 15"
-        assert d.format("dddd, DD MMMM YYYY") == "Friday, 15 March 2024"
+        assert d.format("EEE DD") == "Fri 15"
+        assert d.format("EEEE, DD MMMM YYYY") == "Friday, 15 March 2024"
 
     def test_small_year(self):
         d = Date(1, 6, 15)
@@ -248,12 +248,12 @@ class TestDateParse:
         assert d == Date(2024, 3, 15)
 
     def test_weekday_valid(self):
-        d = Date.parse("Fri 2024-03-15", format="ddd YYYY-MM-DD")
+        d = Date.parse("Fri 2024-03-15", format="EEE YYYY-MM-DD")
         assert d == Date(2024, 3, 15)
 
     def test_weekday_mismatch(self):
         with pytest.raises(ValueError, match="weekday"):
-            Date.parse("Mon 2024-03-15", format="ddd YYYY-MM-DD")
+            Date.parse("Mon 2024-03-15", format="EEE YYYY-MM-DD")
 
     def test_missing_year(self):
         with pytest.raises(ValueError, match="year"):
@@ -278,7 +278,7 @@ class TestDateParse:
 
     def test_roundtrip_complex(self):
         d = Date(2024, 12, 25)
-        pattern = "dddd, DD MMMM YYYY"
+        pattern = "EEEE, DD MMMM YYYY"
         assert Date.parse(d.format(pattern), format=pattern) == d
 
 
@@ -323,8 +323,8 @@ class TestMonthWeekdayCoverage:
         ],
     )
     def test_all_weekdays(self, day, abbr, full):
-        assert Date.parse(f"{abbr} {day}", format="ddd YYYY-MM-DD") == day
-        assert Date.parse(f"{full} {day}", format="dddd YYYY-MM-DD") == day
+        assert Date.parse(f"{abbr} {day}", format="EEE YYYY-MM-DD") == day
+        assert Date.parse(f"{full} {day}", format="EEEE YYYY-MM-DD") == day
 
 
 class TestTimeFormat:
@@ -604,7 +604,7 @@ class TestPlainDateTimeParse:
         # March 15, 2024 is a Friday, not Monday
         with pytest.raises(ValueError, match="weekday"):
             PlainDateTime.parse(
-                "Mon 2024-03-15 14:30", format="ddd YYYY-MM-DD hh:mm"
+                "Mon 2024-03-15 14:30", format="EEE YYYY-MM-DD hh:mm"
             )
 
 
@@ -693,7 +693,7 @@ class TestOffsetDateTimeParse:
         with pytest.raises(ValueError, match="weekday"):
             OffsetDateTime.parse(
                 "Mon 2024-03-15 14:30+02:00",
-                format="ddd YYYY-MM-DD hh:mmxxx",
+                format="EEE YYYY-MM-DD hh:mmxxx",
             )
 
 
@@ -792,7 +792,7 @@ class TestZonedDateTimeParse:
         with pytest.raises(ValueError, match="weekday"):
             ZonedDateTime.parse(
                 "Mon 2024-03-15 14:30+01:00[Europe/Paris]",
-                format="ddd YYYY-MM-DD hh:mmxxx'['VV']'",
+                format="EEE YYYY-MM-DD hh:mmxxx'['VV']'",
             )
 
 
@@ -865,7 +865,7 @@ class TestStrftimeParity:
     def test_rfc2822_like(self):
         """Roughly equivalent to %a, %d %b %Y %H:%M:%S %z"""
         odt = OffsetDateTime(2024, 3, 15, 14, 30, 5, offset=hours(2))
-        result = odt.format("ddd, DD MMM YYYY hh:mm:ssxxx")
+        result = odt.format("EEE, DD MMM YYYY hh:mm:ssxxx")
         assert result == "Fri, 15 Mar 2024 14:30:05+02:00"
 
     def test_12h_time(self):
@@ -877,7 +877,7 @@ class TestStrftimeParity:
         """Equivalent to %A, %B %d, %Y"""
         d = Date(2024, 12, 25)
         assert (
-            d.format("dddd, MMMM DD, YYYY") == "Wednesday, December 25, 2024"
+            d.format("EEEE, MMMM DD, YYYY") == "Wednesday, December 25, 2024"
         )
 
 

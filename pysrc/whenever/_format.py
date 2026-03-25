@@ -363,7 +363,7 @@ class _DayUnpadded(_Field):
 
 
 class _WeekdayAbbr(_Field):
-    pattern = ("d", 3)
+    pattern = ("E", 3)
     category = "date"
     state_field = "weekday"
 
@@ -378,7 +378,7 @@ class _WeekdayAbbr(_Field):
 
 
 class _WeekdayFull(_Field):
-    pattern = ("d", 4)
+    pattern = ("E", 4)
     category = "date"
     state_field = "weekday"
 
