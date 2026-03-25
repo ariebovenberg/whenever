@@ -193,7 +193,7 @@ pub(crate) fn generic_alloc<T: PyWrapped>(type_: PyType, d: T) -> PyReturn {
                 (&raw mut (*slf).data).write(d);
                 Ok(Owned::new(PyObj::from_ptr_unchecked(r)))
             }
-            None => Err(PyErrMarker()),
+            None => Err(PyErrMarker),
         }
     }
 }

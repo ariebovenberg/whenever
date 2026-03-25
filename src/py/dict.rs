@@ -35,7 +35,7 @@ impl PyStaticType for PyDict {
 impl PyDict {
     pub(crate) fn set_item_str(&self, key: &CStr, value: PyObj) -> PyResult<()> {
         if unsafe { PyDict_SetItemString(self.obj.as_ptr(), key.as_ptr(), value.as_ptr()) } == -1 {
-            return Err(PyErrMarker());
+            return Err(PyErrMarker);
         }
         Ok(())
     }

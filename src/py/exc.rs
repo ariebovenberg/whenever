@@ -12,24 +12,27 @@ use pyo3_ffi::*;
 // However, this is a price we can pay in exchange for the convenience
 // of the `?` operator.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct PyErrMarker(); // sentinel that the Python error indicator is set
+pub(crate) struct PyErrMarker; // sentinel that the Python error indicator is set
 
 pub(crate) type PyResult<T> = Result<T, PyErrMarker>;
 pub(crate) type PyReturn = PyResult<Owned<PyObj>>;
 
+#[cold]
 pub(crate) fn raise<T, U: ToPy>(exc: *mut PyObject, msg: U) -> PyResult<T> {
     Err(exception(exc, msg))
 }
 
+#[cold]
 pub(crate) fn exception<U: ToPy>(exc: *mut PyObject, msg: U) -> PyErrMarker {
     // If the message conversion fails, an error is set for us.
     // It's mostly likely a MemoryError.
     if let Ok(m) = msg.to_py() {
         unsafe { PyErr_SetObject(exc, m.as_ptr()) }
     };
-    PyErrMarker()
+    PyErrMarker
 }
 
+#[cold]
 pub(crate) fn value_err<U: ToPy>(msg: U) -> PyErrMarker {
     exception(unsafe { PyExc_ValueError }, msg)
 }
@@ -113,17 +116,20 @@ impl<T> ResultExt<T> for Result<T, String> {
     }
 }
 
+#[cold]
 pub(crate) fn raise_type_err<T, U: ToPy>(msg: U) -> PyResult<T> {
     raise(unsafe { PyExc_TypeError }, msg)
 }
 
+#[cold]
 pub(crate) fn raise_value_err<T, U: ToPy>(msg: U) -> PyResult<T> {
     raise(unsafe { PyExc_ValueError }, msg)
 }
 
+#[cold]
 pub(crate) fn raise_key_err<T>(key: PyObj) -> PyResult<T> {
     unsafe { PyErr_SetObject(PyExc_KeyError, key.as_ptr()) };
-    Err(PyErrMarker())
+    Err(PyErrMarker)
 }
 
 /// Emit a warning using a custom warning class (e.g. a heap-type UserWarning subclass).
@@ -131,7 +137,7 @@ pub(crate) fn raise_key_err<T>(key: PyObj) -> PyResult<T> {
 pub(crate) fn warn_with_class(warning_cls: PyObj, msg: &CStr, stacklevel: isize) -> PyResult<()> {
     match unsafe { PyErr_WarnEx(warning_cls.as_ptr(), msg.as_ptr(), stacklevel as _) } {
         0 => Ok(()),
-        _ => Err(PyErrMarker()),
+        _ => Err(PyErrMarker),
     }
 }
 
@@ -160,7 +166,7 @@ impl ContextVarBool {
     pub(crate) fn get(self) -> PyResult<bool> {
         let mut value: *mut PyObject = std::ptr::null_mut();
         match unsafe { PyContextVar_Get(self.as_ptr(), std::ptr::null_mut(), &mut value) } {
-            -1 => Err(PyErrMarker()),
+            -1 => Err(PyErrMarker),
             _ => {
                 if value.is_null() {
                     Ok(false)
@@ -168,7 +174,7 @@ impl ContextVarBool {
                     let result = unsafe { PyObject_IsTrue(value) };
                     unsafe { Py_DECREF(value) };
                     match result {
-                        -1 => Err(PyErrMarker()),
+                        -1 => Err(PyErrMarker),
                         0 => Ok(false),
                         _ => Ok(true),
                     }

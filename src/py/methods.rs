@@ -386,38 +386,39 @@ macro_rules! catch_panic {
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| $e)) {
             Ok(v) => v,
             Err(payload) => {
-                let msg = if let Some(s) = payload.downcast_ref::<&str>() {
-                    *s
-                } else if let Some(s) = payload.downcast_ref::<String>() {
-                    s.as_str()
-                } else {
-                    "panic with non-string payload"
-                };
-                unsafe {
-                    pyo3_ffi::PyErr_SetString(
-                        PyExc_RuntimeError,
-                        std::ffi::CString::new(format!(
-                            concat!($context, ": {}. Please report an issue in the bug tracker."),
-                            msg
-                        ))
-                        // A cautious unwrap here to avoid double panic.
-                        // I don't expect this to ever fail--but then again
-                        // you can't anticipate every possible panic message.
-                        .unwrap_or(
-                            std::ffi::CString::new(concat!(
-                                $context,
-                                ". Please report an issue in the bug tracker."
-                            ))
-                            .unwrap(),
-                        )
-                        .as_ptr()
-                        .cast(),
-                    )
-                };
+                set_panic_err(payload, $context);
                 $returns
             }
         }
     };
+}
+
+/// Converts a Rust panic payload into a Python `RuntimeError`.
+/// `#[cold]` + `#[inline(never)]` ensure this heavy formatting code is compiled
+/// exactly once — LLVM treats the call site as cold, so zero hot-path overhead.
+#[cold]
+#[inline(never)]
+pub(crate) fn set_panic_err(
+    payload: Box<dyn std::any::Any + Send + 'static>,
+    context: &'static str,
+) {
+    let msg = if let Some(s) = payload.downcast_ref::<&str>() {
+        *s
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.as_str()
+    } else {
+        "panic with non-string payload"
+    };
+    let text = format!("{context}: {msg}. Please report an issue in the bug tracker.");
+    // A cautious unwrap here: a null byte in a panic message would be unusual,
+    // but we fall back to a shorter message to avoid a double-panic.
+    let c = std::ffi::CString::new(text).unwrap_or_else(|_| {
+        std::ffi::CString::new(
+            "Panic in Rust extension. Please report an issue in the bug tracker.",
+        )
+        .unwrap()
+    });
+    unsafe { pyo3_ffi::PyErr_SetString(pyo3_ffi::PyExc_RuntimeError, c.as_ptr().cast()) }
 }
 
 #[allow(unused_imports)]

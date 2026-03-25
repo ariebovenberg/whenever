@@ -25,6 +25,8 @@ crate-type = ["cdylib", "rlib"]
 lto = "fat"
 codegen-units = 1
 strip = true
+# FUTURE: consider `opt-level = "s"`.
+# It reduces binary size by about 10%, at about 10% slower performance
 
 [dependencies]
 ahash = "^0.8.12"

@@ -74,7 +74,7 @@ macro_rules! parse_args_kwargs {
                 },
                 $(&mut $var,)*
             ) == 0 {
-                return Err(PyErrMarker());
+                return Err(PyErrMarker);
             }
         }
     };

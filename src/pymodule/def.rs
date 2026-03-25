@@ -233,7 +233,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     unsafe { PyDateTime_IMPORT() };
     let py_api = match unsafe { PyDateTimeAPI().as_ref() } {
         Some(api) => api,
-        None => Err(PyErrMarker())?,
+        None => Err(PyErrMarker)?,
     };
 
     // NOTE: getting strptime from the C API `DateTimeType` results in crashes
