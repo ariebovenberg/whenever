@@ -26,6 +26,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx_copybutton",
+    "sphinx_design",
     "myst_parser",
 ]
 templates_path = ["_templates"]
@@ -42,6 +43,7 @@ myst_heading_anchors = 2
 myst_enable_extensions = [
     "colon_fence",
     "smartquotes",
+    "deflist",
 ]
 
 # -- Options for HTML output ----------------------------------------------

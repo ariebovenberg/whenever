@@ -1,4 +1,5 @@
 sphinx>=9,<10
 furo>=2025.12.9,<2026
 sphinx-copybutton~=0.5
+shinx-design>=0.7,<0.8
 myst-parser>=5,<6
