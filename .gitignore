@@ -74,4 +74,5 @@ docs/_build/
 .hypothesis
 .benchmarks
 
-benchmarks/comparison/result_*.json
+benchmarks/comparison/charts/
+benchmarks/comparison/results/

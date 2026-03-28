@@ -12,7 +12,6 @@
 from __future__ import annotations
 
 import enum
-from abc import ABC, abstractmethod
 from collections.abc import (
     Callable,
     ItemsView,
@@ -240,8 +239,8 @@ class _Base:
         return pydantic_schema(cls)
 
     @classmethod
-    @abstractmethod
-    def parse_iso(cls: type[_T], s: str, /) -> _T: ...  # pragma: no cover
+    def parse_iso(cls: type[_T], s: str, /) -> _T:
+        raise NotImplementedError  # pragma: no cover
 
 
 if TYPE_CHECKING:
@@ -2734,7 +2733,10 @@ class TimeDelta(_Base):
         """
         if not isinstance(other, (int, float)):
             return NotImplemented
-        return TimeDelta(nanoseconds=int(self._total_ns * other))
+        result = int(self._total_ns * other)
+        if abs(result) > _MAX_DELTA_NANOS:
+            raise ValueError("TimeDelta out of range")
+        return TimeDelta._from_nanos_unchecked(result)
 
     def __rmul__(self, other: float) -> TimeDelta:
         return self * other
@@ -2746,7 +2748,8 @@ class TimeDelta(_Base):
         >>> -d
         TimeDelta(-PT1h30m)
         """
-        return TimeDelta(nanoseconds=-self._total_ns)
+        # No range check needed: negating a valid TimeDelta always stays in range
+        return TimeDelta._from_nanos_unchecked(-self._total_ns)
 
     def __pos__(self) -> TimeDelta:
         """Return the value unchanged
@@ -5550,7 +5553,7 @@ AnyDelta = (
 # - OffsetDateTime
 #
 # (This base class class itself is not for public use.)
-class _BasicConversions(_Base, ABC):
+class _BasicConversions(_Base):
     __slots__ = ("_py_dt", "_nanos")
     _py_dt: _datetime
     _nanos: int
@@ -5614,12 +5617,12 @@ class _BasicConversions(_Base, ABC):
         )
         return self.to_stdlib()
 
-    @abstractmethod
-    def format_iso(self) -> str: ...  # pragma: no cover
+    def format_iso(self) -> str:
+        raise NotImplementedError  # pragma: no cover
 
     @classmethod
-    @abstractmethod
-    def parse_iso(cls: type[_T], s: str, /) -> _T: ...  # pragma: no cover
+    def parse_iso(cls: type[_T], s: str, /) -> _T:
+        raise NotImplementedError  # pragma: no cover
 
     def __str__(self) -> str:
         return self.format_iso()
@@ -5633,9 +5636,8 @@ class _BasicConversions(_Base, ABC):
         self._nanos = nanos  # type: ignore[attr-defined]
         return self
 
-    @abstractmethod
     def _init_from_py(self, d: _datetime) -> None:
-        raise NotImplementedError()
+        raise NotImplementedError  # pragma: no cover
 
 
 # Methods for types that know a local date and time-of-day:
@@ -5643,7 +5645,7 @@ class _BasicConversions(_Base, ABC):
 # - ZonedDateTime
 # - OffsetDateTime
 # (The class itself is not for public use.)
-class _LocalTime(_BasicConversions, ABC):
+class _LocalTime(_BasicConversions):
     __slots__ = ()
 
     @property
@@ -5861,7 +5863,7 @@ class _ExactTime(_BasicConversions):
         ... )
         True
         """
-        if not isinstance(other, _ExactTime):
+        if not isinstance(other, _EXACT_TIME_TYPES):
             return NotImplemented
         # We can't rely on simple equality, because it isn't equal
         # between two datetimes with different timezones if one of the
@@ -5883,7 +5885,7 @@ class _ExactTime(_BasicConversions):
         ... )
         True
         """
-        if not isinstance(other, _ExactTime):
+        if not isinstance(other, _EXACT_TIME_TYPES):
             return NotImplemented
         return (self._py_dt.astimezone(_UTC), self._nanos) < (
             other._py_dt.astimezone(_UTC),
@@ -5900,7 +5902,7 @@ class _ExactTime(_BasicConversions):
         ... )
         True
         """
-        if not isinstance(other, _ExactTime):
+        if not isinstance(other, _EXACT_TIME_TYPES):
             return NotImplemented
         return (self._py_dt.astimezone(_UTC), self._nanos) <= (
             other._py_dt.astimezone(_UTC),
@@ -5917,7 +5919,7 @@ class _ExactTime(_BasicConversions):
         ... )
         True
         """
-        if not isinstance(other, _ExactTime):
+        if not isinstance(other, _EXACT_TIME_TYPES):
             return NotImplemented
         return (self._py_dt.astimezone(_UTC), self._nanos) > (
             other._py_dt.astimezone(_UTC),
@@ -5934,7 +5936,7 @@ class _ExactTime(_BasicConversions):
         ... )
         True
         """
-        if not isinstance(other, _ExactTime):
+        if not isinstance(other, _EXACT_TIME_TYPES):
             return NotImplemented
         return (self._py_dt.astimezone(_UTC), self._nanos) >= (
             other._py_dt.astimezone(_UTC),
@@ -5942,12 +5944,14 @@ class _ExactTime(_BasicConversions):
         )
 
     def _subtract_operator(self, other: _ExactTimeAlias) -> TimeDelta:
-        if isinstance(other, _ExactTime):
+        if isinstance(other, _EXACT_TIME_TYPES):
             py_delta = self._py_dt.astimezone(_UTC) - other._py_dt
-            return TimeDelta(
-                seconds=py_delta.days * 86_400 + py_delta.seconds,
-                nanoseconds=self._nanos - other._nanos,
+            total_ns = (
+                (py_delta.days * 86_400 + py_delta.seconds) * 1_000_000_000
+                + self._nanos
+                - other._nanos
             )
+            return TimeDelta._from_nanos_unchecked(total_ns)
         return NotImplemented
 
 
@@ -6287,13 +6291,20 @@ class Instant(_ExactTime):
 
         See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
         """
-        return self + TimeDelta(
-            hours=hours,
-            minutes=minutes,
-            seconds=seconds,
-            milliseconds=milliseconds,
-            microseconds=microseconds,
-            nanoseconds=nanoseconds,
+        delta_ns = (
+            int(hours * 3_600_000_000_000)
+            + int(minutes * 60_000_000_000)
+            + int(seconds * 1_000_000_000)
+            + int(milliseconds * 1_000_000)
+            + int(microseconds * 1_000)
+            + nanoseconds
+        )
+        if abs(delta_ns) > _MAX_DELTA_NANOS:
+            raise ValueError("TimeDelta out of range")
+        delta_secs, nanos = divmod(self._nanos + delta_ns, 1_000_000_000)
+        return self._from_py_unchecked(
+            self._py_dt + _timedelta(seconds=delta_secs),
+            nanos,
         )
 
     def subtract(
@@ -6409,7 +6420,7 @@ class Instant(_ExactTime):
         >>> d - Instant.from_utc(2020, 8, 14)
         TimeDelta(47:12:00)
         """
-        if isinstance(other, _ExactTime):
+        if isinstance(other, _EXACT_TIME_TYPES):
             return self._subtract_operator(other)
         elif isinstance(other, TimeDelta):
             return self + -other
@@ -7168,18 +7179,17 @@ class OffsetDateTime(_ExactAndLocalTime):
             self._py_dt.timetz(),
         )
 
-        tdelta = sign * TimeDelta(
-            hours=hours,
-            minutes=minutes,
-            seconds=seconds,
-            milliseconds=milliseconds,
-            microseconds=microseconds,
-            nanoseconds=nanoseconds,
+        delta_ns = sign * (
+            int(hours * 3_600_000_000_000)
+            + int(minutes * 60_000_000_000)
+            + int(seconds * 1_000_000_000)
+            + int(milliseconds * 1_000_000)
+            + int(microseconds * 1_000)
+            + nanoseconds
         )
-
-        delta_secs, nanos = divmod(
-            tdelta._total_ns + self._nanos, 1_000_000_000
-        )
+        if abs(delta_ns) > _MAX_DELTA_NANOS:
+            raise ValueError("TimeDelta out of range")
+        delta_secs, nanos = divmod(delta_ns + self._nanos, 1_000_000_000)
         return self._from_py_unchecked(
             check_utc_bounds(
                 py_dt_with_new_date + _timedelta(seconds=delta_secs)
@@ -7985,7 +7995,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         See `the docs <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__
         for more information.
         """
-        if isinstance(other, _ExactTime):
+        if isinstance(other, _EXACT_TIME_TYPES):
             return self._subtract_operator(other)
         elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
             return self + -other
@@ -8118,13 +8128,22 @@ class ZonedDateTime(_ExactAndLocalTime):
                 self.date()._add_months(months_total)._add_days(days_total),
                 disambiguate=disambiguate,
             )
-        return self + sign * TimeDelta(
-            hours=hours,
-            minutes=minutes,
-            seconds=seconds,
-            milliseconds=milliseconds,
-            microseconds=microseconds,
-            nanoseconds=nanoseconds,
+        delta_ns = sign * (
+            int(hours * 3_600_000_000_000)
+            + int(minutes * 60_000_000_000)
+            + int(seconds * 1_000_000_000)
+            + int(milliseconds * 1_000_000)
+            + int(microseconds * 1_000)
+            + nanoseconds
+        )
+        if abs(delta_ns) > _MAX_DELTA_NANOS:
+            raise ValueError("TimeDelta out of range")
+        delta_secs, nanos = divmod(delta_ns + self._nanos, 1_000_000_000)
+        new_epoch = int(self._py_dt.timestamp()) + delta_secs
+        return self._from_py_unchecked(
+            _from_epoch(new_epoch, self._tz),
+            nanos,
+            self._tz,
         )
 
     @overload
@@ -8468,6 +8487,11 @@ def _unpkl_zoned(data: bytes, tzid: str) -> ZonedDateTime:
         nanos,
         get_tz(tzid),
     )
+
+
+# Concrete types that implement _ExactTime. Defined here (after all three
+# classes) so methods in _ExactTime can use it at call time.
+_EXACT_TIME_TYPES = (Instant, OffsetDateTime, ZonedDateTime)
 
 
 @final
@@ -9061,24 +9085,27 @@ class PlainDateTime(_LocalTime):
             ._add_days(sign * (weeks * 7 + days)),
         )._py_dt
 
-        tdelta = sign * TimeDelta(
-            hours=hours,
-            minutes=minutes,
-            seconds=seconds,
-            milliseconds=milliseconds,
-            microseconds=microseconds,
-            nanoseconds=nanoseconds,
+        delta_ns = sign * (
+            int(hours * 3_600_000_000_000)
+            + int(minutes * 60_000_000_000)
+            + int(seconds * 1_000_000_000)
+            + int(milliseconds * 1_000_000)
+            + int(microseconds * 1_000)
+            + nanoseconds
         )
-        if tdelta and not _ignore_timezone_unaware_arithmetic_warning.get():
+        if abs(delta_ns) > _MAX_DELTA_NANOS:
+            raise ValueError("TimeDelta out of range")
+        if (
+            delta_ns != 0
+            and not _ignore_timezone_unaware_arithmetic_warning.get()
+        ):
             warn(
                 PLAIN_SHIFT_UNAWARE_MSG,
                 TimeZoneUnawareArithmeticWarning,
                 stacklevel=4,
             )
 
-        delta_secs, nanos = divmod(
-            tdelta._total_ns + self._nanos, 1_000_000_000
-        )
+        delta_secs, nanos = divmod(delta_ns + self._nanos, 1_000_000_000)
         return self._from_py_unchecked(
             (py_dt_with_new_date + _timedelta(seconds=delta_secs)),
             nanos,
@@ -9497,19 +9524,29 @@ def _to_tz(dt: _datetime, tz: TimeZone) -> _datetime:
 
 
 _MAX_ORDINAL = _date.max.toordinal()
+_EPOCH_DT = _datetime(1970, 1, 1, tzinfo=_UTC)
 
 
 def _from_epoch(ts: int, tz: TimeZone) -> _datetime:
-    # NOTE: we can't use the obvious datetime.fromtimestamp() here, because it
-    # may give errors on extreme values on some platforms.
+    # Check ts (UTC), not local_ts below, because a negative UTC offset can
+    # make local_ts land inside the valid datetime range even when ts itself
+    # is out of range — meaning fromtimestamp() would silently succeed and
+    # return a datetime that exceeds Instant.MAX.
     if (ordinal := ts // 86_400 + 719_163) < 1 or ordinal > _MAX_ORDINAL:
         raise OverflowError("Time out of range")
-    return _to_tz(
-        (
-            _datetime.fromordinal(ordinal) + _timedelta(seconds=ts % 86_400)
-        ).replace(tzinfo=_UTC),
-        tz,
-    )
+    offset = tz.offset_for_instant(ts)
+    local_ts = ts + offset
+    # datetime.fromtimestamp() is faster than manual arithmetic, but may fail
+    # for dates outside the platform's time_t range (e.g. year 1 or year 9999
+    # on 32-bit Windows). Fall back to the portable ordinal approach in that case.
+    try:
+        return _datetime.fromtimestamp(local_ts, _UTC).replace(
+            tzinfo=mk_fixed_tzinfo(offset)
+        )
+    except (OSError, OverflowError, ValueError):
+        return (_EPOCH_DT + _timedelta(seconds=local_ts)).replace(
+            tzinfo=mk_fixed_tzinfo(offset)
+        )
 
 
 def _load_offset(offset: int | TimeDelta, /) -> _timezone:

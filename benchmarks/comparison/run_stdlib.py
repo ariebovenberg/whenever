@@ -1,48 +1,131 @@
-# See Makefile for how to run this
-import pyperf
+"""
+Stdlib (+dateutil) benchmarks — run with:
 
-runner = pyperf.Runner()
+    uv run python run_stdlib.py --fast                    # all benchmarks
+    uv run python run_stdlib.py --only now --fast         # single benchmark
+    uv run python run_stdlib.py --only now,parse_iso      # multiple
 
-runner.timeit(
-    "various operations",
-    "d = datetime.fromisoformat('2020-04-05T22:04:00-04:00')"
-    ".astimezone(UTC);"
-    "d - datetime.now(UTC);"
-    "(d + timedelta(hours=4, minutes=30))"
-    ".astimezone(ZoneInfo('Europe/Amsterdam'))"
-    ".isoformat()",
-    setup="from datetime import datetime, timedelta, UTC; from zoneinfo import ZoneInfo",
+Note: calendar_shift uses dateutil.relativedelta since the stdlib has no
+built-in calendar arithmetic.
+"""
+import argparse
+import sys
+
+_pre = argparse.ArgumentParser(add_help=False)
+_pre.add_argument("--only", default=None, metavar="NAME",
+                  help="comma-separated list of benchmark names to run")
+_ns, _remaining = _pre.parse_known_args(sys.argv[1:])
+_only = set(_ns.only.split(",")) if _ns.only else None
+sys.argv = [sys.argv[0]] + _remaining
+
+import pyperf  # noqa: E402
+
+
+def _add_only(cmd, args):
+    if _ns.only:
+        cmd += ["--only", _ns.only]
+
+
+runner = pyperf.Runner(add_cmdline_args=_add_only if _ns.only else None)
+
+
+def _bench(name: str, stmt: str, setup: str = "") -> None:
+    if _only is None or name in _only:
+        runner.timeit(name, stmt, setup=setup)
+
+
+_bench(
+    "now",
+    "datetime.now(UTC)",
+    setup="from datetime import datetime, UTC",
 )
 
-# runner.timeit(
-#     "new date",
-#     "date(2020, 2, 29)",
-#     "from datetime import date",
-# )
+_bench(
+    "parse_iso",
+    "datetime.fromisoformat('2020-04-05T22:04:00-04:00')",
+    setup="from datetime import datetime",
+)
 
-# runner.timeit(
-#     "date add",
-#     "d + relativedelta(years=-4, months=59, weeks=-7, days=3)",
-#     setup="import datetime; from dateutil.relativedelta import relativedelta;"
-#     "d = datetime.date(1987, 3, 31)",
-# )
+_bench(
+    "instantiate_zdt",
+    "datetime(2020, 3, 20, 12, 30, 45, tzinfo=ZoneInfo('Europe/Amsterdam'))",
+    setup=(
+        "from datetime import datetime;"
+        " from zoneinfo import ZoneInfo;"
+    ),
+)
 
-# runner.timeit(
-#     "date diff",
-#     "relativedelta(d1, d2)",
-#     setup="from datetime import date; from dateutil.relativedelta import relativedelta;"
-#     "d1 = date(2020, 2, 29); d2 = date(2025, 2, 28)",
-# )
+_bench(
+    "shift",
+    "dt + timedelta(hours=4, minutes=30)",
+    setup=(
+        "from datetime import datetime, timedelta;"
+        " from zoneinfo import ZoneInfo;"
+        " dt = datetime(2020, 3, 20, 12, 30, 45, tzinfo=ZoneInfo('Europe/Amsterdam'))"
+    ),
+)
 
-# runner.timeit(
-#     "parse date",
-#     "f('2020-02-29')",
-#     setup="from datetime import date; f = date.fromisoformat",
-# )
+_bench(
+    "to_tz",
+    "dt.astimezone(ZoneInfo('America/New_York'))",
+    setup=(
+        "from datetime import datetime;"
+        " from zoneinfo import ZoneInfo;"
+        " dt = datetime(2020, 3, 20, 12, 30, 45, tzinfo=ZoneInfo('Europe/Amsterdam'))"
+    ),
+)
 
-# runner.timeit(
-#     "change tz",
-#     "dt.astimezone(ZoneInfo('America/New_York'))",
-#     setup="from datetime import datetime; from zoneinfo import ZoneInfo; "
-#     "dt = datetime(2020, 3, 20, 12, 30, 45, tzinfo=ZoneInfo('Europe/Amsterdam'))",
+_bench(
+    "normalize_utc",
+    "dt.astimezone(UTC)",
+    setup=(
+        "from datetime import datetime, UTC;"
+        " from zoneinfo import ZoneInfo;"
+        " dt = datetime(2020, 3, 20, 12, 30, 45, tzinfo=ZoneInfo('Europe/Amsterdam'))"
+    ),
+)
+
+_bench(
+    "format_iso",
+    "dt.isoformat()",
+    setup=(
+        "from datetime import datetime;"
+        " from zoneinfo import ZoneInfo;"
+        " dt = datetime(2020, 3, 20, 12, 30, 45, tzinfo=ZoneInfo('Europe/Amsterdam'))"
+    ),
+)
+
+_bench(
+    "difference",
+    "dt2 - dt1",
+    setup=(
+        "from datetime import datetime, UTC;"
+        " dt1 = datetime(2020, 3, 20, 12, 0, 0, tzinfo=UTC);"
+        " dt2 = datetime(2020, 3, 21, 8, 30, 0, tzinfo=UTC)"
+    ),
+)
+
+_bench(
+    "calendar_shift",
+    "dt + delta",
+    setup=(
+        "from datetime import datetime;"
+        " from zoneinfo import ZoneInfo;"
+        " from dateutil.relativedelta import relativedelta;"
+        " dt = datetime(2020, 3, 20, 12, 30, 45, tzinfo=ZoneInfo('Europe/Amsterdam'));"
+        " delta = relativedelta(years=1, months=3)"
+    ),
+)
+
+# Compound benchmark — mirrors the original "various operations" comparison.
+# Uncomment to include in the run.
+# _bench(
+#     "compound",
+#     "d = datetime.fromisoformat('2020-04-05T22:04:00-04:00')"
+#     ".astimezone(UTC);"
+#     "d - datetime.now(UTC);"
+#     "(d + timedelta(hours=4, minutes=30))"
+#     ".astimezone(ZoneInfo('Europe/Amsterdam'))"
+#     ".isoformat()",
+#     setup="from datetime import datetime, timedelta, UTC; from zoneinfo import ZoneInfo",
 # )

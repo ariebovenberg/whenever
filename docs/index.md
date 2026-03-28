@@ -25,7 +25,8 @@ It's designed to be:
   modern datetime libraries in other languages.
 
 **{octicon}`zap` Fast**
-: Whenever is 10-100× faster than Pendulum and Arrow---and up to 4× as fast as the standard library for common operations.
+: In common operations, whenever is 10-100× faster than Pendulum and 
+  Arrow---and 2-4× as fast as the standard library.
 
 A quick taste:
 
@@ -55,7 +56,7 @@ Browse the sidebar to navigate the documentation, or jump directly to a topic be
 
 ```{eval-rst}
 
-.. grid:: 1 2 2 2
+.. grid:: 1 2 2 3
    :margin: 4 4 0 0
    :gutter: 2
 
@@ -94,6 +95,13 @@ Browse the sidebar to navigate the documentation, or jump directly to a topic be
 
       All information on classes and functions
 
+   .. grid-item-card:: :octicon:`graph` Benchmarks
+      :link: benchmarks
+      :link-type: ref
+      :shadow: md
+
+      How whenever compares in speed
+
    .. grid-item-card:: :octicon:`question` FAQ
       :link: faq
       :link-type: ref
@@ -111,6 +119,7 @@ Browse the sidebar to navigate the documentation, or jump directly to a topic be
    .. grid-item-card:: :octicon:`repo` Repository
       :link: https://github.com/ariebovenberg/whenever
       :shadow: md
+      :link-alt: GitHub repository
 
       Find code, issues, and discussions here
 
@@ -133,6 +142,7 @@ Browse the sidebar to navigate the documentation, or jump directly to a topic be
    Introduction <self>
    guide/index
    examples
+   benchmarks
    design
    faq
 

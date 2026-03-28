@@ -48,6 +48,12 @@ else:
 
 _tzcache_lru_lock = _Lock()
 
+# One-entry fast path: skips LRU update for repeated lookups of the same zone.
+# Thread-safe for GIL Python (atomic assignment); under free-threading the
+# worst case is a benign missed cache-hit, which falls back to the normal path.
+_last_tz_key: str | None = None
+_last_tz_val: TimeZone | None = None
+
 
 def _set_tzpath(to: tuple[str, ...]) -> None:
     global _TZPATH
@@ -55,12 +61,19 @@ def _set_tzpath(to: tuple[str, ...]) -> None:
 
 
 def _clear_tz_cache() -> None:
+    global _last_tz_key, _last_tz_val
+    _last_tz_key = None
+    _last_tz_val = None
     _tzcache_lookup.clear()
     with _tzcache_lru_lock:
         _tzcache_lru.clear()
 
 
 def _clear_tz_cache_by_keys(keys: tuple[str, ...]) -> None:
+    global _last_tz_key, _last_tz_val
+    if _last_tz_key in keys:
+        _last_tz_key = None
+        _last_tz_val = None
     with _tzcache_lru_lock:
         for k in keys:
             _tzcache_lookup.pop(k, None)
@@ -68,6 +81,10 @@ def _clear_tz_cache_by_keys(keys: tuple[str, ...]) -> None:
 
 
 def get_tz(key: str) -> TimeZone:
+    global _last_tz_key, _last_tz_val
+    if key == _last_tz_key:
+        return _last_tz_val  # type: ignore[return-value]
+
     instance = _tzcache_lookup.get(key)
     if instance is None:
         # Concurrency note: we accept the possibility of multiple threads
@@ -85,6 +102,8 @@ def get_tz(key: str) -> TimeZone:
             except KeyError:  # pragma: no cover
                 pass  # theoretically possible if other threads are clearing too
 
+    _last_tz_key = key
+    _last_tz_val = instance
     return instance
 
 

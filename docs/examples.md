@@ -108,6 +108,15 @@ ZonedDateTime("2025-04-19 15:00:00-04:00[America/New_York]")
 The {meth}`~whenever.ZonedDateTime.round` method can be used for so much more!
 See its documentation for more details.
 
+## Determine the end of the day
+
+```python
+>>> d = ZonedDateTime.now("America/New_York")
+ZonedDateTime("2025-04-19 15:46:41-04:00[America/New_York]")
+>>> d.add(nanoseconds=1).round("day", mode="ceil")
+ZonedDateTime("2025-04-19 23:59:59.999999999-04:00[America/New_York]")
+```
+
 ## Get the current unix timestamp
 
 ```python
@@ -307,7 +316,7 @@ It also integrates nicely with the standard library's formatting protocol
 
 ## Roundtrip: datetime → string → datetime
 
-Every `whenever` type has a reversible string representation:
+Every `whenever` type has an ISO-compatible reversible string representation:
 
 ```python
 >>> from whenever import ZonedDateTime
@@ -316,13 +325,5 @@ Every `whenever` type has a reversible string representation:
 >>> s
 '2025-06-15 14:30:00+02:00[Europe/Amsterdam]'
 >>> ZonedDateTime(s) == d
-True
-```
-
-For ISO 8601 exchange:
-
-```python
->>> iso = d.format_iso()
->>> ZonedDateTime.parse_iso(iso) == d
 True
 ```
