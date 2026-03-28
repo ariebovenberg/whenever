@@ -1,11 +1,11 @@
 """
-Whenever benchmarks — run with:
+Whenever (pure Python) benchmarks — run with:
 
-    uv run python run_whenever.py --fast                    # all benchmarks
-    uv run python run_whenever.py --only now --fast         # single benchmark
-    uv run python run_whenever.py --only now,parse_iso      # multiple
+    uv run python run_whenever_pure.py --fast
+    uv run python run_whenever_pure.py --only now --fast
 
-Uses whenever 0.9.5 (optimized Rust wheel from PyPI).
+Imports directly from whenever._pywhenever to bypass the Rust extension,
+giving the pure-Python performance baseline for the same operations.
 """
 import argparse
 import sys
@@ -36,26 +36,26 @@ def _bench(name: str, stmt: str, setup: str = "") -> None:
 _bench(
     "now",
     "Instant.now()",
-    setup="from whenever import Instant",
+    setup="from whenever._pywhenever import Instant",
 )
 
 _bench(
     "parse_iso",
     "OffsetDateTime('2020-04-05T22:04:00-04:00')",
-    setup="from whenever import OffsetDateTime",
+    setup="from whenever._pywhenever import OffsetDateTime",
 )
 
 _bench(
     "instantiate_zdt",
     "ZonedDateTime(2020, 3, 20, 12, 30, 45, tz='Europe/Amsterdam')",
-    setup="from whenever import ZonedDateTime",
+    setup="from whenever._pywhenever import ZonedDateTime",
 )
 
 _bench(
     "shift",
     "dt.add(hours=4, minutes=30)",
     setup=(
-        "from whenever import ZonedDateTime;"
+        "from whenever._pywhenever import ZonedDateTime;"
         " dt = ZonedDateTime(2020, 3, 20, 12, 30, 45, tz='Europe/Amsterdam')"
     ),
 )
@@ -64,7 +64,7 @@ _bench(
     "to_tz",
     "dt.to_tz('America/New_York')",
     setup=(
-        "from whenever import ZonedDateTime;"
+        "from whenever._pywhenever import ZonedDateTime;"
         " dt = ZonedDateTime(2020, 3, 20, 12, 30, 45, tz='Europe/Amsterdam')"
     ),
 )
@@ -73,7 +73,7 @@ _bench(
     "normalize_utc",
     "dt.to_instant()",
     setup=(
-        "from whenever import ZonedDateTime;"
+        "from whenever._pywhenever import ZonedDateTime;"
         " dt = ZonedDateTime(2020, 3, 20, 12, 30, 45, tz='Europe/Amsterdam')"
     ),
 )
@@ -82,7 +82,7 @@ _bench(
     "format_iso",
     "dt.format_iso()",
     setup=(
-        "from whenever import ZonedDateTime;"
+        "from whenever._pywhenever import ZonedDateTime;"
         " dt = ZonedDateTime(2020, 3, 20, 12, 30, 45, tz='Europe/Amsterdam')"
     ),
 )
@@ -91,7 +91,7 @@ _bench(
     "difference",
     "i2 - i1",
     setup=(
-        "from whenever import Instant;"
+        "from whenever._pywhenever import Instant;"
         " i1 = Instant.from_utc(2020, 3, 20, 12, 0, 0);"
         " i2 = Instant.from_utc(2020, 3, 21, 8, 30, 0)"
     ),
@@ -101,20 +101,19 @@ _bench(
     "calendar_shift",
     "dt.add(years=1, months=3)",
     setup=(
-        "from whenever import ZonedDateTime;"
+        "from whenever._pywhenever import ZonedDateTime;"
         " dt = ZonedDateTime(2020, 3, 20, 12, 30, 45, tz='Europe/Amsterdam')"
     ),
 )
 
-# Compound benchmark — mirrors the original "various operations" comparison.
-# Uncomment to include in the run.
+# Compound benchmark — uncomment to include.
 # _bench(
 #     "compound",
-#     "d = OffsetDateTime.parse_iso('2020-04-05T22:04:00-04:00')"
+#     "d = OffsetDateTime('2020-04-05T22:04:00-04:00')"
 #     ".to_instant();"
 #     "d - Instant.now();"
 #     "d.add(hours=4, minutes=30)"
 #     ".to_tz('Europe/Amsterdam')"
 #     ".format_iso()",
-#     setup="from whenever import OffsetDateTime, Instant",
+#     setup="from whenever._pywhenever import OffsetDateTime, Instant",
 # )

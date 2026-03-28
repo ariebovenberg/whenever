@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>SVG preview — whenever benchmarks</title>
+<style>
+  :root { --bg: #ffffff; --fg: #1f2328; --border: #d0d7de; --h: #24292f; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d1117; --fg: #e6edf3; --border: #30363d; --h: #e6edf3; }
+  }
+  body  { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+          background: var(--bg); color: var(--fg); margin: 2rem; }
+  h2    { color: var(--h); border-bottom: 1px solid var(--border); padding-bottom: .4rem; }
+  .row  { display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: 2rem; }
+  .box  { border: 1px solid var(--border); border-radius: 6px; padding: 1rem;
+          background: var(--bg); flex: 1 1 45%; }
+  .box h3 { margin: 0 0 .75rem; font-size: .9rem; color: var(--fg); opacity: .6; }
+  img, object { max-width: 100%; }
+</style>
+</head>
+<body>
+<h2>Compound benchmark (README)</h2>
+<div class="row">
+  <div class="box"><h3>Vega-Lite (original)</h3>
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="graph-dark.svg">
+      <img src="graph-light.svg" alt="Vega original">
+    </picture>
+  </div>
+  <div class="box"><h3>Matplotlib draft</h3>
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="charts/readme-draft-dark.svg">
+      <img src="charts/readme-draft-light.svg" alt="Matplotlib draft">
+    </picture>
+  </div>
+</div>
+
+<h2>Detailed timing (docs page)</h2>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="charts/timing-dark.svg">
+  <img src="charts/timing-light.svg" alt="Timing grid" style="max-width:100%">
+</picture>
+</body>
+</html>
