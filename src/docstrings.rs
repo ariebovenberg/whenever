@@ -63,9 +63,8 @@ length of the DST transition.
 The typical fix is to use calendar-based arithmetic
 (e.g. :class:`~whenever.ItemizedDelta`) instead of exact-time
 shifts when the number of calendar days matters.
-Suppress this warning with the
-:func:`~whenever.ignore_days_not_always_24h_warning` context
-manager (or Python's standard warning filters) if 24-hour days are
+Suppress this warning by passing ``assume_24h_days=True``
+(or Python's standard warning filters) if 24-hour days are
 intentional.
 ";
 pub(crate) const IMPLICITLYIGNORINGDST: &CStr = c"\
@@ -252,6 +251,30 @@ Can also be constructed from an ISO 8601 string:
 >>> MonthDay(\"--11-23\")
 MonthDay(\"--11-23\")
 ";
+pub(crate) const NAIVEARITHMETICWARNING: &CStr = c"\
+Raised when exact-time arithmetic is performed on a
+:class:`~whenever.PlainDateTime` without timezone context.
+
+A :class:`~whenever.PlainDateTime` carries no timezone information.
+When you add or subtract exact time units (hours, minutes, seconds) or
+measure the difference between two :class:`~whenever.PlainDateTime` values,
+the computation treats every hour as equal. This warning is always emitted
+because there is no way to know whether a timezone transition falls in the
+interval--if one does, the result may be off by an hour or more.
+
+For example, adding 2 hours to ``2023-03-26 01:30`` (Amsterdam) gives
+``03:30``, but clocks jumped from 02:00 to 03:00 that morning, so only
+1 real hour has passed.
+
+The typical fix is to call :meth:`~whenever.PlainDateTime.assume_tz` first
+so the timezone is known, then perform the arithmetic on the resulting
+:class:`~whenever.ZonedDateTime`.
+Suppress by passing ``naive_arithmetic_ok=True``
+(or Python's standard warning filters) if you: (a) explicitly accept
+potentially incorrect results, (b) know no transitions occur in the
+interval, or (c) are working with clock times not representing a real-world
+timezone (e.g. a simulation).
+";
 pub(crate) const OFFSETDATETIME: &CStr = c"\
 A datetime with a fixed UTC offset.
 
@@ -321,7 +344,7 @@ Base class for warnings about potential DST-related bugs in user code.
 This is not raised directly, but serves as the parent for
 :class:`~whenever.DaysNotAlways24HoursWarning`,
 :class:`~whenever.PotentiallyStaleOffsetWarning`, and
-:class:`~whenever.TimeZoneUnawareArithmeticWarning`.
+:class:`~whenever.NaiveArithmeticWarning`.
 You can catch or filter all DST-related warnings at once
 by targeting this class.
 ";
@@ -338,8 +361,8 @@ may be wrong, silently producing a timestamp that is off by the difference.
 
 The typical fix is to work with :class:`~whenever.ZonedDateTime` instead,
 which always keeps the offset in sync with the timezone rules.
-Alternatively, suppress this warning with the
-:func:`~whenever.ignore_potentially_stale_offset_warning` context manager
+Alternatively, suppress this warning by passing
+``stale_offset_ok=True``
 (or Python's standard warning filters) when the fixed offset is intentional
 and correct.
 ";
@@ -415,31 +438,6 @@ A shorter way to instantiate a timedelta is to use the helper functions
 ";
 pub(crate) const TIMEZONENOTFOUNDERROR: &CStr = c"\
 A timezone with the given ID was not found";
-pub(crate) const TIMEZONEUNAWAREARITHMETICWARNING: &CStr = c"\
-Raised when exact-time arithmetic is performed on a
-:class:`~whenever.PlainDateTime` without timezone context.
-
-A :class:`~whenever.PlainDateTime` carries no timezone information.
-When you add or subtract exact time units (hours, minutes, seconds) or
-measure the difference between two :class:`~whenever.PlainDateTime` values,
-the computation treats every hour as equal. This warning is always emitted
-because there is no way to know whether a timezone transition falls in the
-interval--if one does, the result may be off by an hour or more.
-
-For example, adding 2 hours to ``2023-03-26 01:30`` (Amsterdam) gives
-``03:30``, but clocks jumped from 02:00 to 03:00 that morning, so only
-1 real hour has passed.
-
-The typical fix is to call :meth:`~whenever.PlainDateTime.assume_tz` first
-so the timezone is known, then perform the arithmetic on the resulting
-:class:`~whenever.ZonedDateTime`.
-Suppress this warning with the
-:func:`~whenever.ignore_timezone_unaware_arithmetic_warning` context manager
-(or Python's standard warning filters) if you: (a) explicitly accept
-potentially incorrect results, (b) know no transitions occur in the
-interval, or (c) are working with clock times not representing a real-world
-timezone (e.g. a simulation).
-";
 pub(crate) const WHENEVERDEPRECATIONWARNING: &CStr = c"\
 Raised when a deprecated feature of the ``whenever`` library is used.
 
@@ -1227,7 +1225,7 @@ relative_to
     :class:`OffsetDateTime` reference point.
 
     - :class:`ZonedDateTime`: DST-aware; emits no warning
-    - :class:`PlainDateTime`: emits :class:`TimeZoneUnawareArithmeticWarning`
+    - :class:`PlainDateTime`: emits :class:`NaiveArithmeticWarning`
       when the conversion crosses the calendar/exact-time boundary
       (i.e. the delta or output mixes calendar and exact-time units).
       Pure calendar-to-calendar or exact-to-exact conversions do not warn.
@@ -1288,7 +1286,7 @@ relative_to
     :class:`OffsetDateTime` reference point.
 
     - :class:`ZonedDateTime`: DST-aware; emits no warning
-    - :class:`PlainDateTime`: emits :class:`TimeZoneUnawareArithmeticWarning`
+    - :class:`PlainDateTime`: emits :class:`NaiveArithmeticWarning`
       when the conversion crosses the calendar/exact-time boundary
       (i.e. the delta or target unit mixes calendar and exact-time units).
       Pure calendar-to-calendar or exact-to-exact conversions do not warn.
@@ -1371,8 +1369,7 @@ Shifting an ``OffsetDateTime`` keeps the fixed UTC offset, which may not
 match the actual offset after a DST or other timezone transition.
 Convert to a ``ZonedDateTime`` first for timezone-aware arithmetic
 using :meth:`assume_tz`.
-Suppress with the
-:func:`~whenever.ignore_potentially_stale_offset_warning` context manager;
+Pass ``stale_offset_ok=True`` to suppress;
 Python's standard warning filters also apply.
 ";
 pub(crate) const OFFSETDATETIME_ASSUME_TZ: &CStr = c"\
@@ -1415,7 +1412,7 @@ The inverse of the ``parse_rfc2822()`` method.
 \"Sat, 15 Aug 2020 23:12:00 +0200\"
 ";
 pub(crate) const OFFSETDATETIME_FROM_TIMESTAMP: &CStr = c"\
-from_timestamp(i, /, *, offset, ignore_dst=...)
+from_timestamp(i, /, *, offset, ignore_dst=..., stale_offset_ok=False)
 --
 
 Create an instance from a UNIX timestamp (in seconds).
@@ -1429,10 +1426,10 @@ may produce an incorrect result: you can't know from the offset alone
 whether DST applies to this timestamp. Use
 ``ZonedDateTime.from_timestamp(ts, tz='<tz>')`` if you know the timezone,
 or ``Instant.from_timestamp()`` for timezone-agnostic exact time.
-Suppress with :func:`~whenever.ignore_potentially_stale_offset_warning`.
+Pass ``stale_offset_ok=True`` to suppress.
 ";
 pub(crate) const OFFSETDATETIME_FROM_TIMESTAMP_MILLIS: &CStr = c"\
-from_timestamp_millis(i, /, *, offset, ignore_dst=...)
+from_timestamp_millis(i, /, *, offset, ignore_dst=..., stale_offset_ok=False)
 --
 
 Create an instance from a UNIX timestamp (in milliseconds).
@@ -1442,7 +1439,7 @@ The inverse of the ``timestamp_millis()`` method.
 See :meth:`from_timestamp` for more information.
 ";
 pub(crate) const OFFSETDATETIME_FROM_TIMESTAMP_NANOS: &CStr = c"\
-from_timestamp_nanos(i, /, *, offset, ignore_dst=...)
+from_timestamp_nanos(i, /, *, offset, ignore_dst=..., stale_offset_ok=False)
 --
 
 Create an instance from a UNIX timestamp (in nanoseconds).
@@ -1452,7 +1449,7 @@ The inverse of the ``timestamp_nanos()`` method.
 See :meth:`from_timestamp` for more information.
 ";
 pub(crate) const OFFSETDATETIME_NOW: &CStr = c"\
-now(offset, /, *, ignore_dst=...)
+now(offset, /, *, ignore_dst=..., stale_offset_ok=False)
 --
 
 Create an instance from the current time.
@@ -1463,7 +1460,7 @@ Getting the current time as an ``OffsetDateTime`` with a fixed UTC offset
 may be incorrect: the offset doesn't update when DST or other timezone
 rules change. Use ``ZonedDateTime.now('<tz>')`` if you know the timezone,
 or ``Instant.now()`` for timezone-agnostic exact time.
-Suppress with :func:`~whenever.ignore_potentially_stale_offset_warning`.
+Pass ``stale_offset_ok=True`` to suppress.
 ";
 pub(crate) const OFFSETDATETIME_PARSE: &CStr = c"\
 parse(s, /, *, format)
@@ -1536,10 +1533,10 @@ which may no longer be correct after the change (e.g. replacing the month
 on a European-timezone datetime may move it into a different DST period).
 Convert to ``ZonedDateTime`` first for timezone-aware field replacement
 using :meth:`assume_tz`.
-Suppress with :func:`~whenever.ignore_potentially_stale_offset_warning`.
+Pass ``stale_offset_ok=True`` to suppress.
 ";
 pub(crate) const OFFSETDATETIME_REPLACE_DATE: &CStr = c"\
-replace_date($self, date, /, *, ignore_dst=...)
+replace_date($self, date, /, *, ignore_dst=..., stale_offset_ok=False)
 --
 
 Construct a new instance with the date replaced.
@@ -1547,7 +1544,7 @@ Construct a new instance with the date replaced.
 See :meth:`replace` for more information.
 ";
 pub(crate) const OFFSETDATETIME_REPLACE_TIME: &CStr = c"\
-replace_time($self, time, /, *, ignore_dst=...)
+replace_time($self, time, /, *, ignore_dst=..., stale_offset_ok=False)
 --
 
 Construct a new instance with the time replaced.
@@ -1555,7 +1552,7 @@ Construct a new instance with the time replaced.
 See :meth:`replace` for more information.
 ";
 pub(crate) const OFFSETDATETIME_ROUND: &CStr = c"\
-round($self, unit='second', /, *, increment=1, mode='half_even', ignore_dst=...)
+round($self, unit='second', /, *, increment=1, mode='half_even', ignore_dst=..., stale_offset_ok=False)
 --
 
 Round the datetime to the specified unit and increment,
@@ -1579,7 +1576,7 @@ Rounding an ``OffsetDateTime`` keeps the fixed UTC offset, which may not
 be accurate if the rounded datetime crosses into a different DST period.
 Convert to a ``ZonedDateTime`` first for timezone-aware rounding
 using :meth:`assume_tz`.
-Suppress with :func:`~whenever.ignore_potentially_stale_offset_warning`.
+Pass ``stale_offset_ok=True`` to suppress.
 ";
 pub(crate) const OFFSETDATETIME_SINCE: &CStr = c"\
 since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
@@ -1622,8 +1619,7 @@ Warning
 Adding **exact time units** (e.g. hours, seconds) to a ``PlainDateTime``
 does not account for timezone transitions that may occur in the interval.
 Use ``.assume_tz('<tz>') + delta`` if you know the timezone.
-Suppress with the
-:func:`~whenever.ignore_timezone_unaware_arithmetic_warning` context manager;
+Pass ``naive_arithmetic_ok=True`` to suppress;
 Python's standard warning filters also apply.
 ";
 pub(crate) const PLAINDATETIME_ASSUME_FIXED_OFFSET: &CStr = c"\
@@ -1678,15 +1674,24 @@ Assume the datetime is in UTC, creating an ``Instant``.
 Instant(\"2020-08-15 23:12:00Z\")
 ";
 pub(crate) const PLAINDATETIME_DIFFERENCE: &CStr = c"\
-difference($self, other, /, *, ignore_dst=...)
+difference($self, other, /, *, ignore_dst=..., naive_arithmetic_ok=False)
 --
 
-Calculate the difference between two times without a timezone.
+Calculate the exact time difference between two plain datetimes.
 
-.. deprecated:: 0.10.0
+This method returns the exact elapsed :class:`TimeDelta` between two
+``PlainDateTime`` values. Equivalent to the subtraction operator (``-``),
+but allows suppressing the :class:`NaiveArithmeticWarning`
+via the ``naive_arithmetic_ok`` parameter.
 
-    The ``difference()`` method is deprecated, use the subtraction operator or
-    :meth:`since` method instead.
+Use :meth:`since` or :meth:`until` for more advanced options such as
+calendar units, unit decomposition, and rounding.
+
+Warning
+-------
+Calculating the difference between two ``PlainDateTime`` values does
+not account for timezone transitions. Use :meth:`assume_tz` to convert
+to a ``ZonedDateTime`` first for accurate results.
 ";
 pub(crate) const PLAINDATETIME_FORMAT: &CStr = c"\
 Format as a custom pattern string.
@@ -1767,7 +1772,7 @@ This method has similar behavior to the ``round()`` method of
 Temporal objects in JavaScript.
 ";
 pub(crate) const PLAINDATETIME_SINCE: &CStr = c"\
-since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
+since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=..., naive_arithmetic_ok=False)
 --
 
 Calculate the duration since another PlainDateTime,
@@ -1789,7 +1794,7 @@ Subtract a time amount from this datetime.
 See :meth:`add` for more information.
 ";
 pub(crate) const PLAINDATETIME_UNTIL: &CStr = c"\
-until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
+until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=..., naive_arithmetic_ok=False)
 --
 
 Inverse of the ``since()`` method. See :meth:`since` for more information.";
@@ -2043,7 +2048,7 @@ The total size in seconds
     Use :meth:`total` with ``'seconds'`` instead.
 ";
 pub(crate) const TIMEDELTA_IN_UNITS: &CStr = c"\
-in_units($self, units, /, *, round_mode='trunc', round_increment=1, relative_to=...)
+in_units($self, units, /, *, round_mode='trunc', round_increment=1, relative_to=..., assume_24h_days=False)
 --
 
 Convert to a :class:`ItemizedDelta` with the specified units
@@ -2074,7 +2079,7 @@ relative_to
 
     - :class:`ZonedDateTime`: DST-aware; emits no warning
     - :class:`PlainDateTime`: does not account for time zones; emits
-      :class:`TimeZoneUnawareArithmeticWarning`
+      :class:`NaiveArithmeticWarning`
     - :class:`OffsetDateTime`: does not account for DST changes; emits
       :class:`PotentiallyStaleOffsetWarning`
 ";
@@ -2101,7 +2106,7 @@ Convert to a :class:`~datetime.timedelta`
     Use :meth:`to_stdlib` instead.
 ";
 pub(crate) const TIMEDELTA_ROUND: &CStr = c"\
-round($self, unit='second', /, *, increment=1, mode='half_even')
+round($self, unit='second', /, *, increment=1, mode='half_even', assume_24h_days=False)
 --
 
 Round the delta to the specified unit and increment,
@@ -2138,7 +2143,7 @@ Nanoseconds are truncated to microseconds.
 If you need more control over rounding, use :meth:`round` first.
 ";
 pub(crate) const TIMEDELTA_TOTAL: &CStr = c"\
-total($self, unit, relative_to=..., _warn_stacklevel=2)
+total($self, unit, relative_to=..., _warn_stacklevel=2, assume_24h_days=False)
 --
 
 The total size in the given unit, as a float (or int for nanoseconds)
@@ -2148,7 +2153,7 @@ argument is required to determine the actual duration of each unit:
 
 - :class:`ZonedDateTime`: DST-aware; emits no warning
 - :class:`PlainDateTime`: no timezone context; emits
-  :class:`TimeZoneUnawareArithmeticWarning`
+  :class:`NaiveArithmeticWarning`
 - :class:`OffsetDateTime`: fixed offset; emits
   :class:`PotentiallyStaleOffsetWarning`
 
@@ -2545,11 +2550,13 @@ As an inverse, :class:`PlainDateTime` has methods
 , :meth:`~PlainDateTime.assume_tz`, and :meth:`~PlainDateTime.assume_system_tz`.
 ";
 pub(crate) const EXACTTIME_DIFFERENCE: &CStr = c"\
-Calculate the difference between two instants in time.
+Calculate the exact time difference between two datetimes.
 
-.. deprecated:: 0.10.0
+This method returns the exact elapsed :class:`TimeDelta` between
+two instants in time. Equivalent to the subtraction operator (``-``).
 
-   Use the subtraction operator instead
+Use :meth:`since` or :meth:`until` for more advanced options such as
+calendar units, unit decomposition, and rounding.
 ";
 pub(crate) const EXACTTIME_EXACT_EQ: &CStr = c"\
 Compare objects by their values
@@ -2651,17 +2658,17 @@ ZonedDateTime(\"2021-01-02T03:04:05+01:00[Europe/Paris]\")
 pub(crate) const LOCALTIME_YEAR: &CStr = c"\
 The year component of the datetime";
 pub(crate) const CANNOT_ROUND_DAY_MSG: &CStr = c"Cannot round to day, because days do not have a fixed length. Due to daylight saving time, some days have 23 or 25 hours. If you wish to round to exactly 24 hours, use `round('hour', increment=24)`.";
-pub(crate) const DAYS_NOT_ALWAYS_24H_MSG: &CStr = c"This operation assumes days are exactly 24 hours. Calendar days may be 23 or 25 hours long during DST transitions. If you're working with UTC, or deliberately want fixed-length days, this is correct. For DST-aware operations, consider using ZonedDateTime arithmetic instead, or passing the `relative_to` argument where available. Suppress this warning with `with whenever.ignore_days_not_always_24h_warning():`. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const DAYS_NOT_ALWAYS_24H_MSG: &CStr = c"This operation assumes days are exactly 24 hours. Calendar days may be 23 or 25 hours long during DST transitions. If you're working with UTC, or deliberately want fixed-length days, this is correct. For DST-aware operations, consider using ZonedDateTime arithmetic instead, or passing the `relative_to` argument where available. Pass `assume_24h_days=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const FORMAT_ISO_NO_TZ_MSG: &CStr = c"This ZonedDateTime has no timezone ID and cannot be formatted in the standard ISO format, which requires it. This typically means the ZonedDateTime was created from a system timezone with an unknown ID. To format without the timezone designator, set the `tz=` argument to 'never' or 'auto'.";
-pub(crate) const IGNORE_DST_DEPRECATED_MSG: &CStr = c"The `ignore_dst` parameter is deprecated and replaced with a warning.";
-pub(crate) const OFFSET_FROM_TIMESTAMP_STALE_MSG: &CStr = c"Converting a UNIX timestamp to OffsetDateTime with a fixed UTC offset may produce an incorrect result: you can't know from the offset alone whether DST is in effect at this timestamp. Use ZonedDateTime.from_timestamp(ts, tz='<tz>') if you know the timezone, or Instant.from_timestamp() for timezone-agnostic exact time. Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, or with Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const OFFSET_NOW_STALE_MSG: &CStr = c"Getting the current time as an OffsetDateTime with a fixed UTC offset may be incorrect: the offset doesn't update when DST or other timezone rules change. Use ZonedDateTime.now('<tz>') if you know the timezone, or Instant.now() for timezone-agnostic exact time. Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, or with Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const OFFSET_REPLACE_STALE_MSG: &CStr = c"Replacing fields of an OffsetDateTime keeps the fixed UTC offset, which may no longer be correct after the change (e.g. replacing the month on a European-timezone datetime may move it into a different DST period). Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware field replacement. Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, or with Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const OFFSET_ROUND_STALE_MSG: &CStr = c"Rounding an OffsetDateTime keeps the fixed UTC offset, which may not be accurate in the rare case that the rounded time crosses a DST or other timezone boundary. Convert to a ZonedDateTime first (using .assume_tz()) for timezone-aware rounding. Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, or with Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const OFFSET_SHIFT_STALE_MSG: &CStr = c"Shifting an OffsetDateTime keeps the fixed UTC offset, which may not match the actual offset after a DST or other timezone transition (e.g. adding 1 day to 2024-03-09 12:00-07:00 gives 2024-03-10 12:00-07:00, but if this offset represents Denver, Colorado (America/Denver), the actual offset changed to -06:00 on that date). Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware arithmetic. Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, or with Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const PLAIN_DIFF_UNAWARE_MSG: &CStr = c"Calculating the difference between two PlainDateTime values does not account for timezone transitions that may have occurred between them: for example, PlainDateTime(2023, 3, 26, 3, 0) - PlainDateTime(2023, 3, 26, 1, 0) gives 2h, but in Amsterdam clocks jumped from 2:00 to 3:00 that morning, so only 1 real hour elapsed. Use .assume_tz('<tz>') for both values if you know the timezone. Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, or with Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const PLAIN_RELATIVE_TO_UNAWARE_MSG: &CStr = c"Using a PlainDateTime as reference does not account for timezone transitions: without a timezone, converting between calendar units (months, days) and exact time units (hours, seconds) is ambiguous across DST boundaries. Use .assume_tz('<tz>') for timezone-aware results. Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, or with Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const PLAIN_SHIFT_UNAWARE_MSG: &CStr = c"Shifting a PlainDateTime by exact time units does not account for timezone transitions that may occur in the interval (e.g. adding 2 hours to 2023-03-26 01:30 in Amsterdam crosses the spring-forward transition, so only 1 real hour has passed). Use .assume_tz('<tz>') + delta if you know the timezone. Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, or with Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const STALE_OFFSET_CALENDAR_MSG: &CStr = c"Computing calendar units (years, months, weeks, days) relative to an OffsetDateTime assumes the UTC offset remains constant throughout the period. If the region has since changed its rules (e.g. DST), the result may be off by an hour. Use ZonedDateTime for DST-aware calendar arithmetic. Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, or with Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const IGNORE_DST_DEPRECATED_MSG: &CStr = c"The `ignore_dst` parameter is deprecated. Use `stale_offset_ok` or `naive_arithmetic_ok` instead.";
+pub(crate) const OFFSET_FROM_TIMESTAMP_STALE_MSG: &CStr = c"Converting a UNIX timestamp to OffsetDateTime with a fixed UTC offset may produce an incorrect result: you can't know from the offset alone whether DST is in effect at this timestamp. Use ZonedDateTime.from_timestamp(ts, tz='<tz>') if you know the timezone, or Instant.from_timestamp() for timezone-agnostic exact time. Pass `stale_offset_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const OFFSET_NOW_STALE_MSG: &CStr = c"Getting the current time as an OffsetDateTime with a fixed UTC offset may be incorrect: the offset doesn't update when DST or other timezone rules change. Use ZonedDateTime.now('<tz>') if you know the timezone, or Instant.now() for timezone-agnostic exact time. Pass `stale_offset_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const OFFSET_REPLACE_STALE_MSG: &CStr = c"Replacing fields of an OffsetDateTime keeps the fixed UTC offset, which may no longer be correct after the change (e.g. replacing the month on a European-timezone datetime may move it into a different DST period). Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware field replacement. Pass `stale_offset_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const OFFSET_ROUND_STALE_MSG: &CStr = c"Rounding an OffsetDateTime keeps the fixed UTC offset, which may not be accurate in the rare case that the rounded time crosses a DST or other timezone boundary. Convert to a ZonedDateTime first (using .assume_tz()) for timezone-aware rounding. Pass `stale_offset_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const OFFSET_SHIFT_STALE_MSG: &CStr = c"Shifting an OffsetDateTime keeps the fixed UTC offset, which may not match the actual offset after a DST or other timezone transition (e.g. adding 1 day to 2024-03-09 12:00-07:00 gives 2024-03-10 12:00-07:00, but if this offset represents Denver, Colorado (America/Denver), the actual offset changed to -06:00 on that date). Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware arithmetic. Pass `stale_offset_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const PLAIN_DIFF_UNAWARE_MSG: &CStr = c"Calculating the difference between two PlainDateTime values does not account for timezone transitions that may have occurred between them: for example, PlainDateTime(2023, 3, 26, 3, 0) - PlainDateTime(2023, 3, 26, 1, 0) gives 2h, but in Amsterdam clocks jumped from 2:00 to 3:00 that morning, so only 1 real hour elapsed. Use .assume_tz('<tz>') for both values if you know the timezone. Pass `naive_arithmetic_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const PLAIN_RELATIVE_TO_UNAWARE_MSG: &CStr = c"Using a PlainDateTime as reference does not account for timezone transitions: without a timezone, converting between calendar units (months, days) and exact time units (hours, seconds) is ambiguous across DST boundaries. Use .assume_tz('<tz>') for timezone-aware results. Pass `naive_arithmetic_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const PLAIN_SHIFT_UNAWARE_MSG: &CStr = c"Shifting a PlainDateTime by exact time units does not account for timezone transitions that may occur in the interval (e.g. adding 2 hours to 2023-03-26 01:30 in Amsterdam crosses the spring-forward transition, so only 1 real hour has passed). Use .assume_tz('<tz>') + delta if you know the timezone. Pass `naive_arithmetic_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const STALE_OFFSET_CALENDAR_MSG: &CStr = c"Computing calendar units (years, months, weeks, days) relative to an OffsetDateTime assumes the UTC offset remains constant throughout the period. If the region has since changed its rules (e.g. DST), the result may be off by an hour. Use ZonedDateTime for DST-aware calendar arithmetic. Pass `stale_offset_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const ZONEINFO_NO_KEY_MSG: &CStr = c"Can't determine the IANA timezone ID of the given datetime: The 'key' attribute of the datetime's ZoneInfo object is None. 
 This typically means the ZoneInfo object represents the system timezone with an unknown ID. As an alternative, you can use OffsetDateTime.from_py_datetime(), but be aware this is a lossy conversion that only preserves the current UTC offset and discards future daylight saving rules. Please note that a timezone abbreviation like 'CEST' from datetime.tzname() is not a valid IANA timezone ID and cannot be used here.";

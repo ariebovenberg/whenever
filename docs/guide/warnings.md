@@ -16,7 +16,7 @@ fully, giving you several levels of control.
 For a full list of warning types and the operations that trigger them, see the
 {ref}`API reference <api>`:
 {class}`~whenever.PotentialDstBugWarning`,
-{class}`~whenever.TimeZoneUnawareArithmeticWarning`,
+{class}`~whenever.NaiveArithmeticWarning`,
 {class}`~whenever.PotentiallyStaleOffsetWarning`, and
 {class}`~whenever.DaysNotAlways24HoursWarning`.
 ```
@@ -42,7 +42,7 @@ To target a specific warning type instead:
 
 ```python
 # Only error on timezone-unaware arithmetic (PlainDateTime):
-warnings.filterwarnings("error", category=whenever.TimeZoneUnawareArithmeticWarning)
+warnings.filterwarnings("error", category=whenever.NaiveArithmeticWarning)
 
 # Only error on potentially stale offset operations (OffsetDateTime):
 warnings.filterwarnings("error", category=whenever.PotentiallyStaleOffsetWarning)
@@ -100,55 +100,75 @@ warnings.filterwarnings(
 ## Suppress specific calls
 
 Sometimes an operation is deliberately imprecise — and that's fine, as long as
-the decision is conscious and documented. Use the context managers provided by
-`whenever` to suppress the warning for specific operations:
+the decision is conscious and documented. Each method that may emit a
+DST-related warning accepts a boolean keyword argument that suppresses it:
+
+| Keyword argument | Suppresses | Used on |
+|---|---|---|
+| `assume_24h_days=True` | {class}`~whenever.DaysNotAlways24HoursWarning` | {class}`~whenever.TimeDelta` methods |
+| `stale_offset_ok=True` | {class}`~whenever.PotentiallyStaleOffsetWarning` | {class}`~whenever.OffsetDateTime` methods |
+| `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods |
+
+For example:
 
 ```python
-from whenever import PlainDateTime, ignore_timezone_unaware_arithmetic_warning
+from whenever import PlainDateTime
 
 # Naive arithmetic is acceptable here: these buses don't run across
 # DST boundaries (all departures are between 06:00 and 22:00).
-with ignore_timezone_unaware_arithmetic_warning():
-    next_departure = scheduled.add(hours=1)
+next_departure = scheduled.add(hours=1, naive_arithmetic_ok=True)
 ```
 
+The keyword argument documents the decision at the call site
+while keeping the suppression limited to exactly one operation.
 
-The context manager documents the decision at the call site and keeps the
-suppression local — code outside the `with` block still sees the warning
-normally.
-
-The three context managers, one per warning type:
-
-| Context manager | Suppresses |
-|---|---|
-| {func}`~whenever.ignore_timezone_unaware_arithmetic_warning` | {class}`~whenever.TimeZoneUnawareArithmeticWarning` |
-| {func}`~whenever.ignore_potentially_stale_offset_warning` | {class}`~whenever.PotentiallyStaleOffsetWarning` |
-| {func}`~whenever.ignore_days_not_always_24h_warning` | {class}`~whenever.DaysNotAlways24HoursWarning` |
-
-:::{tip}
-
-Thes context managers can also be used as a decorator if you want to suppress
-warnings for an entire function:
-
-```python
-@ignore_timezone_unaware_arithmetic_warning()
-def next_departure(scheduled: PlainDateTime) -> PlainDateTime:
-    ...
+```{note}
+These keyword arguments supersede the ``ignore_dst`` keyword argument
+(deprecated in 0.10).
 ```
 
-:::
+### Operators
 
-There is no combined context manager for {class}`~whenever.PotentialDstBugWarning`
-as a whole; if you need to suppress all DST warnings in a block,
-use a {class}`warnings.catch_warnings` block:
+The `+` and `-` operators always emit warnings when applicable, because
+operators cannot accept keyword arguments. Use the method equivalents instead:
+
+- `dt + delta` → `dt.add(delta, ...)`
+- `dt - delta` → `dt.subtract(delta, ...)`
+- `dt_a - dt_b` → `dt_a.difference(dt_b)` (for {class}`~whenever.PlainDateTime`,
+  pass `naive_arithmetic_ok=True`)
+
+Alternatively, suppress operator warnings with Python's standard
+{func}`warnings.filterwarnings`.
+
+## Using Python's warnings infrastructure
+
+Since `whenever` warnings are standard Python warnings, you can also
+suppress them with {class}`warnings.catch_warnings`:
 
 ```python
 import warnings
 import whenever
 
 with warnings.catch_warnings():
-    warnings.simplefilter("ignore", whenever.PotentialDstBugWarning)
-    # ... all DST warnings suppressed here
+    warnings.simplefilter("ignore", whenever.PotentiallyStaleOffsetWarning)
+    # ... all stale-offset warnings suppressed inside this block
+```
+
+This is useful when you want to blanket-suppress warnings for a block of code
+or for operators (which can't take keyword arguments).
+
+```{admonition} Limitation before Python 3.14
+:class: warning
+
+Before Python 3.14, {class}`warnings.catch_warnings` is **not context-safe**:
+in concurrent code (threads or async tasks) the suppression filter may leak to
+other contexts, or other contexts may interfere with yours. This is a
+[known CPython limitation](https://docs.python.org/3/library/warnings.html#warning-filter)
+addressed by the ``PYTHON_CONTEXT_AWARE_WARNINGS`` flag introduced in
+Python 3.14.
+
+The per-method keyword arguments described above don't have this limitation —
+they suppress the warning for exactly one call, regardless of concurrency.
 ```
 
 ## Exploratory use and scripts
@@ -165,7 +185,7 @@ warnings.filterwarnings("ignore", category=whenever.PotentialDstBugWarning)
 
 This is fine for exploration. If you later promote the code to production,
 revisit the suppressed warnings and decide for each one whether to fix the
-underlying issue or document it with a context manager.
+underlying issue or suppress it explicitly with the appropriate keyword argument.
 
 ## Choosing the right approach
 
@@ -173,6 +193,7 @@ underlying issue or document it with a context manager.
 |---|---|
 | Production code | `filterwarnings("error", ...)` at startup |
 | CI / test suite | `filterwarnings = error::whenever.PotentialDstBugWarning` in `pytest.ini` |
-| One intentional imprecision | `with ignore_..._warning():` + a comment |
+| One intentional imprecision | Per-method kwarg (e.g. `naive_arithmetic_ok=True`) + a comment |
+| Suppress operator warnings | `warnings.catch_warnings()` block (Python ≥ 3.14 for concurrency safety) |
 | Entire module intentionally imprecise | `filterwarnings("ignore", ..., module=r"mymodule\.*")` |
 | Exploratory scripts | `filterwarnings("ignore", ...)` globally |

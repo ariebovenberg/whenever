@@ -355,7 +355,7 @@ pub(crate) fn set_timedelta_from_kwargs(
     key: PyObj,
     value: PyObj,
     delta: &mut TimeDelta,
-    state: &State,
+    units: &mut ExactUnitSet,
     eq: fn(PyObj, PyObj) -> bool,
     str_weeks: PyObj,
     str_days: PyObj,
@@ -366,55 +366,27 @@ pub(crate) fn set_timedelta_from_kwargs(
     str_microseconds: PyObj,
     str_nanoseconds: PyObj,
 ) -> PyResult<bool> {
-    if eq(key, str_weeks) {
-        *delta = delta
-            .add(ExactUnit::Weeks.parse_py_number(value)?)
-            .ok_or_range_err()?;
-        if !state.cv_ignore_days_not_always_24h.get()? {
-            warn_with_class(
-                state.warn_days_not_always_24h,
-                doc::DAYS_NOT_ALWAYS_24H_MSG,
-                1,
-            )?;
-        }
+    let unit = if eq(key, str_weeks) {
+        ExactUnit::Weeks
     } else if eq(key, str_days) {
-        *delta = delta
-            .add(ExactUnit::Days.parse_py_number(value)?)
-            .ok_or_range_err()?;
-        if !state.cv_ignore_days_not_always_24h.get()? {
-            warn_with_class(
-                state.warn_days_not_always_24h,
-                doc::DAYS_NOT_ALWAYS_24H_MSG,
-                1,
-            )?;
-        }
+        ExactUnit::Days
     } else if eq(key, str_hours) {
-        *delta = delta
-            .add(ExactUnit::Hours.parse_py_number(value)?)
-            .ok_or_range_err()?;
+        ExactUnit::Hours
     } else if eq(key, str_minutes) {
-        *delta = delta
-            .add(ExactUnit::Minutes.parse_py_number(value)?)
-            .ok_or_range_err()?;
+        ExactUnit::Minutes
     } else if eq(key, str_seconds) {
-        *delta = delta
-            .add(ExactUnit::Seconds.parse_py_number(value)?)
-            .ok_or_range_err()?;
+        ExactUnit::Seconds
     } else if eq(key, str_milliseconds) {
-        *delta = delta
-            .add(ExactUnit::Milliseconds.parse_py_number(value)?)
-            .ok_or_range_err()?;
+        ExactUnit::Milliseconds
     } else if eq(key, str_microseconds) {
-        *delta = delta
-            .add(ExactUnit::Microseconds.parse_py_number(value)?)
-            .ok_or_range_err()?;
+        ExactUnit::Microseconds
     } else if eq(key, str_nanoseconds) {
-        *delta = delta
-            .add(ExactUnit::Nanoseconds.parse_py_number(value)?)
-            .ok_or_range_err()?;
+        ExactUnit::Nanoseconds
     } else {
         return Ok(false);
-    }
+    };
+    units.insert(unit);
+    *delta = delta.add(unit.parse_py_number(value)?).ok_or_range_err()?;
     Ok(true)
 }
 
@@ -423,6 +395,8 @@ where
     K: IntoIterator<Item = (PyObj, PyObj)>,
 {
     let mut result = TimeDelta::ZERO;
+    let mut suppress_24h_warning = false;
+    let mut units = ExactUnitSet::EMPTY;
 
     let &State {
         str_weeks,
@@ -433,26 +407,42 @@ where
         str_milliseconds,
         str_microseconds,
         str_nanoseconds,
+        str_assume_24h_days,
         ..
     } = state;
 
     handle_kwargs(fname, kwargs, |key, value, eq| {
-        set_timedelta_from_kwargs(
-            key,
-            value,
-            &mut result,
-            state,
-            eq,
-            str_weeks,
-            str_days,
-            str_hours,
-            str_minutes,
-            str_seconds,
-            str_milliseconds,
-            str_microseconds,
-            str_nanoseconds,
-        )
+        if eq(key, str_assume_24h_days) {
+            suppress_24h_warning = value.is_truthy();
+            Ok(true)
+        } else {
+            set_timedelta_from_kwargs(
+                key,
+                value,
+                &mut result,
+                &mut units,
+                eq,
+                str_weeks,
+                str_days,
+                str_hours,
+                str_minutes,
+                str_seconds,
+                str_milliseconds,
+                str_microseconds,
+                str_nanoseconds,
+            )
+        }
     })?;
+
+    if !suppress_24h_warning
+        && (units.contains(ExactUnit::Days) || units.contains(ExactUnit::Weeks))
+    {
+        warn_with_class(
+            state.warn_days_not_always_24h,
+            doc::DAYS_NOT_ALWAYS_24H_MSG,
+            1,
+        )?;
+    }
 
     Ok(result)
 }
@@ -1230,12 +1220,14 @@ fn in_units(
         str_round_increment,
         round_mode_strs,
         str_relative_to,
+        str_assume_24h_days,
         ..
     } = state;
 
     let mut round_mode = round::Mode::Trunc;
     let mut round_increment = math::RoundIncrement::MIN;
     let mut relative_to_arg = None;
+    let mut suppress_24h_warning = false;
 
     handle_kwargs("in_units", kwargs, |key, value, eq| {
         if eq(key, str_round_mode) {
@@ -1244,6 +1236,8 @@ fn in_units(
             round_increment = math::RoundIncrement::from_py(value)?;
         } else if eq(key, str_relative_to) {
             relative_to_arg = Some(value);
+        } else if eq(key, str_assume_24h_days) {
+            suppress_24h_warning = value.is_truthy();
         } else {
             return Ok(false);
         }
@@ -1289,7 +1283,7 @@ fn in_units(
             false,
         )
     } else {
-        if units.has_days_or_weeks() && !state.cv_ignore_days_not_always_24h.get()? {
+        if units.has_days_or_weeks() && !suppress_24h_warning {
             warn_with_class(
                 state.warn_days_not_always_24h,
                 doc::DAYS_NOT_ALWAYS_24H_MSG,
@@ -1314,7 +1308,19 @@ fn total(
 ) -> PyReturn {
     let state = cls.state();
     let unit = AnyUnit::from_py(handle_one_arg("total", args)?, state)?;
-    let relative_to_arg = handle_one_kwarg("total", state.str_relative_to, kwargs)?;
+
+    let mut relative_to_arg = None;
+    let mut suppress_24h_warning = false;
+    handle_kwargs("total", kwargs, |key, value, eq| {
+        if eq(key, state.str_relative_to) {
+            relative_to_arg = Some(value);
+        } else if eq(key, state.str_assume_24h_days) {
+            suppress_24h_warning = value.is_truthy();
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    })?;
 
     let cal_unit = match unit.to_exact(relative_to_arg.is_none()) {
         Ok(ExactUnit::Nanoseconds) => {
@@ -1322,9 +1328,7 @@ fn total(
             return slf.total_nanos().to_py();
         }
         Ok(u) => {
-            if (u == ExactUnit::Weeks || u == ExactUnit::Days)
-                && !state.cv_ignore_days_not_always_24h.get()?
-            {
+            if (u == ExactUnit::Weeks || u == ExactUnit::Days) && !suppress_24h_warning {
                 warn_with_class(
                     state.warn_days_not_always_24h,
                     doc::DAYS_NOT_ALWAYS_24H_MSG,

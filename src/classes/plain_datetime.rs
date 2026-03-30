@@ -273,13 +273,7 @@ fn __sub__(a: PyObj, b: PyObj) -> PyReturn {
         let (dt_type, slf) = unsafe { a.assume_heaptype::<DateTime>() };
         let (_, other) = unsafe { b.assume_heaptype::<DateTime>() };
         let state = dt_type.state();
-        if !state.cv_ignore_tz_unaware_arithmetic.get()? {
-            warn_with_class(
-                state.warn_tz_unaware_arithmetic,
-                doc::PLAIN_DIFF_UNAWARE_MSG,
-                1,
-            )?;
-        }
+        warn_with_class(state.warn_naive_arithmetic, doc::PLAIN_DIFF_UNAWARE_MSG, 1)?;
         slf.assume_utc()
             .diff(other.assume_utc())
             .to_obj(state.time_delta_type)
@@ -309,13 +303,7 @@ fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                 .ok_or_range_err()?
                 .to_obj(dt_type)
         } else if let Some(mut tdelta) = obj_b.extract(state.time_delta_type) {
-            if !state.cv_ignore_tz_unaware_arithmetic.get()? {
-                warn_with_class(
-                    state.warn_tz_unaware_arithmetic,
-                    doc::PLAIN_SHIFT_UNAWARE_MSG,
-                    1,
-                )?;
-            }
+            warn_with_class(state.warn_naive_arithmetic, doc::PLAIN_SHIFT_UNAWARE_MSG, 1)?;
             tdelta = tdelta.negate_if(negate);
             a.shift(tdelta).ok_or_range_err()?.to_obj(dt_type)
         } else if let Some(dt) = obj_b.extract(state.datetime_delta_type) {
@@ -327,12 +315,8 @@ fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                 days = -days;
                 tdelta = -tdelta;
             }
-            if !tdelta.is_zero() && !state.cv_ignore_tz_unaware_arithmetic.get()? {
-                warn_with_class(
-                    state.warn_tz_unaware_arithmetic,
-                    doc::PLAIN_SHIFT_UNAWARE_MSG,
-                    1,
-                )?;
+            if !tdelta.is_zero() {
+                warn_with_class(state.warn_naive_arithmetic, doc::PLAIN_SHIFT_UNAWARE_MSG, 1)?;
             }
             a.shift_date(months, days)
                 .and_then(|dt| dt.shift(tdelta))
@@ -523,6 +507,7 @@ fn shift_method(
     negate: bool,
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
+    let state = cls.state();
     let &State {
         str_years,
         str_months,
@@ -535,32 +520,35 @@ fn shift_method(
         str_microseconds,
         str_nanoseconds,
         str_ignore_dst,
+        str_naive_arithmetic_ok,
         time_delta_type,
         date_delta_type,
         datetime_delta_type,
         itemized_date_delta_type,
         itemized_delta_type,
         warn_deprecation,
-        warn_tz_unaware_arithmetic,
-        cv_ignore_tz_unaware_arithmetic,
+        warn_naive_arithmetic,
         ..
-    } = cls.state();
+    } = state;
     let mut months = DeltaMonths::ZERO;
     let mut days = DeltaDays::ZERO;
     let mut tdelta = TimeDelta::ZERO;
     let mut got_ignore_dst = false;
+    let mut suppress_unaware = false;
 
     match *args {
         [arg] => {
-            match kwargs.next() {
-                Some((key, _value)) if kwargs.len() == 1 && key.py_eq(str_ignore_dst)? => {
+            for (key, value) in kwargs.by_ref() {
+                if key.py_eq(str_ignore_dst)? {
                     got_ignore_dst = true;
+                } else if key.py_eq(str_naive_arithmetic_ok)? {
+                    suppress_unaware = value.is_truthy();
+                } else {
+                    raise_type_err(format!(
+                        "{fname}() can't mix positional and keyword arguments"
+                    ))?;
                 }
-                Some(_) => raise_type_err(format!(
-                    "{fname}() can't mix positional and keyword arguments"
-                ))?,
-                None => {}
-            };
+            }
             if let Some(t) = arg.extract(time_delta_type) {
                 tdelta = t;
             } else if let Some(ddelta) = arg.extract(date_delta_type) {
@@ -588,6 +576,9 @@ fn shift_method(
             handle_kwargs(fname, kwargs, |key, value, eq| {
                 if eq(key, str_ignore_dst) {
                     got_ignore_dst = true;
+                    Ok(true)
+                } else if eq(key, str_naive_arithmetic_ok) {
+                    suppress_unaware = value.is_truthy();
                     Ok(true)
                 } else {
                     handle_delta_unit_kwargs(
@@ -627,8 +618,8 @@ fn shift_method(
     days = days.negate_if(negate);
     tdelta = tdelta.negate_if(negate);
 
-    if !tdelta.is_zero() && !cv_ignore_tz_unaware_arithmetic.get()? {
-        warn_with_class(warn_tz_unaware_arithmetic, doc::PLAIN_SHIFT_UNAWARE_MSG, 1)?;
+    if !tdelta.is_zero() && !suppress_unaware {
+        warn_with_class(warn_naive_arithmetic, doc::PLAIN_SHIFT_UNAWARE_MSG, 1)?;
     }
     slf.shift_date(months, days)
         .and_then(|dt| dt.shift(tdelta))
@@ -643,18 +634,24 @@ fn difference(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    // difference() is deprecated entirely
-    warn_with_class(state.warn_deprecation, c"The difference() method is deprecated, use the subtraction operator or since() method instead. ", 1)?;
-    // Accept but ignore the deprecated ignore_dst kwarg
-    if let Some((key, _value)) = kwargs.next()
-        && !(kwargs.len() == 1 && key.py_eq(state.str_ignore_dst)?)
-    {
-        raise_type_err(format!("Unknown keyword argument: {key}"))?;
+    let mut suppress_unaware = false;
+    // Accept deprecated ignore_dst kwarg and new naive_arithmetic_ok kwarg
+    for (key, value) in kwargs.by_ref() {
+        if key.py_eq(state.str_ignore_dst)? {
+            warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
+        } else if key.py_eq(state.str_naive_arithmetic_ok)? {
+            suppress_unaware = value.is_truthy();
+        } else {
+            raise_type_err(format!("Unknown keyword argument: {key}"))?;
+        }
     }
     let [arg] = *args else {
         raise_type_err("difference() takes exactly 1 argument")?
     };
     if let Some(dt) = arg.extract(cls) {
+        if !suppress_unaware {
+            warn_with_class(state.warn_naive_arithmetic, doc::PLAIN_DIFF_UNAWARE_MSG, 1)?;
+        }
         slf.assume_utc()
             .diff(dt.assume_utc())
             .to_obj(state.time_delta_type)
@@ -959,20 +956,33 @@ fn plain_since(
     let other = handle_one_arg(fname, args)?
         .extract(cls)
         .ok_or_type_err("argument must be a whenever.PlainDateTime")?;
-    let kwargs = SinceUntilKwargs::parse(fname, state, kwargs)?;
+
+    let mut suppress_unaware = false;
+    let mut got_ignore_dst = false;
+    let since_kwargs = SinceUntilKwargs::parse_with(fname, state, kwargs, |key, value, eq| {
+        if eq(key, state.str_naive_arithmetic_ok) {
+            suppress_unaware = value.is_truthy();
+            Ok(true)
+        } else if eq(key, state.str_ignore_dst) {
+            got_ignore_dst = true;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    })?;
+
+    if got_ignore_dst {
+        warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
+    }
 
     // Warn only when the output contains exact time units (hours/min/sec/ns).
     // Calendar-only output (years/months/weeks/days) doesn't involve clock time,
     // so there's no DST ambiguity in that case.
-    if kwargs.has_exact_output() && !state.cv_ignore_tz_unaware_arithmetic.get()? {
-        warn_with_class(
-            state.warn_tz_unaware_arithmetic,
-            doc::PLAIN_DIFF_UNAWARE_MSG,
-            1,
-        )?;
+    if since_kwargs.has_exact_output() && !suppress_unaware {
+        warn_with_class(state.warn_naive_arithmetic, doc::PLAIN_DIFF_UNAWARE_MSG, 1)?;
     }
 
-    plain_since_inner(state, slf, other, kwargs, flip)
+    plain_since_inner(state, slf, other, since_kwargs, flip)
 }
 
 /// Resolve a non-ZonedDateTime `relative_to` argument to a `DateTime`,
@@ -990,16 +1000,16 @@ pub(crate) fn resolve_local_relative_to(
     warn_offset: bool,
 ) -> PyResult<DateTime> {
     if let Some(pdt) = arg.extract(state.plain_datetime_type) {
-        if warn_plain && !state.cv_ignore_tz_unaware_arithmetic.get()? {
+        if warn_plain {
             warn_with_class(
-                state.warn_tz_unaware_arithmetic,
+                state.warn_naive_arithmetic,
                 doc::PLAIN_RELATIVE_TO_UNAWARE_MSG,
                 1,
             )?;
         }
         Ok(pdt)
     } else if let Some(odt) = arg.extract(state.offset_datetime_type) {
-        if warn_offset && !state.cv_ignore_potentially_stale_offset.get()? {
+        if warn_offset {
             warn_with_class(
                 state.warn_potentially_stale_offset,
                 doc::STALE_OFFSET_CALENDAR_MSG,

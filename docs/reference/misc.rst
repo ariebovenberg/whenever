@@ -17,9 +17,6 @@ Context managers
 ----------------
 
 .. autoclass:: patch_current_time
-.. autoclass:: ignore_timezone_unaware_arithmetic_warning
-.. autoclass:: ignore_days_not_always_24h_warning
-.. autoclass:: ignore_potentially_stale_offset_warning
 
 
 Timezone data

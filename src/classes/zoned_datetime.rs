@@ -1539,17 +1539,11 @@ fn shift_method(
 
 fn difference(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, arg: PyObj) -> PyReturn {
     let &State {
-        warn_deprecation,
         instant_type,
         offset_datetime_type,
         time_delta_type,
         ..
     } = cls.state();
-    warn_with_class(
-        warn_deprecation,
-        c"The difference() method is deprecated. Use the subtraction operator or since() method instead.",
-        1,
-    )?;
     let inst_a = slf.instant();
 
     let inst_b = if let Some(zdt) = arg.extract(cls) {

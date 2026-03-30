@@ -8,17 +8,15 @@ import pytest
 from whenever import (
     ItemizedDateDelta,
     ItemizedDelta,
+    NaiveArithmeticWarning,
     OffsetDateTime,
     PlainDateTime,
     PotentiallyStaleOffsetWarning,
     TimeDelta,
-    TimeZoneUnawareArithmeticWarning,
     ZonedDateTime,
-    ignore_potentially_stale_offset_warning,
-    ignore_timezone_unaware_arithmetic_warning,
 )
 
-from .common import AlwaysEqual, NeverEqual
+from .common import AlwaysEqual, NeverEqual, suppress
 from .test_date_delta import INVALID_DDELTAS
 from .test_time_delta import INVALID_TDELTAS
 
@@ -556,7 +554,7 @@ class TestInUnitsRelativeToNonZoned:
         # calendar delta + exact output → warns (output has exact)
         d = ItemizedDelta(months=1)
         ref = PlainDateTime(2020, 1, 1)
-        with pytest.warns(TimeZoneUnawareArithmeticWarning):
+        with pytest.warns(NaiveArithmeticWarning):
             result = d.in_units(["days", "hours"], relative_to=ref)
         assert result == ItemizedDelta(days=31)
 
@@ -564,7 +562,7 @@ class TestInUnitsRelativeToNonZoned:
         # mixed delta + mixed output → warns
         d = ItemizedDelta(months=1, hours=5)
         ref = PlainDateTime(2020, 1, 1)
-        with pytest.warns(TimeZoneUnawareArithmeticWarning):
+        with pytest.warns(NaiveArithmeticWarning):
             result = d.in_units(["days", "hours"], relative_to=ref)
         assert result == ItemizedDelta(days=31, hours=5)
 
@@ -616,7 +614,7 @@ class TestInUnitsRelativeToNonZoned:
 
     def test_warning_suppressed_plain(self):
         d = ItemizedDelta(months=1)
-        with ignore_timezone_unaware_arithmetic_warning():
+        with suppress(NaiveArithmeticWarning):
             result = d.in_units(
                 ["days", "hours"], relative_to=PlainDateTime(2020, 1, 1)
             )
@@ -624,7 +622,7 @@ class TestInUnitsRelativeToNonZoned:
 
     def test_warning_suppressed_offset(self):
         d = ItemizedDelta(months=1)
-        with ignore_potentially_stale_offset_warning():
+        with suppress(PotentiallyStaleOffsetWarning):
             result = d.in_units(
                 ["weeks", "days"],
                 relative_to=OffsetDateTime(2020, 1, 1, offset=3),
@@ -634,7 +632,7 @@ class TestInUnitsRelativeToNonZoned:
     def test_results_match_zoned_utc(self):
         # Plain/Offset should give same result as ZonedDateTime in UTC
         d = ItemizedDelta(months=2, hours=48)
-        with ignore_timezone_unaware_arithmetic_warning():
+        with suppress(NaiveArithmeticWarning):
             plain_result = d.in_units(
                 ["months", "days", "hours"],
                 relative_to=PlainDateTime(2020, 3, 15, 10),
@@ -978,16 +976,16 @@ class TestTotal:
         assert result == pytest.approx(10.5)
 
         # exact delta + calendar unit → warns (crosses boundary)
-        with pytest.warns(TimeZoneUnawareArithmeticWarning):
+        with pytest.warns(NaiveArithmeticWarning):
             d_exact.total("days", relative_to=PlainDateTime(2020, 1, 1))
 
         # calendar delta + exact unit → warns (crosses boundary)
-        with pytest.warns(TimeZoneUnawareArithmeticWarning):
+        with pytest.warns(NaiveArithmeticWarning):
             d_cal.total("hours", relative_to=PlainDateTime(2020, 1, 1))
 
         # nanoseconds result is int; uses mixed delta to trigger warning
         d_ns_mixed = ItemizedDelta(months=1, nanoseconds=500_000_000)
-        with pytest.warns(TimeZoneUnawareArithmeticWarning):
+        with pytest.warns(NaiveArithmeticWarning):
             result = d_ns_mixed.total(
                 "nanoseconds", relative_to=PlainDateTime(2020, 1, 1)
             )
@@ -1031,10 +1029,10 @@ class TestTotal:
 
     def test_relative_to_warning_suppressed(self):
         d = ItemizedDelta(months=1)
-        with ignore_timezone_unaware_arithmetic_warning():
+        with suppress(NaiveArithmeticWarning):
             result = d.total("hours", relative_to=PlainDateTime(2020, 1, 1))
         assert result == pytest.approx(744.0)
-        with ignore_potentially_stale_offset_warning():
+        with suppress(PotentiallyStaleOffsetWarning):
             result = d.total(
                 "days", relative_to=OffsetDateTime(2020, 1, 1, offset=2)
             )
