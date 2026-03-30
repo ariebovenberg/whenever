@@ -627,11 +627,6 @@ fn shift_method(
 
 fn difference(cls: HeapType<Instant>, inst_a: Instant, obj_b: PyObj) -> PyReturn {
     let state = cls.state();
-    warn_with_class(
-        state.warn_deprecation,
-        c"The difference() method is deprecated. Use the subtraction operator instead.",
-        1,
-    )?;
 
     let inst_b = if let Some(i) = obj_b.extract(cls) {
         i

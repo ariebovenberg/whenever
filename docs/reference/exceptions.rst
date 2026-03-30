@@ -6,7 +6,7 @@ Exceptions and warnings
 Warnings
 --------
 
-.. autoexception:: TimeZoneUnawareArithmeticWarning
+.. autoexception:: NaiveArithmeticWarning
    :show-inheritance:
 
 .. autoexception:: DaysNotAlways24HoursWarning

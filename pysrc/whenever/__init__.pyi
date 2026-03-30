@@ -65,7 +65,7 @@ __all__ = [
     # Exceptions/warnings
     "DaysNotAlways24HoursWarning",
     "PotentiallyStaleOffsetWarning",
-    "TimeZoneUnawareArithmeticWarning",
+    "NaiveArithmeticWarning",
     "PotentialDstBugWarning",
     "WheneverDeprecationWarning",
     "SkippedTime",
@@ -420,6 +420,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
+        assume_24h_days: bool = ...,
     ) -> None: ...
     @overload
     def total(
@@ -430,6 +431,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         relative_to: (
             ZonedDateTime | PlainDateTime | OffsetDateTime
         ),  # required for years/months
+        assume_24h_days: bool = ...,
     ) -> float: ...
     @overload
     def total(
@@ -446,6 +448,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         /,
         *,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = ...,
+        assume_24h_days: bool = ...,
     ) -> float: ...
     @overload
     def total(
@@ -454,6 +457,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         /,
         *,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = ...,
+        assume_24h_days: bool = ...,
     ) -> int: ...
     @deprecated("Use total('days') instead")
     def in_days_of_24h(self) -> float: ...
@@ -503,6 +507,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         ] = "trunc",
         round_increment: int = ...,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
+        assume_24h_days: bool = ...,
     ) -> ItemizedDelta: ...
     @overload
     def in_units(
@@ -532,6 +537,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         ] = "trunc",
         round_increment: int = ...,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = ...,
+        assume_24h_days: bool = ...,
     ) -> ItemizedDelta: ...
     def to_stdlib(self) -> _timedelta: ...
     @deprecated("Use to_stdlib() instead")
@@ -566,6 +572,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
             "half_trunc",
             "half_even",
         ] = "half_even",
+        assume_24h_days: bool = ...,
     ) -> Self: ...
     @overload
     def round(
@@ -584,6 +591,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
             "half_trunc",
             "half_even",
         ] = "half_even",
+        assume_24h_days: bool = ...,
     ) -> Self: ...
     @overload
     def add(self, other: TimeDelta, /) -> Self: ...
@@ -1471,6 +1479,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         /,
         *,
         ignore_dst: Literal[True] = ...,
+        stale_offset_ok: bool = ...,
     ) -> Self: ...
     @classmethod
     def from_timestamp(
@@ -1480,6 +1489,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         *,
         offset: int | TimeDelta,
         ignore_dst: Literal[True] = ...,
+        stale_offset_ok: bool = ...,
     ) -> Self: ...
     @classmethod
     def from_timestamp_millis(
@@ -1489,6 +1499,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         *,
         offset: int | TimeDelta,
         ignore_dst: Literal[True] = ...,
+        stale_offset_ok: bool = ...,
     ) -> Self: ...
     @classmethod
     def from_timestamp_nanos(
@@ -1498,6 +1509,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         *,
         offset: int | TimeDelta,
         ignore_dst: Literal[True] = ...,
+        stale_offset_ok: bool = ...,
     ) -> Self: ...
     @classmethod
     @deprecated("Use parse() with a pattern string instead")
@@ -1521,6 +1533,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         nanosecond: int = ...,
         offset: int | TimeDelta = ...,
         ignore_dst: Literal[True] = ...,
+        stale_offset_ok: bool = ...,
     ) -> Self: ...
     def replace_date(
         self,
@@ -1528,6 +1541,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         /,
         *,
         ignore_dst: Literal[True] = ...,
+        stale_offset_ok: bool = ...,
     ) -> Self: ...
     def replace_time(
         self,
@@ -1535,6 +1549,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         /,
         *,
         ignore_dst: Literal[True] = ...,
+        stale_offset_ok: bool = ...,
     ) -> Self: ...
     @overload
     def add(
@@ -1551,6 +1566,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         microseconds: float = 0,
         nanoseconds: int = 0,
         ignore_dst: Literal[True] = ...,
+        stale_offset_ok: bool = ...,
     ) -> Self: ...
     @overload
     def add(
@@ -1580,6 +1596,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         microseconds: float = 0,
         nanoseconds: int = 0,
         ignore_dst: Literal[True] = ...,
+        stale_offset_ok: bool = ...,
     ) -> Self: ...
     @overload
     def subtract(
@@ -1613,6 +1630,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
             "half_even",
         ] = "half_even",
         ignore_dst: Literal[True] = ...,
+        stale_offset_ok: bool = ...,
     ) -> Self: ...
     @overload
     def round(
@@ -1641,6 +1659,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
             "half_even",
         ] = "half_even",
         ignore_dst: Literal[True] = ...,
+        stale_offset_ok: bool = ...,
     ) -> Self: ...
     def assume_tz(
         self,
@@ -1884,6 +1903,122 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
     def replace_date(self, d: Date, /) -> Self: ...
     def replace_time(self, t: Time, /) -> Self: ...
     @overload
+    def since(
+        self,
+        b: Self,
+        /,
+        *,
+        total: Literal[
+            "years",
+            "months",
+            "weeks",
+            "days",
+            "hours",
+            "minutes",
+            "seconds",
+        ],
+        naive_arithmetic_ok: bool = ...,
+    ) -> float: ...
+    @overload
+    def since(
+        self,
+        b: Self,
+        /,
+        *,
+        total: Literal["nanoseconds"],
+        naive_arithmetic_ok: bool = ...,
+    ) -> int: ...
+    @overload
+    def since(
+        self,
+        b: Self,
+        /,
+        *,
+        in_units: Sequence[
+            Literal[
+                "years",
+                "months",
+                "weeks",
+                "days",
+                "hours",
+                "minutes",
+                "seconds",
+                "nanoseconds",
+            ]
+        ],
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = ...,
+        round_increment: int = ...,
+        naive_arithmetic_ok: bool = ...,
+    ) -> ItemizedDelta: ...
+    @overload
+    def until(
+        self,
+        b: Self,
+        /,
+        *,
+        total: Literal[
+            "years",
+            "months",
+            "weeks",
+            "days",
+            "hours",
+            "minutes",
+            "seconds",
+        ],
+        naive_arithmetic_ok: bool = ...,
+    ) -> float: ...
+    @overload
+    def until(
+        self,
+        b: Self,
+        /,
+        *,
+        total: Literal["nanoseconds"],
+        naive_arithmetic_ok: bool = ...,
+    ) -> int: ...
+    @overload
+    def until(
+        self,
+        b: Self,
+        /,
+        *,
+        in_units: Sequence[
+            Literal[
+                "years",
+                "months",
+                "weeks",
+                "days",
+                "hours",
+                "minutes",
+                "seconds",
+                "nanoseconds",
+            ]
+        ],
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = ...,
+        round_increment: int = ...,
+        naive_arithmetic_ok: bool = ...,
+    ) -> ItemizedDelta: ...
+    @overload
     def add(
         self,
         *,
@@ -1898,6 +2033,7 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         microseconds: float = 0,
         nanoseconds: int = 0,
         ignore_dst: Literal[True] = ...,
+        naive_arithmetic_ok: bool = ...,
     ) -> Self: ...
     @overload
     def add(
@@ -1922,6 +2058,7 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         microseconds: float = 0,
         nanoseconds: int = 0,
         ignore_dst: Literal[True] = ...,
+        naive_arithmetic_ok: bool = ...,
     ) -> Self: ...
     @overload
     def subtract(self, d: DateDelta, /) -> Self: ...
@@ -1933,9 +2070,13 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         *,
         ignore_dst: Literal[True] = ...,
     ) -> Self: ...
-    @deprecated("Use since() or subtraction operator instead")
     def difference(
-        self, other: Self, /, *, ignore_dst: Literal[True] = ...
+        self,
+        other: Self,
+        /,
+        *,
+        ignore_dst: Literal[True] = ...,
+        naive_arithmetic_ok: bool = ...,
     ) -> TimeDelta: ...
     def __add__(self, delta: TimeDelta | DateDelta, /) -> Self: ...
     @overload
@@ -2013,16 +2154,9 @@ def reset_tzpath(
 def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None: ...
 def available_timezones() -> set[str]: ...
 def reset_system_tz() -> None: ...
-def ignore_days_not_always_24h_warning() -> _GeneratorContextManager[None]: ...
-def ignore_potentially_stale_offset_warning() -> (
-    _GeneratorContextManager[None]
-): ...
-def ignore_timezone_unaware_arithmetic_warning() -> (
-    _GeneratorContextManager[None]
-): ...
 
 class PotentialDstBugWarning(UserWarning): ...
 class DaysNotAlways24HoursWarning(PotentialDstBugWarning): ...
 class PotentiallyStaleOffsetWarning(PotentialDstBugWarning): ...
-class TimeZoneUnawareArithmeticWarning(PotentialDstBugWarning): ...
+class NaiveArithmeticWarning(PotentialDstBugWarning): ...
 class WheneverDeprecationWarning(UserWarning): ...

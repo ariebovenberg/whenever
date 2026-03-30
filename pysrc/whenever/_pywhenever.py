@@ -19,7 +19,6 @@ from collections.abc import (
     Mapping,
     ValuesView,
 )
-from contextvars import ContextVar
 from datetime import (
     date as _date,
     datetime as _datetime,
@@ -132,7 +131,7 @@ __all__ = [
     # Exceptions/warnings
     "DaysNotAlways24HoursWarning",
     "PotentiallyStaleOffsetWarning",
-    "TimeZoneUnawareArithmeticWarning",
+    "NaiveArithmeticWarning",
     "PotentialDstBugWarning",
     "WheneverDeprecationWarning",
     "SkippedTime",
@@ -1947,6 +1946,7 @@ class TimeDelta(_Base):
             milliseconds: float = 0,
             microseconds: float = 0,
             nanoseconds: int = 0,
+            assume_24h_days: bool = False,
         ) -> None: ...
 
     def __init__(
@@ -1960,9 +1960,10 @@ class TimeDelta(_Base):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
+        assume_24h_days: bool = False,
     ) -> None:
         assert type(nanoseconds) is int  # catch this common mistake
-        if (weeks or days) and not _ignore_days_not_always_24h_warning.get():
+        if (weeks or days) and not assume_24h_days:
             warn(
                 DAYS_NOT_ALWAYS_24H_MSG,
                 DaysNotAlways24HoursWarning,
@@ -2012,6 +2013,7 @@ class TimeDelta(_Base):
         ],
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = _UNSET,
         _warn_stacklevel: int = 2,
+        assume_24h_days: bool = False,
     ) -> float | int:
         """The total size in the given unit, as a float (or int for nanoseconds)
 
@@ -2020,7 +2022,7 @@ class TimeDelta(_Base):
 
         - :class:`ZonedDateTime`: DST-aware; emits no warning
         - :class:`PlainDateTime`: no timezone context; emits
-          :class:`TimeZoneUnawareArithmeticWarning`
+          :class:`NaiveArithmeticWarning`
         - :class:`OffsetDateTime`: fixed offset; emits
           :class:`PotentiallyStaleOffsetWarning`
 
@@ -2033,21 +2035,19 @@ class TimeDelta(_Base):
                 # For non-zoned datetimes, we can just pretend to work in
                 # the UTC 'timezone' and continue with the tz aware logic.
                 if isinstance(relative_to, PlainDateTime):
-                    if not _ignore_timezone_unaware_arithmetic_warning.get():
-                        warn(
-                            PLAIN_RELATIVE_TO_UNAWARE_MSG,
-                            TimeZoneUnawareArithmeticWarning,
-                            stacklevel=_warn_stacklevel,
-                        )
+                    warn(
+                        PLAIN_RELATIVE_TO_UNAWARE_MSG,
+                        NaiveArithmeticWarning,
+                        stacklevel=_warn_stacklevel,
+                    )
                     relative_to = relative_to.assume_tz("UTC")
                 elif isinstance(relative_to, OffsetDateTime):
-                    if not _ignore_potentially_stale_offset_warning.get():
-                        warn(
-                            PotentiallyStaleOffsetWarning(
-                                STALE_OFFSET_CALENDAR_MSG
-                            ),
-                            stacklevel=_warn_stacklevel,
-                        )
+                    warn(
+                        PotentiallyStaleOffsetWarning(
+                            STALE_OFFSET_CALENDAR_MSG
+                        ),
+                        stacklevel=_warn_stacklevel,
+                    )
                     relative_to = relative_to.to_plain().assume_tz("UTC")
 
                 shifted = relative_to + self
@@ -2086,7 +2086,7 @@ class TimeDelta(_Base):
                     )
                 ) * sign
             elif unit in ("days", "weeks"):
-                if not _ignore_days_not_always_24h_warning.get():
+                if not assume_24h_days:
                     warn(
                         DAYS_NOT_ALWAYS_24H_MSG,
                         DaysNotAlways24HoursWarning,
@@ -2258,6 +2258,7 @@ class TimeDelta(_Base):
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = _UNSET,
+        assume_24h_days: bool = False,
     ) -> ItemizedDelta:
         """Convert to a :class:`ItemizedDelta` with the specified units
 
@@ -2287,7 +2288,7 @@ class TimeDelta(_Base):
 
             - :class:`ZonedDateTime`: DST-aware; emits no warning
             - :class:`PlainDateTime`: does not account for time zones; emits
-              :class:`TimeZoneUnawareArithmeticWarning`
+              :class:`NaiveArithmeticWarning`
             - :class:`OffsetDateTime`: does not account for DST changes; emits
               :class:`PotentiallyStaleOffsetWarning`
         """
@@ -2308,21 +2309,15 @@ class TimeDelta(_Base):
         if relative_to is not _UNSET:
             has_cal = has_years_months or "days" in units or "weeks" in units
             if isinstance(relative_to, PlainDateTime):
-                if (
-                    has_cal
-                    and not _ignore_timezone_unaware_arithmetic_warning.get()
-                ):
+                if has_cal:
                     warn(
                         PLAIN_RELATIVE_TO_UNAWARE_MSG,
-                        TimeZoneUnawareArithmeticWarning,
+                        NaiveArithmeticWarning,
                         stacklevel=2,
                     )
                 relative_to = relative_to.assume_tz("UTC")
             elif isinstance(relative_to, OffsetDateTime):
-                if (
-                    has_cal
-                    and not _ignore_potentially_stale_offset_warning.get()
-                ):
+                if has_cal:
                     warn(
                         PotentiallyStaleOffsetWarning(
                             STALE_OFFSET_CALENDAR_MSG
@@ -2337,9 +2332,7 @@ class TimeDelta(_Base):
                 round_increment=round_increment,
             )
 
-        if (
-            "days" in units or "weeks" in units
-        ) and not _ignore_days_not_always_24h_warning.get():
+        if ("days" in units or "weeks" in units) and not assume_24h_days:
             warn(
                 DAYS_NOT_ALWAYS_24H_MSG,
                 DaysNotAlways24HoursWarning,
@@ -2543,6 +2536,7 @@ class TimeDelta(_Base):
         *,
         increment: int = 1,
         mode: RoundModeStr = "half_even",
+        assume_24h_days: bool = False,
     ) -> TimeDelta:
         """Round the delta to the specified unit and increment,
         or to a multiple of another :class:`TimeDelta`.
@@ -2562,12 +2556,9 @@ class TimeDelta(_Base):
                 raise TypeError(
                     "Cannot specify both a TimeDelta and an increment"
                 )
-            increment_ns = unit._to_round_increment_ns(True)
+            increment_ns = unit._to_round_increment_ns(not assume_24h_days)
         else:
-            if (
-                unit in ("day", "week")
-                and not _ignore_days_not_always_24h_warning.get()
-            ):
+            if unit in ("day", "week") and not assume_24h_days:
                 warn(
                     DAYS_NOT_ALWAYS_24H_MSG,
                     DaysNotAlways24HoursWarning,
@@ -4177,7 +4168,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             :class:`OffsetDateTime` reference point.
 
             - :class:`ZonedDateTime`: DST-aware; emits no warning
-            - :class:`PlainDateTime`: emits :class:`TimeZoneUnawareArithmeticWarning`
+            - :class:`PlainDateTime`: emits :class:`NaiveArithmeticWarning`
               when the conversion crosses the calendar/exact-time boundary
               (i.e. the delta or output mixes calendar and exact-time units).
               Pure calendar-to-calendar or exact-to-exact conversions do not warn.
@@ -4188,21 +4179,17 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         has_exact_in_units = any(map(_EXACT_TIME_UNITS.__contains__, units))
         has_cal_in_units = any(map(_CAL_DELTA_UNITS.__contains__, units))
         if isinstance(relative_to, PlainDateTime):
-            if (
-                (self._has_exact_time() or has_exact_in_units)
-                and (self._has_cal() or has_cal_in_units)
-                and not _ignore_timezone_unaware_arithmetic_warning.get()
+            if (self._has_exact_time() or has_exact_in_units) and (
+                self._has_cal() or has_cal_in_units
             ):
                 warn(
                     PLAIN_RELATIVE_TO_UNAWARE_MSG,
-                    TimeZoneUnawareArithmeticWarning,
+                    NaiveArithmeticWarning,
                     stacklevel=2,
                 )
             relative_to = relative_to.assume_tz("UTC")
         elif isinstance(relative_to, OffsetDateTime):
-            if (
-                self._has_cal() or has_cal_in_units
-            ) and not _ignore_potentially_stale_offset_warning.get():
+            if self._has_cal() or has_cal_in_units:
                 warn(
                     PotentiallyStaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG),
                     stacklevel=2,
@@ -4231,7 +4218,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             :class:`OffsetDateTime` reference point.
 
             - :class:`ZonedDateTime`: DST-aware; emits no warning
-            - :class:`PlainDateTime`: emits :class:`TimeZoneUnawareArithmeticWarning`
+            - :class:`PlainDateTime`: emits :class:`NaiveArithmeticWarning`
               when the conversion crosses the calendar/exact-time boundary
               (i.e. the delta or target unit mixes calendar and exact-time units).
               Pure calendar-to-calendar or exact-to-exact conversions do not warn.
@@ -4241,21 +4228,17 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         """
         is_exact_unit = unit in _EXACT_TIME_UNITS
         if isinstance(relative_to, PlainDateTime):
-            if (
-                (self._has_exact_time() or is_exact_unit)
-                and (self._has_cal() or not is_exact_unit)
-                and not _ignore_timezone_unaware_arithmetic_warning.get()
+            if (self._has_exact_time() or is_exact_unit) and (
+                self._has_cal() or not is_exact_unit
             ):
                 warn(
                     PLAIN_RELATIVE_TO_UNAWARE_MSG,
-                    TimeZoneUnawareArithmeticWarning,
+                    NaiveArithmeticWarning,
                     stacklevel=2,
                 )
             relative_to = relative_to.assume_tz("UTC")
         elif isinstance(relative_to, OffsetDateTime):
-            if (
-                self._has_cal() or not is_exact_unit
-            ) and not _ignore_potentially_stale_offset_warning.get():
+            if self._has_cal() or not is_exact_unit:
                 warn(
                     PotentiallyStaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG),
                     stacklevel=2,
@@ -5833,17 +5816,14 @@ class _ExactTime(_BasicConversions):
         other: Instant | OffsetDateTime | ZonedDateTime,
         /,
     ) -> TimeDelta:
-        """Calculate the difference between two instants in time.
+        """Calculate the exact time difference between two datetimes.
 
-        .. deprecated:: 0.10.0
+        This method returns the exact elapsed :class:`TimeDelta` between
+        two instants in time. Equivalent to the subtraction operator (``-``).
 
-           Use the subtraction operator instead
+        Use :meth:`since` or :meth:`until` for more advanced options such as
+        calendar units, unit decomposition, and rounding.
         """
-        warn(
-            "The difference() method is deprecated. Use the subtraction operator instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
         return self - other  # type: ignore[operator, no-any-return]
 
     def __eq__(self, other: object) -> bool:
@@ -6545,7 +6525,12 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     @classmethod
     def now(
-        cls, offset: int | TimeDelta, /, *, ignore_dst: bool = _UNSET
+        cls,
+        offset: int | TimeDelta,
+        /,
+        *,
+        ignore_dst: bool = _UNSET,
+        stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Create an instance from the current time.
 
@@ -6555,7 +6540,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         may be incorrect: the offset doesn't update when DST or other timezone
         rules change. Use ``ZonedDateTime.now('<tz>')`` if you know the timezone,
         or ``Instant.now()`` for timezone-agnostic exact time.
-        Suppress with :func:`~whenever.ignore_potentially_stale_offset_warning`.
+        Pass ``stale_offset_ok=True`` to suppress.
         """
         if ignore_dst is not _UNSET:
             warn(
@@ -6563,7 +6548,7 @@ class OffsetDateTime(_ExactAndLocalTime):
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
-        if not _ignore_potentially_stale_offset_warning.get():
+        if not stale_offset_ok:
             warn(
                 OFFSET_NOW_STALE_MSG,
                 PotentiallyStaleOffsetWarning,
@@ -6626,6 +6611,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         *,
         offset: int | TimeDelta,
         ignore_dst: bool = _UNSET,
+        stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in seconds).
 
@@ -6638,7 +6624,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         whether DST applies to this timestamp. Use
         ``ZonedDateTime.from_timestamp(ts, tz='<tz>')`` if you know the timezone,
         or ``Instant.from_timestamp()`` for timezone-agnostic exact time.
-        Suppress with :func:`~whenever.ignore_potentially_stale_offset_warning`.
+        Pass ``stale_offset_ok=True`` to suppress.
         """
         if ignore_dst is not _UNSET:
             warn(
@@ -6646,7 +6632,7 @@ class OffsetDateTime(_ExactAndLocalTime):
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
-        if not _ignore_potentially_stale_offset_warning.get():
+        if not stale_offset_ok:
             warn(
                 OFFSET_FROM_TIMESTAMP_STALE_MSG,
                 PotentiallyStaleOffsetWarning,
@@ -6660,7 +6646,13 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     @classmethod
     def from_timestamp_millis(
-        cls, i: int, /, *, offset: int | TimeDelta, ignore_dst: bool = _UNSET
+        cls,
+        i: int,
+        /,
+        *,
+        offset: int | TimeDelta,
+        ignore_dst: bool = _UNSET,
+        stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in milliseconds).
 
@@ -6674,7 +6666,7 @@ class OffsetDateTime(_ExactAndLocalTime):
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
-        if not _ignore_potentially_stale_offset_warning.get():
+        if not stale_offset_ok:
             warn(
                 OFFSET_FROM_TIMESTAMP_STALE_MSG,
                 PotentiallyStaleOffsetWarning,
@@ -6689,7 +6681,13 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     @classmethod
     def from_timestamp_nanos(
-        cls, i: int, /, *, offset: int | TimeDelta, ignore_dst: bool = _UNSET
+        cls,
+        i: int,
+        /,
+        *,
+        offset: int | TimeDelta,
+        ignore_dst: bool = _UNSET,
+        stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in nanoseconds).
 
@@ -6703,7 +6701,7 @@ class OffsetDateTime(_ExactAndLocalTime):
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
-        if not _ignore_potentially_stale_offset_warning.get():
+        if not stale_offset_ok:
             warn(
                 OFFSET_FROM_TIMESTAMP_STALE_MSG,
                 PotentiallyStaleOffsetWarning,
@@ -6746,10 +6744,15 @@ class OffsetDateTime(_ExactAndLocalTime):
             nanosecond: int = ...,
             offset: int | TimeDelta = ...,
             ignore_dst: bool = ...,
+            stale_offset_ok: bool = ...,
         ) -> OffsetDateTime: ...
 
     def replace(
-        self, /, ignore_dst: bool = _UNSET, **kwargs: Any
+        self,
+        /,
+        ignore_dst: bool = _UNSET,
+        stale_offset_ok: bool = False,
+        **kwargs: Any,
     ) -> OffsetDateTime:
         """Construct a new instance with the given fields replaced.
 
@@ -6760,7 +6763,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         on a European-timezone datetime may move it into a different DST period).
         Convert to ``ZonedDateTime`` first for timezone-aware field replacement
         using :meth:`assume_tz`.
-        Suppress with :func:`~whenever.ignore_potentially_stale_offset_warning`.
+        Pass ``stale_offset_ok=True`` to suppress.
         """
         if ignore_dst is not _UNSET:
             warn(
@@ -6768,7 +6771,7 @@ class OffsetDateTime(_ExactAndLocalTime):
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
-        if not _ignore_potentially_stale_offset_warning.get():
+        if not stale_offset_ok:
             warn(
                 OFFSET_REPLACE_STALE_MSG,
                 PotentiallyStaleOffsetWarning,
@@ -6785,7 +6788,12 @@ class OffsetDateTime(_ExactAndLocalTime):
         )
 
     def replace_date(
-        self, date: Date, /, *, ignore_dst: bool = _UNSET
+        self,
+        date: Date,
+        /,
+        *,
+        ignore_dst: bool = _UNSET,
+        stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Construct a new instance with the date replaced.
 
@@ -6797,7 +6805,7 @@ class OffsetDateTime(_ExactAndLocalTime):
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
-        if not _ignore_potentially_stale_offset_warning.get():
+        if not stale_offset_ok:
             warn(
                 OFFSET_REPLACE_STALE_MSG,
                 PotentiallyStaleOffsetWarning,
@@ -6811,7 +6819,12 @@ class OffsetDateTime(_ExactAndLocalTime):
         )
 
     def replace_time(
-        self, time: Time, /, *, ignore_dst: bool = _UNSET
+        self,
+        time: Time,
+        /,
+        *,
+        ignore_dst: bool = _UNSET,
+        stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Construct a new instance with the time replaced.
 
@@ -6823,7 +6836,7 @@ class OffsetDateTime(_ExactAndLocalTime):
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
-        if not _ignore_potentially_stale_offset_warning.get():
+        if not stale_offset_ok:
             warn(
                 OFFSET_REPLACE_STALE_MSG,
                 PotentiallyStaleOffsetWarning,
@@ -6853,17 +6866,15 @@ class OffsetDateTime(_ExactAndLocalTime):
         Colorado (America/Denver), the actual offset changed to ``-06:00`` that day.
         Convert to a ``ZonedDateTime`` first for timezone-aware arithmetic
         using :meth:`assume_tz`.
-        Suppress with the
-        :func:`~whenever.ignore_potentially_stale_offset_warning` context manager;
-        Python's standard warning filters also apply.
+        Use ``.add(..., stale_offset_ok=True)`` or Python's
+        standard warning filters to suppress.
         """
         if isinstance(delta, TimeDelta):
-            if not _ignore_potentially_stale_offset_warning.get():
-                warn(
-                    OFFSET_SHIFT_STALE_MSG,
-                    PotentiallyStaleOffsetWarning,
-                    stacklevel=2,
-                )
+            warn(
+                OFFSET_SHIFT_STALE_MSG,
+                PotentiallyStaleOffsetWarning,
+                stacklevel=2,
+            )
             delta_secs, nanos = divmod(
                 delta._total_ns + self._nanos, 1_000_000_000
             )
@@ -6884,12 +6895,11 @@ class OffsetDateTime(_ExactAndLocalTime):
     ) -> TimeDelta | OffsetDateTime:
         """Subtract a time delta or calculate the duration to another exact time."""
         if isinstance(other, TimeDelta):
-            if not _ignore_potentially_stale_offset_warning.get():
-                warn(
-                    OFFSET_SHIFT_STALE_MSG,
-                    PotentiallyStaleOffsetWarning,
-                    stacklevel=2,
-                )
+            warn(
+                OFFSET_SHIFT_STALE_MSG,
+                PotentiallyStaleOffsetWarning,
+                stacklevel=2,
+            )
             delta_secs, nanos = divmod(
                 -other._total_ns + self._nanos, 1_000_000_000
             )
@@ -7070,6 +7080,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             microseconds: float = 0,
             nanoseconds: int = 0,
             ignore_dst: bool = ...,
+            stale_offset_ok: bool = ...,
         ) -> OffsetDateTime: ...
 
     @no_type_check
@@ -7082,8 +7093,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         match the actual offset after a DST or other timezone transition.
         Convert to a ``ZonedDateTime`` first for timezone-aware arithmetic
         using :meth:`assume_tz`.
-        Suppress with the
-        :func:`~whenever.ignore_potentially_stale_offset_warning` context manager;
+        Pass ``stale_offset_ok=True`` to suppress;
         Python's standard warning filters also apply.
         """
         return self._shift(1, *args, **kwargs)
@@ -7108,6 +7118,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             microseconds: float = 0,
             nanoseconds: int = 0,
             ignore_dst: bool = ...,
+            stale_offset_ok: bool = ...,
         ) -> OffsetDateTime: ...
 
     @no_type_check
@@ -7126,6 +7137,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         /,
         *,
         ignore_dst: bool = _UNSET,
+        stale_offset_ok: bool = False,
         **kwargs,
     ) -> OffsetDateTime:
         if ignore_dst is not _UNSET:
@@ -7134,7 +7146,7 @@ class OffsetDateTime(_ExactAndLocalTime):
                 WheneverDeprecationWarning,
                 stacklevel=3,
             )
-        if not _ignore_potentially_stale_offset_warning.get():
+        if not stale_offset_ok:
             warn(
                 OFFSET_SHIFT_STALE_MSG,
                 PotentiallyStaleOffsetWarning,
@@ -7216,6 +7228,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         increment: int = 1,
         mode: RoundModeStr = "half_even",
         ignore_dst: bool = _UNSET,
+        stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Round the datetime to the specified unit and increment,
         or to a multiple of a :class:`TimeDelta`.
@@ -7238,7 +7251,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         be accurate if the rounded datetime crosses into a different DST period.
         Convert to a ``ZonedDateTime`` first for timezone-aware rounding
         using :meth:`assume_tz`.
-        Suppress with :func:`~whenever.ignore_potentially_stale_offset_warning`.
+        Pass ``stale_offset_ok=True`` to suppress.
         """
         if ignore_dst is not _UNSET:
             warn(
@@ -7246,7 +7259,7 @@ class OffsetDateTime(_ExactAndLocalTime):
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
-        if not _ignore_potentially_stale_offset_warning.get():
+        if not stale_offset_ok:
             warn(
                 OFFSET_ROUND_STALE_MSG,
                 PotentiallyStaleOffsetWarning,
@@ -8774,9 +8787,8 @@ class PlainDateTime(_LocalTime):
         Adding exact time units (a ``TimeDelta``) to a ``PlainDateTime`` does
         not account for timezone transitions that may occur in the interval.
         Use ``.assume_tz('<tz>') + delta`` if you know the timezone.
-        Suppress with the
-        :func:`~whenever.ignore_timezone_unaware_arithmetic_warning` context manager;
-        Python's standard warning filters also apply.
+        Use ``.add(..., naive_arithmetic_ok=True)`` or Python's
+        standard warning filters to suppress.
         """
         if isinstance(delta, DateDelta):
             return self._from_py_unchecked(
@@ -8787,12 +8799,11 @@ class PlainDateTime(_LocalTime):
                 self._nanos,
             )
         elif isinstance(delta, TimeDelta):
-            if not _ignore_timezone_unaware_arithmetic_warning.get():
-                warn(
-                    PLAIN_SHIFT_UNAWARE_MSG,
-                    TimeZoneUnawareArithmeticWarning,
-                    stacklevel=2,
-                )
+            warn(
+                PLAIN_SHIFT_UNAWARE_MSG,
+                NaiveArithmeticWarning,
+                stacklevel=2,
+            )
             delta_secs, nanos = divmod(
                 delta._total_ns + self._nanos, 1_000_000_000
             )
@@ -8818,17 +8829,15 @@ class PlainDateTime(_LocalTime):
         ``PlainDateTime`` values does not account for timezone transitions that
         may occur in the interval. Use :meth:`~whenever.PlainDateTime.assume_tz`
         to convert to a ``ZonedDateTime`` first for accurate results.
-        Suppress with the
-        :func:`~whenever.ignore_timezone_unaware_arithmetic_warning` context manager;
-        Python's standard warning filters also apply.
+        Use ``.add(..., naive_arithmetic_ok=True)`` or Python's
+        standard warning filters to suppress.
         """
         if isinstance(other, TimeDelta):
-            if not _ignore_timezone_unaware_arithmetic_warning.get():
-                warn(
-                    PLAIN_SHIFT_UNAWARE_MSG,
-                    TimeZoneUnawareArithmeticWarning,
-                    stacklevel=2,
-                )
+            warn(
+                PLAIN_SHIFT_UNAWARE_MSG,
+                NaiveArithmeticWarning,
+                stacklevel=2,
+            )
             delta_secs, nanos = divmod(
                 -other._total_ns + self._nanos, 1_000_000_000
             )
@@ -8836,12 +8845,11 @@ class PlainDateTime(_LocalTime):
                 self._py_dt + _timedelta(seconds=delta_secs), nanos
             )
         elif isinstance(other, PlainDateTime):
-            if not _ignore_timezone_unaware_arithmetic_warning.get():
-                warn(
-                    PLAIN_DIFF_UNAWARE_MSG,
-                    TimeZoneUnawareArithmeticWarning,
-                    stacklevel=2,
-                )
+            warn(
+                PLAIN_DIFF_UNAWARE_MSG,
+                NaiveArithmeticWarning,
+                stacklevel=2,
+            )
             return self._sub(other)
         elif isinstance(other, (DateDelta, DateTimeDelta)):
             return self + -other
@@ -8856,20 +8864,41 @@ class PlainDateTime(_LocalTime):
         )
 
     def difference(
-        self, other: PlainDateTime, /, *, ignore_dst: bool = _UNSET
+        self,
+        other: PlainDateTime,
+        /,
+        *,
+        ignore_dst: bool = _UNSET,
+        naive_arithmetic_ok: bool = False,
     ) -> TimeDelta:
-        """Calculate the difference between two times without a timezone.
+        """Calculate the exact time difference between two plain datetimes.
 
-        .. deprecated:: 0.10.0
+        This method returns the exact elapsed :class:`TimeDelta` between two
+        ``PlainDateTime`` values. Equivalent to the subtraction operator (``-``),
+        but allows suppressing the :class:`NaiveArithmeticWarning`
+        via the ``naive_arithmetic_ok`` parameter.
 
-            The ``difference()`` method is deprecated, use the subtraction operator or
-            :meth:`since` method instead.
+        Use :meth:`since` or :meth:`until` for more advanced options such as
+        calendar units, unit decomposition, and rounding.
+
+        Warning
+        -------
+        Calculating the difference between two ``PlainDateTime`` values does
+        not account for timezone transitions. Use :meth:`assume_tz` to convert
+        to a ``ZonedDateTime`` first for accurate results.
         """
-        warn(
-            "The difference() method is deprecated, use the subtraction operator or since() method instead. ",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
+        if ignore_dst is not _UNSET:
+            warn(
+                IGNORE_DST_DEPRECATED_MSG,
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
+        if not naive_arithmetic_ok:
+            warn(
+                PLAIN_DIFF_UNAWARE_MSG,
+                NaiveArithmeticWarning,
+                stacklevel=2,
+            )
         py_delta = self._py_dt - other._py_dt
         return TimeDelta(
             seconds=py_delta.days * 86_400 + py_delta.seconds,
@@ -8883,6 +8912,7 @@ class PlainDateTime(_LocalTime):
         /,
         *,
         total: DeltaUnitStr,
+        naive_arithmetic_ok: bool = ...,
     ) -> float: ...
 
     @overload
@@ -8894,6 +8924,7 @@ class PlainDateTime(_LocalTime):
         in_units: Sequence[DeltaUnitStr],
         round_mode: RoundModeStr = ...,
         round_increment: int = ...,
+        naive_arithmetic_ok: bool = ...,
     ) -> ItemizedDelta: ...
 
     def since(
@@ -8905,6 +8936,7 @@ class PlainDateTime(_LocalTime):
         in_units: Sequence[DeltaUnitStr] = _UNSET,
         round_mode: RoundModeStr = _UNSET,
         round_increment: int = _UNSET,
+        naive_arithmetic_ok: bool = False,
     ) -> ItemizedDelta | float:
         """Calculate the duration since another PlainDateTime,
         in terms of the specified units.
@@ -8923,6 +8955,7 @@ class PlainDateTime(_LocalTime):
             None if in_units is _UNSET else in_units,
             round_mode,
             round_increment,
+            emit_warn=not naive_arithmetic_ok,
         )
 
     @overload
@@ -8932,6 +8965,7 @@ class PlainDateTime(_LocalTime):
         /,
         *,
         total: DeltaUnitStr,
+        naive_arithmetic_ok: bool = ...,
     ) -> float: ...
 
     @overload
@@ -8943,6 +8977,7 @@ class PlainDateTime(_LocalTime):
         in_units: Sequence[DeltaUnitStr],
         round_mode: RoundModeStr = ...,
         round_increment: int = ...,
+        naive_arithmetic_ok: bool = ...,
     ) -> ItemizedDelta: ...
 
     def until(
@@ -8954,6 +8989,7 @@ class PlainDateTime(_LocalTime):
         in_units: Sequence[DeltaUnitStr] = _UNSET,
         round_mode: RoundModeStr = _UNSET,
         round_increment: int = _UNSET,
+        naive_arithmetic_ok: bool = False,
     ) -> ItemizedDelta | float:
         """Inverse of the ``since()`` method. See :meth:`since` for more information."""
         return _plain_since(
@@ -8963,11 +8999,17 @@ class PlainDateTime(_LocalTime):
             None if in_units is _UNSET else in_units,
             round_mode,
             round_increment,
+            emit_warn=not naive_arithmetic_ok,
         )
 
     @overload
     def add(
-        self, d: AnyDelta, /, *, ignore_dst: bool = ...
+        self,
+        d: AnyDelta,
+        /,
+        *,
+        ignore_dst: bool = ...,
+        naive_arithmetic_ok: bool = ...,
     ) -> PlainDateTime: ...
 
     @overload
@@ -8985,6 +9027,7 @@ class PlainDateTime(_LocalTime):
         microseconds: float = ...,
         nanoseconds: int = ...,
         ignore_dst: bool = ...,
+        naive_arithmetic_ok: bool = ...,
     ) -> PlainDateTime: ...
 
     @no_type_check
@@ -8996,15 +9039,19 @@ class PlainDateTime(_LocalTime):
         Adding **exact time units** (e.g. hours, seconds) to a ``PlainDateTime``
         does not account for timezone transitions that may occur in the interval.
         Use ``.assume_tz('<tz>') + delta`` if you know the timezone.
-        Suppress with the
-        :func:`~whenever.ignore_timezone_unaware_arithmetic_warning` context manager;
+        Pass ``naive_arithmetic_ok=True`` to suppress;
         Python's standard warning filters also apply.
         """
         return self._shift(1, *args, **kwargs)
 
     @overload
     def subtract(
-        self, d: AnyDelta, /, *, ignore_dst: bool = ...
+        self,
+        d: AnyDelta,
+        /,
+        *,
+        ignore_dst: bool = ...,
+        naive_arithmetic_ok: bool = ...,
     ) -> PlainDateTime: ...
 
     @overload
@@ -9022,6 +9069,7 @@ class PlainDateTime(_LocalTime):
         microseconds: float = ...,
         nanoseconds: int = ...,
         ignore_dst: bool = ...,
+        naive_arithmetic_ok: bool = ...,
     ) -> PlainDateTime: ...
 
     @no_type_check
@@ -9040,18 +9088,23 @@ class PlainDateTime(_LocalTime):
         /,
         *,
         ignore_dst: bool = _UNSET,
+        naive_arithmetic_ok: bool = False,
         **kwargs,
     ) -> PlainDateTime:
         if ignore_dst is not _UNSET:
             warn(
-                "The `ignore_dst` argument is deprecated and replaced with warnings.",
+                IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
                 stacklevel=3,
             )
 
         if kwargs:
             if arg is _UNSET:
-                return self._shift_kwargs(sign, **kwargs)
+                return self._shift_kwargs(
+                    sign,
+                    naive_arithmetic_ok=naive_arithmetic_ok,
+                    **kwargs,
+                )
             raise TypeError("Cannot mix positional and keyword arguments")
 
         elif arg is not _UNSET:
@@ -9060,6 +9113,7 @@ class PlainDateTime(_LocalTime):
                 months=arg._date_part._months,
                 days=arg._date_part._days,
                 nanoseconds=arg._time_part._total_ns,
+                naive_arithmetic_ok=naive_arithmetic_ok,
             )
         else:
             return self
@@ -9078,6 +9132,7 @@ class PlainDateTime(_LocalTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
+        naive_arithmetic_ok: bool = False,
     ) -> PlainDateTime:
         py_dt_with_new_date = self.replace_date(
             self.date()
@@ -9095,13 +9150,10 @@ class PlainDateTime(_LocalTime):
         )
         if abs(delta_ns) > _MAX_DELTA_NANOS:
             raise ValueError("TimeDelta out of range")
-        if (
-            delta_ns != 0
-            and not _ignore_timezone_unaware_arithmetic_warning.get()
-        ):
+        if delta_ns != 0 and not naive_arithmetic_ok:
             warn(
                 PLAIN_SHIFT_UNAWARE_MSG,
-                TimeZoneUnawareArithmeticWarning,
+                NaiveArithmeticWarning,
                 stacklevel=4,
             )
 
@@ -9281,26 +9333,13 @@ def _unpkl_local(data: bytes) -> PlainDateTime:
     return PlainDateTime._from_py_unchecked(_datetime(*args), nanos)
 
 
-_ignore_days_not_always_24h_warning: ContextVar[bool] = ContextVar(
-    "_ignore_days_not_always_24h_warning", default=False
-)
-
-_ignore_potentially_stale_offset_warning: ContextVar[bool] = ContextVar(
-    "_ignore_potentially_stale_offset_warning", default=False
-)
-
-_ignore_timezone_unaware_arithmetic_warning: ContextVar[bool] = ContextVar(
-    "_ignore_timezone_unaware_arithmetic_warning", default=False
-)
-
-
 class PotentialDstBugWarning(UserWarning):
     """Base class for warnings about potential DST-related bugs in user code.
 
     This is not raised directly, but serves as the parent for
     :class:`~whenever.DaysNotAlways24HoursWarning`,
     :class:`~whenever.PotentiallyStaleOffsetWarning`, and
-    :class:`~whenever.TimeZoneUnawareArithmeticWarning`.
+    :class:`~whenever.NaiveArithmeticWarning`.
     You can catch or filter all DST-related warnings at once
     by targeting this class.
     """
@@ -9319,9 +9358,8 @@ class DaysNotAlways24HoursWarning(PotentialDstBugWarning):
     The typical fix is to use calendar-based arithmetic
     (e.g. :class:`~whenever.ItemizedDelta`) instead of exact-time
     shifts when the number of calendar days matters.
-    Suppress this warning with the
-    :func:`~whenever.ignore_days_not_always_24h_warning` context
-    manager (or Python's standard warning filters) if 24-hour days are
+    Suppress this warning by passing ``assume_24h_days=True``
+    (or Python's standard warning filters) if 24-hour days are
     intentional.
     """
 
@@ -9339,14 +9377,14 @@ class PotentiallyStaleOffsetWarning(PotentialDstBugWarning):
 
     The typical fix is to work with :class:`~whenever.ZonedDateTime` instead,
     which always keeps the offset in sync with the timezone rules.
-    Alternatively, suppress this warning with the
-    :func:`~whenever.ignore_potentially_stale_offset_warning` context manager
+    Alternatively, suppress this warning by passing
+    ``stale_offset_ok=True``
     (or Python's standard warning filters) when the fixed offset is intentional
     and correct.
     """
 
 
-class TimeZoneUnawareArithmeticWarning(PotentialDstBugWarning):
+class NaiveArithmeticWarning(PotentialDstBugWarning):
     """Raised when exact-time arithmetic is performed on a
     :class:`~whenever.PlainDateTime` without timezone context.
 
@@ -9364,8 +9402,7 @@ class TimeZoneUnawareArithmeticWarning(PotentialDstBugWarning):
     The typical fix is to call :meth:`~whenever.PlainDateTime.assume_tz` first
     so the timezone is known, then perform the arithmetic on the resulting
     :class:`~whenever.ZonedDateTime`.
-    Suppress this warning with the
-    :func:`~whenever.ignore_timezone_unaware_arithmetic_warning` context manager
+    Suppress by passing ``naive_arithmetic_ok=True``
     (or Python's standard warning filters) if you: (a) explicitly accept
     potentially incorrect results, (b) know no transitions occur in the
     interval, or (c) are working with clock times not representing a real-world
@@ -9387,8 +9424,8 @@ OFFSET_NOW_STALE_MSG = (
     "the offset doesn't update when DST or other timezone rules change. "
     "Use ZonedDateTime.now('<tz>') if you know the timezone, or "
     "Instant.now() for timezone-agnostic exact time. "
-    "Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, "
-    "or with Python's standard warning filters. "
+    "Pass `stale_offset_ok=True` to suppress this warning, "
+    "or use Python's standard warning filters. "
     "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )
 
@@ -9398,8 +9435,8 @@ OFFSET_FROM_TIMESTAMP_STALE_MSG = (
     "is in effect at this timestamp. "
     "Use ZonedDateTime.from_timestamp(ts, tz='<tz>') if you know the timezone, or "
     "Instant.from_timestamp() for timezone-agnostic exact time. "
-    "Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, "
-    "or with Python's standard warning filters. "
+    "Pass `stale_offset_ok=True` to suppress this warning, "
+    "or use Python's standard warning filters. "
     "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )
 
@@ -9408,8 +9445,8 @@ OFFSET_REPLACE_STALE_MSG = (
     "be correct after the change (e.g. replacing the month on a European-timezone datetime "
     "may move it into a different DST period). "
     "Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware field replacement. "
-    "Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, "
-    "or with Python's standard warning filters. "
+    "Pass `stale_offset_ok=True` to suppress this warning, "
+    "or use Python's standard warning filters. "
     "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )
 
@@ -9420,8 +9457,8 @@ OFFSET_SHIFT_STALE_MSG = (
     "but if this offset represents Denver, Colorado (America/Denver), "
     "the actual offset changed to -06:00 on that date). "
     "Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware arithmetic. "
-    "Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, "
-    "or with Python's standard warning filters. "
+    "Pass `stale_offset_ok=True` to suppress this warning, "
+    "or use Python's standard warning filters. "
     "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )
 
@@ -9429,8 +9466,8 @@ OFFSET_ROUND_STALE_MSG = (
     "Rounding an OffsetDateTime keeps the fixed UTC offset, which may not be accurate "
     "in the rare case that the rounded time crosses a DST or other timezone boundary. "
     "Convert to a ZonedDateTime first (using .assume_tz()) for timezone-aware rounding. "
-    "Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, "
-    "or with Python's standard warning filters. "
+    "Pass `stale_offset_ok=True` to suppress this warning, "
+    "or use Python's standard warning filters. "
     "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )
 
@@ -9440,8 +9477,8 @@ PLAIN_SHIFT_UNAWARE_MSG = (
     "(e.g. adding 2 hours to 2023-03-26 01:30 in Amsterdam crosses the spring-forward "
     "transition, so only 1 real hour has passed). "
     "Use .assume_tz('<tz>') + delta if you know the timezone. "
-    "Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, "
-    "or with Python's standard warning filters. "
+    "Pass `naive_arithmetic_ok=True` to suppress this warning, "
+    "or use Python's standard warning filters. "
     "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )
 
@@ -9452,8 +9489,8 @@ PLAIN_DIFF_UNAWARE_MSG = (
     "gives 2h, but in Amsterdam clocks jumped from 2:00 to 3:00 that morning, "
     "so only 1 real hour elapsed. "
     "Use .assume_tz('<tz>') for both values if you know the timezone. "
-    "Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, "
-    "or with Python's standard warning filters. "
+    "Pass `naive_arithmetic_ok=True` to suppress this warning, "
+    "or use Python's standard warning filters. "
     "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )
 
@@ -9462,8 +9499,8 @@ PLAIN_RELATIVE_TO_UNAWARE_MSG = (
     "without a timezone, converting between calendar units (months, days) and "
     "exact time units (hours, seconds) is ambiguous across DST boundaries. "
     "Use .assume_tz('<tz>') for timezone-aware results. "
-    "Suppress with the whenever.ignore_timezone_unaware_arithmetic_warning() context manager, "
-    "or with Python's standard warning filters. "
+    "Pass `naive_arithmetic_ok=True` to suppress this warning, "
+    "or use Python's standard warning filters. "
     "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )
 
@@ -9472,8 +9509,8 @@ STALE_OFFSET_CALENDAR_MSG = (
     "assumes the UTC offset remains constant throughout the period. "
     "If the region has since changed its rules (e.g. DST), the result may be off by an hour. "
     "Use ZonedDateTime for DST-aware calendar arithmetic. "
-    "Suppress with the whenever.ignore_potentially_stale_offset_warning() context manager, "
-    "or with Python's standard warning filters. "
+    "Pass `stale_offset_ok=True` to suppress this warning, "
+    "or use Python's standard warning filters. "
     "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )
 
@@ -9508,12 +9545,14 @@ DAYS_NOT_ALWAYS_24H_MSG = (
     "If you're working with UTC, or deliberately want fixed-length days, this is correct. "
     "For DST-aware operations, consider using ZonedDateTime arithmetic instead, "
     "or passing the `relative_to` argument where available. "
-    "Suppress this warning with `with whenever.ignore_days_not_always_24h_warning():`. "
+    "Pass `assume_24h_days=True` to suppress this warning, "
+    "or use Python's standard warning filters. "
     "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )
 
 IGNORE_DST_DEPRECATED_MSG = (
-    "The `ignore_dst` parameter is deprecated and replaced with a warning."
+    "The `ignore_dst` parameter is deprecated. "
+    "Use `stale_offset_ok` or `naive_arithmetic_ok` instead."
 )
 
 
@@ -9685,12 +9724,11 @@ def _plain_since(
         # Calendar units (years/months/weeks/days) don't involve clock time,
         # so there's no DST ambiguity.
         if emit_warn and total in _EXACT_TIME_UNITS:
-            if not _ignore_timezone_unaware_arithmetic_warning.get():
-                warn(
-                    PLAIN_DIFF_UNAWARE_MSG,
-                    TimeZoneUnawareArithmeticWarning,
-                    stacklevel=3,
-                )
+            warn(
+                PLAIN_DIFF_UNAWARE_MSG,
+                NaiveArithmeticWarning,
+                stacklevel=3,
+            )
         # Use UTC ZonedDateTime to avoid double-warning inside TimeDelta.total.
         return self._sub(b).total(total, relative_to=b.assume_tz("UTC"))
     elif in_units is None:
@@ -9704,14 +9742,10 @@ def _plain_since(
     # Warn only when the output contains exact time units (hours/min/sec/ns).
     # Calendar-only output (months, days, etc.) doesn't involve clock time,
     # so there's no DST ambiguity in that case.
-    if (
-        emit_warn
-        and exact_units
-        and not _ignore_timezone_unaware_arithmetic_warning.get()
-    ):
+    if emit_warn and exact_units:
         warn(
             PLAIN_DIFF_UNAWARE_MSG,
-            TimeZoneUnawareArithmeticWarning,
+            NaiveArithmeticWarning,
             stacklevel=3,
         )
 

@@ -52,7 +52,7 @@ depending on whether you're in Australia or Mexico, for example.
 Another limitation is that you can't account for Daylight Saving Time
 if you only have a date and time-of-day without a timezone.
 Therefore, adding exact time units to "plain" datetimes will emit a
-`TimeZoneUnawareArithmeticWarning` to prevent you from accidentally introducing DST bugs.
+`NaiveArithmeticWarning` to prevent you from accidentally introducing DST bugs.
 This is because—strictly speaking—you don't know what the
 local time will be in 3 hours:
 perhaps the clock will be moved forward or back due to Daylight Saving Time.
@@ -65,8 +65,7 @@ PlainDateTime("2020-03-14 15:00:00")
 # possible, but emits a warning:
 >>> bus_departs.add(hours=3)                    # adding exact time units
 # IS possible:
->>> with ignore_timezone_unaware_arithmetic_warning():  # explicitly ignore
-...     bus_departs.add(hours=3)
+>>> bus_departs.add(hours=3, naive_arithmetic_ok=True)  # explicitly suppress
 >>> PlainDateTime(2020, 3, 15) > bus_departs    # comparison with other plain datetimes
 >>> bus_departs.add(days=2)                     # calendar operations are OK
 ```
@@ -137,8 +136,7 @@ an efficient and compatible choice for representing times in the past.
 >>> # This will emit a warning!
 >>> flight_arrival.add(hours=3)  # a DST-bug waiting to happen!
 >>> # instead:
->>> with ignore_potentially_stale_offset_warning():  # explicitly ignore
-...     flight_arrival.add(hours=3)
+>>> flight_arrival.add(hours=3, stale_offset_ok=True)  # explicitly suppress
 >>> flight_arrival.in_tz("America/New_York").add(hours=3)  # use the full timezone
 ```
 

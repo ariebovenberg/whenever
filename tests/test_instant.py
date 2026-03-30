@@ -1,6 +1,6 @@
+import contextlib
 import pickle
 import re
-from contextlib import suppress
 from copy import copy, deepcopy
 from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
 from zoneinfo import ZoneInfo
@@ -13,11 +13,11 @@ from whenever import (
     Instant,
     OffsetDateTime,
     PlainDateTime,
+    PotentiallyStaleOffsetWarning,
     TimeDelta,
     WheneverDeprecationWarning,
     ZonedDateTime,
     hours,
-    ignore_potentially_stale_offset_warning,
     milliseconds,
     nanoseconds,
     seconds,
@@ -28,6 +28,7 @@ from .common import (
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
+    suppress,
     system_tz_ams,
     system_tz_nyc,
 )
@@ -292,34 +293,34 @@ class TestFromTimestamp:
         ) - nanoseconds(4)
 
     def test_extremes(self):
-        with suppress(OSError):
+        with contextlib.suppress(OSError):
             assert Instant.from_timestamp(
                 Instant.MAX.timestamp()
             ) == Instant.from_utc(9999, 12, 31, 23, 59, 59)
 
-        with suppress(OSError):
+        with contextlib.suppress(OSError):
             assert (
                 Instant.from_timestamp(Instant.MIN.timestamp()) == Instant.MIN
             )
 
-        with suppress(OSError):
+        with contextlib.suppress(OSError):
             assert Instant.from_timestamp_millis(
                 Instant.MAX.timestamp_millis()
             ) == Instant.from_utc(
                 9999, 12, 31, 23, 59, 59, nanosecond=999_000_000
             )
-        with suppress(OSError):
+        with contextlib.suppress(OSError):
             assert (
                 Instant.from_timestamp_millis(Instant.MIN.timestamp_millis())
                 == Instant.MIN
             )
 
-        with suppress(OSError):
+        with contextlib.suppress(OSError):
             assert (
                 Instant.from_timestamp_nanos(Instant.MAX.timestamp_nanos())
                 == Instant.MAX
             )
-        with suppress(OSError):
+        with contextlib.suppress(OSError):
             assert (
                 Instant.from_timestamp_nanos(Instant.MIN.timestamp_nanos())
                 == Instant.MIN
@@ -395,7 +396,7 @@ class TestComparison:
         d = Instant.from_utc(2020, 8, 15, 12, 30)
 
         offset_eq = d.to_fixed_offset(4)
-        with ignore_potentially_stale_offset_warning():
+        with suppress(PotentiallyStaleOffsetWarning):
             offset_gt = offset_eq.replace(minute=31)
             offset_lt = offset_eq.replace(minute=29)
         assert d >= offset_eq
@@ -704,11 +705,6 @@ class TestShiftOperators:
 
 
 class TestDifference:
-
-    def test_is_deprecated(self):
-        d = Instant.from_utc(2020, 8, 15)
-        with pytest.warns(WheneverDeprecationWarning, match="difference"):
-            d.difference(d)
 
     def test_other_instant(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)

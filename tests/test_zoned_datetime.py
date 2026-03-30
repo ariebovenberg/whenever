@@ -25,6 +25,7 @@ from whenever import (
     ItemizedDelta,
     OffsetDateTime,
     PlainDateTime,
+    PotentiallyStaleOffsetWarning,
     RepeatedTime,
     SkippedTime,
     Time,
@@ -36,7 +37,6 @@ from whenever import (
     clear_tzcache,
     days,
     hours,
-    ignore_potentially_stale_offset_warning,
     milliseconds,
     minutes,
     reset_tzpath,
@@ -52,6 +52,7 @@ from .common import (
     AlwaysSmaller,
     NeverEqual,
     create_zdt,
+    suppress,
     system_tz,
     system_tz_ams,
     system_tz_nyc,
@@ -1027,7 +1028,7 @@ class TestEquality:
 
         assert d == d.to_fixed_offset()
         assert hash(d) == hash(d.to_fixed_offset())
-        with ignore_potentially_stale_offset_warning():
+        with suppress(PotentiallyStaleOffsetWarning):
             assert d != d.to_fixed_offset().replace(hour=10)
 
         # important: check typing errors in case of strict-comparison mode
@@ -2768,7 +2769,7 @@ class TestComparison:
         d = create_zdt(2023, 10, 29, 2, 30, tz=tz, disambiguate="later")
 
         offset_eq = d.to_fixed_offset()
-        with ignore_potentially_stale_offset_warning():
+        with suppress(PotentiallyStaleOffsetWarning):
             offset_lt = offset_eq.replace(minute=29)
             offset_gt = offset_eq.replace(minute=31)
 
@@ -3828,14 +3829,6 @@ class TestAddSubtractCalendarUnits:
 
 
 class TestDifference:
-
-    def test_method_is_deprecated_refer_to_operators_instead(self):
-        d1 = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
-        d2 = ZonedDateTime(2020, 8, 14, tz="Europe/Amsterdam")
-        with pytest.warns(
-            WheneverDeprecationWarning, match="subtraction operator"
-        ):
-            d1.difference(d2)
 
     @pytest.mark.parametrize(
         "tz", ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE]

@@ -11,17 +11,14 @@ from whenever import (
     DateDelta,
     DaysNotAlways24HoursWarning,
     ItemizedDelta,
+    NaiveArithmeticWarning,
     OffsetDateTime,
     PlainDateTime,
     PotentiallyStaleOffsetWarning,
     TimeDelta,
-    TimeZoneUnawareArithmeticWarning,
     WheneverDeprecationWarning,
     ZonedDateTime,
     hours,
-    ignore_days_not_always_24h_warning,
-    ignore_potentially_stale_offset_warning,
-    ignore_timezone_unaware_arithmetic_warning,
     microseconds,
     milliseconds,
     minutes,
@@ -29,7 +26,13 @@ from whenever import (
     seconds,
 )
 
-from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
+from .common import (
+    AlwaysEqual,
+    AlwaysLarger,
+    AlwaysSmaller,
+    NeverEqual,
+    suppress,
+)
 
 MAX_HOURS = 9999 * 366 * 24
 pytestmark = pytest.mark.filterwarnings(
@@ -123,8 +126,7 @@ class TestInit:
     def test_valid(self, kwargs, expected_nanos):
         d = TimeDelta(**kwargs)
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", WheneverDeprecationWarning)
+        with suppress(WheneverDeprecationWarning):
             assert d.total("nanoseconds") == expected_nanos
         # the components are not accessible directly
         assert not hasattr(d, "hours")
@@ -321,7 +323,7 @@ class TestTotal:
             assert d.total("days") == approx(d.total("hours") / 24)
 
         # Silencing the warnings
-        with ignore_days_not_always_24h_warning():
+        with suppress(DaysNotAlways24HoursWarning):
             assert d.total("days")
 
         # relative to a regular date
@@ -385,7 +387,7 @@ class TestTotal:
             assert d.total("weeks") == approx(d.total("hours") / (24 * 7))
 
         # Silencing the warnings
-        with ignore_days_not_always_24h_warning():
+        with suppress(DaysNotAlways24HoursWarning):
             assert d.total("weeks")
 
         # non DST date
@@ -602,19 +604,19 @@ class TestTotal:
     def test_relative_to_plain_datetime(self):
         td = TimeDelta(hours=360)  # 15 days
         pdt = PlainDateTime(2023, 3, 1, 2)
-        with pytest.warns(TimeZoneUnawareArithmeticWarning):
+        with pytest.warns(NaiveArithmeticWarning):
             result = td.total("months", relative_to=pdt)
         assert result == approx(15 / 31)
 
         # suppression works
-        with ignore_timezone_unaware_arithmetic_warning():
+        with suppress(NaiveArithmeticWarning):
             result_sup = td.total("months", relative_to=pdt)
         assert result_sup == approx(15 / 31)
 
         # years
         td_yr = TimeDelta(hours=24 * 365)  # 365 days
         pdt_yr = PlainDateTime(2023, 1, 1)
-        with ignore_timezone_unaware_arithmetic_warning():
+        with suppress(NaiveArithmeticWarning):
             result_yr = td_yr.total("years", relative_to=pdt_yr)
         assert result_yr == approx(1.0)
 
@@ -622,7 +624,7 @@ class TestTotal:
         # backward span: March 16 → Feb 16 = 28 days (Feb 2023)
         td_neg = TimeDelta(hours=-360)
         pdt_neg = PlainDateTime(2023, 3, 16, 2)
-        with ignore_timezone_unaware_arithmetic_warning():
+        with suppress(NaiveArithmeticWarning):
             result_neg = td_neg.total("months", relative_to=pdt_neg)
         assert result_neg == approx(-15 / 28)
 
@@ -637,14 +639,14 @@ class TestTotal:
         assert result == approx(15 / 31)
 
         # suppression works
-        with ignore_potentially_stale_offset_warning():
+        with suppress(PotentiallyStaleOffsetWarning):
             result_sup = td.total("months", relative_to=odt)
         assert result_sup == approx(15 / 31)
 
     def test_relative_to_odt_uses_local_not_utc(self):
         td = TimeDelta(hours=360)  # 15 days
         odt = OffsetDateTime(2023, 3, 1, 2, offset=5)
-        with ignore_potentially_stale_offset_warning():
+        with suppress(PotentiallyStaleOffsetWarning):
             result_correct = td.total("months", relative_to=odt)
         assert result_correct == approx(15 / 31)  # March anchor
 
@@ -1308,8 +1310,7 @@ class TestRound:
     def test_valid(
         self, t, increment, unit, floor, ceil, half_floor, half_ceil, half_even
     ):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DaysNotAlways24HoursWarning)
+        with suppress(DaysNotAlways24HoursWarning):
             assert t.round(unit, increment=increment) == half_even
             assert t.round(unit, increment=increment, mode="ceil") == ceil
             assert t.round(unit, increment=increment, mode="expand") == (
@@ -1707,7 +1708,7 @@ class TestInUnits:
             # TEST round single units with large values
         ],
     )
-    @ignore_days_not_always_24h_warning()
+    @suppress(DaysNotAlways24HoursWarning)
     def test_valid(self, delta, units, kwargs, expected):
         assert delta.in_units(units, **kwargs) == expected
 
@@ -1761,7 +1762,7 @@ class TestInUnits:
             d.in_units(["weeks", "hours"])
 
         # test warnings suppression
-        with ignore_days_not_always_24h_warning():
+        with suppress(DaysNotAlways24HoursWarning):
             d.in_units(["days"])
 
     def test_non_sequence_units(self):
@@ -1786,7 +1787,7 @@ class TestInUnits:
 
     def test_very_large_increment(self):
         # round_increment=1<<65 ns exceeds i64::MAX; should not OverflowError
-        with ignore_days_not_always_24h_warning():
+        with suppress(DaysNotAlways24HoursWarning):
             d = TimeDelta(days=592)
         # trunc mode: value < 1*(1<<65), rounds down to zero
         assert d.in_units(
@@ -1805,7 +1806,7 @@ class TestInUnits:
         # 140 days from 2024-02-29 = 4 months + 20 days
         d = TimeDelta(hours=3360)
         ref = PlainDateTime(2024, 2, 29, 12, 1)
-        with pytest.warns(TimeZoneUnawareArithmeticWarning):
+        with pytest.warns(NaiveArithmeticWarning):
             result = d.in_units(["months", "days"], relative_to=ref)
         assert result["months"] == 4
 

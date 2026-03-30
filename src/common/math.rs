@@ -808,6 +808,18 @@ impl SinceUntilKwargs {
 
 impl SinceUntilKwargs {
     pub(crate) fn parse(fname: &str, state: &State, kwargs: &mut IterKwargs) -> PyResult<Self> {
+        Self::parse_with(fname, state, kwargs, |_, _, _| Ok(false))
+    }
+
+    pub(crate) fn parse_with<F>(
+        fname: &str,
+        state: &State,
+        kwargs: &mut IterKwargs,
+        mut extra_handler: F,
+    ) -> PyResult<Self>
+    where
+        F: FnMut(PyObj, PyObj, fn(PyObj, PyObj) -> bool) -> PyResult<bool>,
+    {
         let mut round_mode = round::Mode::Trunc;
         let mut round_increment = RoundIncrement::MIN;
         let mut units: Option<UnitsOrUnit> = None;
@@ -842,7 +854,7 @@ impl SinceUntilKwargs {
                 round_increment = RoundIncrement::from_py(value)?;
                 round_was_set = true;
             } else {
-                return Ok(false);
+                return extra_handler(key, value, eq);
             }
             Ok(true)
         })?;

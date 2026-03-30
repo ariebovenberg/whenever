@@ -590,15 +590,23 @@ enum OffsetMismatch {
 
 impl OffsetMismatch {
     fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
-        if obj.py_eq(state.str_raise)? {
-            Ok(Self::Raise)
-        } else if obj.py_eq(state.str_keep_instant)? {
-            Ok(Self::KeepInstant)
-        } else if obj.py_eq(state.str_keep_local)? {
-            Ok(Self::KeepLocal)
-        } else {
-            raise_value_err(format!("invalid value for offset_mismatch: '{obj}'"))
-        }
+        let &State {
+            str_raise,
+            str_keep_instant,
+            str_keep_local,
+            ..
+        } = state;
+        match_interned_str("offset_mismatch", obj, |v, eq| {
+            Some(if eq(v, str_raise) {
+                Self::Raise
+            } else if eq(v, str_keep_instant) {
+                Self::KeepInstant
+            } else if eq(v, str_keep_local) {
+                Self::KeepLocal
+            } else {
+                None?
+            })
+        })
     }
 }
 
@@ -653,29 +661,34 @@ fn time(cls: HeapType<OffsetDateTime>, OffsetDateTime { time, .. }: OffsetDateTi
 }
 
 #[inline]
-/// Emit `PotentiallyStaleOffsetWarning` unless suppressed by ContextVar.
 fn offset_stale_warning(state: &State, msg: &CStr) -> PyResult<()> {
-    if !state.cv_ignore_potentially_stale_offset.get()? {
-        warn_with_class(state.warn_potentially_stale_offset, msg, 1)?;
-    }
-    Ok(())
+    warn_with_class(state.warn_potentially_stale_offset, msg, 1)
 }
 
-/// Check for deprecated `ignore_dst` kwarg in a kwargs iterator that only
-/// has this one optional kwarg remaining, and emit stale offset warning.
-fn check_deprecated_ignore_dst_and_warn(
+/// Check for deprecated `ignore_dst` and new `stale_offset_ok`
+/// kwargs in a kwargs iterator that only has these optional kwargs remaining,
+/// and emit stale offset warning.
+fn check_ignore_dst_and_stale_offset(
+    fname: &str,
     kwargs: &mut IterKwargs,
     state: &State,
     stale_msg: &CStr,
 ) -> PyResult<()> {
-    if let Some((key, _value)) = kwargs.next() {
-        if kwargs.len() == 1 && key.py_eq(state.str_ignore_dst)? {
+    let mut suppress = false;
+    handle_kwargs(fname, kwargs, |key, value, eq| {
+        if eq(key, state.str_ignore_dst) {
             warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
+        } else if eq(key, state.str_stale_offset_ok) {
+            suppress = value.is_truthy();
         } else {
-            raise_type_err(format!("Unknown keyword argument: {key}"))?;
+            return Ok(false);
         }
+        Ok(true)
+    })?;
+    if !suppress {
+        offset_stale_warning(state, stale_msg)?;
     }
-    offset_stale_warning(state, stale_msg)
+    Ok(())
 }
 
 fn replace_date(
@@ -685,7 +698,12 @@ fn replace_date(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    check_deprecated_ignore_dst_and_warn(kwargs, state, doc::OFFSET_REPLACE_STALE_MSG)?;
+    check_ignore_dst_and_stale_offset(
+        "replace_date",
+        kwargs,
+        state,
+        doc::OFFSET_REPLACE_STALE_MSG,
+    )?;
     let &[arg] = args else {
         raise_type_err("replace() takes exactly 1 positional argument")?
     };
@@ -705,7 +723,12 @@ fn replace_time(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    check_deprecated_ignore_dst_and_warn(kwargs, state, doc::OFFSET_REPLACE_STALE_MSG)?;
+    check_ignore_dst_and_stale_offset(
+        "replace_time",
+        kwargs,
+        state,
+        doc::OFFSET_REPLACE_STALE_MSG,
+    )?;
     let &[arg] = args else {
         raise_type_err("replace() takes exactly 1 positional argument")?
     };
@@ -759,6 +782,7 @@ fn replace(
     let &State {
         str_ignore_dst,
         str_offset,
+        str_stale_offset_ok,
         str_year,
         str_month,
         str_day,
@@ -782,10 +806,13 @@ fn replace(
     let mut second = time.second.into();
     let mut nanos = time.subsec.get() as _;
     let mut got_ignore_dst = false;
+    let mut suppress_stale = false;
 
     handle_kwargs("replace", kwargs, |key, value, eq| {
         if eq(key, str_ignore_dst) {
             got_ignore_dst = true;
+        } else if eq(key, str_stale_offset_ok) {
+            suppress_stale = value.is_truthy();
         } else if eq(key, str_offset) {
             offset = Offset::from_obj(value, time_delta_type)?;
         } else {
@@ -815,7 +842,9 @@ fn replace(
     if got_ignore_dst {
         warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
     }
-    offset_stale_warning(state, doc::OFFSET_REPLACE_STALE_MSG)?;
+    if !suppress_stale {
+        offset_stale_warning(state, doc::OFFSET_REPLACE_STALE_MSG)?;
+    }
 
     let date = Date::from_longs(year, month, day).ok_or_value_err("invalid date")?;
     let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("invalid time")?;
@@ -829,7 +858,7 @@ fn now(cls: HeapType<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     let &[offset_obj] = args else {
         raise_type_err("now() takes exactly 1 positional argument")?
     };
-    check_deprecated_ignore_dst_and_warn(kwargs, state, doc::OFFSET_NOW_STALE_MSG)?;
+    check_ignore_dst_and_stale_offset("now", kwargs, state, doc::OFFSET_NOW_STALE_MSG)?;
     let offset = Offset::from_obj(offset_obj, state.time_delta_type)?;
     state
         .time_ns()?
@@ -901,6 +930,7 @@ fn shift_method(
     let state = cls.state();
     let &State {
         str_ignore_dst,
+        str_stale_offset_ok,
         str_years,
         str_months,
         str_weeks,
@@ -923,17 +953,20 @@ fn shift_method(
     let mut days = DeltaDays::ZERO;
     let mut tdelta = TimeDelta::ZERO;
     let mut got_ignore_dst = false;
+    let mut suppress_stale = false;
 
     match *args {
         [arg] => {
-            match kwargs.next() {
-                Some((key, _value)) if kwargs.len() == 1 && key.py_eq(str_ignore_dst)? => {
+            for (key, value) in kwargs.by_ref() {
+                if key.py_eq(str_ignore_dst)? {
                     got_ignore_dst = true;
+                } else if key.py_eq(str_stale_offset_ok)? {
+                    suppress_stale = value.is_truthy();
+                } else {
+                    raise_type_err(format!(
+                        "{fname}() can't mix positional and keyword arguments"
+                    ))?;
                 }
-                None => {}
-                _ => raise_type_err(format!(
-                    "{fname}() can't mix positional and keyword arguments"
-                ))?,
             }
             if let Some(t) = arg.extract(time_delta_type) {
                 tdelta = t;
@@ -962,6 +995,9 @@ fn shift_method(
             handle_kwargs(fname, kwargs, |key, value, eq| {
                 if eq(key, str_ignore_dst) {
                     got_ignore_dst = true;
+                    Ok(true)
+                } else if eq(key, str_stale_offset_ok) {
+                    suppress_stale = value.is_truthy();
                     Ok(true)
                 } else {
                     handle_delta_unit_kwargs(
@@ -996,7 +1032,9 @@ fn shift_method(
     if got_ignore_dst {
         warn_with_class(warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
     }
-    offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
+    if !suppress_stale {
+        offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
+    }
 
     months = months.negate_if(negate);
     days = days.negate_if(negate);
@@ -1056,14 +1094,22 @@ fn __reduce__(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyResult<Ow
         .into_pytuple()
 }
 
-/// checks the args comply with (ts: ?, /, *, offset: ?, ignore_dst: ?)
+/// checks the args comply with (ts: ?, /, *, offset: ?, ignore_dst: ?, stale_offset_ok: ?)
 fn check_from_timestamp_args_return_offset(
     fname: &str,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
     state: &State,
 ) -> PyResult<Offset> {
+    let &State {
+        str_ignore_dst,
+        str_stale_offset_ok,
+        str_offset,
+        time_delta_type,
+        ..
+    } = state;
     let mut got_ignore_dst = false;
+    let mut suppress_stale = false;
     let mut offset = None;
     if args.len() != 1 {
         raise_type_err(format!(
@@ -1074,10 +1120,12 @@ fn check_from_timestamp_args_return_offset(
     }
 
     handle_kwargs("from_timestamp", kwargs, |key, value, eq| {
-        if eq(key, state.str_ignore_dst) {
+        if eq(key, str_ignore_dst) {
             got_ignore_dst = true;
-        } else if eq(key, state.str_offset) {
-            offset = Some(Offset::from_obj(value, state.time_delta_type)?);
+        } else if eq(key, str_stale_offset_ok) {
+            suppress_stale = value.is_truthy();
+        } else if eq(key, str_offset) {
+            offset = Some(Offset::from_obj(value, time_delta_type)?);
         } else {
             return Ok(false);
         }
@@ -1087,7 +1135,9 @@ fn check_from_timestamp_args_return_offset(
     if got_ignore_dst {
         warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
     }
-    offset_stale_warning(state, doc::OFFSET_FROM_TIMESTAMP_STALE_MSG)?;
+    if !suppress_stale {
+        offset_stale_warning(state, doc::OFFSET_FROM_TIMESTAMP_STALE_MSG)?;
+    }
 
     offset.ok_or_type_err("missing required keyword argument: 'offset'")
 }
@@ -1213,11 +1263,14 @@ fn round(
         increment,
         mode,
         got_ignore_dst,
+        suppress_stale,
     } = round::Args::parse(state, args, kwargs, true)?;
     if got_ignore_dst {
         warn_with_class(state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
     }
-    offset_stale_warning(state, doc::OFFSET_ROUND_STALE_MSG)?;
+    if !suppress_stale {
+        offset_stale_warning(state, doc::OFFSET_ROUND_STALE_MSG)?;
+    }
     let round_nanos = match increment {
         round::RoundIncrement::Day => NS_PER_DAY,
         round::RoundIncrement::Exact(ns) => ns.get(),

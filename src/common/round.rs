@@ -222,6 +222,7 @@ pub(crate) struct Args {
     pub(crate) increment: RoundIncrement,
     pub(crate) mode: Mode,
     pub(crate) got_ignore_dst: bool,
+    pub(crate) suppress_stale: bool,
 }
 
 static INCREMENT_DIV_MSG: &str =
@@ -247,6 +248,7 @@ impl Args {
             str_increment,
             round_mode_strs,
             str_ignore_dst,
+            str_stale_offset_ok,
             time_delta_type,
             ..
         } = state;
@@ -255,6 +257,7 @@ impl Args {
 
         let mut mode = Mode::HalfEven;
         let mut got_ignore_dst = false;
+        let mut suppress_stale = false;
         let mut increment_kwarg = None;
         handle_kwargs("round", kwargs, |key, value, eq| {
             if eq(key, str_mode) {
@@ -271,6 +274,8 @@ impl Args {
                 increment_kwarg = Some(unsafe { NonZeroU64::new_unchecked(raw_increment as _) });
             } else if ignore_dst_kwarg && eq(key, str_ignore_dst) {
                 got_ignore_dst = true;
+            } else if ignore_dst_kwarg && eq(key, str_stale_offset_ok) {
+                suppress_stale = value.is_truthy();
             } else {
                 return Ok(false);
             }
@@ -329,6 +334,7 @@ impl Args {
             increment,
             mode,
             got_ignore_dst,
+            suppress_stale,
         })
     }
 }
@@ -355,6 +361,7 @@ impl DeltaArgs {
             str_mode,
             str_increment,
             round_mode_strs,
+            str_assume_24h_days,
             time_delta_type,
             ..
         } = state;
@@ -363,6 +370,7 @@ impl DeltaArgs {
 
         let mut mode = Mode::HalfEven;
         let mut increment_kwarg = None;
+        let mut suppress_24h_warning = false;
         handle_kwargs("round", kwargs, |key, value, eq| {
             if eq(key, str_mode) {
                 mode = Mode::from_py(value, round_mode_strs)?;
@@ -376,6 +384,8 @@ impl DeltaArgs {
                 }
                 // SAFETY: we just checked that it's >0
                 increment_kwarg = Some(unsafe { NonZeroU128::new_unchecked(raw_increment as _) });
+            } else if eq(key, str_assume_24h_days) {
+                suppress_24h_warning = value.is_truthy();
             } else {
                 return Ok(false);
             }
@@ -411,9 +421,7 @@ impl DeltaArgs {
                         str_week,
                         true,
                     )?;
-                    if matches!(unit, Unit::Day | Unit::Week)
-                        && !state.cv_ignore_days_not_always_24h.get()?
-                    {
+                    if matches!(unit, Unit::Day | Unit::Week) && !suppress_24h_warning {
                         warn_with_class(
                             state.warn_days_not_always_24h,
                             doc::DAYS_NOT_ALWAYS_24H_MSG,

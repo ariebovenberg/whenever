@@ -41,22 +41,22 @@ See the full list below.
 - The `ignore_dst` parameter (which was used to enable DST-unsafe operations)
   has been replaced by a warnings mechanism that allows users to
   suppress or escalate DST-related warnings
-  using context managers or Python's standard warning filters.
+  using per-method keyword arguments or Python's standard warning filters.
 
   **Rationale**: The `ignore_dst` parameter was a source of confusion,
   and made the `OffsetDateTime` APIs less compatible.
 
   **Migration**:
-  - Remove `ignore_dst=True` from all calls.
-  - For `OffsetDateTime` operations: use
-    `with ignore_potentially_stale_offset_warning(): ...`
-    to suppress warnings.
-  - For `PlainDateTime` operations: use
-    `with ignore_timezone_unaware_arithmetic_warning(): ...`
-    to suppress warnings.
+  - Replace `ignore_dst=True` with the appropriate keyword argument:
+    - `OffsetDateTime` methods: `stale_offset_ok=True`
+    - `PlainDateTime` methods: `naive_arithmetic_ok=True`
+    - `TimeDelta` methods: `assume_24h_days=True`
   - Alternatively, use Python's `warnings.filterwarnings()` to
-    suppress `PotentiallyStaleOffsetWarning` or
-    `TimeZoneUnawareArithmeticWarning`.
+    suppress `PotentiallyStaleOffsetWarning`,
+    `NaiveArithmeticWarning`, or `DaysNotAlways24HoursWarning`.
+  - `ignore_dst` is still accepted (with a deprecation warning) and
+    will be removed in a future release.
+
 
 - Behavior of an edge case is changed: disambiguation of non-existent times
   as a result of calendar arithmetic (or `replace()`) no longer tries to reuse
@@ -84,8 +84,6 @@ See the full list below.
   `.in_milliseconds()`, `.in_microseconds()`, `.in_nanoseconds()`,
   `.in_days_of_24h()`, and `.in_hrs_mins_secs_nanos()`.
   Use `total()` or `in_units()` instead.
-- The `difference()` method on datetimes is deprecated.
-  Instead, use the `-` subtraction operator, or the new `since()` method.
 - `Date.days_since()` and `Date.days_until()`.
   Use `since()` and `until()` with `total='days'` instead.
 - `py_date()`, `py_time()`, `py_datetime()`, and `py_timedelta()`.
@@ -126,12 +124,10 @@ See the full list below.
   and `ZonedDateTime.tz_abbrev()` methods for querying timezone metadata
   (DST offset adjustment and timezone abbreviation).
 - Warning classes (`PotentiallyStaleOffsetWarning`,
-  `TimeZoneUnawareArithmeticWarning`, `DaysNotAlways24HoursWarning`)
-  and corresponding context managers
-  (`ignore_potentially_stale_offset_warning()`,
-  `ignore_timezone_unaware_arithmetic_warning()`,
-  `ignore_days_not_always_24h_warning()`) for fine-grained control
-  over DST-related warnings.
+  `NaiveArithmeticWarning`, `DaysNotAlways24HoursWarning`)
+  and corresponding per-method keyword arguments
+  (`stale_offset_ok`, `naive_arithmetic_ok`,
+  `assume_24h_days`) for fine-grained control over DST-related warnings.
 - A huge revamp and expansion of the documentation.
   The structure and navigability of API reference and overview pages
   has been improved. Several new pages have been added, including:

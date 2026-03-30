@@ -16,14 +16,14 @@ with each other:
 >>> # difference in exact time
 >>> Instant.from_utc(2023, 12, 28, 11, 30) - ZonedDateTime(2023, 12, 28, tz="Europe/Amsterdam")
 TimeDelta("PT12h30m")
->>> # difference in local time (emits TimeZoneUnawareArithmeticWarning)
+>>> # difference in local time (emits NaiveArithmeticWarning)
 >>> PlainDateTime(2023, 12, 28, 11) - PlainDateTime(2023, 12, 27, 11)
 TimeDelta("PT24h")
 ```
 
 ```{note}
 Subtracting two {class}`~whenever.PlainDateTime` values emits a
-{class}`~whenever.TimeZoneUnawareArithmeticWarning`, because without
+{class}`~whenever.NaiveArithmeticWarning`, because without
 timezone context the result can't account for DST transitions.
 See the warning's documentation for details.
 ```
@@ -204,8 +204,7 @@ see {ref}`the fundamentals <arithmetic2>`.
   OffsetDateTime("2024-03-10 13:00:00-07:00")  # offset is stale; Denver is -06:00 on this date
   >>> d.to_tz("America/Denver").add(hours=24)   # DST-safe
   ZonedDateTime("2024-03-10 14:00:00-06:00[America/Denver]")
-  >>> with ignore_potentially_stale_offset_warning():  # suppress if you know what you're doing
-  ...     d.add(hours=24)
+  >>> d.add(hours=24, stale_offset_ok=True)  # suppress if you know what you're doing
   OffsetDateTime("2024-03-10 13:00:00-07:00")
   ```
 
@@ -237,16 +236,15 @@ see {ref}`the fundamentals <arithmetic2>`.
   without any complications.
   Exact time units (hours, minutes, seconds, nanoseconds), however, are
   unreliable without a timezone, so these operations emit a
-  {class}`~whenever.TimeZoneUnawareArithmeticWarning`:
+  {class}`~whenever.NaiveArithmeticWarning`:
 
   ```python
   >>> d = PlainDateTime(2023, 10, 29, 1, 30)
-  >>> d.add(hours=2)  # emits TimeZoneUnawareArithmeticWarning
+  >>> d.add(hours=2)  # emits NaiveArithmeticWarning
   PlainDateTime("2023-10-29 03:30:00")  # 03:30 doesn't exist in Amsterdam on this date
   >>> d.assume_tz("Europe/Amsterdam").add(hours=2)   # timezone-aware
   ZonedDateTime("2023-10-29 02:30:00+01:00[Europe/Amsterdam]")
-  >>> with ignore_timezone_unaware_arithmetic_warning():  # suppress if you know what you're doing
-  ...     d.add(hours=2)
+  >>> d.add(hours=2, naive_arithmetic_ok=True)  # suppress if you know what you're doing
   PlainDateTime("2023-10-29 03:30:00")
   ```
 
@@ -272,7 +270,7 @@ Here is a summary of the arithmetic features for each type:
 
 [^1]: Emits a {class}`~whenever.PotentiallyStaleOffsetWarning`
 [^2]: The result may be ambiguous in rare cases. Accepts the ``disambiguate`` argument.
-[^3]: Emits a {class}`~whenever.TimeZoneUnawareArithmeticWarning`
+[^3]: Emits a {class}`~whenever.NaiveArithmeticWarning`
 
 
 :::{admonition} Why are these operations allowed at all if they can be wrong?

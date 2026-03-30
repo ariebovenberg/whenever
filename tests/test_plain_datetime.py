@@ -1,5 +1,6 @@
 import pickle
 import re
+import warnings
 from datetime import datetime as py_datetime, timezone
 from typing import Any, Literal, Sequence
 
@@ -11,18 +12,17 @@ from whenever import (
     Date,
     Instant,
     ItemizedDelta,
+    NaiveArithmeticWarning,
     OffsetDateTime,
     PlainDateTime,
     RepeatedTime,
     SkippedTime,
     Time,
     TimeDelta,
-    TimeZoneUnawareArithmeticWarning,
     WheneverDeprecationWarning,
     ZonedDateTime,
     days,
     hours,
-    ignore_timezone_unaware_arithmetic_warning,
     months,
     nanoseconds,
     seconds,
@@ -36,6 +36,7 @@ from .common import (
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
+    suppress,
     system_tz,
     system_tz_ams,
 )
@@ -223,7 +224,7 @@ class TestAssumeSystemTz:
             AMS_TZ_POSIX,
         ],
     )
-    @ignore_timezone_unaware_arithmetic_warning()
+    @suppress(NaiveArithmeticWarning)
     def test_nonexistent(self, tz):
         with system_tz(tz):
             d = PlainDateTime(2023, 3, 26, 2, 15)
@@ -577,11 +578,11 @@ class TestShiftMethods:
 
     def test_warnings(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+        with pytest.warns(NaiveArithmeticWarning) as w:
             d.add(months=2, hours=48, seconds=5, nanoseconds=3)
         assert len(w) == 1
 
-        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+        with pytest.warns(NaiveArithmeticWarning) as w:
             d.subtract(months=2, hours=48, seconds=5, nanoseconds=3)
         assert len(w) == 1
 
@@ -590,14 +591,14 @@ class TestShiftMethods:
         d.add(days=10, months=3, years=1)
 
         # ignore_dst deprecated
-        with ignore_timezone_unaware_arithmetic_warning():
+        with suppress(NaiveArithmeticWarning):
             with pytest.warns(WheneverDeprecationWarning, match="ignore_dst"):
                 d.add(hours=48, seconds=5, nanoseconds=3, ignore_dst=True)
 
             with pytest.warns(WheneverDeprecationWarning, match="ignore_dst"):
                 d.subtract(hours=48, seconds=5, nanoseconds=3, ignore_dst=True)
 
-    @ignore_timezone_unaware_arithmetic_warning()
+    @suppress(NaiveArithmeticWarning)
     def test_valid(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         shifted = PlainDateTime(2020, 5, 27, 23, 12, 14, nanosecond=987_651)
@@ -643,7 +644,7 @@ class TestShiftMethods:
 
         assert d.subtract(months=3) == d.add(months=-3)
 
-    @ignore_timezone_unaware_arithmetic_warning()
+    @suppress(NaiveArithmeticWarning)
     def test_invalid(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.raises((ValueError, OverflowError), match="range|year"):
@@ -674,7 +675,7 @@ class TestShiftMethods:
         microseconds=floats(),
         nanoseconds=integers(),
     )
-    @ignore_timezone_unaware_arithmetic_warning()
+    @suppress(NaiveArithmeticWarning)
     def test_fuzzing(self, **kwargs):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         try:
@@ -707,7 +708,7 @@ class TestShiftOperators:
 
     def test_timedelta(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with ignore_timezone_unaware_arithmetic_warning():
+        with suppress(NaiveArithmeticWarning):
             assert d.add(hours=48, seconds=5, nanoseconds=3) == d + TimeDelta(
                 hours=48, seconds=5, nanoseconds=3
             )
@@ -716,12 +717,12 @@ class TestShiftOperators:
             ) == d - TimeDelta(hours=48, seconds=5, nanoseconds=3)
 
         # operators trigger warning (exactly one warning each)
-        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+        with pytest.warns(NaiveArithmeticWarning) as w:
             d + TimeDelta(hours=48, seconds=5, nanoseconds=3)
         assert len(w) == 1
 
         # operators trigger warning (exactly one warning each)
-        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+        with pytest.warns(NaiveArithmeticWarning) as w:
             d - TimeDelta(hours=48, seconds=5, nanoseconds=3)
         assert len(w) == 1
 
@@ -739,21 +740,20 @@ class TestDifference:
     def test_method(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
         other = PlainDateTime(2020, 8, 14, 23, 12, 4, nanosecond=987_654_321)
-        assert d.difference(d) == hours(0)
-        assert d.difference(other) == hours(24) + seconds(5) - nanoseconds(321)
-
-        # the method is deprecated
-        with pytest.warns(WheneverDeprecationWarning, match="difference"):
-            d.difference(other)
+        with suppress(NaiveArithmeticWarning):
+            assert d.difference(d) == hours(0)
+            assert d.difference(other) == hours(24) + seconds(5) - nanoseconds(
+                321
+            )
 
     def test_operator(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
         other = PlainDateTime(2020, 8, 14, 23, 12, 4, nanosecond=987_654_321)
-        with ignore_timezone_unaware_arithmetic_warning():
+        with suppress(NaiveArithmeticWarning):
             assert d - d == hours(0)
             assert d - other == hours(24) + seconds(5) - nanoseconds(321)
 
-        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+        with pytest.warns(NaiveArithmeticWarning) as w:
             d - other
         assert len(w) == 1
 
@@ -1258,7 +1258,6 @@ class TestSince:
             ),
         ],
     )
-    @ignore_timezone_unaware_arithmetic_warning()
     def test_examples(
         self,
         a: PlainDateTime,
@@ -1278,43 +1277,42 @@ class TestSince:
         kwargs: dict[str, Any],
         expect: ItemizedDelta,
     ):
-        assert a.since(b, in_units=units, **kwargs).exact_eq(expect)
+        with suppress(NaiveArithmeticWarning):
+            assert a.since(b, in_units=units, **kwargs).exact_eq(expect)
 
     def test_warnings(self):
         a = PlainDateTime(2023, 2, 15, hour=13, minute=25)
         b = PlainDateTime(2021, 7, 3, hour=1)
 
         # exact output units trigger the warning
-        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+        with pytest.warns(NaiveArithmeticWarning) as w:
             a.since(b, in_units=["hours", "minutes"])
         assert len(w) == 1
 
-        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+        with pytest.warns(NaiveArithmeticWarning) as w:
             a.until(b, in_units=["hours", "minutes"])
         assert len(w) == 1
 
         # mixed calendar+exact output also triggers (has exact)
-        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+        with pytest.warns(NaiveArithmeticWarning) as w:
             a.since(b, in_units=["days", "hours"])
         assert len(w) == 1
 
         # total with exact unit triggers the warning
-        with pytest.warns(TimeZoneUnawareArithmeticWarning) as w:
+        with pytest.warns(NaiveArithmeticWarning) as w:
             a.since(b, total="hours")
         assert len(w) == 1
 
         # calendar-only output: no warning (counting calendar units needs no clock awareness)
-        import warnings as _warnings
-
-        with _warnings.catch_warnings():
-            _warnings.simplefilter("error")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
             a.since(b, in_units=["months", "weeks"])
             a.until(b, in_units=["months", "weeks"])
             a.since(b, total="days")
             a.since(b, total="years")
 
         # suppression works
-        with ignore_timezone_unaware_arithmetic_warning():
+        with suppress(NaiveArithmeticWarning):
             a.since(b, in_units=["hours", "minutes"])
             a.until(b, total="hours")
 
@@ -1338,7 +1336,7 @@ class TestSince:
                 in_units=(),
             )
 
-    @ignore_timezone_unaware_arithmetic_warning()
+    @suppress(NaiveArithmeticWarning)
     def test_no_other_class_supported(self):
         with pytest.raises(TypeError):
             PlainDateTime(2023, 2, 15).since(
@@ -1375,7 +1373,7 @@ class TestSince:
                 PlainDateTime(2020, 1, 1), in_units=["hours", "days"]
             )
 
-    @ignore_timezone_unaware_arithmetic_warning()
+    @suppress(NaiveArithmeticWarning)
     def test_invalid_round_mode(self):
         # round_mode and round_increment are not supported with total=
         with pytest.raises(TypeError, match="round_mode.*total|total.*round"):
@@ -1401,7 +1399,7 @@ class TestSince:
                 round_mode="foobar",
             )  # type: ignore[call-overload]
 
-    @ignore_timezone_unaware_arithmetic_warning()
+    @suppress(NaiveArithmeticWarning)
     def test_until_is_inverse(self):
         a = PlainDateTime(2023, 2, 15, hour=3)
         b = PlainDateTime(2021, 7, 3)
@@ -1423,7 +1421,7 @@ class TestSince:
             )
         )
 
-    @ignore_timezone_unaware_arithmetic_warning()
+    @suppress(NaiveArithmeticWarning)
     def test_until_rounding_symmetry(self):
         a = PlainDateTime(2019, 1, 30, hour=5)
         b = PlainDateTime(2020, 2, 1, hour=12)
@@ -1443,7 +1441,7 @@ class TestSince:
         )
         assert result_ceil == ItemizedDelta(years=1, months=1)
 
-    @ignore_timezone_unaware_arithmetic_warning()
+    @suppress(NaiveArithmeticWarning)
     def test_single_unit_returns_float(self):
         a = PlainDateTime(2025, 3, 15)
         b = PlainDateTime(2023, 3, 15)
@@ -1451,57 +1449,57 @@ class TestSince:
         assert isinstance(result, float)
         assert result == 2.0
 
-    @ignore_timezone_unaware_arithmetic_warning()
     def test_roundtrip_add_back(self):
         """Verify that adding the since() result back gives the original datetime."""
-        a = PlainDateTime(2025, 6, 15, hour=14, minute=30, second=45)
-        b = PlainDateTime(2023, 1, 10, hour=8, minute=15, second=20)
-        result = a.since(
-            b,
-            in_units=[
-                "years",
-                "months",
-                "days",
-                "hours",
-                "minutes",
-                "seconds",
-            ],
-        )
-        assert (
-            b.add(
-                years=result["years"],
-                months=result["months"],
-                days=result["days"],
-                hours=result["hours"],
-                minutes=result["minutes"],
-                seconds=result["seconds"],
+        with suppress(NaiveArithmeticWarning):
+            a = PlainDateTime(2025, 6, 15, hour=14, minute=30, second=45)
+            b = PlainDateTime(2023, 1, 10, hour=8, minute=15, second=20)
+            result = a.since(
+                b,
+                in_units=[
+                    "years",
+                    "months",
+                    "days",
+                    "hours",
+                    "minutes",
+                    "seconds",
+                ],
             )
-            == a
-        )
+            assert (
+                b.add(
+                    years=result["years"],
+                    months=result["months"],
+                    days=result["days"],
+                    hours=result["hours"],
+                    minutes=result["minutes"],
+                    seconds=result["seconds"],
+                )
+                == a
+            )
 
-    @ignore_timezone_unaware_arithmetic_warning()
     def test_roundtrip_negative(self):
         """Verify roundtrip for negative results."""
-        a = PlainDateTime(2020, 1, 1)
-        b = PlainDateTime(2025, 6, 15, hour=14)
-        result = a.since(b, in_units=["years", "months", "days", "hours"])
-        assert (
-            b.add(
-                years=result["years"],
-                months=result["months"],
-                days=result["days"],
-                hours=result["hours"],
+        with suppress(NaiveArithmeticWarning):
+            a = PlainDateTime(2020, 1, 1)
+            b = PlainDateTime(2025, 6, 15, hour=14)
+            result = a.since(b, in_units=["years", "months", "days", "hours"])
+            assert (
+                b.add(
+                    years=result["years"],
+                    months=result["months"],
+                    days=result["days"],
+                    hours=result["hours"],
+                )
+                == a
             )
-            == a
-        )
 
-    @ignore_timezone_unaware_arithmetic_warning()
+    @suppress(NaiveArithmeticWarning)
     def test_nanoseconds_dont_overflow(self):
         a = PlainDateTime(9000, 1, 1)
         b = PlainDateTime(23, 3, 15)
         assert a.since(b, total="nanoseconds") == 283280457600000000000
 
-    @ignore_timezone_unaware_arithmetic_warning()
+    @suppress(NaiveArithmeticWarning)
     def test_very_large_increment(self):
         a = PlainDateTime(2023, 2, 15)
         b = PlainDateTime(2021, 7, 3)

@@ -153,7 +153,7 @@ The warning approach gives you four levels of control:
    warnings.filterwarnings("error", category=whenever.PotentialDstBugWarning)
    ```
 3. **Escape hatch** — when the operation is intentional, silence it with
-   a context manager (e.g. {func}`~whenever.ignore_potentially_stale_offset_warning`),
+   a keyword argument (e.g. ``stale_offset_ok=True``),
    documenting the decision in code.
 4. **Fine-grained** — configure at the module or function level, using
    Python's existing warning infrastructure.
