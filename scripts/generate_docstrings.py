@@ -17,6 +17,9 @@ assert sys.version_info >= (
     13,
 ), "This script requires Python 3.13 or later due to how docstrings are rendered."
 
+# Types defined in pure Python only (not in Rust extension)
+_PURE_PYTHON_TYPES = {"YearMonth", "MonthDay", "IsoWeekDate"}
+
 classes = {
     cls
     for name, cls in W.__dict__.items()
@@ -25,6 +28,7 @@ classes = {
         and inspect.isclass(cls)
         and cls.__module__ == "whenever"
         and not issubclass(cls, enum.Enum)
+        and name not in _PURE_PYTHON_TYPES
     )
 }
 functions = {

@@ -15,12 +15,10 @@ try:  # pragma: no cover
         _unpkl_dtdelta,
         _unpkl_inst,
         _unpkl_local,
-        _unpkl_md,
         _unpkl_offset,
         _unpkl_tdelta,
         _unpkl_time,
         _unpkl_utc,
-        _unpkl_ym,
         _unpkl_zoned,
     )
 
@@ -63,17 +61,17 @@ except ModuleNotFoundError as e:
         _unpkl_idelta,
         _unpkl_inst,
         _unpkl_local,
-        _unpkl_md,
         _unpkl_offset,
         _unpkl_tdelta,
         _unpkl_time,
         _unpkl_utc,
-        _unpkl_ym,
         _unpkl_zoned,
     )
 
     _EXTENSION_LOADED = False
 
+# YearMonth/MonthDay/IsoWeekDate unpickle functions always come from _shared
+from ._shared import _unpkl_iwd, _unpkl_md, _unpkl_ym
 from ._typing import *
 
 MONDAY = Weekday.MONDAY

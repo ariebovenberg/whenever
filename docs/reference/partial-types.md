@@ -13,10 +13,12 @@
    time
    yearmonth
    monthday
+   isoweekdate
 ```
 
 This section describes the "smaller" date & time types provided by
-`whenever`: {class}`Date`, {class}`Time`, {class}`YearMonth`, and {class}`MonthDay`.
+`whenever`: {class}`Date`, {class}`Time`, {class}`YearMonth`, {class}`MonthDay`,
+and {class}`IsoWeekDate`.
 
 ## Overview
 
@@ -26,6 +28,7 @@ This section describes the "smaller" date & time types provided by
 | {class}`Time` | A time of day (hour, minute, second…) | `Time(14, 30)` |
 | {class}`YearMonth` | A year and month without a day | `YearMonth(2024, 3)` |
 | {class}`MonthDay` | A month and day without a year | `MonthDay(3, 15)` |
+| {class}`IsoWeekDate` | An ISO 8601 week date (year, week, weekday) | `IsoWeekDate(2024, 1, Weekday.MONDAY)` |
 
 ## Date
 

@@ -7,7 +7,6 @@ use crate::{
         instant::{self, unpickle as _unpkl_inst, unpickle_pre_0_8 as _unpkl_utc},
         itemized_date_delta::{self, unpickle as _unpkl_iddelta},
         itemized_delta::{self, unpickle as _unpkl_idelta},
-        monthday::{self, unpickle as _unpkl_md},
         offset_datetime::{self, unpickle as _unpkl_offset},
         plain_datetime::{self, unpickle as _unpkl_local},
         time::{self, unpickle as _unpkl_time},
@@ -15,7 +14,6 @@ use crate::{
             self, hours, microseconds, milliseconds, minutes, nanoseconds, seconds,
             unpickle as _unpkl_tdelta,
         },
-        yearmonth::{self, unpickle as _unpkl_ym},
         zoned_datetime::{self, unpickle as _unpkl_zoned},
     },
     common::round,
@@ -62,8 +60,6 @@ pub(crate) static mut MODULE_DEF: PyModuleDef = PyModuleDef {
 
 static mut METHODS: &mut [PyMethodDef] = &mut [
     modmethod1!(_unpkl_date, c""),
-    modmethod1!(_unpkl_ym, c""),
-    modmethod1!(_unpkl_md, c""),
     modmethod1!(_unpkl_time, c""),
     modmethod_vararg!(_unpkl_ddelta, c""),
     modmethod1!(_unpkl_tdelta, c""),
@@ -144,20 +140,6 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         c"_unpkl_date",
     )?;
     create_singletons(*date_type, date::SINGLETONS)?;
-    let (yearmonth_type, unpickle_yearmonth) = new_class(
-        module,
-        module_name.borrow(),
-        &mut unsafe { yearmonth::SPEC },
-        c"_unpkl_ym",
-    )?;
-    create_singletons(*yearmonth_type, yearmonth::SINGLETONS)?;
-    let (monthday_type, unpickle_monthday) = new_class(
-        module,
-        module_name.borrow(),
-        &mut unsafe { monthday::SPEC },
-        c"_unpkl_md",
-    )?;
-    create_singletons(*monthday_type, monthday::SINGLETONS)?;
     let (time_type, unpickle_time) = new_class(
         module,
         module_name.borrow(),
@@ -243,11 +225,36 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         .getattr(c"strptime")?;
     let time_ns = import(c"time")?.getattr(c"time_ns")?;
 
-    let weekday_enum = new_enum(
-        module,
-        module_name.borrow(),
-        "Weekday",
-        "MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY SUNDAY",
+    let shared_module = import(c"whenever._shared")?;
+    let yearmonth_type = shared_module.getattr(c"YearMonth")?;
+    let monthday_type = shared_module.getattr(c"MonthDay")?;
+    let weekday_enum = shared_module.getattr(c"Weekday")?;
+    let isoweekdate_type = shared_module.getattr(c"IsoWeekDate")?;
+    let isoweekdate_new = isoweekdate_type.getattr(c"_from_parts_unchecked")?;
+
+    module.add_type(
+        yearmonth_type
+            .borrow()
+            .cast_allow_subclass::<PyType>()
+            .unwrap(),
+    )?;
+    module.add_type(
+        monthday_type
+            .borrow()
+            .cast_allow_subclass::<PyType>()
+            .unwrap(),
+    )?;
+    module.add_type(
+        weekday_enum
+            .borrow()
+            .cast_allow_subclass::<PyType>()
+            .unwrap(),
+    )?;
+    module.add_type(
+        isoweekdate_type
+            .borrow()
+            .cast_allow_subclass::<PyType>()
+            .unwrap(),
     )?;
 
     let exc_repeated = new_exception(
@@ -319,6 +326,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         date_type: date_type.py_owned(),
         yearmonth_type: yearmonth_type.py_owned(),
         monthday_type: monthday_type.py_owned(),
+        isoweekdate_new: isoweekdate_new.py_owned(),
         time_type: time_type.py_owned(),
         date_delta_type: date_delta_type.py_owned(),
         time_delta_type: time_delta_type.py_owned(),
@@ -422,8 +430,6 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         warn_deprecation: warn_deprecation.py_owned(),
 
         unpickle_date: unpickle_date.py_owned(),
-        unpickle_yearmonth: unpickle_yearmonth.py_owned(),
-        unpickle_monthday: unpickle_monthday.py_owned(),
         unpickle_time: unpickle_time.py_owned(),
         unpickle_date_delta: unpickle_date_delta.py_owned(),
         unpickle_time_delta: unpickle_time_delta.py_owned(),
@@ -438,6 +444,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         time_patch,
         tz_store,
     });
+
     Ok(())
 }
 
@@ -477,16 +484,6 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
             state.date_type.inner(),
             state.unpickle_date,
             date::SINGLETONS.len(),
-        ),
-        (
-            state.yearmonth_type.inner(),
-            state.unpickle_yearmonth,
-            yearmonth::SINGLETONS.len(),
-        ),
-        (
-            state.monthday_type.inner(),
-            state.unpickle_monthday,
-            monthday::SINGLETONS.len(),
         ),
         (
             state.time_type.inner(),
@@ -543,6 +540,11 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
         traverse(unpkl.as_ptr(), visit, arg)?;
     }
 
+    // imported types
+    traverse(state.yearmonth_type.as_ptr(), visit, arg)?;
+    traverse(state.monthday_type.as_ptr(), visit, arg)?;
+    traverse(state.isoweekdate_new.as_ptr(), visit, arg)?;
+
     // enum members
     for member in state.weekday_enum_members.into_iter() {
         traverse(member.as_ptr(), visit, arg)?;
@@ -593,6 +595,7 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.date_type).cast());
         Py_CLEAR((&raw mut state.yearmonth_type).cast());
         Py_CLEAR((&raw mut state.monthday_type).cast());
+        Py_CLEAR((&raw mut state.isoweekdate_new).cast());
         Py_CLEAR((&raw mut state.time_type).cast());
         Py_CLEAR((&raw mut state.date_delta_type).cast());
         Py_CLEAR((&raw mut state.time_delta_type).cast());
@@ -678,8 +681,6 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
 
         // unpickling functions
         Py_CLEAR((&raw mut state.unpickle_date).cast());
-        Py_CLEAR((&raw mut state.unpickle_yearmonth).cast());
-        Py_CLEAR((&raw mut state.unpickle_monthday).cast());
         Py_CLEAR((&raw mut state.unpickle_time).cast());
         Py_CLEAR((&raw mut state.unpickle_date_delta).cast());
         Py_CLEAR((&raw mut state.unpickle_time_delta).cast());
@@ -728,8 +729,9 @@ unsafe extern "C" fn module_free(mod_ptr: *mut c_void) {
 pub(crate) struct State {
     // classes
     pub(crate) date_type: HeapType<date::Date>,
-    pub(crate) yearmonth_type: HeapType<yearmonth::YearMonth>,
-    pub(crate) monthday_type: HeapType<monthday::MonthDay>,
+    pub(crate) yearmonth_type: PyObj,
+    pub(crate) monthday_type: PyObj,
+    pub(crate) isoweekdate_new: PyObj,
     pub(crate) time_type: HeapType<time::Time>,
     pub(crate) date_delta_type: HeapType<date_delta::DateDelta>,
     pub(crate) time_delta_type: HeapType<time_delta::TimeDelta>,
@@ -759,8 +761,6 @@ pub(crate) struct State {
 
     // unpickling functions
     pub(crate) unpickle_date: PyObj,
-    pub(crate) unpickle_yearmonth: PyObj,
-    pub(crate) unpickle_monthday: PyObj,
     pub(crate) unpickle_time: PyObj,
     pub(crate) unpickle_date_delta: PyObj,
     pub(crate) unpickle_time_delta: PyObj,

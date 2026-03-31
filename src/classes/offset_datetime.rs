@@ -660,6 +660,65 @@ fn time(cls: HeapType<OffsetDateTime>, OffsetDateTime { time, .. }: OffsetDateTi
     time.to_obj(cls.state().time_type)
 }
 
+fn day_of_year(_: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+    let d = slf.date;
+    (d.year.days_before_month(d.month) + d.day as u16).to_py()
+}
+
+fn days_in_month(_: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+    let d = slf.date;
+    d.year.days_in_month(d.month).to_py()
+}
+
+fn days_in_year(_: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+    (if slf.date.year.is_leap() {
+        366_u16
+    } else {
+        365_u16
+    })
+    .to_py()
+}
+
+fn in_leap_year(_: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+    slf.date.year.is_leap().to_py()
+}
+
+fn start_of(
+    cls: HeapType<OffsetDateTime>,
+    slf: OffsetDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    let state = cls.state();
+    let unit_obj = handle_one_arg("start_of", args)?;
+    let stale_offset_ok = handle_one_kwarg("start_of", state.str_stale_offset_ok, kwargs)?;
+    if !stale_offset_ok.is_some_and(|v| v.is_truthy()) {
+        offset_stale_warning(state, doc::OFFSET_START_END_OF_STALE_MSG)?;
+    }
+    let (dt, _) = slf.without_offset().start_of_unit(unit_obj, state)?;
+    OffsetDateTime::new(dt.date, dt.time, slf.offset)
+        .ok_or_range_err()?
+        .to_obj(cls)
+}
+
+fn end_of(
+    cls: HeapType<OffsetDateTime>,
+    slf: OffsetDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    let state = cls.state();
+    let unit_obj = handle_one_arg("end_of", args)?;
+    let stale_offset_ok = handle_one_kwarg("end_of", state.str_stale_offset_ok, kwargs)?;
+    if !stale_offset_ok.is_some_and(|v| v.is_truthy()) {
+        offset_stale_warning(state, doc::OFFSET_START_END_OF_STALE_MSG)?;
+    }
+    let (dt, _) = slf.without_offset().end_of_unit(unit_obj, state)?;
+    OffsetDateTime::new(dt.date, dt.time, slf.offset)
+        .ok_or_range_err()?
+        .to_obj(cls)
+}
+
 #[inline]
 fn offset_stale_warning(state: &State, msg: &CStr) -> PyResult<()> {
     warn_with_class(state.warn_potentially_stale_offset, msg, 1)
@@ -918,7 +977,7 @@ fn subtract(
     shift_method(cls, slf, args, kwargs, true)
 }
 
-#[inline]
+#[inline(never)]
 fn shift_method(
     cls: HeapType<OffsetDateTime>,
     slf: OffsetDateTime,
@@ -1310,6 +1369,7 @@ fn until(
     offset_since(cls, slf, args, kwargs, true)
 }
 
+#[inline(never)]
 fn offset_since(
     cls: HeapType<OffsetDateTime>,
     slf: OffsetDateTime,
@@ -1543,6 +1603,12 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(OffsetDateTime, assume_tz, doc::OFFSETDATETIME_ASSUME_TZ),
     method0!(OffsetDateTime, date, doc::LOCALTIME_DATE),
     method0!(OffsetDateTime, time, doc::LOCALTIME_TIME),
+    method0!(OffsetDateTime, day_of_year, doc::LOCALTIME_DAY_OF_YEAR),
+    method0!(OffsetDateTime, days_in_month, doc::LOCALTIME_DAYS_IN_MONTH),
+    method0!(OffsetDateTime, days_in_year, doc::LOCALTIME_DAYS_IN_YEAR),
+    method0!(OffsetDateTime, in_leap_year, doc::LOCALTIME_IN_LEAP_YEAR),
+    method_kwargs!(OffsetDateTime, start_of, doc::OFFSETDATETIME_START_OF),
+    method_kwargs!(OffsetDateTime, end_of, doc::OFFSETDATETIME_END_OF),
     method0!(
         OffsetDateTime,
         format_rfc2822,

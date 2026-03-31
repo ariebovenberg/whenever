@@ -36,4 +36,11 @@ There's also {class}`~whenever.YearMonth` and {class}`~whenever.MonthDay` for re
 year-month and month-day combinations, respectively.
 These are useful for representing recurring events or birthdays.
 
+{class}`~whenever.IsoWeekDate` represents a date in the ISO 8601 week date system:
+
+```python
+>>> Date(2024, 12, 30).iso_week_date()
+IsoWeekDate("2025-W01-1")
+```
+
 See the {ref}`API reference <partial-api>` for more details.

@@ -10,10 +10,8 @@ use crate::{
     classes::{
         date_delta::{DateDelta, handle_init_kwargs as handle_datedelta_kwargs},
         itemized_date_delta::ItemizedDateDelta,
-        monthday::MonthDay,
         plain_datetime::DateTime,
         time::Time,
-        yearmonth::YearMonth,
     },
     common::{
         fmt::{self, Chunk},
@@ -77,6 +75,35 @@ impl Date {
             month,
             day: 1,
         }
+    }
+
+    /// Core logic for finding the nth weekday in a month.
+    /// Positive n counts from the start (1 = first), negative from the end (-1 = last).
+    /// Returns None if the nth occurrence doesn't exist.
+    pub(crate) fn nth_weekday_in_month(
+        year: Year,
+        month: Month,
+        n: i32,
+        target_dow: Weekday,
+    ) -> Option<Date> {
+        debug_assert!(n != 0);
+        let target_dow = target_dow as i32;
+        let day = if n > 0 {
+            let first_dow = Date::first_of_month(year, month).day_of_week() as i32;
+            let offset = (target_dow - first_dow).rem_euclid(7);
+            1 + offset + (n - 1) * 7
+        } else {
+            let dim = year.days_in_month(month) as i32;
+            let last_dow = Date::last_of_month(year, month).day_of_week() as i32;
+            let offset = (last_dow - target_dow).rem_euclid(7);
+            dim - offset + (n + 1) * 7
+        };
+        let dim = year.days_in_month(month) as i32;
+        (day >= 1 && day <= dim).then_some(Date {
+            year,
+            month,
+            day: day as u8,
+        })
     }
 
     pub(crate) fn from_longs(y: c_long, m: c_long, day: c_long) -> Option<Self> {
@@ -226,6 +253,38 @@ impl Date {
 
     pub(crate) fn day_of_week(self) -> Weekday {
         self.unix_days().day_of_week()
+    }
+
+    /// Compute the ISO week year and week number for this date.
+    pub(crate) fn iso_year_week(self) -> (i32, u8) {
+        let day_of_year = self.year.days_before_month(self.month) + self.day as u16;
+        // ISO weekday: Monday=1, Sunday=7
+        let dow = self.day_of_week() as u8;
+        // The nearest Thursday determines the ISO year and week
+        let nearest_thursday_doy = day_of_year as i32 + (4 - dow as i32);
+        let mut iso_year = self.year.get() as i32;
+
+        if nearest_thursday_doy <= 0 {
+            // Belongs to the previous year's last week
+            iso_year -= 1;
+            let prev_year_days = if Year::new_unchecked(iso_year as u16).is_leap() {
+                366
+            } else {
+                365
+            };
+            let week = (nearest_thursday_doy + prev_year_days - 1) / 7 + 1;
+            (iso_year, week as u8)
+        } else {
+            let year_days = if self.year.is_leap() { 366 } else { 365 };
+            if nearest_thursday_doy > year_days {
+                // Belongs to the next year's first week
+                iso_year += 1;
+                (iso_year, 1)
+            } else {
+                let week = (nearest_thursday_doy - 1) / 7 + 1;
+                (iso_year, week as u8)
+            }
+        }
     }
 
     pub(crate) const fn hash(self) -> i32 {
@@ -397,11 +456,15 @@ fn from_py_date(cls: HeapType<Date>, arg: PyObj) -> PyReturn {
 }
 
 fn year_month(cls: HeapType<Date>, Date { year, month, .. }: Date) -> PyReturn {
-    YearMonth::new(year, month).to_obj(cls.state().yearmonth_type)
+    let state = cls.state();
+    let args = (year.get().to_py()?, month.get().to_py()?).into_pytuple()?;
+    state.yearmonth_type.call(args.borrow())
 }
 
 fn month_day(cls: HeapType<Date>, Date { month, day, .. }: Date) -> PyReturn {
-    MonthDay::new_unchecked(month, day).to_obj(cls.state().monthday_type)
+    let state = cls.state();
+    let args = (month.get().to_py()?, day.to_py()?).into_pytuple()?;
+    state.monthday_type.call(args.borrow())
 }
 
 fn format_iso(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
@@ -444,6 +507,178 @@ fn parse_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn {
 
 fn day_of_week(cls: HeapType<Date>, slf: Date) -> Owned<PyObj> {
     cls.state().weekday_enum_members[(slf.day_of_week() as u8 - 1) as usize].newref()
+}
+
+fn iso_week_date(cls: HeapType<Date>, slf: Date) -> PyReturn {
+    let state = cls.state();
+    let (iso_year, iso_week) = slf.iso_year_week();
+    let weekday_idx = slf.day_of_week() as u8 - 1;
+    let args = (
+        iso_year.to_py()?,
+        (iso_week as u8).to_py()?,
+        state.weekday_enum_members[weekday_idx as usize].newref(),
+    )
+        .into_pytuple()?;
+    state.isoweekdate_new.call(args.borrow())
+}
+
+fn day_of_year(_: HeapType<Date>, slf: Date) -> PyReturn {
+    (slf.year.days_before_month(slf.month) + slf.day as u16).to_py()
+}
+
+fn days_in_month(_: HeapType<Date>, slf: Date) -> PyReturn {
+    slf.year.days_in_month(slf.month).to_py()
+}
+
+fn days_in_year(_: HeapType<Date>, slf: Date) -> PyReturn {
+    (if slf.year.is_leap() { 366_u16 } else { 365_u16 }).to_py()
+}
+
+fn in_leap_year(_: HeapType<Date>, slf: Date) -> PyReturn {
+    slf.year.is_leap().to_py()
+}
+
+fn next_day(cls: HeapType<Date>, slf: Date) -> PyReturn {
+    slf.shift(DeltaMonths::ZERO, DeltaDays::new_unchecked(1))
+        .ok_or_range_err()?
+        .to_obj(cls)
+}
+
+fn prev_day(cls: HeapType<Date>, slf: Date) -> PyReturn {
+    slf.shift(DeltaMonths::ZERO, DeltaDays::new_unchecked(-1))
+        .ok_or_range_err()?
+        .to_obj(cls)
+}
+
+fn nth_weekday_of_month(cls: HeapType<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
+    let &[n_obj, dow_obj] = args else {
+        raise_type_err("nth_weekday_of_month() requires exactly 2 positional arguments")?
+    };
+    let state = cls.state();
+    let n = {
+        let raw = n_obj
+            .cast_exact::<PyInt>()
+            .ok_or_type_err("n must be an integer")?
+            .to_i64()?;
+        if raw == 0 {
+            raise_value_err("n must not be 0")?
+        } else if !(-5..=5).contains(&raw) {
+            raise_value_err("n must be between -5 and 5")?
+        }
+        // SAFETY: we just checked that it's well within range
+        raw as i32
+    };
+
+    let target_dow = extract_weekday(state, dow_obj)?;
+    Date::nth_weekday_in_month(slf.year, slf.month, n, target_dow)
+        .ok_or_value_err(format!(
+            "Weekday #{n} doesn't exist in {}-{:02}",
+            slf.year.get(),
+            slf.month.get()
+        ))?
+        .to_obj(cls)
+}
+
+fn nth_weekday(cls: HeapType<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
+    let &[n_obj, dow_obj] = args else {
+        raise_type_err("nth_weekday_of_month() requires exactly 2 positional arguments")?
+    };
+    let state = cls.state();
+    let n = {
+        let raw = n_obj
+            .cast_exact::<PyInt>()
+            .ok_or_type_err("n must be an integer")?
+            .to_i64()?;
+        if raw == 0 {
+            raise_value_err("n must not be 0")?
+        } else if !(-5..=5).contains(&raw) {
+            raise_value_err("n must be between -5 and 5")?
+        }
+        // SAFETY: we just checked that it's well within range
+        raw as i32
+    };
+    let target_dow = extract_weekday(state, dow_obj)? as i32;
+    let self_dow = slf.day_of_week() as i32;
+
+    let days = if n > 0 {
+        let mut offset = (target_dow - self_dow).rem_euclid(7);
+        if offset == 0 {
+            offset = 7;
+        }
+        offset + (n - 1) * 7
+    } else {
+        let mut offset = (self_dow - target_dow).rem_euclid(7);
+        if offset == 0 {
+            offset = 7;
+        }
+        -(offset + (-n - 1) * 7)
+    };
+
+    slf.shift(DeltaMonths::ZERO, DeltaDays::new(days).ok_or_range_err()?)
+        .ok_or_range_err()?
+        .to_obj(cls)
+}
+
+fn start_of(cls: HeapType<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
+    let &State {
+        str_year,
+        str_month,
+        ..
+    } = cls.state();
+    match_interned_str("unit", unit_obj, |v, eq| {
+        if eq(v, str_year) {
+            Some(Date {
+                year: slf.year,
+                month: Month::January,
+                day: 1,
+            })
+        } else if eq(v, str_month) {
+            Some(Date {
+                year: slf.year,
+                month: slf.month,
+                day: 1,
+            })
+        } else {
+            None
+        }
+    })?
+    .to_obj(cls)
+}
+
+fn end_of(cls: HeapType<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
+    let &State {
+        str_year,
+        str_month,
+        ..
+    } = cls.state();
+    match_interned_str("unit", unit_obj, |v, eq| {
+        if eq(v, str_year) {
+            Some(Date {
+                year: slf.year,
+                month: Month::December,
+                day: 31,
+            })
+        } else if eq(v, str_month) {
+            Some(Date {
+                year: slf.year,
+                month: slf.month,
+                day: slf.year.days_in_month(slf.month),
+            })
+        } else {
+            None
+        }
+    })?
+    .to_obj(cls)
+}
+
+/// Extract a Weekday enum value from a Python argument
+fn extract_weekday(state: &State, arg: PyObj) -> PyResult<Weekday> {
+    state
+        .weekday_enum_members
+        .iter()
+        .position(|m| *m == arg)
+        .map(|i| Weekday::from_iso_unchecked(i as u8 + 1))
+        .ok_or_type_err("weekday must be a Weekday enum member")
 }
 
 fn __reduce__(cls: HeapType<Date>, Date { year, month, day }: Date) -> PyResult<Owned<PyTuple>> {
@@ -563,7 +798,7 @@ fn subtract(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwa
     shift_method(cls, slf, args, kwargs, true)
 }
 
-#[inline]
+#[inline(never)]
 fn shift_method(
     cls: HeapType<Date>,
     slf: Date,
@@ -615,6 +850,7 @@ fn until(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs
     since_inner(cls, slf, args, kwargs, "until", true)
 }
 
+#[inline(never)]
 fn since_inner(
     cls: HeapType<Date>,
     slf: Date,
@@ -932,6 +1168,17 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     method0!(Date, month_day, doc::DATE_MONTH_DAY),
     method1!(Date, at, doc::DATE_AT),
     method0!(Date, day_of_week, doc::DATE_DAY_OF_WEEK),
+    method0!(Date, iso_week_date, doc::DATE_ISO_WEEK_DATE),
+    method0!(Date, day_of_year, doc::DATE_DAY_OF_YEAR),
+    method0!(Date, days_in_month, doc::DATE_DAYS_IN_MONTH),
+    method0!(Date, days_in_year, doc::DATE_DAYS_IN_YEAR),
+    method0!(Date, in_leap_year, doc::DATE_IN_LEAP_YEAR),
+    method0!(Date, next_day, doc::DATE_NEXT_DAY),
+    method0!(Date, prev_day, doc::DATE_PREV_DAY),
+    method_vararg!(Date, nth_weekday_of_month, doc::DATE_NTH_WEEKDAY_OF_MONTH),
+    method_vararg!(Date, nth_weekday, doc::DATE_NTH_WEEKDAY),
+    method1!(Date, start_of, doc::DATE_START_OF),
+    method1!(Date, end_of, doc::DATE_END_OF),
     method0!(Date, __reduce__, c""),
     method_kwargs!(Date, add, doc::DATE_ADD),
     method_kwargs!(Date, subtract, doc::DATE_SUBTRACT),

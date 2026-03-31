@@ -241,3 +241,62 @@ def test_cannot_subclass():
 
         class SubclassDate(YearMonth):  # type: ignore[misc]
             pass
+
+
+class TestDaysInMonth:
+
+    @pytest.mark.parametrize(
+        "ym, expected",
+        [
+            (YearMonth(2024, 1), 31),
+            (YearMonth(2024, 2), 29),
+            (YearMonth(2023, 2), 28),
+            (YearMonth(2023, 3), 31),
+            (YearMonth(2023, 4), 30),
+            (YearMonth(2023, 5), 31),
+            (YearMonth(2023, 6), 30),
+            (YearMonth(2023, 7), 31),
+            (YearMonth(2023, 8), 31),
+            (YearMonth(2023, 9), 30),
+            (YearMonth(2023, 10), 31),
+            (YearMonth(2023, 11), 30),
+            (YearMonth(2023, 12), 31),
+        ],
+    )
+    def test_values(self, ym, expected):
+        assert ym.days_in_month() == expected
+
+    def test_feb_century_leap_rules(self):
+        assert YearMonth(2000, 2).days_in_month() == 29
+        assert YearMonth(1900, 2).days_in_month() == 28
+
+
+class TestDaysInYear:
+
+    @pytest.mark.parametrize(
+        "ym, expected",
+        [
+            (YearMonth(2024, 1), 366),
+            (YearMonth(2023, 1), 365),
+            (YearMonth(2000, 6), 366),
+            (YearMonth(1900, 6), 365),
+        ],
+    )
+    def test_values(self, ym, expected):
+        assert ym.days_in_year() == expected
+
+
+class TestInLeapYear:
+
+    @pytest.mark.parametrize(
+        "ym, expected",
+        [
+            (YearMonth(2024, 1), True),
+            (YearMonth(2023, 1), False),
+            (YearMonth(2000, 6), True),
+            (YearMonth(1900, 6), False),
+            (YearMonth(2100, 6), False),
+        ],
+    )
+    def test_values(self, ym, expected):
+        assert ym.in_leap_year() is expected
