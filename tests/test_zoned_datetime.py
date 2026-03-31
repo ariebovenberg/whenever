@@ -1097,6 +1097,353 @@ class TestIsAmbiguous:
         assert not d2.is_ambiguous()
 
 
+class TestNextTransition:
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_ams_summer(self, tz: str):
+        d = create_zdt(2023, 8, 15, 12, tz=tz)
+        t = d.next_transition()
+        assert t is not None
+        # Next transition is fall-back in October 2023.
+        # The returned instant is when the new offset takes effect,
+        # so disambiguate="later" matches the CET offset.
+        assert t.exact_eq(
+            create_zdt(2023, 10, 29, 2, tz=tz, disambiguate="later")
+        )
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_ams_winter(self, tz: str):
+        d = create_zdt(2024, 1, 15, 12, tz=tz)
+        t = d.next_transition()
+        assert t is not None
+        # Next transition is spring-forward in March 2024
+        assert t.exact_eq(create_zdt(2024, 3, 31, 3, tz=tz))
+
+    def test_utc_returns_none(self):
+        d = create_zdt(2024, 6, 15, 12, tz="Etc/UTC")
+        assert d.next_transition() is None
+
+    def test_no_dst_returns_none(self):
+        d = create_zdt(2024, 6, 15, 12, tz="Asia/Kolkata")
+        assert d.next_transition() is None
+
+    def test_chain_nyc(self):
+        d = ZonedDateTime(2024, 1, 1, tz="America/New_York")
+        t1 = d.next_transition()
+        assert t1 is not None
+        t2 = t1.next_transition()
+        assert t2 is not None
+        assert t1.exact_eq(
+            ZonedDateTime(2024, 3, 10, 3, tz="America/New_York")
+        )
+        assert t2.exact_eq(
+            ZonedDateTime(
+                2024, 11, 3, 1, tz="America/New_York", disambiguate="later"
+            )
+        )
+
+    def test_southern_hemisphere_sydney(self):
+        d = ZonedDateTime(2024, 1, 15, tz="Australia/Sydney")
+        t = d.next_transition()
+        assert t is not None
+        # Sydney: DST ends in April (fall-back)
+        assert t.exact_eq(
+            ZonedDateTime(
+                2024, 4, 7, 2, tz="Australia/Sydney", disambiguate="later"
+            )
+        )
+
+    def test_at_exact_transition_nyc(self):
+        # At the exact moment of spring-forward in NYC
+        d = ZonedDateTime(2024, 3, 10, 3, tz="America/New_York")
+        t = d.next_transition()
+        assert t is not None
+        # Should skip the current transition and find the next one
+        assert t.exact_eq(
+            ZonedDateTime(
+                2024, 11, 3, 1, tz="America/New_York", disambiguate="later"
+            )
+        )
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_far_future_posix(self, tz: str):
+        d = create_zdt(2050, 6, 15, 12, tz=tz)
+        t = d.next_transition()
+        assert t is not None
+        # Verify we get a transition in 2050
+        assert t.year == 2050
+        assert t.month == 10  # fall-back
+
+    def test_return_type_and_tz(self):
+        d = ZonedDateTime(2024, 1, 1, tz="America/New_York")
+        t = d.next_transition()
+        assert isinstance(t, ZonedDateTime)
+        assert t.tz == "America/New_York"
+
+    def test_nanosecond_is_zero(self):
+        # Transitions are always on second boundaries
+        d = ZonedDateTime(
+            2024, 1, 1, nanosecond=123_456, tz="America/New_York"
+        )
+        t = d.next_transition()
+        assert t is not None
+        assert t.nanosecond == 0
+
+    def test_near_max_boundary(self):
+        d = ZonedDateTime(9999, 12, 1, tz="America/New_York")
+        # Should not crash; result depends on POSIX rule year limits
+        t = d.next_transition()
+        # Year 9999 may or may not have a transition depending on implementation
+        if t is not None:
+            assert isinstance(t, ZonedDateTime)
+
+    def test_near_min_boundary(self):
+        d = ZonedDateTime(1, 1, 1, tz="America/New_York")
+        t = d.next_transition()
+        assert t is not None
+        assert isinstance(t, ZonedDateTime)
+
+    # -- First transition is into DST (America/Iqaluit, Antarctica/Palmer) --
+    # These zones have no recorded transitions before their first one, and that
+    # first transition is directly INTO a DST period (not a standard time).
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_iqaluit_before_first_transition(self):
+        """America/Iqaluit: first transition at 1942-08-01 is directly into DST."""
+        d = ZonedDateTime(1940, 1, 1, tz="America/Iqaluit")
+        t = d.next_transition()
+        assert t is not None
+        # First transition: 1942-08-01 00:00:00 UTC → -04:00 (EWT, DST)
+        assert t.exact_eq(
+            ZonedDateTime(
+                1942, 7, 31, 20, tz="America/Iqaluit", disambiguate="later"
+            )
+        )
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_iqaluit_none_before_first_transition(self):
+        """No transition before the very first one."""
+        d = ZonedDateTime(1940, 1, 1, tz="America/Iqaluit")
+        t = d.prev_transition()
+        assert t is None
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_palmer_before_first_transition(self):
+        """Antarctica/Palmer: first transition at 1965-01-01 is directly into DST."""
+        d = ZonedDateTime(1963, 1, 1, tz="Antarctica/Palmer")
+        t = d.next_transition()
+        assert t is not None
+        # First transition: 1965-01-01 00:00:00 UTC → -03:00 (DST)
+        # This is a fall-back; local time 21:00 is ambiguous, use "later"
+        assert t.exact_eq(
+            ZonedDateTime(
+                1964, 12, 31, 21, tz="Antarctica/Palmer", disambiguate="later"
+            )
+        )
+
+    # -- Array-to-POSIX TZ string handoff --
+    # After the last explicitly recorded transition, the POSIX TZ string takes over.
+    # These tests verify that next/prev_transition seamlessly crosses this boundary.
+
+    @pytest.mark.parametrize(
+        "tz",
+        [AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_next_transition_after_posix_boundary(self, tz: str):
+        """next_transition in POSIX territory returns correct spring-forward."""
+        d = create_zdt(2050, 12, 1, tz=tz)
+        t = d.next_transition()
+        assert t is not None
+        # Last Sunday of March 2051: spring-forward to +02:00
+        # 2051-03-26 01:00:00 UTC → 2051-03-26T03:00:00+02:00
+        assert t.exact_eq(create_zdt(2051, 3, 26, 3, tz=tz))
+
+    @pytest.mark.parametrize(
+        "tz",
+        [AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_prev_transition_after_posix_boundary(self, tz: str):
+        """prev_transition in POSIX territory returns correct spring-forward."""
+        d = create_zdt(2051, 4, 1, tz=tz)
+        t = d.prev_transition()
+        assert t is not None
+        assert t.exact_eq(create_zdt(2051, 3, 26, 3, tz=tz))
+
+
+class TestPrevTransition:
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_ams_summer(self, tz: str):
+        d = create_zdt(2023, 8, 15, 12, tz=tz)
+        t = d.prev_transition()
+        assert t is not None
+        # Previous transition is spring-forward in March 2023
+        assert t.exact_eq(create_zdt(2023, 3, 26, 3, tz=tz))
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_ams_winter(self, tz: str):
+        d = create_zdt(2024, 1, 15, 12, tz=tz)
+        t = d.prev_transition()
+        assert t is not None
+        # Previous transition is fall-back in October 2023.
+        # disambiguate="later" to get the CET offset.
+        assert t.exact_eq(
+            create_zdt(2023, 10, 29, 2, tz=tz, disambiguate="later")
+        )
+
+    def test_utc_returns_none(self):
+        d = create_zdt(2024, 6, 15, 12, tz="Etc/UTC")
+        assert d.prev_transition() is None
+
+    def test_kolkata_historical(self):
+        # Asia/Kolkata has no transitions in modern times
+        # but has historical transitions
+        d = create_zdt(2024, 6, 15, 12, tz="Asia/Kolkata")
+        t = d.prev_transition()
+        # There are historical transitions, so it should return something
+        assert t is not None
+        assert t.year < 2024  # historical
+
+    def test_chain_nyc(self):
+        d = ZonedDateTime(2024, 12, 1, tz="America/New_York")
+        t1 = d.prev_transition()
+        assert t1 is not None
+        t2 = t1.prev_transition()
+        assert t2 is not None
+        assert t1.exact_eq(
+            ZonedDateTime(
+                2024, 11, 3, 1, tz="America/New_York", disambiguate="later"
+            )
+        )
+        assert t2.exact_eq(
+            ZonedDateTime(2024, 3, 10, 3, tz="America/New_York")
+        )
+
+    def test_southern_hemisphere_sydney(self):
+        d = ZonedDateTime(2024, 1, 15, tz="Australia/Sydney")
+        t = d.prev_transition()
+        assert t is not None
+        # Sydney: DST started in October 2023 (spring-forward)
+        assert t.exact_eq(ZonedDateTime(2023, 10, 1, 3, tz="Australia/Sydney"))
+
+    def test_at_exact_transition_nyc(self):
+        # At the exact moment of spring-forward in NYC
+        d = ZonedDateTime(2024, 3, 10, 3, tz="America/New_York")
+        t = d.prev_transition()
+        assert t is not None
+        # Should skip the current transition and find the previous one
+        assert t.exact_eq(
+            ZonedDateTime(
+                2023, 11, 5, 1, tz="America/New_York", disambiguate="later"
+            )
+        )
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_far_future_posix(self, tz: str):
+        d = create_zdt(2050, 6, 15, 12, tz=tz)
+        t = d.prev_transition()
+        assert t is not None
+        # Verify we get a transition in 2050
+        assert t.year == 2050
+        assert t.month == 3  # spring-forward
+
+    def test_return_type_and_tz(self):
+        d = ZonedDateTime(2024, 12, 1, tz="America/New_York")
+        t = d.prev_transition()
+        assert isinstance(t, ZonedDateTime)
+        assert t.tz == "America/New_York"
+
+    def test_nanosecond_is_zero(self):
+        d = ZonedDateTime(
+            2024, 12, 1, nanosecond=999_999, tz="America/New_York"
+        )
+        t = d.prev_transition()
+        assert t is not None
+        assert t.nanosecond == 0
+
+    def test_near_max_boundary(self):
+        d = ZonedDateTime(9999, 12, 1, tz="America/New_York")
+        t = d.prev_transition()
+        assert t is not None
+        assert isinstance(t, ZonedDateTime)
+
+    def test_near_min_boundary(self):
+        d = ZonedDateTime(1, 1, 1, tz="America/New_York")
+        # At the very beginning, there may be no previous transition
+        t = d.prev_transition()
+        # The result depends on whether there are transitions before year 1
+        if t is not None:
+            assert isinstance(t, ZonedDateTime)
+
+    # -- First transition is into DST --
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_iqaluit_from_first_dst_period(self):
+        """During the first DST period, prev_transition returns the entry into it."""
+        d = ZonedDateTime(1943, 1, 1, tz="America/Iqaluit")
+        t = d.prev_transition()
+        assert t is not None
+        assert t.exact_eq(
+            ZonedDateTime(
+                1942, 7, 31, 20, tz="America/Iqaluit", disambiguate="later"
+            )
+        )
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_palmer_from_first_dst_period(self):
+        """During the first DST period, prev_transition returns the entry into it."""
+        d = ZonedDateTime(1965, 2, 1, tz="Antarctica/Palmer")
+        t = d.prev_transition()
+        assert t is not None
+        assert t.exact_eq(
+            ZonedDateTime(
+                1964, 12, 31, 21, tz="Antarctica/Palmer", disambiguate="later"
+            )
+        )
+
+    # -- Array-to-POSIX TZ string handoff --
+
+    @pytest.mark.parametrize(
+        "tz",
+        [AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_next_transition_after_posix_boundary(self, tz: str):
+        """next_transition crossing the POSIX TZ boundary returns correct result."""
+        d = create_zdt(2050, 12, 1, tz=tz)
+        t = d.next_transition()
+        assert t is not None
+        assert t.exact_eq(create_zdt(2051, 3, 26, 3, tz=tz))
+
+    @pytest.mark.parametrize(
+        "tz",
+        [AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_prev_transition_after_posix_boundary(self, tz: str):
+        """prev_transition from just past the POSIX boundary."""
+        d = create_zdt(2051, 4, 1, tz=tz)
+        t = d.prev_transition()
+        assert t is not None
+        assert t.exact_eq(create_zdt(2051, 3, 26, 3, tz=tz))
+
+
 class TestDstOffset:
 
     @pytest.mark.parametrize(
@@ -1155,7 +1502,7 @@ class TestDstOffset:
         zi = ZoneInfo("Europe/Dublin")
         py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1164,7 +1511,7 @@ class TestDstOffset:
         zi = ZoneInfo("Europe/Dublin")
         py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1211,13 +1558,13 @@ class TestDstOffset:
         zi = ZoneInfo("Europe/Dublin")
         py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[union-attr]
         )
 
         d2 = create_zdt(2100, 1, 15, 12, tz="Europe/Dublin")
         py_dt2 = py_datetime(2100, 1, 15, 12, tzinfo=zi)
         assert d2.dst_offset() == TimeDelta(
-            seconds=int(py_dt2.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt2.dst()  # type: ignore[union-attr]
         )
 
     # -- Australia/Sydney: southern hemisphere DST (summer in Jan) --
@@ -1229,7 +1576,7 @@ class TestDstOffset:
         zi = ZoneInfo("Australia/Sydney")
         py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1239,7 +1586,7 @@ class TestDstOffset:
         zi = ZoneInfo("Australia/Sydney")
         py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1286,7 +1633,7 @@ class TestDstOffset:
         zi = ZoneInfo("Australia/Sydney")
         py_dt = py_datetime(2100, 1, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[union-attr]
         )
 
     # -- Pacific/Honolulu: no DST ever --
@@ -1318,7 +1665,7 @@ class TestDstOffset:
         zi = ZoneInfo("Africa/Casablanca")
         py_dt = py_datetime(2019, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(
@@ -1331,7 +1678,7 @@ class TestDstOffset:
         zi = ZoneInfo("Africa/Casablanca")
         py_dt = py_datetime(2019, 1, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[union-attr]
         )
 
     @pytest.mark.skipif(
@@ -1344,7 +1691,7 @@ class TestDstOffset:
         zi = ZoneInfo("Africa/Casablanca")
         py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[union-attr]
         )
 
     # -- America/New_York: standard US DST --
@@ -1354,7 +1701,7 @@ class TestDstOffset:
         zi = ZoneInfo("America/New_York")
         py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[union-attr]
         )
 
     def test_new_york_winter(self):
@@ -1362,7 +1709,7 @@ class TestDstOffset:
         zi = ZoneInfo("America/New_York")
         py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[union-attr]
         )
 
     def test_new_york_spring_forward(self):
@@ -1406,13 +1753,13 @@ class TestDstOffset:
         zi = ZoneInfo("America/New_York")
         py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[union-attr]
         )
 
         d2 = create_zdt(2100, 1, 15, 12, tz="America/New_York")
         py_dt2 = py_datetime(2100, 1, 15, 12, tzinfo=zi)
         assert d2.dst_offset() == TimeDelta(
-            seconds=int(py_dt2.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt2.dst()  # type: ignore[union-attr]
         )
 
     # -- UTC: no DST --
@@ -1422,7 +1769,7 @@ class TestDstOffset:
         zi = ZoneInfo("UTC")
         py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[union-attr]
         )
 
     def test_utc_far_future(self):
@@ -1436,7 +1783,7 @@ class TestDstOffset:
         zi = ZoneInfo("Asia/Tokyo")
         py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            seconds=int(py_dt.dst().total_seconds())  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[union-attr]
         )
 
     def test_tokyo_winter(self):
@@ -1446,6 +1793,60 @@ class TestDstOffset:
     def test_tokyo_far_future(self):
         d = create_zdt(2100, 7, 15, 12, tz="Asia/Tokyo")
         assert d.dst_offset() == TimeDelta()
+
+    # -- First transition is into DST --
+    # Zones where the very first recorded transition is INTO a DST state.
+    # The initial period (before first transition) has no DST.
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_iqaluit_initial_period(self):
+        """Before the first transition, Iqaluit has no DST (it was UTC+0)."""
+        d = ZonedDateTime(1940, 1, 1, 12, tz="America/Iqaluit")
+        zi = ZoneInfo("America/Iqaluit")
+        py_dt = py_datetime(1940, 1, 1, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            py_dt.dst()  # type: ignore[union-attr]
+        )
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_iqaluit_first_dst_period(self):
+        """After the first transition, Iqaluit is in EWT (DST = +1h vs EST)."""
+        d = ZonedDateTime(1942, 9, 1, 12, tz="America/Iqaluit")
+        zi = ZoneInfo("America/Iqaluit")
+        py_dt = py_datetime(1942, 9, 1, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            py_dt.dst()  # type: ignore[union-attr]
+        )
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_iqaluit_after_first_dst_period(self):
+        """After returning to standard time, Iqaluit has no DST."""
+        d = ZonedDateTime(1946, 1, 1, 12, tz="America/Iqaluit")
+        zi = ZoneInfo("America/Iqaluit")
+        py_dt = py_datetime(1946, 1, 1, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            py_dt.dst()  # type: ignore[union-attr]
+        )
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_palmer_initial_period(self):
+        """Before the first transition, Palmer has no DST (it was UTC+0)."""
+        d = ZonedDateTime(1963, 6, 15, 12, tz="Antarctica/Palmer")
+        zi = ZoneInfo("Antarctica/Palmer")
+        py_dt = py_datetime(1963, 6, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            py_dt.dst()  # type: ignore[union-attr]
+        )
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_palmer_first_dst_period(self):
+        """After the first transition (1965-01-01), Palmer is in DST (+1h vs -04)."""
+        d = ZonedDateTime(1965, 2, 15, 12, tz="Antarctica/Palmer")
+        zi = ZoneInfo("Antarctica/Palmer")
+        py_dt = py_datetime(1965, 2, 15, 12, tzinfo=zi)
+        assert d.dst_offset() == TimeDelta(
+            py_dt.dst()  # type: ignore[union-attr]
+        )
 
 
 class TestTzAbbrev:

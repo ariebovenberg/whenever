@@ -15,10 +15,10 @@ from typing import TYPE_CHECKING, Any, ClassVar, no_type_check, overload
 
 from ._common import (
     DUMMY_LEAP_YEAR,
+    SPHINX_RUNNING,
     _Base,
     add_alternate_constructors,
     final,
-    SPHINX_RUNNING,
 )
 from ._math import days_in_month, is_leap
 from ._parse import monthday_from_iso, yearmonth_from_iso
@@ -758,6 +758,14 @@ IsoWeekDate.MAX = IsoWeekDate._from_parts_unchecked(
 # Set __module__ so these types and unpickle functions appear as 'whenever.X'
 # regardless of which backend (Rust or pure Python) loaded them.
 if not SPHINX_RUNNING:
-    for _obj in (Weekday, YearMonth, MonthDay, IsoWeekDate, _unpkl_ym, _unpkl_md, _unpkl_iwd):
+    for _obj in (
+        Weekday,
+        YearMonth,
+        MonthDay,
+        IsoWeekDate,
+        _unpkl_ym,
+        _unpkl_md,
+        _unpkl_iwd,
+    ):
         _obj.__module__ = "whenever"
     del _obj

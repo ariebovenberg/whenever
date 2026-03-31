@@ -515,7 +515,7 @@ fn iso_week_date(cls: HeapType<Date>, slf: Date) -> PyReturn {
     let weekday_idx = slf.day_of_week() as u8 - 1;
     let args = (
         iso_year.to_py()?,
-        (iso_week as u8).to_py()?,
+        iso_week.to_py()?,
         state.weekday_enum_members[weekday_idx as usize].newref(),
     )
         .into_pytuple()?;

@@ -1448,6 +1448,34 @@ fn is_ambiguous(_: PyType, slf: ZonedDateTime) -> PyReturn {
     .to_py()
 }
 
+fn next_transition(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
+    match slf.tz.next_transition(slf.instant().epoch) {
+        Some((epoch, offset)) => {
+            let OffsetDateTime { date, time, offset } = epoch
+                .offset(offset)
+                .ok_or_range_err()?
+                .datetime(SubSecNanos::MIN)
+                .with_offset_unchecked(offset);
+            ZonedDateTime::new_unchecked(date, time, offset, slf.tz.newref(), cls)
+        }
+        None => Ok(none()),
+    }
+}
+
+fn prev_transition(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
+    match slf.tz.prev_transition(slf.instant().epoch) {
+        Some((epoch, offset)) => {
+            let OffsetDateTime { date, time, offset } = epoch
+                .offset(offset)
+                .ok_or_range_err()?
+                .datetime(SubSecNanos::MIN)
+                .with_offset_unchecked(offset);
+            ZonedDateTime::new_unchecked(date, time, offset, slf.tz.newref(), cls)
+        }
+        None => Ok(none()),
+    }
+}
+
 fn dst_offset(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
     let &State {
         time_delta_type, ..
@@ -2202,6 +2230,16 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::EXACTTIME_TIMESTAMP_NANOS
     ),
     method0!(ZonedDateTime, is_ambiguous, doc::ZONEDDATETIME_IS_AMBIGUOUS),
+    method0!(
+        ZonedDateTime,
+        next_transition,
+        doc::ZONEDDATETIME_NEXT_TRANSITION
+    ),
+    method0!(
+        ZonedDateTime,
+        prev_transition,
+        doc::ZONEDDATETIME_PREV_TRANSITION
+    ),
     method0!(ZonedDateTime, dst_offset, doc::ZONEDDATETIME_DST_OFFSET),
     method0!(ZonedDateTime, tz_abbrev, doc::ZONEDDATETIME_TZ_ABBREV),
     classmethod_kwargs!(
