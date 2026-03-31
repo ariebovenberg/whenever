@@ -7,7 +7,7 @@ unpythonic edges.
 from __future__ import annotations
 
 import struct
-from bisect import bisect_right as _bisect_right
+from bisect import bisect_left as _bisect_left, bisect_right as _bisect_right
 from io import BytesIO
 from typing import IO, MutableSequence, Sequence, final
 
@@ -142,6 +142,33 @@ class TimeZone:
         else:
             assert self._meta_by_utc  # ensured during parsing
             return self._meta_by_utc[-1]
+
+    def next_transition(self, t: EpochSecs) -> tuple[EpochSecs, Offset] | None:
+        """Get the (epoch, new_offset) of the next UTC offset transition
+        strictly after `t`, or None if there is no next transition."""
+        idx = _bisect_right(self._utc_epochs, t)
+        if idx < len(self._utc_epochs):
+            return (self._utc_epochs[idx], self._utc_offsets[idx])
+        if self._end is not None:
+            return self._end.next_transition(t)
+        return None
+
+    def prev_transition(self, t: EpochSecs) -> tuple[EpochSecs, Offset] | None:
+        """Get the (epoch, new_offset) of the previous UTC offset transition
+        strictly before `t`, or None if there is no previous transition."""
+        # If past all recorded transitions, check POSIX first
+        if self._end is not None and (
+            not self._utc_epochs or t > self._utc_epochs[-1]
+        ):
+            result = self._end.prev_transition(t)
+            if result is not None:
+                return result
+        # Search recorded transitions: last one strictly < t.
+        # Skip index 0 which is the sentinel initial offset, not a real transition.
+        idx = _bisect_left(self._utc_epochs, t) - 1
+        if idx >= 1:
+            return (self._utc_epochs[idx], self._utc_offsets[idx])
+        return None
 
     # NOTE: this equality check needs to be fast, since it's used in
     # some routines to check if the timezone is indeed changing.
@@ -437,7 +464,15 @@ def _load_transitions(
 ]:
     """Load transitions and metadata from parsed data"""
     first_utoff, _, first_abbrind = types[0]
-    last_std_offset = first_utoff
+
+    # Pre-seed last_std_offset from the first non-DST type in actual transitions.
+    # This ensures correct DST saving computation when the very first transitions
+    # are DST (e.g. America/Iqaluit, Antarctica/Palmer), where types[0] is the
+    # pre-standard LMT type and not the relevant standard offset.
+    last_std_offset = next(
+        (types[idx][0] for idx in indices if not types[idx][1]),
+        first_utoff,
+    )
 
     offsets: list[tuple[EpochSecs, Offset]] = [
         (EPOCH_SECS_MIN, first_utoff),

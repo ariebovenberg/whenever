@@ -8107,6 +8107,42 @@ class ZonedDateTime(_ExactAndLocalTime):
             is not Unambiguous
         )
 
+    def next_transition(self) -> ZonedDateTime | None:
+        """The next timezone transition after this datetime, if any.
+
+        Returns ``None`` if the timezone has no further transitions
+        (e.g. for UTC or fixed-offset timezones).
+
+        >>> d = ZonedDateTime(2024, 1, 1, tz="America/New_York")
+        >>> d.next_transition()
+        ZonedDateTime(2024-03-10 03:00:00-04:00[America/New_York])
+        """
+        epoch = int(self._py_dt.timestamp())
+        if (result := self._tz.next_transition(epoch)) is None:
+            return None
+        t, offset = result
+        return self._from_py_unchecked(
+            _from_epoch_offset(t, offset), 0, self._tz
+        )
+
+    def prev_transition(self) -> ZonedDateTime | None:
+        """The previous timezone transition before this datetime, if any.
+
+        Returns ``None`` if the timezone has no earlier transitions
+        (e.g. for UTC or fixed-offset timezones).
+
+        >>> d = ZonedDateTime(2024, 1, 1, tz="America/New_York")
+        >>> d.prev_transition()
+        ZonedDateTime(2023-11-05 01:00:00-05:00[America/New_York])
+        """
+        epoch = int(self._py_dt.timestamp())
+        if (result := self._tz.prev_transition(epoch)) is None:
+            return None
+        t, offset = result
+        return self._from_py_unchecked(
+            _from_epoch_offset(t, offset), 0, self._tz
+        )
+
     def dst_offset(self) -> TimeDelta:
         """The DST offset (adjustment) as a :class:`TimeDelta`.
 
@@ -8127,7 +8163,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         "negative DST" in winter. In such cases, this method
         returns a negative value during winter.
         """
-        dst_saving = self._tz.meta_for_instant(int(self._py_dt.timestamp()))[0]
+        dst_saving, _ = self._tz.meta_for_instant(int(self._py_dt.timestamp()))
         return TimeDelta._from_nanos_unchecked(dst_saving * 1_000_000_000)
 
     def tz_abbrev(self) -> str:
@@ -9509,13 +9545,16 @@ _EPOCH_DT = _datetime(1970, 1, 1, tzinfo=_UTC)
 
 
 def _from_epoch(ts: int, tz: TimeZone) -> _datetime:
+    return _from_epoch_offset(ts, tz.offset_for_instant(ts))
+
+
+def _from_epoch_offset(ts: int, offset: int) -> _datetime:
     # Check ts (UTC), not local_ts below, because a negative UTC offset can
     # make local_ts land inside the valid datetime range even when ts itself
     # is out of range — meaning fromtimestamp() would silently succeed and
     # return a datetime that exceeds Instant.MAX.
     if (ordinal := ts // 86_400 + 719_163) < 1 or ordinal > _MAX_ORDINAL:
         raise OverflowError("Time out of range")
-    offset = tz.offset_for_instant(ts)
     local_ts = ts + offset
     # datetime.fromtimestamp() is faster than manual arithmetic, but may fail
     # for dates outside the platform's time_t range (e.g. year 1 or year 9999

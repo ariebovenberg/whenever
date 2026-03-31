@@ -191,32 +191,9 @@ class TzStr:
         self.std_abbrev = std_abbrev
 
     def offset_for_instant(self, epoch: int) -> int:
-        if not self.dst:
-            return self.std
-        # Theoretically, the epoch year could be different from the
-        # local year. However, in practice, we can assume that the year of
-        # the transition isn't affected by the DST change.
-        # This is what Python's `zoneinfo` does anyway...
-        year = year_for_epoch(epoch + self.std)
-
-        start_rule, start_time = self.dst.start
-        end_rule, end_time = self.dst.end
-        dst_offset = self.dst.offset
-
-        start = epoch_for_date(start_rule.apply(year)) + start_time - self.std
-        end = epoch_for_date(end_rule.apply(year)) + end_time - dst_offset
-
-        # Handle wraparound
-        if start < end:
-            if start <= epoch < end:
-                return dst_offset
-            else:
-                return self.std
-        else:
-            if end <= epoch < start:
-                return self.std
-            else:
-                return dst_offset
+        if self.dst and self._is_dst_at(epoch):
+            return self.dst.offset
+        return self.std
 
     # NOTE: `epoch` is the datetime in seconds since the LOCAL epoch.
     def ambiguity_for_local(self, epoch: int) -> Ambiguity:
@@ -263,28 +240,76 @@ class TzStr:
             else:
                 return Unambiguous(off1)
 
-    def meta_for_instant(self, epoch: int) -> tuple[int, str]:
-        """Return (dst_saving_secs, abbreviation) for the given UTC epoch."""
-        if not self.dst:
-            return (0, self.std_abbrev)
-
-        year = year_for_epoch(epoch + self.std)
+    def _utc_transitions_for_year(
+        self, year: int
+    ) -> tuple[tuple[int, int], tuple[int, int]] | None:
+        """Return ((start_epoch, new_offset), (end_epoch, new_offset))
+        DST transition instants in UTC for the given year.
+        Returns None if no DST rule or year out of range."""
+        if not self.dst or not (1 <= year <= 9999):
+            return None
         start_rule, start_time = self.dst.start
         end_rule, end_time = self.dst.end
-        dst_offset = self.dst.offset
-
         start = epoch_for_date(start_rule.apply(year)) + start_time - self.std
-        end = epoch_for_date(end_rule.apply(year)) + end_time - dst_offset
+        end = epoch_for_date(end_rule.apply(year)) + end_time - self.dst.offset
+        return ((start, self.dst.offset), (end, self.std))
 
+    def _is_dst_at(self, epoch: int) -> bool:
+        """Whether DST is active at the given UTC epoch."""
+        trans = self._utc_transitions_for_year(
+            year_for_epoch(epoch + self.std)
+        )
+        if trans is None:
+            return False
+        (start, _), (end, _) = trans
         if start < end:
-            is_dst = start <= epoch < end
+            return start <= epoch < end
         else:
-            is_dst = not (end <= epoch < start)
+            return not (end <= epoch < start)
 
-        if is_dst:
-            return (dst_offset - self.std, self.dst.abbrev)
-        else:
-            return (0, self.std_abbrev)
+    def next_transition(self, epoch: int) -> tuple[int, int] | None:
+        """Return (epoch, new_offset) of the next UTC offset transition
+        after `epoch`, or None if there is no DST rule."""
+        trans = self._utc_transitions_for_year(
+            year_for_epoch(epoch + self.std)
+        )
+        if trans is None:
+            return None
+        future = sorted((e, o) for e, o in trans if e > epoch)
+        if future:
+            return future[0]
+        # Both transitions are <= epoch; check next year
+        trans = self._utc_transitions_for_year(
+            year_for_epoch(epoch + self.std) + 1
+        )
+        if trans is None:
+            return None
+        return min(trans)
+
+    def prev_transition(self, epoch: int) -> tuple[int, int] | None:
+        """Return (epoch, new_offset) of the previous UTC offset transition
+        before `epoch`, or None if there is no DST rule."""
+        trans = self._utc_transitions_for_year(
+            year_for_epoch(epoch + self.std)
+        )
+        if trans is None:
+            return None
+        past = sorted(((e, o) for e, o in trans if e < epoch), reverse=True)
+        if past:
+            return past[0]
+        # Both transitions are >= epoch; check previous year
+        trans = self._utc_transitions_for_year(
+            year_for_epoch(epoch + self.std) - 1
+        )
+        if trans is None:
+            return None
+        return max(trans)
+
+    def meta_for_instant(self, epoch: int) -> tuple[int, str]:
+        """Return (dst_saving_secs, abbreviation) for the given UTC epoch."""
+        if self.dst and self._is_dst_at(epoch):
+            return (self.dst.offset - self.std, self.dst.abbrev)
+        return (0, self.std_abbrev)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TzStr):

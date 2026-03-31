@@ -78,42 +78,11 @@ pub(crate) enum Rule {
 
 impl TzStr {
     pub(crate) fn offset_for_instant(&self, epoch: EpochSecs) -> Offset {
-        match self.dst {
-            None => self.std, // No DST rule means a fixed offset
-            Some(Dst {
-                start: (start_rule, start_time),
-                end: (end_rule, end_time),
-                offset: dst_offset,
-                ..
-            }) => {
-                // To determine the exact instant of DST start/end,
-                // we need to know the *local* year.
-                // However, this is theoretically difficult to determine
-                // since we don't *strictly* know the if DST is active,
-                // and thus what the offset should be.
-                // However, in practice, we can assume that the year of
-                // the transition isn't affected by the DST change.
-                // This is what Python's `zoneinfo` does anyway...
-                let year = epoch.saturating_offset(self.std).date().year;
-                // Below are some saturing_add_i32 calls to prevent overflow.
-                // These should only affect DST calculations at the extreme MIN/MAX
-                // boundaries. This situation is exceedingly rare, but at least we don't crash.
-                let start = start_rule
-                    .for_year(year)
-                    .epoch()
-                    .saturating_add_i32(start_time - self.std.get());
-                let end = end_rule
-                    .for_year(year)
-                    .epoch()
-                    .saturating_add_i32(end_time - dst_offset.get());
-
-                // Q: Why so complicated? A: Because end may be before start
-                if (epoch >= end || epoch < start) && start < end || epoch < start && epoch >= end {
-                    self.std
-                } else {
-                    dst_offset
-                }
-            }
+        if self.is_dst_at(epoch) {
+            // SAFETY: is_dst_at only returns true when self.dst is Some
+            self.dst.unwrap().offset
+        } else {
+            self.std
         }
     }
 
@@ -177,42 +146,92 @@ impl TzStr {
     /// Timezone metadata: (dst_saving, abbreviation)
     pub(crate) fn meta_for_instant(&self, epoch: EpochSecs) -> TzMetaResult {
         match self.dst {
-            None => TzMetaResult {
+            Some(Dst {
+                offset: dst_offset,
+                abbrev: dst_abbrev,
+                ..
+            }) if self.is_dst_at(epoch) => TzMetaResult {
+                dst_saving: dst_offset.get() - self.std.get(),
+                abbrev: dst_abbrev,
+            },
+            _ => TzMetaResult {
                 dst_saving: 0,
                 abbrev: self.std_abbrev,
             },
-            Some(Dst {
-                start: (start_rule, start_time),
-                end: (end_rule, end_time),
-                offset: dst_offset,
-                abbrev: dst_abbrev,
-            }) => {
-                let year = epoch.saturating_offset(self.std).date().year;
-                let start = start_rule
-                    .for_year(year)
-                    .epoch()
-                    .saturating_add_i32(start_time - self.std.get());
-                let end = end_rule
-                    .for_year(year)
-                    .epoch()
-                    .saturating_add_i32(end_time - dst_offset.get());
-
-                let is_dst = !((epoch >= end || epoch < start) && start < end
-                    || epoch < start && epoch >= end);
-
-                if is_dst {
-                    TzMetaResult {
-                        dst_saving: dst_offset.get() - self.std.get(),
-                        abbrev: dst_abbrev,
-                    }
-                } else {
-                    TzMetaResult {
-                        dst_saving: 0,
-                        abbrev: self.std_abbrev,
-                    }
-                }
-            }
         }
+    }
+
+    /// Compute the two DST transition instants (in UTC) for a given year,
+    /// each paired with the offset that becomes active at that transition.
+    fn utc_transitions_for_year(
+        &self,
+        year: Year,
+    ) -> Option<((EpochSecs, Offset), (EpochSecs, Offset))> {
+        let Dst {
+            start: (start_rule, start_time),
+            end: (end_rule, end_time),
+            offset: dst_offset,
+            ..
+        } = self.dst?;
+        let start = start_rule
+            .for_year(year)
+            .epoch()
+            .saturating_add_i32(start_time - self.std.get());
+        let end = end_rule
+            .for_year(year)
+            .epoch()
+            .saturating_add_i32(end_time - dst_offset.get());
+        Some(((start, dst_offset), (end, self.std)))
+    }
+
+    /// Whether DST is active at the given UTC epoch.
+    fn is_dst_at(&self, epoch: EpochSecs) -> bool {
+        let Some(((start, _), (end, _))) =
+            self.utc_transitions_for_year(epoch.saturating_offset(self.std).date().year)
+        else {
+            return false;
+        };
+        if start < end {
+            start <= epoch && epoch < end
+        } else {
+            !(end <= epoch && epoch < start)
+        }
+    }
+
+    /// The next UTC offset transition after `epoch`, or None if no DST rule.
+    pub(crate) fn next_transition(&self, epoch: EpochSecs) -> Option<(EpochSecs, Offset)> {
+        let year = epoch.saturating_offset(self.std).date().year;
+        let ((se, so), (ee, eo)) = self.utc_transitions_for_year(year)?;
+        let result = match (se > epoch, ee > epoch) {
+            (true, true) if se <= ee => Some((se, so)),
+            (true, true) => Some((ee, eo)),
+            (true, false) => Some((se, so)),
+            (false, true) => Some((ee, eo)),
+            (false, false) => None,
+        };
+        result.or_else(|| {
+            let next_year = Year::new(year.get() + 1)?;
+            let ((se, so), (ee, eo)) = self.utc_transitions_for_year(next_year)?;
+            Some(if se <= ee { (se, so) } else { (ee, eo) })
+        })
+    }
+
+    /// The previous UTC offset transition before `epoch`, or None if no DST rule.
+    pub(crate) fn prev_transition(&self, epoch: EpochSecs) -> Option<(EpochSecs, Offset)> {
+        let year = epoch.saturating_offset(self.std).date().year;
+        let ((se, so), (ee, eo)) = self.utc_transitions_for_year(year)?;
+        let result = match (se < epoch, ee < epoch) {
+            (true, true) if se >= ee => Some((se, so)),
+            (true, true) => Some((ee, eo)),
+            (true, false) => Some((se, so)),
+            (false, true) => Some((ee, eo)),
+            (false, false) => None,
+        };
+        result.or_else(|| {
+            let prev_year = Year::new(year.get() - 1)?;
+            let ((se, so), (ee, eo)) = self.utc_transitions_for_year(prev_year)?;
+            Some(if se >= ee { (se, so) } else { (ee, eo) })
+        })
     }
 
     pub fn parse(s: &[u8]) -> Option<Self> {

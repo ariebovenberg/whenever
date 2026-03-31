@@ -2378,6 +2378,16 @@ False
 >>> ZonedDateTime(2023, 10, 29, 2, 15, tz=\"Europe/Amsterdam\").is_ambiguous()
 True
 ";
+pub(crate) const ZONEDDATETIME_NEXT_TRANSITION: &CStr = c"\
+The next timezone transition after this datetime, if any.
+
+Returns ``None`` if the timezone has no further transitions
+(e.g. for UTC or fixed-offset timezones).
+
+>>> d = ZonedDateTime(2024, 1, 1, tz=\"America/New_York\")
+>>> d.next_transition()
+ZonedDateTime(2024-03-10 03:00:00-04:00[America/New_York])
+";
 pub(crate) const ZONEDDATETIME_NOW: &CStr = c"\
 Create an instance from the current time in the given timezone.";
 pub(crate) const ZONEDDATETIME_NOW_IN_SYSTEM_TZ: &CStr = c"\
@@ -2420,6 +2430,16 @@ Important
 ---------
 The timezone ID is a recent extension to the ISO 8601 format (RFC 9557).
 Although it is gaining popularity, it is not yet widely supported.
+";
+pub(crate) const ZONEDDATETIME_PREV_TRANSITION: &CStr = c"\
+The previous timezone transition before this datetime, if any.
+
+Returns ``None`` if the timezone has no earlier transitions
+(e.g. for UTC or fixed-offset timezones).
+
+>>> d = ZonedDateTime(2024, 1, 1, tz=\"America/New_York\")
+>>> d.prev_transition()
+ZonedDateTime(2023-11-05 01:00:00-05:00[America/New_York])
 ";
 pub(crate) const ZONEDDATETIME_REPLACE: &CStr = c"\
 replace($self, /, *, year=None, month=None, weeks=0, day=None, hour=None, minute=None, second=None, nanosecond=None, tz=None, disambiguate)

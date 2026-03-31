@@ -142,6 +142,28 @@ impl TimeZone {
             })
     }
 
+    /// The next UTC offset transition strictly after `t`, or None.
+    pub(crate) fn next_transition(&self, t: EpochSecs) -> Option<(EpochSecs, Offset)> {
+        bisect(&self.offsets_by_utc, t)
+            .map(|i| self.offsets_by_utc[i])
+            .or_else(|| self.end.and_then(|tz| tz.next_transition(t)))
+    }
+
+    /// The previous UTC offset transition strictly before `t`, or None.
+    pub(crate) fn prev_transition(&self, t: EpochSecs) -> Option<(EpochSecs, Offset)> {
+        // If past all recorded transitions, check POSIX first
+        if let Some(tz) = self.end
+            && self.offsets_by_utc.last().is_none_or(|&(last, _)| t > last)
+            && let Some(result) = tz.prev_transition(t)
+        {
+            return Some(result);
+        }
+        // Find last recorded transition strictly before t.
+        // Skip index 0 which is the sentinel initial offset.
+        let idx = self.offsets_by_utc.partition_point(|(e, _)| *e < t);
+        (idx > 1).then(|| self.offsets_by_utc[idx - 1])
+    }
+
     pub fn parse_tzif(s: &[u8], key: Option<&str>) -> ParseResult<Self> {
         let mut scan = Scan::new(s);
         let header = parse_header(&mut scan).ok_or(ErrorCause::Header)?;
@@ -339,15 +361,24 @@ fn load_transitions(
 
     offsets.push((EpochSecs::MIN, first_type.offset));
 
-    let mut last_std_offset = first_type.offset;
+    // Pre-seed last_std_offset from the first non-DST type in actual transitions.
+    // This ensures correct DST saving computation when the very first transitions
+    // are DST (e.g. America/Iqaluit, Antarctica/Palmer), where types[0] is the
+    // pre-standard LMT type and not the relevant standard offset.
+    let mut last_std_offset = indices
+        .iter()
+        .find_map(|&idx| {
+            let typ = types.get(usize::from(idx))?;
+            (!typ.isdst).then_some(typ.offset)
+        })
+        .unwrap_or(first_type.offset);
+
     meta.push(TransitionMeta {
-        // For the first entry, dst_saving is 0 since we don't have a prior standard
+        // For the first entry (before all transitions), dst_saving is 0 since
+        // types[0] is always a non-DST type (pre-standard LMT or similar).
         dst_saving: 0,
         abbrev_idx: first_type.abbrev_idx,
     });
-    if !first_type.isdst {
-        last_std_offset = first_type.offset;
-    }
 
     for (&idx, &epoch) in indices.iter().zip(transition_times) {
         let typ = types.get(usize::from(idx))?;
