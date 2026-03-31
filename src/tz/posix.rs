@@ -288,24 +288,14 @@ impl Rule {
                 .date(),
 
             Self::LastWeekday(w, m) => {
-                // Try the last day of the month, and adjust from there
-                let day_last = Date::last_of_month(y, m);
-                Date {
-                    day: day_last.day
-                        - (day_last.day_of_week().sunday_is_0() + 7 - w.sunday_is_0()) % 7,
-                    ..day_last
-                }
+                // SAFETY: -1 always produces a valid result (every month has
+                // at least one occurrence of every weekday)
+                Date::nth_weekday_in_month(y, m, -1, w).unwrap()
             }
             Self::NthWeekday(n, w, m) => {
-                // Try the first day of the month, and adjust from there
                 debug_assert!(n.get() <= 4);
-                let day1 = Date::first_of_month(y, m);
-                Date {
-                    day: ((w.sunday_is_0() + 7 - day1.day_of_week().sunday_is_0()) % 7)
-                        + 7 * (n.get() - 1)
-                        + 1,
-                    ..day1
-                }
+                // SAFETY: n in 1..=4 always fits in a month
+                Date::nth_weekday_in_month(y, m, n.get() as i32, w).unwrap()
             }
         }
     }

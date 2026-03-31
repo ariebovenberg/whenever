@@ -11,9 +11,7 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-import enum
 from collections.abc import (
-    Callable,
     ItemsView,
     KeysView,
     Mapping,
@@ -43,7 +41,15 @@ from typing import (
 )
 from warnings import warn
 
-from ._common import check_utc_bounds, mk_fixed_tzinfo
+from ._common import (
+    SPHINX_RUNNING,
+    WheneverDeprecationWarning,
+    _Base,
+    add_alternate_constructors,
+    check_utc_bounds,
+    final,
+    mk_fixed_tzinfo,
+)
 from ._format import (
     compile_pattern,
     format_fields,
@@ -62,6 +68,7 @@ from ._math import (
     days_in_month,
     increment_to_ns_for_datetime,
     increment_to_ns_for_delta,
+    is_leap,
     resolve_leap_day,
 )
 from ._parse import (
@@ -70,13 +77,21 @@ from ._parse import (
     InvalidOffsetError,
     date_from_iso,
     datetime_from_iso,
-    monthday_from_iso,
     offset_dt_from_iso,
     parse_rfc2822,
     parse_timedelta_component,
     time_from_iso,
-    yearmonth_from_iso,
     zdt_from_iso,
+)
+from ._shared import (
+    IsoWeekDate,
+    MonthDay,
+    Weekday,
+    YearMonth,
+    _nth_weekday_of_month,
+    _unpkl_iwd,
+    _unpkl_md,
+    _unpkl_ym,
 )
 from ._typing import (
     DateDeltaUnitStr,
@@ -107,6 +122,7 @@ __all__ = [
     "Date",
     "YearMonth",
     "MonthDay",
+    "IsoWeekDate",
     "Time",
     "Instant",
     "OffsetDateTime",
@@ -145,53 +161,6 @@ __all__ = [
 ]
 
 
-# A self-set variable to detect if we're being run by sphinx autodoc
-try:
-    from sphinx import (  # type: ignore[attr-defined, import-not-found, unused-ignore]
-        SPHINX_RUNNING,
-    )
-except ImportError:
-    SPHINX_RUNNING = False
-
-
-# A custom warnings class to prevent silent deprecation warnings in user code.
-# See https://sethmlarson.dev/deprecations-via-warnings-dont-work-for-python-libraries
-class WheneverDeprecationWarning(UserWarning):
-    """Raised when a deprecated feature of the ``whenever`` library is used.
-
-    This is a custom warning class (not a subclass of
-    :class:`DeprecationWarning`) so that deprecation warnings from this
-    library are visible by default—unlike standard ``DeprecationWarning``,
-    which Python silences in production code.
-    """
-
-
-class Weekday(enum.Enum):
-    """Day of the week; ``.value`` corresponds with ISO numbering
-    (monday=1, sunday=7).
-
-    All members are also available as constants in the module namespace:
-
-    >>> from whenever import Weekday, MONDAY, SUNDAY
-    >>> MONDAY is Weekday.MONDAY
-    True
-
-    :class:`~whenever.Date` and other date-carrying types return
-    ``Weekday`` from their :meth:`~whenever.Date.day_of_week` method:
-
-    >>> Date(2024, 12, 25).day_of_week()
-    Weekday.WEDNESDAY
-    """
-
-    MONDAY = 1
-    TUESDAY = 2
-    WEDNESDAY = 3
-    THURSDAY = 4
-    FRIDAY = 5
-    SATURDAY = 6
-    SUNDAY = 7
-
-
 # Helpers that pre-compute/lookup as much as possible
 _UTC = _timezone.utc
 _object_new = object.__new__
@@ -215,76 +184,60 @@ _UNSET: Any = type(
 
 _CAL_DELTA_UNITS = DATE_DELTA_UNITS
 _EXACT_TIME_UNITS = EXACT_UNITS_STRICT
+_UNITS_FOR_START_END_OF = ("year", "month", "day", "hour", "minute", "second")
 
 
-# Basic behavior common to all classes
-class _Base:
-    __slots__ = ()
-
-    # Immutable classes don't need to be copied
-    @no_type_check
-    def __copy__(self):
-        return self
-
-    @no_type_check
-    def __deepcopy__(self, _):
-        return self
-
-    @no_type_check
-    @classmethod
-    def __get_pydantic_core_schema__(cls, *_, **kwargs):
-        from ._utils import pydantic_schema
-
-        return pydantic_schema(cls)
-
-    @classmethod
-    def parse_iso(cls: type[_T], s: str, /) -> _T:
-        raise NotImplementedError  # pragma: no cover
+def _start_of_dt(dt: _datetime, unit: str) -> tuple[_datetime, int]:
+    """Return (new_datetime, nanoseconds) for start_of on a datetime."""
+    if unit == "year":
+        return dt.replace(month=1, day=1, hour=0, minute=0, second=0), 0
+    elif unit == "month":
+        return dt.replace(day=1, hour=0, minute=0, second=0), 0
+    elif unit == "day":
+        return dt.replace(hour=0, minute=0, second=0), 0
+    elif unit == "hour":
+        return dt.replace(minute=0, second=0), 0
+    elif unit == "minute":
+        return dt.replace(second=0), 0
+    elif unit == "second":
+        return dt, 0
+    else:
+        raise ValueError(
+            f"Invalid unit: {unit!r}. "
+            f"Valid units: {', '.join(map(repr, _UNITS_FOR_START_END_OF))}"
+        )
 
 
-if TYPE_CHECKING:
-    from typing import final
-else:
-
-    def final(cls):
-
-        def init_subclass_not_allowed(cls, **kwargs):  # pragma: no cover
-            raise TypeError("Subclassing not allowed")
-
-        cls.__init_subclass__ = init_subclass_not_allowed
-        return cls
-
-
-_Tcall = TypeVar("_Tcall", bound=Callable[..., None])
-
-
-# I'd love for this to be a decorator, but every attempt I made resulted
-# in mypy getting too confused. I've tried a lot.
-def add_alternate_constructors(
-    init_default: _Tcall,
-    py_type: type | None = None,
-    deprecation_msg: str | None = None,
-) -> _Tcall:
-    """Add alternate constructors to a class's __init__ method."""
-
-    def __init__(self: Any, *args: Any, **kwargs: Any) -> None:
-        match args:
-            case [str() as iso_string] if not kwargs:
-                if deprecation_msg:
-                    warn(
-                        deprecation_msg,
-                        WheneverDeprecationWarning,
-                        stacklevel=2,
-                    )
-                self._init_from_iso(iso_string)
-            case [obj] if (
-                py_type is not None and not kwargs and isinstance(obj, py_type)
-            ):
-                self._init_from_py(obj)
-            case _:
-                init_default(self, *args, **kwargs)
-
-    return __init__  # type: ignore[return-value]
+def _end_of_dt(dt: _datetime, unit: str) -> tuple[_datetime, int]:
+    """Return (new_datetime, nanoseconds) for end_of on a datetime."""
+    if unit == "year":
+        return (
+            dt.replace(month=12, day=31, hour=23, minute=59, second=59),
+            999_999_999,
+        )
+    elif unit == "month":
+        return (
+            dt.replace(
+                day=days_in_month(dt.year, dt.month),
+                hour=23,
+                minute=59,
+                second=59,
+            ),
+            999_999_999,
+        )
+    elif unit == "day":
+        return dt.replace(hour=23, minute=59, second=59), 999_999_999
+    elif unit == "hour":
+        return dt.replace(minute=59, second=59), 999_999_999
+    elif unit == "minute":
+        return dt.replace(second=59), 999_999_999
+    elif unit == "second":
+        return dt, 999_999_999
+    else:
+        raise ValueError(
+            f"Invalid unit: {unit!r}. "
+            f"Valid units: {', '.join(map(repr, _UNITS_FOR_START_END_OF))}"
+        )
 
 
 @final
@@ -406,6 +359,176 @@ class Date(_Base):
         6  # the ISO value
         """
         return Weekday(self._py_date.isoweekday())
+
+    def iso_week_date(self) -> IsoWeekDate:
+        """The ISO week date for this date
+
+        >>> Date(2024, 12, 30).iso_week_date()
+        IsoWeekDate("2025-W01-1")
+        """
+        y, w, d = self._py_date.isocalendar()
+        return IsoWeekDate._from_parts_unchecked(y, w, Weekday(d))
+
+    def day_of_year(self) -> int:
+        """Ordinal day in the year (1--366)
+
+        >>> Date(2021, 1, 2).day_of_year()
+        2
+        >>> Date(2021, 12, 31).day_of_year()
+        365
+        """
+        return self._py_date.timetuple().tm_yday
+
+    def days_in_month(self) -> int:
+        """Number of days in the current month (28--31)
+
+        >>> Date(2024, 2, 1).days_in_month()
+        29
+        >>> Date(2023, 2, 1).days_in_month()
+        28
+        """
+        return days_in_month(self._py_date.year, self._py_date.month)
+
+    def days_in_year(self) -> int:
+        """Number of days in the current year (365 or 366)
+
+        >>> Date(2024, 1, 1).days_in_year()
+        366
+        >>> Date(2023, 1, 1).days_in_year()
+        365
+        """
+        return 366 if is_leap(self._py_date.year) else 365
+
+    def in_leap_year(self) -> bool:
+        """Whether this date's year is a leap year
+
+        >>> Date(2024, 1, 1).in_leap_year()
+        True
+        >>> Date(2023, 1, 1).in_leap_year()
+        False
+        """
+        return is_leap(self._py_date.year)
+
+    def next_day(self) -> Date:
+        """The date immediately following
+
+        >>> Date(2021, 1, 2).next_day()
+        Date("2021-01-03")
+        """
+        return Date._from_py_unchecked(self._py_date + _timedelta(days=1))
+
+    def prev_day(self) -> Date:
+        """The date immediately preceding
+
+        >>> Date(2021, 1, 2).prev_day()
+        Date("2021-01-01")
+        """
+        return Date._from_py_unchecked(self._py_date - _timedelta(days=1))
+
+    def start_of(self, unit: str, /) -> Date:
+        """The start of the given calendar unit
+
+        Valid units: ``"year"``, ``"month"``
+
+        Note
+        ----
+        ``"week"`` is not a valid unit because weeks do not have
+        a universal start day. Use :meth:`nth_weekday` instead.
+
+        >>> Date(2024, 8, 15).start_of("year")
+        Date("2024-01-01")
+        >>> Date(2024, 8, 15).start_of("month")
+        Date("2024-08-01")
+        """
+        if unit == "year":
+            return Date._from_py_unchecked(
+                self._py_date.replace(month=1, day=1)
+            )
+        elif unit == "month":
+            return Date._from_py_unchecked(self._py_date.replace(day=1))
+        else:
+            raise ValueError(
+                f"Invalid unit: {unit!r}. " "Valid units: 'year', 'month'"
+            )
+
+    def end_of(self, unit: str, /) -> Date:
+        """The end of the given calendar unit
+
+        See :meth:`start_of` for valid units.
+
+        >>> Date(2024, 8, 15).end_of("year")
+        Date("2024-12-31")
+        >>> Date(2024, 8, 15).end_of("month")
+        Date("2024-08-31")
+        """
+        if unit == "year":
+            return Date._from_py_unchecked(
+                self._py_date.replace(month=12, day=31)
+            )
+        elif unit == "month":
+            return Date._from_py_unchecked(
+                self._py_date.replace(
+                    day=days_in_month(self._py_date.year, self._py_date.month)
+                )
+            )
+        else:
+            raise ValueError(
+                f"Invalid unit: {unit!r}. " "Valid units: 'year', 'month'"
+            )
+
+    def nth_weekday_of_month(self, n: int, weekday: Weekday, /) -> Date:
+        """The n-th occurrence of a weekday in this date's month.
+
+        Negative ``n`` counts from the end.
+        ``n=0`` raises :class:`ValueError`.
+
+        >>> Date(2024, 8, 1).nth_weekday_of_month(2, Weekday.FRIDAY)
+        Date("2024-08-09")
+        >>> Date(2024, 8, 1).nth_weekday_of_month(-1, Weekday.FRIDAY)
+        Date("2024-08-30")
+        """
+        if n == 0:
+            raise ValueError("n must not be 0")
+        if not isinstance(weekday, Weekday):
+            raise TypeError("weekday must be a Weekday enum member")
+        if not (-5 <= n <= 5):
+            raise ValueError("n must be between -5 and 5")
+        year, month = self._py_date.year, self._py_date.month
+        day = _nth_weekday_of_month(year, month, n, weekday.value)
+        return Date._from_py_unchecked(_date(year, month, day))
+
+    def nth_weekday(self, n: int, weekday: Weekday, /) -> Date:
+        """The n-th occurrence of a weekday from this date (exclusive).
+
+        Negative ``n`` searches backward.
+        ``n=0`` raises :class:`ValueError`.
+
+        >>> Date(2024, 8, 1).nth_weekday(1, Weekday.FRIDAY)
+        Date("2024-08-02")
+        >>> Date(2024, 8, 1).nth_weekday(-1, Weekday.WEDNESDAY)
+        Date("2024-07-31")
+        """
+        if n == 0:
+            raise ValueError("n must not be 0")
+        if not isinstance(weekday, Weekday):
+            raise TypeError("weekday must be a Weekday enum member")
+        if not (-5 <= n <= 5):
+            raise ValueError("n must be between -5 and 5")
+        target_dow = weekday.value
+        self_dow = self._py_date.isoweekday()
+
+        if n > 0:
+            offset = (target_dow - self_dow) % 7
+            if offset == 0:
+                offset = 7
+            delta = offset + (n - 1) * 7
+        else:
+            offset = (self_dow - target_dow) % 7
+            if offset == 0:
+                offset = 7
+            delta = -(offset + (-n - 1) * 7)
+
+        return Date._from_py_unchecked(self._py_date + _timedelta(days=delta))
 
     def at(self, t: Time, /) -> PlainDateTime:
         """Combine a date with a time to create a datetime
@@ -1041,384 +1164,7 @@ Date.MIN = Date._from_py_unchecked(_date.min)
 Date.MAX = Date._from_py_unchecked(_date.max)
 
 
-@final
-class YearMonth(_Base):
-    """A year and month without a day component.
-
-    Useful for representing recurring events, billing periods,
-    or any concept that doesn't need a specific day.
-
-    >>> ym = YearMonth(2021, 1)
-    YearMonth("2021-01")
-
-    Can also be constructed from an ISO 8601 string:
-
-    >>> YearMonth("2021-01")
-    YearMonth("2021-01")
-    """
-
-    # We store the underlying data in a datetime.date object,
-    # which allows us to benefit from its functionality and performance.
-    # It isn't exposed to the user, so it's not a problem.
-    __slots__ = ("_py",)
-
-    MIN: ClassVar[YearMonth]
-    """The minimum possible year-month"""
-    MAX: ClassVar[YearMonth]
-    """The maximum possible year-month"""
-
-    # Overloads for a nice autodoc.
-    # Proper typing of the constructors is handled in the type stubs
-    if not TYPE_CHECKING:
-
-        @overload
-        def __init__(self, iso_string: str, /) -> None: ...
-
-        @overload
-        def __init__(self, year: int, month: int) -> None: ...
-
-    def __init__(self, year: int, month: int) -> None:
-        self._py = _date(year, month, 1)
-
-    __init__ = add_alternate_constructors(__init__)
-
-    def _init_from_iso(self, s: str) -> None:
-        self._py = yearmonth_from_iso(s)
-
-    @property
-    def year(self) -> int:
-        """The year component of the year-month
-
-        >>> YearMonth(2021, 1).year
-        2021
-        """
-        return self._py.year
-
-    @property
-    def month(self) -> int:
-        """The month component of the year-month
-
-        >>> YearMonth(2021, 1).month
-        1
-        """
-        return self._py.month
-
-    def format_iso(self) -> str:
-        """Format as the ISO 8601 year-month format.
-
-        Inverse of :meth:`parse_iso`.
-
-        >>> YearMonth(2021, 1).format_iso()
-        '2021-01'
-        """
-        return self._py.isoformat()[:7]
-
-    @classmethod
-    def parse_iso(cls, s: str, /) -> YearMonth:
-        """Create from the ISO 8601 format ``YYYY-MM`` or ``YYYYMM``.
-
-        Inverse of :meth:`format_iso`
-
-        >>> YearMonth.parse_iso("2021-01")
-        YearMonth("2021-01")
-        """
-        return cls._from_py_unchecked(yearmonth_from_iso(s))
-
-    if not TYPE_CHECKING:  # for a nice autodoc
-
-        @overload
-        def replace(self, year: int = ..., month: int = ...) -> YearMonth: ...
-
-    def replace(self, **kwargs: Any) -> YearMonth:
-        """Create a new instance with the given fields replaced
-
-        >>> d = YearMonth(2021, 12)
-        >>> d.replace(month=3)
-        YearMonth("2021-03")
-        """
-        if "day" in kwargs:
-            raise TypeError(
-                "replace() got an unexpected keyword argument 'day'"
-            )
-        return YearMonth._from_py_unchecked(self._py.replace(**kwargs))
-
-    def on_day(self, day: int, /) -> Date:
-        """Create a date from this year-month with a given day
-
-        >>> YearMonth(2021, 1).on_day(2)
-        Date("2021-01-02")
-        """
-        return Date._from_py_unchecked(self._py.replace(day=day))
-
-    __str__ = format_iso
-
-    def __repr__(self) -> str:
-        return f'YearMonth("{self}")'
-
-    def __eq__(self, other: object) -> bool:
-        """Compare for equality
-
-        >>> ym = YearMonth(2021, 1)
-        >>> ym == YearMonth(2021, 1)
-        True
-        >>> ym == YearMonth(2021, 2)
-        False
-        """
-        if not isinstance(other, YearMonth):
-            return NotImplemented
-        return self._py == other._py
-
-    def __lt__(self, other: YearMonth) -> bool:
-        if not isinstance(other, YearMonth):
-            return NotImplemented
-        return self._py < other._py
-
-    def __le__(self, other: YearMonth) -> bool:
-        if not isinstance(other, YearMonth):
-            return NotImplemented
-        return self._py <= other._py
-
-    def __gt__(self, other: YearMonth) -> bool:
-        if not isinstance(other, YearMonth):
-            return NotImplemented
-        return self._py > other._py
-
-    def __ge__(self, other: YearMonth) -> bool:
-        if not isinstance(other, YearMonth):
-            return NotImplemented
-        return self._py >= other._py
-
-    def __hash__(self) -> int:
-        return hash(self._py)
-
-    @classmethod
-    def _from_py_unchecked(cls, d: _date, /) -> YearMonth:
-        self = _object_new(cls)
-        self._init_from_inner(d)
-        return self
-
-    def _init_from_inner(self, d: _date, /) -> None:
-        assert d.day == 1
-        self._py = d
-
-    @no_type_check
-    def __reduce__(self):
-        return _unpkl_ym, (pack("<HB", self.year, self.month),)
-
-
-# A separate unpickling function allows us to make backwards-compatible changes
-# to the pickling format in the future
-@no_type_check
-def _unpkl_ym(data: bytes) -> YearMonth:
-    return YearMonth(*unpack("<HB", data))
-
-
-YearMonth.MIN = YearMonth._from_py_unchecked(_date.min)
-YearMonth.MAX = YearMonth._from_py_unchecked(_date.max.replace(day=1))
-
-
 _DUMMY_LEAP_YEAR = 4
-
-
-@final
-class MonthDay(_Base):
-    """A month and day without a year component.
-
-    Useful for representing recurring annual events such as
-    birthdays, holidays, or anniversaries.
-
-    >>> md = MonthDay(11, 23)
-    MonthDay("--11-23")
-
-    Can also be constructed from an ISO 8601 string:
-
-    >>> MonthDay("--11-23")
-    MonthDay("--11-23")
-    """
-
-    # We store the underlying data in a datetime.date object,
-    # which allows us to benefit from its functionality and performance.
-    # It isn't exposed to the user, so it's not a problem.
-    __slots__ = ("_py",)
-
-    MIN: ClassVar[MonthDay]
-    """The minimum possible month-day"""
-    MAX: ClassVar[MonthDay]
-    """The maximum possible month-day"""
-
-    # Overloads for a nice autodoc.
-    # Proper typing of the constructors is handled in the type stubs
-    if not TYPE_CHECKING:
-
-        @overload
-        def __init__(self, iso_string: str, /) -> None: ...
-
-        @overload
-        def __init__(self, month: int, day: int) -> None: ...
-
-    def __init__(self, month: int, day: int) -> None:
-        self._py = _date(_DUMMY_LEAP_YEAR, month, day)
-
-    __init__ = add_alternate_constructors(__init__)
-
-    def _init_from_iso(self, s: str) -> None:
-        self._py = monthday_from_iso(s)
-
-    @property
-    def month(self) -> int:
-        """The month component of the month-day
-
-        >>> MonthDay(11, 23).month
-        11
-        """
-        return self._py.month
-
-    @property
-    def day(self) -> int:
-        """The day component of the month-day
-
-        >>> MonthDay(11, 23).day
-        23
-        """
-        return self._py.day
-
-    def format_iso(self) -> str:
-        """Format as the ISO 8601 month-day format.
-
-        Inverse of ``parse_iso``.
-
-        >>> MonthDay(10, 8).format_iso()
-        '--10-08'
-
-        Note
-        ----
-        This format is officially only part of the 2000 edition of the
-        ISO 8601 standard. There is no alternative for month-day
-        in the newer editions. However, it is still widely used in other libraries.
-        """
-        return f"-{self._py.isoformat()[4:]}"
-
-    @classmethod
-    def parse_iso(cls, s: str, /) -> MonthDay:
-        """Create from the ISO 8601 format ``--MM-DD`` or ``--MMDD``.
-
-        Inverse of :meth:`format_iso`
-
-        >>> MonthDay.parse_iso("--11-23")
-        MonthDay("--11-23")
-        """
-        return cls._from_py_unchecked(monthday_from_iso(s))
-
-    if not TYPE_CHECKING:  # for a nice autodoc
-
-        @overload
-        def replace(self, month: int = ..., day: int = ...) -> MonthDay: ...
-
-    def replace(self, **kwargs: Any) -> MonthDay:
-        """Create a new instance with the given fields replaced
-
-        >>> d = MonthDay(11, 23)
-        >>> d.replace(month=3)
-        MonthDay("--03-23")
-        """
-        if "year" in kwargs:
-            raise TypeError(
-                "replace() got an unexpected keyword argument 'year'"
-            )
-        return MonthDay._from_py_unchecked(self._py.replace(**kwargs))
-
-    def in_year(self, year: int, /) -> Date:
-        """Create a date from this month-day with a given day
-
-        >>> MonthDay(8, 1).in_year(2025)
-        Date("2025-08-01")
-
-        Note
-        ----
-        This method will raise a ``ValueError`` if the month-day is a leap day
-        and the year is not a leap year.
-        """
-        return Date._from_py_unchecked(self._py.replace(year=year))
-
-    def is_leap(self) -> bool:
-        """Check if the month-day is February 29th
-
-        >>> MonthDay(2, 29).is_leap()
-        True
-        >>> MonthDay(3, 1).is_leap()
-        False
-        """
-        return self._py.month == 2 and self._py.day == 29
-
-    __str__ = format_iso
-
-    def __repr__(self) -> str:
-        return f'MonthDay("{self}")'
-
-    def __eq__(self, other: object) -> bool:
-        """Compare for equality
-
-        >>> md = MonthDay(10, 1)
-        >>> md == MonthDay(10, 1)
-        True
-        >>> md == MonthDay(10, 2)
-        False
-        """
-        if not isinstance(other, MonthDay):
-            return NotImplemented
-        return self._py == other._py
-
-    def __lt__(self, other: MonthDay) -> bool:
-        if not isinstance(other, MonthDay):
-            return NotImplemented
-        return self._py < other._py
-
-    def __le__(self, other: MonthDay) -> bool:
-        if not isinstance(other, MonthDay):
-            return NotImplemented
-        return self._py <= other._py
-
-    def __gt__(self, other: MonthDay) -> bool:
-        if not isinstance(other, MonthDay):
-            return NotImplemented
-        return self._py > other._py
-
-    def __ge__(self, other: MonthDay) -> bool:
-        if not isinstance(other, MonthDay):
-            return NotImplemented
-        return self._py >= other._py
-
-    def __hash__(self) -> int:
-        return hash(self._py)
-
-    @classmethod
-    def _from_py_unchecked(cls, d: _date, /) -> MonthDay:
-        self = _object_new(cls)
-        self._init_from_inner(d)
-        return self
-
-    def _init_from_inner(self, d: _date, /) -> None:
-        assert d.year == _DUMMY_LEAP_YEAR
-        self._py = d
-
-    @no_type_check
-    def __reduce__(self):
-        return _unpkl_md, (pack("<BB", self.month, self.day),)
-
-
-# A separate unpickling function allows us to make backwards-compatible changes
-# to the pickling format in the future
-@no_type_check
-def _unpkl_md(data: bytes) -> MonthDay:
-    return MonthDay(*unpack("<BB", data))
-
-
-MonthDay.MIN = MonthDay._from_py_unchecked(
-    _date.min.replace(year=_DUMMY_LEAP_YEAR)
-)
-MonthDay.MAX = MonthDay._from_py_unchecked(
-    _date.max.replace(year=_DUMMY_LEAP_YEAR)
-)
 
 
 @final
@@ -5698,6 +5444,38 @@ class _LocalTime(_BasicConversions):
         """
         return Time._from_py_unchecked(self._py_dt.time(), self._nanos)
 
+    def day_of_year(self) -> int:
+        """Ordinal day in the year (1--366)
+
+        >>> PlainDateTime(2021, 1, 2).day_of_year()
+        2
+        """
+        return self._py_dt.timetuple().tm_yday
+
+    def days_in_month(self) -> int:
+        """Number of days in the current month (28--31)
+
+        >>> PlainDateTime(2024, 2, 1).days_in_month()
+        29
+        """
+        return days_in_month(self._py_dt.year, self._py_dt.month)
+
+    def days_in_year(self) -> int:
+        """Number of days in the current year (365 or 366)
+
+        >>> PlainDateTime(2024, 1, 1).days_in_year()
+        366
+        """
+        return 366 if is_leap(self._py_dt.year) else 365
+
+    def in_leap_year(self) -> bool:
+        """Whether this date's year is a leap year
+
+        >>> PlainDateTime(2024, 1, 1).in_leap_year()
+        True
+        """
+        return is_leap(self._py_dt.year)
+
 
 # Methods for types that represent a specific moment in time.
 # Implemented by:
@@ -6850,6 +6628,65 @@ class OffsetDateTime(_ExactAndLocalTime):
             ),
             time._nanos,
         )
+
+    def start_of(
+        self,
+        unit: str,
+        /,
+        *,
+        stale_offset_ok: bool = False,
+    ) -> OffsetDateTime:
+        """The start of the given unit
+
+        Valid units: ``"year"``, ``"month"``, ``"day"``,
+        ``"hour"``, ``"minute"``, ``"second"``
+
+        Note
+        ----
+        ``"week"`` is not a valid unit because weeks do not have
+        a universal start day. Use :meth:`~Date.nth_weekday` on the
+        :meth:`date` instead.
+
+        Warning
+        -------
+        The offset is preserved, which may not be correct for the
+        resulting time. See :class:`~whenever.PotentiallyStaleOffsetWarning`.
+        Pass ``stale_offset_ok=True`` to suppress.
+
+        >>> OffsetDateTime(2024, 8, 15, 14, 30, offset=5).start_of("day")
+        OffsetDateTime("2024-08-15 00:00:00+05:00")
+        """
+        if not stale_offset_ok:
+            warn(
+                OFFSET_START_END_OF_STALE_MSG,
+                PotentiallyStaleOffsetWarning,
+                stacklevel=2,
+            )
+        new_dt, nanos = _start_of_dt(self._py_dt, unit)
+        return self._from_py_unchecked(check_utc_bounds(new_dt), nanos)
+
+    def end_of(
+        self,
+        unit: str,
+        /,
+        *,
+        stale_offset_ok: bool = False,
+    ) -> OffsetDateTime:
+        """The end of the given unit
+
+        See :meth:`start_of` for valid units and stale offset behavior.
+
+        >>> OffsetDateTime(2024, 8, 15, 14, 30, offset=5).end_of("day")
+        OffsetDateTime("2024-08-15 23:59:59.999999999+05:00")
+        """
+        if not stale_offset_ok:
+            warn(
+                OFFSET_START_END_OF_STALE_MSG,
+                PotentiallyStaleOffsetWarning,
+                stacklevel=2,
+            )
+        new_dt, nanos = _end_of_dt(self._py_dt, unit)
+        return self._from_py_unchecked(check_utc_bounds(new_dt), nanos)
 
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
@@ -8336,16 +8173,78 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         This is almost always at midnight the same day, but may be different
         for timezones which transition at—and thus skip over—midnight.
+
+        .. deprecated:: 0.10.0
+            Use ``start_of("day")`` instead.
         """
-        return self._from_py_unchecked(
-            resolve_ambiguity(
-                _datetime.combine(self._py_dt.date(), _time.min),
-                self._tz,
-                "compatible",
-            ),
-            0,
-            self._tz,
+        warn(
+            'start_of_day() is deprecated; use start_of("day") instead.',
+            WheneverDeprecationWarning,
+            stacklevel=2,
         )
+        return self.start_of("day")
+
+    def start_of(self, unit: str, /) -> ZonedDateTime:
+        """The start of the given unit
+
+        Valid units: ``"year"``, ``"month"``, ``"day"``,
+        ``"hour"``, ``"minute"``, ``"second"``
+
+        Note
+        ----
+        ``"week"`` is not a valid unit because weeks do not have
+        a universal start day. Use :meth:`~Date.nth_weekday` on the
+        :meth:`date` instead.
+
+        For ``"day"``, ``"month"``, and ``"year"``, the resulting time
+        is resolved in the timezone using ``"compatible"`` disambiguation,
+        since midnight may not exist due to DST transitions.
+        This is equivalent to :meth:`start_of_day` for ``"day"``.
+
+        For ``"hour"``, ``"minute"``, and ``"second"``, the existing offset
+        is preserved if valid, otherwise the correct offset for the
+        resulting time is determined.
+
+        >>> ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").start_of("day")
+        ZonedDateTime("2024-08-15 00:00:00-04:00[America/New_York]")
+        >>> ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").start_of("hour")
+        ZonedDateTime("2024-08-15 14:00:00-04:00[America/New_York]")
+        """
+        dt = self._py_dt
+        tz = self._tz
+        new_dt, nanos = _start_of_dt(dt, unit)
+        naive = new_dt.replace(tzinfo=None)
+        if unit in ("year", "month", "day"):
+            resolved = resolve_ambiguity(naive, tz, "compatible")
+        else:
+            resolved = resolve_ambiguity_using_prev_offset(
+                naive,
+                dt.utcoffset(),  # type: ignore[arg-type]
+                tz,
+            )
+        return self._from_py_unchecked(resolved, nanos, tz)
+
+    def end_of(self, unit: str, /) -> ZonedDateTime:
+        """The end of the given unit
+
+        See :meth:`start_of` for valid units and timezone behavior.
+
+        >>> ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").end_of("day")
+        ZonedDateTime("2024-08-15 23:59:59.999999999-04:00[America/New_York]")
+        """
+        dt = self._py_dt
+        tz = self._tz
+        new_dt, nanos = _end_of_dt(dt, unit)
+        naive = new_dt.replace(tzinfo=None)
+        if unit in ("year", "month", "day"):
+            resolved = resolve_ambiguity(naive, tz, "compatible")
+        else:
+            resolved = resolve_ambiguity_using_prev_offset(
+                naive,
+                dt.utcoffset(),  # type: ignore[arg-type]
+                tz,
+            )
+        return self._from_py_unchecked(resolved, nanos, tz)
 
     def round(
         self,
@@ -8724,6 +8623,39 @@ class PlainDateTime(_LocalTime):
         return self._from_py_unchecked(
             _datetime.combine(self._py_dt.date(), t._py), t._nanos
         )
+
+    def start_of(self, unit: str, /) -> PlainDateTime:
+        """The start of the given unit
+
+        Valid units: ``"year"``, ``"month"``, ``"day"``,
+        ``"hour"``, ``"minute"``, ``"second"``
+
+        Note
+        ----
+        ``"week"`` is not a valid unit because weeks do not have
+        a universal start day. Use :meth:`~Date.nth_weekday` on the
+        :meth:`date` instead.
+
+        >>> PlainDateTime(2024, 8, 15, 14, 30, 45).start_of("day")
+        PlainDateTime("2024-08-15 00:00:00")
+        >>> PlainDateTime(2024, 8, 15, 14, 30, 45).start_of("hour")
+        PlainDateTime("2024-08-15 14:00:00")
+        """
+        new_dt, nanos = _start_of_dt(self._py_dt, unit)
+        return self._from_py_unchecked(new_dt, nanos)
+
+    def end_of(self, unit: str, /) -> PlainDateTime:
+        """The end of the given unit
+
+        See :meth:`start_of` for valid units.
+
+        >>> PlainDateTime(2024, 8, 15, 14, 30, 45).end_of("day")
+        PlainDateTime("2024-08-15 23:59:59.999999999")
+        >>> PlainDateTime(2024, 8, 15, 14, 30, 45).end_of("hour")
+        PlainDateTime("2024-08-15 14:59:59.999999999")
+        """
+        new_dt, nanos = _end_of_dt(self._py_dt, unit)
+        return self._from_py_unchecked(new_dt, nanos)
 
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
@@ -9471,6 +9403,16 @@ OFFSET_ROUND_STALE_MSG = (
     "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )
 
+OFFSET_START_END_OF_STALE_MSG = (
+    "Getting the start/end of a unit on an OffsetDateTime keeps the fixed UTC offset, "
+    "which may not be correct for the resulting time "
+    "(e.g. the start of the year may have a different UTC offset due to DST). "
+    "Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware results. "
+    "Pass `stale_offset_ok=True` to suppress this warning, "
+    "or use Python's standard warning filters. "
+    "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
+)
+
 PLAIN_SHIFT_UNAWARE_MSG = (
     "Shifting a PlainDateTime by exact time units does not account for timezone transitions "
     "that may occur in the interval "
@@ -10207,6 +10149,7 @@ for _unpkl in (
     _unpkl_date,
     _unpkl_ym,
     _unpkl_md,
+    _unpkl_iwd,
     _unpkl_time,
     _unpkl_tdelta,
     _unpkl_dtdelta,

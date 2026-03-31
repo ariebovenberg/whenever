@@ -167,7 +167,7 @@ class TestInit:
             TimeDelta(1)  # type: ignore[call-overload]
 
         with pytest.raises(TypeError):
-            TimeDelta(**{1: 43})  # type: ignore[misc]
+            TimeDelta(**{1: 43})  # type: ignore[misc,call-overload]
 
     def test_iso(self):
         assert TimeDelta("PT1H2M3.000004S") == TimeDelta(

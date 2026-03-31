@@ -389,7 +389,7 @@ const MAX_MONTH_DAYS: [[u8; 13]; 2] = [
         31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
     ],
 ];
-const DAYS_BEFORE_MONTH: [[u16; 13]; 2] = [
+pub(crate) const DAYS_BEFORE_MONTH: [[u16; 13]; 2] = [
     // non-leap years
     [
         0, // 1-indexed
@@ -974,10 +974,6 @@ impl Weekday {
 
     pub(crate) const fn iso(self) -> u8 {
         self as u8
-    }
-
-    pub(crate) const fn sunday_is_0(self) -> u8 {
-        self.iso() % 7
     }
 }
 

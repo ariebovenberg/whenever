@@ -351,7 +351,7 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     }
 }
 
-#[inline]
+#[inline(never)]
 fn shift_inner(
     cls: HeapType<Instant>,
     inst: Instant,
@@ -569,7 +569,7 @@ fn subtract(
     shift_method(cls, slf, args, kwargs, true)
 }
 
-#[inline]
+#[inline(never)]
 fn shift_method(
     cls: HeapType<Instant>,
     instant: Instant,

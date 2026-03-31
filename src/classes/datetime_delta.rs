@@ -343,7 +343,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     add_method(obj_a, obj_b, true)
 }
 
-#[inline]
+#[inline(never)]
 fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     // FUTURE: optimize zero cases
     let type_a = obj_a.type_();

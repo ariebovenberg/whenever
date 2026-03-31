@@ -133,6 +133,8 @@ fn my_method(cls: HeapType<MyType>, slf: MyType, args: &[PyObj], kwargs: &mut It
   field-level validation (`"argument must be ..."`, `"days out of range"`). Use uppercase for
   sentences about operations or results (`"Resulting date out of range"`, `"Cannot round ..."`,
   `"Invalid pickle data"`). When in doubt, match existing messages in the same file.
+- Don't downcast integer types (e.g. `i64` → `i32`) without an explicit check
+  or comment explaining why it's safe.
 
 ### Common patterns
 

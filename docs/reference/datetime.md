@@ -75,6 +75,13 @@ local date and time values:
 | `add()`, `subtract()`      | {meth}`🔗 <PlainDateTime.add>`, {meth}`🔗 <PlainDateTime.subtract>`      | {meth}`🔗 <ZonedDateTime.add>`, {meth}`🔗 <ZonedDateTime.subtract>`      | {meth}`🔗 <OffsetDateTime.add>`, {meth}`🔗 <OffsetDateTime.subtract>`      |
 | `since()`, `until()`      | {meth}`🔗 <PlainDateTime.since>`, {meth}`🔗 <PlainDateTime.until>`      | {meth}`🔗 <ZonedDateTime.since>`, {meth}`🔗 <ZonedDateTime.until>`      | {meth}`🔗 <OffsetDateTime.since>`, {meth}`🔗 <OffsetDateTime.until>`      |
 | `round()`                                     | {meth}`🔗 <PlainDateTime.round>`                                     | {meth}`🔗 <ZonedDateTime.round>`                                     | {meth}`🔗 <OffsetDateTime.round>`                                      |
+|    |   |   |
+| `start_of()`, `end_of()`    | {meth}`🔗 <PlainDateTime.start_of>`, {meth}`🔗 <PlainDateTime.end_of>`    | {meth}`🔗 <ZonedDateTime.start_of>`, {meth}`🔗 <ZonedDateTime.end_of>`    | {meth}`🔗 <OffsetDateTime.start_of>`, {meth}`🔗 <OffsetDateTime.end_of>`    |
+|    |   |   |
+| `day_of_year()`              | {meth}`🔗 <PlainDateTime.day_of_year>`                                 | {meth}`🔗 <ZonedDateTime.day_of_year>`                                 | {meth}`🔗 <OffsetDateTime.day_of_year>`                                  |
+| `days_in_month()`            | {meth}`🔗 <PlainDateTime.days_in_month>`                               | {meth}`🔗 <ZonedDateTime.days_in_month>`                               | {meth}`🔗 <OffsetDateTime.days_in_month>`                                |
+| `days_in_year()`             | {meth}`🔗 <PlainDateTime.days_in_year>`                                | {meth}`🔗 <ZonedDateTime.days_in_year>`                                | {meth}`🔗 <OffsetDateTime.days_in_year>`                                 |
+| `in_leap_year()`             | {meth}`🔗 <PlainDateTime.in_leap_year>`                                | {meth}`🔗 <ZonedDateTime.in_leap_year>`                                | {meth}`🔗 <OffsetDateTime.in_leap_year>`                                 |
 
 
 :::{note}
@@ -109,7 +116,7 @@ Several other methods are unique to one or more classes:
 |                                            | {meth}`~ZonedDateTime.dst_offset`       |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.tz_abbrev`        |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.day_length`       |                                        |                                                        |
-|                                            | {meth}`~ZonedDateTime.start_of_day`     |                                        |                                                        |
+|                                            | {meth}`~ZonedDateTime.start_of_day` *(deprecated)* |                                        |                                                        |
 
 
 [^1]: `timestamp_millis()` and `timestamp_nanos()` methods are also

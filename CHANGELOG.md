@@ -94,8 +94,10 @@ See the full list below.
   Use the constructor directly instead (e.g. `Date(datetime.date(...))`).
 - `parse_strptime()` methods on `OffsetDateTime` and `PlainDateTime`.
   Use the new `parse()` method instead.
+- `ZonedDateTime.start_of_day()`.
+  Use `start_of("day")` instead.
 
-**Improved**
+**Added or improved**
 
 - New `since()` and `until()` methods on `Date`, `ZonedDateTime`,
   `OffsetDateTime`, and `PlainDateTime` for calculating the difference
@@ -128,13 +130,28 @@ See the full list below.
   and corresponding per-method keyword arguments
   (`stale_offset_ok`, `naive_arithmetic_ok`,
   `assume_24h_days`) for fine-grained control over DST-related warnings.
+- New `IsoWeekDate` type for representing ISO calendar week dates.
+  Construct with `IsoWeekDate(year, week, weekday)` or parse with
+  `IsoWeekDate("2024-W01-1")`.
+  Convert from `Date` with `Date.iso_week_date()`.
+- New calendar methods on `Date`: `day_of_year()`, `days_in_month()`,
+  `days_in_year()`, `in_leap_year()`, `next_day()`, `prev_day()`,
+  `nth_weekday_of_month()`, `nth_weekday()`, `start_of()`, `end_of()`.
+- New calendar methods on `PlainDateTime`, `ZonedDateTime`,
+  `OffsetDateTime`: `day_of_year()`, `days_in_month()`,
+  `days_in_year()`, `in_leap_year()`, `start_of()`, `end_of()`.
+- New calendar methods on `YearMonth`: `days_in_month()`,
+  `days_in_year()`, `in_leap_year()`.
 - A huge revamp and expansion of the documentation.
   The structure and navigability of API reference and overview pages
   has been improved. Several new pages have been added, including:
   - An explanation of the fundamental concepts of time
   - An overview of Python's datetime pitfalls
   - Explanation of the rounding API
-- Reduced the binary size of the Rust extension by ±20%.
+- Reduced the binary size of the Rust extension by preventing inlining
+  of code in non-critical paths.
+- `YearMonth`, `MonthDay`, `Weekday`, and `IsoWeekDate` are now
+  implemented in pure Python always, reducing the compiled extension size.
 
 **Fixed**
 

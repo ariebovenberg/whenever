@@ -120,6 +120,199 @@ impl DateTime {
         })
     }
 
+    /// Compute the start-of-unit DateTime. Returns `(DateTime, bool)` where
+    /// the bool indicates whether the result needs DST-aware resolution
+    /// (true for year/month/day, false for sub-day units that stay in the same day).
+    pub(crate) fn start_of_unit(
+        self,
+        unit_obj: PyObj,
+        state: &State,
+    ) -> PyResult<(DateTime, bool)> {
+        let &State {
+            str_year,
+            str_month,
+            str_day,
+            str_hour,
+            str_minute,
+            str_second,
+            ..
+        } = state;
+        let d = self.date;
+        match_interned_str("unit", unit_obj, |v, eq| {
+            if eq(v, str_year) {
+                Some((
+                    DateTime {
+                        date: Date {
+                            year: d.year,
+                            month: Month::January,
+                            day: 1,
+                        },
+                        time: Time::MIDNIGHT,
+                    },
+                    true,
+                ))
+            } else if eq(v, str_month) {
+                Some((
+                    DateTime {
+                        date: Date {
+                            year: d.year,
+                            month: d.month,
+                            day: 1,
+                        },
+                        time: Time::MIDNIGHT,
+                    },
+                    true,
+                ))
+            } else if eq(v, str_day) {
+                Some((
+                    DateTime {
+                        date: d,
+                        time: Time::MIDNIGHT,
+                    },
+                    true,
+                ))
+            } else if eq(v, str_hour) {
+                Some((
+                    DateTime {
+                        date: d,
+                        time: Time {
+                            hour: self.time.hour,
+                            minute: 0,
+                            second: 0,
+                            subsec: SubSecNanos::MIN,
+                        },
+                    },
+                    false,
+                ))
+            } else if eq(v, str_minute) {
+                Some((
+                    DateTime {
+                        date: d,
+                        time: Time {
+                            hour: self.time.hour,
+                            minute: self.time.minute,
+                            second: 0,
+                            subsec: SubSecNanos::MIN,
+                        },
+                    },
+                    false,
+                ))
+            } else if eq(v, str_second) {
+                Some((
+                    DateTime {
+                        date: d,
+                        time: Time {
+                            hour: self.time.hour,
+                            minute: self.time.minute,
+                            second: self.time.second,
+                            subsec: SubSecNanos::MIN,
+                        },
+                    },
+                    false,
+                ))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Compute the end-of-unit DateTime. Returns `(DateTime, bool)` where
+    /// the bool indicates whether the result needs DST-aware resolution.
+    pub(crate) fn end_of_unit(self, unit_obj: PyObj, state: &State) -> PyResult<(DateTime, bool)> {
+        let &State {
+            str_year,
+            str_month,
+            str_day,
+            str_hour,
+            str_minute,
+            str_second,
+            ..
+        } = state;
+        let d = self.date;
+        let max_time = Time {
+            hour: 23,
+            minute: 59,
+            second: 59,
+            subsec: SubSecNanos::MAX,
+        };
+        match_interned_str("unit", unit_obj, |v, eq| {
+            if eq(v, str_year) {
+                Some((
+                    DateTime {
+                        date: Date {
+                            year: d.year,
+                            month: Month::December,
+                            day: 31,
+                        },
+                        time: max_time,
+                    },
+                    true,
+                ))
+            } else if eq(v, str_month) {
+                Some((
+                    DateTime {
+                        date: Date {
+                            year: d.year,
+                            month: d.month,
+                            day: d.year.days_in_month(d.month),
+                        },
+                        time: max_time,
+                    },
+                    true,
+                ))
+            } else if eq(v, str_day) {
+                Some((
+                    DateTime {
+                        date: d,
+                        time: max_time,
+                    },
+                    true,
+                ))
+            } else if eq(v, str_hour) {
+                Some((
+                    DateTime {
+                        date: d,
+                        time: Time {
+                            hour: self.time.hour,
+                            minute: 59,
+                            second: 59,
+                            subsec: SubSecNanos::MAX,
+                        },
+                    },
+                    false,
+                ))
+            } else if eq(v, str_minute) {
+                Some((
+                    DateTime {
+                        date: d,
+                        time: Time {
+                            hour: self.time.hour,
+                            minute: self.time.minute,
+                            second: 59,
+                            subsec: SubSecNanos::MAX,
+                        },
+                    },
+                    false,
+                ))
+            } else if eq(v, str_second) {
+                Some((
+                    DateTime {
+                        date: d,
+                        time: Time {
+                            hour: self.time.hour,
+                            minute: self.time.minute,
+                            second: self.time.second,
+                            subsec: SubSecNanos::MAX,
+                        },
+                    },
+                    false,
+                ))
+            } else {
+                None
+            }
+        })
+    }
+
     pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
         // Minimal length is 11 (YYYYMMDDTHH)
         if s.len() < 11 {
@@ -282,7 +475,7 @@ fn __sub__(a: PyObj, b: PyObj) -> PyReturn {
     }
 }
 
-#[inline]
+#[inline(never)]
 fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     let type_a = obj_a.type_();
     let type_b = obj_b.type_();
@@ -498,7 +691,7 @@ fn subtract(
     shift_method(cls, slf, args, kwargs, true)
 }
 
-#[inline]
+#[inline(never)]
 fn shift_method(
     cls: HeapType<DateTime>,
     slf: DateTime,
@@ -780,6 +973,39 @@ fn time(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
     slf.time.to_obj(cls.state().time_type)
 }
 
+fn day_of_year(_: HeapType<DateTime>, slf: DateTime) -> PyReturn {
+    let d = slf.date;
+    (d.year.days_before_month(d.month) + d.day as u16).to_py()
+}
+
+fn days_in_month(_: HeapType<DateTime>, slf: DateTime) -> PyReturn {
+    let d = slf.date;
+    d.year.days_in_month(d.month).to_py()
+}
+
+fn days_in_year(_: HeapType<DateTime>, slf: DateTime) -> PyReturn {
+    (if slf.date.year.is_leap() {
+        366_u16
+    } else {
+        365_u16
+    })
+    .to_py()
+}
+
+fn in_leap_year(_: HeapType<DateTime>, slf: DateTime) -> PyReturn {
+    slf.date.year.is_leap().to_py()
+}
+
+fn start_of(cls: HeapType<DateTime>, slf: DateTime, unit_obj: PyObj) -> PyReturn {
+    let (dt, _) = slf.start_of_unit(unit_obj, cls.state())?;
+    dt.to_obj(cls)
+}
+
+fn end_of(cls: HeapType<DateTime>, slf: DateTime, unit_obj: PyObj) -> PyReturn {
+    let (dt, _) = slf.end_of_unit(unit_obj, cls.state())?;
+    dt.to_obj(cls)
+}
+
 fn is_datetime_sep(c: u8) -> bool {
     c == b'T' || c == b' ' || c == b't'
 }
@@ -943,6 +1169,7 @@ fn until(
     plain_since(cls, slf, args, kwargs, true)
 }
 
+#[inline(never)]
 fn plain_since(
     cls: HeapType<DateTime>,
     slf: DateTime,
@@ -1295,6 +1522,12 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(DateTime, py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
     method0!(DateTime, date, doc::LOCALTIME_DATE),
     method0!(DateTime, time, doc::LOCALTIME_TIME),
+    method0!(DateTime, day_of_year, doc::LOCALTIME_DAY_OF_YEAR),
+    method0!(DateTime, days_in_month, doc::LOCALTIME_DAYS_IN_MONTH),
+    method0!(DateTime, days_in_year, doc::LOCALTIME_DAYS_IN_YEAR),
+    method0!(DateTime, in_leap_year, doc::LOCALTIME_IN_LEAP_YEAR),
+    method1!(DateTime, start_of, doc::PLAINDATETIME_START_OF),
+    method1!(DateTime, end_of, doc::PLAINDATETIME_END_OF),
     method_kwargs!(DateTime, format_iso, doc::PLAINDATETIME_FORMAT_ISO),
     classmethod1!(DateTime, parse_iso, doc::PLAINDATETIME_PARSE_ISO),
     classmethod_kwargs!(DateTime, parse_strptime, doc::PLAINDATETIME_PARSE_STRPTIME),

@@ -3,26 +3,6 @@ use crate::py::*;
 use pyo3_ffi::*;
 use std::{ffi::CStr, ptr::null_mut as NULL};
 
-/// Create and add a new enum type to the module
-pub(crate) fn new_enum(
-    module: PyModule,
-    module_name: PyObj,
-    name: &str,
-    members: &str, // space-separated list of members
-) -> PyResult<Owned<PyType>> {
-    let tp = (name.to_py()?, members.to_py()?).into_pytuple()?;
-    let enum_cls = import(c"enum")?
-        .getattr(c"Enum")?
-        .call(tp.borrow())?
-        .cast_allow_subclass::<PyType>()
-        .unwrap();
-
-    enum_cls.setattr(c"__module__", module_name)?;
-
-    module.add_type(enum_cls.borrow())?;
-    Ok(enum_cls)
-}
-
 /// Create and add a new exception type to the module
 pub(crate) fn new_exception(
     module: PyModule,

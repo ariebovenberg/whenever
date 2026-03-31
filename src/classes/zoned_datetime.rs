@@ -610,7 +610,7 @@ fn __sub__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
     inst_a.diff(inst_b).to_obj(state.time_delta_type)
 }
 
-#[inline]
+#[inline(never)]
 fn shift_operator(
     state: &State,
     cls: HeapType<ZonedDateTime>,
@@ -861,6 +861,77 @@ fn date(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
 
 fn time(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
     slf.time.to_obj(cls.state().time_type)
+}
+
+fn day_of_year(_: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
+    let d = slf.date;
+    (d.year.days_before_month(d.month) + d.day as u16).to_py()
+}
+
+fn days_in_month(_: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
+    let d = slf.date;
+    d.year.days_in_month(d.month).to_py()
+}
+
+fn days_in_year(_: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
+    (if slf.date.year.is_leap() {
+        366_u16
+    } else {
+        365_u16
+    })
+    .to_py()
+}
+
+fn in_leap_year(_: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
+    slf.date.year.is_leap().to_py()
+}
+
+fn start_of(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, unit_obj: PyObj) -> PyReturn {
+    let state = cls.state();
+    let &State {
+        exc_repeated,
+        exc_skipped,
+        ..
+    } = state;
+    let (dt, needs_disambiguate) = slf.without_offset().start_of_unit(unit_obj, state)?;
+    if needs_disambiguate {
+        ZonedDateTime::resolve_using_disambiguate(
+            dt.date,
+            dt.time,
+            &slf.tz,
+            Disambiguate::Compatible,
+            exc_repeated,
+            exc_skipped,
+        )?
+        .assume_tz_unchecked(slf.tz.newref(), cls)
+    } else {
+        ZonedDateTime::resolve_using_offset(dt.date, dt.time, &slf.tz, slf.offset)?
+            .assume_tz_unchecked(slf.tz.newref(), cls)
+    }
+}
+
+fn end_of(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, unit_obj: PyObj) -> PyReturn {
+    let state = cls.state();
+    let &State {
+        exc_repeated,
+        exc_skipped,
+        ..
+    } = state;
+    let (dt, needs_disambiguate) = slf.without_offset().end_of_unit(unit_obj, state)?;
+    if needs_disambiguate {
+        ZonedDateTime::resolve_using_disambiguate(
+            dt.date,
+            dt.time,
+            &slf.tz,
+            Disambiguate::Compatible,
+            exc_repeated,
+            exc_skipped,
+        )?
+        .assume_tz_unchecked(slf.tz.newref(), cls)
+    } else {
+        ZonedDateTime::resolve_using_offset(dt.date, dt.time, &slf.tz, slf.offset)?
+            .assume_tz_unchecked(slf.tz.newref(), cls)
+    }
 }
 
 fn replace_date(
@@ -1409,7 +1480,7 @@ fn subtract(
     shift_method(cls, slf, args, kwargs, true)
 }
 
-#[inline]
+#[inline(never)]
 fn shift_method(
     cls: HeapType<ZonedDateTime>,
     slf: ZonedDateTime,
@@ -1561,21 +1632,22 @@ fn difference(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, arg: PyObj) -> P
 }
 
 fn start_of_day(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
-    let ZonedDateTime { date, tz, .. } = slf;
-    let &State {
-        exc_repeated,
-        exc_skipped,
-        ..
-    } = cls.state();
+    let state = cls.state();
+    warn_with_class(
+        state.warn_deprecation,
+        c"start_of_day() is deprecated; use start_of(\"day\") instead.",
+        1,
+    )?;
+    let (dt, _) = slf.without_offset().start_of_unit(state.str_day, state)?;
     ZonedDateTime::resolve_using_disambiguate(
-        date,
-        Time::MIDNIGHT,
-        &tz,
+        dt.date,
+        dt.time,
+        &slf.tz,
         Disambiguate::Compatible,
-        exc_repeated,
-        exc_skipped,
+        state.exc_repeated,
+        state.exc_skipped,
     )?
-    .assume_tz_unchecked(tz.newref(), cls)
+    .assume_tz_unchecked(slf.tz.newref(), cls)
 }
 
 fn day_length(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
@@ -1780,6 +1852,7 @@ pub(crate) fn zoned_target(
     Some(target_date)
 }
 
+#[inline(never)]
 fn zoned_since(
     cls: HeapType<ZonedDateTime>,
     slf: ZonedDateTime,
@@ -2073,6 +2146,12 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(ZonedDateTime, to_plain, doc::EXACTANDLOCALTIME_TO_PLAIN),
     method0!(ZonedDateTime, date, doc::LOCALTIME_DATE),
     method0!(ZonedDateTime, time, doc::LOCALTIME_TIME),
+    method0!(ZonedDateTime, day_of_year, doc::LOCALTIME_DAY_OF_YEAR),
+    method0!(ZonedDateTime, days_in_month, doc::LOCALTIME_DAYS_IN_MONTH),
+    method0!(ZonedDateTime, days_in_year, doc::LOCALTIME_DAYS_IN_YEAR),
+    method0!(ZonedDateTime, in_leap_year, doc::LOCALTIME_IN_LEAP_YEAR),
+    method1!(ZonedDateTime, start_of, doc::ZONEDDATETIME_START_OF),
+    method1!(ZonedDateTime, end_of, doc::ZONEDDATETIME_END_OF),
     method_kwargs!(ZonedDateTime, format_iso, doc::ZONEDDATETIME_FORMAT_ISO),
     classmethod1!(ZonedDateTime, parse_iso, doc::ZONEDDATETIME_PARSE_ISO),
     classmethod1!(ZonedDateTime, now, doc::ZONEDDATETIME_NOW),

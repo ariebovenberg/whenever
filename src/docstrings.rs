@@ -237,20 +237,6 @@ its fields. This means that ``ItemizedDelta(hours=90)`` and
 To convert to a normalized form, use :meth:`in_units`.
 See also the `delta documentation <https://whenever.rtfd.io/en/latest/guide/deltas.html>`_.
 ";
-pub(crate) const MONTHDAY: &CStr = c"\
-A month and day without a year component.
-
-Useful for representing recurring annual events such as
-birthdays, holidays, or anniversaries.
-
->>> md = MonthDay(11, 23)
-MonthDay(\"--11-23\")
-
-Can also be constructed from an ISO 8601 string:
-
->>> MonthDay(\"--11-23\")
-MonthDay(\"--11-23\")
-";
 pub(crate) const NAIVEARITHMETICWARNING: &CStr = c"\
 Raised when exact-time arithmetic is performed on a
 :class:`~whenever.PlainDateTime` without timezone context.
@@ -446,20 +432,6 @@ This is a custom warning class (not a subclass of
 library are visible by default—unlike standard ``DeprecationWarning``,
 which Python silences in production code.
 ";
-pub(crate) const YEARMONTH: &CStr = c"\
-A year and month without a day component.
-
-Useful for representing recurring events, billing periods,
-or any concept that doesn't need a specific day.
-
->>> ym = YearMonth(2021, 1)
-YearMonth(\"2021-01\")
-
-Can also be constructed from an ISO 8601 string:
-
->>> YearMonth(\"2021-01\")
-YearMonth(\"2021-01\")
-";
 pub(crate) const ZONEDDATETIME: &CStr = c"\
 A datetime associated with a timezone from the IANA database.
 
@@ -598,6 +570,30 @@ Weekday.SATURDAY
 >>> Weekday.SATURDAY.value
 6  # the ISO value
 ";
+pub(crate) const DATE_DAY_OF_YEAR: &CStr = c"\
+Ordinal day in the year (1--366)
+
+>>> Date(2021, 1, 2).day_of_year()
+2
+>>> Date(2021, 12, 31).day_of_year()
+365
+";
+pub(crate) const DATE_DAYS_IN_MONTH: &CStr = c"\
+Number of days in the current month (28--31)
+
+>>> Date(2024, 2, 1).days_in_month()
+29
+>>> Date(2023, 2, 1).days_in_month()
+28
+";
+pub(crate) const DATE_DAYS_IN_YEAR: &CStr = c"\
+Number of days in the current year (365 or 366)
+
+>>> Date(2024, 1, 1).days_in_year()
+366
+>>> Date(2023, 1, 1).days_in_year()
+365
+";
 pub(crate) const DATE_DAYS_SINCE: &CStr = c"\
 Calculate the number of days this day is after another date.
 
@@ -612,6 +608,16 @@ Calculate the number of days from this date to another date.
 .. deprecated:: 0.10.0
 
     Use :meth:`until` with `unit=\"days\"` instead.
+";
+pub(crate) const DATE_END_OF: &CStr = c"\
+The end of the given calendar unit
+
+See :meth:`start_of` for valid units.
+
+>>> Date(2024, 8, 15).end_of(\"year\")
+Date(\"2024-12-31\")
+>>> Date(2024, 8, 15).end_of(\"month\")
+Date(\"2024-08-31\")
 ";
 pub(crate) const DATE_FORMAT: &CStr = c"\
 Format as a custom pattern string.
@@ -646,6 +652,20 @@ Date(\"2021-01-02\")
 
     Use the constructor ``Date(d)`` instead.
 ";
+pub(crate) const DATE_IN_LEAP_YEAR: &CStr = c"\
+Whether this date's year is a leap year
+
+>>> Date(2024, 1, 1).in_leap_year()
+True
+>>> Date(2023, 1, 1).in_leap_year()
+False
+";
+pub(crate) const DATE_ISO_WEEK_DATE: &CStr = c"\
+The ISO week date for this date
+
+>>> Date(2024, 12, 30).iso_week_date()
+IsoWeekDate(\"2025-W01-1\")
+";
 pub(crate) const DATE_MONTH: &CStr = c"\
 The month component of the date
 
@@ -657,6 +677,40 @@ The month and day (without a year component)
 
 >>> Date(2021, 1, 2).month_day()
 MonthDay(\"--01-02\")
+";
+pub(crate) const DATE_NEXT_DAY: &CStr = c"\
+The date immediately following
+
+>>> Date(2021, 1, 2).next_day()
+Date(\"2021-01-03\")
+";
+pub(crate) const DATE_NTH_WEEKDAY: &CStr = c"\
+nth_weekday($self, n, weekday, /)
+--
+
+The n-th occurrence of a weekday from this date (exclusive).
+
+Negative ``n`` searches backward.
+``n=0`` raises :class:`ValueError`.
+
+>>> Date(2024, 8, 1).nth_weekday(1, Weekday.FRIDAY)
+Date(\"2024-08-02\")
+>>> Date(2024, 8, 1).nth_weekday(-1, Weekday.WEDNESDAY)
+Date(\"2024-07-31\")
+";
+pub(crate) const DATE_NTH_WEEKDAY_OF_MONTH: &CStr = c"\
+nth_weekday_of_month($self, n, weekday, /)
+--
+
+The n-th occurrence of a weekday in this date's month.
+
+Negative ``n`` counts from the end.
+``n=0`` raises :class:`ValueError`.
+
+>>> Date(2024, 8, 1).nth_weekday_of_month(2, Weekday.FRIDAY)
+Date(\"2024-08-09\")
+>>> Date(2024, 8, 1).nth_weekday_of_month(-1, Weekday.FRIDAY)
+Date(\"2024-08-30\")
 ";
 pub(crate) const DATE_PARSE: &CStr = c"\
 parse(s, /, *, format)
@@ -682,6 +736,12 @@ Inverse of :meth:`format_iso`
 
 >>> Date.parse_iso(\"2021-01-02\")
 Date(\"2021-01-02\")
+";
+pub(crate) const DATE_PREV_DAY: &CStr = c"\
+The date immediately preceding
+
+>>> Date(2021, 1, 2).prev_day()
+Date(\"2021-01-01\")
 ";
 pub(crate) const DATE_PY_DATE: &CStr = c"\
 Convert to a standard library :class:`~datetime.date`
@@ -744,6 +804,21 @@ ItemizedDateDelta | float
     as an :class:`ItemizedDateDelta`,
     If ``total`` is specified, as a float number of the specified unit.
 
+";
+pub(crate) const DATE_START_OF: &CStr = c"\
+The start of the given calendar unit
+
+Valid units: ``\"year\"``, ``\"month\"``
+
+Note
+----
+``\"week\"`` is not a valid unit because weeks do not have
+a universal start day. Use :meth:`nth_weekday` instead.
+
+>>> Date(2024, 8, 15).start_of(\"year\")
+Date(\"2024-01-01\")
+>>> Date(2024, 8, 15).start_of(\"month\")
+Date(\"2024-08-01\")
 ";
 pub(crate) const DATE_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0)
@@ -1294,69 +1369,6 @@ relative_to
       when the delta contains calendar units (years, months, weeks, days)
       **or** the target unit is a calendar unit
 ";
-pub(crate) const MONTHDAY_DAY: &CStr = c"\
-The day component of the month-day
-
->>> MonthDay(11, 23).day
-23
-";
-pub(crate) const MONTHDAY_FORMAT_ISO: &CStr = c"\
-Format as the ISO 8601 month-day format.
-
-Inverse of ``parse_iso``.
-
->>> MonthDay(10, 8).format_iso()
-'--10-08'
-
-Note
-----
-This format is officially only part of the 2000 edition of the
-ISO 8601 standard. There is no alternative for month-day
-in the newer editions. However, it is still widely used in other libraries.
-";
-pub(crate) const MONTHDAY_IN_YEAR: &CStr = c"\
-Create a date from this month-day with a given day
-
->>> MonthDay(8, 1).in_year(2025)
-Date(\"2025-08-01\")
-
-Note
-----
-This method will raise a ``ValueError`` if the month-day is a leap day
-and the year is not a leap year.
-";
-pub(crate) const MONTHDAY_IS_LEAP: &CStr = c"\
-Check if the month-day is February 29th
-
->>> MonthDay(2, 29).is_leap()
-True
->>> MonthDay(3, 1).is_leap()
-False
-";
-pub(crate) const MONTHDAY_MONTH: &CStr = c"\
-The month component of the month-day
-
->>> MonthDay(11, 23).month
-11
-";
-pub(crate) const MONTHDAY_PARSE_ISO: &CStr = c"\
-Create from the ISO 8601 format ``--MM-DD`` or ``--MMDD``.
-
-Inverse of :meth:`format_iso`
-
->>> MonthDay.parse_iso(\"--11-23\")
-MonthDay(\"--11-23\")
-";
-pub(crate) const MONTHDAY_REPLACE: &CStr = c"\
-replace($self, /, *, month=None, day=None)
---
-
-Create a new instance with the given fields replaced
-
->>> d = MonthDay(11, 23)
->>> d.replace(month=3)
-MonthDay(\"--03-23\")
-";
 pub(crate) const OFFSETDATETIME_ADD: &CStr = c"\
 add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=False)
 --
@@ -1384,6 +1396,17 @@ By default, if the offset of this datetime doesn't match the actual
 offset of the timezone at this datetime, an error is raised.
 Using the ``offset_mismatch`` parameter, you can choose to ignore
 the mismatch, keeping either the instant or the local time the same.
+";
+pub(crate) const OFFSETDATETIME_END_OF: &CStr = c"\
+end_of($self, unit, /, *, stale_offset_ok=False)
+--
+
+The end of the given unit
+
+See :meth:`start_of` for valid units and stale offset behavior.
+
+>>> OffsetDateTime(2024, 8, 15, 14, 30, offset=5).end_of(\"day\")
+OffsetDateTime(\"2024-08-15 23:59:59.999999999+05:00\")
 ";
 pub(crate) const OFFSETDATETIME_FORMAT: &CStr = c"\
 Format as a custom pattern string.
@@ -1595,6 +1618,30 @@ ItemizedDelta(\"PT25h15m\")
 When calculating calendar units (years, months, weeks, days),
 both datetimes must have the same offset.
 ";
+pub(crate) const OFFSETDATETIME_START_OF: &CStr = c"\
+start_of($self, unit, /, *, stale_offset_ok=False)
+--
+
+The start of the given unit
+
+Valid units: ``\"year\"``, ``\"month\"``, ``\"day\"``,
+``\"hour\"``, ``\"minute\"``, ``\"second\"``
+
+Note
+----
+``\"week\"`` is not a valid unit because weeks do not have
+a universal start day. Use :meth:`~Date.nth_weekday` on the
+:meth:`date` instead.
+
+Warning
+-------
+The offset is preserved, which may not be correct for the
+resulting time. See :class:`~whenever.PotentiallyStaleOffsetWarning`.
+Pass ``stale_offset_ok=True`` to suppress.
+
+>>> OffsetDateTime(2024, 8, 15, 14, 30, offset=5).start_of(\"day\")
+OffsetDateTime(\"2024-08-15 00:00:00+05:00\")
+";
 pub(crate) const OFFSETDATETIME_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=False)
 --
@@ -1693,6 +1740,16 @@ Calculating the difference between two ``PlainDateTime`` values does
 not account for timezone transitions. Use :meth:`assume_tz` to convert
 to a ``ZonedDateTime`` first for accurate results.
 ";
+pub(crate) const PLAINDATETIME_END_OF: &CStr = c"\
+The end of the given unit
+
+See :meth:`start_of` for valid units.
+
+>>> PlainDateTime(2024, 8, 15, 14, 30, 45).end_of(\"day\")
+PlainDateTime(\"2024-08-15 23:59:59.999999999\")
+>>> PlainDateTime(2024, 8, 15, 14, 30, 45).end_of(\"hour\")
+PlainDateTime(\"2024-08-15 14:59:59.999999999\")
+";
 pub(crate) const PLAINDATETIME_FORMAT: &CStr = c"\
 Format as a custom pattern string.
 
@@ -1784,6 +1841,23 @@ in terms of the specified units.
 ...          round_increment=15,
 ...          round_mode=\"ceil\")
 ItemizedDelta(\"PT25h15m\")
+";
+pub(crate) const PLAINDATETIME_START_OF: &CStr = c"\
+The start of the given unit
+
+Valid units: ``\"year\"``, ``\"month\"``, ``\"day\"``,
+``\"hour\"``, ``\"minute\"``, ``\"second\"``
+
+Note
+----
+``\"week\"`` is not a valid unit because weeks do not have
+a universal start day. Use :meth:`~Date.nth_weekday` on the
+:meth:`date` instead.
+
+>>> PlainDateTime(2024, 8, 15, 14, 30, 45).start_of(\"day\")
+PlainDateTime(\"2024-08-15 00:00:00\")
+>>> PlainDateTime(2024, 8, 15, 14, 30, 45).start_of(\"hour\")
+PlainDateTime(\"2024-08-15 14:00:00\")
 ";
 pub(crate) const PLAINDATETIME_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=False)
@@ -2161,50 +2235,6 @@ argument is required to determine the actual duration of each unit:
 >>> d.total('minutes')
 90.0
 ";
-pub(crate) const YEARMONTH_FORMAT_ISO: &CStr = c"\
-Format as the ISO 8601 year-month format.
-
-Inverse of :meth:`parse_iso`.
-
->>> YearMonth(2021, 1).format_iso()
-'2021-01'
-";
-pub(crate) const YEARMONTH_MONTH: &CStr = c"\
-The month component of the year-month
-
->>> YearMonth(2021, 1).month
-1
-";
-pub(crate) const YEARMONTH_ON_DAY: &CStr = c"\
-Create a date from this year-month with a given day
-
->>> YearMonth(2021, 1).on_day(2)
-Date(\"2021-01-02\")
-";
-pub(crate) const YEARMONTH_PARSE_ISO: &CStr = c"\
-Create from the ISO 8601 format ``YYYY-MM`` or ``YYYYMM``.
-
-Inverse of :meth:`format_iso`
-
->>> YearMonth.parse_iso(\"2021-01\")
-YearMonth(\"2021-01\")
-";
-pub(crate) const YEARMONTH_REPLACE: &CStr = c"\
-replace($self, /, *, year=None, month=None)
---
-
-Create a new instance with the given fields replaced
-
->>> d = YearMonth(2021, 12)
->>> d.replace(month=3)
-YearMonth(\"2021-03\")
-";
-pub(crate) const YEARMONTH_YEAR: &CStr = c"\
-The year component of the year-month
-
->>> YearMonth(2021, 1).year
-2021
-";
 pub(crate) const ZONEDDATETIME_ADD: &CStr = c"\
 add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
 --
@@ -2249,6 +2279,14 @@ Some timezones have unusual DST rules. For example,
 Europe/Dublin defines its standard time as IST (UTC+1) and uses
 \"negative DST\" in winter. In such cases, this method
 returns a negative value during winter.
+";
+pub(crate) const ZONEDDATETIME_END_OF: &CStr = c"\
+The end of the given unit
+
+See :meth:`start_of` for valid units and timezone behavior.
+
+>>> ZonedDateTime(2024, 8, 15, 14, 30, tz=\"America/New_York\").end_of(\"day\")
+ZonedDateTime(\"2024-08-15 23:59:59.999999999-04:00[America/New_York]\")
 ";
 pub(crate) const ZONEDDATETIME_FORMAT: &CStr = c"\
 Format as a custom pattern string.
@@ -2458,11 +2496,40 @@ ItemizedDelta(\"PT33h15m\")
 When calculating calendar units (years, months, weeks, days),
 both datetimes must have the same timezone.
 ";
+pub(crate) const ZONEDDATETIME_START_OF: &CStr = c"\
+The start of the given unit
+
+Valid units: ``\"year\"``, ``\"month\"``, ``\"day\"``,
+``\"hour\"``, ``\"minute\"``, ``\"second\"``
+
+Note
+----
+``\"week\"`` is not a valid unit because weeks do not have
+a universal start day. Use :meth:`~Date.nth_weekday` on the
+:meth:`date` instead.
+
+For ``\"day\"``, ``\"month\"``, and ``\"year\"``, the resulting time
+is resolved in the timezone using ``\"compatible\"`` disambiguation,
+since midnight may not exist due to DST transitions.
+This is equivalent to :meth:`start_of_day` for ``\"day\"``.
+
+For ``\"hour\"``, ``\"minute\"``, and ``\"second\"``, the existing offset
+is preserved if valid, otherwise the correct offset for the
+resulting time is determined.
+
+>>> ZonedDateTime(2024, 8, 15, 14, 30, tz=\"America/New_York\").start_of(\"day\")
+ZonedDateTime(\"2024-08-15 00:00:00-04:00[America/New_York]\")
+>>> ZonedDateTime(2024, 8, 15, 14, 30, tz=\"America/New_York\").start_of(\"hour\")
+ZonedDateTime(\"2024-08-15 14:00:00-04:00[America/New_York]\")
+";
 pub(crate) const ZONEDDATETIME_START_OF_DAY: &CStr = c"\
 The start of the current calendar day.
 
 This is almost always at midnight the same day, but may be different
 for timezones which transition at—and thus skip over—midnight.
+
+.. deprecated:: 0.10.0
+    Use ``start_of(\"day\")`` instead.
 ";
 pub(crate) const ZONEDDATETIME_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
@@ -2631,8 +2698,32 @@ ZonedDateTime(\"2021-01-02T03:04:05+00:00[Europe/London]\")
 ";
 pub(crate) const LOCALTIME_DAY: &CStr = c"\
 The day component of the datetime";
+pub(crate) const LOCALTIME_DAY_OF_YEAR: &CStr = c"\
+Ordinal day in the year (1--366)
+
+>>> PlainDateTime(2021, 1, 2).day_of_year()
+2
+";
+pub(crate) const LOCALTIME_DAYS_IN_MONTH: &CStr = c"\
+Number of days in the current month (28--31)
+
+>>> PlainDateTime(2024, 2, 1).days_in_month()
+29
+";
+pub(crate) const LOCALTIME_DAYS_IN_YEAR: &CStr = c"\
+Number of days in the current year (365 or 366)
+
+>>> PlainDateTime(2024, 1, 1).days_in_year()
+366
+";
 pub(crate) const LOCALTIME_HOUR: &CStr = c"\
 The hour component of the datetime";
+pub(crate) const LOCALTIME_IN_LEAP_YEAR: &CStr = c"\
+Whether this date's year is a leap year
+
+>>> PlainDateTime(2024, 1, 1).in_leap_year()
+True
+";
 pub(crate) const LOCALTIME_MINUTE: &CStr = c"\
 The minute component of the datetime";
 pub(crate) const LOCALTIME_MONTH: &CStr = c"\
@@ -2666,6 +2757,7 @@ pub(crate) const OFFSET_NOW_STALE_MSG: &CStr = c"Getting the current time as an 
 pub(crate) const OFFSET_REPLACE_STALE_MSG: &CStr = c"Replacing fields of an OffsetDateTime keeps the fixed UTC offset, which may no longer be correct after the change (e.g. replacing the month on a European-timezone datetime may move it into a different DST period). Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware field replacement. Pass `stale_offset_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_ROUND_STALE_MSG: &CStr = c"Rounding an OffsetDateTime keeps the fixed UTC offset, which may not be accurate in the rare case that the rounded time crosses a DST or other timezone boundary. Convert to a ZonedDateTime first (using .assume_tz()) for timezone-aware rounding. Pass `stale_offset_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_SHIFT_STALE_MSG: &CStr = c"Shifting an OffsetDateTime keeps the fixed UTC offset, which may not match the actual offset after a DST or other timezone transition (e.g. adding 1 day to 2024-03-09 12:00-07:00 gives 2024-03-10 12:00-07:00, but if this offset represents Denver, Colorado (America/Denver), the actual offset changed to -06:00 on that date). Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware arithmetic. Pass `stale_offset_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const OFFSET_START_END_OF_STALE_MSG: &CStr = c"Getting the start/end of a unit on an OffsetDateTime keeps the fixed UTC offset, which may not be correct for the resulting time (e.g. the start of the year may have a different UTC offset due to DST). Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware results. Pass `stale_offset_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const PLAIN_DIFF_UNAWARE_MSG: &CStr = c"Calculating the difference between two PlainDateTime values does not account for timezone transitions that may have occurred between them: for example, PlainDateTime(2023, 3, 26, 3, 0) - PlainDateTime(2023, 3, 26, 1, 0) gives 2h, but in Amsterdam clocks jumped from 2:00 to 3:00 that morning, so only 1 real hour elapsed. Use .assume_tz('<tz>') for both values if you know the timezone. Pass `naive_arithmetic_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const PLAIN_RELATIVE_TO_UNAWARE_MSG: &CStr = c"Using a PlainDateTime as reference does not account for timezone transitions: without a timezone, converting between calendar units (months, days) and exact time units (hours, seconds) is ambiguous across DST boundaries. Use .assume_tz('<tz>') for timezone-aware results. Pass `naive_arithmetic_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const PLAIN_SHIFT_UNAWARE_MSG: &CStr = c"Shifting a PlainDateTime by exact time units does not account for timezone transitions that may occur in the interval (e.g. adding 2 hours to 2023-03-26 01:30 in Amsterdam crosses the spring-forward transition, so only 1 real hour has passed). Use .assume_tz('<tz>') + delta if you know the timezone. Pass `naive_arithmetic_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";

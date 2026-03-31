@@ -11,6 +11,7 @@ from tests.test_date_delta import make_ddelta
 from whenever import (
     Date,
     DateDelta,
+    IsoWeekDate,
     ItemizedDateDelta,
     MonthDay,
     PlainDateTime,
@@ -1190,3 +1191,324 @@ def test_cannot_subclass():
 
         class SubclassDate(Date):  # type: ignore[misc]
             pass
+
+
+MONDAY = Weekday.MONDAY
+TUESDAY = Weekday.TUESDAY
+WEDNESDAY = Weekday.WEDNESDAY
+THURSDAY = Weekday.THURSDAY
+FRIDAY = Weekday.FRIDAY
+SATURDAY = Weekday.SATURDAY
+SUNDAY = Weekday.SUNDAY
+
+
+class TestDayOfYear:
+
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (Date(2023, 1, 1), 1),
+            (Date(2023, 1, 2), 2),
+            (Date(2023, 2, 28), 59),
+            (Date(2024, 2, 28), 59),
+            (Date(2024, 2, 29), 60),
+            (Date(2023, 3, 1), 60),
+            (Date(2024, 3, 1), 61),
+            (Date(2023, 12, 31), 365),
+            (Date(2024, 12, 31), 366),
+        ],
+    )
+    def test_values(self, d, expected):
+        assert d.day_of_year() == expected
+
+    def test_first_and_last_day(self):
+        assert Date(2000, 1, 1).day_of_year() == 1
+        assert Date(2000, 12, 31).day_of_year() == 366  # leap year
+
+    def test_century_year(self):
+        # 1900 is not a leap year (div by 100 but not 400)
+        assert Date(1900, 12, 31).day_of_year() == 365
+        assert Date(1900, 3, 1).day_of_year() == 60
+
+    def test_not_callable_with_args(self):
+        with pytest.raises(TypeError):
+            Date(2024, 1, 1).day_of_year(1)  # type: ignore[call-arg]
+
+
+class TestDaysInMonth:
+
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (Date(2023, 1, 15), 31),
+            (Date(2023, 2, 15), 28),
+            (Date(2024, 2, 15), 29),
+            (Date(2023, 3, 15), 31),
+            (Date(2023, 4, 15), 30),
+            (Date(2023, 5, 15), 31),
+            (Date(2023, 6, 15), 30),
+            (Date(2023, 7, 15), 31),
+            (Date(2023, 8, 15), 31),
+            (Date(2023, 9, 15), 30),
+            (Date(2023, 10, 15), 31),
+            (Date(2023, 11, 15), 30),
+            (Date(2023, 12, 15), 31),
+        ],
+    )
+    def test_values(self, d, expected):
+        assert d.days_in_month() == expected
+
+    def test_not_callable_with_args(self):
+        with pytest.raises(TypeError):
+            Date(2024, 1, 1).days_in_month(1)  # type: ignore[call-arg]
+
+
+class TestDaysInYear:
+
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (Date(2024, 1, 1), 366),
+            (Date(2023, 1, 1), 365),
+            (Date(2000, 6, 15), 366),
+            (Date(1900, 6, 15), 365),
+        ],
+    )
+    def test_values(self, d, expected):
+        assert d.days_in_year() == expected
+
+
+class TestInLeapYear:
+
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (Date(2024, 1, 1), True),
+            (Date(2023, 1, 1), False),
+            (Date(2000, 6, 15), True),
+            (Date(1900, 6, 15), False),
+            (Date(2100, 6, 15), False),
+        ],
+    )
+    def test_values(self, d, expected):
+        assert d.in_leap_year() is expected
+
+
+class TestNextDay:
+
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (Date(2024, 1, 1), Date(2024, 1, 2)),
+            (Date(2024, 1, 31), Date(2024, 2, 1)),
+            (Date(2024, 2, 28), Date(2024, 2, 29)),
+            (Date(2024, 2, 29), Date(2024, 3, 1)),
+            (Date(2023, 2, 28), Date(2023, 3, 1)),
+            (Date(2024, 12, 31), Date(2025, 1, 1)),
+        ],
+    )
+    def test_values(self, d, expected):
+        assert d.next_day() == expected
+
+    def test_at_max(self):
+        with pytest.raises((ValueError, OverflowError)):
+            Date.MAX.next_day()
+
+
+class TestPrevDay:
+
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (Date(2024, 1, 2), Date(2024, 1, 1)),
+            (Date(2024, 2, 1), Date(2024, 1, 31)),
+            (Date(2024, 3, 1), Date(2024, 2, 29)),
+            (Date(2023, 3, 1), Date(2023, 2, 28)),
+            (Date(2025, 1, 1), Date(2024, 12, 31)),
+            (Date(2024, 1, 1), Date(2023, 12, 31)),
+        ],
+    )
+    def test_values(self, d, expected):
+        assert d.prev_day() == expected
+
+    def test_at_min(self):
+        with pytest.raises((ValueError, OverflowError)):
+            Date.MIN.prev_day()
+
+
+class TestNthWeekdayOfMonth:
+
+    @pytest.mark.parametrize(
+        "d, n, weekday, expected",
+        [
+            # December 2024 starts on Sunday
+            (Date(2024, 12, 1), 1, MONDAY, Date(2024, 12, 2)),
+            (Date(2024, 12, 1), 2, MONDAY, Date(2024, 12, 9)),
+            (Date(2024, 12, 1), 3, MONDAY, Date(2024, 12, 16)),
+            (Date(2024, 12, 1), 4, MONDAY, Date(2024, 12, 23)),
+            (Date(2024, 12, 1), 5, MONDAY, Date(2024, 12, 30)),
+            (Date(2024, 12, 1), 1, SUNDAY, Date(2024, 12, 1)),
+            (Date(2024, 12, 1), 1, FRIDAY, Date(2024, 12, 6)),
+            (Date(2024, 12, 1), 1, SATURDAY, Date(2024, 12, 7)),
+            # Negative n
+            (Date(2024, 12, 1), -1, MONDAY, Date(2024, 12, 30)),
+            (Date(2024, 12, 1), -2, MONDAY, Date(2024, 12, 23)),
+            (Date(2024, 12, 1), -1, SUNDAY, Date(2024, 12, 29)),
+            (Date(2024, 12, 1), -1, TUESDAY, Date(2024, 12, 31)),
+            # Various months
+            (Date(2024, 1, 15), 1, MONDAY, Date(2024, 1, 1)),
+            (Date(2024, 2, 15), 1, THURSDAY, Date(2024, 2, 1)),
+            (Date(2024, 2, 15), -1, THURSDAY, Date(2024, 2, 29)),
+            # February non-leap
+            (Date(2023, 2, 1), 4, TUESDAY, Date(2023, 2, 28)),
+            (Date(2023, 2, 1), -1, TUESDAY, Date(2023, 2, 28)),
+        ],
+    )
+    def test_values(self, d, n, weekday, expected):
+        assert d.nth_weekday_of_month(n, weekday) == expected
+
+    def test_invalid_weekday_type(self):
+        with pytest.raises(TypeError):
+            Date(2024, 12, 1).nth_weekday_of_month(1, 5)  # type: ignore[arg-type]
+
+    def test_fifth_negative_when_not_exists(self):
+        # February 2023 (non-leap) starts on Wednesday
+        # Only 4 Fridays: 3, 10, 17, 24
+        with pytest.raises(ValueError):
+            Date(2023, 2, 1).nth_weekday_of_month(-5, FRIDAY)
+
+
+class TestNthWeekday:
+
+    @pytest.mark.parametrize(
+        "d, n, weekday, expected",
+        [
+            (Date(2024, 12, 25), 1, FRIDAY, Date(2024, 12, 27)),
+            (Date(2024, 12, 25), 2, FRIDAY, Date(2025, 1, 3)),
+            (Date(2024, 12, 25), 1, WEDNESDAY, Date(2025, 1, 1)),
+            (Date(2024, 12, 25), -1, MONDAY, Date(2024, 12, 23)),
+            (Date(2024, 12, 25), -1, WEDNESDAY, Date(2024, 12, 18)),
+            (Date(2024, 12, 25), -2, MONDAY, Date(2024, 12, 16)),
+            (Date(2024, 12, 25), 1, MONDAY, Date(2024, 12, 30)),
+            (Date(2024, 12, 25), 1, TUESDAY, Date(2024, 12, 31)),
+            (Date(2024, 12, 25), 1, THURSDAY, Date(2024, 12, 26)),
+            (Date(2024, 12, 25), 1, SATURDAY, Date(2024, 12, 28)),
+            (Date(2024, 12, 25), 1, SUNDAY, Date(2024, 12, 29)),
+            (Date(2024, 12, 25), -1, TUESDAY, Date(2024, 12, 24)),
+            (Date(2024, 12, 25), -1, THURSDAY, Date(2024, 12, 19)),
+            (Date(2024, 12, 25), -1, FRIDAY, Date(2024, 12, 20)),
+            (Date(2024, 12, 25), -1, SATURDAY, Date(2024, 12, 21)),
+            (Date(2024, 12, 25), -1, SUNDAY, Date(2024, 12, 22)),
+            (Date(2024, 12, 25), 3, FRIDAY, Date(2025, 1, 10)),
+            (Date(2024, 12, 25), -3, FRIDAY, Date(2024, 12, 6)),
+            (Date(2024, 12, 25), 5, FRIDAY, Date(2025, 1, 24)),
+            (Date(2024, 12, 25), -5, FRIDAY, Date(2024, 11, 22)),
+        ],
+    )
+    def test_values(self, d, n, weekday, expected):
+        assert d.nth_weekday(n, weekday) == expected
+
+    def test_invalid_weekday_type(self):
+        with pytest.raises(TypeError):
+            Date(2024, 12, 25).nth_weekday(1, 5)  # type: ignore[arg-type]
+
+    def test_n_too_large(self):
+        with pytest.raises(ValueError):
+            Date(2024, 12, 25).nth_weekday(6, FRIDAY)
+
+        with pytest.raises(ValueError):
+            Date(2024, 12, 25).nth_weekday(-6, FRIDAY)
+
+
+class TestIsoWeekDateConversion:
+
+    def test_basic(self):
+        assert Date(2024, 1, 1).iso_week_date() == IsoWeekDate(2024, 1, MONDAY)
+
+    def test_year_boundary_forward(self):
+        # Dec 30, 2024 belongs to ISO 2025-W01
+        iwd = Date(2024, 12, 30).iso_week_date()
+        assert iwd.year == 2025
+        assert iwd.week == 1
+
+    def test_year_boundary_backward(self):
+        # Jan 1, 2016 belongs to ISO 2015-W53
+        iwd = Date(2016, 1, 1).iso_week_date()
+        assert iwd.year == 2015
+        assert iwd.week == 53
+
+    def test_mid_year(self):
+        iwd = Date(2024, 7, 4).iso_week_date()
+        assert iwd.year == 2024
+        assert iwd.week == 27
+        assert iwd.weekday == THURSDAY
+
+    def test_roundtrip_many_dates(self):
+        # Verify round-trip for several important dates
+        for d in [
+            Date(2024, 1, 1),
+            Date(2024, 6, 15),
+            Date(2024, 12, 31),
+            Date(2023, 1, 1),
+            Date(2023, 12, 31),
+            Date(2020, 2, 29),
+        ]:
+            assert d.iso_week_date().date() == d
+
+
+class TestStartOf:
+
+    def test_year(self):
+        assert Date(2024, 8, 15).start_of("year") == Date(2024, 1, 1)
+
+    def test_year_already_jan1(self):
+        assert Date(2024, 1, 1).start_of("year") == Date(2024, 1, 1)
+
+    def test_month(self):
+        assert Date(2024, 8, 15).start_of("month") == Date(2024, 8, 1)
+
+    def test_month_already_first(self):
+        assert Date(2024, 8, 1).start_of("month") == Date(2024, 8, 1)
+
+    def test_month_december(self):
+        assert Date(2024, 12, 25).start_of("month") == Date(2024, 12, 1)
+
+    def test_invalid_unit(self):
+        with pytest.raises(ValueError, match="Invalid"):
+            Date(2024, 8, 15).start_of("day")  # type: ignore[arg-type]
+
+    def test_invalid_unit_arbitrary(self):
+        with pytest.raises(ValueError, match="Invalid"):
+            Date(2024, 8, 15).start_of("week")  # type: ignore[arg-type]
+
+
+class TestEndOf:
+
+    def test_year(self):
+        assert Date(2024, 8, 15).end_of("year") == Date(2024, 12, 31)
+
+    def test_year_already_dec31(self):
+        assert Date(2024, 12, 31).end_of("year") == Date(2024, 12, 31)
+
+    def test_month_31_days(self):
+        assert Date(2024, 8, 15).end_of("month") == Date(2024, 8, 31)
+
+    def test_month_30_days(self):
+        assert Date(2024, 6, 10).end_of("month") == Date(2024, 6, 30)
+
+    def test_month_feb_leap_year(self):
+        assert Date(2024, 2, 10).end_of("month") == Date(2024, 2, 29)
+
+    def test_month_feb_non_leap_year(self):
+        assert Date(2023, 2, 10).end_of("month") == Date(2023, 2, 28)
+
+    def test_month_already_last_day(self):
+        assert Date(2024, 8, 31).end_of("month") == Date(2024, 8, 31)
+
+    def test_invalid_unit(self):
+        with pytest.raises(ValueError, match="Invalid"):
+            Date(2024, 8, 15).end_of("day")  # type: ignore[arg-type]
+
+    def test_invalid_unit_arbitrary(self):
+        with pytest.raises(ValueError, match="Invalid"):
+            Date(2024, 8, 15).end_of("hour")  # type: ignore[arg-type]

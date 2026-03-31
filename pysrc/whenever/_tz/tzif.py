@@ -9,7 +9,7 @@ from __future__ import annotations
 import struct
 from bisect import bisect_right as _bisect_right
 from io import BytesIO
-from typing import IO, Sequence, final
+from typing import IO, MutableSequence, Sequence, final
 
 from .common import Ambiguity, Fold, Gap, Unambiguous
 from .posix import TzStr, epoch_for_date, year_for_epoch
@@ -282,8 +282,8 @@ _PRECALC_UNTIL = 2050
 
 
 def _extend_with_posix(
-    offsets: list[tuple[EpochSecs, Offset]],
-    meta: list[tuple[int, str]],
+    offsets: MutableSequence[tuple[EpochSecs, Offset]],
+    meta: MutableSequence[tuple[int, str]],
     end: TzStr,
 ) -> None:
     """Append pre-computed DST transitions from the POSIX TZ rule to *offsets*
@@ -432,11 +432,11 @@ def _load_transitions(
     indices: Sequence[int],
     abbrev_data: bytes,
 ) -> tuple[
-    Sequence[tuple[EpochSecs, Offset]],
-    Sequence[tuple[int, str]],
+    MutableSequence[tuple[EpochSecs, Offset]],
+    MutableSequence[tuple[int, str]],
 ]:
     """Load transitions and metadata from parsed data"""
-    first_utoff, first_isdst, first_abbrind = types[0]
+    first_utoff, _, first_abbrind = types[0]
     last_std_offset = first_utoff
 
     offsets: list[tuple[EpochSecs, Offset]] = [

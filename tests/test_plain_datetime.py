@@ -1534,3 +1534,151 @@ def test_cannot_subclass():
 
         class Subclass(PlainDateTime):  # type: ignore[misc]
             pass
+
+
+class TestDayOfYear:
+
+    def test_basic(self):
+        assert PlainDateTime(2024, 2, 29, 12, 30).day_of_year() == 60
+
+    def test_jan1(self):
+        assert PlainDateTime(2023, 1, 1, 0, 0).day_of_year() == 1
+
+    def test_dec31_nonleap(self):
+        assert PlainDateTime(2023, 12, 31, 23, 59).day_of_year() == 365
+
+
+class TestDaysInMonth:
+
+    def test_feb_leap(self):
+        assert PlainDateTime(2024, 2, 29, 12, 30).days_in_month() == 29
+
+    def test_feb_nonleap(self):
+        assert PlainDateTime(2023, 2, 15, 12, 30).days_in_month() == 28
+
+    def test_january(self):
+        assert PlainDateTime(2023, 1, 15, 12, 30).days_in_month() == 31
+
+
+class TestDaysInYear:
+
+    def test_leap(self):
+        assert PlainDateTime(2024, 2, 29, 12, 30).days_in_year() == 366
+
+    def test_nonleap(self):
+        assert PlainDateTime(2023, 6, 15, 12, 30).days_in_year() == 365
+
+
+class TestInLeapYear:
+
+    def test_leap(self):
+        assert PlainDateTime(2024, 2, 29, 12, 30).in_leap_year() is True
+
+    def test_nonleap(self):
+        assert PlainDateTime(2023, 6, 15, 12, 30).in_leap_year() is False
+
+
+class TestStartOf:
+
+    def test_year(self):
+        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
+        result = dt.start_of("year")
+        assert result == PlainDateTime(2024, 1, 1)
+        assert result.nanosecond == 0
+
+    def test_month(self):
+        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
+        result = dt.start_of("month")
+        assert result == PlainDateTime(2024, 8, 1)
+        assert result.nanosecond == 0
+
+    def test_day(self):
+        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
+        result = dt.start_of("day")
+        assert result == PlainDateTime(2024, 8, 15)
+        assert result.nanosecond == 0
+
+    def test_hour(self):
+        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
+        result = dt.start_of("hour")
+        assert result == PlainDateTime(2024, 8, 15, 14)
+        assert result.nanosecond == 0
+
+    def test_minute(self):
+        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
+        result = dt.start_of("minute")
+        assert result == PlainDateTime(2024, 8, 15, 14, 30)
+        assert result.nanosecond == 0
+
+    def test_second(self):
+        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
+        result = dt.start_of("second")
+        assert result == PlainDateTime(2024, 8, 15, 14, 30, 45)
+        assert result.nanosecond == 0
+
+    def test_invalid_unit(self):
+        with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
+            PlainDateTime(2024, 8, 15, 14, 30).start_of("week")  # type: ignore[arg-type]
+
+
+class TestEndOf:
+
+    def test_year(self):
+        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
+        result = dt.end_of("year")
+        assert result == PlainDateTime(
+            2024, 12, 31, 23, 59, 59, nanosecond=999_999_999
+        )
+
+    def test_month_31_days(self):
+        dt = PlainDateTime(2024, 8, 15, 14, 30)
+        result = dt.end_of("month")
+        assert result == PlainDateTime(
+            2024, 8, 31, 23, 59, 59, nanosecond=999_999_999
+        )
+
+    def test_month_feb_leap(self):
+        dt = PlainDateTime(2024, 2, 10, 12)
+        result = dt.end_of("month")
+        assert result == PlainDateTime(
+            2024, 2, 29, 23, 59, 59, nanosecond=999_999_999
+        )
+
+    def test_month_feb_non_leap(self):
+        dt = PlainDateTime(2023, 2, 10, 12)
+        result = dt.end_of("month")
+        assert result == PlainDateTime(
+            2023, 2, 28, 23, 59, 59, nanosecond=999_999_999
+        )
+
+    def test_day(self):
+        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
+        result = dt.end_of("day")
+        assert result == PlainDateTime(
+            2024, 8, 15, 23, 59, 59, nanosecond=999_999_999
+        )
+
+    def test_hour(self):
+        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
+        result = dt.end_of("hour")
+        assert result == PlainDateTime(
+            2024, 8, 15, 14, 59, 59, nanosecond=999_999_999
+        )
+
+    def test_minute(self):
+        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
+        result = dt.end_of("minute")
+        assert result == PlainDateTime(
+            2024, 8, 15, 14, 30, 59, nanosecond=999_999_999
+        )
+
+    def test_second(self):
+        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
+        result = dt.end_of("second")
+        assert result == PlainDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=999_999_999
+        )
+
+    def test_invalid_unit(self):
+        with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
+            PlainDateTime(2024, 8, 15, 14, 30).end_of("week")  # type: ignore[arg-type]

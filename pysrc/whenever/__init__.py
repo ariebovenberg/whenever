@@ -11,6 +11,7 @@ from ._core import (  # The unpickle functions must be findable at module-level
     _unpkl_iddelta,
     _unpkl_idelta,
     _unpkl_inst,
+    _unpkl_iwd,
     _unpkl_local,
     _unpkl_md,
     _unpkl_offset,

@@ -585,7 +585,7 @@ fn __mul__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     }
 }
 
-#[inline]
+#[inline(never)]
 fn mul_int(delta_obj: PyObj, factor: i128) -> PyReturn {
     if factor == 1 {
         Ok(delta_obj.newref())
@@ -601,7 +601,7 @@ fn mul_int(delta_obj: PyObj, factor: i128) -> PyReturn {
     }
 }
 
-#[inline]
+#[inline(never)]
 fn mul_float(delta_obj: PyObj, factor: f64) -> PyReturn {
     if factor == 1.0 {
         Ok(delta_obj.newref())
@@ -716,7 +716,7 @@ fn __sub__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
     add_operator(a_obj, b_obj, true)
 }
 
-#[inline]
+#[inline(never)]
 fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
     let a_cls = a_obj.type_();
     let b_cls = b_obj.type_();

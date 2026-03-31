@@ -1972,6 +1972,11 @@ class TestStartOfDay:
             .exact_eq(ZonedDateTime(9999, 12, 31, tz="America/New_York"))
         )
 
+    def test_deprecation_warning(self):
+        zdt = ZonedDateTime(2024, 8, 15, 14, tz="America/New_York")
+        with pytest.warns(WheneverDeprecationWarning, match="start_of_day"):
+            zdt.start_of_day()
+
 
 @pytest.mark.parametrize(
     "tz",
@@ -5043,3 +5048,337 @@ def test_cannot_subclass():
 
         class Subclass(ZonedDateTime):  # type: ignore[misc]
             pass
+
+
+class TestDayOfYear:
+
+    def test_basic(self):
+        zdt = ZonedDateTime(2024, 2, 29, 12, tz="America/New_York")
+        assert zdt.day_of_year() == 60
+
+    def test_jan1(self):
+        zdt = ZonedDateTime(2023, 1, 1, 0, tz="America/New_York")
+        assert zdt.day_of_year() == 1
+
+
+class TestDaysInMonth:
+
+    def test_feb_leap(self):
+        zdt = ZonedDateTime(2024, 2, 29, 12, tz="America/New_York")
+        assert zdt.days_in_month() == 29
+
+    def test_feb_nonleap(self):
+        zdt = ZonedDateTime(2023, 2, 15, 12, tz="America/New_York")
+        assert zdt.days_in_month() == 28
+
+
+class TestDaysInYear:
+
+    def test_leap(self):
+        zdt = ZonedDateTime(2024, 2, 29, 12, tz="America/New_York")
+        assert zdt.days_in_year() == 366
+
+    def test_nonleap(self):
+        zdt = ZonedDateTime(2023, 6, 15, 12, tz="America/New_York")
+        assert zdt.days_in_year() == 365
+
+
+class TestInLeapYear:
+
+    def test_leap(self):
+        zdt = ZonedDateTime(2024, 2, 29, 12, tz="America/New_York")
+        assert zdt.in_leap_year() is True
+
+    def test_nonleap(self):
+        zdt = ZonedDateTime(2023, 6, 15, 12, tz="America/New_York")
+        assert zdt.in_leap_year() is False
+
+
+class TestStartOf:
+
+    def test_year(self):
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        result = zdt.start_of("year")
+        assert result.exact_eq(
+            ZonedDateTime(2024, 1, 1, tz="America/New_York")
+        )
+
+    def test_month(self):
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        result = zdt.start_of("month")
+        assert result.exact_eq(
+            ZonedDateTime(2024, 8, 1, tz="America/New_York")
+        )
+
+    def test_day(self):
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        result = zdt.start_of("day")
+        assert result.exact_eq(
+            ZonedDateTime(2024, 8, 15, tz="America/New_York")
+        )
+
+    def test_day_matches_start_of_day(self):
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        assert zdt.start_of("day").exact_eq(zdt.start_of_day())
+
+    def test_hour(self):
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        result = zdt.start_of("hour")
+        assert result.exact_eq(
+            ZonedDateTime(2024, 8, 15, 14, tz="America/New_York")
+        )
+
+    def test_minute(self):
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        result = zdt.start_of("minute")
+        assert result.exact_eq(
+            ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York")
+        )
+
+    def test_second(self):
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        result = zdt.start_of("second")
+        assert result.exact_eq(
+            ZonedDateTime(2024, 8, 15, 14, 30, 45, tz="America/New_York")
+        )
+
+    def test_invalid_unit(self):
+        with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
+            ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").start_of(
+                "week"  # type: ignore[arg-type]
+            )
+
+    def test_hour_gap_transition(self):
+        # Lord Howe: at 2:00 AM Oct 6, clocks spring forward 30min
+        # to 2:30 AM. Times 2:00-2:29 don't exist.
+        # At 2:45+11:00, start_of("hour") should resolve the gap.
+        zdt = ZonedDateTime(2024, 10, 6, 2, 45, tz="Australia/Lord_Howe")
+        result = zdt.start_of("hour")
+        assert result.exact_eq(
+            ZonedDateTime(2024, 10, 6, 2, 30, tz="Australia/Lord_Howe")
+        )
+
+    def test_hour_fold_earlier(self):
+        # Lord Howe end of DST: Apr 7, 1:30-1:59 occurs twice.
+        # At 1:45+11:00 (first occurrence), start_of("hour") => 1:00+11:00
+        zdt = ZonedDateTime(
+            2024,
+            4,
+            7,
+            1,
+            45,
+            tz="Australia/Lord_Howe",
+            disambiguate="earlier",
+        )
+        result = zdt.start_of("hour")
+        assert result.offset == hours(11)
+
+    def test_hour_fold_later(self):
+        # At 1:45+10:30 (second occurrence), start_of("hour") => 1:00+11:00
+        # because 1:00 is not in the fold (fold is 1:30-1:59),
+        # so it's unambiguous at +11:00
+        zdt = ZonedDateTime(
+            2024,
+            4,
+            7,
+            1,
+            45,
+            tz="Australia/Lord_Howe",
+            disambiguate="later",
+        )
+        result = zdt.start_of("hour")
+        assert result.offset == hours(11)
+
+
+class TestEndOf:
+
+    def test_year(self):
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        result = zdt.end_of("year")
+        assert result.exact_eq(
+            ZonedDateTime(
+                2024,
+                12,
+                31,
+                23,
+                59,
+                59,
+                nanosecond=999_999_999,
+                tz="America/New_York",
+            )
+        )
+
+    def test_month_31_days(self):
+        zdt = ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York")
+        result = zdt.end_of("month")
+        assert result.exact_eq(
+            ZonedDateTime(
+                2024,
+                8,
+                31,
+                23,
+                59,
+                59,
+                nanosecond=999_999_999,
+                tz="America/New_York",
+            )
+        )
+
+    def test_month_feb_leap(self):
+        zdt = ZonedDateTime(2024, 2, 10, 12, tz="America/New_York")
+        result = zdt.end_of("month")
+        assert result.exact_eq(
+            ZonedDateTime(
+                2024,
+                2,
+                29,
+                23,
+                59,
+                59,
+                nanosecond=999_999_999,
+                tz="America/New_York",
+            )
+        )
+
+    def test_day(self):
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        result = zdt.end_of("day")
+        assert result.exact_eq(
+            ZonedDateTime(
+                2024,
+                8,
+                15,
+                23,
+                59,
+                59,
+                nanosecond=999_999_999,
+                tz="America/New_York",
+            )
+        )
+
+    def test_hour(self):
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        result = zdt.end_of("hour")
+        assert result.exact_eq(
+            ZonedDateTime(
+                2024,
+                8,
+                15,
+                14,
+                59,
+                59,
+                nanosecond=999_999_999,
+                tz="America/New_York",
+            )
+        )
+
+    def test_minute(self):
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        result = zdt.end_of("minute")
+        assert result.exact_eq(
+            ZonedDateTime(
+                2024,
+                8,
+                15,
+                14,
+                30,
+                59,
+                nanosecond=999_999_999,
+                tz="America/New_York",
+            )
+        )
+
+    def test_second(self):
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        result = zdt.end_of("second")
+        assert result.exact_eq(
+            ZonedDateTime(
+                2024,
+                8,
+                15,
+                14,
+                30,
+                45,
+                nanosecond=999_999_999,
+                tz="America/New_York",
+            )
+        )
+
+    def test_invalid_unit(self):
+        with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
+            ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").end_of(
+                "week"  # type: ignore[arg-type]
+            )
+
+    def test_hour_gap_transition(self):
+        # Lord Howe: at 2:00 AM Oct 6, clocks spring forward 30min.
+        # At 2:45+11:00, end_of("hour") should be 2:59:59.999999999+11:00
+        zdt = ZonedDateTime(2024, 10, 6, 2, 45, tz="Australia/Lord_Howe")
+        result = zdt.end_of("hour")
+        assert result.exact_eq(
+            ZonedDateTime(
+                2024,
+                10,
+                6,
+                2,
+                59,
+                59,
+                nanosecond=999_999_999,
+                tz="Australia/Lord_Howe",
+            )
+        )
+
+    def test_hour_fold_preserves_offset(self):
+        # Lord Howe end of DST: 1:30-1:59 occurs twice.
+        # At 1:45+11:00, end_of("hour") => 1:59+11:00 (earlier offset preserved)
+        zdt_e = ZonedDateTime(
+            2024,
+            4,
+            7,
+            1,
+            45,
+            tz="Australia/Lord_Howe",
+            disambiguate="earlier",
+        )
+        result_e = zdt_e.end_of("hour")
+        assert result_e.offset == hours(11)
+
+        # At 1:45+10:30, end_of("hour") => 1:59+10:30 (later offset preserved)
+        zdt_l = ZonedDateTime(
+            2024,
+            4,
+            7,
+            1,
+            45,
+            tz="Australia/Lord_Howe",
+            disambiguate="later",
+        )
+        result_l = zdt_l.end_of("hour")
+        assert result_l.offset == TimeDelta(hours=10, minutes=30)
+
+        # They represent different instants
+        assert result_e != result_l
