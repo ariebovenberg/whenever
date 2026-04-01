@@ -9587,7 +9587,6 @@ _no_tzinfo_fold_or_ms = {"tzinfo", "fold", "microsecond"}.isdisjoint
 _fromtimestamp = _datetime.fromtimestamp
 
 
-
 def _format_date(d: _date, basic: bool) -> str:
     sep = "" if basic else "-"
     return f"{d.year:04d}{sep}{d.month:02d}{sep}{d.day:02d}"

@@ -217,16 +217,18 @@ Common critiques of `PlainDateTime` are:
   "*stainless* steel", "*plain* text", or "*serverless*
   computing".
 
+(faq-leap-seconds)=
 ## Are leap seconds supported?
 
-Leap seconds are not supported. Taking leap seconds into account is a
-complex and niche feature, which is not needed for the vast majority of
-applications. This decision is consistent with other modern libraries
+Leap seconds are not fully supported. Taking leap seconds into account
+is a complex and niche feature, which is not needed for the vast majority
+of applications. This decision is consistent with other modern libraries
 (e.g. NodaTime, Temporal) and standards (RFC 5545, Unix time) which do
 not support leap seconds.
 
-One improvement that is planned: allowing the parsing of leap seconds,
-which are then truncated to 59 seconds.
+However, *whenever* does accept leap seconds during parsing, normalizing
+them to the previous second (59). This applies to ISO 8601, RFC 2822, and
+[custom format strings](pattern-format).
 
 (faq-why-not-dropin)=
 ## Why no drop-in replacement for `datetime`?

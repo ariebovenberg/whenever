@@ -170,6 +170,9 @@ Some types require specific fields in the parse pattern:
 
 All types that include date fields require `YYYY`, `MM`, and `DD`.
 
+A second value of ``60`` (leap second) is accepted and normalized to ``59``.
+See [](faq-leap-seconds) for details.
+
 ## Comparison with strftime
 
 The {meth}`~OffsetDateTime.parse_strptime` methods on {class}`OffsetDateTime` and

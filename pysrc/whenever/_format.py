@@ -492,6 +492,8 @@ class _Second(_Field):
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
         state.second, pos = _parse_digits(s, pos, 2)
+        if state.second == 60:
+            state.second = 59
         return pos
 
 
@@ -505,6 +507,8 @@ class _SecondUnpadded(_Field):
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
         state.second, pos = _parse_1or2_digits(s, pos)
+        if state.second == 60:
+            state.second = 59
         return pos
 
 
@@ -519,6 +523,8 @@ class _SecondOpt(_Field):
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
         if pos < len(s) and s[pos].isdigit():
             state.second, pos = _parse_digits(s, pos, 2)
+            if state.second == 60:
+                state.second = 59
         else:
             state.second = 0
             state.second_absent = True
@@ -546,13 +552,12 @@ class _ColonSec(_Field):
         if pos < len(s) and s[pos] == ":":
             pos += 1  # consume the colon
             state.second, pos = _parse_digits(s, pos, 2)
+            if state.second == 60:
+                state.second = 59
         else:
             state.second = 0
             state.second_absent = True
         return pos
-
-    def __repr__(self) -> str:
-        return ":SS"
 
 
 class _FracExact(_Field):
