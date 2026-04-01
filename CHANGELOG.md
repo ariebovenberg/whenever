@@ -99,6 +99,9 @@ See the full list below.
 
 **Added or improved**
 
+- Parsing methods now accept leap seconds (second value of ``60``),
+  normalizing them to ``59``. This applies to ISO 8601, RFC 2822,
+  and custom format strings.
 - New `ZonedDateTime.next_transition()` and `ZonedDateTime.prev_transition()` methods
   for finding the next or previous UTC offset transition (e.g. DST change)
   relative to the current datetime. Returns ``None`` for timezones without

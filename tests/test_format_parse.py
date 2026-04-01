@@ -567,6 +567,19 @@ class TestTimeParse:
             pattern = "ii:mm aa"
             assert Time.parse(t.format(pattern), format=pattern) == t
 
+    def test_leap_second(self):
+        # ss (_Second): accepts 60, normalizes to 59
+        assert Time.parse("14:30:60", format="hh:mm:ss") == Time(14, 30, 59)
+        # s (_SecondUnpadded): same
+        assert Time.parse("14:30:60", format="hh:mm:s") == Time(14, 30, 59)
+        # :SS (_ColonSec, compiled from ":SS"): same
+        assert Time.parse("14:30:60", format="hh:mm:SS") == Time(14, 30, 59)
+        # SS (_SecondOpt, no colon prefix): same with adjacent digits
+        assert Time.parse("143060", format="hhmmSS") == Time(14, 30, 59)
+        # Values > 60 are invalid
+        with pytest.raises(ValueError):
+            Time.parse("14:30:61", format="hh:mm:ss")
+
 
 class TestPlainDateTimeFormat:
     def test_basic(self):

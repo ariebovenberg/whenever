@@ -1288,18 +1288,18 @@ fn parse_field(
         }
         Field::Second => {
             let (v, p) = parse_digits(s, pos, 2)?;
-            state.second = Some(v as u8);
+            state.second = Some(if v == 60 { 59 } else { v as u8 });
             Ok(p)
         }
         Field::SecondUnpadded => {
             let (v, p) = parse_1or2_digits(s, pos)?;
-            state.second = Some(v as u8);
+            state.second = Some(if v == 60 { 59 } else { v as u8 });
             Ok(p)
         }
         Field::SecondOpt => {
             if pos < s.len() && s[pos].is_ascii_digit() {
                 let (v, p) = parse_digits(s, pos, 2)?;
-                state.second = Some(v as u8);
+                state.second = Some(if v == 60 { 59 } else { v as u8 });
                 Ok(p)
             } else {
                 state.second = Some(0);
@@ -1310,7 +1310,7 @@ fn parse_field(
         Field::ColonSec => {
             if pos < s.len() && s[pos] == b':' {
                 let (v, p) = parse_digits(s, pos + 1, 2)?;
-                state.second = Some(v as u8);
+                state.second = Some(if v == 60 { 59 } else { v as u8 });
                 Ok(p)
             } else {
                 state.second = Some(0);
