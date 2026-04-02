@@ -18,12 +18,12 @@ def suppress(*warning_classes):
 
     Usage::
 
-        with suppress(PotentiallyStaleOffsetWarning):
+        with suppress(StaleOffsetWarning):
             ...
 
     Can also be used as a decorator::
 
-        @suppress(PotentiallyStaleOffsetWarning)
+        @suppress(StaleOffsetWarning)
         def test_something():
             ...
     """

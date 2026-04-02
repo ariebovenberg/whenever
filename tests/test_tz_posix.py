@@ -599,3 +599,15 @@ class TestCalculateOffsets:
             assert tz.offset_for_instant(epoch_b) == expected.after
         else:
             pass  # Gap times aren't reversible
+
+
+class TestPrevTransitionEdge:
+
+    def test_prev_transition_year_1_returns_none(self):
+        """prev_transition returns None when checking the previous year
+        would go below year 1."""
+        tz = TzStr.parse("WET0WEST,M3.5.0,M10.5.0")
+        # Jan 1, year 1: both year-1 transitions are in the future,
+        # and year 0 is out of range -> returns None
+        jan1_year1_epoch = (date(1, 1, 1).toordinal() - 719163) * 86400
+        assert tz.prev_transition(jan1_year1_epoch) is None

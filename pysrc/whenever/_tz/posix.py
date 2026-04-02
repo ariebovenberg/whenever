@@ -260,7 +260,7 @@ class TzStr:
             year_for_epoch(epoch + self.std)
         )
         if trans is None:
-            return False
+            return False  # pragma: no cover
         (start, _), (end, _) = trans
         if start < end:
             return start <= epoch < end

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, no_type_check, overload
 from ._common import (
     DUMMY_LEAP_YEAR,
     SPHINX_RUNNING,
+    UNSET,
     _Base,
     add_alternate_constructors,
     final,
@@ -395,7 +396,7 @@ class MonthDay(_Base):
         return MonthDay._from_py_unchecked(self._py.replace(**kwargs))
 
     def in_year(self, year: int, /) -> Date:
-        """Create a date from this month-day with a given day
+        """Create a date from this month-day in a given year
 
         >>> MonthDay(8, 1).in_year(2025)
         Date("2025-08-01")
@@ -616,9 +617,9 @@ class IsoWeekDate(_Base):
         self,
         /,
         *,
-        year: int = 0,
-        week: int = 0,
-        weekday: Weekday | None = None,
+        year: int = UNSET,
+        week: int = UNSET,
+        weekday: Weekday = UNSET,
     ) -> IsoWeekDate:
         """Return a new :class:`IsoWeekDate` with the given fields replaced
 
@@ -626,9 +627,9 @@ class IsoWeekDate(_Base):
         IsoWeekDate("2024-W10-1")
         """
         return IsoWeekDate(
-            year or self._year,
-            week or self._week,
-            weekday if weekday is not None else self._weekday,
+            self._year if year is UNSET else year,
+            self._week if week is UNSET else week,
+            self._weekday if weekday is UNSET else weekday,
         )
 
     def format_iso(self, *, basic: bool = False) -> str:
@@ -757,7 +758,7 @@ IsoWeekDate.MAX = IsoWeekDate._from_parts_unchecked(
 
 # Set __module__ so these types and unpickle functions appear as 'whenever.X'
 # regardless of which backend (Rust or pure Python) loaded them.
-if not SPHINX_RUNNING:
+if not SPHINX_RUNNING:  # pragma: no branch
     for _obj in (
         Weekday,
         YearMonth,

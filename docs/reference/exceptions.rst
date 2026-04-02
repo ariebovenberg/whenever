@@ -9,13 +9,16 @@ Warnings
 .. autoexception:: NaiveArithmeticWarning
    :show-inheritance:
 
-.. autoexception:: DaysNotAlways24HoursWarning
+.. autoexception:: DaysAssumed24HoursWarning
    :show-inheritance:
 
-.. autoexception:: PotentiallyStaleOffsetWarning
+.. autoexception:: StaleOffsetWarning
    :show-inheritance:
 
 .. autoexception:: PotentialDstBugWarning
+   :show-inheritance:
+
+.. autoexception:: WheneverDeprecationWarning
    :show-inheritance:
 
 

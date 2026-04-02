@@ -43,6 +43,7 @@ from warnings import warn
 
 from ._common import (
     SPHINX_RUNNING,
+    UNSET,
     WheneverDeprecationWarning,
     _Base,
     add_alternate_constructors,
@@ -145,8 +146,8 @@ __all__ = [
     "microseconds",
     "nanoseconds",
     # Exceptions/warnings
-    "DaysNotAlways24HoursWarning",
-    "PotentiallyStaleOffsetWarning",
+    "DaysAssumed24HoursWarning",
+    "StaleOffsetWarning",
     "NaiveArithmeticWarning",
     "PotentialDstBugWarning",
     "WheneverDeprecationWarning",
@@ -175,32 +176,46 @@ _MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * 1_000_000_000
 _MAX_SUBSEC_NANOS = 999_999_999
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
-# A sentinel value that looks nice in autodoc.
-# Used in cases where `None` would be a valid value, or where we want to
-# avoid allowing `None` to be passed in by users.
-_UNSET: Any = type(
-    "UNSET", (), {"__repr__": lambda _: "...", "__bool__": lambda _: False}
-)()
 
-_CAL_DELTA_UNITS = DATE_DELTA_UNITS
-_EXACT_TIME_UNITS = EXACT_UNITS_STRICT
+
+def _time_units_to_nanos(
+    sign: int,
+    hours: float,
+    minutes: float,
+    seconds: float,
+    milliseconds: float,
+    microseconds: float,
+    nanoseconds: int,
+) -> int:
+    delta_ns = sign * (
+        int(hours * 3_600_000_000_000)
+        + int(minutes * 60_000_000_000)
+        + int(seconds * 1_000_000_000)
+        + int(milliseconds * 1_000_000)
+        + int(microseconds * 1_000)
+        + nanoseconds
+    )
+    if abs(delta_ns) > _MAX_DELTA_NANOS:
+        raise ValueError("TimeDelta out of range")
+    return delta_ns
+
+
 _UNITS_FOR_START_END_OF = ("year", "month", "day", "hour", "minute", "second")
 
 
-def _start_of_dt(dt: _datetime, unit: str) -> tuple[_datetime, int]:
-    """Return (new_datetime, nanoseconds) for start_of on a datetime."""
+def _start_of_dt(dt: _datetime, unit: str) -> _datetime:
     if unit == "year":
-        return dt.replace(month=1, day=1, hour=0, minute=0, second=0), 0
+        return dt.replace(month=1, day=1, hour=0, minute=0, second=0)
     elif unit == "month":
-        return dt.replace(day=1, hour=0, minute=0, second=0), 0
+        return dt.replace(day=1, hour=0, minute=0, second=0)
     elif unit == "day":
-        return dt.replace(hour=0, minute=0, second=0), 0
+        return dt.replace(hour=0, minute=0, second=0)
     elif unit == "hour":
-        return dt.replace(minute=0, second=0), 0
+        return dt.replace(minute=0, second=0)
     elif unit == "minute":
-        return dt.replace(second=0), 0
+        return dt.replace(second=0)
     elif unit == "second":
-        return dt, 0
+        return dt
     else:
         raise ValueError(
             f"Invalid unit: {unit!r}. "
@@ -208,31 +223,24 @@ def _start_of_dt(dt: _datetime, unit: str) -> tuple[_datetime, int]:
         )
 
 
-def _end_of_dt(dt: _datetime, unit: str) -> tuple[_datetime, int]:
-    """Return (new_datetime, nanoseconds) for end_of on a datetime."""
+def _end_of_dt(dt: _datetime, unit: str) -> _datetime:
     if unit == "year":
-        return (
-            dt.replace(month=12, day=31, hour=23, minute=59, second=59),
-            999_999_999,
-        )
+        return dt.replace(month=12, day=31, hour=23, minute=59, second=59)
     elif unit == "month":
-        return (
-            dt.replace(
-                day=days_in_month(dt.year, dt.month),
-                hour=23,
-                minute=59,
-                second=59,
-            ),
-            999_999_999,
+        return dt.replace(
+            day=days_in_month(dt.year, dt.month),
+            hour=23,
+            minute=59,
+            second=59,
         )
     elif unit == "day":
-        return dt.replace(hour=23, minute=59, second=59), 999_999_999
+        return dt.replace(hour=23, minute=59, second=59)
     elif unit == "hour":
-        return dt.replace(minute=59, second=59), 999_999_999
+        return dt.replace(minute=59, second=59)
     elif unit == "minute":
-        return dt.replace(second=59), 999_999_999
+        return dt.replace(second=59)
     elif unit == "second":
-        return dt, 999_999_999
+        return dt
     else:
         raise ValueError(
             f"Invalid unit: {unit!r}. "
@@ -425,20 +433,18 @@ class Date(_Base):
         """
         return Date._from_py_unchecked(self._py_date - _timedelta(days=1))
 
-    def start_of(self, unit: str, /) -> Date:
+    def start_of(self, unit: Literal["year", "month"], /) -> Date:
         """The start of the given calendar unit
-
-        Valid units: ``"year"``, ``"month"``
-
-        Note
-        ----
-        ``"week"`` is not a valid unit because weeks do not have
-        a universal start day. Use :meth:`nth_weekday` instead.
 
         >>> Date(2024, 8, 15).start_of("year")
         Date("2024-01-01")
         >>> Date(2024, 8, 15).start_of("month")
         Date("2024-08-01")
+
+        Note
+        ----
+        ``"week"`` is not a valid unit because weeks do not have
+        a universal start day. Use :meth:`nth_weekday` instead.
         """
         if unit == "year":
             return Date._from_py_unchecked(
@@ -451,15 +457,15 @@ class Date(_Base):
                 f"Invalid unit: {unit!r}. " "Valid units: 'year', 'month'"
             )
 
-    def end_of(self, unit: str, /) -> Date:
+    def end_of(self, unit: Literal["year", "month"], /) -> Date:
         """The end of the given calendar unit
-
-        See :meth:`start_of` for valid units.
 
         >>> Date(2024, 8, 15).end_of("year")
         Date("2024-12-31")
         >>> Date(2024, 8, 15).end_of("month")
         Date("2024-08-31")
+
+        See also :meth:`start_of`
         """
         if unit == "year":
             return Date._from_py_unchecked(
@@ -539,9 +545,6 @@ class Date(_Base):
 
         You can use methods like :meth:`~PlainDateTime.assume_utc`
         or :meth:`~PlainDateTime.assume_tz` to find the corresponding exact time.
-
-        >>> d.at(Time(12, 30)).assume_tz("America/New_York")
-        ZonedDateTime("2021-01-02 12:30:00-05:00[America/New_York]")
         """
         return PlainDateTime._from_py_unchecked(
             _datetime.combine(self._py_date, t._py), t._nanos
@@ -754,16 +757,16 @@ class Date(_Base):
     def _shift(
         self,
         sign: int,
-        delta: ItemizedDateDelta | DateDelta = _UNSET,
+        delta: ItemizedDateDelta | DateDelta = UNSET,
         /,
         **kwargs,
     ) -> Date:
         if kwargs:
-            if delta is not _UNSET:
+            if delta is not UNSET:
                 raise TypeError(
                     "Cannot combine positional and keyword arguments"
                 )
-        elif delta is not _UNSET:
+        elif delta is not UNSET:
             if isinstance(delta, ItemizedDateDelta):
                 kwargs = delta
             else:
@@ -840,10 +843,10 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        total: DateDeltaUnitStr = _UNSET,
-        in_units: Sequence[DateDeltaUnitStr] = _UNSET,
-        round_mode: RoundModeStr = _UNSET,
-        round_increment: int = _UNSET,
+        total: DateDeltaUnitStr = UNSET,
+        in_units: Sequence[DateDeltaUnitStr] = UNSET,
+        round_mode: RoundModeStr = UNSET,
+        round_increment: int = UNSET,
     ) -> ItemizedDateDelta | float:
         """Calculate the difference between this date and another date.
         The difference is calculated in terms of the chosen calendar unit
@@ -886,10 +889,10 @@ class Date(_Base):
             If ``total`` is specified, as a float number of the specified unit.
 
         """
-        if total is not _UNSET:
-            if in_units is not _UNSET:
+        if total is not UNSET:
+            if in_units is not UNSET:
                 raise TypeError("Cannot specify both 'total' and 'in_units'")
-            if round_mode is not _UNSET or round_increment is not _UNSET:
+            if round_mode is not UNSET or round_increment is not UNSET:
                 raise TypeError(
                     "'round_mode' and 'round_increment' cannot be used with 'total'"
                 )
@@ -903,14 +906,14 @@ class Date(_Base):
             denom = float((expand_date - trunc_date).days)
             num = float((self._py_date - trunc_date).days)
             return (trunc_amount + num / denom) * sign
-        elif in_units is _UNSET:
+        elif in_units is UNSET:
             raise TypeError("Must specify either `in_units` or `total`")
 
         units = _normalize_units(in_units, valid_units=DATE_DELTA_UNITS)
         effective_increment = (
-            1 if round_increment is _UNSET else round_increment
+            1 if round_increment is UNSET else round_increment
         )
-        effective_round_mode = "trunc" if round_mode is _UNSET else round_mode
+        effective_round_mode = "trunc" if round_mode is UNSET else round_mode
         smallest_unit = units[-1]
         sign = 1 if self >= b else -1
         results, trunc, expand = date_diff(
@@ -963,10 +966,10 @@ class Date(_Base):
         b: Date,
         /,
         *,
-        total: DateDeltaUnitStr = _UNSET,
-        in_units: Sequence[DateDeltaUnitStr] = _UNSET,
-        round_mode: RoundModeStr = _UNSET,
-        round_increment: int = _UNSET,
+        total: DateDeltaUnitStr = UNSET,
+        in_units: Sequence[DateDeltaUnitStr] = UNSET,
+        round_mode: RoundModeStr = UNSET,
+        round_increment: int = UNSET,
     ) -> ItemizedDateDelta | float:
         """Companion to :meth:`since` that calculates the difference until another date.
         See :meth:`since` for more information.
@@ -1628,7 +1631,7 @@ def _unpkl_time(data: bytes) -> Time:
 Time.MIN = Time()
 Time.MIDNIGHT = Time()
 Time.NOON = Time(12)
-Time.MAX = Time(23, 59, 59, nanosecond=999_999_999)
+Time.MAX = Time(23, 59, 59, nanosecond=_MAX_SUBSEC_NANOS)
 
 
 @final
@@ -1692,7 +1695,7 @@ class TimeDelta(_Base):
             milliseconds: float = 0,
             microseconds: float = 0,
             nanoseconds: int = 0,
-            assume_24h_days: bool = False,
+            days_assumed_24h_ok: bool = False,
         ) -> None: ...
 
     def __init__(
@@ -1706,13 +1709,13 @@ class TimeDelta(_Base):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        assume_24h_days: bool = False,
+        days_assumed_24h_ok: bool = False,
     ) -> None:
         assert type(nanoseconds) is int  # catch this common mistake
-        if (weeks or days) and not assume_24h_days:
+        if (weeks or days) and not days_assumed_24h_ok:
             warn(
                 DAYS_NOT_ALWAYS_24H_MSG,
-                DaysNotAlways24HoursWarning,
+                DaysAssumed24HoursWarning,
                 stacklevel=3,  # extra frame from add_alternate_constructors
             )
         ns = self._total_ns = (
@@ -1757,9 +1760,9 @@ class TimeDelta(_Base):
             "microseconds",
             "nanoseconds",
         ],
-        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = _UNSET,
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = UNSET,
         _warn_stacklevel: int = 2,
-        assume_24h_days: bool = False,
+        days_assumed_24h_ok: bool = False,
     ) -> float | int:
         """The total size in the given unit, as a float (or int for nanoseconds)
 
@@ -1770,14 +1773,14 @@ class TimeDelta(_Base):
         - :class:`PlainDateTime`: no timezone context; emits
           :class:`NaiveArithmeticWarning`
         - :class:`OffsetDateTime`: fixed offset; emits
-          :class:`PotentiallyStaleOffsetWarning`
+          :class:`StaleOffsetWarning`
 
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d.total('minutes')
         90.0
         """
         if unit in ("days", "weeks", "years", "months"):
-            if relative_to is not _UNSET:
+            if relative_to is not UNSET:
                 # For non-zoned datetimes, we can just pretend to work in
                 # the UTC 'timezone' and continue with the tz aware logic.
                 if isinstance(relative_to, PlainDateTime):
@@ -1789,9 +1792,7 @@ class TimeDelta(_Base):
                     relative_to = relative_to.assume_tz("UTC")
                 elif isinstance(relative_to, OffsetDateTime):
                     warn(
-                        PotentiallyStaleOffsetWarning(
-                            STALE_OFFSET_CALENDAR_MSG
-                        ),
+                        StaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG),
                         stacklevel=_warn_stacklevel,
                     )
                     relative_to = relative_to.to_plain().assume_tz("UTC")
@@ -1832,10 +1833,10 @@ class TimeDelta(_Base):
                     )
                 ) * sign
             elif unit in ("days", "weeks"):
-                if not assume_24h_days:
+                if not days_assumed_24h_ok:
                     warn(
                         DAYS_NOT_ALWAYS_24H_MSG,
-                        DaysNotAlways24HoursWarning,
+                        DaysAssumed24HoursWarning,
                         stacklevel=_warn_stacklevel,
                     )
             else:
@@ -2003,8 +2004,8 @@ class TimeDelta(_Base):
         *,
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
-        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = _UNSET,
-        assume_24h_days: bool = False,
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = UNSET,
+        days_assumed_24h_ok: bool = False,
     ) -> ItemizedDelta:
         """Convert to a :class:`ItemizedDelta` with the specified units
 
@@ -2036,10 +2037,10 @@ class TimeDelta(_Base):
             - :class:`PlainDateTime`: does not account for time zones; emits
               :class:`NaiveArithmeticWarning`
             - :class:`OffsetDateTime`: does not account for DST changes; emits
-              :class:`PotentiallyStaleOffsetWarning`
+              :class:`StaleOffsetWarning`
         """
         has_years_months = "years" in units or "months" in units
-        if has_years_months and relative_to is _UNSET:
+        if has_years_months and relative_to is UNSET:
             raise TypeError(
                 "Years and months units require a `relative_to` argument"
             )
@@ -2052,7 +2053,7 @@ class TimeDelta(_Base):
                 "Nanoseconds can only be specified together with seconds"
             )
 
-        if relative_to is not _UNSET:
+        if relative_to is not UNSET:
             has_cal = has_years_months or "days" in units or "weeks" in units
             if isinstance(relative_to, PlainDateTime):
                 if has_cal:
@@ -2065,9 +2066,7 @@ class TimeDelta(_Base):
             elif isinstance(relative_to, OffsetDateTime):
                 if has_cal:
                     warn(
-                        PotentiallyStaleOffsetWarning(
-                            STALE_OFFSET_CALENDAR_MSG
-                        ),
+                        StaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG),
                         stacklevel=2,
                     )
                 relative_to = relative_to.to_plain().assume_tz("UTC")
@@ -2078,10 +2077,10 @@ class TimeDelta(_Base):
                 round_increment=round_increment,
             )
 
-        if ("days" in units or "weeks" in units) and not assume_24h_days:
+        if ("days" in units or "weeks" in units) and not days_assumed_24h_ok:
             warn(
                 DAYS_NOT_ALWAYS_24H_MSG,
-                DaysNotAlways24HoursWarning,
+                DaysAssumed24HoursWarning,
                 stacklevel=2,
             )
 
@@ -2282,7 +2281,7 @@ class TimeDelta(_Base):
         *,
         increment: int = 1,
         mode: RoundModeStr = "half_even",
-        assume_24h_days: bool = False,
+        days_assumed_24h_ok: bool = False,
     ) -> TimeDelta:
         """Round the delta to the specified unit and increment,
         or to a multiple of another :class:`TimeDelta`.
@@ -2302,12 +2301,12 @@ class TimeDelta(_Base):
                 raise TypeError(
                     "Cannot specify both a TimeDelta and an increment"
                 )
-            increment_ns = unit._to_round_increment_ns(not assume_24h_days)
+            increment_ns = unit._to_round_increment_ns(not days_assumed_24h_ok)
         else:
-            if unit in ("day", "week") and not assume_24h_days:
+            if unit in ("day", "week") and not days_assumed_24h_ok:
                 warn(
                     DAYS_NOT_ALWAYS_24H_MSG,
-                    DaysNotAlways24HoursWarning,
+                    DaysAssumed24HoursWarning,
                     stacklevel=2,
                 )
             increment_ns = increment_to_ns_for_delta(unit, increment)
@@ -2347,16 +2346,16 @@ class TimeDelta(_Base):
         nanoseconds: int = ...,
     ) -> TimeDelta: ...
 
-    def add(self, arg: TimeDelta = _UNSET, /, **kwargs: Any) -> TimeDelta:
+    def add(self, arg: TimeDelta = UNSET, /, **kwargs: Any) -> TimeDelta:
         """Add time to this delta, returning a new delta.
 
         Days and weeks are treated as exact 24-hour and 168-hour units,
-        which emits a :class:`~whenever.DaysNotAlways24HoursWarning`."""
+        which emits a :class:`~whenever.DaysAssumed24HoursWarning`."""
         if kwargs:
-            if arg is not _UNSET:
+            if arg is not UNSET:
                 raise TypeError("Cannot mix positional and keyword arguments")
             return self + TimeDelta(**kwargs)
-        elif arg is not _UNSET:
+        elif arg is not UNSET:
             return self + arg
         else:
             return self
@@ -2379,16 +2378,16 @@ class TimeDelta(_Base):
         nanoseconds: int = ...,
     ) -> TimeDelta: ...
 
-    def subtract(self, arg: TimeDelta = _UNSET, /, **kwargs: Any) -> TimeDelta:
+    def subtract(self, arg: TimeDelta = UNSET, /, **kwargs: Any) -> TimeDelta:
         """Subtract time from this delta, returning a new delta.
 
         Days and weeks are treated as exact 24-hour and 168-hour units,
-        which emits a :class:`~whenever.DaysNotAlways24HoursWarning`."""
+        which emits a :class:`~whenever.DaysAssumed24HoursWarning`."""
         if kwargs:
-            if arg is not _UNSET:
+            if arg is not UNSET:
                 raise TypeError("Cannot mix positional and keyword arguments")
             return self - TimeDelta(**kwargs)
-        elif arg is not _UNSET:
+        elif arg is not UNSET:
             return self - arg
         else:
             return self
@@ -3158,17 +3157,17 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     def __init__(
         self,
         *,
-        years: int = _UNSET,
-        months: int = _UNSET,
-        weeks: int = _UNSET,
-        days: int = _UNSET,
-        hours: int = _UNSET,
-        minutes: int = _UNSET,
-        seconds: int = _UNSET,
-        nanoseconds: int = _UNSET,
+        years: int = UNSET,
+        months: int = UNSET,
+        weeks: int = UNSET,
+        days: int = UNSET,
+        hours: int = UNSET,
+        minutes: int = UNSET,
+        seconds: int = UNSET,
+        nanoseconds: int = UNSET,
     ) -> None:
         sign: Sign = 0
-        if nanoseconds is not _UNSET and seconds is _UNSET:
+        if nanoseconds is not UNSET and seconds is UNSET:
             seconds = 0
 
         self._years, sign = _check_component(years, sign, _MAX_DELTA_YEARS)
@@ -3186,14 +3185,14 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             nanoseconds, sign, _MAX_SUBSEC_NANOS
         )
         if (
-            years is _UNSET
-            and months is _UNSET
-            and weeks is _UNSET
-            and days is _UNSET
-            and hours is _UNSET
-            and minutes is _UNSET
-            and seconds is _UNSET
-            and nanoseconds is _UNSET
+            years is UNSET
+            and months is UNSET
+            and weeks is UNSET
+            and days is UNSET
+            and hours is UNSET
+            and minutes is UNSET
+            and seconds is UNSET
+            and nanoseconds is UNSET
         ):
             # This is to ensure ISO8601 formatting/parsing is round-trip safe.
             # There is no "empty" duration in ISO8601; at least one field must be present.
@@ -3785,7 +3784,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
     def add(
         self,
-        arg: ItemizedDelta = _UNSET,
+        arg: ItemizedDelta = UNSET,
         /,
         *,
         relative_to: ZonedDateTime,
@@ -3808,14 +3807,14 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             }
         )
         if kwargs:
-            if arg is not _UNSET:
+            if arg is not UNSET:
                 raise TypeError("Cannot mix positional and keyword arguments")
             invalid = set(kwargs) - valid_keys
             if invalid:
                 raise TypeError(
                     f"Unexpected keyword argument: {next(iter(invalid))!r}"
                 )
-        elif arg is not _UNSET:
+        elif arg is not UNSET:
             # In this case the mapping types are interchangeable
             kwargs = arg  # type: ignore[assignment]
         else:
@@ -3871,7 +3870,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
     def subtract(
         self,
-        arg: ItemizedDelta = _UNSET,
+        arg: ItemizedDelta = UNSET,
         /,
         *,
         relative_to: ZonedDateTime,
@@ -3881,7 +3880,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         **kwargs: Any,
     ) -> ItemizedDelta:
         """Inverse of :meth:`add`."""
-        arg = -arg if arg is not _UNSET else _UNSET
+        arg = -arg if arg is not UNSET else UNSET
         return self.add(
             arg,
             **{k: -v for k, v in kwargs.items()},
@@ -3918,12 +3917,12 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
               when the conversion crosses the calendar/exact-time boundary
               (i.e. the delta or output mixes calendar and exact-time units).
               Pure calendar-to-calendar or exact-to-exact conversions do not warn.
-            - :class:`OffsetDateTime`: emits :class:`PotentiallyStaleOffsetWarning`
+            - :class:`OffsetDateTime`: emits :class:`StaleOffsetWarning`
               when the delta contains calendar units (years, months, weeks, days)
               **or** the output units include calendar units
         """
-        has_exact_in_units = any(map(_EXACT_TIME_UNITS.__contains__, units))
-        has_cal_in_units = any(map(_CAL_DELTA_UNITS.__contains__, units))
+        has_exact_in_units = any(map(EXACT_UNITS_STRICT.__contains__, units))
+        has_cal_in_units = any(map(DATE_DELTA_UNITS.__contains__, units))
         if isinstance(relative_to, PlainDateTime):
             if (self._has_exact_time() or has_exact_in_units) and (
                 self._has_cal() or has_cal_in_units
@@ -3937,7 +3936,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         elif isinstance(relative_to, OffsetDateTime):
             if self._has_cal() or has_cal_in_units:
                 warn(
-                    PotentiallyStaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG),
+                    StaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG),
                     stacklevel=2,
                 )
             relative_to = relative_to.to_plain().assume_tz("UTC")
@@ -3968,11 +3967,11 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
               when the conversion crosses the calendar/exact-time boundary
               (i.e. the delta or target unit mixes calendar and exact-time units).
               Pure calendar-to-calendar or exact-to-exact conversions do not warn.
-            - :class:`OffsetDateTime`: emits :class:`PotentiallyStaleOffsetWarning`
+            - :class:`OffsetDateTime`: emits :class:`StaleOffsetWarning`
               when the delta contains calendar units (years, months, weeks, days)
               **or** the target unit is a calendar unit
         """
-        is_exact_unit = unit in _EXACT_TIME_UNITS
+        is_exact_unit = unit in EXACT_UNITS_STRICT
         if isinstance(relative_to, PlainDateTime):
             if (self._has_exact_time() or is_exact_unit) and (
                 self._has_cal() or not is_exact_unit
@@ -3986,7 +3985,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         elif isinstance(relative_to, OffsetDateTime):
             if self._has_cal() or not is_exact_unit:
                 warn(
-                    PotentiallyStaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG),
+                    StaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG),
                     stacklevel=2,
                 )
             relative_to = relative_to.to_plain().assume_tz("UTC")
@@ -4021,10 +4020,10 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         ItemizedDelta("P1yT2h")
         """
         kwargs_w_sentinel = {
-            k: _UNSET if v is None else v for k, v in kwargs.items()
+            k: UNSET if v is None else v for k, v in kwargs.items()
         }
         fields = {**self, **kwargs_w_sentinel}
-        if all(v is _UNSET for v in fields.values()):
+        if all(v is UNSET for v in fields.values()):
             raise ValueError("at least one field must remain set")
         return ItemizedDelta(**fields)
 
@@ -4182,10 +4181,10 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     def __init__(
         self,
         *,
-        years: int = _UNSET,
-        months: int = _UNSET,
-        weeks: int = _UNSET,
-        days: int = _UNSET,
+        years: int = UNSET,
+        months: int = UNSET,
+        weeks: int = UNSET,
+        days: int = UNSET,
     ) -> None:
         sign: Sign = 0
         self._years, sign = _check_component(years, sign, _MAX_DELTA_YEARS)
@@ -4193,10 +4192,10 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         self._weeks, sign = _check_component(weeks, sign, _MAX_DELTA_WEEKS)
         self._days, sign = _check_component(days, sign, _MAX_DELTA_DAYS)
         if (
-            years is _UNSET
-            and months is _UNSET
-            and weeks is _UNSET
-            and days is _UNSET
+            years is UNSET
+            and months is UNSET
+            and weeks is UNSET
+            and days is UNSET
         ):
             # This is to ensure ISO8601 formatting/parsing is round-trip safe.
             # There is no "empty" duration in ISO8601; at least one field must be present.
@@ -4265,11 +4264,11 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         ItemizedDateDelta("P1y4w")
         """
         kwargs_w_sentinel = {
-            k: _UNSET if v is None else v for k, v in kwargs.items()
+            k: UNSET if v is None else v for k, v in kwargs.items()
         }
         # Keys may be invalid here, but the constructor will catch that.
         fields = {**self, **kwargs_w_sentinel}  # type: ignore[misc]
-        if all(v is _UNSET for v in fields.values()):
+        if all(v is UNSET for v in fields.values()):
             raise ValueError("at least one field must remain set")
         return ItemizedDateDelta(**fields)
 
@@ -4620,7 +4619,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
     def add(
         self,
-        arg: ItemizedDateDelta = _UNSET,
+        arg: ItemizedDateDelta = UNSET,
         /,
         *,
         relative_to: Date,
@@ -4632,14 +4631,14 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         """Add time to this delta, returning a new delta"""
         valid_keys = frozenset({"years", "months", "weeks", "days"})
         if kwargs:
-            if arg is not _UNSET:
+            if arg is not UNSET:
                 raise TypeError("Cannot mix positional and keyword arguments")
             invalid = set(kwargs) - valid_keys
             if invalid:
                 raise TypeError(
                     f"Unexpected keyword argument: {next(iter(invalid))!r}"
                 )
-        elif arg is not _UNSET:
+        elif arg is not UNSET:
             # In this case the mapping types are interchangeable
             kwargs = arg  # type: ignore[assignment]
         else:
@@ -4686,7 +4685,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
     def subtract(
         self,
-        arg: ItemizedDateDelta = _UNSET,
+        arg: ItemizedDateDelta = UNSET,
         /,
         *,
         relative_to: Date,
@@ -4696,7 +4695,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         **kwargs: Any,
     ) -> ItemizedDateDelta:
         """Subtract time from this delta, returning a new delta"""
-        arg = -arg if arg is not _UNSET else _UNSET
+        arg = -arg if arg is not UNSET else UNSET
         return self.add(
             arg,
             **{k: -v for k, v in kwargs.items()},
@@ -4802,9 +4801,9 @@ def _check_bound(i: int | None, max_value: int) -> int | None:
 
 
 def _check_component(
-    value: int, sign: Sign, max_value: int  # may also be _UNSET
+    value: int, sign: Sign, max_value: int  # may also be UNSET
 ) -> tuple[int | None, Sign]:
-    if value is _UNSET:
+    if value is UNSET:
         return None, sign
     elif value == 0:
         return 0, sign
@@ -5522,7 +5521,7 @@ class _ExactTime(_BasicConversions):
     ) -> OffsetDateTime: ...
 
     def to_fixed_offset(
-        self, offset: int | TimeDelta = _UNSET, /
+        self, offset: int | TimeDelta = UNSET, /
     ) -> OffsetDateTime:
         """Convert to an OffsetDateTime that represents the same moment in time.
 
@@ -5532,7 +5531,7 @@ class _ExactTime(_BasicConversions):
             self._py_dt.astimezone(
                 # mypy doesn't know that offset is never None
                 _timezone(self._py_dt.utcoffset())  # type: ignore[arg-type]
-                if offset is _UNSET
+                if offset is UNSET
                 else _load_offset(offset)
             ),
             self._nanos,
@@ -5599,8 +5598,9 @@ class _ExactTime(_BasicConversions):
         This method returns the exact elapsed :class:`TimeDelta` between
         two instants in time. Equivalent to the subtraction operator (``-``).
 
-        Use :meth:`since` or :meth:`until` for more advanced options such as
-        calendar units, unit decomposition, and rounding.
+        Use :meth:`~whenever.ZonedDateTime.since` or
+        :meth:`~whenever.ZonedDateTime.until` for more advanced
+        options such as calendar units, unit decomposition, and rounding.
         """
         return self - other  # type: ignore[operator, no-any-return]
 
@@ -6049,16 +6049,15 @@ class Instant(_ExactTime):
 
         See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
         """
-        delta_ns = (
-            int(hours * 3_600_000_000_000)
-            + int(minutes * 60_000_000_000)
-            + int(seconds * 1_000_000_000)
-            + int(milliseconds * 1_000_000)
-            + int(microseconds * 1_000)
-            + nanoseconds
+        delta_ns = _time_units_to_nanos(
+            1,
+            hours,
+            minutes,
+            seconds,
+            milliseconds,
+            microseconds,
+            nanoseconds,
         )
-        if abs(delta_ns) > _MAX_DELTA_NANOS:
-            raise ValueError("TimeDelta out of range")
         delta_secs, nanos = divmod(self._nanos + delta_ns, 1_000_000_000)
         return self._from_py_unchecked(
             self._py_dt + _timedelta(seconds=delta_secs),
@@ -6307,7 +6306,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         offset: int | TimeDelta,
         /,
         *,
-        ignore_dst: bool = _UNSET,
+        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Create an instance from the current time.
@@ -6320,7 +6319,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         or ``Instant.now()`` for timezone-agnostic exact time.
         Pass ``stale_offset_ok=True`` to suppress.
         """
-        if ignore_dst is not _UNSET:
+        if ignore_dst is not UNSET:
             warn(
                 IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
@@ -6329,7 +6328,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         if not stale_offset_ok:
             warn(
                 OFFSET_NOW_STALE_MSG,
-                PotentiallyStaleOffsetWarning,
+                StaleOffsetWarning,
                 stacklevel=2,
             )
         secs, nanos = divmod(time_ns(), 1_000_000_000)
@@ -6388,7 +6387,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         /,
         *,
         offset: int | TimeDelta,
-        ignore_dst: bool = _UNSET,
+        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in seconds).
@@ -6404,7 +6403,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         or ``Instant.from_timestamp()`` for timezone-agnostic exact time.
         Pass ``stale_offset_ok=True`` to suppress.
         """
-        if ignore_dst is not _UNSET:
+        if ignore_dst is not UNSET:
             warn(
                 IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
@@ -6413,7 +6412,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         if not stale_offset_ok:
             warn(
                 OFFSET_FROM_TIMESTAMP_STALE_MSG,
-                PotentiallyStaleOffsetWarning,
+                StaleOffsetWarning,
                 stacklevel=2,
             )
         secs, fract = divmod(i, 1)
@@ -6429,7 +6428,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         /,
         *,
         offset: int | TimeDelta,
-        ignore_dst: bool = _UNSET,
+        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in milliseconds).
@@ -6438,7 +6437,7 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         See :meth:`from_timestamp` for more information.
         """
-        if ignore_dst is not _UNSET:
+        if ignore_dst is not UNSET:
             warn(
                 IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
@@ -6447,7 +6446,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         if not stale_offset_ok:
             warn(
                 OFFSET_FROM_TIMESTAMP_STALE_MSG,
-                PotentiallyStaleOffsetWarning,
+                StaleOffsetWarning,
                 stacklevel=2,
             )
         if not isinstance(i, int):
@@ -6464,7 +6463,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         /,
         *,
         offset: int | TimeDelta,
-        ignore_dst: bool = _UNSET,
+        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in nanoseconds).
@@ -6473,7 +6472,7 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         See :meth:`from_timestamp` for more information.
         """
-        if ignore_dst is not _UNSET:
+        if ignore_dst is not UNSET:
             warn(
                 IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
@@ -6482,7 +6481,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         if not stale_offset_ok:
             warn(
                 OFFSET_FROM_TIMESTAMP_STALE_MSG,
-                PotentiallyStaleOffsetWarning,
+                StaleOffsetWarning,
                 stacklevel=2,
             )
         if not isinstance(i, int):
@@ -6528,7 +6527,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     def replace(
         self,
         /,
-        ignore_dst: bool = _UNSET,
+        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = False,
         **kwargs: Any,
     ) -> OffsetDateTime:
@@ -6543,7 +6542,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         using :meth:`assume_tz`.
         Pass ``stale_offset_ok=True`` to suppress.
         """
-        if ignore_dst is not _UNSET:
+        if ignore_dst is not UNSET:
             warn(
                 IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
@@ -6552,7 +6551,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         if not stale_offset_ok:
             warn(
                 OFFSET_REPLACE_STALE_MSG,
-                PotentiallyStaleOffsetWarning,
+                StaleOffsetWarning,
                 stacklevel=2,
             )
         _check_invalid_replace_kwargs(kwargs)
@@ -6570,14 +6569,14 @@ class OffsetDateTime(_ExactAndLocalTime):
         date: Date,
         /,
         *,
-        ignore_dst: bool = _UNSET,
+        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Construct a new instance with the date replaced.
 
         See :meth:`replace` for more information.
         """
-        if ignore_dst is not _UNSET:
+        if ignore_dst is not UNSET:
             warn(
                 IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
@@ -6586,7 +6585,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         if not stale_offset_ok:
             warn(
                 OFFSET_REPLACE_STALE_MSG,
-                PotentiallyStaleOffsetWarning,
+                StaleOffsetWarning,
                 stacklevel=2,
             )
         return self._from_py_unchecked(
@@ -6601,14 +6600,14 @@ class OffsetDateTime(_ExactAndLocalTime):
         time: Time,
         /,
         *,
-        ignore_dst: bool = _UNSET,
+        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Construct a new instance with the time replaced.
 
         See :meth:`replace` for more information.
         """
-        if ignore_dst is not _UNSET:
+        if ignore_dst is not UNSET:
             warn(
                 IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
@@ -6617,7 +6616,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         if not stale_offset_ok:
             warn(
                 OFFSET_REPLACE_STALE_MSG,
-                PotentiallyStaleOffsetWarning,
+                StaleOffsetWarning,
                 stacklevel=2,
             )
         return self._from_py_unchecked(
@@ -6631,15 +6630,15 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     def start_of(
         self,
-        unit: str,
+        unit: Literal["year", "month", "day", "hour", "minute", "second"],
         /,
         *,
         stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """The start of the given unit
 
-        Valid units: ``"year"``, ``"month"``, ``"day"``,
-        ``"hour"``, ``"minute"``, ``"second"``
+        >>> OffsetDateTime(2024, 8, 15, 14, 30, offset=5).start_of("day")
+        OffsetDateTime("2024-08-15 00:00:00+05:00")
 
         Note
         ----
@@ -6650,43 +6649,42 @@ class OffsetDateTime(_ExactAndLocalTime):
         Warning
         -------
         The offset is preserved, which may not be correct for the
-        resulting time. See :class:`~whenever.PotentiallyStaleOffsetWarning`.
+        resulting time. See :class:`~whenever.StaleOffsetWarning`.
         Pass ``stale_offset_ok=True`` to suppress.
-
-        >>> OffsetDateTime(2024, 8, 15, 14, 30, offset=5).start_of("day")
-        OffsetDateTime("2024-08-15 00:00:00+05:00")
         """
         if not stale_offset_ok:
             warn(
                 OFFSET_START_END_OF_STALE_MSG,
-                PotentiallyStaleOffsetWarning,
+                StaleOffsetWarning,
                 stacklevel=2,
             )
-        new_dt, nanos = _start_of_dt(self._py_dt, unit)
-        return self._from_py_unchecked(check_utc_bounds(new_dt), nanos)
+        new_dt = _start_of_dt(self._py_dt, unit)
+        return self._from_py_unchecked(check_utc_bounds(new_dt), 0)
 
     def end_of(
         self,
-        unit: str,
+        unit: Literal["year", "month", "day", "hour", "minute", "second"],
         /,
         *,
         stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """The end of the given unit
 
-        See :meth:`start_of` for valid units and stale offset behavior.
-
         >>> OffsetDateTime(2024, 8, 15, 14, 30, offset=5).end_of("day")
         OffsetDateTime("2024-08-15 23:59:59.999999999+05:00")
+
+        See also :meth:`start_of`
         """
         if not stale_offset_ok:
             warn(
                 OFFSET_START_END_OF_STALE_MSG,
-                PotentiallyStaleOffsetWarning,
+                StaleOffsetWarning,
                 stacklevel=2,
             )
-        new_dt, nanos = _end_of_dt(self._py_dt, unit)
-        return self._from_py_unchecked(check_utc_bounds(new_dt), nanos)
+        new_dt = _end_of_dt(self._py_dt, unit)
+        return self._from_py_unchecked(
+            check_utc_bounds(new_dt), _MAX_SUBSEC_NANOS
+        )
 
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
@@ -6709,7 +6707,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         if isinstance(delta, TimeDelta):
             warn(
                 OFFSET_SHIFT_STALE_MSG,
-                PotentiallyStaleOffsetWarning,
+                StaleOffsetWarning,
                 stacklevel=2,
             )
             delta_secs, nanos = divmod(
@@ -6734,7 +6732,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         if isinstance(other, TimeDelta):
             warn(
                 OFFSET_SHIFT_STALE_MSG,
-                PotentiallyStaleOffsetWarning,
+                StaleOffsetWarning,
                 stacklevel=2,
             )
             delta_secs, nanos = divmod(
@@ -6970,14 +6968,14 @@ class OffsetDateTime(_ExactAndLocalTime):
     def _shift(
         self,
         sign: int,
-        arg: AnyDelta | _UNSET = _UNSET,
+        arg: AnyDelta | UNSET = UNSET,
         /,
         *,
-        ignore_dst: bool = _UNSET,
+        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = False,
         **kwargs,
     ) -> OffsetDateTime:
-        if ignore_dst is not _UNSET:
+        if ignore_dst is not UNSET:
             warn(
                 IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
@@ -6986,15 +6984,15 @@ class OffsetDateTime(_ExactAndLocalTime):
         if not stale_offset_ok:
             warn(
                 OFFSET_SHIFT_STALE_MSG,
-                PotentiallyStaleOffsetWarning,
+                StaleOffsetWarning,
                 stacklevel=3,
             )
         if kwargs:
-            if arg is _UNSET:
+            if arg is UNSET:
                 return self._shift_kwargs(sign, **kwargs)
             raise TypeError("Cannot mix positional and keyword arguments")
 
-        elif arg is not _UNSET:
+        elif arg is not UNSET:
             return self._shift_kwargs(
                 sign,
                 months=arg._date_part._months,
@@ -7028,16 +7026,15 @@ class OffsetDateTime(_ExactAndLocalTime):
             self._py_dt.timetz(),
         )
 
-        delta_ns = sign * (
-            int(hours * 3_600_000_000_000)
-            + int(minutes * 60_000_000_000)
-            + int(seconds * 1_000_000_000)
-            + int(milliseconds * 1_000_000)
-            + int(microseconds * 1_000)
-            + nanoseconds
+        delta_ns = _time_units_to_nanos(
+            sign,
+            hours,
+            minutes,
+            seconds,
+            milliseconds,
+            microseconds,
+            nanoseconds,
         )
-        if abs(delta_ns) > _MAX_DELTA_NANOS:
-            raise ValueError("TimeDelta out of range")
         delta_secs, nanos = divmod(delta_ns + self._nanos, 1_000_000_000)
         return self._from_py_unchecked(
             check_utc_bounds(
@@ -7064,7 +7061,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         *,
         increment: int = 1,
         mode: RoundModeStr = "half_even",
-        ignore_dst: bool = _UNSET,
+        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Round the datetime to the specified unit and increment,
@@ -7090,7 +7087,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         using :meth:`assume_tz`.
         Pass ``stale_offset_ok=True`` to suppress.
         """
-        if ignore_dst is not _UNSET:
+        if ignore_dst is not UNSET:
             warn(
                 IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
@@ -7099,7 +7096,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         if not stale_offset_ok:
             warn(
                 OFFSET_ROUND_STALE_MSG,
-                PotentiallyStaleOffsetWarning,
+                StaleOffsetWarning,
                 stacklevel=2,
             )
         if isinstance(unit, TimeDelta):
@@ -7181,10 +7178,10 @@ class OffsetDateTime(_ExactAndLocalTime):
         b: OffsetDateTime,
         /,
         *,
-        total: DeltaUnitStr = _UNSET,
-        in_units: Sequence[DeltaUnitStr] = _UNSET,
-        round_mode: RoundModeStr = _UNSET,
-        round_increment: int = _UNSET,
+        total: DeltaUnitStr = UNSET,
+        in_units: Sequence[DeltaUnitStr] = UNSET,
+        round_mode: RoundModeStr = UNSET,
+        round_increment: int = UNSET,
     ) -> ItemizedDelta | float:
         """Calculate the duration since another OffsetDateTime,
         in terms of the specified units.
@@ -7203,7 +7200,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             self,
             b,
             total or None,
-            None if in_units is _UNSET else in_units,
+            None if in_units is UNSET else in_units,
             round_mode,
             round_increment,
         )
@@ -7233,17 +7230,17 @@ class OffsetDateTime(_ExactAndLocalTime):
         b: OffsetDateTime,
         /,
         *,
-        total: DeltaUnitStr = _UNSET,
-        in_units: Sequence[DeltaUnitStr] = _UNSET,
-        round_mode: RoundModeStr = _UNSET,
-        round_increment: int = _UNSET,
+        total: DeltaUnitStr = UNSET,
+        in_units: Sequence[DeltaUnitStr] = UNSET,
+        round_mode: RoundModeStr = UNSET,
+        round_increment: int = UNSET,
     ) -> ItemizedDelta | float:
         """Inverse of the ``since()`` method. See :meth:`since` for more information."""
         return _offset_since(
             b,
             self,
             total or None,
-            None if in_units is _UNSET else in_units,
+            None if in_units is UNSET else in_units,
             round_mode,
             round_increment,
         )
@@ -7703,7 +7700,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         self._tz = _tz
 
     def replace_date(
-        self, date: Date, /, disambiguate: DisambiguateStr = _UNSET
+        self, date: Date, /, disambiguate: DisambiguateStr = UNSET
     ) -> ZonedDateTime:
         """Construct a new instance with the date replaced.
 
@@ -7720,7 +7717,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
 
     def replace_time(
-        self, time: Time, /, disambiguate: DisambiguateStr = _UNSET
+        self, time: Time, /, disambiguate: DisambiguateStr = UNSET
     ) -> ZonedDateTime:
         """Construct a new instance with the time replaced.
 
@@ -7754,7 +7751,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         ) -> ZonedDateTime: ...
 
     def replace(
-        self, /, disambiguate: DisambiguateStr = _UNSET, **kwargs: Any
+        self, /, disambiguate: DisambiguateStr = UNSET, **kwargs: Any
     ) -> ZonedDateTime:
         """Construct a new instance with the given fields replaced.
 
@@ -7928,19 +7925,19 @@ class ZonedDateTime(_ExactAndLocalTime):
     def _shift(
         self,
         sign: int,
-        delta: AnyDelta | _UNSET = _UNSET,
+        delta: AnyDelta | UNSET = UNSET,
         /,
         *,
-        disambiguate: DisambiguateStr = _UNSET,
+        disambiguate: DisambiguateStr = UNSET,
         **kwargs,
     ) -> ZonedDateTime:
         if kwargs:
-            if delta is _UNSET:
+            if delta is UNSET:
                 return self._shift_kwargs(
                     sign, disambiguate=disambiguate, **kwargs
                 )
             raise TypeError("Cannot mix positional and keyword arguments")
-        elif delta is _UNSET:
+        elif delta is UNSET:
             return self
         elif isinstance(delta, (ItemizedDelta, ItemizedDateDelta)):
             return self._shift_kwargs(sign, **delta, disambiguate=disambiguate)
@@ -7969,7 +7966,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: DisambiguateStr = _UNSET,
+        disambiguate: DisambiguateStr = UNSET,
     ) -> ZonedDateTime:
         months_total = sign * (years * 12 + months)
         days_total = sign * (weeks * 7 + days)
@@ -7978,16 +7975,15 @@ class ZonedDateTime(_ExactAndLocalTime):
                 self.date()._add_months(months_total)._add_days(days_total),
                 disambiguate=disambiguate,
             )
-        delta_ns = sign * (
-            int(hours * 3_600_000_000_000)
-            + int(minutes * 60_000_000_000)
-            + int(seconds * 1_000_000_000)
-            + int(milliseconds * 1_000_000)
-            + int(microseconds * 1_000)
-            + nanoseconds
+        delta_ns = _time_units_to_nanos(
+            sign,
+            hours,
+            minutes,
+            seconds,
+            milliseconds,
+            microseconds,
+            nanoseconds,
         )
-        if abs(delta_ns) > _MAX_DELTA_NANOS:
-            raise ValueError("TimeDelta out of range")
         delta_secs, nanos = divmod(delta_ns + self._nanos, 1_000_000_000)
         new_epoch = int(self._py_dt.timestamp()) + delta_secs
         return self._from_py_unchecked(
@@ -8023,10 +8019,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         b: ZonedDateTime,
         /,
         *,
-        total: DeltaUnitStr = _UNSET,
-        in_units: Sequence[DeltaUnitStr] = _UNSET,
-        round_mode: RoundModeStr = _UNSET,
-        round_increment: int = _UNSET,
+        total: DeltaUnitStr = UNSET,
+        in_units: Sequence[DeltaUnitStr] = UNSET,
+        round_mode: RoundModeStr = UNSET,
+        round_increment: int = UNSET,
     ) -> ItemizedDelta | float:
         """Calculate the duration since another ZonedDateTime,
         in terms of the specified units.
@@ -8045,7 +8041,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             self,
             b,
             total or None,
-            None if in_units is _UNSET else in_units,
+            None if in_units is UNSET else in_units,
             round_mode,
             round_increment,
         )
@@ -8075,17 +8071,17 @@ class ZonedDateTime(_ExactAndLocalTime):
         b: ZonedDateTime,
         /,
         *,
-        total: DeltaUnitStr = _UNSET,
-        in_units: Sequence[DeltaUnitStr] = _UNSET,
-        round_mode: RoundModeStr = _UNSET,
-        round_increment: int = _UNSET,
+        total: DeltaUnitStr = UNSET,
+        in_units: Sequence[DeltaUnitStr] = UNSET,
+        round_mode: RoundModeStr = UNSET,
+        round_increment: int = UNSET,
     ) -> ItemizedDelta | float:
         """Inverse of the ``since()`` method. See :meth:`since` for more information."""
         return _zoned_since(
             b,
             self,
             total or None,
-            None if in_units is _UNSET else in_units,
+            None if in_units is UNSET else in_units,
             round_mode,
             round_increment,
         )
@@ -8187,9 +8183,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         This is usually 24 hours, but may be different due to timezone transitions.
 
         >>> ZonedDateTime(2020, 8, 15, tz="Europe/London").day_length()
-        TimeDelta(24:00:00)
+        TimeDelta("PT24h")
         >>> ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam").day_length()
-        TimeDelta(25:00:00)
+        TimeDelta("PT25h")
         """
         midnight_naive = _datetime.combine(self._py_dt.date(), _time.min)
         midnight = resolve_ambiguity(
@@ -8220,11 +8216,27 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
         return self.start_of("day")
 
-    def start_of(self, unit: str, /) -> ZonedDateTime:
+    def _resolve_for_unit(self, naive: _datetime, unit: str) -> _datetime:
+        tz = self._tz
+        if unit in ("year", "month", "day"):
+            return resolve_ambiguity(naive, tz, "compatible")
+        return resolve_ambiguity_using_prev_offset(
+            naive,
+            self._py_dt.utcoffset(),  # type: ignore[arg-type]
+            tz,
+        )
+
+    def start_of(
+        self,
+        unit: Literal["year", "month", "day", "hour", "minute", "second"],
+        /,
+    ) -> ZonedDateTime:
         """The start of the given unit
 
-        Valid units: ``"year"``, ``"month"``, ``"day"``,
-        ``"hour"``, ``"minute"``, ``"second"``
+        >>> ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").start_of("day")
+        ZonedDateTime("2024-08-15 00:00:00-04:00[America/New_York]")
+        >>> ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").start_of("hour")
+        ZonedDateTime("2024-08-15 14:00:00-04:00[America/New_York]")
 
         Note
         ----
@@ -8235,52 +8247,33 @@ class ZonedDateTime(_ExactAndLocalTime):
         For ``"day"``, ``"month"``, and ``"year"``, the resulting time
         is resolved in the timezone using ``"compatible"`` disambiguation,
         since midnight may not exist due to DST transitions.
-        This is equivalent to :meth:`start_of_day` for ``"day"``.
 
         For ``"hour"``, ``"minute"``, and ``"second"``, the existing offset
-        is preserved if valid, otherwise the correct offset for the
-        resulting time is determined.
-
-        >>> ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").start_of("day")
-        ZonedDateTime("2024-08-15 00:00:00-04:00[America/New_York]")
-        >>> ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").start_of("hour")
-        ZonedDateTime("2024-08-15 14:00:00-04:00[America/New_York]")
+        is preserved if valid, otherwise the "compatible" disambiguation strategy is used.
         """
-        dt = self._py_dt
-        tz = self._tz
-        new_dt, nanos = _start_of_dt(dt, unit)
+        new_dt = _start_of_dt(self._py_dt, unit)
         naive = new_dt.replace(tzinfo=None)
-        if unit in ("year", "month", "day"):
-            resolved = resolve_ambiguity(naive, tz, "compatible")
-        else:
-            resolved = resolve_ambiguity_using_prev_offset(
-                naive,
-                dt.utcoffset(),  # type: ignore[arg-type]
-                tz,
-            )
-        return self._from_py_unchecked(resolved, nanos, tz)
+        return self._from_py_unchecked(
+            self._resolve_for_unit(naive, unit), 0, self._tz
+        )
 
-    def end_of(self, unit: str, /) -> ZonedDateTime:
+    def end_of(
+        self,
+        unit: Literal["year", "month", "day", "hour", "minute", "second"],
+        /,
+    ) -> ZonedDateTime:
         """The end of the given unit
-
-        See :meth:`start_of` for valid units and timezone behavior.
 
         >>> ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").end_of("day")
         ZonedDateTime("2024-08-15 23:59:59.999999999-04:00[America/New_York]")
+
+        See also :meth:`start_of`
         """
-        dt = self._py_dt
-        tz = self._tz
-        new_dt, nanos = _end_of_dt(dt, unit)
+        new_dt = _end_of_dt(self._py_dt, unit)
         naive = new_dt.replace(tzinfo=None)
-        if unit in ("year", "month", "day"):
-            resolved = resolve_ambiguity(naive, tz, "compatible")
-        else:
-            resolved = resolve_ambiguity_using_prev_offset(
-                naive,
-                dt.utcoffset(),  # type: ignore[arg-type]
-                tz,
-            )
-        return self._from_py_unchecked(resolved, nanos, tz)
+        return self._from_py_unchecked(
+            self._resolve_for_unit(naive, unit), _MAX_SUBSEC_NANOS, self._tz
+        )
 
     def round(
         self,
@@ -8660,38 +8653,43 @@ class PlainDateTime(_LocalTime):
             _datetime.combine(self._py_dt.date(), t._py), t._nanos
         )
 
-    def start_of(self, unit: str, /) -> PlainDateTime:
+    def start_of(
+        self,
+        unit: Literal["year", "month", "day", "hour", "minute", "second"],
+        /,
+    ) -> PlainDateTime:
         """The start of the given unit
 
-        Valid units: ``"year"``, ``"month"``, ``"day"``,
-        ``"hour"``, ``"minute"``, ``"second"``
+        >>> PlainDateTime(2024, 8, 15, 14, 30, 45).start_of("day")
+        PlainDateTime("2024-08-15 00:00:00")
+        >>> PlainDateTime(2024, 8, 15, 14, 30, 45).start_of("hour")
+        PlainDateTime("2024-08-15 14:00:00")
 
         Note
         ----
         ``"week"`` is not a valid unit because weeks do not have
         a universal start day. Use :meth:`~Date.nth_weekday` on the
         :meth:`date` instead.
-
-        >>> PlainDateTime(2024, 8, 15, 14, 30, 45).start_of("day")
-        PlainDateTime("2024-08-15 00:00:00")
-        >>> PlainDateTime(2024, 8, 15, 14, 30, 45).start_of("hour")
-        PlainDateTime("2024-08-15 14:00:00")
         """
-        new_dt, nanos = _start_of_dt(self._py_dt, unit)
-        return self._from_py_unchecked(new_dt, nanos)
+        new_dt = _start_of_dt(self._py_dt, unit)
+        return self._from_py_unchecked(new_dt, 0)
 
-    def end_of(self, unit: str, /) -> PlainDateTime:
+    def end_of(
+        self,
+        unit: Literal["year", "month", "day", "hour", "minute", "second"],
+        /,
+    ) -> PlainDateTime:
         """The end of the given unit
-
-        See :meth:`start_of` for valid units.
 
         >>> PlainDateTime(2024, 8, 15, 14, 30, 45).end_of("day")
         PlainDateTime("2024-08-15 23:59:59.999999999")
         >>> PlainDateTime(2024, 8, 15, 14, 30, 45).end_of("hour")
         PlainDateTime("2024-08-15 14:59:59.999999999")
+
+        See also :meth:`start_of`
         """
-        new_dt, nanos = _end_of_dt(self._py_dt, unit)
-        return self._from_py_unchecked(new_dt, nanos)
+        new_dt = _end_of_dt(self._py_dt, unit)
+        return self._from_py_unchecked(new_dt, _MAX_SUBSEC_NANOS)
 
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
@@ -8836,7 +8834,7 @@ class PlainDateTime(_LocalTime):
         other: PlainDateTime,
         /,
         *,
-        ignore_dst: bool = _UNSET,
+        ignore_dst: bool = UNSET,
         naive_arithmetic_ok: bool = False,
     ) -> TimeDelta:
         """Calculate the exact time difference between two plain datetimes.
@@ -8855,7 +8853,7 @@ class PlainDateTime(_LocalTime):
         not account for timezone transitions. Use :meth:`assume_tz` to convert
         to a ``ZonedDateTime`` first for accurate results.
         """
-        if ignore_dst is not _UNSET:
+        if ignore_dst is not UNSET:
             warn(
                 IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
@@ -8867,11 +8865,7 @@ class PlainDateTime(_LocalTime):
                 NaiveArithmeticWarning,
                 stacklevel=2,
             )
-        py_delta = self._py_dt - other._py_dt
-        return TimeDelta(
-            seconds=py_delta.days * 86_400 + py_delta.seconds,
-            nanoseconds=self._nanos - other._nanos,
-        )
+        return self._sub(other)
 
     @overload
     def since(
@@ -8900,10 +8894,10 @@ class PlainDateTime(_LocalTime):
         b: PlainDateTime,
         /,
         *,
-        total: DeltaUnitStr = _UNSET,
-        in_units: Sequence[DeltaUnitStr] = _UNSET,
-        round_mode: RoundModeStr = _UNSET,
-        round_increment: int = _UNSET,
+        total: DeltaUnitStr = UNSET,
+        in_units: Sequence[DeltaUnitStr] = UNSET,
+        round_mode: RoundModeStr = UNSET,
+        round_increment: int = UNSET,
         naive_arithmetic_ok: bool = False,
     ) -> ItemizedDelta | float:
         """Calculate the duration since another PlainDateTime,
@@ -8920,7 +8914,7 @@ class PlainDateTime(_LocalTime):
             self,
             b,
             total or None,
-            None if in_units is _UNSET else in_units,
+            None if in_units is UNSET else in_units,
             round_mode,
             round_increment,
             emit_warn=not naive_arithmetic_ok,
@@ -8953,10 +8947,10 @@ class PlainDateTime(_LocalTime):
         b: PlainDateTime,
         /,
         *,
-        total: DeltaUnitStr = _UNSET,
-        in_units: Sequence[DeltaUnitStr] = _UNSET,
-        round_mode: RoundModeStr = _UNSET,
-        round_increment: int = _UNSET,
+        total: DeltaUnitStr = UNSET,
+        in_units: Sequence[DeltaUnitStr] = UNSET,
+        round_mode: RoundModeStr = UNSET,
+        round_increment: int = UNSET,
         naive_arithmetic_ok: bool = False,
     ) -> ItemizedDelta | float:
         """Inverse of the ``since()`` method. See :meth:`since` for more information."""
@@ -8964,7 +8958,7 @@ class PlainDateTime(_LocalTime):
             b,
             self,
             total or None,
-            None if in_units is _UNSET else in_units,
+            None if in_units is UNSET else in_units,
             round_mode,
             round_increment,
             emit_warn=not naive_arithmetic_ok,
@@ -9052,14 +9046,14 @@ class PlainDateTime(_LocalTime):
     def _shift(
         self,
         sign: int,
-        arg: AnyDelta | _UNSET = _UNSET,
+        arg: AnyDelta | UNSET = UNSET,
         /,
         *,
-        ignore_dst: bool = _UNSET,
+        ignore_dst: bool = UNSET,
         naive_arithmetic_ok: bool = False,
         **kwargs,
     ) -> PlainDateTime:
-        if ignore_dst is not _UNSET:
+        if ignore_dst is not UNSET:
             warn(
                 IGNORE_DST_DEPRECATED_MSG,
                 WheneverDeprecationWarning,
@@ -9067,7 +9061,7 @@ class PlainDateTime(_LocalTime):
             )
 
         if kwargs:
-            if arg is _UNSET:
+            if arg is UNSET:
                 return self._shift_kwargs(
                     sign,
                     naive_arithmetic_ok=naive_arithmetic_ok,
@@ -9075,7 +9069,7 @@ class PlainDateTime(_LocalTime):
                 )
             raise TypeError("Cannot mix positional and keyword arguments")
 
-        elif arg is not _UNSET:
+        elif arg is not UNSET:
             return self._shift_kwargs(
                 sign,
                 months=arg._date_part._months,
@@ -9108,16 +9102,15 @@ class PlainDateTime(_LocalTime):
             ._add_days(sign * (weeks * 7 + days)),
         )._py_dt
 
-        delta_ns = sign * (
-            int(hours * 3_600_000_000_000)
-            + int(minutes * 60_000_000_000)
-            + int(seconds * 1_000_000_000)
-            + int(milliseconds * 1_000_000)
-            + int(microseconds * 1_000)
-            + nanoseconds
+        delta_ns = _time_units_to_nanos(
+            sign,
+            hours,
+            minutes,
+            seconds,
+            milliseconds,
+            microseconds,
+            nanoseconds,
         )
-        if abs(delta_ns) > _MAX_DELTA_NANOS:
-            raise ValueError("TimeDelta out of range")
         if delta_ns != 0 and not naive_arithmetic_ok:
             warn(
                 PLAIN_SHIFT_UNAWARE_MSG,
@@ -9304,51 +9297,107 @@ def _unpkl_local(data: bytes) -> PlainDateTime:
 class PotentialDstBugWarning(UserWarning):
     """Base class for warnings about potential DST-related bugs in user code.
 
-    This is not raised directly, but serves as the parent for
-    :class:`~whenever.DaysNotAlways24HoursWarning`,
-    :class:`~whenever.PotentiallyStaleOffsetWarning`, and
-    :class:`~whenever.NaiveArithmeticWarning`.
-    You can catch or filter all DST-related warnings at once
-    by targeting this class.
+    Not raised directly. Subclasses cover three distinct scenarios:
+
+    - :class:`~whenever.DaysAssumed24HoursWarning` — days treated as exact 24-hour units
+    - :class:`~whenever.StaleOffsetWarning` — fixed offset may be wrong after a DST shift
+    - :class:`~whenever.NaiveArithmeticWarning` — exact-time arithmetic without timezone context
+
+    Catching or filtering this base class handles all three at once:
+
+    .. code-block:: python
+
+        import warnings, whenever
+        warnings.filterwarnings("error", category=whenever.PotentialDstBugWarning)
     """
 
 
-class DaysNotAlways24HoursWarning(PotentialDstBugWarning):
-    """Raised when a :class:`~whenever.TimeDelta` operation assumes
-    that calendar days are always exactly 24 hours long.
+class DaysAssumed24HoursWarning(PotentialDstBugWarning):
+    """Raised when days are treated as exactly 24 hours, which may be wrong
+    across a DST transition.
 
-    Due to DST transitions, a calendar day in a specific timezone
-    can be 23 or 25 hours (or even other lengths in rare cases).
-    When you add days using exact-time arithmetic (i.e. treating
-    each day as 86,400 seconds), the result may be off by the
-    length of the DST transition.
+    :class:`~whenever.TimeDelta` always represents exact time.
+    Constructing one with ``days`` or ``weeks`` kwargs converts those units
+    to nanoseconds using fixed 86400-second days. If you later add this delta
+    to a :class:`~whenever.ZonedDateTime` on a day where clocks spring forward
+    or fall back, the local time of the result will be off by the transition
+    length (usually one hour).
 
-    The typical fix is to use calendar-based arithmetic
-    (e.g. :class:`~whenever.ItemizedDelta`) instead of exact-time
-    shifts when the number of calendar days matters.
-    Suppress this warning by passing ``assume_24h_days=True``
-    (or Python's standard warning filters) if 24-hour days are
-    intentional.
+    .. rubric:: When it can occur
+
+    .. code-block:: python
+
+        from whenever import TimeDelta, ZonedDateTime
+
+        # TimeDelta(days=1) is exactly 86 400 seconds — no DST awareness.
+        delta = TimeDelta(days=1)  # DaysAssumed24HoursWarning
+
+        # Adding it to a ZonedDateTime on a spring-forward day gives the
+        # wrong local time:
+        eve = ZonedDateTime(2025, 3, 30, 12, tz="Europe/Amsterdam")
+        eve + delta
+        # ZonedDateTime("2025-03-31 13:00:00+02:00[Europe/Amsterdam]")
+        # ^^ 13:00, not 12:00 — one hour lost to the DST transition
+
+    .. rubric:: How to fix it
+
+    Use calendar-based arithmetic directly on the datetime to preserve
+    local time across transitions:
+
+    .. code-block:: python
+
+        eve.add(days=1)
+        # ZonedDateTime("2025-03-31 12:00:00+02:00[Europe/Amsterdam]")  ✓
+
+    To suppress when exact 24-hour arithmetic is genuinely intended, pass
+    ``days_assumed_24h_ok=True`` (or use Python's standard warning filters):
+
+    .. code-block:: python
+
+        TimeDelta(days=1, days_assumed_24h_ok=True)
     """
 
 
-class PotentiallyStaleOffsetWarning(PotentialDstBugWarning):
-    """Raised when an operation on an :class:`~whenever.OffsetDateTime` may
-    result in a datetime with an incorrect UTC offset.
+class StaleOffsetWarning(PotentialDstBugWarning):
+    """Raised when an :class:`~whenever.OffsetDateTime` operation may
+    silently preserve an incorrect UTC offset.
 
-    A fixed UTC offset (e.g. ``+02:00``) carries no timezone rules--it doesn't
-    know about DST, historical offset changes, or future policy decisions that
-    could change which offset a region observes. After shifting, rounding, or
-    replacing fields of an ``OffsetDateTime``, the original offset is preserved
-    verbatim. If the region has since changed its rules, the preserved offset
-    may be wrong, silently producing a timestamp that is off by the difference.
+    A fixed UTC offset (e.g. ``+02:00``) carries no timezone rules — it doesn't
+    know about DST, historical offset changes, or future policy decisions.
+    After shifting, rounding, or replacing fields of an
+    :class:`~whenever.OffsetDateTime`, the original offset is kept verbatim.
+    If the region's rules changed since that offset was recorded, the result
+    is a timestamp that is off by the difference — silently.
 
-    The typical fix is to work with :class:`~whenever.ZonedDateTime` instead,
-    which always keeps the offset in sync with the timezone rules.
-    Alternatively, suppress this warning by passing
-    ``stale_offset_ok=True``
-    (or Python's standard warning filters) when the fixed offset is intentional
-    and correct.
+    .. rubric:: When it can occur
+
+    .. code-block:: python
+
+        from whenever import OffsetDateTime
+
+        # Denver is UTC-7 in winter, UTC-6 in summer.
+        # On 2024-03-10, clocks spring forward at 2:00 AM.
+        d = OffsetDateTime(2024, 3, 9, 13, offset=-7)
+        d.add(hours=24)  # StaleOffsetWarning
+        # OffsetDateTime("2024-03-10 13:00:00-07:00")
+        # ^^ -07:00 is wrong; Denver is -06:00 on this date
+
+    .. rubric:: How to fix it
+
+    Convert to :class:`~whenever.ZonedDateTime` first so the offset updates
+    automatically with the timezone rules:
+
+    .. code-block:: python
+
+        d.assume_tz("America/Denver").add(hours=24)
+        # ZonedDateTime("2024-03-10 14:00:00-06:00[America/Denver]")  ✓
+
+    To suppress when the fixed offset is deliberate and known to be correct,
+    pass ``stale_offset_ok=True`` (or use Python's standard warning filters):
+
+    .. code-block:: python
+
+        d.add(hours=24, stale_offset_ok=True)
     """
 
 
@@ -9356,25 +9405,48 @@ class NaiveArithmeticWarning(PotentialDstBugWarning):
     """Raised when exact-time arithmetic is performed on a
     :class:`~whenever.PlainDateTime` without timezone context.
 
-    A :class:`~whenever.PlainDateTime` carries no timezone information.
-    When you add or subtract exact time units (hours, minutes, seconds) or
-    measure the difference between two :class:`~whenever.PlainDateTime` values,
-    the computation treats every hour as equal. This warning is always emitted
-    because there is no way to know whether a timezone transition falls in the
-    interval--if one does, the result may be off by an hour or more.
+    :class:`~whenever.PlainDateTime` carries no timezone information, so it
+    can't account for DST transitions. When you add or subtract exact time
+    units (hours, minutes, seconds) or measure the exact difference between
+    two :class:`~whenever.PlainDateTime` values, the computation treats every
+    hour as equal. If a timezone transition falls in the interval, the result
+    may be off by an hour or more.
 
-    For example, adding 2 hours to ``2023-03-26 01:30`` (Amsterdam) gives
-    ``03:30``, but clocks jumped from 02:00 to 03:00 that morning, so only
-    1 real hour has passed.
+    .. rubric:: When it can occur
 
-    The typical fix is to call :meth:`~whenever.PlainDateTime.assume_tz` first
-    so the timezone is known, then perform the arithmetic on the resulting
-    :class:`~whenever.ZonedDateTime`.
-    Suppress by passing ``naive_arithmetic_ok=True``
-    (or Python's standard warning filters) if you: (a) explicitly accept
-    potentially incorrect results, (b) know no transitions occur in the
-    interval, or (c) are working with clock times not representing a real-world
-    timezone (e.g. a simulation).
+    .. code-block:: python
+
+        from whenever import PlainDateTime
+
+        # On 2023-10-29, Amsterdam clocks fall back at 3:00 AM.
+        # PlainDateTime has no knowledge of this.
+        d = PlainDateTime(2023, 10, 29, 1, 30)
+        d.add(hours=2)  # NaiveArithmeticWarning
+        # PlainDateTime("2023-10-29 03:30:00")
+        # ^^ only 1 real hour passed in Amsterdam (clocks went back)
+
+        # Also emitted for exact-unit differences:
+        d2 = PlainDateTime(2023, 10, 30, 1, 30)
+        d2 - d  # NaiveArithmeticWarning
+
+    .. rubric:: How to fix it
+
+    Attach a timezone with :meth:`~whenever.PlainDateTime.assume_tz` first,
+    then perform arithmetic on the resulting :class:`~whenever.ZonedDateTime`:
+
+    .. code-block:: python
+
+        d.assume_tz("Europe/Amsterdam").add(hours=2)
+        # ZonedDateTime("2023-10-29 02:30:00+01:00[Europe/Amsterdam]")  ✓
+
+    To suppress when timezone context doesn't apply (e.g. simulations,
+    clock times not tied to a real-world timezone, or when you know no
+    transitions occur in the interval), pass ``naive_arithmetic_ok=True``
+    (or use Python's standard warning filters):
+
+    .. code-block:: python
+
+        d.add(hours=2, naive_arithmetic_ok=True)
     """
 
 
@@ -9523,7 +9595,7 @@ DAYS_NOT_ALWAYS_24H_MSG = (
     "If you're working with UTC, or deliberately want fixed-length days, this is correct. "
     "For DST-aware operations, consider using ZonedDateTime arithmetic instead, "
     "or passing the `relative_to` argument where available. "
-    "Pass `assume_24h_days=True` to suppress this warning, "
+    "Pass `days_assumed_24h_ok=True` to suppress this warning, "
     "or use Python's standard warning filters. "
     "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )
@@ -9563,7 +9635,7 @@ def _from_epoch_offset(ts: int, offset: int) -> _datetime:
         return _datetime.fromtimestamp(local_ts, _UTC).replace(
             tzinfo=mk_fixed_tzinfo(offset)
         )
-    except (OSError, OverflowError, ValueError):
+    except (OSError, OverflowError, ValueError):  # pragma: no cover
         return (_EPOCH_DT + _timedelta(seconds=local_ts)).replace(
             tzinfo=mk_fixed_tzinfo(offset)
         )
@@ -9687,8 +9759,8 @@ def _plain_since(
     b: PlainDateTime,
     total: DeltaUnitStr | None,
     in_units: Sequence[DeltaUnitStr] | None,
-    round_mode: RoundModeStr = _UNSET,
-    round_increment: int = _UNSET,
+    round_mode: RoundModeStr = UNSET,
+    round_increment: int = UNSET,
     emit_warn: bool = True,
 ) -> ItemizedDelta | float:
     """Shared since() implementation for PlainDateTime and OffsetDateTime.
@@ -9697,14 +9769,14 @@ def _plain_since(
     if total is not None:
         if in_units is not None:
             raise TypeError("Cannot specify both 'total' and 'in_units'")
-        if round_mode is not _UNSET or round_increment is not _UNSET:
+        if round_mode is not UNSET or round_increment is not UNSET:
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
             )
         # Warn if the requested unit is an exact time unit.
         # Calendar units (years/months/weeks/days) don't involve clock time,
         # so there's no DST ambiguity.
-        if emit_warn and total in _EXACT_TIME_UNITS:
+        if emit_warn and total in EXACT_UNITS_STRICT:
             warn(
                 PLAIN_DIFF_UNAWARE_MSG,
                 NaiveArithmeticWarning,
@@ -9715,8 +9787,8 @@ def _plain_since(
     elif in_units is None:
         raise TypeError("Must specify either `total` or `in_units`")
 
-    effective_increment = 1 if round_increment is _UNSET else round_increment
-    effective_round_mode = "trunc" if round_mode is _UNSET else round_mode
+    effective_increment = 1 if round_increment is UNSET else round_increment
+    effective_round_mode = "trunc" if round_mode is UNSET else round_mode
     units = _normalize_units(in_units, valid_units=DELTA_UNITS)
     cal_units, exact_units = _split_calendar_and_exact_units(units)
 
@@ -9805,8 +9877,8 @@ def _offset_since(
     b: OffsetDateTime,
     total: DeltaUnitStr | None,
     in_units: Sequence[DeltaUnitStr] | None,
-    round_mode: RoundModeStr = _UNSET,
-    round_increment: int = _UNSET,
+    round_mode: RoundModeStr = UNSET,
+    round_increment: int = UNSET,
 ) -> ItemizedDelta | float:
     """since() implementation for OffsetDateTime.
     Calendar units require both datetimes to have the same offset.
@@ -9816,7 +9888,7 @@ def _offset_since(
     if total is not None:
         if in_units is not None:
             raise TypeError("Cannot specify both 'total' and 'in_units'")
-        if round_mode is not _UNSET or round_increment is not _UNSET:
+        if round_mode is not UNSET or round_increment is not UNSET:
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
             )
@@ -9833,8 +9905,8 @@ def _offset_since(
     elif in_units is None:
         raise TypeError("Must specify either `total` or `in_units`")
 
-    effective_increment = 1 if round_increment is _UNSET else round_increment
-    effective_round_mode = "trunc" if round_mode is _UNSET else round_mode
+    effective_increment = 1 if round_increment is UNSET else round_increment
+    effective_round_mode = "trunc" if round_mode is UNSET else round_mode
     resolved_units = _normalize_units(in_units, valid_units=DELTA_UNITS)
     cal_units, exact_units = _split_calendar_and_exact_units(resolved_units)
 
@@ -9874,8 +9946,8 @@ def _zoned_since(
     b: ZonedDateTime,
     total: DeltaUnitStr | None,
     in_units: Sequence[DeltaUnitStr] | None,
-    round_mode: RoundModeStr = _UNSET,
-    round_increment: int = _UNSET,
+    round_mode: RoundModeStr = UNSET,
+    round_increment: int = UNSET,
 ) -> ItemizedDelta | float:
     """Shared since() implementation for ZonedDateTime.
     Calendar units require both datetimes to have the same timezone.
@@ -9883,7 +9955,7 @@ def _zoned_since(
     if total is not None:
         if in_units is not None:
             raise TypeError("Cannot specify both 'total' and 'in_units'")
-        if round_mode is not _UNSET or round_increment is not _UNSET:
+        if round_mode is not UNSET or round_increment is not UNSET:
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
             )
@@ -9896,8 +9968,8 @@ def _zoned_since(
     elif in_units is None:
         raise TypeError("Must specify either `total` or `in_units`")
 
-    effective_increment = 1 if round_increment is _UNSET else round_increment
-    effective_round_mode = "trunc" if round_mode is _UNSET else round_mode
+    effective_increment = 1 if round_increment is UNSET else round_increment
+    effective_round_mode = "trunc" if round_mode is UNSET else round_mode
     units = _normalize_units(in_units, valid_units=DELTA_UNITS)
     cal_units, exact_units = _split_calendar_and_exact_units(units)
     if cal_units and a.tz != b.tz:
@@ -10021,11 +10093,11 @@ Instant.MIN = Instant._from_py_unchecked(
 )
 Instant.MAX = Instant._from_py_unchecked(
     _datetime.max.replace(tzinfo=_UTC, microsecond=0),
-    999_999_999,
+    _MAX_SUBSEC_NANOS,
 )
 PlainDateTime.MIN = PlainDateTime._from_py_unchecked(_datetime.min, 0)
 PlainDateTime.MAX = PlainDateTime._from_py_unchecked(
-    _datetime.max.replace(microsecond=0), 999_999_999
+    _datetime.max.replace(microsecond=0), _MAX_SUBSEC_NANOS
 )
 
 

@@ -1371,11 +1371,28 @@ class TestNthWeekdayOfMonth:
         with pytest.raises(TypeError):
             Date(2024, 12, 1).nth_weekday_of_month(1, 5)  # type: ignore[arg-type]
 
+    def test_n_zero(self):
+        with pytest.raises(ValueError, match="n must not be 0"):
+            Date(2024, 8, 15).nth_weekday_of_month(0, MONDAY)
+
+    def test_fifth_positive_when_not_exists(self):
+        # February 2023 (non-leap) starts on Wednesday
+        # Only 4 Wednesdays: 1, 8, 15, 22
+        with pytest.raises(ValueError):
+            Date(2023, 2, 1).nth_weekday_of_month(5, WEDNESDAY)
+
     def test_fifth_negative_when_not_exists(self):
         # February 2023 (non-leap) starts on Wednesday
         # Only 4 Fridays: 3, 10, 17, 24
         with pytest.raises(ValueError):
             Date(2023, 2, 1).nth_weekday_of_month(-5, FRIDAY)
+
+    def test_n_out_of_range(self):
+        with pytest.raises(ValueError, match="n must be between -5 and 5"):
+            Date(2024, 12, 1).nth_weekday_of_month(6, MONDAY)
+
+        with pytest.raises(ValueError, match="n must be between -5 and 5"):
+            Date(2024, 12, 1).nth_weekday_of_month(-6, MONDAY)
 
 
 class TestNthWeekday:
@@ -1412,12 +1429,26 @@ class TestNthWeekday:
         with pytest.raises(TypeError):
             Date(2024, 12, 25).nth_weekday(1, 5)  # type: ignore[arg-type]
 
+    def test_n_zero(self):
+        with pytest.raises(ValueError, match="n must not be 0"):
+            Date(2024, 8, 15).nth_weekday(0, MONDAY)
+
     def test_n_too_large(self):
         with pytest.raises(ValueError):
             Date(2024, 12, 25).nth_weekday(6, FRIDAY)
 
         with pytest.raises(ValueError):
             Date(2024, 12, 25).nth_weekday(-6, FRIDAY)
+
+    def test_same_weekday_as_date(self):
+        # 2024-12-25 is a Wednesday. n=1 should return NEXT Wednesday, not self
+        assert Date(2024, 12, 25).nth_weekday(1, WEDNESDAY) == Date(2025, 1, 1)
+
+    def test_same_weekday_as_date_negative(self):
+        # 2024-12-25 is a Wednesday. n=-1 should return PREVIOUS Wednesday
+        assert Date(2024, 12, 25).nth_weekday(-1, WEDNESDAY) == Date(
+            2024, 12, 18
+        )
 
 
 class TestIsoWeekDateConversion:

@@ -41,6 +41,7 @@ __all__ = [
     "Date",
     "YearMonth",
     "MonthDay",
+    "IsoWeekDate",
     "Time",
     "Instant",
     "OffsetDateTime",
@@ -63,8 +64,8 @@ __all__ = [
     "microseconds",
     "nanoseconds",
     # Exceptions/warnings
-    "DaysNotAlways24HoursWarning",
-    "PotentiallyStaleOffsetWarning",
+    "DaysAssumed24HoursWarning",
+    "StaleOffsetWarning",
     "NaiveArithmeticWarning",
     "PotentialDstBugWarning",
     "WheneverDeprecationWarning",
@@ -455,7 +456,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        assume_24h_days: bool = ...,
+        days_assumed_24h_ok: bool = ...,
     ) -> None: ...
     @overload
     def total(
@@ -466,7 +467,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         relative_to: (
             ZonedDateTime | PlainDateTime | OffsetDateTime
         ),  # required for years/months
-        assume_24h_days: bool = ...,
+        days_assumed_24h_ok: bool = ...,
     ) -> float: ...
     @overload
     def total(
@@ -483,7 +484,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         /,
         *,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = ...,
-        assume_24h_days: bool = ...,
+        days_assumed_24h_ok: bool = ...,
     ) -> float: ...
     @overload
     def total(
@@ -492,7 +493,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         /,
         *,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = ...,
-        assume_24h_days: bool = ...,
+        days_assumed_24h_ok: bool = ...,
     ) -> int: ...
     @deprecated("Use total('days') instead")
     def in_days_of_24h(self) -> float: ...
@@ -542,7 +543,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         ] = "trunc",
         round_increment: int = ...,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
-        assume_24h_days: bool = ...,
+        days_assumed_24h_ok: bool = ...,
     ) -> ItemizedDelta: ...
     @overload
     def in_units(
@@ -572,7 +573,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         ] = "trunc",
         round_increment: int = ...,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = ...,
-        assume_24h_days: bool = ...,
+        days_assumed_24h_ok: bool = ...,
     ) -> ItemizedDelta: ...
     def to_stdlib(self) -> _timedelta: ...
     @deprecated("Use to_stdlib() instead")
@@ -607,7 +608,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
             "half_trunc",
             "half_even",
         ] = "half_even",
-        assume_24h_days: bool = ...,
+        days_assumed_24h_ok: bool = ...,
     ) -> Self: ...
     @overload
     def round(
@@ -626,7 +627,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
             "half_trunc",
             "half_even",
         ] = "half_even",
-        assume_24h_days: bool = ...,
+        days_assumed_24h_ok: bool = ...,
     ) -> Self: ...
     @overload
     def add(self, other: TimeDelta, /) -> Self: ...
@@ -2222,7 +2223,7 @@ def available_timezones() -> set[str]: ...
 def reset_system_tz() -> None: ...
 
 class PotentialDstBugWarning(UserWarning): ...
-class DaysNotAlways24HoursWarning(PotentialDstBugWarning): ...
-class PotentiallyStaleOffsetWarning(PotentialDstBugWarning): ...
+class DaysAssumed24HoursWarning(PotentialDstBugWarning): ...
+class StaleOffsetWarning(PotentialDstBugWarning): ...
 class NaiveArithmeticWarning(PotentialDstBugWarning): ...
 class WheneverDeprecationWarning(UserWarning): ...

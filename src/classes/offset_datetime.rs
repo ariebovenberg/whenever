@@ -764,7 +764,7 @@ fn replace_date(
         doc::OFFSET_REPLACE_STALE_MSG,
     )?;
     let &[arg] = args else {
-        raise_type_err("replace() takes exactly 1 positional argument")?
+        raise_type_err("replace_date() takes exactly 1 positional argument")?
     };
     if let Some(date) = arg.extract(state.date_type) {
         OffsetDateTime::new(date, time, offset)
@@ -789,14 +789,14 @@ fn replace_time(
         doc::OFFSET_REPLACE_STALE_MSG,
     )?;
     let &[arg] = args else {
-        raise_type_err("replace() takes exactly 1 positional argument")?
+        raise_type_err("replace_time() takes exactly 1 positional argument")?
     };
     if let Some(time) = arg.extract(state.time_type) {
         OffsetDateTime::new(date, time, offset)
             .ok_or_range_err()?
             .to_obj(cls)
     } else {
-        raise_type_err("date must be a whenever.Time instance")
+        raise_type_err("time must be a whenever.Time instance")
     }
 }
 

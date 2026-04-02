@@ -17,8 +17,8 @@ For a full list of warning types and the operations that trigger them, see the
 {ref}`API reference <api>`:
 {class}`~whenever.PotentialDstBugWarning`,
 {class}`~whenever.NaiveArithmeticWarning`,
-{class}`~whenever.PotentiallyStaleOffsetWarning`, and
-{class}`~whenever.DaysNotAlways24HoursWarning`.
+{class}`~whenever.StaleOffsetWarning`, and
+{class}`~whenever.DaysAssumed24HoursWarning`.
 ```
 
 ## Turn warnings into errors
@@ -45,7 +45,7 @@ To target a specific warning type instead:
 warnings.filterwarnings("error", category=whenever.NaiveArithmeticWarning)
 
 # Only error on potentially stale offset operations (OffsetDateTime):
-warnings.filterwarnings("error", category=whenever.PotentiallyStaleOffsetWarning)
+warnings.filterwarnings("error", category=whenever.StaleOffsetWarning)
 ```
 
 ### In pytest
@@ -105,8 +105,8 @@ DST-related warning accepts a boolean keyword argument that suppresses it:
 
 | Keyword argument | Suppresses | Used on |
 |---|---|---|
-| `assume_24h_days=True` | {class}`~whenever.DaysNotAlways24HoursWarning` | {class}`~whenever.TimeDelta` methods |
-| `stale_offset_ok=True` | {class}`~whenever.PotentiallyStaleOffsetWarning` | {class}`~whenever.OffsetDateTime` methods |
+| `days_assumed_24h_ok=True` | {class}`~whenever.DaysAssumed24HoursWarning` | {class}`~whenever.TimeDelta` methods |
+| `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` methods |
 | `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods |
 
 For example:
@@ -114,8 +114,7 @@ For example:
 ```python
 from whenever import PlainDateTime
 
-# Naive arithmetic is acceptable here: these buses don't run across
-# DST boundaries (all departures are between 06:00 and 22:00).
+# Naive arithmetic is acceptable here because <insert reason>
 next_departure = scheduled.add(hours=1, naive_arithmetic_ok=True)
 ```
 
@@ -150,7 +149,7 @@ import warnings
 import whenever
 
 with warnings.catch_warnings():
-    warnings.simplefilter("ignore", whenever.PotentiallyStaleOffsetWarning)
+    warnings.simplefilter("ignore", whenever.StaleOffsetWarning)
     # ... all stale-offset warnings suppressed inside this block
 ```
 

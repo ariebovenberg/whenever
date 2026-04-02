@@ -151,7 +151,7 @@ class TimeZone:
             return (self._utc_epochs[idx], self._utc_offsets[idx])
         if self._end is not None:
             return self._end.next_transition(t)
-        return None
+        return None  # pragma: no cover
 
     def prev_transition(self, t: EpochSecs) -> tuple[EpochSecs, Offset] | None:
         """Get the (epoch, new_offset) of the previous UTC offset transition

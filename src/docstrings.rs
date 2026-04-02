@@ -50,22 +50,49 @@ A duration with both a date and time component.
     and time parts, losing the original fields.
     ``ItemizedDelta`` preserves the exact fields it was created with.
 ";
-pub(crate) const DAYSNOTALWAYS24HOURSWARNING: &CStr = c"\
-Raised when a :class:`~whenever.TimeDelta` operation assumes
-that calendar days are always exactly 24 hours long.
+pub(crate) const DAYSASSUMED24HOURSWARNING: &CStr = c"\
+Raised when days are treated as exactly 24 hours, which may be wrong
+across a DST transition.
 
-Due to DST transitions, a calendar day in a specific timezone
-can be 23 or 25 hours (or even other lengths in rare cases).
-When you add days using exact-time arithmetic (i.e. treating
-each day as 86,400 seconds), the result may be off by the
-length of the DST transition.
+:class:`~whenever.TimeDelta` always represents exact time.
+Constructing one with ``days`` or ``weeks`` kwargs converts those units
+to nanoseconds using fixed 86400-second days. If you later add this delta
+to a :class:`~whenever.ZonedDateTime` on a day where clocks spring forward
+or fall back, the local time of the result will be off by the transition
+length (usually one hour).
 
-The typical fix is to use calendar-based arithmetic
-(e.g. :class:`~whenever.ItemizedDelta`) instead of exact-time
-shifts when the number of calendar days matters.
-Suppress this warning by passing ``assume_24h_days=True``
-(or Python's standard warning filters) if 24-hour days are
-intentional.
+.. rubric:: When it can occur
+
+.. code-block:: python
+
+    from whenever import TimeDelta, ZonedDateTime
+
+    # TimeDelta(days=1) is exactly 86 400 seconds — no DST awareness.
+    delta = TimeDelta(days=1)  # DaysAssumed24HoursWarning
+
+    # Adding it to a ZonedDateTime on a spring-forward day gives the
+    # wrong local time:
+    eve = ZonedDateTime(2025, 3, 30, 12, tz=\"Europe/Amsterdam\")
+    eve + delta
+    # ZonedDateTime(\"2025-03-31 13:00:00+02:00[Europe/Amsterdam]\")
+    # ^^ 13:00, not 12:00 — one hour lost to the DST transition
+
+.. rubric:: How to fix it
+
+Use calendar-based arithmetic directly on the datetime to preserve
+local time across transitions:
+
+.. code-block:: python
+
+    eve.add(days=1)
+    # ZonedDateTime(\"2025-03-31 12:00:00+02:00[Europe/Amsterdam]\")  ✓
+
+To suppress when exact 24-hour arithmetic is genuinely intended, pass
+``days_assumed_24h_ok=True`` (or use Python's standard warning filters):
+
+.. code-block:: python
+
+    TimeDelta(days=1, days_assumed_24h_ok=True)
 ";
 pub(crate) const IMPLICITLYIGNORINGDST: &CStr = c"\
 Raised when an operation would silently ignore DST transitions.
@@ -241,25 +268,48 @@ pub(crate) const NAIVEARITHMETICWARNING: &CStr = c"\
 Raised when exact-time arithmetic is performed on a
 :class:`~whenever.PlainDateTime` without timezone context.
 
-A :class:`~whenever.PlainDateTime` carries no timezone information.
-When you add or subtract exact time units (hours, minutes, seconds) or
-measure the difference between two :class:`~whenever.PlainDateTime` values,
-the computation treats every hour as equal. This warning is always emitted
-because there is no way to know whether a timezone transition falls in the
-interval--if one does, the result may be off by an hour or more.
+:class:`~whenever.PlainDateTime` carries no timezone information, so it
+can't account for DST transitions. When you add or subtract exact time
+units (hours, minutes, seconds) or measure the exact difference between
+two :class:`~whenever.PlainDateTime` values, the computation treats every
+hour as equal. If a timezone transition falls in the interval, the result
+may be off by an hour or more.
 
-For example, adding 2 hours to ``2023-03-26 01:30`` (Amsterdam) gives
-``03:30``, but clocks jumped from 02:00 to 03:00 that morning, so only
-1 real hour has passed.
+.. rubric:: When it can occur
 
-The typical fix is to call :meth:`~whenever.PlainDateTime.assume_tz` first
-so the timezone is known, then perform the arithmetic on the resulting
-:class:`~whenever.ZonedDateTime`.
-Suppress by passing ``naive_arithmetic_ok=True``
-(or Python's standard warning filters) if you: (a) explicitly accept
-potentially incorrect results, (b) know no transitions occur in the
-interval, or (c) are working with clock times not representing a real-world
-timezone (e.g. a simulation).
+.. code-block:: python
+
+    from whenever import PlainDateTime
+
+    # On 2023-10-29, Amsterdam clocks fall back at 3:00 AM.
+    # PlainDateTime has no knowledge of this.
+    d = PlainDateTime(2023, 10, 29, 1, 30)
+    d.add(hours=2)  # NaiveArithmeticWarning
+    # PlainDateTime(\"2023-10-29 03:30:00\")
+    # ^^ only 1 real hour passed in Amsterdam (clocks went back)
+
+    # Also emitted for exact-unit differences:
+    d2 = PlainDateTime(2023, 10, 30, 1, 30)
+    d2 - d  # NaiveArithmeticWarning
+
+.. rubric:: How to fix it
+
+Attach a timezone with :meth:`~whenever.PlainDateTime.assume_tz` first,
+then perform arithmetic on the resulting :class:`~whenever.ZonedDateTime`:
+
+.. code-block:: python
+
+    d.assume_tz(\"Europe/Amsterdam\").add(hours=2)
+    # ZonedDateTime(\"2023-10-29 02:30:00+01:00[Europe/Amsterdam]\")  ✓
+
+To suppress when timezone context doesn't apply (e.g. simulations,
+clock times not tied to a real-world timezone, or when you know no
+transitions occur in the interval), pass ``naive_arithmetic_ok=True``
+(or use Python's standard warning filters):
+
+.. code-block:: python
+
+    d.add(hours=2, naive_arithmetic_ok=True)
 ";
 pub(crate) const OFFSETDATETIME: &CStr = c"\
 A datetime with a fixed UTC offset.
@@ -327,35 +377,64 @@ When to use this type:
 pub(crate) const POTENTIALDSTBUGWARNING: &CStr = c"\
 Base class for warnings about potential DST-related bugs in user code.
 
-This is not raised directly, but serves as the parent for
-:class:`~whenever.DaysNotAlways24HoursWarning`,
-:class:`~whenever.PotentiallyStaleOffsetWarning`, and
-:class:`~whenever.NaiveArithmeticWarning`.
-You can catch or filter all DST-related warnings at once
-by targeting this class.
-";
-pub(crate) const POTENTIALLYSTALEOFFSETWARNING: &CStr = c"\
-Raised when an operation on an :class:`~whenever.OffsetDateTime` may
-result in a datetime with an incorrect UTC offset.
+Not raised directly. Subclasses cover three distinct scenarios:
 
-A fixed UTC offset (e.g. ``+02:00``) carries no timezone rules--it doesn't
-know about DST, historical offset changes, or future policy decisions that
-could change which offset a region observes. After shifting, rounding, or
-replacing fields of an ``OffsetDateTime``, the original offset is preserved
-verbatim. If the region has since changed its rules, the preserved offset
-may be wrong, silently producing a timestamp that is off by the difference.
+- :class:`~whenever.DaysAssumed24HoursWarning` — days treated as exact 24-hour units
+- :class:`~whenever.StaleOffsetWarning` — fixed offset may be wrong after a DST shift
+- :class:`~whenever.NaiveArithmeticWarning` — exact-time arithmetic without timezone context
 
-The typical fix is to work with :class:`~whenever.ZonedDateTime` instead,
-which always keeps the offset in sync with the timezone rules.
-Alternatively, suppress this warning by passing
-``stale_offset_ok=True``
-(or Python's standard warning filters) when the fixed offset is intentional
-and correct.
+Catching or filtering this base class handles all three at once:
+
+.. code-block:: python
+
+    import warnings, whenever
+    warnings.filterwarnings(\"error\", category=whenever.PotentialDstBugWarning)
 ";
 pub(crate) const REPEATEDTIME: &CStr = c"\
 A datetime is repeated in a timezone, e.g. because of DST";
 pub(crate) const SKIPPEDTIME: &CStr = c"\
 A datetime is skipped in a timezone, e.g. because of DST";
+pub(crate) const STALEOFFSETWARNING: &CStr = c"\
+Raised when an :class:`~whenever.OffsetDateTime` operation may
+silently preserve an incorrect UTC offset.
+
+A fixed UTC offset (e.g. ``+02:00``) carries no timezone rules — it doesn't
+know about DST, historical offset changes, or future policy decisions.
+After shifting, rounding, or replacing fields of an
+:class:`~whenever.OffsetDateTime`, the original offset is kept verbatim.
+If the region's rules changed since that offset was recorded, the result
+is a timestamp that is off by the difference — silently.
+
+.. rubric:: When it can occur
+
+.. code-block:: python
+
+    from whenever import OffsetDateTime
+
+    # Denver is UTC-7 in winter, UTC-6 in summer.
+    # On 2024-03-10, clocks spring forward at 2:00 AM.
+    d = OffsetDateTime(2024, 3, 9, 13, offset=-7)
+    d.add(hours=24)  # StaleOffsetWarning
+    # OffsetDateTime(\"2024-03-10 13:00:00-07:00\")
+    # ^^ -07:00 is wrong; Denver is -06:00 on this date
+
+.. rubric:: How to fix it
+
+Convert to :class:`~whenever.ZonedDateTime` first so the offset updates
+automatically with the timezone rules:
+
+.. code-block:: python
+
+    d.assume_tz(\"America/Denver\").add(hours=24)
+    # ZonedDateTime(\"2024-03-10 14:00:00-06:00[America/Denver]\")  ✓
+
+To suppress when the fixed offset is deliberate and known to be correct,
+pass ``stale_offset_ok=True`` (or use Python's standard warning filters):
+
+.. code-block:: python
+
+    d.add(hours=24, stale_offset_ok=True)
+";
 pub(crate) const TIME: &CStr = c"\
 Time of day without a date component.
 
@@ -552,9 +631,6 @@ PlainDateTime(\"2021-01-02 12:30:00\")
 
 You can use methods like :meth:`~PlainDateTime.assume_utc`
 or :meth:`~PlainDateTime.assume_tz` to find the corresponding exact time.
-
->>> d.at(Time(12, 30)).assume_tz(\"America/New_York\")
-ZonedDateTime(\"2021-01-02 12:30:00-05:00[America/New_York]\")
 ";
 pub(crate) const DATE_DAY: &CStr = c"\
 The day component of the date
@@ -612,12 +688,12 @@ Calculate the number of days from this date to another date.
 pub(crate) const DATE_END_OF: &CStr = c"\
 The end of the given calendar unit
 
-See :meth:`start_of` for valid units.
-
 >>> Date(2024, 8, 15).end_of(\"year\")
 Date(\"2024-12-31\")
 >>> Date(2024, 8, 15).end_of(\"month\")
 Date(\"2024-08-31\")
+
+See also :meth:`start_of`
 ";
 pub(crate) const DATE_FORMAT: &CStr = c"\
 Format as a custom pattern string.
@@ -808,17 +884,15 @@ ItemizedDateDelta | float
 pub(crate) const DATE_START_OF: &CStr = c"\
 The start of the given calendar unit
 
-Valid units: ``\"year\"``, ``\"month\"``
+>>> Date(2024, 8, 15).start_of(\"year\")
+Date(\"2024-01-01\")
+>>> Date(2024, 8, 15).start_of(\"month\")
+Date(\"2024-08-01\")
 
 Note
 ----
 ``\"week\"`` is not a valid unit because weeks do not have
 a universal start day. Use :meth:`nth_weekday` instead.
-
->>> Date(2024, 8, 15).start_of(\"year\")
-Date(\"2024-01-01\")
->>> Date(2024, 8, 15).start_of(\"month\")
-Date(\"2024-08-01\")
 ";
 pub(crate) const DATE_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0)
@@ -1304,7 +1378,7 @@ relative_to
       when the conversion crosses the calendar/exact-time boundary
       (i.e. the delta or output mixes calendar and exact-time units).
       Pure calendar-to-calendar or exact-to-exact conversions do not warn.
-    - :class:`OffsetDateTime`: emits :class:`PotentiallyStaleOffsetWarning`
+    - :class:`OffsetDateTime`: emits :class:`StaleOffsetWarning`
       when the delta contains calendar units (years, months, weeks, days)
       **or** the output units include calendar units
 ";
@@ -1365,12 +1439,12 @@ relative_to
       when the conversion crosses the calendar/exact-time boundary
       (i.e. the delta or target unit mixes calendar and exact-time units).
       Pure calendar-to-calendar or exact-to-exact conversions do not warn.
-    - :class:`OffsetDateTime`: emits :class:`PotentiallyStaleOffsetWarning`
+    - :class:`OffsetDateTime`: emits :class:`StaleOffsetWarning`
       when the delta contains calendar units (years, months, weeks, days)
       **or** the target unit is a calendar unit
 ";
 pub(crate) const OFFSETDATETIME_ADD: &CStr = c"\
-add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=False)
+add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=..., stale_offset_ok=False)
 --
 
 Add a time amount to this datetime.
@@ -1403,10 +1477,10 @@ end_of($self, unit, /, *, stale_offset_ok=False)
 
 The end of the given unit
 
-See :meth:`start_of` for valid units and stale offset behavior.
-
 >>> OffsetDateTime(2024, 8, 15, 14, 30, offset=5).end_of(\"day\")
 OffsetDateTime(\"2024-08-15 23:59:59.999999999+05:00\")
+
+See also :meth:`start_of`
 ";
 pub(crate) const OFFSETDATETIME_FORMAT: &CStr = c"\
 Format as a custom pattern string.
@@ -1544,7 +1618,7 @@ Parse a datetime with offset using the standard library ``strptime()`` method.
 
 ";
 pub(crate) const OFFSETDATETIME_REPLACE: &CStr = c"\
-replace($self, /, *, year=None, month=None, weeks=0, day=None, hour=None, minute=None, second=None, nanosecond=None, offset=None, ignore_dst=False)
+replace($self, /, *, year=None, month=None, day=None, hour=None, minute=None, second=None, nanosecond=None, offset=None, ignore_dst=..., stale_offset_ok=False)
 --
 
 Construct a new instance with the given fields replaced.
@@ -1624,8 +1698,8 @@ start_of($self, unit, /, *, stale_offset_ok=False)
 
 The start of the given unit
 
-Valid units: ``\"year\"``, ``\"month\"``, ``\"day\"``,
-``\"hour\"``, ``\"minute\"``, ``\"second\"``
+>>> OffsetDateTime(2024, 8, 15, 14, 30, offset=5).start_of(\"day\")
+OffsetDateTime(\"2024-08-15 00:00:00+05:00\")
 
 Note
 ----
@@ -1636,14 +1710,11 @@ a universal start day. Use :meth:`~Date.nth_weekday` on the
 Warning
 -------
 The offset is preserved, which may not be correct for the
-resulting time. See :class:`~whenever.PotentiallyStaleOffsetWarning`.
+resulting time. See :class:`~whenever.StaleOffsetWarning`.
 Pass ``stale_offset_ok=True`` to suppress.
-
->>> OffsetDateTime(2024, 8, 15, 14, 30, offset=5).start_of(\"day\")
-OffsetDateTime(\"2024-08-15 00:00:00+05:00\")
 ";
 pub(crate) const OFFSETDATETIME_SUBTRACT: &CStr = c"\
-subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=False)
+subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=..., stale_offset_ok=False)
 --
 
 Subtract a time amount from this datetime.
@@ -1656,7 +1727,7 @@ until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=.
 
 Inverse of the ``since()`` method. See :meth:`since` for more information.";
 pub(crate) const PLAINDATETIME_ADD: &CStr = c"\
-add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=False)
+add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=..., naive_arithmetic_ok=False)
 --
 
 Add a time amount to this datetime.
@@ -1743,12 +1814,12 @@ to a ``ZonedDateTime`` first for accurate results.
 pub(crate) const PLAINDATETIME_END_OF: &CStr = c"\
 The end of the given unit
 
-See :meth:`start_of` for valid units.
-
 >>> PlainDateTime(2024, 8, 15, 14, 30, 45).end_of(\"day\")
 PlainDateTime(\"2024-08-15 23:59:59.999999999\")
 >>> PlainDateTime(2024, 8, 15, 14, 30, 45).end_of(\"hour\")
 PlainDateTime(\"2024-08-15 14:59:59.999999999\")
+
+See also :meth:`start_of`
 ";
 pub(crate) const PLAINDATETIME_FORMAT: &CStr = c"\
 Format as a custom pattern string.
@@ -1845,22 +1916,19 @@ ItemizedDelta(\"PT25h15m\")
 pub(crate) const PLAINDATETIME_START_OF: &CStr = c"\
 The start of the given unit
 
-Valid units: ``\"year\"``, ``\"month\"``, ``\"day\"``,
-``\"hour\"``, ``\"minute\"``, ``\"second\"``
+>>> PlainDateTime(2024, 8, 15, 14, 30, 45).start_of(\"day\")
+PlainDateTime(\"2024-08-15 00:00:00\")
+>>> PlainDateTime(2024, 8, 15, 14, 30, 45).start_of(\"hour\")
+PlainDateTime(\"2024-08-15 14:00:00\")
 
 Note
 ----
 ``\"week\"`` is not a valid unit because weeks do not have
 a universal start day. Use :meth:`~Date.nth_weekday` on the
 :meth:`date` instead.
-
->>> PlainDateTime(2024, 8, 15, 14, 30, 45).start_of(\"day\")
-PlainDateTime(\"2024-08-15 00:00:00\")
->>> PlainDateTime(2024, 8, 15, 14, 30, 45).start_of(\"hour\")
-PlainDateTime(\"2024-08-15 14:00:00\")
 ";
 pub(crate) const PLAINDATETIME_SUBTRACT: &CStr = c"\
-subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=False)
+subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=..., naive_arithmetic_ok=False)
 --
 
 Subtract a time amount from this datetime.
@@ -2011,7 +2079,7 @@ add($self, arg=..., /, **kwargs)
 Add time to this delta, returning a new delta.
 
 Days and weeks are treated as exact 24-hour and 168-hour units,
-which emits a :class:`~whenever.DaysNotAlways24HoursWarning`.";
+which emits a :class:`~whenever.DaysAssumed24HoursWarning`.";
 pub(crate) const TIMEDELTA_FORMAT_ISO: &CStr = c"\
 Format as the *popular interpretation* of the ISO 8601 duration format.
 May not strictly adhere to (all versions of) the standard.
@@ -2122,7 +2190,7 @@ The total size in seconds
     Use :meth:`total` with ``'seconds'`` instead.
 ";
 pub(crate) const TIMEDELTA_IN_UNITS: &CStr = c"\
-in_units($self, units, /, *, round_mode='trunc', round_increment=1, relative_to=..., assume_24h_days=False)
+in_units($self, units, /, *, round_mode='trunc', round_increment=1, relative_to=..., days_assumed_24h_ok=False)
 --
 
 Convert to a :class:`ItemizedDelta` with the specified units
@@ -2155,7 +2223,7 @@ relative_to
     - :class:`PlainDateTime`: does not account for time zones; emits
       :class:`NaiveArithmeticWarning`
     - :class:`OffsetDateTime`: does not account for DST changes; emits
-      :class:`PotentiallyStaleOffsetWarning`
+      :class:`StaleOffsetWarning`
 ";
 pub(crate) const TIMEDELTA_PARSE_ISO: &CStr = c"\
 Parse the *popular interpretation* of the ISO 8601 duration format.
@@ -2180,7 +2248,7 @@ Convert to a :class:`~datetime.timedelta`
     Use :meth:`to_stdlib` instead.
 ";
 pub(crate) const TIMEDELTA_ROUND: &CStr = c"\
-round($self, unit='second', /, *, increment=1, mode='half_even', assume_24h_days=False)
+round($self, unit='second', /, *, increment=1, mode='half_even', days_assumed_24h_ok=False)
 --
 
 Round the delta to the specified unit and increment,
@@ -2203,7 +2271,7 @@ subtract($self, arg=..., /, **kwargs)
 Subtract time from this delta, returning a new delta.
 
 Days and weeks are treated as exact 24-hour and 168-hour units,
-which emits a :class:`~whenever.DaysNotAlways24HoursWarning`.";
+which emits a :class:`~whenever.DaysAssumed24HoursWarning`.";
 pub(crate) const TIMEDELTA_TO_STDLIB: &CStr = c"\
 Convert to a :class:`~datetime.timedelta`
 
@@ -2217,7 +2285,7 @@ Nanoseconds are truncated to microseconds.
 If you need more control over rounding, use :meth:`round` first.
 ";
 pub(crate) const TIMEDELTA_TOTAL: &CStr = c"\
-total($self, unit, relative_to=..., _warn_stacklevel=2, assume_24h_days=False)
+total($self, unit, relative_to=..., _warn_stacklevel=2, days_assumed_24h_ok=False)
 --
 
 The total size in the given unit, as a float (or int for nanoseconds)
@@ -2229,7 +2297,7 @@ argument is required to determine the actual duration of each unit:
 - :class:`PlainDateTime`: no timezone context; emits
   :class:`NaiveArithmeticWarning`
 - :class:`OffsetDateTime`: fixed offset; emits
-  :class:`PotentiallyStaleOffsetWarning`
+  :class:`StaleOffsetWarning`
 
 >>> d = TimeDelta(hours=1, minutes=30)
 >>> d.total('minutes')
@@ -2256,9 +2324,9 @@ The duration between the start of the current day and the next.
 This is usually 24 hours, but may be different due to timezone transitions.
 
 >>> ZonedDateTime(2020, 8, 15, tz=\"Europe/London\").day_length()
-TimeDelta(24:00:00)
+TimeDelta(\"PT24h\")
 >>> ZonedDateTime(2023, 10, 29, tz=\"Europe/Amsterdam\").day_length()
-TimeDelta(25:00:00)
+TimeDelta(\"PT25h\")
 ";
 pub(crate) const ZONEDDATETIME_DST_OFFSET: &CStr = c"\
 The DST offset (adjustment) as a :class:`TimeDelta`.
@@ -2283,10 +2351,10 @@ returns a negative value during winter.
 pub(crate) const ZONEDDATETIME_END_OF: &CStr = c"\
 The end of the given unit
 
-See :meth:`start_of` for valid units and timezone behavior.
-
 >>> ZonedDateTime(2024, 8, 15, 14, 30, tz=\"America/New_York\").end_of(\"day\")
 ZonedDateTime(\"2024-08-15 23:59:59.999999999-04:00[America/New_York]\")
+
+See also :meth:`start_of`
 ";
 pub(crate) const ZONEDDATETIME_FORMAT: &CStr = c"\
 Format as a custom pattern string.
@@ -2442,7 +2510,7 @@ Returns ``None`` if the timezone has no earlier transitions
 ZonedDateTime(2023-11-05 01:00:00-05:00[America/New_York])
 ";
 pub(crate) const ZONEDDATETIME_REPLACE: &CStr = c"\
-replace($self, /, *, year=None, month=None, weeks=0, day=None, hour=None, minute=None, second=None, nanosecond=None, tz=None, disambiguate)
+replace($self, /, *, year=None, month=None, day=None, hour=None, minute=None, second=None, nanosecond=None, tz=None, disambiguate)
 --
 
 Construct a new instance with the given fields replaced.
@@ -2519,8 +2587,10 @@ both datetimes must have the same timezone.
 pub(crate) const ZONEDDATETIME_START_OF: &CStr = c"\
 The start of the given unit
 
-Valid units: ``\"year\"``, ``\"month\"``, ``\"day\"``,
-``\"hour\"``, ``\"minute\"``, ``\"second\"``
+>>> ZonedDateTime(2024, 8, 15, 14, 30, tz=\"America/New_York\").start_of(\"day\")
+ZonedDateTime(\"2024-08-15 00:00:00-04:00[America/New_York]\")
+>>> ZonedDateTime(2024, 8, 15, 14, 30, tz=\"America/New_York\").start_of(\"hour\")
+ZonedDateTime(\"2024-08-15 14:00:00-04:00[America/New_York]\")
 
 Note
 ----
@@ -2531,16 +2601,9 @@ a universal start day. Use :meth:`~Date.nth_weekday` on the
 For ``\"day\"``, ``\"month\"``, and ``\"year\"``, the resulting time
 is resolved in the timezone using ``\"compatible\"`` disambiguation,
 since midnight may not exist due to DST transitions.
-This is equivalent to :meth:`start_of_day` for ``\"day\"``.
 
 For ``\"hour\"``, ``\"minute\"``, and ``\"second\"``, the existing offset
-is preserved if valid, otherwise the correct offset for the
-resulting time is determined.
-
->>> ZonedDateTime(2024, 8, 15, 14, 30, tz=\"America/New_York\").start_of(\"day\")
-ZonedDateTime(\"2024-08-15 00:00:00-04:00[America/New_York]\")
->>> ZonedDateTime(2024, 8, 15, 14, 30, tz=\"America/New_York\").start_of(\"hour\")
-ZonedDateTime(\"2024-08-15 14:00:00-04:00[America/New_York]\")
+is preserved if valid, otherwise the \"compatible\" disambiguation strategy is used.
 ";
 pub(crate) const ZONEDDATETIME_START_OF_DAY: &CStr = c"\
 The start of the current calendar day.
@@ -2642,8 +2705,9 @@ Calculate the exact time difference between two datetimes.
 This method returns the exact elapsed :class:`TimeDelta` between
 two instants in time. Equivalent to the subtraction operator (``-``).
 
-Use :meth:`since` or :meth:`until` for more advanced options such as
-calendar units, unit decomposition, and rounding.
+Use :meth:`~whenever.ZonedDateTime.since` or
+:meth:`~whenever.ZonedDateTime.until` for more advanced
+options such as calendar units, unit decomposition, and rounding.
 ";
 pub(crate) const EXACTTIME_EXACT_EQ: &CStr = c"\
 Compare objects by their values
@@ -2769,7 +2833,7 @@ ZonedDateTime(\"2021-01-02T03:04:05+01:00[Europe/Paris]\")
 pub(crate) const LOCALTIME_YEAR: &CStr = c"\
 The year component of the datetime";
 pub(crate) const CANNOT_ROUND_DAY_MSG: &CStr = c"Cannot round to day, because days do not have a fixed length. Due to daylight saving time, some days have 23 or 25 hours. If you wish to round to exactly 24 hours, use `round('hour', increment=24)`.";
-pub(crate) const DAYS_NOT_ALWAYS_24H_MSG: &CStr = c"This operation assumes days are exactly 24 hours. Calendar days may be 23 or 25 hours long during DST transitions. If you're working with UTC, or deliberately want fixed-length days, this is correct. For DST-aware operations, consider using ZonedDateTime arithmetic instead, or passing the `relative_to` argument where available. Pass `assume_24h_days=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const DAYS_NOT_ALWAYS_24H_MSG: &CStr = c"This operation assumes days are exactly 24 hours. Calendar days may be 23 or 25 hours long during DST transitions. If you're working with UTC, or deliberately want fixed-length days, this is correct. For DST-aware operations, consider using ZonedDateTime arithmetic instead, or passing the `relative_to` argument where available. Pass `days_assumed_24h_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const FORMAT_ISO_NO_TZ_MSG: &CStr = c"This ZonedDateTime has no timezone ID and cannot be formatted in the standard ISO format, which requires it. This typically means the ZonedDateTime was created from a system timezone with an unknown ID. To format without the timezone designator, set the `tz=` argument to 'never' or 'auto'.";
 pub(crate) const IGNORE_DST_DEPRECATED_MSG: &CStr = c"The `ignore_dst` parameter is deprecated. Use `stale_offset_ok` or `naive_arithmetic_ok` instead.";
 pub(crate) const OFFSET_FROM_TIMESTAMP_STALE_MSG: &CStr = c"Converting a UNIX timestamp to OffsetDateTime with a fixed UTC offset may produce an incorrect result: you can't know from the offset alone whether DST is in effect at this timestamp. Use ZonedDateTime.from_timestamp(ts, tz='<tz>') if you know the timezone, or Instant.from_timestamp() for timezone-agnostic exact time. Pass `stale_offset_ok=True` to suppress this warning, or use Python's standard warning filters. See https://whenever.readthedocs.io/en/latest/guide/warnings.html";

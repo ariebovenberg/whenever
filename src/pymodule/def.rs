@@ -294,14 +294,14 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     )?;
     let warn_days_not_always_24h = new_exception(
         module,
-        c"whenever.DaysNotAlways24HoursWarning",
-        doc::DAYSNOTALWAYS24HOURSWARNING,
+        c"whenever.DaysAssumed24HoursWarning",
+        doc::DAYSASSUMED24HOURSWARNING,
         warn_potential_dst_bug.as_ptr(),
     )?;
     let warn_potentially_stale_offset = new_exception(
         module,
-        c"whenever.PotentiallyStaleOffsetWarning",
-        doc::POTENTIALLYSTALEOFFSETWARNING,
+        c"whenever.StaleOffsetWarning",
+        doc::STALEOFFSETWARNING,
         warn_potential_dst_bug.as_ptr(),
     )?;
     let warn_naive_arithmetic = new_exception(
@@ -413,7 +413,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         str_offset_mismatch: intern(c"offset_mismatch")?.py_owned(),
         str_keep_instant: intern(c"keep_instant")?.py_owned(),
         str_keep_local: intern(c"keep_local")?.py_owned(),
-        str_assume_24h_days: intern(c"assume_24h_days")?.py_owned(),
+        str_days_assumed_24h_ok: intern(c"days_assumed_24h_ok")?.py_owned(),
         str_stale_offset_ok: intern(c"stale_offset_ok")?.py_owned(),
         str_naive_arithmetic_ok: intern(c"naive_arithmetic_ok")?.py_owned(),
 
@@ -675,7 +675,7 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.str_offset_mismatch).cast());
         Py_CLEAR((&raw mut state.str_keep_instant).cast());
         Py_CLEAR((&raw mut state.str_keep_local).cast());
-        Py_CLEAR((&raw mut state.str_assume_24h_days).cast());
+        Py_CLEAR((&raw mut state.str_days_assumed_24h_ok).cast());
         Py_CLEAR((&raw mut state.str_stale_offset_ok).cast());
         Py_CLEAR((&raw mut state.str_naive_arithmetic_ok).cast());
 
@@ -831,7 +831,7 @@ pub(crate) struct State {
     pub(crate) str_offset_mismatch: PyObj,
     pub(crate) str_keep_instant: PyObj,
     pub(crate) str_keep_local: PyObj,
-    pub(crate) str_assume_24h_days: PyObj,
+    pub(crate) str_days_assumed_24h_ok: PyObj,
     pub(crate) str_stale_offset_ok: PyObj,
     pub(crate) str_naive_arithmetic_ok: PyObj,
 

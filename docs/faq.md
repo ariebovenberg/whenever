@@ -92,7 +92,7 @@ If you shift or round an {class}`~whenever.OffsetDateTime`, the
 library preserves the original offset verbatim—which may be wrong
 for future dates if the region's rules have changed.
 That's why these operations emit a
-{class}`~whenever.PotentiallyStaleOffsetWarning`.
+{class}`~whenever.StaleOffsetWarning`.
 When you need DST-safe arithmetic, convert to
 {class}`~whenever.ZonedDateTime` first.
 

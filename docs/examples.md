@@ -101,11 +101,12 @@ OffsetDateTime("2025-04-19 19:02:00+04:00")
 ```python
 >>> d = ZonedDateTime.now("America/New_York")
 ZonedDateTime("2025-04-19 15:46:41-04:00[America/New_York]")
->>> d.round("hour", mode="floor")
+>>> d.start_of("hour")
 ZonedDateTime("2025-04-19 15:00:00-04:00[America/New_York]")
 ```
 
-The {meth}`~whenever.ZonedDateTime.round` method can be used for so much more!
+The {meth}`~whenever.ZonedDateTime.start_of` method also works with
+other units like ``"day"``, ``"minute"``, and more.
 See its documentation for more details.
 
 ## Determine the end of the day
@@ -113,7 +114,7 @@ See its documentation for more details.
 ```python
 >>> d = ZonedDateTime.now("America/New_York")
 ZonedDateTime("2025-04-19 15:46:41-04:00[America/New_York]")
->>> d.add(nanoseconds=1).round("day", mode="ceil")
+>>> d.end_of("day")
 ZonedDateTime("2025-04-19 23:59:59.999999999-04:00[America/New_York]")
 ```
 
