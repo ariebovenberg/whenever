@@ -715,6 +715,63 @@ class TestShiftMethods:
             pass
 
 
+class TestNaiveArithmeticOkKwarg:
+    def test_add(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            d.add(hours=1, naive_arithmetic_ok=True)
+
+    def test_subtract(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            d.subtract(hours=1, naive_arithmetic_ok=True)
+
+    def test_difference(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        other = PlainDateTime(2020, 8, 14, 23, 12, 4, nanosecond=987_654)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            d.difference(other, naive_arithmetic_ok=True)
+
+    def test_since(self):
+        a = PlainDateTime(2023, 2, 15, hour=13, minute=25)
+        b = PlainDateTime(2021, 7, 3, hour=1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            a.since(b, total="hours", naive_arithmetic_ok=True)
+
+    def test_since_in_units(self):
+        a = PlainDateTime(2023, 2, 15, hour=13, minute=25)
+        b = PlainDateTime(2021, 7, 3, hour=1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            a.since(
+                b,
+                in_units=["hours", "minutes"],
+                naive_arithmetic_ok=True,
+            )
+
+    def test_until(self):
+        a = PlainDateTime(2023, 2, 15, hour=13, minute=25)
+        b = PlainDateTime(2021, 7, 3, hour=1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            a.until(b, total="hours", naive_arithmetic_ok=True)
+
+    def test_until_in_units(self):
+        a = PlainDateTime(2023, 2, 15, hour=13, minute=25)
+        b = PlainDateTime(2021, 7, 3, hour=1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            a.until(
+                b,
+                in_units=["hours", "minutes"],
+                naive_arithmetic_ok=True,
+            )
+
+
 class TestShiftOperators:
 
     def test_date_delta(self):
@@ -793,6 +850,15 @@ class TestDifference:
 
         with pytest.raises(TypeError):
             d - 43  # type: ignore[operator]
+
+    def test_ignore_dst_deprecated(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9)
+        other = PlainDateTime(2020, 8, 14, 23, 12, 4)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", NaiveArithmeticWarning)
+            warnings.simplefilter("always", WheneverDeprecationWarning)
+            with pytest.warns(WheneverDeprecationWarning):
+                d.difference(other, ignore_dst=True)
 
 
 class TestRound:
@@ -1578,6 +1644,9 @@ class TestDayOfYear:
     def test_dec31_nonleap(self):
         assert PlainDateTime(2023, 12, 31, 23, 59).day_of_year() == 365
 
+    def test_dec31_leap(self):
+        assert PlainDateTime(2024, 12, 31, 23, 59).day_of_year() == 366
+
 
 class TestDaysInMonth:
 
@@ -1590,6 +1659,14 @@ class TestDaysInMonth:
     def test_january(self):
         assert PlainDateTime(2023, 1, 15, 12, 30).days_in_month() == 31
 
+    def test_feb_century_nonleap(self):
+        # 1900 is not a leap year (divisible by 100, not by 400)
+        assert PlainDateTime(1900, 2, 15, 12, 30).days_in_month() == 28
+
+    def test_feb_century_leap(self):
+        # 2000 is a leap year (divisible by 400)
+        assert PlainDateTime(2000, 2, 15, 12, 30).days_in_month() == 29
+
 
 class TestDaysInYear:
 
@@ -1599,6 +1676,12 @@ class TestDaysInYear:
     def test_nonleap(self):
         assert PlainDateTime(2023, 6, 15, 12, 30).days_in_year() == 365
 
+    def test_century_nonleap(self):
+        assert PlainDateTime(1900, 6, 15, 12, 30).days_in_year() == 365
+
+    def test_century_leap(self):
+        assert PlainDateTime(2000, 6, 15, 12, 30).days_in_year() == 366
+
 
 class TestInLeapYear:
 
@@ -1607,6 +1690,12 @@ class TestInLeapYear:
 
     def test_nonleap(self):
         assert PlainDateTime(2023, 6, 15, 12, 30).in_leap_year() is False
+
+    def test_century_nonleap(self):
+        assert PlainDateTime(1900, 6, 15, 12, 30).in_leap_year() is False
+
+    def test_century_leap(self):
+        assert PlainDateTime(2000, 6, 15, 12, 30).in_leap_year() is True
 
 
 class TestStartOf:

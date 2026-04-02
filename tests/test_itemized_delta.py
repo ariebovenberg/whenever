@@ -11,7 +11,7 @@ from whenever import (
     NaiveArithmeticWarning,
     OffsetDateTime,
     PlainDateTime,
-    PotentiallyStaleOffsetWarning,
+    StaleOffsetWarning,
     TimeDelta,
     ZonedDateTime,
 )
@@ -581,7 +581,7 @@ class TestInUnitsRelativeToNonZoned:
         # calendar delta + calendar output → warns (offset, calendar both sides)
         d = ItemizedDelta(months=1, days=5)
         ref = OffsetDateTime(2020, 1, 1, offset=3)
-        with pytest.warns(PotentiallyStaleOffsetWarning):
+        with pytest.warns(StaleOffsetWarning):
             result = d.in_units(["weeks", "days"], relative_to=ref)
         assert result == ItemizedDelta(weeks=5, days=1)
 
@@ -589,7 +589,7 @@ class TestInUnitsRelativeToNonZoned:
         # exact delta + calendar output → warns (output has calendar)
         d = ItemizedDelta(hours=50)
         ref = OffsetDateTime(2020, 1, 1, offset=3)
-        with pytest.warns(PotentiallyStaleOffsetWarning):
+        with pytest.warns(StaleOffsetWarning):
             result = d.in_units(["days", "hours"], relative_to=ref)
         assert result == ItemizedDelta(days=2, hours=2)
 
@@ -597,7 +597,7 @@ class TestInUnitsRelativeToNonZoned:
         # mixed delta + mixed output → warns
         d = ItemizedDelta(months=1, hours=5)
         ref = OffsetDateTime(2020, 1, 1, offset=3)
-        with pytest.warns(PotentiallyStaleOffsetWarning):
+        with pytest.warns(StaleOffsetWarning):
             result = d.in_units(["days", "hours"], relative_to=ref)
         assert result == ItemizedDelta(days=31, hours=5)
 
@@ -622,7 +622,7 @@ class TestInUnitsRelativeToNonZoned:
 
     def test_warning_suppressed_offset(self):
         d = ItemizedDelta(months=1)
-        with suppress(PotentiallyStaleOffsetWarning):
+        with suppress(StaleOffsetWarning):
             result = d.in_units(
                 ["weeks", "days"],
                 relative_to=OffsetDateTime(2020, 1, 1, offset=3),
@@ -998,7 +998,7 @@ class TestTotal:
 
         # calendar delta + calendar unit → warns
         d_cal = ItemizedDelta(months=1)
-        with pytest.warns(PotentiallyStaleOffsetWarning):
+        with pytest.warns(StaleOffsetWarning):
             result = d_cal.total(
                 "days", relative_to=OffsetDateTime(2020, 1, 1, offset=2)
             )
@@ -1016,13 +1016,13 @@ class TestTotal:
         assert result == pytest.approx(10.5)
 
         # calendar delta + exact unit → warns (delta has calendar)
-        with pytest.warns(PotentiallyStaleOffsetWarning):
+        with pytest.warns(StaleOffsetWarning):
             d_cal.total(
                 "hours", relative_to=OffsetDateTime(2020, 1, 1, offset=2)
             )
 
         # exact delta + calendar unit → warns (unit is calendar)
-        with pytest.warns(PotentiallyStaleOffsetWarning):
+        with pytest.warns(StaleOffsetWarning):
             d_exact.total(
                 "days", relative_to=OffsetDateTime(2020, 1, 1, offset=3)
             )
@@ -1032,7 +1032,7 @@ class TestTotal:
         with suppress(NaiveArithmeticWarning):
             result = d.total("hours", relative_to=PlainDateTime(2020, 1, 1))
         assert result == pytest.approx(744.0)
-        with suppress(PotentiallyStaleOffsetWarning):
+        with suppress(StaleOffsetWarning):
             result = d.total(
                 "days", relative_to=OffsetDateTime(2020, 1, 1, offset=2)
             )

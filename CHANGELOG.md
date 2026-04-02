@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.0b2 (2026-03-20)
+## 0.10.0b3 (2026-04-??)
 
 A big release with several breaking changes and improvements. Highlights
 are the new delta API, customizable string formatting and parsing,
@@ -50,10 +50,10 @@ See the full list below.
   - Replace `ignore_dst=True` with the appropriate keyword argument:
     - `OffsetDateTime` methods: `stale_offset_ok=True`
     - `PlainDateTime` methods: `naive_arithmetic_ok=True`
-    - `TimeDelta` methods: `assume_24h_days=True`
+    - `TimeDelta` methods: `days_assumed_24h_ok=True`
   - Alternatively, use Python's `warnings.filterwarnings()` to
-    suppress `PotentiallyStaleOffsetWarning`,
-    `NaiveArithmeticWarning`, or `DaysNotAlways24HoursWarning`.
+    suppress `StaleOffsetWarning`,
+    `NaiveArithmeticWarning`, or `DaysAssumed24HoursWarning`.
   - `ignore_dst` is still accepted (with a deprecation warning) and
     will be removed in a future release.
 
@@ -132,11 +132,11 @@ See the full list below.
 - New `ZonedDateTime.dst_offset()`
   and `ZonedDateTime.tz_abbrev()` methods for querying timezone metadata
   (DST offset adjustment and timezone abbreviation).
-- Warning classes (`PotentiallyStaleOffsetWarning`,
-  `NaiveArithmeticWarning`, `DaysNotAlways24HoursWarning`)
+- Warning classes (`StaleOffsetWarning`,
+  `NaiveArithmeticWarning`, `DaysAssumed24HoursWarning`)
   and corresponding per-method keyword arguments
   (`stale_offset_ok`, `naive_arithmetic_ok`,
-  `assume_24h_days`) for fine-grained control over DST-related warnings.
+  `days_assumed_24h_ok`) for fine-grained control over DST-related warnings.
 - New `IsoWeekDate` type for representing ISO calendar week dates.
   Construct with `IsoWeekDate(year, week, weekday)` or parse with
   `IsoWeekDate("2024-W01-1")`.
@@ -155,8 +155,6 @@ See the full list below.
   - An explanation of the fundamental concepts of time
   - An overview of Python's datetime pitfalls
   - Explanation of the rounding API
-- Reduced the binary size of the Rust extension by preventing inlining
-  of code in non-critical paths.
 - `YearMonth`, `MonthDay`, `Weekday`, and `IsoWeekDate` are now
   implemented in pure Python always, reducing the compiled extension size.
 
@@ -164,6 +162,13 @@ See the full list below.
 
 - (Pure-Python version) Fixed incorrect behavior of `<` operator between `Time`
   instances if nanoseconds are involved.
+
+**Changed during beta**
+
+- The warning-suppressing context managers were removed.
+- The format code for day-of-week was changed from `d` to `E` to avoid confusion with `D`.
+- The DST warning classes were renamed.
+- The `difference()` method is no longer deprecated.
 
 ## 0.9.5 (2026-01-11)
 

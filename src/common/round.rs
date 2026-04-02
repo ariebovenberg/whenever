@@ -361,7 +361,7 @@ impl DeltaArgs {
             str_mode,
             str_increment,
             round_mode_strs,
-            str_assume_24h_days,
+            str_days_assumed_24h_ok,
             time_delta_type,
             ..
         } = state;
@@ -384,7 +384,7 @@ impl DeltaArgs {
                 }
                 // SAFETY: we just checked that it's >0
                 increment_kwarg = Some(unsafe { NonZeroU128::new_unchecked(raw_increment as _) });
-            } else if eq(key, str_assume_24h_days) {
+            } else if eq(key, str_days_assumed_24h_ok) {
                 suppress_24h_warning = value.is_truthy();
             } else {
                 return Ok(false);

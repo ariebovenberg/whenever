@@ -119,7 +119,7 @@ Like {class}`~whenever.ZonedDateTime`, this type represents an exact time
 *and* a local time. The difference is that {class}`~whenever.OffsetDateTime`
 has a *fixed* offset from UTC rather than a timezone.
 As a result, it doesn't know about Daylight Saving Time or other timezone changes.
-Many operations will emit a {class}`~whenever.PotentiallyStaleOffsetWarning`
+Many operations will emit a {class}`~whenever.StaleOffsetWarning`
 to prevent you from accidentally introducing DST bugs.
 
 Then why use it? Firstly, most datetime formats (e.g. ISO 8601 and RFC 2822) only have fixed offsets,

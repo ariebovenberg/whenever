@@ -1,5 +1,4 @@
 import pickle
-import re
 from copy import copy, deepcopy
 
 import pytest
@@ -58,6 +57,26 @@ class TestConstructor:
     def test_invalid_string(self):
         with pytest.raises(ValueError):
             IsoWeekDate("2024-01-01")
+
+    def test_invalid_string_lowercase_w(self):
+        with pytest.raises(ValueError):
+            IsoWeekDate("2024-w01-1")
+
+    def test_invalid_string_missing_weekday(self):
+        with pytest.raises(ValueError):
+            IsoWeekDate("2024-W01")
+
+    def test_invalid_string_abc(self):
+        with pytest.raises(ValueError):
+            IsoWeekDate("abc")
+
+    def test_invalid_string_empty(self):
+        with pytest.raises(ValueError):
+            IsoWeekDate("")
+
+    def test_invalid_string_week_0(self):
+        with pytest.raises(ValueError):
+            IsoWeekDate("2024-W00-1")
 
     def test_invalid_string_bad_day(self):
         with pytest.raises(ValueError):
@@ -195,6 +214,17 @@ class TestComparison:
         assert IsoWeekDate(2024, 1, MONDAY) != "2024-W01-1"  # type: ignore[comparison-overlap]
         assert IsoWeekDate(2024, 1, MONDAY) != (2024, 1, MONDAY)  # type: ignore[comparison-overlap]
 
+    def test_ordering_with_other_type(self):
+        d = IsoWeekDate(2024, 1, MONDAY)
+        with pytest.raises(TypeError):
+            d < "2024-W01-1"  # type: ignore[operator]
+        with pytest.raises(TypeError):
+            d <= "2024-W01-1"  # type: ignore[operator]
+        with pytest.raises(TypeError):
+            d > "2024-W01-1"  # type: ignore[operator]
+        with pytest.raises(TypeError):
+            d >= "2024-W01-1"  # type: ignore[operator]
+
 
 class TestHash:
 
@@ -222,9 +252,20 @@ class TestReplace:
         iwd = IsoWeekDate(2024, 1, MONDAY)
         assert iwd.replace(year=2025) == IsoWeekDate(2025, 1, MONDAY)
 
+    def test_replace_multiple_fields(self):
+        iwd = IsoWeekDate(2024, 1, MONDAY)
+        assert iwd.replace(year=2025, week=10, weekday=FRIDAY) == IsoWeekDate(
+            2025, 10, FRIDAY
+        )
+
     def test_replace_invalid(self):
         with pytest.raises(ValueError):
             IsoWeekDate(2024, 52, MONDAY).replace(week=53)
+
+    def test_replace_year_makes_week53_invalid(self):
+        # 2004 has 53 weeks, 2024 does not
+        with pytest.raises(ValueError):
+            IsoWeekDate(2004, 53, FRIDAY).replace(year=2024)
 
 
 class TestPickle:
@@ -256,3 +297,9 @@ class TestMinMax:
 
     def test_min_le_max(self):
         assert IsoWeekDate.MIN <= IsoWeekDate.MAX
+
+
+def test_copy():
+    iwd = IsoWeekDate(2024, 1, MONDAY)
+    assert copy(iwd) is iwd
+    assert deepcopy(iwd) is iwd

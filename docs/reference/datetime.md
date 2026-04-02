@@ -109,13 +109,15 @@ Several other methods are unique to one or more classes:
 |                                            |                                         | {meth}`~OffsetDateTime.assume_tz`      | {meth}`~PlainDateTime.assume_tz`                       |
 |                                            |                                         |                                        | {meth}`~PlainDateTime.assume_system_tz`                |
 |                                            |                                         |                                        | {meth}`~PlainDateTime.assume_fixed_offset`             |
-|                                            |                                         | {meth}`~OffsetDateTime.parse_strptime` | {meth}`~PlainDateTime.parse_strptime`                  |
+|                                            |                                         | {meth}`~OffsetDateTime.parse_strptime` *(deprecated)* | {meth}`~PlainDateTime.parse_strptime` *(deprecated)*                  |
 |                                            | {attr}`~ZonedDateTime.tz`               |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.now_in_system_tz` |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.is_ambiguous`     |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.dst_offset`       |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.tz_abbrev`        |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.day_length`       |                                        |                                                        |
+|                                            | {meth}`~ZonedDateTime.next_transition`  |                                        |                                                        |
+|                                            | {meth}`~ZonedDateTime.prev_transition`  |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.start_of_day` *(deprecated)* |                                        |                                                        |
 
 

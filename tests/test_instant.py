@@ -13,7 +13,7 @@ from whenever import (
     Instant,
     OffsetDateTime,
     PlainDateTime,
-    PotentiallyStaleOffsetWarning,
+    StaleOffsetWarning,
     TimeDelta,
     WheneverDeprecationWarning,
     ZonedDateTime,
@@ -396,7 +396,7 @@ class TestComparison:
         d = Instant.from_utc(2020, 8, 15, 12, 30)
 
         offset_eq = d.to_fixed_offset(4)
-        with suppress(PotentiallyStaleOffsetWarning):
+        with suppress(StaleOffsetWarning):
             offset_gt = offset_eq.replace(minute=31)
             offset_lt = offset_eq.replace(minute=29)
         assert d >= offset_eq

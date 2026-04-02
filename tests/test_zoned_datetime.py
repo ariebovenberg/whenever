@@ -18,6 +18,7 @@ from hypothesis import given
 from hypothesis.strategies import text
 
 from whenever import (
+    _EXTENSION_LOADED,
     Date,
     Instant,
     InvalidOffsetError,
@@ -25,9 +26,9 @@ from whenever import (
     ItemizedDelta,
     OffsetDateTime,
     PlainDateTime,
-    PotentiallyStaleOffsetWarning,
     RepeatedTime,
     SkippedTime,
+    StaleOffsetWarning,
     Time,
     TimeDelta,
     TimeZoneNotFoundError,
@@ -1040,7 +1041,7 @@ class TestEquality:
 
         assert d == d.to_fixed_offset()
         assert hash(d) == hash(d.to_fixed_offset())
-        with suppress(PotentiallyStaleOffsetWarning):
+        with suppress(StaleOffsetWarning):
             assert d != d.to_fixed_offset().replace(hour=10)
 
         # important: check typing errors in case of strict-comparison mode
@@ -1514,7 +1515,7 @@ class TestDstOffset:
         zi = ZoneInfo("Europe/Dublin")
         py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1523,7 +1524,7 @@ class TestDstOffset:
         zi = ZoneInfo("Europe/Dublin")
         py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1534,13 +1535,13 @@ class TestDstOffset:
         d_before = create_zdt(2020, 3, 29, 0, 30, tz="Europe/Dublin")
         py_before = py_datetime(2020, 3, 29, 0, 30, tzinfo=zi)
         assert d_before.dst_offset() == TimeDelta(
-            seconds=int(py_before.dst().total_seconds())  # type: ignore[union-attr]
+            py_before.dst()  # type: ignore[arg-type]
         )
         # After transition: 2020-03-29 2:30 (summer, IST)
         d_after = create_zdt(2020, 3, 29, 2, 30, tz="Europe/Dublin")
         py_after = py_datetime(2020, 3, 29, 2, 30, tzinfo=zi)
         assert d_after.dst_offset() == TimeDelta(
-            seconds=int(py_after.dst().total_seconds())  # type: ignore[union-attr]
+            py_after.dst()  # type: ignore[arg-type]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1553,7 +1554,7 @@ class TestDstOffset:
         )
         py_earlier = py_datetime(2020, 10, 25, 1, 30, tzinfo=zi, fold=0)
         assert d_earlier.dst_offset() == TimeDelta(
-            seconds=int(py_earlier.dst().total_seconds())  # type: ignore[union-attr]
+            py_earlier.dst()  # type: ignore[arg-type]
         )
         # After transition (later fold): 2020-10-25 1:30 GMT
         d_later = create_zdt(
@@ -1561,7 +1562,7 @@ class TestDstOffset:
         )
         py_later = py_datetime(2020, 10, 25, 1, 30, tzinfo=zi, fold=1)
         assert d_later.dst_offset() == TimeDelta(
-            seconds=int(py_later.dst().total_seconds())  # type: ignore[union-attr]
+            py_later.dst()  # type: ignore[arg-type]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1570,13 +1571,13 @@ class TestDstOffset:
         zi = ZoneInfo("Europe/Dublin")
         py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
         d2 = create_zdt(2100, 1, 15, 12, tz="Europe/Dublin")
         py_dt2 = py_datetime(2100, 1, 15, 12, tzinfo=zi)
         assert d2.dst_offset() == TimeDelta(
-            py_dt2.dst()  # type: ignore[union-attr]
+            py_dt2.dst()  # type: ignore[arg-type]
         )
 
     # -- Australia/Sydney: southern hemisphere DST (summer in Jan) --
@@ -1588,7 +1589,7 @@ class TestDstOffset:
         zi = ZoneInfo("Australia/Sydney")
         py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1598,7 +1599,7 @@ class TestDstOffset:
         zi = ZoneInfo("Australia/Sydney")
         py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1609,13 +1610,13 @@ class TestDstOffset:
         d_before = create_zdt(2020, 10, 4, 1, 30, tz="Australia/Sydney")
         py_before = py_datetime(2020, 10, 4, 1, 30, tzinfo=zi)
         assert d_before.dst_offset() == TimeDelta(
-            seconds=int(py_before.dst().total_seconds())  # type: ignore[union-attr]
+            py_before.dst()  # type: ignore[arg-type]
         )
         # After: 2020-10-04 3:30 AEDT (DST active)
         d_after = create_zdt(2020, 10, 4, 3, 30, tz="Australia/Sydney")
         py_after = py_datetime(2020, 10, 4, 3, 30, tzinfo=zi)
         assert d_after.dst_offset() == TimeDelta(
-            seconds=int(py_after.dst().total_seconds())  # type: ignore[union-attr]
+            py_after.dst()  # type: ignore[arg-type]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1628,7 +1629,7 @@ class TestDstOffset:
         )
         py_earlier = py_datetime(2020, 4, 5, 2, 30, tzinfo=zi, fold=0)
         assert d_earlier.dst_offset() == TimeDelta(
-            seconds=int(py_earlier.dst().total_seconds())  # type: ignore[union-attr]
+            py_earlier.dst()  # type: ignore[arg-type]
         )
         # Later fold: 2020-04-05 2:30 AEST
         d_later = create_zdt(
@@ -1636,7 +1637,7 @@ class TestDstOffset:
         )
         py_later = py_datetime(2020, 4, 5, 2, 30, tzinfo=zi, fold=1)
         assert d_later.dst_offset() == TimeDelta(
-            seconds=int(py_later.dst().total_seconds())  # type: ignore[union-attr]
+            py_later.dst()  # type: ignore[arg-type]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1645,7 +1646,7 @@ class TestDstOffset:
         zi = ZoneInfo("Australia/Sydney")
         py_dt = py_datetime(2100, 1, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     # -- Pacific/Honolulu: no DST ever --
@@ -1677,7 +1678,7 @@ class TestDstOffset:
         zi = ZoneInfo("Africa/Casablanca")
         py_dt = py_datetime(2019, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     @pytest.mark.skipif(
@@ -1690,7 +1691,7 @@ class TestDstOffset:
         zi = ZoneInfo("Africa/Casablanca")
         py_dt = py_datetime(2019, 1, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     @pytest.mark.skipif(
@@ -1703,7 +1704,7 @@ class TestDstOffset:
         zi = ZoneInfo("Africa/Casablanca")
         py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     # -- America/New_York: standard US DST --
@@ -1713,7 +1714,7 @@ class TestDstOffset:
         zi = ZoneInfo("America/New_York")
         py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     def test_new_york_winter(self):
@@ -1721,7 +1722,7 @@ class TestDstOffset:
         zi = ZoneInfo("America/New_York")
         py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     def test_new_york_spring_forward(self):
@@ -1731,13 +1732,13 @@ class TestDstOffset:
         d_before = create_zdt(2020, 3, 8, 1, 30, tz="America/New_York")
         py_before = py_datetime(2020, 3, 8, 1, 30, tzinfo=zi)
         assert d_before.dst_offset() == TimeDelta(
-            seconds=int(py_before.dst().total_seconds())  # type: ignore[union-attr]
+            py_before.dst()  # type: ignore[arg-type]
         )
         # After: 2020-03-08 3:30 EDT
         d_after = create_zdt(2020, 3, 8, 3, 30, tz="America/New_York")
         py_after = py_datetime(2020, 3, 8, 3, 30, tzinfo=zi)
         assert d_after.dst_offset() == TimeDelta(
-            seconds=int(py_after.dst().total_seconds())  # type: ignore[union-attr]
+            py_after.dst()  # type: ignore[arg-type]
         )
 
     def test_new_york_fall_back(self):
@@ -1749,7 +1750,7 @@ class TestDstOffset:
         )
         py_earlier = py_datetime(2020, 11, 1, 1, 30, tzinfo=zi, fold=0)
         assert d_earlier.dst_offset() == TimeDelta(
-            seconds=int(py_earlier.dst().total_seconds())  # type: ignore[union-attr]
+            py_earlier.dst()  # type: ignore[arg-type]
         )
         # Later fold: 2020-11-01 1:30 EST
         d_later = create_zdt(
@@ -1757,7 +1758,7 @@ class TestDstOffset:
         )
         py_later = py_datetime(2020, 11, 1, 1, 30, tzinfo=zi, fold=1)
         assert d_later.dst_offset() == TimeDelta(
-            seconds=int(py_later.dst().total_seconds())  # type: ignore[union-attr]
+            py_later.dst()  # type: ignore[arg-type]
         )
 
     def test_new_york_far_future(self):
@@ -1765,13 +1766,13 @@ class TestDstOffset:
         zi = ZoneInfo("America/New_York")
         py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
         d2 = create_zdt(2100, 1, 15, 12, tz="America/New_York")
         py_dt2 = py_datetime(2100, 1, 15, 12, tzinfo=zi)
         assert d2.dst_offset() == TimeDelta(
-            py_dt2.dst()  # type: ignore[union-attr]
+            py_dt2.dst()  # type: ignore[arg-type]
         )
 
     # -- UTC: no DST --
@@ -1781,7 +1782,7 @@ class TestDstOffset:
         zi = ZoneInfo("UTC")
         py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     def test_utc_far_future(self):
@@ -1795,7 +1796,7 @@ class TestDstOffset:
         zi = ZoneInfo("Asia/Tokyo")
         py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     def test_tokyo_winter(self):
@@ -1817,7 +1818,7 @@ class TestDstOffset:
         zi = ZoneInfo("America/Iqaluit")
         py_dt = py_datetime(1940, 1, 1, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1827,7 +1828,7 @@ class TestDstOffset:
         zi = ZoneInfo("America/Iqaluit")
         py_dt = py_datetime(1942, 9, 1, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1837,7 +1838,7 @@ class TestDstOffset:
         zi = ZoneInfo("America/Iqaluit")
         py_dt = py_datetime(1946, 1, 1, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1847,7 +1848,7 @@ class TestDstOffset:
         zi = ZoneInfo("Antarctica/Palmer")
         py_dt = py_datetime(1963, 6, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
@@ -1857,7 +1858,7 @@ class TestDstOffset:
         zi = ZoneInfo("Antarctica/Palmer")
         py_dt = py_datetime(1965, 2, 15, 12, tzinfo=zi)
         assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[union-attr]
+            py_dt.dst()  # type: ignore[arg-type]
         )
 
 
@@ -3228,7 +3229,7 @@ class TestComparison:
         d = create_zdt(2023, 10, 29, 2, 30, tz=tz, disambiguate="later")
 
         offset_eq = d.to_fixed_offset()
-        with suppress(PotentiallyStaleOffsetWarning):
+        with suppress(StaleOffsetWarning):
             offset_lt = offset_eq.replace(minute=29)
             offset_gt = offset_eq.replace(minute=31)
 
@@ -5514,6 +5515,14 @@ class TestDayOfYear:
         zdt = ZonedDateTime(2023, 1, 1, 0, tz="America/New_York")
         assert zdt.day_of_year() == 1
 
+    def test_dec31_nonleap(self):
+        zdt = ZonedDateTime(2023, 12, 31, 12, tz="America/New_York")
+        assert zdt.day_of_year() == 365
+
+    def test_dec31_leap(self):
+        zdt = ZonedDateTime(2024, 12, 31, 12, tz="America/New_York")
+        assert zdt.day_of_year() == 366
+
 
 class TestDaysInMonth:
 
@@ -5524,6 +5533,18 @@ class TestDaysInMonth:
     def test_feb_nonleap(self):
         zdt = ZonedDateTime(2023, 2, 15, 12, tz="America/New_York")
         assert zdt.days_in_month() == 28
+
+    def test_jan(self):
+        zdt = ZonedDateTime(2023, 1, 15, 12, tz="America/New_York")
+        assert zdt.days_in_month() == 31
+
+    def test_feb_century_nonleap(self):
+        zdt = ZonedDateTime(1900, 2, 15, 12, tz="UTC")
+        assert zdt.days_in_month() == 28
+
+    def test_feb_century_leap(self):
+        zdt = ZonedDateTime(2000, 2, 15, 12, tz="UTC")
+        assert zdt.days_in_month() == 29
 
 
 class TestDaysInYear:
@@ -5536,6 +5557,14 @@ class TestDaysInYear:
         zdt = ZonedDateTime(2023, 6, 15, 12, tz="America/New_York")
         assert zdt.days_in_year() == 365
 
+    def test_century_nonleap(self):
+        zdt = ZonedDateTime(1900, 6, 15, 12, tz="UTC")
+        assert zdt.days_in_year() == 365
+
+    def test_century_leap(self):
+        zdt = ZonedDateTime(2000, 6, 15, 12, tz="UTC")
+        assert zdt.days_in_year() == 366
+
 
 class TestInLeapYear:
 
@@ -5546,6 +5575,14 @@ class TestInLeapYear:
     def test_nonleap(self):
         zdt = ZonedDateTime(2023, 6, 15, 12, tz="America/New_York")
         assert zdt.in_leap_year() is False
+
+    def test_century_nonleap(self):
+        zdt = ZonedDateTime(1900, 6, 15, 12, tz="UTC")
+        assert zdt.in_leap_year() is False
+
+    def test_century_leap(self):
+        zdt = ZonedDateTime(2000, 6, 15, 12, tz="UTC")
+        assert zdt.in_leap_year() is True
 
 
 class TestStartOf:
@@ -5836,3 +5873,20 @@ class TestEndOf:
 
         # They represent different instants
         assert result_e != result_l
+
+
+class TestClearTzCache:
+
+    @pytest.mark.skipif(
+        _EXTENSION_LOADED, reason="Rust extension has its own cache"
+    )
+    def test_clear_by_keys_clears_last_tz(self):
+        """Clearing the cache by key clears _last_tz_key when it matches."""
+        from whenever._tz import store
+
+        # Load a timezone to populate the fast cache
+        ZonedDateTime(2024, 1, 1, tz="US/Eastern")
+        assert store._last_tz_key == "US/Eastern"
+        # Now clear that exact key — _last_tz_key should be reset
+        clear_tzcache(only_keys=["US/Eastern"])
+        assert store._last_tz_key is None

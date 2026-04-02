@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import (
+
+# Unused imports are necessary for sphinc autodoc due to
+# scoping issues introduced by add_alternate_constructors().
+from datetime import (  # noqa: F401
+    date as _date,
     datetime as _datetime,
+    time as _time,
     timedelta as _timedelta,
     timezone as _timezone,
 )
@@ -21,6 +26,13 @@ try:
     )
 except ImportError:
     SPHINX_RUNNING = False
+
+# A sentinel value that looks nice in autodoc.
+# Used in cases where `None` would be a valid value, or where we want to
+# avoid allowing `None` to be passed in by users.
+UNSET: Any = type(
+    "UNSET", (), {"__repr__": lambda _: "...", "__bool__": lambda _: False}
+)()
 
 
 # We cache fixed-offset tzinfo objects to avoid creating multiple identical ones.

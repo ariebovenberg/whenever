@@ -288,7 +288,7 @@ impl Date {
     }
 
     pub(crate) const fn hash(self) -> i32 {
-        // SAFETY: the struct size is equeval to the size of an i32.
+        // SAFETY: the struct size is equal to the size of an i32.
         // We don't need to do any extra hashing. It may be counterintuitive,
         // but this is also what `int` does: `hash(6) == 6`.
         unsafe { mem::transmute(self) }
@@ -581,7 +581,7 @@ fn nth_weekday_of_month(cls: HeapType<Date>, slf: Date, args: &[PyObj]) -> PyRet
 
 fn nth_weekday(cls: HeapType<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
     let &[n_obj, dow_obj] = args else {
-        raise_type_err("nth_weekday_of_month() requires exactly 2 positional arguments")?
+        raise_type_err("nth_weekday() requires exactly 2 positional arguments")?
     };
     let state = cls.state();
     let n = {

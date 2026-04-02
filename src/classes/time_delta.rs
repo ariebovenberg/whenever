@@ -407,12 +407,12 @@ where
         str_milliseconds,
         str_microseconds,
         str_nanoseconds,
-        str_assume_24h_days,
+        str_days_assumed_24h_ok,
         ..
     } = state;
 
     handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, str_assume_24h_days) {
+        if eq(key, str_days_assumed_24h_ok) {
             suppress_24h_warning = value.is_truthy();
             Ok(true)
         } else {
@@ -1220,7 +1220,7 @@ fn in_units(
         str_round_increment,
         round_mode_strs,
         str_relative_to,
-        str_assume_24h_days,
+        str_days_assumed_24h_ok,
         ..
     } = state;
 
@@ -1236,7 +1236,7 @@ fn in_units(
             round_increment = math::RoundIncrement::from_py(value)?;
         } else if eq(key, str_relative_to) {
             relative_to_arg = Some(value);
-        } else if eq(key, str_assume_24h_days) {
+        } else if eq(key, str_days_assumed_24h_ok) {
             suppress_24h_warning = value.is_truthy();
         } else {
             return Ok(false);
@@ -1314,7 +1314,7 @@ fn total(
     handle_kwargs("total", kwargs, |key, value, eq| {
         if eq(key, state.str_relative_to) {
             relative_to_arg = Some(value);
-        } else if eq(key, state.str_assume_24h_days) {
+        } else if eq(key, state.str_days_assumed_24h_ok) {
             suppress_24h_warning = value.is_truthy();
         } else {
             return Ok(false);

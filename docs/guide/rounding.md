@@ -72,14 +72,14 @@ There are some restrictions on the allowed increments:
   but not to the nearest 7 seconds.
 
 [^1]: This assumes days are always 24 hours long, which is not always the case in practice due to daylight saving time changes.
-      Thus, a {class}`~whenever.DaysNotAlways24HoursWarning` is issued
+      Thus, a {class}`~whenever.DaysAssumed24HoursWarning` is issued
       when rounding a TimeDelta to days or weeks.
-      Suppress it by passing ``assume_24h_days=True``
+      Suppress it by passing ``days_assumed_24h_ok=True``
       if you know this is acceptable for your use case:
 
       ```python
       >>> d = TimeDelta(hours=50)
-      >>> d.round("day", assume_24h_days=True)
+      >>> d.round("day", days_assumed_24h_ok=True)
       TimeDelta("PT48h")
       ```
 [^2]: This is explicitly disallowed because an Instant has no concept of days.

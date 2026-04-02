@@ -9,12 +9,12 @@ from pytest import approx
 
 from whenever import (
     DateDelta,
-    DaysNotAlways24HoursWarning,
+    DaysAssumed24HoursWarning,
     ItemizedDelta,
     NaiveArithmeticWarning,
     OffsetDateTime,
     PlainDateTime,
-    PotentiallyStaleOffsetWarning,
+    StaleOffsetWarning,
     TimeDelta,
     WheneverDeprecationWarning,
     ZonedDateTime,
@@ -175,12 +175,12 @@ class TestInit:
         )
 
     def test_weeks_and_days(self):
-        with pytest.warns(DaysNotAlways24HoursWarning):
+        with pytest.warns(DaysAssumed24HoursWarning):
             week = TimeDelta(weeks=1)
 
         assert week == TimeDelta(hours=7 * 24)
 
-        with pytest.warns(DaysNotAlways24HoursWarning):
+        with pytest.warns(DaysAssumed24HoursWarning):
             day = TimeDelta(days=1)
 
         assert day == TimeDelta(hours=24)
@@ -199,7 +199,7 @@ class TestInit:
             warnings.simplefilter("always")
             TimeDelta(days=1)
         assert len(w) == 1
-        assert w[0].category is DaysNotAlways24HoursWarning
+        assert w[0].category is DaysAssumed24HoursWarning
         # The warning filename must not point to library internals
         assert "_pywhenever" not in w[0].filename
 
@@ -319,11 +319,11 @@ class TestTotal:
     def test_days_and_weeks(self):
         d = TimeDelta(hours=1, minutes=2, seconds=0.003, nanoseconds=4)
 
-        with pytest.warns(DaysNotAlways24HoursWarning):
+        with pytest.warns(DaysAssumed24HoursWarning):
             assert d.total("days") == approx(d.total("hours") / 24)
 
         # Silencing the warnings
-        with suppress(DaysNotAlways24HoursWarning):
+        with suppress(DaysAssumed24HoursWarning):
             assert d.total("days")
 
         # relative to a regular date
@@ -377,17 +377,17 @@ class TestTotal:
             warnings.simplefilter("always")
             d.total("days")
         assert len(w) == 1
-        assert w[0].category is DaysNotAlways24HoursWarning
+        assert w[0].category is DaysAssumed24HoursWarning
         assert "_pywhenever" not in w[0].filename
 
     def test_weeks(self):
         d = TimeDelta(hours=2000)
 
-        with pytest.warns(DaysNotAlways24HoursWarning):
+        with pytest.warns(DaysAssumed24HoursWarning):
             assert d.total("weeks") == approx(d.total("hours") / (24 * 7))
 
         # Silencing the warnings
-        with suppress(DaysNotAlways24HoursWarning):
+        with suppress(DaysAssumed24HoursWarning):
             assert d.total("weeks")
 
         # non DST date
@@ -633,20 +633,20 @@ class TestTotal:
         # the *local* datetime (offset stripped) is used as the calendar anchor.
         td = TimeDelta(hours=360)  # 15 days
         odt = OffsetDateTime(2023, 3, 1, 2, offset=5)
-        with pytest.warns(PotentiallyStaleOffsetWarning):
+        with pytest.warns(StaleOffsetWarning):
             result = td.total("months", relative_to=odt)
         # same reference date as PlainDateTime(2023, 3, 1, 2)
         assert result == approx(15 / 31)
 
         # suppression works
-        with suppress(PotentiallyStaleOffsetWarning):
+        with suppress(StaleOffsetWarning):
             result_sup = td.total("months", relative_to=odt)
         assert result_sup == approx(15 / 31)
 
     def test_relative_to_odt_uses_local_not_utc(self):
         td = TimeDelta(hours=360)  # 15 days
         odt = OffsetDateTime(2023, 3, 1, 2, offset=5)
-        with suppress(PotentiallyStaleOffsetWarning):
+        with suppress(StaleOffsetWarning):
             result_correct = td.total("months", relative_to=odt)
         assert result_correct == approx(15 / 31)  # March anchor
 
@@ -901,10 +901,10 @@ class TestAddSubtract:
 
     def test_days_and_weeks(self):
         d = TimeDelta(seconds=1.5)
-        with pytest.warns(DaysNotAlways24HoursWarning):
+        with pytest.warns(DaysAssumed24HoursWarning):
             assert d.add(weeks=4) == d.add(hours=4 * 7 * 24)
 
-        with pytest.warns(DaysNotAlways24HoursWarning):
+        with pytest.warns(DaysAssumed24HoursWarning):
             assert d.add(days=-9) == d.add(hours=-9 * 24)
 
     def test_out_of_range(self):
@@ -1310,7 +1310,7 @@ class TestRound:
     def test_valid(
         self, t, increment, unit, floor, ceil, half_floor, half_ceil, half_even
     ):
-        with suppress(DaysNotAlways24HoursWarning):
+        with suppress(DaysAssumed24HoursWarning):
             assert t.round(unit, increment=increment) == half_even
             assert t.round(unit, increment=increment, mode="ceil") == ceil
             assert t.round(unit, increment=increment, mode="expand") == (
@@ -1376,10 +1376,10 @@ class TestRound:
 
     def test_24h_day_warning(self):
         t = TimeDelta.ZERO
-        with pytest.warns(DaysNotAlways24HoursWarning):
+        with pytest.warns(DaysAssumed24HoursWarning):
             t.round("day")
 
-        with pytest.warns(DaysNotAlways24HoursWarning):
+        with pytest.warns(DaysAssumed24HoursWarning):
             t.round("week")
 
     def test_extremes(self):
@@ -1708,7 +1708,7 @@ class TestInUnits:
             # TEST round single units with large values
         ],
     )
-    @suppress(DaysNotAlways24HoursWarning)
+    @suppress(DaysAssumed24HoursWarning)
     def test_valid(self, delta, units, kwargs, expected):
         assert delta.in_units(units, **kwargs) == expected
 
@@ -1755,14 +1755,14 @@ class TestInUnits:
 
     def test_24h_days_warning(self):
         d = TimeDelta(hours=49)
-        with pytest.warns(DaysNotAlways24HoursWarning):
+        with pytest.warns(DaysAssumed24HoursWarning):
             d.in_units(["days", "hours"])
 
-        with pytest.warns(DaysNotAlways24HoursWarning):
+        with pytest.warns(DaysAssumed24HoursWarning):
             d.in_units(["weeks", "hours"])
 
         # test warnings suppression
-        with suppress(DaysNotAlways24HoursWarning):
+        with suppress(DaysAssumed24HoursWarning):
             d.in_units(["days"])
 
     def test_non_sequence_units(self):
@@ -1787,7 +1787,7 @@ class TestInUnits:
 
     def test_very_large_increment(self):
         # round_increment=1<<65 ns exceeds i64::MAX; should not OverflowError
-        with suppress(DaysNotAlways24HoursWarning):
+        with suppress(DaysAssumed24HoursWarning):
             d = TimeDelta(days=592)
         # trunc mode: value < 1*(1<<65), rounds down to zero
         assert d.in_units(
@@ -1814,7 +1814,7 @@ class TestInUnits:
         # Same arithmetic as plain, but uses OffsetDateTime
         d = TimeDelta(hours=3360)
         ref = OffsetDateTime(2024, 2, 29, 12, 1, offset=2)
-        with pytest.warns(PotentiallyStaleOffsetWarning):
+        with pytest.warns(StaleOffsetWarning):
             result = d.in_units(["months", "days"], relative_to=ref)
         assert result["months"] == 4
 
@@ -1858,6 +1858,32 @@ def test_compatible_unpickle():
     assert pickle.loads(dumped) == TimeDelta(
         hours=1, minutes=2, seconds=3, microseconds=4
     )
+
+
+class TestAssume24hDaysKwarg:
+    def test_init(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            TimeDelta(days=1, days_assumed_24h_ok=True)
+
+    def test_total(self):
+        td = TimeDelta(hours=48)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = td.total("days", days_assumed_24h_ok=True)
+            assert result == approx(2.0)
+
+    def test_in_units(self):
+        td = TimeDelta(hours=48)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            td.in_units(["days", "hours"], days_assumed_24h_ok=True)
+
+    def test_round(self):
+        td = TimeDelta(hours=25)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            td.round("day", days_assumed_24h_ok=True)
 
 
 class TestDeprecations:
