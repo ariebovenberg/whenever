@@ -57,3 +57,17 @@ Under these shared semantics:
 Taken together, these rules are sometimes described as **DST-safe arithmetic**.
 They aim to preserve the intent behind an operation—whether that intent is about
 elapsed time or about the structure of the calendar—so that arithmetic behaves in a way that matches how people reason about time.
+
+```{note}
+**Days occupy a special position.** By convention (RFC 5545, and most modern
+date-time libraries), days and weeks are treated as *calendar* units: adding a
+day keeps the local clock time the same, even if the underlying UTC offset
+changes due to DST. This is the behavior people expect when they say
+"reschedule to tomorrow."
+
+In contexts with no local time to preserve (such as
+{class}`~whenever.Instant` or
+{class}`~whenever.TimeDelta`), days can still be used but
+are treated as exactly 24 hours each—with a warning to make the assumption
+explicit.
+```

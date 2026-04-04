@@ -1438,25 +1438,37 @@ class Instant(_PyDateTimeMixin, _ExactTime):
     def __format__(self, spec: str, /) -> str: ...
     @classmethod
     def parse(cls, s: str, /, *, format: str) -> Instant: ...
+    @overload
+    def add(self, d: TimeDelta, /) -> Self: ...
+    @overload
     def add(
         self,
         *,
+        weeks: float = 0,
+        days: float = 0,
         hours: float = 0,
         minutes: float = 0,
         seconds: float = 0,
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
+        days_assumed_24h_ok: bool = False,
     ) -> Self: ...
+    @overload
+    def subtract(self, d: TimeDelta, /) -> Self: ...
+    @overload
     def subtract(
         self,
         *,
+        weeks: float = 0,
+        days: float = 0,
         hours: float = 0,
         minutes: float = 0,
         seconds: float = 0,
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
+        days_assumed_24h_ok: bool = False,
     ) -> Self: ...
     @overload
     def round(

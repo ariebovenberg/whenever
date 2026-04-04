@@ -5,14 +5,10 @@ use pyo3_ffi::*;
 use crate::{
     classes::{
         date::Date,
-        datetime_delta::handle_exact_unit,
         offset_datetime::OffsetDateTime,
         plain_datetime::DateTime,
         time::Time,
-        time_delta::{
-            DeltaIncrement, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS,
-            TimeDelta,
-        },
+        time_delta::{DeltaIncrement, TimeDelta, timedelta_from_kwargs},
     },
     common::{
         fmt::{self, Suffix},
@@ -578,51 +574,37 @@ fn shift_method(
     negate: bool,
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
-    let &State {
-        str_hours,
-        str_minutes,
-        str_seconds,
-        str_milliseconds,
-        str_microseconds,
-        str_nanoseconds,
-        ..
-    } = cls.state();
-    let mut nanos: i128 = 0;
+    let state = cls.state();
+    let time_delta_type = state.time_delta_type;
 
-    if !args.is_empty() {
-        raise_type_err(format!("{fname}() takes no positional arguments"))?;
-    }
-    handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, str_hours) {
-            nanos += handle_exact_unit(value, MAX_HOURS, "hours", NS_PER_HOUR as i128)?;
-        } else if eq(key, str_minutes) {
-            nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", NS_PER_MINUTE as i128)?;
-        } else if eq(key, str_seconds) {
-            nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000_i128)?;
-        } else if eq(key, str_milliseconds) {
-            nanos += handle_exact_unit(value, MAX_MILLISECONDS, "milliseconds", 1_000_000_i128)?;
-        } else if eq(key, str_microseconds) {
-            nanos += handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000_i128)?;
-        } else if eq(key, str_nanoseconds) {
-            nanos = value
-                .cast_allow_subclass::<PyInt>()
-                .ok_or_value_err("nanoseconds must be an integer")?
-                .to_i128()?
-                .checked_add(nanos)
-                .ok_or_range_err()?;
-        } else {
-            return Ok(false);
+    match *args {
+        [arg] => {
+            if kwargs.len() != 0 {
+                raise_type_err(format!(
+                    "{fname}() can't mix positional and keyword arguments"
+                ))?;
+            }
+            if let Some(d) = arg.extract(time_delta_type) {
+                instant
+                    .shift(d.negate_if(negate))
+                    .ok_or_range_err()?
+                    .to_obj(cls)
+            } else {
+                raise_type_err(format!("{fname}() argument must be a TimeDelta"))?
+            }
         }
-        Ok(true)
-    })?;
-    if negate {
-        nanos = -nanos;
+        [] => {
+            let tdelta = timedelta_from_kwargs(fname, kwargs, state)?;
+            instant
+                .shift(tdelta.negate_if(negate))
+                .ok_or_range_err()?
+                .to_obj(cls)
+        }
+        _ => raise_type_err(format!(
+            "{fname}() takes at most 1 positional argument, got {}",
+            args.len()
+        ))?,
     }
-
-    instant
-        .shift(TimeDelta::from_nanos(nanos).ok_or_range_err()?)
-        .ok_or_range_err()?
-        .to_obj(cls)
 }
 
 fn difference(cls: HeapType<Instant>, inst_a: Instant, obj_b: PyObj) -> PyReturn {

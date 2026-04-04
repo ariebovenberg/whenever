@@ -390,7 +390,11 @@ pub(crate) fn set_timedelta_from_kwargs(
     Ok(true)
 }
 
-fn timedelta_from_kwargs<K>(fname: &'static str, kwargs: K, state: &State) -> PyResult<TimeDelta>
+pub(crate) fn timedelta_from_kwargs<K>(
+    fname: &'static str,
+    kwargs: K,
+    state: &State,
+) -> PyResult<TimeDelta>
 where
     K: IntoIterator<Item = (PyObj, PyObj)>,
 {

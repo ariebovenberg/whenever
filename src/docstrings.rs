@@ -1579,12 +1579,22 @@ See :ref:`pattern-format` for details.
 OffsetDateTime(\"2024-03-15 14:30:00+02:00\")
 ";
 pub(crate) const OFFSETDATETIME_PARSE_ISO: &CStr = c"\
-Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
+Parse an ISO 8601 string with a UTC offset.
+
+Supports ``YYYY-MM-DDTHH:MM:SS±HH:MM`` and variants
+(see the `ISO 8601 docs <https://whenever.rtfd.io/en/latest/reference/iso8601.html>`__
+for full details).
 
 The inverse of the ``format_iso()`` method.
 
 >>> OffsetDateTime.parse_iso(\"2020-08-15T23:12:00+02:00\")
 OffsetDateTime(\"2020-08-15 23:12:00+02:00\")
+
+Note
+----
+``Z`` is accepted as an offset and treated as ``+00:00``.
+Strictly speaking, ``Z`` means \"UTC\" (i.e. no fixed offset),
+but in practice it is almost universally used as a synonym for ``+00:00``.
 ";
 pub(crate) const OFFSETDATETIME_PARSE_RFC2822: &CStr = c"\
 Parse an offset datetime in RFC 2822 format.
@@ -1661,11 +1671,6 @@ Different rounding modes are available.
 OffsetDateTime(\"2020-08-16 00:00:00[+04:00]\")
 >>> d.round(\"minute\", increment=15, mode=\"floor\")
 OffsetDateTime(\"2020-08-15 23:15:00[+04:00]\")
-
-Note
-----
-* This method has similar behavior to the ``round()`` method of
-  Temporal objects in JavaScript.
 
 Warning
 -------
@@ -1893,11 +1898,6 @@ Different rounding modes are available.
 PlainDateTime(\"2020-08-16 00:00:00\")
 >>> d.round(\"minute\", increment=15, mode=\"floor\")
 PlainDateTime(\"2020-08-15 23:15:00\")
-
-Note
-----
-This method has similar behavior to the ``round()`` method of
-Temporal objects in JavaScript.
 ";
 pub(crate) const PLAINDATETIME_SINCE: &CStr = c"\
 since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=..., naive_arithmetic_ok=False)
@@ -2564,8 +2564,6 @@ Notes
   Otherwise, ambiguity is resolved according to the \"compatible\" strategy.
 * Rounding in \"day\" mode may be affected by DST transitions.
   i.e. on 23-hour days, 11:31 AM is rounded up.
-* This method has similar behavior to the ``round()`` method of
-  Temporal objects in JavaScript.
 ";
 pub(crate) const ZONEDDATETIME_SINCE: &CStr = c"\
 since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)

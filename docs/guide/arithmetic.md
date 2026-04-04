@@ -1,264 +1,257 @@
 (arithmetic)=
 # Arithmetic
 
-The classes in `whenever` support various arithmetic operations.
+`whenever` supports differences, additions, and subtractions across all its
+datetime and instant types. This page is a practical guide to those operations.
 
-## Difference
+```{tip}
+For the conceptual background on exact vs. calendar units,
+see {ref}`the fundamentals <arithmetic2>`.
+For working with duration objects directly,
+see {ref}`delta types <durations>`.
+```
 
-### Exact time
+## Simple examples
 
-You can get the exact duration between two datetimes or instants
-with the `-` operator.
+```python
+>>> ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam").add(hours=5, minutes=30)
+ZonedDateTime("2023-12-28 17:00:00+01:00[Europe/Amsterdam]")
+
+>>> Instant.from_utc(2023, 12, 28, 11, 30) - ZonedDateTime(2023, 12, 28, tz="Europe/Amsterdam")
+TimeDelta("PT12h30m")
+
+>>> d1 = ZonedDateTime(2020, 1, 1, tz="Europe/Amsterdam")
+>>> d2 = ZonedDateTime(2023, 6, 15, tz="Europe/Amsterdam")
+>>> d2.since(d1, in_units=["years", "months", "days"])
+ItemizedDelta("P3y5m14d")
+```
+
+## Overview
+
+The table below summarizes which operations are available for each type.
+Click a row heading to learn more about that kind of operation;
+click a cell to jump to that type's detailed section.
+
+|  | {ref}`Instant <arithmetic-inst>` | {ref}`ZonedDT <arithmetic-zoned>` | {ref}`OffsetDT <arithmetic-offset>` | {ref}`PlainDT <arithmetic-plain>` |
+|:--|:--:|:--:|:--:|:--:|
+| {ref}`Exact difference <arith-exact-diff>` (`-`) | {ref}`✅ <arithmetic-inst>` | {ref}`✅ <arithmetic-zoned>` | {ref}`✅ <arithmetic-offset>` | {ref}`⚠️ <arithmetic-plain>` |
+| {ref}`Calendar difference <arith-cal-diff>` (`since`/`until`) | {ref}`❌ <arithmetic-inst>` | {ref}`✅ <arithmetic-zoned>` | {ref}`✅ <arithmetic-offset>` | {ref}`✅ <arithmetic-plain>` |
+| {ref}`Add/subtract exact units <arith-add-exact>` | {ref}`✅ <arithmetic-inst>` |  {ref}`✅ <arithmetic-zoned>` | {ref}`⚠️ <arithmetic-offset>` | {ref}`⚠️ <arithmetic-plain>` |
+| {ref}`Add/subtract calendar units <arith-add-cal>` | {ref}`❌ <arithmetic-inst>` |  {ref}`✅ <arithmetic-zoned>` | {ref}`⚠️ <arithmetic-offset>` | {ref}`✅ <arithmetic-plain>` |
+
+Key: ✅ fully supported · ⚠️ supported with caveats · ❌ not supported
+
+## Operations
+
+This section explains what each row of the table above means.
+For the specifics and caveats of each type, see the
+{ref}`per-type sections <arith-per-type>` below.
+
+(arith-exact-diff)=
+### Exact difference
+
+The `-` operator computes the exact elapsed time between two points in time.
+The result is always a {class}`~whenever.TimeDelta`.
 Exact and local types cannot be mixed, although exact types can be mixed
 with each other:
 
 ```python
->>> # difference in exact time
 >>> Instant.from_utc(2023, 12, 28, 11, 30) - ZonedDateTime(2023, 12, 28, tz="Europe/Amsterdam")
 TimeDelta("PT12h30m")
->>> # difference in local time (emits NaiveArithmeticWarning)
->>> PlainDateTime(2023, 12, 28, 11) - PlainDateTime(2023, 12, 27, 11)
-TimeDelta("PT24h")
 ```
 
-```{note}
-Subtracting two {class}`~whenever.PlainDateTime` values emits a
-{class}`~whenever.NaiveArithmeticWarning`, because without
-timezone context the result can't account for DST transitions.
-See {ref}`arithmetic-dst` for details.
-```
+This measures real elapsed seconds, not calendar distance.
+For differences in calendar units (years, months, days), use `since()`/`until()` instead.
 
-The result is always a {class}`~whenever.TimeDelta`, representing the exact elapsed time.
-This is intentional: the `-` operator is reserved for cases
-where the result is unambiguous (see {ref}`design`).
-For differences in calendar units, use `since()` / `until()` below.
+(arith-cal-diff)=
+### Calendar difference
 
-### In specific (calendar) units
-
-For calendar differences, the `since()` and `until()` methods are available.
-These methods can express the difference in various calendar units,
-such as years, months, and days, while accounting for the varying lengths of these units.
+The `since()` and `until()` methods compute differences in calendar units.
+The result is an {class}`~whenever.ItemizedDelta` (or {class}`~whenever.ItemizedDateDelta`
+for date-only types), with one component per unit:
 
 ```python
->>> d1 = Date(2020, 1, 1)
->>> d2 = Date(2023, 6, 15)
 >>> d2.since(d1, in_units=["years", "months", "days"])
-ItemizedDateDelta("P3y5m14d")
->>> d1.until(d2, in_units=["years", "months", "days"])
-ItemizedDateDelta("P3y5m14d")
+ItemizedDelta("P3y5m14d")
 ```
 
-Beyond calendar units, `since()` and `until()` also support exact time units.
-This lets you express differences in whatever granularity you need—for
-example, a total number of minutes without rolling over to hours:
+These methods also accept exact time units (e.g. `in_units=["days", "hours"]`),
+which measures elapsed time in those units.
+Pass `total=` to get a single `float` directly:
 
 ```python
->>> d1 = OffsetDateTime(2020, 1, 1, 12, offset=-7)
->>> d2 = OffsetDateTime(2020, 1, 3, 15, 30, offset=-7)
->>> d2.since(d1, in_units=["days", "hours"])
-ItemizedDelta("P2d3h")
+>>> d2.since(d1, total="days")
+1261.0
 ```
 
-:::{tip}
-The result is a dict-like structure ordered from largest to smallest unit,
-so you can unpack the values directly:
+Various rounding modes are available for the smallest unit. See {ref}`rounding` for details.
 
-```python
->>> years, months, days = d2.since(d1, in_units=["years", "months", "days"]).values()
->>> years, months, days
-(3, 5, 14)
-```
-:::
-
-These methods are available on {class}`~whenever.Date`,
-{class}`~whenever.ZonedDateTime`, {class}`~whenever.OffsetDateTime`, and
-{class}`~whenever.PlainDateTime`.
-If you only need a single unit, pass the `total` parameter to get a `float` directly:
-
-```python
->>> d2.since(d1, total="months")
-41.46666666667
-```
-
-```{note}
-For calendar units (years, months), the fractional part is based on
-the number of days in the surrounding period, not a fixed conversion factor.
-For example, 6 months starting from January 1 covers 181 days out of a
-365-day year, giving approximately 0.496 years — not exactly 0.5.
-```
-
-Various rounding modes are available for the smallest unit when using `in_units`.
-See {ref}`rounding` for details.
-
+(arith-add-exact)=
 (add-subtract-time)=
-## Adding and subtracting
+### Add/subtract exact units
 
-You can add or subtract various units of time from a datetime instance.
+Adding or subtracting hours, minutes, seconds, milliseconds, microseconds, or nanoseconds
+shifts the datetime by an exact elapsed duration.
+DST transitions do not affect the result—a shift of two hours always means two hours of
+real elapsed time:
 
 ```python
->>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
->>> d.add(hours=5, minutes=30)
-ZonedDateTime("2023-12-28 17:00:00+01:00[Europe/Amsterdam]")
+>>> d = ZonedDateTime(2023, 3, 25, hour=12, tz="Europe/Amsterdam")
+>>> d.add(hours=24)   # clocks spring forward overnight
+ZonedDateTime("2023-03-26 13:00:00+02:00[Europe/Amsterdam]")
 ```
 
-The arithmetic behavior differs across three categories of units:
+(arith-add-cal)=
+### Add/subtract calendar units
 
-1. Adding **years and months** adjusts the calendar date. If the resulting day
-   doesn't exist, it's truncated to the last valid day of the month:
+Adding or subtracting years, months, weeks, or days adjusts the calendar date while
+keeping the local time of day intact. This follows RFC 5545 (iCalendar) and matches
+the intuitive meaning of "reschedule to tomorrow" or "move to next month."
 
-   ```python
-   >>> d = PlainDateTime(2023, 8, 31, hour=12)
-   >>> d.add(months=1)
-   PlainDateTime("2023-09-30 12:00:00")
-   ```
+**Month truncation.** If the result would land on a day that doesn't exist
+(e.g. February 31st), it is truncated to the last valid day of the month:
 
-   ```{note}
-   On {class}`~whenever.ZonedDateTime`, the result may land in a DST transition.
-   Use the `disambiguate` argument to control how this is resolved
-   (default: `"compatible"`). See {ref}`arithmetic-dst`.
-   ```
+```python
+>>> PlainDateTime(2023, 8, 31).add(months=1)
+PlainDateTime("2023-09-30 00:00:00")   # September has 30 days
+```
 
-2. Adding **days** advances the calendar date, keeping the local time of day intact.
-   This is the behavior you'd expect when postponing something "to tomorrow"—
-   the time stays the same regardless of DST changes (following RFC 5545).
-   It is *not* the same as adding 24 hours during a DST transition—see
-   {ref}`arithmetic-dst` for the distinction.
+**Days: calendar or exact?** The industry standard—and `whenever`'s default—treats days
+and weeks as *calendar* units: adding a day preserves the local clock time,
+not an exact 24-hour span. The difference matters during DST transitions:
 
-   ```python
-   >>> d = ZonedDateTime(2023, 3, 25, hour=12, tz="Europe/Amsterdam")
-   >>> d.add(days=1)  # a day later, still 12 o'clock
-   ZonedDateTime("2023-03-26 12:00:00+02:00[Europe/Amsterdam]")
-   ```
+```python
+>>> d = ZonedDateTime(2023, 3, 25, hour=12, tz="Europe/Amsterdam")
+>>> d.add(days=1)    # "same time tomorrow"—only 23 h elapsed
+ZonedDateTime("2023-03-26 12:00:00+02:00[Europe/Amsterdam]")
+>>> d.add(hours=24)  # exactly 24 hours later—local time shifts
+ZonedDateTime("2023-03-26 13:00:00+02:00[Europe/Amsterdam]")
+```
 
-   ```{note}
-   As with months and years, adding days to a {class}`~whenever.ZonedDateTime`
-   accepts the `disambiguate` argument,
-   since the resulting date might fall in a DST transition.
-   ```
-
-3. Adding **hours, minutes, seconds** (and smaller) shifts the datetime by
-   the exact elapsed duration:
-
-   ```python
-   >>> d = ZonedDateTime(2023, 3, 25, hour=12, tz="Europe/Amsterdam")
-   >>> d.add(hours=24)  # clocks sprang forward overnight
-   ZonedDateTime("2023-03-26 13:00:00+02:00[Europe/Amsterdam]")
-   ```
+In contexts where there is no local time to preserve (e.g. {class}`~whenever.Instant`
+or {class}`~whenever.TimeDelta`), days can still be used but are treated as exactly
+24 hours each. A {class}`~whenever.DaysAssumed24HoursWarning` is emitted as a reminder;
+pass `days_assumed_24h_ok=True` to suppress it.
 
 ```{seealso}
-For more details on working with durations as standalone objects
-(reusing, converting, or comparing them), see {ref}`delta types <durations>`.
+{ref}`the fundamentals <arithmetic2>` for the full conceptual background on exact
+vs. calendar units.
 ```
 
-(arithmetic-dst)=
-## Days aren't always 24 hours
+(arith-per-type)=
+## Per type
 
-Due to DST transitions, a calendar day can be 23 or 25 hours long[^1].
-`whenever`'s API surfaces this where it matters—operations that may silently
-produce incorrect results emit a warning instead.
+(arithmetic-inst)=
+### Instant
 
-The difference is most visible when choosing between `add(days=1)` and
-`add(hours=24)`. When clocks spring forward:
+{class}`~whenever.Instant` represents a single point in time with no calendar or
+timezone context. It therefore only natively supports exact-time operations.
+
+| Operation | Support |
+| --------- | ------- |
+| Exact difference (`-`) | ✅ returns {class}`~whenever.TimeDelta` |
+| Calendar difference (`since`/`until`) | ❌ not available |
+| Add/subtract hours, minutes, seconds, … | ✅ always unambiguous |
+| Add/subtract days, weeks | ⚠️ treated as exactly 24 hours ({class}`~whenever.DaysAssumed24HoursWarning`) |
+| Add/subtract years, months | ❌ not supported |
 
 ```python
->>> # The night before Spring Forward in Amsterdam (March 30 → 31, 2025)
->>> eve = ZonedDateTime(2025, 3, 30, hour=1, tz="Europe/Amsterdam")
->>> eve.add(days=1)       # "same time tomorrow"
-ZonedDateTime("2025-03-31 01:00:00+02:00[Europe/Amsterdam]")
->>> eve.add(hours=24)     # exactly 24 hours later (but 2 AM local!)
-ZonedDateTime("2025-03-31 02:00:00+02:00[Europe/Amsterdam]")
+>>> i = Instant.from_utc(2023, 3, 25, 12)
+>>> i.add(hours=24)                           # exact—unambiguous
+Instant("2023-03-26 12:00:00Z")
+>>> i.add(days=1)                             # emits DaysAssumed24HoursWarning
+Instant("2023-03-26 12:00:00Z")
+>>> i.add(days=1, days_assumed_24h_ok=True)   # suppress
+Instant("2023-03-26 12:00:00Z")
 ```
 
-Use `days` when you want "same wall-clock time tomorrow,"
-and `hours` when you want an exact elapsed duration.
+(arithmetic-zoned)=
+### ZonedDateTime
 
-For background on the distinction between exact and calendar units,
-see {ref}`the fundamentals <arithmetic2>`.
+{class}`~whenever.ZonedDateTime` is the recommended type for all arithmetic. It carries
+full timezone rules and handles DST correctly — all four arithmetic operations are
+fully supported.
 
-**ZonedDateTime** always handles DST correctly. Adding days preserves
-the local time of day; adding hours/minutes/seconds advances by exact
-elapsed time. When adding years, months, or days, the result may land
-in a DST transition — use `disambiguate` to control resolution
-(default: `"compatible"`):
+When adding calendar units, the result may land in a DST transition.
+Use `disambiguate` to control how this is resolved (default: `"compatible"`):
 
 ```python
 >>> d = ZonedDateTime(2024, 10, 3, 1, 15, tz="America/Denver")
+>>> d.add(months=1)                          # default: compatible
+ZonedDateTime("2024-11-03 01:15:00-06:00[America/Denver]")
 >>> d.add(months=1, disambiguate="raise")
 Traceback (most recent call last):
   ...
 whenever.RepeatedTime: 2024-11-03 01:15:00 is repeated in timezone 'America/Denver'
 ```
 
-**OffsetDateTime** carries a fixed UTC offset, not full timezone rules.
-It can't know whether DST applies after a shift, so arithmetic that crosses
-a DST boundary may silently preserve an incorrect offset.
-These operations emit a {class}`~whenever.StaleOffsetWarning`:
+The difference between `days` and `hours` is most visible during a DST transition:
+
+```python
+>>> eve = ZonedDateTime(2025, 3, 30, hour=1, tz="Europe/Amsterdam")
+>>> eve.add(days=1)    # "same time tomorrow"
+ZonedDateTime("2025-03-31 01:00:00+02:00[Europe/Amsterdam]")
+>>> eve.add(hours=24)  # exactly 24 hours later
+ZonedDateTime("2025-03-31 02:00:00+02:00[Europe/Amsterdam]")
+```
+
+(arithmetic-offset)=
+### OffsetDateTime
+
+{class}`~whenever.OffsetDateTime` carries a fixed UTC offset, not the full timezone
+rules needed to determine whether DST applies at a future point. All arithmetic
+operations are supported, but any operation that crosses a DST boundary may silently
+carry a stale offset. These operations emit a {class}`~whenever.StaleOffsetWarning`:
 
 ```python
 >>> d = OffsetDateTime(2024, 3, 9, 13, offset=-7)
->>> d.add(hours=24)  # emits StaleOffsetWarning
-OffsetDateTime("2024-03-10 13:00:00-07:00")  # offset is stale; Denver is -06:00 on this date
->>> d.to_tz("America/Denver").add(hours=24)   # DST-safe
+>>> d.add(hours=24)                           # emits StaleOffsetWarning
+OffsetDateTime("2024-03-10 13:00:00-07:00")   # offset is stale; Denver is -06:00 here
+>>> d.to_tz("America/Denver").add(hours=24)   # DST-safe alternative
 ZonedDateTime("2024-03-10 14:00:00-06:00[America/Denver]")
->>> d.add(hours=24, stale_offset_ok=True)  # suppress if intentional
+>>> d.add(hours=24, stale_offset_ok=True)     # suppress if intentional
 OffsetDateTime("2024-03-10 13:00:00-07:00")
 ```
 
-{class}`~whenever.Instant` has no calendar, so it only supports exact time units,
-which always work correctly.
-
 ```{attention}
-Even in a timezone without DST, prefer {class}`~whenever.ZonedDateTime` over
-{class}`~whenever.OffsetDateTime` for arithmetic. Political decisions can change
-a region's offset in the future.
+Even in a timezone without DST, prefer {class}`~whenever.ZonedDateTime` for arithmetic.
+Political decisions can change a region's UTC offset in the future.
 ```
 
-**PlainDateTime** has no timezone, so exact-time arithmetic can't account for
-DST transitions. Adding or subtracting hours/minutes/seconds—or measuring an
-exact difference—emits a {class}`~whenever.NaiveArithmeticWarning`:
+:::{admonition} Why allow operations that can be wrong?
+:class: hint
+
+DST-safe arithmetic requires full timezone rules. When you have an
+{class}`~whenever.OffsetDateTime` or {class}`~whenever.PlainDateTime`, that context
+isn't available.
+
+Rather than making these operations impossible—frustrating when you genuinely don't
+have a timezone or know there is no DST—`whenever` allows them but emits a warning.
+The warning points to the safer alternative ({class}`~whenever.ZonedDateTime`) while
+leaving an escape hatch for cases where you understand the trade-off.
+:::
+
+
+(arithmetic-plain)=
+### PlainDateTime
+
+{class}`~whenever.PlainDateTime` has no timezone, so it cannot account for DST
+in exact-time operations.
+
+| Operation | Support |
+| --------- | ------- |
+| Exact difference (`-`) | ⚠️ {class}`~whenever.NaiveArithmeticWarning` |
+| Calendar difference with calendar units | ✅ |
+| Calendar difference with exact units (e.g. `total="hours"`) | ⚠️ {class}`~whenever.NaiveArithmeticWarning` |
+| Add/subtract exact units | ⚠️ {class}`~whenever.NaiveArithmeticWarning` |
+| Add/subtract calendar units | ✅ |
 
 ```python
 >>> d = PlainDateTime(2023, 10, 29, 1, 30)
->>> d.add(hours=2)  # emits NaiveArithmeticWarning
-PlainDateTime("2023-10-29 03:30:00")  # 03:30 doesn't exist in Amsterdam on this date
->>> d.assume_tz("Europe/Amsterdam").add(hours=2)   # timezone-aware
+>>> d.add(hours=2)                                # emits NaiveArithmeticWarning
+PlainDateTime("2023-10-29 03:30:00")              # may not exist in your timezone
+>>> d.assume_tz("Europe/Amsterdam").add(hours=2)  # timezone-aware alternative
 ZonedDateTime("2023-10-29 02:30:00+01:00[Europe/Amsterdam]")
->>> d.add(hours=2, naive_arithmetic_ok=True)  # suppress if intentional
+>>> d.add(hours=2, naive_arithmetic_ok=True)      # suppress if intentional
 PlainDateTime("2023-10-29 03:30:00")
 ```
-
-When using `since()` / `until()` on a `PlainDateTime`, the warning is
-emitted only for exact time units (e.g. ``total="hours"``).
-Calendar units (e.g. ``total="days"``) are always safe.
-
-### Summary
-
-|                       | Instant | OffsetDT|ZonedDT  |PlainDT  |
-|:----------------------|:-------:|:-------:|:-------:|:-------:|
-| Difference (`-`)      | ✅      |  ✅     |   ✅    |⚠️  [^4] |
-| `since()` / `until()` (calendar units) | ❌      |  ✅  |   ✅    |    ✅   |
-| `since()` / `until()` (exact units)    | ❌      |  ✅  |   ✅    |⚠️  [^4] |
-| add/subtract years, months, days       | ❌      |⚠️  [^2] |✅  [^3] |    ✅   |
-| add/subtract hours, minutes, seconds   | ✅      |⚠️  [^2] |  ✅     |⚠️  [^4] |
-
-[^2]: Emits a {class}`~whenever.StaleOffsetWarning`
-[^3]: The result may be ambiguous in rare cases. Accepts the ``disambiguate`` argument.
-[^4]: Emits a {class}`~whenever.NaiveArithmeticWarning`
-
-
-:::{admonition} Why are these operations allowed at all if they can be wrong?
-:class: hint
-
-DST-safe arithmetic requires a timezone. When you work with
-{class}`~whenever.OffsetDateTime` or {class}`~whenever.PlainDateTime`,
-that timezone context is simply not available.
-
-Rather than making these operations impossible (which would be frustrating
-when you genuinely don't have a timezone, or when you *know* there is no DST),
-`whenever` allows them but emits a warning. The warning points you to the
-safer alternative—using {class}`~whenever.ZonedDateTime`—while still giving
-you an escape hatch if you understand the trade-off.
-:::
-
-[^1]: In rare cases, timezone changes like DST can even result in day lengths
-      with non-integer hour counts.

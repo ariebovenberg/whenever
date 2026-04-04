@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.0b3 (2026-04-??)
+## 0.10.0b4 (2026-04-??)
 
 A big release with several breaking changes and improvements. Highlights
 are the new delta API, customizable string formatting and parsing,
@@ -157,6 +157,9 @@ See the full list below.
   - Explanation of the rounding API
 - `YearMonth`, `MonthDay`, `Weekday`, and `IsoWeekDate` are now
   implemented in pure Python always, reducing the compiled extension size.
+- `Instant.add/subtract` now support passing `TimeDelta` instances.
+  Instead of rejecting `days` and `weeks`, these methods now emit a warning
+  about DST issues, consistent with the behavior of `TimeDelta`.
 
 **Fixed**
 
