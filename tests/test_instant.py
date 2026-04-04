@@ -10,6 +10,7 @@ from hypothesis import given
 from hypothesis.strategies import floats, integers, text
 
 from whenever import (
+    DaysAssumed24HoursWarning,
     Instant,
     OffsetDateTime,
     PlainDateTime,
@@ -606,6 +607,13 @@ class TestAddMethod:
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         assert d.add(hours=24, seconds=5) == d + hours(24) + seconds(5)
         assert d + nanoseconds(20_000_000) == d.add(nanoseconds=20_000_000)
+        assert d.add() == d
+
+    def test_positional_timedelta(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
+        assert d.add(hours(24) + seconds(5)) == d + hours(24) + seconds(5)
+        assert d.add(nanoseconds(20_000_000)) == d.add(nanoseconds=20_000_000)
+        assert d.add(TimeDelta.ZERO) == d
 
     def test_invalid(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
@@ -615,8 +623,20 @@ class TestAddMethod:
         with pytest.raises((ValueError, OverflowError), match="range"):
             d.add(hours=-24 * 365 * 3000)
 
-        with pytest.raises(TypeError, match="positional"):
-            d.add(4)  # type: ignore[misc]
+        with pytest.raises(TypeError, match="TimeDelta"):
+            d.add(4)  # type: ignore[call-overload]
+
+        with pytest.raises(TypeError, match="mix"):
+            d.add(hours(1), hours=1)  # type: ignore[call-overload]
+
+    def test_days_weeks(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
+        with pytest.warns(DaysAssumed24HoursWarning):
+            assert d.add(days=1) == d + hours(24)
+        with pytest.warns(DaysAssumed24HoursWarning):
+            assert d.add(weeks=1) == d + hours(24 * 7)
+        # suppressed
+        assert d.add(days=1, days_assumed_24h_ok=True) == d + hours(24)
 
     @given(
         hours=floats(),
@@ -639,6 +659,13 @@ class TestSubtractMethod:
     def test_valid(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         assert d.subtract(hours=24, seconds=5) == d - hours(24) - seconds(5)
+        assert d.subtract() == d
+
+    def test_positional_timedelta(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        assert d.subtract(hours(24) + seconds(5)) == d - hours(24) - seconds(5)
+        assert d.subtract(hours(4)) == d.subtract(hours=4)
+        assert d.subtract(TimeDelta.ZERO) == d
 
     def test_invalid(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
@@ -648,11 +675,18 @@ class TestSubtractMethod:
         with pytest.raises((ValueError, OverflowError), match="range"):
             d.subtract(hours=-24 * 365 * 8000)
 
-        with pytest.raises(TypeError, match="positional"):
-            d.subtract(4)  # type: ignore[misc]
+        with pytest.raises(TypeError, match="TimeDelta"):
+            d.subtract(4)  # type: ignore[call-overload]
 
-        with pytest.raises(TypeError, match="positional"):
-            d.subtract(hours(4))  # type: ignore[arg-type,misc]
+        with pytest.raises(TypeError, match="mix"):
+            d.subtract(hours(1), hours=1)  # type: ignore[call-overload]
+
+    def test_days_weeks(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with pytest.warns(DaysAssumed24HoursWarning):
+            assert d.subtract(days=1) == d - hours(24)
+        # suppressed
+        assert d.subtract(days=1, days_assumed_24h_ok=True) == d - hours(24)
 
     @given(
         hours=floats(),

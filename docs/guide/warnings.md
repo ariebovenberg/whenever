@@ -105,7 +105,7 @@ DST-related warning accepts a boolean keyword argument that suppresses it:
 
 | Keyword argument | Suppresses | Used on |
 |---|---|---|
-| `days_assumed_24h_ok=True` | {class}`~whenever.DaysAssumed24HoursWarning` | {class}`~whenever.TimeDelta` methods |
+| `days_assumed_24h_ok=True` | {class}`~whenever.DaysAssumed24HoursWarning` | {class}`~whenever.TimeDelta` methods, {class}`~whenever.Instant` `add`/`subtract` |
 | `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` methods |
 | `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods |
 

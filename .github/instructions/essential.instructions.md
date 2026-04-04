@@ -51,6 +51,7 @@ Key directories:
 - **Pure Python tests**: remove the compiled extension first (`make clean-ext`)
   Rebuild after with `make build`.
 - Group related test functions in a class when testing a single method/concept
+- Make liberal use of `pytest.mark.parametrize` to describe repeated test cases without duplication
 - Match existing test style and keep tests in the same file when possible
 - Pre-existing test failures are common (features not yet ported to Rust). Ignore them
   unless they're related to your changes.

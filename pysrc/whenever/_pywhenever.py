@@ -6035,56 +6035,117 @@ class Instant(_ExactTime):
         ).astimezone(_UTC)
         return cls._from_py_unchecked(dt, state.nanos)
 
-    def add(
-        self,
-        *,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-    ) -> Instant:
+    if not TYPE_CHECKING:  # for a nicer autodoc
+
+        @overload
+        def add(self, d: TimeDelta, /) -> Instant: ...
+
+        @overload
+        def add(
+            self,
+            *,
+            weeks: float = 0,
+            days: float = 0,
+            hours: float = 0,
+            minutes: float = 0,
+            seconds: float = 0,
+            milliseconds: float = 0,
+            microseconds: float = 0,
+            nanoseconds: int = 0,
+            days_assumed_24h_ok: bool = False,
+        ) -> Instant: ...
+
+    @no_type_check
+    def add(self, *args, **kwargs) -> Instant:
         """Add a time amount to this instant.
 
         See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
         """
-        delta_ns = _time_units_to_nanos(
-            1,
-            hours,
-            minutes,
-            seconds,
-            milliseconds,
-            microseconds,
-            nanoseconds,
-        )
-        delta_secs, nanos = divmod(self._nanos + delta_ns, 1_000_000_000)
-        return self._from_py_unchecked(
-            self._py_dt + _timedelta(seconds=delta_secs),
-            nanos,
-        )
+        return self._shift(1, *args, **kwargs)
 
-    def subtract(
+    if not TYPE_CHECKING:  # for a nicer autodoc
+
+        @overload
+        def subtract(self, d: TimeDelta, /) -> Instant: ...
+
+        @overload
+        def subtract(
+            self,
+            *,
+            weeks: float = 0,
+            days: float = 0,
+            hours: float = 0,
+            minutes: float = 0,
+            seconds: float = 0,
+            milliseconds: float = 0,
+            microseconds: float = 0,
+            nanoseconds: int = 0,
+            days_assumed_24h_ok: bool = False,
+        ) -> Instant: ...
+
+    @no_type_check
+    def subtract(self, *args, **kwargs) -> Instant:
+        """Subtract a time amount from this instant.
+
+        See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
+        """
+        return self._shift(-1, *args, **kwargs)
+
+    @no_type_check
+    def _shift(
         self,
+        sign: int,
+        arg: TimeDelta | UNSET = UNSET,
+        /,
+        **kwargs,
+    ) -> Instant:
+        if kwargs:
+            if arg is not UNSET:
+                raise TypeError("Cannot mix positional and keyword arguments")
+            return self._shift_kwargs(sign, **kwargs)
+        elif arg is not UNSET:
+            if not isinstance(arg, TimeDelta):
+                raise TypeError(f"argument must be a TimeDelta, got {arg!r}")
+            return self._shift_kwargs(sign, nanoseconds=arg._total_ns)
+        else:
+            return self
+
+    def _shift_kwargs(
+        self,
+        sign: int,
         *,
+        weeks: float = 0,
+        days: float = 0,
         hours: float = 0,
         minutes: float = 0,
         seconds: float = 0,
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
+        days_assumed_24h_ok: bool = False,
     ) -> Instant:
-        """Subtract a time amount from this instant.
-
-        See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
-        """
-        return self.add(
-            hours=-hours,
-            minutes=-minutes,
-            seconds=-seconds,
-            milliseconds=-milliseconds,
-            microseconds=-microseconds,
-            nanoseconds=-nanoseconds,
+        if (weeks or days) and not days_assumed_24h_ok:
+            warn(
+                DAYS_NOT_ALWAYS_24H_MSG,
+                DaysAssumed24HoursWarning,
+                stacklevel=4,
+            )
+        delta_ns = sign * (
+            int(weeks * 7 * 86_400_000_000_000)
+            + int(days * 86_400_000_000_000)
+            + int(hours * 3_600_000_000_000)
+            + int(minutes * 60_000_000_000)
+            + int(seconds * 1_000_000_000)
+            + int(milliseconds * 1_000_000)
+            + int(microseconds * 1_000)
+            + nanoseconds
+        )
+        if abs(delta_ns) > _MAX_DELTA_NANOS:
+            raise ValueError("TimeDelta out of range")
+        delta_secs, nanos = divmod(self._nanos + delta_ns, 1_000_000_000)
+        return self._from_py_unchecked(
+            self._py_dt + _timedelta(seconds=delta_secs),
+            nanos,
         )
 
     def round(
@@ -6366,12 +6427,22 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     @classmethod
     def parse_iso(cls, s: str, /) -> OffsetDateTime:
-        """Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
+        """Parse an ISO 8601 string with a UTC offset.
+
+        Supports ``YYYY-MM-DDTHH:MM:SS±HH:MM`` and variants
+        (see the `ISO 8601 docs <https://whenever.rtfd.io/en/latest/reference/iso8601.html>`__
+        for full details).
 
         The inverse of the ``format_iso()`` method.
 
         >>> OffsetDateTime.parse_iso("2020-08-15T23:12:00+02:00")
         OffsetDateTime("2020-08-15 23:12:00+02:00")
+
+        Note
+        ----
+        ``Z`` is accepted as an offset and treated as ``+00:00``.
+        Strictly speaking, ``Z`` means "UTC" (i.e. no fixed offset),
+        but in practice it is almost universally used as a synonym for ``+00:00``.
         """
         self = _object_new(cls)
         self._init_from_iso(s)
@@ -7073,11 +7144,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         OffsetDateTime("2020-08-16 00:00:00[+04:00]")
         >>> d.round("minute", increment=15, mode="floor")
         OffsetDateTime("2020-08-15 23:15:00[+04:00]")
-
-        Note
-        ----
-        * This method has similar behavior to the ``round()`` method of
-          Temporal objects in JavaScript.
 
         Warning
         -------
@@ -8311,8 +8377,6 @@ class ZonedDateTime(_ExactAndLocalTime):
           Otherwise, ambiguity is resolved according to the "compatible" strategy.
         * Rounding in "day" mode may be affected by DST transitions.
           i.e. on 23-hour days, 11:31 AM is rounded up.
-        * This method has similar behavior to the ``round()`` method of
-          Temporal objects in JavaScript.
         """
         if isinstance(unit, TimeDelta):
             if increment != 1:
@@ -9251,11 +9315,6 @@ class PlainDateTime(_LocalTime):
         PlainDateTime("2020-08-16 00:00:00")
         >>> d.round("minute", increment=15, mode="floor")
         PlainDateTime("2020-08-15 23:15:00")
-
-        Note
-        ----
-        This method has similar behavior to the ``round()`` method of
-        Temporal objects in JavaScript.
         """
         if isinstance(unit, TimeDelta):
             if increment != 1:
