@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.0b5 (2026-04-??)
+## 0.10.0 (2026-04-05)
 
 A big release with several breaking changes and improvements. Highlights
 are the new delta API, customizable string formatting and parsing,
@@ -165,13 +165,6 @@ See the full list below.
 
 - (Pure-Python version) Fixed incorrect behavior of `<` operator between `Time`
   instances if nanoseconds are involved.
-
-**Changed during beta**
-
-- The warning-suppressing context managers were removed.
-- The format code for day-of-week was changed from `d` to `E` to avoid confusion with `D`.
-- The DST warning classes were renamed.
-- The `difference()` method is no longer deprecated.
 
 ## 0.9.5 (2026-01-11)
 
