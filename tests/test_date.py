@@ -1420,6 +1420,8 @@ class TestNthWeekday:
             (Date(2024, 12, 25), -3, FRIDAY, Date(2024, 12, 6)),
             (Date(2024, 12, 25), 5, FRIDAY, Date(2025, 1, 24)),
             (Date(2024, 12, 25), -5, FRIDAY, Date(2024, 11, 22)),
+            (Date(2024, 12, 25), 234, FRIDAY, Date(2029, 6, 15)),
+            (Date(2024, 12, 25), -234, FRIDAY, Date(2020, 7, 3)),
         ],
     )
     def test_values(self, d, n, weekday, expected):
@@ -1435,10 +1437,10 @@ class TestNthWeekday:
 
     def test_n_too_large(self):
         with pytest.raises(ValueError):
-            Date(2024, 12, 25).nth_weekday(6, FRIDAY)
+            Date(2024, 12, 25).nth_weekday(521_723, FRIDAY)
 
         with pytest.raises(ValueError):
-            Date(2024, 12, 25).nth_weekday(-6, FRIDAY)
+            Date(2024, 12, 25).nth_weekday(-521_723, FRIDAY)
 
     def test_same_weekday_as_date(self):
         # 2024-12-25 is a Wednesday. n=1 should return NEXT Wednesday, not self

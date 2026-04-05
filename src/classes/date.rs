@@ -591,8 +591,8 @@ fn nth_weekday(cls: HeapType<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
             .to_i64()?;
         if raw == 0 {
             raise_value_err("n must not be 0")?
-        } else if !(-5..=5).contains(&raw) {
-            raise_value_err("n must be between -5 and 5")?
+        } else if !(-521_722..=521_722).contains(&raw) {
+            raise_value_err("n out of range")?
         }
         // SAFETY: we just checked that it's well within range
         raw as i32

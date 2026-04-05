@@ -6,6 +6,7 @@ from typing import Any, Literal, cast
 import pytest
 
 from whenever import (
+    Instant,
     ItemizedDateDelta,
     ItemizedDelta,
     NaiveArithmeticWarning,
@@ -643,6 +644,13 @@ class TestInUnitsRelativeToNonZoned:
         )
         assert plain_result.exact_eq(zoned_result)
 
+    def test_invalid_relative_to_type(self):
+        with pytest.raises(TypeError, match="relative_to"):
+            ItemizedDelta(years=2, hours=9).in_units(
+                ["years", "hours"],
+                relative_to=Instant.from_utc(2021, 1, 1),  # type: ignore[arg-type]
+            )
+
 
 class TestAddSub:
     # We have a limited number of test cases here since this operation is
@@ -927,6 +935,12 @@ class TestTotal:
     def test_no_relative_to(self):
         with pytest.raises(TypeError, match="relative_to"):
             ItemizedDelta(years=2, hours=9).total("months")  # type: ignore[call-arg]
+
+    def test_invalid_relative_to_type(self):
+        with pytest.raises(TypeError, match="relative_to"):
+            ItemizedDelta(years=2, hours=9).total(
+                "months", relative_to=Instant.from_utc(2021, 1, 1)  # type: ignore[arg-type]
+            )
 
     def test_nanoseconds_is_int(self):
         assert isinstance(
