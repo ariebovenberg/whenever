@@ -37,17 +37,16 @@ def _nth_weekday_of_month(year: int, month: int, n: int, weekday: int) -> int:
     ``weekday`` is ISO weekday (1=Mon, 7=Sun).
     Returns the day of month, or raises ValueError if it doesn't exist.
     """
+    dim = days_in_month(year, month)
     if n > 0:
         first_dow = _date(year, month, 1).isoweekday()
         offset = (weekday - first_dow) % 7
         day = 1 + offset + (n - 1) * 7
     else:
-        dim = days_in_month(year, month)
         last_dow = _date(year, month, dim).isoweekday()
         offset = (last_dow - weekday) % 7
         day = dim - offset + (n + 1) * 7
 
-    dim = days_in_month(year, month)
     if day < 1 or day > dim:
         raise ValueError(f"Weekday #{n} doesn't exist in {year}-{month:02d}")
     return day

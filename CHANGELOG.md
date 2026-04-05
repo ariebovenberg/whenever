@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.0b4 (2026-04-??)
+## 0.10.0b5 (2026-04-??)
 
 A big release with several breaking changes and improvements. Highlights
 are the new delta API, customizable string formatting and parsing,

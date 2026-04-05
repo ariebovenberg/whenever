@@ -518,8 +518,8 @@ class Date(_Base):
             raise ValueError("n must not be 0")
         if not isinstance(weekday, Weekday):
             raise TypeError("weekday must be a Weekday enum member")
-        if not (-5 <= n <= 5):
-            raise ValueError("n must be between -5 and 5")
+        if not (-521_722 <= n <= 521_722):
+            raise ValueError("n out of range")
         target_dow = weekday.value
         self_dow = self._py_date.isoweekday()
 
@@ -3940,6 +3940,10 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                     stacklevel=2,
                 )
             relative_to = relative_to.to_plain().assume_tz("UTC")
+        elif not isinstance(relative_to, ZonedDateTime):
+            raise TypeError(
+                "relative_to must be a ZonedDateTime, PlainDateTime, or OffsetDateTime"
+            )
         return relative_to.add(self).since(
             relative_to,
             in_units=units,
@@ -3989,6 +3993,10 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                     stacklevel=2,
                 )
             relative_to = relative_to.to_plain().assume_tz("UTC")
+        elif not isinstance(relative_to, ZonedDateTime):
+            raise TypeError(
+                "relative_to must be a ZonedDateTime, PlainDateTime, or OffsetDateTime"
+            )
         return (relative_to.add(self) - relative_to).total(
             unit, relative_to=relative_to
         )
@@ -7265,7 +7273,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         return _offset_since(
             self,
             b,
-            total or None,
+            None if total is UNSET else total,
             None if in_units is UNSET else in_units,
             round_mode,
             round_increment,
@@ -7305,7 +7313,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         return _offset_since(
             b,
             self,
-            total or None,
+            None if total is UNSET else total,
             None if in_units is UNSET else in_units,
             round_mode,
             round_increment,
@@ -8106,7 +8114,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         return _zoned_since(
             self,
             b,
-            total or None,
+            None if total is UNSET else total,
             None if in_units is UNSET else in_units,
             round_mode,
             round_increment,
@@ -8146,7 +8154,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         return _zoned_since(
             b,
             self,
-            total or None,
+            None if total is UNSET else total,
             None if in_units is UNSET else in_units,
             round_mode,
             round_increment,
@@ -8977,7 +8985,7 @@ class PlainDateTime(_LocalTime):
         return _plain_since(
             self,
             b,
-            total or None,
+            None if total is UNSET else total,
             None if in_units is UNSET else in_units,
             round_mode,
             round_increment,
@@ -9021,7 +9029,7 @@ class PlainDateTime(_LocalTime):
         return _plain_since(
             b,
             self,
-            total or None,
+            None if total is UNSET else total,
             None if in_units is UNSET else in_units,
             round_mode,
             round_increment,
