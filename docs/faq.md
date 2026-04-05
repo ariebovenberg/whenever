@@ -254,6 +254,11 @@ it out and report any issues!
 More information about the benchmarks can be found in the `benchmarks`
 directory of the repository.
 
+## Is it compatible with SQLAlchemy?
+
+Yes! Have a look at [`whenever-sqlalchemy`](https://pypi.org/project/whenever-sqlalchemy/),
+a separate package that provides SQLAlchemy types and utilities for working with `whenever`.
+
 ## How can I use the pure-Python version?
 
 `whenever` is implemented both in Rust and in pure Python. By default,
