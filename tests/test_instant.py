@@ -193,8 +193,9 @@ class TestEquality:
         assert hash(d) == hash(zoned_same)
         assert hash(d) != hash(zoned_different)
 
+        # FUTURE: this *should* be flagged by mypy, but it isn't as of 1.20
         with pytest.raises(TypeError):
-            d.exact_eq(zoned_same)  # type: ignore[arg-type]
+            d.exact_eq(zoned_same)
 
         # important: check typing errors in case of strict-comparison mode
         d2 = Instant.from_utc(2020, 8, 15)
@@ -212,8 +213,9 @@ class TestEquality:
         assert hash(d) == hash(offset_same)
         assert hash(d) != hash(offset_different)
 
+        # FUTURE: this *should* be flagged by mypy, but it isn't as of 1.20
         with pytest.raises(TypeError):
-            d.exact_eq(offset_same)  # type: ignore[arg-type]
+            d.exact_eq(offset_same)
 
 
 class TestTimestamp:

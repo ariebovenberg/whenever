@@ -165,7 +165,7 @@ def test_mapping_like_interface(
     assert dict(d) == expected
     assert Counter(d) == Counter(expected)
     # mypy ignore awaiting release of https://github.com/python/mypy/pull/20416
-    assert ItemizedDelta(**d) == d  # type: ignore[misc]
+    assert ItemizedDelta(**d) == d  # type: ignore[arg-type]
 
     for key in expected:
         assert key in d
@@ -761,7 +761,7 @@ class TestAddSub:
         assert result.exact_eq(expected)
 
         # same result with kwargs
-        assert d1.add(**d2, relative_to=relative_to, **kwargs).exact_eq(  # type: ignore[call-overload, misc]
+        assert d1.add(**d2, relative_to=relative_to, **kwargs).exact_eq(  # type: ignore[call-overload, arg-type]
             expected
         )
 
@@ -775,7 +775,7 @@ class TestAddSub:
             ).exact_eq(expected)
 
             assert d1.subtract(  # type: ignore[call-overload]
-                **{k: -v for k, v in d2.items()},  # type: ignore[misc]
+                **{k: -v for k, v in d2.items()},
                 relative_to=relative_to,
                 **kwargs,
             ).exact_eq(expected)
@@ -1204,7 +1204,7 @@ def test_parts(
     expected_date: ItemizedDateDelta,
     expected_time: TimeDelta,
 ):
-    (date_part, time_part) = d.date_and_time_parts()
+    date_part, time_part = d.date_and_time_parts()
     if date_part is None:
         assert expected_date is None
     else:

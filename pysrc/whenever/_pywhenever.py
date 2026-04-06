@@ -892,7 +892,7 @@ class Date(_Base):
         if total is not UNSET:
             if in_units is not UNSET:
                 raise TypeError("Cannot specify both 'total' and 'in_units'")
-            if round_mode is not UNSET or round_increment is not UNSET:
+            if round_mode is not UNSET or round_increment is not UNSET:  # type: ignore[comparison-overlap]
                 raise TypeError(
                     "'round_mode' and 'round_increment' cannot be used with 'total'"
                 )
@@ -911,9 +911,9 @@ class Date(_Base):
 
         units = _normalize_units(in_units, valid_units=DATE_DELTA_UNITS)
         effective_increment = (
-            1 if round_increment is UNSET else round_increment
+            1 if round_increment is UNSET else round_increment  # type: ignore[comparison-overlap]
         )
-        effective_round_mode = "trunc" if round_mode is UNSET else round_mode
+        effective_round_mode = "trunc" if round_mode is UNSET else round_mode  # type: ignore[comparison-overlap]
         smallest_unit = units[-1]
         sign = 1 if self >= b else -1
         results, trunc, expand = date_diff(
@@ -936,10 +936,9 @@ class Date(_Base):
                 sign,
             )
 
-        # mypy false positive: 'keywords must be strings' (but they're string literals!)
         return ItemizedDateDelta._from_signed(
             sign if any(results.values()) else 0, **results
-        )  # type: ignore[misc]
+        )
 
     @overload
     def until(
@@ -2094,8 +2093,7 @@ class TimeDelta(_Base):
         sign: Sign = 1 if self._total_ns >= 0 else -1
         if not any(result.values()):
             sign = 0  # due to rounding, the result may be zero even if self is not zero
-        # mypy false positive: 'keywords must be strings' (but they're string literals!)
-        return ItemizedDelta._from_signed(sign, **result)  # type: ignore[misc]
+        return ItemizedDelta._from_signed(sign, **result)
 
     def _in_exact_units(
         self,
@@ -3415,8 +3413,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         >>> d.format_iso()
         'P1W11DT4H1.000012S'
         """
-        # Mypy complains about string unpacking. But it's valid here. See mypy/issues/13823
-        y, m, w, d, h, s = "ymwdhs" if lowercase_units else "YMWDHS"  # type: ignore[misc]
+        y, m, w, d, h, s = "ymwdhs" if lowercase_units else "YMWDHS"
 
         sgn = self.sign()
         parts = ["-" * (sgn < 0), "P"]
@@ -4301,8 +4298,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         which is not part of the ISO 8601 standard, but is a common extension.
         See :ref:`here <iso8601-durations>` for more information.
         """
-        # Mypy complains about string unpacking. But it's valid here. See mypy/issues/13823
-        y, m, w, d = "ymwd" if lowercase_units else "YMWD"  # type: ignore[misc]
+        y, m, w, d = "ymwd" if lowercase_units else "YMWD"
 
         parts = ["-" * (self.sign() < 0), "P"]
         if self._years is not None:
@@ -9836,7 +9832,7 @@ def _plain_since(
     if total is not None:
         if in_units is not None:
             raise TypeError("Cannot specify both 'total' and 'in_units'")
-        if round_mode is not UNSET or round_increment is not UNSET:
+        if round_mode is not UNSET or round_increment is not UNSET:  # type: ignore[comparison-overlap]
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
             )
@@ -9933,8 +9929,7 @@ def _plain_since(
                 sign,
             )
 
-    # mypy false positive: 'keywords must be strings' (but they're string literals!)
-    return ItemizedDelta._from_signed(  # type: ignore[misc]
+    return ItemizedDelta._from_signed(
         sign if any(result.values()) else 0, **result
     )
 
@@ -9955,7 +9950,7 @@ def _offset_since(
     if total is not None:
         if in_units is not None:
             raise TypeError("Cannot specify both 'total' and 'in_units'")
-        if round_mode is not UNSET or round_increment is not UNSET:
+        if round_mode is not UNSET or round_increment is not UNSET:  # type: ignore[comparison-overlap]
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
             )
@@ -10003,7 +9998,7 @@ def _offset_since(
             round_increment=effective_increment,
             round_mode=effective_round_mode,
         )
-        return ItemizedDelta._from_signed(  # type: ignore[misc]
+        return ItemizedDelta._from_signed(
             sign if any(result.values()) else 0, **result
         )
 
@@ -10022,7 +10017,7 @@ def _zoned_since(
     if total is not None:
         if in_units is not None:
             raise TypeError("Cannot specify both 'total' and 'in_units'")
-        if round_mode is not UNSET or round_increment is not UNSET:
+        if round_mode is not UNSET or round_increment is not UNSET:  # type: ignore[comparison-overlap]
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
             )
@@ -10096,8 +10091,7 @@ def _zoned_since(
                 sign,
             )
 
-    # mypy false positive: 'keywords must be strings' (but they're string literals!)
-    return ItemizedDelta._from_signed(  # type: ignore[misc]
+    return ItemizedDelta._from_signed(
         sign if any(result.values()) else 0, **result
     )
 

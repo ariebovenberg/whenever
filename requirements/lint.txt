@@ -1,4 +1,4 @@
-black>=25,<26
+black>=26,<27
 flake8>=6,<8
 isort>=6,<9
 slotscheck>=0.17,<0.20

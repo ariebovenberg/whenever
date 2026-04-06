@@ -47,6 +47,7 @@ Issues = "https://github.com/ariebovenberg/whenever/issues"
 Changelog = "https://github.com/ariebovenberg/whenever/blob/main/CHANGELOG.md"
 
 [tool.black]
+target-version = ['py310']
 line-length = 79
 include = '\.pyi?$'
 exclude = '''
