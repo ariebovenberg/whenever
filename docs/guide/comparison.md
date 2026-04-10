@@ -61,40 +61,17 @@ See the documentation of {meth}`__eq__ (exact) <whenever.ZonedDateTime.__eq__>`
 and {meth}`PlainDateTime.__eq__ <whenever.PlainDateTime.__eq__>` for more details.
 ```
 
-## Sub-second precision and equality
+## Nanosecond precision and interoperability
 
-When using the equality operator (`==`), `whenever` compares all components of
-a datetime, including its sub-second precision down to nanoseconds.
+Take care when comparing datetimes after interoperating with databases,
+the Python standard library, or other systems that may not support nanosecond precision.
+Since equality is based on full nanosecond precision,
+two datetimes may no longer be equal after a round-trip that loses precision.
 
-This can cause unexpected results. For example, PostgreSQL stores datetimes with
-microsecond precision (6 digits), not nanosecond precision (9 digits).
-If you save an {class}`~whenever.Instant` with nanosecond precision to
-PostgreSQL and then retrieve it, the retrieved value will not be equal
-to the original value.
+This may not be apparent in development if your system's clock only supports microsecond
+precision (such as MacOS).
 
-```python
->>> # An original instant with nanosecond precision
->>> i = Instant.now()
->>> i
-Instant("2026-04-10 12:34:56.789123456Z")
->>> # After being saved to and retrieved from a microsecond-only database:
->>> retrieved = Instant.from_utc(2026, 4, 10, 12, 34, 56, nanosecond=789123000)
->>> i == retrieved
-False
-```
-
-macOS does not support nanosecond precision, so this error may not appear in development.
-
-To work around this, you can use the {meth}`~whenever.ZonedDateTime.round`
-method to explicitly normalize the precision before comparing:
-
-```python
->>> # Explicitly round to microsecond precision
->>> i = Instant.now().round("microsecond")
->>> # now it will match what's stored in a microsecond-only database
->>> i == retrieved_from_db
-True
-```
+Use `.round('microsecond')` to explicitly round values to microsecond precision.
 
 ## Strict equality
 

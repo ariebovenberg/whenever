@@ -388,10 +388,4 @@ The precision of this time depends on what the OS and hardware provide:
 This is a limitation of the operating systems themselves, not `whenever`.
 If this difference in precision causes issues in your tests or when
 comparing values across different systems, you can normalize the precision
-by using the {meth}`~ZonedDateTime.round` method:
-
-```python
-# Normalize to microseconds, which is supported across all platforms
-now = Instant.now().round("microsecond")
-```
-
+by calling `.round("microsecond")`
