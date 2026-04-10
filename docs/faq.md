@@ -373,3 +373,25 @@ This is for several reasons:
 2.  Properly supporting subclassing requires a lot of extra work, and
     adds subtle ways to misuse the API.
 3.  Enabling subclassing would undo some performance optimizations.
+
+(faq-now-precision)=
+## Why does `.now()` have different precision on different OSes?
+
+When you call a `.now()` method (such as {meth}`Instant.now`), `whenever`
+delegates to the underlying operating system to get the current time.
+The precision of this time depends on what the OS and hardware provide:
+
+- **Linux** typically provides nanosecond precision (9 digits).
+- **macOS** typically provides microsecond precision (6 digits).
+- **Windows** has its own variable precision depending on the version and configuration.
+
+This is a limitation of the operating systems themselves, not `whenever`.
+If this difference in precision causes issues in your tests or when
+comparing values across different systems, you can normalize the precision
+by using the {meth}`~ZonedDateTime.round` method:
+
+```python
+# Normalize to microseconds, which is supported across all platforms
+now = Instant.now().round("microsecond")
+```
+
