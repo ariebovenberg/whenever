@@ -5,4 +5,4 @@ slotscheck>=0.17,<0.20
 build
 twine>=6.2.0
 packaging>=24
-pyperf>2,<3
+pyperf>=2.10.0,<3
