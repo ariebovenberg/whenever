@@ -1,5 +1,5 @@
 black>=26,<27
-flake8>=6,<8
+flake8>=7.3.0,<8
 isort>=6,<9
 slotscheck>=0.17,<0.20
 build
