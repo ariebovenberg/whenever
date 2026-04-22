@@ -1,6 +1,6 @@
 black>=26,<27
 flake8>=6,<8
-isort>=6,<9
+isort>=8.0.1,<9
 slotscheck>=0.17,<0.20
 build
 twine>=6.2.0
