@@ -159,12 +159,13 @@ jobs:
       # NOTE: we end up running pytest twice in the following sections.
       # This is because we want to test the code with and without optional dependencies.
       - run: pytest tests/
-      - run: pip install tzdata pydantic
+      - if: ${{ matrix.python-version != 'pypy3.10' && matrix.python-version != 'pypy3.11' }}
+        run: pip install tzdata pydantic
       # NOTE: we only care about coverage once. We arbitrarily choose 3.12 for that
       - if: ${{ matrix.python-version == '3.12' }}
         run: |
           pytest tests/ --cov=whenever --cov-report term-missing
-      - if: ${{ matrix.python-version != '3.12' }}
+      - if: ${{ matrix.python-version != '3.12' && matrix.python-version != 'pypy3.10' && matrix.python-version != 'pypy3.11' }}
         run: |
           pytest tests/
 
