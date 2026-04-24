@@ -1,8 +1,8 @@
 black>=26,<27
-flake8>=6,<8
-isort>=6,<9
-slotscheck>=0.17,<0.20
+flake8>=7.3.0,<8
+isort>=8.0.1,<9
+slotscheck>=0.19.1,<0.20
 build
 twine>=6.2.0
-packaging>=24
-pyperf>2,<3
+packaging>=26.1
+pyperf>=2.10,<3

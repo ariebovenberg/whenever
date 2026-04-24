@@ -892,7 +892,7 @@ class Date(_Base):
         if total is not UNSET:
             if in_units is not UNSET:
                 raise TypeError("Cannot specify both 'total' and 'in_units'")
-            if round_mode is not UNSET or round_increment is not UNSET:  # type: ignore[comparison-overlap]
+            if round_mode is not UNSET or round_increment is not UNSET:
                 raise TypeError(
                     "'round_mode' and 'round_increment' cannot be used with 'total'"
                 )
@@ -911,9 +911,9 @@ class Date(_Base):
 
         units = _normalize_units(in_units, valid_units=DATE_DELTA_UNITS)
         effective_increment = (
-            1 if round_increment is UNSET else round_increment  # type: ignore[comparison-overlap]
+            1 if round_increment is UNSET else round_increment
         )
-        effective_round_mode = "trunc" if round_mode is UNSET else round_mode  # type: ignore[comparison-overlap]
+        effective_round_mode = "trunc" if round_mode is UNSET else round_mode
         smallest_unit = units[-1]
         sign = 1 if self >= b else -1
         results, trunc, expand = date_diff(
@@ -9832,7 +9832,7 @@ def _plain_since(
     if total is not None:
         if in_units is not None:
             raise TypeError("Cannot specify both 'total' and 'in_units'")
-        if round_mode is not UNSET or round_increment is not UNSET:  # type: ignore[comparison-overlap]
+        if round_mode is not UNSET or round_increment is not UNSET:
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
             )
@@ -9950,7 +9950,7 @@ def _offset_since(
     if total is not None:
         if in_units is not None:
             raise TypeError("Cannot specify both 'total' and 'in_units'")
-        if round_mode is not UNSET or round_increment is not UNSET:  # type: ignore[comparison-overlap]
+        if round_mode is not UNSET or round_increment is not UNSET:
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
             )
@@ -10017,7 +10017,7 @@ def _zoned_since(
     if total is not None:
         if in_units is not None:
             raise TypeError("Cannot specify both 'total' and 'in_units'")
-        if round_mode is not UNSET or round_increment is not UNSET:  # type: ignore[comparison-overlap]
+        if round_mode is not UNSET or round_increment is not UNSET:
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
             )
