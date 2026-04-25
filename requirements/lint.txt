@@ -4,5 +4,5 @@ isort>=8.0.1,<9
 slotscheck>=0.19.1,<0.20
 build
 twine>=6.2.0
-packaging>=26.1
+packaging>=26.2
 pyperf>=2.10,<3
