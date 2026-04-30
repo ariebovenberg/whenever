@@ -2,8 +2,6 @@
 use crate::{
     classes::{
         date::{self, unpickle as _unpkl_date},
-        date_delta::{self, days, months, unpickle as _unpkl_ddelta, weeks, years},
-        datetime_delta::{self, unpickle as _unpkl_dtdelta},
         instant::{self, unpickle as _unpkl_inst, unpickle_pre_0_8 as _unpkl_utc},
         itemized_date_delta::{self, unpickle as _unpkl_iddelta},
         itemized_delta::{self, unpickle as _unpkl_idelta},
@@ -61,9 +59,7 @@ pub(crate) static mut MODULE_DEF: PyModuleDef = PyModuleDef {
 static mut METHODS: &mut [PyMethodDef] = &mut [
     modmethod1!(_unpkl_date, c""),
     modmethod1!(_unpkl_time, c""),
-    modmethod_vararg!(_unpkl_ddelta, c""),
     modmethod1!(_unpkl_tdelta, c""),
-    modmethod_vararg!(_unpkl_dtdelta, c""),
     modmethod_vararg!(_unpkl_iddelta, c""),
     modmethod_vararg!(_unpkl_idelta, c""),
     modmethod1!(_unpkl_local, c""),
@@ -72,10 +68,6 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     modmethod1!(_unpkl_offset, c""),
     modmethod_vararg!(_unpkl_zoned, c""),
     // FUTURE: set __module__ on these
-    modmethod1!(years, doc::YEARS),
-    modmethod1!(months, doc::MONTHS),
-    modmethod1!(weeks, doc::WEEKS),
-    modmethod1!(days, doc::DAYS),
     modmethod1!(hours, doc::HOURS),
     modmethod1!(minutes, doc::MINUTES),
     modmethod1!(seconds, doc::SECONDS),
@@ -147,13 +139,6 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         c"_unpkl_time",
     )?;
     create_singletons(*time_type, time::SINGLETONS)?;
-    let (date_delta_type, unpickle_date_delta) = new_class(
-        module,
-        module_name.borrow(),
-        &mut unsafe { date_delta::SPEC },
-        c"_unpkl_ddelta",
-    )?;
-    create_singletons(*date_delta_type, date_delta::SINGLETONS)?;
     let (time_delta_type, unpickle_time_delta) = new_class(
         module,
         module_name.borrow(),
@@ -161,13 +146,6 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         c"_unpkl_tdelta",
     )?;
     create_singletons(*time_delta_type, time_delta::SINGLETONS)?;
-    let (datetime_delta_type, unpickle_datetime_delta) = new_class(
-        module,
-        module_name.borrow(),
-        &mut unsafe { datetime_delta::SPEC },
-        c"_unpkl_dtdelta",
-    )?;
-    create_singletons(*datetime_delta_type, datetime_delta::SINGLETONS)?;
     let (itemized_date_delta_type, unpickle_itemized_date_delta) = new_class(
         module,
         module_name.borrow(),
@@ -272,12 +250,6 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         doc::INVALIDOFFSETERROR,
         unsafe { PyExc_ValueError },
     )?;
-    let exc_implicitly_ignoring_dst = new_exception(
-        module,
-        c"whenever.ImplicitlyIgnoringDST",
-        doc::IMPLICITLYIGNORINGDST,
-        unsafe { PyExc_TypeError },
-    )?;
     let exc_tz_notfound = new_exception(
         module,
         c"whenever.TimeZoneNotFoundError",
@@ -310,12 +282,6 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         doc::NAIVEARITHMETICWARNING,
         warn_potential_dst_bug.as_ptr(),
     )?;
-    let warn_deprecation = new_exception(
-        module,
-        c"whenever.WheneverDeprecationWarning",
-        doc::WHENEVERDEPRECATIONWARNING,
-        unsafe { PyExc_UserWarning },
-    )?;
 
     let time_patch = Patch::new()?;
     let tz_store = TzStore::new(*exc_tz_notfound)?;
@@ -328,9 +294,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         monthday_type: monthday_type.py_owned(),
         isoweekdate_new: isoweekdate_new.py_owned(),
         time_type: time_type.py_owned(),
-        date_delta_type: date_delta_type.py_owned(),
         time_delta_type: time_delta_type.py_owned(),
-        datetime_delta_type: datetime_delta_type.py_owned(),
         itemized_date_delta_type: itemized_date_delta_type.py_owned(),
         itemized_delta_type: itemized_delta_type.py_owned(),
         plain_datetime_type: plain_datetime_type.py_owned(),
@@ -380,7 +344,6 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         str_tz: intern(c"tz")?.py_owned(),
         str_disambiguate: intern(c"disambiguate")?.py_owned(),
         str_offset: intern(c"offset")?.py_owned(),
-        str_ignore_dst: intern(c"ignore_dst")?.py_owned(),
         str_total: intern(c"total")?.py_owned(),
         str_unit: intern(c"unit")?.py_owned(),
         str_in_units: intern(c"in_units")?.py_owned(),
@@ -420,20 +383,16 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         exc_repeated: exc_repeated.py_owned(),
         exc_skipped: exc_skipped.py_owned(),
         exc_invalid_offset: exc_invalid_offset.py_owned(),
-        exc_implicitly_ignoring_dst: exc_implicitly_ignoring_dst.py_owned(),
         exc_tz_notfound: exc_tz_notfound.py_owned(),
 
         warn_potential_dst_bug: warn_potential_dst_bug.py_owned(),
         warn_days_not_always_24h: warn_days_not_always_24h.py_owned(),
         warn_potentially_stale_offset: warn_potentially_stale_offset.py_owned(),
         warn_naive_arithmetic: warn_naive_arithmetic.py_owned(),
-        warn_deprecation: warn_deprecation.py_owned(),
 
         unpickle_date: unpickle_date.py_owned(),
         unpickle_time: unpickle_time.py_owned(),
-        unpickle_date_delta: unpickle_date_delta.py_owned(),
         unpickle_time_delta: unpickle_time_delta.py_owned(),
-        unpickle_datetime_delta: unpickle_datetime_delta.py_owned(),
         unpickle_itemized_date_delta: unpickle_itemized_date_delta.py_owned(),
         unpickle_itemized_delta: unpickle_itemized_delta.py_owned(),
         unpickle_plain_datetime: unpickle_plain_datetime.py_owned(),
@@ -491,19 +450,9 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
             time::SINGLETONS.len(),
         ),
         (
-            state.date_delta_type.inner(),
-            state.unpickle_date_delta,
-            date_delta::SINGLETONS.len(),
-        ),
-        (
             state.time_delta_type.inner(),
             state.unpickle_time_delta,
             time_delta::SINGLETONS.len(),
-        ),
-        (
-            state.datetime_delta_type.inner(),
-            state.unpickle_datetime_delta,
-            datetime_delta::SINGLETONS.len(),
         ),
         (
             state.itemized_date_delta_type.inner(),
@@ -555,7 +504,6 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
         state.exc_repeated,
         state.exc_skipped,
         state.exc_invalid_offset,
-        state.exc_implicitly_ignoring_dst,
         state.exc_tz_notfound,
     ] {
         traverse(exc.as_ptr(), visit, arg)?;
@@ -567,7 +515,6 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
         state.warn_days_not_always_24h,
         state.warn_potentially_stale_offset,
         state.warn_naive_arithmetic,
-        state.warn_deprecation,
     ] {
         traverse(w.as_ptr(), visit, arg)?;
     }
@@ -597,9 +544,7 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.monthday_type).cast());
         Py_CLEAR((&raw mut state.isoweekdate_new).cast());
         Py_CLEAR((&raw mut state.time_type).cast());
-        Py_CLEAR((&raw mut state.date_delta_type).cast());
         Py_CLEAR((&raw mut state.time_delta_type).cast());
-        Py_CLEAR((&raw mut state.datetime_delta_type).cast());
         Py_CLEAR((&raw mut state.itemized_date_delta_type).cast());
         Py_CLEAR((&raw mut state.itemized_delta_type).cast());
         Py_CLEAR((&raw mut state.plain_datetime_type).cast());
@@ -644,7 +589,6 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.str_tz).cast());
         Py_CLEAR((&raw mut state.str_disambiguate).cast());
         Py_CLEAR((&raw mut state.str_offset).cast());
-        Py_CLEAR((&raw mut state.str_ignore_dst).cast());
         Py_CLEAR((&raw mut state.str_total).cast());
         Py_CLEAR((&raw mut state.str_unit).cast());
         Py_CLEAR((&raw mut state.str_in_units).cast());
@@ -682,9 +626,7 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         // unpickling functions
         Py_CLEAR((&raw mut state.unpickle_date).cast());
         Py_CLEAR((&raw mut state.unpickle_time).cast());
-        Py_CLEAR((&raw mut state.unpickle_date_delta).cast());
         Py_CLEAR((&raw mut state.unpickle_time_delta).cast());
-        Py_CLEAR((&raw mut state.unpickle_datetime_delta).cast());
         Py_CLEAR((&raw mut state.unpickle_itemized_date_delta).cast());
         Py_CLEAR((&raw mut state.unpickle_itemized_delta).cast());
         Py_CLEAR((&raw mut state.unpickle_plain_datetime).cast());
@@ -696,7 +638,6 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.exc_repeated).cast());
         Py_CLEAR((&raw mut state.exc_skipped).cast());
         Py_CLEAR((&raw mut state.exc_invalid_offset).cast());
-        Py_CLEAR((&raw mut state.exc_implicitly_ignoring_dst).cast());
         Py_CLEAR((&raw mut state.exc_tz_notfound).cast());
 
         // warnings
@@ -704,7 +645,6 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.warn_days_not_always_24h).cast());
         Py_CLEAR((&raw mut state.warn_potentially_stale_offset).cast());
         Py_CLEAR((&raw mut state.warn_naive_arithmetic).cast());
-        Py_CLEAR((&raw mut state.warn_deprecation).cast());
 
         // imported stuff
         Py_CLEAR((&raw mut state.strptime).cast());
@@ -733,9 +673,7 @@ pub(crate) struct State {
     pub(crate) monthday_type: PyObj,
     pub(crate) isoweekdate_new: PyObj,
     pub(crate) time_type: HeapType<time::Time>,
-    pub(crate) date_delta_type: HeapType<date_delta::DateDelta>,
     pub(crate) time_delta_type: HeapType<time_delta::TimeDelta>,
-    pub(crate) datetime_delta_type: HeapType<datetime_delta::DateTimeDelta>,
     pub(crate) itemized_date_delta_type: HeapType<itemized_date_delta::ItemizedDateDelta>,
     pub(crate) itemized_delta_type: HeapType<itemized_delta::ItemizedDelta>,
     pub(crate) plain_datetime_type: HeapType<plain_datetime::DateTime>,
@@ -749,7 +687,6 @@ pub(crate) struct State {
     pub(crate) exc_repeated: PyObj,
     pub(crate) exc_skipped: PyObj,
     pub(crate) exc_invalid_offset: PyObj,
-    pub(crate) exc_implicitly_ignoring_dst: PyObj,
     pub(crate) exc_tz_notfound: PyObj,
 
     // warnings
@@ -757,14 +694,11 @@ pub(crate) struct State {
     pub(crate) warn_days_not_always_24h: PyObj,
     pub(crate) warn_potentially_stale_offset: PyObj,
     pub(crate) warn_naive_arithmetic: PyObj,
-    pub(crate) warn_deprecation: PyObj,
 
     // unpickling functions
     pub(crate) unpickle_date: PyObj,
     pub(crate) unpickle_time: PyObj,
-    pub(crate) unpickle_date_delta: PyObj,
     pub(crate) unpickle_time_delta: PyObj,
-    pub(crate) unpickle_datetime_delta: PyObj,
     pub(crate) unpickle_itemized_date_delta: PyObj,
     pub(crate) unpickle_itemized_delta: PyObj,
     pub(crate) unpickle_plain_datetime: PyObj,
@@ -808,7 +742,6 @@ pub(crate) struct State {
     pub(crate) str_tz: PyObj,
     pub(crate) str_disambiguate: PyObj,
     pub(crate) str_offset: PyObj,
-    pub(crate) str_ignore_dst: PyObj,
     pub(crate) str_total: PyObj,
     pub(crate) str_unit: PyObj,
     pub(crate) str_in_units: PyObj,

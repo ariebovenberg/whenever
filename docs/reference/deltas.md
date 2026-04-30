@@ -43,7 +43,7 @@ each suited for different use cases:
 
 ```{note}
 {class}`ItemizedDelta` and {class}`ItemizedDateDelta` were introduced in version 0.10,
-and replace the (now deprecated) {class}`DateTimeDelta` and {class}`DateDelta` classes.
+replacing the removed ``DateTimeDelta`` and ``DateDelta`` classes.
 ```
 
 

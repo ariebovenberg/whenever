@@ -221,7 +221,6 @@ pub(crate) enum RoundIncrement {
 pub(crate) struct Args {
     pub(crate) increment: RoundIncrement,
     pub(crate) mode: Mode,
-    pub(crate) got_ignore_dst: bool,
     pub(crate) suppress_stale: bool,
 }
 
@@ -233,7 +232,7 @@ impl Args {
         state: &State,
         args: &[PyObj],
         kwargs: &mut IterKwargs,
-        ignore_dst_kwarg: bool,
+        stale_offset_kwarg: bool,
     ) -> PyResult<Self> {
         let &State {
             str_nanosecond,
@@ -247,7 +246,6 @@ impl Args {
             str_mode,
             str_increment,
             round_mode_strs,
-            str_ignore_dst,
             str_stale_offset_ok,
             time_delta_type,
             ..
@@ -256,7 +254,6 @@ impl Args {
         let opt_arg = handle_opt_arg("round", args)?;
 
         let mut mode = Mode::HalfEven;
-        let mut got_ignore_dst = false;
         let mut suppress_stale = false;
         let mut increment_kwarg = None;
         handle_kwargs("round", kwargs, |key, value, eq| {
@@ -272,9 +269,7 @@ impl Args {
                 }
                 // SAFETY: we just checked that it's >0
                 increment_kwarg = Some(unsafe { NonZeroU64::new_unchecked(raw_increment as _) });
-            } else if ignore_dst_kwarg && eq(key, str_ignore_dst) {
-                got_ignore_dst = true;
-            } else if ignore_dst_kwarg && eq(key, str_stale_offset_ok) {
+            } else if stale_offset_kwarg && eq(key, str_stale_offset_ok) {
                 suppress_stale = value.is_truthy();
             } else {
                 return Ok(false);
@@ -333,7 +328,6 @@ impl Args {
         Ok(Args {
             increment,
             mode,
-            got_ignore_dst,
             suppress_stale,
         })
     }

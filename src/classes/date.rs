@@ -8,10 +8,8 @@ use std::fmt::{Display, Formatter};
 
 use crate::{
     classes::{
-        date_delta::{DateDelta, handle_init_kwargs as handle_datedelta_kwargs},
-        itemized_date_delta::ItemizedDateDelta,
-        plain_datetime::DateTime,
-        time::Time,
+        date_delta::handle_init_kwargs as handle_datedelta_kwargs,
+        itemized_date_delta::ItemizedDateDelta, plain_datetime::DateTime, time::Time,
     },
     common::{
         fmt::{self, Chunk},
@@ -395,8 +393,6 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Date, Py_tp_str, __str__, 1),
     slotmethod!(Date, Py_tp_repr, __repr__, 1),
     slotmethod!(Date, Py_tp_richcompare, __richcmp__),
-    slotmethod!(Py_nb_subtract, __sub__, 2),
-    slotmethod!(Py_nb_add, __add__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: doc::DATE.as_ptr() as *mut c_void,
@@ -425,34 +421,6 @@ static mut SLOTS: &[PyType_Slot] = &[
 
 fn to_stdlib(cls: HeapType<Date>, slf: Date) -> PyReturn {
     slf.to_py(cls.state().py_api)
-}
-
-fn py_date(cls: HeapType<Date>, slf: Date) -> PyReturn {
-    let &State {
-        warn_deprecation, ..
-    } = cls.state();
-    warn_with_class(
-        warn_deprecation,
-        c"py_date() is deprecated. Use to_stdlib() instead.",
-        1,
-    )?;
-    to_stdlib(cls, slf)
-}
-
-fn from_py_date(cls: HeapType<Date>, arg: PyObj) -> PyReturn {
-    let &State {
-        warn_deprecation, ..
-    } = cls.state();
-    warn_with_class(
-        warn_deprecation,
-        c"from_py_date() is deprecated. Use Date() constructor instead.",
-        1,
-    )?;
-    Date::from_py(
-        arg.cast_allow_subclass::<PyDate>()
-            .ok_or_type_err("argument must be a datetime.date")?,
-    )
-    .to_obj(cls)
 }
 
 fn year_month(cls: HeapType<Date>, Date { year, month, .. }: Date) -> PyReturn {
@@ -690,106 +658,6 @@ fn __reduce__(cls: HeapType<Date>, Date { year, month, day }: Date) -> PyResult<
         .into_pytuple()
 }
 
-fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
-    let type_a = obj_a.type_();
-    let type_b = obj_b.type_();
-
-    // Easy case: Date - Date
-    if type_b == type_a {
-        // SAFETY: the only way to get here is if *both* are Date
-        let (date_type, a) = unsafe { obj_a.assume_heaptype::<Date>() };
-        let (_, b) = unsafe { obj_b.assume_heaptype::<Date>() };
-        warn_with_class(
-            date_type.state().warn_deprecation,
-            c"Using the `-` operator on Date is deprecated; use the .since() method with explicit units instead.",
-            1,
-        )?;
-
-        let year_a = a.year.get() as i32;
-        let year_b = b.year.get() as i32;
-        let month_a = a.month as i32;
-        let month_b = b.month as i32;
-        let mut days = a.day as i32;
-
-        // Safe: subtraction is always within bounds
-        let mut months = DeltaMonths::new_unchecked(month_a - month_b + 12 * (year_a - year_b));
-
-        // FUTURE: use unchecked, faster version of this function
-        let mut moved_a = b
-            .shift_months(months)
-            // The move is within bounds since we derived it from the dates
-            .unwrap();
-
-        // Check if we've overshot
-        if b > a && moved_a < a {
-            months = DeltaMonths::new_unchecked(months.get() + 1);
-            moved_a = b.shift_months(months).unwrap();
-            days -= a.year.days_in_month(a.month) as i32;
-        } else if b < a && moved_a > a {
-            months = DeltaMonths::new_unchecked(months.get() - 1);
-            moved_a = b.shift_months(months).unwrap();
-            days += moved_a.year.days_in_month(moved_a.month) as i32;
-        };
-        DateDelta {
-            months,
-            days: DeltaDays::new_unchecked(days - moved_a.day as i32),
-        }
-        .to_obj(date_type.state().date_delta_type)
-    // Case: types within whenever module.
-    } else if let Some(state) = type_a.same_module(type_b) {
-        warn_with_class(
-            state.warn_deprecation,
-            c"Using the `-` operator on Date is deprecated; use the .subtract() method instead.",
-            1,
-        )?;
-        // SAFETY: the way we've structured binary operations within whenever
-        // ensures that the first operand is the self type.
-        let (date_type, date) = unsafe { obj_a.assume_heaptype::<Date>() };
-        let DateDelta { months, days } =
-            obj_b
-                .extract(state.date_delta_type)
-                .ok_or_else_type_err(|| {
-                    format!("unsupported operand type(s) for -: 'Date' and '{type_b}'")
-                })?;
-        date.shift_months(-months)
-            .and_then(|date| date.shift_days(-days))
-            .ok_or_range_err()?
-            .to_obj(date_type)
-    // Case: other types
-    } else {
-        not_implemented()
-    }
-}
-
-fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
-    // We need to be careful since this method can be called reflexively
-    let type_a = obj_a.type_();
-    let type_b = obj_b.type_();
-    if let Some(state) = type_a.same_module(type_b) {
-        warn_with_class(
-            state.warn_deprecation,
-            c"Using the + operator on Date is deprecated; use the .add() method instead.",
-            1,
-        )?;
-        // SAFETY: the way we've structured binary operations within whenever
-        // ensures that the first operand is the self type.
-        let (date_type, date) = unsafe { obj_a.assume_heaptype::<Date>() };
-        let DateDelta { months, days } =
-            obj_b
-                .extract(state.date_delta_type)
-                .ok_or_else_type_err(|| {
-                    format!("unsupported operand type(s) for +: 'Date' and '{type_b}'")
-                })?;
-        // SAFETY: at least one of the operands must be a Date
-        date.shift_months(months)
-            .and_then(|date| date.shift_days(days))
-            .ok_or_range_err()?
-            .to_obj(date_type)
-    } else {
-        not_implemented()
-    }
-}
-
 fn add(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     shift_method(cls, slf, args, kwargs, false)
 }
@@ -810,14 +678,10 @@ fn shift_method(
     let state = cls.state();
     let (mut months, mut days) = match (args, kwargs.len()) {
         (&[arg], 0) => {
-            if let Some(d) = arg.extract(state.date_delta_type) {
-                (d.months, d.days)
-            } else if let Some(d) = arg.extract(state.itemized_date_delta_type) {
+            if let Some(d) = arg.extract(state.itemized_date_delta_type) {
                 d.to_months_days().ok_or_range_err()?
             } else {
-                raise_type_err(format!(
-                    "{fname}() argument must be a DateDelta or ItemizedDateDelta"
-                ))?
+                raise_type_err(format!("{fname}() argument must be an ItemizedDateDelta"))?
             }
         }
         ([], _) => {
@@ -957,38 +821,6 @@ fn date_since_float(a: Date, b: Date, unit: CalUnit) -> PyReturn {
     let num = a.unix_days().diff(trunc.unix_days()).get() as f64;
     let denom = expand.unix_days().diff(trunc.unix_days()).get() as f64;
     ((result.abs() as f64 + num / denom).negate_if(neg)).to_py()
-}
-
-fn days_since(cls: HeapType<Date>, slf: Date, other: PyObj) -> PyReturn {
-    warn_with_class(
-        cls.state().warn_deprecation,
-        c"days_since() is deprecated; use since() with total='days' instead.",
-        1,
-    )?;
-    slf.unix_days()
-        .diff(
-            other
-                .extract(cls)
-                .ok_or_type_err("argument must be a whenever.Date")?
-                .unix_days(),
-        )
-        .get()
-        .to_py()
-}
-
-fn days_until(cls: HeapType<Date>, slf: Date, other: PyObj) -> PyReturn {
-    warn_with_class(
-        cls.state().warn_deprecation,
-        c"days_until() is deprecated; use until() with total='days' instead.",
-        1,
-    )?;
-    other
-        .extract(cls)
-        .ok_or_type_err("argument must be a whenever.Date")?
-        .unix_days()
-        .diff(slf.unix_days())
-        .get()
-        .to_py()
 }
 
 fn replace(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
@@ -1157,11 +989,9 @@ fn parse(cls: HeapType<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetu
 
 static mut METHODS: &mut [PyMethodDef] = &mut [
     method0!(Date, to_stdlib, doc::DATE_TO_STDLIB),
-    method0!(Date, py_date, doc::DATE_PY_DATE),
     method_kwargs!(Date, format_iso, doc::DATE_FORMAT_ISO),
     classmethod0!(Date, today_in_system_tz, doc::DATE_TODAY_IN_SYSTEM_TZ),
     classmethod1!(Date, parse_iso, doc::DATE_PARSE_ISO),
-    classmethod1!(Date, from_py_date, doc::DATE_FROM_PY_DATE),
     method0!(Date, __copy__, c""),
     method1!(Date, __deepcopy__, c""),
     method0!(Date, year_month, doc::DATE_YEAR_MONTH),
@@ -1182,8 +1012,6 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     method0!(Date, __reduce__, c""),
     method_kwargs!(Date, add, doc::DATE_ADD),
     method_kwargs!(Date, subtract, doc::DATE_SUBTRACT),
-    method1!(Date, days_since, doc::DATE_DAYS_SINCE),
-    method1!(Date, days_until, doc::DATE_DAYS_UNTIL),
     method_kwargs!(Date, since, doc::DATE_SINCE),
     method_kwargs!(Date, until, doc::DATE_UNTIL),
     method_kwargs!(Date, replace, doc::DATE_REPLACE),

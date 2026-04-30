@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.11.0 (unreleased)
+
+**Breaking changes**
+
+- Removed the ``DateDelta`` and ``DateTimeDelta`` classes,
+  which were deprecated in 0.10.0.
+  Use ``ItemizedDateDelta`` and ``ItemizedDelta`` instead.
+- Removed the ``years()``, ``months()``, ``weeks()``, ``days()`` helper
+  functions, which were deprecated in 0.10.0.
+  Use ``ItemizedDateDelta(years=...)``, etc. instead,
+  or use keyword arguments directly (e.g. ``dt.add(years=1, months=2)``).
+- Removed the ``Date.__add__``/``__sub__`` operators with ``DateDelta``
+  and ``Date.__sub__`` between two dates (returning ``DateDelta``),
+  which were deprecated in 0.10.0.
+  Use ``add()``, ``subtract()``, ``since()``, or ``until()`` instead.
+- Removed the ``ignore_dst`` parameter from ``OffsetDateTime`` and
+  ``PlainDateTime`` methods, which was deprecated in 0.10.0.
+  Use ``stale_offset_ok=True`` (``OffsetDateTime``) or
+  ``naive_arithmetic_ok=True`` (``PlainDateTime``) instead.
+- Removed the ``py_date()``, ``py_time()``, ``py_datetime()``, and
+  ``py_timedelta()`` methods, which were deprecated in 0.10.0.
+  Use ``to_stdlib()`` instead.
+- Removed the ``from_py_date()``, ``from_py_time()``,
+  ``from_py_datetime()``, and ``from_py_timedelta()`` methods,
+  which were deprecated in 0.10.0.
+  Use the constructor directly (e.g. ``Date(datetime.date(...))``).
+- Removed ``TimeDelta.in_hours()``, ``.in_minutes()``, ``.in_seconds()``,
+  ``.in_milliseconds()``, ``.in_microseconds()``, ``.in_nanoseconds()``,
+  ``.in_days_of_24h()``, and ``.in_hrs_mins_secs_nanos()``,
+  which were deprecated in 0.10.0.
+  Use ``total()`` or ``in_units()`` instead.
+- Removed ``Date.days_since()`` and ``Date.days_until()``,
+  which were deprecated in 0.10.0.
+  Use ``since()`` and ``until()`` with ``total='days'`` instead.
+- Removed ``parse_strptime()`` methods on ``OffsetDateTime`` and
+  ``PlainDateTime``, which were deprecated in 0.10.0.
+  Use ``parse()`` instead.
+- Removed ``ZonedDateTime.start_of_day()``,
+  which was deprecated in 0.10.0.
+  Use ``start_of("day")`` instead.
+- Removed ``WheneverDeprecationWarning`` and ``ImplicitlyIgnoringDST``
+  exception classes, which are no longer needed.
+
 ## 0.10.0 (2026-04-05)
 
 A big release with several breaking changes and improvements. Highlights

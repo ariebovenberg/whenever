@@ -6,8 +6,6 @@ from ._core import *
 from ._core import (  # The unpickle functions must be findable at module-level
     _EXTENSION_LOADED,
     _unpkl_date,
-    _unpkl_ddelta,
-    _unpkl_dtdelta,
     _unpkl_iddelta,
     _unpkl_idelta,
     _unpkl_inst,
@@ -31,7 +29,7 @@ if not _EXTENSION_LOADED:  # pragma: no cover
 
 # Yes, we could get the version with importlib.metadata,
 # but we try to keep our import time as low as possible.
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 # We expose these at module-level for convenience
 MONDAY = Weekday.MONDAY
@@ -45,7 +43,6 @@ SUNDAY = Weekday.SUNDAY
 reset_tzpath()  # populate the tzpath once at startup
 
 
-# Handle deprecated names
 def __getattr__(name: str) -> object:
     # This ensures we get the most up-to-date TZPATH.
     if name == "TZPATH":
@@ -55,6 +52,4 @@ def __getattr__(name: str) -> object:
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-AnyDelta: TypeAlias = (
-    DateDelta | TimeDelta | DateTimeDelta | ItemizedDelta | ItemizedDateDelta
-)
+AnyDelta: TypeAlias = TimeDelta | ItemizedDelta | ItemizedDateDelta
