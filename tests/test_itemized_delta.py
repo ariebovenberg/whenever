@@ -17,8 +17,7 @@ from whenever import (
     ZonedDateTime,
 )
 
-from .common import AlwaysEqual, NeverEqual, suppress
-from .test_date_delta import INVALID_DDELTAS
+from .common import INVALID_DDELTAS, AlwaysEqual, NeverEqual, suppress
 from .test_time_delta import INVALID_TDELTAS
 
 UNITS = cast(
@@ -35,9 +34,6 @@ UNITS = cast(
         ]
     ],
     "years months weeks days hours minutes seconds nanoseconds".split(),
-)
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
 )
 
 

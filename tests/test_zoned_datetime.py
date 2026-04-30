@@ -32,17 +32,13 @@ from whenever import (
     Time,
     TimeDelta,
     TimeZoneNotFoundError,
-    WheneverDeprecationWarning,
     ZonedDateTime,
     available_timezones,
     clear_tzcache,
-    days,
     hours,
     milliseconds,
     minutes,
     reset_tzpath,
-    weeks,
-    years,
 )
 
 from .common import (
@@ -67,10 +63,6 @@ else:
     HAS_TZDATA = True
 
 TEST_DIR = Path(__file__).parent
-
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
 
 
 class TestInit:
@@ -2267,131 +2259,6 @@ class TestDayLength:
             d_max_neg.day_length()
 
 
-class TestStartOfDay:
-
-    @pytest.mark.parametrize(
-        "d, expect",
-        [
-            # no special day
-            (
-                ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
-                ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam"),
-            ),
-            (
-                create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_POSIX),
-                create_zdt(2020, 8, 15, tz=AMS_TZ_POSIX),
-            ),
-            (
-                ZonedDateTime(1832, 12, 15, 12, 1, 30, tz="UTC"),
-                ZonedDateTime(1832, 12, 15, tz="UTC"),
-            ),
-            # DST at non-midnight
-            (
-                ZonedDateTime(2023, 10, 29, 12, 8, 30, tz="Europe/Amsterdam"),
-                ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam"),
-            ),
-            (
-                ZonedDateTime(2023, 3, 26, 12, 8, 30, tz="Europe/Amsterdam"),
-                ZonedDateTime(2023, 3, 26, tz="Europe/Amsterdam"),
-            ),
-            (
-                create_zdt(2023, 3, 26, 12, 8, 30, tz=AMS_TZ_RAWFILE),
-                create_zdt(2023, 3, 26, tz=AMS_TZ_RAWFILE),
-            ),
-            (
-                ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"),
-                ZonedDateTime(2024, 4, 7, tz="Australia/Lord_Howe"),
-            ),
-            # Non-regular transition
-            (
-                ZonedDateTime(1894, 6, 1, 1, tz="Europe/Zurich"),
-                ZonedDateTime(1894, 6, 1, 0, 30, 14, tz="Europe/Zurich"),
-            ),
-            # DST starts at midnight
-            (
-                ZonedDateTime(2016, 2, 20, 8, tz="America/Sao_Paulo"),
-                ZonedDateTime(2016, 2, 20, tz="America/Sao_Paulo"),
-            ),
-            (
-                ZonedDateTime(2016, 2, 21, 2, tz="America/Sao_Paulo"),
-                ZonedDateTime(2016, 2, 21, tz="America/Sao_Paulo"),
-            ),
-            (
-                ZonedDateTime(2016, 10, 16, 15, tz="America/Sao_Paulo"),
-                ZonedDateTime(2016, 10, 16, 1, tz="America/Sao_Paulo"),
-            ),
-            (
-                ZonedDateTime(2016, 10, 17, 19, tz="America/Sao_Paulo"),
-                ZonedDateTime(2016, 10, 17, tz="America/Sao_Paulo"),
-            ),
-            # Samoa skipped a day
-            (
-                ZonedDateTime(2011, 12, 31, 21, tz="Pacific/Apia"),
-                ZonedDateTime(2011, 12, 31, tz="Pacific/Apia"),
-            ),
-            (
-                ZonedDateTime(2011, 12, 29, 21, tz="Pacific/Apia"),
-                ZonedDateTime(2011, 12, 29, tz="Pacific/Apia"),
-            ),
-            # Another edge case
-            (
-                ZonedDateTime(2010, 11, 7, 23, tz="America/St_Johns"),
-                ZonedDateTime(
-                    2010, 11, 7, tz="America/St_Johns", disambiguate="earlier"
-                ),
-            ),
-            # a day that starts twice
-            (
-                ZonedDateTime(
-                    2016,
-                    2,
-                    20,
-                    23,
-                    45,
-                    disambiguate="later",
-                    tz="America/Sao_Paulo",
-                ),
-                ZonedDateTime(
-                    2016, 2, 20, tz="America/Sao_Paulo", disambiguate="raise"
-                ),
-            ),
-        ],
-    )
-    def test_examples(self, d: ZonedDateTime, expect):
-        assert d.start_of_day().exact_eq(expect)
-
-    def test_extreme_boundaries(self):
-        # Negative UTC offsets at lower bound are fine
-        assert (
-            ZonedDateTime(1, 1, 1, 2, tz="America/New_York")
-            .start_of_day()
-            .exact_eq(ZonedDateTime(1, 1, 1, tz="America/New_York"))
-        )
-
-        # Positive UTC offsets at lower bound are NOT fine
-        d_max_pos = ZonedDateTime(1, 1, 1, 12, tz="Asia/Tokyo")
-        with pytest.raises((ValueError, OverflowError), match="range"):
-            d_max_pos.start_of_day()
-
-        # Upper bound is always fine
-        assert (
-            ZonedDateTime(9999, 12, 31, 23, tz="Asia/Tokyo")
-            .start_of_day()
-            .exact_eq(ZonedDateTime(9999, 12, 31, tz="Asia/Tokyo"))
-        )
-
-        assert (
-            ZonedDateTime(9999, 12, 31, 12, tz="America/New_York")
-            .start_of_day()
-            .exact_eq(ZonedDateTime(9999, 12, 31, tz="America/New_York"))
-        )
-
-    def test_deprecation_warning(self):
-        zdt = ZonedDateTime(2024, 8, 15, 14, tz="America/New_York")
-        with pytest.warns(WheneverDeprecationWarning, match="start_of_day"):
-            zdt.start_of_day()
-
-
 @pytest.mark.parametrize(
     "tz",
     ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
@@ -4135,12 +4002,6 @@ class TestAddSubtractTimeUnits:
             42 - d  # type: ignore[operator]
 
         with pytest.raises(TypeError, match="unsupported operand type"):
-            years(1) + d  # type: ignore[operator]
-
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            years(1) - d  # type: ignore[operator]
-
-        with pytest.raises(TypeError, match="unsupported operand type"):
             d + d  # type: ignore[operator]
 
         with pytest.raises((TypeError, AttributeError)):
@@ -4164,18 +4025,9 @@ class TestAddSubtractCalendarUnits:
         assert d.add(years=0, weeks=0).exact_eq(d)
         assert d.add().exact_eq(d)
 
-        # same with operators
-        assert (d + days(0)).exact_eq(d)
-        assert (d + weeks(0)).exact_eq(d)
-        assert (d + years(0)).exact_eq(d)
-
         # same with subtraction
         assert d.subtract(days=0, disambiguate="raise").exact_eq(d)
         assert d.subtract(days=0).exact_eq(d)
-
-        assert (d - days(0)).exact_eq(d)
-        assert (d - weeks(0)).exact_eq(d)
-        assert (d - years(0)).exact_eq(d)
 
     def test_simple_date(self):
         d = ZonedDateTime(
@@ -4209,19 +4061,6 @@ class TestAddSubtractCalendarUnits:
         assert d.add(ItemizedDelta(years=1, weeks=2, hours=2)).exact_eq(
             d.add(years=1, weeks=2, hours=2)
         )
-        # same with operators
-        assert (d + (years(1) + weeks(2) + days(-2))).exact_eq(
-            d.add(years=1, weeks=2, days=-2)
-        )
-        assert (d + (years(1) + weeks(2) + hours(2))).exact_eq(
-            d.add(years=1, weeks=2, hours=2)
-        )
-        assert (d - (years(1) + weeks(2) + days(-2))).exact_eq(
-            d.subtract(years=1, weeks=2, days=-2)
-        )
-        assert (d - (years(1) + weeks(2) + hours(2))).exact_eq(
-            d.subtract(years=1, weeks=2, hours=2)
-        )
 
     def test_ambiguity(self):
         d = ZonedDateTime(
@@ -4244,9 +4083,6 @@ class TestAddSubtractCalendarUnits:
         assert d.add(years=1, days=-2, disambiguate="compatible").exact_eq(
             d.replace(year=2024, day=27, disambiguate="earlier")
         )
-        # check operators too
-        assert (d + years(1) - days(2)).exact_eq(d.add(years=1, days=-2))
-
         # transition to a gap
         assert d.add(months=5, days=2, disambiguate="compatible").exact_eq(
             d.replace(year=2024, month=3, day=31, disambiguate="later")
@@ -5445,59 +5281,6 @@ def test_copy(tz: str):
     assert deepcopy(d) is d
 
 
-class TestDeprecations:
-    def test_py_datetime(self):
-        d = ZonedDateTime(
-            2020,
-            8,
-            15,
-            23,
-            12,
-            9,
-            nanosecond=987_654_999,
-            tz="Europe/Amsterdam",
-        )
-        with pytest.warns(WheneverDeprecationWarning):
-            result = d.py_datetime()
-        assert result == py_datetime(
-            2020,
-            8,
-            15,
-            23,
-            12,
-            9,
-            987_654,
-            tzinfo=ZoneInfo("Europe/Amsterdam"),
-        )
-
-    def test_from_py_datetime(self):
-        with pytest.warns(WheneverDeprecationWarning):
-            result = ZonedDateTime.from_py_datetime(
-                py_datetime(
-                    2020,
-                    8,
-                    15,
-                    23,
-                    12,
-                    9,
-                    987_654,
-                    tzinfo=ZoneInfo("Europe/Paris"),
-                )
-            )
-        assert result.exact_eq(
-            ZonedDateTime(
-                2020,
-                8,
-                15,
-                23,
-                12,
-                9,
-                nanosecond=987_654_000,
-                tz="Europe/Paris",
-            )
-        )
-
-
 def test_cannot_subclass():
     with pytest.raises(TypeError):
 
@@ -5613,12 +5396,6 @@ class TestStartOf:
         assert result.exact_eq(
             ZonedDateTime(2024, 8, 15, tz="America/New_York")
         )
-
-    def test_day_matches_start_of_day(self):
-        zdt = ZonedDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
-        )
-        assert zdt.start_of("day").exact_eq(zdt.start_of_day())
 
     def test_hour(self):
         zdt = ZonedDateTime(

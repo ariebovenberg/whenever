@@ -8,7 +8,6 @@ import pytest
 from pytest import approx
 
 from whenever import (
-    DateDelta,
     DaysAssumed24HoursWarning,
     ItemizedDelta,
     NaiveArithmeticWarning,
@@ -16,7 +15,6 @@ from whenever import (
     PlainDateTime,
     StaleOffsetWarning,
     TimeDelta,
-    WheneverDeprecationWarning,
     ZonedDateTime,
     hours,
     microseconds,
@@ -35,9 +33,6 @@ from .common import (
 )
 
 MAX_HOURS = 9999 * 366 * 24
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
 
 
 class TestInit:
@@ -126,8 +121,7 @@ class TestInit:
     def test_valid(self, kwargs, expected_nanos):
         d = TimeDelta(**kwargs)
 
-        with suppress(WheneverDeprecationWarning):
-            assert d.total("nanoseconds") == expected_nanos
+        assert d.total("nanoseconds") == expected_nanos
         # the components are not accessible directly
         assert not hasattr(d, "hours")
 
@@ -254,43 +248,6 @@ def test_boolean():
     assert not TimeDelta(hours=0, minutes=0, seconds=0, microseconds=0)
     assert not TimeDelta(hours=1, minutes=-60)
     assert TimeDelta(microseconds=1)
-
-
-def test_aggregations():
-    d = TimeDelta(hours=1, minutes=2, seconds=0.003, nanoseconds=4)
-    with pytest.warns(
-        WheneverDeprecationWarning, match=r"total\('nanoseconds'\)"
-    ):
-        assert d.in_nanoseconds() == approx(
-            3_600_000_000_000 + 2 * 60_000_000_000 + 3_000_000 + 4
-        )
-    with pytest.warns(
-        WheneverDeprecationWarning, match=r"total\('microseconds'\)"
-    ):
-        assert d.in_microseconds() == approx(
-            3_600_000_000 + 2 * 60_000_000 + 3 * 1_000 + 0.004
-        )
-    with pytest.warns(
-        WheneverDeprecationWarning, match=r"total\('milliseconds'\)"
-    ):
-        assert d.in_milliseconds() == approx(3_600_000 + 2 * 60_000 + 3 + 4e-6)
-    with pytest.warns(WheneverDeprecationWarning, match=r"total\('seconds'\)"):
-        assert d.in_seconds() == approx(3600 + 2 * 60 + 0.003 + 4e-9)
-    with pytest.warns(WheneverDeprecationWarning, match=r"total\('minutes'\)"):
-        assert d.in_minutes() == approx(
-            60 + 2 + 0.003 / 60 + 4 / 60_000_000_000
-        )
-    with pytest.warns(WheneverDeprecationWarning, match=r"total\('hours'\)"):
-        assert d.in_hours() == approx(
-            1 + 2 / 60 + 0.003 / 3_600 + 4 / 3_600_000_000_000_000
-        )
-    with pytest.warns(WheneverDeprecationWarning, match=r"total\('days'\)"):
-        assert d.in_days_of_24h() == approx(
-            1 / 24
-            + 2 / (24 * 60)
-            + 0.003 / (24 * 3_600)
-            + 4 / (24 * 3_600_000_000_000_000)
-        )
 
 
 class TestTotal:
@@ -1021,9 +978,6 @@ class TestDivision:
         with pytest.raises(TypeError):
             PlainDateTime(2020, 3, 1) / d  # type: ignore[operator]
 
-        with pytest.raises(TypeError):
-            DateDelta(days=5) / d  # type: ignore[operator]
-
 
 class TestFloorDiv:
 
@@ -1484,21 +1438,6 @@ def test_init_from_py_timedelta():
         TimeDelta(py_timedelta.min)
 
 
-def test_as_hrs_mins_secs_nanos():
-    d = TimeDelta(hours=1, minutes=2, seconds=-3, microseconds=4_060_000)
-    hms = d.in_hrs_mins_secs_nanos()
-    assert all(isinstance(x, int) for x in hms)
-    assert hms == (1, 2, 1, 60_000_000)
-    assert TimeDelta(hours=-2, minutes=-15).in_hrs_mins_secs_nanos() == (
-        -2,
-        -15,
-        0,
-        0,
-    )
-    assert TimeDelta(nanoseconds=-4).in_hrs_mins_secs_nanos() == (0, 0, 0, -4)
-    assert TimeDelta.ZERO.in_hrs_mins_secs_nanos() == (0, 0, 0, 0)
-
-
 def test_abs():
     assert abs(TimeDelta()) == TimeDelta()
     assert abs(
@@ -1884,16 +1823,3 @@ class TestAssume24hDaysKwarg:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             td.round("day", days_assumed_24h_ok=True)
-
-
-class TestDeprecations:
-    def test_py_timedelta(self):
-        d = TimeDelta(hours=1)
-        with pytest.warns(WheneverDeprecationWarning):
-            result = d.py_timedelta()
-        assert result == py_timedelta(hours=1)
-
-    def test_from_py_timedelta(self):
-        with pytest.warns(WheneverDeprecationWarning):
-            result = TimeDelta.from_py_timedelta(py_timedelta(hours=1))
-        assert result == TimeDelta(hours=1)

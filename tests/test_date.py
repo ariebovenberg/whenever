@@ -2,22 +2,19 @@ import pickle
 import re
 from copy import copy, deepcopy
 from datetime import date as py_date, datetime as py_datetime
-from itertools import chain, product
+from itertools import chain
 from typing import Literal
 
 import pytest
 
-from tests.test_date_delta import make_ddelta
 from whenever import (
     Date,
-    DateDelta,
     IsoWeekDate,
     ItemizedDateDelta,
     MonthDay,
     PlainDateTime,
     Time,
     Weekday,
-    WheneverDeprecationWarning,
     YearMonth,
 )
 
@@ -30,9 +27,6 @@ from .common import (
 
 MAX_I64 = 1 << 63
 MAX_I32 = 1 << 31
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
 
 
 class TestInit:
@@ -420,20 +414,8 @@ class TestAdd:
     def test_valid(self, d, kwargs, expected):
         assert d.add(**kwargs) == expected
 
-        assert d.add(DateDelta(**kwargs)) == expected
-        assert d + DateDelta(**kwargs) == expected
-
         if kwargs:  # skip the empty delta case
             assert d.add(ItemizedDateDelta(**kwargs)) == expected
-
-    def test_operator_deprecation_warning(self):
-
-        d = Date(2021, 1, 31)
-        delta = DateDelta(months=2)
-        with pytest.warns(
-            WheneverDeprecationWarning, match=r"\+ operator.*add"
-        ):
-            assert (d + delta) is not None
 
     @pytest.mark.parametrize(
         "d, kwargs",
@@ -452,66 +434,12 @@ class TestAdd:
             d.add(**kwargs)
 
         with pytest.raises((OverflowError, ValueError)):
-            d + DateDelta(**kwargs)
-
-        with pytest.raises((OverflowError, ValueError)):
-            d.add(DateDelta(**kwargs))
-
-        with pytest.raises((OverflowError, ValueError)):
             d.add(ItemizedDateDelta(**kwargs))
-
-    def test_invalid(self):
-        with pytest.raises(TypeError):
-            Date(2021, 1, 1) + None  # type: ignore[operator]
-
-        with pytest.raises(TypeError):
-            None + Date(2021, 1, 1)  # type: ignore[operator]
-
-        with pytest.raises(TypeError):
-            py_date(2020, 1, 1) + Date(2021, 1, 1)  # type: ignore[operator]
 
     def test_no_mix_arg_kwargs(self):
         d = Date(2020, 1, 1)
         with pytest.raises(TypeError):
-            d.add(DateDelta(years=1), months=1)  # type: ignore[call-overload]
-
-        with pytest.raises(TypeError):
             d.add(ItemizedDateDelta(years=1), months=1)  # type: ignore[call-overload]
-
-
-class TestDaysUntilAndSince:
-
-    @pytest.mark.parametrize(
-        "d1, d2, expected",
-        [
-            (Date(2021, 1, 1), Date(2021, 1, 31), 30),
-            (Date(2020, 2, 28), Date(2020, 2, 28), 0),
-            (Date(2020, 2, 28), Date(2020, 3, 1), 2),
-            (Date(2020, 2, 28), Date(2020, 2, 1), -27),
-            (Date(1990, 5, 2), Date(2021, 12, 1), 11536),
-            (Date.MIN, Date.MAX, 3652058),
-        ],
-    )
-    def test_days_until_and_since(self, d1, d2, expected):
-        assert d1.days_until(d2) == expected
-        assert d2.days_since(d1) == expected
-        assert d1.days_since(d2) == -expected
-        assert d2.days_until(d1) == -expected
-
-    def test_invalid(self):
-        with pytest.raises((TypeError, AttributeError)):
-            Date(2021, 1, 1).days_until(PlainDateTime(2021, 1, 1, 1, 2, 3))  # type: ignore[arg-type]
-
-    def test_deprecated(self):
-        with pytest.warns(
-            WheneverDeprecationWarning, match=r"days_until.*until()"
-        ):
-            assert Date(2021, 1, 1).days_until(Date(2021, 1, 31)) == 30
-
-        with pytest.warns(
-            WheneverDeprecationWarning, match=r"days_since.*since()"
-        ):
-            assert Date(2021, 1, 1).days_since(Date(2021, 1, 31)) == -30
 
 
 _EXAMPLE_DATES = [
@@ -951,24 +879,9 @@ class TestSubtract:
     )
     def test_valid_delta(self, d, kwargs, expected):
         assert d.subtract(**kwargs) == expected
-        assert d - DateDelta(**kwargs) == expected
-        assert d.subtract(DateDelta(**kwargs)) == expected
 
         if kwargs:  # skip the zero-delta case
             assert d.subtract(ItemizedDateDelta(**kwargs)) == expected
-
-    def test_operator_is_deprecated(self):
-        d = Date(2021, 1, 1)
-        delta = DateDelta(days=1)
-        with pytest.warns(
-            WheneverDeprecationWarning, match="-.*operator.*subtract"
-        ):
-            d - delta
-
-        with pytest.warns(
-            WheneverDeprecationWarning, match="-.*operator.*since"
-        ):
-            d - d
 
     @pytest.mark.parametrize(
         "kwargs",
@@ -983,131 +896,10 @@ class TestSubtract:
     )
     def test_delta_out_of_bounds(self, kwargs):
         with pytest.raises((OverflowError, ValueError)):
-            Date(2021, 1, 1) - DateDelta(**kwargs)
-        with pytest.raises((OverflowError, ValueError)):
             Date(2021, 1, 1).subtract(**kwargs)
-        with pytest.raises((OverflowError, ValueError)):
-            Date(2021, 1, 1).subtract(DateDelta(**kwargs))
 
         with pytest.raises((OverflowError, ValueError)):
             Date(2021, 1, 1).subtract(ItemizedDateDelta(**kwargs))
-
-    @pytest.mark.parametrize(
-        "d1, d2, expected",
-        [
-            (Date(2021, 1, 31), Date(2021, 1, 1), make_ddelta(days=30)),
-            (Date(2021, 1, 1), Date(2021, 1, 31), -make_ddelta(days=30)),
-            (Date(2021, 1, 20), Date(2021, 1, 11), make_ddelta(days=9)),
-            (Date(2021, 2, 28), Date(2021, 2, 28), make_ddelta(days=0)),
-            (Date(2021, 2, 28), Date(2021, 2, 27), make_ddelta(days=1)),
-            (Date(2021, 2, 28), Date(2021, 2, 1), make_ddelta(days=27)),
-        ],
-    )
-    def test_days(self, d1, d2, expected):
-        assert d1 - d2 == expected
-
-    @pytest.mark.parametrize(
-        "d1, d2, delta",
-        [
-            (
-                Date(2021, 2, 1),
-                Date(2020, 1, 29),
-                make_ddelta(years=1, days=3),
-            ),
-            (Date(2021, 1, 31), Date(2020, 12, 31), make_ddelta(months=1)),
-            (Date(2020, 12, 31), Date(2021, 1, 31), make_ddelta(months=-1)),
-            (
-                Date(2021, 1, 20),
-                Date(2020, 12, 19),
-                make_ddelta(months=1, days=1),
-            ),
-            (Date(2024, 2, 28), Date(2024, 2, 29), -make_ddelta(days=1)),
-            (Date(2024, 2, 29), Date(2024, 2, 28), make_ddelta(days=1)),
-            (
-                Date(2024, 2, 29),
-                Date(2023, 3, 1),
-                make_ddelta(months=11, days=28),
-            ),
-            (
-                Date(2024, 2, 29),
-                Date(2023, 3, 2),
-                make_ddelta(months=11, days=27),
-            ),
-            (
-                Date(2023, 3, 2),
-                Date(2024, 2, 29),
-                -make_ddelta(months=11, days=27),
-            ),
-            (Date(2024, 1, 31), Date(2023, 1, 31), make_ddelta(years=1)),
-            (
-                Date(2023, 1, 31),
-                Date(2024, 2, 29),
-                -make_ddelta(years=1, days=28),
-            ),
-            (
-                Date(2023, 1, 30),
-                Date(2024, 2, 29),
-                -make_ddelta(years=1, days=29),
-            ),
-            (
-                Date(2022, 12, 30),
-                Date(2024, 2, 29),
-                -make_ddelta(years=1, months=1, days=30),
-            ),
-            (
-                Date(2024, 2, 29),
-                Date(2023, 1, 31),
-                make_ddelta(years=1, months=1),
-            ),
-            (
-                Date(2024, 2, 29),
-                Date(2023, 2, 28),
-                make_ddelta(years=1, days=1),
-            ),
-            (Date(2023, 2, 28), Date(2024, 2, 29), -make_ddelta(years=1)),
-            (Date(2023, 2, 28), Date(2024, 2, 28), -make_ddelta(years=1)),
-            (Date(2025, 2, 28), Date(2024, 2, 29), make_ddelta(years=1)),
-            (
-                Date(2024, 2, 29),
-                Date(2025, 2, 28),
-                -make_ddelta(months=11, days=28),
-            ),
-            (
-                Date(2023, 2, 28),
-                Date(2024, 2, 29),
-                make_ddelta(years=-1),
-            ),
-        ],
-    )
-    def test_months_and_years(self, d1, d2, delta):
-        assert d1 - d2 == delta
-        assert d2 + delta == d1
-
-    def test_invalid_type(self):
-        with pytest.raises(TypeError, match="unsupported operand"):
-            Date(2021, 1, 1) - 1  # type: ignore[operator]
-        with pytest.raises(TypeError, match="unsupported operand"):
-            Date(2021, 1, 1) - "2021-01-01"  # type: ignore[operator]
-
-        with pytest.raises(TypeError):
-            None - Date(2021, 1, 1)  # type: ignore[operator]
-
-        with pytest.raises(TypeError):
-            3 - Date(2021, 1, 1)  # type: ignore[operator]
-
-        with pytest.raises(TypeError):
-            DateDelta() - Date(2021, 1, 1)  # type: ignore[operator]
-
-        with pytest.raises(TypeError):
-            Date(2021, 1, 1) - PlainDateTime(2020, 3, 2)  # type: ignore[operator]
-
-        with pytest.raises(TypeError):
-            PlainDateTime(2021, 1, 1) - Date(2020, 3, 2)  # type: ignore[operator]
-
-    def test_fuzzing(self):
-        for d1, d2 in product(_EXAMPLE_DATES, _EXAMPLE_DATES):
-            delta = d1 - d2
-            assert d2 + delta == d1
 
 
 def test_day_of_week():
@@ -1166,24 +958,6 @@ def test_copy():
 def test_singletons():
     assert Date.MIN == Date(1, 1, 1)
     assert Date.MAX == Date(9999, 12, 31)
-
-
-class TestDeprecations:
-    def test_py_date(self):
-        d = Date(2021, 1, 2)
-        with pytest.warns(WheneverDeprecationWarning):
-            result = d.py_date()
-        assert result == py_date(2021, 1, 2)
-
-    def test_from_py_date(self):
-        with pytest.warns(WheneverDeprecationWarning):
-            result = Date.from_py_date(py_date(2021, 1, 2))
-        assert result == Date(2021, 1, 2)
-
-    def test_from_py_date_wrong_type(self):
-        with pytest.warns(WheneverDeprecationWarning):
-            with pytest.raises(TypeError):
-                Date.from_py_date(42)  # type: ignore[arg-type]
 
 
 def test_cannot_subclass():

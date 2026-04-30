@@ -4,8 +4,7 @@ use std::{fmt, ops::Neg, ptr::null_mut as NULL};
 
 use crate::{
     classes::{
-        date_delta::{DateDelta, InitError},
-        datetime_delta::{DateTimeDelta, handle_exact_unit},
+        datetime_delta::handle_exact_unit,
         instant::Instant,
         itemized_delta::ItemizedDelta,
         offset_datetime::OffsetDateTime,
@@ -99,12 +98,6 @@ impl TimeDelta {
 
     pub(crate) fn abs(self) -> Self {
         if self.secs.get() >= 0 { self } else { -self }
-    }
-
-    pub(crate) fn mul(self, factor: i128) -> Option<Self> {
-        self.total_nanos()
-            .checked_mul(factor)
-            .and_then(Self::from_nanos)
     }
 
     pub(crate) fn add(self, other: Self) -> Option<Self> {
@@ -732,44 +725,6 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
         let (_, b) = unsafe { b_obj.assume_heaptype::<TimeDelta>() };
 
         a.add(b.negate_if(negate)).ok_or_range_err()?.to_obj(cls)
-    } else if let Some(state) = a_cls.same_module(b_cls) {
-        // SAFETY: the way we've structured binary operations within whenever
-        // ensures that the first operand is the self type.
-        let (_, tdelta) = unsafe { a_obj.assume_heaptype::<TimeDelta>() };
-
-        if let Some(mut ddelta) = b_obj.extract(state.date_delta_type) {
-            if negate {
-                ddelta = -ddelta;
-            }
-            warn_with_class(
-                state.warn_deprecation,
-                c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
-                1,
-            )?;
-            DateTimeDelta::new(ddelta, tdelta)
-                .ok_or_value_err("mixed sign of delta components")?
-                .to_obj(state.datetime_delta_type)
-        } else if let Some(mut dtdelta) = b_obj.extract(state.datetime_delta_type) {
-            if negate {
-                dtdelta = -dtdelta;
-            }
-            dtdelta
-                .add(DateTimeDelta {
-                    ddelta: DateDelta::ZERO,
-                    tdelta,
-                })
-                .map_err(|e| {
-                    value_err(match e {
-                        InitError::TooBig => "Result out of range",
-                        InitError::MixedSign => "mixed sign of delta components",
-                    })
-                })?
-                .to_obj(state.datetime_delta_type)
-        } else {
-            raise_type_err(format!(
-                "unsupported operand type(s) for +/-: {a_cls} and {b_cls}"
-            ))?
-        }
     } else {
         not_implemented()
     }
@@ -851,91 +806,6 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     .to_obj(state.time_delta_type)
 }
 
-fn in_nanoseconds(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    warn_with_class(
-        cls.state().warn_deprecation,
-        c"in_nanoseconds is deprecated, use total('nanoseconds') instead",
-        1,
-    )?;
-    slf.total_nanos().to_py()
-}
-
-fn in_microseconds(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    warn_with_class(
-        cls.state().warn_deprecation,
-        c"in_microseconds is deprecated, use total('microseconds') instead",
-        1,
-    )?;
-    let TimeDelta { secs, subsec } = slf;
-    (secs.get() as f64 * 1e6 + subsec.get() as f64 * 1e-3).to_py()
-}
-
-fn in_milliseconds(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    warn_with_class(
-        cls.state().warn_deprecation,
-        c"in_milliseconds is deprecated, use total('milliseconds') instead",
-        1,
-    )?;
-    let TimeDelta { secs, subsec } = slf;
-    (secs.get() as f64 * 1e3 + subsec.get() as f64 * 1e-6).to_py()
-}
-
-fn in_seconds(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    warn_with_class(
-        cls.state().warn_deprecation,
-        c"in_seconds is deprecated, use total('seconds') instead",
-        1,
-    )?;
-    let TimeDelta { secs, subsec } = slf;
-    (secs.get() as f64 + subsec.get() as f64 * 1e-9).to_py()
-}
-
-fn in_minutes(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    warn_with_class(
-        cls.state().warn_deprecation,
-        c"in_minutes is deprecated, use total('minutes') instead",
-        1,
-    )?;
-    let TimeDelta { secs, subsec } = slf;
-    (secs.get() as f64 / 60.0 + subsec.get() as f64 * 1e-9 / 60.0).to_py()
-}
-
-fn in_hours(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    warn_with_class(
-        cls.state().warn_deprecation,
-        c"in_hours is deprecated, use total('hours') instead",
-        1,
-    )?;
-    let TimeDelta { secs, subsec } = slf;
-    (secs.get() as f64 / 3600.0 + subsec.get() as f64 * 1e-9 / 3600.0).to_py()
-}
-
-fn in_days_of_24h(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    warn_with_class(
-        cls.state().warn_deprecation,
-        c"in_days_of_24h is deprecated, use total('days') instead",
-        1,
-    )?;
-    let TimeDelta { secs, subsec } = slf;
-    (secs.get() as f64 / S_PER_DAY as f64 + subsec.get() as f64 * 1e-9 / S_PER_DAY as f64).to_py()
-}
-
-fn from_py_timedelta(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
-    let &State {
-        warn_deprecation, ..
-    } = cls.state();
-    warn_with_class(
-        warn_deprecation,
-        c"from_py_timedelta() is deprecated. Use TimeDelta() constructor instead.",
-        1,
-    )?;
-    if let Some(d) = arg.cast_exact::<PyTimeDelta>() {
-        TimeDelta::from_py(d).ok_or_range_err()?.to_obj(cls)
-    } else {
-        raise_type_err("argument must be datetime.timedelta exactly")
-    }
-}
-
 fn to_stdlib(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     let TimeDelta { subsec, secs } = slf;
     let &PyDateTime_CAPI {
@@ -954,37 +824,6 @@ fn to_stdlib(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
         )
     }
     .rust_owned()
-}
-
-fn py_timedelta(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    let &State {
-        warn_deprecation, ..
-    } = cls.state();
-    warn_with_class(
-        warn_deprecation,
-        c"py_timedelta() is deprecated. Use to_stdlib() instead.",
-        1,
-    )?;
-    to_stdlib(cls, slf)
-}
-
-fn in_hrs_mins_secs_nanos(_: PyType, slf: TimeDelta) -> PyResult<Owned<PyTuple>> {
-    let TimeDelta { secs, subsec } = slf;
-    let secs = secs.get();
-    let (secs, nanos) = if secs >= 0 {
-        (secs, subsec.get())
-    } else if subsec.get() == 0 {
-        (secs, 0)
-    } else {
-        (secs + 1, subsec.get() - NS_PER_SEC as i32)
-    };
-    (
-        (secs / S_PER_HOUR as i64).to_py()?,
-        (secs % S_PER_HOUR as i64 / 60).to_py()?,
-        (secs % 60).to_py()?,
-        nanos.to_py()?,
-    )
-        .into_pytuple()
 }
 
 fn format_iso(_: PyType, slf: TimeDelta) -> PyReturn {
@@ -1412,25 +1251,7 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(TimeDelta, __reduce__, c""),
     method0!(TimeDelta, format_iso, doc::TIMEDELTA_FORMAT_ISO),
     classmethod1!(TimeDelta, parse_iso, doc::TIMEDELTA_PARSE_ISO),
-    method0!(TimeDelta, in_nanoseconds, doc::TIMEDELTA_IN_NANOSECONDS),
-    method0!(TimeDelta, in_microseconds, doc::TIMEDELTA_IN_MICROSECONDS),
-    method0!(TimeDelta, in_milliseconds, doc::TIMEDELTA_IN_MILLISECONDS),
-    method0!(TimeDelta, in_seconds, doc::TIMEDELTA_IN_SECONDS),
-    method0!(TimeDelta, in_minutes, doc::TIMEDELTA_IN_MINUTES),
-    method0!(TimeDelta, in_hours, doc::TIMEDELTA_IN_HOURS),
-    method0!(TimeDelta, in_days_of_24h, doc::TIMEDELTA_IN_DAYS_OF_24H),
-    classmethod1!(
-        TimeDelta,
-        from_py_timedelta,
-        doc::TIMEDELTA_FROM_PY_TIMEDELTA
-    ),
     method0!(TimeDelta, to_stdlib, doc::TIMEDELTA_TO_STDLIB),
-    method0!(TimeDelta, py_timedelta, doc::TIMEDELTA_PY_TIMEDELTA),
-    method0!(
-        TimeDelta,
-        in_hrs_mins_secs_nanos,
-        doc::TIMEDELTA_IN_HRS_MINS_SECS_NANOS
-    ),
     method_kwargs!(TimeDelta, round, doc::TIMEDELTA_ROUND),
     method_kwargs!(TimeDelta, add, doc::TIMEDELTA_ADD),
     method_kwargs!(TimeDelta, subtract, doc::TIMEDELTA_SUBTRACT),

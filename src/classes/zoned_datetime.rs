@@ -620,8 +620,6 @@ fn shift_operator(
 ) -> PyReturn {
     let &State {
         time_delta_type,
-        date_delta_type,
-        datetime_delta_type,
         exc_repeated,
         exc_skipped,
         ..
@@ -633,13 +631,6 @@ fn shift_operator(
 
     if let Some(d) = arg.extract(time_delta_type) {
         tdelta = d;
-    } else if let Some(d) = arg.extract(date_delta_type) {
-        months = d.months;
-        days = d.days;
-    } else if let Some(d) = arg.extract(datetime_delta_type) {
-        months = d.ddelta.months;
-        days = d.ddelta.days;
-        tdelta = d.tdelta;
     } else if let Some(d) = arg.extract(state.itemized_date_delta_type) {
         let (m, dy) = d.to_months_days().ok_or_range_err()?;
         months = m;
@@ -815,18 +806,6 @@ fn to_stdlib(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
         .rust_owned()?
         .borrow(),
     )
-}
-
-fn py_datetime(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
-    let &State {
-        warn_deprecation, ..
-    } = cls.state();
-    warn_with_class(
-        warn_deprecation,
-        c"py_datetime() is deprecated. Use to_stdlib() instead.",
-        1,
-    )?;
-    to_stdlib(cls, slf)
 }
 
 fn to_instant(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
@@ -1234,21 +1213,6 @@ fn from_system_tz(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<Py
         .assume_tz_unchecked(tz, cls)
 }
 
-fn from_py_datetime(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
-    let &State {
-        warn_deprecation, ..
-    } = cls.state();
-    warn_with_class(
-        warn_deprecation,
-        c"from_py_datetime() is deprecated. Use ZonedDateTime() constructor instead.",
-        1,
-    )?;
-    let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() else {
-        raise_type_err("argument must be a datetime.datetime instance")?
-    };
-    from_py_datetime_inner(cls, dt)
-}
-
 fn from_py_datetime_inner(cls: HeapType<ZonedDateTime>, dt: PyDateTime) -> PyReturn {
     let State {
         zoneinfo_type,
@@ -1520,8 +1484,6 @@ fn shift_method(
     let state = cls.state();
     let &State {
         time_delta_type,
-        date_delta_type,
-        datetime_delta_type,
         str_disambiguate,
         exc_repeated,
         exc_skipped,
@@ -1567,13 +1529,6 @@ fn shift_method(
             };
             if let Some(d) = arg.extract(time_delta_type) {
                 tdelta = d;
-            } else if let Some(d) = arg.extract(date_delta_type) {
-                months = d.months;
-                days = d.days;
-            } else if let Some(d) = arg.extract(datetime_delta_type) {
-                months = d.ddelta.months;
-                days = d.ddelta.days;
-                tdelta = d.tdelta;
             } else if let Some(d) = arg.extract(itemized_date_delta_type) {
                 let (m, dy) = d.to_months_days().ok_or_range_err()?;
                 months = m;
@@ -1657,25 +1612,6 @@ fn difference(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, arg: PyObj) -> P
         )?
     };
     inst_a.diff(inst_b).to_obj(time_delta_type)
-}
-
-fn start_of_day(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
-    let state = cls.state();
-    warn_with_class(
-        state.warn_deprecation,
-        c"start_of_day() is deprecated; use start_of(\"day\") instead.",
-        1,
-    )?;
-    let (dt, _) = slf.without_offset().start_of_unit(state.str_day, state)?;
-    ZonedDateTime::resolve_using_disambiguate(
-        dt.date,
-        dt.time,
-        &slf.tz,
-        Disambiguate::Compatible,
-        state.exc_repeated,
-        state.exc_skipped,
-    )?
-    .assume_tz_unchecked(slf.tz.newref(), cls)
 }
 
 fn day_length(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
@@ -2165,11 +2101,6 @@ static mut METHODS: &[PyMethodDef] = &[
     ),
     method1!(ZonedDateTime, exact_eq, doc::EXACTTIME_EXACT_EQ),
     method0!(ZonedDateTime, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
-    method0!(
-        ZonedDateTime,
-        py_datetime,
-        doc::BASICCONVERSIONS_PY_DATETIME
-    ),
     method0!(ZonedDateTime, to_instant, doc::EXACTANDLOCALTIME_TO_INSTANT),
     method0!(ZonedDateTime, to_plain, doc::EXACTANDLOCALTIME_TO_PLAIN),
     method0!(ZonedDateTime, date, doc::LOCALTIME_DATE),
@@ -2213,11 +2144,6 @@ static mut METHODS: &[PyMethodDef] = &[
         ml_flags: METH_CLASS | METH_VARARGS | METH_KEYWORDS,
         ml_doc: doc::ZONEDDATETIME_FROM_SYSTEM_TZ.as_ptr(),
     },
-    classmethod1!(
-        ZonedDateTime,
-        from_py_datetime,
-        doc::BASICCONVERSIONS_FROM_PY_DATETIME
-    ),
     method0!(ZonedDateTime, timestamp, doc::EXACTTIME_TIMESTAMP),
     method0!(
         ZonedDateTime,
@@ -2263,7 +2189,6 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(ZonedDateTime, add, doc::ZONEDDATETIME_ADD),
     method_kwargs!(ZonedDateTime, subtract, doc::ZONEDDATETIME_SUBTRACT),
     method1!(ZonedDateTime, difference, doc::EXACTTIME_DIFFERENCE),
-    method0!(ZonedDateTime, start_of_day, doc::ZONEDDATETIME_START_OF_DAY),
     method0!(ZonedDateTime, day_length, doc::ZONEDDATETIME_DAY_LENGTH),
     method_kwargs!(ZonedDateTime, round, doc::ZONEDDATETIME_ROUND),
     method_kwargs!(ZonedDateTime, since, doc::ZONEDDATETIME_SINCE),

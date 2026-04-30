@@ -924,22 +924,6 @@ class TestSecurityEdgeCases:
         assert state.year is None
 
 
-class TestDeprecations:
-    """Test that deprecated methods emit warnings."""
-
-    def test_offset_datetime_parse_strptime_deprecated(self):
-        with pytest.warns(match="parse_strptime.*deprecated"):
-            OffsetDateTime.parse_strptime(
-                "2020-08-15+0200", format="%Y-%m-%d%z"
-            )
-
-    def test_plain_datetime_parse_strptime_deprecated(self):
-        with pytest.warns(match="parse_strptime.*deprecated"):
-            PlainDateTime.parse_strptime(
-                "2020-08-15 14:30", format="%Y-%m-%d %H:%M"
-            )
-
-
 class TestParseEdgeCases:
     """Test parse error paths for coverage."""
 

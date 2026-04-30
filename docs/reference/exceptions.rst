@@ -18,9 +18,6 @@ Warnings
 .. autoexception:: PotentialDstBugWarning
    :show-inheritance:
 
-.. autoexception:: WheneverDeprecationWarning
-   :show-inheritance:
-
 
 Exceptions
 ----------

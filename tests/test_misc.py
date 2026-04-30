@@ -12,11 +12,10 @@ import pytest
 from whenever import (
     _EXTENSION_LOADED,
     Date,
-    DateDelta,
-    DateTimeDelta,
-    ImplicitlyIgnoringDST,
     Instant,
     InvalidOffsetError,
+    ItemizedDateDelta,
+    ItemizedDelta,
     MonthDay,
     OffsetDateTime,
     PlainDateTime,
@@ -30,10 +29,6 @@ from whenever import (
 from whenever._tz.system import _tzid_from_path, get_tz
 
 from .common import system_tz_ams
-
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
 
 
 @pytest.mark.skipif(
@@ -62,7 +57,6 @@ def test_type_aliases():
 
 
 def test_exceptions():
-    assert issubclass(ImplicitlyIgnoringDST, TypeError)
     assert issubclass(InvalidOffsetError, ValueError)
 
 
@@ -138,10 +132,11 @@ def test_text_signature():
         Date,
         Time,
         TimeDelta,
-        DateDelta,
-        DateTimeDelta,
+        ItemizedDateDelta,
+        ItemizedDelta,
     ]
-    deprecated: list[str] = []
+    # Mapping protocol methods don't have __text_signature__
+    mapping_methods = {"keys", "values", "items", "get"}
     methods = (
         m
         for m in chain.from_iterable(cls.__dict__.values() for cls in classes)
@@ -152,7 +147,7 @@ def test_text_signature():
         assert c.__module__ == "whenever"
 
     for m in methods:
-        if m.__name__.startswith("_") or m.__name__ in deprecated:
+        if m.__name__.startswith("_") or m.__name__ in mapping_methods:
             continue
         sig = m.__text_signature__
         assert (
@@ -176,24 +171,24 @@ def test_pydantic():
         odt: OffsetDateTime
         date: Date = Date(2024, 1, 4)  # default value for testing
         time: Time
-        ddelta: DateDelta
+        ddelta: ItemizedDateDelta
         tdelta: TimeDelta
-        dtdelta: DateTimeDelta
+        dtdelta: ItemizedDelta
         monthday: MonthDay
         yearmonth: YearMonth
 
     # Older versions of pydantic use inspect.signature()
     # in schema generation. Let's make sure that works.
-    signature(DateTimeDelta.__get_pydantic_core_schema__)
+    signature(ItemizedDelta.__get_pydantic_core_schema__)
 
     inst = Instant.from_utc(2024, 1, 1, hour=12)
     zdt = ZonedDateTime(2024, 1, 1, hour=12, tz="Europe/Amsterdam")
     odt = OffsetDateTime(2024, 1, 1, hour=12, offset=1)
     time = Time(12, 0, 0)
     date = Date(2024, 1, 4)
-    ddelta = DateDelta(days=3, months=9)
+    ddelta = ItemizedDateDelta(days=3, months=9)
     tdelta = TimeDelta(hours=3, minutes=9)
-    dtdelta = DateTimeDelta(days=3, months=9, hours=3, minutes=9)
+    dtdelta = ItemizedDelta(days=3, months=9, hours=3, minutes=9)
     monthday = MonthDay(month=1, day=1)
     yearmonth = YearMonth(year=2024, month=1)
 

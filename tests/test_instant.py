@@ -16,7 +16,6 @@ from whenever import (
     PlainDateTime,
     StaleOffsetWarning,
     TimeDelta,
-    WheneverDeprecationWarning,
     ZonedDateTime,
     hours,
     milliseconds,
@@ -41,9 +40,6 @@ from .test_offset_datetime import (
 )
 
 BIG_INT = 1 << 64 + 1  # a big int that may cause an overflow error
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
 
 
 def test_init_parses_iso():
@@ -1224,27 +1220,6 @@ class TestRound:
         d = Instant.from_utc(2020, 1, 1, 12)
         with pytest.raises(TypeError):
             d.round(TimeDelta(hours=1), increment=2)  # type: ignore[call-overload]
-
-
-class TestDeprecations:
-    def test_py_datetime(self):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.warns(WheneverDeprecationWarning):
-            result = d.py_datetime()
-        assert result == py_datetime(
-            2020, 8, 15, 23, 12, 9, 987, tzinfo=timezone.utc
-        )
-
-    def test_from_py_datetime(self):
-        with pytest.warns(WheneverDeprecationWarning):
-            result = Instant.from_py_datetime(
-                py_datetime(
-                    2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc
-                )
-            )
-        assert result.exact_eq(
-            Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
-        )
 
 
 def test_cannot_subclass():

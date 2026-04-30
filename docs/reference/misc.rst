@@ -10,7 +10,6 @@ This section contains API documentation for miscellaneous functions and data
 
     other-types
     exceptions
-    deprecated
 
 
 Context managers

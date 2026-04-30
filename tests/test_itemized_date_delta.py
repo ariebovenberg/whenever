@@ -7,15 +7,11 @@ import pytest
 
 from whenever import Date, ItemizedDateDelta, ItemizedDelta
 
-from .common import AlwaysEqual, NeverEqual
-from .test_date_delta import INVALID_DDELTAS
+from .common import INVALID_DDELTAS, AlwaysEqual, NeverEqual
 
 UNITS = cast(
     Sequence[Literal["years", "months", "weeks", "days"]],
     "years months weeks days".split(),
-)
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
 )
 
 

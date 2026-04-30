@@ -78,13 +78,6 @@ ZonedDateTime("2024-03-15 14:30:00+01:00[Europe/Paris]")
 See the {ref}`pattern format reference <pattern-format>` for the
 full list of specifiers and details.
 
-```{deprecated} 0.10.0
-The ``parse_strptime()`` methods on ``OffsetDateTime`` and ``PlainDateTime``
-are deprecated. Use ``parse()`` with a pattern string instead, or convert
-from a stdlib datetime:
-``OffsetDateTime(datetime.strptime(...))``.
-```
-
 ## Pydantic integration
 
 ```{warning}

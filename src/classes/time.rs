@@ -439,34 +439,6 @@ fn to_stdlib(cls: HeapType<Time>, slf: Time) -> PyReturn {
     .rust_owned()
 }
 
-fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn {
-    let &State {
-        warn_deprecation, ..
-    } = cls.state();
-    warn_with_class(
-        warn_deprecation,
-        c"py_time() is deprecated. Use to_stdlib() instead.",
-        1,
-    )?;
-    to_stdlib(cls, slf)
-}
-
-fn from_py_time(cls: HeapType<Time>, arg: PyObj) -> PyReturn {
-    let &State {
-        warn_deprecation, ..
-    } = cls.state();
-    warn_with_class(
-        warn_deprecation,
-        c"from_py_time() is deprecated. Use Time() constructor instead.",
-        1,
-    )?;
-    Time::from_py(
-        arg.cast_allow_subclass::<PyTime>()
-            .ok_or_type_err("argument must be a datetime.time")?,
-    )
-    .to_obj(cls)
-}
-
 fn format_iso(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     if !args.is_empty() {
         raise_type_err("format_iso() takes no positional arguments")?;
@@ -700,11 +672,9 @@ static mut METHODS: &[PyMethodDef] = &[
     method1!(Time, __deepcopy__, c""),
     method0!(Time, __reduce__, c""),
     method0!(Time, to_stdlib, doc::TIME_TO_STDLIB),
-    method0!(Time, py_time, doc::TIME_PY_TIME),
     method_kwargs!(Time, replace, doc::TIME_REPLACE),
     method_kwargs!(Time, format_iso, doc::TIME_FORMAT_ISO),
     classmethod1!(Time, parse_iso, doc::TIME_PARSE_ISO),
-    classmethod1!(Time, from_py_time, doc::TIME_FROM_PY_TIME),
     method1!(Time, on, doc::TIME_ON),
     method_kwargs!(Time, round, doc::TIME_ROUND),
     method1!(Time, format, doc::TIME_FORMAT),
