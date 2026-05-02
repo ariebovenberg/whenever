@@ -1,9 +1,6 @@
 use core::ffi::c_long;
 
-use crate::{
-    common::{math::CalUnit, scalar::*},
-    py::*,
-};
+use crate::{common::scalar::*, py::*};
 
 pub(crate) fn handle_init_kwargs<T>(
     fname: &str,
@@ -58,65 +55,4 @@ where
         DeltaMonths::from_long(months).ok_or_range_err()?,
         DeltaDays::from_long(days).ok_or_range_err()?,
     ))
-}
-
-// parse the prefix of an ISO8601 duration, e.g. `P`, `-P`, `+P`,
-pub(crate) fn parse_prefix(s: &mut &[u8]) -> Option<bool> {
-    debug_assert!(s.len() >= 2);
-    match s[0] {
-        b'P' | b'p' => {
-            let result = Some(false);
-            *s = &s[1..];
-            result
-        }
-        b'-' if s[1].eq_ignore_ascii_case(&b'P') => {
-            let result = Some(true);
-            *s = &s[2..];
-            result
-        }
-        b'+' if s[1].eq_ignore_ascii_case(&b'P') => {
-            let result = Some(false);
-            *s = &s[2..];
-            result
-        }
-        _ => None,
-    }
-}
-
-fn finish_parsing_component(s: &mut &[u8], mut value: i32) -> Option<(i32, CalUnit)> {
-    // We limit parsing to a number of digits to prevent overflow
-    for i in 1..s.len().min(9) {
-        match s[i] {
-            c if c.is_ascii_digit() => value = value * 10 + i32::from(c - b'0'),
-            b'D' | b'd' => {
-                *s = &s[i + 1..];
-                return Some((value, CalUnit::Days));
-            }
-            b'W' | b'w' => {
-                *s = &s[i + 1..];
-                return Some((value, CalUnit::Weeks));
-            }
-            b'M' | b'm' => {
-                *s = &s[i + 1..];
-                return Some((value, CalUnit::Months));
-            }
-            b'Y' | b'y' => {
-                *s = &s[i + 1..];
-                return Some((value, CalUnit::Years));
-            }
-            _ => {
-                return None;
-            }
-        }
-    }
-    None
-}
-
-// parse a component of a ISO8601 duration, e.g. `6Y`, `56M`, `2W`, `0D`
-pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, CalUnit)> {
-    if s.len() >= 2 && s[0].is_ascii_digit() {
-        finish_parsing_component(s, (s[0] - b'0').into())
-    } else {
-        None
-    }
 }

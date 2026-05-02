@@ -132,8 +132,6 @@ def test_text_signature():
         Date,
         Time,
         TimeDelta,
-        ItemizedDateDelta,
-        ItemizedDelta,
     ]
     # Mapping protocol methods don't have __text_signature__
     mapping_methods = {"keys", "values", "items", "get"}

@@ -3,8 +3,6 @@ use crate::{
     classes::{
         date::{self, unpickle as _unpkl_date},
         instant::{self, unpickle as _unpkl_inst, unpickle_pre_0_8 as _unpkl_utc},
-        itemized_date_delta::{self, unpickle as _unpkl_iddelta},
-        itemized_delta::{self, unpickle as _unpkl_idelta},
         offset_datetime::{self, unpickle as _unpkl_offset},
         plain_datetime::{self, unpickle as _unpkl_local},
         time::{self, unpickle as _unpkl_time},
@@ -60,8 +58,6 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     modmethod1!(_unpkl_date, c""),
     modmethod1!(_unpkl_time, c""),
     modmethod1!(_unpkl_tdelta, c""),
-    modmethod_vararg!(_unpkl_iddelta, c""),
-    modmethod_vararg!(_unpkl_idelta, c""),
     modmethod1!(_unpkl_local, c""),
     modmethod1!(_unpkl_inst, c""),
     modmethod1!(_unpkl_utc, c""), // for backwards compatibility
@@ -146,20 +142,6 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         c"_unpkl_tdelta",
     )?;
     create_singletons(*time_delta_type, time_delta::SINGLETONS)?;
-    let (itemized_date_delta_type, unpickle_itemized_date_delta) = new_class(
-        module,
-        module_name.borrow(),
-        &mut unsafe { itemized_date_delta::SPEC },
-        c"_unpkl_iddelta",
-    )?;
-    itemized_date_delta::register_as_mapping(itemized_date_delta_type.borrow().as_py_obj())?;
-    let (itemized_delta_type, unpickle_itemized_delta) = new_class(
-        module,
-        module_name.borrow(),
-        &mut unsafe { itemized_delta::SPEC },
-        c"_unpkl_idelta",
-    )?;
-    itemized_date_delta::register_as_mapping(itemized_delta_type.borrow().as_py_obj())?;
     let (plain_datetime_type, unpickle_plain_datetime) = new_class(
         module,
         module_name.borrow(),
@@ -210,6 +192,12 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     let isoweekdate_type = shared_module.getattr(c"IsoWeekDate")?;
     let isoweekdate_new = isoweekdate_type.getattr(c"_from_parts_unchecked")?;
 
+    let deltas_module = import(c"whenever._deltas")?;
+    let itemized_date_delta_type = deltas_module.getattr(c"ItemizedDateDelta")?;
+    let itemized_delta_type = deltas_module.getattr(c"ItemizedDelta")?;
+    let unpickle_itemized_date_delta = deltas_module.getattr(c"_unpkl_iddelta")?;
+    let unpickle_itemized_delta = deltas_module.getattr(c"_unpkl_idelta")?;
+
     module.add_type(
         yearmonth_type
             .borrow()
@@ -230,6 +218,18 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     )?;
     module.add_type(
         isoweekdate_type
+            .borrow()
+            .cast_allow_subclass::<PyType>()
+            .unwrap(),
+    )?;
+    module.add_type(
+        itemized_date_delta_type
+            .borrow()
+            .cast_allow_subclass::<PyType>()
+            .unwrap(),
+    )?;
+    module.add_type(
+        itemized_delta_type
             .borrow()
             .cast_allow_subclass::<PyType>()
             .unwrap(),
@@ -455,16 +455,6 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
             time_delta::SINGLETONS.len(),
         ),
         (
-            state.itemized_date_delta_type.inner(),
-            state.unpickle_itemized_date_delta,
-            0,
-        ),
-        (
-            state.itemized_delta_type.inner(),
-            state.unpickle_itemized_delta,
-            0,
-        ),
-        (
             state.plain_datetime_type.inner(),
             state.unpickle_plain_datetime,
             plain_datetime::SINGLETONS.len(),
@@ -493,6 +483,10 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
     traverse(state.yearmonth_type.as_ptr(), visit, arg)?;
     traverse(state.monthday_type.as_ptr(), visit, arg)?;
     traverse(state.isoweekdate_new.as_ptr(), visit, arg)?;
+    traverse(state.itemized_date_delta_type.as_ptr(), visit, arg)?;
+    traverse(state.itemized_delta_type.as_ptr(), visit, arg)?;
+    traverse(state.unpickle_itemized_date_delta.as_ptr(), visit, arg)?;
+    traverse(state.unpickle_itemized_delta.as_ptr(), visit, arg)?;
 
     // enum members
     for member in state.weekday_enum_members.into_iter() {
@@ -674,8 +668,8 @@ pub(crate) struct State {
     pub(crate) isoweekdate_new: PyObj,
     pub(crate) time_type: HeapType<time::Time>,
     pub(crate) time_delta_type: HeapType<time_delta::TimeDelta>,
-    pub(crate) itemized_date_delta_type: HeapType<itemized_date_delta::ItemizedDateDelta>,
-    pub(crate) itemized_delta_type: HeapType<itemized_delta::ItemizedDelta>,
+    pub(crate) itemized_date_delta_type: PyObj,
+    pub(crate) itemized_delta_type: PyObj,
     pub(crate) plain_datetime_type: HeapType<plain_datetime::DateTime>,
     pub(crate) instant_type: HeapType<instant::Instant>,
     pub(crate) offset_datetime_type: HeapType<offset_datetime::OffsetDateTime>,

@@ -162,6 +162,40 @@ def test_mapping_views():
     }
 
 
+class TestKeysView:
+    def test_iter_order(self):
+        keys = ItemizedDateDelta(days=1, years=2).keys()
+        assert list(keys) == ["years", "days"]
+
+    def test_reversed(self):
+        keys = ItemizedDateDelta(days=1, years=2).keys()
+        assert list(reversed(keys)) == ["days", "years"]
+
+    def test_and_with_keys_view(self):
+        k1 = ItemizedDateDelta(years=1, months=2).keys()
+        k2 = ItemizedDateDelta(months=5, days=6).keys()
+        result = k1 & k2
+        assert isinstance(result, KeysView)
+        assert set(result) == {"months"}
+
+    def test_subset(self):
+        k1 = ItemizedDateDelta(years=1).keys()
+        k2 = ItemizedDateDelta(years=3, months=4).keys()
+        assert k1 <= k2
+        assert k1 < k2
+        assert k2 >= k1
+        assert k2 > k1
+
+    def test_isdisjoint(self):
+        k1 = ItemizedDateDelta(years=1).keys()
+        k2 = ItemizedDateDelta(days=2).keys()
+        assert k1.isdisjoint(k2)
+
+    def test_not_hashable(self):
+        with pytest.raises(TypeError):
+            hash(ItemizedDateDelta(years=1).keys())
+
+
 def test_replace():
     d = ItemizedDateDelta(years=2, months=3, weeks=4)
 

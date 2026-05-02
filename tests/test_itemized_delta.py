@@ -212,6 +212,157 @@ def test_mapping_views():
     }
 
 
+class TestKeysView:
+    """Test the custom _DeltaKeysView implementation"""
+
+    def test_len(self):
+        assert len(ItemizedDelta(years=1).keys()) == 1
+        assert len(ItemizedDelta(years=1, months=2, days=3).keys()) == 3
+
+    def test_contains(self):
+        keys = ItemizedDelta(years=1, hours=2).keys()
+        assert "years" in keys
+        assert "hours" in keys
+        assert "months" not in keys
+        assert "invalid" not in keys
+        assert 42 not in keys
+
+    def test_iter_order(self):
+        keys = ItemizedDelta(seconds=1, years=2, days=3).keys()
+        assert list(keys) == ["years", "days", "seconds"]
+
+    def test_reversed(self):
+        keys = ItemizedDelta(seconds=1, years=2, days=3).keys()
+        assert list(reversed(keys)) == ["seconds", "days", "years"]
+
+    def test_and_with_keys_view(self):
+        k1 = ItemizedDelta(years=1, months=2, days=3).keys()
+        k2 = ItemizedDelta(months=5, hours=6).keys()
+        result = k1 & k2
+        assert isinstance(result, KeysView)
+        assert set(result) == {"months"}
+
+    def test_or_with_keys_view(self):
+        k1 = ItemizedDelta(years=1).keys()
+        k2 = ItemizedDelta(hours=2).keys()
+        result = k1 | k2
+        assert isinstance(result, KeysView)
+        assert set(result) == {"years", "hours"}
+
+    def test_sub_with_keys_view(self):
+        k1 = ItemizedDelta(years=1, months=2, days=3).keys()
+        k2 = ItemizedDelta(months=5).keys()
+        result = k1 - k2
+        assert isinstance(result, KeysView)
+        assert set(result) == {"years", "days"}
+
+    def test_xor_with_keys_view(self):
+        k1 = ItemizedDelta(years=1, months=2).keys()
+        k2 = ItemizedDelta(months=5, days=3).keys()
+        result = k1 ^ k2
+        assert isinstance(result, KeysView)
+        assert set(result) == {"years", "days"}
+
+    def test_and_with_set(self):
+        keys = ItemizedDelta(years=1, months=2).keys()
+        assert keys & {"years", "days"} == {"years"}
+
+    def test_or_with_set(self):
+        keys = ItemizedDelta(years=1).keys()
+        assert keys | {"extra"} == {"years", "extra"}
+
+    def test_sub_with_set(self):
+        keys = ItemizedDelta(years=1, months=2).keys()
+        assert keys - {"months"} == {"years"}
+
+    def test_rsub_with_set(self):
+        keys = ItemizedDelta(years=1, months=2).keys()
+        assert {"years", "days"} - keys == {"days"}
+
+    def test_xor_with_set(self):
+        keys = ItemizedDelta(years=1, months=2).keys()
+        assert keys ^ {"months", "days"} == {"years", "days"}
+
+    def test_eq(self):
+        k1 = ItemizedDelta(years=1, months=2).keys()
+        k2 = ItemizedDelta(years=3, months=4).keys()
+        assert k1 == k2
+        assert k1 == {"years", "months"}
+
+    def test_ne(self):
+        k1 = ItemizedDelta(years=1, months=2).keys()
+        k2 = ItemizedDelta(years=3, days=4).keys()
+        assert k1 != k2
+        assert k1 != {"years", "days"}
+
+    def test_le(self):
+        k1 = ItemizedDelta(years=1).keys()
+        k2 = ItemizedDelta(years=3, months=4).keys()
+        assert k1 <= k2
+        assert k1 <= {"years", "months"}
+        assert not (k2 <= k1)
+
+    def test_ge(self):
+        k1 = ItemizedDelta(years=1, months=2).keys()
+        k2 = ItemizedDelta(years=3).keys()
+        assert k1 >= k2
+        assert k1 >= {"years"}
+        assert not (k2 >= k1)
+
+    def test_lt(self):
+        k1 = ItemizedDelta(years=1).keys()
+        k2 = ItemizedDelta(years=3, months=4).keys()
+        assert k1 < k2
+        assert not (k1 < k1)
+        assert k1 < {"years", "months"}
+        assert not (k1 < {"years"})
+
+    def test_gt(self):
+        k1 = ItemizedDelta(years=1, months=2).keys()
+        k2 = ItemizedDelta(years=3).keys()
+        assert k1 > k2
+        assert not (k1 > k1)
+        assert k1 > {"years"}
+        assert not (k1 > {"years", "months"})
+
+    def test_isdisjoint(self):
+        k1 = ItemizedDelta(years=1).keys()
+        k2 = ItemizedDelta(hours=2).keys()
+        k3 = ItemizedDelta(years=3, days=4).keys()
+        assert k1.isdisjoint(k2)
+        assert not k1.isdisjoint(k3)
+
+    def test_isdisjoint_with_iterable(self):
+        keys = ItemizedDelta(years=1, months=2).keys()
+        assert keys.isdisjoint(["hours", "days"])
+        assert not keys.isdisjoint(["years", "days"])
+
+    def test_not_hashable(self):
+        keys = ItemizedDelta(years=1).keys()
+        with pytest.raises(TypeError):
+            hash(keys)
+
+    def test_cross_type_keys_view(self):
+        k1 = ItemizedDelta(years=1, hours=2).keys()
+        k2 = ItemizedDateDelta(years=3, days=4).keys()
+        assert k1 & k2 == {"years"}
+        assert k1 | k2 == {"years", "days", "hours"}
+
+    def test_ror_with_set(self):
+        keys = ItemizedDelta(years=1).keys()
+        assert {"extra"} | keys == {"years", "extra"}
+
+    def test_rand_with_set(self):
+        keys = ItemizedDelta(years=1, months=2).keys()
+        assert {"years", "days"} & keys == {"years"}
+
+    def test_from_iterable(self):
+        keys = ItemizedDelta(years=1).keys()
+        result = type(keys)._from_iterable(["a", "b"])
+        assert result == {"a", "b"}
+        assert isinstance(result, set)
+
+
 class TestEq:
     def test_notimplemented(self):
         d = ItemizedDelta(days=5)

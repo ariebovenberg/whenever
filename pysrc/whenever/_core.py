@@ -20,24 +20,6 @@ try:  # pragma: no cover
         _unpkl_zoned,
     )
 
-    # Backfill symbols not yet in the Rust extension (temporary)
-    try:
-        from ._whenever import _unpkl_idelta as _unpkl_idelta
-    except ImportError:
-        from ._pywhenever import _unpkl_idelta as _unpkl_idelta
-    try:
-        from ._whenever import _unpkl_iddelta as _unpkl_iddelta
-    except ImportError:
-        from ._pywhenever import _unpkl_iddelta as _unpkl_iddelta
-    try:
-        from ._whenever import ItemizedDelta as ItemizedDelta
-    except ImportError:
-        from ._pywhenever import ItemizedDelta as ItemizedDelta
-    try:
-        from ._whenever import ItemizedDateDelta as ItemizedDateDelta
-    except ImportError:
-        from ._pywhenever import ItemizedDateDelta as ItemizedDateDelta
-
     _EXTENSION_LOADED = True
 
 except ModuleNotFoundError as e:
@@ -53,8 +35,6 @@ except ModuleNotFoundError as e:
         _set_tzpath,
         _unpatch_time,
         _unpkl_date,
-        _unpkl_iddelta,
-        _unpkl_idelta,
         _unpkl_inst,
         _unpkl_local,
         _unpkl_offset,
@@ -65,6 +45,14 @@ except ModuleNotFoundError as e:
     )
 
     _EXTENSION_LOADED = False
+
+# ItemizedDelta/ItemizedDateDelta always come from _deltas (pure Python)
+from ._deltas import (
+    ItemizedDateDelta,
+    ItemizedDelta,
+    _unpkl_iddelta,
+    _unpkl_idelta,
+)
 
 # YearMonth/MonthDay/IsoWeekDate unpickle functions always come from _shared
 from ._shared import _unpkl_iwd, _unpkl_md, _unpkl_ym

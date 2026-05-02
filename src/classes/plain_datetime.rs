@@ -3,7 +3,7 @@ use crate::{
         date::Date,
         instant::Instant,
         itemized_date_delta::ItemizedDateDelta,
-        itemized_delta::{ItemizedDelta, handle_delta_unit_kwargs},
+        itemized_delta::{self, ItemizedDelta, handle_delta_unit_kwargs},
         time::Time,
         time_delta::TimeDelta,
         zoned_datetime::ZonedDateTime,
@@ -710,11 +710,15 @@ fn shift_method(
             }
             if let Some(t) = arg.extract(time_delta_type) {
                 tdelta = t;
-            } else if let Some(d) = arg.extract(itemized_date_delta_type) {
+            } else if arg.type_().as_py_obj() == itemized_date_delta_type {
+                let tup = arg.getattr(c"_to_tuple")?.call0()?;
+                let d = ItemizedDateDelta::from_py_tuple(tup.borrow())?;
                 let (m, dy) = d.to_months_days().ok_or_range_err()?;
                 months = m;
                 days = dy;
-            } else if let Some(d) = arg.extract(itemized_delta_type) {
+            } else if arg.type_().as_py_obj() == itemized_delta_type {
+                let tup = arg.getattr(c"_to_tuple")?.call0()?;
+                let d = ItemizedDelta::from_py_tuple(tup.borrow())?;
                 let (m, dy, td) = d.to_components().ok_or_range_err()?;
                 months = m;
                 days = dy;
@@ -1263,7 +1267,7 @@ fn plain_since_in_units(
     };
 
     result.fill_cal_units(cal_results);
-    result.to_obj(state.itemized_delta_type)
+    itemized_delta::to_py(result, state)
 }
 
 fn round(
