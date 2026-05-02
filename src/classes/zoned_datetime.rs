@@ -3,7 +3,7 @@ use crate::{
         date::Date,
         instant::Instant,
         itemized_date_delta::ItemizedDateDelta,
-        itemized_delta::{ItemizedDelta, handle_delta_unit_kwargs},
+        itemized_delta::{self, ItemizedDelta, handle_delta_unit_kwargs},
         offset_datetime::OffsetDateTime,
         plain_datetime::{DateTime, set_components_from_kwargs},
         time::Time,
@@ -235,11 +235,6 @@ impl ZonedDateTime {
         self.without_tz().with_date_in_tz(new_date, self.tz)
     }
 
-    pub(crate) fn shift_default(self, delta: ItemizedDelta) -> Option<OffsetDateTime> {
-        let (months, days, tdelta) = delta.to_components()?;
-        self.without_tz().shift_in_tz(months, days, tdelta, self.tz)
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn shift(
         self,
@@ -299,24 +294,6 @@ impl OffsetDateTime {
                 .with_offset(later)
             }
         }
-    }
-
-    pub(crate) fn shift_in_tz(
-        self,
-        months: DeltaMonths,
-        days: DeltaDays,
-        tdelta: TimeDelta,
-        tz: TzPtr,
-    ) -> Option<OffsetDateTime> {
-        let shifted_by_date = if !months.is_zero() || !days.is_zero() {
-            self.with_date_in_tz(self.date.shift(months, days)?, tz)?
-        } else {
-            self
-        };
-        shifted_by_date
-            .instant()
-            .shift(tdelta)?
-            .to_offset(shifted_by_date.offset)
     }
 }
 
@@ -631,11 +608,15 @@ fn shift_operator(
 
     if let Some(d) = arg.extract(time_delta_type) {
         tdelta = d;
-    } else if let Some(d) = arg.extract(state.itemized_date_delta_type) {
+    } else if arg.type_().as_py_obj() == state.itemized_date_delta_type {
+        let tup = arg.getattr(c"_to_tuple")?.call0()?;
+        let d = ItemizedDateDelta::from_py_tuple(tup.borrow())?;
         let (m, dy) = d.to_months_days().ok_or_range_err()?;
         months = m;
         days = dy;
-    } else if let Some(d) = arg.extract(state.itemized_delta_type) {
+    } else if arg.type_().as_py_obj() == state.itemized_delta_type {
+        let tup = arg.getattr(c"_to_tuple")?.call0()?;
+        let d = ItemizedDelta::from_py_tuple(tup.borrow())?;
         let (m, dy, td) = d.to_components().ok_or_range_err()?;
         months = m;
         days = dy;
@@ -1529,11 +1510,15 @@ fn shift_method(
             };
             if let Some(d) = arg.extract(time_delta_type) {
                 tdelta = d;
-            } else if let Some(d) = arg.extract(itemized_date_delta_type) {
+            } else if arg.type_().as_py_obj() == itemized_date_delta_type {
+                let tup = arg.getattr(c"_to_tuple")?.call0()?;
+                let d = ItemizedDateDelta::from_py_tuple(tup.borrow())?;
                 let (m, dy) = d.to_months_days().ok_or_range_err()?;
                 months = m;
                 days = dy;
-            } else if let Some(d) = arg.extract(itemized_delta_type) {
+            } else if arg.type_().as_py_obj() == itemized_delta_type {
+                let tup = arg.getattr(c"_to_tuple")?.call0()?;
+                let d = ItemizedDelta::from_py_tuple(tup.borrow())?;
                 let (m, dy, td) = d.to_components().ok_or_range_err()?;
                 months = m;
                 days = dy;
@@ -1848,18 +1833,20 @@ fn zoned_since(
         SinceUntilKwargs::Total(unit) => {
             zoned_since_float(a.without_tz(), b, target_date, unit, neg)
         }
-        SinceUntilKwargs::InUnits(units, round_mode, round_increment) => zoned_since_in_units(
-            a.without_tz(),
-            a_inst,
-            b,
-            target_date,
-            units,
-            round_mode,
-            round_increment,
-            neg,
-        )
-        .ok_or_range_err()?
-        .to_obj(state.itemized_delta_type),
+        SinceUntilKwargs::InUnits(units, round_mode, round_increment) => {
+            let result = zoned_since_in_units(
+                a.without_tz(),
+                a_inst,
+                b,
+                target_date,
+                units,
+                round_mode,
+                round_increment,
+                neg,
+            )
+            .ok_or_range_err()?;
+            itemized_delta::to_py(result, state)
+        }
     }
 }
 

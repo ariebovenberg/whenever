@@ -118,12 +118,6 @@ pub(crate) fn raise_value_err<T, U: ToPy>(msg: U) -> PyResult<T> {
     raise(unsafe { PyExc_ValueError }, msg)
 }
 
-#[cold]
-pub(crate) fn raise_key_err<T>(key: PyObj) -> PyResult<T> {
-    unsafe { PyErr_SetObject(PyExc_KeyError, key.as_ptr()) };
-    Err(PyErrMarker)
-}
-
 /// Emit a warning using a custom warning class (e.g. a heap-type UserWarning subclass).
 /// `stacklevel` controls how many frames to skip (1 = caller).
 pub(crate) fn warn_with_class(warning_cls: PyObj, msg: &CStr, stacklevel: isize) -> PyResult<()> {

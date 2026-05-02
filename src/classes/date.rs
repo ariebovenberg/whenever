@@ -9,7 +9,9 @@ use std::fmt::{Display, Formatter};
 use crate::{
     classes::{
         date_delta::handle_init_kwargs as handle_datedelta_kwargs,
-        itemized_date_delta::ItemizedDateDelta, plain_datetime::DateTime, time::Time,
+        itemized_date_delta::{self, ItemizedDateDelta},
+        plain_datetime::DateTime,
+        time::Time,
     },
     common::{
         fmt::{self, Chunk},
@@ -678,8 +680,12 @@ fn shift_method(
     let state = cls.state();
     let (mut months, mut days) = match (args, kwargs.len()) {
         (&[arg], 0) => {
-            if let Some(d) = arg.extract(state.itemized_date_delta_type) {
-                d.to_months_days().ok_or_range_err()?
+            if arg.type_().as_py_obj() == state.itemized_date_delta_type {
+                let tup = arg.getattr(c"_to_tuple")?;
+                let tup_result = tup.call0()?;
+                ItemizedDateDelta::from_py_tuple(tup_result.borrow())?
+                    .to_months_days()
+                    .ok_or_range_err()?
             } else {
                 raise_type_err(format!("{fname}() argument must be an ItemizedDateDelta"))?
             }
@@ -773,15 +779,16 @@ fn since_inner(
                 date_since_float(a, b, unit)
             }
         }
-        Some(DateSinceUnits::InUnits(units)) => date_since_iddelta(
-            a,
-            b,
-            units,
-            round_mode.unwrap_or(round::Mode::Trunc),
-            round_increment,
-        )
-        .unwrap()
-        .to_obj(cls.state().itemized_date_delta_type),
+        Some(DateSinceUnits::InUnits(units)) => {
+            let d = date_since_iddelta(
+                a,
+                b,
+                units,
+                round_mode.unwrap_or(round::Mode::Trunc),
+                round_increment,
+            )?;
+            itemized_date_delta::to_py(d, cls.state())
+        }
         None => raise_type_err("must specify either 'total' or 'in_units'"),
     }
 }
