@@ -2,5 +2,5 @@ pytest>=9.0.3,<10
 pytest-cov>=7.1.0,<8
 pytest-benchmark[histogram]>=5.2.3,<6
 pytest-order>=1.4.0,<2
-hypothesis>=6.152.5,<7
+hypothesis>=6.152.6,<7
 time_machine>=2,<3; implementation_name == 'cpython'
