@@ -920,7 +920,7 @@ fn now(cls: HeapType<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     check_ignore_dst_and_stale_offset("now", kwargs, state, doc::OFFSET_NOW_STALE_MSG)?;
     let offset = Offset::from_obj(offset_obj, state.time_delta_type)?;
     state
-        .time_ns()?
+        .now()?
         .to_offset(offset)
         // SAFETY: Exception types are safe to reference during Python runtime
         .ok_or_raise(unsafe { PyExc_OSError }, "Date is out of range")?
@@ -1287,6 +1287,7 @@ fn parse_strptime(
     let args = (arg_obj.newref(), format_obj.newref()).into_pytuple()?;
     let parsed = state
         .strptime
+        .get()?
         .call(*args)?
         .cast_exact::<PyDateTime>()
         .ok_or_type_err("strptime() returned non-datetime")?;

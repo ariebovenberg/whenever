@@ -98,7 +98,7 @@ impl Instant {
 }
 
 impl State {
-    pub(crate) fn time_ns(&self) -> PyResult<Instant> {
+    pub(crate) fn now(&self) -> PyResult<Instant> {
         let Patch {
             state: status,
             time_machine_installed,
@@ -126,7 +126,7 @@ impl State {
     }
 
     fn time_ns_py(&self) -> PyResult<Instant> {
-        let ts = self.time_ns.call0()?;
+        let ts = self.time_ns.get()?.call0()?;
         let ns = ts
             .cast_exact::<PyInt>()
             .ok_or_raise(

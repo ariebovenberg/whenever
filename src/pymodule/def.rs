@@ -16,7 +16,7 @@ use crate::{
         },
         zoned_datetime::{self, unpickle as _unpkl_zoned},
     },
-    common::round,
+    common::{round, sync::OncePyCell},
     docstrings as doc,
     py::*,
     pymodule::{
@@ -86,6 +86,7 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     modmethod1!(_patch_time_keep_ticking, c""),
     modmethod0!(_unpatch_time, c""),
     modmethod1!(_set_tzpath, c""),
+    modmethod0!(_get_tzpath, c""),
     modmethod0!(_clear_tz_cache, c""),
     modmethod1!(_clear_tz_cache_by_keys, c""),
     modmethod0!(reset_system_tz, doc::RESET_SYSTEM_TZ),
@@ -127,6 +128,9 @@ static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
 
 #[cold]
 fn module_exec(module: PyModule) -> PyResult<()> {
+    // Emit marker so tests can detect debug builds and assert cleanup.
+    #[cfg(debug_assertions)]
+    eprintln!("[whenever] module_exec (debug)");
     // Initialize state to None to get it out of uninitialized state ASAP,
     // as any further calls could trigger a GC cycle which would retrieve
     // the state.
@@ -218,45 +222,6 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         None => Err(PyErrMarker)?,
     };
 
-    // NOTE: getting strptime from the C API `DateTimeType` results in crashes
-    // with subinterpreters. Thus we import it through Python.
-    let strptime = import(c"datetime")?
-        .getattr(c"datetime")?
-        .getattr(c"strptime")?;
-    let time_ns = import(c"time")?.getattr(c"time_ns")?;
-
-    let shared_module = import(c"whenever._shared")?;
-    let yearmonth_type = shared_module.getattr(c"YearMonth")?;
-    let monthday_type = shared_module.getattr(c"MonthDay")?;
-    let weekday_enum = shared_module.getattr(c"Weekday")?;
-    let isoweekdate_type = shared_module.getattr(c"IsoWeekDate")?;
-    let isoweekdate_new = isoweekdate_type.getattr(c"_from_parts_unchecked")?;
-
-    module.add_type(
-        yearmonth_type
-            .borrow()
-            .cast_allow_subclass::<PyType>()
-            .unwrap(),
-    )?;
-    module.add_type(
-        monthday_type
-            .borrow()
-            .cast_allow_subclass::<PyType>()
-            .unwrap(),
-    )?;
-    module.add_type(
-        weekday_enum
-            .borrow()
-            .cast_allow_subclass::<PyType>()
-            .unwrap(),
-    )?;
-    module.add_type(
-        isoweekdate_type
-            .borrow()
-            .cast_allow_subclass::<PyType>()
-            .unwrap(),
-    )?;
-
     let exc_repeated = new_exception(
         module,
         c"whenever.RepeatedTime",
@@ -318,15 +283,12 @@ fn module_exec(module: PyModule) -> PyResult<()> {
     )?;
 
     let time_patch = Patch::new()?;
-    let tz_store = TzStore::new(*exc_tz_notfound)?;
+    let tz_store = TzStore::new(*exc_tz_notfound);
 
     // Only write the state once everything is initialized,
     // to ensure we don't leak references to the above.
     state.replace(State {
         date_type: date_type.py_owned(),
-        yearmonth_type: yearmonth_type.py_owned(),
-        monthday_type: monthday_type.py_owned(),
-        isoweekdate_new: isoweekdate_new.py_owned(),
         time_type: time_type.py_owned(),
         date_delta_type: date_delta_type.py_owned(),
         time_delta_type: time_delta_type.py_owned(),
@@ -338,20 +300,40 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         offset_datetime_type: offset_datetime_type.py_owned(),
         zoned_datetime_type: zoned_datetime_type.py_owned(),
 
+        yearmonth_type: OncePyObj::new(|| import(c"whenever._shared")?.getattr(c"YearMonth")),
+        monthday_type: OncePyObj::new(|| import(c"whenever._shared")?.getattr(c"MonthDay")),
+        isoweekdate_new: OncePyObj::new(|| {
+            import(c"whenever._shared")?
+                .getattr(c"IsoWeekDate")?
+                .getattr(c"_from_parts_unchecked")
+        }),
+        weekday_enum_members: OncePyCell::new(|| {
+            let shared_module = import(c"whenever._shared")?;
+            let weekday_enum = shared_module.getattr(c"Weekday")?;
+            Ok([
+                weekday_enum.getattr(c"MONDAY")?,
+                weekday_enum.getattr(c"TUESDAY")?,
+                weekday_enum.getattr(c"WEDNESDAY")?,
+                weekday_enum.getattr(c"THURSDAY")?,
+                weekday_enum.getattr(c"FRIDAY")?,
+                weekday_enum.getattr(c"SATURDAY")?,
+                weekday_enum.getattr(c"SUNDAY")?,
+            ])
+        }),
+
         py_api,
-        strptime: strptime.py_owned(),
-        time_ns: time_ns.py_owned(),
-        weekday_enum_members: [
-            weekday_enum.getattr(c"MONDAY")?.py_owned(),
-            weekday_enum.getattr(c"TUESDAY")?.py_owned(),
-            weekday_enum.getattr(c"WEDNESDAY")?.py_owned(),
-            weekday_enum.getattr(c"THURSDAY")?.py_owned(),
-            weekday_enum.getattr(c"FRIDAY")?.py_owned(),
-            weekday_enum.getattr(c"SATURDAY")?.py_owned(),
-            weekday_enum.getattr(c"SUNDAY")?.py_owned(),
-        ],
-        zoneinfo_type: LazyImport::new(c"zoneinfo", c"ZoneInfo"),
-        get_pydantic_schema: LazyImport::new(c"whenever._utils", c"pydantic_schema"),
+        // NOTE: getting strptime from the C API `DateTimeType` results in crashes
+        // with subinterpreters. Thus we import it through Python.
+        strptime: OncePyObj::new(|| {
+            import(c"datetime")?
+                .getattr(c"datetime")?
+                .getattr(c"strptime")
+        }),
+        time_ns: OncePyObj::new(|| import(c"time")?.getattr(c"time_ns")),
+        zoneinfo_type: OncePyObj::new(|| import(c"zoneinfo")?.getattr(c"ZoneInfo")),
+        get_pydantic_schema: OncePyObj::new(|| {
+            import(c"whenever._utils")?.getattr(c"pydantic_schema")
+        }),
 
         str_years: intern(c"years")?.py_owned(),
         str_months: intern(c"months")?.py_owned(),
@@ -540,14 +522,14 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
         traverse(unpkl.as_ptr(), visit, arg)?;
     }
 
-    // imported types
-    traverse(state.yearmonth_type.as_ptr(), visit, arg)?;
-    traverse(state.monthday_type.as_ptr(), visit, arg)?;
-    traverse(state.isoweekdate_new.as_ptr(), visit, arg)?;
-
-    // enum members
-    for member in state.weekday_enum_members.into_iter() {
-        traverse(member.as_ptr(), visit, arg)?;
+    // Lazily imported from _shared
+    state.yearmonth_type.traverse(visit, arg)?;
+    state.monthday_type.traverse(visit, arg)?;
+    state.isoweekdate_new.traverse(visit, arg)?;
+    if let Some(members) = state.weekday_enum_members.get_if_init() {
+        for member in members {
+            traverse(member.as_ptr(), visit, arg)?;
+        }
     }
 
     // exceptions
@@ -573,8 +555,8 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
     }
 
     // Imported stuff
-    traverse(state.strptime.as_ptr(), visit, arg)?;
-    traverse(state.time_ns.as_ptr(), visit, arg)?;
+    state.strptime.traverse(visit, arg)?;
+    state.time_ns.traverse(visit, arg)?;
     state.zoneinfo_type.traverse(visit, arg)?;
     state.get_pydantic_schema.traverse(visit, arg)?;
     Ok(())
@@ -593,9 +575,12 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
     unsafe {
         // types
         Py_CLEAR((&raw mut state.date_type).cast());
-        Py_CLEAR((&raw mut state.yearmonth_type).cast());
-        Py_CLEAR((&raw mut state.monthday_type).cast());
-        Py_CLEAR((&raw mut state.isoweekdate_new).cast());
+        // lazily imported from _shared (OncePyObj handles cleanup via Drop)
+        if let Some(members) = state.weekday_enum_members.take() {
+            for m in &members {
+                Py_DECREF(m.as_ptr());
+            }
+        }
         Py_CLEAR((&raw mut state.time_type).cast());
         Py_CLEAR((&raw mut state.date_delta_type).cast());
         Py_CLEAR((&raw mut state.time_delta_type).cast());
@@ -606,15 +591,6 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.instant_type).cast());
         Py_CLEAR((&raw mut state.offset_datetime_type).cast());
         Py_CLEAR((&raw mut state.zoned_datetime_type).cast());
-
-        // enum members
-        Py_CLEAR((&raw mut state.weekday_enum_members[0]).cast());
-        Py_CLEAR((&raw mut state.weekday_enum_members[1]).cast());
-        Py_CLEAR((&raw mut state.weekday_enum_members[2]).cast());
-        Py_CLEAR((&raw mut state.weekday_enum_members[3]).cast());
-        Py_CLEAR((&raw mut state.weekday_enum_members[4]).cast());
-        Py_CLEAR((&raw mut state.weekday_enum_members[5]).cast());
-        Py_CLEAR((&raw mut state.weekday_enum_members[6]).cast());
 
         // interned strings
         Py_CLEAR((&raw mut state.str_years).cast());
@@ -706,9 +682,14 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
         Py_CLEAR((&raw mut state.warn_naive_arithmetic).cast());
         Py_CLEAR((&raw mut state.warn_deprecation).cast());
 
-        // imported stuff
-        Py_CLEAR((&raw mut state.strptime).cast());
-        Py_CLEAR((&raw mut state.time_ns).cast());
+        // imported stuff (OncePyObj uses explicit clear() to avoid layout assumptions)
+        state.strptime.clear();
+        state.time_ns.clear();
+        state.zoneinfo_type.clear();
+        state.get_pydantic_schema.clear();
+        state.yearmonth_type.clear();
+        state.monthday_type.clear();
+        state.isoweekdate_new.clear();
     }
 
     0
@@ -716,6 +697,8 @@ unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
 
 #[cold]
 unsafe extern "C" fn module_free(mod_ptr: *mut c_void) {
+    #[cfg(debug_assertions)]
+    eprintln!("[whenever] module_free called");
     // SAFETY: We're passed a valid PyModule pointer
     let module = unsafe { PyModule::from_ptr_unchecked(mod_ptr.cast()) };
     // SAFETY: `module_exec` initialized the state immediately to `None`
@@ -729,9 +712,6 @@ unsafe extern "C" fn module_free(mod_ptr: *mut c_void) {
 pub(crate) struct State {
     // classes
     pub(crate) date_type: HeapType<date::Date>,
-    pub(crate) yearmonth_type: PyObj,
-    pub(crate) monthday_type: PyObj,
-    pub(crate) isoweekdate_new: PyObj,
     pub(crate) time_type: HeapType<time::Time>,
     pub(crate) date_delta_type: HeapType<date_delta::DateDelta>,
     pub(crate) time_delta_type: HeapType<time_delta::TimeDelta>,
@@ -743,7 +723,11 @@ pub(crate) struct State {
     pub(crate) offset_datetime_type: HeapType<offset_datetime::OffsetDateTime>,
     pub(crate) zoned_datetime_type: HeapType<zoned_datetime::ZonedDateTime>,
 
-    pub(crate) weekday_enum_members: [PyObj; 7],
+    // Lazily imported from _shared
+    pub(crate) yearmonth_type: OncePyObj,
+    pub(crate) monthday_type: OncePyObj,
+    pub(crate) isoweekdate_new: OncePyObj,
+    pub(crate) weekday_enum_members: OncePyCell<[Owned<PyObj>; 7]>,
 
     // exceptions
     pub(crate) exc_repeated: PyObj,
@@ -775,10 +759,10 @@ pub(crate) struct State {
     pub(crate) py_api: &'static PyDateTime_CAPI,
 
     // imported stuff
-    pub(crate) strptime: PyObj,
-    pub(crate) time_ns: PyObj,
-    pub(crate) zoneinfo_type: LazyImport,
-    pub(crate) get_pydantic_schema: LazyImport,
+    pub(crate) strptime: OncePyObj,
+    pub(crate) time_ns: OncePyObj,
+    pub(crate) zoneinfo_type: OncePyObj,
+    pub(crate) get_pydantic_schema: OncePyObj,
 
     // strings
     pub(crate) str_years: PyObj,

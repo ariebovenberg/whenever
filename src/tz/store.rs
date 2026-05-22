@@ -1,6 +1,6 @@
 use crate::{
+    common::sync::{AtomicRefCount, OncePyCell, SwapCell, SwapPtr, SyncCell},
     py::*,
-    tz::sync::{AtomicRefCount, SwapCell, SwapPtr, SyncCell},
     tz::tzif::{TimeZone, is_valid_key},
 };
 use ahash::AHashMap;
@@ -186,9 +186,9 @@ impl Cache {
     /// Get an entry from the cache, or insert it from the supplied function.
     /// Returns a strong reference.
     /// The load function is called outside the lock to avoid holding it during I/O.
-    fn get_or_insert_with<F>(&self, key: &str, load: F) -> Option<TzPtr>
+    fn get_or_insert_with<F>(&self, key: &str, load: F) -> PyResult<Option<TzPtr>>
     where
-        F: FnOnce() -> Option<TimeZone>,
+        F: FnOnce() -> PyResult<Option<TimeZone>>,
     {
         // First, check the cache under the lock
         let cached = self.inner.with_mut(|CacheInner { lookup, lru }| {
@@ -203,17 +203,20 @@ impl Cache {
         });
 
         if let Some(tz) = cached {
-            return Some(tz);
+            return Ok(Some(tz));
         }
 
         // Cache miss: load outside the lock (may do file I/O)
+        let Some(timezone) = load()? else {
+            return Ok(None);
+        };
         // We start with refcount of 2:
         // - one to return to the caller
         // - one to keep the pointer alive in the LRU
-        let loaded = TzPtr::new(load()?, 2);
+        let loaded = TzPtr::new(timezone, 2);
 
         // Re-acquire lock to insert. Another thread may have loaded the same key.
-        self.inner.with_mut(|CacheInner { lookup, lru }| {
+        Ok(self.inner.with_mut(|CacheInner { lookup, lru }| {
             lookup
                 .get(key)
                 .copied()
@@ -233,7 +236,7 @@ impl Cache {
                     lookup.insert(key.to_string(), loaded);
                     Some(loaded)
                 })
-        })
+        }))
     }
 
     fn decref<F>(tz: TzPtr, cleanup: F)
@@ -385,9 +388,11 @@ pub(crate) struct TzStore {
     // The zoneinfo timezone cache.
     cache: Cache,
     // The path to the `tzdata` Python package contents, if any.
-    tzdata_path: Option<PathBuf>,
-    // The paths to search for zoneinfo files. Patchable during runtime.
-    paths: SwapCell<Vec<PathBuf>>,
+    // Lazily initialized on first timezone lookup.
+    tzdata_path: OncePyCell<Option<PathBuf>>,
+    // The paths to search for zoneinfo files.
+    // None = not yet initialized (lazy). Some = populated.
+    paths_cache: SwapCell<Option<Vec<PathBuf>>>,
     // We cache the system timezone here, since it's expensive to determine.
     // Uses SwapPtr for lock-free reads with atomic swaps for writes.
     // This holds a strong reference to a TzPtr.
@@ -397,28 +402,39 @@ pub(crate) struct TzStore {
 }
 
 impl TzStore {
-    pub(crate) fn new(exc_notfound: PyObj) -> PyResult<Self> {
-        Ok(Self {
+    pub(crate) fn new(exc_notfound: PyObj) -> Self {
+        Self {
             cache: Cache::new(),
-            tzdata_path: get_tzdata_path()?,
-            // Empty. The actual search paths are patched in at module import
-            // because this is determined in Python code.
-            paths: SwapCell::new(Vec::with_capacity(4)),
+            tzdata_path: OncePyCell::new(get_tzdata_path),
+            paths_cache: SwapCell::new(None),
             system_tz_cache: SwapPtr::new(None),
             exc_notfound,
-        })
+        }
     }
 
     /// Set the timezone search paths.
     pub(crate) fn set_paths(&self, new_paths: Vec<PathBuf>) {
-        self.paths.swap(new_paths);
+        self.paths_cache.swap(Some(new_paths));
+    }
+
+    /// Get the timezone search paths, lazily initializing from Python if needed.
+    fn get_paths(&self) -> PyResult<()> {
+        let populated = self.paths_cache.with_read(|p| p.is_some());
+        if !populated {
+            let py_paths = import(c"whenever._shared")?
+                .getattr(c"_tzpath_from_env")?
+                .call0()?;
+            self.paths_cache
+                .swap(Some(tuple_to_pathvec(py_paths.borrow())?));
+        }
+        Ok(())
     }
 
     /// Fetches the timezone definition for the given IANA time zone ID.
     pub(crate) fn get(&self, key: &str) -> PyResult<TzHandle<'_>> {
         let ptr = self
             .cache
-            .get_or_insert_with(key, || self.load_tzif(key))
+            .get_or_insert_with(key, || self.load_tzif(key))?
             .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
                 format!("No time zone found with key {key}")
             })?;
@@ -471,27 +487,49 @@ impl TzStore {
         self.cache.clear_only(keys);
     }
 
-    /// Load a TZif file by key, assuming the key is untrusted input.
-    fn load_tzif(&self, raw_key: &str) -> Option<TimeZone> {
-        let key = BenignKey::new(raw_key)?;
-        self.load_tzif_from_tzpath(key)
-            .or_else(|| self.load_tzif_from_tzdata(key))
-    }
-
-    /// Load a TZif from the TZPATH directory, assuming a benign TZ ID.
-    fn load_tzif_from_tzpath(&self, key: BenignKey) -> Option<TimeZone> {
-        self.paths.with_read(|paths| {
-            paths
-                .iter()
-                .find_map(|base| self.read_tzif_at_path(&base.join(key), Some(key)))
+    /// Return the current TZPATH as a Python tuple of strings.
+    /// Lazily initializes paths if needed.
+    pub(crate) fn get_paths_as_pytuple(&self) -> PyReturn {
+        self.get_paths()?;
+        self.paths_cache.with_read(|paths| {
+            let paths = paths.as_deref().unwrap_or(&[]);
+            let tuple = PyTuple::with_len(paths.len() as _)?;
+            for (i, p) in paths.iter().enumerate() {
+                tuple.init_item(i as _, p.to_string_lossy().as_ref().to_py()?);
+            }
+            // SAFETY: PyTuple is a PyObj subtype
+            Ok(unsafe { tuple.cast_unchecked() })
         })
     }
 
+    /// Load a TZif file by key, assuming the key is untrusted input.
+    fn load_tzif(&self, raw_key: &str) -> PyResult<Option<TimeZone>> {
+        let Some(key) = BenignKey::new(raw_key) else {
+            return Ok(None);
+        };
+        self.load_tzif_from_tzpath(key)?
+            .map_or_else(|| self.load_tzif_from_tzdata(key), |tz| Ok(Some(tz)))
+    }
+
+    /// Load a TZif from the TZPATH directory, assuming a benign TZ ID.
+    /// Lazily initializes paths from Python if needed.
+    fn load_tzif_from_tzpath(&self, key: BenignKey) -> PyResult<Option<TimeZone>> {
+        self.get_paths()?;
+        Ok(self.paths_cache.with_read(|paths| {
+            paths.as_ref().and_then(|ps| {
+                ps.iter()
+                    .find_map(|base| self.read_tzif_at_path(&base.join(key), Some(key)))
+            })
+        }))
+    }
+
     /// Load a TZif from the tzdata package, assuming a benign TZ ID.
-    fn load_tzif_from_tzdata(&self, key: BenignKey) -> Option<TimeZone> {
-        self.tzdata_path
+    fn load_tzif_from_tzdata(&self, key: BenignKey) -> PyResult<Option<TimeZone>> {
+        Ok(self
+            .tzdata_path
+            .get()?
             .as_ref()
-            .and_then(|base| self.read_tzif_at_path(&base.join(key), Some(key)))
+            .and_then(|base| self.read_tzif_at_path(&base.join(key), Some(key))))
     }
 
     /// Read a TZif file from the given path, returning None if it doesn't exist
@@ -532,7 +570,7 @@ impl TzStore {
             // type 0: a zoneinfo key
             0 => self
                 .cache
-                .get_or_insert_with(tz_value, || self.load_tzif(tz_value))
+                .get_or_insert_with(tz_value, || self.load_tzif(tz_value))?
                 .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
                     format!("No time zone found with key {tz_value}")
                 }),
@@ -547,16 +585,14 @@ impl TzStore {
                 Ok(TzPtr::new(tzif, 1))
             }
             // type 2: zoneinfo key OR posix TZ string (we're unsure which)
-            2 => {
-                self.cache
-                    // Try to load it as a zoneinfo key first.
-                    .get_or_insert_with(tz_value, || self.load_tzif(tz_value))
-                    // If this fails, try to parse it as a posix TZ string.
-                    .or_else(|| TimeZone::parse_posix(tz_value).map(|tz| TzPtr::new(tz, 1)))
-                    .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
-                        format!("No time zone found with key or posix TZ string {tz_value}")
-                    })
-            }
+            2 => self
+                .cache
+                .get_or_insert_with(tz_value, || self.load_tzif(tz_value))?
+                // If this fails, try to parse it as a posix TZ string.
+                .or_else(|| TimeZone::parse_posix(tz_value).map(|tz| TzPtr::new(tz, 1)))
+                .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
+                    format!("No time zone found with key or posix TZ string {tz_value}")
+                }),
             _ => raise_type_err(ERR_MSG)?,
         }
     }
@@ -612,6 +648,22 @@ fn get_tzdata_path() -> PyResult<Option<PathBuf>> {
 
         py_str.as_str()?.to_owned()
     })))
+}
+
+/// Convert a Python tuple of str to Vec<PathBuf>.
+fn tuple_to_pathvec(obj: PyObj) -> PyResult<Vec<PathBuf>> {
+    let tuple = obj
+        .cast_exact::<PyTuple>()
+        .ok_or_type_err("expected tuple of strings")?;
+    let mut result = Vec::with_capacity(tuple.len() as _);
+    for item in tuple.iter() {
+        result.push(PathBuf::from(
+            item.cast_allow_subclass::<PyStr>()
+                .ok_or_type_err("path must be a string")?
+                .as_str()?,
+        ));
+    }
+    Ok(result)
 }
 
 /// Wrapper around a timezone key that has been validated to be "benign",

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 from datetime import (
     date as _date,
@@ -6,7 +8,7 @@ from datetime import (
     timedelta as _timedelta,
     timezone as _timezone,
 )
-from typing import Literal, NoReturn, cast
+from typing import TYPE_CHECKING, Literal, NoReturn, cast
 
 from ._common import (
     DUMMY_LEAP_YEAR,
@@ -15,7 +17,9 @@ from ._common import (
     check_utc_bounds,
     mk_fixed_tzinfo,
 )
-from ._tz import SafeTzId, TimeZone, get_tz, resolve_ambiguity, validate_tzid
+
+if TYPE_CHECKING:
+    from ._tz import SafeTzId, TimeZone
 
 
 class InvalidOffsetError(ValueError):
@@ -122,6 +126,8 @@ def offset_dt_from_iso(s: str) -> tuple[_datetime, Nanos]:
 
 
 def zdt_from_iso(s: str) -> tuple[_datetime, Nanos, TimeZone]:
+    from ._tz import get_tz, resolve_ambiguity
+
     if len(s) < 11 or "W" in s[:11] or not s.isascii():
         _parse_err(s)
 
@@ -180,6 +186,8 @@ def _time_offset_tz_from_iso(
 ) -> tuple[_time, Nanos, _timezone | Literal["Z"] | None, SafeTzId | None]:
     # ditch the bracketted timezone (if present)
     if s.endswith("]"):
+        from ._tz import validate_tzid
+
         # NOTE: sorry for the unicode escape sequences. Literal brackets
         # break my LSP's indentation detection. \x5b is open bracket '['
         s, tz_raw = s[:-1].rsplit("\x5b", 1)
