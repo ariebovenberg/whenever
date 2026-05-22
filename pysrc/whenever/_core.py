@@ -6,6 +6,7 @@ try:  # pragma: no cover
     from ._whenever import (
         _clear_tz_cache as _clear_tz_cache,
         _clear_tz_cache_by_keys as _clear_tz_cache_by_keys,
+        _get_tzpath as _get_tzpath,
         _patch_time_frozen as _patch_time_frozen,
         _patch_time_keep_ticking as _patch_time_keep_ticking,
         _set_tzpath as _set_tzpath,
@@ -13,6 +14,8 @@ try:  # pragma: no cover
         _unpkl_date,
         _unpkl_ddelta,
         _unpkl_dtdelta,
+        _unpkl_iddelta,
+        _unpkl_idelta,
         _unpkl_inst,
         _unpkl_local,
         _unpkl_offset,
@@ -21,24 +24,6 @@ try:  # pragma: no cover
         _unpkl_utc,
         _unpkl_zoned,
     )
-
-    # Backfill symbols not yet in the Rust extension (temporary)
-    try:
-        from ._whenever import _unpkl_idelta as _unpkl_idelta
-    except ImportError:
-        from ._pywhenever import _unpkl_idelta as _unpkl_idelta
-    try:
-        from ._whenever import _unpkl_iddelta as _unpkl_iddelta
-    except ImportError:
-        from ._pywhenever import _unpkl_iddelta as _unpkl_iddelta
-    try:
-        from ._whenever import ItemizedDelta as ItemizedDelta
-    except ImportError:
-        from ._pywhenever import ItemizedDelta as ItemizedDelta
-    try:
-        from ._whenever import ItemizedDateDelta as ItemizedDateDelta
-    except ImportError:
-        from ._pywhenever import ItemizedDateDelta as ItemizedDateDelta
 
     _EXTENSION_LOADED = True
 
@@ -50,6 +35,7 @@ except ModuleNotFoundError as e:
     from ._pywhenever import (
         _clear_tz_cache,
         _clear_tz_cache_by_keys,
+        _get_tzpath,
         _patch_time_frozen,
         _patch_time_keep_ticking,
         _set_tzpath,
@@ -69,15 +55,3 @@ except ModuleNotFoundError as e:
     )
 
     _EXTENSION_LOADED = False
-
-# YearMonth/MonthDay/IsoWeekDate unpickle functions always come from _shared
-from ._shared import _unpkl_iwd, _unpkl_md, _unpkl_ym
-from ._typing import *
-
-MONDAY = Weekday.MONDAY
-TUESDAY = Weekday.TUESDAY
-WEDNESDAY = Weekday.WEDNESDAY
-THURSDAY = Weekday.THURSDAY
-FRIDAY = Weekday.FRIDAY
-SATURDAY = Weekday.SATURDAY
-SUNDAY = Weekday.SUNDAY

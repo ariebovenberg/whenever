@@ -90,9 +90,6 @@ from ._shared import (
     Weekday,
     YearMonth,
     _nth_weekday_of_month,
-    _unpkl_iwd,
-    _unpkl_md,
-    _unpkl_ym,
 )
 from ._typing import (
     DateDeltaUnitStr,
@@ -110,6 +107,7 @@ from ._tz import (  # noqa: F401
     Unambiguous,
     _clear_tz_cache as _clear_tz_cache,
     _clear_tz_cache_by_keys as _clear_tz_cache_by_keys,
+    _get_tzpath as _get_tzpath,
     _set_tzpath as _set_tzpath,
     get_system_tz,
     get_tz,
@@ -117,50 +115,6 @@ from ._tz import (  # noqa: F401
     resolve_ambiguity,
     resolve_ambiguity_using_prev_offset,
 )
-
-__all__ = [
-    # Date and time
-    "Date",
-    "YearMonth",
-    "MonthDay",
-    "IsoWeekDate",
-    "Time",
-    "Instant",
-    "OffsetDateTime",
-    "ZonedDateTime",
-    "PlainDateTime",
-    # Deltas and time units
-    "DateDelta",
-    "TimeDelta",
-    "DateTimeDelta",
-    "ItemizedDelta",
-    "ItemizedDateDelta",
-    "years",
-    "months",
-    "weeks",
-    "days",
-    "hours",
-    "minutes",
-    "seconds",
-    "milliseconds",
-    "microseconds",
-    "nanoseconds",
-    # Exceptions/warnings
-    "DaysAssumed24HoursWarning",
-    "StaleOffsetWarning",
-    "NaiveArithmeticWarning",
-    "PotentialDstBugWarning",
-    "WheneverDeprecationWarning",
-    "SkippedTime",
-    "RepeatedTime",
-    "InvalidOffsetError",
-    "ImplicitlyIgnoringDST",
-    "TimeZoneNotFoundError",
-    # Other stuff
-    "Weekday",
-    "reset_system_tz",
-]
-
 
 # Helpers that pre-compute/lookup as much as possible
 _UTC = _timezone.utc
@@ -10307,36 +10261,14 @@ _ExactTimeAlias = Instant | OffsetDateTime | ZonedDateTime
 # This does mess up sphinx autodoc's introspection a bit, so we fix that below.
 # see https://github.com/sphinx-doc/sphinx/issues/3673
 if not SPHINX_RUNNING:  # pragma: no branch
-    for name in __all__ + "_LocalTime _ExactTime _ExactAndLocalTime".split():
-        member = locals()[name]
-        if getattr(member, "__module__", "").startswith(
+    _ftype = type(_unpkl_date)
+    for _name, _member in dict(locals()).items():
+        if isinstance(_member, (type, _ftype)) and getattr(
+            _member, "__module__", ""
+        ).startswith(
             "whenever"
         ):  # pragma: no branch
-            member.__module__ = "whenever"
-
-    # clear up loop variables so they don't leak into the namespace
-    del name
-    del member
-
-
-for _unpkl in (
-    _unpkl_date,
-    _unpkl_ym,
-    _unpkl_md,
-    _unpkl_iwd,
-    _unpkl_time,
-    _unpkl_tdelta,
-    _unpkl_dtdelta,
-    _unpkl_idelta,
-    _unpkl_iddelta,
-    _unpkl_ddelta,
-    _unpkl_utc,
-    _unpkl_offset,
-    _unpkl_zoned,
-    _unpkl_local,
-):
-    _unpkl.__module__ = "whenever"
-
+            _member.__module__ = "whenever"
 
 # disable further subclassing
 final(_Base)

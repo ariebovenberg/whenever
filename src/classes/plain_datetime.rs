@@ -1013,7 +1013,7 @@ fn is_datetime_sep(c: u8) -> bool {
 fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let &State {
         str_format,
-        strptime,
+        ref strptime,
         warn_deprecation,
         ..
     } = cls.state();
@@ -1035,6 +1035,7 @@ fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwar
 
     let args = (arg_obj.newref(), format_obj.newref()).into_pytuple()?;
     let parsed = strptime
+        .get()?
         .call(*args)?
         .cast_exact::<PyDateTime>()
         .ok_or_type_err("strptime() returned non-datetime")?;

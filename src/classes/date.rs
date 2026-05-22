@@ -458,13 +458,13 @@ fn from_py_date(cls: HeapType<Date>, arg: PyObj) -> PyReturn {
 fn year_month(cls: HeapType<Date>, Date { year, month, .. }: Date) -> PyReturn {
     let state = cls.state();
     let args = (year.get().to_py()?, month.get().to_py()?).into_pytuple()?;
-    state.yearmonth_type.call(args.borrow())
+    state.yearmonth_type.get()?.call(args.borrow())
 }
 
 fn month_day(cls: HeapType<Date>, Date { month, day, .. }: Date) -> PyReturn {
     let state = cls.state();
     let args = (month.get().to_py()?, day.to_py()?).into_pytuple()?;
-    state.monthday_type.call(args.borrow())
+    state.monthday_type.get()?.call(args.borrow())
 }
 
 fn format_iso(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
@@ -505,21 +505,23 @@ fn parse_iso(cls: HeapType<Date>, s: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn day_of_week(cls: HeapType<Date>, slf: Date) -> Owned<PyObj> {
-    cls.state().weekday_enum_members[(slf.day_of_week() as u8 - 1) as usize].newref()
+fn day_of_week(cls: HeapType<Date>, slf: Date) -> PyReturn {
+    let members = cls.state().weekday_enum_members.get()?;
+    Ok(members[(slf.day_of_week() as u8 - 1) as usize].newref())
 }
 
 fn iso_week_date(cls: HeapType<Date>, slf: Date) -> PyReturn {
     let state = cls.state();
+    let members = state.weekday_enum_members.get()?;
     let (iso_year, iso_week) = slf.iso_year_week();
     let weekday_idx = slf.day_of_week() as u8 - 1;
     let args = (
         iso_year.to_py()?,
         iso_week.to_py()?,
-        state.weekday_enum_members[weekday_idx as usize].newref(),
+        members[weekday_idx as usize].newref(),
     )
         .into_pytuple()?;
-    state.isoweekdate_new.call(args.borrow())
+    state.isoweekdate_new.get()?.call(args.borrow())
 }
 
 fn day_of_year(_: HeapType<Date>, slf: Date) -> PyReturn {
@@ -675,8 +677,9 @@ fn end_of(cls: HeapType<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
 fn extract_weekday(state: &State, arg: PyObj) -> PyResult<Weekday> {
     state
         .weekday_enum_members
+        .get()?
         .iter()
-        .position(|m| *m == arg)
+        .position(|m| m.eq(&arg))
         .map(|i| Weekday::from_iso_unchecked(i as u8 + 1))
         .ok_or_type_err("weekday must be a Weekday enum member")
 }
@@ -1045,7 +1048,7 @@ fn at(cls: HeapType<Date>, date: Date, time_obj: PyObj) -> PyReturn {
 
 fn today_in_system_tz(cls: HeapType<Date>) -> PyReturn {
     let state = cls.state();
-    let epoch = state.time_ns()?.epoch;
+    let epoch = state.now()?.epoch;
     Date::from_py(system_tz_today_from_timestamp(state.py_api, epoch)?.borrow()).to_obj(cls)
 }
 

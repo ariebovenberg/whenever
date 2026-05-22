@@ -17,6 +17,7 @@ __all__ = [
     "get_system_tz",
     "_clear_tz_cache",
     "_clear_tz_cache_by_keys",
+    "_get_tzpath",
     "_set_tzpath",
     "reset_system_tz",
 ]
@@ -58,6 +59,10 @@ _last_tz_val: TimeZone | None = None
 def _set_tzpath(to: tuple[str, ...]) -> None:
     global _TZPATH
     _TZPATH = to
+
+
+def _get_tzpath() -> tuple[str, ...]:
+    return _TZPATH
 
 
 def _clear_tz_cache() -> None:
