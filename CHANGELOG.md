@@ -1,5 +1,13 @@
 # Changelog
 
+
+## 0.10.1 (2026-05-??)
+
+- Reduced import time by ~60% when the Rust extension is active.
+  This was achieved by deferring the import of several internal submodules
+  and timezone database setup until they are actually needed.
+- Fixed CI compatibility with Python 3.13t (free-threaded build)
+
 ## 0.10.0 (2026-04-05)
 
 A big release with several breaking changes and improvements. Highlights

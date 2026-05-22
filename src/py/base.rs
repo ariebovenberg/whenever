@@ -131,6 +131,11 @@ pub(crate) trait PyBase: FromPy {
         self.as_py_obj().inner.as_ptr()
     }
 
+    /// Get the PyObject pointer as NonNull (always valid for PyBase types).
+    fn as_nonnull(&self) -> NonNull<PyObject> {
+        self.as_py_obj().inner
+    }
+
     /// Write the repr of the object to the given formatter.
     fn write_repr<T: std::fmt::Write>(&self, f: &mut T) -> std::fmt::Result {
         let Ok(repr_obj) = unsafe { PyObject_Repr(self.as_ptr()) }.rust_owned() else {

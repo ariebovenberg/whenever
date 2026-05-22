@@ -1173,13 +1173,13 @@ fn replace(
 fn now(cls: HeapType<ZonedDateTime>, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
     let tz = state.tz_store.obj_get(tz_obj)?;
-    state.time_ns()?.to_tz_py(tz, cls)
+    state.now()?.to_tz_py(tz, cls)
 }
 
 fn now_in_system_tz(cls: HeapType<ZonedDateTime>) -> PyReturn {
     let state = cls.state();
     let tz = state.tz_store.get_system_tz()?;
-    state.time_ns()?.to_tz_py(tz, cls)
+    state.now()?.to_tz_py(tz, cls)
 }
 
 fn from_system_tz(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {

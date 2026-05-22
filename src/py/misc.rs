@@ -1,9 +1,6 @@
 //! Miscellaneous utility functions and constants.
 use super::{args::*, base::*, exc::*, refs::*, types::*};
-use core::{
-    ffi::{CStr, c_int, c_void},
-    ptr::null_mut as NULL,
-};
+use core::ffi::{CStr, c_int, c_void};
 use pyo3_ffi::*;
 
 pub(crate) fn none() -> Owned<PyObj> {
@@ -69,50 +66,65 @@ macro_rules! unpack_one {
     }};
 }
 
-#[derive(Debug)]
-pub(crate) struct LazyImport {
-    module: &'static CStr,
-    name: &'static CStr,
-    obj: std::cell::UnsafeCell<*mut PyObject>,
+/// A lazily-initialized Python object with GC traverse and cleanup support.
+/// Uses lock-free CAS on a SwapPtr for initialization.
+/// Returns `PyObj` by value (Copy) — no reference lifetime concerns.
+pub(crate) struct OncePyObj {
+    init: fn() -> PyReturn,
+    ptr: crate::common::sync::SwapPtr<PyObject>,
 }
 
-impl LazyImport {
-    pub(crate) fn new(module: &'static CStr, name: &'static CStr) -> Self {
+impl OncePyObj {
+    pub(crate) const fn new(init: fn() -> PyReturn) -> Self {
         Self {
-            module,
-            name,
-            obj: std::cell::UnsafeCell::new(NULL()),
+            init,
+            ptr: crate::common::sync::SwapPtr::new(None),
         }
     }
 
-    /// Get the object, importing it if necessary.
+    #[inline]
     pub(crate) fn get(&self) -> PyResult<PyObj> {
-        unsafe {
-            let obj = *self.obj.get();
-            if obj.is_null() {
-                let t = import(self.module)?.getattr(self.name)?.py_owned();
-                self.obj.get().write(t.as_ptr());
-                Ok(t)
-            } else {
-                Ok(PyObj::from_ptr_unchecked(obj))
+        if let Some(p) = self.ptr.load() {
+            return Ok(PyObj::wrap(p));
+        }
+        self.get_slow()
+    }
+
+    #[cold]
+    fn get_slow(&self) -> PyResult<PyObj> {
+        let owned = (self.init)()?;
+        let obj = owned.py_owned();
+        let ptr = obj.as_nonnull();
+        match self.ptr.try_init(ptr) {
+            Ok(()) => Ok(obj),
+            Err(winner) => {
+                // Another init beat us — DECREF ours, use theirs
+                unsafe { Py_DECREF(obj.as_ptr()) };
+                Ok(PyObj::wrap(winner))
             }
         }
     }
 
-    /// Ensure Python's GC can traverse this object.
     pub(crate) fn traverse(&self, visit: visitproc, arg: *mut c_void) -> TraverseResult {
-        let obj = unsafe { *self.obj.get() };
-        traverse(obj, visit, arg)
+        if let Some(p) = self.ptr.load() {
+            traverse(p.as_ptr(), visit, arg)?;
+        }
+        Ok(())
+    }
+
+    /// Clear the stored pointer, DECREFing the old value if set.
+    /// Called from `module_clear` to break reference cycles.
+    pub(crate) fn clear(&self) {
+        if let Some(p) = self.ptr.swap(None) {
+            unsafe { Py_DECREF(p.as_ptr()) };
+        }
     }
 }
 
-impl Drop for LazyImport {
+impl Drop for OncePyObj {
     fn drop(&mut self) {
-        unsafe {
-            let obj = self.obj.get();
-            if !(*obj).is_null() {
-                Py_CLEAR(obj);
-            }
+        if let Some(p) = self.ptr.swap(None) {
+            unsafe { Py_DECREF(p.as_ptr()) };
         }
     }
 }

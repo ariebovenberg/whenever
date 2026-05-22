@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os.path  # NOTE: we don't use pathlib here to keep our imports light
-import sysconfig
 from contextlib import contextmanager
 from functools import partial
 from typing import Any, Iterable, Iterator, no_type_check
@@ -14,6 +13,7 @@ from ._core import (
     ZonedDateTime,
     _clear_tz_cache,
     _clear_tz_cache_by_keys,
+    _get_tzpath,
     _patch_time_frozen,
     _patch_time_keep_ticking,
     _set_tzpath,
@@ -117,9 +117,6 @@ def patch_current_time(
         _unpatch_time()
 
 
-TZPATH: tuple[str, ...] = ()
-
-
 def reset_tzpath(
     target: Iterable[str | os.PathLike[str]] | None = None, /
 ) -> None:
@@ -136,8 +133,6 @@ def reset_tzpath(
 
     Behaves similarly to :func:`zoneinfo.reset_tzpath`
     """
-    global TZPATH
-
     if target is not None:
         # This is such a common mistake, that we raise a descriptive error
         if isinstance(target, (str, bytes)):
@@ -146,26 +141,11 @@ def reset_tzpath(
         if not all(map(os.path.isabs, target)):
             raise ValueError("tzpaths must be absolute paths")
         # mypy doesn't seem to follow, but it appears correct
-        TZPATH = tuple(map(os.fspath, target))  # type: ignore[arg-type]
+        _set_tzpath(tuple(map(os.fspath, target)))  # type: ignore[arg-type]
     else:
-        TZPATH = _tzpath_from_env()
-    _set_tzpath(TZPATH)
+        from ._shared import _tzpath_from_env
 
-
-def _tzpath_from_env() -> tuple[str, ...]:
-    try:
-        env_var = os.environ["PYTHONTZPATH"]
-    except KeyError:
-        env_var = sysconfig.get_config_var("TZPATH")
-
-    # FUTURE: include in test coverage
-    if not env_var:
-        return ()  # pragma: no cover
-
-    raw_tzpath = env_var.split(os.pathsep)
-    # according to spec, we're allowed to silently ignore invalid paths
-    new_tzpath = tuple(filter(os.path.isabs, raw_tzpath))
-    return new_tzpath
+        _set_tzpath(_tzpath_from_env())
 
 
 def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None:
@@ -225,7 +205,7 @@ def available_timezones() -> set[str]:
         pass
 
     # Get the zones from the tzpath directories
-    for base in TZPATH:
+    for base in _get_tzpath():
         zones.update(_find_all_tznames(base))
 
     zones.discard("posixrules")  # a special file that shouldn't be included

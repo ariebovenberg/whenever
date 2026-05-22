@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import sys
 from inspect import signature
 from itertools import chain
@@ -75,6 +76,53 @@ def test_version():
 def test_no_attr_on_module():
     with pytest.raises((AttributeError, ImportError), match="DoesntExist"):
         from whenever import DoesntExist  # type: ignore[attr-defined] # noqa
+
+
+@pytest.mark.skipif(
+    not _EXTENSION_LOADED, reason="only relevant when extension is active"
+)
+def test_extension_doesnt_import_tz_modules():
+    # When the Rust extension is active, the Python timezone subsystem
+    # (_tz, calendar, platform) and _shared must not be imported just by doing
+    # `import whenever`. Violations here mean slow startup for all users.
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import whenever, json, sys; "
+            "print(json.dumps([k for k in sys.modules "
+            "if k == 'whenever._tz' or k.startswith('whenever._tz.')  "
+            "or k == 'whenever._shared' "
+            "or k == 'whenever._typing' "
+            "or k == 'whenever._utils' "
+            "or k in ('calendar', 'platform')]))",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    imported = json.loads(result.stdout)
+    assert (
+        imported == []
+    ), f"unexpected modules imported on 'import whenever': {imported}"
+
+
+@pytest.mark.skipif(
+    not _EXTENSION_LOADED, reason="only relevant when extension is active"
+)
+def test_module_cleanup_runs():
+    # Verify module_free is called on interpreter shutdown (debug builds only).
+    # This ensures Python objects held by module state are properly released.
+    result = subprocess.run(
+        [sys.executable, "-c", "import whenever"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    if "[whenever] module_exec (debug)" not in result.stderr:
+        pytest.skip("extension not built with debug_assertions")
+    # In debug builds, module_free MUST be called during shutdown
+    assert "[whenever] module_free called" in result.stderr
 
 
 @pytest.mark.skipif(

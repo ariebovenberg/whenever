@@ -45,6 +45,10 @@ pub(crate) fn _clear_tz_cache_by_keys(state: &mut State, keys_obj: PyObj) -> PyR
     Ok(none())
 }
 
+pub(crate) fn _get_tzpath(state: &mut State) -> PyReturn {
+    state.tz_store.get_paths_as_pytuple()
+}
+
 pub(crate) fn reset_system_tz(state: &mut State) -> PyReturn {
     state.tz_store.reset_system_tz()?;
     Ok(none())

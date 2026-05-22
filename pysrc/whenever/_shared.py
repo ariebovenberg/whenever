@@ -78,6 +78,16 @@ class Weekday(enum.Enum):
     SUNDAY = 7
 
 
+# Convenience constants, also available as top-level whenever.MONDAY etc.
+MONDAY = Weekday.MONDAY
+TUESDAY = Weekday.TUESDAY
+WEDNESDAY = Weekday.WEDNESDAY
+THURSDAY = Weekday.THURSDAY
+FRIDAY = Weekday.FRIDAY
+SATURDAY = Weekday.SATURDAY
+SUNDAY = Weekday.SUNDAY
+
+
 @final
 class YearMonth(_Base):
     """A year and month without a day component.
@@ -769,3 +779,22 @@ if not SPHINX_RUNNING:  # pragma: no branch
     ):
         _obj.__module__ = "whenever"
     del _obj
+
+
+def _tzpath_from_env() -> tuple[str, ...]:
+    import os
+
+    try:
+        env_var = os.environ["PYTHONTZPATH"]
+    except KeyError:
+        import sysconfig
+
+        env_var = sysconfig.get_config_var("TZPATH")
+
+    # FUTURE: include in test coverage
+    if not env_var:
+        return ()  # pragma: no cover
+
+    raw_tzpath = env_var.split(os.pathsep)
+    # according to spec, we're allowed to silently ignore invalid paths
+    return tuple(filter(os.path.isabs, raw_tzpath))

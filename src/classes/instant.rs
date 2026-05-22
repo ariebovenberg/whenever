@@ -525,7 +525,7 @@ fn from_py_datetime(cls: HeapType<Instant>, obj: PyObj) -> PyReturn {
 }
 
 fn now(cls: HeapType<Instant>) -> PyReturn {
-    cls.state().time_ns()?.to_obj(cls)
+    cls.state().now()?.to_obj(cls)
 }
 
 fn format_iso(
