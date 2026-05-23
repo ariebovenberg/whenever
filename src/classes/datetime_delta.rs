@@ -133,7 +133,7 @@ pub(crate) fn set_units_from_kwargs(
     state: &State,
     eq: fn(PyObj, PyObj) -> bool,
 ) -> PyResult<bool> {
-    if eq(key, state.str_years) {
+    if eq(key, *state.str_years) {
         *months = value
             .cast_allow_subclass::<PyInt>()
             .ok_or_value_err("years must be an integer")?
@@ -142,7 +142,7 @@ pub(crate) fn set_units_from_kwargs(
             .and_then(|y| y.try_into().ok())
             .and_then(|y| months.checked_add(y))
             .ok_or_range_err()?;
-    } else if eq(key, state.str_months) {
+    } else if eq(key, *state.str_months) {
         *months = value
             .cast_allow_subclass::<PyInt>()
             .ok_or_value_err("months must be an integer")?
@@ -151,7 +151,7 @@ pub(crate) fn set_units_from_kwargs(
             .ok()
             .and_then(|m| months.checked_add(m))
             .ok_or_range_err()?;
-    } else if eq(key, state.str_weeks) {
+    } else if eq(key, *state.str_weeks) {
         *days = value
             .cast_allow_subclass::<PyInt>()
             .ok_or_value_err("weeks must be an integer")?
@@ -160,7 +160,7 @@ pub(crate) fn set_units_from_kwargs(
             .and_then(|d| d.try_into().ok())
             .and_then(|d| days.checked_add(d))
             .ok_or_range_err()?;
-    } else if eq(key, state.str_days) {
+    } else if eq(key, *state.str_days) {
         *days = value
             .cast_allow_subclass::<PyInt>()
             .ok_or_value_err("days must be an integer")?
@@ -169,17 +169,17 @@ pub(crate) fn set_units_from_kwargs(
             .ok()
             .and_then(|d| days.checked_add(d))
             .ok_or_range_err()?;
-    } else if eq(key, state.str_hours) {
+    } else if eq(key, *state.str_hours) {
         *nanos += handle_exact_unit(value, MAX_HOURS, "hours", NS_PER_HOUR as i128)?;
-    } else if eq(key, state.str_minutes) {
+    } else if eq(key, *state.str_minutes) {
         *nanos += handle_exact_unit(value, MAX_MINUTES, "minutes", NS_PER_MINUTE as i128)?;
-    } else if eq(key, state.str_seconds) {
+    } else if eq(key, *state.str_seconds) {
         *nanos += handle_exact_unit(value, MAX_SECS, "seconds", 1_000_000_000)?;
-    } else if eq(key, state.str_milliseconds) {
+    } else if eq(key, *state.str_milliseconds) {
         *nanos += handle_exact_unit(value, MAX_MILLISECONDS, "milliseconds", 1_000_000)?;
-    } else if eq(key, state.str_microseconds) {
+    } else if eq(key, *state.str_microseconds) {
         *nanos += handle_exact_unit(value, MAX_MICROSECONDS, "microseconds", 1_000)?;
-    } else if eq(key, state.str_nanoseconds) {
+    } else if eq(key, *state.str_nanoseconds) {
         *nanos = value
             .cast_allow_subclass::<PyInt>()
             .ok_or_value_err("nanoseconds must be an integer")?
@@ -226,7 +226,7 @@ fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) 
     let mut nanos: i128 = 0;
     let state = cls.state();
     warn_with_class(
-        state.warn_deprecation,
+        *state.warn_deprecation,
         c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
         1,
     )?;
@@ -361,12 +361,12 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
         let (delta_type, a) = unsafe { obj_a.assume_heaptype::<DateTimeDelta>() };
-        let delta_b = if let Some(ddelta) = obj_b.extract(state.date_delta_type) {
+        let delta_b = if let Some(ddelta) = obj_b.extract(*state.date_delta_type) {
             DateTimeDelta {
                 ddelta,
                 tdelta: TimeDelta::ZERO,
             }
-        } else if let Some(tdelta) = obj_b.extract(state.time_delta_type) {
+        } else if let Some(tdelta) = obj_b.extract(*state.time_delta_type) {
             DateTimeDelta {
                 ddelta: DateDelta::ZERO,
                 tdelta,
@@ -451,7 +451,7 @@ fn format_iso(_: PyType, d: DateTimeDelta) -> PyReturn {
 
 fn parse_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
     warn_with_class(
-        cls.state().warn_deprecation,
+        *cls.state().warn_deprecation,
         c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
         1,
     )?;
@@ -539,26 +539,26 @@ fn in_months_days_secs_nanos(
     } else {
         subsec.get()
     };
-    (
+    [
         months.get().to_py()?,
         days.get().to_py()?,
         secs.to_py()?,
         nanos.to_py()?,
-    )
-        .into_pytuple()
+    ]
+    .into_pytuple()
 }
 
 fn date_part(cls: HeapType<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
     warn_with_class(
-        cls.state().warn_deprecation,
+        *cls.state().warn_deprecation,
         c"DateTimeDelta.date_part() is deprecated.",
         1,
     )?;
-    slf.ddelta.to_obj(cls.state().date_delta_type)
+    slf.ddelta.to_obj(*cls.state().date_delta_type)
 }
 
 fn time_part(cls: HeapType<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
-    slf.tdelta.to_obj(cls.state().time_delta_type)
+    slf.tdelta.to_obj(*cls.state().time_delta_type)
 }
 
 fn __reduce__(
@@ -568,19 +568,20 @@ fn __reduce__(
         tdelta: TimeDelta { secs, subsec },
     }: DateTimeDelta,
 ) -> PyResult<Owned<PyTuple>> {
-    (
+    [
         cls.state().unpickle_datetime_delta.newref(),
         // We don't do our own bit packing because the numbers are usually small
         // and Python's pickle protocol handles them more efficiently.
-        (
+        [
             months.get().to_py()?,
             days.get().to_py()?,
             secs.get().to_py()?,
             subsec.get().to_py()?,
-        )
-            .into_pytuple()?,
-    )
-        .into_pytuple()
+        ]
+        .into_pytuple()?
+        .into_obj(),
+    ]
+    .into_pytuple()
 }
 
 pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
@@ -613,7 +614,7 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
                 ),
             },
         }
-        .to_obj(state.datetime_delta_type),
+        .to_obj(*state.datetime_delta_type),
         _ => raise_type_err("invalid pickle data")?,
     }
 }

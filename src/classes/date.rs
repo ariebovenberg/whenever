@@ -428,11 +428,8 @@ fn to_stdlib(cls: HeapType<Date>, slf: Date) -> PyReturn {
 }
 
 fn py_date(cls: HeapType<Date>, slf: Date) -> PyReturn {
-    let &State {
-        warn_deprecation, ..
-    } = cls.state();
     warn_with_class(
-        warn_deprecation,
+        *cls.state().warn_deprecation,
         c"py_date() is deprecated. Use to_stdlib() instead.",
         1,
     )?;
@@ -440,11 +437,8 @@ fn py_date(cls: HeapType<Date>, slf: Date) -> PyReturn {
 }
 
 fn from_py_date(cls: HeapType<Date>, arg: PyObj) -> PyReturn {
-    let &State {
-        warn_deprecation, ..
-    } = cls.state();
     warn_with_class(
-        warn_deprecation,
+        *cls.state().warn_deprecation,
         c"from_py_date() is deprecated. Use Date() constructor instead.",
         1,
     )?;
@@ -456,27 +450,28 @@ fn from_py_date(cls: HeapType<Date>, arg: PyObj) -> PyReturn {
 }
 
 fn year_month(cls: HeapType<Date>, Date { year, month, .. }: Date) -> PyReturn {
-    let state = cls.state();
-    let args = (year.get().to_py()?, month.get().to_py()?).into_pytuple()?;
-    state.yearmonth_type.get()?.call(args.borrow())
+    cls.state()
+        .yearmonth_type
+        .get()?
+        .call_args([year.get().to_py()?, month.get().to_py()?])
 }
 
 fn month_day(cls: HeapType<Date>, Date { month, day, .. }: Date) -> PyReturn {
-    let state = cls.state();
-    let args = (month.get().to_py()?, day.to_py()?).into_pytuple()?;
-    state.monthday_type.get()?.call(args.borrow())
+    cls.state()
+        .monthday_type
+        .get()?
+        .call_args([month.get().to_py()?, day.to_py()?])
 }
 
 fn format_iso(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     if !args.is_empty() {
         raise_type_err("format_iso() takes no positional arguments")?
     }
-
     let mut basic = false;
-    let str_basic = cls.state().str_basic;
+    let state = cls.state();
 
     handle_kwargs("format_iso", kwargs, |key, value, eq| {
-        if eq(key, str_basic) {
+        if eq(key, *state.str_basic) {
             if value.is_true() {
                 basic = true;
             } else if value.is_false() {
@@ -512,16 +507,13 @@ fn day_of_week(cls: HeapType<Date>, slf: Date) -> PyReturn {
 
 fn iso_week_date(cls: HeapType<Date>, slf: Date) -> PyReturn {
     let state = cls.state();
-    let members = state.weekday_enum_members.get()?;
     let (iso_year, iso_week) = slf.iso_year_week();
     let weekday_idx = slf.day_of_week() as u8 - 1;
-    let args = (
+    state.isoweekdate_new.get()?.call_args([
         iso_year.to_py()?,
         iso_week.to_py()?,
-        members[weekday_idx as usize].newref(),
-    )
-        .into_pytuple()?;
-    state.isoweekdate_new.get()?.call(args.borrow())
+        state.weekday_enum_members.get()?[weekday_idx as usize].newref(),
+    ])
 }
 
 fn day_of_year(_: HeapType<Date>, slf: Date) -> PyReturn {
@@ -556,7 +548,6 @@ fn nth_weekday_of_month(cls: HeapType<Date>, slf: Date, args: &[PyObj]) -> PyRet
     let &[n_obj, dow_obj] = args else {
         raise_type_err("nth_weekday_of_month() requires exactly 2 positional arguments")?
     };
-    let state = cls.state();
     let n = {
         let raw = n_obj
             .cast_exact::<PyInt>()
@@ -571,7 +562,7 @@ fn nth_weekday_of_month(cls: HeapType<Date>, slf: Date, args: &[PyObj]) -> PyRet
         raw as i32
     };
 
-    let target_dow = extract_weekday(state, dow_obj)?;
+    let target_dow = extract_weekday(cls.state(), dow_obj)?;
     Date::nth_weekday_in_month(slf.year, slf.month, n, target_dow)
         .ok_or_value_err(format!(
             "Weekday #{n} doesn't exist in {}-{:02}",
@@ -585,7 +576,6 @@ fn nth_weekday(cls: HeapType<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
     let &[n_obj, dow_obj] = args else {
         raise_type_err("nth_weekday() requires exactly 2 positional arguments")?
     };
-    let state = cls.state();
     let n = {
         let raw = n_obj
             .cast_exact::<PyInt>()
@@ -599,7 +589,7 @@ fn nth_weekday(cls: HeapType<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
         // SAFETY: we just checked that it's well within range
         raw as i32
     };
-    let target_dow = extract_weekday(state, dow_obj)? as i32;
+    let target_dow = extract_weekday(cls.state(), dow_obj)? as i32;
     let self_dow = slf.day_of_week() as i32;
 
     let days = if n > 0 {
@@ -622,19 +612,15 @@ fn nth_weekday(cls: HeapType<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
 }
 
 fn start_of(cls: HeapType<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
-    let &State {
-        str_year,
-        str_month,
-        ..
-    } = cls.state();
+    let state = cls.state();
     match_interned_str("unit", unit_obj, |v, eq| {
-        if eq(v, str_year) {
+        if eq(v, *state.str_year) {
             Some(Date {
                 year: slf.year,
                 month: Month::January,
                 day: 1,
             })
-        } else if eq(v, str_month) {
+        } else if eq(v, *state.str_month) {
             Some(Date {
                 year: slf.year,
                 month: slf.month,
@@ -648,19 +634,15 @@ fn start_of(cls: HeapType<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
 }
 
 fn end_of(cls: HeapType<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
-    let &State {
-        str_year,
-        str_month,
-        ..
-    } = cls.state();
+    let state = cls.state();
     match_interned_str("unit", unit_obj, |v, eq| {
-        if eq(v, str_year) {
+        if eq(v, *state.str_year) {
             Some(Date {
                 year: slf.year,
                 month: Month::December,
                 day: 31,
             })
-        } else if eq(v, str_month) {
+        } else if eq(v, *state.str_month) {
             Some(Date {
                 year: slf.year,
                 month: slf.month,
@@ -686,11 +668,11 @@ fn extract_weekday(state: &State, arg: PyObj) -> PyResult<Weekday> {
 
 fn __reduce__(cls: HeapType<Date>, Date { year, month, day }: Date) -> PyResult<Owned<PyTuple>> {
     let data = pack![year.get(), month.get(), day];
-    (
+    [
         cls.state().unpickle_date.newref(),
-        (data.to_py()?,).into_pytuple()?,
-    )
-        .into_pytuple()
+        [data.to_py()?].into_pytuple()?.into_obj(),
+    ]
+    .into_pytuple()
 }
 
 fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
@@ -703,7 +685,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         let (date_type, a) = unsafe { obj_a.assume_heaptype::<Date>() };
         let (_, b) = unsafe { obj_b.assume_heaptype::<Date>() };
         warn_with_class(
-            date_type.state().warn_deprecation,
+            *date_type.state().warn_deprecation,
             c"Using the `-` operator on Date is deprecated; use the .since() method with explicit units instead.",
             1,
         )?;
@@ -737,23 +719,22 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
             months,
             days: DeltaDays::new_unchecked(days - moved_a.day as i32),
         }
-        .to_obj(date_type.state().date_delta_type)
+        .to_obj(*date_type.state().date_delta_type)
     // Case: types within whenever module.
     } else if let Some(state) = type_a.same_module(type_b) {
         warn_with_class(
-            state.warn_deprecation,
+            *state.warn_deprecation,
             c"Using the `-` operator on Date is deprecated; use the .subtract() method instead.",
             1,
         )?;
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
         let (date_type, date) = unsafe { obj_a.assume_heaptype::<Date>() };
-        let DateDelta { months, days } =
-            obj_b
-                .extract(state.date_delta_type)
-                .ok_or_else_type_err(|| {
-                    format!("unsupported operand type(s) for -: 'Date' and '{type_b}'")
-                })?;
+        let DateDelta { months, days } = obj_b
+            .extract(*state.date_delta_type)
+            .ok_or_else_type_err(|| {
+                format!("unsupported operand type(s) for -: 'Date' and '{type_b}'")
+            })?;
         date.shift_months(-months)
             .and_then(|date| date.shift_days(-days))
             .ok_or_range_err()?
@@ -770,19 +751,18 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     let type_b = obj_b.type_();
     if let Some(state) = type_a.same_module(type_b) {
         warn_with_class(
-            state.warn_deprecation,
+            *state.warn_deprecation,
             c"Using the + operator on Date is deprecated; use the .add() method instead.",
             1,
         )?;
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
         let (date_type, date) = unsafe { obj_a.assume_heaptype::<Date>() };
-        let DateDelta { months, days } =
-            obj_b
-                .extract(state.date_delta_type)
-                .ok_or_else_type_err(|| {
-                    format!("unsupported operand type(s) for +: 'Date' and '{type_b}'")
-                })?;
+        let DateDelta { months, days } = obj_b
+            .extract(*state.date_delta_type)
+            .ok_or_else_type_err(|| {
+                format!("unsupported operand type(s) for +: 'Date' and '{type_b}'")
+            })?;
         // SAFETY: at least one of the operands must be a Date
         date.shift_months(months)
             .and_then(|date| date.shift_days(days))
@@ -813,9 +793,9 @@ fn shift_method(
     let state = cls.state();
     let (mut months, mut days) = match (args, kwargs.len()) {
         (&[arg], 0) => {
-            if let Some(d) = arg.extract(state.date_delta_type) {
+            if let Some(d) = arg.extract(*state.date_delta_type) {
                 (d.months, d.days)
-            } else if let Some(d) = arg.extract(state.itemized_date_delta_type) {
+            } else if let Some(d) = arg.extract(*state.itemized_date_delta_type) {
                 d.to_months_days().ok_or_range_err()?
             } else {
                 raise_type_err(format!(
@@ -823,16 +803,7 @@ fn shift_method(
                 ))?
             }
         }
-        ([], _) => {
-            let &State {
-                str_days,
-                str_months,
-                str_years,
-                str_weeks,
-                ..
-            } = state;
-            handle_datedelta_kwargs(fname, kwargs, str_years, str_months, str_days, str_weeks)?
-        }
+        ([], _) => handle_datedelta_kwargs(fname, kwargs, state)?,
         _ => raise_type_err(format!(
             "{fname}() takes either only kwargs or 1 positional arg"
         ))?,
@@ -863,14 +834,7 @@ fn since_inner(
     negate: bool,
 ) -> PyReturn {
     let state = cls.state();
-    let &State {
-        str_total,
-        str_in_units,
-        str_round_mode,
-        str_round_increment,
-        round_mode_strs,
-        ..
-    } = state;
+    let round_mode_strs = &state.round_mode_strs;
 
     let other = handle_one_arg(fname, args)?
         .extract(cls)
@@ -881,20 +845,20 @@ fn since_inner(
     let mut round_increment = math::DateRoundIncrement::MIN;
     let mut round_was_set = false;
     handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, str_total) {
+        if eq(key, *state.str_total) {
             if units.is_some() {
                 return raise_type_err("cannot specify both 'total' and 'in_units'");
             }
             units = Some(DateSinceUnits::Total(CalUnit::from_py(value, state)?));
-        } else if eq(key, str_in_units) {
+        } else if eq(key, *state.str_in_units) {
             if units.is_some() {
                 return raise_type_err("cannot specify both 'total' and 'in_units'");
             }
             units = Some(DateSinceUnits::InUnits(CalUnitSet::from_py(value, state)?));
-        } else if eq(key, str_round_mode) {
+        } else if eq(key, *state.str_round_mode) {
             round_mode = round::Mode::from_py_named("round_mode", value, round_mode_strs)?.into();
             round_was_set = true;
-        } else if eq(key, str_round_increment) {
+        } else if eq(key, *state.str_round_increment) {
             round_increment = DateRoundIncrement::from_py(value)?;
             round_was_set = true;
         } else {
@@ -920,7 +884,7 @@ fn since_inner(
             round_increment,
         )
         .unwrap()
-        .to_obj(cls.state().itemized_date_delta_type),
+        .to_obj(*cls.state().itemized_date_delta_type),
         None => raise_type_err("must specify either 'total' or 'in_units'"),
     }
 }
@@ -964,7 +928,7 @@ fn date_since_float(a: Date, b: Date, unit: CalUnit) -> PyReturn {
 
 fn days_since(cls: HeapType<Date>, slf: Date, other: PyObj) -> PyReturn {
     warn_with_class(
-        cls.state().warn_deprecation,
+        *cls.state().warn_deprecation,
         c"days_since() is deprecated; use since() with total='days' instead.",
         1,
     )?;
@@ -981,7 +945,7 @@ fn days_since(cls: HeapType<Date>, slf: Date, other: PyObj) -> PyReturn {
 
 fn days_until(cls: HeapType<Date>, slf: Date, other: PyObj) -> PyReturn {
     warn_with_class(
-        cls.state().warn_deprecation,
+        *cls.state().warn_deprecation,
         c"days_until() is deprecated; use until() with total='days' instead.",
         1,
     )?;
@@ -999,27 +963,22 @@ fn replace(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwar
         raise_type_err("replace() takes no positional arguments")?
     }
 
-    let &State {
-        str_year,
-        str_month,
-        str_day,
-        ..
-    } = cls.state();
+    let state = cls.state();
     let mut year = slf.year.get().into();
     let mut month = slf.month.get().into();
     let mut day = slf.day.into();
     handle_kwargs("replace", kwargs, |key, value, eq| {
-        if eq(key, str_year) {
+        if eq(key, *state.str_year) {
             year = value
                 .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("year must be an integer")?
                 .to_long()?;
-        } else if eq(key, str_month) {
+        } else if eq(key, *state.str_month) {
             month = value
                 .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("month must be an integer")?
                 .to_long()?;
-        } else if eq(key, str_day) {
+        } else if eq(key, *state.str_day) {
             day = value
                 .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("day must be an integer")?
@@ -1035,21 +994,17 @@ fn replace(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwar
 }
 
 fn at(cls: HeapType<Date>, date: Date, time_obj: PyObj) -> PyReturn {
-    let &State {
-        time_type,
-        plain_datetime_type,
-        ..
-    } = cls.state();
+    let state = cls.state();
     let time = time_obj
-        .extract(time_type)
+        .extract(*state.time_type)
         .ok_or_type_err("argument must be a whenever.Time")?;
-    DateTime { date, time }.to_obj(plain_datetime_type)
+    DateTime { date, time }.to_obj(*state.plain_datetime_type)
 }
 
 fn today_in_system_tz(cls: HeapType<Date>) -> PyReturn {
     let state = cls.state();
     let epoch = state.now()?.epoch;
-    Date::from_py(system_tz_today_from_timestamp(state.py_api, epoch)?.borrow()).to_obj(cls)
+    Date::from_py(*system_tz_today_from_timestamp(state.py_api, epoch)?).to_obj(cls)
 }
 
 fn system_tz_today_from_timestamp(
@@ -1060,8 +1015,7 @@ fn system_tz_today_from_timestamp(
     }: &PyDateTime_CAPI,
     s: EpochSecs,
 ) -> PyResult<Owned<PyDate>> {
-    let timestamp_obj = s.get().to_py()?;
-    let args = (timestamp_obj,).into_pytuple()?;
+    let args = [s.get().to_py()?].into_pytuple()?;
     Ok(unsafe {
         // we make use of the fact that date.fromtimstamp() by default
         // uses the system timezone
@@ -1124,7 +1078,7 @@ fn parse(cls: HeapType<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetu
         .ok_or_type_err("parse() argument must be str")?;
     let s = s_pystr.as_utf8()?;
 
-    let fmt_obj = handle_one_kwarg("parse", cls.state().str_format, kwargs)?.ok_or_else(|| {
+    let fmt_obj = handle_one_kwarg("parse", *cls.state().str_format, kwargs)?.ok_or_else(|| {
         raise_type_err::<(), _>("parse() requires 'format' keyword argument").unwrap_err()
     })?;
     let fmt_pystr = fmt_obj
@@ -1135,21 +1089,21 @@ fn parse(cls: HeapType<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetu
     let elements = pattern::compile(fmt_bytes).into_value_err()?;
     pattern::validate_fields(&elements, pattern::CategorySet::DATE, "Date")?;
 
-    let state = pattern::parse_to_state(&elements, s).into_value_err()?;
+    let pstate = pattern::parse_to_state(&elements, s).into_value_err()?;
 
-    let year = state.year.ok_or_value_err(
+    let year = pstate.year.ok_or_value_err(
         "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
     )?;
-    let month = state.month.ok_or_value_err(
+    let month = pstate.month.ok_or_value_err(
         "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
     )?;
-    let day = state.day.ok_or_value_err(
+    let day = pstate.day.ok_or_value_err(
         "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
     )?;
 
     let date = Date::new(year, month, day).ok_or_value_err("Invalid date")?;
 
-    if let Some(wd) = state.weekday
+    if let Some(wd) = pstate.weekday
         && date.day_of_week() != wd
     {
         raise_value_err("Parsed weekday does not match the date")?;
@@ -1210,7 +1164,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
         month: Month::new_unchecked(unpack_one!(packed, u8)),
         day: unpack_one!(packed, u8),
     }
-    .to_obj(state.date_type)
+    .to_obj(*state.date_type)
 }
 
 fn year(_: PyType, slf: Date) -> PyReturn {

@@ -440,11 +440,9 @@ fn to_stdlib(cls: HeapType<Time>, slf: Time) -> PyReturn {
 }
 
 fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn {
-    let &State {
-        warn_deprecation, ..
-    } = cls.state();
+    let state = cls.state();
     warn_with_class(
-        warn_deprecation,
+        *state.warn_deprecation,
         c"py_time() is deprecated. Use to_stdlib() instead.",
         1,
     )?;
@@ -452,11 +450,9 @@ fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn {
 }
 
 fn from_py_time(cls: HeapType<Time>, arg: PyObj) -> PyReturn {
-    let &State {
-        warn_deprecation, ..
-    } = cls.state();
+    let state = cls.state();
     warn_with_class(
-        warn_deprecation,
+        *state.warn_deprecation,
         c"from_py_time() is deprecated. Use Time() constructor instead.",
         1,
     )?;
@@ -475,31 +471,11 @@ fn format_iso(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterK
     // As-efficient-as-possible assignment of keyword arguments
     let mut unit = fmt::Unit::Auto;
     let mut basic = false;
-    let &State {
-        str_unit,
-        str_basic,
-        str_hour,
-        str_minute,
-        str_second,
-        str_millisecond,
-        str_microsecond,
-        str_nanosecond,
-        str_auto,
-        ..
-    } = cls.state();
+    let state = cls.state();
     handle_kwargs("format_iso", kwargs, |key, value, eq| {
-        if eq(key, str_unit) {
-            unit = fmt::Unit::from_py(
-                value,
-                str_hour,
-                str_minute,
-                str_second,
-                str_millisecond,
-                str_microsecond,
-                str_nanosecond,
-                str_auto,
-            )?;
-        } else if eq(key, str_basic) {
+        if eq(key, *state.str_unit) {
+            unit = fmt::Unit::from_py(value, state)?;
+        } else if eq(key, *state.str_basic) {
             if value.is_true() {
                 basic = true;
             } else if value.is_false() {
@@ -536,34 +512,24 @@ fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyResult<Owned<PyTuple>> {
         subsec: nanos,
     } = slf;
     let data = pack![hour, minute, second, nanos.get()];
-    (
+    [
         cls.state().unpickle_time.newref(),
-        (data.to_py()?,).into_pytuple()?,
-    )
-        .into_pytuple()
+        [data.to_py()?].into_pytuple()?.into_obj(),
+    ]
+    .into_pytuple()
 }
 fn on(cls: HeapType<Time>, slf: Time, arg: PyObj) -> PyReturn {
-    let &State {
-        plain_datetime_type,
-        date_type,
-        ..
-    } = cls.state();
+    let state = cls.state();
 
-    if let Some(date) = arg.extract(date_type) {
-        DateTime { date, time: slf }.to_obj(plain_datetime_type)
+    if let Some(date) = arg.extract(*state.date_type) {
+        DateTime { date, time: slf }.to_obj(*state.plain_datetime_type)
     } else {
         raise_type_err("argument must be a date")
     }
 }
 
 fn replace(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    let &State {
-        str_hour,
-        str_minute,
-        str_second,
-        str_nanosecond,
-        ..
-    } = cls.state();
+    let state = cls.state();
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")
     } else {
@@ -572,22 +538,22 @@ fn replace(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwar
         let mut second = slf.second.into();
         let mut nanos = slf.subsec.get() as _;
         handle_kwargs("replace", kwargs, |key, value, eq| {
-            if eq(key, str_hour) {
+            if eq(key, *state.str_hour) {
                 hour = value
                     .cast_allow_subclass::<PyInt>()
                     .ok_or_type_err("hour must be an integer")?
                     .to_long()?;
-            } else if eq(key, str_minute) {
+            } else if eq(key, *state.str_minute) {
                 minute = value
                     .cast_allow_subclass::<PyInt>()
                     .ok_or_type_err("minute must be an integer")?
                     .to_long()?;
-            } else if eq(key, str_second) {
+            } else if eq(key, *state.str_second) {
                 second = value
                     .cast_allow_subclass::<PyInt>()
                     .ok_or_type_err("second must be an integer")?
                     .to_long()?;
-            } else if eq(key, str_nanosecond) {
+            } else if eq(key, *state.str_nanosecond) {
                 nanos = value
                     .cast_allow_subclass::<PyInt>()
                     .ok_or_type_err("nanosecond must be an integer")?
@@ -665,7 +631,7 @@ fn parse(cls: HeapType<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetu
         .ok_or_type_err("parse() argument must be str")?;
     let s = s_pystr.as_utf8()?;
 
-    let fmt_obj = handle_one_kwarg("parse", cls.state().str_format, kwargs)?.ok_or_else(|| {
+    let fmt_obj = handle_one_kwarg("parse", *cls.state().str_format, kwargs)?.ok_or_else(|| {
         raise_type_err::<(), _>("parse() requires 'format' keyword argument").unwrap_err()
     })?;
     let fmt_pystr = fmt_obj
@@ -729,7 +695,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
         second: unpack_one!(data, u8),
         subsec: SubSecNanos::new_unchecked(unpack_one!(data, i32)),
     }
-    .to_obj(state.time_type)
+    .to_obj(*state.time_type)
 }
 
 fn hour(_: PyType, slf: Time) -> PyReturn {
