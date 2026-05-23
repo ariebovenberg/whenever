@@ -12,10 +12,52 @@ use pyo3_ffi::*;
 // However, this is a price we can pay in exchange for the convenience
 // of the `?` operator.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[must_use = "exception is set on the current thread; propagate with ? or clear with PyErr_Clear"]
 pub(crate) struct PyErrMarker; // sentinel that the Python error indicator is set
 
 pub(crate) type PyResult<T> = Result<T, PyErrMarker>;
 pub(crate) type PyReturn = PyResult<Owned<PyObj>>;
+
+/// Extension methods for [`PyResult`] to handle Python exceptions.
+pub(crate) trait PyResultExt<T>: Sized {
+    /// On error, clears the Python exception and returns `None`.
+    fn or_clear(self) -> Option<T>;
+
+    /// If the error matches `exc_type`, clears it and returns `Ok(None)`.
+    /// Other errors propagate unchanged. On success, returns `Ok(Some(...))`.
+    fn catch(self, exc_type: *mut PyObject) -> PyResult<Option<T>>;
+}
+
+impl<T> PyResultExt<T> for PyResult<T> {
+    fn or_clear(self) -> Option<T> {
+        match self {
+            Ok(x) => Some(x),
+            Err(_) => {
+                unsafe { PyErr_Clear() };
+                None
+            }
+        }
+    }
+
+    fn catch(self, exc_type: *mut PyObject) -> PyResult<Option<T>> {
+        match self {
+            Ok(x) => Ok(Some(x)),
+            Err(e) => {
+                if unsafe { PyErr_ExceptionMatches(exc_type) } == 1 {
+                    unsafe { PyErr_Clear() };
+                    Ok(None)
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+}
+
+/// Returns a pointer to the `ImportError` exception type.
+pub(crate) fn exc_import_error() -> *mut PyObject {
+    unsafe { PyExc_ImportError }
+}
 
 #[cold]
 pub(crate) fn raise<T, U: ToPy>(exc: *mut PyObject, msg: U) -> PyResult<T> {

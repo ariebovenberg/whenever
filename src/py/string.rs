@@ -87,46 +87,41 @@ impl PyStaticType for PyBytes {
 }
 
 impl PyBytes {
-    pub(crate) fn as_bytes(&self) -> PyResult<&[u8]> {
-        // FUTURE: is there a way to use unchecked versions of
-        // the C API: PyBytes_AS_STRING, PyBytes_GET_SIZE?
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        // SAFETY: self is a PyBytes; AsString and Size only fail on type mismatch, impossible here
         let p = unsafe { PyBytes_AsString(self.as_ptr()) };
-        if p.is_null() {
-            return Err(PyErrMarker);
-        };
-        Ok(unsafe {
-            std::slice::from_raw_parts(p.cast::<u8>(), PyBytes_Size(self.as_ptr()) as usize)
-        })
+        debug_assert!(!p.is_null());
+        unsafe { std::slice::from_raw_parts(p.cast::<u8>(), PyBytes_Size(self.as_ptr()) as usize) }
     }
 }
 
 impl ToPy for String {
     fn to_py(self) -> PyReturn {
-        unsafe { PyUnicode_FromStringAndSize(self.as_ptr().cast(), self.len() as _) }.rust_owned()
+        unsafe { PyUnicode_FromStringAndSize(self.as_ptr().cast(), self.len() as _) }.own()
     }
 }
 
 impl ToPy for &str {
     fn to_py(self) -> PyReturn {
-        unsafe { PyUnicode_FromStringAndSize(self.as_ptr().cast(), self.len() as _) }.rust_owned()
+        unsafe { PyUnicode_FromStringAndSize(self.as_ptr().cast(), self.len() as _) }.own()
     }
 }
 
 impl ToPy for &CStr {
     fn to_py(self) -> PyReturn {
-        unsafe { PyUnicode_FromString(self.as_ptr()) }.rust_owned()
+        unsafe { PyUnicode_FromString(self.as_ptr()) }.own()
     }
 }
 
 impl ToPy for &[u8] {
     fn to_py(self) -> PyReturn {
-        unsafe { PyBytes_FromStringAndSize(self.as_ptr().cast(), self.len() as _) }.rust_owned()
+        unsafe { PyBytes_FromStringAndSize(self.as_ptr().cast(), self.len() as _) }.own()
     }
 }
 
 impl<const N: usize> ToPy for [u8; N] {
     fn to_py(self) -> PyReturn {
-        unsafe { PyBytes_FromStringAndSize(self.as_ptr().cast(), N as _) }.rust_owned()
+        unsafe { PyBytes_FromStringAndSize(self.as_ptr().cast(), N as _) }.own()
     }
 }
 
@@ -151,7 +146,7 @@ const ASCII_STR_KIND: c_uint = 1;
 impl PyAsciiStrBuilder {
     /// Create a new builder for a string of the given length.
     pub(crate) fn new(len: usize) -> PyResult<Self> {
-        let obj = unsafe { PyUnicode_New(len as _, 127) }.rust_owned()?;
+        let obj = unsafe { PyUnicode_New(len as _, 127) }.own()?;
         debug_assert!(unsafe { PyUnicode_KIND(obj.as_ptr()) == ASCII_STR_KIND });
         Ok(Self {
             data: unsafe { PyUnicode_DATA(obj.as_ptr()).cast() },

@@ -274,11 +274,6 @@ impl EpochSecs {
         }
     }
 
-    pub(crate) fn diff(self, other: Self) -> DeltaSeconds {
-        // Safe: range of DeltaSeconds is large enough to cover all possible differences
-        DeltaSeconds::new_unchecked(self.0 - other.0)
-    }
-
     pub(crate) fn to_delta(self) -> DeltaSeconds {
         // Safe: range of DeltaSeconds is large enough to cover all possible differences
         DeltaSeconds::new_unchecked(self.0)
@@ -803,10 +798,6 @@ impl SubSecNanos {
         self.0 as u32
     }
 
-    pub(crate) fn negate(self) -> (DeltaSeconds, Self) {
-        Self::MIN.diff(self)
-    }
-
     pub(crate) fn from_remainder<T>(nanos: T) -> Self
     where
         T: Copy + NanosRemainder,
@@ -818,17 +809,6 @@ impl SubSecNanos {
     pub(crate) fn from_fract(frac: f64) -> Self {
         // Safety: remainder is always in range
         Self::new_unchecked((frac.fract() * 1_000_000_000_f64).rem_euclid(1_000_000_000_f64) as _)
-    }
-
-    /// Get the difference between two nanosecond values,
-    /// along with the seconds part of the difference (at most -1) if a < b
-    pub(crate) fn diff(self, other: Self) -> (DeltaSeconds, Self) {
-        let diff_signed = self.0 - other.0;
-        (
-            // Safety: No range check since we're dealing with at most -1 second here
-            DeltaSeconds::new_unchecked(diff_signed.div_euclid(1_000_000_000) as _),
-            SubSecNanos::from_remainder(diff_signed),
-        )
     }
 
     pub(crate) fn add(self, other: Self) -> (DeltaSeconds, Self) {

@@ -93,12 +93,16 @@ impl<T: PyBase> std::ops::DerefMut for Owned<T> {
 }
 
 pub(crate) trait PyObjectExt {
-    fn rust_owned(self) -> PyResult<Owned<PyObj>>;
+    fn own(self) -> PyResult<Owned<PyObj>>;
+    fn borrow(self) -> PyResult<PyObj>;
 }
 
 impl PyObjectExt for *mut PyObject {
-    fn rust_owned(self) -> PyResult<Owned<PyObj>> {
+    fn own(self) -> PyResult<Owned<PyObj>> {
         PyObj::new(self).map(Owned::new)
+    }
+    fn borrow(self) -> PyResult<PyObj> {
+        PyObj::new(self)
     }
 }
 

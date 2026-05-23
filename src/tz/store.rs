@@ -4,7 +4,6 @@ use crate::{
     tz::tzif::{TimeZone, is_valid_key},
 };
 use ahash::AHashMap;
-use pyo3_ffi::*;
 use std::{
     collections::VecDeque,
     fs,
@@ -627,26 +626,18 @@ impl Drop for TzStore {
 }
 
 fn get_tzdata_path() -> PyResult<Option<PathBuf>> {
-    Ok(Some(PathBuf::from({
-        let __path__ = match import(c"tzdata.zoneinfo") {
-            Ok(obj) => Ok(obj),
-            // i.e. catch ImportError: no tzdata installed.
-            _ if unsafe { PyErr_ExceptionMatches(PyExc_ImportError) } == 1 => {
-                unsafe { PyErr_Clear() };
-                return Ok(None);
-            }
-            e => e,
-        }?
-        .getattr(c"__path__")?;
-        // __path__ is a list of paths. It will only have one element,
-        // unless somebody is doing something strange.
-        let py_str = __path__
-            .getitem(*(0).to_py()?)?
-            .cast_exact::<PyStr>()
-            .ok_or_type_err("tzdata module path must be a string")?;
-
-        py_str.as_str()?.to_owned()
-    })))
+    let Some(tzdata) = import(c"tzdata.zoneinfo").catch(exc_import_error())? else {
+        // ImportError: no tzdata installed
+        return Ok(None);
+    };
+    let __path__ = tzdata.getattr(c"__path__")?;
+    // __path__ is a list of paths. It will only have one element,
+    // unless somebody is doing something strange.
+    let py_str = __path__
+        .getitem(*(0).to_py()?)?
+        .cast_exact::<PyStr>()
+        .ok_or_type_err("tzdata module path must be a string")?;
+    Ok(Some(PathBuf::from(py_str.as_str()?)))
 }
 
 /// Convert a Python tuple of str to Vec<PathBuf>.

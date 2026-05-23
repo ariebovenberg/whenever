@@ -68,11 +68,12 @@ jobs:
 
       # These optional dependencies will trigger certain tests that are
       # skipped without them. Pydantic doesn't support 3.13t though.
+      # 3.13t is experimental so not a problem to skip.
       - if: ${{ matrix.python-version != '3.13t' }}
         name: Test with optional dependencies
         shell: bash
         run: |
-          pip install tzdata
+          pip install tzdata pydantic
           pytest tests/ -s -v
       # Debug mode sometimes surfaces issues not seen in release mode
       - name: Test (debug mode)

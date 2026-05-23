@@ -46,7 +46,7 @@ impl PyTuple {
 
     /// Create a new tuple with the given length.
     pub(crate) fn with_len(len: Py_ssize_t) -> PyResult<Owned<Self>> {
-        Ok(unsafe { PyTuple_New(len).rust_owned()?.cast_unchecked::<PyTuple>() })
+        Ok(unsafe { PyTuple_New(len).own()?.cast_unchecked::<PyTuple>() })
     }
 }
 
@@ -59,7 +59,7 @@ impl Owned<PyTuple> {
 
     /// Get a Python iterator over this tuple.
     pub(crate) fn py_iter(self) -> PyReturn {
-        unsafe { PyObject_GetIter(self.as_ptr()) }.rust_owned()
+        unsafe { PyObject_GetIter(self.as_ptr()) }.own()
     }
 }
 

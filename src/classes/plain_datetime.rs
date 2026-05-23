@@ -831,7 +831,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
         .cast_exact::<PyBytes>()
         .ok_or_type_err("invalid pickle data")?;
 
-    let mut packed = py_bytes.as_bytes()?;
+    let mut packed = py_bytes.as_bytes();
     if packed.len() != 11 {
         raise_type_err("invalid pickle data")?
     }
@@ -894,7 +894,7 @@ fn to_stdlib(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
             DateTimeType,
         )
     }
-    .rust_owned()
+    .own()
 }
 
 fn py_datetime(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
@@ -973,7 +973,7 @@ fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwar
 
     let parsed = strptime
         .get()?
-        .call_args([arg_obj.newref(), format_obj.newref()])?
+        .call_args([arg_obj, format_obj])?
         .cast_exact::<PyDateTime>()
         .ok_or_type_err("strptime() returned non-datetime")?;
 
