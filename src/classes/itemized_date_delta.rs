@@ -212,13 +212,7 @@ fn __new__(cls: HeapType<ItemizedDateDelta>, args: PyTuple, kwargs: Option<PyDic
         }
     }
 
-    let &State {
-        str_years,
-        str_months,
-        str_weeks,
-        str_days,
-        ..
-    } = cls.state();
+    let state = cls.state();
 
     let kwarg_dict = match kwargs {
         Some(d) if d.len() > 0 => d,
@@ -232,13 +226,13 @@ fn __new__(cls: HeapType<ItemizedDateDelta>, args: PyTuple, kwargs: Option<PyDic
         "ItemizedDateDelta",
         kwarg_dict.iteritems(),
         |key, value, eq| {
-            if eq(key, str_years) {
+            if eq(key, *state.str_years) {
                 slf.years = DeltaField::parse(value, &mut sign, MAX_YEARS)?;
-            } else if eq(key, str_months) {
+            } else if eq(key, *state.str_months) {
                 slf.months = DeltaField::parse(value, &mut sign, MAX_MONTHS)?;
-            } else if eq(key, str_weeks) {
+            } else if eq(key, *state.str_weeks) {
                 slf.weeks = DeltaField::parse(value, &mut sign, MAX_WEEKS)?;
-            } else if eq(key, str_days) {
+            } else if eq(key, *state.str_days) {
                 slf.days = DeltaField::parse(value, &mut sign, MAX_DAYS)?;
             } else {
                 return Ok(false);
@@ -265,7 +259,7 @@ fn format_iso(
     }
     let mut lowercase = false;
     handle_kwargs("format_iso", kwargs, |key, value, eq| {
-        if eq(key, cls.state().str_lowercase_units) {
+        if eq(key, *cls.state().str_lowercase_units) {
             lowercase = value.is_true();
             Ok(true)
         } else {
@@ -377,21 +371,15 @@ fn mp_subscript_inner(
     d: ItemizedDateDelta,
     key: PyObj,
 ) -> PyReturn {
-    let &State {
-        str_years,
-        str_months,
-        str_weeks,
-        str_days,
-        ..
-    } = cls.state();
+    let state = cls.state();
     let found = find_interned(key, |key, eq| {
-        if eq(key, str_years) {
+        if eq(key, *state.str_years) {
             d.years.to_py_if_set()
-        } else if eq(key, str_months) {
+        } else if eq(key, *state.str_months) {
             d.months.to_py_if_set()
-        } else if eq(key, str_weeks) {
+        } else if eq(key, *state.str_weeks) {
             d.weeks.to_py_if_set()
-        } else if eq(key, str_days) {
+        } else if eq(key, *state.str_days) {
             d.days.to_py_if_set()
         } else {
             None
@@ -410,47 +398,35 @@ extern "C" fn __tp_iter__(slf_ptr: *mut PyObject) -> *mut PyObject {
 }
 
 fn iter_inner(cls: HeapType<ItemizedDateDelta>, d: ItemizedDateDelta) -> PyReturn {
-    let &State {
-        str_years,
-        str_months,
-        str_weeks,
-        str_days,
-        ..
-    } = cls.state();
+    let state = cls.state();
     let tup = PyTuple::with_len(d.len() as _)?;
     let mut i = 0;
     if d.years.is_set() {
-        tup.init_item(i, str_years.newref());
+        tup.init_item(i, state.str_years.newref());
         i += 1;
     }
     if d.months.is_set() {
-        tup.init_item(i, str_months.newref());
+        tup.init_item(i, state.str_months.newref());
         i += 1;
     }
     if d.weeks.is_set() {
-        tup.init_item(i, str_weeks.newref());
+        tup.init_item(i, state.str_weeks.newref());
         i += 1;
     }
     if d.days.is_set() {
-        tup.init_item(i, str_days.newref());
+        tup.init_item(i, state.str_days.newref());
     }
     tup.py_iter()
 }
 
 extern "C" fn __sq_contains__(slf: PyObj, key: PyObj) -> c_int {
     let (cls, d) = unsafe { slf.assume_heaptype::<ItemizedDateDelta>() };
-    let &State {
-        str_years,
-        str_months,
-        str_weeks,
-        str_days,
-        ..
-    } = cls.state();
+    let state = cls.state();
     check_interned(key, |key, eq| {
-        (eq(key, str_years) && d.years.is_set())
-            || (eq(key, str_months) && d.months.is_set())
-            || (eq(key, str_weeks) && d.weeks.is_set())
-            || (eq(key, str_days) && d.days.is_set())
+        (eq(key, *state.str_years) && d.years.is_set())
+            || (eq(key, *state.str_months) && d.months.is_set())
+            || (eq(key, *state.str_weeks) && d.weeks.is_set())
+            || (eq(key, *state.str_days) && d.days.is_set())
     }) as c_int
 }
 
@@ -470,22 +446,16 @@ fn replace(
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")?;
     }
-    let &State {
-        str_years,
-        str_months,
-        str_weeks,
-        str_days,
-        ..
-    } = cls.state();
+    let state = cls.state();
 
     handle_kwargs("replace", kwargs, |key, value, eq| {
-        if eq(key, str_years) {
+        if eq(key, *state.str_years) {
             d.years = DeltaField::parse_opt(value, MAX_YEARS)?;
-        } else if eq(key, str_months) {
+        } else if eq(key, *state.str_months) {
             d.months = DeltaField::parse_opt(value, MAX_MONTHS)?;
-        } else if eq(key, str_weeks) {
+        } else if eq(key, *state.str_weeks) {
             d.weeks = DeltaField::parse_opt(value, MAX_WEEKS)?;
-        } else if eq(key, str_days) {
+        } else if eq(key, *state.str_days) {
             d.days = DeltaField::parse_opt(value, MAX_DAYS)?;
         } else {
             return Ok(false);
@@ -504,17 +474,18 @@ fn replace(
 }
 
 fn __reduce__(cls: HeapType<ItemizedDateDelta>, d: ItemizedDateDelta) -> PyResult<Owned<PyTuple>> {
-    (
+    [
         cls.state().unpickle_itemized_date_delta.newref(),
-        (
+        [
             d.years.to_py()?,
             d.months.to_py()?,
             d.weeks.to_py()?,
             d.days.to_py()?,
-        )
-            .into_pytuple()?,
-    )
-        .into_pytuple()
+        ]
+        .into_pytuple()?
+        .into_obj(),
+    ]
+    .into_pytuple()
 }
 
 pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
@@ -527,13 +498,13 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
         weeks: DeltaField::parse_opt(weeks_obj, MAX_WEEKS)?,
         days: DeltaField::parse_opt(days_obj, MAX_DAYS)?,
     }
-    .to_obj(state.itemized_date_delta_type)
+    .to_obj(*state.itemized_date_delta_type)
 }
 
 fn extract_relative_to_date(state: &State, relative_to: Option<PyObj>) -> PyResult<Date> {
     relative_to
         .ok_or_type_err("missing required keyword argument: 'relative_to'")?
-        .extract(state.date_type)
+        .extract(*state.date_type)
         .ok_or_type_err("relative_to must be a whenever.Date")
 }
 
@@ -544,13 +515,7 @@ fn in_units(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let &State {
-        str_relative_to,
-        str_round_mode,
-        str_round_increment,
-        round_mode_strs,
-        ..
-    } = state;
+    let round_mode_strs = &state.round_mode_strs;
 
     let units = CalUnitSet::from_py(handle_one_arg("in_units", args)?, state)?;
 
@@ -559,15 +524,15 @@ fn in_units(
     let mut round_increment = DateRoundIncrement::MIN;
 
     handle_kwargs("in_units", kwargs, |key, value, eq| {
-        if eq(key, str_relative_to) {
+        if eq(key, *state.str_relative_to) {
             relative_to_arg = Some(
                 value
-                    .extract(state.date_type)
+                    .extract(*state.date_type)
                     .ok_or_type_err("relative_to must be a whenever.Date")?,
             )
-        } else if eq(key, str_round_mode) {
+        } else if eq(key, *state.str_round_mode) {
             round_mode = round::Mode::from_py(value, round_mode_strs)?;
-        } else if eq(key, str_round_increment) {
+        } else if eq(key, *state.str_round_increment) {
             round_increment = DateRoundIncrement::from_py(value)?;
         } else {
             return Ok(false);
@@ -583,7 +548,7 @@ fn in_units(
     let shifted = relative_to.shift(months, days).ok_or_range_err()?;
 
     date_since_iddelta(shifted, relative_to, units, round_mode, round_increment)?
-        .to_obj(state.itemized_date_delta_type)
+        .to_obj(*state.itemized_date_delta_type)
 }
 
 fn total(
@@ -596,7 +561,7 @@ fn total(
     let cal_unit = CalUnit::from_py(handle_one_arg("total", args)?, state)?;
     let relative_to = extract_relative_to_date(
         state,
-        handle_one_kwarg("total", state.str_relative_to, kwargs)?,
+        handle_one_kwarg("total", *state.str_relative_to, kwargs)?,
     )?;
     let (months, days) = d.to_months_days().ok_or_range_err()?;
     let shifted = relative_to.shift(months, days).ok_or_range_err()?;
@@ -626,15 +591,7 @@ pub(crate) fn handle_date_delta_unit_kwargs(
     state: &State,
     eq: impl Fn(PyObj, PyObj) -> bool,
 ) -> PyResult<bool> {
-    let &State {
-        str_years,
-        str_months,
-        str_weeks,
-        str_days,
-        ..
-    } = state;
-
-    if eq(key, str_years) {
+    if eq(key, *state.str_years) {
         *months = DeltaMonths::from_i64_years(
             value
                 .cast_allow_subclass::<PyInt>()
@@ -645,7 +602,7 @@ pub(crate) fn handle_date_delta_unit_kwargs(
         .add(*months)
         .ok_or_range_err()?;
         units.insert(CalUnit::Years);
-    } else if eq(key, str_months) {
+    } else if eq(key, *state.str_months) {
         *months = DeltaMonths::from_i64(
             value
                 .cast_allow_subclass::<PyInt>()
@@ -656,7 +613,7 @@ pub(crate) fn handle_date_delta_unit_kwargs(
         .add(*months)
         .ok_or_range_err()?;
         units.insert(CalUnit::Months);
-    } else if eq(key, str_weeks) {
+    } else if eq(key, *state.str_weeks) {
         *days = DeltaDays::from_i64_weeks(
             value
                 .cast_allow_subclass::<PyInt>()
@@ -667,7 +624,7 @@ pub(crate) fn handle_date_delta_unit_kwargs(
         .add(*days)
         .ok_or_range_err()?;
         units.insert(CalUnit::Weeks);
-    } else if eq(key, str_days) {
+    } else if eq(key, *state.str_days) {
         *days = DeltaDays::from_i64(
             value
                 .cast_allow_subclass::<PyInt>()
@@ -693,19 +650,11 @@ fn add_sub(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
-    let &State {
-        str_relative_to,
-        str_in_units,
-        str_round_mode,
-        round_mode_strs,
-        str_round_increment,
-        itemized_date_delta_type,
-        ..
-    } = state;
+    let round_mode_strs = &state.round_mode_strs;
 
     let arg = handle_opt_arg(fname, args)?
         .map(|obj| {
-            obj.extract(itemized_date_delta_type)
+            obj.extract(*state.itemized_date_delta_type)
                 .ok_or_type_err("argument must be an ItemizedDateDelta")
         })
         .transpose()?;
@@ -719,17 +668,17 @@ fn add_sub(
     let mut units_from_kwargs = CalUnitSet::EMPTY;
 
     handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, str_relative_to) {
+        if eq(key, *state.str_relative_to) {
             relative_to_arg = Some(
                 value
-                    .extract(state.date_type)
+                    .extract(*state.date_type)
                     .ok_or_type_err("relative_to must be a whenever.Date")?,
             );
-        } else if eq(key, str_in_units) {
+        } else if eq(key, *state.str_in_units) {
             units = CalUnitSet::from_py(value, state)?;
-        } else if eq(key, str_round_mode) {
+        } else if eq(key, *state.str_round_mode) {
             round_mode = round::Mode::from_py(value, round_mode_strs)?;
-        } else if eq(key, str_round_increment) {
+        } else if eq(key, *state.str_round_increment) {
             round_increment = DateRoundIncrement::from_py(value)?;
         } else {
             return handle_date_delta_unit_kwargs(
@@ -772,7 +721,7 @@ fn add_sub(
         .ok_or_range_err()?;
 
     date_since_iddelta(shifted, relative_to, units, round_mode, round_increment)?
-        .to_obj(itemized_date_delta_type)
+        .to_obj(*state.itemized_date_delta_type)
 }
 
 fn add(
@@ -802,7 +751,7 @@ pub(crate) fn register_as_mapping(type_obj: PyObj) -> PyResult<()> {
         unsafe { PyDict::from_ptr_unchecked((*type_obj.as_ptr().cast::<PyTypeObject>()).tp_dict) };
     for name in &[c"keys", c"values", c"items", c"get"] {
         let method = mapping_cls.getattr(name)?;
-        type_dict.set_item_str(name, method.borrow())?;
+        type_dict.set_item_str(name, *method)?;
     }
     Ok(())
 }

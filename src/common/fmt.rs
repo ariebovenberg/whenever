@@ -129,31 +129,21 @@ pub(crate) enum Unit {
 }
 
 impl Unit {
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn from_py(
-        obj: PyObj,
-        str_hour: PyObj,
-        str_minute: PyObj,
-        str_second: PyObj,
-        str_millisecond: PyObj,
-        str_microsecond: PyObj,
-        str_nanosecond: PyObj,
-        str_auto: PyObj,
-    ) -> PyResult<Self> {
+    pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
         match_interned_str("unit", obj, |v, eq| {
-            if eq(v, str_millisecond) {
+            if eq(v, *state.str_millisecond) {
                 Some(Self::Millisecond)
-            } else if eq(v, str_hour) {
+            } else if eq(v, *state.str_hour) {
                 Some(Self::Hour)
-            } else if eq(v, str_minute) {
+            } else if eq(v, *state.str_minute) {
                 Some(Self::Minute)
-            } else if eq(v, str_second) {
+            } else if eq(v, *state.str_second) {
                 Some(Self::Second)
-            } else if eq(v, str_microsecond) {
+            } else if eq(v, *state.str_microsecond) {
                 Some(Self::Microsecond)
-            } else if eq(v, str_nanosecond) {
+            } else if eq(v, *state.str_nanosecond) {
                 Some(Self::Nanosecond)
-            } else if eq(v, str_auto) {
+            } else if eq(v, *state.str_auto) {
                 Some(Self::Auto)
             } else {
                 None
@@ -236,47 +226,20 @@ pub(crate) fn format_iso(
     let mut unit = Unit::Auto;
     let mut basic = false;
     let mut tz_display = TzDisplay::Always;
-    let &State {
-        str_sep,
-        str_space,
-        str_t,
-        str_unit,
-        str_hour,
-        str_minute,
-        str_second,
-        str_millisecond,
-        str_microsecond,
-        str_nanosecond,
-        str_auto,
-        str_basic,
-        str_always,
-        str_never,
-        str_tz,
-        ..
-    } = state;
     handle_kwargs("format_iso", kwargs, |key, value, eq| {
-        if eq(key, str_sep) {
+        if eq(key, *state.str_sep) {
             sep = match_interned_str("sep", value, |v, eq| {
-                if eq(v, str_space) {
+                if eq(v, *state.str_space) {
                     Some(b' ')
-                } else if eq(v, str_t) {
+                } else if eq(v, *state.str_t) {
                     Some(b'T')
                 } else {
                     None
                 }
             })?;
-        } else if eq(key, str_unit) {
-            unit = Unit::from_py(
-                value,
-                str_hour,
-                str_minute,
-                str_second,
-                str_millisecond,
-                str_microsecond,
-                str_nanosecond,
-                str_auto,
-            )?;
-        } else if eq(key, str_basic) {
+        } else if eq(key, *state.str_unit) {
+            unit = Unit::from_py(value, state)?;
+        } else if eq(key, *state.str_basic) {
             if value.is_true() {
                 basic = true;
             } else if value.is_false() {
@@ -285,13 +248,13 @@ pub(crate) fn format_iso(
                 raise_type_err("`basic` must be a boolean value")?;
             }
         // Only allow the tz argument if we have a timezone suffix
-        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(key, str_tz) {
+        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(key, *state.str_tz) {
             tz_display = match_interned_str("tz", value, |v, eq| {
-                if eq(v, str_auto) {
+                if eq(v, *state.str_auto) {
                     Some(TzDisplay::Auto)
-                } else if eq(v, str_never) {
+                } else if eq(v, *state.str_never) {
                     Some(TzDisplay::Never)
-                } else if eq(v, str_always) {
+                } else if eq(v, *state.str_always) {
                     Some(TzDisplay::Always)
                 } else {
                     None

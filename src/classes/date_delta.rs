@@ -164,10 +164,7 @@ pub(crate) fn format_components(delta: DateDelta, s: &mut String) {
 pub(crate) fn handle_init_kwargs<T>(
     fname: &str,
     kwargs: T,
-    str_years: PyObj,
-    str_months: PyObj,
-    str_days: PyObj,
-    str_weeks: PyObj,
+    state: &State,
 ) -> PyResult<(DeltaMonths, DeltaDays)>
 where
     T: IntoIterator<Item = (PyObj, PyObj)>,
@@ -175,21 +172,21 @@ where
     let mut days: c_long = 0;
     let mut months: c_long = 0;
     handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, str_days) {
+        if eq(key, *state.str_days) {
             days = value
                 .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("days must be an integer")?
                 .to_long()?
                 .checked_add(days)
                 .ok_or_range_err()?;
-        } else if eq(key, str_months) {
+        } else if eq(key, *state.str_months) {
             months = value
                 .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("months must be an integer")?
                 .to_long()?
                 .checked_add(months)
                 .ok_or_range_err()?;
-        } else if eq(key, str_years) {
+        } else if eq(key, *state.str_years) {
             months = value
                 .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("years must be an integer")?
@@ -197,7 +194,7 @@ where
                 .checked_mul(12)
                 .and_then(|m| m.checked_add(months))
                 .ok_or_range_err()?;
-        } else if eq(key, str_weeks) {
+        } else if eq(key, *state.str_weeks) {
             days = value
                 .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("weeks must be an integer")?
@@ -217,16 +214,9 @@ where
 }
 
 fn __new__(cls: HeapType<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
-    let &State {
-        str_years,
-        str_months,
-        str_days,
-        str_weeks,
-        warn_deprecation,
-        ..
-    } = cls.state();
+    let state = cls.state();
     warn_with_class(
-        warn_deprecation,
+        *state.warn_deprecation,
         c"DateDelta is deprecated; use ItemizedDateDelta instead.",
         1,
     )?;
@@ -244,14 +234,7 @@ fn __new__(cls: HeapType<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> P
     match kwargs {
         None => DateDelta::ZERO,
         Some(kwarg_dict) => {
-            let (months, days) = handle_init_kwargs(
-                "DateDelta",
-                kwarg_dict.iteritems(),
-                str_years,
-                str_months,
-                str_days,
-                str_weeks,
-            )?;
+            let (months, days) = handle_init_kwargs("DateDelta", kwarg_dict.iteritems(), state)?;
             DateDelta::new(months, days).ok_or_value_err("mixed sign in DateDelta")?
         }
     }
@@ -260,7 +243,7 @@ fn __new__(cls: HeapType<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> P
 
 pub(crate) fn years(state: &State, amount: PyObj) -> PyReturn {
     warn_with_class(
-        state.warn_deprecation,
+        *state.warn_deprecation,
         c"years() is deprecated; use ItemizedDateDelta instead.",
         1,
     )?;
@@ -272,12 +255,12 @@ pub(crate) fn years(state: &State, amount: PyObj) -> PyReturn {
         .and_then(DeltaMonths::from_long)
         .map(DateDelta::from_months)
         .ok_or_range_err()?
-        .to_obj(state.date_delta_type)
+        .to_obj(*state.date_delta_type)
 }
 
 pub(crate) fn months(state: &State, amount: PyObj) -> PyReturn {
     warn_with_class(
-        state.warn_deprecation,
+        *state.warn_deprecation,
         c"months() is deprecated; use ItemizedDateDelta instead.",
         1,
     )?;
@@ -289,12 +272,12 @@ pub(crate) fn months(state: &State, amount: PyObj) -> PyReturn {
     )
     .map(DateDelta::from_months)
     .ok_or_range_err()?
-    .to_obj(state.date_delta_type)
+    .to_obj(*state.date_delta_type)
 }
 
 pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn {
     warn_with_class(
-        state.warn_deprecation,
+        *state.warn_deprecation,
         c"weeks() is deprecated; use ItemizedDateDelta instead.",
         1,
     )?;
@@ -306,12 +289,12 @@ pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn {
         .and_then(DeltaDays::from_long)
         .map(DateDelta::from_days)
         .ok_or_range_err()?
-        .to_obj(state.date_delta_type)
+        .to_obj(*state.date_delta_type)
 }
 
 pub(crate) fn days(state: &State, amount: PyObj) -> PyReturn {
     warn_with_class(
-        state.warn_deprecation,
+        *state.warn_deprecation,
         c"days() is deprecated; use ItemizedDateDelta instead.",
         1,
     )?;
@@ -323,7 +306,7 @@ pub(crate) fn days(state: &State, amount: PyObj) -> PyReturn {
     )
     .map(DateDelta::from_days)
     .ok_or_range_err()?
-    .to_obj(state.date_delta_type)
+    .to_obj(*state.date_delta_type)
 }
 
 fn __richcmp__(cls: HeapType<DateDelta>, a: DateDelta, b_obj: PyObj, op: c_int) -> PyReturn {
@@ -407,17 +390,17 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
         let (_, ddelta) = unsafe { obj_a.assume_heaptype::<DateDelta>() };
-        if let Some(mut tdelta) = obj_b.extract(state.time_delta_type) {
+        if let Some(mut tdelta) = obj_b.extract(*state.time_delta_type) {
             if negate {
                 tdelta = -tdelta;
             }
             warn_with_class(
-                state.warn_deprecation,
+                *state.warn_deprecation,
                 c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
                 1,
             )?;
             DateTimeDelta::new(ddelta, tdelta).ok_or_value_err("mixed sign in delta")?
-        } else if let Some(mut dtdelta) = obj_b.extract(state.datetime_delta_type) {
+        } else if let Some(mut dtdelta) = obj_b.extract(*state.datetime_delta_type) {
             if negate {
                 dtdelta = -dtdelta;
             }
@@ -438,7 +421,7 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                 "unsupported operand type(s) for +/-: {type_a} and {type_b}"
             ))?
         }
-        .to_obj(state.datetime_delta_type)
+        .to_obj(*state.datetime_delta_type)
     } else {
         not_implemented()
     }
@@ -515,7 +498,7 @@ fn format_iso(_: PyType, slf: DateDelta) -> PyReturn {
 
 fn parse_iso(cls: HeapType<DateDelta>, arg: PyObj) -> PyReturn {
     warn_with_class(
-        cls.state().warn_deprecation,
+        *cls.state().warn_deprecation,
         c"DateDelta is deprecated; use ItemizedDateDelta instead.",
         1,
     )?;
@@ -648,7 +631,7 @@ pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, CalUnit)> {
 }
 
 fn in_months_days(_: PyType, DateDelta { months, days }: DateDelta) -> PyResult<Owned<PyTuple>> {
-    (months.get().to_py()?, days.get().to_py()?).into_pytuple()
+    [months.get().to_py()?, days.get().to_py()?].into_pytuple()
 }
 
 // FUTURE: maybe also return the sign?
@@ -658,18 +641,20 @@ fn in_years_months_days(
 ) -> PyResult<Owned<PyTuple>> {
     let years = months.get() / 12;
     let months = months.get() % 12;
-    (years.to_py()?, months.to_py()?, days.get().to_py()?).into_pytuple()
+    [years.to_py()?, months.to_py()?, days.get().to_py()?].into_pytuple()
 }
 
 fn __reduce__(
     cls: HeapType<DateDelta>,
     DateDelta { months, days }: DateDelta,
 ) -> PyResult<Owned<PyTuple>> {
-    (
+    [
         cls.state().unpickle_date_delta.newref(),
-        (months.get().to_py()?, days.get().to_py()?).into_pytuple()?,
-    )
-        .into_pytuple()
+        [months.get().to_py()?, days.get().to_py()?]
+            .into_pytuple()?
+            .into_obj(),
+    ]
+    .into_pytuple()
 }
 
 pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
@@ -689,7 +674,7 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
             );
             DateDelta::new(months, days)
                 .ok_or_value_err("invalid pickle data")?
-                .to_obj(state.date_delta_type)
+                .to_obj(*state.date_delta_type)
         }
         _ => raise_type_err("invalid pickle data")?,
     }

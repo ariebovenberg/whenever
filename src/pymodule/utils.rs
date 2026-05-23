@@ -13,7 +13,7 @@ pub(crate) fn new_exception(
     // SAFETY: calling C API with valid arguments
     let e = unsafe { PyErr_NewExceptionWithDoc(name.as_ptr(), doc.as_ptr(), base, NULL()) }
         .rust_owned()?;
-    module.add_type(e.borrow().cast_allow_subclass::<PyType>().unwrap())?;
+    module.add_type((*e).cast_allow_subclass::<PyType>().unwrap())?;
     Ok(e)
 }
 
@@ -30,7 +30,7 @@ pub(crate) fn new_class<T: PyWrapped>(
         .cast_allow_subclass::<PyType>()
         .unwrap()
         .map(|t| unsafe { t.link_type::<T>() });
-    module.add_type(cls.borrow().into())?;
+    module.add_type((*cls).into())?;
 
     let unpickler = module.getattr(unpickle_name)?;
     unpickler.setattr(c"__module__", module_nameobj)?;
@@ -50,7 +50,7 @@ pub(crate) fn create_singletons<T: PySimpleAlloc>(
             // NOTE: We drop the value here, but count on the class dict to
             // keep the reference alive. This is safe since the dict is blocked
             // from mutation by the Py_TPFLAGS_IMMUTABLETYPE flag.
-            .set_item_str(name, pyvalue.borrow())?;
+            .set_item_str(name, *pyvalue)?;
     }
     Ok(())
 }

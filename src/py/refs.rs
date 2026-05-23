@@ -25,10 +25,6 @@ impl<T: PyBase> Owned<T> {
         }
     }
 
-    pub(crate) fn borrow(&self) -> T {
-        self.inner
-    }
-
     /// Apply a function to the inner object while retaining ownership.
     pub(crate) fn map<U, F>(self, f: F) -> Owned<U>
     where
@@ -36,6 +32,11 @@ impl<T: PyBase> Owned<T> {
         U: PyBase,
     {
         Owned::new(f(self.py_owned()))
+    }
+
+    /// Upcast to `Owned<PyObj>`, losing the specific subtype.
+    pub(crate) fn into_obj(self) -> Owned<PyObj> {
+        self.map(|t| t.as_py_obj())
     }
 }
 

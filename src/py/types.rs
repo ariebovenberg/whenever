@@ -9,6 +9,7 @@ use core::{
 use pyo3_ffi::*;
 
 /// Wrapper around PyTypeObject.
+#[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PyType {
     obj: PyObj,
@@ -75,6 +76,9 @@ impl std::fmt::Display for PyType {
 }
 
 /// A PyTypeObject that is linked to a Rust struct in whenever.
+/// `#[repr(transparent)]` so that `*mut HeapType<T>` can be cast to
+/// `*mut *mut PyObject` in `module_clear` (same as PyType → PyObj chain).
+#[repr(transparent)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct HeapType<T: PyWrapped> {
     type_py: PyType,

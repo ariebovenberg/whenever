@@ -195,12 +195,6 @@ mod gil_enabled {
             // SAFETY: GIL guarantees single-threaded access
             unsafe { (*self.value.get()).as_ref() }
         }
-
-        /// Take the value out, leaving the cell empty. Requires exclusive access.
-        #[inline]
-        pub(crate) fn take(&mut self) -> Option<T> {
-            self.value.get_mut().take()
-        }
     }
 
     impl<T: std::fmt::Debug> std::fmt::Debug for OncePyCell<T> {
