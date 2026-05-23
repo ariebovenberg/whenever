@@ -117,43 +117,43 @@ impl ToPy for i128 {
                 1,
             )
         }
-        .rust_owned()
+        .own()
     }
 }
 
 impl ToPy for i64 {
     fn to_py(self) -> PyReturn {
-        unsafe { PyLong_FromLongLong(self) }.rust_owned()
+        unsafe { PyLong_FromLongLong(self) }.own()
     }
 }
 
 impl ToPy for i32 {
     fn to_py(self) -> PyReturn {
-        unsafe { PyLong_FromLong(self.into()) }.rust_owned()
+        unsafe { PyLong_FromLong(self.into()) }.own()
     }
 }
 
 impl ToPy for f64 {
     fn to_py(self) -> PyReturn {
-        unsafe { PyFloat_FromDouble(self) }.rust_owned()
+        unsafe { PyFloat_FromDouble(self) }.own()
     }
 }
 
 impl ToPy for u32 {
     fn to_py(self) -> PyReturn {
-        unsafe { PyLong_FromUnsignedLong(self.into()) }.rust_owned()
+        unsafe { PyLong_FromUnsignedLong(self.into()) }.own()
     }
 }
 
 impl ToPy for u16 {
     fn to_py(self) -> PyReturn {
-        unsafe { PyLong_FromUnsignedLong(self.into()) }.rust_owned()
+        unsafe { PyLong_FromUnsignedLong(self.into()) }.own()
     }
 }
 
 impl ToPy for u8 {
     fn to_py(self) -> PyReturn {
-        unsafe { PyLong_FromUnsignedLong(self.into()) }.rust_owned()
+        unsafe { PyLong_FromUnsignedLong(self.into()) }.own()
     }
 }
 

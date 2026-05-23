@@ -132,8 +132,7 @@ def __getattr__(name: str) -> object:
         mod = __import__(src, fromlist=("",))
         g = globals()
         for n in _LAZY_MODULES[src]:
-            if hasattr(mod, n):
-                g[n] = getattr(mod, n)
+            g[n] = getattr(mod, n)
         return g[name]
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 

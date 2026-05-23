@@ -436,7 +436,7 @@ fn to_stdlib(cls: HeapType<Time>, slf: Time) -> PyReturn {
             TimeType,
         )
     }
-    .rust_owned()
+    .own()
 }
 
 fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn {
@@ -685,7 +685,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
         .cast_exact::<PyBytes>()
         .ok_or_type_err("invalid pickle data")?;
 
-    let mut data = py_bytes.as_bytes()?;
+    let mut data = py_bytes.as_bytes();
     if data.len() != 7 {
         raise_type_err("invalid pickle data")?
     }

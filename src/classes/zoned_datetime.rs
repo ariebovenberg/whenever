@@ -706,7 +706,7 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     let py_bytes = data
         .cast_exact::<PyBytes>()
         .ok_or_type_err("invalid pickle data")?;
-    let mut packed = py_bytes.as_bytes()?;
+    let mut packed = py_bytes.as_bytes();
     if packed.len() != 15 {
         raise_type_err("invalid pickle data")?;
     }
@@ -773,8 +773,8 @@ fn to_stdlib(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
                     DeltaType,
                 )
             }
-            .rust_owned()?;
-            unsafe { TimeZone_FromTimeZone(delta.as_ptr(), NULL()) }.rust_owned()
+            .own()?;
+            unsafe { TimeZone_FromTimeZone(delta.as_ptr(), NULL()) }.own()
         }
     }?;
 
@@ -793,7 +793,7 @@ fn to_stdlib(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
                 DateTimeType,
             )
         }
-        .rust_owned()?
+        .own()?
         .py_owned(),
     )
 }

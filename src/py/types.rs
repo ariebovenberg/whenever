@@ -4,7 +4,6 @@ use crate::pymodule::State;
 use core::{
     ffi::CStr,
     mem::{self, MaybeUninit},
-    ptr::NonNull,
 };
 use pyo3_ffi::*;
 
@@ -39,27 +38,26 @@ impl PyStaticType for PyType {
 }
 
 impl PyType {
+    /// Get the Python module this type belongs to, if any.
+    /// Returns `None` (and clears the exception) for types not belonging to a module.
+    pub(crate) fn get_module(&self) -> Option<PyModule> {
+        Some(unsafe {
+            PyType_GetModule(self.as_ptr().cast())
+                .borrow()
+                .or_clear()?
+                .cast_unchecked::<PyModule>()
+        })
+    }
+
     /// Get the module state if both types are from the whenever module.
     pub(crate) fn same_module(&self, other: PyType) -> Option<&State> {
-        let Some(mod_a) = NonNull::new(unsafe { PyType_GetModule(self.as_ptr().cast()) }) else {
-            unsafe { PyErr_Clear() };
-            return None;
-        };
-        let Some(mod_b) = NonNull::new(unsafe { PyType_GetModule(other.as_ptr().cast()) }) else {
-            unsafe { PyErr_Clear() };
-            return None;
-        };
-        if mod_a == mod_b {
+        let mod_a = self.get_module()?;
+        mod_a.is(other.get_module()?).then(|| {
             // SAFETY: we only use this function after module initialization
-            unsafe {
-                PyModule::from_ptr_unchecked(mod_a.as_ptr())
-                    .state()
-                    .assume_init_ref()
-                    .as_ref()
-            }
-        } else {
-            None
-        }
+            unsafe { mod_a.state().assume_init_ref() }
+                .as_ref()
+                .expect("Module state should be initialized")
+        })
     }
 
     /// Associate the type with the given Rust type.

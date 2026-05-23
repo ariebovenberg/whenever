@@ -57,17 +57,8 @@ impl Instant {
     }
 
     pub(crate) fn diff(self, other: Self) -> TimeDelta {
-        let (extra_sec, subsec) = self.subsec.diff(other.subsec);
-        TimeDelta {
-            secs: self
-                .epoch
-                .diff(other.epoch)
-                // Safety: we know that the difference between two instants is
-                // always within delta range
-                .add(extra_sec)
-                .unwrap(),
-            subsec,
-        }
+        // Safety: difference between two valid Instants is always within delta range
+        TimeDelta::from_nanos_unchecked(self.timestamp_nanos() - other.timestamp_nanos())
     }
 
     pub(crate) fn timestamp_millis(&self) -> i64 {
@@ -160,7 +151,7 @@ impl Instant {
                 DateTimeType,
             )
         }
-        .rust_owned()
+        .own()
     }
 
     // Returns None if the datetime is out of range
@@ -421,7 +412,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let binding = arg
         .cast_exact::<PyBytes>()
         .ok_or_type_err("invalid pickle data")?;
-    let mut packed = binding.as_bytes()?;
+    let mut packed = binding.as_bytes();
     if packed.len() != 12 {
         raise_value_err("invalid pickle data")?;
     }
@@ -437,7 +428,7 @@ pub(crate) fn unpickle_pre_0_8(state: &State, arg: PyObj) -> PyReturn {
     let binding = arg
         .cast_exact::<PyBytes>()
         .ok_or_type_err("invalid pickle data")?;
-    let mut packed = binding.as_bytes()?;
+    let mut packed = binding.as_bytes();
     if packed.len() != 12 {
         raise_value_err("invalid pickle data")?;
     }

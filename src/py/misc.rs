@@ -21,7 +21,7 @@ pub(crate) fn __deepcopy__(_: PyType, slf: PyObj, _: PyObj) -> Owned<PyObj> {
 }
 
 pub(crate) fn import(module: &CStr) -> PyReturn {
-    unsafe { PyImport_ImportModule(module.as_ptr()) }.rust_owned()
+    unsafe { PyImport_ImportModule(module.as_ptr()) }.own()
 }
 
 pub(crate) fn __get_pydantic_core_schema__<T: PyWrapped>(
@@ -41,14 +41,9 @@ pub(crate) fn not_implemented() -> PyReturn {
 
 /// Pack various types into a byte array. Used for pickling.
 macro_rules! pack {
-    [$x:expr, $($xs:expr),*] => {{
-        // OPTIMIZE: use Vec::with_capacity, or a fixed-size array
-        // since we know the size at compile time
+    [$($x:expr),+] => {{
         let mut result = Vec::new();
-        result.extend_from_slice(&$x.to_le_bytes());
-        $(
-            result.extend_from_slice(&$xs.to_le_bytes());
-        )*
+        $(result.extend_from_slice(&$x.to_le_bytes());)+
         result
     }}
 }
