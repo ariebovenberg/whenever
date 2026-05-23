@@ -239,7 +239,7 @@ impl Date {
                 DateType,
             )
         }
-        .rust_owned()
+        .own()
     }
 
     pub(crate) fn from_py(d: PyDate) -> Self {
@@ -453,14 +453,14 @@ fn year_month(cls: HeapType<Date>, Date { year, month, .. }: Date) -> PyReturn {
     cls.state()
         .yearmonth_type
         .get()?
-        .call_args([year.get().to_py()?, month.get().to_py()?])
+        .call_args([*year.get().to_py()?, *month.get().to_py()?])
 }
 
 fn month_day(cls: HeapType<Date>, Date { month, day, .. }: Date) -> PyReturn {
     cls.state()
         .monthday_type
         .get()?
-        .call_args([month.get().to_py()?, day.to_py()?])
+        .call_args([*month.get().to_py()?, *day.to_py()?])
 }
 
 fn format_iso(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
@@ -510,9 +510,9 @@ fn iso_week_date(cls: HeapType<Date>, slf: Date) -> PyReturn {
     let (iso_year, iso_week) = slf.iso_year_week();
     let weekday_idx = slf.day_of_week() as u8 - 1;
     state.isoweekdate_new.get()?.call_args([
-        iso_year.to_py()?,
-        iso_week.to_py()?,
-        state.weekday_enum_members.get()?[weekday_idx as usize].newref(),
+        *iso_year.to_py()?,
+        *iso_week.to_py()?,
+        *state.weekday_enum_members.get()?[weekday_idx as usize],
     ])
 }
 
@@ -1021,7 +1021,7 @@ fn system_tz_today_from_timestamp(
         // uses the system timezone
         // SAFETY: Date_FromTimestamp is safe to call with valid pointers
         Date_FromTimestamp(DateType, args.as_ptr())
-            .rust_owned()?
+            .own()?
             // SAFETY: safe to assume Date_FromTimestamp returns a date
             .cast_unchecked::<PyDate>()
     })
@@ -1155,7 +1155,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let binding = arg
         .cast_exact::<PyBytes>()
         .ok_or_type_err("invalid pickle data")?;
-    let mut packed = binding.as_bytes()?;
+    let mut packed = binding.as_bytes();
     if packed.len() != 4 {
         raise_value_err("invalid pickle data")?
     }

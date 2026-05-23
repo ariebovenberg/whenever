@@ -88,7 +88,6 @@ impl TimeDelta {
         }
     }
 
-    // FUTURE: see if we can avoid the i128
     pub(crate) const fn total_nanos(self) -> i128 {
         self.secs.get() as i128 * NS_PER_SEC as i128 + self.subsec.get() as i128
     }
@@ -108,11 +107,8 @@ impl TimeDelta {
     }
 
     pub(crate) fn add(self, other: Self) -> Option<Self> {
-        let (extra_sec, subsec) = self.subsec.add(other.subsec);
-        Some(Self {
-            secs: self.secs.add(other.secs)?.add(extra_sec)?,
-            subsec,
-        })
+        // No i128 overflow possible: 2 * DeltaNanos::MAX << i128::MAX
+        Self::from_nanos(self.total_nanos() + other.total_nanos())
     }
 
     pub(crate) const ZERO: Self = Self {
@@ -283,13 +279,9 @@ impl Neg for TimeDelta {
     type Output = Self;
 
     fn neg(self) -> TimeDelta {
-        let (extra_seconds, subsec) = self.subsec.negate();
-        // SAFETY: valid timedelta's can always be negated within range,
+        // Safety: valid timedelta's can always be negated within range,
         // due to our choice of MIN/MAX
-        TimeDelta {
-            secs: (-self.secs).add(extra_seconds).unwrap(),
-            subsec,
-        }
+        TimeDelta::from_nanos_unchecked(-self.total_nanos())
     }
 }
 
@@ -805,7 +797,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let py_bytes = arg
         .cast_exact::<PyBytes>()
         .ok_or_type_err("invalid pickle data")?;
-    let mut data = py_bytes.as_bytes()?;
+    let mut data = py_bytes.as_bytes();
     if data.len() != 12 {
         raise_value_err("invalid pickle data")?;
     }
@@ -916,7 +908,7 @@ fn to_stdlib(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
             DeltaType,
         )
     }
-    .rust_owned()
+    .own()
 }
 
 fn py_timedelta(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {

@@ -433,19 +433,6 @@ mod free_threaded {
                 Some(unsafe { &*p })
             }
         }
-
-        /// Take the value out, leaving the cell empty. Requires exclusive access.
-        #[inline]
-        pub(crate) fn take(&mut self) -> Option<T> {
-            let p = *self.ptr.get_mut();
-            if p.is_null() {
-                None
-            } else {
-                *self.ptr.get_mut() = std::ptr::null_mut();
-                // SAFETY: p was created by Box::into_raw
-                Some(*unsafe { Box::from_raw(p) })
-            }
-        }
     }
 
     impl<T> Drop for OncePyCell<T> {

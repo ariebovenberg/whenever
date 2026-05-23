@@ -47,6 +47,10 @@ impl PyObj {
         unsafe { T::from_ptr_unchecked(self.as_ptr()) }
     }
 
+    /// Extract the class and its Rust data from a `PyObj` known to be a heap type.
+    ///
+    /// # Safety
+    /// The caller must guarantee that `self` is an instance of `HeapType<T>`.
     pub(crate) unsafe fn assume_heaptype<T: PyWrapped>(&self) -> (HeapType<T>, T) {
         (
             unsafe { HeapType::from_ptr_unchecked(self.type_().as_ptr()) },
@@ -84,9 +88,10 @@ impl PyObj {
     }
 
     pub(crate) fn to_tuple(self) -> PyResult<Owned<PyTuple>> {
+        // SAFETY: PySequence_Tuple always returns a tuple object on success
         Ok(unsafe {
             pyo3_ffi::PySequence_Tuple(self.as_ptr())
-                .rust_owned()?
+                .own()?
                 .cast_unchecked::<PyTuple>()
         })
     }
@@ -109,6 +114,10 @@ impl PyBase for PyObj {
 
 impl FromPy for PyObj {
     unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
+        debug_assert!(
+            !ptr.is_null(),
+            "from_ptr_unchecked called with null pointer"
+        );
         Self {
             inner: unsafe { NonNull::new_unchecked(ptr) },
         }
@@ -147,18 +156,13 @@ pub(crate) trait PyBase: FromPy {
 
     /// Write the repr of the object to the given formatter.
     fn write_repr<T: std::fmt::Write>(&self, f: &mut T) -> std::fmt::Result {
-        let Ok(repr_obj) = unsafe { PyObject_Repr(self.as_ptr()) }.rust_owned() else {
-            // i.e. repr() raised an exception
-            unsafe { PyErr_Clear() };
+        let Some(repr_obj) = unsafe { PyObject_Repr(self.as_ptr()) }.own().or_clear() else {
             return f.write_str("<repr() failed>");
         };
         let Some(py_str) = repr_obj.cast_exact::<PyStr>() else {
-            // i.e. repr() didn't return a string
             return f.write_str("<repr() failed>");
         };
-        let Ok(utf8) = py_str.as_utf8() else {
-            // i.e. repr() returned a non-UTF-8 string
-            unsafe { PyErr_Clear() };
+        let Some(utf8) = py_str.as_utf8().or_clear() else {
             return f.write_str("<repr() failed>");
         };
         // SAFETY: Python emits valid UTF-8 strings
@@ -167,12 +171,12 @@ pub(crate) trait PyBase: FromPy {
 
     /// Call `getattr()` on the object
     fn getattr(&self, name: &CStr) -> PyReturn {
-        unsafe { PyObject_GetAttrString(self.as_ptr(), name.as_ptr()) }.rust_owned()
+        unsafe { PyObject_GetAttrString(self.as_ptr(), name.as_ptr()) }.own()
     }
 
     /// Call __getitem__ of the object
     fn getitem(&self, key: PyObj) -> PyReturn {
-        unsafe { PyObject_GetItem(self.as_ptr(), key.as_ptr()) }.rust_owned()
+        unsafe { PyObject_GetItem(self.as_ptr(), key.as_ptr()) }.own()
     }
 
     /// Get the attribute of the object.
@@ -186,17 +190,17 @@ pub(crate) trait PyBase: FromPy {
 
     /// Call the object with one argument.
     fn call1(&self, arg: impl PyBase) -> PyReturn {
-        unsafe { PyObject_CallOneArg(self.as_ptr(), arg.as_ptr()) }.rust_owned()
+        unsafe { PyObject_CallOneArg(self.as_ptr(), arg.as_ptr()) }.own()
     }
 
     /// Call the object with no arguments.
     fn call0(&self) -> PyReturn {
-        unsafe { PyObject_CallNoArgs(self.as_ptr()) }.rust_owned()
+        unsafe { PyObject_CallNoArgs(self.as_ptr()) }.own()
     }
 
     /// Call the object with positional arguments using the vectorcall protocol,
     /// avoiding the overhead of building a Python tuple.
-    fn call_args<const N: usize>(&self, args: [Owned<PyObj>; N]) -> PyReturn {
+    fn call_args<const N: usize>(&self, args: [PyObj; N]) -> PyReturn {
         unsafe {
             PyObject_Vectorcall(
                 self.as_ptr(),
@@ -205,7 +209,7 @@ pub(crate) trait PyBase: FromPy {
                 NULL(),
             )
         }
-        .rust_owned()
+        .own()
     }
 
     /// Determine if the object is equal to another object, according to Python's
@@ -217,6 +221,10 @@ pub(crate) trait PyBase: FromPy {
             0 => Ok(false),
             _ => Err(PyErrMarker),
         }
+    }
+
+    fn is(&self, other: impl PyBase) -> bool {
+        self.as_ptr() == other.as_ptr()
     }
 
     fn is_truthy(&self) -> bool {

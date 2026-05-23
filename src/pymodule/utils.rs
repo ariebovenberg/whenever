@@ -11,8 +11,8 @@ pub(crate) fn new_exception(
     base: *mut PyObject,
 ) -> PyResult<Owned<PyObj>> {
     // SAFETY: calling C API with valid arguments
-    let e = unsafe { PyErr_NewExceptionWithDoc(name.as_ptr(), doc.as_ptr(), base, NULL()) }
-        .rust_owned()?;
+    let e =
+        unsafe { PyErr_NewExceptionWithDoc(name.as_ptr(), doc.as_ptr(), base, NULL()) }.own()?;
     module.add_type((*e).cast_allow_subclass::<PyType>().unwrap())?;
     Ok(e)
 }
@@ -26,7 +26,7 @@ pub(crate) fn new_class<T: PyWrapped>(
     unpickle_name: &CStr,
 ) -> PyResult<(Owned<HeapType<T>>, Owned<PyObj>)> {
     let cls = unsafe { PyType_FromModuleAndSpec(module.as_ptr(), spec, NULL()) }
-        .rust_owned()?
+        .own()?
         .cast_allow_subclass::<PyType>()
         .unwrap()
         .map(|t| unsafe { t.link_type::<T>() });
@@ -57,5 +57,5 @@ pub(crate) fn create_singletons<T: PySimpleAlloc>(
 
 /// Intern a string in the Python interpreter
 pub(crate) fn intern(s: &CStr) -> PyReturn {
-    unsafe { PyUnicode_InternFromString(s.as_ptr()) }.rust_owned()
+    unsafe { PyUnicode_InternFromString(s.as_ptr()) }.own()
 }

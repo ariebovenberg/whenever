@@ -106,8 +106,8 @@ impl OffsetDateTime {
                 DeltaType,
             )
         }
-        .rust_owned()?;
-        let tz = unsafe { TimeZone_FromTimeZone(delta.as_ptr(), NULL()) }.rust_owned()?;
+        .own()?;
+        let tz = unsafe { TimeZone_FromTimeZone(delta.as_ptr(), NULL()) }.own()?;
         unsafe {
             DateTime_FromDateAndTime(
                 year.get().into(),
@@ -121,7 +121,7 @@ impl OffsetDateTime {
                 DateTimeType,
             )
         }
-        .rust_owned()
+        .own()
         // SAFETY: safe to assume result of C API function is the proper type
         .map(|d| unsafe { d.cast_unchecked::<PyDateTime>() })
     }
@@ -598,7 +598,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     let py_bytes = arg
         .cast_exact::<PyBytes>()
         .ok_or_type_err("invalid pickle data")?;
-    let mut packed = py_bytes.as_bytes()?;
+    let mut packed = py_bytes.as_bytes();
     if packed.len() != 15 {
         raise_value_err("invalid pickle data")?;
     }
@@ -1217,7 +1217,7 @@ fn parse_strptime(
     let parsed = state
         .strptime
         .get()?
-        .call_args([arg_obj.newref(), format_obj.newref()])?
+        .call_args([arg_obj, format_obj])?
         .cast_exact::<PyDateTime>()
         .ok_or_type_err("strptime() returned non-datetime")?;
 
