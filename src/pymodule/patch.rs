@@ -12,7 +12,7 @@ pub(crate) fn _patch_time_keep_ticking(state: &mut State, arg: PyObj) -> PyRetur
 }
 
 pub(crate) fn _patch_time(state: &mut State, arg: PyObj, freeze: bool) -> PyReturn {
-    let Some(inst) = arg.extract(state.instant_type) else {
+    let Some(inst) = arg.extract(*state.instant_type) else {
         return raise_type_err("expected an Instant")?;
     };
 
@@ -66,7 +66,7 @@ fn time_machine_installed() -> PyResult<bool> {
     // because that would be slower. We only need to check its existence.
     Ok(!import(c"importlib.util")?
         .getattr(c"find_spec")?
-        .call1("time_machine".to_py()?.borrow())?
+        .call1(*"time_machine".to_py()?)?
         .is_none())
 }
 

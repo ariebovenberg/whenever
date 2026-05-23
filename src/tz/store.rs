@@ -424,8 +424,7 @@ impl TzStore {
             let py_paths = import(c"whenever._shared")?
                 .getattr(c"_tzpath_from_env")?
                 .call0()?;
-            self.paths_cache
-                .swap(Some(tuple_to_pathvec(py_paths.borrow())?));
+            self.paths_cache.swap(Some(tuple_to_pathvec(*py_paths)?));
         }
         Ok(())
     }
@@ -642,7 +641,7 @@ fn get_tzdata_path() -> PyResult<Option<PathBuf>> {
         // __path__ is a list of paths. It will only have one element,
         // unless somebody is doing something strange.
         let py_str = __path__
-            .getitem((0).to_py()?.borrow())?
+            .getitem(*(0).to_py()?)?
             .cast_exact::<PyStr>()
             .ok_or_type_err("tzdata module path must be a string")?;
 

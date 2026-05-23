@@ -163,13 +163,13 @@ pub(crate) enum CalUnit {
 impl CalUnit {
     pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
         find_interned(v, |v, eq| {
-            Some(if eq(v, state.str_years) {
+            Some(if eq(v, *state.str_years) {
                 CalUnit::Years
-            } else if eq(v, state.str_months) {
+            } else if eq(v, *state.str_months) {
                 CalUnit::Months
-            } else if eq(v, state.str_weeks) {
+            } else if eq(v, *state.str_weeks) {
                 CalUnit::Weeks
-            } else if eq(v, state.str_days) {
+            } else if eq(v, *state.str_days) {
                 CalUnit::Days
             } else {
                 None?
@@ -352,33 +352,22 @@ pub(crate) enum DeltaUnit {
 
 impl DeltaUnit {
     pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
-        let &State {
-            str_years,
-            str_months,
-            str_weeks,
-            str_days,
-            str_hours,
-            str_minutes,
-            str_seconds,
-            str_nanoseconds,
-            ..
-        } = state;
         find_interned(v, |v, eq| {
-            Some(if eq(v, str_years) {
+            Some(if eq(v, *state.str_years) {
                 DeltaUnit::Years
-            } else if eq(v, str_months) {
+            } else if eq(v, *state.str_months) {
                 DeltaUnit::Months
-            } else if eq(v, str_weeks) {
+            } else if eq(v, *state.str_weeks) {
                 DeltaUnit::Weeks
-            } else if eq(v, str_days) {
+            } else if eq(v, *state.str_days) {
                 DeltaUnit::Days
-            } else if eq(v, str_hours) {
+            } else if eq(v, *state.str_hours) {
                 DeltaUnit::Hours
-            } else if eq(v, str_minutes) {
+            } else if eq(v, *state.str_minutes) {
                 DeltaUnit::Minutes
-            } else if eq(v, str_seconds) {
+            } else if eq(v, *state.str_seconds) {
                 DeltaUnit::Seconds
-            } else if eq(v, str_nanoseconds) {
+            } else if eq(v, *state.str_nanoseconds) {
                 DeltaUnit::Nanoseconds
             } else {
                 None?
@@ -709,39 +698,26 @@ pub(crate) enum AnyUnit {
 
 impl AnyUnit {
     pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
-        let &State {
-            str_years,
-            str_months,
-            str_weeks,
-            str_days,
-            str_hours,
-            str_minutes,
-            str_seconds,
-            str_milliseconds,
-            str_microseconds,
-            str_nanoseconds,
-            ..
-        } = state;
         find_interned(v, |v, eq| {
-            Some(if eq(v, str_years) {
+            Some(if eq(v, *state.str_years) {
                 AnyUnit::Years
-            } else if eq(v, str_months) {
+            } else if eq(v, *state.str_months) {
                 AnyUnit::Months
-            } else if eq(v, str_weeks) {
+            } else if eq(v, *state.str_weeks) {
                 AnyUnit::Weeks
-            } else if eq(v, str_days) {
+            } else if eq(v, *state.str_days) {
                 AnyUnit::Days
-            } else if eq(v, str_hours) {
+            } else if eq(v, *state.str_hours) {
                 AnyUnit::Hours
-            } else if eq(v, str_minutes) {
+            } else if eq(v, *state.str_minutes) {
                 AnyUnit::Minutes
-            } else if eq(v, str_seconds) {
+            } else if eq(v, *state.str_seconds) {
                 AnyUnit::Seconds
-            } else if eq(v, str_milliseconds) {
+            } else if eq(v, *state.str_milliseconds) {
                 AnyUnit::Milliseconds
-            } else if eq(v, str_microseconds) {
+            } else if eq(v, *state.str_microseconds) {
                 AnyUnit::Microseconds
-            } else if eq(v, str_nanoseconds) {
+            } else if eq(v, *state.str_nanoseconds) {
                 AnyUnit::Nanoseconds
             } else {
                 None?
@@ -825,32 +801,25 @@ impl SinceUntilKwargs {
         let mut units: Option<UnitsOrUnit> = None;
         let mut round_was_set = false;
 
-        let &State {
-            str_total,
-            str_in_units,
-            str_round_mode,
-            str_round_increment,
-            round_mode_strs,
-            ..
-        } = state;
+        let round_mode_strs = &state.round_mode_strs;
 
         handle_kwargs(fname, kwargs, |key, value, eq| {
-            if eq(key, str_total) {
+            if eq(key, *state.str_total) {
                 if units.is_some() {
                     raise_type_err("cannot specify both 'total' and 'in_units'")?;
                 }
                 let unit = DeltaUnit::from_py(value, state)?;
                 units = Some(UnitsOrUnit::One(unit));
-            } else if eq(key, str_in_units) {
+            } else if eq(key, *state.str_in_units) {
                 if units.is_some() {
                     raise_type_err("cannot specify both 'total' and 'in_units'")?;
                 }
                 let unit_set = DeltaUnitSet::from_py(value, state)?;
                 units = Some(UnitsOrUnit::Seq(unit_set));
-            } else if eq(key, str_round_mode) {
+            } else if eq(key, *state.str_round_mode) {
                 round_mode = round::Mode::from_py_named("round_mode", value, round_mode_strs)?;
                 round_was_set = true;
-            } else if eq(key, str_round_increment) {
+            } else if eq(key, *state.str_round_increment) {
                 round_increment = RoundIncrement::from_py(value)?;
                 round_was_set = true;
             } else {

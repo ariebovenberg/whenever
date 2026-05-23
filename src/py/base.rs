@@ -90,6 +90,15 @@ impl PyObj {
                 .cast_unchecked::<PyTuple>()
         })
     }
+
+    /// Visit this object during GC traversal.
+    pub(crate) fn gc_traverse(
+        self,
+        visit: pyo3_ffi::visitproc,
+        arg: *mut core::ffi::c_void,
+    ) -> crate::py::misc::TraverseResult {
+        crate::py::misc::traverse(self.as_ptr(), visit, arg)
+    }
 }
 
 impl PyBase for PyObj {
@@ -185,10 +194,18 @@ pub(crate) trait PyBase: FromPy {
         unsafe { PyObject_CallNoArgs(self.as_ptr()) }.rust_owned()
     }
 
-    /// Call the object with a tuple of arguments.
-    fn call(&self, args: PyTuple) -> PyReturn {
-        // OPTIMIZE: use vectorcall?
-        unsafe { PyObject_Call(self.as_ptr(), args.as_ptr(), NULL()) }.rust_owned()
+    /// Call the object with positional arguments using the vectorcall protocol,
+    /// avoiding the overhead of building a Python tuple.
+    fn call_args<const N: usize>(&self, args: [Owned<PyObj>; N]) -> PyReturn {
+        unsafe {
+            PyObject_Vectorcall(
+                self.as_ptr(),
+                args.map(|a| a.as_ptr()).as_ptr(),
+                N as _,
+                NULL(),
+            )
+        }
+        .rust_owned()
     }
 
     /// Determine if the object is equal to another object, according to Python's

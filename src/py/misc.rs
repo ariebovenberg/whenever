@@ -105,19 +105,11 @@ impl OncePyObj {
         }
     }
 
-    pub(crate) fn traverse(&self, visit: visitproc, arg: *mut c_void) -> TraverseResult {
+    pub(crate) fn gc_traverse(&self, visit: visitproc, arg: *mut c_void) -> TraverseResult {
         if let Some(p) = self.ptr.load() {
             traverse(p.as_ptr(), visit, arg)?;
         }
         Ok(())
-    }
-
-    /// Clear the stored pointer, DECREFing the old value if set.
-    /// Called from `module_clear` to break reference cycles.
-    pub(crate) fn clear(&self) {
-        if let Some(p) = self.ptr.swap(None) {
-            unsafe { Py_DECREF(p.as_ptr()) };
-        }
     }
 }
 

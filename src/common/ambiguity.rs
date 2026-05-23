@@ -1,5 +1,5 @@
 //! Functionality for handling ambiguous datetime values.
-use crate::{common::scalar::Offset, py::*};
+use crate::{common::scalar::Offset, py::*, pymodule::State};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum Disambiguate {
@@ -19,19 +19,14 @@ pub enum Ambiguity {
 impl Disambiguate {
     pub(crate) fn from_only_kwarg(
         kwargs: &mut IterKwargs,
-        str_disambiguate: PyObj,
         fname: &str,
-        str_compatible: PyObj,
-        str_raise: PyObj,
-        str_earlier: PyObj,
-        str_later: PyObj,
+        state: &State,
     ) -> PyResult<Option<Self>> {
         match kwargs.next() {
             Some((name, value)) => {
                 if kwargs.len() == 1 {
-                    if name.py_eq(str_disambiguate)? {
-                        Self::from_py(value, str_compatible, str_raise, str_earlier, str_later)
-                            .map(Some)
+                    if name.py_eq(*state.str_disambiguate)? {
+                        Self::from_py(value, state).map(Some)
                     } else {
                         raise_type_err(format!(
                             "{fname}() got an unexpected keyword argument {name}"
@@ -49,21 +44,15 @@ impl Disambiguate {
         }
     }
 
-    pub(crate) fn from_py(
-        obj: PyObj,
-        str_compatible: PyObj,
-        str_raise: PyObj,
-        str_earlier: PyObj,
-        str_later: PyObj,
-    ) -> PyResult<Self> {
+    pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
         match_interned_str("disambiguate", obj, |v, eq| {
-            Some(if eq(v, str_compatible) {
+            Some(if eq(v, *state.str_compatible) {
                 Disambiguate::Compatible
-            } else if eq(v, str_raise) {
+            } else if eq(v, *state.str_raise) {
                 Disambiguate::Raise
-            } else if eq(v, str_earlier) {
+            } else if eq(v, *state.str_earlier) {
                 Disambiguate::Earlier
-            } else if eq(v, str_later) {
+            } else if eq(v, *state.str_later) {
                 Disambiguate::Later
             } else {
                 None?
