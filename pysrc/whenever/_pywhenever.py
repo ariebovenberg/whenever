@@ -116,6 +116,60 @@ from ._tz import (  # noqa: F401
     resolve_ambiguity_using_prev_offset,
 )
 
+__all__ = (
+    # Date and time
+    "Date",
+    "YearMonth",
+    "MonthDay",
+    "IsoWeekDate",
+    "Time",
+    "Instant",
+    "OffsetDateTime",
+    "ZonedDateTime",
+    "PlainDateTime",
+    # Deltas and time units
+    "DateDelta",
+    "TimeDelta",
+    "DateTimeDelta",
+    "ItemizedDelta",
+    "ItemizedDateDelta",
+    "years",
+    "months",
+    "weeks",
+    "days",
+    "hours",
+    "minutes",
+    "seconds",
+    "milliseconds",
+    "microseconds",
+    "nanoseconds",
+    # Exceptions/warnings
+    "DaysAssumed24HoursWarning",
+    "StaleOffsetWarning",
+    "NaiveArithmeticWarning",
+    "PotentialDstBugWarning",
+    "WheneverDeprecationWarning",
+    "SkippedTime",
+    "RepeatedTime",
+    "InvalidOffsetError",
+    "ImplicitlyIgnoringDST",
+    "TimeZoneNotFoundError",
+    # Other
+    "reset_system_tz",
+    "_unpkl_date",
+    "_unpkl_ddelta",
+    "_unpkl_dtdelta",
+    "_unpkl_iddelta",
+    "_unpkl_idelta",
+    "_unpkl_inst",
+    "_unpkl_local",
+    "_unpkl_offset",
+    "_unpkl_tdelta",
+    "_unpkl_time",
+    "_unpkl_utc",
+    "_unpkl_zoned",
+)
+
 # Helpers that pre-compute/lookup as much as possible
 _UTC = _timezone.utc
 _object_new = object.__new__
@@ -10262,9 +10316,10 @@ _ExactTimeAlias = Instant | OffsetDateTime | ZonedDateTime
 # see https://github.com/sphinx-doc/sphinx/issues/3673
 if not SPHINX_RUNNING:  # pragma: no branch
     _ftype = type(_unpkl_date)
-    for _name, _member in dict(locals()).items():
-        if isinstance(_member, (type, _ftype)) and getattr(
-            _member, "__module__", ""
+    for _name in __all__:
+        _member = globals()[_name]
+        if isinstance(_member, (type, _ftype)) and (
+            getattr(_member, "__module__", "") or ""
         ).startswith(
             "whenever"
         ):  # pragma: no branch
