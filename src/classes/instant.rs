@@ -613,9 +613,7 @@ fn difference(cls: HeapType<Instant>, inst_a: Instant, obj_b: PyObj) -> PyReturn
 
 fn to_tz(cls: HeapType<Instant>, slf: Instant, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
-    let tz_store = &state.tz_store;
-    let tz = tz_store.obj_get(tz_obj)?;
-    slf.to_tz_py(tz, *state.zoned_datetime_type)
+    slf.to_tz_py(state.tz_store.obj_get(tz_obj)?, *state.zoned_datetime_type)
 }
 
 fn to_fixed_offset(cls: HeapType<Instant>, slf: Instant, args: &[PyObj]) -> PyReturn {
@@ -632,9 +630,7 @@ fn to_fixed_offset(cls: HeapType<Instant>, slf: Instant, args: &[PyObj]) -> PyRe
 
 fn to_system_tz(cls: HeapType<Instant>, slf: Instant) -> PyReturn {
     let state = cls.state();
-    let tz_store = &state.tz_store;
-    let tz = tz_store.get_system_tz()?;
-    slf.to_tz_py(tz, *state.zoned_datetime_type)
+    slf.to_tz_py(state.tz_store.get_system_tz()?, *state.zoned_datetime_type)
 }
 
 fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn {
@@ -691,8 +687,7 @@ fn format(_cls: HeapType<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn
     pattern::validate_fields(&elements, pattern::CategorySet::DATE_TIME_OFFSET, "Instant")?;
     if pattern::has_12h_without_ampm(&elements) {
         warn_with_class(
-            // SAFETY: PyExc_UserWarning is always valid
-            unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
+            exc_user_warning(),
             c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
             1,
         )?;

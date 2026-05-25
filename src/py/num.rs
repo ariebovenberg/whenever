@@ -59,7 +59,7 @@ impl PyInt {
             Ok(i128::from_le_bytes(bytes))
         } else {
             raise(
-                unsafe { PyExc_OverflowError },
+                exc_overflow_error(),
                 "Python int too large to convert to i128",
             )
         }

@@ -801,8 +801,6 @@ impl SinceUntilKwargs {
         let mut units: Option<UnitsOrUnit> = None;
         let mut round_was_set = false;
 
-        let round_mode_strs = &state.round_mode_strs;
-
         handle_kwargs(fname, kwargs, |key, value, eq| {
             if eq(key, *state.str_total) {
                 if units.is_some() {
@@ -817,7 +815,8 @@ impl SinceUntilKwargs {
                 let unit_set = DeltaUnitSet::from_py(value, state)?;
                 units = Some(UnitsOrUnit::Seq(unit_set));
             } else if eq(key, *state.str_round_mode) {
-                round_mode = round::Mode::from_py_named("round_mode", value, round_mode_strs)?;
+                round_mode =
+                    round::Mode::from_py_named("round_mode", value, *state.round_mode_strs)?;
                 round_was_set = true;
             } else if eq(key, *state.str_round_increment) {
                 round_increment = RoundIncrement::from_py(value)?;

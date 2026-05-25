@@ -25,7 +25,7 @@ pub(crate) trait PyResultExt<T>: Sized {
 
     /// If the error matches `exc_type`, clears it and returns `Ok(None)`.
     /// Other errors propagate unchanged. On success, returns `Ok(Some(...))`.
-    fn catch(self, exc_type: *mut PyObject) -> PyResult<Option<T>>;
+    fn catch(self, exc_type: PyObj) -> PyResult<Option<T>>;
 }
 
 impl<T> PyResultExt<T> for PyResult<T> {
@@ -39,11 +39,11 @@ impl<T> PyResultExt<T> for PyResult<T> {
         }
     }
 
-    fn catch(self, exc_type: *mut PyObject) -> PyResult<Option<T>> {
+    fn catch(self, exc_type: PyObj) -> PyResult<Option<T>> {
         match self {
             Ok(x) => Ok(Some(x)),
             Err(e) => {
-                if unsafe { PyErr_ExceptionMatches(exc_type) } == 1 {
+                if unsafe { PyErr_ExceptionMatches(exc_type.as_ptr()) } == 1 {
                     unsafe { PyErr_Clear() };
                     Ok(None)
                 } else {
@@ -54,38 +54,59 @@ impl<T> PyResultExt<T> for PyResult<T> {
     }
 }
 
-/// Returns a pointer to the `ImportError` exception type.
-pub(crate) fn exc_import_error() -> *mut PyObject {
-    unsafe { PyExc_ImportError }
+/// Returns the built-in [`PyObj`] for a Python exception type.
+pub(crate) fn exc_import_error() -> PyObj {
+    unsafe { PyObj::from_ptr_unchecked(PyExc_ImportError) }
+}
+pub(crate) fn exc_value_error() -> PyObj {
+    unsafe { PyObj::from_ptr_unchecked(PyExc_ValueError) }
+}
+pub(crate) fn exc_type_error() -> PyObj {
+    unsafe { PyObj::from_ptr_unchecked(PyExc_TypeError) }
+}
+pub(crate) fn exc_os_error() -> PyObj {
+    unsafe { PyObj::from_ptr_unchecked(PyExc_OSError) }
+}
+pub(crate) fn exc_runtime_error() -> PyObj {
+    unsafe { PyObj::from_ptr_unchecked(PyExc_RuntimeError) }
+}
+pub(crate) fn exc_zero_division_error() -> PyObj {
+    unsafe { PyObj::from_ptr_unchecked(PyExc_ZeroDivisionError) }
+}
+pub(crate) fn exc_user_warning() -> PyObj {
+    unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) }
+}
+pub(crate) fn exc_overflow_error() -> PyObj {
+    unsafe { PyObj::from_ptr_unchecked(PyExc_OverflowError) }
 }
 
 #[cold]
-pub(crate) fn raise<T, U: ToPy>(exc: *mut PyObject, msg: U) -> PyResult<T> {
+pub(crate) fn raise<T, U: ToPy>(exc: PyObj, msg: U) -> PyResult<T> {
     Err(exception(exc, msg))
 }
 
 #[cold]
-pub(crate) fn exception<U: ToPy>(exc: *mut PyObject, msg: U) -> PyErrMarker {
+pub(crate) fn exception<U: ToPy>(exc: PyObj, msg: U) -> PyErrMarker {
     // If the message conversion fails, an error is set for us.
     // It's mostly likely a MemoryError.
     if let Ok(m) = msg.to_py() {
-        unsafe { PyErr_SetObject(exc, m.as_ptr()) }
+        unsafe { PyErr_SetObject(exc.as_ptr(), m.as_ptr()) }
     };
     PyErrMarker
 }
 
 #[cold]
 pub(crate) fn value_err<U: ToPy>(msg: U) -> PyErrMarker {
-    exception(unsafe { PyExc_ValueError }, msg)
+    exception(exc_value_error(), msg)
 }
 
 pub(crate) trait OptionExt<T> {
-    fn ok_or_else_raise<F, M: ToPy>(self, exc: *mut PyObject, fmt: F) -> PyResult<T>
+    fn ok_or_else_raise<F, M: ToPy>(self, exc: PyObj, fmt: F) -> PyResult<T>
     where
         Self: Sized,
         F: FnOnce() -> M;
 
-    fn ok_or_raise<U: ToPy>(self, exc: *mut PyObject, msg: U) -> PyResult<T>
+    fn ok_or_raise<U: ToPy>(self, exc: PyObj, msg: U) -> PyResult<T>
     where
         Self: Sized,
     {
@@ -96,7 +117,7 @@ pub(crate) trait OptionExt<T> {
     where
         Self: Sized,
     {
-        self.ok_or_raise(unsafe { PyExc_ValueError }, msg)
+        self.ok_or_raise(exc_value_error(), msg)
     }
 
     fn ok_or_range_err(self) -> PyResult<T>
@@ -104,10 +125,7 @@ pub(crate) trait OptionExt<T> {
         Self: Sized,
     {
         // FUTURE: can we intern this somehow, since it's static?
-        self.ok_or_raise(
-            unsafe { PyExc_ValueError },
-            "Value or calculation out of range",
-        )
+        self.ok_or_raise(exc_value_error(), "Value or calculation out of range")
     }
 
     fn ok_or_else_value_err<F, M: ToPy>(self, fmt: F) -> PyResult<T>
@@ -115,7 +133,7 @@ pub(crate) trait OptionExt<T> {
         Self: Sized,
         F: FnOnce() -> M,
     {
-        unsafe { self.ok_or_else_raise(PyExc_ValueError, fmt) }
+        self.ok_or_else_raise(exc_value_error(), fmt)
     }
 
     fn ok_or_else_type_err<F, M: ToPy>(self, fmt: F) -> PyResult<T>
@@ -123,19 +141,19 @@ pub(crate) trait OptionExt<T> {
         Self: Sized,
         F: FnOnce() -> M,
     {
-        unsafe { self.ok_or_else_raise(PyExc_TypeError, fmt) }
+        self.ok_or_else_raise(exc_type_error(), fmt)
     }
 
     fn ok_or_type_err<U: ToPy>(self, msg: U) -> PyResult<T>
     where
         Self: Sized,
     {
-        self.ok_or_raise(unsafe { PyExc_TypeError }, msg)
+        self.ok_or_raise(exc_type_error(), msg)
     }
 }
 
 impl<T> OptionExt<T> for Option<T> {
-    fn ok_or_else_raise<F, M: ToPy>(self, exc: *mut PyObject, fmt: F) -> PyResult<T>
+    fn ok_or_else_raise<F, M: ToPy>(self, exc: PyObj, fmt: F) -> PyResult<T>
     where
         F: FnOnce() -> M,
     {
@@ -160,12 +178,12 @@ impl<T> ResultExt<T> for Result<T, String> {
 
 #[cold]
 pub(crate) fn raise_type_err<T, U: ToPy>(msg: U) -> PyResult<T> {
-    raise(unsafe { PyExc_TypeError }, msg)
+    raise(exc_type_error(), msg)
 }
 
 #[cold]
 pub(crate) fn raise_value_err<T, U: ToPy>(msg: U) -> PyResult<T> {
-    raise(unsafe { PyExc_ValueError }, msg)
+    raise(exc_value_error(), msg)
 }
 
 #[cold]

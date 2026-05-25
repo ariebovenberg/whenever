@@ -670,8 +670,6 @@ fn shift_method(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
-    let str_ignore_dst = *state.str_ignore_dst;
-    let str_naive_arithmetic_ok = *state.str_naive_arithmetic_ok;
     let mut months = DeltaMonths::ZERO;
     let mut days = DeltaDays::ZERO;
     let mut tdelta = TimeDelta::ZERO;
@@ -681,9 +679,9 @@ fn shift_method(
     match *args {
         [arg] => {
             for (key, value) in kwargs.by_ref() {
-                if key.py_eq(str_ignore_dst)? {
+                if key.py_eq(*state.str_ignore_dst)? {
                     got_ignore_dst = true;
-                } else if key.py_eq(str_naive_arithmetic_ok)? {
+                } else if key.py_eq(*state.str_naive_arithmetic_ok)? {
                     suppress_unaware = value.is_truthy();
                 } else {
                     raise_type_err(format!(
@@ -716,10 +714,10 @@ fn shift_method(
         [] => {
             let mut units = DeltaUnitSet::EMPTY; // not used, but need to pass
             handle_kwargs(fname, kwargs, |key, value, eq| {
-                if eq(key, str_ignore_dst) {
+                if eq(key, *state.str_ignore_dst) {
                     got_ignore_dst = true;
                     Ok(true)
-                } else if eq(key, str_naive_arithmetic_ok) {
+                } else if eq(key, *state.str_naive_arithmetic_ok) {
                     suppress_unaware = value.is_truthy();
                     Ok(true)
                 } else {
@@ -852,9 +850,8 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
 }
 
 fn from_py_datetime(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
-    let state = cls.state();
     warn_with_class(
-        *state.warn_deprecation,
+        *cls.state().warn_deprecation,
         c"from_py_datetime() is deprecated. Use PlainDateTime() constructor instead.",
         1,
     )?;
@@ -954,7 +951,6 @@ fn is_datetime_sep(c: u8) -> bool {
 
 fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let state = cls.state();
-    let strptime = &state.strptime;
     warn_with_class(
         *state.warn_deprecation,
         c"parse_strptime() is deprecated; use parse() with a format pattern instead.",
@@ -971,7 +967,8 @@ fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwar
         ))?
     };
 
-    let parsed = strptime
+    let parsed = state
+        .strptime
         .get()?
         .call_args([arg_obj, format_obj])?
         .cast_exact::<PyDateTime>()
@@ -998,8 +995,6 @@ fn assume_tz(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let tz_store = &state.tz_store;
-
     let DateTime { date, time } = slf;
     let &[tz_obj] = args else {
         raise_type_err(format!(
@@ -1010,7 +1005,7 @@ fn assume_tz(
 
     let dis = Disambiguate::from_only_kwarg(kwargs, "assume_tz", state)?
         .unwrap_or(Disambiguate::Compatible);
-    let tz = tz_store.obj_get(tz_obj)?;
+    let tz = state.tz_store.obj_get(tz_obj)?;
     ZonedDateTime::resolve_using_disambiguate(
         date,
         time,
@@ -1029,7 +1024,6 @@ fn assume_system_tz(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let tz_store = &state.tz_store;
     let DateTime { date, time } = slf;
     if !args.is_empty() {
         raise_type_err("assume_system_tz() takes no positional arguments")?
@@ -1037,7 +1031,7 @@ fn assume_system_tz(
 
     let dis = Disambiguate::from_only_kwarg(kwargs, "assume_tz", state)?
         .unwrap_or(Disambiguate::Compatible);
-    let tz = tz_store.get_system_tz()?;
+    let tz = state.tz_store.get_system_tz()?;
     ZonedDateTime::resolve_using_disambiguate(
         date,
         time,
@@ -1330,8 +1324,7 @@ fn format(_cls: HeapType<DateTime>, slf: DateTime, pattern_obj: PyObj) -> PyRetu
     pattern::validate_fields(&elements, pattern::CategorySet::DATE_TIME, "PlainDateTime")?;
     if pattern::has_12h_without_ampm(&elements) {
         warn_with_class(
-            // SAFETY: PyExc_UserWarning is always valid
-            unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
+            exc_user_warning(),
             c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
             1,
         )?;

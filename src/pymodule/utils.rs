@@ -8,11 +8,12 @@ pub(crate) fn new_exception(
     module: PyModule,
     name: &CStr,
     doc: &CStr,
-    base: *mut PyObject,
+    base: PyObj,
 ) -> PyResult<Owned<PyObj>> {
     // SAFETY: calling C API with valid arguments
     let e =
-        unsafe { PyErr_NewExceptionWithDoc(name.as_ptr(), doc.as_ptr(), base, NULL()) }.own()?;
+        unsafe { PyErr_NewExceptionWithDoc(name.as_ptr(), doc.as_ptr(), base.as_ptr(), NULL()) }
+            .own()?;
     module.add_type((*e).cast_allow_subclass::<PyType>().unwrap())?;
     Ok(e)
 }
@@ -41,9 +42,7 @@ pub(crate) fn create_singletons<T: PySimpleAlloc>(
     cls: HeapType<T>,
     objs: &[(&CStr, T)],
 ) -> PyResult<()> {
-    // SAFETY: each type is guaranteed to have tp_dict
-    let cls_dict =
-        unsafe { PyDict::from_ptr_unchecked((*cls.as_ptr().cast::<PyTypeObject>()).tp_dict) };
+    let cls_dict = cls.inner().get_dict();
     for (name, value) in objs {
         let pyvalue = value.to_obj(cls)?;
         cls_dict

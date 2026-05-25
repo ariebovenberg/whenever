@@ -440,9 +440,8 @@ fn to_stdlib(cls: HeapType<Time>, slf: Time) -> PyReturn {
 }
 
 fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn {
-    let state = cls.state();
     warn_with_class(
-        *state.warn_deprecation,
+        *cls.state().warn_deprecation,
         c"py_time() is deprecated. Use to_stdlib() instead.",
         1,
     )?;
@@ -450,9 +449,8 @@ fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn {
 }
 
 fn from_py_time(cls: HeapType<Time>, arg: PyObj) -> PyReturn {
-    let state = cls.state();
     warn_with_class(
-        *state.warn_deprecation,
+        *cls.state().warn_deprecation,
         c"from_py_time() is deprecated. Use Time() constructor instead.",
         1,
     )?;
@@ -589,8 +587,7 @@ fn format(_cls: HeapType<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
     pattern::validate_fields(&elements, pattern::CategorySet::TIME, "Time")?;
     if pattern::has_12h_without_ampm(&elements) {
         warn_with_class(
-            // SAFETY: PyExc_UserWarning is always valid
-            unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
+            exc_user_warning(),
             c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
             1,
         )?;

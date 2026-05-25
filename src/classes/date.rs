@@ -1036,8 +1036,7 @@ fn format(_: HeapType<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {
     pattern::validate_fields(&elements, pattern::CategorySet::DATE, "Date")?;
     if pattern::has_12h_without_ampm(&elements) {
         warn_with_class(
-            // SAFETY: PyExc_UserWarning is always valid
-            unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
+            exc_user_warning(),
             c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
             1,
         )?;

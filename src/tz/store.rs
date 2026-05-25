@@ -433,7 +433,7 @@ impl TzStore {
         let ptr = self
             .cache
             .get_or_insert_with(key, || self.load_tzif(key))?
-            .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
+            .ok_or_else_raise(self.exc_notfound, || {
                 format!("No time zone found with key {key}")
             })?;
         Ok(TzHandle::Ptr(ptr, self))
@@ -488,6 +488,7 @@ impl TzStore {
     /// Return the current TZPATH as a Python tuple of strings.
     /// Lazily initializes paths if needed.
     pub(crate) fn get_paths_as_pytuple(&self) -> PyReturn {
+        // TODO: remove all these get_paths() calls
         self.get_paths()?;
         self.paths_cache.with_read(|paths| {
             let paths = paths.as_deref().unwrap_or(&[]);
@@ -569,7 +570,7 @@ impl TzStore {
             0 => self
                 .cache
                 .get_or_insert_with(tz_value, || self.load_tzif(tz_value))?
-                .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
+                .ok_or_else_raise(self.exc_notfound, || {
                     format!("No time zone found with key {tz_value}")
                 }),
             // type 1: Path to a TZif file
@@ -577,7 +578,7 @@ impl TzStore {
                 let path = PathBuf::from(tz_value);
                 let tzif = self
                     .read_tzif_at_path(&path, None)
-                    .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
+                    .ok_or_else_raise(self.exc_notfound, || {
                         format!("No time zone found at path {path:?}")
                     })?;
                 Ok(TzPtr::new(tzif, 1))
@@ -588,7 +589,7 @@ impl TzStore {
                 .get_or_insert_with(tz_value, || self.load_tzif(tz_value))?
                 // If this fails, try to parse it as a posix TZ string.
                 .or_else(|| TimeZone::parse_posix(tz_value).map(|tz| TzPtr::new(tz, 1)))
-                .ok_or_else_raise(self.exc_notfound.as_ptr(), || {
+                .ok_or_else_raise(self.exc_notfound, || {
                     format!("No time zone found with key or posix TZ string {tz_value}")
                 }),
             _ => raise_type_err(ERR_MSG)?,

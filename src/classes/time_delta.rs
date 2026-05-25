@@ -584,7 +584,7 @@ fn __truediv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
             // This special case saves us an allocation
             return Ok(a_obj.newref());
         } else if factor == 0 {
-            raise(unsafe { PyExc_ZeroDivisionError }, "Division by zero")?
+            raise(exc_zero_division_error(), "Division by zero")?
         }
         let nanos = delta.total_nanos();
         // SAFETY: division by integer is never bigger than the original value
@@ -605,7 +605,7 @@ fn __truediv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
             // This special case saves us an allocation
             return Ok(a_obj.newref());
         } else if factor == 0.0 {
-            raise(unsafe { PyExc_ZeroDivisionError }, "Division by zero")?
+            raise(exc_zero_division_error(), "Division by zero")?
         }
         TimeDelta::from_nanos_f64(delta.to_nanos_f64() / factor)
             .ok_or_range_err()?
@@ -615,7 +615,7 @@ fn __truediv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
         let (_, a) = unsafe { a_obj.assume_heaptype::<TimeDelta>() };
         let (_, b) = unsafe { b_obj.assume_heaptype::<TimeDelta>() };
         if b.is_zero() {
-            raise(unsafe { PyExc_ZeroDivisionError }, "Division by zero")?
+            raise(exc_zero_division_error(), "Division by zero")?
         }
         (a.total_nanos() as f64 / b.total_nanos() as f64).to_py()
     } else {
@@ -629,7 +629,7 @@ fn __floordiv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
         let (_, a_delta) = unsafe { a_obj.assume_heaptype::<TimeDelta>() };
         let (_, b_delta) = unsafe { b_obj.assume_heaptype::<TimeDelta>() };
         if b_delta.is_zero() {
-            raise(unsafe { PyExc_ZeroDivisionError }, "Division by zero")?
+            raise(exc_zero_division_error(), "Division by zero")?
         }
         // NOTE: we can't avoid using i128 *in general*, because the divisor
         //       may be 1 nanosecond and the dividend TimeDelta.MAX
@@ -655,7 +655,7 @@ fn __mod__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
         let a = a_delta.total_nanos();
         let b = b_delta.total_nanos();
         if b == 0 {
-            raise(unsafe { PyExc_ZeroDivisionError }, "Division by zero")?
+            raise(exc_zero_division_error(), "Division by zero")?
         }
         let mut result = a % b;
         // Adjust for "correct" (Python style) floor division with mixed signs
@@ -1168,13 +1168,9 @@ fn in_units(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-
     let units = DeltaUnitSet::from_py(handle_one_arg("in_units", args)?, state)?;
 
     // Parse optional round kwargs
-    let round_mode_strs = &state.round_mode_strs;
-    let str_days_assumed_24h_ok = *state.str_days_assumed_24h_ok;
-
     let mut round_mode = round::Mode::Trunc;
     let mut round_increment = math::RoundIncrement::MIN;
     let mut relative_to_arg = None;
@@ -1182,12 +1178,13 @@ fn in_units(
 
     handle_kwargs("in_units", kwargs, |key, value, eq| {
         if eq(key, *state.str_round_mode) {
-            round_mode = round::Mode::from_py_named("rounding mode", value, round_mode_strs)?;
+            round_mode =
+                round::Mode::from_py_named("rounding mode", value, &state.round_mode_strs)?;
         } else if eq(key, *state.str_round_increment) {
             round_increment = math::RoundIncrement::from_py(value)?;
         } else if eq(key, *state.str_relative_to) {
             relative_to_arg = Some(value);
-        } else if eq(key, str_days_assumed_24h_ok) {
+        } else if eq(key, *state.str_days_assumed_24h_ok) {
             suppress_24h_warning = value.is_truthy();
         } else {
             return Ok(false);

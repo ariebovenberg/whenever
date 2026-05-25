@@ -492,16 +492,14 @@ fn to_fixed_offset(cls: HeapType<OffsetDateTime>, slf_obj: PyObj, args: &[PyObj]
 
 fn to_tz(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
-    let tz_store = &state.tz_store;
-    let tz = tz_store.obj_get(tz_obj)?;
-    slf.instant().to_tz_py(tz, *state.zoned_datetime_type)
+    slf.instant()
+        .to_tz_py(state.tz_store.obj_get(tz_obj)?, *state.zoned_datetime_type)
 }
 
 fn to_system_tz(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     let state = cls.state();
-    let tz_store = &state.tz_store;
-    let tz = tz_store.get_system_tz()?;
-    slf.instant().to_tz_py(tz, *state.zoned_datetime_type)
+    slf.instant()
+        .to_tz_py(state.tz_store.get_system_tz()?, *state.zoned_datetime_type)
 }
 
 fn assume_tz(
@@ -547,7 +545,7 @@ fn assume_tz(
 
     match mismatch {
         OffsetMismatch::Raise => raise(
-            state.exc_invalid_offset.as_ptr(),
+            *state.exc_invalid_offset,
             format!(
                 "Offset mismatch: timezone '{}' has offset {actual_offset}, but offset {} was expected",
                 tz.key.as_deref().unwrap_or("(unknown)"),
@@ -625,9 +623,8 @@ fn to_stdlib(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
 }
 
 fn py_datetime(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    let state = cls.state();
     warn_with_class(
-        *state.warn_deprecation,
+        *cls.state().warn_deprecation,
         c"py_datetime() is deprecated. Use to_stdlib() instead.",
         1,
     )?;
@@ -884,8 +881,7 @@ fn now(cls: HeapType<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     state
         .now()?
         .to_offset(offset)
-        // SAFETY: Exception types are safe to reference during Python runtime
-        .ok_or_raise(unsafe { PyExc_OSError }, "Date is out of range")?
+        .ok_or_raise(exc_os_error(), "Date is out of range")?
         .to_obj(cls)
 }
 
@@ -948,8 +944,6 @@ fn shift_method(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
-    let str_ignore_dst = *state.str_ignore_dst;
-    let str_stale_offset_ok = *state.str_stale_offset_ok;
     let mut months = DeltaMonths::ZERO;
     let mut days = DeltaDays::ZERO;
     let mut tdelta = TimeDelta::ZERO;
@@ -959,9 +953,9 @@ fn shift_method(
     match *args {
         [arg] => {
             for (key, value) in kwargs.by_ref() {
-                if key.py_eq(str_ignore_dst)? {
+                if key.py_eq(*state.str_ignore_dst)? {
                     got_ignore_dst = true;
-                } else if key.py_eq(str_stale_offset_ok)? {
+                } else if key.py_eq(*state.str_stale_offset_ok)? {
                     suppress_stale = value.is_truthy();
                 } else {
                     raise_type_err(format!(
@@ -994,10 +988,10 @@ fn shift_method(
         [] => {
             let mut units = DeltaUnitSet::EMPTY;
             handle_kwargs(fname, kwargs, |key, value, eq| {
-                if eq(key, str_ignore_dst) {
+                if eq(key, *state.str_ignore_dst) {
                     got_ignore_dst = true;
                     Ok(true)
-                } else if eq(key, str_stale_offset_ok) {
+                } else if eq(key, *state.str_stale_offset_ok) {
                     suppress_stale = value.is_truthy();
                     Ok(true)
                 } else {
@@ -1398,8 +1392,7 @@ fn format(_: HeapType<OffsetDateTime>, slf: OffsetDateTime, pattern_obj: PyObj) 
     )?;
     if pattern::has_12h_without_ampm(&elements) {
         warn_with_class(
-            // SAFETY: PyExc_UserWarning is always valid
-            unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
+            exc_user_warning(),
             c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
             1,
         )?;
