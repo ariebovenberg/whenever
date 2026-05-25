@@ -1,5 +1,5 @@
 use crate::{
-    common::sync::{AtomicRefCount, OncePyCell, SwapCell, SwapPtr, SyncCell},
+    common::sync::{AtomicRefCount, OncePyCell, SwapPtr, SyncCell},
     py::*,
     tz::tzif::{TimeZone, is_valid_key},
 };
@@ -390,8 +390,8 @@ pub(crate) struct TzStore {
     // Lazily initialized on first timezone lookup.
     tzdata_path: OncePyCell<Option<PathBuf>>,
     // The paths to search for zoneinfo files.
-    // None = not yet initialized (lazy). Some = populated.
-    paths_cache: SwapCell<Option<Vec<PathBuf>>>,
+    // Lazily initialized from Python's TZPATH on first use; can be overridden via set_paths().
+    paths: OncePyCell<Vec<PathBuf>>,
     // We cache the system timezone here, since it's expensive to determine.
     // Uses SwapPtr for lock-free reads with atomic swaps for writes.
     // This holds a strong reference to a TzPtr.
@@ -405,27 +405,17 @@ impl TzStore {
         Self {
             cache: Cache::new(),
             tzdata_path: OncePyCell::new(get_tzdata_path),
-            paths_cache: SwapCell::new(None),
+            paths: OncePyCell::new(init_paths),
             system_tz_cache: SwapPtr::new(None),
             exc_notfound,
         }
     }
 
-    /// Set the timezone search paths.
+    /// Set the timezone search paths, overriding the lazily-initialized default.
+    /// NOT thread-safe in free-threaded builds — must not be called concurrently
+    /// with timezone lookups. The GIL prevents this in standard Python.
     pub(crate) fn set_paths(&self, new_paths: Vec<PathBuf>) {
-        self.paths_cache.swap(Some(new_paths));
-    }
-
-    /// Get the timezone search paths, lazily initializing from Python if needed.
-    fn get_paths(&self) -> PyResult<()> {
-        let populated = self.paths_cache.with_read(|p| p.is_some());
-        if !populated {
-            let py_paths = import(c"whenever._shared")?
-                .getattr(c"_tzpath_from_env")?
-                .call0()?;
-            self.paths_cache.swap(Some(tuple_to_pathvec(*py_paths)?));
-        }
-        Ok(())
+        self.paths.set(new_paths);
     }
 
     /// Fetches the timezone definition for the given IANA time zone ID.
@@ -488,17 +478,13 @@ impl TzStore {
     /// Return the current TZPATH as a Python tuple of strings.
     /// Lazily initializes paths if needed.
     pub(crate) fn get_paths_as_pytuple(&self) -> PyReturn {
-        // TODO: remove all these get_paths() calls
-        self.get_paths()?;
-        self.paths_cache.with_read(|paths| {
-            let paths = paths.as_deref().unwrap_or(&[]);
-            let tuple = PyTuple::with_len(paths.len() as _)?;
-            for (i, p) in paths.iter().enumerate() {
-                tuple.init_item(i as _, p.to_string_lossy().as_ref().to_py()?);
-            }
-            // SAFETY: PyTuple is a PyObj subtype
-            Ok(unsafe { tuple.cast_unchecked() })
-        })
+        let paths = self.paths.get()?;
+        let tuple = PyTuple::with_len(paths.len() as _)?;
+        for (i, p) in paths.iter().enumerate() {
+            tuple.init_item(i as _, p.to_string_lossy().as_ref().to_py()?);
+        }
+        // SAFETY: PyTuple is a PyObj subtype
+        Ok(unsafe { tuple.cast_unchecked() })
     }
 
     /// Load a TZif file by key, assuming the key is untrusted input.
@@ -513,13 +499,10 @@ impl TzStore {
     /// Load a TZif from the TZPATH directory, assuming a benign TZ ID.
     /// Lazily initializes paths from Python if needed.
     fn load_tzif_from_tzpath(&self, key: BenignKey) -> PyResult<Option<TimeZone>> {
-        self.get_paths()?;
-        Ok(self.paths_cache.with_read(|paths| {
-            paths.as_ref().and_then(|ps| {
-                ps.iter()
-                    .find_map(|base| self.read_tzif_at_path(&base.join(key), Some(key)))
-            })
-        }))
+        let paths = self.paths.get()?;
+        Ok(paths
+            .iter()
+            .find_map(|base| self.read_tzif_at_path(&base.join(key), Some(key))))
     }
 
     /// Load a TZif from the tzdata package, assuming a benign TZ ID.
@@ -639,6 +622,13 @@ fn get_tzdata_path() -> PyResult<Option<PathBuf>> {
         .cast_exact::<PyStr>()
         .ok_or_type_err("tzdata module path must be a string")?;
     Ok(Some(PathBuf::from(py_str.as_str()?)))
+}
+
+fn init_paths() -> PyResult<Vec<PathBuf>> {
+    let py_paths = import(c"whenever._shared")?
+        .getattr(c"_tzpath_from_env")?
+        .call0()?;
+    tuple_to_pathvec(*py_paths)
 }
 
 /// Convert a Python tuple of str to Vec<PathBuf>.

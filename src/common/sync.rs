@@ -3,15 +3,15 @@
 //!
 //! - `SyncCell<T>`: A mutex-like wrapper. Uses `UnsafeCell` for GIL builds (no overhead),
 //!   `Mutex` for free-threaded builds.
-//! - `SwapCell<T>`: A cell optimized for read-heavy workloads with rare writes.
-//!   Uses `UnsafeCell` for GIL builds, `AtomicPtr` for free-threaded builds.
-//!   Reads are lock-free; writes atomically swap the entire value.
-//! - `SwapPtr<T>`: Like `SwapCell` but for `Option<NonNull<T>>` specifically,
-//!   avoiding the extra Box indirection since it's already pointer-sized.
+//! - `SwapPtr<T>`: A cell for `Option<NonNull<T>>` optimized for read-heavy, write-rare patterns.
+//!   Avoids Box indirection since `Option<NonNull<T>>` is pointer-sized.
 //!   Has `try_init` for lock-free init-once patterns (CAS null→value).
 //! - `OncePyCell<T>`: A cell that computes its value on first access (fallible).
+//!   Supports `set()` to override the value later (e.g. for user-controlled search paths).
 //!   Uses `UnsafeCell` for GIL builds, lock-free CAS for free-threaded builds.
 //!   On concurrent init, both threads compute the value; the CAS loser drops theirs.
+//!   `set()` is NOT thread-safe in free-threaded builds — callers must ensure no
+//!   concurrent `get()` calls are in progress (the GIL provides this guarantee).
 //! - `AtomicRefCount`: A reference counter. Uses plain `usize` for GIL builds,
 //!   `AtomicUsize` for free-threaded builds.
 
@@ -45,34 +45,6 @@ mod gil_enabled {
 
     // SAFETY: With GIL enabled, Python ensures single-threaded access
     unsafe impl<T> Sync for SyncCell<T> {}
-
-    /// A cell optimized for read-heavy, write-rare access patterns.
-    /// In GIL builds, this is just an UnsafeCell with no overhead.
-    #[derive(Debug)]
-    pub(crate) struct SwapCell<T>(UnsafeCell<T>);
-
-    impl<T> SwapCell<T> {
-        pub(crate) fn new(value: T) -> Self {
-            Self(UnsafeCell::new(value))
-        }
-
-        /// Read the value. Lock-free (no-op with GIL).
-        #[inline]
-        pub(crate) fn with_read<R, F: FnOnce(&T) -> R>(&self, f: F) -> R {
-            // SAFETY: GIL guarantees single-threaded access
-            f(unsafe { &*self.0.get() })
-        }
-
-        /// Replace the value, returning the old one.
-        #[inline]
-        pub(crate) fn swap(&self, new: T) -> T {
-            // SAFETY: GIL guarantees single-threaded access
-            std::mem::replace(unsafe { &mut *self.0.get() }, new)
-        }
-    }
-
-    // SAFETY: With GIL enabled, Python ensures single-threaded access
-    unsafe impl<T> Sync for SwapCell<T> {}
 
     /// A cell for `Option<NonNull<T>>` optimized for read-heavy, write-rare patterns.
     /// In GIL builds, this is just an UnsafeCell with no overhead.
@@ -195,6 +167,13 @@ mod gil_enabled {
             // SAFETY: GIL guarantees single-threaded access
             unsafe { (*self.value.get()).as_ref() }
         }
+
+        /// Override the stored value, replacing any existing one (or bypassing lazy init).
+        #[inline]
+        pub(crate) fn set(&self, value: T) {
+            // SAFETY: GIL guarantees single-threaded access
+            *unsafe { &mut *self.value.get() } = Some(value);
+        }
     }
 
     impl<T: std::fmt::Debug> std::fmt::Debug for OncePyCell<T> {
@@ -236,43 +215,6 @@ mod free_threaded {
         pub(crate) fn with_mut<R, F: FnOnce(&mut T) -> R>(&self, f: F) -> R {
             let mut guard = self.0.lock().expect("mutex poisoned");
             f(&mut guard)
-        }
-    }
-
-    /// A cell optimized for read-heavy, write-rare access patterns.
-    /// Uses AtomicPtr for lock-free reads and atomic swaps for writes.
-    #[derive(Debug)]
-    pub(crate) struct SwapCell<T>(AtomicPtr<T>);
-
-    impl<T> SwapCell<T> {
-        pub(crate) fn new(value: T) -> Self {
-            Self(AtomicPtr::new(Box::into_raw(Box::new(value))))
-        }
-
-        /// Read the value. Lock-free.
-        #[inline]
-        pub(crate) fn with_read<R, F: FnOnce(&T) -> R>(&self, f: F) -> R {
-            let ptr = self.0.load(Ordering::Acquire);
-            // SAFETY: ptr is always valid - we only store valid Box pointers,
-            // and swap always replaces with another valid pointer.
-            f(unsafe { &*ptr })
-        }
-
-        /// Replace the value, returning the old one.
-        #[inline]
-        pub(crate) fn swap(&self, new: T) -> T {
-            let new_ptr = Box::into_raw(Box::new(new));
-            let old_ptr = self.0.swap(new_ptr, Ordering::AcqRel);
-            // SAFETY: old_ptr was created by Box::into_raw
-            *unsafe { Box::from_raw(old_ptr) }
-        }
-    }
-
-    impl<T> Drop for SwapCell<T> {
-        fn drop(&mut self) {
-            let ptr = *self.0.get_mut();
-            // SAFETY: ptr was created by Box::into_raw
-            drop(unsafe { Box::from_raw(ptr) });
         }
     }
 
@@ -431,6 +373,19 @@ mod free_threaded {
             } else {
                 // SAFETY: non-null ptr is stable and valid
                 Some(unsafe { &*p })
+            }
+        }
+
+        /// Override the stored value, replacing any existing one (or bypassing lazy init).
+        /// NOT thread-safe in free-threaded builds: callers must ensure no concurrent
+        /// `get()` calls are in progress, since old allocations are freed immediately.
+        /// In GIL builds the GIL guarantees single-threaded access.
+        pub(crate) fn set(&self, value: T) {
+            let new_ptr = Box::into_raw(Box::new(value));
+            let old_ptr = self.ptr.swap(new_ptr, Ordering::AcqRel);
+            if !old_ptr.is_null() {
+                // SAFETY: old_ptr was created by Box::into_raw and is no longer accessible
+                drop(unsafe { Box::from_raw(old_ptr) });
             }
         }
     }

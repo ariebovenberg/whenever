@@ -1412,7 +1412,9 @@ fn shift_method(
     match *args {
         [arg] => {
             match kwargs.next() {
-                Some((key, value)) if kwargs.len() == 1 && key.py_eq(*state.str_disambiguate)? => {
+                Some((key, value))
+                    if kwargs.len() == 1 && key.py_eq(*state.str_disambiguate)? =>
+                {
                     dis = Some(Disambiguate::from_py(value, state)?)
                 }
                 None => {}
