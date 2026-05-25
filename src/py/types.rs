@@ -1,5 +1,5 @@
 //! Functionality related to Python type objects
-use super::{base::*, exc::*, module::*, refs::*};
+use super::{base::*, dict::PyDict, exc::*, module::*, refs::*};
 use crate::pymodule::State;
 use core::{
     ffi::CStr,
@@ -47,6 +47,12 @@ impl PyType {
                 .or_clear()?
                 .cast_unchecked::<PyModule>()
         })
+    }
+
+    /// Get the `__dict__` of this type.
+    pub(crate) fn get_dict(self) -> PyDict {
+        // SAFETY: type objects always have tp_dict populated
+        unsafe { PyDict::from_ptr_unchecked((*self.as_ptr().cast::<PyTypeObject>()).tp_dict) }
     }
 
     /// Get the module state if both types are from the whenever module.

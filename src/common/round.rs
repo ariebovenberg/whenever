@@ -224,8 +224,6 @@ impl Args {
         kwargs: &mut IterKwargs,
         ignore_dst_kwarg: bool,
     ) -> PyResult<Self> {
-        let round_mode_strs = &state.round_mode_strs;
-
         let opt_arg = handle_opt_arg("round", args)?;
 
         let mut mode = Mode::HalfEven;
@@ -234,7 +232,7 @@ impl Args {
         let mut increment_kwarg = None;
         handle_kwargs("round", kwargs, |key, value, eq| {
             if eq(key, *state.str_mode) {
-                mode = Mode::from_py(value, round_mode_strs)?;
+                mode = Mode::from_py(value, &state.round_mode_strs)?;
             } else if eq(key, *state.str_increment) {
                 let raw_increment = value
                     .cast_allow_subclass::<PyInt>()
@@ -322,17 +320,13 @@ pub(crate) struct DeltaArgs {
 
 impl DeltaArgs {
     pub(crate) fn parse(state: &State, args: &[PyObj], kwargs: &mut IterKwargs) -> PyResult<Self> {
-        let round_mode_strs = &state.round_mode_strs;
-        let str_days_assumed_24h_ok = *state.str_days_assumed_24h_ok;
-
         let opt_arg = handle_opt_arg("round", args)?;
-
         let mut mode = Mode::HalfEven;
         let mut increment_kwarg = None;
         let mut suppress_24h_warning = false;
         handle_kwargs("round", kwargs, |key, value, eq| {
             if eq(key, *state.str_mode) {
-                mode = Mode::from_py(value, round_mode_strs)?;
+                mode = Mode::from_py(value, &state.round_mode_strs)?;
             } else if eq(key, *state.str_increment) {
                 let raw_increment = value
                     .cast_allow_subclass::<PyInt>()
@@ -343,7 +337,7 @@ impl DeltaArgs {
                 }
                 // SAFETY: we just checked that it's >0
                 increment_kwarg = Some(unsafe { NonZeroU128::new_unchecked(raw_increment as _) });
-            } else if eq(key, str_days_assumed_24h_ok) {
+            } else if eq(key, *state.str_days_assumed_24h_ok) {
                 suppress_24h_warning = value.is_truthy();
             } else {
                 return Ok(false);

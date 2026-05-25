@@ -143,7 +143,7 @@ impl ZonedDateTime {
                     Disambiguate::Later => later,
                     Disambiguate::Compatible => earlier,
                     Disambiguate::Raise => raise(
-                        exc_repeated.as_ptr(),
+                        exc_repeated,
                         format!(
                             "{} {} is repeated in {}",
                             date,
@@ -161,7 +161,7 @@ impl ZonedDateTime {
                     Disambiguate::Later => (shift, later),
                     Disambiguate::Compatible => (shift, later),
                     Disambiguate::Raise => raise(
-                        exc_skipped.as_ptr(),
+                        exc_skipped,
                         format!(
                             "{} {} is skipped in {}",
                             date,
@@ -395,7 +395,6 @@ fn __new__(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
     };
 
     let state = cls.state();
-    let tz_store = &state.tz_store;
     let mut year: c_long = 0;
     let mut month: c_long = 0;
     let mut day: c_long = 0;
@@ -425,7 +424,7 @@ fn __new__(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
         return raise_type_err("tz argument is required");
     };
 
-    let tz = tz_store.obj_get(PyObj::wrap(tz))?;
+    let tz = state.tz_store.obj_get(PyObj::wrap(tz))?;
     let date = Date::from_longs(year, month, day).ok_or_value_err("invalid date")?;
     let time =
         Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?;
@@ -693,16 +692,14 @@ fn exact_eq(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, obj_b: PyObj) -> P
 }
 
 fn to_tz(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, tz_obj: PyObj) -> PyReturn {
-    let tz_new = cls.state().tz_store.obj_get(tz_obj)?;
-    slf.instant().to_tz_py(tz_new, cls)
+    slf.instant()
+        .to_tz_py(cls.state().tz_store.obj_get(tz_obj)?, cls)
 }
 
 pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     let &[data, tz_obj] = args else {
         raise_type_err("invalid pickle data")?
     };
-    let tz_store = &state.tz_store;
-
     let py_bytes = data
         .cast_exact::<PyBytes>()
         .ok_or_type_err("invalid pickle data")?;
@@ -723,7 +720,7 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
             subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
         },
         Offset::new_unchecked(unpack_one!(packed, i32)),
-        tz_store.obj_get(tz_obj)?,
+        state.tz_store.obj_get(tz_obj)?,
         *state.zoned_datetime_type,
     )
 }
@@ -756,10 +753,8 @@ fn to_stdlib(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
         DeltaType,
         ..
     } = state.py_api;
-    let zoneinfo_type = &state.zoneinfo_type;
-
     let tzinfo = match slf.tz.key.as_ref() {
-        Some(key) => zoneinfo_type.get()?.call1(*key.as_str().to_py()?),
+        Some(key) => state.zoneinfo_type.get()?.call1(*key.as_str().to_py()?),
         None => {
             let offset = slf.offset;
             // SAFETY: calling C API with valid arguments
@@ -780,7 +775,7 @@ fn to_stdlib(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
 
     tzinfo.getattr(c"fromutc")?.call1(
         // SAFETY: calling C API with valid arguments
-        unsafe {
+        *unsafe {
             DateTime_FromDateAndTime(
                 year.get().into(),
                 month.get().into(),
@@ -793,15 +788,13 @@ fn to_stdlib(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
                 DateTimeType,
             )
         }
-        .own()?
-        .py_owned(),
+        .own()?,
     )
 }
 
 fn py_datetime(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
-    let state = cls.state();
     warn_with_class(
-        *state.warn_deprecation,
+        *cls.state().warn_deprecation,
         c"py_datetime() is deprecated. Use to_stdlib() instead.",
         1,
     )?;
@@ -826,8 +819,8 @@ fn to_fixed_offset(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, args: &[PyO
 }
 
 fn to_system_tz(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
-    let tz_new = cls.state().tz_store.get_system_tz()?;
-    slf.instant().to_tz_py(tz_new, cls)
+    slf.instant()
+        .to_tz_py(cls.state().tz_store.get_system_tz()?, cls)
 }
 
 fn date(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
@@ -993,8 +986,7 @@ fn parse_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
         .zip(read_offset_and_tzname(&mut s))
         .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?;
     let state = cls.state();
-    let tz_store = &state.tz_store;
-    let tz = tz_store.get(tzstr)?;
+    let tz = state.tz_store.get(tzstr)?;
     match offset {
         OffsetInIsoString::Some(offset) => {
             // Make sure the offset is valid
@@ -1002,7 +994,7 @@ fn parse_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
                 Ambiguity::Unambiguous(f) if f == offset => (),
                 Ambiguity::Fold(f1, f2) if f1 == offset || f2 == offset => (),
                 _ => raise(
-                    state.exc_invalid_offset.as_ptr(),
+                    *state.exc_invalid_offset,
                     format!("invalid offset for {tzstr}"),
                 )?,
             }
@@ -1023,7 +1015,6 @@ fn replace(
         raise_type_err("replace() takes no positional arguments")?;
     }
     let state = cls.state();
-    let tz_store = &state.tz_store;
     let ZonedDateTime {
         date,
         time,
@@ -1042,7 +1033,7 @@ fn replace(
 
     handle_kwargs("replace", kwargs, |key, value, eq| {
         if eq(key, *state.str_tz) {
-            let tz_new = tz_store.obj_get(value)?;
+            let tz_new = state.tz_store.obj_get(value)?;
             // If we change timezones, forget about trying to preserve the offset.
             // Just use compatible disambiguation.
             if !tz.is_same_tz(*tz_new) {
@@ -1085,19 +1076,16 @@ fn replace(
 
 fn now(cls: HeapType<ZonedDateTime>, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
-    let tz = state.tz_store.obj_get(tz_obj)?;
-    state.now()?.to_tz_py(tz, cls)
+    state.now()?.to_tz_py(state.tz_store.obj_get(tz_obj)?, cls)
 }
 
 fn now_in_system_tz(cls: HeapType<ZonedDateTime>) -> PyReturn {
     let state = cls.state();
-    let tz = state.tz_store.get_system_tz()?;
-    state.now()?.to_tz_py(tz, cls)
+    state.now()?.to_tz_py(state.tz_store.get_system_tz()?, cls)
 }
 
 fn from_system_tz(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let state = cls.state();
-    let tz_store = &state.tz_store;
     let mut year: c_long = 0;
     let mut month: c_long = 0;
     let mut day: c_long = 0;
@@ -1121,7 +1109,7 @@ fn from_system_tz(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<Py
         disambiguate
     );
 
-    let tz = tz_store.get_system_tz()?;
+    let tz = state.tz_store.get_system_tz()?;
     let date = Date::from_longs(year, month, day).ok_or_value_err("invalid date")?;
     let time =
         Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?;
@@ -1154,16 +1142,12 @@ fn from_py_datetime(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
 }
 
 fn from_py_datetime_inner(cls: HeapType<ZonedDateTime>, dt: PyDateTime) -> PyReturn {
-    let State {
-        zoneinfo_type,
-        tz_store,
-        ..
-    } = cls.state();
+    let state = cls.state();
     let tzinfo = dt.tzinfo();
     // NOTE: it has to be exactly a `ZoneInfo`, since
     // we *know* that this corresponds to a TZ database entry.
     // Other types could be making up their own rules.
-    if tzinfo.type_().as_ptr() != zoneinfo_type.get()?.as_ptr() {
+    if tzinfo.type_().as_ptr() != state.zoneinfo_type.get()?.as_ptr() {
         raise_value_err(format!(
             "tzinfo must be of type ZoneInfo (exactly), got {tzinfo}"
         ))?;
@@ -1173,7 +1157,7 @@ fn from_py_datetime_inner(cls: HeapType<ZonedDateTime>, dt: PyDateTime) -> PyRet
         raise_value_err(doc::ZONEINFO_NO_KEY_MSG)?;
     };
 
-    let tz = tz_store.obj_get(*key)?;
+    let tz = state.tz_store.obj_get(*key)?;
     // We use the timestamp() to convert into a ZonedDateTime
     // Alternatives not chosen:
     // - resolve offset from date/time -> fold not respected, instant may be different
@@ -1186,7 +1170,7 @@ fn from_py_datetime_inner(cls: HeapType<ZonedDateTime>, dt: PyDateTime) -> PyRet
         .call0()?
         .cast_exact::<PyFloat>()
         .ok_or_raise(
-            unsafe { PyExc_RuntimeError },
+            exc_runtime_error(),
             "datetime.datetime.timestamp() returned non-float",
         )?
         .to_f64()?;
@@ -1266,11 +1250,10 @@ fn check_from_timestamp_args_return_tz<'a>(
     state: &'a State,
     fname: &str,
 ) -> PyResult<TzHandle<'a>> {
-    let tz_store = &state.tz_store;
     match (args, kwargs.next()) {
         (&[_], Some((key, value))) if kwargs.len() == 1 => {
             if key.py_eq(*state.str_tz)? {
-                tz_store.obj_get(value)
+                state.tz_store.obj_get(value)
             } else {
                 raise_type_err(format!(
                     "{fname}() got an unexpected keyword argument {key}"
@@ -1421,7 +1404,6 @@ fn shift_method(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
-    let str_disambiguate = *state.str_disambiguate;
     let mut dis = None;
     let mut months = DeltaMonths::ZERO;
     let mut days = DeltaDays::ZERO;
@@ -1430,7 +1412,7 @@ fn shift_method(
     match *args {
         [arg] => {
             match kwargs.next() {
-                Some((key, value)) if kwargs.len() == 1 && key.py_eq(str_disambiguate)? => {
+                Some((key, value)) if kwargs.len() == 1 && key.py_eq(*state.str_disambiguate)? => {
                     dis = Some(Disambiguate::from_py(value, state)?)
                 }
                 None => {}
@@ -1463,7 +1445,7 @@ fn shift_method(
         [] => {
             let mut units = DeltaUnitSet::EMPTY;
             handle_kwargs(fname, kwargs, |key, value, eq| {
-                if eq(key, str_disambiguate) {
+                if eq(key, *state.str_disambiguate) {
                     dis = Disambiguate::from_py(value, state)?.into();
                     Ok(true)
                 } else {
@@ -1543,15 +1525,13 @@ fn start_of_day(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
 fn day_length(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
     let ZonedDateTime { date, tz, .. } = slf;
     let state = cls.state();
-    let exc_repeated = *state.exc_repeated;
-    let exc_skipped = *state.exc_skipped;
     let start_of_day = ZonedDateTime::resolve_using_disambiguate(
         date,
         Time::MIDNIGHT,
         &tz,
         Disambiguate::Compatible,
-        exc_repeated,
-        exc_skipped,
+        *state.exc_repeated,
+        *state.exc_skipped,
     )?
     .instant();
     let start_of_next_day = ZonedDateTime::resolve_using_disambiguate(
@@ -1559,8 +1539,8 @@ fn day_length(cls: HeapType<ZonedDateTime>, slf: ZonedDateTime) -> PyReturn {
         Time::MIDNIGHT,
         &tz,
         Disambiguate::Compatible,
-        exc_repeated,
-        exc_skipped,
+        *state.exc_repeated,
+        *state.exc_skipped,
     )?
     .instant();
     start_of_next_day
@@ -1600,16 +1580,14 @@ fn round(
 
 fn round_day(slf: ZonedDateTime, state: &State, mode: round::Mode) -> PyResult<OffsetDateTime> {
     let ZonedDateTime { date, time, tz, .. } = slf;
-    let exc_repeated = *state.exc_repeated;
-    let exc_skipped = *state.exc_skipped;
     let get_floor = || {
         ZonedDateTime::resolve_using_disambiguate(
             date,
             Time::MIDNIGHT,
             &tz,
             Disambiguate::Compatible,
-            exc_repeated,
-            exc_skipped,
+            *state.exc_repeated,
+            *state.exc_skipped,
         )
     };
     let get_ceil = || {
@@ -1618,8 +1596,8 @@ fn round_day(slf: ZonedDateTime, state: &State, mode: round::Mode) -> PyResult<O
             Time::MIDNIGHT,
             &tz,
             Disambiguate::Compatible,
-            exc_repeated,
-            exc_skipped,
+            *state.exc_repeated,
+            *state.exc_skipped,
         )
     };
     match mode {
@@ -1849,8 +1827,7 @@ fn format(_cls: HeapType<ZonedDateTime>, slf: ZonedDateTime, pattern_obj: PyObj)
     )?;
     if pattern::has_12h_without_ampm(&elements) {
         warn_with_class(
-            // SAFETY: PyExc_UserWarning is always valid
-            unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) },
+            exc_user_warning(),
             c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
             1,
         )?;
@@ -1896,8 +1873,6 @@ fn parse(cls: HeapType<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
     let s = s_pystr.as_utf8()?;
 
     let state = cls.state();
-    let tz_store = &state.tz_store;
-
     let mut fmt_obj = None;
     let mut dis = Disambiguate::Compatible;
     handle_kwargs("parse", kwargs, |key, value, eq| {
@@ -1966,7 +1941,7 @@ fn parse(cls: HeapType<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
         subsec: parsed.nanos,
     };
 
-    let tz = tz_store.get(tz_id)?;
+    let tz = state.tz_store.get(tz_id)?;
 
     if let Some(offset) = parsed.offset_secs {
         // Use offset to disambiguate during DST transitions.

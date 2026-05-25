@@ -697,7 +697,6 @@ fn in_units(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let round_mode_strs = &state.round_mode_strs;
     let units = DeltaUnitSet::from_py(handle_one_arg("in_units", args)?, state)?;
 
     let mut relative_to_arg = None;
@@ -708,7 +707,7 @@ fn in_units(
         if eq(key, *state.str_relative_to) {
             relative_to_arg = Some(value);
         } else if eq(key, *state.str_round_mode) {
-            round_mode = round::Mode::from_py_named("round_mode", value, round_mode_strs)?;
+            round_mode = round::Mode::from_py_named("round_mode", value, &state.round_mode_strs)?;
         } else if eq(key, *state.str_round_increment) {
             round_increment = RoundIncrement::from_py(value)?;
         } else {
@@ -969,7 +968,6 @@ fn add_sub(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
-    let round_mode_strs = &state.round_mode_strs;
 
     let other = handle_opt_arg(fname, args)?
         .map(|arg| {
@@ -996,7 +994,7 @@ fn add_sub(
         } else if eq(key, *state.str_in_units) {
             units = DeltaUnitSet::from_py(value, state)?;
         } else if eq(key, *state.str_round_mode) {
-            round_mode = round::Mode::from_py_named("round_mode", value, round_mode_strs)?;
+            round_mode = round::Mode::from_py_named("round_mode", value, &state.round_mode_strs)?;
         } else if eq(key, *state.str_round_increment) {
             round_increment = RoundIncrement::from_py(value)?;
         } else {

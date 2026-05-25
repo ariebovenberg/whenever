@@ -89,8 +89,7 @@ impl OncePyObj {
     fn get_slow(&self) -> PyResult<PyObj> {
         let owned = (self.init)()?;
         let obj = owned.py_owned();
-        let ptr = obj.as_nonnull();
-        match self.ptr.try_init(ptr) {
+        match self.ptr.try_init(obj.as_nonnull()) {
             Ok(()) => Ok(obj),
             Err(winner) => {
                 // Another init beat us — DECREF ours, use theirs

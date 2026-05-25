@@ -515,8 +515,6 @@ fn in_units(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let round_mode_strs = &state.round_mode_strs;
-
     let units = CalUnitSet::from_py(handle_one_arg("in_units", args)?, state)?;
 
     let mut relative_to_arg = None;
@@ -531,7 +529,7 @@ fn in_units(
                     .ok_or_type_err("relative_to must be a whenever.Date")?,
             )
         } else if eq(key, *state.str_round_mode) {
-            round_mode = round::Mode::from_py(value, round_mode_strs)?;
+            round_mode = round::Mode::from_py(value, &state.round_mode_strs)?;
         } else if eq(key, *state.str_round_increment) {
             round_increment = DateRoundIncrement::from_py(value)?;
         } else {
@@ -650,7 +648,6 @@ fn add_sub(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
-    let round_mode_strs = &state.round_mode_strs;
 
     let arg = handle_opt_arg(fname, args)?
         .map(|obj| {
@@ -677,7 +674,7 @@ fn add_sub(
         } else if eq(key, *state.str_in_units) {
             units = CalUnitSet::from_py(value, state)?;
         } else if eq(key, *state.str_round_mode) {
-            round_mode = round::Mode::from_py(value, round_mode_strs)?;
+            round_mode = round::Mode::from_py(value, &state.round_mode_strs)?;
         } else if eq(key, *state.str_round_increment) {
             round_increment = DateRoundIncrement::from_py(value)?;
         } else {
@@ -743,12 +740,13 @@ fn subtract(
 }
 
 /// Register with collections.abc.Mapping and copy mixin methods
-pub(crate) fn register_as_mapping(type_obj: PyObj) -> PyResult<()> {
+pub(crate) fn register_as_mapping(type_obj: PyType) -> PyResult<()> {
     let abc = import(c"collections.abc")?;
     let mapping_cls = abc.getattr(c"Mapping")?;
-    mapping_cls.getattr(c"register")?.call1(type_obj)?;
-    let type_dict =
-        unsafe { PyDict::from_ptr_unchecked((*type_obj.as_ptr().cast::<PyTypeObject>()).tp_dict) };
+    mapping_cls
+        .getattr(c"register")?
+        .call1(type_obj.as_py_obj())?;
+    let type_dict = type_obj.get_dict();
     for name in &[c"keys", c"values", c"items", c"get"] {
         let method = mapping_cls.getattr(name)?;
         type_dict.set_item_str(name, *method)?;

@@ -178,14 +178,14 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         &mut unsafe { itemized_date_delta::SPEC },
         c"_unpkl_iddelta",
     )?;
-    itemized_date_delta::register_as_mapping(itemized_date_delta_type.as_py_obj())?;
+    itemized_date_delta::register_as_mapping(itemized_date_delta_type.inner())?;
     let (itemized_delta_type, unpickle_itemized_delta) = new_class(
         module,
         *module_name,
         &mut unsafe { itemized_delta::SPEC },
         c"_unpkl_idelta",
     )?;
-    itemized_date_delta::register_as_mapping(itemized_delta_type.as_py_obj())?;
+    itemized_date_delta::register_as_mapping(itemized_delta_type.inner())?;
     let (plain_datetime_type, unpickle_plain_datetime) = new_class(
         module,
         *module_name,
@@ -226,28 +226,31 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         module,
         c"whenever.RepeatedTime",
         doc::REPEATEDTIME,
-        unsafe { PyExc_ValueError },
+        exc_value_error(),
     )?;
-    let exc_skipped = new_exception(module, c"whenever.SkippedTime", doc::SKIPPEDTIME, unsafe {
-        PyExc_ValueError
-    })?;
+    let exc_skipped = new_exception(
+        module,
+        c"whenever.SkippedTime",
+        doc::SKIPPEDTIME,
+        exc_value_error(),
+    )?;
     let exc_invalid_offset = new_exception(
         module,
         c"whenever.InvalidOffsetError",
         doc::INVALIDOFFSETERROR,
-        unsafe { PyExc_ValueError },
+        exc_value_error(),
     )?;
     let exc_implicitly_ignoring_dst = new_exception(
         module,
         c"whenever.ImplicitlyIgnoringDST",
         doc::IMPLICITLYIGNORINGDST,
-        unsafe { PyExc_TypeError },
+        exc_type_error(),
     )?;
     let exc_tz_notfound = new_exception(
         module,
         c"whenever.TimeZoneNotFoundError",
         doc::TIMEZONENOTFOUNDERROR,
-        unsafe { PyExc_ValueError },
+        exc_value_error(),
     )?;
 
     // Warning classes (UserWarning hierarchy)
@@ -255,34 +258,33 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         module,
         c"whenever.PotentialDstBugWarning",
         doc::POTENTIALDSTBUGWARNING,
-        unsafe { PyExc_UserWarning },
+        exc_user_warning(),
     )?;
     let warn_days_not_always_24h = new_exception(
         module,
         c"whenever.DaysAssumed24HoursWarning",
         doc::DAYSASSUMED24HOURSWARNING,
-        warn_potential_dst_bug.as_ptr(),
+        *warn_potential_dst_bug,
     )?;
     let warn_potentially_stale_offset = new_exception(
         module,
         c"whenever.StaleOffsetWarning",
         doc::STALEOFFSETWARNING,
-        warn_potential_dst_bug.as_ptr(),
+        *warn_potential_dst_bug,
     )?;
     let warn_naive_arithmetic = new_exception(
         module,
         c"whenever.NaiveArithmeticWarning",
         doc::NAIVEARITHMETICWARNING,
-        warn_potential_dst_bug.as_ptr(),
+        *warn_potential_dst_bug,
     )?;
     let warn_deprecation = new_exception(
         module,
         c"whenever.WheneverDeprecationWarning",
         doc::WHENEVERDEPRECATIONWARNING,
-        unsafe { PyExc_UserWarning },
+        exc_user_warning(),
     )?;
 
-    let time_patch = Patch::new()?;
     let tz_store = TzStore::new(*exc_tz_notfound);
 
     // Only write the state once everything is initialized,
@@ -422,7 +424,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         unpickle_offset_datetime,
         unpickle_zoned_datetime,
 
-        time_patch,
+        time_patch: Patch::new()?,
         tz_store,
     });
 
@@ -430,21 +432,19 @@ fn module_exec(module: PyModule) -> PyResult<()> {
 }
 
 fn traverse_type(
-    target: *mut PyTypeObject,
+    target: PyType,
     visit: visitproc,
     arg: *mut c_void,
     num_singletons: usize,
 ) -> TraverseResult {
-    if !target.is_null() {
-        // XXX: This trick SEEMS to let us avoid adding GC support to our types.
-        // Since our types are atomic and immutable this should be allowed...
-        // ...BUT there is a reference cycle between the class and the
-        // singleton instances (e.g. the Date.MAX instance and Date class itself)
-        // Visiting the type once for each singleton should make GC aware of this.
-        // NOTE: the +1 is for the type itself
-        for _ in 0..(num_singletons + 1) {
-            traverse(target.cast(), visit, arg)?;
-        }
+    // XXX: This trick SEEMS to let us avoid adding GC support to our types.
+    // Since our types are atomic and immutable this should be allowed...
+    // ...BUT there is a reference cycle between the class and the
+    // singleton instances (e.g. the Date.MAX instance and Date class itself)
+    // Visiting the type once for each singleton should make GC aware of this.
+    // NOTE: the +1 is for the type itself
+    for _ in 0..(num_singletons + 1) {
+        traverse(target.as_ptr(), visit, arg)?;
     }
     Ok(())
 }
@@ -460,7 +460,7 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
     };
 
     // types
-    for (cls, ref unpkl, num_singletons) in [
+    for (cls, unpkl, num_singletons) in [
         (
             state.date_type.inner(),
             *state.unpickle_date,
@@ -517,7 +517,7 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
             0,
         ),
     ] {
-        traverse_type(cls.as_ptr().cast(), visit, arg, num_singletons)?;
+        traverse_type(cls, visit, arg, num_singletons)?;
         unpkl.gc_traverse(visit, arg)?;
     }
 
