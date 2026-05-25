@@ -21,7 +21,7 @@ from ._core import (  # The unpickle functions must be findable at module-level
 
 # Yes, we could get the version with importlib.metadata,
 # but we try to keep our import time as low as possible.
-__version__ = "0.10.1"
+__version__ = "0.10.1b0"
 
 __all__ = (
     # Date and time
