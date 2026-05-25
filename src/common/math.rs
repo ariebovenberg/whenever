@@ -816,7 +816,7 @@ impl SinceUntilKwargs {
                 units = Some(UnitsOrUnit::Seq(unit_set));
             } else if eq(key, *state.str_round_mode) {
                 round_mode =
-                    round::Mode::from_py_named("round_mode", value, *state.round_mode_strs)?;
+                    round::Mode::from_py_named("round_mode", value, &state.round_mode_strs)?;
                 round_was_set = true;
             } else if eq(key, *state.str_round_increment) {
                 round_increment = RoundIncrement::from_py(value)?;
