@@ -331,7 +331,7 @@ pub(crate) fn extract_year(s: &[u8], index: usize) -> Option<Year> {
     .map(Year::new_unchecked)
 }
 
-impl PySimpleAlloc for Date {}
+impl PyWrapped for Date {}
 
 impl Display for Date {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -345,11 +345,14 @@ impl Display for Date {
 fn __new__(cls: HeapType<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let arg = args.iter().next().unwrap();
+        if PyStr::isinstance(arg) {
+            return parse_iso(cls, arg);
+        }
         // Accept stdlib datetime.date (or datetime.datetime, which is a subclass)
         if let Some(d) = arg.cast_allow_subclass::<PyDate>() {
             return Date::from_py(d).to_obj(cls);
         }
-        return parse_iso(cls, arg);
+        return raise_type_err("Date() requires an ISO 8601 string or datetime.date");
     }
     let mut year: c_long = 0;
     let mut month: c_long = 0;
@@ -424,7 +427,7 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 fn to_stdlib(cls: HeapType<Date>, slf: Date) -> PyReturn {
-    slf.to_py(cls.state().py_api)
+    slf.to_py(cls.state().py_api()?)
 }
 
 fn py_date(cls: HeapType<Date>, slf: Date) -> PyReturn {
@@ -1004,7 +1007,7 @@ fn at(cls: HeapType<Date>, date: Date, time_obj: PyObj) -> PyReturn {
 fn today_in_system_tz(cls: HeapType<Date>) -> PyReturn {
     let state = cls.state();
     let epoch = state.now()?.epoch;
-    Date::from_py(*system_tz_today_from_timestamp(state.py_api, epoch)?).to_obj(cls)
+    Date::from_py(*system_tz_today_from_timestamp(state.py_api()?, epoch)?).to_obj(cls)
 }
 
 fn system_tz_today_from_timestamp(
@@ -1118,8 +1121,8 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     classmethod0!(Date, today_in_system_tz, doc::DATE_TODAY_IN_SYSTEM_TZ),
     classmethod1!(Date, parse_iso, doc::DATE_PARSE_ISO),
     classmethod1!(Date, from_py_date, doc::DATE_FROM_PY_DATE),
-    method0!(Date, __copy__, c""),
-    method1!(Date, __deepcopy__, c""),
+    COPY_METHOD,
+    DEEPCOPY_METHOD,
     method0!(Date, year_month, doc::DATE_YEAR_MONTH),
     method0!(Date, month_day, doc::DATE_MONTH_DAY),
     method1!(Date, at, doc::DATE_AT),

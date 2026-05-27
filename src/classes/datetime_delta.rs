@@ -87,7 +87,7 @@ impl DateTimeDelta {
     }
 }
 
-impl PySimpleAlloc for DateTimeDelta {}
+impl PyWrapped for DateTimeDelta {}
 
 impl Neg for DateTimeDelta {
     type Output = Self;
@@ -217,6 +217,7 @@ impl fmt::Display for DateTimeDelta {
     }
 }
 
+#[inline(never)]
 fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let nargs = args.len();
     let nkwargs = kwargs.map_or(0, |k| k.len());
@@ -288,10 +289,10 @@ fn __richcmp__(
 }
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
-    hashmask(
+    let (_, d) =
         // SAFETY: first argument guaranteed to be self type
-        unsafe { slf.assume_heaptype::<DateTimeDelta>() }.1.pyhash(),
-    )
+        unsafe { slf.assume_heaptype::<DateTimeDelta>() };
+    hashmask(d.pyhash())
 }
 
 fn __neg__(cls: HeapType<DateTimeDelta>, d: DateTimeDelta) -> PyReturn {
@@ -299,8 +300,9 @@ fn __neg__(cls: HeapType<DateTimeDelta>, d: DateTimeDelta) -> PyReturn {
 }
 
 extern "C" fn __bool__(slf: PyObj) -> c_int {
-    // SAFETY: first argument guaranteed to be self type
-    let (_, DateTimeDelta { ddelta, tdelta }) = unsafe { slf.assume_heaptype() };
+    let (_, DateTimeDelta { ddelta, tdelta }) =
+        // SAFETY: first argument guaranteed to be self type
+        unsafe { slf.assume_heaptype::<DateTimeDelta>() };
     (!(ddelta.is_zero() && tdelta.is_zero())).into()
 }
 
@@ -395,16 +397,16 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
         .to_obj(delta_type)
 }
 
-fn __abs__(
-    cls: HeapType<DateTimeDelta>,
-    DateTimeDelta { ddelta, tdelta }: DateTimeDelta,
-) -> PyReturn {
-    // FUTURE: optimize case where self is already positive
-    DateTimeDelta {
-        ddelta: ddelta.abs(),
-        tdelta: tdelta.abs(),
+fn __abs__(cls: HeapType<DateTimeDelta>, slf: Wrapped<'_, DateTimeDelta>) -> PyReturn {
+    if slf.ddelta.months.get() >= 0 && slf.ddelta.days.get() >= 0 && !slf.tdelta.is_negative() {
+        Ok(slf.newref())
+    } else {
+        DateTimeDelta {
+            ddelta: slf.ddelta.abs(),
+            tdelta: slf.tdelta.abs(),
+        }
+        .to_obj(cls)
     }
-    .to_obj(cls)
 }
 
 #[allow(static_mut_refs)]
@@ -414,7 +416,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(DateTimeDelta, Py_nb_negative, __neg__, 1),
     slotmethod!(DateTimeDelta, Py_tp_repr, __repr__, 1),
     slotmethod!(DateTimeDelta, Py_tp_str, __str__, 1),
-    slotmethod!(DateTimeDelta, Py_nb_positive, identity1, 1),
+    IDENTITY_SLOT,
     slotmethod!(DateTimeDelta, Py_nb_absolute, __abs__, 1),
     slotmethod!(Py_nb_multiply, __mul__, 2),
     slotmethod!(Py_nb_add, __add__, 2),
@@ -620,8 +622,8 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method0!(DateTimeDelta, __copy__, c""),
-    method1!(DateTimeDelta, __deepcopy__, c""),
+    COPY_METHOD,
+    DEEPCOPY_METHOD,
     method0!(DateTimeDelta, format_iso, doc::DATETIMEDELTA_FORMAT_ISO),
     method0!(DateTimeDelta, date_part, doc::DATETIMEDELTA_DATE_PART),
     method0!(DateTimeDelta, time_part, doc::DATETIMEDELTA_TIME_PART),

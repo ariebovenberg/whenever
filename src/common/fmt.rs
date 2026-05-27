@@ -6,7 +6,6 @@ use crate::{
     docstrings::FORMAT_ISO_NO_TZ_MSG,
     py::*,
     pymodule::State,
-    tz::store::TzPtr,
 };
 
 // Static table for formatting 2-digit numbers. Avoids division/modulo operations.
@@ -153,11 +152,12 @@ impl Unit {
 }
 
 /// Suffix kind of a ISO8601 formatted string
-pub(crate) enum Suffix {
-    Absent,                  // No suffix (i.e. local/naive datetime)
-    Zulu,                    // Static Z (Zulu, i.e. UTC)
-    Offset(Offset),          // Offset only
-    OffsetTz(Offset, TzPtr), // Offset and timezone name (in brackets)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Suffix<'a> {
+    Absent,                            // No suffix (i.e. local/naive datetime)
+    Zulu,                              // Static Z (Zulu, i.e. UTC)
+    Offset(Offset),                    // Offset only
+    OffsetTz(Offset, Option<&'a str>), // Offset and timezone name (in brackets)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,7 +215,7 @@ pub(crate) fn format_iso(
     state: &State,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
-    suffix: Suffix,
+    suffix: Suffix<'_>,
 ) -> PyReturn {
     if !args.is_empty() {
         raise_type_err("format_iso() takes no positional arguments")?;
@@ -273,7 +273,7 @@ pub(crate) fn format_iso(
         Suffix::Absent => SuffixFormat::Absent,
         Suffix::Zulu => SuffixFormat::Zulu,
         Suffix::Offset(offset) => SuffixFormat::Offset(offset.format_iso(basic)),
-        Suffix::OffsetTz(offset, ref tz) => match (tz.key.as_deref(), tz_display) {
+        Suffix::OffsetTz(offset, tz_key) => match (tz_key, tz_display) {
             (Some(key), TzDisplay::Auto | TzDisplay::Always) => {
                 SuffixFormat::OffsetTz(offset.format_iso(basic), key)
             }

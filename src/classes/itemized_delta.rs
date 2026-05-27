@@ -256,7 +256,7 @@ impl ItemizedDelta {
     }
 }
 
-impl PySimpleAlloc for ItemizedDelta {}
+impl PyWrapped for ItemizedDelta {}
 
 fn __new__(cls: HeapType<ItemizedDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     match args.len() {
@@ -435,11 +435,9 @@ fn __richcmp__(
     }
 }
 
-fn __neg__(cls: HeapType<ItemizedDelta>, slf: PyObj) -> PyReturn {
-    // Safety: CPython guarantees `slf` is a valid instance of our heap type
-    let (_, d) = unsafe { slf.assume_heaptype::<ItemizedDelta>() };
+fn __neg__(cls: HeapType<ItemizedDelta>, d: Wrapped<'_, ItemizedDelta>) -> PyReturn {
     if d.derived_sign() == 0 {
-        return Ok(slf.newref());
+        return Ok(d.newref());
     }
     ItemizedDelta {
         years: d.years.neg(),
@@ -454,20 +452,19 @@ fn __neg__(cls: HeapType<ItemizedDelta>, slf: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn __abs__(cls: HeapType<ItemizedDelta>, slf: PyObj) -> PyReturn {
-    let (_, d) = unsafe { slf.assume_heaptype::<ItemizedDelta>() };
-    if d.derived_sign() >= 0 {
+fn __abs__(cls: HeapType<ItemizedDelta>, slf: Wrapped<'_, ItemizedDelta>) -> PyReturn {
+    if slf.derived_sign() >= 0 {
         Ok(slf.newref())
     } else {
         ItemizedDelta {
-            years: d.years.neg(),
-            months: d.months.neg(),
-            weeks: d.weeks.neg(),
-            days: d.days.neg(),
-            hours: d.hours.neg(),
-            minutes: d.minutes.neg(),
-            seconds: d.seconds.neg(),
-            nanos: d.nanos.neg(),
+            years: slf.years.neg(),
+            months: slf.months.neg(),
+            weeks: slf.weeks.neg(),
+            days: slf.days.neg(),
+            hours: slf.hours.neg(),
+            minutes: slf.minutes.neg(),
+            seconds: slf.seconds.neg(),
+            nanos: slf.nanos.neg(),
         }
         .to_obj(cls)
     }
@@ -690,6 +687,7 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     .to_obj(*state.itemized_delta_type)
 }
 
+#[inline(never)]
 fn in_units(
     cls: HeapType<ItemizedDelta>,
     d: ItemizedDelta,
@@ -721,7 +719,7 @@ fn in_units(
     };
 
     // ZonedDateTime: full DST-aware path.
-    if let Some(zdt) = arg.extract(*state.zoned_datetime_type) {
+    if let Some(zdt) = arg.extract_ref(*state.zoned_datetime_type) {
         let shifted = zdt.shift_default(d).ok_or_range_err()?;
         let shifted_inst = shifted.instant();
         let neg = d.derived_sign().is_negative();
@@ -771,6 +769,7 @@ fn in_units(
     )
 }
 
+#[inline(never)]
 fn total(
     cls: HeapType<ItemizedDelta>,
     d: ItemizedDelta,
@@ -778,14 +777,13 @@ fn total(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-
     let unit = DeltaUnit::from_py(handle_one_arg("total", args)?, state)?;
 
     let arg = handle_one_kwarg("total", *state.str_relative_to, kwargs)?
         .ok_or_type_err("missing required keyword argument: 'relative_to'")?;
 
     // ZonedDateTime: full DST-aware path.
-    if let Some(zdt) = arg.extract(*state.zoned_datetime_type) {
+    if let Some(zdt) = arg.extract_ref(*state.zoned_datetime_type) {
         let shifted = zdt.shift_default(d).ok_or_range_err()?;
         let tdelta = shifted.instant().diff(zdt.instant());
         let cal_unit = match unit.to_exact(false) {
@@ -959,6 +957,7 @@ pub(crate) fn handle_delta_unit_kwargs(
     Ok(true)
 }
 
+#[inline(never)]
 fn add_sub(
     cls: HeapType<ItemizedDelta>,
     d: ItemizedDelta,
@@ -976,7 +975,7 @@ fn add_sub(
         })
         .transpose()?;
 
-    let mut relative_to_arg = None;
+    let mut relative_to_obj: Option<PyObj> = None;
     let mut units = DeltaUnitSet::EMPTY;
     let mut round_mode = round::Mode::Trunc;
     let mut round_increment = RoundIncrement::MIN;
@@ -987,10 +986,7 @@ fn add_sub(
 
     handle_kwargs(fname, kwargs, |key, value, eq| {
         if eq(key, *state.str_relative_to) {
-            relative_to_arg = value
-                .extract(*state.zoned_datetime_type)
-                .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?
-                .into();
+            relative_to_obj = Some(value);
         } else if eq(key, *state.str_in_units) {
             units = DeltaUnitSet::from_py(value, state)?;
         } else if eq(key, *state.str_round_mode) {
@@ -1014,9 +1010,12 @@ fn add_sub(
         Ok(true)
     })?;
 
-    let relative_to = relative_to_arg.ok_or_type_err(format!(
+    let relative_to_obj = relative_to_obj.ok_or_type_err(format!(
         "{fname}() missing required keyword argument: 'relative_to'"
     ))?;
+    let relative_to = relative_to_obj
+        .extract_ref(*state.zoned_datetime_type)
+        .ok_or_type_err("relative_to must be a whenever.ZonedDateTime")?;
 
     if units.is_empty() {
         raise_type_err(format!(
@@ -1042,7 +1041,7 @@ fn add_sub(
     let total_tdelta = self_tdelta.add(tdelta).ok_or_range_err()?;
     let shifted = relative_to
         .without_tz()
-        .shift_in_tz(total_months, total_days, total_tdelta, relative_to.tz)
+        .shift_in_tz(total_months, total_days, total_tdelta, relative_to.tz())
         .ok_or_range_err()?;
     let shifted_inst = shifted.instant();
 
@@ -1139,8 +1138,8 @@ static mut GETSETTERS: &[PyGetSetDef] = &[PyGetSetDef {
 }];
 
 static mut METHODS: &[PyMethodDef] = &[
-    method0!(ItemizedDelta, __copy__, c""),
-    method1!(ItemizedDelta, __deepcopy__, c""),
+    COPY_METHOD,
+    DEEPCOPY_METHOD,
     method0!(ItemizedDelta, sign, doc::ITEMIZEDDELTA_SIGN),
     method_kwargs!(ItemizedDelta, format_iso, doc::ITEMIZEDDELTA_FORMAT_ISO),
     classmethod1!(ItemizedDelta, parse_iso, doc::ITEMIZEDDELTA_PARSE_ISO),

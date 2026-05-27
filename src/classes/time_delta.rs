@@ -273,7 +273,7 @@ impl TimeDelta {
     }
 }
 
-impl PySimpleAlloc for TimeDelta {}
+impl PyWrapped for TimeDelta {}
 
 impl Neg for TimeDelta {
     type Output = Self;
@@ -415,15 +415,15 @@ fn __new__(cls: HeapType<TimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> P
     match (args.len(), nkwargs) {
         (1, 0) => {
             let arg = args.iter().next().unwrap();
-            // NOTE: this needs to be a bit roundabout to ensure
-            // we have a clear error message for timedelta subclasses.
-            if arg.cast_allow_subclass::<PyTimeDelta>().is_some() {
+            if PyStr::isinstance(arg) {
+                parse_iso(cls, arg)
+            } else if arg.cast_allow_subclass::<PyTimeDelta>().is_some() {
                 let d = arg
                     .cast_exact::<PyTimeDelta>()
                     .ok_or_type_err("argument must be datetime.timedelta exactly")?;
                 TimeDelta::from_py(d).ok_or_range_err()?.to_obj(cls)
             } else {
-                parse_iso(cls, arg)
+                raise_type_err("TimeDelta() requires an ISO 8601 string or datetime.timedelta")
             }
         }
         (0, 0) => TimeDelta::ZERO.to_obj(cls),
@@ -732,11 +732,9 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
     }
 }
 
-fn __abs__(cls: HeapType<TimeDelta>, slf: PyObj) -> PyReturn {
-    // SAFETY: we know slf is passed to this method
-    let (_, a) = unsafe { slf.assume_heaptype::<TimeDelta>() };
-    if a.is_negative() {
-        (-a).to_obj(cls)
+fn __abs__(cls: HeapType<TimeDelta>, slf: Wrapped<'_, TimeDelta>) -> PyReturn {
+    if slf.is_negative() {
+        (-*slf).to_obj(cls)
     } else {
         Ok(slf.newref())
     }
@@ -749,7 +747,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(TimeDelta, Py_nb_negative, __neg__, 1),
     slotmethod!(TimeDelta, Py_tp_repr, __repr__, 1),
     slotmethod!(TimeDelta, Py_tp_str, __str__, 1),
-    slotmethod!(TimeDelta, Py_nb_positive, identity1, 1),
+    IDENTITY_SLOT,
     slotmethod!(Py_nb_multiply, __mul__, 2),
     slotmethod!(Py_nb_true_divide, __truediv__, 2),
     slotmethod!(Py_nb_add, __add__, 2),
@@ -897,7 +895,7 @@ fn to_stdlib(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
         Delta_FromDelta,
         DeltaType,
         ..
-    } = cls.state().py_api;
+    } = cls.state().py_api()?;
     // SAFETY: calling C API with valid arguments
     unsafe {
         Delta_FromDelta(
@@ -1138,6 +1136,7 @@ fn subtract(
     add_method(cls, slf, args, kwargs, true)
 }
 
+#[inline(never)]
 fn add_method(
     cls: HeapType<TimeDelta>,
     slf: TimeDelta,
@@ -1161,6 +1160,7 @@ fn add_method(
     slf.add(other).ok_or_range_err()?.to_obj(cls)
 }
 
+#[inline(never)]
 fn in_units(
     cls: HeapType<TimeDelta>,
     slf: TimeDelta,
@@ -1196,9 +1196,9 @@ fn in_units(
 
     if let Some(arg) = relative_to_arg {
         // ZonedDateTime: full DST-aware path.
-        if let Some(zdt) = arg.extract(*state.zoned_datetime_type) {
+        if let Some(zdt) = arg.extract_ref(*state.zoned_datetime_type) {
             let shifted_inst = zdt.instant().shift(slf).ok_or_range_err()?;
-            let shifted = shifted_inst.to_tz(zdt.tz).ok_or_range_err()?;
+            let shifted = shifted_inst.to_tz(zdt.tz()).ok_or_range_err()?;
             return zoned_since_in_units(
                 shifted,
                 shifted_inst,
@@ -1248,6 +1248,7 @@ fn in_units(
     }
 }
 
+#[inline(never)]
 fn total(
     cls: HeapType<TimeDelta>,
     slf: TimeDelta,
@@ -1293,9 +1294,9 @@ fn total(
         .ok_or_type_err("for calendar units, a `relative_to` argument must be passed")?;
 
     // ZonedDateTime: full DST-aware path via zoned_target.
-    if let Some(zdt) = arg.extract(*state.zoned_datetime_type) {
+    if let Some(zdt) = arg.extract_ref(*state.zoned_datetime_type) {
         let shifted_inst = zdt.instant().shift(slf).ok_or_range_err()?;
-        let shifted = shifted_inst.to_tz(zdt.tz).ok_or_range_err()?;
+        let shifted = shifted_inst.to_tz(zdt.tz()).ok_or_range_err()?;
         return total_cal(slf.is_negative(), cal_unit, zdt, shifted, shifted_inst);
     }
 
@@ -1320,10 +1321,11 @@ fn total(
     total_cal_plain(neg, cal_unit, a_inst, b_dt, target_date)
 }
 
+#[inline(never)]
 pub(crate) fn total_cal(
     neg: bool,
     unit: math::CalUnit,
-    relative_to: ZonedDateTime,
+    relative_to: &ZonedDateTime,
     shifted: OffsetDateTime,
     shifted_inst: Instant,
 ) -> PyReturn {
@@ -1351,8 +1353,8 @@ pub(crate) fn total_cal(
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method0!(TimeDelta, __copy__, c""),
-    method1!(TimeDelta, __deepcopy__, c""),
+    COPY_METHOD,
+    DEEPCOPY_METHOD,
     method0!(TimeDelta, __reduce__, c""),
     method0!(TimeDelta, format_iso, doc::TIMEDELTA_FORMAT_ISO),
     classmethod1!(TimeDelta, parse_iso, doc::TIMEDELTA_PARSE_ISO),

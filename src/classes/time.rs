@@ -285,7 +285,7 @@ impl fmt::Chunk for IsoFormat {
     }
 }
 
-impl PySimpleAlloc for Time {}
+impl PyWrapped for Time {}
 
 // FUTURE: a trait for faster formatting since timestamp are small and
 // limited in length?
@@ -325,11 +325,11 @@ pub(crate) const SINGLETONS: &[(&CStr, Time); 4] = &[
 fn __new__(cls: HeapType<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let obj = args.iter().next().unwrap();
-        if let Some(t) = obj.cast_allow_subclass::<PyTime>() {
-            return Time::from_py(t).to_obj(cls);
-        }
         if PyStr::isinstance(obj) {
             return parse_iso(cls, obj);
+        }
+        if let Some(t) = obj.cast_allow_subclass::<PyTime>() {
+            return Time::from_py(t).to_obj(cls);
         }
     }
     let mut hour: c_long = 0;
@@ -424,7 +424,7 @@ fn to_stdlib(cls: HeapType<Time>, slf: Time) -> PyReturn {
         Time_FromTime,
         TimeType,
         ..
-    } = cls.state().py_api;
+    } = cls.state().py_api()?;
     // SAFETY: calling C API with valid arguments
     unsafe {
         Time_FromTime(
@@ -659,8 +659,8 @@ fn parse(cls: HeapType<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetu
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method0!(Time, __copy__, c""),
-    method1!(Time, __deepcopy__, c""),
+    COPY_METHOD,
+    DEEPCOPY_METHOD,
     method0!(Time, __reduce__, c""),
     method0!(Time, to_stdlib, doc::TIME_TO_STDLIB),
     method0!(Time, py_time, doc::TIME_PY_TIME),

@@ -1,24 +1,108 @@
 //! Miscellaneous utility functions and constants.
 use super::{args::*, base::*, exc::*, refs::*, types::*};
+use crate::common::sync::SwapPtr;
 use core::ffi::{CStr, c_int, c_void};
 use pyo3_ffi::*;
+
+/// A lazily-initialized Python object with GC traverse and cleanup support.
+/// Uses lock-free CAS on a `SwapPtr` for initialization.
+/// Returns `PyObj` by value (Copy) — no reference lifetime concerns.
+pub(crate) struct OncePyObj {
+    init: fn() -> PyReturn,
+    ptr: SwapPtr<PyObject>,
+}
+
+impl OncePyObj {
+    pub(crate) const fn new(init: fn() -> PyReturn) -> Self {
+        Self {
+            init,
+            ptr: SwapPtr::new(None),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn get(&self) -> PyResult<PyObj> {
+        if let Some(p) = self.ptr.load() {
+            return Ok(PyObj::wrap(p));
+        }
+        self.get_slow()
+    }
+
+    #[cold]
+    fn get_slow(&self) -> PyResult<PyObj> {
+        let owned = (self.init)()?;
+        let obj = owned.py_owned();
+        match self.ptr.try_init(obj.as_nonnull()) {
+            Ok(()) => Ok(obj),
+            Err(winner) => {
+                // Another init won the race — DECREF ours, return theirs
+                unsafe { Py_DECREF(obj.as_ptr()) };
+                Ok(PyObj::wrap(winner))
+            }
+        }
+    }
+
+    pub(crate) fn gc_traverse(&self, visit: visitproc, arg: *mut c_void) -> TraverseResult {
+        if let Some(p) = self.ptr.load() {
+            traverse(p.as_ptr(), visit, arg)?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for OncePyObj {
+    fn drop(&mut self) {
+        if let Some(p) = self.ptr.swap(None) {
+            unsafe { Py_DECREF(p.as_ptr()) };
+        }
+    }
+}
 
 pub(crate) fn none() -> Owned<PyObj> {
     // SAFETY: Py_None is a valid pointer
     unsafe { PyObj::from_ptr_unchecked(Py_None()) }.newref()
 }
 
-pub(crate) fn identity1(_: PyType, slf: PyObj) -> Owned<PyObj> {
-    slf.newref()
-}
+/// Slot function for unary positive: just returns a new reference to self.
+pub(crate) const IDENTITY_SLOT: PyType_Slot = PyType_Slot {
+    slot: Py_nb_positive,
+    pfunc: {
+        unsafe extern "C" fn _wrap(slf: *mut PyObject) -> *mut PyObject {
+            unsafe { pyo3_ffi::Py_NewRef(slf) }
+        }
+        _wrap as *mut c_void
+    },
+};
 
-pub(crate) fn __copy__(_: PyType, slf: PyObj) -> Owned<PyObj> {
-    slf.newref()
-}
+/// __copy__ slot: immutable objects just return a new reference to self.
+pub(crate) const COPY_METHOD: PyMethodDef = PyMethodDef {
+    ml_name: c"__copy__".as_ptr().cast(),
+    ml_meth: PyMethodDefPointer {
+        PyCFunction: {
+            unsafe extern "C" fn _wrap(slf: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
+                unsafe { pyo3_ffi::Py_NewRef(slf) }
+            }
+            _wrap
+        },
+    },
+    ml_flags: METH_NOARGS,
+    ml_doc: c"".as_ptr(),
+};
 
-pub(crate) fn __deepcopy__(_: PyType, slf: PyObj, _: PyObj) -> Owned<PyObj> {
-    slf.newref()
-}
+/// __deepcopy__ slot: immutable objects just return a new reference to self.
+pub(crate) const DEEPCOPY_METHOD: PyMethodDef = PyMethodDef {
+    ml_name: c"__deepcopy__".as_ptr().cast(),
+    ml_meth: PyMethodDefPointer {
+        PyCFunction: {
+            unsafe extern "C" fn _wrap(slf: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
+                unsafe { pyo3_ffi::Py_NewRef(slf) }
+            }
+            _wrap
+        },
+    },
+    ml_flags: METH_O,
+    ml_doc: c"".as_ptr(),
+};
 
 pub(crate) fn import(module: &CStr) -> PyReturn {
     unsafe { PyImport_ImportModule(module.as_ptr()) }.own()
@@ -33,10 +117,10 @@ pub(crate) fn __get_pydantic_core_schema__<T: PyWrapped>(
 }
 
 pub(crate) fn not_implemented() -> PyReturn {
-    Ok(Owned::new(
+    Ok(
         // SAFETY: Py_NotImplemented is always non-null
-        unsafe { PyObj::from_ptr_unchecked(Py_NewRef(Py_NotImplemented())) },
-    ))
+        unsafe { PyObj::from_ptr_unchecked(Py_NotImplemented()) }.newref(),
+    )
 }
 
 /// Pack various types into a byte array. Used for pickling.
@@ -59,60 +143,6 @@ macro_rules! unpack_one {
         }
         data
     }};
-}
-
-/// A lazily-initialized Python object with GC traverse and cleanup support.
-/// Uses lock-free CAS on a SwapPtr for initialization.
-/// Returns `PyObj` by value (Copy) — no reference lifetime concerns.
-pub(crate) struct OncePyObj {
-    init: fn() -> PyReturn,
-    ptr: crate::common::sync::SwapPtr<PyObject>,
-}
-
-impl OncePyObj {
-    pub(crate) const fn new(init: fn() -> PyReturn) -> Self {
-        Self {
-            init,
-            ptr: crate::common::sync::SwapPtr::new(None),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn get(&self) -> PyResult<PyObj> {
-        if let Some(p) = self.ptr.load() {
-            return Ok(PyObj::wrap(p));
-        }
-        self.get_slow()
-    }
-
-    #[cold]
-    fn get_slow(&self) -> PyResult<PyObj> {
-        let owned = (self.init)()?;
-        let obj = owned.py_owned();
-        match self.ptr.try_init(obj.as_nonnull()) {
-            Ok(()) => Ok(obj),
-            Err(winner) => {
-                // Another init beat us — DECREF ours, use theirs
-                unsafe { Py_DECREF(obj.as_ptr()) };
-                Ok(PyObj::wrap(winner))
-            }
-        }
-    }
-
-    pub(crate) fn gc_traverse(&self, visit: visitproc, arg: *mut c_void) -> TraverseResult {
-        if let Some(p) = self.ptr.load() {
-            traverse(p.as_ptr(), visit, arg)?;
-        }
-        Ok(())
-    }
-}
-
-impl Drop for OncePyObj {
-    fn drop(&mut self) {
-        if let Some(p) = self.ptr.swap(None) {
-            unsafe { Py_DECREF(p.as_ptr()) };
-        }
-    }
 }
 
 // FUTURE: a more efficient way for specific cases?

@@ -38,11 +38,21 @@ impl FromPy for PyDate {
 
 impl PyStaticType for PyDate {
     fn isinstance_exact(obj: impl PyBase) -> bool {
-        unsafe { PyDate_CheckExact(obj.as_ptr()) != 0 }
+        unsafe {
+            if PyDateTimeAPI().is_null() {
+                PyDateTime_IMPORT();
+            }
+            PyDate_CheckExact(obj.as_ptr()) != 0
+        }
     }
 
     fn isinstance(obj: impl PyBase) -> bool {
-        unsafe { PyDate_Check(obj.as_ptr()) != 0 }
+        unsafe {
+            if PyDateTimeAPI().is_null() {
+                PyDateTime_IMPORT();
+            }
+            PyDate_Check(obj.as_ptr()) != 0
+        }
     }
 }
 
@@ -122,11 +132,21 @@ impl FromPy for PyDateTime {
 
 impl PyStaticType for PyDateTime {
     fn isinstance_exact(obj: impl PyBase) -> bool {
-        unsafe { PyDateTime_CheckExact(obj.as_ptr()) != 0 }
+        unsafe {
+            if PyDateTimeAPI().is_null() {
+                PyDateTime_IMPORT();
+            }
+            PyDateTime_CheckExact(obj.as_ptr()) != 0
+        }
     }
 
     fn isinstance(obj: impl PyBase) -> bool {
-        unsafe { PyDateTime_Check(obj.as_ptr()) != 0 }
+        unsafe {
+            if PyDateTimeAPI().is_null() {
+                PyDateTime_IMPORT();
+            }
+            PyDateTime_Check(obj.as_ptr()) != 0
+        }
     }
 }
 
@@ -183,11 +203,21 @@ impl FromPy for PyTimeDelta {
 
 impl PyStaticType for PyTimeDelta {
     fn isinstance_exact(obj: impl PyBase) -> bool {
-        unsafe { PyDelta_CheckExact(obj.as_ptr()) != 0 }
+        unsafe {
+            if PyDateTimeAPI().is_null() {
+                PyDateTime_IMPORT();
+            }
+            PyDelta_CheckExact(obj.as_ptr()) != 0
+        }
     }
 
     fn isinstance(obj: impl PyBase) -> bool {
-        unsafe { PyDelta_Check(obj.as_ptr()) != 0 }
+        unsafe {
+            if PyDateTimeAPI().is_null() {
+                PyDateTime_IMPORT();
+            }
+            PyDelta_Check(obj.as_ptr()) != 0
+        }
     }
 }
 
@@ -236,11 +266,21 @@ impl FromPy for PyTime {
 
 impl PyStaticType for PyTime {
     fn isinstance_exact(obj: impl PyBase) -> bool {
-        unsafe { PyTime_CheckExact(obj.as_ptr()) != 0 }
+        unsafe {
+            if PyDateTimeAPI().is_null() {
+                PyDateTime_IMPORT();
+            }
+            PyTime_CheckExact(obj.as_ptr()) != 0
+        }
     }
 
     fn isinstance(obj: impl PyBase) -> bool {
-        unsafe { PyTime_Check(obj.as_ptr()) != 0 }
+        unsafe {
+            if PyDateTimeAPI().is_null() {
+                PyDateTime_IMPORT();
+            }
+            PyTime_Check(obj.as_ptr()) != 0
+        }
     }
 }
 

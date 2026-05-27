@@ -95,12 +95,12 @@ Browse the sidebar to navigate the documentation, or jump directly to a topic be
 
       All information on classes and functions
 
-   .. grid-item-card:: :octicon:`graph` Benchmarks
-      :link: benchmarks
+   .. grid-item-card:: :octicon:`graph` Performance
+      :link: performance
       :link-type: ref
       :shadow: md
 
-      How whenever compares in speed
+      Speed, import time, and binary size
 
    .. grid-item-card:: :octicon:`question` FAQ
       :link: faq
@@ -142,7 +142,7 @@ Browse the sidebar to navigate the documentation, or jump directly to a topic be
    Introduction <self>
    guide/index
    examples
-   benchmarks
+   performance
    design
    faq
 

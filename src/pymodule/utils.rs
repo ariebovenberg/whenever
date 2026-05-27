@@ -38,7 +38,7 @@ pub(crate) fn new_class<T: PyWrapped>(
     Ok((cls, unpickler))
 }
 
-pub(crate) fn create_singletons<T: PySimpleAlloc>(
+pub(crate) fn create_singletons<T: PyWrapped + Copy>(
     cls: HeapType<T>,
     objs: &[(&CStr, T)],
 ) -> PyResult<()> {

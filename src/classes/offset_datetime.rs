@@ -250,7 +250,7 @@ fn skip_tzname(s: &mut Scan) -> Option<()> {
     Some(())
 }
 
-impl PySimpleAlloc for OffsetDateTime {}
+impl PyWrapped for OffsetDateTime {}
 
 impl Display for OffsetDateTime {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -259,13 +259,17 @@ impl Display for OffsetDateTime {
     }
 }
 
+#[inline(never)]
 fn __new__(cls: HeapType<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let arg = args.iter().next().unwrap();
+        if PyStr::isinstance(arg) {
+            return parse_iso(cls, arg);
+        }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
             return OffsetDateTime::from_py(dt)?.to_obj(cls);
         }
-        return parse_iso(cls, arg);
+        return raise_type_err("OffsetDateTime() requires an ISO 8601 string or datetime.datetime");
     }
     let mut year: c_long = 0;
     let mut month: c_long = 0;
@@ -336,7 +340,7 @@ fn __richcmp__(
 
         if let Some(inst) = b_obj.extract(*state.instant_type) {
             inst
-        } else if let Some(zdt) = b_obj.extract(*state.zoned_datetime_type) {
+        } else if let Some(zdt) = b_obj.extract_ref(*state.zoned_datetime_type) {
             zdt.instant()
         } else {
             return not_implemented();
@@ -416,7 +420,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         }
         let inst_b = if let Some(inst) = obj_b.extract(*state.instant_type) {
             inst
-        } else if let Some(zdt) = obj_b.extract(*state.zoned_datetime_type) {
+        } else if let Some(zdt) = obj_b.extract_ref(*state.zoned_datetime_type) {
             zdt.instant()
         } else {
             return not_implemented();
@@ -474,18 +478,14 @@ pub(crate) fn to_instant(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> 
     slf.instant().to_obj(*cls.state().instant_type)
 }
 
-fn to_fixed_offset(cls: HeapType<OffsetDateTime>, slf_obj: PyObj, args: &[PyObj]) -> PyReturn {
+fn to_fixed_offset(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime, args: &[PyObj]) -> PyReturn {
     match *args {
-        [] => Ok(slf_obj.newref()),
-        [offset_obj] => {
-            // SAFETY: self argument is always of OffsetDateTime type
-            unsafe { slf_obj.assume_heaptype::<OffsetDateTime>() }
-                .1
-                .instant()
-                .to_offset(Offset::from_obj(offset_obj, *cls.state().time_delta_type)?)
-                .ok_or_range_err()?
-                .to_obj(cls)
-        }
+        [] => slf.to_obj(cls),
+        [offset_obj] => slf
+            .instant()
+            .to_offset(Offset::from_obj(offset_obj, *cls.state().time_delta_type)?)
+            .ok_or_range_err()?
+            .to_obj(cls),
         _ => raise_type_err("to_fixed_offset() takes at most 1 argument"),
     }
 }
@@ -618,7 +618,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
 }
 
 fn to_stdlib(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    slf.to_py(cls.state().py_api)
+    slf.to_py(cls.state().py_api()?)
         .map(|owned| owned.map(|dt| dt.as_py_obj()))
 }
 
@@ -1041,7 +1041,7 @@ fn difference(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime, arg: PyObj) ->
         odt.instant()
     } else if let Some(inst) = arg.extract(*state.instant_type) {
         inst
-    } else if let Some(zdt) = arg.extract(*state.zoned_datetime_type) {
+    } else if let Some(zdt) = arg.extract_ref(*state.zoned_datetime_type) {
         zdt.instant()
     } else {
         raise_type_err(
@@ -1494,8 +1494,8 @@ fn parse(cls: HeapType<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs)
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method0!(OffsetDateTime, __copy__, c""),
-    method1!(OffsetDateTime, __deepcopy__, c""),
+    COPY_METHOD,
+    DEEPCOPY_METHOD,
     method0!(OffsetDateTime, __reduce__, c""),
     classmethod_kwargs!(OffsetDateTime, now, doc::OFFSETDATETIME_NOW),
     method1!(OffsetDateTime, exact_eq, doc::EXACTTIME_EXACT_EQ),
