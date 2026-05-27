@@ -8,12 +8,9 @@
 //!   Has `try_init` for lock-free init-once patterns (CAS null→value).
 //! - `OncePyCell<T>`: A cell that computes its value on first access (fallible).
 //!   Supports `set()` to override the value later (e.g. for user-controlled search paths).
-//!   Uses `UnsafeCell` for GIL builds, lock-free CAS for free-threaded builds.
-//!   On concurrent init, both threads compute the value; the CAS loser drops theirs.
-//!   `set()` is NOT thread-safe in free-threaded builds — callers must ensure no
-//!   concurrent `get()` calls are in progress (the GIL provides this guarantee).
-//! - `AtomicRefCount`: A reference counter. Uses plain `usize` for GIL builds,
-//!   `AtomicUsize` for free-threaded builds.
+//!   Returns `Arc<T>` so that a concurrent `set()` never frees memory still reachable by a reader.
+//!   GIL builds use `UnsafeCell<Option<Arc<T>>>` (no lock overhead).
+//!   Free-threaded builds use `RwLock<Option<Arc<T>>>` (shared read lock, exclusive write lock).
 
 // =============================================================================
 // GIL-enabled builds: no synchronization needed
@@ -24,6 +21,7 @@ mod gil_enabled {
     use crate::py::PyResult;
     use std::cell::UnsafeCell;
     use std::ptr::NonNull;
+    use std::sync::Arc;
 
     /// A cell that provides interior mutability without synchronization.
     /// Safe only when the GIL guarantees single-threaded access.
@@ -89,56 +87,12 @@ mod gil_enabled {
     // SAFETY: With GIL enabled, Python ensures single-threaded access
     unsafe impl<T> Sync for SwapPtr<T> {}
 
-    /// A reference counter without atomic operations.
-    /// Safe only when the GIL guarantees single-threaded access.
-    #[derive(Debug)]
-    pub(crate) struct AtomicRefCount(UnsafeCell<usize>);
-
-    impl AtomicRefCount {
-        pub(crate) fn new(value: usize) -> Self {
-            Self(UnsafeCell::new(value))
-        }
-
-        #[inline]
-        pub(crate) fn get(&self) -> usize {
-            // SAFETY: GIL guarantees single-threaded access
-            unsafe { *self.0.get() }
-        }
-
-        #[inline]
-        pub(crate) fn increment(&self) {
-            // SAFETY: GIL guarantees single-threaded access
-            unsafe { *self.0.get() += 1 }
-        }
-
-        /// This method always succeeds in GIL-enabled builds.
-        /// See the free-threaded version for details.
-        #[inline]
-        pub(crate) fn try_increment(&self) -> bool {
-            self.increment();
-            true
-        }
-
-        /// Decrements the counter and returns the new value.
-        #[inline]
-        pub(crate) fn decrement(&self) -> usize {
-            // SAFETY: GIL guarantees single-threaded access
-            unsafe {
-                let ptr = self.0.get();
-                *ptr -= 1;
-                *ptr
-            }
-        }
-    }
-
-    // SAFETY: With GIL enabled, Python ensures single-threaded access
-    unsafe impl Sync for AtomicRefCount {}
-
     /// A cell that computes its value on first access (fallible).
-    /// In GIL builds: no synchronization needed.
+    /// In GIL builds: no synchronization needed. Stores `Arc<T>` so the API
+    /// is identical to the free-threaded variant.
     pub(crate) struct OncePyCell<T> {
         init: fn() -> PyResult<T>,
-        value: UnsafeCell<Option<T>>,
+        value: UnsafeCell<Option<Arc<T>>>,
     }
 
     impl<T> OncePyCell<T> {
@@ -151,28 +105,28 @@ mod gil_enabled {
 
         /// Get the value, initializing on first call.
         #[inline]
-        pub(crate) fn get(&self) -> PyResult<&T> {
+        pub(crate) fn get(&self) -> PyResult<Arc<T>> {
             // SAFETY: GIL guarantees single-threaded access
             let slot = unsafe { &mut *self.value.get() };
             if slot.is_none() {
-                *slot = Some((self.init)()?);
+                *slot = Some(Arc::new((self.init)()?));
             }
             // SAFETY: We just ensured it's Some
-            Ok(unsafe { slot.as_ref().unwrap_unchecked() })
+            Ok(unsafe { slot.as_ref().unwrap_unchecked() }.clone())
         }
 
         /// Get the value if already initialized (e.g. for GC traverse).
         #[inline]
-        pub(crate) fn get_if_init(&self) -> Option<&T> {
+        pub(crate) fn get_if_init(&self) -> Option<Arc<T>> {
             // SAFETY: GIL guarantees single-threaded access
-            unsafe { (*self.value.get()).as_ref() }
+            unsafe { (*self.value.get()).as_ref() }.map(Arc::clone)
         }
 
         /// Override the stored value, replacing any existing one (or bypassing lazy init).
         #[inline]
         pub(crate) fn set(&self, value: T) {
             // SAFETY: GIL guarantees single-threaded access
-            *unsafe { &mut *self.value.get() } = Some(value);
+            *unsafe { &mut *self.value.get() } = Some(Arc::new(value));
         }
     }
 
@@ -197,8 +151,8 @@ mod free_threaded {
     use crate::py::PyResult;
     use std::ptr::NonNull;
     use std::sync::{
-        Mutex,
-        atomic::{AtomicPtr, AtomicUsize, Ordering},
+        Arc, Mutex, RwLock,
+        atomic::{AtomicPtr, Ordering},
     };
 
     /// A cell that provides interior mutability with mutex synchronization.
@@ -265,160 +219,82 @@ mod free_threaded {
         }
     }
 
-    /// A reference counter with atomic operations.
-    #[derive(Debug)]
-    pub(crate) struct AtomicRefCount(AtomicUsize);
-
-    impl AtomicRefCount {
-        pub(crate) fn new(value: usize) -> Self {
-            Self(AtomicUsize::new(value))
-        }
-
-        #[inline]
-        pub(crate) fn get(&self) -> usize {
-            self.0.load(Ordering::Acquire)
-        }
-
-        #[inline]
-        pub(crate) fn increment(&self) {
-            self.0.fetch_add(1, Ordering::AcqRel);
-        }
-
-        /// Try to increment the counter if it's not zero.
-        /// Returns true if successful, false if the counter was zero.
-        /// Uses compare-and-swap to atomically check and increment.
-        #[inline]
-        pub(crate) fn try_increment(&self) -> bool {
-            let mut current = self.0.load(Ordering::Acquire);
-            loop {
-                if current == 0 {
-                    return false;
-                }
-                match self.0.compare_exchange_weak(
-                    current,
-                    current + 1,
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
-                ) {
-                    Ok(_) => return true,
-                    Err(new) => current = new,
-                }
-            }
-        }
-
-        /// Decrements the counter and returns the new value.
-        #[inline]
-        pub(crate) fn decrement(&self) -> usize {
-            self.0.fetch_sub(1, Ordering::AcqRel) - 1
-        }
-    }
-
     /// A cell that computes its value on first access (fallible).
-    /// In free-threaded builds: uses lock-free CAS. On concurrent init, both
-    /// threads compute the value; the CAS loser drops theirs.
+    /// In free-threaded builds: uses `RwLock<Option<Arc<T>>>`.
+    /// Reads take a shared read lock (fast when uncontested) and clone the `Arc`.
+    /// Writes (init or `set()`) take an exclusive write lock.
+    ///
+    /// Storing `Arc<T>` fixes the `set()` vs `get()` race present in a raw-pointer
+    /// design: `set()` replaces the `Arc` under the write lock; any reader already
+    /// holding a cloned `Arc` keeps its allocation alive until the clone drops.
+    ///
+    /// For truly lock-free reads, `arc-swap` (or hazard pointers) would be needed,
+    /// but the overhead of an uncontested read lock is negligible for this use case.
     pub(crate) struct OncePyCell<T> {
         init: fn() -> PyResult<T>,
-        ptr: AtomicPtr<T>,
+        value: RwLock<Option<Arc<T>>>,
     }
 
     impl<T> OncePyCell<T> {
         pub(crate) const fn new(init: fn() -> PyResult<T>) -> Self {
             Self {
                 init,
-                ptr: AtomicPtr::new(std::ptr::null_mut()),
+                value: RwLock::new(None),
             }
         }
 
-        /// Fast path: return reference if already initialized.
+        /// Get the value, initializing on first call.
+        /// Fast path: one read lock + Arc clone (2 uncontested atomics).
         #[inline]
-        pub(crate) fn get(&self) -> PyResult<&T> {
-            let p = self.ptr.load(Ordering::Acquire);
-            if !p.is_null() {
-                // SAFETY: non-null ptr is a valid Box pointer that's never moved
-                return Ok(unsafe { &*p });
+        pub(crate) fn get(&self) -> PyResult<Arc<T>> {
+            if let Some(arc) = self.value.read().unwrap().as_ref() {
+                return Ok(arc.clone());
             }
             self.get_slow()
         }
 
-        /// Slow path: compute the value and CAS it in.
+        /// Slow path: compute the value and store it under a write lock.
+        /// Double-checked: another thread may have initialized while we computed.
         #[cold]
-        fn get_slow(&self) -> PyResult<&T> {
-            let val = (self.init)()?;
-            let new_ptr = Box::into_raw(Box::new(val));
-            match self.ptr.compare_exchange(
-                std::ptr::null_mut(),
-                new_ptr,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => {
-                    // SAFETY: we just stored this pointer, it's valid
-                    Ok(unsafe { &*new_ptr })
-                }
-                Err(winner) => {
-                    // Another thread won — drop ours, use theirs
-                    drop(unsafe { Box::from_raw(new_ptr) });
-                    // SAFETY: winner is non-null and stable (never swapped after init)
-                    Ok(unsafe { &*winner })
-                }
+        fn get_slow(&self) -> PyResult<Arc<T>> {
+            let val = Arc::new((self.init)()?);
+            let mut guard = self.value.write().unwrap();
+            if let Some(existing) = guard.as_ref() {
+                return Ok(existing.clone());
             }
+            *guard = Some(val.clone());
+            Ok(val)
         }
 
         /// Get the value if already initialized (e.g. for GC traverse).
         #[inline]
-        pub(crate) fn get_if_init(&self) -> Option<&T> {
-            let p = self.ptr.load(Ordering::Acquire);
-            if p.is_null() {
-                None
-            } else {
-                // SAFETY: non-null ptr is stable and valid
-                Some(unsafe { &*p })
-            }
+        pub(crate) fn get_if_init(&self) -> Option<Arc<T>> {
+            self.value.read().unwrap().as_ref().map(Arc::clone)
         }
 
         /// Override the stored value, replacing any existing one (or bypassing lazy init).
-        /// NOT thread-safe in free-threaded builds: callers must ensure no concurrent
-        /// `get()` calls are in progress, since old allocations are freed immediately.
-        /// In GIL builds the GIL guarantees single-threaded access.
+        /// Safe: write lock ensures no reader is active; old `Arc` is dropped after the lock
+        /// is released, and existing `Arc` clones (held by readers) keep the allocation alive.
         pub(crate) fn set(&self, value: T) {
-            let new_ptr = Box::into_raw(Box::new(value));
-            let old_ptr = self.ptr.swap(new_ptr, Ordering::AcqRel);
-            if !old_ptr.is_null() {
-                // SAFETY: old_ptr was created by Box::into_raw and is no longer accessible
-                drop(unsafe { Box::from_raw(old_ptr) });
-            }
-        }
-    }
-
-    impl<T> Drop for OncePyCell<T> {
-        fn drop(&mut self) {
-            let p = *self.ptr.get_mut();
-            if !p.is_null() {
-                // SAFETY: p was created by Box::into_raw
-                drop(unsafe { Box::from_raw(p) });
-            }
+            *self.value.write().unwrap() = Some(Arc::new(value));
         }
     }
 
     impl<T: std::fmt::Debug> std::fmt::Debug for OncePyCell<T> {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            let p = self.ptr.load(Ordering::Acquire);
-            let value: Option<&T> = if p.is_null() {
-                None
-            } else {
-                Some(unsafe { &*p })
-            };
-            f.debug_struct("OncePyCell").field("value", &value).finish()
+            f.debug_struct("OncePyCell")
+                .field("value", &*self.value.read().unwrap())
+                .finish()
         }
     }
 
-    // SAFETY: OncePyCell uses proper atomic synchronization for concurrent access
+    // SAFETY: OncePyCell uses RwLock for safe concurrent access
     unsafe impl<T: Send + Sync> Sync for OncePyCell<T> {}
     unsafe impl<T: Send> Send for OncePyCell<T> {}
 }
 
 #[cfg(not(Py_GIL_DISABLED))]
-pub(crate) use gil_enabled::*;
+pub(crate) use gil_enabled::{OncePyCell, SwapPtr, SyncCell};
 
 #[cfg(Py_GIL_DISABLED)]
-pub(crate) use free_threaded::*;
+pub(crate) use free_threaded::{OncePyCell, SwapPtr, SyncCell};

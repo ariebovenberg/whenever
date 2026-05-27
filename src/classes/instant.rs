@@ -198,10 +198,13 @@ impl Instant {
 fn __new__(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let arg = args.iter().next().unwrap();
+        if PyStr::isinstance(arg) {
+            return parse_iso(cls, arg);
+        }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
             return Instant::from_py(dt)?.ok_or_range_err()?.to_obj(cls);
         }
-        parse_iso(cls, arg)
+        raise_type_err("Instant() requires an ISO 8601 string or datetime.datetime")
     } else {
         raise_type_err(
             "Instant() can only be called with an ISO 8601 string passed
@@ -240,7 +243,7 @@ fn from_utc(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> Py
     .to_obj(cls)
 }
 
-impl PySimpleAlloc for Instant {}
+impl PyWrapped for Instant {}
 
 fn __repr__(_: PyType, i: Instant) -> PyReturn {
     let DateTime { date, time } = i.utc_datetime();
@@ -268,7 +271,7 @@ fn __richcmp__(cls: HeapType<Instant>, inst_a: Instant, b_obj: PyObj, op: c_int)
         i
     } else {
         let state = cls.state();
-        if let Some(i) = b_obj.extract(*state.zoned_datetime_type) {
+        if let Some(i) = b_obj.extract_ref(*state.zoned_datetime_type) {
             i.instant()
         } else if let Some(odt) = b_obj.extract(*state.offset_datetime_type) {
             odt.instant()
@@ -313,7 +316,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
         let (inst_type, inst_a) = unsafe { obj_a.assume_heaptype::<Instant>() };
-        let inst_b = if let Some(zdt) = obj_b.extract(*state.zoned_datetime_type) {
+        let inst_b = if let Some(zdt) = obj_b.extract_ref(*state.zoned_datetime_type) {
             zdt.instant()
         } else if let Some(odt) = obj_b.extract(*state.offset_datetime_type) {
             odt.instant()
@@ -484,7 +487,7 @@ fn from_timestamp_nanos(cls: HeapType<Instant>, ts: PyObj) -> PyReturn {
 }
 
 fn to_stdlib(cls: HeapType<Instant>, slf: Instant) -> PyReturn {
-    slf.to_py(cls.state().py_api)
+    slf.to_py(cls.state().py_api()?)
 }
 
 fn py_datetime(cls: HeapType<Instant>, slf: Instant) -> PyReturn {
@@ -593,12 +596,12 @@ fn shift_method(
     }
 }
 
-fn difference(cls: HeapType<Instant>, inst_a: Instant, obj_b: PyObj) -> PyReturn {
+fn difference(cls: HeapType<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     let state = cls.state();
 
     let inst_b = if let Some(i) = obj_b.extract(cls) {
         i
-    } else if let Some(zdt) = obj_b.extract(*state.zoned_datetime_type) {
+    } else if let Some(zdt) = obj_b.extract_ref(*state.zoned_datetime_type) {
         zdt.instant()
     } else if let Some(odt) = obj_b.extract(*state.offset_datetime_type) {
         odt.instant()
@@ -608,7 +611,7 @@ fn difference(cls: HeapType<Instant>, inst_a: Instant, obj_b: PyObj) -> PyReturn
              Instant, or ZonedDateTime",
         )?
     };
-    inst_a.diff(inst_b).to_obj(*state.time_delta_type)
+    slf.diff(inst_b).to_obj(*state.time_delta_type)
 }
 
 fn to_tz(cls: HeapType<Instant>, slf: Instant, tz_obj: PyObj) -> PyReturn {
@@ -781,8 +784,8 @@ fn parse(cls: HeapType<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyR
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method0!(Instant, __copy__, c""),
-    method1!(Instant, __deepcopy__, c""),
+    COPY_METHOD,
+    DEEPCOPY_METHOD,
     method0!(Instant, __reduce__, c""),
     method1!(Instant, exact_eq, doc::EXACTTIME_EXACT_EQ),
     method0!(Instant, timestamp, doc::EXACTTIME_TIMESTAMP),

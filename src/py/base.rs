@@ -41,28 +41,44 @@ impl PyObj {
         unsafe { PyType::from_ptr_unchecked(Py_TYPE(self.inner.as_ptr()).cast()) }
     }
 
-    /// Convert into anything that converts from PyObject.
-    /// Useful for passing Pyobjects into functions that may convert them.
-    pub(crate) unsafe fn into_unchecked<T: FromPy>(self) -> T {
-        unsafe { T::from_ptr_unchecked(self.as_ptr()) }
+    /// Get a reference to the Rust data embedded in this Python object.
+    ///
+    /// # Safety
+    /// The caller must guarantee that `self` points to a `PyWrap<T>` instance.
+    #[inline]
+    pub(crate) unsafe fn data_ref<T: PyWrapped>(&self) -> &T {
+        unsafe { &(*self.inner.as_ptr().cast::<PyWrap<T>>()).data }
     }
 
-    /// Extract the class and its Rust data from a `PyObj` known to be a heap type.
+    /// Extract the class and a reference to the Rust data from a `PyObj`
+    /// known to be a heap type.
     ///
     /// # Safety
     /// The caller must guarantee that `self` is an instance of `HeapType<T>`.
-    pub(crate) unsafe fn assume_heaptype<T: PyWrapped>(&self) -> (HeapType<T>, T) {
+    pub(crate) unsafe fn assume_heaptype_ref<T: PyWrapped>(&self) -> (HeapType<T>, &T) {
         (
             unsafe { HeapType::from_ptr_unchecked(self.type_().as_ptr()) },
-            unsafe { T::from_obj(self.inner.as_ptr()) },
+            unsafe { self.data_ref::<T>() },
         )
     }
 
-    pub(crate) fn extract<T: PyWrapped>(&self, t: HeapType<T>) -> Option<T> {
-        (self.type_() == t.inner()).then(
-            // SAFETY: we've just checked the type, so this is safe
-            || unsafe { T::from_obj(self.inner.as_ptr()) },
+    pub(crate) unsafe fn assume_heaptype<T: PyWrapped + Copy>(&self) -> (HeapType<T>, T) {
+        (
+            unsafe { HeapType::from_ptr_unchecked(self.type_().as_ptr()) },
+            *unsafe { self.data_ref::<T>() },
         )
+    }
+
+    pub(crate) fn extract_ref<T: PyWrapped>(&self, t: HeapType<T>) -> Option<&T> {
+        (self.type_() == t.inner())
+            // SAFETY: we've just checked the type, so this is safe
+            .then(|| unsafe { self.data_ref::<T>() })
+    }
+
+    pub(crate) fn extract<T: PyWrapped + Copy>(&self, t: HeapType<T>) -> Option<T> {
+        (self.type_() == t.inner())
+            // SAFETY: we've just checked the type, so this is safe
+            .then(|| *unsafe { self.data_ref::<T>() })
     }
 
     /// Downcast to a specific type *exactly*. Cannot be used for heap types,

@@ -327,7 +327,7 @@ impl DateTime {
     }
 }
 
-impl PySimpleAlloc for DateTime {}
+impl PyWrapped for DateTime {}
 
 impl std::fmt::Display for DateTime {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -335,13 +335,17 @@ impl std::fmt::Display for DateTime {
     }
 }
 
+#[inline(never)]
 fn __new__(cls: HeapType<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let arg = args.iter().next().unwrap();
+        if PyStr::isinstance(arg) {
+            return parse_iso(cls, arg);
+        }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
             return DateTime::from_py(dt)?.to_obj(cls);
         }
-        return parse_iso(cls, arg);
+        return raise_type_err("PlainDateTime() requires an ISO 8601 string or datetime.datetime");
     }
     let mut year: c_long = 0;
     let mut month: c_long = 0;
@@ -477,13 +481,13 @@ fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
             a.shift_date(months, days)
                 .ok_or_range_err()?
                 .to_obj(dt_type)
-        } else if let Some(mut tdelta) = obj_b.extract(*state.time_delta_type) {
+        } else if let Some(tdelta) = obj_b.extract(*state.time_delta_type) {
             warn_with_class(
                 *state.warn_naive_arithmetic,
                 doc::PLAIN_SHIFT_UNAWARE_MSG,
                 1,
             )?;
-            tdelta = tdelta.negate_if(negate);
+            let tdelta = tdelta.negate_if(negate);
             a.shift(tdelta).ok_or_range_err()?.to_obj(dt_type)
         } else if let Some(dt) = obj_b.extract(*state.datetime_delta_type) {
             let mut months = dt.ddelta.months;
@@ -876,7 +880,7 @@ fn to_stdlib(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
         DateTime_FromDateAndTime,
         DateTimeType,
         ..
-    } = cls.state().py_api;
+    } = cls.state().py_api()?;
     // SAFETY: calling C API with valid arguments
     unsafe {
         DateTime_FromDateAndTime(
@@ -1183,7 +1187,7 @@ pub(crate) fn plain_since_float(
 ///
 /// This mirrors `zoned_datetime::total_cal` but works with raw `Instant` and
 /// `DateTime` values instead of `ZonedDateTime`, avoiding the need for a UTC
-/// `TzPtr`.
+/// timezone object.
 pub(crate) fn total_cal_plain(
     neg: bool,
     unit: math::CalUnit,
@@ -1236,6 +1240,7 @@ pub(crate) fn plain_since_inner(
     }
 }
 
+#[inline(never)]
 #[allow(clippy::too_many_arguments)]
 fn plain_since_in_units(
     state: &State,
@@ -1415,8 +1420,8 @@ fn parse(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> Py
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method0!(DateTime, __copy__, c""),
-    method1!(DateTime, __deepcopy__, c""),
+    COPY_METHOD,
+    DEEPCOPY_METHOD,
     method0!(DateTime, __reduce__, c""),
     classmethod1!(
         DateTime,

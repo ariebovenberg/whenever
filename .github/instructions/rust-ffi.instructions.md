@@ -13,7 +13,7 @@ The `src/py/` module provides safe wrappers. Key types:
 
 | Type | Purpose |
 |------|---------|
-| `PyObj` | Core wrapper around `*mut PyObject`. Has `.extract()`, `.type_()`, `.is_none()` |
+| `PyObj` | Core wrapper around `*mut PyObject`. Has `.extract()` (Copy types), `.extract_ref()` (ref types), `.type_()`, `.is_none()` |
 | `Owned<T>` | RAII refcount wrapper. Use `Owned::new()` to take ownership, `.borrow()` for non-owning access |
 | `HeapType<T>` | A Python heap type that carries module state via `.state()` → `&State` |
 | `PyType` | A Python type object. `.same_module()` checks if two types belong to the same module |
@@ -143,7 +143,7 @@ Use `match_interned_str` when the default error format is acceptable.
 ## Type-specific gotchas
 
 - **ZonedDateTime** doesn't implement `Ord` in Rust. Compare via `.instant()` for ordering.
-  Uses `TzPtr::is_same_tz()` for timezone comparison (not `==`).
+  Non-Copy (contains `Arc<TimeZone>`). Uses `Arc::ptr_eq` + content equality for timezone comparison.
   DST-aware operations need `ambiguity_for_local()` resolution.
 - **OffsetDateTime** compares by instant (`Instant` has `Ord`). Offset is an `Offset` scalar.
 - **PlainDateTime** (`DateTime` in Rust) compares by local date+time. Has `Ord`.

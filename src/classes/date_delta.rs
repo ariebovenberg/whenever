@@ -108,7 +108,7 @@ impl DateDelta {
     }
 }
 
-impl PySimpleAlloc for DateDelta {}
+impl PyWrapped for DateDelta {}
 
 impl Neg for DateDelta {
     type Output = Self;
@@ -427,16 +427,13 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     }
 }
 
-fn __abs__(cls: HeapType<DateDelta>, slf: PyObj) -> PyReturn {
-    // SAFETY: self argument to __abs__ is always a DateDelta
-    let (_, DateDelta { months, days }) = unsafe { slf.assume_heaptype() };
-    if months.get() >= 0 && days.get() >= 0 {
+fn __abs__(cls: HeapType<DateDelta>, slf: Wrapped<'_, DateDelta>) -> PyReturn {
+    if slf.months.get() >= 0 && slf.days.get() >= 0 {
         Ok(slf.newref())
     } else {
         DateDelta {
-            // SAFETY: No overflow is possible due to the ranges
-            months: -months,
-            days: -days,
+            months: -slf.months,
+            days: -slf.days,
         }
         .to_obj(cls)
     }
@@ -461,7 +458,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(DateDelta, Py_nb_negative, __neg__, 1),
     slotmethod!(DateDelta, Py_tp_repr, __repr__, 1),
     slotmethod!(DateDelta, Py_tp_str, __str__, 1),
-    slotmethod!(DateDelta, Py_nb_positive, identity1, 1),
+    IDENTITY_SLOT,
     slotmethod!(DateDelta, Py_nb_absolute, __abs__, 1),
     slotmethod!(Py_nb_multiply, __mul__, 2),
     slotmethod!(Py_nb_add, __add__, 2),
@@ -681,8 +678,8 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
 }
 
 static mut METHODS: &[PyMethodDef] = &[
-    method0!(DateDelta, __copy__, c""),
-    method1!(DateDelta, __deepcopy__, c""),
+    COPY_METHOD,
+    DEEPCOPY_METHOD,
     method0!(DateDelta, format_iso, doc::DATEDELTA_FORMAT_ISO),
     classmethod1!(DateDelta, parse_iso, doc::DATEDELTA_PARSE_ISO),
     method0!(DateDelta, in_months_days, doc::DATEDELTA_IN_MONTHS_DAYS),

@@ -16,7 +16,10 @@ use crate::{
         },
         zoned_datetime::{self, unpickle as _unpkl_zoned},
     },
-    common::{round, sync::OncePyCell},
+    common::{
+        round,
+        sync::{OncePyCell, SwapPtr},
+    },
     docstrings as doc,
     py::*,
     pymodule::{
@@ -216,12 +219,6 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         .getattr(c"_unpkl_utc")?
         .setattr(c"__module__", *module_name)?;
 
-    unsafe { PyDateTime_IMPORT() };
-    let py_api = match unsafe { PyDateTimeAPI().as_ref() } {
-        Some(api) => api,
-        None => Err(PyErrMarker)?,
-    };
-
     let exc_repeated = new_exception(
         module,
         c"whenever.RepeatedTime",
@@ -323,7 +320,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
             ])
         }),
 
-        py_api,
+        py_api: SwapPtr::new(None),
         // NOTE: getting strptime from the C API `DateTimeType` results in crashes
         // with subinterpreters. Thus we import it through Python.
         strptime: OncePyObj::new(|| {
@@ -526,7 +523,7 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
     state.monthday_type.gc_traverse(visit, arg)?;
     state.isoweekdate_new.gc_traverse(visit, arg)?;
     if let Some(members) = state.weekday_enum_members.get_if_init() {
-        for m in members {
+        for m in members.iter() {
             m.gc_traverse(visit, arg)?;
         }
     }
@@ -632,7 +629,7 @@ pub(crate) struct State {
     pub(crate) unpickle_offset_datetime: Owned<PyObj>,
     pub(crate) unpickle_zoned_datetime: Owned<PyObj>,
 
-    pub(crate) py_api: &'static PyDateTime_CAPI,
+    pub(crate) py_api: SwapPtr<PyDateTime_CAPI>,
 
     // imported stuff
     pub(crate) strptime: OncePyObj,
@@ -696,4 +693,24 @@ pub(crate) struct State {
 
     pub(crate) time_patch: Patch,
     pub(crate) tz_store: TzStore,
+}
+
+impl State {
+    pub(crate) fn py_api(&self) -> PyResult<&'static PyDateTime_CAPI> {
+        if let Some(p) = self.py_api.load() {
+            return Ok(unsafe { p.as_ref() });
+        }
+        self.py_api_slow()
+    }
+
+    #[cold]
+    fn py_api_slow(&self) -> PyResult<&'static PyDateTime_CAPI> {
+        unsafe { PyDateTime_IMPORT() };
+        let api = unsafe { PyDateTimeAPI().as_ref() }.ok_or(PyErrMarker)?;
+        // try_init is a no-op if another thread already initialized
+        let _ = self
+            .py_api
+            .try_init(unsafe { std::ptr::NonNull::new_unchecked(PyDateTimeAPI()) });
+        Ok(api)
+    }
 }

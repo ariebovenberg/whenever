@@ -197,7 +197,7 @@ pub(crate) fn parse_date_fields(s: &mut &[u8], negated: bool) -> Option<Itemized
     Some(result)
 }
 
-impl PySimpleAlloc for ItemizedDateDelta {}
+impl PyWrapped for ItemizedDateDelta {}
 
 fn __new__(cls: HeapType<ItemizedDateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     match args.len() {
@@ -311,30 +311,28 @@ fn __richcmp__(
     }
 }
 
-fn __neg__(cls: HeapType<ItemizedDateDelta>, slf: PyObj) -> PyReturn {
-    let (_, d) = unsafe { slf.assume_heaptype::<ItemizedDateDelta>() };
-    if d.derived_sign() == 0 {
+fn __neg__(cls: HeapType<ItemizedDateDelta>, slf: Wrapped<'_, ItemizedDateDelta>) -> PyReturn {
+    if slf.derived_sign() == 0 {
         return Ok(slf.newref());
     }
     ItemizedDateDelta {
-        years: d.years.neg(),
-        months: d.months.neg(),
-        weeks: d.weeks.neg(),
-        days: d.days.neg(),
+        years: slf.years.neg(),
+        months: slf.months.neg(),
+        weeks: slf.weeks.neg(),
+        days: slf.days.neg(),
     }
     .to_obj(cls)
 }
 
-fn __abs__(cls: HeapType<ItemizedDateDelta>, slf: PyObj) -> PyReturn {
-    let (_, d) = unsafe { slf.assume_heaptype::<ItemizedDateDelta>() };
-    if d.derived_sign() >= 0 {
+fn __abs__(cls: HeapType<ItemizedDateDelta>, slf: Wrapped<'_, ItemizedDateDelta>) -> PyReturn {
+    if slf.derived_sign() >= 0 {
         Ok(slf.newref())
     } else {
         ItemizedDateDelta {
-            years: d.years.neg(),
-            months: d.months.neg(),
-            weeks: d.weeks.neg(),
-            days: d.days.neg(),
+            years: slf.years.neg(),
+            months: slf.months.neg(),
+            weeks: slf.weeks.neg(),
+            days: slf.days.neg(),
         }
         .to_obj(cls)
     }
@@ -502,12 +500,14 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
 }
 
 fn extract_relative_to_date(state: &State, relative_to: Option<PyObj>) -> PyResult<Date> {
-    relative_to
+    let relative_to = relative_to
         .ok_or_type_err("missing required keyword argument: 'relative_to'")?
         .extract(*state.date_type)
-        .ok_or_type_err("relative_to must be a whenever.Date")
+        .ok_or_type_err("relative_to must be a whenever.Date")?;
+    Ok(relative_to)
 }
 
+#[inline(never)]
 fn in_units(
     cls: HeapType<ItemizedDateDelta>,
     d: ItemizedDateDelta,
@@ -549,6 +549,7 @@ fn in_units(
         .to_obj(*state.itemized_date_delta_type)
 }
 
+#[inline(never)]
 fn total(
     cls: HeapType<ItemizedDateDelta>,
     d: ItemizedDateDelta,
@@ -639,6 +640,7 @@ pub(crate) fn handle_date_delta_unit_kwargs(
     Ok(true)
 }
 
+#[inline(never)]
 fn add_sub(
     cls: HeapType<ItemizedDateDelta>,
     d: ItemizedDateDelta,
@@ -813,8 +815,8 @@ static mut GETSETTERS: &[PyGetSetDef] = &[PyGetSetDef {
 }];
 
 static mut METHODS: &[PyMethodDef] = &[
-    method0!(ItemizedDateDelta, __copy__, c""),
-    method1!(ItemizedDateDelta, __deepcopy__, c""),
+    COPY_METHOD,
+    DEEPCOPY_METHOD,
     method0!(ItemizedDateDelta, sign, doc::ITEMIZEDDATEDELTA_SIGN),
     method_kwargs!(
         ItemizedDateDelta,
