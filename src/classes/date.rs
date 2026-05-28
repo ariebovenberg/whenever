@@ -148,6 +148,27 @@ impl Date {
         Some(Date::new_clamp_days(year, month, self.day))
     }
 
+    pub(crate) fn start_of_week_mon(self) -> Option<Date> {
+        let days_back = self.unix_days().day_of_week().iso() as i32 - 1;
+        self.shift_days(DeltaDays::new(-days_back).unwrap())
+    }
+
+    pub(crate) fn start_of_week_sun(self) -> Option<Date> {
+        let dow = self.unix_days().day_of_week().iso() % 7;
+        self.shift_days(DeltaDays::new(-(dow as i32)).unwrap())
+    }
+
+    pub(crate) fn end_of_week_mon(self) -> Option<Date> {
+        let days_fwd = 7 - self.unix_days().day_of_week().iso() as i32;
+        self.shift_days(DeltaDays::new(days_fwd).unwrap())
+    }
+
+    pub(crate) fn end_of_week_sun(self) -> Option<Date> {
+        let dow = self.unix_days().day_of_week().iso() as i32;
+        let days_fwd = (6 - dow).rem_euclid(7);
+        self.shift_days(DeltaDays::new(days_fwd).unwrap())
+    }
+
     /// Parse YYYY-MM-DD
     pub(crate) fn parse_iso_extended(s: [u8; 10]) -> Option<Self> {
         (s[4] == b'-' && s[7] == b'-')
@@ -616,46 +637,67 @@ fn nth_weekday(cls: HeapType<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
 
 fn start_of(cls: HeapType<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
     let state = cls.state();
-    match_interned_str("unit", unit_obj, |v, eq| {
+    find_interned(unit_obj, |v, eq| {
         if eq(v, *state.str_year) {
-            Some(Date {
+            Some(Ok(Date {
                 year: slf.year,
                 month: Month::January,
                 day: 1,
-            })
+            }))
         } else if eq(v, *state.str_month) {
-            Some(Date {
+            Some(Ok(Date {
                 year: slf.year,
                 month: slf.month,
                 day: 1,
-            })
+            }))
+        } else if eq(v, *state.str_week_mon) {
+            Some(slf.start_of_week_mon().ok_or_range_err())
+        } else if eq(v, *state.str_week_sun) {
+            Some(slf.start_of_week_sun().ok_or_range_err())
         } else {
             None
         }
-    })?
+    })
+    .transpose()?
+    .ok_or_else(|| week_unit_error(state, unit_obj))?
     .to_obj(cls)
 }
 
 fn end_of(cls: HeapType<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
     let state = cls.state();
-    match_interned_str("unit", unit_obj, |v, eq| {
+    find_interned(unit_obj, |v, eq| {
         if eq(v, *state.str_year) {
-            Some(Date {
+            Some(Ok(Date {
                 year: slf.year,
                 month: Month::December,
                 day: 31,
-            })
+            }))
         } else if eq(v, *state.str_month) {
-            Some(Date {
+            Some(Ok(Date {
                 year: slf.year,
                 month: slf.month,
                 day: slf.year.days_in_month(slf.month),
-            })
+            }))
+        } else if eq(v, *state.str_week_mon) {
+            Some(slf.end_of_week_mon().ok_or_range_err())
+        } else if eq(v, *state.str_week_sun) {
+            Some(slf.end_of_week_sun().ok_or_range_err())
         } else {
             None
         }
-    })?
+    })
+    .transpose()?
+    .ok_or_else(|| week_unit_error(state, unit_obj))?
     .to_obj(cls)
+}
+
+fn week_unit_error(state: &State, unit_obj: PyObj) -> PyErrMarker {
+    if unit_obj.py_eq(*state.str_week).unwrap_or(false) {
+        raise_value_err::<(), _>("unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.")
+            .unwrap_err()
+    } else {
+        raise_value_err::<(), _>(format!("Invalid value for unit: {unit_obj}")).unwrap_err()
+    }
 }
 
 /// Extract a Weekday enum value from a Python argument

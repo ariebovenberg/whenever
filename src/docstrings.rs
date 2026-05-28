@@ -692,6 +692,8 @@ The end of the given calendar unit
 Date(\"2024-12-31\")
 >>> Date(2024, 8, 15).end_of(\"month\")
 Date(\"2024-08-31\")
+>>> Date(2024, 8, 15).end_of(\"week_mon\")
+Date(\"2024-08-18\")
 
 See also :meth:`start_of`
 ";
@@ -888,11 +890,8 @@ The start of the given calendar unit
 Date(\"2024-01-01\")
 >>> Date(2024, 8, 15).start_of(\"month\")
 Date(\"2024-08-01\")
-
-Note
-----
-``\"week\"`` is not a valid unit because weeks do not have
-a universal start day. Use :meth:`nth_weekday` instead.
+>>> Date(2024, 8, 15).start_of(\"week_mon\")
+Date(\"2024-08-12\")
 ";
 pub(crate) const DATE_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0)
@@ -1706,12 +1705,6 @@ The start of the given unit
 >>> OffsetDateTime(2024, 8, 15, 14, 30, offset=5).start_of(\"day\")
 OffsetDateTime(\"2024-08-15 00:00:00+05:00\")
 
-Note
-----
-``\"week\"`` is not a valid unit because weeks do not have
-a universal start day. Use :meth:`~Date.nth_weekday` on the
-:meth:`date` instead.
-
 Warning
 -------
 The offset is preserved, which may not be correct for the
@@ -1920,12 +1913,6 @@ The start of the given unit
 PlainDateTime(\"2024-08-15 00:00:00\")
 >>> PlainDateTime(2024, 8, 15, 14, 30, 45).start_of(\"hour\")
 PlainDateTime(\"2024-08-15 14:00:00\")
-
-Note
-----
-``\"week\"`` is not a valid unit because weeks do not have
-a universal start day. Use :meth:`~Date.nth_weekday` on the
-:meth:`date` instead.
 ";
 pub(crate) const PLAINDATETIME_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, ignore_dst=..., naive_arithmetic_ok=False)
@@ -2590,13 +2577,8 @@ ZonedDateTime(\"2024-08-15 00:00:00-04:00[America/New_York]\")
 >>> ZonedDateTime(2024, 8, 15, 14, 30, tz=\"America/New_York\").start_of(\"hour\")
 ZonedDateTime(\"2024-08-15 14:00:00-04:00[America/New_York]\")
 
-Note
-----
-``\"week\"`` is not a valid unit because weeks do not have
-a universal start day. Use :meth:`~Date.nth_weekday` on the
-:meth:`date` instead.
-
-For ``\"day\"``, ``\"month\"``, and ``\"year\"``, the resulting time
+For ``\"day\"``, ``\"month\"``, ``\"week_mon\"``, ``\"week_sun\"``,
+and ``\"year\"``, the resulting time
 is resolved in the timezone using ``\"compatible\"`` disambiguation,
 since midnight may not exist due to DST transitions.
 

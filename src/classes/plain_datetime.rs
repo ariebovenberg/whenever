@@ -120,91 +120,89 @@ impl DateTime {
         })
     }
 
+    fn week_unit_error(state: &State, unit_obj: PyObj) -> PyErrMarker {
+        if unit_obj.py_eq(*state.str_week).unwrap_or(false) {
+            raise_value_err::<(), _>(
+                "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.",
+            )
+            .unwrap_err()
+        } else {
+            raise_value_err::<(), _>(format!("Invalid value for unit: {unit_obj}")).unwrap_err()
+        }
+    }
+
     /// Compute the start-of-unit DateTime. Returns `(DateTime, bool)` where
     /// the bool indicates whether the result needs DST-aware resolution
-    /// (true for year/month/day, false for sub-day units that stay in the same day).
+    /// (true for year/month/day/week, false for sub-day units).
     pub(crate) fn start_of_unit(
         self,
         unit_obj: PyObj,
         state: &State,
     ) -> PyResult<(DateTime, bool)> {
         let d = self.date;
-        match_interned_str("unit", unit_obj, |v, eq| {
+        find_interned(unit_obj, |v, eq| {
             if eq(v, *state.str_year) {
-                Some((
-                    DateTime {
-                        date: Date {
-                            year: d.year,
-                            month: Month::January,
-                            day: 1,
-                        },
-                        time: Time::MIDNIGHT,
-                    },
-                    true,
-                ))
+                Some(Ok(Date {
+                    year: d.year,
+                    month: Month::January,
+                    day: 1,
+                }))
             } else if eq(v, *state.str_month) {
-                Some((
-                    DateTime {
-                        date: Date {
-                            year: d.year,
-                            month: d.month,
-                            day: 1,
-                        },
-                        time: Time::MIDNIGHT,
-                    },
-                    true,
-                ))
+                Some(Ok(Date {
+                    year: d.year,
+                    month: d.month,
+                    day: 1,
+                }))
+            } else if eq(v, *state.str_week_mon) {
+                Some(d.start_of_week_mon().ok_or_range_err())
+            } else if eq(v, *state.str_week_sun) {
+                Some(d.start_of_week_sun().ok_or_range_err())
             } else if eq(v, *state.str_day) {
-                Some((
-                    DateTime {
-                        date: d,
-                        time: Time::MIDNIGHT,
-                    },
-                    true,
-                ))
-            } else if eq(v, *state.str_hour) {
-                Some((
-                    DateTime {
-                        date: d,
-                        time: Time {
-                            hour: self.time.hour,
-                            minute: 0,
-                            second: 0,
-                            subsec: SubSecNanos::MIN,
-                        },
-                    },
-                    false,
-                ))
-            } else if eq(v, *state.str_minute) {
-                Some((
-                    DateTime {
-                        date: d,
-                        time: Time {
-                            hour: self.time.hour,
-                            minute: self.time.minute,
-                            second: 0,
-                            subsec: SubSecNanos::MIN,
-                        },
-                    },
-                    false,
-                ))
-            } else if eq(v, *state.str_second) {
-                Some((
-                    DateTime {
-                        date: d,
-                        time: Time {
-                            hour: self.time.hour,
-                            minute: self.time.minute,
-                            second: self.time.second,
-                            subsec: SubSecNanos::MIN,
-                        },
-                    },
-                    false,
-                ))
+                Some(Ok(d))
             } else {
                 None
             }
         })
+        .transpose()?
+        .map(|date| {
+            (
+                DateTime {
+                    date,
+                    time: Time::MIDNIGHT,
+                },
+                true,
+            )
+        })
+        .or_else(|| {
+            find_interned(unit_obj, |v, eq| {
+                if eq(v, *state.str_hour) {
+                    Some(Time {
+                        hour: self.time.hour,
+                        minute: 0,
+                        second: 0,
+                        subsec: SubSecNanos::MIN,
+                    })
+                } else if eq(v, *state.str_minute) {
+                    Some(Time {
+                        hour: self.time.hour,
+                        minute: self.time.minute,
+                        second: 0,
+                        subsec: SubSecNanos::MIN,
+                    })
+                } else if eq(v, *state.str_second) {
+                    Some(Time {
+                        hour: self.time.hour,
+                        minute: self.time.minute,
+                        second: self.time.second,
+                        subsec: SubSecNanos::MIN,
+                    })
+                } else {
+                    None
+                }
+            })
+            .map(|time| (DateTime { date: d, time }, false))
+        })
+        .ok_or_else(|| Self::week_unit_error(state, unit_obj))
     }
 
     /// Compute the end-of-unit DateTime. Returns `(DateTime, bool)` where
@@ -217,82 +215,69 @@ impl DateTime {
             second: 59,
             subsec: SubSecNanos::MAX,
         };
-        match_interned_str("unit", unit_obj, |v, eq| {
+        find_interned(unit_obj, |v, eq| {
             if eq(v, *state.str_year) {
-                Some((
-                    DateTime {
-                        date: Date {
-                            year: d.year,
-                            month: Month::December,
-                            day: 31,
-                        },
-                        time: max_time,
-                    },
-                    true,
-                ))
+                Some(Ok(Date {
+                    year: d.year,
+                    month: Month::December,
+                    day: 31,
+                }))
             } else if eq(v, *state.str_month) {
-                Some((
-                    DateTime {
-                        date: Date {
-                            year: d.year,
-                            month: d.month,
-                            day: d.year.days_in_month(d.month),
-                        },
-                        time: max_time,
-                    },
-                    true,
-                ))
+                Some(Ok(Date {
+                    year: d.year,
+                    month: d.month,
+                    day: d.year.days_in_month(d.month),
+                }))
+            } else if eq(v, *state.str_week_mon) {
+                Some(d.end_of_week_mon().ok_or_range_err())
+            } else if eq(v, *state.str_week_sun) {
+                Some(d.end_of_week_sun().ok_or_range_err())
             } else if eq(v, *state.str_day) {
-                Some((
-                    DateTime {
-                        date: d,
-                        time: max_time,
-                    },
-                    true,
-                ))
-            } else if eq(v, *state.str_hour) {
-                Some((
-                    DateTime {
-                        date: d,
-                        time: Time {
-                            hour: self.time.hour,
-                            minute: 59,
-                            second: 59,
-                            subsec: SubSecNanos::MAX,
-                        },
-                    },
-                    false,
-                ))
-            } else if eq(v, *state.str_minute) {
-                Some((
-                    DateTime {
-                        date: d,
-                        time: Time {
-                            hour: self.time.hour,
-                            minute: self.time.minute,
-                            second: 59,
-                            subsec: SubSecNanos::MAX,
-                        },
-                    },
-                    false,
-                ))
-            } else if eq(v, *state.str_second) {
-                Some((
-                    DateTime {
-                        date: d,
-                        time: Time {
-                            hour: self.time.hour,
-                            minute: self.time.minute,
-                            second: self.time.second,
-                            subsec: SubSecNanos::MAX,
-                        },
-                    },
-                    false,
-                ))
+                Some(Ok(d))
             } else {
                 None
             }
         })
+        .transpose()?
+        .map(|date| {
+            (
+                DateTime {
+                    date,
+                    time: max_time,
+                },
+                true,
+            )
+        })
+        .or_else(|| {
+            find_interned(unit_obj, |v, eq| {
+                if eq(v, *state.str_hour) {
+                    Some(Time {
+                        hour: self.time.hour,
+                        minute: 59,
+                        second: 59,
+                        subsec: SubSecNanos::MAX,
+                    })
+                } else if eq(v, *state.str_minute) {
+                    Some(Time {
+                        hour: self.time.hour,
+                        minute: self.time.minute,
+                        second: 59,
+                        subsec: SubSecNanos::MAX,
+                    })
+                } else if eq(v, *state.str_second) {
+                    Some(Time {
+                        hour: self.time.hour,
+                        minute: self.time.minute,
+                        second: self.time.second,
+                        subsec: SubSecNanos::MAX,
+                    })
+                } else {
+                    None
+                }
+            })
+            .map(|time| (DateTime { date: d, time }, false))
+        })
+        .ok_or_else(|| Self::week_unit_error(state, unit_obj))
     }
 
     pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {

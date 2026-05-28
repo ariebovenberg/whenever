@@ -53,6 +53,7 @@ def test_multiple_interpreters():
 
 
 def test_type_aliases():
+    from whenever import AnyDelta  # noqa
     from whenever import DateDeltaUnitStr  # noqa
     from whenever import DeltaUnitStr  # noqa
     from whenever import DisambiguateStr  # noqa

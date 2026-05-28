@@ -208,7 +208,16 @@ def _time_units_to_nanos(
     return delta_ns
 
 
-_UNITS_FOR_START_END_OF = ("year", "month", "day", "hour", "minute", "second")
+_UNITS_FOR_START_END_OF = (
+    "year",
+    "month",
+    "week_mon",
+    "week_sun",
+    "day",
+    "hour",
+    "minute",
+    "second",
+)
 
 
 def _start_of_dt(dt: _datetime, unit: str) -> _datetime:
@@ -216,6 +225,14 @@ def _start_of_dt(dt: _datetime, unit: str) -> _datetime:
         return dt.replace(month=1, day=1, hour=0, minute=0, second=0)
     elif unit == "month":
         return dt.replace(day=1, hour=0, minute=0, second=0)
+    elif unit == "week_mon":
+        days_back = dt.isoweekday() - 1
+        d = dt - _timedelta(days=days_back)
+        return d.replace(hour=0, minute=0, second=0)
+    elif unit == "week_sun":
+        days_back = dt.isoweekday() % 7
+        d = dt - _timedelta(days=days_back)
+        return d.replace(hour=0, minute=0, second=0)
     elif unit == "day":
         return dt.replace(hour=0, minute=0, second=0)
     elif unit == "hour":
@@ -224,6 +241,11 @@ def _start_of_dt(dt: _datetime, unit: str) -> _datetime:
         return dt.replace(second=0)
     elif unit == "second":
         return dt
+    elif unit == "week":
+        raise ValueError(
+            "unit 'week' is ambiguous. "
+            "Use 'week_mon' or 'week_sun' instead."
+        )
     else:
         raise ValueError(
             f"Invalid unit: {unit!r}. "
@@ -241,6 +263,14 @@ def _end_of_dt(dt: _datetime, unit: str) -> _datetime:
             minute=59,
             second=59,
         )
+    elif unit == "week_mon":
+        days_fwd = 7 - dt.isoweekday()
+        d = dt + _timedelta(days=days_fwd)
+        return d.replace(hour=23, minute=59, second=59)
+    elif unit == "week_sun":
+        days_fwd = (6 - dt.isoweekday()) % 7
+        d = dt + _timedelta(days=days_fwd)
+        return d.replace(hour=23, minute=59, second=59)
     elif unit == "day":
         return dt.replace(hour=23, minute=59, second=59)
     elif unit == "hour":
@@ -249,6 +279,11 @@ def _end_of_dt(dt: _datetime, unit: str) -> _datetime:
         return dt.replace(second=59)
     elif unit == "second":
         return dt
+    elif unit == "week":
+        raise ValueError(
+            "unit 'week' is ambiguous. "
+            "Use 'week_mon' or 'week_sun' instead."
+        )
     else:
         raise ValueError(
             f"Invalid unit: {unit!r}. "
@@ -441,18 +476,17 @@ class Date(_Base):
         """
         return Date._from_py_unchecked(self._py_date - _timedelta(days=1))
 
-    def start_of(self, unit: Literal["year", "month"], /) -> Date:
+    def start_of(
+        self, unit: Literal["year", "month", "week_mon", "week_sun"], /
+    ) -> Date:
         """The start of the given calendar unit
 
         >>> Date(2024, 8, 15).start_of("year")
         Date("2024-01-01")
         >>> Date(2024, 8, 15).start_of("month")
         Date("2024-08-01")
-
-        Note
-        ----
-        ``"week"`` is not a valid unit because weeks do not have
-        a universal start day. Use :meth:`nth_weekday` instead.
+        >>> Date(2024, 8, 15).start_of("week_mon")
+        Date("2024-08-12")
         """
         if unit == "year":
             return Date._from_py_unchecked(
@@ -460,18 +494,35 @@ class Date(_Base):
             )
         elif unit == "month":
             return Date._from_py_unchecked(self._py_date.replace(day=1))
-        else:
-            raise ValueError(
-                f"Invalid unit: {unit!r}. Valid units: 'year', 'month'"
+        elif unit == "week_mon":
+            days_back = self._py_date.isoweekday() - 1
+            return Date._from_py_unchecked(
+                self._py_date - _timedelta(days=days_back)
             )
+        elif unit == "week_sun":
+            days_back = self._py_date.isoweekday() % 7
+            return Date._from_py_unchecked(
+                self._py_date - _timedelta(days=days_back)
+            )
+        elif unit == "week":
+            raise ValueError(
+                "unit 'week' is ambiguous. "
+                "Use 'week_mon' or 'week_sun' instead."
+            )
+        else:
+            raise ValueError(f"Invalid value for unit: {unit!r}")
 
-    def end_of(self, unit: Literal["year", "month"], /) -> Date:
+    def end_of(
+        self, unit: Literal["year", "month", "week_mon", "week_sun"], /
+    ) -> Date:
         """The end of the given calendar unit
 
         >>> Date(2024, 8, 15).end_of("year")
         Date("2024-12-31")
         >>> Date(2024, 8, 15).end_of("month")
         Date("2024-08-31")
+        >>> Date(2024, 8, 15).end_of("week_mon")
+        Date("2024-08-18")
 
         See also :meth:`start_of`
         """
@@ -485,10 +536,23 @@ class Date(_Base):
                     day=days_in_month(self._py_date.year, self._py_date.month)
                 )
             )
-        else:
-            raise ValueError(
-                f"Invalid unit: {unit!r}. Valid units: 'year', 'month'"
+        elif unit == "week_mon":
+            days_fwd = 7 - self._py_date.isoweekday()
+            return Date._from_py_unchecked(
+                self._py_date + _timedelta(days=days_fwd)
             )
+        elif unit == "week_sun":
+            days_fwd = (6 - self._py_date.isoweekday()) % 7
+            return Date._from_py_unchecked(
+                self._py_date + _timedelta(days=days_fwd)
+            )
+        elif unit == "week":
+            raise ValueError(
+                "unit 'week' is ambiguous. "
+                "Use 'week_mon' or 'week_sun' instead."
+            )
+        else:
+            raise ValueError(f"Invalid value for unit: {unit!r}")
 
     def nth_weekday_of_month(self, n: int, weekday: Weekday, /) -> Date:
         """The n-th occurrence of a weekday in this date's month.
@@ -6713,7 +6777,16 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     def start_of(
         self,
-        unit: Literal["year", "month", "day", "hour", "minute", "second"],
+        unit: Literal[
+            "year",
+            "month",
+            "week_mon",
+            "week_sun",
+            "day",
+            "hour",
+            "minute",
+            "second",
+        ],
         /,
         *,
         stale_offset_ok: bool = False,
@@ -6722,12 +6795,6 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         >>> OffsetDateTime(2024, 8, 15, 14, 30, offset=5).start_of("day")
         OffsetDateTime("2024-08-15 00:00:00+05:00")
-
-        Note
-        ----
-        ``"week"`` is not a valid unit because weeks do not have
-        a universal start day. Use :meth:`~Date.nth_weekday` on the
-        :meth:`date` instead.
 
         Warning
         -------
@@ -6746,7 +6813,16 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     def end_of(
         self,
-        unit: Literal["year", "month", "day", "hour", "minute", "second"],
+        unit: Literal[
+            "year",
+            "month",
+            "week_mon",
+            "week_sun",
+            "day",
+            "hour",
+            "minute",
+            "second",
+        ],
         /,
         *,
         stale_offset_ok: bool = False,
@@ -8298,7 +8374,7 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     def _resolve_for_unit(self, naive: _datetime, unit: str) -> _datetime:
         tz = self._tz
-        if unit in ("year", "month", "day"):
+        if unit in ("year", "month", "week_mon", "week_sun", "day"):
             return resolve_ambiguity(naive, tz, "compatible")
         return resolve_ambiguity_using_prev_offset(
             naive,
@@ -8308,7 +8384,16 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     def start_of(
         self,
-        unit: Literal["year", "month", "day", "hour", "minute", "second"],
+        unit: Literal[
+            "year",
+            "month",
+            "week_mon",
+            "week_sun",
+            "day",
+            "hour",
+            "minute",
+            "second",
+        ],
         /,
     ) -> ZonedDateTime:
         """The start of the given unit
@@ -8318,13 +8403,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").start_of("hour")
         ZonedDateTime("2024-08-15 14:00:00-04:00[America/New_York]")
 
-        Note
-        ----
-        ``"week"`` is not a valid unit because weeks do not have
-        a universal start day. Use :meth:`~Date.nth_weekday` on the
-        :meth:`date` instead.
-
-        For ``"day"``, ``"month"``, and ``"year"``, the resulting time
+        For ``"day"``, ``"month"``, ``"week_mon"``, ``"week_sun"``,
+        and ``"year"``, the resulting time
         is resolved in the timezone using ``"compatible"`` disambiguation,
         since midnight may not exist due to DST transitions.
 
@@ -8339,7 +8419,16 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     def end_of(
         self,
-        unit: Literal["year", "month", "day", "hour", "minute", "second"],
+        unit: Literal[
+            "year",
+            "month",
+            "week_mon",
+            "week_sun",
+            "day",
+            "hour",
+            "minute",
+            "second",
+        ],
         /,
     ) -> ZonedDateTime:
         """The end of the given unit
@@ -8733,7 +8822,16 @@ class PlainDateTime(_LocalTime):
 
     def start_of(
         self,
-        unit: Literal["year", "month", "day", "hour", "minute", "second"],
+        unit: Literal[
+            "year",
+            "month",
+            "week_mon",
+            "week_sun",
+            "day",
+            "hour",
+            "minute",
+            "second",
+        ],
         /,
     ) -> PlainDateTime:
         """The start of the given unit
@@ -8742,19 +8840,22 @@ class PlainDateTime(_LocalTime):
         PlainDateTime("2024-08-15 00:00:00")
         >>> PlainDateTime(2024, 8, 15, 14, 30, 45).start_of("hour")
         PlainDateTime("2024-08-15 14:00:00")
-
-        Note
-        ----
-        ``"week"`` is not a valid unit because weeks do not have
-        a universal start day. Use :meth:`~Date.nth_weekday` on the
-        :meth:`date` instead.
         """
         new_dt = _start_of_dt(self._py_dt, unit)
         return self._from_py_unchecked(new_dt, 0)
 
     def end_of(
         self,
-        unit: Literal["year", "month", "day", "hour", "minute", "second"],
+        unit: Literal[
+            "year",
+            "month",
+            "week_mon",
+            "week_sun",
+            "day",
+            "hour",
+            "minute",
+            "second",
+        ],
         /,
     ) -> PlainDateTime:
         """The end of the given unit

@@ -396,6 +396,8 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         str_days_assumed_24h_ok: intern(c"days_assumed_24h_ok")?,
         str_stale_offset_ok: intern(c"stale_offset_ok")?,
         str_naive_arithmetic_ok: intern(c"naive_arithmetic_ok")?,
+        str_week_mon: intern(c"week_mon")?,
+        str_week_sun: intern(c"week_sun")?,
 
         exc_repeated,
         exc_skipped,
@@ -690,6 +692,8 @@ pub(crate) struct State {
     pub(crate) str_days_assumed_24h_ok: Owned<PyObj>,
     pub(crate) str_stale_offset_ok: Owned<PyObj>,
     pub(crate) str_naive_arithmetic_ok: Owned<PyObj>,
+    pub(crate) str_week_mon: Owned<PyObj>,
+    pub(crate) str_week_sun: Owned<PyObj>,
 
     pub(crate) time_patch: Patch,
     pub(crate) tz_store: TzStore,

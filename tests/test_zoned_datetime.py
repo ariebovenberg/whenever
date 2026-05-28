@@ -5639,8 +5639,34 @@ class TestStartOf:
     def test_invalid_unit(self):
         with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
             ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").start_of(
+                "invalid"  # type: ignore[arg-type]
+            )
+
+    def test_week_value_error(self):
+        with pytest.raises(ValueError, match="ambiguous"):
+            ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").start_of(
                 "week"  # type: ignore[arg-type]
             )
+
+    def test_week_mon(self):
+        # Thursday Aug 15 -> Monday Aug 12 at midnight
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        result = zdt.start_of("week_mon")
+        assert result.exact_eq(
+            ZonedDateTime(2024, 8, 12, tz="America/New_York")
+        )
+
+    def test_week_sun(self):
+        # Thursday Aug 15 -> Sunday Aug 11 at midnight
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        result = zdt.start_of("week_sun")
+        assert result.exact_eq(
+            ZonedDateTime(2024, 8, 11, tz="America/New_York")
+        )
 
     def test_hour_gap_transition(self):
         # Lord Howe: at 2:00 AM Oct 6, clocks spring forward 30min
@@ -5682,6 +5708,17 @@ class TestStartOf:
         )
         result = zdt.start_of("hour")
         assert result.offset == hours(11)
+
+    @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
+    def test_min_max_no_crash(self, unit):
+        try:
+            ZonedDateTime(1, 1, 1, tz="UTC").start_of(unit)
+        except (ValueError, OverflowError):
+            pass
+        try:
+            ZonedDateTime(9999, 12, 31, 23, 59, 59, tz="UTC").start_of(unit)
+        except (ValueError, OverflowError):
+            pass
 
 
 class TestEndOf:
@@ -5810,8 +5847,52 @@ class TestEndOf:
     def test_invalid_unit(self):
         with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
             ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").end_of(
+                "invalid"  # type: ignore[arg-type]
+            )
+
+    def test_week_value_error(self):
+        with pytest.raises(ValueError, match="ambiguous"):
+            ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").end_of(
                 "week"  # type: ignore[arg-type]
             )
+
+    def test_week_mon(self):
+        # Thursday Aug 15 -> Sunday Aug 18 end of day
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        result = zdt.end_of("week_mon")
+        assert result.exact_eq(
+            ZonedDateTime(
+                2024,
+                8,
+                18,
+                23,
+                59,
+                59,
+                nanosecond=999_999_999,
+                tz="America/New_York",
+            )
+        )
+
+    def test_week_sun(self):
+        # Thursday Aug 15 -> Saturday Aug 17 end of day
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        result = zdt.end_of("week_sun")
+        assert result.exact_eq(
+            ZonedDateTime(
+                2024,
+                8,
+                17,
+                23,
+                59,
+                59,
+                nanosecond=999_999_999,
+                tz="America/New_York",
+            )
+        )
 
     def test_hour_gap_transition(self):
         # Lord Howe: at 2:00 AM Oct 6, clocks spring forward 30min.
@@ -5861,6 +5942,17 @@ class TestEndOf:
 
         # They represent different instants
         assert result_e != result_l
+
+    @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
+    def test_min_max_no_crash(self, unit):
+        try:
+            ZonedDateTime(1, 1, 1, tz="UTC").end_of(unit)
+        except (ValueError, OverflowError):
+            pass
+        try:
+            ZonedDateTime(9999, 12, 31, 23, 59, 59, tz="UTC").end_of(unit)
+        except (ValueError, OverflowError):
+            pass
 
 
 class TestClearTzCache:
