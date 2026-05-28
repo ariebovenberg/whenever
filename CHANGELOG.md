@@ -7,6 +7,9 @@
   This was achieved by deferring the import of several internal submodules
   and timezone database setup until they are actually needed.
 - Fixed CI compatibility with Python 3.13t (free-threaded build)
+- Added ``"week_mon"`` and ``"week_sun"`` as valid
+  units for ``start_of()`` and ``end_of()`` on ``Date``, ``PlainDateTime``,
+  ``ZonedDateTime``, and ``OffsetDateTime``.
 
 ## 0.10.0 (2026-04-05)
 
