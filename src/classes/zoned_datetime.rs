@@ -489,7 +489,7 @@ fn __str__(_: PyType, slf: &ZonedDateTime) -> PyReturn {
         b'T',
         time.format_iso(fmt::Unit::Auto, false),
         offset.format_iso(false),
-        TzFormat { tz: tz },
+        TzFormat { tz },
     ))
 }
 

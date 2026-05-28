@@ -89,6 +89,19 @@ uv run python charts.py                                    # to charts/
 uv run python charts.py --output ../../docs/_static/benchmarks/  # update docs
 ```
 
+### Import time and package size charts
+
+`perf_charts.py` measures import time (by spawning subprocesses) and
+generates package-size comparison charts:
+
+```shell
+# Use the development Python (with current whenever build):
+uv run python perf_charts.py --python $(which python) --output ../../docs/_static/benchmarks/
+
+# Or skip measurement and only regenerate size charts:
+uv run python perf_charts.py --skip-import --output ../../docs/_static/benchmarks/
+```
+
 ## Verifying the Python build
 
 pyperf spawns worker processes using `sys.executable`, which is the `.venv`
