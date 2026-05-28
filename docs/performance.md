@@ -6,28 +6,28 @@
 
 1. **Runtime speed** — operations should be as fast as possible
 2. **Import time** — `import whenever` should feel instant
-3. **Binary size** — the wheel should stay small for fast installs
+3. **Package size** — the wheel should stay small for fast/slim installs
 
 These goals can conflict: aggressive inlining improves runtime speed but
-increases binary size, which in turn inflates import time (more pages to
-fault in from disk on first load). `whenever` targets a balance that
-prioritizes runtime speed—since it dominates real-world workloads—while
-keeping the binary compact enough that cold-start imports stay under 10 ms
-on modern hardware.
+increases binary size, which in turn inflates import time.
+`whenever` targets a balance, sacrificing a bit of runtime speed in cold
+code paths to keep the module compact and fast to import.
+
+```{admonition} Test environment
+:class: hint
+
+All benchmarks on this page were run on an Apple M1 Pro (32 GB, macOS 26.3)
+using Python 3.14.3 (PGO+LTO build). Import-time measurements use warm
+page cache.
+```
 
 ---
 
-## Runtime benchmarks
+## Runtime speed
 
 `whenever` is compared against Python's standard library (+ `dateutil`),
 [Arrow](https://pypi.org/project/arrow/), and [Pendulum](https://pypi.org/project/pendulum/)
-across nine common datetime operations.
-
-Benchmarks are run with [pyperf](https://pyperf.readthedocs.io/) on an
-Apple M1 Pro (32 GB, macOS 26.3) using Python 3.14.3 (PGO+LTO),
-whenever 0.9.5, Arrow 1.4.0, and Pendulum 3.2.0.
-
-### Timing
+across common datetime operations.
 
 *Lower is better.  Bars exceeding the axis cutoff are annotated with `>`.*
 
@@ -41,7 +41,7 @@ whenever 0.9.5, Arrow 1.4.0, and Pendulum 3.2.0.
 </picture>
 ```
 
-### Why is whenever faster?
+Why is `whenever` faster?
 
 - **No layering.** Arrow and Pendulum wrap Python's `datetime.datetime` rather
   than replacing it. Every operation pays the overhead of crossing extra Python
@@ -49,15 +49,15 @@ whenever 0.9.5, Arrow 1.4.0, and Pendulum 3.2.0.
 
 - **Optimised parsing and formatting.** The Rust extension uses hand-written,
   single-pass byte-level parsers and formatters: no regex, no intermediate string
-  objects, no `strptime`/`strftime` round-trips.
+  objects.
 
 - **Front-loaded computation.** Every `ZonedDateTime` stores its UTC offset at
   construction time. Operations like "normalize to UTC" or "subtract two instants"
   become simple integer arithmetic with no timezone database lookup at operation
-  time. This also makes timezone conversion and arithmetic consistently fast.
+  time.
 
-- **Compiled core.** The default wheel is a Rust CPython extension, giving
-  C-level performance with safe, auditable code. The pure-Python fallback still
+- **Compiled core.** The default wheel is a Rust extension, giving C-level
+  performance with safe, auditable code. The pure-Python fallback still
   benefits from the front-loaded computation model and outperforms Arrow on most
   simple operations.
 
@@ -76,51 +76,69 @@ Overall it is in the same ballpark as Arrow and Pendulum.
 
 ## Import time
 
-A cold `import whenever` takes approximately 7–8 ms on an Apple M1.
-The breakdown:
+`import whenever` is nearly free because the package defers all heavy
+work until the first attribute access.
+`import datetime` is faster on standard CPython builds because `_datetime` is
+statically linked into the interpreter. Third-party packages cannot match that.
 
-| Phase | Time |
-|-------|------|
-| Dynamic library loading (page faults) | ~5 ms |
-| `PyDateTime_IMPORT` (imports `datetime`) | ~1.3 ms |
-| Class and exception creation | ~0.5 ms |
-| Python import machinery overhead | ~0.2 ms |
+*Other libraries shown for context.*
 
-Dynamic library loading dominates. The OS must page-fault the `.so`/`.dylib`
-into memory from disk on the first access after boot or cache eviction.
-Subsequent imports in the same process are effectively free (~125 ns via
-`sys.modules` lookup).
+```{raw} html
+<picture>
+  <source media="(prefers-color-scheme: dark)"
+          srcset="_static/benchmarks/import-time-dark.svg">
+  <img src="_static/benchmarks/import-time-light.svg"
+       alt="Import time comparison"
+       width="50%">
+</picture>
+```
 
-Strategies used to keep import time low:
+Import time is mainly kept low through lazy loading of submodules and dependencies:
 
-- **LTO + strip** — `lto = "fat"` and `strip = true` reduce the binary to
-  essentials, minimizing the number of pages that must be faulted in.
-- **Lazy imports** — heavy standard library modules (`zoneinfo`, `strptime`,
-  `pydantic`) are imported on first use via `OncePyObj`, not at module load.
-- **Minimal module_exec** — the module initialization function does only
-  what is strictly necessary: create types, intern strings, cache a few
-  constants.
+- The `__init__.py` uses module-level `__getattr__` (PEP 562) to defer the
+  extension load until first access.
+  Code that imports `whenever` but doesn't use it pays essentially nothing.
+- Dependencies (`datetime`, `zoneinfo`, `pydantic`, `typing`)
+  are imported on first use, not at module load.
 
 ---
 
-## Binary size
+## Package size
 
-The release wheel's native extension is approximately 850 KB (macOS arm64).
-Key contributors:
+The chart below compares wheel sizes of `whenever` against other
+datetime libraries, as well as some unrelated libraries for context.
+A pure-Python wheel is also available for environments where install size
+or platform coverage matters more than runtime speed.
 
-| Component | Size | Notes |
-|-----------|------|-------|
-| Method/slot wrapper functions | ~163 KB | 351 FFI entry points with `catch_unwind` |
-| Standard library (backtrace, panic) | ~103 KB | Linked unconditionally by `std` |
-| Class implementations | ~90 KB | Largest: `ZonedDateTime` (48 KB) |
-| Interned strings and docstrings | ~96 KB | Stored in `__cstring` section |
+```{raw} html
+<picture>
+  <source media="(prefers-color-scheme: dark)"
+          srcset="_static/benchmarks/package-size-dark.svg">
+  <img src="_static/benchmarks/package-size-light.svg"
+       alt="Wheel size comparison"
+       width="50%">
+</picture>
+```
 
-Build settings that minimize size without sacrificing runtime speed:
+`whenever`'s focus on runtime speed and rich API means it is relatively large.
+It keeps the wheel size reasonable through careful design choices:
 
-- `lto = "fat"` — enables cross-crate dead code elimination
-- `codegen-units = 1` — gives the optimizer a global view
-- `strip = true` — removes symbol tables and debug info
-- `#[inline(never)]` on large cold functions — prevents code duplication
+- Several types (`Weekday`, `YearMonth`, `MonthDay`, `IsoWeekDate`) are
+  implemented only in Python even when the extension is active, keeping the
+  native binary focused on the performance-critical datetime types.
+- Inlining is used judiciously: hot code paths are optimized, while cold paths
+  are prevented from inflating the binary size.
+
+Trade-offs not taken:
+
+- Full, descriptive docstrings (almost 100 KB) are included in the wheel.
+- Panics in Rust code are caught and converted to Python exceptions, which
+  requires unwinding tables and increases binary size. `orjson` compiles
+  with `panic = "abort"` to avoid this overhead, but `whenever` prioritizes
+  safety and debuggability over minimal size.
+- Rust extensions have more overhead per method than C extensions,
+  but this is worth the safety and maintainability benefits.
+
 
 ---
 
@@ -132,4 +150,7 @@ See `benchmarks/comparison/README.md` for setup instructions.
 cd benchmarks/comparison
 ./run.sh --fast --update-docs   # quick run, update these charts
 uv run python run_whenever.py --only now --fast   # single benchmark
+
+# Import time and package size charts:
+uv run python perf_charts.py --python $(which python) --output ../../docs/_static/benchmarks/
 ```
