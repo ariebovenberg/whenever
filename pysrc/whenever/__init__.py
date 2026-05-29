@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 # Almost everything is lazily imported, to speed up initial import time.
 def __getattr__(name: str) -> object:
     # When any name from a group is first accessed, the whole module is loaded
@@ -18,26 +17,15 @@ def __getattr__(name: str) -> object:
         return _get_tzpath()
     elif name == "AnyDelta":
         from ._core import (
-            DateDelta,
-            DateTimeDelta,
             ItemizedDateDelta,
             ItemizedDelta,
             TimeDelta,
         )
 
         globals()["AnyDelta"] = val = (
-            DateDelta
-            | TimeDelta
-            | DateTimeDelta
-            | ItemizedDelta
-            | ItemizedDateDelta
+            TimeDelta | ItemizedDelta | ItemizedDateDelta
         )
         return val
-    elif name == "__version__":
-        globals()["__version__"] = version = __import__(
-            "importlib.metadata"
-        ).metadata.version(__name__)
-        return version
 
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
@@ -48,11 +36,15 @@ def __dir__() -> list[str]:
         (
             globals().keys()
             | _LAZY_NAMES.keys()
-            | {"TZPATH", "AnyDelta", "__version__"}
+            | {"TZPATH", "AnyDelta"}
         )
         - {"_LAZY_MODULES", "_LAZY_NAMES"}
     )
 
+
+# Yes, we could get the version with importlib.metadata,
+# but we try to keep our import time as low as possible.
+__version__ = "0.11.0"
 
 # This could be derived from the imports below, but it's easier for static
 # analysis and IDEs if it's statically defined.
@@ -68,15 +60,9 @@ __all__ = (
     "ZonedDateTime",
     "PlainDateTime",
     # Deltas and time units
-    "DateDelta",
     "TimeDelta",
-    "DateTimeDelta",
     "ItemizedDelta",
     "ItemizedDateDelta",
-    "years",
-    "months",
-    "weeks",
-    "days",
     "hours",
     "minutes",
     "seconds",
@@ -88,11 +74,9 @@ __all__ = (
     "StaleOffsetWarning",
     "NaiveArithmeticWarning",
     "PotentialDstBugWarning",
-    "WheneverDeprecationWarning",
     "SkippedTime",
     "RepeatedTime",
     "InvalidOffsetError",
-    "ImplicitlyIgnoringDST",
     "TimeZoneNotFoundError",
     # Enums/constants
     "Weekday",
@@ -122,16 +106,10 @@ _LAZY_MODULES = {
         "OffsetDateTime",
         "ZonedDateTime",
         "PlainDateTime",
-        "DateDelta",
         "TimeDelta",
-        "DateTimeDelta",
         "ItemizedDelta",
         "ItemizedDateDelta",
         # Unit constructors
-        "years",
-        "months",
-        "weeks",
-        "days",
         "hours",
         "minutes",
         "seconds",
@@ -143,19 +121,15 @@ _LAZY_MODULES = {
         "StaleOffsetWarning",
         "NaiveArithmeticWarning",
         "PotentialDstBugWarning",
-        "WheneverDeprecationWarning",
         "SkippedTime",
         "RepeatedTime",
         "InvalidOffsetError",
-        "ImplicitlyIgnoringDST",
         "TimeZoneNotFoundError",
         # Other
         "reset_system_tz",
         "_EXTENSION_LOADED",
         # Unpickle functions
         "_unpkl_date",
-        "_unpkl_ddelta",
-        "_unpkl_dtdelta",
         "_unpkl_iddelta",
         "_unpkl_idelta",
         "_unpkl_inst",

@@ -177,13 +177,4 @@ where
     handler(value, ptr_eq).or_else(|| handler(value, value_eq))
 }
 
-/// Like find_interned, but for boolean checks.
-/// The closure returns true if a match was found. Tries ptr_eq first, then value_eq.
-pub(crate) fn check_interned<F>(value: PyObj, mut handler: F) -> bool
-where
-    F: FnMut(PyObj, fn(PyObj, PyObj) -> bool) -> bool,
-{
-    handler(value, ptr_eq) || handler(value, value_eq)
-}
-
 pub(crate) use parse_args_kwargs;

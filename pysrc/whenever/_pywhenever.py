@@ -11,12 +11,6 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-from collections.abc import (
-    ItemsView,
-    KeysView,
-    Mapping,
-    ValuesView,
-)
 from datetime import (
     date as _date,
     datetime as _datetime,
@@ -24,14 +18,12 @@ from datetime import (
     timedelta as _timedelta,
     timezone as _timezone,
 )
-from math import fmod
 from struct import pack, unpack
 from time import time_ns
 from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
-    Iterator,
     Literal,
     Sequence,
     TypeVar,
@@ -44,12 +36,17 @@ from warnings import warn
 from ._common import (
     SPHINX_RUNNING,
     UNSET,
-    WheneverDeprecationWarning,
     _Base,
     add_alternate_constructors,
     check_utc_bounds,
     final,
     mk_fixed_tzinfo,
+)
+from ._deltas import (
+    ItemizedDateDelta,
+    ItemizedDelta,
+    _unpkl_iddelta,
+    _unpkl_idelta,
 )
 from ._format import (
     compile_pattern,
@@ -130,15 +127,9 @@ __all__ = (
     "ZonedDateTime",
     "PlainDateTime",
     # Deltas and time units
-    "DateDelta",
     "TimeDelta",
-    "DateTimeDelta",
     "ItemizedDelta",
     "ItemizedDateDelta",
-    "years",
-    "months",
-    "weeks",
-    "days",
     "hours",
     "minutes",
     "seconds",
@@ -150,17 +141,13 @@ __all__ = (
     "StaleOffsetWarning",
     "NaiveArithmeticWarning",
     "PotentialDstBugWarning",
-    "WheneverDeprecationWarning",
     "SkippedTime",
     "RepeatedTime",
     "InvalidOffsetError",
-    "ImplicitlyIgnoringDST",
     "TimeZoneNotFoundError",
     # Other
     "reset_system_tz",
     "_unpkl_date",
-    "_unpkl_ddelta",
-    "_unpkl_dtdelta",
     "_unpkl_iddelta",
     "_unpkl_idelta",
     "_unpkl_inst",
@@ -660,40 +647,6 @@ class Date(_Base):
         """Convert to a standard library :class:`~datetime.date`"""
         return self._py_date
 
-    def py_date(self) -> _date:
-        """Convert to a standard library :class:`~datetime.date`
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`to_stdlib` instead.
-        """
-        warn(
-            "py_date() is deprecated; use to_stdlib() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self.to_stdlib()
-
-    @classmethod
-    def from_py_date(cls, d: _date, /) -> Date:
-        """Create from a :class:`~datetime.date`
-
-        >>> Date.from_py_date(date(2021, 1, 2))
-        Date("2021-01-02")
-
-        .. deprecated:: 0.10.0
-
-            Use the constructor ``Date(d)`` instead.
-        """
-        warn(
-            "from_py_date() is deprecated; use Date() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        self = _object_new(cls)
-        self._init_from_py(d)
-        return self
-
     def _init_from_py(self, d: _date) -> None:
         if type(d) is _date:
             pass
@@ -806,7 +759,7 @@ class Date(_Base):
         return Date._from_py_unchecked(self._py_date.replace(**kwargs))
 
     @overload
-    def add(self, delta: ItemizedDateDelta | DateDelta, /) -> Date: ...
+    def add(self, delta: ItemizedDateDelta, /) -> Date: ...
 
     @overload
     def add(
@@ -833,7 +786,7 @@ class Date(_Base):
         return self._shift(1, *args, **kwargs)
 
     @overload
-    def subtract(self, delta: ItemizedDateDelta | DateDelta, /) -> Date: ...
+    def subtract(self, delta: ItemizedDateDelta, /) -> Date: ...
 
     @overload
     def subtract(
@@ -863,7 +816,7 @@ class Date(_Base):
     def _shift(
         self,
         sign: int,
-        delta: ItemizedDateDelta | DateDelta = UNSET,
+        delta: ItemizedDateDelta = UNSET,
         /,
         **kwargs,
     ) -> Date:
@@ -873,11 +826,7 @@ class Date(_Base):
                     "Cannot combine positional and keyword arguments"
                 )
         elif delta is not UNSET:
-            if isinstance(delta, ItemizedDateDelta):
-                kwargs = delta
-            else:
-                assert isinstance(delta, DateDelta)
-                kwargs = {"months": delta._months, "days": delta._days}
+            kwargs = delta
         else:  # no arguments, just return self
             return self
         return self._shift_kwargs(sign, **kwargs)
@@ -894,35 +843,6 @@ class Date(_Base):
             self._add_months(sign * (years * 12 + months))._py_date
             + _timedelta(weeks * 7 + days) * sign
         )
-
-    def days_since(self, other: Date, /) -> int:
-        """Calculate the number of days this day is after another date.
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`since` with `unit="days"` instead.
-
-        """
-        warn(
-            "days_since() is deprecated; use since() with total='days' instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return (self._py_date - other._py_date).days
-
-    def days_until(self, other: Date, /) -> int:
-        """Calculate the number of days from this date to another date.
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`until` with `unit="days"` instead.
-        """
-        warn(
-            "days_until() is deprecated; use until() with total='days' instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return (other._py_date - self._py_date).days
 
     @overload
     def since(
@@ -1099,112 +1019,6 @@ class Date(_Base):
 
     def _add_days(self, days: int) -> Date:
         return Date._from_py_unchecked(self._py_date + _timedelta(days))
-
-    def __add__(self, p: DateDelta) -> Date:
-        """Add a delta to a date.
-        Behaves the same as :meth:`add`
-
-        .. deprecated:: 0.10.0
-
-            Using the ``+`` operator on :class:`Date` is deprecated;
-            use the :meth:`add` method instead.
-        """
-        warn(
-            "Using the + operator on Date is deprecated; "
-            "use the .add() method instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return (
-            self.add(months=p._months, days=p._days)
-            if isinstance(p, DateDelta)
-            else NotImplemented
-        )
-
-    @overload
-    def __sub__(self, d: DateDelta) -> Date: ...
-
-    @overload
-    def __sub__(self, d: Date) -> DateDelta: ...
-
-    def __sub__(self, d: DateDelta | Date) -> Date | DateDelta:
-        """Subtract a delta from a date, or subtract two dates
-
-        Subtracting a delta works the same as :meth:`subtract`.
-
-        >>> Date(2021, 1, 2) - DateDelta(weeks=1, days=3)
-        Date("2020-12-26")
-
-        The difference between two dates is calculated in months and days,
-        such that:
-
-        >>> delta = d1 - d2
-        >>> d2 + delta == d1  # always
-
-        The following is not always true:
-
-        >>> d1 - (d1 - d2) == d2  # not always true!
-        >>> -(d2 - d1) == d1 - d2  # not always true!
-
-        >>> Date(2023, 4, 15) - Date(2011, 6, 24)
-        DateDelta("P12Y9M22D")
-        >>> # Truncation
-        >>> Date(2024, 4, 30) - Date(2023, 5, 31)
-        DateDelta("P11M")
-        >>> Date(2024, 3, 31) - Date(2023, 6, 30)
-        DateDelta("P9M1D")
-        >>> # the other way around, the result is different
-        >>> Date(2023, 6, 30) - Date(2024, 3, 31)
-        DateDelta(-P9M)
-
-        .. deprecated:: 0.10.0
-
-            Using the ``-`` operator on :class:`Date` is deprecated;
-            use the :meth:`subtract` method or the :meth:`since` method instead.
-        """
-        if isinstance(d, DateDelta):
-            warn(
-                "Using the `-` operator on Date is deprecated; "
-                "use the .subtract() method instead.",
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
-            return self.subtract(months=d._months, days=d._days)
-        elif isinstance(d, Date):
-            warn(
-                "Using the `-` operator on Date is deprecated; "
-                "use the .since() method with explicit units instead.",
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
-            mos = self.month - d.month + 12 * (self.year - d.year)
-            shifted = d._add_months(mos)
-
-            # yes, it's a bit duplicated, but preferable to being clever.
-            if d > self:
-                if shifted < self:  # i.e. we've overshot
-                    mos += 1
-                    shifted = d._add_months(mos)
-                    dys = (
-                        -shifted.day
-                        - days_in_month(self.year, self.month)
-                        + self.day
-                    )
-                else:
-                    dys = self.day - shifted.day
-            else:
-                if shifted > self:  # i.e. we've overshot
-                    mos -= 1
-                    shifted = d._add_months(mos)
-                    dys = (
-                        -shifted.day
-                        + days_in_month(shifted.year, shifted.month)
-                        + self.day
-                    )
-                else:
-                    dys = self.day - shifted.day
-            return DateDelta._from_months_days(mos, dys)
-        return NotImplemented
 
     __str__ = format_iso
 
@@ -1420,40 +1234,6 @@ class Time(_Base):
         If you need more control over rounding, use :meth:`round` first.
         """
         return self._py.replace(microsecond=self._nanos // 1_000)
-
-    def py_time(self) -> _time:
-        """Convert to a standard library :class:`~datetime.time`
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`to_stdlib` instead.
-        """
-        warn(
-            "py_time() is deprecated; use to_stdlib() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self.to_stdlib()
-
-    @classmethod
-    def from_py_time(cls, t: _time, /) -> Time:
-        """Create from a :class:`~datetime.time`
-
-        >>> Time.from_py_time(time(12, 30, 0))
-        Time(12:30:00)
-
-        .. deprecated:: 0.10.0
-
-            Use the constructor ``Time(t)`` instead.
-        """
-        warn(
-            "from_py_time() is deprecated; use Time() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        self = _object_new(cls)
-        self._init_from_py(t)
-        return self
 
     def _init_from_py(self, t: _time, /) -> None:
         if type(t) is _time:
@@ -1845,11 +1625,6 @@ class TimeDelta(_Base):
     """The maximum possible delta"""
     MIN: ClassVar[TimeDelta]
     """The minimum possible delta"""
-    _date_part: ClassVar[DateDelta]
-
-    @property
-    def _time_part(self) -> TimeDelta:
-        return self
 
     def total(
         self,
@@ -1954,153 +1729,6 @@ class TimeDelta(_Base):
             return self._total_ns / NS_PER_UNIT_PLURAL[unit]
         except KeyError:
             raise ValueError(f"Invalid unit: {unit!r}")
-
-    def in_days_of_24h(self) -> float:
-        """The total size in days (of exactly 24 hours each)
-
-        Note
-        ----
-        Note that this may not be the same as days on the calendar,
-        since some days have 23 or 25 hours due to daylight saving time.
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`total` with ``'days'`` instead.
-        """
-        warn(
-            "in_days_of_24h is deprecated, use total('days') instead",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._total_ns / 86_400_000_000_000
-
-    def in_hours(self) -> float:
-        """The total size in hours
-
-        >>> d = TimeDelta(hours=1, minutes=30)
-        >>> d.in_hours()
-        1.5
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`total` with ``'hours'`` instead.
-        """
-        warn(
-            "in_hours is deprecated, use total('hours') instead",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._total_ns / 3_600_000_000_000
-
-    def in_minutes(self) -> float:
-        """The total size in minutes
-
-        >>> d = TimeDelta(hours=1, minutes=30, seconds=30)
-        >>> d.in_minutes()
-        90.5
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`total` with ``'minutes'`` instead.
-        """
-        warn(
-            "in_minutes is deprecated, use total('minutes') instead",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._total_ns / 60_000_000_000
-
-    def in_seconds(self) -> float:
-        """The total size in seconds
-
-        >>> d = TimeDelta(minutes=2, seconds=1, microseconds=500_000)
-        >>> d.in_seconds()
-        121.5
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`total` with ``'seconds'`` instead.
-        """
-        warn(
-            "in_seconds is deprecated, use total('seconds') instead",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._total_ns / 1_000_000_000
-
-    def in_milliseconds(self) -> float:
-        """The total size in milliseconds
-
-        >>> d = TimeDelta(seconds=2, microseconds=50)
-        >>> d.in_milliseconds()
-        2_000.05
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`total` with ``'milliseconds'`` instead.
-        """
-        warn(
-            "in_milliseconds is deprecated, use total('milliseconds') instead",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._total_ns / 1_000_000
-
-    def in_microseconds(self) -> float:
-        """The total size in microseconds
-
-        >>> d = TimeDelta(seconds=2, nanoseconds=50)
-        >>> d.in_microseconds()
-        2_000_000.05
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`total` with ``'microseconds'`` instead.
-        """
-        warn(
-            "in_microseconds is deprecated, use total('microseconds') instead",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._total_ns / 1_000
-
-    def in_nanoseconds(self) -> int:
-        """The total size in nanoseconds
-
-        >>> d = TimeDelta(seconds=2, nanoseconds=50)
-        >>> d.in_nanoseconds()
-        2_000_000_050
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`total` with ``'nanoseconds'`` instead.
-        """
-        warn(
-            "in_nanoseconds is deprecated, use total('nanoseconds') instead",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._total_ns
-
-    def in_hrs_mins_secs_nanos(self) -> tuple[int, int, int, int]:
-        """Convert to a tuple of (hours, minutes, seconds, nanoseconds)
-
-        >>> d = TimeDelta(hours=1, minutes=30, microseconds=5_000_090)
-        >>> d.in_hrs_mins_secs_nanos()
-        (1, 30, 5, 90_000)
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`in_units` with ``['hours', 'minutes', 'seconds', 'nanoseconds']`` instead.
-        """
-        hours, rem = divmod(abs(self._total_ns), 3_600_000_000_000)
-        mins, rem = divmod(rem, 60_000_000_000)
-        secs, ns = divmod(rem, 1_000_000_000)
-        return (
-            (hours, mins, secs, ns)
-            if self._total_ns >= 0
-            else (-hours, -mins, -secs, -ns)
-        )
 
     def in_units(
         self,
@@ -2235,20 +1863,6 @@ class TimeDelta(_Base):
         """
         return _timedelta(microseconds=self._total_ns // 1_000)
 
-    def py_timedelta(self) -> _timedelta:
-        """Convert to a :class:`~datetime.timedelta`
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`to_stdlib` instead.
-        """
-        warn(
-            "py_timedelta() is deprecated; use to_stdlib() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self.to_stdlib()
-
     def _init_from_py(self, td: _timedelta, /) -> None:
         if type(td) is not _timedelta:
             raise TypeError("Expected datetime.timedelta exactly")
@@ -2260,26 +1874,6 @@ class TimeDelta(_Base):
         if abs(ns) > _MAX_DELTA_NANOS:
             raise ValueError("TimeDelta out of range")
 
-    @classmethod
-    def from_py_timedelta(cls, td: _timedelta, /) -> TimeDelta:
-        """Create from a :class:`~datetime.timedelta`
-
-        >>> TimeDelta.from_py_timedelta(timedelta(seconds=5400))
-        TimeDelta("PT1h30m")
-
-        .. deprecated:: 0.10.0
-
-            Use the constructor ``TimeDelta(td)`` instead.
-        """
-        warn(
-            "from_py_timedelta() is deprecated; use TimeDelta() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        self = _object_new(cls)
-        self._init_from_py(td)
-        return self
-
     def format_iso(self) -> str:
         """Format as the *popular interpretation* of the ISO 8601 duration format.
         May not strictly adhere to (all versions of) the standard.
@@ -2290,7 +1884,9 @@ class TimeDelta(_Base):
         >>> TimeDelta(hours=1, minutes=30).format_iso()
         'PT1H30M'
         """
-        hrs, mins, secs, ns = abs(self).in_hrs_mins_secs_nanos()
+        hrs, rem = divmod(abs(self._total_ns), 3_600_000_000_000)
+        mins, rem = divmod(rem, 60_000_000_000)
+        secs, ns = divmod(rem, 1_000_000_000)
         seconds = (
             f"{secs + ns / 1_000_000_000:.9f}".rstrip("0") if ns else str(secs)
         )
@@ -2710,2679 +2306,7 @@ TimeDelta.MAX = TimeDelta(seconds=9999 * 366 * 24 * 3_600)
 TimeDelta.MIN = TimeDelta(seconds=-9999 * 366 * 24 * 3_600)
 
 
-@final
-class DateDelta(_Base):
-    """A duration of time consisting of calendar units
-    (years, months, weeks, and days).
-
-    .. deprecated:: 0.10.0
-
-        Use :class:`ItemizedDateDelta` instead.
-        ``DateDelta`` normalizes its inputs (e.g. 14 months becomes
-        1 year and 2 months), losing the original fields.
-        ``ItemizedDateDelta`` preserves the exact fields it was created with.
-    """
-
-    __slots__ = ("_months", "_days")
-
-    # Overloads for a nice autodoc.
-    # Proper typing of the constructors is handled in the type stubs
-    if not TYPE_CHECKING:
-
-        @overload
-        def __init__(self, iso_string: str, /) -> None: ...
-
-        @overload
-        def __init__(
-            self,
-            *,
-            years: int = ...,
-            months: int = ...,
-            weeks: int = ...,
-            days: int = ...,
-        ) -> None: ...
-
-    def __init__(
-        self, *, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0
-    ) -> None:
-        warn(
-            "DateDelta is deprecated; use ItemizedDateDelta instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        months = self._months = months + 12 * years
-        days = self._days = days + 7 * weeks
-        if (months > 0 and days < 0) or (months < 0 and days > 0):
-            raise ValueError("mixed sign in DateDelta")
-        elif (
-            abs(self._months) > _MAX_DELTA_MONTHS
-            or abs(self._days) > _MAX_DELTA_DAYS
-        ):
-            raise ValueError("Date delta months out of range")
-
-    __init__ = add_alternate_constructors(
-        __init__,
-        deprecation_msg="DateDelta is deprecated; use ItemizedDateDelta instead.",
-    )
-
-    @classmethod
-    def _from_months_days(cls, months: int, days: int) -> DateDelta:
-        """Internal: create without deprecation warning"""
-        self = _object_new(cls)
-        if (months > 0 and days < 0) or (months < 0 and days > 0):
-            raise ValueError("mixed sign in DateDelta")
-        elif abs(months) > _MAX_DELTA_MONTHS or abs(days) > _MAX_DELTA_DAYS:
-            raise ValueError("Date delta months out of range")
-        self._months = months
-        self._days = days
-        return self
-
-    ZERO: ClassVar[DateDelta]
-    """A delta of zero"""
-    _time_part = TimeDelta.ZERO
-
-    @property
-    def _date_part(self) -> DateDelta:
-        return self
-
-    def in_months_days(self) -> tuple[int, int]:
-        """Convert to a tuple of months and days.
-
-        >>> p = DateDelta(months=25, days=9)
-        >>> p.in_months_days()
-        (25, 9)
-        >>> DateDelta(months=-13, weeks=-5)
-        (-13, -35)
-        """
-        return self._months, self._days
-
-    def in_years_months_days(self) -> tuple[int, int, int]:
-        """Convert to a tuple of years, months, and days.
-
-        >>> p = DateDelta(years=1, months=2, days=11)
-        >>> p.in_years_months_days()
-        (1, 2, 11)
-        """
-        years = int(self._months / 12)
-        months = int(fmod(self._months, 12))
-        return years, months, self._days
-
-    def format_iso(self) -> str:
-        """Format as the *popular interpretation* of the ISO 8601 duration format.
-        May not strictly adhere to (all versions of) the standard.
-        See :ref:`here <iso8601-durations>` for more information.
-
-        Inverse of :meth:`parse_iso`.
-
-        >>> p = DateDelta(years=1, months=2, weeks=3, days=11)
-        >>> p.format_iso()
-        'P1Y2M3W11D'
-        >>> DateDelta().format_iso()
-        'P0D'
-
-        The format looks like this:
-
-        .. code-block:: text
-
-            P(nY)(nM)(nD)
-
-        For example:
-
-        .. code-block:: text
-
-            P1D
-            P2M
-            P1Y2M3W4D
-
-        """
-        if self._months < 0 or self._days < 0:
-            sign = "-"
-            months, days = -self._months, -self._days
-        else:
-            sign = ""
-            months, days = self._months, self._days
-
-        years = months // 12
-        months %= 12
-
-        date = (
-            f"{years}Y" * bool(years),
-            f"{months}M" * bool(months),
-            f"{days}D" * bool(days),
-        )
-        return sign + "P" + ("".join(date) or "0D")
-
-    __str__ = format_iso
-
-    def _init_from_iso(self, s: str) -> None:
-        exc = ValueError(f"Invalid format: {s!r}")
-        prev_unit = ""
-        months = 0
-        days = 0
-
-        if len(s) < 3 or not s.isascii():
-            raise exc
-
-        s = s.upper()
-        if s[0] == "P":
-            sign = 1
-            rest = s[1:]
-        elif s.startswith("-P"):
-            sign = -1
-            rest = s[2:]
-        elif s.startswith("+P"):
-            sign = 1
-            rest = s[2:]
-        else:
-            raise exc
-
-        while rest:
-            rest, value, unit = _parse_datedelta_component(rest, exc)
-
-            if unit == "Y" and prev_unit == "":
-                months += value * 12
-            elif unit == "M" and prev_unit in "Y":
-                months += value
-            elif unit == "W" and prev_unit in "YM":
-                days += value * 7
-            elif unit == "D" and prev_unit in "YMW":
-                days += value
-                if rest:
-                    raise exc  # leftover characters
-                break
-            else:
-                raise exc  # components out of order
-
-            prev_unit = unit
-
-        if months > _MAX_DELTA_MONTHS or days > _MAX_DELTA_DAYS:
-            raise ValueError("DateDelta out of range")
-
-        self._months = sign * months
-        self._days = sign * days
-
-    @classmethod
-    def parse_iso(cls, s: str, /) -> DateDelta:
-        """Parse the *popular interpretation* of the ISO 8601 duration format.
-        Does not parse all possible ISO 8601 durations.
-        See :ref:`here <iso8601-durations>` for more information.
-
-        Inverse of :meth:`format_iso`
-
-        >>> DateDelta.parse_iso("P1W11D")
-        DateDelta("P1w11d")
-        >>> DateDelta.parse_iso("-P3m")
-        DateDelta(-P3m)
-
-        Note
-        ----
-        Only durations without time component are accepted.
-        ``P0D`` is valid, but ``PT0S`` is not.
-
-        Note
-        ----
-        The number of digits in each component is limited to 8.
-        """
-        warn(
-            "DateDelta is deprecated; use ItemizedDateDelta instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        self = _object_new(cls)
-        self._init_from_iso(s)
-        return self
-
-    @overload
-    def __add__(self, other: DateDelta) -> DateDelta: ...
-
-    @overload
-    def __add__(self, other: TimeDelta) -> DateTimeDelta: ...
-
-    def __add__(
-        self, other: DateDelta | TimeDelta
-    ) -> DateDelta | DateTimeDelta:
-        """Add the fields of another delta to this one
-
-        >>> p = DateDelta(weeks=2, months=1)
-        >>> p + DateDelta(weeks=1, days=4)
-        DateDelta("P1m25d")
-        """
-        if isinstance(other, DateDelta):
-            return DateDelta._from_months_days(
-                self._months + other._months,
-                self._days + other._days,
-            )
-        elif isinstance(other, TimeDelta):
-            warn(
-                "DateTimeDelta is deprecated; use ItemizedDelta instead.",
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
-            new = _object_new(DateTimeDelta)
-            new._date_part = self
-            new._time_part = other
-            return new
-        else:
-            return NotImplemented
-
-    def __radd__(self, other: TimeDelta) -> DateTimeDelta:
-        if isinstance(other, TimeDelta):
-            warn(
-                "DateTimeDelta is deprecated; use ItemizedDelta instead.",
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
-            new = _object_new(DateTimeDelta)
-            new._date_part = self
-            new._time_part = other
-            return new
-        return NotImplemented
-
-    @overload
-    def __sub__(self, other: DateDelta) -> DateDelta: ...
-
-    @overload
-    def __sub__(self, other: TimeDelta) -> DateTimeDelta: ...
-
-    def __sub__(
-        self, other: DateDelta | TimeDelta
-    ) -> DateDelta | DateTimeDelta:
-        """Subtract the fields of another delta from this one
-
-        >>> p = DateDelta(weeks=2, days=3)
-        >>> p - DateDelta(days=2)
-        DateDelta("P15d")
-        """
-        if isinstance(other, DateDelta):
-            return DateDelta._from_months_days(
-                self._months - other._months,
-                self._days - other._days,
-            )
-        elif isinstance(other, TimeDelta):
-            warn(
-                "DateTimeDelta is deprecated; use ItemizedDelta instead.",
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
-            return self + (-other)
-        else:
-            return NotImplemented
-
-    def __rsub__(self, other: TimeDelta) -> DateTimeDelta:
-        if isinstance(other, TimeDelta):
-            warn(
-                "DateTimeDelta is deprecated; use ItemizedDelta instead.",
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
-            return -self + other
-        return NotImplemented
-
-    def __eq__(self, other: object) -> bool:
-        """Compare for equality, normalized to months and days.
-
-        `a == b` is equivalent to `a.in_months_days() == b.in_months_days()`
-
-        >>> p = DateDelta(weeks=4, days=2)
-        DateDelta("P30d")
-        >>> p == DateDelta(weeks=3, days=9)
-        True
-        >>> p == DateDelta(weeks=2, days=4)
-        True  # same number of days
-        >>> p == DateDelta(months=1)
-        False  # months and days cannot be compared directly
-        """
-        if not isinstance(other, DateDelta):
-            return NotImplemented
-        return self._months == other._months and self._days == other._days
-
-    def __hash__(self) -> int:
-        return hash((self._months, self._days))
-
-    def __bool__(self) -> bool:
-        """True if any contains any non-zero data
-
-        >>> bool(DateDelta())
-        False
-        >>> bool(DateDelta(days=-1))
-        True
-        """
-        return bool(self._months or self._days)
-
-    def __repr__(self) -> str:
-        iso = self.format_iso()
-        # lowercase everything besides the prefix (don't forget the sign!)
-        cased = iso[:2] + iso[2:].lower()
-        return f'DateDelta("{cased}")'
-
-    def __neg__(self) -> DateDelta:
-        """Negate the contents
-
-        >>> p = DateDelta(weeks=2, days=3)
-        >>> -p
-        DateDelta(-P17d)
-        """
-        return DateDelta._from_months_days(-self._months, -self._days)
-
-    def __pos__(self) -> DateDelta:
-        """Return the value unchanged
-
-        >>> p = DateDelta(weeks=2, days=-3)
-        DateDelta("P11d")
-        >>> +p
-        DateDelta("P11d")
-        """
-        return self
-
-    def __mul__(self, other: int) -> DateDelta:
-        """Multiply the contents by a round number
-
-        >>> p = DateDelta(years=1, weeks=2)
-        >>> p * 2
-        DateDelta("P2y28d")
-        """
-        if not isinstance(other, int):
-            return NotImplemented
-        return DateDelta._from_months_days(
-            self._months * other,
-            self._days * other,
-        )
-
-    def __rmul__(self, other: int) -> DateDelta:
-        if isinstance(other, int):
-            return self * other
-        return NotImplemented
-
-    def __abs__(self) -> DateDelta:
-        """If the contents are negative, return the positive version
-
-        >>> p = DateDelta(months=-2, days=-3)
-        >>> abs(p)
-        DateDelta("P2m3d")
-        """
-        return DateDelta._from_months_days(abs(self._months), abs(self._days))
-
-    @no_type_check
-    def __reduce__(self):
-        return (_unpkl_ddelta, (self._months, self._days))
-
-
-# A separate unpickling function allows us to make backwards-compatible changes
-# to the pickling format in the future
-def _unpkl_ddelta(months: int, days: int) -> DateDelta:
-    return DateDelta._from_months_days(months, days)
-
-
-_MAX_DDELTA_DIGITS = 8  # consistent with Rust extension
-
-
-# Returns (rest_of_string, value, unit), e.g. ("3D", 2, "Y")
-def _parse_datedelta_component(s: str, exc: Exception) -> tuple[str, int, str]:
-    try:
-        split_index, unit = next(
-            (i, c) for i, c in enumerate(s) if c in "YMWD"
-        )
-    except StopIteration:
-        raise exc
-
-    raw, rest = s[:split_index], s[split_index + 1 :]
-
-    if not raw.isdigit() or len(raw) > _MAX_DDELTA_DIGITS:
-        raise exc
-
-    return rest, int(raw), unit
-
-
-DateDelta.ZERO = DateDelta._from_months_days(0, 0)
-TimeDelta._date_part = DateDelta.ZERO
-
-
-@final
-class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
-    """A duration that preserves the exact fields it was created with.
-    It closely models the ISO 8601 duration format for durations.
-
-    >>> d = ItemizedDelta(weeks=2, days=3, hours=14)
-    ItemizedDelta("P2w3dT14h")
-    >>> d = ItemizedDelta("P2w3dT14h")
-    >>> str(d)
-    'P2w3dT14h'
-
-    It behaves like a mapping where the keys are
-    the unit names and the values are the amounts.
-    Items are ordered from largest to smallest unit.
-
-    >>> d['weeks']
-    2
-    >>> d.get('minutes')
-    None
-    >>> dict(d)
-    {"weeks": 2, "days": 3, "hours": 14}
-    >>> list(d.keys())
-    ["weeks", "days", "hours"]
-    >>> weeks, days, hours = d.values()
-    (2, 3, 14)
-
-    ``ItemizedDelta`` also supports other dictionary-like operations:
-
-    >>> "months" in d  # check for presence of a field
-    False
-    >>> len(d)  # number of fields set
-    3
-
-    Zero values are considered distinct from "missing" values:
-
-    >>> d2 = ItemizedDelta(years=2, weeks=3, hours=0)
-    >>> dict(d2)
-    {"years": 2, "weeks": 3, "hours": 0}
-
-    Additionally, no normalization is performed.
-    Months are not rolled into years, minutes into hours, etc.
-
-    >>> d3 = ItemizedDelta(months=24, minutes=90)
-    ItemizedDelta("P24mT90m")
-
-    Empty durations are not allowed. At least one field must be set (but it can be zero):
-
-    >>> ItemizedDelta()
-    ValueError: At least one field must be set
-    >>> ItemizedDelta(seconds=0)
-    ItemizedDelta("PT0s")
-
-    Negative durations are supported, but all fields must have the same sign:
-
-    >>> d4 = ItemizedDelta(years=-1, weeks=-2, days=0)
-    ItemizedDelta("-P1y2w0d")
-    >>> ItemizedDelta(years=1, days=-3)
-    ValueError: All fields must have the same sign
-
-    Note
-    ----
-    Unlike :class:`TimeDelta`, ``ItemizedDelta`` does not normalize
-    its fields. This means that ``ItemizedDelta(hours=90)`` and
-    ``ItemizedDelta(days=3, hours=18)`` are considered different values.
-    To convert to a normalized form, use :meth:`in_units`.
-    See also the `delta documentation <https://whenever.rtfd.io/en/latest/guide/deltas.html>`_.
-    """
-
-    __slots__ = (
-        # Values are stored as signed integers (or None if not set).
-        # All non-zero fields must have the same sign.
-        "_years",
-        "_months",
-        "_weeks",
-        "_days",
-        "_hours",
-        "_minutes",
-        "_seconds",
-        # FUTURE: allow nanoseconds to exceed 999,999,999?
-        "_nanoseconds",
-    )
-
-    def _has_cal(self) -> bool:
-        """True if this delta has any calendar units (years, months, weeks, days) set."""
-        return (
-            self._years is not None
-            or self._months is not None
-            or self._weeks is not None
-            or self._days is not None
-        )
-
-    def _has_exact_time(self) -> bool:
-        """True if this delta has any exact time units (hours, minutes, seconds, nanoseconds) set."""
-        return (
-            self._hours is not None
-            or self._minutes is not None
-            or self._seconds is not None
-            or self._nanoseconds is not None
-        )
-
-    # Overloads for a nice autodoc.
-    # Proper typing of the constructors is handled in the type stubs
-    if not TYPE_CHECKING:
-
-        @overload
-        def __init__(self, iso_string: str, /) -> None: ...
-
-        @overload
-        def __init__(
-            self,
-            *,
-            years: int = ...,
-            months: int = ...,
-            weeks: int = ...,
-            days: int = ...,
-            hours: int = ...,
-            minutes: int = ...,
-            seconds: int = ...,
-            nanoseconds: int = ...,
-        ) -> None: ...
-
-    def __init__(
-        self,
-        *,
-        years: int = UNSET,
-        months: int = UNSET,
-        weeks: int = UNSET,
-        days: int = UNSET,
-        hours: int = UNSET,
-        minutes: int = UNSET,
-        seconds: int = UNSET,
-        nanoseconds: int = UNSET,
-    ) -> None:
-        sign: Sign = 0
-        if nanoseconds is not UNSET and seconds is UNSET:
-            seconds = 0
-
-        self._years, sign = _check_component(years, sign, _MAX_DELTA_YEARS)
-        self._months, sign = _check_component(months, sign, _MAX_DELTA_MONTHS)
-        self._weeks, sign = _check_component(weeks, sign, _MAX_DELTA_WEEKS)
-        self._days, sign = _check_component(days, sign, _MAX_DELTA_DAYS)
-        self._hours, sign = _check_component(hours, sign, _MAX_DELTA_HOURS)
-        self._minutes, sign = _check_component(
-            minutes, sign, _MAX_DELTA_MINUTES
-        )
-        self._seconds, sign = _check_component(
-            seconds, sign, _MAX_DELTA_SECONDS
-        )
-        self._nanoseconds, sign = _check_component(
-            nanoseconds, sign, _MAX_SUBSEC_NANOS
-        )
-        if (
-            years is UNSET
-            and months is UNSET
-            and weeks is UNSET
-            and days is UNSET
-            and hours is UNSET
-            and minutes is UNSET
-            and seconds is UNSET
-            and nanoseconds is UNSET
-        ):
-            # This is to ensure ISO8601 formatting/parsing is round-trip safe.
-            # There is no "empty" duration in ISO8601; at least one field must be present.
-            raise ValueError("at least one field must be set")
-
-    __init__ = add_alternate_constructors(__init__)
-
-    def sign(self) -> Sign:
-        """The sign of the delta, 1, 0, or -1"""
-        for v in (
-            self._years,
-            self._months,
-            self._weeks,
-            self._days,
-            self._hours,
-            self._minutes,
-            self._seconds,
-            self._nanoseconds,
-        ):
-            if v:
-                return 1 if v > 0 else -1
-        return 0
-
-    # FUTURE: a float_seconds method that combines seconds and nanoseconds into a single float value?
-
-    def __iter__(self) -> Iterator[DeltaUnitStr]:
-        """Iterate over all non-missing fields, ordered from largest to smallest unit."""
-        if self._years is not None:
-            yield "years"
-        if self._months is not None:
-            yield "months"
-        if self._weeks is not None:
-            yield "weeks"
-        if self._days is not None:
-            yield "days"
-        if self._hours is not None:
-            yield "hours"
-        if self._minutes is not None:
-            yield "minutes"
-        if self._seconds is not None:
-            yield "seconds"
-        if self._nanoseconds is not None:
-            yield "nanoseconds"
-
-    # These methods defer to the base class implementations, but need to be
-    # documented here for the API docs.
-    if not TYPE_CHECKING:  # pragma: no cover
-        if SPHINX_RUNNING:
-
-            def keys(self) -> KeysView[DeltaUnitStr]:
-                """The names of all defined fields, in order of largest to smallest unit.
-
-                Part of the mapping protocol
-                """
-                ...
-
-            # FUTURE: an optimized ValuesView class that defers to the internal
-            # fields directly instead of going through __getitem__
-            def values(self) -> ValuesView[int]:
-                """Return all defined field values, in order
-                of largest to smallest unit.
-
-                >>> d = ItemizedDelta(years=3, hours=12, days=0)
-                >>> years, days, hours = d.values()
-                (3, 0, 12)
-                >>> list(d.values())
-                [3, 0, 12]
-
-                Part of the mapping protocol
-                """
-                ...
-
-            def items(self) -> ItemsView[DeltaUnitStr, int]:
-                """Return all defined fields as (unit, value) pairs
-                ordered from largest to smallest unit.
-
-                >>> d = ItemizedDelta(years=3, hours=12, days=0)
-                >>> list(d.items())
-                [('years', 3), ('days', 0), ('hours', 12)]
-
-                Part of the mapping protocol
-                """
-                ...
-
-            @overload
-            def get(self, key: DeltaUnitStr, /) -> int | None: ...
-
-            @overload
-            def get(self, key: DeltaUnitStr, default: int, /) -> int: ...
-
-            def get(
-                self, key: DeltaUnitStr, default: object = None, /
-            ) -> object:
-                """Get the value of a specific field by name, or return default if not set.
-
-                Part of the mapping protocol
-                """
-                ...
-
-    def __getitem__(self, key: str) -> int:
-        """Get the value of a specific field by name.
-
-        >>> d = ItemizedDelta(weeks=1, days=3)
-        >>> d["weeks"]
-        1
-        >>> d["days"]
-        3
-        >>> d["hours"]
-        KeyError: 'hours'
-        """
-        match key:
-            case "years":
-                value = self._years
-            case "months":
-                value = self._months
-            case "weeks":
-                value = self._weeks
-            case "days":
-                value = self._days
-            case "hours":
-                value = self._hours
-            case "minutes":
-                value = self._minutes
-            case "seconds":
-                value = self._seconds
-            case "nanoseconds":
-                value = self._nanoseconds
-            case _:
-                raise KeyError(key)
-
-        if value is not None:
-            return value
-
-        raise KeyError(key)
-
-    def __len__(self) -> int:
-        """Get the number of fields that are set.
-
-        >>> d = ItemizedDelta(weeks=1, days=3)
-        >>> len(d)
-        2
-        """
-        return (
-            (self._years is not None)
-            + (self._months is not None)
-            + (self._weeks is not None)
-            + (self._days is not None)
-            + (self._hours is not None)
-            + (self._minutes is not None)
-            + (self._seconds is not None)
-            + (self._nanoseconds is not None)
-        )
-
-    def __contains__(self, key: object) -> bool:
-        """Check if a specific field is set.
-
-        >>> d = ItemizedDelta(weeks=1, days=3)
-        >>> "weeks" in d
-        True
-        >>> "hours" in d
-        False
-        """
-        if key == "years":
-            return self._years is not None
-        elif key == "months":
-            return self._months is not None
-        elif key == "weeks":
-            return self._weeks is not None
-        elif key == "days":
-            return self._days is not None
-        elif key == "hours":
-            return self._hours is not None
-        elif key == "minutes":
-            return self._minutes is not None
-        elif key == "seconds":
-            return self._seconds is not None
-        elif key == "nanoseconds":
-            return self._nanoseconds is not None
-        return False
-
-    def __bool__(self) -> bool:
-        """An ItemizedDelta is considered False if its sign is 0.
-
-        >>> bool(ItemizedDelta(weeks=0))
-        False
-        >>> bool(ItemizedDelta(weeks=1))
-        True
-        """
-        return bool(
-            self._years
-            or self._months
-            or self._weeks
-            or self._days
-            or self._hours
-            or self._minutes
-            or self._seconds
-            or self._nanoseconds
-        )
-
-    def format_iso(self, *, lowercase_units: bool = False) -> str:
-        """Format as the *popular interpretation* of the ISO 8601 duration format.
-        May not strictly adhere to (all versions of) the standard.
-        See :ref:`here <iso8601-durations>` for more information.
-
-        Inverse of :meth:`parse_iso`.
-
-        The format is:
-
-        .. code-block:: text
-
-            P(nY)(nM)(nW)(nD)T(nH)(nM)(nS)
-
-        >>> d = ItemizedDelta(
-        ...     weeks=1,
-        ...     days=11,
-        ...     hours=4,
-        ...     seconds=1,
-        ...     nanoseconds=12_000,
-        ... )
-        >>> d.format_iso()
-        'P1W11DT4H1.000012S'
-        """
-        y, m, w, d, h, s = "ymwdhs" if lowercase_units else "YMWDHS"
-
-        sgn = self.sign()
-        parts = ["-" * (sgn < 0), "P"]
-        if self._years is not None:
-            parts.append(f"{abs(self._years)}{y}")
-        if self._months is not None:
-            parts.append(f"{abs(self._months)}{m}")
-        if self._weeks is not None:
-            parts.append(f"{abs(self._weeks)}{w}")
-        if self._days is not None:
-            parts.append(f"{abs(self._days)}{d}")
-
-        parts.append("T")
-
-        if self._hours is not None:
-            parts.append(f"{abs(self._hours)}{h}")
-        if self._minutes is not None:
-            parts.append(f"{abs(self._minutes)}{m}")
-        if self._seconds is not None:
-            if self._nanoseconds is None:
-                parts.append(f"{abs(self._seconds)}{s}")
-            elif self._nanoseconds:
-                parts.append(
-                    f"{abs(self._seconds)}.{abs(self._nanoseconds):09d}".rstrip(
-                        "0"
-                    )
-                    + s
-                )
-            else:
-                parts.append(f"{abs(self._seconds)}.0{s}")
-
-        joined = "".join(parts)
-        if joined.endswith("T"):  # skip the T if no time fields
-            return joined[:-1]
-        # NOTE: we always have at least one field,
-        # so we don't need to check for "empty" durations.
-        return joined
-
-    @classmethod
-    def parse_iso(cls, s: str, /) -> ItemizedDelta:
-        """Parse the *popular interpretation* of the ISO 8601 duration format.
-        Does not parse all possible ISO 8601 durations.
-        See :ref:`here <iso8601-durations>` for more information.
-
-        .. code-block:: text
-
-           P4D        # 4 days
-           PT4H       # 4 hours
-           PT0M       # 0 minutes
-           PT3M40.5S  # 3 minutes and 40.5 seconds
-           P1W11DT90M # 1 week, 11 days, and 90 minutes
-           -PT7H400M  # -7 hours and -400 minutes
-           +PT7H4M    # 7 hours and 4 minutes (7:04:00)
-
-        Inverse of :meth:`format_iso`
-
-        >>> ItemizeDelta.parse_iso("-P1W11DT4H")
-        ItemizeDelta("-P1w11dT4h")
-        """
-        exc = ValueError(f"Invalid format: {s!r}")
-        prev_unit = ""
-        years, months, weeks, days, hours, minutes, seconds, nanos = (
-            None,
-        ) * 8
-
-        # Catch certain invalid strings early, making parsing easier
-        if len(s) < 3 or not s.isascii() or s.endswith("T"):
-            raise exc
-
-        sign: Sign
-        s = s.upper()
-        if s[0] == "P":
-            sign = 1
-            rest = s[1:]
-        elif s.startswith("-P"):
-            sign = -1
-            rest = s[2:]
-        elif s.startswith("+P"):
-            sign = 1
-            rest = s[2:]
-        else:
-            raise exc
-
-        # parse the date part
-        while rest and not rest.startswith("T"):
-            rest, value, unit = _parse_datedelta_component(rest, exc)
-
-            if unit == "Y" and prev_unit == "":
-                years = value
-            elif unit == "M" and prev_unit in "Y":
-                months = value
-            elif unit == "W" and prev_unit in "YM":
-                weeks = value
-            elif unit == "D" and prev_unit in "YMW":
-                days = value
-                break
-            else:
-                raise exc  # components out of order
-
-            prev_unit = unit
-
-        prev_unit = ""
-        if rest and not rest.startswith("T"):
-            raise exc
-
-        # skip the "T" separator
-        rest = rest[1:]
-
-        while rest:
-            rest_new, value, unit = parse_timedelta_component(rest, exc)
-
-            if unit == "H" and prev_unit == "":
-                hours = value
-            elif unit == "M" and prev_unit in "H":
-                minutes = value
-            elif unit == "S":
-                seconds = value // 1_000_000_000
-                # Only set nanos if there are fractional digits
-                if "," in rest or "." in rest:
-                    nanos = value % 1_000_000_000
-                if rest_new:
-                    raise exc
-                break
-            else:
-                raise exc
-
-            rest = rest_new
-            prev_unit = unit
-
-        if not (
-            years
-            or months
-            or weeks
-            or days
-            or hours
-            or minutes
-            or seconds
-            or nanos
-        ):
-            sign = 0
-
-        # NOTE: we've implicitly validated that at least one field is set
-        return cls._from_signed(
-            sign,
-            years,
-            months,
-            weeks,
-            days,
-            hours,
-            minutes,
-            seconds,
-            nanos,
-        )
-
-    def date_and_time_parts(
-        self,
-    ) -> tuple[ItemizedDateDelta | None, TimeDelta | None]:
-        """Split into date and time parts.
-
-        Either part may be None if no fields were set of that type.
-        At least one part will be non-None, since at least one field must be set.
-
-        >>> d = ItemizedDelta(
-        ...     years=1,
-        ...     months=2,
-        ...     weeks=3,
-        ...     days=4,
-        ...     hours=5,
-        ...     minutes=6,
-        ...     seconds=7,
-        ...     nanoseconds=8,
-        ... )
-        >>> date_part, time_part = d.date_and_time_parts()
-        >>> date_part
-        ItemizedDateDelta("P1y2m3w4d")
-        >>> time_part
-        TimeDelta("P5h6m7.000000008s")
-        >>> ItemizedDelta(weeks=2).date_and_time_parts()
-        (ItemizedDateDelta("P2w"), None)
-
-        """
-        years, months, weeks, days = date_values = (
-            self._years,
-            self._months,
-            self._weeks,
-            self._days,
-        )
-        if all(v is None for v in date_values):
-            date_part = None
-        else:
-            sgn = self.sign()
-            date_part = ItemizedDateDelta._from_signed(
-                sgn if any(date_values) else 0,
-                years=abs(years) if years is not None else None,
-                months=abs(months) if months is not None else None,
-                weeks=abs(weeks) if weeks is not None else None,
-                days=abs(days) if days is not None else None,
-            )
-
-        hours, minutes, seconds, nanoseconds = time_values = (
-            self._hours,
-            self._minutes,
-            self._seconds,
-            self._nanoseconds,
-        )
-        if all(v is None for v in time_values):
-            time_part = None
-        else:
-            time_part = TimeDelta(
-                hours=hours or 0,
-                minutes=minutes or 0,
-                seconds=seconds or 0,
-                nanoseconds=nanoseconds or 0,
-            )
-        return date_part, time_part
-
-    # A private constructor that bypasses sign/presence validation.
-    # All field values must be non-negative; `sign` is applied when storing.
-    @classmethod
-    def _from_signed(
-        cls,
-        sign: Sign,
-        years: int | None = None,
-        months: int | None = None,
-        weeks: int | None = None,
-        days: int | None = None,
-        hours: int | None = None,
-        minutes: int | None = None,
-        seconds: int | None = None,
-        nanoseconds: int | None = None,
-    ) -> ItemizedDelta:
-        self = _object_new(cls)
-
-        def _apply(v: int | None, max_val: int) -> int | None:
-            v = _check_bound(v, max_val)
-            return -v if v and sign < 0 else v
-
-        self._years = _apply(years, _MAX_DELTA_YEARS)
-        self._months = _apply(months, _MAX_DELTA_MONTHS)
-        self._weeks = _apply(weeks, _MAX_DELTA_WEEKS)
-        self._days = _apply(days, _MAX_DELTA_DAYS)
-        self._hours = _apply(hours, _MAX_DELTA_HOURS)
-        self._minutes = _apply(minutes, _MAX_DELTA_MINUTES)
-        self._seconds = _apply(seconds, _MAX_DELTA_SECONDS)
-        self._nanoseconds = _apply(nanoseconds, _MAX_SUBSEC_NANOS)
-        return self
-
-    def __eq__(self, other: object) -> bool:
-        """Compare for equality. Each field is individually compared.
-        No normalization is performed. Zero values are considered equivalent
-        to missing values.
-
-        Thus, ``ItemizedDelta(weeks=1, seconds=0) == ItemizedDelta(weeks=1)``
-
-        >>> d = ItemizedDelta(weeks=2, minutes=90)
-        >>> d == ItemizedDelta(weeks=2, minutes=90)
-        True
-        >>> d == ItemizedDelta(weeks=2, minutes=91)
-        False
-
-        If you want strict equality (including presence of fields),
-        use :meth:`exact_eq`.
-
-        """
-        if not isinstance(other, ItemizedDelta):
-            return NotImplemented
-        return (
-            (self._years or 0) == (other._years or 0)
-            and (self._months or 0) == (other._months or 0)
-            and (self._weeks or 0) == (other._weeks or 0)
-            and (self._days or 0) == (other._days or 0)
-            and (self._hours or 0) == (other._hours or 0)
-            and (self._minutes or 0) == (other._minutes or 0)
-            and (self._seconds or 0) == (other._seconds or 0)
-            and (self._nanoseconds or 0) == (other._nanoseconds or 0)
-        )
-
-    def exact_eq(self, other: ItemizedDelta, /) -> bool:
-        """Check for strict equality. All fields *and their presence* must match."""
-        return (
-            self._years == other._years
-            and self._months == other._months
-            and self._weeks == other._weeks
-            and self._days == other._days
-            and self._hours == other._hours
-            and self._minutes == other._minutes
-            and self._seconds == other._seconds
-            and self._nanoseconds == other._nanoseconds
-        )
-
-    def __abs__(self) -> ItemizedDelta:
-        """If the contents are negative, return the positive version
-
-        >>> d = ItemizedDelta(weeks=-2, days=-3)
-        >>> abs(d)
-        ItemizedDelta("P2w3d")
-        """
-        if self.sign() >= 0:
-            return self
-        return ItemizedDelta._from_signed(
-            1,
-            abs(self._years) if self._years is not None else None,
-            abs(self._months) if self._months is not None else None,
-            abs(self._weeks) if self._weeks is not None else None,
-            abs(self._days) if self._days is not None else None,
-            abs(self._hours) if self._hours is not None else None,
-            abs(self._minutes) if self._minutes is not None else None,
-            abs(self._seconds) if self._seconds is not None else None,
-            abs(self._nanoseconds) if self._nanoseconds is not None else None,
-        )
-
-    def __neg__(self) -> ItemizedDelta:
-        """Invert the sign of the contents
-
-        >>> d = ItemizedDelta(weeks=2, days=3)
-        >>> -d
-        ItemizedDelta("-P2w3d")
-        >>> --d
-        ItemizedDelta("P2w3d")
-        """
-        if self.sign() == 0:
-            return self
-        return ItemizedDelta._from_signed(
-            -self.sign(),
-            abs(self._years) if self._years is not None else None,
-            abs(self._months) if self._months is not None else None,
-            abs(self._weeks) if self._weeks is not None else None,
-            abs(self._days) if self._days is not None else None,
-            abs(self._hours) if self._hours is not None else None,
-            abs(self._minutes) if self._minutes is not None else None,
-            abs(self._seconds) if self._seconds is not None else None,
-            abs(self._nanoseconds) if self._nanoseconds is not None else None,
-        )
-
-    @overload
-    def add(
-        self,
-        other: ItemizedDelta,
-        /,
-        *,
-        relative_to: ZonedDateTime,
-        in_units: Sequence[DeltaUnitStr],
-        round_mode: RoundModeStr = ...,
-        round_increment: int = ...,
-    ) -> ItemizedDelta: ...
-
-    @overload
-    def add(
-        self,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        hours: int = ...,
-        minutes: int = ...,
-        seconds: int = ...,
-        nanoseconds: int = ...,
-        relative_to: ZonedDateTime,
-        in_units: Sequence[DeltaUnitStr],
-        round_mode: RoundModeStr = ...,
-        round_increment: int = ...,
-    ) -> ItemizedDelta: ...
-
-    def add(
-        self,
-        arg: ItemizedDelta = UNSET,
-        /,
-        *,
-        relative_to: ZonedDateTime,
-        in_units: Sequence[DeltaUnitStr],
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-        **kwargs: Any,
-    ) -> ItemizedDelta:
-        """Add time to this delta, returning a new delta"""
-        valid_keys = frozenset(
-            {
-                "years",
-                "months",
-                "weeks",
-                "days",
-                "hours",
-                "minutes",
-                "seconds",
-                "nanoseconds",
-            }
-        )
-        if kwargs:
-            if arg is not UNSET:
-                raise TypeError("Cannot mix positional and keyword arguments")
-            invalid = set(kwargs) - valid_keys
-            if invalid:
-                raise TypeError(
-                    f"Unexpected keyword argument: {next(iter(invalid))!r}"
-                )
-        elif arg is not UNSET:
-            # In this case the mapping types are interchangeable
-            kwargs = arg  # type: ignore[assignment]
-        else:
-            return self
-
-        return relative_to.add(
-            years=self.get("years", 0) + kwargs.get("years", 0),
-            months=self.get("months", 0) + kwargs.get("months", 0),
-            weeks=self.get("weeks", 0) + kwargs.get("weeks", 0),
-            days=self.get("days", 0) + kwargs.get("days", 0),
-            hours=self.get("hours", 0) + kwargs.get("hours", 0),
-            minutes=self.get("minutes", 0) + kwargs.get("minutes", 0),
-            seconds=self.get("seconds", 0) + kwargs.get("seconds", 0),
-            nanoseconds=self.get("nanoseconds", 0)
-            + kwargs.get("nanoseconds", 0),
-        ).since(
-            relative_to,
-            in_units=in_units,
-            round_mode=round_mode,
-            round_increment=round_increment,
-        )
-
-    @overload
-    def subtract(
-        self,
-        other: ItemizedDelta,
-        /,
-        *,
-        relative_to: ZonedDateTime,
-        in_units: Sequence[DeltaUnitStr],
-        round_mode: RoundModeStr = ...,
-        round_increment: int = ...,
-    ) -> ItemizedDelta: ...
-
-    @overload
-    def subtract(
-        self,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        hours: int = ...,
-        minutes: int = ...,
-        seconds: int = ...,
-        nanoseconds: int = ...,
-        relative_to: ZonedDateTime,
-        in_units: Sequence[DeltaUnitStr],
-        round_mode: RoundModeStr = ...,
-        round_increment: int = ...,
-    ) -> ItemizedDelta: ...
-
-    def subtract(
-        self,
-        arg: ItemizedDelta = UNSET,
-        /,
-        *,
-        relative_to: ZonedDateTime,
-        in_units: Sequence[DeltaUnitStr],
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-        **kwargs: Any,
-    ) -> ItemizedDelta:
-        """Inverse of :meth:`add`."""
-        arg = -arg if arg is not UNSET else UNSET
-        return self.add(
-            arg,
-            **{k: -v for k, v in kwargs.items()},
-            relative_to=relative_to,
-            in_units=in_units,
-            round_mode=round_mode,
-            round_increment=round_increment,
-        )
-
-    def in_units(
-        self,
-        units: Sequence[DeltaUnitStr],
-        /,
-        *,
-        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-    ) -> ItemizedDelta:
-        """Convert this delta into the specified units. A `relative_to` datetime
-        is required to resolve calendar units.
-
-        >>> d = ItemizedDelta(years=1, months=8, minutes=1000)
-        >>> d.in_units(["weeks", "hours"], relative_to=ZonedDateTime(2020, 6, 30, 12, tz="Asia/Tokyo"))
-        ItemizedDelta("P86w160h")
-
-        Parameters
-        ----------
-        relative_to
-            A :class:`ZonedDateTime`, :class:`PlainDateTime`, or
-            :class:`OffsetDateTime` reference point.
-
-            - :class:`ZonedDateTime`: DST-aware; emits no warning
-            - :class:`PlainDateTime`: emits :class:`NaiveArithmeticWarning`
-              when the conversion crosses the calendar/exact-time boundary
-              (i.e. the delta or output mixes calendar and exact-time units).
-              Pure calendar-to-calendar or exact-to-exact conversions do not warn.
-            - :class:`OffsetDateTime`: emits :class:`StaleOffsetWarning`
-              when the delta contains calendar units (years, months, weeks, days)
-              **or** the output units include calendar units
-        """
-        has_exact_in_units = any(map(EXACT_UNITS_STRICT.__contains__, units))
-        has_cal_in_units = any(map(DATE_DELTA_UNITS.__contains__, units))
-        if isinstance(relative_to, PlainDateTime):
-            if (self._has_exact_time() or has_exact_in_units) and (
-                self._has_cal() or has_cal_in_units
-            ):
-                warn(
-                    PLAIN_RELATIVE_TO_UNAWARE_MSG,
-                    NaiveArithmeticWarning,
-                    stacklevel=2,
-                )
-            relative_to = relative_to.assume_tz("UTC")
-        elif isinstance(relative_to, OffsetDateTime):
-            if self._has_cal() or has_cal_in_units:
-                warn(
-                    StaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG),
-                    stacklevel=2,
-                )
-            relative_to = relative_to.to_plain().assume_tz("UTC")
-        elif not isinstance(relative_to, ZonedDateTime):
-            raise TypeError(
-                "relative_to must be a ZonedDateTime, PlainDateTime, or OffsetDateTime"
-            )
-        return relative_to.add(self).since(
-            relative_to,
-            in_units=units,
-            round_mode=round_mode,
-            round_increment=round_increment,
-        )
-
-    def total(
-        self,
-        unit: DeltaUnitStr,
-        /,
-        *,
-        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
-    ) -> float:
-        """Return the total duration expressed in the specified unit as a float
-
-        Parameters
-        ----------
-        relative_to
-            A :class:`ZonedDateTime`, :class:`PlainDateTime`, or
-            :class:`OffsetDateTime` reference point.
-
-            - :class:`ZonedDateTime`: DST-aware; emits no warning
-            - :class:`PlainDateTime`: emits :class:`NaiveArithmeticWarning`
-              when the conversion crosses the calendar/exact-time boundary
-              (i.e. the delta or target unit mixes calendar and exact-time units).
-              Pure calendar-to-calendar or exact-to-exact conversions do not warn.
-            - :class:`OffsetDateTime`: emits :class:`StaleOffsetWarning`
-              when the delta contains calendar units (years, months, weeks, days)
-              **or** the target unit is a calendar unit
-        """
-        is_exact_unit = unit in EXACT_UNITS_STRICT
-        if isinstance(relative_to, PlainDateTime):
-            if (self._has_exact_time() or is_exact_unit) and (
-                self._has_cal() or not is_exact_unit
-            ):
-                warn(
-                    PLAIN_RELATIVE_TO_UNAWARE_MSG,
-                    NaiveArithmeticWarning,
-                    stacklevel=2,
-                )
-            relative_to = relative_to.assume_tz("UTC")
-        elif isinstance(relative_to, OffsetDateTime):
-            if self._has_cal() or not is_exact_unit:
-                warn(
-                    StaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG),
-                    stacklevel=2,
-                )
-            relative_to = relative_to.to_plain().assume_tz("UTC")
-        elif not isinstance(relative_to, ZonedDateTime):
-            raise TypeError(
-                "relative_to must be a ZonedDateTime, PlainDateTime, or OffsetDateTime"
-            )
-        return (relative_to.add(self) - relative_to).total(
-            unit, relative_to=relative_to
-        )
-
-    if not TYPE_CHECKING:
-        # This overload ensures it shows up nicely in the API docs, not just as "kwargs"
-        @overload
-        def replace(
-            self,
-            *,
-            years: int | None = ...,
-            months: int | None = ...,
-            weeks: int | None = ...,
-            days: int | None = ...,
-            hours: int | None = ...,
-            minutes: int | None = ...,
-            seconds: int | None = ...,
-            nanoseconds: int | None = ...,
-        ) -> ItemizedDelta: ...
-
-    def replace(self, **kwargs: int | None) -> ItemizedDelta:
-        """Return a new delta with specific fields replaced.
-        Fields set to ``None`` will be removed.
-
-        All normal validation rules apply.
-
-        >>> d = ItemizedDelta(years=1, months=2, hours=3)
-        >>> d.replace(months=None, hours=2)
-        ItemizedDelta("P1yT2h")
-        """
-        kwargs_w_sentinel = {
-            k: UNSET if v is None else v for k, v in kwargs.items()
-        }
-        fields = {**self, **kwargs_w_sentinel}
-        if all(v is UNSET for v in fields.values()):
-            raise ValueError("at least one field must remain set")
-        return ItemizedDelta(**fields)
-
-    @no_type_check
-    def __reduce__(self):
-        return (
-            _unpkl_idelta,
-            (
-                self._years,
-                self._months,
-                self._weeks,
-                self._days,
-                self._hours,
-                self._minutes,
-                self._seconds,
-                self._nanoseconds,
-            ),
-        )
-
-    def __repr__(self) -> str:
-        return f'ItemizedDelta("{self.format_iso(lowercase_units=True)}")'
-
-    __str__ = format_iso
-
-    def _init_from_iso(self, s: str) -> None:
-        parsed = type(self).parse_iso(s)
-        self._years = parsed._years
-        self._months = parsed._months
-        self._weeks = parsed._weeks
-        self._days = parsed._days
-        self._hours = parsed._hours
-        self._minutes = parsed._minutes
-        self._seconds = parsed._seconds
-        self._nanoseconds = parsed._nanoseconds
-
-
-# A separate unpickling function allows us to make backwards-compatible changes
-# to the pickling format in the future
-def _unpkl_idelta(
-    years: int | None,
-    months: int | None,
-    weeks: int | None,
-    days: int | None,
-    hours: int | None,
-    minutes: int | None,
-    seconds: int | None,
-    nanoseconds: int | None,
-) -> ItemizedDelta:
-    self = _object_new(ItemizedDelta)
-    self._years = years
-    self._months = months
-    self._weeks = weeks
-    self._days = days
-    self._hours = hours
-    self._minutes = minutes
-    self._seconds = seconds
-    self._nanoseconds = nanoseconds
-    return self
-
-
-@final
-class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
-    """A date duration that preserves the exact fields it was created with.
-    It closely models the ISO 8601 duration format for date-only durations.
-
-    >>> d = ItemizedDateDelta(years=2, weeks=3)
-    ItemizedDateDelta("P2Y3W")
-    >>> d = ItemizedDateDelta("P22W")
-    >>> str(d)
-    'P22W'
-
-    It behaves like a mapping where the keys are
-    the unit names and the values are the amounts.
-    Items are ordered from largest to smallest unit.
-
-    >>> d['weeks']
-    22
-    >>> d.get('days')
-    None
-    >>> dict(d)
-    {"years": 2, "weeks": 3}
-    >>> list(d.keys())
-    ["years", "weeks"]
-    >>> years, weeks = d.values()
-    (2, 3)
-
-    ``ItemizedDateDelta`` also supports other dictionary-like operations:
-
-    >>> "days" in d  # check for presence of a field
-    False
-    >>> len(d)  # number of fields set
-    2
-
-    Zero values are considered distinct from "missing" values:
-
-    >>> d2 = ItemizedDateDelta(years=2, weeks=3, days=0)
-    >>> dict(d2)
-    {"years": 2, "weeks": 3, "days": 0}
-
-    Additionally, no normalization is performed.
-    Months are not rolled into years, weeks into days, etc.
-
-    >>> d3 = ItemizedDateDelta(months=24, days=100)
-    ItemizedDateDelta("P24m100d")
-
-    Empty durations are not allowed. At least one field must be set (but it can be zero):
-
-    >>> ItemizedDateDelta()
-    ValueError: At least one field must be set
-    >>> ItemizedDateDelta(days=0)
-    ItemizedDateDelta("P0d")
-
-    Negative durations are supported, but all fields must have the same sign:
-
-    >>> d4 = ItemizedDateDelta(years=-1, weeks=-2, days=0)
-    ItemizedDateDelta("-P1y2w0d")
-    >>> ItemizedDateDelta(years=1, days=-3)
-    ValueError: All fields must have the same sign
-
-    Note
-    ----
-    Unlike :class:`DateDelta`, ``ItemizedDateDelta`` does not normalize
-    its fields. This means that ``ItemizedDateDelta(months=14)`` and
-    ``ItemizedDateDelta(years=1, months=2)`` are considered different values.
-    To convert to a normalized form, use :meth:`in_units`.
-    See also the `delta documentation <https://whenever.rtfd.io/en/latest/guide/deltas.html>`_.
-    """
-
-    __slots__ = (
-        # Values are stored as signed integers (or None if not set).
-        # All non-zero fields must have the same sign.
-        "_years",
-        "_months",
-        "_weeks",
-        "_days",
-    )
-
-    # Overloads for a nice autodoc.
-    # Proper typing of the constructors is handled in the type stubs
-    if not TYPE_CHECKING:
-
-        @overload
-        def __init__(self, iso_string: str, /) -> None: ...
-
-        @overload
-        def __init__(
-            self,
-            *,
-            years: int = ...,
-            months: int = ...,
-            weeks: int = ...,
-            days: int = ...,
-        ) -> None: ...
-
-    def __init__(
-        self,
-        *,
-        years: int = UNSET,
-        months: int = UNSET,
-        weeks: int = UNSET,
-        days: int = UNSET,
-    ) -> None:
-        sign: Sign = 0
-        self._years, sign = _check_component(years, sign, _MAX_DELTA_YEARS)
-        self._months, sign = _check_component(months, sign, _MAX_DELTA_MONTHS)
-        self._weeks, sign = _check_component(weeks, sign, _MAX_DELTA_WEEKS)
-        self._days, sign = _check_component(days, sign, _MAX_DELTA_DAYS)
-        if (
-            years is UNSET
-            and months is UNSET
-            and weeks is UNSET
-            and days is UNSET
-        ):
-            # This is to ensure ISO8601 formatting/parsing is round-trip safe.
-            # There is no "empty" duration in ISO8601; at least one field must be present.
-            raise ValueError("at least one field must be set")
-
-    __init__ = add_alternate_constructors(__init__)
-
-    def sign(self) -> Sign:
-        """The sign of the delta, whether it's positive, negative, or zero.
-
-        >>> ItemizedDateDelta(weeks=2).sign()
-        1
-        >>> ItemizedDateDelta(days=-3).sign()
-        -1
-        >>> ItemizedDateDelta(weeks=0).sign()
-        0
-        """
-        for v in (self._years, self._months, self._weeks, self._days):
-            if v:
-                return 1 if v > 0 else -1
-        return 0
-
-    def in_units(
-        self,
-        units: Sequence[DateDeltaUnitStr],
-        /,
-        *,
-        relative_to: Date,
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-    ) -> ItemizedDateDelta:
-        """Convert this delta into the specified units. A `relative_to` date
-        is required to resolve variable-length units (years and months).
-
-        >>> d = ItemizedDateDelta(years=1, months=8)
-        >>> d.in_units(["weeks", "days"], relative_to=Date(2020, 6, 30))
-        ItemizedDateDelta("P86w6d")
-        """
-        return relative_to.add(self).since(
-            relative_to,
-            in_units=units,
-            round_mode=round_mode,
-            round_increment=round_increment,
-        )
-
-    if not TYPE_CHECKING:
-        # This overload ensures it shows up nicely in the API docs, not just as "kwargs"
-        @overload
-        def replace(
-            self,
-            *,
-            years: int | None = ...,
-            months: int | None = ...,
-            weeks: int | None = ...,
-            days: int | None = ...,
-        ) -> ItemizedDateDelta: ...
-
-    def replace(self, **kwargs: int | None) -> ItemizedDateDelta:
-        """Return a new delta with specific fields replaced.
-        Fields set to ``None`` will be removed.
-
-        All normal validation rules apply.
-
-        >>> d = ItemizedDateDelta(years=1, months=2, weeks=3)
-        >>> d.replace(months=None, weeks=4)
-        ItemizedDateDelta("P1y4w")
-        """
-        kwargs_w_sentinel = {
-            k: UNSET if v is None else v for k, v in kwargs.items()
-        }
-        # Keys may be invalid here, but the constructor will catch that.
-        fields = {**self, **kwargs_w_sentinel}  # type: ignore[misc]
-        if all(v is UNSET for v in fields.values()):
-            raise ValueError("at least one field must remain set")
-        return ItemizedDateDelta(**fields)
-
-    def format_iso(self, *, lowercase_units: bool = False) -> str:
-        """Convert to the canionical ISO 8601 string representation:
-
-        .. code-block:: text
-
-            P(nY)(nM)(nW)(nD)
-
-        You can also use ``str(d)`` which is equivalent to ``d.format_iso()``.
-
-        Inverse of :meth:`parse_iso`.
-
-        >>> d = ItemizedDateDelta(weeks=1, days=11)
-        >>> d.format_iso()
-        'P1W11D'
-
-        Note
-        ----
-        Negative durations are prefixed with a minus sign,
-        which is not part of the ISO 8601 standard, but is a common extension.
-        See :ref:`here <iso8601-durations>` for more information.
-        """
-        y, m, w, d = "ymwd" if lowercase_units else "YMWD"
-
-        parts = ["-" * (self.sign() < 0), "P"]
-        if self._years is not None:
-            parts.append(f"{abs(self._years)}{y}")
-        if self._months is not None:
-            parts.append(f"{abs(self._months)}{m}")
-        if self._weeks is not None:
-            parts.append(f"{abs(self._weeks)}{w}")
-        if self._days is not None:
-            parts.append(f"{abs(self._days)}{d}")
-
-        # NOTE: we always have at least one field,
-        # so we don't need to check for "empty" durations.
-        return "".join(parts)
-
-    @classmethod
-    def parse_iso(cls, s: str, /) -> ItemizedDateDelta:
-        """Parse the *popular interpretation* of the ISO 8601 duration format.
-        Inverse of :meth:`format_iso`
-
-        >>> ItemizedDateDelta.parse_iso("-P1W11D")
-        ItemizedDateDelta("-P1w11d")
-
-        You can also use the constructor ``ItemizedDateDelta(s)`` which is
-        equivalent to ``ItemizedDateDelta.parse_iso(s)``.
-
-        Note
-        ----
-        Does not parse all possible ISO 8601 durations. In particular,
-        it doesn't allow fractional values.
-        See :ref:`here <iso8601-durations>` for more information.
-        """
-        exc = ValueError(f"Invalid format: {s!r}")
-
-        # Catch certain invalid strings early, making parsing easier
-        if len(s) < 3 or not s.isascii():
-            raise exc
-
-        sign: Sign
-        s = s.upper()  # normalize to uppercase for parsing
-        if s[0] == "P":
-            sign = 1
-            rest = s[1:]
-        elif s.startswith("-P"):
-            sign = -1
-            rest = s[2:]
-        elif s.startswith("+P"):
-            sign = 1
-            rest = s[2:]
-        else:
-            raise exc
-
-        years, months, weeks, days = (None,) * 4
-        prev_unit = ""
-        while rest:
-            rest, value, unit = _parse_datedelta_component(rest, exc)
-
-            if unit == "Y" and prev_unit == "":
-                years = value
-            elif unit == "M" and prev_unit in "Y":
-                months = value
-            elif unit == "W" and prev_unit in "YM":
-                weeks = value
-            elif unit == "D" and prev_unit in "YMW":
-                days = value
-                break
-            else:
-                raise exc  # components out of order
-
-            prev_unit = unit
-
-        if rest:
-            raise exc
-
-        if not (years or months or weeks or days):
-            sign = 0
-
-        # NOTE: we've implicitly validated that at least one field is set
-        return cls._from_signed(sign, years, months, weeks, days)
-
-    # These methods defer to the base class implementations, but need to be
-    # documented here for the API docs.
-    if not TYPE_CHECKING:  # pragma: no cover
-        if SPHINX_RUNNING:
-
-            def keys(self) -> KeysView[DateDeltaUnitStr]:
-                """The names of all defined fields, ordered from largest to smallest unit.
-
-                Part of the mapping protocol
-                """
-                ...
-
-            # FUTURE: an optimized ValuesView class that defers to the internal
-            # fields directly instead of going through __getitem__
-            def values(self) -> ValuesView[int]:
-                """Return all defined field values, in order
-                of largest to smallest unit.
-
-                >>> d = ItemizedDateDelta(years=3, days=12, months=0)
-                >>> years, months, days = d.values()
-                (3, 0, 12)
-                >>> list(d.values())
-                [3, 0, 12]
-                """
-                ...
-
-            def items(self) -> ItemsView[DateDeltaUnitStr, int]:
-                """Return all defined fields as (unit, value) pairs
-                ordered from largest to smallest unit.
-
-                >>> d = ItemizedDateDelta(years=3, days=12, months=0)
-                >>> list(d.items())
-                [('years', 3), ('months', 0), ('days', 12)]
-                """
-                ...
-
-            @overload
-            def get(self, key: DateDeltaUnitStr, /) -> int | None: ...
-
-            @overload
-            def get(self, key: DateDeltaUnitStr, default: int, /) -> int: ...
-
-            def get(
-                self, key: DateDeltaUnitStr, default: object = None, /
-            ) -> object:
-                """Get the value of a specific field by name, or return default if not set.
-
-                Part of the mapping protocol
-                """
-                ...
-
-    def __iter__(self) -> Iterator[DateDeltaUnitStr]:
-        """Iterate over all unit names for fields that are set, ordered from largest to smallest unit."""
-        if self._years is not None:
-            yield "years"
-        if self._months is not None:
-            yield "months"
-        if self._weeks is not None:
-            yield "weeks"
-        if self._days is not None:
-            yield "days"
-
-    def __getitem__(self, key: DateDeltaUnitStr) -> int:
-        """Get the value of a specific field by name.
-
-        >>> d = ItemizedDateDelta(weeks=1, days=0)
-        >>> d["weeks"]
-        1
-        >>> d["days"]
-        0
-        >>> d["years"]
-        KeyError: 'years'
-        """
-        match key:
-            case "years":
-                value = self._years
-            case "months":
-                value = self._months
-            case "weeks":
-                value = self._weeks
-            case "days":
-                value = self._days
-            case _:
-                raise KeyError(key)
-
-        if value is not None:
-            return value
-
-        raise KeyError(key)
-
-    def __len__(self) -> int:
-        """Get the number of fields that are set.
-
-        >>> d = ItemizedDateDelta(weeks=1, days=0)
-        >>> len(d)
-        2
-        """
-        return (
-            (self._years is not None)
-            + (self._months is not None)
-            + (self._weeks is not None)
-            + (self._days is not None)
-        )
-
-    def __contains__(self, key: object) -> bool:
-        """Check if a specific field is set.
-
-        >>> d = ItemizedDateDelta(weeks=1, days=0)
-        >>> "weeks" in d
-        True
-        >>> "days" in d
-        True
-        >>> "months" in d
-        False
-        """
-        if key == "years":
-            return self._years is not None
-        elif key == "months":
-            return self._months is not None
-        elif key == "weeks":
-            return self._weeks is not None
-        elif key == "days":
-            return self._days is not None
-        return False
-
-    def __bool__(self) -> bool:
-        """An ItemizedDateDelta is considered False if its sign is 0.
-
-        >>> d = ItemizedDateDelta(weeks=0)
-        >>> bool(d)
-        False
-        >>> d = ItemizedDateDelta(weeks=1)
-        >>> bool(d)
-        True
-        """
-        return bool(self._years or self._months or self._weeks or self._days)
-
-    def __eq__(self, other: object) -> bool:
-        """Compare each field for equality, under the following rules:
-
-        - No normalization is performed. 12 months is not equal to 1 year, etc.
-        - Zero values are considered equivalent to missing values.
-
-        If you want strict equality (including presence of fields),
-        use :meth:`exact_eq`.
-
-        >>> d = ItemizedDateDelta(weeks=2, days=3)
-        >>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
-        True
-        >>> d == ItemizedDateDelta(weeks=2, days=4)
-        False
-        """
-        if not isinstance(other, ItemizedDateDelta):
-            return NotImplemented
-        return (
-            (self._years or 0) == (other._years or 0)
-            and (self._months or 0) == (other._months or 0)
-            and (self._weeks or 0) == (other._weeks or 0)
-            and (self._days or 0) == (other._days or 0)
-        )
-
-    def exact_eq(self, other: ItemizedDateDelta, /) -> bool:
-        """Check for strict equality. All fields *and their presence* must match.
-
-        >>> d = ItemizedDateDelta(weeks=2, days=3)
-        >>> d == ItemizedDateDelta(weeks=2, days=3)
-        True
-        >>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
-        True
-        >>> d.exact_eq(ItemizedDateDelta(weeks=2, days=3, months=0))
-        False
-        """
-        return (
-            self._years == other._years
-            and self._months == other._months
-            and self._weeks == other._weeks
-            and self._days == other._days
-        )
-
-    def __abs__(self) -> ItemizedDateDelta:
-        """If the contents are negative, return the positive version
-
-        >>> d = ItemizedDateDelta(weeks=-2, days=-3)
-        >>> abs(d)
-        ItemizedDateDelta("P2w3d")
-        """
-        if self.sign() >= 0:
-            return self
-        return ItemizedDateDelta._from_signed(
-            1,
-            abs(self._years) if self._years is not None else None,
-            abs(self._months) if self._months is not None else None,
-            abs(self._weeks) if self._weeks is not None else None,
-            abs(self._days) if self._days is not None else None,
-        )
-
-    def __neg__(self) -> ItemizedDateDelta:
-        """Invert the sign of the contents
-
-        >>> d = ItemizedDateDelta(weeks=2, days=3)
-        >>> -d
-        ItemizedDateDelta("-P2w3d")
-        >>> --d
-        ItemizedDateDelta("P2w3d")
-        """
-        if self.sign() == 0:
-            return self
-        return ItemizedDateDelta._from_signed(
-            -self.sign(),
-            abs(self._years) if self._years is not None else None,
-            abs(self._months) if self._months is not None else None,
-            abs(self._weeks) if self._weeks is not None else None,
-            abs(self._days) if self._days is not None else None,
-        )
-
-    @overload
-    def add(
-        self,
-        other: ItemizedDateDelta,
-        /,
-        *,
-        relative_to: Date,
-        in_units: Sequence[DateDeltaUnitStr],
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-    ) -> ItemizedDateDelta: ...
-
-    @overload
-    def add(
-        self,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        relative_to: Date,
-        in_units: Sequence[DateDeltaUnitStr],
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-    ) -> ItemizedDateDelta: ...
-
-    def add(
-        self,
-        arg: ItemizedDateDelta = UNSET,
-        /,
-        *,
-        relative_to: Date,
-        in_units: Sequence[DateDeltaUnitStr],
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-        **kwargs: int,
-    ) -> ItemizedDateDelta:
-        """Add time to this delta, returning a new delta"""
-        valid_keys = frozenset({"years", "months", "weeks", "days"})
-        if kwargs:
-            if arg is not UNSET:
-                raise TypeError("Cannot mix positional and keyword arguments")
-            invalid = set(kwargs) - valid_keys
-            if invalid:
-                raise TypeError(
-                    f"Unexpected keyword argument: {next(iter(invalid))!r}"
-                )
-        elif arg is not UNSET:
-            # In this case the mapping types are interchangeable
-            kwargs = arg  # type: ignore[assignment]
-        else:
-            return self
-
-        return relative_to.add(
-            years=self.get("years", 0) + kwargs.get("years", 0),
-            months=self.get("months", 0) + kwargs.get("months", 0),
-            weeks=self.get("weeks", 0) + kwargs.get("weeks", 0),
-            days=self.get("days", 0) + kwargs.get("days", 0),
-        ).since(
-            relative_to,
-            in_units=in_units,
-            round_mode=round_mode,
-            round_increment=round_increment,
-        )
-
-    @overload
-    def subtract(
-        self,
-        other: ItemizedDateDelta,
-        /,
-        *,
-        relative_to: Date,
-        in_units: Sequence[DateDeltaUnitStr],
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-    ) -> ItemizedDateDelta: ...
-
-    @overload
-    def subtract(
-        self,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        relative_to: Date,
-        in_units: Sequence[DateDeltaUnitStr],
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-    ) -> ItemizedDateDelta: ...
-
-    def subtract(
-        self,
-        arg: ItemizedDateDelta = UNSET,
-        /,
-        *,
-        relative_to: Date,
-        in_units: Sequence[DateDeltaUnitStr],
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-        **kwargs: Any,
-    ) -> ItemizedDateDelta:
-        """Subtract time from this delta, returning a new delta"""
-        arg = -arg if arg is not UNSET else UNSET
-        return self.add(
-            arg,
-            **{k: -v for k, v in kwargs.items()},
-            relative_to=relative_to,
-            in_units=in_units,
-            round_mode=round_mode,
-            round_increment=round_increment,
-        )
-
-    def total(self, unit: DateDeltaUnitStr, /, *, relative_to: Date) -> float:
-        """Return the total duration expressed in the specified unit as a float
-
-        >>> ItemizedDateDelta(years=1, months=6).total("months", relative_to=Date(2020, 1, 31))
-        18.0
-        >>> ItemizedDateDelta(days=1000).total("years", relative_to=Date(2020, 4, 10))
-        2.73972602739726
-        """
-        shifted = relative_to.add(self)
-        sgn = self.sign()
-        try:
-            trunc_amount, trunc_date_interim, expand_date_interim = DIFF_FUNCS[
-                unit
-            ](shifted._py_date, relative_to._py_date, 1, sgn or 1)
-        except KeyError:
-            raise ValueError(f"Unsupported unit: {unit!r}") from None
-
-        trunc_date = resolve_leap_day(trunc_date_interim)
-        expand_date = resolve_leap_day(expand_date_interim)
-
-        return (
-            trunc_amount
-            + ((shifted._py_date - trunc_date) / (expand_date - trunc_date))
-        ) * sgn
-
-    # A private constructor that bypasses sign/presence validation.
-    # All field values must be non-negative; `sign` is applied when storing.
-    @classmethod
-    def _from_signed(
-        cls,
-        sign: Sign,
-        years: int | None = None,
-        months: int | None = None,
-        weeks: int | None = None,
-        days: int | None = None,
-    ) -> ItemizedDateDelta:
-        self = _object_new(cls)
-
-        def _apply(v: int | None, max_val: int) -> int | None:
-            v = _check_bound(v, max_val)
-            return -v if v and sign < 0 else v
-
-        self._years = _apply(years, _MAX_DELTA_YEARS)
-        self._months = _apply(months, _MAX_DELTA_MONTHS)
-        self._weeks = _apply(weeks, _MAX_DELTA_WEEKS)
-        self._days = _apply(days, _MAX_DELTA_DAYS)
-        return self
-
-    @no_type_check
-    def __reduce__(self):
-        return (
-            _unpkl_iddelta,
-            (
-                self._years,
-                self._months,
-                self._weeks,
-                self._days,
-            ),
-        )
-
-    def __repr__(self) -> str:
-        return f'ItemizedDateDelta("{self.format_iso(lowercase_units=True)}")'
-
-    __str__ = format_iso
-
-    def _init_from_iso(self, s: str) -> None:
-        parsed = type(self).parse_iso(s)
-        self._years = parsed._years
-        self._months = parsed._months
-        self._weeks = parsed._weeks
-        self._days = parsed._days
-
-
-# A separate unpickling function allows us to make backwards-compatible changes
-# to the pickling format in the future
-def _unpkl_iddelta(
-    years: int | None,
-    months: int | None,
-    weeks: int | None,
-    days: int | None,
-) -> ItemizedDateDelta:
-    self = _object_new(ItemizedDateDelta)
-    self._years = years
-    self._months = months
-    self._weeks = weeks
-    self._days = days
-    return self
-
-
-def _check_bound(i: int | None, max_value: int) -> int | None:
-    if i and i > max_value:
-        raise ValueError("delta out of range")
-    return i
-
-
-def _check_component(
-    value: int,
-    sign: Sign,
-    max_value: int,  # may also be UNSET
-) -> tuple[int | None, Sign]:
-    if value is UNSET:
-        return None, sign
-    elif value == 0:
-        return 0, sign
-    elif value < 0:
-        if sign == 1:
-            raise ValueError("mixed sign in delta")
-        sign = -1
-        if -value > max_value:
-            raise ValueError("delta out of range")
-    else:  # value > 0
-        if sign == -1:
-            raise ValueError("mixed sign in delta")
-        sign = 1
-        if value > max_value:
-            raise ValueError("delta out of range")
-    return value, sign
-
-
-@final
-class DateTimeDelta(_Base):
-    """A duration with both a date and time component.
-
-    .. deprecated:: 0.10.0
-
-        Use :class:`ItemizedDelta` instead.
-        ``DateTimeDelta`` normalizes its inputs separately for the date
-        and time parts, losing the original fields.
-        ``ItemizedDelta`` preserves the exact fields it was created with.
-    """
-
-    __slots__ = ("_date_part", "_time_part")
-
-    # Overloads for a nice autodoc.
-    # Proper typing of the constructors is handled in the type stubs
-    if not TYPE_CHECKING:
-
-        @overload
-        def __init__(self, iso_string: str, /) -> None: ...
-
-        @overload
-        def __init__(
-            self,
-            *,
-            years: int = ...,
-            months: int = ...,
-            weeks: int = ...,
-            days: int = ...,
-            hours: float = ...,
-            minutes: float = ...,
-            seconds: float = ...,
-            milliseconds: float = ...,
-            microseconds: float = ...,
-            nanoseconds: int = ...,
-        ) -> None: ...
-
-    def __init__(
-        self,
-        *,
-        years: int = 0,
-        months: int = 0,
-        weeks: int = 0,
-        days: int = 0,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-    ) -> None:
-        warn(
-            "DateTimeDelta is deprecated; use ItemizedDelta instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        self._date_part = DateDelta._from_months_days(
-            months + 12 * years, days + 7 * weeks
-        )
-        self._time_part = TimeDelta(
-            hours=hours,
-            minutes=minutes,
-            seconds=seconds,
-            milliseconds=milliseconds,
-            microseconds=microseconds,
-            nanoseconds=nanoseconds,
-        )
-        if (
-            (self._date_part._months < 0 or self._date_part._days < 0)
-            and self._time_part._total_ns > 0
-        ) or (
-            (self._date_part._months > 0 or self._date_part._days > 0)
-            and self._time_part._total_ns < 0
-        ):
-            raise ValueError("mixed sign in DateTimeDelta")
-
-    __init__ = add_alternate_constructors(
-        __init__,
-        deprecation_msg="DateTimeDelta is deprecated; use ItemizedDelta instead.",
-    )
-
-    ZERO: ClassVar[DateTimeDelta]
-    """A delta of zero"""
-
-    def date_part(self) -> DateDelta:
-        """The date part of the delta
-
-        .. deprecated:: 0.10.0
-        """
-        warn(
-            "DateTimeDelta.date_part() is deprecated.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._date_part
-
-    def time_part(self) -> TimeDelta:
-        """The time part of the delta"""
-        return self._time_part
-
-    def in_months_days_secs_nanos(self) -> tuple[int, int, int, int]:
-        """Convert to a tuple of (months, days, seconds, nanoseconds)
-
-        >>> d = DateTimeDelta(weeks=1, days=11, hours=4, microseconds=2)
-        >>> d.in_months_days_secs_nanos()
-        (0, 18, 14_400, 2000)
-        """
-        subsec_nanos = int(fmod(self._time_part._total_ns, 1_000_000_000))
-        whole_seconds = int(self._time_part._total_ns / 1_000_000_000)
-        return self._date_part.in_months_days() + (whole_seconds, subsec_nanos)
-
-    def format_iso(self) -> str:
-        """Format as the *popular interpretation* of the ISO 8601 duration format.
-        May not strictly adhere to (all versions of) the standard.
-        See :ref:`here <iso8601-durations>` for more information.
-
-        Inverse of :meth:`parse_iso`.
-
-        The format is:
-
-        .. code-block:: text
-
-            P(nY)(nM)(nD)T(nH)(nM)(nS)
-
-        >>> d = DateTimeDelta(
-        ...     weeks=1,
-        ...     days=11,
-        ...     hours=4,
-        ...     milliseconds=12,
-        ... )
-        >>> d.format_iso()
-        'P1W11DT4H0.012S'
-        """
-        sign = (
-            self._date_part._months < 0
-            or self._date_part._days < 0
-            or self._time_part._total_ns < 0
-        ) * "-"
-        date = abs(self._date_part).format_iso()[1:] * bool(self._date_part)
-        time = abs(self._time_part).format_iso()[1:] * bool(self._time_part)
-        return sign + "P" + ((date + time) or "0D")
-
-    def _init_from_iso(self, s: str) -> None:
-        exc = ValueError(f"Invalid format: {s!r}")
-        prev_unit = ""
-        months = 0
-        days = 0
-        nanos = 0
-
-        if len(s) < 3 or not s.isascii() or s.endswith("T"):
-            raise exc
-
-        s = s.upper()
-        if s[0] == "P":
-            sign = 1
-            rest = s[1:]
-        elif s.startswith("-P"):
-            sign = -1
-            rest = s[2:]
-        elif s.startswith("+P"):
-            sign = 1
-            rest = s[2:]
-        else:
-            raise exc
-
-        while rest and not rest.startswith("T"):
-            rest, value, unit = _parse_datedelta_component(rest, exc)
-
-            if unit == "Y" and prev_unit == "":
-                months += value * 12
-            elif unit == "M" and prev_unit in "Y":
-                months += value
-            elif unit == "W" and prev_unit in "YM":
-                days += value * 7
-            elif unit == "D" and prev_unit in "YMW":
-                days += value
-                break
-            else:
-                raise exc  # components out of order
-
-            prev_unit = unit
-
-        prev_unit = ""
-        if rest and not rest.startswith("T"):
-            raise exc
-
-        # skip the "T" separator
-        rest = rest[1:]
-
-        while rest:
-            rest, value, unit = parse_timedelta_component(rest, exc)
-
-            if unit == "H" and prev_unit == "":
-                nanos += value * 3_600_000_000_000
-            elif unit == "M" and prev_unit in "H":
-                nanos += value * 60_000_000_000
-            elif unit == "S":
-                nanos += value
-                if rest:
-                    raise exc
-                break
-            else:
-                raise exc
-
-            prev_unit = unit
-
-        if nanos > _MAX_DELTA_NANOS:
-            raise exc
-
-        try:
-            ddelta = DateDelta._from_months_days(sign * months, sign * days)
-        except ValueError:
-            raise exc
-
-        tdelta = TimeDelta._from_nanos_unchecked(sign * nanos)
-        return self._init_from_parts(ddelta, tdelta)
-
-    @classmethod
-    def parse_iso(cls, s: str, /) -> DateTimeDelta:
-        """Parse the *popular interpretation* of the ISO 8601 duration format.
-        Does not parse all possible ISO 8601 durations.
-        See :ref:`here <iso8601-durations>` for more information.
-
-        .. code-block:: text
-
-           P4D        # 4 days
-           PT4H       # 4 hours
-           PT3M40.5S  # 3 minutes and 40.5 seconds
-           P1W11DT4H  # 1 week, 11 days, and 4 hours
-           -PT7H4M    # -7 hours and -4 minutes (-7:04:00)
-           +PT7H4M    # 7 hours and 4 minutes (7:04:00)
-
-        Inverse of :meth:`format_iso`
-
-        >>> DateTimeDelta.parse_iso("-P1W11DT4H")
-        DateTimeDelta(-P1w11dT4h)
-        """
-        warn(
-            "DateTimeDelta is deprecated; use ItemizedDelta instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        self = _object_new(cls)
-        self._init_from_iso(s)
-        return self
-
-    def __add__(
-        self, other: DateTimeDelta | DateDelta | TimeDelta
-    ) -> DateTimeDelta:
-        """Add two deltas together
-
-        >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
-        >>> d + DateTimeDelta(months=2, days=3, minutes=90)
-        DateTimeDelta("P1m1w14dT5h30m")
-        """
-        new = _object_new(DateTimeDelta)
-        if isinstance(other, DateTimeDelta):
-            new._date_part = self._date_part + other._date_part
-            new._time_part = self._time_part + other._time_part
-        elif isinstance(other, TimeDelta):
-            new._date_part = self._date_part
-            new._time_part = self._time_part + other
-        elif isinstance(other, DateDelta):
-            new._date_part = self._date_part + other
-            new._time_part = self._time_part
-        else:
-            return NotImplemented
-        return new
-
-    def __radd__(self, other: TimeDelta | DateDelta) -> DateTimeDelta:
-        if isinstance(other, (TimeDelta, DateDelta)):
-            return self + other
-        return NotImplemented
-
-    def __sub__(
-        self, other: DateTimeDelta | TimeDelta | DateDelta
-    ) -> DateTimeDelta:
-        """Subtract two deltas
-
-        >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
-        >>> d - DateTimeDelta(months=2, days=3, minutes=90)
-        DateTimeDelta(-P2m1w8dT2h30m)
-        """
-        if isinstance(other, DateTimeDelta):
-            d = self._date_part - other._date_part
-            t = self._time_part - other._time_part
-        elif isinstance(other, TimeDelta):
-            d = self._date_part
-            t = self._time_part - other
-        elif isinstance(other, DateDelta):
-            d = self._date_part - other
-            t = self._time_part
-        else:
-            return NotImplemented
-        return self._from_parts(d, t)
-
-    def __rsub__(self, other: TimeDelta | DateDelta) -> DateTimeDelta:
-        new = _object_new(DateTimeDelta)
-        if isinstance(other, TimeDelta):
-            new._date_part = -self._date_part
-            new._time_part = other - self._time_part
-        elif isinstance(other, DateDelta):
-            new._date_part = other - self._date_part
-            new._time_part = -self._time_part
-        else:
-            return NotImplemented
-        return new
-
-    def __eq__(self, other: object) -> bool:
-        """Compare for equality
-
-        >>> d = DateTimeDelta(
-        ...     weeks=1,
-        ...     days=23,
-        ...     hours=4,
-        ... )
-        >>> d == DateTimeDelta(
-        ...     weeks=1,
-        ...     days=23,
-        ...     minutes=4 * 60,  # normalized
-        ... )
-        True
-        >>> d == DateTimeDelta(
-        ...     weeks=4,
-        ...     days=2,  # days/weeks are normalized
-        ...     hours=4,
-        ... )
-        True
-        >>> d == DateTimeDelta(
-        ...     months=1,  # months/days cannot be compared directly
-        ...     hours=4,
-        ... )
-        False
-        """
-        if not isinstance(other, DateTimeDelta):
-            return NotImplemented
-        return (
-            self._date_part == other._date_part
-            and self._time_part == other._time_part
-        )
-
-    def __hash__(self) -> int:
-        return hash((self._date_part, self._time_part))
-
-    def __bool__(self) -> bool:
-        """True if any field is non-zero
-
-        >>> bool(DateTimeDelta())
-        False
-        >>> bool(DateTimeDelta(minutes=1))
-        True
-        """
-        return bool(self._date_part or self._time_part)
-
-    def __mul__(self, other: int) -> DateTimeDelta:
-        """Multiply by a number
-
-        >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
-        >>> d * 2
-        DateTimeDelta("P2w22dT8h")
-        """
-        # OPTIMIZE: use unchecked constructor
-        return self._from_parts(
-            self._date_part * other, self._time_part * other
-        )
-
-    def __rmul__(self, other: int) -> DateTimeDelta:
-        return self * other
-
-    def __neg__(self) -> DateTimeDelta:
-        """Negate the delta
-
-        >>> d = DateTimeDelta(days=11, hours=4)
-        >>> -d
-        DateTimeDelta(-P11dT4h)
-        """
-        # OPTIMIZE: use unchecked constructor
-        return self._from_parts(-self._date_part, -self._time_part)
-
-    def __pos__(self) -> DateTimeDelta:
-        """Return the delta unchanged
-
-        >>> d = DateTimeDelta(weeks=1, days=-11, hours=4)
-        >>> +d
-        DateTimeDelta("P1W11DT4H")
-        """
-        return self
-
-    def __abs__(self) -> DateTimeDelta:
-        """The absolute value of the delta
-
-        >>> d = DateTimeDelta(weeks=1, days=-11, hours=4)
-        >>> abs(d)
-        DateTimeDelta("P1w11dT4h")
-        """
-        new = _object_new(DateTimeDelta)
-        new._date_part = abs(self._date_part)
-        new._time_part = abs(self._time_part)
-        return new
-
-    __str__ = format_iso
-
-    def __repr__(self) -> str:
-        iso = self.format_iso()
-        # lowercase everything besides the prefix and separator
-        cased = "".join(c if c in "PT" else c.lower() for c in iso)
-        return f'DateTimeDelta("{cased}")'
-
-    def _init_from_parts(self, d: DateDelta, t: TimeDelta) -> None:
-        self._date_part = d
-        self._time_part = t
-        if ((d._months < 0 or d._days < 0) and t._total_ns > 0) or (
-            (d._months > 0 or d._days > 0) and t._total_ns < 0
-        ):
-            raise ValueError("mixed sign in DateTimeDelta")
-
-    @classmethod
-    def _from_parts(cls, d: DateDelta, t: TimeDelta) -> DateTimeDelta:
-        new = _object_new(cls)
-        new._init_from_parts(d, t)
-        return new
-
-    @no_type_check
-    def __reduce__(self):
-        secs, nanos = divmod(self._time_part._total_ns, 1_000_000_000)
-        return (
-            _unpkl_dtdelta,
-            (self._date_part._months, self._date_part._days, secs, nanos),
-        )
-
-
-# A separate unpickling function allows us to make backwards-compatible changes
-# to the pickling format in the future
-@no_type_check
-def _unpkl_dtdelta(
-    months: int, days: int, secs: int, nanos: int
-) -> DateTimeDelta:
-    new = _object_new(DateTimeDelta)
-    new._date_part = DateDelta._from_months_days(months, days)
-    new._time_part = TimeDelta(seconds=secs, nanoseconds=nanos)
-    return new
-
-
-DateTimeDelta.ZERO = DateTimeDelta._from_parts(
-    DateDelta._from_months_days(0, 0), TimeDelta.ZERO
-)
-AnyDelta = (
-    DateTimeDelta | TimeDelta | DateDelta | ItemizedDelta | ItemizedDateDelta
-)
+AnyDelta = TimeDelta | ItemizedDelta | ItemizedDateDelta
 
 
 # Methods for types converting to/from the standard library and ISO8601:
@@ -5398,37 +2322,6 @@ class _BasicConversions(_Base):
     _py_dt: _datetime
     _nanos: int
 
-    @classmethod
-    def from_py_datetime(cls: type[_T], d: _datetime, /) -> _T:
-        """Create an instance from a :class:`~datetime.datetime` object.
-
-        .. deprecated:: 0.10.0
-
-            Use the constructor instead (e.g. ``Instant(d)``,
-            ``ZonedDateTime(d)``, etc.)
-
-        Note
-        ----
-        The datetime is checked for validity, raising similar exceptions
-        to the constructor.
-        ``ValueError`` is raised if the datetime doesn't have the correct
-        tzinfo matching the class. For example, :class:`ZonedDateTime`
-        requires a :class:`~zoneinfo.ZoneInfo` tzinfo.
-
-        Warning
-        -------
-        No exceptions are raised if the datetime is ambiguous.
-        Its ``fold`` attribute is used to disambiguate.
-        """
-        warn(
-            "from_py_datetime() is deprecated; use the constructor instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        self = _object_new(cls)
-        self._init_from_py(d)  # type: ignore[attr-defined]
-        return self
-
     def to_stdlib(self) -> _datetime:
         """Convert to a standard library :class:`~datetime.datetime`
 
@@ -5442,20 +2335,6 @@ class _BasicConversions(_Base):
           a fixed offset (:class:`~datetime.timezone` tzinfo)
         """
         return self._py_dt.replace(microsecond=self._nanos // 1_000)
-
-    def py_datetime(self) -> _datetime:
-        """Convert to a standard library :class:`~datetime.datetime`
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`to_stdlib` instead.
-        """
-        warn(
-            "py_datetime() is deprecated; use to_stdlib() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self.to_stdlib()
 
     def format_iso(self) -> str:
         raise NotImplementedError  # pragma: no cover
@@ -6320,7 +3199,7 @@ class Instant(_ExactTime):
         """
         if isinstance(delta, TimeDelta):
             delta_secs, nanos = divmod(
-                self._nanos + delta._time_part._total_ns,
+                self._nanos + delta._total_ns,
                 1_000_000_000,
             )
             return self._from_py_unchecked(
@@ -6477,8 +3356,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         offset: int | TimeDelta,
         /,
         *,
-        ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = UNSET,
+        stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Create an instance from the current time.
 
@@ -6490,12 +3368,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         or ``Instant.now()`` for timezone-agnostic exact time.
         Pass ``stale_offset_ok=True`` to suppress.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_NOW_STALE_MSG,
@@ -6568,8 +3440,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         /,
         *,
         offset: int | TimeDelta,
-        ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = UNSET,
+        stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in seconds).
 
@@ -6584,12 +3455,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         or ``Instant.from_timestamp()`` for timezone-agnostic exact time.
         Pass ``stale_offset_ok=True`` to suppress.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_FROM_TIMESTAMP_STALE_MSG,
@@ -6609,8 +3474,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         /,
         *,
         offset: int | TimeDelta,
-        ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = UNSET,
+        stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in milliseconds).
 
@@ -6618,12 +3482,6 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         See :meth:`from_timestamp` for more information.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_FROM_TIMESTAMP_STALE_MSG,
@@ -6644,8 +3502,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         /,
         *,
         offset: int | TimeDelta,
-        ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = UNSET,
+        stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in nanoseconds).
 
@@ -6653,12 +3510,6 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         See :meth:`from_timestamp` for more information.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_FROM_TIMESTAMP_STALE_MSG,
@@ -6701,15 +3552,13 @@ class OffsetDateTime(_ExactAndLocalTime):
             *,
             nanosecond: int = ...,
             offset: int | TimeDelta = ...,
-            ignore_dst: bool = ...,
             stale_offset_ok: bool = ...,
         ) -> OffsetDateTime: ...
 
     def replace(
         self,
         /,
-        ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = UNSET,
+        stale_offset_ok: bool = False,
         **kwargs: Any,
     ) -> OffsetDateTime:
         """Construct a new instance with the given fields replaced.
@@ -6723,12 +3572,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         using :meth:`assume_tz`.
         Pass ``stale_offset_ok=True`` to suppress.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_REPLACE_STALE_MSG,
@@ -6750,19 +3593,12 @@ class OffsetDateTime(_ExactAndLocalTime):
         date: Date,
         /,
         *,
-        ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = UNSET,
+        stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Construct a new instance with the date replaced.
 
         See :meth:`replace` for more information.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_REPLACE_STALE_MSG,
@@ -6781,19 +3617,12 @@ class OffsetDateTime(_ExactAndLocalTime):
         time: Time,
         /,
         *,
-        ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = UNSET,
+        stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Construct a new instance with the time replaced.
 
         See :meth:`replace` for more information.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_REPLACE_STALE_MSG,
@@ -6937,35 +3766,6 @@ class OffsetDateTime(_ExactAndLocalTime):
             )
         return super()._subtract_operator(other)
 
-    @classmethod
-    def parse_strptime(cls, s: str, /, *, format: str) -> OffsetDateTime:
-        """Parse a datetime with offset using the standard library ``strptime()`` method.
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`parse` with a pattern string instead, or use
-            ``OffsetDateTime(datetime.strptime(...))``.
-
-        """
-        warn(
-            "parse_strptime() is deprecated; "
-            "use parse() with a pattern string instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        parsed = _datetime.strptime(s, format)
-        if (offset := parsed.utcoffset()) is None:
-            raise ValueError(
-                "Parsed datetime must have an offset. "
-                "Use %z, %Z, or %:z in the format string"
-            )
-        if offset.microseconds:
-            raise ValueError("sub-second offset precision not supported")
-        return cls._from_py_unchecked(
-            check_utc_bounds(parsed.replace(microsecond=0)),
-            parsed.microsecond * 1_000,
-        )
-
     def format_rfc2822(self) -> str:
         """Format as an RFC 2822 string.
 
@@ -7107,7 +3907,6 @@ class OffsetDateTime(_ExactAndLocalTime):
             milliseconds: float = 0,
             microseconds: float = 0,
             nanoseconds: int = 0,
-            ignore_dst: bool = ...,
             stale_offset_ok: bool = ...,
         ) -> OffsetDateTime: ...
 
@@ -7145,7 +3944,6 @@ class OffsetDateTime(_ExactAndLocalTime):
             milliseconds: float = 0,
             microseconds: float = 0,
             nanoseconds: int = 0,
-            ignore_dst: bool = ...,
             stale_offset_ok: bool = ...,
         ) -> OffsetDateTime: ...
 
@@ -7164,16 +3962,9 @@ class OffsetDateTime(_ExactAndLocalTime):
         arg: AnyDelta | UNSET = UNSET,
         /,
         *,
-        ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = UNSET,
+        stale_offset_ok: bool = False,
         **kwargs,
     ) -> OffsetDateTime:
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=3,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_SHIFT_STALE_MSG,
@@ -7186,12 +3977,12 @@ class OffsetDateTime(_ExactAndLocalTime):
             raise TypeError("Cannot mix positional and keyword arguments")
 
         elif arg is not UNSET:
-            return self._shift_kwargs(
-                sign,
-                months=arg._date_part._months,
-                days=arg._date_part._days,
-                nanoseconds=arg._time_part._total_ns,
-            )
+            if isinstance(arg, (ItemizedDelta, ItemizedDateDelta)):
+                return self._shift_kwargs(sign, **arg)
+            elif isinstance(arg, TimeDelta):
+                return self._shift_kwargs(sign, nanoseconds=arg._total_ns)
+            else:
+                raise TypeError(f"argument must be a delta, got {arg!r}")
         else:
             return self
 
@@ -7254,8 +4045,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         *,
         increment: int = 1,
         mode: RoundModeStr = "half_even",
-        ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = UNSET,
+        stale_offset_ok: bool = False,
     ) -> OffsetDateTime:
         """Round the datetime to the specified unit and increment,
         or to a multiple of a :class:`TimeDelta`.
@@ -7275,12 +4065,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         using :meth:`assume_tz`.
         Pass ``stale_offset_ok=True`` to suppress.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_ROUND_STALE_MSG,
@@ -7997,9 +4781,7 @@ class ZonedDateTime(_ExactAndLocalTime):
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
 
-    def __add__(
-        self, delta: TimeDelta | DateDelta | DateTimeDelta
-    ) -> ZonedDateTime:
+    def __add__(self, delta: TimeDelta) -> ZonedDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
 
         See `the docs <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__
@@ -8007,20 +4789,13 @@ class ZonedDateTime(_ExactAndLocalTime):
         """
         if isinstance(delta, TimeDelta):
             delta_secs, nanos = divmod(
-                delta._time_part._total_ns + self._nanos, 1_000_000_000
+                delta._total_ns + self._nanos, 1_000_000_000
             )
             new_epoch = int(self._py_dt.timestamp()) + delta_secs
             return self._from_py_unchecked(
                 _from_epoch(new_epoch, self._tz),
                 nanos,
                 self._tz,
-            )
-        elif isinstance(delta, DateDelta):
-            return self.replace_date(self.date() + delta)
-        elif isinstance(delta, DateTimeDelta):
-            return (
-                self.replace_date(self.date() + delta._date_part)
-                + delta._time_part
             )
         return NotImplemented
 
@@ -8040,7 +4815,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         """
         if isinstance(other, _EXACT_TIME_TYPES):
             return self._subtract_operator(other)
-        elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
+        elif isinstance(other, TimeDelta):
             return self + -other
         return NotImplemented
 
@@ -8137,16 +4912,14 @@ class ZonedDateTime(_ExactAndLocalTime):
             return self
         elif isinstance(delta, (ItemizedDelta, ItemizedDateDelta)):
             return self._shift_kwargs(sign, **delta, disambiguate=disambiguate)
-        elif isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
+        elif isinstance(delta, TimeDelta):
             return self._shift_kwargs(
                 sign,
-                months=delta._date_part._months,
-                days=delta._date_part._days,
-                nanoseconds=delta._time_part._total_ns,
+                nanoseconds=delta._total_ns,
                 disambiguate=disambiguate,
             )
         else:
-            raise TypeError("argument must be a delta, got {delta!r}")
+            raise TypeError(f"argument must be a delta, got {delta!r}")
 
     def _shift_kwargs(
         self,
@@ -8392,23 +5165,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             self._tz,
             "compatible",
         )
-        return TimeDelta.from_py_timedelta(next_midnight - midnight)
-
-    def start_of_day(self) -> ZonedDateTime:
-        """The start of the current calendar day.
-
-        This is almost always at midnight the same day, but may be different
-        for timezones which transition at—and thus skip over—midnight.
-
-        .. deprecated:: 0.10.0
-            Use ``start_of("day")`` instead.
-        """
-        warn(
-            'start_of_day() is deprecated; use start_of("day") instead.',
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self.start_of("day")
+        return TimeDelta(next_midnight - midnight)
 
     def _resolve_for_unit(self, naive: _datetime, unit: str) -> _datetime:
         tz = self._tz
@@ -9013,7 +5770,7 @@ class PlainDateTime(_LocalTime):
             return NotImplemented
         return (self._py_dt, self._nanos) >= (other._py_dt, other._nanos)
 
-    def __add__(self, delta: DateDelta | TimeDelta) -> PlainDateTime:
+    def __add__(self, delta: TimeDelta) -> PlainDateTime:
         """Add a delta to this datetime.
 
         Warning
@@ -9024,15 +5781,7 @@ class PlainDateTime(_LocalTime):
         Use ``.add(..., naive_arithmetic_ok=True)`` or Python's
         standard warning filters to suppress.
         """
-        if isinstance(delta, DateDelta):
-            return self._from_py_unchecked(
-                _datetime.combine(
-                    (self.date() + delta._date_part)._py_date,
-                    self._py_dt.time(),
-                ),
-                self._nanos,
-            )
-        elif isinstance(delta, TimeDelta):
+        if isinstance(delta, TimeDelta):
             warn(
                 PLAIN_SHIFT_UNAWARE_MSG,
                 NaiveArithmeticWarning,
@@ -9050,10 +5799,10 @@ class PlainDateTime(_LocalTime):
     def __sub__(self, other: PlainDateTime) -> TimeDelta: ...
 
     @overload
-    def __sub__(self, other: TimeDelta | DateDelta) -> PlainDateTime: ...
+    def __sub__(self, other: TimeDelta) -> PlainDateTime: ...
 
     def __sub__(
-        self, other: PlainDateTime | TimeDelta | DateDelta
+        self, other: PlainDateTime | TimeDelta
     ) -> TimeDelta | PlainDateTime:
         """Subtract a delta or calculate the duration to another plain datetime.
 
@@ -9085,8 +5834,6 @@ class PlainDateTime(_LocalTime):
                 stacklevel=2,
             )
             return self._sub(other)
-        elif isinstance(other, (DateDelta, DateTimeDelta)):
-            return self + -other
         else:
             return NotImplemented
 
@@ -9102,8 +5849,7 @@ class PlainDateTime(_LocalTime):
         other: PlainDateTime,
         /,
         *,
-        ignore_dst: bool = UNSET,
-        naive_arithmetic_ok: bool = UNSET,
+        naive_arithmetic_ok: bool = False,
     ) -> TimeDelta:
         """Calculate the exact time difference between two plain datetimes.
 
@@ -9121,12 +5867,6 @@ class PlainDateTime(_LocalTime):
         not account for timezone transitions. Use :meth:`assume_tz` to convert
         to a ``ZonedDateTime`` first for accurate results.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not naive_arithmetic_ok:
             warn(
                 PLAIN_DIFF_UNAWARE_MSG,
@@ -9238,7 +5978,6 @@ class PlainDateTime(_LocalTime):
         d: AnyDelta,
         /,
         *,
-        ignore_dst: bool = ...,
         naive_arithmetic_ok: bool = ...,
     ) -> PlainDateTime: ...
 
@@ -9256,7 +5995,6 @@ class PlainDateTime(_LocalTime):
         milliseconds: float = ...,
         microseconds: float = ...,
         nanoseconds: int = ...,
-        ignore_dst: bool = ...,
         naive_arithmetic_ok: bool = ...,
     ) -> PlainDateTime: ...
 
@@ -9280,7 +6018,6 @@ class PlainDateTime(_LocalTime):
         d: AnyDelta,
         /,
         *,
-        ignore_dst: bool = ...,
         naive_arithmetic_ok: bool = ...,
     ) -> PlainDateTime: ...
 
@@ -9298,7 +6035,6 @@ class PlainDateTime(_LocalTime):
         milliseconds: float = ...,
         microseconds: float = ...,
         nanoseconds: int = ...,
-        ignore_dst: bool = ...,
         naive_arithmetic_ok: bool = ...,
     ) -> PlainDateTime: ...
 
@@ -9317,16 +6053,9 @@ class PlainDateTime(_LocalTime):
         arg: AnyDelta | UNSET = UNSET,
         /,
         *,
-        ignore_dst: bool = UNSET,
-        naive_arithmetic_ok: bool = UNSET,
+        naive_arithmetic_ok: bool = False,
         **kwargs,
     ) -> PlainDateTime:
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=3,
-            )
 
         if kwargs:
             if arg is UNSET:
@@ -9338,13 +6067,18 @@ class PlainDateTime(_LocalTime):
             raise TypeError("Cannot mix positional and keyword arguments")
 
         elif arg is not UNSET:
-            return self._shift_kwargs(
-                sign,
-                months=arg._date_part._months,
-                days=arg._date_part._days,
-                nanoseconds=arg._time_part._total_ns,
-                naive_arithmetic_ok=naive_arithmetic_ok,
-            )
+            if isinstance(arg, (ItemizedDelta, ItemizedDateDelta)):
+                return self._shift_kwargs(
+                    sign, naive_arithmetic_ok=naive_arithmetic_ok, **arg
+                )
+            elif isinstance(arg, TimeDelta):
+                return self._shift_kwargs(
+                    sign,
+                    nanoseconds=arg._total_ns,
+                    naive_arithmetic_ok=naive_arithmetic_ok,
+                )
+            else:
+                raise TypeError(f"argument must be a delta, got {arg!r}")
         else:
             return self
 
@@ -9390,32 +6124,6 @@ class PlainDateTime(_LocalTime):
         return self._from_py_unchecked(
             (py_dt_with_new_date + _timedelta(seconds=delta_secs)),
             nanos,
-        )
-
-    @classmethod
-    def parse_strptime(cls, s: str, /, *, format: str) -> PlainDateTime:
-        """Parse a plain datetime using the standard library ``strptime()`` method.
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`parse` with a pattern string instead, or use
-            ``PlainDateTime(datetime.strptime(...))``.
-
-        """
-        warn(
-            "parse_strptime() is deprecated; "
-            "use parse() with a pattern string instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        parsed = _datetime.strptime(s, format)
-        if parsed.tzinfo is not None:
-            raise ValueError(
-                "Parsed datetime can't have an offset. "
-                "Do not use %z, %Z, or %:z in the format string"
-            )
-        return cls._from_py_unchecked(
-            parsed.replace(microsecond=0), parsed.microsecond * 1_000
         )
 
     def assume_utc(self) -> Instant:
@@ -9713,15 +6421,6 @@ class NaiveArithmeticWarning(PotentialDstBugWarning):
     """
 
 
-class ImplicitlyIgnoringDST(TypeError):
-    """Raised when an operation would silently ignore DST transitions.
-
-    .. deprecated:: 0.10.0
-
-       This exception is deprecated and will be removed in a future version.
-    """
-
-
 OFFSET_NOW_STALE_MSG = (
     "Getting the current time as an OffsetDateTime with a fixed UTC offset may be incorrect: "
     "the offset doesn't update when DST or other timezone rules change. "
@@ -9837,7 +6536,7 @@ ZONEINFO_NO_KEY_MSG = (
     "Can't determine the IANA timezone ID of the given datetime: "
     "The 'key' attribute of the datetime's ZoneInfo object is None. \n"
     "This typically means the ZoneInfo object represents the system timezone with "
-    "an unknown ID. As an alternative, you can use OffsetDateTime.from_py_datetime(), "
+    "an unknown ID. As an alternative, you can use OffsetDateTime(dt), "
     "but be aware this is a lossy conversion that only preserves "
     "the current UTC offset and discards future daylight saving rules. "
     "Please note that a timezone abbreviation like 'CEST' from datetime.tzname() "
@@ -9861,11 +6560,6 @@ DAYS_NOT_ALWAYS_24H_MSG = (
     "Pass `days_assumed_24h_ok=True` to suppress this warning, "
     "or use Python's standard warning filters. "
     "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
-)
-
-IGNORE_DST_DEPRECATED_MSG = (
-    "The `ignore_dst` parameter is deprecated. "
-    "Use `stale_offset_ok` or `naive_arithmetic_ok` instead."
 )
 
 
@@ -10360,70 +7054,6 @@ PlainDateTime.MIN = PlainDateTime._from_py_unchecked(_datetime.min, 0)
 PlainDateTime.MAX = PlainDateTime._from_py_unchecked(
     _datetime.max.replace(microsecond=0), _MAX_SUBSEC_NANOS
 )
-
-
-def years(i: int, /) -> DateDelta:
-    """Create a :class:`~DateDelta` with the given number of years.
-    ``years(1) == DateDelta(years=1)``
-
-    .. deprecated:: 0.10.0
-
-        Use :class:`~whenever.ItemizedDateDelta` instead
-    """
-    warn(
-        "years() is deprecated; use ItemizedDateDelta instead.",
-        WheneverDeprecationWarning,
-        stacklevel=2,
-    )
-    return DateDelta._from_months_days(12 * i, 0)
-
-
-def months(i: int, /) -> DateDelta:
-    """Create a :class:`~DateDelta` with the given number of months.
-    ``months(1) == DateDelta(months=1)``
-
-    .. deprecated:: 0.10.0
-
-        Use :class:`~whenever.ItemizedDateDelta` instead
-    """
-    warn(
-        "months() is deprecated; use ItemizedDateDelta instead.",
-        WheneverDeprecationWarning,
-        stacklevel=2,
-    )
-    return DateDelta._from_months_days(i, 0)
-
-
-def weeks(i: int, /) -> DateDelta:
-    """Create a :class:`~DateDelta` with the given number of weeks.
-    ``weeks(1) == DateDelta(weeks=1)``
-
-    .. deprecated:: 0.10.0
-
-        Use :class:`~whenever.ItemizedDateDelta` instead
-    """
-    warn(
-        "weeks() is deprecated; use ItemizedDateDelta instead.",
-        WheneverDeprecationWarning,
-        stacklevel=2,
-    )
-    return DateDelta._from_months_days(0, 7 * i)
-
-
-def days(i: int, /) -> DateDelta:
-    """Create a :class:`~DateDelta` with the given number of days.
-    ``days(1) == DateDelta(days=1)``
-
-    .. deprecated:: 0.10.0
-
-        Use :class:`~whenever.ItemizedDateDelta` instead
-    """
-    warn(
-        "days() is deprecated; use ItemizedDateDelta instead.",
-        WheneverDeprecationWarning,
-        stacklevel=2,
-    )
-    return DateDelta._from_months_days(0, i)
 
 
 def hours(i: float, /) -> TimeDelta:

@@ -7,10 +7,6 @@ from whenever import Date, MonthDay
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
-
 
 class TestInit:
     def test_valid(self):

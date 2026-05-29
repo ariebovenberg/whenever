@@ -131,7 +131,7 @@ an efficient and compatible choice for representing times in the past.
 ```python
 >>> flight_departure = OffsetDateTime(2023, 4, 21, hour=9, offset=-4)
 >>> flight_arrival = OffsetDateTime(2023, 4, 21, hour=10, offset=-6)
->>> (flight_arrival - flight_departure).in_hours()
+>>> (flight_arrival - flight_departure).total("hours")
 3
 >>> # This will emit a warning!
 >>> flight_arrival.add(hours=3)  # a DST-bug waiting to happen!
