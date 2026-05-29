@@ -5,7 +5,7 @@ from __future__ import annotations
 __version__ = "0.10.1b0"
 
 # This could be derived from the imports below, but it's easier for static
-# analysis and IDEs if it's explicitly defined.
+# analysis and IDEs if it's statically defined.
 __all__ = (
     # Date and time
     "Date",
@@ -146,7 +146,7 @@ _LAZY_MODULES = {
     ),
 }
 _LAZY_NAMES = {
-    n: module for module, names in _LAZY_MODULES.items() for n in names
+    n: mod for mod, names in _LAZY_MODULES.items() for n in names
 }
 
 
@@ -181,3 +181,14 @@ def __getattr__(name: str) -> object:
         globals()["AnyDelta"] = val
         return val
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
+
+# Without this, IDEs won't show proper information for our types.
+# Note we don't actually import `typing`, as this has a runtime cost.
+TYPE_CHECKING = False
+
+if TYPE_CHECKING:
+    from ._core import *
+    from ._shared import *
+    from ._typing import *
+    from ._utils import *
