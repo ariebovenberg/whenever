@@ -121,7 +121,7 @@ or platform coverage matters more than runtime speed.
 ```
 
 `whenever`'s focus on runtime speed and rich API means it is relatively large.
-It keeps the wheel size reasonable through careful design choices:
+However, it keeps the wheel size reasonable through careful design choices:
 
 - Several types (`Weekday`, `YearMonth`, `MonthDay`, `IsoWeekDate`) are
   implemented only in Python even when the extension is active, keeping the
