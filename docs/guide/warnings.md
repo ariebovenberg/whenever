@@ -121,11 +121,6 @@ next_departure = scheduled.add(hours=1, naive_arithmetic_ok=True)
 The keyword argument documents the decision at the call site
 while keeping the suppression limited to exactly one operation.
 
-```{note}
-These keyword arguments supersede the ``ignore_dst`` keyword argument
-(deprecated in 0.10).
-```
-
 ### Operators
 
 The `+` and `-` operators always emit warnings when applicable, because

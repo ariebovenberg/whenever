@@ -20,7 +20,13 @@ assert sys.version_info >= (
 )
 
 # Types defined in pure Python only (not in Rust extension)
-_PURE_PYTHON_TYPES = {"YearMonth", "MonthDay", "IsoWeekDate"}
+_PURE_PYTHON_TYPES = {
+    "YearMonth",
+    "MonthDay",
+    "IsoWeekDate",
+    "ItemizedDelta",
+    "ItemizedDateDelta",
+}
 
 classes = {
     cls
@@ -103,15 +109,15 @@ minute=None, second=None, nanosecond=None, tz=None, disambiguate)""",
     W.OffsetDateTime.add: """\
 ($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, \
 hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
-ignore_dst=..., stale_offset_ok=False)""",
+stale_offset_ok=False)""",
     W.OffsetDateTime.replace: """\
 ($self, /, *, year=None, month=None, day=None, hour=None, \
 minute=None, second=None, nanosecond=None, offset=None, \
-ignore_dst=..., stale_offset_ok=False)""",
+stale_offset_ok=False)""",
     W.PlainDateTime.add: """\
 ($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, \
 hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
-ignore_dst=..., naive_arithmetic_ok=False)""",
+naive_arithmetic_ok=False)""",
     W.PlainDateTime.replace: """\
 ($self, /, *, year=None, month=None, day=None, hour=None, \
 minute=None, second=None, nanosecond=None)""",

@@ -11,6 +11,43 @@ from whenever import (
     reset_system_tz,
 )
 
+MAX_I64 = 1 << 64
+
+INVALID_DDELTAS = [
+    "P3D7Y",  # components out of order
+    "P3M7Y",  # components out of order
+    "P\U0001d7d9Y",  # non-ASCII
+    "P--2D",
+    "P++2D",
+    "P+-2D",
+    "--P2D",
+    "++P2D",
+    "1P2",
+    f"P{MAX_I64+2}Y",
+    f"P-{MAX_I64+2}Y",
+    "P3R",  # invalid unit
+    "PT3M",  # time component
+    "P3.4Y",  # decimal
+    "P1,5D",  # comma
+    "P1Y2M3W4DT1H2M3S",  # time component
+    "P1YT0S",  # zero time component still invalid
+    "P99999Y",  # too large
+    # incomplete
+    "",
+    "P",  # no components
+    "P34m4",
+    "P34",
+    "P-D",
+    "P+D",
+    "P-",
+    "P+",
+    "Y",
+    "5Y",
+    "-5Y",
+    "P8",
+    "P8M3",
+]
+
 
 @contextmanager
 def suppress(*warning_classes):

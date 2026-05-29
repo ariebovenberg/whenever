@@ -136,14 +136,6 @@ pub(crate) trait OptionExt<T> {
         self.ok_or_else_raise(exc_value_error(), fmt)
     }
 
-    fn ok_or_else_type_err<F, M: ToPy>(self, fmt: F) -> PyResult<T>
-    where
-        Self: Sized,
-        F: FnOnce() -> M,
-    {
-        self.ok_or_else_raise(exc_type_error(), fmt)
-    }
-
     fn ok_or_type_err<U: ToPy>(self, msg: U) -> PyResult<T>
     where
         Self: Sized,
@@ -184,12 +176,6 @@ pub(crate) fn raise_type_err<T, U: ToPy>(msg: U) -> PyResult<T> {
 #[cold]
 pub(crate) fn raise_value_err<T, U: ToPy>(msg: U) -> PyResult<T> {
     raise(exc_value_error(), msg)
-}
-
-#[cold]
-pub(crate) fn raise_key_err<T>(key: PyObj) -> PyResult<T> {
-    unsafe { PyErr_SetObject(PyExc_KeyError, key.as_ptr()) };
-    Err(PyErrMarker)
 }
 
 /// Emit a warning using a custom warning class (e.g. a heap-type UserWarning subclass).
