@@ -1,7 +1,7 @@
 black>=26,<27
 flake8>=7.3.0,<8
 isort>=8.0.1,<9
-slotscheck>=0.19.1,<0.20
+slotscheck>=0.20.0,<0.21
 build
 twine>=6.2.0
 packaging>=26.2
