@@ -1,49 +1,45 @@
 .PHONY: init
 init:
-	pip install -U setuptools-rust setuptools build pyperf
-	pip install -U -r requirements/all.txt
-	pip install -e .
+	uv sync -v
 
 .PHONY: typecheck
 typecheck:
-	mypy pysrc/ tests/
+	uv run mypy pysrc/ tests/
 
 .PHONY: format
 format:
-	black pysrc/ tests/ scripts/
-	isort pysrc/ tests/ scripts/
+	uv run black pysrc/ tests/ scripts/
+	uv run isort pysrc/ tests/ scripts/
 	cargo fmt
 
 .PHONY: docs
-docs:
-	rm -f pysrc/whenever/*.so  # Presence of the rust extension breaks sphinx (FUTURE: a better workaround)
-	rm -rf docs/_build/
-	make -C docs/ html
+docs: clean-ext  # clean the extension since it messes with autodoc
+	uv run make -C docs/ html
 
 .PHONY: check-readme
 check-readme:
-	python -m build --sdist
-	twine check dist/*
+	uv run python -m build --sdist
+	uv run twine check dist/*
 
 .PHONY: test-py
 test-py:
-	RUST_BACKTRACE=1 pytest -s tests/
+	uv run pytest -s tests/
 
 
 .PHONY: test-rs
 test-rs:
-	RUST_BACKTRACE=1 cargo test
+	cargo test
 
 .PHONY: test
 test: test-py test-rs
 
 .PHONY: ci-lint
 ci-lint: check-readme
-	flake8 pysrc/ tests/ scripts/
-	black --check pysrc/ tests/ scripts/
-	isort --check pysrc/ tests/ scripts/
+	uv run flake8 pysrc/ tests/ scripts/
+	uv run black --check pysrc/ tests/ scripts/
+	uv run isort --check pysrc/ tests/ scripts/
 	cargo fmt -- --check
-	env PYTHONPATH=pysrc/ slotscheck pysrc
+	uv run env PYTHONPATH=pysrc/ slotscheck pysrc
 	cargo clippy --all-targets --all-features -- -D warnings
 
 .PHONY: clean-ext
@@ -52,22 +48,21 @@ clean-ext:
 
 .PHONY: clean
 clean: clean-ext
-	python setup.py clean --all
+	uv run python setup.py clean --all
 	rm -rf build/ dist/ pysrc/**/__pycache__ *.egg-info **/*.egg-info \
 		docs/_build/ htmlcov/ .mypy_cache/ .pytest_cache/ target/
 
-
 .PHONY: build
 build:
-	python setup.py build_rust --inplace
+	uv run python setup.py build_rust --inplace
 
 .PHONY: build-release
 build-release:
-	python setup.py build_rust --inplace --release
+	uv run python setup.py build_rust --inplace --release
 
 .PHONY: bench
 bench: build-release
-	pytest -s benchmarks/ \
+	uv run pytest -s benchmarks/ \
 		--benchmark-group-by=group \
 		--benchmark-columns=median,stddev \
 		--benchmark-autosave \
@@ -76,15 +71,15 @@ bench: build-release
 .PHONY: bench-compare
 bench-compare: build-release
 	rm -f benchmarks/comparison/result_*.json
-	python benchmarks/comparison/run_stdlib_dateutil.py --fast -o \
+	uv run python benchmarks/comparison/run_stdlib_dateutil.py --fast -o \
 		benchmarks/comparison/result_stdlib_dateutil.json
-	python benchmarks/comparison/run_pendulum.py --fast -o \
+	uv run python benchmarks/comparison/run_pendulum.py --fast -o \
 		benchmarks/comparison/result_pendulum.json
-	python benchmarks/comparison/run_arrow.py --fast -o \
+	uv run python benchmarks/comparison/run_arrow.py --fast -o \
 		benchmarks/comparison/result_arrow.json
-	python benchmarks/comparison/run_whenever.py --fast -o \
+	uv run python benchmarks/comparison/run_whenever.py --fast -o \
 		benchmarks/comparison/result_whenever.json
-	python -m pyperf compare_to benchmarks/comparison/result_stdlib_dateutil.json \
+	uv run python -m pyperf compare_to benchmarks/comparison/result_stdlib_dateutil.json \
 		benchmarks/comparison/result_pendulum.json \
 		benchmarks/comparison/result_arrow.json \
 		benchmarks/comparison/result_whenever.json \

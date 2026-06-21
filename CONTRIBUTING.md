@@ -18,8 +18,11 @@ An example of setting up things up on a Unix-like system:
 # install the dependencies
 make init
 
-# build the rust extension
+# build the rust extension in place
 make build
+
+# rebuild it in release mode
+make build-release
 
 # clear the build artifacts (useful if you want to test the pure Python version)
 make clean
