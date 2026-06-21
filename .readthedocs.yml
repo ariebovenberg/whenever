@@ -9,14 +9,15 @@ sphinx:
   fail_on_warning: true
 
 build:
-  os: ubuntu-22.04
+  os: ubuntu-24.04
   tools:
-    python: "3.12"
+    python: "3.13"
     # rust shouldn't be needed as we disable building the extension
     # in the readthedocs configuration
 
 python:
   install:
-    - requirements: requirements/docs.txt
-    - method: pip
-      path: .
+    - method: uv
+      command: sync
+      groups:
+        - docs

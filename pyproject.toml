@@ -39,6 +39,36 @@ keywords = [
     "zoneinfo", "tzdata", "tzdb"
 ]
 
+[dependency-groups]
+dev = [
+    "black>=26,<27",
+    "build",
+    "flake8>=7.3.0,<8",
+    "hypothesis>=6.152.7,<7",
+    "isort>=8.0.1,<9",
+    "mypy>=2.1.0,<2.2",
+    "packaging>=26.2",
+    "pyperf>=2.10,<3",
+    "pytest-benchmark[histogram]>=5.2.3,<6",
+    "pytest-cov>=7.1.0,<8",
+    "pytest-order>=1.4.0,<2",
+    "pytest>=9.0.3,<10",
+    "setuptools-rust",
+    "slotscheck>=0.20,<0.21",
+    "time_machine>=3.2,<4; implementation_name == 'cpython'",
+    "twine>=6.2.0",
+]
+docs = [
+    "furo>=2025.12.19,<2026",
+    "myst-parser>=5,<6",
+    "sphinx-copybutton~=0.5",
+    "sphinx-design>=0.7,<0.8",
+    "sphinx>=9,<10",
+]
+
+[tool.uv.dependency-groups]
+docs = {requires-python = ">=3.13"}
+
 
 [project.urls]
 Documentation = "https://whenever.readthedocs.io"
@@ -67,6 +97,9 @@ exclude = '''
 profile = 'black'
 line_length = 79
 combine_as_imports = true
+
+[tool.uv]
+default-groups = "all"
 
 [tool.mypy]
 warn_unused_ignores = true
@@ -97,8 +130,9 @@ find = { where = ["pysrc"] }
 # We essentially use three build systems:
 # - We use maturin to build the binary distributions for different
 #   platforms in CI, since it is very convenient for this purpose.
-# - We need setuptools to allow enabling/disabling building the Rust
-#   extension using the environment variable, since maturin does not support this.
+# - We use setuptools for source distributions and editable installs.
+# - The custom backend below runs `build_rust --inplace` during editable
+#   installs so `uv sync` can keep the Rust extension in the source tree.
 # - To actually build the Rust extension with setuptools, we need
 #   setuptools_rust.
 [tool.maturin]
@@ -111,8 +145,8 @@ requires = [
     "setuptools",
     "wheel",
 ]
-# We need a custom backend to make the inclusion of setuptools_rust conditional
-# on the environment variable.
+# We need a custom backend to make editable installs build the Rust
+# extension in place.
 # Follows the approach from setuptools.pypa.io/en/latest/build_meta.html#dynamic-build-dependencies-and-other-build-meta-tweaks
 build-backend = "backend"
 backend-path = ["_custom_pybuild"]
