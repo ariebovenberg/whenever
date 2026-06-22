@@ -1,15 +1,19 @@
 .PHONY: init
 init:
-	uv sync -v
+	uv sync --frozen -v --all-groups
+
+.PHONY: lint
+update:
+	uv lock --upgrade
 
 .PHONY: typecheck
 typecheck:
 	uv run mypy pysrc/ tests/
 
-.PHONY: format
-format:
-	uv run black pysrc/ tests/ scripts/
-	uv run isort pysrc/ tests/ scripts/
+.PHONY: fix
+fix:
+	uv run --no-sync ruff check --select I --fix .
+	uv run --no-sync ruff format .
 	cargo fmt
 
 .PHONY: docs
@@ -23,21 +27,20 @@ check-readme:
 
 .PHONY: test-py
 test-py:
-	uv run pytest -s tests/
+	RUST_BACKTRACE=1 uv run pytest -s tests/
 
 
 .PHONY: test-rs
 test-rs:
-	cargo test
+	RUST_BACKTRACE=1 cargo test
 
 .PHONY: test
 test: test-py test-rs
 
 .PHONY: ci-lint
 ci-lint: check-readme
-	uv run flake8 pysrc/ tests/ scripts/
-	uv run black --check pysrc/ tests/ scripts/
-	uv run isort --check pysrc/ tests/ scripts/
+	uv run ruff check .
+	uv run ruff format --check .
 	cargo fmt -- --check
 	uv run env PYTHONPATH=pysrc/ slotscheck pysrc
 	cargo clippy --all-targets --all-features -- -D warnings
@@ -50,7 +53,8 @@ clean-ext:
 clean: clean-ext
 	uv run python setup.py clean --all
 	rm -rf build/ dist/ pysrc/**/__pycache__ *.egg-info **/*.egg-info \
-		docs/_build/ htmlcov/ .mypy_cache/ .pytest_cache/ target/
+		docs/_build/ htmlcov/ .mypy_cache/ .pytest_cache/ .ruff_cache/ \
+		target/
 
 .PHONY: build
 build:

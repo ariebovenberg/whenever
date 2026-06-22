@@ -239,7 +239,6 @@ def monthday_from_iso(s: str) -> _date:
 # The ISO parsing functions were improved in Python 3.11,
 # so we use them if available.
 if sys.version_info >= (3, 11):
-
     _date_from_iso_basic = _date.fromisoformat
 
     def _time_from_iso_nofrac(s: str) -> _time:

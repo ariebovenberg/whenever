@@ -2,7 +2,6 @@ import pickle
 import sys
 
 import pytest
-
 from whenever import _EXTENSION_LOADED, Date
 
 

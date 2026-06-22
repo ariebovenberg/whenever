@@ -8,7 +8,6 @@ from zoneinfo import ZoneInfo
 import pytest
 from hypothesis import given
 from hypothesis.strategies import floats, integers, text
-
 from whenever import (
     DaysAssumed24HoursWarning,
     Instant,
@@ -219,7 +218,6 @@ class TestEquality:
 
 
 class TestTimestamp:
-
     def test_default_seconds(self):
         assert Instant.from_utc(1970, 1, 1).timestamp() == 0
         assert (
@@ -255,7 +253,6 @@ class TestTimestamp:
 
 
 class TestFromTimestamp:
-
     @pytest.mark.parametrize(
         "method, factor",
         [
@@ -489,7 +486,6 @@ class _MyDateTime(py_datetime):
 
 
 class TestInitFromPy:
-
     @pytest.mark.parametrize(
         "dt, expected",
         [
@@ -604,7 +600,6 @@ def test_min_max():
 
 
 class TestAddMethod:
-
     def test_valid(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
         assert d.add(hours=24, seconds=5) == d + hours(24) + seconds(5)
@@ -657,7 +652,6 @@ class TestAddMethod:
 
 
 class TestSubtractMethod:
-
     def test_valid(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         assert d.subtract(hours=24, seconds=5) == d - hours(24) - seconds(5)
@@ -741,7 +735,6 @@ class TestShiftOperators:
 
 
 class TestDifference:
-
     def test_other_instant(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
         other = Instant.from_utc(
@@ -909,7 +902,6 @@ def test_rfc2822(i, expect):
 
 
 class TestParseRFC2822:
-
     @pytest.mark.parametrize("s, expected", VALID_RFC2822)
     def test_valid(self, s, expected: OffsetDateTime):
         assert Instant.parse_rfc2822(s) == expected.to_instant()
@@ -921,7 +913,6 @@ class TestParseRFC2822:
 
 
 class TestFormatIso:
-
     @pytest.mark.parametrize(
         "d, expect",
         [
@@ -1015,7 +1006,6 @@ class TestFormatIso:
 
 
 class TestParseIso:
-
     @pytest.mark.parametrize("s, expect", VALID_ISO_STRINGS)
     def test_valid(self, s: str, expect: OffsetDateTime):
         assert Instant.parse_iso(s) == expect.to_instant()
@@ -1038,7 +1028,6 @@ class TestParseIso:
 
 
 class TestRound:
-
     @pytest.mark.parametrize(
         "d, increment, unit, floor, ceil, half_floor, half_ceil, half_even",
         [

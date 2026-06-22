@@ -5,7 +5,6 @@ from copy import copy, deepcopy
 from typing import Any
 
 import pytest
-
 from whenever import (
     DateDelta,
     DateTimeDelta,
@@ -29,7 +28,6 @@ def make_dtdelta(**kwargs: Any) -> DateTimeDelta:
 
 
 class TestInit:
-
     def test_happy_path(self):
         d = DateTimeDelta(
             years=1,
@@ -253,7 +251,6 @@ INVALID_DELTAS.remove("PT4M3H")
 
 
 class TestParseIso:
-
     def test_empty(self):
         assert DateTimeDelta.parse_iso("P0D") == DateTimeDelta()
 
@@ -377,7 +374,6 @@ def test_repr(d, expect):
 
 
 class TestAdd:
-
     def test_same_type(self):
         p = DateTimeDelta(
             years=1,
@@ -479,7 +475,6 @@ class TestAdd:
 
 
 class TestSubtract:
-
     def test_same_type(self):
         p = DateTimeDelta(
             years=1,
@@ -778,7 +773,6 @@ def test_compatible_unpickle():
 
 
 class TestDeprecationWarnings:
-
     def test_init(self):
         with pytest.warns(WheneverDeprecationWarning, match="DateTimeDelta"):
             DateTimeDelta(months=1, hours=2)

@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import colorsys
-import json
 import math
 import re
 import sys
@@ -102,7 +101,7 @@ LIBRARY_ORDER = ["whenever", "stdlib", "arrow", "pendulum"]
 # Ordered to match LIBRARY_ORDER.
 _LIGHT_STOPS: tuple[tuple[float, float], ...] = (
     # (0.64, 0.28),  # whenever  — darkest
-    (0.55, 0.59),   # datetime
+    (0.55, 0.59),  # datetime
     # (0.56, 0.70),   # arrow
     # (0.59, 0.85),   # pendulum  — lightest
 ) * 4
@@ -114,10 +113,10 @@ _DARK_STOPS: tuple[tuple[float, float], ...] = (
 ) * 4
 
 
-def _hsl_hex(h_deg: float, s: float, l: float) -> str:
+def _hsl_hex(h_deg: float, s: float, lightness: float) -> str:
     """HSL → #rrggbb.  h in degrees [0–360], s and l in [0, 1]."""
     # colorsys uses HLS order (not HSL)
-    r, g, b = colorsys.hls_to_rgb(h_deg / 360.0, l, s)
+    r, g, b = colorsys.hls_to_rgb(h_deg / 360.0, lightness, s)
     return f"#{round(r * 255):02x}{round(g * 255):02x}{round(b * 255):02x}"
 
 
@@ -125,7 +124,8 @@ def _make_palette(
     hue: float, stops: tuple[tuple[float, float], ...]
 ) -> dict[str, str]:
     return {
-        lib: _hsl_hex(hue, s, l) for lib, (s, l) in zip(LIBRARY_ORDER, stops)
+        lib: _hsl_hex(hue, saturation, lightness)
+        for lib, (saturation, lightness) in zip(LIBRARY_ORDER, stops)
     }
 
 
@@ -177,7 +177,7 @@ def _fmt_ns(ns: float) -> str:
     if ns < 1_000_000:
         val = ns / 1_000
         return f"{val:.1f} µs" if val < 10 else f"{val:.0f} µs"
-    return f"{ns/1_000_000:.1f} ms"
+    return f"{ns / 1_000_000:.1f} ms"
 
 
 def _compute_cutoff(values: list[float]) -> float:
@@ -275,7 +275,9 @@ def _plot_timing_subplot(
     ax.xaxis.set_major_formatter(
         mticker.FuncFormatter(
             lambda x, _: (
-                f"{x/divisor:.1f}" if x / divisor < 10 else f"{x/divisor:.0f}"
+                f"{x / divisor:.1f}"
+                if x / divisor < 10
+                else f"{x / divisor:.0f}"
             )
         )
     )

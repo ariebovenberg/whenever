@@ -6,12 +6,10 @@ so they deserve tests.
 """
 
 import pytest
-
 from whenever._math import custom_round
 
 
 class TestCustomRound:
-
     @pytest.mark.parametrize(
         "value, remainder, expanded, mode, increment, sign, expected",
         [

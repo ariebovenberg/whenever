@@ -9,6 +9,10 @@ on:
 
 env:
   RUST_BACKTRACE: 1
+  # We rely on setup-python action to install Python,
+  # because it does better caching and works with 32-bit Python on Windows.
+  UV_PYTHON_DOWNLOADS: never
+  UV_NO_MANAGED_PYTHON: "true"
 
 jobs:
   test-rust:
@@ -19,10 +23,10 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: "1.93"
+      # even though we only test rust, we need CPython to link against
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-          allow-prereleases: true
+          python-version: "3.13"
       - name: Build and test
         run: |
           cargo test
@@ -47,36 +51,33 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: "1.93"
+      - uses: astral-sh/setup-uv@v5
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true
 
-
-      # NOTE: We test multiple times in different dependency configurations
-      - name: Test (no extra deps)
+      # Testing without integrations (e.g. pydantic, time_machine) to ensure there's no accidental dependency on them
+      - name: Test (debug, no dependency integrations)
         shell: bash
         run: |
-          pip install -r requirements/test.txt
-          pip install build
-          # ensure isolated build
-          python -m build
-          pip install dist/*.whl
+          uv sync --locked --group test
+          uv run pytest tests/ -s -v
 
-          pytest tests/ -s -v
-
-      - name: Test (all deps)
+      # Testing with integrations to ensure they work
+      - name: Test (debug, all dependency integrations)
+        if: ${{ matrix.python-version != '3.15' && matrix.python-version != '3.15t' }}
         shell: bash
         run: |
-          pip install tzdata pydantic
-          pytest tests/ -s -v
-      # Debug mode sometimes surfaces issues not seen in release mode
-      - name: Test (debug mode)
+          uv sync --locked --group test --group integrations
+          uv run pytest tests/ -s -v
+      # Release mode sometimes surfaces issues not seen in debug
+      - name: Test (release mode)
         shell: bash
         run: |
-          pip install -e .
-          pytest tests/ -s -v
-      - run: python scripts/smoketest_*.py
+          uv sync --locked --reinstall-package whenever --no-editable --group test
+          uv run pytest tests/ -s -v
+      - run: uv run python scripts/smoketest_*.py
 
   test-os:
     name: Test ${{ matrix.os }}, 3.13 ${{ matrix.no_build_ext && 'pure Python' || 'Rust extension' }}
@@ -91,6 +92,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: "1.93"
+      - uses: astral-sh/setup-uv@v5
 
       - name: Add win32 target
         if: ${{ matrix.os == 'windows' && !matrix.no_build_ext }}
@@ -109,19 +111,18 @@ jobs:
           python-version: '3.13'
           architecture: x86
 
+      - name: Sync Python environment
+        run: uv sync --locked --group test
+        env:
+          WHENEVER_NO_BUILD_RUST_EXT: ${{ matrix.no_build_ext }}
+
       - name: Install and test
         shell: bash
         run: |
-          pip install -r requirements/test.txt
-          pip install build
-          # ensure isolated build
-          python -m build
-          pip install dist/*.whl
-
-          pytest tests/ -s -v
+          uv run pytest tests/ -s -v
           # NOTE: yes, we test twice: once with optional deps, once without
-          pip install tzdata pydantic
-          pytest tests/ -s -v
+          uv sync --locked --group test --group integrations
+          uv run pytest tests/ -s -v
         env:
           WHENEVER_NO_BUILD_RUST_EXT: ${{ matrix.no_build_ext }}
 
@@ -147,36 +148,35 @@ jobs:
         ]
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true
-      - run: |
-          pip install -r requirements/test.txt
-          pip install build
-          python -m build
-          pip install dist/*.whl
+      - name: Sync Python environment
+        run: uv sync --locked --group test
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
-      - run: python scripts/smoketest_*.py
+      - run: uv run python scripts/smoketest_*.py
       # NOTE: we end up running pytest twice in the following sections.
       # This is because we want to test the code with and without optional dependencies.
-      - run: pytest tests/
-      - if: ${{ matrix.python-version != 'pypy3.10' && matrix.python-version != 'pypy3.11' }}
-        run: pip install tzdata pydantic
+      - run: uv run pytest tests/
+      - if: ${{ !contains(fromJSON('["pypy3.10", "pypy3.11", "3.15", "3.15t"]'), matrix.python-version) }}
+        run: uv sync --locked --group test --group integrations
       # NOTE: we only care about coverage once. We arbitrarily choose 3.12 for that
       - if: ${{ matrix.python-version == '3.12' }}
         run: |
-          pytest tests/ --cov=whenever --cov-report term-missing
-      - if: ${{ matrix.python-version != '3.12' && matrix.python-version != 'pypy3.10' && matrix.python-version != 'pypy3.11' }}
+          uv run pytest tests/ --cov=whenever --cov-report term-missing
+      - if: ${{ !contains(fromJSON('["pypy3.10", "pypy3.11", "3.15", "3.15t"]'), matrix.python-version) }}
         run: |
-          pytest tests/
+          uv run pytest tests/
 
   lint:
     name: Linting
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -184,10 +184,10 @@ jobs:
         with:
           toolchain: "1.93"
           components: "clippy, rustfmt"
-      - run: |
-          pip install .
-          pip install -r requirements/lint.txt
-          make ci-lint
+      - run: uv sync --locked --group dev-extra
+        env:
+          WHENEVER_NO_BUILD_RUST_EXT: "1"
+      - run: make ci-lint
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
 
@@ -196,12 +196,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - run: uv sync --locked --no-install-project
+        env:
+          WHENEVER_NO_BUILD_RUST_EXT: "1"
       - run: |
-          pip install .
-          python scripts/generate_docstrings.py > fresh_docstrings.rs
+          uv run python scripts/generate_docstrings.py > fresh_docstrings.rs
           if diff -q fresh_docstrings.rs src/docstrings.rs > /dev/null; then
               echo "OK"
           else
@@ -217,14 +220,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-      - run: |
-          pip install .
-          pip install -r requirements/typecheck.txt
-          pip install -r requirements/test.txt
-          make typecheck
+          python-version: '3.13'
+      - run: uv sync --locked --all-groups --no-install-project
+        env:
+          WHENEVER_NO_BUILD_RUST_EXT: "1"
+      - run: make typecheck
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
 

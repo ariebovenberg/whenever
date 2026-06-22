@@ -3,7 +3,6 @@
 import warnings
 
 import pytest
-
 from whenever import (
     Date,
     Instant,

@@ -6,8 +6,6 @@ from itertools import chain, product
 from typing import Literal
 
 import pytest
-
-from tests.test_date_delta import make_ddelta
 from whenever import (
     Date,
     DateDelta,
@@ -20,6 +18,8 @@ from whenever import (
     WheneverDeprecationWarning,
     YearMonth,
 )
+
+from tests.test_date_delta import make_ddelta
 
 from .common import (
     AlwaysEqual,
@@ -36,7 +36,6 @@ pytestmark = pytest.mark.filterwarnings(
 
 
 class TestInit:
-
     def test_args(self):
         d = Date(2021, 1, 2)
         assert d.year == 2021
@@ -199,7 +198,6 @@ def test_str():
 
 
 class TestParseIso:
-
     @pytest.mark.parametrize(
         "s, expected",
         [
@@ -385,7 +383,6 @@ def test_comparison():
 
 
 class TestAdd:
-
     @pytest.mark.parametrize(
         "d, kwargs, expected",
         [
@@ -480,7 +477,6 @@ class TestAdd:
 
 
 class TestDaysUntilAndSince:
-
     @pytest.mark.parametrize(
         "d1, d2, expected",
         [
@@ -556,7 +552,6 @@ _EXAMPLE_DATES = [
 
 
 class TestSinceAndUntil:
-
     @pytest.mark.parametrize(
         "d1, d2, unit, expected",
         [
@@ -819,7 +814,9 @@ class TestSinceAndUntil:
 
         # both in_unit and in_units specified
         with pytest.raises(TypeError, match="both"):
-            d.since(Date(2020, 1, 1), total="years", in_units=("days", "months"))  # type: ignore[call-overload]
+            d.since(
+                Date(2020, 1, 1), total="years", in_units=("days", "months")
+            )  # type: ignore[call-overload]
 
         # duplicate units
         with pytest.raises(ValueError, match="duplicate"):
@@ -924,7 +921,6 @@ class TestSinceAndUntil:
 
 
 class TestSubtract:
-
     @pytest.mark.parametrize(
         "d, kwargs, expected",
         [
@@ -1203,7 +1199,6 @@ SUNDAY = Weekday.SUNDAY
 
 
 class TestDayOfYear:
-
     @pytest.mark.parametrize(
         "d, expected",
         [
@@ -1236,7 +1231,6 @@ class TestDayOfYear:
 
 
 class TestDaysInMonth:
-
     @pytest.mark.parametrize(
         "d, expected",
         [
@@ -1264,7 +1258,6 @@ class TestDaysInMonth:
 
 
 class TestDaysInYear:
-
     @pytest.mark.parametrize(
         "d, expected",
         [
@@ -1279,7 +1272,6 @@ class TestDaysInYear:
 
 
 class TestInLeapYear:
-
     @pytest.mark.parametrize(
         "d, expected",
         [
@@ -1295,7 +1287,6 @@ class TestInLeapYear:
 
 
 class TestNextDay:
-
     @pytest.mark.parametrize(
         "d, expected",
         [
@@ -1316,7 +1307,6 @@ class TestNextDay:
 
 
 class TestPrevDay:
-
     @pytest.mark.parametrize(
         "d, expected",
         [
@@ -1337,7 +1327,6 @@ class TestPrevDay:
 
 
 class TestNthWeekdayOfMonth:
-
     @pytest.mark.parametrize(
         "d, n, weekday, expected",
         [
@@ -1396,7 +1385,6 @@ class TestNthWeekdayOfMonth:
 
 
 class TestNthWeekday:
-
     @pytest.mark.parametrize(
         "d, n, weekday, expected",
         [
@@ -1454,7 +1442,6 @@ class TestNthWeekday:
 
 
 class TestIsoWeekDateConversion:
-
     def test_basic(self):
         assert Date(2024, 1, 1).iso_week_date() == IsoWeekDate(2024, 1, MONDAY)
 
@@ -1490,7 +1477,6 @@ class TestIsoWeekDateConversion:
 
 
 class TestStartOf:
-
     def test_year(self):
         assert Date(2024, 8, 15).start_of("year") == Date(2024, 1, 1)
 
@@ -1516,7 +1502,6 @@ class TestStartOf:
 
 
 class TestEndOf:
-
     def test_year(self):
         assert Date(2024, 8, 15).end_of("year") == Date(2024, 12, 31)
 

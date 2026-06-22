@@ -8,12 +8,17 @@ Stdlib (+dateutil) benchmarks — run with:
 Note: calendar_shift uses dateutil.relativedelta since the stdlib has no
 built-in calendar arithmetic.
 """
+
 import argparse
 import sys
 
 _pre = argparse.ArgumentParser(add_help=False)
-_pre.add_argument("--only", default=None, metavar="NAME",
-                  help="comma-separated list of benchmark names to run")
+_pre.add_argument(
+    "--only",
+    default=None,
+    metavar="NAME",
+    help="comma-separated list of benchmark names to run",
+)
 _ns, _remaining = _pre.parse_known_args(sys.argv[1:])
 _only = set(_ns.only.split(",")) if _ns.only else None
 sys.argv = [sys.argv[0]] + _remaining
@@ -49,10 +54,7 @@ _bench(
 _bench(
     "instantiate_zdt",
     "datetime(2020, 3, 20, 12, 30, 45, tzinfo=ZoneInfo('Europe/Amsterdam'))",
-    setup=(
-        "from datetime import datetime;"
-        " from zoneinfo import ZoneInfo;"
-    ),
+    setup=("from datetime import datetime; from zoneinfo import ZoneInfo;"),
 )
 
 _bench(

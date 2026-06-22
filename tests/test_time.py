@@ -7,7 +7,6 @@ from datetime import (
 )
 
 import pytest
-
 from whenever import (
     Date,
     PlainDateTime,
@@ -24,7 +23,6 @@ pytestmark = pytest.mark.filterwarnings(
 
 
 class TestInit:
-
     def test_all_args(self):
         t = Time(1, 2, 3, nanosecond=4_000)
         assert t.hour == 1
@@ -158,7 +156,6 @@ def test_replace():
 
 
 class TestParseIso:
-
     @pytest.mark.parametrize(
         "input, expect",
         [
@@ -370,7 +367,6 @@ def test_on():
 
 
 class TestRound:
-
     @pytest.mark.parametrize(
         "t, increment, unit, floor, ceil, half_floor, half_ceil, half_even",
         [

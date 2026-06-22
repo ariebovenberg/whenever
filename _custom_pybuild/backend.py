@@ -1,9 +1,8 @@
 # See pyproject.toml for why this file exists.
-from setuptools import build_meta as _orig
-from setuptools.build_meta import *
-import platform
 import os
+import platform
 
+from setuptools.build_meta import *
 
 if os.getenv("WHENEVER_NO_BUILD_RUST_EXT") or (
     platform.python_implementation() in ("PyPy", "GraalVM")

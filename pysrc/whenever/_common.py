@@ -7,7 +7,7 @@ from collections.abc import Callable
 from datetime import (  # noqa: F401
     date as _date,
     datetime as _datetime,
-    time as _time,
+    time as _time,  # noqa: F401
     timedelta as _timedelta,
     timezone as _timezone,
 )

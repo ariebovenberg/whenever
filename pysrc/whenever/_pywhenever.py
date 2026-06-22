@@ -454,7 +454,7 @@ class Date(_Base):
             return Date._from_py_unchecked(self._py_date.replace(day=1))
         else:
             raise ValueError(
-                f"Invalid unit: {unit!r}. " "Valid units: 'year', 'month'"
+                f"Invalid unit: {unit!r}. Valid units: 'year', 'month'"
             )
 
     def end_of(self, unit: Literal["year", "month"], /) -> Date:
@@ -479,7 +479,7 @@ class Date(_Base):
             )
         else:
             raise ValueError(
-                f"Invalid unit: {unit!r}. " "Valid units: 'year', 'month'"
+                f"Invalid unit: {unit!r}. Valid units: 'year', 'month'"
             )
 
     def nth_weekday_of_month(self, n: int, weekday: Weekday, /) -> Date:
@@ -4805,7 +4805,9 @@ def _check_bound(i: int | None, max_value: int) -> int | None:
 
 
 def _check_component(
-    value: int, sign: Sign, max_value: int  # may also be UNSET
+    value: int,
+    sign: Sign,
+    max_value: int,  # may also be UNSET
 ) -> tuple[int | None, Sign]:
     if value is UNSET:
         return None, sign
@@ -5487,7 +5489,6 @@ class _LocalTime(_BasicConversions):
 # - OffsetDateTime
 # (This base class class itself is not for public use.)
 class _ExactTime(_BasicConversions):
-
     __slots__ = ()
 
     def timestamp(self) -> int:
@@ -5723,7 +5724,6 @@ class _ExactTime(_BasicConversions):
 # - OffsetDateTime
 # (The class itself it not for public use.)
 class _ExactAndLocalTime(_LocalTime, _ExactTime):
-
     __slots__ = ()
 
     @property
@@ -6020,7 +6020,7 @@ class Instant(_ExactTime):
         state = parse_fields(elements, s)
         if state.offset_secs is None:
             raise ValueError(
-                "Instant.parse() pattern must include an offset " "field (x/X)"
+                "Instant.parse() pattern must include an offset field (x/X)"
             )
         if state.year is None or state.month is None or state.day is None:
             raise ValueError(
@@ -6252,7 +6252,7 @@ class Instant(_ExactTime):
         return hash((self._py_dt, self._nanos))
 
     def __repr__(self) -> str:
-        return f"Instant(\"{str(self).replace('T', ' ')}\")"
+        return f'Instant("{str(self).replace("T", " ")}")'
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
@@ -7211,10 +7211,12 @@ class OffsetDateTime(_ExactAndLocalTime):
             return result
         elif offset_mismatch == "raise":
             offset_expected = _format_offset(
-                self._py_dt.utcoffset(), basic=False  # type: ignore[arg-type]
+                self._py_dt.utcoffset(),  # type: ignore[arg-type]
+                basic=False,
             )
             offset_actual = _format_offset(
-                result._py_dt.utcoffset(), basic=False  # type: ignore[arg-type]
+                result._py_dt.utcoffset(),  # type: ignore[arg-type]
+                basic=False,
             )
             raise InvalidOffsetError(
                 f"Offset mismatch: timezone {tz!r} has offset {offset_actual}, "
@@ -7316,7 +7318,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         )
 
     def __repr__(self) -> str:
-        return f"OffsetDateTime(\"{str(self).replace('T', ' ')}\")"
+        return f'OffsetDateTime("{str(self).replace("T", " ")}")'
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
@@ -8461,7 +8463,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             f'ZonedDateTime("{_format_date(self._py_dt, False)} '
             f"{_format_time(self._py_dt, self._nanos, 'auto', False)}"
             f"{_format_offset(self._py_dt.utcoffset(), False)}"  # type: ignore[arg-type]
-            f"[{self._tz.key or '<system timezone without ID>'}]\")"
+            f'[{self._tz.key or "<system timezone without ID>"}]")'
         )
 
     # a custom pickle implementation with a smaller payload
@@ -9339,7 +9341,7 @@ class PlainDateTime(_LocalTime):
         return self.date()._add_days(next_day).at(rounded_time)
 
     def __repr__(self) -> str:
-        return f"PlainDateTime(\"{str(self).replace('T', ' ')}\")"
+        return f'PlainDateTime("{str(self).replace("T", " ")}")'
 
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:

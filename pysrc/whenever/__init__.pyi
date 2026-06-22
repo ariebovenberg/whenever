@@ -930,7 +930,9 @@ class ItemizedDelta(
         *,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
     ) -> float: ...
-    def __iter__(self) -> Iterator[
+    def __iter__(
+        self,
+    ) -> Iterator[
         Literal[
             "years",
             "months",

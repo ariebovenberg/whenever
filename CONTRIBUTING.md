@@ -18,7 +18,7 @@ An example of setting up things up on a Unix-like system:
 # install the dependencies
 make init
 
-# build the rust extension in place
+# build the rust extension in place (debug mode)
 make build
 
 # rebuild it in release mode
@@ -28,7 +28,7 @@ make build-release
 make clean
 
 make test  # run the tests (Python and Rust)
-make format  # apply autoformatting
+make fix  # apply autoformatting
 make ci-lint  # various static checks
 make typecheck  # run mypy and typing tests
 ```

@@ -76,7 +76,7 @@ def _parse_digits(s: str, pos: int, count: int) -> tuple[int, int]:
     chunk = s[pos:end]
     if not chunk.isdigit():
         raise ValueError(
-            f"Expected {count} digits at position {pos}, " f"got {chunk!r}"
+            f"Expected {count} digits at position {pos}, got {chunk!r}"
         )
     return int(chunk), end
 
@@ -934,9 +934,7 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
 # Characters allowed as unquoted literals in patterns.
 # Letters must be quoted. Reserved chars (< > [ ] { } #) raise errors.
 # '.' and ':' are handled separately as potential compound-token prefixes.
-_LITERAL_CHARS = frozenset(
-    " \t\n" "0123456789" "-/,;_" "()+@!~*&%$^|\\=?`" '"'
-)
+_LITERAL_CHARS = frozenset(' \t\n0123456789-/,;_()+@!~*&%$^|\\=?`"')
 _PENDING_CHARS = frozenset(".:")
 
 _RESERVED_CHARS = frozenset("<>[]{}#")
@@ -1090,7 +1088,7 @@ def validate_fields(
     for el in elements:
         if isinstance(el, _Field) and el.category not in allowed_categories:
             raise ValueError(
-                f"{type_name} does not support pattern " f"field {el!r}"
+                f"{type_name} does not support pattern field {el!r}"
             )
 
 
@@ -1170,7 +1168,7 @@ def parse_fields(
 
     if pos != len(s):
         raise ValueError(
-            f"Unexpected trailing text at position {pos}: " f"{s[pos:]!r}"
+            f"Unexpected trailing text at position {pos}: {s[pos:]!r}"
         )
 
     state.resolve()
