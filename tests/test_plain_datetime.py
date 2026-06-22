@@ -7,7 +7,6 @@ from typing import Any, Literal, Sequence
 import pytest
 from hypothesis import given
 from hypothesis.strategies import floats, integers, text
-
 from whenever import (
     Date,
     Instant,
@@ -47,7 +46,6 @@ pytestmark = pytest.mark.filterwarnings(
 
 
 class TestInit:
-
     def test_simple(self):
         d = PlainDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)
 
@@ -438,7 +436,6 @@ def test_repr():
 
 
 class TestFormatIso:
-
     def test_default(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_650)
         assert str(d) == "2020-08-15T23:12:09.00098765"
@@ -606,7 +603,6 @@ def test_replace():
 
 
 class TestShiftMethods:
-
     def test_warnings(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.warns(NaiveArithmeticWarning) as w:
@@ -773,7 +769,6 @@ class TestNaiveArithmeticOkKwarg:
 
 
 class TestShiftOperators:
-
     def test_date_delta(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         shifted = d.replace(year=2021, day=19)
@@ -862,7 +857,6 @@ class TestDifference:
 
 
 class TestRound:
-
     @pytest.mark.parametrize(
         "d, increment, unit, floor, ceil, half_floor, half_ceil, half_even",
         [
@@ -1089,7 +1083,6 @@ def test_old_pickle_data_remains_unpicklable():
 
 
 class TestParseStrptime:
-
     def test_strptime(self):
         assert PlainDateTime.parse_strptime(
             "2020-08-15 23:12", format="%Y-%m-%d %H:%M"
@@ -1105,12 +1098,12 @@ class TestParseStrptime:
         # format is keyword-only
         with pytest.raises(TypeError, match="format|argument"):
             OffsetDateTime.parse_strptime(
-                "2020-08-15 23:12:09", "%Y-%m-%d %H:%M:%S"  # type: ignore[misc]
+                "2020-08-15 23:12:09",
+                "%Y-%m-%d %H:%M:%S",  # type: ignore[misc]
             )
 
 
 class TestSince:
-
     @pytest.mark.parametrize(
         "a, b, units, kwargs, expect",
         [
@@ -1632,7 +1625,6 @@ def test_cannot_subclass():
 
 
 class TestDayOfYear:
-
     def test_basic(self):
         assert PlainDateTime(2024, 2, 29, 12, 30).day_of_year() == 60
 
@@ -1647,7 +1639,6 @@ class TestDayOfYear:
 
 
 class TestDaysInMonth:
-
     def test_feb_leap(self):
         assert PlainDateTime(2024, 2, 29, 12, 30).days_in_month() == 29
 
@@ -1667,7 +1658,6 @@ class TestDaysInMonth:
 
 
 class TestDaysInYear:
-
     def test_leap(self):
         assert PlainDateTime(2024, 2, 29, 12, 30).days_in_year() == 366
 
@@ -1682,7 +1672,6 @@ class TestDaysInYear:
 
 
 class TestInLeapYear:
-
     def test_leap(self):
         assert PlainDateTime(2024, 2, 29, 12, 30).in_leap_year() is True
 
@@ -1697,7 +1686,6 @@ class TestInLeapYear:
 
 
 class TestStartOf:
-
     def test_year(self):
         dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
         result = dt.start_of("year")
@@ -1740,7 +1728,6 @@ class TestStartOf:
 
 
 class TestEndOf:
-
     def test_year(self):
         dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
         result = dt.end_of("year")

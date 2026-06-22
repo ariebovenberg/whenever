@@ -5,12 +5,17 @@ Pendulum benchmarks — run with:
     uv run python run_pendulum.py --only now --fast         # single benchmark
     uv run python run_pendulum.py --only now,parse_iso      # multiple
 """
+
 import argparse
 import sys
 
 _pre = argparse.ArgumentParser(add_help=False)
-_pre.add_argument("--only", default=None, metavar="NAME",
-                  help="comma-separated list of benchmark names to run")
+_pre.add_argument(
+    "--only",
+    default=None,
+    metavar="NAME",
+    help="comma-separated list of benchmark names to run",
+)
 _ns, _remaining = _pre.parse_known_args(sys.argv[1:])
 _only = set(_ns.only.split(",")) if _ns.only else None
 sys.argv = [sys.argv[0]] + _remaining

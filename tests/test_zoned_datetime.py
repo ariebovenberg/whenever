@@ -16,7 +16,6 @@ from zoneinfo import (
 import pytest
 from hypothesis import given
 from hypothesis.strategies import text
-
 from whenever import (
     _EXTENSION_LOADED,
     Date,
@@ -181,7 +180,10 @@ class TestInit:
         d = ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc)
         ZonedDateTime(2020, 8, 15, 5, 12, tz=ams)
 
-        assert available_timezones() == zoneinfo_available_timezones()
+        assert (
+            available_timezones()
+            == zoneinfo_available_timezones().difference(["localtime"])
+        )
 
         from whenever import TZPATH
 
@@ -194,7 +196,10 @@ class TestInit:
         assert TZPATH == (str(TEST_DIR / "tzif"),)
         try:
             # Available timezones should now be different
-            assert available_timezones() != zoneinfo_available_timezones()
+            assert (
+                available_timezones()
+                != zoneinfo_available_timezones().difference(["localtime"])
+            )
             # We still can find load the NYC timezone even though
             # it isn't in the new path. This is because it's cached!
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
@@ -229,7 +234,10 @@ class TestInit:
         assert TZPATH == prev_tzpath
 
         # Available timezones should now be the same again
-        assert available_timezones() == zoneinfo_available_timezones()
+        assert (
+            available_timezones()
+            == zoneinfo_available_timezones().difference(["localtime"])
+        )
 
         # Our custom timezones are still in the cache
         assert ZonedDateTime(1982, 8, 15, 5, 12, tz="Amsterdam.tzif")
@@ -414,7 +422,7 @@ def test_available_timezones():
     tzs = available_timezones()
 
     # So long as we don't mess with the configuration, these should be identical
-    assert tzs == zoneinfo_available_timezones()
+    assert tzs == zoneinfo_available_timezones().difference(["localtime"])
 
     d = ZonedDateTime(2025, 3, 26, 1, 15, 30, tz="UTC")
 
@@ -742,7 +750,6 @@ class TestReplaceTime:
 
 
 class TestFormatIso:
-
     @pytest.mark.parametrize(
         "d, expected",
         [
@@ -1067,7 +1074,6 @@ class TestEquality:
 
 
 class TestIsAmbiguous:
-
     @pytest.mark.parametrize(
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
@@ -1111,7 +1117,6 @@ class TestIsAmbiguous:
 
 
 class TestNextTransition:
-
     @pytest.mark.parametrize(
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
@@ -1293,7 +1298,6 @@ class TestNextTransition:
 
 
 class TestPrevTransition:
-
     @pytest.mark.parametrize(
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
@@ -1458,7 +1462,6 @@ class TestPrevTransition:
 
 
 class TestDstOffset:
-
     @pytest.mark.parametrize(
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
@@ -1863,7 +1866,6 @@ class TestDstOffset:
 
 
 class TestTzAbbrev:
-
     @pytest.mark.parametrize(
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
@@ -2268,7 +2270,6 @@ class TestDayLength:
 
 
 class TestStartOfDay:
-
     @pytest.mark.parametrize(
         "d, expect",
         [
@@ -2796,7 +2797,7 @@ class TestParseIso:
             ZonedDateTime.parse_iso("2020-08-15T12:08:30Z[X]")
 
         with pytest.raises((TimeZoneNotFoundError, ValueError)):
-            ZonedDateTime.parse_iso(f"2023-10-29T02:15:30+02:00[{'X'*9999}]")
+            ZonedDateTime.parse_iso(f"2023-10-29T02:15:30+02:00[{'X' * 9999}]")
 
         with pytest.raises((TimeZoneNotFoundError, ValueError)):
             ZonedDateTime.parse_iso(
@@ -2854,7 +2855,6 @@ class TestParseIso:
 
 
 class TestTimestamp:
-
     def test_default_seconds(self):
         assert ZonedDateTime(1970, 1, 1, tz="Iceland").timestamp() == 0
         assert (
@@ -2943,7 +2943,6 @@ class TestTimestamp:
 
 
 class TestFromTimestamp:
-
     @pytest.mark.parametrize(
         "method, factor",
         [
@@ -3389,7 +3388,6 @@ class _MyDatetime(py_datetime):
 
 
 class TestInitFromPy:
-
     @pytest.mark.parametrize(
         "pydt, expect",
         [
@@ -4152,7 +4150,6 @@ class TestAddSubtractTimeUnits:
 
 
 class TestAddSubtractCalendarUnits:
-
     def test_zero(self):
         d = ZonedDateTime(
             2020, 8, 15, 23, 12, 9, nanosecond=987_654_321, tz="Asia/Tokyo"
@@ -4289,7 +4286,6 @@ class TestAddSubtractCalendarUnits:
 
 
 class TestDifference:
-
     @pytest.mark.parametrize(
         "tz", ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE]
     )
@@ -4349,7 +4345,6 @@ class TestDifference:
 
 
 class TestSince:
-
     @pytest.mark.parametrize(
         "a, b, units, kwargs, expect",
         [
@@ -5050,7 +5045,6 @@ class TestSince:
 
 
 class TestRound:
-
     @pytest.mark.parametrize(
         "d, increment, unit, floor, ceil, half_floor, half_ceil, half_even",
         [
@@ -5506,7 +5500,6 @@ def test_cannot_subclass():
 
 
 class TestDayOfYear:
-
     def test_basic(self):
         zdt = ZonedDateTime(2024, 2, 29, 12, tz="America/New_York")
         assert zdt.day_of_year() == 60
@@ -5525,7 +5518,6 @@ class TestDayOfYear:
 
 
 class TestDaysInMonth:
-
     def test_feb_leap(self):
         zdt = ZonedDateTime(2024, 2, 29, 12, tz="America/New_York")
         assert zdt.days_in_month() == 29
@@ -5548,7 +5540,6 @@ class TestDaysInMonth:
 
 
 class TestDaysInYear:
-
     def test_leap(self):
         zdt = ZonedDateTime(2024, 2, 29, 12, tz="America/New_York")
         assert zdt.days_in_year() == 366
@@ -5567,7 +5558,6 @@ class TestDaysInYear:
 
 
 class TestInLeapYear:
-
     def test_leap(self):
         zdt = ZonedDateTime(2024, 2, 29, 12, tz="America/New_York")
         assert zdt.in_leap_year() is True
@@ -5586,7 +5576,6 @@ class TestInLeapYear:
 
 
 class TestStartOf:
-
     def test_year(self):
         zdt = ZonedDateTime(
             2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
@@ -5696,7 +5685,6 @@ class TestStartOf:
 
 
 class TestEndOf:
-
     def test_year(self):
         zdt = ZonedDateTime(
             2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
@@ -5876,7 +5864,6 @@ class TestEndOf:
 
 
 class TestClearTzCache:
-
     @pytest.mark.skipif(
         _EXTENSION_LOADED, reason="Rust extension has its own cache"
     )

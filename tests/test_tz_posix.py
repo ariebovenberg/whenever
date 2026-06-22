@@ -2,7 +2,6 @@ from datetime import date, datetime, timedelta, timezone
 from functools import partial
 
 import pytest
-
 from whenever._tz.common import Fold, Gap, Unambiguous
 from whenever._tz.posix import (
     DEFAULT_RULE_TIME,
@@ -31,7 +30,6 @@ def mk_epoch(
 
 
 class TestParse:
-
     @pytest.mark.parametrize(
         "s",
         [
@@ -263,7 +261,6 @@ class TestParse:
 
 
 class TestApplyRule:
-
     @pytest.mark.parametrize(
         "year, nth, expected",
         [
@@ -348,7 +345,6 @@ class TestApplyRule:
 
 
 class TestCalculateOffsets:
-
     TZ_FIXED = TzStr(std=1234, dst=None, std_abbrev="STD")
 
     # A TZ with random-ish DST rules
@@ -602,7 +598,6 @@ class TestCalculateOffsets:
 
 
 class TestPrevTransitionEdge:
-
     def test_prev_transition_year_1_returns_none(self):
         """prev_transition returns None when checking the previous year
         would go below year 1."""

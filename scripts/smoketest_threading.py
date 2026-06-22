@@ -43,9 +43,9 @@ TIMEZONE_SAMPLE = [
     "America/Argentina/Ushuaia",
     "Brazil/Acre",
 ]
-assert (
-    len(TIMEZONE_SAMPLE) % NUM_THREADS
-), "Timezone sample should not be evenly divisible by number of threads"
+assert len(TIMEZONE_SAMPLE) % NUM_THREADS, (
+    "Timezone sample should not be evenly divisible by number of threads"
+)
 TZS = TIMEZONE_SAMPLE * (NUM_THREADS * NUM_ITERATIONS)
 
 

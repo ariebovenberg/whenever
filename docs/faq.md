@@ -276,7 +276,7 @@ install from the source distribution with the
 `WHENEVER_NO_BUILD_RUST_EXT` environment variable set:
 
 ```bash
-WHENEVER_NO_BUILD_RUST_EXT=1 pip install whenever --no-binary whenever
+WHENEVER_NO_BUILD_RUST_EXT=1 uv pip install whenever --no-binary whenever
 ```
 
 You can check if the Rust extension is being used by running:

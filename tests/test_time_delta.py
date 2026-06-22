@@ -6,7 +6,6 @@ from datetime import timedelta as py_timedelta
 
 import pytest
 from pytest import approx
-
 from whenever import (
     DateDelta,
     DaysAssumed24HoursWarning,
@@ -41,7 +40,6 @@ pytestmark = pytest.mark.filterwarnings(
 
 
 class TestInit:
-
     @pytest.mark.parametrize(
         "kwargs, expected_nanos",
         [
@@ -205,7 +203,6 @@ class TestInit:
 
 
 class TestFactories:
-
     @pytest.mark.parametrize(
         "f, arg, expected",
         [
@@ -294,7 +291,6 @@ def test_aggregations():
 
 
 class TestTotal:
-
     def test_exact_units(self):
         d = TimeDelta(hours=1, minutes=2, seconds=0.003, nanoseconds=4)
         assert d.total("nanoseconds") == approx(
@@ -838,7 +834,6 @@ INVALID_TDELTAS = [
 
 
 class TestParseIso:
-
     @pytest.mark.parametrize("s, expected", VALID_TDELTAS)
     def test_valid(self, s, expected):
         assert TimeDelta.parse_iso(s) == expected
@@ -870,7 +865,6 @@ class TestParseIso:
 
 
 class TestAddSubtract:
-
     @pytest.mark.parametrize(
         "kwargs, expected",
         [
@@ -975,7 +969,6 @@ def test_multiply():
 
 
 class TestDivision:
-
     def test_by_number(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
         assert d / 2 == TimeDelta(
@@ -1026,7 +1019,6 @@ class TestDivision:
 
 
 class TestFloorDiv:
-
     def test_examples(self):
         d = TimeDelta(hours=3, minutes=40, seconds=3, microseconds=4)
         assert d // TimeDelta(hours=1) == 3
@@ -1069,7 +1061,6 @@ class TestFloorDiv:
 
 
 class TestRemainder:
-
     def test_examples(self):
         d = TimeDelta(hours=3, minutes=40, seconds=3, microseconds=4)
         assert d % TimeDelta(hours=1) == TimeDelta(
@@ -1508,7 +1499,6 @@ def test_abs():
 
 
 class TestInUnits:
-
     @pytest.mark.parametrize(
         "delta, units, kwargs, expected",
         [

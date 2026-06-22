@@ -8,7 +8,6 @@ from zoneinfo import ZoneInfo
 import pytest
 from hypothesis import given
 from hypothesis.strategies import floats, integers, text
-
 from whenever import (
     Date,
     Instant,
@@ -547,7 +546,6 @@ class TestEquality:
 
 
 class TestTimestamp:
-
     def test_default_seconds(self):
         assert OffsetDateTime(1970, 1, 1, 3, offset=3).timestamp() == 0
         assert (
@@ -577,7 +575,6 @@ class TestTimestamp:
 
 
 class TestFromTimestamp:
-
     @pytest.mark.parametrize(
         "method, factor",
         [
@@ -837,7 +834,6 @@ class _MyDatetime(py_datetime):
 
 
 class TestInitFromPy:
-
     @pytest.mark.parametrize(
         "d, expect",
         [
@@ -974,7 +970,6 @@ def test_components():
 
 
 class TestNow:
-
     @suppress(StaleOffsetWarning)
     def test_timedelta(self):
         now = OffsetDateTime.now(hours(5))
@@ -1062,7 +1057,6 @@ def test_replace():
 
 
 class TestAddSubtractOperators:
-
     @suppress(StaleOffsetWarning)
     def test_same_as_method(self):
         d = OffsetDateTime(
@@ -1097,7 +1091,6 @@ class TestAddSubtractOperators:
 
 
 class TestShiftMethods:
-
     def test_warnings(self):
         d = OffsetDateTime(
             2020, 8, 15, 23, 12, 9, nanosecond=987_654, offset=5
@@ -1111,7 +1104,6 @@ class TestShiftMethods:
         assert len(w) == 1
 
         with suppress(StaleOffsetWarning):
-
             with pytest.warns(WheneverDeprecationWarning, match="ignore_dst"):
                 d.add(hours=4, ignore_dst=True)
 
@@ -1301,7 +1293,8 @@ class TestAssumeTz:
 
         with pytest.raises(ValueError, match="foo"):
             OffsetDateTime("2020-08-15 23:12:09+02:00").assume_tz(
-                "Europe/Paris", offset_mismatch="foo"  # type: ignore[arg-type]
+                "Europe/Paris",
+                offset_mismatch="foo",  # type: ignore[arg-type]
             )
 
         with pytest.raises(TimeZoneNotFoundError, match="Foo"):
@@ -1309,7 +1302,6 @@ class TestAssumeTz:
 
 
 class TestDifference:
-
     def test_offset(self):
         d = OffsetDateTime(2020, 8, 15, 23, 12, 9, nanosecond=3, offset=5)
         other = OffsetDateTime(2020, 8, 14, 23, 12, 4, nanosecond=4, offset=-3)
@@ -1475,7 +1467,6 @@ def test_to_plain():
 
 
 class TestParseStrptime:
-
     @pytest.mark.parametrize(
         "string, fmt, expected",
         [
@@ -1526,7 +1517,8 @@ class TestParseStrptime:
         # format is keyword-only
         with pytest.raises(TypeError, match="format|argument"):
             OffsetDateTime.parse_strptime(
-                "2020-08-15 23:12:09 +0400", "%Y-%m-%d %H:%M:%S %z"  # type: ignore[misc]
+                "2020-08-15 23:12:09 +0400",
+                "%Y-%m-%d %H:%M:%S %z",  # type: ignore[misc]
             )
 
         # out of range
@@ -1846,7 +1838,6 @@ INVALID_RFC2822 = [
 
 
 class TestParseRFC2822:
-
     @pytest.mark.parametrize("s, expected", VALID_RFC2822)
     def test_valid(self, s, expected):
         assert OffsetDateTime.parse_rfc2822(s) == expected
@@ -1869,7 +1860,6 @@ class TestParseRFC2822:
 
 
 class TestRound:
-
     @pytest.mark.parametrize(
         "d, increment, unit, floor, ceil, half_floor, half_ceil, half_even",
         [
@@ -2312,7 +2302,6 @@ def test_cannot_subclass():
 
 
 class TestDayOfYear:
-
     def test_basic(self):
         odt = OffsetDateTime(2024, 2, 29, 12, offset=hours(5))
         assert odt.day_of_year() == 60
@@ -2331,7 +2320,6 @@ class TestDayOfYear:
 
 
 class TestDaysInMonth:
-
     def test_feb_leap(self):
         odt = OffsetDateTime(2024, 2, 29, 12, offset=hours(5))
         assert odt.days_in_month() == 29
@@ -2354,7 +2342,6 @@ class TestDaysInMonth:
 
 
 class TestDaysInYear:
-
     def test_leap(self):
         odt = OffsetDateTime(2024, 2, 29, 12, offset=hours(5))
         assert odt.days_in_year() == 366
@@ -2373,7 +2360,6 @@ class TestDaysInYear:
 
 
 class TestInLeapYear:
-
     def test_leap(self):
         odt = OffsetDateTime(2024, 2, 29, 12, offset=hours(5))
         assert odt.in_leap_year() is True
@@ -2392,7 +2378,6 @@ class TestInLeapYear:
 
 
 class TestStartOf:
-
     @suppress(StaleOffsetWarning)
     def test_year(self):
         odt = OffsetDateTime(
@@ -2479,7 +2464,6 @@ class TestStartOf:
 
 
 class TestEndOf:
-
     @suppress(StaleOffsetWarning)
     def test_year(self):
         odt = OffsetDateTime(

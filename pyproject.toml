@@ -7,7 +7,7 @@ maintainers = [
     {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com"},
 ]
 readme = "README.md"
-version = "0.10.0"
+version = "0.10.1.dev0"
 license = "MIT"
 description = "Modern datetime library for Python"
 requires-python = ">=3.10"
@@ -40,22 +40,28 @@ keywords = [
 ]
 
 [dependency-groups]
-dev = [
-    "black>=26,<27",
-    "build",
-    "flake8>=7.3.0,<8",
-    "hypothesis>=6.152.7,<7",
-    "isort>=8.0.1,<9",
-    "mypy>=2.1.0,<2.2",
-    "packaging>=26.2",
-    "pyperf>=2.10,<3",
+test = [
     "pytest-benchmark[histogram]>=5.2.3,<6",
     "pytest-cov>=7.1.0,<8",
     "pytest-order>=1.4.0,<2",
     "pytest>=9.0.3,<10",
-    "setuptools-rust",
-    "slotscheck>=0.20,<0.21",
+    "hypothesis>=6.152.7,<7",
+]
+typing = [
+    "mypy>=2.1.0,<2.2",
+]
+integrations = [
     "time_machine>=3.2,<4; implementation_name == 'cpython'",
+    "tzdata>=2020.1",
+    "pydantic>=2.10,<3",
+]
+dev-extra = [
+    "ruff>=0.15,<0.16",
+    "slotscheck>=0.20,<0.21",
+    "build",
+    "packaging>=26.2",
+    "pyperf>=2.10,<3",
+    "setuptools-rust",
     "twine>=6.2.0",
 ]
 docs = [
@@ -76,30 +82,24 @@ Repository = "https://github.com/ariebovenberg/whenever"
 Issues = "https://github.com/ariebovenberg/whenever/issues"
 Changelog = "https://github.com/ariebovenberg/whenever/blob/main/CHANGELOG.md"
 
-[tool.black]
-target-version = ['py310']
+[tool.ruff]
 line-length = 79
-include = '\.pyi?$'
-exclude = '''
-/(
-    \.eggs
-  | \.hg
-  | \.git
-  | \.mypy_cache
-  | \.venv
-  | _build
-  | build
-  | dist
-)/
-'''
+target-version = "py310"
+exclude = ["pysrc/whenever/_typing_312.py"]
 
-[tool.isort]
-profile = 'black'
-line_length = 79
-combine_as_imports = true
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
 
-[tool.uv]
-default-groups = "all"
+[tool.ruff.lint.per-file-ignores]
+"_custom_pybuild/backend.py" = ["F403"]
+"docs/conf.py" = ["E402"]
+"pysrc/whenever/__init__.py" = ["F401", "F403", "F405"]
+"pysrc/whenever/_core.py" = ["F401", "F403", "F405"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+[tool.ruff.format]
 
 [tool.mypy]
 warn_unused_ignores = true

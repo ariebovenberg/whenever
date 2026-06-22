@@ -15,7 +15,9 @@ from whenever import _pywhenever as W
 assert sys.version_info >= (
     3,
     13,
-), "This script requires Python 3.13 or later due to how docstrings are rendered."
+), (
+    "This script requires Python 3.13 or later due to how docstrings are rendered."
+)
 
 # Types defined in pure Python only (not in Rust extension)
 _PURE_PYTHON_TYPES = {"YearMonth", "MonthDay", "IsoWeekDate"}
@@ -147,7 +149,8 @@ def method_doc(method):
             str(inspect.signature(method))
             # I escape the parens (\x28) because they mess up some LSPs
             # and text editors when viewing this script.
-            .replace("\x28self", "\x28$self").replace("\x28cls", "\x28$type")
+            .replace("\x28self", "\x28$self")
+            .replace("\x28cls", "\x28$type")
         )
     doc = method.__doc__.replace('"', '\\"')
     sig_prefix = f"{method.__name__}{sig}\n--\n\n"

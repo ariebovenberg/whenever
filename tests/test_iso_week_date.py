@@ -2,7 +2,6 @@ import pickle
 from copy import copy, deepcopy
 
 import pytest
-
 from whenever import Date, IsoWeekDate, Weekday
 
 MONDAY = Weekday.MONDAY
@@ -15,7 +14,6 @@ SUNDAY = Weekday.SUNDAY
 
 
 class TestConstructor:
-
     def test_basic(self):
         iwd = IsoWeekDate(2024, 1, MONDAY)
         assert iwd.year == 2024
@@ -88,7 +86,6 @@ class TestConstructor:
 
 
 class TestProperties:
-
     def test_year(self):
         assert IsoWeekDate(2024, 1, MONDAY).year == 2024
 
@@ -109,7 +106,6 @@ class TestProperties:
 
 
 class TestDate:
-
     def test_basic(self):
         assert IsoWeekDate(2024, 1, MONDAY).date() == Date(2024, 1, 1)
 
@@ -131,7 +127,6 @@ class TestDate:
 
 
 class TestWeeksInYear:
-
     def test_long_year(self):
         assert IsoWeekDate(2004, 1, MONDAY).weeks_in_year() == 53
 
@@ -140,7 +135,6 @@ class TestWeeksInYear:
 
 
 class TestFormatParse:
-
     def test_format_iso(self):
         assert IsoWeekDate(2024, 1, MONDAY).format_iso() == "2024-W01-1"
 
@@ -183,7 +177,6 @@ class TestFormatParse:
 
 
 class TestComparison:
-
     def test_equal(self):
         assert IsoWeekDate(2024, 1, MONDAY) == IsoWeekDate(2024, 1, MONDAY)
 
@@ -227,7 +220,6 @@ class TestComparison:
 
 
 class TestHash:
-
     def test_equal_values_same_hash(self):
         a = IsoWeekDate(2024, 1, MONDAY)
         b = IsoWeekDate(2024, 1, MONDAY)
@@ -239,7 +231,6 @@ class TestHash:
 
 
 class TestReplace:
-
     def test_replace_week(self):
         iwd = IsoWeekDate(2024, 1, MONDAY)
         assert iwd.replace(week=10) == IsoWeekDate(2024, 10, MONDAY)
@@ -269,7 +260,6 @@ class TestReplace:
 
 
 class TestPickle:
-
     def test_roundtrip(self):
         iwd = IsoWeekDate(2024, 1, MONDAY)
         assert pickle.loads(pickle.dumps(iwd)) == iwd
@@ -288,7 +278,6 @@ class TestPickle:
 
 
 class TestMinMax:
-
     def test_min_exists(self):
         assert isinstance(IsoWeekDate.MIN, IsoWeekDate)
 

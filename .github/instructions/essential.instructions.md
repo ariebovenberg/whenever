@@ -19,8 +19,8 @@ Key directories:
 
 - `make build` — build the Rust extension and copy .so
 - `make clean` — remove build artifacts (to test pure Python)
-- `make format` — format all code (Rust + Python). **Unformatted code isn't finished.**
-- `make ci-lint` — run the full CI lint suite (flake8, twine check, etc.)
+- `make fix` — format all code (Rust + Python). **Unformatted code isn't finished.**
+- `make ci-lint` — run the full CI lint suite (Ruff, twine check, etc.)
 - `make clean-ext` - remove the compiled extension (so that you can test the pure Python implementation)
 - `pytest tests` — run Python tests
 - `cargo test` — run Rust tests

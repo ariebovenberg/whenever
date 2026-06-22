@@ -8,7 +8,6 @@ from typing import no_type_check
 from unittest.mock import patch
 
 import pytest
-
 from whenever import (
     _EXTENSION_LOADED,
     Date,
@@ -82,9 +81,9 @@ def test_no_attr_on_module():
     reason="time-machine doesn't support PyPy",
 )
 def test_time_machine():
-    import time_machine
+    time_machine = pytest.importorskip("time_machine")
 
-    with time_machine.travel("1980-03-02 02:00 UTC"):
+    with time_machine.travel("1980-03-02T02:00+00:00"):
         assert Instant.now() == Instant.from_utc(1980, 3, 2, hour=2)
 
 
@@ -155,9 +154,9 @@ def test_text_signature():
         if m.__name__.startswith("_") or m.__name__ in deprecated:
             continue
         sig = m.__text_signature__
-        assert (
-            sig is not None
-        ), f"{m} missing __text_signature__. Hint: try running `python scripts/generate_docstrings.py > src/docstrings.py`"
+        assert sig is not None, (
+            f"{m} missing __text_signature__. Hint: try running `python scripts/generate_docstrings.py > src/docstrings.py`"
+        )
         signature(m)  # raises ValueError if invalid
 
 

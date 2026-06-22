@@ -1,10 +1,12 @@
 from __future__ import annotations
+
+import importlib.metadata
+
 import sphinx
 
 sphinx.SPHINX_RUNNING = True
 
 # -- Project information -----------------------------------------------------
-import importlib.metadata
 
 metadata = importlib.metadata.metadata("whenever")
 
@@ -18,7 +20,10 @@ release = metadata["Version"]
 nitpicky = True
 nitpick_ignore = [
     ("py:class", "whenever._pywhenever._T"),
-    ("py:class", "TypeAliasForwardRef"),  # https://github.com/sphinx-doc/sphinx/issues/11327
+    (
+        "py:class",
+        "TypeAliasForwardRef",
+    ),  # https://github.com/sphinx-doc/sphinx/issues/11327
 ]
 extensions = [
     "sphinx.ext.autodoc",

@@ -5,7 +5,6 @@ from copy import copy, deepcopy
 from typing import Any
 
 import pytest
-
 from whenever import (
     DateDelta,
     DateTimeDelta,
@@ -34,7 +33,6 @@ def make_ddelta(**kwargs: Any) -> DateDelta:
 
 
 class TestInit:
-
     def test_init(self):
         d = DateDelta(years=1, months=2, weeks=3, days=11)
         assert d.in_months_days() == (14, 32)
@@ -193,8 +191,8 @@ INVALID_DDELTAS = [
     "--P2D",
     "++P2D",
     "1P2",
-    f"P{MAX_I64+2}Y",
-    f"P-{MAX_I64+2}Y",
+    f"P{MAX_I64 + 2}Y",
+    f"P-{MAX_I64 + 2}Y",
     "P3R",  # invalid unit
     "PT3M",  # time component
     "P3.4Y",  # decimal
@@ -239,7 +237,6 @@ VALID_DDELTAS = [
 
 
 class TestParseIso:
-
     @pytest.mark.parametrize("input, expect", VALID_DDELTAS)
     def test_valid(self, input, expect):
         assert DateDelta.parse_iso(input) == expect
@@ -369,7 +366,6 @@ class TestMultiply:
 
 
 class TestAdd:
-
     def test_same_type(self):
         p = DateDelta(years=1, months=2, weeks=3, days=4)
         q = DateDelta(years=-1, months=3, weeks=-1)
@@ -410,7 +406,6 @@ class TestAdd:
 
 
 class TestSubtract:
-
     def test_same_type(self):
         p = DateDelta(years=1, months=2, weeks=3, days=4)
         q = DateDelta(years=-1, months=3, weeks=-1)
@@ -504,7 +499,6 @@ def test_cannot_subclass():
 
 
 class TestDeprecationWarnings:
-
     def test_init(self):
         with pytest.warns(WheneverDeprecationWarning, match="DateDelta"):
             DateDelta(months=1)

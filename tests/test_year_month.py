@@ -3,7 +3,6 @@ import re
 from copy import copy, deepcopy
 
 import pytest
-
 from whenever import Date, YearMonth
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
@@ -14,7 +13,6 @@ pytestmark = pytest.mark.filterwarnings(
 
 
 class TestInit:
-
     def test_valid(self):
         assert YearMonth(2021, 12) is not None
         assert YearMonth(1, 1) is not None
@@ -124,7 +122,6 @@ def test_repr():
 
 
 class TestParseIso:
-
     @pytest.mark.parametrize(
         "s, expected",
         [
@@ -244,7 +241,6 @@ def test_cannot_subclass():
 
 
 class TestDaysInMonth:
-
     @pytest.mark.parametrize(
         "ym, expected",
         [
@@ -272,7 +268,6 @@ class TestDaysInMonth:
 
 
 class TestDaysInYear:
-
     @pytest.mark.parametrize(
         "ym, expected",
         [
@@ -287,7 +282,6 @@ class TestDaysInYear:
 
 
 class TestInLeapYear:
-
     @pytest.mark.parametrize(
         "ym, expected",
         [

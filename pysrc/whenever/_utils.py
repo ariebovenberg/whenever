@@ -228,7 +228,9 @@ def available_timezones() -> set[str]:
     for base in TZPATH:
         zones.update(_find_all_tznames(base))
 
-    zones.discard("posixrules")  # a special file that shouldn't be included
+    # special files that shouldn't be included
+    zones.discard("posixrules")
+    zones.discard("localtime")
     return zones
 
 

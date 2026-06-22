@@ -3,7 +3,6 @@ import re
 from copy import copy, deepcopy
 
 import pytest
-
 from whenever import Date, MonthDay
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
@@ -14,7 +13,6 @@ pytestmark = pytest.mark.filterwarnings(
 
 
 class TestInit:
-
     def test_valid(self):
         assert MonthDay(12, 3) is not None
         assert MonthDay(1, 1) is not None
@@ -132,7 +130,6 @@ def test_repr():
 
 
 class TestParseIso:
-
     @pytest.mark.parametrize(
         "s, expected",
         [
