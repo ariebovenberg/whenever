@@ -23,8 +23,8 @@ INVALID_DDELTAS = [
     "--P2D",
     "++P2D",
     "1P2",
-    f"P{MAX_I64+2}Y",
-    f"P-{MAX_I64+2}Y",
+    f"P{MAX_I64 + 2}Y",
+    f"P-{MAX_I64 + 2}Y",
     "P3R",  # invalid unit
     "PT3M",  # time component
     "P3.4Y",  # decimal

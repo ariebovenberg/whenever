@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 # Almost everything is lazily imported, to speed up initial import time.
 def __getattr__(name: str) -> object:
     # When any name from a group is first accessed, the whole module is loaded
@@ -33,11 +34,7 @@ def __getattr__(name: str) -> object:
 # Ensures not-yet-imported names are still included in dir() output
 def __dir__() -> list[str]:
     return sorted(
-        (
-            globals().keys()
-            | _LAZY_NAMES.keys()
-            | {"TZPATH", "AnyDelta"}
-        )
+        (globals().keys() | _LAZY_NAMES.keys() | {"TZPATH", "AnyDelta"})
         - {"_LAZY_MODULES", "_LAZY_NAMES"}
     )
 
