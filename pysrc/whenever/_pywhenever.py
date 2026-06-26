@@ -1467,6 +1467,36 @@ class Time(_Base):
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
         return Time._from_py_unchecked(self._py.replace(**kwargs), nanos)
 
+    def add(self, delta: TimeDelta, /) -> Time:
+        """Add a :class:`~whenever.TimeDelta` to this time, wrapping around midnight.
+
+        >>> Time(22, 0).add(hours(3))
+        Time("01:00:00")
+        >>> Time(0, 0).add(hours(-1))
+        Time("23:00:00")
+        """
+        if not isinstance(delta, TimeDelta):
+            raise TypeError(
+                f"add() argument must be a TimeDelta, got {type(delta)!r}"
+            )
+        return Time._from_ns_since_midnight(
+            (self._to_ns_since_midnight() + delta._total_ns) % 86_400_000_000_000
+        )
+
+    def subtract(self, delta: TimeDelta, /) -> Time:
+        """Subtract a :class:`~whenever.TimeDelta` from this time, wrapping around midnight.
+
+        >>> Time(1, 0).subtract(hours(3))
+        Time("22:00:00")
+        """
+        if not isinstance(delta, TimeDelta):
+            raise TypeError(
+                f"subtract() argument must be a TimeDelta, got {type(delta)!r}"
+            )
+        return Time._from_ns_since_midnight(
+            (self._to_ns_since_midnight() - delta._total_ns) % 86_400_000_000_000
+        )
+
     def _to_ns_since_midnight(self) -> int:
         return (
             self._py.hour * 3_600_000_000_000
