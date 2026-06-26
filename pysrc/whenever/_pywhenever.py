@@ -243,8 +243,7 @@ def _start_of_dt(dt: _datetime, unit: str) -> _datetime:
         return dt
     elif unit == "week":
         raise ValueError(
-            "unit 'week' is ambiguous. "
-            "Use 'week_mon' or 'week_sun' instead."
+            "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead."
         )
     else:
         raise ValueError(
@@ -281,8 +280,7 @@ def _end_of_dt(dt: _datetime, unit: str) -> _datetime:
         return dt
     elif unit == "week":
         raise ValueError(
-            "unit 'week' is ambiguous. "
-            "Use 'week_mon' or 'week_sun' instead."
+            "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead."
         )
     else:
         raise ValueError(
@@ -10421,9 +10419,7 @@ if not SPHINX_RUNNING:  # pragma: no branch
         _member = globals()[_name]
         if isinstance(_member, (type, _ftype)) and (
             getattr(_member, "__module__", "") or ""
-        ).startswith(
-            "whenever"
-        ):  # pragma: no branch
+        ).startswith("whenever"):  # pragma: no branch
             _member.__module__ = "whenever"
 
 # disable further subclassing

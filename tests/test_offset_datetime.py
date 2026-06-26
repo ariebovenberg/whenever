@@ -2652,7 +2652,9 @@ class TestEndOf:
     @suppress(StaleOffsetWarning)
     def test_invalid_unit(self):
         with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
-            OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5)).end_of("invalid")  # type: ignore[arg-type]
+            OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5)).end_of(
+                "invalid"
+            )  # type: ignore[arg-type]
 
     @suppress(StaleOffsetWarning)
     def test_week_value_error(self):
