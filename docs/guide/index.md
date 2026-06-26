@@ -30,4 +30,5 @@ For more details, see the {ref}`API reference <api>`.
    system-tz
    testing
    warnings
+   migrating-from-arrow-pendulum
 ```
