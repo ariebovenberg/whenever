@@ -295,11 +295,13 @@ impl TzStore {
             // type 1: Path to a TZif file
             1 => {
                 let path = PathBuf::from(tz_value);
-                let tzif = self
-                    .read_tzif_at_path(&path, None)
-                    .ok_or_else_raise(self.exc_notfound, || {
+                let tzif = self.read_tzif_at_path(&path, None).ok_or_else_raise(
+                    self.exc_notfound,
+                    || {
+                        // TODO: better print?
                         format!("No time zone found at path {path:?}")
-                    })?;
+                    },
+                )?;
                 Ok(Arc::new(tzif))
             }
             // type 2: zoneinfo key OR posix TZ string (we're unsure which)

@@ -144,7 +144,9 @@ pub(crate) enum Unit {
     Week,
 }
 
+// TODO: rename
 impl Unit {
+    // TODO: use state
     #[allow(clippy::too_many_arguments)]
     fn from_py(
         s: PyObj,

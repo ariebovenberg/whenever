@@ -1,5 +1,5 @@
 use crate::{
-    classes::plain_datetime::DateTime,
+    classes::{date::Date, plain_datetime::DateTime},
     common::{
         fmt::{self, Sink, format_2_digits},
         parse::Scan,
@@ -26,7 +26,30 @@ pub struct Time {
 }
 
 impl Time {
-    pub(crate) const fn pyhash(&self) -> Py_hash_t {
+    pub(crate) const MIN: Time = Time {
+        hour: 0,
+        minute: 0,
+        second: 0,
+        subsec: SubSecNanos::MIN,
+    };
+
+    pub(crate) const MAX: Self = Self {
+        hour: 23,
+        minute: 59,
+        second: 59,
+        subsec: SubSecNanos::MAX,
+    };
+
+    pub(crate) fn new(hour: u8, minute: u8, second: u8, subsec: SubSecNanos) -> Option<Self> {
+        (hour < 24 && minute < 60 && second < 60).then_some(Self {
+            hour,
+            minute,
+            second,
+            subsec,
+        })
+    }
+
+    pub(crate) const fn pyhash(self) -> Py_hash_t {
         #[cfg(target_pointer_width = "64")]
         {
             ((self.hour as Py_hash_t) << 48)
@@ -45,7 +68,7 @@ impl Time {
         }
     }
 
-    pub(crate) const fn total_seconds(&self) -> u32 {
+    pub(crate) const fn total_seconds(self) -> u32 {
         self.hour as u32 * 3600 + self.minute as u32 * 60 + self.second as u32
     }
 
@@ -58,8 +81,15 @@ impl Time {
         }
     }
 
-    pub(crate) const fn total_nanos(&self) -> u64 {
+    pub(crate) const fn total_nanos(self) -> u64 {
         self.subsec.get() as u64 + self.total_seconds() as u64 * 1_000_000_000
+    }
+
+    pub(crate) const fn on(self, d: Date) -> DateTime {
+        DateTime {
+            date: d,
+            time: self,
+        }
     }
 
     pub(crate) fn from_total_nanos_unchecked(nanos: u64) -> Self {
@@ -206,12 +236,89 @@ impl Time {
         }
     }
 
-    pub(crate) const MIDNIGHT: Time = Time {
-        hour: 0,
-        minute: 0,
-        second: 0,
-        subsec: SubSecNanos::MIN,
-    };
+    pub(crate) fn start_of(self, u: BoundUnit) -> Self {
+        match u {
+            BoundUnit::Hour => Time {
+                hour: self.hour,
+                ..Time::MIN
+            },
+            BoundUnit::Minute => Time {
+                second: 0,
+                subsec: SubSecNanos::MIN,
+                ..self
+            },
+            BoundUnit::Second => Time {
+                subsec: SubSecNanos::MIN,
+                ..self
+            },
+        }
+    }
+
+    pub(crate) fn end_of(self, u: BoundUnit) -> Self {
+        match u {
+            BoundUnit::Hour => Time {
+                hour: self.hour,
+                ..Time::MAX
+            },
+            BoundUnit::Minute => Time {
+                second: 59,
+                subsec: SubSecNanos::MAX,
+                ..self
+            },
+            BoundUnit::Second => Time {
+                subsec: SubSecNanos::MAX,
+                ..self
+            },
+        }
+    }
+
+    /// Start of the next unit of time, returning the new time and
+    /// whether it has rolled over to the next day
+    pub(crate) fn next_start_of(self, u: BoundUnit) -> (Self, bool) {
+        match u {
+            BoundUnit::Hour => (
+                Time {
+                    hour: (self.hour + 1) % 24,
+                    ..Time::MIN
+                },
+                self.hour == 23,
+            ),
+            BoundUnit::Minute => (
+                Time {
+                    hour: (self.hour + (self.minute == 59) as u8) % 24,
+                    minute: (self.minute + 1) % 60,
+                    ..Time::MIN
+                },
+                self.minute == 59 && self.hour == 23,
+            ),
+            BoundUnit::Second => (
+                Time {
+                    hour: (self.hour + (self.minute == 59 && self.second == 59) as u8) % 24,
+                    minute: (self.minute + (self.second == 59) as u8) % 60,
+                    second: (self.second + 1) % 60,
+                    ..Time::MIN
+                },
+                self.second == 59 && self.minute == 59 && self.hour == 23,
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BoundUnit {
+    Hour,
+    Minute,
+    Second,
+}
+
+impl BoundUnit {
+    pub(crate) fn in_secs(self) -> i32 {
+        match self {
+            BoundUnit::Hour => 3600,
+            BoundUnit::Minute => 60,
+            BoundUnit::Second => 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -300,8 +407,8 @@ impl Display for Time {
 }
 
 pub(crate) const SINGLETONS: &[(&CStr, Time); 4] = &[
-    (c"MIN", Time::MIDNIGHT),
-    (c"MIDNIGHT", Time::MIDNIGHT),
+    (c"MIN", Time::MIN),
+    (c"MIDNIGHT", Time::MIN),
     (
         c"NOON",
         Time {
@@ -311,15 +418,7 @@ pub(crate) const SINGLETONS: &[(&CStr, Time); 4] = &[
             subsec: SubSecNanos::MIN,
         },
     ),
-    (
-        c"MAX",
-        Time {
-            hour: 23,
-            minute: 59,
-            second: 59,
-            subsec: SubSecNanos::MAX,
-        },
-    ),
+    (c"MAX", Time::MAX),
 ];
 
 fn __new__(cls: HeapType<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
@@ -516,6 +615,7 @@ fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyResult<Owned<PyTuple>> {
     ]
     .into_pytuple()
 }
+
 fn on(cls: HeapType<Time>, slf: Time, arg: PyObj) -> PyReturn {
     let state = cls.state();
 

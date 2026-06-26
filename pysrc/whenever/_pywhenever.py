@@ -289,6 +289,54 @@ def _end_of_dt(dt: _datetime, unit: str) -> _datetime:
         )
 
 
+def _start_of_next_dt(dt: _datetime, unit: str) -> _datetime:
+    if unit == "year":
+        return dt.replace(
+            year=dt.year + 1,
+            month=1,
+            day=1,
+            hour=0,
+            minute=0,
+            second=0,
+        )
+    elif unit == "month":
+        year, month = divmod(dt.month, 12)
+        return dt.replace(
+            year=dt.year + year,
+            month=month + 1,
+            day=1,
+            hour=0,
+            minute=0,
+            second=0,
+        )
+    elif unit == "week_mon":
+        days_fwd = 8 - dt.isoweekday()
+        d = dt + _timedelta(days=days_fwd)
+        return d.replace(hour=0, minute=0, second=0)
+    elif unit == "week_sun":
+        days_fwd = 7 - dt.isoweekday() % 7
+        d = dt + _timedelta(days=days_fwd)
+        return d.replace(hour=0, minute=0, second=0)
+    elif unit == "day":
+        # OPTIMIZE: computer days(1), hours(1) etc. as singletons
+        return (dt + _timedelta(days=1)).replace(hour=0, minute=0, second=0)
+    elif unit == "hour":
+        return (dt + _timedelta(hours=1)).replace(minute=0, second=0)
+    elif unit == "minute":
+        return (dt + _timedelta(minutes=1)).replace(second=0)
+    elif unit == "second":
+        return dt + _timedelta(seconds=1)
+    elif unit == "week":
+        raise ValueError(
+            "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead."
+        )
+    else:
+        raise ValueError(
+            f"Invalid unit: {unit!r}. "
+            f"Valid units: {', '.join(map(repr, _UNITS_FOR_START_END_OF))}"
+        )
+
+
 @final
 class Date(_Base):
     """A date without a time component.
@@ -1764,7 +1812,7 @@ class TimeDelta(_Base):
             milliseconds: float = 0,
             microseconds: float = 0,
             nanoseconds: int = 0,
-            days_assumed_24h_ok: bool = False,
+            days_assumed_24h_ok: bool = UNSET,
         ) -> None: ...
 
     def __init__(
@@ -1778,7 +1826,7 @@ class TimeDelta(_Base):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        days_assumed_24h_ok: bool = False,
+        days_assumed_24h_ok: bool = UNSET,
     ) -> None:
         assert type(nanoseconds) is int  # catch this common mistake
         if (weeks or days) and not days_assumed_24h_ok:
@@ -1831,7 +1879,7 @@ class TimeDelta(_Base):
         ],
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = UNSET,
         _warn_stacklevel: int = 2,
-        days_assumed_24h_ok: bool = False,
+        days_assumed_24h_ok: bool = UNSET,
     ) -> float | int:
         """The total size in the given unit, as a float (or int for nanoseconds)
 
@@ -2074,7 +2122,7 @@ class TimeDelta(_Base):
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = UNSET,
-        days_assumed_24h_ok: bool = False,
+        days_assumed_24h_ok: bool = UNSET,
     ) -> ItemizedDelta:
         """Convert to a :class:`ItemizedDelta` with the specified units
 
@@ -2349,7 +2397,7 @@ class TimeDelta(_Base):
         *,
         increment: int = 1,
         mode: RoundModeStr = "half_even",
-        days_assumed_24h_ok: bool = False,
+        days_assumed_24h_ok: bool = UNSET,
     ) -> TimeDelta:
         """Round the delta to the specified unit and increment,
         or to a multiple of another :class:`TimeDelta`.
@@ -6126,7 +6174,7 @@ class Instant(_ExactTime):
             milliseconds: float = 0,
             microseconds: float = 0,
             nanoseconds: int = 0,
-            days_assumed_24h_ok: bool = False,
+            days_assumed_24h_ok: bool = UNSET,
         ) -> Instant: ...
 
     @no_type_check
@@ -6154,7 +6202,7 @@ class Instant(_ExactTime):
             milliseconds: float = 0,
             microseconds: float = 0,
             nanoseconds: int = 0,
-            days_assumed_24h_ok: bool = False,
+            days_assumed_24h_ok: bool = UNSET,
         ) -> Instant: ...
 
     @no_type_check
@@ -6196,7 +6244,7 @@ class Instant(_ExactTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        days_assumed_24h_ok: bool = False,
+        days_assumed_24h_ok: bool = UNSET,
     ) -> Instant:
         if (weeks or days) and not days_assumed_24h_ok:
             warn(
@@ -6442,7 +6490,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         /,
         *,
         ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = False,
+        stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """Create an instance from the current time.
 
@@ -6533,7 +6581,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         *,
         offset: int | TimeDelta,
         ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = False,
+        stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in seconds).
 
@@ -6574,7 +6622,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         *,
         offset: int | TimeDelta,
         ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = False,
+        stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in milliseconds).
 
@@ -6609,7 +6657,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         *,
         offset: int | TimeDelta,
         ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = False,
+        stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in nanoseconds).
 
@@ -6673,7 +6721,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         self,
         /,
         ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = False,
+        stale_offset_ok: bool = UNSET,
         **kwargs: Any,
     ) -> OffsetDateTime:
         """Construct a new instance with the given fields replaced.
@@ -6715,7 +6763,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         /,
         *,
         ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = False,
+        stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """Construct a new instance with the date replaced.
 
@@ -6746,7 +6794,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         /,
         *,
         ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = False,
+        stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """Construct a new instance with the time replaced.
 
@@ -6787,7 +6835,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         ],
         /,
         *,
-        stale_offset_ok: bool = False,
+        stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """The start of the given unit
 
@@ -6823,7 +6871,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         ],
         /,
         *,
-        stale_offset_ok: bool = False,
+        stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """The end of the given unit
 
@@ -7129,7 +7177,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         /,
         *,
         ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = False,
+        stale_offset_ok: bool = UNSET,
         **kwargs,
     ) -> OffsetDateTime:
         if ignore_dst is not UNSET:
@@ -7219,7 +7267,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         increment: int = 1,
         mode: RoundModeStr = "half_even",
         ignore_dst: bool = UNSET,
-        stale_offset_ok: bool = False,
+        stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """Round the datetime to the specified unit and increment,
         or to a multiple of a :class:`TimeDelta`.
@@ -7853,6 +7901,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         self._nanos = d.microsecond * 1_000
         self._tz = _tz
 
+    # TODO: warn in replace methods that end_of etc. exist.
     def replace_date(
         self, date: Date, /, disambiguate: DisambiguateStr = UNSET
     ) -> ZonedDateTime:
@@ -8436,11 +8485,11 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         See also :meth:`start_of`
         """
-        new_dt = _end_of_dt(self._py_dt, unit)
+        new_dt = _start_of_next_dt(self._py_dt, unit)
         naive = new_dt.replace(tzinfo=None)
         return self._from_py_unchecked(
-            self._resolve_for_unit(naive, unit), _MAX_SUBSEC_NANOS, self._tz
-        )
+            self._resolve_for_unit(naive, unit), 0, self._tz
+        ).subtract(nanoseconds=1)
 
     def round(
         self,
@@ -9012,7 +9061,7 @@ class PlainDateTime(_LocalTime):
         /,
         *,
         ignore_dst: bool = UNSET,
-        naive_arithmetic_ok: bool = False,
+        naive_arithmetic_ok: bool = UNSET,
     ) -> TimeDelta:
         """Calculate the exact time difference between two plain datetimes.
 
@@ -9075,7 +9124,7 @@ class PlainDateTime(_LocalTime):
         in_units: Sequence[DeltaUnitStr] = UNSET,
         round_mode: RoundModeStr = UNSET,
         round_increment: int = UNSET,
-        naive_arithmetic_ok: bool = False,
+        naive_arithmetic_ok: bool = UNSET,
     ) -> ItemizedDelta | float:
         """Calculate the duration since another PlainDateTime,
         in terms of the specified units.
@@ -9128,7 +9177,7 @@ class PlainDateTime(_LocalTime):
         in_units: Sequence[DeltaUnitStr] = UNSET,
         round_mode: RoundModeStr = UNSET,
         round_increment: int = UNSET,
-        naive_arithmetic_ok: bool = False,
+        naive_arithmetic_ok: bool = UNSET,
     ) -> ItemizedDelta | float:
         """Inverse of the ``since()`` method. See :meth:`since` for more information."""
         return _plain_since(
@@ -9227,7 +9276,7 @@ class PlainDateTime(_LocalTime):
         /,
         *,
         ignore_dst: bool = UNSET,
-        naive_arithmetic_ok: bool = False,
+        naive_arithmetic_ok: bool = UNSET,
         **kwargs,
     ) -> PlainDateTime:
         if ignore_dst is not UNSET:
@@ -9271,7 +9320,7 @@ class PlainDateTime(_LocalTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        naive_arithmetic_ok: bool = False,
+        naive_arithmetic_ok: bool = UNSET,
     ) -> PlainDateTime:
         py_dt_with_new_date = self.replace_date(
             self.date()

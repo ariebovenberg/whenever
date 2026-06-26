@@ -1,6 +1,6 @@
 ---
-applyTo:
-  - "src/**"
+name: rust-ffi
+description: "Instructions for using whenever's internal Rust FFI abstractions"
 ---
 
 # Rust FFI Instructions

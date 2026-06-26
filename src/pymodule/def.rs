@@ -696,7 +696,7 @@ pub(crate) struct State {
     pub(crate) str_week_sun: Owned<PyObj>,
 
     pub(crate) time_patch: Patch,
-    pub(crate) tz_store: TzStore,
+    pub(crate) tz_store: TzStore, // TODO: rename tzdb?
 }
 
 impl State {

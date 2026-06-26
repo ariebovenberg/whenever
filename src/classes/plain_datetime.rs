@@ -1,13 +1,12 @@
 use crate::{
     classes::{
-        date::Date,
+        date::{self, Date},
         date_delta::DateDelta,
         instant::Instant,
         itemized_date_delta::ItemizedDateDelta,
         itemized_delta::{ItemizedDelta, handle_delta_unit_kwargs},
-        time::Time,
+        time::{self, Time},
         time_delta::TimeDelta,
-        zoned_datetime::ZonedDateTime,
     },
     common::{
         ambiguity::*,
@@ -69,12 +68,55 @@ pub(crate) const SINGLETONS: &[(&CStr, DateTime); 2] = &[
     ),
 ];
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub(crate) enum BoundaryUnit {
+    Date(date::BoundaryUnit),
+    Time(time::BoundUnit),
+    Day,
+}
+
+impl BoundaryUnit {
+    pub(crate) fn from_py(state: &State, obj: PyObj) -> PyResult<Self> {
+        find_interned(obj, |v, eq| {
+            if eq(v, *state.str_year) {
+                Some(Ok(BoundaryUnit::Date(date::BoundaryUnit::Year)))
+            } else if eq(v, *state.str_month) {
+                Some(Ok(BoundaryUnit::Date(date::BoundaryUnit::Month)))
+            } else if eq(v, *state.str_week_mon) {
+                Some(Ok(BoundaryUnit::Date(date::BoundaryUnit::WeekMon)))
+            } else if eq(v, *state.str_week_sun) {
+                Some(Ok(BoundaryUnit::Date(date::BoundaryUnit::WeekSun)))
+            } else if eq(v, *state.str_day) {
+                Some(Ok(BoundaryUnit::Day))
+            } else if eq(v, *state.str_hour) {
+                Some(Ok(BoundaryUnit::Time(time::BoundUnit::Hour)))
+            } else if eq(v, *state.str_minute) {
+                Some(Ok(BoundaryUnit::Time(time::BoundUnit::Minute)))
+            } else if eq(v, *state.str_second) {
+                Some(Ok(BoundaryUnit::Time(time::BoundUnit::Second)))
+            } else if eq(v, *state.str_week) {
+                Some(raise_value_err(
+                    "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.",
+                ))
+            } else {
+                None
+            }
+        })
+        .transpose()?
+        .ok_or_else_value_err(|| format!("Invalid unit: {obj}"))
+    }
+}
+
 impl DateTime {
     pub(crate) fn assume_utc(self) -> Instant {
         Instant {
             epoch: self.date.epoch_at(self.time),
             subsec: self.time.subsec,
         }
+    }
+
+    pub(crate) fn local_epoch(self) -> EpochSecs {
+        self.date.epoch_at(self.time)
     }
 
     pub(crate) fn diff(self, other: Self) -> TimeDelta {
@@ -97,8 +139,9 @@ impl DateTime {
         self.assume_utc().shift(t).map(|i| i.utc_datetime())
     }
 
+    // TODO: combine with the other conversion method? Rename?
     // FUTURE: is this actually worth it?
-    pub(crate) fn change_offset(self, s: OffsetDelta) -> Option<Self> {
+    pub(crate) fn shift_by_offset(self, s: OffsetDelta) -> Option<Self> {
         let Self { date, time } = self;
         // Safety: both values sufficiently within i32 range
         let secs_since_midnight = time.total_seconds() as i32 + s.get();
@@ -120,164 +163,47 @@ impl DateTime {
         })
     }
 
-    fn week_unit_error(state: &State, unit_obj: PyObj) -> PyErrMarker {
-        if unit_obj.py_eq(*state.str_week).unwrap_or(false) {
-            raise_value_err::<(), _>(
-                "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.",
-            )
-            .unwrap_err()
-        } else {
-            raise_value_err::<(), _>(format!("Invalid value for unit: {unit_obj}")).unwrap_err()
-        }
-    }
-
-    /// Compute the start-of-unit DateTime. Returns `(DateTime, bool)` where
-    /// the bool indicates whether the result needs DST-aware resolution
-    /// (true for year/month/day/week, false for sub-day units).
-    pub(crate) fn start_of_unit(
-        self,
-        unit_obj: PyObj,
-        state: &State,
-    ) -> PyResult<(DateTime, bool)> {
-        let d = self.date;
-        find_interned(unit_obj, |v, eq| {
-            if eq(v, *state.str_year) {
-                Some(Ok(Date {
-                    year: d.year,
-                    month: Month::January,
-                    day: 1,
-                }))
-            } else if eq(v, *state.str_month) {
-                Some(Ok(Date {
-                    year: d.year,
-                    month: d.month,
-                    day: 1,
-                }))
-            } else if eq(v, *state.str_week_mon) {
-                Some(d.start_of_week_mon().ok_or_range_err())
-            } else if eq(v, *state.str_week_sun) {
-                Some(d.start_of_week_sun().ok_or_range_err())
-            } else if eq(v, *state.str_day) {
-                Some(Ok(d))
-            } else {
-                None
-            }
-        })
-        .transpose()?
-        .map(|date| {
-            (
-                DateTime {
-                    date,
-                    time: Time::MIDNIGHT,
-                },
-                true,
-            )
-        })
-        .or_else(|| {
-            find_interned(unit_obj, |v, eq| {
-                if eq(v, *state.str_hour) {
-                    Some(Time {
-                        hour: self.time.hour,
-                        minute: 0,
-                        second: 0,
-                        subsec: SubSecNanos::MIN,
-                    })
-                } else if eq(v, *state.str_minute) {
-                    Some(Time {
-                        hour: self.time.hour,
-                        minute: self.time.minute,
-                        second: 0,
-                        subsec: SubSecNanos::MIN,
-                    })
-                } else if eq(v, *state.str_second) {
-                    Some(Time {
-                        hour: self.time.hour,
-                        minute: self.time.minute,
-                        second: self.time.second,
-                        subsec: SubSecNanos::MIN,
-                    })
-                } else {
-                    None
-                }
-            })
-            .map(|time| (DateTime { date: d, time }, false))
-        })
-        .ok_or_else(|| Self::week_unit_error(state, unit_obj))
-    }
-
-    /// Compute the end-of-unit DateTime. Returns `(DateTime, bool)` where
-    /// the bool indicates whether the result needs DST-aware resolution.
-    pub(crate) fn end_of_unit(self, unit_obj: PyObj, state: &State) -> PyResult<(DateTime, bool)> {
-        let d = self.date;
-        let max_time = Time {
-            hour: 23,
-            minute: 59,
-            second: 59,
-            subsec: SubSecNanos::MAX,
+    /// Compute the start-of-unit DateTime
+    pub(crate) fn start_of_unit(self, unit: BoundaryUnit) -> Option<DateTime> {
+        let (date, time) = match unit {
+            BoundaryUnit::Date(u) => (self.date.start_of(u)?, Time::MIN),
+            BoundaryUnit::Time(u) => (self.date, self.time.start_of(u)),
+            BoundaryUnit::Day => (self.date, Time::MIN),
         };
-        find_interned(unit_obj, |v, eq| {
-            if eq(v, *state.str_year) {
-                Some(Ok(Date {
-                    year: d.year,
-                    month: Month::December,
-                    day: 31,
-                }))
-            } else if eq(v, *state.str_month) {
-                Some(Ok(Date {
-                    year: d.year,
-                    month: d.month,
-                    day: d.year.days_in_month(d.month),
-                }))
-            } else if eq(v, *state.str_week_mon) {
-                Some(d.end_of_week_mon().ok_or_range_err())
-            } else if eq(v, *state.str_week_sun) {
-                Some(d.end_of_week_sun().ok_or_range_err())
-            } else if eq(v, *state.str_day) {
-                Some(Ok(d))
-            } else {
-                None
+        Some(DateTime { date, time })
+    }
+
+    /// Compute the end-of-unit DateTime.
+    pub(crate) fn end_of_unit(self, unit: BoundaryUnit) -> Option<DateTime> {
+        let (date, time) = match unit {
+            BoundaryUnit::Date(u) => (self.date.end_of(u)?, Time::MAX),
+            BoundaryUnit::Time(u) => (self.date, self.time.end_of(u)),
+            BoundaryUnit::Day => (self.date, Time::MAX),
+        };
+
+        Some(DateTime { date, time })
+    }
+
+    // TODO: Result->Option
+    /// Compute the start_of_unit, but for the next interval. This is needed
+    /// for a timezone-aware end_of_unit()
+    pub(crate) fn next_start_of_unit(self, unit: BoundaryUnit) -> Option<DateTime> {
+        let (date, time) = match unit {
+            BoundaryUnit::Date(u) => (self.date.next_start_of(u)?, Time::MIN),
+            BoundaryUnit::Time(u) => {
+                let (time, overflow) = self.time.next_start_of(u);
+                (
+                    if overflow {
+                        self.date.tomorrow()?
+                    } else {
+                        self.date
+                    },
+                    time,
+                )
             }
-        })
-        .transpose()?
-        .map(|date| {
-            (
-                DateTime {
-                    date,
-                    time: max_time,
-                },
-                true,
-            )
-        })
-        .or_else(|| {
-            find_interned(unit_obj, |v, eq| {
-                if eq(v, *state.str_hour) {
-                    Some(Time {
-                        hour: self.time.hour,
-                        minute: 59,
-                        second: 59,
-                        subsec: SubSecNanos::MAX,
-                    })
-                } else if eq(v, *state.str_minute) {
-                    Some(Time {
-                        hour: self.time.hour,
-                        minute: self.time.minute,
-                        second: 59,
-                        subsec: SubSecNanos::MAX,
-                    })
-                } else if eq(v, *state.str_second) {
-                    Some(Time {
-                        hour: self.time.hour,
-                        minute: self.time.minute,
-                        second: self.time.second,
-                        subsec: SubSecNanos::MAX,
-                    })
-                } else {
-                    None
-                }
-            })
-            .map(|time| (DateTime { date: d, time }, false))
-        })
-        .ok_or_else(|| Self::week_unit_error(state, unit_obj))
+            BoundaryUnit::Day => (self.date.tomorrow()?, Time::MIN),
+        };
+        Some(DateTime { date, time })
     }
 
     pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
@@ -925,13 +851,15 @@ fn in_leap_year(_: HeapType<DateTime>, slf: DateTime) -> PyReturn {
 }
 
 fn start_of(cls: HeapType<DateTime>, slf: DateTime, unit_obj: PyObj) -> PyReturn {
-    let (dt, _) = slf.start_of_unit(unit_obj, cls.state())?;
-    dt.to_obj(cls)
+    slf.start_of_unit(BoundaryUnit::from_py(cls.state(), unit_obj)?)
+        .ok_or_range_err()?
+        .to_obj(cls)
 }
 
 fn end_of(cls: HeapType<DateTime>, slf: DateTime, unit_obj: PyObj) -> PyReturn {
-    let (dt, _) = slf.end_of_unit(unit_obj, cls.state())?;
-    dt.to_obj(cls)
+    slf.end_of_unit(BoundaryUnit::from_py(cls.state(), unit_obj)?)
+        .ok_or_range_err()?
+        .to_obj(cls)
 }
 
 fn is_datetime_sep(c: u8) -> bool {
@@ -984,7 +912,6 @@ fn assume_tz(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let DateTime { date, time } = slf;
     let &[tz_obj] = args else {
         raise_type_err(format!(
             "assume_tz() takes 1 positional argument but {} were given",
@@ -995,15 +922,8 @@ fn assume_tz(
     let dis = Disambiguate::from_only_kwarg(kwargs, "assume_tz", state)?
         .unwrap_or(Disambiguate::Compatible);
     let tz = state.tz_store.obj_get(tz_obj)?;
-    ZonedDateTime::resolve_using_disambiguate(
-        date,
-        time,
-        &tz,
-        dis,
-        *state.exc_repeated,
-        *state.exc_skipped,
-    )?
-    .assume_tz_unchecked(tz, *state.zoned_datetime_type)
+    slf.localize_using_disambiguate(&tz, dis, state)?
+        .assume_tz_unchecked(tz, *state.zoned_datetime_type)
 }
 
 fn assume_system_tz(
@@ -1013,7 +933,6 @@ fn assume_system_tz(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let DateTime { date, time } = slf;
     if !args.is_empty() {
         raise_type_err("assume_system_tz() takes no positional arguments")?
     }
@@ -1021,15 +940,8 @@ fn assume_system_tz(
     let dis = Disambiguate::from_only_kwarg(kwargs, "assume_tz", state)?
         .unwrap_or(Disambiguate::Compatible);
     let tz = state.tz_store.get_system_tz()?;
-    ZonedDateTime::resolve_using_disambiguate(
-        date,
-        time,
-        &tz,
-        dis,
-        *state.exc_repeated,
-        *state.exc_skipped,
-    )?
-    .assume_tz_unchecked(tz, *state.zoned_datetime_type)
+    slf.localize_using_disambiguate(&tz, dis, state)?
+        .assume_tz_unchecked(tz, *state.zoned_datetime_type)
 }
 
 fn replace_date(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn {
@@ -1138,7 +1050,7 @@ pub(crate) fn resolve_local_relative_to(
                 1,
             )?;
         }
-        Ok(odt.without_offset())
+        Ok(odt.local())
     } else {
         raise_type_err("relative_to must be a ZonedDateTime, PlainDateTime, or OffsetDateTime")
     }
@@ -1568,9 +1480,9 @@ mod tests {
                 subsec: SubSecNanos::MIN,
             },
         };
-        assert_eq!(d.change_offset(OffsetDelta::ZERO).unwrap(), d);
+        assert_eq!(d.shift_by_offset(OffsetDelta::ZERO).unwrap(), d);
         assert_eq!(
-            d.change_offset(OffsetDelta::new_unchecked(1)).unwrap(),
+            d.shift_by_offset(OffsetDelta::new_unchecked(1)).unwrap(),
             DateTime {
                 date: mkdate(2023, 3, 2),
                 time: Time {
@@ -1582,7 +1494,7 @@ mod tests {
             }
         );
         assert_eq!(
-            d.change_offset(OffsetDelta::new_unchecked(-1)).unwrap(),
+            d.shift_by_offset(OffsetDelta::new_unchecked(-1)).unwrap(),
             DateTime {
                 date: mkdate(2023, 3, 2),
                 time: Time {
@@ -1594,7 +1506,8 @@ mod tests {
             }
         );
         assert_eq!(
-            d.change_offset(OffsetDelta::new_unchecked(86_400)).unwrap(),
+            d.shift_by_offset(OffsetDelta::new_unchecked(86_400))
+                .unwrap(),
             DateTime {
                 date: mkdate(2023, 3, 3),
                 time: Time {
@@ -1606,7 +1519,7 @@ mod tests {
             }
         );
         assert_eq!(
-            d.change_offset(OffsetDelta::new_unchecked(-86_400))
+            d.shift_by_offset(OffsetDelta::new_unchecked(-86_400))
                 .unwrap(),
             DateTime {
                 date: mkdate(2023, 3, 1),
@@ -1627,10 +1540,13 @@ mod tests {
                 subsec: SubSecNanos::MIN,
             },
         };
-        assert_eq!(midnight.change_offset(OffsetDelta::ZERO).unwrap(), midnight);
+        assert_eq!(
+            midnight.shift_by_offset(OffsetDelta::ZERO).unwrap(),
+            midnight
+        );
         assert_eq!(
             midnight
-                .change_offset(OffsetDelta::new_unchecked(-1))
+                .shift_by_offset(OffsetDelta::new_unchecked(-1))
                 .unwrap(),
             DateTime {
                 date: mkdate(2023, 3, 1),
@@ -1644,7 +1560,7 @@ mod tests {
         );
         assert_eq!(
             midnight
-                .change_offset(OffsetDelta::new_unchecked(-86_400))
+                .shift_by_offset(OffsetDelta::new_unchecked(-86_400))
                 .unwrap(),
             DateTime {
                 date: mkdate(2023, 3, 1),
@@ -1658,7 +1574,7 @@ mod tests {
         );
         assert_eq!(
             midnight
-                .change_offset(OffsetDelta::new_unchecked(-86_401))
+                .shift_by_offset(OffsetDelta::new_unchecked(-86_401))
                 .unwrap(),
             DateTime {
                 date: mkdate(2023, 2, 28),
@@ -1680,7 +1596,7 @@ mod tests {
                     subsec: SubSecNanos::MIN,
                 }
             }
-            .change_offset(OffsetDelta::new_unchecked(-1))
+            .shift_by_offset(OffsetDelta::new_unchecked(-1))
             .unwrap(),
             DateTime {
                 date: mkdate(2022, 12, 31),

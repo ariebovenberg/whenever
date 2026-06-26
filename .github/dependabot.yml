@@ -8,3 +8,9 @@ updates:
   open-pull-requests-limit: 10
   commit-message:
     prefix: "🤖 "
+- package-ecosystem: "github-actions"
+  directory: "/"
+  schedule:
+    interval: "weekly"
+  commit-message:
+    prefix: "🤖 "

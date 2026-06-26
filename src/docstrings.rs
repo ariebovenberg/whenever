@@ -1471,7 +1471,7 @@ Using the ``offset_mismatch`` parameter, you can choose to ignore
 the mismatch, keeping either the instant or the local time the same.
 ";
 pub(crate) const OFFSETDATETIME_END_OF: &CStr = c"\
-end_of($self, unit, /, *, stale_offset_ok=False)
+end_of($self, unit, /, *, stale_offset_ok=...)
 --
 
 The end of the given unit
@@ -1508,7 +1508,7 @@ The inverse of the ``parse_rfc2822()`` method.
 \"Sat, 15 Aug 2020 23:12:00 +0200\"
 ";
 pub(crate) const OFFSETDATETIME_FROM_TIMESTAMP: &CStr = c"\
-from_timestamp(i, /, *, offset, ignore_dst=..., stale_offset_ok=False)
+from_timestamp(i, /, *, offset, ignore_dst=..., stale_offset_ok=...)
 --
 
 Create an instance from a UNIX timestamp (in seconds).
@@ -1525,7 +1525,7 @@ or ``Instant.from_timestamp()`` for timezone-agnostic exact time.
 Pass ``stale_offset_ok=True`` to suppress.
 ";
 pub(crate) const OFFSETDATETIME_FROM_TIMESTAMP_MILLIS: &CStr = c"\
-from_timestamp_millis(i, /, *, offset, ignore_dst=..., stale_offset_ok=False)
+from_timestamp_millis(i, /, *, offset, ignore_dst=..., stale_offset_ok=...)
 --
 
 Create an instance from a UNIX timestamp (in milliseconds).
@@ -1535,7 +1535,7 @@ The inverse of the ``timestamp_millis()`` method.
 See :meth:`from_timestamp` for more information.
 ";
 pub(crate) const OFFSETDATETIME_FROM_TIMESTAMP_NANOS: &CStr = c"\
-from_timestamp_nanos(i, /, *, offset, ignore_dst=..., stale_offset_ok=False)
+from_timestamp_nanos(i, /, *, offset, ignore_dst=..., stale_offset_ok=...)
 --
 
 Create an instance from a UNIX timestamp (in nanoseconds).
@@ -1545,7 +1545,7 @@ The inverse of the ``timestamp_nanos()`` method.
 See :meth:`from_timestamp` for more information.
 ";
 pub(crate) const OFFSETDATETIME_NOW: &CStr = c"\
-now(offset, /, *, ignore_dst=..., stale_offset_ok=False)
+now(offset, /, *, ignore_dst=..., stale_offset_ok=...)
 --
 
 Create an instance from the current time.
@@ -1642,7 +1642,7 @@ using :meth:`assume_tz`.
 Pass ``stale_offset_ok=True`` to suppress.
 ";
 pub(crate) const OFFSETDATETIME_REPLACE_DATE: &CStr = c"\
-replace_date($self, date, /, *, ignore_dst=..., stale_offset_ok=False)
+replace_date($self, date, /, *, ignore_dst=..., stale_offset_ok=...)
 --
 
 Construct a new instance with the date replaced.
@@ -1650,7 +1650,7 @@ Construct a new instance with the date replaced.
 See :meth:`replace` for more information.
 ";
 pub(crate) const OFFSETDATETIME_REPLACE_TIME: &CStr = c"\
-replace_time($self, time, /, *, ignore_dst=..., stale_offset_ok=False)
+replace_time($self, time, /, *, ignore_dst=..., stale_offset_ok=...)
 --
 
 Construct a new instance with the time replaced.
@@ -1658,7 +1658,7 @@ Construct a new instance with the time replaced.
 See :meth:`replace` for more information.
 ";
 pub(crate) const OFFSETDATETIME_ROUND: &CStr = c"\
-round($self, unit='second', /, *, increment=1, mode='half_even', ignore_dst=..., stale_offset_ok=False)
+round($self, unit='second', /, *, increment=1, mode='half_even', ignore_dst=..., stale_offset_ok=...)
 --
 
 Round the datetime to the specified unit and increment,
@@ -1697,7 +1697,7 @@ When calculating calendar units (years, months, weeks, days),
 both datetimes must have the same offset.
 ";
 pub(crate) const OFFSETDATETIME_START_OF: &CStr = c"\
-start_of($self, unit, /, *, stale_offset_ok=False)
+start_of($self, unit, /, *, stale_offset_ok=...)
 --
 
 The start of the given unit
@@ -1790,7 +1790,7 @@ Assume the datetime is in UTC, creating an ``Instant``.
 Instant(\"2020-08-15 23:12:00Z\")
 ";
 pub(crate) const PLAINDATETIME_DIFFERENCE: &CStr = c"\
-difference($self, other, /, *, ignore_dst=..., naive_arithmetic_ok=False)
+difference($self, other, /, *, ignore_dst=..., naive_arithmetic_ok=...)
 --
 
 Calculate the exact time difference between two plain datetimes.
@@ -1893,7 +1893,7 @@ PlainDateTime(\"2020-08-16 00:00:00\")
 PlainDateTime(\"2020-08-15 23:15:00\")
 ";
 pub(crate) const PLAINDATETIME_SINCE: &CStr = c"\
-since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=..., naive_arithmetic_ok=False)
+since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=..., naive_arithmetic_ok=...)
 --
 
 Calculate the duration since another PlainDateTime,
@@ -1923,7 +1923,7 @@ Subtract a time amount from this datetime.
 See :meth:`add` for more information.
 ";
 pub(crate) const PLAINDATETIME_UNTIL: &CStr = c"\
-until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=..., naive_arithmetic_ok=False)
+until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=..., naive_arithmetic_ok=...)
 --
 
 Inverse of the ``since()`` method. See :meth:`since` for more information.";
@@ -2177,7 +2177,7 @@ The total size in seconds
     Use :meth:`total` with ``'seconds'`` instead.
 ";
 pub(crate) const TIMEDELTA_IN_UNITS: &CStr = c"\
-in_units($self, units, /, *, round_mode='trunc', round_increment=1, relative_to=..., days_assumed_24h_ok=False)
+in_units($self, units, /, *, round_mode='trunc', round_increment=1, relative_to=..., days_assumed_24h_ok=...)
 --
 
 Convert to a :class:`ItemizedDelta` with the specified units
@@ -2235,7 +2235,7 @@ Convert to a :class:`~datetime.timedelta`
     Use :meth:`to_stdlib` instead.
 ";
 pub(crate) const TIMEDELTA_ROUND: &CStr = c"\
-round($self, unit='second', /, *, increment=1, mode='half_even', days_assumed_24h_ok=False)
+round($self, unit='second', /, *, increment=1, mode='half_even', days_assumed_24h_ok=...)
 --
 
 Round the delta to the specified unit and increment,
@@ -2272,7 +2272,7 @@ Nanoseconds are truncated to microseconds.
 If you need more control over rounding, use :meth:`round` first.
 ";
 pub(crate) const TIMEDELTA_TOTAL: &CStr = c"\
-total($self, unit, relative_to=..., _warn_stacklevel=2, days_assumed_24h_ok=False)
+total($self, unit, relative_to=..., _warn_stacklevel=2, days_assumed_24h_ok=...)
 --
 
 The total size in the given unit, as a float (or int for nanoseconds)

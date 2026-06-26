@@ -119,11 +119,11 @@ impl TzStr {
                     if t < t1 {
                         Ambiguity::Unambiguous(off1)
                     } else if t < t1.saturating_add_i32(shift) {
-                        Ambiguity::Gap(off2, off1)
+                        Ambiguity::Gap(t1.saturating_add_i32(shift), off2, off1)
                     } else if t < t2.saturating_add_i32(-shift) {
                         Ambiguity::Unambiguous(off2)
                     } else if t < t2 {
-                        Ambiguity::Fold(off2, off1)
+                        Ambiguity::Fold(t2, off2, off1)
                     } else {
                         Ambiguity::Unambiguous(off1)
                     }
@@ -131,11 +131,11 @@ impl TzStr {
                 } else if t < t1.saturating_add_i32(shift) {
                     Ambiguity::Unambiguous(off1)
                 } else if t < t1 {
-                    Ambiguity::Fold(off1, off2)
+                    Ambiguity::Fold(t1, off1, off2)
                 } else if t < t2 {
                     Ambiguity::Unambiguous(off2)
                 } else if t < t2.saturating_add_i32(-shift) {
-                    Ambiguity::Gap(off1, off2)
+                    Ambiguity::Gap(t2.saturating_add_i32(-shift), off1, off2)
                 } else {
                     Ambiguity::Unambiguous(off1)
                 }
@@ -426,12 +426,20 @@ mod tests {
         Ambiguity::Unambiguous(offset.try_into().unwrap())
     }
 
-    fn fold(off1: i32, off2: i32) -> Ambiguity {
-        Ambiguity::Fold(off1.try_into().unwrap(), off2.try_into().unwrap())
+    fn fold(t: i64, off1: i32, off2: i32) -> Ambiguity {
+        Ambiguity::Fold(
+            t.try_into().unwrap(),
+            off1.try_into().unwrap(),
+            off2.try_into().unwrap(),
+        )
     }
 
-    fn gap(off1: i32, off2: i32) -> Ambiguity {
-        Ambiguity::Gap(off1.try_into().unwrap(), off2.try_into().unwrap())
+    fn gap(t: i64, off1: i32, off2: i32) -> Ambiguity {
+        Ambiguity::Gap(
+            t.try_into().unwrap(),
+            off1.try_into().unwrap(),
+            off2.try_into().unwrap(),
+        )
     }
 
     fn mkdate(year: u16, month: u8, day: u8) -> Date {
@@ -998,7 +1006,7 @@ mod tests {
                         "tz: {tz:?} date: {date}, time: {time}, {offset:?}, {epoch:?}"
                     );
                 }
-                Fold(a, b) => {
+                Fold(_, a, b) => {
                     let epoch_a = to_epoch_s(date, time, a);
                     let epoch_b = to_epoch_s(date, time, b);
                     assert_eq!(
@@ -1012,7 +1020,7 @@ mod tests {
                         "(later offset) tz: {tz:?} date: {date}, time: {time}, {b:?}, {epoch_b:?}"
                     );
                 }
-                Gap(_, _) => {} // Times in a gap aren't reversible
+                Gap(_, _, _) => {} // Times in a gap aren't reversible
             }
         }
 
@@ -1027,71 +1035,166 @@ mod tests {
             (tz, (1990, 3, 13), (12, 34, 56), unambig(4800)),
             // Gap: Before, start, mid, end, after
             (tz, (1990, 3, 25), (3, 59, 59), unambig(4800)),
-            (tz, (1990, 3, 25), (4, 0, 0), gap(9300, 4800)),
-            (tz, (1990, 3, 25), (5, 10, 0), gap(9300, 4800)),
-            (tz, (1990, 3, 25), (5, 14, 59), gap(9300, 4800)),
+            (tz, (1990, 3, 25), (4, 0, 0), gap(638342100, 9300, 4800)),
+            (tz, (1990, 3, 25), (5, 10, 0), gap(638342100, 9300, 4800)),
+            (tz, (1990, 3, 25), (5, 14, 59), gap(638342100, 9300, 4800)),
             (tz, (1990, 3, 25), (5, 15, 0), unambig(9300)),
             // Well after the transition
             (tz, (1990, 6, 26), (8, 0, 0), unambig(9300)),
             // Fold: Before, start, mid, end, after
             (tz, (1990, 10, 8), (0, 44, 59), unambig(9300)),
-            (tz, (1990, 10, 8), (0, 45, 0), fold(9300, 4800)),
-            (tz, (1990, 10, 8), (1, 33, 59), fold(9300, 4800)),
-            (tz, (1990, 10, 8), (1, 59, 59), fold(9300, 4800)),
+            (tz, (1990, 10, 8), (0, 45, 0), fold(655351200, 9300, 4800)),
+            (tz, (1990, 10, 8), (1, 33, 59), fold(655351200, 9300, 4800)),
+            (tz, (1990, 10, 8), (1, 59, 59), fold(655351200, 9300, 4800)),
             (tz, (1990, 10, 8), (2, 0, 0), unambig(4800)),
             // Well after the end of DST
             (tz, (1990, 11, 30), (23, 34, 56), unambig(4800)),
             // time outside 0-24h range is also valid for a rule
             (tz_weirdtime, (1990, 3, 26), (1, 59, 59), unambig(4800)),
-            (tz_weirdtime, (1990, 3, 27), (2, 0, 0), gap(9300, 4800)),
-            (tz_weirdtime, (1990, 3, 27), (3, 0, 0), gap(9300, 4800)),
-            (tz_weirdtime, (1990, 3, 27), (3, 14, 59), gap(9300, 4800)),
+            (
+                tz_weirdtime,
+                (1990, 3, 27),
+                (2, 0, 0),
+                gap(638507700, 9300, 4800),
+            ),
+            (
+                tz_weirdtime,
+                (1990, 3, 27),
+                (3, 0, 0),
+                gap(638507700, 9300, 4800),
+            ),
+            (
+                tz_weirdtime,
+                (1990, 3, 27),
+                (3, 14, 59),
+                gap(638507700, 9300, 4800),
+            ),
             (tz_weirdtime, (1990, 3, 27), (3, 15, 0), unambig(9300)),
             (tz_weirdtime, (1990, 10, 7), (20, 44, 59), unambig(9300)),
-            (tz_weirdtime, (1990, 10, 7), (20, 45, 0), fold(9300, 4800)),
-            (tz_weirdtime, (1990, 10, 7), (21, 33, 59), fold(9300, 4800)),
-            (tz_weirdtime, (1990, 10, 7), (21, 59, 59), fold(9300, 4800)),
+            (
+                tz_weirdtime,
+                (1990, 10, 7),
+                (20, 45, 0),
+                fold(655336800, 9300, 4800),
+            ),
+            (
+                tz_weirdtime,
+                (1990, 10, 7),
+                (21, 33, 59),
+                fold(655336800, 9300, 4800),
+            ),
+            (
+                tz_weirdtime,
+                (1990, 10, 7),
+                (21, 59, 59),
+                fold(655336800, 9300, 4800),
+            ),
             (tz_weirdtime, (1990, 10, 7), (22, 0, 0), unambig(4800)),
             (tz_weirdtime, (1990, 10, 7), (22, 0, 1), unambig(4800)),
             // 00:00:00 is a valid time for a rule
             (tz00, (1990, 3, 24), (23, 59, 59), unambig(4800)),
-            (tz00, (1990, 3, 25), (0, 0, 0), gap(9300, 4800)),
-            (tz00, (1990, 3, 25), (1, 0, 0), gap(9300, 4800)),
-            (tz00, (1990, 3, 25), (1, 14, 59), gap(9300, 4800)),
+            (tz00, (1990, 3, 25), (0, 0, 0), gap(638327700, 9300, 4800)),
+            (tz00, (1990, 3, 25), (1, 0, 0), gap(638327700, 9300, 4800)),
+            (tz00, (1990, 3, 25), (1, 14, 59), gap(638327700, 9300, 4800)),
             (tz00, (1990, 3, 25), (1, 15, 0), unambig(9300)),
             (tz00, (1990, 10, 7), (22, 44, 59), unambig(9300)),
-            (tz00, (1990, 10, 7), (22, 45, 0), fold(9300, 4800)),
-            (tz00, (1990, 10, 7), (23, 33, 59), fold(9300, 4800)),
-            (tz00, (1990, 10, 7), (23, 59, 59), fold(9300, 4800)),
+            (
+                tz00,
+                (1990, 10, 7),
+                (22, 45, 0),
+                fold(655344000, 9300, 4800),
+            ),
+            (
+                tz00,
+                (1990, 10, 7),
+                (23, 33, 59),
+                fold(655344000, 9300, 4800),
+            ),
+            (
+                tz00,
+                (1990, 10, 7),
+                (23, 59, 59),
+                fold(655344000, 9300, 4800),
+            ),
             (tz00, (1990, 10, 8), (0, 0, 0), unambig(4800)),
             (tz00, (1990, 10, 8), (0, 0, 1), unambig(4800)),
             // Negative DST should be handled gracefully. Gap and fold reversed
             // Fold instead of gap
             (tz_neg, (1990, 3, 25), (0, 59, 59), unambig(4800)),
-            (tz_neg, (1990, 3, 25), (1, 0, 0), fold(4800, 1200)),
-            (tz_neg, (1990, 3, 25), (1, 33, 59), fold(4800, 1200)),
-            (tz_neg, (1990, 3, 25), (1, 59, 59), fold(4800, 1200)),
+            (
+                tz_neg,
+                (1990, 3, 25),
+                (1, 0, 0),
+                fold(638330400, 4800, 1200),
+            ),
+            (
+                tz_neg,
+                (1990, 3, 25),
+                (1, 33, 59),
+                fold(638330400, 4800, 1200),
+            ),
+            (
+                tz_neg,
+                (1990, 3, 25),
+                (1, 59, 59),
+                fold(638330400, 4800, 1200),
+            ),
             (tz_neg, (1990, 3, 25), (2, 0, 0), unambig(1200)),
             // Gap instead of fold
             (tz_neg, (1990, 10, 8), (3, 59, 59), unambig(1200)),
-            (tz_neg, (1990, 10, 8), (4, 0, 0), gap(4800, 1200)),
-            (tz_neg, (1990, 10, 8), (4, 42, 12), gap(4800, 1200)),
-            (tz_neg, (1990, 10, 8), (4, 59, 59), gap(4800, 1200)),
+            (tz_neg, (1990, 10, 8), (4, 0, 0), gap(655362000, 4800, 1200)),
+            (
+                tz_neg,
+                (1990, 10, 8),
+                (4, 42, 12),
+                gap(655362000, 4800, 1200),
+            ),
+            (
+                tz_neg,
+                (1990, 10, 8),
+                (4, 59, 59),
+                gap(655362000, 4800, 1200),
+            ),
             (tz_neg, (1990, 10, 8), (5, 0, 0), unambig(4800)),
             // Always DST
             (tz_always_dst, (1990, 1, 1), (0, 0, 0), unambig(3600)),
             // This is actually incorrect, but ZoneInfo does the same...
-            (tz_always_dst, (1992, 12, 31), (23, 0, 0), gap(7200, 3600)),
+            (
+                tz_always_dst,
+                (1992, 12, 31),
+                (23, 0, 0),
+                gap(725846400, 7200, 3600),
+            ),
             // Inverted DST
             (tz_inverted, (1990, 2, 9), (15, 0, 0), unambig(7200)), // DST in effect
             (tz_inverted, (1990, 3, 25), (1, 19, 0), unambig(7200)), // Before fold
-            (tz_inverted, (1990, 3, 25), (1, 20, 0), fold(7200, 4800)), // Fold starts
-            (tz_inverted, (1990, 3, 25), (1, 59, 0), fold(7200, 4800)), // Fold almost over
+            (
+                tz_inverted,
+                (1990, 3, 25),
+                (1, 20, 0),
+                fold(638330400, 7200, 4800),
+            ), // Fold starts
+            (
+                tz_inverted,
+                (1990, 3, 25),
+                (1, 59, 0),
+                fold(638330400, 7200, 4800),
+            ), // Fold almost over
             (tz_inverted, (1990, 3, 25), (2, 0, 0), unambig(4800)), // Fold over
             (tz_inverted, (1990, 9, 8), (8, 0, 0), unambig(4800)),  // DST not in effect
             (tz_inverted, (1990, 10, 8), (3, 59, 0), unambig(4800)), // Before gap
-            (tz_inverted, (1990, 10, 8), (4, 0, 0), gap(7200, 4800)), // Gap starts
-            (tz_inverted, (1990, 10, 8), (4, 39, 0), gap(7200, 4800)), // Gap almost over
+            (
+                tz_inverted,
+                (1990, 10, 8),
+                (4, 0, 0),
+                gap(655360800, 7200, 4800),
+            ), // Gap starts
+            (
+                tz_inverted,
+                (1990, 10, 8),
+                (4, 39, 0),
+                gap(655360800, 7200, 4800),
+            ), // Gap almost over
             (tz_inverted, (1990, 10, 8), (4, 40, 0), unambig(7200)), // Gap over
             (tz_inverted, (1990, 12, 31), (23, 40, 0), unambig(7200)), // DST not in effect
         ];

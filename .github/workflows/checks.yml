@@ -26,7 +26,7 @@ jobs:
       # even though we only test rust, we need CPython to link against
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - name: Build and test
         run: |
           cargo test
@@ -40,8 +40,8 @@ jobs:
           "3.10",
           "3.11",
           "3.12",
-          # NOTE: 3.13 is absent since we test it in the OS job matrix
-          "3.14",
+          "3.13",
+          # NOTE: 3.14 is absent since we test it in the OS job matrix
           "3.14t",
           "3.15",
           "3.15t"
@@ -64,19 +64,15 @@ jobs:
           uv sync --locked --group test
           uv run pytest tests/ -s -v
 
-          pytest tests/ -s -v
-
-      # These optional dependencies will trigger certain tests that are
-      # skipped without them. Pydantic doesn't support 3.13t though.
-      # 3.13t is experimental so not a problem to skip.
-      - if: ${{ matrix.python-version != '3.13t' }}
-        name: Test with optional dependencies
+      # Testing with integrations to ensure they work
+      - name: Test (debug, all dependency integrations)
+        if: ${{ matrix.python-version != '3.15' && matrix.python-version != '3.15t' }}
         shell: bash
         run: |
-          pip install tzdata pydantic
-          pytest tests/ -s -v
-      # Debug mode sometimes surfaces issues not seen in release mode
-      - name: Test (debug mode)
+          uv sync --locked --group test --group integrations
+          uv run pytest tests/ -s -v
+      # Release mode sometimes surfaces issues not seen in debug
+      - name: Test (release mode)
         shell: bash
         run: |
           uv sync --locked --reinstall-package whenever --no-editable --group test
@@ -84,13 +80,21 @@ jobs:
       - run: uv run python scripts/smoketest_*.py
 
   test-os:
-    name: Test ${{ matrix.os }}, 3.13 ${{ matrix.no_build_ext && 'pure Python' || 'Rust extension' }}
+    name: Test ${{ matrix.os }}, 3.14 ${{ matrix.no_build_ext && 'pure Python' || 'Rust extension' }} ${{ matrix.architecture }}
     runs-on: ${{ matrix.os }}-latest
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu, windows, macos]
         no_build_ext: ["", "1"]
+        include:
+          # For windows, we also test 32-bit Python
+          - os: windows
+            architecture: x86
+            no_build_ext: ""
+          - os: windows
+            architecture: x64
+            no_build_ext: ""
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -99,21 +103,13 @@ jobs:
       - uses: astral-sh/setup-uv@v5
 
       - name: Add win32 target
-        if: ${{ matrix.os == 'windows' && !matrix.no_build_ext }}
+        if: ${{ matrix.os == 'windows' && matrix.architecture == 'x86' }}
         run: rustup target add i686-pc-windows-msvc
 
       - uses: actions/setup-python@v5
-        if: ${{ !(matrix.os == 'windows') }}
         with:
-          python-version: '3.13'
-
-      # ensure 32-bit target is tested
-      # FUTURE: Add a linux 32-bit target
-      - uses: actions/setup-python@v5
-        if: ${{ matrix.os == 'windows' }}
-        with:
-          python-version: '3.13'
-          architecture: x86
+          python-version: '3.14'
+          architecture:  ${{ matrix.architecture || 'x64' }}
 
       - name: Sync Python environment
         run: uv sync --locked --group test
@@ -130,6 +126,21 @@ jobs:
         env:
           WHENEVER_NO_BUILD_RUST_EXT: ${{ matrix.no_build_ext }}
 
+      - name: Install tzcode
+        if: ${{ matrix.os == 'ubuntu' && !matrix.no_build_ext }}
+        shell: bash
+        run: |
+          mkdir -p /tmp/tzcode
+          curl --fail --silent --show-error --location \
+            https://data.iana.org/time-zones/releases/tzcode2026b.tar.gz \
+            | tar -xz -C /tmp/tzcode
+          make -C /tmp/tzcode zdump
+          echo /tmp/tzcode >> "$GITHUB_PATH"
+
+      - name: Smoke test timezone transitions
+        if: ${{ matrix.os == 'ubuntu' && !matrix.no_build_ext }}
+        run: uv run python scripts/smoketest_tz_transitions.py
+
   test-pure-python:
     name: Test ubuntu, ${{ matrix.python-version }} pure Python
     runs-on: ubuntu-latest
@@ -140,8 +151,8 @@ jobs:
           "3.10",
           "3.11",
           "3.12",
-          # NOTE: 3.13 is absent since we test it in the OS job matrix
-          "3.14",
+          "3.13",
+          # NOTE: 3.14 is absent since we test it in the OS job matrix
           "3.14t",
           "3.15",
           "3.15t",
@@ -164,9 +175,9 @@ jobs:
       - run: uv run python scripts/smoketest_*.py
       # NOTE: we end up running pytest twice in the following sections.
       # This is because we want to test the code with and without optional dependencies.
-      - run: pytest tests/
-      - if: ${{ matrix.python-version != 'pypy3.10' && matrix.python-version != 'pypy3.11' && matrix.python-version != '3.13t'}}
-        run: pip install tzdata pydantic
+      - run: uv run pytest tests/
+      - if: ${{ !contains(fromJSON('["pypy3.10", "pypy3.11", "3.15", "3.15t"]'), matrix.python-version) }}
+        run: uv sync --locked --group test --group integrations
       # NOTE: we only care about coverage once. We arbitrarily choose 3.12 for that
       - if: ${{ matrix.python-version == '3.12' }}
         run: |
@@ -183,7 +194,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: "1.93"
@@ -203,7 +214,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.14'
       - run: uv sync --locked --no-install-project
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
@@ -227,7 +238,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.14'
       - run: uv sync --locked --all-groups --no-install-project
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"

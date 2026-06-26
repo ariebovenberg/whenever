@@ -10,6 +10,11 @@ update:
 typecheck:
 	uv run mypy pysrc/ tests/
 
+.PHONY: sync-docstrings
+sync-docstrings:
+	# --no-sync prevents rust rebuild, which fails on empty docstrings.rs
+	uv run --no-sync python scripts/generate_docstrings.py > src/docstrings.rs
+
 .PHONY: fix
 fix:
 	uv run --no-sync ruff check --select I --fix .
@@ -42,7 +47,7 @@ ci-lint: check-readme
 	uv run ruff check .
 	uv run ruff format --check .
 	cargo fmt -- --check
-	uv run env PYTHONPATH=pysrc/ slotscheck pysrc
+	uv run env PYTHONPATH=pysrc/ slotscheck -v pysrc
 	cargo clippy --all-targets --all-features -- -D warnings
 
 .PHONY: clean-ext

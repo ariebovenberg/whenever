@@ -22,11 +22,11 @@ Key directories:
 - `make fix` — format all code (Rust + Python). **Unformatted code isn't finished.**
 - `make ci-lint` — run the full CI lint suite (Ruff, twine check, etc.)
 - `make clean-ext` - remove the compiled extension (so that you can test the pure Python implementation)
-- `pytest tests` — run Python tests
+- `make test-py` — run Python tests
 - `cargo test` — run Rust tests
 - `cargo build` — quick compile check (no Python extension copy)
-- `python -c "import whenever; print(whenever._EXTENSION_LOADED)"` — verify extension is loaded
-- `pytest tests --cov=whenever --cov-report term-missing` for test coverage (ensure you're running pure Python first!)
+- `uv run python -c "import whenever; print(whenever._EXTENSION_LOADED)"` — verify extension is loaded
+- `uv run pytest tests --cov=whenever --cov-report term-missing` for test coverage (ensure you're running pure Python first!)
 - `make docs` build documentation (ensures no broken links, etc.)
 
 ## General reminders
@@ -46,7 +46,7 @@ Key directories:
 
 ## Tests
 
-- Run with `pytest tests` (not bare `pytest` — avoids benchmark tests)
+- Run with `make test-py` (not bare `pytest` — avoids benchmark tests)
 - `cargo test` for Rust-only unit tests
 - **Pure Python tests**: remove the compiled extension first (`make clean-ext`)
   Rebuild after with `make build`.

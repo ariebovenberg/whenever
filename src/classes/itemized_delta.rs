@@ -1040,8 +1040,8 @@ fn add_sub(
     let total_days = self_days.add(days).ok_or_range_err()?;
     let total_tdelta = self_tdelta.add(tdelta).ok_or_range_err()?;
     let shifted = relative_to
-        .without_tz()
-        .shift_in_tz(total_months, total_days, total_tdelta, relative_to.tz())
+        .fixed_offset()
+        .shift_in_tz(total_months, total_days, total_tdelta, &relative_to.tz)
         .ok_or_range_err()?;
     let shifted_inst = shifted.instant();
 

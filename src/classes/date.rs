@@ -148,16 +148,6 @@ impl Date {
         Some(Date::new_clamp_days(year, month, self.day))
     }
 
-    pub(crate) fn start_of_week_mon(self) -> Option<Date> {
-        let days_back = self.unix_days().day_of_week().iso() as i32 - 1;
-        self.shift_days(DeltaDays::new(-days_back).unwrap())
-    }
-
-    pub(crate) fn start_of_week_sun(self) -> Option<Date> {
-        let dow = self.unix_days().day_of_week().iso() % 7;
-        self.shift_days(DeltaDays::new(-(dow as i32)).unwrap())
-    }
-
     pub(crate) fn end_of_week_mon(self) -> Option<Date> {
         let days_fwd = 7 - self.unix_days().day_of_week().iso() as i32;
         self.shift_days(DeltaDays::new(days_fwd).unwrap())
@@ -313,6 +303,90 @@ impl Date {
         // We don't need to do any extra hashing. It may be counterintuitive,
         // but this is also what `int` does: `hash(6) == 6`.
         unsafe { mem::transmute(self) }
+    }
+
+    fn start_of_week_mon(self) -> Option<Date> {
+        let days_back = self.unix_days().day_of_week().iso() as i32 - 1;
+        // SAFETY: shifting days is well within DeltaDays range
+        self.shift_days(DeltaDays::new_unchecked(-days_back))
+    }
+
+    fn start_of_week_sun(self) -> Option<Date> {
+        let dow = self.unix_days().day_of_week().iso() % 7;
+        // SAFETY: shifting days is well within DeltaDays range
+        self.shift_days(DeltaDays::new_unchecked(-(dow as i32)))
+    }
+
+    pub(crate) fn start_of(self, unit: BoundaryUnit) -> Option<Date> {
+        match unit {
+            BoundaryUnit::WeekMon => self.start_of_week_mon(),
+            BoundaryUnit::WeekSun => self.start_of_week_sun(),
+            BoundaryUnit::Month => Some(Date {
+                year: self.year,
+                month: self.month,
+                day: 1,
+            }),
+            BoundaryUnit::Year => Some(Date {
+                year: self.year,
+                month: Month::January,
+                day: 1,
+            }),
+        }
+    }
+
+    pub(crate) fn end_of(self, unit: BoundaryUnit) -> Option<Date> {
+        match unit {
+            BoundaryUnit::WeekMon => self.end_of_week_mon(),
+            BoundaryUnit::WeekSun => self.end_of_week_sun(),
+            BoundaryUnit::Month => Some(Date {
+                day: self.year.days_in_month(self.month),
+                ..self
+            }),
+            BoundaryUnit::Year => Some(Date {
+                year: self.year,
+                ..Date::MAX
+            }),
+        }
+    }
+
+    pub(crate) fn next_start_of(self, unit: BoundaryUnit) -> Option<Date> {
+        self.end_of(unit)?.tomorrow()
+    }
+
+    pub(crate) fn at(self, time: Time) -> DateTime {
+        DateTime { date: self, time }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BoundaryUnit {
+    Year,
+    Month,
+    WeekMon,
+    WeekSun,
+}
+
+impl BoundaryUnit {
+    pub(crate) fn from_py(state: &State, obj: PyObj) -> PyResult<Self> {
+        find_interned(obj, |v, eq| {
+            if eq(v, *state.str_year) {
+                Some(Ok(BoundaryUnit::Year))
+            } else if eq(v, *state.str_month) {
+                Some(Ok(BoundaryUnit::Month))
+            } else if eq(v, *state.str_week) {
+                Some(raise_value_err(
+                    "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.",
+                ))
+            } else if eq(v, *state.str_week_mon) {
+                Some(Ok(BoundaryUnit::WeekMon))
+            } else if eq(v, *state.str_week_sun) {
+                Some(Ok(BoundaryUnit::WeekSun))
+            } else {
+                None
+            }
+        })
+        .transpose()?
+        .ok_or_else_value_err(|| format!("Invalid unit: {obj}"))
     }
 }
 
@@ -636,68 +710,13 @@ fn nth_weekday(cls: HeapType<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
 }
 
 fn start_of(cls: HeapType<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
-    let state = cls.state();
-    find_interned(unit_obj, |v, eq| {
-        if eq(v, *state.str_year) {
-            Some(Ok(Date {
-                year: slf.year,
-                month: Month::January,
-                day: 1,
-            }))
-        } else if eq(v, *state.str_month) {
-            Some(Ok(Date {
-                year: slf.year,
-                month: slf.month,
-                day: 1,
-            }))
-        } else if eq(v, *state.str_week_mon) {
-            Some(slf.start_of_week_mon().ok_or_range_err())
-        } else if eq(v, *state.str_week_sun) {
-            Some(slf.start_of_week_sun().ok_or_range_err())
-        } else {
-            None
-        }
-    })
-    .transpose()?
-    .ok_or_else(|| week_unit_error(state, unit_obj))?
-    .to_obj(cls)
+    let unit = BoundaryUnit::from_py(cls.state(), unit_obj)?;
+    slf.start_of(unit).ok_or_range_err()?.to_obj(cls)
 }
 
 fn end_of(cls: HeapType<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
-    let state = cls.state();
-    find_interned(unit_obj, |v, eq| {
-        if eq(v, *state.str_year) {
-            Some(Ok(Date {
-                year: slf.year,
-                month: Month::December,
-                day: 31,
-            }))
-        } else if eq(v, *state.str_month) {
-            Some(Ok(Date {
-                year: slf.year,
-                month: slf.month,
-                day: slf.year.days_in_month(slf.month),
-            }))
-        } else if eq(v, *state.str_week_mon) {
-            Some(slf.end_of_week_mon().ok_or_range_err())
-        } else if eq(v, *state.str_week_sun) {
-            Some(slf.end_of_week_sun().ok_or_range_err())
-        } else {
-            None
-        }
-    })
-    .transpose()?
-    .ok_or_else(|| week_unit_error(state, unit_obj))?
-    .to_obj(cls)
-}
-
-fn week_unit_error(state: &State, unit_obj: PyObj) -> PyErrMarker {
-    if unit_obj.py_eq(*state.str_week).unwrap_or(false) {
-        raise_value_err::<(), _>("unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.")
-            .unwrap_err()
-    } else {
-        raise_value_err::<(), _>(format!("Invalid value for unit: {unit_obj}")).unwrap_err()
-    }
+    let unit = BoundaryUnit::from_py(cls.state(), unit_obj)?;
+    slf.end_of(unit).ok_or_range_err()?.to_obj(cls)
 }
 
 /// Extract a Weekday enum value from a Python argument
