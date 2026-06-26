@@ -753,7 +753,6 @@ class TestNaiveArithmeticOkKwarg:
 
 
 class TestShiftOperators:
-
     def test_timedelta(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with suppress(NaiveArithmeticWarning):

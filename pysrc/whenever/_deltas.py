@@ -197,7 +197,9 @@ def _check_bound(i: int | None, max_value: int) -> int | None:
 
 
 def _check_component(
-    value: int, sign: Sign, max_value: int  # may also be UNSET
+    value: int,
+    sign: Sign,
+    max_value: int,  # may also be UNSET
 ) -> tuple[int | None, Sign]:
     if value is UNSET:
         return None, sign
@@ -444,7 +446,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     # documented here for the API docs.
     if not TYPE_CHECKING:  # pragma: no cover
         if SPHINX_RUNNING:
-
             # FUTURE: an optimized ValuesView class that defers to the internal
             # fields directly instead of going through __getitem__
             def values(self) -> ValuesView[int]:
@@ -1621,7 +1622,6 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     # documented here for the API docs.
     if not TYPE_CHECKING:  # pragma: no cover
         if SPHINX_RUNNING:
-
             # FUTURE: an optimized ValuesView class that defers to the internal
             # fields directly instead of going through __getitem__
             def values(self) -> ValuesView[int]:

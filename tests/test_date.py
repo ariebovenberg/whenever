@@ -6,7 +6,6 @@ from itertools import chain
 from typing import Literal
 
 import pytest
-
 from whenever import (
     Date,
     IsoWeekDate,
@@ -17,8 +16,6 @@ from whenever import (
     Weekday,
     YearMonth,
 )
-
-from tests.test_date_delta import make_ddelta
 
 from .common import (
     AlwaysEqual,
