@@ -49,6 +49,11 @@ impl TimeDelta {
         subsec: SubSecNanos::MIN,
     };
 
+    pub(crate) const RESOLUTION: Self = Self {
+        secs: DeltaSeconds::new_unchecked(0),
+        subsec: SubSecNanos::new_unchecked(1),
+    };
+
     pub(crate) fn from_nanos_f64(nanos_f: f64) -> Option<Self> {
         if nanos_f.is_nan()
             || !(DeltaNanos::MIN.get() as f64..=DeltaNanos::MAX.get() as f64).contains(&nanos_f)
@@ -78,14 +83,6 @@ impl TimeDelta {
     pub(crate) fn from_nanos(nanos: i128) -> Option<Self> {
         let (secs, subsec) = DeltaNanos::new(nanos)?.sec_subsec();
         Some(Self { secs, subsec })
-    }
-
-    pub(crate) const fn from_offset(x: Offset) -> Self {
-        TimeDelta {
-            // Safe: offset range is well within DeltaSeconds range
-            secs: DeltaSeconds::new_unchecked(x.get() as _),
-            subsec: SubSecNanos::MIN,
-        }
     }
 
     pub(crate) const fn total_nanos(self) -> i128 {
@@ -295,6 +292,16 @@ impl std::fmt::Display for TimeDelta {
         }
         // SAFETY: we know it's just ASCII
         f.write_str(unsafe { std::str::from_utf8_unchecked(&isofmt) })
+    }
+}
+
+impl Offset {
+    pub(crate) const fn to_delta(self) -> TimeDelta {
+        TimeDelta {
+            // Safe: offset range is well within DeltaSeconds range
+            secs: DeltaSeconds::new_unchecked(self.get() as _),
+            subsec: SubSecNanos::MIN,
+        }
     }
 }
 
@@ -1198,7 +1205,7 @@ fn in_units(
         // ZonedDateTime: full DST-aware path.
         if let Some(zdt) = arg.extract_ref(*state.zoned_datetime_type) {
             let shifted_inst = zdt.instant().shift(slf).ok_or_range_err()?;
-            let shifted = shifted_inst.to_tz(zdt.tz()).ok_or_range_err()?;
+            let shifted = shifted_inst.to_tz(&zdt.tz).ok_or_range_err()?;
             return zoned_since_in_units(
                 shifted,
                 shifted_inst,
@@ -1219,10 +1226,7 @@ fn in_units(
 
         // Compute the shifted datetime by treating b_dt as UTC anchor.
         let a_inst = b_dt.assume_utc().shift(slf).ok_or_range_err()?;
-        let a_dt = a_inst
-            .to_offset(Offset::ZERO)
-            .ok_or_range_err()?
-            .without_offset();
+        let a_dt = a_inst.to_offset(Offset::ZERO).ok_or_range_err()?.local();
         plain_since_inner(
             state,
             a_dt,
@@ -1296,7 +1300,7 @@ fn total(
     // ZonedDateTime: full DST-aware path via zoned_target.
     if let Some(zdt) = arg.extract_ref(*state.zoned_datetime_type) {
         let shifted_inst = zdt.instant().shift(slf).ok_or_range_err()?;
-        let shifted = shifted_inst.to_tz(zdt.tz()).ok_or_range_err()?;
+        let shifted = shifted_inst.to_tz(&zdt.tz).ok_or_range_err()?;
         return total_cal(slf.is_negative(), cal_unit, zdt, shifted, shifted_inst);
     }
 
@@ -1308,10 +1312,7 @@ fn total(
 
     let neg = slf.is_negative();
     let a_inst = b_dt.assume_utc().shift(slf).ok_or_range_err()?;
-    let a_dt = a_inst
-        .to_offset(Offset::ZERO)
-        .ok_or_range_err()?
-        .without_offset();
+    let a_dt = a_inst.to_offset(Offset::ZERO).ok_or_range_err()?.local();
     let target_date = match (neg, b_dt.with_date(a_dt.date).cmp(&a_dt)) {
         (false, std::cmp::Ordering::Greater) => a_dt.date.yesterday(),
         (true, std::cmp::Ordering::Less) => a_dt.date.tomorrow(),

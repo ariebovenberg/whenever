@@ -1,15 +1,32 @@
 # Changelog
 
 
-## 0.10.1 (2026-05-??)
+## 0.10.1 (2026-06-??)
+
+**Improved**
 
 - Reduced import time by ~60% when the Rust extension is active.
   This was achieved by deferring the import of several internal submodules
   and timezone database setup until they are actually needed.
-- Fixed CI compatibility with Python 3.13t (free-threaded build)
+
+**Added**
+
 - Added ``"week_mon"`` and ``"week_sun"`` as valid
   units for ``start_of()`` and ``end_of()`` on ``Date``, ``PlainDateTime``,
   ``ZonedDateTime``, and ``OffsetDateTime``.
+
+**Fixed**
+
+- Ensured that `end_of()` is always exactly 1 nanosecond before the next `start_of()`,
+  even if they fall on a DST transition. This prevents any gaps or overlaps in time calculations.
+- Fixed a pure-Python regression introduced in 0.10.0 that could return incorrect
+  offsets for part of a year. This occurred when a timezone switched from explicitly
+  recorded transitions to recurring transition rules partway through that year.
+  In practice, this affected a handful of timezones, and only when
+  system timezone data wasn't present (e.g. on Windows).
+  A rigorous test ensures this won't regress again in the future.
+- Removed free-threading support for 3.13 specifically.
+  In 3.13, free threading is still experimental and not yet stable.
 
 ## 0.10.0 (2026-04-05)
 

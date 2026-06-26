@@ -5,7 +5,7 @@ use crate::{
         itemized_date_delta::ItemizedDateDelta,
         itemized_delta::{ItemizedDelta, handle_delta_unit_kwargs},
         offset_datetime::OffsetDateTime,
-        plain_datetime::{DateTime, set_components_from_kwargs},
+        plain_datetime::{BoundaryUnit, DateTime, set_components_from_kwargs},
         time::Time,
         time_delta::TimeDelta,
     },
@@ -27,16 +27,17 @@ use core::{
     ptr::null_mut as NULL,
 };
 use pyo3_ffi::*;
-use std::{ptr::NonNull, sync::Arc};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ZonedDateTime {
     pub(crate) date: Date,
     time: Time,
     offset: Offset,
-    tz: Arc<TimeZone>,
+    pub(crate) tz: Arc<TimeZone>,
 }
 
+// Custom implementation to optimize timezone equality checks
 impl std::cmp::PartialEq for ZonedDateTime {
     fn eq(&self, other: &Self) -> bool {
         self.date == other.date
@@ -48,185 +49,25 @@ impl std::cmp::PartialEq for ZonedDateTime {
 
 impl ZonedDateTime {
     /// Whether two ZonedDateTimes share the same timezone (pointer or value equality).
-    pub(crate) fn same_tz(&self, other: &Self) -> bool {
+    fn same_tz(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.tz, &other.tz) || *self.tz == *other.tz
-    }
-
-    /// The timezone associated with this datetime.
-    pub(crate) fn tz(&self) -> &TimeZone {
-        &self.tz
-    }
-
-    pub(crate) fn create(
-        date: Date,
-        time: Time,
-        offset: Offset,
-        tz: Arc<TimeZone>,
-        cls: HeapType<Self>,
-    ) -> PyReturn {
-        // Check: the instant represented by the date and time is within range
-        date.epoch_at(time).offset(-offset).ok_or_range_err()?;
-        Self::new_unchecked(date, time, offset, tz, cls)
-    }
-
-    pub(crate) fn new_unchecked(
-        date: Date,
-        time: Time,
-        offset: Offset,
-        tz: Arc<TimeZone>,
-        cls: HeapType<Self>,
-    ) -> PyReturn {
-        generic_alloc(
-            cls.into(),
-            ZonedDateTime {
-                date,
-                time,
-                offset,
-                tz,
-            },
-        )
-    }
-
-    pub(crate) fn resolve_default(
-        date: Date,
-        time: Time,
-        tz: Arc<TimeZone>,
-        cls: HeapType<Self>,
-    ) -> PyReturn {
-        let (DateTime { date, time }, offset) = match tz.ambiguity_for_local(date.epoch_at(time)) {
-            Ambiguity::Unambiguous(offset) | Ambiguity::Fold(offset, _) => {
-                (DateTime { date, time }, offset)
-            }
-            Ambiguity::Gap(offset, offset_prev) => {
-                let shift = offset.sub(offset_prev);
-                (
-                    DateTime { date, time }
-                        .change_offset(shift)
-                        .ok_or_range_err()?,
-                    offset,
-                )
-            }
-        };
-        ZonedDateTime::create(date, time, offset, tz, cls)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn resolve(
-        date: Date,
-        time: Time,
-        tz: &TimeZone,
-        dis: Option<Disambiguate>,
-        preferred_offset: Offset,
-        exc_repeated: PyObj,
-        exc_skipped: PyObj,
-    ) -> PyResult<OffsetDateTime> {
-        match dis {
-            Some(d) => {
-                Self::resolve_using_disambiguate(date, time, tz, d, exc_repeated, exc_skipped)
-            }
-            None => Self::resolve_using_offset(date, time, tz, preferred_offset),
-        }
-    }
-
-    pub(crate) fn resolve_using_disambiguate(
-        date: Date,
-        time: Time,
-        tz: &TimeZone,
-        dis: Disambiguate,
-        exc_repeated: PyObj,
-        exc_skipped: PyObj,
-    ) -> PyResult<OffsetDateTime> {
-        match tz.ambiguity_for_local(date.epoch_at(time)) {
-            Ambiguity::Unambiguous(offset) => OffsetDateTime::new(date, time, offset),
-            Ambiguity::Fold(earlier, later) => OffsetDateTime::new(
-                date,
-                time,
-                match dis {
-                    Disambiguate::Earlier => earlier,
-                    Disambiguate::Later => later,
-                    Disambiguate::Compatible => earlier,
-                    Disambiguate::Raise => raise(
-                        exc_repeated,
-                        format!(
-                            "{} {} is repeated in {}",
-                            date,
-                            time,
-                            tz_err_display(&tz.key)
-                        ),
-                    )?,
-                },
-            ),
-            Ambiguity::Gap(later, earlier) => {
-                let shift = later.sub(earlier);
-                let dt = DateTime { date, time };
-                let (shift, offset) = match dis {
-                    Disambiguate::Earlier => (-shift, earlier),
-                    Disambiguate::Later => (shift, later),
-                    Disambiguate::Compatible => (shift, later),
-                    Disambiguate::Raise => raise(
-                        exc_skipped,
-                        format!(
-                            "{} {} is skipped in {}",
-                            date,
-                            time,
-                            tz_err_display(&tz.key)
-                        ),
-                    )?,
-                };
-                dt.change_offset(shift)
-                    // shifting out of the gap can result in an out-of-range date
-                    .ok_or_range_err()?
-                    .with_offset(offset)
-            }
-        }
-        // or the shifted datetime represents an invalid instant
-        .ok_or_range_err()
-    }
-
-    /// Resolve a local time in a timezone, trying to reuse the given offset
-    /// if it is valid. Otherwise, the "compatible" disambiguation is used.
-    fn resolve_using_offset(
-        date: Date,
-        time: Time,
-        tz: &TimeZone,
-        target: Offset,
-    ) -> PyResult<OffsetDateTime> {
-        use Ambiguity::*;
-        match tz.ambiguity_for_local(date.epoch_at(time)) {
-            Unambiguous(offset) => OffsetDateTime::new(date, time, offset),
-            Fold(offset0, offset1) => OffsetDateTime::new(
-                date,
-                time,
-                if target == offset1 { offset1 } else { offset0 },
-            ),
-            // For gaps, don't try to reuse the previous offset since the
-            // time doesn't exist. Use "compatible" (later) behavior.
-            Gap(later, earlier) => {
-                let shift = later.sub(earlier);
-                DateTime { date, time }
-                    .change_offset(shift)
-                    .ok_or_range_err()?
-                    .with_offset(later)
-            }
-        }
-        .ok_or_range_err()
     }
 
     pub(crate) fn instant(&self) -> Instant {
         Instant::from_datetime(self.date, self.time)
             .offset(-self.offset)
-            // Safe: we know the instant of a ZonedDateTime is always valid
+            // SAFETY: we know the instant of a ZonedDateTime is always valid
             .unwrap()
     }
 
-    pub(crate) fn without_offset(&self) -> DateTime {
+    fn local(&self) -> DateTime {
         DateTime {
             date: self.date,
             time: self.time,
         }
     }
 
-    pub(crate) fn without_tz(&self) -> OffsetDateTime {
+    pub(crate) fn fixed_offset(&self) -> OffsetDateTime {
         OffsetDateTime {
             date: self.date,
             time: self.time,
@@ -235,38 +76,32 @@ impl ZonedDateTime {
     }
 
     pub(crate) fn with_date(&self, new_date: Date) -> Option<OffsetDateTime> {
-        self.without_tz().with_date_in_tz(new_date, &self.tz)
+        self.fixed_offset().with_date_in_tz(new_date, &self.tz)
     }
 
     pub(crate) fn shift_default(&self, delta: ItemizedDelta) -> Option<OffsetDateTime> {
         let (months, days, tdelta) = delta.to_components()?;
-        self.without_tz()
+        self.fixed_offset()
             .shift_in_tz(months, days, tdelta, &self.tz)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn shift(
         &self,
         months: DeltaMonths,
         days: DeltaDays,
         delta: TimeDelta,
         dis: Option<Disambiguate>,
-        exc_repeated: PyObj,
-        exc_skipped: PyObj,
+        state: &State,
         cls: HeapType<Self>,
     ) -> PyReturn {
         let shifted_by_date = if !months.is_zero() || !days.is_zero() {
-            Self::resolve(
-                self.date.shift(months, days).ok_or_range_err()?,
-                self.time,
-                &self.tz,
-                dis,
-                self.offset,
-                exc_repeated,
-                exc_skipped,
-            )?
+            self.date
+                .shift(months, days)
+                .ok_or_range_err()?
+                .at(self.time)
+                .localize_custom(&self.tz, dis, self.offset, state)?
         } else {
-            self.without_tz()
+            self.fixed_offset()
         };
 
         shifted_by_date
@@ -277,23 +112,122 @@ impl ZonedDateTime {
     }
 }
 
+impl DateTime {
+    /// Simple/fast path to resolve with the 'compatible' disambiguation strategy.
+    pub(crate) fn localize_default(self, tz: &TimeZone) -> Option<OffsetDateTime> {
+        match tz.ambiguity_for_local(self.assume_utc().epoch) {
+            Ambiguity::Unambiguous(offset) | Ambiguity::Fold(_, offset, _) => {
+                self.with_offset(offset)
+            }
+            Ambiguity::Gap(_, offset, offset_prev) => {
+                let shift = offset.sub(offset_prev);
+                self.shift_by_offset(shift)?.with_offset(offset)
+            }
+        }
+    }
+
+    /// Like `with_tz_offset`, but with a preferred offset to try to reuse if possible.
+    pub(crate) fn localize_using_offset(
+        self,
+        tz: &TimeZone,
+        target: Offset,
+    ) -> Option<OffsetDateTime> {
+        match tz.ambiguity_for_local(self.assume_utc().epoch) {
+            Ambiguity::Unambiguous(offset) => self.with_offset(offset),
+            Ambiguity::Fold(_, earlier, later) => {
+                self.with_offset(if target == later { later } else { earlier })
+            }
+            // For gaps, don't try to reuse the previous offset since the
+            // time doesn't exist. Use "compatible" (later) behavior.
+            Ambiguity::Gap(_, later, earlier) => {
+                // TODO: earlier/later inverted???
+                let shift = later.sub(earlier);
+                self.shift_by_offset(shift)?.with_offset(later)
+            }
+        }
+    }
+
+    pub(crate) fn localize_using_disambiguate(
+        self,
+        tz: &TimeZone,
+        dis: Disambiguate,
+        state: &State,
+    ) -> PyResult<OffsetDateTime> {
+        match tz.ambiguity_for_local(self.assume_utc().epoch) {
+            Ambiguity::Unambiguous(offset) => self.with_offset(offset),
+            Ambiguity::Fold(_, earlier, later) => self.with_offset(match dis {
+                Disambiguate::Earlier => earlier,
+                Disambiguate::Later => later,
+                Disambiguate::Compatible => earlier,
+                Disambiguate::Raise => raise(
+                    *state.exc_repeated,
+                    format!(
+                        "{} {} is repeated in {}",
+                        self.date,
+                        self.time,
+                        tz_err_display(&tz.key)
+                    ),
+                )?,
+            }),
+            Ambiguity::Gap(_, later, earlier) => {
+                let shift = later.sub(earlier);
+                let (shift, offset) = match dis {
+                    Disambiguate::Earlier => (-shift, earlier),
+                    Disambiguate::Later => (shift, later),
+                    Disambiguate::Compatible => (shift, later),
+                    Disambiguate::Raise => raise(
+                        *state.exc_skipped,
+                        format!(
+                            "{} {} is skipped in {}",
+                            self.date,
+                            self.time,
+                            tz_err_display(&tz.key)
+                        ),
+                    )?,
+                };
+                self.shift_by_offset(shift)
+                    // shifting out of the gap can result in an out-of-range date
+                    .ok_or_range_err()?
+                    .with_offset(offset)
+            }
+        }
+        // or the shifted datetime represents an invalid instant
+        .ok_or_range_err()
+    }
+
+    fn localize_custom(
+        self,
+        tz: &TimeZone,
+        dis: Option<Disambiguate>,
+        preferred_offset: Offset,
+        state: &State,
+    ) -> PyResult<OffsetDateTime> {
+        match dis {
+            Some(d) => self.localize_using_disambiguate(tz, d, state),
+            None => self
+                .localize_using_offset(tz, preferred_offset)
+                .ok_or_range_err(),
+        }
+    }
+}
+
 impl OffsetDateTime {
     fn with_date_in_tz(self, new_date: Date, tz: &TimeZone) -> Option<OffsetDateTime> {
         match tz.ambiguity_for_local(new_date.epoch_at(self.time)) {
             Ambiguity::Unambiguous(offset) => OffsetDateTime::new(new_date, self.time, offset),
-            Ambiguity::Fold(earlier, later) => {
+            Ambiguity::Fold(_, earlier, later) => {
                 // Compatible: pick the offset matching the original
                 let offset = if self.offset == later { later } else { earlier };
                 OffsetDateTime::new(new_date, self.time, offset)
             }
-            Ambiguity::Gap(later, earlier) => {
+            Ambiguity::Gap(_, later, earlier) => {
                 // Compatible: shift to later
                 let shift = later.sub(earlier);
                 DateTime {
                     date: new_date,
                     time: self.time,
                 }
-                .change_offset(shift)?
+                .shift_by_offset(shift)?
                 .with_offset(later)
             }
         }
@@ -352,9 +286,10 @@ impl PyWrapped for ZonedDateTime {}
 impl Instant {
     /// Convert an instant to a zoned datetime, ready to be returned to Python.
     pub(crate) fn to_tz_py(self, tz: Arc<TimeZone>, cls: HeapType<ZonedDateTime>) -> PyReturn {
-        let OffsetDateTime { date, time, offset } = self.to_tz(&tz).ok_or_range_err()?;
-        // SAFETY: We've already checked for both out-of-range date and time.
-        ZonedDateTime::new_unchecked(date, time, offset, tz, cls)
+        self.to_tz(&tz)
+            .ok_or_range_err()?
+            // SAFETY: We've already checked for both out-of-range date and time.
+            .assume_tz_unchecked(tz, cls)
     }
 
     // Covert an instant to an OffsetDateTime in the given timezone.
@@ -378,11 +313,16 @@ impl OffsetDateTime {
         tz: Arc<TimeZone>,
         cls: HeapType<ZonedDateTime>,
     ) -> PyReturn {
-        ZonedDateTime::new_unchecked(self.date, self.time, self.offset, tz, cls)
+        ZonedDateTime {
+            date: self.date,
+            time: self.time,
+            offset: self.offset,
+            tz,
+        }
+        .to_obj(cls)
     }
 }
 
-#[inline(never)]
 fn __new__(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     // Alternate constructor: one ISO 8601 string or stdlib datetime argument
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
@@ -422,27 +362,20 @@ fn __new__(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
         disambiguate
     );
 
-    let Some(tz) = NonNull::new(tz) else {
-        return raise_type_err("tz argument is required");
-    };
-
-    let tz = state.tz_store.obj_get(PyObj::wrap(tz))?;
+    let tz = state
+        .tz_store
+        .obj_get(tz.borrow_opt().ok_or_type_err("`tz` argment is required")?)?;
     let date = Date::from_longs(year, month, day).ok_or_value_err("invalid date")?;
     let time =
         Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?;
-    let dis = match NonNull::new(disambiguate) {
-        None => Disambiguate::Compatible,
-        Some(dis) => Disambiguate::from_py(PyObj::wrap(dis), state)?,
-    };
-    ZonedDateTime::resolve_using_disambiguate(
-        date,
-        time,
-        &tz,
-        dis,
-        *state.exc_repeated,
-        *state.exc_skipped,
-    )?
-    .assume_tz_unchecked(tz, cls)
+    let dis = disambiguate
+        .borrow_opt()
+        .map_or(Ok(Disambiguate::Compatible), |o| {
+            Disambiguate::from_py(o, state)
+        })?;
+    DateTime { date, time }
+        .localize_using_disambiguate(&tz, dis, state)?
+        .assume_tz_unchecked(tz, cls)
 }
 
 extern "C" fn dealloc(arg: PyObj) {
@@ -591,7 +524,6 @@ fn __sub__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
     inst_a.diff(inst_b).to_obj(*state.time_delta_type)
 }
 
-#[inline(never)]
 fn shift_operator(
     state: &State,
     cls: HeapType<ZonedDateTime>,
@@ -631,15 +563,7 @@ fn shift_operator(
     days = days.negate_if(negate);
     tdelta = tdelta.negate_if(negate);
 
-    slf.shift(
-        months,
-        days,
-        tdelta,
-        None,
-        *state.exc_repeated,
-        *state.exc_skipped,
-        cls,
-    )
+    slf.shift(months, days, tdelta, None, state, cls)
 }
 
 #[allow(static_mut_refs)]
@@ -700,22 +624,22 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     if packed.len() != 15 {
         raise_type_err("invalid pickle data")?;
     }
-    ZonedDateTime::new_unchecked(
-        Date {
+    ZonedDateTime {
+        date: Date {
             year: Year::new_unchecked(unpack_one!(packed, u16)),
             month: Month::new_unchecked(unpack_one!(packed, u8)),
             day: unpack_one!(packed, u8),
         },
-        Time {
+        time: Time {
             hour: unpack_one!(packed, u8),
             minute: unpack_one!(packed, u8),
             second: unpack_one!(packed, u8),
             subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
         },
-        Offset::new_unchecked(unpack_one!(packed, i32)),
-        state.tz_store.obj_get(tz_obj)?,
-        *state.zoned_datetime_type,
-    )
+        offset: Offset::new_unchecked(unpack_one!(packed, i32)),
+        tz: state.tz_store.obj_get(tz_obj)?,
+    }
+    .to_obj(*state.zoned_datetime_type)
 }
 
 fn to_stdlib(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
@@ -733,8 +657,8 @@ fn to_stdlib(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
                 subsec,
             },
     } = slf
-        .without_offset()
-        .change_offset(-slf.offset.as_offset_delta())
+        .local()
+        .shift_by_offset(-slf.offset.as_offset_delta())
         // Safety: we know the UTC date and time are valid
         .unwrap();
     let state = cls.state();
@@ -843,40 +767,85 @@ fn in_leap_year(_: HeapType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
 }
 
 fn start_of(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> PyReturn {
-    let state = cls.state();
-    let (dt, needs_disambiguate) = slf.without_offset().start_of_unit(unit_obj, state)?;
-    if needs_disambiguate {
-        ZonedDateTime::resolve_using_disambiguate(
-            dt.date,
-            dt.time,
-            &slf.tz,
-            Disambiguate::Compatible,
-            *state.exc_repeated,
-            *state.exc_skipped,
-        )?
-        .assume_tz_unchecked(slf.tz.clone(), cls)
-    } else {
-        ZonedDateTime::resolve_using_offset(dt.date, dt.time, &slf.tz, slf.offset)?
-            .assume_tz_unchecked(slf.tz.clone(), cls)
+    let unit = BoundaryUnit::from_py(cls.state(), unit_obj)?;
+
+    // Behavior differs:
+    // 1. Calendar units always consume folds. A unit is only "started" once
+    //    with the next "start of day/week/month/year".
+    // 2. Other units consume folds under certain conditions, but not always.
+    match unit {
+        BoundaryUnit::Date(_) | BoundaryUnit::Day => slf
+            .local()
+            .start_of_unit(unit)
+            .ok_or_range_err()?
+            .localize_default(&slf.tz)
+            .ok_or_range_err()?
+            .assume_tz_unchecked(slf.tz.clone(), cls),
+        BoundaryUnit::Time(_) => {
+            let start_local = slf.local().start_of_unit(unit).ok_or_range_err()?;
+            match slf.tz.ambiguity_for_local(start_local.local_epoch()) {
+                Ambiguity::Unambiguous(f) => start_local.with_offset(f),
+                Ambiguity::Fold(_, f1, f2) => {
+                    // Use the 'later' part of the fold if we're already in it.
+                    // Otherwise, use the earlier part.
+                    start_local.with_offset(if f2 == slf.offset { f2 } else { f1 })
+                }
+                Ambiguity::Gap(end, f, _) => end.datetime(slf.time.subsec).with_offset(f),
+            }
+        }
+        .ok_or_range_err()?
+        .assume_tz_unchecked(slf.tz.clone(), cls),
     }
 }
 
 fn end_of(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> PyReturn {
-    let state = cls.state();
-    let (dt, needs_disambiguate) = slf.without_offset().end_of_unit(unit_obj, state)?;
-    if needs_disambiguate {
-        ZonedDateTime::resolve_using_disambiguate(
-            dt.date,
-            dt.time,
-            &slf.tz,
-            Disambiguate::Compatible,
-            *state.exc_repeated,
-            *state.exc_skipped,
-        )?
-        .assume_tz_unchecked(slf.tz.clone(), cls)
-    } else {
-        ZonedDateTime::resolve_using_offset(dt.date, dt.time, &slf.tz, slf.offset)?
-            .assume_tz_unchecked(slf.tz.clone(), cls)
+    let unit = BoundaryUnit::from_py(cls.state(), unit_obj)?;
+
+    // Behavior differs:
+    // 1. Calendar units always consume folds--so that it seamlessly lines up
+    //    with the next "start of day/week/month/year".
+    // 2. Other units consume folds under certain conditions, but not always.
+    match unit {
+        BoundaryUnit::Date(_) | BoundaryUnit::Day => slf
+            // Calculate the start of the next unit, then step back one ns.
+            .local()
+            .next_start_of_unit(unit)
+            .ok_or_range_err()?
+            .localize_default(&slf.tz)
+            .ok_or_range_err()?
+            .instant()
+            .shift(-TimeDelta::RESOLUTION)
+            .unwrap()
+            .to_tz_py(slf.tz.clone(), cls),
+        BoundaryUnit::Time(u) => {
+            let end_local = slf.local().end_of_unit(unit).ok_or_range_err()?;
+            let local_epoch = end_local.local_epoch();
+            match slf.tz.ambiguity_for_local(local_epoch) {
+                Ambiguity::Unambiguous(f) => end_local.with_offset(f),
+                Ambiguity::Fold(end, f1, f2) => {
+                    end_local.with_offset(
+                        // Use the 'later' part of the fold if...
+                        if
+                        // ...(a) we're already in that part of the fold...
+                        f2 == slf.offset ||
+                        // ...or (b) we're exactly at the end of the fold, and the fold is
+                        // shorter than the unit.
+                        (local_epoch.get() + 1 == end.get() && f1.sub(f2).get() < u.in_secs())
+                        {
+                            f2
+                        } else {
+                            f1
+                        },
+                    )
+                }
+                Ambiguity::Gap(end, later, earlier) => end
+                    .saturating_add_i32(-later.sub(earlier).get() - 1)
+                    .datetime(SubSecNanos::MAX)
+                    .with_offset(earlier),
+            }
+        }
+        .ok_or_range_err()?
+        .assume_tz_unchecked(slf.tz.clone(), cls),
     }
 }
 
@@ -902,20 +871,11 @@ fn replace_date(
         ref tz,
         ..
     } = *slf;
-    if let Some(date) = arg.extract(*state.date_type) {
-        ZonedDateTime::resolve(
-            date,
-            time,
-            tz,
-            dis,
-            offset,
-            *state.exc_repeated,
-            *state.exc_skipped,
-        )?
+    arg.extract(*state.date_type)
+        .ok_or_type_err("date must be a whenever.Date")?
+        .at(time)
+        .localize_custom(tz, dis, offset, state)?
         .assume_tz_unchecked(tz.clone(), cls)
-    } else {
-        raise_type_err("date must be a whenever.Date instance")
-    }
 }
 
 fn replace_time(
@@ -925,7 +885,6 @@ fn replace_time(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-
     let &[arg] = args else {
         raise_type_err(format!(
             "replace_time() takes exactly 1 argument but {} were given",
@@ -940,19 +899,11 @@ fn replace_time(
         ref tz,
         ..
     } = *slf;
-    let time = arg
-        .extract(*state.time_type)
-        .ok_or_type_err("time must be a whenever.Time instance")?;
-    ZonedDateTime::resolve(
-        date,
-        time,
-        tz,
-        dis,
-        offset,
-        *state.exc_repeated,
-        *state.exc_skipped,
-    )?
-    .assume_tz_unchecked(tz.clone(), cls)
+    arg.extract(*state.time_type)
+        .ok_or_type_err("time must be a whenever.Time instance")?
+        .on(date)
+        .localize_custom(tz, dis, offset, state)?
+        .assume_tz_unchecked(tz.clone(), cls)
 }
 
 fn format_iso(
@@ -971,7 +922,6 @@ fn format_iso(
     )
 }
 
-#[inline(never)]
 fn parse_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
     let py_str = arg
         .cast_allow_subclass::<PyStr>()
@@ -979,7 +929,7 @@ fn parse_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
         // called through the constructor
         .ok_or_type_err("when parsing from ISO format, the argument must be str")?;
     let mut s = Scan::new(py_str.as_utf8()?);
-    let (DateTime { date, time }, (offset, tzstr)) = DateTime::read_iso(&mut s)
+    let (dt, (offset, tzstr)) = DateTime::read_iso(&mut s)
         .zip(read_offset_and_tzname(&mut s))
         .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?;
     let state = cls.state();
@@ -987,18 +937,23 @@ fn parse_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
     match offset {
         OffsetInIsoString::Some(offset) => {
             // Make sure the offset is valid
-            match tz.ambiguity_for_local(date.epoch_at(time)) {
+            match tz.ambiguity_for_local(dt.assume_utc().epoch) {
                 Ambiguity::Unambiguous(f) if f == offset => (),
-                Ambiguity::Fold(f1, f2) if f1 == offset || f2 == offset => (),
+                Ambiguity::Fold(_, f1, f2) if f1 == offset || f2 == offset => (),
                 _ => raise(
                     *state.exc_invalid_offset,
                     format!("invalid offset for {tzstr}"),
                 )?,
             }
-            ZonedDateTime::create(date, time, offset, tz, cls)
+            dt.with_offset(offset)
+                .ok_or_range_err()?
+                .assume_tz_unchecked(tz.clone(), cls)
         }
-        OffsetInIsoString::Z => Instant::from_datetime(date, time).to_tz_py(tz, cls),
-        OffsetInIsoString::Missing => ZonedDateTime::resolve_default(date, time, tz, cls),
+        OffsetInIsoString::Z => dt.assume_utc().to_tz_py(tz, cls),
+        OffsetInIsoString::Missing => dt
+            .localize_default(&tz)
+            .ok_or_range_err()?
+            .assume_tz_unchecked(tz, cls),
     }
 }
 
@@ -1058,18 +1013,11 @@ fn replace(
     })?;
 
     let tz = tz_new.unwrap_or_else(|| tz.clone());
-    let date = Date::from_longs(year, month, day).ok_or_value_err("invalid date")?;
-    let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("invalid time")?;
-    ZonedDateTime::resolve(
-        date,
-        time,
-        &tz,
-        dis,
-        offset,
-        *state.exc_repeated,
-        *state.exc_skipped,
-    )?
-    .assume_tz_unchecked(tz, cls)
+    Date::from_longs(year, month, day)
+        .ok_or_value_err("invalid date")?
+        .at(Time::from_longs(hour, minute, second, nanos).ok_or_value_err("invalid time")?)
+        .localize_custom(&tz, dis, offset, state)?
+        .assume_tz_unchecked(tz, cls)
 }
 
 fn now(cls: HeapType<ZonedDateTime>, tz_obj: PyObj) -> PyReturn {
@@ -1108,22 +1056,16 @@ fn from_system_tz(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<Py
     );
 
     let tz = state.tz_store.get_system_tz()?;
-    let date = Date::from_longs(year, month, day).ok_or_value_err("invalid date")?;
-    let time =
-        Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?;
-    let dis = match NonNull::new(disambiguate) {
-        None => Disambiguate::Compatible,
-        Some(dis) => Disambiguate::from_py(PyObj::wrap(dis), state)?,
-    };
-    ZonedDateTime::resolve_using_disambiguate(
-        date,
-        time,
-        &tz,
-        dis,
-        *state.exc_repeated,
-        *state.exc_skipped,
-    )?
-    .assume_tz_unchecked(tz, cls)
+    let dis = disambiguate
+        .borrow_opt()
+        .map_or(Ok(Disambiguate::Compatible), |o| {
+            Disambiguate::from_py(o, state)
+        })?;
+    Date::from_longs(year, month, day)
+        .ok_or_value_err("invalid date")?
+        .at(Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?)
+        .localize_using_disambiguate(&tz, dis, state)?
+        .assume_tz_unchecked(tz, cls)
 }
 
 fn from_py_datetime(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
@@ -1185,8 +1127,7 @@ fn from_py_datetime_inner(cls: HeapType<ZonedDateTime>, dt: PyDateTime) -> PyRet
 }
 
 fn to_plain(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    slf.without_offset()
-        .to_obj(*cls.state().plain_datetime_type)
+    slf.local().to_obj(*cls.state().plain_datetime_type)
 }
 
 fn timestamp(_: PyType, slf: &ZonedDateTime) -> PyReturn {
@@ -1241,7 +1182,6 @@ fn __reduce__(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime) -> PyResult<Own
 }
 
 /// checks the args comply with (ts, /, *, tz: str)
-#[inline]
 fn check_from_timestamp_args_return_tz(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1330,35 +1270,31 @@ fn is_ambiguous(_: PyType, slf: &ZonedDateTime) -> PyReturn {
     } = *slf;
     matches!(
         tz.ambiguity_for_local(date.epoch_at(time)),
-        Ambiguity::Fold(_, _)
+        Ambiguity::Fold(_, _, _)
     )
     .to_py()
 }
 
 fn next_transition(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     match slf.tz.next_transition(slf.instant().epoch) {
-        Some((epoch, offset)) => {
-            let OffsetDateTime { date, time, offset } = epoch
-                .offset(offset)
-                .ok_or_range_err()?
-                .datetime(SubSecNanos::MIN)
-                .with_offset_unchecked(offset);
-            ZonedDateTime::new_unchecked(date, time, offset, slf.tz.clone(), cls)
-        }
+        Some((epoch, offset)) => epoch
+            .offset(offset)
+            .ok_or_range_err()?
+            .datetime(SubSecNanos::MIN)
+            .with_offset_unchecked(offset)
+            .assume_tz_unchecked(slf.tz.clone(), cls),
         None => Ok(none()),
     }
 }
 
 fn prev_transition(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     match slf.tz.prev_transition(slf.instant().epoch) {
-        Some((epoch, offset)) => {
-            let OffsetDateTime { date, time, offset } = epoch
-                .offset(offset)
-                .ok_or_range_err()?
-                .datetime(SubSecNanos::MIN)
-                .with_offset_unchecked(offset);
-            ZonedDateTime::new_unchecked(date, time, offset, slf.tz.clone(), cls)
-        }
+        Some((epoch, offset)) => epoch
+            .offset(offset)
+            .ok_or_range_err()?
+            .datetime(SubSecNanos::MIN)
+            .with_offset_unchecked(offset)
+            .assume_tz_unchecked(slf.tz.clone(), cls),
         None => Ok(none()),
     }
 }
@@ -1394,7 +1330,6 @@ fn subtract(
     shift_method(cls, slf, args, kwargs, true)
 }
 
-#[inline(never)]
 fn shift_method(
     cls: HeapType<ZonedDateTime>,
     slf: &ZonedDateTime,
@@ -1476,15 +1411,7 @@ fn shift_method(
     days = days.negate_if(negate);
     tdelta = tdelta.negate_if(negate);
 
-    slf.shift(
-        months,
-        days,
-        tdelta,
-        dis,
-        *state.exc_repeated,
-        *state.exc_skipped,
-        cls,
-    )
+    slf.shift(months, days, tdelta, dis, state, cls)
 }
 
 fn difference(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime, arg: PyObj) -> PyReturn {
@@ -1506,48 +1433,36 @@ fn difference(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime, arg: PyObj) -> 
 }
 
 fn start_of_day(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    let state = cls.state();
     warn_with_class(
-        *state.warn_deprecation,
+        *cls.state().warn_deprecation,
         c"start_of_day() is deprecated; use start_of(\"day\") instead.",
         1,
     )?;
-    let (dt, _) = slf.without_offset().start_of_unit(*state.str_day, state)?;
-    ZonedDateTime::resolve_using_disambiguate(
-        dt.date,
-        dt.time,
-        &slf.tz,
-        Disambiguate::Compatible,
-        *state.exc_repeated,
-        *state.exc_skipped,
-    )?
-    .assume_tz_unchecked(slf.tz.clone(), cls)
+    slf.local()
+        .start_of_unit(BoundaryUnit::Day)
+        .ok_or_range_err()?
+        .localize_default(&slf.tz)
+        .ok_or_range_err()?
+        .assume_tz_unchecked(slf.tz.clone(), cls)
 }
 
 fn day_length(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     let ZonedDateTime { date, ref tz, .. } = *slf;
-    let state = cls.state();
-    let start_of_day = ZonedDateTime::resolve_using_disambiguate(
-        date,
-        Time::MIDNIGHT,
-        tz,
-        Disambiguate::Compatible,
-        *state.exc_repeated,
-        *state.exc_skipped,
-    )?
-    .instant();
-    let start_of_next_day = ZonedDateTime::resolve_using_disambiguate(
-        date.tomorrow().ok_or_range_err()?,
-        Time::MIDNIGHT,
-        tz,
-        Disambiguate::Compatible,
-        *state.exc_repeated,
-        *state.exc_skipped,
-    )?
-    .instant();
+    let start_of_day = date
+        .at(Time::MIN)
+        .localize_default(tz)
+        .ok_or_range_err()?
+        .instant();
+    let start_of_next_day = date
+        .tomorrow()
+        .ok_or_range_err()?
+        .at(Time::MIN)
+        .localize_default(tz)
+        .ok_or_range_err()?
+        .instant();
     start_of_next_day
         .diff(start_of_day)
-        .to_obj(*state.time_delta_type)
+        .to_obj(*cls.state().time_delta_type)
 }
 
 fn round(
@@ -1556,13 +1471,12 @@ fn round(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let state = cls.state();
     let round::Args {
         increment, mode, ..
-    } = round::Args::parse(state, args, kwargs, false)?;
+    } = round::Args::parse(cls.state(), args, kwargs, false)?;
 
     match increment {
-        round::RoundIncrement::Day => round_day(slf, state, mode),
+        round::RoundIncrement::Day => round_day(slf, mode),
         round::RoundIncrement::Exact(ns) => {
             let ZonedDateTime {
                 mut date,
@@ -1574,41 +1488,28 @@ fn round(
             if next_day == 1 {
                 date = date.tomorrow().ok_or_range_err()?;
             };
-            ZonedDateTime::resolve_using_offset(date, time_rounded, tz, offset)
+            DateTime {
+                date,
+                time: time_rounded,
+            }
+            .localize_using_offset(tz, offset)
         }
-    }?
+    }
+    .ok_or_range_err()?
     .assume_tz_unchecked(slf.tz.clone(), cls)
 }
 
-fn round_day(slf: &ZonedDateTime, state: &State, mode: round::Mode) -> PyResult<OffsetDateTime> {
+fn round_day(slf: &ZonedDateTime, mode: round::Mode) -> Option<OffsetDateTime> {
     let ZonedDateTime {
         date, time, ref tz, ..
     } = *slf;
-    let get_floor = || {
-        ZonedDateTime::resolve_using_disambiguate(
-            date,
-            Time::MIDNIGHT,
-            tz,
-            Disambiguate::Compatible,
-            *state.exc_repeated,
-            *state.exc_skipped,
-        )
-    };
-    let get_ceil = || {
-        ZonedDateTime::resolve_using_disambiguate(
-            date.tomorrow().ok_or_range_err()?,
-            Time::MIDNIGHT,
-            tz,
-            Disambiguate::Compatible,
-            *state.exc_repeated,
-            *state.exc_skipped,
-        )
-    };
+    let get_floor = || date.at(Time::MIN).localize_default(tz);
+    let get_ceil = || date.tomorrow()?.at(Time::MIN).localize_default(tz);
     match mode {
         round::Mode::Ceil | round::Mode::Expand => {
             // Round up anything *except* midnight (which is a no-op)
-            if time == Time::MIDNIGHT {
-                Ok(slf.without_tz())
+            if time == Time::MIN {
+                Some(slf.fixed_offset())
             } else {
                 get_ceil()
             }
@@ -1627,11 +1528,7 @@ fn round_day(slf: &ZonedDateTime, state: &State, mode: round::Mode) -> PyResult<
                 round::Mode::HalfCeil | round::Mode::HalfExpand => day_ns / 2,
                 _ => unreachable!(),
             };
-            if time_ns >= threshold {
-                Ok(ceil)
-            } else {
-                Ok(floor)
-            }
+            Some(if time_ns >= threshold { ceil } else { floor })
         }
     }
 }
@@ -1720,7 +1617,6 @@ pub(crate) fn zoned_target(
     Some(target_date)
 }
 
-#[inline(never)]
 fn zoned_since(
     cls: HeapType<ZonedDateTime>,
     slf: &ZonedDateTime,
@@ -1751,10 +1647,10 @@ fn zoned_since(
 
     match kwargs {
         SinceUntilKwargs::Total(unit) => {
-            zoned_since_float(a.without_tz(), b, target_date, unit, neg)
+            zoned_since_float(a.fixed_offset(), b, target_date, unit, neg)
         }
         SinceUntilKwargs::InUnits(units, round_mode, round_increment) => zoned_since_in_units(
-            a.without_tz(),
+            a.fixed_offset(),
             a_inst,
             b,
             target_date,
@@ -1768,7 +1664,6 @@ fn zoned_since(
     }
 }
 
-#[inline(never)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn zoned_since_in_units(
     a: OffsetDateTime,
@@ -1935,33 +1830,25 @@ fn parse(cls: HeapType<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
     let hour = parsed.hour.unwrap_or(0);
     let minute = parsed.minute.unwrap_or(0);
     let second = parsed.second.unwrap_or(0);
-
-    if hour >= 24 || minute >= 60 || second >= 60 {
-        raise_value_err("Invalid time")?;
-    }
-
-    let time = Time {
-        hour,
-        minute,
-        second,
-        subsec: parsed.nanos,
-    };
-
+    let dt =
+        date.at(Time::new(hour, minute, second, parsed.nanos).ok_or_value_err("Invalid time")?);
     let tz = state.tz_store.get(tz_id)?;
-
+    // TODO: reuse localize() method?
     if let Some(offset) = parsed.offset_secs {
         // Use offset to disambiguate during DST transitions.
-        // offset is already a validated scalar::Offset — no range check needed.
-        match tz.ambiguity_for_local(date.epoch_at(time)) {
-            Ambiguity::Unambiguous(f) if f == offset => {
-                ZonedDateTime::create(date, time, offset, tz, cls)
-            }
-            Ambiguity::Fold(f1, f2) if f1 == offset || f2 == offset => {
-                ZonedDateTime::create(date, time, offset, tz, cls)
-            }
-            Ambiguity::Gap(_, _) => raise_value_err(format!(
+        match tz.ambiguity_for_local(dt.assume_utc().epoch) {
+            Ambiguity::Unambiguous(f) if f == offset => dt
+                .with_offset(offset)
+                .ok_or_range_err()?
+                .assume_tz_unchecked(tz, cls),
+            Ambiguity::Fold(_, f1, f2) if f1 == offset || f2 == offset => dt
+                .with_offset(offset)
+                .ok_or_range_err()?
+                .assume_tz_unchecked(tz, cls),
+            Ambiguity::Gap(_, _, _) => raise_value_err(format!(
                 "The local time does not exist in timezone {tz_id:?}"
             )),
+            // TODO: does this display nicely?
             _ => raise_value_err(format!(
                 "Offset {}s does not match timezone {tz_id:?}",
                 offset.get()
@@ -1969,15 +1856,8 @@ fn parse(cls: HeapType<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
         }
     } else {
         // No offset provided — use disambiguate kwarg
-        let odt = ZonedDateTime::resolve_using_disambiguate(
-            date,
-            time,
-            &tz,
-            dis,
-            *state.exc_repeated,
-            *state.exc_skipped,
-        )?;
-        odt.assume_tz_unchecked(tz, cls)
+        dt.localize_using_disambiguate(&tz, dis, state)?
+            .assume_tz_unchecked(tz, cls)
     }
 }
 
@@ -2144,7 +2024,7 @@ fn tz(_: PyType, slf: &ZonedDateTime) -> PyReturn {
 }
 
 fn offset(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    TimeDelta::from_offset(slf.offset).to_obj(*cls.state().time_delta_type)
+    slf.offset.to_delta().to_obj(*cls.state().time_delta_type)
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[

@@ -1,9 +1,10 @@
 use core::ffi::{CStr, c_int, c_long, c_void};
-use core::ptr::{NonNull, null_mut as NULL};
+use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 use std::fmt::{Display, Formatter};
 
 use crate::classes::itemized_delta::handle_delta_unit_kwargs;
+use crate::classes::plain_datetime::BoundaryUnit;
 use crate::common::math::{DeltaUnitSet, SinceUntilKwargs};
 use crate::{
     classes::{
@@ -52,7 +53,7 @@ impl OffsetDateTime {
             .unwrap()
     }
 
-    pub(crate) const fn without_offset(self) -> DateTime {
+    pub(crate) const fn local(self) -> DateTime {
         DateTime {
             date: self.date,
             time: self.time,
@@ -129,7 +130,7 @@ impl OffsetDateTime {
     pub(crate) fn from_py(dt: PyDateTime) -> PyResult<Self> {
         let date = Date::from_py(dt.date());
         let time = Time::from_py_dt(dt);
-        OffsetDateTime::new(date, time, Offset::from_py(dt)?).ok_or_range_err()
+        OffsetDateTime::new(date, time, Offset::from_stdlib_datetime(dt)?).ok_or_range_err()
     }
 }
 
@@ -201,7 +202,7 @@ impl Offset {
     }
 
     /// Get the offset from a Python datetime
-    pub(crate) fn from_py(dt: PyDateTime) -> PyResult<Self> {
+    pub(crate) fn from_stdlib_datetime(dt: PyDateTime) -> PyResult<Self> {
         Ok({
             let offset = dt.utcoffset()?;
             if let Some(py_delta) = (*offset).cast_exact::<PyTimeDelta>() {
@@ -259,7 +260,6 @@ impl Display for OffsetDateTime {
     }
 }
 
-#[inline(never)]
 fn __new__(cls: HeapType<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let arg = args.iter().next().unwrap();
@@ -294,14 +294,14 @@ fn __new__(cls: HeapType<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>)
         offset
     );
 
-    let Some(offset_obj) = NonNull::new(offset).map(PyObj::wrap) else {
-        raise_type_err("missing required keyword argument: 'offset'")?
-    };
-    let date = Date::from_longs(year, month, day).ok_or_value_err("invalid date")?;
-    let time =
-        Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?;
+    let offset_obj = offset
+        .borrow_opt()
+        .ok_or_type_err("missing required keyword argument: 'offset'")?;
     let offset = Offset::from_obj(offset_obj, *cls.state().time_delta_type)?;
-    OffsetDateTime::new(date, time, offset)
+    Date::from_longs(year, month, day)
+        .ok_or_value_err("invalid date")?
+        .at(Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?)
+        .with_offset(offset)
         .ok_or_range_err()?
         .to_obj(cls)
 }
@@ -552,20 +552,11 @@ fn assume_tz(
                 slf.offset,
             ),
         ),
-        OffsetMismatch::KeepLocal => {
-            // Keep the local datetime, resolve in the new timezone
-            use crate::classes::zoned_datetime::ZonedDateTime;
-            use crate::common::ambiguity::Disambiguate;
-            let odt = ZonedDateTime::resolve_using_disambiguate(
-                slf.date,
-                slf.time,
-                &tz,
-                Disambiguate::Compatible,
-                *state.exc_repeated,
-                *state.exc_skipped,
-            )?;
-            odt.assume_tz_unchecked(tz, *state.zoned_datetime_type)
-        }
+        OffsetMismatch::KeepLocal => slf
+            .local()
+            .localize_default(&tz)
+            .ok_or_range_err()?
+            .assume_tz_unchecked(tz, *state.zoned_datetime_type),
         OffsetMismatch::KeepInstant => unreachable!(),
     }
 }
@@ -669,13 +660,17 @@ fn start_of(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let unit_obj = handle_one_arg("start_of", args)?;
     let stale_offset_ok = handle_one_kwarg("start_of", *state.str_stale_offset_ok, kwargs)?;
     if !stale_offset_ok.is_some_and(|v| v.is_truthy()) {
         offset_stale_warning(state, doc::OFFSET_START_END_OF_STALE_MSG)?;
     }
-    let (dt, _) = slf.without_offset().start_of_unit(unit_obj, state)?;
-    OffsetDateTime::new(dt.date, dt.time, slf.offset)
+    slf.local()
+        .start_of_unit(BoundaryUnit::from_py(
+            state,
+            handle_one_arg("start_of", args)?,
+        )?)
+        .ok_or_range_err()?
+        .with_offset(slf.offset)
         .ok_or_range_err()?
         .to_obj(cls)
 }
@@ -687,18 +682,21 @@ fn end_of(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let unit_obj = handle_one_arg("end_of", args)?;
     let stale_offset_ok = handle_one_kwarg("end_of", *state.str_stale_offset_ok, kwargs)?;
     if !stale_offset_ok.is_some_and(|v| v.is_truthy()) {
         offset_stale_warning(state, doc::OFFSET_START_END_OF_STALE_MSG)?;
     }
-    let (dt, _) = slf.without_offset().end_of_unit(unit_obj, state)?;
-    OffsetDateTime::new(dt.date, dt.time, slf.offset)
+    slf.local()
+        .end_of_unit(BoundaryUnit::from_py(
+            state,
+            handle_one_arg("end_of", args)?,
+        )?)
+        .ok_or_range_err()?
+        .with_offset(slf.offset)
         .ok_or_range_err()?
         .to_obj(cls)
 }
 
-#[inline]
 fn offset_stale_warning(state: &State, msg: &CStr) -> PyResult<()> {
     warn_with_class(*state.warn_potentially_stale_offset, msg, 1)
 }
@@ -900,8 +898,7 @@ fn from_py_datetime(cls: HeapType<OffsetDateTime>, arg: PyObj) -> PyReturn {
 }
 
 pub(crate) fn to_plain(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    slf.without_offset()
-        .to_obj(*cls.state().plain_datetime_type)
+    slf.local().to_obj(*cls.state().plain_datetime_type)
 }
 
 pub(crate) fn timestamp(_: PyType, slf: OffsetDateTime) -> PyReturn {
@@ -1027,7 +1024,7 @@ fn shift_method(
     months = months.negate_if(negate);
     days = days.negate_if(negate);
     tdelta = tdelta.negate_if(negate);
-    slf.without_offset()
+    slf.local()
         .shift_date(months, days)
         .and_then(|dt| dt.shift(tdelta))
         .and_then(|dt| dt.with_offset(slf.offset))
@@ -1338,8 +1335,8 @@ fn offset_since(
                     // units are well-defined and exact units are always correct.
                     plain_datetime::plain_since_inner(
                         state,
-                        a.without_offset(),
-                        b.without_offset(),
+                        a.local(),
+                        b.local(),
                         SinceUntilKwargs::Total(unit),
                         false, // flip already applied above
                     )
@@ -1351,8 +1348,8 @@ fn offset_since(
                 // same offset: use the plain datetime rounding logic (days are always 24h)
                 (true, true) => plain_datetime::plain_since_inner(
                     state,
-                    slf.without_offset(),
-                    other.without_offset(),
+                    slf.local(),
+                    other.local(),
                     SinceUntilKwargs::InUnits(unit_set, round_mode, round_increment),
                     flip,
                 ),
@@ -1632,7 +1629,7 @@ fn nanosecond(_: PyType, slf: OffsetDateTime) -> PyReturn {
 }
 
 fn offset(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    TimeDelta::from_offset(slf.offset).to_obj(*cls.state().time_delta_type)
+    slf.offset.to_delta().to_obj(*cls.state().time_delta_type)
 }
 
 static mut GETSETTERS: &[PyGetSetDef] = &[

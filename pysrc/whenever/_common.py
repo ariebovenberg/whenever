@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-# Unused imports are necessary for sphinc autodoc due to
+# Unused imports are necessary for sphinx autodoc due to
 # scoping issues introduced by add_alternate_constructors().
 from datetime import (  # noqa: F401
     date as _date,

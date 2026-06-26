@@ -1759,6 +1759,26 @@ class TestStartOf:
 
 
 class TestEndOf:
+    @pytest.mark.parametrize(
+        ("unit", "next_start"),
+        [
+            ("year", PlainDateTime(2025, 1, 1)),
+            ("month", PlainDateTime(2024, 9, 1)),
+            ("week_mon", PlainDateTime(2024, 8, 19)),
+            ("week_sun", PlainDateTime(2024, 8, 18)),
+            ("day", PlainDateTime(2024, 8, 16)),
+            ("hour", PlainDateTime(2024, 8, 15, 15)),
+            ("minute", PlainDateTime(2024, 8, 15, 14, 31)),
+            ("second", PlainDateTime(2024, 8, 15, 14, 30, 46)),
+        ],
+    )
+    def test_adjacent_to_next_start(self, unit, next_start):
+        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
+        assert (
+            dt.end_of(unit).add(nanoseconds=1, naive_arithmetic_ok=True)
+            == next_start
+        )
+
     def test_year(self):
         dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
         result = dt.end_of("year")

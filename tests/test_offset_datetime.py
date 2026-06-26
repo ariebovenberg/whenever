@@ -2497,6 +2497,32 @@ class TestStartOf:
 
 
 class TestEndOf:
+    @pytest.mark.parametrize(
+        ("unit", "next_start"),
+        [
+            ("year", OffsetDateTime(2025, 1, 1, offset=hours(5))),
+            ("month", OffsetDateTime(2024, 9, 1, offset=hours(5))),
+            ("week_mon", OffsetDateTime(2024, 8, 19, offset=hours(5))),
+            ("week_sun", OffsetDateTime(2024, 8, 18, offset=hours(5))),
+            ("day", OffsetDateTime(2024, 8, 16, offset=hours(5))),
+            ("hour", OffsetDateTime(2024, 8, 15, 15, offset=hours(5))),
+            ("minute", OffsetDateTime(2024, 8, 15, 14, 31, offset=hours(5))),
+            (
+                "second",
+                OffsetDateTime(2024, 8, 15, 14, 30, 46, offset=hours(5)),
+            ),
+        ],
+    )
+    def test_adjacent_to_next_start(self, unit, next_start):
+        odt = OffsetDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, offset=hours(5)
+        )
+        assert (
+            odt.end_of(unit, stale_offset_ok=True)
+            .add(nanoseconds=1, stale_offset_ok=True)
+            .exact_eq(next_start)
+        )
+
     @suppress(StaleOffsetWarning)
     def test_year(self):
         odt = OffsetDateTime(
@@ -2653,8 +2679,8 @@ class TestEndOf:
     def test_invalid_unit(self):
         with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
             OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5)).end_of(
-                "invalid"
-            )  # type: ignore[arg-type]
+                "invalid"  # type: ignore[arg-type]
+            )
 
     @suppress(StaleOffsetWarning)
     def test_week_value_error(self):

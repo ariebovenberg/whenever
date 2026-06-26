@@ -1556,6 +1556,19 @@ class TestStartOf:
 
 
 class TestEndOf:
+    @pytest.mark.parametrize(
+        ("unit", "next_start"),
+        [
+            ("year", Date(2025, 1, 1)),
+            ("month", Date(2024, 9, 1)),
+            ("week_mon", Date(2024, 8, 19)),
+            ("week_sun", Date(2024, 8, 18)),
+        ],
+    )
+    def test_adjacent_to_next_start(self, unit, next_start):
+        date = Date(2024, 8, 15)
+        assert date.end_of(unit).add(days=1) == next_start
+
     def test_year(self):
         assert Date(2024, 8, 15).end_of("year") == Date(2024, 12, 31)
 

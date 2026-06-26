@@ -2,6 +2,7 @@
 # so expect some unpythonic code.
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,33 @@ from whenever._tz.tzif import (
 )
 
 TZIF_DIR = Path(__file__).parent / "tzif"
+UTC_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def ymdhms(
+    year: int,
+    month: int,
+    day: int,
+    hour: int = 0,
+    minute: int = 0,
+    second: int = 0,
+) -> int:
+    value = datetime(
+        year, month, day, hour, minute, second, tzinfo=timezone.utc
+    )
+    return int((value - UTC_EPOCH).total_seconds())
+
+
+def hhmm(hours: int, minutes: int = 0) -> int:
+    assert 0 <= minutes < 60
+    return hms(hours, minutes, 0)
+
+
+def hms(hours: int, minutes: int, seconds: int) -> int:
+    assert 0 <= minutes < 60
+    assert 0 <= seconds < 60
+    sign = -1 if hours < 0 else 1
+    return hours * 3600 + sign * (minutes * 60 + seconds)
 
 
 class TestBasicParsing:
@@ -63,6 +91,14 @@ AMS = TimeZone.parse_tzif((TZIF_DIR / "Amsterdam.tzif").read_bytes())
 
 class TestTZifFiles:
     """Test parsing of actual TZif files"""
+
+    def test_posix_extension_includes_remainder_of_last_explicit_year(self):
+        test_file = TZIF_DIR / "Lord_Howe.tzif"
+        tzif = TimeZone.parse_tzif(test_file.read_bytes())
+
+        # The final explicit transition ends DST in April 2008. The POSIX tail
+        # starts it again in October of that same year.
+        assert tzif.offset_for_instant(ymdhms(2008, 12, 1)) == hhmm(11)
 
     def test_utc(self):
         """Test UTC timezone file"""
@@ -153,30 +189,30 @@ class TestTZifFiles:
         "t, expected",
         [
             # before the entire range
-            (-2850000000, 1050),
+            (ymdhms(1879, 9, 8, 21, 20), hms(0, 17, 30)),
             # at start of range
-            (-2840141851, 1050),
-            (-2840141850, 1050),
-            (-2840141849, 1050),
+            (ymdhms(1879, 12, 31, 23, 42, 29), hms(0, 17, 30)),
+            (ymdhms(1879, 12, 31, 23, 42, 30), hms(0, 17, 30)),
+            (ymdhms(1879, 12, 31, 23, 42, 31), hms(0, 17, 30)),
             # The first transition
-            (-2450995201, 1050),
-            (-2450995200, 0),
-            (-2450995199, 0),
+            (ymdhms(1892, 4, 30, 23, 59, 59), hms(0, 17, 30)),
+            (ymdhms(1892, 5, 1), hhmm(0)),
+            (ymdhms(1892, 5, 1, 0, 0, 1), hhmm(0)),
             # Arbitrary transition (fold)
-            (1698541199, 7200),
-            (1698541200, 3600),
-            (1698541201, 3600),
+            (ymdhms(2023, 10, 29, 0, 59, 59), hhmm(2)),
+            (ymdhms(2023, 10, 29, 1), hhmm(1)),
+            (ymdhms(2023, 10, 29, 1, 0, 1), hhmm(1)),
             # Arbitrary transition (gap)
-            (1743296399, 3600),
-            (1743296400, 7200),
-            (1743296401, 7200),
+            (ymdhms(2025, 3, 30, 0, 59, 59), hhmm(1)),
+            (ymdhms(2025, 3, 30, 1), hhmm(2)),
+            (ymdhms(2025, 3, 30, 1, 0, 1), hhmm(2)),
             # Transitions after the last explicit one need to use the POSIX TZ string
-            (2216249999, 3600),
-            (2216250000, 7200),
-            (2216250001, 7200),
-            (2645053199, 7200),
-            (2645053200, 3600),
-            (2645053201, 3600),
+            (ymdhms(2040, 3, 25, 0, 59, 59), hhmm(1)),
+            (ymdhms(2040, 3, 25, 1), hhmm(2)),
+            (ymdhms(2040, 3, 25, 1, 0, 1), hhmm(2)),
+            (ymdhms(2053, 10, 26, 0, 59, 59), hhmm(2)),
+            (ymdhms(2053, 10, 26, 1), hhmm(1)),
+            (ymdhms(2053, 10, 26, 1, 0, 1), hhmm(1)),
         ],
     )
     def test_offset_for_instant(self, t, expected):
@@ -187,58 +223,82 @@ class TestTZifFiles:
         "t, expected",
         [
             # before the entire range
-            (-2850000000 + 1050, Unambiguous(1050)),
+            (
+                ymdhms(1879, 9, 8, 21, 37, 30),
+                Unambiguous(hms(0, 17, 30)),
+            ),
             # At the start of the range
-            (-2840141851 + 1050, Unambiguous(1050)),
-            (-2840141850 + 1050, Unambiguous(1050)),
-            (-2840141849 + 1050, Unambiguous(1050)),
+            (
+                ymdhms(1879, 12, 31, 23, 59, 59),
+                Unambiguous(hms(0, 17, 30)),
+            ),
+            (ymdhms(1880, 1, 1), Unambiguous(hms(0, 17, 30))),
+            (
+                ymdhms(1880, 1, 1, 0, 0, 1),
+                Unambiguous(hms(0, 17, 30)),
+            ),
             # --- The first transition (a fold) ---
             # well before the fold (no ambiguity)
-            (-2750999299 + 1050, Unambiguous(1050)),
+            (
+                ymdhms(1882, 10, 28, 17, 49, 11),
+                Unambiguous(hms(0, 17, 30)),
+            ),
             # Just before times become ambiguous
-            (-2450995201, Unambiguous(1050)),
+            (
+                ymdhms(1892, 4, 30, 23, 59, 59),
+                Unambiguous(hms(0, 17, 30)),
+            ),
             # At the moment times becomes ambiguous
-            (-2450995200, Fold(1050, 0)),
+            (
+                ymdhms(1892, 5, 1),
+                Fold(hms(0, 17, 30), hhmm(0)),
+            ),
             # Short before the clock change, short enough for ambiguity!
-            (-2450995902 + 1050, Fold(1050, 0)),
+            (
+                ymdhms(1892, 5, 1, 0, 5, 48),
+                Fold(hms(0, 17, 30), hhmm(0)),
+            ),
             # A second before the clock change (ambiguity!)
-            (-2450995201 + 1050, Fold(1050, 0)),
+            (
+                ymdhms(1892, 5, 1, 0, 17, 29),
+                Fold(hms(0, 17, 30), hhmm(0)),
+            ),
             # At the exact clock change (no ambiguity)
-            (-2450995200 + 1050, Unambiguous(0)),
+            (ymdhms(1892, 5, 1, 0, 17, 30), Unambiguous(hhmm(0))),
             # Directly after the clock change (no ambiguity)
-            (-2450995199 + 1050, Unambiguous(0)),
+            (ymdhms(1892, 5, 1, 0, 17, 31), Unambiguous(hhmm(0))),
             # --- A "gap" transition ---
             # Well before the transition
-            (-1698792800, Unambiguous(3600)),
+            (ymdhms(1916, 3, 3, 1, 6, 40), Unambiguous(hhmm(1))),
             # Just before the clock change
-            (-1693702801 + 3600, Unambiguous(3600)),
+            (ymdhms(1916, 4, 30, 23, 59, 59), Unambiguous(hhmm(1))),
             # At the exact clock change (ambiguity!)
-            (-1693702800 + 3600, Gap(7200, 3600)),
+            (ymdhms(1916, 5, 1), Gap(hhmm(2), hhmm(1))),
             # Right after the clock change (ambiguity)
-            (-1693702793 + 3600, Gap(7200, 3600)),
+            (ymdhms(1916, 5, 1, 0, 0, 7), Gap(hhmm(2), hhmm(1))),
             # Slightly before the gap ends (ambiguity)
-            (-1693702801 + 7200, Gap(7200, 3600)),
+            (ymdhms(1916, 5, 1, 0, 59, 59), Gap(hhmm(2), hhmm(1))),
             # The gap ends (no ambiguity)
-            (-1693702800 + 7200, Unambiguous(7200)),
+            (ymdhms(1916, 5, 1, 1), Unambiguous(hhmm(2))),
             # A sample of other times
-            (700387500, Unambiguous(3600)),
-            (701834700, Gap(7200, 3600)),
-            (715302300, Unambiguous(7200)),
+            (ymdhms(1992, 3, 12, 8, 5), Unambiguous(hhmm(1))),
+            (ymdhms(1992, 3, 29, 2, 5), Gap(hhmm(2), hhmm(1))),
+            (ymdhms(1992, 8, 31, 23, 5), Unambiguous(hhmm(2))),
             # ---- Transitions after the last explicit one need to use the POSIX TZ string
             # before gap
-            (2216249999 + 3600, Unambiguous(3600)),
+            (ymdhms(2040, 3, 25, 1, 59, 59), Unambiguous(hhmm(1))),
             # gap starts
-            (2216250000 + 3600, Gap(7200, 3600)),
+            (ymdhms(2040, 3, 25, 2), Gap(hhmm(2), hhmm(1))),
             # gap ends
-            (2216250000 + 7200, Unambiguous(7200)),
+            (ymdhms(2040, 3, 25, 3), Unambiguous(hhmm(2))),
             # somewhere in summer
-            (2216290000, Unambiguous(7200)),
+            (ymdhms(2040, 3, 25, 12, 6, 40), Unambiguous(hhmm(2))),
             # Fold starts
-            (2645056800, Fold(7200, 3600)),
+            (ymdhms(2053, 10, 26, 2), Fold(hhmm(2), hhmm(1))),
             # In the fold
-            (2645056940, Fold(7200, 3600)),
+            (ymdhms(2053, 10, 26, 2, 2, 20), Fold(hhmm(2), hhmm(1))),
             # end of the fold
-            (2645056800 + 3600, Unambiguous(3600)),
+            (ymdhms(2053, 10, 26, 3), Unambiguous(hhmm(1))),
         ],
     )
     def test_ambiguity_for_local(self, t, expected):

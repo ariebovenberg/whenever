@@ -124,7 +124,7 @@ pub(crate) trait OptionExt<T> {
     where
         Self: Sized,
     {
-        // FUTURE: can we intern this somehow, since it's static?
+        // FUTURE: can/should we intern this somehow, since it's static?
         self.ok_or_raise(exc_value_error(), "Value or calculation out of range")
     }
 

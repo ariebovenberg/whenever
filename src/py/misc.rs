@@ -23,7 +23,7 @@ impl OncePyObj {
     #[inline]
     pub(crate) fn get(&self) -> PyResult<PyObj> {
         if let Some(p) = self.ptr.load() {
-            return Ok(PyObj::wrap(p));
+            return Ok(PyObj::new(p));
         }
         self.get_slow()
     }
@@ -37,7 +37,7 @@ impl OncePyObj {
             Err(winner) => {
                 // Another init won the race — DECREF ours, return theirs
                 unsafe { Py_DECREF(obj.as_ptr()) };
-                Ok(PyObj::wrap(winner))
+                Ok(PyObj::new(winner))
             }
         }
     }

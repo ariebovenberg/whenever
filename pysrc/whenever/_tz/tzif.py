@@ -331,23 +331,28 @@ def _extend_with_posix(
     dst_abbrev = end.dst.abbrev
     std_abbrev = end.std_abbrev
 
-    start_year = year_for_epoch(offsets[-1][0]) + 1 if offsets else 1970
+    last_epoch = offsets[-1][0] if offsets else EPOCH_SECS_MIN
+    start_year = year_for_epoch(last_epoch) if offsets else 1970
 
     for year in range(start_year, _PRECALC_UNTIL + 1):
         dst_start = epoch_for_date(start_rule.apply(year)) + start_time - std
         dst_end = epoch_for_date(end_rule.apply(year)) + end_time - dst_offset
         if dst_start < dst_end:
             # Northern hemisphere: DST active in summer
-            offsets.append((dst_start, dst_offset))
-            offsets.append((dst_end, std))
-            meta.append((dst_saving, dst_abbrev))
-            meta.append((0, std_abbrev))
+            transitions = (
+                ((dst_start, dst_offset), (dst_saving, dst_abbrev)),
+                ((dst_end, std), (0, std_abbrev)),
+            )
         else:
             # Southern hemisphere: DST active in winter
-            offsets.append((dst_end, std))
-            offsets.append((dst_start, dst_offset))
-            meta.append((0, std_abbrev))
-            meta.append((dst_saving, dst_abbrev))
+            transitions = (
+                ((dst_end, std), (0, std_abbrev)),
+                ((dst_start, dst_offset), (dst_saving, dst_abbrev)),
+            )
+        for transition, transition_meta in transitions:
+            if transition[0] > last_epoch:
+                offsets.append(transition)
+                meta.append(transition_meta)
 
 
 def _parse_content(

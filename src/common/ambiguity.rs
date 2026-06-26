@@ -1,5 +1,9 @@
 //! Functionality for handling ambiguous datetime values.
-use crate::{common::scalar::Offset, py::*, pymodule::State};
+use crate::{
+    common::scalar::{EpochSecs, Offset},
+    py::*,
+    pymodule::State,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum Disambiguate {
@@ -12,8 +16,8 @@ pub(crate) enum Disambiguate {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Ambiguity {
     Unambiguous(Offset),
-    Gap(Offset, Offset),  // (earlier, later) occurrence, (a > b)
-    Fold(Offset, Offset), // (later, earlier) occurrence, (a > b)
+    Gap(EpochSecs, Offset, Offset), // (end, later, earlier) occurrence, (a > b)
+    Fold(EpochSecs, Offset, Offset), // (end, later, earlier) occurrence, (a > b)
 }
 
 impl Disambiguate {

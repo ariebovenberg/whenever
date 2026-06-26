@@ -45,6 +45,7 @@ pub(crate) const SINGLETONS: &[(&CStr, Instant); 2] = &[
 ];
 
 impl Instant {
+    // TODO: method on datetime?
     pub(crate) fn from_datetime(date: Date, time: Time) -> Self {
         Instant {
             epoch: date.epoch_at(time),

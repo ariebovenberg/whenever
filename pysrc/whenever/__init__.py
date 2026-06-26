@@ -145,9 +145,7 @@ _LAZY_MODULES = {
         "SUNDAY",
     ),
 }
-_LAZY_NAMES = {
-    n: mod for mod, names in _LAZY_MODULES.items() for n in names
-}
+_LAZY_NAMES = {n: mod for mod, names in _LAZY_MODULES.items() for n in names}
 
 
 def __getattr__(name: str) -> object:

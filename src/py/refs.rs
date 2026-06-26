@@ -3,6 +3,7 @@ use super::{base::*, exc::*};
 use core::mem::ManuallyDrop;
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
+use std::ptr::NonNull;
 
 /// A wrapper for Python objects that have a reference owned by Rust.
 /// They are decreferred on drop.
@@ -95,14 +96,23 @@ impl<T: PyBase> std::ops::DerefMut for Owned<T> {
 pub(crate) trait PyObjectExt {
     fn own(self) -> PyResult<Owned<PyObj>>;
     fn borrow(self) -> PyResult<PyObj>;
+    fn borrow_opt(self) -> Option<PyObj>;
 }
 
 impl PyObjectExt for *mut PyObject {
+    /// Take ownership of a raw PyObject, interpreting NULL as an error.
     fn own(self) -> PyResult<Owned<PyObj>> {
-        PyObj::new(self).map(Owned::new)
+        self.borrow().map(Owned::new)
     }
+
+    /// Wrap a raw PyObject, interpreting NULL as an error.
     fn borrow(self) -> PyResult<PyObj> {
-        PyObj::new(self)
+        NonNull::new(self).map(PyObj::new).ok_or(PyErrMarker)
+    }
+
+    /// Wrap a raw PyObject, interpreting NULL as None.
+    fn borrow_opt(self) -> Option<PyObj> {
+        NonNull::new(self).map(PyObj::new)
     }
 }
 

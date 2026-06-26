@@ -25,14 +25,7 @@ pub(crate) struct PyObj {
 }
 
 impl PyObj {
-    pub(crate) fn new(ptr: *mut PyObject) -> PyResult<Self> {
-        match NonNull::new(ptr) {
-            Some(x) => Ok(Self { inner: x }),
-            None => Err(PyErrMarker),
-        }
-    }
-
-    pub(crate) fn wrap(inner: NonNull<PyObject>) -> Self {
+    pub(crate) fn new(inner: NonNull<PyObject>) -> Self {
         Self { inner }
     }
 
