@@ -31,7 +31,7 @@ def test_add(benchmark):
 def test_diff(benchmark):
     d1 = Date(2020, 2, 29)
     d2 = Date(2025, 2, 28)
-    benchmark(lambda: d1 - d2)
+    benchmark(d1.since, d2, total="days")
 
 
 def test_attributes(benchmark):
