@@ -7615,6 +7615,65 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     _PATTERN_CATS = frozenset({"date", "time", "offset", "tz"})
 
+    def format_rfc2822(self) -> str:
+        """Format as an RFC 2822 string, using the current UTC offset.
+
+        The inverse of the ``parse_rfc2822()`` method.
+
+        >>> ZonedDateTime(2020, 8, 15, 23, 12, tz="America/New_York").format_rfc2822()
+        "Sat, 15 Aug 2020 23:12:00 -0400"
+
+        Note
+        ----
+        The IANA timezone ID is not included in the output. Use
+        :meth:`format_iso` if you need the full zoned representation.
+        """
+        offset = int(self._py_dt.utcoffset().total_seconds())  # type: ignore[union-attr]
+        offset_sign = "-" if offset < 0 else "+"
+        offset = abs(offset)
+        offset_h = offset // 3600
+        offset_m = (offset % 3600) // 60
+        return (
+            f"{WEEKDAY_TO_RFC2822[self._py_dt.weekday()]}, "
+            f"{self._py_dt.day:02} "
+            f"{MONTH_TO_RFC2822[self._py_dt.month]} {self._py_dt.year:04} "
+            f"{self._py_dt.time()} "
+            f"{offset_sign}{offset_h:02}{offset_m:02}"
+        )
+
+    @classmethod
+    def parse_rfc2822(cls, s: str, /, *, tz: str) -> ZonedDateTime:
+        """Parse an RFC 2822 string and assign an IANA timezone.
+
+        The ``tz`` parameter is required because RFC 2822 only contains UTC
+        offset information, not an IANA timezone ID.
+
+        >>> ZonedDateTime.parse_rfc2822(
+        ...     "Sat, 15 Aug 2020 23:12:00 -0400", tz="America/New_York"
+        ... )
+        ZonedDateTime("2020-08-15 23:12:00-04:00[America/New_York]")
+
+        Note
+        ----
+        - Strictly speaking, an offset of ``-0000`` means that the offset
+          is "unknown". Here, we treat it the same as +0000.
+        - Although technically part of the RFC 2822 standard,
+          comments within folding whitespace are not supported.
+        - The parsed UTC offset must match the actual offset of ``tz``
+          at the parsed datetime, otherwise a :exc:`ValueError` is raised.
+        """
+        parsed = parse_rfc2822(s)
+        _tz = get_tz(tz)
+        secs = int(parsed.timestamp())
+        result = cls._from_py_unchecked(_from_epoch(secs, _tz), 0, _tz)
+        if result._py_dt.utcoffset() != parsed.utcoffset():
+            raise ValueError(
+                f"The offset in the RFC 2822 string ({parsed.utcoffset()}) "
+                f"does not match the offset of timezone '{tz}' "
+                f"at that time ({result._py_dt.utcoffset()})"
+            )
+        return result
+
     def format(self, pattern: str, /) -> str:
         """Format as a custom pattern string.
 
