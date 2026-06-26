@@ -102,9 +102,9 @@ def test_extension_doesnt_import_tz_modules():
         check=True,
     )
     imported = json.loads(result.stdout)
-    assert (
-        imported == []
-    ), f"unexpected modules imported on 'import whenever': {imported}"
+    assert imported == [], (
+        f"unexpected modules imported on 'import whenever': {imported}"
+    )
 
 
 @pytest.mark.skipif(

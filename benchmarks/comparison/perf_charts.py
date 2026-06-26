@@ -35,9 +35,7 @@ import numpy as np
 # Font/SVG helpers (shared with charts.py)
 # ---------------------------------------------------------------------------
 
-_SYSTEM_FONT = (
-    "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
-)
+_SYSTEM_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
 
 _SVG_RC = {
     "svg.fonttype": "none",
@@ -315,11 +313,13 @@ def main() -> None:
         for mod in IMPORT_MODULES:
             t = measure_import(mod, python=python)
             times_ns[mod] = t
-            print(f"  {mod:25s}: {t/1e6:.2f} ms")
+            print(f"  {mod:25s}: {t / 1e6:.2f} ms")
 
         print("\nGenerating import-time charts…")
         for theme in ("light", "dark"):
-            plot_import_time(times_ns, out_dir / f"import-time-{theme}.svg", theme)
+            plot_import_time(
+                times_ns, out_dir / f"import-time-{theme}.svg", theme
+            )
 
     # -- Package size --
     print("\nGenerating package-size charts…")
