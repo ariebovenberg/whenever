@@ -59,6 +59,7 @@ def _save_svg(fig: plt.Figure, output: Path) -> None:
         f"font-family: {_SYSTEM_FONT}",
         svg,
     )
+    svg = "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
     output.write_text(svg)
     print(f"  Saved {output}")
 
@@ -195,7 +196,7 @@ def plot_import_time(
 # ---------------------------------------------------------------------------
 
 # Wheel sizes: (label, size_kb) — manylinux_2_17_x86_64, cp313
-# Updated 2025-05-27 from PyPI
+# Updated 2026-05-27 from PyPI
 PACKAGE_SIZES = [
     ("whenever (pure python)", 116),
     ("whenever", 617),

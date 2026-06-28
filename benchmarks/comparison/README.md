@@ -1,33 +1,22 @@
 # Comparison benchmarks
 
 Compares `whenever` against `stdlib` (+ `dateutil`), `whenever` (pure Python),
-`arrow`, and `pendulum` across 9 individual operations, plus a
-memory-per-instance report.
-
-## Setup
-
-The suite has its own isolated environment managed by `uv`, pinning
-`whenever==0.9.5` from PyPI (the latest stable optimized Rust wheel) so that
-the local dev version is not accidentally used.
-
-```shell
-cd benchmarks/comparison
-uv sync          # creates .venv with Python 3.14 and all dependencies
-```
+`arrow`, and `pendulum` across 9 individual operations.
 
 ## Running benchmarks
 
 ### Proper run (final results)
 
 ```shell
-./run.sh              # full pyperf run — slow but reliable
-./run.sh --fast       # faster run, fewer samples — good for quick checks
-./run.sh --update-docs   # also write SVG charts to docs/_static/benchmarks/
-./run.sh --fast --update-docs
+make bench-compare         # full pyperf run — slow but reliable
+make bench-compare-fast    # fewer samples, useful while iterating
+make bench-compare-docs    # full run and update documentation charts
 ```
 
+Each target syncs the root `benchmark` dependency group, builds the local Rust
+extension in release mode, and then runs the comparison scripts.
 Results land in `results/` and a comparison table is printed at the end,
-followed by a memory-per-instance report and chart generation.
+followed by chart generation.
 
 ### Individual benchmarks
 
@@ -35,9 +24,10 @@ Each script can be run directly.  Use `--fast` while iterating and
 `--only NAME` to run a single benchmark (or `--only a,b,c` for multiple):
 
 ```shell
-uv run python run_whenever.py --fast
-uv run python run_whenever.py --only now --fast
-uv run python run_whenever.py --only now,parse_iso
+make build-release
+uv run --group benchmark python benchmarks/comparison/run_whenever.py --fast
+uv run --group benchmark python benchmarks/comparison/run_whenever.py \
+    --only now,parse_iso
 ```
 
 Available benchmark names (identical across all five scripts):
@@ -72,21 +62,13 @@ Uncomment the relevant block in each file to include it.
 > **Note on `shift`:** `stdlib`'s `+ timedelta` is DST-*unsafe*, so it
 > has an unfair speed advantage there.  `whenever`'s `add()` is DST-safe.
 
-### Memory per instance
-
-```shell
-uv run python memory.py
-uv run python memory.py -o results/memory.json   # also write JSON
-```
-
 ### Generating charts
 
-Reads `results/result_*.json` and `results/memory.json`, writes
-`timing-light.svg`, `timing-dark.svg`, `memory-light.svg`, `memory-dark.svg`:
+Reads `results/result_*.json` and writes
+`timing-light.svg` and `timing-dark.svg`:
 
 ```shell
-uv run python charts.py                                    # to charts/
-uv run python charts.py --output ../../docs/_static/benchmarks/  # update docs
+uv run --group benchmark python benchmarks/comparison/charts.py
 ```
 
 ### Import time and package size charts
@@ -95,18 +77,14 @@ uv run python charts.py --output ../../docs/_static/benchmarks/  # update docs
 generates package-size comparison charts:
 
 ```shell
-# Use the development Python (with current whenever build):
-uv run python perf_charts.py --python $(which python) --output ../../docs/_static/benchmarks/
-
-# Or skip measurement and only regenerate size charts:
-uv run python perf_charts.py --skip-import --output ../../docs/_static/benchmarks/
+make bench-compare-docs
 ```
 
 ## Verifying the Python build
 
-pyperf spawns worker processes using `sys.executable`, which is the `.venv`
-Python resolved by `uv run`.  `run.sh` prints build flags at startup to
-confirm the interpreter was built with PGO (Profile-Guided Optimisation).
+pyperf spawns worker processes using `sys.executable`, which is the root
+project's UV-managed Python. `run.sh` prints build flags at startup to confirm
+the interpreter was built with PGO (Profile-Guided Optimisation).
 
 If you see a warning, install the python-build-standalone interpreter, which
 ships with PGO+LTO enabled:

@@ -60,9 +60,16 @@ dev-extra = [
     "slotscheck>=0.20,<0.21",
     "build",
     "packaging>=26.2",
-    "pyperf>=2.10,<3",
     "setuptools-rust",
     "twine>=6.2.0",
+]
+benchmark = [
+    "arrow>=1.4,<2",
+    "matplotlib>=3.10,<4",
+    "pendulum>=3.2,<4",
+    "pyperf>=2.10,<3",
+    "python-dateutil>=2.9,<3",
+    "setuptools-rust",
 ]
 docs = [
     "furo>=2025.12.19,<2026",
@@ -73,6 +80,7 @@ docs = [
 ]
 
 [tool.uv.dependency-groups]
+benchmark = {requires-python = ">=3.14"}
 docs = {requires-python = ">=3.13"}
 
 
