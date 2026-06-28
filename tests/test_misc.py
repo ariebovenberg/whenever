@@ -76,14 +76,41 @@ def test_version():
 def test_dir_includes_public_names():
     import whenever
 
-    assert set(whenever.__all__) <= set(dir(whenever))
+    expected = {
+        *whenever.__all__,
+        "TZPATH",
+        "__version__",
+        "_EXTENSION_LOADED",
+        "RoundModeStr",
+    }
+    assert expected <= set(dir(whenever))
 
     result = subprocess.run(
         [
             sys.executable,
             "-c",
-            "import whenever; "
-            "assert set(whenever.__all__) <= set(dir(whenever))",
+            "import sys; import whenever; "
+            f"expected = {expected!r}; "
+            "assert expected <= set(dir(whenever)); "
+            "assert 'whenever._core' not in sys.modules; "
+            "assert 'whenever._utils' not in sys.modules; "
+            "assert 'whenever._typing' not in sys.modules",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_star_import_includes_utilities():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "namespace = {}; exec('from whenever import *', namespace); "
+            "expected = {'patch_current_time', 'reset_tzpath', "
+            "'clear_tzcache', 'available_timezones'}; "
+            "assert expected <= namespace.keys()",
         ],
         capture_output=True,
         text=True,

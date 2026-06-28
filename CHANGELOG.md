@@ -17,6 +17,8 @@
 
 **Fixed**
 
+- Restored utility functions to `whenever.__all__` and ensured `dir(whenever)`
+  includes lazily loaded public attributes without importing them.
 - Fixed `ZonedDateTime.end_of()` around DST transitions. Calendar-unit
   boundaries are exactly 1 nanosecond before the next `start_of()`. Sub-day
   units preserve the current occurrence of repeated local times when possible,
