@@ -17,8 +17,10 @@
 
 **Fixed**
 
-- Ensured that `end_of()` is always exactly 1 nanosecond before the next `start_of()`,
-  even if they fall on a DST transition. This prevents any gaps or overlaps in time calculations.
+- Fixed `ZonedDateTime.end_of()` around DST transitions. Calendar-unit
+  boundaries are exactly 1 nanosecond before the next `start_of()`. Sub-day
+  units preserve the current occurrence of repeated local times when possible,
+  while correctly handling gaps and folds shorter than the requested unit.
 - Fixed a pure-Python regression introduced in 0.10.0 that could return incorrect
   offsets for part of a year. This occurred when a timezone switched from explicitly
   recorded transitions to recurring transition rules partway through that year.

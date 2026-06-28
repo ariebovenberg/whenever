@@ -2,7 +2,7 @@
 # so expect some unpythonic code.
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -43,6 +43,11 @@ def hms(hours: int, minutes: int, seconds: int) -> int:
     assert 0 <= seconds < 60
     sign = -1 if hours < 0 else 1
     return hours * 3600 + sign * (minutes * 60 + seconds)
+
+
+def ambiguity(tz: TimeZone, local_epoch: int):
+    dt = (UTC_EPOCH + timedelta(seconds=local_epoch)).replace(tzinfo=None)
+    return tz.ambiguity_for_local(dt)
 
 
 class TestBasicParsing:
@@ -109,7 +114,7 @@ class TestTZifFiles:
         assert tzif._end == TzStr.parse("UTC0")
 
         assert tzif.offset_for_instant(2216250001) == 0
-        assert tzif.ambiguity_for_local(2216250000) == Unambiguous(0)
+        assert ambiguity(tzif, 2216250000) == Unambiguous(0)
 
     def test_fixed(self):
         """Test fixed offset timezone file"""
@@ -120,7 +125,7 @@ class TestTZifFiles:
         assert tzif._end == TzStr.parse("<+13>-13")
 
         assert tzif.offset_for_instant(2216250001) == 13 * 3600
-        assert tzif.ambiguity_for_local(2216250000) == Unambiguous(13 * 3600)
+        assert ambiguity(tzif, 2216250000) == Unambiguous(13 * 3600)
 
     def test_v1(self):
         """Test version 1 TZif file"""
@@ -132,7 +137,7 @@ class TestTZifFiles:
 
         # a timestamp out of the range of the file should return the last offset (best guess)
         assert tzif.offset_for_instant(3_155_760_000) == 3600
-        assert tzif.ambiguity_for_local(4_000_000_000) == Unambiguous(3600)
+        assert ambiguity(tzif, 4_000_000_000) == Unambiguous(3600)
         # meta_for_instant after last transition with no POSIX string: falls back to last entry
         assert tzif.meta_for_instant(4_000_000_000) == (0, "CET")
 
@@ -163,27 +168,25 @@ class TestTZifFiles:
         assert tzif.offset_for_instant(-712150200) == -36000
 
         # Just before the last gap
-        assert tzif.ambiguity_for_local(-712150201 - 37800) == Unambiguous(
-            -37800
-        )
+        assert ambiguity(tzif, -712150201 - 37800) == Unambiguous(-37800)
 
         # Start of the gap
-        assert tzif.ambiguity_for_local(-712150200 - 37800) == Gap(
-            -36000, -37800
+        assert ambiguity(tzif, -712150200 - 37800) == Gap(
+            -712150200 - 37800 + 1800, -36000, -37800
         )
 
         # Just before end of gap
-        assert tzif.ambiguity_for_local(-712150200 - 37800 + 1800 - 1) == Gap(
-            -36000, -37800
+        assert ambiguity(tzif, -712150200 - 37800 + 1800 - 1) == Gap(
+            -712150200 - 37800 + 1800, -36000, -37800
         )
 
         # End of gap
-        assert tzif.ambiguity_for_local(
-            -712150200 - 37800 + 1800
-        ) == Unambiguous(-36000)
+        assert ambiguity(tzif, -712150200 - 37800 + 1800) == Unambiguous(
+            -36000
+        )
 
         # After the gap
-        assert tzif.ambiguity_for_local(-712150200) == Unambiguous(-36000)
+        assert ambiguity(tzif, -712150200) == Unambiguous(-36000)
 
     @pytest.mark.parametrize(
         "t, expected",
@@ -251,17 +254,29 @@ class TestTZifFiles:
             # At the moment times becomes ambiguous
             (
                 ymdhms(1892, 5, 1),
-                Fold(hms(0, 17, 30), hhmm(0)),
+                Fold(
+                    ymdhms(1892, 5, 1, 0, 17, 30),
+                    hms(0, 17, 30),
+                    hhmm(0),
+                ),
             ),
             # Short before the clock change, short enough for ambiguity!
             (
                 ymdhms(1892, 5, 1, 0, 5, 48),
-                Fold(hms(0, 17, 30), hhmm(0)),
+                Fold(
+                    ymdhms(1892, 5, 1, 0, 17, 30),
+                    hms(0, 17, 30),
+                    hhmm(0),
+                ),
             ),
             # A second before the clock change (ambiguity!)
             (
                 ymdhms(1892, 5, 1, 0, 17, 29),
-                Fold(hms(0, 17, 30), hhmm(0)),
+                Fold(
+                    ymdhms(1892, 5, 1, 0, 17, 30),
+                    hms(0, 17, 30),
+                    hhmm(0),
+                ),
             ),
             # At the exact clock change (no ambiguity)
             (ymdhms(1892, 5, 1, 0, 17, 30), Unambiguous(hhmm(0))),
@@ -273,36 +288,57 @@ class TestTZifFiles:
             # Just before the clock change
             (ymdhms(1916, 4, 30, 23, 59, 59), Unambiguous(hhmm(1))),
             # At the exact clock change (ambiguity!)
-            (ymdhms(1916, 5, 1), Gap(hhmm(2), hhmm(1))),
+            (
+                ymdhms(1916, 5, 1),
+                Gap(ymdhms(1916, 5, 1, 1), hhmm(2), hhmm(1)),
+            ),
             # Right after the clock change (ambiguity)
-            (ymdhms(1916, 5, 1, 0, 0, 7), Gap(hhmm(2), hhmm(1))),
+            (
+                ymdhms(1916, 5, 1, 0, 0, 7),
+                Gap(ymdhms(1916, 5, 1, 1), hhmm(2), hhmm(1)),
+            ),
             # Slightly before the gap ends (ambiguity)
-            (ymdhms(1916, 5, 1, 0, 59, 59), Gap(hhmm(2), hhmm(1))),
+            (
+                ymdhms(1916, 5, 1, 0, 59, 59),
+                Gap(ymdhms(1916, 5, 1, 1), hhmm(2), hhmm(1)),
+            ),
             # The gap ends (no ambiguity)
             (ymdhms(1916, 5, 1, 1), Unambiguous(hhmm(2))),
             # A sample of other times
             (ymdhms(1992, 3, 12, 8, 5), Unambiguous(hhmm(1))),
-            (ymdhms(1992, 3, 29, 2, 5), Gap(hhmm(2), hhmm(1))),
+            (
+                ymdhms(1992, 3, 29, 2, 5),
+                Gap(ymdhms(1992, 3, 29, 3), hhmm(2), hhmm(1)),
+            ),
             (ymdhms(1992, 8, 31, 23, 5), Unambiguous(hhmm(2))),
             # ---- Transitions after the last explicit one need to use the POSIX TZ string
             # before gap
             (ymdhms(2040, 3, 25, 1, 59, 59), Unambiguous(hhmm(1))),
             # gap starts
-            (ymdhms(2040, 3, 25, 2), Gap(hhmm(2), hhmm(1))),
+            (
+                ymdhms(2040, 3, 25, 2),
+                Gap(ymdhms(2040, 3, 25, 3), hhmm(2), hhmm(1)),
+            ),
             # gap ends
             (ymdhms(2040, 3, 25, 3), Unambiguous(hhmm(2))),
             # somewhere in summer
             (ymdhms(2040, 3, 25, 12, 6, 40), Unambiguous(hhmm(2))),
             # Fold starts
-            (ymdhms(2053, 10, 26, 2), Fold(hhmm(2), hhmm(1))),
+            (
+                ymdhms(2053, 10, 26, 2),
+                Fold(ymdhms(2053, 10, 26, 3), hhmm(2), hhmm(1)),
+            ),
             # In the fold
-            (ymdhms(2053, 10, 26, 2, 2, 20), Fold(hhmm(2), hhmm(1))),
+            (
+                ymdhms(2053, 10, 26, 2, 2, 20),
+                Fold(ymdhms(2053, 10, 26, 3), hhmm(2), hhmm(1)),
+            ),
             # end of the fold
             (ymdhms(2053, 10, 26, 3), Unambiguous(hhmm(1))),
         ],
     )
     def test_ambiguity_for_local(self, t, expected):
-        assert AMS.ambiguity_for_local(t) == expected
+        assert ambiguity(AMS, t) == expected
 
 
 def test_smoke():
