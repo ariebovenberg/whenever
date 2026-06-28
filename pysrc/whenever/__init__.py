@@ -1,8 +1,51 @@
 from __future__ import annotations
 
-# Yes, we could get the version with importlib.metadata,
-# but we try to keep our import time as low as possible.
-__version__ = "0.10.1b0"
+
+# Almost everything is lazily imported, to speed up initial import time.
+def __getattr__(name: str) -> object:
+    if src := _LAZY_NAMES.get(name):
+        mod = __import__(src, fromlist=("",))
+        g = globals()
+        for n in _LAZY_MODULES[src]:
+            g[n] = getattr(mod, n)
+        return g[name]
+    # TZPATH is a live view, not a cached value.
+    elif name == "TZPATH":
+        from ._core import _get_tzpath
+
+        return _get_tzpath()
+    elif name == "AnyDelta":
+        from ._core import (
+            DateDelta,
+            DateTimeDelta,
+            ItemizedDateDelta,
+            ItemizedDelta,
+            TimeDelta,
+        )
+
+        globals()["AnyDelta"] = val = (
+            DateDelta
+            | TimeDelta
+            | DateTimeDelta
+            | ItemizedDelta
+            | ItemizedDateDelta
+        )
+        return val
+    elif name == "__version__":
+        globals()["__version__"] = version = __import__(
+            "importlib.metadata"
+        ).metadata.version(__name__)
+        return version
+
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
+
+# Ensures not-yet-imported names are still included in dir() output
+def __dir__() -> list[str]:
+    return list(
+        (globals().keys() | __all__) - {"_LAZY_MODULES", "_LAZY_NAMES"}
+    )
+
 
 # This could be derived from the imports below, but it's easier for static
 # analysis and IDEs if it's statically defined.
@@ -57,6 +100,7 @@ __all__ = (
     "reset_system_tz",
     "AnyDelta",
 )
+
 
 # Names lazily imported from submodules.
 # When any name from a group is first accessed, the whole module is loaded
@@ -148,39 +192,6 @@ _LAZY_MODULES = {
 _LAZY_NAMES = {n: mod for mod, names in _LAZY_MODULES.items() for n in names}
 
 
-def __getattr__(name: str) -> object:
-    if src := _LAZY_NAMES.get(name):
-        mod = __import__(src, fromlist=("",))
-        g = globals()
-        for n in _LAZY_MODULES[src]:
-            g[n] = getattr(mod, n)
-        return g[name]
-    # TZPATH is a live view, not a cached value.
-    if name == "TZPATH":
-        from ._core import _get_tzpath
-
-        return _get_tzpath()
-    if name == "AnyDelta":
-        from ._core import (
-            DateDelta,
-            DateTimeDelta,
-            ItemizedDateDelta,
-            ItemizedDelta,
-            TimeDelta,
-        )
-
-        val = (
-            DateDelta
-            | TimeDelta
-            | DateTimeDelta
-            | ItemizedDelta
-            | ItemizedDateDelta
-        )
-        globals()["AnyDelta"] = val
-        return val
-    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
-
-
 # Without this, IDEs won't show proper information for our types.
 # Note we don't actually import `typing`, as this has a runtime cost.
 TYPE_CHECKING = False
@@ -190,3 +201,5 @@ if TYPE_CHECKING:
     from ._shared import *
     from ._typing import *
     from ._utils import *
+
+del TYPE_CHECKING
