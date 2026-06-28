@@ -195,8 +195,14 @@ class TzStr:
             return self.dst.offset
         return self.std
 
+    def ambiguity_for_local(self, dt: datetime) -> Ambiguity:
+        assert dt.tzinfo is None
+        return self._ambiguity_for_local_epoch(
+            int(dt.replace(tzinfo=UTC).timestamp())
+        )
+
     # NOTE: `epoch` is the datetime in seconds since the LOCAL epoch.
-    def ambiguity_for_local(self, epoch: int) -> Ambiguity:
+    def _ambiguity_for_local_epoch(self, epoch: int) -> Ambiguity:
         if not self.dst:
             return Unambiguous(self.std)
         year = year_for_epoch(epoch)
@@ -221,22 +227,22 @@ class TzStr:
             if epoch < t1:
                 return Unambiguous(off1)
             elif epoch < t1 + shift:
-                return Gap(off2, off1)
+                return Gap(t1 + shift, off2, off1)
             elif epoch < t2 - shift:
                 return Unambiguous(off2)
             elif epoch < t2:
-                return Fold(off2, off1)
+                return Fold(t2, off2, off1)
             else:
                 return Unambiguous(off1)
         else:
             if epoch < t1 + shift:
                 return Unambiguous(off1)
             elif epoch < t1:
-                return Fold(off1, off2)
+                return Fold(t1, off1, off2)
             elif epoch < t2:
                 return Unambiguous(off2)
             elif epoch < t2 - shift:
-                return Gap(off1, off2)
+                return Gap(t2 - shift, off1, off2)
             else:
                 return Unambiguous(off1)
 

@@ -45,18 +45,18 @@ def resolve_ambiguity(
             "disambiguate must be 'compatible', 'earlier', 'later', or 'raise'"
         )
 
-    ambiguity = tz.ambiguity_for_local(int(dt.replace(tzinfo=UTC).timestamp()))
+    ambiguity = tz.ambiguity_for_local(dt)
     match ambiguity:
         case Unambiguous(offset):
             pass
-        case Fold(before, after):
+        case Fold(_, before, after):
             if disambiguate in ("compatible", "earlier"):
                 offset = before
             elif disambiguate == "later":
                 offset = after
             else:  # disambiguate == "raise"
                 raise RepeatedTime._for_tz(dt, tz.key)
-        case Gap(before, after):  # pragma: no branch
+        case Gap(_, before, after):  # pragma: no branch
             if disambiguate in ("compatible", "later"):
                 offset = before
                 shift = before - after
@@ -78,7 +78,7 @@ def resolve_ambiguity(
 def resolve_ambiguity_using_prev_offset(
     dt: _datetime, prev_offset: _timedelta, tz: TimeZone
 ) -> _datetime:
-    ambiguity = tz.ambiguity_for_local(int(dt.replace(tzinfo=UTC).timestamp()))
+    ambiguity = tz.ambiguity_for_local(dt)
     offset = int(prev_offset.total_seconds())
     if isinstance(ambiguity, Unambiguous):
         offset = ambiguity.offset

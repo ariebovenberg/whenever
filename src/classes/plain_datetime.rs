@@ -184,7 +184,6 @@ impl DateTime {
         Some(DateTime { date, time })
     }
 
-    // TODO: Result->Option
     /// Compute the start_of_unit, but for the next interval. This is needed
     /// for a timezone-aware end_of_unit()
     pub(crate) fn next_start_of_unit(self, unit: BoundaryUnit) -> Option<DateTime> {

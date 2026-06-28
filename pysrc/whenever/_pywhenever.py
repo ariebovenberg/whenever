@@ -100,6 +100,8 @@ from ._typing import (
     RoundModeStr,
 )
 from ._tz import (  # noqa: F401
+    Fold,
+    Gap,
     RepeatedTime,
     SkippedTime,
     TimeZone,
@@ -8299,9 +8301,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         """
         return (
             type(
-                self._tz.ambiguity_for_local(
-                    int(self._py_dt.replace(tzinfo=_UTC).timestamp())
-                )
+                self._tz.ambiguity_for_local(self._py_dt.replace(tzinfo=None))
             )
             is not Unambiguous
         )
@@ -8429,6 +8429,35 @@ class ZonedDateTime(_ExactAndLocalTime):
             tz,
         )
 
+    def _resolve_end_of_time_unit(
+        self, naive: _datetime, unit: str
+    ) -> _datetime:
+        local_epoch = int(naive.replace(tzinfo=_UTC).timestamp())
+        ambiguity = self._tz.ambiguity_for_local(naive)
+        match ambiguity:
+            case Unambiguous(offset):
+                pass
+            case Fold(end, earlier_offset, later_offset):
+                current_offset = int(
+                    self._py_dt.utcoffset().total_seconds()  # type: ignore[union-attr]
+                )
+                unit_seconds = {"hour": 3_600, "minute": 60, "second": 1}[unit]
+                # A fold shorter than the unit is part of the same local-clock
+                # unit, so include it when it ends exactly at the boundary.
+                offset = (
+                    later_offset
+                    if current_offset == later_offset
+                    or (
+                        local_epoch + 1 == end
+                        and earlier_offset - later_offset < unit_seconds
+                    )
+                    else earlier_offset
+                )
+            case Gap(end, new_offset, old_offset):
+                # A skipped endpoint ends at the instant before the gap.
+                return _from_epoch_offset(end - new_offset - 1, old_offset)
+        return naive.replace(tzinfo=mk_fixed_tzinfo(offset))
+
     def start_of(
         self,
         unit: Literal[
@@ -8485,11 +8514,20 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         See also :meth:`start_of`
         """
-        new_dt = _start_of_next_dt(self._py_dt, unit)
+        if unit in ("year", "month", "week_mon", "week_sun", "day"):
+            new_dt = _start_of_next_dt(self._py_dt, unit)
+            naive = new_dt.replace(tzinfo=None)
+            return self._from_py_unchecked(
+                self._resolve_for_unit(naive, unit), 0, self._tz
+            ).subtract(nanoseconds=1)
+
+        new_dt = _end_of_dt(self._py_dt, unit)
         naive = new_dt.replace(tzinfo=None)
         return self._from_py_unchecked(
-            self._resolve_for_unit(naive, unit), 0, self._tz
-        ).subtract(nanoseconds=1)
+            self._resolve_end_of_time_unit(naive, unit),
+            _MAX_SUBSEC_NANOS,
+            self._tz,
+        )
 
     def round(
         self,

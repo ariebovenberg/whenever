@@ -6048,6 +6048,30 @@ class TestEndOf:
             )
         )
 
+    def test_hour_fold_does_not_consume_full_hour_fold(self):
+        zdt = ZonedDateTime(
+            2024,
+            11,
+            3,
+            1,
+            30,
+            tz="America/New_York",
+            disambiguate="earlier",
+        )
+        assert zdt.end_of("hour").exact_eq(
+            ZonedDateTime(
+                2024,
+                11,
+                3,
+                1,
+                59,
+                59,
+                nanosecond=999_999_999,
+                tz="America/New_York",
+                disambiguate="earlier",
+            )
+        )
+
     @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
     def test_min_max_no_crash(self, unit):
         try:
