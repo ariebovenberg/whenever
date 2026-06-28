@@ -74,9 +74,22 @@ __all__ = [
     "InvalidOffsetError",
     "ImplicitlyIgnoringDST",
     "TimeZoneNotFoundError",
-    # Other stuff
+    # Enums/constants
     "Weekday",
+    "MONDAY",
+    "TUESDAY",
+    "WEDNESDAY",
+    "THURSDAY",
+    "FRIDAY",
+    "SATURDAY",
+    "SUNDAY",
+    # Other
     "reset_system_tz",
+    "patch_current_time",
+    "reset_tzpath",
+    "clear_tzcache",
+    "available_timezones",
+    "AnyDelta",
 ]
 
 _EXTENSION_LOADED: bool

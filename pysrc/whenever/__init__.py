@@ -42,8 +42,13 @@ def __getattr__(name: str) -> object:
 
 # Ensures not-yet-imported names are still included in dir() output
 def __dir__() -> list[str]:
-    return list(
-        (globals().keys() | __all__) - {"_LAZY_MODULES", "_LAZY_NAMES"}
+    return sorted(
+        (
+            globals().keys()
+            | _LAZY_NAMES.keys()
+            | {"TZPATH", "AnyDelta", "__version__"}
+        )
+        - {"_LAZY_MODULES", "_LAZY_NAMES"}
     )
 
 
@@ -98,6 +103,10 @@ __all__ = (
     "SUNDAY",
     # Other
     "reset_system_tz",
+    "patch_current_time",
+    "reset_tzpath",
+    "clear_tzcache",
+    "available_timezones",
     "AnyDelta",
 )
 
