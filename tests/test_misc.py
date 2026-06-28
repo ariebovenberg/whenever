@@ -73,6 +73,24 @@ def test_version():
     assert isinstance(__version__, str)
 
 
+def test_dir_includes_public_names():
+    import whenever
+
+    assert set(whenever.__all__) <= set(dir(whenever))
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import whenever; "
+            "assert set(whenever.__all__) <= set(dir(whenever))",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_no_attr_on_module():
     with pytest.raises((AttributeError, ImportError), match="DoesntExist"):
         from whenever import DoesntExist  # type: ignore[attr-defined] # noqa
