@@ -5,7 +5,7 @@ Whenever benchmarks — run with:
     uv run python run_whenever.py --only now --fast         # single benchmark
     uv run python run_whenever.py --only now,parse_iso      # multiple
 
-Uses whenever 0.9.5 (optimized Rust wheel from PyPI).
+Uses the local release build created by ``make build-release``.
 """
 
 import argparse

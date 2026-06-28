@@ -80,6 +80,7 @@ def _save_svg(fig: plt.Figure, output: Path, tight_text: bool = False) -> None:
             r"\1; letter-spacing: -0.3px",
             svg,
         )
+    svg = "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
     output.write_text(svg)
     print(f"  Saved {output}")
 

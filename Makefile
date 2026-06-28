@@ -78,18 +78,19 @@ bench: build-release
 		--benchmark-group-by=fullname \
 
 .PHONY: bench-compare
-bench-compare: build-release
-	rm -f benchmarks/comparison/result_*.json
-	uv run python benchmarks/comparison/run_stdlib_dateutil.py --fast -o \
-		benchmarks/comparison/result_stdlib_dateutil.json
-	uv run python benchmarks/comparison/run_pendulum.py --fast -o \
-		benchmarks/comparison/result_pendulum.json
-	uv run python benchmarks/comparison/run_arrow.py --fast -o \
-		benchmarks/comparison/result_arrow.json
-	uv run python benchmarks/comparison/run_whenever.py --fast -o \
-		benchmarks/comparison/result_whenever.json
-	uv run python -m pyperf compare_to benchmarks/comparison/result_stdlib_dateutil.json \
-		benchmarks/comparison/result_pendulum.json \
-		benchmarks/comparison/result_arrow.json \
-		benchmarks/comparison/result_whenever.json \
-		--table
+bench-compare:
+	uv sync --locked --group benchmark
+	$(MAKE) build-release
+	uv run --no-sync --group benchmark benchmarks/comparison/run.sh
+
+.PHONY: bench-compare-fast
+bench-compare-fast:
+	uv sync --locked --group benchmark
+	$(MAKE) build-release
+	uv run --no-sync --group benchmark benchmarks/comparison/run.sh --fast
+
+.PHONY: bench-compare-docs
+bench-compare-docs:
+	uv sync --locked --group benchmark
+	$(MAKE) build-release
+	uv run --no-sync --group benchmark benchmarks/comparison/run.sh --update-docs

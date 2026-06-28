@@ -147,10 +147,7 @@ Trade-offs not taken:
 See `benchmarks/comparison/README.md` for setup instructions.
 
 ```shell
-cd benchmarks/comparison
-./run.sh --fast --update-docs   # quick run, update these charts
-uv run python run_whenever.py --only now --fast   # single benchmark
-
-# Import time and package size charts:
-uv run python perf_charts.py --python $(which python) --output ../../docs/_static/benchmarks/
+make bench-compare         # full comparison run
+make bench-compare-fast    # quick comparison run
+make bench-compare-docs    # full run and update these charts
 ```
