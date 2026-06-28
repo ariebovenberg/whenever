@@ -5838,6 +5838,28 @@ class TestEndOf:
             )
         )
 
+    @pytest.mark.parametrize(
+        ("tz", "hour"),
+        [
+            ("UTC", 23),
+            ("America/New_York", 18),
+        ],
+    )
+    def test_hour_at_upper_boundary(self, tz, hour):
+        zdt = ZonedDateTime(9999, 12, 31, hour, tz=tz)
+        assert zdt.end_of("hour").exact_eq(
+            ZonedDateTime(
+                9999,
+                12,
+                31,
+                hour,
+                59,
+                59,
+                nanosecond=999_999_999,
+                tz=tz,
+            )
+        )
+
     def test_minute(self):
         zdt = ZonedDateTime(
             2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
