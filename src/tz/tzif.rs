@@ -71,7 +71,6 @@ impl TimeZone {
             })
     }
 
-    // TODO: take DateTime instead of EpochSecs
     /// Get the UTC offset at the given local time (expressed in epoch seconds).
     pub fn ambiguity_for_local(&self, t: EpochSecs) -> Ambiguity {
         bisect(&self.offsets_by_local, t)

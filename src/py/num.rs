@@ -1,8 +1,25 @@
 //! Functionality for Python's int and float types
 use super::{base::*, exc::*, refs::*};
-use core::ffi::c_long;
+use core::ffi::{c_int, c_long, c_uchar};
 use core::mem;
 use pyo3_ffi::*;
+
+unsafe extern "C" {
+    fn _PyLong_FromByteArray(
+        bytes: *const c_uchar,
+        n: usize,
+        little_endian: c_int,
+        is_signed: c_int,
+    ) -> *mut PyObject;
+
+    fn _PyLong_AsByteArray(
+        v: *mut PyLongObject,
+        bytes: *mut c_uchar,
+        n: usize,
+        little_endian: c_int,
+        is_signed: c_int,
+    ) -> c_int;
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PyInt {
