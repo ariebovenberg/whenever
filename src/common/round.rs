@@ -144,39 +144,25 @@ pub(crate) enum Unit {
     Week,
 }
 
-// TODO: rename
 impl Unit {
-    // TODO: use state
-    #[allow(clippy::too_many_arguments)]
-    fn from_py(
-        s: PyObj,
-        str_nanosecond: PyObj,
-        str_microsecond: PyObj,
-        str_millisecond: PyObj,
-        str_second: PyObj,
-        str_minute: PyObj,
-        str_hour: PyObj,
-        str_day: PyObj,
-        str_week: PyObj,
-        for_delta: bool,
-    ) -> PyResult<Unit> {
+    fn from_py(s: PyObj, state: &State, for_delta: bool) -> PyResult<Unit> {
         // OPTIMIZE: run the comparisons in order if likelihood
         match_interned_str("unit", s, |v, eq| {
-            Some(if eq(v, str_nanosecond) {
+            Some(if eq(v, *state.str_nanosecond) {
                 Unit::Nanosecond
-            } else if eq(v, str_microsecond) {
+            } else if eq(v, *state.str_microsecond) {
                 Unit::Microsecond
-            } else if eq(v, str_millisecond) {
+            } else if eq(v, *state.str_millisecond) {
                 Unit::Millisecond
-            } else if eq(v, str_second) {
+            } else if eq(v, *state.str_second) {
                 Unit::Second
-            } else if eq(v, str_minute) {
+            } else if eq(v, *state.str_minute) {
                 Unit::Minute
-            } else if eq(v, str_hour) {
+            } else if eq(v, *state.str_hour) {
                 Unit::Hour
-            } else if eq(v, str_day) {
+            } else if eq(v, *state.str_day) {
                 Unit::Day
-            } else if for_delta && eq(v, str_week) {
+            } else if for_delta && eq(v, *state.str_week) {
                 Unit::Week
             } else {
                 None?
@@ -273,14 +259,7 @@ impl Args {
                 } else {
                     let unit = Unit::from_py(
                         arg,
-                        *state.str_nanosecond,
-                        *state.str_microsecond,
-                        *state.str_millisecond,
-                        *state.str_second,
-                        *state.str_minute,
-                        *state.str_hour,
-                        *state.str_day,
-                        *state.str_week,
+                        state,
                         false,
                     )?;
                     let increment_int = increment_kwarg.unwrap_or(NonZeroU64::MIN);
@@ -366,14 +345,7 @@ impl DeltaArgs {
                 } else {
                     let unit = Unit::from_py(
                         arg,
-                        *state.str_nanosecond,
-                        *state.str_microsecond,
-                        *state.str_millisecond,
-                        *state.str_second,
-                        *state.str_minute,
-                        *state.str_hour,
-                        *state.str_day,
-                        *state.str_week,
+                        state,
                         true,
                     )?;
                     if matches!(unit, Unit::Day | Unit::Week) && !suppress_24h_warning {
