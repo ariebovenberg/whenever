@@ -257,11 +257,7 @@ impl Args {
                     }
                     RoundIncrement::Exact(nanos)
                 } else {
-                    let unit = Unit::from_py(
-                        arg,
-                        state,
-                        false,
-                    )?;
+                    let unit = Unit::from_py(arg, state, false)?;
                     let increment_int = increment_kwarg.unwrap_or(NonZeroU64::MIN);
                     debug_assert!(unit != Unit::Week);
                     if unit == Unit::Day {
@@ -343,11 +339,7 @@ impl DeltaArgs {
                         subsec: delta.subsec,
                     }
                 } else {
-                    let unit = Unit::from_py(
-                        arg,
-                        state,
-                        true,
-                    )?;
+                    let unit = Unit::from_py(arg, state, true)?;
                     if matches!(unit, Unit::Day | Unit::Week) && !suppress_24h_warning {
                         warn_with_class(
                             *state.warn_days_not_always_24h,

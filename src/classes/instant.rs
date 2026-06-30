@@ -45,14 +45,6 @@ pub(crate) const SINGLETONS: &[(&CStr, Instant); 2] = &[
 ];
 
 impl Instant {
-    // TODO: method on datetime?
-    pub(crate) fn from_datetime(date: Date, time: Time) -> Self {
-        Instant {
-            epoch: date.epoch_at(time),
-            subsec: time.subsec,
-        }
-    }
-
     pub(crate) fn utc_datetime(self) -> DateTime {
         self.epoch.datetime(self.subsec)
     }
@@ -157,7 +149,9 @@ impl Instant {
 
     // Returns None if the datetime is out of range
     fn from_py(dt: PyDateTime) -> PyResult<Option<Self>> {
-        let inst = Instant::from_datetime(Date::from_py(dt.date()), Time::from_py_dt(dt));
+        let inst = Date::from_py(dt.date())
+            .at(Time::from_py_dt(dt))
+            .assume_utc();
         Ok({
             let offset = dt.utcoffset()?;
             if let Some(py_delta) = (*offset).cast_exact::<PyTimeDelta>() {
@@ -237,11 +231,11 @@ fn from_utc(cls: HeapType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> Py
         nanosecond
     );
 
-    Instant::from_datetime(
-        Date::from_longs(year, month, day).ok_or_value_err("invalid date")?,
-        Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?,
-    )
-    .to_obj(cls)
+    Date::from_longs(year, month, day)
+        .ok_or_value_err("invalid date")?
+        .at(Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?)
+        .assume_utc()
+        .to_obj(cls)
 }
 
 impl PyWrapped for Instant {}
@@ -778,7 +772,8 @@ fn parse(cls: HeapType<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyR
     };
 
     // offset is already validated (scalar::Offset) — no range check needed here.
-    Instant::from_datetime(date, time)
+    date.at(time)
+        .assume_utc()
         .offset(-offset)
         .ok_or_range_err()?
         .to_obj(cls)

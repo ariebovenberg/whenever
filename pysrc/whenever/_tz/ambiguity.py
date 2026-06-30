@@ -49,20 +49,20 @@ def resolve_ambiguity(
     match ambiguity:
         case Unambiguous(offset):
             pass
-        case Fold(_, before, after):
+        case Fold(_, earlier_offset, later_offset):
             if disambiguate in ("compatible", "earlier"):
-                offset = before
+                offset = earlier_offset
             elif disambiguate == "later":
-                offset = after
+                offset = later_offset
             else:  # disambiguate == "raise"
                 raise RepeatedTime._for_tz(dt, tz.key)
-        case Gap(_, before, after):  # pragma: no branch
+        case Gap(_, later_offset, earlier_offset):  # pragma: no branch
             if disambiguate in ("compatible", "later"):
-                offset = before
-                shift = before - after
+                offset = later_offset
+                shift = later_offset - earlier_offset
             elif disambiguate == "earlier":
-                offset = after
-                shift = after - before
+                offset = earlier_offset
+                shift = earlier_offset - later_offset
             else:  # disambiguate == "raise"
                 raise SkippedTime._for_tz(dt, tz.key)
             # shift the datetime out of the gap
@@ -85,13 +85,13 @@ def resolve_ambiguity_using_prev_offset(
     elif isinstance(ambiguity, Fold):
         # If the offset is already valid, there's nothing to do
         # otherwise, always use the earlier offset
-        if ambiguity.after != offset:
-            offset = ambiguity.before
+        if ambiguity.later_offset != offset:
+            offset = ambiguity.earlier_offset
     else:  # isinstance(ambiguity, Gap)
         # Don't try to reuse the previous offset in case of a gap,
         # since we can't prevent an unexpected shift anyway.
         # We just do the default (compatible) behavior.
-        offset = ambiguity.before
-        dt += _timedelta(seconds=offset - ambiguity.after)
+        offset = ambiguity.later_offset
+        dt += _timedelta(seconds=offset - ambiguity.earlier_offset)
 
     return dt.replace(tzinfo=mk_fixed_tzinfo(offset))

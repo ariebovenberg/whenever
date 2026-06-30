@@ -603,11 +603,13 @@ class TestCalculateOffsets:
             )
         elif isinstance(expected, Fold):
             epoch_a = to_epoch_s(
-                y, m, d, hour, minute, second, expected.before
+                y, m, d, hour, minute, second, expected.earlier_offset
             )
-            epoch_b = to_epoch_s(y, m, d, hour, minute, second, expected.after)
-            assert tz.offset_for_instant(epoch_a) == expected.before
-            assert tz.offset_for_instant(epoch_b) == expected.after
+            epoch_b = to_epoch_s(
+                y, m, d, hour, minute, second, expected.later_offset
+            )
+            assert tz.offset_for_instant(epoch_a) == expected.earlier_offset
+            assert tz.offset_for_instant(epoch_b) == expected.later_offset
         else:
             pass  # Gap times aren't reversible
 

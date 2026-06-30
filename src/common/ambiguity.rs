@@ -16,8 +16,8 @@ pub(crate) enum Disambiguate {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Ambiguity {
     Unambiguous(Offset),
-    Gap(EpochSecs, Offset, Offset), // (end, later, earlier) occurrence, (a > b)
-    Fold(EpochSecs, Offset, Offset), // (end, later, earlier) occurrence, (a > b)
+    Gap(EpochSecs, Offset, Offset), // (end, later_offset, earlier_offset)
+    Fold(EpochSecs, Offset, Offset), // (end, earlier_offset, later_offset)
 }
 
 impl Disambiguate {
