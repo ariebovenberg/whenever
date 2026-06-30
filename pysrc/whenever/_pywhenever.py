@@ -7903,7 +7903,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         self._nanos = d.microsecond * 1_000
         self._tz = _tz
 
-    # TODO: warn in replace methods that end_of etc. exist.
     def replace_date(
         self, date: Date, /, disambiguate: DisambiguateStr = UNSET
     ) -> ZonedDateTime:
@@ -7960,6 +7959,11 @@ class ZonedDateTime(_ExactAndLocalTime):
     ) -> ZonedDateTime:
         """Construct a new instance with the given fields replaced.
 
+        Tip
+        ---
+        If you need the start or end of a unit (e.g. the start of the day),
+        use :meth:`start_of` and :meth:`end_of` instead.
+
         Important
         ---------
         Replacing fields of a ZonedDateTime may result in an ambiguous time
@@ -7971,6 +7975,7 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         See `the documentation <https://whenever.rtfd.io/en/latest/guide/ambiguity.html>`__
         for more information.
+
         """
 
         _check_invalid_replace_kwargs(kwargs)
@@ -8453,9 +8458,11 @@ class ZonedDateTime(_ExactAndLocalTime):
                     )
                     else earlier_offset
                 )
-            case Gap(end, new_offset, old_offset):
+            case Gap(end, later_offset, earlier_offset):
                 # A skipped endpoint ends at the instant before the gap.
-                return _from_epoch_offset(end - new_offset - 1, old_offset)
+                return _from_epoch_offset(
+                    end - later_offset - 1, earlier_offset
+                )
         return naive.replace(tzinfo=mk_fixed_tzinfo(offset))
 
     def start_of(

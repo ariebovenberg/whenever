@@ -2502,6 +2502,11 @@ replace($self, /, *, year=None, month=None, day=None, hour=None, minute=None, se
 
 Construct a new instance with the given fields replaced.
 
+Tip
+---
+If you need the start or end of a unit (e.g. the start of the day),
+use :meth:`start_of` and :meth:`end_of` instead.
+
 Important
 ---------
 Replacing fields of a ZonedDateTime may result in an ambiguous time
@@ -2513,6 +2518,7 @@ if possible, falling back to the \"compatible\" strategy if needed.
 
 See `the documentation <https://whenever.rtfd.io/en/latest/guide/ambiguity.html>`__
 for more information.
+
 ";
 pub(crate) const ZONEDDATETIME_REPLACE_DATE: &CStr = c"\
 replace_date($self, date, /, disambiguate=...)

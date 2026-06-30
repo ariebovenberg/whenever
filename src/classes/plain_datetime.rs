@@ -139,8 +139,8 @@ impl DateTime {
         self.assume_utc().shift(t).map(|i| i.utc_datetime())
     }
 
-    // TODO: combine with the other conversion method? Rename?
-    // FUTURE: is this actually worth it?
+    // This is significantly faster than the plain `shift` because
+    // offset deltas are guaranteed to be <48 hours
     pub(crate) fn shift_by_offset(self, s: OffsetDelta) -> Option<Self> {
         let Self { date, time } = self;
         // Safety: both values sufficiently within i32 range

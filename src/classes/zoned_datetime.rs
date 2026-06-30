@@ -54,7 +54,9 @@ impl ZonedDateTime {
     }
 
     pub(crate) fn instant(&self) -> Instant {
-        Instant::from_datetime(self.date, self.time)
+        self.date
+            .at(self.time)
+            .assume_utc()
             .offset(-self.offset)
             // SAFETY: we know the instant of a ZonedDateTime is always valid
             .unwrap()
@@ -119,9 +121,9 @@ impl DateTime {
             Ambiguity::Unambiguous(offset) | Ambiguity::Fold(_, offset, _) => {
                 self.with_offset(offset)
             }
-            Ambiguity::Gap(_, offset, offset_prev) => {
-                let shift = offset.sub(offset_prev);
-                self.shift_by_offset(shift)?.with_offset(offset)
+            Ambiguity::Gap(_, later_offset, earlier_offset) => {
+                let shift = later_offset.sub(earlier_offset);
+                self.shift_by_offset(shift)?.with_offset(later_offset)
             }
         }
     }
@@ -134,15 +136,18 @@ impl DateTime {
     ) -> Option<OffsetDateTime> {
         match tz.ambiguity_for_local(self.assume_utc().epoch) {
             Ambiguity::Unambiguous(offset) => self.with_offset(offset),
-            Ambiguity::Fold(_, earlier, later) => {
-                self.with_offset(if target == later { later } else { earlier })
+            Ambiguity::Fold(_, earlier_offset, later_offset) => {
+                self.with_offset(if target == later_offset {
+                    later_offset
+                } else {
+                    earlier_offset
+                })
             }
             // For gaps, don't try to reuse the previous offset since the
             // time doesn't exist. Use "compatible" (later) behavior.
-            Ambiguity::Gap(_, later, earlier) => {
-                // TODO: earlier/later inverted???
-                let shift = later.sub(earlier);
-                self.shift_by_offset(shift)?.with_offset(later)
+            Ambiguity::Gap(_, later_offset, earlier_offset) => {
+                let shift = later_offset.sub(earlier_offset);
+                self.shift_by_offset(shift)?.with_offset(later_offset)
             }
         }
     }
@@ -155,10 +160,10 @@ impl DateTime {
     ) -> PyResult<OffsetDateTime> {
         match tz.ambiguity_for_local(self.assume_utc().epoch) {
             Ambiguity::Unambiguous(offset) => self.with_offset(offset),
-            Ambiguity::Fold(_, earlier, later) => self.with_offset(match dis {
-                Disambiguate::Earlier => earlier,
-                Disambiguate::Later => later,
-                Disambiguate::Compatible => earlier,
+            Ambiguity::Fold(_, earlier_offset, later_offset) => self.with_offset(match dis {
+                Disambiguate::Earlier => earlier_offset,
+                Disambiguate::Later => later_offset,
+                Disambiguate::Compatible => earlier_offset,
                 Disambiguate::Raise => raise(
                     *state.exc_repeated,
                     format!(
@@ -169,12 +174,12 @@ impl DateTime {
                     ),
                 )?,
             }),
-            Ambiguity::Gap(_, later, earlier) => {
-                let shift = later.sub(earlier);
+            Ambiguity::Gap(_, later_offset, earlier_offset) => {
+                let shift = later_offset.sub(earlier_offset);
                 let (shift, offset) = match dis {
-                    Disambiguate::Earlier => (-shift, earlier),
-                    Disambiguate::Later => (shift, later),
-                    Disambiguate::Compatible => (shift, later),
+                    Disambiguate::Earlier => (-shift, earlier_offset),
+                    Disambiguate::Later => (shift, later_offset),
+                    Disambiguate::Compatible => (shift, later_offset),
                     Disambiguate::Raise => raise(
                         *state.exc_skipped,
                         format!(
@@ -215,20 +220,24 @@ impl OffsetDateTime {
     fn with_date_in_tz(self, new_date: Date, tz: &TimeZone) -> Option<OffsetDateTime> {
         match tz.ambiguity_for_local(new_date.epoch_at(self.time)) {
             Ambiguity::Unambiguous(offset) => OffsetDateTime::new(new_date, self.time, offset),
-            Ambiguity::Fold(_, earlier, later) => {
+            Ambiguity::Fold(_, earlier_offset, later_offset) => {
                 // Compatible: pick the offset matching the original
-                let offset = if self.offset == later { later } else { earlier };
+                let offset = if self.offset == later_offset {
+                    later_offset
+                } else {
+                    earlier_offset
+                };
                 OffsetDateTime::new(new_date, self.time, offset)
             }
-            Ambiguity::Gap(_, later, earlier) => {
+            Ambiguity::Gap(_, later_offset, earlier_offset) => {
                 // Compatible: shift to later
-                let shift = later.sub(earlier);
+                let shift = later_offset.sub(earlier_offset);
                 DateTime {
                     date: new_date,
                     time: self.time,
                 }
                 .shift_by_offset(shift)?
-                .with_offset(later)
+                .with_offset(later_offset)
             }
         }
     }
@@ -785,12 +794,18 @@ fn start_of(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) 
             let start_local = slf.local().start_of_unit(unit).ok_or_range_err()?;
             match slf.tz.ambiguity_for_local(start_local.local_epoch()) {
                 Ambiguity::Unambiguous(f) => start_local.with_offset(f),
-                Ambiguity::Fold(_, f1, f2) => {
+                Ambiguity::Fold(_, earlier_offset, later_offset) => {
                     // Use the 'later' part of the fold if we're already in it.
                     // Otherwise, use the earlier part.
-                    start_local.with_offset(if f2 == slf.offset { f2 } else { f1 })
+                    start_local.with_offset(if later_offset == slf.offset {
+                        later_offset
+                    } else {
+                        earlier_offset
+                    })
                 }
-                Ambiguity::Gap(end, f, _) => end.datetime(slf.time.subsec).with_offset(f),
+                Ambiguity::Gap(end, later_offset, _) => {
+                    end.datetime(slf.time.subsec).with_offset(later_offset)
+                }
             }
         }
         .ok_or_range_err()?
@@ -822,26 +837,27 @@ fn end_of(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) ->
             let local_epoch = end_local.local_epoch();
             match slf.tz.ambiguity_for_local(local_epoch) {
                 Ambiguity::Unambiguous(f) => end_local.with_offset(f),
-                Ambiguity::Fold(end, f1, f2) => {
+                Ambiguity::Fold(end, earlier_offset, later_offset) => {
                     end_local.with_offset(
                         // Use the 'later' part of the fold if...
                         if
                         // ...(a) we're already in that part of the fold...
-                        f2 == slf.offset ||
+                        later_offset == slf.offset ||
                         // ...or (b) we're exactly at the end of the fold, and the fold is
                         // shorter than the unit.
-                        (local_epoch.get() + 1 == end.get() && f1.sub(f2).get() < u.in_secs())
+                        (local_epoch.get() + 1 == end.get()
+                            && earlier_offset.sub(later_offset).get() < u.in_secs())
                         {
-                            f2
+                            later_offset
                         } else {
-                            f1
+                            earlier_offset
                         },
                     )
                 }
-                Ambiguity::Gap(end, later, earlier) => end
-                    .saturating_add_i32(-later.sub(earlier).get() - 1)
+                Ambiguity::Gap(end, later_offset, earlier_offset) => end
+                    .saturating_add_i32(-later_offset.sub(earlier_offset).get() - 1)
                     .datetime(SubSecNanos::MAX)
-                    .with_offset(earlier),
+                    .with_offset(earlier_offset),
             }
         }
         .ok_or_range_err()?
@@ -939,7 +955,8 @@ fn parse_iso(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
             // Make sure the offset is valid
             match tz.ambiguity_for_local(dt.assume_utc().epoch) {
                 Ambiguity::Unambiguous(f) if f == offset => (),
-                Ambiguity::Fold(_, f1, f2) if f1 == offset || f2 == offset => (),
+                Ambiguity::Fold(_, earlier_offset, later_offset)
+                    if earlier_offset == offset || later_offset == offset => {}
                 _ => raise(
                     *state.exc_invalid_offset,
                     format!("invalid offset for {tzstr}"),
@@ -1833,7 +1850,8 @@ fn parse(cls: HeapType<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
     let dt =
         date.at(Time::new(hour, minute, second, parsed.nanos).ok_or_value_err("Invalid time")?);
     let tz = state.tz_store.get(tz_id)?;
-    // TODO: reuse localize() method?
+    // NOTE: we can't reuse localize_*() methods because we need to outright
+    // reject invalid offsets, rather than just disambiguate them.
     if let Some(offset) = parsed.offset_secs {
         // Use offset to disambiguate during DST transitions.
         match tz.ambiguity_for_local(dt.assume_utc().epoch) {
@@ -1841,14 +1859,16 @@ fn parse(cls: HeapType<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
                 .with_offset(offset)
                 .ok_or_range_err()?
                 .assume_tz_unchecked(tz, cls),
-            Ambiguity::Fold(_, f1, f2) if f1 == offset || f2 == offset => dt
-                .with_offset(offset)
-                .ok_or_range_err()?
-                .assume_tz_unchecked(tz, cls),
+            Ambiguity::Fold(_, earlier_offset, later_offset)
+                if earlier_offset == offset || later_offset == offset =>
+            {
+                dt.with_offset(offset)
+                    .ok_or_range_err()?
+                    .assume_tz_unchecked(tz, cls)
+            }
             Ambiguity::Gap(_, _, _) => raise_value_err(format!(
                 "The local time does not exist in timezone {tz_id:?}"
             )),
-            // TODO: does this display nicely?
             _ => raise_value_err(format!(
                 "Offset {}s does not match timezone {tz_id:?}",
                 offset.get()

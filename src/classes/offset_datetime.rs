@@ -47,7 +47,9 @@ impl OffsetDateTime {
     }
 
     pub(crate) fn instant(self) -> Instant {
-        Instant::from_datetime(self.date, self.time)
+        self.date
+            .at(self.time)
+            .assume_utc()
             .offset(-self.offset)
             // Safe: we know the instant of an OffsetDateTime is in range
             .unwrap()

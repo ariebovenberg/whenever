@@ -15,51 +15,61 @@ class Unambiguous:
 
 
 class Gap:
-    __match_args__ = ("end", "before", "after")
+    # In a gap, the later_offset is numerically the offset after the jump and
+    # the earlier_offset is the offset before it.
+    __match_args__ = ("end", "later_offset", "earlier_offset")
     end: int
-    before: int
-    after: int
+    later_offset: int
+    earlier_offset: int
 
-    def __init__(self, end: int, before: int, after: int):
+    def __init__(self, end: int, later_offset: int, earlier_offset: int):
         self.end = end
-        self.before = before
-        self.after = after
+        self.later_offset = later_offset
+        self.earlier_offset = earlier_offset
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Gap):
             return (
                 self.end == other.end
-                and self.before == other.before
-                and self.after == other.after
+                and self.later_offset == other.later_offset
+                and self.earlier_offset == other.earlier_offset
             )
         return False  # pragma: no cover
 
     def __repr__(self) -> str:
-        return f"Gap({self.end}, {self.before}, {self.after})"
+        return (
+            f"Gap(end={self.end}, later_offset={self.later_offset}, "
+            f"earlier_offset={self.earlier_offset})"
+        )
 
 
 class Fold:
-    __match_args__ = ("end", "before", "after")
+    # In a fold, the earlier_offset is the offset before the clock goes back
+    # and the later_offset is the offset after it.
+    __match_args__ = ("end", "earlier_offset", "later_offset")
     end: int
-    before: int
-    after: int
+    earlier_offset: int
+    later_offset: int
 
-    def __init__(self, end: int, before: int, after: int):
+    def __init__(self, end: int, earlier_offset: int, later_offset: int):
         self.end = end
-        self.before = before
-        self.after = after
+        self.earlier_offset = earlier_offset
+        self.later_offset = later_offset
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Fold):
             return (
                 self.end == other.end
-                and self.before == other.before
-                and self.after == other.after
+                and self.earlier_offset == other.earlier_offset
+                and self.later_offset == other.later_offset
             )
         return False  # pragma: no cover
 
     def __repr__(self) -> str:
-        return f"Fold({self.end}, {self.before}, {self.after})"
+        return (
+            f"Fold(end={self.end}, earlier_offset={self.earlier_offset}, "
+            f"later_offset={self.later_offset})"
+        )
 
 
 Ambiguity = Unambiguous | Gap | Fold

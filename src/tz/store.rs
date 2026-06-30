@@ -298,7 +298,6 @@ impl TzStore {
                 let tzif = self.read_tzif_at_path(&path, None).ok_or_else_raise(
                     self.exc_notfound,
                     || {
-                        // TODO: better print?
                         format!("No time zone found at path {path:?}")
                     },
                 )?;

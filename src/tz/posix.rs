@@ -426,19 +426,19 @@ mod tests {
         Ambiguity::Unambiguous(offset.try_into().unwrap())
     }
 
-    fn fold(t: i64, off1: i32, off2: i32) -> Ambiguity {
+    fn fold(t: i64, earlier_offset: i32, later_offset: i32) -> Ambiguity {
         Ambiguity::Fold(
             t.try_into().unwrap(),
-            off1.try_into().unwrap(),
-            off2.try_into().unwrap(),
+            earlier_offset.try_into().unwrap(),
+            later_offset.try_into().unwrap(),
         )
     }
 
-    fn gap(t: i64, off1: i32, off2: i32) -> Ambiguity {
+    fn gap(t: i64, later_offset: i32, earlier_offset: i32) -> Ambiguity {
         Ambiguity::Gap(
             t.try_into().unwrap(),
-            off1.try_into().unwrap(),
-            off2.try_into().unwrap(),
+            later_offset.try_into().unwrap(),
+            earlier_offset.try_into().unwrap(),
         )
     }
 
@@ -1006,18 +1006,18 @@ mod tests {
                         "tz: {tz:?} date: {date}, time: {time}, {offset:?}, {epoch:?}"
                     );
                 }
-                Fold(_, a, b) => {
-                    let epoch_a = to_epoch_s(date, time, a);
-                    let epoch_b = to_epoch_s(date, time, b);
+                Fold(_, earlier_offset, later_offset) => {
+                    let epoch_earlier = to_epoch_s(date, time, earlier_offset);
+                    let epoch_later = to_epoch_s(date, time, later_offset);
                     assert_eq!(
-                        tz.offset_for_instant(epoch_a),
-                        a,
-                        "(earlier offset) tz: {tz:?} date: {date}, time: {time}, {a:?}, {epoch_a:?}"
+                        tz.offset_for_instant(epoch_earlier),
+                        earlier_offset,
+                        "(earlier offset) tz: {tz:?} date: {date}, time: {time}, {earlier_offset:?}, {epoch_earlier:?}"
                     );
                     assert_eq!(
-                        tz.offset_for_instant(epoch_b),
-                        b,
-                        "(later offset) tz: {tz:?} date: {date}, time: {time}, {b:?}, {epoch_b:?}"
+                        tz.offset_for_instant(epoch_later),
+                        later_offset,
+                        "(later offset) tz: {tz:?} date: {date}, time: {time}, {later_offset:?}, {epoch_later:?}"
                     );
                 }
                 Gap(_, _, _) => {} // Times in a gap aren't reversible

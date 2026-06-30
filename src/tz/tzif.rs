@@ -561,12 +561,12 @@ mod tests {
         Ambiguity::Unambiguous(offset.try_into().unwrap())
     }
 
-    fn fold_at(t: EpochSecs, off1: Offset, off2: Offset) -> Ambiguity {
-        Ambiguity::Fold(t, off1, off2)
+    fn fold_at(t: EpochSecs, earlier_offset: Offset, later_offset: Offset) -> Ambiguity {
+        Ambiguity::Fold(t, earlier_offset, later_offset)
     }
 
-    fn gap_at(t: EpochSecs, off1: Offset, off2: Offset) -> Ambiguity {
-        Ambiguity::Gap(t, off1, off2)
+    fn gap_at(t: EpochSecs, later_offset: Offset, earlier_offset: Offset) -> Ambiguity {
+        Ambiguity::Gap(t, later_offset, earlier_offset)
     }
 
     #[test]
