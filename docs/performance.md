@@ -16,8 +16,8 @@ code paths to keep the module compact and fast to import.
 ```{admonition} Test environment
 :class: hint
 
-All benchmarks on this page were run on an Apple M1 Pro (32 GB, macOS 26.3)
-using Python 3.14.3 (PGO+LTO build). Import-time measurements use warm
+All benchmarks on this page were run on an Apple M1 Pro (32 GB, macOS 26.5)
+using Python 3.14.6 (PGO+LTO build). Import-time measurements use warm
 page cache.
 ```
 
