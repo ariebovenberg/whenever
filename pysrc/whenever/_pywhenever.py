@@ -321,7 +321,7 @@ def _start_of_next_dt(dt: _datetime, unit: str) -> _datetime:
         return d.replace(hour=0, minute=0, second=0)
     else:
         assert unit == "day"
-        # OPTIMIZE: computer days(1), hours(1) etc. as singletons
+        # OPTIMIZE: compute days(1), hours(1) etc. as singletons
         return (dt + _timedelta(days=1)).replace(hour=0, minute=0, second=0)
 
 
@@ -8424,8 +8424,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         self, naive: _datetime, unit: str
     ) -> _datetime:
         local_epoch = int(naive.replace(tzinfo=_UTC).timestamp())
-        ambiguity = self._tz.ambiguity_for_local(naive)
-        match ambiguity:
+        match self._tz._ambiguity_for_local_epoch(local_epoch):
             case Unambiguous(offset):
                 pass
             case Fold(end, earlier_offset, later_offset):

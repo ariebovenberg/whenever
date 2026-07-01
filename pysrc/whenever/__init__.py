@@ -3,6 +3,8 @@ from __future__ import annotations
 
 # Almost everything is lazily imported, to speed up initial import time.
 def __getattr__(name: str) -> object:
+    # When any name from a group is first accessed, the whole module is loaded
+    # and all names from it are pre-populated, so subsequent accesses skip __getattr__.
     if src := _LAZY_NAMES.get(name):
         mod = __import__(src, fromlist=("",))
         g = globals()
@@ -111,9 +113,6 @@ __all__ = (
 )
 
 
-# Names lazily imported from submodules.
-# When any name from a group is first accessed, the whole module is loaded
-# and all names from it are pre-populated, so subsequent accesses skip __getattr__.
 _LAZY_MODULES = {
     f"{__package__}._core": (
         # Classes
@@ -202,7 +201,8 @@ _LAZY_NAMES = {n: mod for mod, names in _LAZY_MODULES.items() for n in names}
 
 
 # Without this, IDEs won't show proper information for our types.
-# Note we don't actually import `typing`, as this has a runtime cost.
+# Note we don't actually import the variable from `typing`,
+# as this has a runtime cost.
 TYPE_CHECKING = False
 
 if TYPE_CHECKING:

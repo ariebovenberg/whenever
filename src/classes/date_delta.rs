@@ -627,29 +627,21 @@ pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, CalUnit)> {
     }
 }
 
-fn in_months_days(_: PyType, DateDelta { months, days }: DateDelta) -> PyResult<Owned<PyTuple>> {
+fn in_months_days(_: PyType, DateDelta { months, days }: DateDelta) -> PyReturn {
     [months.get().to_py()?, days.get().to_py()?].into_pytuple()
 }
 
 // FUTURE: maybe also return the sign?
-fn in_years_months_days(
-    _: PyType,
-    DateDelta { months, days }: DateDelta,
-) -> PyResult<Owned<PyTuple>> {
+fn in_years_months_days(_: PyType, DateDelta { months, days }: DateDelta) -> PyReturn {
     let years = months.get() / 12;
     let months = months.get() % 12;
     [years.to_py()?, months.to_py()?, days.get().to_py()?].into_pytuple()
 }
 
-fn __reduce__(
-    cls: HeapType<DateDelta>,
-    DateDelta { months, days }: DateDelta,
-) -> PyResult<Owned<PyTuple>> {
+fn __reduce__(cls: HeapType<DateDelta>, DateDelta { months, days }: DateDelta) -> PyReturn {
     [
         cls.state().unpickle_date_delta.newref(),
-        [months.get().to_py()?, days.get().to_py()?]
-            .into_pytuple()?
-            .into_obj(),
+        [months.get().to_py()?, days.get().to_py()?].into_pytuple()?,
     ]
     .into_pytuple()
 }

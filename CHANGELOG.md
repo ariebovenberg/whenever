@@ -1,7 +1,7 @@
 # Changelog
 
 
-## 0.10.1 (2026-06-??)
+## 0.10.1 (2026-07-02)
 
 **Improved**
 
@@ -19,6 +19,8 @@
 
 - Restored utility functions to `whenever.__all__` and ensured `dir(whenever)`
   includes lazily loaded public attributes without importing them.
+- Fixed `Date.today_in_system_tz()` in the Rust extension so it uses whenever's
+  cached system timezone instead of from `datetime`.
 - Fixed `ZonedDateTime.end_of()` around DST transitions. Calendar-unit
   boundaries are exactly 1 nanosecond before the next `start_of()`. Sub-day
   units preserve the current occurrence of repeated local times when possible,
@@ -26,7 +28,7 @@
 - Fixed a pure-Python regression introduced in 0.10.0 that could return incorrect
   offsets for part of a year. This occurred when a timezone switched from explicitly
   recorded transitions to recurring transition rules partway through that year.
-  In practice, this affected a handful of timezones, and only when
+  This affected a handful of timezones, and in practive only when
   system timezone data wasn't present (e.g. on Windows).
   The Rust extension (the default) was not affected.
   A rigorous test ensures this won't regress again in the future.

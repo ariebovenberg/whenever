@@ -604,7 +604,7 @@ fn replace(
     d.to_obj(cls)
 }
 
-fn date_and_time_parts(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyResult<Owned<PyTuple>> {
+fn date_and_time_parts(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyReturn {
     let state = cls.state();
 
     // Date part
@@ -645,7 +645,7 @@ fn date_and_time_parts(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyResu
     [date_part?, time_part?].into_pytuple()
 }
 
-fn __reduce__(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyResult<Owned<PyTuple>> {
+fn __reduce__(cls: HeapType<ItemizedDelta>, d: ItemizedDelta) -> PyReturn {
     let state = cls.state();
     let tup = PyTuple::with_len(8)?;
     tup.init_item(0, d.years.to_py()?);
@@ -975,7 +975,7 @@ fn add_sub(
         })
         .transpose()?;
 
-    let mut relative_to_obj: Option<PyObj> = None;
+    let mut relative_to_obj = None;
     let mut units = DeltaUnitSet::EMPTY;
     let mut round_mode = round::Mode::Trunc;
     let mut round_increment = RoundIncrement::MIN;

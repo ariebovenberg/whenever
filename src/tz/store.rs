@@ -70,7 +70,6 @@ impl Cache {
     fn new_to_lru(tz: Arc<TimeZone>, lru: &mut Lru) {
         debug_assert!(tz.key.is_some());
         if lru.len() == LRU_CAPACITY {
-            // Evict LRU entry; stale weak refs in lookup are cleaned up lazily
             lru.pop_back();
         }
         lru.push_front(tz);
@@ -80,11 +79,11 @@ impl Cache {
         match lru.iter().position(|ptr| Arc::ptr_eq(ptr, tz)) {
             Some(0) => {} // Already at the front
             Some(i) => {
-                lru.remove(i);
-                lru.push_front(Arc::clone(tz));
+                let t = lru.remove(i).unwrap(); // index validated by position
+                lru.push_front(t);
             }
             None => {
-                Self::new_to_lru(Arc::clone(tz), lru);
+                Self::new_to_lru(tz.clone(), lru);
             }
         }
     }
@@ -112,10 +111,11 @@ type Lookup = AHashMap<String, Weak<TimeZone>>;
 #[derive(Debug)]
 struct CacheInner {
     // Weak references to timezones keyed by TZ ID.
-    // Strong references are held by (1) the LRU and (2) ZonedDateTime objects (via Arc).    // Stale entries (where the Weak ref has expired) are cleaned up lazily on next access.
+    // Strong references are held by (1) the LRU and (2) ZonedDateTime objects.
     //
     // "Ahash" works significantly faster than the standard hashing algorithm.
-    // We don't need cryptographic security since keys are trusted (valid zoneinfo IDs).
+    // We don't need cryptographic security since keys are validated
+    // first to be zoneinfo IDs.
     lookup: Lookup,
     // Keeps the most recently used entries alive to prevent over-eager dropping.
     //

@@ -601,7 +601,7 @@ fn parse_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyResult<Owned<PyTuple>> {
+fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyReturn {
     let Time {
         hour,
         minute,
@@ -611,7 +611,7 @@ fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyResult<Owned<PyTuple>> {
     let data = pack![hour, minute, second, nanos.get()];
     [
         cls.state().unpickle_time.newref(),
-        [data.to_py()?].into_pytuple()?.into_obj(),
+        [data.to_py()?].into_pytuple()?,
     ]
     .into_pytuple()
 }

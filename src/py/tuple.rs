@@ -83,15 +83,15 @@ impl Iterator for PyTupleIter {
 }
 
 pub(crate) trait IntoPyTuple {
-    fn into_pytuple(self) -> PyResult<Owned<PyTuple>>;
+    fn into_pytuple(self) -> PyReturn;
 }
 
 impl<const N: usize, T: PyBase> IntoPyTuple for [Owned<T>; N] {
-    fn into_pytuple(self) -> PyResult<Owned<PyTuple>> {
+    fn into_pytuple(self) -> PyReturn {
         let tuple = PyTuple::with_len(N as _)?;
         for (i, item) in self.into_iter().enumerate() {
             tuple.init_item(i as _, item);
         }
-        Ok(tuple)
+        Ok(tuple.into_obj())
     }
 }
