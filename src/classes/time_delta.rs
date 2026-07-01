@@ -788,12 +788,12 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn __reduce__(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyResult<Owned<PyTuple>> {
+fn __reduce__(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     let TimeDelta { secs, subsec } = slf;
     let data = pack![secs.get(), subsec.get()];
     [
         cls.state().unpickle_time_delta.newref(),
-        [data.to_py()?].into_pytuple()?.into_obj(),
+        [data.to_py()?].into_pytuple()?,
     ]
     .into_pytuple()
 }
@@ -883,9 +883,8 @@ fn in_days_of_24h(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
 }
 
 fn from_py_timedelta(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
-    let state = cls.state();
     warn_with_class(
-        *state.warn_deprecation,
+        *cls.state().warn_deprecation,
         c"from_py_timedelta() is deprecated. Use TimeDelta() constructor instead.",
         1,
     )?;
@@ -917,16 +916,15 @@ fn to_stdlib(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
 }
 
 fn py_timedelta(cls: HeapType<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    let state = cls.state();
     warn_with_class(
-        *state.warn_deprecation,
+        *cls.state().warn_deprecation,
         c"py_timedelta() is deprecated. Use to_stdlib() instead.",
         1,
     )?;
     to_stdlib(cls, slf)
 }
 
-fn in_hrs_mins_secs_nanos(_: PyType, slf: TimeDelta) -> PyResult<Owned<PyTuple>> {
+fn in_hrs_mins_secs_nanos(_: PyType, slf: TimeDelta) -> PyReturn {
     let TimeDelta { secs, subsec } = slf;
     let secs = secs.get();
     let (secs, nanos) = if secs >= 0 {

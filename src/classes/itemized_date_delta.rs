@@ -471,7 +471,7 @@ fn replace(
     d.to_obj(cls)
 }
 
-fn __reduce__(cls: HeapType<ItemizedDateDelta>, d: ItemizedDateDelta) -> PyResult<Owned<PyTuple>> {
+fn __reduce__(cls: HeapType<ItemizedDateDelta>, d: ItemizedDateDelta) -> PyReturn {
     [
         cls.state().unpickle_itemized_date_delta.newref(),
         [
@@ -480,8 +480,7 @@ fn __reduce__(cls: HeapType<ItemizedDateDelta>, d: ItemizedDateDelta) -> PyResul
             d.weeks.to_py()?,
             d.days.to_py()?,
         ]
-        .into_pytuple()?
-        .into_obj(),
+        .into_pytuple()?,
     ]
     .into_pytuple()
 }

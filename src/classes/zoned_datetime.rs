@@ -998,7 +998,7 @@ fn replace(
     let mut second = time.second.into();
     let mut nanos = time.subsec.get() as _;
     let mut dis = None;
-    let mut tz_new: Option<Arc<TimeZone>> = None;
+    let mut tz_new = None;
 
     handle_kwargs("replace", kwargs, |key, value, eq| {
         if eq(key, *state.str_tz) {
@@ -1086,9 +1086,8 @@ fn from_system_tz(cls: HeapType<ZonedDateTime>, args: PyTuple, kwargs: Option<Py
 }
 
 fn from_py_datetime(cls: HeapType<ZonedDateTime>, arg: PyObj) -> PyReturn {
-    let state = cls.state();
     warn_with_class(
-        *state.warn_deprecation,
+        *cls.state().warn_deprecation,
         c"from_py_datetime() is deprecated. Use ZonedDateTime() constructor instead.",
         1,
     )?;
@@ -1159,7 +1158,7 @@ fn timestamp_nanos(_: PyType, slf: &ZonedDateTime) -> PyReturn {
     slf.instant().timestamp_nanos().to_py()
 }
 
-fn __reduce__(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime) -> PyResult<Owned<PyTuple>> {
+fn __reduce__(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     let ZonedDateTime {
         date: Date { year, month, day },
         time:
@@ -1191,9 +1190,7 @@ fn __reduce__(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime) -> PyResult<Own
         .ok_or_value_err("cannot pickle ZonedDateTime without timezone ID")?;
     [
         cls.state().unpickle_zoned_datetime.newref(),
-        [data.to_py()?, tz_key.as_str().to_py()?]
-            .into_pytuple()?
-            .into_obj(),
+        [data.to_py()?, tz_key.as_str().to_py()?].into_pytuple()?,
     ]
     .into_pytuple()
 }

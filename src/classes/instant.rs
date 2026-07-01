@@ -394,14 +394,11 @@ fn exact_eq(cls: HeapType<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     }
 }
 
-fn __reduce__(
-    cls: HeapType<Instant>,
-    Instant { epoch, subsec }: Instant,
-) -> PyResult<Owned<PyTuple>> {
+fn __reduce__(cls: HeapType<Instant>, Instant { epoch, subsec }: Instant) -> PyReturn {
     let data = pack![epoch.get(), subsec.get()];
     [
         cls.state().unpickle_instant.newref(),
-        [data.to_py()?].into_pytuple()?.into_obj(),
+        [data.to_py()?].into_pytuple()?,
     ]
     .into_pytuple()
 }

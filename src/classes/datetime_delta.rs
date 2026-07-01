@@ -533,7 +533,7 @@ fn in_months_days_secs_nanos(
         ddelta: DateDelta { months, days },
         tdelta: TimeDelta { secs, subsec },
     }: DateTimeDelta,
-) -> PyResult<Owned<PyTuple>> {
+) -> PyReturn {
     let mut secs = secs.get();
     let nanos = if secs < 0 && subsec.get() > 0 {
         secs += 1;
@@ -569,7 +569,7 @@ fn __reduce__(
         ddelta: DateDelta { months, days },
         tdelta: TimeDelta { secs, subsec },
     }: DateTimeDelta,
-) -> PyResult<Owned<PyTuple>> {
+) -> PyReturn {
     [
         cls.state().unpickle_datetime_delta.newref(),
         // We don't do our own bit packing because the numbers are usually small
@@ -580,8 +580,7 @@ fn __reduce__(
             secs.get().to_py()?,
             subsec.get().to_py()?,
         ]
-        .into_pytuple()?
-        .into_obj(),
+        .into_pytuple()?,
     ]
     .into_pytuple()
 }

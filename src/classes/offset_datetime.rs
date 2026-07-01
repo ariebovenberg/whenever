@@ -1054,7 +1054,7 @@ fn difference(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime, arg: PyObj) ->
         .to_obj(*state.time_delta_type)
 }
 
-fn __reduce__(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyResult<Owned<PyTuple>> {
+fn __reduce__(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     let OffsetDateTime {
         date: Date { year, month, day },
         time:
@@ -1078,7 +1078,7 @@ fn __reduce__(cls: HeapType<OffsetDateTime>, slf: OffsetDateTime) -> PyResult<Ow
     ];
     [
         cls.state().unpickle_offset_datetime.newref(),
-        [data.to_py()?].into_pytuple()?.into_obj(),
+        [data.to_py()?].into_pytuple()?,
     ]
     .into_pytuple()
 }

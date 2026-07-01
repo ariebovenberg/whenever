@@ -711,7 +711,7 @@ fn difference(
     }
 }
 
-fn __reduce__(cls: HeapType<DateTime>, slf: DateTime) -> PyResult<Owned<PyTuple>> {
+fn __reduce__(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
     let DateTime {
         date: Date { year, month, day },
         time:
@@ -733,7 +733,7 @@ fn __reduce__(cls: HeapType<DateTime>, slf: DateTime) -> PyResult<Owned<PyTuple>
     ];
     [
         cls.state().unpickle_plain_datetime.newref(),
-        [data.to_py()?].into_pytuple()?.into_obj(),
+        [data.to_py()?].into_pytuple()?,
     ]
     .into_pytuple()
 }

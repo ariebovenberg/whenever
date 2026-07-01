@@ -373,14 +373,14 @@ impl BoundaryUnit {
                 Some(Ok(BoundaryUnit::Year))
             } else if eq(v, *state.str_month) {
                 Some(Ok(BoundaryUnit::Month))
-            } else if eq(v, *state.str_week) {
-                Some(raise_value_err(
-                    "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.",
-                ))
             } else if eq(v, *state.str_week_mon) {
                 Some(Ok(BoundaryUnit::WeekMon))
             } else if eq(v, *state.str_week_sun) {
                 Some(Ok(BoundaryUnit::WeekSun))
+            } else if eq(v, *state.str_week) {
+                Some(raise_value_err(
+                    "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.",
+                ))
             } else {
                 None
             }
@@ -730,11 +730,11 @@ fn extract_weekday(state: &State, arg: PyObj) -> PyResult<Weekday> {
         .ok_or_type_err("weekday must be a Weekday enum member")
 }
 
-fn __reduce__(cls: HeapType<Date>, Date { year, month, day }: Date) -> PyResult<Owned<PyTuple>> {
+fn __reduce__(cls: HeapType<Date>, Date { year, month, day }: Date) -> PyReturn {
     let data = pack![year.get(), month.get(), day];
     [
         cls.state().unpickle_date.newref(),
-        [data.to_py()?].into_pytuple()?.into_obj(),
+        [data.to_py()?].into_pytuple()?,
     ]
     .into_pytuple()
 }
@@ -898,7 +898,6 @@ fn since_inner(
     negate: bool,
 ) -> PyReturn {
     let state = cls.state();
-    let round_mode_strs = &state.round_mode_strs;
 
     let other = handle_one_arg(fname, args)?
         .extract(cls)
@@ -920,7 +919,8 @@ fn since_inner(
             }
             units = Some(DateSinceUnits::InUnits(CalUnitSet::from_py(value, state)?));
         } else if eq(key, *state.str_round_mode) {
-            round_mode = round::Mode::from_py_named("round_mode", value, round_mode_strs)?.into();
+            round_mode =
+                round::Mode::from_py_named("round_mode", value, &state.round_mode_strs)?.into();
             round_was_set = true;
         } else if eq(key, *state.str_round_increment) {
             round_increment = DateRoundIncrement::from_py(value)?;
@@ -1067,28 +1067,8 @@ fn at(cls: HeapType<Date>, date: Date, time_obj: PyObj) -> PyReturn {
 
 fn today_in_system_tz(cls: HeapType<Date>) -> PyReturn {
     let state = cls.state();
-    let epoch = state.now()?.epoch;
-    Date::from_py(*system_tz_today_from_timestamp(state.py_api()?, epoch)?).to_obj(cls)
-}
-
-fn system_tz_today_from_timestamp(
-    &PyDateTime_CAPI {
-        Date_FromTimestamp,
-        DateType,
-        ..
-    }: &PyDateTime_CAPI,
-    s: EpochSecs,
-) -> PyResult<Owned<PyDate>> {
-    let args = [s.get().to_py()?].into_pytuple()?;
-    Ok(unsafe {
-        // we make use of the fact that date.fromtimstamp() by default
-        // uses the system timezone
-        // SAFETY: Date_FromTimestamp is safe to call with valid pointers
-        Date_FromTimestamp(DateType, args.as_ptr())
-            .own()?
-            // SAFETY: safe to assume Date_FromTimestamp returns a date
-            .cast_unchecked::<PyDate>()
-    })
+    let tz = state.tz_store.get_system_tz()?;
+    state.now()?.to_tz(&tz).ok_or_range_err()?.date.to_obj(cls)
 }
 
 fn format(_: HeapType<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {

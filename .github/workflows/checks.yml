@@ -24,7 +24,7 @@ jobs:
         with:
           toolchain: "1.93"
       # even though we only test rust, we need CPython to link against
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
       - name: Build and test
@@ -37,12 +37,11 @@ jobs:
       fail-fast: false
       matrix:
         python-version: [
-          "3.10",
+          # NOTE: 3.10, 3.14t are absent since we test them in the OS job matrix
           "3.11",
           "3.12",
           "3.13",
-          # NOTE: 3.14 is absent since we test it in the OS job matrix
-          "3.14t",
+          "3.14",
           "3.15",
           "3.15t"
         ]
@@ -51,8 +50,8 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: "1.93"
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true
@@ -82,14 +81,16 @@ jobs:
           uv run python scripts/smoketest_*.py
 
   test-os:
-    name: Test ${{ matrix.os }}, 3.14 ${{ matrix.no_build_ext && 'pure Python' || 'Rust extension' }} ${{ matrix.architecture }}
+    name: Test ${{ matrix.os }}, ${{matrix.python-version}} ${{ matrix.no_build_ext && 'pure Python' || 'Rust extension' }} ${{ matrix.architecture }}
     runs-on: ${{ matrix.os }}-latest
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu, windows, macos]
         no_build_ext: ["", "1"]
-        architecture: [x64]
+        architecture: [null]
+        # To keep the matrix size reasonable, we only test oldest and newest Python versions on each OS.
+        python-version: ["3.10", "3.14t"]
         include:
           # For windows, we also test 32-bit Python
           - os: windows
@@ -100,15 +101,15 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: "1.93"
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
 
       - name: Add win32 target
         if: ${{ matrix.os == 'windows' && matrix.architecture == 'x86' }}
         run: rustup target add i686-pc-windows-msvc
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
-          python-version: '3.14'
+          python-version: ${{ matrix.python-version }}
           architecture:  ${{ matrix.architecture }}
 
       - name: Sync Python environment
@@ -133,12 +134,11 @@ jobs:
       fail-fast: false
       matrix:
         python-version: [
-          "3.10",
+          # NOTE: 3.10, 3.14t are absent since we test them in the OS job matrix
           "3.11",
           "3.12",
           "3.13",
-          # NOTE: 3.14 is absent since we test it in the OS job matrix
-          "3.14t",
+          "3.14",
           "3.15",
           "3.15t",
           # NOTE: If pypy/pytest fails, if could be due to
@@ -148,8 +148,8 @@ jobs:
         ]
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true
@@ -178,8 +178,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -198,8 +198,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
       - run: uv sync --locked --no-install-project
@@ -222,8 +222,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
       - run: uv sync --locked --all-groups --no-install-project
