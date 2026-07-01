@@ -34,6 +34,10 @@ check-readme:
 test-py:
 	RUST_BACKTRACE=1 uv run pytest -s tests/
 
+.PHONY: test-cov
+test-cov: clean-ext
+	RUST_BACKTRACE=1 uv run pytest -s tests/ --cov=pysrc --cov-report=term-missing --cov-report=html
+
 
 .PHONY: test-rs
 test-rs:

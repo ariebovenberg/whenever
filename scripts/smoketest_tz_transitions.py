@@ -16,6 +16,7 @@ from pathlib import Path
 import whenever
 from whenever import (
     Instant,
+    ZonedDateTime,
     available_timezones,
     clear_tzcache,
     reset_tzpath,
@@ -132,7 +133,7 @@ def find_tzif(key: str, paths: tuple[Path, ...]) -> Path | None:
     )
 
 
-def next_offset_transition(cursor):
+def next_offset_transition(cursor: ZonedDateTime):
     while (transition := cursor.next_transition()) is not None:
         if transition.offset != cursor.offset:
             return transition

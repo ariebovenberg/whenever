@@ -77,7 +77,9 @@ jobs:
         run: |
           uv sync --locked --reinstall-package whenever --no-editable --group test
           uv run pytest tests/ -s -v
-      - run: uv run python scripts/smoketest_*.py
+      - run: |
+          sudo apt-get install -y tzdata  # for the zdump command
+          uv run python scripts/smoketest_*.py
 
   test-os:
     name: Test ${{ matrix.os }}, 3.14 ${{ matrix.no_build_ext && 'pure Python' || 'Rust extension' }} ${{ matrix.architecture }}
@@ -126,21 +128,6 @@ jobs:
         env:
           WHENEVER_NO_BUILD_RUST_EXT: ${{ matrix.no_build_ext }}
 
-      - name: Install tzcode
-        if: ${{ matrix.os == 'ubuntu' && !matrix.no_build_ext }}
-        shell: bash
-        run: |
-          mkdir -p /tmp/tzcode
-          curl --fail --silent --show-error --location \
-            https://data.iana.org/time-zones/releases/tzcode2026b.tar.gz \
-            | tar -xz -C /tmp/tzcode
-          make -C /tmp/tzcode zdump
-          echo /tmp/tzcode >> "$GITHUB_PATH"
-
-      - name: Smoke test timezone transitions
-        if: ${{ matrix.os == 'ubuntu' && !matrix.no_build_ext }}
-        run: uv run python scripts/smoketest_tz_transitions.py
-
   test-pure-python:
     name: Test ubuntu, ${{ matrix.python-version }} pure Python
     runs-on: ubuntu-latest
@@ -172,19 +159,21 @@ jobs:
         run: uv sync --locked --group test
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
-      - run: uv run python scripts/smoketest_*.py
       # NOTE: we end up running pytest twice in the following sections.
       # This is because we want to test the code with and without optional dependencies.
       - run: uv run pytest tests/
       - if: ${{ !contains(fromJSON('["pypy3.10", "pypy3.11", "3.15", "3.15t"]'), matrix.python-version) }}
         run: uv sync --locked --group test --group integrations
-      # NOTE: we only care about coverage once. We arbitrarily choose 3.12 for that
-      - if: ${{ matrix.python-version == '3.12' }}
+      # NOTE: we only care about coverage once. We arbitrarily choose one of the Python versions to run it on
+      - if: ${{ matrix.python-version == '3.14' }}
         run: |
           uv run pytest tests/ --cov=whenever --cov-report term-missing
-      - if: ${{ !contains(fromJSON('["pypy3.10", "pypy3.11", "3.15", "3.15t"]'), matrix.python-version) }}
+      - if: ${{ !contains(fromJSON('["pypy3.10", "pypy3.11", "3.15", "3.15t", "3.14"]'), matrix.python-version) }}
         run: |
           uv run pytest tests/
+      - run: |
+          sudo apt-get install -y tzdata  # for the zdump command
+          uv run python scripts/smoketest_*.py
 
   lint:
     name: Linting
