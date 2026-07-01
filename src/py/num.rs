@@ -1,25 +1,8 @@
 //! Functionality for Python's int and float types
 use super::{base::*, exc::*, refs::*};
-use core::ffi::{c_int, c_long, c_uchar};
+use core::ffi::c_long;
 use core::mem;
 use pyo3_ffi::*;
-
-unsafe extern "C" {
-    fn _PyLong_FromByteArray(
-        bytes: *const c_uchar,
-        n: usize,
-        little_endian: c_int,
-        is_signed: c_int,
-    ) -> *mut PyObject;
-
-    fn _PyLong_AsByteArray(
-        v: *mut PyLongObject,
-        bytes: *mut c_uchar,
-        n: usize,
-        little_endian: c_int,
-        is_signed: c_int,
-    ) -> c_int;
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PyInt {
@@ -69,16 +52,41 @@ impl PyInt {
 
     pub(crate) fn to_i128(self) -> PyResult<i128> {
         let mut bytes: [u8; 16] = [0; 16];
-        // Yes, this is a private API, but it's the only way to get a 128-bit integer
-        // on Python < 3.13. Other libraries do this too.
-        if unsafe { _PyLong_AsByteArray(self.as_ptr().cast(), &mut bytes as *mut _, 16, 1, 1) } == 0
+        #[cfg(not(Py_3_13))]
         {
-            Ok(i128::from_le_bytes(bytes))
-        } else {
-            raise(
-                exc_overflow_error(),
-                "Python int too large to convert to i128",
-            )
+            // This private API is the only direct 128-bit conversion before Python 3.13.
+            if unsafe {
+                _PyLong_AsByteArray(self.as_ptr().cast(), bytes.as_mut_ptr(), bytes.len(), 1, 1)
+            } == 0
+            {
+                Ok(i128::from_le_bytes(bytes))
+            } else {
+                raise(
+                    exc_overflow_error(),
+                    "Python int too large to convert to i128",
+                )
+            }
+        }
+        #[cfg(Py_3_13)]
+        {
+            let size = unsafe {
+                PyLong_AsNativeBytes(
+                    self.as_ptr(),
+                    bytes.as_mut_ptr().cast(),
+                    bytes.len() as Py_ssize_t,
+                    Py_ASNATIVEBYTES_NATIVE_ENDIAN,
+                )
+            };
+            if size < 0 {
+                Err(PyErrMarker)
+            } else if size as usize > bytes.len() {
+                raise(
+                    exc_overflow_error(),
+                    "Python int too large to convert to i128",
+                )
+            } else {
+                Ok(i128::from_ne_bytes(bytes))
+            }
         }
     }
 }
@@ -124,17 +132,29 @@ impl PyFloat {
 
 impl ToPy for i128 {
     fn to_py(self) -> PyReturn {
-        // Yes, this is a private API, but it's the only way to create a 128-bit integer
-        // on Python < 3.13. Other libraries do this too.
-        unsafe {
-            _PyLong_FromByteArray(
-                self.to_le_bytes().as_ptr().cast(),
-                mem::size_of::<i128>(),
-                1,
-                1,
-            )
-        }
-        .own()
+        #[cfg(not(Py_3_13))]
+        let ptr = {
+            // This private API is the only direct 128-bit conversion before Python 3.13.
+            unsafe {
+                _PyLong_FromByteArray(
+                    self.to_le_bytes().as_ptr().cast(),
+                    mem::size_of::<i128>(),
+                    1,
+                    1,
+                )
+            }
+        };
+        #[cfg(Py_3_13)]
+        let ptr = {
+            unsafe {
+                PyLong_FromNativeBytes(
+                    self.to_ne_bytes().as_ptr().cast(),
+                    mem::size_of::<i128>(),
+                    Py_ASNATIVEBYTES_NATIVE_ENDIAN,
+                )
+            }
+        };
+        ptr.own()
     }
 }
 

@@ -319,24 +319,10 @@ def _start_of_next_dt(dt: _datetime, unit: str) -> _datetime:
         days_fwd = 7 - dt.isoweekday() % 7
         d = dt + _timedelta(days=days_fwd)
         return d.replace(hour=0, minute=0, second=0)
-    elif unit == "day":
+    else:
+        assert unit == "day"
         # OPTIMIZE: computer days(1), hours(1) etc. as singletons
         return (dt + _timedelta(days=1)).replace(hour=0, minute=0, second=0)
-    elif unit == "hour":
-        return (dt + _timedelta(hours=1)).replace(minute=0, second=0)
-    elif unit == "minute":
-        return (dt + _timedelta(minutes=1)).replace(second=0)
-    elif unit == "second":
-        return dt + _timedelta(seconds=1)
-    elif unit == "week":
-        raise ValueError(
-            "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead."
-        )
-    else:
-        raise ValueError(
-            f"Invalid unit: {unit!r}. "
-            f"Valid units: {', '.join(map(repr, _UNITS_FOR_START_END_OF))}"
-        )
 
 
 @final
@@ -8458,7 +8444,7 @@ class ZonedDateTime(_ExactAndLocalTime):
                     )
                     else earlier_offset
                 )
-            case Gap(end, later_offset, earlier_offset):
+            case Gap(end, later_offset, earlier_offset):  # pragma: no branch
                 # A skipped endpoint ends at the instant before the gap.
                 return _from_epoch_offset(
                     end - later_offset - 1, earlier_offset

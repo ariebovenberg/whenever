@@ -26,7 +26,7 @@ Key directories:
 - `cargo test` — run Rust tests
 - `cargo build` — quick compile check (no Python extension copy)
 - `uv run python -c "import whenever; print(whenever._EXTENSION_LOADED)"` — verify extension is loaded
-- `uv run pytest tests --cov=whenever --cov-report term-missing` for test coverage (ensure you're running pure Python first!)
+- `make test-cov` for test coverage (this clears the extension btw)
 - `make docs` build documentation (ensures no broken links, etc.)
 
 ## General reminders
