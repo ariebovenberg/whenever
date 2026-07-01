@@ -1,7 +1,12 @@
+```{eval-rst}
+:tocdepth: 2
+```
+
 (faq)=
 # FAQ
 
 ```{eval-rst}
+
 .. currentmodule:: whenever
 ```
 
@@ -273,21 +278,54 @@ need to configure anything.
 
 To opt out of the Rust extension and use the pure-Python version,
 install from the source distribution with the
-`WHENEVER_NO_BUILD_RUST_EXT` environment variable set:
+`WHENEVER_NO_BUILD_RUST_EXT` environment variable set.
 
-```bash
-WHENEVER_NO_BUILD_RUST_EXT=1 uv pip install whenever --no-binary whenever
+Installing this way is different depending on your tool of choice:
+
+### Pip
+
 ```
+# as a one-off command
+WHENEVER_NO_BUILD_RUST_EXT=1 pip install whenever --no-binary whenever
+
+# in requirements.txt
+--no-binary whenever
+whenever
+```
+
+### Poetry
+
+```
+
+# as a one-off command
+WHENEVER_NO_BUILD_RUST_EXT=1 poetry run pip install --no-binary whenever whenever
+
+# in poetry.toml (not pyproject.toml!)
+[installer]
+no-binary = ["whenever"]
+```
+
+### uv
+
+```
+# as a one-off command
+uv add whenever --no-binary-package whenever
+
+# pyproject.toml
+[tool.uv]
+no-binary-package = ["whenever"]
+```
+
+See [uv's documentation](https://docs.astral.sh/uv/reference/settings/#no-binary-package) for more information
+
+
+In all cases, the important part is forcing a source install so that the
+Rust extension is not built.
 
 You can check if the Rust extension is being used by running:
 
 ```bash
 python -c "import whenever; print(whenever._EXTENSION_LOADED)"
-```
-
-```{note}
-If you're using Poetry or another third-party package manager, you
-should consult its documentation on opting out of binary wheels.
 ```
 
 ## What about `dateutil`?

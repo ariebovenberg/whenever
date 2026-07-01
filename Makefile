@@ -23,7 +23,7 @@ fix:
 
 .PHONY: docs
 docs: clean-ext  # clean the extension since it messes with autodoc
-	uv run make -C docs/ html
+	uv run --no-sync make -C docs/ html
 
 .PHONY: check-readme
 check-readme:

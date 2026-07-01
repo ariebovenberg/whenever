@@ -28,8 +28,9 @@
   recorded transitions to recurring transition rules partway through that year.
   In practice, this affected a handful of timezones, and only when
   system timezone data wasn't present (e.g. on Windows).
+  The Rust extension (the default) was not affected.
   A rigorous test ensures this won't regress again in the future.
-- Removed free-threading support for 3.13 specifically.
+- Limit free threading support to Python 3.14 and later.
   In 3.13, free threading is still experimental and not yet stable.
 
 ## 0.10.0 (2026-04-05)

@@ -89,13 +89,11 @@ jobs:
       matrix:
         os: [ubuntu, windows, macos]
         no_build_ext: ["", "1"]
+        architecture: [x64]
         include:
           # For windows, we also test 32-bit Python
           - os: windows
             architecture: x86
-            no_build_ext: ""
-          - os: windows
-            architecture: x64
             no_build_ext: ""
     steps:
       - uses: actions/checkout@v4
@@ -111,7 +109,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
-          architecture:  ${{ matrix.architecture || 'x64' }}
+          architecture:  ${{ matrix.architecture }}
 
       - name: Sync Python environment
         run: uv sync --locked --group test
