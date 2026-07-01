@@ -78,8 +78,10 @@ Overall it is in the same ballpark as Arrow and Pendulum.
 
 `import whenever` is nearly free because the package defers all heavy
 work until the first attribute access.
-`import datetime` is faster on standard CPython builds because `_datetime` is
-statically linked into the interpreter. Third-party packages cannot match that.
+`import datetime` is faster on standard CPython builds because `datetime.py`
+is a thin wrapper around the built-in C module `_datetime`, which imports
+without loading a separate shared library. Third-party packages cannot match
+that.
 
 *Other libraries shown for context.*
 
