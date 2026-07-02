@@ -8414,11 +8414,22 @@ class ZonedDateTime(_ExactAndLocalTime):
         tz = self._tz
         if unit in ("year", "month", "week_mon", "week_sun", "day"):
             return resolve_ambiguity(naive, tz, "compatible")
-        return resolve_ambiguity_using_prev_offset(
-            naive,
-            self._py_dt.utcoffset(),  # type: ignore[arg-type]
-            tz,
-        )
+        match tz.ambiguity_for_local(naive):
+            case Unambiguous(offset):
+                pass
+            case Fold(_, earlier_offset, later_offset):
+                current_offset = int(
+                    self._py_dt.utcoffset().total_seconds()  # type: ignore[union-attr]
+                )
+                offset = (
+                    later_offset
+                    if current_offset == later_offset
+                    else earlier_offset
+                )
+            case Gap(end, later_offset, _):  # pragma: no branch
+                # A skipped boundary starts at the first instant after the gap.
+                return _from_epoch_offset(end - later_offset, later_offset)
+        return naive.replace(tzinfo=mk_fixed_tzinfo(offset))
 
     def _resolve_end_of_time_unit(
         self, naive: _datetime, unit: str
@@ -8477,7 +8488,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         since midnight may not exist due to DST transitions.
 
         For ``"hour"``, ``"minute"``, and ``"second"``, the existing offset
-        is preserved if valid, otherwise the "compatible" disambiguation strategy is used.
+        is preserved if valid. A boundary skipped by a transition is moved to
+        the first valid time after the gap.
         """
         new_dt = _start_of_dt(self._py_dt, unit)
         naive = new_dt.replace(tzinfo=None)
