@@ -2589,7 +2589,8 @@ is resolved in the timezone using ``\"compatible\"`` disambiguation,
 since midnight may not exist due to DST transitions.
 
 For ``\"hour\"``, ``\"minute\"``, and ``\"second\"``, the existing offset
-is preserved if valid, otherwise the \"compatible\" disambiguation strategy is used.
+is preserved if valid. A boundary skipped by a transition is moved to
+the first valid time after the gap.
 ";
 pub(crate) const ZONEDDATETIME_START_OF_DAY: &CStr = c"\
 The start of the current calendar day.

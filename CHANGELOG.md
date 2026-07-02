@@ -21,10 +21,11 @@
   includes lazily loaded public attributes without importing them.
 - Fixed `Date.today_in_system_tz()` in the Rust extension so it uses whenever's
   cached system timezone instead of from `datetime`.
-- Fixed `ZonedDateTime.end_of()` around DST transitions. Calendar-unit
-  boundaries are exactly 1 nanosecond before the next `start_of()`. Sub-day
-  units preserve the current occurrence of repeated local times when possible,
-  while correctly handling gaps and folds shorter than the requested unit.
+- Fixed `ZonedDateTime.start_of()` and `end_of()` around DST transitions.
+  Calendar-unit boundaries are exactly 1 nanosecond before the next
+  `start_of()`. Sub-day units preserve the current occurrence of repeated local
+  times when possible, while correctly handling gaps and folds shorter than the
+  requested unit.
 - Fixed a pure-Python regression introduced in 0.10.0 that could return incorrect
   offsets for part of a year. This occurred when a timezone switched from explicitly
   recorded transitions to recurring transition rules partway through that year.

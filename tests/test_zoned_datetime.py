@@ -5679,6 +5679,29 @@ class TestStartOf:
             ZonedDateTime(2024, 10, 6, tz="Australia/Lord_Howe")
         )
 
+    def test_non_minute_aligned_gap(self):
+        # Monrovia advanced from 00:00 to 00:44:30 on Jan 7, 1972.
+        zdt = ZonedDateTime(
+            1972,
+            1,
+            7,
+            0,
+            44,
+            45,
+            nanosecond=123,
+            tz="Africa/Monrovia",
+        )
+        result = zdt.start_of("minute")
+        assert result.exact_eq(
+            ZonedDateTime(1972, 1, 7, 0, 44, 30, tz="Africa/Monrovia")
+        )
+        assert (
+            ZonedDateTime(1972, 1, 6, 23, 59, 45, tz="Africa/Monrovia")
+            .end_of("minute")
+            .add(nanoseconds=1)
+            .exact_eq(result)
+        )
+
     def test_non_hour_fold(self):
         # Lord Howe end of DST: Apr 7, 1:30-1:59 occurs twice.
         zdt = ZonedDateTime(

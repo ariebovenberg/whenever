@@ -803,9 +803,9 @@ fn start_of(cls: HeapType<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) 
                         earlier_offset
                     })
                 }
-                Ambiguity::Gap(end, later_offset, _) => {
-                    end.datetime(slf.time.subsec).with_offset(later_offset)
-                }
+                Ambiguity::Gap(end, later_offset, _) => end
+                    .datetime(start_local.time.subsec)
+                    .with_offset(later_offset),
             }
         }
         .ok_or_range_err()?
