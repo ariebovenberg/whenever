@@ -137,7 +137,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
       - name: Sanity check wheel count
         run: |
           COUNT=$(find wheels-* -maxdepth 1 -type f | wc -l)
