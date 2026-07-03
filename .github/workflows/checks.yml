@@ -19,7 +19,7 @@ jobs:
     name: Test Rust (internal tests)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: "1.93"
@@ -46,7 +46,7 @@ jobs:
           "3.15t"
         ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: "1.93"
@@ -97,7 +97,7 @@ jobs:
             architecture: x86
             no_build_ext: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: "1.93"
@@ -147,7 +147,7 @@ jobs:
           "pypy3.11"
         ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
       - uses: actions/setup-python@v6
         with:
@@ -177,7 +177,7 @@ jobs:
     name: Linting
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
       - uses: actions/setup-python@v6
         with:
@@ -197,7 +197,7 @@ jobs:
     name: Ensure docstrings in Rust/Python are synced
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
       - uses: actions/setup-python@v6
         with:
@@ -221,7 +221,7 @@ jobs:
     name: Typecheck Python code
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
       - uses: actions/setup-python@v6
         with:
