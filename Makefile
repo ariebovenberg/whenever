@@ -52,7 +52,7 @@ ci-lint: check-readme
 	uv run ruff format --check .
 	cargo fmt -- --check
 	# hash seed to ensure deterministic import order by slotscheck
-	uv run env PYTHONPATH=pysrc/ PYTHONHASHSEED=1 slotscheck -v pysrc
+	uv run env PYTHONPATH=pysrc/ PYTHONHASHSEED=2 slotscheck -v pysrc
 	cargo clippy --all-targets --all-features -- -D warnings
 
 .PHONY: clean-ext

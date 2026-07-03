@@ -29,7 +29,7 @@
 - Fixed a pure-Python regression introduced in 0.10.0 that could return incorrect
   offsets for part of a year. This occurred when a timezone switched from explicitly
   recorded transitions to recurring transition rules partway through that year.
-  This affected a handful of timezones, and in practive only when
+  This affected a handful of timezones, and in practice only when
   system timezone data wasn't present (e.g. on Windows).
   The Rust extension (the default) was not affected.
   A rigorous test ensures this won't regress again in the future.
