@@ -101,7 +101,7 @@ jobs:
           rust-toolchain: "1.93"
       - run: uv run twine check --strict dist/*
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wheels-binary-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux || 'auto' }}
           path: dist/*
@@ -123,7 +123,7 @@ jobs:
           WHENEVER_NO_BUILD_RUST_EXT: 1
       - run: uv run twine check --strict dist/*
       - name: Upload pure Python wheels and sdist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wheels-pure-python
           path: dist/*
