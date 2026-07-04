@@ -12,6 +12,8 @@ try:  # pragma: no cover
         _set_tzpath as _set_tzpath,
         _unpatch_time as _unpatch_time,
         _unpkl_date,
+        _unpkl_ddelta,
+        _unpkl_dtdelta,
         _unpkl_inst,
         _unpkl_local,
         _unpkl_offset,
@@ -37,6 +39,8 @@ except ModuleNotFoundError as e:
         _set_tzpath,
         _unpatch_time,
         _unpkl_date,
+        _unpkl_ddelta,
+        _unpkl_dtdelta,
         _unpkl_inst,
         _unpkl_local,
         _unpkl_offset,
@@ -48,11 +52,15 @@ except ModuleNotFoundError as e:
 
     _EXTENSION_LOADED = False
 
-from ._typing import *
-
-if not _EXTENSION_LOADED:
     # In pure Python mode, populate TZPATH eagerly (the Rust extension defers
     # this to first timezone lookup for faster import time).
     from ._utils import reset_tzpath
 
     reset_tzpath()
+
+from ._ideltas import (
+    ItemizedDateDelta,
+    ItemizedDelta,
+    _unpkl_iddelta,
+    _unpkl_idelta,
+)

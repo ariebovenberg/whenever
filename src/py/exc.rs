@@ -136,6 +136,14 @@ pub(crate) trait OptionExt<T> {
         self.ok_or_else_raise(exc_value_error(), fmt)
     }
 
+    fn ok_or_else_type_err<F, M: ToPy>(self, fmt: F) -> PyResult<T>
+    where
+        Self: Sized,
+        F: FnOnce() -> M,
+    {
+        self.ok_or_else_raise(exc_type_error(), fmt)
+    }
+
     fn ok_or_type_err<U: ToPy>(self, msg: U) -> PyResult<T>
     where
         Self: Sized,

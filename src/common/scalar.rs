@@ -588,6 +588,14 @@ impl DeltaMonths {
         self.0
     }
 
+    pub(crate) fn abs(self) -> Self {
+        Self(self.0.abs())
+    }
+
+    pub(crate) fn mul(self, n: i32) -> Option<Self> {
+        self.0.checked_mul(n).and_then(Self::new)
+    }
+
     pub(crate) fn add(self, d: DeltaMonths) -> Option<Self> {
         // Safety: both values well within i32::MIN/MAX
         Self::new(self.0 + d.get())
@@ -653,6 +661,10 @@ impl DeltaDays {
 
     pub(crate) fn abs(self) -> Self {
         Self(self.0.abs())
+    }
+
+    pub(crate) fn mul(self, n: i32) -> Option<Self> {
+        self.0.checked_mul(n).and_then(Self::new)
     }
 
     pub(crate) fn add(self, d: DeltaDays) -> Option<Self> {

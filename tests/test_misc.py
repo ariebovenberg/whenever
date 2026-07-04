@@ -12,10 +12,11 @@ import pytest
 from whenever import (
     _EXTENSION_LOADED,
     Date,
+    DateDelta,
+    DateTimeDelta,
+    ImplicitlyIgnoringDST,
     Instant,
     InvalidOffsetError,
-    ItemizedDateDelta,
-    ItemizedDelta,
     MonthDay,
     OffsetDateTime,
     PlainDateTime,
@@ -29,6 +30,10 @@ from whenever import (
 from whenever._tz.system import _tzid_from_path, get_tz
 
 from .common import system_tz_ams
+
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::whenever.WheneverDeprecationWarning"
+)
 
 
 @pytest.mark.skipif(
@@ -58,17 +63,14 @@ def test_type_aliases():
 
 
 def test_exceptions():
+    assert issubclass(ImplicitlyIgnoringDST, TypeError)
     assert issubclass(InvalidOffsetError, ValueError)
 
 
 def test_version():
-    import whenever
-
-    assert "__version__" not in whenever.__dict__
     from whenever import __version__
 
     assert isinstance(__version__, str)
-    assert whenever.__version__ is __version__
 
 
 def test_dir_includes_public_names():
@@ -126,17 +128,17 @@ def test_no_attr_on_module():
 )
 def test_extension_doesnt_import_tz_modules():
     # When the Rust extension is active, the Python timezone subsystem
-    # (_tz, calendar, platform) and pure-Python types must not be imported
-    # when loading a core type. Violations here mean slow startup for all users.
+    # (_tz, calendar, platform) and _shared must not be imported just by doing
+    # `import whenever`. Violations here mean slow startup for all users.
     result = subprocess.run(
         [
             sys.executable,
             "-c",
-            "from whenever import Instant; import json, sys; "
+            "import whenever, json, sys; "
             "print(json.dumps([k for k in sys.modules "
             "if k == 'whenever._tz' or k.startswith('whenever._tz.')  "
-            "or k == 'whenever._ideltas' "
             "or k == 'whenever._shared' "
+            "or k == 'whenever._typing' "
             "or k == 'whenever._utils' "
             "or k in ('calendar', 'platform')]))",
         ],
@@ -229,9 +231,10 @@ def test_text_signature():
         Date,
         Time,
         TimeDelta,
+        DateDelta,
+        DateTimeDelta,
     ]
-    # Mapping protocol methods don't have __text_signature__
-    mapping_methods = {"keys", "values", "items", "get"}
+    deprecated: list[str] = []
     methods = (
         m
         for m in chain.from_iterable(cls.__dict__.values() for cls in classes)
@@ -242,7 +245,7 @@ def test_text_signature():
         assert c.__module__ == "whenever"
 
     for m in methods:
-        if m.__name__.startswith("_") or m.__name__ in mapping_methods:
+        if m.__name__.startswith("_") or m.__name__ in deprecated:
             continue
         sig = m.__text_signature__
         assert sig is not None, (
@@ -266,24 +269,24 @@ def test_pydantic():
         odt: OffsetDateTime
         date: Date = Date(2024, 1, 4)  # default value for testing
         time: Time
-        ddelta: ItemizedDateDelta
+        ddelta: DateDelta
         tdelta: TimeDelta
-        dtdelta: ItemizedDelta
+        dtdelta: DateTimeDelta
         monthday: MonthDay
         yearmonth: YearMonth
 
     # Older versions of pydantic use inspect.signature()
     # in schema generation. Let's make sure that works.
-    signature(ItemizedDelta.__get_pydantic_core_schema__)
+    signature(DateTimeDelta.__get_pydantic_core_schema__)
 
     inst = Instant.from_utc(2024, 1, 1, hour=12)
     zdt = ZonedDateTime(2024, 1, 1, hour=12, tz="Europe/Amsterdam")
     odt = OffsetDateTime(2024, 1, 1, hour=12, offset=1)
     time = Time(12, 0, 0)
     date = Date(2024, 1, 4)
-    ddelta = ItemizedDateDelta(days=3, months=9)
+    ddelta = DateDelta(days=3, months=9)
     tdelta = TimeDelta(hours=3, minutes=9)
-    dtdelta = ItemizedDelta(days=3, months=9, hours=3, minutes=9)
+    dtdelta = DateTimeDelta(days=3, months=9, hours=3, minutes=9)
     monthday = MonthDay(month=1, day=1)
     yearmonth = YearMonth(year=2024, month=1)
 

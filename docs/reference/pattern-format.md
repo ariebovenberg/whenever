@@ -175,8 +175,8 @@ See [](faq-leap-seconds) for details.
 
 ## Comparison with strftime
 
-The removed ``parse_strptime()`` methods on {class}`OffsetDateTime` and
-{class}`PlainDateTime` have been replaced by
+The {meth}`~OffsetDateTime.parse_strptime` methods on {class}`OffsetDateTime` and
+{class}`PlainDateTime` are deprecated in favor of
 {meth}`~OffsetDateTime.parse`. Here's a migration guide:
 
 | strftime | Pattern | Notes |
