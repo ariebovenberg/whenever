@@ -6,7 +6,7 @@ due to DST transitions or missing timezone context. This is intentional: the
 operations aren't *always* wrong, and raising exceptions would be too strict.
 But ignoring the warnings entirely would be a disservice.
 
-All `whenever` warnings are subclasses of {class}`~whenever.PotentialDstBugWarning`,
+Most `whenever` warnings are subclasses of {class}`~whenever.PotentialDstBugWarning`,
 which is itself a subclass of Python's built-in
 {class}`UserWarning <python:UserWarning>`. They fit into Python's standard
 [`warnings` infrastructure](https://docs.python.org/3/library/warnings.html)
@@ -19,6 +19,11 @@ For a full list of warning types and the operations that trigger them, see the
 {class}`~whenever.NaiveArithmeticWarning`,
 {class}`~whenever.StaleOffsetWarning`, and
 {class}`~whenever.DaysAssumed24HoursWarning`.
+
+`whenever` also emits {class}`~whenever.CalendarUnitCompositionWarning` for
+field-wise itemized-delta composition. It is a plain {class}`UserWarning`
+rather than part of the DST warning hierarchy, because the warning is about
+composition semantics rather than timezone correctness.
 ```
 
 ## Turn warnings into errors
@@ -108,6 +113,7 @@ DST-related warning accepts a boolean keyword argument that suppresses it:
 | `days_assumed_24h_ok=True` | {class}`~whenever.DaysAssumed24HoursWarning` | {class}`~whenever.TimeDelta` methods, {class}`~whenever.Instant` `add`/`subtract` |
 | `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` methods |
 | `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods |
+| `cal_unit_composition_ok=True` | {class}`~whenever.CalendarUnitCompositionWarning` | {class}`~whenever.ItemizedDelta` and {class}`~whenever.ItemizedDateDelta` `add`/`subtract` |
 
 For example:
 
@@ -135,6 +141,11 @@ operators cannot accept keyword arguments. Use the method equivalents instead:
 - `dt - delta` → `dt.subtract(delta, ...)`
 - `dt_a - dt_b` → `dt_a.difference(dt_b)` (for {class}`~whenever.PlainDateTime`,
   pass `naive_arithmetic_ok=True`)
+
+For itemized-delta composition, operators always emit
+{class}`~whenever.CalendarUnitCompositionWarning`. Use the method form if you
+want to pass `cal_unit_composition_ok=True` instead of relying on a global
+warning filter.
 
 Alternatively, suppress operator warnings with Python's standard
 {func}`warnings.filterwarnings`.

@@ -1,10 +1,16 @@
 import pickle
+import warnings as _warnings
 from collections import Counter
 from collections.abc import ItemsView, KeysView, Mapping, ValuesView
 from typing import Any, Literal, Sequence, cast
 
 import pytest
-from whenever import Date, ItemizedDateDelta, ItemizedDelta
+from whenever import (
+    CalendarUnitCompositionWarning,
+    Date,
+    ItemizedDateDelta,
+    ItemizedDelta,
+)
 
 from .common import INVALID_DDELTAS, AlwaysEqual, NeverEqual
 
@@ -651,6 +657,81 @@ class TestAddSub:
             .add(months=1, relative_to=Date(2021, 1, 31), in_units=["months"])
             .exact_eq(ItemizedDateDelta(months=2))
         )
+
+    def test_reference_free_add_and_subtract(self):
+        with _warnings.catch_warnings(record=True) as rec:
+            _warnings.simplefilter("always", CalendarUnitCompositionWarning)
+            result = ItemizedDateDelta(days=1).add(ItemizedDateDelta(days=0))
+        assert result.exact_eq(ItemizedDateDelta(days=1))
+        assert len(rec) == 1
+        assert rec[0].filename.endswith("test_itemized_date_delta.py")
+
+        with pytest.warns(CalendarUnitCompositionWarning):
+            result = ItemizedDateDelta(days=1).add(days=2)
+        assert result.exact_eq(ItemizedDateDelta(days=3))
+
+        with pytest.warns(CalendarUnitCompositionWarning):
+            result = ItemizedDateDelta(days=2).subtract(ItemizedDelta(days=1))
+        assert isinstance(result, ItemizedDelta)
+        assert result.exact_eq(ItemizedDelta(days=1))
+
+    def test_operator_composition(self):
+        with pytest.warns(CalendarUnitCompositionWarning):
+            result = ItemizedDateDelta(days=1) + ItemizedDateDelta(months=2)
+        assert isinstance(result, ItemizedDateDelta)
+        assert result.exact_eq(ItemizedDateDelta(months=2, days=1))
+
+        with pytest.warns(CalendarUnitCompositionWarning):
+            result = ItemizedDateDelta(days=2) + ItemizedDelta(days=3)
+        assert isinstance(result, ItemizedDelta)
+        assert result.exact_eq(ItemizedDelta(days=5))
+
+        with pytest.warns(CalendarUnitCompositionWarning):
+            result = ItemizedDateDelta(days=2) - ItemizedDelta(days=1)
+        assert isinstance(result, ItemizedDelta)
+        assert result.exact_eq(ItemizedDelta(days=1))
+
+    def test_cal_unit_composition_ok_suppresses_warning(self):
+        with _warnings.catch_warnings(record=True) as rec:
+            _warnings.simplefilter("always", CalendarUnitCompositionWarning)
+            result = ItemizedDateDelta(days=1).add(
+                ItemizedDateDelta(days=0), cal_unit_composition_ok=True
+            )
+        assert result.exact_eq(ItemizedDateDelta(days=1))
+        assert rec == []
+
+    def test_no_op_does_not_warn(self):
+        d = ItemizedDateDelta(days=1)
+        with _warnings.catch_warnings(record=True) as rec:
+            _warnings.simplefilter("always", CalendarUnitCompositionWarning)
+            result = d.add()
+        assert result is d
+        assert rec == []
+
+    def test_reference_aware_does_not_warn(self):
+        d = ItemizedDateDelta(days=2)
+        with _warnings.catch_warnings(record=True) as rec:
+            _warnings.simplefilter("always", CalendarUnitCompositionWarning)
+            result = d.add(
+                ItemizedDateDelta(days=1),
+                relative_to=Date(2024, 1, 1),
+                in_units=["days"],
+                cal_unit_composition_ok=True,
+            )
+        assert result.exact_eq(ItemizedDateDelta(days=3))
+        assert rec == []
+
+    def test_invalid_reference_free_arguments(self):
+        with pytest.raises(TypeError, match="relative_to"):
+            ItemizedDateDelta(days=1).add(days=1, round_mode="ceil")
+        with pytest.raises(TypeError, match="relative_to"):
+            ItemizedDateDelta(days=1).add(
+                days=1, in_units=["days"], cal_unit_composition_ok=True
+            )
+
+    def test_unsupported_operand(self):
+        assert ItemizedDateDelta(days=1).__add__(1) is NotImplemented
+        assert ItemizedDateDelta(days=1).__sub__(1) is NotImplemented
 
 
 class TestTotal:

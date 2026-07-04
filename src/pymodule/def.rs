@@ -269,6 +269,12 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         doc::WHENEVERDEPRECATIONWARNING,
         exc_user_warning(),
     )?;
+    let warn_calendar_unit_composition = new_exception(
+        module,
+        c"whenever.CalendarUnitCompositionWarning",
+        doc::CALENDARUNITCOMPOSITIONWARNING,
+        exc_user_warning(),
+    )?;
 
     let tz_store = TzStore::new(*exc_tz_notfound);
 
@@ -381,7 +387,6 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         str_basic: intern(c"basic")?,
         str_always: intern(c"always")?,
         str_never: intern(c"never")?,
-        str_lowercase_units: intern(c"lowercase_units")?,
         str_offset_mismatch: intern(c"offset_mismatch")?,
         str_keep_instant: intern(c"keep_instant")?,
         str_keep_local: intern(c"keep_local")?,
@@ -402,6 +407,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         warn_potentially_stale_offset,
         warn_naive_arithmetic,
         warn_deprecation,
+        warn_calendar_unit_composition,
 
         unpickle_date,
         unpickle_time,
@@ -534,6 +540,7 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
         *state.warn_potentially_stale_offset,
         *state.warn_naive_arithmetic,
         *state.warn_deprecation,
+        *state.warn_calendar_unit_composition,
     ] {
         exc.gc_traverse(visit, arg)?;
     }
@@ -611,6 +618,7 @@ pub(crate) struct State {
     pub(crate) warn_potentially_stale_offset: Owned<PyObj>,
     pub(crate) warn_naive_arithmetic: Owned<PyObj>,
     pub(crate) warn_deprecation: Owned<PyObj>,
+    pub(crate) warn_calendar_unit_composition: Owned<PyObj>,
 
     // unpickling functions
     pub(crate) unpickle_date: Owned<PyObj>,
@@ -679,7 +687,6 @@ pub(crate) struct State {
     pub(crate) str_basic: Owned<PyObj>,
     pub(crate) str_always: Owned<PyObj>,
     pub(crate) str_never: Owned<PyObj>,
-    pub(crate) str_lowercase_units: Owned<PyObj>,
     pub(crate) str_offset_mismatch: Owned<PyObj>,
     pub(crate) str_keep_instant: Owned<PyObj>,
     pub(crate) str_keep_local: Owned<PyObj>,

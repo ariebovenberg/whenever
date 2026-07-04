@@ -67,6 +67,7 @@ __all__ = [
     "DaysAssumed24HoursWarning",
     "StaleOffsetWarning",
     "NaiveArithmeticWarning",
+    "CalendarUnitCompositionWarning",
     "PotentialDstBugWarning",
     "WheneverDeprecationWarning",
     "SkippedTime",
@@ -811,6 +812,79 @@ class ItemizedDelta(
         other: ItemizedDelta,
         /,
         *,
+        relative_to: None = ...,
+        in_units: None = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
+    ) -> ItemizedDelta: ...
+    @overload
+    def add(
+        self,
+        other: ItemizedDateDelta,
+        /,
+        *,
+        relative_to: None = ...,
+        in_units: None = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
+    ) -> ItemizedDelta: ...
+    @overload
+    def add(
+        self,
+        /,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        hours: int = ...,
+        minutes: int = ...,
+        seconds: int = ...,
+        nanoseconds: int = ...,
+        relative_to: None = ...,
+        in_units: None = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
+    ) -> ItemizedDelta: ...
+    @overload
+    def add(
+        self,
+        other: ItemizedDelta,
+        /,
+        *,
         relative_to: ZonedDateTime,
         in_units: Sequence[
             Literal[
@@ -836,6 +910,7 @@ class ItemizedDelta(
             "half_even",
         ] = "trunc",
         round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
     ) -> ItemizedDelta: ...
     @overload
     def add(
@@ -874,6 +949,80 @@ class ItemizedDelta(
             "half_even",
         ] = "trunc",
         round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
+    ) -> ItemizedDelta: ...
+    @overload
+    def subtract(
+        self,
+        other: ItemizedDelta,
+        /,
+        *,
+        relative_to: None = ...,
+        in_units: None = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
+    ) -> ItemizedDelta: ...
+    @overload
+    def subtract(
+        self,
+        other: ItemizedDateDelta,
+        /,
+        *,
+        relative_to: None = ...,
+        in_units: None = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
+    ) -> ItemizedDelta: ...
+    @overload
+    def subtract(
+        self,
+        /,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        hours: int = ...,
+        minutes: int = ...,
+        seconds: int = ...,
+        nanoseconds: int = ...,
+        relative_to: None = ...,
+        in_units: None = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
     ) -> ItemizedDelta: ...
     @overload
     def subtract(
@@ -906,6 +1055,7 @@ class ItemizedDelta(
             "half_even",
         ] = "trunc",
         round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
     ) -> ItemizedDelta: ...
     @overload
     def subtract(
@@ -944,6 +1094,7 @@ class ItemizedDelta(
             "half_even",
         ] = "trunc",
         round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
     ) -> ItemizedDelta: ...
     def total(
         self,
@@ -991,6 +1142,12 @@ class ItemizedDelta(
     ) -> int: ...
     def __abs__(self) -> Self: ...
     def __neg__(self) -> Self: ...
+    def __add__(
+        self, other: ItemizedDelta | ItemizedDateDelta, /
+    ) -> ItemizedDelta: ...
+    def __sub__(
+        self, other: ItemizedDelta | ItemizedDateDelta, /
+    ) -> ItemizedDelta: ...
     def __bool__(self) -> bool: ...
     def sign(self) -> Literal[1, 0, -1]: ...
 
@@ -1047,6 +1204,75 @@ class ItemizedDateDelta(
         other: ItemizedDateDelta,
         /,
         *,
+        relative_to: None = ...,
+        in_units: None = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
+    ) -> ItemizedDateDelta: ...
+    @overload
+    def add(
+        self,
+        other: ItemizedDelta,
+        /,
+        *,
+        relative_to: None = ...,
+        in_units: None = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
+    ) -> ItemizedDelta: ...
+    @overload
+    def add(
+        self,
+        /,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        relative_to: None = ...,
+        in_units: None = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
+    ) -> ItemizedDateDelta | ItemizedDelta: ...
+    @overload
+    def add(
+        self,
+        other: ItemizedDateDelta,
+        /,
+        *,
         relative_to: Date,
         in_units: Sequence[Literal["years", "months", "weeks", "days"]],
         round_mode: Literal[
@@ -1061,6 +1287,7 @@ class ItemizedDateDelta(
             "half_even",
         ] = "trunc",
         round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
     ) -> ItemizedDateDelta: ...
     @overload
     def add(
@@ -1084,7 +1311,77 @@ class ItemizedDateDelta(
             "half_even",
         ] = "trunc",
         round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
     ) -> ItemizedDateDelta: ...
+    @overload
+    def subtract(
+        self,
+        other: ItemizedDateDelta,
+        /,
+        *,
+        relative_to: None = ...,
+        in_units: None = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
+    ) -> ItemizedDateDelta: ...
+    @overload
+    def subtract(
+        self,
+        other: ItemizedDelta,
+        /,
+        *,
+        relative_to: None = ...,
+        in_units: None = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
+    ) -> ItemizedDelta: ...
+    @overload
+    def subtract(
+        self,
+        /,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        relative_to: None = ...,
+        in_units: None = ...,
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = "trunc",
+        round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
+    ) -> ItemizedDateDelta | ItemizedDelta: ...
     @overload
     def subtract(
         self,
@@ -1105,6 +1402,7 @@ class ItemizedDateDelta(
             "half_even",
         ] = "trunc",
         round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
     ) -> ItemizedDateDelta: ...
     @overload
     def subtract(
@@ -1128,6 +1426,7 @@ class ItemizedDateDelta(
             "half_even",
         ] = "trunc",
         round_increment: int = ...,
+        cal_unit_composition_ok: bool = ...,
     ) -> ItemizedDateDelta: ...
     def total(
         self,
@@ -1145,6 +1444,12 @@ class ItemizedDateDelta(
     ) -> int: ...
     def __abs__(self) -> Self: ...
     def __neg__(self) -> Self: ...
+    def __add__(
+        self, other: ItemizedDateDelta | ItemizedDelta, /
+    ) -> ItemizedDateDelta | ItemizedDelta: ...
+    def __sub__(
+        self, other: ItemizedDateDelta | ItemizedDelta, /
+    ) -> ItemizedDateDelta | ItemizedDelta: ...
     def __bool__(self) -> bool: ...
 
 @final
@@ -2304,6 +2609,7 @@ def available_timezones() -> set[str]: ...
 def reset_system_tz() -> None: ...
 
 class PotentialDstBugWarning(UserWarning): ...
+class CalendarUnitCompositionWarning(UserWarning): ...
 class DaysAssumed24HoursWarning(PotentialDstBugWarning): ...
 class StaleOffsetWarning(PotentialDstBugWarning): ...
 class NaiveArithmeticWarning(PotentialDstBugWarning): ...

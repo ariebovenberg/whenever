@@ -1365,13 +1365,14 @@ fn offset_since(
                     let (a, b) = if flip { (other, slf) } else { (slf, other) };
                     let diff = a.instant().diff(b.instant());
                     let abs_mode = round_mode.to_abs_euclid(diff.is_negative());
-                    let result = diff.in_exact_units(
-                        // SAFETY: we've already checked there are only exact units
-                        unit_set.to_exact_assuming_24h_days().unwrap(),
-                        round_increment,
-                        abs_mode,
-                    )
-                    .ok_or_range_err()?;
+                    let result = diff
+                        .in_exact_units(
+                            // SAFETY: we've already checked there are only exact units
+                            unit_set.to_exact_assuming_24h_days().unwrap(),
+                            round_increment,
+                            abs_mode,
+                        )
+                        .ok_or_range_err()?;
                     result.to_obj(state)
                 }
             }

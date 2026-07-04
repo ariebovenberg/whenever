@@ -295,6 +295,12 @@ ItemizedDateDelta("P2m2d")
 ItemizedDateDelta("P1m30d")
 ```
 
+Without a `relative_to` reference, itemized-delta composition is field-wise.
+That makes the operation explicit, but it can change the meaning of later
+application to a datetime. The operation emits
+{class}`~whenever.CalendarUnitCompositionWarning` unless you pass
+`cal_unit_composition_ok=True`.
+
 (delta-operators)=
 ## Operators
 
@@ -310,9 +316,11 @@ TimeDelta("PT5h")
 TimeDelta("PT1h15m")
 ```
 
-Operators are not supported for itemized deltas,
-as they may contain calendar units,
-which have variable durations depending on context.
+Itemized deltas also support `+` and `-`, but those operators perform
+field-wise composition and always emit
+{class}`~whenever.CalendarUnitCompositionWarning`.
+Use the method forms if you want to pass `cal_unit_composition_ok=True`
+or if you need reference-aware composition via `relative_to`.
 
 (delta-rounding)=
 ## Rounding

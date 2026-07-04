@@ -86,6 +86,7 @@ __all__ = (
     "DaysAssumed24HoursWarning",
     "StaleOffsetWarning",
     "NaiveArithmeticWarning",
+    "CalendarUnitCompositionWarning",
     "PotentialDstBugWarning",
     "WheneverDeprecationWarning",
     "SkippedTime",
@@ -162,6 +163,7 @@ _LAZY_MODULES = {
         "_unpkl_zoned",
     ),
     f"{__package__}._ideltas": (
+        "CalendarUnitCompositionWarning",
         "ItemizedDelta",
         "ItemizedDateDelta",
         "_unpkl_iddelta",

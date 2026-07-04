@@ -81,12 +81,6 @@ impl ZonedDateTime {
         self.fixed_offset().with_date_in_tz(new_date, &self.tz)
     }
 
-    pub(crate) fn shift_default(&self, delta: ItemizedDelta) -> Option<OffsetDateTime> {
-        let (months, days, tdelta) = delta.to_components()?;
-        self.fixed_offset()
-            .shift_in_tz(months, days, tdelta, &self.tz)
-    }
-
     pub(crate) fn shift(
         &self,
         months: DeltaMonths,
@@ -240,24 +234,6 @@ impl OffsetDateTime {
                 .with_offset(later_offset)
             }
         }
-    }
-
-    pub(crate) fn shift_in_tz(
-        self,
-        months: DeltaMonths,
-        days: DeltaDays,
-        tdelta: TimeDelta,
-        tz: &TimeZone,
-    ) -> Option<OffsetDateTime> {
-        let shifted_by_date = if !months.is_zero() || !days.is_zero() {
-            self.with_date_in_tz(self.date.shift(months, days)?, tz)?
-        } else {
-            self
-        };
-        shifted_by_date
-            .instant()
-            .shift(tdelta)?
-            .to_offset(shifted_by_date.offset)
     }
 }
 

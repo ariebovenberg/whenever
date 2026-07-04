@@ -41,6 +41,7 @@ from typing import (
 )
 from warnings import warn
 
+from . import _ideltas
 from ._common import (
     SPHINX_RUNNING,
     UNSET,
@@ -118,6 +119,8 @@ from ._tz import (  # noqa: F401
     resolve_ambiguity_using_prev_offset,
 )
 
+CalendarUnitCompositionWarning = _ideltas.CalendarUnitCompositionWarning
+
 __all__ = (
     # Date and time
     "Date",
@@ -149,6 +152,7 @@ __all__ = (
     "DaysAssumed24HoursWarning",
     "StaleOffsetWarning",
     "NaiveArithmeticWarning",
+    "CalendarUnitCompositionWarning",
     "PotentialDstBugWarning",
     "WheneverDeprecationWarning",
     "SkippedTime",
@@ -10495,6 +10499,15 @@ def _unpatch_time() -> None:
 # in the public API, but we do want to use it in type annotations.
 _ExactTimeAlias = Instant | OffsetDateTime | ZonedDateTime
 
+# Keep the deprecated implementation while routing itemized values through
+# the extracted implementation.
+ItemizedDateDelta = _ideltas.ItemizedDateDelta  # type: ignore[assignment]
+ItemizedDelta = _ideltas.ItemizedDelta  # type: ignore[assignment]
+_unpkl_iddelta = _ideltas._unpkl_iddelta  # type: ignore[assignment]
+_unpkl_idelta = _ideltas._unpkl_idelta  # type: ignore[assignment]
+AnyDelta = (
+    DateTimeDelta | TimeDelta | DateDelta | ItemizedDelta | ItemizedDateDelta
+)
 
 # We expose the public members in the root of the module.
 # For clarity, we remove the "_pywhenever" part from the names,

@@ -61,6 +61,13 @@ The same applies to {meth}`~ItemizedDateDelta.in_units`,
 {meth}`~ItemizedDateDelta.add`, and {meth}`~ItemizedDateDelta.subtract`
 when calendar units are involved.
 
+When you call `add()` or `subtract()` on itemized deltas **without** a
+`relative_to` reference, the operation is field-wise and emits
+{class}`~whenever.CalendarUnitCompositionWarning`. This makes the semantics
+explicit while still allowing composition when that's exactly what you want.
+If you need associative exact-duration arithmetic, use {class}`TimeDelta`
+instead.
+
 ## Balancing into different units
 
 "Balancing" means redistributing a delta's value across a new set of units.

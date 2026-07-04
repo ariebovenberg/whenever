@@ -1,10 +1,12 @@
 import pickle
+import warnings as _warnings
 from collections import Counter
 from collections.abc import ItemsView, KeysView, Mapping, Sequence, ValuesView
 from typing import Any, Literal, cast
 
 import pytest
 from whenever import (
+    CalendarUnitCompositionWarning,
     Instant,
     ItemizedDateDelta,
     ItemizedDelta,
@@ -1002,6 +1004,86 @@ class TestAddSub:
             )
             .exact_eq(ItemizedDelta(months=2))
         )
+
+    def test_reference_free_add_and_subtract(self):
+        with _warnings.catch_warnings(record=True) as rec:
+            _warnings.simplefilter("always", CalendarUnitCompositionWarning)
+            result = ItemizedDelta(hours=1).add(ItemizedDateDelta(days=0))
+        assert result.exact_eq(ItemizedDelta(hours=1, days=0))
+        assert len(rec) == 1
+        assert rec[0].filename.endswith("test_itemized_delta.py")
+
+        with pytest.warns(CalendarUnitCompositionWarning):
+            result = ItemizedDelta(hours=1).add(days=2, minutes=3)
+        assert result.exact_eq(ItemizedDelta(days=2, hours=1, minutes=3))
+
+        with pytest.warns(CalendarUnitCompositionWarning):
+            result = ItemizedDelta(days=2).subtract(ItemizedDateDelta(days=1))
+        assert result.exact_eq(ItemizedDelta(days=1))
+
+    def test_operator_composition(self):
+        with pytest.warns(CalendarUnitCompositionWarning):
+            result = ItemizedDelta(hours=1) + ItemizedDelta(minutes=2)
+        assert isinstance(result, ItemizedDelta)
+        assert result.exact_eq(ItemizedDelta(hours=1, minutes=2))
+
+        with pytest.warns(CalendarUnitCompositionWarning):
+            result = ItemizedDateDelta(days=2) + ItemizedDelta(hours=1)
+        assert isinstance(result, ItemizedDelta)
+        assert result.exact_eq(ItemizedDelta(days=2, hours=1))
+
+        with pytest.warns(CalendarUnitCompositionWarning):
+            result = ItemizedDelta(days=2) - ItemizedDateDelta(days=1)
+        assert isinstance(result, ItemizedDelta)
+        assert result.exact_eq(ItemizedDelta(days=1))
+
+        with pytest.warns(CalendarUnitCompositionWarning):
+            result = ItemizedDateDelta(days=2) - ItemizedDelta(days=1)
+        assert isinstance(result, ItemizedDelta)
+        assert result.exact_eq(ItemizedDelta(days=1))
+
+    def test_cal_unit_composition_ok_suppresses_warning(self):
+        with _warnings.catch_warnings(record=True) as rec:
+            _warnings.simplefilter("always", CalendarUnitCompositionWarning)
+            result = ItemizedDelta(hours=1).add(
+                ItemizedDateDelta(days=0),
+                cal_unit_composition_ok=True,
+            )
+        assert result.exact_eq(ItemizedDelta(hours=1, days=0))
+        assert rec == []
+
+    def test_no_op_does_not_warn(self):
+        d = ItemizedDelta(hours=1)
+        with _warnings.catch_warnings(record=True) as rec:
+            _warnings.simplefilter("always", CalendarUnitCompositionWarning)
+            result = d.add()
+        assert result is d
+        assert rec == []
+
+    def test_reference_aware_does_not_warn(self):
+        d = ItemizedDelta(days=2)
+        with _warnings.catch_warnings(record=True) as rec:
+            _warnings.simplefilter("always", CalendarUnitCompositionWarning)
+            result = d.add(
+                ItemizedDelta(days=1),
+                relative_to=ZonedDateTime("2024-01-01T00:00Z[UTC]"),
+                in_units=["days"],
+                cal_unit_composition_ok=True,
+            )
+        assert result.exact_eq(ItemizedDelta(days=3))
+        assert rec == []
+
+    def test_invalid_reference_free_arguments(self):
+        with pytest.raises(TypeError, match="relative_to"):
+            ItemizedDelta(hours=1).add(minutes=1, round_mode="ceil")
+        with pytest.raises(TypeError, match="relative_to"):
+            ItemizedDelta(hours=1).add(
+                minutes=1, in_units=["hours"], cal_unit_composition_ok=True
+            )
+
+    def test_unsupported_operand(self):
+        assert ItemizedDelta(hours=1).__add__(1) is NotImplemented
+        assert ItemizedDelta(hours=1).__sub__(1) is NotImplemented
 
 
 class TestTotal:

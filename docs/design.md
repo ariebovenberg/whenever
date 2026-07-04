@@ -36,24 +36,19 @@ that would obscure their intention. Whenever allows them but emits a
 {class}`warning <whenever.PotentialDstBugWarning>`,
 which can then explicitly and selectively be silenced.
 
-## Operators only where mathematically intuitive
+## Operators with explicit warnings
 
-Operators like ``+``, ``-``, ``*``, and ``/`` are only defined
-when they obey the mathematical properties you'd expect—associativity,
-reversibility, and so on.
+`whenever` prefers explicit methods where semantics are ambiguous,
+but operators are still allowed when their behavior is clear and guarded.
+For example, itemized-delta composition is field-wise and therefore may not
+preserve the order of sequential application when calendar units are involved.
+Rather than hiding that operation, `whenever` exposes it and emits a targeted
+warning so callers can opt in deliberately or silence it explicitly.
 
-For instance, ``a + (b + c) == (a + b) + c`` doesn't hold
-when ``b`` or ``c`` involve months (because months have variable lengths).
-Instead of silently breaking those expectations,
-`whenever` omits the operator and provides explicit methods
-({meth}`~whenever.Date.add`, {meth}`~whenever.Date.subtract`)
-that don't carry the same mathematical connotations.
-
-Similarly, the ``-`` operator between two datetimes
-always returns a {class}`~whenever.TimeDelta` (an exact duration),
-because that's the only type where subtraction is always reversible.
-For calendar-unit differences, use {meth}`~whenever.ZonedDateTime.since`
-/ {meth}`~whenever.ZonedDateTime.until`.
+This keeps the API practical without pretending the operation is fully
+algebraic. When you need calendar-aware composition, pass a
+``relative_to`` reference. When you need exact-duration arithmetic,
+use {class}`~whenever.TimeDelta`.
 
 ## No system timezone by default
 

@@ -9,6 +9,9 @@ Warnings
 .. autoexception:: NaiveArithmeticWarning
    :show-inheritance:
 
+.. autoexception:: CalendarUnitCompositionWarning
+   :show-inheritance:
+
 .. autoexception:: DaysAssumed24HoursWarning
    :show-inheritance:
 
