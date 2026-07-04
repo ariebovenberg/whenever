@@ -17,16 +17,18 @@ def __getattr__(name: str) -> object:
 
         return _get_tzpath()
     elif name == "AnyDelta":
-        from ._core import (
-            ItemizedDateDelta,
-            ItemizedDelta,
-            TimeDelta,
-        )
+        from ._core import TimeDelta
+        from ._ideltas import ItemizedDateDelta, ItemizedDelta
 
         globals()["AnyDelta"] = val = (
             TimeDelta | ItemizedDelta | ItemizedDateDelta
         )
         return val
+    elif name == "__version__":
+        globals()["__version__"] = version = __import__(
+            "importlib.metadata"
+        ).metadata.version(__name__)
+        return version
 
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
@@ -34,14 +36,14 @@ def __getattr__(name: str) -> object:
 # Ensures not-yet-imported names are still included in dir() output
 def __dir__() -> list[str]:
     return sorted(
-        (globals().keys() | _LAZY_NAMES.keys() | {"TZPATH", "AnyDelta"})
+        (
+            globals().keys()
+            | _LAZY_NAMES.keys()
+            | {"TZPATH", "AnyDelta", "__version__"}
+        )
         - {"_LAZY_MODULES", "_LAZY_NAMES"}
     )
 
-
-# Yes, we could get the version with importlib.metadata,
-# but we try to keep our import time as low as possible.
-__version__ = "0.11.0"
 
 # This could be derived from the imports below, but it's easier for static
 # analysis and IDEs if it's statically defined.
@@ -104,8 +106,6 @@ _LAZY_MODULES = {
         "ZonedDateTime",
         "PlainDateTime",
         "TimeDelta",
-        "ItemizedDelta",
-        "ItemizedDateDelta",
         # Unit constructors
         "hours",
         "minutes",
@@ -127,8 +127,6 @@ _LAZY_MODULES = {
         "_EXTENSION_LOADED",
         # Unpickle functions
         "_unpkl_date",
-        "_unpkl_iddelta",
-        "_unpkl_idelta",
         "_unpkl_inst",
         "_unpkl_local",
         "_unpkl_offset",
@@ -136,6 +134,12 @@ _LAZY_MODULES = {
         "_unpkl_time",
         "_unpkl_utc",
         "_unpkl_zoned",
+    ),
+    f"{__package__}._ideltas": (
+        "ItemizedDelta",
+        "ItemizedDateDelta",
+        "_unpkl_iddelta",
+        "_unpkl_idelta",
     ),
     f"{__package__}._utils": (
         "patch_current_time",
@@ -178,6 +182,7 @@ TYPE_CHECKING = False
 
 if TYPE_CHECKING:
     from ._core import *
+    from ._ideltas import *
     from ._shared import *
     from ._typing import *
     from ._utils import *

@@ -62,9 +62,13 @@ def test_exceptions():
 
 
 def test_version():
+    import whenever
+
+    assert "__version__" not in whenever.__dict__
     from whenever import __version__
 
     assert isinstance(__version__, str)
+    assert whenever.__version__ is __version__
 
 
 def test_dir_includes_public_names():
@@ -122,17 +126,17 @@ def test_no_attr_on_module():
 )
 def test_extension_doesnt_import_tz_modules():
     # When the Rust extension is active, the Python timezone subsystem
-    # (_tz, calendar, platform) and _shared must not be imported just by doing
-    # `import whenever`. Violations here mean slow startup for all users.
+    # (_tz, calendar, platform) and pure-Python types must not be imported
+    # when loading a core type. Violations here mean slow startup for all users.
     result = subprocess.run(
         [
             sys.executable,
             "-c",
-            "import whenever, json, sys; "
+            "from whenever import Instant; import json, sys; "
             "print(json.dumps([k for k in sys.modules "
             "if k == 'whenever._tz' or k.startswith('whenever._tz.')  "
+            "or k == 'whenever._ideltas' "
             "or k == 'whenever._shared' "
-            "or k == 'whenever._typing' "
             "or k == 'whenever._utils' "
             "or k in ('calendar', 'platform')]))",
         ],

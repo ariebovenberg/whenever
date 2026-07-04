@@ -48,16 +48,6 @@ except ModuleNotFoundError as e:
 
     _EXTENSION_LOADED = False
 
-# ItemizedDelta/ItemizedDateDelta always come from _deltas (pure Python)
-from ._deltas import (
-    ItemizedDateDelta,
-    ItemizedDelta,
-    _unpkl_iddelta,
-    _unpkl_idelta,
-)
-
-# YearMonth/MonthDay/IsoWeekDate unpickle functions always come from _shared
-from ._shared import _unpkl_iwd, _unpkl_md, _unpkl_ym
 from ._typing import *
 
 if not _EXTENSION_LOADED:
