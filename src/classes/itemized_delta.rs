@@ -52,11 +52,14 @@ impl ItemizedDelta {
         (months, days, TimeDelta::from_nanos(nanos)?).into()
     }
 
-    pub(crate) fn from_py_tuple(tup: PyObj) -> PyResult<Self> {
-        let tup = tup.to_tuple()?;
+    pub(crate) fn extract(obj: PyObj, state: &State) -> PyResult<Option<Self>> {
+        if obj.type_().as_py_obj() != state.itemized_delta_type.get()? {
+            return Ok(None);
+        }
+        let tup = obj.getattr(c"_to_tuple")?.call0()?.to_tuple()?;
         debug_assert!(tup.len() == 8);
         let mut iter = tup.iter();
-        Ok(Self {
+        Ok(Some(Self {
             years: DeltaField::from_py_opt(iter.next().unwrap())?,
             months: DeltaField::from_py_opt(iter.next().unwrap())?,
             weeks: DeltaField::from_py_opt(iter.next().unwrap())?,
@@ -65,21 +68,21 @@ impl ItemizedDelta {
             minutes: DeltaField::from_py_opt(iter.next().unwrap())?,
             seconds: DeltaField::from_py_opt(iter.next().unwrap())?,
             nanos: DeltaField::from_py_opt(iter.next().unwrap())?,
-        })
+        }))
     }
-}
 
-pub(crate) fn to_py(d: ItemizedDelta, state: &State) -> PyReturn {
-    (*state.unpickle_itemized_delta).call_args([
-        *d.years.to_py()?,
-        *d.months.to_py()?,
-        *d.weeks.to_py()?,
-        *d.days.to_py()?,
-        *d.hours.to_py()?,
-        *d.minutes.to_py()?,
-        *d.seconds.to_py()?,
-        *d.nanos.to_py()?,
-    ])
+    pub(crate) fn to_obj(self, state: &State) -> PyReturn {
+        state.unpickle_itemized_delta.get()?.call_args([
+            *self.years.to_py()?,
+            *self.months.to_py()?,
+            *self.weeks.to_py()?,
+            *self.days.to_py()?,
+            *self.hours.to_py()?,
+            *self.minutes.to_py()?,
+            *self.seconds.to_py()?,
+            *self.nanos.to_py()?,
+        ])
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

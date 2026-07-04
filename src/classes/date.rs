@@ -9,9 +9,7 @@ use std::fmt::{Display, Formatter};
 use crate::{
     classes::{
         date_delta::handle_init_kwargs as handle_datedelta_kwargs,
-        itemized_date_delta::{self, ItemizedDateDelta},
-        plain_datetime::DateTime,
-        time::Time,
+        itemized_date_delta::ItemizedDateDelta, plain_datetime::DateTime, time::Time,
     },
     common::{
         fmt::{self, Chunk},
@@ -524,11 +522,17 @@ fn to_stdlib(cls: HeapType<Date>, slf: Date) -> PyReturn {
 }
 
 fn year_month(cls: HeapType<Date>, Date { year, month, .. }: Date) -> PyReturn {
-    (*cls.state().yearmonth_type).call_args([*year.get().to_py()?, *month.get().to_py()?])
+    cls.state()
+        .yearmonth_type
+        .get()?
+        .call_args([*year.get().to_py()?, *month.get().to_py()?])
 }
 
 fn month_day(cls: HeapType<Date>, Date { month, day, .. }: Date) -> PyReturn {
-    (*cls.state().monthday_type).call_args([*month.get().to_py()?, *day.to_py()?])
+    cls.state()
+        .monthday_type
+        .get()?
+        .call_args([*month.get().to_py()?, *day.to_py()?])
 }
 
 fn format_iso(cls: HeapType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
@@ -577,7 +581,7 @@ fn iso_week_date(cls: HeapType<Date>, slf: Date) -> PyReturn {
     let state = cls.state();
     let (iso_year, iso_week) = slf.iso_year_week();
     let weekday_idx = slf.day_of_week() as u8 - 1;
-    (*state.isoweekdate_new).call_args([
+    state.isoweekdate_new.get()?.call_args([
         *iso_year.to_py()?,
         *iso_week.to_py()?,
         *state.weekday_enum_members.get()?[weekday_idx as usize],
@@ -728,17 +732,10 @@ fn shift_method(
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
     let (mut months, mut days) = match (args, kwargs.len()) {
-        (&[arg], 0) => {
-            if arg.type_().as_py_obj() == *state.itemized_date_delta_type {
-                let tup = arg.getattr(c"_to_tuple")?;
-                let tup_result = tup.call0()?;
-                ItemizedDateDelta::from_py_tuple(*tup_result)?
-                    .to_months_days()
-                    .ok_or_range_err()?
-            } else {
-                raise_type_err(format!("{fname}() argument must be an ItemizedDateDelta"))?
-            }
-        }
+        (&[arg], 0) => ItemizedDateDelta::extract(arg, state)?
+            .ok_or_type_err(format!("{fname}() argument must be an ItemizedDateDelta"))?
+            .to_months_days()
+            .ok_or_range_err()?,
         ([], _) => handle_datedelta_kwargs(fname, kwargs, state)?,
         _ => raise_type_err(format!(
             "{fname}() takes either only kwargs or 1 positional arg"
@@ -820,7 +817,7 @@ fn since_inner(
                 round_mode.unwrap_or(round::Mode::Trunc),
                 round_increment,
             )?;
-            itemized_date_delta::to_py(d, cls.state())
+            d.to_obj(cls.state())
         }
         None => raise_type_err("must specify either 'total' or 'in_units'"),
     }

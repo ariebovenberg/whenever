@@ -3,7 +3,7 @@ use crate::{
         date::Date,
         instant::Instant,
         itemized_date_delta::ItemizedDateDelta,
-        itemized_delta::{self, ItemizedDelta, handle_delta_unit_kwargs},
+        itemized_delta::{ItemizedDelta, handle_delta_unit_kwargs},
         offset_datetime::OffsetDateTime,
         plain_datetime::{BoundaryUnit, DateTime, set_components_from_kwargs},
         time::Time,
@@ -523,15 +523,11 @@ fn shift_operator(
 
     if let Some(d) = arg.extract(*state.time_delta_type) {
         tdelta = d;
-    } else if arg.type_().as_py_obj() == *state.itemized_date_delta_type {
-        let tup = arg.getattr(c"_to_tuple")?.call0()?;
-        let d = ItemizedDateDelta::from_py_tuple(*tup)?;
+    } else if let Some(d) = ItemizedDateDelta::extract(arg, state)? {
         let (m, dy) = d.to_months_days().ok_or_range_err()?;
         months = m;
         days = dy;
-    } else if arg.type_().as_py_obj() == *state.itemized_delta_type {
-        let tup = arg.getattr(c"_to_tuple")?.call0()?;
-        let d = ItemizedDelta::from_py_tuple(*tup)?;
+    } else if let Some(d) = ItemizedDelta::extract(arg, state)? {
         let (m, dy, td) = d.to_components().ok_or_range_err()?;
         months = m;
         days = dy;
@@ -1326,15 +1322,11 @@ fn shift_method(
             };
             if let Some(d) = arg.extract(*state.time_delta_type) {
                 tdelta = d;
-            } else if arg.type_().as_py_obj() == *state.itemized_date_delta_type {
-                let tup = arg.getattr(c"_to_tuple")?.call0()?;
-                let d = ItemizedDateDelta::from_py_tuple(*tup)?;
+            } else if let Some(d) = ItemizedDateDelta::extract(arg, state)? {
                 let (m, dy) = d.to_months_days().ok_or_range_err()?;
                 months = m;
                 days = dy;
-            } else if arg.type_().as_py_obj() == *state.itemized_delta_type {
-                let tup = arg.getattr(c"_to_tuple")?.call0()?;
-                let d = ItemizedDelta::from_py_tuple(*tup)?;
+            } else if let Some(d) = ItemizedDelta::extract(arg, state)? {
                 let (m, dy, td) = d.to_components().ok_or_range_err()?;
                 months = m;
                 days = dy;
@@ -1611,7 +1603,7 @@ fn zoned_since(
                 neg,
             )
             .ok_or_range_err()?;
-            itemized_delta::to_py(result, state)
+            result.to_obj(state)
         }
     }
 }

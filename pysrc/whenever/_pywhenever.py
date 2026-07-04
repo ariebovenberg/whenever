@@ -42,7 +42,7 @@ from ._common import (
     final,
     mk_fixed_tzinfo,
 )
-from ._deltas import (
+from ._ideltas import (
     ItemizedDateDelta,
     ItemizedDelta,
     _unpkl_iddelta,

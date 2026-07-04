@@ -6,7 +6,7 @@ use crate::{
     classes::{
         datetime_delta::handle_exact_unit,
         instant::Instant,
-        itemized_delta::{self, ItemizedDelta},
+        itemized_delta::ItemizedDelta,
         offset_datetime::OffsetDateTime,
         plain_datetime::{plain_since_inner, resolve_local_relative_to, total_cal_plain},
         zoned_datetime::{ZonedDateTime, zoned_since_in_units, zoned_target},
@@ -1060,7 +1060,7 @@ fn in_units(
                 neg,
             )
             .ok_or_range_err()?;
-            return itemized_delta::to_py(result, state);
+            return result.to_obj(state);
         }
 
         // PlainDateTime/OffsetDateTime: treat local time as UTC (no DST).
@@ -1089,7 +1089,7 @@ fn in_units(
             let result = slf
                 .in_exact_units(exact, round_increment, round_mode.to_abs_euclid(neg))
                 .ok_or_range_err()?;
-            itemized_delta::to_py(result, state)
+            result.to_obj(state)
         } else {
             raise_type_err("years and months units require a `relative_to` argument")
         }
