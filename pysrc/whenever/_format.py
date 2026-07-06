@@ -617,6 +617,9 @@ class _FracTrim(_Field):
             return [_DotFrac(self.width)]
         return [_Literal(ch), self]
 
+    def __repr__(self) -> str:
+        return "F" * self.width
+
 
 class _DotFrac(_Field):
     """Decimal point + trimmed fractional seconds (``.FFF``).
