@@ -167,6 +167,52 @@ class TestCompilePattern:
             Date(2024, 1, 1).format("YYYY\x00MM")
 
 
+class TestFracTrimErrorRendering:
+    """Rendering a trimmed-fraction (``F``) field inside an error message
+    must raise the intended ``ValueError``, not crash.
+
+    ``_FracTrim`` lacked a ``__repr__``, so any error that referenced such a
+    field (duplicate-field detection, unsupported-field rejection) fell back
+    to ``_Field.__repr__``, which reads the class-only ``pattern`` annotation
+    and raised ``AttributeError: '_FracTrim' object has no attribute
+    'pattern'`` instead. The Rust extension already renders these correctly.
+    """
+
+    def test_repr_matches_letter_times_count(self):
+        from whenever._format import _FracExact, _FracTrim
+
+        assert repr(_FracTrim(1)) == "F"
+        assert repr(_FracTrim(3)) == "FFF"
+        assert repr(_FracTrim(9)) == "FFFFFFFFF"
+        # mirrors the sibling fixed-width fractional field
+        assert repr(_FracExact(3)) == "fff"
+
+    @pytest.mark.parametrize("pattern", ["fF", "Ff", "ffF", "Fff", "FFFff"])
+    def test_compile_duplicate_nanos_with_frac_trim(self, pattern):
+        with pytest.raises(ValueError, match="Duplicate.*nanos"):
+            compile_pattern(pattern)
+
+    @pytest.mark.parametrize("pattern", ["fF", "Ff", "ffF", "Fff"])
+    def test_format_duplicate_nanos_with_frac_trim(self, pattern):
+        with pytest.raises(ValueError, match="Duplicate.*nanos"):
+            Time(1, 2, 3, nanosecond=4).format(pattern)
+
+    @pytest.mark.parametrize("pattern", ["fF", "ffF", "Fff"])
+    def test_parse_duplicate_nanos_with_frac_trim(self, pattern):
+        with pytest.raises(ValueError, match="Duplicate.*nanos"):
+            Time.parse("01:02:03", format=pattern)
+
+    def test_frac_trim_unsupported_for_date_format(self):
+        with pytest.raises(ValueError, match="does not support.*F"):
+            Date(2024, 3, 15).format("F")
+        with pytest.raises(ValueError, match="does not support.*FFF"):
+            Date(2024, 3, 15).format("YYYY-MM-DD FFF")
+
+    def test_frac_trim_unsupported_for_date_parse(self):
+        with pytest.raises(ValueError, match="does not support.*F"):
+            Date.parse("2024-03-15", format="F")
+
+
 class TestDateFormat:
     def test_basic(self):
         d = Date(2024, 3, 15)
