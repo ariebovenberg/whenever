@@ -1,14 +1,11 @@
 # Changelog
 
+## 0.10.2 (2026-07-06)
 
-## Unreleased
-
-**Fixed**
-
-- Rendering a trimmed-fraction (``F``) field in a format-pattern error message
-  (e.g. a duplicate or unsupported ``F`` field) raised ``AttributeError``
-  instead of the intended ``ValueError`` in the pure-Python implementation.
-
+- Fixed an issue in the pure Python implementation where invalid format
+  patterns containing a trimmed-fraction (``F``) field would raise an
+  ``AttributeError`` instead of the intended ``ValueError``.
+  Thanks to @gaoflow for this report and fix (#386).
 
 ## 0.10.1 (2026-07-03)
 

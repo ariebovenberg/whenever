@@ -168,15 +168,7 @@ class TestCompilePattern:
 
 
 class TestFracTrimErrorRendering:
-    """Rendering a trimmed-fraction (``F``) field inside an error message
-    must raise the intended ``ValueError``, not crash.
-
-    ``_FracTrim`` lacked a ``__repr__``, so any error that referenced such a
-    field (duplicate-field detection, unsupported-field rejection) fell back
-    to ``_Field.__repr__``, which reads the class-only ``pattern`` annotation
-    and raised ``AttributeError: '_FracTrim' object has no attribute
-    'pattern'`` instead. The Rust extension already renders these correctly.
-    """
+    """Regression tests for whenever/pull/386"""
 
     def test_repr_matches_letter_times_count(self):
         from whenever._format import _FracExact, _FracTrim
