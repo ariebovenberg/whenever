@@ -48,7 +48,7 @@ test = [
     "hypothesis>=6.152.7,<7",
 ]
 typing = [
-    "mypy>=2.1.0,<2.2",
+    "mypy>=2.1.0,<2.3",
 ]
 integrations = [
     "time_machine>=3.2,<4; implementation_name == 'cpython'",
