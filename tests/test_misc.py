@@ -11,6 +11,7 @@ from unittest.mock import patch
 import pytest
 from whenever import (
     _EXTENSION_LOADED,
+    CalendarUnitCompositionWarning,
     Date,
     DateDelta,
     DateTimeDelta,
@@ -22,6 +23,7 @@ from whenever import (
     PlainDateTime,
     Time,
     TimeDelta,
+    WheneverWarning,
     YearMonth,
     ZonedDateTime,
     patch_current_time,
@@ -65,6 +67,13 @@ def test_type_aliases():
 def test_exceptions():
     assert issubclass(ImplicitlyIgnoringDST, TypeError)
     assert issubclass(InvalidOffsetError, ValueError)
+    from whenever import PotentialDstBugWarning
+
+    assert issubclass(CalendarUnitCompositionWarning, WheneverWarning)
+    assert issubclass(PotentialDstBugWarning, WheneverWarning)
+    assert not issubclass(
+        CalendarUnitCompositionWarning, PotentialDstBugWarning
+    )
 
 
 def test_version():

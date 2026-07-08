@@ -50,9 +50,22 @@ def check_utc_bounds(dt: _datetime) -> _datetime:
     return dt
 
 
+class WheneverWarning(UserWarning):
+    """Base class for all warnings emitted by the ``whenever`` library.
+
+    This can be used with Python's standard warning filters to suppress or
+    escalate all warnings emitted by ``whenever``:
+
+    .. code-block:: python
+
+        import warnings, whenever
+        warnings.filterwarnings("error", category=whenever.WheneverWarning)
+    """
+
+
 # A custom warnings class to prevent silent deprecation warnings in user code.
 # See https://sethmlarson.dev/deprecations-via-warnings-dont-work-for-python-libraries
-class WheneverDeprecationWarning(UserWarning):
+class WheneverDeprecationWarning(WheneverWarning):
     """Raised when a deprecated feature of the ``whenever`` library is used.
 
     This is a custom warning class (not a subclass of

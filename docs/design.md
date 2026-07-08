@@ -36,25 +36,6 @@ that would obscure their intention. Whenever allows them but emits a
 {class}`warning <whenever.PotentialDstBugWarning>`,
 which can then explicitly and selectively be silenced.
 
-## Operators only where mathematically intuitive
-
-Operators like ``+``, ``-``, ``*``, and ``/`` are only defined
-when they obey the mathematical properties you'd expect—associativity,
-reversibility, and so on.
-
-For instance, ``a + (b + c) == (a + b) + c`` doesn't hold
-when ``b`` or ``c`` involve months (because months have variable lengths).
-Instead of silently breaking those expectations,
-`whenever` omits the operator and provides explicit methods
-({meth}`~whenever.Date.add`, {meth}`~whenever.Date.subtract`)
-that don't carry the same mathematical connotations.
-
-Similarly, the ``-`` operator between two datetimes
-always returns a {class}`~whenever.TimeDelta` (an exact duration),
-because that's the only type where subtraction is always reversible.
-For calendar-unit differences, use {meth}`~whenever.ZonedDateTime.since`
-/ {meth}`~whenever.ZonedDateTime.until`.
-
 ## No system timezone by default
 
 Many datetime libraries silently use the system timezone as a default,

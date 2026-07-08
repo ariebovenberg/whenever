@@ -1,29 +1,34 @@
 (warnings)=
 # Handling warnings
 
-`whenever` emits warnings when operations may produce incorrect results
-due to DST transitions or missing timezone context. This is intentional: the
-operations aren't *always* wrong, and raising exceptions would be too strict.
+`whenever` emits warnings when operations may produce incorrect results,
+for example due to DST transitions, missing context, or field-wise
+composition of calendar units. This is intentional: the operations aren't
+*always* wrong,
+and raising exceptions would be too strict.
 But ignoring the warnings entirely would be a disservice.
 
-All `whenever` warnings are subclasses of {class}`~whenever.PotentialDstBugWarning`,
+All `whenever` warnings are subclasses of {class}`~whenever.WheneverWarning`,
 which is itself a subclass of Python's built-in
-{class}`UserWarning <python:UserWarning>`. They fit into Python's standard
+{class}`UserWarning <python:UserWarning>`. DST-related warnings are grouped
+under {class}`~whenever.PotentialDstBugWarning`. They fit into Python's standard
 [`warnings` infrastructure](https://docs.python.org/3/library/warnings.html)
 fully, giving you several levels of control.
 
-```{note}
-For a full list of warning types and the operations that trigger them, see the
-{ref}`API reference <api>`:
-{class}`~whenever.PotentialDstBugWarning`,
-{class}`~whenever.NaiveArithmeticWarning`,
-{class}`~whenever.StaleOffsetWarning`, and
-{class}`~whenever.DaysAssumed24HoursWarning`.
+```text
+UserWarning (stdlib)
+└── WheneverWarning
+    ├── CalendarUnitCompositionWarning
+    ├── PotentialDstBugWarning
+    │   ├── DaysAssumed24HoursWarning
+    │   ├── NaiveArithmeticWarning
+    │   └── StaleOffsetWarning
+    └── WheneverDeprecationWarning
 ```
 
 ## Turn warnings into errors
 
-The most robust approach for production code is to **turn DST warnings into
+The most robust approach for production code is to **turn whenever warnings into
 exceptions** as early as possible — typically in your module's setup or at
 the top of your application entry point:
 
@@ -31,10 +36,16 @@ the top of your application entry point:
 import warnings
 import whenever
 
+warnings.filterwarnings("error", category=whenever.WheneverWarning)
+```
+
+If you only want to target DST-related warnings:
+
+```python
 warnings.filterwarnings("error", category=whenever.PotentialDstBugWarning)
 ```
 
-Any code that triggers a DST-related warning now raises an exception
+Any code that triggers a matching warning now raises an exception
 immediately, forcing you (or your CI) to address it. This is the same principle
 as `PYTHONWARNINGS=error` but scoped to `whenever`'s warning hierarchy only.
 
@@ -50,14 +61,14 @@ warnings.filterwarnings("error", category=whenever.StaleOffsetWarning)
 
 ### In pytest
 
-When running tests, it's highly recommended to turn DST warnings into errors
-so that tests catch potential DST bugs. Add this to your `pytest.ini` (or the
+When running tests, it's highly recommended to turn `whenever` warnings into
+errors so tests catch potential issues. Add this to your `pytest.ini` (or the
 `[tool.pytest.ini_options]` table in `pyproject.toml`):
 
 ```ini
 [pytest]
 filterwarnings =
-    error::whenever.PotentialDstBugWarning
+    error::whenever.WheneverWarning
 ```
 
 Or to target only one module of your project (leaving third-party libraries
@@ -66,13 +77,13 @@ unaffected):
 ```ini
 [pytest]
 filterwarnings =
-    error::whenever.PotentialDstBugWarning:mymodule.*
+    error::whenever.WheneverWarning:mymodule.*
 ```
 
 ```{admonition} Command-line filter not supported
 :class: warning
 
-Unfortunately, passing `PYTHONWARNINGS=error::whenever.PotentialDstBugWarning`
+Unfortunately, passing `PYTHONWARNINGS=error::whenever.WheneverWarning`
 on the command line does **not** work, due to a
 [limitation in CPython](https://github.com/python/cpython/issues/66733):
 the command-line filter only accepts built-in warning classes by name,
@@ -92,7 +103,7 @@ import whenever
 
 warnings.filterwarnings(
     "error",
-    category=whenever.PotentialDstBugWarning,
+    category=whenever.WheneverWarning,
     module=r"mymodule\.scheduling"  # or re.escape(__name__)
 )
 ```
@@ -108,6 +119,7 @@ DST-related warning accepts a boolean keyword argument that suppresses it:
 | `days_assumed_24h_ok=True` | {class}`~whenever.DaysAssumed24HoursWarning` | {class}`~whenever.TimeDelta` methods, {class}`~whenever.Instant` `add`/`subtract` |
 | `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` methods |
 | `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods |
+| `cal_unit_composition_ok=True` | {class}`~whenever.CalendarUnitCompositionWarning` | {class}`~whenever.ItemizedDelta` and {class}`~whenever.ItemizedDateDelta` `add`/`subtract` |
 
 For example:
 
@@ -135,6 +147,11 @@ operators cannot accept keyword arguments. Use the method equivalents instead:
 - `dt - delta` → `dt.subtract(delta, ...)`
 - `dt_a - dt_b` → `dt_a.difference(dt_b)` (for {class}`~whenever.PlainDateTime`,
   pass `naive_arithmetic_ok=True`)
+
+For itemized-delta composition, operators always emit
+{class}`~whenever.CalendarUnitCompositionWarning`. Use the method form if you
+want to pass `cal_unit_composition_ok=True` instead of relying on a global
+warning filter.
 
 Alternatively, suppress operator warnings with Python's standard
 {func}`warnings.filterwarnings`.
@@ -179,7 +196,7 @@ all `whenever` warnings globally and move on:
 import warnings
 import whenever
 
-warnings.filterwarnings("ignore", category=whenever.PotentialDstBugWarning)
+warnings.filterwarnings("ignore", category=whenever.WheneverWarning)
 ```
 
 This is fine for exploration. If you later promote the code to production,
@@ -191,7 +208,7 @@ underlying issue or suppress it explicitly with the appropriate keyword argument
 | Situation | Recommended approach |
 |---|---|
 | Production code | `filterwarnings("error", ...)` at startup |
-| CI / test suite | `filterwarnings = error::whenever.PotentialDstBugWarning` in `pytest.ini` |
+| CI / test suite | `filterwarnings = error::whenever.WheneverWarning` in `pytest.ini` |
 | One intentional imprecision | Per-method kwarg (e.g. `naive_arithmetic_ok=True`) + a comment |
 | Suppress operator warnings | `warnings.catch_warnings()` block (Python ≥ 3.14 for concurrency safety) |
 | Entire module intentionally imprecise | `filterwarnings("ignore", ..., module=r"mymodule\.*")` |

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.10.3 (unreleased)
+
+**Added**
+
+- Added `CalendarUnitCompositionWarning` for field-wise itemized-delta
+  composition.
+- Added `WheneverWarning` as the base class for all warnings emitted by
+  whenever, allowing package-wide suppression or escalation.
+- Added reference-free `ItemizedDelta.add()` / `subtract()` and
+  `ItemizedDateDelta.add()` / `subtract()` composition paths, with the
+  `cal_unit_composition_ok` suppression keyword.
+- Restored `+` and `-` operators for itemized deltas. They perform field-wise
+  composition and emit `CalendarUnitCompositionWarning` by default.
+- Moved the itemized delta implementation to Python. The Rust extension now
+  keeps only the glue needed to accept and return `ItemizedDelta` and
+  `ItemizedDateDelta` values from Rust-backed operations.
+- Drop support for PyPy 3.10. PyPy 3.11 remains supported.
+
 ## 0.10.2 (2026-07-06)
 
 - Fixed an issue in the pure Python implementation where invalid format

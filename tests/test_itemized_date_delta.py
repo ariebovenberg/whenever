@@ -1,20 +1,22 @@
 import pickle
+import warnings
 from collections import Counter
 from collections.abc import ItemsView, KeysView, Mapping, ValuesView
 from typing import Any, Literal, Sequence, cast
 
 import pytest
-from whenever import Date, ItemizedDateDelta, ItemizedDelta
+from whenever import (
+    CalendarUnitCompositionWarning,
+    Date,
+    ItemizedDateDelta,
+    ItemizedDelta,
+)
 
-from .common import AlwaysEqual, NeverEqual
-from .test_date_delta import INVALID_DDELTAS
+from .common import INVALID_DDELTAS, AlwaysEqual, NeverEqual
 
 UNITS = cast(
     Sequence[Literal["years", "months", "weeks", "days"]],
     "years months weeks days".split(),
-)
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
 )
 
 
@@ -162,6 +164,32 @@ def test_mapping_views():
         ("weeks", 4),
         ("days", 5),
     }
+
+
+class TestKeysView:
+    def test_iter_order(self):
+        keys = ItemizedDateDelta(days=1, years=2).keys()
+        assert list(keys) == ["years", "days"]
+
+    def test_and_with_keys_view(self):
+        k1 = ItemizedDateDelta(years=1, months=2).keys()
+        k2 = ItemizedDateDelta(months=5, days=6).keys()
+        result = k1 & k2
+        assert isinstance(result, set)
+        assert set(result) == {"months"}
+
+    def test_subset(self):
+        k1 = ItemizedDateDelta(years=1).keys()
+        k2 = ItemizedDateDelta(years=3, months=4).keys()
+        assert k1 <= k2
+        assert k1 < k2
+        assert k2 >= k1
+        assert k2 > k1
+
+    def test_isdisjoint(self):
+        k1 = ItemizedDateDelta(years=1).keys()
+        k2 = ItemizedDateDelta(days=2).keys()
+        assert k1.isdisjoint(k2)
 
 
 def test_replace():
@@ -565,10 +593,11 @@ class TestAddSub:
             )
 
     def test_add_nothing(self):
-        ItemizedDateDelta(years=2).add(
+        result = ItemizedDateDelta(years=2).add(
             relative_to=Date("2021-12-31"),
             in_units=["years", "months"],
-        ).exact_eq(ItemizedDateDelta(years=2))
+        )
+        assert result.exact_eq(ItemizedDateDelta(years=2, months=0))
 
     def test_add_nothing_changes_units(self):
         ItemizedDateDelta(years=2).add(
@@ -621,6 +650,137 @@ class TestAddSub:
             .add(months=1, relative_to=Date(2021, 1, 31), in_units=["months"])
             .exact_eq(ItemizedDateDelta(months=2))
         )
+
+    def test_reference_free_add_and_subtract(self):
+        with warnings.catch_warnings(record=True) as rec:
+            warnings.simplefilter("always", CalendarUnitCompositionWarning)
+            result = ItemizedDateDelta(days=1).add(ItemizedDateDelta(days=0))
+        assert result.exact_eq(ItemizedDateDelta(days=1))
+        assert len(rec) == 1
+        assert rec[0].filename.endswith("test_itemized_date_delta.py")
+
+        with pytest.warns(CalendarUnitCompositionWarning):
+            result = ItemizedDateDelta(days=1).add(days=2)
+        assert result.exact_eq(ItemizedDateDelta(days=3))
+
+        with pytest.warns(CalendarUnitCompositionWarning):
+            full_result = ItemizedDateDelta(days=2).subtract(
+                ItemizedDelta(days=1)
+            )
+        assert isinstance(full_result, ItemizedDelta)
+        assert full_result.exact_eq(ItemizedDelta(days=1))
+
+    def test_operator_composition(self):
+        with pytest.warns(CalendarUnitCompositionWarning):
+            result = ItemizedDateDelta(days=1) + ItemizedDateDelta(months=2)
+        assert isinstance(result, ItemizedDateDelta)
+        assert result.exact_eq(ItemizedDateDelta(months=2, days=1))
+
+        with pytest.warns(CalendarUnitCompositionWarning):
+            full_result = ItemizedDateDelta(days=2) + ItemizedDelta(days=3)
+        assert isinstance(full_result, ItemizedDelta)
+        assert full_result.exact_eq(ItemizedDelta(days=5))
+
+        with pytest.warns(CalendarUnitCompositionWarning):
+            full_result = ItemizedDateDelta(days=2) - ItemizedDelta(days=1)
+        assert isinstance(full_result, ItemizedDelta)
+        assert full_result.exact_eq(ItemizedDelta(days=1))
+
+    def test_cal_unit_composition_ok_suppresses_warning(self):
+        with warnings.catch_warnings(record=True) as rec:
+            warnings.simplefilter("always", CalendarUnitCompositionWarning)
+            result = ItemizedDateDelta(days=1).add(
+                ItemizedDateDelta(days=0), cal_unit_composition_ok=True
+            )
+        assert result.exact_eq(ItemizedDateDelta(days=1))
+        assert rec == []
+
+    def test_no_op_does_not_warn(self):
+        d = ItemizedDateDelta(days=1)
+        with warnings.catch_warnings(record=True) as rec:
+            warnings.simplefilter("always", CalendarUnitCompositionWarning)
+            result = d.add()
+        assert result is d
+        assert rec == []
+
+    def test_reference_aware_does_not_warn(self):
+        d = ItemizedDateDelta(days=2)
+        with warnings.catch_warnings(record=True) as rec:
+            warnings.simplefilter("always", CalendarUnitCompositionWarning)
+            result = d.add(
+                ItemizedDateDelta(days=1),
+                relative_to=Date(2024, 1, 1),
+                in_units=["days"],
+            )
+        assert result.exact_eq(ItemizedDateDelta(days=3))
+        assert rec == []
+
+    def test_invalid_reference_free_arguments(self):
+        with pytest.raises(TypeError, match="relative_to"):
+            ItemizedDateDelta(days=1).add(  # type: ignore[call-overload]
+                days=1, round_mode="ceil"
+            )
+        with pytest.raises(TypeError, match="relative_to"):
+            ItemizedDateDelta(days=1).add(  # type: ignore[call-overload]
+                days=1, in_units=["days"], cal_unit_composition_ok=True
+            )
+
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    def test_invalid_composition_arguments(self, method: str):
+        delta = ItemizedDateDelta(days=1)
+        operation = getattr(delta, method)
+        reference = Date("2024-01-01")
+        with pytest.raises(TypeError, match="mix"):
+            operation(ItemizedDateDelta(days=1), days=1)
+        with pytest.raises(TypeError, match="Expected an itemized delta"):
+            operation(1)
+        with pytest.raises(TypeError, match="foo"):
+            operation(foo=1)
+        with pytest.raises(TypeError, match="in_units"):
+            operation(days=1, relative_to=reference)
+        with pytest.raises(TypeError, match="relative_to"):
+            operation(days=1, in_units=["days"])
+        with pytest.raises(TypeError, match="rounding"):
+            operation(days=1, round_mode="ceil")
+        with pytest.raises(TypeError, match="must not be None"):
+            operation(days=1, relative_to=None, in_units=["days"])
+
+    def test_subtract_no_op_and_date_result(self):
+        delta = ItemizedDateDelta(days=1)
+        assert delta.subtract() is delta
+        with pytest.warns(CalendarUnitCompositionWarning):
+            result = delta.subtract(ItemizedDateDelta(days=1))
+        assert isinstance(result, ItemizedDateDelta)
+        assert result.exact_eq(ItemizedDateDelta(days=0))
+
+    def test_full_delta_add_and_suppressed_subtract_warning(self):
+        with pytest.warns(CalendarUnitCompositionWarning):
+            result = ItemizedDateDelta(days=1).add(ItemizedDelta(hours=1))
+        assert isinstance(result, ItemizedDelta)
+        assert result.exact_eq(ItemizedDelta(days=1, hours=1))
+
+        with warnings.catch_warnings(record=True) as rec:
+            result = ItemizedDateDelta(days=1).subtract(
+                ItemizedDelta(hours=-1), cal_unit_composition_ok=True
+            )
+        assert isinstance(result, ItemizedDelta)
+        assert result.exact_eq(ItemizedDelta(days=1, hours=1))
+        assert rec == []
+
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    def test_positional_mapping_is_not_supported(self, method: str):
+        with pytest.raises(TypeError, match="itemized delta"):
+            getattr(ItemizedDateDelta(days=1), method)({"days": 1})
+
+    def test_none_reference_is_not_supported(self):
+        with pytest.raises(TypeError, match="must not be None"):
+            ItemizedDateDelta(days=1).add(  # type: ignore[call-overload]
+                days=1, relative_to=None, in_units=["days"]
+            )
+
+    def test_unsupported_operand(self):
+        assert ItemizedDateDelta(days=1).__add__(1) is NotImplemented  # type: ignore[operator]
+        assert ItemizedDateDelta(days=1).__sub__(1) is NotImplemented  # type: ignore[operator]
 
 
 class TestTotal:
