@@ -81,12 +81,6 @@ impl ZonedDateTime {
         self.fixed_offset().with_date_in_tz(new_date, &self.tz)
     }
 
-    pub(crate) fn shift_default(&self, delta: ItemizedDelta) -> Option<OffsetDateTime> {
-        let (months, days, tdelta) = delta.to_components()?;
-        self.fixed_offset()
-            .shift_in_tz(months, days, tdelta, &self.tz)
-    }
-
     pub(crate) fn shift(
         &self,
         months: DeltaMonths,
@@ -240,24 +234,6 @@ impl OffsetDateTime {
                 .with_offset(later_offset)
             }
         }
-    }
-
-    pub(crate) fn shift_in_tz(
-        self,
-        months: DeltaMonths,
-        days: DeltaDays,
-        tdelta: TimeDelta,
-        tz: &TimeZone,
-    ) -> Option<OffsetDateTime> {
-        let shifted_by_date = if !months.is_zero() || !days.is_zero() {
-            self.with_date_in_tz(self.date.shift(months, days)?, tz)?
-        } else {
-            self
-        };
-        shifted_by_date
-            .instant()
-            .shift(tdelta)?
-            .to_offset(shifted_by_date.offset)
     }
 }
 
@@ -553,11 +529,11 @@ fn shift_operator(
         months = d.ddelta.months;
         days = d.ddelta.days;
         tdelta = d.tdelta;
-    } else if let Some(d) = arg.extract(*state.itemized_date_delta_type) {
+    } else if let Some(d) = ItemizedDateDelta::extract(arg, state)? {
         let (m, dy) = d.to_months_days().ok_or_range_err()?;
         months = m;
         days = dy;
-    } else if let Some(d) = arg.extract(*state.itemized_delta_type) {
+    } else if let Some(d) = ItemizedDelta::extract(arg, state)? {
         let (m, dy, td) = d.to_components().ok_or_range_err()?;
         months = m;
         days = dy;
@@ -1380,11 +1356,11 @@ fn shift_method(
                 months = d.ddelta.months;
                 days = d.ddelta.days;
                 tdelta = d.tdelta;
-            } else if let Some(d) = arg.extract(*state.itemized_date_delta_type) {
+            } else if let Some(d) = ItemizedDateDelta::extract(arg, state)? {
                 let (m, dy) = d.to_months_days().ok_or_range_err()?;
                 months = m;
                 days = dy;
-            } else if let Some(d) = arg.extract(*state.itemized_delta_type) {
+            } else if let Some(d) = ItemizedDelta::extract(arg, state)? {
                 let (m, dy, td) = d.to_components().ok_or_range_err()?;
                 months = m;
                 days = dy;
@@ -1663,18 +1639,20 @@ fn zoned_since(
         SinceUntilKwargs::Total(unit) => {
             zoned_since_float(a.fixed_offset(), b, target_date, unit, neg)
         }
-        SinceUntilKwargs::InUnits(units, round_mode, round_increment) => zoned_since_in_units(
-            a.fixed_offset(),
-            a_inst,
-            b,
-            target_date,
-            units,
-            round_mode,
-            round_increment,
-            neg,
-        )
-        .ok_or_range_err()?
-        .to_obj(*state.itemized_delta_type),
+        SinceUntilKwargs::InUnits(units, round_mode, round_increment) => {
+            let result = zoned_since_in_units(
+                a.fixed_offset(),
+                a_inst,
+                b,
+                target_date,
+                units,
+                round_mode,
+                round_increment,
+                neg,
+            )
+            .ok_or_range_err()?;
+            result.to_obj(state)
+        }
     }
 }
 

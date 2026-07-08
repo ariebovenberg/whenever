@@ -14,8 +14,6 @@ try:  # pragma: no cover
         _unpkl_date,
         _unpkl_ddelta,
         _unpkl_dtdelta,
-        _unpkl_iddelta,
-        _unpkl_idelta,
         _unpkl_inst,
         _unpkl_local,
         _unpkl_offset,
@@ -43,8 +41,6 @@ except ModuleNotFoundError as e:
         _unpkl_date,
         _unpkl_ddelta,
         _unpkl_dtdelta,
-        _unpkl_iddelta,
-        _unpkl_idelta,
         _unpkl_inst,
         _unpkl_local,
         _unpkl_offset,
@@ -61,3 +57,11 @@ except ModuleNotFoundError as e:
     from ._utils import reset_tzpath
 
     reset_tzpath()
+
+from ._ideltas import (
+    CalendarUnitCompositionWarning,
+    ItemizedDateDelta,
+    ItemizedDelta,
+    _unpkl_iddelta,
+    _unpkl_idelta,
+)

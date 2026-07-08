@@ -6,7 +6,13 @@ Exceptions and warnings
 Warnings
 --------
 
+.. autoexception:: WheneverWarning
+   :show-inheritance:
+
 .. autoexception:: NaiveArithmeticWarning
+   :show-inheritance:
+
+.. autoexception:: CalendarUnitCompositionWarning
    :show-inheritance:
 
 .. autoexception:: DaysAssumed24HoursWarning
