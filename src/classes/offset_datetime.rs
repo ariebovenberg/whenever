@@ -3,7 +3,8 @@ use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 use std::fmt::{Display, Formatter};
 
-use crate::classes::itemized_delta::handle_delta_unit_kwargs;
+use crate::classes::itemized_date_delta::ItemizedDateDelta;
+use crate::classes::itemized_delta::{ItemizedDelta, handle_delta_unit_kwargs};
 use crate::classes::plain_datetime::BoundaryUnit;
 use crate::common::math::{DeltaUnitSet, SinceUntilKwargs};
 use crate::{
@@ -971,11 +972,11 @@ fn shift_method(
                 months = dt.ddelta.months;
                 days = dt.ddelta.days;
                 tdelta = dt.tdelta;
-            } else if let Some(d) = arg.extract(*state.itemized_date_delta_type) {
+            } else if let Some(d) = ItemizedDateDelta::extract(arg, state)? {
                 let (m, dy) = d.to_months_days().ok_or_range_err()?;
                 months = m;
                 days = dy;
-            } else if let Some(d) = arg.extract(*state.itemized_delta_type) {
+            } else if let Some(d) = ItemizedDelta::extract(arg, state)? {
                 let (m, dy, td) = d.to_components().ok_or_range_err()?;
                 months = m;
                 days = dy;
@@ -1364,14 +1365,15 @@ fn offset_since(
                     let (a, b) = if flip { (other, slf) } else { (slf, other) };
                     let diff = a.instant().diff(b.instant());
                     let abs_mode = round_mode.to_abs_euclid(diff.is_negative());
-                    diff.in_exact_units(
-                        // SAFETY: we've already checked there are only exact units
-                        unit_set.to_exact_assuming_24h_days().unwrap(),
-                        round_increment,
-                        abs_mode,
-                    )
-                    .ok_or_range_err()?
-                    .to_obj(*state.itemized_delta_type)
+                    let result = diff
+                        .in_exact_units(
+                            // SAFETY: we've already checked there are only exact units
+                            unit_set.to_exact_assuming_24h_days().unwrap(),
+                            round_increment,
+                            abs_mode,
+                        )
+                        .ok_or_range_err()?;
+                    result.to_obj(state)
                 }
             }
         }

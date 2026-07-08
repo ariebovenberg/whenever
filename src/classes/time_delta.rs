@@ -1206,7 +1206,7 @@ fn in_units(
         if let Some(zdt) = arg.extract_ref(*state.zoned_datetime_type) {
             let shifted_inst = zdt.instant().shift(slf).ok_or_range_err()?;
             let shifted = shifted_inst.to_tz(&zdt.tz).ok_or_range_err()?;
-            return zoned_since_in_units(
+            let result = zoned_since_in_units(
                 shifted,
                 shifted_inst,
                 zdt,
@@ -1216,8 +1216,8 @@ fn in_units(
                 round_increment,
                 neg,
             )
-            .ok_or_range_err()?
-            .to_obj(*state.itemized_delta_type);
+            .ok_or_range_err()?;
+            return result.to_obj(state);
         }
 
         // PlainDateTime/OffsetDateTime: treat local time as UTC (no DST).
@@ -1243,9 +1243,10 @@ fn in_units(
             )?;
         }
         if let Some(exact) = units.to_exact_assuming_24h_days() {
-            slf.in_exact_units(exact, round_increment, round_mode.to_abs_euclid(neg))
-                .ok_or_range_err()?
-                .to_obj(*state.itemized_delta_type)
+            let result = slf
+                .in_exact_units(exact, round_increment, round_mode.to_abs_euclid(neg))
+                .ok_or_range_err()?;
+            result.to_obj(state)
         } else {
             raise_type_err("years and months units require a `relative_to` argument")
         }
