@@ -20,10 +20,9 @@ def __getattr__(name: str) -> object:
         from ._core import (
             DateDelta,
             DateTimeDelta,
-            ItemizedDateDelta,
-            ItemizedDelta,
             TimeDelta,
         )
+        from ._ideltas import ItemizedDateDelta, ItemizedDelta
 
         globals()["AnyDelta"] = val = (
             DateDelta
@@ -87,6 +86,8 @@ __all__ = (
     "DaysAssumed24HoursWarning",
     "StaleOffsetWarning",
     "NaiveArithmeticWarning",
+    "CalendarUnitCompositionWarning",
+    "WheneverWarning",
     "PotentialDstBugWarning",
     "WheneverDeprecationWarning",
     "SkippedTime",
@@ -125,8 +126,6 @@ _LAZY_MODULES = {
         "DateDelta",
         "TimeDelta",
         "DateTimeDelta",
-        "ItemizedDelta",
-        "ItemizedDateDelta",
         # Unit constructors
         "years",
         "months",
@@ -142,6 +141,7 @@ _LAZY_MODULES = {
         "DaysAssumed24HoursWarning",
         "StaleOffsetWarning",
         "NaiveArithmeticWarning",
+        "WheneverWarning",
         "PotentialDstBugWarning",
         "WheneverDeprecationWarning",
         "SkippedTime",
@@ -156,8 +156,6 @@ _LAZY_MODULES = {
         "_unpkl_date",
         "_unpkl_ddelta",
         "_unpkl_dtdelta",
-        "_unpkl_iddelta",
-        "_unpkl_idelta",
         "_unpkl_inst",
         "_unpkl_local",
         "_unpkl_offset",
@@ -165,6 +163,13 @@ _LAZY_MODULES = {
         "_unpkl_time",
         "_unpkl_utc",
         "_unpkl_zoned",
+    ),
+    f"{__package__}._ideltas": (
+        "CalendarUnitCompositionWarning",
+        "ItemizedDelta",
+        "ItemizedDateDelta",
+        "_unpkl_iddelta",
+        "_unpkl_idelta",
     ),
     f"{__package__}._utils": (
         "patch_current_time",
@@ -207,6 +212,7 @@ TYPE_CHECKING = False
 
 if TYPE_CHECKING:
     from ._core import *
+    from ._ideltas import *
     from ._shared import *
     from ._typing import *
     from ._utils import *

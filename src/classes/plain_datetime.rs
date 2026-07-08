@@ -612,11 +612,11 @@ fn shift_method(
                 months = dt.ddelta.months;
                 days = dt.ddelta.days;
                 tdelta = dt.tdelta;
-            } else if let Some(d) = arg.extract(*state.itemized_date_delta_type) {
+            } else if let Some(d) = ItemizedDateDelta::extract(arg, state)? {
                 let (m, dy) = d.to_months_days().ok_or_range_err()?;
                 months = m;
                 days = dy;
-            } else if let Some(d) = arg.extract(*state.itemized_delta_type) {
+            } else if let Some(d) = ItemizedDelta::extract(arg, state)? {
                 let (m, dy, td) = d.to_components().ok_or_range_err()?;
                 months = m;
                 days = dy;
@@ -1188,7 +1188,7 @@ fn plain_since_in_units(
     };
 
     result.fill_cal_units(cal_results);
-    result.to_obj(*state.itemized_delta_type)
+    result.to_obj(state)
 }
 
 fn round(

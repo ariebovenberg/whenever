@@ -5,10 +5,7 @@ use std::num::NonZeroU128;
 
 use crate::{
     classes::{
-        date::Date,
-        instant::Instant,
-        itemized_date_delta::{ItemizedDateDelta, MAX_DAYS, MAX_MONTHS, MAX_WEEKS, MAX_YEARS},
-        time_delta::TimeDelta,
+        date::Date, instant::Instant, itemized_date_delta::ItemizedDateDelta, time_delta::TimeDelta,
     },
     common::{
         round,
@@ -218,26 +215,6 @@ impl CalUnit {
             CalUnit::Months => &mut d.months,
             CalUnit::Weeks => &mut d.weeks,
             CalUnit::Days => &mut d.days,
-        }
-    }
-
-    pub(crate) const fn max_value(self) -> u32 {
-        (match self {
-            CalUnit::Years => MAX_YEARS,
-            CalUnit::Months => MAX_MONTHS,
-            CalUnit::Weeks => MAX_WEEKS,
-            CalUnit::Days => MAX_DAYS,
-        }) as u32
-    }
-
-    pub(crate) fn validate(self, value: u32, neg: bool) -> Option<i32> {
-        if value > self.max_value() {
-            None?
-        }
-        if neg {
-            Some(-(value as i32))
-        } else {
-            Some(value as i32)
         }
     }
 

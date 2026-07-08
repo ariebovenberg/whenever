@@ -859,7 +859,7 @@ fn shift_method(
         (&[arg], 0) => {
             if let Some(d) = arg.extract(*state.date_delta_type) {
                 (d.months, d.days)
-            } else if let Some(d) = arg.extract(*state.itemized_date_delta_type) {
+            } else if let Some(d) = ItemizedDateDelta::extract(arg, state)? {
                 d.to_months_days().ok_or_range_err()?
             } else {
                 raise_type_err(format!(
@@ -940,15 +940,16 @@ fn since_inner(
                 date_since_float(a, b, unit)
             }
         }
-        Some(DateSinceUnits::InUnits(units)) => date_since_iddelta(
-            a,
-            b,
-            units,
-            round_mode.unwrap_or(round::Mode::Trunc),
-            round_increment,
-        )
-        .unwrap()
-        .to_obj(*cls.state().itemized_date_delta_type),
+        Some(DateSinceUnits::InUnits(units)) => {
+            let d = date_since_iddelta(
+                a,
+                b,
+                units,
+                round_mode.unwrap_or(round::Mode::Trunc),
+                round_increment,
+            )?;
+            d.to_obj(cls.state())
+        }
         None => raise_type_err("must specify either 'total' or 'in_units'"),
     }
 }
