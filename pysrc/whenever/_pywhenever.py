@@ -11,12 +11,6 @@
 #   - It saves some overhead
 from __future__ import annotations
 
-from collections.abc import (
-    ItemsView,
-    KeysView,
-    Mapping,
-    ValuesView,
-)
 from datetime import (
     date as _date,
     datetime as _datetime,
@@ -31,7 +25,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
-    Iterator,
     Literal,
     Sequence,
     TypeVar,
@@ -181,9 +174,7 @@ __all__ = (
 # Helpers that pre-compute/lookup as much as possible
 _UTC = _timezone.utc
 _object_new = object.__new__
-_MAX_DELTA_YEARS = 9999
 _MAX_DELTA_MONTHS = 9999 * 12
-_MAX_DELTA_WEEKS = 9999 * 53
 _MAX_DELTA_DAYS = 9999 * 366
 _MAX_DELTA_HOURS = _MAX_DELTA_DAYS * 24
 _MAX_DELTA_MINUTES = _MAX_DELTA_HOURS * 60
