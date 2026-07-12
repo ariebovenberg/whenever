@@ -32,6 +32,7 @@ from ._common import (
 )
 from ._math import (
     DATE_DELTA_UNITS,
+    DELTA_UNITS,
     DIFF_FUNCS,
     EXACT_UNITS_STRICT,
     Sign,
@@ -41,7 +42,7 @@ from ._parse import parse_timedelta_component
 from ._typing import DateDeltaUnitStr, DeltaUnitStr, RoundModeStr
 
 if TYPE_CHECKING:
-    from whenever import (
+    from ._pywhenever import (
         Date,
         OffsetDateTime,
         PlainDateTime,
@@ -51,21 +52,20 @@ if TYPE_CHECKING:
 
 _object_new = object.__new__
 
-_BIT_TO_KEY: tuple[str, ...] = (
-    "years",
-    "months",
-    "weeks",
-    "days",
-    "hours",
-    "minutes",
-    "seconds",
-    "nanoseconds",
-)
-_KEY_TO_BIT: dict[str, int] = {k: 1 << i for i, k in enumerate(_BIT_TO_KEY)}
-_DATE_DELTA_KEY_ORDER = ("years", "months", "weeks", "days")
-_DATE_DELTA_KEYS = frozenset({"years", "months", "weeks", "days"})
-_DELTA_KEYS = frozenset(_BIT_TO_KEY)
-_EXACT_TIME_KEYS = frozenset({"hours", "minutes", "seconds", "nanoseconds"})
+
+# A special version of "Counter + Counter" that preserves zero
+# and negative values.
+def _items_add(
+    # NOTE: we need to explicitly specify a union with itemized deltas
+    # because mypy can't detect that itemized deltas are Mapping[str, int].
+    a: Mapping[str, int] | ItemizedDelta | ItemizedDateDelta,
+    b: Mapping[str, int] | ItemizedDelta | ItemizedDateDelta,
+) -> Mapping[str, int]:
+    sum = Counter(a)
+    sum.update(b)
+    return sum
+
+
 CALENDAR_UNIT_COMPOSITION_MSG = (
     "Itemized delta composition is field-wise and may not preserve the "
     "result of sequential application. Calendar units, particularly months, "
@@ -103,25 +103,6 @@ class CalendarUnitCompositionWarning(WheneverWarning):
     __module__ = "whenever"
 
 
-def _compose_itemized(
-    lhs: Mapping[Any, int],
-    rhs: Mapping[Any, int],
-    *,
-    subtract: bool,
-    result_type: type[ItemizedDelta] | type[ItemizedDateDelta],
-) -> ItemizedDelta | ItemizedDateDelta:
-    field_names = (
-        _BIT_TO_KEY if result_type is ItemizedDelta else _DATE_DELTA_KEY_ORDER
-    )
-    fields = Counter({k: lhs[k] for k in field_names if k in lhs})
-    rhs_fields = Counter({k: rhs[k] for k in field_names if k in rhs})
-    if subtract:
-        fields.subtract(rhs_fields)
-    else:
-        fields.update(rhs_fields)
-    return result_type(**fields)
-
-
 _MAX_DELTA_YEARS = 9999
 _MAX_DELTA_MONTHS = 9999 * 12
 _MAX_DELTA_WEEKS = 9999 * 53
@@ -129,7 +110,6 @@ _MAX_DELTA_DAYS = 9999 * 366
 _MAX_DELTA_HOURS = _MAX_DELTA_DAYS * 24
 _MAX_DELTA_MINUTES = _MAX_DELTA_HOURS * 60
 _MAX_DELTA_SECONDS = _MAX_DELTA_MINUTES * 60
-_MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * 1_000_000_000
 _MAX_SUBSEC_NANOS = 999_999_999
 
 _MAX_DDELTA_DIGITS = 8  # consistent with Rust extension
@@ -780,7 +760,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                 seconds=seconds or 0,
                 nanoseconds=nanoseconds or 0,
             )
-        return date_part, time_part  # type: ignore[return-value]
+        return date_part, time_part
 
     # A private constructor that bypasses sign/presence validation.
     # All field values must be non-negative; `sign` is applied when storing.
@@ -906,6 +886,37 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         other: ItemizedDelta,
         /,
         *,
+        relative_to: ZonedDateTime,
+        in_units: Sequence[DeltaUnitStr],
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+
+    @overload
+    def add(
+        self,
+        /,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        hours: int = ...,
+        minutes: int = ...,
+        seconds: int = ...,
+        nanoseconds: int = ...,
+        relative_to: ZonedDateTime,
+        in_units: Sequence[DeltaUnitStr],
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+
+    @overload
+    def add(
+        self,
+        other: ItemizedDelta,
+        /,
+        *,
         cal_unit_composition_ok: bool = ...,
     ) -> ItemizedDelta: ...
 
@@ -921,19 +932,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     @overload
     def add(
         self,
-        other: ItemizedDelta,
-        /,
-        *,
-        relative_to: ZonedDateTime,
-        in_units: Sequence[DeltaUnitStr],
-        round_mode: RoundModeStr = ...,
-        round_increment: int = ...,
-        cal_unit_composition_ok: bool = ...,
-    ) -> ItemizedDelta: ...
-
-    @overload
-    def add(
-        self,
         /,
         *,
         years: int = ...,
@@ -944,26 +942,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         minutes: int = ...,
         seconds: int = ...,
         nanoseconds: int = ...,
-        cal_unit_composition_ok: bool = ...,
-    ) -> ItemizedDelta: ...
-
-    @overload
-    def add(
-        self,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        hours: int = ...,
-        minutes: int = ...,
-        seconds: int = ...,
-        nanoseconds: int = ...,
-        relative_to: ZonedDateTime,
-        in_units: Sequence[DeltaUnitStr],
-        round_mode: RoundModeStr = ...,
-        round_increment: int = ...,
         cal_unit_composition_ok: bool = ...,
     ) -> ItemizedDelta: ...
 
@@ -971,31 +949,34 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         self,
         arg: ItemizedDelta | ItemizedDateDelta = UNSET,
         /,
-        relative_to: ZonedDateTime | None = UNSET,
-        in_units: Sequence[DeltaUnitStr] | None = UNSET,
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-        cal_unit_composition_ok: bool = False,
-        **kwargs: Any,
+        *,
+        relative_to: ZonedDateTime = UNSET,
+        in_units: Sequence[DeltaUnitStr] = UNSET,
+        round_mode: RoundModeStr = UNSET,
+        round_increment: int = UNSET,
+        cal_unit_composition_ok: bool = UNSET,
+        **kwargs: int,
     ) -> ItemizedDelta:
         """Add time to this delta, returning a new delta.
 
         Without a `relative_to` reference, composition is field-wise.
         That warning can be suppressed with `cal_unit_composition_ok=True`.
         """
+
+        # Normalize the input into a single unit->value mapping
+        other: Mapping[str, int]
         if kwargs:
             if arg is not UNSET:
+                # NIT: this message is slightly confusing
                 raise TypeError("Cannot mix positional and keyword arguments")
-            invalid = set(kwargs) - _DELTA_KEYS
-            if invalid:
+            if invalid := kwargs.keys() - DELTA_UNITS:
                 raise TypeError(
-                    f"Unexpected keyword argument: {next(iter(invalid))!r}"
+                    f"Unexpected keyword argument: {invalid.pop()!r}"
                 )
-            other: Mapping[str, int] | ItemizedDelta | ItemizedDateDelta = (
-                kwargs
-            )
+            other = kwargs
         elif isinstance(arg, (ItemizedDelta, ItemizedDateDelta)):
-            other = arg
+            # Mypy can't see how itemized deltas are always valid str->int mappings
+            other = arg  # type: ignore[assignment]
         elif arg is not UNSET:
             raise TypeError("Expected an itemized delta")
         else:
@@ -1008,56 +989,42 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             and in_units is UNSET
         ):
             return self
+
         if relative_to is UNSET:
             if in_units is not UNSET:
                 raise TypeError(
                     "Cannot specify `in_units` without `relative_to`"
                 )
-            if round_mode != "trunc" or round_increment != 1:
+            if round_mode is not UNSET or round_increment is not UNSET:
                 raise TypeError("rounding requires `relative_to`")
-            result = _compose_itemized(
-                self,
-                other,
-                subtract=False,
-                result_type=ItemizedDelta,
-            )
             if not cal_unit_composition_ok:
                 warn(
                     CALENDAR_UNIT_COMPOSITION_MSG,
                     CalendarUnitCompositionWarning,
                     stacklevel=2,
                 )
-            return cast(ItemizedDelta, result)
+            return ItemizedDelta(**_items_add(self, other))
 
-        if relative_to is None:
-            raise TypeError("relative_to must not be None")
         if in_units is UNSET:
             raise TypeError(
                 "Must specify `in_units` when `relative_to` is given"
             )
-        assert in_units is not None
-        other_values = cast(Mapping[str, int], other)
 
-        return cast(
-            ItemizedDelta,
-            relative_to.add(
-                years=self.get("years", 0) + other_values.get("years", 0),
-                months=self.get("months", 0) + other_values.get("months", 0),
-                weeks=self.get("weeks", 0) + other_values.get("weeks", 0),
-                days=self.get("days", 0) + other_values.get("days", 0),
-                hours=self.get("hours", 0) + other_values.get("hours", 0),
-                minutes=self.get("minutes", 0)
-                + other_values.get("minutes", 0),
-                seconds=self.get("seconds", 0)
-                + other_values.get("seconds", 0),
-                nanoseconds=self.get("nanoseconds", 0)
-                + other_values.get("nanoseconds", 0),
-            ).since(
-                relative_to,
-                in_units=in_units,
-                round_mode=round_mode,
-                round_increment=round_increment,
-            ),
+        return relative_to.add(
+            years=self.get("years", 0) + other.get("years", 0),
+            months=self.get("months", 0) + other.get("months", 0),
+            weeks=self.get("weeks", 0) + other.get("weeks", 0),
+            days=self.get("days", 0) + other.get("days", 0),
+            hours=self.get("hours", 0) + other.get("hours", 0),
+            minutes=self.get("minutes", 0) + other.get("minutes", 0),
+            seconds=self.get("seconds", 0) + other.get("seconds", 0),
+            nanoseconds=self.get("nanoseconds", 0)
+            + other.get("nanoseconds", 0),
+        ).since(
+            relative_to,
+            in_units=in_units,
+            round_mode=round_mode or "trunc",
+            round_increment=round_increment or 1,
         )
 
     @overload
@@ -1066,6 +1033,37 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         other: ItemizedDelta,
         /,
         *,
+        relative_to: ZonedDateTime,
+        in_units: Sequence[DeltaUnitStr],
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+
+    @overload
+    def subtract(
+        self,
+        /,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        hours: int = ...,
+        minutes: int = ...,
+        seconds: int = ...,
+        nanoseconds: int = ...,
+        relative_to: ZonedDateTime,
+        in_units: Sequence[DeltaUnitStr],
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
+
+    @overload
+    def subtract(
+        self,
+        other: ItemizedDelta,
+        /,
+        *,
         cal_unit_composition_ok: bool = ...,
     ) -> ItemizedDelta: ...
 
@@ -1081,19 +1079,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     @overload
     def subtract(
         self,
-        other: ItemizedDelta,
-        /,
-        *,
-        relative_to: ZonedDateTime,
-        in_units: Sequence[DeltaUnitStr],
-        round_mode: RoundModeStr = ...,
-        round_increment: int = ...,
-        cal_unit_composition_ok: bool = ...,
-    ) -> ItemizedDelta: ...
-
-    @overload
-    def subtract(
-        self,
         /,
         *,
         years: int = ...,
@@ -1104,26 +1089,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         minutes: int = ...,
         seconds: int = ...,
         nanoseconds: int = ...,
-        cal_unit_composition_ok: bool = ...,
-    ) -> ItemizedDelta: ...
-
-    @overload
-    def subtract(
-        self,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        hours: int = ...,
-        minutes: int = ...,
-        seconds: int = ...,
-        nanoseconds: int = ...,
-        relative_to: ZonedDateTime,
-        in_units: Sequence[DeltaUnitStr],
-        round_mode: RoundModeStr = ...,
-        round_increment: int = ...,
         cal_unit_composition_ok: bool = ...,
     ) -> ItemizedDelta: ...
 
@@ -1131,77 +1096,27 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         self,
         arg: ItemizedDelta | ItemizedDateDelta = UNSET,
         /,
-        relative_to: ZonedDateTime | None = UNSET,
-        in_units: Sequence[DeltaUnitStr] | None = UNSET,
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-        cal_unit_composition_ok: bool = False,
-        **kwargs: Any,
+        relative_to: ZonedDateTime = UNSET,
+        in_units: Sequence[DeltaUnitStr] = UNSET,
+        round_mode: RoundModeStr = UNSET,
+        round_increment: int = UNSET,
+        cal_unit_composition_ok: bool = UNSET,
+        **kwargs: int,
     ) -> ItemizedDelta:
         """Subtract time from this delta, returning a new delta."""
+        # Invert the arguments and pass to add()
         if kwargs:
-            if arg is not UNSET:
-                raise TypeError("Cannot mix positional and keyword arguments")
-            invalid = set(kwargs) - _DELTA_KEYS
-            if invalid:
-                raise TypeError(
-                    f"Unexpected keyword argument: {next(iter(invalid))!r}"
-                )
-            other: Mapping[str, int] | ItemizedDelta | ItemizedDateDelta = (
-                kwargs
-            )
-        elif isinstance(arg, (ItemizedDelta, ItemizedDateDelta)):
-            other = arg
-        elif arg is not UNSET:
-            raise TypeError("Expected an itemized delta")
-        else:
-            other = {}
-
-        if (
-            arg is UNSET
-            and not kwargs
-            and relative_to is UNSET
-            and in_units is UNSET
-        ):
-            return self
-        if relative_to is UNSET:
-            if in_units is not UNSET:
-                raise TypeError(
-                    "Cannot specify `in_units` without `relative_to`"
-                )
-            if round_mode != "trunc" or round_increment != 1:
-                raise TypeError("rounding requires `relative_to`")
-            result = _compose_itemized(
-                self,
-                other,
-                subtract=True,
-                result_type=ItemizedDelta,
-            )
-            if not cal_unit_composition_ok:
-                warn(
-                    CALENDAR_UNIT_COMPOSITION_MSG,
-                    CalendarUnitCompositionWarning,
-                    stacklevel=2,
-                )
-            return cast(ItemizedDelta, result)
-
-        if relative_to is None:
-            raise TypeError("relative_to must not be None")
-        if in_units is UNSET:
-            raise TypeError(
-                "Must specify `in_units` when `relative_to` is given"
-            )
-
-        neg_arg = -arg if arg is not UNSET else UNSET
-        assert in_units is not None
-        return self.add(
-            cast(Any, neg_arg),
-            **{k: -v for k, v in kwargs.items()},
+            kwargs = {k: -v for k, v in kwargs.items()}
+        if arg:
+            arg = -arg
+        return self.add(  # type: ignore[no-any-return,call-overload]
+            arg,
             relative_to=relative_to,
             in_units=in_units,
             round_mode=round_mode,
             round_increment=round_increment,
             cal_unit_composition_ok=cal_unit_composition_ok,
+            **kwargs,
         )
 
     def __add__(
@@ -1209,36 +1124,24 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     ) -> ItemizedDelta:
         if not isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
             return NotImplemented
-        result = _compose_itemized(
-            self,
-            other,
-            subtract=False,
-            result_type=ItemizedDelta,
-        )
         warn(
             CALENDAR_UNIT_COMPOSITION_MSG,
             CalendarUnitCompositionWarning,
             stacklevel=2,
         )
-        return cast(ItemizedDelta, result)
+        return ItemizedDelta(**_items_add(self, other))
 
     def __sub__(
         self, other: ItemizedDelta | ItemizedDateDelta
     ) -> ItemizedDelta:
         if not isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
             return NotImplemented
-        result = _compose_itemized(
-            self,
-            other,
-            subtract=True,
-            result_type=ItemizedDelta,
-        )
         warn(
             CALENDAR_UNIT_COMPOSITION_MSG,
             CalendarUnitCompositionWarning,
             stacklevel=2,
         )
-        return cast(ItemizedDelta, result)
+        return ItemizedDelta(**_items_add(self, -other))
 
     def in_units(
         self,
@@ -1630,14 +1533,11 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         >>> d.in_units(["weeks", "days"], relative_to=Date(2020, 6, 30))
         ItemizedDateDelta("P86w6d")
         """
-        return cast(
-            ItemizedDateDelta,
-            relative_to.add(self).since(  # type: ignore[call-overload]
-                relative_to,
-                in_units=units,
-                round_mode=round_mode,
-                round_increment=round_increment,
-            ),
+        return relative_to.add(self).since(
+            relative_to,
+            in_units=units,
+            round_mode=round_mode,
+            round_increment=round_increment,
         )
 
     if not TYPE_CHECKING:
@@ -1985,6 +1885,34 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             abs(self._days) if self._days is not None else None,
         )
 
+    # TODO: support ItemizedDelta here too?
+    @overload
+    def add(
+        self,
+        other: ItemizedDateDelta,
+        /,
+        *,
+        relative_to: Date,
+        in_units: Sequence[DateDeltaUnitStr],
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDateDelta: ...
+
+    @overload
+    def add(
+        self,
+        /,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        relative_to: Date,
+        in_units: Sequence[DateDeltaUnitStr],
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDateDelta: ...
+
     @overload
     def add(
         self,
@@ -2015,47 +1943,32 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         cal_unit_composition_ok: bool = ...,
     ) -> ItemizedDateDelta | ItemizedDelta: ...
 
-    @overload
-    def add(
-        self,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        relative_to: Date,
-        in_units: Sequence[DateDeltaUnitStr],
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-        cal_unit_composition_ok: bool = ...,
-    ) -> ItemizedDateDelta: ...
-
     def add(
         self,
         arg: ItemizedDateDelta | ItemizedDelta = UNSET,
         /,
-        relative_to: Date | None = UNSET,
-        in_units: Sequence[DateDeltaUnitStr] | None = UNSET,
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-        cal_unit_composition_ok: bool = False,
+        *,
+        relative_to: Date = UNSET,
+        in_units: Sequence[DateDeltaUnitStr] = UNSET,
+        round_mode: RoundModeStr = UNSET,
+        round_increment: int = UNSET,
+        cal_unit_composition_ok: bool = UNSET,
         **kwargs: int,
+        # TODO: URGENT: can it handle itemized deltas too?
     ) -> ItemizedDateDelta | ItemizedDelta:
         """Add time to this delta, returning a new delta."""
+        other: Mapping[str, int]
         if kwargs:
             if arg is not UNSET:
                 raise TypeError("Cannot mix positional and keyword arguments")
-            invalid = set(kwargs) - _DATE_DELTA_KEYS
-            if invalid:
+            if invalid := kwargs.keys() - DATE_DELTA_UNITS:
                 raise TypeError(
                     f"Unexpected keyword argument: {next(iter(invalid))!r}"
                 )
-            other: Mapping[str, int] | ItemizedDateDelta | ItemizedDelta = (
-                kwargs
-            )
+            other = kwargs
         elif isinstance(arg, (ItemizedDateDelta, ItemizedDelta)):
-            other = arg
+            # Mypy doesn't see that itemized deltas are valid str->int maps
+            other = arg  # type: ignore[assignment]
         elif arg is not UNSET:
             raise TypeError("Expected an itemized delta")
         else:
@@ -2068,61 +1981,72 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             and in_units is UNSET
         ):
             return self
+
         if relative_to is UNSET:
             if in_units is not UNSET:
                 raise TypeError(
                     "Cannot specify `in_units` without `relative_to`"
                 )
-            if round_mode != "trunc" or round_increment != 1:
+            if round_mode is not UNSET or round_increment is not UNSET:
                 raise TypeError("rounding requires `relative_to`")
-            if isinstance(arg, ItemizedDelta) or any(
-                key in other for key in _EXACT_TIME_KEYS
-            ):
-                result_type: type[ItemizedDateDelta] | type[ItemizedDelta] = (
-                    ItemizedDelta
-                )
-            else:
-                result_type = ItemizedDateDelta
-            result = _compose_itemized(
-                self,
-                other,
-                subtract=False,
-                result_type=result_type,
-            )
             if not cal_unit_composition_ok:
                 warn(
                     CALENDAR_UNIT_COMPOSITION_MSG,
                     CalendarUnitCompositionWarning,
                     stacklevel=2,
                 )
-            return result
+            if isinstance(arg, ItemizedDelta):
+                return ItemizedDelta(**_items_add(self, other))
+            else:
+                return ItemizedDateDelta(**_items_add(self, other))
 
-        if relative_to is None:
-            raise TypeError("relative_to must not be None")
         if in_units is UNSET:
             raise TypeError(
                 "Must specify `in_units` when `relative_to` is given"
             )
-        assert in_units is not None
 
-        return cast(
-            ItemizedDateDelta,
-            relative_to.add(
-                years=self.get("years", 0) + other.get("years", 0),
-                months=self.get("months", 0) + other.get("months", 0),
-                weeks=self.get("weeks", 0) + other.get("weeks", 0),
-                days=self.get("days", 0) + other.get("days", 0),
-            ).since(
-                relative_to,
-                in_units=in_units,
-                round_mode=round_mode,
-                round_increment=round_increment,
-            ),
+        return relative_to.add(
+            years=self.get("years", 0) + other.get("years", 0),
+            months=self.get("months", 0) + other.get("months", 0),
+            weeks=self.get("weeks", 0) + other.get("weeks", 0),
+            days=self.get("days", 0) + other.get("days", 0),
+        ).since(
+            relative_to,
+            in_units=in_units,
+            round_mode=round_mode or "trunc",
+            round_increment=round_increment or 1,
         )
 
     @overload
     def subtract(
         self,
+        /,
+        *,
+        years: int = ...,
+        months: int = ...,
+        weeks: int = ...,
+        days: int = ...,
+        relative_to: Date,
+        in_units: Sequence[DateDeltaUnitStr],
+        round_mode: RoundModeStr = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDateDelta: ...
+
+    @overload
+    def subtract(
+        self,
+        other: ItemizedDateDelta,
+        /,
+        *,
+        relative_to: Date,
+        in_units: Sequence[DateDeltaUnitStr],
+        round_mode: RoundModeStr = "trunc",
+        round_increment: int = 1,
+    ) -> ItemizedDateDelta: ...
+
+    @overload
+    def subtract(
+        self,
         other: ItemizedDateDelta,
         /,
         *,
@@ -2138,172 +2062,59 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         cal_unit_composition_ok: bool = ...,
     ) -> ItemizedDelta: ...
 
-    @overload
-    def subtract(
-        self,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        relative_to: None = ...,
-        in_units: None = ...,
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-        cal_unit_composition_ok: bool = ...,
-    ) -> ItemizedDateDelta | ItemizedDelta: ...
-
-    @overload
-    def subtract(
-        self,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        relative_to: Date,
-        in_units: Sequence[DateDeltaUnitStr],
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-        cal_unit_composition_ok: bool = ...,
-    ) -> ItemizedDateDelta: ...
-
     def subtract(
         self,
         arg: ItemizedDateDelta | ItemizedDelta = UNSET,
         /,
-        relative_to: Date | None = UNSET,
-        in_units: Sequence[DateDeltaUnitStr] | None = UNSET,
-        round_mode: RoundModeStr = "trunc",
-        round_increment: int = 1,
-        cal_unit_composition_ok: bool = False,
-        **kwargs: Any,
+        *,
+        relative_to: Date = UNSET,
+        in_units: Sequence[DateDeltaUnitStr] = UNSET,
+        round_mode: RoundModeStr = UNSET,
+        round_increment: int = UNSET,
+        cal_unit_composition_ok: bool = UNSET,
+        **kwargs: int,
     ) -> ItemizedDateDelta | ItemizedDelta:
         """Subtract time from this delta, returning a new delta."""
+        # Invert the arguments and pass to add()
         if kwargs:
-            if arg is not UNSET:
-                raise TypeError("Cannot mix positional and keyword arguments")
-            invalid = set(kwargs) - _DATE_DELTA_KEYS
-            if invalid:
-                raise TypeError(
-                    f"Unexpected keyword argument: {next(iter(invalid))!r}"
-                )
-            other: Mapping[str, int] | ItemizedDateDelta | ItemizedDelta = (
-                kwargs
-            )
-        elif isinstance(arg, (ItemizedDateDelta, ItemizedDelta)):
-            other = arg
-        elif arg is not UNSET:
-            raise TypeError("Expected an itemized delta")
-        else:
-            other = {}
-
-        if (
-            arg is UNSET
-            and not kwargs
-            and relative_to is UNSET
-            and in_units is UNSET
-        ):
-            return self
-        if relative_to is UNSET:
-            if in_units is not UNSET:
-                raise TypeError(
-                    "Cannot specify `in_units` without `relative_to`"
-                )
-            if round_mode != "trunc" or round_increment != 1:
-                raise TypeError("rounding requires `relative_to`")
-            if isinstance(arg, ItemizedDelta) or any(
-                key in other for key in _EXACT_TIME_KEYS
-            ):
-                result_type: type[ItemizedDateDelta] | type[ItemizedDelta] = (
-                    ItemizedDelta
-                )
-            else:
-                result_type = ItemizedDateDelta
-            result = _compose_itemized(
-                self,
-                other,
-                subtract=True,
-                result_type=result_type,
-            )
-            if not cal_unit_composition_ok:
-                warn(
-                    CALENDAR_UNIT_COMPOSITION_MSG,
-                    CalendarUnitCompositionWarning,
-                    stacklevel=2,
-                )
-            return result
-
-        if relative_to is None:
-            raise TypeError("relative_to must not be None")
-        if in_units is UNSET:
-            raise TypeError(
-                "Must specify `in_units` when `relative_to` is given"
-            )
-
-        neg_arg = -arg if arg is not UNSET else UNSET
-        return cast(
-            ItemizedDateDelta | ItemizedDelta,
-            self.add(  # type: ignore[call-overload]
-                neg_arg,
-                **{k: -v for k, v in kwargs.items()},
-                relative_to=relative_to,
-                in_units=in_units,
-                round_mode=round_mode,
-                round_increment=round_increment,
-                cal_unit_composition_ok=cal_unit_composition_ok,
-            ),
+            kwargs = {k: -v for k, v in kwargs.items()}
+        if arg:
+            arg = -arg
+        return self.add(  # type: ignore[no-any-return,call-overload]
+            arg,
+            relative_to=relative_to,
+            in_units=in_units,
+            round_mode=round_mode,
+            round_increment=round_increment,
+            cal_unit_composition_ok=cal_unit_composition_ok,
+            **kwargs,
         )
 
     def __add__(
         self, other: ItemizedDateDelta | ItemizedDelta
     ) -> ItemizedDateDelta | ItemizedDelta:
-        if not isinstance(other, (ItemizedDateDelta, ItemizedDelta)):
+        if isinstance(other, (ItemizedDateDelta, ItemizedDelta)):
+            warn(
+                CALENDAR_UNIT_COMPOSITION_MSG,
+                CalendarUnitCompositionWarning,
+                stacklevel=2,
+            )
+            return type(other)(**_items_add(self, other))
+        else:
             return NotImplemented
-        result_type: type[ItemizedDateDelta] | type[ItemizedDelta]
-        result_type = (
-            ItemizedDelta
-            if isinstance(other, ItemizedDelta)
-            else ItemizedDateDelta
-        )
-        result = _compose_itemized(
-            self,
-            other,
-            subtract=False,
-            result_type=result_type,
-        )
-        warn(
-            CALENDAR_UNIT_COMPOSITION_MSG,
-            CalendarUnitCompositionWarning,
-            stacklevel=2,
-        )
-        return result
 
     def __sub__(
         self, other: ItemizedDateDelta | ItemizedDelta
     ) -> ItemizedDateDelta | ItemizedDelta:
-        if not isinstance(other, (ItemizedDateDelta, ItemizedDelta)):
+        if isinstance(other, (ItemizedDateDelta, ItemizedDelta)):
+            warn(
+                CALENDAR_UNIT_COMPOSITION_MSG,
+                CalendarUnitCompositionWarning,
+                stacklevel=2,
+            )
+            return type(other)(**_items_add(self, -other))
+        else:
             return NotImplemented
-        result_type: type[ItemizedDateDelta] | type[ItemizedDelta]
-        result_type = (
-            ItemizedDelta
-            if isinstance(other, ItemizedDelta)
-            else ItemizedDateDelta
-        )
-        result = _compose_itemized(
-            self,
-            other,
-            subtract=True,
-            result_type=result_type,
-        )
-        warn(
-            CALENDAR_UNIT_COMPOSITION_MSG,
-            CalendarUnitCompositionWarning,
-            stacklevel=2,
-        )
-        return result
 
     def total(self, unit: DateDeltaUnitStr, /, *, relative_to: Date) -> float:
         """Return the total duration expressed in the specified unit as a float
@@ -2313,7 +2124,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         >>> ItemizedDateDelta(days=1000).total("years", relative_to=Date(2020, 4, 10))
         2.73972602739726
         """
-        shifted = relative_to.add(self)  # type: ignore[call-overload]
+        shifted = relative_to.add(self)
         sgn = self.sign()
         shifted_d = _date(shifted.year, shifted.month, shifted.day)
         ref_d = _date(relative_to.year, relative_to.month, relative_to.day)
