@@ -231,6 +231,13 @@ class TestParseIso:
             "01023",
             "011",
             "2",
+            # basic format is HH/HHMM/HHMMSS only; trailing digits that CPython
+            # reads as a separatorless fraction must be rejected
+            "20103000",
+            "20200101",
+            "2010300",
+            "123045678",
+            "1230456789",
             # other
             "garbage",
             "",

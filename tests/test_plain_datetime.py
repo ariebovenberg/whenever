@@ -378,6 +378,9 @@ class TestParseIso:
             # invalid leap second cases
             "2020-08-15T12:34:61",
             "2020-08-15T12:34:99",
+            # basic-format time is HH/HHMM/HHMMSS, not a separatorless fraction
+            "20200815T12083000",
+            "2020-08-15T120830123",
         ],
     )
     def test_invalid(self, s):

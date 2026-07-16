@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Fixed the pure Python implementation accepting invalid basic-format times
+  with a separatorless fraction (e.g. ``20200101`` or ``20103000``). These now
+  raise ``ValueError`` like the Rust extension, instead of an ``AssertionError``
+  or silently parsing a wrong value.
+  Thanks to @gaoflow for the report and fix (#391).
+
 ## 0.10.2 (2026-07-06)
 
 - Fixed an issue in the pure Python implementation where invalid format
