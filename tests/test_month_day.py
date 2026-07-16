@@ -192,7 +192,7 @@ def test_replace():
         md.replace(day=32)
 
     with pytest.raises(TypeError):
-        md.replace(3)  # type: ignore[misc]
+        md.replace(3)  # type: ignore[call-arg]
 
     with pytest.raises(TypeError, match="foo"):
         md.replace(foo=3)  # type: ignore[call-arg]

@@ -186,7 +186,7 @@ def test_format_iso():
     assert d.format_iso(basic=True) == "20210102"
 
     with pytest.raises(TypeError):
-        d.format_iso(3)  # type: ignore[arg-type, misc]
+        d.format_iso(3)  # type: ignore[arg-type, call-arg]
 
     with pytest.raises(TypeError):
         d.format_iso(sep="T")  # type: ignore[call-arg]
@@ -295,7 +295,7 @@ def test_replace():
     assert d == Date(2021, 1, 2)  # original is unchanged
 
     with pytest.raises(TypeError):
-        d.replace(3)  # type: ignore[misc]
+        d.replace(3)  # type: ignore[call-arg]
 
     with pytest.raises(TypeError, match="foo"):
         d.replace(foo=3)  # type: ignore[call-arg]

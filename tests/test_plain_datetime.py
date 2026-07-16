@@ -1104,7 +1104,7 @@ class TestParseStrptime:
         with pytest.raises(TypeError, match="format|argument"):
             OffsetDateTime.parse_strptime(
                 "2020-08-15 23:12:09",
-                "%Y-%m-%d %H:%M:%S",  # type: ignore[misc]
+                "%Y-%m-%d %H:%M:%S",  # type: ignore[call-arg]
             )
 
 

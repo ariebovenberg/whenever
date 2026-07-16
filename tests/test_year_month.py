@@ -174,7 +174,7 @@ def test_replace():
     assert ym == YearMonth(2021, 1)  # original is unchanged
 
     with pytest.raises(TypeError):
-        ym.replace(3)  # type: ignore[misc]
+        ym.replace(3)  # type: ignore[call-arg]
 
     with pytest.raises(TypeError, match="foo"):
         ym.replace(foo=3)  # type: ignore[call-arg]
