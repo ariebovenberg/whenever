@@ -363,6 +363,7 @@ class TestParseIso:
             # separator, but incomplete time
             "2020-08-15T",
             "2020-08-15T1",
+            "20200815XXT12:30",  # junk after a basic-format date
             # invalid component values
             "0000-12-15T12:08:30",
             "2020-18-15T12:08:30",
@@ -381,6 +382,7 @@ class TestParseIso:
             # basic-format time is HH/HHMM/HHMMSS, not a separatorless fraction
             "20200815T12083000",
             "2020-08-15T120830123",
+            "2020-08-15T120830.",
         ],
     )
     def test_invalid(self, s):

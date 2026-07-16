@@ -821,7 +821,9 @@ INVALID_TDELTAS = [
     "PT 3M",
     "PT-3M",
     "PT3 M",
-    "PT3M4 S"
+    "PT3M4 S",
+    "PTH0S",  # missing hour value
+    "PT48HM4S",  # missing minute value
     # too precise
     "PT1.0000000001S",
     # too small
@@ -830,6 +832,7 @@ INVALID_TDELTAS = [
     "PTM",
     # way too many digits (there's a limit...)
     "PT000000000000000000000000000000000000000000000000000000000001S",
+    # intermediate arithmetic and integer conversion must not overflow
 ]
 
 
@@ -857,11 +860,16 @@ class TestParseIso:
             "-PT400000000000.00S",
             f"PT{10_000 * 366 * 24}H",
             f"PT{10_000 * 366 * 24 * 3600}S",
+            "PT340282366920938463463374607431S",
         ],
     )
     def test_too_large(self, s) -> None:
         with pytest.raises(ValueError, match="range"):
             TimeDelta.parse_iso(s)
+
+    def test_intermediate_overflow(self) -> None:
+        with pytest.raises(ValueError):
+            TimeDelta.parse_iso("PT999999999999999999999999999H")
 
 
 class TestAddSubtract:

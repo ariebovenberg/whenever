@@ -147,6 +147,10 @@ class TestParseIso:
             "20-12",  # two-digit year
             "120-12",  # three-digit year
             "-012-12",  # negative year
+            "+020-12",  # signed year
+            " 020-12",  # whitespace in year
+            "2020-+1",  # signed month
+            "2020- 1",  # whitespace in month
             "312🧨-12",  # non-ASCII
             "202𝟙-11",  # non-ascii
         ],

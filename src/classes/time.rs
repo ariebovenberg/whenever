@@ -150,7 +150,7 @@ impl Time {
         let (minute, second, subsec) = match s.digits00_59() {
             Some(m) => {
                 let (sec, sub) = match s.digits00_60_leap() {
-                    Some(n) => (n, s.subsec().unwrap_or(SubSecNanos::MIN)),
+                    Some(n) => (n, s.subsec()?),
                     None => (0, SubSecNanos::MIN),
                 };
                 (m, sec, sub)

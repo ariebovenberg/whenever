@@ -967,7 +967,7 @@ fn parse_iso(cls: HeapType<TimeDelta>, arg: PyObj) -> PyReturn {
     if is_empty {
         raise_value_err(err())?;
     }
-    TimeDelta::from_nanos(nanos as i128)
+    TimeDelta::from_nanos(i128::try_from(nanos).ok().ok_or_range_err()?)
         .ok_or_range_err()?
         .negate_if(negate)
         .to_obj(cls)
@@ -1048,29 +1048,31 @@ pub(crate) fn parse_time_component(s: &mut &[u8]) -> Option<(u128, TimeUnit)> {
     for i in 0..s.len().min(35) {
         match s[i] {
             c if c.is_ascii_digit() => tally = tally * 10 + u128::from(c - b'0'),
-            b'H' | b'h' => {
+            b'H' | b'h' if i > 0 => {
                 *s = &s[i + 1..];
                 return Some((tally, TimeUnit::Hours));
             }
-            b'M' | b'm' => {
+            b'M' | b'm' if i > 0 => {
                 *s = &s[i + 1..];
                 return Some((tally, TimeUnit::Minutes));
             }
-            b'S' | b's' => {
+            b'S' | b's' if i > 0 => {
                 *s = &s[i + 1..];
                 return Some((
-                    tally * NS_PER_SEC as u128,
+                    tally.checked_mul(NS_PER_SEC as u128)?,
                     TimeUnit::Nanos {
                         has_fraction: false,
                     },
                 ));
             }
             b'.' | b',' if i > 0 => {
-                let result = parse_nano_fractions(&s[i + 1..]).map(|ns| {
-                    (
-                        tally * NS_PER_SEC as u128 + ns as u128,
+                let result = parse_nano_fractions(&s[i + 1..]).and_then(|ns| {
+                    Some((
+                        tally
+                            .checked_mul(NS_PER_SEC as u128)?
+                            .checked_add(ns as u128)?,
                         TimeUnit::Nanos { has_fraction: true },
-                    )
+                    ))
                 });
                 *s = &[];
                 return result;
@@ -1085,18 +1087,18 @@ pub(crate) fn parse_time_component(s: &mut &[u8]) -> Option<(u128, TimeUnit)> {
 // also whether it is empty (to distinguish no components from zero components)
 pub(crate) fn parse_all_components(s: &mut &[u8]) -> Option<(u128, bool)> {
     let mut prev_unit: Option<TimeUnit> = None;
-    let mut nanos = 0;
+    let mut nanos: u128 = 0;
     while !s.is_empty() {
         let (value, unit) = parse_time_component(s)?;
         match (unit, prev_unit.replace(unit)) {
             (TimeUnit::Hours, None) => {
-                nanos += value * NS_PER_HOUR as u128;
+                nanos = nanos.checked_add(value.checked_mul(NS_PER_HOUR as u128)?)?;
             }
             (TimeUnit::Minutes, None | Some(TimeUnit::Hours)) => {
-                nanos += value * NS_PER_MINUTE as u128;
+                nanos = nanos.checked_add(value.checked_mul(NS_PER_MINUTE as u128)?)?;
             }
             (TimeUnit::Nanos { .. }, _) => {
-                nanos += value;
+                nanos = nanos.checked_add(value)?;
                 if s.is_empty() {
                     break;
                 } else {

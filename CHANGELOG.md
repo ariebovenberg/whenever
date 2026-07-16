@@ -7,6 +7,9 @@
   raise ``ValueError`` like the Rust extension, instead of an ``AssertionError``
   or silently parsing a wrong value.
   Thanks to @gaoflow for the report and fix (#391).
+- Fixed several ISO parser edge cases involving malformed numeric components,
+  empty fractions, ``24:00``, trailing duration separators, and overflow in the
+  Rust duration parsers.
 
 ## 0.10.2 (2026-07-06)
 

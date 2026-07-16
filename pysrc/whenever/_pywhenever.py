@@ -3586,7 +3586,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         ) * 8
 
         # Catch certain invalid strings early, making parsing easier
-        if len(s) < 3 or not s.isascii() or s.endswith("T"):
+        if len(s) < 3 or not s.isascii() or s[-1] in "Tt":
             raise exc
 
         sign: Sign

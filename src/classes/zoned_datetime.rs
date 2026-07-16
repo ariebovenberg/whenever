@@ -20,7 +20,7 @@ use crate::{
     docstrings as doc,
     py::*,
     pymodule::State,
-    tz::tzif::TimeZone,
+    tz::tzif::{TimeZone, is_valid_key},
 };
 use core::{
     ffi::{c_int, c_long, c_void},
@@ -282,12 +282,12 @@ fn read_offset_and_tzname<'a>(s: &'a mut Scan) -> Option<(OffsetInIsoString, &'a
         // This scanning check ensures there's no other closing bracket
         && tz.iter().position(|&b| b == b']') == Some(tz.len() - 1)
         && tz.is_ascii())
-    .then(|| {
-        (offset, unsafe {
-            // Safe: we've just checked that it's ASCII-only
-            std::str::from_utf8_unchecked(&tz[1..tz.len() - 1])
-        })
+    .then(|| unsafe {
+        // Safe: we've just checked that it's ASCII-only
+        std::str::from_utf8_unchecked(&tz[1..tz.len() - 1])
     })
+    .filter(|tz| is_valid_key(tz))
+    .map(|tz| (offset, tz))
 }
 
 impl PyWrapped for ZonedDateTime {}
