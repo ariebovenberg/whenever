@@ -1097,7 +1097,7 @@ class Date(_Base):
     def _add_days(self, days: int) -> Date:
         return Date._from_py_unchecked(self._py_date + _timedelta(days))
 
-    def __add__(self, p: DateDelta) -> Date:
+    def __add__(self, p: DateDelta | ItemizedDateDelta) -> Date:
         """Add a delta to a date.
         Behaves the same as :meth:`add`
 
@@ -1106,25 +1106,30 @@ class Date(_Base):
             Using the ``+`` operator on :class:`Date` is deprecated;
             use the :meth:`add` method instead.
         """
-        warn(
-            "Using the + operator on Date is deprecated; "
-            "use the .add() method instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return (
-            self.add(months=p._months, days=p._days)
-            if isinstance(p, DateDelta)
-            else NotImplemented
-        )
+        if isinstance(p, ItemizedDateDelta):
+            return self.add(p)
+        if isinstance(p, DateDelta):
+            warn(
+                "Using the + operator on Date is deprecated; "
+                "use the .add() method instead.",
+                WheneverDeprecationWarning,
+                stacklevel=2,
+            )
+            return self.add(months=p._months, days=p._days)
+        return NotImplemented
 
     @overload
     def __sub__(self, d: DateDelta) -> Date: ...
 
     @overload
+    def __sub__(self, d: ItemizedDateDelta) -> Date: ...
+
+    @overload
     def __sub__(self, d: Date) -> DateDelta: ...
 
-    def __sub__(self, d: DateDelta | Date) -> Date | DateDelta:
+    def __sub__(
+        self, d: DateDelta | ItemizedDateDelta | Date
+    ) -> Date | DateDelta:
         """Subtract a delta from a date, or subtract two dates
 
         Subtracting a delta works the same as :meth:`subtract`.
@@ -1159,6 +1164,8 @@ class Date(_Base):
             Using the ``-`` operator on :class:`Date` is deprecated;
             use the :meth:`subtract` method or the :meth:`since` method instead.
         """
+        if isinstance(d, ItemizedDateDelta):
+            return self.subtract(d)
         if isinstance(d, DateDelta):
             warn(
                 "Using the `-` operator on Date is deprecated; "
@@ -5079,7 +5086,9 @@ class OffsetDateTime(_ExactAndLocalTime):
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
 
-    def __add__(self, delta: TimeDelta) -> OffsetDateTime:
+    def __add__(
+        self, delta: TimeDelta | ItemizedDelta | ItemizedDateDelta
+    ) -> OffsetDateTime:
         """Add a time delta to this datetime.
 
         Warning
@@ -5094,6 +5103,8 @@ class OffsetDateTime(_ExactAndLocalTime):
         Use ``.add(..., stale_offset_ok=True)`` or Python's
         standard warning filters to suppress.
         """
+        if isinstance(delta, (ItemizedDelta, ItemizedDateDelta)):
+            return cast(OffsetDateTime, self.add(delta))
         if isinstance(delta, TimeDelta):
             warn(
                 OFFSET_SHIFT_STALE_MSG,
@@ -5113,12 +5124,17 @@ class OffsetDateTime(_ExactAndLocalTime):
     def __sub__(self, other: _ExactTimeAlias) -> TimeDelta: ...
 
     @overload
-    def __sub__(self, other: TimeDelta) -> OffsetDateTime: ...
+    def __sub__(
+        self, other: TimeDelta | ItemizedDelta | ItemizedDateDelta
+    ) -> OffsetDateTime: ...
 
     def __sub__(
-        self, other: _ExactTimeAlias | TimeDelta
+        self,
+        other: _ExactTimeAlias | TimeDelta | ItemizedDelta | ItemizedDateDelta,
     ) -> TimeDelta | OffsetDateTime:
         """Subtract a time delta or calculate the duration to another exact time."""
+        if isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
+            return cast(OffsetDateTime, self.subtract(other))
         if isinstance(other, TimeDelta):
             warn(
                 OFFSET_SHIFT_STALE_MSG,
@@ -5382,6 +5398,8 @@ class OffsetDateTime(_ExactAndLocalTime):
                 return self._shift_kwargs(sign, **kwargs)
             raise TypeError("Cannot mix positional and keyword arguments")
 
+        elif isinstance(arg, (ItemizedDelta, ItemizedDateDelta)):
+            return self._shift_kwargs(sign, **arg)
         elif arg is not UNSET:
             return self._shift_kwargs(
                 sign,
@@ -6195,13 +6213,20 @@ class ZonedDateTime(_ExactAndLocalTime):
         return hash((self._py_dt, self._nanos))
 
     def __add__(
-        self, delta: TimeDelta | DateDelta | DateTimeDelta
+        self,
+        delta: TimeDelta
+        | DateDelta
+        | DateTimeDelta
+        | ItemizedDelta
+        | ItemizedDateDelta,
     ) -> ZonedDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
 
         See `the docs <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__
         for more information.
         """
+        if isinstance(delta, (ItemizedDelta, ItemizedDateDelta)):
+            return self.add(delta)
         if isinstance(delta, TimeDelta):
             delta_secs, nanos = divmod(
                 delta._time_part._total_ns + self._nanos, 1_000_000_000
@@ -6237,7 +6262,18 @@ class ZonedDateTime(_ExactAndLocalTime):
         """
         if isinstance(other, _EXACT_TIME_TYPES):
             return self._subtract_operator(other)
-        elif isinstance(other, (TimeDelta, DateDelta, DateTimeDelta)):
+        elif isinstance(
+            other,
+            (
+                TimeDelta,
+                DateDelta,
+                DateTimeDelta,
+                ItemizedDelta,
+                ItemizedDateDelta,
+            ),
+        ):
+            if isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
+                return self.subtract(other)
             return self + -other
         return NotImplemented
 
@@ -7210,7 +7246,9 @@ class PlainDateTime(_LocalTime):
             return NotImplemented
         return (self._py_dt, self._nanos) >= (other._py_dt, other._nanos)
 
-    def __add__(self, delta: DateDelta | TimeDelta) -> PlainDateTime:
+    def __add__(
+        self, delta: DateDelta | TimeDelta | ItemizedDelta | ItemizedDateDelta
+    ) -> PlainDateTime:
         """Add a delta to this datetime.
 
         Warning
@@ -7221,6 +7259,8 @@ class PlainDateTime(_LocalTime):
         Use ``.add(..., naive_arithmetic_ok=True)`` or Python's
         standard warning filters to suppress.
         """
+        if isinstance(delta, (ItemizedDelta, ItemizedDateDelta)):
+            return self.add(delta)
         if isinstance(delta, DateDelta):
             return self._from_py_unchecked(
                 _datetime.combine(
@@ -7247,10 +7287,17 @@ class PlainDateTime(_LocalTime):
     def __sub__(self, other: PlainDateTime) -> TimeDelta: ...
 
     @overload
-    def __sub__(self, other: TimeDelta | DateDelta) -> PlainDateTime: ...
+    def __sub__(
+        self, other: TimeDelta | DateDelta | ItemizedDelta | ItemizedDateDelta
+    ) -> PlainDateTime: ...
 
     def __sub__(
-        self, other: PlainDateTime | TimeDelta | DateDelta
+        self,
+        other: PlainDateTime
+        | TimeDelta
+        | DateDelta
+        | ItemizedDelta
+        | ItemizedDateDelta,
     ) -> TimeDelta | PlainDateTime:
         """Subtract a delta or calculate the duration to another plain datetime.
 
@@ -7263,6 +7310,8 @@ class PlainDateTime(_LocalTime):
         Use ``.add(..., naive_arithmetic_ok=True)`` or Python's
         standard warning filters to suppress.
         """
+        if isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
+            return self.subtract(other)
         if isinstance(other, TimeDelta):
             warn(
                 PLAIN_SHIFT_UNAWARE_MSG,
@@ -7534,6 +7583,10 @@ class PlainDateTime(_LocalTime):
                 )
             raise TypeError("Cannot mix positional and keyword arguments")
 
+        elif isinstance(arg, (ItemizedDelta, ItemizedDateDelta)):
+            return self._shift_kwargs(
+                sign, naive_arithmetic_ok=naive_arithmetic_ok, **arg
+            )
         elif arg is not UNSET:
             return self._shift_kwargs(
                 sign,

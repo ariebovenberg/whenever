@@ -298,10 +298,15 @@ class Date(_DateOrTimeMixin):
     def days_since(self, other: Self, /) -> int: ...
     @deprecated('Use until(..., total="days") instead')
     def days_until(self, other: Self, /) -> int: ...
+    @overload
     @deprecated("Use the add() method instead")
     def __add__(self, p: DateDelta, /) -> Self: ...
     @overload
+    def __add__(self, p: ItemizedDateDelta, /) -> Self: ...
+    @overload
     def __sub__(self, d: DateDelta, /) -> Self: ...
+    @overload
+    def __sub__(self, d: ItemizedDateDelta, /) -> Self: ...
     @overload
     @deprecated(
         "Use the subtract(<delta>) or since(<date>, units=...) instead"
@@ -1047,6 +1052,10 @@ class ItemizedDelta(
     @overload
     def __add__(self, other: ItemizedDateDelta, /) -> ItemizedDelta: ...
     @overload
+    def __add__(
+        self, other: ZonedDateTime | PlainDateTime | OffsetDateTime, /
+    ) -> ZonedDateTime | PlainDateTime | OffsetDateTime: ...
+    @overload
     def __sub__(self, other: ItemizedDelta, /) -> ItemizedDelta: ...
     @overload
     def __sub__(self, other: ItemizedDateDelta, /) -> ItemizedDelta: ...
@@ -1127,8 +1136,8 @@ class ItemizedDateDelta(
         other: ItemizedDelta,
         /,
         *,
-        relative_to: Date,
-        in_units: Sequence[Literal["years", "months", "weeks", "days"]],
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
+        in_units: Sequence[DeltaUnitStr],
         round_mode: Literal[
             "ceil",
             "expand",
@@ -1220,8 +1229,8 @@ class ItemizedDateDelta(
         other: ItemizedDelta,
         /,
         *,
-        relative_to: Date,
-        in_units: Sequence[Literal["years", "months", "weeks", "days"]],
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
+        in_units: Sequence[DeltaUnitStr],
         round_mode: Literal[
             "ceil",
             "expand",
@@ -1306,6 +1315,12 @@ class ItemizedDateDelta(
     def __add__(self, other: ItemizedDateDelta, /) -> ItemizedDateDelta: ...
     @overload
     def __add__(self, other: ItemizedDelta, /) -> ItemizedDelta: ...
+    @overload
+    def __add__(
+        self,
+        other: Date | ZonedDateTime | PlainDateTime | OffsetDateTime,
+        /,
+    ) -> Date | ZonedDateTime | PlainDateTime | OffsetDateTime: ...
     @overload
     def __sub__(self, other: ItemizedDateDelta, /) -> ItemizedDateDelta: ...
     @overload
@@ -1980,6 +1995,15 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
             "raise", "keep_instant", "keep_local"
         ] = "raise",
     ) -> ZonedDateTime: ...
+    def __add__(
+        self, delta: TimeDelta | ItemizedDelta | ItemizedDateDelta, /
+    ) -> Self: ...
+    @overload  # type: ignore[override]
+    def __sub__(self, other: _ExactTime) -> TimeDelta: ...
+    @overload
+    def __sub__(
+        self, other: TimeDelta | ItemizedDelta | ItemizedDateDelta, /
+    ) -> Self: ...
 
 @final
 class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
@@ -2149,7 +2173,11 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     ) -> ZonedDateTime: ...
     def __add__(
         self,
-        delta: TimeDelta | DateTimeDelta | DateDelta,
+        delta: TimeDelta
+        | DateTimeDelta
+        | DateDelta
+        | ItemizedDelta
+        | ItemizedDateDelta,
         /,
     ) -> Self: ...
     # we'll clean this up once the deprecated deltas are removed
@@ -2158,7 +2186,11 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @overload
     def __sub__(
         self,
-        other: TimeDelta | DateTimeDelta | DateDelta,
+        other: TimeDelta
+        | DateTimeDelta
+        | DateDelta
+        | ItemizedDelta
+        | ItemizedDateDelta,
     ) -> Self: ...
 
 @final
@@ -2391,9 +2423,17 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         ignore_dst: Literal[True] = ...,
         naive_arithmetic_ok: bool = ...,
     ) -> TimeDelta: ...
-    def __add__(self, delta: TimeDelta | DateDelta, /) -> Self: ...
+    def __add__(
+        self,
+        delta: TimeDelta | DateDelta | ItemizedDelta | ItemizedDateDelta,
+        /,
+    ) -> Self: ...
     @overload
-    def __sub__(self, other: TimeDelta | DateDelta, /) -> Self: ...
+    def __sub__(
+        self,
+        other: TimeDelta | DateDelta | ItemizedDelta | ItemizedDateDelta,
+        /,
+    ) -> Self: ...
     @overload
     def __sub__(self, other: Self, /) -> TimeDelta: ...
 

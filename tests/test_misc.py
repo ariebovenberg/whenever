@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+from contextlib import nullcontext
 from inspect import signature
 from itertools import chain
 from time import sleep
@@ -18,6 +19,8 @@ from whenever import (
     ImplicitlyIgnoringDST,
     Instant,
     InvalidOffsetError,
+    ItemizedDateDelta,
+    ItemizedDelta,
     MonthDay,
     OffsetDateTime,
     PlainDateTime,
@@ -36,6 +39,44 @@ from .common import system_tz_ams
 pytestmark = pytest.mark.filterwarnings(
     "ignore::whenever.WheneverDeprecationWarning"
 )
+
+
+@pytest.mark.parametrize(
+    "dt, delta, expected",
+    [
+        (
+            Date(2021, 1, 31),
+            ItemizedDateDelta(months=1),
+            Date(2021, 2, 28),
+        ),
+        (
+            PlainDateTime(2021, 1, 31),
+            ItemizedDelta(months=1, hours=2),
+            PlainDateTime(2021, 2, 28, 2),
+        ),
+        (
+            OffsetDateTime(2021, 1, 31, offset=0),
+            ItemizedDelta(months=1, hours=2),
+            OffsetDateTime(2021, 2, 28, 2, offset=0),
+        ),
+        (
+            ZonedDateTime(2021, 1, 31, tz="UTC"),
+            ItemizedDelta(months=1, hours=2),
+            ZonedDateTime(2021, 2, 28, 2, tz="UTC"),
+        ),
+    ],
+)
+def test_itemized_delta_datetime_operators(dt, delta, expected):
+    warning = isinstance(dt, (PlainDateTime, OffsetDateTime))
+    with pytest.warns(Warning) if warning else nullcontext():
+        assert dt + delta == expected
+    with pytest.warns(Warning) if warning else nullcontext():
+        assert delta + dt == expected
+    with pytest.warns(Warning) if warning else nullcontext():
+        subtracted = dt - delta
+    with pytest.warns(Warning) if warning else nullcontext():
+        expected_subtracted = dt.subtract(delta)
+    assert subtracted == expected_subtracted
 
 
 @pytest.mark.skipif(

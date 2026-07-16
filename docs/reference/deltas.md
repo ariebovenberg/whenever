@@ -305,9 +305,8 @@ The operation emits
 (delta-operators)=
 ## Operators
 
-Mathematical operators such as `+`, `-`, `*`, and `/`
-are only supported for {class}`TimeDelta`, as these operations
-only make sense for exact time units.
+Multiplication and division are only supported for {class}`TimeDelta`, because
+these operations only make sense for exact time units.
 
 ```python
 >>> delta = TimeDelta(hours=2, minutes=30)
@@ -322,6 +321,13 @@ field-wise composition and always emit
 {class}`~whenever.CalendarUnitCompositionWarning`.
 Use the method forms if you want to pass `cal_unit_composition_ok=True`
 or if you need calendar-aware composition via `relative_to`.
+
+Dates and datetimes support applying an itemized delta with `+` and `-`.
+Addition is also commutative in spelling, so both `datetime + delta` and
+`delta + datetime` are supported. These operations use the date or datetime
+as their reference and do not emit `CalendarUnitCompositionWarning`.
+As with the equivalent `add()` and `subtract()` methods, calendar clamping
+means that adding and then subtracting the same delta is not always reversible.
 
 (delta-rounding)=
 ## Rounding

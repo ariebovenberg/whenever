@@ -468,7 +468,7 @@ extern "C" fn __hash__(arg: PyObj) -> Py_hash_t {
 }
 
 fn __add__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
-    if let Some(state) = a_obj.type_().same_module(b_obj.type_()) {
+    if let Some(state) = a_obj.type_().same_module(a_obj.type_()) {
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
         let (cls, slf) = unsafe { a_obj.assume_heaptype_ref::<ZonedDateTime>() };
@@ -491,7 +491,7 @@ fn __sub__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
     // Other cases are more difficult, as they can be triggered
     // by reflexive operations with arbitrary types.
     // We need to eliminate them carefully.
-    } else if let Some(state) = type_a.same_module(type_b) {
+    } else if let Some(state) = type_a.same_module(type_a) {
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
         let (cls, slf) = unsafe { a_obj.assume_heaptype_ref::<ZonedDateTime>() };
