@@ -358,12 +358,17 @@ INVALID_DELTAS = [
     "PT𝟙H",  # non-ascii
     # incomplete
     "P3DT",
+    "P3Dt",
     "P3DT4",
     "P3DT4h0",
     "P3D4",
     "P3D4T",
     # too many digits
     "PT9999999999999999999S",
+    "PTH0S",  # missing hour value
+    "PT48HM4S",  # missing minute value
+    "PT18446744073709551616H",  # must not wrap to zero
+    "PT18446744073709551617M",  # must not wrap to one
     # out of range
     "P14000Y",
     "P180000M",

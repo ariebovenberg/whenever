@@ -2741,6 +2741,7 @@ class TestParseIso:
             # bracket problems
             "2020-08-15T12:08:30+02:00[Europe/Amsterdam",
             "2020-08-15T12:08:30+02:00[Europe][Amsterdam]",
+            "2020-08-15T12:08:30+02:00[Europe/ Amsterdam]",
             "2020-08-15T12:08:30+02:00Europe/Amsterdam]",
             "2023-10-29T02:15:30+02:00(Europe/Amsterdam)",
             # separator problems
@@ -2749,6 +2750,7 @@ class TestParseIso:
             "2020_08-15T12:08:30+02:00[Europe/Amsterdam]",
             # padding problems
             "2020-08-15T12:8:30+02:00[Europe/Amsterdam]",
+            "20200815XXT12:30+02:00[Europe/Amsterdam]",
             # invalid values
             "2020-08-32T12:08:30+02:00[Europe/Amsterdam]",
             "2020-08-12T12:68:30+02:00[Europe/Amsterdam]",
@@ -2764,6 +2766,7 @@ class TestParseIso:
             # invalid offsets
             "1900-01-01T23:34:39.01-00:24:81[Europe/Dublin]",
             "2020-01-01T00:00:00+04:90[Asia/Calcutta]",
+            "2020-01-01T00:00:00+0 :00[UTC]",
             "2023-10-29",  # only date
             "02:15:30",  # only time
             "2023-10-29T02:15:30",  # no offset
@@ -2784,6 +2787,7 @@ class TestParseIso:
             # basic-format time is HH/HHMM/HHMMSS, not a separatorless fraction
             "2020-08-15T12083000+02:00[Europe/Amsterdam]",
             "20200815T120830123-0400[America/New_York]",
+            "2020-08-15T120830.+00:00[UTC]",
         ],
     )
     def test_invalid(self, s):

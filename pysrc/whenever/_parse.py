@@ -36,6 +36,13 @@ def _parse_nanos(s: str) -> Nanos:
     return int(s.ljust(9, "0"))
 
 
+def _strict_int(s: str) -> int:
+    # Callers validate the full input is ASCII once.
+    if not s.isdigit():
+        raise ValueError()
+    return int(s)
+
+
 def _split_nextchar(
     s: str, chars: str, start: int = 0, end: int = -1
 ) -> tuple[str, str | None, str]:
@@ -48,17 +55,25 @@ def _split_nextchar(
 _is_sep = " Tt".__contains__
 
 
+def _split_iso_date_time(s: str) -> tuple[str, _date]:
+    if s[4] == "-" and s[7] == "-" and _is_sep(s[10]):
+        return s[11:], _date_from_iso_ascii(s[:10])
+    if _is_sep(s[8]):
+        return s[9:], _date_from_iso_ascii(s[:8])
+    raise ValueError()
+
+
 def _offset_from_iso(s: str) -> int:
     minutes = 0
     seconds = 0
     if len(s) == 5 and s[2] == ":" and s[3] < "6":  # most common: HH:MM
-        hours = int(s[:2])
-        minutes = int(s[3:])
+        hours = _strict_int(s[:2])
+        minutes = _strict_int(s[3:])
     elif len(s) == 4 and s[2] < "6":  # HHMM
-        hours = int(s[:2])
-        minutes = int(s[2:])
+        hours = _strict_int(s[:2])
+        minutes = _strict_int(s[2:])
     elif len(s) == 2:  # HH
-        hours = int(s)
+        hours = _strict_int(s)
     elif (
         len(s) == 8
         and s[2] == ":"
@@ -66,13 +81,13 @@ def _offset_from_iso(s: str) -> int:
         and s[3] < "6"
         and s[6] < "6"
     ):  # HH:MM:SS
-        hours = int(s[:2])
-        minutes = int(s[3:5])
-        seconds = int(s[6:])
+        hours = _strict_int(s[:2])
+        minutes = _strict_int(s[3:5])
+        seconds = _strict_int(s[6:])
     elif len(s) == 6 and s[2] < "6" and s[4] < "6":  # HHMMSS
-        hours = int(s[:2])
-        minutes = int(s[2:4])
-        seconds = int(s[4:])
+        hours = _strict_int(s[:2])
+        minutes = _strict_int(s[2:4])
+        seconds = _strict_int(s[4:])
     else:
         raise ValueError("Invalid offset format")
     return hours * 3600 + minutes * 60 + seconds
@@ -84,12 +99,7 @@ def datetime_from_iso(s: str) -> tuple[_datetime, Nanos]:
 
     # OPTIMIZE: the happy path can be faster
     try:
-        if _is_sep(s[10]):  # date in extended format
-            rest, date = s[11:], _date.fromisoformat(s[:10])
-        elif _is_sep(s[8]):  # date in basic format
-            rest, date = s[9:], _date_from_iso_basic(s[:8])
-        else:
-            _parse_err(s)
+        rest, date = _split_iso_date_time(s)
         time, nanos = time_from_iso(rest)
     except ValueError:
         _parse_err(s)
@@ -102,12 +112,7 @@ def offset_dt_from_iso(s: str) -> tuple[_datetime, Nanos]:
         _parse_err(s)
 
     try:
-        if _is_sep(s[10]):  # date in extended format
-            rest, date = s[11:], _date.fromisoformat(s[:10])
-        elif _is_sep(s[8]):  # date in basic format
-            rest, date = s[9:], _date_from_iso_basic(s[:8])
-        else:
-            _parse_err(s)
+        rest, date = _split_iso_date_time(s)
         time, nanos, offset, _ = _time_offset_tz_from_iso(rest)
         if offset is None:
             raise ValueError("Missing offset")
@@ -132,12 +137,7 @@ def zdt_from_iso(s: str) -> tuple[_datetime, Nanos, TimeZone]:
         _parse_err(s)
 
     try:
-        if _is_sep(s[10]):  # date in extended format
-            rest, date = s[11:], _date.fromisoformat(s[:10])
-        elif _is_sep(s[8]):  # date in basic format
-            rest, date = s[9:], _date_from_iso_basic(s[:8])
-        else:
-            _parse_err(s)
+        rest, date = _split_iso_date_time(s)
         time, nanos, offset, tzid = _time_offset_tz_from_iso(rest)
     except ValueError:
         _parse_err(s)
@@ -219,9 +219,9 @@ def yearmonth_from_iso(s: str) -> _date:
         _parse_err(s)
     try:
         if len(s) == 7 and s[4] == "-":
-            year, month = int(s[:4]), int(s[5:])
+            year, month = _strict_int(s[:4]), _strict_int(s[5:])
         elif len(s) == 6:
-            year, month = int(s[:4]), int(s[4:])
+            year, month = _strict_int(s[:4]), _strict_int(s[4:])
         else:
             _parse_err(s)
         return _date(year, month, 1)
@@ -234,9 +234,9 @@ def monthday_from_iso(s: str) -> _date:
         _parse_err(s)
     try:
         if len(s) == 7 and s[4] == "-":
-            month, day = int(s[2:4]), int(s[5:])
+            month, day = _strict_int(s[2:4]), _strict_int(s[5:])
         elif len(s) == 6:
-            month, day = int(s[2:4]), int(s[4:])
+            month, day = _strict_int(s[2:4]), _strict_int(s[4:])
         else:
             _parse_err(s)
         return _date(DUMMY_LEAP_YEAR, month, day)
@@ -244,10 +244,37 @@ def monthday_from_iso(s: str) -> _date:
         _parse_err(s)
 
 
+if sys.version_info >= (3, 11):
+    _date_from_iso_basic = _date.fromisoformat
+
+else:  # pragma: no cover
+
+    def _date_from_iso_basic(s: str) -> _date:
+        return _date.fromisoformat(s[:4] + "-" + s[4:6] + "-" + s[6:])
+
+
+def _date_from_iso_ascii(s: str) -> _date:
+    if not s.replace("-", "").isdigit():
+        raise ValueError()
+    if len(s) == 8:
+        return _date_from_iso_basic(s)
+    if len(s) == 10 and s[4] == "-" and s[7] == "-":
+        return _date.fromisoformat(s)
+    raise ValueError()
+
+
+def date_from_iso(s: str) -> _date:
+    if not s.isascii():
+        _parse_err(s)
+    try:
+        return _date_from_iso_ascii(s)
+    except ValueError:
+        _parse_err(s)
+
+
 # The ISO parsing functions were improved in Python 3.11,
 # so we use them if available.
 if sys.version_info >= (3, 11):
-    _date_from_iso_basic = _date.fromisoformat
 
     def _time_from_iso_nofrac(s: str) -> _time:
         # Compensate for a bug in CPython where times like "12:34:56:78" are
@@ -255,6 +282,8 @@ if sys.version_info >= (3, 11):
         if s.count(":") > 2:
             raise ValueError()
         if all(map("0123456789:".__contains__, s)):
+            if s.startswith("24"):
+                raise ValueError()
             # Reject separator-less fractions like "20200101", which CPython
             # reads as HHMMSSff (20:20:01.01) but our grammar forbids
             if ":" not in s and len(s) not in (2, 4, 6):
@@ -267,19 +296,7 @@ if sys.version_info >= (3, 11):
             return _time.fromisoformat(s)
         raise ValueError()
 
-    def date_from_iso(s: str) -> _date:
-        # prevent isoformat from parsing stuff we don't want it to
-        if "W" in s or not s.isascii():
-            _parse_err(s)
-        try:
-            return _date.fromisoformat(s)
-        except ValueError:
-            _parse_err(s)
-
 else:  # pragma: no cover
-
-    def _date_from_iso_basic(s: str, /) -> _date:
-        return _date.fromisoformat(s[:4] + "-" + s[4:6] + "-" + s[6:8])
 
     def _time_from_iso_nofrac(s: str) -> _time:
         # Compensate for the fact that Python's isoformat
@@ -297,16 +314,6 @@ else:  # pragma: no cover
         if all(map("0123456789:".__contains__, s)):
             return _time.fromisoformat(s)
         raise ValueError()
-
-    def date_from_iso(s: str) -> _date:
-        if not s.isascii():
-            _parse_err(s)
-        try:
-            if len(s) == 8:
-                return _date_from_iso_basic(s)
-            return _date.fromisoformat(s)
-        except ValueError:
-            _parse_err(s)
 
 
 _RFC2822_WEEKDAY_TO_ISO = {

@@ -154,6 +154,10 @@ class TestParseIso:
             "03-12",  # no dashes
             "-10-12",  # not enough dashes
             "---12-03",  # negative month
+            "--+1-03",  # signed month
+            "-- 1-03",  # whitespace in month
+            "--12-+3",  # signed day
+            "--12- 3",  # whitespace in day
             "--1🧨-12",  # non-ASCII
             "--1𝟙-11",  # non-ascii
             # invalid components

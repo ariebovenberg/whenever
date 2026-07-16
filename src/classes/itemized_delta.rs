@@ -370,16 +370,26 @@ fn parse_iso(cls: HeapType<ItemizedDelta>, arg: PyObj) -> PyReturn {
             }
             match unit {
                 TimeUnit::Hours => {
-                    hours = DeltaField::new_checked(value as u64, negated, MAX_HOURS)
-                        .ok_or_range_err()?;
+                    hours = DeltaField::new_checked(
+                        u64::try_from(value).ok().ok_or_range_err()?,
+                        negated,
+                        MAX_HOURS,
+                    )
+                    .ok_or_range_err()?;
                 }
                 TimeUnit::Minutes => {
-                    minutes = DeltaField::new_checked(value as u64, negated, MAX_MINUTES)
-                        .ok_or_range_err()?;
+                    minutes = DeltaField::new_checked(
+                        u64::try_from(value).ok().ok_or_range_err()?,
+                        negated,
+                        MAX_MINUTES,
+                    )
+                    .ok_or_range_err()?;
                 }
                 TimeUnit::Nanos { has_fraction } => {
                     seconds = DeltaField::new_checked(
-                        (value / NS_PER_SEC as u128) as u64,
+                        u64::try_from(value / NS_PER_SEC as u128)
+                            .ok()
+                            .ok_or_range_err()?,
                         negated,
                         MAX_SECONDS,
                     )

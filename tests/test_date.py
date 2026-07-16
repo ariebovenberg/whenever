@@ -225,6 +225,7 @@ class TestParseIso:
             "2022-a1-02",
             "2023-01-3o",
             "2023Ww1-3",
+            "20200229XX",  # basic date with trailing junk
             "2021-01-02T03:04:05",  # with a time
             # bad separators
             "2021-01/02",

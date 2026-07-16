@@ -84,6 +84,20 @@ class TestConstructor:
         with pytest.raises(ValueError):
             IsoWeekDate("2024-W01-8")
 
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "+024-W01-1",
+            " 024-W01-1",
+            "202𝟙-W01-1",
+            "2024-W+1-1",
+            "2024-W 1-1",
+        ],
+    )
+    def test_invalid_string_non_digits(self, s):
+        with pytest.raises(ValueError):
+            IsoWeekDate(s)
+
 
 class TestProperties:
     def test_year(self):
