@@ -141,9 +141,6 @@ jobs:
           "3.14",
           "3.15",
           "3.15t",
-          # NOTE: If pypy/pytest fails, if could be due to
-          #       https://github.com/pypy/pypy/issues/3959
-          "pypy3.10",
           "pypy3.11"
         ]
     steps:
@@ -160,13 +157,13 @@ jobs:
       # NOTE: we end up running pytest twice in the following sections.
       # This is because we want to test the code with and without optional dependencies.
       - run: uv run pytest tests/
-      - if: ${{ !contains(fromJSON('["pypy3.10", "pypy3.11", "3.15", "3.15t"]'), matrix.python-version) }}
+      - if: ${{ !contains(fromJSON('["pypy3.11", "3.15", "3.15t"]'), matrix.python-version) }}
         run: uv sync --locked --group test --group integrations
       # NOTE: we only care about coverage once. We arbitrarily choose one of the Python versions to run it on
       - if: ${{ matrix.python-version == '3.14' }}
         run: |
           uv run pytest tests/ --cov=whenever --cov-report term-missing
-      - if: ${{ !contains(fromJSON('["pypy3.10", "pypy3.11", "3.15", "3.15t", "3.14"]'), matrix.python-version) }}
+      - if: ${{ !contains(fromJSON('["pypy3.11", "3.15", "3.15t", "3.14"]'), matrix.python-version) }}
         run: |
           uv run pytest tests/
       - run: |
