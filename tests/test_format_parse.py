@@ -784,6 +784,22 @@ class TestZonedDateTimeParse:
                 format="YYYY-MM-DD hh:mmxxx",
             )
 
+    @pytest.mark.parametrize("char", ["Ĕ", "é", "界", "𝟙", "Ⅷ", "①"])
+    @pytest.mark.parametrize(
+        ("prefix", "suffix", "match"),
+        [
+            ("", "urope/Paris", r"Expected timezone ID at position 23"),
+            ("Europe/Par", "is", r"Expected .* at position 33"),
+            ("Europe/Paris", "", r"Expected .* at position 35"),
+        ],
+    )
+    def test_non_ascii_tz_id(self, char, prefix, suffix, match):
+        with pytest.raises(ValueError, match=match):
+            ZonedDateTime.parse(
+                f"2024-03-15 14:30+01:00[{prefix}{char}{suffix}]",
+                format="YYYY-MM-DD hh:mmxxx'['VV']'",
+            )
+
     def test_missing_date_fields(self):
         with pytest.raises(ValueError, match="year.*month.*day|date.*fields"):
             ZonedDateTime.parse(

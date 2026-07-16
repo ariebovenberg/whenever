@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed the pure Python custom-format parser accepting non-ASCII letters and
+  numbers in timezone IDs, bringing it in line with the Rust extension.
 - Fixed the pure Python implementation accepting invalid basic-format times
   with a separatorless fraction (e.g. ``20200101`` or ``20103000``). These now
   raise ``ValueError`` like the Rust extension, instead of an ``AssertionError``

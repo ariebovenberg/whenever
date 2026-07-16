@@ -2803,10 +2803,10 @@ class TestParseIso:
         with pytest.raises(TimeZoneNotFoundError):
             ZonedDateTime.parse_iso("2020-08-15T12:08:30Z[X]")
 
-        with pytest.raises((TimeZoneNotFoundError, ValueError)):
+        with pytest.raises(ValueError, match="Invalid format"):
             ZonedDateTime.parse_iso(f"2023-10-29T02:15:30+02:00[{'X' * 9999}]")
 
-        with pytest.raises((TimeZoneNotFoundError, ValueError)):
+        with pytest.raises(ValueError, match="Invalid format"):
             ZonedDateTime.parse_iso(
                 f"2023-10-29T02:15:30+02:00[{chr(1600)}]",
             )
