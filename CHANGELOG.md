@@ -10,6 +10,7 @@
 - Fixed several ISO parser edge cases involving malformed numeric components,
   empty fractions, ``24:00``, trailing duration separators, and overflow in the
   Rust duration parsers.
+- Removed CI checks for PyPy 3.10, which is EOL.
 
 ## 0.10.2 (2026-07-06)
 
