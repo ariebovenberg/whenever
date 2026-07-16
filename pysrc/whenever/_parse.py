@@ -255,6 +255,10 @@ if sys.version_info >= (3, 11):
         if s.count(":") > 2:
             raise ValueError()
         if all(map("0123456789:".__contains__, s)):
+            # Reject separator-less fractions like "20200101", which CPython
+            # reads as HHMMSSff (20:20:01.01) but our grammar forbids
+            if ":" not in s and len(s) not in (2, 4, 6):
+                raise ValueError()
             # Normalize leap seconds (60) to 59
             if (s.count(":") == 2 and s.endswith(":60")) or (
                 len(s) == 6 and s[4:] == "60"

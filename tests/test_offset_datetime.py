@@ -296,6 +296,9 @@ INVALID_ISO_STRINGS = [
     # invalid seconds (61 and above should be rejected)
     "2020-08-15T12:34:61+00:00",
     "2020-08-15T12:34:99+00:00",
+    # basic-format time is HH/HHMM/HHMMSS, not a separatorless fraction
+    "2020-08-15T12083000+05:00",
+    "2020-08-15T120830123+05:00",
 ]
 
 VALID_ISO_STRINGS = [
