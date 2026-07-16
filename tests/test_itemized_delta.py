@@ -1,5 +1,4 @@
 import pickle
-import warnings
 from collections import Counter
 from collections.abc import ItemsView, KeysView, Mapping, Sequence, ValuesView
 from typing import Any, Literal, cast
