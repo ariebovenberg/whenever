@@ -1,5 +1,4 @@
 import pickle
-import warnings
 from collections import Counter
 from collections.abc import ItemsView, KeysView, Mapping, ValuesView
 from typing import Any, Literal, Sequence, cast
@@ -10,6 +9,7 @@ from whenever import (
     Date,
     ItemizedDateDelta,
     ItemizedDelta,
+    ZonedDateTime,
 )
 
 from .common import INVALID_DDELTAS, AlwaysEqual, NeverEqual
@@ -650,6 +650,32 @@ class TestAddSub:
             .add(months=1, relative_to=Date(2021, 1, 31), in_units=["months"])
             .exact_eq(ItemizedDateDelta(months=2))
         )
+
+    def test_full_delta_with_datetime_reference(self):
+        reference = ZonedDateTime(2021, 1, 31, tz="UTC")
+        result = ItemizedDateDelta(months=1).add(
+            ItemizedDelta(months=1, hours=2),
+            relative_to=reference,
+            in_units=["months", "hours"],
+        )
+        assert result.exact_eq(ItemizedDelta(months=2, hours=2))
+
+        result = ItemizedDateDelta(months=3).subtract(
+            ItemizedDelta(months=1, hours=2),
+            relative_to=reference,
+            in_units=["hours"],
+        )
+        assert result.exact_eq(ItemizedDelta(hours=1414))
+
+    def test_full_delta_requires_datetime_reference(self):
+        with pytest.raises(
+            TypeError, match="relative_to must be a .*DateTime"
+        ):
+            ItemizedDateDelta(months=1).add(
+                ItemizedDelta(hours=1),
+                relative_to=Date(2021, 1, 31),  # type: ignore[call-overload]
+                in_units=["hours"],
+            )
 
     def test_reference_free_add_and_subtract(self):
         with pytest.warns(CalendarUnitCompositionWarning):

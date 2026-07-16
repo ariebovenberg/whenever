@@ -373,9 +373,7 @@ pub(crate) extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
 
 fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     let type_a = obj_a.type_();
-    let type_b = obj_b.type_();
-
-    if let Some(state) = type_a.same_module(type_b) {
+    if let Some(state) = type_a.same_module(type_a) {
         // SAFETY: binary op with same-module types, first operand is self
         let (cls, slf) = unsafe { obj_a.assume_heaptype::<OffsetDateTime>() };
         if let Some(tdelta) = obj_b.extract(*state.time_delta_type) {
@@ -383,6 +381,25 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
             let OffsetDateTime { date, time, offset } = slf;
             DateTime { date, time }
                 .shift(tdelta)
+                .and_then(|dt| dt.with_offset(offset))
+                .ok_or_range_err()?
+                .to_obj(cls)
+        } else if let Some(d) = ItemizedDateDelta::extract(obj_b, state)? {
+            offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
+            let (months, days) = d.to_months_days().ok_or_range_err()?;
+            let OffsetDateTime { date, time, offset } = slf;
+            DateTime { date, time }
+                .shift_date(months, days)
+                .and_then(|dt| dt.with_offset(offset))
+                .ok_or_range_err()?
+                .to_obj(cls)
+        } else if let Some(d) = ItemizedDelta::extract(obj_b, state)? {
+            offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
+            let (months, days, tdelta) = d.to_components().ok_or_range_err()?;
+            let OffsetDateTime { date, time, offset } = slf;
+            DateTime { date, time }
+                .shift_date(months, days)
+                .and_then(|dt| dt.shift(tdelta))
                 .and_then(|dt| dt.with_offset(offset))
                 .ok_or_range_err()?
                 .to_obj(cls)
@@ -407,7 +424,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     // Other cases are more difficult, as they can be triggered
     // by reflexive operations with arbitrary types.
     // We need to eliminate them carefully.
-    } else if let Some(state) = type_a.same_module(type_b) {
+    } else if let Some(state) = type_a.same_module(type_a) {
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
         let (cls, slf) = unsafe { obj_a.assume_heaptype::<OffsetDateTime>() };
@@ -417,6 +434,25 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
             let OffsetDateTime { date, time, offset } = slf;
             return DateTime { date, time }
                 .shift(-tdelta)
+                .and_then(|dt| dt.with_offset(offset))
+                .ok_or_range_err()?
+                .to_obj(cls);
+        } else if let Some(d) = ItemizedDateDelta::extract(obj_b, state)? {
+            offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
+            let (months, days) = d.to_months_days().ok_or_range_err()?;
+            let OffsetDateTime { date, time, offset } = slf;
+            return DateTime { date, time }
+                .shift_date(-months, -days)
+                .and_then(|dt| dt.with_offset(offset))
+                .ok_or_range_err()?
+                .to_obj(cls);
+        } else if let Some(d) = ItemizedDelta::extract(obj_b, state)? {
+            offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
+            let (months, days, tdelta) = d.to_components().ok_or_range_err()?;
+            let OffsetDateTime { date, time, offset } = slf;
+            return DateTime { date, time }
+                .shift_date(-months, -days)
+                .and_then(|dt| dt.shift(-tdelta))
                 .and_then(|dt| dt.with_offset(offset))
                 .ok_or_range_err()?
                 .to_obj(cls);

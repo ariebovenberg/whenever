@@ -785,20 +785,22 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         }
         .to_obj(*date_type.state().date_delta_type)
     // Case: types within whenever module.
-    } else if let Some(state) = type_a.same_module(type_b) {
-        warn_with_class(
-            *state.warn_deprecation,
-            c"Using the `-` operator on Date is deprecated; use the .subtract() method instead.",
-            1,
-        )?;
+    } else if let Some(state) = type_a.same_module(type_a) {
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
         let (date_type, date) = unsafe { obj_a.assume_heaptype::<Date>() };
-        let DateDelta { months, days } = obj_b
-            .extract(*state.date_delta_type)
-            .ok_or_else_type_err(|| {
-                format!("unsupported operand type(s) for -: 'Date' and '{type_b}'")
-            })?;
+        let (months, days) = if let Some(d) = obj_b.extract(*state.date_delta_type) {
+            warn_with_class(
+                *state.warn_deprecation,
+                c"Using the `-` operator on Date is deprecated; use the .subtract() method instead.",
+                1,
+            )?;
+            (d.months, d.days)
+        } else if let Some(d) = ItemizedDateDelta::extract(obj_b, state)? {
+            d.to_months_days().ok_or_range_err()?
+        } else {
+            return not_implemented();
+        };
         date.shift_months(-months)
             .and_then(|date| date.shift_days(-days))
             .ok_or_range_err()?
@@ -812,21 +814,22 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
 fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     // We need to be careful since this method can be called reflexively
     let type_a = obj_a.type_();
-    let type_b = obj_b.type_();
-    if let Some(state) = type_a.same_module(type_b) {
-        warn_with_class(
-            *state.warn_deprecation,
-            c"Using the + operator on Date is deprecated; use the .add() method instead.",
-            1,
-        )?;
+    if let Some(state) = type_a.same_module(type_a) {
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
         let (date_type, date) = unsafe { obj_a.assume_heaptype::<Date>() };
-        let DateDelta { months, days } = obj_b
-            .extract(*state.date_delta_type)
-            .ok_or_else_type_err(|| {
-                format!("unsupported operand type(s) for +: 'Date' and '{type_b}'")
-            })?;
+        let (months, days) = if let Some(d) = obj_b.extract(*state.date_delta_type) {
+            warn_with_class(
+                *state.warn_deprecation,
+                c"Using the + operator on Date is deprecated; use the .add() method instead.",
+                1,
+            )?;
+            (d.months, d.days)
+        } else if let Some(d) = ItemizedDateDelta::extract(obj_b, state)? {
+            d.to_months_days().ok_or_range_err()?
+        } else {
+            return not_implemented();
+        };
         // SAFETY: at least one of the operands must be a Date
         date.shift_months(months)
             .and_then(|date| date.shift_days(days))

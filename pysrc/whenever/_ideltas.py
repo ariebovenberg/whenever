@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import (
+    ItemsView,
     Mapping,
+    ValuesView,
 )
 from datetime import date as _date
 from typing import (
@@ -370,7 +372,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
     # These methods defer to the base class implementations, but need to be
     # documented here for the API docs.
-    if not TYPE_CHECKING:
+    if not TYPE_CHECKING:  # pragma: no cover
         if SPHINX_RUNNING:
             from collections.abc import ItemsView, ValuesView
 
@@ -610,7 +612,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         ) * 8
 
         # Catch certain invalid strings early, making parsing easier
-        if len(s) < 3 or not s.isascii() or s.endswith("T"):
+        if len(s) < 3 or not s.isascii() or s[-1] in "Tt":
             raise exc
 
         sign: Sign
@@ -1120,8 +1122,17 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         )
 
     def __add__(
-        self, other: ItemizedDelta | ItemizedDateDelta
-    ) -> ItemizedDelta:
+        self,
+        other: ItemizedDelta
+        | ItemizedDateDelta
+        | ZonedDateTime
+        | PlainDateTime
+        | OffsetDateTime,
+    ) -> ItemizedDelta | ZonedDateTime | PlainDateTime | OffsetDateTime:
+        from ._core import OffsetDateTime, PlainDateTime, ZonedDateTime
+
+        if isinstance(other, (ZonedDateTime, PlainDateTime, OffsetDateTime)):
+            return other.add(self)
         if not isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
             return NotImplemented
         warn(
@@ -1885,7 +1896,6 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             abs(self._days) if self._days is not None else None,
         )
 
-    # TODO: support ItemizedDelta here too?
     @overload
     def add(
         self,
@@ -1897,6 +1907,18 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         round_mode: RoundModeStr = ...,
         round_increment: int = ...,
     ) -> ItemizedDateDelta: ...
+
+    @overload
+    def add(
+        self,
+        other: ItemizedDelta,
+        /,
+        *,
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
+        in_units: Sequence[DeltaUnitStr],
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
 
     @overload
     def add(
@@ -1948,13 +1970,15 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         arg: ItemizedDateDelta | ItemizedDelta = UNSET,
         /,
         *,
-        relative_to: Date = UNSET,
-        in_units: Sequence[DateDeltaUnitStr] = UNSET,
+        relative_to: Date
+        | ZonedDateTime
+        | PlainDateTime
+        | OffsetDateTime = UNSET,
+        in_units: Sequence[DeltaUnitStr] = UNSET,
         round_mode: RoundModeStr = UNSET,
         round_increment: int = UNSET,
         cal_unit_composition_ok: bool = UNSET,
         **kwargs: int,
-        # TODO: URGENT: can it handle itemized deltas too?
     ) -> ItemizedDateDelta | ItemizedDelta:
         """Add time to this delta, returning a new delta."""
         other: Mapping[str, int]
@@ -2005,17 +2029,47 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                 "Must specify `in_units` when `relative_to` is given"
             )
 
-        return relative_to.add(
-            years=self.get("years", 0) + other.get("years", 0),
-            months=self.get("months", 0) + other.get("months", 0),
-            weeks=self.get("weeks", 0) + other.get("weeks", 0),
-            days=self.get("days", 0) + other.get("days", 0),
-        ).since(
+        combined = _items_add(self, other)
+        if isinstance(arg, ItemizedDelta):
+            from ._core import OffsetDateTime, PlainDateTime, ZonedDateTime
+
+            if not isinstance(
+                relative_to, (ZonedDateTime, PlainDateTime, OffsetDateTime)
+            ):
+                raise TypeError(
+                    "relative_to must be a ZonedDateTime, PlainDateTime, or "
+                    "OffsetDateTime when composing with ItemizedDelta"
+                )
+            return cast(
+                ItemizedDelta,
+                relative_to.add(**cast(Any, combined)).since(
+                    cast(Any, relative_to),
+                    in_units=in_units,
+                    round_mode=round_mode or "trunc",
+                    round_increment=round_increment or 1,
+                ),
+            )
+        from ._core import Date
+
+        assert isinstance(relative_to, Date)
+        return relative_to.add(**cast(Any, combined)).since(
             relative_to,
-            in_units=in_units,
+            in_units=cast(Sequence[DateDeltaUnitStr], in_units),
             round_mode=round_mode or "trunc",
             round_increment=round_increment or 1,
         )
+
+    @overload
+    def subtract(
+        self,
+        other: ItemizedDelta,
+        /,
+        *,
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
+        in_units: Sequence[DeltaUnitStr],
+        round_mode: RoundModeStr = ...,
+        round_increment: int = ...,
+    ) -> ItemizedDelta: ...
 
     @overload
     def subtract(
@@ -2067,8 +2121,11 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         arg: ItemizedDateDelta | ItemizedDelta = UNSET,
         /,
         *,
-        relative_to: Date = UNSET,
-        in_units: Sequence[DateDeltaUnitStr] = UNSET,
+        relative_to: Date
+        | ZonedDateTime
+        | PlainDateTime
+        | OffsetDateTime = UNSET,
+        in_units: Sequence[DeltaUnitStr] = UNSET,
         round_mode: RoundModeStr = UNSET,
         round_increment: int = UNSET,
         cal_unit_composition_ok: bool = UNSET,
@@ -2091,8 +2148,27 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         )
 
     def __add__(
-        self, other: ItemizedDateDelta | ItemizedDelta
-    ) -> ItemizedDateDelta | ItemizedDelta:
+        self,
+        other: ItemizedDateDelta
+        | ItemizedDelta
+        | Date
+        | ZonedDateTime
+        | PlainDateTime
+        | OffsetDateTime,
+    ) -> (
+        ItemizedDateDelta
+        | ItemizedDelta
+        | Date
+        | ZonedDateTime
+        | PlainDateTime
+        | OffsetDateTime
+    ):
+        from ._core import Date, OffsetDateTime, PlainDateTime, ZonedDateTime
+
+        if isinstance(
+            other, (Date, ZonedDateTime, PlainDateTime, OffsetDateTime)
+        ):
+            return other.add(self)
         if isinstance(other, (ItemizedDateDelta, ItemizedDelta)):
             warn(
                 CALENDAR_UNIT_COMPOSITION_MSG,

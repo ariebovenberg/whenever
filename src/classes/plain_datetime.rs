@@ -374,9 +374,7 @@ fn __sub__(a: PyObj, b: PyObj) -> PyReturn {
 #[inline(never)]
 fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     let type_a = obj_a.type_();
-    let type_b = obj_b.type_();
-
-    if let Some(state) = type_a.same_module(type_b) {
+    if let Some(state) = type_a.same_module(type_a) {
         // SAFETY: the way we've structured binary operations within whenever
         // ensures that the first operand is the self type.
         let (dt_type, a) = unsafe { obj_a.assume_heaptype::<DateTime>() };
@@ -415,6 +413,27 @@ fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                     1,
                 )?;
             }
+            a.shift_date(months, days)
+                .and_then(|dt| dt.shift(tdelta))
+                .ok_or_range_err()?
+                .to_obj(dt_type)
+        } else if let Some(d) = ItemizedDateDelta::extract(obj_b, state)? {
+            let (months, days) = d.to_months_days().ok_or_range_err()?;
+            a.shift_date(months.negate_if(negate), days.negate_if(negate))
+                .ok_or_range_err()?
+                .to_obj(dt_type)
+        } else if let Some(d) = ItemizedDelta::extract(obj_b, state)? {
+            let (mut months, mut days, mut tdelta) = d.to_components().ok_or_range_err()?;
+            if !tdelta.is_zero() {
+                warn_with_class(
+                    *state.warn_naive_arithmetic,
+                    doc::PLAIN_SHIFT_UNAWARE_MSG,
+                    1,
+                )?;
+            }
+            months = months.negate_if(negate);
+            days = days.negate_if(negate);
+            tdelta = tdelta.negate_if(negate);
             a.shift_date(months, days)
                 .and_then(|dt| dt.shift(tdelta))
                 .ok_or_range_err()?

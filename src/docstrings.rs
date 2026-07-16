@@ -1227,7 +1227,7 @@ Subtract a time amount from this instant.
 See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
 ";
 pub(crate) const ITEMIZEDDATEDELTA_ADD: &CStr = c"\
-add($self, arg=..., /, relative_to=..., in_units=..., round_mode='trunc', round_increment=1, cal_unit_composition_ok=False, **kwargs)
+add($self, arg=..., /, *, relative_to=..., in_units=..., round_mode=..., round_increment=..., cal_unit_composition_ok=..., **kwargs)
 --
 
 Add time to this delta, returning a new delta.";
@@ -1317,7 +1317,7 @@ The sign of the delta, whether it's positive, negative, or zero.
 0
 ";
 pub(crate) const ITEMIZEDDATEDELTA_SUBTRACT: &CStr = c"\
-subtract($self, arg=..., /, relative_to=..., in_units=..., round_mode='trunc', round_increment=1, cal_unit_composition_ok=False, **kwargs)
+subtract($self, arg=..., /, *, relative_to=..., in_units=..., round_mode=..., round_increment=..., cal_unit_composition_ok=..., **kwargs)
 --
 
 Subtract time from this delta, returning a new delta.";
@@ -1333,7 +1333,7 @@ Return the total duration expressed in the specified unit as a float
 2.73972602739726
 ";
 pub(crate) const ITEMIZEDDELTA_ADD: &CStr = c"\
-add($self, arg=..., /, relative_to=..., in_units=..., round_mode='trunc', round_increment=1, cal_unit_composition_ok=False, **kwargs)
+add($self, arg=..., /, *, relative_to=..., in_units=..., round_mode=..., round_increment=..., cal_unit_composition_ok=..., **kwargs)
 --
 
 Add time to this delta, returning a new delta.
@@ -1456,7 +1456,7 @@ ItemizedDelta(\"P1yT2h\")
 pub(crate) const ITEMIZEDDELTA_SIGN: &CStr = c"\
 The sign of the delta, 1, 0, or -1";
 pub(crate) const ITEMIZEDDELTA_SUBTRACT: &CStr = c"\
-subtract($self, arg=..., /, relative_to=..., in_units=..., round_mode='trunc', round_increment=1, cal_unit_composition_ok=False, **kwargs)
+subtract($self, arg=..., /, relative_to=..., in_units=..., round_mode=..., round_increment=..., cal_unit_composition_ok=..., **kwargs)
 --
 
 Subtract time from this delta, returning a new delta.";
