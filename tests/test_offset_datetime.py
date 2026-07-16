@@ -1526,7 +1526,7 @@ class TestParseStrptime:
         with pytest.raises(TypeError, match="format|argument"):
             OffsetDateTime.parse_strptime(
                 "2020-08-15 23:12:09 +0400",
-                "%Y-%m-%d %H:%M:%S %z",  # type: ignore[misc]
+                "%Y-%m-%d %H:%M:%S %z",  # type: ignore[call-arg]
             )
 
         # out of range
