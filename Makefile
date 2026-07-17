@@ -2,9 +2,24 @@
 init:
 	uv sync --frozen -v --all-groups
 
-.PHONY: lint
+.PHONY: update
 update:
 	uv lock --upgrade
+
+QUIET ?= 0
+TEST_PATH ?= tests/
+
+ifeq ($(QUIET),1)
+.SILENT:
+DEFAULT_PYTEST_ARGS := -q --tb=short
+DEFAULT_CARGO_ARGS := --quiet
+else
+DEFAULT_PYTEST_ARGS := -s
+DEFAULT_CARGO_ARGS :=
+endif
+
+PYTEST_ARGS ?= $(DEFAULT_PYTEST_ARGS)
+CARGO_ARGS ?= $(DEFAULT_CARGO_ARGS)
 
 .PHONY: typecheck
 typecheck:
@@ -32,16 +47,16 @@ check-readme:
 
 .PHONY: test-py
 test-py:
-	RUST_BACKTRACE=1 uv run pytest -s tests/
+	RUST_BACKTRACE=1 uv run pytest $(PYTEST_ARGS) $(TEST_PATH)
 
 .PHONY: test-cov
 test-cov: clean-ext
-	RUST_BACKTRACE=1 uv run pytest -s tests/ --cov=pysrc --cov-report=term-missing --cov-report=html
+	RUST_BACKTRACE=1 uv run pytest $(PYTEST_ARGS) $(TEST_PATH) --cov=pysrc --cov-report=term-missing --cov-report=html
 
 
 .PHONY: test-rs
 test-rs:
-	RUST_BACKTRACE=1 cargo test
+	RUST_BACKTRACE=1 cargo test $(CARGO_ARGS)
 
 .PHONY: test
 test: test-py test-rs
