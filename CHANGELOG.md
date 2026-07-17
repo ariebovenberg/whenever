@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.3 (2026-07-17)
 
 - Fixed the pure Python implementation accepting invalid basic-format times
   with a separatorless fraction (e.g. `20200101` or `20103000`). These now
@@ -13,7 +13,7 @@
 - Removed CI checks for PyPy 3.10, which is EOL.
 - Parsing a non-ASCII timezone ID now raises `ValueError` instead of
   `TimeZoneNotFoundError` in the pure Python version, making it consistent
-  with the Rust extension.
+  with the Rust extension. Thanks to @gaoflow for the report and fix (#393)
 
 ## 0.10.2 (2026-07-06)
 
