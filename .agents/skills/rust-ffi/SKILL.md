@@ -19,7 +19,6 @@ The `src/py/` module provides safe wrappers. Key types:
 | `PyType` | A Python type object. `.same_module()` checks if two types belong to the same module |
 | `PyReturn` | Alias for `PyResult<Owned<PyObj>>` — the return type of Python-visible functions |
 | `PyErrMarker` | Sentinel indicating the Python error indicator is set |
-| `ContextVarBool` | `Copy` wrapper for a context variable. Has `.get() -> PyResult<bool>` |
 
 Key helpers in `src/py/`:
 - `raise_value_err()`, `raise_type_err()`, `raise_key_err()` — raise Python exceptions
@@ -43,24 +42,10 @@ Key helpers in `src/py/`:
 - `HeapType<T>` for each class (date_type, time_delta_type, etc.)
 - Exception classes (`exc_repeated`, `exc_skipped`, etc.)
 - Warning classes (`warn_deprecation`, `warn_days_not_always_24h`, etc.)
-- `ContextVarBool`s for suppressing warnings
 - Interned strings (`str_years`, `str_hour`, `str_units`, etc.)
 - Unpickling functions
 
-Access it via `cls.state()` from any `HeapType<T>`. **Unpack needed fields at the top
-of the function** to avoid repeated `state.` access:
-```rust
-let &State {
-    date_type,
-    str_disambiguate,
-    exc_skipped,
-    time_delta_type,
-    ..
-} = cls.state();
-```
-
-When adding new fields to State, update **three** places: the struct definition,
-the initialization in `init_module`, and `Py_CLEAR` in the traverse/clear functions.
+Access it via `cls.state()` from any `HeapType<T>`.
 
 ## Method registration
 
@@ -81,7 +66,6 @@ fn my_method(cls: HeapType<MyType>, slf: MyType, args: &[PyObj], kwargs: &mut It
 - Avoid unnecessary allocations. Use helpers to build Python objects directly
   (e.g., `PyAsciiStrBuilder` instead of `format!()` → `to_py()`)
 - Prefer `i32`/`i64` over `i128` when possible
-- Use `u8::eq_ignore_ascii_case()` instead of manual case checks
 - Use tuples (not lists) for immutable Python sequences
 - Check pointer equality before falling back to `py_eq` for comparisons
 
@@ -116,19 +100,6 @@ let relative_to = handle_one_kwarg("total", state.str_relative_to, kwargs)?;
 Use `handle_delta_unit_kwargs()` for full datetime units, or
 `handle_date_delta_unit_kwargs()` for calendar-only units. These build typed
 `DeltaMonths`/`DeltaDays`/`TimeDelta` directly from kwargs.
-
-**Structured since/until kwarg parsing:**
-```rust
-let SinceUntilKwargs { units, round_mode, round_increment } =
-    SinceUntilKwargs::parse(fname, state, kwargs)?;
-```
-
-**Unit sets:** Use the appropriate bitfield type:
-- `CalUnitSet` — calendar units only (years, months, weeks, days)
-- `ExactUnitSet` — exact units only (weeks through nanoseconds)
-- `DeltaUnitSet` — all delta units (calendar + exact)
-
-Each has `from_py()` for parsing from Python, `.iter()`, `.smallest()`, `.contains()`.
 
 **Interned string matching with custom errors:**
 Use `find_interned` + manual error message when you need a specific error format.
