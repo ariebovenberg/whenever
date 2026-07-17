@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import (
     ItemsView,
+    KeysView,
     Mapping,
     ValuesView,
 )
@@ -374,7 +375,13 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     # documented here for the API docs.
     if not TYPE_CHECKING:  # pragma: no cover
         if SPHINX_RUNNING:
-            from collections.abc import ItemsView, ValuesView
+
+            def keys(self) -> KeysView[DeltaUnitStr]:
+                """The names of all defined fields, in order of largest to smallest unit.
+
+                Part of the mapping protocol
+                """
+                ...
 
             # FUTURE: an optimized ValuesView class that defers to the internal
             # fields directly instead of going through __getitem__
@@ -1691,6 +1698,14 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     # documented here for the API docs.
     if not TYPE_CHECKING:  # pragma: no cover
         if SPHINX_RUNNING:
+
+            def keys(self) -> KeysView[DateDeltaUnitStr]:
+                """The names of all defined fields, ordered from largest to smallest unit.
+
+                Part of the mapping protocol
+                """
+                ...
+
             # FUTURE: an optimized ValuesView class that defers to the internal
             # fields directly instead of going through __getitem__
             def values(self) -> ValuesView[int]:
