@@ -2,23 +2,24 @@
 
 ## Unreleased
 
-- Fixed the pure Python custom-format parser accepting non-ASCII letters and
-  numbers in timezone IDs, bringing it in line with the Rust extension.
 - Fixed the pure Python implementation accepting invalid basic-format times
-  with a separatorless fraction (e.g. ``20200101`` or ``20103000``). These now
-  raise ``ValueError`` like the Rust extension, instead of an ``AssertionError``
+  with a separatorless fraction (e.g. `20200101` or `20103000`). These now
+  raise `ValueError` like the Rust extension, instead of an `AssertionError`
   or silently parsing a wrong value.
   Thanks to @gaoflow for the report and fix (#391).
 - Fixed several ISO parser edge cases involving malformed numeric components,
-  empty fractions, ``24:00``, trailing duration separators, and overflow in the
+  empty fractions, `24:00`, trailing duration separators, and overflow in the
   Rust duration parsers.
 - Removed CI checks for PyPy 3.10, which is EOL.
+- Parsing a non-ASCII timezone ID now raises `ValueError` instead of
+  `TimeZoneNotFoundError` in the pure Python version, making it consistent
+  with the Rust extension.
 
 ## 0.10.2 (2026-07-06)
 
 - Fixed an issue in the pure Python implementation where invalid format
-  patterns containing a trimmed-fraction (``F``) field would raise an
-  ``AttributeError`` instead of the intended ``ValueError``.
+  patterns containing a trimmed-fraction (`F`) field would raise an
+  `AttributeError` instead of the intended `ValueError`.
   Thanks to @gaoflow for this report and fix (#386).
 
 ## 0.10.1 (2026-07-03)
@@ -31,9 +32,9 @@
 
 **Added**
 
-- Added ``"week_mon"`` and ``"week_sun"`` as valid
-  units for ``start_of()`` and ``end_of()`` on ``Date``, ``PlainDateTime``,
-  ``ZonedDateTime``, and ``OffsetDateTime``.
+- Added `"week_mon"` and `"week_sun"` as valid
+  units for `start_of()` and `end_of()` on `Date`, `PlainDateTime`,
+  `ZonedDateTime`, and `OffsetDateTime`.
 
 **Fixed**
 
@@ -155,12 +156,12 @@ See the full list below.
 
 **Added or improved**
 
-- Parsing methods now accept leap seconds (second value of ``60``),
-  normalizing them to ``59``. This applies to ISO 8601, RFC 2822,
+- Parsing methods now accept leap seconds (second value of `60`),
+  normalizing them to `59`. This applies to ISO 8601, RFC 2822,
   and custom format strings.
 - New `ZonedDateTime.next_transition()` and `ZonedDateTime.prev_transition()` methods
   for finding the next or previous UTC offset transition (e.g. DST change)
-  relative to the current datetime. Returns ``None`` for timezones without
+  relative to the current datetime. Returns `None` for timezones without
   transitions (e.g. UTC or fixed-offset).
 - New `since()` and `until()` methods on `Date`, `ZonedDateTime`,
   `OffsetDateTime`, and `PlainDateTime` for calculating the difference

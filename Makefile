@@ -63,6 +63,7 @@ test: test-py test-rs
 
 .PHONY: ci-lint
 ci-lint: check-readme
+	uv lock --check
 	uv run ruff check .
 	uv run ruff format --check .
 	cargo fmt -- --check
