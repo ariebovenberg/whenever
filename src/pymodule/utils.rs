@@ -25,7 +25,7 @@ pub(crate) fn new_class<T: PyWrapped>(
     module_nameobj: PyObj,
     spec: &mut PyType_Spec,
     unpickle_name: &CStr,
-) -> PyResult<(Owned<HeapType<T>>, Owned<PyObj>)> {
+) -> PyResult<(Owned<ExtType<T>>, Owned<PyObj>)> {
     let cls = unsafe { PyType_FromModuleAndSpec(module.as_ptr(), spec, NULL()) }
         .own()?
         .cast_allow_subclass::<PyType>()
@@ -39,7 +39,7 @@ pub(crate) fn new_class<T: PyWrapped>(
 }
 
 pub(crate) fn create_singletons<T: PyWrapped + Copy>(
-    cls: HeapType<T>,
+    cls: ExtType<T>,
     objs: &[(&CStr, T)],
 ) -> PyResult<()> {
     let cls_dict = cls.inner().get_dict();

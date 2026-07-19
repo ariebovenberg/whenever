@@ -213,7 +213,7 @@ where
     ))
 }
 
-fn __new__(cls: HeapType<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+fn __new__(cls: ExtType<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let state = cls.state();
     warn_with_class(
         *state.warn_deprecation,
@@ -309,7 +309,7 @@ pub(crate) fn days(state: &State, amount: PyObj) -> PyReturn {
     .to_obj(*state.date_delta_type)
 }
 
-fn __richcmp__(cls: HeapType<DateDelta>, a: DateDelta, b_obj: PyObj, op: c_int) -> PyReturn {
+fn __richcmp__(cls: ExtType<DateDelta>, a: DateDelta, b_obj: PyObj, op: c_int) -> PyReturn {
     match b_obj.extract(cls) {
         Some(b) => match op {
             pyo3_ffi::Py_EQ => a == b,
@@ -321,7 +321,7 @@ fn __richcmp__(cls: HeapType<DateDelta>, a: DateDelta, b_obj: PyObj, op: c_int) 
     }
 }
 
-fn __neg__(cls: HeapType<DateDelta>, d: DateDelta) -> PyReturn {
+fn __neg__(cls: ExtType<DateDelta>, d: DateDelta) -> PyReturn {
     (-d).to_obj(cls)
 }
 
@@ -334,7 +334,7 @@ fn __str__(_: PyType, d: DateDelta) -> PyReturn {
 }
 
 fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
-    // These checks are needed because the args could be reversed!
+    // These checks are needed because the args could be reversed.
     let (delta_obj, factor) = if let Some(i) = b.cast_allow_subclass::<PyInt>() {
         (a, i.to_long()?)
     } else if let Some(i) = a.cast_allow_subclass::<PyInt>() {
@@ -345,9 +345,9 @@ fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
 
     if factor == 1 {
         return Ok(delta_obj.newref());
-    };
+    }
 
-    // SAFETY: At this point we know that delta_obj is a DateDelta
+    // SAFETY: one operand is a DateDelta and the other is an int.
     let (delta_type, delta) = unsafe { delta_obj.assume_heaptype::<DateDelta>() };
     i32::try_from(factor)
         .ok()
@@ -366,68 +366,65 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
 
 #[inline(never)]
 fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
-    let type_a = obj_a.type_();
-    let type_b = obj_b.type_();
-
-    // Case: both are DateDelta
-    if type_a == type_b {
-        // SAFETY: The only way to get here is if *both* are DateDelta
-        let (ddelta_type, a) = unsafe { obj_a.assume_heaptype::<DateDelta>() };
-        let (_, mut b) = unsafe { obj_b.assume_heaptype::<DateDelta>() };
-        if negate {
-            b = -b;
-        }
-        a.add(b)
-            .map_err(|e| {
-                value_err(match e {
-                    InitError::TooBig => "Addition result out of bounds",
-                    InitError::MixedSign => "mixed sign in DateDelta",
-                })
-            })?
-            .to_obj(ddelta_type)
-    // Case: two `whenever` types
-    } else if let Some(state) = type_a.same_module(type_b) {
-        // SAFETY: the way we've structured binary operations within whenever
-        // ensures that the first operand is the self type.
-        let (_, ddelta) = unsafe { obj_a.assume_heaptype::<DateDelta>() };
-        if let Some(mut tdelta) = obj_b.extract(*state.time_delta_type) {
-            if negate {
-                tdelta = -tdelta;
+    binary_operation::<DateDelta>(obj_a, obj_b, if negate { "-" } else { "+" }, |operands| {
+        match operands {
+            BinaryOperands::SameType(cls, a, b) => {
+                let mut b = *b;
+                if negate {
+                    b = -b;
+                }
+                Ok(Some(
+                    a.add(b)
+                        .map_err(|e| {
+                            value_err(match e {
+                                InitError::TooBig => "Addition result out of bounds",
+                                InitError::MixedSign => "mixed sign in DateDelta",
+                            })
+                        })?
+                        .to_obj(cls)?,
+                ))
             }
-            warn_with_class(
-                *state.warn_deprecation,
-                c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
-                1,
-            )?;
-            DateTimeDelta::new(ddelta, tdelta).ok_or_value_err("mixed sign in delta")?
-        } else if let Some(mut dtdelta) = obj_b.extract(*state.datetime_delta_type) {
-            if negate {
-                dtdelta = -dtdelta;
+            BinaryOperands::ExtTypes(ddelta, other, state) => {
+                let result = match_type!(
+                    other,
+                    *state.time_delta_type => |mut tdelta| {
+                        if negate {
+                            tdelta = -tdelta;
+                        }
+                        warn_with_class(
+                            *state.warn_deprecation,
+                            c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
+                            1,
+                        )?;
+                        DateTimeDelta::new(*ddelta, tdelta)
+                            .ok_or_value_err("mixed sign in delta")?
+                    },
+                    *state.datetime_delta_type => |mut dtdelta| {
+                        if negate {
+                            dtdelta = -dtdelta;
+                        }
+                        dtdelta
+                            .add(DateTimeDelta {
+                                ddelta: *ddelta,
+                                tdelta: TimeDelta::ZERO,
+                            })
+                            .map_err(|e| {
+                                value_err(match e {
+                                    InitError::TooBig => "Addition result out of bounds",
+                                    InitError::MixedSign => "mixed sign in DateTimeDelta",
+                                })
+                            })?
+                    },
+                    _ => { return Ok(None) },
+                );
+                Ok(Some(result.to_obj(*state.datetime_delta_type)?))
             }
-            dtdelta
-                .add(DateTimeDelta {
-                    // SAFETY: At least one of the two is a DateDelta
-                    ddelta,
-                    tdelta: TimeDelta::ZERO,
-                })
-                .map_err(|e| {
-                    value_err(match e {
-                        InitError::TooBig => "Addition result out of bounds",
-                        InitError::MixedSign => "mixed sign in DateTimeDelta",
-                    })
-                })?
-        } else {
-            raise_type_err(format!(
-                "unsupported operand type(s) for +/-: {type_a} and {type_b}"
-            ))?
+            BinaryOperands::OtherTypes => Ok(None),
         }
-        .to_obj(*state.datetime_delta_type)
-    } else {
-        not_implemented()
-    }
+    })
 }
 
-fn __abs__(cls: HeapType<DateDelta>, slf: Wrapped<'_, DateDelta>) -> PyReturn {
+fn __abs__(cls: ExtType<DateDelta>, slf: Wrapped<'_, DateDelta>) -> PyReturn {
     if slf.months.get() >= 0 && slf.days.get() >= 0 {
         Ok(slf.newref())
     } else {
@@ -493,7 +490,7 @@ fn format_iso(_: PyType, slf: DateDelta) -> PyReturn {
     slf.fmt_iso().to_py()
 }
 
-fn parse_iso(cls: HeapType<DateDelta>, arg: PyObj) -> PyReturn {
+fn parse_iso(cls: ExtType<DateDelta>, arg: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"DateDelta is deprecated; use ItemizedDateDelta instead.",
@@ -502,7 +499,7 @@ fn parse_iso(cls: HeapType<DateDelta>, arg: PyObj) -> PyReturn {
     parse_iso_inner(cls, arg)
 }
 
-fn parse_iso_inner(cls: HeapType<DateDelta>, arg: PyObj) -> PyReturn {
+fn parse_iso_inner(cls: ExtType<DateDelta>, arg: PyObj) -> PyReturn {
     let py_str = arg
         .cast_allow_subclass::<PyStr>()
         // NOTE: this exception message also needs to make sense when
@@ -638,7 +635,7 @@ fn in_years_months_days(_: PyType, DateDelta { months, days }: DateDelta) -> PyR
     [years.to_py()?, months.to_py()?, days.get().to_py()?].into_pytuple()
 }
 
-fn __reduce__(cls: HeapType<DateDelta>, DateDelta { months, days }: DateDelta) -> PyReturn {
+fn __reduce__(cls: ExtType<DateDelta>, DateDelta { months, days }: DateDelta) -> PyReturn {
     [
         cls.state().unpickle_date_delta.newref(),
         [months.get().to_py()?, days.get().to_py()?].into_pytuple()?,

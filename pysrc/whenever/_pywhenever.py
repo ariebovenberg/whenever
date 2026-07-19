@@ -36,6 +36,8 @@ from warnings import warn
 
 from . import _ideltas
 from ._common import (
+    OFFSET_SHIFT_STALE_MSG,
+    PLAIN_SHIFT_UNAWARE_MSG,
     SPHINX_RUNNING,
     UNSET,
     WheneverDeprecationWarning,
@@ -1097,7 +1099,7 @@ class Date(_Base):
     def _add_days(self, days: int) -> Date:
         return Date._from_py_unchecked(self._py_date + _timedelta(days))
 
-    def __add__(self, p: DateDelta | ItemizedDateDelta) -> Date:
+    def __add__(self, p: DateDelta) -> Date:
         """Add a delta to a date.
         Behaves the same as :meth:`add`
 
@@ -1106,8 +1108,6 @@ class Date(_Base):
             Using the ``+`` operator on :class:`Date` is deprecated;
             use the :meth:`add` method instead.
         """
-        if isinstance(p, ItemizedDateDelta):
-            return self.add(p)
         if isinstance(p, DateDelta):
             warn(
                 "Using the + operator on Date is deprecated; "
@@ -1122,14 +1122,9 @@ class Date(_Base):
     def __sub__(self, d: DateDelta) -> Date: ...
 
     @overload
-    def __sub__(self, d: ItemizedDateDelta) -> Date: ...
-
-    @overload
     def __sub__(self, d: Date) -> DateDelta: ...
 
-    def __sub__(
-        self, d: DateDelta | ItemizedDateDelta | Date
-    ) -> Date | DateDelta:
+    def __sub__(self, d: DateDelta | Date) -> Date | DateDelta:
         """Subtract a delta from a date, or subtract two dates
 
         Subtracting a delta works the same as :meth:`subtract`.
@@ -1164,8 +1159,6 @@ class Date(_Base):
             Using the ``-`` operator on :class:`Date` is deprecated;
             use the :meth:`subtract` method or the :meth:`since` method instead.
         """
-        if isinstance(d, ItemizedDateDelta):
-            return self.subtract(d)
         if isinstance(d, DateDelta):
             warn(
                 "Using the `-` operator on Date is deprecated; "
@@ -2500,16 +2493,42 @@ class TimeDelta(_Base):
         else:
             return self
 
-    def __add__(self, other: TimeDelta) -> TimeDelta:
+    @overload
+    def __add__(self, other: TimeDelta) -> TimeDelta: ...
+
+    @overload
+    def __add__(self, other: Instant) -> Instant: ...
+
+    @overload
+    def __add__(self, other: PlainDateTime) -> PlainDateTime: ...
+
+    @overload
+    def __add__(self, other: OffsetDateTime) -> OffsetDateTime: ...
+
+    @overload
+    def __add__(self, other: ZonedDateTime) -> ZonedDateTime: ...
+
+    def __add__(
+        self,
+        other: TimeDelta
+        | Instant
+        | PlainDateTime
+        | OffsetDateTime
+        | ZonedDateTime,
+    ) -> TimeDelta | Instant | PlainDateTime | OffsetDateTime | ZonedDateTime:
         """Add two deltas together
 
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d + TimeDelta(minutes=30)
         TimeDelta("PT2h")
         """
-        if not isinstance(other, TimeDelta):
-            return NotImplemented
-        return TimeDelta(nanoseconds=self._total_ns + other._total_ns)
+        if isinstance(
+            other, (Instant, PlainDateTime, OffsetDateTime, ZonedDateTime)
+        ):
+            return _ideltas._shift_datetime_operator(other, self, False)
+        if isinstance(other, TimeDelta):
+            return TimeDelta(nanoseconds=self._total_ns + other._total_ns)
+        return NotImplemented
 
     def __sub__(self, other: TimeDelta) -> TimeDelta:
         """Subtract two deltas
@@ -5086,9 +5105,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
 
-    def __add__(
-        self, delta: TimeDelta | ItemizedDelta | ItemizedDateDelta
-    ) -> OffsetDateTime:
+    def __add__(self, delta: TimeDelta) -> OffsetDateTime:
         """Add a time delta to this datetime.
 
         Warning
@@ -5103,8 +5120,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         Use ``.add(..., stale_offset_ok=True)`` or Python's
         standard warning filters to suppress.
         """
-        if isinstance(delta, (ItemizedDelta, ItemizedDateDelta)):
-            return cast(OffsetDateTime, self.add(delta))
         if isinstance(delta, TimeDelta):
             warn(
                 OFFSET_SHIFT_STALE_MSG,
@@ -5124,17 +5139,13 @@ class OffsetDateTime(_ExactAndLocalTime):
     def __sub__(self, other: _ExactTimeAlias) -> TimeDelta: ...
 
     @overload
-    def __sub__(
-        self, other: TimeDelta | ItemizedDelta | ItemizedDateDelta
-    ) -> OffsetDateTime: ...
+    def __sub__(self, other: TimeDelta) -> OffsetDateTime: ...
 
     def __sub__(
         self,
-        other: _ExactTimeAlias | TimeDelta | ItemizedDelta | ItemizedDateDelta,
+        other: _ExactTimeAlias | TimeDelta,
     ) -> TimeDelta | OffsetDateTime:
         """Subtract a time delta or calculate the duration to another exact time."""
-        if isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
-            return cast(OffsetDateTime, self.subtract(other))
         if isinstance(other, TimeDelta):
             warn(
                 OFFSET_SHIFT_STALE_MSG,
@@ -6214,19 +6225,13 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     def __add__(
         self,
-        delta: TimeDelta
-        | DateDelta
-        | DateTimeDelta
-        | ItemizedDelta
-        | ItemizedDateDelta,
+        delta: TimeDelta | DateDelta | DateTimeDelta,
     ) -> ZonedDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
 
         See `the docs <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__
         for more information.
         """
-        if isinstance(delta, (ItemizedDelta, ItemizedDateDelta)):
-            return self.add(delta)
         if isinstance(delta, TimeDelta):
             delta_secs, nanos = divmod(
                 delta._time_part._total_ns + self._nanos, 1_000_000_000
@@ -6268,12 +6273,8 @@ class ZonedDateTime(_ExactAndLocalTime):
                 TimeDelta,
                 DateDelta,
                 DateTimeDelta,
-                ItemizedDelta,
-                ItemizedDateDelta,
             ),
         ):
-            if isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
-                return self.subtract(other)
             return self + -other
         return NotImplemented
 
@@ -7246,9 +7247,7 @@ class PlainDateTime(_LocalTime):
             return NotImplemented
         return (self._py_dt, self._nanos) >= (other._py_dt, other._nanos)
 
-    def __add__(
-        self, delta: DateDelta | TimeDelta | ItemizedDelta | ItemizedDateDelta
-    ) -> PlainDateTime:
+    def __add__(self, delta: DateDelta | TimeDelta) -> PlainDateTime:
         """Add a delta to this datetime.
 
         Warning
@@ -7259,8 +7258,6 @@ class PlainDateTime(_LocalTime):
         Use ``.add(..., naive_arithmetic_ok=True)`` or Python's
         standard warning filters to suppress.
         """
-        if isinstance(delta, (ItemizedDelta, ItemizedDateDelta)):
-            return self.add(delta)
         if isinstance(delta, DateDelta):
             return self._from_py_unchecked(
                 _datetime.combine(
@@ -7287,17 +7284,11 @@ class PlainDateTime(_LocalTime):
     def __sub__(self, other: PlainDateTime) -> TimeDelta: ...
 
     @overload
-    def __sub__(
-        self, other: TimeDelta | DateDelta | ItemizedDelta | ItemizedDateDelta
-    ) -> PlainDateTime: ...
+    def __sub__(self, other: TimeDelta | DateDelta) -> PlainDateTime: ...
 
     def __sub__(
         self,
-        other: PlainDateTime
-        | TimeDelta
-        | DateDelta
-        | ItemizedDelta
-        | ItemizedDateDelta,
+        other: PlainDateTime | TimeDelta | DateDelta,
     ) -> TimeDelta | PlainDateTime:
         """Subtract a delta or calculate the duration to another plain datetime.
 
@@ -7310,8 +7301,6 @@ class PlainDateTime(_LocalTime):
         Use ``.add(..., naive_arithmetic_ok=True)`` or Python's
         standard warning filters to suppress.
         """
-        if isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
-            return self.subtract(other)
         if isinstance(other, TimeDelta):
             warn(
                 PLAIN_SHIFT_UNAWARE_MSG,
@@ -7585,7 +7574,9 @@ class PlainDateTime(_LocalTime):
 
         elif isinstance(arg, (ItemizedDelta, ItemizedDateDelta)):
             return self._shift_kwargs(
-                sign, naive_arithmetic_ok=naive_arithmetic_ok, **arg
+                sign,
+                naive_arithmetic_ok=naive_arithmetic_ok,
+                **arg,
             )
         elif arg is not UNSET:
             return self._shift_kwargs(
@@ -8003,18 +7994,6 @@ OFFSET_REPLACE_STALE_MSG = (
     "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )
 
-OFFSET_SHIFT_STALE_MSG = (
-    "Shifting an OffsetDateTime keeps the fixed UTC offset, which may not match the "
-    "actual offset after a DST or other timezone transition "
-    "(e.g. adding 1 day to 2024-03-09 12:00-07:00 gives 2024-03-10 12:00-07:00, "
-    "but if this offset represents Denver, Colorado (America/Denver), "
-    "the actual offset changed to -06:00 on that date). "
-    "Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware arithmetic. "
-    "Pass `stale_offset_ok=True` to suppress this warning, "
-    "or use Python's standard warning filters. "
-    "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
-)
-
 OFFSET_ROUND_STALE_MSG = (
     "Rounding an OffsetDateTime keeps the fixed UTC offset, which may not be accurate "
     "in the rare case that the rounded time crosses a DST or other timezone boundary. "
@@ -8030,17 +8009,6 @@ OFFSET_START_END_OF_STALE_MSG = (
     "(e.g. the start of the year may have a different UTC offset due to DST). "
     "Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware results. "
     "Pass `stale_offset_ok=True` to suppress this warning, "
-    "or use Python's standard warning filters. "
-    "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
-)
-
-PLAIN_SHIFT_UNAWARE_MSG = (
-    "Shifting a PlainDateTime by exact time units does not account for timezone transitions "
-    "that may occur in the interval "
-    "(e.g. adding 2 hours to 2023-03-26 01:30 in Amsterdam crosses the spring-forward "
-    "transition, so only 1 real hour has passed). "
-    "Use .assume_tz('<tz>') + delta if you know the timezone. "
-    "Pass `naive_arithmetic_ok=True` to suppress this warning, "
     "or use Python's standard warning filters. "
     "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )

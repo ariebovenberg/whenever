@@ -70,13 +70,23 @@ When you call `add()` or `subtract()` on itemized deltas **without** a
 `relative_to` reference, the operation is field-wise and emits
 {class}`~whenever.CalendarUnitCompositionWarning`. Field-wise composition is
 literal and sometimes useful, but it should not be confused with sequential
-application to a date or datetime:
+application to a date or datetime.
+
+An example illustrates the difference.
+Imagine we're calculating the delivery date of multi-stage projects:
 
 ```python
->>> Date(2024, 1, 31) + ItemizedDateDelta(months=1) + ItemizedDateDelta(months=1)
-Date("2024-03-28")
->>> d2 = Date(2024, 1, 31) + ItemizedDateDelta(months=2)
-Date("2024-03-31")
+>>> stage1 = ItemizedDateDelta(months=1)
+>>> stage2 = ItemizedDateDelta(days=30)
+>>> stage3 = ItemizedDateDelta(months=1)
+>>> start = Date("2024-01-01")
+
+>>> start + stage1 + stage2 + stage3
+Date("2024-04-02")
+>>> # Note! Summing fieldwise first loses the ordering
+>>> summed = stage1 + stage2 + stage3  # P2M30D
+>>> start + summed
+Date("2024-03-30")
 ```
 
 ## Balancing into different units
