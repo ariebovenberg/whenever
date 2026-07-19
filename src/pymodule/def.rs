@@ -591,15 +591,15 @@ unsafe extern "C" fn module_free(mod_ptr: *mut c_void) {
 // they can be deleted from it.
 pub(crate) struct State {
     // classes
-    pub(crate) date_type: Owned<HeapType<date::Date>>,
-    pub(crate) time_type: Owned<HeapType<time::Time>>,
-    pub(crate) date_delta_type: Owned<HeapType<date_delta::DateDelta>>,
-    pub(crate) time_delta_type: Owned<HeapType<time_delta::TimeDelta>>,
-    pub(crate) datetime_delta_type: Owned<HeapType<datetime_delta::DateTimeDelta>>,
-    pub(crate) plain_datetime_type: Owned<HeapType<plain_datetime::DateTime>>,
-    pub(crate) instant_type: Owned<HeapType<instant::Instant>>,
-    pub(crate) offset_datetime_type: Owned<HeapType<offset_datetime::OffsetDateTime>>,
-    pub(crate) zoned_datetime_type: Owned<HeapType<zoned_datetime::ZonedDateTime>>,
+    pub(crate) date_type: Owned<ExtType<date::Date>>,
+    pub(crate) time_type: Owned<ExtType<time::Time>>,
+    pub(crate) date_delta_type: Owned<ExtType<date_delta::DateDelta>>,
+    pub(crate) time_delta_type: Owned<ExtType<time_delta::TimeDelta>>,
+    pub(crate) datetime_delta_type: Owned<ExtType<datetime_delta::DateTimeDelta>>,
+    pub(crate) plain_datetime_type: Owned<ExtType<plain_datetime::DateTime>>,
+    pub(crate) instant_type: Owned<ExtType<instant::Instant>>,
+    pub(crate) offset_datetime_type: Owned<ExtType<offset_datetime::OffsetDateTime>>,
+    pub(crate) zoned_datetime_type: Owned<ExtType<zoned_datetime::ZonedDateTime>>,
 
     // Lazily imported from _shared
     pub(crate) yearmonth_type: OncePyObj,

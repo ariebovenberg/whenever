@@ -820,8 +820,6 @@ class TestShiftOperators:
             d + 42  # type: ignore[operator]
         with pytest.raises(TypeError, match="unsupported operand type"):
             42 + d  # type: ignore[operator]
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            seconds(4) + d  # type: ignore[operator]
 
 
 class TestDifference:

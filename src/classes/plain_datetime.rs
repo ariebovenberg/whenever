@@ -246,7 +246,7 @@ impl std::fmt::Display for DateTime {
 }
 
 #[inline(never)]
-fn __new__(cls: HeapType<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+fn __new__(cls: ExtType<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let arg = args.iter().next().unwrap();
         if PyStr::isinstance(arg) {
@@ -301,7 +301,7 @@ fn __str__(_: PyType, slf: DateTime) -> PyReturn {
 }
 
 fn format_iso(
-    cls: HeapType<DateTime>,
+    cls: ExtType<DateTime>,
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -316,7 +316,7 @@ fn format_iso(
     )
 }
 
-fn parse_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
+fn parse_iso(cls: ExtType<DateTime>, arg: PyObj) -> PyReturn {
     DateTime::parse(
         arg.cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
@@ -328,7 +328,7 @@ fn parse_iso(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn __richcmp__(cls: HeapType<DateTime>, slf: DateTime, other: PyObj, op: c_int) -> PyReturn {
+fn __richcmp__(cls: ExtType<DateTime>, slf: DateTime, other: PyObj, op: c_int) -> PyReturn {
     if let Some(dt) = other.extract(cls) {
         match op {
             pyo3_ffi::Py_LT => slf < dt,
@@ -356,48 +356,43 @@ fn __add__(a: PyObj, b: PyObj) -> PyReturn {
 }
 
 fn __sub__(a: PyObj, b: PyObj) -> PyReturn {
-    // easy case: subtracting two PlainDateTime objects
-    if a.type_() == b.type_() {
-        // SAFETY: at least one of the args is a PlainDateTime so both are.
-        let (dt_type, slf) = unsafe { a.assume_heaptype::<DateTime>() };
-        let (_, other) = unsafe { b.assume_heaptype::<DateTime>() };
-        let state = dt_type.state();
-        warn_with_class(*state.warn_naive_arithmetic, doc::PLAIN_DIFF_UNAWARE_MSG, 1)?;
-        slf.assume_utc()
-            .diff(other.assume_utc())
-            .to_obj(*state.time_delta_type)
-    } else {
-        shift_operator(a, b, true)
-    }
+    shift_operator(a, b, true)
 }
 
 #[inline(never)]
 fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
-    let type_a = obj_a.type_();
-    if let Some(state) = type_a.same_module(type_a) {
-        // SAFETY: the way we've structured binary operations within whenever
-        // ensures that the first operand is the self type.
-        let (dt_type, a) = unsafe { obj_a.assume_heaptype::<DateTime>() };
+    binary_operation::<DateTime>(obj_a, obj_b, if negate { "-" } else { "+" }, |operands| {
+        let (a, other, state) = match operands {
+            BinaryOperands::SameType(cls, a, b) if negate => {
+                let state = cls.state();
+                warn_with_class(*state.warn_naive_arithmetic, doc::PLAIN_DIFF_UNAWARE_MSG, 1)?;
+                return Ok(Some(
+                    a.assume_utc()
+                        .diff(b.assume_utc())
+                        .to_obj(*state.time_delta_type)?,
+                ));
+            }
+            BinaryOperands::SameType(_, _, _) => return Ok(None),
+            BinaryOperands::ExtTypes(a, other, state) => (a, other, state),
+            BinaryOperands::OtherTypes => return Ok(None),
+        };
 
-        if let Some(DateDelta {
+        let result = if let Some(DateDelta {
             mut months,
             mut days,
-        }) = obj_b.extract(*state.date_delta_type)
+        }) = other.extract(*state.date_delta_type)
         {
             months = months.negate_if(negate);
             days = days.negate_if(negate);
-            a.shift_date(months, days)
-                .ok_or_range_err()?
-                .to_obj(dt_type)
-        } else if let Some(tdelta) = obj_b.extract(*state.time_delta_type) {
+            a.shift_date(months, days).ok_or_range_err()?
+        } else if let Some(tdelta) = other.extract(*state.time_delta_type) {
             warn_with_class(
                 *state.warn_naive_arithmetic,
                 doc::PLAIN_SHIFT_UNAWARE_MSG,
                 1,
             )?;
-            let tdelta = tdelta.negate_if(negate);
-            a.shift(tdelta).ok_or_range_err()?.to_obj(dt_type)
-        } else if let Some(dt) = obj_b.extract(*state.datetime_delta_type) {
+            a.shift(tdelta.negate_if(negate)).ok_or_range_err()?
+        } else if let Some(dt) = other.extract(*state.datetime_delta_type) {
             let mut months = dt.ddelta.months;
             let mut days = dt.ddelta.days;
             let mut tdelta = dt.tdelta;
@@ -416,34 +411,11 @@ fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
             a.shift_date(months, days)
                 .and_then(|dt| dt.shift(tdelta))
                 .ok_or_range_err()?
-                .to_obj(dt_type)
-        } else if let Some(d) = ItemizedDateDelta::extract(obj_b, state)? {
-            let (months, days) = d.to_months_days().ok_or_range_err()?;
-            a.shift_date(months.negate_if(negate), days.negate_if(negate))
-                .ok_or_range_err()?
-                .to_obj(dt_type)
-        } else if let Some(d) = ItemizedDelta::extract(obj_b, state)? {
-            let (mut months, mut days, mut tdelta) = d.to_components().ok_or_range_err()?;
-            if !tdelta.is_zero() {
-                warn_with_class(
-                    *state.warn_naive_arithmetic,
-                    doc::PLAIN_SHIFT_UNAWARE_MSG,
-                    1,
-                )?;
-            }
-            months = months.negate_if(negate);
-            days = days.negate_if(negate);
-            tdelta = tdelta.negate_if(negate);
-            a.shift_date(months, days)
-                .and_then(|dt| dt.shift(tdelta))
-                .ok_or_range_err()?
-                .to_obj(dt_type)
         } else {
-            not_implemented()
-        }
-    } else {
-        not_implemented()
-    }
+            return Ok(None);
+        };
+        Ok(Some(result.to_obj(a.ext_type())?))
+    })
 }
 
 #[allow(static_mut_refs)]
@@ -537,7 +509,7 @@ pub(crate) fn set_components_from_kwargs(
 }
 
 fn replace(
-    cls: HeapType<DateTime>,
+    cls: ExtType<DateTime>,
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -575,17 +547,12 @@ fn replace(
     .to_obj(cls)
 }
 
-fn add(
-    cls: HeapType<DateTime>,
-    slf: DateTime,
-    args: &[PyObj],
-    kwargs: &mut IterKwargs,
-) -> PyReturn {
+fn add(cls: ExtType<DateTime>, slf: DateTime, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     shift_method(cls, slf, args, kwargs, false)
 }
 
 fn subtract(
-    cls: HeapType<DateTime>,
+    cls: ExtType<DateTime>,
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -595,7 +562,7 @@ fn subtract(
 
 #[inline(never)]
 fn shift_method(
-    cls: HeapType<DateTime>,
+    cls: ExtType<DateTime>,
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -698,7 +665,7 @@ fn shift_method(
 }
 
 fn difference(
-    cls: HeapType<DateTime>,
+    cls: ExtType<DateTime>,
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -730,7 +697,7 @@ fn difference(
     }
 }
 
-fn __reduce__(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
+fn __reduce__(cls: ExtType<DateTime>, slf: DateTime) -> PyReturn {
     let DateTime {
         date: Date { year, month, day },
         time:
@@ -782,7 +749,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     .to_obj(*state.plain_datetime_type)
 }
 
-fn from_py_datetime(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
+fn from_py_datetime(cls: ExtType<DateTime>, arg: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"from_py_datetime() is deprecated. Use PlainDateTime() constructor instead.",
@@ -794,7 +761,7 @@ fn from_py_datetime(cls: HeapType<DateTime>, arg: PyObj) -> PyReturn {
     DateTime::from_py(dt)?.to_obj(cls)
 }
 
-fn to_stdlib(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
+fn to_stdlib(cls: ExtType<DateTime>, slf: DateTime) -> PyReturn {
     let DateTime {
         date: Date { year, month, day },
         time:
@@ -827,7 +794,7 @@ fn to_stdlib(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
     .own()
 }
 
-fn py_datetime(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
+fn py_datetime(cls: ExtType<DateTime>, slf: DateTime) -> PyReturn {
     let state = cls.state();
     warn_with_class(
         *state.warn_deprecation,
@@ -837,25 +804,25 @@ fn py_datetime(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
     to_stdlib(cls, slf)
 }
 
-fn date(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
+fn date(cls: ExtType<DateTime>, slf: DateTime) -> PyReturn {
     slf.date.to_obj(*cls.state().date_type)
 }
 
-fn time(cls: HeapType<DateTime>, slf: DateTime) -> PyReturn {
+fn time(cls: ExtType<DateTime>, slf: DateTime) -> PyReturn {
     slf.time.to_obj(*cls.state().time_type)
 }
 
-fn day_of_year(_: HeapType<DateTime>, slf: DateTime) -> PyReturn {
+fn day_of_year(_: ExtType<DateTime>, slf: DateTime) -> PyReturn {
     let d = slf.date;
     (d.year.days_before_month(d.month) + d.day as u16).to_py()
 }
 
-fn days_in_month(_: HeapType<DateTime>, slf: DateTime) -> PyReturn {
+fn days_in_month(_: ExtType<DateTime>, slf: DateTime) -> PyReturn {
     let d = slf.date;
     d.year.days_in_month(d.month).to_py()
 }
 
-fn days_in_year(_: HeapType<DateTime>, slf: DateTime) -> PyReturn {
+fn days_in_year(_: ExtType<DateTime>, slf: DateTime) -> PyReturn {
     (if slf.date.year.is_leap() {
         366_u16
     } else {
@@ -864,17 +831,17 @@ fn days_in_year(_: HeapType<DateTime>, slf: DateTime) -> PyReturn {
     .to_py()
 }
 
-fn in_leap_year(_: HeapType<DateTime>, slf: DateTime) -> PyReturn {
+fn in_leap_year(_: ExtType<DateTime>, slf: DateTime) -> PyReturn {
     slf.date.year.is_leap().to_py()
 }
 
-fn start_of(cls: HeapType<DateTime>, slf: DateTime, unit_obj: PyObj) -> PyReturn {
+fn start_of(cls: ExtType<DateTime>, slf: DateTime, unit_obj: PyObj) -> PyReturn {
     slf.start_of_unit(BoundaryUnit::from_py(cls.state(), unit_obj)?)
         .ok_or_range_err()?
         .to_obj(cls)
 }
 
-fn end_of(cls: HeapType<DateTime>, slf: DateTime, unit_obj: PyObj) -> PyReturn {
+fn end_of(cls: ExtType<DateTime>, slf: DateTime, unit_obj: PyObj) -> PyReturn {
     slf.end_of_unit(BoundaryUnit::from_py(cls.state(), unit_obj)?)
         .ok_or_range_err()?
         .to_obj(cls)
@@ -884,7 +851,7 @@ fn is_datetime_sep(c: u8) -> bool {
     c == b'T' || c == b' ' || c == b't'
 }
 
-fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn parse_strptime(cls: ExtType<DateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let state = cls.state();
     warn_with_class(
         *state.warn_deprecation,
@@ -912,11 +879,11 @@ fn parse_strptime(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwar
     DateTime::from_py(*parsed)?.to_obj(cls)
 }
 
-fn assume_utc(cls: HeapType<DateTime>, d: DateTime) -> PyReturn {
+fn assume_utc(cls: ExtType<DateTime>, d: DateTime) -> PyReturn {
     d.assume_utc().to_obj(*cls.state().instant_type)
 }
 
-fn assume_fixed_offset(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn {
+fn assume_fixed_offset(cls: ExtType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn {
     let state = cls.state();
     slf.with_offset(Offset::from_obj(arg, *state.time_delta_type)?)
         .ok_or_range_err()?
@@ -924,7 +891,7 @@ fn assume_fixed_offset(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> Py
 }
 
 fn assume_tz(
-    cls: HeapType<DateTime>,
+    cls: ExtType<DateTime>,
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -945,7 +912,7 @@ fn assume_tz(
 }
 
 fn assume_system_tz(
-    cls: HeapType<DateTime>,
+    cls: ExtType<DateTime>,
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -962,14 +929,14 @@ fn assume_system_tz(
         .assume_tz_unchecked(tz, *state.zoned_datetime_type)
 }
 
-fn replace_date(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn {
+fn replace_date(cls: ExtType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn {
     let Some(date) = arg.extract(*cls.state().date_type) else {
         raise_type_err("argument must be a whenever.Date")?
     };
     DateTime { date, ..slf }.to_obj(cls)
 }
 
-fn replace_time(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn {
+fn replace_time(cls: ExtType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn {
     let Some(time) = arg.extract(*cls.state().time_type) else {
         raise_type_err("argument must be a whenever.Time")?
     };
@@ -977,7 +944,7 @@ fn replace_time(cls: HeapType<DateTime>, slf: DateTime, arg: PyObj) -> PyReturn 
 }
 
 fn since(
-    cls: HeapType<DateTime>,
+    cls: ExtType<DateTime>,
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -986,7 +953,7 @@ fn since(
 }
 
 fn until(
-    cls: HeapType<DateTime>,
+    cls: ExtType<DateTime>,
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -996,7 +963,7 @@ fn until(
 
 #[inline(never)]
 fn plain_since(
-    cls: HeapType<DateTime>,
+    cls: ExtType<DateTime>,
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1211,7 +1178,7 @@ fn plain_since_in_units(
 }
 
 fn round(
-    cls: HeapType<DateTime>,
+    cls: ExtType<DateTime>,
     slf: DateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1235,7 +1202,7 @@ fn round(
     .to_obj(cls)
 }
 
-fn format(_cls: HeapType<DateTime>, slf: DateTime, pattern_obj: PyObj) -> PyReturn {
+fn format(_cls: ExtType<DateTime>, slf: DateTime, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
@@ -1265,7 +1232,7 @@ fn format(_cls: HeapType<DateTime>, slf: DateTime, pattern_obj: PyObj) -> PyRetu
     pattern::format_to_py(&elements, &vals)
 }
 
-fn __format__(cls: HeapType<DateTime>, slf: DateTime, spec_obj: PyObj) -> PyReturn {
+fn __format__(cls: ExtType<DateTime>, slf: DateTime, spec_obj: PyObj) -> PyReturn {
     if spec_obj.is_truthy() {
         format(cls, slf, spec_obj)
     } else {
@@ -1273,7 +1240,7 @@ fn __format__(cls: HeapType<DateTime>, slf: DateTime, spec_obj: PyObj) -> PyRetu
     }
 }
 
-fn parse(cls: HeapType<DateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn parse(cls: ExtType<DateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let &[s_obj] = args else {
         raise_type_err(format!(
             "parse() takes exactly 1 positional argument ({} given)",

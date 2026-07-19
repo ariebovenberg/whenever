@@ -8,7 +8,7 @@ macro_rules! method0(
                     use crate::py::*;
                     unsafe extern "C" fn _wrap(slf_ptr: *mut PyObject, _: *mut PyObject) -> *mut PyObject {
                         let slf = unsafe { PyObj::from_ptr_unchecked(slf_ptr) };
-                        let wrapped = unsafe { Wrapped::new(slf, slf.data_ref::<$typ>()) };
+                        let wrapped = unsafe { Wrapped::new(slf) };
                         catch_panic!($meth(
                             unsafe {slf.type_().link_type::<$typ>().into()},
                             FromWrapped::from_wrapped(wrapped)
@@ -33,7 +33,7 @@ macro_rules! method1(
                     unsafe extern "C" fn _wrap(slf_ptr: *mut PyObject, arg_obj: *mut PyObject) -> *mut PyObject {
                         let slf = unsafe {PyObj::from_ptr_unchecked(slf_ptr)};
                         let arg = unsafe {PyObj::from_ptr_unchecked(arg_obj)};
-                        let wrapped = unsafe { Wrapped::new(slf, slf.data_ref::<$typ>()) };
+                        let wrapped = unsafe { Wrapped::new(slf) };
                         catch_panic!($meth(
                             unsafe {slf.type_().link_type::<$typ>().into()},
                             FromWrapped::from_wrapped(wrapped),
@@ -164,7 +164,7 @@ macro_rules! method_vararg(
                         nargs: Py_ssize_t,
                     ) -> *mut PyObject {
                         let slf = unsafe {PyObj::from_ptr_unchecked(slf_obj)};
-                        let wrapped = unsafe { Wrapped::new(slf, slf.data_ref::<$typ>()) };
+                        let wrapped = unsafe { Wrapped::new(slf) };
                         catch_panic!($meth(
                             unsafe {slf.type_().link_type::<$typ>().into()},
                             FromWrapped::from_wrapped(wrapped),
@@ -228,7 +228,7 @@ macro_rules! method_kwargs(
                     ) -> *mut PyObject {
                         let slf = unsafe {PyObj::from_ptr_unchecked(slf_ptr)};
                         let nargs = unsafe {PyVectorcall_NARGS(nargsf as usize)};
-                        let wrapped = unsafe { Wrapped::new(slf, slf.data_ref::<$typ>()) };
+                        let wrapped = unsafe { Wrapped::new(slf) };
                         catch_panic!($meth(
                             unsafe {PyType::from_ptr_unchecked(cls.cast()).link_type::<$typ>().into()},
                             FromWrapped::from_wrapped(wrapped),
@@ -286,7 +286,7 @@ macro_rules! slotmethod {
                 ) -> *mut PyObject {
                     catch_panic!(
                         $name(
-                            unsafe { HeapType::<$typ>::from_ptr_unchecked(cls.cast()) },
+                            unsafe { ExtType::<$typ>::from_ptr_unchecked(cls.cast()) },
                             unsafe { PyTuple::from_ptr_unchecked(args) },
                             (!kwargs.is_null())
                                 .then(|| unsafe { PyDict::from_ptr_unchecked(kwargs) }),
@@ -309,7 +309,7 @@ macro_rules! slotmethod {
                     op: c_int,
                 ) -> *mut PyObject {
                     let a = unsafe { PyObj::from_ptr_unchecked(a) };
-                    let wrapped = unsafe { Wrapped::new(a, a.data_ref::<$typ>()) };
+                    let wrapped = unsafe { Wrapped::new(a) };
                     catch_panic!(
                         $name(
                             unsafe { a.type_().link_type::<$typ>().into() },
@@ -347,7 +347,7 @@ macro_rules! slotmethod {
             pfunc: {
                 unsafe extern "C" fn _wrap(slf: *mut PyObject) -> *mut PyObject {
                     let slf = unsafe { PyObj::from_ptr_unchecked(slf) };
-                    let wrapped = unsafe { Wrapped::new(slf, slf.data_ref::<$typ>()) };
+                    let wrapped = unsafe { Wrapped::new(slf) };
                     catch_panic!(
                         $name(
                             unsafe { slf.type_().link_type::<$typ>().into() },
@@ -372,7 +372,7 @@ macro_rules! getter(
                     _: *mut c_void,
                 ) -> *mut PyObject {
                     let slf = unsafe {PyObj::from_ptr_unchecked(slf_obj)};
-                    let wrapped = unsafe { Wrapped::new(slf, slf.data_ref::<$typ>()) };
+                    let wrapped = unsafe { Wrapped::new(slf) };
                     catch_panic!($meth(
                         unsafe {slf.type_().link_type::<$typ>().into()},
                         FromWrapped::from_wrapped(wrapped),

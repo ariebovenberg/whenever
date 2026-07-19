@@ -1,5 +1,5 @@
 //! Functionality related to Python type objects
-use super::{base::*, dict::PyDict, exc::*, module::*, refs::*};
+use super::{base::*, dict::PyDict, exc::*, misc::not_implemented, module::*, refs::*};
 use crate::pymodule::State;
 use core::{
     ffi::CStr,
@@ -13,6 +13,98 @@ use pyo3_ffi::*;
 pub(crate) struct PyType {
     obj: PyObj,
 }
+
+pub(crate) enum BinaryOperands<'a, T: PyWrapped> {
+    SameType(ExtType<T>, Wrapped<'a, T>, Wrapped<'a, T>),
+    ExtTypes(Wrapped<'a, T>, PyObj, &'a State),
+    OtherTypes,
+}
+
+pub(crate) fn binary_operation<T: PyWrapped>(
+    a: PyObj,
+    b: PyObj,
+    operator: &str,
+    operation: impl FnOnce(BinaryOperands<'_, T>) -> PyResult<Option<Owned<PyObj>>>,
+) -> PyReturn {
+    let type_a = a.type_();
+    let type_b = b.type_();
+    let operands = binary_operands::<T>(a, b, type_a, type_b);
+    let other_types = matches!(&operands, BinaryOperands::OtherTypes);
+    match operation(operands)? {
+        Some(result) => Ok(result),
+        None => {
+            if other_types {
+                not_implemented()
+            } else {
+                raise_type_err(format!(
+                    "unsupported operand type(s) for {operator}: '{}' and '{}'",
+                    type_a.name().to_string_lossy(),
+                    type_b.name().to_string_lossy(),
+                ))
+            }
+        }
+    }
+}
+
+fn binary_operands<'a, T: PyWrapped>(
+    a: PyObj,
+    b: PyObj,
+    type_a: PyType,
+    type_b: PyType,
+) -> BinaryOperands<'a, T> {
+    if type_a == type_b {
+        // SAFETY: binary_operation's type parameter matches the slot's left type,
+        // and equal types mean the right operand has the same representation.
+        return BinaryOperands::SameType(
+            unsafe { type_a.link_type() },
+            unsafe { Wrapped::new(a) },
+            unsafe { Wrapped::new(b) },
+        );
+    }
+    let (Some(module_a), Some(module_b)) = (type_a.get_module(), type_b.get_module()) else {
+        return BinaryOperands::OtherTypes;
+    };
+    if module_a.is(module_b) {
+        // SAFETY: whenever binary slots never return NotImplemented for two extension types,
+        // so equal modules imply that the left operand is this slot's declared type.
+        let cls: ExtType<T> = unsafe { type_a.link_type() };
+        let left: Wrapped<'_, T> = unsafe { Wrapped::new(a) };
+        let state = cls.state();
+        BinaryOperands::ExtTypes(left, b, state)
+    } else {
+        BinaryOperands::OtherTypes
+    }
+}
+
+/// Match an extension object against typed classes without erasing the arm types.
+macro_rules! match_type {
+    ($obj:ident, ref $type_:expr => |$value:ident| $body:block, $($rest:tt)+) => {
+        if let Some($value) = $obj.extract_ref($type_) {
+            $body
+        } else {
+            match_type!($obj, $($rest)+)
+        }
+    };
+    ($obj:ident, $type_:expr => |mut $value:ident| $body:block, $($rest:tt)+) => {
+        if let Some(mut $value) = $obj.extract($type_) {
+            $body
+        } else {
+            match_type!($obj, $($rest)+)
+        }
+    };
+    ($obj:ident, $type_:expr => |$value:ident| $body:block, $($rest:tt)+) => {
+        if let Some($value) = $obj.extract($type_) {
+            $body
+        } else {
+            match_type!($obj, $($rest)+)
+        }
+    };
+    ($obj:ident, _ => $body:block $(,)?) => {
+        $body
+    };
+}
+
+pub(crate) use match_type;
 
 impl PyBase for PyType {
     fn as_py_obj(&self) -> PyObj {
@@ -38,6 +130,11 @@ impl PyStaticType for PyType {
 }
 
 impl PyType {
+    fn name(&self) -> &CStr {
+        // SAFETY: a type object's tp_name is always a null-terminated string.
+        unsafe { CStr::from_ptr((*self.as_ptr().cast::<PyTypeObject>()).tp_name) }
+    }
+
     /// Get the Python module this type belongs to, if any.
     /// Returns `None` (and clears the exception) for types not belonging to a module.
     pub(crate) fn get_module(&self) -> Option<PyModule> {
@@ -55,21 +152,10 @@ impl PyType {
         unsafe { PyDict::from_ptr_unchecked((*self.as_ptr().cast::<PyTypeObject>()).tp_dict) }
     }
 
-    /// Get the module state if both types are from the whenever module.
-    pub(crate) fn same_module(&self, other: PyType) -> Option<&State> {
-        let mod_a = self.get_module()?;
-        mod_a.is(other.get_module()?).then(|| {
-            // SAFETY: we only use this function after module initialization
-            unsafe { mod_a.state().assume_init_ref() }
-                .as_ref()
-                .expect("Module state should be initialized")
-        })
-    }
-
     /// Associate the type with the given Rust type.
-    pub(crate) unsafe fn link_type<T: PyWrapped>(self) -> HeapType<T> {
+    pub(crate) unsafe fn link_type<T: PyWrapped>(self) -> ExtType<T> {
         // SAFETY: we assume the pointer is valid and points to a PyType object
-        unsafe { HeapType::from_ptr_unchecked(self.as_ptr()) }
+        unsafe { ExtType::from_ptr_unchecked(self.as_ptr()) }
     }
 }
 
@@ -80,24 +166,24 @@ impl std::fmt::Display for PyType {
 }
 
 /// A PyTypeObject that is linked to a Rust struct in whenever.
-/// `#[repr(transparent)]` so that `*mut HeapType<T>` can be cast to
+/// `#[repr(transparent)]` so that `*mut ExtType<T>` can be cast to
 /// `*mut *mut PyObject` in `module_clear` (same as PyType → PyObj chain).
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct HeapType<T: PyWrapped> {
+pub(crate) struct ExtType<T: PyWrapped> {
     type_py: PyType,
     type_rust: std::marker::PhantomData<T>,
 }
 
-// HeapType is always Copy/Clone: it's just a pointer + PhantomData marker.
-impl<T: PyWrapped> Copy for HeapType<T> {}
-impl<T: PyWrapped> Clone for HeapType<T> {
+// ExtType is always Copy/Clone: it's just a pointer + PhantomData marker.
+impl<T: PyWrapped> Copy for ExtType<T> {}
+impl<T: PyWrapped> Clone for ExtType<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: PyWrapped> HeapType<T> {
+impl<T: PyWrapped> ExtType<T> {
     /// Get the module state
     pub(crate) fn state<'a>(&self) -> &'a State {
         // SAFETY: the type pointer is valid, and the retrieved module
@@ -118,13 +204,13 @@ impl<T: PyWrapped> HeapType<T> {
     }
 }
 
-impl<T: PyWrapped> PyBase for HeapType<T> {
+impl<T: PyWrapped> PyBase for ExtType<T> {
     fn as_py_obj(&self) -> PyObj {
         self.type_py.as_py_obj()
     }
 }
 
-impl<T: PyWrapped> FromPy for HeapType<T> {
+impl<T: PyWrapped> FromPy for ExtType<T> {
     unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
         Self {
             type_py: unsafe { PyType::from_ptr_unchecked(ptr) },
@@ -133,8 +219,8 @@ impl<T: PyWrapped> FromPy for HeapType<T> {
     }
 }
 
-impl<T: PyWrapped> From<HeapType<T>> for PyType {
-    fn from(t: HeapType<T>) -> Self {
+impl<T: PyWrapped> From<ExtType<T>> for PyType {
+    fn from(t: ExtType<T>) -> Self {
         t.type_py
     }
 }
@@ -143,7 +229,7 @@ impl<T: PyWrapped> From<HeapType<T>> for PyType {
 pub(crate) trait PyWrapped: Sized {
     /// Allocate a new Python object wrapping this data.
     #[inline]
-    fn to_obj(self, type_: HeapType<Self>) -> PyReturn {
+    fn to_obj(self, type_: ExtType<Self>) -> PyReturn {
         generic_alloc(type_.into(), self)
     }
 }
@@ -164,14 +250,23 @@ pub(crate) struct Wrapped<'a, T: PyWrapped> {
 
 impl<'a, T: PyWrapped> Wrapped<'a, T> {
     #[inline]
-    pub(crate) unsafe fn new(obj: PyObj, data: &'a T) -> Self {
-        Self { obj, data }
+    pub(crate) unsafe fn new(obj: PyObj) -> Self {
+        Self {
+            obj,
+            data: unsafe { &(*obj.as_ptr().cast::<PyWrap<T>>()).data },
+        }
     }
 
     /// Return a new Python reference to the containing object.
     #[inline]
     pub(crate) fn newref(&self) -> Owned<PyObj> {
         self.obj.newref()
+    }
+
+    #[inline]
+    pub(crate) fn ext_type(&self) -> ExtType<T> {
+        // SAFETY: Wrapped is only constructed for an instance of ExtType<T>.
+        unsafe { ExtType::from_ptr_unchecked(self.obj.type_().as_ptr()) }
     }
 }
 

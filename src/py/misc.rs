@@ -109,7 +109,7 @@ pub(crate) fn import(module: &CStr) -> PyReturn {
 }
 
 pub(crate) fn __get_pydantic_core_schema__<T: PyWrapped>(
-    cls: HeapType<T>,
+    cls: ExtType<T>,
     _: &[PyObj],
     _: &mut IterKwargs,
 ) -> PyReturn {

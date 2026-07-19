@@ -15,6 +15,8 @@
   composition and emit `CalendarUnitCompositionWarning` by default.
 - Added `+` and `-` operators between dates or datetimes and compatible
   itemized deltas, including reflected addition (`delta + datetime`).
+- Added reflected addition (`TimeDelta + datetime`) wherever the corresponding
+  `datetime + TimeDelta` operation is supported.
 - Added mixed `ItemizedDateDelta.add()` / `subtract()` support for an
   `ItemizedDelta` argument using a datetime `relative_to` reference.
 - Moved the itemized delta implementation to Python. The Rust extension now
