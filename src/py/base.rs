@@ -47,28 +47,28 @@ impl PyObj {
     /// known to be a heap type.
     ///
     /// # Safety
-    /// The caller must guarantee that `self` is an instance of `HeapType<T>`.
-    pub(crate) unsafe fn assume_heaptype_ref<T: PyWrapped>(&self) -> (HeapType<T>, &T) {
+    /// The caller must guarantee that `self` is an instance of `ExtType<T>`.
+    pub(crate) unsafe fn assume_heaptype_ref<T: PyWrapped>(&self) -> (ExtType<T>, &T) {
         (
-            unsafe { HeapType::from_ptr_unchecked(self.type_().as_ptr()) },
+            unsafe { ExtType::from_ptr_unchecked(self.type_().as_ptr()) },
             unsafe { self.data_ref::<T>() },
         )
     }
 
-    pub(crate) unsafe fn assume_heaptype<T: PyWrapped + Copy>(&self) -> (HeapType<T>, T) {
+    pub(crate) unsafe fn assume_heaptype<T: PyWrapped + Copy>(&self) -> (ExtType<T>, T) {
         (
-            unsafe { HeapType::from_ptr_unchecked(self.type_().as_ptr()) },
+            unsafe { ExtType::from_ptr_unchecked(self.type_().as_ptr()) },
             *unsafe { self.data_ref::<T>() },
         )
     }
 
-    pub(crate) fn extract_ref<T: PyWrapped>(&self, t: HeapType<T>) -> Option<&T> {
+    pub(crate) fn extract_ref<T: PyWrapped>(&self, t: ExtType<T>) -> Option<&T> {
         (self.type_() == t.inner())
             // SAFETY: we've just checked the type, so this is safe
             .then(|| unsafe { self.data_ref::<T>() })
     }
 
-    pub(crate) fn extract<T: PyWrapped + Copy>(&self, t: HeapType<T>) -> Option<T> {
+    pub(crate) fn extract<T: PyWrapped + Copy>(&self, t: ExtType<T>) -> Option<T> {
         (self.type_() == t.inner())
             // SAFETY: we've just checked the type, so this is safe
             .then(|| *unsafe { self.data_ref::<T>() })

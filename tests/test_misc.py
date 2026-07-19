@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+import warnings
 from contextlib import nullcontext
 from inspect import signature
 from itertools import chain
@@ -77,6 +78,71 @@ def test_itemized_delta_datetime_operators(dt, delta, expected):
     with pytest.warns(Warning) if warning else nullcontext():
         expected_subtracted = dt.subtract(delta)
     assert subtracted == expected_subtracted
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        lambda dt, delta: dt + delta,
+        lambda dt, delta: delta + dt,
+        lambda dt, delta: dt - delta,
+    ],
+)
+@pytest.mark.parametrize("delta", [ItemizedDelta(hours=1), TimeDelta(hours=1)])
+def test_datetime_operator_warning_location(operation, delta):
+    dt = PlainDateTime(2021, 1, 31)
+    with pytest.warns(Warning) as caught:
+        operation(dt, delta)
+    assert all("_ideltas.py" not in warning.filename for warning in caught)
+
+
+@pytest.mark.parametrize(
+    "delta",
+    [ItemizedDelta(months=1), ItemizedDateDelta(days=1)],
+)
+def test_plain_datetime_calendar_delta_operators_do_not_warn(delta):
+    dt = PlainDateTime(2021, 1, 31)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        dt + delta
+        delta + dt
+        dt - delta
+
+
+def test_zero_time_delta_plain_datetime_addition_warns_from_both_sides():
+    dt = PlainDateTime(2021, 1, 31)
+    delta = TimeDelta.ZERO
+    with pytest.warns(Warning):
+        dt + delta
+    with pytest.warns(Warning):
+        delta + dt
+
+
+@pytest.mark.parametrize(
+    "delta", [ItemizedDelta(hours=1), ItemizedDateDelta(days=1)]
+)
+@pytest.mark.parametrize("method", ["__radd__", "__rsub__"])
+def test_itemized_delta_reflected_operator_not_implemented(delta, method):
+    assert getattr(delta, method)(object()) is NotImplemented
+
+
+@pytest.mark.parametrize(
+    "dt",
+    [
+        PlainDateTime(2021, 1, 31),
+        OffsetDateTime(2021, 1, 31, offset=0),
+        ZonedDateTime(2021, 1, 31, tz="UTC"),
+        Instant.from_utc(2021, 1, 31),
+    ],
+)
+def test_time_delta_reflected_datetime_addition(dt):
+    delta = TimeDelta(hours=2)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        expected = dt + delta
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert delta + dt == expected
 
 
 @pytest.mark.skipif(

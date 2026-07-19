@@ -19,6 +19,7 @@ from typing import (
     Any,
     Iterator,
     Sequence,
+    TypeVar,
     cast,
     no_type_check,
     overload,
@@ -26,6 +27,8 @@ from typing import (
 from warnings import warn
 
 from ._common import (
+    OFFSET_SHIFT_STALE_MSG,
+    PLAIN_SHIFT_UNAWARE_MSG,
     SPHINX_RUNNING,  # noqa
     UNSET,
     WheneverWarning,
@@ -54,6 +57,47 @@ if TYPE_CHECKING:
     )
 
 _object_new = object.__new__
+_T = TypeVar("_T")
+
+
+def _shift_datetime_operator(
+    datetime: _T,
+    delta: ItemizedDelta | ItemizedDateDelta | TimeDelta,
+    subtract: bool,
+    warn_stacklevel: int = 3,
+) -> _T:
+    from ._core import (
+        NaiveArithmeticWarning,
+        OffsetDateTime,
+        PlainDateTime,
+        StaleOffsetWarning,
+        TimeDelta,
+    )
+
+    operand = cast(Any, datetime)
+    if isinstance(datetime, PlainDateTime):
+        if (
+            isinstance(delta, TimeDelta)
+            or isinstance(delta, ItemizedDelta)
+            and any(delta.get(unit, 0) for unit in EXACT_UNITS_STRICT)
+        ):
+            warn(
+                PLAIN_SHIFT_UNAWARE_MSG,
+                NaiveArithmeticWarning,
+                stacklevel=warn_stacklevel,
+            )
+        kwargs = {"naive_arithmetic_ok": True}
+    elif isinstance(datetime, OffsetDateTime):
+        warn(
+            OFFSET_SHIFT_STALE_MSG,
+            StaleOffsetWarning,
+            stacklevel=warn_stacklevel,
+        )
+        kwargs = {"stale_offset_ok": True}
+    else:
+        kwargs = {}
+    operation = operand.subtract if subtract else operand.add
+    return cast(_T, operation(delta, **kwargs))
 
 
 # A special version of "Counter + Counter" that preserves zero
@@ -1139,7 +1183,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         from ._core import OffsetDateTime, PlainDateTime, ZonedDateTime
 
         if isinstance(other, (ZonedDateTime, PlainDateTime, OffsetDateTime)):
-            return other.add(self)
+            return _shift_datetime_operator(other, self, False)
         if not isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
             return NotImplemented
         warn(
@@ -1148,6 +1192,15 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             stacklevel=2,
         )
         return ItemizedDelta(**_items_add(self, other))
+
+    def __radd__(
+        self, other: ZonedDateTime | PlainDateTime | OffsetDateTime
+    ) -> ZonedDateTime | PlainDateTime | OffsetDateTime:
+        from ._core import OffsetDateTime, PlainDateTime, ZonedDateTime
+
+        if isinstance(other, (ZonedDateTime, PlainDateTime, OffsetDateTime)):
+            return _shift_datetime_operator(other, self, False)
+        return NotImplemented
 
     def __sub__(
         self, other: ItemizedDelta | ItemizedDateDelta
@@ -1160,6 +1213,15 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             stacklevel=2,
         )
         return ItemizedDelta(**_items_add(self, -other))
+
+    def __rsub__(
+        self, other: ZonedDateTime | PlainDateTime | OffsetDateTime
+    ) -> ZonedDateTime | PlainDateTime | OffsetDateTime:
+        from ._core import OffsetDateTime, PlainDateTime, ZonedDateTime
+
+        if isinstance(other, (ZonedDateTime, PlainDateTime, OffsetDateTime)):
+            return _shift_datetime_operator(other, self, True)
+        return NotImplemented
 
     def in_units(
         self,
@@ -2183,7 +2245,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         if isinstance(
             other, (Date, ZonedDateTime, PlainDateTime, OffsetDateTime)
         ):
-            return other.add(self)
+            return _shift_datetime_operator(other, self, False)
         if isinstance(other, (ItemizedDateDelta, ItemizedDelta)):
             warn(
                 CALENDAR_UNIT_COMPOSITION_MSG,
@@ -2193,6 +2255,18 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             return type(other)(**_items_add(self, other))
         else:
             return NotImplemented
+
+    def __radd__(
+        self,
+        other: Date | ZonedDateTime | PlainDateTime | OffsetDateTime,
+    ) -> Date | ZonedDateTime | PlainDateTime | OffsetDateTime:
+        from ._core import Date, OffsetDateTime, PlainDateTime, ZonedDateTime
+
+        if isinstance(
+            other, (Date, ZonedDateTime, PlainDateTime, OffsetDateTime)
+        ):
+            return _shift_datetime_operator(other, self, False)
+        return NotImplemented
 
     def __sub__(
         self, other: ItemizedDateDelta | ItemizedDelta
@@ -2206,6 +2280,18 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             return type(other)(**_items_add(self, -other))
         else:
             return NotImplemented
+
+    def __rsub__(
+        self,
+        other: Date | ZonedDateTime | PlainDateTime | OffsetDateTime,
+    ) -> Date | ZonedDateTime | PlainDateTime | OffsetDateTime:
+        from ._core import Date, OffsetDateTime, PlainDateTime, ZonedDateTime
+
+        if isinstance(
+            other, (Date, ZonedDateTime, PlainDateTime, OffsetDateTime)
+        ):
+            return _shift_datetime_operator(other, self, True)
+        return NotImplemented
 
     def total(self, unit: DateDeltaUnitStr, /, *, relative_to: Date) -> float:
         """Return the total duration expressed in the specified unit as a float

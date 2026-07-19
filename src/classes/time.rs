@@ -421,7 +421,7 @@ pub(crate) const SINGLETONS: &[(&CStr, Time); 4] = &[
     (c"MAX", Time::MAX),
 ];
 
-fn __new__(cls: HeapType<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+fn __new__(cls: ExtType<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let obj = args.iter().next().unwrap();
         if PyStr::isinstance(obj) {
@@ -456,7 +456,7 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     hashmask(unsafe { slf.assume_heaptype::<Time>() }.1.pyhash())
 }
 
-fn __richcmp__(cls: HeapType<Time>, slf: Time, arg: PyObj, op: c_int) -> PyReturn {
+fn __richcmp__(cls: ExtType<Time>, slf: Time, arg: PyObj, op: c_int) -> PyReturn {
     match arg.extract(cls) {
         Some(b) => match op {
             pyo3_ffi::Py_EQ => slf == b,
@@ -512,7 +512,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn to_stdlib(cls: HeapType<Time>, slf: Time) -> PyReturn {
+fn to_stdlib(cls: ExtType<Time>, slf: Time) -> PyReturn {
     let Time {
         hour,
         minute,
@@ -538,7 +538,7 @@ fn to_stdlib(cls: HeapType<Time>, slf: Time) -> PyReturn {
     .own()
 }
 
-fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn {
+fn py_time(cls: ExtType<Time>, slf: Time) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"py_time() is deprecated. Use to_stdlib() instead.",
@@ -547,7 +547,7 @@ fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn {
     to_stdlib(cls, slf)
 }
 
-fn from_py_time(cls: HeapType<Time>, arg: PyObj) -> PyReturn {
+fn from_py_time(cls: ExtType<Time>, arg: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"from_py_time() is deprecated. Use Time() constructor instead.",
@@ -560,7 +560,7 @@ fn from_py_time(cls: HeapType<Time>, arg: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn format_iso(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn format_iso(cls: ExtType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     if !args.is_empty() {
         raise_type_err("format_iso() takes no positional arguments")?;
     }
@@ -589,7 +589,7 @@ fn format_iso(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterK
     PyAsciiStrBuilder::format(slf.format_iso(unit, basic))
 }
 
-fn parse_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn {
+fn parse_iso(cls: ExtType<Time>, s: PyObj) -> PyReturn {
     Time::parse_iso(
         s.cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
@@ -601,7 +601,7 @@ fn parse_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyReturn {
+fn __reduce__(cls: ExtType<Time>, slf: Time) -> PyReturn {
     let Time {
         hour,
         minute,
@@ -616,7 +616,7 @@ fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyReturn {
     .into_pytuple()
 }
 
-fn on(cls: HeapType<Time>, slf: Time, arg: PyObj) -> PyReturn {
+fn on(cls: ExtType<Time>, slf: Time, arg: PyObj) -> PyReturn {
     let state = cls.state();
 
     if let Some(date) = arg.extract(*state.date_type) {
@@ -626,7 +626,7 @@ fn on(cls: HeapType<Time>, slf: Time, arg: PyObj) -> PyReturn {
     }
 }
 
-fn replace(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn replace(cls: ExtType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let state = cls.state();
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")
@@ -667,7 +667,7 @@ fn replace(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwar
     }
 }
 
-fn round(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn round(cls: ExtType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let round::Args {
         increment, mode, ..
     } = round::Args::parse(cls.state(), args, kwargs, false)?;
@@ -678,7 +678,7 @@ fn round(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs
     slf.round(increment_ns, mode).0.to_obj(cls)
 }
 
-fn format(_cls: HeapType<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
+fn format(_cls: ExtType<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
@@ -708,7 +708,7 @@ fn format(_cls: HeapType<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
     pattern::format_to_py(&elements, &vals)
 }
 
-fn __format__(cls: HeapType<Time>, slf: Time, spec_obj: PyObj) -> PyReturn {
+fn __format__(cls: ExtType<Time>, slf: Time, spec_obj: PyObj) -> PyReturn {
     if spec_obj.is_truthy() {
         format(cls, slf, spec_obj)
     } else {
@@ -716,7 +716,7 @@ fn __format__(cls: HeapType<Time>, slf: Time, spec_obj: PyObj) -> PyReturn {
     }
 }
 
-fn parse(cls: HeapType<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn parse(cls: ExtType<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let &[s_obj] = args else {
         raise_type_err(format!(
             "parse() takes exactly 1 positional argument ({} given)",

@@ -3,10 +3,9 @@
 
 `whenever` emits warnings when operations may produce incorrect results,
 for example due to DST transitions, missing context, or field-wise
-composition of calendar units. This is intentional: the operations aren't
-*always* wrong,
-and raising exceptions would be too strict.
-But ignoring the warnings entirely would be a disservice.
+composition of calendar units. This is intentional: the operations
+are classic "footguns", but forbidding them entirely would be too strict.
+Warnings are an ideal mechanism to ensure the potential issues don't pass unnoticed.
 
 All `whenever` warnings are subclasses of {class}`~whenever.WheneverWarning`,
 which is itself a subclass of Python's built-in

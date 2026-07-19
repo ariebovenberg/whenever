@@ -19,6 +19,29 @@ UTC = _timezone.utc
 DUMMY_LEAP_YEAR = 4
 Nanos = int  # 0-999_999_999
 
+OFFSET_SHIFT_STALE_MSG = (
+    "Shifting an OffsetDateTime keeps the fixed UTC offset, which may not match the "
+    "actual offset after a DST or other timezone transition "
+    "(e.g. adding 1 day to 2024-03-09 12:00-07:00 gives 2024-03-10 12:00-07:00, "
+    "but if this offset represents Denver, Colorado (America/Denver), "
+    "the actual offset changed to -06:00 on that date). "
+    "Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware arithmetic. "
+    "Pass `stale_offset_ok=True` to suppress this warning, "
+    "or use Python's standard warning filters. "
+    "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
+)
+
+PLAIN_SHIFT_UNAWARE_MSG = (
+    "Shifting a PlainDateTime by exact time units does not account for timezone transitions "
+    "that may occur in the interval "
+    "(e.g. adding 2 hours to 2023-03-26 01:30 in Amsterdam crosses the spring-forward "
+    "transition, so only 1 real hour has passed). "
+    "Use .assume_tz('<tz>') + delta if you know the timezone. "
+    "Pass `naive_arithmetic_ok=True` to suppress this warning, "
+    "or use Python's standard warning filters. "
+    "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
+)
+
 # A self-set variable to detect if we're being run by sphinx autodoc
 try:
     from sphinx import (  # type: ignore[attr-defined, import-not-found, unused-ignore]
