@@ -48,13 +48,9 @@ from ._parse import parse_timedelta_component
 from ._typing import DateDeltaUnitStr, DeltaUnitStr, RoundModeStr
 
 if TYPE_CHECKING:
-    from ._pywhenever import (
-        Date,
-        OffsetDateTime,
-        PlainDateTime,
-        TimeDelta,
-        ZonedDateTime,
-    )
+    from . import _pywhenever as _whenever
+else:
+    import whenever as _whenever
 
 _object_new = object.__new__
 _T = TypeVar("_T")
@@ -62,7 +58,7 @@ _T = TypeVar("_T")
 
 def _shift_datetime_operator(
     datetime: _T,
-    delta: ItemizedDelta | ItemizedDateDelta | TimeDelta,
+    delta: ItemizedDelta | ItemizedDateDelta | _whenever.TimeDelta,
     subtract: bool,
     warn_stacklevel: int = 3,
 ) -> _T:
@@ -111,6 +107,18 @@ def _items_add(
     sum = Counter(a)
     sum.update(b)
     return sum
+
+
+def _resolve_rounding(
+    round_mode: RoundModeStr, round_increment: int
+) -> tuple[RoundModeStr, int]:
+    mode = "trunc" if round_mode is UNSET else round_mode
+    increment = 1 if round_increment is UNSET else round_increment
+    if not isinstance(increment, int):
+        raise TypeError("round_increment must be an integer")
+    if increment <= 0:
+        raise ValueError("round_increment must be a positive integer in range")
+    return mode, increment
 
 
 CALENDAR_UNIT_COMPOSITION_MSG = (
@@ -753,7 +761,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
     def date_and_time_parts(
         self,
-    ) -> tuple[ItemizedDateDelta | None, TimeDelta | None]:
+    ) -> tuple[ItemizedDateDelta | None, _whenever.TimeDelta | None]:
         """Split into date and time parts.
 
         Either part may be None if no fields were set of that type.
@@ -939,7 +947,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         other: ItemizedDelta,
         /,
         *,
-        relative_to: ZonedDateTime,
+        relative_to: _whenever.ZonedDateTime,
         in_units: Sequence[DeltaUnitStr],
         round_mode: RoundModeStr = ...,
         round_increment: int = ...,
@@ -958,7 +966,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         minutes: int = ...,
         seconds: int = ...,
         nanoseconds: int = ...,
-        relative_to: ZonedDateTime,
+        relative_to: _whenever.ZonedDateTime,
         in_units: Sequence[DeltaUnitStr],
         round_mode: RoundModeStr = ...,
         round_increment: int = ...,
@@ -1003,7 +1011,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         arg: ItemizedDelta | ItemizedDateDelta = UNSET,
         /,
         *,
-        relative_to: ZonedDateTime = UNSET,
+        relative_to: _whenever.ZonedDateTime = UNSET,
         in_units: Sequence[DeltaUnitStr] = UNSET,
         round_mode: RoundModeStr = UNSET,
         round_increment: int = UNSET,
@@ -1040,6 +1048,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             and not kwargs
             and relative_to is UNSET
             and in_units is UNSET
+            and round_mode is UNSET
+            and round_increment is UNSET
         ):
             return self
 
@@ -1063,6 +1073,9 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                 "Must specify `in_units` when `relative_to` is given"
             )
 
+        round_mode, round_increment = _resolve_rounding(
+            round_mode, round_increment
+        )
         return relative_to.add(
             years=self.get("years", 0) + other.get("years", 0),
             months=self.get("months", 0) + other.get("months", 0),
@@ -1076,8 +1089,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         ).since(
             relative_to,
             in_units=in_units,
-            round_mode=round_mode or "trunc",
-            round_increment=round_increment or 1,
+            round_mode=round_mode,
+            round_increment=round_increment,
         )
 
     @overload
@@ -1086,7 +1099,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         other: ItemizedDelta,
         /,
         *,
-        relative_to: ZonedDateTime,
+        relative_to: _whenever.ZonedDateTime,
         in_units: Sequence[DeltaUnitStr],
         round_mode: RoundModeStr = ...,
         round_increment: int = ...,
@@ -1105,7 +1118,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         minutes: int = ...,
         seconds: int = ...,
         nanoseconds: int = ...,
-        relative_to: ZonedDateTime,
+        relative_to: _whenever.ZonedDateTime,
         in_units: Sequence[DeltaUnitStr],
         round_mode: RoundModeStr = ...,
         round_increment: int = ...,
@@ -1149,7 +1162,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         self,
         arg: ItemizedDelta | ItemizedDateDelta = UNSET,
         /,
-        relative_to: ZonedDateTime = UNSET,
+        *,
+        relative_to: _whenever.ZonedDateTime = UNSET,
         in_units: Sequence[DeltaUnitStr] = UNSET,
         round_mode: RoundModeStr = UNSET,
         round_increment: int = UNSET,
@@ -1176,10 +1190,15 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         self,
         other: ItemizedDelta
         | ItemizedDateDelta
-        | ZonedDateTime
-        | PlainDateTime
-        | OffsetDateTime,
-    ) -> ItemizedDelta | ZonedDateTime | PlainDateTime | OffsetDateTime:
+        | _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime,
+    ) -> (
+        ItemizedDelta
+        | _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime
+    ):
         from ._core import OffsetDateTime, PlainDateTime, ZonedDateTime
 
         if isinstance(other, (ZonedDateTime, PlainDateTime, OffsetDateTime)):
@@ -1194,8 +1213,15 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         return ItemizedDelta(**_items_add(self, other))
 
     def __radd__(
-        self, other: ZonedDateTime | PlainDateTime | OffsetDateTime
-    ) -> ZonedDateTime | PlainDateTime | OffsetDateTime:
+        self,
+        other: _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime,
+    ) -> (
+        _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime
+    ):
         from ._core import OffsetDateTime, PlainDateTime, ZonedDateTime
 
         if isinstance(other, (ZonedDateTime, PlainDateTime, OffsetDateTime)):
@@ -1215,8 +1241,15 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         return ItemizedDelta(**_items_add(self, -other))
 
     def __rsub__(
-        self, other: ZonedDateTime | PlainDateTime | OffsetDateTime
-    ) -> ZonedDateTime | PlainDateTime | OffsetDateTime:
+        self,
+        other: _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime,
+    ) -> (
+        _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime
+    ):
         from ._core import OffsetDateTime, PlainDateTime, ZonedDateTime
 
         if isinstance(other, (ZonedDateTime, PlainDateTime, OffsetDateTime)):
@@ -1228,7 +1261,9 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         units: Sequence[DeltaUnitStr],
         /,
         *,
-        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
+        relative_to: _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime,
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDelta:
@@ -1301,7 +1336,9 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         unit: DeltaUnitStr,
         /,
         *,
-        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
+        relative_to: _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime,
     ) -> float:
         """Return the total duration expressed in the specified unit as a float
 
@@ -1461,6 +1498,9 @@ def _unpkl_idelta(
     return self
 
 
+_unpkl_idelta.__module__ = "whenever"
+
+
 @final
 class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     """A date duration that preserves the exact fields it was created with.
@@ -1602,7 +1642,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         units: Sequence[DateDeltaUnitStr],
         /,
         *,
-        relative_to: Date,
+        relative_to: _whenever.Date,
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
     ) -> ItemizedDateDelta:
@@ -1979,7 +2019,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         other: ItemizedDateDelta,
         /,
         *,
-        relative_to: Date,
+        relative_to: _whenever.Date,
         in_units: Sequence[DateDeltaUnitStr],
         round_mode: RoundModeStr = ...,
         round_increment: int = ...,
@@ -1991,7 +2031,9 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         other: ItemizedDelta,
         /,
         *,
-        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
+        relative_to: _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime,
         in_units: Sequence[DeltaUnitStr],
         round_mode: RoundModeStr = ...,
         round_increment: int = ...,
@@ -2006,7 +2048,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         months: int = ...,
         weeks: int = ...,
         days: int = ...,
-        relative_to: Date,
+        relative_to: _whenever.Date,
         in_units: Sequence[DateDeltaUnitStr],
         round_mode: RoundModeStr = ...,
         round_increment: int = ...,
@@ -2047,10 +2089,10 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         arg: ItemizedDateDelta | ItemizedDelta = UNSET,
         /,
         *,
-        relative_to: Date
-        | ZonedDateTime
-        | PlainDateTime
-        | OffsetDateTime = UNSET,
+        relative_to: _whenever.Date
+        | _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime = UNSET,
         in_units: Sequence[DeltaUnitStr] = UNSET,
         round_mode: RoundModeStr = UNSET,
         round_increment: int = UNSET,
@@ -2080,6 +2122,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             and not kwargs
             and relative_to is UNSET
             and in_units is UNSET
+            and round_mode is UNSET
+            and round_increment is UNSET
         ):
             return self
 
@@ -2106,6 +2150,9 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                 "Must specify `in_units` when `relative_to` is given"
             )
 
+        round_mode, round_increment = _resolve_rounding(
+            round_mode, round_increment
+        )
         combined = _items_add(self, other)
         if isinstance(arg, ItemizedDelta):
             from ._core import OffsetDateTime, PlainDateTime, ZonedDateTime
@@ -2122,8 +2169,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                 relative_to.add(**cast(Any, combined)).since(
                     cast(Any, relative_to),
                     in_units=in_units,
-                    round_mode=round_mode or "trunc",
-                    round_increment=round_increment or 1,
+                    round_mode=round_mode,
+                    round_increment=round_increment,
                 ),
             )
         from ._core import Date
@@ -2132,8 +2179,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         return relative_to.add(**cast(Any, combined)).since(
             relative_to,
             in_units=cast(Sequence[DateDeltaUnitStr], in_units),
-            round_mode=round_mode or "trunc",
-            round_increment=round_increment or 1,
+            round_mode=round_mode,
+            round_increment=round_increment,
         )
 
     @overload
@@ -2142,7 +2189,9 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         other: ItemizedDelta,
         /,
         *,
-        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
+        relative_to: _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime,
         in_units: Sequence[DeltaUnitStr],
         round_mode: RoundModeStr = ...,
         round_increment: int = ...,
@@ -2157,7 +2206,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         months: int = ...,
         weeks: int = ...,
         days: int = ...,
-        relative_to: Date,
+        relative_to: _whenever.Date,
         in_units: Sequence[DateDeltaUnitStr],
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
@@ -2169,7 +2218,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         other: ItemizedDateDelta,
         /,
         *,
-        relative_to: Date,
+        relative_to: _whenever.Date,
         in_units: Sequence[DateDeltaUnitStr],
         round_mode: RoundModeStr = "trunc",
         round_increment: int = 1,
@@ -2198,10 +2247,10 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         arg: ItemizedDateDelta | ItemizedDelta = UNSET,
         /,
         *,
-        relative_to: Date
-        | ZonedDateTime
-        | PlainDateTime
-        | OffsetDateTime = UNSET,
+        relative_to: _whenever.Date
+        | _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime = UNSET,
         in_units: Sequence[DeltaUnitStr] = UNSET,
         round_mode: RoundModeStr = UNSET,
         round_increment: int = UNSET,
@@ -2228,17 +2277,17 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         self,
         other: ItemizedDateDelta
         | ItemizedDelta
-        | Date
-        | ZonedDateTime
-        | PlainDateTime
-        | OffsetDateTime,
+        | _whenever.Date
+        | _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime,
     ) -> (
         ItemizedDateDelta
         | ItemizedDelta
-        | Date
-        | ZonedDateTime
-        | PlainDateTime
-        | OffsetDateTime
+        | _whenever.Date
+        | _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime
     ):
         from ._core import Date, OffsetDateTime, PlainDateTime, ZonedDateTime
 
@@ -2258,8 +2307,16 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
     def __radd__(
         self,
-        other: Date | ZonedDateTime | PlainDateTime | OffsetDateTime,
-    ) -> Date | ZonedDateTime | PlainDateTime | OffsetDateTime:
+        other: _whenever.Date
+        | _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime,
+    ) -> (
+        _whenever.Date
+        | _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime
+    ):
         from ._core import Date, OffsetDateTime, PlainDateTime, ZonedDateTime
 
         if isinstance(
@@ -2283,8 +2340,16 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
     def __rsub__(
         self,
-        other: Date | ZonedDateTime | PlainDateTime | OffsetDateTime,
-    ) -> Date | ZonedDateTime | PlainDateTime | OffsetDateTime:
+        other: _whenever.Date
+        | _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime,
+    ) -> (
+        _whenever.Date
+        | _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime
+    ):
         from ._core import Date, OffsetDateTime, PlainDateTime, ZonedDateTime
 
         if isinstance(
@@ -2293,7 +2358,9 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             return _shift_datetime_operator(other, self, True)
         return NotImplemented
 
-    def total(self, unit: DateDeltaUnitStr, /, *, relative_to: Date) -> float:
+    def total(
+        self, unit: DateDeltaUnitStr, /, *, relative_to: _whenever.Date
+    ) -> float:
         """Return the total duration expressed in the specified unit as a float
 
         >>> ItemizedDateDelta(years=1, months=6).total("months", relative_to=Date(2020, 1, 31))
@@ -2385,3 +2452,6 @@ def _unpkl_iddelta(
     self._weeks = weeks
     self._days = days
     return self
+
+
+_unpkl_iddelta.__module__ = "whenever"
