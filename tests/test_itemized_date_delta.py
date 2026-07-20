@@ -744,6 +744,34 @@ class TestAddSub:
         with pytest.raises(TypeError, match="rounding"):
             operation(days=1, round_mode="ceil")
 
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    @pytest.mark.parametrize(
+        "rounding, error",
+        [
+            ({"round_mode": ""}, ValueError),
+            ({"round_increment": 0}, ValueError),
+            ({"round_increment": 0.5}, TypeError),
+        ],
+    )
+    def test_invalid_rounding_arguments(
+        self,
+        method: str,
+        rounding: dict[str, str | int | float],
+        error: type[Exception],
+    ):
+        delta = ItemizedDateDelta(days=1)
+        operation = getattr(delta, method)
+        reference = Date("2024-01-01")
+        with pytest.raises(error):
+            operation(
+                days=1,
+                relative_to=reference,
+                in_units=["days"],
+                **rounding,
+            )
+        with pytest.raises(TypeError, match="rounding"):
+            operation(**rounding)
+
     def test_subtract_no_op_and_date_result(self):
         delta = ItemizedDateDelta(days=1)
         assert delta.subtract() is delta
@@ -883,6 +911,8 @@ def test_bool():
 def test_pickle(d: ItemizedDateDelta):
     dumped = pickle.dumps(d)
     assert len(dumped) < 100
+    assert d.__reduce__()[0].__module__ == "whenever"
+    assert b"whenever._ideltas" not in dumped
     assert pickle.loads(dumped).exact_eq(d)
 
 

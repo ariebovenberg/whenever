@@ -1068,6 +1068,40 @@ class TestAddSub:
         with pytest.raises((TypeError, AttributeError)):
             operation(hours=1, relative_to=None, in_units=["hours"])
 
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    @pytest.mark.parametrize(
+        "rounding, error",
+        [
+            ({"round_mode": ""}, ValueError),
+            ({"round_increment": 0}, ValueError),
+            ({"round_increment": 0.5}, TypeError),
+        ],
+    )
+    def test_invalid_rounding_arguments(
+        self,
+        method: str,
+        rounding: dict[str, str | int | float],
+        error: type[Exception],
+    ):
+        delta = ItemizedDelta(hours=1)
+        operation = getattr(delta, method)
+        reference = ZonedDateTime("2024-01-01T00:00Z[UTC]")
+        with pytest.raises(error):
+            operation(
+                hours=1,
+                relative_to=reference,
+                in_units=["hours"],
+                **rounding,
+            )
+        with pytest.raises(TypeError, match="rounding"):
+            operation(**rounding)
+
+    def test_subtract_options_are_keyword_only(self):
+        delta = ItemizedDelta(hours=1)
+        reference = ZonedDateTime("2024-01-01T00:00Z[UTC]")
+        with pytest.raises(TypeError):
+            getattr(delta, "subtract")(ItemizedDelta(hours=1), reference)
+
     def test_subtract_no_op_and_suppressed_warning(self):
         delta = ItemizedDelta(hours=1)
         assert delta.subtract() is delta
@@ -1455,6 +1489,8 @@ def test_parts(
 def test_pickle(d: ItemizedDelta):
     dumped = pickle.dumps(d)
     assert len(dumped) < 100
+    assert d.__reduce__()[0].__module__ == "whenever"
+    assert b"whenever._ideltas" not in dumped
     assert pickle.loads(dumped).exact_eq(d)
 
 
