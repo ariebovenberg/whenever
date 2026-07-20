@@ -72,21 +72,18 @@ When you call `add()` or `subtract()` on itemized deltas **without** a
 literal and sometimes useful, but it should not be confused with sequential
 application to a date or datetime.
 
-An example illustrates the difference.
-Imagine we're calculating the delivery date of multi-stage projects:
+For example, month-end clamping makes the two operations differ:
 
 ```python
->>> stage1 = ItemizedDateDelta(months=1)
->>> stage2 = ItemizedDateDelta(days=30)
->>> stage3 = ItemizedDateDelta(months=1)
->>> start = Date("2024-01-01")
+>>> one_month = ItemizedDateDelta(months=1)
+>>> start = Date("2023-01-31")
 
->>> start + stage1 + stage2 + stage3
-Date("2024-04-02")
->>> # Note! Summing fieldwise first loses the ordering
->>> summed = stage1 + stage2 + stage3  # P2M30D
+>>> start + one_month + one_month
+Date("2023-03-28")
+>>> # Summing fieldwise first applies two months in a single step
+>>> summed = one_month + one_month  # P2M
 >>> start + summed
-Date("2024-03-30")
+Date("2023-03-31")
 ```
 
 ## Balancing into different units

@@ -234,6 +234,29 @@ def test_star_import_includes_utilities():
     assert result.returncode == 0, result.stderr
 
 
+def test_itemized_runtime_annotations_resolve_from_lazy_import():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from typing import get_type_hints; "
+            "import whenever; "
+            "ItemizedDelta = whenever.ItemizedDelta; "
+            "ItemizedDateDelta = whenever.ItemizedDateDelta; "
+            "assert 'whenever._core' not in sys.modules; "
+            "assert get_type_hints(ItemizedDelta.add)['relative_to'] "
+            "is whenever.ZonedDateTime; "
+            "get_type_hints(ItemizedDelta.date_and_time_parts); "
+            "get_type_hints(ItemizedDateDelta.__add__); "
+            "assert get_type_hints(ItemizedDateDelta.total)['relative_to'] "
+            "is whenever.Date",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_no_attr_on_module():
     with pytest.raises((AttributeError, ImportError), match="DoesntExist"):
         from whenever import DoesntExist  # type: ignore[attr-defined] # noqa
