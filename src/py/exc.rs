@@ -100,7 +100,7 @@ pub(crate) fn value_err<U: ToPy>(msg: U) -> PyErrMarker {
     exception(exc_value_error(), msg)
 }
 
-pub(crate) trait OptionExt<T> {
+pub(crate) trait RaiseExt<T> {
     fn ok_or_else_raise<F, M: ToPy>(self, exc: PyObj, fmt: F) -> PyResult<T>
     where
         Self: Sized,
@@ -144,7 +144,7 @@ pub(crate) trait OptionExt<T> {
     }
 }
 
-impl<T> OptionExt<T> for Option<T> {
+impl<T> RaiseExt<T> for Option<T> {
     fn ok_or_else_raise<F, M: ToPy>(self, exc: PyObj, fmt: F) -> PyResult<T>
     where
         F: FnOnce() -> M,
@@ -153,6 +153,15 @@ impl<T> OptionExt<T> for Option<T> {
             Some(x) => Ok(x),
             None => raise(exc, fmt()),
         }
+    }
+}
+
+impl<T, E: PyBase> RaiseExt<T> for Result<T, Owned<E>> {
+    fn ok_or_else_raise<F, M: ToPy>(self, exc: PyObj, fmt: F) -> PyResult<T>
+    where
+        F: FnOnce() -> M,
+    {
+        self.map_err(|_| exception(exc, fmt()))
     }
 }
 

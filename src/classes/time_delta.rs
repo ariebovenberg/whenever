@@ -354,7 +354,7 @@ pub(crate) fn set_timedelta_from_kwargs(
     value: PyObj,
     delta: &mut TimeDelta,
     units: &mut ExactUnitSet,
-    eq: fn(PyObj, PyObj) -> bool,
+    eq: StrEqFn,
     state: &State,
 ) -> PyResult<bool> {
     let unit = if eq(key, *state.str_weeks) {
@@ -395,7 +395,7 @@ where
 
     handle_kwargs(fname, kwargs, |key, value, eq| {
         if eq(key, *state.str_days_assumed_24h_ok) {
-            suppress_24h_warning = value.is_truthy();
+            suppress_24h_warning = value.is_truthy()?;
             Ok(true)
         } else {
             set_timedelta_from_kwargs(key, value, &mut result, &mut units, eq, state)
@@ -690,7 +690,8 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
             BinaryOperands::SameType(cls, a, b) => Ok(Some(
                 a.add(b.negate_if(negate)).ok_or_range_err()?.to_obj(cls)?,
             )),
-            BinaryOperands::ExtTypes(tdelta, other, state) => {
+            BinaryOperands::ExtTypes(cls, tdelta, other) => {
+                let state = cls.state();
                 if let Some(mut ddelta) = other.extract(*state.date_delta_type) {
                     if negate {
                         ddelta = -ddelta;
@@ -1233,7 +1234,7 @@ fn in_units(
         } else if eq(key, *state.str_relative_to) {
             relative_to_arg = Some(value);
         } else if eq(key, *state.str_days_assumed_24h_ok) {
-            suppress_24h_warning = value.is_truthy();
+            suppress_24h_warning = value.is_truthy()?;
         } else {
             return Ok(false);
         }
@@ -1310,7 +1311,7 @@ fn total(
         if eq(key, *state.str_relative_to) {
             relative_to_arg = Some(value);
         } else if eq(key, *state.str_days_assumed_24h_ok) {
-            suppress_24h_warning = value.is_truthy();
+            suppress_24h_warning = value.is_truthy()?;
         } else {
             return Ok(false);
         }

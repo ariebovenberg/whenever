@@ -16,7 +16,7 @@ pub(crate) struct PyType {
 
 pub(crate) enum BinaryOperands<'a, T: PyWrapped> {
     SameType(ExtType<T>, Wrapped<'a, T>, Wrapped<'a, T>),
-    ExtTypes(Wrapped<'a, T>, PyObj, &'a State),
+    ExtTypes(ExtType<T>, Wrapped<'a, T>, PyObj),
     OtherTypes,
 }
 
@@ -69,8 +69,7 @@ fn binary_operands<'a, T: PyWrapped>(
         // so equal modules imply that the left operand is this slot's declared type.
         let cls: ExtType<T> = unsafe { type_a.link_type() };
         let left: Wrapped<'_, T> = unsafe { Wrapped::new(a) };
-        let state = cls.state();
-        BinaryOperands::ExtTypes(left, b, state)
+        BinaryOperands::ExtTypes(cls, left, b)
     } else {
         BinaryOperands::OtherTypes
     }
@@ -185,7 +184,7 @@ impl<T: PyWrapped> Clone for ExtType<T> {
 
 impl<T: PyWrapped> ExtType<T> {
     /// Get the module state
-    pub(crate) fn state<'a>(&self) -> &'a State {
+    pub(crate) fn state(&self) -> &State {
         // SAFETY: the type pointer is valid, and the retrieved module
         // state is valid once the Python module is initialized.
         unsafe {
@@ -350,7 +349,8 @@ pub(crate) fn generic_alloc<T: PyWrapped>(type_: PyType, d: T) -> PyReturn {
         match slf.cast::<PyObject>().as_mut() {
             Some(r) => {
                 (&raw mut (*slf).data).write(d);
-                Ok(Owned::new(PyObj::from_ptr_unchecked(r)))
+                // SAFETY: tp_alloc returns a new reference and `r` is non-null here.
+                Ok(Owned::from_owned_ptr(r))
             }
             None => Err(PyErrMarker),
         }

@@ -384,7 +384,8 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                         .to_obj(cls)?,
                 ))
             }
-            BinaryOperands::ExtTypes(ddelta, other, state) => {
+            BinaryOperands::ExtTypes(cls, ddelta, other) => {
+                let state = cls.state();
                 let result = match_type!(
                     other,
                     *state.time_delta_type => |mut tdelta| {

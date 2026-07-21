@@ -29,7 +29,7 @@ impl Disambiguate {
         match kwargs.next() {
             Some((name, value)) => {
                 if kwargs.len() == 1 {
-                    if name.py_eq(*state.str_disambiguate)? {
+                    if unicode_eq(name, *state.str_disambiguate) {
                         Self::from_py(value, state).map(Some)
                     } else {
                         raise_type_err(format!(

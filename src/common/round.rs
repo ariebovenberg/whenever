@@ -234,7 +234,7 @@ impl Args {
             } else if ignore_dst_kwarg && eq(key, *state.str_ignore_dst) {
                 got_ignore_dst = true;
             } else if ignore_dst_kwarg && eq(key, *state.str_stale_offset_ok) {
-                suppress_stale = value.is_truthy();
+                suppress_stale = value.is_truthy()?;
             } else {
                 return Ok(false);
             }
@@ -315,7 +315,7 @@ impl DeltaArgs {
                 // SAFETY: we just checked that it's >0
                 increment_kwarg = Some(unsafe { NonZeroU128::new_unchecked(raw_increment as _) });
             } else if eq(key, *state.str_days_assumed_24h_ok) {
-                suppress_24h_warning = value.is_truthy();
+                suppress_24h_warning = value.is_truthy()?;
             } else {
                 return Ok(false);
             }

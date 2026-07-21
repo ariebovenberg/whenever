@@ -31,7 +31,8 @@ impl OncePyObj {
     #[cold]
     fn get_slow(&self) -> PyResult<PyObj> {
         let owned = (self.init)()?;
-        let obj = owned.py_owned();
+        // SAFETY: `owned` transfers a valid reference which remains stored in this cell.
+        let obj = unsafe { PyObj::from_ptr_unchecked(owned.into_raw()) };
         match self.ptr.try_init(obj.as_nonnull()) {
             Ok(()) => Ok(obj),
             Err(winner) => {

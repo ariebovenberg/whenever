@@ -150,7 +150,8 @@ pub(crate) trait PyBase: FromPy {
     /// Create a new, owned, reference to this object.
     fn newref(self) -> Owned<Self> {
         unsafe { Py_INCREF(self.as_py_obj().as_ptr()) }
-        Owned::new(self)
+        // SAFETY: Py_INCREF created the owned reference transferred here.
+        unsafe { Owned::from_owned_ptr(self.as_ptr()) }
     }
 
     /// Get the PyObject pointer.
@@ -168,7 +169,7 @@ pub(crate) trait PyBase: FromPy {
         let Some(repr_obj) = unsafe { PyObject_Repr(self.as_ptr()) }.own().or_clear() else {
             return f.write_str("<repr() failed>");
         };
-        let Some(py_str) = repr_obj.cast_exact::<PyStr>() else {
+        let Ok(py_str) = repr_obj.cast_exact::<PyStr>() else {
             return f.write_str("<repr() failed>");
         };
         let Some(utf8) = py_str.as_utf8().or_clear() else {
@@ -221,23 +222,16 @@ pub(crate) trait PyBase: FromPy {
         .own()
     }
 
-    /// Determine if the object is equal to another object, according to Python's
-    /// `__eq__` method.
-    fn py_eq(&self, other: impl PyBase) -> PyResult<bool> {
-        // SAFETY: calling CPython API with valid arguments
-        match unsafe { PyObject_RichCompareBool(self.as_ptr(), other.as_ptr(), Py_EQ) } {
-            1 => Ok(true),
-            0 => Ok(false),
-            _ => Err(PyErrMarker),
-        }
-    }
-
     fn is(&self, other: impl PyBase) -> bool {
         self.as_ptr() == other.as_ptr()
     }
 
-    fn is_truthy(&self) -> bool {
-        unsafe { PyObject_IsTrue(self.as_ptr()) != 0 }
+    fn is_truthy(&self) -> PyResult<bool> {
+        match unsafe { PyObject_IsTrue(self.as_ptr()) } {
+            1 => Ok(true),
+            0 => Ok(false),
+            _ => Err(PyErrMarker),
+        }
     }
 
     /// Determine if the object is *exactly equal* to `True`.

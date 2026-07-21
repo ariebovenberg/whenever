@@ -717,6 +717,18 @@ class TestShiftMethods:
 
 
 class TestNaiveArithmeticOkKwarg:
+    def test_truthiness_error_propagates(self):
+        class BadBool:
+            def __bool__(self):
+                raise RuntimeError("bool failed")
+
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9)
+        with pytest.raises(RuntimeError, match="bool failed"):
+            d.add(
+                hours=1,
+                naive_arithmetic_ok=BadBool(),  # type: ignore[arg-type]
+            )
+
     def test_add(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with warnings.catch_warnings():

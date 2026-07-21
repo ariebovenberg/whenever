@@ -362,7 +362,7 @@ fn __sub__(a: PyObj, b: PyObj) -> PyReturn {
 #[inline(never)]
 fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     binary_operation::<DateTime>(obj_a, obj_b, if negate { "-" } else { "+" }, |operands| {
-        let (a, other, state) = match operands {
+        let (cls, a, other) = match operands {
             BinaryOperands::SameType(cls, a, b) if negate => {
                 let state = cls.state();
                 warn_with_class(*state.warn_naive_arithmetic, doc::PLAIN_DIFF_UNAWARE_MSG, 1)?;
@@ -373,9 +373,10 @@ fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                 ));
             }
             BinaryOperands::SameType(_, _, _) => return Ok(None),
-            BinaryOperands::ExtTypes(a, other, state) => (a, other, state),
+            BinaryOperands::ExtTypes(cls, a, other) => (cls, a, other),
             BinaryOperands::OtherTypes => return Ok(None),
         };
+        let state = cls.state();
 
         let result = if let Some(DateDelta {
             mut months,
@@ -465,7 +466,7 @@ pub(crate) fn set_components_from_kwargs(
     second: &mut c_long,
     nanos: &mut c_long,
     state: &State,
-    eq: fn(PyObj, PyObj) -> bool,
+    eq: StrEqFn,
 ) -> PyResult<bool> {
     if eq(key, *state.str_year) {
         *year = value
@@ -579,10 +580,10 @@ fn shift_method(
     match *args {
         [arg] => {
             for (key, value) in kwargs.by_ref() {
-                if key.py_eq(*state.str_ignore_dst)? {
+                if unicode_eq(key, *state.str_ignore_dst) {
                     got_ignore_dst = true;
-                } else if key.py_eq(*state.str_naive_arithmetic_ok)? {
-                    suppress_unaware = value.is_truthy();
+                } else if unicode_eq(key, *state.str_naive_arithmetic_ok) {
+                    suppress_unaware = value.is_truthy()?;
                 } else {
                     raise_type_err(format!(
                         "{fname}() can't mix positional and keyword arguments"
@@ -618,7 +619,7 @@ fn shift_method(
                     got_ignore_dst = true;
                     Ok(true)
                 } else if eq(key, *state.str_naive_arithmetic_ok) {
-                    suppress_unaware = value.is_truthy();
+                    suppress_unaware = value.is_truthy()?;
                     Ok(true)
                 } else {
                     handle_delta_unit_kwargs(
@@ -674,10 +675,10 @@ fn difference(
     let mut suppress_unaware = false;
     // Accept deprecated ignore_dst kwarg and new naive_arithmetic_ok kwarg
     for (key, value) in kwargs.by_ref() {
-        if key.py_eq(*state.str_ignore_dst)? {
+        if unicode_eq(key, *state.str_ignore_dst) {
             warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
-        } else if key.py_eq(*state.str_naive_arithmetic_ok)? {
-            suppress_unaware = value.is_truthy();
+        } else if unicode_eq(key, *state.str_naive_arithmetic_ok) {
+            suppress_unaware = value.is_truthy()?;
         } else {
             raise_type_err(format!("Unknown keyword argument: {key}"))?;
         }
@@ -859,7 +860,7 @@ fn parse_strptime(cls: ExtType<DateTime>, args: &[PyObj], kwargs: &mut IterKwarg
         1,
     )?;
     let format_obj = match kwargs.next() {
-        Some((key, value)) if kwargs.len() == 1 && key.py_eq(*state.str_format)? => value,
+        Some((key, value)) if kwargs.len() == 1 && unicode_eq(key, *state.str_format) => value,
         _ => raise_type_err("parse_strptime() requires exactly one keyword argument `format`")?,
     };
     let &[arg_obj] = args else {
@@ -980,7 +981,7 @@ fn plain_since(
     let mut got_ignore_dst = false;
     let since_kwargs = SinceUntilKwargs::parse_with(fname, state, kwargs, |key, value, eq| {
         if eq(key, *state.str_naive_arithmetic_ok) {
-            suppress_unaware = value.is_truthy();
+            suppress_unaware = value.is_truthy()?;
             Ok(true)
         } else if eq(key, *state.str_ignore_dst) {
             got_ignore_dst = true;
@@ -1233,7 +1234,7 @@ fn format(_cls: ExtType<DateTime>, slf: DateTime, pattern_obj: PyObj) -> PyRetur
 }
 
 fn __format__(cls: ExtType<DateTime>, slf: DateTime, spec_obj: PyObj) -> PyReturn {
-    if spec_obj.is_truthy() {
+    if spec_obj.is_truthy()? {
         format(cls, slf, spec_obj)
     } else {
         __str__(cls.into(), slf)

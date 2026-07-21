@@ -373,9 +373,10 @@ pub(crate) extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
 
 fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     binary_operation::<OffsetDateTime>(obj_a, obj_b, "+", |operands| {
-        let BinaryOperands::ExtTypes(slf, other, state) = operands else {
+        let BinaryOperands::ExtTypes(cls, slf, other) = operands else {
             return Ok(None);
         };
+        let state = cls.state();
         let Some(tdelta) = other.extract(*state.time_delta_type) else {
             return Ok(None);
         };
@@ -386,14 +387,14 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
                 .shift(tdelta)
                 .and_then(|dt| dt.with_offset(offset))
                 .ok_or_range_err()?
-                .to_obj(slf.ext_type())?,
+                .to_obj(cls)?,
         ))
     })
 }
 
 fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     binary_operation::<OffsetDateTime>(obj_a, obj_b, "-", |operands| {
-        let (slf, other, state) = match operands {
+        let (cls, slf, other) = match operands {
             BinaryOperands::SameType(cls, slf, other) => {
                 return Ok(Some(
                     slf.instant()
@@ -401,9 +402,10 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
                         .to_obj(*cls.state().time_delta_type)?,
                 ));
             }
-            BinaryOperands::ExtTypes(slf, other, state) => (slf, other, state),
+            BinaryOperands::ExtTypes(cls, slf, other) => (cls, slf, other),
             BinaryOperands::OtherTypes => return Ok(None),
         };
+        let state = cls.state();
         if let Some(tdelta) = other.extract(*state.time_delta_type) {
             offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
             let OffsetDateTime { date, time, offset } = *slf;
@@ -604,8 +606,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
 }
 
 fn to_stdlib(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    slf.to_py(cls.state().py_api()?)
-        .map(|owned| owned.map(|dt| dt.as_py_obj()))
+    slf.to_py(cls.state().py_api()?).map(Owned::into_obj)
 }
 
 fn py_datetime(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
@@ -656,7 +657,10 @@ fn start_of(
 ) -> PyReturn {
     let state = cls.state();
     let stale_offset_ok = handle_one_kwarg("start_of", *state.str_stale_offset_ok, kwargs)?;
-    if !stale_offset_ok.is_some_and(|v| v.is_truthy()) {
+    if !match stale_offset_ok {
+        Some(value) => value.is_truthy()?,
+        None => false,
+    } {
         offset_stale_warning(state, doc::OFFSET_START_END_OF_STALE_MSG)?;
     }
     slf.local()
@@ -678,7 +682,10 @@ fn end_of(
 ) -> PyReturn {
     let state = cls.state();
     let stale_offset_ok = handle_one_kwarg("end_of", *state.str_stale_offset_ok, kwargs)?;
-    if !stale_offset_ok.is_some_and(|v| v.is_truthy()) {
+    if !match stale_offset_ok {
+        Some(value) => value.is_truthy()?,
+        None => false,
+    } {
         offset_stale_warning(state, doc::OFFSET_START_END_OF_STALE_MSG)?;
     }
     slf.local()
@@ -710,7 +717,7 @@ fn check_ignore_dst_and_stale_offset(
         if eq(key, *state.str_ignore_dst) {
             warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
         } else if eq(key, *state.str_stale_offset_ok) {
-            suppress = value.is_truthy();
+            suppress = value.is_truthy()?;
         } else {
             return Ok(false);
         }
@@ -829,7 +836,7 @@ fn replace(
         if eq(key, *state.str_ignore_dst) {
             got_ignore_dst = true;
         } else if eq(key, *state.str_stale_offset_ok) {
-            suppress_stale = value.is_truthy();
+            suppress_stale = value.is_truthy()?;
         } else if eq(key, *state.str_offset) {
             offset = Offset::from_obj(value, *state.time_delta_type)?;
         } else {
@@ -945,10 +952,10 @@ fn shift_method(
     match *args {
         [arg] => {
             for (key, value) in kwargs.by_ref() {
-                if key.py_eq(*state.str_ignore_dst)? {
+                if unicode_eq(key, *state.str_ignore_dst) {
                     got_ignore_dst = true;
-                } else if key.py_eq(*state.str_stale_offset_ok)? {
-                    suppress_stale = value.is_truthy();
+                } else if unicode_eq(key, *state.str_stale_offset_ok) {
+                    suppress_stale = value.is_truthy()?;
                 } else {
                     raise_type_err(format!(
                         "{fname}() can't mix positional and keyword arguments"
@@ -984,7 +991,7 @@ fn shift_method(
                     got_ignore_dst = true;
                     Ok(true)
                 } else if eq(key, *state.str_stale_offset_ok) {
-                    suppress_stale = value.is_truthy();
+                    suppress_stale = value.is_truthy()?;
                     Ok(true)
                 } else {
                     handle_delta_unit_kwargs(
@@ -1098,7 +1105,7 @@ fn check_from_timestamp_args_return_offset(
         if eq(key, *state.str_ignore_dst) {
             got_ignore_dst = true;
         } else if eq(key, *state.str_stale_offset_ok) {
-            suppress_stale = value.is_truthy();
+            suppress_stale = value.is_truthy()?;
         } else if eq(key, *state.str_offset) {
             offset = Some(Offset::from_obj(value, *state.time_delta_type)?);
         } else {
@@ -1190,7 +1197,7 @@ fn parse_strptime(
         1,
     )?;
     let format_obj = match kwargs.next() {
-        Some((key, value)) if kwargs.len() == 1 && key.py_eq(*state.str_format)? => value,
+        Some((key, value)) if kwargs.len() == 1 && unicode_eq(key, *state.str_format) => value,
         _ => raise_type_err("parse_strptime() requires exactly one keyword argument `format`")?,
     };
     let &[arg_obj] = args else {
@@ -1407,7 +1414,7 @@ fn format(_: ExtType<OffsetDateTime>, slf: OffsetDateTime, pattern_obj: PyObj) -
 }
 
 fn __format__(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime, spec_obj: PyObj) -> PyReturn {
-    if spec_obj.is_truthy() {
+    if spec_obj.is_truthy()? {
         format(cls, slf, spec_obj)
     } else {
         __str__(cls.into(), slf)

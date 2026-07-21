@@ -5,7 +5,7 @@ use crate::{
         fmt::{self, Sink, format_2_digits},
         round,
     },
-    py::{PyInt, PyObj, PyResult, PyReturn, base::ToPy, exc::OptionExt, none},
+    py::{PyInt, PyObj, PyResult, PyReturn, base::ToPy, exc::RaiseExt, none},
 };
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
 

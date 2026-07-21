@@ -93,7 +93,7 @@ pub(crate) fn handle_delta_unit_kwargs(
     days: &mut DeltaDays,
     time: &mut TimeDelta,
     units: &mut DeltaUnitSet,
-    eq: impl Fn(PyObj, PyObj) -> bool,
+    eq: StrEqFn,
     allow_milliseconds: bool,
     allow_microseconds: bool,
     state: &State,

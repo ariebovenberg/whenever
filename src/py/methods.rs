@@ -64,8 +64,8 @@ macro_rules! modmethod1(
                             // SAFETY: module state is initialized before this function is called
                             unsafe { mod_obj
                                 .state()
-                                .assume_init_mut()
-                                .as_mut()
+                                .assume_init_ref()
+                                .as_ref()
                                 .unwrap()
                             },
                             arg
@@ -94,8 +94,8 @@ macro_rules! modmethod0(
                             // SAFETY: module state is initialized before this function is called
                             unsafe { mod_obj
                                 .state()
-                                .assume_init_mut()
-                                .as_mut()
+                                .assume_init_ref()
+                                .as_ref()
                                 .unwrap()
                             },
                         ).to_py_owned_ptr())
@@ -197,8 +197,8 @@ macro_rules! modmethod_vararg(
                             // SAFETY: module state is initialized before this function is called
                             unsafe { mod_obj
                                 .state()
-                                .assume_init_mut()
-                                .as_mut()
+                                .assume_init_ref()
+                                .as_ref()
                                 .unwrap()
                             },
                             unsafe {std::slice::from_raw_parts(args.cast::<PyObj>(), nargs as usize)},
