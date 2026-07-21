@@ -131,7 +131,7 @@ pub(crate) fn set_units_from_kwargs(
     days: &mut i32,
     nanos: &mut i128,
     state: &State,
-    eq: fn(PyObj, PyObj) -> bool,
+    eq: StrEqFn,
 ) -> PyResult<bool> {
     if eq(key, *state.str_years) {
         *months = value
@@ -345,7 +345,8 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     binary_operation::<DateTimeDelta>(obj_a, obj_b, if negate { "-" } else { "+" }, |operands| {
         let (cls, a, mut b) = match operands {
             BinaryOperands::SameType(cls, a, b) => (cls, a, *b),
-            BinaryOperands::ExtTypes(a, other, state) => {
+            BinaryOperands::ExtTypes(cls, a, other) => {
+                let state = cls.state();
                 let b = match_type!(
                     other,
                     *state.date_delta_type => |ddelta| {
@@ -362,7 +363,7 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                     },
                     _ => { return Ok(None) },
                 );
-                (a.ext_type(), a, b)
+                (cls, a, b)
             }
             BinaryOperands::OtherTypes => return Ok(None),
         };

@@ -13,60 +13,53 @@ pub(crate) struct Owned<T: PyBase> {
 }
 
 impl<T: PyBase> Owned<T> {
-    pub(crate) fn new(inner: T) -> Self {
-        Self { inner }
-    }
-
-    pub(crate) fn py_owned(self) -> T {
-        // By transferring ownership to Python, we essentially say
-        // Rust is no longer responsible for the memory (i.e. Drop)
-        let this = ManuallyDrop::new(self);
-        unsafe {
-            std::ptr::read(&this.inner) // Read the inner object without dropping it
+    /// Construct an owned reference from a pointer for which the caller owns a reference.
+    ///
+    /// # Safety
+    /// `ptr` must be non-null, point to a `T`, and transfer one owned reference to this value.
+    pub(crate) unsafe fn from_owned_ptr(ptr: *mut PyObject) -> Self {
+        Self {
+            inner: unsafe { T::from_ptr_unchecked(ptr) },
         }
     }
 
-    /// Apply a function to the inner object while retaining ownership.
-    pub(crate) fn map<U, F>(self, f: F) -> Owned<U>
-    where
-        F: FnOnce(T) -> U,
-        U: PyBase,
-    {
-        Owned::new(f(self.py_owned()))
+    /// Transfer ownership to the caller without decrementing the reference count.
+    pub(crate) fn into_raw(self) -> *mut PyObject {
+        let this = ManuallyDrop::new(self);
+        this.inner.as_ptr()
     }
 
     /// Upcast to `Owned<PyObj>`, losing the specific subtype.
     pub(crate) fn into_obj(self) -> Owned<PyObj> {
-        self.map(|t| t.as_py_obj())
-    }
-}
-
-impl<T: PyBase> Owned<T> {
-    pub(crate) fn cast_exact<U: PyStaticType>(self) -> Option<Owned<U>> {
-        let inner = self.py_owned();
-        inner.as_py_obj().cast_exact().map(Owned::new).or_else(|| {
-            // Casting failed, but don't forget to decref the original object
-            unsafe { Py_DECREF(inner.as_ptr()) };
-            None
-        })
+        let ptr = self.into_raw();
+        // SAFETY: the pointer and its owned reference are transferred unchanged.
+        unsafe { Owned::from_owned_ptr(ptr) }
     }
 
-    pub(crate) fn cast_allow_subclass<U: PyStaticType>(self) -> Option<Owned<U>> {
-        let inner = self.py_owned();
-        inner
-            .as_py_obj()
-            .cast_allow_subclass()
-            .map(Owned::new)
-            .or_else(|| {
-                // Casting failed, but don't forget to decref the original object
-                unsafe { Py_DECREF(inner.as_ptr()) };
-                None
-            })
+    pub(crate) fn cast_exact<U: PyStaticType>(self) -> Result<Owned<U>, Self> {
+        if U::isinstance_exact(self.inner) {
+            let ptr = self.into_raw();
+            // SAFETY: the exact type check succeeded and ownership is transferred unchanged.
+            Ok(unsafe { Owned::from_owned_ptr(ptr) })
+        } else {
+            Err(self)
+        }
+    }
+
+    pub(crate) fn cast_allow_subclass<U: PyStaticType>(self) -> Result<Owned<U>, Self> {
+        if U::isinstance(self.inner) {
+            let ptr = self.into_raw();
+            // SAFETY: the type check succeeded and ownership is transferred unchanged.
+            Ok(unsafe { Owned::from_owned_ptr(ptr) })
+        } else {
+            Err(self)
+        }
     }
 
     pub(crate) unsafe fn cast_unchecked<U: PyBase>(self) -> Owned<U> {
-        // SAFETY: the caller guarantees the type
-        Owned::new(unsafe { self.py_owned().as_py_obj().cast_unchecked() })
+        let ptr = self.into_raw();
+        // SAFETY: the caller guarantees the pointee has type U; ownership is unchanged.
+        unsafe { Owned::from_owned_ptr(ptr) }
     }
 }
 
@@ -87,12 +80,6 @@ impl<T: PyBase> std::ops::Deref for Owned<T> {
     }
 }
 
-impl<T: PyBase> std::ops::DerefMut for Owned<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
 pub(crate) trait PyObjectExt {
     fn own(self) -> PyResult<Owned<PyObj>>;
     fn borrow(self) -> PyResult<PyObj>;
@@ -102,7 +89,9 @@ pub(crate) trait PyObjectExt {
 impl PyObjectExt for *mut PyObject {
     /// Take ownership of a raw PyObject, interpreting NULL as an error.
     fn own(self) -> PyResult<Owned<PyObj>> {
-        self.borrow().map(Owned::new)
+        self.borrow()?;
+        // SAFETY: CPython APIs used with `own()` transfer a new reference on success.
+        Ok(unsafe { Owned::from_owned_ptr(self) })
     }
 
     /// Wrap a raw PyObject, interpreting NULL as an error.
@@ -128,8 +117,8 @@ impl ToPyOwnedPtr for *mut PyObject {
 
 impl<T: PyBase> ToPyOwnedPtr for PyResult<Owned<T>> {
     fn to_py_owned_ptr(self) -> *mut PyObject {
-        match self.map(|x| x.py_owned()) {
-            Ok(x) => x.as_ptr(),
+        match self {
+            Ok(x) => x.into_raw(),
             Err(_) => NULL(),
         }
     }
@@ -137,6 +126,6 @@ impl<T: PyBase> ToPyOwnedPtr for PyResult<Owned<T>> {
 
 impl<T: PyBase> ToPyOwnedPtr for Owned<T> {
     fn to_py_owned_ptr(self) -> *mut PyObject {
-        self.py_owned().as_ptr()
+        self.into_raw()
     }
 }

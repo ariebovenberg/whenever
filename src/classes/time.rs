@@ -709,7 +709,7 @@ fn format(_cls: ExtType<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
 }
 
 fn __format__(cls: ExtType<Time>, slf: Time, spec_obj: PyObj) -> PyReturn {
-    if spec_obj.is_truthy() {
+    if spec_obj.is_truthy()? {
         format(cls, slf, spec_obj)
     } else {
         __str__(cls.into(), slf)

@@ -54,7 +54,7 @@ impl Owned<PyTuple> {
     /// Set an item in a tuple being constructed.
     /// Takes ownership of the value (steals the reference).
     pub(crate) fn init_item(&self, index: Py_ssize_t, value: Owned<impl PyBase>) {
-        unsafe { PyTuple_SET_ITEM(self.as_ptr(), index, value.py_owned().as_ptr()) };
+        unsafe { PyTuple_SET_ITEM(self.as_ptr(), index, value.into_raw()) };
     }
 }
 

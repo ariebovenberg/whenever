@@ -770,7 +770,8 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
                 .to_obj(*date_type.state().date_delta_type)?,
             ))
         }
-        BinaryOperands::ExtTypes(date, other, state) => {
+        BinaryOperands::ExtTypes(cls, date, other) => {
+            let state = cls.state();
             let Some(d) = other.extract(*state.date_delta_type) else {
                 return Ok(None);
             };
@@ -783,7 +784,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
                 date.shift_months(-d.months)
                     .and_then(|date| date.shift_days(-d.days))
                     .ok_or_range_err()?
-                    .to_obj(date.ext_type())?,
+                    .to_obj(cls)?,
             ))
         }
         BinaryOperands::OtherTypes => Ok(None),
@@ -792,9 +793,10 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
 
 fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     binary_operation::<Date>(obj_a, obj_b, "+", |operands| {
-        let BinaryOperands::ExtTypes(date, other, state) = operands else {
+        let BinaryOperands::ExtTypes(cls, date, other) = operands else {
             return Ok(None);
         };
+        let state = cls.state();
         let Some(d) = other.extract(*state.date_delta_type) else {
             return Ok(None);
         };
@@ -807,7 +809,7 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
             date.shift_months(d.months)
                 .and_then(|date| date.shift_days(d.days))
                 .ok_or_range_err()?
-                .to_obj(date.ext_type())?,
+                .to_obj(cls)?,
         ))
     })
 }
@@ -1078,7 +1080,7 @@ fn format(_: ExtType<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {
 }
 
 fn __format__(cls: ExtType<Date>, slf: Date, spec_obj: PyObj) -> PyReturn {
-    if spec_obj.is_truthy() {
+    if spec_obj.is_truthy()? {
         format(cls, slf, spec_obj)
     } else {
         __str__(cls.into(), slf)

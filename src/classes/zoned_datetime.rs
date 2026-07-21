@@ -469,16 +469,16 @@ extern "C" fn __hash__(arg: PyObj) -> Py_hash_t {
 
 fn __add__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
     binary_operation::<ZonedDateTime>(a_obj, b_obj, "+", |operands| {
-        let BinaryOperands::ExtTypes(slf, other, state) = operands else {
+        let BinaryOperands::ExtTypes(cls, slf, other) = operands else {
             return Ok(None);
         };
-        shift_operator(state, slf.ext_type(), &slf, other, false)
+        shift_operator(cls.state(), cls, &slf, other, false)
     })
 }
 
 fn __sub__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
     binary_operation::<ZonedDateTime>(a_obj, b_obj, "-", |operands| {
-        let (slf, other, state) = match operands {
+        let (cls, slf, other) = match operands {
             BinaryOperands::SameType(cls, slf, b) => {
                 return Ok(Some(
                     slf.instant()
@@ -486,9 +486,10 @@ fn __sub__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
                         .to_obj(*cls.state().time_delta_type)?,
                 ));
             }
-            BinaryOperands::ExtTypes(slf, other, state) => (slf, other, state),
+            BinaryOperands::ExtTypes(cls, slf, other) => (cls, slf, other),
             BinaryOperands::OtherTypes => return Ok(None),
         };
+        let state = cls.state();
         let inst_b = match_type!(
             other,
             *state.instant_type => |inst| { inst },
@@ -1160,7 +1161,7 @@ fn check_from_timestamp_args_return_tz(
 ) -> PyResult<Arc<TimeZone>> {
     match (args, kwargs.next()) {
         (&[_], Some((key, value))) if kwargs.len() == 1 => {
-            if key.py_eq(*state.str_tz)? {
+            if unicode_eq(key, *state.str_tz) {
                 state.tz_store.obj_get(value)
             } else {
                 raise_type_err(format!(
@@ -1318,7 +1319,7 @@ fn shift_method(
         [arg] => {
             match kwargs.next() {
                 Some((key, value))
-                    if kwargs.len() == 1 && key.py_eq(*state.str_disambiguate)? =>
+                    if kwargs.len() == 1 && unicode_eq(key, *state.str_disambiguate) =>
                 {
                     dis = Some(Disambiguate::from_py(value, state)?)
                 }
@@ -1726,7 +1727,7 @@ fn format(_cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj)
 }
 
 fn __format__(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, spec_obj: PyObj) -> PyReturn {
-    if spec_obj.is_truthy() {
+    if spec_obj.is_truthy()? {
         format(cls, slf, spec_obj)
     } else {
         __str__(cls.into(), slf)
