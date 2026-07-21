@@ -299,14 +299,15 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         BinaryOperands::SameType(cls, inst_a, inst_b) => Ok(Some(
             inst_a.diff(*inst_b).to_obj(*cls.state().time_delta_type)?,
         )),
-        BinaryOperands::ExtTypes(inst_a, other, state) => {
+        BinaryOperands::ExtTypes(cls, inst_a, other) => {
+            let state = cls.state();
             let inst_b = match_type!(
                 other,
                 ref *state.zoned_datetime_type => |zdt| { zdt.instant() },
                 *state.offset_datetime_type => |odt| { odt.instant() },
                 _ => {
                     return shift_inner(
-                        inst_a.ext_type(),
+                        cls,
                         *inst_a,
                         *state.time_delta_type,
                         other,
@@ -322,10 +323,10 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
 
 fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     binary_operation::<Instant>(obj_a, obj_b, "+", |operands| {
-        let BinaryOperands::ExtTypes(inst, other, state) = operands else {
+        let BinaryOperands::ExtTypes(cls, inst, other) = operands else {
             return Ok(None);
         };
-        shift_inner(inst.ext_type(), *inst, *state.time_delta_type, other, false)
+        shift_inner(cls, *inst, *cls.state().time_delta_type, other, false)
     })
 }
 
@@ -690,7 +691,7 @@ fn format(_cls: ExtType<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn 
 }
 
 fn __format__(cls: ExtType<Instant>, slf: Instant, spec_obj: PyObj) -> PyReturn {
-    if spec_obj.is_truthy() {
+    if spec_obj.is_truthy()? {
         format(cls, slf, spec_obj)
     } else {
         __str__(cls.into(), slf)

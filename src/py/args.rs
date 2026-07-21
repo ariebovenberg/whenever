@@ -86,13 +86,18 @@ fn ptr_eq(a: PyObj, b: PyObj) -> bool {
 }
 
 #[inline]
-fn value_eq(a: PyObj, b: PyObj) -> bool {
-    unsafe { PyObject_RichCompareBool(a.as_ptr(), b.as_ptr(), Py_EQ) == 1 }
+pub(crate) fn unicode_eq(a: PyObj, b: PyObj) -> bool {
+    debug_assert!(unsafe { PyUnicode_Check(b.as_ptr()) != 0 });
+    // The value being matched may not be a string. The expected names are always State's interned
+    // strings, so valid values can be compared without invoking Python-level equality.
+    unsafe { PyUnicode_Check(a.as_ptr()) != 0 && PyUnicode_Compare(a.as_ptr(), b.as_ptr()) == 0 }
 }
+
+pub(crate) type StrEqFn = fn(PyObj, PyObj) -> bool;
 
 pub(crate) fn handle_kwargs<F, K>(fname: &str, kwargs: K, mut handler: F) -> PyResult<()>
 where
-    F: FnMut(PyObj, PyObj, fn(PyObj, PyObj) -> bool) -> PyResult<bool>,
+    F: FnMut(PyObj, PyObj, StrEqFn) -> PyResult<bool>,
     K: IntoIterator<Item = (PyObj, PyObj)>,
 {
     for (key, value) in kwargs {
@@ -100,7 +105,7 @@ where
         // This is actually the common case, as static strings are interned.
         // In the rare case they aren't, we fall back to value comparison.
         // Doing it this way is faster than always doing value comparison outright.
-        if !handler(key, value, ptr_eq)? && !handler(key, value, value_eq)? {
+        if !handler(key, value, ptr_eq)? && !handler(key, value, unicode_eq)? {
             return raise_type_err(format!(
                 "{fname}() got an unexpected keyword argument: {key}"
             ));
@@ -116,7 +121,7 @@ where
 {
     let mut result = None;
     for (k, v) in kwargs {
-        if k.py_eq(key)? {
+        if unicode_eq(k, key) {
             result = Some(v);
         } else {
             raise_type_err(format!("{fname}() got an unexpected keyword argument: {k}"))?;
@@ -153,18 +158,13 @@ pub(crate) fn handle_one_arg(fname: &str, args: &[PyObj]) -> PyResult<PyObj> {
 
 /// Helper to efficiently match a value against a set of known interned strings.
 /// The handler closure is called twice, first with pointer equality (very fast),
-/// and only if that fails, with value equality (slower).
-///
-/// NOTE: although Python's string equality also uses this trick, it does so
-/// on a per-object basis, so it will still end up running slower equality checks
-/// multiple times. By doing it this way, we end up with only pointer equality
-/// checks for the common case of interned strings.
+/// and only if that fails, with direct Unicode comparison (slower).
 pub(crate) fn match_interned_str<T, F>(name: &str, value: PyObj, mut handler: F) -> PyResult<T>
 where
-    F: FnMut(PyObj, fn(PyObj, PyObj) -> bool) -> Option<T>,
+    F: FnMut(PyObj, StrEqFn) -> Option<T>,
 {
     handler(value, ptr_eq)
-        .or_else(|| handler(value, value_eq))
+        .or_else(|| handler(value, unicode_eq))
         .ok_or_else_value_err(|| format!("Invalid value for {name}: {value}"))
 }
 
@@ -172,9 +172,9 @@ where
 /// instead of raising an error.
 pub(crate) fn find_interned<T, F>(value: PyObj, mut handler: F) -> Option<T>
 where
-    F: FnMut(PyObj, fn(PyObj, PyObj) -> bool) -> Option<T>,
+    F: FnMut(PyObj, StrEqFn) -> Option<T>,
 {
-    handler(value, ptr_eq).or_else(|| handler(value, value_eq))
+    handler(value, ptr_eq).or_else(|| handler(value, unicode_eq))
 }
 
 pub(crate) use parse_args_kwargs;

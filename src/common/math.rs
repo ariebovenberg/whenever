@@ -771,7 +771,7 @@ impl SinceUntilKwargs {
         mut extra_handler: F,
     ) -> PyResult<Self>
     where
-        F: FnMut(PyObj, PyObj, fn(PyObj, PyObj) -> bool) -> PyResult<bool>,
+        F: FnMut(PyObj, PyObj, StrEqFn) -> PyResult<bool>,
     {
         let mut round_mode = round::Mode::Trunc;
         let mut round_increment = RoundIncrement::MIN;

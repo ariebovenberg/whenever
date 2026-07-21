@@ -33,6 +33,13 @@ mod gil_enabled {
             Self(UnsafeCell::new(value))
         }
 
+        /// Access the inner value immutably.
+        #[inline]
+        pub(crate) fn with<R, F: FnOnce(&T) -> R>(&self, f: F) -> R {
+            // SAFETY: GIL guarantees single-threaded access
+            f(unsafe { &*self.0.get() })
+        }
+
         /// Access the inner value mutably.
         #[inline]
         pub(crate) fn with_mut<R, F: FnOnce(&mut T) -> R>(&self, f: F) -> R {
@@ -162,6 +169,13 @@ mod free_threaded {
     impl<T> SyncCell<T> {
         pub(crate) fn new(value: T) -> Self {
             Self(Mutex::new(value))
+        }
+
+        /// Access the inner value immutably under the mutex.
+        #[inline]
+        pub(crate) fn with<R, F: FnOnce(&T) -> R>(&self, f: F) -> R {
+            let guard = self.0.lock().expect("mutex poisoned");
+            f(&guard)
         }
 
         /// Access the inner value mutably under the mutex.

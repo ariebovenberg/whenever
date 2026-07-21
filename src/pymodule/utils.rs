@@ -29,8 +29,9 @@ pub(crate) fn new_class<T: PyWrapped>(
     let cls = unsafe { PyType_FromModuleAndSpec(module.as_ptr(), spec, NULL()) }
         .own()?
         .cast_allow_subclass::<PyType>()
-        .unwrap()
-        .map(|t| unsafe { t.link_type::<T>() });
+        .unwrap();
+    // SAFETY: this type was created from the specification for T above.
+    let cls = unsafe { cls.cast_unchecked::<ExtType<T>>() };
     module.add_type((*cls).into())?;
 
     let unpickler = module.getattr(unpickle_name)?;

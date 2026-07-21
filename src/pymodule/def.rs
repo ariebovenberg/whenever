@@ -16,7 +16,7 @@ use crate::{
     },
     common::{
         round,
-        sync::{OncePyCell, SwapPtr},
+        sync::{OncePyCell, SwapPtr, SyncCell},
     },
     docstrings as doc,
     py::*,
@@ -126,14 +126,15 @@ static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
 ];
 
 #[cold]
-fn module_exec(module: PyModule) -> PyResult<()> {
+fn module_exec(mut module: PyModule) -> PyResult<()> {
     // Emit marker so tests can detect debug builds and assert cleanup.
     #[cfg(debug_assertions)]
     eprintln!("[whenever] module_exec (debug)");
     // Initialize state to None to get it out of uninitialized state ASAP,
     // as any further calls could trigger a GC cycle which would retrieve
     // the state.
-    let state = module.state().write(None);
+    // SAFETY: module_exec has exclusive access while initializing the module state.
+    unsafe { module.state_mut() }.write(None);
     let module_name = "whenever".to_py()?;
 
     let (date_type, unpickle_date) = new_class(
@@ -284,7 +285,7 @@ fn module_exec(module: PyModule) -> PyResult<()> {
 
     // Only write the state once everything is initialized,
     // to ensure we don't leak references to the above.
-    state.replace(State {
+    let state = State {
         date_type,
         time_type,
         date_delta_type,
@@ -430,9 +431,11 @@ fn module_exec(module: PyModule) -> PyResult<()> {
         unpickle_offset_datetime,
         unpickle_zoned_datetime,
 
-        time_patch: Patch::new()?,
+        time_patch: SyncCell::new(Patch::new()?),
         tz_store,
-    });
+    };
+    // SAFETY: module_exec exclusively owns the module-state lifecycle transition.
+    unsafe { module.state_mut().assume_init_mut() }.replace(state);
 
     Ok(())
 }
@@ -460,7 +463,7 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
     let module = unsafe { PyModule::from_ptr_unchecked(mod_ptr) };
     // SAFETY: `module_exec` initialized the state immediately to `None`
     // so it's safe to access--even though it hasn't been fully populated yet.
-    let Some(state) = (unsafe { module.state().assume_init_mut() }) else {
+    let Some(state) = (unsafe { module.state().assume_init_ref() }) else {
         // i.e. `module_exec` hasn't finished yet
         return Ok(());
     };
@@ -561,10 +564,11 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
 
 #[cold]
 unsafe extern "C" fn module_clear(mod_ptr: *mut PyObject) -> c_int {
+    // SAFETY: We're passed a valid PyModule pointer.
+    let mut module = unsafe { PyModule::from_ptr_unchecked(mod_ptr) };
     unsafe {
-        // SAFETY: We're passed a valid PyModule pointer
-        PyModule::from_ptr_unchecked(mod_ptr)
-            .state()
+        module
+            .state_mut()
             // SAFETY: `module_exec` initialized the state immediately to `None`
             // so it's safe to access--even though it hasn't been fully populated yet.
             .assume_init_mut()
@@ -703,7 +707,7 @@ pub(crate) struct State {
     pub(crate) str_week_mon: Owned<PyObj>,
     pub(crate) str_week_sun: Owned<PyObj>,
 
-    pub(crate) time_patch: Patch,
+    pub(crate) time_patch: SyncCell<Patch>,
     pub(crate) tz_store: TzStore,
 }
 
